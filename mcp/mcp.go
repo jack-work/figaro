@@ -23,6 +23,15 @@ type Client struct {
 	TracerProvider      trace.TracerProvider
 }
 
+func (client *Client) ContainsTool(toolName string) bool {
+	for _, tool := range client.Tools {
+		if tool.Name == toolName {
+			return true
+		}
+	}
+	return false
+}
+
 // executes mcp handshake and initializes tools
 func Initialize(ctx context.Context, server dockerbridge.ContainerDefinition, rpcClient *jsonrpc.StdioClient, tp trace.TracerProvider) (*Client, error) {
 	client := createMcpClient(server, rpcClient, tp)

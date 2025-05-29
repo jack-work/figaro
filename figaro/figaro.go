@@ -26,6 +26,7 @@ type Figaro struct {
 	toolsCache      []mcp.Tool // Might get stale when we implement dynamic tool introduction
 	tracerProvider  trace.TracerProvider
 	anthropicbridge *anthropicbridge.AnthropicBridge
+	update          chan string
 }
 
 type ServerRegistry struct {
@@ -37,7 +38,7 @@ type ServerRegistry struct {
 // Otherwise, it will always have a non-nil value, even if empty list.
 // If server does not return any tools by responding with nil tools in result rather than empty list, that's fine,
 // it's interpreted to mean empty list for interest of compatibility.
-func SummonFigaro(ctx context.Context, tp trace.TracerProvider, servers ServerRegistry) (*Figaro, context.CancelCauseFunc, error) {
+func SummonFigaro(ctx context.Context, tp trace.TracerProvider, servers ServerRegistry, update chan string) (*Figaro, context.CancelCauseFunc, error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 
 	tracer := tp.Tracer("figaro")
@@ -124,6 +125,7 @@ func SummonFigaro(ctx context.Context, tp trace.TracerProvider, servers ServerRe
 	return &Figaro{
 		clients:        mcpClients,
 		tracerProvider: tp,
+		update:         update,
 	}, cancel, nil
 }
 
@@ -147,10 +149,8 @@ type mcpClientWrapper struct {
 func (figaro *Figaro) GetClientForTool(toolName string) *mcp.Client {
 	for _, clientWrapper := range figaro.clients {
 		client := clientWrapper.mcpClient
-		for _, tool := range client.Tools {
-			if tool.Name == toolName {
-				return client
-			}
+		if client.ContainsTool(toolName) {
+			return client
 		}
 	}
 	return nil
@@ -219,20 +219,14 @@ func (figaro *Figaro) Request(args []string, modePtr *string) error {
 				cancel()
 				return err
 			case next := <-stream.Progress:
-				fmt.Print(next)
+				figaro.update <- next
 			case message = <-stream.Result:
+				figaro.update <- "\n\n"
 				break progressLoop
 			}
 		}
 
-		modelResponse := make([]anthropic.ContentBlockParamUnion, 0, len(message.Content))
-		for _, message := range message.Content {
-			modelResponse = append(modelResponse, message.ToParam())
-		}
-		conversation = append(conversation, anthropic.MessageParam{
-			Content: modelResponse,
-			Role:    anthropic.MessageParamRoleAssistant,
-		})
+		conversation = appendMessage(conversation, message)
 
 		for message.StopReason == "tool_use" {
 			toolResponses, err := callTools(ctx, message, figaro)
@@ -277,17 +271,38 @@ func (figaro *Figaro) Request(args []string, modePtr *string) error {
 						// Progress channel closed, move on to result
 						break progressLoop2
 					}
-					fmt.Print(next)
+					// fmt.Print(next)
+					figaro.update <- next
+				case message = <-stream.Result:
+					break progressLoop2
 				}
 			}
 
-			message = <-stream.Result
 		}
 
-		writeHostFile(conversation, ".conversation.json")
+		conversation = appendMessage(conversation, message)
+
+		// fmt.Println("done!")
+		figaro.update <- "\n\ndone!"
+		if err := writeHostFile(conversation, ".conversation.json"); err != nil {
+			span.RecordError(err)
+			logging.EzPrint(err)
+		}
 	}
 
 	return nil
+}
+
+func appendMessage(conversation []anthropic.MessageParam, message *anthropic.Message) []anthropic.MessageParam {
+	modelResponse := make([]anthropic.ContentBlockParamUnion, 0, len(message.Content))
+	for _, message := range message.Content {
+		modelResponse = append(modelResponse, message.ToParam())
+	}
+	conversation = append(conversation, anthropic.MessageParam{
+		Content: modelResponse,
+		Role:    anthropic.MessageParamRoleAssistant,
+	})
+	return conversation
 }
 
 func writeHostFile(contents any, path ...string) error {
@@ -297,7 +312,7 @@ func writeHostFile(contents any, path ...string) error {
 	}
 
 	relative := filepath.Join(path...)
-	filePath := filepath.Join(homeDir, relative)
+	filePath := filepath.Join(homeDir, ".figaro", relative)
 	byteContents, err := json.Marshal(contents)
 	err = os.WriteFile(filePath, byteContents, os.FileMode(os.O_TRUNC))
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"figaro/figaro"
+	// "figaro/forum"
 	"figaro/logging"
 	"flag"
 	"fmt"
@@ -15,6 +16,12 @@ import (
 )
 
 func main() {
+	// p := forum.OpenForum()
+	// if _, err := p.Run(); err != nil {
+	// 	fmt.Printf("Alas, there's been an error: %v", err)
+	// 	os.Exit(1)
+	// }
+	// return
 	// establish root context
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(ctx.Err())
@@ -41,7 +48,25 @@ func main() {
 		logging.EzPrint(err)
 	}
 
-	figaro, cancel, err := figaro.SummonFigaro(ctx, tp, *servers)
+	update := make(chan string)
+	go func() {
+		defer close(update)
+	loop:
+		for {
+			select {
+			case content := <-update:
+				fmt.Print(content)
+			// I'm pretty sure this doesn't fire because the program ends before it can be read.
+			// To get this to work, we probably need to defer this bit to make sure it runs,
+			// rather that programming it to a loop.
+			case <-ctx.Done():
+				fmt.Println("\n\nDone!")
+				break loop
+			}
+		}
+	}()
+
+	figaro, cancel, err := figaro.SummonFigaro(ctx, tp, *servers, update)
 	defer cancel(ctx.Err())
 
 	if err != nil {
