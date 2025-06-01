@@ -6,7 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"figaro/figaro"
-	// "figaro/forum"
+
+	"figaro/forum"
 	"figaro/logging"
 	"flag"
 	"fmt"
@@ -16,7 +17,6 @@ import (
 )
 
 func main() {
-	// p := forum.OpenForum()
 	// if _, err := p.Run(); err != nil {
 	// 	fmt.Printf("Alas, there's been an error: %v", err)
 	// 	os.Exit(1)
@@ -48,24 +48,13 @@ func main() {
 		logging.EzPrint(err)
 	}
 
-	update := make(chan string)
-	go func() {
-		defer close(update)
-	loop:
-		for {
-			select {
-			case content := <-update:
-				fmt.Print(content)
-			// I'm pretty sure this doesn't fire because the program ends before it can be read.
-			// To get this to work, we probably need to defer this bit to make sure it runs,
-			// rather that programming it to a loop.
-			case <-ctx.Done():
-				fmt.Println("\n\nDone!")
-				break loop
-			}
-		}
-	}()
+	update := make(chan figaro.Event)
+	defer close(update)
 
+	// This is async tui
+	forum.OpenForum(ctx, tp, update)
+
+	// This blocks, once it's done, the tui is basically shot.
 	figaro, cancel, err := figaro.SummonFigaro(ctx, tp, *servers, update)
 	defer cancel(ctx.Err())
 
@@ -76,8 +65,16 @@ func main() {
 	// Use the flag value
 	args := flag.Args()
 	if len(args) > 0 {
-		figaro.Request(args, modePtr)
+		err := figaro.Request(args, modePtr)
+		if err != nil {
+			logging.EzPrint(err.Error())
+		}
 		cancel(nil)
+		// <-update
+		if err != nil {
+			logging.EzPrint(err)
+			return
+		}
 		return
 	} else {
 		logging.EzPrint("Nothing to say now.  Bye bye.")

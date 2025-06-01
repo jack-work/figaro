@@ -16,6 +16,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -26,7 +27,27 @@ type Figaro struct {
 	toolsCache      []mcp.Tool // Might get stale when we implement dynamic tool introduction
 	tracerProvider  trace.TracerProvider
 	anthropicbridge *anthropicbridge.AnthropicBridge
-	update          chan string
+	update          chan Event
+}
+
+type EventType string
+
+const (
+	TaskStarted   EventType = "task_started"
+	TaskCompleted EventType = "task_completed"
+	TaskFailed    EventType = "task_failed"
+
+	MessageStarted EventType = "message_started"
+	MessagePart    EventType = "message_part"
+	MessageEnded   EventType = "message_ended"
+)
+
+type Event struct {
+	Type      EventType              `json:"type"`
+	TaskID    string                 `json:"task_id"`
+	MessageID string                 `json:"message_id"`
+	Data      string                 `json:"data,omitempty"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type ServerRegistry struct {
@@ -38,7 +59,7 @@ type ServerRegistry struct {
 // Otherwise, it will always have a non-nil value, even if empty list.
 // If server does not return any tools by responding with nil tools in result rather than empty list, that's fine,
 // it's interpreted to mean empty list for interest of compatibility.
-func SummonFigaro(ctx context.Context, tp trace.TracerProvider, servers ServerRegistry, update chan string) (*Figaro, context.CancelCauseFunc, error) {
+func SummonFigaro(ctx context.Context, tp trace.TracerProvider, servers ServerRegistry, update chan Event) (*Figaro, context.CancelCauseFunc, error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 
 	tracer := tp.Tracer("figaro")
@@ -176,6 +197,31 @@ func (figaro *Figaro) GetAllTools() []mcp.Tool {
 	return result
 }
 
+func (figaro *Figaro) handleStream(ctx context.Context, stream *anthropicbridge.ConsoleStreamable[*anthropic.Message], cancel context.CancelFunc, addSuffix bool) (*anthropic.Message, error) {
+	hasStarted := false
+	for {
+		select {
+		case err := <-stream.Error:
+			cancel()
+			return nil, err
+		case next, ok := <-stream.Progress:
+			if !ok {
+				return <-stream.Result, nil
+			}
+			var evtType EventType
+			if !hasStarted {
+				evtType = MessageStarted
+			} else {
+				evtType = MessagePart
+			}
+			figaro.update <- Event{Type: evtType, Data: next}
+		case message := <-stream.Result:
+			figaro.update <- Event{Type: MessageEnded, MessageID: message.ID}
+			return message, nil
+		}
+	}
+}
+
 func (figaro *Figaro) Request(args []string, modePtr *string) error {
 	ctx, cancel := context.WithTimeoutCause(context.Background(), time.Duration(time.Minute), fmt.Errorf("Operation timed out"))
 	defer cancel()
@@ -184,51 +230,44 @@ func (figaro *Figaro) Request(args []string, modePtr *string) error {
 	ctx, span := tracer.Start(ctx, "request")
 	defer span.End()
 
-	tools := figaro.GetAllTools()
-	input := strings.Join(args, " ")
-
-	span.AddEvent("Tools retrieved",
-		trace.WithAttributes(attribute.String("serialized_tools", logging.EzMarshal(tools))))
-
-	role := anthropic.MessageParamRole(string(anthropic.MessageParamRoleUser))
-
 	conversation := make([]anthropic.MessageParam, 0, 1)
 	anthropicClient, err := anthropicbridge.InitAnthropic(anthropicbridge.WithLogging(figaro.tracerProvider))
 	if err != nil {
 		return fmt.Errorf("failed to initialize Anthropic client: %w", err)
 	}
+	role := anthropic.MessageParamRole(string(anthropic.MessageParamRoleUser))
+	input := strings.Join(args, " ")
 
-	for range 1 {
-		conversation = append(conversation, anthropic.MessageParam{
-			Content: []anthropic.ContentBlockParamUnion{{
-				OfRequestTextBlock: &anthropic.TextBlockParam{Text: input},
-			}},
-			Role: role,
-		})
-		messageParams := GetMessageNewParams(conversation, tools)
-		stream, err := anthropicClient.StreamMessage(context.Background(), *messageParams)
-		if err != nil {
+	messageParam := createMessageParam(input, role)
+	conversation = append(conversation, messageParam)
+
+	message, conversation, err := figaro.streamMessage(ctx, conversation, anthropicClient, cancel)
+	if err != nil {
+		return err
+	}
+
+	err = figaro.agentLoop(ctx, span, anthropicClient, message, conversation, cancel)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		span.RecordError(err)
+		span.SetAttributes(attribute.String("error_details", logging.EzMarshal(err)))
+	}
+	return err
+}
+func (figaro *Figaro) agentLoop(
+	ctx context.Context,
+	span trace.Span,
+	anthropicClient anthropicbridge.AnthropicBridge,
+	message *anthropic.Message,
+	conversation []anthropic.MessageParam,
+	cancel context.CancelFunc,
+) error {
+	i := 0
+	for {
+		if err := shouldDisrupt(i); err != nil {
 			return err
 		}
-
-		var message *anthropic.Message
-	progressLoop:
-		for {
-			select {
-			case err := <-stream.Error:
-				cancel()
-				return err
-			case next := <-stream.Progress:
-				figaro.update <- next
-			case message = <-stream.Result:
-				figaro.update <- "\n\n"
-				break progressLoop
-			}
-		}
-
-		conversation = appendMessage(conversation, message)
-
-		for message.StopReason == "tool_use" {
+		if message.StopReason == "tool_use" {
 			toolResponses, err := callTools(ctx, message, figaro)
 			if err != nil {
 				return err
@@ -236,16 +275,8 @@ func (figaro *Figaro) Request(args []string, modePtr *string) error {
 
 			toolResults := make([]anthropic.ContentBlockParamUnion, 0)
 			for id, toolResponse := range toolResponses {
-				toolResults = append(toolResults, anthropic.ContentBlockParamUnion{
-					OfRequestToolResultBlock: &anthropic.ToolResultBlockParam{
-						ToolUseID: id,
-						Content: []anthropic.ToolResultBlockParamContentUnion{{
-							OfRequestTextBlock: &anthropic.TextBlockParam{
-								Text: anyToString(toolResponse.Result),
-							},
-						}},
-					},
-				})
+				block := createToolResultBlock(id, toolResponse)
+				toolResults = append(toolResults, block)
 			}
 
 			conversation = append(conversation, anthropic.MessageParam{
@@ -253,50 +284,82 @@ func (figaro *Figaro) Request(args []string, modePtr *string) error {
 				Role:    anthropic.MessageParamRoleUser,
 			})
 
-			messageParams = GetMessageNewParams(conversation, tools)
-			stream, err = anthropicClient.StreamMessage(ctx, *messageParams)
+			message, conversation, err = figaro.streamMessage(ctx, conversation, anthropicClient, cancel)
 			if err != nil {
-				cancel()
 				return err
 			}
 
-		progressLoop2:
-			for {
-				select {
-				case err := <-stream.Error:
-					cancel()
-					return err
-				case next, ok := <-stream.Progress:
-					if !ok {
-						// Progress channel closed, move on to result
-						break progressLoop2
-					}
-					// fmt.Print(next)
-					figaro.update <- next
-				case message = <-stream.Result:
-					break progressLoop2
-				}
+			if err := writeHostFile(conversation, ".conversation.json"); err != nil {
+				span.RecordError(err)
+				logging.EzPrint(err)
 			}
-
+		} else {
+			return nil
 		}
+		i++
+	}
+}
 
-		conversation = appendMessage(conversation, message)
+// Returns an error object if the agent loop should be disrupted.
+func shouldDisrupt(i int) error {
+	if i < 10 {
+		return nil
+	}
+	return fmt.Errorf("Maximum iteration count was exhausted.")
+}
 
-		// fmt.Println("done!")
-		figaro.update <- "\n\ndone!"
-		if err := writeHostFile(conversation, ".conversation.json"); err != nil {
-			span.RecordError(err)
-			logging.EzPrint(err)
-		}
+func createToolResultBlock(id string, toolResponse jsonrpc.Message[any]) anthropic.ContentBlockParamUnion {
+	newVar := anthropic.ContentBlockParamUnion{
+		OfRequestToolResultBlock: &anthropic.ToolResultBlockParam{
+			ToolUseID: id,
+			Content: []anthropic.ToolResultBlockParamContentUnion{{
+				OfRequestTextBlock: &anthropic.TextBlockParam{
+					Text: anyToString(toolResponse.Result),
+				},
+			}},
+		},
+	}
+	return newVar
+}
+
+func createMessageParam(input string, role anthropic.MessageParamRole) anthropic.MessageParam {
+	messageParam := anthropic.MessageParam{
+		Content: []anthropic.ContentBlockParamUnion{{
+			OfRequestTextBlock: &anthropic.TextBlockParam{Text: input},
+		}},
+		Role: role,
+	}
+	return messageParam
+}
+
+// This method calls the llm stream api and then pipes the response stream to that which
+// is configured in the receiver.
+func (figaro *Figaro) streamMessage(
+	ctx context.Context,
+	conversation []anthropic.MessageParam,
+	anthropicClient anthropicbridge.AnthropicBridge,
+	cancel context.CancelFunc,
+) (*anthropic.Message, []anthropic.MessageParam, error) {
+	tools := figaro.GetAllTools()
+	messageParams := GetMessageNewParams(conversation, tools)
+	stream, err := anthropicClient.StreamMessage(ctx, *messageParams)
+	if err != nil {
+		cancel()
+		return nil, nil, err
 	}
 
-	return nil
+	message, err := figaro.handleStream(ctx, stream, cancel, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	conversation = appendMessage(conversation, message)
+	return message, conversation, nil
 }
 
 func appendMessage(conversation []anthropic.MessageParam, message *anthropic.Message) []anthropic.MessageParam {
 	modelResponse := make([]anthropic.ContentBlockParamUnion, 0, len(message.Content))
-	for _, message := range message.Content {
-		modelResponse = append(modelResponse, message.ToParam())
+	for _, content := range message.Content {
+		modelResponse = append(modelResponse, content.ToParam())
 	}
 	conversation = append(conversation, anthropic.MessageParam{
 		Content: modelResponse,

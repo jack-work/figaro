@@ -115,6 +115,9 @@ func (bridge *AnthropicBridge) StreamMessage(
 
 	errCh := make(chan error)
 	message := anthropic.Message{}
+	// TODO: Move the stream processing logic from figaro to the anthropic bridge.
+	// Then, define an interface for the bridges and make it easier to include other
+	// models.
 	progress := make(chan string, 1)
 	result := make(chan *anthropic.Message)
 

@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func EzMarshal[T any](content T) string {
@@ -23,4 +27,11 @@ func EzPrint[T any](content T) {
 	} else {
 		fmt.Println(string(telem))
 	}
+}
+
+func EzFail(span trace.Span, err error) {
+	EzPrint(err)
+	span.SetStatus(codes.Error, err.Error())
+	span.RecordError(err)
+	span.SetAttributes(attribute.String("error_details", EzMarshal(err)))
 }

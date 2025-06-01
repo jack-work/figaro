@@ -1,9 +1,15 @@
 package forum
 
 import (
+	"context"
+	"figaro/figaro"
+	"figaro/logging"
 	"fmt"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
-	// "os"
+	"github.com/charmbracelet/glamour"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type model struct {
@@ -13,11 +19,61 @@ type model struct {
 }
 
 type Forum struct {
+	program *tea.Program
 }
 
-func OpenForum() *tea.Program {
-	p := tea.NewProgram(initialModel())
-	return p
+func GetMarkdownString(message string) (*string, error) {
+	out, err := glamour.Render(message, "dark")
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func OpenForum(ctx context.Context, tp trace.TracerProvider, update chan figaro.Event) {
+	ctx, cancel := context.WithCancelCause(ctx)
+
+	tracer := tp.Tracer("forum")
+	ctx, span := tracer.Start(ctx, "request")
+	defer span.End()
+	// p := tea.NewProgram(initialModel())
+	var sb strings.Builder
+	go func() {
+		defer cancel(ctx.Err())
+	loop:
+		for {
+			select {
+			case event := <-update:
+				switch event.Type {
+				case figaro.TaskStarted:
+				case figaro.TaskCompleted:
+				case figaro.TaskFailed:
+				case figaro.MessageStarted:
+					fmt.Print(event.Data)
+					sb.WriteString(event.Data)
+				case figaro.MessagePart:
+					fmt.Print(event.Data)
+					sb.WriteString(event.Data)
+					fmt.Print(event.Data)
+				case figaro.MessageEnded:
+					s, err := GetMarkdownString(sb.String())
+					if err != nil {
+						logging.EzFail(span, err)
+						break loop
+					}
+					fmt.Println(*s)
+				default:
+				}
+			// I'm pretty sure this doesn't fire because the program ends before it can be read.
+			// To get this to work, we probably need to defer this bit to make sure it runs,
+			// rather that programming it to a loop.
+			case <-ctx.Done():
+				fmt.Println("\n\nDone!")
+				sb.WriteString("___")
+				break loop
+			}
+		}
+	}()
 }
 
 func initialModel() model {
