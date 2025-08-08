@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/spf13/cobra"
 
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
 	"go.opentelemetry.io/otel/log/global"
@@ -22,6 +24,87 @@ import (
 )
 
 var logger otellog.Logger
+
+type Message struct {
+	Role      string    `json:"role"`      // "user" or "assistant"
+	Content   string    `json:"content"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+type Conversation struct {
+	Name     string    `json:"name"`
+	Messages []Message `json:"messages"`
+}
+
+func loadConversation(name string) (*Conversation, error) {
+	filename := fmt.Sprintf(".%s.figaro.json", name)
+	
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Create new conversation if file doesn't exist
+			return &Conversation{
+				Name:     name,
+				Messages: []Message{},
+			}, nil
+		}
+		return nil, fmt.Errorf("failed to read conversation file: %w", err)
+	}
+
+	var conv Conversation
+	if err := json.Unmarshal(data, &conv); err != nil {
+		return nil, fmt.Errorf("failed to parse conversation file: %w", err)
+	}
+
+	logEvent("info", "Loaded conversation", "name", name, "message_count", len(conv.Messages))
+	return &conv, nil
+}
+
+func (c *Conversation) save() error {
+	filename := fmt.Sprintf(".%s.figaro.json", c.Name)
+	
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal conversation: %w", err)
+	}
+
+	if err := os.WriteFile(filename, data, 0644); err != nil {
+		return fmt.Errorf("failed to write conversation file: %w", err)
+	}
+
+	logEvent("info", "Saved conversation", "name", c.Name, "message_count", len(c.Messages))
+	return nil
+}
+
+func (c *Conversation) addUserMessage(content string) {
+	c.Messages = append(c.Messages, Message{
+		Role:      "user",
+		Content:   content,
+		Timestamp: time.Now(),
+	})
+}
+
+func (c *Conversation) addAssistantMessage(content string) {
+	c.Messages = append(c.Messages, Message{
+		Role:      "assistant",
+		Content:   content,
+		Timestamp: time.Now(),
+	})
+}
+
+func (c *Conversation) toAnthropicMessages() []anthropic.MessageParam {
+	var messages []anthropic.MessageParam
+	
+	for _, msg := range c.Messages {
+		if msg.Role == "user" {
+			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)))
+		} else if msg.Role == "assistant" {
+			messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(msg.Content)))
+		}
+	}
+	
+	return messages
+}
 
 func setupLogger() func() {
 	ctx := context.Background()
@@ -127,7 +210,7 @@ func logEvent(level, message string, attrs ...interface{}) {
 
 type LLMProvider interface {
 	GenerateText(ctx context.Context, prompt string) (io.Reader, error)
-	GenerateBlocks(ctx context.Context, prompt string) (<-chan ContentBlock, error)
+	GenerateBlocks(ctx context.Context, messages []anthropic.MessageParam) (<-chan ContentBlock, error)
 }
 
 type ClaudeLLM struct {
@@ -174,21 +257,19 @@ func (c *ClaudeLLM) GenerateText(ctx context.Context, prompt string) (io.Reader,
 	return strings.NewReader(""), nil
 }
 
-func (c *ClaudeLLM) GenerateBlocks(ctx context.Context, prompt string) (<-chan ContentBlock, error) {
+func (c *ClaudeLLM) GenerateBlocks(ctx context.Context, messages []anthropic.MessageParam) (<-chan ContentBlock, error) {
 	blockChan := make(chan ContentBlock, 10)
 
 	go func() {
 		defer close(blockChan)
 
 		// Log start of request
-		logEvent("info", "Starting LLM request", "prompt_length", len(prompt))
+		logEvent("info", "Starting LLM request", "message_count", len(messages))
 
 		resp, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 			Model:     anthropic.ModelClaudeSonnet4_20250514,
 			MaxTokens: 1024,
-			Messages: []anthropic.MessageParam{
-				anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-			},
+			Messages:  messages,
 			Tools: []anthropic.ToolUnionParam{{
 				OfWebSearchTool20250305: &anthropic.WebSearchTool20250305Param{
 					MaxUses: param.Opt[int64]{
@@ -254,12 +335,70 @@ func min(a, b int) int {
 	return b
 }
 
+var (
+	conversationName string
+)
+
 func main() {
+	var rootCmd = &cobra.Command{
+		Use:   "figaro [flags] <message>",
+		Short: "Claude CLI with conversation persistence",
+		Long:  "A CLI tool to chat with Claude AI with support for persistent conversations",
+		Args:  cobra.MinimumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			runFigaro(args)
+		},
+	}
+
+	rootCmd.Flags().StringVarP(&conversationName, "conversation", "c", "", "Conversation name for persistence (creates .{name}.figaro.json)")
+
+	if err := rootCmd.Execute(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runFigaro(args []string) {
 	fmt.Println("=== Claude ===")
 
 	// Setup OpenTelemetry logger
 	cleanup := setupLogger()
 	defer cleanup()
+
+	// Concatenate all arguments as the prompt
+	prompt := strings.Join(args, " ")
+	logEvent("info", "Application started", "prompt", prompt, "conversation", conversationName)
+
+	// Load or create conversation
+	var conv *Conversation
+	var err error
+	
+	if conversationName != "" {
+		conv, err = loadConversation(conversationName)
+		if err != nil {
+			logEvent("error", "Failed to load conversation", "error", err.Error())
+			log.Fatal(err)
+		}
+	} else {
+		// Create temporary conversation for one-off messages
+		conv = &Conversation{
+			Name:     "temp",
+			Messages: []Message{},
+		}
+	}
+
+	// Add user message to conversation
+	conv.addUserMessage(prompt)
+
+	// Save conversation if persistent
+	if conversationName != "" {
+		if err := conv.save(); err != nil {
+			logEvent("error", "Failed to save conversation", "error", err.Error())
+			log.Fatal(err)
+		}
+	}
+
+	// Generate messages for API
+	messages := conv.toAnthropicMessages()
 
 	llm, err := NewClaudeLLM()
 	if err != nil {
@@ -269,18 +408,7 @@ func main() {
 
 	ctx := context.Background()
 
-	if len(os.Args) == 0 {
-		log.Fatal(err)
-		return
-	}
-
-	// Concatenate all command line arguments as the prompt
-	var prompt string
-	prompt = strings.Join(os.Args[1:], " ")
-
-	logEvent("info", "Application started", "prompt", prompt)
-
-	blockChan, err := llm.GenerateBlocks(ctx, prompt)
+	blockChan, err := llm.GenerateBlocks(ctx, messages)
 	if err != nil {
 		logEvent("error", "Failed to generate blocks", "error", err.Error())
 		log.Fatal(err)
@@ -288,9 +416,35 @@ func main() {
 
 	logEvent("info", "Starting markdown rendering")
 
-	if err := RenderMarkdownChannel(blockChan); err != nil {
+	// Collect response for saving to conversation
+	var responseContent strings.Builder
+
+	// Create a new channel to capture response content
+	responseChan := make(chan ContentBlock, 10)
+	
+	// Start a goroutine to capture response content
+	go func() {
+		defer close(responseChan)
+		for block := range blockChan {
+			if block.Type == TextBlock {
+				responseContent.WriteString(block.Content)
+			}
+			responseChan <- block
+		}
+	}()
+
+	if err := RenderMarkdownChannel(responseChan); err != nil {
 		logEvent("error", "Failed to render markdown", "error", err.Error())
 		log.Fatal(err)
+	}
+
+	// Save assistant response to conversation
+	if conversationName != "" && responseContent.Len() > 0 {
+		conv.addAssistantMessage(responseContent.String())
+		if err := conv.save(); err != nil {
+			logEvent("error", "Failed to save final conversation", "error", err.Error())
+			log.Fatal(err)
+		}
 	}
 
 	logEvent("info", "Application completed")

@@ -1,6 +1,6 @@
 {
-	"Timestamp": "2025-08-08T15:53:23.219507596-04:00",
-	"ObservedTimestamp": "2025-08-08T15:53:23.219507656-04:00",
+	"Timestamp": "2025-08-08T17:20:20.551101059-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:20.551101119-04:00",
 	"Severity": 9,
 	"SeverityText": "INFO",
 	"Body": {
@@ -12,7 +12,14 @@
 			"Key": "prompt",
 			"Value": {
 				"Type": "String",
-				"Value": "hello world"
+				"Value": "what did you just say? concise"
+			}
+		},
+		{
+			"Key": "conversation",
+			"Value": {
+				"Type": "String",
+				"Value": "test"
 			}
 		}
 	],
@@ -44,8 +51,112 @@
 	"DroppedAttributes": 0
 }
 {
-	"Timestamp": "2025-08-08T15:53:23.219527565-04:00",
-	"ObservedTimestamp": "2025-08-08T15:53:23.219527615-04:00",
+	"Timestamp": "2025-08-08T17:20:20.551327439-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:20.551327509-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Loaded conversation"
+	},
+	"Attributes": [
+		{
+			"Key": "name",
+			"Value": {
+				"Type": "String",
+				"Value": "test"
+			}
+		},
+		{
+			"Key": "message_count",
+			"Value": {
+				"Type": "Int64",
+				"Value": 4
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T17:20:20.551438739-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:20.551438799-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Saved conversation"
+	},
+	"Attributes": [
+		{
+			"Key": "name",
+			"Value": {
+				"Type": "String",
+				"Value": "test"
+			}
+		},
+		{
+			"Key": "message_count",
+			"Value": {
+				"Type": "Int64",
+				"Value": 5
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T17:20:20.551457489-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:20.551457539-04:00",
 	"Severity": 9,
 	"SeverityText": "INFO",
 	"Body": {
@@ -81,8 +192,8 @@
 	"DroppedAttributes": 0
 }
 {
-	"Timestamp": "2025-08-08T15:53:23.219550385-04:00",
-	"ObservedTimestamp": "2025-08-08T15:53:23.219550435-04:00",
+	"Timestamp": "2025-08-08T17:20:20.551479059-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:20.551479129-04:00",
 	"Severity": 9,
 	"SeverityText": "INFO",
 	"Body": {
@@ -91,10 +202,10 @@
 	},
 	"Attributes": [
 		{
-			"Key": "prompt_length",
+			"Key": "message_count",
 			"Value": {
 				"Type": "Int64",
-				"Value": 11
+				"Value": 5
 			}
 		}
 	],
@@ -126,8 +237,8 @@
 	"DroppedAttributes": 0
 }
 {
-	"Timestamp": "2025-08-08T15:53:24.695558595-04:00",
-	"ObservedTimestamp": "2025-08-08T15:53:24.695558685-04:00",
+	"Timestamp": "2025-08-08T17:20:22.833326205-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:22.833326425-04:00",
 	"Severity": 9,
 	"SeverityText": "INFO",
 	"Body": {
@@ -171,8 +282,8 @@
 	"DroppedAttributes": 0
 }
 {
-	"Timestamp": "2025-08-08T15:53:24.695565805-04:00",
-	"ObservedTimestamp": "2025-08-08T15:53:24.695565855-04:00",
+	"Timestamp": "2025-08-08T17:20:22.833333845-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:22.833333915-04:00",
 	"Severity": 9,
 	"SeverityText": "INFO",
 	"Body": {
@@ -216,8 +327,8 @@
 	"DroppedAttributes": 0
 }
 {
-	"Timestamp": "2025-08-08T15:53:24.695579465-04:00",
-	"ObservedTimestamp": "2025-08-08T15:53:24.695579535-04:00",
+	"Timestamp": "2025-08-08T17:20:22.833346425-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:22.833346475-04:00",
 	"Severity": 9,
 	"SeverityText": "INFO",
 	"Body": {
@@ -236,14 +347,14 @@
 			"Key": "content_length",
 			"Value": {
 				"Type": "Int64",
-				"Value": 90
+				"Value": 209
 			}
 		},
 		{
 			"Key": "content_preview",
 			"Value": {
 				"Type": "String",
-				"Value": "Hello! How can I help you today? Is there anything"
+				"Value": "I demonstrated that I can search the internet by s"
 			}
 		}
 	],
@@ -275,8 +386,8 @@
 	"DroppedAttributes": 0
 }
 {
-	"Timestamp": "2025-08-08T15:53:24.695585045-04:00",
-	"ObservedTimestamp": "2025-08-08T15:53:24.695585115-04:00",
+	"Timestamp": "2025-08-08T17:20:22.833351935-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:22.833351995-04:00",
 	"Severity": 9,
 	"SeverityText": "INFO",
 	"Body": {
@@ -320,8 +431,8 @@
 	"DroppedAttributes": 0
 }
 {
-	"Timestamp": "2025-08-08T15:53:24.695587805-04:00",
-	"ObservedTimestamp": "2025-08-08T15:53:24.695587855-04:00",
+	"Timestamp": "2025-08-08T17:20:22.833355855-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:22.833355905-04:00",
 	"Severity": 9,
 	"SeverityText": "INFO",
 	"Body": {
@@ -372,8 +483,8 @@
 	"DroppedAttributes": 0
 }
 {
-	"Timestamp": "2025-08-08T15:53:24.695595835-04:00",
-	"ObservedTimestamp": "2025-08-08T15:53:24.695595885-04:00",
+	"Timestamp": "2025-08-08T17:20:22.833357455-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:22.833357505-04:00",
 	"Severity": 9,
 	"SeverityText": "INFO",
 	"Body": {
@@ -392,7 +503,7 @@
 			"Key": "content_length",
 			"Value": {
 				"Type": "Int64",
-				"Value": 90
+				"Value": 209
 			}
 		}
 	],
@@ -424,8 +535,8 @@
 	"DroppedAttributes": 0
 }
 {
-	"Timestamp": "2025-08-08T15:53:24.695903744-04:00",
-	"ObservedTimestamp": "2025-08-08T15:53:24.695903824-04:00",
+	"Timestamp": "2025-08-08T17:20:22.833597805-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:22.833597875-04:00",
 	"Severity": 9,
 	"SeverityText": "INFO",
 	"Body": {
@@ -469,8 +580,8 @@
 	"DroppedAttributes": 0
 }
 {
-	"Timestamp": "2025-08-08T15:53:24.695906214-04:00",
-	"ObservedTimestamp": "2025-08-08T15:53:24.695906274-04:00",
+	"Timestamp": "2025-08-08T17:20:22.833598995-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:22.833599065-04:00",
 	"Severity": 9,
 	"SeverityText": "INFO",
 	"Body": {
@@ -514,8 +625,60 @@
 	"DroppedAttributes": 0
 }
 {
-	"Timestamp": "2025-08-08T15:53:24.695907204-04:00",
-	"ObservedTimestamp": "2025-08-08T15:53:24.695907274-04:00",
+	"Timestamp": "2025-08-08T17:20:22.833703655-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:22.833703705-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Saved conversation"
+	},
+	"Attributes": [
+		{
+			"Key": "name",
+			"Value": {
+				"Type": "String",
+				"Value": "test"
+			}
+		},
+		{
+			"Key": "message_count",
+			"Value": {
+				"Type": "Int64",
+				"Value": 6
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T17:20:22.833705435-04:00",
+	"ObservedTimestamp": "2025-08-08T17:20:22.833705485-04:00",
 	"Severity": 9,
 	"SeverityText": "INFO",
 	"Body": {
