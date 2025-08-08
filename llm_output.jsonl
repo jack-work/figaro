@@ -1,0 +1,552 @@
+{
+	"Timestamp": "2025-08-08T15:53:23.219507596-04:00",
+	"ObservedTimestamp": "2025-08-08T15:53:23.219507656-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Application started"
+	},
+	"Attributes": [
+		{
+			"Key": "prompt",
+			"Value": {
+				"Type": "String",
+				"Value": "hello world"
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T15:53:23.219527565-04:00",
+	"ObservedTimestamp": "2025-08-08T15:53:23.219527615-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Starting markdown rendering"
+	},
+	"Attributes": [],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T15:53:23.219550385-04:00",
+	"ObservedTimestamp": "2025-08-08T15:53:23.219550435-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Starting LLM request"
+	},
+	"Attributes": [
+		{
+			"Key": "prompt_length",
+			"Value": {
+				"Type": "Int64",
+				"Value": 11
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T15:53:24.695558595-04:00",
+	"ObservedTimestamp": "2025-08-08T15:53:24.695558685-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Received LLM response"
+	},
+	"Attributes": [
+		{
+			"Key": "has_error",
+			"Value": {
+				"Type": "Bool",
+				"Value": false
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T15:53:24.695565805-04:00",
+	"ObservedTimestamp": "2025-08-08T15:53:24.695565855-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Processing content block"
+	},
+	"Attributes": [
+		{
+			"Key": "block_index",
+			"Value": {
+				"Type": "Int64",
+				"Value": 0
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T15:53:24.695579465-04:00",
+	"ObservedTimestamp": "2025-08-08T15:53:24.695579535-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Sending text block"
+	},
+	"Attributes": [
+		{
+			"Key": "block_index",
+			"Value": {
+				"Type": "Int64",
+				"Value": 0
+			}
+		},
+		{
+			"Key": "content_length",
+			"Value": {
+				"Type": "Int64",
+				"Value": 90
+			}
+		},
+		{
+			"Key": "content_preview",
+			"Value": {
+				"Type": "String",
+				"Value": "Hello! How can I help you today? Is there anything"
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T15:53:24.695585045-04:00",
+	"ObservedTimestamp": "2025-08-08T15:53:24.695585115-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Finished processing all blocks"
+	},
+	"Attributes": [
+		{
+			"Key": "total_blocks",
+			"Value": {
+				"Type": "Int64",
+				"Value": 1
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T15:53:24.695587805-04:00",
+	"ObservedTimestamp": "2025-08-08T15:53:24.695587855-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Received block for rendering"
+	},
+	"Attributes": [
+		{
+			"Key": "block_count",
+			"Value": {
+				"Type": "Int64",
+				"Value": 1
+			}
+		},
+		{
+			"Key": "block_type",
+			"Value": {
+				"Type": "Int64",
+				"Value": 0
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T15:53:24.695595835-04:00",
+	"ObservedTimestamp": "2025-08-08T15:53:24.695595885-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Rendering text block"
+	},
+	"Attributes": [
+		{
+			"Key": "block_count",
+			"Value": {
+				"Type": "Int64",
+				"Value": 1
+			}
+		},
+		{
+			"Key": "content_length",
+			"Value": {
+				"Type": "Int64",
+				"Value": 90
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T15:53:24.695903744-04:00",
+	"ObservedTimestamp": "2025-08-08T15:53:24.695903824-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Text block rendered and displayed"
+	},
+	"Attributes": [
+		{
+			"Key": "block_count",
+			"Value": {
+				"Type": "Int64",
+				"Value": 1
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T15:53:24.695906214-04:00",
+	"ObservedTimestamp": "2025-08-08T15:53:24.695906274-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Finished rendering all blocks"
+	},
+	"Attributes": [
+		{
+			"Key": "total_blocks_rendered",
+			"Value": {
+				"Type": "Int64",
+				"Value": 1
+			}
+		}
+	],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
+{
+	"Timestamp": "2025-08-08T15:53:24.695907204-04:00",
+	"ObservedTimestamp": "2025-08-08T15:53:24.695907274-04:00",
+	"Severity": 9,
+	"SeverityText": "INFO",
+	"Body": {
+		"Type": "String",
+		"Value": "Application completed"
+	},
+	"Attributes": [],
+	"TraceID": "00000000000000000000000000000000",
+	"SpanID": "0000000000000000",
+	"TraceFlags": "00",
+	"Resource": [
+		{
+			"Key": "service.name",
+			"Value": {
+				"Type": "STRING",
+				"Value": "figaro"
+			}
+		},
+		{
+			"Key": "service.version",
+			"Value": {
+				"Type": "STRING",
+				"Value": "1.0.0"
+			}
+		}
+	],
+	"Scope": {
+		"Name": "figaro-logger",
+		"Version": "",
+		"SchemaURL": "",
+		"Attributes": {}
+	},
+	"DroppedAttributes": 0
+}
