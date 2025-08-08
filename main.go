@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,6 +31,44 @@ type Message struct {
 	Role      string    `json:"role"`      // "user" or "assistant"
 	Content   string    `json:"content"`
 	Timestamp time.Time `json:"timestamp"`
+	Hash      string    `json:"hash"`
+}
+
+type MessageWithHash struct {
+	Message
+}
+
+func (m *MessageWithHash) MarshalJSON() ([]byte, error) {
+	return json.Marshal(m.Message)
+}
+
+func (m *MessageWithHash) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &m.Message)
+}
+
+func calculateMessageHash(prevHash, role, content string, timestamp time.Time) string {
+	messageData := struct {
+		PrevHash  string    `json:"prevHash"`
+		Role      string    `json:"role"`
+		Content   string    `json:"content"`
+		Timestamp time.Time `json:"timestamp"`
+	}{
+		PrevHash:  prevHash,
+		Role:      role,
+		Content:   content,
+		Timestamp: timestamp,
+	}
+	
+	jsonData, err := json.Marshal(messageData)
+	if err != nil {
+		// Fallback to simple string concatenation if marshaling fails
+		data := prevHash + role + content + timestamp.Format(time.RFC3339Nano)
+		hash := sha256.Sum256([]byte(data))
+		return hex.EncodeToString(hash[:])
+	}
+	
+	hash := sha256.Sum256(jsonData)
+	return hex.EncodeToString(hash[:])
 }
 
 type Conversation struct {
@@ -77,18 +117,36 @@ func (c *Conversation) save() error {
 }
 
 func (c *Conversation) addUserMessage(content string) {
+	timestamp := time.Now()
+	prevHash := ""
+	if len(c.Messages) > 0 {
+		prevHash = c.Messages[len(c.Messages)-1].Hash
+	}
+	
+	hash := calculateMessageHash(prevHash, "user", content, timestamp)
+	
 	c.Messages = append(c.Messages, Message{
 		Role:      "user",
 		Content:   content,
-		Timestamp: time.Now(),
+		Timestamp: timestamp,
+		Hash:      hash,
 	})
 }
 
 func (c *Conversation) addAssistantMessage(content string) {
+	timestamp := time.Now()
+	prevHash := ""
+	if len(c.Messages) > 0 {
+		prevHash = c.Messages[len(c.Messages)-1].Hash
+	}
+	
+	hash := calculateMessageHash(prevHash, "assistant", content, timestamp)
+	
 	c.Messages = append(c.Messages, Message{
 		Role:      "assistant",
 		Content:   content,
-		Timestamp: time.Now(),
+		Timestamp: timestamp,
+		Hash:      hash,
 	})
 }
 
@@ -337,6 +395,7 @@ func min(a, b int) int {
 
 var (
 	conversationName string
+	printHashes     bool
 )
 
 func main() {
@@ -351,6 +410,7 @@ func main() {
 	}
 
 	rootCmd.Flags().StringVarP(&conversationName, "conversation", "c", "", "Conversation name for persistence (creates .{name}.figaro.json)")
+	rootCmd.Flags().BoolVar(&printHashes, "print-hashes", false, "Print message hashes for testing")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
@@ -386,8 +446,37 @@ func runFigaro(args []string) {
 		}
 	}
 
+	// Print hashes if requested (for testing)
+	if printHashes {
+		fmt.Println("\n=== Message Hashes ===")
+		for i, msg := range conv.Messages {
+			msgWithHash := MessageWithHash{Message: msg}
+			jsonData, err := json.MarshalIndent(msgWithHash, "", "  ")
+			if err != nil {
+				fmt.Printf("Error marshaling message %d: %v\n", i, err)
+				continue
+			}
+			fmt.Printf("Message %d:\n%s\n", i, string(jsonData))
+		}
+		fmt.Println("======================\n")
+	}
+
 	// Add user message to conversation
 	conv.addUserMessage(prompt)
+
+	// Print new message hash if requested
+	if printHashes && len(conv.Messages) > 0 {
+		fmt.Println("\n=== New Message Hash ===")
+		newMsg := conv.Messages[len(conv.Messages)-1]
+		msgWithHash := MessageWithHash{Message: newMsg}
+		jsonData, err := json.MarshalIndent(msgWithHash, "", "  ")
+		if err != nil {
+			fmt.Printf("Error marshaling new message: %v\n", err)
+		} else {
+			fmt.Printf("New Message:\n%s\n", string(jsonData))
+		}
+		fmt.Println("========================\n")
+	}
 
 	// Save conversation if persistent
 	if conversationName != "" {
