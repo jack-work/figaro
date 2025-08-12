@@ -32,6 +32,7 @@ type Message struct {
 	Content   string    `json:"content"`
 	Timestamp time.Time `json:"timestamp"`
 	Hash      string    `json:"hash"`
+	PrevHash  string    `json:"prevHash"`
 }
 
 type MessageWithHash struct {
@@ -130,6 +131,7 @@ func (c *Conversation) addUserMessage(content string) {
 		Content:   content,
 		Timestamp: timestamp,
 		Hash:      hash,
+		PrevHash:  prevHash,
 	})
 }
 
@@ -147,6 +149,7 @@ func (c *Conversation) addAssistantMessage(content string) {
 		Content:   content,
 		Timestamp: timestamp,
 		Hash:      hash,
+		PrevHash:  prevHash,
 	})
 }
 
@@ -395,7 +398,6 @@ func min(a, b int) int {
 
 var (
 	conversationName string
-	printHashes     bool
 )
 
 func main() {
@@ -410,7 +412,6 @@ func main() {
 	}
 
 	rootCmd.Flags().StringVarP(&conversationName, "conversation", "c", "", "Conversation name for persistence (creates .{name}.figaro.json)")
-	rootCmd.Flags().BoolVar(&printHashes, "print-hashes", false, "Print message hashes for testing")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
@@ -446,37 +447,8 @@ func runFigaro(args []string) {
 		}
 	}
 
-	// Print hashes if requested (for testing)
-	if printHashes {
-		fmt.Println("\n=== Message Hashes ===")
-		for i, msg := range conv.Messages {
-			msgWithHash := MessageWithHash{Message: msg}
-			jsonData, err := json.MarshalIndent(msgWithHash, "", "  ")
-			if err != nil {
-				fmt.Printf("Error marshaling message %d: %v\n", i, err)
-				continue
-			}
-			fmt.Printf("Message %d:\n%s\n", i, string(jsonData))
-		}
-		fmt.Println("======================\n")
-	}
-
 	// Add user message to conversation
 	conv.addUserMessage(prompt)
-
-	// Print new message hash if requested
-	if printHashes && len(conv.Messages) > 0 {
-		fmt.Println("\n=== New Message Hash ===")
-		newMsg := conv.Messages[len(conv.Messages)-1]
-		msgWithHash := MessageWithHash{Message: newMsg}
-		jsonData, err := json.MarshalIndent(msgWithHash, "", "  ")
-		if err != nil {
-			fmt.Printf("Error marshaling new message: %v\n", err)
-		} else {
-			fmt.Printf("New Message:\n%s\n", string(jsonData))
-		}
-		fmt.Println("========================\n")
-	}
 
 	// Save conversation if persistent
 	if conversationName != "" {
