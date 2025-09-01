@@ -2,174 +2,27 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/spf13/cobra"
 
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
-	"go.opentelemetry.io/otel/log/global"
 	otellog "go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/log/global"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
 )
 
 var logger otellog.Logger
 
-type Message struct {
-	Role      string    `json:"role"`      // "user" or "assistant"
-	Content   string    `json:"content"`
-	Timestamp time.Time `json:"timestamp"`
-	Hash      string    `json:"hash"`
-	PrevHash  string    `json:"prevHash"`
-}
-
-type MessageWithHash struct {
-	Message
-}
-
-func (m *MessageWithHash) MarshalJSON() ([]byte, error) {
-	return json.Marshal(m.Message)
-}
-
-func (m *MessageWithHash) UnmarshalJSON(data []byte) error {
-	return json.Unmarshal(data, &m.Message)
-}
-
-func calculateMessageHash(prevHash, role, content string, timestamp time.Time) string {
-	messageData := struct {
-		PrevHash  string    `json:"prevHash"`
-		Role      string    `json:"role"`
-		Content   string    `json:"content"`
-		Timestamp time.Time `json:"timestamp"`
-	}{
-		PrevHash:  prevHash,
-		Role:      role,
-		Content:   content,
-		Timestamp: timestamp,
-	}
-	
-	jsonData, err := json.Marshal(messageData)
-	if err != nil {
-		// Fallback to simple string concatenation if marshaling fails
-		data := prevHash + role + content + timestamp.Format(time.RFC3339Nano)
-		hash := sha256.Sum256([]byte(data))
-		return hex.EncodeToString(hash[:])
-	}
-	
-	hash := sha256.Sum256(jsonData)
-	return hex.EncodeToString(hash[:])
-}
-
-type Conversation struct {
-	Name     string    `json:"name"`
-	Messages []Message `json:"messages"`
-}
-
-func loadConversation(name string) (*Conversation, error) {
-	filename := fmt.Sprintf(".%s.figaro.json", name)
-	
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Create new conversation if file doesn't exist
-			return &Conversation{
-				Name:     name,
-				Messages: []Message{},
-			}, nil
-		}
-		return nil, fmt.Errorf("failed to read conversation file: %w", err)
-	}
-
-	var conv Conversation
-	if err := json.Unmarshal(data, &conv); err != nil {
-		return nil, fmt.Errorf("failed to parse conversation file: %w", err)
-	}
-
-	logEvent("info", "Loaded conversation", "name", name, "message_count", len(conv.Messages))
-	return &conv, nil
-}
-
-func (c *Conversation) save() error {
-	filename := fmt.Sprintf(".%s.figaro.json", c.Name)
-	
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal conversation: %w", err)
-	}
-
-	if err := os.WriteFile(filename, data, 0644); err != nil {
-		return fmt.Errorf("failed to write conversation file: %w", err)
-	}
-
-	logEvent("info", "Saved conversation", "name", c.Name, "message_count", len(c.Messages))
-	return nil
-}
-
-func (c *Conversation) addUserMessage(content string) {
-	timestamp := time.Now()
-	prevHash := ""
-	if len(c.Messages) > 0 {
-		prevHash = c.Messages[len(c.Messages)-1].Hash
-	}
-	
-	hash := calculateMessageHash(prevHash, "user", content, timestamp)
-	
-	c.Messages = append(c.Messages, Message{
-		Role:      "user",
-		Content:   content,
-		Timestamp: timestamp,
-		Hash:      hash,
-		PrevHash:  prevHash,
-	})
-}
-
-func (c *Conversation) addAssistantMessage(content string) {
-	timestamp := time.Now()
-	prevHash := ""
-	if len(c.Messages) > 0 {
-		prevHash = c.Messages[len(c.Messages)-1].Hash
-	}
-	
-	hash := calculateMessageHash(prevHash, "assistant", content, timestamp)
-	
-	c.Messages = append(c.Messages, Message{
-		Role:      "assistant",
-		Content:   content,
-		Timestamp: timestamp,
-		Hash:      hash,
-		PrevHash:  prevHash,
-	})
-}
-
-func (c *Conversation) toAnthropicMessages() []anthropic.MessageParam {
-	var messages []anthropic.MessageParam
-	
-	for _, msg := range c.Messages {
-		if msg.Role == "user" {
-			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content)))
-		} else if msg.Role == "assistant" {
-			messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(msg.Content)))
-		}
-	}
-	
-	return messages
-}
-
 func setupLogger() func() {
 	ctx := context.Background()
-	
+
 	// Create a log file
 	logFile, err := os.Create("llm_output.jsonl")
 	if err != nil {
@@ -201,7 +54,7 @@ func setupLogger() func() {
 
 	// Set global logger provider
 	global.SetLoggerProvider(provider)
-	
+
 	// Get logger
 	logger = provider.Logger("figaro-logger")
 
@@ -215,14 +68,14 @@ func setupLogger() func() {
 	}
 }
 
-func logEvent(level, message string, attrs ...interface{}) {
+func logEvent(level, message string, attrs ...any) {
 	if logger == nil {
 		return
 	}
 
 	var severity otellog.Severity
 	var severityText string
-	
+
 	switch level {
 	case "info":
 		severity = otellog.SeverityInfo
@@ -269,135 +122,21 @@ func logEvent(level, message string, attrs ...interface{}) {
 	logger.Emit(context.Background(), record)
 }
 
-type LLMProvider interface {
-	GenerateText(ctx context.Context, prompt string) (io.Reader, error)
-	GenerateBlocks(ctx context.Context, messages []anthropic.MessageParam) (<-chan ContentBlock, error)
+type Figaro struct {
+	llmProvider LLMProvider
 }
 
-type ClaudeLLM struct {
-	client *anthropic.Client
-}
-
-func NewClaudeLLM() (*ClaudeLLM, error) {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable is not set")
-	}
-
-	client := anthropic.NewClient(
-		option.WithAPIKey(apiKey),
-	)
-
-	return &ClaudeLLM{client: &client}, nil
-}
-
-func (c *ClaudeLLM) GenerateText(ctx context.Context, prompt string) (io.Reader, error) {
-	resp, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaudeSonnet4_20250514,
-		MaxTokens: 1024,
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-		},
-		Tools: []anthropic.ToolUnionParam{{
-			OfWebSearchTool20250305: &anthropic.WebSearchTool20250305Param{
-				MaxUses: param.Opt[int64]{
-					Value: 5,
-				},
-			},
-		}},
-	})
+func NewFigaro() (*Figaro, error) {
+	llm, err := NewClaudeLLM()
 	if err != nil {
-		return nil, fmt.Errorf("failed to call Anthropic API: %w", err)
+		return nil, err
 	}
-
-	if len(resp.Content) > 0 {
-		textBlock := resp.Content[0].AsText()
-		return strings.NewReader(textBlock.Text), nil
-	}
-
-	return strings.NewReader(""), nil
-}
-
-func (c *ClaudeLLM) GenerateBlocks(ctx context.Context, messages []anthropic.MessageParam) (<-chan ContentBlock, error) {
-	blockChan := make(chan ContentBlock, 10)
-
-	go func() {
-		defer close(blockChan)
-
-		// Log start of request
-		logEvent("info", "Starting LLM request", "message_count", len(messages))
-
-		resp, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
-			Model:     anthropic.ModelClaudeSonnet4_20250514,
-			MaxTokens: 1024,
-			Messages:  messages,
-			Tools: []anthropic.ToolUnionParam{{
-				OfWebSearchTool20250305: &anthropic.WebSearchTool20250305Param{
-					MaxUses: param.Opt[int64]{
-						Value: 5,
-					},
-				},
-			}},
-		})
-
-		// Log response received
-		logEvent("info", "Received LLM response", "has_error", err != nil)
-
-		if err != nil {
-			logEvent("error", "LLM request failed", "error", err.Error())
-			// Send error as text block
-			blockChan <- ContentBlock{
-				Type:    TextBlock,
-				Content: fmt.Sprintf("Error: %v", err),
-			}
-			return
-		}
-
-		// Process all content blocks from the response
-		for i, content := range resp.Content {
-			logEvent("info", "Processing content block", "block_index", i)
-
-			switch v := content.AsAny().(type) {
-			case anthropic.TextBlock:
-				preview := strings.ReplaceAll(v.Text[:min(50, len(v.Text))], "\n", "\\n")
-				logEvent("info", "Sending text block", "block_index", i, "content_length", len(v.Text), "content_preview", preview)
-				blockChan <- ContentBlock{
-					Type:    TextBlock,
-					Content: v.Text,
-				}
-			case anthropic.ServerToolUseBlock:
-				logEvent("info", "Sending server tool use block", "block_index", i)
-				blockChan <- ContentBlock{
-					Type:    WebSearchBlock,
-					Content: v.RawJSON(),
-				}
-			case anthropic.WebSearchToolResultBlock:
-				logEvent("info", "Sending web search result block", "block_index", i)
-				blockChan <- ContentBlock{
-					Type:    WebSearchBlock,
-					Content: v.Content.RawJSON(),
-				}
-			default:
-				logEvent("warn", "Unknown content block type", "block_index", i, "type", fmt.Sprintf("%T", v))
-				fmt.Printf("Unknown content block type: %T\n", v)
-			}
-		}
-
-		logEvent("info", "Finished processing all blocks", "total_blocks", len(resp.Content))
-	}()
-
-	return blockChan, nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	return &Figaro{llmProvider: llm}, nil
 }
 
 var (
 	conversationName string
+	forkName         string
 )
 
 func main() {
@@ -412,13 +151,14 @@ func main() {
 	}
 
 	rootCmd.Flags().StringVarP(&conversationName, "conversation", "c", "", "Conversation name for persistence (creates .{name}.figaro.json)")
+	rootCmd.Flags().StringVarP(&forkName, "fork", "f", "", "Fork from existing conversation file")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func runFigaro(args []string) {
+func (f *Figaro) La(args []string, conversationName, forkName string) error {
 	fmt.Println("=== Claude ===")
 
 	// Setup OpenTelemetry logger
@@ -429,15 +169,33 @@ func runFigaro(args []string) {
 	prompt := strings.Join(args, " ")
 	logEvent("info", "Application started", "prompt", prompt, "conversation", conversationName)
 
+	// Handle fork logic
+	if forkName != "" {
+		if err := validateForkExists(forkName); err != nil {
+			logEvent("error", "Fork validation failed", "error", err.Error())
+			return err
+		}
+		if conversationName == "" {
+			return fmt.Errorf("conversation name (-c) is required when forking")
+		}
+	}
+
 	// Load or create conversation
 	var conv *Conversation
 	var err error
-	
-	if conversationName != "" {
+
+	if forkName != "" {
+		// Create new conversation with parent reference
+		conv = &Conversation{
+			Name:     conversationName,
+			Messages: []Message{},
+			Parent:   &forkName,
+		}
+	} else if conversationName != "" {
 		conv, err = loadConversation(conversationName)
 		if err != nil {
 			logEvent("error", "Failed to load conversation", "error", err.Error())
-			log.Fatal(err)
+			return err
 		}
 	} else {
 		// Create temporary conversation for one-off messages
@@ -454,25 +212,23 @@ func runFigaro(args []string) {
 	if conversationName != "" {
 		if err := conv.save(); err != nil {
 			logEvent("error", "Failed to save conversation", "error", err.Error())
-			log.Fatal(err)
+			return err
 		}
 	}
 
 	// Generate messages for API
-	messages := conv.toAnthropicMessages()
-
-	llm, err := NewClaudeLLM()
+	messages, err := conv.toAnthropicMessages()
 	if err != nil {
-		log.Fatal(err)
-		return
+		logEvent("error", "Failed to generate blocks", "error", err.Error())
+		return err
 	}
 
 	ctx := context.Background()
 
-	blockChan, err := llm.GenerateBlocks(ctx, messages)
+	blockChan, err := f.llmProvider.GenerateBlocks(ctx, messages)
 	if err != nil {
 		logEvent("error", "Failed to generate blocks", "error", err.Error())
-		log.Fatal(err)
+		return err
 	}
 
 	logEvent("info", "Starting markdown rendering")
@@ -482,7 +238,7 @@ func runFigaro(args []string) {
 
 	// Create a new channel to capture response content
 	responseChan := make(chan ContentBlock, 10)
-	
+
 	// Start a goroutine to capture response content
 	go func() {
 		defer close(responseChan)
@@ -496,7 +252,7 @@ func runFigaro(args []string) {
 
 	if err := RenderMarkdownChannel(responseChan); err != nil {
 		logEvent("error", "Failed to render markdown", "error", err.Error())
-		log.Fatal(err)
+		return err
 	}
 
 	// Save assistant response to conversation
@@ -504,9 +260,21 @@ func runFigaro(args []string) {
 		conv.addAssistantMessage(responseContent.String())
 		if err := conv.save(); err != nil {
 			logEvent("error", "Failed to save final conversation", "error", err.Error())
-			log.Fatal(err)
+			return err
 		}
 	}
 
 	logEvent("info", "Application completed")
+	return nil
+}
+
+func runFigaro(args []string) {
+	figaro, err := NewFigaro()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := figaro.La(args, conversationName, forkName); err != nil {
+		log.Fatal(err)
+	}
 }
