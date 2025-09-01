@@ -137,6 +137,7 @@ func NewFigaro() (*Figaro, error) {
 var (
 	conversationName string
 	forkName         string
+	viewMode         bool
 )
 
 func main() {
@@ -144,7 +145,7 @@ func main() {
 		Use:   "figaro [flags] <message>",
 		Short: "Claude CLI with conversation persistence",
 		Long:  "A CLI tool to chat with Claude AI with support for persistent conversations",
-		Args:  cobra.MinimumNArgs(1),
+		Args:  cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			runFigaro(args)
 		},
@@ -152,6 +153,7 @@ func main() {
 
 	rootCmd.Flags().StringVarP(&conversationName, "conversation", "c", "", "Conversation name for persistence (creates .{name}.figaro.json)")
 	rootCmd.Flags().StringVarP(&forkName, "fork", "f", "", "Fork from existing conversation file")
+	rootCmd.Flags().BoolVarP(&viewMode, "view", "v", false, "View full conversation history (requires -c)")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
@@ -268,7 +270,74 @@ func (f *Figaro) La(args []string, conversationName, forkName string) error {
 	return nil
 }
 
+func viewConversation(conversationName string) error {
+	conv, err := loadConversation(conversationName)
+	if err != nil {
+		return fmt.Errorf("failed to load conversation: %w", err)
+	}
+
+	if len(conv.Messages) == 0 {
+		fmt.Printf("# Conversation: %s\n\n*No messages yet*\n", conv.Name)
+		return nil
+	}
+
+	// Create markdown content for the entire conversation
+	var content strings.Builder
+	
+	// Header with conversation info
+	content.WriteString(fmt.Sprintf("# Conversation: %s\n\n", conv.Name))
+	
+	if conv.Parent != nil {
+		content.WriteString(fmt.Sprintf("**Forked from:** %s\n\n", *conv.Parent))
+	}
+	
+	content.WriteString(fmt.Sprintf("**Messages:** %d\n\n", len(conv.Messages)))
+	content.WriteString("---\n\n")
+
+	// Render each message
+	for i, msg := range conv.Messages {
+		// Message header with role and timestamp
+		roleIcon := "👤"
+		if msg.Role == "assistant" {
+			roleIcon = "🤖"
+		}
+		
+		content.WriteString(fmt.Sprintf("## %s **%s** `#%d`\n\n", roleIcon, strings.Title(msg.Role), i+1))
+		content.WriteString(fmt.Sprintf("**Time:** %s  \n", msg.Timestamp.Format("2006-01-02 15:04:05")))
+		content.WriteString(fmt.Sprintf("**Hash:** `%s`  \n", msg.Hash[:8]))
+		if msg.PrevHash != "" {
+			content.WriteString(fmt.Sprintf("**Previous:** `%s`  \n", msg.PrevHash[:8]))
+		}
+		content.WriteString("\n")
+		
+		// Message content
+		content.WriteString(msg.Content)
+		content.WriteString("\n\n---\n\n")
+	}
+
+	// Use existing markdown renderer
+	blocks := make(chan ContentBlock, 1)
+	blocks <- ContentBlock{Type: TextBlock, Content: content.String()}
+	close(blocks)
+	
+	return RenderMarkdownChannel(blocks)
+}
+
 func runFigaro(args []string) {
+	if viewMode {
+		if conversationName == "" {
+			log.Fatal("view mode requires a conversation name (-c)")
+		}
+		if err := viewConversation(conversationName); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
+	if len(args) == 0 {
+		log.Fatal("message is required when not in view mode")
+	}
+
 	figaro, err := NewFigaro()
 	if err != nil {
 		log.Fatal(err)
