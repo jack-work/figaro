@@ -187,6 +187,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ensureSelectedVisible()
 			}
 			return m, nil
+		case "u":
+			m.viewport.ScrollDown(1)
+			return m, nil
+		case "i":
+			m.viewport.ScrollUp(1)
+			return m, nil
 		case "enter":
 			m.expanded[m.selected] = !m.expanded[m.selected]
 			m.updateContent()
@@ -221,12 +227,12 @@ func (m *model) updateContent() {
 		}
 
 		header := fmt.Sprintf("## %s %s #%d", roleIcon, cases.Title(language.English).String(msg.Role), i+1)
-		meta := fmt.Sprintf("**Time:** %s | **Hash:** `%s`",
+		meta := fmt.Sprintf("### Time: %s | Hash: `%s`",
 			msg.Timestamp.Format("2006-01-02 15:04:05"),
 			msg.Hash[:8])
 
 		if msg.PrevHash != "" {
-			meta += fmt.Sprintf(" | **Previous:** `%s`", msg.PrevHash[:8])
+			meta += fmt.Sprintf(" | Previous: `%s`", msg.PrevHash[:8])
 		}
 
 		// Get message content (full or truncated)
@@ -263,6 +269,7 @@ func (m *model) updateContent() {
 		}
 
 		content.WriteString(renderedHeader)
+		content.WriteString("\n")
 		content.WriteString(renderedContent)
 
 		// Add separator between messages
@@ -281,58 +288,54 @@ func (m *model) ensureSelectedVisible() {
 		return
 	}
 
-	// Get the content of the selected message
-	selectedMsg := m.messages[m.selected]
-	if m.expanded[m.selected] {
-		selectedMsg = m.fullMessages[m.selected]
-	}
-
-	// Render the selected message to get its actual displayed height
-	renderedMsg, err := m.renderer.Render(selectedMsg)
-	if err != nil {
-		renderedMsg = selectedMsg
-	}
-
-	// Calculate the position and height of the selected message
+	// Calculate the line position of the selected message by counting rendered lines
 	linePos := 0
 	for i := 0; i < m.selected; i++ {
-		msg := m.messages[i]
-		if m.expanded[i] {
-			msg = m.fullMessages[i]
+		msg := m.conversation.Messages[i]
+
+		// Create header and meta for this message
+		roleIcon := "👤"
+		if msg.Role == "assistant" {
+			roleIcon = "🤖"
+		}
+		header := fmt.Sprintf("## %s %s #%d", roleIcon, cases.Title(language.English).String(msg.Role), i+1)
+		meta := fmt.Sprintf("### Time: %s | Hash: `%s`",
+			msg.Timestamp.Format("2006-01-02 15:04:05"),
+			msg.Hash[:8])
+		if msg.PrevHash != "" {
+			meta += fmt.Sprintf(" | Previous: `%s`", msg.PrevHash[:8])
 		}
 
-		rendered, err := m.renderer.Render(msg)
+		headerMetaText := fmt.Sprintf("%s\n%s", header, meta)
+
+		// Get message content
+		messageContent := strings.TrimSpace(msg.Content)
+		if !m.expanded[i] && len(messageContent) > 200 {
+			messageContent = messageContent[:200] + "..."
+		}
+
+		// Render both parts to get accurate line count
+		var renderedHeader, renderedContent string
+		var err error
+
+		renderedHeader, err = m.renderer.Render(headerMetaText)
 		if err != nil {
-			rendered = msg
+			renderedHeader = headerMetaText
+		}
+		renderedContent, err = m.renderer.Render(messageContent)
+		if err != nil {
+			renderedContent = messageContent
 		}
 
-		linePos += strings.Count(rendered, "\n") + 3 // +1 for the message itself, no spacing
-	}
-
-	// Calculate the height of the selected message
-	selectedHeight := strings.Count(renderedMsg, "\n") + 3
-
-	currentTop := m.viewport.YOffset
-	viewportHeight := m.viewport.Height
-
-	// Check if the selected message is fully visible
-	messageTop := linePos
-	messageBottom := linePos + selectedHeight
-
-	// Only scroll if the message is not fully visible
-	if messageTop < currentTop {
-		// Message starts above viewport, scroll to show the top
-		m.viewport.SetYOffset(messageTop)
-	} else if messageBottom > currentTop+viewportHeight {
-		// Message extends below viewport
-		if selectedHeight <= viewportHeight {
-			// If message fits in viewport, show it completely
-			m.viewport.SetYOffset(messageBottom - viewportHeight)
-		} else {
-			// If message is larger than viewport, show from the top
-			m.viewport.SetYOffset(messageTop)
+		// Count lines in both parts plus separator
+		linePos += strings.Count(renderedHeader, "\n") + strings.Count(renderedContent, "\n") + 2
+		if i < len(m.conversation.Messages)-1 {
+			linePos += 2 // separator lines
 		}
 	}
+
+	// Snap viewport to show selected message at the top
+	m.viewport.SetYOffset(linePos)
 }
 
 func (m model) executeAction() tea.Cmd {
