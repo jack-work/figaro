@@ -24,7 +24,7 @@ type ContentBlock struct {
 
 // RenderMarkdownChannel accepts blocks from a channel and renders them
 func RenderMarkdownChannel(blockChan <-chan ContentBlock) error {
-	
+
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(80),
@@ -41,17 +41,17 @@ func RenderMarkdownChannel(blockChan <-chan ContentBlock) error {
 		switch block.Type {
 		case TextBlock:
 			logEvent("info", "Rendering text block", "block_count", blockCount, "content_length", len(block.Content))
-			
+
 			output, err := renderer.Render(block.Content)
 			if err != nil {
 				return fmt.Errorf("failed to render text block: %w", err)
 			}
 			fmt.Print(output)
-			
+
 			logEvent("info", "Text block rendered and displayed", "block_count", blockCount)
 		case WebSearchBlock:
 			logEvent("info", "Rendering web search block", "block_count", blockCount)
-			
+
 			// Render web search blocks with special formatting
 			searchOutput := fmt.Sprintf("🔍 **Web Search Results:**\n%s\n", block.Content)
 			output, err := renderer.Render(searchOutput)
@@ -59,7 +59,7 @@ func RenderMarkdownChannel(blockChan <-chan ContentBlock) error {
 				return fmt.Errorf("failed to render web search block: %w", err)
 			}
 			fmt.Print(output)
-			
+
 			logEvent("info", "Web search block rendered and displayed", "block_count", blockCount)
 		}
 	}
@@ -123,11 +123,11 @@ func shouldRender(currentLine, buffer string) bool {
 	if len(currentLine) == 0 {
 		return true
 	}
-	
+
 	// Render immediately for headers
 	if len(currentLine) > 0 && currentLine[0] == '#' {
 		return true
 	}
-	
+
 	return false
 }

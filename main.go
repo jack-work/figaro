@@ -283,14 +283,14 @@ func viewConversation(conversationName string) error {
 
 	// Create markdown content for the entire conversation
 	var content strings.Builder
-	
+
 	// Header with conversation info
 	content.WriteString(fmt.Sprintf("# Conversation: %s\n\n", conv.Name))
-	
+
 	if conv.Parent != nil {
 		content.WriteString(fmt.Sprintf("**Forked from:** %s\n\n", *conv.Parent))
 	}
-	
+
 	content.WriteString(fmt.Sprintf("**Messages:** %d\n\n", len(conv.Messages)))
 	content.WriteString("---\n\n")
 
@@ -301,7 +301,7 @@ func viewConversation(conversationName string) error {
 		if msg.Role == "assistant" {
 			roleIcon = "🤖"
 		}
-		
+
 		content.WriteString(fmt.Sprintf("## %s **%s** `#%d`\n\n", roleIcon, strings.Title(msg.Role), i+1))
 		content.WriteString(fmt.Sprintf("**Time:** %s  \n", msg.Timestamp.Format("2006-01-02 15:04:05")))
 		content.WriteString(fmt.Sprintf("**Hash:** `%s`  \n", msg.Hash[:8]))
@@ -309,7 +309,7 @@ func viewConversation(conversationName string) error {
 			content.WriteString(fmt.Sprintf("**Previous:** `%s`  \n", msg.PrevHash[:8]))
 		}
 		content.WriteString("\n")
-		
+
 		// Message content
 		content.WriteString(msg.Content)
 		content.WriteString("\n\n---\n\n")
@@ -319,7 +319,7 @@ func viewConversation(conversationName string) error {
 	blocks := make(chan ContentBlock, 1)
 	blocks <- ContentBlock{Type: TextBlock, Content: content.String()}
 	close(blocks)
-	
+
 	return RenderMarkdownChannel(blocks)
 }
 
@@ -328,7 +328,7 @@ func runFigaro(args []string) {
 		if conversationName == "" {
 			log.Fatal("view mode requires a conversation name (-c)")
 		}
-		if err := viewConversation(conversationName); err != nil {
+		if err := runInteractiveView(conversationName); err != nil {
 			log.Fatal(err)
 		}
 		return

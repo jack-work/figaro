@@ -105,10 +105,3 @@ func (c *ClaudeLLM) GenerateBlocks(ctx context.Context, messages []anthropic.Mes
 
 	return blockChan, nil
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
