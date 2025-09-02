@@ -8,19 +8,22 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/ansi"
+	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
 
 type model struct {
-	conversation *Conversation
-	selected     int
-	messages     []string
-	fullMessages []string
-	expanded     map[int]bool
-	viewport     viewport.Model
-	renderer     *glamour.TermRenderer
+	conversation     *Conversation
+	selected         int
+	messages         []string
+	fullMessages     []string
+	expanded         map[int]bool
+	viewport         viewport.Model
+	renderer         *glamour.TermRenderer
+	selectedRenderer *glamour.TermRenderer
 }
 
 var (
@@ -44,31 +47,68 @@ var (
 			Width(100)
 )
 
-func initialModel(conv *Conversation) model {
-	bgColor := "#000000"
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithStyles(ansi.StyleConfig{
-			Document: ansi.StyleBlock{
-				StylePrimitive: ansi.StylePrimitive{
-					BackgroundColor: &bgColor, // Set your background here
-				},
-			},
-			Paragraph: ansi.StyleBlock{
-				StylePrimitive: ansi.StylePrimitive{
-					BackgroundColor: &bgColor, // Ensure paragraphs also get background
-				},
-			},
-			// Add other elements as needed
-			Heading: ansi.StyleBlock{
-				StylePrimitive: ansi.StylePrimitive{
-					BackgroundColor: &bgColor,
-				},
-			},
-		}),
+func createRenderer(backgroundColor *string) (*glamour.TermRenderer, error) {
+
+	var baseStyle ansi.StyleConfig
+	if termenv.HasDarkBackground() {
+		baseStyle = styles.DarkStyleConfig
+	} else {
+		baseStyle = styles.LightStyleConfig
+	}
+	if backgroundColor != nil {
+		baseStyle.Document.BackgroundColor = backgroundColor
+		baseStyle.Paragraph.BackgroundColor = backgroundColor
+		baseStyle.CodeBlock.BackgroundColor = backgroundColor
+		baseStyle.Text.BackgroundColor = backgroundColor
+	}
+	// 1. Set Margin to 0 for all block elements
+	var marginStyle uint = 0
+	baseStyle.Document.Margin = &marginStyle
+	baseStyle.Paragraph.Margin = &marginStyle
+	baseStyle.BlockQuote.Margin = &marginStyle
+	baseStyle.CodeBlock.StyleBlock.Margin = &marginStyle
+	baseStyle.Heading.Margin = &marginStyle
+	baseStyle.H1.Margin = &marginStyle
+	baseStyle.H2.Margin = &marginStyle
+	baseStyle.H3.Margin = &marginStyle
+	baseStyle.H4.Margin = &marginStyle
+	baseStyle.H5.Margin = &marginStyle
+	baseStyle.H6.Margin = &marginStyle
+
+	// 2. Remove BlockPrefix and BlockSuffix newlines
+	baseStyle.Document.StylePrimitive.BlockPrefix = ""
+	baseStyle.Document.StylePrimitive.BlockSuffix = ""
+	baseStyle.Paragraph.StylePrimitive.BlockPrefix = ""
+	baseStyle.Paragraph.StylePrimitive.BlockSuffix = ""
+
+	// 3. Remove BlockSuffix from headings (they have "\n" by default)
+	baseStyle.Heading.StylePrimitive.BlockSuffix = ""
+	baseStyle.H1.StylePrimitive.BlockPrefix = ""
+	baseStyle.H1.StylePrimitive.BlockSuffix = ""
+	baseStyle.H2.StylePrimitive.BlockSuffix = ""
+	baseStyle.H3.StylePrimitive.BlockSuffix = ""
+	baseStyle.H4.StylePrimitive.BlockSuffix = ""
+	baseStyle.H5.StylePrimitive.BlockSuffix = ""
+	baseStyle.H6.StylePrimitive.BlockSuffix = ""
+
+	return glamour.NewTermRenderer(
+		glamour.WithStyles(baseStyle),
 		glamour.WithWordWrap(80),
 	)
+}
+
+func initialModel(conv *Conversation) model {
+	// Create normal renderer (no background override)
+	renderer, err := createRenderer(nil)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create renderer: %v", err))
+	}
+
+	// Create selected renderer with background color matching selection
+	selectedBgColor := "#585858" // Color 240 in hex
+	selectedRenderer, err := createRenderer(&selectedBgColor)
+	if err != nil {
+		panic(fmt.Sprintf("failed to create selected renderer: %v", err))
 	}
 
 	messages := make([]string, len(conv.Messages))
@@ -102,13 +142,14 @@ func initialModel(conv *Conversation) model {
 	vp := viewport.New(80, 20)
 
 	m := model{
-		conversation: conv,
-		selected:     len(messages) - 1,
-		messages:     messages,
-		fullMessages: fullMessages,
-		expanded:     make(map[int]bool),
-		viewport:     vp,
-		renderer:     renderer,
+		conversation:     conv,
+		selected:         len(messages) - 1,
+		messages:         messages,
+		fullMessages:     fullMessages,
+		expanded:         make(map[int]bool),
+		viewport:         vp,
+		renderer:         renderer,
+		selectedRenderer: selectedRenderer,
 	}
 
 	m.updateContent()
@@ -194,36 +235,41 @@ func (m *model) updateContent() {
 			messageContent = messageContent[:200] + "..."
 		}
 
-		// Render markdown content
-		renderedContent, err := m.renderer.Render(messageContent)
-		if err != nil {
-			renderedContent = messageContent
-		}
-
 		// Render header/meta as markdown
 		headerMetaText := fmt.Sprintf("%s\n%s", header, meta)
-		renderedHeader, err := m.renderer.Render(headerMetaText)
-		if err != nil {
-			renderedHeader = headerMetaText
+
+		// Use appropriate renderer based on selection
+		var renderedHeader, renderedContent string
+		var err error
+
+		if i == m.selected {
+			renderedHeader, err = m.selectedRenderer.Render(headerMetaText)
+			if err != nil {
+				renderedHeader = headerMetaText
+			}
+			renderedContent, err = m.selectedRenderer.Render(messageContent)
+			if err != nil {
+				renderedContent = messageContent
+			}
+		} else {
+			renderedHeader, err = m.renderer.Render(headerMetaText)
+			if err != nil {
+				renderedHeader = headerMetaText
+			}
+			renderedContent, err = m.renderer.Render(messageContent)
+			if err != nil {
+				renderedContent = messageContent
+			}
 		}
 
-		// Apply lipgloss styling to the rendered markdown
-		if i == m.selected {
-			content.WriteString(selectedStyle.Render(renderedHeader))
-			content.WriteString("\n")
-			content.WriteString(selectedStyle.Render(renderedContent))
-		} else {
-			content.WriteString(normalStyle.Render(renderedHeader))
-			content.WriteString("\n")
-			content.WriteString(normalStyle.Render(renderedContent))
-		}
+		content.WriteString(renderedHeader)
+		content.WriteString(renderedContent)
 
 		// Add separator between messages
 		if i < len(m.messages)-1 {
 			separator := strings.Repeat("─", 80)
 			content.WriteString("\n")
 			content.WriteString(separatorStyle.Render(separator))
-			content.WriteString("\n")
 		}
 	}
 
@@ -260,11 +306,11 @@ func (m *model) ensureSelectedVisible() {
 			rendered = msg
 		}
 
-		linePos += strings.Count(rendered, "\n") + 1 // +1 for the message itself, no spacing
+		linePos += strings.Count(rendered, "\n") + 3 // +1 for the message itself, no spacing
 	}
 
 	// Calculate the height of the selected message
-	selectedHeight := strings.Count(renderedMsg, "\n") + 1
+	selectedHeight := strings.Count(renderedMsg, "\n") + 3
 
 	currentTop := m.viewport.YOffset
 	viewportHeight := m.viewport.Height
