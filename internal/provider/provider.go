@@ -1,12 +1,17 @@
-// Package provider defines the interface that model providers must implement.
+// Package provider defines the interface that LLM providers implement.
 //
-// A Provider is an isomorphism between figaro's canonical message types
-// and a provider's native wire format. It can project canonical messages
-// onto its native format (for sending to the API) and lift native
-// responses back into canonical form (for storage and display).
+// A provider is the reverse of a store: where the store receives
+// messages and returns context, the provider receives context and
+// returns messages.
 //
-// Providers may use the Baggage map on messages to cache their native
-// representations, avoiding redundant conversion on subsequent turns.
+// The provider handles conversion between figaro's IR (message.Block)
+// and its native wire format internally. When a message in the block
+// has baggage for this provider, the provider uses that directly
+// instead of re-converting from the IR.
+//
+// The provider wraps each response chunk in the IR, including the
+// unaltered original representation in the baggage field. The caller
+// never touches native provider types.
 package provider
 
 import (
@@ -24,24 +29,46 @@ type Tool struct {
 
 // StreamEvent is a single chunk from a streaming response.
 type StreamEvent struct {
-	Delta       string
+	// Delta text for incremental display.
+	Delta string
+
+	// ContentType of the block being streamed.
 	ContentType message.ContentType
-	BlockDone   bool
-	Done        bool
-	Message     *message.Message
-	Err         error
+
+	// BlockDone is true when a content block is complete.
+	BlockDone bool
+
+	// Done is true when the entire response is finished.
+	// Message is the final accumulated IR message with baggage populated.
+	Done bool
+
+	// Message is the accumulated IR message (partial during stream, final when Done).
+	// Baggage is populated with the provider's native representation on Done.
+	Message *message.Message
+
+	// Err is non-nil only when Done && the response ended in error.
+	Err error
 }
 
-// Request captures everything needed for a single LLM call.
-type Request struct {
-	SystemPrompt string
-	Messages     []message.Message
-	Tools        []Tool
-	MaxTokens    int
-}
-
-// Provider is the interface each model backend must implement.
+// Provider is the LLM provider interface.
+//
+// It receives a conversation block (IR), converts it to its native
+// format (using baggage when available), calls the API, and streams
+// back IR messages with baggage populated.
 type Provider interface {
+	// Name returns the provider identifier (e.g. "anthropic").
+	// Used as the key in Message.Baggage.
 	Name() string
-	Stream(ctx context.Context, req Request) (<-chan StreamEvent, error)
+
+	// Send provides the conversation context and available tools
+	// to the provider. The provider converts the block to its
+	// native format internally, using baggage where available.
+	//
+	// Returns a channel that streams response events.
+	// The channel is closed after the final event (Done == true).
+	//
+	// Each StreamEvent.Message has Baggage[Name()] populated with
+	// the unaltered native response, so re-sending this message
+	// back to the same provider is a cache hit.
+	Send(ctx context.Context, block *message.Block, tools []Tool, maxTokens int) (<-chan StreamEvent, error)
 }

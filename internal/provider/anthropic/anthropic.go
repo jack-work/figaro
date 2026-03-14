@@ -1,10 +1,8 @@
 // Package anthropic implements the figaro Provider for the Anthropic Messages API.
 //
-// It speaks directly to https://api.anthropic.com/v1/messages using
-// net/http and parses the SSE stream by hand — no SDK dependency.
-//
-// Native message representations are cached in Message.Baggage["anthropic"]
-// to skip re-serialization on subsequent turns within the same provider.
+// Direct HTTP+SSE, no SDK. Converts from message.Block IR to
+// Anthropic's native format, using baggage when available.
+// Populates baggage on responses for cache-hit re-sends.
 package anthropic
 
 import (
@@ -36,17 +34,14 @@ type Anthropic struct {
 
 func New(apiKey, model string) *Anthropic {
 	return &Anthropic{
-		APIKey: apiKey,
-		Model:  model,
-		HTTPClient: &http.Client{
-			Timeout: 10 * time.Minute,
-		},
+		APIKey: apiKey, Model: model,
+		HTTPClient: &http.Client{Timeout: 10 * time.Minute},
 	}
 }
 
 func (a *Anthropic) Name() string { return providerName }
 
-// --- Native types (Anthropic wire format) ---
+// --- Native types ---
 
 type nativeRequest struct {
 	Model     string          `json:"model"`
@@ -81,7 +76,22 @@ type nativeTool struct {
 	InputSchema interface{} `json:"input_schema"`
 }
 
-// --- Projection: canonical -> native ---
+// --- Projection: IR Block → native request ---
+
+func (a *Anthropic) projectBlock(block *message.Block, tools []provider.Tool, maxTokens int) nativeRequest {
+	req := nativeRequest{
+		Model: a.Model, MaxTokens: maxTokens, Stream: true,
+	}
+
+	// System prompt from header
+	if block.Header != nil && len(block.Header.Content) > 0 {
+		req.System = block.Header.Content[0].Text
+	}
+
+	req.Messages = a.projectMessages(block.Messages)
+	req.Tools = projectTools(tools)
+	return req
+}
 
 func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 	var result []nativeMessage
@@ -96,6 +106,7 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 	}
 
 	for _, msg := range msgs {
+		// Try baggage first
 		if raw, ok := msg.Baggage[providerName]; ok {
 			var cached nativeMessage
 			if err := json.Unmarshal(raw, &cached); err == nil {
@@ -155,11 +166,15 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 				contentBlocks = append(contentBlocks, nativeBlock{Type: "text", Text: c.Text})
 			}
 			pendingToolResults = append(pendingToolResults, nativeBlock{
-				Type:      "tool_result",
-				ToolUseID: msg.ToolCallID,
-				IsError:   len(msg.Content) > 0 && msg.Content[0].IsError,
-				Content:   contentBlocks,
+				Type: "tool_result", ToolUseID: msg.ToolCallID,
+				IsError: len(msg.Content) > 0 && msg.Content[0].IsError,
+				Content: contentBlocks,
 			})
+
+		case message.RoleSystem:
+			// System messages from compacted headers are handled
+			// at the block level, not per-message.
+			continue
 		}
 	}
 	flushToolResults()
@@ -174,19 +189,14 @@ func projectTools(tools []provider.Tool) []nativeTool {
 	return result
 }
 
-// --- Lifting: native response stream -> canonical ---
+// --- Send: IR Block → stream → IR Messages with baggage ---
 
-func (a *Anthropic) Stream(ctx context.Context, req provider.Request) (<-chan provider.StreamEvent, error) {
-	maxTokens := req.MaxTokens
+func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	if maxTokens == 0 {
 		maxTokens = 8192
 	}
 
-	native := nativeRequest{
-		Model: a.Model, MaxTokens: maxTokens, System: req.SystemPrompt,
-		Messages: a.projectMessages(req.Messages), Tools: projectTools(req.Tools), Stream: true,
-	}
-
+	native := a.projectBlock(block, tools, maxTokens)
 	body, err := json.Marshal(native)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -354,6 +364,7 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 
 		case "message_stop":
 			msg.Usage = &usage
+			// Stash native form in baggage
 			nativeMsg := nativeMessage{Role: "assistant"}
 			for _, c := range msg.Content {
 				switch c.Type {

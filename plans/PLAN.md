@@ -10,31 +10,76 @@ Figaro is a minimal, Go-native coding agent. Each agent instance is called
 a "figaro" (after the barber of Seville). The runtime manages a table of
 figaros, each with its own conversation context and store.
 
-## Core Architecture
+## Core Concepts
 
-### The Store Interface
+### IR (Intermediate Representation)
 
-One interface, implemented by all persistence layers:
+Messages use a provider-agnostic canonical format. Each message carries
+a `Baggage` map keyed by provider name, holding the unaltered original
+wire representation. This avoids NxM translations:
+
+- Provider receives IR block → checks baggage for cache hit → converts
+  from IR only on miss
+- Provider streams response → wraps in IR → stashes native form in baggage
+- Switch providers mid-conversation: new provider ignores old baggage,
+  converts from IR, starts populating its own
+
+### Logical Time
+
+Each message gets a monotonic `uint64` counter called `logical_time`.
+One per tic, uniquely identifies the message in the session. Used for
+ordering, branching, and entry references. No UUIDs, no content hashes.
+
+### message.Block
+
+The unit of conversation context:
+
+```go
+type Block struct {
+    Header   *Message    // compacted summary (nil if no compaction)
+    Messages []Message   // ordered conversation, first-kept to leaf
+}
+```
+
+`Store.Context()` returns `*Block`. `Provider.Send()` accepts `*Block`.
+The provider converts the block to its native format internally.
+
+## Interfaces
+
+### Store
+
+One interface, all layers. The agent never knows what's behind it.
 
 ```go
 type Store interface {
-    Context() []message.Message     // get ordered messages for LLM
-    Append(msg) (string, error)     // add message, block until durable
-    Branch(entryID) error           // fork from earlier point
-    LeafID() string
+    Context() *message.Block          // get conversation for LLM
+    Append(msg message.Message) (uint64, error)  // add message, get logical time
+    Branch(logicalTime uint64) error  // fork from earlier point
+    LeafTime() uint64                 // current leaf logical time
     SessionID() string
     Close() error
 }
 ```
 
-Compaction is **internal** to the store — the agent loop never triggers it.
-When the store decides it's time (entry count, token estimate), it compacts
-on its own between tics.
+Compaction is internal to the store. The agent loop never triggers it.
 
-### The Registry
+### Provider
 
-Maps figaro IDs → Store instances. A figaro ID is resolved from shell PID,
-caller process, or CLI args.
+The reverse of a store: receives context, returns messages.
+
+```go
+type Provider interface {
+    Name() string
+    Send(ctx, *message.Block, tools, maxTokens) (<-chan StreamEvent, error)
+}
+```
+
+The provider's output channel streams `StreamEvent`s. Each event carries
+the accumulated IR message. On `Done`, the message has baggage populated.
+
+### Registry
+
+Maps figaro IDs → Store instances.
 
 ```go
 type Registry interface {
@@ -44,177 +89,117 @@ type Registry interface {
 }
 ```
 
-### The Orchestration Loop (State Machine)
+## The Tic Loop
 
-The loop is synchronous, tic-based. Each tic processes one message:
+Synchronous state machine. Each tic processes one message:
 
 ```
-                    ┌──────────────────────────┐
-                    │    resolve figaro ID      │
-                    │    (PID / args / env)     │
-                    └────────────┬─────────────┘
-                                 │
-                    ┌────────────▼─────────────┐
-                    │  registry.Get(figaroID)   │
-                    │  → store for this figaro  │
-                    └────────────┬─────────────┘
-                                 │
-                    ┌────────────▼─────────────┐
-                    │  store.Append(userMsg)    │
-                    │  (blocks until written)   │
-                    └────────────┬─────────────┘
-                                 │
-              ┌──────────────────▼──────────────────┐
-              │           TIC LOOP                   │
-              │                                      │
-              │  msgs := store.Context()             │
-              │  last := msgs[len(msgs)-1]           │
-              │                                      │
-              │  switch last.Role:                   │
-              │                                      │
-              │  case user, tool_result:             │
-              │    → send to LLM provider            │
-              │    → stream response chunks          │
-              │    → accumulate assistant message     │
-              │    → store.Append(assistantMsg)       │
-              │    → next tic                        │
-              │                                      │
-              │  case assistant:                     │
-              │    if has tool calls:                │
-              │      → execute each tool             │
-              │      → store.Append(toolResultMsg)   │
-              │      → next tic                     │
-              │    if stop reason == "stop":         │
-              │      → DONE, yield to user           │
-              │    if stop reason == "error":        │
-              │      → DONE, report error            │
-              │                                      │
-              └──────────────────────────────────────┘
+append user message
+  │
+  ▼
+┌─────────────────────────────────────┐
+│ TIC:                                │
+│   block := store.Context()          │
+│   last := block.Messages[last]      │
+│                                     │
+│   user | tool_result →              │
+│     provider.Send(block)            │
+│     stream deltas to Out chan       │
+│     store.Append(assistantMsg)      │
+│     → next tic                     │
+│                                     │
+│   assistant + tool_calls →          │
+│     execute each tool               │
+│     store.Append(toolResultMsg)     │
+│     → next tic                     │
+│                                     │
+│   assistant + stop →                │
+│     emit done                       │
+│     return                          │
+└─────────────────────────────────────┘
 
-In parallel with every store.Append():
-  → stream the message as JSON-RPC 2.0 notification to stdout
+Every Append also emits a JSON-RPC 2.0 notification to the Out channel.
 ```
 
-### How pi's Agent Loop Works (for reference)
+### How pi handles this (for reference)
 
-Pi's loop (agent-loop.ts) has the same bones:
+Pi's agent-loop.ts has the same bones but with async complexity:
 
-1. **Outer loop**: runs until no more tool calls AND no pending messages
-2. **Each turn**: stream assistant response → check for tool calls
-3. **If tool calls**: execute sequentially, check for steering messages
-   between each tool (user typed while tools were running). If steering
-   arrived, skip remaining tools.
-4. **If no tool calls**: check for follow-up messages (queued while
-   streaming). If any, inject them and continue.
-5. **Stop conditions**: `stopReason == "stop"` (model done),
-   `"error"`, `"aborted"` (signal/ctrl-c)
+1. Outer loop: runs until no tool calls AND no pending messages
+2. Each turn: stream assistant → check tool calls
+3. If tool calls: execute sequentially, check for steering messages
+   between each (user typed while tools ran). If steering, skip remaining.
+4. If no tool calls: check follow-up messages. If any, continue.
+5. Stop on: `stop`, `error`, `aborted`
 
-Figaro simplifies this for step 1: no steering, no follow-ups, single
-operator sending one message at a time. The tic loop is equivalent to
-pi's inner loop with those features stripped out.
+Figaro step 1 simplifies: no steering, no follow-ups, single operator,
+one message at a time. Equivalent to pi's inner loop stripped down.
 
-### JSON-RPC 2.0 Output
+## JSON-RPC 2.0 Output
 
-The figaro process writes newline-delimited JSON-RPC 2.0 **notifications**
-to stdout as it works:
+The process writes newline-delimited notifications to stdout:
 
 ```jsonl
 {"jsonrpc":"2.0","method":"stream.delta","params":{"text":"I'll fix","content_type":"text"}}
 {"jsonrpc":"2.0","method":"stream.tool_start","params":{"tool_name":"bash","arguments":{"command":"ls"}}}
 {"jsonrpc":"2.0","method":"stream.tool_end","params":{"tool_name":"bash","result":"main.go\ngo.mod"}}
-{"jsonrpc":"2.0","method":"stream.message","params":{"entry_id":"00000003","message":{...}}}
+{"jsonrpc":"2.0","method":"stream.message","params":{"logical_time":3,"message":{...}}}
 {"jsonrpc":"2.0","method":"stream.done","params":{"session_id":"abc","reason":"stop"}}
 ```
 
-Messages in the store are ALSO jsonrpc2 — same envelope. The stdout stream
-is a live view of the same log the store persists.
-
-### Message Format with Baggage
-
-Each message carries the canonical (provider-agnostic) content plus an
-opaque `baggage` map keyed by provider name. The originating provider
-stashes its native response there so re-serialization on subsequent turns
-is a cache hit, not a full conversion:
-
-```go
-type Message struct {
-    Role       Role
-    Content    []Content
-    Model      string
-    Provider   string
-    Usage      *Usage
-    StopReason StopReason
-    Timestamp  int64
-    Baggage    map[string]json.RawMessage  // "anthropic" → native wire format
-}
-```
+The `stream.message` notification carries the full IR message including
+baggage. The stdout stream is a live view of what the store persists.
 
 ---
 
-## Step 1: Core Agent Loop (NOW)
+## Roadmap
 
-**Goal**: figaro runs as a forked process from the shell, processes one
-prompt, streams output, exits.
+### Step 1: Core Agent Loop (NOW)
 
 ```
 $ figaro --session abc123 "fix the bug"
 ```
 
-What happens:
-
-1. Resolve figaro ID from args (or generate from session ID)
-2. Open JSONL store for that session (implements `Store` directly)
-3. `store.Append(userMsg)` — writes to JSONL, blocks
-4. Enter tic loop:
-   - `store.Context()` → read full conversation
-   - Last message is user → send to Anthropic
-   - Stream response, `store.Append(assistantMsg)`
-   - If tool calls → execute, `store.Append(toolResultMsg)`, next tic
-   - If stop → exit
-5. Every `Append` also writes a JSON-RPC notification to stdout
-6. Process exits
+Process starts, opens JSONL store, runs tic loop, streams to stdout, exits.
 
 **Deliverables**:
+- [x] `message.Message` IR with baggage and logical time
+- [x] `message.Block` as context unit
 - [x] `store.Store` interface
-- [x] `message.Message` with baggage
-- [x] `provider.Provider` interface
-- [x] `provider/anthropic` — raw HTTP+SSE, no SDK
+- [x] `store.Registry` interface
+- [x] `provider.Provider` interface (Send accepts Block)
+- [x] `provider/anthropic` — raw HTTP+SSE, baggage populated
 - [x] JSON-RPC 2.0 notification types
-- [ ] JSONL store implementation (implements `Store`)
-- [ ] Tic-based orchestration loop (replaces current `agent.Agent`)
-- [ ] CLI entrypoint with session resolution
-- [ ] OAuth token support (Claude Max)
-- [ ] Stdout JSON-RPC writer
+- [x] Tic-based agent loop
+- [ ] JSONL store implementation (implements Store)
+- [ ] CLI entrypoint wiring (registry, store, tools, system prompt)
+- [ ] OAuth token support (Claude Max — read from ~/.pi/agent/auth.json or own auth)
 
-## Step 2: In-Memory WAL (NEXT)
-
-Insert `MemoryStore` between agent and JSONL:
+### Step 2: In-Memory WAL
 
 ```
 agent ──► MemoryStore ──► JSONLStore ──► disk
 ```
 
-- `MemoryStore.Context()` → serves from memory (fast)
-- `MemoryStore.Append()` → writes to memory, flushes to JSONL periodically
-- On startup, seeds from `JSONLStore.Context()` if WAL is cold
-- Compaction happens in the WAL layer: when full, compacts contents,
-  writes compacted header, resets, archives old JSONL
+Same interface. MemoryStore decorates JSONLStore:
+- `Context()` → from memory (fast)
+- `Append()` → to memory immediately, flush to JSONL periodically
+- Startup: seed from inner `Context()` if cold
+- Compaction: internal, when WAL hits size threshold
 
-## Step 3: Daemon + Frontend (LATER)
+### Step 3: Daemon + Frontend
 
-- Long-running daemon holds the registry and warm stores
-- CLI becomes thin client talking to daemon via unix socket
-- Frontend process reads JSON-RPC from stdout (or socket)
-- Renders with goldmark for markdown, bubbletea or similar for TUI
-- Warm HTTP/2 connections to Anthropic
+- Long-running daemon holds the Registry and warm stores
+- CLI becomes thin client (unix socket)
+- Frontend reads JSON-RPC, renders with goldmark/bubbletea
+- Warm HTTP/2 to Anthropic
 
-## Step X: Archive Rotation (FUTURE)
+### Step X: Archive Rotation
 
 When WAL is full:
-1. `mv` existing JSONL to archive (stamped with hash)
+1. mv existing JSONL to archive (stamped)
 2. Compact WAL contents
 3. Reset WAL with compacted header
-4. New JSONL starts with just the compacted summary
+4. New JSONL starts fresh with just the summary
 
-Archive directory accumulates old JSONL files — the full history
-is preserved but not loaded unless explicitly requested.
+Archive accumulates — full history preserved, not loaded by default.
