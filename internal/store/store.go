@@ -1,67 +1,45 @@
 // Package store defines the unified context store interface.
 //
-// Every implementation — JSONL files, in-memory cache, database —
-// implements the same Store interface. Layering is done by
-// decoration: each layer wraps an inner Store and adds behavior.
+// The same interface is implemented by:
+//   - JSONL file backend (durable, one message per append)
+//   - In-memory WAL (write-ahead log, fast, flushes to inner store)
 //
-// Step 1 (now):
-//
-//	agent ──► JSONLStore ──► disk
-//
-// Step 2 (later):
+// Decoration: each layer wraps an inner Store.
 //
 //	agent ──► MemoryStore ──► JSONLStore ──► disk
-//	          (write-ahead     (periodic
-//	           log, fast        flush,
-//	           reads)           durable)
+//	          (WAL, fast       (durable,
+//	           reads,           one write
+//	           batched          per append)
+//	           flushes)
 //
-// The agent loop never knows which layer it's talking to.
-// It calls Context() to get messages, Append() to add one.
+// The orchestration loop calls Append() for each message (user,
+// assistant, tool result) one at a time, synchronously. After
+// each append completes, it calls Context() to get the full
+// conversation and inspects the last message to decide what to
+// do next (send to LLM, execute tool, yield to user, stop).
+//
+// Compaction is internal to the store. When the store decides
+// it's time (e.g. entry count threshold, token estimate), it
+// compacts on its own — the agent loop never triggers it.
 package store
 
 import "github.com/jack-work/figaro/internal/message"
 
-// Entry is a single node in the session tree.
-type Entry struct {
-	Type     EntryType        `json:"type"`
-	ID       string           `json:"id"`
-	ParentID string           `json:"parent_id,omitempty"`
-	Ts       int64            `json:"ts"`
-
-	Message          *message.Message `json:"message,omitempty"`
-	Summary          string           `json:"summary,omitempty"`
-	FirstKeptEntryID string           `json:"first_kept_entry_id,omitempty"`
-	TokensBefore     int              `json:"tokens_before,omitempty"`
-	Cwd              string           `json:"cwd,omitempty"`
-	Version          int              `json:"version,omitempty"`
-}
-
-type EntryType string
-
-const (
-	EntryHeader     EntryType = "header"
-	EntryMessage    EntryType = "message"
-	EntryCompaction EntryType = "compaction"
-)
-
-// Store is the single interface for session context persistence.
+// Store is the single interface for session context.
 //
-// Implementations may be backed by files, memory, databases, or
-// decorators wrapping other Stores. The agent loop depends only
-// on this interface.
+// The orchestration loop depends only on this. It never knows
+// whether it's talking to a file, a memory buffer, or a
+// decorated chain.
 type Store interface {
 	// Context returns the ordered messages for the current leaf,
-	// honoring compaction. This is what gets sent to the LLM.
-	// The returned slice is owned by the caller.
+	// with compaction applied. This is what gets sent to the LLM.
+	// The header (compacted summary) is prepended if present.
 	Context() []message.Message
 
-	// Append adds a message as a child of the current leaf,
-	// advances the leaf, and returns the new entry ID.
+	// Append adds a message, advances the leaf, and blocks until
+	// the write is durable (or buffered, for WAL implementations).
+	// Returns the entry ID.
 	Append(msg message.Message) (string, error)
-
-	// Compact records a compaction summary. Messages before
-	// firstKeptEntryID are excluded from future Context() calls.
-	Compact(summary string, firstKeptEntryID string, tokensBefore int) (string, error)
 
 	// Branch moves the leaf to an earlier entry for forking.
 	Branch(entryID string) error
@@ -72,57 +50,22 @@ type Store interface {
 	// SessionID returns the session identifier.
 	SessionID() string
 
-	// Close releases resources (file handles, connections, etc).
+	// Close flushes any buffered writes and releases resources.
 	Close() error
 }
 
-// --- Step 1: the agent loop uses it directly ---
-//
-// func runAgent(ctx context.Context, store store.Store, provider provider.Provider) {
-//     // Get existing context (may be empty for new session,
-//     // or full conversation for a resumed one)
-//     msgs := store.Context()
-//
-//     // Append the new user message
-//     store.Append(userMsg)
-//
-//     for {
-//         msgs = store.Context()    // always re-read — store is source of truth
-//         stream := provider.Stream(ctx, msgs, tools)
-//
-//         for chunk := range stream {
-//             rpc.WriteStdout(chunk)   // JSON-RPC 2.0 notification to stdout
-//         }
-//
-//         store.Append(assistantMsg)
-//
-//         if no tool calls { break }
-//
-//         for each toolCall {
-//             result := executeTool(toolCall)
-//             store.Append(toolResultMsg)
-//             rpc.WriteStdout(toolStatus)
-//         }
-//         // loop back: store.Context() now includes tool results
-//     }
-//
-//     rpc.WriteStdout(done)
-// }
+// Registry maps figaro IDs to their Store instances.
+// The process maintains one registry; each figaro (agent) gets
+// its own store, resolved by ID at the start of each invocation.
+type Registry interface {
+	// Get returns the store for a figaro, creating it if needed.
+	// The figaro ID may come from the shell PID, caller process,
+	// or CLI args.
+	Get(figaroID string) (Store, error)
 
-// --- Step 2: insert memory layer as a write-ahead cache ---
-//
-// jsonl := jsonlstore.Open("session.jsonl")      // implements Store
-// mem   := memstore.Wrap(jsonl)                   // implements Store, decorates jsonl
-// runAgent(ctx, mem, provider)                    // agent sees no difference
-//
-// mem.Context()  → returns from in-memory tree (fast)
-// mem.Append()   → writes to in-memory tree immediately
-//                   flushes to jsonl on a schedule or threshold
-// mem.Close()    → flushes remaining entries to jsonl, closes jsonl
-//
-// On startup:
-//   mem is empty → calls jsonl.Context() to seed itself
-//   subsequent reads served from memory
-//
-// On periodic flush:
-//   mem drains buffered entries to jsonl.Append() in batch
+	// List returns all active figaro IDs.
+	List() []string
+
+	// Close flushes and closes all stores.
+	Close() error
+}
