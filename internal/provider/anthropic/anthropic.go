@@ -21,22 +21,30 @@ import (
 )
 
 const (
-	providerName = "anthropic"
-	apiURL       = "https://api.anthropic.com/v1/messages"
-	apiVersion   = "2023-06-01"
+	providerName       = "anthropic"
+	apiURL             = "https://api.anthropic.com/v1/messages"
+	apiVersion         = "2023-06-01"
+	claudeCodeVersion  = "2.1.62"
 )
 
 type Anthropic struct {
 	APIKey     string
 	Model      string
+	IsOAuth    bool // true when using OAuth token (needs Bearer auth + Claude Code headers)
 	HTTPClient *http.Client
 }
 
 func New(apiKey, model string) *Anthropic {
+	isOAuth := isOAuthToken(apiKey)
 	return &Anthropic{
-		APIKey: apiKey, Model: model,
+		APIKey: apiKey, Model: model, IsOAuth: isOAuth,
 		HTTPClient: &http.Client{Timeout: 10 * time.Minute},
 	}
+}
+
+// isOAuthToken detects OAuth access tokens by the "sk-ant-oat" infix.
+func isOAuthToken(key string) bool {
+	return strings.Contains(key, "sk-ant-oat")
 }
 
 func (a *Anthropic) Name() string { return providerName }
@@ -46,10 +54,16 @@ func (a *Anthropic) Name() string { return providerName }
 type nativeRequest struct {
 	Model     string          `json:"model"`
 	MaxTokens int             `json:"max_tokens"`
-	System    string          `json:"system,omitempty"`
+	System    interface{}     `json:"system,omitempty"` // string or []systemBlock for OAuth
 	Messages  []nativeMessage `json:"messages"`
 	Tools     []nativeTool    `json:"tools,omitempty"`
 	Stream    bool            `json:"stream"`
+}
+
+// systemBlock is used for the array form of the system prompt (required for OAuth).
+type systemBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 type nativeMessage struct {
@@ -83,9 +97,22 @@ func (a *Anthropic) projectBlock(block *message.Block, tools []provider.Tool, ma
 		Model: a.Model, MaxTokens: maxTokens, Stream: true,
 	}
 
-	// System prompt from header
+	// Build system prompt — OAuth requires array form with Claude Code identity prefix.
+	var systemText string
 	if block.Header != nil && len(block.Header.Content) > 0 {
-		req.System = block.Header.Content[0].Text
+		systemText = block.Header.Content[0].Text
+	}
+
+	if a.IsOAuth {
+		blocks := []systemBlock{
+			{Type: "text", Text: "You are Claude Code, Anthropic's official CLI for Claude."},
+		}
+		if systemText != "" {
+			blocks = append(blocks, systemBlock{Type: "text", Text: systemText})
+		}
+		req.System = blocks
+	} else if systemText != "" {
+		req.System = systemText
 	}
 
 	req.Messages = a.projectMessages(block.Messages)
@@ -207,8 +234,18 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []prov
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", a.APIKey)
 	httpReq.Header.Set("anthropic-version", apiVersion)
+
+	if a.IsOAuth {
+		// OAuth tokens use Bearer auth and require Claude Code impersonation headers.
+		httpReq.Header.Set("Authorization", "Bearer "+a.APIKey)
+		httpReq.Header.Set("anthropic-beta", "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14")
+		httpReq.Header.Set("User-Agent", "claude-cli/"+claudeCodeVersion)
+		httpReq.Header.Set("x-app", "cli")
+		httpReq.Header.Set("anthropic-dangerous-direct-browser-access", "true")
+	} else {
+		httpReq.Header.Set("x-api-key", a.APIKey)
+	}
 
 	resp, err := a.HTTPClient.Do(httpReq)
 	if err != nil {
