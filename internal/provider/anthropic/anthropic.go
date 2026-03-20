@@ -13,33 +13,123 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
+	hush "github.com/jack-work/hush/client"
 )
 
 const (
-	providerName       = "anthropic"
-	apiURL             = "https://api.anthropic.com/v1/messages"
-	apiVersion         = "2023-06-01"
-	claudeCodeVersion  = "2.1.62"
+	providerName      = "anthropic"
+	apiBaseURL        = "https://api.anthropic.com/v1"
+	apiMessagesURL    = apiBaseURL + "/messages"
+	apiVersion        = "2023-06-01"
+	claudeCodeVersion = "2.1.62"
 )
 
 type Anthropic struct {
-	APIKey     string
+	auth       auth.TokenResolver
 	Model      string
-	IsOAuth    bool // true when using OAuth token (needs Bearer auth + Claude Code headers)
+	MaxTokens  int
 	HTTPClient *http.Client
 }
 
-func New(apiKey, model string) *Anthropic {
-	isOAuth := isOAuthToken(apiKey)
-	return &Anthropic{
-		APIKey: apiKey, Model: model, IsOAuth: isOAuth,
-		HTTPClient: &http.Client{Timeout: 10 * time.Minute},
+// New creates an Anthropic provider from the config section.
+// authPath is the path to the provider's auth.json for OAuth credentials.
+// Auth is resolved internally: if APIKey is set, it's used as a
+// static key. Otherwise, OAuth via hush is used. The env var
+// ANTHROPIC_API_KEY is checked as a fallback before OAuth.
+func New(cfg config.AnthropicProvider, authPath string) (*Anthropic, error) {
+	resolver, err := buildResolver(cfg.APIKey, authPath)
+	if err != nil {
+		return nil, err
 	}
+	return &Anthropic{
+		auth:       resolver,
+		Model:      cfg.Model,
+		MaxTokens:  cfg.MaxTokens,
+		HTTPClient: &http.Client{Timeout: 10 * time.Minute},
+	}, nil
+}
+
+// buildResolver returns the appropriate TokenResolver based on the
+// available credentials. Priority: config api_key → env var → OAuth.
+func buildResolver(apiKey, authPath string) (auth.TokenResolver, error) {
+	if apiKey != "" {
+		return &auth.StaticKey{Key: apiKey}, nil
+	}
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		return &auth.StaticKey{Key: key}, nil
+	}
+	hushClient, err := hush.New()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"no API key and hush agent not available: %w\n"+
+				"  Set api_key in config, ANTHROPIC_API_KEY env, or run: figaro login",
+			err,
+		)
+	}
+	mgr := auth.NewManager(hushClient, auth.AnthropicOAuth, authPath)
+	return &auth.OAuthResolver{Manager: mgr}, nil
+}
+
+// Models fetches the list of available models from the Anthropic API.
+func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
+	apiKey, err := a.auth.Resolve()
+	if err != nil {
+		return nil, fmt.Errorf("resolve token: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiBaseURL+"/models?limit=100", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("anthropic-version", apiVersion)
+	if isOAuthToken(apiKey) {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("anthropic-beta", "claude-code-20250219,oauth-2025-04-20")
+		req.Header.Set("User-Agent", "claude-cli/"+claudeCodeVersion)
+		req.Header.Set("x-app", "cli")
+		req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
+	} else {
+		req.Header.Set("x-api-key", apiKey)
+	}
+
+	resp, err := a.HTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("anthropic models API %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		Data []struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"display_name"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode models: %w", err)
+	}
+
+	var models []provider.ModelInfo
+	for _, m := range result.Data {
+		models = append(models, provider.ModelInfo{
+			ID:       m.ID,
+			Name:     m.DisplayName,
+			Provider: providerName,
+		})
+	}
+	return models, nil
 }
 
 // isOAuthToken detects OAuth access tokens by the "sk-ant-oat" infix.
@@ -92,7 +182,7 @@ type nativeTool struct {
 
 // --- Projection: IR Block → native request ---
 
-func (a *Anthropic) projectBlock(block *message.Block, tools []provider.Tool, maxTokens int) nativeRequest {
+func (a *Anthropic) projectBlock(block *message.Block, tools []provider.Tool, maxTokens int, oauth bool) nativeRequest {
 	req := nativeRequest{
 		Model: a.Model, MaxTokens: maxTokens, Stream: true,
 	}
@@ -103,7 +193,7 @@ func (a *Anthropic) projectBlock(block *message.Block, tools []provider.Tool, ma
 		systemText = block.Header.Content[0].Text
 	}
 
-	if a.IsOAuth {
+	if oauth {
 		blocks := []systemBlock{
 			{Type: "text", Text: "You are Claude Code, Anthropic's official CLI for Claude."},
 		}
@@ -220,31 +310,40 @@ func projectTools(tools []provider.Tool) []nativeTool {
 
 func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	if maxTokens == 0 {
+		maxTokens = a.MaxTokens
+	}
+	if maxTokens == 0 {
 		maxTokens = 8192
 	}
 
-	native := a.projectBlock(block, tools, maxTokens)
+	// Resolve token fresh each call (supports OAuth refresh).
+	apiKey, err := a.auth.Resolve()
+	if err != nil {
+		return nil, fmt.Errorf("resolve token: %w", err)
+	}
+
+	native := a.projectBlock(block, tools, maxTokens, isOAuthToken(apiKey))
 	body, err := json.Marshal(native)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", apiMessagesURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", apiVersion)
 
-	if a.IsOAuth {
+	if isOAuthToken(apiKey) {
 		// OAuth tokens use Bearer auth and require Claude Code impersonation headers.
-		httpReq.Header.Set("Authorization", "Bearer "+a.APIKey)
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 		httpReq.Header.Set("anthropic-beta", "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14")
 		httpReq.Header.Set("User-Agent", "claude-cli/"+claudeCodeVersion)
 		httpReq.Header.Set("x-app", "cli")
 		httpReq.Header.Set("anthropic-dangerous-direct-browser-access", "true")
 	} else {
-		httpReq.Header.Set("x-api-key", a.APIKey)
+		httpReq.Header.Set("x-api-key", apiKey)
 	}
 
 	resp, err := a.HTTPClient.Do(httpReq)
