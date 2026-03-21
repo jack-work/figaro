@@ -632,11 +632,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 				if p.IsError {
 					sw.Write([]byte(fmt.Sprintf("\n**⚠ error:** `%s`\n\n", p.Result)))
 				} else if !toolStreamed {
-					result := p.Result
-					if len(result) > 500 {
-						result = result[:500] + "\n... (truncated)"
-					}
-					sw.Write([]byte(fmt.Sprintf("```\n%s\n```\n", result)))
+					// Display the full tool result. The tool itself handles
+					// truncation (e.g., read truncates to 2000 lines/50KB
+					// with pagination hints). Don't re-truncate here.
+					sw.Write([]byte(fmt.Sprintf("```\n%s\n```\n", p.Result)))
 				}
 				sw.Write([]byte("---\n\n"))
 				toolStreamed = false
