@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/creachadair/jrpc2"
+	"github.com/jack-work/largo"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/angelus"
@@ -509,6 +510,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		reorderBuf  = make(map[uint64]pendingEvent)
 	)
 
+	// Streaming markdown renderer for LLM output.
+	sw, err := largo.NewWriter(os.Stdout, largo.Options{Margin: 4})
+	if err != nil {
+		die("largo: %s", err)
+	}
+
 	// Tracks whether the current tool has streamed output chunks.
 	// If so, we skip the final result display in tool_end to avoid double output.
 	toolStreamed := false
@@ -530,7 +537,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 				figOtel.Event(ctx, "cli.recv.delta",
 					attribute.String("text", p.Text),
 				)
-				fmt.Print(p.Text)
+				sw.Write([]byte(p.Text))
 			}
 		case rpc.MethodThinking:
 			var p rpc.ThinkingParams
@@ -540,6 +547,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		case rpc.MethodToolStart:
 			var p rpc.ToolStartParams
 			if json.Unmarshal(params, &p) == nil {
+				sw.Flush() // render pending markdown before tool output
 				toolStreamed = false
 				fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", p.ToolName)
 			}
@@ -570,6 +578,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 				fmt.Fprintf(os.Stderr, "error: %s\n", p.Message)
 			}
 		case rpc.MethodDone:
+			sw.Flush() // render any remaining markdown
 			select {
 			case doneCh <- struct{}{}:
 			default:
@@ -630,8 +639,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 	case <-doneCh:
 		fmt.Println()
 	case <-ctx.Done():
+		sw.Flush()
 		fmt.Fprintln(os.Stderr, "\ninterrupted")
 	case <-time.After(120 * time.Second):
+		sw.Flush()
 		die("timeout waiting for response")
 	}
 }
