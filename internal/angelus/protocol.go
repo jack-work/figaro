@@ -16,6 +16,7 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/tool"
 )
 
 // ProviderFactory creates a provider from a name and model.
@@ -80,6 +81,14 @@ func (h *handlers) create(ctx context.Context, req *rpc.CreateRequest) (rpc.Crea
 	home, _ := os.UserHomeDir()
 	logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
 
+	// Wire tools with the figaro's working directory.
+	tools := []tool.Tool{
+		&tool.Bash{Cwd: cwd},
+		&tool.Read{Cwd: cwd},
+		&tool.Write{Cwd: cwd},
+		&tool.Edit{Cwd: cwd},
+	}
+
 	agent := figaro.NewAgent(figaro.Config{
 		ID:         id,
 		SocketPath: sockPath,
@@ -89,6 +98,7 @@ func (h *handlers) create(ctx context.Context, req *rpc.CreateRequest) (rpc.Crea
 		Cwd:        cwd,
 		Root:       cwd, // TODO: detect git root
 		MaxTokens:  8192,
+		Tools:      tools,
 		LogDir:     logDir,
 	})
 

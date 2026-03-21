@@ -17,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -31,7 +32,8 @@ type Config struct {
 	Cwd        string // working directory
 	Root       string // project root
 	MaxTokens  int
-	LogDir     string // directory for per-figaro JSONL event log (empty = no logging)
+	Tools      []tool.Tool // tools available to the agent
+	LogDir     string      // directory for per-figaro JSONL event log (empty = no logging)
 }
 
 // Agent is the goroutine-based implementation of Figaro.
@@ -45,6 +47,7 @@ type Agent struct {
 	cwd        string
 	root       string
 	maxTokens  int
+	tools      []tool.Tool
 	memStore   *store.MemStore
 
 	// Prompt FIFO — single goroutine drains this.
@@ -84,6 +87,7 @@ func NewAgent(cfg Config) *Agent {
 		cwd:         cfg.Cwd,
 		root:        cfg.Root,
 		maxTokens:   cfg.MaxTokens,
+		tools:       cfg.Tools,
 		memStore:    store.NewMemStore(),
 		promptQ:     make(chan string, 64),
 		subscribers: make(map[chan rpc.Notification]struct{}),
@@ -324,6 +328,7 @@ func (a *Agent) processPrompt(ctx context.Context, text string) {
 	ag := &agent.Agent{
 		Store:        a.memStore,
 		Provider:     a.prov,
+		Tools:        a.tools,
 		SystemPrompt: sysPrompt,
 		MaxTokens:    a.maxTokens,
 		Out:          out,

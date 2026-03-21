@@ -509,6 +509,13 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 			if json.Unmarshal(params, &p) == nil {
 				if p.IsError {
 					fmt.Fprintf(os.Stderr, "[tool error: %s]\n", p.Result)
+				} else {
+					// Truncate long results for display.
+					result := p.Result
+					if len(result) > 500 {
+						result = result[:500] + "\n... (truncated)"
+					}
+					fmt.Fprintf(os.Stderr, "%s\n", result)
 				}
 			}
 		case rpc.MethodError:
