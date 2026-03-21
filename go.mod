@@ -4,12 +4,14 @@ go 1.25.5
 
 require (
 	github.com/BurntSushi/toml v1.5.0
+	github.com/creachadair/jrpc2 v1.3.5
 	github.com/jack-work/hush v0.3.0
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.42.0
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.42.0
 	go.opentelemetry.io/otel/sdk v1.42.0
 	go.opentelemetry.io/otel/trace v1.42.0
+	golang.org/x/sys v0.42.0
 )
 
 require (
@@ -24,7 +26,6 @@ require (
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/metric v1.42.0 // indirect
 	golang.org/x/crypto v0.45.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

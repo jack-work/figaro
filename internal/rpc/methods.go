@@ -80,8 +80,16 @@ type CreateRequest struct {
 }
 
 type CreateResponse struct {
-	FigaroID   string `json:"figaro_id"`
-	SocketPath string `json:"socket_path"`
+	FigaroID string   `json:"figaro_id"`
+	Endpoint Endpoint `json:"endpoint"`
+}
+
+// Endpoint describes how to connect to a figaro. Matches transport.Endpoint.
+// Duplicated here so the RPC types don't import the transport package
+// (keeps the wire format self-describing for non-Go clients).
+type Endpoint struct {
+	Scheme  string `json:"scheme"`
+	Address string `json:"address"`
 }
 
 type KillRequest struct {
@@ -110,9 +118,9 @@ type ResolveRequest struct {
 }
 
 type ResolveResponse struct {
-	FigaroID   string `json:"figaro_id,omitempty"`
-	SocketPath string `json:"socket_path,omitempty"`
-	Found      bool   `json:"found"`
+	FigaroID string   `json:"figaro_id,omitempty"`
+	Endpoint Endpoint `json:"endpoint,omitempty"`
+	Found    bool     `json:"found"`
 }
 
 type UnbindRequest struct {

@@ -79,8 +79,11 @@ func TestCreateRequest(t *testing.T) {
 
 func TestCreateResponse(t *testing.T) {
 	roundTrip(t, "create_response.json", rpc.CreateResponse{
-		FigaroID:   "abc123",
-		SocketPath: "/run/user/1000/figaro/figaros/abc123.sock",
+		FigaroID: "abc123",
+		Endpoint: rpc.Endpoint{
+			Scheme:  "unix",
+			Address: "/run/user/1000/figaro/figaros/abc123.sock",
+		},
 	})
 }
 
@@ -93,9 +96,12 @@ func TestBindRequest(t *testing.T) {
 
 func TestResolveResponse_Found(t *testing.T) {
 	roundTrip(t, "resolve_response_found.json", rpc.ResolveResponse{
-		FigaroID:   "abc123",
-		SocketPath: "/run/user/1000/figaro/figaros/abc123.sock",
-		Found:      true,
+		FigaroID: "abc123",
+		Endpoint: rpc.Endpoint{
+			Scheme:  "unix",
+			Address: "/run/user/1000/figaro/figaros/abc123.sock",
+		},
+		Found: true,
 	})
 }
 
