@@ -40,13 +40,26 @@ CLI (ephemeral) → Angelus (supervisor) → Figaro agents
 
 ## Status — *Lavori in corso*
 
-Working: streaming responses, tool execution (bash, read, write, edit), conversation continuity, OAuth login, `list`/`kill`/`context`/`models`, OpenTelemetry tracing, configurable personality via `credo.md`, skills from markdown, panic recovery with automatic restart.
+Working: streaming responses with **incremental markdown rendering** (via [largo](https://github.com/jack-work/largo) — a streaming glamour wrapper that renders rich text as it arrives, no waiting for the full response), tool execution (bash, read, write, edit), conversation continuity, OAuth login, `list`/`kill`/`context`/`models`/`attend`/`new`/`rest`, OpenTelemetry tracing, configurable personality via `credo.md`, skills from markdown, panic recovery with automatic restart.
+
+## Provider — *Chi suona?*
+
+Figaro currently speaks to **Anthropic** only, authenticated via OAuth through their first-party [Claude Code](https://docs.anthropic.com/en/docs/claude-code) flow — the same mechanism used by the official CLI and other third-party tools in the ecosystem. A **Claude Pro or Max subscription** is required. Tokens are encrypted at rest via [hush](https://github.com/jack-work/hush); the agent never touches plaintext credentials on disk.
+
+API key authentication (`ANTHROPIC_API_KEY` or config) is also supported as a fallback.
+
+```bash
+figaro login anthropic   # opens browser, completes OAuth PKCE
+```
+
+The provider interface (`internal/provider/`) is designed for multiple backends. Adding a new provider means implementing one interface — the agent loop, store, and transport layer are provider-agnostic.
 
 ## *Il futuro*
 
-- **Arias.** Persistent conversation contexts — in-memory, then WAL, then database.
-- **Frontends.** Rich CLI, browser, chat applications — all just JSON-RPC clients.
-- **Scaling.** Multi-node figaros. Transport abstraction already supports TCP and websocket endpoints.
+- **Arias.** Persistent conversation contexts. The store interface is in place (in-memory today) — WAL-backed persistence, then a proper database. Conversations that survive restarts.
+- **Providers.** More backends beyond Anthropic. The `Provider` interface is ready; the wiring is not.
+- **Frontends.** Browser, chat applications — all just JSON-RPC clients over the existing socket protocol.
+- **Scaling.** Multi-node figaros. The transport abstraction already implements unix and TCP listeners; websocket is next.
 - **Pooling.** Reusable agent processes assigned to arias on demand.
 - **Isolation.** Network boundaries for tool execution. *Un factotum* who reads his master's letters is no longer trusted with them.
 
