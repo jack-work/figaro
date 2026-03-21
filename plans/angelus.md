@@ -155,6 +155,18 @@ Supervisor is consulted for session resolution only. All agent interaction is di
 - [ ] Crash prompt no longer needed once persistence works
 - [ ] Test: create figaro, prompt, kill angelus, restart, verify context survives
 
+### Step 12: Arias + figaro process pool (future)
+Figaros are currently lightweight goroutines. The long-term plan:
+- Rename "conversation context" to **aria** — the unit of chat context
+- Figaros become a **process pool** of reusable agent instances
+- An aria is assigned to a figaro from the pool when active, released when idle
+- The persistent store (step 10) is per-aria, not per-figaro
+- Store layers: in-memory log → flush to JSONL file → eventually a database
+- The existing MemStore is the in-memory layer; JSONL persistence is the WAL
+- When an aria is assigned to a figaro, the WAL is replayed into memory
+- This decouples agent lifecycle from conversation lifecycle — figaros are
+  compute, arias are state
+
 ### Step 11: Tool execution
 - [ ] Wire existing tools (bash, read, write, edit) into figaro config
 - [ ] Tools passed to agent.Agent when constructing in processPrompt
