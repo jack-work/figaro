@@ -120,6 +120,48 @@ Supervisor is consulted for session resolution only. All agent interaction is di
   - `figaro kill <id>` → removes it
   - 55 tests pass
 
+### Post-steps: completed since step 6
+- [x] Notification streaming restored (word-by-word via jrpc2 server push)
+- [x] Sequenced event envelopes (fix jrpc2 reordering bug)
+- [x] Otel in angelus process + figaro span attributes
+- [x] SimpleSpanProcessor (no drops)
+- [x] Delta tracing on both figaro emit and CLI receive sides
+- [x] stream.thinking rendering (basic stderr)
+- [x] Conversation continuity verified (os.Getppid() returns stable shell pid)
+
+## Remaining Work
+
+### Step 7: Panic recovery
+- [ ] Wrap figaro drain loop in recover()
+- [ ] On panic: log stack trace, restart goroutine, inject crash system prompt
+- [ ] Registry entry (id, pid bindings) survives — only chat context lost
+- [ ] Test: mock provider that panics, verify figaro restarts and is usable
+
+### Step 8: System prompt from config
+- [ ] Add `system_prompt` field to provider config TOML
+- [ ] Angelus reads it when creating figaros
+- [ ] Fallback to sensible default if not set
+- [ ] Test: fixture config with custom prompt, verify it reaches the agent
+
+### Step 9: RPC event logging
+- [ ] Restore JSONL event log (all notifications logged to file)
+- [ ] Log path from config (existing log.rpc_file)
+- [ ] Angelus writes events from all figaros (tagged with figaro ID)
+- [ ] Or: each figaro writes its own event log
+
+### Step 10: Chat persistence
+- [ ] JSONL append log per figaro in ~/.local/state/figaro/figaros/<id>/
+- [ ] On figaro restart, reload context from log
+- [ ] Crash prompt no longer needed once persistence works
+- [ ] Test: create figaro, prompt, kill angelus, restart, verify context survives
+
+### Step 11: Tool execution
+- [ ] Wire existing tools (bash, read, write, edit) into figaro config
+- [ ] Tools passed to agent.Agent when constructing in processPrompt
+- [ ] Tool execution renders stream.tool_start / stream.tool_end in CLI
+- [ ] Test: mock tool, verify tool call → result → assistant response flow
+- [ ] Security: confirm tool execution runs in angelus process (or future child process)
+
 ## Package Layout
 
 ```
