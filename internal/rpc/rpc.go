@@ -53,8 +53,7 @@ type MessageParams struct {
 }
 
 type DoneParams struct {
-	SessionID string `json:"session_id"`
-	Reason    string `json:"reason"`
+	Reason string `json:"reason"`
 }
 
 type ErrorParams struct {

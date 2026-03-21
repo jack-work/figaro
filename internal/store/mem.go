@@ -10,15 +10,14 @@ import (
 // MemStore is a minimal in-memory store for bootstrapping the agent loop.
 // No persistence — messages live only for the duration of the process.
 type MemStore struct {
-	mu        sync.Mutex
-	sessionID string
-	messages  []message.Message
-	nextLT    uint64
+	mu       sync.Mutex
+	messages []message.Message
+	nextLT   uint64
 }
 
-// NewMemStore creates an in-memory store with the given session ID.
-func NewMemStore(sessionID string) *MemStore {
-	return &MemStore{sessionID: sessionID, nextLT: 1}
+// NewMemStore creates an in-memory store.
+func NewMemStore() *MemStore {
+	return &MemStore{nextLT: 1}
 }
 
 func (s *MemStore) Context() *message.Block {
@@ -63,5 +62,4 @@ func (s *MemStore) LeafTime() uint64 {
 	return s.messages[len(s.messages)-1].LogicalTime
 }
 
-func (s *MemStore) SessionID() string { return s.sessionID }
-func (s *MemStore) Close() error      { return nil }
+func (s *MemStore) Close() error { return nil }

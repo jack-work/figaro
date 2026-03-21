@@ -35,9 +35,6 @@ type Store interface {
 	// LeafTime returns the logical time of the current leaf.
 	LeafTime() uint64
 
-	// SessionID returns the session identifier.
-	SessionID() string
-
 	// Close flushes any buffered writes and releases resources.
 	Close() error
 }

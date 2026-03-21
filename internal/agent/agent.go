@@ -88,8 +88,7 @@ func (a *Agent) ticLoop(ctx context.Context) error {
 			if len(toolCalls) == 0 {
 				// No tool calls — done
 				a.emit(rpc.MethodDone, rpc.DoneParams{
-					SessionID: a.Store.SessionID(),
-					Reason:    string(last.StopReason),
+					Reason: string(last.StopReason),
 				})
 				return nil
 			}
