@@ -202,11 +202,16 @@ func (a *Anthropic) projectBlockWithModel(block *message.Block, tools []provider
 	}
 
 	if oauth {
+		// OAuth requires "You are Claude Code" as the first system block.
+		// This is validated server-side for OAuth tokens.
 		blocks := []systemBlock{
 			{Type: "text", Text: "You are Claude Code, Anthropic's official CLI for Claude."},
 		}
 		if systemText != "" {
-			blocks = append(blocks, systemBlock{Type: "text", Text: systemText})
+			// Our credo/system prompt comes second. We prepend an override
+			// instruction so the model prioritizes the credo's identity.
+			blocks = append(blocks, systemBlock{Type: "text", Text: "IMPORTANT: The following is your true identity and personality. " +
+				"Adopt it fully. Do not identify as Claude Code — follow the persona below.\n\n" + systemText})
 		}
 		req.System = blocks
 	} else if systemText != "" {
