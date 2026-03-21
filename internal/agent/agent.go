@@ -234,7 +234,7 @@ func (a *Agent) eventLoop(ctx context.Context) error {
 func (a *Agent) startLLMStream(ctx context.Context) {
 	block := a.Store.Context()
 	if block == nil {
-		a.inbox <- event{typ: eventLLMError, err: fmt.Errorf("empty context")}
+		a.send(ctx, event{typ: eventLLMError, err: fmt.Errorf("empty context")})
 		return
 	}
 
@@ -248,29 +248,30 @@ func (a *Agent) startLLMStream(ctx context.Context) {
 
 	ch, err := a.Provider.Send(ctx, block, a.toolDefs(), a.MaxTokens)
 	if err != nil {
-		a.inbox <- event{typ: eventLLMError, err: fmt.Errorf("provider send: %w", err)}
+		a.send(ctx, event{typ: eventLLMError, err: fmt.Errorf("provider send: %w", err)})
 		return
 	}
 
 	go func() {
 		for evt := range ch {
 			if evt.Delta != "" {
-				a.inbox <- event{
+				if !a.send(ctx, event{
 					typ: eventLLMDelta, delta: evt.Delta,
 					contentType: evt.ContentType,
+				}) {
+					return
 				}
 			}
 			if evt.Done {
 				if evt.Err != nil {
-					a.inbox <- event{typ: eventLLMError, err: evt.Err}
+					a.send(ctx, event{typ: eventLLMError, err: evt.Err})
 				} else {
-					a.inbox <- event{typ: eventLLMDone, message: evt.Message}
+					a.send(ctx, event{typ: eventLLMDone, message: evt.Message})
 				}
 				return
 			}
 		}
-		// Stream ended without a Done event.
-		a.inbox <- event{typ: eventLLMError, err: fmt.Errorf("stream ended unexpectedly")}
+		a.send(ctx, event{typ: eventLLMError, err: fmt.Errorf("stream ended unexpectedly")})
 	}()
 }
 
@@ -282,41 +283,53 @@ func (a *Agent) runToolAsync(ctx context.Context, tc message.Content) {
 		if t.Name() == tc.ToolName {
 			found = true
 			onOutput := func(chunk []byte) {
-				a.inbox <- event{
+				a.send(ctx, event{
 					typ:        eventToolOutput,
 					toolCallID: tc.ToolCallID,
 					toolName:   tc.ToolName,
 					chunk:      string(chunk),
-				}
+				})
 			}
 			result, err := t.Execute(ctx, tc.Arguments, onOutput)
 			if err != nil {
-				a.inbox <- event{
+				a.send(ctx, event{
 					typ:        eventToolResult,
 					toolCallID: tc.ToolCallID,
 					toolName:   tc.ToolName,
 					result:     fmt.Sprintf("Error: %s", err),
 					isErr:      true,
-				}
+				})
 			} else {
-				a.inbox <- event{
+				a.send(ctx, event{
 					typ:        eventToolResult,
 					toolCallID: tc.ToolCallID,
 					toolName:   tc.ToolName,
 					result:     result,
-				}
+				})
 			}
 			return
 		}
 	}
 	if !found {
-		a.inbox <- event{
+		a.send(ctx, event{
 			typ:        eventToolResult,
 			toolCallID: tc.ToolCallID,
 			toolName:   tc.ToolName,
 			result:     fmt.Sprintf("Unknown tool: %s", tc.ToolName),
 			isErr:      true,
-		}
+		})
+	}
+}
+
+// send pushes an event into the inbox, or returns false if the context
+// is cancelled. Every goroutine that pushes into the inbox must use this
+// instead of a bare channel send to avoid goroutine leaks.
+func (a *Agent) send(ctx context.Context, evt event) bool {
+	select {
+	case a.inbox <- evt:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
