@@ -38,7 +38,7 @@ func (b *Bash) Parameters() interface{} {
 	}
 }
 
-func (b *Bash) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+func (b *Bash) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) (string, error) {
 	command, _ := args["command"].(string)
 	if command == "" {
 		return "", fmt.Errorf("command is required")
@@ -57,9 +57,11 @@ func (b *Bash) Execute(ctx context.Context, args map[string]interface{}) (string
 	// Own process group so we can kill the entire tree.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
+	// streamWriter captures all output and optionally streams chunks
+	// to the onOutput callback as they arrive.
+	sw := &streamWriter{onOutput: onOutput}
+	cmd.Stdout = sw
+	cmd.Stderr = sw
 
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("start command: %w", err)
@@ -81,8 +83,7 @@ func (b *Bash) Execute(ctx context.Context, args map[string]interface{}) (string
 
 	select {
 	case err := <-done:
-		// Process exited normally or with error.
-		return b.formatResult(out.String(), err, timedOut, canceled, timeout)
+		return b.formatResult(sw.String(), err, timedOut, canceled, timeout)
 	case <-timeoutCh:
 		timedOut = true
 	case <-ctx.Done():
@@ -95,7 +96,7 @@ func (b *Bash) Execute(ctx context.Context, args map[string]interface{}) (string
 	// Wait for the process to actually exit (so pipes close).
 	<-done
 
-	return b.formatResult(out.String(), nil, timedOut, canceled, timeout)
+	return b.formatResult(sw.String(), nil, timedOut, canceled, timeout)
 }
 
 // killProcessGroup sends SIGKILL to the entire process group.
@@ -129,6 +130,27 @@ func (b *Bash) formatResult(output string, err error, timedOut, canceled bool, t
 		return "", err
 	}
 	return output, nil
+}
+
+// streamWriter captures all output and optionally streams chunks to a callback.
+type streamWriter struct {
+	buf      bytes.Buffer
+	onOutput OnOutput
+}
+
+func (w *streamWriter) Write(p []byte) (int, error) {
+	n, err := w.buf.Write(p)
+	if w.onOutput != nil && n > 0 {
+		// Send a copy so the callback can safely hold the reference.
+		chunk := make([]byte, n)
+		copy(chunk, p[:n])
+		w.onOutput(chunk)
+	}
+	return n, err
+}
+
+func (w *streamWriter) String() string {
+	return w.buf.String()
 }
 
 // truncateTail keeps the last MaxOutputLines / MaxOutputBytes of output.

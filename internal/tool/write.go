@@ -22,7 +22,7 @@ func (w *Write) Parameters() interface{} {
 	}
 }
 
-func (w *Write) Execute(_ context.Context, args map[string]interface{}) (string, error) {
+func (w *Write) Execute(_ context.Context, args map[string]interface{}, _ OnOutput) (string, error) {
 	path, _ := args["path"].(string)
 	content, _ := args["content"].(string)
 	if path == "" {

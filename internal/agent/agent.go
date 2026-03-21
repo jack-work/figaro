@@ -191,7 +191,9 @@ func (a *Agent) executeTool(ctx context.Context, tc message.Content) error {
 func (a *Agent) runTool(ctx context.Context, tc message.Content) (string, bool) {
 	for _, t := range a.Tools {
 		if t.Name() == tc.ToolName {
-			result, err := t.Execute(ctx, tc.Arguments)
+			// TODO: wire onOutput callback to stream tool output
+			// to subscribers in real-time. For now, nil disables streaming.
+			result, err := t.Execute(ctx, tc.Arguments, nil)
 			if err != nil {
 				return fmt.Sprintf("Error: %s", err), true
 			}

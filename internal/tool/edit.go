@@ -24,7 +24,7 @@ func (e *Edit) Parameters() interface{} {
 	}
 }
 
-func (e *Edit) Execute(_ context.Context, args map[string]interface{}) (string, error) {
+func (e *Edit) Execute(_ context.Context, args map[string]interface{}, _ OnOutput) (string, error) {
 	path, _ := args["path"].(string)
 	oldText, _ := args["old_text"].(string)
 	newText, _ := args["new_text"].(string)

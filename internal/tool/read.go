@@ -21,7 +21,7 @@ func (r *Read) Parameters() interface{} {
 	}
 }
 
-func (r *Read) Execute(_ context.Context, args map[string]interface{}) (string, error) {
+func (r *Read) Execute(_ context.Context, args map[string]interface{}, _ OnOutput) (string, error) {
 	path, _ := args["path"].(string)
 	if path == "" {
 		return "", fmt.Errorf("path is required")
