@@ -6,12 +6,6 @@
 
 ---
 
-## About
-
-Figaro is named for the resourceful barber-factotum of Beaumarchais' plays and Rossini's opera — the clever servant who is everywhere he's needed, solves everyone's problems, and does it all with style. The agent embodies this spirit: brisk, witty, and relentlessly practical. Its system prompt (the *credo*) gives it Figaro's voice; its architecture gives it Figaro's reach.
-
----
-
 ## *Ecco qua* — What Is This?
 
 A CLI coding agent with a supervisor architecture. You talk, Figaro listens, schemes, and delivers. Conversations outlive your terminal. Come back tomorrow — *il factotum* remembers.
