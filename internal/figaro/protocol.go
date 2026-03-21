@@ -127,6 +127,7 @@ func (a *Agent) handleSetModel(ctx context.Context, req *rpc.SetModelRequest) (r
 
 type serverSubscriber struct {
 	srv *jrpc2.Server
+	seq uint64 // monotonic sequence number for ordered delivery
 }
 
 func (a *Agent) addServerSubscriber(srv *jrpc2.Server) *serverSubscriber {

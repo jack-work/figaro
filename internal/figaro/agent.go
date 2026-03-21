@@ -3,6 +3,7 @@ package figaro
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -190,9 +191,20 @@ func (a *Agent) processPrompt(ctx context.Context, text string) {
 	a.mu.Unlock()
 
 	// Build a notification sink that fans out to subscribers.
+	// Pass ctx so otel events are recorded on the prompt span.
 	out := make(chan rpc.Notification, 128)
 	go func() {
+		seq := 0
 		for n := range out {
+			if n.Method == rpc.MethodDelta {
+				if p, ok := n.Params.(rpc.DeltaParams); ok {
+					figOtel.Event(ctx, "figaro.notify.delta",
+						attribute.Int("seq", seq),
+						attribute.String("text", p.Text),
+					)
+				}
+			}
+			seq++
 			a.fanOut(n)
 		}
 	}()
@@ -245,8 +257,19 @@ func (a *Agent) fanOut(n rpc.Notification) {
 	}
 
 	// jrpc2 server-based subscribers (socket connections).
+	// Each notification is stamped with a per-subscriber sequence number.
+	// The CLI uses this to reorder notifications that arrive out of order
+	// due to jrpc2's concurrent dispatch model.
 	for sub := range a.serverSubs {
-		sub.srv.Notify(context.Background(), n.Method, n.Params)
+		sub.seq++
+		envelope := rpc.SequencedEvent{
+			Seq:    sub.seq,
+			Method: n.Method,
+			Params: n.Params,
+		}
+		if err := sub.srv.Notify(context.Background(), rpc.MethodEvent, envelope); err != nil {
+			fmt.Fprintf(os.Stderr, "figaro: notify error: %v\n", err)
+		}
 	}
 }
 

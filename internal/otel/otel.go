@@ -58,8 +58,11 @@ func Init(ctx context.Context, traceFile string) (func(context.Context) error, e
 		return nil, fmt.Errorf("create resource: %w", err)
 	}
 
+	// SimpleSpanProcessor exports synchronously — no queue, no drops.
+	// Acceptable for a background daemon; the small overhead of a file
+	// write per span is negligible compared to LLM call latency.
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
+		sdktrace.WithSpanProcessor(sdktrace.NewSimpleSpanProcessor(exporter)),
 		sdktrace.WithResource(res),
 	)
 
@@ -87,4 +90,13 @@ func Start(ctx context.Context, name string, opts ...trace.SpanStartOption) (con
 // WithAttributes returns a SpanStartOption that sets attributes on the span.
 func WithAttributes(attrs ...attribute.KeyValue) trace.SpanStartOption {
 	return trace.WithAttributes(attrs...)
+}
+
+// Event records an event on the span in ctx. If there is no active span,
+// this is a no-op.
+func Event(ctx context.Context, name string, attrs ...attribute.KeyValue) {
+	span := trace.SpanFromContext(ctx)
+	if span.IsRecording() {
+		span.AddEvent(name, trace.WithAttributes(attrs...))
+	}
 }

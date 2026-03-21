@@ -59,3 +59,12 @@ type DoneParams struct {
 type ErrorParams struct {
 	Message string `json:"message"`
 }
+
+// SequencedEvent wraps a notification with a monotonic sequence number.
+// Used for ordered delivery over jrpc2, which may dispatch OnNotify
+// callbacks from concurrent goroutines.
+type SequencedEvent struct {
+	Seq    uint64      `json:"seq"`
+	Method string      `json:"method"`
+	Params interface{} `json:"params"`
+}

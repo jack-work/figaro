@@ -22,11 +22,13 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/creachadair/jrpc2"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/auth"
@@ -440,28 +442,51 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string)
 
 	doneCh := make(chan struct{}, 1)
 
-	fcli, err := figaro.DialClient(ep, func(method string, req *jrpc2.Request) {
+	// jrpc2's client dispatches OnNotify from concurrent goroutines,
+	// which reorders notifications. The figaro stamps each notification
+	// with a monotonic sequence number inside a figaro.event envelope.
+	// We buffer out-of-order events and deliver them in sequence.
+	type pendingEvent struct {
+		method string
+		params json.RawMessage
+	}
+
+	var (
+		reorderMu   sync.Mutex
+		nextSeq     uint64 = 1
+		reorderBuf  = make(map[uint64]pendingEvent)
+	)
+
+	deliverEvent := func(method string, params json.RawMessage) {
 		switch method {
 		case rpc.MethodDelta:
 			var p rpc.DeltaParams
-			if req.UnmarshalParams(&p) == nil {
+			if json.Unmarshal(params, &p) == nil {
+				figOtel.Event(ctx, "cli.recv.delta",
+					attribute.String("text", p.Text),
+				)
 				fmt.Print(p.Text)
+			}
+		case rpc.MethodThinking:
+			var p rpc.ThinkingParams
+			if json.Unmarshal(params, &p) == nil {
+				fmt.Fprintf(os.Stderr, "thinking: %s\n", p.Text)
 			}
 		case rpc.MethodToolStart:
 			var p rpc.ToolStartParams
-			if req.UnmarshalParams(&p) == nil {
+			if json.Unmarshal(params, &p) == nil {
 				fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", p.ToolName)
 			}
 		case rpc.MethodToolEnd:
 			var p rpc.ToolEndParams
-			if req.UnmarshalParams(&p) == nil {
+			if json.Unmarshal(params, &p) == nil {
 				if p.IsError {
 					fmt.Fprintf(os.Stderr, "[tool error: %s]\n", p.Result)
 				}
 			}
 		case rpc.MethodError:
 			var p rpc.ErrorParams
-			if req.UnmarshalParams(&p) == nil {
+			if json.Unmarshal(params, &p) == nil {
 				fmt.Fprintf(os.Stderr, "error: %s\n", p.Message)
 			}
 		case rpc.MethodDone:
@@ -469,6 +494,46 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string)
 			case doneCh <- struct{}{}:
 			default:
 			}
+		}
+	}
+
+	fcli, err := figaro.DialClient(ep, func(method string, req *jrpc2.Request) {
+		// All notifications arrive as figaro.event envelopes with a seq number.
+		if method != rpc.MethodEvent {
+			return
+		}
+
+		// Parse the envelope. Params is a JSON object with seq, method, params.
+		var raw json.RawMessage
+		req.UnmarshalParams(&raw)
+
+		var envelope struct {
+			Seq    uint64          `json:"seq"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		if json.Unmarshal(raw, &envelope) != nil {
+			return
+		}
+
+		reorderMu.Lock()
+		defer reorderMu.Unlock()
+
+		// Buffer this event.
+		reorderBuf[envelope.Seq] = pendingEvent{
+			method: envelope.Method,
+			params: envelope.Params,
+		}
+
+		// Deliver all consecutive events starting from nextSeq.
+		for {
+			evt, ok := reorderBuf[nextSeq]
+			if !ok {
+				break
+			}
+			delete(reorderBuf, nextSeq)
+			nextSeq++
+			deliverEvent(evt.method, evt.params)
 		}
 	})
 	if err != nil {

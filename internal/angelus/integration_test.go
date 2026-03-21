@@ -2,6 +2,7 @@ package angelus_test
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 	"testing"
@@ -121,9 +122,19 @@ func TestIntegration_CreateAndPrompt(t *testing.T) {
 	}
 
 	// Connect with notification handler to wait for stream.done.
+	// Notifications arrive as figaro.event envelopes with seq numbers.
 	doneCh := make(chan struct{}, 1)
 	fcli, err := figaro.DialClient(figaroEP, func(method string, req *jrpc2.Request) {
-		if method == "stream.done" {
+		if method != "figaro.event" {
+			return
+		}
+		var raw json.RawMessage
+		req.UnmarshalParams(&raw)
+		var envelope struct {
+			Method string `json:"method"`
+		}
+		json.Unmarshal(raw, &envelope)
+		if envelope.Method == "stream.done" {
 			select {
 			case doneCh <- struct{}{}:
 			default:
