@@ -11,22 +11,21 @@
 A CLI coding agent with a supervisor architecture. You talk, Figaro listens, schemes, and delivers. Conversations outlive your terminal. Come back tomorrow — *il factotum* remembers.
 
 ```
-figaro -- explain this function to me
-figaro -- now refactor it, per favore
+q explain this function to me
+q now refactor it, per favore
 figaro list
 figaro kill abc123
 ```
 
-Every component speaks JSON-RPC 2.0 over unix sockets. Build a frontend in whatever language suits your fancy — Figaro doesn't care who's asking, only that the question is interesting.
+`q` is short for *"Figaro, qua!"* — the call that summons the barber. Every component speaks JSON-RPC 2.0 over unix sockets. Build a frontend in whatever language suits your fancy.
 
 ## *¿Por qué?* — Why Another One?
 
-The existing tools have merit, *naturalmente*, but also baggage:
-
-- **No runtime bloat.** Single static binary. No Node, no Bun, no dependency tree deeper than a Sevillian well. Written in Go — *veloce e leggero*.
+- **No runtime bloat.** Single static binary. No Node, no Bun, no dependency well. Written in Go — *veloce e leggero*.
 - **No TUI chains.** Plain stdout streaming. Rich frontends come later, as separate clients, not load-bearing walls.
 - **Secrets handled.** OAuth tokens encrypted at rest via [hush](https://github.com/jack-work/hush). No plaintext keys lounging on disk like an unguarded letter on Rosina's balcony.
-- **Supervisor architecture.** Agents outlive terminals. The angelus watches over its figaros — restarting the fallen, tracking the living.
+- **Supervisor architecture.** The angelus watches over its figaros — restarting the fallen, tracking the living. Agents outlive terminals.
+- **The actor on stage.** Every figaro is an *attore* — a single event loop, one mailbox, one voice. LLM responses, tool output, errors — all enter through the same door, are processed in order, and exit through the same curtain. No race conditions, no tangled threads. *Come in un'opera ben diretta* — like a well-conducted opera.
 - **Protocol-first.** JSON-RPC everywhere. The socket is the API. Any language, any frontend, any machine.
 
 ## Architecture
@@ -35,18 +34,17 @@ The existing tools have merit, *naturalmente*, but also baggage:
 CLI (ephemeral) → Angelus (supervisor) → Figaro agents
 ```
 
-- **CLI**: Stateless translator. Stdio ↔ JSON-RPC. Arrives, delivers, departs — like a well-timed entrance.
+- **CLI**: Stateless translator. Stdio ↔ JSON-RPC. Arrives, delivers, departs.
 - **Angelus**: The quiet guardian. Registry, PID tracking, health monitoring. Auto-starts on first invocation.
-- **Figaro**: *Il factotum.* Owns a conversation, a model, a prompt queue. Each on its own socket, each with its own personality defined by a *credo* — a templated soul file that shapes behavior without pretending to grant consciousness.
+- **Figaro**: *Il factotum.* An event-driven actor — one inbox, one loop. Owns a conversation, a model, tools. Each on its own socket, each with a *credo* that shapes its voice.
 
 ## Status — *Lavori in corso*
 
-Working: OAuth login, streaming responses, conversation continuity, `list`/`kill`/`context`/`models`, OpenTelemetry tracing, configurable personality via `credo.md`, skills from markdown with frontmatter, panic recovery.
+Working: streaming responses, tool execution (bash, read, write, edit), conversation continuity, OAuth login, `list`/`kill`/`context`/`models`, OpenTelemetry tracing, configurable personality via `credo.md`, skills from markdown, panic recovery with automatic restart.
 
 ## *Il futuro*
 
 - **Arias.** Persistent conversation contexts — in-memory, then WAL, then database.
-- **Tool execution.** Bash, file I/O. *Il barbiere* picks up his razor.
 - **Frontends.** Rich CLI, browser, chat applications — all just JSON-RPC clients.
 - **Scaling.** Multi-node figaros. Transport abstraction already supports TCP and websocket endpoints.
 - **Pooling.** Reusable agent processes assigned to arias on demand.
@@ -56,8 +54,9 @@ Working: OAuth login, streaming responses, conversation continuity, `list`/`kill
 
 ```bash
 go install github.com/jack-work/figaro/cmd/figaro@latest
+ln -s $(which figaro) ~/go/bin/q    # the factotum's call
 figaro login anthropic
-figaro -- buongiorno, Figaro
+q buongiorno, Figaro
 ```
 
 Configuration: `~/.config/figaro/`. Personality: `credo.md`. Skills: `skills/`. Provider settings: `providers/anthropic/config.toml`.
