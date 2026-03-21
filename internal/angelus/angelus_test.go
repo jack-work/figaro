@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -90,9 +91,12 @@ func TestAngelus_PIDMonitorUnbindsDeadPID(t *testing.T) {
 	m := newMock("abc")
 	require.NoError(t, a.Registry.Register(m))
 
-	// Bind a PID that definitely doesn't exist.
-	// PID 2^22 is very unlikely to be alive.
-	deadPID := 4194304
+	// Get a guaranteed-dead PID: start a process and let it exit.
+	cmd := exec.Command("true")
+	require.NoError(t, cmd.Start())
+	deadPID := cmd.Process.Pid
+	require.NoError(t, cmd.Wait()) // now dead
+
 	require.NoError(t, a.Registry.Bind(deadPID, "abc"))
 
 	// Wait for the monitor to reap it (polls every 2s).
