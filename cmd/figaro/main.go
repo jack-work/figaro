@@ -475,6 +475,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		reorderBuf  = make(map[uint64]pendingEvent)
 	)
 
+	// Tracks whether the current tool has streamed output chunks.
+	// If so, we skip the final result display in tool_end to avoid double output.
+	toolStreamed := false
+
 	deliverEvent := func(method string, params json.RawMessage) {
 		// Log to CLI RPC file.
 		if rpcEnc != nil {
@@ -502,11 +506,13 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		case rpc.MethodToolStart:
 			var p rpc.ToolStartParams
 			if json.Unmarshal(params, &p) == nil {
+				toolStreamed = false
 				fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", p.ToolName)
 			}
 		case rpc.MethodToolOutput:
 			var p rpc.ToolOutputParams
 			if json.Unmarshal(params, &p) == nil {
+				toolStreamed = true
 				fmt.Fprint(os.Stderr, p.Chunk)
 			}
 		case rpc.MethodToolEnd:
@@ -514,14 +520,15 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 			if json.Unmarshal(params, &p) == nil {
 				if p.IsError {
 					fmt.Fprintf(os.Stderr, "[tool error: %s]\n", p.Result)
-				} else {
-					// Truncate long results for display.
+				} else if !toolStreamed {
+					// Only show the final result if we didn't stream chunks.
 					result := p.Result
 					if len(result) > 500 {
 						result = result[:500] + "\n... (truncated)"
 					}
 					fmt.Fprintf(os.Stderr, "%s\n", result)
 				}
+				toolStreamed = false
 			}
 		case rpc.MethodError:
 			var p rpc.ErrorParams
