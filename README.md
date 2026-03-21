@@ -44,13 +44,17 @@ Working: incremental markdown rendering, tool execution (bash, read, write, edit
 
 ## Provider — *Chi suona?*
 
-Anthropic only, for now. Authentication via OAuth requires a **Max subscription**. Tokens are encrypted at rest via [hush](https://github.com/jack-work/hush). API key authentication (`ANTHROPIC_API_KEY` or config) is also supported.
+*¡Atención!* The barber requires a voice, and voices cost money.
+
+Figaro speaks through **Anthropic** — and only Anthropic, for the moment. He authenticates via OAuth, the same door that other respectable tools knock upon. You will need a **Max subscription**, a browser, and the nerve to type:
 
 ```bash
 figaro login anthropic
 ```
 
-The provider interface is designed for multiple backends — adding one means implementing a single interface. The agent loop, store, and transport are provider-agnostic.
+Tokens never touch the disk in plaintext — [hush](https://github.com/jack-work/hush) encrypts them at rest, because *un factotum* who leaves letters lying about is soon out of work. An API key (`ANTHROPIC_API_KEY` or config) will also do, if you prefer the traditional arrangement.
+
+The provider interface awaits more singers. One interface, one role to learn — the stage, the orchestra, the libretto are all provider-agnostic.
 
 ## *Il futuro*
 
