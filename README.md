@@ -1,79 +1,67 @@
 # Figaro
 
-*"Largo al factotum della città!"*
+*A coding agent. Pronto prontissimo.*
 
-A coding agent, built in Go. Work in progress.
+> *"Largo al factotum della città!" — Il barbiere di Siviglia, G. Rossini (1816)*
 
-## What
+---
 
-Figaro is a CLI coding agent with a supervisor architecture. You talk to it from your terminal. It remembers your conversation, streams responses, and — eventually — writes and runs code on your behalf.
+## *Ecco qua* — What Is This?
+
+A CLI coding agent with a supervisor architecture. You talk, Figaro listens, schemes, and delivers. Conversations outlive your terminal. Come back tomorrow — *il factotum* remembers.
 
 ```
-figaro -- explain this function
-figaro -- refactor it to use channels
+figaro -- explain this function to me
+figaro -- now refactor it, per favore
 figaro list
 figaro kill abc123
 ```
 
-## Why
+Every component speaks JSON-RPC 2.0 over unix sockets. Build a frontend in whatever language suits your fancy — Figaro doesn't care who's asking, only that the question is interesting.
 
-We wanted something simpler. The existing tools have their merits, but also their baggage:
+## *¿Por qué?* — Why Another One?
 
-- **No Node/Bun runtime.** Single static Go binary.
-- **No TUI dependency.** Plain stdout streaming. Fancy frontends come later, as separate clients.
-- **Built-in secret handling.** OAuth tokens encrypted at rest via [hush](https://github.com/jack-work/hush). No plaintext API keys on disk.
-- **Supervisor architecture.** Agents outlive your terminal. Come back tomorrow, pick up where you left off.
-- **JSON-RPC everywhere.** Every component speaks JSON-RPC 2.0 over unix sockets. Build a frontend in any language.
+The existing tools have merit, *naturalmente*, but also baggage:
+
+- **No runtime bloat.** Single static binary. No Node, no Bun, no dependency tree deeper than a Sevillian well. Written in Go — *veloce e leggero*.
+- **No TUI chains.** Plain stdout streaming. Rich frontends come later, as separate clients, not load-bearing walls.
+- **Secrets handled.** OAuth tokens encrypted at rest via [hush](https://github.com/jack-work/hush). No plaintext keys lounging on disk like an unguarded letter on Rosina's balcony.
+- **Supervisor architecture.** Agents outlive terminals. The angelus watches over its figaros — restarting the fallen, tracking the living.
+- **Protocol-first.** JSON-RPC everywhere. The socket is the API. Any language, any frontend, any machine.
 
 ## Architecture
 
 ```
-CLI (ephemeral) → Angelus (supervisor) → Figaro agents (goroutines)
+CLI (ephemeral) → Angelus (supervisor) → Figaro agents
 ```
 
-- **CLI**: Stateless. Translates stdio ↔ JSON-RPC. Exits when done.
-- **Angelus**: Long-lived supervisor. Registry, PID tracking, health monitoring. Auto-starts on first use.
-- **Figaro**: An agent. Owns a conversation, a model, a prompt queue. Streams responses via server-push notifications.
+- **CLI**: Stateless translator. Stdio ↔ JSON-RPC. Arrives, delivers, departs — like a well-timed entrance.
+- **Angelus**: The quiet guardian. Registry, PID tracking, health monitoring. Auto-starts on first invocation.
+- **Figaro**: *Il factotum.* Owns a conversation, a model, a prompt queue. Each on its own socket, each with its own personality defined by a *credo* — a templated soul file that shapes behavior without pretending to grant consciousness.
 
-## Status
+## Status — *Lavori in corso*
 
-Working today:
-- OAuth login via Anthropic Max subscription
-- Streaming responses (word-by-word)
-- Conversation continuity per terminal session
-- `list`, `kill`, `context`, `models` subcommands
-- OpenTelemetry tracing
-- Configurable personality via credo.md template
-- Skills loaded from markdown files with frontmatter
-- Panic recovery (agents restart without taking down the supervisor)
+Working: OAuth login, streaming responses, conversation continuity, `list`/`kill`/`context`/`models`, OpenTelemetry tracing, configurable personality via `credo.md`, skills from markdown with frontmatter, panic recovery.
 
-## Future
+## *Il futuro*
 
-- **Arias.** Persistent conversation contexts, decoupled from agent instances. In-memory → JSONL WAL → database.
-- **Tool execution.** Bash, file read/write/edit. The agent becomes a coder.
-- **Streaming frontend.** Rich CLI rendering — thinking indicators, tool call display, syntax highlighting.
-- **Browser & chat frontends.** Any JSON-RPC client can connect to the figaro socket.
-- **Multi-node scaling.** Figaros on remote machines. Transport abstraction already supports TCP/websocket endpoints.
-- **Figaro pooling.** Reusable agent processes assigned to arias on demand.
-- **Network isolation.** Single and multi-system security boundaries for tool execution.
+- **Arias.** Persistent conversation contexts — in-memory, then WAL, then database.
+- **Tool execution.** Bash, file I/O. *Il barbiere* picks up his razor.
+- **Frontends.** Rich CLI, browser, chat applications — all just JSON-RPC clients.
+- **Scaling.** Multi-node figaros. Transport abstraction already supports TCP and websocket endpoints.
+- **Pooling.** Reusable agent processes assigned to arias on demand.
+- **Isolation.** Network boundaries for tool execution. *Un factotum* who reads his master's letters is no longer trusted with them.
 
 ## Setup
 
 ```bash
-# Install
 go install github.com/jack-work/figaro/cmd/figaro@latest
-
-# Login (Anthropic Max subscription)
 figaro login anthropic
-
-# Talk
-figaro -- hello, Figaro
+figaro -- buongiorno, Figaro
 ```
 
-Configuration lives in `~/.config/figaro/`. See `credo.md` for personality, `providers/anthropic/config.toml` for model settings.
+Configuration: `~/.config/figaro/`. Personality: `credo.md`. Skills: `skills/`. Provider settings: `providers/anthropic/config.toml`.
 
-## License
+---
 
-*"Tutti mi chiedono, tutti mi vogliono."*
-
-MIT.
+*Tutti mi chiedono, tutti mi vogliono.* MIT.
