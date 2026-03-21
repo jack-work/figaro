@@ -584,7 +584,31 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 			if json.Unmarshal(params, &p) == nil {
 				sw.Flush()
 				toolStreamed = false
-				sw.Write([]byte(fmt.Sprintf("\n---\n`▶ %s`\n", p.ToolName)))
+				// Show the command/path for common tools.
+				detail := ""
+				switch p.ToolName {
+				case "bash":
+					if cmd, ok := p.Arguments["command"].(string); ok {
+						detail = cmd
+					}
+				case "read":
+					if path, ok := p.Arguments["path"].(string); ok {
+						detail = path
+					}
+				case "write":
+					if path, ok := p.Arguments["path"].(string); ok {
+						detail = path
+					}
+				case "edit":
+					if path, ok := p.Arguments["path"].(string); ok {
+						detail = path
+					}
+				}
+				if detail != "" {
+					sw.Write([]byte(fmt.Sprintf("\n---\n`▶ %s` `%s`\n", p.ToolName, detail)))
+				} else {
+					sw.Write([]byte(fmt.Sprintf("\n---\n`▶ %s`\n", p.ToolName)))
+				}
 			}
 		case rpc.MethodToolOutput:
 			var p rpc.ToolOutputParams
