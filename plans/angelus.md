@@ -71,18 +71,19 @@ Supervisor is consulted for session resolution only. All agent interaction is di
 - **Validated**: `go test ./internal/rpc/...` passes, all fixtures round-trip cleanly
 - **Fixtures**: `testdata/` with 8 JSON fixtures covering both protocols
 
-### Step 3: Figaro agent package
-- [ ] Create `internal/figaro/figaro.go` — interface definition
-- [ ] Create `internal/figaro/agent.go` — goroutine implementation
+### Step 3: Figaro agent package ✅ (core)
+- [x] Create `internal/figaro/figaro.go` — interface definition (Figaro + FigaroInfo)
+- [x] Create `internal/figaro/agent.go` — goroutine implementation
   // TODO: convert to child process via --figaro flag
+- [x] Prompt FIFO queue (buffered channel, single drain goroutine — actor model)
+- [x] Subscriber fan-out (multiple channels, add/remove, non-blocking send)
+- [x] Unit tests: 9 tests with mock provider (prompt→response, context, FIFO ordering,
+  multi-subscriber, unsubscribe, kill, info)
 - [ ] Create `internal/figaro/protocol.go` — jrpc2 handler map (prompt, context, subscribe, info)
 - [ ] Create `internal/figaro/client.go` — typed client for connecting to figaro socket
-- [ ] Prompt FIFO queue (buffered channel, single drain goroutine)
-- [ ] Subscriber fan-out (multiple channels, add/remove)
 - [ ] Panic recovery with crash prompt injection
-- [ ] Unit tests: mock provider, verify prompt→response flow, subscriber delivery, FIFO ordering
-- **Validate**: unit tests pass; can construct a figaro in a test, send a prompt, receive notifications
-- **Fixture**: `testdata/` with sample prompts and expected notification sequences
+- **Validated**: all 9 tests pass; figaro processes prompts FIFO, fans out to multiple subscribers
+- NOTE: protocol.go and client.go deferred to Step 5 (needs angelus wiring first)
 
 ### Step 4: Angelus supervisor package
 - [ ] Create `internal/angelus/angelus.go` — supervisor struct, Run(), socket listener
