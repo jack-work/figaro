@@ -1,16 +1,19 @@
-// Package agent implements the tic-based orchestration loop.
+// Package agent implements the event-driven orchestration loop.
 //
-// The loop is synchronous. Each tic:
-//  1. store.Context() → get the conversation block
-//  2. Inspect the last message
-//  3. Act according to message type:
-//     - user or tool_result → send to LLM provider
-//     - assistant with tool calls → execute tools
-//     - assistant with stop → done, yield to caller
-//  4. store.Append() each result, one at a time
+// All events flow through a single inbox channel (the actor mailbox).
+// A single goroutine drains the inbox and processes events:
 //
-// In parallel with every append, the message is streamed as
-// a JSON-RPC 2.0 notification to the output channel.
+//   - EventUserPrompt    → append to store, start LLM streaming
+//   - EventLLMDelta      → emit to subscribers (display only)
+//   - EventLLMDone       → append to store, check for tool calls
+//   - EventToolStart     → emit to subscribers
+//   - EventToolOutput    → emit to subscribers (display only)
+//   - EventToolResult    → append to store, emit, maybe send back to LLM
+//   - EventError         → emit to subscribers
+//
+// LLM streaming and tool execution run in background goroutines that
+// push events into the inbox. The loop is the single point of emission —
+// no goroutine calls emit directly.
 package agent
 
 import (
@@ -25,6 +28,49 @@ import (
 	"github.com/jack-work/figaro/internal/tool"
 )
 
+// --- Event types ---
+
+type eventType int
+
+const (
+	eventUserPrompt eventType = iota
+	eventLLMDelta
+	eventLLMDone
+	eventLLMError
+	eventToolStart
+	eventToolOutput
+	eventToolResult
+)
+
+type event struct {
+	typ eventType
+
+	// eventUserPrompt
+	text string
+
+	// eventLLMDelta
+	delta       string
+	contentType message.ContentType
+
+	// eventLLMDone
+	message *message.Message
+
+	// eventLLMError, eventToolResult (when isErr)
+	err error
+
+	// eventToolStart, eventToolOutput, eventToolResult
+	toolCallID string
+	toolName   string
+	arguments  map[string]interface{}
+
+	// eventToolOutput
+	chunk string
+
+	// eventToolResult
+	result string
+	isErr  bool
+}
+
 // Agent orchestrates the conversation loop.
 type Agent struct {
 	Store        store.Store
@@ -36,80 +82,163 @@ type Agent struct {
 	// Out receives JSON-RPC notifications for the frontend.
 	// The caller is responsible for reading and rendering.
 	Out chan<- rpc.Notification
+
+	// inbox is the actor mailbox. All events flow through here.
+	inbox chan event
 }
 
-// Prompt appends a user message and runs the tic loop to completion.
+// Prompt appends a user message and runs the event loop to completion.
 func (a *Agent) Prompt(ctx context.Context, text string) error {
-	userMsg := message.Message{
-		Role:      message.RoleUser,
-		Content:   []message.Content{message.TextContent(text)},
-		Timestamp: time.Now().UnixMilli(),
-	}
+	a.inbox = make(chan event, 128)
 
-	lt, err := a.Store.Append(userMsg)
-	if err != nil {
-		return fmt.Errorf("append user message: %w", err)
-	}
-	userMsg.LogicalTime = lt
-	a.emit(rpc.MethodMessage, rpc.MessageParams{
-		LogicalTime: lt, Message: userMsg,
-	})
+	// Seed the loop with the user prompt event.
+	a.inbox <- event{typ: eventUserPrompt, text: text}
 
-	return a.ticLoop(ctx)
+	return a.eventLoop(ctx)
 }
 
-// ticLoop runs until the assistant stops or an error occurs.
-func (a *Agent) ticLoop(ctx context.Context) error {
+// eventLoop is the single processing goroutine. It reads events from
+// the inbox and handles each one. LLM streaming and tool execution
+// push events back into the inbox from background goroutines.
+func (a *Agent) eventLoop(ctx context.Context) error {
+	// pendingTools tracks how many tool results we're waiting for
+	// in the current tool-call batch.
+	var pendingTools int
+	var pendingToolCalls []message.Content
+
 	for {
-		block := a.Store.Context()
-		if block == nil || len(block.Messages) == 0 {
-			return fmt.Errorf("empty context")
-		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
 
-		last := block.Messages[len(block.Messages)-1]
+		case evt := <-a.inbox:
+			switch evt.typ {
 
-		switch last.Role {
-		case message.RoleUser, message.RoleToolResult:
-			// Send to LLM, stream response, append
-			if err := a.sendToProvider(ctx, block); err != nil {
-				return err
-			}
-			// Next tic: context now has the assistant message
-
-		case message.RoleAssistant:
-			// Check for tool calls
-			var toolCalls []message.Content
-			for _, c := range last.Content {
-				if c.Type == message.ContentToolCall {
-					toolCalls = append(toolCalls, c)
+			case eventUserPrompt:
+				userMsg := message.Message{
+					Role:      message.RoleUser,
+					Content:   []message.Content{message.TextContent(evt.text)},
+					Timestamp: time.Now().UnixMilli(),
 				}
-			}
-
-			if len(toolCalls) == 0 {
-				// No tool calls — done
-				a.emit(rpc.MethodDone, rpc.DoneParams{
-					Reason: string(last.StopReason),
+				lt, err := a.Store.Append(userMsg)
+				if err != nil {
+					return fmt.Errorf("append user message: %w", err)
+				}
+				userMsg.LogicalTime = lt
+				a.emit(rpc.MethodMessage, rpc.MessageParams{
+					LogicalTime: lt, Message: userMsg,
 				})
-				return nil
-			}
+				// Start LLM streaming.
+				a.startLLMStream(ctx)
 
-			// Execute tools, append results one by one
-			for _, tc := range toolCalls {
-				if err := a.executeTool(ctx, tc); err != nil {
-					return err
+			case eventLLMDelta:
+				a.emit(rpc.MethodDelta, rpc.DeltaParams{
+					Text: evt.delta, ContentType: evt.contentType,
+				})
+
+			case eventLLMDone:
+				if evt.message == nil {
+					return fmt.Errorf("no response from provider")
+				}
+				// Append assistant message to store.
+				lt, err := a.Store.Append(*evt.message)
+				if err != nil {
+					return fmt.Errorf("append assistant message: %w", err)
+				}
+				evt.message.LogicalTime = lt
+				a.emit(rpc.MethodMessage, rpc.MessageParams{
+					LogicalTime: lt, Message: *evt.message,
+				})
+
+				// Check for tool calls.
+				var toolCalls []message.Content
+				for _, c := range evt.message.Content {
+					if c.Type == message.ContentToolCall {
+						toolCalls = append(toolCalls, c)
+					}
+				}
+
+				if len(toolCalls) == 0 {
+					// No tool calls — turn is complete.
+					a.emit(rpc.MethodDone, rpc.DoneParams{
+						Reason: string(evt.message.StopReason),
+					})
+					return nil
+				}
+
+				// Execute tools sequentially: start the first one,
+				// queue the rest.
+				pendingToolCalls = toolCalls[1:]
+				pendingTools = len(toolCalls)
+				tc := toolCalls[0]
+				a.emit(rpc.MethodToolStart, rpc.ToolStartParams{
+					ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
+					Arguments: tc.Arguments,
+				})
+				go a.runToolAsync(ctx, tc)
+
+			case eventLLMError:
+				a.emit(rpc.MethodError, rpc.ErrorParams{Message: evt.err.Error()})
+				return fmt.Errorf("provider stream: %w", evt.err)
+
+			case eventToolOutput:
+				a.emit(rpc.MethodToolOutput, rpc.ToolOutputParams{
+					ToolCallID: evt.toolCallID,
+					ToolName:   evt.toolName,
+					Chunk:      evt.chunk,
+				})
+
+			case eventToolResult:
+				a.emit(rpc.MethodToolEnd, rpc.ToolEndParams{
+					ToolCallID: evt.toolCallID, ToolName: evt.toolName,
+					Result: evt.result, IsError: evt.isErr,
+				})
+
+				// Append tool result to store.
+				resultMsg := message.NewToolResult(
+					evt.toolCallID, evt.toolName,
+					[]message.Content{message.TextContent(evt.result)},
+					evt.isErr, 0, time.Now().UnixMilli(),
+				)
+				lt, err := a.Store.Append(resultMsg)
+				if err != nil {
+					return fmt.Errorf("append tool result: %w", err)
+				}
+				resultMsg.LogicalTime = lt
+				a.emit(rpc.MethodMessage, rpc.MessageParams{
+					LogicalTime: lt, Message: resultMsg,
+				})
+
+				pendingTools--
+
+				if len(pendingToolCalls) > 0 {
+					// Start the next tool in the batch.
+					tc := pendingToolCalls[0]
+					pendingToolCalls = pendingToolCalls[1:]
+					a.emit(rpc.MethodToolStart, rpc.ToolStartParams{
+						ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
+						Arguments: tc.Arguments,
+					})
+					go a.runToolAsync(ctx, tc)
+				} else if pendingTools == 0 {
+					// All tools done — send results back to LLM.
+					a.startLLMStream(ctx)
 				}
 			}
-			// Next tic: context now has tool results
-
-		default:
-			return fmt.Errorf("unexpected message role at leaf: %s", last.Role)
 		}
 	}
 }
 
-// sendToProvider streams the block to the LLM and appends the response.
-func (a *Agent) sendToProvider(ctx context.Context, block *message.Block) error {
-	// Inject system prompt into block header if not already set
+// startLLMStream sends the current context to the LLM in a background
+// goroutine. Events are pushed back into the inbox.
+func (a *Agent) startLLMStream(ctx context.Context) {
+	block := a.Store.Context()
+	if block == nil {
+		a.inbox <- event{typ: eventLLMError, err: fmt.Errorf("empty context")}
+		return
+	}
+
+	// Inject system prompt.
 	if block.Header == nil && a.SystemPrompt != "" {
 		block.Header = &message.Message{
 			Role:    message.RoleSystem,
@@ -119,95 +248,76 @@ func (a *Agent) sendToProvider(ctx context.Context, block *message.Block) error 
 
 	ch, err := a.Provider.Send(ctx, block, a.toolDefs(), a.MaxTokens)
 	if err != nil {
-		return fmt.Errorf("provider send: %w", err)
+		a.inbox <- event{typ: eventLLMError, err: fmt.Errorf("provider send: %w", err)}
+		return
 	}
 
-	var assistantMsg *message.Message
-	for evt := range ch {
-		// Stream deltas to frontend
-		if evt.Delta != "" {
-			a.emit(rpc.MethodDelta, rpc.DeltaParams{
-				Text: evt.Delta, ContentType: evt.ContentType,
-			})
-		}
-
-		if evt.Done {
-			if evt.Err != nil {
-				a.emit(rpc.MethodError, rpc.ErrorParams{Message: evt.Err.Error()})
-				return fmt.Errorf("provider stream: %w", evt.Err)
+	go func() {
+		for evt := range ch {
+			if evt.Delta != "" {
+				a.inbox <- event{
+					typ: eventLLMDelta, delta: evt.Delta,
+					contentType: evt.ContentType,
+				}
 			}
-			assistantMsg = evt.Message
+			if evt.Done {
+				if evt.Err != nil {
+					a.inbox <- event{typ: eventLLMError, err: evt.Err}
+				} else {
+					a.inbox <- event{typ: eventLLMDone, message: evt.Message}
+				}
+				return
+			}
 		}
-	}
-
-	if assistantMsg == nil {
-		return fmt.Errorf("no response from provider")
-	}
-
-	lt, err := a.Store.Append(*assistantMsg)
-	if err != nil {
-		return fmt.Errorf("append assistant message: %w", err)
-	}
-	assistantMsg.LogicalTime = lt
-	a.emit(rpc.MethodMessage, rpc.MessageParams{
-		LogicalTime: lt, Message: *assistantMsg,
-	})
-
-	return nil
+		// Stream ended without a Done event.
+		a.inbox <- event{typ: eventLLMError, err: fmt.Errorf("stream ended unexpectedly")}
+	}()
 }
 
-// executeTool runs a single tool call and appends the result.
-func (a *Agent) executeTool(ctx context.Context, tc message.Content) error {
-	a.emit(rpc.MethodToolStart, rpc.ToolStartParams{
-		ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-		Arguments: tc.Arguments,
-	})
-
-	result, isErr := a.runTool(ctx, tc)
-
-	a.emit(rpc.MethodToolEnd, rpc.ToolEndParams{
-		ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-		Result: result, IsError: isErr,
-	})
-
-	resultMsg := message.NewToolResult(
-		tc.ToolCallID, tc.ToolName,
-		[]message.Content{message.TextContent(result)},
-		isErr, 0, time.Now().UnixMilli(),
-	)
-
-	lt, err := a.Store.Append(resultMsg)
-	if err != nil {
-		return fmt.Errorf("append tool result: %w", err)
-	}
-	resultMsg.LogicalTime = lt
-	a.emit(rpc.MethodMessage, rpc.MessageParams{
-		LogicalTime: lt, Message: resultMsg,
-	})
-
-	return nil
-}
-
-func (a *Agent) runTool(ctx context.Context, tc message.Content) (string, bool) {
+// runToolAsync executes a tool in a background goroutine and pushes
+// events into the inbox.
+func (a *Agent) runToolAsync(ctx context.Context, tc message.Content) {
+	var found bool
 	for _, t := range a.Tools {
 		if t.Name() == tc.ToolName {
-			// Stream tool output chunks through the same Out channel
-			// as all other notifications (deltas, done, etc.).
+			found = true
 			onOutput := func(chunk []byte) {
-				a.emit(rpc.MethodToolOutput, rpc.ToolOutputParams{
-					ToolCallID: tc.ToolCallID,
-					ToolName:   tc.ToolName,
-					Chunk:      string(chunk),
-				})
+				a.inbox <- event{
+					typ:        eventToolOutput,
+					toolCallID: tc.ToolCallID,
+					toolName:   tc.ToolName,
+					chunk:      string(chunk),
+				}
 			}
 			result, err := t.Execute(ctx, tc.Arguments, onOutput)
 			if err != nil {
-				return fmt.Sprintf("Error: %s", err), true
+				a.inbox <- event{
+					typ:        eventToolResult,
+					toolCallID: tc.ToolCallID,
+					toolName:   tc.ToolName,
+					result:     fmt.Sprintf("Error: %s", err),
+					isErr:      true,
+				}
+			} else {
+				a.inbox <- event{
+					typ:        eventToolResult,
+					toolCallID: tc.ToolCallID,
+					toolName:   tc.ToolName,
+					result:     result,
+				}
 			}
-			return result, false
+			return
 		}
 	}
-	return fmt.Sprintf("Unknown tool: %s", tc.ToolName), true
+	if !found {
+		a.inbox <- event{
+			typ:        eventToolResult,
+			toolCallID: tc.ToolCallID,
+			toolName:   tc.ToolName,
+			result:     fmt.Sprintf("Unknown tool: %s", tc.ToolName),
+			isErr:      true,
+		}
+	}
 }
 
 func (a *Agent) toolDefs() []provider.Tool {
