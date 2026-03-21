@@ -236,6 +236,140 @@ func TestAgent_Kill(t *testing.T) {
 	assert.False(t, open, "subscriber channel should be closed after kill")
 }
 
+// --- Panicking provider ---
+
+type panicProvider struct {
+	panicCount int
+	response   string
+}
+
+func (p *panicProvider) Name() string         { return "panic-mock" }
+func (p *panicProvider) SetModel(model string) {}
+
+func (p *panicProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
+
+func (p *panicProvider) Send(ctx context.Context, block *message.Block, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+	if p.panicCount > 0 {
+		p.panicCount--
+		panic("simulated crash")
+	}
+	ch := make(chan provider.StreamEvent, 4)
+	go func() {
+		defer close(ch)
+		msg := message.Message{
+			Role:       message.RoleAssistant,
+			Content:    []message.Content{message.TextContent(p.response)},
+			StopReason: message.StopEnd,
+			Provider:   "panic-mock",
+			Timestamp:  time.Now().UnixMilli(),
+		}
+		ch <- provider.StreamEvent{Delta: p.response, ContentType: message.ContentText, Message: &msg}
+		ch <- provider.StreamEvent{Done: true, Message: &msg}
+	}()
+	return ch, nil
+}
+
+func TestAgent_PanicRecovery(t *testing.T) {
+	// Provider panics on the first call, succeeds on the second.
+	prov := &panicProvider{panicCount: 1, response: "recovered"}
+
+	a := figaro.NewAgent(figaro.Config{
+		ID:           "panic-test",
+		SocketPath:   "/tmp/panic-test.sock",
+		Provider:     prov,
+		Model:        "mock-model",
+		SystemPrompt: "test",
+		MaxTokens:    1024,
+	})
+	defer a.Kill()
+
+	ch := a.Subscribe()
+
+	// First prompt — will panic inside the agent.
+	a.Prompt("trigger panic")
+
+	// Should receive an error notification about the crash.
+	timeout := time.After(5 * time.Second)
+	gotError := false
+	for !gotError {
+		select {
+		case n := <-ch:
+			if n.Method == rpc.MethodError {
+				gotError = true
+			}
+		case <-timeout:
+			t.Fatal("timeout waiting for error notification after panic")
+		}
+	}
+
+	// Second prompt — should work because the agent restarted.
+	a.Prompt("after recovery")
+
+	gotDone := false
+	timeout = time.After(5 * time.Second)
+	for !gotDone {
+		select {
+		case n := <-ch:
+			if n.Method == rpc.MethodDone {
+				gotDone = true
+			}
+		case <-timeout:
+			t.Fatal("timeout waiting for done after recovery")
+		}
+	}
+
+	// Context should have the second prompt's messages (first was lost).
+	msgs := a.Context()
+	require.GreaterOrEqual(t, len(msgs), 2)
+	assert.Equal(t, message.RoleUser, msgs[0].Role)
+	assert.Equal(t, message.RoleAssistant, msgs[1].Role)
+}
+
+func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
+	// Provider panics on first call.
+	prov := &panicProvider{panicCount: 1, response: "ok"}
+
+	a := figaro.NewAgent(figaro.Config{
+		ID:           "panic-ctx-test",
+		SocketPath:   "/tmp/panic-ctx-test.sock",
+		Provider:     prov,
+		Model:        "mock-model",
+		SystemPrompt: "test",
+		MaxTokens:    1024,
+	})
+	defer a.Kill()
+
+	ch := a.Subscribe()
+
+	// Trigger panic.
+	a.Prompt("boom")
+
+	// Wait for error.
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case n := <-ch:
+			if n.Method == rpc.MethodError {
+				goto errorReceived
+			}
+		case <-timeout:
+			t.Fatal("timeout")
+		}
+	}
+errorReceived:
+
+	// Context should be empty — reset after panic.
+	assert.Empty(t, a.Context(), "context should be empty after panic")
+
+	// Info should show zero tokens and messages.
+	info := a.Info()
+	assert.Equal(t, 0, info.TokensIn)
+	assert.Equal(t, 0, info.TokensOut)
+	assert.Equal(t, 0, info.MessageCount)
+}
+
 func TestAgent_SetModel(t *testing.T) {
 	a := newTestAgent("hi")
 	defer a.Kill()

@@ -131,11 +131,14 @@ Supervisor is consulted for session resolution only. All agent interaction is di
 
 ## Remaining Work
 
-### Step 7: Panic recovery
-- [ ] Wrap figaro drain loop in recover()
-- [ ] On panic: log stack trace, restart goroutine, inject crash system prompt
-- [ ] Registry entry (id, pid bindings) survives — only chat context lost
-- [ ] Test: mock provider that panics, verify figaro restarts and is usable
+### Step 7: Panic recovery ✅
+- [x] Wrap figaro drain loop in recover() via runWithRecovery/drainLoopProtected
+- [x] On panic: log stack trace to stderr, reset MemStore, inject crash system prompt
+- [x] Notify subscribers with stream.error about the crash
+- [x] Registry entry, pid bindings, socket all survive
+- [x] Test: panicProvider panics on first call, verify error notification + successful second prompt
+- [x] Test: verify context and token counts reset to zero after panic
+- **Validated**: 12 figaro tests pass, 57 total
 
 ### Step 8: System prompt from config
 - [ ] Add `system_prompt` field to provider config TOML

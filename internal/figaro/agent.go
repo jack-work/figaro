@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -78,7 +79,7 @@ func NewAgent(cfg Config) *Agent {
 		done:        make(chan struct{}),
 	}
 
-	go a.drainLoop(ctx)
+	go a.runWithRecovery(ctx)
 	return a
 }
 
@@ -162,10 +163,71 @@ func (a *Agent) Kill() {
 	a.mu.Unlock()
 }
 
-// drainLoop processes prompts one at a time (FIFO / actor model).
-func (a *Agent) drainLoop(ctx context.Context) {
+const crashPrompt = `[System: This agent crashed and was restarted. The previous ` +
+	`conversation context was lost. Inform the user that you experienced ` +
+	`an unexpected restart and that prior context is no longer available.]`
+
+// runWithRecovery runs the drain loop and restarts it on panic.
+// On panic: logs the stack, resets the store, injects a crash system prompt,
+// notifies subscribers of the error, and restarts the loop.
+// The figaro's registry entry, pid bindings, and socket all survive.
+func (a *Agent) runWithRecovery(ctx context.Context) {
 	defer close(a.done)
 
+	for {
+		panicked := a.drainLoopProtected(ctx)
+		if !panicked {
+			return // clean exit (context cancelled)
+		}
+
+		// Check if we should stop entirely.
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		// Reset store — context is lost.
+		a.mu.Lock()
+		a.memStore = store.NewMemStore()
+		a.tokensIn = 0
+		a.tokensOut = 0
+		a.mu.Unlock()
+
+		// Notify subscribers of the crash.
+		a.fanOut(rpc.Notification{
+			JSONRPC: "2.0",
+			Method:  rpc.MethodError,
+			Params:  rpc.ErrorParams{Message: "agent crashed and was restarted; context lost"},
+		})
+
+		// Inject crash prompt so the agent knows to inform the user.
+		a.sysPrompt = crashPrompt
+
+		fmt.Fprintf(os.Stderr, "figaro %s: restarted after panic\n", a.id)
+		// Loop back to restart drainLoopProtected.
+	}
+}
+
+// drainLoopProtected runs the drain loop with panic recovery.
+// Returns true if it exited due to a panic, false for clean exit.
+func (a *Agent) drainLoopProtected(ctx context.Context) (panicked bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Log the panic and stack trace.
+			stack := make([]byte, 4096)
+			n := runtime.Stack(stack, false)
+			fmt.Fprintf(os.Stderr, "figaro %s: panic: %v\n%s\n", a.id, r, stack[:n])
+			panicked = true
+		}
+	}()
+
+	a.drainLoop(ctx)
+	return false
+}
+
+// drainLoop processes prompts one at a time (FIFO / actor model).
+func (a *Agent) drainLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
