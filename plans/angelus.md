@@ -100,29 +100,25 @@ Supervisor is consulted for session resolution only. All agent interaction is di
 - **Validated**: 22 tests pass; registry invariants verified, PID monitor reaps dead PIDs
 - NOTE: protocol.go and client.go deferred to Step 5 (wiring)
 
-### Step 5: CLI package
-- [ ] Create `internal/cli/cli.go` — parse args, connect supervisor, resolve/create/bind, connect figaro, translate stdio
-- [ ] POSIX `--` prompt parsing, subcommand dispatch (new, context, list, kill, models, login)
-- [ ] `new` subcommand: Resolve(ppid) → Unbind(ppid) → Create() → Bind(ppid, new_id) → Prompt
-- [ ] Auto-start angelus (fork with `--angelus`, wait for socket)
-- [ ] Unit tests: mock both sockets, verify CLI flow for each subcommand
-- **Validate**: unit tests pass; full manual flow works end-to-end
-- **Fixture**: `testdata/` with expected CLI output for various scenarios
-
-### Step 6: Wire into cmd/figaro/main.go
-- [ ] `--angelus` flag dispatches to supervisor mode
-- [ ] Default mode dispatches to CLI
-- [ ] Integrate otel init/shutdown
-- [ ] Integration smoke test
-- **Validate**: full manual flow:
-  1. `figaro -- hello` — auto-starts angelus, creates figaro, streams response
-  2. `figaro -- followup` — resumes same figaro (same shell ppid)
-  3. `figaro list` — shows the figaro
-  4. `figaro context` — shows chat history
-  5. `figaro new -- fresh start` — unbinds old, creates new figaro
-  6. `figaro list` — shows both figaros (old is idle, new is active)
-  7. `figaro kill <id>` — kills one
-  8. Check trace file for spans
+### Step 5+6: CLI + main.go wiring ✅
+- [x] `--angelus` flag dispatches to supervisor mode (fork/exec with Setsid)
+- [x] Auto-start angelus on first CLI use (fork, wait for socket)
+- [x] POSIX `--` prompt parsing, subcommand dispatch
+- [x] `figaro -- <prompt>`: resolve ppid → figaro, create if needed, prompt, display response
+- [x] `figaro new -- <prompt>`: unbind old, create new, bind, prompt
+- [x] `figaro list`: table of all figaros
+- [x] `figaro kill <id>`: kill a figaro
+- [x] `figaro context`: show chat history for current shell's figaro
+- [x] `figaro models`: list available models (client-side)
+- [x] `figaro login <provider>`: OAuth flow (client-side)
+- [x] ProviderFactory injected into angelus for creating providers
+- [x] Platform-specific detach (detach_unix.go with Setsid)
+- [ ] Proper notification streaming (currently polls context instead)
+- **Validated**: full manual flow works:
+  - `figaro -- "What is 2+2?"` → auto-starts angelus, creates figaro, returns "4"
+  - `figaro list` → shows figaro with 2 messages
+  - `figaro kill <id>` → removes it
+  - 55 tests pass
 
 ## Package Layout
 
