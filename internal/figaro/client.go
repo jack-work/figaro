@@ -9,21 +9,33 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
+// NotifyHandler is called for each server-pushed notification.
+// The method is one of the rpc.Method* constants (stream.delta, etc.)
+// and req can be used to unmarshal the params.
+type NotifyHandler func(method string, req *jrpc2.Request)
+
 // Client is a typed JSON-RPC client for talking to a figaro agent socket.
 type Client struct {
 	cli *jrpc2.Client
 }
 
 // DialClient connects to a figaro agent at the given endpoint.
-func DialClient(ep transport.Endpoint) (*Client, error) {
+// If onNotify is non-nil, it will be called for each server-pushed
+// notification (stream.delta, stream.done, etc.).
+func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) {
 	ch, err := transport.Dial(ep)
 	if err != nil {
 		return nil, err
 	}
-	cli := jrpc2.NewClient(ch, &jrpc2.ClientOptions{
-		// OnNotify handles server-pushed notifications (stream.delta, etc.)
-		// The caller sets this via SetNotifyHandler after construction.
-	})
+	var opts *jrpc2.ClientOptions
+	if onNotify != nil {
+		opts = &jrpc2.ClientOptions{
+			OnNotify: func(req *jrpc2.Request) {
+				onNotify(req.Method(), req)
+			},
+		}
+	}
+	cli := jrpc2.NewClient(ch, opts)
 	return &Client{cli: cli}, nil
 }
 
@@ -55,12 +67,6 @@ func (c *Client) Info(ctx context.Context) (*rpc.FigaroInfoResponse, error) {
 func (c *Client) SetModel(ctx context.Context, model string) error {
 	_, err := c.cli.Call(ctx, rpc.MethodSetModel, rpc.SetModelRequest{Model: model})
 	return err
-}
-
-// Raw returns the underlying jrpc2.Client for advanced usage
-// (e.g. setting notification handlers).
-func (c *Client) Raw() *jrpc2.Client {
-	return c.cli
 }
 
 // Close closes the connection.

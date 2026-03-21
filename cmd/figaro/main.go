@@ -26,12 +26,15 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/creachadair/jrpc2"
+
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider/anthropic"
+	"github.com/jack-work/figaro/internal/rpc"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/transport"
 	hush "github.com/jack-work/hush/client"
@@ -256,7 +259,7 @@ func runContext(loaded *config.Loaded) {
 	}
 
 	figaroEP := transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
-	fcli, err := figaro.DialClient(figaroEP)
+	fcli, err := figaro.DialClient(figaroEP, nil)
 	if err != nil {
 		die("connect figaro: %s", err)
 	}
@@ -432,10 +435,42 @@ func mustCreateAndBind(ctx context.Context, acli *angelus.Client, loaded *config
 }
 
 func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string) {
-	ctx, span := figOtel.Start(ctx, "figaro.prompt")
+	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
 
-	fcli, err := figaro.DialClient(ep)
+	doneCh := make(chan struct{}, 1)
+
+	fcli, err := figaro.DialClient(ep, func(method string, req *jrpc2.Request) {
+		switch method {
+		case rpc.MethodDelta:
+			var p rpc.DeltaParams
+			if req.UnmarshalParams(&p) == nil {
+				fmt.Print(p.Text)
+			}
+		case rpc.MethodToolStart:
+			var p rpc.ToolStartParams
+			if req.UnmarshalParams(&p) == nil {
+				fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", p.ToolName)
+			}
+		case rpc.MethodToolEnd:
+			var p rpc.ToolEndParams
+			if req.UnmarshalParams(&p) == nil {
+				if p.IsError {
+					fmt.Fprintf(os.Stderr, "[tool error: %s]\n", p.Result)
+				}
+			}
+		case rpc.MethodError:
+			var p rpc.ErrorParams
+			if req.UnmarshalParams(&p) == nil {
+				fmt.Fprintf(os.Stderr, "error: %s\n", p.Message)
+			}
+		case rpc.MethodDone:
+			select {
+			case doneCh <- struct{}{}:
+			default:
+			}
+		}
+	})
 	if err != nil {
 		die("connect figaro: %s", err)
 	}
@@ -445,41 +480,15 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string)
 		die("prompt: %s", err)
 	}
 
-	// Poll context until assistant message appears.
-	// TODO: replace with proper notification streaming once jrpc2 client
-	// OnNotify is wired (needs to be set at construction time).
-	deadline := time.Now().Add(120 * time.Second)
-	for time.Now().Before(deadline) {
-		time.Sleep(200 * time.Millisecond)
-		ctxResp, err := fcli.Context(ctx)
-		if err != nil {
-			continue
-		}
-		// Look for the last assistant message.
-		for i := len(ctxResp.Messages) - 1; i >= 0; i-- {
-			m, ok := ctxResp.Messages[i].(map[string]interface{})
-			if !ok {
-				continue
-			}
-			role, _ := m["role"].(string)
-			if role != "assistant" {
-				continue
-			}
-			// Found it — extract text and print.
-			if content, ok := m["content"].([]interface{}); ok {
-				for _, c := range content {
-					if block, ok := c.(map[string]interface{}); ok {
-						if text, ok := block["text"].(string); ok {
-							fmt.Print(text)
-						}
-					}
-				}
-			}
-			fmt.Println()
-			return
-		}
+	// Wait for stream.done or context cancellation.
+	select {
+	case <-doneCh:
+		fmt.Println()
+	case <-ctx.Done():
+		fmt.Fprintln(os.Stderr, "\ninterrupted")
+	case <-time.After(120 * time.Second):
+		die("timeout waiting for response")
 	}
-	die("timeout waiting for response")
 }
 
 // --- Provider construction (used by angelus and models) ---

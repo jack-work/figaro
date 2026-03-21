@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/creachadair/jrpc2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -119,15 +120,28 @@ func TestIntegration_CreateAndPrompt(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	fcli, err := figaro.DialClient(figaroEP)
+	// Connect with notification handler to wait for stream.done.
+	doneCh := make(chan struct{}, 1)
+	fcli, err := figaro.DialClient(figaroEP, func(method string, req *jrpc2.Request) {
+		if method == "stream.done" {
+			select {
+			case doneCh <- struct{}{}:
+			default:
+			}
+		}
+	})
 	require.NoError(t, err)
 	defer fcli.Close()
 
 	err = fcli.Prompt(ctx, "what is the answer?")
 	require.NoError(t, err)
 
-	// Give the agent a moment to process.
-	time.Sleep(200 * time.Millisecond)
+	// Wait for done notification.
+	select {
+	case <-doneCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for stream.done")
+	}
 
 	// Verify via info that the message was processed.
 	info, err := fcli.Info(ctx)
