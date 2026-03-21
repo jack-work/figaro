@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"syscall"
 	"path/filepath"
 	"sync"
 	"strings"
@@ -74,6 +75,9 @@ func main() {
 		switch os.Args[1] {
 		case "login":
 			runLogin(loaded)
+			return
+		case "rest":
+			runRest()
 			return
 		case "models":
 			runModels(loaded)
@@ -310,6 +314,34 @@ func runContext(loaded *config.Loaded) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	enc.Encode(ctxResp.Messages)
+}
+
+// --- CLI: rest (put the angelus to rest) ---
+
+func runRest() {
+	sockPath := angelusSocketPath()
+	ep := transport.UnixEndpoint(sockPath)
+	if cli, err := angelus.DialClient(ep); err == nil {
+		cli.Close()
+	} else {
+		fmt.Fprintln(os.Stderr, "angelus is not running")
+		return
+	}
+
+	// Find and signal the angelus process.
+	pidBytes, err := os.ReadFile(filepath.Join(angelusRuntimeDir(), "angelus.pid"))
+	if err == nil {
+		var pid int
+		if _, err := fmt.Sscanf(string(pidBytes), "%d", &pid); err == nil {
+			syscall.Kill(pid, syscall.SIGTERM)
+			fmt.Fprintf(os.Stderr, "angelus (pid %d) put to rest\n", pid)
+			return
+		}
+	}
+
+	// Fallback: just remove the socket so next invocation starts fresh.
+	os.Remove(sockPath)
+	fmt.Fprintln(os.Stderr, "angelus socket removed; will restart on next invocation")
 }
 
 // --- CLI: models (client-side, no angelus) ---
@@ -750,6 +782,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "       figaro list")
 	fmt.Fprintln(os.Stderr, "       figaro kill <id>")
 	fmt.Fprintln(os.Stderr, "       figaro models")
+	fmt.Fprintln(os.Stderr, "       figaro rest")
 	fmt.Fprintln(os.Stderr, "       figaro login <provider>")
 }
 

@@ -2,6 +2,7 @@ package angelus
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -91,7 +92,12 @@ func (a *Angelus) Run(ctx context.Context) error {
 		return err
 	}
 
-	a.Logger.Printf("angelus started, socket=%s", a.SocketPath)
+	// Write PID file for clean shutdown.
+	pidPath := filepath.Join(a.RuntimeDir, "angelus.pid")
+	os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
+	defer os.Remove(pidPath)
+
+	a.Logger.Printf("angelus started, pid=%d, socket=%s", os.Getpid(), a.SocketPath)
 
 	// Start PID monitor.
 	go a.pidMonitor(ctx)
