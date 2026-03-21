@@ -8,18 +8,28 @@ sockets, making every component a language-agnostic service.
 
 ## CLI Ergonomics
 
-Prompts use `-p` flag to disambiguate from subcommands:
+Prompts use POSIX `--` to separate from subcommands. Everything after `--` is the prompt:
 
 ```
-figaro -p "explain this code"     # prompt (resolved via ppid)
-figaro new -p "start fresh"       # create new figaro + prompt
+figaro -- explain this code       # prompt (resolved via ppid → figaro)
+figaro new -- start fresh         # unbind old figaro, create new, bind, prompt
 figaro context                    # show chat history (resolved via ppid)
 figaro context <id>               # show chat history for specific figaro
 figaro list                       # list all figaros
 figaro kill <id>                  # kill a figaro
-figaro models                    # list available models
+figaro models                     # list available models
 figaro login <provider>           # OAuth login (client-side, no angelus)
 ```
+
+### PID Index Invariant
+
+The pid→figaro index is a strict **1:1 map**. A pid maps to exactly one figaro.
+
+- `Bind(pid, figaro_id)` always unbinds the pid first if it was bound elsewhere.
+- The registry enforces this at the data structure level — attempting to create a
+  duplicate mapping returns an error (belt and suspenders beyond the auto-unbind).
+- `figaro new` flow: Resolve(ppid) → Unbind(ppid) → Create() → Bind(ppid, new_id).
+  The old figaro is NOT killed — it goes idle. The pid just points to the new one.
 
 ## Architecture
 
@@ -77,16 +87,23 @@ Supervisor is consulted for session resolution only. All agent interaction is di
 ### Step 4: Angelus supervisor package
 - [ ] Create `internal/angelus/angelus.go` — supervisor struct, Run(), socket listener
 - [ ] Create `internal/angelus/registry.go` — figaro registry, pid index, Create/Kill/Bind/Resolve
+  - pid index is a strict 1:1 map (one pid → one figaro)
+  - Bind(pid, id) auto-unbinds the pid if already bound elsewhere
+  - Bind returns error if pid is already bound to the same id (no-op guard)
+  - Reverse index: figaro → []pid for Info/cleanup
 - [ ] Create `internal/angelus/protocol.go` — jrpc2 handler map for supervisor methods
 - [ ] Create `internal/angelus/client.go` — typed client for CLI → supervisor
 - [ ] PID monitor goroutine (poll 2s, kill(pid, 0), unbind dead PIDs)
-- [ ] Unit tests: mock figaro interface, verify registry ops, pid binding, pid death detection
+  // NOTE: uses golang.org/x/sys/unix. Windows will need build-tagged alternative.
+- [ ] Unit tests: mock figaro interface, verify registry ops, pid binding, pid death detection,
+  duplicate bind rejection, unbind-on-rebind behavior
 - **Validate**: unit tests pass; can start supervisor in a test, create/list/kill figaros
 - **Fixture**: `testdata/` with registry state snapshots
 
 ### Step 5: CLI package
 - [ ] Create `internal/cli/cli.go` — parse args, connect supervisor, resolve/create/bind, connect figaro, translate stdio
-- [ ] `-p` flag for prompt, subcommand dispatch (new, context, list, kill, models, login)
+- [ ] POSIX `--` prompt parsing, subcommand dispatch (new, context, list, kill, models, login)
+- [ ] `new` subcommand: Resolve(ppid) → Unbind(ppid) → Create() → Bind(ppid, new_id) → Prompt
 - [ ] Auto-start angelus (fork with `--angelus`, wait for socket)
 - [ ] Unit tests: mock both sockets, verify CLI flow for each subcommand
 - **Validate**: unit tests pass; full manual flow works end-to-end
@@ -98,13 +115,14 @@ Supervisor is consulted for session resolution only. All agent interaction is di
 - [ ] Integrate otel init/shutdown
 - [ ] Integration smoke test
 - **Validate**: full manual flow:
-  1. `figaro -p "hello"` — auto-starts angelus, creates figaro, streams response
-  2. `figaro -p "followup"` — resumes same figaro
+  1. `figaro -- hello` — auto-starts angelus, creates figaro, streams response
+  2. `figaro -- followup` — resumes same figaro (same shell ppid)
   3. `figaro list` — shows the figaro
   4. `figaro context` — shows chat history
-  5. `figaro new -p "fresh start"` — new figaro
-  6. `figaro kill <id>` — kills it
-  7. Check trace file for spans
+  5. `figaro new -- fresh start` — unbinds old, creates new figaro
+  6. `figaro list` — shows both figaros (old is idle, new is active)
+  7. `figaro kill <id>` — kills one
+  8. Check trace file for spans
 
 ## Package Layout
 
