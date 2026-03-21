@@ -504,6 +504,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 			if json.Unmarshal(params, &p) == nil {
 				fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", p.ToolName)
 			}
+		case rpc.MethodToolOutput:
+			var p rpc.ToolOutputParams
+			if json.Unmarshal(params, &p) == nil {
+				fmt.Fprint(os.Stderr, p.Chunk)
+			}
 		case rpc.MethodToolEnd:
 			var p rpc.ToolEndParams
 			if json.Unmarshal(params, &p) == nil {

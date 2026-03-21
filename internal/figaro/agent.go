@@ -55,8 +55,12 @@ type Agent struct {
 
 	// Subscriber fan-out.
 	mu          sync.RWMutex
+	// Channel subscribers: used in tests only. Could be extended later
+	// for in-process logging or other observers.
 	subscribers map[chan rpc.Notification]struct{}
-	serverSubs  map[*serverSubscriber]struct{} // jrpc2 server-based subscribers
+	// Socket subscribers: jrpc2 server connections (CLI, frontends).
+	// All notifications (deltas, tool output, done, etc.) flow through here.
+	serverSubs map[*serverSubscriber]struct{}
 
 	// Metrics.
 	createdAt  time.Time

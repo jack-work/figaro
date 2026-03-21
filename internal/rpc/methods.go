@@ -4,7 +4,8 @@ package rpc
 
 const (
 	// Notifications: figaro → subscriber (no response expected).
-	MethodDelta     = "stream.delta"
+	MethodDelta      = "stream.delta"
+	MethodToolOutput = "stream.tool_output"
 	MethodThinking  = "stream.thinking"
 	MethodToolStart = "stream.tool_start"
 	MethodToolEnd   = "stream.tool_end"

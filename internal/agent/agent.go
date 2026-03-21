@@ -191,9 +191,16 @@ func (a *Agent) executeTool(ctx context.Context, tc message.Content) error {
 func (a *Agent) runTool(ctx context.Context, tc message.Content) (string, bool) {
 	for _, t := range a.Tools {
 		if t.Name() == tc.ToolName {
-			// TODO: wire onOutput callback to stream tool output
-			// to subscribers in real-time. For now, nil disables streaming.
-			result, err := t.Execute(ctx, tc.Arguments, nil)
+			// Stream tool output chunks through the same Out channel
+			// as all other notifications (deltas, done, etc.).
+			onOutput := func(chunk []byte) {
+				a.emit(rpc.MethodToolOutput, rpc.ToolOutputParams{
+					ToolCallID: tc.ToolCallID,
+					ToolName:   tc.ToolName,
+					Chunk:      string(chunk),
+				})
+			}
+			result, err := t.Execute(ctx, tc.Arguments, onOutput)
 			if err != nil {
 				return fmt.Sprintf("Error: %s", err), true
 			}

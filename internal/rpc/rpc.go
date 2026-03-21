@@ -56,6 +56,12 @@ type DoneParams struct {
 	Reason string `json:"reason"`
 }
 
+type ToolOutputParams struct {
+	ToolCallID string `json:"tool_call_id"`
+	ToolName   string `json:"tool_name"`
+	Chunk      string `json:"chunk"`
+}
+
 type ErrorParams struct {
 	Message string `json:"message"`
 }
