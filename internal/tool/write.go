@@ -22,7 +22,7 @@ func (w *Write) Parameters() interface{} {
 	}
 }
 
-func (w *Write) Execute(_ context.Context, args map[string]interface{}, _ OnOutput) (string, error) {
+func (w *Write) Execute(_ context.Context, args map[string]interface{}, onOutput OnOutput) (string, error) {
 	path, _ := args["path"].(string)
 	content, _ := args["content"].(string)
 	if path == "" {
@@ -37,5 +37,9 @@ func (w *Write) Execute(_ context.Context, args map[string]interface{}, _ OnOutp
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Wrote %d bytes to %s", len(content), path), nil
+	result := fmt.Sprintf("Wrote %d bytes to %s", len(content), path)
+	if onOutput != nil {
+		onOutput([]byte(result))
+	}
+	return result, nil
 }

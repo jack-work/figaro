@@ -24,7 +24,7 @@ func (e *Edit) Parameters() interface{} {
 	}
 }
 
-func (e *Edit) Execute(_ context.Context, args map[string]interface{}, _ OnOutput) (string, error) {
+func (e *Edit) Execute(_ context.Context, args map[string]interface{}, onOutput OnOutput) (string, error) {
 	path, _ := args["path"].(string)
 	oldText, _ := args["old_text"].(string)
 	newText, _ := args["new_text"].(string)
@@ -50,5 +50,9 @@ func (e *Edit) Execute(_ context.Context, args map[string]interface{}, _ OnOutpu
 	if err := os.WriteFile(path, []byte(result), 0o644); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Edited %s", path), nil
+	msg := fmt.Sprintf("Edited %s", path)
+	if onOutput != nil {
+		onOutput([]byte(msg))
+	}
+	return msg, nil
 }
