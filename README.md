@@ -22,7 +22,7 @@ figaro kill abc123
 ## *¿Por qué?* — Why Another One?
 
 - **No runtime bloat.** Single static binary. No Node, no Bun, no dependency well. Written in Go — *veloce e leggero*.
-- **No TUI chains.** Plain stdout streaming. Rich frontends come later, as separate clients, not load-bearing walls.
+- **No TUI chains.** Incremental markdown rendering via [largo](https://github.com/jack-work/largo) — rich text streams to your terminal as it arrives, not after. Rich frontends come later, as separate clients, not load-bearing walls.
 - **Secrets handled.** OAuth tokens encrypted at rest via [hush](https://github.com/jack-work/hush). No plaintext keys lounging on disk like an unguarded letter on Rosina's balcony.
 - **Supervisor architecture.** The angelus watches over its figaros — restarting the fallen, tracking the living. Agents outlive terminals.
 - **The actor on stage.** Every figaro is an *attore* — a single event loop, one mailbox, one voice. LLM responses, tool output, errors — all enter through the same door, are processed in order, and exit through the same curtain. No race conditions, no tangled threads. *Come in un'opera ben diretta* — like a well-conducted opera.
@@ -40,19 +40,17 @@ CLI (ephemeral) → Angelus (supervisor) → Figaro agents
 
 ## Status — *Lavori in corso*
 
-Working: streaming responses with **incremental markdown rendering** (via [largo](https://github.com/jack-work/largo) — a streaming glamour wrapper that renders rich text as it arrives, no waiting for the full response), tool execution (bash, read, write, edit), conversation continuity, OAuth login, `list`/`kill`/`context`/`models`/`attend`/`new`/`rest`, OpenTelemetry tracing, configurable personality via `credo.md`, skills from markdown, panic recovery with automatic restart.
+Working: incremental markdown rendering, tool execution (bash, read, write, edit), conversation continuity, OAuth login, `list`/`kill`/`context`/`models`/`attend`/`new`/`rest`, OpenTelemetry tracing, configurable personality via `credo.md`, skills from markdown, panic recovery with automatic restart.
 
 ## Provider — *Chi suona?*
 
-Figaro currently speaks to **Anthropic** only, authenticated via OAuth through their first-party [Claude Code](https://docs.anthropic.com/en/docs/claude-code) flow — the same mechanism used by the official CLI and other third-party tools in the ecosystem. A **Claude Pro or Max subscription** is required. Tokens are encrypted at rest via [hush](https://github.com/jack-work/hush); the agent never touches plaintext credentials on disk.
-
-API key authentication (`ANTHROPIC_API_KEY` or config) is also supported as a fallback.
+Anthropic only, for now. Authentication via OAuth requires a **Max subscription**. Tokens are encrypted at rest via [hush](https://github.com/jack-work/hush). API key authentication (`ANTHROPIC_API_KEY` or config) is also supported.
 
 ```bash
-figaro login anthropic   # opens browser, completes OAuth PKCE
+figaro login anthropic
 ```
 
-The provider interface (`internal/provider/`) is designed for multiple backends. Adding a new provider means implementing one interface — the agent loop, store, and transport layer are provider-agnostic.
+The provider interface is designed for multiple backends — adding one means implementing a single interface. The agent loop, store, and transport are provider-agnostic.
 
 ## *Il futuro*
 
