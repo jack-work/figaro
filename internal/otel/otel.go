@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -81,4 +82,9 @@ func Tracer() trace.Tracer {
 // Start begins a new span. Shorthand for Tracer().Start(ctx, name).
 func Start(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	return Tracer().Start(ctx, name, opts...)
+}
+
+// WithAttributes returns a SpanStartOption that sets attributes on the span.
+func WithAttributes(attrs ...attribute.KeyValue) trace.SpanStartOption {
+	return trace.WithAttributes(attrs...)
 }

@@ -100,6 +100,16 @@ func runAngelus() {
 	loaded := mustLoadConfig()
 	runtimeDir := angelusRuntimeDir()
 
+	// Initialize otel in the angelus process.
+	logCfg := loaded.Log()
+	traceFile := filepath.Join(filepath.Dir(logCfg.RPCFile), "traces.jsonl")
+	otelShutdown, err := figOtel.Init(context.Background(), traceFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: otel init: %s\n", err)
+	} else {
+		defer otelShutdown(context.Background())
+	}
+
 	logger, logFile := mustOpenLog()
 	defer logFile.Close()
 

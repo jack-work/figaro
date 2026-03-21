@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/jack-work/figaro/internal/agent"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -174,7 +176,13 @@ func (a *Agent) drainLoop(ctx context.Context) {
 }
 
 func (a *Agent) processPrompt(ctx context.Context, text string) {
-	ctx, span := figOtel.Start(ctx, "figaro.prompt")
+	ctx, span := figOtel.Start(ctx, "figaro.prompt",
+		figOtel.WithAttributes(
+			attribute.String("figaro.id", a.id),
+			attribute.String("figaro.model", a.model),
+			attribute.String("figaro.provider", a.prov.Name()),
+		),
+	)
 	defer span.End()
 
 	a.mu.Lock()

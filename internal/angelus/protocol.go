@@ -7,9 +7,11 @@ import (
 
 	"github.com/creachadair/jrpc2/handler"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 )
@@ -53,6 +55,14 @@ type handlers struct {
 }
 
 func (h *handlers) create(ctx context.Context, req *rpc.CreateRequest) (rpc.CreateResponse, error) {
+	_, span := figOtel.Start(ctx, "angelus.create",
+		figOtel.WithAttributes(
+			attribute.String("figaro.provider", req.Provider),
+			attribute.String("figaro.model", req.Model),
+		),
+	)
+	defer span.End()
+
 	prov, err := h.factory(req.Provider, req.Model)
 	if err != nil {
 		return rpc.CreateResponse{}, fmt.Errorf("create provider: %w", err)

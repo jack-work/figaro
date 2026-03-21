@@ -10,7 +10,9 @@ import (
 
 	"github.com/creachadair/jrpc2"
 	"github.com/creachadair/jrpc2/handler"
+	"go.opentelemetry.io/otel/attribute"
 
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/transport"
 
 	// NOTE: golang.org/x/sys/unix is Linux/macOS only. For future Windows
@@ -61,6 +63,14 @@ func (a *Angelus) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	a.cancel = cancel
 	a.StartedAt = time.Now()
+
+	ctx, span := figOtel.Start(ctx, "angelus.run",
+		figOtel.WithAttributes(
+			attribute.String("angelus.socket", a.SocketPath),
+			attribute.Int("angelus.pid", os.Getpid()),
+		),
+	)
+	defer span.End()
 
 	// Create runtime directories.
 	if err := os.MkdirAll(a.FigaroSocketDir(), 0700); err != nil {
