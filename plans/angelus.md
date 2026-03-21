@@ -55,13 +55,13 @@ Supervisor is consulted for session resolution only. All agent interaction is di
 
 ## Steps
 
-### Step 1: OpenTelemetry foundation
-- [ ] Add otel dependency
-- [ ] Create `internal/otel/otel.go` — tracer provider, file exporter, span helpers
-- [ ] Write unit tests verifying spans are recorded
-- [ ] Wire into `cmd/figaro/main.go` (init on startup, flush on shutdown)
-- **Validate**: `figaro -p "hello"` works, trace file appears at `~/.local/state/figaro/traces.jsonl`
-- **Fixture**: `testdata/expected_span.json` for span shape validation
+### Step 1: OpenTelemetry foundation ✅
+- [x] Add otel dependency
+- [x] Create `internal/otel/otel.go` — tracer provider, file exporter, span helpers
+- [x] Write unit tests verifying spans are recorded (4 tests)
+- [x] Wire into `cmd/figaro/main.go` (init on startup, flush on shutdown)
+- [x] Update CLI to use `--` prompt separator
+- **Validated**: `figaro -- hello` works, `~/.local/state/figaro/traces.jsonl` contains `figaro.prompt` span
 
 ### Step 2: JSON-RPC foundation + shared types
 - [ ] Add `creachadair/jrpc2` dependency
