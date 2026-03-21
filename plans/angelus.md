@@ -85,21 +85,20 @@ Supervisor is consulted for session resolution only. All agent interaction is di
 - **Validated**: all 9 tests pass; figaro processes prompts FIFO, fans out to multiple subscribers
 - NOTE: protocol.go and client.go deferred to Step 5 (needs angelus wiring first)
 
-### Step 4: Angelus supervisor package
-- [ ] Create `internal/angelus/angelus.go` — supervisor struct, Run(), socket listener
-- [ ] Create `internal/angelus/registry.go` — figaro registry, pid index, Create/Kill/Bind/Resolve
-  - pid index is a strict 1:1 map (one pid → one figaro)
-  - Bind(pid, id) auto-unbinds the pid if already bound elsewhere
-  - Bind returns error if pid is already bound to the same id (no-op guard)
-  - Reverse index: figaro → []pid for Info/cleanup
+### Step 4: Angelus supervisor package ✅ (core)
+- [x] Create `internal/angelus/registry.go` — figaro registry, pid index
+  - pid index is strict 1:1 (auto-unbind on rebind, no-op on same-bind)
+  - Reverse index: figaro → []pid for cleanup on Kill
+  - 16 tests covering all invariants
+- [x] Create `internal/angelus/angelus.go` — supervisor struct, Run(), socket listener
+  - PID monitor goroutine (poll 2s, kill(pid, 0), unbind dead PIDs)
+  // NOTE: uses golang.org/x/sys/unix. Windows needs build-tagged alternative.
+  - Stale socket cleanup on startup
+  - 6 tests (socket creation, PID reaping, stale cleanup, etc.)
 - [ ] Create `internal/angelus/protocol.go` — jrpc2 handler map for supervisor methods
 - [ ] Create `internal/angelus/client.go` — typed client for CLI → supervisor
-- [ ] PID monitor goroutine (poll 2s, kill(pid, 0), unbind dead PIDs)
-  // NOTE: uses golang.org/x/sys/unix. Windows will need build-tagged alternative.
-- [ ] Unit tests: mock figaro interface, verify registry ops, pid binding, pid death detection,
-  duplicate bind rejection, unbind-on-rebind behavior
-- **Validate**: unit tests pass; can start supervisor in a test, create/list/kill figaros
-- **Fixture**: `testdata/` with registry state snapshots
+- **Validated**: 22 tests pass; registry invariants verified, PID monitor reaps dead PIDs
+- NOTE: protocol.go and client.go deferred to Step 5 (wiring)
 
 ### Step 5: CLI package
 - [ ] Create `internal/cli/cli.go` — parse args, connect supervisor, resolve/create/bind, connect figaro, translate stdio
