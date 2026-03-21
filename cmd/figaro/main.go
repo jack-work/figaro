@@ -83,6 +83,9 @@ func main() {
 		case "kill":
 			runKill(loaded)
 			return
+		case "attend":
+			runAttend(loaded)
+			return
 		case "context":
 			runContext(loaded)
 			return
@@ -246,6 +249,31 @@ func runKill(loaded *config.Loaded) {
 		die("kill: %s", err)
 	}
 	fmt.Fprintf(os.Stderr, "killed %s\n", figaroID)
+}
+
+// --- CLI: attend ---
+
+func runAttend(loaded *config.Loaded) {
+	if len(os.Args) < 3 {
+		die("usage: figaro attend <id>")
+	}
+	figaroID := os.Args[2]
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	ppid := os.Getppid()
+
+	// Unbind from any existing figaro first.
+	acli.Unbind(ctx, ppid)
+
+	if err := acli.Bind(ctx, ppid, figaroID); err != nil {
+		die("attend: %s", err)
+	}
+	fmt.Fprintf(os.Stderr, "attending %s\n", figaroID)
 }
 
 // --- CLI: context ---
@@ -706,6 +734,7 @@ func extractPrompt(args []string) string {
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "usage: figaro -- <prompt>")
 	fmt.Fprintln(os.Stderr, "       figaro new -- <prompt>")
+	fmt.Fprintln(os.Stderr, "       figaro attend <id>")
 	fmt.Fprintln(os.Stderr, "       figaro context [id]")
 	fmt.Fprintln(os.Stderr, "       figaro list")
 	fmt.Fprintln(os.Stderr, "       figaro kill <id>")
