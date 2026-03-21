@@ -43,6 +43,12 @@ import (
 )
 
 func main() {
+	// Multi-call binary: if invoked as "q", rewrite args to "figaro --".
+	// Create the symlink: ln -s $(which figaro) ~/go/bin/q
+	if filepath.Base(os.Args[0]) == "q" {
+		os.Args = append([]string{"figaro", "--"}, os.Args[1:]...)
+	}
+
 	// Internal flag: run as angelus supervisor.
 	if len(os.Args) > 1 && os.Args[1] == "--angelus" {
 		runAngelus()
