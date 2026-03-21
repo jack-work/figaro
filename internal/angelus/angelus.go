@@ -8,6 +8,11 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/creachadair/jrpc2"
+	"github.com/creachadair/jrpc2/handler"
+
+	"github.com/jack-work/figaro/internal/transport"
+
 	// NOTE: golang.org/x/sys/unix is Linux/macOS only. For future Windows
 	// support, PID monitoring will need a build-tagged alternative using
 	// golang.org/x/sys/windows or os.FindProcess + signal probing.
@@ -18,6 +23,7 @@ import (
 // a unix socket for JSON-RPC requests, and monitors bound PIDs.
 type Angelus struct {
 	Registry   *Registry
+	Handlers   handler.Map // jrpc2 handler map, set before Run()
 	SocketPath string
 	RuntimeDir string
 	Logger     *log.Logger
@@ -34,6 +40,7 @@ type Config struct {
 }
 
 // New creates an Angelus. Call Run() to start it.
+// Set a.Handlers before calling Run() to enable JSON-RPC.
 func New(cfg Config) *Angelus {
 	return &Angelus{
 		Registry:   NewRegistry(),
@@ -101,11 +108,30 @@ func (a *Angelus) Run(ctx context.Context) error {
 	}
 }
 
-// handleConn is a placeholder for the jrpc2 handler (Step 5 wires this).
-// For now it closes the connection.
+// handleConn serves a single JSON-RPC connection.
 func (a *Angelus) handleConn(ctx context.Context, conn net.Conn) {
-	// TODO: wire jrpc2 server here in Step 5.
-	conn.Close()
+	if a.Handlers == nil {
+		conn.Close()
+		return
+	}
+
+	ch := transport.WrapConn(conn)
+	srv := jrpc2.NewServer(a.Handlers, &jrpc2.ServerOptions{
+		AllowPush: true,
+	})
+	srv.Start(ch)
+
+	done := make(chan struct{})
+	go func() {
+		srv.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		srv.Stop()
+	}
 }
 
 // pidMonitor polls bound PIDs every 2 seconds and unbinds dead ones.

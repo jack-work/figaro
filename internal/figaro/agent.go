@@ -41,6 +41,7 @@ type Agent struct {
 	// Subscriber fan-out.
 	mu          sync.RWMutex
 	subscribers map[chan rpc.Notification]struct{}
+	serverSubs  map[*serverSubscriber]struct{} // jrpc2 server-based subscribers
 
 	// Metrics.
 	createdAt  time.Time
@@ -167,12 +168,12 @@ func (a *Agent) drainLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case text := <-a.promptQ:
-			a.handlePrompt(ctx, text)
+			a.processPrompt(ctx, text)
 		}
 	}
 }
 
-func (a *Agent) handlePrompt(ctx context.Context, text string) {
+func (a *Agent) processPrompt(ctx context.Context, text string) {
 	ctx, span := figOtel.Start(ctx, "figaro.prompt")
 	defer span.End()
 
@@ -225,12 +226,19 @@ func (a *Agent) handlePrompt(ctx context.Context, text string) {
 func (a *Agent) fanOut(n rpc.Notification) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
+
+	// Channel-based subscribers (in-process).
 	for ch := range a.subscribers {
 		select {
 		case ch <- n:
 		default:
 			// Subscriber is slow — drop notification rather than blocking the agent.
 		}
+	}
+
+	// jrpc2 server-based subscribers (socket connections).
+	for sub := range a.serverSubs {
+		sub.srv.Notify(context.Background(), n.Method, n.Params)
 	}
 }
 
