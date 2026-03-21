@@ -19,6 +19,7 @@ type Config struct {
 	ID           string
 	SocketPath   string
 	Provider     provider.Provider
+	Model        string // model ID (e.g. "claude-sonnet-4-20250514"), for metadata
 	SystemPrompt string
 	MaxTokens    int
 }
@@ -29,6 +30,7 @@ type Agent struct {
 	id         string
 	socketPath string
 	prov       provider.Provider
+	model      string
 	sysPrompt  string
 	maxTokens  int
 	memStore   *store.MemStore
@@ -60,6 +62,7 @@ func NewAgent(cfg Config) *Agent {
 		id:          cfg.ID,
 		socketPath:  cfg.SocketPath,
 		prov:        cfg.Provider,
+		model:       cfg.Model,
 		sysPrompt:   cfg.SystemPrompt,
 		maxTokens:   cfg.MaxTokens,
 		memStore:    store.NewMemStore(),
@@ -127,7 +130,7 @@ func (a *Agent) Info() FigaroInfo {
 		ID:           a.id,
 		State:        state,
 		Provider:     a.prov.Name(),
-		Model:        a.modelName(),
+		Model:        a.model,
 		MessageCount: len(msgs),
 		TokensIn:     a.tokensIn,
 		TokensOut:    a.tokensOut,
@@ -197,14 +200,15 @@ func (a *Agent) handlePrompt(ctx context.Context, text string) {
 		})
 	}
 
-	// Update token counts from the last assistant message.
+	// Accumulate token counts from the latest assistant message.
 	a.mu.Lock()
 	a.lastActive = time.Now()
 	if msgs := a.memStore.Context(); msgs != nil {
-		for _, m := range msgs.Messages {
-			if m.Usage != nil {
-				a.tokensIn = m.Usage.InputTokens
-				a.tokensOut = m.Usage.OutputTokens
+		for i := len(msgs.Messages) - 1; i >= 0; i-- {
+			if m := msgs.Messages[i]; m.Usage != nil {
+				a.tokensIn += m.Usage.InputTokens
+				a.tokensOut += m.Usage.OutputTokens
+				break // only count the latest turn's usage
 			}
 		}
 	}
@@ -223,8 +227,4 @@ func (a *Agent) fanOut(n rpc.Notification) {
 	}
 }
 
-func (a *Agent) modelName() string {
-	// The provider doesn't expose the model name directly.
-	// For now we use the provider name; the caller can set it from config.
-	return a.prov.Name()
-}
+

@@ -57,6 +57,7 @@ func newTestAgent(response string) *figaro.Agent {
 		ID:           "test-001",
 		SocketPath:   "/tmp/test-figaro.sock",
 		Provider:     &mockProvider{response: response},
+		Model:        "mock-model-v1",
 		SystemPrompt: "You are a test agent.",
 		MaxTokens:    1024,
 	})
@@ -150,6 +151,7 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 		ID:           "fifo-test",
 		SocketPath:   "/tmp/test-fifo.sock",
 		Provider:     &mockProvider{response: "ok"},
+		Model:        "mock-model-v1",
 		SystemPrompt: "",
 		MaxTokens:    1024,
 	})
@@ -240,5 +242,6 @@ func TestAgent_Info(t *testing.T) {
 	info := a.Info()
 	assert.Equal(t, "test-001", info.ID)
 	assert.Equal(t, "mock", info.Provider)
+	assert.Equal(t, "mock-model-v1", info.Model)
 	assert.False(t, info.CreatedAt.IsZero())
 }
