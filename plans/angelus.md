@@ -153,11 +153,13 @@ Supervisor is consulted for session resolution only. All agent interaction is di
 - [x] 10 credo tests (skills loading, formatting, template build, caching, context change)
 - **Validated**: 67 total tests pass, live test shows Figaro personality + runtime fields
 
-### Step 9: RPC event logging
-- [ ] Restore JSONL event log (all notifications logged to file)
-- [ ] Log path from config (existing log.rpc_file)
-- [ ] Angelus writes events from all figaros (tagged with figaro ID)
-- [ ] Or: each figaro writes its own event log
+### Step 9: RPC event logging ✅
+- [x] Per-figaro JSONL event log: ~/.local/state/figaro/figaros/<id>.jsonl
+  Every notification emitted by a figaro is logged (delta, message, done, etc.)
+- [x] CLI RPC log restored: ~/.local/state/figaro/rpc.jsonl (from config log.rpc_file)
+  Every notification received by the CLI is logged
+- [x] Angelus log: ~/.local/state/figaro/angelus.log (lifecycle events via Logger)
+- **Validated**: all three log paths verified with live prompts
 
 ### Step 10: Chat persistence
 - [ ] JSONL append log per figaro in ~/.local/state/figaro/figaros/<id>/

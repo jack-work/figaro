@@ -77,6 +77,9 @@ func (h *handlers) create(ctx context.Context, req *rpc.CreateRequest) (rpc.Crea
 	scribe := credo.NewDefaultScribe(h.config.ConfigDir)
 
 	cwd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
+
 	agent := figaro.NewAgent(figaro.Config{
 		ID:         id,
 		SocketPath: sockPath,
@@ -86,6 +89,7 @@ func (h *handlers) create(ctx context.Context, req *rpc.CreateRequest) (rpc.Crea
 		Cwd:        cwd,
 		Root:       cwd, // TODO: detect git root
 		MaxTokens:  8192,
+		LogDir:     logDir,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {

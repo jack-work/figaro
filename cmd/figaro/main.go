@@ -168,7 +168,7 @@ func runPrompt(loaded *config.Loaded, prompt string) {
 	_ = figaroID
 
 	// Connect to figaro and prompt.
-	mustPromptFigaro(ctx, figaroEP, prompt)
+	mustPromptFigaro(ctx, figaroEP, prompt, loaded.Log().RPCFile)
 }
 
 // --- CLI: new ---
@@ -188,7 +188,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string) {
 	// Create new figaro and bind.
 	_, figaroEP := mustCreateAndBind(ctx, acli, loaded, ppid)
 
-	mustPromptFigaro(ctx, figaroEP, prompt)
+	mustPromptFigaro(ctx, figaroEP, prompt, loaded.Log().RPCFile)
 }
 
 // --- CLI: list ---
@@ -436,9 +436,27 @@ func mustCreateAndBind(ctx context.Context, acli *angelus.Client, loaded *config
 	return createResp.FigaroID, ep
 }
 
-func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string) {
+func openRPCLog(path string) (*json.Encoder, *os.File) {
+	if path == "" {
+		return nil, nil
+	}
+	os.MkdirAll(filepath.Dir(path), 0700)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return nil, nil
+	}
+	return json.NewEncoder(f), f
+}
+
+func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string, rpcLogPath string) {
 	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
+
+	// Open CLI RPC log.
+	rpcEnc, rpcFile := openRPCLog(rpcLogPath)
+	if rpcFile != nil {
+		defer rpcFile.Close()
+	}
 
 	doneCh := make(chan struct{}, 1)
 
@@ -458,6 +476,15 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string)
 	)
 
 	deliverEvent := func(method string, params json.RawMessage) {
+		// Log to CLI RPC file.
+		if rpcEnc != nil {
+			rpcEnc.Encode(map[string]interface{}{
+				"jsonrpc": "2.0",
+				"method":  method,
+				"params":  json.RawMessage(params),
+			})
+		}
+
 		switch method {
 		case rpc.MethodDelta:
 			var p rpc.DeltaParams

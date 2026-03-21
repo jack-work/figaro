@@ -2,8 +2,10 @@ package figaro
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -29,6 +31,7 @@ type Config struct {
 	Cwd        string // working directory
 	Root       string // project root
 	MaxTokens  int
+	LogDir     string // directory for per-figaro JSONL event log (empty = no logging)
 }
 
 // Agent is the goroutine-based implementation of Figaro.
@@ -58,6 +61,10 @@ type Agent struct {
 	tokensIn   int
 	tokensOut  int
 
+	// Event log.
+	logEncoder *json.Encoder // nil if no log dir configured
+	logFile    *os.File
+
 	// Lifecycle.
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -84,6 +91,16 @@ func NewAgent(cfg Config) *Agent {
 		lastActive:  time.Now(),
 		cancel:      cancel,
 		done:        make(chan struct{}),
+	}
+
+	// Open per-figaro event log.
+	if cfg.LogDir != "" {
+		os.MkdirAll(cfg.LogDir, 0700)
+		logPath := filepath.Join(cfg.LogDir, cfg.ID+".jsonl")
+		if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600); err == nil {
+			a.logFile = f
+			a.logEncoder = json.NewEncoder(f)
+		}
 	}
 
 	go a.runWithRecovery(ctx)
@@ -168,6 +185,10 @@ func (a *Agent) Kill() {
 	}
 	a.subscribers = nil
 	a.mu.Unlock()
+
+	if a.logFile != nil {
+		a.logFile.Close()
+	}
 }
 
 // staticScribe is a Scribe that always returns the same prompt.
@@ -337,6 +358,11 @@ func (a *Agent) processPrompt(ctx context.Context, text string) {
 func (a *Agent) fanOut(n rpc.Notification) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
+
+	// Log to per-figaro event file.
+	if a.logEncoder != nil {
+		a.logEncoder.Encode(n)
+	}
 
 	// Channel-based subscribers (in-process).
 	for ch := range a.subscribers {
