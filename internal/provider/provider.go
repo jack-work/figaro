@@ -42,6 +42,9 @@ type Provider interface {
 	// Implementations may call the provider's API or return a static list.
 	Models(ctx context.Context) ([]ModelInfo, error)
 
+	// SetModel changes the model used for subsequent Send calls.
+	SetModel(model string)
+
 	// Send streams a conversation to the provider and returns response events.
 	Send(ctx context.Context, block *message.Block, tools []Tool, maxTokens int) (<-chan StreamEvent, error)
 }

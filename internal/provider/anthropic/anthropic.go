@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/internal/auth"
@@ -34,6 +35,7 @@ const (
 
 type Anthropic struct {
 	auth       auth.TokenResolver
+	mu         sync.Mutex
 	Model      string
 	MaxTokens  int
 	HTTPClient *http.Client
@@ -139,6 +141,12 @@ func isOAuthToken(key string) bool {
 
 func (a *Anthropic) Name() string { return providerName }
 
+func (a *Anthropic) SetModel(model string) {
+	a.mu.Lock()
+	a.Model = model
+	a.mu.Unlock()
+}
+
 // --- Native types ---
 
 type nativeRequest struct {
@@ -182,9 +190,9 @@ type nativeTool struct {
 
 // --- Projection: IR Block → native request ---
 
-func (a *Anthropic) projectBlock(block *message.Block, tools []provider.Tool, maxTokens int, oauth bool) nativeRequest {
+func (a *Anthropic) projectBlockWithModel(block *message.Block, tools []provider.Tool, maxTokens int, oauth bool, model string) nativeRequest {
 	req := nativeRequest{
-		Model: a.Model, MaxTokens: maxTokens, Stream: true,
+		Model: model, MaxTokens: maxTokens, Stream: true,
 	}
 
 	// Build system prompt — OAuth requires array form with Claude Code identity prefix.
@@ -316,13 +324,18 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []prov
 		maxTokens = 8192
 	}
 
+	// Snapshot model under lock (SetModel may be called between sends).
+	a.mu.Lock()
+	model := a.Model
+	a.mu.Unlock()
+
 	// Resolve token fresh each call (supports OAuth refresh).
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
 		return nil, fmt.Errorf("resolve token: %w", err)
 	}
 
-	native := a.projectBlock(block, tools, maxTokens, isOAuthToken(apiKey))
+	native := a.projectBlockWithModel(block, tools, maxTokens, isOAuthToken(apiKey), model)
 	body, err := json.Marshal(native)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -357,11 +370,11 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []prov
 	}
 
 	ch := make(chan provider.StreamEvent, 64)
-	go a.consumeSSE(resp.Body, ch)
+	go a.consumeSSE(resp.Body, ch, model)
 	return ch, nil
 }
 
-func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEvent) {
+func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEvent, model string) {
 	defer close(ch)
 	defer body.Close()
 
@@ -375,7 +388,7 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 	)
 	msg.Role = message.RoleAssistant
 	msg.Provider = providerName
-	msg.Model = a.Model
+	msg.Model = model
 	msg.Timestamp = time.Now().UnixMilli()
 
 	for scanner.Scan() {

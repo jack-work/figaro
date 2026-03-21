@@ -81,6 +81,13 @@ func NewAgent(cfg Config) *Agent {
 func (a *Agent) ID() string         { return a.id }
 func (a *Agent) SocketPath() string  { return a.socketPath }
 
+func (a *Agent) SetModel(model string) {
+	a.mu.Lock()
+	a.model = model
+	a.mu.Unlock()
+	a.prov.SetModel(model)
+}
+
 func (a *Agent) Prompt(text string) {
 	a.promptQ <- text
 }

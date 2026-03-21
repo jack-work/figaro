@@ -20,7 +20,8 @@ type mockProvider struct {
 	response string
 }
 
-func (m *mockProvider) Name() string { return "mock" }
+func (m *mockProvider) Name() string         { return "mock" }
+func (m *mockProvider) SetModel(model string) {}
 
 func (m *mockProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	return nil, nil
@@ -233,6 +234,15 @@ func TestAgent_Kill(t *testing.T) {
 	// Subscriber channel should be closed.
 	_, open := <-ch
 	assert.False(t, open, "subscriber channel should be closed after kill")
+}
+
+func TestAgent_SetModel(t *testing.T) {
+	a := newTestAgent("hi")
+	defer a.Kill()
+
+	assert.Equal(t, "mock-model-v1", a.Info().Model)
+	a.SetModel("mock-model-v2")
+	assert.Equal(t, "mock-model-v2", a.Info().Model)
 }
 
 func TestAgent_Info(t *testing.T) {

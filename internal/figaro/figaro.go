@@ -39,6 +39,9 @@ type Figaro interface {
 	// Unsubscribe removes a subscriber channel.
 	Unsubscribe(ch <-chan rpc.Notification)
 
+	// SetModel changes the model for subsequent prompts.
+	SetModel(model string)
+
 	// Info returns current metadata.
 	Info() FigaroInfo
 

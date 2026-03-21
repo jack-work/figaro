@@ -13,9 +13,10 @@ const (
 	MethodError     = "stream.error"
 
 	// Requests: client → figaro (response expected).
-	MethodPrompt  = "figaro.prompt"
-	MethodContext = "figaro.context"
+	MethodPrompt     = "figaro.prompt"
+	MethodContext    = "figaro.context"
 	MethodFigaroInfo = "figaro.info"
+	MethodSetModel   = "figaro.set_model"
 	// figaro.subscribe is handled at the transport level (long-lived connection).
 )
 
@@ -41,6 +42,14 @@ type PromptRequest struct {
 }
 
 type PromptResponse struct {
+	OK bool `json:"ok"`
+}
+
+type SetModelRequest struct {
+	Model string `json:"model"`
+}
+
+type SetModelResponse struct {
 	OK bool `json:"ok"`
 }
 
