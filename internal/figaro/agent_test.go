@@ -55,12 +55,11 @@ func (m *mockProvider) Send(ctx context.Context, block *message.Block, tools []p
 
 func newTestAgent(response string) *figaro.Agent {
 	return figaro.NewAgent(figaro.Config{
-		ID:           "test-001",
-		SocketPath:   "/tmp/test-figaro.sock",
-		Provider:     &mockProvider{response: response},
-		Model:        "mock-model-v1",
-		SystemPrompt: "You are a test agent.",
-		MaxTokens:    1024,
+		ID:         "test-001",
+		SocketPath: "/tmp/test-figaro.sock",
+		Provider:   &mockProvider{response: response},
+		Model:      "mock-model-v1",
+		MaxTokens:  1024,
 	})
 }
 
@@ -149,12 +148,11 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 
 	// Use a provider that echoes the prompt (via the messages).
 	a = figaro.NewAgent(figaro.Config{
-		ID:           "fifo-test",
-		SocketPath:   "/tmp/test-fifo.sock",
-		Provider:     &mockProvider{response: "ok"},
-		Model:        "mock-model-v1",
-		SystemPrompt: "",
-		MaxTokens:    1024,
+		ID:         "fifo-test",
+		SocketPath: "/tmp/test-fifo.sock",
+		Provider:   &mockProvider{response: "ok"},
+		Model:      "mock-model-v1",
+		MaxTokens:  1024,
 	})
 	defer a.Kill()
 
@@ -276,12 +274,11 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	prov := &panicProvider{panicCount: 1, response: "recovered"}
 
 	a := figaro.NewAgent(figaro.Config{
-		ID:           "panic-test",
-		SocketPath:   "/tmp/panic-test.sock",
-		Provider:     prov,
-		Model:        "mock-model",
-		SystemPrompt: "test",
-		MaxTokens:    1024,
+		ID:         "panic-test",
+		SocketPath: "/tmp/panic-test.sock",
+		Provider:   prov,
+		Model:      "mock-model",
+		MaxTokens:  1024,
 	})
 	defer a.Kill()
 
@@ -332,12 +329,11 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 	prov := &panicProvider{panicCount: 1, response: "ok"}
 
 	a := figaro.NewAgent(figaro.Config{
-		ID:           "panic-ctx-test",
-		SocketPath:   "/tmp/panic-ctx-test.sock",
-		Provider:     prov,
-		Model:        "mock-model",
-		SystemPrompt: "test",
-		MaxTokens:    1024,
+		ID:         "panic-ctx-test",
+		SocketPath: "/tmp/panic-ctx-test.sock",
+		Provider:   prov,
+		Model:      "mock-model",
+		MaxTokens:  1024,
 	})
 	defer a.Kill()
 

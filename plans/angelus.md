@@ -140,11 +140,18 @@ Supervisor is consulted for session resolution only. All agent interaction is di
 - [x] Test: verify context and token counts reset to zero after panic
 - **Validated**: 12 figaro tests pass, 57 total
 
-### Step 8: System prompt from config
-- [ ] Add `system_prompt` field to provider config TOML
-- [ ] Angelus reads it when creating figaros
-- [ ] Fallback to sensible default if not set
-- [ ] Test: fixture config with custom prompt, verify it reaches the agent
+### Step 8: Credo scribe (system prompt) ✅
+- [x] `internal/credo/credo.go`: Scribe interface + DefaultScribe implementation
+  - Template-based: credo.md with Go text/template fields
+  - Runtime values: DateTime (hour precision), Cwd, Root, Provider, Model, FigaroID, Tools
+  - Skills loaded from ~/.config/figaro/skills/ with frontmatter parsing
+  - Caching: re-templates only on file change or context change
+- [x] `internal/credo/default_credo.md`: Figaro's personality (Barber of Seville)
+- [x] Figaro Config takes Scribe instead of static SystemPrompt
+- [x] Panic recovery uses staticScribe for crash prompt
+- [x] Angelus creates DefaultScribe from config directory when spawning figaros
+- [x] 10 credo tests (skills loading, formatting, template build, caching, context change)
+- **Validated**: 67 total tests pass, live test shows Figaro personality + runtime fields
 
 ### Step 9: RPC event logging
 - [ ] Restore JSONL event log (all notifications logged to file)

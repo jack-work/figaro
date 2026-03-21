@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/agent"
+	"github.com/jack-work/figaro/internal/credo"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
@@ -20,12 +21,14 @@ import (
 
 // Config holds everything needed to construct an Agent.
 type Config struct {
-	ID           string
-	SocketPath   string
-	Provider     provider.Provider
-	Model        string // model ID (e.g. "claude-sonnet-4-20250514"), for metadata
-	SystemPrompt string
-	MaxTokens    int
+	ID         string
+	SocketPath string
+	Provider   provider.Provider
+	Model      string // model ID (e.g. "claude-sonnet-4-20250514"), for metadata
+	Scribe     credo.Scribe
+	Cwd        string // working directory
+	Root       string // project root
+	MaxTokens  int
 }
 
 // Agent is the goroutine-based implementation of Figaro.
@@ -35,7 +38,9 @@ type Agent struct {
 	socketPath string
 	prov       provider.Provider
 	model      string
-	sysPrompt  string
+	scribe     credo.Scribe
+	cwd        string
+	root       string
 	maxTokens  int
 	memStore   *store.MemStore
 
@@ -68,7 +73,9 @@ func NewAgent(cfg Config) *Agent {
 		socketPath:  cfg.SocketPath,
 		prov:        cfg.Provider,
 		model:       cfg.Model,
-		sysPrompt:   cfg.SystemPrompt,
+		scribe:      cfg.Scribe,
+		cwd:         cfg.Cwd,
+		root:        cfg.Root,
 		maxTokens:   cfg.MaxTokens,
 		memStore:    store.NewMemStore(),
 		promptQ:     make(chan string, 64),
@@ -163,6 +170,16 @@ func (a *Agent) Kill() {
 	a.mu.Unlock()
 }
 
+// staticScribe is a Scribe that always returns the same prompt.
+// Used for crash recovery and testing.
+type staticScribe struct {
+	prompt string
+}
+
+func (s *staticScribe) Build(ctx credo.Context) (string, error) {
+	return s.prompt, nil
+}
+
 const crashPrompt = `[System: This agent crashed and was restarted. The previous ` +
 	`conversation context was lost. Inform the user that you experienced ` +
 	`an unexpected restart and that prior context is no longer available.]`
@@ -201,8 +218,9 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 			Params:  rpc.ErrorParams{Message: "agent crashed and was restarted; context lost"},
 		})
 
-		// Inject crash prompt so the agent knows to inform the user.
-		a.sysPrompt = crashPrompt
+		// Inject crash scribe so the agent knows to inform the user.
+		// The original scribe is replaced; crash prompt takes priority.
+		a.scribe = &staticScribe{prompt: crashPrompt}
 
 		fmt.Fprintf(os.Stderr, "figaro %s: restarted after panic\n", a.id)
 		// Loop back to restart drainLoopProtected.
@@ -271,10 +289,21 @@ func (a *Agent) processPrompt(ctx context.Context, text string) {
 		}
 	}()
 
+	// Build system prompt from scribe (re-templated on each prompt).
+	sysPrompt := ""
+	if a.scribe != nil {
+		credoCtx := credo.CurrentContext(a.cwd, a.root, a.prov.Name(), a.model, a.id, "")
+		if p, err := a.scribe.Build(credoCtx); err == nil {
+			sysPrompt = p
+		} else {
+			fmt.Fprintf(os.Stderr, "figaro %s: credo build error: %v\n", a.id, err)
+		}
+	}
+
 	ag := &agent.Agent{
 		Store:        a.memStore,
 		Provider:     a.prov,
-		SystemPrompt: a.sysPrompt,
+		SystemPrompt: sysPrompt,
 		MaxTokens:    a.maxTokens,
 		Out:          out,
 	}

@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/creachadair/jrpc2/handler"
@@ -10,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/credo"
 	"github.com/jack-work/figaro/internal/figaro"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
@@ -71,13 +73,19 @@ func (h *handlers) create(ctx context.Context, req *rpc.CreateRequest) (rpc.Crea
 	id := uuid.New().String()[:8]
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
 
+	// Build credo scribe from config directory.
+	scribe := credo.NewDefaultScribe(h.config.ConfigDir)
+
+	cwd, _ := os.Getwd()
 	agent := figaro.NewAgent(figaro.Config{
-		ID:           id,
-		SocketPath:   sockPath,
-		Provider:     prov,
-		Model:        req.Model,
-		SystemPrompt: "You are a helpful assistant. Be concise.",
-		MaxTokens:    8192,
+		ID:         id,
+		SocketPath: sockPath,
+		Provider:   prov,
+		Model:      req.Model,
+		Scribe:     scribe,
+		Cwd:        cwd,
+		Root:       cwd, // TODO: detect git root
+		MaxTokens:  8192,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
