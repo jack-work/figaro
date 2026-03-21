@@ -548,6 +548,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		die("largo: %s", err)
 	}
 
+	// Display the user's prompt as a header.
+	sw.Write([]byte(fmt.Sprintf("**> %s**\n\n---\n\n", prompt)))
+	sw.Flush()
+
 	// Tracks whether the current tool has streamed output chunks.
 	// If so, we skip the final result display in tool_end to avoid double output.
 	toolStreamed := false
