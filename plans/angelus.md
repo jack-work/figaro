@@ -63,13 +63,13 @@ Supervisor is consulted for session resolution only. All agent interaction is di
 - [x] Update CLI to use `--` prompt separator
 - **Validated**: `figaro -- hello` works, `~/.local/state/figaro/traces.jsonl` contains `figaro.prompt` span
 
-### Step 2: JSON-RPC foundation + shared types
-- [ ] Add `creachadair/jrpc2` dependency
-- [ ] Refactor `internal/rpc/rpc.go` — notification types carry no figaro_id (direct socket)
-- [ ] Define `internal/rpc/methods.go` — method name constants for both protocols
-- [ ] Write fixture-based tests for serialization round-trips
-- **Validate**: `go test ./internal/rpc/...` passes
-- **Fixture**: `testdata/` with JSON-RPC request/response/notification samples
+### Step 2: JSON-RPC foundation + shared types ✅
+- [x] Add `creachadair/jrpc2` dependency
+- [x] Refactor `internal/rpc/rpc.go` — notification types (no figaro_id, direct socket)
+- [x] Define `internal/rpc/methods.go` — method constants + typed request/response structs for both protocols
+- [x] Write fixture-based tests for serialization round-trips (10 tests)
+- **Validated**: `go test ./internal/rpc/...` passes, all fixtures round-trip cleanly
+- **Fixtures**: `testdata/` with 8 JSON fixtures covering both protocols
 
 ### Step 3: Figaro agent package
 - [ ] Create `internal/figaro/figaro.go` — interface definition

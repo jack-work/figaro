@@ -1,24 +1,29 @@
-// Package rpc defines the JSON-RPC 2.0 notification types for figaro.
+// Package rpc defines the JSON-RPC 2.0 types shared across figaro components.
 //
-// These are written to stdout as newline-delimited JSON.
-// The figaro process streams notifications as it works;
-// a frontend process reads and renders them.
+// Two protocols use these types:
 //
-// Messages in the store are also IR messages with the same
-// baggage structure. The stdout stream is a live view of what
-// gets persisted.
+//  1. Figaro socket (agent ops): prompt, context, subscribe, info
+//     + stream notifications (delta, message, tool_start, etc.)
+//
+//  2. Angelus socket (registry ops): create, kill, list, info, bind, resolve, unbind, status
+//
+// All communication across process boundaries is JSON-RPC 2.0.
+// This package defines the shared types so that any client in any
+// language can implement the protocol.
 package rpc
 
 import "github.com/jack-work/figaro/internal/message"
 
+// --- Figaro socket: notification params (streamed to subscribers) ---
+
 // Notification is a JSON-RPC 2.0 notification (no id, no response).
+// Used internally by the agent to emit events. When sent over jrpc2,
+// the library handles framing — this type is for the in-process channel.
 type Notification struct {
 	JSONRPC string      `json:"jsonrpc"`
 	Method  string      `json:"method"`
 	Params  interface{} `json:"params,omitempty"`
 }
-
-// --- Notification params ---
 
 type DeltaParams struct {
 	Text        string              `json:"text"`
@@ -49,21 +54,9 @@ type MessageParams struct {
 
 type DoneParams struct {
 	SessionID string `json:"session_id"`
-	FigaroID  string `json:"figaro_id,omitempty"`
 	Reason    string `json:"reason"`
 }
 
 type ErrorParams struct {
 	Message string `json:"message"`
 }
-
-// Method constants.
-const (
-	MethodDelta     = "stream.delta"
-	MethodThinking  = "stream.thinking"
-	MethodToolStart = "stream.tool_start"
-	MethodToolEnd   = "stream.tool_end"
-	MethodMessage   = "stream.message"
-	MethodDone      = "stream.done"
-	MethodError     = "stream.error"
-)

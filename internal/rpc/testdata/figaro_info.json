@@ -1,0 +1,12 @@
+{
+  "id": "abc123",
+  "state": "active",
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-20250514",
+  "message_count": 4,
+  "tokens_in": 150,
+  "tokens_out": 42,
+  "created_at": 1700000000000,
+  "last_active": 1700000060000,
+  "bound_pids": [1234, 5678]
+}
