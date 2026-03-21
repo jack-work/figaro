@@ -551,6 +551,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 	// Tracks whether the current tool has streamed output chunks.
 	// If so, we skip the final result display in tool_end to avoid double output.
 	toolStreamed := false
+	// Tracks whether we've opened a fenced code block for tool output.
+	toolOutputStarted := false
 
 	deliverEvent := func(method string, params json.RawMessage) {
 		// Log to CLI RPC file.
@@ -574,40 +576,52 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		case rpc.MethodThinking:
 			var p rpc.ThinkingParams
 			if json.Unmarshal(params, &p) == nil {
-				fmt.Fprintf(os.Stderr, "thinking: %s\n", p.Text)
+				sw.Flush()
+				sw.Write([]byte(fmt.Sprintf("\n> *🤔 %s*\n\n", p.Text)))
 			}
 		case rpc.MethodToolStart:
 			var p rpc.ToolStartParams
 			if json.Unmarshal(params, &p) == nil {
-				sw.Flush() // render pending markdown before tool output
+				sw.Flush()
 				toolStreamed = false
-				fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", p.ToolName)
+				sw.Write([]byte(fmt.Sprintf("\n---\n`▶ %s`\n", p.ToolName)))
 			}
 		case rpc.MethodToolOutput:
 			var p rpc.ToolOutputParams
 			if json.Unmarshal(params, &p) == nil {
 				toolStreamed = true
-				fmt.Fprint(os.Stderr, p.Chunk)
+				// Tool output as a fenced code block streamed incrementally.
+				if !toolOutputStarted {
+					sw.Flush()
+					sw.Write([]byte("```\n"))
+					toolOutputStarted = true
+				}
+				sw.Write([]byte(p.Chunk))
 			}
 		case rpc.MethodToolEnd:
 			var p rpc.ToolEndParams
 			if json.Unmarshal(params, &p) == nil {
+				if toolOutputStarted {
+					sw.Write([]byte("\n```\n"))
+					toolOutputStarted = false
+				}
 				if p.IsError {
-					fmt.Fprintf(os.Stderr, "[tool error: %s]\n", p.Result)
+					sw.Write([]byte(fmt.Sprintf("\n**⚠ error:** `%s`\n\n", p.Result)))
 				} else if !toolStreamed {
-					// Only show the final result if we didn't stream chunks.
 					result := p.Result
 					if len(result) > 500 {
 						result = result[:500] + "\n... (truncated)"
 					}
-					fmt.Fprintf(os.Stderr, "%s\n", result)
+					sw.Write([]byte(fmt.Sprintf("```\n%s\n```\n", result)))
 				}
+				sw.Write([]byte("---\n\n"))
 				toolStreamed = false
 			}
 		case rpc.MethodError:
 			var p rpc.ErrorParams
 			if json.Unmarshal(params, &p) == nil {
-				fmt.Fprintf(os.Stderr, "error: %s\n", p.Message)
+				sw.Flush()
+				sw.Write([]byte(fmt.Sprintf("\n**❌ error:** %s\n\n", p.Message)))
 			}
 		case rpc.MethodDone:
 			sw.Flush() // render any remaining markdown
