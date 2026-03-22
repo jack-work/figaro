@@ -537,9 +537,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 	}
 
 	var (
-		reorderMu   sync.Mutex
-		nextSeq     uint64 = 1
-		reorderBuf  = make(map[uint64]pendingEvent)
+		reorderMu      sync.Mutex
+		nextSeq        uint64 = 1
+		reorderBuf     = make(map[uint64]pendingEvent)
+		lastDelivery   = time.Now()
+		gapTimeout     = 5 * time.Second // skip lost seqs after this
 	)
 
 	// Streaming markdown renderer for LLM output.
@@ -687,6 +689,22 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 			params: envelope.Params,
 		}
 
+		// If we've been waiting for nextSeq too long and have buffered
+		// events with higher seqs, skip the gap. This prevents the
+		// reorder buffer from deadlocking on a dropped notification.
+		if len(reorderBuf) > 0 {
+			if _, ok := reorderBuf[nextSeq]; !ok && time.Since(lastDelivery) > gapTimeout {
+				// Find the lowest buffered seq and jump to it.
+				minSeq := envelope.Seq
+				for s := range reorderBuf {
+					if s < minSeq {
+						minSeq = s
+					}
+				}
+				nextSeq = minSeq
+			}
+		}
+
 		// Deliver all consecutive events starting from nextSeq.
 		for {
 			evt, ok := reorderBuf[nextSeq]
@@ -695,6 +713,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 			}
 			delete(reorderBuf, nextSeq)
 			nextSeq++
+			lastDelivery = time.Now()
 			deliverEvent(evt.method, evt.params)
 		}
 	})
@@ -716,7 +735,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		fmt.Fprintln(os.Stderr, "\ninterrupted")
 	case <-time.After(120 * time.Second):
 		sw.Flush()
-		die("timeout waiting for response")
+		fmt.Fprintln(os.Stderr, "\n\nresponse timed out — figaro is still running")
+		fmt.Fprintln(os.Stderr, "reconnect with: figaro attend <id>")
 	}
 }
 
