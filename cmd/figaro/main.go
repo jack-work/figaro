@@ -651,6 +651,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 			if json.Unmarshal(params, &p) == nil {
 				sw.Flush()
 				sw.Write([]byte(fmt.Sprintf("\n**❌ error:** %s\n\n", p.Message)))
+				sw.Flush()
+				// Provider errors are critical — exit the CLI.
+				select {
+				case doneCh <- struct{}{}:
+				default:
+				}
 			}
 		case rpc.MethodDone:
 			sw.Flush() // render any remaining markdown
