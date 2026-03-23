@@ -141,6 +141,11 @@ func isOAuthToken(key string) bool {
 
 func (a *Anthropic) Name() string { return providerName }
 
+// log writes to stderr with a provider prefix. Visible in the angelus log.
+func log(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "anthropic: "+format+"\n", args...)
+}
+
 func (a *Anthropic) SetModel(model string) {
 	a.mu.Lock()
 	a.Model = model
@@ -379,25 +384,84 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []prov
 	return ch, nil
 }
 
+// sseReadTimeout is how long we wait for the next SSE line before
+// treating the connection as stalled.
+const sseReadTimeout = 5 * time.Minute
+
 func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEvent, model string) {
 	defer close(ch)
 	defer body.Close()
 
-	scanner := bufio.NewScanner(body)
+	log("sse: stream started, model=%s", model)
+
+	// Wrap the body with a read deadline. We use a pipe + goroutine
+	// because http.Response.Body doesn't support SetReadDeadline.
+	pr, pw := io.Pipe()
+	go func() {
+		defer pw.Close()
+		buf := make([]byte, 32*1024)
+		for {
+			n, err := body.Read(buf)
+			if n > 0 {
+				pw.Write(buf[:n])
+			}
+			if err != nil {
+				if err != io.EOF {
+					log("sse: body read error: %v", err)
+				}
+				return
+			}
+		}
+	}()
+
+	scanner := bufio.NewScanner(pr)
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 
 	var (
 		msg       message.Message
 		usage     message.Usage
 		eventType string
+		lines     int
 	)
 	msg.Role = message.RoleAssistant
 	msg.Provider = providerName
 	msg.Model = model
 	msg.Timestamp = time.Now().UnixMilli()
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	// Read with timeout: if no line arrives within sseReadTimeout,
+	// we treat the stream as dead.
+	scanCh := make(chan string, 1)
+	scanErr := make(chan error, 1)
+	scanNext := func() {
+		go func() {
+			if scanner.Scan() {
+				scanCh <- scanner.Text()
+			} else {
+				scanErr <- scanner.Err()
+			}
+		}()
+	}
+
+	scanNext()
+	for {
+		var line string
+		select {
+		case line = <-scanCh:
+			lines++
+		case err := <-scanErr:
+			if err != nil {
+				log("sse: scanner error after %d lines: %v", lines, err)
+			} else {
+				log("sse: stream ended after %d lines (EOF)", lines)
+			}
+			goto done
+		case <-time.After(sseReadTimeout):
+			log("sse: read timeout after %d lines (%v with no data)", lines, sseReadTimeout)
+			msg.StopReason = message.StopAborted
+			ch <- provider.StreamEvent{Done: true, Message: &msg,
+				Err: fmt.Errorf("SSE stream stalled: no data for %v", sseReadTimeout)}
+			return
+		}
 		if strings.HasPrefix(line, "event: ") {
 			eventType = strings.TrimPrefix(line, "event: ")
 			continue
@@ -514,9 +578,12 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 				usage.InputTokens = ms.Message.Usage.InputTokens
 				usage.CacheReadTokens = ms.Message.Usage.CacheRead
 				usage.CacheWriteTokens = ms.Message.Usage.CacheCreate
+				log("sse: message_start input_tokens=%d cache_read=%d cache_create=%d",
+					usage.InputTokens, usage.CacheReadTokens, usage.CacheWriteTokens)
 			}
 
 		case "message_stop":
+			log("sse: message_stop output_tokens=%d stop_reason=%s", usage.OutputTokens, msg.StopReason)
 			msg.Usage = &usage
 			// Stash native form in baggage
 			nativeMsg := nativeMessage{Role: "assistant"}
@@ -544,14 +611,19 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 		case "error":
 			var errEvt struct{ Error struct{ Message string } }
 			json.Unmarshal([]byte(data), &errEvt)
+			log("sse: received error event: %s", errEvt.Error.Message)
 			msg.StopReason = message.StopError
 			ch <- provider.StreamEvent{Done: true, Message: &msg,
 				Err: fmt.Errorf("anthropic stream error: %s", errEvt.Error.Message)}
 			return
 		}
+
+		scanNext()
 	}
 
+done:
 	if msg.StopReason == "" {
+		log("sse: stream ended without message_stop after %d lines", lines)
 		msg.StopReason = message.StopAborted
 		ch <- provider.StreamEvent{Done: true, Message: &msg, Err: fmt.Errorf("stream ended unexpectedly")}
 	}

@@ -19,6 +19,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/jack-work/figaro/internal/message"
@@ -115,6 +116,7 @@ func (a *Agent) eventLoop(ctx context.Context) error {
 			switch evt.typ {
 
 			case eventUserPrompt:
+				fmt.Fprintf(os.Stderr, "agent: event=UserPrompt text=%q\n", truncLog(evt.text, 60))
 				userMsg := message.Message{
 					Role:      message.RoleUser,
 					Content:   []message.Content{message.TextContent(evt.text)},
@@ -137,6 +139,7 @@ func (a *Agent) eventLoop(ctx context.Context) error {
 				})
 
 			case eventLLMDone:
+				fmt.Fprintf(os.Stderr, "agent: event=LLMDone stop_reason=%s\n", evt.message.StopReason)
 				if evt.message == nil {
 					return fmt.Errorf("no response from provider")
 				}
@@ -178,6 +181,7 @@ func (a *Agent) eventLoop(ctx context.Context) error {
 				go a.runToolAsync(ctx, tc)
 
 			case eventLLMError:
+				fmt.Fprintf(os.Stderr, "agent: event=LLMError err=%v\n", evt.err)
 				a.emit(rpc.MethodError, rpc.ErrorParams{Message: evt.err.Error()})
 				return fmt.Errorf("provider stream: %w", evt.err)
 
@@ -189,6 +193,8 @@ func (a *Agent) eventLoop(ctx context.Context) error {
 				})
 
 			case eventToolResult:
+				fmt.Fprintf(os.Stderr, "agent: event=ToolResult tool=%s err=%v result_len=%d\n",
+					evt.toolName, evt.isErr, len(evt.result))
 				a.emit(rpc.MethodToolEnd, rpc.ToolEndParams{
 					ToolCallID: evt.toolCallID, ToolName: evt.toolName,
 					Result: evt.result, IsError: evt.isErr,
@@ -246,6 +252,7 @@ func (a *Agent) startLLMStream(ctx context.Context) {
 		}
 	}
 
+	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context\n", len(block.Messages))
 	ch, err := a.Provider.Send(ctx, block, a.toolDefs(), a.MaxTokens)
 	if err != nil {
 		a.send(ctx, event{typ: eventLLMError, err: fmt.Errorf("provider send: %w", err)})
@@ -331,6 +338,13 @@ func (a *Agent) send(ctx context.Context, evt event) bool {
 	case <-ctx.Done():
 		return false
 	}
+}
+
+func truncLog(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 func (a *Agent) toolDefs() []provider.Tool {
