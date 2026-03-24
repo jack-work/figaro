@@ -43,11 +43,13 @@ type Anthropic struct {
 
 // New creates an Anthropic provider from the config section.
 // authPath is the path to the provider's auth.json for OAuth credentials.
+// hushClient is the hush client for token encryption/decryption (may be nil
+// if using a static API key).
 // Auth is resolved internally: if APIKey is set, it's used as a
 // static key. Otherwise, OAuth via hush is used. The env var
 // ANTHROPIC_API_KEY is checked as a fallback before OAuth.
-func New(cfg config.AnthropicProvider, authPath string) (*Anthropic, error) {
-	resolver, err := buildResolver(cfg.APIKey, authPath)
+func New(cfg config.AnthropicProvider, authPath string, hushClient *hush.Client) (*Anthropic, error) {
+	resolver, err := buildResolver(cfg.APIKey, authPath, hushClient)
 	if err != nil {
 		return nil, err
 	}
@@ -61,19 +63,17 @@ func New(cfg config.AnthropicProvider, authPath string) (*Anthropic, error) {
 
 // buildResolver returns the appropriate TokenResolver based on the
 // available credentials. Priority: config api_key → env var → OAuth.
-func buildResolver(apiKey, authPath string) (auth.TokenResolver, error) {
+func buildResolver(apiKey, authPath string, hushClient *hush.Client) (auth.TokenResolver, error) {
 	if apiKey != "" {
 		return &auth.StaticKey{Key: apiKey}, nil
 	}
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
 		return &auth.StaticKey{Key: key}, nil
 	}
-	hushClient, err := hush.New()
-	if err != nil {
+	if hushClient == nil {
 		return nil, fmt.Errorf(
-			"no API key and hush agent not available: %w\n"+
+			"no API key and no hush client available.\n" +
 				"  Set api_key in config, ANTHROPIC_API_KEY env, or run: figaro login",
-			err,
 		)
 	}
 	mgr := auth.NewManager(hushClient, auth.AnthropicOAuth, authPath)

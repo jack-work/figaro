@@ -41,10 +41,19 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/transport"
-	hush "github.com/jack-work/hush/client"
+	"github.com/jack-work/hush/managed"
 )
 
 func main() {
+	// Re-exec guard: if we were spawned by managed.SpawnDaemon to serve
+	// as the embedded hush agent, run it and exit immediately.
+	if managed.IsAgentChild() {
+		if err := managed.RunAgentChild(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
 	// Multi-call binary: if invoked as "q", rewrite args to "figaro --".
 	// Create the symlink: ln -s $(which figaro) ~/go/bin/q
 	if filepath.Base(os.Args[0]) == "q" {
@@ -383,10 +392,8 @@ func runLogin(loaded *config.Loaded) {
 	}
 	providerName := os.Args[2]
 
-	hushClient, err := hush.New()
-	if err != nil {
-		die("%s", err)
-	}
+	h := mustHush()
+	hushClient := h.Client()
 
 	authPath := loaded.ProviderAuthPath(providerName)
 	if err := os.MkdirAll(filepath.Dir(authPath), 0700); err != nil {
@@ -402,7 +409,7 @@ func runLogin(loaded *config.Loaded) {
 	}
 
 	mgr := auth.NewManager(hushClient, oauthCfg, authPath)
-	err = auth.Login(mgr, func() (string, error) {
+	err := auth.Login(mgr, func() (string, error) {
 		reader := bufio.NewReader(os.Stdin)
 		line, err := reader.ReadString('\n')
 		return strings.TrimSpace(line), err
@@ -667,6 +674,52 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		}
 	}
 
+	// flushReorderBuf delivers any consecutive events and skips gaps if stale.
+	// Caller must hold reorderMu.
+	flushReorderBuf := func() {
+		// Skip stale gaps.
+		if len(reorderBuf) > 0 {
+			if _, ok := reorderBuf[nextSeq]; !ok && time.Since(lastDelivery) > gapTimeout {
+				minSeq := uint64(^uint64(0))
+				for s := range reorderBuf {
+					if s < minSeq {
+						minSeq = s
+					}
+				}
+				nextSeq = minSeq
+			}
+		}
+		// Deliver consecutive events.
+		for {
+			evt, ok := reorderBuf[nextSeq]
+			if !ok {
+				break
+			}
+			delete(reorderBuf, nextSeq)
+			nextSeq++
+			lastDelivery = time.Now()
+			deliverEvent(evt.method, evt.params)
+		}
+	}
+
+	// Background goroutine to flush stale gaps even when no new events arrive.
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				reorderMu.Lock()
+				flushReorderBuf()
+				reorderMu.Unlock()
+			case <-doneCh:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	fcli, err := figaro.DialClient(ep, func(method string, req *jrpc2.Request) {
 		// All notifications arrive as figaro.event envelopes with a seq number.
 		if method != rpc.MethodEvent {
@@ -689,39 +742,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		reorderMu.Lock()
 		defer reorderMu.Unlock()
 
-		// Buffer this event.
 		reorderBuf[envelope.Seq] = pendingEvent{
 			method: envelope.Method,
 			params: envelope.Params,
 		}
 
-		// If we've been waiting for nextSeq too long and have buffered
-		// events with higher seqs, skip the gap. This prevents the
-		// reorder buffer from deadlocking on a dropped notification.
-		if len(reorderBuf) > 0 {
-			if _, ok := reorderBuf[nextSeq]; !ok && time.Since(lastDelivery) > gapTimeout {
-				// Find the lowest buffered seq and jump to it.
-				minSeq := envelope.Seq
-				for s := range reorderBuf {
-					if s < minSeq {
-						minSeq = s
-					}
-				}
-				nextSeq = minSeq
-			}
-		}
-
-		// Deliver all consecutive events starting from nextSeq.
-		for {
-			evt, ok := reorderBuf[nextSeq]
-			if !ok {
-				break
-			}
-			delete(reorderBuf, nextSeq)
-			nextSeq++
-			lastDelivery = time.Now()
-			deliverEvent(evt.method, evt.params)
-		}
+		flushReorderBuf()
 	})
 	if err != nil {
 		die("connect figaro: %s", err)
@@ -762,7 +788,8 @@ func buildProviderFactory(loaded *config.Loaded) angelus.ProviderFactory {
 				acfg.Model = model // override from create request
 			}
 			authPath := loaded.ProviderAuthPath(providerName)
-			return anthropic.New(acfg, authPath)
+			h := mustHush()
+			return anthropic.New(acfg, authPath, h.Client())
 		default:
 			return nil, fmt.Errorf("unknown provider: %q", providerName)
 		}
@@ -782,7 +809,8 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 			acfg.Model = loaded.Config.DefaultModel
 		}
 		authPath := loaded.ProviderAuthPath(name)
-		p, err := anthropic.New(acfg, authPath)
+		h := mustHush()
+		p, err := anthropic.New(acfg, authPath, h.Client())
 		if err != nil {
 			return nil, 0
 		}
@@ -814,6 +842,29 @@ func mustLoadConfig() *config.Loaded {
 		die("config: %s", err)
 	}
 	return loaded
+}
+
+// hushOnce lazily initializes the managed hush instance. The managed
+// package detects a running hush agent (ModeExternal) or starts one
+// via the hush CLI or embedded re-exec (ModeEmbedded). This replaces
+// direct hush.Client construction and eliminates the "agent not running"
+// dead end in non-interactive contexts.
+var (
+	hushInstance *managed.Hush
+	hushOnce     sync.Once
+	hushErr      error
+)
+
+func mustHush() *managed.Hush {
+	hushOnce.Do(func() {
+		hushInstance, hushErr = managed.New(managed.Options{
+			AppName: "figaro",
+		})
+	})
+	if hushErr != nil {
+		die("hush: %s", hushErr)
+	}
+	return hushInstance
 }
 
 func mustOpenLog() (*log.Logger, *os.File) {
