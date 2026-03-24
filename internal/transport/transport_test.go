@@ -67,12 +67,10 @@ func TestDialAndListen_Unix(t *testing.T) {
 	sockPath := filepath.Join(dir, "test.sock")
 	ep := transport.UnixEndpoint(sockPath)
 
-	// Listen.
 	ln, err := transport.Listen(ep)
 	require.NoError(t, err)
 	defer ln.Close()
 
-	// Accept in background.
 	accepted := make(chan net.Conn, 1)
 	go func() {
 		conn, err := ln.Accept()
@@ -81,15 +79,13 @@ func TestDialAndListen_Unix(t *testing.T) {
 		}
 	}()
 
-	// Dial.
-	ch, err := transport.Dial(ep)
+	conn, err := transport.Dial(ep)
 	require.NoError(t, err)
 
-	// Should have connected.
 	serverConn := <-accepted
 	require.NotNil(t, serverConn)
 	serverConn.Close()
-	ch.Close()
+	conn.Close()
 }
 
 func TestDial_UnsupportedScheme(t *testing.T) {
@@ -99,42 +95,12 @@ func TestDial_UnsupportedScheme(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported transport scheme")
 }
 
-func TestWrapConn(t *testing.T) {
-	dir := t.TempDir()
-	sockPath := filepath.Join(dir, "wrap.sock")
-
-	ln, err := net.Listen("unix", sockPath)
-	require.NoError(t, err)
-	defer ln.Close()
-
-	go func() {
-		conn, _ := ln.Accept()
-		ch := transport.WrapConn(conn)
-		// Echo back what we receive.
-		msg, _ := ch.Recv()
-		ch.Send(msg)
-		ch.Close()
-	}()
-
-	conn, err := net.Dial("unix", sockPath)
-	require.NoError(t, err)
-	ch := transport.WrapConn(conn)
-
-	require.NoError(t, ch.Send([]byte(`{"hello":"world"}`)))
-	reply, err := ch.Recv()
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"hello":"world"}`, string(reply))
-	ch.Close()
-}
-
 func TestListen_CreatesSocket(t *testing.T) {
 	dir := t.TempDir()
 	sockPath := filepath.Join(dir, "sub", "test.sock")
-	// sub/ doesn't exist yet — Listen should fail (we don't auto-create dirs).
 	_, err := transport.Listen(transport.UnixEndpoint(sockPath))
 	assert.Error(t, err)
 
-	// Create the dir, then listen should work.
 	require.NoError(t, os.MkdirAll(filepath.Dir(sockPath), 0700))
 	ln, err := transport.Listen(transport.UnixEndpoint(sockPath))
 	require.NoError(t, err)

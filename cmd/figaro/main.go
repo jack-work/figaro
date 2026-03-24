@@ -28,7 +28,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/creachadair/jrpc2"
 	"github.com/jack-work/largo"
 	"go.opentelemetry.io/otel/attribute"
 
@@ -534,23 +533,6 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 
 	doneCh := make(chan struct{}, 1)
 
-	// jrpc2's client dispatches OnNotify from concurrent goroutines,
-	// which reorders notifications. The figaro stamps each notification
-	// with a monotonic sequence number inside a figaro.event envelope.
-	// We buffer out-of-order events and deliver them in sequence.
-	type pendingEvent struct {
-		method string
-		params json.RawMessage
-	}
-
-	var (
-		reorderMu      sync.Mutex
-		nextSeq        uint64 = 1
-		reorderBuf     = make(map[uint64]pendingEvent)
-		lastDelivery   = time.Now()
-		gapTimeout     = 5 * time.Second // skip lost seqs after this
-	)
-
 	// Streaming markdown renderer for LLM output.
 	sw, err := largo.NewWriter(os.Stdout, largo.Options{Margin: 4})
 	if err != nil {
@@ -674,80 +656,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		}
 	}
 
-	// flushReorderBuf delivers any consecutive events and skips gaps if stale.
-	// Caller must hold reorderMu.
-	flushReorderBuf := func() {
-		// Skip stale gaps.
-		if len(reorderBuf) > 0 {
-			if _, ok := reorderBuf[nextSeq]; !ok && time.Since(lastDelivery) > gapTimeout {
-				minSeq := uint64(^uint64(0))
-				for s := range reorderBuf {
-					if s < minSeq {
-						minSeq = s
-					}
-				}
-				nextSeq = minSeq
-			}
-		}
-		// Deliver consecutive events.
-		for {
-			evt, ok := reorderBuf[nextSeq]
-			if !ok {
-				break
-			}
-			delete(reorderBuf, nextSeq)
-			nextSeq++
-			lastDelivery = time.Now()
-			deliverEvent(evt.method, evt.params)
-		}
-	}
-
-	// Background goroutine to flush stale gaps even when no new events arrive.
-	go func() {
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				reorderMu.Lock()
-				flushReorderBuf()
-				reorderMu.Unlock()
-			case <-doneCh:
-				return
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	fcli, err := figaro.DialClient(ep, func(method string, req *jrpc2.Request) {
-		// All notifications arrive as figaro.event envelopes with a seq number.
-		if method != rpc.MethodEvent {
-			return
-		}
-
-		// Parse the envelope. Params is a JSON object with seq, method, params.
-		var raw json.RawMessage
-		req.UnmarshalParams(&raw)
-
-		var envelope struct {
-			Seq    uint64          `json:"seq"`
-			Method string          `json:"method"`
-			Params json.RawMessage `json:"params"`
-		}
-		if json.Unmarshal(raw, &envelope) != nil {
-			return
-		}
-
-		reorderMu.Lock()
-		defer reorderMu.Unlock()
-
-		reorderBuf[envelope.Seq] = pendingEvent{
-			method: envelope.Method,
-			params: envelope.Params,
-		}
-
-		flushReorderBuf()
+	// Notifications are delivered in wire order — no reordering needed.
+	// Our jsonrpc.Client calls OnNotify synchronously on the reader goroutine.
+	fcli, err := figaro.DialClient(ep, func(method string, params json.RawMessage) {
+		deliverEvent(method, params)
 	})
 	if err != nil {
 		die("connect figaro: %s", err)

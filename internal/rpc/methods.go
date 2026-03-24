@@ -13,9 +13,6 @@ const (
 	MethodDone      = "stream.done"
 	MethodError     = "stream.error"
 
-	// Sequenced event envelope (wraps all notifications for ordered delivery).
-	MethodEvent = "figaro.event"
-
 	// Requests: client → figaro (response expected).
 	MethodPrompt     = "figaro.prompt"
 	MethodContext    = "figaro.context"

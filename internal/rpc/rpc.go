@@ -17,8 +17,7 @@ import "github.com/jack-work/figaro/internal/message"
 // --- Figaro socket: notification params (streamed to subscribers) ---
 
 // Notification is a JSON-RPC 2.0 notification (no id, no response).
-// Used internally by the agent to emit events. When sent over jrpc2,
-// the library handles framing — this type is for the in-process channel.
+// Used internally by the agent to emit events on the in-process channel.
 type Notification struct {
 	JSONRPC string      `json:"jsonrpc"`
 	Method  string      `json:"method"`
@@ -66,11 +65,4 @@ type ErrorParams struct {
 	Message string `json:"message"`
 }
 
-// SequencedEvent wraps a notification with a monotonic sequence number.
-// Used for ordered delivery over jrpc2, which may dispatch OnNotify
-// callbacks from concurrent goroutines.
-type SequencedEvent struct {
-	Seq    uint64      `json:"seq"`
-	Method string      `json:"method"`
-	Params interface{} `json:"params"`
-}
+

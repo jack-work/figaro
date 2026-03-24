@@ -9,12 +9,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/creachadair/jrpc2"
-	"github.com/creachadair/jrpc2/handler"
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/jack-work/figaro/internal/jsonrpc"
 	figOtel "github.com/jack-work/figaro/internal/otel"
-	"github.com/jack-work/figaro/internal/transport"
 
 	// NOTE: golang.org/x/sys/unix is Linux/macOS only. For future Windows
 	// support, PID monitoring will need a build-tagged alternative using
@@ -26,7 +24,7 @@ import (
 // a unix socket for JSON-RPC requests, and monitors bound PIDs.
 type Angelus struct {
 	Registry   *Registry
-	Handlers   handler.Map // jrpc2 handler map, set before Run()
+	Handlers   map[string]jsonrpc.HandlerFunc // set before Run()
 	SocketPath string
 	RuntimeDir string
 	Logger     *log.Logger
@@ -131,15 +129,12 @@ func (a *Angelus) handleConn(ctx context.Context, conn net.Conn) {
 		return
 	}
 
-	ch := transport.WrapConn(conn)
-	srv := jrpc2.NewServer(a.Handlers, &jrpc2.ServerOptions{
-		AllowPush: true,
-	})
-	srv.Start(ch)
+	jconn := jsonrpc.NewConn(conn)
+	srv := jsonrpc.NewServer(jconn, a.Handlers)
 
 	done := make(chan struct{})
 	go func() {
-		srv.Wait()
+		srv.Serve(ctx)
 		close(done)
 	}()
 

@@ -58,7 +58,7 @@ type Agent struct {
 	// Channel subscribers: used in tests only. Could be extended later
 	// for in-process logging or other observers.
 	subscribers map[chan rpc.Notification]struct{}
-	// Socket subscribers: jrpc2 server connections (CLI, frontends).
+	// Socket subscribers: jsonrpc server connections (CLI, frontends).
 	// All notifications (deltas, tool output, done, etc.) flow through here.
 	serverSubs map[*serverSubscriber]struct{}
 
@@ -382,18 +382,9 @@ func (a *Agent) fanOut(n rpc.Notification) {
 		}
 	}
 
-	// jrpc2 server-based subscribers (socket connections).
-	// Each notification is stamped with a per-subscriber sequence number.
-	// The CLI uses this to reorder notifications that arrive out of order
-	// due to jrpc2's concurrent dispatch model.
+	// Socket subscribers — direct notification, ordered by the writer mutex.
 	for sub := range a.serverSubs {
-		sub.seq++
-		envelope := rpc.SequencedEvent{
-			Seq:    sub.seq,
-			Method: n.Method,
-			Params: n.Params,
-		}
-		if err := sub.srv.Notify(context.Background(), rpc.MethodEvent, envelope); err != nil {
+		if err := sub.srv.Notify(n.Method, n.Params); err != nil {
 			fmt.Fprintf(os.Stderr, "figaro: notify error: %v\n", err)
 		}
 	}
