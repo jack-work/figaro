@@ -767,7 +767,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		fmt.Fprintln(os.Stderr, "\ninterrupted")
 	case <-time.After(120 * time.Second):
 		sw.Flush()
-		fmt.Fprintln(os.Stderr, "\n\nresponse timed out — figaro is still running")
+		fmt.Fprintln(os.Stderr, "\n\nCLI timed out waiting for stream completion — the figaro may still be running")
+		fmt.Fprintln(os.Stderr, "this can happen when notifications are dropped in transit")
 		fmt.Fprintln(os.Stderr, "reconnect with: figaro attend <id>")
 	}
 }
