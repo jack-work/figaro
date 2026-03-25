@@ -61,3 +61,5 @@ require (
 )
 
 replace github.com/jack-work/hush => /home/gluck/dev/hush/master
+
+replace github.com/jack-work/largo => /home/gluck/dev/largo/master
