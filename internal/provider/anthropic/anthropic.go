@@ -350,7 +350,6 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []prov
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
-
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", apiMessagesURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -448,6 +447,7 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 		select {
 		case line = <-scanCh:
 			lines++
+			scanNext() // start reading next line immediately
 		case err := <-scanErr:
 			if err != nil {
 				log("sse: scanner error after %d lines: %v", lines, err)
@@ -617,8 +617,6 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 				Err: fmt.Errorf("anthropic stream error: %s", errEvt.Error.Message)}
 			return
 		}
-
-		scanNext()
 	}
 
 done:
