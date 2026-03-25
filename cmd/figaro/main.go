@@ -655,18 +655,15 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		die("prompt: %s", err)
 	}
 
-	// Wait for stream.done or context cancellation.
+	// Wait for stream.done, stream.error, or ctrl-C.
+	// No wall-clock timeout — multi-tool sessions can run for minutes.
+	// The figaro agent has its own timeouts (SSE, HTTP).
 	select {
 	case <-doneCh:
 		fmt.Println()
 	case <-ctx.Done():
 		sw.Flush()
 		fmt.Fprintln(os.Stderr, "\ninterrupted")
-	case <-time.After(120 * time.Second):
-		sw.Flush()
-		fmt.Fprintln(os.Stderr, "\n\nCLI timed out waiting for stream completion — the figaro may still be running")
-		fmt.Fprintln(os.Stderr, "this can happen when notifications are dropped in transit")
-		fmt.Fprintln(os.Stderr, "reconnect with: figaro attend <id>")
 	}
 }
 
