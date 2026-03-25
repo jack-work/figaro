@@ -545,10 +545,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 	sw.Write([]byte(fmt.Sprintf("\n---\n\n**> %s**\n\n---\n\n", prompt)))
 	sw.Flush()
 
-	// Tool state: buffer output chunks, render all at once on tool_end.
-	toolStreamed := false
+	// Tool state: header is built on tool_start, full block rendered on tool_end.
 	toolHeader := ""
-	var toolOutput strings.Builder
 
 	deliverEvent := func(method string, params json.RawMessage) {
 		// Log to CLI RPC file.
@@ -579,8 +577,6 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 			var p rpc.ToolStartParams
 			if json.Unmarshal(params, &p) == nil {
 				sw.Flush()
-				toolStreamed = false
-				toolOutput.Reset()
 				detail := ""
 				switch p.ToolName {
 				case "bash":
@@ -607,24 +603,14 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 				}
 			}
 		case rpc.MethodToolOutput:
-			var p rpc.ToolOutputParams
-			if json.Unmarshal(params, &p) == nil {
-				toolStreamed = true
-				toolOutput.WriteString(p.Chunk)
-			}
+			// Ignored — we render the full result from tool_end.
 		case rpc.MethodToolEnd:
 			var p rpc.ToolEndParams
 			if json.Unmarshal(params, &p) == nil {
-				// Build the complete tool block and render it all at once
-				// through largo — no streaming echo-then-replace.
 				var block strings.Builder
 				block.WriteString(toolHeader)
 				if p.IsError {
 					block.WriteString(fmt.Sprintf("\n**⚠ error:** `%s`\n\n", p.Result))
-				} else if toolStreamed {
-					block.WriteString("```\n")
-					block.WriteString(toolOutput.String())
-					block.WriteString("```\n\n")
 				} else {
 					block.WriteString("```\n")
 					block.WriteString(p.Result)
@@ -632,8 +618,6 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 				}
 				sw.Write([]byte(block.String()))
 				sw.Flush()
-				toolOutput.Reset()
-				toolStreamed = false
 			}
 		case rpc.MethodError:
 			var p rpc.ErrorParams
