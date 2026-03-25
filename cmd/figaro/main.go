@@ -534,7 +534,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 	doneCh := make(chan struct{}, 1)
 
 	// Streaming markdown renderer for LLM output.
-	sw, err := largo.NewWriter(os.Stdout, largo.Options{Margin: 4})
+	sw, err := largo.NewWriter(os.Stdout, largo.Options{})
 	if err != nil {
 		die("largo: %s", err)
 	}
