@@ -41,6 +41,7 @@ import (
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/hush/managed"
+	"golang.org/x/term"
 )
 
 func main() {
@@ -470,6 +471,7 @@ func ensureAngelus() {
 }
 
 func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
+	ensureHush()
 	ensureAngelus()
 	ep := transport.UnixEndpoint(angelusSocketPath())
 	cli, err := angelus.DialClient(ep)
@@ -779,6 +781,31 @@ func mustHush() *managed.Hush {
 		die("hush: %s", hushErr)
 	}
 	return hushInstance
+}
+
+// ensureHush initializes hush and starts the agent if needed.
+// Must be called from the CLI process (not the angelus) so it can
+// prompt for a passphrase on the terminal. After this returns, the
+// angelus can use hush without interactive prompts.
+func ensureHush() {
+	h := mustHush()
+	if !h.HasIdentity() {
+		fmt.Fprintln(os.Stderr, "No hush identity found. Creating one...")
+		fmt.Fprint(os.Stderr, "Passphrase (for encrypting secrets at rest): ")
+		passphrase, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			die("read passphrase: %s", err)
+		}
+		pub, err := h.Init(passphrase)
+		if err != nil {
+			die("init hush identity: %s", err)
+		}
+		fmt.Fprintf(os.Stderr, "Identity created. Public key: %s\n", pub)
+	}
+	if err := h.EnsureReady(); err != nil {
+		die("hush: %s", err)
+	}
 }
 
 func mustOpenLog() (*log.Logger, *os.File) {
