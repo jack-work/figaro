@@ -548,8 +548,6 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 	// Tracks whether the current tool has streamed output chunks.
 	// If so, we skip the final result display in tool_end to avoid double output.
 	toolStreamed := false
-	// Tracks whether we've opened a fenced code block for tool output.
-	toolOutputStarted := false
 
 	deliverEvent := func(method string, params json.RawMessage) {
 		// Log to CLI RPC file.
@@ -579,9 +577,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		case rpc.MethodToolStart:
 			var p rpc.ToolStartParams
 			if json.Unmarshal(params, &p) == nil {
+				// Flush any pending LLM markdown, then write tool
+				// output directly to stdout — no glamour rendering.
 				sw.Flush()
 				toolStreamed = false
-				// Show the command/path for common tools.
 				detail := ""
 				switch p.ToolName {
 				case "bash":
@@ -602,40 +601,26 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 					}
 				}
 				if detail != "" {
-					sw.Write([]byte(fmt.Sprintf("\n---\n`▶ %s` `%s`\n", p.ToolName, detail)))
+					fmt.Fprintf(os.Stdout, "\n▶ %s  %s\n", p.ToolName, detail)
 				} else {
-					sw.Write([]byte(fmt.Sprintf("\n---\n`▶ %s`\n", p.ToolName)))
+					fmt.Fprintf(os.Stdout, "\n▶ %s\n", p.ToolName)
 				}
 			}
 		case rpc.MethodToolOutput:
 			var p rpc.ToolOutputParams
 			if json.Unmarshal(params, &p) == nil {
 				toolStreamed = true
-				// Tool output as a fenced code block streamed incrementally.
-				// No Flush before the fence — let the tool header and code
-				// block accumulate together so largo renders them as one unit.
-				if !toolOutputStarted {
-					sw.Write([]byte("```\n"))
-					toolOutputStarted = true
-				}
-				sw.Write([]byte(p.Chunk))
+				os.Stdout.Write([]byte(p.Chunk))
 			}
 		case rpc.MethodToolEnd:
 			var p rpc.ToolEndParams
 			if json.Unmarshal(params, &p) == nil {
-				if toolOutputStarted {
-					sw.Write([]byte("```\n"))
-					toolOutputStarted = false
-				}
 				if p.IsError {
-					sw.Write([]byte(fmt.Sprintf("\n**⚠ error:** `%s`\n\n", p.Result)))
+					fmt.Fprintf(os.Stdout, "\n⚠ error: %s\n", p.Result)
 				} else if !toolStreamed {
-					// Display the full tool result. The tool itself handles
-					// truncation (e.g., read truncates to 2000 lines/50KB
-					// with pagination hints). Don't re-truncate here.
-					sw.Write([]byte(fmt.Sprintf("```\n%s\n```\n", p.Result)))
+					os.Stdout.Write([]byte(p.Result))
 				}
-				sw.Write([]byte("\n"))
+				fmt.Fprintln(os.Stdout)
 				toolStreamed = false
 			}
 		case rpc.MethodError:
