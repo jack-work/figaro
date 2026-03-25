@@ -610,8 +610,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 			if json.Unmarshal(params, &p) == nil {
 				toolStreamed = true
 				// Tool output as a fenced code block streamed incrementally.
+				// No Flush before the fence — let the tool header and code
+				// block accumulate together so largo renders them as one unit.
 				if !toolOutputStarted {
-					sw.Flush()
 					sw.Write([]byte("```\n"))
 					toolOutputStarted = true
 				}
