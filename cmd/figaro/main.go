@@ -614,8 +614,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 				} else {
 					block.WriteString("```\n")
 					block.WriteString(p.Result)
-					block.WriteString("\n```\n\n")
+					block.WriteString("\n```\n")
 				}
+				block.WriteString("---\n\n")
 				sw.Write([]byte(block.String()))
 				sw.Flush()
 			}
