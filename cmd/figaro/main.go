@@ -621,7 +621,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 			var p rpc.ToolEndParams
 			if json.Unmarshal(params, &p) == nil {
 				if toolOutputStarted {
-					sw.Write([]byte("\n```\n"))
+					sw.Write([]byte("```\n"))
 					toolOutputStarted = false
 				}
 				if p.IsError {
@@ -632,7 +632,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 					// with pagination hints). Don't re-truncate here.
 					sw.Write([]byte(fmt.Sprintf("```\n%s\n```\n", p.Result)))
 				}
-				sw.Write([]byte("---\n\n"))
+				sw.Write([]byte("\n"))
 				toolStreamed = false
 			}
 		case rpc.MethodError:
