@@ -545,9 +545,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 	sw.Write([]byte(fmt.Sprintf("\n---\n\n**> %s**\n\n---\n\n", prompt)))
 	sw.Flush()
 
-	// Tracks whether the current tool has streamed output chunks.
-	// If so, we skip the final result display in tool_end to avoid double output.
+	// Tool state: buffer output chunks, render all at once on tool_end.
 	toolStreamed := false
+	toolHeader := ""
+	var toolOutput strings.Builder
 
 	deliverEvent := func(method string, params json.RawMessage) {
 		// Log to CLI RPC file.
@@ -577,10 +578,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		case rpc.MethodToolStart:
 			var p rpc.ToolStartParams
 			if json.Unmarshal(params, &p) == nil {
-				// Flush any pending LLM markdown, then write tool
-				// output directly to stdout — no glamour rendering.
 				sw.Flush()
 				toolStreamed = false
+				toolOutput.Reset()
 				detail := ""
 				switch p.ToolName {
 				case "bash":
@@ -601,26 +601,38 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 					}
 				}
 				if detail != "" {
-					fmt.Fprintf(os.Stdout, "\n▶ %s  %s\n", p.ToolName, detail)
+					toolHeader = fmt.Sprintf("\n---\n`▶ %s` `%s`\n", p.ToolName, detail)
 				} else {
-					fmt.Fprintf(os.Stdout, "\n▶ %s\n", p.ToolName)
+					toolHeader = fmt.Sprintf("\n---\n`▶ %s`\n", p.ToolName)
 				}
 			}
 		case rpc.MethodToolOutput:
 			var p rpc.ToolOutputParams
 			if json.Unmarshal(params, &p) == nil {
 				toolStreamed = true
-				os.Stdout.Write([]byte(p.Chunk))
+				toolOutput.WriteString(p.Chunk)
 			}
 		case rpc.MethodToolEnd:
 			var p rpc.ToolEndParams
 			if json.Unmarshal(params, &p) == nil {
+				// Build the complete tool block and render it all at once
+				// through largo — no streaming echo-then-replace.
+				var block strings.Builder
+				block.WriteString(toolHeader)
 				if p.IsError {
-					fmt.Fprintf(os.Stdout, "\n⚠ error: %s\n", p.Result)
-				} else if !toolStreamed {
-					os.Stdout.Write([]byte(p.Result))
+					block.WriteString(fmt.Sprintf("\n**⚠ error:** `%s`\n\n", p.Result))
+				} else if toolStreamed {
+					block.WriteString("```\n")
+					block.WriteString(toolOutput.String())
+					block.WriteString("```\n\n")
+				} else {
+					block.WriteString("```\n")
+					block.WriteString(p.Result)
+					block.WriteString("\n```\n\n")
 				}
-				fmt.Fprintln(os.Stdout)
+				sw.Write([]byte(block.String()))
+				sw.Flush()
+				toolOutput.Reset()
 				toolStreamed = false
 			}
 		case rpc.MethodError:
