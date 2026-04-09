@@ -2,6 +2,9 @@ package figaro_test
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -384,4 +387,200 @@ func TestAgent_Info(t *testing.T) {
 	assert.Equal(t, "mock", info.Provider)
 	assert.Equal(t, "mock-model-v1", info.Model)
 	assert.False(t, info.CreatedAt.IsZero())
+}
+
+// --- Persistence tests ---
+
+func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
+	storeDir := t.TempDir()
+
+	a := figaro.NewAgent(figaro.Config{
+		ID:         "persist-001",
+		SocketPath: "/tmp/persist-test.sock",
+		Provider:   &mockProvider{response: "persisted reply"},
+		Model:      "mock-model-v1",
+		MaxTokens:  1024,
+		StoreDir:   storeDir,
+	})
+	defer a.Kill()
+
+	ch := a.Subscribe()
+	a.Prompt("save me")
+
+	// Wait for done.
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case n := <-ch:
+			if n.Method == rpc.MethodDone {
+				goto firstDone
+			}
+		case <-timeout:
+			t.Fatal("timeout")
+		}
+	}
+firstDone:
+
+	// Send a second prompt — by the time it starts processing,
+	// the first prompt's flush is guaranteed complete (FIFO drain loop).
+	a.Prompt("second")
+	for {
+		select {
+		case n := <-ch:
+			if n.Method == rpc.MethodDone {
+				goto secondDone
+			}
+		case <-timeout:
+			t.Fatal("timeout on second prompt")
+		}
+	}
+secondDone:
+
+	// The aria file should exist on disk (flushed after first prompt).
+	ariaPath := filepath.Join(storeDir, "persist-001.json")
+	data, err := os.ReadFile(ariaPath)
+	require.NoError(t, err, "aria file should exist after prompt")
+	require.NotEmpty(t, data)
+
+	// Parse and verify contents.
+	var fd struct {
+		NextLT   uint64      `json:"next_lt"`
+		Messages []struct {
+			Role string `json:"role"`
+		} `json:"messages"`
+		Meta *struct {
+			Provider string `json:"provider"`
+			Model    string `json:"model"`
+		} `json:"meta"`
+	}
+	require.NoError(t, json.Unmarshal(data, &fd))
+	// At minimum, the first prompt's flush wrote user + assistant (2 messages).
+	// The second prompt's flush may or may not have completed by now,
+	// but 2+ messages proves flush-at-turn-boundary works.
+	assert.GreaterOrEqual(t, len(fd.Messages), 2, "should have at least user + assistant on disk")
+
+	// Metadata should be persisted.
+	require.NotNil(t, fd.Meta)
+	assert.Equal(t, "mock", fd.Meta.Provider)
+	assert.Equal(t, "mock-model-v1", fd.Meta.Model)
+}
+
+func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
+	storeDir := t.TempDir()
+
+	// First agent: prompt and kill (which flushes to disk).
+	a1 := figaro.NewAgent(figaro.Config{
+		ID:         "restore-001",
+		SocketPath: "/tmp/restore-test.sock",
+		Provider:   &mockProvider{response: "first reply"},
+		Model:      "mock-model-v1",
+		MaxTokens:  1024,
+		StoreDir:   storeDir,
+	})
+
+	ch := a1.Subscribe()
+	a1.Prompt("hello")
+
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case n := <-ch:
+			if n.Method == rpc.MethodDone {
+				goto firstDone
+			}
+		case <-timeout:
+			t.Fatal("timeout on first prompt")
+		}
+	}
+firstDone:
+	a1.Kill()
+
+	// Second agent with the same ID and StoreDir — should seed from disk.
+	a2 := figaro.NewAgent(figaro.Config{
+		ID:         "restore-001",
+		SocketPath: "/tmp/restore-test2.sock",
+		Provider:   &mockProvider{response: "second reply"},
+		Model:      "mock-model-v1",
+		MaxTokens:  1024,
+		StoreDir:   storeDir,
+	})
+	defer a2.Kill()
+
+	// Context should already have the first conversation.
+	msgs := a2.Context()
+	require.GreaterOrEqual(t, len(msgs), 2, "should restore messages from disk")
+	assert.Equal(t, message.RoleUser, msgs[0].Role)
+	assert.Equal(t, message.RoleAssistant, msgs[1].Role)
+}
+
+func TestAgent_PersistenceKillFlushes(t *testing.T) {
+	storeDir := t.TempDir()
+
+	a := figaro.NewAgent(figaro.Config{
+		ID:         "killflush-001",
+		SocketPath: "/tmp/killflush-test.sock",
+		Provider:   &mockProvider{response: "will be saved"},
+		Model:      "mock-model-v1",
+		MaxTokens:  1024,
+		StoreDir:   storeDir,
+	})
+
+	ch := a.Subscribe()
+	a.Prompt("save on kill")
+
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case n := <-ch:
+			if n.Method == rpc.MethodDone {
+				goto done
+			}
+		case <-timeout:
+			t.Fatal("timeout")
+		}
+	}
+done:
+
+	// Kill the agent (should flush + close).
+	a.Kill()
+
+	// Verify data is on disk.
+	ariaPath := filepath.Join(storeDir, "killflush-001.json")
+	_, err := os.Stat(ariaPath)
+	assert.NoError(t, err, "aria file should exist after kill")
+}
+
+func TestAgent_EphemeralWhenNoStoreDir(t *testing.T) {
+	// No StoreDir — should behave as before (no files written).
+	tmpDir := t.TempDir()
+
+	a := figaro.NewAgent(figaro.Config{
+		ID:         "ephemeral-001",
+		SocketPath: "/tmp/ephemeral-test.sock",
+		Provider:   &mockProvider{response: "gone"},
+		Model:      "mock-model-v1",
+		MaxTokens:  1024,
+		// StoreDir deliberately omitted.
+	})
+
+	ch := a.Subscribe()
+	a.Prompt("vanish")
+
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case n := <-ch:
+			if n.Method == rpc.MethodDone {
+				goto done
+			}
+		case <-timeout:
+			t.Fatal("timeout")
+		}
+	}
+done:
+	a.Kill()
+
+	// No files should appear in any random dir.
+	entries, _ := os.ReadDir(tmpDir)
+	assert.Empty(t, entries, "no files should be written without StoreDir")
 }

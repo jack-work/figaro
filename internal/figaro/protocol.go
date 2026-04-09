@@ -52,7 +52,7 @@ func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 	jconn := jsonrpc.NewConn(conn)
 
 	handlers := map[string]jsonrpc.HandlerFunc{
-		rpc.MethodPrompt: func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		rpc.MethodPrompt: func(ctx context.Context, params json.RawMessage) (any, error) {
 			var req rpc.PromptRequest
 			if err := json.Unmarshal(params, &req); err != nil {
 				return nil, err
@@ -60,15 +60,15 @@ func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 			a.Prompt(req.Text)
 			return rpc.PromptResponse{OK: true}, nil
 		},
-		rpc.MethodContext: func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		rpc.MethodContext: func(ctx context.Context, params json.RawMessage) (any, error) {
 			msgs := a.Context()
-			iface := make([]interface{}, len(msgs))
+			iface := make([]any, len(msgs))
 			for i, m := range msgs {
 				iface[i] = m
 			}
 			return rpc.ContextResponse{Messages: iface}, nil
 		},
-		rpc.MethodFigaroInfo: func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		rpc.MethodFigaroInfo: func(ctx context.Context, params json.RawMessage) (any, error) {
 			info := a.Info()
 			return rpc.FigaroInfoResponse{
 				ID:           info.ID,
@@ -82,7 +82,7 @@ func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 				LastActive:   info.LastActive.UnixMilli(),
 			}, nil
 		},
-		rpc.MethodSetModel: func(ctx context.Context, params json.RawMessage) (interface{}, error) {
+		rpc.MethodSetModel: func(ctx context.Context, params json.RawMessage) (any, error) {
 			var req rpc.SetModelRequest
 			if err := json.Unmarshal(params, &req); err != nil {
 				return nil, err

@@ -14,16 +14,28 @@ import (
 type fileData struct {
 	NextLT   uint64            `json:"next_lt"`
 	Messages []message.Message `json:"messages"`
+	Meta     *AriaMeta         `json:"meta,omitempty"`
+}
+
+// AriaMeta holds metadata persisted alongside an aria's messages.
+// Used to restore agents on angelus restart.
+type AriaMeta struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Cwd      string `json:"cwd"`
+	Root     string `json:"root"`
 }
 
 // FileStore persists a conversation as a single JSON file.
 // Each write overwrites the file atomically (write-to-tmp + rename).
-// It implements Store and can serve as the downstream for MemStore.
+// It implements Store and Downstream.
+var _ Downstream = (*FileStore)(nil)
 type FileStore struct {
 	mu       sync.Mutex
 	path     string
 	messages []message.Message
 	nextLT   uint64
+	meta     *AriaMeta
 }
 
 // NewFileStore creates a FileStore at the given path.
@@ -50,6 +62,7 @@ func NewFileStore(path string) (*FileStore, error) {
 
 	s.messages = fd.Messages
 	s.nextLT = fd.NextLT
+	s.meta = fd.Meta
 	return s, nil
 }
 
@@ -99,9 +112,19 @@ func (s *FileStore) Close() error {
 	return nil
 }
 
-// Overwrite replaces the store's contents with the given messages
-// and nextLT, then writes to disk. Used by MemStore.Flush().
-func (s *FileStore) Overwrite(messages []message.Message, nextLT uint64) error {
+// Seed returns the persisted messages and next logical time.
+// Called once during MemStore construction to restore state.
+func (s *FileStore) Seed() ([]message.Message, uint64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	msgs := make([]message.Message, len(s.messages))
+	copy(msgs, s.messages)
+	return msgs, s.nextLT, nil
+}
+
+// Checkpoint replaces the store's contents with the given messages
+// and nextLT, then writes to disk atomically.
+func (s *FileStore) Checkpoint(messages []message.Message, nextLT uint64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messages = make([]message.Message, len(messages))
@@ -124,12 +147,27 @@ func (s *FileStore) Path() string {
 	return s.path
 }
 
+// SetMeta sets the aria metadata. Written to disk on next write.
+func (s *FileStore) SetMeta(meta *AriaMeta) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.meta = meta
+}
+
+// Meta returns the aria metadata, or nil if none was set/loaded.
+func (s *FileStore) Meta() *AriaMeta {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.meta
+}
+
 // writeLocked writes the current state to disk atomically.
 // Caller must hold s.mu.
 func (s *FileStore) writeLocked() error {
 	fd := fileData{
 		NextLT:   s.nextLT,
 		Messages: s.messages,
+		Meta:     s.meta,
 	}
 	data, err := json.Marshal(fd)
 	if err != nil {

@@ -2,22 +2,26 @@ package store
 
 import (
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// MemStore is an in-memory store with optional downstream persistence.
+// MemStore is an in-memory write-ahead log with optional downstream
+// persistence.
 //
-// When constructed with NewMemStoreWith, it seeds from the downstream
-// store's Context() and delegates Flush/Clear to it. The in-memory
-// state is always the authoritative hot copy — Append writes only to
-// memory. Flush snapshots the full state downstream on demand.
+// Append writes only to memory (the WAL). Flush checkpoints the full
+// state to the downstream atomically. The in-memory state is always
+// the authoritative hot copy.
+//
+// The downstream is abstract — FileStore (JSON files) is the default,
+// but any Downstream implementation (SQL, Redis+SQL) can be used.
 type MemStore struct {
 	mu         sync.Mutex
 	messages   []message.Message
 	nextLT     uint64
-	downstream *FileStore // nil = no persistence (test/crash mode)
+	downstream Downstream // nil = no persistence (test/crash mode)
 }
 
 // NewMemStore creates a standalone in-memory store with no persistence.
@@ -25,24 +29,23 @@ func NewMemStore() *MemStore {
 	return &MemStore{nextLT: 1}
 }
 
-// NewMemStoreWith creates an in-memory store backed by a downstream
-// FileStore. The in-memory state is seeded from downstream.Context()
-// at construction time, recovering logical time from the last message.
-func NewMemStoreWith(downstream *FileStore) *MemStore {
+// NewMemStoreWith creates an in-memory WAL backed by a downstream
+// persistence layer. The WAL is seeded from downstream.Seed() at
+// construction time.
+func NewMemStoreWith(downstream Downstream) *MemStore {
 	s := &MemStore{
 		nextLT:     1,
 		downstream: downstream,
 	}
 
-	if block := downstream.Context(); block != nil && len(block.Messages) > 0 {
-		s.messages = make([]message.Message, len(block.Messages))
-		copy(s.messages, block.Messages)
-		// Recover nextLT from the highest logical time.
-		for _, m := range s.messages {
-			if m.LogicalTime >= s.nextLT {
-				s.nextLT = m.LogicalTime + 1
-			}
-		}
+	msgs, nextLT, err := downstream.Seed()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "memstore: seed error: %v\n", err)
+		return s
+	}
+	if len(msgs) > 0 {
+		s.messages = msgs
+		s.nextLT = nextLT
 	}
 
 	return s
@@ -90,8 +93,8 @@ func (s *MemStore) LeafTime() uint64 {
 	return s.messages[len(s.messages)-1].LogicalTime
 }
 
-// Flush copies the full in-memory state to the downstream FileStore.
-// Memory is unchanged — the store stays hot. No-op if no downstream.
+// Flush checkpoints the full in-memory WAL to the downstream.
+// Memory is unchanged — the WAL stays hot. No-op if no downstream.
 func (s *MemStore) Flush() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -100,7 +103,7 @@ func (s *MemStore) Flush() error {
 	}
 	msgs := make([]message.Message, len(s.messages))
 	copy(msgs, s.messages)
-	return s.downstream.Overwrite(msgs, s.nextLT)
+	return s.downstream.Checkpoint(msgs, s.nextLT)
 }
 
 // Clear wipes the in-memory state and cascades to delete the
@@ -125,4 +128,9 @@ func (s *MemStore) Close() error {
 		return s.downstream.Close()
 	}
 	return nil
+}
+
+// Downstream returns the backing persistence layer, or nil if standalone.
+func (s *MemStore) Downstream() Downstream {
+	return s.downstream
 }

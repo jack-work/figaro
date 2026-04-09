@@ -39,6 +39,57 @@ type Store interface {
 	Close() error
 }
 
+// Downstream is the persistence backend for MemStore.
+//
+// MemStore acts as an in-memory write-ahead log, periodically
+// checkpointing its full state to the downstream. The downstream
+// is responsible for durable storage — files, SQL, etc.
+//
+// Built-in implementation:
+//   - FileStore: atomic JSON files (default, zero dependencies)
+//
+// To add a new backend (e.g. PostgreSQL, SQLite), implement this
+// interface. Seed returns the persisted state on startup;
+// Checkpoint writes the full WAL snapshot atomically.
+//
+// Example SQL schema (PostgreSQL):
+//
+//	CREATE TABLE arias (
+//	    id         TEXT PRIMARY KEY,
+//	    messages   JSONB NOT NULL DEFAULT '[]',
+//	    next_lt    BIGINT NOT NULL DEFAULT 1,
+//	    meta       JSONB,
+//	    updated_at TIMESTAMPTZ DEFAULT now()
+//	);
+//
+// For a cache tier (e.g. Redis), wrap the durable downstream:
+//
+//	agent → MemStore → RedisCache → SQLStore → database
+//
+// RedisCache implements Downstream, delegates Checkpoint to the
+// inner SQLStore, and serves Seed from cache when warm.
+type Downstream interface {
+	// Seed returns persisted messages and the next logical time.
+	// Called once during MemStore construction to restore state.
+	Seed() ([]message.Message, uint64, error)
+
+	// Checkpoint atomically persists the full WAL state.
+	// Called by MemStore.Flush() at turn boundaries.
+	Checkpoint(messages []message.Message, nextLT uint64) error
+
+	// SetMeta sets aria metadata, persisted on next Checkpoint.
+	SetMeta(meta *AriaMeta)
+
+	// Meta returns the current aria metadata.
+	Meta() *AriaMeta
+
+	// Remove deletes all persisted state for this aria.
+	Remove() error
+
+	// Close releases resources (connections, file handles).
+	Close() error
+}
+
 // Registry maps figaro IDs to their Store instances.
 // The process maintains one registry; each figaro gets its own
 // store, resolved by ID at the start of each invocation.

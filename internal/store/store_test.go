@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -147,7 +150,7 @@ func TestFileStore_Overwrite(t *testing.T) {
 		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("beta")}, LogicalTime: 2},
 		{Role: message.RoleUser, Content: []message.Content{message.TextContent("gamma")}, LogicalTime: 3},
 	}
-	if err := fs.Overwrite(newMsgs, 4); err != nil {
+	if err := fs.Checkpoint(newMsgs, 4); err != nil {
 		t.Fatalf("Overwrite: %v", err)
 	}
 
@@ -502,4 +505,127 @@ func TestRemoveAria_Nonexistent(t *testing.T) {
 	if err := RemoveAria(dir, "ghost"); err != nil {
 		t.Fatalf("RemoveAria nonexistent: %v", err)
 	}
+}
+
+// --- Metadata persistence tests ---
+
+func TestFileStore_MetaPersistence(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "meta.json")
+
+	fs, err := NewFileStore(path)
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+
+	meta := &AriaMeta{
+		Provider: "anthropic",
+		Model:    "claude-sonnet-4-20250514",
+		Cwd:      "/home/test",
+		Root:     "/home/test/project",
+	}
+	fs.SetMeta(meta)
+
+	// Write something to disk.
+	fs.Append(message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}})
+
+	// Reload and check meta.
+	fs2, err := NewFileStore(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	got := fs2.Meta()
+	if got == nil {
+		t.Fatal("expected meta after reload, got nil")
+	}
+	if got.Provider != meta.Provider {
+		t.Fatalf("provider: got %q, want %q", got.Provider, meta.Provider)
+	}
+	if got.Model != meta.Model {
+		t.Fatalf("model: got %q, want %q", got.Model, meta.Model)
+	}
+	if got.Cwd != meta.Cwd {
+		t.Fatalf("cwd: got %q, want %q", got.Cwd, meta.Cwd)
+	}
+	if got.Root != meta.Root {
+		t.Fatalf("root: got %q, want %q", got.Root, meta.Root)
+	}
+}
+
+func TestListArias_IncludesMeta(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "withmeta.json")
+
+	fs, err := NewFileStore(path)
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	fs.SetMeta(&AriaMeta{Provider: "mock", Model: "test-v1"})
+	fs.Append(message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("x")}})
+
+	arias, err := ListArias(dir)
+	if err != nil {
+		t.Fatalf("ListArias: %v", err)
+	}
+	if len(arias) != 1 {
+		t.Fatalf("expected 1 aria, got %d", len(arias))
+	}
+	if arias[0].Meta == nil {
+		t.Fatal("expected meta in AriaInfo")
+	}
+	if arias[0].Meta.Provider != "mock" {
+		t.Fatalf("provider: got %q", arias[0].Meta.Provider)
+	}
+}
+
+func TestMemStore_DownstreamAccessor(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "downstream.json")
+
+	fs, err := NewFileStore(path)
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	ms := NewMemStoreWith(fs)
+	assert.NotNil(t, ms.Downstream())
+
+	standalone := NewMemStore()
+	assert.Nil(t, standalone.Downstream())
+}
+
+func TestFileStore_Seed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "seed.json")
+
+	fs, err := NewFileStore(path)
+	require.NoError(t, err)
+
+	// Empty store seeds empty.
+	msgs, nextLT, err := fs.Seed()
+	require.NoError(t, err)
+	assert.Empty(t, msgs)
+	assert.Equal(t, uint64(1), nextLT)
+
+	// Append some messages.
+	fs.Append(message.Message{
+		Role:    message.RoleUser,
+		Content: []message.Content{message.TextContent("hello")},
+	})
+	fs.Append(message.Message{
+		Role:    message.RoleAssistant,
+		Content: []message.Content{message.TextContent("hi")},
+	})
+
+	// Seed returns messages and correct nextLT.
+	msgs, nextLT, err = fs.Seed()
+	require.NoError(t, err)
+	assert.Len(t, msgs, 2)
+	assert.Equal(t, uint64(3), nextLT)
+	assert.Equal(t, message.RoleUser, msgs[0].Role)
+	assert.Equal(t, message.RoleAssistant, msgs[1].Role)
+
+	// Seed returns a copy — mutating it doesn't affect the store.
+	msgs[0].Role = "mutated"
+	msgs2, _, _ := fs.Seed()
+	assert.Equal(t, message.RoleUser, msgs2[0].Role)
 }

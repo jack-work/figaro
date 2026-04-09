@@ -13,6 +13,7 @@ type AriaInfo struct {
 	ID           string
 	MessageCount int
 	LastModified time.Time
+	Meta         *AriaMeta // nil if no metadata in file
 }
 
 // ListArias scans a directory for aria JSON files and returns
@@ -41,12 +42,14 @@ func ListArias(dir string) ([]AriaInfo, error) {
 			continue // skip unreadable entries
 		}
 
-		// Read just enough to count messages.
+		// Read just enough to count messages and get metadata.
 		msgCount := 0
+		var meta *AriaMeta
 		if data, err := os.ReadFile(path); err == nil {
 			var fd fileData
 			if json.Unmarshal(data, &fd) == nil {
 				msgCount = len(fd.Messages)
+				meta = fd.Meta
 			}
 		}
 
@@ -54,6 +57,7 @@ func ListArias(dir string) ([]AriaInfo, error) {
 			ID:           id,
 			MessageCount: msgCount,
 			LastModified: info.ModTime(),
+			Meta:         meta,
 		})
 	}
 

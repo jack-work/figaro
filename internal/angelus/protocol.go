@@ -17,6 +17,7 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
 )
 
@@ -31,23 +32,45 @@ type ServerConfig struct {
 	Ctx             context.Context
 }
 
-// NewHandlerMap creates the handler map for the angelus socket.
-func NewHandlerMap(cfg ServerConfig) map[string]jsonrpc.HandlerFunc {
+// Handlers wraps the angelus JSON-RPC handler map and provides
+// additional methods like aria restoration.
+type Handlers struct {
+	Map map[string]jsonrpc.HandlerFunc
+	h   *handlers
+}
+
+// NewHandlers creates the handler set for the angelus socket.
+func NewHandlers(cfg ServerConfig) *Handlers {
 	h := &handlers{
 		angelus: cfg.Angelus,
 		config:  cfg.Config,
 		factory: cfg.ProviderFactory,
 		ctx:     cfg.Ctx,
 	}
-	return map[string]jsonrpc.HandlerFunc{
-		rpc.MethodCreate:  h.create,
-		rpc.MethodKill:    h.kill,
-		rpc.MethodList:    h.list,
-		rpc.MethodBind:    h.bind,
-		rpc.MethodResolve: h.resolve,
-		rpc.MethodUnbind:  h.unbind,
-		rpc.MethodStatus:  h.status,
+	return &Handlers{
+		Map: map[string]jsonrpc.HandlerFunc{
+			rpc.MethodCreate:  h.create,
+			rpc.MethodKill:    h.kill,
+			rpc.MethodList:    h.list,
+			rpc.MethodBind:    h.bind,
+			rpc.MethodResolve: h.resolve,
+			rpc.MethodUnbind:  h.unbind,
+			rpc.MethodStatus:  h.status,
+		},
+		h: h,
 	}
+}
+
+// RestoreArias scans the store directory and re-creates agents for
+// persisted arias. Call once on angelus startup, before accepting clients.
+func (hs *Handlers) RestoreArias(ctx context.Context) {
+	hs.h.RestoreArias(ctx)
+}
+
+// NewHandlerMap creates the handler map for the angelus socket.
+// Deprecated: Use NewHandlers for access to RestoreArias.
+func NewHandlerMap(cfg ServerConfig) map[string]jsonrpc.HandlerFunc {
+	return NewHandlers(cfg).Map
 }
 
 type handlers struct {
@@ -84,6 +107,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
 	logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
+	storeDir := filepath.Join(home, ".local", "state", "figaro", "arias")
 
 	tools := []tool.Tool{
 		&tool.Bash{Cwd: cwd},
@@ -103,6 +127,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		MaxTokens:  8192,
 		Tools:      tools,
 		LogDir:     logDir,
+		StoreDir:   storeDir,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -131,6 +156,15 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.angelus.Registry.Kill(req.FigaroID); err != nil {
 		return nil, err
 	}
+
+	// Remove persisted aria from disk.
+	home, _ := os.UserHomeDir()
+	storeDir := filepath.Join(home, ".local", "state", "figaro", "arias")
+	if err := store.RemoveAria(storeDir, req.FigaroID); err != nil {
+		// Log but don't fail the kill — the agent is already dead.
+		h.angelus.Logger.Printf("warning: failed to remove aria file for %s: %v", req.FigaroID, err)
+	}
+
 	h.angelus.Logger.Printf("killed figaro %s", req.FigaroID)
 	return rpc.KillResponse{OK: true}, nil
 }
@@ -200,4 +234,83 @@ func (h *handlers) status(ctx context.Context, params json.RawMessage) (interfac
 		FigaroCount: h.angelus.Registry.FigaroCount(),
 		BoundPIDs:   h.angelus.Registry.BoundPIDCount(),
 	}, nil
+}
+
+// RestoreArias scans the aria store directory and re-creates agents
+// for any persisted arias that have metadata. Called on angelus startup.
+func (h *handlers) RestoreArias(ctx context.Context) {
+	home, _ := os.UserHomeDir()
+	storeDir := filepath.Join(home, ".local", "state", "figaro", "arias")
+
+	arias, err := store.ListArias(storeDir)
+	if err != nil {
+		h.angelus.Logger.Printf("restore: failed to list arias: %v", err)
+		return
+	}
+
+	for _, aria := range arias {
+		if aria.Meta == nil {
+			h.angelus.Logger.Printf("restore: skipping %s (no metadata)", aria.ID)
+			continue
+		}
+		if aria.MessageCount == 0 {
+			// Empty aria — clean up the file.
+			store.RemoveAria(storeDir, aria.ID)
+			continue
+		}
+
+		meta := aria.Meta
+		prov, err := h.factory(meta.Provider, meta.Model)
+		if err != nil {
+			h.angelus.Logger.Printf("restore: skipping %s: create provider: %v", aria.ID, err)
+			continue
+		}
+
+		sockPath := filepath.Join(h.angelus.FigaroSocketDir(), aria.ID+".sock")
+		scribe := credo.NewDefaultScribe(h.config.ConfigDir)
+
+		logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
+
+		cwd := meta.Cwd
+		root := meta.Root
+		// Fallback if the directories no longer exist.
+		if _, err := os.Stat(cwd); err != nil {
+			cwd, _ = os.Getwd()
+		}
+		if _, err := os.Stat(root); err != nil {
+			root = cwd
+		}
+
+		tools := []tool.Tool{
+			&tool.Bash{Cwd: cwd},
+			&tool.Read{Cwd: cwd},
+			&tool.Write{Cwd: cwd},
+			&tool.Edit{Cwd: cwd},
+		}
+
+		agent := figaro.NewAgent(figaro.Config{
+			ID:         aria.ID,
+			SocketPath: sockPath,
+			Provider:   prov,
+			Model:      meta.Model,
+			Scribe:     scribe,
+			Cwd:        cwd,
+			Root:       root,
+			MaxTokens:  8192,
+			Tools:      tools,
+			LogDir:     logDir,
+			StoreDir:   storeDir,
+		})
+
+		if err := h.angelus.Registry.Register(agent); err != nil {
+			agent.Kill()
+			h.angelus.Logger.Printf("restore: skipping %s: register: %v", aria.ID, err)
+			continue
+		}
+
+		go agent.StartSocket(ctx)
+
+		h.angelus.Logger.Printf("restored figaro %s, provider=%s, model=%s, messages=%d",
+			aria.ID, meta.Provider, meta.Model, aria.MessageCount)
+	}
 }

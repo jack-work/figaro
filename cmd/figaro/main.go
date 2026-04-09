@@ -149,12 +149,16 @@ func runAngelus() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	a.Handlers = angelus.NewHandlerMap(angelus.ServerConfig{
+	handlers := angelus.NewHandlers(angelus.ServerConfig{
 		Angelus:         a,
 		Config:          loaded,
 		ProviderFactory: buildProviderFactory(loaded),
 		Ctx:             ctx,
 	})
+	a.Handlers = handlers.Map
+
+	// Restore persisted arias from disk before accepting connections.
+	handlers.RestoreArias(ctx)
 
 	if err := a.Run(ctx); err != nil {
 		logger.Fatalf("angelus: %v", err)
