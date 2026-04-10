@@ -15,10 +15,10 @@ type OnOutput func(chunk []byte)
 type Tool interface {
 	Name() string
 	Description() string
-	Parameters() interface{}
+	Parameters() any
 
 	// Execute runs the tool. onOutput receives streaming output chunks
 	// as they become available (may be nil to disable streaming).
 	// Returns the final complete result.
-	Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) (string, error)
+	Execute(ctx context.Context, args map[string]any, onOutput OnOutput) (string, error)
 }

@@ -12,7 +12,7 @@ import (
 )
 
 func TestBash_Basic(t *testing.T) {
-	b := &tool.Bash{Cwd: t.TempDir()}
+	b := tool.NewBashTool(t.TempDir())
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "echo hello",
 	}, nil)
@@ -21,14 +21,14 @@ func TestBash_Basic(t *testing.T) {
 }
 
 func TestBash_NoCommand(t *testing.T) {
-	b := &tool.Bash{Cwd: t.TempDir()}
+	b := tool.NewBashTool(t.TempDir())
 	_, err := b.Execute(context.Background(), map[string]interface{}{}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "command is required")
 }
 
 func TestBash_NonZeroExit(t *testing.T) {
-	b := &tool.Bash{Cwd: t.TempDir()}
+	b := tool.NewBashTool(t.TempDir())
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "exit 42",
 	}, nil)
@@ -38,7 +38,7 @@ func TestBash_NonZeroExit(t *testing.T) {
 }
 
 func TestBash_Stderr(t *testing.T) {
-	b := &tool.Bash{Cwd: t.TempDir()}
+	b := tool.NewBashTool(t.TempDir())
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "echo error >&2",
 	}, nil)
@@ -47,7 +47,7 @@ func TestBash_Stderr(t *testing.T) {
 }
 
 func TestBash_Timeout(t *testing.T) {
-	b := &tool.Bash{Cwd: t.TempDir()}
+	b := tool.NewBashTool(t.TempDir())
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "sleep 60",
 		"timeout": float64(1),
@@ -58,7 +58,7 @@ func TestBash_Timeout(t *testing.T) {
 
 func TestBash_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	b := &tool.Bash{Cwd: t.TempDir()}
+	b := tool.NewBashTool(t.TempDir())
 
 	// Cancel immediately.
 	cancel()
@@ -76,7 +76,7 @@ func TestBash_ContextCancel(t *testing.T) {
 
 func TestBash_Cwd(t *testing.T) {
 	dir := t.TempDir()
-	b := &tool.Bash{Cwd: dir}
+	b := tool.NewBashTool(dir)
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "pwd",
 	}, nil)
@@ -85,7 +85,7 @@ func TestBash_Cwd(t *testing.T) {
 }
 
 func TestBash_NoOutput(t *testing.T) {
-	b := &tool.Bash{Cwd: t.TempDir()}
+	b := tool.NewBashTool(t.TempDir())
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "true",
 	}, nil)
@@ -94,7 +94,7 @@ func TestBash_NoOutput(t *testing.T) {
 }
 
 func TestBash_OutputTruncation(t *testing.T) {
-	b := &tool.Bash{Cwd: t.TempDir()}
+	b := tool.NewBashTool(t.TempDir())
 	// Generate more than MaxOutputLines.
 	cmd := "for i in $(seq 1 3000); do echo line$i; done"
 	result, err := b.Execute(context.Background(), map[string]interface{}{
@@ -108,7 +108,7 @@ func TestBash_OutputTruncation(t *testing.T) {
 }
 
 func TestBash_LargeOutputByteTruncation(t *testing.T) {
-	b := &tool.Bash{Cwd: t.TempDir()}
+	b := tool.NewBashTool(t.TempDir())
 	// Generate more than MaxOutputBytes.
 	// Each line is ~80 chars, need 50KB / 80 ≈ 640 lines, but use more to be safe.
 	cmd := "for i in $(seq 1 2000); do echo $(head -c 80 /dev/urandom | base64 | head -c 80); done"
@@ -125,7 +125,7 @@ func TestBash_LargeOutputByteTruncation(t *testing.T) {
 }
 
 func TestBash_ProcessTreeKill(t *testing.T) {
-	b := &tool.Bash{Cwd: t.TempDir()}
+	b := tool.NewBashTool(t.TempDir())
 	// Spawn a child that spawns a grandchild. Timeout should kill both.
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "bash -c 'sleep 60' & sleep 60",
@@ -136,7 +136,7 @@ func TestBash_ProcessTreeKill(t *testing.T) {
 }
 
 func TestBash_StreamingOutput(t *testing.T) {
-	b := &tool.Bash{Cwd: t.TempDir()}
+	b := tool.NewBashTool(t.TempDir())
 
 	var chunks []string
 	onOutput := func(chunk []byte) {
@@ -161,7 +161,7 @@ func TestBash_StreamingOutput(t *testing.T) {
 }
 
 func TestBash_StreamingNil(t *testing.T) {
-	b := &tool.Bash{Cwd: t.TempDir()}
+	b := tool.NewBashTool(t.TempDir())
 	// nil onOutput should not panic.
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": "echo ok",
@@ -171,12 +171,12 @@ func TestBash_StreamingNil(t *testing.T) {
 }
 
 func TestBash_Name(t *testing.T) {
-	b := &tool.Bash{}
+	b := tool.NewBashTool("")
 	assert.Equal(t, "bash", b.Name())
 }
 
 func TestBash_Description(t *testing.T) {
-	b := &tool.Bash{}
+	b := tool.NewBashTool("")
 	assert.Contains(t, b.Description(), "2000 lines")
 	assert.Contains(t, b.Description(), "50KB")
 }

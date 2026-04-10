@@ -5,29 +5,53 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"strings"
 	"syscall"
 	"time"
 )
 
-// Output truncation limits.
-const (
-	MaxOutputLines = 2000
-	MaxOutputBytes = 50 * 1024 // 50KB
-)
+// BashRequest is the typed input to the bash tool.
+type BashRequest struct {
+	Command string
+	// Timeout is the wall-clock limit for the command. Zero means no
+	// timeout (the context still applies).
+	Timeout time.Duration
+}
 
-type Bash struct{ Cwd string }
+// BashResult bundles the final output string with metadata about how
+// the command finished. Output is the (possibly truncated) captured
+// stdout+stderr and is what the model sees.
+type BashResult struct {
+	Output     string
+	ExitCode   int
+	TimedOut   bool
+	Canceled   bool
+	Truncation *TruncationResult
+}
 
-func (b *Bash) Name() string { return "bash" }
-func (b *Bash) Description() string {
+// Runner is the Go-level interface.
+type Runner interface {
+	Run(ctx context.Context, req BashRequest) (BashResult, error)
+}
+
+// BashTool implements both Runner and the generic Tool interface.
+type BashTool struct {
+	Cwd string
+}
+
+// NewBashTool constructs a BashTool bound to cwd.
+func NewBashTool(cwd string) *BashTool { return &BashTool{Cwd: cwd} }
+
+func (b *BashTool) Name() string { return "bash" }
+func (b *BashTool) Description() string {
 	return fmt.Sprintf(
 		"Execute a bash command in the current working directory. Returns stdout and stderr. "+
 			"Output is truncated to last %d lines or %dKB (whichever is hit first). "+
-			"If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+			"Optionally provide a timeout in seconds.",
 		MaxOutputLines, MaxOutputBytes/1024,
 	)
 }
-func (b *Bash) Parameters() interface{} {
+
+func (b *BashTool) Parameters() interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -38,65 +62,110 @@ func (b *Bash) Parameters() interface{} {
 	}
 }
 
-func (b *Bash) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) (string, error) {
+func (b *BashTool) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) (string, error) {
 	command, _ := args["command"].(string)
 	if command == "" {
 		return "", fmt.Errorf("command is required")
 	}
-
-	// Parse optional timeout.
 	var timeout time.Duration
 	if t, ok := args["timeout"].(float64); ok && t > 0 {
 		timeout = time.Duration(t * float64(time.Second))
 	}
 
+	res, err := b.run(ctx, BashRequest{Command: command, Timeout: timeout}, onOutput)
+	if err != nil {
+		return "", err
+	}
+	return res.Output, nil
+}
+
+// Run is the typed Go API. Non-zero exit codes are not returned as an
+// error — they're surfaced in the BashResult.ExitCode field and
+// reflected in the formatted Output string.
+func (b *BashTool) Run(ctx context.Context, req BashRequest) (BashResult, error) {
+	return b.run(ctx, req, nil)
+}
+
+func (b *BashTool) run(ctx context.Context, req BashRequest, onOutput OnOutput) (BashResult, error) {
+	if req.Command == "" {
+		return BashResult{}, fmt.Errorf("command is required")
+	}
+
 	// We manage killing ourselves rather than using exec.CommandContext,
 	// because we need to kill the entire process group (Setpgid).
-	cmd := exec.Command("bash", "-c", command)
+	cmd := exec.Command("bash", "-c", req.Command)
 	cmd.Dir = b.Cwd
-	// Own process group so we can kill the entire tree.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	// streamWriter captures all output and optionally streams chunks
-	// to the onOutput callback as they arrive.
 	sw := &streamWriter{onOutput: onOutput}
 	cmd.Stdout = sw
 	cmd.Stderr = sw
 
 	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("start command: %w", err)
+		return BashResult{}, fmt.Errorf("start command: %w", err)
 	}
 
-	// Wait for completion, timeout, or context cancellation.
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 
-	var timedOut, canceled bool
-
-	// Build a timeout channel if needed.
 	var timeoutCh <-chan time.Time
-	if timeout > 0 {
-		timer := time.NewTimer(timeout)
+	if req.Timeout > 0 {
+		timer := time.NewTimer(req.Timeout)
 		defer timer.Stop()
 		timeoutCh = timer.C
 	}
 
+	var timedOut, canceled bool
 	select {
 	case err := <-done:
-		return b.formatResult(sw.String(), err, timedOut, canceled, timeout)
+		return b.formatResult(sw.String(), err, false, false, req.Timeout)
 	case <-timeoutCh:
 		timedOut = true
 	case <-ctx.Done():
 		canceled = true
 	}
 
-	// Kill the entire process group.
 	killProcessGroup(cmd)
-
-	// Wait for the process to actually exit (so pipes close).
 	<-done
+	return b.formatResult(sw.String(), nil, timedOut, canceled, req.Timeout)
+}
 
-	return b.formatResult(sw.String(), nil, timedOut, canceled, timeout)
+func (b *BashTool) formatResult(raw string, execErr error, timedOut, canceled bool, timeout time.Duration) (BashResult, error) {
+	trunc := TruncateTail(raw, TruncationOptions{})
+	output := trunc.Content
+	if output == "" {
+		output = "(no output)"
+	}
+
+	if trunc.Truncated {
+		output += fmt.Sprintf("\n\n[Output truncated to last %d lines / %dKB]", MaxOutputLines, MaxOutputBytes/1024)
+	}
+
+	exitCode := 0
+	if execErr != nil {
+		if exitErr, ok := execErr.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			return BashResult{}, execErr
+		}
+	}
+
+	switch {
+	case timedOut:
+		output += fmt.Sprintf("\n\nCommand timed out after %s", timeout)
+	case canceled:
+		output += "\n\nCommand aborted"
+	case exitCode != 0:
+		output += fmt.Sprintf("\n\nCommand exited with code %d", exitCode)
+	}
+
+	return BashResult{
+		Output:     output,
+		ExitCode:   exitCode,
+		TimedOut:   timedOut,
+		Canceled:   canceled,
+		Truncation: &trunc,
+	}, nil
 }
 
 // killProcessGroup sends SIGKILL to the entire process group.
@@ -104,32 +173,6 @@ func killProcessGroup(cmd *exec.Cmd) {
 	if cmd.Process != nil {
 		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
-}
-
-func (b *Bash) formatResult(output string, err error, timedOut, canceled bool, timeout time.Duration) (string, error) {
-	output, truncated := truncateTail(output)
-
-	if output == "" {
-		output = "(no output)"
-	}
-
-	if truncated {
-		output += fmt.Sprintf("\n\n[Output truncated to last %d lines / %dKB]", MaxOutputLines, MaxOutputBytes/1024)
-	}
-
-	if timedOut {
-		return fmt.Sprintf("%s\n\nCommand timed out after %s", output, timeout), nil
-	}
-	if canceled {
-		return fmt.Sprintf("%s\n\nCommand aborted", output), nil
-	}
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return fmt.Sprintf("%s\n\nCommand exited with code %d", output, exitErr.ExitCode()), nil
-		}
-		return "", err
-	}
-	return output, nil
 }
 
 // streamWriter captures all output and optionally streams chunks to a callback.
@@ -141,7 +184,6 @@ type streamWriter struct {
 func (w *streamWriter) Write(p []byte) (int, error) {
 	n, err := w.buf.Write(p)
 	if w.onOutput != nil && n > 0 {
-		// Send a copy so the callback can safely hold the reference.
 		chunk := make([]byte, n)
 		copy(chunk, p[:n])
 		w.onOutput(chunk)
@@ -149,29 +191,4 @@ func (w *streamWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (w *streamWriter) String() string {
-	return w.buf.String()
-}
-
-// truncateTail keeps the last MaxOutputLines / MaxOutputBytes of output.
-// Returns the truncated string and whether truncation occurred.
-func truncateTail(output string) (string, bool) {
-	// Check byte limit first.
-	if len(output) > MaxOutputBytes {
-		output = output[len(output)-MaxOutputBytes:]
-		// Find the first newline to avoid a partial first line.
-		if idx := strings.Index(output, "\n"); idx >= 0 {
-			output = output[idx+1:]
-		}
-		return output, true
-	}
-
-	// Check line limit.
-	lines := strings.Split(output, "\n")
-	if len(lines) > MaxOutputLines {
-		lines = lines[len(lines)-MaxOutputLines:]
-		return strings.Join(lines, "\n"), true
-	}
-
-	return output, false
-}
+func (w *streamWriter) String() string { return w.buf.String() }

@@ -109,13 +109,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
 	storeDir := filepath.Join(home, ".local", "state", "figaro", "arias")
 
-	tools := []tool.Tool{
-		&tool.Bash{Cwd: cwd},
-		&tool.Read{Cwd: cwd},
-		&tool.Write{Cwd: cwd},
-		&tool.Edit{Cwd: cwd},
-	}
-
 	agent := figaro.NewAgent(figaro.Config{
 		ID:         id,
 		SocketPath: sockPath,
@@ -125,7 +118,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		Cwd:        cwd,
 		Root:       cwd,
 		MaxTokens:  8192,
-		Tools:      tools,
+		Tools:      tool.DefaultRegistry(cwd),
 		LogDir:     logDir,
 		StoreDir:   storeDir,
 	})
@@ -281,13 +274,6 @@ func (h *handlers) RestoreArias(ctx context.Context) {
 			root = cwd
 		}
 
-		tools := []tool.Tool{
-			&tool.Bash{Cwd: cwd},
-			&tool.Read{Cwd: cwd},
-			&tool.Write{Cwd: cwd},
-			&tool.Edit{Cwd: cwd},
-		}
-
 		agent := figaro.NewAgent(figaro.Config{
 			ID:         aria.ID,
 			SocketPath: sockPath,
@@ -297,7 +283,7 @@ func (h *handlers) RestoreArias(ctx context.Context) {
 			Cwd:        cwd,
 			Root:       root,
 			MaxTokens:  8192,
-			Tools:      tools,
+			Tools:      tool.DefaultRegistry(cwd),
 			LogDir:     logDir,
 			StoreDir:   storeDir,
 		})

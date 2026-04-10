@@ -25,7 +25,7 @@ func TestRead_Basic(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "hello.txt", "hello world")
 
-	r := &tool.Read{Cwd: dir}
+	r := tool.NewReadTool(dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path": "hello.txt",
 	}, nil)
@@ -37,7 +37,7 @@ func TestRead_AbsolutePath(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestFile(t, dir, "abs.txt", "absolute")
 
-	r := &tool.Read{Cwd: "/tmp"}
+	r := tool.NewReadTool("/tmp")
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path": path,
 	}, nil)
@@ -46,14 +46,14 @@ func TestRead_AbsolutePath(t *testing.T) {
 }
 
 func TestRead_NoPath(t *testing.T) {
-	r := &tool.Read{Cwd: t.TempDir()}
+	r := tool.NewReadTool(t.TempDir())
 	_, err := r.Execute(context.Background(), map[string]interface{}{}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "path is required")
 }
 
 func TestRead_FileNotFound(t *testing.T) {
-	r := &tool.Read{Cwd: t.TempDir()}
+	r := tool.NewReadTool(t.TempDir())
 	_, err := r.Execute(context.Background(), map[string]interface{}{
 		"path": "nonexistent.txt",
 	}, nil)
@@ -64,7 +64,7 @@ func TestRead_Offset(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "lines.txt", "line1\nline2\nline3\nline4\nline5")
 
-	r := &tool.Read{Cwd: dir}
+	r := tool.NewReadTool(dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path":   "lines.txt",
 		"offset": float64(3),
@@ -81,7 +81,7 @@ func TestRead_Limit(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "lines.txt", "line1\nline2\nline3\nline4\nline5")
 
-	r := &tool.Read{Cwd: dir}
+	r := tool.NewReadTool(dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path":  "lines.txt",
 		"limit": float64(2),
@@ -97,7 +97,7 @@ func TestRead_OffsetAndLimit(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "lines.txt", "line1\nline2\nline3\nline4\nline5")
 
-	r := &tool.Read{Cwd: dir}
+	r := tool.NewReadTool(dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path":   "lines.txt",
 		"offset": float64(2),
@@ -114,7 +114,7 @@ func TestRead_OffsetBeyondEnd(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "short.txt", "one\ntwo")
 
-	r := &tool.Read{Cwd: dir}
+	r := tool.NewReadTool(dir)
 	_, err := r.Execute(context.Background(), map[string]interface{}{
 		"path":   "short.txt",
 		"offset": float64(100),
@@ -132,7 +132,7 @@ func TestRead_LineTruncation(t *testing.T) {
 	}
 	writeTestFile(t, dir, "big.txt", strings.Join(lines, "\n"))
 
-	r := &tool.Read{Cwd: dir}
+	r := tool.NewReadTool(dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path": "big.txt",
 	}, nil)
@@ -144,26 +144,50 @@ func TestRead_LineTruncation(t *testing.T) {
 
 func TestRead_ByteTruncation(t *testing.T) {
 	dir := t.TempDir()
-	// Generate more than MaxOutputBytes in few lines.
-	bigLine := strings.Repeat("x", 60*1024) // 60KB in one line
+	// Many lines, each small, total > MaxOutputBytes. Byte limit hits
+	// before line limit.
+	var lines []string
+	for i := 0; i < 600; i++ {
+		lines = append(lines, strings.Repeat("x", 100))
+	}
+	writeTestFile(t, dir, "wide.txt", strings.Join(lines, "\n"))
+
+	r := tool.NewReadTool(dir)
+	result, err := r.Execute(context.Background(), map[string]interface{}{
+		"path": "wide.txt",
+	}, nil)
+	require.NoError(t, err)
+	assert.LessOrEqual(t, len(result), tool.MaxOutputBytes+200) // allow slack for continuation message
+	assert.Contains(t, result, "Use offset=")
+}
+
+func TestRead_FirstLineExceedsLimit(t *testing.T) {
+	dir := t.TempDir()
+	// Single line larger than MaxOutputBytes — TruncateHead returns
+	// FirstLineExceedsLimit, and the read tool surfaces a sed fallback
+	// instead of a mid-line slice.
+	bigLine := strings.Repeat("x", 60*1024)
 	writeTestFile(t, dir, "huge.txt", bigLine)
 
-	r := &tool.Read{Cwd: dir}
+	r := tool.NewReadTool(dir)
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"path": "huge.txt",
 	}, nil)
 	require.NoError(t, err)
-	assert.LessOrEqual(t, len(result), tool.MaxOutputBytes+200) // allow slack for message
-	assert.Contains(t, result, "Use offset=")
+	assert.Contains(t, result, "exceeds")
+	assert.Contains(t, result, "sed -n '1p'")
+	assert.Contains(t, result, "huge.txt")
+	// No output lines emitted — only the hint.
+	assert.Less(t, len(result), 300)
 }
 
 func TestRead_Name(t *testing.T) {
-	r := &tool.Read{}
+	r := tool.NewReadTool("")
 	assert.Equal(t, "read", r.Name())
 }
 
 func TestRead_Description(t *testing.T) {
-	r := &tool.Read{}
+	r := tool.NewReadTool("")
 	assert.Contains(t, r.Description(), "2000 lines")
 	assert.Contains(t, r.Description(), "offset")
 }

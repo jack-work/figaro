@@ -72,7 +72,7 @@ type Config struct {
 	Cwd        string // working directory
 	Root       string // project root
 	MaxTokens  int
-	Tools      []tool.Tool // tools available to the agent
+	Tools      *tool.Registry // tools available to the agent
 	LogDir     string      // directory for per-figaro JSONL event log (empty = no logging)
 	StoreDir   string      // directory for aria persistence (empty = ephemeral)
 }
@@ -90,7 +90,7 @@ type Agent struct {
 	cwd        string
 	root       string
 	maxTokens  int
-	tools      []tool.Tool
+	tools      *tool.Registry
 	memStore   *store.MemStore
 	storeDir   string // persisted if non-empty
 
@@ -693,39 +693,8 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 // runToolAsync executes a tool in a background goroutine and pushes
 // events as selfish into the captured inbox.
 func (a *Agent) runToolAsync(ctx context.Context, inbox *Inbox, tc message.Content) {
-	var found bool
-	for _, t := range a.tools {
-		if t.Name() == tc.ToolName {
-			found = true
-			onOutput := func(chunk []byte) {
-				inbox.SendSelfish(event{
-					typ:        eventToolOutput,
-					toolCallID: tc.ToolCallID,
-					toolName:   tc.ToolName,
-					chunk:      string(chunk),
-				})
-			}
-			result, err := t.Execute(ctx, tc.Arguments, onOutput)
-			if err != nil {
-				inbox.SendSelfish(event{
-					typ:        eventToolResult,
-					toolCallID: tc.ToolCallID,
-					toolName:   tc.ToolName,
-					result:     fmt.Sprintf("Error: %s", err),
-					isErr:      true,
-				})
-			} else {
-				inbox.SendSelfish(event{
-					typ:        eventToolResult,
-					toolCallID: tc.ToolCallID,
-					toolName:   tc.ToolName,
-					result:     result,
-				})
-			}
-			return
-		}
-	}
-	if !found {
+	t, ok := a.tools.Get(tc.ToolName)
+	if !ok {
 		inbox.SendSelfish(event{
 			typ:        eventToolResult,
 			toolCallID: tc.ToolCallID,
@@ -733,12 +702,42 @@ func (a *Agent) runToolAsync(ctx context.Context, inbox *Inbox, tc message.Conte
 			result:     fmt.Sprintf("Unknown tool: %s", tc.ToolName),
 			isErr:      true,
 		})
+		return
 	}
+	onOutput := func(chunk []byte) {
+		inbox.SendSelfish(event{
+			typ:        eventToolOutput,
+			toolCallID: tc.ToolCallID,
+			toolName:   tc.ToolName,
+			chunk:      string(chunk),
+		})
+	}
+	result, err := t.Execute(ctx, tc.Arguments, onOutput)
+	if err != nil {
+		inbox.SendSelfish(event{
+			typ:        eventToolResult,
+			toolCallID: tc.ToolCallID,
+			toolName:   tc.ToolName,
+			result:     fmt.Sprintf("Error: %s", err),
+			isErr:      true,
+		})
+		return
+	}
+	inbox.SendSelfish(event{
+		typ:        eventToolResult,
+		toolCallID: tc.ToolCallID,
+		toolName:   tc.ToolName,
+		result:     result,
+	})
 }
 
 func (a *Agent) toolDefs() []provider.Tool {
-	defs := make([]provider.Tool, len(a.tools))
-	for i, t := range a.tools {
+	if a.tools == nil {
+		return nil
+	}
+	list := a.tools.List()
+	defs := make([]provider.Tool, len(list))
+	for i, t := range list {
 		defs[i] = provider.Tool{Name: t.Name(), Description: t.Description(), Parameters: t.Parameters()}
 	}
 	return defs
