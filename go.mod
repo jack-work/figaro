@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/google/uuid v1.6.0
 	github.com/jack-work/hush v0.3.0
-	github.com/jack-work/largo v0.0.0-20260321201243-2a7e2ec8ffa9
+	github.com/jack-work/largo v0.1.0
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.42.0
@@ -61,5 +61,3 @@ require (
 )
 
 replace github.com/jack-work/hush => /home/gluck/dev/hush/master
-
-replace github.com/jack-work/largo => /home/gluck/dev/largo/master
