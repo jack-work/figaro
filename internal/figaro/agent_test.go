@@ -287,27 +287,31 @@ func TestAgent_PanicRecovery(t *testing.T) {
 
 	ch := a.Subscribe()
 
-	// First prompt — will panic inside the agent.
+	// First prompt — will panic inside the agent. The new contract is
+	// that every turn (success or failure) must terminate with Done so
+	// the CLI never hangs. We expect Error followed eventually by Done.
 	a.Prompt("trigger panic")
 
-	// Should receive an error notification about the crash.
 	timeout := time.After(5 * time.Second)
-	gotError := false
-	for !gotError {
+	gotError, gotDone := false, false
+	for !(gotError && gotDone) {
 		select {
 		case n := <-ch:
 			if n.Method == rpc.MethodError {
 				gotError = true
 			}
+			if n.Method == rpc.MethodDone {
+				gotDone = true
+			}
 		case <-timeout:
-			t.Fatal("timeout waiting for error notification after panic")
+			t.Fatalf("timeout: gotError=%v gotDone=%v", gotError, gotDone)
 		}
 	}
 
 	// Second prompt — should work because the agent restarted.
 	a.Prompt("after recovery")
 
-	gotDone := false
+	gotDone = false
 	timeout = time.After(5 * time.Second)
 	for !gotDone {
 		select {

@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -539,18 +540,28 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 
 	doneCh := make(chan struct{}, 1)
 
-	// Streaming markdown renderer for LLM output.
+	// One largo writer owns the entire output stream. Every event below
+	// is expressed as markdown into it; tool stdout is the one exception
+	// and goes through Suspend/Resume so it appears verbatim (with its
+	// own ANSI colors) instead of being mangled by glamour.
 	sw, err := largo.NewWriter(os.Stdout, largo.Options{})
 	if err != nil {
 		die("largo: %s", err)
 	}
 
-	// Display the user's prompt as a header with visual separation.
-	sw.Write([]byte(fmt.Sprintf("\n---\n\n**> %s**\n\n---\n\n", prompt)))
-	sw.Flush()
+	// rawOut is non-nil while a tool call is streaming output through
+	// largo's pass-through region.
+	var rawOut io.Writer
 
-	// Tool state: header is built on tool_start, full block rendered on tool_end.
-	toolHeader := ""
+	// resumeIfSuspended is idempotent: safe to call before any
+	// transition that needs largo back in markdown-rendering mode.
+	resumeIfSuspended := func() {
+		if rawOut == nil {
+			return
+		}
+		_ = sw.Resume()
+		rawOut = nil
+	}
 
 	deliverEvent := func(method string, params json.RawMessage) {
 		// Log to CLI RPC file.
@@ -571,73 +582,54 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 				)
 				sw.Write([]byte(p.Text))
 			}
+
 		case rpc.MethodThinking:
 			var p rpc.ThinkingParams
 			if json.Unmarshal(params, &p) == nil {
-				sw.Flush()
-				sw.Write([]byte(fmt.Sprintf("\n> *🤔 %s*\n\n", p.Text)))
+				sw.Write([]byte("\n> *🤔 " + largo.EscapeInline(p.Text) + "*\n\n"))
 			}
+
 		case rpc.MethodToolStart:
 			var p rpc.ToolStartParams
 			if json.Unmarshal(params, &p) == nil {
-				sw.Flush()
-				detail := ""
-				switch p.ToolName {
-				case "bash":
-					if cmd, ok := p.Arguments["command"].(string); ok {
-						detail = cmd
-					}
-				case "read":
-					if path, ok := p.Arguments["path"].(string); ok {
-						detail = path
-					}
-				case "write":
-					if path, ok := p.Arguments["path"].(string); ok {
-						detail = path
-					}
-				case "edit":
-					if path, ok := p.Arguments["path"].(string); ok {
-						detail = path
-					}
+				header := "\n---\n`▶ " + p.ToolName + "`"
+				if detail := toolDetail(p); detail != "" {
+					header += " " + largo.InlineCode(detail)
 				}
-				if detail != "" {
-					toolHeader = fmt.Sprintf("\n---\n`▶ %s` `%s`\n", p.ToolName, detail)
-				} else {
-					toolHeader = fmt.Sprintf("\n---\n`▶ %s`\n", p.ToolName)
-				}
+				header += "\n\n"
+				sw.Write([]byte(header))
+				rawOut = sw.Suspend()
 			}
+
 		case rpc.MethodToolOutput:
-			// Ignored — we render the full result from tool_end.
+			var p rpc.ToolOutputParams
+			if json.Unmarshal(params, &p) == nil && rawOut != nil {
+				rawOut.Write([]byte(p.Chunk))
+			}
+
 		case rpc.MethodToolEnd:
 			var p rpc.ToolEndParams
 			if json.Unmarshal(params, &p) == nil {
-				var block strings.Builder
-				block.WriteString(toolHeader)
+				resumeIfSuspended()
 				if p.IsError {
-					block.WriteString(fmt.Sprintf("\n**⚠ error:** `%s`\n\n", p.Result))
-				} else {
-					block.WriteString("```\n")
-					block.WriteString(p.Result)
-					block.WriteString("\n```\n")
+					sw.Write([]byte("\n**⚠ error:** " + largo.EscapeInline(p.Result) + "\n\n"))
 				}
-				block.WriteString("---\n\n")
-				sw.Write([]byte(block.String()))
-				sw.Flush()
+				sw.Write([]byte("\n---\n\n"))
 			}
+
 		case rpc.MethodError:
+			// Errors are advisory — print and keep waiting. The agent
+			// is responsible for sending Done if the turn cannot
+			// continue. Don't terminate the CLI on Error alone.
 			var p rpc.ErrorParams
 			if json.Unmarshal(params, &p) == nil {
-				sw.Flush()
-				sw.Write([]byte(fmt.Sprintf("\n**❌ error:** %s\n\n", p.Message)))
-				sw.Flush()
-				// Provider errors are critical — exit the CLI.
-				select {
-				case doneCh <- struct{}{}:
-				default:
-				}
+				resumeIfSuspended()
+				sw.Write([]byte("\n**❌ error:** " + largo.EscapeInline(p.Message) + "\n\n"))
 			}
+
 		case rpc.MethodDone:
-			sw.Flush() // render any remaining markdown
+			resumeIfSuspended()
+			sw.Flush()
 			select {
 			case doneCh <- struct{}{}:
 			default:
@@ -659,16 +651,34 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		die("prompt: %s", err)
 	}
 
-	// Wait for stream.done, stream.error, or ctrl-C.
-	// No wall-clock timeout — multi-tool sessions can run for minutes.
-	// The figaro agent has its own timeouts (SSE, HTTP).
+	// Wait for stream.done or ctrl-C. No wall-clock timeout — multi-tool
+	// sessions can run for minutes; the figaro agent has its own
+	// SSE/HTTP timeouts that surface as Error → Done.
 	select {
 	case <-doneCh:
 		fmt.Println()
 	case <-ctx.Done():
+		resumeIfSuspended()
 		sw.Flush()
 		fmt.Fprintln(os.Stderr, "\ninterrupted")
 	}
+}
+
+// toolDetail returns the most useful single-line detail for a tool
+// call: the bash command, the file path, etc. Empty if the tool has
+// no obvious one-line summary.
+func toolDetail(p rpc.ToolStartParams) string {
+	switch p.ToolName {
+	case "bash":
+		if cmd, ok := p.Arguments["command"].(string); ok {
+			return cmd
+		}
+	case "read", "write", "edit":
+		if path, ok := p.Arguments["path"].(string); ok {
+			return path
+		}
+	}
+	return ""
 }
 
 // --- Provider construction (used by angelus and models) ---

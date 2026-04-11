@@ -341,7 +341,10 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		a.pendingToolCalls = nil
 		a.systemPrompt = ""
 
-		// Notify subscribers of the crash.
+		// Notify subscribers of the crash. Error is advisory (informs
+		// the user something went wrong); Done is the terminator that
+		// tells the CLI the failed turn has fully unwound. The agent
+		// itself survives via the restart loop below.
 		crashMsg := "agent crashed and was restarted"
 		if a.storeDir != "" {
 			crashMsg += "; context restored from last checkpoint"
@@ -352,6 +355,11 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 			JSONRPC: "2.0",
 			Method:  rpc.MethodError,
 			Params:  rpc.ErrorParams{Message: crashMsg},
+		})
+		a.fanOut(rpc.Notification{
+			JSONRPC: "2.0",
+			Method:  rpc.MethodDone,
+			Params:  rpc.DoneParams{Reason: "error: " + crashMsg},
 		})
 
 		// Inject crash scribe so the agent knows to inform the user.
@@ -441,7 +449,7 @@ func (a *Agent) drainLoop(ctx context.Context) {
 					Method:  rpc.MethodError,
 					Params:  rpc.ErrorParams{Message: fmt.Sprintf("append user message: %s", err)},
 				})
-				a.endTurn("")
+				a.endTurn("error: append user message")
 				continue
 			}
 			userMsg.LogicalTime = lt
@@ -471,7 +479,7 @@ func (a *Agent) drainLoop(ctx context.Context) {
 					Method:  rpc.MethodError,
 					Params:  rpc.ErrorParams{Message: "no response from provider"},
 				})
-				a.endTurn("")
+				a.endTurn("error: no response from provider")
 				continue
 			}
 			fmt.Fprintf(os.Stderr, "agent: event=LLMDone stop_reason=%s\n", evt.message.StopReason)
@@ -484,7 +492,7 @@ func (a *Agent) drainLoop(ctx context.Context) {
 					Method:  rpc.MethodError,
 					Params:  rpc.ErrorParams{Message: fmt.Sprintf("append assistant message: %s", err)},
 				})
-				a.endTurn("")
+				a.endTurn("error: append assistant message")
 				continue
 			}
 			evt.message.LogicalTime = lt
@@ -531,7 +539,7 @@ func (a *Agent) drainLoop(ctx context.Context) {
 				Method:  rpc.MethodError,
 				Params:  rpc.ErrorParams{Message: evt.err.Error()},
 			})
-			a.endTurn("")
+			a.endTurn("error: " + evt.err.Error())
 
 		case eventToolOutput:
 			a.fanOut(rpc.Notification{
@@ -597,17 +605,17 @@ func (a *Agent) drainLoop(ctx context.Context) {
 	}
 }
 
-// endTurn finishes the current turn. If reason is non-empty,
-// a stream.done notification is sent. Resets turn state and
-// yields the inbox to release the next patient message.
+// endTurn finishes the current turn. Always sends a stream.done
+// notification — the reason carries either the LLM stop_reason
+// (clean turn) or "error: ..." (recoverable failure). The session
+// itself survives; subscribers should treat Done as the only
+// terminator and Error as advisory.
 func (a *Agent) endTurn(reason string) {
-	if reason != "" {
-		a.fanOut(rpc.Notification{
-			JSONRPC: "2.0",
-			Method:  rpc.MethodDone,
-			Params:  rpc.DoneParams{Reason: reason},
-		})
-	}
+	a.fanOut(rpc.Notification{
+		JSONRPC: "2.0",
+		Method:  rpc.MethodDone,
+		Params:  rpc.DoneParams{Reason: reason},
+	})
 
 	// End otel span.
 	if a.endTurnSpan != nil {
