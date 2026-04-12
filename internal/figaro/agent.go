@@ -18,6 +18,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/tokens"
 	"github.com/jack-work/figaro/internal/tool"
 )
 
@@ -248,16 +249,20 @@ func (a *Agent) Info() FigaroInfo {
 		state = "active"
 	}
 
+	ctxTokens, ctxExact := tokens.ContextSize(a.memStore.Context())
+
 	return FigaroInfo{
-		ID:           a.id,
-		State:        state,
-		Provider:     a.prov.Name(),
-		Model:        a.model,
-		MessageCount: len(msgs),
-		TokensIn:     a.tokensIn,
-		TokensOut:    a.tokensOut,
-		CreatedAt:    a.createdAt,
-		LastActive:   a.lastActive,
+		ID:            a.id,
+		State:         state,
+		Provider:      a.prov.Name(),
+		Model:         a.model,
+		MessageCount:  len(msgs),
+		TokensIn:      a.tokensIn,
+		TokensOut:     a.tokensOut,
+		ContextTokens: ctxTokens,
+		ContextExact:  ctxExact,
+		CreatedAt:     a.createdAt,
+		LastActive:    a.lastActive,
 	}
 }
 
