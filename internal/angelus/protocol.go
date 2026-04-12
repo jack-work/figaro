@@ -167,16 +167,18 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 	result := make([]rpc.FigaroInfoResponse, len(infos))
 	for i, info := range infos {
 		result[i] = rpc.FigaroInfoResponse{
-			ID:           info.ID,
-			State:        info.State,
-			Provider:     info.Provider,
-			Model:        info.Model,
-			MessageCount: info.MessageCount,
-			TokensIn:     info.TokensIn,
-			TokensOut:    info.TokensOut,
-			CreatedAt:    info.CreatedAt.UnixMilli(),
-			LastActive:   info.LastActive.UnixMilli(),
-			BoundPIDs:    h.angelus.Registry.BoundPIDs(info.ID),
+			ID:            info.ID,
+			State:         info.State,
+			Provider:      info.Provider,
+			Model:         info.Model,
+			MessageCount:  info.MessageCount,
+			TokensIn:      info.TokensIn,
+			TokensOut:     info.TokensOut,
+			ContextTokens: info.ContextTokens,
+			ContextExact:  info.ContextExact,
+			CreatedAt:     info.CreatedAt.UnixMilli(),
+			LastActive:    info.LastActive.UnixMilli(),
+			BoundPIDs:     h.angelus.Registry.BoundPIDs(info.ID),
 		}
 	}
 	return rpc.ListResponse{Figaros: result}, nil

@@ -234,7 +234,7 @@ func runList(loaded *config.Loaded) {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(w, "ID\tSTATE\tMODEL\tMESSAGES\tPIDS\n")
+	fmt.Fprintf(w, "ID\tSTATE\tMODEL\tMSGS\tCONTEXT\tPIDS\n")
 	for _, f := range resp.Figaros {
 		pids := make([]string, len(f.BoundPIDs))
 		for i, p := range f.BoundPIDs {
@@ -244,8 +244,12 @@ func runList(loaded *config.Loaded) {
 		if pidStr == "" {
 			pidStr = "-"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\n",
-			f.ID, f.State, f.Model, f.MessageCount, pidStr)
+		ctxStr := fmt.Sprintf("%dk", f.ContextTokens/1000)
+		if !f.ContextExact {
+			ctxStr = "~" + ctxStr
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
+			f.ID, f.State, f.Model, f.MessageCount, ctxStr, pidStr)
 	}
 	w.Flush()
 }

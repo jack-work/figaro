@@ -51,13 +51,15 @@ type Figaro interface {
 
 // FigaroInfo holds metadata about a running figaro.
 type FigaroInfo struct {
-	ID           string    `json:"id"`
-	State        string    `json:"state"` // "active", "idle"
-	Provider     string    `json:"provider"`
-	Model        string    `json:"model"`
-	MessageCount int       `json:"message_count"`
-	TokensIn     int       `json:"tokens_in"`
-	TokensOut    int       `json:"tokens_out"`
-	CreatedAt    time.Time `json:"created_at"`
-	LastActive   time.Time `json:"last_active"`
+	ID            string    `json:"id"`
+	State         string    `json:"state"` // "active", "idle"
+	Provider      string    `json:"provider"`
+	Model         string    `json:"model"`
+	MessageCount  int       `json:"message_count"`
+	TokensIn      int       `json:"tokens_in"`
+	TokensOut     int       `json:"tokens_out"`
+	ContextTokens int       `json:"context_tokens"` // estimated next-turn input size
+	ContextExact  bool      `json:"context_exact"`  // true if from Usage watermark
+	CreatedAt     time.Time `json:"created_at"`
+	LastActive    time.Time `json:"last_active"`
 }
