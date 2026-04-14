@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"syscall"
 	"time"
+
+	"github.com/jack-work/figaro/internal/message"
 )
 
 // BashRequest is the typed input to the bash tool.
@@ -62,10 +64,10 @@ func (b *BashTool) Parameters() interface{} {
 	}
 }
 
-func (b *BashTool) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) (string, error) {
+func (b *BashTool) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) ([]message.Content, error) {
 	command, _ := args["command"].(string)
 	if command == "" {
-		return "", fmt.Errorf("command is required")
+		return nil, fmt.Errorf("command is required")
 	}
 	var timeout time.Duration
 	if t, ok := args["timeout"].(float64); ok && t > 0 {
@@ -74,9 +76,9 @@ func (b *BashTool) Execute(ctx context.Context, args map[string]interface{}, onO
 
 	res, err := b.run(ctx, BashRequest{Command: command, Timeout: timeout}, onOutput)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return res.Output, nil
+	return []message.Content{message.TextContent(res.Output)}, nil
 }
 
 // Run is the typed Go API. Non-zero exit codes are not returned as an

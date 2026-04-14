@@ -188,6 +188,7 @@ func TestEdit_JSONArgs(t *testing.T) {
 		},
 	}, nil)
 	require.NoError(t, err)
-	assert.Contains(t, res, "Successfully applied 1 edit")
+	require.Len(t, res, 1)
+	assert.Contains(t, res[0].Text, "Successfully applied 1 edit")
 	assert.Contains(t, readFile(t, filepath.Join(dir, "f.txt")), "FOO")
 }

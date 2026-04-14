@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/jack-work/figaro/internal/message"
 )
 
 // WriteRequest is the typed input to the write tool.
@@ -48,18 +50,18 @@ func (w *WriteTool) Parameters() interface{} {
 	}
 }
 
-func (w *WriteTool) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) (string, error) {
+func (w *WriteTool) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) ([]message.Content, error) {
 	path, _ := args["path"].(string)
 	content, _ := args["content"].(string)
 	res, err := w.Write(ctx, WriteRequest{Path: path, Content: content})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	result := fmt.Sprintf("Wrote %d bytes to %s", res.BytesWritten, res.Path)
 	if onOutput != nil {
 		onOutput([]byte(result))
 	}
-	return result, nil
+	return []message.Content{message.TextContent(result)}, nil
 }
 
 // Write is the typed Go API.

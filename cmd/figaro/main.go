@@ -22,10 +22,11 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"syscall"
 	"path/filepath"
-	"sync"
+	"slices"
 	"strings"
+	"sync"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -37,9 +38,9 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropic"
 	"github.com/jack-work/figaro/internal/rpc"
-	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/hush/managed"
 	"golang.org/x/term"
@@ -234,7 +235,7 @@ func runList(loaded *config.Loaded) {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(w, "ID\tSTATE\tMODEL\tMSGS\tCONTEXT\tPIDS\n")
+	fmt.Fprintf(w, "\tID\tSTATE\tMODEL\tMSGS\tCONTEXT\tPIDS\n")
 	for _, f := range resp.Figaros {
 		pids := make([]string, len(f.BoundPIDs))
 		for i, p := range f.BoundPIDs {
@@ -248,8 +249,12 @@ func runList(loaded *config.Loaded) {
 		if !f.ContextExact {
 			ctxStr = "~" + ctxStr
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
-			f.ID, f.State, f.Model, f.MessageCount, ctxStr, pidStr)
+		current := ""
+		if slices.Contains(f.BoundPIDs, os.Getppid()) {
+			current = "*"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+			current, f.ID, f.State, f.Model, f.MessageCount, ctxStr, pidStr)
 	}
 	w.Flush()
 }

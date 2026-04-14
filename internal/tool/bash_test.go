@@ -8,8 +8,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/tool"
 )
+
+// resultText extracts the concatenated text from a tool result.
+func resultText(content []message.Content) string {
+	var sb strings.Builder
+	for _, c := range content {
+		if c.Type == message.ContentText {
+			sb.WriteString(c.Text)
+		}
+	}
+	return sb.String()
+}
 
 func TestBash_Basic(t *testing.T) {
 	b := tool.NewBashTool(t.TempDir())
@@ -17,7 +29,7 @@ func TestBash_Basic(t *testing.T) {
 		"command": "echo hello",
 	}, nil)
 	require.NoError(t, err)
-	assert.Contains(t, result, "hello")
+	assert.Contains(t, resultText(result), "hello")
 }
 
 func TestBash_NoCommand(t *testing.T) {
@@ -34,7 +46,7 @@ func TestBash_NonZeroExit(t *testing.T) {
 	}, nil)
 	// Non-zero exit is not an error — it's returned in the output.
 	require.NoError(t, err)
-	assert.Contains(t, result, "exited with code 42")
+	assert.Contains(t, resultText(result), "exited with code 42")
 }
 
 func TestBash_Stderr(t *testing.T) {
@@ -43,7 +55,7 @@ func TestBash_Stderr(t *testing.T) {
 		"command": "echo error >&2",
 	}, nil)
 	require.NoError(t, err)
-	assert.Contains(t, result, "error")
+	assert.Contains(t, resultText(result), "error")
 }
 
 func TestBash_Timeout(t *testing.T) {
@@ -53,7 +65,7 @@ func TestBash_Timeout(t *testing.T) {
 		"timeout": float64(1),
 	}, nil)
 	require.NoError(t, err)
-	assert.Contains(t, result, "timed out")
+	assert.Contains(t, resultText(result), "timed out")
 }
 
 func TestBash_ContextCancel(t *testing.T) {
@@ -70,7 +82,7 @@ func TestBash_ContextCancel(t *testing.T) {
 	if err != nil {
 		assert.Contains(t, err.Error(), "context canceled")
 	} else {
-		assert.Contains(t, result, "aborted")
+		assert.Contains(t, resultText(result), "aborted")
 	}
 }
 
@@ -81,7 +93,7 @@ func TestBash_Cwd(t *testing.T) {
 		"command": "pwd",
 	}, nil)
 	require.NoError(t, err)
-	assert.Contains(t, result, dir)
+	assert.Contains(t, resultText(result), dir)
 }
 
 func TestBash_NoOutput(t *testing.T) {
@@ -90,7 +102,7 @@ func TestBash_NoOutput(t *testing.T) {
 		"command": "true",
 	}, nil)
 	require.NoError(t, err)
-	assert.Equal(t, "(no output)", result)
+	assert.Equal(t, "(no output)", resultText(result))
 }
 
 func TestBash_OutputTruncation(t *testing.T) {
@@ -101,10 +113,11 @@ func TestBash_OutputTruncation(t *testing.T) {
 		"command": cmd,
 	}, nil)
 	require.NoError(t, err)
-	assert.Contains(t, result, "[Output truncated")
+	text := resultText(result)
+	assert.Contains(t, text, "[Output truncated")
 	// Should contain the last lines, not the first.
-	assert.Contains(t, result, "line3000")
-	assert.NotContains(t, result, "line1\n")
+	assert.Contains(t, text, "line3000")
+	assert.NotContains(t, text, "line1\n")
 }
 
 func TestBash_LargeOutputByteTruncation(t *testing.T) {
@@ -116,9 +129,10 @@ func TestBash_LargeOutputByteTruncation(t *testing.T) {
 		"command": cmd,
 	}, nil)
 	require.NoError(t, err)
+	text := resultText(result)
 	// Should be truncated.
-	lines := strings.Split(result, "\n")
-	totalBytes := len(result)
+	lines := strings.Split(text, "\n")
+	totalBytes := len(text)
 	// Allow some slack for the truncation message.
 	assert.LessOrEqual(t, totalBytes, tool.MaxOutputBytes+200)
 	_ = lines
@@ -132,7 +146,7 @@ func TestBash_ProcessTreeKill(t *testing.T) {
 		"timeout": float64(1),
 	}, nil)
 	require.NoError(t, err)
-	assert.Contains(t, result, "timed out")
+	assert.Contains(t, resultText(result), "timed out")
 }
 
 func TestBash_StreamingOutput(t *testing.T) {
@@ -148,16 +162,17 @@ func TestBash_StreamingOutput(t *testing.T) {
 	}, onOutput)
 	require.NoError(t, err)
 
+	text := resultText(result)
 	// Final result should contain both lines.
-	assert.Contains(t, result, "hello")
-	assert.Contains(t, result, "world")
+	assert.Contains(t, text, "hello")
+	assert.Contains(t, text, "world")
 
 	// Streaming callback should have been called with chunks.
 	assert.NotEmpty(t, chunks, "onOutput should have been called")
 
 	// Reassembled chunks should equal the final result.
 	reassembled := strings.Join(chunks, "")
-	assert.Equal(t, result, reassembled)
+	assert.Equal(t, text, reassembled)
 }
 
 func TestBash_StreamingNil(t *testing.T) {
@@ -167,7 +182,7 @@ func TestBash_StreamingNil(t *testing.T) {
 		"command": "echo ok",
 	}, nil)
 	require.NoError(t, err)
-	assert.Contains(t, result, "ok")
+	assert.Contains(t, resultText(result), "ok")
 }
 
 func TestBash_Name(t *testing.T) {

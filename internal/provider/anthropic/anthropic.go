@@ -185,6 +185,7 @@ type nativeBlock struct {
 	ToolUseID string      `json:"tool_use_id,omitempty"`
 	IsError   bool        `json:"is_error,omitempty"`
 	Content   interface{} `json:"content,omitempty"`
+	Source    interface{} `json:"source,omitempty"`
 }
 
 type nativeTool struct {
@@ -266,7 +267,7 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 				case message.ContentImage:
 					blocks = append(blocks, nativeBlock{
 						Type: "image",
-						Content: map[string]interface{}{
+						Source: map[string]interface{}{
 							"type": "base64", "media_type": c.MimeType, "data": c.Data,
 						},
 					})
@@ -298,7 +299,24 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 		case message.RoleToolResult:
 			var contentBlocks []nativeBlock
 			for _, c := range msg.Content {
-				contentBlocks = append(contentBlocks, nativeBlock{Type: "text", Text: c.Text})
+				switch c.Type {
+				case message.ContentImage:
+					contentBlocks = append(contentBlocks, nativeBlock{
+						Type: "image",
+						Source: map[string]interface{}{
+							"type": "base64", "media_type": c.MimeType, "data": c.Data,
+						},
+					})
+				default:
+					text := c.Text
+					if text == "" {
+						text = "(empty)"
+					}
+					contentBlocks = append(contentBlocks, nativeBlock{Type: "text", Text: text})
+				}
+			}
+			if len(contentBlocks) == 0 {
+				contentBlocks = []nativeBlock{{Type: "text", Text: "(empty)"}}
 			}
 			pendingToolResults = append(pendingToolResults, nativeBlock{
 				Type: "tool_result", ToolUseID: msg.ToolCallID,

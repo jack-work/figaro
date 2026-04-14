@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/tool"
 )
 
@@ -19,8 +20,8 @@ type fakeTool struct {
 func (f *fakeTool) Name() string             { return f.name }
 func (f *fakeTool) Description() string      { return "fake " + f.name }
 func (f *fakeTool) Parameters() interface{}  { return map[string]interface{}{} }
-func (f *fakeTool) Execute(_ context.Context, _ map[string]interface{}, _ tool.OnOutput) (string, error) {
-	return "ok", nil
+func (f *fakeTool) Execute(_ context.Context, _ map[string]interface{}, _ tool.OnOutput) ([]message.Content, error) {
+	return []message.Content{message.TextContent("ok")}, nil
 }
 
 func TestRegistry_RegisterAndGet(t *testing.T) {

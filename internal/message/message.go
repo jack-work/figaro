@@ -125,6 +125,10 @@ func TextContent(text string) Content {
 	return Content{Type: ContentText, Text: text}
 }
 
+func ImageContent(mimeType, data string) Content {
+	return Content{Type: ContentImage, MimeType: mimeType, Data: data}
+}
+
 func ToolCallContent(id, name string, args map[string]interface{}) Content {
 	return Content{
 		Type: ContentToolCall, ToolCallID: id,

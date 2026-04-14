@@ -1,6 +1,10 @@
 package tool
 
-import "context"
+import (
+	"context"
+
+	"github.com/jack-work/figaro/internal/message"
+)
 
 // OnOutput is called with streaming output chunks during tool execution.
 // The tool calls this as output becomes available. The final complete
@@ -19,6 +23,6 @@ type Tool interface {
 
 	// Execute runs the tool. onOutput receives streaming output chunks
 	// as they become available (may be nil to disable streaming).
-	// Returns the final complete result.
-	Execute(ctx context.Context, args map[string]any, onOutput OnOutput) (string, error)
+	// Returns structured content blocks (text, images, etc.).
+	Execute(ctx context.Context, args map[string]any, onOutput OnOutput) ([]message.Content, error)
 }

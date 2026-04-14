@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"text/template"
 	"time"
@@ -38,6 +39,7 @@ type Context struct {
 	Model     string // model ID (e.g. "claude-sonnet-4-20250514")
 	FigaroID  string // figaro instance ID
 	Tools     string // formatted tool list (statically constructed)
+	Version   string // build version: VCS commit hash
 }
 
 // Skill is a skill loaded from a markdown file with frontmatter.
@@ -132,7 +134,34 @@ func CurrentContext(cwd, root, providerName, model, figaroID, tools string) Cont
 		Model:    model,
 		FigaroID: figaroID,
 		Tools:    tools,
+		Version:  buildVersion(),
 	}
+}
+
+// buildVersion extracts the VCS revision from Go's embedded build info.
+func buildVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	var rev, dirty string
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			if s.Value == "true" {
+				dirty = "-dirty"
+			}
+		}
+	}
+	if rev == "" {
+		return "unknown"
+	}
+	if len(rev) > 8 {
+		rev = rev[:8]
+	}
+	return rev + dirty
 }
 
 // --- Skills ---

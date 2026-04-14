@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/jack-work/figaro/internal/message"
 )
 
 // EditRequest is the typed input to the edit tool. A single call can
@@ -81,15 +83,15 @@ func (e *EditTool) Parameters() interface{} {
 	}
 }
 
-func (e *EditTool) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) (string, error) {
+func (e *EditTool) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) ([]message.Content, error) {
 	req, err := parseEditArgs(args)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	res, err := e.Edit(ctx, req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	msg := fmt.Sprintf("Successfully applied %d edit(s) to %s", res.EditsApplied, res.Path)
@@ -99,7 +101,7 @@ func (e *EditTool) Execute(ctx context.Context, args map[string]interface{}, onO
 	if onOutput != nil {
 		onOutput([]byte(msg))
 	}
-	return msg, nil
+	return []message.Content{message.TextContent(msg)}, nil
 }
 
 // Edit is the typed Go API.
@@ -153,6 +155,7 @@ func (e *EditTool) Edit(ctx context.Context, req EditRequest) (EditResult, error
 	return result, nil
 }
 
+// TODO: figure out a better way to parse arguments here.
 // parseEditArgs lifts the JSON-map arg shape used by the Tool interface
 // into a typed EditRequest. Expects:
 //

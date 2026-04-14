@@ -184,6 +184,7 @@ func TestCurrentContext(t *testing.T) {
 	assert.Equal(t, "claude-sonnet-4", ctx.Model)
 	assert.Equal(t, "fig-001", ctx.FigaroID)
 	assert.Equal(t, "bash, read, write, edit", ctx.Tools)
+	assert.NotEmpty(t, ctx.Version)
 
 	// DateTime should be hour precision (no minutes/seconds).
 	assert.False(t, strings.Contains(ctx.DateTime, ":"), "DateTime should not contain minutes/seconds")

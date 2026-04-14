@@ -59,8 +59,8 @@ type event struct {
 	chunk string
 
 	// eventToolResult
-	result string
-	isErr  bool
+	content []message.Content
+	isErr   bool
 }
 
 // Config holds everything needed to construct an Agent.
@@ -558,21 +558,28 @@ func (a *Agent) drainLoop(ctx context.Context) {
 			})
 
 		case eventToolResult:
+			// Summarize text content for logging and RPC notification.
+			var resultText string
+			for _, c := range evt.content {
+				if c.Type == message.ContentText {
+					resultText += c.Text
+				}
+			}
 			fmt.Fprintf(os.Stderr, "agent: event=ToolResult tool=%s err=%v result_len=%d\n",
-				evt.toolName, evt.isErr, len(evt.result))
+				evt.toolName, evt.isErr, len(resultText))
 			a.fanOut(rpc.Notification{
 				JSONRPC: "2.0",
 				Method:  rpc.MethodToolEnd,
 				Params: rpc.ToolEndParams{
 					ToolCallID: evt.toolCallID, ToolName: evt.toolName,
-					Result: evt.result, IsError: evt.isErr,
+					Result: resultText, IsError: evt.isErr,
 				},
 			})
 
 			// Append tool result to store.
 			resultMsg := message.NewToolResult(
 				evt.toolCallID, evt.toolName,
-				[]message.Content{message.TextContent(evt.result)},
+				evt.content,
 				evt.isErr, 0, time.Now().UnixMilli(),
 			)
 			lt, err := a.memStore.Append(resultMsg)
@@ -712,7 +719,7 @@ func (a *Agent) runToolAsync(ctx context.Context, inbox *Inbox, tc message.Conte
 			typ:        eventToolResult,
 			toolCallID: tc.ToolCallID,
 			toolName:   tc.ToolName,
-			result:     fmt.Sprintf("Unknown tool: %s", tc.ToolName),
+			content:    []message.Content{message.TextContent(fmt.Sprintf("Unknown tool: %s", tc.ToolName))},
 			isErr:      true,
 		})
 		return
@@ -725,13 +732,13 @@ func (a *Agent) runToolAsync(ctx context.Context, inbox *Inbox, tc message.Conte
 			chunk:      string(chunk),
 		})
 	}
-	result, err := t.Execute(ctx, tc.Arguments, onOutput)
+	content, err := t.Execute(ctx, tc.Arguments, onOutput)
 	if err != nil {
 		inbox.SendSelfish(event{
 			typ:        eventToolResult,
 			toolCallID: tc.ToolCallID,
 			toolName:   tc.ToolName,
-			result:     fmt.Sprintf("Error: %s", err),
+			content:    []message.Content{message.TextContent(fmt.Sprintf("Error: %s", err))},
 			isErr:      true,
 		})
 		return
@@ -740,7 +747,7 @@ func (a *Agent) runToolAsync(ctx context.Context, inbox *Inbox, tc message.Conte
 		typ:        eventToolResult,
 		toolCallID: tc.ToolCallID,
 		toolName:   tc.ToolName,
-		result:     result,
+		content:    content,
 	})
 }
 

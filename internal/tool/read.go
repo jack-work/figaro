@@ -2,10 +2,14 @@ package tool
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/jack-work/figaro/internal/message"
 )
 
 // ReadRequest is the typed input to the read tool. Use this directly
@@ -44,9 +48,11 @@ func (r *ReadTool) Name() string { return "read" }
 
 func (r *ReadTool) Description() string {
 	return fmt.Sprintf(
-		"Read the contents of a file. Output is truncated to %d lines or %dKB "+
+		"Read the contents of a file. For text files, output is truncated to %d lines or %dKB "+
 			"(whichever is hit first). Use offset/limit for large files. "+
-			"When you need the full file, continue with offset until complete.",
+			"Image files (JPEG, PNG, GIF, WebP) are detected automatically and returned as "+
+			"vision-compatible image content blocks — always use this tool instead of cat/bash "+
+			"when you need to view or analyze an image.",
 		MaxOutputLines, MaxOutputBytes/1024,
 	)
 }
@@ -64,13 +70,38 @@ func (r *ReadTool) Parameters() interface{} {
 }
 
 // Execute is the Tool-interface entry point used by the agent. It
-// decodes the JSON args, delegates to Read, and renders the result as
-// a string.
-func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) (string, error) {
+// decodes the JSON args, delegates to Read, and renders the result.
+// For image files, returns an image content block. For text files,
+// returns a text content block.
+func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) ([]message.Content, error) {
 	path, _ := args["path"].(string)
 	if path == "" {
-		return "", fmt.Errorf("path is required")
+		return nil, fmt.Errorf("path is required")
 	}
+
+	absPath := path
+	if !filepath.IsAbs(absPath) {
+		absPath = filepath.Join(r.Cwd, absPath)
+	}
+
+	// Check if the file is an image — return as image content block.
+	if mimeType, ok := detectImageMIME(absPath); ok {
+		data, err := os.ReadFile(absPath)
+		if err != nil {
+			return nil, err
+		}
+		encoded := base64.StdEncoding.EncodeToString(data)
+		note := fmt.Sprintf("[Image: %s (%s, %s)]", filepath.Base(absPath), mimeType, FormatSize(len(data)))
+		if onOutput != nil {
+			onOutput([]byte(note))
+		}
+		return []message.Content{
+			message.TextContent(note),
+			message.ImageContent(mimeType, encoded),
+		}, nil
+	}
+
+	// Text file path — use the existing Read logic.
 	req := ReadRequest{Path: path}
 	if off, ok := args["offset"].(float64); ok && off > 0 {
 		req.Offset = int(off)
@@ -81,12 +112,37 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 
 	res, err := r.Read(ctx, req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if onOutput != nil {
 		onOutput([]byte(res.Content))
 	}
-	return res.Content, nil
+	return []message.Content{message.TextContent(res.Content)}, nil
+}
+
+// detectImageMIME sniffs the file to see if it's an image type
+// supported by the Anthropic vision API. Returns the MIME type and
+// true if supported, or ("", false) otherwise.
+func detectImageMIME(path string) (string, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+
+	buf := make([]byte, 512)
+	n, err := f.Read(buf)
+	if err != nil || n == 0 {
+		return "", false
+	}
+
+	mimeType := http.DetectContentType(buf[:n])
+	switch mimeType {
+	case "image/jpeg", "image/png", "image/gif", "image/webp":
+		return mimeType, true
+	default:
+		return "", false
+	}
 }
 
 // Read is the typed Go API. Other programs can call this directly
