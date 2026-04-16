@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/google/uuid v1.6.0
-	github.com/jack-work/hush v0.3.0
+	github.com/jack-work/hush v0.5.0
 	github.com/jack-work/largo v0.1.0
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/stretchr/testify v1.11.1
@@ -59,5 +59,3 @@ require (
 	golang.org/x/net v0.47.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/jack-work/hush => /home/gluck/dev/hush/master
