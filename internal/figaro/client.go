@@ -68,3 +68,10 @@ func (c *Client) Interrupt(ctx context.Context) error {
 func (c *Client) Close() error {
 	return c.cli.Close()
 }
+
+// Done returns a channel that is closed when the underlying connection
+// is closed (server died, EOF, network error). Selectable from CLI
+// loops to detect agent crashes mid-turn.
+func (c *Client) Done() <-chan struct{} {
+	return c.cli.Done()
+}

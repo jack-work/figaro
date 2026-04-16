@@ -355,3 +355,11 @@ func (c *Client) Close() error {
 	<-c.done
 	return err
 }
+
+// Done returns a channel that is closed when the client's read loop
+// exits — i.e. when the underlying connection is closed by either
+// side, or hits an unrecoverable read error. Useful for detecting an
+// agent that died mid-turn.
+func (c *Client) Done() <-chan struct{} {
+	return c.done
+}

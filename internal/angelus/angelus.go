@@ -7,10 +7,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/jsonrpc"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 
@@ -94,6 +96,11 @@ func (a *Angelus) Run(ctx context.Context) error {
 	pidPath := filepath.Join(a.RuntimeDir, "angelus.pid")
 	os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
 	defer os.Remove(pidPath)
+
+	// Remove the socket file on exit so `figaro rest` can detect that
+	// the angelus has finished shutting down (it polls for the absence
+	// of this file).
+	defer os.Remove(a.SocketPath)
 
 	a.Logger.Printf("angelus started, pid=%d, socket=%s", os.Getpid(), a.SocketPath)
 
@@ -180,5 +187,70 @@ func isAlive(pid int) bool {
 func (a *Angelus) Stop() {
 	if a.cancel != nil {
 		a.cancel()
+	}
+}
+
+// Shutdown drains the registry and stops every figaro gracefully.
+// It runs in three phases:
+//
+//  1. Mark the registry as draining (rejects new figaro.create).
+//  2. For each figaro: send Interrupt(), poll its Info().State for
+//     up to perAgentGrace, then call Kill() which flushes the store.
+//  3. Cancel the angelus context so the accept loop exits.
+//
+// Idempotent. Safe to call from a signal handler. Returns when every
+// figaro has been killed (or its grace expired).
+func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
+	if a.Registry == nil {
+		a.Stop()
+		return
+	}
+	if a.Registry.IsDraining() {
+		return // already shutting down
+	}
+	a.Registry.SetDraining()
+
+	figaros := a.Registry.All()
+	if a.Logger != nil {
+		a.Logger.Printf("angelus: graceful shutdown beginning, %d figaro(s) to drain", len(figaros))
+	}
+
+	// Phase 1: ask everyone to interrupt their current turn.
+	for _, f := range figaros {
+		f.Interrupt()
+	}
+
+	// Phase 2: wait for each one to reach idle, then kill it. We do
+	// this in parallel — one slow figaro shouldn't starve the others.
+	var wg sync.WaitGroup
+	for _, f := range figaros {
+		wg.Add(1)
+		go func(f figaro.Figaro) {
+			defer wg.Done()
+			waitForIdle(f, perAgentGrace)
+			if err := a.Registry.Kill(f.ID()); err != nil && a.Logger != nil {
+				a.Logger.Printf("angelus: kill %s: %v", f.ID(), err)
+			}
+		}(f)
+	}
+	wg.Wait()
+
+	if a.Logger != nil {
+		a.Logger.Printf("angelus: graceful shutdown complete")
+	}
+
+	// Phase 3: stop the accept loop.
+	a.Stop()
+}
+
+// waitForIdle polls the figaro's State, returning early as soon as
+// it reads "idle" or after the grace deadline.
+func waitForIdle(f figaro.Figaro, grace time.Duration) {
+	deadline := time.Now().Add(grace)
+	for time.Now().Before(deadline) {
+		if f.Info().State == "idle" {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

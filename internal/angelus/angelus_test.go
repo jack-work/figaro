@@ -154,3 +154,39 @@ func TestAngelus_StaleSocketCleanup(t *testing.T) {
 		t.Error("timeout")
 	}
 }
+
+func TestAngelus_ShutdownDrainsAllFigaros(t *testing.T) {
+	a, _ := newTestAngelus(t)
+
+	// Register a few mock figaros.
+	for _, id := range []string{"a1", "a2", "a3"} {
+		require.NoError(t, a.Registry.Register(newMock(id)))
+	}
+	require.Equal(t, 3, a.Registry.FigaroCount())
+
+	a.Shutdown(500 * time.Millisecond)
+
+	assert.Zero(t, a.Registry.FigaroCount(), "all figaros should be killed")
+	assert.True(t, a.Registry.IsDraining(), "registry should remain draining")
+}
+
+func TestAngelus_ShutdownRefusesNewRegistrations(t *testing.T) {
+	a, _ := newTestAngelus(t)
+
+	a.Shutdown(100 * time.Millisecond)
+
+	err := a.Registry.Register(newMock("late"))
+	require.Error(t, err, "Register should fail after shutdown")
+	assert.Contains(t, err.Error(), "shutting down")
+}
+
+func TestAngelus_ShutdownIdempotent(t *testing.T) {
+	a, _ := newTestAngelus(t)
+	require.NoError(t, a.Registry.Register(newMock("only")))
+
+	a.Shutdown(100 * time.Millisecond)
+	// Second call must not panic, must not error, must do nothing harmful.
+	a.Shutdown(100 * time.Millisecond)
+
+	assert.Zero(t, a.Registry.FigaroCount())
+}

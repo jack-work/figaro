@@ -161,7 +161,7 @@ func runAngelus() {
 		Logger:     logger,
 	})
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	handlers := angelus.NewHandlers(angelus.ServerConfig{
@@ -174,6 +174,15 @@ func runAngelus() {
 
 	// Restore persisted arias from disk before accepting connections.
 	handlers.RestoreArias(ctx)
+
+	// Watch for SIGINT/SIGTERM and run a graceful shutdown so active
+	// figaros get a chance to interrupt their turns and flush state
+	// before the process exits.
+	go func() {
+		<-ctx.Done()
+		logger.Printf("angelus: signal received, draining figaros")
+		a.Shutdown(5 * time.Second)
+	}()
 
 	if err := a.Run(ctx); err != nil {
 		logger.Fatalf("angelus: %v", err)
@@ -339,12 +348,18 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string) int 
 			return 1
 		}
 		return 0
+	case <-fcli.Done():
+		// Agent socket closed before stream.done arrived. The agent
+		// died, was killed, or the angelus shut down mid-turn.
+		fmt.Fprintln(os.Stderr, "error: agent disconnected before turn completed")
+		return 1
 	case <-ctx.Done():
 		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		_ = fcli.Interrupt(intCtx)
 		intCancel()
 		select {
 		case <-doneCh:
+		case <-fcli.Done():
 		case <-time.After(3 * time.Second):
 		}
 		return 130
@@ -473,6 +488,15 @@ func runContext(loaded *config.Loaded) {
 // --- CLI: rest (put the angelus to rest) ---
 
 func runRest() {
+	// `figaro rest --force` jumps straight to SIGKILL. Default sends
+	// SIGTERM and waits for the angelus to drain (graceful shutdown).
+	force := false
+	for _, arg := range os.Args[2:] {
+		if arg == "--force" || arg == "-f" {
+			force = true
+		}
+	}
+
 	sockPath := angelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
 	if cli, err := angelus.DialClient(ep); err == nil {
@@ -482,20 +506,42 @@ func runRest() {
 		return
 	}
 
-	// Find and signal the angelus process.
+	// Find the angelus PID.
 	pidBytes, err := os.ReadFile(filepath.Join(angelusRuntimeDir(), "angelus.pid"))
-	if err == nil {
-		var pid int
-		if _, err := fmt.Sscanf(string(pidBytes), "%d", &pid); err == nil {
-			syscall.Kill(pid, syscall.SIGTERM)
+	if err != nil {
+		os.Remove(sockPath)
+		fmt.Fprintln(os.Stderr, "angelus pid file missing; socket removed")
+		return
+	}
+	var pid int
+	if _, err := fmt.Sscanf(string(pidBytes), "%d", &pid); err != nil {
+		os.Remove(sockPath)
+		fmt.Fprintln(os.Stderr, "angelus pid file unreadable; socket removed")
+		return
+	}
+
+	if force {
+		syscall.Kill(pid, syscall.SIGKILL)
+		os.Remove(sockPath)
+		fmt.Fprintf(os.Stderr, "angelus (pid %d) forcefully terminated\n", pid)
+		return
+	}
+
+	// Graceful: SIGTERM then wait for the socket file to disappear,
+	// which the angelus removes only after Shutdown completes.
+	syscall.Kill(pid, syscall.SIGTERM)
+
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(sockPath); os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "angelus (pid %d) put to rest\n", pid)
 			return
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Fallback: just remove the socket so next invocation starts fresh.
-	os.Remove(sockPath)
-	fmt.Fprintln(os.Stderr, "angelus socket removed; will restart on next invocation")
+	fmt.Fprintf(os.Stderr,
+		"angelus (pid %d) did not rest within 15s; try `figaro rest --force`\n", pid)
 }
 
 // --- CLI: models (client-side, no angelus) ---
@@ -821,6 +867,13 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 	select {
 	case <-doneCh:
 		fmt.Println()
+	case <-fcli.Done():
+		// Agent socket closed before stream.done. The agent died,
+		// was killed, or the angelus shut down mid-turn. Don't hang.
+		resumeIfSuspended()
+		sw.Flush()
+		fmt.Fprintln(os.Stderr, "\nerror: agent disconnected before turn completed")
+		os.Exit(1)
 	case <-ctx.Done():
 		// Signal the agent to abort the current turn and wait briefly
 		// for its graceful shutdown — stream.error + stream.done will
@@ -832,6 +885,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 
 		select {
 		case <-doneCh:
+		case <-fcli.Done():
 		case <-time.After(3 * time.Second):
 			// Agent didn't ack in time — bail out anyway.
 		}

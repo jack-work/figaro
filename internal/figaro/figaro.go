@@ -29,6 +29,11 @@ type Figaro interface {
 	// Returns immediately after enqueuing.
 	Prompt(text string)
 
+	// Interrupt asks the figaro to abort its current turn. Selfish
+	// signal — cuts ahead of pending LLM/tool events. Idempotent and
+	// safe to call when idle (no-op).
+	Interrupt()
+
 	// Context returns all messages in the chat history.
 	Context() []message.Message
 

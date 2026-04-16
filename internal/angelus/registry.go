@@ -6,6 +6,7 @@ package angelus
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/jack-work/figaro/internal/figaro"
 )
@@ -26,6 +27,10 @@ type Registry struct {
 
 	// figaroPIDs maps figaro ID → set of bound PIDs (reverse index for cleanup).
 	figaroPIDs map[string]map[int]struct{}
+
+	// draining is set during graceful shutdown. Read by Register to
+	// reject new figaros while the angelus is winding down.
+	draining atomic.Bool
 }
 
 // NewRegistry creates an empty registry.
@@ -38,8 +43,12 @@ func NewRegistry() *Registry {
 }
 
 // Register adds a figaro to the registry. Returns an error if the ID
-// is already registered.
+// is already registered, or if the registry is draining.
 func (r *Registry) Register(f figaro.Figaro) error {
+	if r.draining.Load() {
+		return fmt.Errorf("angelus: shutting down, refusing new figaros")
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -183,6 +192,29 @@ func (r *Registry) FigaroCount() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.figaros)
+}
+
+// SetDraining marks the registry as shutting down. Subsequent Register
+// calls will fail. Idempotent.
+func (r *Registry) SetDraining() {
+	r.draining.Store(true)
+}
+
+// IsDraining reports whether the registry is in shutdown mode.
+func (r *Registry) IsDraining() bool {
+	return r.draining.Load()
+}
+
+// All returns a snapshot of all registered figaros. Safe for the
+// shutdown loop to iterate without holding the registry mutex.
+func (r *Registry) All() []figaro.Figaro {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]figaro.Figaro, 0, len(r.figaros))
+	for _, f := range r.figaros {
+		out = append(out, f)
+	}
+	return out
 }
 
 // BoundPIDCount returns the total number of pid bindings.
