@@ -33,6 +33,7 @@ const (
 	eventLLMError
 	eventToolOutput
 	eventToolResult
+	eventInterrupt
 )
 
 type event struct {
@@ -102,8 +103,10 @@ type Agent struct {
 	pendingTools     int
 	pendingToolCalls []message.Content
 	systemPrompt     string
-	turnCtx          context.Context // carries otel span for current turn
+	turnCtx          context.Context // carries otel span for current turn; cancelled on interrupt / turn end
+	turnCancel       context.CancelFunc
 	endTurnSpan      func()
+	interrupted      bool // true if current turn was interrupted; suppress error noise
 
 	// Subscriber fan-out.
 	mu sync.RWMutex
@@ -206,6 +209,13 @@ func (a *Agent) SetModel(model string) {
 
 func (a *Agent) Prompt(text string) {
 	a.inbox.SendPatient(event{typ: eventUserPrompt, text: text})
+}
+
+// Interrupt signals the agent to abort the current turn. Selfish event,
+// so it cuts in front of any pending LLM/tool work. Safe to call at any
+// time — if the agent is idle, the event is harmlessly absorbed.
+func (a *Agent) Interrupt() {
+	a.inbox.SendSelfish(event{typ: eventInterrupt})
 }
 
 func (a *Agent) Context() []message.Message {
@@ -335,6 +345,11 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 			a.endTurnSpan()
 			a.endTurnSpan = nil
 		}
+		// Cancel any in-flight turn so provider/tool goroutines unwind.
+		if a.turnCancel != nil {
+			a.turnCancel()
+			a.turnCancel = nil
+		}
 
 		// Swap the inbox. Old goroutines captured the old inbox —
 		// their SendSelfish calls will return false (closed).
@@ -424,7 +439,12 @@ func (a *Agent) drainLoop(ctx context.Context) {
 					attribute.String("figaro.provider", a.prov.Name()),
 				),
 			)
+			// Wrap in a cancelable context so interrupts can cut short
+			// in-flight LLM streams and tool executions.
+			turnCtx, turnCancel := context.WithCancel(turnCtx)
 			a.turnCtx = turnCtx
+			a.turnCancel = turnCancel
+			a.interrupted = false
 			a.endTurnSpan = func() { span.End() }
 
 			fmt.Fprintf(os.Stderr, "agent: event=UserPrompt text=%q\n", truncLog(evt.text, 60))
@@ -465,9 +485,12 @@ func (a *Agent) drainLoop(ctx context.Context) {
 			})
 
 			// Start LLM streaming.
-			a.startLLMStream(ctx, inbox)
+			a.startLLMStream(a.turnCtx, inbox)
 
 		case eventLLMDelta:
+			if a.interrupted {
+				continue
+			}
 			figOtel.Event(a.turnCtx, "figaro.notify.delta",
 				attribute.String("text", evt.delta),
 			)
@@ -478,6 +501,10 @@ func (a *Agent) drainLoop(ctx context.Context) {
 			})
 
 		case eventLLMDone:
+			if a.interrupted {
+				fmt.Fprintf(os.Stderr, "agent: event=LLMDone (post-interrupt, suppressed)\n")
+				continue
+			}
 			if evt.message == nil {
 				a.fanOut(rpc.Notification{
 					JSONRPC: "2.0",
@@ -535,9 +562,16 @@ func (a *Agent) drainLoop(ctx context.Context) {
 					Arguments: tc.Arguments,
 				},
 			})
-			go a.runToolAsync(ctx, inbox, tc)
+			go a.runToolAsync(a.turnCtx, inbox, tc)
 
 		case eventLLMError:
+			// If we were interrupted, the provider's ctx.Done() will
+			// usually surface as an error here. Swallow it silently —
+			// the interrupt handler already ended the turn.
+			if a.interrupted {
+				fmt.Fprintf(os.Stderr, "agent: event=LLMError (post-interrupt, suppressed) err=%v\n", evt.err)
+				continue
+			}
 			fmt.Fprintf(os.Stderr, "agent: event=LLMError err=%v\n", evt.err)
 			a.fanOut(rpc.Notification{
 				JSONRPC: "2.0",
@@ -547,6 +581,9 @@ func (a *Agent) drainLoop(ctx context.Context) {
 			a.endTurn("error: " + evt.err.Error())
 
 		case eventToolOutput:
+			if a.interrupted {
+				continue
+			}
 			a.fanOut(rpc.Notification{
 				JSONRPC: "2.0",
 				Method:  rpc.MethodToolOutput,
@@ -558,6 +595,12 @@ func (a *Agent) drainLoop(ctx context.Context) {
 			})
 
 		case eventToolResult:
+			// Suppress tool results that arrive after an interrupt; the
+			// turn has already been ended and the store/subscribers moved on.
+			if a.interrupted {
+				fmt.Fprintf(os.Stderr, "agent: event=ToolResult (post-interrupt, suppressed) tool=%s\n", evt.toolName)
+				continue
+			}
 			// Summarize text content for logging and RPC notification.
 			var resultText string
 			for _, c := range evt.content {
@@ -608,11 +651,35 @@ func (a *Agent) drainLoop(ctx context.Context) {
 						Arguments: tc.Arguments,
 					},
 				})
-				go a.runToolAsync(ctx, inbox, tc)
+				go a.runToolAsync(a.turnCtx, inbox, tc)
 			} else if a.pendingTools == 0 {
 				// All tools done — send results back to LLM.
-				a.startLLMStream(ctx, a.inbox)
+				a.startLLMStream(a.turnCtx, a.inbox)
 			}
+
+		case eventInterrupt:
+			// Idempotent: ignore if we're already idle or already interrupted.
+			if a.inbox.IsIdle() || a.interrupted {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "agent: event=Interrupt\n")
+			a.interrupted = true
+
+			// Cancel the turn context — unblocks the provider HTTP
+			// stream, running tool commands, etc. Their goroutines
+			// will surface ctx.Canceled errors which the post-interrupt
+			// guards above silently drop.
+			if a.turnCancel != nil {
+				a.turnCancel()
+			}
+
+			// Tell subscribers — advisory Error + terminating Done.
+			a.fanOut(rpc.Notification{
+				JSONRPC: "2.0",
+				Method:  rpc.MethodError,
+				Params:  rpc.ErrorParams{Message: "interrupted"},
+			})
+			a.endTurn("interrupted")
 		}
 	}
 }
@@ -633,6 +700,14 @@ func (a *Agent) endTurn(reason string) {
 	if a.endTurnSpan != nil {
 		a.endTurnSpan()
 		a.endTurnSpan = nil
+	}
+
+	// Cancel the turn context so any lingering provider/tool
+	// goroutines unwind. Idempotent — cancel() on a cancelled ctx
+	// is a no-op.
+	if a.turnCancel != nil {
+		a.turnCancel()
+		a.turnCancel = nil
 	}
 
 	// Accumulate token counts from the latest assistant message.

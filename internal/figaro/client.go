@@ -57,6 +57,13 @@ func (c *Client) SetModel(ctx context.Context, model string) error {
 	return c.cli.Call(ctx, rpc.MethodSetModel, rpc.SetModelRequest{Model: model}, nil)
 }
 
+// Interrupt asks the figaro to abort its current turn. Returns as soon
+// as the agent has accepted the signal — the actual cancellation is
+// asynchronous (the agent will emit stream.error + stream.done).
+func (c *Client) Interrupt(ctx context.Context) error {
+	return c.cli.Call(ctx, rpc.MethodInterrupt, rpc.InterruptRequest{}, nil)
+}
+
 // Close closes the connection.
 func (c *Client) Close() error {
 	return c.cli.Close()

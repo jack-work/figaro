@@ -90,6 +90,10 @@ func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 			a.SetModel(req.Model)
 			return rpc.SetModelResponse{OK: true}, nil
 		},
+		rpc.MethodInterrupt: func(ctx context.Context, params json.RawMessage) (any, error) {
+			a.Interrupt()
+			return rpc.InterruptResponse{OK: true}, nil
+		},
 	}
 
 	srv := jsonrpc.NewServer(jconn, handlers)

@@ -18,6 +18,7 @@ const (
 	MethodContext    = "figaro.context"
 	MethodFigaroInfo = "figaro.info"
 	MethodSetModel   = "figaro.set_model"
+	MethodInterrupt  = "figaro.interrupt"
 	// figaro.subscribe is handled at the transport level (long-lived connection).
 )
 
@@ -51,6 +52,12 @@ type SetModelRequest struct {
 }
 
 type SetModelResponse struct {
+	OK bool `json:"ok"`
+}
+
+type InterruptRequest struct{}
+
+type InterruptResponse struct {
 	OK bool `json:"ok"`
 }
 

@@ -588,3 +588,114 @@ done:
 	entries, _ := os.ReadDir(tmpDir)
 	assert.Empty(t, entries, "no files should be written without StoreDir")
 }
+
+// --- Slow provider for interrupt testing ---
+
+type slowProvider struct {
+	started chan struct{} // closed once Send has been entered
+}
+
+func (s *slowProvider) Name() string          { return "slow" }
+func (s *slowProvider) SetModel(model string) {}
+func (s *slowProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
+
+// Send blocks until ctx is cancelled, then reports the cancellation
+// as a stream error — mirroring what a real HTTP SSE stream does when
+// its request context is cancelled mid-flight.
+func (s *slowProvider) Send(ctx context.Context, block *message.Block, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+	ch := make(chan provider.StreamEvent, 1)
+	go func() {
+		defer close(ch)
+		if s.started != nil {
+			close(s.started)
+			s.started = nil
+		}
+		<-ctx.Done()
+		ch <- provider.StreamEvent{Done: true, Err: ctx.Err()}
+	}()
+	return ch, nil
+}
+
+// TestAgent_Interrupt verifies that Interrupt cancels an in-flight
+// turn, emits stream.error + stream.done, and leaves the agent idle
+// and usable for a second prompt.
+func TestAgent_Interrupt(t *testing.T) {
+	started := make(chan struct{})
+	a := figaro.NewAgent(figaro.Config{
+		ID:         "interrupt-001",
+		SocketPath: "/tmp/interrupt-test.sock",
+		Provider:   &slowProvider{started: started},
+		Model:      "slow-model",
+		MaxTokens:  1024,
+	})
+	defer a.Kill()
+
+	ch := a.Subscribe()
+	a.Prompt("take forever please")
+
+	// Wait for the provider to actually be streaming before interrupting,
+	// so we're testing the mid-turn path and not a pre-start race.
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("provider never started")
+	}
+
+	a.Interrupt()
+
+	// Collect notifications until Done. We should see one Error
+	// carrying the interrupt message, followed by Done.
+	var sawError bool
+	var doneReason string
+	timeout := time.After(3 * time.Second)
+loop:
+	for {
+		select {
+		case n := <-ch:
+			switch n.Method {
+			case rpc.MethodError:
+				if p, ok := n.Params.(rpc.ErrorParams); ok && p.Message == "interrupted" {
+					sawError = true
+				}
+			case rpc.MethodDone:
+				if p, ok := n.Params.(rpc.DoneParams); ok {
+					doneReason = p.Reason
+				}
+				break loop
+			}
+		case <-timeout:
+			t.Fatal("timeout waiting for interrupt to flow through")
+		}
+	}
+
+	assert.True(t, sawError, "expected stream.error(\"interrupted\")")
+	assert.Equal(t, "interrupted", doneReason)
+
+	// Agent should be idle and reusable after the interrupt.
+	// (Avoid reissuing a prompt with the slow provider; just assert the
+	// loop didn't die.)
+	info := a.Info()
+	assert.Equal(t, "idle", info.State, "agent should be idle after interrupt")
+}
+
+// TestAgent_InterruptWhenIdle is a no-op: Interrupt on an idle agent
+// must not emit spurious Done/Error notifications.
+func TestAgent_InterruptWhenIdle(t *testing.T) {
+	a := newTestAgent("hi")
+	defer a.Kill()
+
+	ch := a.Subscribe()
+	a.Interrupt()
+
+	select {
+	case n := <-ch:
+		t.Fatalf("unexpected notification from idle interrupt: %+v", n)
+	case <-time.After(150 * time.Millisecond):
+		// Silence is correct.
+	}
+}
+
+// Ensure unused import elision doesn't remove json (kept for future tests).
+var _ = json.RawMessage(nil)

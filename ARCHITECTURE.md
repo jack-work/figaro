@@ -173,6 +173,17 @@ eventToolResult  ──┘
 
 Prompts arriving while a turn is active are buffered in `pendingPrompts` and re-enqueued by `turnComplete` in FIFO order.
 
+### Interruption (Ctrl+C / Ctrl+D)
+
+Each prompt runs under a **turn-scoped** context derived from the agent's lifetime context. `prov.Send` and `tool.Execute` both receive this context, so cancelling it cleanly unwinds the LLM HTTP stream and any running tool subprocess.
+
+1. The CLI catches `os.Interrupt` via `signal.NotifyContext` and (if stdin is a TTY) also watches stdin for EOF. Either triggers a context cancel.
+2. On cancel, the CLI sends a `figaro.interrupt` JSON-RPC call and waits up to 3s for `stream.done`.
+3. The agent enqueues a **selfish** `eventInterrupt` — it cuts the line ahead of pending LLM/tool events.
+4. The drain loop handles it: sets `a.interrupted = true`, calls `turnCancel()`, emits `stream.error("interrupted") → stream.done("interrupted")`, and calls `endTurn` which drops pending tool calls and yields the inbox.
+5. Stragglers from the cancelled provider/tool goroutines surface as `eventLLMError` / `eventToolResult`; the `a.interrupted` guard suppresses them silently — no panic, no races, no duplicate notifications.
+6. The next prompt (patient event) releases through `Yield()` and the agent is fully reusable.
+
 ### Provider-Agnostic IR with Baggage
 
 Messages use a canonical `message.Message` type. Each message carries a `Baggage` map (`map[string]json.RawMessage`) keyed by provider name. The originating provider stashes its native wire format in baggage. On re-send to the same provider, it reads from baggage directly — no round-trip through the IR.
@@ -263,6 +274,7 @@ ______________________________________________________________________
 | Method | Direction | Purpose |
 |--------|-----------|---------|
 | `figaro.prompt` | CLI → Agent | Enqueue prompt (returns immediately) |
+| `figaro.interrupt` | CLI → Agent | Cancel the current turn (Ctrl+C / Ctrl+D) |
 | `figaro.context` | CLI → Agent | Get full message history |
 | `figaro.info` | CLI → Agent | Agent metadata |
 | `figaro.set_model` | CLI → Agent | Hot-swap model |

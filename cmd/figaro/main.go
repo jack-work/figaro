@@ -541,6 +541,30 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
 
+	// Derive a cancellable child so Ctrl+D (stdin EOF) can cancel the same
+	// context used for SIGINT. Go's signal.NotifyContext already wires
+	// os.Interrupt into ctx above us; we just need to add EOF.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Watch stdin for EOF (Ctrl+D) in the background. When we detect it,
+	// cancel the context — same path as Ctrl+C. Only meaningful when
+	// stdin is a terminal; non-interactive pipes would EOF immediately
+	// and kill the prompt before we ever receive output.
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		go func() {
+			buf := make([]byte, 256)
+			for {
+				_, err := os.Stdin.Read(buf)
+				if err != nil {
+					// EOF (Ctrl+D) or any read error — treat as interrupt.
+					cancel()
+					return
+				}
+			}
+		}()
+	}
+
 	// Open CLI RPC log.
 	rpcEnc, rpcFile := openRPCLog(rpcLogPath)
 	if rpcFile != nil {
@@ -660,16 +684,29 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		die("prompt: %s", err)
 	}
 
-	// Wait for stream.done or ctrl-C. No wall-clock timeout — multi-tool
-	// sessions can run for minutes; the figaro agent has its own
-	// SSE/HTTP timeouts that surface as Error → Done.
+	// Wait for stream.done or an interrupt (Ctrl+C / Ctrl+D). No wall-clock
+	// timeout — multi-tool sessions can run for minutes; the figaro agent
+	// has its own SSE/HTTP timeouts that surface as Error → Done.
 	select {
 	case <-doneCh:
 		fmt.Println()
 	case <-ctx.Done():
+		// Signal the agent to abort the current turn and wait briefly
+		// for its graceful shutdown — stream.error + stream.done will
+		// arrive, close the output cleanly, and unblock doneCh.
+		fmt.Fprintln(os.Stderr, "\ninterrupting...")
+		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_ = fcli.Interrupt(intCtx)
+		intCancel()
+
+		select {
+		case <-doneCh:
+		case <-time.After(3 * time.Second):
+			// Agent didn't ack in time — bail out anyway.
+		}
 		resumeIfSuspended()
 		sw.Flush()
-		fmt.Fprintln(os.Stderr, "\ninterrupted")
+		fmt.Fprintln(os.Stderr, "interrupted")
 	}
 }
 
