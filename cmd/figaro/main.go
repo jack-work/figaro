@@ -62,6 +62,12 @@ func main() {
 		os.Args = append([]string{"figaro", "--"}, os.Args[1:]...)
 	}
 
+	// Multi-call: "l" → "figaro plain --". Raw, ephemeral, pipe-friendly.
+	// Create the symlink: ln -s $(which figaro) ~/go/bin/l
+	if filepath.Base(os.Args[0]) == "l" {
+		os.Args = append([]string{"figaro", "plain", "--"}, os.Args[1:]...)
+	}
+
 	// Internal flag: run as angelus supervisor.
 	if len(os.Args) > 1 && os.Args[1] == "--angelus" {
 		runAngelus()
@@ -111,6 +117,13 @@ func main() {
 				die("usage: figaro new -- <prompt>")
 			}
 			runNewPrompt(loaded, prompt)
+			return
+		case "plain":
+			prompt := extractPrompt(os.Args[2:])
+			if prompt == "" {
+				die("usage: figaro plain -- <prompt>")
+			}
+			runPlainPrompt(loaded, prompt)
 			return
 		}
 	}
@@ -218,6 +231,124 @@ func runNewPrompt(loaded *config.Loaded, prompt string) {
 	_, figaroEP := mustCreateAndBind(ctx, acli, loaded, ppid)
 
 	mustPromptFigaro(ctx, figaroEP, prompt, loaded.Log().RPCFile)
+}
+
+// --- CLI: plain (raw, ephemeral, pipe-friendly) ---
+
+// runPlainPrompt creates a fresh ephemeral figaro, streams the
+// response verbatim to stdout, and kills the figaro on exit. No
+// PID binding, no aria file, no ANSI, no markdown rendering, no
+// tool decorations. Tool output is still streamed raw so that
+// flows like `l 'run: ls' | sort` work naturally.
+func runPlainPrompt(loaded *config.Loaded, prompt string) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	provName := loaded.Config.DefaultProvider
+	model := defaultModel(loaded, provName)
+
+	createResp, err := acli.CreateEphemeral(ctx, provName, model)
+	if err != nil {
+		die("create figaro: %s", err)
+	}
+	figaroID := createResp.FigaroID
+	figaroEP := transport.Endpoint{
+		Scheme:  createResp.Endpoint.Scheme,
+		Address: createResp.Endpoint.Address,
+	}
+
+	// Always clean up the ephemeral figaro on exit. Uses a detached
+	// context so interrupt doesn't prevent the kill.
+	defer func() {
+		killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer killCancel()
+		_ = acli.Kill(killCtx, figaroID)
+	}()
+
+	// Wait for the figaro socket to appear.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, serr := os.Stat(figaroEP.Address); serr == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	exitCode := plainPrompt(ctx, figaroEP, prompt)
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
+}
+
+// plainPrompt streams the assistant's response (and any tool output)
+// verbatim to stdout. Returns a process exit code: 0 on clean Done,
+// 1 on error, 130 on interrupt.
+func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string) int {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	doneCh := make(chan struct{}, 1)
+	var sawError bool
+
+	out := os.Stdout
+
+	deliverEvent := func(method string, params json.RawMessage) {
+		switch method {
+		case rpc.MethodDelta:
+			var p rpc.DeltaParams
+			if json.Unmarshal(params, &p) == nil {
+				out.Write([]byte(p.Text))
+			}
+		case rpc.MethodToolOutput:
+			var p rpc.ToolOutputParams
+			if json.Unmarshal(params, &p) == nil {
+				out.Write([]byte(p.Chunk))
+			}
+		case rpc.MethodError:
+			var p rpc.ErrorParams
+			if json.Unmarshal(params, &p) == nil {
+				fmt.Fprintln(os.Stderr, "error:", p.Message)
+				sawError = true
+			}
+		case rpc.MethodDone:
+			select {
+			case doneCh <- struct{}{}:
+			default:
+			}
+		}
+	}
+
+	fcli, err := figaro.DialClient(ep, deliverEvent)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error: connect figaro:", err)
+		return 1
+	}
+	defer fcli.Close()
+
+	if err := fcli.Prompt(ctx, prompt); err != nil {
+		fmt.Fprintln(os.Stderr, "error: prompt:", err)
+		return 1
+	}
+
+	select {
+	case <-doneCh:
+		if sawError {
+			return 1
+		}
+		return 0
+	case <-ctx.Done():
+		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_ = fcli.Interrupt(intCtx)
+		intCancel()
+		select {
+		case <-doneCh:
+		case <-time.After(3 * time.Second):
+		}
+		return 130
+	}
 }
 
 // --- CLI: list ---
@@ -875,6 +1006,7 @@ func extractPrompt(args []string) string {
 func printUsage() {
 	fmt.Fprintln(os.Stderr, "usage: figaro -- <prompt>")
 	fmt.Fprintln(os.Stderr, "       figaro new -- <prompt>")
+	fmt.Fprintln(os.Stderr, "       figaro plain -- <prompt>   (raw, ephemeral, pipe-friendly; also 'l')")
 	fmt.Fprintln(os.Stderr, "       figaro attend <id>")
 	fmt.Fprintln(os.Stderr, "       figaro context [id]")
 	fmt.Fprintln(os.Stderr, "       figaro list")

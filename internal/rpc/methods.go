@@ -85,8 +85,9 @@ type FigaroInfoResponse struct {
 // --- Angelus socket: request/response types ---
 
 type CreateRequest struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
+	Provider  string `json:"provider"`
+	Model     string `json:"model"`
+	Ephemeral bool   `json:"ephemeral,omitempty"` // if true, no aria file is written (in-memory only)
 }
 
 type CreateResponse struct {

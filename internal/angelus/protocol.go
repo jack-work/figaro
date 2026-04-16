@@ -108,6 +108,11 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	home, _ := os.UserHomeDir()
 	logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
 	storeDir := filepath.Join(home, ".local", "state", "figaro", "arias")
+	if req.Ephemeral {
+		// Empty StoreDir → NewMemStore() (no downstream). WAL lives in RAM
+		// only; Flush and Close become no-ops. Agent vanishes on Kill.
+		storeDir = ""
+	}
 
 	agent := figaro.NewAgent(figaro.Config{
 		ID:         id,

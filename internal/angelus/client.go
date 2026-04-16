@@ -28,6 +28,16 @@ func (c *Client) Create(ctx context.Context, provider, model string) (*rpc.Creat
 	return &resp, err
 }
 
+// CreateEphemeral creates a figaro whose state lives in memory only.
+// No aria file is written; the agent vanishes when killed.
+func (c *Client) CreateEphemeral(ctx context.Context, provider, model string) (*rpc.CreateResponse, error) {
+	var resp rpc.CreateResponse
+	err := c.cli.Call(ctx, rpc.MethodCreate, rpc.CreateRequest{
+		Provider: provider, Model: model, Ephemeral: true,
+	}, &resp)
+	return &resp, err
+}
+
 func (c *Client) Kill(ctx context.Context, figaroID string) error {
 	return c.cli.Call(ctx, rpc.MethodKill, rpc.KillRequest{FigaroID: figaroID}, nil)
 }
