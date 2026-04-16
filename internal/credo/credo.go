@@ -138,8 +138,18 @@ func CurrentContext(cwd, root, providerName, model, figaroID, tools string) Cont
 	}
 }
 
+// version can be set at link time via -ldflags:
+//
+//	-X github.com/jack-work/figaro/internal/credo.version=abc1234
+//
+// When empty, buildVersion falls back to the VCS revision embedded by Go.
+var version string
+
 // buildVersion extracts the VCS revision from Go's embedded build info.
 func buildVersion() string {
+	if version != "" {
+		return version
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "unknown"
