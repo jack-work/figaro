@@ -49,13 +49,14 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	}
 	return &Handlers{
 		Map: map[string]jsonrpc.HandlerFunc{
-			rpc.MethodCreate:  h.create,
-			rpc.MethodKill:    h.kill,
-			rpc.MethodList:    h.list,
-			rpc.MethodBind:    h.bind,
-			rpc.MethodResolve: h.resolve,
-			rpc.MethodUnbind:  h.unbind,
-			rpc.MethodStatus:  h.status,
+			rpc.MethodCreate:       h.create,
+			rpc.MethodKill:         h.kill,
+			rpc.MethodList:         h.list,
+			rpc.MethodBind:         h.bind,
+			rpc.MethodResolve:      h.resolve,
+			rpc.MethodUnbind:       h.unbind,
+			rpc.MethodStatus:       h.status,
+			rpc.MethodSaveBindings: h.saveBindings,
 		},
 		h: h,
 	}
@@ -234,6 +235,18 @@ func (h *handlers) status(ctx context.Context, params json.RawMessage) (interfac
 		Uptime:      h.angelus.StartedAt.UnixMilli(),
 		FigaroCount: h.angelus.Registry.FigaroCount(),
 		BoundPIDs:   h.angelus.Registry.BoundPIDCount(),
+	}, nil
+}
+
+func (h *handlers) saveBindings(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	path := h.angelus.BindingsPath()
+	if err := SaveBindings(h.angelus.Registry, path); err != nil {
+		return nil, err
+	}
+	h.angelus.Logger.Printf("saved pid bindings to %s (%d)", path, h.angelus.Registry.BoundPIDCount())
+	return rpc.SaveBindingsResponse{
+		OK:    true,
+		Count: h.angelus.Registry.BoundPIDCount(),
 	}, nil
 }
 

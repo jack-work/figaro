@@ -181,6 +181,11 @@ func runAngelus() {
 	// Restore persisted arias from disk before accepting connections.
 	handlers.RestoreArias(ctx)
 
+	// Reattach any PID bindings persisted from the previous angelus
+	// lifetime (via `figaro rest --keep-pids`). Dead or recycled PIDs
+	// are filtered out; the file is consumed on read.
+	angelus.RestoreBindings(a.Registry, a.BindingsPath(), logger)
+
 	// Watch for SIGINT/SIGTERM and run a graceful shutdown so active
 	// figaros get a chance to interrupt their turns and flush state
 	// before the process exits.
@@ -580,16 +585,38 @@ func runContext(loaded *config.Loaded) {
 func runRest() {
 	// `figaro rest --force` jumps straight to SIGKILL. Default sends
 	// SIGTERM and waits for the angelus to drain (graceful shutdown).
+	// `figaro rest --keep-pids` first asks the angelus to persist its
+	// PID→figaro bindings so the next angelus startup can reattach.
 	force := false
+	keepPIDs := false
 	for _, arg := range os.Args[2:] {
-		if arg == "--force" || arg == "-f" {
+		switch arg {
+		case "--force", "-f":
 			force = true
+		case "--keep-pids", "-k":
+			keepPIDs = true
 		}
 	}
 
 	sockPath := angelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
-	if cli, err := angelus.DialClient(ep); err == nil {
+	if keepPIDs {
+		// Save bindings synchronously before SIGTERM. Requires the
+		// angelus to still be alive and serving.
+		cli, err := angelus.DialClient(ep)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "angelus is not running")
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		resp, err := cli.SaveBindings(ctx)
+		cancel()
+		cli.Close()
+		if err != nil {
+			die("save-bindings: %s", err)
+		}
+		fmt.Fprintf(os.Stderr, "persisted %d pid binding(s)\n", resp.Count)
+	} else if cli, err := angelus.DialClient(ep); err == nil {
 		cli.Close()
 	} else {
 		fmt.Fprintln(os.Stderr, "angelus is not running")

@@ -58,6 +58,13 @@ func (a *Angelus) FigaroSocketDir() string {
 	return filepath.Join(a.RuntimeDir, "figaros")
 }
 
+// BindingsPath returns the path for persisted PID bindings.
+// Consumed on startup after RestoreArias; written by SaveBindings
+// when the user asks for `figaro rest --keep-pids`.
+func (a *Angelus) BindingsPath() string {
+	return filepath.Join(a.RuntimeDir, "bindings.json")
+}
+
 // Run starts the angelus: creates directories, listens on the socket,
 // starts the PID monitor, and blocks until ctx is cancelled.
 func (a *Angelus) Run(ctx context.Context) error {

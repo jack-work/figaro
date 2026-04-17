@@ -35,7 +35,8 @@ const (
 	MethodResolve = "pid.resolve"
 	MethodUnbind  = "pid.unbind"
 
-	MethodStatus  = "angelus.status"
+	MethodStatus        = "angelus.status"
+	MethodSaveBindings  = "angelus.save_bindings"
 )
 
 // --- Figaro socket: request/response types ---
@@ -156,4 +157,9 @@ type StatusResponse struct {
 	Uptime      int64 `json:"uptime_ms"`     // millis since angelus start
 	FigaroCount int   `json:"figaro_count"`
 	BoundPIDs   int   `json:"bound_pids"`
+}
+
+type SaveBindingsResponse struct {
+	OK    bool `json:"ok"`
+	Count int  `json:"count"` // number of bindings written
 }

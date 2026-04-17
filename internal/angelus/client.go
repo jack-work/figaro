@@ -74,6 +74,17 @@ func (c *Client) Status(ctx context.Context) (*rpc.StatusResponse, error) {
 	return &resp, nil
 }
 
+// SaveBindings asks the angelus to persist its current PID→figaro
+// bindings to disk. Called by `figaro rest --keep-pids` just before
+// sending SIGTERM so the bindings survive the restart.
+func (c *Client) SaveBindings(ctx context.Context) (*rpc.SaveBindingsResponse, error) {
+	var resp rpc.SaveBindingsResponse
+	if err := c.cli.Call(ctx, rpc.MethodSaveBindings, nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Client) Close() error {
 	return c.cli.Close()
 }
