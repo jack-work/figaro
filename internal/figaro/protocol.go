@@ -72,6 +72,7 @@ func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 			info := a.Info()
 			return rpc.FigaroInfoResponse{
 				ID:           info.ID,
+				Label:        info.Label,
 				State:        info.State,
 				Provider:     info.Provider,
 				Model:        info.Model,
@@ -89,6 +90,16 @@ func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 			}
 			a.SetModel(req.Model)
 			return rpc.SetModelResponse{OK: true}, nil
+		},
+		rpc.MethodSetLabel: func(ctx context.Context, params json.RawMessage) (any, error) {
+			var req rpc.SetLabelRequest
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, err
+			}
+			if err := a.SetLabel(req.Label); err != nil {
+				return nil, err
+			}
+			return rpc.SetLabelResponse{OK: true}, nil
 		},
 		rpc.MethodInterrupt: func(ctx context.Context, params json.RawMessage) (any, error) {
 			a.Interrupt()

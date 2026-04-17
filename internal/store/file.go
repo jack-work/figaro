@@ -24,6 +24,7 @@ type AriaMeta struct {
 	Model    string `json:"model"`
 	Cwd      string `json:"cwd"`
 	Root     string `json:"root"`
+	Label    string `json:"label,omitempty"`
 }
 
 // FileStore persists a conversation as a single JSON file.

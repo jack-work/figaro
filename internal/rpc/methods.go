@@ -18,6 +18,7 @@ const (
 	MethodContext    = "figaro.context"
 	MethodFigaroInfo = "figaro.info"
 	MethodSetModel   = "figaro.set_model"
+	MethodSetLabel   = "figaro.set_label"
 	MethodInterrupt  = "figaro.interrupt"
 	// figaro.subscribe is handled at the transport level (long-lived connection).
 )
@@ -55,6 +56,14 @@ type SetModelResponse struct {
 	OK bool `json:"ok"`
 }
 
+type SetLabelRequest struct {
+	Label string `json:"label"`
+}
+
+type SetLabelResponse struct {
+	OK bool `json:"ok"`
+}
+
 type InterruptRequest struct{}
 
 type InterruptResponse struct {
@@ -69,6 +78,7 @@ type ContextResponse struct {
 
 type FigaroInfoResponse struct {
 	ID            string   `json:"id"`
+	Label         string   `json:"label,omitempty"`
 	State         string   `json:"state"`
 	Provider      string   `json:"provider"`
 	Model         string   `json:"model"`

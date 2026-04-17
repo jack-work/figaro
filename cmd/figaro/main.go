@@ -108,6 +108,9 @@ func main() {
 		case "attend":
 			runAttend(loaded)
 			return
+		case "label":
+			runLabel(loaded)
+			return
 		case "context":
 			runContext(loaded)
 			return
@@ -381,7 +384,7 @@ func runList(loaded *config.Loaded) {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(w, "\tID\tSTATE\tMODEL\tMSGS\tCONTEXT\tPIDS\n")
+	fmt.Fprintf(w, "\tID\tLABEL\tSTATE\tMODEL\tMSGS\tCONTEXT\tPIDS\n")
 	for _, f := range resp.Figaros {
 		pids := make([]string, len(f.BoundPIDs))
 		for i, p := range f.BoundPIDs {
@@ -399,8 +402,12 @@ func runList(loaded *config.Loaded) {
 		if slices.Contains(f.BoundPIDs, os.Getppid()) {
 			current = "*"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
-			current, f.ID, f.State, f.Model, f.MessageCount, ctxStr, pidStr)
+		label := f.Label
+		if label == "" {
+			label = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+			current, f.ID, label, f.State, f.Model, f.MessageCount, ctxStr, pidStr)
 	}
 	w.Flush()
 }
@@ -448,6 +455,57 @@ func runAttend(loaded *config.Loaded) {
 		die("attend: %s", err)
 	}
 	fmt.Fprintf(os.Stderr, "attending %s\n", figaroID)
+}
+
+// --- CLI: label ---
+
+// runLabel sets a human-readable label on an aria.
+// Usage: figaro label <id> <label words...>
+// An empty label (no words after id) clears the label.
+func runLabel(loaded *config.Loaded) {
+	if len(os.Args) < 3 {
+		die("usage: figaro label <id> <label>")
+	}
+	figaroID := os.Args[2]
+	label := strings.Join(os.Args[3:], " ")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	// Find the figaro's socket via list — no dedicated resolve-by-id RPC.
+	resp, err := acli.List(ctx)
+	if err != nil {
+		die("list: %s", err)
+	}
+	var found bool
+	for _, f := range resp.Figaros {
+		if f.ID == figaroID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		die("no figaro with id %q", figaroID)
+	}
+
+	ep := transport.UnixEndpoint(filepath.Join(angelusRuntimeDir(), "figaros", figaroID+".sock"))
+	fcli, err := figaro.DialClient(ep, nil)
+	if err != nil {
+		die("connect figaro: %s", err)
+	}
+	defer fcli.Close()
+
+	if err := fcli.SetLabel(ctx, label); err != nil {
+		die("set label: %s", err)
+	}
+	if label == "" {
+		fmt.Fprintf(os.Stderr, "cleared label on %s\n", figaroID)
+	} else {
+		fmt.Fprintf(os.Stderr, "labeled %s: %q\n", figaroID, label)
+	}
 }
 
 // --- CLI: context ---
@@ -1062,6 +1120,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "       figaro new -- <prompt>")
 	fmt.Fprintln(os.Stderr, "       figaro plain -- <prompt>   (raw, ephemeral, pipe-friendly; also 'l')")
 	fmt.Fprintln(os.Stderr, "       figaro attend <id>")
+	fmt.Fprintln(os.Stderr, "       figaro label <id> <label>")
 	fmt.Fprintln(os.Stderr, "       figaro context [id]")
 	fmt.Fprintln(os.Stderr, "       figaro list")
 	fmt.Fprintln(os.Stderr, "       figaro kill <id>")

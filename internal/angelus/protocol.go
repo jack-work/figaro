@@ -173,6 +173,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 	for i, info := range infos {
 		result[i] = rpc.FigaroInfoResponse{
 			ID:            info.ID,
+			Label:         info.Label,
 			State:         info.State,
 			Provider:      info.Provider,
 			Model:         info.Model,
@@ -283,6 +284,7 @@ func (h *handlers) RestoreArias(ctx context.Context) {
 
 		agent := figaro.NewAgent(figaro.Config{
 			ID:         aria.ID,
+			Label:      meta.Label,
 			SocketPath: sockPath,
 			Provider:   prov,
 			Model:      meta.Model,

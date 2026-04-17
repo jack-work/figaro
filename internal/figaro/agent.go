@@ -67,6 +67,7 @@ type event struct {
 // Config holds everything needed to construct an Agent.
 type Config struct {
 	ID         string
+	Label      string // optional human-readable label (persisted in aria meta)
 	SocketPath string
 	Provider   provider.Provider
 	Model      string // model ID (e.g. "claude-sonnet-4-20250514"), for metadata
@@ -85,6 +86,7 @@ type Config struct {
 // TODO: convert to child process via --figaro flag for full isolation.
 type Agent struct {
 	id         string
+	label      string
 	socketPath string
 	prov       provider.Provider
 	model      string
@@ -139,6 +141,7 @@ func NewAgent(cfg Config) *Agent {
 
 	a := &Agent{
 		id:          cfg.ID,
+		label:       cfg.Label,
 		socketPath:  cfg.SocketPath,
 		prov:        cfg.Provider,
 		model:       cfg.Model,
@@ -192,12 +195,21 @@ func (a *Agent) newStore() *store.MemStore {
 		return store.NewMemStore()
 	}
 	// Persist metadata for aria restoration on angelus restart.
+	// Preserve any existing label from disk if Config didn't supply one.
+	label := a.label
+	if label == "" {
+		if existing := fs.Meta(); existing != nil {
+			label = existing.Label
+		}
+	}
 	fs.SetMeta(&store.AriaMeta{
 		Provider: a.prov.Name(),
 		Model:    a.model,
 		Cwd:      a.cwd,
 		Root:     a.root,
+		Label:    label,
 	})
+	a.label = label
 	return store.NewMemStoreWith(fs)
 }
 
@@ -209,6 +221,33 @@ func (a *Agent) SetModel(model string) {
 	a.model = model
 	a.mu.Unlock()
 	a.prov.SetModel(model)
+}
+
+// SetLabel updates the aria's label and persists it to disk. Empty
+// string clears the label. Returns any error from the persistence
+// flush. Safe to call during an active turn — Flush snapshots the
+// current WAL without altering it.
+func (a *Agent) SetLabel(label string) error {
+	a.mu.Lock()
+	a.label = label
+	a.mu.Unlock()
+
+	ds := a.memStore.Downstream()
+	if ds == nil {
+		return nil // ephemeral — no file to update
+	}
+	meta := ds.Meta()
+	if meta == nil {
+		meta = &store.AriaMeta{
+			Provider: a.prov.Name(),
+			Model:    a.model,
+			Cwd:      a.cwd,
+			Root:     a.root,
+		}
+	}
+	meta.Label = label
+	ds.SetMeta(meta)
+	return a.memStore.Flush()
 }
 
 func (a *Agent) Prompt(text string) {
@@ -267,6 +306,7 @@ func (a *Agent) Info() FigaroInfo {
 
 	return FigaroInfo{
 		ID:            a.id,
+		Label:         a.label,
 		State:         state,
 		Provider:      a.prov.Name(),
 		Model:         a.model,

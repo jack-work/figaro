@@ -57,6 +57,11 @@ func (c *Client) SetModel(ctx context.Context, model string) error {
 	return c.cli.Call(ctx, rpc.MethodSetModel, rpc.SetModelRequest{Model: model}, nil)
 }
 
+// SetLabel sets the aria's human-readable label. Persists to disk.
+func (c *Client) SetLabel(ctx context.Context, label string) error {
+	return c.cli.Call(ctx, rpc.MethodSetLabel, rpc.SetLabelRequest{Label: label}, nil)
+}
+
 // Interrupt asks the figaro to abort its current turn. Returns as soon
 // as the agent has accepted the signal — the actual cancellation is
 // asynchronous (the agent will emit stream.error + stream.done).

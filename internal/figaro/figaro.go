@@ -47,6 +47,10 @@ type Figaro interface {
 	// SetModel changes the model for subsequent prompts.
 	SetModel(model string)
 
+	// SetLabel sets the aria's human-readable label and persists it.
+	// Empty string clears the label. Returns any persistence error.
+	SetLabel(label string) error
+
 	// Info returns current metadata.
 	Info() FigaroInfo
 
@@ -57,6 +61,7 @@ type Figaro interface {
 // FigaroInfo holds metadata about a running figaro.
 type FigaroInfo struct {
 	ID            string    `json:"id"`
+	Label         string    `json:"label,omitempty"`
 	State         string    `json:"state"` // "active", "idle"
 	Provider      string    `json:"provider"`
 	Model         string    `json:"model"`

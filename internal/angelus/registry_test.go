@@ -29,6 +29,7 @@ func (m *mockFigaro) Context() []message.Message               { return nil }
 func (m *mockFigaro) Subscribe() <-chan rpc.Notification       { return make(chan rpc.Notification) }
 func (m *mockFigaro) Unsubscribe(ch <-chan rpc.Notification)   {}
 func (m *mockFigaro) SetModel(model string)                    {}
+func (m *mockFigaro) SetLabel(label string) error              { return nil }
 func (m *mockFigaro) Kill()                                    { m.killed = true }
 func (m *mockFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{
