@@ -160,6 +160,10 @@ func NewAgent(cfg Config) *Agent {
 	// or ephemeral (standalone MemStore).
 	a.memStore = a.newStore()
 
+	// Seed cumulative token counters from persisted Usage so restored
+	// arias don't start over at zero.
+	a.tokensIn, a.tokensOut = sumUsage(a.memStore.Context())
+
 	// Open per-figaro event log.
 	if cfg.LogDir != "" {
 		os.MkdirAll(cfg.LogDir, 0700)
@@ -336,8 +340,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		// so NewMemStoreWith will seed from the last known-good snapshot.
 		a.mu.Lock()
 		a.memStore = a.newStore()
-		a.tokensIn = 0
-		a.tokensOut = 0
+		a.tokensIn, a.tokensOut = sumUsage(a.memStore.Context())
 		a.mu.Unlock()
 
 		// End any active otel span.
@@ -869,4 +872,21 @@ func truncLog(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// sumUsage totals the InputTokens / OutputTokens across a block's
+// messages. Used to seed cumulative counters after restore or panic
+// recovery so they reflect the full history, not just this process's
+// lifetime.
+func sumUsage(block *message.Block) (in, out int) {
+	if block == nil {
+		return 0, 0
+	}
+	for _, m := range block.Messages {
+		if m.Usage != nil {
+			in += m.Usage.InputTokens
+			out += m.Usage.OutputTokens
+		}
+	}
+	return in, out
 }
