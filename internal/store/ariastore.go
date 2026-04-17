@@ -8,7 +8,9 @@ import (
 	"time"
 )
 
-// AriaInfo holds metadata about a persisted aria on disk.
+// AriaInfo holds metadata about a persisted aria. Returned by
+// Backend.List so callers can enumerate arias without opening
+// every handle.
 type AriaInfo struct {
 	ID           string
 	MessageCount int
@@ -16,10 +18,10 @@ type AriaInfo struct {
 	Meta         *AriaMeta // nil if no metadata in file
 }
 
-// ListArias scans a directory for aria JSON files and returns
+// listAriasInDir scans a directory for aria JSON files and returns
 // metadata for each. The aria ID is derived from the filename
-// (minus the .json extension).
-func ListArias(dir string) ([]AriaInfo, error) {
+// (minus the .json extension). Used by FileBackend.List.
+func listAriasInDir(dir string) ([]AriaInfo, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -62,15 +64,4 @@ func ListArias(dir string) ([]AriaInfo, error) {
 	}
 
 	return arias, nil
-}
-
-// RemoveAria deletes an aria file from disk by ID.
-// Returns nil if the file does not exist.
-func RemoveAria(dir, id string) error {
-	path := filepath.Join(dir, id+".json")
-	err := os.Remove(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	return err
 }

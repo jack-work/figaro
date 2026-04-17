@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/jsonrpc"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/store"
 
 	// NOTE: golang.org/x/sys/unix is Linux/macOS only. For future Windows
 	// support, PID monitoring will need a build-tagged alternative using
@@ -27,6 +28,7 @@ import (
 type Angelus struct {
 	Registry   *Registry
 	Handlers   map[string]jsonrpc.HandlerFunc // set before Run()
+	Backend    store.Backend                  // aria persistence (nil = ephemeral-only)
 	SocketPath string
 	RuntimeDir string
 	Logger     *log.Logger
@@ -38,8 +40,9 @@ type Angelus struct {
 
 // Config holds the settings for creating an Angelus.
 type Config struct {
-	RuntimeDir string // e.g. $XDG_RUNTIME_DIR/figaro
+	RuntimeDir string        // e.g. $XDG_RUNTIME_DIR/figaro
 	Logger     *log.Logger
+	Backend    store.Backend // aria persistence (nil = ephemeral-only)
 }
 
 // New creates an Angelus. Call Run() to start it.
@@ -47,6 +50,7 @@ type Config struct {
 func New(cfg Config) *Angelus {
 	return &Angelus{
 		Registry:   NewRegistry(),
+		Backend:    cfg.Backend,
 		SocketPath: filepath.Join(cfg.RuntimeDir, "angelus.sock"),
 		RuntimeDir: cfg.RuntimeDir,
 		Logger:     cfg.Logger,
@@ -248,6 +252,14 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 
 	// Phase 3: stop the accept loop.
 	a.Stop()
+
+	// Phase 4: close the backend. Safe now that every agent has
+	// flushed its Downstream handle in phase 2. No-op for FileBackend.
+	if a.Backend != nil {
+		if err := a.Backend.Close(); err != nil && a.Logger != nil {
+			a.Logger.Printf("angelus: backend close: %v", err)
+		}
+	}
 }
 
 // waitForIdle polls the figaro's State, returning early as soon as

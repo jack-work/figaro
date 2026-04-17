@@ -17,7 +17,6 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
-	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
 )
 
@@ -108,11 +107,12 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
 	logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
-	storeDir := filepath.Join(home, ".local", "state", "figaro", "arias")
+
+	// Ephemeral figaros skip the backend entirely — WAL lives only in
+	// RAM, no file written, agent vanishes on Kill.
+	backend := h.angelus.Backend
 	if req.Ephemeral {
-		// Empty StoreDir → NewMemStore() (no downstream). WAL lives in RAM
-		// only; Flush and Close become no-ops. Agent vanishes on Kill.
-		storeDir = ""
+		backend = nil
 	}
 
 	agent := figaro.NewAgent(figaro.Config{
@@ -126,7 +126,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		MaxTokens:  8192,
 		Tools:      tool.DefaultRegistry(cwd),
 		LogDir:     logDir,
-		StoreDir:   storeDir,
+		Backend:    backend,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -156,12 +156,13 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 		return nil, err
 	}
 
-	// Remove persisted aria from disk.
-	home, _ := os.UserHomeDir()
-	storeDir := filepath.Join(home, ".local", "state", "figaro", "arias")
-	if err := store.RemoveAria(storeDir, req.FigaroID); err != nil {
-		// Log but don't fail the kill — the agent is already dead.
-		h.angelus.Logger.Printf("warning: failed to remove aria file for %s: %v", req.FigaroID, err)
+	// Remove persisted aria via the backend. Non-fatal: the agent is
+	// already gone, and a stale aria file is harmless (will be shown
+	// by `figaro list` but not singable).
+	if h.angelus.Backend != nil {
+		if err := h.angelus.Backend.Remove(req.FigaroID); err != nil {
+			h.angelus.Logger.Printf("warning: failed to remove aria for %s: %v", req.FigaroID, err)
+		}
 	}
 
 	h.angelus.Logger.Printf("killed figaro %s", req.FigaroID)
@@ -250,17 +251,20 @@ func (h *handlers) saveBindings(ctx context.Context, params json.RawMessage) (in
 	}, nil
 }
 
-// RestoreArias scans the aria store directory and re-creates agents
-// for any persisted arias that have metadata. Called on angelus startup.
+// RestoreArias enumerates persisted arias via the backend and
+// re-creates agents for each. Called on angelus startup.
 func (h *handlers) RestoreArias(ctx context.Context) {
-	home, _ := os.UserHomeDir()
-	storeDir := filepath.Join(home, ".local", "state", "figaro", "arias")
-
-	arias, err := store.ListArias(storeDir)
+	if h.angelus.Backend == nil {
+		return
+	}
+	arias, err := h.angelus.Backend.List()
 	if err != nil {
 		h.angelus.Logger.Printf("restore: failed to list arias: %v", err)
 		return
 	}
+
+	home, _ := os.UserHomeDir()
+	logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
 
 	for _, aria := range arias {
 		if aria.Meta == nil {
@@ -268,8 +272,8 @@ func (h *handlers) RestoreArias(ctx context.Context) {
 			continue
 		}
 		if aria.MessageCount == 0 {
-			// Empty aria — clean up the file.
-			store.RemoveAria(storeDir, aria.ID)
+			// Empty aria — clean up.
+			h.angelus.Backend.Remove(aria.ID)
 			continue
 		}
 
@@ -282,8 +286,6 @@ func (h *handlers) RestoreArias(ctx context.Context) {
 
 		sockPath := filepath.Join(h.angelus.FigaroSocketDir(), aria.ID+".sock")
 		scribe := credo.NewDefaultScribe(h.config.ConfigDir)
-
-		logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
 
 		cwd := meta.Cwd
 		root := meta.Root
@@ -307,7 +309,7 @@ func (h *handlers) RestoreArias(ctx context.Context) {
 			MaxTokens:  8192,
 			Tools:      tool.DefaultRegistry(cwd),
 			LogDir:     logDir,
-			StoreDir:   storeDir,
+			Backend:    h.angelus.Backend,
 		})
 
 		if err := h.angelus.Registry.Register(agent); err != nil {

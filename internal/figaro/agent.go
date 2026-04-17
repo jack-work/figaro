@@ -76,8 +76,8 @@ type Config struct {
 	Root       string // project root
 	MaxTokens  int
 	Tools      *tool.Registry // tools available to the agent
-	LogDir     string      // directory for per-figaro JSONL event log (empty = no logging)
-	StoreDir   string      // directory for aria persistence (empty = ephemeral)
+	LogDir     string         // directory for per-figaro JSONL event log (empty = no logging)
+	Backend    store.Backend  // aria persistence (nil = ephemeral)
 }
 
 // Agent is the goroutine-based implementation of Figaro.
@@ -96,7 +96,7 @@ type Agent struct {
 	maxTokens  int
 	tools      *tool.Registry
 	memStore   *store.MemStore
-	storeDir   string // persisted if non-empty
+	backend    store.Backend // nil = ephemeral
 
 	// Actor inbox — priority mailbox with selfish/patient queues.
 	inbox *Inbox
@@ -150,7 +150,7 @@ func NewAgent(cfg Config) *Agent {
 		root:        cfg.Root,
 		maxTokens:   cfg.MaxTokens,
 		tools:       cfg.Tools,
-		storeDir:    cfg.StoreDir,
+		backend:     cfg.Backend,
 		inbox:       NewInbox(ctx),
 		subscribers: make(map[chan rpc.Notification]struct{}),
 		createdAt:   time.Now(),
@@ -182,27 +182,26 @@ func NewAgent(cfg Config) *Agent {
 }
 
 // newStore creates the appropriate store for this agent.
-// If StoreDir is set, creates a FileStore → MemStore chain (persistent).
-// Otherwise, creates a standalone MemStore (ephemeral).
+// With a Backend: opens a per-aria Downstream, wraps in MemStore.
+// Without: a standalone MemStore (ephemeral).
 func (a *Agent) newStore() *store.MemStore {
-	if a.storeDir == "" {
+	if a.backend == nil {
 		return store.NewMemStore()
 	}
-	storePath := filepath.Join(a.storeDir, a.id+".json")
-	fs, err := store.NewFileStore(storePath)
+	ds, err := a.backend.Open(a.id)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: store open error: %v (falling back to ephemeral)\n", a.id, err)
+		fmt.Fprintf(os.Stderr, "figaro %s: backend open error: %v (falling back to ephemeral)\n", a.id, err)
 		return store.NewMemStore()
 	}
 	// Persist metadata for aria restoration on angelus restart.
 	// Preserve any existing label from disk if Config didn't supply one.
 	label := a.label
 	if label == "" {
-		if existing := fs.Meta(); existing != nil {
+		if existing := ds.Meta(); existing != nil {
 			label = existing.Label
 		}
 	}
-	fs.SetMeta(&store.AriaMeta{
+	ds.SetMeta(&store.AriaMeta{
 		Provider: a.prov.Name(),
 		Model:    a.model,
 		Cwd:      a.cwd,
@@ -210,7 +209,7 @@ func (a *Agent) newStore() *store.MemStore {
 		Label:    label,
 	})
 	a.label = label
-	return store.NewMemStoreWith(fs)
+	return store.NewMemStoreWith(ds)
 }
 
 func (a *Agent) ID() string        { return a.id }
@@ -409,7 +408,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		// tells the CLI the failed turn has fully unwound. The agent
 		// itself survives via the restart loop below.
 		crashMsg := "agent crashed and was restarted"
-		if a.storeDir != "" {
+		if a.backend != nil {
 			crashMsg += "; context restored from last checkpoint"
 		} else {
 			crashMsg += "; context lost"

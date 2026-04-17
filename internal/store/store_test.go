@@ -421,57 +421,73 @@ func TestMemStore_MultipleFlushesOverwrite(t *testing.T) {
 	}
 }
 
-// --- AriaStore tests ---
+// --- FileBackend tests ---
 
-func TestListArias_Empty(t *testing.T) {
+func TestFileBackend_List_Empty(t *testing.T) {
 	dir := t.TempDir()
-	arias, err := ListArias(dir)
+	b, err := NewFileBackend(dir)
 	if err != nil {
-		t.Fatalf("ListArias: %v", err)
+		t.Fatalf("NewFileBackend: %v", err)
+	}
+	arias, err := b.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
 	}
 	if len(arias) != 0 {
 		t.Fatalf("expected 0 arias, got %d", len(arias))
 	}
 }
 
-func TestListArias_NonexistentDir(t *testing.T) {
-	arias, err := ListArias("/nonexistent/path")
+func TestFileBackend_List_NonexistentDir(t *testing.T) {
+	// NewFileBackend creates the directory if missing; listing an
+	// empty backend should simply return zero results.
+	dir := filepath.Join(t.TempDir(), "fresh")
+	b, err := NewFileBackend(dir)
 	if err != nil {
-		t.Fatalf("ListArias on nonexistent: %v", err)
+		t.Fatalf("NewFileBackend: %v", err)
+	}
+	arias, err := b.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
 	}
 	if len(arias) != 0 {
 		t.Fatalf("expected 0 arias")
 	}
 }
 
-func TestListArias_FindsArias(t *testing.T) {
+func TestFileBackend_List_FindsArias(t *testing.T) {
 	dir := t.TempDir()
+	b, err := NewFileBackend(dir)
+	if err != nil {
+		t.Fatalf("NewFileBackend: %v", err)
+	}
 
-	// Create two aria files.
-	fs1, _ := NewFileStore(filepath.Join(dir, "abc123.json"))
-	fs1.Append(message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}})
-	fs1.Append(message.Message{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("hi")}})
+	ds1, _ := b.Open("abc123")
+	ds1.Checkpoint([]message.Message{
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}, LogicalTime: 1},
+		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("hi")}, LogicalTime: 2},
+	}, 3)
 
-	fs2, _ := NewFileStore(filepath.Join(dir, "def456.json"))
-	fs2.Append(message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("one")}})
+	ds2, _ := b.Open("def456")
+	ds2.Checkpoint([]message.Message{
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("one")}, LogicalTime: 1},
+	}, 2)
 
 	// Also create a non-json file — should be ignored.
 	os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("ignore me"), 0600)
 
-	arias, err := ListArias(dir)
+	arias, err := b.List()
 	if err != nil {
-		t.Fatalf("ListArias: %v", err)
+		t.Fatalf("List: %v", err)
 	}
 	if len(arias) != 2 {
 		t.Fatalf("expected 2 arias, got %d", len(arias))
 	}
 
-	// Build a map for easier assertions.
 	byID := make(map[string]AriaInfo)
 	for _, a := range arias {
 		byID[a.ID] = a
 	}
-
 	if byID["abc123"].MessageCount != 2 {
 		t.Fatalf("abc123: expected 2 messages, got %d", byID["abc123"].MessageCount)
 	}
@@ -480,30 +496,33 @@ func TestListArias_FindsArias(t *testing.T) {
 	}
 }
 
-func TestRemoveAria(t *testing.T) {
+func TestFileBackend_Remove(t *testing.T) {
 	dir := t.TempDir()
+	b, _ := NewFileBackend(dir)
 
-	fs, _ := NewFileStore(filepath.Join(dir, "doomed.json"))
-	fs.Append(message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("bye")}})
+	ds, _ := b.Open("doomed")
+	ds.Checkpoint([]message.Message{
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("bye")}, LogicalTime: 1},
+	}, 2)
 
-	if err := RemoveAria(dir, "doomed"); err != nil {
-		t.Fatalf("RemoveAria: %v", err)
+	if err := b.Remove("doomed"); err != nil {
+		t.Fatalf("Remove: %v", err)
 	}
-
 	if _, err := os.Stat(filepath.Join(dir, "doomed.json")); !os.IsNotExist(err) {
 		t.Fatalf("file should be deleted")
 	}
 
-	// Remove again — should be no-op.
-	if err := RemoveAria(dir, "doomed"); err != nil {
-		t.Fatalf("RemoveAria idempotent: %v", err)
+	// Remove again — no-op.
+	if err := b.Remove("doomed"); err != nil {
+		t.Fatalf("Remove idempotent: %v", err)
 	}
 }
 
-func TestRemoveAria_Nonexistent(t *testing.T) {
+func TestFileBackend_Remove_Nonexistent(t *testing.T) {
 	dir := t.TempDir()
-	if err := RemoveAria(dir, "ghost"); err != nil {
-		t.Fatalf("RemoveAria nonexistent: %v", err)
+	b, _ := NewFileBackend(dir)
+	if err := b.Remove("ghost"); err != nil {
+		t.Fatalf("Remove nonexistent: %v", err)
 	}
 }
 
@@ -554,18 +573,20 @@ func TestFileStore_MetaPersistence(t *testing.T) {
 
 func TestListArias_IncludesMeta(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "withmeta.json")
+	b, _ := NewFileBackend(dir)
 
-	fs, err := NewFileStore(path)
+	ds, err := b.Open("withmeta")
 	if err != nil {
-		t.Fatalf("NewFileStore: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
-	fs.SetMeta(&AriaMeta{Provider: "mock", Model: "test-v1"})
-	fs.Append(message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("x")}})
+	ds.SetMeta(&AriaMeta{Provider: "mock", Model: "test-v1"})
+	ds.Checkpoint([]message.Message{
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("x")}, LogicalTime: 1},
+	}, 2)
 
-	arias, err := ListArias(dir)
+	arias, err := b.List()
 	if err != nil {
-		t.Fatalf("ListArias: %v", err)
+		t.Fatalf("List: %v", err)
 	}
 	if len(arias) != 1 {
 		t.Fatalf("expected 1 aria, got %d", len(arias))

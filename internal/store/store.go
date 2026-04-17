@@ -90,16 +90,39 @@ type Downstream interface {
 	Close() error
 }
 
-// Registry maps figaro IDs to their Store instances.
-// The process maintains one registry; each figaro gets its own
-// store, resolved by ID at the start of each invocation.
-type Registry interface {
-	// Get returns the store for a figaro, creating it if needed.
-	Get(figaroID string) (Store, error)
+// Backend is the aria storage provider. One per angelus lifetime.
+//
+// A Backend owns the full set of persisted arias. It can enumerate
+// them, open per-aria Downstream handles, and delete them by ID.
+// The Downstream handles returned by Open are the per-aria Append/
+// Checkpoint surface that MemStore decorates.
+//
+// Typical implementations:
+//
+//   - FileBackend: one directory of JSON files (current default)
+//   - SQLiteBackend: one embedded database (future)
+//
+// Implementations must be safe for concurrent use across arias.
+// Per-aria handle ordering is the handle's own responsibility.
+type Backend interface {
+	// Open returns a Downstream handle for the aria. If the aria
+	// is new, the handle starts empty (next_lt=1, no messages).
+	// If it already exists, the handle's Seed replays the persisted
+	// state.
+	Open(ariaID string) (Downstream, error)
 
-	// List returns all active figaro IDs.
-	List() []string
+	// List returns metadata for every persisted aria. Used on
+	// angelus startup (RestoreArias) and for `figaro list`.
+	List() ([]AriaInfo, error)
 
-	// Close flushes and closes all stores.
+	// Remove deletes an aria permanently. A missing aria is not an
+	// error. Callers must close the owning agent (and therefore the
+	// Downstream handle) before calling Remove to avoid racing with
+	// a pending Checkpoint.
+	Remove(ariaID string) error
+
+	// Close releases backend-level resources (database connections,
+	// shared file handles). Callers must first close all live
+	// Downstream handles via the owning agents.
 	Close() error
 }

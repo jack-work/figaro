@@ -41,6 +41,7 @@ import (
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropic"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/hush/managed"
 	"golang.org/x/term"
@@ -162,9 +163,15 @@ func runAngelus() {
 	logger, logFile := mustOpenLog()
 	defer logFile.Close()
 
+	backend, err := ariaBackend()
+	if err != nil {
+		logger.Fatalf("angelus: aria backend: %v", err)
+	}
+
 	a := angelus.New(angelus.Config{
 		RuntimeDir: runtimeDir,
 		Logger:     logger,
+		Backend:    backend,
 	})
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -728,6 +735,18 @@ func runLogin(loaded *config.Loaded) {
 }
 
 // --- Angelus connection helpers ---
+
+// ariaBackend constructs the angelus's aria storage backend. Today
+// this is always a FileBackend at ~/.local/state/figaro/arias; once
+// a DB backend lands, this is the single switch point.
+func ariaBackend() (store.Backend, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("user home: %w", err)
+	}
+	dir := filepath.Join(home, ".local", "state", "figaro", "arias")
+	return store.NewFileBackend(dir)
+}
 
 func angelusRuntimeDir() string {
 	if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {

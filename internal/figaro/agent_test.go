@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 // --- Mock provider ---
@@ -397,6 +398,8 @@ func TestAgent_Info(t *testing.T) {
 
 func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 	storeDir := t.TempDir()
+	backend, err := store.NewFileBackend(storeDir)
+	require.NoError(t, err)
 
 	a := figaro.NewAgent(figaro.Config{
 		ID:         "persist-001",
@@ -404,7 +407,7 @@ func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 		Provider:   &mockProvider{response: "persisted reply"},
 		Model:      "mock-model-v1",
 		MaxTokens:  1024,
-		StoreDir:   storeDir,
+		Backend:    backend,
 	})
 	defer a.Kill()
 
@@ -471,6 +474,8 @@ secondDone:
 
 func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 	storeDir := t.TempDir()
+	backend, err := store.NewFileBackend(storeDir)
+	require.NoError(t, err)
 
 	// First agent: prompt and kill (which flushes to disk).
 	a1 := figaro.NewAgent(figaro.Config{
@@ -479,7 +484,7 @@ func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 		Provider:   &mockProvider{response: "first reply"},
 		Model:      "mock-model-v1",
 		MaxTokens:  1024,
-		StoreDir:   storeDir,
+		Backend:    backend,
 	})
 
 	ch := a1.Subscribe()
@@ -499,14 +504,14 @@ func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 firstDone:
 	a1.Kill()
 
-	// Second agent with the same ID and StoreDir — should seed from disk.
+	// Second agent with the same ID and Backend — should seed from disk.
 	a2 := figaro.NewAgent(figaro.Config{
 		ID:         "restore-001",
 		SocketPath: "/tmp/restore-test2.sock",
 		Provider:   &mockProvider{response: "second reply"},
 		Model:      "mock-model-v1",
 		MaxTokens:  1024,
-		StoreDir:   storeDir,
+		Backend:    backend,
 	})
 	defer a2.Kill()
 
@@ -519,6 +524,8 @@ firstDone:
 
 func TestAgent_PersistenceKillFlushes(t *testing.T) {
 	storeDir := t.TempDir()
+	backend, err := store.NewFileBackend(storeDir)
+	require.NoError(t, err)
 
 	a := figaro.NewAgent(figaro.Config{
 		ID:         "killflush-001",
@@ -526,7 +533,7 @@ func TestAgent_PersistenceKillFlushes(t *testing.T) {
 		Provider:   &mockProvider{response: "will be saved"},
 		Model:      "mock-model-v1",
 		MaxTokens:  1024,
-		StoreDir:   storeDir,
+		Backend:    backend,
 	})
 
 	ch := a.Subscribe()
@@ -550,12 +557,12 @@ done:
 
 	// Verify data is on disk.
 	ariaPath := filepath.Join(storeDir, "killflush-001.json")
-	_, err := os.Stat(ariaPath)
-	assert.NoError(t, err, "aria file should exist after kill")
+	_, statErr := os.Stat(ariaPath)
+	assert.NoError(t, statErr, "aria file should exist after kill")
 }
 
-func TestAgent_EphemeralWhenNoStoreDir(t *testing.T) {
-	// No StoreDir — should behave as before (no files written).
+func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
+	// No Backend — should behave as before (no files written).
 	tmpDir := t.TempDir()
 
 	a := figaro.NewAgent(figaro.Config{
@@ -564,7 +571,7 @@ func TestAgent_EphemeralWhenNoStoreDir(t *testing.T) {
 		Provider:   &mockProvider{response: "gone"},
 		Model:      "mock-model-v1",
 		MaxTokens:  1024,
-		// StoreDir deliberately omitted.
+		// Backend deliberately omitted.
 	})
 
 	ch := a.Subscribe()
@@ -586,7 +593,7 @@ done:
 
 	// No files should appear in any random dir.
 	entries, _ := os.ReadDir(tmpDir)
-	assert.Empty(t, entries, "no files should be written without StoreDir")
+	assert.Empty(t, entries, "no files should be written without a Backend")
 }
 
 // --- Slow provider for interrupt testing ---
