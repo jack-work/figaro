@@ -108,6 +108,9 @@ func main() {
 		case "attend":
 			runAttend(loaded)
 			return
+		case "detach":
+			runDetach(loaded)
+			return
 		case "label":
 			runLabel(loaded)
 			return
@@ -506,6 +509,35 @@ func runLabel(loaded *config.Loaded) {
 	} else {
 		fmt.Fprintf(os.Stderr, "labeled %s: %q\n", figaroID, label)
 	}
+}
+
+// --- CLI: detach ---
+
+// runDetach unbinds this shell's PPID from whatever figaro it is
+// currently attached to. The figaro stays alive; the next `q` call
+// from this shell will create a fresh figaro (or prompt for attend).
+func runDetach(loaded *config.Loaded) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	ppid := os.Getppid()
+
+	resp, err := acli.Resolve(ctx, ppid)
+	if err != nil {
+		die("resolve: %s", err)
+	}
+	if !resp.Found {
+		fmt.Fprintln(os.Stderr, "no figaro bound to this shell")
+		return
+	}
+
+	if err := acli.Unbind(ctx, ppid); err != nil {
+		die("unbind: %s", err)
+	}
+	fmt.Fprintf(os.Stderr, "detached from %s\n", resp.FigaroID)
 }
 
 // --- CLI: context ---
@@ -1120,6 +1152,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "       figaro new -- <prompt>")
 	fmt.Fprintln(os.Stderr, "       figaro plain -- <prompt>   (raw, ephemeral, pipe-friendly; also 'l')")
 	fmt.Fprintln(os.Stderr, "       figaro attend <id>")
+	fmt.Fprintln(os.Stderr, "       figaro detach")
 	fmt.Fprintln(os.Stderr, "       figaro label <id> <label>")
 	fmt.Fprintln(os.Stderr, "       figaro context [id]")
 	fmt.Fprintln(os.Stderr, "       figaro list")
