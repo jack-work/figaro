@@ -1,16 +1,20 @@
 # Chalkboard — Implementation Plan
 
+> **Status (2026-04-29): largely complete.** All six stages landed (commits `99f051d` through `3e1b7a6`). The chalkboard is wired end-to-end, prefix byte-stability is enforced, `cache_control` is set correctly on the wire, default templates ship, lint/tests/benchmarks/docs all in place. The only thing not yet observable is `cache_read_tokens > 0` from the Anthropic API itself — that turns out to be an **auth-path policy** rather than a wiring issue. See [`prompt-caching-limitations.md`](./prompt-caching-limitations.md) for the full write-up. Goal achieved on the figaro side; Anthropic-side caching engagement is gated by auth path (API key supports it; OAuth + Claude Code beta does not).
+
 > Make the conversation prefix byte-stable; wire `cache_control`. The system reminder feature falls out as a consequence.
 
-Background and analysis: [`docs/system-reminders/audit.md`](../docs/system-reminders/audit.md). Read the audit before making large design decisions; this document describes execution.
+Background and analysis: [`../../docs/system-reminders/audit.md`](../../docs/system-reminders/audit.md). Read the audit before making large design decisions; this document describes execution.
 
 This plan replaces an earlier "Implement System Reminders" sketch. The earlier sketch framed the work as a feature; the audit established it is more accurately a **state-management refactor** for cache-prefix stability that delivers reminders as one of its products.
+
+Companion document: [`prompt-caching-limitations.md`](./prompt-caching-limitations.md) — why client-controlled `cache_control` does not engage on the OAuth (Claude subscription) path, and how to monitor for future policy changes.
 
 ---
 
 ## Goal
 
-Eliminate per-turn entropy in the conversation prefix sent to providers, so `cache_control` on the Anthropic API hits consistently. Move volatile and conditional state out of the system prompt and into a structured, append-only state record co-located with the conversation log: the **chalkboard**. The chalkboard's mutations are the canonical mechanism by which the harness surfaces state changes to the model.
+Eliminate per-turn entropy in the conversation prefix sent to providers, so `cache_control` on the Anthropic API hits consistently *whenever the auth path supports caching*. Move volatile and conditional state out of the system prompt and into a structured, append-only state record co-located with the conversation log: the **chalkboard**. The chalkboard's mutations are the canonical mechanism by which the harness surfaces state changes to the model. The cache-engagement question is downstream of auth-path policy; the prefix-stability and chalkboard-as-state-mechanism wins are independent and are the primary outcomes.
 
 ## Design constraints (load-bearing)
 
@@ -166,9 +170,11 @@ Cheap, parallel. Lands before chalkboard for measurement baseline.
 
 **Done when:** a real prompt to Anthropic returns a non-zero `cache_read_input_tokens` value on the second turn within the cache TTL.
 
+> **Stage 0.5 outcome (2026-04-29).** Wire-format correctness verified by unit tests; live API smoke test on the user's OAuth + `claude-code-20250219` path returned `cache_read=0 cache_write=0` despite correct `cache_control` placement. Investigation determined this is an **Anthropic-side auth-path policy** (OAuth/subscription tokens are scoped to first-party Claude Code traffic; client-controlled `cache_control` is silently zeroed pre-2026-03-17, hard-rejected with HTTP 400 after). The original done-when criterion is therefore unachievable on this auth path; it would be achievable on `ANTHROPIC_API_KEY` auth, where the wiring is unchanged. See [`prompt-caching-limitations.md`](./prompt-caching-limitations.md) for the full investigation. Stage 0.5 closed: wiring shipped, instrumentation in place, policy cause documented for future reference.
+
 ### Stage 1 — Audit ✅
 
-[`docs/system-reminders/audit.md`](../docs/system-reminders/audit.md).
+[`../../docs/system-reminders/audit.md`](../../docs/system-reminders/audit.md).
 
 ### Stage 2 — Chalkboard core
 
