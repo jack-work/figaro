@@ -399,7 +399,7 @@ func runList(loaded *config.Loaded) {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(w, "\tID\tLABEL\tSTATE\tMODEL\tMSGS\tCONTEXT\tPIDS\n")
+	fmt.Fprintf(w, "\tID\tLABEL\tSTATE\tMODEL\tMSGS\tCONTEXT\tCACHE\tPIDS\n")
 	for _, f := range resp.Figaros {
 		pids := make([]string, len(f.BoundPIDs))
 		for i, p := range f.BoundPIDs {
@@ -413,6 +413,12 @@ func runList(loaded *config.Loaded) {
 		if !f.ContextExact {
 			ctxStr = "~" + ctxStr
 		}
+		// CACHE column: cumulative cache_read / cache_write tokens across
+		// the aria's life. Shows the prompt-cache hit value over time.
+		cacheStr := "-"
+		if f.CacheReadTokens > 0 || f.CacheWriteTokens > 0 {
+			cacheStr = fmt.Sprintf("%dk/%dk", f.CacheReadTokens/1000, f.CacheWriteTokens/1000)
+		}
 		current := ""
 		if slices.Contains(f.BoundPIDs, os.Getppid()) {
 			current = "*"
@@ -421,8 +427,8 @@ func runList(loaded *config.Loaded) {
 		if label == "" {
 			label = "-"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
-			current, f.ID, label, f.State, f.Model, f.MessageCount, ctxStr, pidStr)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
+			current, f.ID, label, f.State, f.Model, f.MessageCount, ctxStr, cacheStr, pidStr)
 	}
 	w.Flush()
 }

@@ -157,16 +157,25 @@ func (a *Anthropic) SetModel(model string) {
 type nativeRequest struct {
 	Model     string          `json:"model"`
 	MaxTokens int             `json:"max_tokens"`
-	System    interface{}     `json:"system,omitempty"` // string or []systemBlock for OAuth
+	System    []systemBlock   `json:"system,omitempty"`
 	Messages  []nativeMessage `json:"messages"`
 	Tools     []nativeTool    `json:"tools,omitempty"`
 	Stream    bool            `json:"stream"`
 }
 
-// systemBlock is used for the array form of the system prompt (required for OAuth).
-type systemBlock struct {
+// cacheControl marks a block as a prompt-cache breakpoint. Only "ephemeral"
+// is supported today; Anthropic caches the prefix up to and including the
+// marked block for the cache TTL (~5 min).
+type cacheControl struct {
 	Type string `json:"type"`
-	Text string `json:"text"`
+}
+
+// systemBlock is one entry in the system prompt array. cache_control on
+// the last system block caches the full system prefix.
+type systemBlock struct {
+	Type         string        `json:"type"`
+	Text         string        `json:"text"`
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 type nativeMessage struct {
@@ -175,23 +184,25 @@ type nativeMessage struct {
 }
 
 type nativeBlock struct {
-	Type      string      `json:"type"`
-	Text      string      `json:"text,omitempty"`
-	Thinking  string      `json:"thinking,omitempty"`
-	Signature string      `json:"signature,omitempty"`
-	ID        string      `json:"id,omitempty"`
-	Name      string      `json:"name,omitempty"`
-	Input     interface{} `json:"input,omitempty"`
-	ToolUseID string      `json:"tool_use_id,omitempty"`
-	IsError   bool        `json:"is_error,omitempty"`
-	Content   interface{} `json:"content,omitempty"`
-	Source    interface{} `json:"source,omitempty"`
+	Type         string        `json:"type"`
+	Text         string        `json:"text,omitempty"`
+	Thinking     string        `json:"thinking,omitempty"`
+	Signature    string        `json:"signature,omitempty"`
+	ID           string        `json:"id,omitempty"`
+	Name         string        `json:"name,omitempty"`
+	Input        interface{}   `json:"input,omitempty"`
+	ToolUseID    string        `json:"tool_use_id,omitempty"`
+	IsError      bool          `json:"is_error,omitempty"`
+	Content      interface{}   `json:"content,omitempty"`
+	Source       interface{}   `json:"source,omitempty"`
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 type nativeTool struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	InputSchema interface{} `json:"input_schema"`
+	Name         string        `json:"name"`
+	Description  string        `json:"description"`
+	InputSchema  interface{}   `json:"input_schema"`
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 // --- Projection: IR Block → native request ---
@@ -201,32 +212,59 @@ func (a *Anthropic) projectBlockWithModel(block *message.Block, tools []provider
 		Model: model, MaxTokens: maxTokens, Stream: true,
 	}
 
-	// Build system prompt — OAuth requires array form with Claude Code identity prefix.
+	// Build system prompt — always array form so cache_control can attach.
 	var systemText string
 	if block.Header != nil && len(block.Header.Content) > 0 {
 		systemText = block.Header.Content[0].Text
 	}
 
 	if oauth {
-		// OAuth requires "You are Claude Code" as the first system block.
-		// This is validated server-side for OAuth tokens.
-		blocks := []systemBlock{
-			{Type: "text", Text: "You are Claude Code, Anthropic's official CLI for Claude."},
-		}
+		// OAuth requires "You are Claude Code" as the first system block —
+		// validated server-side for OAuth tokens.
+		req.System = append(req.System, systemBlock{Type: "text", Text: "You are Claude Code, Anthropic's official CLI for Claude."})
 		if systemText != "" {
-			// Our credo/system prompt comes second. We prepend an override
-			// instruction so the model prioritizes the credo's identity.
-			blocks = append(blocks, systemBlock{Type: "text", Text: "IMPORTANT: The following is your true identity and personality. " +
+			// Our credo comes second, with an override instruction so the
+			// model prioritizes the credo's identity.
+			req.System = append(req.System, systemBlock{Type: "text", Text: "IMPORTANT: The following is your true identity and personality. " +
 				"Adopt it fully. Do not identify as Claude Code — follow the persona below.\n\n" + systemText})
 		}
-		req.System = blocks
 	} else if systemText != "" {
-		req.System = systemText
+		req.System = append(req.System, systemBlock{Type: "text", Text: systemText})
 	}
 
 	req.Messages = a.projectMessages(block.Messages)
 	req.Tools = projectTools(tools)
+
+	markCacheBreakpoints(&req)
 	return req
+}
+
+// markCacheBreakpoints sets cache_control: ephemeral on the last block of
+// each cacheable region of the request:
+//
+//  1. The last system block — caches the system prefix.
+//  2. The last tool definition — caches system + tools.
+//  3. The last content block of the second-to-last message — caches
+//     system + tools + the conversation up through the leaf at the most
+//     recent endTurn (i.e. everything that was on disk before the new
+//     user prompt arrived).
+//
+// The third breakpoint is implicit: it follows from message ordering. If
+// the conversation has fewer than two messages, no message-level
+// breakpoint is set.
+func markCacheBreakpoints(req *nativeRequest) {
+	if n := len(req.System); n > 0 {
+		req.System[n-1].CacheControl = &cacheControl{Type: "ephemeral"}
+	}
+	if n := len(req.Tools); n > 0 {
+		req.Tools[n-1].CacheControl = &cacheControl{Type: "ephemeral"}
+	}
+	if n := len(req.Messages); n >= 2 {
+		m := &req.Messages[n-2]
+		if k := len(m.Content); k > 0 {
+			m.Content[k-1].CacheControl = &cacheControl{Type: "ephemeral"}
+		}
+	}
 }
 
 func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {

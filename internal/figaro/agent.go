@@ -124,6 +124,8 @@ type Agent struct {
 	lastActive time.Time
 	tokensIn   int
 	tokensOut  int
+	cacheRead  int
+	cacheWrite int
 
 	// Event log.
 	logEncoder *json.Encoder // nil if no log dir configured
@@ -165,7 +167,7 @@ func NewAgent(cfg Config) *Agent {
 
 	// Seed cumulative token counters from persisted Usage so restored
 	// arias don't start over at zero.
-	a.tokensIn, a.tokensOut = sumUsage(a.memStore.Context())
+	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(a.memStore.Context())
 
 	// Open per-figaro event log.
 	if cfg.LogDir != "" {
@@ -304,18 +306,20 @@ func (a *Agent) Info() FigaroInfo {
 	ctxTokens, ctxExact := tokens.ContextSize(a.memStore.Context())
 
 	return FigaroInfo{
-		ID:            a.id,
-		Label:         a.label,
-		State:         state,
-		Provider:      a.prov.Name(),
-		Model:         a.model,
-		MessageCount:  len(msgs),
-		TokensIn:      a.tokensIn,
-		TokensOut:     a.tokensOut,
-		ContextTokens: ctxTokens,
-		ContextExact:  ctxExact,
-		CreatedAt:     a.createdAt,
-		LastActive:    a.lastActive,
+		ID:               a.id,
+		Label:            a.label,
+		State:            state,
+		Provider:         a.prov.Name(),
+		Model:            a.model,
+		MessageCount:     len(msgs),
+		TokensIn:         a.tokensIn,
+		TokensOut:        a.tokensOut,
+		CacheReadTokens:  a.cacheRead,
+		CacheWriteTokens: a.cacheWrite,
+		ContextTokens:    ctxTokens,
+		ContextExact:     ctxExact,
+		CreatedAt:        a.createdAt,
+		LastActive:       a.lastActive,
 	}
 }
 
@@ -379,7 +383,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		// so NewMemStoreWith will seed from the last known-good snapshot.
 		a.mu.Lock()
 		a.memStore = a.newStore()
-		a.tokensIn, a.tokensOut = sumUsage(a.memStore.Context())
+		a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(a.memStore.Context())
 		a.mu.Unlock()
 
 		// End any active otel span.
@@ -760,6 +764,8 @@ func (a *Agent) endTurn(reason string) {
 			if m := msgs.Messages[i]; m.Usage != nil {
 				a.tokensIn += m.Usage.InputTokens
 				a.tokensOut += m.Usage.OutputTokens
+				a.cacheRead += m.Usage.CacheReadTokens
+				a.cacheWrite += m.Usage.CacheWriteTokens
 				break // only count the latest turn's usage
 			}
 		}
@@ -913,19 +919,21 @@ func truncLog(s string, n int) string {
 	return s[:n] + "..."
 }
 
-// sumUsage totals the InputTokens / OutputTokens across a block's
-// messages. Used to seed cumulative counters after restore or panic
-// recovery so they reflect the full history, not just this process's
-// lifetime.
-func sumUsage(block *message.Block) (in, out int) {
+// sumUsage totals InputTokens / OutputTokens / CacheReadTokens /
+// CacheWriteTokens across a block's messages. Used to seed cumulative
+// counters after restore or panic recovery so they reflect the full
+// history, not just this process's lifetime.
+func sumUsage(block *message.Block) (in, out, cacheRead, cacheWrite int) {
 	if block == nil {
-		return 0, 0
+		return 0, 0, 0, 0
 	}
 	for _, m := range block.Messages {
 		if m.Usage != nil {
 			in += m.Usage.InputTokens
 			out += m.Usage.OutputTokens
+			cacheRead += m.Usage.CacheReadTokens
+			cacheWrite += m.Usage.CacheWriteTokens
 		}
 	}
-	return in, out
+	return in, out, cacheRead, cacheWrite
 }

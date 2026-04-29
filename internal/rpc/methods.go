@@ -78,19 +78,21 @@ type ContextResponse struct {
 }
 
 type FigaroInfoResponse struct {
-	ID            string   `json:"id"`
-	Label         string   `json:"label,omitempty"`
-	State         string   `json:"state"`
-	Provider      string   `json:"provider"`
-	Model         string   `json:"model"`
-	MessageCount  int      `json:"message_count"`
-	TokensIn      int      `json:"tokens_in"`
-	TokensOut     int      `json:"tokens_out"`
-	ContextTokens int      `json:"context_tokens"` // estimated next-turn input size
-	ContextExact  bool     `json:"context_exact"`  // true if from Usage watermark
-	CreatedAt     int64    `json:"created_at"`     // unix millis
-	LastActive    int64    `json:"last_active"`    // unix millis
-	BoundPIDs     []int    `json:"bound_pids"`
+	ID               string `json:"id"`
+	Label            string `json:"label,omitempty"`
+	State            string `json:"state"`
+	Provider         string `json:"provider"`
+	Model            string `json:"model"`
+	MessageCount     int    `json:"message_count"`
+	TokensIn         int    `json:"tokens_in"`
+	TokensOut        int    `json:"tokens_out"`
+	CacheReadTokens  int    `json:"cache_read_tokens"`  // cumulative cache-hit tokens
+	CacheWriteTokens int    `json:"cache_write_tokens"` // cumulative cache-write tokens
+	ContextTokens    int    `json:"context_tokens"`     // estimated next-turn input size
+	ContextExact     bool   `json:"context_exact"`      // true if from Usage watermark
+	CreatedAt        int64  `json:"created_at"`         // unix millis
+	LastActive       int64  `json:"last_active"`        // unix millis
+	BoundPIDs        []int  `json:"bound_pids"`
 }
 
 // --- Angelus socket: request/response types ---
