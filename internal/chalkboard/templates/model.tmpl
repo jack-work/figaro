@@ -1,0 +1,5 @@
+{{- if .OldString -}}
+Model changed from {{.OldString}} to {{.NewString}}.
+{{- else -}}
+Model: {{.NewString}}
+{{- end -}}
