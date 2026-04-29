@@ -252,6 +252,14 @@ func (a *Anthropic) projectBlockWithModel(block *message.Block, tools []provider
 // The third breakpoint is implicit: it follows from message ordering. If
 // the conversation has fewer than two messages, no message-level
 // breakpoint is set.
+//
+// Note: the OAuth + claude-code-20250219 beta path silently ignores
+// client-controlled cache_control (verified by inspecting the
+// cache_creation.ephemeral_*_input_tokens fields in the response, which
+// stay at 0). On the API-key path, these breakpoints engage normally.
+// The wiring is left in place so the cache works whenever the auth path
+// allows it; correctness of the request bytes is verified by the unit
+// tests in this package.
 func markCacheBreakpoints(req *nativeRequest) {
 	if n := len(req.System); n > 0 {
 		req.System[n-1].CacheControl = &cacheControl{Type: "ephemeral"}
@@ -415,8 +423,10 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []prov
 
 	if isOAuthToken(apiKey) {
 		// OAuth tokens use Bearer auth and require Claude Code impersonation headers.
+		// prompt-caching-2024-07-31 enables client-controlled cache_control on
+		// the OAuth path (otherwise it is silently ignored).
 		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-		httpReq.Header.Set("anthropic-beta", "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14")
+		httpReq.Header.Set("anthropic-beta", "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31")
 		httpReq.Header.Set("User-Agent", "claude-cli/"+claudeCodeVersion)
 		httpReq.Header.Set("x-app", "cli")
 		httpReq.Header.Set("anthropic-dangerous-direct-browser-access", "true")

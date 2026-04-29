@@ -163,6 +163,14 @@ func runAngelus() {
 	logger, logFile := mustOpenLog()
 	defer logFile.Close()
 
+	// Redirect the daemon's stderr to the angelus log so library code that
+	// writes via fmt.Fprintf(os.Stderr, ...) (provider, agent, etc.) is
+	// captured. The daemon's stderr is /dev/null by default (see
+	// ensureAngelus); without this, those writes are lost.
+	if err := syscall.Dup2(int(logFile.Fd()), int(os.Stderr.Fd())); err != nil {
+		logger.Printf("warning: stderr redirect failed: %v", err)
+	}
+
 	backend, err := ariaBackend()
 	if err != nil {
 		logger.Fatalf("angelus: aria backend: %v", err)
