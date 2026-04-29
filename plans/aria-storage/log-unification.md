@@ -267,29 +267,50 @@ Each stage commits independently. The plan is conservative: shape the types firs
 
 **Tests:** restore from old format produces identical `Block.Entries` (modulo patch interleaving — see Stage C). New writes go to `arias/{id}/aria.jsonl`.
 
-### Stage C — Patches enter the log
+### Stage C — Patches enter the log; `chalkboard.Store` retires
 
-**Goal:** `applyChalkboardInput` writes a `Patch` LogEntry to MemStore at the same `lt` boundary as the next message, instead of a separate chalkboard log.
-
-**Deliverables:**
-- `internal/figaro/agent.go`: `applyChalkboardInput` allocates `lt` via `MemStore.AllocLT()`, builds a `LogEntry{Kind: EntryKindPatch, ...}`, appends to MemStore. The chalkboard `Store.Append` call is removed.
-- `internal/chalkboard/store.go`: `Store` interface narrows. `Append` is gone (patches live in the message store now). `Snapshot` and `SaveSnapshot` remain — the snapshot file is now `arias/{id}/chalkboard.json`. `chalkboard.Store` becomes a thin wrapper around the snapshot file.
-- `internal/figaro/agent.go`: cold-load path reads the snapshot file; if missing, replays patches from the log.
-- Migration: on first load of an old-format aria, the chalkboard log entries are converted to `LogEntry{Kind: EntryKindPatch}` and interleaved into the message log at their original `lt` slots. Deletes `chalkboards/{id}/` afterward.
-
-**Tests:** after a turn with chalkboard input, `aria.jsonl` contains a Patch entry alongside the user/assistant messages. Logical times are unique. Cold-load reconstruction matches the snapshot file.
-
-### Stage D — Projection rewrite
-
-**Goal:** `applyRenderer` becomes a pure projection-time function that reads/writes `entry.Baggage["anthropic"]`. The agent's `cbTurnReminders` field disappears.
+**Goal:** `applyChalkboardInput` writes a Patch LogEntry to MemStore at `lt` immediately preceding the user message it triggered. The chalkboard.Store interface is replaced by a per-aria value handle.
 
 **Deliverables:**
-- `internal/provider/anthropic/anthropic.go`: `projectBlockWithModel` walks `Block.Entries` (was `Block.Messages`). For Patch entries, calls `renderPatchBlocks(entry)` which uses baggage if present, computes-and-stashes if not.
-- `internal/provider/anthropic/render.go`: `renderTag` and `renderTool` become pure functions on `*LogEntry`; populate baggage as a side effect.
-- `internal/figaro/agent.go`: remove `cbTurnReminders`; remove the `[]chalkboard.RenderedEntry` parameter from `Provider.Send`. The provider has all the information it needs from `block.Entries`.
-- `internal/provider/provider.go`: `Send` signature drops `[]chalkboard.RenderedEntry`.
+- `internal/chalkboard/aria.go` (NEW): `*Aria` per-aria handle owning the in-memory snapshot + the `arias/{id}/chalkboard.json` cache file. `Open(rootDir, ariaID) (*Aria, error)`, `(*Aria).Snapshot()`, `(*Aria).Apply(Patch)`, `(*Aria).Save()`, `(*Aria).Close()`. Atomic write-tmp + rename for Save. See Resolved Question R5.
+- `internal/chalkboard/store.go` (DELETED): `Store` interface, `FileStore`, the separate patch-log machinery — all gone. Patch persistence is now the message store's responsibility (LogEntry of kind Patch).
+- `internal/figaro/agent.go`:
+  - Replace `cb chalkboard.Store` + `cbSnap chalkboard.Snapshot` fields with a single `aria *chalkboard.Aria`.
+  - `applyChalkboardInput`: allocate `lt` via `MemStore.AllocLT()`, build `LogEntry{Kind: EntryKindPatch, LogicalTime: lt, ...}`, call `MemStore.Append(entry)`. Then call `a.aria.Apply(patch)` to advance in-memory state. The user message is appended next via `MemStore.Append(msg)` at the next allocated lt — patch and user message are appended atomically as part of one event handler so no log observer sees one without the other (R6).
+  - `endTurn`: call `a.aria.Save()` alongside `MemStore.Flush()`.
+  - `Kill`: call `a.aria.Close()`.
+- `internal/angelus/protocol.go`: construction sites replace `Chalkboard chalkboard.Store` with `*chalkboard.Aria` (opened per aria). Restoration path opens an Aria for each restored aria.
+- `cmd/figaro/main.go`: `buildChalkboard` returns just templates; `Aria` opening moves to per-agent construction in the angelus.
+- Migration: on cold load of an old-format aria, read the legacy `chalkboards/{id}/log.json`, convert each patch entry to a `LogEntry{Kind: EntryKindPatch}` interleaved into `arias/{id}/aria.jsonl` at its original `lt` slot, then move `chalkboards/{id}/snapshot.json` → `arias/{id}/chalkboard.json` and delete the old `chalkboards/{id}/` directory.
 
-**Tests:** wire-payload byte-equality across two consecutive turns with the same chalkboard state (no IR changes triggered). New patch on turn 2 produces baggage on the patch entry; turn 3 with no chalkboard change re-uses that baggage. The user-facing tag-rendered text appears in the persisted IR via the patch's baggage.
+**Tests:**
+- After a turn with chalkboard input, `aria.jsonl` contains a Patch entry at `lt=N` followed by a user message at `lt=N+1`. Logical times are unique (no Stage-3 collision regression).
+- Cold-load with existing `aria.jsonl` reconstructs the same `Block.Entries` and the same chalkboard snapshot.
+- Migration test: synthesize a legacy-format aria + chalkboard pair on disk; cold-load; assert the unified format on disk afterward and identical in-memory state.
+
+### Stage D — Projection rewrite (variadic baggage)
+
+**Goal:** Renderers become pure projection-time functions that read/write `entry.Baggage[providerName]` of type `ProviderBaggage` (R1: variadic — Messages slice + AttachToNext slice). The agent's `cbTurnReminders` field and the `[]chalkboard.RenderedEntry` parameter on `Provider.Send` both go away.
+
+**Deliverables:**
+- `internal/message/baggage.go` (NEW): `Baggage map[string]ProviderBaggage`, `ProviderBaggage{Messages, AttachToNext}` per R1.
+- `internal/message/message.go`: `Message.Baggage` and `LogEntry.Baggage` switch from `map[string]json.RawMessage` to the new `Baggage` type. Migration of existing serialized `Message.Baggage` (which is `map[string]nativeMessageJSON`) into `ProviderBaggage{Messages: []json.RawMessage{nativeMessageJSON}}` — a single-element list — is straightforward and backward-compatible at the JSON level (we read either shape, write the new shape).
+- `internal/provider/anthropic/anthropic.go`: `projectBlockWithModel` walks `Block.Entries`. For each entry:
+  - Read `entry.Baggage["anthropic"]`. If non-empty, emit `Messages` directly into the wire stream and accumulate `AttachToNext` blocks for the next eligible message.
+  - If empty, call the configured renderer (tag or tool) on the entry. The renderer populates `entry.Baggage["anthropic"]` as a side effect; the projection then reads it as in the cache-hit path.
+- `internal/provider/anthropic/render.go`:
+  - `renderTag(*LogEntry)` populates `ProviderBaggage{AttachToNext: [...]}` for patch entries; messages produced by message-kind entries continue to use `Messages: [singleNativeMessage]`.
+  - `renderTool(*LogEntry)` populates `ProviderBaggage{Messages: [assistantToolUse, userToolResult]}` for patch entries — variadic case.
+  - Both become pure functions on a single entry; no batch-state needed.
+- `internal/figaro/agent.go`: remove `cbTurnReminders`; remove `applyChalkboardInput`'s render call. Rendering is the provider's responsibility now.
+- `internal/provider/provider.go`: `Send(ctx, *Block, []Tool, maxTokens)` — the `[]chalkboard.RenderedEntry` parameter is gone.
+
+**Tests:**
+- Wire-payload byte-equality across two consecutive turns with the same chalkboard state: turn 1 populates patch.Baggage["anthropic"]; turn 2 reads it; bytes match.
+- Tool-injection variadic case: a patch with two reminder keys produces a 2-message Messages slice (assistant tool_use + user tool_result with the bundled content). Both messages survive baggage round-trip.
+- Renderer-change mid-aria (Q4): turn N with renderer="tag" writes AttachToNext baggage; switch to renderer="tool"; turn N+1 produces new Messages baggage; turn N's baggage is unchanged.
+- Multi-provider baggage (Q7): provider A renders patch, baggage["a"] populated. Switch to provider B for next send; baggage["b"] absent; provider B re-renders and populates baggage["b"]. Both keys coexist on the same patch entry.
+- The user-facing tag-rendered text now appears in the persisted IR via `LogEntry.Baggage["anthropic"].AttachToNext` — answering the original "why don't system-reminders show up in the aria" question.
 
 ### Stage E — Debug-mode reconciliation
 
@@ -309,26 +330,129 @@ Each stage commits independently. The plan is conservative: shape the types firs
 - Update `agents.md` and `ARCHITECTURE.md` for the new on-disk layout.
 - CHANGELOG entry covering the storage migration.
 
-## Open questions
+## Resolved questions (concrete decisions)
 
-1. **Strict-NDJSON vs lazy-NDJSON for aria.jsonl.** Strict NDJSON allows append-without-rewrite (fsync each line, restore is O(file size)). Lazy NDJSON keeps the current rewrite-tmp-rename atomicity at the cost of full rewrites on every endTurn. The latter is simpler and consistent with the chalkboard.json snapshot file; the former is the right shape for sqlite migration later. Recommend lazy for v1, strict for the watermarking work.
+The following questions have been answered. Recording the decisions so future implementers don't relitigate them.
 
-2. **Baggage shape for the tool-injection renderer.** Tool injection produces a *pair* of synthetic messages, not content blocks attached to an existing message. The baggage shape needs to express "after this patch, insert these two synthetic native messages into the wire stream." Slightly different from the tag renderer's "attach these content blocks to the next user message." Worth sketching the exact baggage union before Stage D.
+### R1. Tool-injection baggage shape — variadic
 
-3. **What about the `Header` field?** Compaction (future) writes a summarized message into `Block.Header`. Should that be a `LogEntry` too? Likely not — Header isn't a timeline event, it's a state summary. Leaving it as `*Message` is consistent.
+A patch's per-provider baggage must support **multiple wire-format outputs**. Tag rendering produces zero or more content-block attachments to the next user message; tool-injection rendering produces multiple complete wire messages (typically an assistant + user pair). Both shapes need to be expressible in the IR.
 
-4. **Renderer change mid-aria.** Already discussed above (existing baggage preserved, new patches rendered with new renderer). Tests should cover this explicitly so the behavior is locked in.
+**Type-system encoding.** The baggage value for a single provider is variadic:
 
-5. **What happens to `chalkboard.Store` as an interface?** After Stage C it does almost nothing — just the snapshot file. Worth folding it into `store.Backend` or removing it entirely, replaced by direct `os.ReadFile`/`os.WriteFile` calls in the agent. Decide during Stage C.
+```go
+// internal/message/baggage.go (proposed)
 
-6. **Patch lt placement: before-or-after the user message?** Today the patch lt is computed *before* `Append(userMsg)`, so the patch slot would naturally come before the user message in the unified log:
-   ```
-   lt=1: patch
-   lt=2: user message
-   ```
-   This matches the conceptual "state changes, then user speaks under that new state" ordering. Confirm this is the intended ordering in Stage C; the alternative (user message first, patch attached as metadata) would change semantics.
+// Baggage is the per-provider wire-format record for a LogEntry.
+// Keyed by provider name (e.g. "anthropic"). Each value is variadic —
+// one LogEntry may produce multiple wire-format outputs for one
+// provider.
+type Baggage map[string]ProviderBaggage
 
-7. **Multi-provider baggage on patches.** A patch's baggage map (`map[string]json.RawMessage`) supports multiple providers, just like message baggage. When switching providers mid-aria, the new provider sees no baggage and re-renders. This is consistent with the existing message-baggage behavior and probably correct. Worth a test.
+// ProviderBaggage carries the variadic wire-format outputs from a
+// single LogEntry for a single provider. A patch entry under a
+// tool-injection renderer produces multiple Messages and zero
+// AttachToNext blocks; a patch entry under a tag renderer produces
+// zero Messages and one or more AttachToNext blocks; a regular
+// Message LogEntry produces exactly one Messages entry and zero
+// AttachToNext blocks.
+type ProviderBaggage struct {
+    // Messages are complete wire-format messages this entry
+    // materializes, in order. Each is the provider's native message
+    // shape (e.g. nativeMessage JSON for Anthropic).
+    Messages []json.RawMessage `json:"messages,omitempty"`
+
+    // AttachToNext are content blocks to append to the next
+    // surrounding wire message of the configured kind (typically the
+    // next user-role message). Tag-renderer patches use this.
+    AttachToNext []json.RawMessage `json:"attach_to_next,omitempty"`
+}
+```
+
+This collapses the "tag vs tool produces structurally different baggage" problem: both fit one shape, populated with different fields. The projection algorithm walks entries, reads each entry's `ProviderBaggage` for the active provider, emits `Messages` directly into the wire stream and accumulates `AttachToNext` blocks for the next eligible message.
+
+Worth noting: this shape is forward-compatible with renderer variants we haven't designed yet (e.g. "system-block injection" if some future provider supports a developer-role message between turns). Adding a new effect kind means adding a new field to `ProviderBaggage`, not breaking the existing union.
+
+### R5. `chalkboard.Store` retires; replaced by `*chalkboard.Aria`
+
+After Stage C (patches enter the unified log), the chalkboard's only remaining persistence concern is the snapshot cache file. The agent already holds the in-memory snapshot (`a.cbSnap`). The right consolidation is to fold that field plus the file-persistence operations into a single per-aria handle:
+
+```go
+// internal/chalkboard/aria.go (proposed)
+
+// Aria is a per-aria chalkboard state handle. Owns the in-memory
+// current snapshot and its on-disk cache file. Single-owner —
+// safe for use by the agent's drain-loop goroutine without locking
+// (the actor model serializes access).
+type Aria struct {
+    id       string
+    snapshot Snapshot
+    path     string  // path to arias/{id}/chalkboard.json
+    dirty    bool
+}
+
+// Open loads the snapshot for an aria from disk. Returns an Aria
+// pre-populated with the persisted state, or an empty Aria if
+// no snapshot file exists yet (cold-start).
+func Open(rootDir, ariaID string) (*Aria, error)
+
+// Snapshot returns the current in-memory state. The returned value
+// is a clone; callers may not mutate it.
+func (a *Aria) Snapshot() Snapshot
+
+// Apply mutates the in-memory snapshot by applying p. Marks dirty.
+// Returns the post-apply snapshot for the caller's convenience.
+func (a *Aria) Apply(p Patch) Snapshot
+
+// Save flushes the in-memory snapshot to disk if dirty. Idempotent.
+// Atomic: write-tmp + rename.
+func (a *Aria) Save() error
+
+// Close flushes any pending writes and releases the handle.
+func (a *Aria) Close() error
+```
+
+The agent's `cbSnap` and `cb` fields collapse into one `*chalkboard.Aria`. `applyChalkboardInput` calls `aria.Apply(patch)`; `endTurn` calls `aria.Save()`; `Kill` calls `aria.Close()`. The `chalkboard.Store` interface goes away.
+
+Lifecycle: opened in `NewAgent`, closed in `Kill`. One `*Aria` per agent, lifetime-bound. No multi-aria handle juggling — figaro agents are 1:1 with arias.
+
+Why a value type rather than an interface: there is exactly one implementation. Adding an interface for testability is unnecessary — the value can be constructed in tests against a `t.TempDir()` like every other file-backed type in the codebase. Interfaces are for swap points (sqlite swap-in, alternate backends); we don't have one yet.
+
+### R6. Patch lt placement — before the message it precedes
+
+A patch lands in the log **before** the user message that triggered its application. Conceptually: state changes, then the user speaks under that new state. The patch reads as a comment annotating the turn it precedes.
+
+```
+lt=1: patch (cwd, datetime set)         ← state change, attached to lt=2 by tag-renderer
+lt=2: user message ("ciao")
+lt=3: assistant message ("Ciao.")
+lt=4: user message ("saluti")           ← no patch this turn (chalkboard unchanged)
+lt=5: assistant message ("Saluti.")
+```
+
+If a prompt RPC carries a patch (or a context bag from which a non-empty diff is computed), the resulting patch entry inserts at `lt = MemStore.AllocLT()` immediately followed by the user message at the next allocated lt. The two are appended atomically as part of the same `eventUserPrompt` handling — no observer of the log can see one without the other.
+
+This matches the user-message-attachment semantics of the tag renderer naturally: the patch's `AttachToNext` blocks attach to the very next user-role message, which is the one the patch precedes.
+
+## Remaining open questions
+
+Items still genuinely undecided.
+
+### Q1. Strict-NDJSON vs lazy-NDJSON for `aria.jsonl`
+
+Strict NDJSON allows append-on-each-write (fsync each line, restore is O(file size)). Lazy NDJSON keeps the current rewrite-tmp-rename atomicity at the cost of full rewrites on every endTurn. The latter is simpler and consistent with the chalkboard.json snapshot file's atomic pattern; the former is the right shape for sqlite migration later. **Recommendation:** lazy for v1; strict when watermarking lands.
+
+### Q3. `Block.Header` field
+
+Compaction (future) writes a summarized message into `Block.Header`. Should that become a `LogEntry` too? **Recommendation:** no — Header is a state summary, not a timeline event. Leaving it as `*Message` is consistent and avoids forcing every consumer of `Block.Entries` to handle a special header-position case.
+
+### Q4. Renderer change mid-aria
+
+If the user switches `reminder_renderer: "tag" → "tool"` mid-conversation, what happens to existing patch baggage? **Direction:** existing baggage on past patch entries is preserved (those turns happened that way; rewriting history would diverge from what the model actually saw). New patches render with the new renderer; the wire format becomes mixed-renderer for that aria's history; the conversation remains internally consistent. Test this explicitly in Stage F so the behavior is locked in and a regression triggers a failure.
+
+### Q7. Multi-provider baggage on patches
+
+A patch's `Baggage` map (per-provider) supports multiple providers naturally — same as message baggage today. When switching providers mid-aria, the new provider sees no baggage for the patch entry and re-renders. **Direction:** this is consistent with existing message-baggage behavior and probably correct. Worth an explicit test (provider A renders patch, switch to provider B, verify B re-renders without consulting A's baggage). Edge: if a patch entry has both A and B baggage from past projections, both stay; only the active provider's baggage is read on a given send.
 
 ## Relationship to the cache-control work
 
