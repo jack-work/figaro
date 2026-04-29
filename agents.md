@@ -57,6 +57,7 @@ If you're not sure whether a change touches the flake, run `nix build` and find 
 `internal/rpc/` — shared notification types and method constants for both sockets.
 `internal/store/` — `Store` interface, `MemStore`, `FileStore`, `Backend`, aria management.
 `internal/tokens/` — context-window token accounting.
+`internal/chalkboard/` — per-aria structured state record. Snapshots, patches, embedded body templates, append-only file store. Surfaced to providers as system reminders.
 `internal/tool/` — tool interface + bash/read/write/edit tools.
 `internal/transport/` — endpoint abstraction (unix/tcp), Dial/Listen.
 
@@ -82,21 +83,24 @@ These are the load-bearing rules. Breaking them produces races, lost messages, o
 3. **Provider baggage round-trip.** Each `message.Message` carries `Baggage` keyed by provider name. The originating provider stashes its native wire form there; on re-send to the same provider, it reads from baggage rather than reconstructing from the IR. Don't strip baggage on a path that may round-trip.
 4. **Store layering.** `MemStore` is the hot, authoritative copy during a turn. `FileStore` is a checkpoint flushed at turn boundaries via atomic write-to-tmp + rename. Reads during a turn go to MemStore; persistence is the agent's job at `turnComplete`, not the store's job on every `Append`.
 5. **PID binding is 1:1.** A shell PID maps to at most one figaro at a time. `pid.bind` / `pid.unbind` / `pid.resolve` go through the angelus. Don't add a side path that mutates this map.
-6. **Panic recovery preserves identity.** `runWithRecovery` resets the store to the last FileStore checkpoint, injects a crash system prompt, and restarts the drain loop. The figaro's id, registry entry, PID bindings, and socket all survive a panic. Anything that lives outside the agent must tolerate a drain-loop restart without leaking.
+6. **Panic recovery preserves identity.** `runWithRecovery` resets the store to the last FileStore checkpoint and restarts the drain loop. The figaro's id, registry entry, PID bindings, socket, **and credo** all survive a panic — recovery is invisible to the model (logged to stderr only). Anything that lives outside the agent must tolerate a drain-loop restart without leaking.
 7. **Interrupt cuts the line.** `eventInterrupt` is a *selfish* event: it jumps ahead of pending LLM/tool events. Stragglers from cancelled provider/tool goroutines are suppressed by the `a.interrupted` guard. Keep them suppressed — surfacing them is a regression.
 8. **Notification ordering is wire-ordered.** The CLI receives notifications synchronously on the JSON-RPC client read loop. No reordering, no parallel dispatch. New notification types must be emitted from the drain loop (or the fanOut path it owns), not from arbitrary goroutines.
 9. **Secrets never hit disk in plaintext.** Tokens go through `hush`. Don't read or log credentials. Don't write a "convenience" path that bypasses the encrypted store.
 10. **One static binary.** No new runtime dependencies (Node, Bun, Python). New tools, providers, and frontends must be reachable through the existing socket protocol — not bundled into the binary.
+11. **Cache prefix is byte-stable.** The conversation prefix sent to providers — system blocks, tools, and all messages up through the leaf at the most recent `endTurn` — must be byte-identical across requests within an aria's lifetime, modulo deliberate edits to `~/.config/figaro/credo.md` or `skills/`. Anthropic's `cache_control` breakpoints depend on this. Never mutate `block.Header` or earlier `block.Messages` mid-session. Chalkboard reminders attach to the leaf user message only — never to the prefix. Compaction (future) is the one event that legitimately rewrites the prefix.
+12. **Harness does not inject overrides.** Never insert content that voids prior instructions or pretends to speak as the system mid-conversation ("ignore previous", "IMPORTANT: …", staticScribe-style replacements). State changes flow exclusively through the chalkboard and its renderers. The credo persists across panics, model switches, and interrupts; only deliberate user edits to `credo.md` change the agent's identity.
 
 ## Hot spots
 
 Places where small changes have outsized blast radius. Read carefully, test thoroughly, and consider asking before editing.
 
-- `internal/figaro/agent.go` — the drain loop. Event dispatch, turn lifecycle, interrupt handling, panic recovery. Long file; cohesive on purpose.
+- `internal/figaro/agent.go` — the drain loop. Event dispatch, turn lifecycle, interrupt handling, panic recovery, chalkboard application. Long file; cohesive on purpose.
 - `internal/figaro/inbox.go` — the inbox itself, including selfish vs. patient event semantics.
 - `internal/angelus/angelus.go` + `registry.go` — supervisor lifecycle, PID monitor, draining shutdown.
 - `internal/store/file.go` + `mem.go` — flush ordering and atomic-rename semantics. Easy to break crash safety here.
-- `internal/provider/anthropic/anthropic.go` — direct HTTP+SSE, no SDK. Streaming parser is hand-rolled.
+- `internal/chalkboard/` — append-only patch log + cached snapshot. Touching the on-disk shape (`<id>/log.json` / `<id>/snapshot.json`) is a wire-format change.
+- `internal/provider/anthropic/anthropic.go` + `render.go` — direct HTTP+SSE, no SDK. Streaming parser is hand-rolled. Renderers (tag and tool-injection) live in render.go and must never mutate the cache prefix (invariant #11).
 - `internal/jsonrpc/jsonrpc.go` — NDJSON framing. Don't switch frame formats without updating both ends and the protocol tables in `ARCHITECTURE.md`.
 - `cmd/figaro/main.go` — multi-call dispatch, daemon fork, signal handling. The `q` and `l` symlinks are part of the contract.
 
@@ -107,7 +111,8 @@ Take freely-reversible local actions. Pause and ask before doing anything in the
 **Always disclose and confirm before:**
 
 - Changing any **JSON-RPC method, notification, or wire payload** (both socket tables in `ARCHITECTURE.md`). Frontends in any language are part of the contract.
-- Changing the **on-disk aria format** (`internal/store/file.go`) or any layout under `~/.config/figaro/` or `~/.local/state/figaro/`. Old arias must keep loading or migrate explicitly.
+- Changing the **on-disk aria or chalkboard format** (`internal/store/file.go`, `internal/chalkboard/store.go`) or any layout under `~/.config/figaro/` or `~/.local/state/figaro/`. Old data must keep loading or migrate explicitly.
+- Anything that mutates the **cache prefix** mid-session (system block, tools, or earlier messages). Invariant #11.
 - Touching **OAuth / hush flows** in `internal/auth/`. Tokens are users' real credentials.
 - Adding a **new runtime dependency**, replace directive, or external service.
 - Removing or renaming a **CLI subcommand or flag**. Users have muscle memory and shell history.

@@ -40,7 +40,7 @@ CLI (ephemeral) → Angelus (supervisor) → Figaro agents
 
 ## Status — *Lavori in corso*
 
-Working: incremental markdown rendering, tool execution (bash, read, write, edit), conversation continuity, OAuth login, `list`/`kill`/`context`/`models`/`attend`/`new`/`rest`, OpenTelemetry tracing, configurable personality via `credo.md`, skills from markdown, panic recovery with automatic restart.
+Working: incremental markdown rendering, tool execution (bash, read, write, edit), conversation continuity, OAuth login, `list`/`kill`/`context`/`models`/`attend`/`new`/`rest`, OpenTelemetry tracing, configurable personality via `credo.md`, skills from markdown, panic recovery (credo survives), prompt-cache plumbing on the Anthropic API, **chalkboard**: structured per-aria state surfaced to the model as system reminders.
 
 ## Provider — *Chi suona?*
 

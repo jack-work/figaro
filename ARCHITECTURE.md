@@ -84,6 +84,12 @@ internal/
 │   ├── mem.go           In-memory store with optional downstream persistence
 │   ├── file.go          JSON file store (atomic write-to-tmp + rename)
 │   └── ariastore.go     Aria listing/removal for restore-on-restart
+├── chalkboard/
+│   ├── chalkboard.go    Snapshot, Patch, Entry, Diff/Apply/Merge
+│   ├── render.go        Embedded text/template rendering, override loader
+│   ├── lint.go          Phrasing lint (imperative / length / dup)
+│   ├── store.go         Store interface + FileStore (log + snapshot files)
+│   └── templates/       Embedded default body templates per key
 ├── tool/
 │   ├── tool.go          Tool interface (Name, Execute, Parameters)
 │   ├── bash.go          Shell command execution with streaming output
@@ -98,21 +104,22 @@ internal/
 
 | Package | Lines | Status |
 |---------|------:|--------|
-| `cmd/figaro` | 837 | ✅ working |
-| `internal/angelus` | 762 | ✅ working, tested |
+| `cmd/figaro` | ~880 | ✅ working |
+| `internal/angelus` | ~780 | ✅ working, tested |
 | `internal/auth` | ~350 | ✅ working (OAuth + PKCE) |
-| `internal/config` | ~130 | ✅ working |
+| `internal/chalkboard` | ~600 | ✅ working, tested |
+| `internal/config` | ~140 | ✅ working |
 | `internal/credo` | ~210 | ✅ working, tested |
-| `internal/figaro` | ~900 | ✅ working, tested |
+| `internal/figaro` | ~1100 | ✅ working, tested |
 | `internal/jsonrpc` | ~280 | ✅ working, tested |
 | `internal/message` | ~130 | ✅ working |
 | `internal/otel` | ~90 | ✅ working, tested |
-| `internal/provider/anthropic` | ~450 | ✅ working |
-| `internal/rpc` | 207 | ✅ working, tested |
+| `internal/provider/anthropic` | ~750 | ✅ working, tested |
+| `internal/rpc` | ~240 | ✅ working, tested |
 | `internal/store` | ~370 | ✅ working, tested |
-| `internal/tool` | 433 | ✅ working, tested |
-| `internal/transport` | 99 | ✅ working, tested |
-| **Total** | **~5,100** | |
+| `internal/tool` | ~440 | ✅ working, tested |
+| `internal/transport` | ~100 | ✅ working, tested |
+| **Total** | **~6,400** | |
 
 ______________________________________________________________________
 
@@ -211,7 +218,52 @@ The angelus maintains a **strict 1:1 map** of `PID → figaro ID`. Your shell's 
 
 ### Panic Recovery
 
-The agent runs inside `runWithRecovery`. On panic: log stack trace, reset store (re-seed from last FileStore checkpoint), inject crash system prompt, notify subscribers, restart the drain loop. The registry entry, PID bindings, and socket all survive.
+The agent runs inside `runWithRecovery`. On panic: log stack trace to stderr, reset store (re-seed from last FileStore checkpoint), notify subscribers (advisory `error` + terminating `done`), restart the drain loop. The registry entry, PID bindings, socket, **and credo** all survive — recovery is invisible to the model. The only artifact is the stderr log line.
+
+### Chalkboard
+
+A **chalkboard** is the union of an aria's configuration and per-turn context — every structured value about the aria that is not a conversation message. Examples: cwd, datetime, model, label, project root, last truncation event.
+
+```
+CLI ──prompt + context──▶ Agent ──patch──▶ ContextLayer (diff vs prior, persist)
+                                    │
+                                    ├─▶ chalkboard.Render → []RenderedEntry
+                                    │
+                                    ▼
+                          Provider.Send(block, tools, reminders, …)
+                                    │
+                                    ▼
+                          renderTag / renderTool → wire payload
+```
+
+The patch is the canonical unit:
+
+```go
+type Patch struct {
+    Set    map[string]json.RawMessage
+    Remove []string
+}
+```
+
+**Wire protocol.** `figaro.prompt` extends with an optional `chalkboard` field:
+
+- `patch` only → apply patch directly
+- `context` only (a snapshot) → server diffs vs persisted, applies the diff
+- `context` + `patch` → diff for drift detection, patch on top
+- neither → no-op
+
+**Persistence.** Per-aria, append-only patch log + cached current snapshot, sharing a logical-time space with the conversation log. Files at `~/.local/state/figaro/chalkboards/<id>/{log.json,snapshot.json}`. The snapshot file is a derived cache rewritten at `endTurn`; the log is the source of truth and can replay any past state.
+
+**Templates.** Each chalkboard key has a body template (Go `text/template`, embedded via `//go:embed` from `internal/chalkboard/templates/`). User overrides at `~/.config/figaro/chalkboard/<key>.tmpl`. Keys without a template are stored but not surfaced to the model.
+
+**Provider rendering.** Each provider chooses how to surface reminders. Anthropic ships two:
+
+- **tag** (default) — wraps each rendered body in `<system-reminder name="…">…</system-reminder>` blocks appended to the latest user message.
+- **tool** — emits a synthetic `assistant: tool_use(…)` + `user: tool_result(…)` pair after the latest user message. The synthetic tool is **not** declared in `req.Tools`; the model reads it as transcript-only context.
+
+Both renderers attach exclusively to the leaf user message. Neither mutates `req.System`, `req.Tools`, or any earlier message — invariant #11 in `agents.md`.
+
+**Cache control.** With the prefix byte-stable, `markCacheBreakpoints` sets `cache_control: ephemeral` on the last system block, the last tool definition, and the second-to-last message (the leaf at the most recent `endTurn` = everything that was on disk before the new prompt arrived). Caching engages on auth paths that allow client-controlled `cache_control`. The OAuth + `claude-code-20250219` beta path silently ignores it (verified empirically; documented in `markCacheBreakpoints`).
 
 ______________________________________________________________________
 
@@ -225,9 +277,12 @@ ______________________________________________________________________
 │   ├── websearch.md
 │   ├── docker.md
 │   └── ...
+├── chalkboard/              # optional per-key body template overrides
+│   ├── cwd.tmpl
+│   └── ...
 └── providers/
     └── anthropic/
-        ├── config.toml      # model, max_tokens, api_key
+        ├── config.toml      # model, max_tokens, api_key, reminder_renderer ("tag"|"tool")
         └── auth.toml        # hush-encrypted OAuth tokens
 ```
 
@@ -242,14 +297,19 @@ $XDG_RUNTIME_DIR/figaro/     # (or /tmp/figaro)
     └── ...
 
 ~/.local/state/figaro/
-├── angelus.log              # supervisor log
+├── angelus.log              # supervisor log (also captures stderr from provider/agent)
 ├── rpc.jsonl                # CLI-side RPC log
 ├── traces.jsonl             # OpenTelemetry trace export
 ├── figaros/
 │   ├── a1b2c3d4.jsonl       # per-agent event log
 │   └── ...
-└── arias/
-    ├── a1b2c3d4.json        # persisted conversation (FileStore)
+├── arias/
+│   ├── a1b2c3d4.json        # persisted conversation (FileStore)
+│   └── ...
+└── chalkboards/
+    ├── a1b2c3d4/
+    │   ├── log.json         # NDJSON of patch entries, append-only
+    │   └── snapshot.json    # cached current snapshot, atomic rewrite at endTurn
     └── ...
 ```
 
@@ -333,9 +393,11 @@ ______________________________________________________________________
 - Conversation persistence (MemStore → FileStore, restore on restart)
 - PID binding + dead-PID reaping
 - OAuth PKCE login with hush-encrypted token storage
-- Panic recovery with automatic restart
+- Panic recovery with automatic restart (credo persists across panics)
 - OpenTelemetry tracing to file
 - Configurable personality (credo.md + skills)
+- Chalkboard: structured per-aria state surfaced as system reminders, persisted as append-only patch log + cached snapshot
+- `cache_control` wiring on the Anthropic provider (system / tools / leaf-1 message); cache hit measurement via `figaro list` CACHE column
 
 ### 🔮 Future (*Il futuro*)
 
