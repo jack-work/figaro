@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"text/template"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/credo"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -29,6 +31,12 @@ type ServerConfig struct {
 	Config          *config.Loaded
 	ProviderFactory ProviderFactory
 	Ctx             context.Context
+
+	// Chalkboard plumbing — optional. If set, every figaro this server
+	// creates (or restores) gets the same store and templates injected
+	// into its Config. nil = no chalkboard processing.
+	Chalkboard          chalkboard.Store
+	ChalkboardTemplates *template.Template
 }
 
 // Handlers wraps the angelus JSON-RPC handler map and provides
@@ -45,6 +53,8 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		config:  cfg.Config,
 		factory: cfg.ProviderFactory,
 		ctx:     cfg.Ctx,
+		cb:      cfg.Chalkboard,
+		cbTmpls: cfg.ChalkboardTemplates,
 	}
 	return &Handlers{
 		Map: map[string]jsonrpc.HandlerFunc{
@@ -78,6 +88,8 @@ type handlers struct {
 	config  *config.Loaded
 	factory ProviderFactory
 	ctx     context.Context
+	cb      chalkboard.Store
+	cbTmpls *template.Template
 }
 
 func (h *handlers) create(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -115,18 +127,27 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		backend = nil
 	}
 
+	// Ephemeral figaros also skip the chalkboard — no persistence path
+	// makes sense for a transient prompt.
+	cbStore := h.cb
+	if req.Ephemeral {
+		cbStore = nil
+	}
+
 	agent := figaro.NewAgent(figaro.Config{
-		ID:         id,
-		SocketPath: sockPath,
-		Provider:   prov,
-		Model:      req.Model,
-		Scribe:     scribe,
-		Cwd:        cwd,
-		Root:       cwd,
-		MaxTokens:  8192,
-		Tools:      tool.DefaultRegistry(cwd),
-		LogDir:     logDir,
-		Backend:    backend,
+		ID:                  id,
+		SocketPath:          sockPath,
+		Provider:            prov,
+		Model:               req.Model,
+		Scribe:              scribe,
+		Cwd:                 cwd,
+		Root:                cwd,
+		MaxTokens:           8192,
+		Tools:               tool.DefaultRegistry(cwd),
+		LogDir:              logDir,
+		Backend:             backend,
+		Chalkboard:          cbStore,
+		ChalkboardTemplates: h.cbTmpls,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -300,18 +321,20 @@ func (h *handlers) RestoreArias(ctx context.Context) {
 		}
 
 		agent := figaro.NewAgent(figaro.Config{
-			ID:         aria.ID,
-			Label:      meta.Label,
-			SocketPath: sockPath,
-			Provider:   prov,
-			Model:      meta.Model,
-			Scribe:     scribe,
-			Cwd:        cwd,
-			Root:       root,
-			MaxTokens:  8192,
-			Tools:      tool.DefaultRegistry(cwd),
-			LogDir:     logDir,
-			Backend:    h.angelus.Backend,
+			ID:                  aria.ID,
+			Label:               meta.Label,
+			SocketPath:          sockPath,
+			Provider:            prov,
+			Model:               meta.Model,
+			Scribe:              scribe,
+			Cwd:                 cwd,
+			Root:                root,
+			MaxTokens:           8192,
+			Tools:               tool.DefaultRegistry(cwd),
+			LogDir:              logDir,
+			Backend:             h.angelus.Backend,
+			Chalkboard:          h.cb,
+			ChalkboardTemplates: h.cbTmpls,
 		})
 
 		if err := h.angelus.Registry.Register(agent); err != nil {

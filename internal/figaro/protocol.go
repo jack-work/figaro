@@ -57,7 +57,7 @@ func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 			if err := json.Unmarshal(params, &req); err != nil {
 				return nil, err
 			}
-			a.Prompt(req.Text)
+			a.SubmitPrompt(req)
 			return rpc.PromptResponse{OK: true}, nil
 		},
 		rpc.MethodContext: func(ctx context.Context, params json.RawMessage) (any, error) {

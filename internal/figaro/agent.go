@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"text/template"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/credo"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -40,7 +42,8 @@ type event struct {
 	typ eventType
 
 	// eventUserPrompt
-	text string
+	text       string
+	chalkboard *rpc.ChalkboardInput // optional client-supplied state input
 
 	// eventLLMDelta
 	delta       string
@@ -78,6 +81,11 @@ type Config struct {
 	Tools      *tool.Registry // tools available to the agent
 	LogDir     string         // directory for per-figaro JSONL event log (empty = no logging)
 	Backend    store.Backend  // aria persistence (nil = ephemeral)
+
+	// Chalkboard plumbing. Optional — nil = no chalkboard processing,
+	// patches and snapshots are not persisted, no reminders are rendered.
+	Chalkboard          chalkboard.Store
+	ChalkboardTemplates *template.Template
 }
 
 // Agent is the goroutine-based implementation of Figaro.
@@ -97,6 +105,13 @@ type Agent struct {
 	tools      *tool.Registry
 	memStore   *store.MemStore
 	backend    store.Backend // nil = ephemeral
+
+	// Chalkboard. Optional. cb is the persisted-state store, cbTmpls
+	// renders patches to bodies, cbSnap is the in-memory current
+	// snapshot (saved at endTurn).
+	cb      chalkboard.Store
+	cbTmpls *template.Template
+	cbSnap  chalkboard.Snapshot
 
 	// Actor inbox — priority mailbox with selfish/patient queues.
 	inbox *Inbox
@@ -153,6 +168,8 @@ func NewAgent(cfg Config) *Agent {
 		maxTokens:   cfg.MaxTokens,
 		tools:       cfg.Tools,
 		backend:     cfg.Backend,
+		cb:          cfg.Chalkboard,
+		cbTmpls:     cfg.ChalkboardTemplates,
 		inbox:       NewInbox(ctx),
 		subscribers: make(map[chan rpc.Notification]struct{}),
 		createdAt:   time.Now(),
@@ -168,6 +185,17 @@ func NewAgent(cfg Config) *Agent {
 	// Seed cumulative token counters from persisted Usage so restored
 	// arias don't start over at zero.
 	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(a.memStore.Context())
+
+	// Load the chalkboard's current snapshot if a store is configured.
+	// Failures fall back to an empty snapshot so the agent still runs.
+	if a.cb != nil {
+		if snap, err := a.cb.Snapshot(a.id); err == nil {
+			a.cbSnap = snap
+		} else {
+			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard snapshot load: %v (starting empty)\n", a.id, err)
+			a.cbSnap = chalkboard.Snapshot{}
+		}
+	}
 
 	// Open per-figaro event log.
 	if cfg.LogDir != "" {
@@ -253,6 +281,18 @@ func (a *Agent) SetLabel(label string) error {
 
 func (a *Agent) Prompt(text string) {
 	a.inbox.SendPatient(event{typ: eventUserPrompt, text: text})
+}
+
+// SubmitPrompt enqueues a prompt with the full request shape, including
+// any optional chalkboard input. The agent applies chalkboard logic
+// (diff against persisted snapshot, persist patch, render reminders) on
+// the drain-loop goroutine.
+func (a *Agent) SubmitPrompt(req rpc.PromptRequest) {
+	a.inbox.SendPatient(event{
+		typ:        eventUserPrompt,
+		text:       req.Text,
+		chalkboard: req.Chalkboard,
+	})
 }
 
 // Interrupt signals the agent to abort the current turn. Selfish event,
@@ -344,24 +384,12 @@ func (a *Agent) Kill() {
 	}
 }
 
-// staticScribe is a Scribe that always returns the same prompt.
-// Used for crash recovery and testing.
-type staticScribe struct {
-	prompt string
-}
-
-func (s *staticScribe) Build(ctx credo.Context) (string, error) {
-	return s.prompt, nil
-}
-
-const crashPrompt = `[System: This agent crashed and was restarted. The previous ` +
-	`conversation context was lost. Inform the user that you experienced ` +
-	`an unexpected restart and that prior context is no longer available.]`
-
 // runWithRecovery runs the drain loop and restarts it on panic.
 // On panic: logs the stack, resets the store, swaps the inbox,
-// notifies subscribers of the error, and restarts the loop.
-// The figaro's registry entry, pid bindings, and socket all survive.
+// notifies subscribers of the error, and restarts the loop. The
+// figaro's registry entry, pid bindings, socket, and credo all
+// survive — recovery is invisible to the model. The stderr log
+// line is the only artifact.
 func (a *Agent) runWithRecovery(ctx context.Context) {
 	defer close(a.done)
 
@@ -428,9 +456,10 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 			Params:  rpc.DoneParams{Reason: "error: " + crashMsg},
 		})
 
-		// Inject crash scribe so the agent knows to inform the user.
-		// The original scribe is replaced; crash prompt takes priority.
-		a.scribe = &staticScribe{prompt: crashPrompt}
+		// Note: the credo (a.scribe) is intentionally NOT replaced. The
+		// agent retains its full identity across panics; the model is
+		// not informed via injected conversation content. Operators see
+		// the stderr line below, the model does not.
 
 		fmt.Fprintf(os.Stderr, "figaro %s: restarted after panic\n", a.id)
 		// Loop back to restart drainLoopProtected.
@@ -494,6 +523,12 @@ func (a *Agent) drainLoop(ctx context.Context) {
 			a.endTurnSpan = func() { span.End() }
 
 			fmt.Fprintf(os.Stderr, "agent: event=UserPrompt text=%q\n", truncLog(evt.text, 60))
+
+			// Apply chalkboard input from the request, if any. The
+			// resulting patch is persisted to the chalkboard log; the
+			// in-memory snapshot advances. (Rendering and provider
+			// integration land in Stage 4.)
+			a.applyChalkboardInput(evt.chalkboard)
 
 			// Build system prompt from scribe (re-templated on each prompt).
 			a.systemPrompt = ""
@@ -777,6 +812,15 @@ func (a *Agent) endTurn(reason string) {
 		fmt.Fprintf(os.Stderr, "figaro %s: store flush error: %v\n", a.id, err)
 	}
 
+	// Persist the chalkboard snapshot at the same lifecycle point as
+	// MemStore.Flush. The patch log was already appended at prompt-time;
+	// this is a fast-path cache for cold loads.
+	if a.cb != nil {
+		if err := a.cb.SaveSnapshot(a.id, a.cbSnap); err != nil {
+			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard snapshot save: %v\n", a.id, err)
+		}
+	}
+
 	// Reset turn state.
 	a.pendingTools = 0
 	a.pendingToolCalls = nil
@@ -917,6 +961,66 @@ func truncLog(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// applyChalkboardInput merges the client's chalkboard input with the
+// persisted snapshot, appends the resulting patch to the log, and
+// advances the in-memory snapshot. No-op if no chalkboard store is
+// configured. Errors are logged but do not abort the prompt — chalkboard
+// is supplemental to, not gating, the conversation.
+//
+// Wire-protocol semantics:
+//   - patch only           → apply patch directly
+//   - context only         → diff context vs current, apply diff
+//   - context + patch      → apply diff(context, current), then patch on top
+//   - neither              → no-op
+func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
+	if a.cb == nil || input == nil {
+		return
+	}
+
+	// Convert wire-shape patch (rpc.ChalkboardPatch) to chalkboard.Patch.
+	// They're isomorphic; the duplicate type lives at the rpc layer to
+	// keep the leaf-package import graph clean.
+	var clientPatch chalkboard.Patch
+	if input.Patch != nil {
+		clientPatch = chalkboard.Patch{Set: input.Patch.Set, Remove: input.Patch.Remove}
+	}
+
+	var combined chalkboard.Patch
+	switch {
+	case input.Context != nil && input.Patch != nil:
+		// Drift-detection: diff context vs persisted; apply patch on top.
+		ctx := chalkboard.Snapshot(input.Context)
+		drift := ctx.Diff(a.cbSnap)
+		combined = chalkboard.Merge(drift, clientPatch)
+	case input.Context != nil:
+		// Context-only: server diffs and applies.
+		ctx := chalkboard.Snapshot(input.Context)
+		combined = ctx.Diff(a.cbSnap)
+	case input.Patch != nil:
+		// Patch-only: apply directly.
+		combined = clientPatch
+	}
+
+	if combined.IsEmpty() {
+		return
+	}
+
+	// Persist patch at the next available logical time. We use the
+	// message store's leaf time + 1 so the chalkboard log shares the
+	// monotonic time space with the conversation log.
+	lt := a.memStore.LeafTime() + 1
+	if err := a.cb.Append(a.id, lt, combined); err != nil {
+		fmt.Fprintf(os.Stderr, "figaro %s: chalkboard append: %v\n", a.id, err)
+		return
+	}
+
+	// Advance in-memory snapshot.
+	if a.cbSnap == nil {
+		a.cbSnap = chalkboard.Snapshot{}
+	}
+	a.cbSnap = a.cbSnap.Apply(combined)
 }
 
 // sumUsage totals InputTokens / OutputTokens / CacheReadTokens /

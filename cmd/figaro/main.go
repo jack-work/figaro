@@ -28,6 +28,7 @@ import (
 	"sync"
 	"syscall"
 	"text/tabwriter"
+	"text/template"
 	"time"
 
 	"github.com/jack-work/largo"
@@ -35,6 +36,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -182,14 +184,22 @@ func runAngelus() {
 		Backend:    backend,
 	})
 
+	// Build the chalkboard plumbing: per-aria store rooted under the
+	// state dir, plus the embedded default body templates. Failures here
+	// are non-fatal — the angelus runs without chalkboard if either
+	// fails, with a warning to the log.
+	cbStore, cbTmpls := buildChalkboard(logger)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	handlers := angelus.NewHandlers(angelus.ServerConfig{
-		Angelus:         a,
-		Config:          loaded,
-		ProviderFactory: buildProviderFactory(loaded),
-		Ctx:             ctx,
+		Angelus:             a,
+		Config:              loaded,
+		ProviderFactory:     buildProviderFactory(loaded),
+		Ctx:                 ctx,
+		Chalkboard:          cbStore,
+		ChalkboardTemplates: cbTmpls,
 	})
 	a.Handlers = handlers.Map
 
@@ -1180,6 +1190,36 @@ func ensureHush() {
 	if err := h.EnsureReady(); err != nil {
 		die("hush: %s", err)
 	}
+}
+
+// buildChalkboard wires up the per-aria chalkboard store (under
+// ~/.local/state/figaro/chalkboards/) and loads the embedded default
+// body templates plus any user overrides from
+// ~/.config/figaro/chalkboard/. Returns nils with a logged warning if
+// either step fails — the angelus continues to function without
+// chalkboard, just without state-driven reminders.
+func buildChalkboard(logger *log.Logger) (chalkboard.Store, *template.Template) {
+	home, _ := os.UserHomeDir()
+	stateRoot := filepath.Join(home, ".local", "state", "figaro", "chalkboards")
+	store, err := chalkboard.NewFileStore(stateRoot)
+	if err != nil {
+		logger.Printf("warning: chalkboard store init failed: %v (chalkboard disabled)", err)
+		return nil, nil
+	}
+	tmpls, err := chalkboard.LoadDefaultTemplates()
+	if err != nil {
+		logger.Printf("warning: chalkboard templates load failed: %v (chalkboard disabled)", err)
+		return nil, nil
+	}
+	overrideDir := filepath.Join(home, ".config", "figaro", "chalkboard")
+	if _, err := os.Stat(overrideDir); err == nil {
+		if t, err := chalkboard.LoadOverrideTemplates(tmpls, overrideDir); err == nil {
+			tmpls = t
+		} else {
+			logger.Printf("warning: chalkboard override templates failed: %v (using defaults only)", err)
+		}
+	}
+	return store, tmpls
 }
 
 func mustOpenLog() (*log.Logger, *os.File) {

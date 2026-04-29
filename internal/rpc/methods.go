@@ -1,5 +1,7 @@
 package rpc
 
+import "encoding/json"
+
 // --- Figaro socket methods (agent ops) ---
 
 const (
@@ -42,7 +44,34 @@ const (
 // --- Figaro socket: request/response types ---
 
 type PromptRequest struct {
-	Text string `json:"text"`
+	Text       string           `json:"text"`
+	Chalkboard *ChalkboardInput `json:"chalkboard,omitempty"`
+}
+
+// ChalkboardInput carries an optional state update from the client.
+// The presence of Patch is the discriminator:
+//
+//   - Patch only: apply the patch directly to the persisted snapshot.
+//   - Context only: server diffs Context against the persisted snapshot
+//     and applies the resulting patch.
+//   - Both: server uses Context as the client's expected base (drift
+//     detection); applies Patch on top.
+//
+// Schema is open — keys are whatever the client populates. Absence of a
+// key in Context means deletion (for the Context-only and both paths).
+type ChalkboardInput struct {
+	Context map[string]json.RawMessage `json:"context,omitempty"`
+	Patch   *ChalkboardPatch           `json:"patch,omitempty"`
+}
+
+// ChalkboardPatch is the wire shape for a chalkboard delta. The Go type
+// is duplicated here (rather than importing chalkboard.Patch) to keep
+// the rpc package import-graph at the leaf of the dependency tree —
+// lower-level packages don't depend on chalkboard. The chalkboard
+// package converts to/from this shape internally.
+type ChalkboardPatch struct {
+	Set    map[string]json.RawMessage `json:"set,omitempty"`
+	Remove []string                   `json:"remove,omitempty"`
 }
 
 type PromptResponse struct {
