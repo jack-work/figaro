@@ -108,10 +108,13 @@ type Agent struct {
 
 	// Chalkboard. Optional. cb is the persisted-state store, cbTmpls
 	// renders patches to bodies, cbSnap is the in-memory current
-	// snapshot (saved at endTurn).
-	cb      chalkboard.Store
-	cbTmpls *template.Template
-	cbSnap  chalkboard.Snapshot
+	// snapshot (saved at endTurn). cbTurnReminders holds the rendered
+	// entries for the current turn — populated by applyChalkboardInput,
+	// passed to startLLMStream, cleared at endTurn.
+	cb              chalkboard.Store
+	cbTmpls         *template.Template
+	cbSnap          chalkboard.Snapshot
+	cbTurnReminders []chalkboard.RenderedEntry
 
 	// Actor inbox — priority mailbox with selfish/patient queues.
 	inbox *Inbox
@@ -825,6 +828,7 @@ func (a *Agent) endTurn(reason string) {
 	a.pendingTools = 0
 	a.pendingToolCalls = nil
 	a.systemPrompt = ""
+	a.cbTurnReminders = nil
 
 	// Release next patient message (or mark as idle).
 	a.inbox.Yield()
@@ -847,8 +851,8 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context\n", len(block.Messages))
-	ch, err := a.prov.Send(ctx, block, a.toolDefs(), a.maxTokens)
+	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context, %d reminders\n", len(block.Messages), len(a.cbTurnReminders))
+	ch, err := a.prov.Send(ctx, block, a.toolDefs(), a.cbTurnReminders, a.maxTokens)
 	if err != nil {
 		inbox.SendSelfish(event{typ: eventLLMError, err: fmt.Errorf("provider send: %w", err)})
 		return
@@ -1007,6 +1011,12 @@ func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
 		return
 	}
 
+	// Capture the prior snapshot for templating before we advance.
+	priorSnap := a.cbSnap
+	if priorSnap == nil {
+		priorSnap = chalkboard.Snapshot{}
+	}
+
 	// Persist patch at the next available logical time. We use the
 	// message store's leaf time + 1 so the chalkboard log shares the
 	// monotonic time space with the conversation log.
@@ -1017,10 +1027,19 @@ func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
 	}
 
 	// Advance in-memory snapshot.
-	if a.cbSnap == nil {
-		a.cbSnap = chalkboard.Snapshot{}
+	a.cbSnap = priorSnap.Apply(combined)
+
+	// Render reminder bodies for this turn. Templates that don't match
+	// any key produce no entries (silent skip). Errors are logged and
+	// the turn proceeds without those reminders.
+	if a.cbTmpls != nil {
+		rendered, err := chalkboard.Render(combined, priorSnap, a.cbTmpls)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard render: %v\n", a.id, err)
+		} else {
+			a.cbTurnReminders = rendered
+		}
 	}
-	a.cbSnap = a.cbSnap.Apply(combined)
 }
 
 // sumUsage totals InputTokens / OutputTokens / CacheReadTokens /

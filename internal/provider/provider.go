@@ -4,6 +4,7 @@ package provider
 import (
 	"context"
 
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -45,6 +46,9 @@ type Provider interface {
 	// SetModel changes the model used for subsequent Send calls.
 	SetModel(model string)
 
-	// Send streams a conversation to the provider and returns response events.
-	Send(ctx context.Context, block *message.Block, tools []Tool, maxTokens int) (<-chan StreamEvent, error)
+	// Send streams a conversation to the provider and returns response
+	// events. Reminders is the harness's pre-rendered chalkboard
+	// updates for this turn — each provider chooses how to surface them
+	// per its own configuration. nil/empty = no reminders this turn.
+	Send(ctx context.Context, block *message.Block, tools []Tool, reminders []chalkboard.RenderedEntry, maxTokens int) (<-chan StreamEvent, error)
 }

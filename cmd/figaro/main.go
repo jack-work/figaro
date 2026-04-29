@@ -373,7 +373,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string) int 
 	}
 	defer fcli.Close()
 
-	if err := fcli.Prompt(ctx, prompt); err != nil {
+	if err := fcli.PromptWithChalkboard(ctx, prompt, buildPromptChalkboard()); err != nil {
 		fmt.Fprintln(os.Stderr, "error: prompt:", err)
 		return 1
 	}
@@ -1017,7 +1017,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 	}
 	defer fcli.Close()
 
-	if err := fcli.Prompt(ctx, prompt); err != nil {
+	if err := fcli.PromptWithChalkboard(ctx, prompt, buildPromptChalkboard()); err != nil {
 		die("prompt: %s", err)
 	}
 
@@ -1190,6 +1190,31 @@ func ensureHush() {
 	if err := h.EnsureReady(); err != nil {
 		die("hush: %s", err)
 	}
+}
+
+// buildPromptChalkboard collects the per-prompt chalkboard values the
+// CLI surfaces to its figaro: cwd and datetime (hour-precision). The
+// agent diffs this against its persisted snapshot and emits reminders
+// only on change. Model and label are server-managed (updated when
+// figaro.set_model or figaro.set_label fire) and are NOT shipped from
+// the CLI side.
+func buildPromptChalkboard() *rpc.ChalkboardInput {
+	cwd, _ := os.Getwd()
+	snap := map[string]json.RawMessage{}
+	if cwd != "" {
+		if b, err := json.Marshal(cwd); err == nil {
+			snap["cwd"] = b
+		}
+	}
+	// Hour-precision: don't churn within a single hour.
+	dt := time.Now().Format("Monday, January 2, 2006, 3PM MST")
+	if b, err := json.Marshal(dt); err == nil {
+		snap["datetime"] = b
+	}
+	if len(snap) == 0 {
+		return nil
+	}
+	return &rpc.ChalkboardInput{Context: snap}
 }
 
 // buildChalkboard wires up the per-aria chalkboard store (under

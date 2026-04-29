@@ -34,6 +34,12 @@ func (c *Client) Prompt(ctx context.Context, text string) error {
 	return c.cli.Call(ctx, rpc.MethodPrompt, rpc.PromptRequest{Text: text}, nil)
 }
 
+// PromptWithChalkboard sends a prompt with an optional chalkboard input.
+// Pass nil for the input to behave identically to Prompt.
+func (c *Client) PromptWithChalkboard(ctx context.Context, text string, cb *rpc.ChalkboardInput) error {
+	return c.cli.Call(ctx, rpc.MethodPrompt, rpc.PromptRequest{Text: text, Chalkboard: cb}, nil)
+}
+
 // Context returns all messages in the figaro's chat history.
 func (c *Client) Context(ctx context.Context) (*rpc.ContextResponse, error) {
 	var resp rpc.ContextResponse

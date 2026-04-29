@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
@@ -34,11 +35,12 @@ const (
 )
 
 type Anthropic struct {
-	auth       auth.TokenResolver
-	mu         sync.Mutex
-	Model      string
-	MaxTokens  int
-	HTTPClient *http.Client
+	auth             auth.TokenResolver
+	mu               sync.Mutex
+	Model            string
+	MaxTokens        int
+	HTTPClient       *http.Client
+	ReminderRenderer string // "tag" (default) or "tool"
 }
 
 // New creates an Anthropic provider from the config section.
@@ -53,11 +55,16 @@ func New(cfg config.AnthropicProvider, authPath string, hushClient *hush.Client)
 	if err != nil {
 		return nil, err
 	}
+	rr := cfg.ReminderRenderer
+	if rr == "" {
+		rr = "tag"
+	}
 	return &Anthropic{
-		auth:       resolver,
-		Model:      cfg.Model,
-		MaxTokens:  cfg.MaxTokens,
-		HTTPClient: &http.Client{Timeout: 10 * time.Minute},
+		auth:             resolver,
+		Model:            cfg.Model,
+		MaxTokens:        cfg.MaxTokens,
+		HTTPClient:       &http.Client{Timeout: 10 * time.Minute},
+		ReminderRenderer: rr,
 	}, nil
 }
 
@@ -390,7 +397,7 @@ func projectTools(tools []provider.Tool) []nativeTool {
 
 // --- Send: IR Block → stream → IR Messages with baggage ---
 
-func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []provider.Tool, reminders []chalkboard.RenderedEntry, maxTokens int) (<-chan provider.StreamEvent, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
 	}
@@ -410,6 +417,8 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []prov
 	}
 
 	native := a.projectBlockWithModel(block, tools, maxTokens, isOAuthToken(apiKey), model)
+	// Apply the configured reminder renderer (default: tag).
+	a.applyRenderer(&native, reminders)
 	body, err := json.Marshal(native)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)

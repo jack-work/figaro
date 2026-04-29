@@ -47,6 +47,16 @@ type AnthropicProvider struct {
 	Model     string `toml:"model"`
 	MaxTokens int    `toml:"max_tokens"`
 	APIKey    string `toml:"api_key"`
+
+	// ReminderRenderer selects how chalkboard reminders are surfaced
+	// to the model. "tag" (default) wraps each rendered body in
+	// <system-reminder name="…">…</system-reminder> blocks attached to
+	// the latest user message. "tool" emits a synthetic assistant
+	// tool_use + user tool_result pair after the latest user message.
+	// The synthetic tool is NOT declared in the request's tools list,
+	// so the model cannot call it going forward — it reads as
+	// "I called something, got something back, moving on."
+	ReminderRenderer string `toml:"reminder_renderer"`
 }
 
 // Loaded holds the parsed top-level config plus path context.
