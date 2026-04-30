@@ -3,7 +3,6 @@ package credo_test
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -81,27 +80,20 @@ func TestFormatSkills(t *testing.T) {
 // --- DefaultScribe ---
 
 func TestDefaultScribe_Build(t *testing.T) {
-	// Use the testdata directory as the config dir.
 	scribe := credo.NewDefaultScribe("testdata")
 
 	ctx := credo.Context{
-		DateTime: "Thursday, March 20, 2026, 10PM EDT",
-		Cwd:      "/home/gluck/dev/figaro",
-		Root:     "/home/gluck/dev/figaro",
 		Provider: "anthropic",
-		Model:    "claude-sonnet-4-20250514",
 		FigaroID: "abc123",
+		Version:  "v1",
 	}
 
 	prompt, err := scribe.Build(ctx)
 	require.NoError(t, err)
 
-	// Template fields should be resolved.
-	assert.Contains(t, prompt, "Thursday, March 20, 2026, 10PM EDT")
-	assert.Contains(t, prompt, "/home/gluck/dev/figaro")
 	assert.Contains(t, prompt, "anthropic")
-	assert.Contains(t, prompt, "claude-sonnet-4-20250514")
 	assert.Contains(t, prompt, "abc123")
+	assert.Contains(t, prompt, "v1")
 
 	// Skills should be appended.
 	assert.Contains(t, prompt, "# Available Skills")
@@ -113,12 +105,9 @@ func TestDefaultScribe_Caching(t *testing.T) {
 	scribe := credo.NewDefaultScribe("testdata")
 
 	ctx := credo.Context{
-		DateTime: "Thursday, March 20, 2026, 10PM EDT",
-		Cwd:      "/tmp",
-		Root:     "/tmp",
 		Provider: "mock",
-		Model:    "mock-model",
 		FigaroID: "test",
+		Version:  "v1",
 	}
 
 	prompt1, err := scribe.Build(ctx)
@@ -127,30 +116,15 @@ func TestDefaultScribe_Caching(t *testing.T) {
 	prompt2, err := scribe.Build(ctx)
 	require.NoError(t, err)
 
-	// Same context + same file → should return cached result.
+	// Same context + same file → cache hit.
 	assert.Equal(t, prompt1, prompt2)
 }
 
 func TestDefaultScribe_RebuildOnContextChange(t *testing.T) {
 	scribe := credo.NewDefaultScribe("testdata")
 
-	ctx1 := credo.Context{
-		DateTime: "Thursday, March 20, 2026, 10PM EDT",
-		Cwd:      "/tmp/a",
-		Root:     "/tmp/a",
-		Provider: "mock",
-		Model:    "model-a",
-		FigaroID: "test",
-	}
-
-	ctx2 := credo.Context{
-		DateTime: "Thursday, March 20, 2026, 11PM EDT",
-		Cwd:      "/tmp/b",
-		Root:     "/tmp/b",
-		Provider: "mock",
-		Model:    "model-b",
-		FigaroID: "test",
-	}
+	ctx1 := credo.Context{Provider: "a", FigaroID: "test", Version: "v1"}
+	ctx2 := credo.Context{Provider: "b", FigaroID: "test", Version: "v1"}
 
 	prompt1, err := scribe.Build(ctx1)
 	require.NoError(t, err)
@@ -159,14 +133,14 @@ func TestDefaultScribe_RebuildOnContextChange(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotEqual(t, prompt1, prompt2)
-	assert.Contains(t, prompt1, "model-a")
-	assert.Contains(t, prompt2, "model-b")
+	assert.Contains(t, prompt1, "Provider: a")
+	assert.Contains(t, prompt2, "Provider: b")
 }
 
 func TestDefaultScribe_MissingCredoFile(t *testing.T) {
 	scribe := credo.NewDefaultScribe(t.TempDir())
 
-	ctx := credo.Context{DateTime: "now", Cwd: "/tmp", Root: "/tmp"}
+	ctx := credo.Context{Provider: "p", FigaroID: "f"}
 	_, err := scribe.Build(ctx)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "credo.md")
@@ -175,17 +149,9 @@ func TestDefaultScribe_MissingCredoFile(t *testing.T) {
 // --- CurrentContext ---
 
 func TestCurrentContext(t *testing.T) {
-	ctx := credo.CurrentContext("/work", "/project", "anthropic", "claude-sonnet-4", "fig-001", "bash, read, write, edit")
+	ctx := credo.CurrentContext("anthropic", "fig-001")
 
-	assert.NotEmpty(t, ctx.DateTime)
-	assert.Equal(t, "/work", ctx.Cwd)
-	assert.Equal(t, "/project", ctx.Root)
 	assert.Equal(t, "anthropic", ctx.Provider)
-	assert.Equal(t, "claude-sonnet-4", ctx.Model)
 	assert.Equal(t, "fig-001", ctx.FigaroID)
-	assert.Equal(t, "bash, read, write, edit", ctx.Tools)
 	assert.NotEmpty(t, ctx.Version)
-
-	// DateTime should be hour precision (no minutes/seconds).
-	assert.False(t, strings.Contains(ctx.DateTime, ":"), "DateTime should not contain minutes/seconds")
 }

@@ -30,16 +30,19 @@ type Scribe interface {
 	Build(ctx Context) (string, error)
 }
 
-// Context holds the runtime values available to the credo template.
+// Context holds the values exposed to the credo template.
+//
+// Stage C.6 trimmed this set to identity-only fields that don't
+// change per turn. Datetime, cwd, root, model, and tool listings now
+// flow through chalkboard.system.* and are surfaced as reminders by
+// the provider, not woven into the credo body. Templates referencing
+// the removed fields fail loudly at execute time — the surface area
+// of the credo is small enough that switching to chalkboard reminders
+// is a one-edit migration for users.
 type Context struct {
-	DateTime  string // current date/time, hour precision
-	Cwd       string // working directory of the calling process
-	Root      string // project root (git root or explicit)
-	Provider  string // provider name (e.g. "anthropic")
-	Model     string // model ID (e.g. "claude-sonnet-4-20250514")
-	FigaroID  string // figaro instance ID
-	Tools     string // formatted tool list (statically constructed)
-	Version   string // build version: VCS commit hash
+	Provider string // provider name (e.g. "anthropic")
+	FigaroID string // figaro instance ID
+	Version  string // build version: VCS commit hash
 }
 
 // Skill is a skill loaded from a markdown file with frontmatter.
@@ -124,16 +127,12 @@ func (s *DefaultScribe) Build(ctx Context) (string, error) {
 }
 
 // CurrentContext builds a Context from the current runtime state.
-func CurrentContext(cwd, root, providerName, model, figaroID, tools string) Context {
-	now := time.Now()
+// Only identity fields (Provider, FigaroID, Version) — anything that
+// changes turn-to-turn lives in the chalkboard.
+func CurrentContext(providerName, figaroID string) Context {
 	return Context{
-		DateTime: now.Format("Monday, January 2, 2006, 3PM MST"),
-		Cwd:      cwd,
-		Root:     root,
 		Provider: providerName,
-		Model:    model,
 		FigaroID: figaroID,
-		Tools:    tools,
 		Version:  buildVersion(),
 	}
 }

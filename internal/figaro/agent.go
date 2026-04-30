@@ -236,7 +236,7 @@ func (a *Agent) bootstrapIfNeeded() {
 	if _, ok := snap["system.prompt"]; ok {
 		return // already bootstrapped (restored aria)
 	}
-	credoCtx := credo.CurrentContext(a.cwd, a.root, a.prov.Name(), a.model, a.id, "")
+	credoCtx := credo.CurrentContext(a.prov.Name(), a.id)
 	prompt, err := a.scribe.Build(credoCtx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap credo build: %v\n", a.id, err)
@@ -1099,7 +1099,7 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 	if a.chalkboard == nil || a.scribe == nil {
 		return nil, nil, false, fmt.Errorf("rehydrate requires both a chalkboard and a scribe")
 	}
-	credoCtx := credo.CurrentContext(a.cwd, a.root, a.prov.Name(), a.model, a.id, "")
+	credoCtx := credo.CurrentContext(a.prov.Name(), a.id)
 	prompt, buildErr := a.scribe.Build(credoCtx)
 	if buildErr != nil {
 		return nil, nil, false, fmt.Errorf("rehydrate build: %w", buildErr)
@@ -1178,7 +1178,7 @@ func (a *Agent) resolveSystemPrompt() string {
 	if a.scribe == nil {
 		return ""
 	}
-	credoCtx := credo.CurrentContext(a.cwd, a.root, a.prov.Name(), a.model, a.id, "")
+	credoCtx := credo.CurrentContext(a.prov.Name(), a.id)
 	p, err := a.scribe.Build(credoCtx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "figaro %s: credo build error: %v\n", a.id, err)
