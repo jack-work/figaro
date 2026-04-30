@@ -204,8 +204,66 @@ func NewAgent(cfg Config) *Agent {
 		}
 	}
 
+	// Bootstrap: on a fresh aria, run the Scribe once, snapshot the
+	// system prompt + a few related keys into chalkboard.system.*, and
+	// emit a state-only tic carrying that patch. Subsequent turns read
+	// the system prompt from the chalkboard snapshot — no re-templating
+	// per turn.
+	a.bootstrapIfNeeded()
+
 	go a.runWithRecovery(ctx)
 	return a
+}
+
+// bootstrapIfNeeded runs the Scribe once and emits a state-only tic
+// (a user-role Message with no Content, only Patches) when the aria
+// has no chalkboard system.prompt yet. Idempotent: a restored aria
+// whose chalkboard.json already carries system.prompt is left alone.
+//
+// Requires both a chalkboard.State and a Scribe; either being nil
+// short-circuits (ephemeral arias have no chalkboard, and tests may
+// pass nil scribes).
+func (a *Agent) bootstrapIfNeeded() {
+	if a.chalkboard == nil || a.scribe == nil {
+		return
+	}
+	snap := a.chalkboard.Snapshot()
+	if _, ok := snap["system.prompt"]; ok {
+		return // already bootstrapped (restored aria)
+	}
+	credoCtx := credo.CurrentContext(a.cwd, a.root, a.prov.Name(), a.model, a.id, "")
+	prompt, err := a.scribe.Build(credoCtx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap credo build: %v\n", a.id, err)
+		return
+	}
+
+	patch := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+	setStr := func(key, val string) {
+		if b, err := json.Marshal(val); err == nil {
+			patch.Set[key] = b
+		}
+	}
+	setStr("system.prompt", prompt)
+	setStr("system.model", a.model)
+	setStr("system.provider", a.prov.Name())
+
+	tic := message.Message{
+		Role:      message.RoleUser,
+		Patches:   []message.Patch{patch},
+		Timestamp: time.Now().UnixMilli(),
+	}
+	if _, err := a.memStore.Append(tic); err != nil {
+		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap append tic: %v\n", a.id, err)
+		return
+	}
+	a.chalkboard.Apply(patch)
+	if err := a.chalkboard.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap chalkboard save: %v\n", a.id, err)
+	}
+	if err := a.memStore.Flush(); err != nil {
+		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap memStore flush: %v\n", a.id, err)
+	}
 }
 
 // newStore creates the appropriate store for this agent.
@@ -531,18 +589,11 @@ func (a *Agent) drainLoop(ctx context.Context) {
 			// Apply chalkboard input — patch attaches to the in-progress tic.
 			a.applyChalkboardInput(evt.chalkboard)
 
-			// Build system prompt from scribe (re-templated on each prompt
-			// for now; C.4 moves this to chalkboard.system.prompt set at
-			// bootstrap so Scribe runs only once per aria's lifetime).
-			a.systemPrompt = ""
-			if a.scribe != nil {
-				credoCtx := credo.CurrentContext(a.cwd, a.root, a.prov.Name(), a.model, a.id, "")
-				if p, err := a.scribe.Build(credoCtx); err == nil {
-					a.systemPrompt = p
-				} else {
-					fmt.Fprintf(os.Stderr, "figaro %s: credo build error: %v\n", a.id, err)
-				}
-			}
+			// Pick up the system prompt from chalkboard.system.prompt
+			// (set at bootstrap; refreshed by figaro.rehydrate).
+			// Ephemeral arias without a chalkboard fall back to a
+			// per-prompt scribe build for parity.
+			a.systemPrompt = a.resolveSystemPrompt()
 
 			// Build/extend the in-progress tic with the user's text content,
 			// then finalize and send.
@@ -993,6 +1044,31 @@ func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
 	// Advance the chalkboard's in-memory snapshot. (Persisted to disk
 	// at endTurn via chalkboard.Save.)
 	a.chalkboard.Apply(combined)
+}
+
+// resolveSystemPrompt returns the system prompt for the next Send.
+// Reads from chalkboard.system.prompt (set at bootstrap) when available,
+// otherwise falls back to a per-prompt Scribe build (ephemeral arias).
+func (a *Agent) resolveSystemPrompt() string {
+	if a.chalkboard != nil {
+		snap := a.chalkboard.Snapshot()
+		if raw, ok := snap["system.prompt"]; ok {
+			var s string
+			if err := json.Unmarshal(raw, &s); err == nil {
+				return s
+			}
+		}
+	}
+	if a.scribe == nil {
+		return ""
+	}
+	credoCtx := credo.CurrentContext(a.cwd, a.root, a.prov.Name(), a.model, a.id, "")
+	p, err := a.scribe.Build(credoCtx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "figaro %s: credo build error: %v\n", a.id, err)
+		return ""
+	}
+	return p
 }
 
 // ensureInProgressTic guarantees that a.inProgressTic is non-nil and
