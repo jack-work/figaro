@@ -20,34 +20,39 @@ Outcome: wiring correct; cache engages on API-key auth. The OAuth + `claude-code
 
 ## 2. Aria log unification — **planned**, plan-only commits
 
-Plan: [`aria-storage/log-unification.md`](./aria-storage/log-unification.md). Currently at v2 (single document tracks revision history at top).
+Plan: [`aria-storage/log-unification.md`](./aria-storage/log-unification.md). Currently at v3 (revision history tracked in the plan; v1 and v2 superseded).
 
-Motivation: chalkboard patches don't appear in the persisted aria log; `lt` collisions between message and chalkboard counters; `Block.Header` is dual-purpose (compaction + system prompt); Scribe re-templates every prompt; provider rendering is locked into Anthropic's tag-inside-user-message pattern.
+Motivation: chalkboard patches don't appear in the persisted aria log; `lt` collisions between message and chalkboard counters; `Block.Header` is dual-purpose (compaction + system prompt); Scribe re-templates every prompt; the IR/wire shapes diverged more than necessary (tool results as separate IR messages requiring projection-time batching).
 
-Architectural moves the plan locks in:
+Architectural moves v3 locks in:
 
-- Patches as **sidecars on the IR message** they accompany (or Patch-only entries for bootstrap and rehydrate); not standalone timeline events.
-- `Block` becomes literally `Entries []LogEntry` — single-typed list. `Block.Header` retires; system prompt moves to `chalkboard.system.prompt`.
-- Renderers are pure handlers under **causal masking** — read `self` + prior entries + chalkboard snapshot; never future entries. No global cleanup pass; no `coalesceSameRole`.
-- Baggage is a flat list of wire messages with **no positional metadata**. Two-layer shape: `map[provider]ProviderBaggage{Messages, Fingerprint}`. Cache is sticky; force-rerender is explicit.
+- **Single IR primitive — `Message`.** A user-role Message represents a "tic": the atomic time delta between agent (assistant) responses, accumulating whatever arrived in that window — text, tool_results, chalkboard patches — in any combination. An assistant-role Message is the LLM's response to one tic. No `LogEntry` wrapper; the timeline is `[]Message`.
+- **Tool results as content blocks**, not separate Messages. `ContentToolResult` content type added; `RoleToolResult` retires. One tic Message naturally batches N tool_result blocks for a multi-tool turn — IR shape mirrors wire shape 1:1.
+- **Patches as a field on Message** (`Patches []Patch`), populated for user-role messages whose tic carried chalkboard mutations.
+- **State-only tics** (Patch-only Messages, no Content) are valid IR; emit zero wire output but contribute to the chalkboard snapshot. Bootstrap and rehydrate are state-only tics.
+- **No alternation invariant in IR.** Provider's projection enforces wire alternation per provider's needs.
+- **Agent loop builds an in-progress tic** mutably; finalizes (memStore.Append + send) when ready. Once finalized, the Message is immutable IR.
+- Renderers are pure handlers under **causal masking** — read `self` + prior entries + chalkboard snapshot; never future entries.
+- **Baggage is variadic per provider** with renderer-config fingerprint. Two-layer shape: `Baggage{Entries map[provider]ProviderBaggage{Messages, Fingerprint}}`. Cache is sticky; force-rerender is explicit. Old single-blob shape readable for back-compat.
 - **Compaction omitted by design.** Arias are immutable, append-only.
 - `chalkboard.system.*` reserved namespace for durable per-aria configuration. Mutations only via `figaro.rehydrate` control message.
-- `chalkboard.Store` retires; replaced by `*chalkboard.State` (per-aria value handle).
+- `chalkboard.Store` retires; replaced by `*chalkboard.State` (per-aria value handle). Snapshot returns a copy today; in-code TODO marks future path to immutable / lock-guarded structures.
 - One logical-time counter via `MemStore.AllocLT()`; collisions become impossible.
 - Lazy NDJSON via rewrite-tmp-rename for both `aria.jsonl` and `chalkboard.json`.
 - `Scribe` runs exactly twice per aria: bootstrap and rehydrate. Subsequent turns read `system.prompt` from the chalkboard.
 - Credo `Context` struct trimmed to `{Provider, FigaroID, Version}`; entropic fields removed from template eligibility (`DateTime` removed entirely, supplied by client via chalkboard).
+- `Patch` lives in `internal/message/` canonically; `chalkboard` aliases it.
 
 Six implementation stages, each independently committable:
 
-- **A** — IR types: `LogEntry`, `Block.Entries`, `Patch` moved to `message/`, `Baggage{Messages, Fingerprint}`. Header / Messages-slice deprecated. No storage or projection changes yet.
-- **B** — Storage: NDJSON shape under `arias/{id}/aria.jsonl` + `arias/{id}/chalkboard.json`. Lazy rewrite-tmp-rename. Cold-load migration from legacy layout (one-shot per aria).
-- **C** — Chalkboard `*State`; bootstrap (Scribe-once); `figaro.rehydrate` RPC + `figaro rehydrate [--dry-run]` CLI; `chalkboard.Store` deletion; provider-switching rejected at validation; legacy chalkboard log integration into the unified aria.jsonl during migration.
-- **D** — Projection rewrite: handlers under causal masking; baggage as cache with renderer-config fingerprint; `Provider.Send` takes `(*Block, snapshot, ...)` (no more reminders parameter, no more system-prompt parameter — both come from snapshot).
-- **E** — Skills as structured chalkboard data: `system.skills` (JSON array of `{name, description, path}`); `system.skills_digest` for drift detection; `FormatSkills` moves from Scribe to `internal/provider/anthropic/render_skills.go`; skills emitted as a separate system block at projection time (cache_control attaches to it as the last system element).
-- **F** — Tests, benchmarks, docs: prefix byte-stability extended to bootstrap entries; replay safety; agents.md invariants updated; ARCHITECTURE.md updated for the new layout; CHANGELOG.
+- **A** — Extend `Message` with `Patches []Patch` and the new `Baggage` shape. Move `Patch` to `internal/message/` (chalkboard aliases). Add `ContentToolResult` content type; retire `RoleToolResult` and Message-level `ToolCallID` / `ToolName` scalars. Custom unmarshaling for back-compat read of old Baggage shape. No agent or projection changes yet.
+- **B** — Storage: NDJSON shape under `arias/{id}/aria.jsonl` + `arias/{id}/chalkboard.json`. Lazy rewrite-tmp-rename. Cold-load migration (legacy chalkboard patch log entries become state-only tic Messages interleaved at their `lt` slots).
+- **C** — Chalkboard `*State`; aria bootstrap (Scribe-once → state-only tic); `figaro.rehydrate` RPC + `figaro rehydrate [--dry-run]` CLI; `chalkboard.Store` deletion; provider-switching rejected at validation; **agent loop refactored to in-progress-tic accumulator pattern**.
+- **D** — Projection rewrite: handlers under causal masking; baggage as cache with renderer-config fingerprint; `pendingToolResults` removed (already batched in IR); `Provider.Send` takes `(*Block, snapshot, ...)` (system-prompt + reminders parameters retire — both come from snapshot).
+- **E** — Skills as structured chalkboard data: `system.skills` (JSON array of `{name, description, path}`); `system.skills_digest` for drift detection; `FormatSkills` moves from Scribe to `internal/provider/anthropic/render_skills.go`; skills emitted as a separate system block at projection time.
+- **F** — Tests, benchmarks, docs (agents.md, ARCHITECTURE.md, CHANGELOG).
 
-After landing: the persisted aria contains a faithful record of what the model saw (system reminders included via patch-sidecar baggage); operators can inspect any aria's `system.*` state and skills history via the log; `figaro rehydrate` evolves config in flight without restarting figaros; provider abstraction is genuinely polymorphic over `system.prompt` (any provider can translate it to its own system field, developer-role message, prepended assistant message, etc.).
+After landing: persisted aria contains a faithful record of what the model saw (system-reminder content captured in per-Message baggage; tool_result blocks live on the user-role Messages they belong to); operators can inspect any aria's `system.*` state and skills history via the log; `figaro rehydrate` evolves config in flight without restarting figaros; provider abstraction is polymorphic over `system.prompt` (any provider can translate to its own system field, developer-role message, prepended assistant message); IR/wire mapping is mostly 1:1.
 
 ## 3. Ponder points — **future / scaffold**
 
@@ -58,8 +63,8 @@ Concept: designated breakpoints in the conversation log where the model performs
 Why it lives here as a forward-looking marker:
 
 - Requires causal-masking handlers (delivered by Stage D of unification).
-- Requires per-message baggage cache with renderer-config fingerprinting (delivered by Stage D).
-- Requires sidecar-on-message pattern for the ponder result to attach without forcing a new IR variant (delivered by Stage A).
+- Requires per-Message baggage cache with renderer-config fingerprinting (delivered by Stage A + D).
+- Requires the in-progress-tic / accumulator pattern so a ponder result can ride on the tic that triggered it as a Patch or Content block (delivered by Stage A + C).
 - Requires `system.*` reserved namespace for ponder policy knobs (delivered by Stage C).
 
 The architectural prerequisites are exactly the moves the unification plan makes for unrelated reasons (cache stability, faithful audit, single-typed IR). When ponder points get specified, the IR shape, projection algorithm, and storage layout already support them — the work is mostly handler logic and CLI/policy plumbing.
