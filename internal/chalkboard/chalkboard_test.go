@@ -105,7 +105,7 @@ func TestEntries_DeterministicOrder(t *testing.T) {
 		},
 		Remove: []string{"omega"},
 	}
-	es := p.Entries(prev)
+	es := chalkboard.PatchEntries(p, prev)
 	keys := make([]string, len(es))
 	for i, e := range es {
 		keys[i] = e.Key

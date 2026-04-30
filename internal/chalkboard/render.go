@@ -82,7 +82,7 @@ func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, 
 	if p.IsEmpty() {
 		return nil, nil
 	}
-	entries := p.Entries(prev)
+	entries := PatchEntries(p, prev)
 	out := make([]RenderedEntry, 0, len(entries))
 	for _, e := range entries {
 		t := tmpls.Lookup(e.Key)

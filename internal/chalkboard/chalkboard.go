@@ -16,6 +16,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"sort"
+
+	"github.com/jack-work/figaro/internal/message"
 )
 
 // Snapshot is a full state view: an open-schema key-value map.
@@ -31,16 +33,12 @@ func (s Snapshot) Clone() Snapshot {
 	return out
 }
 
-// Patch is the delta between two snapshots.
-type Patch struct {
-	Set    map[string]json.RawMessage `json:"set,omitempty"`
-	Remove []string                   `json:"remove,omitempty"`
-}
-
-// IsEmpty reports whether the patch makes no changes.
-func (p Patch) IsEmpty() bool {
-	return len(p.Set) == 0 && len(p.Remove) == 0
-}
+// Patch is a re-export of message.Patch so callers within the
+// chalkboard package can refer to the IR delta type by an unqualified
+// local name. Methods defined on message.Patch (IsEmpty) are usable
+// via this alias. Methods that depend on Snapshot — see PatchEntries
+// below — live in this package as package-level functions.
+type Patch = message.Patch
 
 // Diff computes a patch that, when applied to prev, produces s.
 //   - keys present in s with a different value than prev → Set
@@ -145,9 +143,11 @@ func (e Entry) IsRemoval() bool {
 	return e.New == nil
 }
 
-// Entries returns the entries from a patch in stable, deterministic
-// order (sorted by key).
-func (p Patch) Entries(prev Snapshot) []Entry {
+// PatchEntries returns the entries from a patch in stable,
+// deterministic order (sorted by key). Defined as a package-level
+// function rather than a method on Patch because Patch's canonical
+// home is the message package and Snapshot lives here.
+func PatchEntries(p Patch, prev Snapshot) []Entry {
 	keys := make([]string, 0, len(p.Set)+len(p.Remove))
 	for k := range p.Set {
 		keys = append(keys, k)
