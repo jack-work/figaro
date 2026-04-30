@@ -34,29 +34,46 @@ const (
 type ContentType string
 
 const (
-	ContentText     ContentType = "text"
-	ContentImage    ContentType = "image"
-	ContentThinking ContentType = "thinking"
-	ContentToolCall ContentType = "tool_call"
+	ContentText       ContentType = "text"
+	ContentImage      ContentType = "image"
+	ContentThinking   ContentType = "thinking"
+	ContentToolCall   ContentType = "tool_call"   // assistant emits these
+	ContentToolResult ContentType = "tool_result" // user-role tic carries these (one block per tool that completed)
 )
 
 // Content is a single block within a message.
+//
+// The block's Type determines which other fields carry meaningful data:
+//
+//   - text      → Text
+//   - thinking  → Text (the thinking content; signature is provider-side)
+//   - image     → MimeType + Data
+//   - tool_call → ToolCallID + ToolName + Arguments (assistant turn)
+//   - tool_result → ToolCallID + Text (or Image fields) + IsError
+//     (user-role tic; one block per tool that completed since the
+//     last assistant turn)
 type Content struct {
 	Type ContentType `json:"type"`
 
-	// Text content (type == "text" or "thinking")
+	// Text content (type == "text", "thinking", or "tool_result"
+	// when the result is text)
 	Text string `json:"text,omitempty"`
 
-	// Image content (type == "image")
+	// Image content (type == "image", or "tool_result" when the
+	// result is an image)
 	MimeType string `json:"mime_type,omitempty"`
 	Data     string `json:"data,omitempty"` // base64
 
-	// Tool call (type == "tool_call")
+	// Tool identifiers. Used by:
+	//   - tool_call:   ToolCallID + ToolName (and Arguments)
+	//   - tool_result: ToolCallID (matching the tool_call this answers)
+	//                  ToolName is also populated for human-readable logs
 	ToolCallID string                 `json:"tool_call_id,omitempty"`
 	ToolName   string                 `json:"tool_name,omitempty"`
 	Arguments  map[string]interface{} `json:"arguments,omitempty"`
 
-	// Tool result error flag
+	// IsError is set on tool_result blocks when the tool execution
+	// returned an error.
 	IsError bool `json:"is_error,omitempty"`
 }
 
@@ -146,6 +163,26 @@ func ToolCallContent(id, name string, args map[string]interface{}) Content {
 	return Content{
 		Type: ContentToolCall, ToolCallID: id,
 		ToolName: name, Arguments: args,
+	}
+}
+
+// ToolResultContent constructs a tool_result content block. Used by
+// the agent loop to append a tool's result to the in-progress tic.
+// Multiple tool_result blocks can coexist in one user-role Message
+// (one per tool that completed since the last assistant turn).
+//
+// The result data goes into the Text field; for richer payloads
+// (images, structured content) callers can use TextContent / ImageContent
+// in a separate block — but Anthropic's wire shape expects a single
+// text or image inside each tool_result, so this helper keeps it
+// simple.
+func ToolResultContent(toolCallID, toolName, text string, isErr bool) Content {
+	return Content{
+		Type:       ContentToolResult,
+		ToolCallID: toolCallID,
+		ToolName:   toolName,
+		Text:       text,
+		IsError:    isErr,
 	}
 }
 
