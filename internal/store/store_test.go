@@ -61,14 +61,14 @@ func TestFileStore_AppendWritesToDisk(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	ctx := fs2.Context()
-	if ctx == nil || len(ctx.Messages) != 1 {
+	if ctx == nil || len(ctx.Messages()) != 1 {
 		t.Fatalf("expected 1 message after reload, got %v", ctx)
 	}
-	if ctx.Messages[0].Content[0].Text != "hello" {
-		t.Fatalf("wrong text: %s", ctx.Messages[0].Content[0].Text)
+	if ctx.Messages()[0].Content[0].Text != "hello" {
+		t.Fatalf("wrong text: %s", ctx.Messages()[0].Content[0].Text)
 	}
-	if ctx.Messages[0].LogicalTime != 1 {
-		t.Fatalf("wrong lt: %d", ctx.Messages[0].LogicalTime)
+	if ctx.Messages()[0].LogicalTime != 1 {
+		t.Fatalf("wrong lt: %d", ctx.Messages()[0].LogicalTime)
 	}
 }
 
@@ -118,8 +118,8 @@ func TestFileStore_Branch(t *testing.T) {
 	}
 
 	ctx := fs.Context()
-	if len(ctx.Messages) != 1 {
-		t.Fatalf("expected 1 message after branch, got %d", len(ctx.Messages))
+	if len(ctx.Messages()) != 1 {
+		t.Fatalf("expected 1 message after branch, got %d", len(ctx.Messages()))
 	}
 
 	// Verify branch was persisted.
@@ -128,8 +128,8 @@ func TestFileStore_Branch(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	ctx2 := fs2.Context()
-	if len(ctx2.Messages) != 1 {
-		t.Fatalf("expected 1 message after reload, got %d", len(ctx2.Messages))
+	if len(ctx2.Messages()) != 1 {
+		t.Fatalf("expected 1 message after reload, got %d", len(ctx2.Messages()))
 	}
 }
 
@@ -155,11 +155,11 @@ func TestFileStore_Overwrite(t *testing.T) {
 	}
 
 	ctx := fs.Context()
-	if len(ctx.Messages) != 3 {
-		t.Fatalf("expected 3 messages, got %d", len(ctx.Messages))
+	if len(ctx.Messages()) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(ctx.Messages()))
 	}
-	if ctx.Messages[2].Content[0].Text != "gamma" {
-		t.Fatalf("wrong content: %s", ctx.Messages[2].Content[0].Text)
+	if ctx.Messages()[2].Content[0].Text != "gamma" {
+		t.Fatalf("wrong content: %s", ctx.Messages()[2].Content[0].Text)
 	}
 
 	// Reload — should see the overwritten data.
@@ -168,8 +168,8 @@ func TestFileStore_Overwrite(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	ctx2 := fs2.Context()
-	if len(ctx2.Messages) != 3 {
-		t.Fatalf("expected 3 messages after reload, got %d", len(ctx2.Messages))
+	if len(ctx2.Messages()) != 3 {
+		t.Fatalf("expected 3 messages after reload, got %d", len(ctx2.Messages()))
 	}
 }
 
@@ -232,7 +232,7 @@ func TestMemStore_Standalone(t *testing.T) {
 	}
 
 	ctx := s.Context()
-	if ctx == nil || len(ctx.Messages) != 1 {
+	if ctx == nil || len(ctx.Messages()) != 1 {
 		t.Fatalf("expected 1 message")
 	}
 
@@ -284,13 +284,13 @@ func TestMemStore_FlushToFileStore(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	ctx := fs2.Context()
-	if ctx == nil || len(ctx.Messages) != 3 {
+	if ctx == nil || len(ctx.Messages()) != 3 {
 		t.Fatalf("expected 3 messages on disk, got %v", ctx)
 	}
 
 	// Memory still has all 3.
 	memCtx := ms.Context()
-	if len(memCtx.Messages) != 3 {
+	if len(memCtx.Messages()) != 3 {
 		t.Fatalf("memory should still have 3 messages")
 	}
 }
@@ -315,11 +315,11 @@ func TestMemStore_SeedFromFileStore(t *testing.T) {
 	ms := NewMemStoreWith(fs2)
 
 	ctx := ms.Context()
-	if ctx == nil || len(ctx.Messages) != 2 {
+	if ctx == nil || len(ctx.Messages()) != 2 {
 		t.Fatalf("expected 2 seeded messages, got %v", ctx)
 	}
-	if ctx.Messages[0].Content[0].Text != "old msg" {
-		t.Fatalf("wrong seeded content: %s", ctx.Messages[0].Content[0].Text)
+	if ctx.Messages()[0].Content[0].Text != "old msg" {
+		t.Fatalf("wrong seeded content: %s", ctx.Messages()[0].Content[0].Text)
 	}
 
 	// Next append should continue logical time.
@@ -386,7 +386,7 @@ func TestMemStore_CloseFlushes(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	ctx := fs2.Context()
-	if ctx == nil || len(ctx.Messages) != 1 {
+	if ctx == nil || len(ctx.Messages()) != 1 {
 		t.Fatalf("expected 1 message after close+reload")
 	}
 }
@@ -416,8 +416,8 @@ func TestMemStore_MultipleFlushesOverwrite(t *testing.T) {
 		t.Fatalf("reload: %v", err)
 	}
 	ctx := fs2.Context()
-	if len(ctx.Messages) != 3 {
-		t.Fatalf("expected 3 messages, got %d", len(ctx.Messages))
+	if len(ctx.Messages()) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(ctx.Messages()))
 	}
 }
 

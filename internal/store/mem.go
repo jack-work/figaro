@@ -59,7 +59,7 @@ func (s *MemStore) Context() *message.Block {
 	}
 	msgs := make([]message.Message, len(s.messages))
 	copy(msgs, s.messages)
-	return &message.Block{Messages: msgs}
+	return message.NewBlockOfMessages(msgs)
 }
 
 func (s *MemStore) Append(msg message.Message) (uint64, error) {

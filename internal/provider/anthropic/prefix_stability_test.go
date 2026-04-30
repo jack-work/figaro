@@ -35,12 +35,10 @@ func TestPrefixByteStability_AcrossTurnsWithChalkboardMutation(t *testing.T) {
 	// reminders, return its JSON-marshaled prefix bytes.
 	prefixBytes := func(messages []message.Message, reminders []chalkboard.RenderedEntry) ([]byte, *nativeRequest) {
 		t.Helper()
-		block := &message.Block{
-			Header: &message.Message{
-				Role:    message.RoleSystem,
-				Content: []message.Content{message.TextContent("you are figaro, brief and helpful")},
-			},
-			Messages: messages,
+		block := message.NewBlockOfMessages(messages)
+		block.Header = &message.Message{
+			Role:    message.RoleSystem,
+			Content: []message.Content{message.TextContent("you are figaro, brief and helpful")},
 		}
 		tools := []provider.Tool{
 			{Name: "bash", Description: "shell", Parameters: map[string]interface{}{"type": "object"}},
@@ -133,10 +131,13 @@ func TestPrefixByteStability_RemindersDoNotAffectPrefix(t *testing.T) {
 			Role:    message.RoleSystem,
 			Content: []message.Content{message.TextContent("credo")},
 		},
-		Messages: []message.Message{
-			{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
-			{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("hi")}},
-			{Role: message.RoleUser, Content: []message.Content{message.TextContent("again")}},
+		Entries: []message.LogEntry{
+
+			{Message: &message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}}},
+
+			{Message: &message.Message{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("hi")}}},
+
+			{Message: &message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("again")}}},
 		},
 	}
 	tools := []provider.Tool{

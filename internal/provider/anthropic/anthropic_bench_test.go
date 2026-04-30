@@ -30,13 +30,12 @@ func benchBlock(nMessages int) *message.Block {
 			Content: []message.Content{message.TextContent("turn body number " + itoa(i))},
 		}
 	}
-	return &message.Block{
-		Header: &message.Message{
-			Role:    message.RoleSystem,
-			Content: []message.Content{message.TextContent("you are figaro")},
-		},
-		Messages: msgs,
+	block := message.NewBlockOfMessages(msgs)
+	block.Header = &message.Message{
+		Role:    message.RoleSystem,
+		Content: []message.Content{message.TextContent("you are figaro")},
 	}
+	return block
 }
 
 func benchTools() []provider.Tool {
