@@ -184,11 +184,12 @@ func runAngelus() {
 		Backend:    backend,
 	})
 
-	// Build the chalkboard plumbing: per-aria store rooted under the
-	// state dir, plus the embedded default body templates. Failures here
-	// are non-fatal — the angelus runs without chalkboard if either
-	// fails, with a warning to the log.
-	cbStore, cbTmpls := buildChalkboard(logger)
+	// Build the chalkboard plumbing: the embedded default body templates
+	// (plus any user overrides). Per-aria State handles are opened by
+	// the protocol handlers under arias/{id}/chalkboard.json — see
+	// protocol.go. Failure here is non-fatal — the angelus runs
+	// without chalkboard, with a warning to the log.
+	cbTmpls := buildChalkboard(logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -196,9 +197,8 @@ func runAngelus() {
 	handlers := angelus.NewHandlers(angelus.ServerConfig{
 		Angelus:             a,
 		Config:              loaded,
-		ProviderFactory:     buildProviderFactory(loaded),
+		ProviderFactory:     buildProviderFactory(loaded, cbTmpls),
 		Ctx:                 ctx,
-		Chalkboard:          cbStore,
 		ChalkboardTemplates: cbTmpls,
 	})
 	a.Handlers = handlers.Map
@@ -1074,7 +1074,7 @@ func toolDetail(p rpc.ToolStartParams) string {
 
 // --- Provider construction (used by angelus and models) ---
 
-func buildProviderFactory(loaded *config.Loaded) angelus.ProviderFactory {
+func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template) angelus.ProviderFactory {
 	return func(providerName, model string) (providerPkg.Provider, error) {
 		switch providerName {
 		case "anthropic":
@@ -1089,7 +1089,12 @@ func buildProviderFactory(loaded *config.Loaded) angelus.ProviderFactory {
 			}
 			authPath := loaded.ProviderAuthPath(providerName)
 			h := mustHush()
-			return anthropic.New(acfg, authPath, h.Client())
+			a, err := anthropic.New(acfg, authPath, h.Client())
+			if err != nil {
+				return nil, err
+			}
+			a.Templates = cbTmpls
+			return a, nil
 		default:
 			return nil, fmt.Errorf("unknown provider: %q", providerName)
 		}
@@ -1217,25 +1222,19 @@ func buildPromptChalkboard() *rpc.ChalkboardInput {
 	return &rpc.ChalkboardInput{Context: snap}
 }
 
-// buildChalkboard wires up the per-aria chalkboard store (under
-// ~/.local/state/figaro/chalkboards/) and loads the embedded default
-// body templates plus any user overrides from
-// ~/.config/figaro/chalkboard/. Returns nils with a logged warning if
-// either step fails — the angelus continues to function without
-// chalkboard, just without state-driven reminders.
-func buildChalkboard(logger *log.Logger) (chalkboard.Store, *template.Template) {
-	home, _ := os.UserHomeDir()
-	stateRoot := filepath.Join(home, ".local", "state", "figaro", "chalkboards")
-	store, err := chalkboard.NewFileStore(stateRoot)
-	if err != nil {
-		logger.Printf("warning: chalkboard store init failed: %v (chalkboard disabled)", err)
-		return nil, nil
-	}
+// buildChalkboard loads the embedded default body templates plus any
+// user overrides from ~/.config/figaro/chalkboard/. Returns nil with a
+// logged warning if loading fails — the angelus continues to function
+// without chalkboard, just without state-driven reminders. Per-aria
+// chalkboard.State handles are opened by the protocol handlers, not
+// here.
+func buildChalkboard(logger *log.Logger) *template.Template {
 	tmpls, err := chalkboard.LoadDefaultTemplates()
 	if err != nil {
 		logger.Printf("warning: chalkboard templates load failed: %v (chalkboard disabled)", err)
-		return nil, nil
+		return nil
 	}
+	home, _ := os.UserHomeDir()
 	overrideDir := filepath.Join(home, ".config", "figaro", "chalkboard")
 	if _, err := os.Stat(overrideDir); err == nil {
 		if t, err := chalkboard.LoadOverrideTemplates(tmpls, overrideDir); err == nil {
@@ -1244,7 +1243,7 @@ func buildChalkboard(logger *log.Logger) (chalkboard.Store, *template.Template) 
 			logger.Printf("warning: chalkboard override templates failed: %v (using defaults only)", err)
 		}
 	}
-	return store, tmpls
+	return tmpls
 }
 
 func mustOpenLog() (*log.Logger, *os.File) {

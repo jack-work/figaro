@@ -82,9 +82,11 @@ type Config struct {
 	LogDir     string         // directory for per-figaro JSONL event log (empty = no logging)
 	Backend    store.Backend  // aria persistence (nil = ephemeral)
 
-	// Chalkboard plumbing. Optional — nil = no chalkboard processing,
-	// patches and snapshots are not persisted, no reminders are rendered.
-	Chalkboard          chalkboard.Store
+	// Chalkboard plumbing. Optional — nil = no chalkboard processing.
+	// Caller (angelus for persistent arias; nil for ephemeral) owns
+	// construction by calling chalkboard.Open at the right path; the
+	// Agent calls Close on Kill.
+	Chalkboard          *chalkboard.State
 	ChalkboardTemplates *template.Template
 }
 
@@ -106,15 +108,18 @@ type Agent struct {
 	memStore   *store.MemStore
 	backend    store.Backend // nil = ephemeral
 
-	// Chalkboard. Optional. cb is the persisted-state store, cbTmpls
-	// renders patches to bodies, cbSnap is the in-memory current
-	// snapshot (saved at endTurn). cbTurnReminders holds the rendered
-	// entries for the current turn — populated by applyChalkboardInput,
-	// passed to startLLMStream, cleared at endTurn.
-	cb              chalkboard.Store
-	cbTmpls         *template.Template
-	cbSnap          chalkboard.Snapshot
-	cbTurnReminders []chalkboard.RenderedEntry
+	// Chalkboard. Optional. *chalkboard.State owns the in-memory
+	// snapshot AND the on-disk cache file. cbTmpls renders patches
+	// to system-reminder bodies. The agent's drain loop is the only
+	// goroutine that touches these fields; no locking needed.
+	chalkboard *chalkboard.State
+	cbTmpls    *template.Template
+
+	// inProgressTic is a mutable user-role Message accumulated
+	// between LLM sends. Built up by eventUserPrompt and
+	// eventToolResult; finalized (memStore.Append + send) when
+	// ready. Nil between turns.
+	inProgressTic *message.Message
 
 	// Actor inbox — priority mailbox with selfish/patient queues.
 	inbox *Inbox
@@ -171,7 +176,7 @@ func NewAgent(cfg Config) *Agent {
 		maxTokens:   cfg.MaxTokens,
 		tools:       cfg.Tools,
 		backend:     cfg.Backend,
-		cb:          cfg.Chalkboard,
+		chalkboard:  cfg.Chalkboard,
 		cbTmpls:     cfg.ChalkboardTemplates,
 		inbox:       NewInbox(ctx),
 		subscribers: make(map[chan rpc.Notification]struct{}),
@@ -188,17 +193,6 @@ func NewAgent(cfg Config) *Agent {
 	// Seed cumulative token counters from persisted Usage so restored
 	// arias don't start over at zero.
 	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(a.memStore.Context())
-
-	// Load the chalkboard's current snapshot if a store is configured.
-	// Failures fall back to an empty snapshot so the agent still runs.
-	if a.cb != nil {
-		if snap, err := a.cb.Snapshot(a.id); err == nil {
-			a.cbSnap = snap
-		} else {
-			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard snapshot load: %v (starting empty)\n", a.id, err)
-			a.cbSnap = chalkboard.Snapshot{}
-		}
-	}
 
 	// Open per-figaro event log.
 	if cfg.LogDir != "" {
@@ -382,6 +376,13 @@ func (a *Agent) Kill() {
 		fmt.Fprintf(os.Stderr, "figaro %s: store close error: %v\n", a.id, err)
 	}
 
+	// Flush the chalkboard snapshot to its on-disk cache.
+	if a.chalkboard != nil {
+		if err := a.chalkboard.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard close error: %v\n", a.id, err)
+		}
+	}
+
 	if a.logFile != nil {
 		a.logFile.Close()
 	}
@@ -527,13 +528,12 @@ func (a *Agent) drainLoop(ctx context.Context) {
 
 			fmt.Fprintf(os.Stderr, "agent: event=UserPrompt text=%q\n", truncLog(evt.text, 60))
 
-			// Apply chalkboard input from the request, if any. The
-			// resulting patch is persisted to the chalkboard log; the
-			// in-memory snapshot advances. (Rendering and provider
-			// integration land in Stage 4.)
+			// Apply chalkboard input — patch attaches to the in-progress tic.
 			a.applyChalkboardInput(evt.chalkboard)
 
-			// Build system prompt from scribe (re-templated on each prompt).
+			// Build system prompt from scribe (re-templated on each prompt
+			// for now; C.4 moves this to chalkboard.system.prompt set at
+			// bootstrap so Scribe runs only once per aria's lifetime).
 			a.systemPrompt = ""
 			if a.scribe != nil {
 				credoCtx := credo.CurrentContext(a.cwd, a.root, a.prov.Name(), a.model, a.id, "")
@@ -544,32 +544,11 @@ func (a *Agent) drainLoop(ctx context.Context) {
 				}
 			}
 
-			// Append user message to store.
-			userMsg := message.Message{
-				Role:      message.RoleUser,
-				Content:   []message.Content{message.TextContent(evt.text)},
-				Timestamp: time.Now().UnixMilli(),
-			}
-			lt, err := a.memStore.Append(userMsg)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "figaro %s: append user message: %v\n", a.id, err)
-				a.fanOut(rpc.Notification{
-					JSONRPC: "2.0",
-					Method:  rpc.MethodError,
-					Params:  rpc.ErrorParams{Message: fmt.Sprintf("append user message: %s", err)},
-				})
-				a.endTurn("error: append user message")
-				continue
-			}
-			userMsg.LogicalTime = lt
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodMessage,
-				Params:  rpc.MessageParams{LogicalTime: lt, Message: userMsg},
-			})
-
-			// Start LLM streaming.
-			a.startLLMStream(a.turnCtx, inbox)
+			// Build/extend the in-progress tic with the user's text content,
+			// then finalize and send.
+			a.ensureInProgressTic()
+			a.inProgressTic.Content = append(a.inProgressTic.Content, message.TextContent(evt.text))
+			a.finalizeAndSend(inbox)
 
 		case eventLLMDelta:
 			if a.interrupted {
@@ -703,22 +682,13 @@ func (a *Agent) drainLoop(ctx context.Context) {
 				},
 			})
 
-			// Append tool result to store.
-			resultMsg := message.NewToolResult(
-				evt.toolCallID, evt.toolName,
-				evt.content,
-				evt.isErr, 0, time.Now().UnixMilli(),
-			)
-			lt, err := a.memStore.Append(resultMsg)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "figaro %s: append tool result: %v\n", a.id, err)
-			}
-			resultMsg.LogicalTime = lt
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodMessage,
-				Params:  rpc.MessageParams{LogicalTime: lt, Message: resultMsg},
-			})
+			// Append a ContentToolResult block to the in-progress tic.
+			// All tool results from one assistant turn accumulate into
+			// a single user-role Message; we append it to memStore at
+			// finalizeAndSend (when pendingTools hits zero).
+			a.ensureInProgressTic()
+			a.inProgressTic.Content = append(a.inProgressTic.Content,
+				message.ToolResultContent(evt.toolCallID, evt.toolName, resultText, evt.isErr))
 
 			a.pendingTools--
 
@@ -737,8 +707,10 @@ func (a *Agent) drainLoop(ctx context.Context) {
 				})
 				go a.runToolAsync(a.turnCtx, inbox, tc)
 			} else if a.pendingTools == 0 {
-				// All tools done — send results back to LLM.
-				a.startLLMStream(a.turnCtx, a.inbox)
+				// All tools done — finalize the tic (one Message
+				// containing all tool_result blocks) and send the
+				// updated context back to the LLM.
+				a.finalizeAndSend(a.inbox)
 			}
 
 		case eventInterrupt:
@@ -816,10 +788,9 @@ func (a *Agent) endTurn(reason string) {
 	}
 
 	// Persist the chalkboard snapshot at the same lifecycle point as
-	// MemStore.Flush. The patch log was already appended at prompt-time;
-	// this is a fast-path cache for cold loads.
-	if a.cb != nil {
-		if err := a.cb.SaveSnapshot(a.id, a.cbSnap); err != nil {
+	// MemStore.Flush.
+	if a.chalkboard != nil {
+		if err := a.chalkboard.Save(); err != nil {
 			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard snapshot save: %v\n", a.id, err)
 		}
 	}
@@ -828,7 +799,7 @@ func (a *Agent) endTurn(reason string) {
 	a.pendingTools = 0
 	a.pendingToolCalls = nil
 	a.systemPrompt = ""
-	a.cbTurnReminders = nil
+	a.inProgressTic = nil
 
 	// Release next patient message (or mark as idle).
 	a.inbox.Yield()
@@ -851,8 +822,8 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context, %d reminders\n", len(block.Messages), len(a.cbTurnReminders))
-	ch, err := a.prov.Send(ctx, block, a.toolDefs(), a.cbTurnReminders, a.maxTokens)
+	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context\n", len(block.Messages))
+	ch, err := a.prov.Send(ctx, block, a.toolDefs(), a.maxTokens)
 	if err != nil {
 		inbox.SendSelfish(event{typ: eventLLMError, err: fmt.Errorf("provider send: %w", err)})
 		return
@@ -968,40 +939,44 @@ func truncLog(s string, n int) string {
 }
 
 // applyChalkboardInput merges the client's chalkboard input with the
-// persisted snapshot, appends the resulting patch to the log, and
-// advances the in-memory snapshot. No-op if no chalkboard store is
-// configured. Errors are logged but do not abort the prompt — chalkboard
-// is supplemental to, not gating, the conversation.
+// persisted snapshot, attaches the resulting patch to the in-progress
+// tic, and advances the in-memory chalkboard.State. No-op if no
+// chalkboard.State is configured (ephemeral mode) or no input.
 //
 // Wire-protocol semantics:
 //   - patch only           → apply patch directly
 //   - context only         → diff context vs current, apply diff
 //   - context + patch      → apply diff(context, current), then patch on top
 //   - neither              → no-op
+//
+// The patch is attached to the in-progress tic (creating one if
+// needed). When that tic is finalized via finalizeAndSend, the patch
+// rides with it as part of the same Message — the IR record of "this
+// turn brought these state changes."
 func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
-	if a.cb == nil || input == nil {
+	if a.chalkboard == nil || input == nil {
 		return
 	}
 
 	// Convert wire-shape patch (rpc.ChalkboardPatch) to chalkboard.Patch.
-	// They're isomorphic; the duplicate type lives at the rpc layer to
-	// keep the leaf-package import graph clean.
 	var clientPatch chalkboard.Patch
 	if input.Patch != nil {
 		clientPatch = chalkboard.Patch{Set: input.Patch.Set, Remove: input.Patch.Remove}
 	}
+
+	snap := a.chalkboard.Snapshot()
 
 	var combined chalkboard.Patch
 	switch {
 	case input.Context != nil && input.Patch != nil:
 		// Drift-detection: diff context vs persisted; apply patch on top.
 		ctx := chalkboard.Snapshot(input.Context)
-		drift := ctx.Diff(a.cbSnap)
+		drift := ctx.Diff(snap)
 		combined = chalkboard.Merge(drift, clientPatch)
 	case input.Context != nil:
 		// Context-only: server diffs and applies.
 		ctx := chalkboard.Snapshot(input.Context)
-		combined = ctx.Diff(a.cbSnap)
+		combined = ctx.Diff(snap)
 	case input.Patch != nil:
 		// Patch-only: apply directly.
 		combined = clientPatch
@@ -1011,35 +986,57 @@ func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
 		return
 	}
 
-	// Capture the prior snapshot for templating before we advance.
-	priorSnap := a.cbSnap
-	if priorSnap == nil {
-		priorSnap = chalkboard.Snapshot{}
-	}
+	// Attach to the in-progress tic.
+	a.ensureInProgressTic()
+	a.inProgressTic.Patches = append(a.inProgressTic.Patches, combined)
 
-	// Persist patch at the next available logical time. We use the
-	// message store's leaf time + 1 so the chalkboard log shares the
-	// monotonic time space with the conversation log.
-	lt := a.memStore.LeafTime() + 1
-	if err := a.cb.Append(a.id, lt, combined); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: chalkboard append: %v\n", a.id, err)
-		return
-	}
+	// Advance the chalkboard's in-memory snapshot. (Persisted to disk
+	// at endTurn via chalkboard.Save.)
+	a.chalkboard.Apply(combined)
+}
 
-	// Advance in-memory snapshot.
-	a.cbSnap = priorSnap.Apply(combined)
-
-	// Render reminder bodies for this turn. Templates that don't match
-	// any key produce no entries (silent skip). Errors are logged and
-	// the turn proceeds without those reminders.
-	if a.cbTmpls != nil {
-		rendered, err := chalkboard.Render(combined, priorSnap, a.cbTmpls)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard render: %v\n", a.id, err)
-		} else {
-			a.cbTurnReminders = rendered
+// ensureInProgressTic guarantees that a.inProgressTic is non-nil and
+// ready to accumulate Content blocks and Patches. Called by both the
+// user-prompt and tool-result paths. The tic is finalized by
+// finalizeAndSend.
+func (a *Agent) ensureInProgressTic() {
+	if a.inProgressTic == nil {
+		a.inProgressTic = &message.Message{
+			Role:      message.RoleUser,
+			Timestamp: time.Now().UnixMilli(),
 		}
 	}
+}
+
+// finalizeAndSend appends the in-progress tic to the memStore (which
+// allocates its LogicalTime) and starts the LLM stream. Clears
+// inProgressTic. No-op if inProgressTic is nil.
+func (a *Agent) finalizeAndSend(inbox *Inbox) {
+	if a.inProgressTic == nil {
+		return
+	}
+	tic := *a.inProgressTic
+	a.inProgressTic = nil
+
+	lt, err := a.memStore.Append(tic)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "figaro %s: append tic: %v\n", a.id, err)
+		a.fanOut(rpc.Notification{
+			JSONRPC: "2.0",
+			Method:  rpc.MethodError,
+			Params:  rpc.ErrorParams{Message: fmt.Sprintf("append tic: %s", err)},
+		})
+		a.endTurn("error: append tic")
+		return
+	}
+	tic.LogicalTime = lt
+	a.fanOut(rpc.Notification{
+		JSONRPC: "2.0",
+		Method:  rpc.MethodMessage,
+		Params:  rpc.MessageParams{LogicalTime: lt, Message: tic},
+	})
+
+	a.startLLMStream(a.turnCtx, inbox)
 }
 
 // sumUsage totals InputTokens / OutputTokens / CacheReadTokens /

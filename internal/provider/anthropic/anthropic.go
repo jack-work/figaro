@@ -16,6 +16,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/jack-work/figaro/internal/auth"
@@ -41,6 +42,11 @@ type Anthropic struct {
 	MaxTokens        int
 	HTTPClient       *http.Client
 	ReminderRenderer string // "tag" (default) or "tool"
+
+	// Templates is the chalkboard body-template set used to render
+	// per-message Patches as system-reminder content blocks. Optional;
+	// nil means patches are dropped (no reminder content emitted).
+	Templates *template.Template
 }
 
 // New creates an Anthropic provider from the config section.
@@ -282,19 +288,24 @@ func markCacheBreakpoints(req *nativeRequest) {
 	}
 }
 
+// projectMessages converts the IR message stream to the wire shape.
+// Patches on user-role Messages are rendered inline as system-reminder
+// content blocks via the configured ReminderRenderer (Stage C, log
+// unification). Tool results are carried as ContentToolResult blocks
+// within the user-role tic that accumulated them.
 func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 	var result []nativeMessage
-	var pendingToolResults []nativeBlock
-
-	flushToolResults := func() {
-		if len(pendingToolResults) == 0 {
-			return
-		}
-		result = append(result, nativeMessage{Role: "user", Content: pendingToolResults})
-		pendingToolResults = nil
-	}
+	prevSnap := chalkboard.Snapshot{}
 
 	for _, msg := range msgs {
+		// Track running snapshot for reminder rendering's "old" field,
+		// even on cache-hit paths where we use baggage verbatim.
+		applyPatches := func() {
+			for _, p := range msg.Patches {
+				prevSnap = prevSnap.Apply(p)
+			}
+		}
+
 		// Try baggage first. The cache hit path expects exactly one
 		// wire message per Message for now (the typical case);
 		// variadic baggage (multiple wire messages per Message) is
@@ -302,19 +313,14 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 		if pb, ok := msg.Baggage.Get(providerName); ok && len(pb.Messages) > 0 {
 			var cached nativeMessage
 			if err := json.Unmarshal(pb.Messages[0], &cached); err == nil {
-				if msg.Role == message.RoleToolResult {
-					pendingToolResults = append(pendingToolResults, cached.Content...)
-					continue
-				}
-				flushToolResults()
 				result = append(result, cached)
+				applyPatches()
 				continue
 			}
 		}
 
 		switch msg.Role {
 		case message.RoleUser:
-			flushToolResults()
 			var blocks []nativeBlock
 			for _, c := range msg.Content {
 				switch c.Type {
@@ -327,14 +333,27 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 							"type": "base64", "media_type": c.MimeType, "data": c.Data,
 						},
 					})
+				case message.ContentToolResult:
+					text := c.Text
+					if text == "" {
+						text = "(empty)"
+					}
+					blocks = append(blocks, nativeBlock{
+						Type: "tool_result", ToolUseID: c.ToolCallID,
+						IsError: c.IsError,
+						Content: []nativeBlock{{Type: "text", Text: text}},
+					})
 				}
 			}
+			// Render Patches as system-reminder content blocks on the
+			// same user-role wire message. Renderer choice is shared
+			// across all messages in the stream.
+			blocks = append(blocks, a.renderPatchBlocks(msg.Patches, &prevSnap)...)
 			if len(blocks) > 0 {
 				result = append(result, nativeMessage{Role: "user", Content: blocks})
 			}
 
 		case message.RoleAssistant:
-			flushToolResults()
 			var blocks []nativeBlock
 			for _, c := range msg.Content {
 				switch c.Type {
@@ -352,42 +371,56 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 				result = append(result, nativeMessage{Role: "assistant", Content: blocks})
 			}
 
-		case message.RoleToolResult:
-			var contentBlocks []nativeBlock
-			for _, c := range msg.Content {
-				switch c.Type {
-				case message.ContentImage:
-					contentBlocks = append(contentBlocks, nativeBlock{
-						Type: "image",
-						Source: map[string]interface{}{
-							"type": "base64", "media_type": c.MimeType, "data": c.Data,
-						},
-					})
-				default:
-					text := c.Text
-					if text == "" {
-						text = "(empty)"
-					}
-					contentBlocks = append(contentBlocks, nativeBlock{Type: "text", Text: text})
-				}
-			}
-			if len(contentBlocks) == 0 {
-				contentBlocks = []nativeBlock{{Type: "text", Text: "(empty)"}}
-			}
-			pendingToolResults = append(pendingToolResults, nativeBlock{
-				Type: "tool_result", ToolUseID: msg.ToolCallID,
-				IsError: len(msg.Content) > 0 && msg.Content[0].IsError,
-				Content: contentBlocks,
-			})
-
 		case message.RoleSystem:
 			// System messages from compacted headers are handled
 			// at the block level, not per-message.
 			continue
 		}
 	}
-	flushToolResults()
 	return result
+}
+
+// renderPatchBlocks renders the given patches as system-reminder content
+// blocks using the configured renderer. Advances prevSnap in step. The
+// "tool" renderer is not legal inline (it injects synthetic
+// assistant/user pairs which would break alternation here); on that
+// setting we fall back to "tag" with a one-time warning per Send.
+func (a *Anthropic) renderPatchBlocks(patches []message.Patch, prevSnap *chalkboard.Snapshot) []nativeBlock {
+	if len(patches) == 0 || a.Templates == nil {
+		for _, p := range patches {
+			*prevSnap = prevSnap.Apply(p)
+		}
+		return nil
+	}
+	if a.ReminderRenderer == "tool" {
+		log("warning: reminder_renderer=tool not supported inline; using tag")
+	}
+	var out []nativeBlock
+	for _, p := range patches {
+		rendered, err := chalkboard.Render(p, *prevSnap, a.Templates)
+		if err != nil {
+			log("warning: render patch: %v", err)
+		} else {
+			for _, r := range rendered {
+				text := fmt.Sprintf("<system-reminder name=\"%s\">\n%s\n</system-reminder>",
+					escapeAttr(r.Key), r.Body)
+				out = append(out, nativeBlock{Type: "text", Text: text})
+			}
+		}
+		*prevSnap = prevSnap.Apply(p)
+	}
+	return out
+}
+
+// escapeAttr escapes a string for safe use as an XML-attribute value
+// inside a <system-reminder name="…"> tag. We only need the minimal
+// XML attribute escaping (quote and ampersand); chalkboard keys are
+// expected to be simple identifiers anyway.
+func escapeAttr(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, `"`, "&quot;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	return s
 }
 
 func projectTools(tools []provider.Tool) []nativeTool {
@@ -400,7 +433,7 @@ func projectTools(tools []provider.Tool) []nativeTool {
 
 // --- Send: IR Block → stream → IR Messages with baggage ---
 
-func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []provider.Tool, reminders []chalkboard.RenderedEntry, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
 	}
@@ -420,8 +453,6 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []prov
 	}
 
 	native := a.projectBlockWithModel(block, tools, maxTokens, isOAuthToken(apiKey), model)
-	// Apply the configured reminder renderer (default: tag).
-	a.applyRenderer(&native, reminders)
 	body, err := json.Marshal(native)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)

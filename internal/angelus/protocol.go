@@ -32,10 +32,11 @@ type ServerConfig struct {
 	ProviderFactory ProviderFactory
 	Ctx             context.Context
 
-	// Chalkboard plumbing — optional. If set, every figaro this server
-	// creates (or restores) gets the same store and templates injected
-	// into its Config. nil = no chalkboard processing.
-	Chalkboard          chalkboard.Store
+	// ChalkboardTemplates is the shared body-template set used by
+	// providers to render per-message Patches as system reminders.
+	// Optional — nil disables chalkboard reminder rendering. Per-aria
+	// chalkboard.State handles are opened by the create / RestoreArias
+	// handlers under arias/{id}/chalkboard.json, alongside aria.jsonl.
 	ChalkboardTemplates *template.Template
 }
 
@@ -53,7 +54,6 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		config:  cfg.Config,
 		factory: cfg.ProviderFactory,
 		ctx:     cfg.Ctx,
-		cb:      cfg.Chalkboard,
 		cbTmpls: cfg.ChalkboardTemplates,
 	}
 	return &Handlers{
@@ -88,8 +88,29 @@ type handlers struct {
 	config  *config.Loaded
 	factory ProviderFactory
 	ctx     context.Context
-	cb      chalkboard.Store
 	cbTmpls *template.Template
+}
+
+// openAriaChalkboard returns a *chalkboard.State at
+// arias/{ariaID}/chalkboard.json (sibling to aria.jsonl). Returns nil
+// when the angelus has no FileBackend (chalkboard persistence is
+// FileBackend-specific) or the open fails — in either case the agent
+// runs without a chalkboard and a warning is logged.
+func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
+	if h.cbTmpls == nil {
+		return nil
+	}
+	fb, ok := h.angelus.Backend.(interface{ Dir() string })
+	if !ok {
+		return nil
+	}
+	path := filepath.Join(fb.Dir(), ariaID, "chalkboard.json")
+	st, err := chalkboard.Open(path)
+	if err != nil {
+		h.angelus.Logger.Printf("warning: chalkboard open %s: %v (chalkboard disabled for this aria)", path, err)
+		return nil
+	}
+	return st
 }
 
 func (h *handlers) create(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -127,11 +148,12 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		backend = nil
 	}
 
-	// Ephemeral figaros also skip the chalkboard — no persistence path
-	// makes sense for a transient prompt.
-	cbStore := h.cb
-	if req.Ephemeral {
-		cbStore = nil
+	// Ephemeral figaros skip the chalkboard — no persistence path makes
+	// sense for a transient prompt. Persistent figaros open a per-aria
+	// chalkboard.State at arias/{id}/chalkboard.json.
+	var cbState *chalkboard.State
+	if !req.Ephemeral {
+		cbState = h.openAriaChalkboard(id)
 	}
 
 	agent := figaro.NewAgent(figaro.Config{
@@ -146,7 +168,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		Tools:               tool.DefaultRegistry(cwd),
 		LogDir:              logDir,
 		Backend:             backend,
-		Chalkboard:          cbStore,
+		Chalkboard:          cbState,
 		ChalkboardTemplates: h.cbTmpls,
 	})
 
@@ -333,7 +355,7 @@ func (h *handlers) RestoreArias(ctx context.Context) {
 			Tools:               tool.DefaultRegistry(cwd),
 			LogDir:              logDir,
 			Backend:             h.angelus.Backend,
-			Chalkboard:          h.cb,
+			Chalkboard:          h.openAriaChalkboard(aria.ID),
 			ChalkboardTemplates: h.cbTmpls,
 		})
 

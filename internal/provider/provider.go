@@ -4,7 +4,6 @@ package provider
 import (
 	"context"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -47,8 +46,8 @@ type Provider interface {
 	SetModel(model string)
 
 	// Send streams a conversation to the provider and returns response
-	// events. Reminders is the harness's pre-rendered chalkboard
-	// updates for this turn — each provider chooses how to surface them
-	// per its own configuration. nil/empty = no reminders this turn.
-	Send(ctx context.Context, block *message.Block, tools []Tool, reminders []chalkboard.RenderedEntry, maxTokens int) (<-chan StreamEvent, error)
+	// events. The provider reads chalkboard patches directly from the
+	// per-message Patches field and renders them inline as system
+	// reminders per its own configuration.
+	Send(ctx context.Context, block *message.Block, tools []Tool, maxTokens int) (<-chan StreamEvent, error)
 }

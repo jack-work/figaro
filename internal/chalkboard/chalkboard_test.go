@@ -2,6 +2,7 @@ package chalkboard_test
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -246,5 +247,5 @@ func TestLint_CleanBody(t *testing.T) {
 
 // helper
 func writeFile(path, body string) error {
-	return writeFileTrunc(path, []byte(body))
+	return os.WriteFile(path, []byte(body), 0o600)
 }

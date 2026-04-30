@@ -3,15 +3,12 @@ package anthropic
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
 // Benchmark the projection hot path. projectBlockWithModel is called
-// once per Send; markCacheBreakpoints is called inside it; applyRenderer
-// is called immediately after on the Send path. We measure each
-// component separately and the combined cost.
+// once per Send.
 
 func benchBlock(nMessages int) *message.Block {
 	msgs := make([]message.Message, nMessages)
@@ -65,46 +62,6 @@ func BenchmarkProjectBlock_100msgs(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = a.projectBlockWithModel(block, tools, 1024, false, "claude-test")
-	}
-}
-
-func BenchmarkApplyRenderer_Tag_5reminders(b *testing.B) {
-	a := &Anthropic{ReminderRenderer: "tag"}
-	reminders := []chalkboard.RenderedEntry{
-		{Key: "cwd", Body: "Working directory: /home/figaro"},
-		{Key: "datetime", Body: "Current time: 10AM EDT"},
-		{Key: "model", Body: "Model: claude-opus-4-6"},
-		{Key: "root", Body: "Project root: /home/figaro"},
-		{Key: "label", Body: "Aria label: morning"},
-	}
-	makeReq := func() *nativeRequest {
-		req := a.projectBlockWithModel(benchBlock(10), benchTools(), 1024, false, "claude-test")
-		return &req
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		req := makeReq()
-		a.applyRenderer(req, reminders)
-	}
-}
-
-func BenchmarkApplyRenderer_Tool_5reminders(b *testing.B) {
-	a := &Anthropic{ReminderRenderer: "tool"}
-	reminders := []chalkboard.RenderedEntry{
-		{Key: "cwd", Body: "Working directory: /home/figaro"},
-		{Key: "datetime", Body: "Current time: 10AM EDT"},
-		{Key: "model", Body: "Model: claude-opus-4-6"},
-		{Key: "root", Body: "Project root: /home/figaro"},
-		{Key: "label", Body: "Aria label: morning"},
-	}
-	makeReq := func() *nativeRequest {
-		req := a.projectBlockWithModel(benchBlock(10), benchTools(), 1024, false, "claude-test")
-		return &req
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		req := makeReq()
-		a.applyRenderer(req, reminders)
 	}
 }
 

@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/message"
@@ -28,7 +27,7 @@ func (m *mockProviderForIntegration) SetModel(model string) {}
 func (m *mockProviderForIntegration) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	return nil, nil
 }
-func (m *mockProviderForIntegration) Send(ctx context.Context, block *message.Block, tools []provider.Tool, reminders []chalkboard.RenderedEntry, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (m *mockProviderForIntegration) Send(ctx context.Context, block *message.Block, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	ch := make(chan provider.StreamEvent, 4)
 	go func() {
 		defer close(ch)

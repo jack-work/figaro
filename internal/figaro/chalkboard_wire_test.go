@@ -3,6 +3,7 @@ package figaro_test
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -18,27 +19,33 @@ import (
 	"github.com/jack-work/figaro/internal/tool"
 )
 
-// chalkSpyProvider captures the reminders Send is called with so tests
-// can assert what the agent passed to the provider.
+// chalkSpyProvider captures the IR Block Send is called with so tests
+// can inspect the per-message Patches the agent attached.
 type chalkSpyProvider struct {
 	mu             sync.Mutex
-	receivedRems   [][]chalkboard.RenderedEntry
 	receivedBlocks []*message.Block
 }
 
-func (p *chalkSpyProvider) Name() string                  { return "spy" }
-func (p *chalkSpyProvider) Models(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (p *chalkSpyProvider) SetModel(string)               {}
-func (p *chalkSpyProvider) Send(ctx context.Context, block *message.Block, tools []provider.Tool, reminders []chalkboard.RenderedEntry, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (p *chalkSpyProvider) Name() string { return "spy" }
+func (p *chalkSpyProvider) Models(_ context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
+func (p *chalkSpyProvider) SetModel(string) {}
+func (p *chalkSpyProvider) Send(ctx context.Context, block *message.Block, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	p.mu.Lock()
-	p.receivedRems = append(p.receivedRems, append([]chalkboard.RenderedEntry(nil), reminders...))
-	p.receivedBlocks = append(p.receivedBlocks, block)
+	// Deep-copy the block: the agent owns the underlying memstore and
+	// will keep mutating it after Send returns.
+	copyMsgs := make([]message.Message, len(block.Messages))
+	copy(copyMsgs, block.Messages)
+	p.receivedBlocks = append(p.receivedBlocks, &message.Block{
+		Header:   block.Header,
+		Messages: copyMsgs,
+	})
 	p.mu.Unlock()
 
 	ch := make(chan provider.StreamEvent, 4)
 	go func() {
 		defer close(ch)
-		// Emit a trivial assistant reply so the turn ends cleanly.
 		msg := &message.Message{
 			Role:       message.RoleAssistant,
 			Content:    []message.Content{message.TextContent("ok")},
@@ -52,19 +59,28 @@ func (p *chalkSpyProvider) Send(ctx context.Context, block *message.Block, tools
 	return ch, nil
 }
 
-func (p *chalkSpyProvider) lastReminders() []chalkboard.RenderedEntry {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if len(p.receivedRems) == 0 {
-		return nil
-	}
-	return p.receivedRems[len(p.receivedRems)-1]
-}
-
 func (p *chalkSpyProvider) sendCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return len(p.receivedRems)
+	return len(p.receivedBlocks)
+}
+
+// lastTurnPatches returns the patches attached to the leaf user-role
+// Message of the most-recent Send. Empty if no user-role leaf or no
+// patches.
+func (p *chalkSpyProvider) lastTurnPatches() []message.Patch {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.receivedBlocks) == 0 {
+		return nil
+	}
+	msgs := p.receivedBlocks[len(p.receivedBlocks)-1].Messages
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == message.RoleUser {
+			return msgs[i].Patches
+		}
+	}
+	return nil
 }
 
 // runOneTurn submits a prompt with the given chalkboard input and waits
@@ -89,12 +105,12 @@ func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.ChalkboardIn
 	}
 }
 
-// newAgentWithChalkboard builds an Agent wired with an in-memory
-// chalkboard.Store and the embedded default templates.
-func newAgentWithChalkboard(t *testing.T) (*figaro.Agent, *chalkSpyProvider, chalkboard.Store) {
+// newAgentWithChalkboard builds an Agent wired with a per-aria
+// *chalkboard.State and the embedded default templates.
+func newAgentWithChalkboard(t *testing.T) (*figaro.Agent, *chalkSpyProvider, *chalkboard.State) {
 	t.Helper()
 	dir := t.TempDir()
-	cb, err := chalkboard.NewFileStore(dir)
+	cb, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
 
 	tmpls, err := chalkboard.LoadDefaultTemplates()
@@ -117,12 +133,31 @@ func newAgentWithChalkboard(t *testing.T) (*figaro.Agent, *chalkSpyProvider, cha
 	return a, prov, cb
 }
 
+// patchSets collects the set keys from a slice of patches.
+func patchSets(ps []message.Patch) []string {
+	seen := map[string]struct{}{}
+	for _, p := range ps {
+		for k := range p.Set {
+			seen[k] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	return out
+}
+
 // --- Wire-protocol coverage ---
+//
+// With log unification, the agent attaches one combined patch to the
+// in-progress tic per user-prompt event. We assert patch presence and
+// keys; rendering is the provider's job (covered in
+// internal/provider/anthropic).
 
 func TestWire_ContextOnly_DiffsAndApplies(t *testing.T) {
 	a, prov, _ := newAgentWithChalkboard(t)
 
-	// Turn 1: send a context with cwd. Snapshot was empty → patch sets cwd.
 	cb1 := &rpc.ChalkboardInput{
 		Context: map[string]json.RawMessage{
 			"cwd": json.RawMessage(`"/home/alpha"`),
@@ -130,12 +165,12 @@ func TestWire_ContextOnly_DiffsAndApplies(t *testing.T) {
 	}
 	runOneTurn(t, a, "first", cb1)
 	require.Equal(t, 1, prov.sendCount())
-	rems := prov.lastReminders()
-	require.Len(t, rems, 1, "first turn should produce 1 reminder for the new key")
-	assert.Equal(t, "cwd", rems[0].Key)
+	patches := prov.lastTurnPatches()
+	require.Len(t, patches, 1, "first turn should attach 1 combined patch")
+	assert.ElementsMatch(t, []string{"cwd"}, patchSets(patches))
 }
 
-func TestWire_ContextOnly_NoChange_NoReminders(t *testing.T) {
+func TestWire_ContextOnly_NoChange_NoPatch(t *testing.T) {
 	a, prov, _ := newAgentWithChalkboard(t)
 	cb := &rpc.ChalkboardInput{
 		Context: map[string]json.RawMessage{
@@ -145,17 +180,15 @@ func TestWire_ContextOnly_NoChange_NoReminders(t *testing.T) {
 	runOneTurn(t, a, "first", cb)
 	runOneTurn(t, a, "second", cb) // identical context
 	require.Equal(t, 2, prov.sendCount())
-	assert.Empty(t, prov.lastReminders(), "identical context on a subsequent turn must produce 0 reminders")
+	assert.Empty(t, prov.lastTurnPatches(), "identical context must produce 0 patches on a subsequent turn")
 }
 
 func TestWire_PatchOnly_AppliesDirectly(t *testing.T) {
 	a, prov, _ := newAgentWithChalkboard(t)
 
-	// Turn 1: empty context establishes a baseline.
 	runOneTurn(t, a, "first", nil)
 	require.Equal(t, 1, prov.sendCount())
 
-	// Turn 2: explicit patch (no context). Should apply directly.
 	cb := &rpc.ChalkboardInput{
 		Patch: &rpc.ChalkboardPatch{
 			Set: map[string]json.RawMessage{
@@ -165,16 +198,14 @@ func TestWire_PatchOnly_AppliesDirectly(t *testing.T) {
 	}
 	runOneTurn(t, a, "second", cb)
 	require.Equal(t, 2, prov.sendCount())
-	rems := prov.lastReminders()
-	require.Len(t, rems, 1, "patch-only path should set the key and render a reminder")
-	assert.Equal(t, "cwd", rems[0].Key)
-	assert.Contains(t, rems[0].Body, "/home/beta")
+	patches := prov.lastTurnPatches()
+	require.Len(t, patches, 1)
+	assert.ElementsMatch(t, []string{"cwd"}, patchSets(patches))
 }
 
 func TestWire_ContextAndPatch_Combined(t *testing.T) {
 	a, prov, _ := newAgentWithChalkboard(t)
 
-	// Send context (cwd) + patch (model). Both should fire reminders.
 	cb := &rpc.ChalkboardInput{
 		Context: map[string]json.RawMessage{
 			"cwd": json.RawMessage(`"/home/alpha"`),
@@ -187,11 +218,9 @@ func TestWire_ContextAndPatch_Combined(t *testing.T) {
 	}
 	runOneTurn(t, a, "first", cb)
 	require.Equal(t, 1, prov.sendCount())
-	rems := prov.lastReminders()
-	require.Len(t, rems, 2, "context + patch should produce 2 reminders (cwd from diff, model from patch)")
-
-	keys := []string{rems[0].Key, rems[1].Key}
-	assert.ElementsMatch(t, []string{"cwd", "model"}, keys)
+	patches := prov.lastTurnPatches()
+	require.Len(t, patches, 1, "context + patch are merged into one combined patch")
+	assert.ElementsMatch(t, []string{"cwd", "model"}, patchSets(patches))
 }
 
 func TestWire_NeitherContextNorPatch_NoOp(t *testing.T) {
@@ -199,27 +228,24 @@ func TestWire_NeitherContextNorPatch_NoOp(t *testing.T) {
 
 	runOneTurn(t, a, "first", nil)
 	require.Equal(t, 1, prov.sendCount())
-	assert.Empty(t, prov.lastReminders(), "no chalkboard input → no reminders")
+	assert.Empty(t, prov.lastTurnPatches(), "no chalkboard input → no patches")
 }
 
 func TestWire_ContextRemoval(t *testing.T) {
 	a, prov, _ := newAgentWithChalkboard(t)
 
-	// Turn 1: set cwd.
 	runOneTurn(t, a, "first", &rpc.ChalkboardInput{
 		Context: map[string]json.RawMessage{
 			"cwd": json.RawMessage(`"/home/alpha"`),
 		},
 	})
 
-	// Turn 2: send empty context. Server diffs vs persisted → cwd
-	// should be removed. (Removed keys don't render — but they DO get
-	// persisted to the chalkboard log, which we can't inspect from
-	// here without coupling the test to internals. The contract: no
-	// reminder, no error.)
 	runOneTurn(t, a, "second", &rpc.ChalkboardInput{
 		Context: map[string]json.RawMessage{},
 	})
 	require.Equal(t, 2, prov.sendCount())
-	assert.Empty(t, prov.lastReminders(), "removal should not render a reminder (no template binding for removal)")
+	patches := prov.lastTurnPatches()
+	require.Len(t, patches, 1, "removal must still attach a patch (the timeline records it)")
+	require.Empty(t, patches[0].Set)
+	assert.ElementsMatch(t, []string{"cwd"}, patches[0].Remove)
 }
