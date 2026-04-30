@@ -116,28 +116,6 @@ func TestMessage_BaggageNewShape(t *testing.T) {
 	require.Len(t, pb.Messages, 1)
 }
 
-// TestMessage_LegacyBaggage_OnDisk verifies that Messages serialized
-// with the pre-A2 baggage shape (flat map[provider]json.RawMessage)
-// load correctly into the new Baggage type.
-func TestMessage_LegacyBaggage_OnDisk(t *testing.T) {
-	// Hand-crafted legacy JSON: the baggage field is the old flat-map shape.
-	legacy := []byte(`{
-		"role": "assistant",
-		"content": [{"type":"text","text":"ciao"}],
-		"logical_time": 2,
-		"timestamp": 1700000000000,
-		"baggage": {"anthropic": {"role":"assistant","content":[{"type":"text","text":"ciao"}]}}
-	}`)
-
-	var decoded message.Message
-	require.NoError(t, json.Unmarshal(legacy, &decoded))
-
-	pb, ok := decoded.Baggage.Get("anthropic")
-	require.True(t, ok)
-	require.Len(t, pb.Messages, 1, "legacy single blob converts to length-1 Messages slice")
-	assert.Empty(t, pb.Fingerprint)
-}
-
 // TestPatch_AliasIdentity verifies the type-alias contract — a value
 // constructed as chalkboard.Patch is assignable to message.Patch and
 // vice versa.

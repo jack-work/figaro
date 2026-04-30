@@ -1,9 +1,6 @@
 package message
 
-import (
-	"encoding/json"
-	"fmt"
-)
+import "encoding/json"
 
 // Baggage records the wire-format outputs of a Message, keyed by
 // provider name. Each ProviderBaggage value is variadic — a single
@@ -31,13 +28,11 @@ import (
 //
 //	{"entries": {"anthropic": {"messages": [...], "fp": "..."}}}
 //
-// Backward-compatible read: pre-Stage-A2 baggage was a flat map
-// of provider name to a single raw JSON blob:
-//
-//	{"anthropic": <nativeMessageJSON>}
-//
-// UnmarshalJSON detects this old shape and converts each blob to
-// ProviderBaggage{Messages: []json.RawMessage{<blob>}}.
+// New code targets this shape exclusively. Legacy on-disk shapes
+// from before this type landed are not supported by this package;
+// operators are expected to back up and clear stale arias before
+// upgrading. Standard JSON marshal/unmarshal applies — no custom
+// hooks.
 type Baggage struct {
 	Entries map[string]ProviderBaggage `json:"entries,omitempty"`
 }
@@ -80,36 +75,4 @@ func (b *Baggage) Set(providerName string, pb ProviderBaggage) {
 		b.Entries = make(map[string]ProviderBaggage)
 	}
 	b.Entries[providerName] = pb
-}
-
-// UnmarshalJSON accepts either the current Baggage shape
-// ({"entries": {...}}) or the legacy flat-map shape (provider names
-// as direct keys with raw JSON blobs as values). Legacy entries are
-// converted into ProviderBaggage{Messages: [<blob>]} with no
-// Fingerprint.
-func (b *Baggage) UnmarshalJSON(data []byte) error {
-	if len(data) == 0 || string(data) == "null" {
-		return nil
-	}
-	// Try the current shape first: object with an "entries" key.
-	var current struct {
-		Entries map[string]ProviderBaggage `json:"entries"`
-	}
-	if err := json.Unmarshal(data, &current); err == nil && current.Entries != nil {
-		b.Entries = current.Entries
-		return nil
-	}
-	// Fall back to the legacy flat-map shape.
-	var legacy map[string]json.RawMessage
-	if err := json.Unmarshal(data, &legacy); err != nil {
-		return fmt.Errorf("baggage: parse failed for both current and legacy shapes: %w", err)
-	}
-	if len(legacy) == 0 {
-		return nil
-	}
-	b.Entries = make(map[string]ProviderBaggage, len(legacy))
-	for k, v := range legacy {
-		b.Entries[k] = ProviderBaggage{Messages: []json.RawMessage{v}}
-	}
-	return nil
 }
