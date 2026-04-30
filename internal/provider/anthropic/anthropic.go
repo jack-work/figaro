@@ -295,10 +295,13 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 	}
 
 	for _, msg := range msgs {
-		// Try baggage first
-		if raw, ok := msg.Baggage[providerName]; ok {
+		// Try baggage first. The cache hit path expects exactly one
+		// wire message per Message for now (the typical case);
+		// variadic baggage (multiple wire messages per Message) is
+		// reserved for Stage D.
+		if pb, ok := msg.Baggage.Get(providerName); ok && len(pb.Messages) > 0 {
 			var cached nativeMessage
-			if err := json.Unmarshal(raw, &cached); err == nil {
+			if err := json.Unmarshal(pb.Messages[0], &cached); err == nil {
 				if msg.Role == message.RoleToolResult {
 					pendingToolResults = append(pendingToolResults, cached.Content...)
 					continue
@@ -675,10 +678,9 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 				}
 			}
 			if raw, err := json.Marshal(nativeMsg); err == nil {
-				if msg.Baggage == nil {
-					msg.Baggage = make(map[string]json.RawMessage)
-				}
-				msg.Baggage[providerName] = raw
+				msg.Baggage.Set(providerName, message.ProviderBaggage{
+					Messages: []json.RawMessage{raw},
+				})
 			}
 			ch <- provider.StreamEvent{Done: true, Message: &msg}
 			return

@@ -9,8 +9,6 @@
 // of re-converting from the IR.
 package message
 
-import "encoding/json"
-
 // Role identifies the participant in a conversation turn.
 type Role string
 
@@ -70,15 +68,27 @@ type Usage struct {
 	CacheWriteTokens int `json:"cache_write_tokens"`
 }
 
-// Message is the canonical IR unit.
+// Message is the canonical IR unit — both for conversational turns
+// (a user message, a tic accumulating events between agent responses,
+// or an assistant response) and for state-only timeline events
+// (bootstrap and rehydrate, which are user-role Messages with only
+// Patches and no Content). See plans/aria-storage/log-unification.md.
 //
-// It is the intermediate representation that all providers project
-// to and from. The Baggage field carries the unaltered original
-// response from the originating provider, keyed by provider name.
-// This avoids re-conversion when sending back to the same provider.
+// All providers project to and from Message. The Baggage field caches
+// the per-provider wire-format projection of this Message; on re-send
+// to the same provider, it pulls from baggage instead of re-converting
+// from the IR.
 type Message struct {
 	Role    Role      `json:"role"`
 	Content []Content `json:"content"`
+
+	// Patches are chalkboard mutations that arrived during the time
+	// delta this Message represents. Populated for user-role
+	// Messages whose tic carried state changes; nil otherwise.
+	// State-only tics (bootstrap, rehydrate) carry only Patches
+	// (no Content) and emit zero wire output but contribute to the
+	// chalkboard snapshot the projection reads.
+	Patches []Patch `json:"patches,omitempty"`
 
 	// Assistant-only metadata
 	Model      string     `json:"model,omitempty"`
@@ -86,7 +96,12 @@ type Message struct {
 	Usage      *Usage     `json:"usage,omitempty"`
 	StopReason StopReason `json:"stop_reason,omitempty"`
 
-	// Tool result metadata (role == "tool_result")
+	// Tool result metadata (role == "tool_result").
+	//
+	// Deprecated: scheduled to retire in a follow-up Stage A commit;
+	// tool_result data moves to per-Content-block fields when the
+	// ContentToolResult content type lands. New code should not rely
+	// on these Message-level fields.
 	ToolCallID string `json:"tool_call_id,omitempty"`
 	ToolName   string `json:"tool_name,omitempty"`
 
@@ -97,11 +112,9 @@ type Message struct {
 	// Timestamp in unix millis (wall clock, informational).
 	Timestamp int64 `json:"timestamp"`
 
-	// Baggage: provider name → unaltered original representation.
-	// The originating provider stashes its native wire format here.
-	// On re-send to the same provider, it pulls from baggage
-	// instead of re-converting from the IR.
-	Baggage map[string]json.RawMessage `json:"baggage,omitempty"`
+	// Baggage caches the per-provider wire-format projection of
+	// this Message. See type Baggage for the variadic shape.
+	Baggage Baggage `json:"baggage,omitempty"`
 }
 
 // Block is the unit of conversation context: an optional compacted
