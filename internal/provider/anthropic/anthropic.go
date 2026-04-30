@@ -323,7 +323,7 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 				case message.ContentImage:
 					blocks = append(blocks, nativeBlock{
 						Type: "image",
-						Source: map[string]interface{}{
+						Source: map[string]any{
 							"type": "base64", "media_type": c.MimeType, "data": c.Data,
 						},
 					})
@@ -627,8 +627,12 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 
 		case "message_delta":
 			var md struct {
-				Delta struct{ StopReason string `json:"stop_reason"` } `json:"delta"`
-				Usage struct{ OutputTokens int `json:"output_tokens"` } `json:"usage"`
+				Delta struct {
+					StopReason string `json:"stop_reason"`
+				} `json:"delta"`
+				Usage struct {
+					OutputTokens int `json:"output_tokens"`
+				} `json:"usage"`
 			}
 			if json.Unmarshal([]byte(data), &md) == nil {
 				usage.OutputTokens = md.Usage.OutputTokens
