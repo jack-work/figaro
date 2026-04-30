@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -444,33 +445,35 @@ firstDone:
 	}
 secondDone:
 
-	// The aria file should exist on disk (flushed after first prompt).
-	ariaPath := filepath.Join(storeDir, "persist-001.json")
+	// The aria directory should exist on disk (flushed after first prompt).
+	ariaDir := filepath.Join(storeDir, "persist-001")
+	ariaPath := filepath.Join(ariaDir, "aria.jsonl")
 	data, err := os.ReadFile(ariaPath)
-	require.NoError(t, err, "aria file should exist after prompt")
+	require.NoError(t, err, "aria.jsonl should exist after prompt")
 	require.NotEmpty(t, data)
 
-	// Parse and verify contents.
-	var fd struct {
-		NextLT   uint64      `json:"next_lt"`
-		Messages []struct {
-			Role string `json:"role"`
-		} `json:"messages"`
-		Meta *struct {
-			Provider string `json:"provider"`
-			Model    string `json:"model"`
-		} `json:"meta"`
+	// aria.jsonl is NDJSON; count non-empty lines.
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	var msgCount int
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			msgCount++
+		}
 	}
-	require.NoError(t, json.Unmarshal(data, &fd))
 	// At minimum, the first prompt's flush wrote user + assistant (2 messages).
-	// The second prompt's flush may or may not have completed by now,
-	// but 2+ messages proves flush-at-turn-boundary works.
-	assert.GreaterOrEqual(t, len(fd.Messages), 2, "should have at least user + assistant on disk")
+	assert.GreaterOrEqual(t, msgCount, 2, "should have at least user + assistant on disk")
 
-	// Metadata should be persisted.
-	require.NotNil(t, fd.Meta)
-	assert.Equal(t, "mock", fd.Meta.Provider)
-	assert.Equal(t, "mock-model-v1", fd.Meta.Model)
+	// meta.json should be present and parseable.
+	metaPath := filepath.Join(ariaDir, "meta.json")
+	mdata, err := os.ReadFile(metaPath)
+	require.NoError(t, err, "meta.json should exist after prompt")
+	var meta struct {
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+	}
+	require.NoError(t, json.Unmarshal(mdata, &meta))
+	assert.Equal(t, "mock", meta.Provider)
+	assert.Equal(t, "mock-model-v1", meta.Model)
 }
 
 func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
@@ -557,9 +560,9 @@ done:
 	a.Kill()
 
 	// Verify data is on disk.
-	ariaPath := filepath.Join(storeDir, "killflush-001.json")
+	ariaPath := filepath.Join(storeDir, "killflush-001", "aria.jsonl")
 	_, statErr := os.Stat(ariaPath)
-	assert.NoError(t, statErr, "aria file should exist after kill")
+	assert.NoError(t, statErr, "aria.jsonl should exist after kill")
 }
 
 func TestAgent_EphemeralWhenNoBackend(t *testing.T) {

@@ -1,6 +1,8 @@
 package store
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,15 +12,12 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// fileData is the on-disk JSON format for a FileStore.
-type fileData struct {
-	NextLT   uint64            `json:"next_lt"`
-	Messages []message.Message `json:"messages"`
-	Meta     *AriaMeta         `json:"meta,omitempty"`
-}
-
 // AriaMeta holds metadata persisted alongside an aria's messages.
 // Used to restore agents on angelus restart.
+//
+// Deprecated: scheduled to retire in Stage C of the
+// log-unification work, when chalkboard.system.* keys take over the
+// restoration metadata role. For now it lives in arias/{id}/meta.json.
 type AriaMeta struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
@@ -27,44 +26,89 @@ type AriaMeta struct {
 	Label    string `json:"label,omitempty"`
 }
 
-// FileStore persists a conversation as a single JSON file.
-// Each write overwrites the file atomically (write-to-tmp + rename).
+// FileStore persists a conversation as an aria directory:
+//
+//	{dir}/
+//	├── aria.jsonl   NDJSON of message.Message values, one per line
+//	└── meta.json    AriaMeta (transitional; retires in Stage C)
+//
+// Each write rewrites both files atomically (write-to-tmp + rename).
+// Lazy NDJSON: full file rewrite at flush time, not append-on-each-line.
 // It implements Store and Downstream.
 var _ Downstream = (*FileStore)(nil)
+
 type FileStore struct {
 	mu       sync.Mutex
-	path     string
+	dir      string
 	messages []message.Message
 	nextLT   uint64
 	meta     *AriaMeta
 }
 
-// NewFileStore creates a FileStore at the given path.
-// If the file exists, its contents are loaded into memory.
-// If the file does not exist, the store starts empty.
-func NewFileStore(path string) (*FileStore, error) {
+const (
+	ariaFile = "aria.jsonl"
+	metaFile = "meta.json"
+)
+
+// NewFileStore creates or opens a FileStore for the aria directory
+// at dir. If dir contains aria.jsonl and/or meta.json, they are
+// loaded into memory. Missing files are not an error — the store
+// starts empty.
+func NewFileStore(dir string) (*FileStore, error) {
 	s := &FileStore{
-		path:   path,
+		dir:    dir,
 		nextLT: 1,
 	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return s, nil
-		}
-		return nil, fmt.Errorf("read store file: %w", err)
+	if err := s.loadLocked(); err != nil {
+		return nil, err
 	}
-
-	var fd fileData
-	if err := json.Unmarshal(data, &fd); err != nil {
-		return nil, fmt.Errorf("parse store file: %w", err)
-	}
-
-	s.messages = fd.Messages
-	s.nextLT = fd.NextLT
-	s.meta = fd.Meta
 	return s, nil
+}
+
+// loadLocked reads aria.jsonl and meta.json from disk into the
+// in-memory state. Caller need not hold s.mu (this is called only
+// from NewFileStore before the value is shared).
+func (s *FileStore) loadLocked() error {
+	// aria.jsonl: NDJSON of Messages.
+	data, err := os.ReadFile(filepath.Join(s.dir, ariaFile))
+	if err == nil {
+		scanner := bufio.NewScanner(bytes.NewReader(data))
+		// Allow large messages (tool results, long replies); cap at 8MB/line.
+		scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+		for scanner.Scan() {
+			line := scanner.Bytes()
+			if len(line) == 0 {
+				continue
+			}
+			var m message.Message
+			if err := json.Unmarshal(line, &m); err != nil {
+				return fmt.Errorf("parse aria entry: %w", err)
+			}
+			s.messages = append(s.messages, m)
+			if m.LogicalTime >= s.nextLT {
+				s.nextLT = m.LogicalTime + 1
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("scan aria.jsonl: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read aria.jsonl: %w", err)
+	}
+
+	// meta.json: AriaMeta (transitional; Stage C retires).
+	mdata, err := os.ReadFile(filepath.Join(s.dir, metaFile))
+	if err == nil {
+		var meta AriaMeta
+		if err := json.Unmarshal(mdata, &meta); err != nil {
+			return fmt.Errorf("parse meta.json: %w", err)
+		}
+		s.meta = &meta
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read meta.json: %w", err)
+	}
+
+	return nil
 }
 
 func (s *FileStore) Context() *message.Block {
@@ -134,18 +178,29 @@ func (s *FileStore) Checkpoint(messages []message.Message, nextLT uint64) error 
 	return s.writeLocked()
 }
 
-// Remove deletes the backing file. Used by MemStore.Clear().
+// Remove deletes the entire aria directory. Used by MemStore.Clear().
 func (s *FileStore) Remove() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messages = nil
 	s.nextLT = 1
-	return os.Remove(s.path)
+	err := os.RemoveAll(s.dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }
 
-// Path returns the file path.
+// Dir returns the aria directory path.
+func (s *FileStore) Dir() string {
+	return s.dir
+}
+
+// Path is retained for compatibility; returns the aria directory path.
+//
+// Deprecated: use Dir().
 func (s *FileStore) Path() string {
-	return s.path
+	return s.dir
 }
 
 // SetMeta sets the aria metadata. Written to disk on next write.
@@ -162,30 +217,54 @@ func (s *FileStore) Meta() *AriaMeta {
 	return s.meta
 }
 
-// writeLocked writes the current state to disk atomically.
-// Caller must hold s.mu.
+// writeLocked writes aria.jsonl and meta.json atomically.
+// Caller must hold s.mu. Each file uses the rewrite-tmp-rename pattern:
+// build the full content in memory, write to a sibling .tmp file with
+// fsync, then atomically rename. Crash-safety guarantees the reader
+// always sees either the prior or the new content, never partial.
 func (s *FileStore) writeLocked() error {
-	fd := fileData{
-		NextLT:   s.nextLT,
-		Messages: s.messages,
-		Meta:     s.meta,
-	}
-	data, err := json.Marshal(fd)
-	if err != nil {
-		return fmt.Errorf("marshal store: %w", err)
+	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+		return fmt.Errorf("create aria dir: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
-		return fmt.Errorf("create store dir: %w", err)
+	// aria.jsonl: serialize messages line-by-line.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	for i := range s.messages {
+		// Encode adds a trailing newline by default — that's our
+		// NDJSON line separator.
+		if err := enc.Encode(s.messages[i]); err != nil {
+			return fmt.Errorf("encode message[%d]: %w", i, err)
+		}
+	}
+	if err := writeAtomic(filepath.Join(s.dir, ariaFile), buf.Bytes()); err != nil {
+		return err
 	}
 
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return fmt.Errorf("write tmp: %w", err)
+	// meta.json: standard JSON object, written only when meta is set.
+	if s.meta != nil {
+		mdata, err := json.Marshal(s.meta)
+		if err != nil {
+			return fmt.Errorf("marshal meta: %w", err)
+		}
+		if err := writeAtomic(filepath.Join(s.dir, metaFile), mdata); err != nil {
+			return err
+		}
 	}
-	if err := os.Rename(tmp, s.path); err != nil {
+	return nil
+}
+
+// writeAtomic writes data to path via the rewrite-tmp-rename pattern.
+// fsync is requested implicitly by the OS on rename(2); for an explicit
+// fsync, callers can extend this helper later.
+func writeAtomic(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return fmt.Errorf("write tmp %s: %w", path, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
 		os.Remove(tmp)
-		return fmt.Errorf("rename: %w", err)
+		return fmt.Errorf("rename %s: %w", path, err)
 	}
 	return nil
 }

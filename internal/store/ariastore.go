@@ -1,10 +1,11 @@
 package store
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -18,9 +19,9 @@ type AriaInfo struct {
 	Meta         *AriaMeta // nil if no metadata in file
 }
 
-// listAriasInDir scans a directory for aria JSON files and returns
-// metadata for each. The aria ID is derived from the filename
-// (minus the .json extension). Used by FileBackend.List.
+// listAriasInDir scans a directory for aria subdirectories and returns
+// metadata for each. An aria subdirectory is one that contains
+// aria.jsonl. Used by FileBackend.List.
 func listAriasInDir(dir string) ([]AriaInfo, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -32,33 +33,43 @@ func listAriasInDir(dir string) ([]AriaInfo, error) {
 
 	var arias []AriaInfo
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+		if !e.IsDir() {
 			continue
 		}
+		ariaDir := filepath.Join(dir, e.Name())
+		ariaPath := filepath.Join(ariaDir, ariaFile)
 
-		id := strings.TrimSuffix(e.Name(), ".json")
-		path := filepath.Join(dir, e.Name())
-
-		info, err := e.Info()
+		ariaStat, err := os.Stat(ariaPath)
 		if err != nil {
-			continue // skip unreadable entries
+			continue // skip dirs without aria.jsonl
 		}
 
-		// Read just enough to count messages and get metadata.
+		// Count messages by counting lines in aria.jsonl. Cheap; doesn't
+		// require parsing every entry.
 		msgCount := 0
+		if data, err := os.ReadFile(ariaPath); err == nil {
+			scanner := bufio.NewScanner(bytes.NewReader(data))
+			scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+			for scanner.Scan() {
+				if len(scanner.Bytes()) > 0 {
+					msgCount++
+				}
+			}
+		}
+
+		// meta.json is optional.
 		var meta *AriaMeta
-		if data, err := os.ReadFile(path); err == nil {
-			var fd fileData
-			if json.Unmarshal(data, &fd) == nil {
-				msgCount = len(fd.Messages)
-				meta = fd.Meta
+		if mdata, err := os.ReadFile(filepath.Join(ariaDir, metaFile)); err == nil {
+			var m AriaMeta
+			if json.Unmarshal(mdata, &m) == nil {
+				meta = &m
 			}
 		}
 
 		arias = append(arias, AriaInfo{
-			ID:           id,
+			ID:           e.Name(),
 			MessageCount: msgCount,
-			LastModified: info.ModTime(),
+			LastModified: ariaStat.ModTime(),
 			Meta:         meta,
 		})
 	}
