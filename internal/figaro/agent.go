@@ -310,7 +310,7 @@ func (a *Agent) Context() []message.Message {
 	if block == nil {
 		return nil
 	}
-	return block.Messages()
+	return block.Messages
 }
 
 func (a *Agent) Subscribe() <-chan rpc.Notification {
@@ -797,10 +797,9 @@ func (a *Agent) endTurn(reason string) {
 	// Accumulate token counts from the latest assistant message.
 	a.mu.Lock()
 	a.lastActive = time.Now()
-	if block := a.memStore.Context(); block != nil {
-		msgs := block.Messages()
-		for i := len(msgs) - 1; i >= 0; i-- {
-			if m := msgs[i]; m.Usage != nil {
+	if msgs := a.memStore.Context(); msgs != nil {
+		for i := len(msgs.Messages) - 1; i >= 0; i-- {
+			if m := msgs.Messages[i]; m.Usage != nil {
 				a.tokensIn += m.Usage.InputTokens
 				a.tokensOut += m.Usage.OutputTokens
 				a.cacheRead += m.Usage.CacheReadTokens
@@ -852,7 +851,7 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d entries in context, %d reminders\n", len(block.Entries), len(a.cbTurnReminders))
+	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context, %d reminders\n", len(block.Messages), len(a.cbTurnReminders))
 	ch, err := a.prov.Send(ctx, block, a.toolDefs(), a.cbTurnReminders, a.maxTokens)
 	if err != nil {
 		inbox.SendSelfish(event{typ: eventLLMError, err: fmt.Errorf("provider send: %w", err)})
@@ -1051,7 +1050,7 @@ func sumUsage(block *message.Block) (in, out, cacheRead, cacheWrite int) {
 	if block == nil {
 		return 0, 0, 0, 0
 	}
-	for _, m := range block.Messages() {
+	for _, m := range block.Messages {
 		if m.Usage != nil {
 			in += m.Usage.InputTokens
 			out += m.Usage.OutputTokens

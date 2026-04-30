@@ -22,18 +22,14 @@ import (
 // messages appended after. exact is true only when the watermark is
 // the last message in the block.
 func ContextSize(block *message.Block) (tokens int, exact bool) {
-	if block == nil {
-		return 0, true
-	}
-	msgs := block.Messages()
-	if len(msgs) == 0 {
+	if block == nil || len(block.Messages) == 0 {
 		return 0, true
 	}
 
 	// Find last assistant message with Usage.
 	watermark := -1
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Usage != nil {
+	for i := len(block.Messages) - 1; i >= 0; i-- {
+		if block.Messages[i].Usage != nil {
 			watermark = i
 			break
 		}
@@ -42,22 +38,22 @@ func ContextSize(block *message.Block) (tokens int, exact bool) {
 	if watermark < 0 {
 		// No authoritative data — estimate everything.
 		total := 0
-		for _, m := range msgs {
+		for _, m := range block.Messages {
 			total += EstimateMessage(m)
 		}
 		return total, false
 	}
 
-	u := msgs[watermark].Usage
+	u := block.Messages[watermark].Usage
 	base := u.InputTokens + u.OutputTokens
 
-	if watermark == len(msgs)-1 {
+	if watermark == len(block.Messages)-1 {
 		return base, true
 	}
 
 	// Heuristic tail for messages after the watermark.
 	tail := 0
-	for _, m := range msgs[watermark+1:] {
+	for _, m := range block.Messages[watermark+1:] {
 		tail += EstimateMessage(m)
 	}
 	return base + tail, false

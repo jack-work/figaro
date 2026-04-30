@@ -78,13 +78,10 @@ func TestProjectBlock_CacheBreakpoints(t *testing.T) {
 			Role:    message.RoleSystem,
 			Content: []message.Content{message.TextContent("you are a test agent")},
 		},
-		Entries: []message.LogEntry{
-
-			{Message: &message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("first turn")}}},
-
-			{Message: &message.Message{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("first reply")}}},
-
-			{Message: &message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("second turn — current prompt")}}},
+		Messages: []message.Message{
+			{Role: message.RoleUser, Content: []message.Content{message.TextContent("first turn")}},
+			{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("first reply")}},
+			{Role: message.RoleUser, Content: []message.Content{message.TextContent("second turn — current prompt")}},
 		},
 	}
 	tools := []provider.Tool{
@@ -126,9 +123,8 @@ func TestProjectBlock_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
 			Role:    message.RoleSystem,
 			Content: []message.Content{message.TextContent("you are a test agent")},
 		},
-		Entries: []message.LogEntry{
-
-			{Message: &message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("first prompt — nothing on disk yet")}}},
+		Messages: []message.Message{
+			{Role: message.RoleUser, Content: []message.Content{message.TextContent("first prompt — nothing on disk yet")}},
 		},
 	}
 
@@ -150,13 +146,10 @@ func TestProjectBlock_StableAcrossCalls(t *testing.T) {
 			Role:    message.RoleSystem,
 			Content: []message.Content{message.TextContent("you are a test agent")},
 		},
-		Entries: []message.LogEntry{
-
-			{Message: &message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("ciao")}}},
-
-			{Message: &message.Message{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("salve")}}},
-
-			{Message: &message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("again")}}},
+		Messages: []message.Message{
+			{Role: message.RoleUser, Content: []message.Content{message.TextContent("ciao")}},
+			{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("salve")}},
+			{Role: message.RoleUser, Content: []message.Content{message.TextContent("again")}},
 		},
 	}
 	tools := []provider.Tool{
@@ -186,9 +179,8 @@ func TestProjectBlock_OAuthSystemArray(t *testing.T) {
 			Role:    message.RoleSystem,
 			Content: []message.Content{message.TextContent("you are figaro")},
 		},
-		Entries: []message.LogEntry{
-
-			{Message: &message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}}},
+		Messages: []message.Message{
+			{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
 		},
 	}
 

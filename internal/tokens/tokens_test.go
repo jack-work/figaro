@@ -20,7 +20,8 @@ func TestContextSize_EmptyBlock(t *testing.T) {
 }
 
 func TestContextSize_WatermarkIsLeaf(t *testing.T) {
-	block := message.NewBlockOfMessages([]message.Message{
+	block := &message.Block{
+		Messages: []message.Message{
 			{Role: message.RoleUser, Content: []message.Content{
 				message.TextContent("hello"),
 			}},
@@ -30,7 +31,8 @@ func TestContextSize_WatermarkIsLeaf(t *testing.T) {
 				InputTokens:  500,
 				OutputTokens: 50,
 			}},
-		})
+		},
+	}
 
 	tokens, exact := ContextSize(block)
 	assert.Equal(t, 550, tokens)
@@ -38,7 +40,8 @@ func TestContextSize_WatermarkIsLeaf(t *testing.T) {
 }
 
 func TestContextSize_MessagesAfterWatermark(t *testing.T) {
-	block := message.NewBlockOfMessages([]message.Message{
+	block := &message.Block{
+		Messages: []message.Message{
 			{Role: message.RoleUser, Content: []message.Content{
 				message.TextContent("hello"),
 			}},
@@ -52,7 +55,8 @@ func TestContextSize_MessagesAfterWatermark(t *testing.T) {
 				// 40 chars → ceil(40/4) = 10 tokens
 				message.TextContent("now do something else for me please ok?!"),
 			}},
-		})
+		},
+	}
 
 	tokens, exact := ContextSize(block)
 	assert.Equal(t, 560, tokens)
@@ -60,7 +64,8 @@ func TestContextSize_MessagesAfterWatermark(t *testing.T) {
 }
 
 func TestContextSize_NoUsage(t *testing.T) {
-	block := message.NewBlockOfMessages([]message.Message{
+	block := &message.Block{
+		Messages: []message.Message{
 			{Role: message.RoleUser, Content: []message.Content{
 				// 12 chars → ceil(12/4) = 3
 				message.TextContent("hello world!"),
@@ -69,7 +74,8 @@ func TestContextSize_NoUsage(t *testing.T) {
 				// 8 chars → ceil(8/4) = 2
 				message.TextContent("hi there"),
 			}},
-		})
+		},
+	}
 
 	tokens, exact := ContextSize(block)
 	assert.Equal(t, 5, tokens)

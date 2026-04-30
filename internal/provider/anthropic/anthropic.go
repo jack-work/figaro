@@ -239,7 +239,7 @@ func (a *Anthropic) projectBlockWithModel(block *message.Block, tools []provider
 		req.System = append(req.System, systemBlock{Type: "text", Text: systemText})
 	}
 
-	req.Messages = a.projectMessages(block.Messages())
+	req.Messages = a.projectMessages(block.Messages)
 	req.Tools = projectTools(tools)
 
 	markCacheBreakpoints(&req)

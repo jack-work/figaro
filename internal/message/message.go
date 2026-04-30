@@ -104,68 +104,19 @@ type Message struct {
 	Baggage map[string]json.RawMessage `json:"baggage,omitempty"`
 }
 
-// Block is the unit of conversation context: an optional system-prompt
-// (or future compaction-summary) header followed by the ordered log of
-// LogEntry values. Each LogEntry carries either a conversational
-// Message, a chalkboard Patch, or both (a turn whose chalkboard input
-// produced changes — see plans/aria-storage/log-unification.md).
+// Block is the unit of conversation context: an optional compacted
+// summary header followed by the ordered messages.
 //
 // This is what Store.Context() returns and what gets passed to the
 // provider for conversion to its native format.
 type Block struct {
-	// Header is currently the system-prompt carrier; historically it
-	// was reserved for compaction summaries. With compaction omitted
-	// from the unification design, this slot is planned to retire
-	// (the system prompt moves to chalkboard.system.prompt). For
-	// now it remains for compatibility.
-	//
-	// Deprecated: targeted for removal in Stage C of the
-	// log-unification work; new code should not rely on this field.
+	// Header is the compacted summary of earlier conversation.
+	// Nil if no compaction has occurred.
 	Header *Message
 
-	// Entries is the ordered conversation log: messages, chalkboard
-	// patches, and message+patch sidecar combinations.
-	Entries []LogEntry
-}
-
-// Messages returns the messages-only view of the entries, in order.
-// Entries that have no Message (Patch-only entries — bootstrap,
-// rehydrate) are skipped. The returned slice is freshly allocated;
-// callers may not retain a stable reference to its identity.
-//
-// This accessor exists primarily for migration: callers that previously
-// read the (now-renamed) Messages field can switch to this method
-// without iterating Entries directly. New code that needs Patch
-// sidecars should range over Entries instead.
-func (b *Block) Messages() []Message {
-	if b == nil {
-		return nil
-	}
-	out := make([]Message, 0, len(b.Entries))
-	for _, e := range b.Entries {
-		if e.Message != nil {
-			out = append(out, *e.Message)
-		}
-	}
-	return out
-}
-
-// NewBlockOfMessages constructs a Block whose Entries are exactly the
-// given messages, each wrapped in a Message-only LogEntry. Convenience
-// for callers (tests, the store layer) migrating from the pre-Entries
-// shape; new code constructing entries with patch sidecars should
-// build LogEntry values directly.
-func NewBlockOfMessages(msgs []Message) *Block {
-	entries := make([]LogEntry, len(msgs))
-	for i, m := range msgs {
-		mm := m
-		entries[i] = LogEntry{
-			LogicalTime: m.LogicalTime,
-			Timestamp:   m.Timestamp,
-			Message:     &mm,
-		}
-	}
-	return &Block{Entries: entries}
+	// Messages is the ordered conversation from the first kept
+	// message (or from the start if no compaction) to the leaf.
+	Messages []Message
 }
 
 // --- convenience constructors ---
