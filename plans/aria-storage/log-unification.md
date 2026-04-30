@@ -334,17 +334,67 @@ Each stage commits independently. Conservative order: shape the types, migrate s
 
 **Goal:** Skills move into `chalkboard.system.skills` as structured metadata. Anthropic's projection reads it and produces the same markdown appendix as today, but at projection time, not inside Scribe. (Future providers can render differently.)
 
-**Deliverables:**
-- `internal/credo/credo.go`: `LoadSkills` keeps its current shape. `FormatSkills` deletes — Scribe no longer renders skills inline. The template body output is purely the credo body.
-- `internal/chalkboard/skills.go` (NEW): `Skill` struct (Name, Description, Path) re-exported here for IR consumption. Helpers: `MarshalSkills([]Skill) json.RawMessage`, `UnmarshalSkills(json.RawMessage) []Skill`.
-- `internal/figaro/agent.go`: bootstrap reads skills, marshals into `system.skills` chalkboard key. Rehydrate re-reads and diffs.
-- `internal/provider/anthropic/anthropic.go`: in `projectBlockWithModel`, after extracting `system.prompt`, also extract `system.skills`; render as the existing markdown format; append to the Anthropic system blocks (as a separate system block, so it can be cache-controlled separately if desired).
-- `internal/provider/anthropic/render_skills.go` (NEW): the markdown formatter for Anthropic — same output shape as the current `FormatSkills` so we don't change what the model sees.
+**The shape stored in chalkboard:**
+
+```jsonc
+// chalkboard.system.skills
+[
+  {"name": "brave",  "description": "Search the web ...", "path": "/home/gluck/.config/figaro/skills/brave.md"},
+  {"name": "docker", "description": "Docker container ...", "path": "/home/gluck/.config/figaro/skills/docker.md"}
+  // ...
+]
+```
+
+Only frontmatter metadata + path. Skill body content is read on demand by the model via the `read` tool — same as today.
+
+**Drift detection digest:**
+
+```go
+func skillsDigest(skills []Skill) string {
+    // Sort by path for stability
+    sort.Slice(skills, func(i, j int) bool { return skills[i].Path < skills[j].Path })
+    h := sha256.New()
+    for _, s := range skills {
+        info, _ := os.Stat(s.Path)
+        fmt.Fprintf(h, "%s\t%d\t%d\n", s.Path, info.ModTime().UnixNano(), info.Size())
+    }
+    return hex.EncodeToString(h.Sum(nil))
+}
+```
+
+Stored as `chalkboard.system.skills_digest` at bootstrap and on each rehydrate. On cold load, agent recomputes the digest from current disk; mismatch logs a warning ("aria N has skills_digest A; disk is now B; run `figaro rehydrate` to update"). Non-blocking.
+
+**Order-sensitive deliverables.** Sequence matters for byte-stability test continuity:
+
+1. **Add `chalkboard.system.skills` shape and the digest helper.** No projection changes yet. Bootstrap writes the new keys; nothing reads them yet. Existing FormatSkills + Scribe path still produces the system prompt.
+2. **Move `FormatSkills` from `internal/credo/` to `internal/provider/anthropic/render_skills.go`.** Identical implementation, new home. Verify byte-for-byte identical output via test on representative `[]Skill` input. Wire-format and Scribe behavior remain unchanged at this step.
+3. **Drop `FormatSkills` invocation from `Scribe.Build`.** Scribe now produces ONLY the rendered credo body; skills are absent from `system.prompt`. The test suite would fail at this point — wire format changed. Don't ship this step alone.
+4. **Anthropic projection reads `system.skills` from the chalkboard snapshot and emits the markdown as a SEPARATE system block** (in addition to the existing prompt block). The `req.System` array becomes:
+   - `{"type": "text", "text": "You are Claude Code, ..."}` (OAuth only — Claude Code identity)
+   - `{"type": "text", "text": "<credo body>"}` (system.prompt)
+   - `{"type": "text", "text": "# Available Skills\n...", "cache_control": ephemeral}` (system.skills, last block)
+   The `markCacheBreakpoints` logic targets the last system block; with skills present, it now lands on the skills block. With no skills, on the prompt block. Either way, byte-stable per-aria.
+5. **Re-run wire-format byte-stability tests.** Bytes that the model sees are identical to pre-refactor *modulo the block boundary* between credo and skills. Snapshot tests on `req.System` updated to expect the array shape.
+6. **Cold-load drift detection.** Compute current disk digest at agent activation; compare to `system.skills_digest`; log mismatch warning.
+7. **Rehydrate handler reads skills.** Re-read `~/.config/figaro/skills/`, recompute structured `[]Skill` and digest, diff against current `system.skills`/`system.skills_digest`, emit patch on diff.
+
+**Files touched:**
+
+- `internal/credo/credo.go`: `LoadSkills` stays; `FormatSkills` and `Skill.Content` removed from this package (Content was unused anyway). `Skill` struct moves into `internal/message/skill.go` so it lives in the IR.
+- `internal/chalkboard/skills.go` (NEW): `MarshalSkills([]Skill) json.RawMessage`, `UnmarshalSkills(json.RawMessage) ([]Skill, error)`, `SkillsDigest([]Skill) string`.
+- `internal/figaro/agent.go`: bootstrap and rehydrate paths populate `system.skills` and `system.skills_digest`.
+- `internal/provider/anthropic/render_skills.go` (NEW): the markdown formatter; identical bytes to the prior `credo.FormatSkills`.
+- `internal/provider/anthropic/anthropic.go`: `projectBlockWithModel` emits skills as a separate system block.
 
 **Tests:**
-- Bootstrap captures skills; projection produces identical bytes to the current FormatSkills output.
-- Add a skill file → run rehydrate → assert `system.skills` updates and includes the new entry.
-- Drift warning: cold-load with `system.skills_digest` ≠ current disk emits a warning to operator; aria continues running with the cached digest until rehydrate.
+
+- Bootstrap on an aria with N skills: `system.skills` is a JSON array of N entries; `system.skills_digest` matches the helper output.
+- Anthropic projection produces identical markdown bytes for the skills block as `FormatSkills` did before the move (snapshot test).
+- Wire-format `req.System` is a 2- or 3-element array depending on auth path and skill presence; cache_control is on the last element.
+- Add a skill file → run `figaro rehydrate` → patch contains the new skill in `system.skills` and an updated `system.skills_digest`.
+- Edit a skill's frontmatter description → run rehydrate → patch contains the updated entry.
+- Edit a skill's body only → rehydrate → digest changes (mod-time differs), but the rendered system block bytes are unchanged (description unchanged), so `req.System` bytes match prior. Cache hit possible.
+- Cold-load drift: write a fake old digest into chalkboard.json; restart agent; assert warning emitted to angelus.log.
 
 ### Stage F — Tests, benchmarks, docs
 
