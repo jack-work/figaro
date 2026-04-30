@@ -105,6 +105,21 @@ func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 			a.Interrupt()
 			return rpc.InterruptResponse{OK: true}, nil
 		},
+		rpc.MethodRehydrate: func(ctx context.Context, params json.RawMessage) (any, error) {
+			var req rpc.RehydrateRequest
+			if len(params) > 0 {
+				if err := json.Unmarshal(params, &req); err != nil {
+					return nil, err
+				}
+			}
+			set, removed, applied, err := a.Rehydrate(req.DryRun)
+			if err != nil {
+				return nil, err
+			}
+			return rpc.RehydrateResponse{
+				Applied: applied, SetKeys: set, RemoveKeys: removed,
+			}, nil
+		},
 	}
 
 	srv := jsonrpc.NewServer(jconn, handlers)

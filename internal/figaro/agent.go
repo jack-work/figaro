@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"text/template"
 	"time"
@@ -36,6 +37,7 @@ const (
 	eventToolOutput
 	eventToolResult
 	eventInterrupt
+	eventRehydrate
 )
 
 type event struct {
@@ -65,6 +67,9 @@ type event struct {
 	// eventToolResult
 	content []message.Content
 	isErr   bool
+
+	// eventRehydrate
+	rehydratePatch message.Patch
 }
 
 // Config holds everything needed to construct an Agent.
@@ -764,6 +769,35 @@ func (a *Agent) drainLoop(ctx context.Context) {
 				a.finalizeAndSend(a.inbox)
 			}
 
+		case eventRehydrate:
+			// Re-run the credo and write the new system.* keys as a
+			// state-only tic. No LLM stream — control plane only.
+			fmt.Fprintf(os.Stderr, "agent: event=Rehydrate set=%d remove=%d\n",
+				len(evt.rehydratePatch.Set), len(evt.rehydratePatch.Remove))
+			tic := message.Message{
+				Role:      message.RoleUser,
+				Patches:   []message.Patch{evt.rehydratePatch},
+				Timestamp: time.Now().UnixMilli(),
+			}
+			lt, err := a.memStore.Append(tic)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "figaro %s: rehydrate append: %v\n", a.id, err)
+				continue
+			}
+			tic.LogicalTime = lt
+			a.chalkboard.Apply(evt.rehydratePatch)
+			if err := a.chalkboard.Save(); err != nil {
+				fmt.Fprintf(os.Stderr, "figaro %s: rehydrate chalkboard save: %v\n", a.id, err)
+			}
+			if err := a.memStore.Flush(); err != nil {
+				fmt.Fprintf(os.Stderr, "figaro %s: rehydrate flush: %v\n", a.id, err)
+			}
+			a.fanOut(rpc.Notification{
+				JSONRPC: "2.0",
+				Method:  rpc.MethodMessage,
+				Params:  rpc.MessageParams{LogicalTime: lt, Message: tic},
+			})
+
 		case eventInterrupt:
 			// Idempotent: ignore if we're already idle or already interrupted.
 			if a.inbox.IsIdle() || a.interrupted {
@@ -1015,18 +1049,22 @@ func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
 		clientPatch = chalkboard.Patch{Set: input.Patch.Set, Remove: input.Patch.Remove}
 	}
 
-	snap := a.chalkboard.Snapshot()
+	// system.* is harness-reserved (set by bootstrap / rehydrate);
+	// clients can't manage those keys. Strip them from the snapshot
+	// the client's Context is diffed against, so unmentioned system.*
+	// keys aren't interpreted as removals.
+	snap := withoutSystemNS(a.chalkboard.Snapshot())
 
 	var combined chalkboard.Patch
 	switch {
 	case input.Context != nil && input.Patch != nil:
 		// Drift-detection: diff context vs persisted; apply patch on top.
-		ctx := chalkboard.Snapshot(input.Context)
+		ctx := withoutSystemNS(chalkboard.Snapshot(input.Context))
 		drift := ctx.Diff(snap)
 		combined = chalkboard.Merge(drift, clientPatch)
 	case input.Context != nil:
 		// Context-only: server diffs and applies.
-		ctx := chalkboard.Snapshot(input.Context)
+		ctx := withoutSystemNS(chalkboard.Snapshot(input.Context))
 		combined = ctx.Diff(snap)
 	case input.Patch != nil:
 		// Patch-only: apply directly.
@@ -1044,6 +1082,84 @@ func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
 	// Advance the chalkboard's in-memory snapshot. (Persisted to disk
 	// at endTurn via chalkboard.Save.)
 	a.chalkboard.Apply(combined)
+}
+
+// Rehydrate re-runs the Scribe and writes its output to
+// chalkboard.system.* as a fresh state-only tic. The diff (vs the
+// current chalkboard) is what actually gets stored; if nothing
+// changed, no tic is appended and the response reports an empty
+// patch.
+//
+// dryRun computes the diff but doesn't persist anything — used by
+// `figaro rehydrate --dry-run` to preview what would change.
+//
+// Returns the keys set / removed by the patch. Errors from the
+// scribe (e.g. credo.md unreadable) bubble up unchanged.
+func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied bool, err error) {
+	if a.chalkboard == nil || a.scribe == nil {
+		return nil, nil, false, fmt.Errorf("rehydrate requires both a chalkboard and a scribe")
+	}
+	credoCtx := credo.CurrentContext(a.cwd, a.root, a.prov.Name(), a.model, a.id, "")
+	prompt, buildErr := a.scribe.Build(credoCtx)
+	if buildErr != nil {
+		return nil, nil, false, fmt.Errorf("rehydrate build: %w", buildErr)
+	}
+
+	desired := chalkboard.Snapshot{}
+	setStr := func(key, val string) {
+		if b, mErr := json.Marshal(val); mErr == nil {
+			desired[key] = b
+		}
+	}
+	setStr("system.prompt", prompt)
+	setStr("system.model", a.model)
+	setStr("system.provider", a.prov.Name())
+
+	// Diff against just the system.* slice of current — leave any
+	// non-system keys (cwd, datetime, etc.) untouched.
+	currentSystem := systemNSOnly(a.chalkboard.Snapshot())
+	patch := desired.Diff(currentSystem)
+
+	for k := range patch.Set {
+		set = append(set, k)
+	}
+	removed = append(removed, patch.Remove...)
+
+	if patch.IsEmpty() || dryRun {
+		return set, removed, false, nil
+	}
+
+	// Apply via the inbox so we don't race the drain loop.
+	a.inbox.SendPatient(event{typ: eventRehydrate, rehydratePatch: patch})
+	return set, removed, true, nil
+}
+
+// withoutSystemNS returns a clone of the snapshot with all keys
+// under the harness-reserved system.* namespace removed. Used to
+// keep client-supplied Context inputs from accidentally erasing
+// bootstrap / rehydrate state during diffing.
+func withoutSystemNS(s chalkboard.Snapshot) chalkboard.Snapshot {
+	out := make(chalkboard.Snapshot, len(s))
+	for k, v := range s {
+		if strings.HasPrefix(k, "system.") {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// systemNSOnly is the symmetric helper: returns a clone containing
+// only system.* keys. Used by Rehydrate to compute its diff against
+// the harness-managed slice of state.
+func systemNSOnly(s chalkboard.Snapshot) chalkboard.Snapshot {
+	out := chalkboard.Snapshot{}
+	for k, v := range s {
+		if strings.HasPrefix(k, "system.") {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // resolveSystemPrompt returns the system prompt for the next Send.

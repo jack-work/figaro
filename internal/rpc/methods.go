@@ -22,6 +22,7 @@ const (
 	MethodSetModel   = "figaro.set_model"
 	MethodSetLabel   = "figaro.set_label"
 	MethodInterrupt  = "figaro.interrupt"
+	MethodRehydrate  = "figaro.rehydrate"
 	// figaro.subscribe is handled at the transport level (long-lived connection).
 )
 
@@ -104,6 +105,23 @@ type ContextRequest struct{}
 
 type ContextResponse struct {
 	Messages []interface{} `json:"messages"` // []message.Message, but interface{} for serialization flexibility
+}
+
+// RehydrateRequest re-runs the Scribe and writes the resulting
+// system.* keys into the chalkboard. With DryRun set, the server
+// computes the diff and returns it without persisting — useful for
+// `figaro rehydrate --dry-run`.
+type RehydrateRequest struct {
+	DryRun bool `json:"dry_run,omitempty"`
+}
+
+// RehydrateResponse describes the patch produced by rehydrate.
+// SetKeys / RemoveKeys list the keys that changed; Applied is true if
+// the patch was actually written to the chalkboard (false on dry-run).
+type RehydrateResponse struct {
+	Applied    bool     `json:"applied"`
+	SetKeys    []string `json:"set_keys,omitempty"`
+	RemoveKeys []string `json:"remove_keys,omitempty"`
 }
 
 type FigaroInfoResponse struct {

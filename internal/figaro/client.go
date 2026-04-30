@@ -75,6 +75,17 @@ func (c *Client) Interrupt(ctx context.Context) error {
 	return c.cli.Call(ctx, rpc.MethodInterrupt, rpc.InterruptRequest{}, nil)
 }
 
+// Rehydrate re-runs the credo and writes the resulting system.* keys
+// to the chalkboard as a state-only tic. With dryRun set, the diff is
+// returned without persisting anything.
+func (c *Client) Rehydrate(ctx context.Context, dryRun bool) (*rpc.RehydrateResponse, error) {
+	var resp rpc.RehydrateResponse
+	if err := c.cli.Call(ctx, rpc.MethodRehydrate, rpc.RehydrateRequest{DryRun: dryRun}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Close closes the connection.
 func (c *Client) Close() error {
 	return c.cli.Close()
