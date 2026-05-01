@@ -17,9 +17,13 @@ import (
 
 // fakeScribe returns a fixed prompt — the bootstrap path doesn't need a
 // real credo template on disk.
-type fakeScribe struct{ prompt string }
+type fakeScribe struct {
+	prompt string
+	skills []credo.Skill
+}
 
 func (f *fakeScribe) Build(credo.Context) (string, error) { return f.prompt, nil }
+func (f *fakeScribe) Skills() ([]credo.Skill, error)      { return f.skills, nil }
 
 func TestBootstrap_FreshAria_EmitsStateOnlyTic(t *testing.T) {
 	dir := t.TempDir()

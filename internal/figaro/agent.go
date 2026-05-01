@@ -279,6 +279,16 @@ func (a *Agent) bootstrapIfNeeded() {
 	setStr("system.model", a.model)
 	setStr("system.provider", a.prov.Name())
 
+	// Stage E: skills travel as their own chalkboard key. The
+	// Anthropic provider formats and emits them as a separate
+	// system block at projection time.
+	if skills, err := a.scribe.Skills(); err == nil && len(skills) > 0 {
+		catalog := skillCatalog(skills)
+		if b, err := json.Marshal(catalog); err == nil {
+			patch.Set["system.skills"] = b
+		}
+	}
+
 	tic := message.Message{
 		Role:      message.RoleUser,
 		Patches:   []message.Patch{patch},
@@ -295,6 +305,22 @@ func (a *Agent) bootstrapIfNeeded() {
 	if err := a.memStore.Flush(); err != nil {
 		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap memStore flush: %v\n", a.id, err)
 	}
+}
+
+// skillCatalog projects the loaded Skill values into the wire shape
+// stored at chalkboard.system.skills. Content bodies are excluded —
+// the model uses the read tool to load a skill's body when invoking
+// it; the catalog is just name/description/path.
+func skillCatalog(skills []credo.Skill) []credo.SkillCatalogEntry {
+	out := make([]credo.SkillCatalogEntry, len(skills))
+	for i, s := range skills {
+		out[i] = credo.SkillCatalogEntry{
+			Name:        s.Name,
+			Description: s.Description,
+			FilePath:    s.FilePath,
+		}
+	}
+	return out
 }
 
 // newStore creates the appropriate store for this agent.
@@ -1182,6 +1208,17 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 	setStr("system.prompt", prompt)
 	setStr("system.model", a.model)
 	setStr("system.provider", a.prov.Name())
+
+	// Stage E: rehydrate also reloads skills from disk and folds
+	// them into system.skills. Empty catalogs (no skills directory)
+	// produce no entry — the diff will Remove system.skills if it
+	// previously existed.
+	if skills, sErr := a.scribe.Skills(); sErr == nil && len(skills) > 0 {
+		catalog := skillCatalog(skills)
+		if b, mErr := json.Marshal(catalog); mErr == nil {
+			desired["system.skills"] = b
+		}
+	}
 
 	// Diff against just the system.* slice of current — leave any
 	// non-system keys (cwd, datetime, etc.) untouched.

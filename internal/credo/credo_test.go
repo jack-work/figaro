@@ -95,10 +95,24 @@ func TestDefaultScribe_Build(t *testing.T) {
 	assert.Contains(t, prompt, "abc123")
 	assert.Contains(t, prompt, "v1")
 
-	// Skills should be appended.
-	assert.Contains(t, prompt, "# Available Skills")
-	assert.Contains(t, prompt, "websearch")
-	assert.Contains(t, prompt, "pishot")
+	// Stage E: skills are no longer appended to the credo body.
+	// They flow through chalkboard.system.skills, formatted by the
+	// provider as a separate system block at projection time.
+	assert.NotContains(t, prompt, "# Available Skills")
+}
+
+func TestDefaultScribe_Skills(t *testing.T) {
+	scribe := credo.NewDefaultScribe("testdata")
+	skills, err := scribe.Skills()
+	require.NoError(t, err)
+	require.Len(t, skills, 2)
+
+	names := map[string]bool{}
+	for _, s := range skills {
+		names[s.Name] = true
+	}
+	assert.True(t, names["websearch"])
+	assert.True(t, names["pishot"])
 }
 
 func TestDefaultScribe_Caching(t *testing.T) {

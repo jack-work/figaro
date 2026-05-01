@@ -24,10 +24,22 @@ import (
 // Scribe assembles the system prompt for a figaro agent.
 // Implementations are injected into the figaro at creation time.
 type Scribe interface {
-	// Build returns the assembled system prompt.
-	// Called before each prompt to pick up runtime changes.
-	// Implementations should cache and only re-template on change.
+	// Build returns the assembled credo body — the templated content
+	// of credo.md only. Called once at bootstrap and again on
+	// figaro.rehydrate. Implementations should cache and only
+	// re-template on change.
+	//
+	// Stage E split: skills are no longer appended to the credo
+	// body. They live independently in chalkboard.system.skills as
+	// structured metadata (see Skills) and the provider emits them
+	// as a separate system block at projection time.
 	Build(ctx Context) (string, error)
+
+	// Skills returns the catalog of skills loaded from disk. Empty
+	// list (not error) when no skills directory exists. Called by
+	// the agent's bootstrap and rehydrate paths to populate
+	// chalkboard.system.skills.
+	Skills() ([]Skill, error)
 }
 
 // Context holds the values exposed to the credo template.
@@ -53,16 +65,48 @@ type Skill struct {
 	FilePath    string // absolute path to the skill file
 }
 
+// SkillCatalogEntry is the wire shape stored at
+// chalkboard.system.skills — the model-facing catalog of available
+// skills. Content bodies are deliberately omitted: the model loads
+// a skill's body via the read tool when it needs to invoke one.
+// Persisting bodies in the catalog would bloat the system prompt
+// for skills that may never be consulted.
+type SkillCatalogEntry struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	FilePath    string `json:"file_path"`
+}
+
+// FormatSkillCatalog renders a catalog as the markdown-shaped
+// system block the provider emits. Mirrors FormatSkills for
+// internal Skill values — same surface from the model's
+// perspective.
+func FormatSkillCatalog(entries []SkillCatalogEntry) string {
+	if len(entries) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("# Available Skills\n\n")
+	b.WriteString("Use the read tool to load a skill's file when the task matches its description.\n\n")
+	for _, e := range entries {
+		b.WriteString(fmt.Sprintf("## %s\n", e.Name))
+		if e.Description != "" {
+			b.WriteString(fmt.Sprintf("*%s*\n", e.Description))
+		}
+		b.WriteString(fmt.Sprintf("File: `%s`\n\n", e.FilePath))
+	}
+	return b.String()
+}
+
 // DefaultScribe loads credo.md and skills from the config directory.
 type DefaultScribe struct {
-	credoPath  string // path to credo.md
-	skillsDir  string // path to skills directory
-	configDir  string // base config directory
+	credoPath string // path to credo.md
+	skillsDir string // path to skills directory
+	configDir string // base config directory
 
 	// Cache.
 	lastCredo    string
 	lastModTime  time.Time
-	lastSkillMod time.Time
 	cachedPrompt string
 	cachedCtx    Context
 }
@@ -79,22 +123,18 @@ func NewDefaultScribe(configDir string) *DefaultScribe {
 	}
 }
 
+// Build returns the templated credo body. Skills no longer ride
+// here — see Skills() and Stage E (skills as system.skills).
 func (s *DefaultScribe) Build(ctx Context) (string, error) {
-	// Check if credo.md changed.
 	credoMod := fileModTime(s.credoPath)
-	skillsMod := dirModTime(s.skillsDir)
-
-	if s.cachedPrompt != "" && credoMod.Equal(s.lastModTime) && skillsMod.Equal(s.lastSkillMod) && ctx == s.cachedCtx {
+	if s.cachedPrompt != "" && credoMod.Equal(s.lastModTime) && ctx == s.cachedCtx {
 		return s.cachedPrompt, nil
 	}
 
-	// Read credo template.
 	tmplBytes, err := os.ReadFile(s.credoPath)
 	if err != nil {
 		return "", fmt.Errorf("read credo.md: %w", err)
 	}
-
-	// Parse and execute template.
 	tmpl, err := template.New("credo").Parse(string(tmplBytes))
 	if err != nil {
 		return "", fmt.Errorf("parse credo template: %w", err)
@@ -105,25 +145,17 @@ func (s *DefaultScribe) Build(ctx Context) (string, error) {
 		return "", fmt.Errorf("execute credo template: %w", err)
 	}
 
-	// Load and append skills.
-	skills, err := LoadSkills(s.skillsDir)
-	if err != nil {
-		// Non-fatal — skills are optional.
-		skills = nil
-	}
-
 	prompt := buf.String()
-	if len(skills) > 0 {
-		prompt += "\n\n" + FormatSkills(skills)
-	}
-
-	// Cache.
 	s.lastModTime = credoMod
-	s.lastSkillMod = skillsMod
 	s.cachedCtx = ctx
 	s.cachedPrompt = prompt
-
 	return prompt, nil
+}
+
+// Skills loads the catalog of skill files under skillsDir. Empty
+// directory returns an empty slice and nil error.
+func (s *DefaultScribe) Skills() ([]Skill, error) {
+	return LoadSkills(s.skillsDir)
 }
 
 // CurrentContext builds a Context from the current runtime state.

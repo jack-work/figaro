@@ -24,6 +24,7 @@ import (
 	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/credo"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	hush "github.com/jack-work/hush/client"
@@ -328,6 +329,21 @@ func (a *Anthropic) projectBlockWithModel(block *message.Block, snapshot chalkbo
 		req.System = append(req.System, systemBlock{Type: "text", Text: systemText})
 	}
 
+	// Stage E: emit chalkboard.system.skills as its own system block
+	// after the credo. The catalog body is a markdown-rendered list
+	// of {name, description, file_path}. Bodies aren't included —
+	// the model uses the read tool to load a skill when it's
+	// invoked.
+	if raw, ok := snapshot["system.skills"]; ok && len(raw) > 0 {
+		var entries []credo.SkillCatalogEntry
+		if json.Unmarshal(raw, &entries) == nil && len(entries) > 0 {
+			body := credo.FormatSkillCatalog(entries)
+			if body != "" {
+				req.System = append(req.System, systemBlock{Type: "text", Text: body})
+			}
+		}
+	}
+
 	// Capture system block bytes for the translation log BEFORE
 	// markCacheBreakpoints attaches per-Send cache_control markers.
 	// The persisted bytes must be cache_control-free; the markers
@@ -462,11 +478,19 @@ func (a *Anthropic) projectMessages(msgs []message.Message, priorTranslations ca
 		// exactly one wire message per Message for now (the typical
 		// case); variadic translation (multiple wire messages per
 		// Message) is reserved for future N:1 native:figaro support.
+		//
+		// The translation log can also hold non-message entries
+		// keyed by figaro_lt (today: the system block array tied to
+		// the bootstrap flt). json.Unmarshal is lax and would happily
+		// decode a systemBlock as an empty-role nativeMessage,
+		// shipping bytes the API rejects. Validate the role
+		// explicitly before using a cached entry.
 		if i < priorTranslations.Len() {
 			pt := priorTranslations.At(i)
 			if len(pt.Messages) > 0 {
 				var cached nativeMessage
-				if err := json.Unmarshal(pt.Messages[0], &cached); err == nil {
+				if err := json.Unmarshal(pt.Messages[0], &cached); err == nil &&
+					(cached.Role == "user" || cached.Role == "assistant") {
 					result = append(result, cached)
 					perFLT[i] = pt.Messages[0] // reuse cached bytes verbatim
 					applyPatches()
