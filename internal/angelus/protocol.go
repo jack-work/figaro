@@ -19,6 +19,7 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
 )
 
@@ -113,6 +114,25 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 	return st
 }
 
+// openAriaTranslationLog returns a per-aria, per-provider translation
+// log at arias/{ariaID}/translations/{providerName}.jsonl. Returns
+// nil when the angelus has no FileBackend (translation log
+// persistence is FileBackend-specific) or the open fails — the agent
+// runs without translation caching in that case.
+func (h *handlers) openAriaTranslationLog(ariaID, providerName string) store.TranslationLog {
+	fb, ok := h.angelus.Backend.(interface{ Dir() string })
+	if !ok {
+		return nil
+	}
+	path := filepath.Join(fb.Dir(), ariaID, "translations", providerName+".jsonl")
+	log, err := store.OpenFileTranslationLog(path)
+	if err != nil {
+		h.angelus.Logger.Printf("warning: translation log open %s: %v (cache disabled for this aria)", path, err)
+		return nil
+	}
+	return log
+}
+
 func (h *handlers) create(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	_, span := figOtel.Start(ctx, "angelus.create")
 	defer span.End()
@@ -150,10 +170,13 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	// Ephemeral figaros skip the chalkboard — no persistence path makes
 	// sense for a transient prompt. Persistent figaros open a per-aria
-	// chalkboard.State at arias/{id}/chalkboard.json.
+	// chalkboard.State at arias/{id}/chalkboard.json and a translation
+	// log at arias/{id}/translations/{provider}.jsonl.
 	var cbState *chalkboard.State
+	var translog store.TranslationLog
 	if !req.Ephemeral {
 		cbState = h.openAriaChalkboard(id)
+		translog = h.openAriaTranslationLog(id, prov.Name())
 	}
 
 	agent := figaro.NewAgent(figaro.Config{
@@ -170,6 +193,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		Backend:             backend,
 		Chalkboard:          cbState,
 		ChalkboardTemplates: h.cbTmpls,
+		TranslationLog:      translog,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -357,6 +381,7 @@ func (h *handlers) RestoreArias(ctx context.Context) {
 			Backend:             h.angelus.Backend,
 			Chalkboard:          h.openAriaChalkboard(aria.ID),
 			ChalkboardTemplates: h.cbTmpls,
+			TranslationLog:      h.openAriaTranslationLog(aria.ID, prov.Name()),
 		})
 
 		if err := h.angelus.Registry.Register(agent); err != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -38,7 +39,7 @@ type integAccumulator struct{}
 func (integAccumulator) Finalize(message.Message) message.ProviderTranslation {
 	return message.ProviderTranslation{}
 }
-func (m *mockProviderForIntegration) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (m *mockProviderForIntegration) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	ch := make(chan provider.StreamEvent, 4)
 	go func() {
 		defer close(ch)

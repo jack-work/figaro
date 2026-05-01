@@ -91,10 +91,13 @@ type Usage struct {
 // (bootstrap and rehydrate, which are user-role Messages with only
 // Patches and no Content). See plans/aria-storage/log-unification.md.
 //
-// All providers project to and from Message. The Translation field
-// caches the per-provider wire-format projection of this Message; on
-// re-send to the same provider, it pulls from translation instead of
-// re-converting from the IR.
+// All providers project to and from Message. Per-provider wire-format
+// projections are cached in a parallel translation log
+// (arias/{id}/translations/{provider}.jsonl), keyed by
+// Message.LogicalTime — see internal/store/translog.go. On re-send
+// to the same provider, the agent supplies the cached translation
+// alongside the block; the provider falls back to fresh rendering
+// on cache misses.
 type Message struct {
 	Role    Role      `json:"role"`
 	Content []Content `json:"content"`
@@ -129,13 +132,6 @@ type Message struct {
 	// Timestamp in unix millis (wall clock, informational).
 	Timestamp int64 `json:"timestamp"`
 
-	// Translation caches the per-provider wire-format projection of
-	// this Message. See type Translation for the variadic shape.
-	//
-	// Stage D.2 plan: this field retires when translations move to a
-	// parallel timeline file (translations/{provider}.jsonl) keyed by
-	// figaro logical times. Until then, it travels inline.
-	Translation Translation `json:"translation,omitempty"`
 }
 
 // Block is the unit of conversation context: an optional compacted

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/message"
@@ -45,7 +46,7 @@ func (stubMockAccumulator) Finalize(message.Message) message.ProviderTranslation
 	return message.ProviderTranslation{}
 }
 
-func (m *mockProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (m *mockProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	ch := make(chan provider.StreamEvent, 4)
 	go func() {
 		defer close(ch)
@@ -270,7 +271,7 @@ func (p *panicProvider) Models(ctx context.Context) ([]provider.ModelInfo, error
 	return nil, nil
 }
 
-func (p *panicProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (p *panicProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	if p.panicCount > 0 {
 		p.panicCount--
 		panic("simulated crash")
@@ -635,7 +636,7 @@ func (s *slowProvider) Models(ctx context.Context) ([]provider.ModelInfo, error)
 // Send blocks until ctx is cancelled, then reports the cancellation
 // as a stream error — mirroring what a real HTTP SSE stream does when
 // its request context is cancelled mid-flight.
-func (s *slowProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (s *slowProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	ch := make(chan provider.StreamEvent, 1)
 	go func() {
 		defer close(ch)

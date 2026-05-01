@@ -14,6 +14,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/credo"
 	"github.com/jack-work/figaro/internal/message"
@@ -52,7 +53,8 @@ type event struct {
 	contentType message.ContentType
 
 	// eventLLMDone
-	message *message.Message
+	message     *message.Message
+	translation *message.ProviderTranslation // wire-form projection from the provider's accumulator
 
 	// eventLLMError, eventToolResult (when isErr)
 	err error
@@ -93,6 +95,13 @@ type Config struct {
 	// Agent calls Close on Kill.
 	Chalkboard          *chalkboard.State
 	ChalkboardTemplates *template.Template
+
+	// TranslationLog is the per-aria, per-provider translation
+	// timeline cache. Optional — nil = no translation caching, the
+	// provider re-renders from IR on every Send. Caller opens the
+	// log at arias/{id}/translations/{provider}.jsonl. The Agent
+	// calls Close on Kill.
+	TranslationLog store.TranslationLog
 }
 
 // Agent is the goroutine-based implementation of Figaro.
@@ -119,6 +128,12 @@ type Agent struct {
 	// goroutine that touches these fields; no locking needed.
 	chalkboard *chalkboard.State
 	cbTmpls    *template.Template
+
+	// TranslationLog persists per-figaro-message wire projections
+	// for one provider. Read on Send to populate the cache; written
+	// on each StreamEvent.Done that carries a Translation. Closed
+	// on Kill. Optional — ephemeral arias run without a log.
+	translog store.TranslationLog
 
 	// inProgressTic is a mutable user-role Message accumulated
 	// between LLM sends. Built up by eventUserPrompt and
@@ -183,6 +198,7 @@ func NewAgent(cfg Config) *Agent {
 		backend:     cfg.Backend,
 		chalkboard:  cfg.Chalkboard,
 		cbTmpls:     cfg.ChalkboardTemplates,
+		translog:    cfg.TranslationLog,
 		inbox:       NewInbox(ctx),
 		subscribers: make(map[chan rpc.Notification]struct{}),
 		createdAt:   time.Now(),
@@ -446,6 +462,13 @@ func (a *Agent) Kill() {
 		}
 	}
 
+	// Close the translation log.
+	if a.translog != nil {
+		if err := a.translog.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "figaro %s: translation log close error: %v\n", a.id, err)
+		}
+	}
+
 	if a.logFile != nil {
 		a.logFile.Close()
 	}
@@ -647,6 +670,20 @@ func (a *Agent) drainLoop(ctx context.Context) {
 				continue
 			}
 			evt.message.LogicalTime = lt
+
+			// Persist the wire-format projection from the provider's
+			// accumulator to the per-aria translation log, keyed by
+			// the assistant message's just-allocated LT.
+			if a.translog != nil && evt.translation != nil {
+				if _, err := a.translog.Append(
+					[]uint64{lt},
+					evt.translation.Messages,
+					evt.translation.Fingerprint,
+				); err != nil {
+					fmt.Fprintf(os.Stderr, "figaro %s: translation log append: %v\n", a.id, err)
+				}
+			}
+
 			a.fanOut(rpc.Notification{
 				JSONRPC: "2.0",
 				Method:  rpc.MethodMessage,
@@ -913,8 +950,14 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 		}
 	}
 
+	// Assemble the prior-translations slice indexed in lockstep
+	// with block.Messages. Lookups against the log fill positions
+	// where a cached entry exists; misses leave a zero
+	// ProviderTranslation (cache miss → provider re-renders).
+	priorTranslations := a.buildPriorTranslations(block.Messages)
+
 	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context\n", len(block.Messages))
-	ch, err := a.prov.Send(ctx, block, snapshot, a.toolDefs(), a.maxTokens)
+	ch, err := a.prov.Send(ctx, block, snapshot, priorTranslations, a.toolDefs(), a.maxTokens)
 	if err != nil {
 		inbox.SendSelfish(event{typ: eventLLMError, err: fmt.Errorf("provider send: %w", err)})
 		return
@@ -934,7 +977,11 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 				if sev.Err != nil {
 					inbox.SendSelfish(event{typ: eventLLMError, err: sev.Err})
 				} else {
-					inbox.SendSelfish(event{typ: eventLLMDone, message: sev.Message})
+					inbox.SendSelfish(event{
+						typ:         eventLLMDone,
+						message:     sev.Message,
+						translation: sev.Translation,
+					})
 				}
 				return
 			}
@@ -1166,6 +1213,26 @@ func systemNSOnly(s chalkboard.Snapshot) chalkboard.Snapshot {
 		}
 	}
 	return out
+}
+
+// buildPriorTranslations returns a CausalSlice indexed in lockstep
+// with msgs: index i holds the cached ProviderTranslation for
+// msgs[i].LogicalTime when known, or a zero entry when missing.
+// No translation log → fully empty slice; the provider treats
+// every message as a cache miss.
+func (a *Agent) buildPriorTranslations(msgs []message.Message) causal.Slice[message.ProviderTranslation] {
+	out := make([]message.ProviderTranslation, len(msgs))
+	if a.translog != nil {
+		for i, m := range msgs {
+			if entry, ok := a.translog.Lookup(m.LogicalTime); ok {
+				out[i] = message.ProviderTranslation{
+					Messages:    entry.Messages,
+					Fingerprint: entry.Fingerprint,
+				}
+			}
+		}
+	}
+	return causal.Wrap(out)
 }
 
 // resolveSystemPrompt returns the system prompt for the next Send.

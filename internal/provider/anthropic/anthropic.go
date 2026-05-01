@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
@@ -291,7 +292,7 @@ type nativeTool struct {
 
 // --- Projection: IR Block → native request ---
 
-func (a *Anthropic) projectBlockWithModel(block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) nativeRequest {
+func (a *Anthropic) projectBlockWithModel(block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, oauth bool, model string) nativeRequest {
 	req := nativeRequest{
 		Model: model, MaxTokens: maxTokens, Stream: true,
 	}
@@ -324,7 +325,7 @@ func (a *Anthropic) projectBlockWithModel(block *message.Block, snapshot chalkbo
 		req.System = append(req.System, systemBlock{Type: "text", Text: systemText})
 	}
 
-	req.Messages = a.projectMessages(block.Messages)
+	req.Messages = a.projectMessages(block.Messages, priorTranslations)
 	req.Tools = projectTools(tools)
 
 	markCacheBreakpoints(&req)
@@ -372,11 +373,15 @@ func markCacheBreakpoints(req *nativeRequest) {
 // content blocks via the configured ReminderRenderer (Stage C, log
 // unification). Tool results are carried as ContentToolResult blocks
 // within the user-role tic that accumulated them.
-func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
+//
+// priorTranslations is parallel-indexed with msgs: priorTranslations.At(i)
+// holds the cached wire-format projection for msgs[i] when known.
+// An empty ProviderTranslation entry triggers fresh rendering.
+func (a *Anthropic) projectMessages(msgs []message.Message, priorTranslations causal.Slice[message.ProviderTranslation]) []nativeMessage {
 	var result []nativeMessage
 	prevSnap := chalkboard.Snapshot{}
 
-	for _, msg := range msgs {
+	for i, msg := range msgs {
 		// Track running snapshot for reminder rendering, even on
 		// cache-hit paths where we use the cached translation verbatim.
 		//
@@ -400,13 +405,16 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 		// Try the cached translation first. The cache hit path expects
 		// exactly one wire message per Message for now (the typical
 		// case); variadic translation (multiple wire messages per
-		// Message) is reserved for Stage D.
-		if pb, ok := msg.Translation.Get(providerName); ok && len(pb.Messages) > 0 {
-			var cached nativeMessage
-			if err := json.Unmarshal(pb.Messages[0], &cached); err == nil {
-				result = append(result, cached)
-				applyPatches()
-				continue
+		// Message) is reserved for future N:1 native:figaro support.
+		if i < priorTranslations.Len() {
+			pt := priorTranslations.At(i)
+			if len(pt.Messages) > 0 {
+				var cached nativeMessage
+				if err := json.Unmarshal(pt.Messages[0], &cached); err == nil {
+					result = append(result, cached)
+					applyPatches()
+					continue
+				}
 			}
 		}
 
@@ -524,7 +532,7 @@ func projectTools(tools []provider.Tool) []nativeTool {
 
 // --- Send: IR Block → stream → IR Messages with translation ---
 
-func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
 	}
@@ -543,7 +551,7 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot cha
 		return nil, fmt.Errorf("resolve token: %w", err)
 	}
 
-	native := a.projectBlockWithModel(block, snapshot, tools, maxTokens, isOAuthToken(apiKey), model)
+	native := a.projectBlockWithModel(block, snapshot, priorTranslations, tools, maxTokens, isOAuthToken(apiKey), model)
 	body, err := json.Marshal(native)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -793,10 +801,11 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 			// Hand the finalized figaro message to the native
 			// accumulator. The stub projects from the figaro IR;
 			// a future SDK-backed accumulator can return its
-			// natively accumulated shape instead.
+			// natively accumulated shape instead. The translation
+			// rides on the StreamEvent — the agent persists it to
+			// the per-aria translation log keyed by Message.LogicalTime.
 			pt := acc.Finalize(msg)
-			msg.Translation.Set(providerName, pt)
-			ch <- provider.StreamEvent{Done: true, Message: &msg}
+			ch <- provider.StreamEvent{Done: true, Message: &msg, Translation: &pt}
 			return
 
 		case "error":

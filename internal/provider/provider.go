@@ -4,6 +4,7 @@ package provider
 import (
 	"context"
 
+	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -31,6 +32,12 @@ type StreamEvent struct {
 	BlockDone   bool
 	Done        bool
 	Message     *message.Message
+	// Translation is set on the Done event for assistant responses:
+	// it carries the per-message wire-format projection the
+	// provider's NativeAccumulator produced. The agent persists it
+	// to the per-aria translation log keyed by Message.LogicalTime.
+	// Nil when the stream errored before message_stop.
+	Translation *message.ProviderTranslation
 	Err         error
 }
 
@@ -78,7 +85,21 @@ type Provider interface {
 	// Patches still travel on each Message and are rendered inline as
 	// system reminders per the provider's own configuration. Pass nil
 	// for ephemeral arias that have no chalkboard.
-	Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []Tool, maxTokens int) (<-chan StreamEvent, error)
+	//
+	// priorTranslations is the per-aria translation cache, indexed
+	// in lockstep with block.Messages: priorTranslations.At(i) is
+	// the cached translation for block.Messages[i]. An empty entry
+	// (zero ProviderTranslation) signals a cache miss; the provider
+	// renders fresh in that case. Pass an empty CausalSlice for
+	// ephemeral arias.
+	Send(
+		ctx context.Context,
+		block *message.Block,
+		snapshot chalkboard.Snapshot,
+		priorTranslations causal.Slice[message.ProviderTranslation],
+		tools []Tool,
+		maxTokens int,
+	) (<-chan StreamEvent, error)
 }
 
 // NativeAccumulator is the per-stream side of the provider that
