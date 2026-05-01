@@ -1,8 +1,9 @@
 // Package anthropic implements the figaro Provider for the Anthropic Messages API.
 //
 // Direct HTTP+SSE, no SDK. Converts from message.Block IR to
-// Anthropic's native format, using baggage when available.
-// Populates baggage on responses for cache-hit re-sends.
+// Anthropic's native format, using cached translations when
+// available. Populates per-message translation on responses for
+// cache-hit re-sends.
 package anthropic
 
 import (
@@ -307,7 +308,7 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 
 	for _, msg := range msgs {
 		// Track running snapshot for reminder rendering, even on
-		// cache-hit paths where we use baggage verbatim.
+		// cache-hit paths where we use the cached translation verbatim.
 		//
 		// The snapshot is what lets a future reminder-policy switch
 		// pick between "render only the keys this tic patched"
@@ -326,11 +327,11 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 			}
 		}
 
-		// Try baggage first. The cache hit path expects exactly one
-		// wire message per Message for now (the typical case);
-		// variadic baggage (multiple wire messages per Message) is
-		// reserved for Stage D.
-		if pb, ok := msg.Baggage.Get(providerName); ok && len(pb.Messages) > 0 {
+		// Try the cached translation first. The cache hit path expects
+		// exactly one wire message per Message for now (the typical
+		// case); variadic translation (multiple wire messages per
+		// Message) is reserved for Stage D.
+		if pb, ok := msg.Translation.Get(providerName); ok && len(pb.Messages) > 0 {
 			var cached nativeMessage
 			if err := json.Unmarshal(pb.Messages[0], &cached); err == nil {
 				result = append(result, cached)
@@ -451,7 +452,7 @@ func projectTools(tools []provider.Tool) []nativeTool {
 	return result
 }
 
-// --- Send: IR Block → stream → IR Messages with baggage ---
+// --- Send: IR Block → stream → IR Messages with translation ---
 
 func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	if maxTokens == 0 {
@@ -718,7 +719,7 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 		case "message_stop":
 			log("sse: message_stop output_tokens=%d stop_reason=%s", usage.OutputTokens, msg.StopReason)
 			msg.Usage = &usage
-			// Stash native form in baggage
+			// Stash native form in the message's translation cache.
 			nativeMsg := nativeMessage{Role: "assistant"}
 			for _, c := range msg.Content {
 				switch c.Type {
@@ -733,7 +734,7 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 				}
 			}
 			if raw, err := json.Marshal(nativeMsg); err == nil {
-				msg.Baggage.Set(providerName, message.ProviderBaggage{
+				msg.Translation.Set(providerName, message.ProviderTranslation{
 					Messages: []json.RawMessage{raw},
 				})
 			}

@@ -10,11 +10,11 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-func TestBaggage_GetSet(t *testing.T) {
-	var b message.Baggage
+func TestTranslation_GetSet(t *testing.T) {
+	var b message.Translation
 	assert.True(t, b.IsEmpty())
 
-	b.Set("anthropic", message.ProviderBaggage{
+	b.Set("anthropic", message.ProviderTranslation{
 		Messages:    []json.RawMessage{json.RawMessage(`{"role":"user"}`)},
 		Fingerprint: "abc123",
 	})
@@ -28,9 +28,9 @@ func TestBaggage_GetSet(t *testing.T) {
 	assert.False(t, ok, "absent provider returns ok=false")
 }
 
-func TestBaggage_RoundTrip_NewShape(t *testing.T) {
-	original := message.Baggage{
-		Entries: map[string]message.ProviderBaggage{
+func TestTranslation_RoundTrip_NewShape(t *testing.T) {
+	original := message.Translation{
+		Entries: map[string]message.ProviderTranslation{
 			"anthropic": {
 				Messages: []json.RawMessage{
 					json.RawMessage(`{"role":"user","content":[{"type":"text","text":"hi"}]}`),
@@ -48,7 +48,7 @@ func TestBaggage_RoundTrip_NewShape(t *testing.T) {
 	b, err := json.Marshal(original)
 	require.NoError(t, err)
 
-	var decoded message.Baggage
+	var decoded message.Translation
 	require.NoError(t, json.Unmarshal(b, &decoded))
 
 	got, ok := decoded.Get("anthropic")
@@ -61,7 +61,7 @@ func TestBaggage_RoundTrip_NewShape(t *testing.T) {
 	assert.Empty(t, got2.Fingerprint, "missing fp serializes to empty")
 }
 
-func TestBaggage_Empty_NilOrAbsent(t *testing.T) {
+func TestTranslation_Empty_NilOrAbsent(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		data []byte
@@ -70,7 +70,7 @@ func TestBaggage_Empty_NilOrAbsent(t *testing.T) {
 		{"empty object", []byte("{}")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var b message.Baggage
+			var b message.Translation
 			require.NoError(t, json.Unmarshal(tc.data, &b))
 			assert.True(t, b.IsEmpty())
 		})

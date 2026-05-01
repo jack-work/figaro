@@ -3,9 +3,9 @@
 //
 // These types are provider-agnostic. They serve as the common spec
 // between providers, avoiding NxM translations. Each message carries
-// opaque provider-specific "baggage" — the unaltered original
-// representation from the originating provider. When sending back
-// to the same provider, it can pull from baggage directly instead
+// per-provider "translation" entries — cached wire-format projections
+// from the originating provider. When sending back to the same
+// provider, it can pull from the cached translation directly instead
 // of re-converting from the IR.
 package message
 
@@ -91,10 +91,10 @@ type Usage struct {
 // (bootstrap and rehydrate, which are user-role Messages with only
 // Patches and no Content). See plans/aria-storage/log-unification.md.
 //
-// All providers project to and from Message. The Baggage field caches
-// the per-provider wire-format projection of this Message; on re-send
-// to the same provider, it pulls from baggage instead of re-converting
-// from the IR.
+// All providers project to and from Message. The Translation field
+// caches the per-provider wire-format projection of this Message; on
+// re-send to the same provider, it pulls from translation instead of
+// re-converting from the IR.
 type Message struct {
 	Role    Role      `json:"role"`
 	Content []Content `json:"content"`
@@ -129,9 +129,13 @@ type Message struct {
 	// Timestamp in unix millis (wall clock, informational).
 	Timestamp int64 `json:"timestamp"`
 
-	// Baggage caches the per-provider wire-format projection of
-	// this Message. See type Baggage for the variadic shape.
-	Baggage Baggage `json:"baggage,omitempty"`
+	// Translation caches the per-provider wire-format projection of
+	// this Message. See type Translation for the variadic shape.
+	//
+	// Stage D.2 plan: this field retires when translations move to a
+	// parallel timeline file (translations/{provider}.jsonl) keyed by
+	// figaro logical times. Until then, it travels inline.
+	Translation Translation `json:"translation,omitempty"`
 }
 
 // Block is the unit of conversation context: an optional compacted

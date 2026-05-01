@@ -30,7 +30,7 @@ func TestMessage_Roundtrip_PlainUserMessage(t *testing.T) {
 	assert.Equal(t, "ciao", decoded.Content[0].Text)
 	assert.Equal(t, uint64(7), decoded.LogicalTime)
 	assert.Empty(t, decoded.Patches)
-	assert.True(t, decoded.Baggage.IsEmpty())
+	assert.True(t, decoded.Translation.IsEmpty())
 }
 
 func TestMessage_Roundtrip_WithPatches(t *testing.T) {
@@ -91,15 +91,15 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 	assert.Equal(t, json.RawMessage(`"you are figaro"`), decoded.Patches[0].Set["system.prompt"])
 }
 
-// TestMessage_BaggageNewShape exercises the new Baggage type wired
+// TestMessage_TranslationNewShape exercises the new Translation type wired
 // into Message.
-func TestMessage_BaggageNewShape(t *testing.T) {
+func TestMessage_TranslationNewShape(t *testing.T) {
 	m := message.Message{
 		Role:        message.RoleAssistant,
 		Content:     []message.Content{message.TextContent("ok")},
 		LogicalTime: 2,
 	}
-	m.Baggage.Set("anthropic", message.ProviderBaggage{
+	m.Translation.Set("anthropic", message.ProviderTranslation{
 		Messages:    []json.RawMessage{json.RawMessage(`{"role":"assistant"}`)},
 		Fingerprint: "fp1",
 	})
@@ -110,7 +110,7 @@ func TestMessage_BaggageNewShape(t *testing.T) {
 	var decoded message.Message
 	require.NoError(t, json.Unmarshal(b, &decoded))
 
-	pb, ok := decoded.Baggage.Get("anthropic")
+	pb, ok := decoded.Translation.Get("anthropic")
 	require.True(t, ok)
 	assert.Equal(t, "fp1", pb.Fingerprint)
 	require.Len(t, pb.Messages, 1)

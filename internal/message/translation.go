@@ -2,10 +2,10 @@ package message
 
 import "encoding/json"
 
-// Baggage records the wire-format outputs of a Message, keyed by
-// provider name. Each ProviderBaggage value is variadic — a single
-// IR Message may produce multiple wire-format messages for one
-// provider:
+// Translation records the wire-format outputs of a Message, keyed by
+// provider name. Each ProviderTranslation value is variadic — a
+// single IR Message may produce multiple wire-format messages for
+// one provider:
 //
 //   - The typical case: 1 wire message per IR Message.
 //   - State-only tics (user-role Messages with only Patches, no
@@ -33,13 +33,19 @@ import "encoding/json"
 // operators are expected to back up and clear stale arias before
 // upgrading. Standard JSON marshal/unmarshal applies — no custom
 // hooks.
-type Baggage struct {
-	Entries map[string]ProviderBaggage `json:"entries,omitempty"`
+//
+// Stage D.2 plan: this type retires from the Message struct and
+// moves to a parallel timeline (arias/{id}/translations/{provider}.jsonl)
+// keyed by figaro logical times. The on-Message field is a
+// transitional shape; new code should treat translations as
+// derivable from the figaro timeline + a Provider's encoder.
+type Translation struct {
+	Entries map[string]ProviderTranslation `json:"entries,omitempty"`
 }
 
-// ProviderBaggage holds one provider's wire-format outputs for one
-// Message.
-type ProviderBaggage struct {
+// ProviderTranslation holds one provider's wire-format outputs for
+// one Message.
+type ProviderTranslation struct {
 	// Messages are complete wire-format messages this Message
 	// materializes for the provider, in order. Each is the
 	// provider's native message shape (e.g. nativeMessage JSON for
@@ -54,25 +60,25 @@ type ProviderBaggage struct {
 	Fingerprint string `json:"fp,omitempty"`
 }
 
-// IsEmpty reports whether the baggage has no per-provider entries.
-func (b Baggage) IsEmpty() bool {
-	return len(b.Entries) == 0
+// IsEmpty reports whether the translation has no per-provider entries.
+func (t Translation) IsEmpty() bool {
+	return len(t.Entries) == 0
 }
 
-// Get returns the provider's baggage and whether it was present.
+// Get returns the provider's translation and whether it was present.
 // Caller must not mutate the returned value's slices.
-func (b Baggage) Get(providerName string) (ProviderBaggage, bool) {
-	if b.Entries == nil {
-		return ProviderBaggage{}, false
+func (t Translation) Get(providerName string) (ProviderTranslation, bool) {
+	if t.Entries == nil {
+		return ProviderTranslation{}, false
 	}
-	pb, ok := b.Entries[providerName]
-	return pb, ok
+	pt, ok := t.Entries[providerName]
+	return pt, ok
 }
 
-// Set stores baggage for a provider. Allocates the map on first use.
-func (b *Baggage) Set(providerName string, pb ProviderBaggage) {
-	if b.Entries == nil {
-		b.Entries = make(map[string]ProviderBaggage)
+// Set stores translation for a provider. Allocates the map on first use.
+func (t *Translation) Set(providerName string, pt ProviderTranslation) {
+	if t.Entries == nil {
+		t.Entries = make(map[string]ProviderTranslation)
 	}
-	b.Entries[providerName] = pb
+	t.Entries[providerName] = pt
 }
