@@ -99,6 +99,74 @@ done:
 		"spy provider doesn't set StreamEvent.Translation; agent must not write empty entries")
 }
 
+// TestTranslog_StaleEntriesClearedOnOpen verifies that translog
+// entries with a non-matching fingerprint are wiped at NewAgent
+// time. Setup: pre-populate a log with a "old/v0" entry, then open
+// an Agent whose provider returns "tlp/v0" — the entry should be
+// gone before the agent serves anything.
+func TestTranslog_StaleEntriesClearedOnOpen(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "translations", "tlp.jsonl")
+
+	pre, err := store.OpenFileTranslationLog(logPath)
+	require.NoError(t, err)
+	_, err = pre.Append([]uint64{1}, []json.RawMessage{json.RawMessage(`{"x":1}`)}, "old/v0")
+	require.NoError(t, err)
+	require.NoError(t, pre.Close())
+
+	log, err := store.OpenFileTranslationLog(logPath)
+	require.NoError(t, err)
+	require.Len(t, log.All(), 1, "preloaded entry should be on disk")
+
+	a := figaro.NewAgent(figaro.Config{
+		ID:             "translog-stale",
+		SocketPath:     dir + "/sock",
+		Provider:       translogProvider{}, // Fingerprint() == "tlp/v0"
+		Model:          "tlp-model",
+		Cwd:            "/tmp",
+		Root:           "/tmp",
+		MaxTokens:      1024,
+		Tools:          tool.NewRegistry(),
+		TranslationLog: log,
+	})
+	t.Cleanup(func() { a.Kill() })
+
+	assert.Empty(t, log.All(),
+		"NewAgent must clear translog entries whose fingerprint disagrees with the provider's")
+}
+
+// TestTranslog_MatchingEntriesPreserved verifies the symmetric case:
+// fingerprints match the provider's current value, log is left alone.
+func TestTranslog_MatchingEntriesPreserved(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "translations", "tlp.jsonl")
+
+	pre, err := store.OpenFileTranslationLog(logPath)
+	require.NoError(t, err)
+	_, err = pre.Append([]uint64{1}, []json.RawMessage{json.RawMessage(`{"x":1}`)}, "tlp/v0")
+	require.NoError(t, err)
+	require.NoError(t, pre.Close())
+
+	log, err := store.OpenFileTranslationLog(logPath)
+	require.NoError(t, err)
+
+	a := figaro.NewAgent(figaro.Config{
+		ID:             "translog-fresh",
+		SocketPath:     dir + "/sock",
+		Provider:       translogProvider{}, // Fingerprint() == "tlp/v0"
+		Model:          "tlp-model",
+		Cwd:            "/tmp",
+		Root:           "/tmp",
+		MaxTokens:      1024,
+		Tools:          tool.NewRegistry(),
+		TranslationLog: log,
+	})
+	t.Cleanup(func() { a.Kill() })
+
+	assert.Len(t, log.All(), 1,
+		"matching fingerprints must leave the log untouched")
+}
+
 // TestTranslog_PopulatedTranslationLands verifies that an
 // assistant Done event with a populated StreamEvent.Translation
 // causes the agent to append a TranslationEntry keyed by the

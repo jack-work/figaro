@@ -225,6 +225,15 @@ func NewAgent(cfg Config) *Agent {
 		}
 	}
 
+	// Translation log staleness check. If any persisted entry's
+	// fingerprint differs from the provider's current Fingerprint(),
+	// throw out the whole log — translations are derivable from the
+	// figaro timeline + the current encoder config, so regeneration
+	// is the safe move on any encoder-config change. Subsequent
+	// assistant turns repopulate naturally as the SSE accumulator
+	// fires.
+	a.invalidateTranslogIfStale()
+
 	// Bootstrap: on a fresh aria, run the Scribe once, snapshot the
 	// system prompt + a few related keys into chalkboard.system.*, and
 	// emit a state-only tic carrying that patch. Subsequent turns read
@@ -1213,6 +1222,39 @@ func systemNSOnly(s chalkboard.Snapshot) chalkboard.Snapshot {
 		}
 	}
 	return out
+}
+
+// invalidateTranslogIfStale clears the translation log when any
+// persisted entry's fingerprint disagrees with the provider's current
+// Fingerprint(). The log is a derivable cache; on a config change
+// we throw it out and let subsequent assistant turns repopulate.
+//
+// No-op when there is no translog or the provider has no fingerprint
+// (empty fingerprints always match — opt-out for providers that
+// don't care about caching invalidation).
+func (a *Agent) invalidateTranslogIfStale() {
+	if a.translog == nil || a.prov == nil {
+		return
+	}
+	want := a.prov.Fingerprint()
+	if want == "" {
+		return
+	}
+	for _, e := range a.translog.All() {
+		if e.Fingerprint == "" {
+			continue // entry without a fingerprint — treat as compatible
+		}
+		if e.Fingerprint != want {
+			if err := a.translog.Clear(); err != nil {
+				fmt.Fprintf(os.Stderr, "figaro %s: translation log clear: %v\n", a.id, err)
+				return
+			}
+			fmt.Fprintf(os.Stderr,
+				"figaro %s: cleared stale translation log (fingerprint mismatch: stored=%q, current=%q)\n",
+				a.id, e.Fingerprint, want)
+			return
+		}
+	}
 }
 
 // buildPriorTranslations returns a CausalSlice indexed in lockstep
