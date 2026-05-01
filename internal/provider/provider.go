@@ -4,6 +4,7 @@ package provider
 import (
 	"context"
 
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -46,8 +47,13 @@ type Provider interface {
 	SetModel(model string)
 
 	// Send streams a conversation to the provider and returns response
-	// events. The provider reads chalkboard patches directly from the
-	// per-message Patches field and renders them inline as system
-	// reminders per its own configuration.
-	Send(ctx context.Context, block *message.Block, tools []Tool, maxTokens int) (<-chan StreamEvent, error)
+	// events.
+	//
+	// The chalkboard snapshot carries per-aria state the provider may
+	// consult — most notably system.prompt (the assembled credo) which
+	// the provider injects into its native system block. Per-message
+	// Patches still travel on each Message and are rendered inline as
+	// system reminders per the provider's own configuration. Pass nil
+	// for ephemeral arias that have no chalkboard.
+	Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []Tool, maxTokens int) (<-chan StreamEvent, error)
 }

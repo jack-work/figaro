@@ -899,16 +899,22 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 		return
 	}
 
-	// Inject system prompt.
-	if block.Header == nil && a.systemPrompt != "" {
-		block.Header = &message.Message{
-			Role:    message.RoleSystem,
-			Content: []message.Content{message.TextContent(a.systemPrompt)},
+	// Snapshot the chalkboard for the provider — system.prompt and
+	// any other harness-managed keys ride here. Ephemeral arias have
+	// no chalkboard; in that case we synthesize a transient snapshot
+	// from a.systemPrompt so the provider's "read system.prompt" path
+	// works uniformly.
+	var snapshot chalkboard.Snapshot
+	if a.chalkboard != nil {
+		snapshot = a.chalkboard.Snapshot()
+	} else if a.systemPrompt != "" {
+		if b, err := json.Marshal(a.systemPrompt); err == nil {
+			snapshot = chalkboard.Snapshot{"system.prompt": b}
 		}
 	}
 
 	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context\n", len(block.Messages))
-	ch, err := a.prov.Send(ctx, block, a.toolDefs(), a.maxTokens)
+	ch, err := a.prov.Send(ctx, block, snapshot, a.toolDefs(), a.maxTokens)
 	if err != nil {
 		inbox.SendSelfish(event{typ: eventLLMError, err: fmt.Errorf("provider send: %w", err)})
 		return

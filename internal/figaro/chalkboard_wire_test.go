@@ -31,7 +31,7 @@ func (p *chalkSpyProvider) Models(_ context.Context) ([]provider.ModelInfo, erro
 	return nil, nil
 }
 func (p *chalkSpyProvider) SetModel(string) {}
-func (p *chalkSpyProvider) Send(ctx context.Context, block *message.Block, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (p *chalkSpyProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	p.mu.Lock()
 	// Deep-copy the block: the agent owns the underlying memstore and
 	// will keep mutating it after Send returns.

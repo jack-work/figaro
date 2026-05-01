@@ -220,14 +220,22 @@ type nativeTool struct {
 
 // --- Projection: IR Block → native request ---
 
-func (a *Anthropic) projectBlockWithModel(block *message.Block, tools []provider.Tool, maxTokens int, oauth bool, model string) nativeRequest {
+func (a *Anthropic) projectBlockWithModel(block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) nativeRequest {
 	req := nativeRequest{
 		Model: model, MaxTokens: maxTokens, Stream: true,
 	}
 
 	// Build system prompt — always array form so cache_control can attach.
+	// Source priority: chalkboard.system.prompt (set at bootstrap by
+	// the agent loop), then block.Header (legacy / ephemeral fallback).
 	var systemText string
-	if block.Header != nil && len(block.Header.Content) > 0 {
+	if raw, ok := snapshot["system.prompt"]; ok {
+		var s string
+		if json.Unmarshal(raw, &s) == nil {
+			systemText = s
+		}
+	}
+	if systemText == "" && block.Header != nil && len(block.Header.Content) > 0 {
 		systemText = block.Header.Content[0].Text
 	}
 
@@ -445,7 +453,7 @@ func projectTools(tools []provider.Tool) []nativeTool {
 
 // --- Send: IR Block → stream → IR Messages with baggage ---
 
-func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
 	}
@@ -464,7 +472,7 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, tools []prov
 		return nil, fmt.Errorf("resolve token: %w", err)
 	}
 
-	native := a.projectBlockWithModel(block, tools, maxTokens, isOAuthToken(apiKey), model)
+	native := a.projectBlockWithModel(block, snapshot, tools, maxTokens, isOAuthToken(apiKey), model)
 	body, err := json.Marshal(native)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)

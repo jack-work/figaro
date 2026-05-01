@@ -51,7 +51,7 @@ func BenchmarkProjectBlock_10msgs(b *testing.B) {
 	tools := benchTools()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = a.projectBlockWithModel(block, tools, 1024, false, "claude-test")
+		_ = a.projectBlockWithModel(block, nil, tools, 1024, false, "claude-test")
 	}
 }
 
@@ -61,7 +61,7 @@ func BenchmarkProjectBlock_100msgs(b *testing.B) {
 	tools := benchTools()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = a.projectBlockWithModel(block, tools, 1024, false, "claude-test")
+		_ = a.projectBlockWithModel(block, nil, tools, 1024, false, "claude-test")
 	}
 }
 
