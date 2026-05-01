@@ -298,8 +298,20 @@ func (a *Anthropic) projectMessages(msgs []message.Message) []nativeMessage {
 	prevSnap := chalkboard.Snapshot{}
 
 	for _, msg := range msgs {
-		// Track running snapshot for reminder rendering's "old" field,
-		// even on cache-hit paths where we use baggage verbatim.
+		// Track running snapshot for reminder rendering, even on
+		// cache-hit paths where we use baggage verbatim.
+		//
+		// The snapshot is what lets a future reminder-policy switch
+		// pick between "render only the keys this tic patched"
+		// (today's behavior) and "render the full snapshot every
+		// turn." Both modes need prevSnap to stay in step with the
+		// timeline; advancing it on cache hits keeps the contract
+		// uniform across rendered and cached messages.
+		//
+		// Today the only template that reads the snapshot indirectly
+		// (via Entry.Old) is model.tmpl, which has no public surface,
+		// so this is mostly defensive — the contract is what we're
+		// preserving, not the current behavior.
 		applyPatches := func() {
 			for _, p := range msg.Patches {
 				prevSnap = prevSnap.Apply(p)

@@ -21,6 +21,27 @@ import (
 )
 
 // Snapshot is a full state view: an open-schema key-value map.
+//
+// Today's shape is intentionally untyped — values are raw JSON, and
+// callers that need a typed view extract their key and json.Unmarshal
+// it themselves. This is fine for the current use cases (renderer
+// templates read with .NewString / .OldString, harness code reads
+// system.* with json.Unmarshal into a string).
+//
+// Future direction: embed Snapshot in a typed envelope where a fixed
+// set of harness-known fields (e.g. system.reminder_policy,
+// system.prompt, system.model) are typed Go fields, and an "extra"
+// map[string]json.RawMessage carries client-defined keys. Renderers
+// would then read policy values via typed accessors instead of
+// string-extracting from raw JSON. The migration path is to add the
+// envelope, leave the existing map accessors in place, and move
+// callers over one by one.
+//
+// One concrete near-term motivation: a reminder-policy field that
+// switches projection between "render only patched keys" (today's
+// behavior) and "render the full snapshot every turn" — see the
+// snapshot threading in the Anthropic projection's projectMessages.
+// That switch wants a typed value rather than a stringly-typed lookup.
 type Snapshot map[string]json.RawMessage
 
 // Clone returns a copy. Useful when mutating a snapshot derived from a
