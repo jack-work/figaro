@@ -42,7 +42,7 @@ type spyAccumulator struct{}
 func (spyAccumulator) Finalize(message.Message) message.ProviderTranslation {
 	return message.ProviderTranslation{}
 }
-func (p *chalkSpyProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (p *chalkSpyProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
 	p.mu.Lock()
 	// Deep-copy the block: the agent owns the underlying memstore and
 	// will keep mutating it after Send returns.
@@ -67,7 +67,7 @@ func (p *chalkSpyProvider) Send(ctx context.Context, block *message.Block, snaps
 		ch <- provider.StreamEvent{Delta: "ok", ContentType: message.ContentText, Message: msg}
 		ch <- provider.StreamEvent{Done: true, Message: msg}
 	}()
-	return ch, nil
+	return ch, provider.ProjectionSummary{}, nil
 }
 
 func (p *chalkSpyProvider) sendCount() int {

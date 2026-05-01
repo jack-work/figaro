@@ -90,7 +90,7 @@ func TestProjectBlock_CacheBreakpoints(t *testing.T) {
 		{Name: "beta", Description: "second", Parameters: fakeSchema()},
 	}
 
-	req := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+	req, _ := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
 
 	require.NotEmpty(t, req.System, "system must be present")
 	last := req.System[len(req.System)-1]
@@ -129,7 +129,7 @@ func TestProjectBlock_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
 		},
 	}
 
-	req := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, nil, 1024, false, "claude-test")
+	req, _ := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, nil, 1024, false, "claude-test")
 
 	require.Len(t, req.Messages, 1)
 	require.NotEmpty(t, req.Messages[0].Content)
@@ -158,8 +158,8 @@ func TestProjectBlock_StableAcrossCalls(t *testing.T) {
 		{Name: "beta", Description: "second", Parameters: fakeSchema()},
 	}
 
-	r1 := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
-	r2 := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+	r1, _ := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+	r2, _ := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
 
 	b1, err := json.Marshal(r1)
 	require.NoError(t, err)
@@ -185,7 +185,7 @@ func TestProjectBlock_OAuthSystemArray(t *testing.T) {
 		},
 	}
 
-	req := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, nil, 1024, true, "claude-test")
+	req, _ := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, nil, 1024, true, "claude-test")
 
 	require.Len(t, req.System, 2, "OAuth system must have two blocks: Claude Code identity + credo")
 	assert.Contains(t, req.System[0].Text, "Claude Code")

@@ -29,7 +29,7 @@ func (translogProvider) Fingerprint() string                                    
 func (translogProvider) SetModel(string)                                           {}
 func (translogProvider) Models(_ context.Context) ([]provider.ModelInfo, error)    { return nil, nil }
 func (translogProvider) OpenAccumulator() provider.NativeAccumulator               { return nil }
-func (translogProvider) Send(_ context.Context, _ *message.Block, _ chalkboard.Snapshot, _ causal.Slice[message.ProviderTranslation], _ []provider.Tool, _ int) (<-chan provider.StreamEvent, error) {
+func (translogProvider) Send(_ context.Context, _ *message.Block, _ chalkboard.Snapshot, _ causal.Slice[message.ProviderTranslation], _ []provider.Tool, _ int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
 	ch := make(chan provider.StreamEvent, 4)
 	go func() {
 		defer close(ch)
@@ -48,7 +48,7 @@ func (translogProvider) Send(_ context.Context, _ *message.Block, _ chalkboard.S
 			},
 		}
 	}()
-	return ch, nil
+	return ch, provider.ProjectionSummary{}, nil
 }
 
 // TestTranslog_AssistantResponseAppendsEntry verifies that when an

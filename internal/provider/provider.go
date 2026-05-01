@@ -3,6 +3,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
@@ -23,6 +24,42 @@ type Tool struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description"`
 	Parameters  interface{} `json:"parameters"` // JSON Schema
+}
+
+// ProjectionSummary is the synchronous output of a Send projection.
+// Returned alongside the StreamEvent channel so the agent can persist
+// the wire bytes that this Send actually emitted (Stage D.2f
+// write-through translation persistence).
+//
+// All RawMessages are wire-format bytes WITHOUT cache_control
+// markers — those are recomputed per-Send by the provider's
+// markCacheBreakpoints (or equivalent) and persisting them with the
+// markers attached would couple cached bytes to the message's
+// position in the conversation, which moves between Sends.
+type ProjectionSummary struct {
+	// PerMessage holds wire bytes parallel-indexed with
+	// block.Messages. PerMessage[i] is the wire form of the figaro
+	// Message at block.Messages[i] — typically one wire message per
+	// figaro Message, though state-only tics that emit no wire
+	// output have a nil RawMessage at their index.
+	PerMessage []json.RawMessage
+
+	// System is the system block array bytes — the wire form of the
+	// chalkboard.system.prompt value (plus any provider-specific
+	// preamble like the OAuth Claude Code identity prefix). One
+	// RawMessage per system block.
+	System []json.RawMessage
+
+	// SystemFLT is the figaro logical time the System bytes are
+	// tied to: the most recent figaro Message whose Patches set
+	// chalkboard.system.prompt. Zero when no aria has bootstrapped
+	// (ephemeral arias that synthesize a snapshot).
+	SystemFLT uint64
+
+	// Fingerprint is the provider's encoder fingerprint at the time
+	// of this projection. Persisted alongside each translation entry
+	// so the staleness check (D.2e) can detect encoder-config drift.
+	Fingerprint string
 }
 
 // StreamEvent is a single chunk from a streaming response.
@@ -92,6 +129,10 @@ type Provider interface {
 	// (zero ProviderTranslation) signals a cache miss; the provider
 	// renders fresh in that case. Pass an empty CausalSlice for
 	// ephemeral arias.
+	//
+	// Returns the ProjectionSummary synchronously — the wire bytes
+	// the provider just produced for this Send, ready for the agent
+	// to persist into the translation log.
 	Send(
 		ctx context.Context,
 		block *message.Block,
@@ -99,7 +140,7 @@ type Provider interface {
 		priorTranslations causal.Slice[message.ProviderTranslation],
 		tools []Tool,
 		maxTokens int,
-	) (<-chan StreamEvent, error)
+	) (<-chan StreamEvent, ProjectionSummary, error)
 }
 
 // NativeAccumulator is the per-stream side of the provider that

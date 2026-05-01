@@ -39,7 +39,7 @@ type integAccumulator struct{}
 func (integAccumulator) Finalize(message.Message) message.ProviderTranslation {
 	return message.ProviderTranslation{}
 }
-func (m *mockProviderForIntegration) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (m *mockProviderForIntegration) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
 	ch := make(chan provider.StreamEvent, 4)
 	go func() {
 		defer close(ch)
@@ -53,7 +53,7 @@ func (m *mockProviderForIntegration) Send(ctx context.Context, block *message.Bl
 		ch <- provider.StreamEvent{Delta: "42", ContentType: message.ContentText, Message: &msg}
 		ch <- provider.StreamEvent{Done: true, Message: &msg}
 	}()
-	return ch, nil
+	return ch, provider.ProjectionSummary{}, nil
 }
 
 func TestIntegration_CreateAndPrompt(t *testing.T) {

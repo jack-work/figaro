@@ -46,7 +46,7 @@ func (stubMockAccumulator) Finalize(message.Message) message.ProviderTranslation
 	return message.ProviderTranslation{}
 }
 
-func (m *mockProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (m *mockProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
 	ch := make(chan provider.StreamEvent, 4)
 	go func() {
 		defer close(ch)
@@ -67,7 +67,7 @@ func (m *mockProvider) Send(ctx context.Context, block *message.Block, snapshot 
 			Message: &msg,
 		}
 	}()
-	return ch, nil
+	return ch, provider.ProjectionSummary{}, nil
 }
 
 // --- Tests ---
@@ -271,7 +271,7 @@ func (p *panicProvider) Models(ctx context.Context) ([]provider.ModelInfo, error
 	return nil, nil
 }
 
-func (p *panicProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (p *panicProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
 	if p.panicCount > 0 {
 		p.panicCount--
 		panic("simulated crash")
@@ -289,7 +289,7 @@ func (p *panicProvider) Send(ctx context.Context, block *message.Block, snapshot
 		ch <- provider.StreamEvent{Delta: p.response, ContentType: message.ContentText, Message: &msg}
 		ch <- provider.StreamEvent{Done: true, Message: &msg}
 	}()
-	return ch, nil
+	return ch, provider.ProjectionSummary{}, nil
 }
 
 func TestAgent_PanicRecovery(t *testing.T) {
@@ -636,7 +636,7 @@ func (s *slowProvider) Models(ctx context.Context) ([]provider.ModelInfo, error)
 // Send blocks until ctx is cancelled, then reports the cancellation
 // as a stream error — mirroring what a real HTTP SSE stream does when
 // its request context is cancelled mid-flight.
-func (s *slowProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (s *slowProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
 	ch := make(chan provider.StreamEvent, 1)
 	go func() {
 		defer close(ch)
@@ -647,7 +647,7 @@ func (s *slowProvider) Send(ctx context.Context, block *message.Block, snapshot 
 		<-ctx.Done()
 		ch <- provider.StreamEvent{Done: true, Err: ctx.Err()}
 	}()
-	return ch, nil
+	return ch, provider.ProjectionSummary{}, nil
 }
 
 // TestAgent_Interrupt verifies that Interrupt cancels an in-flight

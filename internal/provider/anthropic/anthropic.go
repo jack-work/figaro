@@ -292,9 +292,12 @@ type nativeTool struct {
 
 // --- Projection: IR Block → native request ---
 
-func (a *Anthropic) projectBlockWithModel(block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, oauth bool, model string) nativeRequest {
+func (a *Anthropic) projectBlockWithModel(block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, provider.ProjectionSummary) {
 	req := nativeRequest{
 		Model: model, MaxTokens: maxTokens, Stream: true,
+	}
+	summary := provider.ProjectionSummary{
+		Fingerprint: a.Fingerprint(),
 	}
 
 	// Build system prompt — always array form so cache_control can attach.
@@ -325,11 +328,47 @@ func (a *Anthropic) projectBlockWithModel(block *message.Block, snapshot chalkbo
 		req.System = append(req.System, systemBlock{Type: "text", Text: systemText})
 	}
 
-	req.Messages = a.projectMessages(block.Messages, priorTranslations)
+	// Capture system block bytes for the translation log BEFORE
+	// markCacheBreakpoints attaches per-Send cache_control markers.
+	// The persisted bytes must be cache_control-free; the markers
+	// move based on which message is the leaf and would couple the
+	// cached bytes to the position.
+	if len(req.System) > 0 {
+		summary.System = make([]json.RawMessage, len(req.System))
+		for i, sb := range req.System {
+			if raw, err := json.Marshal(sb); err == nil {
+				summary.System[i] = raw
+			}
+		}
+		summary.SystemFLT = lastSystemPromptFLT(block.Messages)
+	}
+
+	msgs, perFLT := a.projectMessages(block.Messages, priorTranslations)
+	req.Messages = msgs
+	summary.PerMessage = perFLT
+
 	req.Tools = projectTools(tools)
 
 	markCacheBreakpoints(&req)
-	return req
+	return req, summary
+}
+
+// lastSystemPromptFLT scans the figaro timeline backward and returns
+// the LogicalTime of the most recent message whose Patches set
+// chalkboard.system.prompt. Returns 0 when no message has set it
+// (ephemeral arias that synthesize the snapshot externally).
+//
+// Compute-on-demand keeps the agent free of "current system flt"
+// state; the figaro timeline is the source of truth.
+func lastSystemPromptFLT(msgs []message.Message) uint64 {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		for _, p := range msgs[i].Patches {
+			if _, ok := p.Set["system.prompt"]; ok {
+				return msgs[i].LogicalTime
+			}
+		}
+	}
+	return 0
 }
 
 // markCacheBreakpoints sets cache_control: ephemeral on the last block of
@@ -377,9 +416,26 @@ func markCacheBreakpoints(req *nativeRequest) {
 // priorTranslations is parallel-indexed with msgs: priorTranslations.At(i)
 // holds the cached wire-format projection for msgs[i] when known.
 // An empty ProviderTranslation entry triggers fresh rendering.
-func (a *Anthropic) projectMessages(msgs []message.Message, priorTranslations causal.Slice[message.ProviderTranslation]) []nativeMessage {
-	var result []nativeMessage
+//
+// Returns:
+//   - result: the wire-message stream (the messages array of the
+//     native request body). Length ≤ len(msgs); state-only figaro
+//     tics that emit no wire output are omitted.
+//   - perFLT: parallel-indexed with msgs. perFLT[i] is the wire
+//     bytes (without cache_control) of the wire message that
+//     msgs[i] produced, or nil for state-only tics that emitted
+//     nothing. Used by ProjectionSummary to populate the
+//     translation log.
+func (a *Anthropic) projectMessages(msgs []message.Message, priorTranslations causal.Slice[message.ProviderTranslation]) (result []nativeMessage, perFLT []json.RawMessage) {
+	perFLT = make([]json.RawMessage, len(msgs))
 	prevSnap := chalkboard.Snapshot{}
+
+	emit := func(idx int, nm nativeMessage) {
+		result = append(result, nm)
+		if raw, err := json.Marshal(nm); err == nil {
+			perFLT[idx] = raw
+		}
+	}
 
 	for i, msg := range msgs {
 		// Track running snapshot for reminder rendering, even on
@@ -412,6 +468,7 @@ func (a *Anthropic) projectMessages(msgs []message.Message, priorTranslations ca
 				var cached nativeMessage
 				if err := json.Unmarshal(pt.Messages[0], &cached); err == nil {
 					result = append(result, cached)
+					perFLT[i] = pt.Messages[0] // reuse cached bytes verbatim
 					applyPatches()
 					continue
 				}
@@ -449,7 +506,7 @@ func (a *Anthropic) projectMessages(msgs []message.Message, priorTranslations ca
 			// across all messages in the stream.
 			blocks = append(blocks, a.renderPatchBlocks(msg.Patches, &prevSnap)...)
 			if len(blocks) > 0 {
-				result = append(result, nativeMessage{Role: "user", Content: blocks})
+				emit(i, nativeMessage{Role: "user", Content: blocks})
 			}
 
 		case message.RoleAssistant:
@@ -467,7 +524,7 @@ func (a *Anthropic) projectMessages(msgs []message.Message, priorTranslations ca
 				}
 			}
 			if len(blocks) > 0 {
-				result = append(result, nativeMessage{Role: "assistant", Content: blocks})
+				emit(i, nativeMessage{Role: "assistant", Content: blocks})
 			}
 
 		case message.RoleSystem:
@@ -476,7 +533,7 @@ func (a *Anthropic) projectMessages(msgs []message.Message, priorTranslations ca
 			continue
 		}
 	}
-	return result
+	return result, perFLT
 }
 
 // renderPatchBlocks renders the given patches as system-reminder content
@@ -532,7 +589,7 @@ func projectTools(tools []provider.Tool) []nativeTool {
 
 // --- Send: IR Block → stream → IR Messages with translation ---
 
-func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
+func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
 	}
@@ -548,17 +605,17 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot cha
 	// Resolve token fresh each call (supports OAuth refresh).
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
-		return nil, fmt.Errorf("resolve token: %w", err)
+		return nil, provider.ProjectionSummary{}, fmt.Errorf("resolve token: %w", err)
 	}
 
-	native := a.projectBlockWithModel(block, snapshot, priorTranslations, tools, maxTokens, isOAuthToken(apiKey), model)
+	native, summary := a.projectBlockWithModel(block, snapshot, priorTranslations, tools, maxTokens, isOAuthToken(apiKey), model)
 	body, err := json.Marshal(native)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return nil, summary, fmt.Errorf("marshal request: %w", err)
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", apiMessagesURL, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, summary, fmt.Errorf("create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", apiVersion)
@@ -578,18 +635,18 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot cha
 
 	resp, err := a.HTTPClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
+		return nil, summary, fmt.Errorf("http request: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		errBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
+		return nil, summary, fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
 	}
 
 	ch := make(chan provider.StreamEvent, 64)
 	acc := a.OpenAccumulator()
 	go a.consumeSSE(resp.Body, ch, model, acc)
-	return ch, nil
+	return ch, summary, nil
 }
 
 // sseReadTimeout is how long we wait for the next SSE line before

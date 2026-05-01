@@ -52,7 +52,7 @@ func BenchmarkProjectBlock_10msgs(b *testing.B) {
 	tools := benchTools()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+		_, _ = a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
 	}
 }
 
@@ -62,7 +62,7 @@ func BenchmarkProjectBlock_100msgs(b *testing.B) {
 	tools := benchTools()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+		_, _ = a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
 	}
 }
 

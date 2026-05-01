@@ -1,6 +1,7 @@
 package figaro
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -966,11 +967,16 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 	priorTranslations := a.buildPriorTranslations(block.Messages)
 
 	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context\n", len(block.Messages))
-	ch, err := a.prov.Send(ctx, block, snapshot, priorTranslations, a.toolDefs(), a.maxTokens)
+	ch, summary, err := a.prov.Send(ctx, block, snapshot, priorTranslations, a.toolDefs(), a.maxTokens)
 	if err != nil {
 		inbox.SendSelfish(event{typ: eventLLMError, err: fmt.Errorf("provider send: %w", err)})
 		return
 	}
+
+	// Persist the projected wire bytes per Send. Idempotent — entries
+	// that already match (figaro_lts + fingerprint + bytes) are
+	// skipped so the file doesn't grow on cache-hit re-Sends.
+	a.persistProjectionSummary(block.Messages, summary)
 
 	go func() {
 		for sev := range ch {
@@ -1222,6 +1228,93 @@ func systemNSOnly(s chalkboard.Snapshot) chalkboard.Snapshot {
 		}
 	}
 	return out
+}
+
+// persistProjectionSummary writes the bytes the provider just
+// projected for this Send into the per-aria translation log,
+// keyed by the figaro logical times each entry covers.
+//
+// Idempotent: an entry is skipped when the log already has a
+// matching entry for those FigaroLTs with the same fingerprint
+// and byte-equal Messages. Only deltas land on disk.
+//
+// State-only figaro tics that emit no wire output get an empty
+// translation entry (Messages = nil) so coverage stays continuous
+// across the figaro timeline. State-only tics that DO contribute
+// to the wire (the bootstrap tic contributes the system block array
+// for system.prompt-establishing patches) are recorded with the
+// system bytes as their messages.
+//
+// No-op when the agent has no translog (ephemeral aria) or the
+// summary is empty.
+func (a *Agent) persistProjectionSummary(msgs []message.Message, summary provider.ProjectionSummary) {
+	if a.translog == nil {
+		return
+	}
+	fp := summary.Fingerprint
+
+	// Per-figaro-message entries. Each non-nil PerMessage[i] gets
+	// its own translation row. Nil entries (state-only tics that
+	// emit no wire output) are skipped — looking up a translation
+	// for those flts naturally misses; no need for empty rows.
+	for i, msg := range msgs {
+		var raw json.RawMessage
+		if i < len(summary.PerMessage) {
+			raw = summary.PerMessage[i]
+		}
+		if raw == nil {
+			continue
+		}
+		// Skip the bootstrap (or rehydrate) flt that carries
+		// system.prompt — its translation row is the system block
+		// array, written below. Without the skip we'd shadow the
+		// system entry with the (typically empty) per-message entry.
+		if msg.LogicalTime == summary.SystemFLT && summary.SystemFLT != 0 {
+			continue
+		}
+		a.maybeAppendTranslation([]uint64{msg.LogicalTime}, []json.RawMessage{raw}, fp)
+	}
+
+	// System block array entry — tied to the figaro tic that last
+	// established system.prompt.
+	if summary.SystemFLT != 0 && len(summary.System) > 0 {
+		a.maybeAppendTranslation([]uint64{summary.SystemFLT}, summary.System, fp)
+	}
+}
+
+// maybeAppendTranslation writes a translation entry only when the
+// existing on-disk entry (if any) for the same figaro_lts differs
+// in fingerprint or bytes. Used by persistProjectionSummary to keep
+// the log idempotent across Sends with no semantic change.
+func (a *Agent) maybeAppendTranslation(figaroLTs []uint64, msgs []json.RawMessage, fp string) {
+	if len(figaroLTs) == 0 {
+		return
+	}
+	// Lookup by the first FK (today every entry covers exactly one
+	// figaro_lt). If an existing entry matches by fingerprint and
+	// bytes, skip the append.
+	if existing, ok := a.translog.Lookup(figaroLTs[0]); ok {
+		if existing.Fingerprint == fp && rawMessagesEqual(existing.Messages, msgs) {
+			return
+		}
+	}
+	if _, err := a.translog.Append(figaroLTs, msgs, fp); err != nil {
+		fmt.Fprintf(os.Stderr, "figaro %s: translation log append: %v\n", a.id, err)
+	}
+}
+
+// rawMessagesEqual reports whether two []json.RawMessage are byte-
+// equal in the same order. Nil and empty slices compare equal.
+func rawMessagesEqual(a, b []json.RawMessage) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !bytes.Equal(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // invalidateTranslogIfStale clears the translation log when any
