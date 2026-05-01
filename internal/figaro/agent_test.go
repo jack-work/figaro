@@ -26,11 +26,23 @@ type mockProvider struct {
 	response string
 }
 
-func (m *mockProvider) Name() string         { return "mock" }
-func (m *mockProvider) SetModel(model string) {}
+func (m *mockProvider) Name() string                          { return "mock" }
+func (m *mockProvider) Fingerprint() string                    { return "mock/v0" }
+func (m *mockProvider) SetModel(model string)                  {}
+func (m *mockProvider) OpenAccumulator() provider.NativeAccumulator {
+	return stubMockAccumulator{}
+}
 
 func (m *mockProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	return nil, nil
+}
+
+// stubMockAccumulator returns an empty translation entry — tests
+// that exercise the figaro IR don't care about translation contents.
+type stubMockAccumulator struct{}
+
+func (stubMockAccumulator) Finalize(message.Message) message.ProviderTranslation {
+	return message.ProviderTranslation{}
 }
 
 func (m *mockProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
@@ -247,8 +259,12 @@ type panicProvider struct {
 	response   string
 }
 
-func (p *panicProvider) Name() string         { return "panic-mock" }
-func (p *panicProvider) SetModel(model string) {}
+func (p *panicProvider) Name() string                          { return "panic-mock" }
+func (p *panicProvider) Fingerprint() string                    { return "panic-mock/v0" }
+func (p *panicProvider) SetModel(model string)                  {}
+func (p *panicProvider) OpenAccumulator() provider.NativeAccumulator {
+	return stubMockAccumulator{}
+}
 
 func (p *panicProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	return nil, nil
@@ -606,8 +622,12 @@ type slowProvider struct {
 	started chan struct{} // closed once Send has been entered
 }
 
-func (s *slowProvider) Name() string          { return "slow" }
-func (s *slowProvider) SetModel(model string) {}
+func (s *slowProvider) Name() string                          { return "slow" }
+func (s *slowProvider) Fingerprint() string                    { return "slow/v0" }
+func (s *slowProvider) SetModel(model string)                  {}
+func (s *slowProvider) OpenAccumulator() provider.NativeAccumulator {
+	return stubMockAccumulator{}
+}
 func (s *slowProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	return nil, nil
 }

@@ -155,6 +155,76 @@ func isOAuthToken(key string) bool {
 
 func (a *Anthropic) Name() string { return providerName }
 
+// Fingerprint hashes the renderer config that affects wire bytes.
+// Today only ReminderRenderer changes the per-tic system-reminder
+// shape; the templates set is fixed across all arias for a given
+// process lifetime, so we don't hash it (a future override-loading
+// path would have to be folded in here).
+func (a *Anthropic) Fingerprint() string {
+	rr := a.ReminderRenderer
+	if rr == "" {
+		rr = "tag"
+	}
+	return "anthropic/" + rr + "/v1"
+}
+
+// stubAccumulator is the today's-default NativeAccumulator: it
+// ignores the live event stream and projects the figaro Message
+// into wire form at Finalize. The result is what the existing
+// consumeSSE message_stop block produced inline before the
+// accumulator extraction.
+type stubAccumulator struct {
+	a *Anthropic
+}
+
+// Finalize implements NativeAccumulator. Projects the figaro
+// assistant Message into one wire nativeMessage and wraps it in a
+// ProviderTranslation entry with the current fingerprint.
+func (s *stubAccumulator) Finalize(fig message.Message) message.ProviderTranslation {
+	native := projectAssistantMessage(fig)
+	raw, err := json.Marshal(native)
+	if err != nil {
+		// Marshaling a struct of strings can't fail in practice;
+		// log and return an empty entry rather than corrupting the
+		// translation.
+		log("warning: marshal native assistant: %v", err)
+		return message.ProviderTranslation{}
+	}
+	return message.ProviderTranslation{
+		Messages:    []json.RawMessage{raw},
+		Fingerprint: s.a.Fingerprint(),
+	}
+}
+
+// OpenAccumulator returns the stub native accumulator described
+// above. A future SDK-backed implementation can swap this out
+// without touching the SSE consumer.
+func (a *Anthropic) OpenAccumulator() provider.NativeAccumulator {
+	return &stubAccumulator{a: a}
+}
+
+// projectAssistantMessage builds the wire shape for one finalized
+// assistant Message. Extracted from the inline message_stop block
+// of consumeSSE so the stub accumulator and any future per-message
+// projector share one implementation. Mirrors the assistant case
+// of projectMessages.
+func projectAssistantMessage(msg message.Message) nativeMessage {
+	out := nativeMessage{Role: "assistant"}
+	for _, c := range msg.Content {
+		switch c.Type {
+		case message.ContentText:
+			out.Content = append(out.Content, nativeBlock{Type: "text", Text: c.Text})
+		case message.ContentThinking:
+			out.Content = append(out.Content, nativeBlock{Type: "thinking", Thinking: c.Text})
+		case message.ContentToolCall:
+			out.Content = append(out.Content, nativeBlock{
+				Type: "tool_use", ID: c.ToolCallID, Name: c.ToolName, Input: c.Arguments,
+			})
+		}
+	}
+	return out
+}
+
 // log writes to stderr with a provider prefix. Visible in the angelus log.
 func log(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "anthropic: "+format+"\n", args...)
@@ -509,7 +579,8 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot cha
 	}
 
 	ch := make(chan provider.StreamEvent, 64)
-	go a.consumeSSE(resp.Body, ch, model)
+	acc := a.OpenAccumulator()
+	go a.consumeSSE(resp.Body, ch, model, acc)
 	return ch, nil
 }
 
@@ -517,7 +588,7 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot cha
 // treating the connection as stalled.
 const sseReadTimeout = 5 * time.Minute
 
-func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEvent, model string) {
+func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEvent, model string, acc provider.NativeAccumulator) {
 	defer close(ch)
 	defer body.Close()
 
@@ -719,25 +790,12 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 		case "message_stop":
 			log("sse: message_stop output_tokens=%d stop_reason=%s", usage.OutputTokens, msg.StopReason)
 			msg.Usage = &usage
-			// Stash native form in the message's translation cache.
-			nativeMsg := nativeMessage{Role: "assistant"}
-			for _, c := range msg.Content {
-				switch c.Type {
-				case message.ContentText:
-					nativeMsg.Content = append(nativeMsg.Content, nativeBlock{Type: "text", Text: c.Text})
-				case message.ContentThinking:
-					nativeMsg.Content = append(nativeMsg.Content, nativeBlock{Type: "thinking", Thinking: c.Text})
-				case message.ContentToolCall:
-					nativeMsg.Content = append(nativeMsg.Content, nativeBlock{
-						Type: "tool_use", ID: c.ToolCallID, Name: c.ToolName, Input: c.Arguments,
-					})
-				}
-			}
-			if raw, err := json.Marshal(nativeMsg); err == nil {
-				msg.Translation.Set(providerName, message.ProviderTranslation{
-					Messages: []json.RawMessage{raw},
-				})
-			}
+			// Hand the finalized figaro message to the native
+			// accumulator. The stub projects from the figaro IR;
+			// a future SDK-backed accumulator can return its
+			// natively accumulated shape instead.
+			pt := acc.Finalize(msg)
+			msg.Translation.Set(providerName, pt)
 			ch <- provider.StreamEvent{Done: true, Message: &msg}
 			return
 

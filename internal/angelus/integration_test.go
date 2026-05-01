@@ -23,10 +23,20 @@ import (
 // mockProviderForIntegration echoes a fixed response.
 type mockProviderForIntegration struct{}
 
-func (m *mockProviderForIntegration) Name() string         { return "mock" }
-func (m *mockProviderForIntegration) SetModel(model string) {}
+func (m *mockProviderForIntegration) Name() string                          { return "mock" }
+func (m *mockProviderForIntegration) Fingerprint() string                    { return "mock/v0" }
+func (m *mockProviderForIntegration) SetModel(model string)                  {}
+func (m *mockProviderForIntegration) OpenAccumulator() provider.NativeAccumulator {
+	return integAccumulator{}
+}
 func (m *mockProviderForIntegration) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	return nil, nil
+}
+
+type integAccumulator struct{}
+
+func (integAccumulator) Finalize(message.Message) message.ProviderTranslation {
+	return message.ProviderTranslation{}
 }
 func (m *mockProviderForIntegration) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	ch := make(chan provider.StreamEvent, 4)

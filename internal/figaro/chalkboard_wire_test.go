@@ -26,11 +26,21 @@ type chalkSpyProvider struct {
 	receivedBlocks []*message.Block
 }
 
-func (p *chalkSpyProvider) Name() string { return "spy" }
+func (p *chalkSpyProvider) Name() string        { return "spy" }
+func (p *chalkSpyProvider) Fingerprint() string { return "spy/v0" }
 func (p *chalkSpyProvider) Models(_ context.Context) ([]provider.ModelInfo, error) {
 	return nil, nil
 }
 func (p *chalkSpyProvider) SetModel(string) {}
+func (p *chalkSpyProvider) OpenAccumulator() provider.NativeAccumulator {
+	return spyAccumulator{}
+}
+
+type spyAccumulator struct{}
+
+func (spyAccumulator) Finalize(message.Message) message.ProviderTranslation {
+	return message.ProviderTranslation{}
+}
 func (p *chalkSpyProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, error) {
 	p.mu.Lock()
 	// Deep-copy the block: the agent owns the underlying memstore and
