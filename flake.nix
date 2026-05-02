@@ -33,6 +33,16 @@
             "-X github.com/jack-work/figaro/internal/credo.version=${rev}"
           ];
 
+          # Multi-call shims: figaro inspects argv[0] and rewrites
+          #   q <prompt>          → figaro -- <prompt>
+          #   l <prompt>          → figaro plain -- <prompt>
+          # See cmd/figaro/main.go. Relative symlinks resolve through
+          # the nix-profile chain since q/l live next to figaro.
+          postInstall = ''
+            ln -s figaro $out/bin/q
+            ln -s figaro $out/bin/l
+          '';
+
           meta.mainProgram = "figaro";
         };
       };
