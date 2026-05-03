@@ -1,27 +1,21 @@
 package store
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"time"
 )
 
-// AriaInfo holds metadata about a persisted aria. Returned by
-// Backend.List so callers can enumerate arias without opening
-// every handle.
+// AriaInfo is what `figaro list` shows for a persisted aria. Read
+// from meta.json + the aria.jsonl mtime; we don't open aria.jsonl.
 type AriaInfo struct {
 	ID           string
 	MessageCount int
 	LastModified time.Time
-	Meta         *AriaMeta // nil if no metadata in file
+	Meta         *AriaMeta // nil if no meta.json
 }
 
-// listAriasInDir scans a directory for aria subdirectories and returns
-// metadata for each. An aria subdirectory is one that contains
-// aria.jsonl. Used by FileBackend.List.
 func listAriasInDir(dir string) ([]AriaInfo, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -37,27 +31,10 @@ func listAriasInDir(dir string) ([]AriaInfo, error) {
 			continue
 		}
 		ariaDir := filepath.Join(dir, e.Name())
-		ariaPath := filepath.Join(ariaDir, ariaFile)
-
-		ariaStat, err := os.Stat(ariaPath)
+		ariaStat, err := os.Stat(filepath.Join(ariaDir, ariaFile))
 		if err != nil {
-			continue // skip dirs without aria.jsonl
+			continue
 		}
-
-		// Count messages by counting lines in aria.jsonl. Cheap; doesn't
-		// require parsing every entry.
-		msgCount := 0
-		if data, err := os.ReadFile(ariaPath); err == nil {
-			scanner := bufio.NewScanner(bytes.NewReader(data))
-			scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-			for scanner.Scan() {
-				if len(scanner.Bytes()) > 0 {
-					msgCount++
-				}
-			}
-		}
-
-		// meta.json is optional.
 		var meta *AriaMeta
 		if mdata, err := os.ReadFile(filepath.Join(ariaDir, metaFile)); err == nil {
 			var m AriaMeta
@@ -65,14 +42,15 @@ func listAriasInDir(dir string) ([]AriaInfo, error) {
 				meta = &m
 			}
 		}
-
-		arias = append(arias, AriaInfo{
+		info := AriaInfo{
 			ID:           e.Name(),
-			MessageCount: msgCount,
 			LastModified: ariaStat.ModTime(),
 			Meta:         meta,
-		})
+		}
+		if meta != nil {
+			info.MessageCount = meta.MessageCount
+		}
+		arias = append(arias, info)
 	}
-
 	return arias, nil
 }

@@ -790,6 +790,15 @@ func (a *Agent) endTurn(reason string) {
 		}
 	}
 
+	// Refresh meta so `figaro list` reflects the current message count
+	// without opening aria.jsonl.
+	if a.backend != nil {
+		if meta, _ := a.backend.Meta(a.id); meta != nil {
+			meta.MessageCount = len(a.figStream.Durable())
+			_ = a.backend.SetMeta(a.id, meta)
+		}
+	}
+
 	// Reset turn state.
 	a.pendingTools = 0
 	a.pendingToolCalls = nil

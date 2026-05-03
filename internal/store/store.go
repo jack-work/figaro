@@ -15,17 +15,15 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// AriaMeta holds metadata persisted alongside an aria.
-//
-// Deprecated: scheduled to retire in Stage C of the log-unification
-// work, when chalkboard.system.* keys take over the restoration
-// metadata role. For now it lives in arias/{id}/meta.json.
+// AriaMeta is the per-aria summary at arias/{id}/meta.json. Holds
+// what `figaro list` needs without opening aria.jsonl.
 type AriaMeta struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
-	Cwd      string `json:"cwd"`
-	Root     string `json:"root"`
-	Label    string `json:"label,omitempty"`
+	Provider     string `json:"provider"`
+	Model        string `json:"model"`
+	Cwd          string `json:"cwd"`
+	Root         string `json:"root"`
+	Label        string `json:"label,omitempty"`
+	MessageCount int    `json:"message_count,omitempty"`
 }
 
 // Backend is the aria storage provider. One per angelus lifetime.

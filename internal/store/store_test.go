@@ -263,13 +263,14 @@ func TestFileBackend_List(t *testing.T) {
 	b, err := NewFileBackend(dir)
 	require.NoError(t, err)
 
-	for _, id := range []string{"a", "b"} {
+	for i, id := range []string{"a", "b"} {
 		s, err := b.Open(id)
 		require.NoError(t, err)
 		_, err = s.Append(Entry[message.Message]{
 			Payload: message.Message{Role: message.RoleUser},
 		}, true)
 		require.NoError(t, err)
+		require.NoError(t, b.SetMeta(id, &AriaMeta{MessageCount: i + 1}))
 	}
 
 	arias, err := b.List()
@@ -281,7 +282,7 @@ func TestFileBackend_List(t *testing.T) {
 		byID[a.ID] = a
 	}
 	assert.Equal(t, 1, byID["a"].MessageCount)
-	assert.Equal(t, 1, byID["b"].MessageCount)
+	assert.Equal(t, 2, byID["b"].MessageCount)
 }
 
 func TestFileBackend_Remove(t *testing.T) {
