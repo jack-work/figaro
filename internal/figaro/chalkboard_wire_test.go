@@ -102,9 +102,6 @@ func newAgentWithChalkboard(t *testing.T) (*figaro.Agent, *chalkSpyProvider, *ch
 	cb, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
 
-	tmpls, err := chalkboard.LoadDefaultTemplates()
-	require.NoError(t, err)
-
 	prov := &chalkSpyProvider{}
 	a := figaro.NewAgent(figaro.Config{
 		ID:                  "test-aria",
@@ -116,7 +113,6 @@ func newAgentWithChalkboard(t *testing.T) (*figaro.Agent, *chalkSpyProvider, *ch
 		MaxTokens:           1024,
 		Tools:               tool.NewRegistry(),
 		Chalkboard:          cb,
-		ChalkboardTemplates: tmpls,
 	})
 	t.Cleanup(func() { a.Kill() })
 	return a, prov, cb

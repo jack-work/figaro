@@ -185,7 +185,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		LogDir:              logDir,
 		Backend:             backend,
 		Chalkboard:          cbState,
-		ChalkboardTemplates: h.cbTmpls,
 		TranslationStream:   translog,
 	})
 
@@ -423,7 +422,6 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 		LogDir:              logDir,
 		Backend:             h.angelus.Backend,
 		Chalkboard:          h.openAriaChalkboard(aria.ID),
-		ChalkboardTemplates: h.cbTmpls,
 		TranslationStream:   h.openAriaTranslation(aria.ID, prov.Name()),
 	})
 

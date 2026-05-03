@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"text/template"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -90,12 +89,9 @@ type Config struct {
 	LogDir     string         // directory for per-figaro JSONL event log (empty = no logging)
 	Backend    store.Backend  // aria persistence (nil = ephemeral)
 
-	// Chalkboard plumbing. Optional — nil = no chalkboard processing.
-	// Caller (angelus for persistent arias; nil for ephemeral) owns
-	// construction by calling chalkboard.Open at the right path; the
-	// Agent calls Close on Kill.
-	Chalkboard          *chalkboard.State
-	ChalkboardTemplates *template.Template
+	// Chalkboard. Optional — nil means an in-memory one is created.
+	// Caller closes it via the agent's Kill path.
+	Chalkboard *chalkboard.State
 
 	// TranslationStream is the per-aria, per-provider translation
 	// stream cache. Optional — nil = no translation caching, the
@@ -110,19 +106,19 @@ type Config struct {
 // One goroutine drains the inbox — no concurrent dispatch, no races.
 // TODO: convert to child process via --figaro flag for full isolation.
 type Agent struct {
-	id         string
-	label      string
-	socketPath string
-	prov       provider.Provider
-	scribe     credo.Scribe
-	cwd        string
-	root       string
-	maxTokens  int
-	tools      *tool.Registry
-	figStream  store.Stream[message.Message]
+	id          string
+	label       string
+	socketPath  string
+	prov        provider.Provider
+	scribe      credo.Scribe
+	cwd         string
+	root        string
+	maxTokens   int
+	tools       *tool.Registry
+	figStream   store.Stream[message.Message]
 	transStream store.Stream[[]json.RawMessage]
-	backend    store.Backend // nil = ephemeral
-	chalkboard *chalkboard.State
+	backend     store.Backend // nil = ephemeral
+	chalkboard  *chalkboard.State
 
 	// lastDecodedTransLT tracks how far synchronize has caught up the
 	// translation stream's durable head into figStream.
@@ -606,20 +602,10 @@ func (a *Agent) act(ctx context.Context) {
 
 				fmt.Fprintf(os.Stderr, "agent: event=UserPrompt text=%q\n", truncLog(evt.text, 60))
 
-				// Apply chalkboard input — patch attaches to the in-progress tic.
-				// agent: pretty sure most events should define chalkboard.  Just always apply it if it's not null, not just in the user prompt.
-				a.applyChalkboardInput(evt.chalkboard)
-
-				// Pick up the system prompt from chalkboard.system.prompt
-				// (set at bootstrap; refreshed by figaro.rehydrate).
-				// Ephemeral arias without a chalkboard fall back to a
-				// per-prompt scribe build for parity.
-				// Build/extend the in-progress tic with the user's text content,
-				// then finalize and send.
+				// Build/extend the in-progress tic with the user's text;
+				// chalkboard input was already applied in synchronize.
 				a.ensureInProgressTic()
 				a.inProgressTic.Content = append(a.inProgressTic.Content, message.TextContent(evt.text))
-
-				// send to llm api
 				a.finalizeAndSend(inbox)
 
 			case eventFigaro:
@@ -824,6 +810,9 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("empty context")})
 		return
 	}
+	// TODO: move Encode into synchronize / catchUpTranslation. Today
+	// Provider.Encode is whole-conversation, not per-message, so Send
+	// can't yet read pre-encoded bytes straight from the stream.
 	body, summary, err := a.prov.Encode(ctx, msgs, a.chalkboard.Snapshot(), a.buildPriorTranslations(msgs), a.toolDefs(), a.maxTokens)
 	if err != nil {
 		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("encode: %w", err)})

@@ -30,9 +30,6 @@ func TestBootstrap_FreshAria_EmitsStateOnlyTic(t *testing.T) {
 	cb, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
 
-	tmpls, err := chalkboard.LoadDefaultTemplates()
-	require.NoError(t, err)
-
 	a := figaro.NewAgent(figaro.Config{
 		ID:                  "boot-aria",
 		SocketPath:          dir + "/sock",
@@ -44,7 +41,6 @@ func TestBootstrap_FreshAria_EmitsStateOnlyTic(t *testing.T) {
 		MaxTokens:           1024,
 		Tools:               tool.NewRegistry(),
 		Chalkboard:          cb,
-		ChalkboardTemplates: tmpls,
 	})
 	t.Cleanup(func() { a.Kill() })
 
@@ -75,9 +71,6 @@ func TestBootstrap_RestoredAria_SkipsBootstrap(t *testing.T) {
 	// First lifetime: create an agent so the bootstrap fires.
 	cb, err := chalkboard.Open(cbPath)
 	require.NoError(t, err)
-	tmpls, err := chalkboard.LoadDefaultTemplates()
-	require.NoError(t, err)
-
 	a1 := figaro.NewAgent(figaro.Config{
 		ID:                  "boot-aria",
 		SocketPath:          dir + "/sock",
@@ -89,7 +82,6 @@ func TestBootstrap_RestoredAria_SkipsBootstrap(t *testing.T) {
 		MaxTokens:           1024,
 		Tools:               tool.NewRegistry(),
 		Chalkboard:          cb,
-		ChalkboardTemplates: tmpls,
 	})
 	require.Len(t, a1.Context(), 1)
 	a1.Kill()
@@ -116,7 +108,6 @@ func TestBootstrap_RestoredAria_SkipsBootstrap(t *testing.T) {
 		MaxTokens:           1024,
 		Tools:               tool.NewRegistry(),
 		Chalkboard:          cb2,
-		ChalkboardTemplates: tmpls,
 	})
 	t.Cleanup(func() { a2.Kill() })
 	assert.Empty(t, a2.Context(),

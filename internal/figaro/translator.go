@@ -105,13 +105,21 @@ func (a *Agent) invalidateTranslogIfStale() {
 	}
 }
 
-// synchronize is the translation orchestrator. After Recv, it scans
-// the translation stream for entries the figaro stream hasn't caught
-// up to yet, decodes each via the provider, and emits the resulting
-// figaro events. eventSendComplete additionally condenses the live
-// tail using the assembled assistant bytes Send returned. The act
-// loop only ever sees figaro / control events.
+// synchronize is the translation orchestrator. After Recv, it applies
+// any chalkboard input the event carries, brings the figaro stream
+// even with the translation stream by decoding new entries, and on
+// eventSendComplete writes the assembled assistant bytes through to
+// the durable head. The act loop only ever sees figaro / control
+// events.
+//
+// TODO: symmetric catchUpTranslation — when figStream is ahead of
+// transStream, call Encode per-message and append. Requires splitting
+// provider.Encode into per-message + request-assembly so Send can
+// read pre-encoded bytes from the stream rather than encoding inline.
 func (a *Agent) synchronize(raw event) []event {
+	if raw.chalkboard != nil {
+		a.applyChalkboardInput(raw.chalkboard)
+	}
 	if raw.typ == eventSendComplete && raw.err == nil && len(raw.sendAssistant) > 0 && a.transStream != nil {
 		a.transStream.Condense(store.Entry[[]json.RawMessage]{
 			Payload:     raw.sendAssistant,
@@ -127,7 +135,9 @@ func (a *Agent) synchronize(raw event) []event {
 }
 
 // catchUpFigaro decodes any new translation entries (live + durable)
-// into figaro events. Watermarks ensure each entry decodes once.
+// into figaro events. Watermarks track the boundary; making this
+// state-free would require backfilling FigaroLT on the translog entry
+// after decode, which contradicts append-only semantics today.
 func (a *Agent) catchUpFigaro() []event {
 	if a.transStream == nil {
 		return nil

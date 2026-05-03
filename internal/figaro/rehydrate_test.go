@@ -19,9 +19,6 @@ func TestRehydrate_DryRun_DoesNotMutateChalkboard(t *testing.T) {
 	cb, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
 
-	tmpls, err := chalkboard.LoadDefaultTemplates()
-	require.NoError(t, err)
-
 	scribe := &fakeScribe{prompt: "version one"}
 	a := figaro.NewAgent(figaro.Config{
 		ID:                  "rehydrate-aria",
@@ -34,7 +31,6 @@ func TestRehydrate_DryRun_DoesNotMutateChalkboard(t *testing.T) {
 		MaxTokens:           1024,
 		Tools:               tool.NewRegistry(),
 		Chalkboard:          cb,
-		ChalkboardTemplates: tmpls,
 	})
 	t.Cleanup(func() { a.Kill() })
 
@@ -57,9 +53,6 @@ func TestRehydrate_Apply_EmitsStateOnlyTic(t *testing.T) {
 	cb, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
 
-	tmpls, err := chalkboard.LoadDefaultTemplates()
-	require.NoError(t, err)
-
 	scribe := &fakeScribe{prompt: "version one"}
 	a := figaro.NewAgent(figaro.Config{
 		ID:                  "rehydrate-aria",
@@ -72,7 +65,6 @@ func TestRehydrate_Apply_EmitsStateOnlyTic(t *testing.T) {
 		MaxTokens:           1024,
 		Tools:               tool.NewRegistry(),
 		Chalkboard:          cb,
-		ChalkboardTemplates: tmpls,
 	})
 	t.Cleanup(func() { a.Kill() })
 
@@ -111,9 +103,6 @@ func TestRehydrate_NoChanges_NoTic(t *testing.T) {
 	cb, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
 
-	tmpls, err := chalkboard.LoadDefaultTemplates()
-	require.NoError(t, err)
-
 	a := figaro.NewAgent(figaro.Config{
 		ID:                  "rehydrate-aria",
 		SocketPath:          dir + "/sock",
@@ -125,7 +114,6 @@ func TestRehydrate_NoChanges_NoTic(t *testing.T) {
 		MaxTokens:           1024,
 		Tools:               tool.NewRegistry(),
 		Chalkboard:          cb,
-		ChalkboardTemplates: tmpls,
 	})
 	t.Cleanup(func() { a.Kill() })
 
