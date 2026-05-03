@@ -10,18 +10,16 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// applyChalkboardInput merges the client's chalkboard input with the
-// persisted snapshot, attaches the resulting patch to the in-progress
-// tic, and advances the in-memory chalkboard.State.
+// applyChalkboardInput merges client input with the persisted
+// snapshot, attaches the patch to the in-progress tic, advances
+// chalkboard.State.
 //
-// Wire-protocol semantics:
 //   - patch only        → apply patch directly
 //   - context only      → diff context vs current, apply diff
-//   - context + patch   → diff(context, current), then patch on top
+//   - context + patch   → diff first, then patch on top
 //   - neither           → no-op
 //
-// system.* keys are stripped from the snapshot diffed against — they
-// are harness-reserved and shouldn't be erasable by client omission.
+// system.* keys are stripped from the diff base — harness-reserved.
 func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
 	if a.chalkboard == nil || input == nil {
 		return
@@ -55,10 +53,8 @@ func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
 	a.chalkboard.Apply(combined)
 }
 
-// Rehydrate re-runs the Scribe and writes its output to chalkboard
-// system.* keys as a fresh state-only tic. The diff vs current is what
-// gets stored; if nothing changed, no tic is appended. dryRun returns
-// the would-be diff without persisting.
+// Rehydrate re-runs the Scribe and emits a state-only tic with the
+// diff. dryRun returns the would-be diff without persisting.
 func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied bool, err error) {
 	if a.chalkboard == nil || a.scribe == nil {
 		return nil, nil, false, fmt.Errorf("rehydrate requires both a chalkboard and a scribe")

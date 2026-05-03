@@ -147,10 +147,8 @@ func isOAuthToken(key string) bool {
 
 func (a *Anthropic) Name() string { return providerName }
 
-// Fingerprint hashes the encoder configuration. v3 marks the move
-// to input-ready cache entries — assistant bytes no longer carry
-// stop_reason / model / usage (those live on the figaro IR
-// Message), so the splice path can use them verbatim.
+// Fingerprint hashes the encoder config. Mismatch invalidates the
+// translator cache.
 func (a *Anthropic) Fingerprint() string {
 	rr := a.ReminderRenderer
 	if rr == "" {
@@ -349,10 +347,10 @@ type nativeTool struct {
 	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
-// --- Encoding: per-message projection ---
+// --- Encoding ---
 
-// Encode projects one figaro IR message into native wire bytes.
-// State-only tics that emit no wire output return nil.
+// Encode projects one IR message to native wire bytes. Returns nil
+// for state-only tics.
 func (a *Anthropic) Encode(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error) {
 	snap := prevSnapshot
 	nm, ok := a.renderMessage(msg, &snap)
@@ -366,10 +364,8 @@ func (a *Anthropic) Encode(msg message.Message, prevSnapshot chalkboard.Snapshot
 	return []json.RawMessage{raw}, nil
 }
 
-// renderMessage produces the wire-shape nativeMessage for one IR
-// message. Returns ok=false for state-only tics (no content blocks
-// emitted). Advances *prevSnap as patches apply, even on the no-emit
-// path, so callers using the snapshot to chain renders stay in step.
+// renderMessage produces the wire shape and advances prevSnap so
+// callers chaining renders stay in step.
 func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snapshot) (nativeMessage, bool) {
 	switch msg.Role {
 	case message.RoleUser:
@@ -486,11 +482,11 @@ func projectTools(tools []provider.Tool) []nativeTool {
 	return result
 }
 
-// --- Encoding: system blocks + request assembly ---
+// --- System blocks + request assembly ---
 
-// systemBlocks builds the system prefix from the chalkboard snapshot.
-// Order: OAuth-required preamble (oauth only), credo (system.prompt),
-// skill catalog (system.skills). Bytes have no cache_control.
+// systemBlocks builds the system prefix in order: OAuth preamble
+// (oauth only), credo (system.prompt), skill catalog
+// (system.skills). No cache_control.
 func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 	var out []systemBlock
 	var systemText string
@@ -521,9 +517,9 @@ func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 	return out
 }
 
-// projectMessagesWithModel is the pure assembly helper: cached
-// per-message bytes + snapshot + tools → nativeRequest with cache
-// markers applied. No auth resolution; used by Send and tests.
+// projectMessagesWithModel is the pure assembler: cached per-message
+// bytes + snapshot + tools → nativeRequest with cache markers. No
+// auth resolution; used by Send and tests.
 func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
@@ -584,19 +580,11 @@ func (a *Anthropic) encodeAll(msgs []message.Message) [][]json.RawMessage {
 	return out
 }
 
-// markCacheBreakpoints sets cache_control: ephemeral on the last block of
-// each cacheable region of the request:
-//
-//  1. The last system block — caches the system prefix.
-//  2. The last tool definition — caches system + tools.
-//  3. The last content block of the second-to-last message — caches
-//     system + tools + the conversation up through the leaf at the most
-//     recent endTurn (i.e. everything that was on disk before the new
-//     user prompt arrived).
-//
-// The OAuth + claude-code-20250219 beta path silently ignores
-// client-controlled cache_control; on the API-key path these
-// breakpoints engage normally.
+// markCacheBreakpoints attaches cache_control:ephemeral to the last
+// block of each cacheable region: system prefix, tool list, and the
+// second-to-last message's last content block (the prior endTurn
+// leaf). The OAuth + claude-code-20250219 beta path silently
+// ignores client-controlled cache_control.
 func markCacheBreakpoints(req *nativeRequest) {
 	if n := len(req.System); n > 0 {
 		req.System[n-1].CacheControl = &cacheControl{Type: "ephemeral"}
@@ -612,13 +600,12 @@ func markCacheBreakpoints(req *nativeRequest) {
 	}
 }
 
-// --- Send: assemble body → HTTP → SSE ---
+// --- Send: assemble → HTTP → SSE ---
 
-// Send assembles the request body internally from the cached
-// per-message bytes plus the snapshot, ships it, and pushes raw
-// native delta events to the bus until the stream closes. Model
-// preference: in.Snapshot["system.model"] wins; the provider's own
-// Model field is the fallback.
+// Send assembles the request body from in.PerMessage + in.Snapshot,
+// POSTs it, and pushes raw native deltas to the bus until the
+// stream closes. Model: snapshot["system.model"] wins, a.Model is
+// the fallback.
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
@@ -670,18 +657,19 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 
 const sseReadTimeout = 5 * time.Minute
 
-// liveDelta is one entry on the translator stream's live tail.
-// Event is the SSE event name (e.g. "content_block_delta"); Data is
-// the original SSE data payload.
+// liveDelta is one entry on the translator's live tail. Event is
+// the SSE event name; Data is the SSE data payload. Model is set
+// only on the synthetic "_start" entry so Assemble can stamp the
+// model the API actually used (real SSE doesn't echo it back).
 type liveDelta struct {
 	Event string          `json:"event"`
 	Data  json.RawMessage `json:"data"`
-	Model string          `json:"model,omitempty"` // set on a synthetic "start" entry so Assemble knows the model
+	Model string          `json:"model,omitempty"`
 }
 
 // consumeSSE forwards every SSE event to the bus and exits when the
 // stream closes. No accumulation — Assemble re-runs the state
-// machine over the live tail at condense time.
+// machine at condense time.
 func consumeSSE(body io.ReadCloser, bus provider.Bus, model string) {
 	defer body.Close()
 	log("sse: stream started, model=%s", model)
@@ -690,9 +678,6 @@ func consumeSSE(body io.ReadCloser, bus provider.Bus, model string) {
 		entry, _ := json.Marshal(liveDelta{Event: eventType, Data: json.RawMessage(data)})
 		bus.Push(provider.Event{Payload: []json.RawMessage{entry}})
 	}
-	// Synthetic "start" entry carries the model name so Assemble can
-	// stamp the assembled nativeMessage with the same model the API
-	// used. The real SSE stream doesn't echo it back.
 	startEntry, _ := json.Marshal(liveDelta{Event: "_start", Model: model})
 	bus.Push(provider.Event{Payload: []json.RawMessage{startEntry}})
 

@@ -10,9 +10,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// invalidateTranslatorIfStale clears the translator stream when any
-// persisted entry's fingerprint disagrees with the provider's current
-// Fingerprint(). The stream is a derivable cache.
+// invalidateTranslatorIfStale clears the translator on any
+// Fingerprint mismatch. The stream is a derivable cache.
 func (a *Agent) invalidateTranslatorIfStale() {
 	if a.translator == nil || a.prov == nil {
 		return
@@ -22,39 +21,31 @@ func (a *Agent) invalidateTranslatorIfStale() {
 		return
 	}
 	for _, e := range a.translator.Durable() {
-		if e.Fingerprint == "" {
+		if e.Fingerprint == "" || e.Fingerprint == want {
 			continue
 		}
-		if e.Fingerprint != want {
-			if err := a.translator.Clear(); err != nil {
-				fmt.Fprintf(os.Stderr, "figaro %s: translator stream clear: %v\n", a.id, err)
-				return
-			}
-			fmt.Fprintf(os.Stderr,
-				"figaro %s: cleared stale translator stream (fingerprint mismatch: stored=%q, current=%q)\n",
-				a.id, e.Fingerprint, want)
+		if err := a.translator.Clear(); err != nil {
+			fmt.Fprintf(os.Stderr, "figaro %s: translator clear: %v\n", a.id, err)
 			return
 		}
+		fmt.Fprintf(os.Stderr,
+			"figaro %s: cleared stale translator (fingerprint mismatch: stored=%q, current=%q)\n",
+			a.id, e.Fingerprint, want)
+		return
 	}
 }
 
-// synchronize is the translation orchestrator that runs after every
-// Recv. It applies any chalkboard input the event carries, decodes
-// new live deltas into figaro UI events, on eventSendComplete folds
-// the live tail into the durable head (Assemble → figStream append
-// → translator Condense), and finally catches up the translator
-// cache with any new figStream entries (encoding direction). The
-// act loop only ever sees figaro / control events.
+// synchronize is the bidirectional translator orchestrator. Runs
+// after every Recv: drains live deltas to UI events, on
+// SendComplete folds the live tail into the durable head, then
+// catches up the encode direction. The act loop only sees figaro /
+// control events.
 func (a *Agent) synchronize(raw event) []event {
 	if raw.chalkboard != nil {
 		a.applyChalkboardInput(raw.chalkboard)
 	}
 
-	var out []event
-	// Decode first: drain any unread live deltas into figaro UI
-	// events. condenseLive resets the live tail, so anything not
-	// projected here is lost.
-	out = append(out, a.catchUpFigaroDelta()...)
+	out := a.catchUpFigaroDelta()
 	if raw.typ == eventSendComplete {
 		if raw.err == nil {
 			out = append(out, a.condenseLive()...)
@@ -63,8 +54,6 @@ func (a *Agent) synchronize(raw event) []event {
 			a.lastDecodedLiveLen = 0
 		}
 	}
-	// Encoding direction: fig → translator. Idempotent; cheap
-	// (Lookup per figStream entry, encode misses only).
 	a.catchUpTranslator()
 	if raw.typ != eventTranslatorLive {
 		out = append(out, raw)
@@ -72,11 +61,10 @@ func (a *Agent) synchronize(raw event) []event {
 	return out
 }
 
-// condenseLive folds the translator live tail into the assembled
-// assistant message: Assemble → Decode → figStream.Append → Condense
-// (with FigaroLT linking the new translator entry to the freshly
-// allocated figStream LT). Emits eventFigaro for any assistant
-// message produced.
+// condenseLive folds the live tail into one durable assistant
+// entry: Assemble → Decode → figStream.Append → re-Encode for
+// input-ready bytes → translator.Condense (FigaroLT links to the
+// new figStream LT).
 func (a *Agent) condenseLive() []event {
 	if a.translator == nil {
 		return nil
@@ -125,10 +113,8 @@ func (a *Agent) condenseLive() []event {
 		lastFigaroLT = entry.LT
 		out = append(out, event{typ: eventFigaro, figMsg: m})
 
-		// Re-encode the IR message into input-ready bytes. The
-		// inbound metadata (stop_reason, usage, model) lives on the
-		// figaro Message; the translator queue only holds bytes the
-		// provider can splice straight into the next request.
+		// Re-encode strips inbound-only fields (stop_reason etc.) that
+		// the API rejects on input. Cached bytes go in clean.
 		encoded, err := a.prov.Encode(m, chalkboard.Snapshot{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "figaro %s: re-encode assistant: %v\n", a.id, err)
@@ -145,14 +131,13 @@ func (a *Agent) condenseLive() []event {
 		Payload:     inputReady,
 		Fingerprint: a.prov.Fingerprint(),
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: condense translator: %v\n", a.id, err)
+		fmt.Fprintf(os.Stderr, "figaro %s: condense: %v\n", a.id, err)
 	}
 	return out
 }
 
-// catchUpFigaroDelta projects new live tail entries (since the last
-// scan) into figaro UI delta events. State-free across Condense
-// because condenseLive resets the watermark.
+// catchUpFigaroDelta decodes new live tail entries into UI deltas.
+// Watermark resets on Condense.
 func (a *Agent) catchUpFigaroDelta() []event {
 	if a.translator == nil {
 		return nil
@@ -180,10 +165,8 @@ func (a *Agent) catchUpFigaroDelta() []event {
 	return out
 }
 
-// catchUpTranslator walks the figaro stream and encodes any messages
-// that lack a translator cache entry. Idempotent; safe to call
-// before each Send. Empty payloads (state-only tics) are still
-// stored so the lookup hits and we don't re-encode the next turn.
+// catchUpTranslator encodes any figStream entries that aren't yet
+// in the translator. Idempotent.
 func (a *Agent) catchUpTranslator() {
 	if a.translator == nil || a.prov == nil {
 		return
@@ -195,14 +178,12 @@ func (a *Agent) catchUpTranslator() {
 			payload, err := a.prov.Encode(msg, snap)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "figaro %s: encode flt=%d: %v\n", a.id, msg.LogicalTime, err)
-			} else {
-				if _, err := a.translator.Append(store.Entry[[]json.RawMessage]{
-					FigaroLT:    msg.LogicalTime,
-					Payload:     payload,
-					Fingerprint: fp,
-				}, true); err != nil {
-					fmt.Fprintf(os.Stderr, "figaro %s: translator append flt=%d: %v\n", a.id, msg.LogicalTime, err)
-				}
+			} else if _, err := a.translator.Append(store.Entry[[]json.RawMessage]{
+				FigaroLT:    msg.LogicalTime,
+				Payload:     payload,
+				Fingerprint: fp,
+			}, true); err != nil {
+				fmt.Fprintf(os.Stderr, "figaro %s: translator append flt=%d: %v\n", a.id, msg.LogicalTime, err)
 			}
 		}
 		for _, p := range msg.Patches {

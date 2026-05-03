@@ -12,9 +12,9 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// bootstrapIfNeeded runs the Scribe once on a fresh aria and emits a
-// state-only tic carrying the system.* patch. Idempotent on restored
-// arias whose chalkboard already has system.prompt.
+// bootstrapIfNeeded runs the Scribe once on a fresh aria and emits
+// a state-only tic with the system.* patch. Idempotent — restored
+// arias whose chalkboard already has system.prompt skip.
 func (a *Agent) bootstrapIfNeeded(model string) {
 	if a.chalkboard == nil || a.scribe == nil {
 		return

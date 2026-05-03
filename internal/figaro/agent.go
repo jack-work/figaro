@@ -71,37 +71,31 @@ type event struct {
 	translatorPayload []json.RawMessage
 }
 
-// Config holds everything needed to construct an Agent.
+// Config is the constructor input for NewAgent.
 type Config struct {
 	ID         string
-	Label      string // optional human-readable label (persisted in aria meta)
+	Label      string
 	SocketPath string
 	Provider   provider.Provider
-	Model      string // model ID (e.g. "claude-sonnet-4-20250514"), for metadata
+	Model      string
 	Scribe     credo.Scribe
-	Cwd        string // working directory
-	Root       string // project root
+	Cwd        string
+	Root       string
 	MaxTokens  int
-	Tools      *tool.Registry // tools available to the agent
-	LogDir     string         // directory for per-figaro JSONL event log (empty = no logging)
-	Backend    store.Backend  // aria persistence (nil = ephemeral)
+	Tools      *tool.Registry
+	LogDir     string        // empty = no per-agent event log
+	Backend    store.Backend // nil = ephemeral
 
-	// Chalkboard. Optional — nil means an in-memory one is created.
-	// Caller closes it via the agent's Kill path.
+	// Chalkboard — nil creates an in-memory one. Closed by Kill.
 	Chalkboard *chalkboard.State
-
-	// TranslatorStream is the per-aria, per-provider translator
-	// stream cache. Optional — nil = no caching, the provider
-	// re-encodes from IR on every Send. Caller opens the stream at
-	// arias/{id}/translations/{provider}.jsonl via
-	// Backend.OpenTranslation. The Agent calls Close on Kill.
+	// TranslatorStream — per-aria, per-provider cache. Nil falls
+	// back to MemStream. Closed by Kill.
 	TranslatorStream store.Stream[[]json.RawMessage]
 }
 
-// Agent is the goroutine-based implementation of Figaro.
-// All events flow through an Inbox (selfish/patient priority mailbox).
-// One goroutine drains the inbox — no concurrent dispatch, no races.
-// TODO: convert to child process via --figaro flag for full isolation.
+// Agent is the actor implementation of Figaro. One inbox, one drain
+// goroutine — no concurrent dispatch.
+// TODO: child-process isolation via --figaro flag.
 type Agent struct {
 	id         string
 	label      string
@@ -117,20 +111,16 @@ type Agent struct {
 	backend    store.Backend // nil = ephemeral
 	chalkboard *chalkboard.State
 
-	// lastDecodedLiveLen tracks the live-tail slice index already
-	// projected into figaro deltas; reset by condenseLive.
+	// Live-tail watermark for catchUpFigaroDelta; reset by condenseLive.
 	lastDecodedLiveLen int
 
-	// inProgressTic is a mutable user-role Message accumulated
-	// between LLM sends. Built up by eventUserPrompt and
-	// eventToolResult; finalized (figStream.Append + send) when
-	// ready. Nil between turns.
+	// User-role Message accumulated across one turn (text + tool
+	// results). Finalized by finalizeAndSend.
 	inProgressTic *message.Message
 
-	// Actor inbox — priority mailbox with selfish/patient queues.
 	inbox *Inbox
 
-	// Turn state (only accessed by the drain loop goroutine).
+	// Turn state — only touched by the drain goroutine.
 	pendingTools     int
 	pendingToolCalls []message.Content
 	turnCtx          context.Context // carries otel span for current turn; cancelled on interrupt / turn end
@@ -138,16 +128,10 @@ type Agent struct {
 	endTurnSpan      func()
 	interrupted      bool // true if current turn was interrupted; suppress error noise
 
-	// Subscriber fan-out.
-	mu sync.RWMutex
-	// Channel subscribers: used in tests only. Could be extended later
-	// for in-process logging or other observers.
-	subscribers map[chan rpc.Notification]struct{}
-	// Socket subscribers: jsonrpc server connections (CLI, frontends).
-	// All notifications (deltas, tool output, done, etc.) flow through here.
-	serverSubs map[*serverSubscriber]struct{}
+	mu          sync.RWMutex
+	subscribers map[chan rpc.Notification]struct{} // tests
+	serverSubs  map[*serverSubscriber]struct{}     // socket clients
 
-	// Metrics.
 	createdAt  time.Time
 	lastActive time.Time
 	tokensIn   int
@@ -155,11 +139,9 @@ type Agent struct {
 	cacheRead  int
 	cacheWrite int
 
-	// Event log.
-	logEncoder *json.Encoder // nil if no log dir configured
+	logEncoder *json.Encoder
 	logFile    *os.File
 
-	// Lifecycle.
 	cancel context.CancelFunc
 	done   chan struct{}
 }
@@ -194,13 +176,10 @@ func NewAgent(cfg Config) *Agent {
 		a.translator = store.NewMemStream[[]json.RawMessage]()
 	}
 	if a.chalkboard == nil {
-		// Ephemeral arias still need a chalkboard so the system prompt
-		// (and any client-supplied state) flow uniformly. Empty path =
-		// in-memory only; Save is a no-op.
+		// Ephemeral arias get an in-memory chalkboard so system prompt
+		// flow stays uniform.
 		a.chalkboard, _ = chalkboard.Open("")
 	}
-	// Seed system.model into the chalkboard up front. Independent of
-	// bootstrap (which is scribe-gated and fills system.prompt etc).
 	if cfg.Model != "" {
 		seed := chalkboard.Patch{Set: map[string]json.RawMessage{}}
 		seed.Set2("system.model", cfg.Model)
@@ -210,7 +189,6 @@ func NewAgent(cfg Config) *Agent {
 
 	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Durable()))
 
-	// Open per-figaro event log.
 	if cfg.LogDir != "" {
 		os.MkdirAll(cfg.LogDir, 0700)
 		logPath := filepath.Join(cfg.LogDir, cfg.ID+".jsonl")
@@ -220,30 +198,15 @@ func NewAgent(cfg Config) *Agent {
 		}
 	}
 
-	// Translator staleness check. If any persisted entry's
-	// fingerprint differs from the provider's current Fingerprint(),
-	// throw out the whole stream — translations are derivable from
-	// the figaro timeline + the current encoder config, so
-	// regeneration is the safe move on any encoder-config change.
-	// Subsequent turns repopulate naturally.
 	a.invalidateTranslatorIfStale()
-
-	// Bootstrap: on a fresh aria, run the Scribe once, snapshot the
-	// system prompt + a few related keys into chalkboard.system.*, and
-	// emit a state-only tic carrying that patch. Subsequent turns read
-	// the system prompt from the chalkboard snapshot — no re-templating
-	// per turn.
 	a.bootstrapIfNeeded(cfg.Model)
 
 	go a.runWithRecovery(ctx)
 	return a
 }
 
-// newStore creates the appropriate store for this agent.
-
-// newStream opens the canonical figaro IR Stream for this agent.
-// Backed by FileStream when a Backend is configured, MemStream when
-// ephemeral. Seeds AriaMeta with the configured model.
+// newStream opens the figaro IR stream — FileStream when persisted,
+// MemStream when ephemeral.
 func (a *Agent) newStream(model string) store.Stream[message.Message] {
 	if a.backend == nil {
 		return store.NewMemStream[message.Message]()
@@ -275,9 +238,7 @@ func (a *Agent) newStream(model string) store.Stream[message.Message] {
 func (a *Agent) ID() string         { return a.id }
 func (a *Agent) SocketPath() string { return a.socketPath }
 
-// currentModel returns the model id from the chalkboard snapshot.
-// Source-of-truth lives at chalkboard.system.model (set at bootstrap,
-// updated by SetModel).
+// currentModel reads chalkboard.system.model — the source of truth.
 func (a *Agent) currentModel() string {
 	if a.chalkboard == nil {
 		return ""
@@ -299,9 +260,8 @@ func (a *Agent) SetModel(m string) {
 	a.prov.SetModel(m)
 }
 
-// SetLabel updates the aria's label and persists it to disk. Empty
-// string clears the label. No-op for ephemeral arias (no backend to
-// write meta to).
+// SetLabel sets the aria's label and persists it. Empty clears.
+// No-op for ephemeral arias.
 func (a *Agent) SetLabel(label string) error {
 	a.mu.Lock()
 	a.label = label
@@ -327,10 +287,7 @@ func (a *Agent) Prompt(text string) {
 	a.inbox.SendPatient(event{typ: eventUserPrompt, text: text})
 }
 
-// SubmitPrompt enqueues a prompt with the full request shape, including
-// any optional chalkboard input. The agent applies chalkboard logic
-// (diff against persisted snapshot, persist patch, render reminders) on
-// the drain-loop goroutine.
+// SubmitPrompt enqueues a prompt with optional chalkboard input.
 func (a *Agent) SubmitPrompt(req rpc.PromptRequest) {
 	a.inbox.SendPatient(event{
 		typ:        eventUserPrompt,
@@ -339,21 +296,19 @@ func (a *Agent) SubmitPrompt(req rpc.PromptRequest) {
 	})
 }
 
-// Interrupt signals the agent to abort the current turn. Selfish event,
-// so it cuts in front of any pending LLM/tool work. Safe to call at any
-// time — if the agent is idle, the event is harmlessly absorbed.
+// Interrupt aborts the current turn. Selfish — cuts in. Idempotent
+// when idle.
 func (a *Agent) Interrupt() {
 	a.inbox.SendSelfish(event{typ: eventInterrupt})
 }
 
-// TODO: Do we really need to do a full pass over this just to unwrap it?
 func (a *Agent) Context() []message.Message {
 	return unwrapMessages(a.figStream.Durable())
 }
 
-// unwrapMessages extracts the .Payload field from each Entry, returning
-// the conversation as a flat []message.Message. Caller must treat the
-// result as read-only — it shares storage with the stream's mirror.
+// unwrapMessages projects entries to a flat []Message, stamping
+// LogicalTime from the entry LT. Result shares storage with the
+// stream — read-only.
 func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 	if len(entries) == 0 {
 		return nil
@@ -375,9 +330,8 @@ func (a *Agent) Subscribe() <-chan rpc.Notification {
 }
 
 func (a *Agent) Unsubscribe(ch <-chan rpc.Notification) {
-	// We need the send-side channel to remove from the map.
-	// The caller passes the receive-only channel they got from Subscribe.
-	// We iterate to find the matching one.
+	// The receive-only channel we got from Subscribe doesn't compare
+	// equal to the send-side key in the map; iterate to match.
 	a.mu.Lock()
 	for sch := range a.subscribers {
 		if sch == ch {
@@ -430,86 +384,61 @@ func (a *Agent) Kill() {
 	a.subscribers = nil
 	a.mu.Unlock()
 
-	// Close the figaro IR stream (per-line append already handles
-	// durability — Close is a flush hook for future buffered modes).
 	if err := a.figStream.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: figaro stream close error: %v\n", a.id, err)
+		fmt.Fprintf(os.Stderr, "figaro %s: figStream close: %v\n", a.id, err)
 	}
-
-	// Flush the chalkboard snapshot to its on-disk cache.
 	if a.chalkboard != nil {
 		if err := a.chalkboard.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard close error: %v\n", a.id, err)
+			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard close: %v\n", a.id, err)
 		}
 	}
-
-	// Close the translator stream.
 	if a.translator != nil {
 		if err := a.translator.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "figaro %s: translator stream close error: %v\n", a.id, err)
+			fmt.Fprintf(os.Stderr, "figaro %s: translator close: %v\n", a.id, err)
 		}
 	}
-
 	if a.logFile != nil {
 		a.logFile.Close()
 	}
 }
 
-// runWithRecovery runs the drain loop and restarts it on panic.
-// On panic: logs the stack, resets the store, swaps the inbox,
-// notifies subscribers of the error, and restarts the loop. The
-// figaro's registry entry, pid bindings, socket, and credo all
-// survive — recovery is invisible to the model. The stderr log
-// line is the only artifact.
+// runWithRecovery drives the drain loop and restarts it on panic.
+// Identity (id, registry entry, PID bindings, socket, credo)
+// survives — recovery is invisible to the model. Operators get the
+// stderr line.
 func (a *Agent) runWithRecovery(ctx context.Context) {
 	defer close(a.done)
 
 	for {
-		panicked := a.actProtected(ctx)
-		if !panicked {
-			return // clean exit (context cancelled)
+		if !a.actProtected(ctx) {
+			return
 		}
-
-		// Check if we should stop entirely.
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
 
-		// Reset the figaro IR stream — re-open the persistent backing
-		// (or a fresh MemStream for ephemeral). For backed streams,
-		// the on-disk NDJSON has the last persisted state and
-		// FileStream replays it at Open.
 		a.mu.Lock()
 		a.figStream = a.newStream(a.currentModel())
 		a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Durable()))
 		a.mu.Unlock()
 
-		// End any active otel span.
 		if a.endTurnSpan != nil {
 			a.endTurnSpan()
 			a.endTurnSpan = nil
 		}
-		// Cancel any in-flight turn so provider/tool goroutines unwind.
 		if a.turnCancel != nil {
 			a.turnCancel()
 			a.turnCancel = nil
 		}
 
-		// Swap the inbox. Old goroutines captured the old inbox —
-		// their SendSelfish calls will return false (closed).
 		a.inbox.Close()
 		a.inbox = NewInbox(ctx, a.figStream, a.translator)
 
-		// Reset turn state.
 		a.pendingTools = 0
 		a.pendingToolCalls = nil
 
-		// Notify subscribers of the crash. Error is advisory (informs
-		// the user something went wrong); Done is the terminator that
-		// tells the CLI the failed turn has fully unwound. The agent
-		// itself survives via the restart loop below.
 		crashMsg := "agent crashed and was restarted"
 		if a.backend != nil {
 			crashMsg += "; context restored from last checkpoint"
@@ -527,18 +456,12 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 			Params:  rpc.DoneParams{Reason: "error: " + crashMsg},
 		})
 
-		// Note: the credo (a.scribe) is intentionally NOT replaced. The
-		// agent retains its full identity across panics; the model is
-		// not informed via injected conversation content. Operators see
-		// the stderr line below, the model does not.
-
 		fmt.Fprintf(os.Stderr, "figaro %s: restarted after panic\n", a.id)
-		// Loop back to restart actProtected.
 	}
 }
 
-// actProtected runs the drain loop with panic recovery.
-// Returns true if it exited due to a panic, false for clean exit.
+// actProtected runs the drain loop under a panic recover. Returns
+// true on panic, false on clean exit.
 func (a *Agent) actProtected(ctx context.Context) (panicked bool) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -554,10 +477,9 @@ func (a *Agent) actProtected(ctx context.Context) (panicked bool) {
 	return false
 }
 
-// act is the single event loop. Recv → synchronize → dispatch.
-// synchronize translates non-figaro events into figaro events and
-// handles condense; the dispatch switch only sees figaro / control
-// events.
+// act is the single event loop: Recv → synchronize → dispatch.
+// synchronize handles all translator orchestration; the switch only
+// sees figaro / control events.
 func (a *Agent) act(ctx context.Context) {
 	for {
 		raw, ok := a.inbox.Recv()
@@ -568,16 +490,13 @@ func (a *Agent) act(ctx context.Context) {
 			switch evt.typ {
 
 			case eventUserPrompt:
-				// Capture inbox for background goroutines. If panic recovery
-				// swaps a.inbox, old goroutines push to the captured (closed)
-				// inbox and silently fail.
+				// Capture inbox in case panic recovery swaps it.
 				inbox := a.inbox
 
 				a.mu.Lock()
 				a.lastActive = time.Now()
 				a.mu.Unlock()
 
-				// Start otel span for this prompt.
 				turnCtx, span := figOtel.Start(ctx, "figaro.prompt",
 					figOtel.WithAttributes(
 						attribute.String("figaro.id", a.id),
@@ -585,8 +504,6 @@ func (a *Agent) act(ctx context.Context) {
 						attribute.String("figaro.provider", a.prov.Name()),
 					),
 				)
-				// Wrap in a cancelable context so interrupts can cut short
-				// in-flight LLM streams and tool executions.
 				turnCtx, turnCancel := context.WithCancel(turnCtx)
 				a.turnCtx = turnCtx
 				a.turnCancel = turnCancel
@@ -595,8 +512,6 @@ func (a *Agent) act(ctx context.Context) {
 
 				fmt.Fprintf(os.Stderr, "agent: event=UserPrompt text=%q\n", truncLog(evt.text, 60))
 
-				// Build/extend the in-progress tic with the user's text;
-				// chalkboard input was already applied in synchronize.
 				a.ensureInProgressTic()
 				a.inProgressTic.Content = append(a.inProgressTic.Content, message.TextContent(evt.text))
 				a.finalizeAndSend(inbox)
@@ -638,13 +553,10 @@ func (a *Agent) act(ctx context.Context) {
 				})
 
 			case eventToolResult:
-				// Suppress tool results that arrive after an interrupt; the
-				// turn has already been ended and the store/subscribers moved on.
 				if a.interrupted {
 					fmt.Fprintf(os.Stderr, "agent: event=ToolResult (post-interrupt, suppressed) tool=%s\n", evt.toolName)
 					continue
 				}
-				// Summarize text content for logging and RPC notification.
 				var resultText string
 				for _, c := range evt.content {
 					if c.Type == message.ContentText {
@@ -662,10 +574,9 @@ func (a *Agent) act(ctx context.Context) {
 					},
 				})
 
-				// Append a ContentToolResult block to the in-progress tic.
-				// All tool results from one assistant turn accumulate into
-				// a single user-role Message; we append it to memStore at
-				// finalizeAndSend (when pendingTools hits zero).
+				// All tool results from one assistant turn accumulate
+				// onto one user-role tic, finalized when the last
+				// tool finishes.
 				a.ensureInProgressTic()
 				a.inProgressTic.Content = append(a.inProgressTic.Content,
 					message.ToolResultContent(evt.toolCallID, evt.toolName, resultText, evt.isErr))
@@ -673,8 +584,7 @@ func (a *Agent) act(ctx context.Context) {
 				a.pendingTools--
 
 				if len(a.pendingToolCalls) > 0 {
-					// Start the next tool in the batch.
-					inbox := a.inbox // capture for goroutine
+					inbox := a.inbox
 					tc := a.pendingToolCalls[0]
 					a.pendingToolCalls = a.pendingToolCalls[1:]
 					a.fanOut(rpc.Notification{
@@ -687,15 +597,10 @@ func (a *Agent) act(ctx context.Context) {
 					})
 					go a.runToolAsync(a.turnCtx, inbox, tc)
 				} else if a.pendingTools == 0 {
-					// All tools done — finalize the tic (one Message
-					// containing all tool_result blocks) and send the
-					// updated context back to the LLM.
 					a.finalizeAndSend(a.inbox)
 				}
 
 			case eventRehydrate:
-				// Re-run the credo and write the new system.* keys as a
-				// state-only tic. No LLM stream — control plane only.
 				fmt.Fprintf(os.Stderr, "agent: event=Rehydrate set=%d remove=%d\n",
 					len(evt.rehydratePatch.Set), len(evt.rehydratePatch.Remove))
 				tic := message.Message{
@@ -703,7 +608,6 @@ func (a *Agent) act(ctx context.Context) {
 					Patches:   []message.Patch{evt.rehydratePatch},
 					Timestamp: time.Now().UnixMilli(),
 				}
-				// This should get sent as a standard message on the inbox to be handled generically and then automatically appended to the log that way.
 				if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
 					fmt.Fprintf(os.Stderr, "figaro %s: rehydrate append: %v\n", a.id, err)
 					continue
@@ -714,22 +618,14 @@ func (a *Agent) act(ctx context.Context) {
 				}
 
 			case eventInterrupt:
-				// Idempotent: ignore if we're already idle or already interrupted.
 				if a.inbox.IsIdle() || a.interrupted {
 					continue
 				}
 				fmt.Fprintf(os.Stderr, "agent: event=Interrupt\n")
 				a.interrupted = true
-
-				// Cancel the turn context — unblocks the provider HTTP
-				// stream, running tool commands, etc. Their goroutines
-				// will surface ctx.Canceled errors which the post-interrupt
-				// guards above silently drop.
 				if a.turnCancel != nil {
 					a.turnCancel()
 				}
-
-				// Tell subscribers — advisory Error + terminating Done.
 				a.fanOut(rpc.Notification{
 					JSONRPC: "2.0",
 					Method:  rpc.MethodError,
@@ -741,11 +637,9 @@ func (a *Agent) act(ctx context.Context) {
 	}
 }
 
-// endTurn finishes the current turn. Always sends a stream.done
-// notification — the reason carries either the LLM stop_reason
-// (clean turn) or "error: ..." (recoverable failure). The session
-// itself survives; subscribers should treat Done as the only
-// terminator and Error as advisory.
+// endTurn fans out stream.done with the reason (LLM stop_reason or
+// "error: …"), persists chalkboard + meta, releases the next
+// patient prompt.
 func (a *Agent) endTurn(reason string) {
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
@@ -753,21 +647,15 @@ func (a *Agent) endTurn(reason string) {
 		Params:  rpc.DoneParams{Reason: reason},
 	})
 
-	// End otel span.
 	if a.endTurnSpan != nil {
 		a.endTurnSpan()
 		a.endTurnSpan = nil
 	}
-
-	// Cancel the turn context so any lingering provider/tool
-	// goroutines unwind. Idempotent — cancel() on a cancelled ctx
-	// is a no-op.
 	if a.turnCancel != nil {
 		a.turnCancel()
 		a.turnCancel = nil
 	}
 
-	// Accumulate token counts from the latest assistant message.
 	a.mu.Lock()
 	a.lastActive = time.Now()
 	for _, e := range a.figStream.ScanFromEnd(64) {
@@ -776,22 +664,16 @@ func (a *Agent) endTurn(reason string) {
 			a.tokensOut += u.OutputTokens
 			a.cacheRead += u.CacheReadTokens
 			a.cacheWrite += u.CacheWriteTokens
-			break // only count the latest turn's usage
+			break
 		}
 	}
 	a.mu.Unlock()
 
-	// Persist the chalkboard snapshot at turn boundary. The figaro IR
-	// stream needs no explicit checkpoint — FileStream already
-	// fsyncs each Append.
 	if a.chalkboard != nil {
 		if err := a.chalkboard.Save(); err != nil {
-			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard snapshot save: %v\n", a.id, err)
+			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard save: %v\n", a.id, err)
 		}
 	}
-
-	// Refresh meta so `figaro list` reflects the current message count
-	// without opening aria.jsonl.
 	if a.backend != nil {
 		if meta, _ := a.backend.Meta(a.id); meta != nil {
 			meta.MessageCount = len(a.figStream.Durable())
@@ -799,20 +681,14 @@ func (a *Agent) endTurn(reason string) {
 		}
 	}
 
-	// Reset turn state.
 	a.pendingTools = 0
 	a.pendingToolCalls = nil
 	a.inProgressTic = nil
-
-	// Release next patient message (or mark as idle).
 	a.inbox.Yield()
 }
 
-// startLLMStream ships one turn via Send in a background goroutine.
-// The translator cache is already caught up by synchronize; its
-// durable head IS the per-message body of the request — we just
-// project it to a slice and hand it to Send. The goroutine posts
-// eventSendComplete on return.
+// startLLMStream projects translator.Durable() to perMsg and hands
+// it to Send. The cache was caught up by synchronize.
 func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 	durable := a.translator.Durable()
 	perMsg := make([][]json.RawMessage, 0, len(durable))
@@ -847,11 +723,9 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 	}()
 }
 
-// handleFigaro fans out a figaro IR entry as MethodMessage and
-// triggers tool dispatch on assistant messages with tool_use content.
-// The figStream.Append already happened — either via inbox routing
-// (for figaro events from external sources) or via synchronize (for
-// figaro events synthesized from a decoded translator condense).
+// handleFigaro fans out the latest figStream entry as MethodMessage
+// and dispatches any tool_use blocks. The append already happened
+// (via inbox routing or synchronize.condenseLive).
 func (a *Agent) handleFigaro(msg message.Message) {
 	tail, ok := a.figStream.PeekTail()
 	if !ok {
@@ -890,8 +764,8 @@ func (a *Agent) handleFigaro(msg message.Message) {
 	go a.runToolAsync(a.turnCtx, a.inbox, tc)
 }
 
-// handleSendComplete fans out the turn-end notification. Condense
-// already happened in synchronize.
+// handleSendComplete fans out the turn end. Condense already
+// happened in synchronize.
 func (a *Agent) handleSendComplete(sendErr error) {
 	if a.interrupted {
 		return
@@ -917,8 +791,8 @@ func (a *Agent) handleSendComplete(sendErr error) {
 	}
 }
 
-// runToolAsync executes a tool in a background goroutine and pushes
-// events as selfish into the captured inbox.
+// runToolAsync runs one tool call in a goroutine and pushes
+// selfish events back to the captured inbox.
 func (a *Agent) runToolAsync(ctx context.Context, inbox *Inbox, tc message.Content) {
 	t, ok := a.tools.Get(tc.ToolName)
 	if !ok {
@@ -974,21 +848,16 @@ func (a *Agent) fanOut(n rpc.Notification) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	// Log to per-figaro event file.
 	if a.logEncoder != nil {
 		a.logEncoder.Encode(n)
 	}
-
-	// Channel-based subscribers (in-process).
 	for ch := range a.subscribers {
 		select {
 		case ch <- n:
 		default:
-			// Subscriber is slow — drop notification rather than blocking the agent.
+			// Slow subscriber — drop rather than block the agent.
 		}
 	}
-
-	// Socket subscribers — direct notification, ordered by the writer mutex.
 	for sub := range a.serverSubs {
 		if err := sub.srv.Notify(n.Method, n.Params); err != nil {
 			fmt.Fprintf(os.Stderr, "figaro: notify error: %v\n", err)
@@ -1003,10 +872,6 @@ func truncLog(s string, n int) string {
 	return s[:n] + "..."
 }
 
-// ensureInProgressTic guarantees that a.inProgressTic is non-nil and
-// ready to accumulate Content blocks and Patches. Called by both the
-// user-prompt and tool-result paths. The tic is finalized by
-// finalizeAndSend.
 func (a *Agent) ensureInProgressTic() {
 	if a.inProgressTic == nil {
 		a.inProgressTic = &message.Message{
@@ -1016,12 +881,9 @@ func (a *Agent) ensureInProgressTic() {
 	}
 }
 
-// finalizeAndSend appends the in-progress tic to the figaro IR
-// stream (which allocates its LogicalTime) and enqueues
-// eventStartLLMStream. The next Recv → synchronize pass catches up
-// the translator with the new figStream entry; dispatch then runs
-// startLLMStream against a fresh cache. Clears inProgressTic. No-op
-// if inProgressTic is nil.
+// finalizeAndSend appends the in-progress tic to figStream and
+// enqueues eventStartLLMStream. The next synchronize pass catches
+// up the translator before dispatch reaches startLLMStream.
 func (a *Agent) finalizeAndSend(inbox *Inbox) {
 	if a.inProgressTic == nil {
 		return
@@ -1043,10 +905,8 @@ func (a *Agent) finalizeAndSend(inbox *Inbox) {
 	inbox.SendSelfish(event{typ: eventStartLLMStream})
 }
 
-// sumUsage totals InputTokens / OutputTokens / CacheReadTokens /
-// CacheWriteTokens across the messages. Used to seed cumulative
-// counters after restore or panic recovery so they reflect the full
-// history, not just this process's lifetime.
+// sumUsage totals tokens across messages. Seeds cumulative counters
+// after restore / panic recovery.
 func sumUsage(msgs []message.Message) (in, out, cacheRead, cacheWrite int) {
 	for _, m := range msgs {
 		if m.Usage != nil {

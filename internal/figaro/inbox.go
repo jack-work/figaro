@@ -10,13 +10,10 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// Inbox is the per-aria event bus. Implements provider.Bus.
-//
-// Owns the typed partitions (Figaro IR + translator cache) as data
-// stores. Push enqueues provider events; SendSelfish/SendPatient
-// enqueue control + figaro events. Recv dequeues, fires the routing
-// subscriber to place the event on its stream, then returns it for
-// the act loop's semantic dispatch.
+// Inbox is the per-aria event bus. Implements provider.Bus. Owns
+// the figaro IR + translator streams. Push / SendSelfish /
+// SendPatient enqueue; Recv dequeues, runs the routing subscriber,
+// returns the event for the act loop.
 type Inbox struct {
 	Figaro     store.Stream[message.Message]
 	Translator store.Stream[[]json.RawMessage]
@@ -42,8 +39,8 @@ func NewInbox(ctx context.Context, fig store.Stream[message.Message], translator
 	return b
 }
 
-// routeToStreams places provider/figaro events on their respective
-// streams as they're consumed. Other event types pass through.
+// routeToStreams places figaro / live-translator events on their
+// streams as they're Recv'd. Other types pass through.
 func (b *Inbox) routeToStreams(ev event) {
 	switch ev.typ {
 	case eventFigaro:
@@ -148,14 +145,13 @@ func (b *Inbox) Subscribe(fn func(event)) func() {
 	}
 }
 
-// Push implements provider.Bus. Every native event lands on the
-// translator stream's live tail; condenseLive folds them at end-of-
-// turn via Provider.Assemble.
+// Push implements provider.Bus — native events land on the
+// translator's live tail; condenseLive folds at turn end.
 func (b *Inbox) Push(ev provider.Event) {
 	b.SendSelfish(event{typ: eventTranslatorLive, translatorPayload: ev.Payload})
 }
 
-// PublishFigaro queues a figaro IR event. Routed to figStream on Recv.
+// PublishFigaro queues a figaro IR event for figStream.
 func (b *Inbox) PublishFigaro(msg message.Message) {
 	b.SendSelfish(event{typ: eventFigaro, figMsg: msg})
 }
