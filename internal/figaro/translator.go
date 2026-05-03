@@ -40,10 +40,11 @@ func (a *Agent) invalidateTranslatorIfStale() {
 
 // synchronize is the translation orchestrator that runs after every
 // Recv. It applies any chalkboard input the event carries, decodes
-// new live deltas into figaro UI events, and on eventSendComplete
-// folds the live tail into the durable head (Assemble → figStream
-// append → translator Condense). The act loop only ever sees figaro
-// / control events.
+// new live deltas into figaro UI events, on eventSendComplete folds
+// the live tail into the durable head (Assemble → figStream append
+// → translator Condense), and finally catches up the translator
+// cache with any new figStream entries (encoding direction). The
+// act loop only ever sees figaro / control events.
 func (a *Agent) synchronize(raw event) []event {
 	if raw.chalkboard != nil {
 		a.applyChalkboardInput(raw.chalkboard)
@@ -62,6 +63,9 @@ func (a *Agent) synchronize(raw event) []event {
 			a.lastDecodedLiveLen = 0
 		}
 	}
+	// Encoding direction: fig → translator. Idempotent; cheap
+	// (Lookup per figStream entry, encode misses only).
+	a.catchUpTranslator()
 	if raw.typ != eventTranslatorLive {
 		out = append(out, raw)
 	}

@@ -34,6 +34,7 @@ const (
 	eventFigaro      // durable assistant Message landed in figStream
 	eventFigaroDelta    // partial assistant text — translated from a translator live entry
 	eventTranslatorLive // routed to translator live on Recv (translated by synchronize)
+	eventStartLLMStream // figStream is finalized for this turn; ship it
 	eventSendComplete
 )
 
@@ -613,6 +614,12 @@ func (a *Agent) act(ctx context.Context) {
 					Params:  rpc.DeltaParams{Text: evt.deltaText, ContentType: evt.deltaCT},
 				})
 
+			case eventStartLLMStream:
+				if a.interrupted {
+					continue
+				}
+				a.startLLMStream(a.turnCtx, a.inbox)
+
 			case eventSendComplete:
 				a.handleSendComplete(evt.err)
 
@@ -792,19 +799,16 @@ func (a *Agent) endTurn(reason string) {
 	a.inbox.Yield()
 }
 
-// startLLMStream catches up the translator cache for the current
-// figaro stream, then ships one turn via Send in a background
-// goroutine. Send assembles its request body internally from the
-// cached per-message bytes plus the snapshot. The goroutine posts
-// eventSendComplete on return; synchronize folds the live tail into
-// the durable head from there.
+// startLLMStream ships one turn via Send in a background goroutine.
+// The translator cache is already caught up by synchronize before
+// dispatch reaches here; we just look up cached entries and hand
+// them to Send. The goroutine posts eventSendComplete on return.
 func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 	msgs := unwrapMessages(a.figStream.Durable())
 	if len(msgs) == 0 {
 		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("empty context")})
 		return
 	}
-	a.catchUpTranslator()
 
 	perMsg := make([][]json.RawMessage, 0, len(msgs))
 	for _, m := range msgs {
@@ -1005,8 +1009,11 @@ func (a *Agent) ensureInProgressTic() {
 }
 
 // finalizeAndSend appends the in-progress tic to the figaro IR
-// stream (which allocates its LogicalTime) and starts the LLM
-// stream. Clears inProgressTic. No-op if inProgressTic is nil.
+// stream (which allocates its LogicalTime) and enqueues
+// eventStartLLMStream. The next Recv → synchronize pass catches up
+// the translator with the new figStream entry; dispatch then runs
+// startLLMStream against a fresh cache. Clears inProgressTic. No-op
+// if inProgressTic is nil.
 func (a *Agent) finalizeAndSend(inbox *Inbox) {
 	if a.inProgressTic == nil {
 		return
@@ -1025,7 +1032,7 @@ func (a *Agent) finalizeAndSend(inbox *Inbox) {
 		return
 	}
 
-	a.startLLMStream(a.turnCtx, inbox)
+	inbox.SendSelfish(event{typ: eventStartLLMStream})
 }
 
 // sumUsage totals InputTokens / OutputTokens / CacheReadTokens /
