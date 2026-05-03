@@ -68,10 +68,6 @@ type event struct {
 
 	// eventTransLive
 	transPayload []json.RawMessage
-
-	// eventSendComplete
-	sendSummary   provider.ProjectionSummary
-	sendAssistant []json.RawMessage
 }
 
 // Config holds everything needed to construct an Agent.
@@ -120,11 +116,8 @@ type Agent struct {
 	backend     store.Backend // nil = ephemeral
 	chalkboard  *chalkboard.State
 
-	// lastDecodedTransLT tracks how far synchronize has caught up the
-	// translation stream's durable head into figStream.
-	lastDecodedTransLT uint64
 	// lastDecodedLiveLen tracks the live-tail slice index already
-	// decoded; resets when the tail shrinks (Condense / Discard).
+	// projected into figaro deltas; reset by condenseLive.
 	lastDecodedLiveLen int
 
 	// inProgressTic is a mutable user-role Message accumulated
@@ -622,7 +615,7 @@ func (a *Agent) act(ctx context.Context) {
 				})
 
 			case eventSendComplete:
-				a.handleSendComplete(evt.sendSummary, evt.err)
+				a.handleSendComplete(evt.err)
 
 			case eventToolOutput:
 				if a.interrupted {
@@ -800,44 +793,44 @@ func (a *Agent) endTurn(reason string) {
 	a.inbox.Yield()
 }
 
-// startLLMStream encodes the current context into wire bytes
-// (translation), then ships them via Send in a background goroutine.
-// On return the goroutine posts eventSendComplete with the assembled
-// assistant native bytes; synchronize condenses + decodes from there.
+// startLLMStream catches up the translation cache for the current
+// figaro stream, assembles the request body from cached per-message
+// bytes, and ships it via Send in a background goroutine. The
+// goroutine posts eventSendComplete on return; synchronize folds the
+// live tail into the durable head from there.
 func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 	msgs := unwrapMessages(a.figStream.Durable())
 	if len(msgs) == 0 {
 		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("empty context")})
 		return
 	}
-	// TODO: move Encode into synchronize / catchUpTranslation. Today
-	// Provider.Encode is whole-conversation, not per-message, so Send
-	// can't yet read pre-encoded bytes straight from the stream.
-	body, summary, err := a.prov.Encode(ctx, msgs, a.chalkboard.Snapshot(), a.buildPriorTranslations(msgs), a.toolDefs(), a.maxTokens)
+	a.catchUpTranslation()
+
+	perMsg := make([][]json.RawMessage, 0, len(msgs))
+	for _, m := range msgs {
+		entry, ok := a.transStream.Lookup(m.LogicalTime)
+		if !ok || len(entry.Payload) == 0 {
+			continue
+		}
+		perMsg = append(perMsg, entry.Payload)
+	}
+	body, err := a.prov.AssembleRequest(perMsg, a.chalkboard.Snapshot(), a.toolDefs(), a.maxTokens)
 	if err != nil {
-		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("encode: %w", err)})
+		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("assemble: %w", err)})
 		return
 	}
 	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context\n", len(msgs))
 	go func() {
-		var (
-			assistant []json.RawMessage
-			sendErr   error
-		)
+		var sendErr error
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
 					sendErr = fmt.Errorf("provider send panic: %v", r)
 				}
 			}()
-			assistant, sendErr = a.prov.Send(ctx, body, inbox)
+			sendErr = a.prov.Send(ctx, body, inbox)
 		}()
-		inbox.SendSelfish(event{
-			typ:           eventSendComplete,
-			sendSummary:   summary,
-			sendAssistant: assistant,
-			err:           sendErr,
-		})
+		inbox.SendSelfish(event{typ: eventSendComplete, err: sendErr})
 	}()
 }
 
@@ -884,9 +877,9 @@ func (a *Agent) handleFigaro(msg message.Message) {
 	go a.runToolAsync(a.turnCtx, a.inbox, tc)
 }
 
-// handleSendComplete fans out the turn-end notification. Condense and
-// projection persistence have already happened in synchronize.
-func (a *Agent) handleSendComplete(_ provider.ProjectionSummary, sendErr error) {
+// handleSendComplete fans out the turn-end notification. Condense
+// already happened in synchronize.
+func (a *Agent) handleSendComplete(sendErr error) {
 	if a.interrupted {
 		return
 	}

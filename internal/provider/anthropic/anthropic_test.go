@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
@@ -95,7 +94,7 @@ func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 		{Name: "beta", Description: "second", Parameters: fakeSchema()},
 	}
 
-	req, _ := a.projectMessagesWithModel(msgs, systemSnapshot(t, "you are a test agent"), causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+	req, _ := a.projectMessagesWithModel(a.encodeAll(msgs), systemSnapshot(t, "you are a test agent"), tools, 1024, false, "claude-test")
 
 	require.NotEmpty(t, req.System, "system must be present")
 	last := req.System[len(req.System)-1]
@@ -128,7 +127,7 @@ func TestProjectMessages_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
 		{Role: message.RoleUser, Content: []message.Content{message.TextContent("first prompt — nothing on disk yet")}},
 	}
 
-	req, _ := a.projectMessagesWithModel(msgs, systemSnapshot(t, "you are a test agent"), causal.Slice[message.ProviderTranslation]{}, nil, 1024, false, "claude-test")
+	req, _ := a.projectMessagesWithModel(a.encodeAll(msgs), systemSnapshot(t, "you are a test agent"), nil, 1024, false, "claude-test")
 
 	require.Len(t, req.Messages, 1)
 	require.NotEmpty(t, req.Messages[0].Content)
@@ -151,8 +150,9 @@ func TestProjectMessages_StableAcrossCalls(t *testing.T) {
 	}
 
 	snap := systemSnapshot(t, "you are a test agent")
-	r1, _ := a.projectMessagesWithModel(msgs, snap, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
-	r2, _ := a.projectMessagesWithModel(msgs, snap, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+	pre := a.encodeAll(msgs)
+	r1, _ := a.projectMessagesWithModel(pre, snap, tools, 1024, false, "claude-test")
+	r2, _ := a.projectMessagesWithModel(pre, snap, tools, 1024, false, "claude-test")
 
 	b1, err := json.Marshal(r1)
 	require.NoError(t, err)
@@ -172,7 +172,7 @@ func TestProjectMessages_OAuthSystemArray(t *testing.T) {
 		{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
 	}
 
-	req, _ := a.projectMessagesWithModel(msgs, systemSnapshot(t, "you are figaro"), causal.Slice[message.ProviderTranslation]{}, nil, 1024, true, "claude-test")
+	req, _ := a.projectMessagesWithModel(a.encodeAll(msgs), systemSnapshot(t, "you are figaro"), nil, 1024, true, "claude-test")
 
 	require.Len(t, req.System, 2, "OAuth system must have two blocks: Claude Code identity + credo")
 	assert.Contains(t, req.System[0].Text, "Claude Code")

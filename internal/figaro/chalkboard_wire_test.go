@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/message"
@@ -20,11 +19,13 @@ import (
 	"github.com/jack-work/figaro/internal/tool"
 )
 
-// chalkSpyProvider captures the IR messages Send is called with so
-// tests can inspect the per-message Patches the agent attached.
+// chalkSpyProvider captures the IR messages EncodeMessage is called
+// with so tests can inspect the per-message Patches the agent
+// attached during catchUpTranslation.
 type chalkSpyProvider struct {
 	mu       sync.Mutex
-	received [][]message.Message
+	encoded  []message.Message
+	sentRuns int
 }
 
 func (p *chalkSpyProvider) Name() string                                          { return "spy" }
@@ -34,39 +35,50 @@ func (p *chalkSpyProvider) SetModel(string)                                     
 func (p *chalkSpyProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
 	return mockDecodeNative(raw)
 }
-// Encode captures the IR messages it was asked to project.
-func (p *chalkSpyProvider) Encode(_ context.Context, msgs []message.Message, _ chalkboard.Snapshot, _ causal.Slice[message.ProviderTranslation], _ []provider.Tool, _ int) ([]byte, provider.ProjectionSummary, error) {
+
+// EncodeMessage records every message it's asked to encode. Returns
+// a stub payload so the cache lookup hits next turn.
+func (p *chalkSpyProvider) EncodeMessage(msg message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
 	p.mu.Lock()
-	copyMsgs := make([]message.Message, len(msgs))
-	copy(copyMsgs, msgs)
-	p.received = append(p.received, copyMsgs)
+	p.encoded = append(p.encoded, msg)
 	p.mu.Unlock()
-	return nil, provider.ProjectionSummary{Fingerprint: p.Fingerprint()}, nil
+	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
 }
 
-func (p *chalkSpyProvider) Send(ctx context.Context, body []byte, bus provider.Bus) ([]json.RawMessage, error) {
-	return []json.RawMessage{mockPushAssistant(bus, "ok")}, nil
+func (p *chalkSpyProvider) AssembleRequest(_ [][]json.RawMessage, _ chalkboard.Snapshot, _ []provider.Tool, _ int) ([]byte, error) {
+	p.mu.Lock()
+	p.sentRuns++
+	p.mu.Unlock()
+	return nil, nil
+}
+
+func (p *chalkSpyProvider) DecodeDelta(payload []json.RawMessage) (string, message.ContentType, bool) {
+	return mockDecodeDelta(payload)
+}
+
+func (p *chalkSpyProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
+	return mockAssemble(deltas)
+}
+
+func (p *chalkSpyProvider) Send(ctx context.Context, body []byte, bus provider.Bus) error {
+	mockPushAssistant(bus, "ok")
+	return nil
 }
 
 func (p *chalkSpyProvider) sendCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return len(p.received)
+	return p.sentRuns
 }
 
-// lastTurnPatches returns the patches attached to the leaf user-role
-// Message of the most-recent Send. Empty if no user-role leaf or no
-// patches.
+// lastTurnPatches returns the patches attached to the most recent
+// user-role message handed to EncodeMessage. Empty if none.
 func (p *chalkSpyProvider) lastTurnPatches() []message.Patch {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if len(p.received) == 0 {
-		return nil
-	}
-	msgs := p.received[len(p.received)-1]
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == message.RoleUser {
-			return msgs[i].Patches
+	for i := len(p.encoded) - 1; i >= 0; i-- {
+		if p.encoded[i].Role == message.RoleUser {
+			return p.encoded[i].Patches
 		}
 	}
 	return nil

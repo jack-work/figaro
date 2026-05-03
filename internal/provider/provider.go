@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -24,17 +23,6 @@ type Tool struct {
 	Parameters  interface{} `json:"parameters"`
 }
 
-// ProjectionSummary is the synchronous output of Encode. Carries the
-// per-message wire bytes the projection emitted, for cache persistence
-// in the translation stream. The assembled assistant native bytes
-// arrive separately as the return value of Send.
-type ProjectionSummary struct {
-	PerMessage  []json.RawMessage
-	System      []json.RawMessage
-	SystemFLT   uint64
-	Fingerprint string
-}
-
 // Event is what the provider pushes to the Bus during Send. Each
 // event lands on the translation stream's live tail.
 type Event struct {
@@ -49,11 +37,12 @@ type Bus interface {
 
 // Provider is the LLM provider interface.
 //
-// Encode + Decode are the translator surface (pure functions over IR
-// and wire bytes). Send is pure transport: it takes pre-encoded bytes
-// and ships them, pushing parsed native events to the bus and
-// returning the assembled assistant native bytes when the stream
-// closes.
+// Encoding is split into per-message projection (EncodeMessage,
+// cached in the translation stream) and request assembly
+// (AssembleRequest, builds the API body from cached entries plus the
+// current snapshot). Send is pure transport. Live deltas are
+// interpreted by DecodeDelta (UI surface) and Assemble (end-of-turn
+// condense from the live tail).
 type Provider interface {
 	Name() string
 
@@ -62,25 +51,39 @@ type Provider interface {
 	Fingerprint() string
 
 	Models(ctx context.Context) ([]ModelInfo, error)
+
+	// agent: provider shouldn't really be stateful.  We should respect the model that is seen on the input whenever sending
+	// messages.  The input to Send should be in the format necessary to build the API request.  Ideally raw byte marshalling,
+	// or a body + headers.  All that should be included in the translator stream (which by the way you should rename "TranslatorStream")
+	// Trans log is not a good name.  If you read this, eradicate it.
 	SetModel(model string)
 
-	// Encode produces the API request body bytes plus the per-message
-	// projection summary. Pure function over conversation state.
-	Encode(
-		ctx context.Context,
-		msgs []message.Message,
-		snapshot chalkboard.Snapshot,
-		priorTranslations causal.Slice[message.ProviderTranslation],
-		tools []Tool,
-		maxTokens int,
-	) ([]byte, ProjectionSummary, error)
+	// agent: Just call it encode.
+	// EncodeMessage projects one figaro IR message into native wire
+	// bytes. prevSnapshot is the chalkboard state immediately before
+	// msg's patches apply. Returns nil for state-only messages that
+	// emit no wire output. Pure function.
+	EncodeMessage(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error)
 
-	// Decode reverses encoded native bytes back into IR.
+	// agent: just make Send accept json.RawMessage and implement this in the implementing type.
+	AssembleRequest(perMessage [][]json.RawMessage, snapshot chalkboard.Snapshot, tools []Tool, maxTokens int) ([]byte, error)
+
+	// Decode reverses native wire bytes back into IR.
 	Decode(raw []json.RawMessage) ([]message.Message, error)
 
-	// Send transports the pre-encoded body to the API, pushes parsed
-	// native events into the bus as they arrive, and returns the
-	// assembled assistant native bytes when the stream closes.
-	// Pure transport — no encoding.
-	Send(ctx context.Context, body []byte, bus Bus) ([]json.RawMessage, error)
+	// Send POSTs the pre-encoded body, pushes raw native delta events
+	// to the bus as they arrive, and returns when the stream closes.
+	// Pure transport — no encoding, no accumulation.
+	Send(ctx context.Context, body []byte, bus Bus) error
+
+	// agent:  just make one decode that returns optional text.
+	//         the decoding operations and the encoding should not be aware whether they
+	//         are viewing the live tail or the durable entries.  They should just see a flat
+	//         stream.  there should be less special casing in the stream
+	DecodeDelta(payload []json.RawMessage) (text string, ct message.ContentType, ok bool)
+
+	// Assemble accumulates the live tail (sequence of raw delta
+	// payloads) into the assembled assistant native message bytes.
+	// Run by synchronize when the live tail is condensed.
+	Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error)
 }

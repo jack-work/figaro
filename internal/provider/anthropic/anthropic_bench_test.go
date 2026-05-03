@@ -3,7 +3,6 @@ package anthropic
 import (
 	"testing"
 
-	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -42,21 +41,21 @@ func benchTools() []provider.Tool {
 
 func BenchmarkProjectMessages_10msgs(b *testing.B) {
 	a := &Anthropic{ReminderRenderer: "tag"}
-	msgs := benchMessages(10)
+	pre := a.encodeAll(benchMessages(10))
 	tools := benchTools()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = a.projectMessagesWithModel(msgs, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+		_, _ = a.projectMessagesWithModel(pre, nil, tools, 1024, false, "claude-test")
 	}
 }
 
 func BenchmarkProjectMessages_100msgs(b *testing.B) {
 	a := &Anthropic{ReminderRenderer: "tag"}
-	msgs := benchMessages(100)
+	pre := a.encodeAll(benchMessages(100))
 	tools := benchTools()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = a.projectMessagesWithModel(msgs, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+		_, _ = a.projectMessagesWithModel(pre, nil, tools, 1024, false, "claude-test")
 	}
 }
 

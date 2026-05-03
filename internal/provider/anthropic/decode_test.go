@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -81,7 +80,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			wire := bytes.TrimRight(wireBytes, "\n")
 
 			// Encode parity: IR → wire == fixture.
-			_, perFLT := a.projectMessages([]message.Message{tc.ir}, causal.Slice[message.ProviderTranslation]{})
+			_, perFLT := a.projectMessages([]message.Message{tc.ir})
 			require.Len(t, perFLT, 1)
 			assert.Equal(t, string(wire), string(perFLT[0]), "encode parity")
 
@@ -92,7 +91,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			assertIRMessageEqual(t, tc.ir, decoded[0])
 
 			// Round trip: fixture → IR → wire == fixture.
-			_, perFLT2 := a.projectMessages(decoded, causal.Slice[message.ProviderTranslation]{})
+			_, perFLT2 := a.projectMessages(decoded)
 			require.Len(t, perFLT2, 1)
 			assert.Equal(t, string(wire), string(perFLT2[0]), "decode→encode round trip")
 		})

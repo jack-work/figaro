@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/message"
@@ -19,9 +18,7 @@ import (
 	"github.com/jack-work/figaro/internal/tool"
 )
 
-// translogProvider emits a populated StreamEvent.Translation on every
-// assistant Done event so we can verify the agent writes those
-// entries to the stream.
+// translogProvider stamps the figaro fingerprint and replies "ok".
 type translogProvider struct{}
 
 func (translogProvider) Name() string                                           { return "tlp" }
@@ -31,11 +28,21 @@ func (translogProvider) Models(_ context.Context) ([]provider.ModelInfo, error) 
 func (translogProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
 	return mockDecodeNative(raw)
 }
-func (translogProvider) Encode(_ context.Context, _ []message.Message, _ chalkboard.Snapshot, _ causal.Slice[message.ProviderTranslation], _ []provider.Tool, _ int) ([]byte, provider.ProjectionSummary, error) {
-	return nil, provider.ProjectionSummary{Fingerprint: "tlp/v0"}, nil
+func (translogProvider) EncodeMessage(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
 }
-func (translogProvider) Send(_ context.Context, _ []byte, bus provider.Bus) ([]json.RawMessage, error) {
-	return []json.RawMessage{mockPushAssistant(bus, "ok")}, nil
+func (translogProvider) AssembleRequest(_ [][]json.RawMessage, _ chalkboard.Snapshot, _ []provider.Tool, _ int) ([]byte, error) {
+	return nil, nil
+}
+func (translogProvider) DecodeDelta(payload []json.RawMessage) (string, message.ContentType, bool) {
+	return mockDecodeDelta(payload)
+}
+func (translogProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
+	return mockAssemble(deltas)
+}
+func (translogProvider) Send(_ context.Context, _ []byte, bus provider.Bus) error {
+	mockPushAssistant(bus, "ok")
+	return nil
 }
 
 // TestTranslog_AssistantResponseAppendsEntry verifies that when an
@@ -78,11 +85,14 @@ func TestTranslog_AssistantResponseAppendsEntry(t *testing.T) {
 	}
 done:
 
-	// Every assistant turn writes one durable native entry to the
-	// translog (the provider's transport role).
+	// One turn ends with two durable entries: the user tic encoded
+	// by catchUpTranslation and the assembled assistant condensed
+	// from the live tail.
 	all := log.Durable()
-	require.Len(t, all, 1, "one assistant turn = one durable native translog entry")
-	assert.Equal(t, "spy/v0", all[0].Fingerprint)
+	require.Len(t, all, 2, "one prompt produces user tic + assistant entries")
+	for _, e := range all {
+		assert.Equal(t, "spy/v0", e.Fingerprint)
+	}
 }
 
 // TestTranslog_StaleEntriesClearedOnOpen verifies that translog
@@ -201,14 +211,14 @@ func TestTranslog_PopulatedTranslationLands(t *testing.T) {
 done:
 
 	all := log.Durable()
-	require.Len(t, all, 1, "exactly one assistant translation should land")
-	entry := all[0]
-	assert.NotZero(t, entry.FigaroLT)
-	assert.Equal(t, "tlp/v0", entry.Fingerprint)
-	require.Len(t, entry.Payload, 1)
+	require.Len(t, all, 2, "user tic + assistant translation")
+	for _, e := range all {
+		assert.NotZero(t, e.FigaroLT)
+		assert.Equal(t, "tlp/v0", e.Fingerprint)
+		require.NotEmpty(t, e.Payload)
 
-	// And: looking up by the assistant's lt finds the entry.
-	got, ok := log.Lookup(entry.FigaroLT)
-	require.True(t, ok)
-	assert.Equal(t, entry.LT, got.LT)
+		got, ok := log.Lookup(e.FigaroLT)
+		require.True(t, ok)
+		assert.Equal(t, e.LT, got.LT)
+	}
 }

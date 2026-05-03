@@ -1,9 +1,12 @@
 // Package anthropic implements the figaro Provider for the Anthropic Messages API.
 //
-// Direct HTTP+SSE, no SDK. Converts from message.Block IR to
-// Anthropic's native format, using cached translations when
-// available. Populates per-message translation on responses for
-// cache-hit re-sends.
+// Per-message encoding (EncodeMessage) is cached in the agent's
+// translation stream. Request assembly (AssembleRequest) splices
+// cached bytes into a request body, applies cache_control markers,
+// and adds the system prefix from the chalkboard snapshot. Send is
+// pure transport: HTTP+SSE, push raw native events to the bus, no
+// accumulation. Synchronize calls Assemble at end-of-turn to fold
+// the live tail into the final assembled assistant bytes.
 package anthropic
 
 import (
@@ -21,7 +24,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/auth"
-	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/credo"
@@ -52,13 +54,6 @@ type Anthropic struct {
 	Templates *template.Template
 }
 
-// New creates an Anthropic provider from the config section.
-// authPath is the path to the provider's auth.json for OAuth credentials.
-// hushClient is the hush client for token encryption/decryption (may be nil
-// if using a static API key).
-// Auth is resolved internally: if APIKey is set, it's used as a
-// static key. Otherwise, OAuth via hush is used. The env var
-// ANTHROPIC_API_KEY is checked as a fallback before OAuth.
 func New(cfg config.AnthropicProvider, authPath string, hushClient *hush.Client) (*Anthropic, error) {
 	resolver, err := buildResolver(cfg.APIKey, authPath, hushClient)
 	if err != nil {
@@ -77,8 +72,6 @@ func New(cfg config.AnthropicProvider, authPath string, hushClient *hush.Client)
 	}, nil
 }
 
-// buildResolver returns the appropriate TokenResolver based on the
-// available credentials. Priority: config api_key → env var → OAuth.
 func buildResolver(apiKey, authPath string, hushClient *hush.Client) (auth.TokenResolver, error) {
 	if apiKey != "" {
 		return &auth.StaticKey{Key: apiKey}, nil
@@ -96,7 +89,6 @@ func buildResolver(apiKey, authPath string, hushClient *hush.Client) (auth.Token
 	return &auth.OAuthResolver{Manager: mgr}, nil
 }
 
-// Models fetches the list of available models from the Anthropic API.
 func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
@@ -150,30 +142,30 @@ func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	return models, nil
 }
 
-// isOAuthToken detects OAuth access tokens by the "sk-ant-oat" infix.
 func isOAuthToken(key string) bool {
 	return strings.Contains(key, "sk-ant-oat")
 }
 
 func (a *Anthropic) Name() string { return providerName }
 
-// Fingerprint hashes the renderer config that affects wire bytes.
-// Today only ReminderRenderer changes the per-tic system-reminder
-// shape; the templates set is fixed across all arias for a given
-// process lifetime, so we don't hash it (a future override-loading
-// path would have to be folded in here).
+// Fingerprint hashes the encoder configuration. v2 marks the split of
+// Encode into per-message + AssembleRequest — translog entries from
+// the v1 era are bytes for an entire conversation, incompatible with
+// the per-message lookup AssembleRequest expects.
 func (a *Anthropic) Fingerprint() string {
 	rr := a.ReminderRenderer
 	if rr == "" {
 		rr = "tag"
 	}
-	return "anthropic/" + rr + "/v1"
+	return "anthropic/" + rr + "/v2"
 }
 
-// Decode reverses projectMessages: nativeMessage wire bytes → IR.
-// Reads stop_reason / usage / model when present (inbound metadata
-// from consumeSSE). Inline <system-reminder> text blocks stay as
-// plain text — the patch-rendering path is one-way.
+func (a *Anthropic) SetModel(model string) {
+	a.mu.Lock()
+	a.Model = model
+	a.mu.Unlock()
+}
+
 func (a *Anthropic) Decode(raw []json.RawMessage) ([]message.Message, error) {
 	out := make([]message.Message, 0, len(raw))
 	for i, r := range raw {
@@ -241,37 +233,8 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 	return m
 }
 
-// projectAssistantMessage builds the wire shape for one finalized
-// assistant Message. Extracted from the inline message_stop block
-// of consumeSSE so the stub accumulator and any future per-message
-// projector share one implementation. Mirrors the assistant case
-// of projectMessages.
-func projectAssistantMessage(msg message.Message) nativeMessage {
-	out := nativeMessage{Role: "assistant"}
-	for _, c := range msg.Content {
-		switch c.Type {
-		case message.ContentText:
-			out.Content = append(out.Content, nativeBlock{Type: "text", Text: c.Text})
-		case message.ContentThinking:
-			out.Content = append(out.Content, nativeBlock{Type: "thinking", Thinking: c.Text})
-		case message.ContentToolCall:
-			out.Content = append(out.Content, nativeBlock{
-				Type: "tool_use", ID: c.ToolCallID, Name: c.ToolName, Input: c.Arguments,
-			})
-		}
-	}
-	return out
-}
-
-// log writes to stderr with a provider prefix. Visible in the angelus log.
 func log(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "anthropic: "+format+"\n", args...)
-}
-
-func (a *Anthropic) SetModel(model string) {
-	a.mu.Lock()
-	a.Model = model
-	a.mu.Unlock()
 }
 
 // --- Native types ---
@@ -285,15 +248,10 @@ type nativeRequest struct {
 	Stream    bool            `json:"stream"`
 }
 
-// cacheControl marks a block as a prompt-cache breakpoint. Only "ephemeral"
-// is supported today; Anthropic caches the prefix up to and including the
-// marked block for the cache TTL (~5 min).
 type cacheControl struct {
 	Type string `json:"type"`
 }
 
-// systemBlock is one entry in the system prompt array. cache_control on
-// the last system block caches the full system prefix.
 type systemBlock struct {
 	Type         string        `json:"type"`
 	Text         string        `json:"text"`
@@ -301,13 +259,11 @@ type systemBlock struct {
 }
 
 type nativeMessage struct {
-	Role    string        `json:"role"`
-	Content []nativeBlock `json:"content"`
-	// Inbound metadata captured by the SSE consumer. omitempty on the
-	// outbound projection so encoded request bytes don't include them.
-	StopReason string       `json:"stop_reason,omitempty"`
-	Model      string       `json:"model,omitempty"`
-	Usage      *nativeUsage `json:"usage,omitempty"`
+	Role       string        `json:"role"`
+	Content    []nativeBlock `json:"content"`
+	StopReason string        `json:"stop_reason,omitempty"`
+	Model      string        `json:"model,omitempty"`
+	Usage      *nativeUsage  `json:"usage,omitempty"`
 }
 
 type nativeUsage struct {
@@ -339,277 +295,101 @@ type nativeTool struct {
 	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
-// --- Projection: IR messages → native request ---
+// --- Encoding: per-message projection ---
 
-func (a *Anthropic) projectMessagesWithModel(msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, provider.ProjectionSummary) {
-	req := nativeRequest{
-		Model: model, MaxTokens: maxTokens, Stream: true,
+// EncodeMessage projects one figaro IR message into native wire
+// bytes. State-only tics that emit no wire output return nil.
+func (a *Anthropic) EncodeMessage(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error) {
+	snap := prevSnapshot
+	nm, ok := a.renderMessage(msg, &snap)
+	if !ok {
+		return nil, nil
 	}
-	summary := provider.ProjectionSummary{
-		Fingerprint: a.Fingerprint(),
+	raw, err := json.Marshal(nm)
+	if err != nil {
+		return nil, fmt.Errorf("marshal nativeMessage: %w", err)
 	}
-
-	// Build system prompt — always array form so cache_control can attach.
-	// Sourced from chalkboard.system.prompt (set at bootstrap by the
-	// agent loop). Ephemeral arias supply a synthesized snapshot.
-	var systemText string
-	if raw, ok := snapshot["system.prompt"]; ok {
-		var s string
-		if json.Unmarshal(raw, &s) == nil {
-			systemText = s
-		}
-	}
-
-	if oauth {
-		// OAuth requires "You are Claude Code" as the first system block —
-		// validated server-side for OAuth tokens.
-		req.System = append(req.System, systemBlock{Type: "text", Text: "You are Claude Code, Anthropic's official CLI for Claude."})
-		if systemText != "" {
-			// Our credo comes second, with an override instruction so the
-			// model prioritizes the credo's identity.
-			req.System = append(req.System, systemBlock{Type: "text", Text: "IMPORTANT: The following is your true identity and personality. " +
-				"Adopt it fully. Do not identify as Claude Code — follow the persona below.\n\n" + systemText})
-		}
-	} else if systemText != "" {
-		req.System = append(req.System, systemBlock{Type: "text", Text: systemText})
-	}
-
-	// Stage E: emit chalkboard.system.skills as its own system block
-	// after the credo. The catalog body is a markdown-rendered list
-	// of {name, description, file_path}. Bodies aren't included —
-	// the model uses the read tool to load a skill when it's
-	// invoked.
-	if raw, ok := snapshot["system.skills"]; ok && len(raw) > 0 {
-		var entries []credo.SkillCatalogEntry
-		if json.Unmarshal(raw, &entries) == nil && len(entries) > 0 {
-			body := credo.FormatSkillCatalog(entries)
-			if body != "" {
-				req.System = append(req.System, systemBlock{Type: "text", Text: body})
-			}
-		}
-	}
-
-	// Capture system block bytes for the translation log BEFORE
-	// markCacheBreakpoints attaches per-Send cache_control markers.
-	// The persisted bytes must be cache_control-free; the markers
-	// move based on which message is the leaf and would couple the
-	// cached bytes to the position.
-	if len(req.System) > 0 {
-		summary.System = make([]json.RawMessage, len(req.System))
-		for i, sb := range req.System {
-			if raw, err := json.Marshal(sb); err == nil {
-				summary.System[i] = raw
-			}
-		}
-		summary.SystemFLT = lastSystemPromptFLT(msgs)
-	}
-
-	wireMsgs, perFLT := a.projectMessages(msgs, priorTranslations)
-	req.Messages = wireMsgs
-	summary.PerMessage = perFLT
-
-	req.Tools = projectTools(tools)
-
-	markCacheBreakpoints(&req)
-	return req, summary
+	return []json.RawMessage{raw}, nil
 }
 
-// lastSystemPromptFLT scans the figaro timeline backward and returns
-// the LogicalTime of the most recent message whose Patches set
-// chalkboard.system.prompt. Returns 0 when no message has set it
-// (ephemeral arias that synthesize the snapshot externally).
-//
-// Compute-on-demand keeps the agent free of "current system flt"
-// state; the figaro timeline is the source of truth.
-func lastSystemPromptFLT(msgs []message.Message) uint64 {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		for _, p := range msgs[i].Patches {
-			if _, ok := p.Set["system.prompt"]; ok {
-				return msgs[i].LogicalTime
+// renderMessage produces the wire-shape nativeMessage for one IR
+// message. Returns ok=false for state-only tics (no content blocks
+// emitted). Advances *prevSnap as patches apply, even on the no-emit
+// path, so callers using the snapshot to chain renders stay in step.
+func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snapshot) (nativeMessage, bool) {
+	switch msg.Role {
+	case message.RoleUser:
+		var blocks []nativeBlock
+		for _, c := range msg.Content {
+			switch c.Type {
+			case message.ContentText:
+				blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
+			case message.ContentImage:
+				blocks = append(blocks, nativeBlock{
+					Type: "image",
+					Source: map[string]any{
+						"type": "base64", "media_type": c.MimeType, "data": c.Data,
+					},
+				})
+			case message.ContentToolResult:
+				text := c.Text
+				if text == "" {
+					text = "(empty)"
+				}
+				blocks = append(blocks, nativeBlock{
+					Type: "tool_result", ToolUseID: c.ToolCallID,
+					IsError: c.IsError,
+					Content: []nativeBlock{{Type: "text", Text: text}},
+				})
 			}
 		}
-	}
-	return 0
-}
-
-// markCacheBreakpoints sets cache_control: ephemeral on the last block of
-// each cacheable region of the request:
-//
-//  1. The last system block — caches the system prefix.
-//  2. The last tool definition — caches system + tools.
-//  3. The last content block of the second-to-last message — caches
-//     system + tools + the conversation up through the leaf at the most
-//     recent endTurn (i.e. everything that was on disk before the new
-//     user prompt arrived).
-//
-// The third breakpoint is implicit: it follows from message ordering. If
-// the conversation has fewer than two messages, no message-level
-// breakpoint is set.
-//
-// Note: the OAuth + claude-code-20250219 beta path silently ignores
-// client-controlled cache_control (verified by inspecting the
-// cache_creation.ephemeral_*_input_tokens fields in the response, which
-// stay at 0). On the API-key path, these breakpoints engage normally.
-// The wiring is left in place so the cache works whenever the auth path
-// allows it; correctness of the request bytes is verified by the unit
-// tests in this package.
-func markCacheBreakpoints(req *nativeRequest) {
-	if n := len(req.System); n > 0 {
-		req.System[n-1].CacheControl = &cacheControl{Type: "ephemeral"}
-	}
-	if n := len(req.Tools); n > 0 {
-		req.Tools[n-1].CacheControl = &cacheControl{Type: "ephemeral"}
-	}
-	if n := len(req.Messages); n >= 2 {
-		m := &req.Messages[n-2]
-		if k := len(m.Content); k > 0 {
-			m.Content[k-1].CacheControl = &cacheControl{Type: "ephemeral"}
+		blocks = append(blocks, a.renderPatchBlocks(msg.Patches, prevSnap)...)
+		if len(blocks) == 0 {
+			return nativeMessage{}, false
 		}
+		return nativeMessage{Role: "user", Content: blocks}, true
+
+	case message.RoleAssistant:
+		var blocks []nativeBlock
+		for _, c := range msg.Content {
+			switch c.Type {
+			case message.ContentText:
+				blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
+			case message.ContentThinking:
+				blocks = append(blocks, nativeBlock{Type: "thinking", Thinking: c.Text})
+			case message.ContentToolCall:
+				blocks = append(blocks, nativeBlock{
+					Type: "tool_use", ID: c.ToolCallID, Name: c.ToolName, Input: c.Arguments,
+				})
+			}
+		}
+		if len(blocks) == 0 {
+			return nativeMessage{}, false
+		}
+		return nativeMessage{Role: "assistant", Content: blocks}, true
 	}
+	return nativeMessage{}, false
 }
 
-// projectMessages converts the IR message stream to the wire shape.
-// Patches on user-role Messages are rendered inline as system-reminder
-// content blocks via the configured ReminderRenderer (Stage C, log
-// unification). Tool results are carried as ContentToolResult blocks
-// within the user-role tic that accumulated them.
-//
-// priorTranslations is parallel-indexed with msgs: priorTranslations.At(i)
-// holds the cached wire-format projection for msgs[i] when known.
-// An empty ProviderTranslation entry triggers fresh rendering.
-//
-// Returns:
-//   - result: the wire-message stream (the messages array of the
-//     native request body). Length ≤ len(msgs); state-only figaro
-//     tics that emit no wire output are omitted.
-//   - perFLT: parallel-indexed with msgs. perFLT[i] is the wire
-//     bytes (without cache_control) of the wire message that
-//     msgs[i] produced, or nil for state-only tics that emitted
-//     nothing. Used by ProjectionSummary to populate the
-//     translation log.
-func (a *Anthropic) projectMessages(msgs []message.Message, priorTranslations causal.Slice[message.ProviderTranslation]) (result []nativeMessage, perFLT []json.RawMessage) {
+// projectMessages renders msgs into the wire shape and the
+// parallel-indexed per-message bytes (length = len(msgs); nil entries
+// for state-only tics). Pure helper used by tests.
+func (a *Anthropic) projectMessages(msgs []message.Message) (result []nativeMessage, perFLT []json.RawMessage) {
 	perFLT = make([]json.RawMessage, len(msgs))
 	prevSnap := chalkboard.Snapshot{}
-
-	emit := func(idx int, nm nativeMessage) {
+	for i, msg := range msgs {
+		nm, ok := a.renderMessage(msg, &prevSnap)
+		if !ok {
+			continue
+		}
 		result = append(result, nm)
 		if raw, err := json.Marshal(nm); err == nil {
-			perFLT[idx] = raw
-		}
-	}
-
-	for i, msg := range msgs {
-		// Track running snapshot for reminder rendering, even on
-		// cache-hit paths where we use the cached translation verbatim.
-		//
-		// The snapshot is what lets a future reminder-policy switch
-		// pick between "render only the keys this tic patched"
-		// (today's behavior) and "render the full snapshot every
-		// turn." Both modes need prevSnap to stay in step with the
-		// timeline; advancing it on cache hits keeps the contract
-		// uniform across rendered and cached messages.
-		//
-		// Today the only template that reads the snapshot indirectly
-		// (via Entry.Old) is model.tmpl, which has no public surface,
-		// so this is mostly defensive — the contract is what we're
-		// preserving, not the current behavior.
-		applyPatches := func() {
-			for _, p := range msg.Patches {
-				prevSnap = prevSnap.Apply(p)
-			}
-		}
-
-		// Try the cached translation first. The cache hit path expects
-		// exactly one wire message per Message for now (the typical
-		// case); variadic translation (multiple wire messages per
-		// Message) is reserved for future N:1 native:figaro support.
-		//
-		// The translation log can also hold non-message entries
-		// keyed by figaro_lt (today: the system block array tied to
-		// the bootstrap flt). json.Unmarshal is lax and would happily
-		// decode a systemBlock as an empty-role nativeMessage,
-		// shipping bytes the API rejects. Validate the role
-		// explicitly before using a cached entry.
-		if i < priorTranslations.Len() {
-			pt := priorTranslations.At(i)
-			if len(pt.Messages) > 0 {
-				var cached nativeMessage
-				if err := json.Unmarshal(pt.Messages[0], &cached); err == nil &&
-					(cached.Role == "user" || cached.Role == "assistant") {
-					result = append(result, cached)
-					perFLT[i] = pt.Messages[0] // reuse cached bytes verbatim
-					applyPatches()
-					continue
-				}
-			}
-		}
-
-		switch msg.Role {
-		case message.RoleUser:
-			var blocks []nativeBlock
-			for _, c := range msg.Content {
-				switch c.Type {
-				case message.ContentText:
-					blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
-				case message.ContentImage:
-					blocks = append(blocks, nativeBlock{
-						Type: "image",
-						Source: map[string]any{
-							"type": "base64", "media_type": c.MimeType, "data": c.Data,
-						},
-					})
-				case message.ContentToolResult:
-					text := c.Text
-					if text == "" {
-						text = "(empty)"
-					}
-					blocks = append(blocks, nativeBlock{
-						Type: "tool_result", ToolUseID: c.ToolCallID,
-						IsError: c.IsError,
-						Content: []nativeBlock{{Type: "text", Text: text}},
-					})
-				}
-			}
-			// Render Patches as system-reminder content blocks on the
-			// same user-role wire message. Renderer choice is shared
-			// across all messages in the stream.
-			blocks = append(blocks, a.renderPatchBlocks(msg.Patches, &prevSnap)...)
-			if len(blocks) > 0 {
-				emit(i, nativeMessage{Role: "user", Content: blocks})
-			}
-
-		case message.RoleAssistant:
-			var blocks []nativeBlock
-			for _, c := range msg.Content {
-				switch c.Type {
-				case message.ContentText:
-					blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
-				case message.ContentThinking:
-					blocks = append(blocks, nativeBlock{Type: "thinking", Thinking: c.Text})
-				case message.ContentToolCall:
-					blocks = append(blocks, nativeBlock{
-						Type: "tool_use", ID: c.ToolCallID, Name: c.ToolName, Input: c.Arguments,
-					})
-				}
-			}
-			if len(blocks) > 0 {
-				emit(i, nativeMessage{Role: "assistant", Content: blocks})
-			}
-
-		case message.RoleSystem:
-			// System messages from compacted headers are handled
-			// at the block level, not per-message.
-			continue
+			perFLT[i] = raw
 		}
 	}
 	return result, perFLT
 }
 
-// renderPatchBlocks renders the given patches as system-reminder content
-// blocks using the configured renderer. Advances prevSnap in step. The
-// "tool" renderer is not legal inline (it injects synthetic
-// assistant/user pairs which would break alternation here); on that
-// setting we fall back to "tag" with a one-time warning per Send.
 func (a *Anthropic) renderPatchBlocks(patches []message.Patch, prevSnap *chalkboard.Snapshot) []nativeBlock {
 	if len(patches) == 0 || a.Templates == nil {
 		for _, p := range patches {
@@ -637,10 +417,6 @@ func (a *Anthropic) renderPatchBlocks(patches []message.Patch, prevSnap *chalkbo
 	return out
 }
 
-// escapeAttr escapes a string for safe use as an XML-attribute value
-// inside a <system-reminder name="…"> tag. We only need the minimal
-// XML attribute escaping (quote and ampersand); chalkboard keys are
-// expected to be simple identifiers anyway.
 func escapeAttr(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
 	s = strings.ReplaceAll(s, `"`, "&quot;")
@@ -656,47 +432,159 @@ func projectTools(tools []provider.Tool) []nativeTool {
 	return result
 }
 
-// --- Encode: IR → request body bytes (pure projection) ---
+// --- Encoding: system blocks + request assembly ---
 
-// Encode produces the API request body for one turn plus the
-// per-message projection summary for cache persistence. Pure
-// translation; no I/O beyond resolving the auth token (cached).
-func (a *Anthropic) Encode(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) ([]byte, provider.ProjectionSummary, error) {
-	if maxTokens == 0 {
-		maxTokens = a.MaxTokens
+// systemBlocks builds the system prefix from the chalkboard snapshot.
+// Order: OAuth-required preamble (oauth only), credo (system.prompt),
+// skill catalog (system.skills). Bytes have no cache_control.
+func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
+	var out []systemBlock
+	var systemText string
+	if raw, ok := snapshot["system.prompt"]; ok {
+		var s string
+		if json.Unmarshal(raw, &s) == nil {
+			systemText = s
+		}
 	}
-	if maxTokens == 0 {
-		maxTokens = 8192
+	if oauth {
+		out = append(out, systemBlock{Type: "text", Text: "You are Claude Code, Anthropic's official CLI for Claude."})
+		if systemText != "" {
+			out = append(out, systemBlock{Type: "text", Text: "IMPORTANT: The following is your true identity and personality. " +
+				"Adopt it fully. Do not identify as Claude Code — follow the persona below.\n\n" + systemText})
+		}
+	} else if systemText != "" {
+		out = append(out, systemBlock{Type: "text", Text: systemText})
 	}
+	if raw, ok := snapshot["system.skills"]; ok && len(raw) > 0 {
+		var entries []credo.SkillCatalogEntry
+		if json.Unmarshal(raw, &entries) == nil && len(entries) > 0 {
+			body := credo.FormatSkillCatalog(entries)
+			if body != "" {
+				out = append(out, systemBlock{Type: "text", Text: body})
+			}
+		}
+	}
+	return out
+}
+
+// AssembleRequest builds the API request body from cached per-message
+// wire bytes and the current chalkboard snapshot. Cache markers are
+// applied to the assembled request, not to the cached bytes (which
+// are kept marker-free so they can be reused at any position).
+func (a *Anthropic) AssembleRequest(perMessage [][]json.RawMessage, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) ([]byte, error) {
 	a.mu.Lock()
 	model := a.Model
 	a.mu.Unlock()
 
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
-		return nil, provider.ProjectionSummary{}, fmt.Errorf("resolve token: %w", err)
+		return nil, fmt.Errorf("resolve token: %w", err)
 	}
-	native, summary := a.projectMessagesWithModel(msgs, snapshot, priorTranslations, tools, maxTokens, isOAuthToken(apiKey), model)
-	body, err := json.Marshal(native)
+
+	req, err := a.projectMessagesWithModel(perMessage, snapshot, tools, maxTokens, isOAuthToken(apiKey), model)
 	if err != nil {
-		return nil, summary, fmt.Errorf("marshal request: %w", err)
+		return nil, err
 	}
-	return body, summary, nil
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	return body, nil
 }
 
-// --- Send: pre-encoded body → HTTP → SSE → assembled native ---
+// projectMessagesWithModel is the pure assembly helper: cached
+// per-message bytes + snapshot + tools → nativeRequest with cache
+// markers applied. No auth resolution, used by tests too.
+func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
+	if maxTokens == 0 {
+		maxTokens = a.MaxTokens
+	}
+	if maxTokens == 0 {
+		maxTokens = 8192
+	}
+	req := nativeRequest{
+		Model: model, MaxTokens: maxTokens, Stream: true,
+		System: systemBlocks(snapshot, oauth),
+		Tools:  projectTools(tools),
+	}
+	for _, entry := range perMessage {
+		for _, raw := range entry {
+			if len(raw) == 0 {
+				continue
+			}
+			var nm nativeMessage
+			if err := json.Unmarshal(raw, &nm); err != nil {
+				return nativeRequest{}, fmt.Errorf("unmarshal cached message: %w", err)
+			}
+			req.Messages = append(req.Messages, nm)
+		}
+	}
+	markCacheBreakpoints(&req)
+	return req, nil
+}
 
-// Send POSTs the pre-encoded body to the Anthropic API, pushes parsed
-// native deltas into the bus, and returns the assembled final
-// nativeMessage bytes when the stream closes.
-func (a *Anthropic) Send(ctx context.Context, body []byte, bus provider.Bus) ([]json.RawMessage, error) {
+// encodeAll encodes a slice of IR messages into per-message wire
+// bytes. Convenience for tests; callers in production go through the
+// translog cache via Agent.catchUpTranslation.
+func (a *Anthropic) encodeAll(msgs []message.Message) [][]json.RawMessage {
+	out := make([][]json.RawMessage, 0, len(msgs))
+	prevSnap := chalkboard.Snapshot{}
+	for _, msg := range msgs {
+		nm, ok := a.renderMessage(msg, &prevSnap)
+		if !ok {
+			continue
+		}
+		raw, err := json.Marshal(nm)
+		if err != nil {
+			continue
+		}
+		out = append(out, []json.RawMessage{raw})
+	}
+	return out
+}
+
+// markCacheBreakpoints sets cache_control: ephemeral on the last block of
+// each cacheable region of the request:
+//
+//  1. The last system block — caches the system prefix.
+//  2. The last tool definition — caches system + tools.
+//  3. The last content block of the second-to-last message — caches
+//     system + tools + the conversation up through the leaf at the most
+//     recent endTurn (i.e. everything that was on disk before the new
+//     user prompt arrived).
+//
+// The OAuth + claude-code-20250219 beta path silently ignores
+// client-controlled cache_control; on the API-key path these
+// breakpoints engage normally.
+func markCacheBreakpoints(req *nativeRequest) {
+	if n := len(req.System); n > 0 {
+		req.System[n-1].CacheControl = &cacheControl{Type: "ephemeral"}
+	}
+	if n := len(req.Tools); n > 0 {
+		req.Tools[n-1].CacheControl = &cacheControl{Type: "ephemeral"}
+	}
+	if n := len(req.Messages); n >= 2 {
+		m := &req.Messages[n-2]
+		if k := len(m.Content); k > 0 {
+			m.Content[k-1].CacheControl = &cacheControl{Type: "ephemeral"}
+		}
+	}
+}
+
+// --- Send: pre-encoded body → HTTP → SSE ---
+
+// Send POSTs the body, pushes raw native delta events to the bus,
+// and returns when the stream closes. Pure transport; the
+// accumulator that folds deltas into the assembled assistant bytes
+// lives in synchronize via Assemble.
+func (a *Anthropic) Send(ctx context.Context, body []byte, bus provider.Bus) error {
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
-		return nil, fmt.Errorf("resolve token: %w", err)
+		return fmt.Errorf("resolve token: %w", err)
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", apiMessagesURL, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return fmt.Errorf("create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", apiVersion)
@@ -716,51 +604,44 @@ func (a *Anthropic) Send(ctx context.Context, body []byte, bus provider.Bus) ([]
 
 	resp, err := a.HTTPClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
+		return fmt.Errorf("http request: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		errBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
+		return fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
 	}
-	assembled := a.consumeSSE(resp.Body, bus, model)
-	if len(assembled) == 0 {
-		return nil, nil
-	}
-	return []json.RawMessage{assembled}, nil
+	consumeSSE(resp.Body, bus, model)
+	return nil
 }
 
-// sseReadTimeout is how long we wait for the next SSE line before
-// treating the connection as stalled.
 const sseReadTimeout = 5 * time.Minute
 
-// liveDelta is the figaro-shape live entry the consumer pushes per
-// content delta. Subscribers extract the text + ContentType.
+// liveDelta is one entry on the translog live tail. Event is the SSE
+// event name (e.g. "content_block_delta"); Data is the original SSE
+// data payload.
 type liveDelta struct {
-	Delta       string              `json:"delta"`
-	ContentType message.ContentType `json:"content_type,omitempty"`
+	Event string          `json:"event"`
+	Data  json.RawMessage `json:"data"`
+	Model string          `json:"model,omitempty"` // set on a synthetic "start" entry so Assemble knows the model
 }
 
-// consumeSSE accumulates the assistant turn into a nativeMessage,
-// pushes deltas to the Bus as they arrive, and returns the assembled
-// final native bytes for the agent to condense the live tail into.
-func (a *Anthropic) consumeSSE(body io.ReadCloser, bus provider.Bus, model string) json.RawMessage {
+// consumeSSE forwards every SSE event to the bus and exits when the
+// stream closes. No accumulation — Assemble re-runs the state
+// machine over the live tail at condense time.
+func consumeSSE(body io.ReadCloser, bus provider.Bus, model string) {
 	defer body.Close()
-
 	log("sse: stream started, model=%s", model)
 
-	pushDelta := func(text string, ct message.ContentType) {
-		if text == "" {
-			return
-		}
-		raw, _ := json.Marshal(liveDelta{Delta: text, ContentType: ct})
-		bus.Push(provider.Event{Payload: []json.RawMessage{raw}})
+	push := func(eventType string, data []byte) {
+		entry, _ := json.Marshal(liveDelta{Event: eventType, Data: json.RawMessage(data)})
+		bus.Push(provider.Event{Payload: []json.RawMessage{entry}})
 	}
-	var assembled json.RawMessage
-	finalize := func(nm nativeMessage) {
-		raw, _ := json.Marshal(nm)
-		assembled = raw
-	}
+	// Synthetic "start" entry carries the model name so Assemble can
+	// stamp the assembled nativeMessage with the same model the API
+	// used. The real SSE stream doesn't echo it back.
+	startEntry, _ := json.Marshal(liveDelta{Event: "_start", Model: model})
+	bus.Push(provider.Event{Payload: []json.RawMessage{startEntry}})
 
 	pr, pw := io.Pipe()
 	go func() {
@@ -783,16 +664,6 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, bus provider.Bus, model strin
 	scanner := bufio.NewScanner(pr)
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 
-	var (
-		nm         nativeMessage
-		usage      nativeUsage
-		eventType  string
-		lines      int
-		stopReason string
-	)
-	nm.Role = "assistant"
-	nm.Model = model
-
 	scanCh := make(chan string, 1)
 	scanErr := make(chan error, 1)
 	scanNext := func() {
@@ -805,19 +676,10 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, bus provider.Bus, model strin
 		}()
 	}
 
-	emitFinal := func(reason string) {
-		if reason != "" {
-			stopReason = reason
-		}
-		if stopReason == "" {
-			stopReason = "aborted"
-		}
-		nm.StopReason = stopReason
-		u := usage
-		nm.Usage = &u
-		finalize(nm)
-	}
-
+	var (
+		eventType string
+		lines     int
+	)
 	scanNext()
 	for {
 		var line string
@@ -831,14 +693,12 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, bus provider.Bus, model strin
 			} else {
 				log("sse: stream ended after %d lines (EOF)", lines)
 			}
-			if stopReason == "" {
-				emitFinal("aborted")
-			}
-			return assembled
+			push("_eof", nil)
+			return
 		case <-time.After(sseReadTimeout):
-			log("sse: read timeout after %d lines (%v with no data)", lines, sseReadTimeout)
-			emitFinal("aborted")
-			return assembled
+			log("sse: read timeout after %d lines", lines)
+			push("_eof", nil)
+			return
 		}
 		if strings.HasPrefix(line, "event: ") {
 			eventType = strings.TrimPrefix(line, "event: ")
@@ -848,8 +708,75 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, bus provider.Bus, model strin
 			continue
 		}
 		data := strings.TrimPrefix(line, "data: ")
+		push(eventType, []byte(data))
+		if eventType == "message_stop" || eventType == "error" {
+			return
+		}
+	}
+}
 
-		switch eventType {
+// --- Live tail interpretation: DecodeDelta + Assemble ---
+
+// DecodeDelta extracts the figaro UI surface (text + content type)
+// for one live tail entry. Non-text events return ok=false.
+func (a *Anthropic) DecodeDelta(payload []json.RawMessage) (string, message.ContentType, bool) {
+	if len(payload) == 0 {
+		return "", "", false
+	}
+	var ld liveDelta
+	if json.Unmarshal(payload[0], &ld) != nil {
+		return "", "", false
+	}
+	if ld.Event != "content_block_delta" {
+		return "", "", false
+	}
+	var d struct {
+		Delta struct {
+			Type     string `json:"type"`
+			Text     string `json:"text,omitempty"`
+			Thinking string `json:"thinking,omitempty"`
+		} `json:"delta"`
+	}
+	if json.Unmarshal(ld.Data, &d) != nil {
+		return "", "", false
+	}
+	switch d.Delta.Type {
+	case "text_delta":
+		return d.Delta.Text, message.ContentText, d.Delta.Text != ""
+	case "thinking_delta":
+		return d.Delta.Thinking, message.ContentThinking, d.Delta.Thinking != ""
+	}
+	return "", "", false
+}
+
+// Assemble runs the SSE accumulator over the live tail, producing
+// the assembled assistant nativeMessage bytes. Returns nil for an
+// empty/malformed tail.
+func (a *Anthropic) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
+	var (
+		nm         nativeMessage
+		usage      nativeUsage
+		stopReason string
+	)
+	nm.Role = "assistant"
+
+	for _, payload := range deltas {
+		if len(payload) == 0 {
+			continue
+		}
+		var ld liveDelta
+		if err := json.Unmarshal(payload[0], &ld); err != nil {
+			continue
+		}
+		switch ld.Event {
+		case "_start":
+			if ld.Model != "" {
+				nm.Model = ld.Model
+			}
+		case "_eof":
+			if stopReason == "" {
+				stopReason = "aborted"
+			}
 		case "content_block_start":
 			var block struct {
 				Index        int `json:"index"`
@@ -859,7 +786,7 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, bus provider.Bus, model strin
 					Name string `json:"name,omitempty"`
 				} `json:"content_block"`
 			}
-			if json.Unmarshal([]byte(data), &block) != nil {
+			if json.Unmarshal(ld.Data, &block) != nil {
 				continue
 			}
 			for len(nm.Content) <= block.Index {
@@ -875,9 +802,8 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, bus provider.Bus, model strin
 					Type: "tool_use", ID: block.ContentBlock.ID, Name: block.ContentBlock.Name,
 				}
 			}
-
 		case "content_block_delta":
-			var delta struct {
+			var d struct {
 				Index int `json:"index"`
 				Delta struct {
 					Type        string `json:"type"`
@@ -886,29 +812,25 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, bus provider.Bus, model strin
 					PartialJSON string `json:"partial_json,omitempty"`
 				} `json:"delta"`
 			}
-			if json.Unmarshal([]byte(data), &delta) != nil || delta.Index >= len(nm.Content) {
+			if json.Unmarshal(ld.Data, &d) != nil || d.Index >= len(nm.Content) {
 				continue
 			}
-			b := &nm.Content[delta.Index]
-			switch delta.Delta.Type {
+			b := &nm.Content[d.Index]
+			switch d.Delta.Type {
 			case "text_delta":
-				b.Text += delta.Delta.Text
-				pushDelta(delta.Delta.Text, message.ContentText)
+				b.Text += d.Delta.Text
 			case "thinking_delta":
-				b.Thinking += delta.Delta.Thinking
-				pushDelta(delta.Delta.Thinking, message.ContentThinking)
+				b.Thinking += d.Delta.Thinking
 			case "input_json_delta":
-				// Buffer partial JSON in a side string; finalized in content_block_stop.
 				if s, ok := b.Input.(string); ok {
-					b.Input = s + delta.Delta.PartialJSON
+					b.Input = s + d.Delta.PartialJSON
 				} else {
-					b.Input = delta.Delta.PartialJSON
+					b.Input = d.Delta.PartialJSON
 				}
 			}
-
 		case "content_block_stop":
 			var stop struct{ Index int }
-			if json.Unmarshal([]byte(data), &stop) != nil || stop.Index >= len(nm.Content) {
+			if json.Unmarshal(ld.Data, &stop) != nil || stop.Index >= len(nm.Content) {
 				continue
 			}
 			b := &nm.Content[stop.Index]
@@ -922,23 +844,6 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, bus provider.Bus, model strin
 					b.Input = map[string]interface{}{}
 				}
 			}
-
-		case "message_delta":
-			var md struct {
-				Delta struct {
-					StopReason string `json:"stop_reason"`
-				} `json:"delta"`
-				Usage struct {
-					OutputTokens int `json:"output_tokens"`
-				} `json:"usage"`
-			}
-			if json.Unmarshal([]byte(data), &md) == nil {
-				usage.OutputTokens = md.Usage.OutputTokens
-				if md.Delta.StopReason != "" {
-					stopReason = md.Delta.StopReason
-				}
-			}
-
 		case "message_start":
 			var ms struct {
 				Message struct {
@@ -949,25 +854,44 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, bus provider.Bus, model strin
 					} `json:"usage"`
 				} `json:"message"`
 			}
-			if json.Unmarshal([]byte(data), &ms) == nil {
+			if json.Unmarshal(ld.Data, &ms) == nil {
 				usage.InputTokens = ms.Message.Usage.InputTokens
 				usage.CacheRead = ms.Message.Usage.CacheRead
 				usage.CacheCreate = ms.Message.Usage.CacheCreate
-				log("sse: message_start input_tokens=%d cache_read=%d cache_create=%d",
-					usage.InputTokens, usage.CacheRead, usage.CacheCreate)
 			}
-
+		case "message_delta":
+			var md struct {
+				Delta struct {
+					StopReason string `json:"stop_reason"`
+				} `json:"delta"`
+				Usage struct {
+					OutputTokens int `json:"output_tokens"`
+				} `json:"usage"`
+			}
+			if json.Unmarshal(ld.Data, &md) == nil {
+				usage.OutputTokens = md.Usage.OutputTokens
+				if md.Delta.StopReason != "" {
+					stopReason = md.Delta.StopReason
+				}
+			}
 		case "message_stop":
-			log("sse: message_stop output_tokens=%d stop_reason=%s", usage.OutputTokens, stopReason)
-			emitFinal("")
-			return assembled
-
+			// terminator; nothing more to fold
 		case "error":
-			var errEvt struct{ Error struct{ Message string } }
-			json.Unmarshal([]byte(data), &errEvt)
-			log("sse: received error event: %s", errEvt.Error.Message)
-			emitFinal("error")
-			return assembled
+			stopReason = "error"
 		}
 	}
+
+	if len(nm.Content) == 0 {
+		return nil, nil
+	}
+	if stopReason == "" {
+		stopReason = "aborted"
+	}
+	nm.StopReason = stopReason
+	nm.Usage = &usage
+	raw, err := json.Marshal(nm)
+	if err != nil {
+		return nil, fmt.Errorf("marshal assembled: %w", err)
+	}
+	return []json.RawMessage{raw}, nil
 }

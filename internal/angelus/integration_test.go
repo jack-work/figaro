@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -58,17 +57,54 @@ func (m *mockProviderForIntegration) Decode(raw []json.RawMessage) ([]message.Me
 	return out, nil
 }
 
-func (m *mockProviderForIntegration) Encode(_ context.Context, _ []message.Message, _ chalkboard.Snapshot, _ causal.Slice[message.ProviderTranslation], _ []provider.Tool, _ int) ([]byte, provider.ProjectionSummary, error) {
-	return nil, provider.ProjectionSummary{Fingerprint: m.Fingerprint()}, nil
+func (m *mockProviderForIntegration) EncodeMessage(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+	return nil, nil
 }
-func (m *mockProviderForIntegration) Send(_ context.Context, _ []byte, _ provider.Bus) ([]json.RawMessage, error) {
+func (m *mockProviderForIntegration) AssembleRequest(_ [][]json.RawMessage, _ chalkboard.Snapshot, _ []provider.Tool, _ int) ([]byte, error) {
+	return nil, nil
+}
+func (m *mockProviderForIntegration) DecodeDelta(payload []json.RawMessage) (string, message.ContentType, bool) {
+	if len(payload) == 0 {
+		return "", "", false
+	}
+	var d struct {
+		Delta string `json:"delta"`
+	}
+	if json.Unmarshal(payload[0], &d) != nil || d.Delta == "" {
+		return "", "", false
+	}
+	return d.Delta, message.ContentText, true
+}
+func (m *mockProviderForIntegration) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
+	var text string
+	for _, p := range deltas {
+		if len(p) == 0 {
+			continue
+		}
+		var d struct {
+			Delta string `json:"delta"`
+		}
+		if json.Unmarshal(p[0], &d) == nil {
+			text += d.Delta
+		}
+	}
+	if text == "" {
+		text = "42"
+	}
 	nm := mockIntegNative{
 		Role:       "assistant",
-		Content:    []map[string]interface{}{{"type": "text", "text": "42"}},
+		Content:    []map[string]interface{}{{"type": "text", "text": text}},
 		StopReason: "end_turn",
 	}
 	raw, _ := json.Marshal(nm)
 	return []json.RawMessage{raw}, nil
+}
+func (m *mockProviderForIntegration) Send(_ context.Context, _ []byte, bus provider.Bus) error {
+	delta, _ := json.Marshal(struct {
+		Delta string `json:"delta"`
+	}{"42"})
+	bus.Push(provider.Event{Payload: []json.RawMessage{delta}})
+	return nil
 }
 
 func TestIntegration_CreateAndPrompt(t *testing.T) {
