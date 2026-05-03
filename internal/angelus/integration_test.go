@@ -72,7 +72,7 @@ func (m *mockProviderForIntegration) Decode(payload []json.RawMessage) ([]messag
 }
 
 func (m *mockProviderForIntegration) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
-	return nil, nil
+	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
 }
 func (m *mockProviderForIntegration) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
 	var text string

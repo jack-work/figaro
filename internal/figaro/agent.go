@@ -31,7 +31,7 @@ const (
 	eventToolResult
 	eventInterrupt
 	eventRehydrate
-	eventFigaro      // durable assistant Message landed in figStream
+	eventFigaro         // durable assistant Message landed in figStream
 	eventFigaroDelta    // partial assistant text — translated from a translator live entry
 	eventTranslatorLive // routed to translator live on Recv (translated by synchronize)
 	eventStartLLMStream // figStream is finalized for this turn; ship it
@@ -103,15 +103,15 @@ type Config struct {
 // One goroutine drains the inbox — no concurrent dispatch, no races.
 // TODO: convert to child process via --figaro flag for full isolation.
 type Agent struct {
-	id          string
-	label       string
-	socketPath  string
-	prov        provider.Provider
-	scribe      credo.Scribe
-	cwd         string
-	root        string
-	maxTokens   int
-	tools       *tool.Registry
+	id         string
+	label      string
+	socketPath string
+	prov       provider.Provider
+	scribe     credo.Scribe
+	cwd        string
+	root       string
+	maxTokens  int
+	tools      *tool.Registry
 	figStream  store.Stream[message.Message]
 	translator store.Stream[[]json.RawMessage]
 	backend    store.Backend // nil = ephemeral
@@ -800,23 +800,22 @@ func (a *Agent) endTurn(reason string) {
 }
 
 // startLLMStream ships one turn via Send in a background goroutine.
-// The translator cache is already caught up by synchronize before
-// dispatch reaches here; we just look up cached entries and hand
-// them to Send. The goroutine posts eventSendComplete on return.
+// The translator cache is already caught up by synchronize; its
+// durable head IS the per-message body of the request — we just
+// project it to a slice and hand it to Send. The goroutine posts
+// eventSendComplete on return.
 func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
-	msgs := unwrapMessages(a.figStream.Durable())
-	if len(msgs) == 0 {
-		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("empty context")})
-		return
-	}
-
-	perMsg := make([][]json.RawMessage, 0, len(msgs))
-	for _, m := range msgs {
-		entry, ok := a.translator.Lookup(m.LogicalTime)
-		if !ok || len(entry.Payload) == 0 {
+	durable := a.translator.Durable()
+	perMsg := make([][]json.RawMessage, 0, len(durable))
+	for _, e := range durable {
+		if len(e.Payload) == 0 {
 			continue
 		}
-		perMsg = append(perMsg, entry.Payload)
+		perMsg = append(perMsg, e.Payload)
+	}
+	if len(perMsg) == 0 {
+		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("empty context")})
+		return
 	}
 	in := provider.SendInput{
 		PerMessage: perMsg,
@@ -824,7 +823,7 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 		Tools:      a.toolDefs(),
 		MaxTokens:  a.maxTokens,
 	}
-	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context\n", len(msgs))
+	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d entries in context\n", len(perMsg))
 	go func() {
 		var sendErr error
 		func() {

@@ -34,7 +34,7 @@ func (m *mockProvider) Decode(payload []json.RawMessage) ([]message.Message, err
 	return mockDecode(payload)
 }
 func (m *mockProvider) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
-	return nil, nil
+	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
 }
 func (m *mockProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
 	return mockAssemble(deltas)
@@ -337,7 +337,7 @@ func (p *panicProvider) Decode(payload []json.RawMessage) ([]message.Message, er
 	return mockDecode(payload)
 }
 func (p *panicProvider) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
-	return nil, nil
+	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
 }
 func (p *panicProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
 	return mockAssemble(deltas)
@@ -695,7 +695,7 @@ func (s *slowProvider) Decode(payload []json.RawMessage) ([]message.Message, err
 	return mockDecode(payload)
 }
 func (s *slowProvider) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
-	return nil, nil
+	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
 }
 func (s *slowProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
 	return mockAssemble(deltas)
