@@ -1,12 +1,11 @@
 // Package anthropic implements the figaro Provider for the Anthropic Messages API.
 //
-// Per-message encoding (EncodeMessage) is cached in the agent's
-// translation stream. Request assembly (AssembleRequest) splices
-// cached bytes into a request body, applies cache_control markers,
-// and adds the system prefix from the chalkboard snapshot. Send is
-// pure transport: HTTP+SSE, push raw native events to the bus, no
-// accumulation. Synchronize calls Assemble at end-of-turn to fold
-// the live tail into the final assembled assistant bytes.
+// Per-message encoding (Encode) is cached in the agent's translator
+// stream. Send takes the cached bytes plus the snapshot and assembles
+// the request body internally before shipping. SSE deltas are pushed
+// raw to the bus; Assemble folds them into the final assistant bytes
+// at end-of-turn. Decode reverses native bytes back to IR uniformly
+// for both durable per-message entries and live tail delta payloads.
 package anthropic
 
 import (
@@ -149,9 +148,9 @@ func isOAuthToken(key string) bool {
 func (a *Anthropic) Name() string { return providerName }
 
 // Fingerprint hashes the encoder configuration. v2 marks the split of
-// Encode into per-message + AssembleRequest — translog entries from
-// the v1 era are bytes for an entire conversation, incompatible with
-// the per-message lookup AssembleRequest expects.
+// Encode into per-message projection plus internal request assembly;
+// older entries are whole-conversation bytes, incompatible with the
+// per-message lookup Send does today.
 func (a *Anthropic) Fingerprint() string {
 	rr := a.ReminderRenderer
 	if rr == "" {
@@ -166,16 +165,71 @@ func (a *Anthropic) SetModel(model string) {
 	a.mu.Unlock()
 }
 
-func (a *Anthropic) Decode(raw []json.RawMessage) ([]message.Message, error) {
-	out := make([]message.Message, 0, len(raw))
-	for i, r := range raw {
+// Decode reverses native wire bytes to IR. Auto-detects between
+// liveDelta (live tail entries from consumeSSE) and nativeMessage
+// (durable per-message entries). Live deltas yield a partial Message
+// with only the streamed fragment as content; non-text events
+// (block start/stop, message_start, etc.) yield no message.
+func (a *Anthropic) Decode(payload []json.RawMessage) ([]message.Message, error) {
+	out := make([]message.Message, 0, len(payload))
+	for i, r := range payload {
+		if len(r) == 0 {
+			continue
+		}
+		// Live tail entry? — has an "event" field.
+		var ld liveDelta
+		if json.Unmarshal(r, &ld) == nil && ld.Event != "" {
+			if msg, ok := decodeLiveDelta(ld); ok {
+				out = append(out, msg)
+			}
+			continue
+		}
+		// Otherwise: a durable nativeMessage.
 		var nm nativeMessage
 		if err := json.Unmarshal(r, &nm); err != nil {
 			return nil, fmt.Errorf("anthropic decode [%d]: %w", i, err)
 		}
+		if nm.Role == "" {
+			continue
+		}
 		out = append(out, decodeNativeMessage(nm))
 	}
 	return out, nil
+}
+
+func decodeLiveDelta(ld liveDelta) (message.Message, bool) {
+	if ld.Event != "content_block_delta" {
+		return message.Message{}, false
+	}
+	var d struct {
+		Delta struct {
+			Type     string `json:"type"`
+			Text     string `json:"text,omitempty"`
+			Thinking string `json:"thinking,omitempty"`
+		} `json:"delta"`
+	}
+	if json.Unmarshal(ld.Data, &d) != nil {
+		return message.Message{}, false
+	}
+	switch d.Delta.Type {
+	case "text_delta":
+		if d.Delta.Text == "" {
+			return message.Message{}, false
+		}
+		return message.Message{
+			Role:    message.RoleAssistant,
+			Content: []message.Content{{Type: message.ContentText, Text: d.Delta.Text}},
+		}, true
+	case "thinking_delta":
+		if d.Delta.Thinking == "" {
+			return message.Message{}, false
+		}
+		return message.Message{
+			Role:    message.RoleAssistant,
+			Content: []message.Content{{Type: message.ContentThinking, Text: d.Delta.Thinking}},
+		}, true
+	}
+	return message.Message{}, false
 }
 
 func decodeNativeMessage(nm nativeMessage) message.Message {
@@ -297,9 +351,9 @@ type nativeTool struct {
 
 // --- Encoding: per-message projection ---
 
-// EncodeMessage projects one figaro IR message into native wire
-// bytes. State-only tics that emit no wire output return nil.
-func (a *Anthropic) EncodeMessage(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error) {
+// Encode projects one figaro IR message into native wire bytes.
+// State-only tics that emit no wire output return nil.
+func (a *Anthropic) Encode(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error) {
 	snap := prevSnapshot
 	nm, ok := a.renderMessage(msg, &snap)
 	if !ok {
@@ -467,34 +521,9 @@ func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 	return out
 }
 
-// AssembleRequest builds the API request body from cached per-message
-// wire bytes and the current chalkboard snapshot. Cache markers are
-// applied to the assembled request, not to the cached bytes (which
-// are kept marker-free so they can be reused at any position).
-func (a *Anthropic) AssembleRequest(perMessage [][]json.RawMessage, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int) ([]byte, error) {
-	a.mu.Lock()
-	model := a.Model
-	a.mu.Unlock()
-
-	apiKey, err := a.auth.Resolve()
-	if err != nil {
-		return nil, fmt.Errorf("resolve token: %w", err)
-	}
-
-	req, err := a.projectMessagesWithModel(perMessage, snapshot, tools, maxTokens, isOAuthToken(apiKey), model)
-	if err != nil {
-		return nil, err
-	}
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
-	}
-	return body, nil
-}
-
 // projectMessagesWithModel is the pure assembly helper: cached
 // per-message bytes + snapshot + tools → nativeRequest with cache
-// markers applied. No auth resolution, used by tests too.
+// markers applied. No auth resolution; used by Send and tests.
 func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
@@ -523,9 +552,21 @@ func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, sna
 	return req, nil
 }
 
+// snapshotModel reads chalkboard.system.model. Provider state
+// (a.Model) is the fallback only.
+func snapshotModel(snap chalkboard.Snapshot) string {
+	if raw, ok := snap["system.model"]; ok {
+		var s string
+		if json.Unmarshal(raw, &s) == nil {
+			return s
+		}
+	}
+	return ""
+}
+
 // encodeAll encodes a slice of IR messages into per-message wire
-// bytes. Convenience for tests; callers in production go through the
-// translog cache via Agent.catchUpTranslation.
+// bytes. Convenience for tests; production goes through the
+// translator cache via Agent.catchUpTranslator.
 func (a *Anthropic) encodeAll(msgs []message.Message) [][]json.RawMessage {
 	out := make([][]json.RawMessage, 0, len(msgs))
 	prevSnap := chalkboard.Snapshot{}
@@ -571,17 +612,33 @@ func markCacheBreakpoints(req *nativeRequest) {
 	}
 }
 
-// --- Send: pre-encoded body → HTTP → SSE ---
+// --- Send: assemble body → HTTP → SSE ---
 
-// Send POSTs the body, pushes raw native delta events to the bus,
-// and returns when the stream closes. Pure transport; the
-// accumulator that folds deltas into the assembled assistant bytes
-// lives in synchronize via Assemble.
-func (a *Anthropic) Send(ctx context.Context, body []byte, bus provider.Bus) error {
+// Send assembles the request body internally from the cached
+// per-message bytes plus the snapshot, ships it, and pushes raw
+// native delta events to the bus until the stream closes. Model
+// preference: in.Snapshot["system.model"] wins; the provider's own
+// Model field is the fallback.
+func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
 		return fmt.Errorf("resolve token: %w", err)
 	}
+	model := snapshotModel(in.Snapshot)
+	if model == "" {
+		a.mu.Lock()
+		model = a.Model
+		a.mu.Unlock()
+	}
+	req, err := a.projectMessagesWithModel(in.PerMessage, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), model)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", apiMessagesURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
@@ -598,10 +655,6 @@ func (a *Anthropic) Send(ctx context.Context, body []byte, bus provider.Bus) err
 		httpReq.Header.Set("x-api-key", apiKey)
 	}
 
-	a.mu.Lock()
-	model := a.Model
-	a.mu.Unlock()
-
 	resp, err := a.HTTPClient.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("http request: %w", err)
@@ -617,9 +670,9 @@ func (a *Anthropic) Send(ctx context.Context, body []byte, bus provider.Bus) err
 
 const sseReadTimeout = 5 * time.Minute
 
-// liveDelta is one entry on the translog live tail. Event is the SSE
-// event name (e.g. "content_block_delta"); Data is the original SSE
-// data payload.
+// liveDelta is one entry on the translator stream's live tail.
+// Event is the SSE event name (e.g. "content_block_delta"); Data is
+// the original SSE data payload.
 type liveDelta struct {
 	Event string          `json:"event"`
 	Data  json.RawMessage `json:"data"`
@@ -715,39 +768,7 @@ func consumeSSE(body io.ReadCloser, bus provider.Bus, model string) {
 	}
 }
 
-// --- Live tail interpretation: DecodeDelta + Assemble ---
-
-// DecodeDelta extracts the figaro UI surface (text + content type)
-// for one live tail entry. Non-text events return ok=false.
-func (a *Anthropic) DecodeDelta(payload []json.RawMessage) (string, message.ContentType, bool) {
-	if len(payload) == 0 {
-		return "", "", false
-	}
-	var ld liveDelta
-	if json.Unmarshal(payload[0], &ld) != nil {
-		return "", "", false
-	}
-	if ld.Event != "content_block_delta" {
-		return "", "", false
-	}
-	var d struct {
-		Delta struct {
-			Type     string `json:"type"`
-			Text     string `json:"text,omitempty"`
-			Thinking string `json:"thinking,omitempty"`
-		} `json:"delta"`
-	}
-	if json.Unmarshal(ld.Data, &d) != nil {
-		return "", "", false
-	}
-	switch d.Delta.Type {
-	case "text_delta":
-		return d.Delta.Text, message.ContentText, d.Delta.Text != ""
-	case "thinking_delta":
-		return d.Delta.Thinking, message.ContentThinking, d.Delta.Thinking != ""
-	}
-	return "", "", false
-}
+// --- Live tail accumulation ---
 
 // Assemble runs the SSE accumulator over the live tail, producing
 // the assembled assistant nativeMessage bytes. Returns nil for an

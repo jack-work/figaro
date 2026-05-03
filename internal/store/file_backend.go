@@ -11,7 +11,7 @@ import (
 
 // FileBackend is the directory-backed Backend. Each aria is its own
 // subdirectory containing the figaro IR stream + per-provider
-// translation streams + meta.
+// translator streams + meta.
 //
 // Layout:
 //

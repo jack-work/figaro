@@ -120,7 +120,7 @@ func (h *handlers) openAriaTranslation(ariaID, providerName string) store.Stream
 	}
 	stream, err := h.angelus.Backend.OpenTranslation(ariaID, providerName)
 	if err != nil {
-		h.angelus.Logger.Printf("warning: translation stream open %s/%s: %v (cache disabled for this aria)", ariaID, providerName, err)
+		h.angelus.Logger.Printf("warning: translator stream open %s/%s: %v (cache disabled for this aria)", ariaID, providerName, err)
 		return nil
 	}
 	return stream
@@ -163,29 +163,29 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	// Ephemeral figaros skip the chalkboard — no persistence path makes
 	// sense for a transient prompt. Persistent figaros open a per-aria
-	// chalkboard.State at arias/{id}/chalkboard.json and a translation
-	// log at arias/{id}/translations/{provider}.jsonl.
+	// chalkboard.State at arias/{id}/chalkboard.json and a translator
+	// stream at arias/{id}/translations/{provider}.jsonl.
 	var cbState *chalkboard.State
-	var translog store.Stream[[]json.RawMessage]
+	var translator store.Stream[[]json.RawMessage]
 	if !req.Ephemeral {
 		cbState = h.openAriaChalkboard(id)
-		translog = h.openAriaTranslation(id, prov.Name())
+		translator = h.openAriaTranslation(id, prov.Name())
 	}
 
 	agent := figaro.NewAgent(figaro.Config{
-		ID:                  id,
-		SocketPath:          sockPath,
-		Provider:            prov,
-		Model:               req.Model,
-		Scribe:              scribe,
-		Cwd:                 cwd,
-		Root:                cwd,
-		MaxTokens:           8192,
-		Tools:               tool.DefaultRegistry(cwd),
-		LogDir:              logDir,
-		Backend:             backend,
-		Chalkboard:          cbState,
-		TranslationStream:   translog,
+		ID:               id,
+		SocketPath:       sockPath,
+		Provider:         prov,
+		Model:            req.Model,
+		Scribe:           scribe,
+		Cwd:              cwd,
+		Root:             cwd,
+		MaxTokens:        8192,
+		Tools:            tool.DefaultRegistry(cwd),
+		LogDir:           logDir,
+		Backend:          backend,
+		Chalkboard:       cbState,
+		TranslatorStream: translator,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -409,20 +409,20 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 	}
 
 	agent := figaro.NewAgent(figaro.Config{
-		ID:                  aria.ID,
-		Label:               meta.Label,
-		SocketPath:          sockPath,
-		Provider:            prov,
-		Model:               meta.Model,
-		Scribe:              scribe,
-		Cwd:                 cwd,
-		Root:                root,
-		MaxTokens:           8192,
-		Tools:               tool.DefaultRegistry(cwd),
-		LogDir:              logDir,
-		Backend:             h.angelus.Backend,
-		Chalkboard:          h.openAriaChalkboard(aria.ID),
-		TranslationStream:   h.openAriaTranslation(aria.ID, prov.Name()),
+		ID:               aria.ID,
+		Label:            meta.Label,
+		SocketPath:       sockPath,
+		Provider:         prov,
+		Model:            meta.Model,
+		Scribe:           scribe,
+		Cwd:              cwd,
+		Root:             root,
+		MaxTokens:        8192,
+		Tools:            tool.DefaultRegistry(cwd),
+		LogDir:           logDir,
+		Backend:          h.angelus.Backend,
+		Chalkboard:       h.openAriaChalkboard(aria.ID),
+		TranslatorStream: h.openAriaTranslation(aria.ID, prov.Name()),
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {

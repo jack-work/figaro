@@ -153,7 +153,7 @@ func TestFileStream_Clear(t *testing.T) {
 	assert.True(t, os.IsNotExist(err))
 }
 
-// --- Translation stream (Stream[[]json.RawMessage]) tests ---
+// --- Translator stream (Stream[[]json.RawMessage]) tests ---
 
 func TestFileStream_Translation_FK(t *testing.T) {
 	s, err := OpenFileStream[[]json.RawMessage](filepath.Join(t.TempDir(), "anthropic.jsonl"))

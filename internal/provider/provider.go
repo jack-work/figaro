@@ -24,7 +24,7 @@ type Tool struct {
 }
 
 // Event is what the provider pushes to the Bus during Send. Each
-// event lands on the translation stream's live tail.
+// event lands on the translator stream's live tail.
 type Event struct {
 	Payload []json.RawMessage
 }
@@ -35,52 +35,50 @@ type Bus interface {
 	Push(Event)
 }
 
-// Provider is the LLM provider interface.
-//
-// Encoding is split into per-message projection (EncodeMessage,
-// cached in the translation stream) and request assembly
-// (AssembleRequest, builds the API body from cached entries plus the
-// current snapshot). Send is pure transport. Live deltas are
-// interpreted by DecodeDelta (UI surface) and Assemble (end-of-turn
-// condense from the live tail).
+// SendInput carries everything one turn needs: the per-message
+// cached wire bytes (from Encode), the chalkboard snapshot the
+// system prefix derives from, the tool definitions, and the token
+// budget. The provider assembles the API request body internally.
+type SendInput struct {
+	PerMessage [][]json.RawMessage
+	Snapshot   chalkboard.Snapshot
+	Tools      []Tool
+	MaxTokens  int
+}
+
+// Provider is the LLM provider interface. Encode projects one IR
+// message into wire bytes (cached in the translator stream); Decode
+// reverses (uniform over durable + live entries); Assemble folds a
+// live tail into one assembled message; Send ships one turn. The
+// implementation is responsible for any provider-specific request
+// assembly inside Send.
 type Provider interface {
 	Name() string
 
 	// Fingerprint hashes the encoder configuration. Stored alongside
-	// translation entries; mismatch invalidates them.
+	// translator entries; mismatch invalidates them.
 	Fingerprint() string
 
 	Models(ctx context.Context) ([]ModelInfo, error)
-
-	// agent: provider shouldn't really be stateful.  We should respect the model that is seen on the input whenever sending
-	// messages.  The input to Send should be in the format necessary to build the API request.  Ideally raw byte marshalling,
-	// or a body + headers.  All that should be included in the translator stream (which by the way you should rename "TranslatorStream")
-	// Trans log is not a good name.  If you read this, eradicate it.
 	SetModel(model string)
 
-	// agent: Just call it encode.
-	// EncodeMessage projects one figaro IR message into native wire
-	// bytes. prevSnapshot is the chalkboard state immediately before
-	// msg's patches apply. Returns nil for state-only messages that
-	// emit no wire output. Pure function.
-	EncodeMessage(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error)
+	// Encode projects one figaro IR message into native wire bytes.
+	// prevSnapshot is the chalkboard state immediately before msg's
+	// patches apply. Returns nil for state-only messages that emit
+	// no wire output. Pure function.
+	Encode(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error)
 
-	// agent: just make Send accept json.RawMessage and implement this in the implementing type.
-	AssembleRequest(perMessage [][]json.RawMessage, snapshot chalkboard.Snapshot, tools []Tool, maxTokens int) ([]byte, error)
+	// Decode reverses native wire bytes back into IR. Uniform over
+	// durable per-message entries and live tail delta payloads —
+	// the result for a delta is a partial message carrying only the
+	// streamed fragment as content.
+	Decode(payload []json.RawMessage) ([]message.Message, error)
 
-	// Decode reverses native wire bytes back into IR.
-	Decode(raw []json.RawMessage) ([]message.Message, error)
-
-	// Send POSTs the pre-encoded body, pushes raw native delta events
-	// to the bus as they arrive, and returns when the stream closes.
-	// Pure transport — no encoding, no accumulation.
-	Send(ctx context.Context, body []byte, bus Bus) error
-
-	// agent:  just make one decode that returns optional text.
-	//         the decoding operations and the encoding should not be aware whether they
-	//         are viewing the live tail or the durable entries.  They should just see a flat
-	//         stream.  there should be less special casing in the stream
-	DecodeDelta(payload []json.RawMessage) (text string, ct message.ContentType, ok bool)
+	// Send ships one turn. The implementation assembles the request
+	// body internally from in.PerMessage + in.Snapshot. Pushes raw
+	// native delta events to the bus as they arrive; returns when
+	// the stream closes. Pure transport beyond the assembly.
+	Send(ctx context.Context, in SendInput, bus Bus) error
 
 	// Assemble accumulates the live tail (sequence of raw delta
 	// payloads) into the assembled assistant native message bytes.

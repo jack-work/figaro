@@ -1,8 +1,8 @@
 // Package store defines the per-aria multi-column log: the canonical
-// figaro IR Stream plus per-provider translation Streams.
+// figaro IR Stream plus per-provider translator Streams.
 //
 // Each column is a Stream[T] (see stream.go). The figaro IR Stream is
-// canonical; translation Streams cache per-provider wire-format
+// canonical; translator Streams cache per-provider wire-format
 // projections, FK'd back via Entry.FigaroLT.
 //
 // Backend opens the per-aria handles and enumerates persisted arias.
@@ -31,7 +31,7 @@ type AriaMeta struct {
 // Backend is the aria storage provider. One per angelus lifetime.
 //
 // Owns the full set of persisted arias. Opens per-aria figaro IR
-// streams and per-(aria, provider) translation streams. Implementations
+// streams and per-(aria, provider) translator streams. Implementations
 // must be safe for concurrent use across arias.
 type Backend interface {
 	// Open returns the canonical figaro IR Stream for the aria. New
@@ -39,7 +39,7 @@ type Backend interface {
 	// state.
 	Open(ariaID string) (Stream[message.Message], error)
 
-	// OpenTranslation returns the per-provider translation Stream
+	// OpenTranslation returns the per-provider translator Stream
 	// for the aria. Each (aria, provider) pair has its own column,
 	// FK'd back to the figaro IR Stream via Entry.FigaroLT.
 	OpenTranslation(ariaID, providerName string) (Stream[[]json.RawMessage], error)

@@ -34,12 +34,26 @@ type mockIntegNative struct {
 	StopReason string                   `json:"stop_reason,omitempty"`
 }
 
-func (m *mockProviderForIntegration) Decode(raw []json.RawMessage) ([]message.Message, error) {
-	out := make([]message.Message, 0, len(raw))
-	for _, r := range raw {
+func (m *mockProviderForIntegration) Decode(payload []json.RawMessage) ([]message.Message, error) {
+	out := make([]message.Message, 0, len(payload))
+	for _, r := range payload {
+		// Live tail deltas have a "delta" field.
+		var d struct {
+			Delta string `json:"delta"`
+		}
+		if json.Unmarshal(r, &d) == nil && d.Delta != "" {
+			out = append(out, message.Message{
+				Role:    message.RoleAssistant,
+				Content: []message.Content{message.TextContent(d.Delta)},
+			})
+			continue
+		}
 		var nm mockIntegNative
 		if err := json.Unmarshal(r, &nm); err != nil {
 			return nil, err
+		}
+		if nm.Role == "" {
+			continue
 		}
 		msg := message.Message{Role: message.Role(nm.Role)}
 		for _, c := range nm.Content {
@@ -57,23 +71,8 @@ func (m *mockProviderForIntegration) Decode(raw []json.RawMessage) ([]message.Me
 	return out, nil
 }
 
-func (m *mockProviderForIntegration) EncodeMessage(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (m *mockProviderForIntegration) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
 	return nil, nil
-}
-func (m *mockProviderForIntegration) AssembleRequest(_ [][]json.RawMessage, _ chalkboard.Snapshot, _ []provider.Tool, _ int) ([]byte, error) {
-	return nil, nil
-}
-func (m *mockProviderForIntegration) DecodeDelta(payload []json.RawMessage) (string, message.ContentType, bool) {
-	if len(payload) == 0 {
-		return "", "", false
-	}
-	var d struct {
-		Delta string `json:"delta"`
-	}
-	if json.Unmarshal(payload[0], &d) != nil || d.Delta == "" {
-		return "", "", false
-	}
-	return d.Delta, message.ContentText, true
 }
 func (m *mockProviderForIntegration) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
 	var text string
@@ -99,7 +98,7 @@ func (m *mockProviderForIntegration) Assemble(deltas [][]json.RawMessage) ([]jso
 	raw, _ := json.Marshal(nm)
 	return []json.RawMessage{raw}, nil
 }
-func (m *mockProviderForIntegration) Send(_ context.Context, _ []byte, bus provider.Bus) error {
+func (m *mockProviderForIntegration) Send(_ context.Context, _ provider.SendInput, bus provider.Bus) error {
 	delta, _ := json.Marshal(struct {
 		Delta string `json:"delta"`
 	}{"42"})

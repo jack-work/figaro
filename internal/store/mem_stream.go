@@ -3,8 +3,8 @@ package store
 import "sync"
 
 // MemStream[T] is an in-memory Stream[T] with no persistent backing.
-// Used for ephemeral arias and for the default in-memory translog
-// when no Backend is configured.
+// Used for ephemeral arias and for the default in-memory translator
+// stream when no Backend is configured.
 type MemStream[T any] struct {
 	mu         sync.Mutex
 	entries    []Entry[T]

@@ -12,14 +12,14 @@ import (
 
 // Inbox is the per-aria event bus. Implements provider.Bus.
 //
-// Owns the typed partitions (Figaro IR + translation cache) as data
+// Owns the typed partitions (Figaro IR + translator cache) as data
 // stores. Push enqueues provider events; SendSelfish/SendPatient
 // enqueue control + figaro events. Recv dequeues, fires the routing
 // subscriber to place the event on its stream, then returns it for
 // the act loop's semantic dispatch.
 type Inbox struct {
-	Figaro   store.Stream[message.Message]
-	Translog store.Stream[[]json.RawMessage]
+	Figaro     store.Stream[message.Message]
+	Translator store.Stream[[]json.RawMessage]
 
 	mu      sync.Mutex
 	cond    *sync.Cond
@@ -31,8 +31,8 @@ type Inbox struct {
 	subs []func(event)
 }
 
-func NewInbox(ctx context.Context, fig store.Stream[message.Message], translog store.Stream[[]json.RawMessage]) *Inbox {
-	b := &Inbox{Figaro: fig, Translog: translog, yielded: true}
+func NewInbox(ctx context.Context, fig store.Stream[message.Message], translator store.Stream[[]json.RawMessage]) *Inbox {
+	b := &Inbox{Figaro: fig, Translator: translator, yielded: true}
 	b.cond = sync.NewCond(&b.mu)
 	b.subs = append(b.subs, b.routeToStreams)
 	go func() {
@@ -50,9 +50,9 @@ func (b *Inbox) routeToStreams(ev event) {
 		if b.Figaro != nil {
 			b.Figaro.Append(store.Entry[message.Message]{Payload: ev.figMsg}, true)
 		}
-	case eventTransLive:
-		if b.Translog != nil {
-			b.Translog.Append(store.Entry[[]json.RawMessage]{Payload: ev.transPayload}, false)
+	case eventTranslatorLive:
+		if b.Translator != nil {
+			b.Translator.Append(store.Entry[[]json.RawMessage]{Payload: ev.translatorPayload}, false)
 		}
 	}
 }
@@ -149,11 +149,10 @@ func (b *Inbox) Subscribe(fn func(event)) func() {
 }
 
 // Push implements provider.Bus. Every native event lands on the
-// translog's live tail; the act loop condenses the tail into a single
-// durable entry on SendComplete using the assembled bytes the
-// provider returned in ProjectionSummary.
+// translator stream's live tail; condenseLive folds them at end-of-
+// turn via Provider.Assemble.
 func (b *Inbox) Push(ev provider.Event) {
-	b.SendSelfish(event{typ: eventTransLive, transPayload: ev.Payload})
+	b.SendSelfish(event{typ: eventTranslatorLive, translatorPayload: ev.Payload})
 }
 
 // PublishFigaro queues a figaro IR event. Routed to figStream on Recv.

@@ -30,22 +30,16 @@ func (m *mockProvider) Name() string                                          { 
 func (m *mockProvider) Fingerprint() string                                   { return "mock/v0" }
 func (m *mockProvider) SetModel(model string)                                 {}
 func (m *mockProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (m *mockProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
-	return mockDecodeNative(raw)
+func (m *mockProvider) Decode(payload []json.RawMessage) ([]message.Message, error) {
+	return mockDecode(payload)
 }
-func (m *mockProvider) EncodeMessage(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (m *mockProvider) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
 	return nil, nil
-}
-func (m *mockProvider) AssembleRequest(_ [][]json.RawMessage, _ chalkboard.Snapshot, _ []provider.Tool, _ int) ([]byte, error) {
-	return nil, nil
-}
-func (m *mockProvider) DecodeDelta(payload []json.RawMessage) (string, message.ContentType, bool) {
-	return mockDecodeDelta(payload)
 }
 func (m *mockProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
 	return mockAssemble(deltas)
 }
-func (m *mockProvider) Send(ctx context.Context, body []byte, bus provider.Bus) error {
+func (m *mockProvider) Send(ctx context.Context, _ provider.SendInput, bus provider.Bus) error {
 	mockPushAssistant(bus, m.response)
 	return nil
 }
@@ -78,21 +72,6 @@ func mockPushAssistant(bus provider.Bus, text string) {
 	bus.Push(provider.Event{Payload: []json.RawMessage{delta}})
 }
 
-func mockDecodeDelta(payload []json.RawMessage) (string, message.ContentType, bool) {
-	if len(payload) == 0 {
-		return "", "", false
-	}
-	var d mockDelta
-	if json.Unmarshal(payload[0], &d) != nil || d.Delta == "" {
-		return "", "", false
-	}
-	ct := d.ContentType
-	if ct == "" {
-		ct = message.ContentText
-	}
-	return d.Delta, ct, true
-}
-
 func mockAssemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
 	var text string
 	for _, payload := range deltas {
@@ -116,12 +95,32 @@ func mockAssemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
 	return []json.RawMessage{raw}, nil
 }
 
-func mockDecodeNative(raw []json.RawMessage) ([]message.Message, error) {
-	out := make([]message.Message, 0, len(raw))
-	for _, r := range raw {
+// mockDecode handles both shapes of payload uniformly. Live tail
+// entries are mockDelta; durable entries are mockNativeAssistant.
+func mockDecode(payload []json.RawMessage) ([]message.Message, error) {
+	out := make([]message.Message, 0, len(payload))
+	for _, r := range payload {
+		if len(r) == 0 {
+			continue
+		}
+		var d mockDelta
+		if json.Unmarshal(r, &d) == nil && d.Delta != "" {
+			ct := d.ContentType
+			if ct == "" {
+				ct = message.ContentText
+			}
+			out = append(out, message.Message{
+				Role:    message.RoleAssistant,
+				Content: []message.Content{{Type: ct, Text: d.Delta}},
+			})
+			continue
+		}
 		var nm mockNativeAssistant
 		if err := json.Unmarshal(r, &nm); err != nil {
 			return nil, err
+		}
+		if nm.Role == "" {
+			continue
 		}
 		msg := message.Message{Role: message.Role(nm.Role)}
 		for _, c := range nm.Content {
@@ -334,22 +333,16 @@ func (p *panicProvider) Name() string                                          {
 func (p *panicProvider) Fingerprint() string                                   { return "panic-mock/v0" }
 func (p *panicProvider) SetModel(model string)                                 {}
 func (p *panicProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (p *panicProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
-	return mockDecodeNative(raw)
+func (p *panicProvider) Decode(payload []json.RawMessage) ([]message.Message, error) {
+	return mockDecode(payload)
 }
-func (p *panicProvider) EncodeMessage(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (p *panicProvider) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
 	return nil, nil
-}
-func (p *panicProvider) AssembleRequest(_ [][]json.RawMessage, _ chalkboard.Snapshot, _ []provider.Tool, _ int) ([]byte, error) {
-	return nil, nil
-}
-func (p *panicProvider) DecodeDelta(payload []json.RawMessage) (string, message.ContentType, bool) {
-	return mockDecodeDelta(payload)
 }
 func (p *panicProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
 	return mockAssemble(deltas)
 }
-func (p *panicProvider) Send(ctx context.Context, body []byte, bus provider.Bus) error {
+func (p *panicProvider) Send(ctx context.Context, _ provider.SendInput, bus provider.Bus) error {
 	if p.panicCount > 0 {
 		p.panicCount--
 		panic("simulated crash")
@@ -698,18 +691,11 @@ func (s *slowProvider) Name() string                                          { 
 func (s *slowProvider) Fingerprint() string                                   { return "slow/v0" }
 func (s *slowProvider) SetModel(model string)                                 {}
 func (s *slowProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (s *slowProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
-	return mockDecodeNative(raw)
+func (s *slowProvider) Decode(payload []json.RawMessage) ([]message.Message, error) {
+	return mockDecode(payload)
 }
-
-func (s *slowProvider) EncodeMessage(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (s *slowProvider) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
 	return nil, nil
-}
-func (s *slowProvider) AssembleRequest(_ [][]json.RawMessage, _ chalkboard.Snapshot, _ []provider.Tool, _ int) ([]byte, error) {
-	return nil, nil
-}
-func (s *slowProvider) DecodeDelta(payload []json.RawMessage) (string, message.ContentType, bool) {
-	return mockDecodeDelta(payload)
 }
 func (s *slowProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
 	return mockAssemble(deltas)
@@ -718,7 +704,7 @@ func (s *slowProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, 
 // Send blocks until ctx is cancelled, then returns the cancellation
 // error — mirroring what a real HTTP SSE stream does when its request
 // context is cancelled mid-flight.
-func (s *slowProvider) Send(ctx context.Context, body []byte, bus provider.Bus) error {
+func (s *slowProvider) Send(ctx context.Context, _ provider.SendInput, bus provider.Bus) error {
 	if s.started != nil {
 		close(s.started)
 		s.started = nil

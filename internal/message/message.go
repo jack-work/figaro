@@ -92,12 +92,10 @@ type Usage struct {
 // Patches and no Content). See plans/aria-storage/log-unification.md.
 //
 // All providers project to and from Message. Per-provider wire-format
-// projections are cached in a parallel translation log
+// projections are cached in a parallel translator stream
 // (arias/{id}/translations/{provider}.jsonl), keyed by
-// Message.LogicalTime — see internal/store/translog.go. On re-send
-// to the same provider, the agent supplies the cached translation
-// alongside the block; the provider falls back to fresh rendering
-// on cache misses.
+// Message.LogicalTime. The agent re-uses cached bytes on re-send and
+// re-encodes on miss.
 type Message struct {
 	Role    Role      `json:"role"`
 	Content []Content `json:"content"`

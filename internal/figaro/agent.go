@@ -32,8 +32,8 @@ const (
 	eventInterrupt
 	eventRehydrate
 	eventFigaro      // durable assistant Message landed in figStream
-	eventFigaroDelta // partial assistant text — translated from a translog live entry
-	eventTransLive   // routed to translog live on Recv (translated by synchronize)
+	eventFigaroDelta    // partial assistant text — translated from a translator live entry
+	eventTranslatorLive // routed to translator live on Recv (translated by synchronize)
 	eventSendComplete
 )
 
@@ -66,8 +66,8 @@ type event struct {
 	deltaText string
 	deltaCT   message.ContentType
 
-	// eventTransLive
-	transPayload []json.RawMessage
+	// eventTranslatorLive
+	translatorPayload []json.RawMessage
 }
 
 // Config holds everything needed to construct an Agent.
@@ -89,12 +89,12 @@ type Config struct {
 	// Caller closes it via the agent's Kill path.
 	Chalkboard *chalkboard.State
 
-	// TranslationStream is the per-aria, per-provider translation
-	// stream cache. Optional — nil = no translation caching, the
-	// provider re-renders from IR on every Send. Caller opens the
-	// stream at arias/{id}/translations/{provider}.jsonl via
+	// TranslatorStream is the per-aria, per-provider translator
+	// stream cache. Optional — nil = no caching, the provider
+	// re-encodes from IR on every Send. Caller opens the stream at
+	// arias/{id}/translations/{provider}.jsonl via
 	// Backend.OpenTranslation. The Agent calls Close on Kill.
-	TranslationStream store.Stream[[]json.RawMessage]
+	TranslatorStream store.Stream[[]json.RawMessage]
 }
 
 // Agent is the goroutine-based implementation of Figaro.
@@ -111,10 +111,10 @@ type Agent struct {
 	root        string
 	maxTokens   int
 	tools       *tool.Registry
-	figStream   store.Stream[message.Message]
-	transStream store.Stream[[]json.RawMessage]
-	backend     store.Backend // nil = ephemeral
-	chalkboard  *chalkboard.State
+	figStream  store.Stream[message.Message]
+	translator store.Stream[[]json.RawMessage]
+	backend    store.Backend // nil = ephemeral
+	chalkboard *chalkboard.State
 
 	// lastDecodedLiveLen tracks the live-tail slice index already
 	// projected into figaro deltas; reset by condenseLive.
@@ -180,7 +180,7 @@ func NewAgent(cfg Config) *Agent {
 		tools:       cfg.Tools,
 		backend:     cfg.Backend,
 		chalkboard:  cfg.Chalkboard,
-		transStream: cfg.TranslationStream,
+		translator:  cfg.TranslatorStream,
 		subscribers: make(map[chan rpc.Notification]struct{}),
 		createdAt:   time.Now(),
 		lastActive:  time.Now(),
@@ -189,8 +189,8 @@ func NewAgent(cfg Config) *Agent {
 	}
 
 	a.figStream = a.newStream(cfg.Model)
-	if a.transStream == nil {
-		a.transStream = store.NewMemStream[[]json.RawMessage]()
+	if a.translator == nil {
+		a.translator = store.NewMemStream[[]json.RawMessage]()
 	}
 	if a.chalkboard == nil {
 		// Ephemeral arias still need a chalkboard so the system prompt
@@ -205,7 +205,7 @@ func NewAgent(cfg Config) *Agent {
 		seed.Set2("system.model", cfg.Model)
 		a.chalkboard.Apply(seed)
 	}
-	a.inbox = NewInbox(ctx, a.figStream, a.transStream)
+	a.inbox = NewInbox(ctx, a.figStream, a.translator)
 
 	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Durable()))
 
@@ -219,14 +219,13 @@ func NewAgent(cfg Config) *Agent {
 		}
 	}
 
-	// Translation log staleness check. If any persisted entry's
+	// Translator staleness check. If any persisted entry's
 	// fingerprint differs from the provider's current Fingerprint(),
-	// throw out the whole log — translations are derivable from the
-	// figaro timeline + the current encoder config, so regeneration
-	// is the safe move on any encoder-config change. Subsequent
-	// assistant turns repopulate naturally as the SSE accumulator
-	// fires.
-	a.invalidateTranslogIfStale()
+	// throw out the whole stream — translations are derivable from
+	// the figaro timeline + the current encoder config, so
+	// regeneration is the safe move on any encoder-config change.
+	// Subsequent turns repopulate naturally.
+	a.invalidateTranslatorIfStale()
 
 	// Bootstrap: on a fresh aria, run the Scribe once, snapshot the
 	// system prompt + a few related keys into chalkboard.system.*, and
@@ -443,10 +442,10 @@ func (a *Agent) Kill() {
 		}
 	}
 
-	// Close the translation log.
-	if a.transStream != nil {
-		if err := a.transStream.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "figaro %s: translation log close error: %v\n", a.id, err)
+	// Close the translator stream.
+	if a.translator != nil {
+		if err := a.translator.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "figaro %s: translator stream close error: %v\n", a.id, err)
 		}
 	}
 
@@ -500,7 +499,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		// Swap the inbox. Old goroutines captured the old inbox —
 		// their SendSelfish calls will return false (closed).
 		a.inbox.Close()
-		a.inbox = NewInbox(ctx, a.figStream, a.transStream)
+		a.inbox = NewInbox(ctx, a.figStream, a.translator)
 
 		// Reset turn state.
 		a.pendingTools = 0
@@ -793,31 +792,33 @@ func (a *Agent) endTurn(reason string) {
 	a.inbox.Yield()
 }
 
-// startLLMStream catches up the translation cache for the current
-// figaro stream, assembles the request body from cached per-message
-// bytes, and ships it via Send in a background goroutine. The
-// goroutine posts eventSendComplete on return; synchronize folds the
-// live tail into the durable head from there.
+// startLLMStream catches up the translator cache for the current
+// figaro stream, then ships one turn via Send in a background
+// goroutine. Send assembles its request body internally from the
+// cached per-message bytes plus the snapshot. The goroutine posts
+// eventSendComplete on return; synchronize folds the live tail into
+// the durable head from there.
 func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 	msgs := unwrapMessages(a.figStream.Durable())
 	if len(msgs) == 0 {
 		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("empty context")})
 		return
 	}
-	a.catchUpTranslation()
+	a.catchUpTranslator()
 
 	perMsg := make([][]json.RawMessage, 0, len(msgs))
 	for _, m := range msgs {
-		entry, ok := a.transStream.Lookup(m.LogicalTime)
+		entry, ok := a.translator.Lookup(m.LogicalTime)
 		if !ok || len(entry.Payload) == 0 {
 			continue
 		}
 		perMsg = append(perMsg, entry.Payload)
 	}
-	body, err := a.prov.AssembleRequest(perMsg, a.chalkboard.Snapshot(), a.toolDefs(), a.maxTokens)
-	if err != nil {
-		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("assemble: %w", err)})
-		return
+	in := provider.SendInput{
+		PerMessage: perMsg,
+		Snapshot:   a.chalkboard.Snapshot(),
+		Tools:      a.toolDefs(),
+		MaxTokens:  a.maxTokens,
 	}
 	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context\n", len(msgs))
 	go func() {
@@ -828,7 +829,7 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 					sendErr = fmt.Errorf("provider send panic: %v", r)
 				}
 			}()
-			sendErr = a.prov.Send(ctx, body, inbox)
+			sendErr = a.prov.Send(ctx, in, inbox)
 		}()
 		inbox.SendSelfish(event{typ: eventSendComplete, err: sendErr})
 	}()
@@ -838,7 +839,7 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 // triggers tool dispatch on assistant messages with tool_use content.
 // The figStream.Append already happened — either via inbox routing
 // (for figaro events from external sources) or via synchronize (for
-// figaro events synthesized from a decoded translog condense).
+// figaro events synthesized from a decoded translator condense).
 func (a *Agent) handleFigaro(msg message.Message) {
 	tail, ok := a.figStream.PeekTail()
 	if !ok {
