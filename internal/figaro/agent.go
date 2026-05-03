@@ -145,7 +145,6 @@ type Agent struct {
 	// Turn state (only accessed by the drain loop goroutine).
 	pendingTools     int
 	pendingToolCalls []message.Content
-	systemPrompt     string
 	turnCtx          context.Context // carries otel span for current turn; cancelled on interrupt / turn end
 	turnCancel       context.CancelFunc
 	endTurnSpan      func()
@@ -207,6 +206,12 @@ func NewAgent(cfg Config) *Agent {
 	a.figStream = a.newStream()
 	if a.translog == nil {
 		a.translog = store.NewMemStream[[]json.RawMessage]()
+	}
+	if a.chalkboard == nil {
+		// Ephemeral arias still need a chalkboard so the system prompt
+		// (and any client-supplied state) flow uniformly. Empty path =
+		// in-memory only; Save is a no-op.
+		a.chalkboard, _ = chalkboard.Open("")
 	}
 	a.inbox = NewInbox(ctx, a.figStream, a.translog)
 
@@ -493,7 +498,6 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		// Reset turn state.
 		a.pendingTools = 0
 		a.pendingToolCalls = nil
-		a.systemPrompt = ""
 
 		// Notify subscribers of the crash. Error is advisory (informs
 		// the user something went wrong); Done is the terminator that
@@ -592,11 +596,6 @@ func (a *Agent) act(ctx context.Context) {
 				// (set at bootstrap; refreshed by figaro.rehydrate).
 				// Ephemeral arias without a chalkboard fall back to a
 				// per-prompt scribe build for parity.
-				// I'm pretty sure there is no reason to type the system prompt at all.
-				// It's just chalkboard state.  So at bootstrap the chalkboard should
-				// just get built with the system prompt.  remove this property altogether
-				a.systemPrompt = a.getSystemPrompt()
-
 				// Build/extend the in-progress tic with the user's text content,
 				// then finalize and send.
 				a.ensureInProgressTic()
@@ -791,7 +790,6 @@ func (a *Agent) endTurn(reason string) {
 	// Reset turn state.
 	a.pendingTools = 0
 	a.pendingToolCalls = nil
-	a.systemPrompt = ""
 	a.inProgressTic = nil
 
 	// Release next patient message (or mark as idle).
@@ -810,16 +808,7 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 		return
 	}
 
-	// agent: we always expect chalkboard snapshot to be non-nil.  Don't read from the system prompt
-	// except via the chalkboard.
-	var snapshot chalkboard.Snapshot
-	if a.chalkboard != nil {
-		snapshot = a.chalkboard.Snapshot()
-	} else if a.systemPrompt != "" {
-		if b, err := json.Marshal(a.systemPrompt); err == nil {
-			snapshot = chalkboard.Snapshot{"system.prompt": b}
-		}
-	}
+	snapshot := a.chalkboard.Snapshot()
 
 	// TODO: I don't think we necessarily expect there to be same number provider translations as there
 	// are figaro messages.
@@ -1003,43 +992,6 @@ func truncLog(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
-}
-
-// applyChalkboardInput merges the client's chalkboard input with the
-// persisted snapshot, attaches the resulting patch to the in-progress
-// tic, and advances the in-memory chalkboard.State. No-op if no
-// chalkboard.State is configured (ephemeral mode) or no input.
-//
-// Wire-protocol semantics:
-//   - patch only           → apply patch directly
-//   - context only         → diff context vs current, apply diff
-//   - context + patch      → apply diff(context, current), then patch on top
-//   - neither              → no-op
-//
-// The patch is attached to the in-progress tic (creating one if
-// needed). When that tic is finalized via finalizeAndSend, the patch
-// rides with it as part of the same Message — the IR record of "this
-// turn brought these state changes."
-func (a *Agent) getSystemPrompt() string {
-	if a.chalkboard != nil {
-		snap := a.chalkboard.Snapshot()
-		if raw, ok := snap["system.prompt"]; ok {
-			var s string
-			if err := json.Unmarshal(raw, &s); err == nil {
-				return s
-			}
-		}
-	}
-	if a.scribe == nil {
-		return ""
-	}
-	credoCtx := credo.CurrentContext(a.prov.Name(), a.id)
-	p, err := a.scribe.Build(credoCtx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: credo build error: %v\n", a.id, err)
-		return ""
-	}
-	return p
 }
 
 // ensureInProgressTic guarantees that a.inProgressTic is non-nil and

@@ -77,8 +77,9 @@ func (s *State) Apply(p Patch) Snapshot {
 // Save flushes the snapshot to disk if dirty. Atomic via
 // rewrite-tmp-rename (write to sibling .tmp file, os.Rename).
 // Idempotent: a second Save() with no intervening Apply() is a no-op.
+// In-memory state (Open with empty path) skips persistence entirely.
 func (s *State) Save() error {
-	if !s.dirty {
+	if !s.dirty || s.path == "" {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
