@@ -545,6 +545,13 @@ func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, sna
 			if err := json.Unmarshal(raw, &nm); err != nil {
 				return nativeRequest{}, fmt.Errorf("unmarshal cached message: %w", err)
 			}
+			// stop_reason / model / usage are inbound-only metadata
+			// captured by Assemble. The Messages API rejects them on
+			// input ("Extra inputs are not permitted"). Strip before
+			// splicing into the request.
+			nm.StopReason = ""
+			nm.Model = ""
+			nm.Usage = nil
 			req.Messages = append(req.Messages, nm)
 		}
 	}
