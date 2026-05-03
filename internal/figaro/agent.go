@@ -32,8 +32,9 @@ const (
 	eventToolResult
 	eventInterrupt
 	eventRehydrate
-	eventFigaro    // routed to figStream on Recv
-	eventTransLive // routed to translog live on Recv
+	eventFigaro      // durable assistant Message landed in figStream
+	eventFigaroDelta // partial assistant text — translated from a translog live entry
+	eventTransLive   // routed to translog live on Recv (translated by synchronize)
 	eventSendComplete
 )
 
@@ -61,6 +62,10 @@ type event struct {
 
 	// eventFigaro
 	figMsg message.Message
+
+	// eventFigaroDelta
+	deltaText string
+	deltaCT   message.ContentType
 
 	// eventTransLive
 	transPayload []json.RawMessage
@@ -549,170 +554,187 @@ func (a *Agent) act(ctx context.Context) {
 			return
 		}
 		for _, evt := range a.synchronize(raw) {
-		switch evt.typ {
+			switch evt.typ {
 
-		case eventUserPrompt:
-			// Capture inbox for background goroutines. If panic recovery
-			// swaps a.inbox, old goroutines push to the captured (closed)
-			// inbox and silently fail.
-			inbox := a.inbox
+			case eventUserPrompt:
+				// Capture inbox for background goroutines. If panic recovery
+				// swaps a.inbox, old goroutines push to the captured (closed)
+				// inbox and silently fail.
+				inbox := a.inbox
 
-			a.mu.Lock()
-			a.lastActive = time.Now()
-			a.mu.Unlock()
+				a.mu.Lock()
+				a.lastActive = time.Now()
+				a.mu.Unlock()
 
-			// Start otel span for this prompt.
-			turnCtx, span := figOtel.Start(ctx, "figaro.prompt",
-				figOtel.WithAttributes(
-					attribute.String("figaro.id", a.id),
-					attribute.String("figaro.model", a.model),
-					attribute.String("figaro.provider", a.prov.Name()),
-				),
-			)
-			// Wrap in a cancelable context so interrupts can cut short
-			// in-flight LLM streams and tool executions.
-			turnCtx, turnCancel := context.WithCancel(turnCtx)
-			a.turnCtx = turnCtx
-			a.turnCancel = turnCancel
-			a.interrupted = false
-			a.endTurnSpan = func() { span.End() }
+				// Start otel span for this prompt.
+				turnCtx, span := figOtel.Start(ctx, "figaro.prompt",
+					figOtel.WithAttributes(
+						attribute.String("figaro.id", a.id),
+						attribute.String("figaro.model", a.model),
+						attribute.String("figaro.provider", a.prov.Name()),
+					),
+				)
+				// Wrap in a cancelable context so interrupts can cut short
+				// in-flight LLM streams and tool executions.
+				turnCtx, turnCancel := context.WithCancel(turnCtx)
+				a.turnCtx = turnCtx
+				a.turnCancel = turnCancel
+				a.interrupted = false
+				a.endTurnSpan = func() { span.End() }
 
-			fmt.Fprintf(os.Stderr, "agent: event=UserPrompt text=%q\n", truncLog(evt.text, 60))
+				fmt.Fprintf(os.Stderr, "agent: event=UserPrompt text=%q\n", truncLog(evt.text, 60))
 
-			// Apply chalkboard input — patch attaches to the in-progress tic.
-			a.applyChalkboardInput(evt.chalkboard)
+				// Apply chalkboard input — patch attaches to the in-progress tic.
+				// agent: pretty sure most events should define chalkboard.  Just always apply it if it's not null, not just in the user prompt.
+				a.applyChalkboardInput(evt.chalkboard)
 
-			// Pick up the system prompt from chalkboard.system.prompt
-			// (set at bootstrap; refreshed by figaro.rehydrate).
-			// Ephemeral arias without a chalkboard fall back to a
-			// per-prompt scribe build for parity.
-			a.systemPrompt = a.getSystemPrompt()
+				// Pick up the system prompt from chalkboard.system.prompt
+				// (set at bootstrap; refreshed by figaro.rehydrate).
+				// Ephemeral arias without a chalkboard fall back to a
+				// per-prompt scribe build for parity.
+				// I'm pretty sure there is no reason to type the system prompt at all.
+				// It's just chalkboard state.  So at bootstrap the chalkboard should
+				// just get built with the system prompt.  remove this property altogether
+				a.systemPrompt = a.getSystemPrompt()
 
-			// Build/extend the in-progress tic with the user's text content,
-			// then finalize and send.
-			a.ensureInProgressTic()
-			a.inProgressTic.Content = append(a.inProgressTic.Content, message.TextContent(evt.text))
-			a.finalizeAndSend(inbox)
+				// Build/extend the in-progress tic with the user's text content,
+				// then finalize and send.
+				a.ensureInProgressTic()
+				a.inProgressTic.Content = append(a.inProgressTic.Content, message.TextContent(evt.text))
 
-		case eventFigaro:
-			a.handleFigaro(evt.figMsg)
+				// send to llm api
+				a.finalizeAndSend(inbox)
 
-		case eventSendComplete:
-			a.handleSendComplete(evt.sendSummary, evt.err)
+			case eventFigaro:
+				a.handleFigaro(evt.figMsg)
 
-		case eventToolOutput:
-			if a.interrupted {
-				continue
-			}
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodToolOutput,
-				Params: rpc.ToolOutputParams{
-					ToolCallID: evt.toolCallID,
-					ToolName:   evt.toolName,
-					Chunk:      evt.chunk,
-				},
-			})
-
-		case eventToolResult:
-			// Suppress tool results that arrive after an interrupt; the
-			// turn has already been ended and the store/subscribers moved on.
-			if a.interrupted {
-				fmt.Fprintf(os.Stderr, "agent: event=ToolResult (post-interrupt, suppressed) tool=%s\n", evt.toolName)
-				continue
-			}
-			// Summarize text content for logging and RPC notification.
-			var resultText string
-			for _, c := range evt.content {
-				if c.Type == message.ContentText {
-					resultText += c.Text
+			case eventFigaroDelta:
+				if a.interrupted {
+					continue
 				}
-			}
-			fmt.Fprintf(os.Stderr, "agent: event=ToolResult tool=%s err=%v result_len=%d\n",
-				evt.toolName, evt.isErr, len(resultText))
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodToolEnd,
-				Params: rpc.ToolEndParams{
-					ToolCallID: evt.toolCallID, ToolName: evt.toolName,
-					Result: resultText, IsError: evt.isErr,
-				},
-			})
-
-			// Append a ContentToolResult block to the in-progress tic.
-			// All tool results from one assistant turn accumulate into
-			// a single user-role Message; we append it to memStore at
-			// finalizeAndSend (when pendingTools hits zero).
-			a.ensureInProgressTic()
-			a.inProgressTic.Content = append(a.inProgressTic.Content,
-				message.ToolResultContent(evt.toolCallID, evt.toolName, resultText, evt.isErr))
-
-			a.pendingTools--
-
-			if len(a.pendingToolCalls) > 0 {
-				// Start the next tool in the batch.
-				inbox := a.inbox // capture for goroutine
-				tc := a.pendingToolCalls[0]
-				a.pendingToolCalls = a.pendingToolCalls[1:]
 				a.fanOut(rpc.Notification{
 					JSONRPC: "2.0",
-					Method:  rpc.MethodToolStart,
-					Params: rpc.ToolStartParams{
-						ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-						Arguments: tc.Arguments,
+					Method:  rpc.MethodDelta,
+					Params:  rpc.DeltaParams{Text: evt.deltaText, ContentType: evt.deltaCT},
+				})
+
+			case eventSendComplete:
+				a.handleSendComplete(evt.sendSummary, evt.err)
+
+			case eventToolOutput:
+				if a.interrupted {
+					continue
+				}
+				a.fanOut(rpc.Notification{
+					JSONRPC: "2.0",
+					Method:  rpc.MethodToolOutput,
+					Params: rpc.ToolOutputParams{
+						ToolCallID: evt.toolCallID,
+						ToolName:   evt.toolName,
+						Chunk:      evt.chunk,
 					},
 				})
-				go a.runToolAsync(a.turnCtx, inbox, tc)
-			} else if a.pendingTools == 0 {
-				// All tools done — finalize the tic (one Message
-				// containing all tool_result blocks) and send the
-				// updated context back to the LLM.
-				a.finalizeAndSend(a.inbox)
-			}
 
-		case eventRehydrate:
-			// Re-run the credo and write the new system.* keys as a
-			// state-only tic. No LLM stream — control plane only.
-			fmt.Fprintf(os.Stderr, "agent: event=Rehydrate set=%d remove=%d\n",
-				len(evt.rehydratePatch.Set), len(evt.rehydratePatch.Remove))
-			tic := message.Message{
-				Role:      message.RoleUser,
-				Patches:   []message.Patch{evt.rehydratePatch},
-				Timestamp: time.Now().UnixMilli(),
-			}
-			if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
-				fmt.Fprintf(os.Stderr, "figaro %s: rehydrate append: %v\n", a.id, err)
-				continue
-			}
-			a.chalkboard.Apply(evt.rehydratePatch)
-			if err := a.chalkboard.Save(); err != nil {
-				fmt.Fprintf(os.Stderr, "figaro %s: rehydrate chalkboard save: %v\n", a.id, err)
-			}
+			case eventToolResult:
+				// Suppress tool results that arrive after an interrupt; the
+				// turn has already been ended and the store/subscribers moved on.
+				if a.interrupted {
+					fmt.Fprintf(os.Stderr, "agent: event=ToolResult (post-interrupt, suppressed) tool=%s\n", evt.toolName)
+					continue
+				}
+				// Summarize text content for logging and RPC notification.
+				var resultText string
+				for _, c := range evt.content {
+					if c.Type == message.ContentText {
+						resultText += c.Text
+					}
+				}
+				fmt.Fprintf(os.Stderr, "agent: event=ToolResult tool=%s err=%v result_len=%d\n",
+					evt.toolName, evt.isErr, len(resultText))
+				a.fanOut(rpc.Notification{
+					JSONRPC: "2.0",
+					Method:  rpc.MethodToolEnd,
+					Params: rpc.ToolEndParams{
+						ToolCallID: evt.toolCallID, ToolName: evt.toolName,
+						Result: resultText, IsError: evt.isErr,
+					},
+				})
 
-		case eventInterrupt:
-			// Idempotent: ignore if we're already idle or already interrupted.
-			if a.inbox.IsIdle() || a.interrupted {
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "agent: event=Interrupt\n")
-			a.interrupted = true
+				// Append a ContentToolResult block to the in-progress tic.
+				// All tool results from one assistant turn accumulate into
+				// a single user-role Message; we append it to memStore at
+				// finalizeAndSend (when pendingTools hits zero).
+				a.ensureInProgressTic()
+				a.inProgressTic.Content = append(a.inProgressTic.Content,
+					message.ToolResultContent(evt.toolCallID, evt.toolName, resultText, evt.isErr))
 
-			// Cancel the turn context — unblocks the provider HTTP
-			// stream, running tool commands, etc. Their goroutines
-			// will surface ctx.Canceled errors which the post-interrupt
-			// guards above silently drop.
-			if a.turnCancel != nil {
-				a.turnCancel()
-			}
+				a.pendingTools--
 
-			// Tell subscribers — advisory Error + terminating Done.
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodError,
-				Params:  rpc.ErrorParams{Message: "interrupted"},
-			})
-			a.endTurn("interrupted")
-		}
+				if len(a.pendingToolCalls) > 0 {
+					// Start the next tool in the batch.
+					inbox := a.inbox // capture for goroutine
+					tc := a.pendingToolCalls[0]
+					a.pendingToolCalls = a.pendingToolCalls[1:]
+					a.fanOut(rpc.Notification{
+						JSONRPC: "2.0",
+						Method:  rpc.MethodToolStart,
+						Params: rpc.ToolStartParams{
+							ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
+							Arguments: tc.Arguments,
+						},
+					})
+					go a.runToolAsync(a.turnCtx, inbox, tc)
+				} else if a.pendingTools == 0 {
+					// All tools done — finalize the tic (one Message
+					// containing all tool_result blocks) and send the
+					// updated context back to the LLM.
+					a.finalizeAndSend(a.inbox)
+				}
+
+			case eventRehydrate:
+				// Re-run the credo and write the new system.* keys as a
+				// state-only tic. No LLM stream — control plane only.
+				fmt.Fprintf(os.Stderr, "agent: event=Rehydrate set=%d remove=%d\n",
+					len(evt.rehydratePatch.Set), len(evt.rehydratePatch.Remove))
+				tic := message.Message{
+					Role:      message.RoleUser,
+					Patches:   []message.Patch{evt.rehydratePatch},
+					Timestamp: time.Now().UnixMilli(),
+				}
+				// This should get sent as a standard message on the inbox to be handled generically and then automatically appended to the log that way.
+				if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
+					fmt.Fprintf(os.Stderr, "figaro %s: rehydrate append: %v\n", a.id, err)
+					continue
+				}
+				a.chalkboard.Apply(evt.rehydratePatch)
+				if err := a.chalkboard.Save(); err != nil {
+					fmt.Fprintf(os.Stderr, "figaro %s: rehydrate chalkboard save: %v\n", a.id, err)
+				}
+
+			case eventInterrupt:
+				// Idempotent: ignore if we're already idle or already interrupted.
+				if a.inbox.IsIdle() || a.interrupted {
+					continue
+				}
+				fmt.Fprintf(os.Stderr, "agent: event=Interrupt\n")
+				a.interrupted = true
+
+				// Cancel the turn context — unblocks the provider HTTP
+				// stream, running tool commands, etc. Their goroutines
+				// will surface ctx.Canceled errors which the post-interrupt
+				// guards above silently drop.
+				if a.turnCancel != nil {
+					a.turnCancel()
+				}
+
+				// Tell subscribers — advisory Error + terminating Done.
+				a.fanOut(rpc.Notification{
+					JSONRPC: "2.0",
+					Method:  rpc.MethodError,
+					Params:  rpc.ErrorParams{Message: "interrupted"},
+				})
+				a.endTurn("interrupted")
+			}
 		}
 	}
 }
@@ -788,6 +810,8 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 		return
 	}
 
+	// agent: we always expect chalkboard snapshot to be non-nil.  Don't read from the system prompt
+	// except via the chalkboard.
 	var snapshot chalkboard.Snapshot
 	if a.chalkboard != nil {
 		snapshot = a.chalkboard.Snapshot()

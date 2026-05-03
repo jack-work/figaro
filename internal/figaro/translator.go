@@ -9,7 +9,6 @@ import (
 	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -107,64 +106,74 @@ func (a *Agent) invalidateTranslogIfStale() {
 }
 
 // synchronize translates a freshly Recv'd event into the figaro
-// events the act loop will dispatch. Provider events (eventTransLive,
-// eventSendComplete) are filtered: deltas fan out MethodDelta as a
-// side effect and produce no figaro event; SendComplete condenses
-// the translog live tail using the assembled bytes from the summary,
-// decodes into IR, appends to figStream, and emits an eventFigaro
-// followed by the original eventSendComplete (so handleSendComplete
-// can fan out MethodDone). Other events pass through unchanged.
+// events the act loop will dispatch. Pure translation — no fan-out.
+// Notifications come from the act loop's switch on figaro events.
+//
+//   - eventTransLive: parse the live native chunk into a figaro
+//     delta event (text + content type).
+//   - eventSendComplete: condense the translog live tail using the
+//     assembled native bytes from the summary, decode into IR, append
+//     to figStream, emit one eventFigaro per assistant message, then
+//     pass through the eventSendComplete so the loop can endTurn.
+//   - everything else: pass through unchanged.
 func (a *Agent) synchronize(raw event) []event {
 	switch raw.typ {
 	case eventTransLive:
-		a.fanoutDelta(raw.transPayload)
-		return nil
-
+		return decodeDelta(raw.transPayload)
 	case eventSendComplete:
-		var out []event
+		out := a.condenseAndDecode(raw.sendSummary)
 		if raw.err == nil && a.translog != nil {
-			if assembled := raw.sendSummary.Assistant; len(assembled) > 0 {
-				if _, err := a.translog.Condense(store.Entry[[]json.RawMessage]{
-					Payload:     assembled,
-					Fingerprint: raw.sendSummary.Fingerprint,
-				}); err == nil {
-					decoded, _ := a.prov.Decode(assembled)
-					for _, m := range decoded {
-						if m.Role != message.RoleAssistant {
-							continue
-						}
-						a.figStream.Append(store.Entry[message.Message]{Payload: m}, true)
-						out = append(out, event{typ: eventFigaro, figMsg: m})
-					}
-				}
-			}
 			a.persistProjectionSummary(unwrapMessages(a.figStream.Durable()), raw.sendSummary)
 		}
 		return append(out, raw)
-
 	default:
 		return []event{raw}
 	}
 }
 
-// fanoutDelta emits MethodDelta for a translog live entry. No figaro
-// event is produced — the partial text isn't an IR Message.
-func (a *Agent) fanoutDelta(payload []json.RawMessage) {
-	if a.interrupted || len(payload) == 0 {
-		return
+// decodeDelta turns one translog live payload into a figaro delta
+// event. Returns nil for empty / unparseable payloads.
+func decodeDelta(payload []json.RawMessage) []event {
+	if len(payload) == 0 {
+		return nil
 	}
 	var d struct {
 		Delta       string              `json:"delta"`
 		ContentType message.ContentType `json:"content_type,omitempty"`
 	}
 	if json.Unmarshal(payload[0], &d) != nil || d.Delta == "" {
-		return
+		return nil
 	}
-	a.fanOut(rpc.Notification{
-		JSONRPC: "2.0",
-		Method:  rpc.MethodDelta,
-		Params:  rpc.DeltaParams{Text: d.Delta, ContentType: d.ContentType},
-	})
+	return []event{{typ: eventFigaroDelta, deltaText: d.Delta, deltaCT: d.ContentType}}
+}
+
+// condenseAndDecode condenses the translog live tail into one durable
+// entry using the summary's assembled bytes, decodes into IR, and
+// appends each assistant message to figStream. Returns one eventFigaro
+// per appended message.
+func (a *Agent) condenseAndDecode(summary provider.ProjectionSummary) []event {
+	if a.translog == nil || len(summary.Assistant) == 0 {
+		return nil
+	}
+	if _, err := a.translog.Condense(store.Entry[[]json.RawMessage]{
+		Payload:     summary.Assistant,
+		Fingerprint: summary.Fingerprint,
+	}); err != nil {
+		return nil
+	}
+	decoded, err := a.prov.Decode(summary.Assistant)
+	if err != nil {
+		return nil
+	}
+	var out []event
+	for _, m := range decoded {
+		if m.Role != message.RoleAssistant {
+			continue
+		}
+		a.figStream.Append(store.Entry[message.Message]{Payload: m}, true)
+		out = append(out, event{typ: eventFigaro, figMsg: m})
+	}
+	return out
 }
 
 // buildPriorTranslations returns a CausalSlice indexed in lockstep
