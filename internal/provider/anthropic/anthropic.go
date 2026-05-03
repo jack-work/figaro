@@ -147,16 +147,16 @@ func isOAuthToken(key string) bool {
 
 func (a *Anthropic) Name() string { return providerName }
 
-// Fingerprint hashes the encoder configuration. v2 marks the split of
-// Encode into per-message projection plus internal request assembly;
-// older entries are whole-conversation bytes, incompatible with the
-// per-message lookup Send does today.
+// Fingerprint hashes the encoder configuration. v3 marks the move
+// to input-ready cache entries — assistant bytes no longer carry
+// stop_reason / model / usage (those live on the figaro IR
+// Message), so the splice path can use them verbatim.
 func (a *Anthropic) Fingerprint() string {
 	rr := a.ReminderRenderer
 	if rr == "" {
 		rr = "tag"
 	}
-	return "anthropic/" + rr + "/v2"
+	return "anthropic/" + rr + "/v3"
 }
 
 func (a *Anthropic) SetModel(model string) {
@@ -545,13 +545,6 @@ func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, sna
 			if err := json.Unmarshal(raw, &nm); err != nil {
 				return nativeRequest{}, fmt.Errorf("unmarshal cached message: %w", err)
 			}
-			// stop_reason / model / usage are inbound-only metadata
-			// captured by Assemble. The Messages API rejects them on
-			// input ("Extra inputs are not permitted"). Strip before
-			// splicing into the request.
-			nm.StopReason = ""
-			nm.Model = ""
-			nm.Usage = nil
 			req.Messages = append(req.Messages, nm)
 		}
 	}

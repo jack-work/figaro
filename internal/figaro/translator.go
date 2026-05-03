@@ -107,6 +107,7 @@ func (a *Agent) condenseLive() []event {
 	var (
 		out          []event
 		lastFigaroLT uint64
+		inputReady   []json.RawMessage
 	)
 	for _, m := range decoded {
 		if m.Role != message.RoleAssistant {
@@ -119,10 +120,25 @@ func (a *Agent) condenseLive() []event {
 		}
 		lastFigaroLT = entry.LT
 		out = append(out, event{typ: eventFigaro, figMsg: m})
+
+		// Re-encode the IR message into input-ready bytes. The
+		// inbound metadata (stop_reason, usage, model) lives on the
+		// figaro Message; the translator queue only holds bytes the
+		// provider can splice straight into the next request.
+		encoded, err := a.prov.Encode(m, chalkboard.Snapshot{})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "figaro %s: re-encode assistant: %v\n", a.id, err)
+			continue
+		}
+		inputReady = append(inputReady, encoded...)
+	}
+	if len(inputReady) == 0 {
+		_ = a.translator.DiscardLive()
+		return out
 	}
 	if _, err := a.translator.Condense(store.Entry[[]json.RawMessage]{
 		FigaroLT:    lastFigaroLT,
-		Payload:     assembled,
+		Payload:     inputReady,
 		Fingerprint: a.prov.Fingerprint(),
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "figaro %s: condense translator: %v\n", a.id, err)
