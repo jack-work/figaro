@@ -34,7 +34,7 @@ func TestSaveAndRestoreBindings_LivePIDs(t *testing.T) {
 	require.NoError(t, r2.Register(newMock("aria-two")))
 
 	logger := log.New(os.Stderr, "test: ", 0)
-	angelus.RestoreBindings(r2, path, logger)
+	angelus.RestoreBindings(r2, path, logger, nil)
 
 	id, f := r2.Resolve(self)
 	assert.NotNil(t, f)
@@ -61,7 +61,7 @@ func TestRestoreBindings_SkipsDeadPID(t *testing.T) {
 	r := angelus.NewRegistry()
 	require.NoError(t, r.Register(newMock("ghost")))
 
-	angelus.RestoreBindings(r, path, log.New(os.Stderr, "test: ", 0))
+	angelus.RestoreBindings(r, path, log.New(os.Stderr, "test: ", 0), nil)
 
 	_, f := r.Resolve(deadPID)
 	assert.Nil(t, f, "dead pid should not be rebound")
@@ -76,5 +76,5 @@ func TestRestoreBindings_MissingFile(t *testing.T) {
 
 	r := angelus.NewRegistry()
 	// Should not panic or log-error on a missing file.
-	angelus.RestoreBindings(r, path, log.New(os.Stderr, "test: ", 0))
+	angelus.RestoreBindings(r, path, log.New(os.Stderr, "test: ", 0), nil)
 }

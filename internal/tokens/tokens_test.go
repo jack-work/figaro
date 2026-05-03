@@ -7,77 +7,71 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestContextSize_NilBlock(t *testing.T) {
+func TestContextSize_NilSlice(t *testing.T) {
 	tokens, exact := ContextSize(nil)
 	assert.Equal(t, 0, tokens)
 	assert.True(t, exact)
 }
 
-func TestContextSize_EmptyBlock(t *testing.T) {
-	tokens, exact := ContextSize(&message.Block{})
+func TestContextSize_EmptySlice(t *testing.T) {
+	tokens, exact := ContextSize([]message.Message{})
 	assert.Equal(t, 0, tokens)
 	assert.True(t, exact)
 }
 
 func TestContextSize_WatermarkIsLeaf(t *testing.T) {
-	block := &message.Block{
-		Messages: []message.Message{
-			{Role: message.RoleUser, Content: []message.Content{
-				message.TextContent("hello"),
-			}},
-			{Role: message.RoleAssistant, Content: []message.Content{
-				message.TextContent("hi there"),
-			}, Usage: &message.Usage{
-				InputTokens:  500,
-				OutputTokens: 50,
-			}},
-		},
+	msgs := []message.Message{
+		{Role: message.RoleUser, Content: []message.Content{
+			message.TextContent("hello"),
+		}},
+		{Role: message.RoleAssistant, Content: []message.Content{
+			message.TextContent("hi there"),
+		}, Usage: &message.Usage{
+			InputTokens:  500,
+			OutputTokens: 50,
+		}},
 	}
 
-	tokens, exact := ContextSize(block)
+	tokens, exact := ContextSize(msgs)
 	assert.Equal(t, 550, tokens)
 	assert.True(t, exact)
 }
 
 func TestContextSize_MessagesAfterWatermark(t *testing.T) {
-	block := &message.Block{
-		Messages: []message.Message{
-			{Role: message.RoleUser, Content: []message.Content{
-				message.TextContent("hello"),
-			}},
-			{Role: message.RoleAssistant, Content: []message.Content{
-				message.TextContent("hi there"),
-			}, Usage: &message.Usage{
-				InputTokens:  500,
-				OutputTokens: 50,
-			}},
-			{Role: message.RoleUser, Content: []message.Content{
-				// 40 chars → ceil(40/4) = 10 tokens
-				message.TextContent("now do something else for me please ok?!"),
-			}},
-		},
+	msgs := []message.Message{
+		{Role: message.RoleUser, Content: []message.Content{
+			message.TextContent("hello"),
+		}},
+		{Role: message.RoleAssistant, Content: []message.Content{
+			message.TextContent("hi there"),
+		}, Usage: &message.Usage{
+			InputTokens:  500,
+			OutputTokens: 50,
+		}},
+		{Role: message.RoleUser, Content: []message.Content{
+			// 40 chars → ceil(40/4) = 10 tokens
+			message.TextContent("now do something else for me please ok?!"),
+		}},
 	}
 
-	tokens, exact := ContextSize(block)
+	tokens, exact := ContextSize(msgs)
 	assert.Equal(t, 560, tokens)
 	assert.False(t, exact)
 }
 
 func TestContextSize_NoUsage(t *testing.T) {
-	block := &message.Block{
-		Messages: []message.Message{
-			{Role: message.RoleUser, Content: []message.Content{
-				// 12 chars → ceil(12/4) = 3
-				message.TextContent("hello world!"),
-			}},
-			{Role: message.RoleAssistant, Content: []message.Content{
-				// 8 chars → ceil(8/4) = 2
-				message.TextContent("hi there"),
-			}},
-		},
+	msgs := []message.Message{
+		{Role: message.RoleUser, Content: []message.Content{
+			// 12 chars → ceil(12/4) = 3
+			message.TextContent("hello world!"),
+		}},
+		{Role: message.RoleAssistant, Content: []message.Content{
+			// 8 chars → ceil(8/4) = 2
+			message.TextContent("hi there"),
+		}},
 	}
 
-	tokens, exact := ContextSize(block)
+	tokens, exact := ContextSize(msgs)
 	assert.Equal(t, 5, tokens)
 	assert.False(t, exact)
 }

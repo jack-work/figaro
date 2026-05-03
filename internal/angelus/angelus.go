@@ -63,8 +63,9 @@ func (a *Angelus) FigaroSocketDir() string {
 }
 
 // BindingsPath returns the path for persisted PID bindings.
-// Consumed on startup after RestoreArias; written by SaveBindings
-// when the user asks for `figaro rest --keep-pids`.
+// Consumed on startup by RestoreBindings (which lazy-restores each
+// binding's target aria); written by SaveBindings when the user asks
+// for `figaro rest --keep-pids`.
 func (a *Angelus) BindingsPath() string {
 	return filepath.Join(a.RuntimeDir, "bindings.json")
 }

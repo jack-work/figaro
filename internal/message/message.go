@@ -131,22 +131,6 @@ type Message struct {
 
 	// Timestamp in unix millis (wall clock, informational).
 	Timestamp int64 `json:"timestamp"`
-
-}
-
-// Block is the unit of conversation context: an optional compacted
-// summary header followed by the ordered messages.
-//
-// This is what Store.Context() returns and what gets passed to the
-// provider for conversion to its native format.
-type Block struct {
-	// Header is the compacted summary of earlier conversation.
-	// Nil if no compaction has occurred.
-	Header *Message
-
-	// Messages is the ordered conversation from the first kept
-	// message (or from the start if no compaction) to the leaf.
-	Messages []Message
 }
 
 // --- convenience constructors ---

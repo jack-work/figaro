@@ -27,47 +27,74 @@ type mockProvider struct {
 	response string
 }
 
-func (m *mockProvider) Name() string                          { return "mock" }
-func (m *mockProvider) Fingerprint() string                    { return "mock/v0" }
-func (m *mockProvider) SetModel(model string)                  {}
-func (m *mockProvider) OpenAccumulator() provider.NativeAccumulator {
-	return stubMockAccumulator{}
+func (m *mockProvider) Name() string                                          { return "mock" }
+func (m *mockProvider) Fingerprint() string                                   { return "mock/v0" }
+func (m *mockProvider) SetModel(model string)                                 {}
+func (m *mockProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (m *mockProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
+	return mockDecodeNative(raw)
+}
+func (m *mockProvider) Send(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, bus provider.Bus) (provider.ProjectionSummary, error) {
+	assembled := mockPushAssistant(bus, m.response)
+	return provider.ProjectionSummary{
+		Fingerprint: m.Fingerprint(),
+		Assistant:   []json.RawMessage{assembled},
+	}, nil
 }
 
-func (m *mockProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
-	return nil, nil
+// mockNativeAssistant is the test envelope: one text block + stop_reason.
+type mockNativeAssistant struct {
+	Role       string             `json:"role"`
+	Content    []mockNativeContent `json:"content"`
+	StopReason string             `json:"stop_reason,omitempty"`
 }
 
-// stubMockAccumulator returns an empty translation entry — tests
-// that exercise the figaro IR don't care about translation contents.
-type stubMockAccumulator struct{}
-
-func (stubMockAccumulator) Finalize(message.Message) message.ProviderTranslation {
-	return message.ProviderTranslation{}
+type mockNativeContent struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
 }
 
-func (m *mockProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
-	ch := make(chan provider.StreamEvent, 4)
-	go func() {
-		defer close(ch)
-		msg := message.Message{
-			Role:       message.RoleAssistant,
-			Content:    []message.Content{message.TextContent(m.response)},
-			StopReason: message.StopEnd,
-			Provider:   "mock",
-			Timestamp:  time.Now().UnixMilli(),
+// mockPushAssistant pushes one delta event to the bus and returns the
+// assembled native bytes for the caller to put in ProjectionSummary.Assistant.
+func mockPushAssistant(bus provider.Bus, text string) json.RawMessage {
+	if text != "" {
+		delta, _ := json.Marshal(struct {
+			Delta       string              `json:"delta"`
+			ContentType message.ContentType `json:"content_type,omitempty"`
+		}{text, message.ContentText})
+		bus.Push(provider.Event{Payload: []json.RawMessage{delta}})
+	}
+	nm := mockNativeAssistant{
+		Role:       "assistant",
+		Content:    []mockNativeContent{{Type: "text", Text: text}},
+		StopReason: "end_turn",
+	}
+	raw, _ := json.Marshal(nm)
+	return raw
+}
+
+func mockDecodeNative(raw []json.RawMessage) ([]message.Message, error) {
+	out := make([]message.Message, 0, len(raw))
+	for _, r := range raw {
+		var nm mockNativeAssistant
+		if err := json.Unmarshal(r, &nm); err != nil {
+			return nil, err
 		}
-		ch <- provider.StreamEvent{
-			Delta:       m.response,
-			ContentType: message.ContentText,
-			Message:     &msg,
+		msg := message.Message{Role: message.Role(nm.Role)}
+		for _, c := range nm.Content {
+			if c.Type == "text" {
+				msg.Content = append(msg.Content, message.TextContent(c.Text))
+			}
 		}
-		ch <- provider.StreamEvent{
-			Done:    true,
-			Message: &msg,
+		switch nm.StopReason {
+		case "end_turn", "stop":
+			msg.StopReason = message.StopEnd
+		case "tool_use":
+			msg.StopReason = message.StopToolUse
 		}
-	}()
-	return ch, provider.ProjectionSummary{}, nil
+		out = append(out, msg)
+	}
+	return out, nil
 }
 
 // --- Tests ---
@@ -260,36 +287,23 @@ type panicProvider struct {
 	response   string
 }
 
-func (p *panicProvider) Name() string                          { return "panic-mock" }
-func (p *panicProvider) Fingerprint() string                    { return "panic-mock/v0" }
-func (p *panicProvider) SetModel(model string)                  {}
-func (p *panicProvider) OpenAccumulator() provider.NativeAccumulator {
-	return stubMockAccumulator{}
+func (p *panicProvider) Name() string                                          { return "panic-mock" }
+func (p *panicProvider) Fingerprint() string                                   { return "panic-mock/v0" }
+func (p *panicProvider) SetModel(model string)                                 {}
+func (p *panicProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (p *panicProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
+	return mockDecodeNative(raw)
 }
-
-func (p *panicProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
-	return nil, nil
-}
-
-func (p *panicProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
+func (p *panicProvider) Send(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, bus provider.Bus) (provider.ProjectionSummary, error) {
 	if p.panicCount > 0 {
 		p.panicCount--
 		panic("simulated crash")
 	}
-	ch := make(chan provider.StreamEvent, 4)
-	go func() {
-		defer close(ch)
-		msg := message.Message{
-			Role:       message.RoleAssistant,
-			Content:    []message.Content{message.TextContent(p.response)},
-			StopReason: message.StopEnd,
-			Provider:   "panic-mock",
-			Timestamp:  time.Now().UnixMilli(),
-		}
-		ch <- provider.StreamEvent{Delta: p.response, ContentType: message.ContentText, Message: &msg}
-		ch <- provider.StreamEvent{Done: true, Message: &msg}
-	}()
-	return ch, provider.ProjectionSummary{}, nil
+	assembled := mockPushAssistant(bus, p.response)
+	return provider.ProjectionSummary{
+		Fingerprint: p.Fingerprint(),
+		Assistant:   []json.RawMessage{assembled},
+	}, nil
 }
 
 func TestAgent_PanicRecovery(t *testing.T) {
@@ -344,11 +358,13 @@ func TestAgent_PanicRecovery(t *testing.T) {
 		}
 	}
 
-	// Context should have the second prompt's messages (first was lost).
+	// Send-path panics are recovered in the spawned goroutine and
+	// surface as an Error notification — the conversation history
+	// is preserved (no full agent crash + reset). The second prompt's
+	// assistant turn should be the most recent entry.
 	msgs := a.Context()
-	require.GreaterOrEqual(t, len(msgs), 2)
-	assert.Equal(t, message.RoleUser, msgs[0].Role)
-	assert.Equal(t, message.RoleAssistant, msgs[1].Role)
+	require.NotEmpty(t, msgs)
+	assert.Equal(t, message.RoleAssistant, msgs[len(msgs)-1].Role)
 }
 
 func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
@@ -383,14 +399,17 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 	}
 errorReceived:
 
-	// Context should be empty — reset after panic.
-	assert.Empty(t, a.Context(), "context should be empty after panic")
+	// Send-path panics no longer wipe the conversation — the user
+	// prompt that triggered the panic stays in the figaro stream and
+	// the agent emits an Error notification. Token counters stay at
+	// zero because no assistant response landed.
+	msgs := a.Context()
+	require.NotEmpty(t, msgs, "user prompt is preserved across Send panics")
+	assert.Equal(t, message.RoleUser, msgs[len(msgs)-1].Role)
 
-	// Info should show zero tokens and messages.
 	info := a.Info()
 	assert.Equal(t, 0, info.TokensIn)
 	assert.Equal(t, 0, info.TokensOut)
-	assert.Equal(t, 0, info.MessageCount)
 }
 
 func TestAgent_SetModel(t *testing.T) {
@@ -623,31 +642,24 @@ type slowProvider struct {
 	started chan struct{} // closed once Send has been entered
 }
 
-func (s *slowProvider) Name() string                          { return "slow" }
-func (s *slowProvider) Fingerprint() string                    { return "slow/v0" }
-func (s *slowProvider) SetModel(model string)                  {}
-func (s *slowProvider) OpenAccumulator() provider.NativeAccumulator {
-	return stubMockAccumulator{}
-}
-func (s *slowProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
-	return nil, nil
+func (s *slowProvider) Name() string                                          { return "slow" }
+func (s *slowProvider) Fingerprint() string                                   { return "slow/v0" }
+func (s *slowProvider) SetModel(model string)                                 {}
+func (s *slowProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (s *slowProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
+	return mockDecodeNative(raw)
 }
 
-// Send blocks until ctx is cancelled, then reports the cancellation
-// as a stream error — mirroring what a real HTTP SSE stream does when
-// its request context is cancelled mid-flight.
-func (s *slowProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
-	ch := make(chan provider.StreamEvent, 1)
-	go func() {
-		defer close(ch)
-		if s.started != nil {
-			close(s.started)
-			s.started = nil
-		}
-		<-ctx.Done()
-		ch <- provider.StreamEvent{Done: true, Err: ctx.Err()}
-	}()
-	return ch, provider.ProjectionSummary{}, nil
+// Send blocks until ctx is cancelled, then returns the cancellation
+// error — mirroring what a real HTTP SSE stream does when its request
+// context is cancelled mid-flight.
+func (s *slowProvider) Send(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, bus provider.Bus) (provider.ProjectionSummary, error) {
+	if s.started != nil {
+		close(s.started)
+		s.started = nil
+	}
+	<-ctx.Done()
+	return provider.ProjectionSummary{}, ctx.Err()
 }
 
 // TestAgent_Interrupt verifies that Interrupt cancels an in-flight

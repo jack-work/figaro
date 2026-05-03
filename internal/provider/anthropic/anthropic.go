@@ -170,39 +170,75 @@ func (a *Anthropic) Fingerprint() string {
 	return "anthropic/" + rr + "/v1"
 }
 
-// stubAccumulator is the today's-default NativeAccumulator: it
-// ignores the live event stream and projects the figaro Message
-// into wire form at Finalize. The result is what the existing
-// consumeSSE message_stop block produced inline before the
-// accumulator extraction.
-type stubAccumulator struct {
-	a *Anthropic
+// Decode reverses projectMessages: nativeMessage wire bytes → IR.
+// Reads stop_reason / usage / model when present (inbound metadata
+// from consumeSSE). Inline <system-reminder> text blocks stay as
+// plain text — the patch-rendering path is one-way.
+func (a *Anthropic) Decode(raw []json.RawMessage) ([]message.Message, error) {
+	out := make([]message.Message, 0, len(raw))
+	for i, r := range raw {
+		var nm nativeMessage
+		if err := json.Unmarshal(r, &nm); err != nil {
+			return nil, fmt.Errorf("anthropic decode [%d]: %w", i, err)
+		}
+		out = append(out, decodeNativeMessage(nm))
+	}
+	return out, nil
 }
 
-// Finalize implements NativeAccumulator. Projects the figaro
-// assistant Message into one wire nativeMessage and wraps it in a
-// ProviderTranslation entry with the current fingerprint.
-func (s *stubAccumulator) Finalize(fig message.Message) message.ProviderTranslation {
-	native := projectAssistantMessage(fig)
-	raw, err := json.Marshal(native)
-	if err != nil {
-		// Marshaling a struct of strings can't fail in practice;
-		// log and return an empty entry rather than corrupting the
-		// translation.
-		log("warning: marshal native assistant: %v", err)
-		return message.ProviderTranslation{}
+func decodeNativeMessage(nm nativeMessage) message.Message {
+	m := message.Message{
+		Role:     message.Role(nm.Role),
+		Provider: providerName,
+		Model:    nm.Model,
 	}
-	return message.ProviderTranslation{
-		Messages:    []json.RawMessage{raw},
-		Fingerprint: s.a.Fingerprint(),
+	for _, b := range nm.Content {
+		switch b.Type {
+		case "text":
+			m.Content = append(m.Content, message.Content{Type: message.ContentText, Text: b.Text})
+		case "thinking":
+			m.Content = append(m.Content, message.Content{Type: message.ContentThinking, Text: b.Thinking})
+		case "tool_use":
+			args, _ := b.Input.(map[string]interface{})
+			m.Content = append(m.Content, message.Content{
+				Type: message.ContentToolCall, ToolCallID: b.ID, ToolName: b.Name, Arguments: args,
+			})
+		case "tool_result":
+			var text string
+			switch v := b.Content.(type) {
+			case string:
+				text = v
+			case []interface{}:
+				for _, item := range v {
+					if mm, ok := item.(map[string]interface{}); ok {
+						if t, _ := mm["text"].(string); t != "" {
+							text += t
+						}
+					}
+				}
+			}
+			m.Content = append(m.Content, message.Content{
+				Type: message.ContentToolResult, ToolCallID: b.ToolUseID, Text: text, IsError: b.IsError,
+			})
+		}
 	}
-}
-
-// OpenAccumulator returns the stub native accumulator described
-// above. A future SDK-backed implementation can swap this out
-// without touching the SSE consumer.
-func (a *Anthropic) OpenAccumulator() provider.NativeAccumulator {
-	return &stubAccumulator{a: a}
+	switch nm.StopReason {
+	case "end_turn", "stop":
+		m.StopReason = message.StopEnd
+	case "max_tokens", "length":
+		m.StopReason = message.StopLength
+	case "tool_use":
+		m.StopReason = message.StopToolUse
+	}
+	if nm.Usage != nil {
+		m.Usage = &message.Usage{
+			InputTokens:      nm.Usage.InputTokens,
+			OutputTokens:     nm.Usage.OutputTokens,
+			CacheReadTokens:  nm.Usage.CacheRead,
+			CacheWriteTokens: nm.Usage.CacheCreate,
+		}
+	}
+	return m
 }
 
 // projectAssistantMessage builds the wire shape for one finalized
@@ -267,6 +303,18 @@ type systemBlock struct {
 type nativeMessage struct {
 	Role    string        `json:"role"`
 	Content []nativeBlock `json:"content"`
+	// Inbound metadata captured by the SSE consumer. omitempty on the
+	// outbound projection so encoded request bytes don't include them.
+	StopReason string       `json:"stop_reason,omitempty"`
+	Model      string       `json:"model,omitempty"`
+	Usage      *nativeUsage `json:"usage,omitempty"`
+}
+
+type nativeUsage struct {
+	InputTokens  int `json:"input_tokens,omitempty"`
+	OutputTokens int `json:"output_tokens,omitempty"`
+	CacheRead    int `json:"cache_read_input_tokens,omitempty"`
+	CacheCreate  int `json:"cache_creation_input_tokens,omitempty"`
 }
 
 type nativeBlock struct {
@@ -291,9 +339,9 @@ type nativeTool struct {
 	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
-// --- Projection: IR Block → native request ---
+// --- Projection: IR messages → native request ---
 
-func (a *Anthropic) projectBlockWithModel(block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, provider.ProjectionSummary) {
+func (a *Anthropic) projectMessagesWithModel(msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, provider.ProjectionSummary) {
 	req := nativeRequest{
 		Model: model, MaxTokens: maxTokens, Stream: true,
 	}
@@ -302,17 +350,14 @@ func (a *Anthropic) projectBlockWithModel(block *message.Block, snapshot chalkbo
 	}
 
 	// Build system prompt — always array form so cache_control can attach.
-	// Source priority: chalkboard.system.prompt (set at bootstrap by
-	// the agent loop), then block.Header (legacy / ephemeral fallback).
+	// Sourced from chalkboard.system.prompt (set at bootstrap by the
+	// agent loop). Ephemeral arias supply a synthesized snapshot.
 	var systemText string
 	if raw, ok := snapshot["system.prompt"]; ok {
 		var s string
 		if json.Unmarshal(raw, &s) == nil {
 			systemText = s
 		}
-	}
-	if systemText == "" && block.Header != nil && len(block.Header.Content) > 0 {
-		systemText = block.Header.Content[0].Text
 	}
 
 	if oauth {
@@ -356,11 +401,11 @@ func (a *Anthropic) projectBlockWithModel(block *message.Block, snapshot chalkbo
 				summary.System[i] = raw
 			}
 		}
-		summary.SystemFLT = lastSystemPromptFLT(block.Messages)
+		summary.SystemFLT = lastSystemPromptFLT(msgs)
 	}
 
-	msgs, perFLT := a.projectMessages(block.Messages, priorTranslations)
-	req.Messages = msgs
+	wireMsgs, perFLT := a.projectMessages(msgs, priorTranslations)
+	req.Messages = wireMsgs
 	summary.PerMessage = perFLT
 
 	req.Tools = projectTools(tools)
@@ -611,9 +656,9 @@ func projectTools(tools []provider.Tool) []nativeTool {
 	return result
 }
 
-// --- Send: IR Block → stream → IR Messages with translation ---
+// --- Send: IR messages → stream → IR Messages with translation ---
 
-func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
+func (a *Anthropic) Send(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, bus provider.Bus) (provider.ProjectionSummary, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
 	}
@@ -621,33 +666,28 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot cha
 		maxTokens = 8192
 	}
 
-	// Snapshot model under lock (SetModel may be called between sends).
 	a.mu.Lock()
 	model := a.Model
 	a.mu.Unlock()
 
-	// Resolve token fresh each call (supports OAuth refresh).
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
-		return nil, provider.ProjectionSummary{}, fmt.Errorf("resolve token: %w", err)
+		return provider.ProjectionSummary{}, fmt.Errorf("resolve token: %w", err)
 	}
 
-	native, summary := a.projectBlockWithModel(block, snapshot, priorTranslations, tools, maxTokens, isOAuthToken(apiKey), model)
+	native, summary := a.projectMessagesWithModel(msgs, snapshot, priorTranslations, tools, maxTokens, isOAuthToken(apiKey), model)
 	body, err := json.Marshal(native)
 	if err != nil {
-		return nil, summary, fmt.Errorf("marshal request: %w", err)
+		return summary, fmt.Errorf("marshal request: %w", err)
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", apiMessagesURL, bytes.NewReader(body))
 	if err != nil {
-		return nil, summary, fmt.Errorf("create request: %w", err)
+		return summary, fmt.Errorf("create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", apiVersion)
 
 	if isOAuthToken(apiKey) {
-		// OAuth tokens use Bearer auth and require Claude Code impersonation headers.
-		// prompt-caching-2024-07-31 enables client-controlled cache_control on
-		// the OAuth path (otherwise it is silently ignored).
 		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 		httpReq.Header.Set("anthropic-beta", "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31")
 		httpReq.Header.Set("User-Agent", "claude-cli/"+claudeCodeVersion)
@@ -659,32 +699,53 @@ func (a *Anthropic) Send(ctx context.Context, block *message.Block, snapshot cha
 
 	resp, err := a.HTTPClient.Do(httpReq)
 	if err != nil {
-		return nil, summary, fmt.Errorf("http request: %w", err)
+		return summary, fmt.Errorf("http request: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		errBody, _ := io.ReadAll(resp.Body)
-		return nil, summary, fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
+		return summary, fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
 	}
 
-	ch := make(chan provider.StreamEvent, 64)
-	acc := a.OpenAccumulator()
-	go a.consumeSSE(resp.Body, ch, model, acc)
-	return ch, summary, nil
+	assistant := a.consumeSSE(resp.Body, bus, model)
+	if len(assistant) > 0 {
+		summary.Assistant = []json.RawMessage{assistant}
+	}
+	return summary, nil
 }
 
 // sseReadTimeout is how long we wait for the next SSE line before
 // treating the connection as stalled.
 const sseReadTimeout = 5 * time.Minute
 
-func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEvent, model string, acc provider.NativeAccumulator) {
-	defer close(ch)
+// liveDelta is the figaro-shape live entry the consumer pushes per
+// content delta. Subscribers extract the text + ContentType.
+type liveDelta struct {
+	Delta       string              `json:"delta"`
+	ContentType message.ContentType `json:"content_type,omitempty"`
+}
+
+// consumeSSE accumulates the assistant turn into a nativeMessage,
+// pushes deltas to the Bus as they arrive, and returns the assembled
+// final native bytes for the agent to condense the live tail into.
+func (a *Anthropic) consumeSSE(body io.ReadCloser, bus provider.Bus, model string) json.RawMessage {
 	defer body.Close()
 
 	log("sse: stream started, model=%s", model)
 
-	// Wrap the body with a read deadline. We use a pipe + goroutine
-	// because http.Response.Body doesn't support SetReadDeadline.
+	pushDelta := func(text string, ct message.ContentType) {
+		if text == "" {
+			return
+		}
+		raw, _ := json.Marshal(liveDelta{Delta: text, ContentType: ct})
+		bus.Push(provider.Event{Payload: []json.RawMessage{raw}})
+	}
+	var assembled json.RawMessage
+	finalize := func(nm nativeMessage) {
+		raw, _ := json.Marshal(nm)
+		assembled = raw
+	}
+
 	pr, pw := io.Pipe()
 	go func() {
 		defer pw.Close()
@@ -707,18 +768,15 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 
 	var (
-		msg       message.Message
-		usage     message.Usage
+		nm        nativeMessage
+		usage     nativeUsage
 		eventType string
 		lines     int
+		stopReason string
 	)
-	msg.Role = message.RoleAssistant
-	msg.Provider = providerName
-	msg.Model = model
-	msg.Timestamp = time.Now().UnixMilli()
+	nm.Role = "assistant"
+	nm.Model = model
 
-	// Read with timeout: if no line arrives within sseReadTimeout,
-	// we treat the stream as dead.
 	scanCh := make(chan string, 1)
 	scanErr := make(chan error, 1)
 	scanNext := func() {
@@ -731,26 +789,40 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 		}()
 	}
 
+	emitFinal := func(reason string) {
+		if reason != "" {
+			stopReason = reason
+		}
+		if stopReason == "" {
+			stopReason = "aborted"
+		}
+		nm.StopReason = stopReason
+		u := usage
+		nm.Usage = &u
+		finalize(nm)
+	}
+
 	scanNext()
 	for {
 		var line string
 		select {
 		case line = <-scanCh:
 			lines++
-			scanNext() // start reading next line immediately
+			scanNext()
 		case err := <-scanErr:
 			if err != nil {
 				log("sse: scanner error after %d lines: %v", lines, err)
 			} else {
 				log("sse: stream ended after %d lines (EOF)", lines)
 			}
-			goto done
+			if stopReason == "" {
+				emitFinal("aborted")
+			}
+			return assembled
 		case <-time.After(sseReadTimeout):
 			log("sse: read timeout after %d lines (%v with no data)", lines, sseReadTimeout)
-			msg.StopReason = message.StopAborted
-			ch <- provider.StreamEvent{Done: true, Message: &msg,
-				Err: fmt.Errorf("SSE stream stalled: no data for %v", sseReadTimeout)}
-			return
+			emitFinal("aborted")
+			return assembled
 		}
 		if strings.HasPrefix(line, "event: ") {
 			eventType = strings.TrimPrefix(line, "event: ")
@@ -774,18 +846,17 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 			if json.Unmarshal([]byte(data), &block) != nil {
 				continue
 			}
-			for len(msg.Content) <= block.Index {
-				msg.Content = append(msg.Content, message.Content{})
+			for len(nm.Content) <= block.Index {
+				nm.Content = append(nm.Content, nativeBlock{})
 			}
 			switch block.ContentBlock.Type {
 			case "text":
-				msg.Content[block.Index] = message.Content{Type: message.ContentText}
+				nm.Content[block.Index] = nativeBlock{Type: "text"}
 			case "thinking":
-				msg.Content[block.Index] = message.Content{Type: message.ContentThinking}
+				nm.Content[block.Index] = nativeBlock{Type: "thinking"}
 			case "tool_use":
-				msg.Content[block.Index] = message.Content{
-					Type: message.ContentToolCall, ToolCallID: block.ContentBlock.ID,
-					ToolName: block.ContentBlock.Name, Arguments: make(map[string]interface{}),
+				nm.Content[block.Index] = nativeBlock{
+					Type: "tool_use", ID: block.ContentBlock.ID, Name: block.ContentBlock.Name,
 				}
 			}
 
@@ -799,43 +870,42 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 					PartialJSON string `json:"partial_json,omitempty"`
 				} `json:"delta"`
 			}
-			if json.Unmarshal([]byte(data), &delta) != nil || delta.Index >= len(msg.Content) {
+			if json.Unmarshal([]byte(data), &delta) != nil || delta.Index >= len(nm.Content) {
 				continue
 			}
-			c := &msg.Content[delta.Index]
-			var deltaText string
+			b := &nm.Content[delta.Index]
 			switch delta.Delta.Type {
 			case "text_delta":
-				c.Text += delta.Delta.Text
-				deltaText = delta.Delta.Text
+				b.Text += delta.Delta.Text
+				pushDelta(delta.Delta.Text, message.ContentText)
 			case "thinking_delta":
-				c.Text += delta.Delta.Thinking
-				deltaText = delta.Delta.Thinking
+				b.Thinking += delta.Delta.Thinking
+				pushDelta(delta.Delta.Thinking, message.ContentThinking)
 			case "input_json_delta":
-				if c.Text == "" {
-					c.Text = delta.Delta.PartialJSON
+				// Buffer partial JSON in a side string; finalized in content_block_stop.
+				if s, ok := b.Input.(string); ok {
+					b.Input = s + delta.Delta.PartialJSON
 				} else {
-					c.Text += delta.Delta.PartialJSON
+					b.Input = delta.Delta.PartialJSON
 				}
-			}
-			if deltaText != "" {
-				ch <- provider.StreamEvent{Delta: deltaText, ContentType: c.Type, Message: &msg}
 			}
 
 		case "content_block_stop":
 			var stop struct{ Index int }
-			if json.Unmarshal([]byte(data), &stop) != nil || stop.Index >= len(msg.Content) {
+			if json.Unmarshal([]byte(data), &stop) != nil || stop.Index >= len(nm.Content) {
 				continue
 			}
-			c := &msg.Content[stop.Index]
-			if c.Type == message.ContentToolCall && c.Text != "" {
-				var args map[string]interface{}
-				if json.Unmarshal([]byte(c.Text), &args) == nil {
-					c.Arguments = args
+			b := &nm.Content[stop.Index]
+			if b.Type == "tool_use" {
+				if s, ok := b.Input.(string); ok && s != "" {
+					var args map[string]interface{}
+					if json.Unmarshal([]byte(s), &args) == nil {
+						b.Input = args
+					}
+				} else if b.Input == nil {
+					b.Input = map[string]interface{}{}
 				}
-				c.Text = ""
 			}
-			ch <- provider.StreamEvent{ContentType: c.Type, BlockDone: true, Message: &msg}
 
 		case "message_delta":
 			var md struct {
@@ -848,13 +918,8 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 			}
 			if json.Unmarshal([]byte(data), &md) == nil {
 				usage.OutputTokens = md.Usage.OutputTokens
-				switch md.Delta.StopReason {
-				case "end_turn":
-					msg.StopReason = message.StopEnd
-				case "max_tokens":
-					msg.StopReason = message.StopLength
-				case "tool_use":
-					msg.StopReason = message.StopToolUse
+				if md.Delta.StopReason != "" {
+					stopReason = md.Delta.StopReason
 				}
 			}
 
@@ -870,40 +935,23 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, ch chan<- provider.StreamEven
 			}
 			if json.Unmarshal([]byte(data), &ms) == nil {
 				usage.InputTokens = ms.Message.Usage.InputTokens
-				usage.CacheReadTokens = ms.Message.Usage.CacheRead
-				usage.CacheWriteTokens = ms.Message.Usage.CacheCreate
+				usage.CacheRead = ms.Message.Usage.CacheRead
+				usage.CacheCreate = ms.Message.Usage.CacheCreate
 				log("sse: message_start input_tokens=%d cache_read=%d cache_create=%d",
-					usage.InputTokens, usage.CacheReadTokens, usage.CacheWriteTokens)
+					usage.InputTokens, usage.CacheRead, usage.CacheCreate)
 			}
 
 		case "message_stop":
-			log("sse: message_stop output_tokens=%d stop_reason=%s", usage.OutputTokens, msg.StopReason)
-			msg.Usage = &usage
-			// Hand the finalized figaro message to the native
-			// accumulator. The stub projects from the figaro IR;
-			// a future SDK-backed accumulator can return its
-			// natively accumulated shape instead. The translation
-			// rides on the StreamEvent — the agent persists it to
-			// the per-aria translation log keyed by Message.LogicalTime.
-			pt := acc.Finalize(msg)
-			ch <- provider.StreamEvent{Done: true, Message: &msg, Translation: &pt}
-			return
+			log("sse: message_stop output_tokens=%d stop_reason=%s", usage.OutputTokens, stopReason)
+			emitFinal("")
+			return assembled
 
 		case "error":
 			var errEvt struct{ Error struct{ Message string } }
 			json.Unmarshal([]byte(data), &errEvt)
 			log("sse: received error event: %s", errEvt.Error.Message)
-			msg.StopReason = message.StopError
-			ch <- provider.StreamEvent{Done: true, Message: &msg,
-				Err: fmt.Errorf("anthropic stream error: %s", errEvt.Error.Message)}
-			return
+			emitFinal("error")
+			return assembled
 		}
-	}
-
-done:
-	if msg.StopReason == "" {
-		log("sse: stream ended without message_stop after %d lines", lines)
-		msg.StopReason = message.StopAborted
-		ch <- provider.StreamEvent{Done: true, Message: &msg, Err: fmt.Errorf("stream ended unexpectedly")}
 	}
 }

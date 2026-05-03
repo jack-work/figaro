@@ -20,60 +20,38 @@ import (
 	"github.com/jack-work/figaro/internal/tool"
 )
 
-// chalkSpyProvider captures the IR Block Send is called with so tests
-// can inspect the per-message Patches the agent attached.
+// chalkSpyProvider captures the IR messages Send is called with so
+// tests can inspect the per-message Patches the agent attached.
 type chalkSpyProvider struct {
-	mu             sync.Mutex
-	receivedBlocks []*message.Block
+	mu       sync.Mutex
+	received [][]message.Message
 }
 
-func (p *chalkSpyProvider) Name() string        { return "spy" }
-func (p *chalkSpyProvider) Fingerprint() string { return "spy/v0" }
-func (p *chalkSpyProvider) Models(_ context.Context) ([]provider.ModelInfo, error) {
-	return nil, nil
+func (p *chalkSpyProvider) Name() string                                          { return "spy" }
+func (p *chalkSpyProvider) Fingerprint() string                                   { return "spy/v0" }
+func (p *chalkSpyProvider) Models(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (p *chalkSpyProvider) SetModel(string)                                       {}
+func (p *chalkSpyProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
+	return mockDecodeNative(raw)
 }
-func (p *chalkSpyProvider) SetModel(string) {}
-func (p *chalkSpyProvider) OpenAccumulator() provider.NativeAccumulator {
-	return spyAccumulator{}
-}
-
-type spyAccumulator struct{}
-
-func (spyAccumulator) Finalize(message.Message) message.ProviderTranslation {
-	return message.ProviderTranslation{}
-}
-func (p *chalkSpyProvider) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
+func (p *chalkSpyProvider) Send(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, bus provider.Bus) (provider.ProjectionSummary, error) {
 	p.mu.Lock()
-	// Deep-copy the block: the agent owns the underlying memstore and
-	// will keep mutating it after Send returns.
-	copyMsgs := make([]message.Message, len(block.Messages))
-	copy(copyMsgs, block.Messages)
-	p.receivedBlocks = append(p.receivedBlocks, &message.Block{
-		Header:   block.Header,
-		Messages: copyMsgs,
-	})
+	copyMsgs := make([]message.Message, len(msgs))
+	copy(copyMsgs, msgs)
+	p.received = append(p.received, copyMsgs)
 	p.mu.Unlock()
 
-	ch := make(chan provider.StreamEvent, 4)
-	go func() {
-		defer close(ch)
-		msg := &message.Message{
-			Role:       message.RoleAssistant,
-			Content:    []message.Content{message.TextContent("ok")},
-			StopReason: message.StopEnd,
-			Usage:      &message.Usage{InputTokens: 1, OutputTokens: 1},
-			Timestamp:  time.Now().UnixMilli(),
-		}
-		ch <- provider.StreamEvent{Delta: "ok", ContentType: message.ContentText, Message: msg}
-		ch <- provider.StreamEvent{Done: true, Message: msg}
-	}()
-	return ch, provider.ProjectionSummary{}, nil
+	assembled := mockPushAssistant(bus, "ok")
+	return provider.ProjectionSummary{
+		Fingerprint: p.Fingerprint(),
+		Assistant:   []json.RawMessage{assembled},
+	}, nil
 }
 
 func (p *chalkSpyProvider) sendCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return len(p.receivedBlocks)
+	return len(p.received)
 }
 
 // lastTurnPatches returns the patches attached to the leaf user-role
@@ -82,10 +60,10 @@ func (p *chalkSpyProvider) sendCount() int {
 func (p *chalkSpyProvider) lastTurnPatches() []message.Patch {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if len(p.receivedBlocks) == 0 {
+	if len(p.received) == 0 {
 		return nil
 	}
-	msgs := p.receivedBlocks[len(p.receivedBlocks)-1].Messages
+	msgs := p.received[len(p.received)-1]
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if msgs[i].Role == message.RoleUser {
 			return msgs[i].Patches

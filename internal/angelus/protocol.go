@@ -36,8 +36,9 @@ type ServerConfig struct {
 	// ChalkboardTemplates is the shared body-template set used by
 	// providers to render per-message Patches as system reminders.
 	// Optional — nil disables chalkboard reminder rendering. Per-aria
-	// chalkboard.State handles are opened by the create / RestoreArias
-	// handlers under arias/{id}/chalkboard.json, alongside aria.jsonl.
+	// chalkboard.State handles are opened on demand by the create /
+	// restoreByID paths under arias/{id}/chalkboard.json, alongside
+	// aria.jsonl.
 	ChalkboardTemplates *template.Template
 }
 
@@ -72,16 +73,11 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	}
 }
 
-// RestoreArias scans the store directory and re-creates agents for
-// persisted arias. Call once on angelus startup, before accepting clients.
-func (hs *Handlers) RestoreArias(ctx context.Context) {
-	hs.h.RestoreArias(ctx)
-}
-
-// NewHandlerMap creates the handler map for the angelus socket.
-// Deprecated: Use NewHandlers for access to RestoreArias.
-func NewHandlerMap(cfg ServerConfig) map[string]jsonrpc.HandlerFunc {
-	return NewHandlers(cfg).Map
+// Restore lazily re-creates the agent for ariaID if it isn't already
+// in the registry. Returns the live Figaro on success. Used by
+// RestoreBindings to revive an aria just before binding a PID to it.
+func (hs *Handlers) Restore(ctx context.Context, ariaID string) (figaro.Figaro, error) {
+	return hs.h.restoreByID(ctx, ariaID)
 }
 
 type handlers struct {
@@ -114,23 +110,20 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 	return st
 }
 
-// openAriaTranslationLog returns a per-aria, per-provider translation
-// log at arias/{ariaID}/translations/{providerName}.jsonl. Returns
-// nil when the angelus has no FileBackend (translation log
-// persistence is FileBackend-specific) or the open fails — the agent
-// runs without translation caching in that case.
-func (h *handlers) openAriaTranslationLog(ariaID, providerName string) store.TranslationLog {
-	fb, ok := h.angelus.Backend.(interface{ Dir() string })
-	if !ok {
+// openAriaTranslation returns a per-aria, per-provider translation
+// stream via the backend. Returns nil when the angelus has no Backend
+// or the open fails — the agent runs without translation caching in
+// that case.
+func (h *handlers) openAriaTranslation(ariaID, providerName string) store.Stream[[]json.RawMessage] {
+	if h.angelus.Backend == nil {
 		return nil
 	}
-	path := filepath.Join(fb.Dir(), ariaID, "translations", providerName+".jsonl")
-	log, err := store.OpenFileTranslationLog(path)
+	stream, err := h.angelus.Backend.OpenTranslation(ariaID, providerName)
 	if err != nil {
-		h.angelus.Logger.Printf("warning: translation log open %s: %v (cache disabled for this aria)", path, err)
+		h.angelus.Logger.Printf("warning: translation stream open %s/%s: %v (cache disabled for this aria)", ariaID, providerName, err)
 		return nil
 	}
-	return log
+	return stream
 }
 
 func (h *handlers) create(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -173,10 +166,10 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	// chalkboard.State at arias/{id}/chalkboard.json and a translation
 	// log at arias/{id}/translations/{provider}.jsonl.
 	var cbState *chalkboard.State
-	var translog store.TranslationLog
+	var translog store.Stream[[]json.RawMessage]
 	if !req.Ephemeral {
 		cbState = h.openAriaChalkboard(id)
-		translog = h.openAriaTranslationLog(id, prov.Name())
+		translog = h.openAriaTranslation(id, prov.Name())
 	}
 
 	agent := figaro.NewAgent(figaro.Config{
@@ -193,7 +186,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		Backend:             backend,
 		Chalkboard:          cbState,
 		ChalkboardTemplates: h.cbTmpls,
-		TranslationLog:      translog,
+		TranslationStream:   translog,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -219,13 +212,15 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if err := h.angelus.Registry.Kill(req.FigaroID); err != nil {
-		return nil, err
+
+	// Live agent: tear it down through the registry. Dormant aria:
+	// nothing to kill in memory, just remove from disk below.
+	if h.angelus.Registry.Get(req.FigaroID) != nil {
+		if err := h.angelus.Registry.Kill(req.FigaroID); err != nil {
+			return nil, err
+		}
 	}
 
-	// Remove persisted aria via the backend. Non-fatal: the agent is
-	// already gone, and a stale aria file is harmless (will be shown
-	// by `figaro list` but not singable).
 	if h.angelus.Backend != nil {
 		if err := h.angelus.Backend.Remove(req.FigaroID); err != nil {
 			h.angelus.Logger.Printf("warning: failed to remove aria for %s: %v", req.FigaroID, err)
@@ -236,11 +231,18 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	return rpc.KillResponse{OK: true}, nil
 }
 
+// list merges live registry entries with persisted-but-dormant arias.
+// Live entries carry full state (token counts, message count from the
+// in-memory store, etc.); dormant entries are synthesized from the
+// backend's AriaInfo and report state="dormant" to signal the agent
+// is not yet loaded. Binding a PID to a dormant aria revives it.
 func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{}, error) {
-	infos := h.angelus.Registry.List()
-	result := make([]rpc.FigaroInfoResponse, len(infos))
-	for i, info := range infos {
-		result[i] = rpc.FigaroInfoResponse{
+	live := h.angelus.Registry.List()
+	result := make([]rpc.FigaroInfoResponse, 0, len(live))
+	seen := make(map[string]struct{}, len(live))
+	for _, info := range live {
+		seen[info.ID] = struct{}{}
+		result = append(result, rpc.FigaroInfoResponse{
 			ID:               info.ID,
 			Label:            info.Label,
 			State:            info.State,
@@ -256,8 +258,33 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			CreatedAt:        info.CreatedAt.UnixMilli(),
 			LastActive:       info.LastActive.UnixMilli(),
 			BoundPIDs:        h.angelus.Registry.BoundPIDs(info.ID),
+		})
+	}
+
+	if h.angelus.Backend != nil {
+		arias, err := h.angelus.Backend.List()
+		if err != nil {
+			h.angelus.Logger.Printf("list: backend enumerate: %v", err)
+		}
+		for _, aria := range arias {
+			if _, ok := seen[aria.ID]; ok {
+				continue
+			}
+			entry := rpc.FigaroInfoResponse{
+				ID:           aria.ID,
+				State:        "dormant",
+				MessageCount: aria.MessageCount,
+				LastActive:   aria.LastModified.UnixMilli(),
+			}
+			if aria.Meta != nil {
+				entry.Label = aria.Meta.Label
+				entry.Provider = aria.Meta.Provider
+				entry.Model = aria.Meta.Model
+			}
+			result = append(result, entry)
 		}
 	}
+
 	return rpc.ListResponse{Figaros: result}, nil
 }
 
@@ -265,6 +292,11 @@ func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{
 	var req rpc.BindRequest
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
+	}
+	// Lazy-restore the target aria if it lives on disk but isn't yet
+	// in the registry. Bind would otherwise fail with "not found".
+	if _, err := h.restoreByID(ctx, req.FigaroID); err != nil {
+		return nil, fmt.Errorf("bind: restore %s: %w", req.FigaroID, err)
 	}
 	if err := h.angelus.Registry.Bind(req.PID, req.FigaroID); err != nil {
 		return nil, err
@@ -320,79 +352,89 @@ func (h *handlers) saveBindings(ctx context.Context, params json.RawMessage) (in
 	}, nil
 }
 
-// RestoreArias enumerates persisted arias via the backend and
-// re-creates agents for each. Called on angelus startup.
-func (h *handlers) RestoreArias(ctx context.Context) {
+// restoreByID looks up the aria in the backend and, if present,
+// re-creates the figaro agent and registers it. Returns the live
+// Figaro on success. If the aria is already registered, returns the
+// existing Figaro without re-creating it. Returns an error when no
+// backend is configured, the aria is unknown, or restoration fails.
+func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figaro, error) {
+	if f := h.angelus.Registry.Get(ariaID); f != nil {
+		return f, nil
+	}
 	if h.angelus.Backend == nil {
-		return
+		return nil, fmt.Errorf("no backend configured")
 	}
 	arias, err := h.angelus.Backend.List()
 	if err != nil {
-		h.angelus.Logger.Printf("restore: failed to list arias: %v", err)
-		return
+		return nil, fmt.Errorf("backend list: %w", err)
+	}
+	for _, aria := range arias {
+		if aria.ID != ariaID {
+			continue
+		}
+		return h.restoreOne(ctx, aria)
+	}
+	return nil, fmt.Errorf("aria %q not found on disk", ariaID)
+}
+
+// restoreOne builds a figaro from an AriaInfo and registers it. Skips
+// arias with no metadata or no messages (the latter are cleaned up).
+// Returns the registered Figaro on success.
+func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.Figaro, error) {
+	if aria.Meta == nil {
+		return nil, fmt.Errorf("restore %s: no metadata", aria.ID)
+	}
+	if aria.MessageCount == 0 {
+		h.angelus.Backend.Remove(aria.ID)
+		return nil, fmt.Errorf("restore %s: empty aria, removed", aria.ID)
+	}
+
+	meta := aria.Meta
+	prov, err := h.factory(meta.Provider, meta.Model)
+	if err != nil {
+		return nil, fmt.Errorf("restore %s: create provider: %w", aria.ID, err)
 	}
 
 	home, _ := os.UserHomeDir()
 	logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
+	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), aria.ID+".sock")
+	scribe := credo.NewDefaultScribe(h.config.ConfigDir)
 
-	for _, aria := range arias {
-		if aria.Meta == nil {
-			h.angelus.Logger.Printf("restore: skipping %s (no metadata)", aria.ID)
-			continue
-		}
-		if aria.MessageCount == 0 {
-			// Empty aria — clean up.
-			h.angelus.Backend.Remove(aria.ID)
-			continue
-		}
-
-		meta := aria.Meta
-		prov, err := h.factory(meta.Provider, meta.Model)
-		if err != nil {
-			h.angelus.Logger.Printf("restore: skipping %s: create provider: %v", aria.ID, err)
-			continue
-		}
-
-		sockPath := filepath.Join(h.angelus.FigaroSocketDir(), aria.ID+".sock")
-		scribe := credo.NewDefaultScribe(h.config.ConfigDir)
-
-		cwd := meta.Cwd
-		root := meta.Root
-		// Fallback if the directories no longer exist.
-		if _, err := os.Stat(cwd); err != nil {
-			cwd, _ = os.Getwd()
-		}
-		if _, err := os.Stat(root); err != nil {
-			root = cwd
-		}
-
-		agent := figaro.NewAgent(figaro.Config{
-			ID:                  aria.ID,
-			Label:               meta.Label,
-			SocketPath:          sockPath,
-			Provider:            prov,
-			Model:               meta.Model,
-			Scribe:              scribe,
-			Cwd:                 cwd,
-			Root:                root,
-			MaxTokens:           8192,
-			Tools:               tool.DefaultRegistry(cwd),
-			LogDir:              logDir,
-			Backend:             h.angelus.Backend,
-			Chalkboard:          h.openAriaChalkboard(aria.ID),
-			ChalkboardTemplates: h.cbTmpls,
-			TranslationLog:      h.openAriaTranslationLog(aria.ID, prov.Name()),
-		})
-
-		if err := h.angelus.Registry.Register(agent); err != nil {
-			agent.Kill()
-			h.angelus.Logger.Printf("restore: skipping %s: register: %v", aria.ID, err)
-			continue
-		}
-
-		go agent.StartSocket(ctx)
-
-		h.angelus.Logger.Printf("restored figaro %s, provider=%s, model=%s, messages=%d",
-			aria.ID, meta.Provider, meta.Model, aria.MessageCount)
+	cwd := meta.Cwd
+	root := meta.Root
+	if _, err := os.Stat(cwd); err != nil {
+		cwd, _ = os.Getwd()
 	}
+	if _, err := os.Stat(root); err != nil {
+		root = cwd
+	}
+
+	agent := figaro.NewAgent(figaro.Config{
+		ID:                  aria.ID,
+		Label:               meta.Label,
+		SocketPath:          sockPath,
+		Provider:            prov,
+		Model:               meta.Model,
+		Scribe:              scribe,
+		Cwd:                 cwd,
+		Root:                root,
+		MaxTokens:           8192,
+		Tools:               tool.DefaultRegistry(cwd),
+		LogDir:              logDir,
+		Backend:             h.angelus.Backend,
+		Chalkboard:          h.openAriaChalkboard(aria.ID),
+		ChalkboardTemplates: h.cbTmpls,
+		TranslationStream:   h.openAriaTranslation(aria.ID, prov.Name()),
+	})
+
+	if err := h.angelus.Registry.Register(agent); err != nil {
+		agent.Kill()
+		return nil, fmt.Errorf("restore %s: register: %w", aria.ID, err)
+	}
+
+	go agent.StartSocket(ctx)
+
+	h.angelus.Logger.Printf("restored figaro %s, provider=%s, model=%s, messages=%d",
+		aria.ID, meta.Provider, meta.Model, aria.MessageCount)
+	return agent, nil
 }

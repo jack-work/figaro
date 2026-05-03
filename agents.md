@@ -51,13 +51,14 @@ If you're not sure whether a change touches the flake, run `nix build` and find 
 `internal/credo/` — system-prompt assembly (template + skills).
 `internal/figaro/` — the actor: agent loop, single-inbox event drain, protocol server, client.
 `internal/jsonrpc/` — minimal NDJSON-framed JSON-RPC 2.0 client/server.
-`internal/message/` — provider-agnostic IR (Message, Block, Baggage).
+`internal/message/` — provider-agnostic IR (Message, Block, Patch, ProviderTranslation).
+`internal/causal/` — typed prefix views (CausalSlice, CausalSink) for handing the past to a translator without exposing the future.
 `internal/otel/` — OpenTelemetry init + span helpers.
 `internal/provider/` — `Provider` interface; `anthropic/` is the only implementation.
 `internal/rpc/` — shared notification types and method constants for both sockets.
-`internal/store/` — `Store` interface, `MemStore`, `FileStore`, `Backend`, aria management.
+`internal/store/` — `Store` interface, `MemStore`, `FileStore`, `Backend`, aria management, per-aria `TranslationLog` (parallel timeline at `arias/{id}/translations/{provider}.jsonl`).
 `internal/tokens/` — context-window token accounting.
-`internal/chalkboard/` — per-aria structured state record. Snapshots, patches, embedded body templates, append-only file store. Surfaced to providers as system reminders.
+`internal/chalkboard/` — per-aria structured state record. `*State` per-aria handle, snapshots, patches (now living canonically in `internal/message/` and aliased here), embedded body templates. Surfaced to providers as system reminders. The `system.*` key namespace is harness-reserved (set at bootstrap, refreshed on `figaro.rehydrate`); clients must not write under it.
 `internal/tool/` — tool interface + bash/read/write/edit tools.
 `internal/transport/` — endpoint abstraction (unix/tcp), Dial/Listen.
 
@@ -73,6 +74,9 @@ If you add or rename a package, update this list and `ARCHITECTURE.md` in the sa
 - **No emojis** in code or commits unless asked. Running prose may use them sparingly where the existing style does.
 - **Imports:** group stdlib / third-party / local with blank lines between groups, `goimports` order.
 - **Tests:** `testify` is in. Prefer table-driven tests for parsers and pure functions; integration tests in `_test.go` next to the code they exercise. `internal/angelus/integration_test.go` is the model for cross-component tests.
+- **Commits:** for stage-shaped work that spans more than a few files (the C and D stages are a model), break the work into discrete sub-stages — each commit reviewable in isolation, each leaving the tree green at `go build && go test && go vet`. Name them `Stage X.N — short summary` in commit subject; the body explains what changed and why. When a sub-stage adds scaffolding for future work, include a comment in the affected code that points at the future direction so the next reader doesn't think it's stranded.
+- **Live verification:** when changes touch the wire path or persistence, run a real prompt through the binary before declaring done. A throwaway script under `/tmp/verify_*.sh` that installs the binary, restarts the angelus, drives a representative conversation, and inspects on-disk state is the standard pattern. Unit tests verify code; live verification verifies behavior.
+- **Forward-only refactors in dev mode.** No back-compat shims for old on-disk shapes — when the format changes, document the migration (or back up + delete old data) rather than carrying a dual-read path. The exception is when the user explicitly asks for back-compat.
 
 ## Invariants
 
@@ -80,7 +84,7 @@ These are the load-bearing rules. Breaking them produces races, lost messages, o
 
 1. **Single inbox per figaro.** Every event — user prompt, LLM delta, tool result, interrupt — enters the agent through one `chan event` and is drained by one goroutine. New goroutines that touch agent state must report results back through the inbox, not by mutating fields directly.
 2. **Turn generation counter.** Stale events from cancelled or completed turns are silently dropped via the generation guard. Don't bypass it. If you add a new event, route it through the same guard.
-3. **Provider baggage round-trip.** Each `message.Message` carries `Baggage` keyed by provider name. The originating provider stashes its native wire form there; on re-send to the same provider, it reads from baggage rather than reconstructing from the IR. Don't strip baggage on a path that may round-trip.
+3. **Translation log is a derivable cache, not a source of truth.** Per-aria, per-provider wire-format projections live in `arias/{id}/translations/{provider}.jsonl`, append-only NDJSON, keyed by figaro logical times. Entries carry the provider's encoder fingerprint at write time. On `Provider.Fingerprint()` mismatch the agent clears the log and lets it repopulate. The `aria.jsonl` figaro timeline is canonical; the translation log is regenerable from it via `Provider.EncodeOutbound` (post-D.2). Don't treat translation entries as authoritative — if you need the truth, re-derive from the figaro timeline.
 4. **Store layering.** `MemStore` is the hot, authoritative copy during a turn. `FileStore` is a checkpoint flushed at turn boundaries via atomic write-to-tmp + rename. Reads during a turn go to MemStore; persistence is the agent's job at `turnComplete`, not the store's job on every `Append`.
 5. **PID binding is 1:1.** A shell PID maps to at most one figaro at a time. `pid.bind` / `pid.unbind` / `pid.resolve` go through the angelus. Don't add a side path that mutates this map.
 6. **Panic recovery preserves identity.** `runWithRecovery` resets the store to the last FileStore checkpoint and restarts the drain loop. The figaro's id, registry entry, PID bindings, socket, **and credo** all survive a panic — recovery is invisible to the model (logged to stderr only). Anything that lives outside the agent must tolerate a drain-loop restart without leaking.
@@ -95,14 +99,15 @@ These are the load-bearing rules. Breaking them produces races, lost messages, o
 
 Places where small changes have outsized blast radius. Read carefully, test thoroughly, and consider asking before editing.
 
-- `internal/figaro/agent.go` — the drain loop. Event dispatch, turn lifecycle, interrupt handling, panic recovery, chalkboard application. Long file; cohesive on purpose.
+- `internal/figaro/agent.go` — the drain loop. Event dispatch, turn lifecycle, interrupt handling, panic recovery, chalkboard application, in-progress-tic accumulation, translation-log persistence (`persistProjectionSummary`), bootstrap + rehydrate orchestration. Long file; cohesive on purpose.
 - `internal/figaro/inbox.go` — the inbox itself, including selfish vs. patient event semantics.
-- `internal/angelus/angelus.go` + `registry.go` — supervisor lifecycle, PID monitor, draining shutdown.
+- `internal/angelus/angelus.go` + `registry.go` + `protocol.go` — supervisor lifecycle, PID monitor, draining shutdown. `protocol.go` opens per-aria `chalkboard.State` + `TranslationLog` on `create` and on lazy restoration via `Handlers.Restore(ariaID)` (called from `RestoreBindings` at startup, and from `pid.bind` / `figaro.list` for dormant arias). Arias on disk without a live registry entry are *dormant* — present in `figaro list`, killable, but not consuming an Agent goroutine until first access.
 - `internal/store/file.go` + `mem.go` — flush ordering and atomic-rename semantics. Easy to break crash safety here.
-- `internal/chalkboard/` — append-only patch log + cached snapshot. Touching the on-disk shape (`<id>/log.json` / `<id>/snapshot.json`) is a wire-format change.
-- `internal/provider/anthropic/anthropic.go` + `render.go` — direct HTTP+SSE, no SDK. Streaming parser is hand-rolled. Renderers (tag and tool-injection) live in render.go and must never mutate the cache prefix (invariant #11).
+- `internal/store/translog.go` — append-only NDJSON translation log per (aria, provider). On-disk shape change requires version negotiation.
+- `internal/chalkboard/state.go` — per-aria `*State` handle (in-memory snapshot + cached file). Single-owner under the actor model; no locking today.
+- `internal/provider/anthropic/anthropic.go` — direct HTTP+SSE, no SDK. Streaming parser is hand-rolled. `projectMessages` renders patches as inline `<system-reminder>` content blocks; `projectBlockWithModel` returns a `provider.ProjectionSummary` for the agent to persist. Renderer choice (`ReminderRenderer`) feeds into `Fingerprint()` — must never mutate the cache prefix (invariant #11).
 - `internal/jsonrpc/jsonrpc.go` — NDJSON framing. Don't switch frame formats without updating both ends and the protocol tables in `ARCHITECTURE.md`.
-- `cmd/figaro/main.go` — multi-call dispatch, daemon fork, signal handling. The `q` and `l` symlinks are part of the contract.
+- `cmd/figaro/main.go` — multi-call dispatch, daemon fork, signal handling. The `q` and `l` symlinks are part of the contract (provided as `postInstall` symlinks in `flake.nix`).
 
 ## Disclosure rules
 
@@ -111,7 +116,7 @@ Take freely-reversible local actions. Pause and ask before doing anything in the
 **Always disclose and confirm before:**
 
 - Changing any **JSON-RPC method, notification, or wire payload** (both socket tables in `ARCHITECTURE.md`). Frontends in any language are part of the contract.
-- Changing the **on-disk aria or chalkboard format** (`internal/store/file.go`, `internal/chalkboard/store.go`) or any layout under `~/.config/figaro/` or `~/.local/state/figaro/`. Old data must keep loading or migrate explicitly.
+- Changing the **on-disk aria, chalkboard, or translation-log format** (`internal/store/file.go`, `internal/store/translog.go`, `internal/chalkboard/state.go`) or any layout under `~/.config/figaro/` or `~/.local/state/figaro/`. Old data must keep loading or migrate explicitly. The current per-aria layout is `arias/{id}/{aria.jsonl, meta.json, chalkboard.json, translations/{provider}.jsonl}`.
 - Anything that mutates the **cache prefix** mid-session (system block, tools, or earlier messages). Invariant #11.
 - Touching **OAuth / hush flows** in `internal/auth/`. Tokens are users' real credentials.
 - Adding a **new runtime dependency**, replace directive, or external service.
@@ -137,6 +142,12 @@ Take freely-reversible local actions. Pause and ask before doing anything in the
 `plans/*.md` are *intent* documents — they describe a design before or during implementation. Treat them as historical record once the work lands. Don't edit a plan to reflect what was actually built; that's what the code and `ARCHITECTURE.md` are for. If a plan is misleading because the implementation diverged, add a short note at the top (`Status: superseded by …`) rather than rewriting.
 
 New plans are welcome for non-trivial work. Keep them in `plans/`, mirror the existing voice, and link them from `ARCHITECTURE.md` if they describe a subsystem that needs ongoing reference.
+
+## Working with `duck/`
+
+`duck/*.md` is for **rubber-duck brainstorms** — captured thinking from design conversations, lower commitment than `plans/`. See `duck/README.md` for the convention. Each file is a session: the user's reasoning preserved as faithfully as possible, with feedback / open questions clearly separable. When the conversation distills into a decision, fold it into a `plans/*.md` and link the duck file as the source. When you spawn a new brainstorm, name it `YYYY-MM-DD-topic.md` and stamp a status (`brainstorm`, `superseded`, `accepted`, `archived`).
+
+The most recent duck doc usually represents in-flight design thinking that hasn't reached `plans/` yet. **Read it before starting on architecturally significant work.**
 
 ## Living document
 

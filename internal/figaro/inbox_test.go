@@ -13,7 +13,7 @@ func TestInbox_PatientDeliveredWhenIdle(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx)
+	b := NewInbox(ctx, nil, nil)
 	b.SendPatient(event{typ: eventUserPrompt, text: "hello"})
 
 	evt, ok := b.Recv()
@@ -26,7 +26,7 @@ func TestInbox_PatientHeldWhenBusy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx)
+	b := NewInbox(ctx, nil, nil)
 
 	// First patient makes it busy.
 	b.SendPatient(event{typ: eventUserPrompt, text: "first"})
@@ -65,27 +65,26 @@ func TestInbox_SelfishAlwaysDelivered(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx)
+	b := NewInbox(ctx, nil, nil)
 
 	// Make it busy (not yielded).
 	b.SendPatient(event{typ: eventUserPrompt, text: "prompt"})
 	b.Recv() // consume the patient
 
 	// Now busy — selfish should still be delivered.
-	ok := b.SendSelfish(event{typ: eventLLMDelta, delta: "hi"})
+	ok := b.SendSelfish(event{typ: eventInterrupt})
 	require.True(t, ok)
 
 	evt, ok := b.Recv()
 	require.True(t, ok)
-	assert.Equal(t, eventLLMDelta, evt.typ)
-	assert.Equal(t, "hi", evt.delta)
+	assert.Equal(t, eventInterrupt, evt.typ)
 }
 
 func TestInbox_YieldReleasesPatient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx)
+	b := NewInbox(ctx, nil, nil)
 
 	// Start a turn.
 	b.SendPatient(event{typ: eventUserPrompt, text: "first"})
@@ -106,7 +105,7 @@ func TestInbox_YieldWhenEmpty(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx)
+	b := NewInbox(ctx, nil, nil)
 
 	// Start and finish a turn.
 	b.SendPatient(event{typ: eventUserPrompt, text: "prompt"})
@@ -126,7 +125,7 @@ func TestInbox_SelfishPriority(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx)
+	b := NewInbox(ctx, nil, nil)
 
 	// Start a turn.
 	b.SendPatient(event{typ: eventUserPrompt, text: "prompt"})
@@ -134,13 +133,12 @@ func TestInbox_SelfishPriority(t *testing.T) {
 
 	// Queue a patient and a selfish.
 	b.SendPatient(event{typ: eventUserPrompt, text: "patient"})
-	b.SendSelfish(event{typ: eventLLMDelta, delta: "selfish"})
+	b.SendSelfish(event{typ: eventInterrupt})
 
 	// Selfish should come first (it's in active; patient is in waiting).
 	evt, ok := b.Recv()
 	require.True(t, ok)
-	assert.Equal(t, eventLLMDelta, evt.typ)
-	assert.Equal(t, "selfish", evt.delta)
+	assert.Equal(t, eventInterrupt, evt.typ)
 
 	// Yield to release the patient.
 	b.Yield()
@@ -154,7 +152,7 @@ func TestInbox_CloseUnblocksRecv(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx)
+	b := NewInbox(ctx, nil, nil)
 
 	done := make(chan bool, 1)
 	go func() {
@@ -176,16 +174,16 @@ func TestInbox_ClosedSendReturnsFalse(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx)
+	b := NewInbox(ctx, nil, nil)
 	b.Close()
 
-	ok := b.SendSelfish(event{typ: eventLLMDelta, delta: "stale"})
+	ok := b.SendSelfish(event{typ: eventInterrupt})
 	assert.False(t, ok, "SendSelfish on closed inbox should return false")
 }
 
 func TestInbox_ContextCancelCloses(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	b := NewInbox(ctx)
+	b := NewInbox(ctx, nil, nil)
 
 	done := make(chan bool, 1)
 	go func() {
@@ -207,7 +205,7 @@ func TestInbox_MultipleYields(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx)
+	b := NewInbox(ctx, nil, nil)
 
 	// Start a turn, queue two patient messages.
 	b.SendPatient(event{typ: eventUserPrompt, text: "first"})

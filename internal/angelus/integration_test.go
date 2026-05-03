@@ -24,36 +24,51 @@ import (
 // mockProviderForIntegration echoes a fixed response.
 type mockProviderForIntegration struct{}
 
-func (m *mockProviderForIntegration) Name() string                          { return "mock" }
-func (m *mockProviderForIntegration) Fingerprint() string                    { return "mock/v0" }
-func (m *mockProviderForIntegration) SetModel(model string)                  {}
-func (m *mockProviderForIntegration) OpenAccumulator() provider.NativeAccumulator {
-	return integAccumulator{}
-}
-func (m *mockProviderForIntegration) Models(ctx context.Context) ([]provider.ModelInfo, error) {
-	return nil, nil
+func (m *mockProviderForIntegration) Name() string                                          { return "mock" }
+func (m *mockProviderForIntegration) Fingerprint() string                                   { return "mock/v0" }
+func (m *mockProviderForIntegration) SetModel(model string)                                 {}
+func (m *mockProviderForIntegration) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+
+type mockIntegNative struct {
+	Role       string                   `json:"role"`
+	Content    []map[string]interface{} `json:"content"`
+	StopReason string                   `json:"stop_reason,omitempty"`
 }
 
-type integAccumulator struct{}
-
-func (integAccumulator) Finalize(message.Message) message.ProviderTranslation {
-	return message.ProviderTranslation{}
-}
-func (m *mockProviderForIntegration) Send(ctx context.Context, block *message.Block, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) (<-chan provider.StreamEvent, provider.ProjectionSummary, error) {
-	ch := make(chan provider.StreamEvent, 4)
-	go func() {
-		defer close(ch)
-		msg := message.Message{
-			Role:       message.RoleAssistant,
-			Content:    []message.Content{message.TextContent("42")},
-			StopReason: message.StopEnd,
-			Provider:   "mock",
-			Timestamp:  time.Now().UnixMilli(),
+func (m *mockProviderForIntegration) Decode(raw []json.RawMessage) ([]message.Message, error) {
+	out := make([]message.Message, 0, len(raw))
+	for _, r := range raw {
+		var nm mockIntegNative
+		if err := json.Unmarshal(r, &nm); err != nil {
+			return nil, err
 		}
-		ch <- provider.StreamEvent{Delta: "42", ContentType: message.ContentText, Message: &msg}
-		ch <- provider.StreamEvent{Done: true, Message: &msg}
-	}()
-	return ch, provider.ProjectionSummary{}, nil
+		msg := message.Message{Role: message.Role(nm.Role)}
+		for _, c := range nm.Content {
+			if t, _ := c["type"].(string); t == "text" {
+				if txt, _ := c["text"].(string); txt != "" {
+					msg.Content = append(msg.Content, message.TextContent(txt))
+				}
+			}
+		}
+		if nm.StopReason == "end_turn" {
+			msg.StopReason = message.StopEnd
+		}
+		out = append(out, msg)
+	}
+	return out, nil
+}
+
+func (m *mockProviderForIntegration) Send(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, bus provider.Bus) (provider.ProjectionSummary, error) {
+	nm := mockIntegNative{
+		Role:       "assistant",
+		Content:    []map[string]interface{}{{"type": "text", "text": "42"}},
+		StopReason: "end_turn",
+	}
+	raw, _ := json.Marshal(nm)
+	return provider.ProjectionSummary{
+		Fingerprint: m.Fingerprint(),
+		Assistant:   []json.RawMessage{raw},
+	}, nil
 }
 
 func TestIntegration_CreateAndPrompt(t *testing.T) {
@@ -73,12 +88,12 @@ func TestIntegration_CreateAndPrompt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	a.Handlers = angelus.NewHandlerMap(angelus.ServerConfig{
+	a.Handlers = angelus.NewHandlers(angelus.ServerConfig{
 		Angelus:         a,
 		Config:          loaded,
 		ProviderFactory: factory,
 		Ctx:             ctx,
-	})
+	}).Map
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- a.Run(ctx) }()

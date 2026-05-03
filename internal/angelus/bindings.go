@@ -67,13 +67,20 @@ func SaveBindings(r *Registry, path string) error {
 	return nil
 }
 
+// AriaRestorer revives a dormant aria into the registry by ID. Used by
+// RestoreBindings to lazy-restore each aria whose PID survived. Returns
+// an error when the aria can't be restored (unknown, corrupt, etc.).
+type AriaRestorer func(ariaID string) error
+
 // RestoreBindings loads path, rebinds surviving PIDs to their figaros
 // in the registry, then removes the file. A PID survives if it is
 // alive AND its current start time matches the saved value (or both
 // are zero — "unchecked"). Non-fatal: errors are logged and skipped.
 //
-// Call this after RestoreArias so the figaros exist in the registry.
-func RestoreBindings(r *Registry, path string, logger *log.Logger) {
+// For each surviving binding, restore is called first to lazy-load
+// the target aria into the registry. A nil restore skips the lazy
+// step (caller is expected to have populated the registry already).
+func RestoreBindings(r *Registry, path string, logger *log.Logger, restore AriaRestorer) {
 	if r == nil {
 		return
 	}
@@ -110,6 +117,15 @@ func RestoreBindings(r *Registry, path string, logger *log.Logger) {
 			}
 			skipped++
 			continue
+		}
+		if restore != nil {
+			if err := restore(b.FigaroID); err != nil {
+				if logger != nil {
+					logger.Printf("bindings: restore %s for pid=%d: %v", b.FigaroID, b.PID, err)
+				}
+				skipped++
+				continue
+			}
 		}
 		if err := r.Bind(b.PID, b.FigaroID); err != nil {
 			if logger != nil {
@@ -154,4 +170,3 @@ func pidStartTime(pid int) uint64 {
 	}
 	return v
 }
-

@@ -2,31 +2,39 @@ package figaro
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
+
+	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/store"
 )
 
-// Inbox is a priority mailbox for the agent's actor loop.
+// Inbox is the per-aria event bus. Implements provider.Bus.
 //
-// Events have two attitudes:
-//   - Selfish: delivered immediately (LLM deltas, tool results, interrupts)
-//   - Patient: held until the current turn yields (user prompts)
-//
-// The drain loop calls Recv in a loop. It only sees events when they're
-// ready — patient events are invisible until Yield releases them.
+// Owns the typed partitions (Figaro IR + translation cache) as data
+// stores. Push enqueues provider events; SendSelfish/SendPatient
+// enqueue control + figaro events. Recv dequeues, fires the routing
+// subscriber to place the event on its stream, then returns it for
+// the act loop's semantic dispatch.
 type Inbox struct {
+	Figaro   store.Stream[message.Message]
+	Translog store.Stream[[]json.RawMessage]
+
 	mu      sync.Mutex
 	cond    *sync.Cond
-	active  []event // selfish events + released patient events
-	waiting []event // patient events held until Yield
-	yielded bool    // true = idle, next patient goes straight to active
+	active  []event
+	waiting []event
+	yielded bool
 	closed  bool
+
+	subs []func(event)
 }
 
-// NewInbox creates an inbox that closes automatically when ctx is cancelled.
-// Starts in the yielded state (idle — first patient message delivers immediately).
-func NewInbox(ctx context.Context) *Inbox {
-	b := &Inbox{yielded: true}
+func NewInbox(ctx context.Context, fig store.Stream[message.Message], translog store.Stream[[]json.RawMessage]) *Inbox {
+	b := &Inbox{Figaro: fig, Translog: translog, yielded: true}
 	b.cond = sync.NewCond(&b.mu)
+	b.subs = append(b.subs, b.routeToStreams)
 	go func() {
 		<-ctx.Done()
 		b.Close()
@@ -34,9 +42,21 @@ func NewInbox(ctx context.Context) *Inbox {
 	return b
 }
 
-// SendSelfish appends an event to the active queue. It is delivered
-// on the next Recv call regardless of turn state. Returns false if
-// the inbox is closed (caller should exit).
+// routeToStreams places provider/figaro events on their respective
+// streams as they're consumed. Other event types pass through.
+func (b *Inbox) routeToStreams(ev event) {
+	switch ev.typ {
+	case eventFigaro:
+		if b.Figaro != nil {
+			b.Figaro.Append(store.Entry[message.Message]{Payload: ev.figMsg}, true)
+		}
+	case eventTransLive:
+		if b.Translog != nil {
+			b.Translog.Append(store.Entry[[]json.RawMessage]{Payload: ev.transPayload}, false)
+		}
+	}
+}
+
 func (b *Inbox) SendSelfish(evt event) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -48,9 +68,6 @@ func (b *Inbox) SendSelfish(evt event) bool {
 	return true
 }
 
-// SendPatient enqueues an event that waits for the current turn to
-// yield. If the inbox is already yielded (idle), the event is
-// delivered immediately and the inbox transitions to busy.
 func (b *Inbox) SendPatient(evt event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -66,9 +83,6 @@ func (b *Inbox) SendPatient(evt event) {
 	b.cond.Signal()
 }
 
-// Yield signals that the current turn is complete. If patient events
-// are waiting, the first one is released to active (starting the next
-// turn). Otherwise the inbox transitions to the yielded (idle) state.
 func (b *Inbox) Yield() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -81,38 +95,68 @@ func (b *Inbox) Yield() {
 	b.cond.Signal()
 }
 
-// Recv blocks until an event is available in the active queue.
-// Returns (event, false) if the inbox is closed.
 func (b *Inbox) Recv() (event, bool) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	for len(b.active) == 0 && !b.closed {
 		b.cond.Wait()
 	}
 	if b.closed {
+		b.mu.Unlock()
 		return event{}, false
 	}
 	evt := b.active[0]
-	// Shift without retaining a reference to the old backing array.
 	copy(b.active, b.active[1:])
 	b.active = b.active[:len(b.active)-1]
+	subs := append([]func(event){}, b.subs...)
+	b.mu.Unlock()
+	for _, fn := range subs {
+		if fn != nil {
+			fn(evt)
+		}
+	}
 	return evt, true
 }
 
-// IsIdle returns true if no turn is in progress.
 func (b *Inbox) IsIdle() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.yielded
 }
 
-// Close shuts down the inbox, unblocking any Recv call. Idempotent.
 func (b *Inbox) Close() {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if b.closed {
+		b.mu.Unlock()
 		return
 	}
 	b.closed = true
 	b.cond.Broadcast()
+	b.mu.Unlock()
+}
+
+func (b *Inbox) Subscribe(fn func(event)) func() {
+	b.mu.Lock()
+	b.subs = append(b.subs, fn)
+	idx := len(b.subs) - 1
+	b.mu.Unlock()
+	return func() {
+		b.mu.Lock()
+		if idx < len(b.subs) {
+			b.subs[idx] = nil
+		}
+		b.mu.Unlock()
+	}
+}
+
+// Push implements provider.Bus. Every native event lands on the
+// translog's live tail; the act loop condenses the tail into a single
+// durable entry on SendComplete using the assembled bytes the
+// provider returned in ProjectionSummary.
+func (b *Inbox) Push(ev provider.Event) {
+	b.SendSelfish(event{typ: eventTransLive, transPayload: ev.Payload})
+}
+
+// PublishFigaro queues a figaro IR event. Routed to figStream on Recv.
+func (b *Inbox) PublishFigaro(msg message.Message) {
+	b.SendSelfish(event{typ: eventFigaro, figMsg: msg})
 }

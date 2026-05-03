@@ -8,10 +8,10 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// Benchmark the projection hot path. projectBlockWithModel is called
-// once per Send.
+// Benchmark the projection hot path. projectMessagesWithModel is
+// called once per Send.
 
-func benchBlock(nMessages int) *message.Block {
+func benchMessages(nMessages int) []message.Message {
 	msgs := make([]message.Message, nMessages)
 	for i := range msgs {
 		// Leaf must be user-role for the realistic projection.
@@ -28,13 +28,7 @@ func benchBlock(nMessages int) *message.Block {
 			Content: []message.Content{message.TextContent("turn body number " + itoa(i))},
 		}
 	}
-	return &message.Block{
-		Header: &message.Message{
-			Role:    message.RoleSystem,
-			Content: []message.Content{message.TextContent("you are figaro")},
-		},
-		Messages: msgs,
-	}
+	return msgs
 }
 
 func benchTools() []provider.Tool {
@@ -46,23 +40,23 @@ func benchTools() []provider.Tool {
 	}
 }
 
-func BenchmarkProjectBlock_10msgs(b *testing.B) {
+func BenchmarkProjectMessages_10msgs(b *testing.B) {
 	a := &Anthropic{ReminderRenderer: "tag"}
-	block := benchBlock(10)
+	msgs := benchMessages(10)
 	tools := benchTools()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+		_, _ = a.projectMessagesWithModel(msgs, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
 	}
 }
 
-func BenchmarkProjectBlock_100msgs(b *testing.B) {
+func BenchmarkProjectMessages_100msgs(b *testing.B) {
 	a := &Anthropic{ReminderRenderer: "tag"}
-	block := benchBlock(100)
+	msgs := benchMessages(100)
 	tools := benchTools()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+		_, _ = a.projectMessagesWithModel(msgs, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
 	}
 }
 

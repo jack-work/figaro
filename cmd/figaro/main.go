@@ -194,6 +194,7 @@ func runAngelus() {
 	// without chalkboard, with a warning to the log.
 	cbTmpls := buildChalkboard(logger)
 
+	// TODO: answer over the chat what this does exactly, then remove this comment.
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -206,13 +207,16 @@ func runAngelus() {
 	})
 	a.Handlers = handlers.Map
 
-	// Restore persisted arias from disk before accepting connections.
-	handlers.RestoreArias(ctx)
-
 	// Reattach any PID bindings persisted from the previous angelus
 	// lifetime (via `figaro rest --keep-pids`). Dead or recycled PIDs
-	// are filtered out; the file is consumed on read.
-	angelus.RestoreBindings(a.Registry, a.BindingsPath(), logger)
+	// are filtered out; the file is consumed on read. Each surviving
+	// binding lazy-restores its target aria into the registry — arias
+	// without a binding stay dormant on disk until first access (Bind
+	// or List walks them in).
+	angelus.RestoreBindings(a.Registry, a.BindingsPath(), logger, func(ariaID string) error {
+		_, err := handlers.Restore(ctx, ariaID)
+		return err
+	})
 
 	// Watch for SIGINT/SIGTERM and run a graceful shutdown so active
 	// figaros get a chance to interrupt their turns and flush state

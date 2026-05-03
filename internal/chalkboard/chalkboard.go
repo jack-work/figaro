@@ -15,6 +15,7 @@ package chalkboard
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"sort"
 
 	"github.com/jack-work/figaro/internal/message"
@@ -204,12 +205,7 @@ func decodeStringOrRaw(raw json.RawMessage) string {
 }
 
 func containsString(xs []string, s string) bool {
-	for _, x := range xs {
-		if x == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, s)
 }
 
 func removeString(xs []string, s string) []string {

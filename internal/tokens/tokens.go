@@ -14,22 +14,23 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// ContextSize returns the estimated token count for a conversation block.
+// ContextSize returns the estimated token count for a conversation
+// slice.
 //
 // It walks backwards to find the last assistant message with Usage
 // (a "watermark"). If found, it uses InputTokens + OutputTokens as
 // the authoritative base, then adds a chars/4 heuristic for any
 // messages appended after. exact is true only when the watermark is
-// the last message in the block.
-func ContextSize(block *message.Block) (tokens int, exact bool) {
-	if block == nil || len(block.Messages) == 0 {
+// the last message in the slice.
+func ContextSize(msgs []message.Message) (tokens int, exact bool) {
+	if len(msgs) == 0 {
 		return 0, true
 	}
 
 	// Find last assistant message with Usage.
 	watermark := -1
-	for i := len(block.Messages) - 1; i >= 0; i-- {
-		if block.Messages[i].Usage != nil {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Usage != nil {
 			watermark = i
 			break
 		}
@@ -38,22 +39,22 @@ func ContextSize(block *message.Block) (tokens int, exact bool) {
 	if watermark < 0 {
 		// No authoritative data — estimate everything.
 		total := 0
-		for _, m := range block.Messages {
+		for _, m := range msgs {
 			total += EstimateMessage(m)
 		}
 		return total, false
 	}
 
-	u := block.Messages[watermark].Usage
+	u := msgs[watermark].Usage
 	base := u.InputTokens + u.OutputTokens
 
-	if watermark == len(block.Messages)-1 {
+	if watermark == len(msgs)-1 {
 		return base, true
 	}
 
 	// Heuristic tail for messages after the watermark.
 	tail := 0
-	for _, m := range block.Messages[watermark+1:] {
+	for _, m := range msgs[watermark+1:] {
 		tail += EstimateMessage(m)
 	}
 	return base + tail, false

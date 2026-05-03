@@ -20,3 +20,10 @@ type Patch struct {
 func (p Patch) IsEmpty() bool {
 	return len(p.Set) == 0 && len(p.Remove) == 0
 }
+
+// Sets with json encoding
+func (p Patch) Set2(key string, val string) {
+	if b, err := json.Marshal(val); err == nil {
+		p.Set[key] = b
+	}
+}

@@ -47,7 +47,7 @@ cmd/figaro/
 internal/
 ├── angelus/
 │   ├── angelus.go       Supervisor: socket listener, PID monitor, lifecycle
-│   ├── protocol.go      Angelus-side JSON-RPC handlers (create/kill/list/bind/resolve); per-aria chalkboard.State + TranslationLog opening on create/RestoreArias
+│   ├── protocol.go      Angelus-side JSON-RPC handlers (create/kill/list/bind/resolve); per-aria chalkboard.State + TranslationLog opened on `create` and on lazy `Restore(ariaID)`. Dormant-aria handling in `kill` / `list`.
 │   ├── registry.go      In-memory figaro registry + PID↔figaro index
 │   └── client.go        Typed client for talking to angelus
 ├── auth/
@@ -217,7 +217,7 @@ Agent ──► MemStore ──► FileStore ──► disk
 
 - **MemStore**: All reads/writes during a turn. Fast, in-process.
 - **FileStore**: Flushed at turn boundaries. Atomic write-to-tmp + rename.
-- **Restore**: On angelus restart, `RestoreArias` scans the store dir, re-creates agents from persisted metadata + messages.
+- **Restore (lazy):** Arias on disk are *dormant by default* — they appear in `figaro list` and can be killed without ever being instantiated. On angelus startup, `RestoreBindings` reads the persisted PID-binding file (from `figaro rest --keep-pids`) and lazy-restores only the bound arias via `Handlers.Restore(ariaID)`. Untracked arias stay dormant until first access (a `pid.bind` to that ID, or a request that needs the live Agent). The `restoreByID` path reads `meta.json` to reconstruct the provider/model/cwd; this is why `AriaMeta` is still load-bearing.
 
 ### PID Binding
 

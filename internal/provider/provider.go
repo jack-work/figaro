@@ -10,7 +10,6 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// ModelInfo describes a model available from a provider.
 type ModelInfo struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
@@ -19,146 +18,70 @@ type ModelInfo struct {
 	MaxTokens     int    `json:"max_tokens"`
 }
 
-// Tool describes a tool the model can call.
 type Tool struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description"`
-	Parameters  interface{} `json:"parameters"` // JSON Schema
+	Parameters  interface{} `json:"parameters"`
 }
 
-// ProjectionSummary is the synchronous output of a Send projection.
-// Returned alongside the StreamEvent channel so the agent can persist
-// the wire bytes that this Send actually emitted (Stage D.2f
-// write-through translation persistence).
-//
-// All RawMessages are wire-format bytes WITHOUT cache_control
-// markers — those are recomputed per-Send by the provider's
-// markCacheBreakpoints (or equivalent) and persisting them with the
-// markers attached would couple cached bytes to the message's
-// position in the conversation, which moves between Sends.
+// ProjectionSummary is the synchronous output of Send. Carries the
+// wire bytes the projection actually emitted (for cache persistence)
+// plus the assembled assistant native the consumer should condense
+// the live tail into.
 type ProjectionSummary struct {
-	// PerMessage holds wire bytes parallel-indexed with
-	// block.Messages. PerMessage[i] is the wire form of the figaro
-	// Message at block.Messages[i] — typically one wire message per
-	// figaro Message, though state-only tics that emit no wire
-	// output have a nil RawMessage at their index.
-	PerMessage []json.RawMessage
-
-	// System is the system block array bytes — the wire form of the
-	// chalkboard.system.prompt value (plus any provider-specific
-	// preamble like the OAuth Claude Code identity prefix). One
-	// RawMessage per system block.
-	System []json.RawMessage
-
-	// SystemFLT is the figaro logical time the System bytes are
-	// tied to: the most recent figaro Message whose Patches set
-	// chalkboard.system.prompt. Zero when no aria has bootstrapped
-	// (ephemeral arias that synthesize a snapshot).
-	SystemFLT uint64
-
-	// Fingerprint is the provider's encoder fingerprint at the time
-	// of this projection. Persisted alongside each translation entry
-	// so the staleness check (D.2e) can detect encoder-config drift.
+	PerMessage  []json.RawMessage
+	System      []json.RawMessage
+	SystemFLT   uint64
 	Fingerprint string
+	// Assistant is the assembled native message bytes for this turn.
+	// One element today; reserved for N:1 native:figaro in future.
+	Assistant []json.RawMessage
 }
 
-// StreamEvent is a single chunk from a streaming response.
-type StreamEvent struct {
-	Delta       string
-	ContentType message.ContentType
-	BlockDone   bool
-	Done        bool
-	Message     *message.Message
-	// Translation is set on the Done event for assistant responses:
-	// it carries the per-message wire-format projection the
-	// provider's NativeAccumulator produced. The agent persists it
-	// to the per-aria translation log keyed by Message.LogicalTime.
-	// Nil when the stream errored before message_stop.
-	Translation *message.ProviderTranslation
-	Err         error
+// Event is what the provider pushes to the Bus during Send. Each
+// event lands on the translation stream's live tail. The act loop
+// condenses the tail into one durable entry on SendComplete.
+type Event struct {
+	Payload []json.RawMessage
 }
 
-// Provider is the LLM provider interface.
+// Bus is the single publish surface the provider uses while
+// streaming. Implemented by the agent's Inbox.
+type Bus interface {
+	Push(Event)
+}
+
+// Provider is the LLM provider interface. Pure transport + codec —
+// no IR construction. Send pushes native events into the supplied
+// Bus; the act loop decodes them into IR via Decode.
 type Provider interface {
-	// Name returns the provider identifier (e.g. "anthropic").
 	Name() string
 
-	// Fingerprint is a short opaque hash describing this provider's
-	// current encoder configuration — anything that, if changed,
-	// would alter the wire bytes produced for the same figaro IR.
-	// Used by the translation cache: a stored entry whose
-	// fingerprint does not match the provider's current value is
-	// treated as stale and regenerated. Empty fingerprints are
-	// allowed for providers that have nothing to hash; they always
-	// match (no invalidation).
+	// Fingerprint hashes the provider's current encoder configuration.
+	// Stored alongside translation entries; mismatch invalidates them.
 	Fingerprint() string
 
-	// Models returns the list of models available from this provider.
-	// Implementations may call the provider's API or return a static list.
 	Models(ctx context.Context) ([]ModelInfo, error)
-
-	// SetModel changes the model used for subsequent Send calls.
 	SetModel(model string)
 
-	// OpenAccumulator returns a per-stream native accumulator. The
-	// streaming Send loop drives the accumulator alongside the
-	// figaro accumulator that builds the IR Message; at stream end
-	// the accumulator's Finalize is called with the figaro Message
-	// and returns the message's ProviderTranslation entry.
-	//
-	// Today's typical implementation: a stub that ignores the live
-	// stream (OnEvent is a no-op) and at Finalize projects the
-	// figaro Message into wire form. Future SDK-backed
-	// implementations may accumulate native shape natively from the
-	// raw event stream and bypass the figaro round-trip.
-	OpenAccumulator() NativeAccumulator
-
-	// Send streams a conversation to the provider and returns response
-	// events.
-	//
-	// The chalkboard snapshot carries per-aria state the provider may
-	// consult — most notably system.prompt (the assembled credo) which
-	// the provider injects into its native system block. Per-message
-	// Patches still travel on each Message and are rendered inline as
-	// system reminders per the provider's own configuration. Pass nil
-	// for ephemeral arias that have no chalkboard.
-	//
-	// priorTranslations is the per-aria translation cache, indexed
-	// in lockstep with block.Messages: priorTranslations.At(i) is
-	// the cached translation for block.Messages[i]. An empty entry
-	// (zero ProviderTranslation) signals a cache miss; the provider
-	// renders fresh in that case. Pass an empty CausalSlice for
-	// ephemeral arias.
-	//
-	// Returns the ProjectionSummary synchronously — the wire bytes
-	// the provider just produced for this Send, ready for the agent
-	// to persist into the translation log.
+	// Send encodes msgs into the API request, opens the HTTP stream,
+	// and pushes parsed native events into target. Live entries for
+	// in-flight chunks (deltas), one durable entry for the assembled
+	// final native message (with stop_reason + usage embedded).
+	// Returns the projection summary so the caller can persist it.
+	// Blocks until the stream closes or ctx is cancelled.
 	Send(
 		ctx context.Context,
-		block *message.Block,
+		msgs []message.Message,
 		snapshot chalkboard.Snapshot,
 		priorTranslations causal.Slice[message.ProviderTranslation],
 		tools []Tool,
 		maxTokens int,
-	) (<-chan StreamEvent, ProjectionSummary, error)
-}
+		bus Bus,
+	) (ProjectionSummary, error)
 
-// NativeAccumulator is the per-stream side of the provider that
-// builds up the wire-format projection of one assistant response.
-// Created at SSE open via Provider.OpenAccumulator, discarded after
-// Finalize. Single-goroutine; no concurrent calls.
-//
-// Today the figaro accumulator inside the provider's HTTP layer
-// builds the IR Message from raw events; this accumulator is a
-// passenger that may either track raw events itself (future SDK
-// integration) or ignore them and lean on the IR at Finalize time
-// (today's stub).
-type NativeAccumulator interface {
-	// Finalize is called when the assistant message is complete.
-	// Returns the per-provider translation entry to attach to the
-	// figaro Message: a sequence of wire messages plus the
-	// fingerprint of the provider's encoder configuration at write
-	// time. The accumulator may consult its own state, the figaro
-	// Message, or both.
-	Finalize(figaroFinal message.Message) message.ProviderTranslation
+	// Decode is the reverse of the Send projection: native bytes to
+	// IR. Used by the act loop to advance the figaro stream from a
+	// translation entry the provider just landed.
+	Decode(raw []json.RawMessage) ([]message.Message, error)
 }

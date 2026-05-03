@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/internal/causal"
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 )
@@ -21,6 +22,16 @@ func fakeSchema() interface{} {
 			"x": map[string]interface{}{"type": "string"},
 		},
 	}
+}
+
+// systemSnapshot returns a chalkboard snapshot that injects the given
+// text as system.prompt — the canonical source for the projection's
+// system block.
+func systemSnapshot(t *testing.T, text string) chalkboard.Snapshot {
+	t.Helper()
+	raw, err := json.Marshal(text)
+	require.NoError(t, err)
+	return chalkboard.Snapshot{"system.prompt": raw}
 }
 
 // TestProjectTools_Deterministic verifies that two consecutive
@@ -67,30 +78,24 @@ func TestProjectTools_RoundTrip(t *testing.T) {
 	assert.Equal(t, string(first), string(second), "projectTools output must round-trip through JSON byte-identically")
 }
 
-// TestProjectBlock_CacheBreakpoints verifies that markCacheBreakpoints
+// TestProjectMessages_CacheBreakpoints verifies that markCacheBreakpoints
 // sets cache_control on:
 //   - the last system block,
 //   - the last tool definition,
 //   - the last content block of the second-to-last message.
-func TestProjectBlock_CacheBreakpoints(t *testing.T) {
+func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 	a := &Anthropic{}
-	block := &message.Block{
-		Header: &message.Message{
-			Role:    message.RoleSystem,
-			Content: []message.Content{message.TextContent("you are a test agent")},
-		},
-		Messages: []message.Message{
-			{Role: message.RoleUser, Content: []message.Content{message.TextContent("first turn")}},
-			{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("first reply")}},
-			{Role: message.RoleUser, Content: []message.Content{message.TextContent("second turn — current prompt")}},
-		},
+	msgs := []message.Message{
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("first turn")}},
+		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("first reply")}},
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("second turn — current prompt")}},
 	}
 	tools := []provider.Tool{
 		{Name: "alpha", Description: "first", Parameters: fakeSchema()},
 		{Name: "beta", Description: "second", Parameters: fakeSchema()},
 	}
 
-	req, _ := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+	req, _ := a.projectMessagesWithModel(msgs, systemSnapshot(t, "you are a test agent"), causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
 
 	require.NotEmpty(t, req.System, "system must be present")
 	last := req.System[len(req.System)-1]
@@ -114,78 +119,60 @@ func TestProjectBlock_CacheBreakpoints(t *testing.T) {
 	assert.Nil(t, lastMsg.Content[len(lastMsg.Content)-1].CacheControl, "the leaf user prompt must not carry cache_control")
 }
 
-// TestProjectBlock_NoMessageBreakpoint_WhenSingleMessage verifies that
-// the message-level breakpoint is suppressed when there is only one
-// message — there is no "stable prior leaf" to anchor.
-func TestProjectBlock_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
+// TestProjectMessages_NoMessageBreakpoint_WhenSingleMessage verifies
+// that the message-level breakpoint is suppressed when there is only
+// one message — there is no "stable prior leaf" to anchor.
+func TestProjectMessages_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
 	a := &Anthropic{}
-	block := &message.Block{
-		Header: &message.Message{
-			Role:    message.RoleSystem,
-			Content: []message.Content{message.TextContent("you are a test agent")},
-		},
-		Messages: []message.Message{
-			{Role: message.RoleUser, Content: []message.Content{message.TextContent("first prompt — nothing on disk yet")}},
-		},
+	msgs := []message.Message{
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("first prompt — nothing on disk yet")}},
 	}
 
-	req, _ := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, nil, 1024, false, "claude-test")
+	req, _ := a.projectMessagesWithModel(msgs, systemSnapshot(t, "you are a test agent"), causal.Slice[message.ProviderTranslation]{}, nil, 1024, false, "claude-test")
 
 	require.Len(t, req.Messages, 1)
 	require.NotEmpty(t, req.Messages[0].Content)
 	assert.Nil(t, req.Messages[0].Content[0].CacheControl, "single message must not carry cache_control")
 }
 
-// TestProjectBlock_StableAcrossCalls verifies that the same input
+// TestProjectMessages_StableAcrossCalls verifies that the same input
 // produces byte-identical request output across two consecutive calls.
-// This is the cache-prefix invariant in its weakest form (no chalkboard
-// inputs yet — same Block in, same bytes out).
-func TestProjectBlock_StableAcrossCalls(t *testing.T) {
+// Cache-prefix invariant in its weakest form (same input → same bytes).
+func TestProjectMessages_StableAcrossCalls(t *testing.T) {
 	a := &Anthropic{}
-	block := &message.Block{
-		Header: &message.Message{
-			Role:    message.RoleSystem,
-			Content: []message.Content{message.TextContent("you are a test agent")},
-		},
-		Messages: []message.Message{
-			{Role: message.RoleUser, Content: []message.Content{message.TextContent("ciao")}},
-			{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("salve")}},
-			{Role: message.RoleUser, Content: []message.Content{message.TextContent("again")}},
-		},
+	msgs := []message.Message{
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("ciao")}},
+		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("salve")}},
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("again")}},
 	}
 	tools := []provider.Tool{
 		{Name: "alpha", Description: "first", Parameters: fakeSchema()},
 		{Name: "beta", Description: "second", Parameters: fakeSchema()},
 	}
 
-	r1, _ := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
-	r2, _ := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+	snap := systemSnapshot(t, "you are a test agent")
+	r1, _ := a.projectMessagesWithModel(msgs, snap, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
+	r2, _ := a.projectMessagesWithModel(msgs, snap, causal.Slice[message.ProviderTranslation]{}, tools, 1024, false, "claude-test")
 
 	b1, err := json.Marshal(r1)
 	require.NoError(t, err)
 	b2, err := json.Marshal(r2)
 	require.NoError(t, err)
 
-	assert.Equal(t, string(b1), string(b2), "projectBlockWithModel must produce byte-identical output for the same input")
+	assert.Equal(t, string(b1), string(b2), "projectMessagesWithModel must produce byte-identical output for the same input")
 }
 
-// TestProjectBlock_OAuthSystemArray verifies that the OAuth path
+// TestProjectMessages_OAuthSystemArray verifies that the OAuth path
 // produces a two-element system array with the Claude Code identity
 // prefix first, the credo (with its override preamble) second, and
 // cache_control attached to the last (credo) block.
-func TestProjectBlock_OAuthSystemArray(t *testing.T) {
+func TestProjectMessages_OAuthSystemArray(t *testing.T) {
 	a := &Anthropic{}
-	block := &message.Block{
-		Header: &message.Message{
-			Role:    message.RoleSystem,
-			Content: []message.Content{message.TextContent("you are figaro")},
-		},
-		Messages: []message.Message{
-			{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
-		},
+	msgs := []message.Message{
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
 	}
 
-	req, _ := a.projectBlockWithModel(block, nil, causal.Slice[message.ProviderTranslation]{}, nil, 1024, true, "claude-test")
+	req, _ := a.projectMessagesWithModel(msgs, systemSnapshot(t, "you are figaro"), causal.Slice[message.ProviderTranslation]{}, nil, 1024, true, "claude-test")
 
 	require.Len(t, req.System, 2, "OAuth system must have two blocks: Claude Code identity + credo")
 	assert.Contains(t, req.System[0].Text, "Claude Code")

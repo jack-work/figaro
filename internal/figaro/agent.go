@@ -1,21 +1,18 @@
 package figaro
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"text/template"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"github.com/jack-work/figaro/internal/causal"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/credo"
 	"github.com/jack-work/figaro/internal/message"
@@ -27,19 +24,17 @@ import (
 	"github.com/jack-work/figaro/internal/tool"
 )
 
-// --- Event types (actor mailbox) ---
-
 type eventType int
 
 const (
 	eventUserPrompt eventType = iota
-	eventLLMDelta
-	eventLLMDone
-	eventLLMError
 	eventToolOutput
 	eventToolResult
 	eventInterrupt
 	eventRehydrate
+	eventFigaro    // routed to figStream on Recv
+	eventTransLive // routed to translog live on Recv
+	eventSendComplete
 )
 
 type event struct {
@@ -47,18 +42,7 @@ type event struct {
 
 	// eventUserPrompt
 	text       string
-	chalkboard *rpc.ChalkboardInput // optional client-supplied state input
-
-	// eventLLMDelta
-	delta       string
-	contentType message.ContentType
-
-	// eventLLMDone
-	message     *message.Message
-	translation *message.ProviderTranslation // wire-form projection from the provider's accumulator
-
-	// eventLLMError, eventToolResult (when isErr)
-	err error
+	chalkboard *rpc.ChalkboardInput
 
 	// eventToolOutput, eventToolResult
 	toolCallID string
@@ -70,9 +54,19 @@ type event struct {
 	// eventToolResult
 	content []message.Content
 	isErr   bool
+	err     error
 
 	// eventRehydrate
 	rehydratePatch message.Patch
+
+	// eventFigaro
+	figMsg message.Message
+
+	// eventTransLive
+	transPayload []json.RawMessage
+
+	// eventSendComplete
+	sendSummary provider.ProjectionSummary
 }
 
 // Config holds everything needed to construct an Agent.
@@ -97,12 +91,12 @@ type Config struct {
 	Chalkboard          *chalkboard.State
 	ChalkboardTemplates *template.Template
 
-	// TranslationLog is the per-aria, per-provider translation
-	// timeline cache. Optional — nil = no translation caching, the
+	// TranslationStream is the per-aria, per-provider translation
+	// stream cache. Optional — nil = no translation caching, the
 	// provider re-renders from IR on every Send. Caller opens the
-	// log at arias/{id}/translations/{provider}.jsonl. The Agent
-	// calls Close on Kill.
-	TranslationLog store.TranslationLog
+	// stream at arias/{id}/translations/{provider}.jsonl via
+	// Backend.OpenTranslation. The Agent calls Close on Kill.
+	TranslationStream store.Stream[[]json.RawMessage]
 }
 
 // Agent is the goroutine-based implementation of Figaro.
@@ -120,25 +114,23 @@ type Agent struct {
 	root       string
 	maxTokens  int
 	tools      *tool.Registry
-	memStore   *store.MemStore
+	figStream  store.Stream[message.Message]
 	backend    store.Backend // nil = ephemeral
 
 	// Chalkboard. Optional. *chalkboard.State owns the in-memory
-	// snapshot AND the on-disk cache file. cbTmpls renders patches
-	// to system-reminder bodies. The agent's drain loop is the only
-	// goroutine that touches these fields; no locking needed.
+	// snapshot AND the on-disk cache file.
 	chalkboard *chalkboard.State
 	cbTmpls    *template.Template
 
-	// TranslationLog persists per-figaro-message wire projections
-	// for one provider. Read on Send to populate the cache; written
-	// on each StreamEvent.Done that carries a Translation. Closed
-	// on Kill. Optional — ephemeral arias run without a log.
-	translog store.TranslationLog
+	// translog persists per-figaro-message wire projections for one
+	// provider. Read on Send to populate the cache; written on each
+	// StreamEvent.Done that carries a Translation. Closed on Kill.
+	// Optional — ephemeral arias run without a translation cache.
+	translog store.Stream[[]json.RawMessage]
 
 	// inProgressTic is a mutable user-role Message accumulated
 	// between LLM sends. Built up by eventUserPrompt and
-	// eventToolResult; finalized (memStore.Append + send) when
+	// eventToolResult; finalized (figStream.Append + send) when
 	// ready. Nil between turns.
 	inProgressTic *message.Message
 
@@ -199,8 +191,7 @@ func NewAgent(cfg Config) *Agent {
 		backend:     cfg.Backend,
 		chalkboard:  cfg.Chalkboard,
 		cbTmpls:     cfg.ChalkboardTemplates,
-		translog:    cfg.TranslationLog,
-		inbox:       NewInbox(ctx),
+		translog:    cfg.TranslationStream,
 		subscribers: make(map[chan rpc.Notification]struct{}),
 		createdAt:   time.Now(),
 		lastActive:  time.Now(),
@@ -208,13 +199,13 @@ func NewAgent(cfg Config) *Agent {
 		done:        make(chan struct{}),
 	}
 
-	// Create the store — either persistent (FileStore → MemStore chain)
-	// or ephemeral (standalone MemStore).
-	a.memStore = a.newStore()
+	a.figStream = a.newStream()
+	if a.translog == nil {
+		a.translog = store.NewMemStream[[]json.RawMessage]()
+	}
+	a.inbox = NewInbox(ctx, a.figStream, a.translog)
 
-	// Seed cumulative token counters from persisted Usage so restored
-	// arias don't start over at zero.
-	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(a.memStore.Context())
+	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Durable()))
 
 	// Open per-figaro event log.
 	if cfg.LogDir != "" {
@@ -246,115 +237,42 @@ func NewAgent(cfg Config) *Agent {
 	return a
 }
 
-// bootstrapIfNeeded runs the Scribe once and emits a state-only tic
-// (a user-role Message with no Content, only Patches) when the aria
-// has no chalkboard system.prompt yet. Idempotent: a restored aria
-// whose chalkboard.json already carries system.prompt is left alone.
-//
-// Requires both a chalkboard.State and a Scribe; either being nil
-// short-circuits (ephemeral arias have no chalkboard, and tests may
-// pass nil scribes).
-func (a *Agent) bootstrapIfNeeded() {
-	if a.chalkboard == nil || a.scribe == nil {
-		return
-	}
-	snap := a.chalkboard.Snapshot()
-	if _, ok := snap["system.prompt"]; ok {
-		return // already bootstrapped (restored aria)
-	}
-	credoCtx := credo.CurrentContext(a.prov.Name(), a.id)
-	prompt, err := a.scribe.Build(credoCtx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap credo build: %v\n", a.id, err)
-		return
-	}
-
-	patch := chalkboard.Patch{Set: map[string]json.RawMessage{}}
-	setStr := func(key, val string) {
-		if b, err := json.Marshal(val); err == nil {
-			patch.Set[key] = b
-		}
-	}
-	setStr("system.prompt", prompt)
-	setStr("system.model", a.model)
-	setStr("system.provider", a.prov.Name())
-
-	// Stage E: skills travel as their own chalkboard key. The
-	// Anthropic provider formats and emits them as a separate
-	// system block at projection time.
-	if skills, err := a.scribe.Skills(); err == nil && len(skills) > 0 {
-		catalog := skillCatalog(skills)
-		if b, err := json.Marshal(catalog); err == nil {
-			patch.Set["system.skills"] = b
-		}
-	}
-
-	tic := message.Message{
-		Role:      message.RoleUser,
-		Patches:   []message.Patch{patch},
-		Timestamp: time.Now().UnixMilli(),
-	}
-	if _, err := a.memStore.Append(tic); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap append tic: %v\n", a.id, err)
-		return
-	}
-	a.chalkboard.Apply(patch)
-	if err := a.chalkboard.Save(); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap chalkboard save: %v\n", a.id, err)
-	}
-	if err := a.memStore.Flush(); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap memStore flush: %v\n", a.id, err)
-	}
-}
-
-// skillCatalog projects the loaded Skill values into the wire shape
-// stored at chalkboard.system.skills. Content bodies are excluded —
-// the model uses the read tool to load a skill's body when invoking
-// it; the catalog is just name/description/path.
-func skillCatalog(skills []credo.Skill) []credo.SkillCatalogEntry {
-	out := make([]credo.SkillCatalogEntry, len(skills))
-	for i, s := range skills {
-		out[i] = credo.SkillCatalogEntry{
-			Name:        s.Name,
-			Description: s.Description,
-			FilePath:    s.FilePath,
-		}
-	}
-	return out
-}
-
 // newStore creates the appropriate store for this agent.
-// With a Backend: opens a per-aria Downstream, wraps in MemStore.
-// Without: a standalone MemStore (ephemeral).
-func (a *Agent) newStore() *store.MemStore {
+
+// newStream opens the canonical figaro IR Stream for this agent.
+// With a Backend: opens the per-aria FileStream and seeds AriaMeta
+// via the backend. Without: a MemStream (ephemeral).
+func (a *Agent) newStream() store.Stream[message.Message] {
 	if a.backend == nil {
-		return store.NewMemStore()
+		return store.NewMemStream[message.Message]()
 	}
-	ds, err := a.backend.Open(a.id)
+	stream, err := a.backend.Open(a.id)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "figaro %s: backend open error: %v (falling back to ephemeral)\n", a.id, err)
-		return store.NewMemStore()
+		return store.NewMemStream[message.Message]()
 	}
 	// Persist metadata for aria restoration on angelus restart.
 	// Preserve any existing label from disk if Config didn't supply one.
 	label := a.label
 	if label == "" {
-		if existing := ds.Meta(); existing != nil {
+		if existing, _ := a.backend.Meta(a.id); existing != nil {
 			label = existing.Label
 		}
 	}
-	ds.SetMeta(&store.AriaMeta{
+	if err := a.backend.SetMeta(a.id, &store.AriaMeta{
 		Provider: a.prov.Name(),
 		Model:    a.model,
 		Cwd:      a.cwd,
 		Root:     a.root,
 		Label:    label,
-	})
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "figaro %s: backend set meta: %v\n", a.id, err)
+	}
 	a.label = label
-	return store.NewMemStoreWith(ds)
+	return stream
 }
 
-func (a *Agent) ID() string        { return a.id }
+func (a *Agent) ID() string         { return a.id }
 func (a *Agent) SocketPath() string { return a.socketPath }
 
 func (a *Agent) SetModel(model string) {
@@ -365,19 +283,17 @@ func (a *Agent) SetModel(model string) {
 }
 
 // SetLabel updates the aria's label and persists it to disk. Empty
-// string clears the label. Returns any error from the persistence
-// flush. Safe to call during an active turn — Flush snapshots the
-// current WAL without altering it.
+// string clears the label. No-op for ephemeral arias (no backend to
+// write meta to).
 func (a *Agent) SetLabel(label string) error {
 	a.mu.Lock()
 	a.label = label
 	a.mu.Unlock()
 
-	ds := a.memStore.Downstream()
-	if ds == nil {
-		return nil // ephemeral — no file to update
+	if a.backend == nil {
+		return nil
 	}
-	meta := ds.Meta()
+	meta, _ := a.backend.Meta(a.id)
 	if meta == nil {
 		meta = &store.AriaMeta{
 			Provider: a.prov.Name(),
@@ -387,8 +303,7 @@ func (a *Agent) SetLabel(label string) error {
 		}
 	}
 	meta.Label = label
-	ds.SetMeta(meta)
-	return a.memStore.Flush()
+	return a.backend.SetMeta(a.id, meta)
 }
 
 func (a *Agent) Prompt(text string) {
@@ -414,12 +329,24 @@ func (a *Agent) Interrupt() {
 	a.inbox.SendSelfish(event{typ: eventInterrupt})
 }
 
+// TODO: Do we really need to do a full pass over this just to unwrap it?
 func (a *Agent) Context() []message.Message {
-	block := a.memStore.Context()
-	if block == nil {
+	return unwrapMessages(a.figStream.Durable())
+}
+
+// unwrapMessages extracts the .Payload field from each Entry, returning
+// the conversation as a flat []message.Message. Caller must treat the
+// result as read-only — it shares storage with the stream's mirror.
+func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
+	if len(entries) == 0 {
 		return nil
 	}
-	return block.Messages
+	out := make([]message.Message, len(entries))
+	for i, e := range entries {
+		out[i] = e.Payload
+		out[i].LogicalTime = e.LT
+	}
+	return out
 }
 
 func (a *Agent) Subscribe() <-chan rpc.Notification {
@@ -455,7 +382,7 @@ func (a *Agent) Info() FigaroInfo {
 		state = "active"
 	}
 
-	ctxTokens, ctxExact := tokens.ContextSize(a.memStore.Context())
+	ctxTokens, ctxExact := tokens.ContextSize(msgs)
 
 	return FigaroInfo{
 		ID:               a.id,
@@ -486,9 +413,10 @@ func (a *Agent) Kill() {
 	a.subscribers = nil
 	a.mu.Unlock()
 
-	// Flush and close the store (writes final state to disk).
-	if err := a.memStore.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: store close error: %v\n", a.id, err)
+	// Close the figaro IR stream (per-line append already handles
+	// durability — Close is a flush hook for future buffered modes).
+	if err := a.figStream.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "figaro %s: figaro stream close error: %v\n", a.id, err)
 	}
 
 	// Flush the chalkboard snapshot to its on-disk cache.
@@ -520,7 +448,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 	defer close(a.done)
 
 	for {
-		panicked := a.drainLoopProtected(ctx)
+		panicked := a.actProtected(ctx)
 		if !panicked {
 			return // clean exit (context cancelled)
 		}
@@ -532,12 +460,13 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		default:
 		}
 
-		// Reset store — re-create with persistence if configured.
-		// The downstream file has the last flushed state (pre-crash),
-		// so NewMemStoreWith will seed from the last known-good snapshot.
+		// Reset the figaro IR stream — re-open the persistent backing
+		// (or a fresh MemStream for ephemeral). For backed streams,
+		// the on-disk NDJSON has the last persisted state and
+		// FileStream replays it at Open.
 		a.mu.Lock()
-		a.memStore = a.newStore()
-		a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(a.memStore.Context())
+		a.figStream = a.newStream()
+		a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Durable()))
 		a.mu.Unlock()
 
 		// End any active otel span.
@@ -554,7 +483,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		// Swap the inbox. Old goroutines captured the old inbox —
 		// their SendSelfish calls will return false (closed).
 		a.inbox.Close()
-		a.inbox = NewInbox(ctx)
+		a.inbox = NewInbox(ctx, a.figStream, a.translog)
 
 		// Reset turn state.
 		a.pendingTools = 0
@@ -588,13 +517,13 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		// the stderr line below, the model does not.
 
 		fmt.Fprintf(os.Stderr, "figaro %s: restarted after panic\n", a.id)
-		// Loop back to restart drainLoopProtected.
+		// Loop back to restart actProtected.
 	}
 }
 
-// drainLoopProtected runs the drain loop with panic recovery.
+// actProtected runs the drain loop with panic recovery.
 // Returns true if it exited due to a panic, false for clean exit.
-func (a *Agent) drainLoopProtected(ctx context.Context) (panicked bool) {
+func (a *Agent) actProtected(ctx context.Context) (panicked bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			// Log the panic and stack trace.
@@ -605,21 +534,21 @@ func (a *Agent) drainLoopProtected(ctx context.Context) (panicked bool) {
 		}
 	}()
 
-	a.drainLoop(ctx)
+	a.act(ctx)
 	return false
 }
 
-// drainLoop is the single event loop (actor model).
-// All events flow through the Inbox. Patient events (user prompts) are
-// held until the current turn yields. Selfish events (LLM/tool) are
-// delivered immediately. The loop just processes whatever Recv returns.
-func (a *Agent) drainLoop(ctx context.Context) {
+// act is the single event loop. Recv → synchronize → dispatch.
+// synchronize translates non-figaro events into figaro events and
+// handles condense; the dispatch switch only sees figaro / control
+// events.
+func (a *Agent) act(ctx context.Context) {
 	for {
-		evt, ok := a.inbox.Recv()
+		raw, ok := a.inbox.Recv()
 		if !ok {
-			return // inbox closed (context cancelled or panic recovery)
+			return
 		}
-
+		for _, evt := range a.synchronize(raw) {
 		switch evt.typ {
 
 		case eventUserPrompt:
@@ -657,7 +586,7 @@ func (a *Agent) drainLoop(ctx context.Context) {
 			// (set at bootstrap; refreshed by figaro.rehydrate).
 			// Ephemeral arias without a chalkboard fall back to a
 			// per-prompt scribe build for parity.
-			a.systemPrompt = a.resolveSystemPrompt()
+			a.systemPrompt = a.getSystemPrompt()
 
 			// Build/extend the in-progress tic with the user's text content,
 			// then finalize and send.
@@ -665,112 +594,11 @@ func (a *Agent) drainLoop(ctx context.Context) {
 			a.inProgressTic.Content = append(a.inProgressTic.Content, message.TextContent(evt.text))
 			a.finalizeAndSend(inbox)
 
-		case eventLLMDelta:
-			if a.interrupted {
-				continue
-			}
-			figOtel.Event(a.turnCtx, "figaro.notify.delta",
-				attribute.String("text", evt.delta),
-			)
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodDelta,
-				Params:  rpc.DeltaParams{Text: evt.delta, ContentType: evt.contentType},
-			})
+		case eventFigaro:
+			a.handleFigaro(evt.figMsg)
 
-		case eventLLMDone:
-			if a.interrupted {
-				fmt.Fprintf(os.Stderr, "agent: event=LLMDone (post-interrupt, suppressed)\n")
-				continue
-			}
-			if evt.message == nil {
-				a.fanOut(rpc.Notification{
-					JSONRPC: "2.0",
-					Method:  rpc.MethodError,
-					Params:  rpc.ErrorParams{Message: "no response from provider"},
-				})
-				a.endTurn("error: no response from provider")
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "agent: event=LLMDone stop_reason=%s\n", evt.message.StopReason)
-
-			// Append assistant message to store.
-			lt, err := a.memStore.Append(*evt.message)
-			if err != nil {
-				a.fanOut(rpc.Notification{
-					JSONRPC: "2.0",
-					Method:  rpc.MethodError,
-					Params:  rpc.ErrorParams{Message: fmt.Sprintf("append assistant message: %s", err)},
-				})
-				a.endTurn("error: append assistant message")
-				continue
-			}
-			evt.message.LogicalTime = lt
-
-			// Persist the wire-format projection from the provider's
-			// accumulator to the per-aria translation log, keyed by
-			// the assistant message's just-allocated LT.
-			if a.translog != nil && evt.translation != nil {
-				if _, err := a.translog.Append(
-					[]uint64{lt},
-					evt.translation.Messages,
-					evt.translation.Fingerprint,
-				); err != nil {
-					fmt.Fprintf(os.Stderr, "figaro %s: translation log append: %v\n", a.id, err)
-				}
-			}
-
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodMessage,
-				Params:  rpc.MessageParams{LogicalTime: lt, Message: *evt.message},
-			})
-
-			// Check for tool calls.
-			var toolCalls []message.Content
-			for _, c := range evt.message.Content {
-				if c.Type == message.ContentToolCall {
-					toolCalls = append(toolCalls, c)
-				}
-			}
-
-			if len(toolCalls) == 0 {
-				// No tool calls — turn is complete.
-				a.endTurn(string(evt.message.StopReason))
-				continue
-			}
-
-			// Execute tools sequentially: start the first one,
-			// queue the rest.
-			inbox := a.inbox // capture for goroutine
-			a.pendingToolCalls = toolCalls[1:]
-			a.pendingTools = len(toolCalls)
-			tc := toolCalls[0]
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodToolStart,
-				Params: rpc.ToolStartParams{
-					ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-					Arguments: tc.Arguments,
-				},
-			})
-			go a.runToolAsync(a.turnCtx, inbox, tc)
-
-		case eventLLMError:
-			// If we were interrupted, the provider's ctx.Done() will
-			// usually surface as an error here. Swallow it silently —
-			// the interrupt handler already ended the turn.
-			if a.interrupted {
-				fmt.Fprintf(os.Stderr, "agent: event=LLMError (post-interrupt, suppressed) err=%v\n", evt.err)
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "agent: event=LLMError err=%v\n", evt.err)
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodError,
-				Params:  rpc.ErrorParams{Message: evt.err.Error()},
-			})
-			a.endTurn("error: " + evt.err.Error())
+		case eventSendComplete:
+			a.handleSendComplete(evt.sendSummary, evt.err)
 
 		case eventToolOutput:
 			if a.interrupted {
@@ -852,24 +680,14 @@ func (a *Agent) drainLoop(ctx context.Context) {
 				Patches:   []message.Patch{evt.rehydratePatch},
 				Timestamp: time.Now().UnixMilli(),
 			}
-			lt, err := a.memStore.Append(tic)
-			if err != nil {
+			if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
 				fmt.Fprintf(os.Stderr, "figaro %s: rehydrate append: %v\n", a.id, err)
 				continue
 			}
-			tic.LogicalTime = lt
 			a.chalkboard.Apply(evt.rehydratePatch)
 			if err := a.chalkboard.Save(); err != nil {
 				fmt.Fprintf(os.Stderr, "figaro %s: rehydrate chalkboard save: %v\n", a.id, err)
 			}
-			if err := a.memStore.Flush(); err != nil {
-				fmt.Fprintf(os.Stderr, "figaro %s: rehydrate flush: %v\n", a.id, err)
-			}
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodMessage,
-				Params:  rpc.MessageParams{LogicalTime: lt, Message: tic},
-			})
 
 		case eventInterrupt:
 			// Idempotent: ignore if we're already idle or already interrupted.
@@ -894,6 +712,7 @@ func (a *Agent) drainLoop(ctx context.Context) {
 				Params:  rpc.ErrorParams{Message: "interrupted"},
 			})
 			a.endTurn("interrupted")
+		}
 		}
 	}
 }
@@ -927,26 +746,20 @@ func (a *Agent) endTurn(reason string) {
 	// Accumulate token counts from the latest assistant message.
 	a.mu.Lock()
 	a.lastActive = time.Now()
-	if msgs := a.memStore.Context(); msgs != nil {
-		for i := len(msgs.Messages) - 1; i >= 0; i-- {
-			if m := msgs.Messages[i]; m.Usage != nil {
-				a.tokensIn += m.Usage.InputTokens
-				a.tokensOut += m.Usage.OutputTokens
-				a.cacheRead += m.Usage.CacheReadTokens
-				a.cacheWrite += m.Usage.CacheWriteTokens
-				break // only count the latest turn's usage
-			}
+	for _, e := range a.figStream.ScanFromEnd(64) {
+		if u := e.Payload.Usage; u != nil {
+			a.tokensIn += u.InputTokens
+			a.tokensOut += u.OutputTokens
+			a.cacheRead += u.CacheReadTokens
+			a.cacheWrite += u.CacheWriteTokens
+			break // only count the latest turn's usage
 		}
 	}
 	a.mu.Unlock()
 
-	// Flush to disk at turn boundary (no-op if no downstream FileStore).
-	if err := a.memStore.Flush(); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: store flush error: %v\n", a.id, err)
-	}
-
-	// Persist the chalkboard snapshot at the same lifecycle point as
-	// MemStore.Flush.
+	// Persist the chalkboard snapshot at turn boundary. The figaro IR
+	// stream needs no explicit checkpoint — FileStream already
+	// fsyncs each Append.
 	if a.chalkboard != nil {
 		if err := a.chalkboard.Save(); err != nil {
 			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard snapshot save: %v\n", a.id, err)
@@ -964,19 +777,17 @@ func (a *Agent) endTurn(reason string) {
 }
 
 // startLLMStream sends the current context to the LLM in a background
-// goroutine. Events are pushed as selfish into the captured inbox.
+// goroutine. The provider blocks on Send while pushing events into
+// the translog (live deltas, durable final). On return the goroutine
+// posts eventSendComplete so the act loop can persist the projection
+// summary and reset turn state.
 func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
-	block := a.memStore.Context()
-	if block == nil {
-		inbox.SendSelfish(event{typ: eventLLMError, err: fmt.Errorf("empty context")})
+	msgs := unwrapMessages(a.figStream.Durable())
+	if len(msgs) == 0 {
+		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("empty context")})
 		return
 	}
 
-	// Snapshot the chalkboard for the provider — system.prompt and
-	// any other harness-managed keys ride here. Ephemeral arias have
-	// no chalkboard; in that case we synthesize a transient snapshot
-	// from a.systemPrompt so the provider's "read system.prompt" path
-	// works uniformly.
 	var snapshot chalkboard.Snapshot
 	if a.chalkboard != nil {
 		snapshot = a.chalkboard.Snapshot()
@@ -986,49 +797,102 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 		}
 	}
 
-	// Assemble the prior-translations slice indexed in lockstep
-	// with block.Messages. Lookups against the log fill positions
-	// where a cached entry exists; misses leave a zero
-	// ProviderTranslation (cache miss → provider re-renders).
-	priorTranslations := a.buildPriorTranslations(block.Messages)
+	// TODO: I don't think we necessarily expect there to be same number provider translations as there
+	// are figaro messages.
+	// This should not be called buildPriorTranslations, it should instead just get a slice of the
+	// translog based on a range of figaro logical times.  That's one of the reasons why we should be
+	// using a common interface when interacting with the stream.  I want to be able to get indexed
+	// events from either topic more or less arbitrarily.  The inbox / bus signaling system may as well
+	// be that interface.  Can just be called log, with something of a "topic" or "kind" primitive
+	// all of which are indexed by a figaro logical time
+	priorTranslations := a.buildPriorTranslations(msgs)
 
-	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context\n", len(block.Messages))
-	ch, summary, err := a.prov.Send(ctx, block, snapshot, priorTranslations, a.toolDefs(), a.maxTokens)
-	if err != nil {
-		inbox.SendSelfish(event{typ: eventLLMError, err: fmt.Errorf("provider send: %w", err)})
+	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context\n", len(msgs))
+	go func() {
+		var (
+			summary provider.ProjectionSummary
+			err     error
+		)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("provider send panic: %v", r)
+				}
+			}()
+			summary, err = a.prov.Send(ctx, msgs, snapshot, priorTranslations, a.toolDefs(), a.maxTokens, inbox)
+		}()
+		inbox.SendSelfish(event{typ: eventSendComplete, sendSummary: summary, err: err})
+	}()
+}
+
+// handleFigaro fans out a figaro IR entry as MethodMessage and
+// triggers tool dispatch on assistant messages with tool_use content.
+// The figStream.Append already happened — either via inbox routing
+// (for figaro events from external sources) or via synchronize (for
+// figaro events synthesized from a decoded translog condense).
+func (a *Agent) handleFigaro(msg message.Message) {
+	tail, ok := a.figStream.PeekTail()
+	if !ok {
 		return
 	}
-
-	// Persist the projected wire bytes per Send. Idempotent — entries
-	// that already match (figaro_lts + fingerprint + bytes) are
-	// skipped so the file doesn't grow on cache-hit re-Sends.
-	a.persistProjectionSummary(block.Messages, summary)
-
-	go func() {
-		for sev := range ch {
-			if sev.Delta != "" {
-				if !inbox.SendSelfish(event{
-					typ: eventLLMDelta,
-					delta: sev.Delta, contentType: sev.ContentType,
-				}) {
-					return // inbox closed
-				}
-			}
-			if sev.Done {
-				if sev.Err != nil {
-					inbox.SendSelfish(event{typ: eventLLMError, err: sev.Err})
-				} else {
-					inbox.SendSelfish(event{
-						typ:         eventLLMDone,
-						message:     sev.Message,
-						translation: sev.Translation,
-					})
-				}
-				return
-			}
+	stamped := tail.Payload
+	stamped.LogicalTime = tail.LT
+	a.fanOut(rpc.Notification{
+		JSONRPC: "2.0",
+		Method:  rpc.MethodMessage,
+		Params:  rpc.MessageParams{LogicalTime: tail.LT, Message: stamped},
+	})
+	if stamped.Role != message.RoleAssistant {
+		return
+	}
+	var toolCalls []message.Content
+	for _, c := range stamped.Content {
+		if c.Type == message.ContentToolCall {
+			toolCalls = append(toolCalls, c)
 		}
-		inbox.SendSelfish(event{typ: eventLLMError, err: fmt.Errorf("stream ended unexpectedly")})
-	}()
+	}
+	if len(toolCalls) == 0 {
+		return
+	}
+	a.pendingToolCalls = toolCalls[1:]
+	a.pendingTools = len(toolCalls)
+	tc := toolCalls[0]
+	a.fanOut(rpc.Notification{
+		JSONRPC: "2.0",
+		Method:  rpc.MethodToolStart,
+		Params: rpc.ToolStartParams{
+			ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
+			Arguments: tc.Arguments,
+		},
+	})
+	go a.runToolAsync(a.turnCtx, a.inbox, tc)
+}
+
+// handleSendComplete fans out the turn-end notification. Condense and
+// projection persistence have already happened in synchronize.
+func (a *Agent) handleSendComplete(_ provider.ProjectionSummary, sendErr error) {
+	if a.interrupted {
+		return
+	}
+	if sendErr != nil {
+		a.fanOut(rpc.Notification{
+			JSONRPC: "2.0",
+			Method:  rpc.MethodError,
+			Params:  rpc.ErrorParams{Message: sendErr.Error()},
+		})
+		a.endTurn("error: " + sendErr.Error())
+		return
+	}
+	if a.pendingTools == 0 {
+		var stopReason message.StopReason
+		if last, ok := a.figStream.PeekTail(); ok {
+			stopReason = last.Payload.StopReason
+		}
+		if stopReason == "" {
+			stopReason = message.StopEnd
+		}
+		a.endTurn(string(stopReason))
+	}
 }
 
 // runToolAsync executes a tool in a background goroutine and pushes
@@ -1132,285 +996,7 @@ func truncLog(s string, n int) string {
 // needed). When that tic is finalized via finalizeAndSend, the patch
 // rides with it as part of the same Message — the IR record of "this
 // turn brought these state changes."
-func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
-	if a.chalkboard == nil || input == nil {
-		return
-	}
-
-	// Convert wire-shape patch (rpc.ChalkboardPatch) to chalkboard.Patch.
-	var clientPatch chalkboard.Patch
-	if input.Patch != nil {
-		clientPatch = chalkboard.Patch{Set: input.Patch.Set, Remove: input.Patch.Remove}
-	}
-
-	// system.* is harness-reserved (set by bootstrap / rehydrate);
-	// clients can't manage those keys. Strip them from the snapshot
-	// the client's Context is diffed against, so unmentioned system.*
-	// keys aren't interpreted as removals.
-	snap := withoutSystemNS(a.chalkboard.Snapshot())
-
-	var combined chalkboard.Patch
-	switch {
-	case input.Context != nil && input.Patch != nil:
-		// Drift-detection: diff context vs persisted; apply patch on top.
-		ctx := withoutSystemNS(chalkboard.Snapshot(input.Context))
-		drift := ctx.Diff(snap)
-		combined = chalkboard.Merge(drift, clientPatch)
-	case input.Context != nil:
-		// Context-only: server diffs and applies.
-		ctx := withoutSystemNS(chalkboard.Snapshot(input.Context))
-		combined = ctx.Diff(snap)
-	case input.Patch != nil:
-		// Patch-only: apply directly.
-		combined = clientPatch
-	}
-
-	if combined.IsEmpty() {
-		return
-	}
-
-	// Attach to the in-progress tic.
-	a.ensureInProgressTic()
-	a.inProgressTic.Patches = append(a.inProgressTic.Patches, combined)
-
-	// Advance the chalkboard's in-memory snapshot. (Persisted to disk
-	// at endTurn via chalkboard.Save.)
-	a.chalkboard.Apply(combined)
-}
-
-// Rehydrate re-runs the Scribe and writes its output to
-// chalkboard.system.* as a fresh state-only tic. The diff (vs the
-// current chalkboard) is what actually gets stored; if nothing
-// changed, no tic is appended and the response reports an empty
-// patch.
-//
-// dryRun computes the diff but doesn't persist anything — used by
-// `figaro rehydrate --dry-run` to preview what would change.
-//
-// Returns the keys set / removed by the patch. Errors from the
-// scribe (e.g. credo.md unreadable) bubble up unchanged.
-func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied bool, err error) {
-	if a.chalkboard == nil || a.scribe == nil {
-		return nil, nil, false, fmt.Errorf("rehydrate requires both a chalkboard and a scribe")
-	}
-	credoCtx := credo.CurrentContext(a.prov.Name(), a.id)
-	prompt, buildErr := a.scribe.Build(credoCtx)
-	if buildErr != nil {
-		return nil, nil, false, fmt.Errorf("rehydrate build: %w", buildErr)
-	}
-
-	desired := chalkboard.Snapshot{}
-	setStr := func(key, val string) {
-		if b, mErr := json.Marshal(val); mErr == nil {
-			desired[key] = b
-		}
-	}
-	setStr("system.prompt", prompt)
-	setStr("system.model", a.model)
-	setStr("system.provider", a.prov.Name())
-
-	// Stage E: rehydrate also reloads skills from disk and folds
-	// them into system.skills. Empty catalogs (no skills directory)
-	// produce no entry — the diff will Remove system.skills if it
-	// previously existed.
-	if skills, sErr := a.scribe.Skills(); sErr == nil && len(skills) > 0 {
-		catalog := skillCatalog(skills)
-		if b, mErr := json.Marshal(catalog); mErr == nil {
-			desired["system.skills"] = b
-		}
-	}
-
-	// Diff against just the system.* slice of current — leave any
-	// non-system keys (cwd, datetime, etc.) untouched.
-	currentSystem := systemNSOnly(a.chalkboard.Snapshot())
-	patch := desired.Diff(currentSystem)
-
-	for k := range patch.Set {
-		set = append(set, k)
-	}
-	removed = append(removed, patch.Remove...)
-
-	if patch.IsEmpty() || dryRun {
-		return set, removed, false, nil
-	}
-
-	// Apply via the inbox so we don't race the drain loop.
-	a.inbox.SendPatient(event{typ: eventRehydrate, rehydratePatch: patch})
-	return set, removed, true, nil
-}
-
-// withoutSystemNS returns a clone of the snapshot with all keys
-// under the harness-reserved system.* namespace removed. Used to
-// keep client-supplied Context inputs from accidentally erasing
-// bootstrap / rehydrate state during diffing.
-func withoutSystemNS(s chalkboard.Snapshot) chalkboard.Snapshot {
-	out := make(chalkboard.Snapshot, len(s))
-	for k, v := range s {
-		if strings.HasPrefix(k, "system.") {
-			continue
-		}
-		out[k] = v
-	}
-	return out
-}
-
-// systemNSOnly is the symmetric helper: returns a clone containing
-// only system.* keys. Used by Rehydrate to compute its diff against
-// the harness-managed slice of state.
-func systemNSOnly(s chalkboard.Snapshot) chalkboard.Snapshot {
-	out := chalkboard.Snapshot{}
-	for k, v := range s {
-		if strings.HasPrefix(k, "system.") {
-			out[k] = v
-		}
-	}
-	return out
-}
-
-// persistProjectionSummary writes the bytes the provider just
-// projected for this Send into the per-aria translation log,
-// keyed by the figaro logical times each entry covers.
-//
-// Idempotent: an entry is skipped when the log already has a
-// matching entry for those FigaroLTs with the same fingerprint
-// and byte-equal Messages. Only deltas land on disk.
-//
-// State-only figaro tics that emit no wire output get an empty
-// translation entry (Messages = nil) so coverage stays continuous
-// across the figaro timeline. State-only tics that DO contribute
-// to the wire (the bootstrap tic contributes the system block array
-// for system.prompt-establishing patches) are recorded with the
-// system bytes as their messages.
-//
-// No-op when the agent has no translog (ephemeral aria) or the
-// summary is empty.
-func (a *Agent) persistProjectionSummary(msgs []message.Message, summary provider.ProjectionSummary) {
-	if a.translog == nil {
-		return
-	}
-	fp := summary.Fingerprint
-
-	// Per-figaro-message entries. Each non-nil PerMessage[i] gets
-	// its own translation row. Nil entries (state-only tics that
-	// emit no wire output) are skipped — looking up a translation
-	// for those flts naturally misses; no need for empty rows.
-	for i, msg := range msgs {
-		var raw json.RawMessage
-		if i < len(summary.PerMessage) {
-			raw = summary.PerMessage[i]
-		}
-		if raw == nil {
-			continue
-		}
-		// Skip the bootstrap (or rehydrate) flt that carries
-		// system.prompt — its translation row is the system block
-		// array, written below. Without the skip we'd shadow the
-		// system entry with the (typically empty) per-message entry.
-		if msg.LogicalTime == summary.SystemFLT && summary.SystemFLT != 0 {
-			continue
-		}
-		a.maybeAppendTranslation([]uint64{msg.LogicalTime}, []json.RawMessage{raw}, fp)
-	}
-
-	// System block array entry — tied to the figaro tic that last
-	// established system.prompt.
-	if summary.SystemFLT != 0 && len(summary.System) > 0 {
-		a.maybeAppendTranslation([]uint64{summary.SystemFLT}, summary.System, fp)
-	}
-}
-
-// maybeAppendTranslation writes a translation entry only when the
-// existing on-disk entry (if any) for the same figaro_lts differs
-// in fingerprint or bytes. Used by persistProjectionSummary to keep
-// the log idempotent across Sends with no semantic change.
-func (a *Agent) maybeAppendTranslation(figaroLTs []uint64, msgs []json.RawMessage, fp string) {
-	if len(figaroLTs) == 0 {
-		return
-	}
-	// Lookup by the first FK (today every entry covers exactly one
-	// figaro_lt). If an existing entry matches by fingerprint and
-	// bytes, skip the append.
-	if existing, ok := a.translog.Lookup(figaroLTs[0]); ok {
-		if existing.Fingerprint == fp && rawMessagesEqual(existing.Messages, msgs) {
-			return
-		}
-	}
-	if _, err := a.translog.Append(figaroLTs, msgs, fp); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: translation log append: %v\n", a.id, err)
-	}
-}
-
-// rawMessagesEqual reports whether two []json.RawMessage are byte-
-// equal in the same order. Nil and empty slices compare equal.
-func rawMessagesEqual(a, b []json.RawMessage) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if !bytes.Equal(a[i], b[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-// invalidateTranslogIfStale clears the translation log when any
-// persisted entry's fingerprint disagrees with the provider's current
-// Fingerprint(). The log is a derivable cache; on a config change
-// we throw it out and let subsequent assistant turns repopulate.
-//
-// No-op when there is no translog or the provider has no fingerprint
-// (empty fingerprints always match — opt-out for providers that
-// don't care about caching invalidation).
-func (a *Agent) invalidateTranslogIfStale() {
-	if a.translog == nil || a.prov == nil {
-		return
-	}
-	want := a.prov.Fingerprint()
-	if want == "" {
-		return
-	}
-	for _, e := range a.translog.All() {
-		if e.Fingerprint == "" {
-			continue // entry without a fingerprint — treat as compatible
-		}
-		if e.Fingerprint != want {
-			if err := a.translog.Clear(); err != nil {
-				fmt.Fprintf(os.Stderr, "figaro %s: translation log clear: %v\n", a.id, err)
-				return
-			}
-			fmt.Fprintf(os.Stderr,
-				"figaro %s: cleared stale translation log (fingerprint mismatch: stored=%q, current=%q)\n",
-				a.id, e.Fingerprint, want)
-			return
-		}
-	}
-}
-
-// buildPriorTranslations returns a CausalSlice indexed in lockstep
-// with msgs: index i holds the cached ProviderTranslation for
-// msgs[i].LogicalTime when known, or a zero entry when missing.
-// No translation log → fully empty slice; the provider treats
-// every message as a cache miss.
-func (a *Agent) buildPriorTranslations(msgs []message.Message) causal.Slice[message.ProviderTranslation] {
-	out := make([]message.ProviderTranslation, len(msgs))
-	if a.translog != nil {
-		for i, m := range msgs {
-			if entry, ok := a.translog.Lookup(m.LogicalTime); ok {
-				out[i] = message.ProviderTranslation{
-					Messages:    entry.Messages,
-					Fingerprint: entry.Fingerprint,
-				}
-			}
-		}
-	}
-	return causal.Wrap(out)
-}
-
-// resolveSystemPrompt returns the system prompt for the next Send.
-// Reads from chalkboard.system.prompt (set at bootstrap) when available,
-// otherwise falls back to a per-prompt Scribe build (ephemeral arias).
-func (a *Agent) resolveSystemPrompt() string {
+func (a *Agent) getSystemPrompt() string {
 	if a.chalkboard != nil {
 		snap := a.chalkboard.Snapshot()
 		if raw, ok := snap["system.prompt"]; ok {
@@ -1445,9 +1031,9 @@ func (a *Agent) ensureInProgressTic() {
 	}
 }
 
-// finalizeAndSend appends the in-progress tic to the memStore (which
-// allocates its LogicalTime) and starts the LLM stream. Clears
-// inProgressTic. No-op if inProgressTic is nil.
+// finalizeAndSend appends the in-progress tic to the figaro IR
+// stream (which allocates its LogicalTime) and starts the LLM
+// stream. Clears inProgressTic. No-op if inProgressTic is nil.
 func (a *Agent) finalizeAndSend(inbox *Inbox) {
 	if a.inProgressTic == nil {
 		return
@@ -1455,8 +1041,7 @@ func (a *Agent) finalizeAndSend(inbox *Inbox) {
 	tic := *a.inProgressTic
 	a.inProgressTic = nil
 
-	lt, err := a.memStore.Append(tic)
-	if err != nil {
+	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
 		fmt.Fprintf(os.Stderr, "figaro %s: append tic: %v\n", a.id, err)
 		a.fanOut(rpc.Notification{
 			JSONRPC: "2.0",
@@ -1466,25 +1051,16 @@ func (a *Agent) finalizeAndSend(inbox *Inbox) {
 		a.endTurn("error: append tic")
 		return
 	}
-	tic.LogicalTime = lt
-	a.fanOut(rpc.Notification{
-		JSONRPC: "2.0",
-		Method:  rpc.MethodMessage,
-		Params:  rpc.MessageParams{LogicalTime: lt, Message: tic},
-	})
 
 	a.startLLMStream(a.turnCtx, inbox)
 }
 
 // sumUsage totals InputTokens / OutputTokens / CacheReadTokens /
-// CacheWriteTokens across a block's messages. Used to seed cumulative
+// CacheWriteTokens across the messages. Used to seed cumulative
 // counters after restore or panic recovery so they reflect the full
 // history, not just this process's lifetime.
-func sumUsage(block *message.Block) (in, out, cacheRead, cacheWrite int) {
-	if block == nil {
-		return 0, 0, 0, 0
-	}
-	for _, m := range block.Messages {
+func sumUsage(msgs []message.Message) (in, out, cacheRead, cacheWrite int) {
+	for _, m := range msgs {
 		if m.Usage != nil {
 			in += m.Usage.InputTokens
 			out += m.Usage.OutputTokens
