@@ -1,6 +1,17 @@
 # Aria Log Unification — v3 (Message as the singular timeline primitive)
 
-> **Status:** plan / proposal. Plan-only commits to date. Stage A previously shipped (A1 + A2) introducing a separate `LogEntry` type; that direction was reverted on review. This v3 spec consolidates the simpler design that emerged from the design discussion: **one IR type per timeline event — `Message`**, with patches and per-event baggage attached as fields.
+> **Status:** **implemented** through Stages A → E (commits below). Treat this document as historical record — the code is now the source of truth for *what*, this is the source of truth for *why*. The single open follow-up is the prefix-byte-stability regression (see § Stage F).
+>
+> **Implementing commits (in order):**
+> - Stage A1 (v3): `4b63a32` — relocate `Patch` to `internal/message/`; new `Translation` (formerly Baggage) shape on Message.
+> - Stage A2 (v3): `71abab0` — extend `Message` with `Patches`, drop scalar `ToolCallID`/`ToolName` Message-level fields.
+> - A2 follow-up: `24cdea1` — drop back-compat baggage read; new shape exclusively.
+> - Stage A.5: `716f317` — `ContentToolResult` content type; `RoleToolResult` retires.
+> - Stage B: `4f58754` — on-disk move to `arias/{id}/aria.jsonl + meta.json`.
+> - Stage C.1–C.6: `88a1c94` (`*State`) → `716f317` (ContentToolResult, also Stage A.5) → `af2b90d` (in-progress tic, inline patch rendering, drop `chalkboard.Store`) → `b837483` (bootstrap state-only tic) → `169c407` (`figaro.rehydrate` + `system.*` reserved namespace) → `4fda852` (trim credo `Context` to `{Provider, FigaroID, Version}`).
+> - Stage D.1: `bb01853` — chalkboard snapshot threaded through `Provider.Send`; `system.prompt` resolution moves to the provider.
+> - Stage D.2a–f: `8ebae45` (rename Baggage→Translation) → `52ce579` (`internal/causal`) → `910cfb7` (`Provider.Fingerprint()` + `OpenAccumulator()`) → `5676df5` (translations to parallel per-aria file; `Translation` field dropped from `message.Message`) → `181459a` (regenerate-on-fingerprint-mismatch) → `7593521` (write-through translation persistence on Send).
+> - Stage E: `b7db923` — skills move to `chalkboard.system.skills` as a structured catalog; provider emits as a separate system block. Same commit fixes a cache-lookup bug (see § Bugs surfaced during implementation).
 >
 > **Revision history:**
 > - **v1 (initial):** patches as standalone LogEntries in a discriminated union with messages.
@@ -365,11 +376,21 @@ This stage can land separately from Stage A or be folded in. I lean folding in �
 
 ### Stage F — Tests, benchmarks, docs
 
-- Prefix byte-stability regression extended to cover bootstrap entry + multiple chalkboard mutations + tool result tics.
-- Replay safety: synthetic patch baggage round-trips correctly.
-- `agents.md` updated with the v3 invariants (single-typed Block.Messages; system.* reserved; bootstrap/rehydrate as state-only tics; renderers under causal masking; in-progress-tic pattern in the agent).
-- `ARCHITECTURE.md` updated for the new on-disk layout, the chalkboard.system namespace, and the rehydrate RPC.
-- CHANGELOG entry covering the storage migration and the IR shape change.
+**Status:** partial. The agents.md and ARCHITECTURE.md sweeps were done in 2026-05-02 (commit pending at handoff). The prefix byte-stability regression is **outstanding** and is the most important remaining item — see § Outstanding work below.
+
+- ~~`agents.md` updated with the v3 invariants (single-typed Block.Messages; system.* reserved; bootstrap/rehydrate as state-only tics; renderers under causal masking; in-progress-tic pattern in the agent).~~ Done.
+- ~~`ARCHITECTURE.md` updated for the new on-disk layout, the chalkboard.system namespace, and the rehydrate RPC.~~ Done.
+- **Pending:** Prefix byte-stability regression extended to cover bootstrap entry + multiple chalkboard mutations + tool result tics. The original `internal/provider/anthropic/prefix_stability_test.go` was deleted in Stage C.3 when the inline-rendering refactor restructured the renderer surface. What survives (`TestProjectBlock_StableAcrossCalls`, `TestProjectBlock_CacheBreakpoints`, `TestProjectBlock_OAuthSystemArray`) is the *weakest* form: same input → same bytes, single call. Multi-turn / chalkboard-mutation / tool-result / skills-block invariance is unproven by tests.
+- **Pending:** Replay safety — synthetic translation entries round-trip correctly through the per-aria translation log.
+- **Pending:** CHANGELOG entry covering the storage migration and the IR shape change.
+
+## Bugs surfaced during implementation
+
+- **Stage E cache-lookup admitted non-message-shaped translation entries.** The Stage D.2f write-through persistence introduced translation log entries for the system block array, keyed by the bootstrap flt. The cache-hit path in `projectMessages` used `json.Unmarshal` to decode any cached entry as a `nativeMessage`. Lax JSON decoding turned the `systemBlock`-shaped bytes (`{type, text}`) into `nativeMessage{Role: "", Content: nil}`, which the Anthropic API rejects with `messages.0.role: Input should be 'user', 'assistant'`. Fixed in `b7db923` (Stage E commit) by validating `cached.Role` before treating an entry as a usable per-message projection. Regression test in `internal/provider/anthropic/projection_test.go`. **Lesson:** any future translation-log entry kind that doesn't have a "role" field needs the same validation — or, better, a `Kind` discriminator on `TranslationEntry` so the per-message lookup path doesn't even consider non-message entries. Deferred; for now the role-validation fix is sufficient.
+
+## Outstanding work
+
+The prefix-byte-stability regression is the single most important loose end. The `cache_control` invariant (#11 in `agents.md`) depends on byte-equality of the prefix (system blocks + tools + messages[0..N-2]) across requests within an aria's lifetime. Without a regression test covering bootstrap + chalkboard mutations + tool result tics + the new skills system block, a future change can silently degrade Anthropic's cache_read tokens — the runtime cost shows up as bills, not as test failures. Restoration is straightforward: a new test file that builds a Block, projects it, mutates the chalkboard, projects again, and asserts byte-equality of `req.System ++ req.Tools ++ req.Messages[:len-1]`.
 
 ## Resolved decisions (v3 summary)
 

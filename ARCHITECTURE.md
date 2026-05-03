@@ -41,13 +41,13 @@ ______________________________________________________________________
 
 ```
 cmd/figaro/
-├── main.go              CLI entry point, multi-call binary (figaro / q)
+├── main.go              CLI entry point, multi-call binary (figaro / q / l)
 └── detach_unix.go       OS-specific process detach for daemon fork
 
 internal/
 ├── angelus/
 │   ├── angelus.go       Supervisor: socket listener, PID monitor, lifecycle
-│   ├── protocol.go      Angelus-side JSON-RPC handlers (create/kill/list/bind/resolve)
+│   ├── protocol.go      Angelus-side JSON-RPC handlers (create/kill/list/bind/resolve); per-aria chalkboard.State + TranslationLog opening on create/RestoreArias
 │   ├── registry.go      In-memory figaro registry + PID↔figaro index
 │   └── client.go        Typed client for talking to angelus
 ├── auth/
@@ -56,39 +56,46 @@ internal/
 │   ├── anthropic.go     Anthropic OAuth endpoint config
 │   ├── login.go         Interactive PKCE login flow
 │   └── pkce.go          PKCE challenge generation
+├── causal/
+│   └── causal.go        Slice[T] / Sink[T] — typed prefix views for translators
 ├── config/
 │   └── config.go        TOML config loading (~/.config/figaro/)
 ├── credo/
-│   ├── credo.go         System prompt assembly (template + skills)
+│   ├── credo.go         Credo body assembly (just the templated body now); Skill / SkillCatalogEntry / FormatSkillCatalog
 │   └── default_credo.md Embedded default personality
 ├── figaro/
-│   ├── figaro.go        Figaro interface (ID, Prompt, Context, Info, Kill)
-│   ├── agent.go         Single-inbox actor: event loop, LLM streaming, tool exec
+│   ├── figaro.go        Figaro interface (ID, Prompt, Context, Info, Kill, Rehydrate)
+│   ├── agent.go         Single-inbox actor: event loop, LLM streaming, tool exec, in-progress-tic accumulation, bootstrap, rehydrate, translation-log persistence
+│   ├── inbox.go         Selfish/patient priority mailbox
 │   ├── protocol.go      Agent-side JSON-RPC socket server + subscriber mgmt
 │   └── client.go        Typed client for talking to a figaro agent
 ├── jsonrpc/
 │   └── jsonrpc.go       Minimal JSON-RPC 2.0 client/server (NDJSON framing)
 ├── message/
-│   └── message.go       Provider-agnostic message IR + Block type
+│   ├── message.go       Provider-agnostic Message IR + Block + Content types
+│   ├── patch.go         Patch type (canonical home; chalkboard aliases it)
+│   └── translation.go   ProviderTranslation (per-provider wire-format projection)
 ├── otel/
 │   └── otel.go          OpenTelemetry init (file exporter, span helpers)
 ├── provider/
-│   ├── provider.go      Provider interface (Send, Models, SetModel)
+│   ├── provider.go      Provider interface (Name, Fingerprint, Models, SetModel, OpenAccumulator, Send); ProjectionSummary; NativeAccumulator
 │   └── anthropic/
-│       └── anthropic.go Anthropic Messages API (direct HTTP+SSE, no SDK)
+│       └── anthropic.go Anthropic Messages API (direct HTTP+SSE, no SDK); inline patch rendering as <system-reminder> blocks; per-message + system-block bytes captured in ProjectionSummary
 ├── rpc/
 │   ├── rpc.go           Shared notification types (Delta, ToolStart, Done, etc.)
 │   └── methods.go       Method constants + request/response types for both sockets
 ├── store/
 │   ├── store.go         Store interface (Context, Append, Branch, LeafTime)
 │   ├── mem.go           In-memory store with optional downstream persistence
-│   ├── file.go          JSON file store (atomic write-to-tmp + rename)
-│   └── ariastore.go     Aria listing/removal for restore-on-restart
+│   ├── file.go          Aria FileStore — directory of {aria.jsonl, meta.json}
+│   ├── file_backend.go  FileBackend (per-aria FileStore opener)
+│   ├── ariastore.go     Aria listing/removal for restore-on-restart
+│   └── translog.go      TranslationLog interface + FileTranslationLog (per-aria, per-provider NDJSON)
 ├── chalkboard/
-│   ├── chalkboard.go    Snapshot, Patch, Entry, Diff/Apply/Merge
+│   ├── chalkboard.go    Snapshot, Patch (alias), Entry, Diff/Apply/Merge
+│   ├── state.go         *State per-aria handle (snapshot + on-disk cache)
 │   ├── render.go        Embedded text/template rendering, override loader
 │   ├── lint.go          Phrasing lint (imperative / length / dup)
-│   ├── store.go         Store interface + FileStore (log + snapshot files)
 │   └── templates/       Embedded default body templates per key
 ├── tool/
 │   ├── tool.go          Tool interface (Name, Execute, Parameters)
@@ -191,9 +198,13 @@ Each prompt runs under a **turn-scoped** context derived from the agent's lifeti
 5. Stragglers from the cancelled provider/tool goroutines surface as `eventLLMError` / `eventToolResult`; the `a.interrupted` guard suppresses them silently — no panic, no races, no duplicate notifications.
 6. The next prompt (patient event) releases through `Yield()` and the agent is fully reusable.
 
-### Provider-Agnostic IR with Baggage
+### Provider-Agnostic IR with Translation Cache
 
-Messages use a canonical `message.Message` type. Each message carries a `Baggage` map (`map[string]json.RawMessage`) keyed by provider name. The originating provider stashes its native wire format in baggage. On re-send to the same provider, it reads from baggage directly — no round-trip through the IR.
+Messages use a canonical `message.Message` type. Per-aria, per-provider wire-format projections live in a **parallel timeline**: `arias/{id}/translations/{provider}.jsonl` (append-only NDJSON; one entry per figaro logical time covered, plus a system-block-array entry tied to the bootstrap flt). Entries are `{alt, figaro_lts, messages, fingerprint}`; `alt` is the translation timeline's own monotonic counter, decoupled from figaro lt; `figaro_lts` is the foreign-key list back to the figaro timeline.
+
+The translation log is a **derivable cache**, not a source of truth: `aria.jsonl` is canonical, and the log can be regenerated by walking the figaro prefix through `Provider.EncodeOutbound`. On startup, if any persisted entry's fingerprint disagrees with `Provider.Fingerprint()`, the agent clears the log and lets it repopulate. Stage D.2f write-through persistence captures the wire bytes the provider *actually sent* on each Send (per-message + system-block array), so a restored aria sends byte-identical bytes back through the cache_control prefix.
+
+On re-send to the same provider, the agent passes a `causal.Slice[ProviderTranslation]` parallel-indexed with `block.Messages` to `Provider.Send`; the provider reuses cached entries when present and re-renders from the IR on miss.
 
 ### Store Layering
 
@@ -222,21 +233,24 @@ The agent runs inside `runWithRecovery`. On panic: log stack trace to stderr, re
 
 ### Chalkboard
 
-A **chalkboard** is the union of an aria's configuration and per-turn context — every structured value about the aria that is not a conversation message. Examples: cwd, datetime, model, label, project root, last truncation event.
+A **chalkboard** is the union of an aria's configuration and per-turn context — every structured value about the aria that is not a conversation message. Examples: cwd, datetime, model, label, project root, last truncation event. The `system.*` key namespace is harness-reserved (set at bootstrap, refreshed on `figaro.rehydrate`); clients must not write under it.
 
 ```
-CLI ──prompt + context──▶ Agent ──patch──▶ ContextLayer (diff vs prior, persist)
+CLI ──prompt + context──▶ Agent (eventUserPrompt)
+                            │
+                            ├─▶ applyChalkboardInput → chalkboard.State.Apply
+                            │      (patch attached to in-progress tic)
+                            │
+                            ▼
+                          finalizeAndSend → memStore.Append(tic) → Provider.Send
                                     │
-                                    ├─▶ chalkboard.Render → []RenderedEntry
-                                    │
-                                    ▼
-                          Provider.Send(block, tools, reminders, …)
-                                    │
-                                    ▼
-                          renderTag / renderTool → wire payload
+                                    ▼ (inside Provider)
+                          projectMessages renders Patches as inline
+                          <system-reminder> content blocks on the same
+                          user-role wire message
 ```
 
-The patch is the canonical unit:
+The patch is the canonical unit (lives in `internal/message/`, aliased from `internal/chalkboard/`):
 
 ```go
 type Patch struct {
@@ -248,22 +262,23 @@ type Patch struct {
 **Wire protocol.** `figaro.prompt` extends with an optional `chalkboard` field:
 
 - `patch` only → apply patch directly
-- `context` only (a snapshot) → server diffs vs persisted, applies the diff
+- `context` only (a snapshot) → server diffs vs persisted, applies the diff (system.* keys excluded from the diff)
 - `context` + `patch` → diff for drift detection, patch on top
 - neither → no-op
 
-**Persistence.** Per-aria, append-only patch log + cached current snapshot, sharing a logical-time space with the conversation log. Files at `~/.local/state/figaro/chalkboards/<id>/{log.json,snapshot.json}`. The snapshot file is a derived cache rewritten at `endTurn`; the log is the source of truth and can replay any past state.
+**Persistence.** Per-aria, in-line on the user-role tic. The tic Message carries `Patches []Patch` directly in `aria.jsonl`; the chalkboard's current snapshot is cached at `arias/{id}/chalkboard.json` (atomic rewrite at `endTurn` — `chalkboard.State.Save`). The figaro timeline is the source of truth; the snapshot is replayable from it.
 
-**Templates.** Each chalkboard key has a body template (Go `text/template`, embedded via `//go:embed` from `internal/chalkboard/templates/`). User overrides at `~/.config/figaro/chalkboard/<key>.tmpl`. Keys without a template are stored but not surfaced to the model.
+**Bootstrap.** On a fresh aria, `NewAgent` runs the Scribe once, snapshots the system prompt + skills catalog into `chalkboard.system.{prompt,model,provider,skills}`, and emits a state-only tic carrying that patch. Subsequent turns read the system prompt from the chalkboard snapshot — Scribe doesn't re-run per turn.
 
-**Provider rendering.** Each provider chooses how to surface reminders. Anthropic ships two:
+**Rehydrate.** `figaro.rehydrate [--dry-run]` re-runs the Scribe and reloads skills from disk; the diff is applied as a state-only tic. Used after editing `~/.config/figaro/credo.md` or adding/removing skill files.
 
-- **tag** (default) — wraps each rendered body in `<system-reminder name="…">…</system-reminder>` blocks appended to the latest user message.
-- **tool** — emits a synthetic `assistant: tool_use(…)` + `user: tool_result(…)` pair after the latest user message. The synthetic tool is **not** declared in `req.Tools`; the model reads it as transcript-only context.
+**Templates.** Each chalkboard key has a body template (Go `text/template`, embedded via `//go:embed` from `internal/chalkboard/templates/`). User overrides at `~/.config/figaro/chalkboard/<key>.tmpl`. Keys without a template are stored but not surfaced to the model. Templates today are read-only on `Entry.NewString` / `IsRemoval`; `Entry.Old` is plumbed but unused by the default templates.
 
-Both renderers attach exclusively to the leaf user message. Neither mutates `req.System`, `req.Tools`, or any earlier message — invariant #11 in `agents.md`.
+**Provider rendering.** Patches are rendered **inline** as `<system-reminder name="…">…</system-reminder>` text blocks on the same user-role wire message that carries the tic's text and tool_results. There is no separate "renderer" surface anymore (the old `renderTag` / `renderTool` files retired in Stage C.3). Rendering happens per-tic during `projectMessages`, with a running snapshot threaded through the loop so a future "render full snapshot every turn" policy can swap in without restructuring.
 
-**Cache control.** With the prefix byte-stable, `markCacheBreakpoints` sets `cache_control: ephemeral` on the last system block, the last tool definition, and the second-to-last message (the leaf at the most recent `endTurn` = everything that was on disk before the new prompt arrived). Caching engages on auth paths that allow client-controlled `cache_control`. The OAuth + `claude-code-20250219` beta path silently ignores it (verified empirically; documented in `markCacheBreakpoints`).
+**System blocks (Anthropic).** The system block array carries up to three blocks at projection time: the OAuth Claude Code identity prefix (when OAuth), the credo body (from `chalkboard.system.prompt`), and the skills catalog (from `chalkboard.system.skills`, formatted by `credo.FormatSkillCatalog`). Each is captured cache_control-free in the per-Send `ProjectionSummary` and persisted to the translation log keyed by the system flt.
+
+**Cache control.** With the prefix byte-stable, `markCacheBreakpoints` sets `cache_control: ephemeral` on the last system block, the last tool definition, and the second-to-last message (the leaf at the most recent `endTurn` = everything that was on disk before the new prompt arrived). Caching engages on auth paths that allow client-controlled `cache_control`. The OAuth + `claude-code-20250219` beta path silently ignores it (verified empirically; documented in `markCacheBreakpoints` and in `plans/cache-control/prompt-caching-limitations.md`).
 
 ______________________________________________________________________
 
@@ -303,15 +318,17 @@ $XDG_RUNTIME_DIR/figaro/     # (or /tmp/figaro)
 ├── figaros/
 │   ├── a1b2c3d4.jsonl       # per-agent event log
 │   └── ...
-├── arias/
-│   ├── a1b2c3d4.json        # persisted conversation (FileStore)
-│   └── ...
-└── chalkboards/
+└── arias/
     ├── a1b2c3d4/
-    │   ├── log.json         # NDJSON of patch entries, append-only
-    │   └── snapshot.json    # cached current snapshot, atomic rewrite at endTurn
+    │   ├── aria.jsonl       # canonical figaro timeline (NDJSON of message.Message)
+    │   ├── chalkboard.json  # cached current chalkboard snapshot (atomic rewrite at endTurn)
+    │   ├── meta.json        # AriaMeta (provider, model, cwd, root, label) — transitional
+    │   └── translations/
+    │       └── anthropic.jsonl  # per-provider translation cache, append-only NDJSON
     └── ...
 ```
+
+Patches no longer have their own `chalkboards/<id>/log.json` — they ride on the user-role tic Messages in `aria.jsonl` directly (Stage C). Translation cache is per-provider in its own NDJSON file (Stage D.2d), not a field on Message.
 
 ______________________________________________________________________
 
@@ -321,23 +338,26 @@ ______________________________________________________________________
 
 | Method | Direction | Purpose |
 |--------|-----------|---------|
-| `figaro.create` | CLI → Angelus | Create new agent (provider, model) |
+| `figaro.create` | CLI → Angelus | Create new agent (provider, model, ephemeral) |
 | `figaro.kill` | CLI → Angelus | Terminate agent + remove aria |
 | `figaro.list` | CLI → Angelus | List all agents with metadata |
 | `pid.bind` | CLI → Angelus | Bind PID → figaro |
 | `pid.resolve` | CLI → Angelus | Look up figaro for PID |
 | `pid.unbind` | CLI → Angelus | Remove PID binding |
 | `angelus.status` | CLI → Angelus | Uptime, counts |
+| `angelus.save_bindings` | CLI → Angelus | Persist PID bindings before `figaro rest` (`--keep-pids`) |
 
 ### Figaro Socket (`<id>.sock`)
 
 | Method | Direction | Purpose |
 |--------|-----------|---------|
-| `figaro.prompt` | CLI → Agent | Enqueue prompt (returns immediately) |
+| `figaro.prompt` | CLI → Agent | Enqueue prompt (returns immediately); optional `chalkboard` field carries patch / context |
 | `figaro.interrupt` | CLI → Agent | Cancel the current turn (Ctrl+C / Ctrl+D) |
 | `figaro.context` | CLI → Agent | Get full message history |
 | `figaro.info` | CLI → Agent | Agent metadata |
 | `figaro.set_model` | CLI → Agent | Hot-swap model |
+| `figaro.set_label` | CLI → Agent | Set human-readable aria label |
+| `figaro.rehydrate` | CLI → Agent | Re-run Scribe + reload skills; emit state-only tic with the diff (`--dry-run` returns the diff without applying) |
 | `stream.delta` | Agent → CLI | LLM text chunk (notification) |
 | `stream.thinking` | Agent → CLI | Extended thinking chunk |
 | `stream.tool_start` | Agent → CLI | Tool execution beginning |
