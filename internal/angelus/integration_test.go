@@ -58,17 +58,17 @@ func (m *mockProviderForIntegration) Decode(raw []json.RawMessage) ([]message.Me
 	return out, nil
 }
 
-func (m *mockProviderForIntegration) Send(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, bus provider.Bus) (provider.ProjectionSummary, error) {
+func (m *mockProviderForIntegration) Encode(_ context.Context, _ []message.Message, _ chalkboard.Snapshot, _ causal.Slice[message.ProviderTranslation], _ []provider.Tool, _ int) ([]byte, provider.ProjectionSummary, error) {
+	return nil, provider.ProjectionSummary{Fingerprint: m.Fingerprint()}, nil
+}
+func (m *mockProviderForIntegration) Send(_ context.Context, _ []byte, _ provider.Bus) ([]json.RawMessage, error) {
 	nm := mockIntegNative{
 		Role:       "assistant",
 		Content:    []map[string]interface{}{{"type": "text", "text": "42"}},
 		StopReason: "end_turn",
 	}
 	raw, _ := json.Marshal(nm)
-	return provider.ProjectionSummary{
-		Fingerprint: m.Fingerprint(),
-		Assistant:   []json.RawMessage{raw},
-	}, nil
+	return []json.RawMessage{raw}, nil
 }
 
 func TestIntegration_CreateAndPrompt(t *testing.T) {

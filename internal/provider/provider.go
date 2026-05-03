@@ -24,64 +24,63 @@ type Tool struct {
 	Parameters  interface{} `json:"parameters"`
 }
 
-// ProjectionSummary is the synchronous output of Send. Carries the
-// wire bytes the projection actually emitted (for cache persistence)
-// plus the assembled assistant native the consumer should condense
-// the live tail into.
+// ProjectionSummary is the synchronous output of Encode. Carries the
+// per-message wire bytes the projection emitted, for cache persistence
+// in the translation stream. The assembled assistant native bytes
+// arrive separately as the return value of Send.
 type ProjectionSummary struct {
 	PerMessage  []json.RawMessage
 	System      []json.RawMessage
 	SystemFLT   uint64
 	Fingerprint string
-	// Assistant is the assembled native message bytes for this turn.
-	// One element today; reserved for N:1 native:figaro in future.
-	Assistant []json.RawMessage
 }
 
 // Event is what the provider pushes to the Bus during Send. Each
-// event lands on the translation stream's live tail. The act loop
-// condenses the tail into one durable entry on SendComplete.
+// event lands on the translation stream's live tail.
 type Event struct {
 	Payload []json.RawMessage
 }
 
-// Bus is the single publish surface the provider uses while
-// streaming. Implemented by the agent's Inbox.
+// Bus is the publish surface the provider uses while streaming.
+// Implemented by the agent's Inbox.
 type Bus interface {
 	Push(Event)
 }
 
-// Provider is the LLM provider interface. Pure transport + codec —
-// no IR construction. Send pushes native events into the supplied
-// Bus; the act loop decodes them into IR via Decode.
+// Provider is the LLM provider interface.
+//
+// Encode + Decode are the translator surface (pure functions over IR
+// and wire bytes). Send is pure transport: it takes pre-encoded bytes
+// and ships them, pushing parsed native events to the bus and
+// returning the assembled assistant native bytes when the stream
+// closes.
 type Provider interface {
 	Name() string
 
-	// Fingerprint hashes the provider's current encoder configuration.
-	// Stored alongside translation entries; mismatch invalidates them.
+	// Fingerprint hashes the encoder configuration. Stored alongside
+	// translation entries; mismatch invalidates them.
 	Fingerprint() string
 
 	Models(ctx context.Context) ([]ModelInfo, error)
 	SetModel(model string)
 
-	// Send encodes msgs into the API request, opens the HTTP stream,
-	// and pushes parsed native events into target. Live entries for
-	// in-flight chunks (deltas), one durable entry for the assembled
-	// final native message (with stop_reason + usage embedded).
-	// Returns the projection summary so the caller can persist it.
-	// Blocks until the stream closes or ctx is cancelled.
-	Send(
+	// Encode produces the API request body bytes plus the per-message
+	// projection summary. Pure function over conversation state.
+	Encode(
 		ctx context.Context,
 		msgs []message.Message,
 		snapshot chalkboard.Snapshot,
 		priorTranslations causal.Slice[message.ProviderTranslation],
 		tools []Tool,
 		maxTokens int,
-		bus Bus,
-	) (ProjectionSummary, error)
+	) ([]byte, ProjectionSummary, error)
 
-	// Decode is the reverse of the Send projection: native bytes to
-	// IR. Used by the act loop to advance the figaro stream from a
-	// translation entry the provider just landed.
+	// Decode reverses encoded native bytes back into IR.
 	Decode(raw []json.RawMessage) ([]message.Message, error)
+
+	// Send transports the pre-encoded body to the API, pushes parsed
+	// native events into the bus as they arrive, and returns the
+	// assembled assistant native bytes when the stream closes.
+	// Pure transport — no encoding.
+	Send(ctx context.Context, body []byte, bus Bus) ([]json.RawMessage, error)
 }

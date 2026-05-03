@@ -71,7 +71,8 @@ type event struct {
 	transPayload []json.RawMessage
 
 	// eventSendComplete
-	sendSummary provider.ProjectionSummary
+	sendSummary   provider.ProjectionSummary
+	sendAssistant []json.RawMessage
 }
 
 // Config holds everything needed to construct an Agent.
@@ -796,45 +797,41 @@ func (a *Agent) endTurn(reason string) {
 	a.inbox.Yield()
 }
 
-// startLLMStream sends the current context to the LLM in a background
-// goroutine. The provider blocks on Send while pushing events into
-// the translog (live deltas, durable final). On return the goroutine
-// posts eventSendComplete so the act loop can persist the projection
-// summary and reset turn state.
+// startLLMStream encodes the current context into wire bytes
+// (translation), then ships them via Send in a background goroutine.
+// On return the goroutine posts eventSendComplete with the assembled
+// assistant native bytes; synchronize condenses + decodes from there.
 func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 	msgs := unwrapMessages(a.figStream.Durable())
 	if len(msgs) == 0 {
 		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("empty context")})
 		return
 	}
-
-	snapshot := a.chalkboard.Snapshot()
-
-	// TODO: I don't think we necessarily expect there to be same number provider translations as there
-	// are figaro messages.
-	// This should not be called buildPriorTranslations, it should instead just get a slice of the
-	// translog based on a range of figaro logical times.  That's one of the reasons why we should be
-	// using a common interface when interacting with the stream.  I want to be able to get indexed
-	// events from either topic more or less arbitrarily.  The inbox / bus signaling system may as well
-	// be that interface.  Can just be called log, with something of a "topic" or "kind" primitive
-	// all of which are indexed by a figaro logical time
-	priorTranslations := a.buildPriorTranslations(msgs)
-
+	body, summary, err := a.prov.Encode(ctx, msgs, a.chalkboard.Snapshot(), a.buildPriorTranslations(msgs), a.toolDefs(), a.maxTokens)
+	if err != nil {
+		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("encode: %w", err)})
+		return
+	}
 	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d messages in context\n", len(msgs))
 	go func() {
 		var (
-			summary provider.ProjectionSummary
-			err     error
+			assistant []json.RawMessage
+			sendErr   error
 		)
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					err = fmt.Errorf("provider send panic: %v", r)
+					sendErr = fmt.Errorf("provider send panic: %v", r)
 				}
 			}()
-			summary, err = a.prov.Send(ctx, msgs, snapshot, priorTranslations, a.toolDefs(), a.maxTokens, inbox)
+			assistant, sendErr = a.prov.Send(ctx, body, inbox)
 		}()
-		inbox.SendSelfish(event{typ: eventSendComplete, sendSummary: summary, err: err})
+		inbox.SendSelfish(event{
+			typ:           eventSendComplete,
+			sendSummary:   summary,
+			sendAssistant: assistant,
+			err:           sendErr,
+		})
 	}()
 }
 

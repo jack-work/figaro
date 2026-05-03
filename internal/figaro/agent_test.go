@@ -34,12 +34,11 @@ func (m *mockProvider) Models(ctx context.Context) ([]provider.ModelInfo, error)
 func (m *mockProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
 	return mockDecodeNative(raw)
 }
-func (m *mockProvider) Send(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, bus provider.Bus) (provider.ProjectionSummary, error) {
-	assembled := mockPushAssistant(bus, m.response)
-	return provider.ProjectionSummary{
-		Fingerprint: m.Fingerprint(),
-		Assistant:   []json.RawMessage{assembled},
-	}, nil
+func (m *mockProvider) Encode(_ context.Context, _ []message.Message, _ chalkboard.Snapshot, _ causal.Slice[message.ProviderTranslation], _ []provider.Tool, _ int) ([]byte, provider.ProjectionSummary, error) {
+	return nil, provider.ProjectionSummary{Fingerprint: m.Fingerprint()}, nil
+}
+func (m *mockProvider) Send(ctx context.Context, body []byte, bus provider.Bus) ([]json.RawMessage, error) {
+	return []json.RawMessage{mockPushAssistant(bus, m.response)}, nil
 }
 
 // mockNativeAssistant is the test envelope: one text block + stop_reason.
@@ -294,16 +293,15 @@ func (p *panicProvider) Models(ctx context.Context) ([]provider.ModelInfo, error
 func (p *panicProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
 	return mockDecodeNative(raw)
 }
-func (p *panicProvider) Send(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, bus provider.Bus) (provider.ProjectionSummary, error) {
+func (p *panicProvider) Encode(_ context.Context, _ []message.Message, _ chalkboard.Snapshot, _ causal.Slice[message.ProviderTranslation], _ []provider.Tool, _ int) ([]byte, provider.ProjectionSummary, error) {
+	return nil, provider.ProjectionSummary{Fingerprint: p.Fingerprint()}, nil
+}
+func (p *panicProvider) Send(ctx context.Context, body []byte, bus provider.Bus) ([]json.RawMessage, error) {
 	if p.panicCount > 0 {
 		p.panicCount--
 		panic("simulated crash")
 	}
-	assembled := mockPushAssistant(bus, p.response)
-	return provider.ProjectionSummary{
-		Fingerprint: p.Fingerprint(),
-		Assistant:   []json.RawMessage{assembled},
-	}, nil
+	return []json.RawMessage{mockPushAssistant(bus, p.response)}, nil
 }
 
 func TestAgent_PanicRecovery(t *testing.T) {
@@ -650,16 +648,21 @@ func (s *slowProvider) Decode(raw []json.RawMessage) ([]message.Message, error) 
 	return mockDecodeNative(raw)
 }
 
+// Encode is a no-op (slowProvider doesn't actually encode).
+func (s *slowProvider) Encode(_ context.Context, _ []message.Message, _ chalkboard.Snapshot, _ causal.Slice[message.ProviderTranslation], _ []provider.Tool, _ int) ([]byte, provider.ProjectionSummary, error) {
+	return nil, provider.ProjectionSummary{Fingerprint: s.Fingerprint()}, nil
+}
+
 // Send blocks until ctx is cancelled, then returns the cancellation
 // error — mirroring what a real HTTP SSE stream does when its request
 // context is cancelled mid-flight.
-func (s *slowProvider) Send(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, bus provider.Bus) (provider.ProjectionSummary, error) {
+func (s *slowProvider) Send(ctx context.Context, body []byte, bus provider.Bus) ([]json.RawMessage, error) {
 	if s.started != nil {
 		close(s.started)
 		s.started = nil
 	}
 	<-ctx.Done()
-	return provider.ProjectionSummary{}, ctx.Err()
+	return nil, ctx.Err()
 }
 
 // TestAgent_Interrupt verifies that Interrupt cancels an in-flight

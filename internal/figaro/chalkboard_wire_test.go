@@ -34,18 +34,18 @@ func (p *chalkSpyProvider) SetModel(string)                                     
 func (p *chalkSpyProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
 	return mockDecodeNative(raw)
 }
-func (p *chalkSpyProvider) Send(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, bus provider.Bus) (provider.ProjectionSummary, error) {
+// Encode captures the IR messages it was asked to project.
+func (p *chalkSpyProvider) Encode(_ context.Context, msgs []message.Message, _ chalkboard.Snapshot, _ causal.Slice[message.ProviderTranslation], _ []provider.Tool, _ int) ([]byte, provider.ProjectionSummary, error) {
 	p.mu.Lock()
 	copyMsgs := make([]message.Message, len(msgs))
 	copy(copyMsgs, msgs)
 	p.received = append(p.received, copyMsgs)
 	p.mu.Unlock()
+	return nil, provider.ProjectionSummary{Fingerprint: p.Fingerprint()}, nil
+}
 
-	assembled := mockPushAssistant(bus, "ok")
-	return provider.ProjectionSummary{
-		Fingerprint: p.Fingerprint(),
-		Assistant:   []json.RawMessage{assembled},
-	}, nil
+func (p *chalkSpyProvider) Send(ctx context.Context, body []byte, bus provider.Bus) ([]json.RawMessage, error) {
+	return []json.RawMessage{mockPushAssistant(bus, "ok")}, nil
 }
 
 func (p *chalkSpyProvider) sendCount() int {

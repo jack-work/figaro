@@ -121,7 +121,7 @@ func (a *Agent) synchronize(raw event) []event {
 	case eventTransLive:
 		return decodeDelta(raw.transPayload)
 	case eventSendComplete:
-		out := a.condenseAndDecode(raw.sendSummary)
+		out := a.condenseAndDecode(raw.sendAssistant, raw.sendSummary.Fingerprint)
 		if raw.err == nil && a.translog != nil {
 			a.persistProjectionSummary(unwrapMessages(a.figStream.Durable()), raw.sendSummary)
 		}
@@ -148,20 +148,19 @@ func decodeDelta(payload []json.RawMessage) []event {
 }
 
 // condenseAndDecode condenses the translog live tail into one durable
-// entry using the summary's assembled bytes, decodes into IR, and
+// entry using the assembled bytes Send returned, decodes into IR, and
 // appends each assistant message to figStream. Returns one eventFigaro
 // per appended message.
-func (a *Agent) condenseAndDecode(summary provider.ProjectionSummary) []event {
-	if a.translog == nil || len(summary.Assistant) == 0 {
+func (a *Agent) condenseAndDecode(assistant []json.RawMessage, fp string) []event {
+	if a.translog == nil || len(assistant) == 0 {
 		return nil
 	}
 	if _, err := a.translog.Condense(store.Entry[[]json.RawMessage]{
-		Payload:     summary.Assistant,
-		Fingerprint: summary.Fingerprint,
+		Payload: assistant, Fingerprint: fp,
 	}); err != nil {
 		return nil
 	}
-	decoded, err := a.prov.Decode(summary.Assistant)
+	decoded, err := a.prov.Decode(assistant)
 	if err != nil {
 		return nil
 	}

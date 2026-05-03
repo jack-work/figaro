@@ -31,12 +31,11 @@ func (translogProvider) Models(_ context.Context) ([]provider.ModelInfo, error) 
 func (translogProvider) Decode(raw []json.RawMessage) ([]message.Message, error) {
 	return mockDecodeNative(raw)
 }
-func (translogProvider) Send(_ context.Context, _ []message.Message, _ chalkboard.Snapshot, _ causal.Slice[message.ProviderTranslation], _ []provider.Tool, _ int, bus provider.Bus) (provider.ProjectionSummary, error) {
-	assembled := mockPushAssistant(bus, "ok")
-	return provider.ProjectionSummary{
-		Fingerprint: "tlp/v0",
-		Assistant:   []json.RawMessage{assembled},
-	}, nil
+func (translogProvider) Encode(_ context.Context, _ []message.Message, _ chalkboard.Snapshot, _ causal.Slice[message.ProviderTranslation], _ []provider.Tool, _ int) ([]byte, provider.ProjectionSummary, error) {
+	return nil, provider.ProjectionSummary{Fingerprint: "tlp/v0"}, nil
+}
+func (translogProvider) Send(_ context.Context, _ []byte, bus provider.Bus) ([]json.RawMessage, error) {
+	return []json.RawMessage{mockPushAssistant(bus, "ok")}, nil
 }
 
 // TestTranslog_AssistantResponseAppendsEntry verifies that when an

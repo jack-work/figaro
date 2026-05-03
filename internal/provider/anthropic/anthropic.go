@@ -656,37 +656,50 @@ func projectTools(tools []provider.Tool) []nativeTool {
 	return result
 }
 
-// --- Send: IR messages → stream → IR Messages with translation ---
+// --- Encode: IR → request body bytes (pure projection) ---
 
-func (a *Anthropic) Send(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int, bus provider.Bus) (provider.ProjectionSummary, error) {
+// Encode produces the API request body for one turn plus the
+// per-message projection summary for cache persistence. Pure
+// translation; no I/O beyond resolving the auth token (cached).
+func (a *Anthropic) Encode(ctx context.Context, msgs []message.Message, snapshot chalkboard.Snapshot, priorTranslations causal.Slice[message.ProviderTranslation], tools []provider.Tool, maxTokens int) ([]byte, provider.ProjectionSummary, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
 	}
 	if maxTokens == 0 {
 		maxTokens = 8192
 	}
-
 	a.mu.Lock()
 	model := a.Model
 	a.mu.Unlock()
 
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
-		return provider.ProjectionSummary{}, fmt.Errorf("resolve token: %w", err)
+		return nil, provider.ProjectionSummary{}, fmt.Errorf("resolve token: %w", err)
 	}
-
 	native, summary := a.projectMessagesWithModel(msgs, snapshot, priorTranslations, tools, maxTokens, isOAuthToken(apiKey), model)
 	body, err := json.Marshal(native)
 	if err != nil {
-		return summary, fmt.Errorf("marshal request: %w", err)
+		return nil, summary, fmt.Errorf("marshal request: %w", err)
+	}
+	return body, summary, nil
+}
+
+// --- Send: pre-encoded body → HTTP → SSE → assembled native ---
+
+// Send POSTs the pre-encoded body to the Anthropic API, pushes parsed
+// native deltas into the bus, and returns the assembled final
+// nativeMessage bytes when the stream closes.
+func (a *Anthropic) Send(ctx context.Context, body []byte, bus provider.Bus) ([]json.RawMessage, error) {
+	apiKey, err := a.auth.Resolve()
+	if err != nil {
+		return nil, fmt.Errorf("resolve token: %w", err)
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", apiMessagesURL, bytes.NewReader(body))
 	if err != nil {
-		return summary, fmt.Errorf("create request: %w", err)
+		return nil, fmt.Errorf("create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", apiVersion)
-
 	if isOAuthToken(apiKey) {
 		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 		httpReq.Header.Set("anthropic-beta", "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31")
@@ -697,21 +710,24 @@ func (a *Anthropic) Send(ctx context.Context, msgs []message.Message, snapshot c
 		httpReq.Header.Set("x-api-key", apiKey)
 	}
 
+	a.mu.Lock()
+	model := a.Model
+	a.mu.Unlock()
+
 	resp, err := a.HTTPClient.Do(httpReq)
 	if err != nil {
-		return summary, fmt.Errorf("http request: %w", err)
+		return nil, fmt.Errorf("http request: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		errBody, _ := io.ReadAll(resp.Body)
-		return summary, fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
+		return nil, fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
 	}
-
-	assistant := a.consumeSSE(resp.Body, bus, model)
-	if len(assistant) > 0 {
-		summary.Assistant = []json.RawMessage{assistant}
+	assembled := a.consumeSSE(resp.Body, bus, model)
+	if len(assembled) == 0 {
+		return nil, nil
 	}
-	return summary, nil
+	return []json.RawMessage{assembled}, nil
 }
 
 // sseReadTimeout is how long we wait for the next SSE line before
@@ -768,10 +784,10 @@ func (a *Anthropic) consumeSSE(body io.ReadCloser, bus provider.Bus, model strin
 	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
 
 	var (
-		nm        nativeMessage
-		usage     nativeUsage
-		eventType string
-		lines     int
+		nm         nativeMessage
+		usage      nativeUsage
+		eventType  string
+		lines      int
 		stopReason string
 	)
 	nm.Role = "assistant"
