@@ -75,7 +75,7 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 		}
 	}
 	setStr("system.prompt", prompt)
-	setStr("system.model", a.model)
+	setStr("system.model", a.currentModel())
 	setStr("system.provider", a.prov.Name())
 
 	if skills, sErr := a.scribe.Skills(); sErr == nil && len(skills) > 0 {

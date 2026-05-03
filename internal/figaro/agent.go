@@ -114,25 +114,22 @@ type Agent struct {
 	label      string
 	socketPath string
 	prov       provider.Provider
-	model      string
 	scribe     credo.Scribe
 	cwd        string
 	root       string
 	maxTokens  int
 	tools      *tool.Registry
 	figStream  store.Stream[message.Message]
+	transStream store.Stream[[]json.RawMessage]
 	backend    store.Backend // nil = ephemeral
-
-	// Chalkboard. Optional. *chalkboard.State owns the in-memory
-	// snapshot AND the on-disk cache file.
 	chalkboard *chalkboard.State
-	cbTmpls    *template.Template
 
-	// translog persists per-figaro-message wire projections for one
-	// provider. Read on Send to populate the cache; written on each
-	// StreamEvent.Done that carries a Translation. Closed on Kill.
-	// Optional — ephemeral arias run without a translation cache.
-	translog store.Stream[[]json.RawMessage]
+	// lastDecodedTransLT tracks how far synchronize has caught up the
+	// translation stream's durable head into figStream.
+	lastDecodedTransLT uint64
+	// lastDecodedLiveLen tracks the live-tail slice index already
+	// decoded; resets when the tail shrinks (Condense / Discard).
+	lastDecodedLiveLen int
 
 	// inProgressTic is a mutable user-role Message accumulated
 	// between LLM sends. Built up by eventUserPrompt and
@@ -187,7 +184,6 @@ func NewAgent(cfg Config) *Agent {
 		label:       cfg.Label,
 		socketPath:  cfg.SocketPath,
 		prov:        cfg.Provider,
-		model:       cfg.Model,
 		scribe:      cfg.Scribe,
 		cwd:         cfg.Cwd,
 		root:        cfg.Root,
@@ -195,8 +191,7 @@ func NewAgent(cfg Config) *Agent {
 		tools:       cfg.Tools,
 		backend:     cfg.Backend,
 		chalkboard:  cfg.Chalkboard,
-		cbTmpls:     cfg.ChalkboardTemplates,
-		translog:    cfg.TranslationStream,
+		transStream: cfg.TranslationStream,
 		subscribers: make(map[chan rpc.Notification]struct{}),
 		createdAt:   time.Now(),
 		lastActive:  time.Now(),
@@ -204,9 +199,9 @@ func NewAgent(cfg Config) *Agent {
 		done:        make(chan struct{}),
 	}
 
-	a.figStream = a.newStream()
-	if a.translog == nil {
-		a.translog = store.NewMemStream[[]json.RawMessage]()
+	a.figStream = a.newStream(cfg.Model)
+	if a.transStream == nil {
+		a.transStream = store.NewMemStream[[]json.RawMessage]()
 	}
 	if a.chalkboard == nil {
 		// Ephemeral arias still need a chalkboard so the system prompt
@@ -214,7 +209,14 @@ func NewAgent(cfg Config) *Agent {
 		// in-memory only; Save is a no-op.
 		a.chalkboard, _ = chalkboard.Open("")
 	}
-	a.inbox = NewInbox(ctx, a.figStream, a.translog)
+	// Seed system.model into the chalkboard up front. Independent of
+	// bootstrap (which is scribe-gated and fills system.prompt etc).
+	if cfg.Model != "" {
+		seed := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+		seed.Set2("system.model", cfg.Model)
+		a.chalkboard.Apply(seed)
+	}
+	a.inbox = NewInbox(ctx, a.figStream, a.transStream)
 
 	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Durable()))
 
@@ -242,7 +244,7 @@ func NewAgent(cfg Config) *Agent {
 	// emit a state-only tic carrying that patch. Subsequent turns read
 	// the system prompt from the chalkboard snapshot — no re-templating
 	// per turn.
-	a.bootstrapIfNeeded()
+	a.bootstrapIfNeeded(cfg.Model)
 
 	go a.runWithRecovery(ctx)
 	return a
@@ -251,9 +253,9 @@ func NewAgent(cfg Config) *Agent {
 // newStore creates the appropriate store for this agent.
 
 // newStream opens the canonical figaro IR Stream for this agent.
-// With a Backend: opens the per-aria FileStream and seeds AriaMeta
-// via the backend. Without: a MemStream (ephemeral).
-func (a *Agent) newStream() store.Stream[message.Message] {
+// Backed by FileStream when a Backend is configured, MemStream when
+// ephemeral. Seeds AriaMeta with the configured model.
+func (a *Agent) newStream(model string) store.Stream[message.Message] {
 	if a.backend == nil {
 		return store.NewMemStream[message.Message]()
 	}
@@ -262,8 +264,6 @@ func (a *Agent) newStream() store.Stream[message.Message] {
 		fmt.Fprintf(os.Stderr, "figaro %s: backend open error: %v (falling back to ephemeral)\n", a.id, err)
 		return store.NewMemStream[message.Message]()
 	}
-	// Persist metadata for aria restoration on angelus restart.
-	// Preserve any existing label from disk if Config didn't supply one.
 	label := a.label
 	if label == "" {
 		if existing, _ := a.backend.Meta(a.id); existing != nil {
@@ -272,7 +272,7 @@ func (a *Agent) newStream() store.Stream[message.Message] {
 	}
 	if err := a.backend.SetMeta(a.id, &store.AriaMeta{
 		Provider: a.prov.Name(),
-		Model:    a.model,
+		Model:    model,
 		Cwd:      a.cwd,
 		Root:     a.root,
 		Label:    label,
@@ -286,11 +286,28 @@ func (a *Agent) newStream() store.Stream[message.Message] {
 func (a *Agent) ID() string         { return a.id }
 func (a *Agent) SocketPath() string { return a.socketPath }
 
-func (a *Agent) SetModel(model string) {
-	a.mu.Lock()
-	a.model = model
-	a.mu.Unlock()
-	a.prov.SetModel(model)
+// currentModel returns the model id from the chalkboard snapshot.
+// Source-of-truth lives at chalkboard.system.model (set at bootstrap,
+// updated by SetModel).
+func (a *Agent) currentModel() string {
+	if a.chalkboard == nil {
+		return ""
+	}
+	raw, ok := a.chalkboard.Snapshot()["system.model"]
+	if !ok {
+		return ""
+	}
+	var s string
+	json.Unmarshal(raw, &s)
+	return s
+}
+
+func (a *Agent) SetModel(m string) {
+	p := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+	p.Set2("system.model", m)
+	a.chalkboard.Apply(p)
+	_ = a.chalkboard.Save()
+	a.prov.SetModel(m)
 }
 
 // SetLabel updates the aria's label and persists it to disk. Empty
@@ -308,7 +325,7 @@ func (a *Agent) SetLabel(label string) error {
 	if meta == nil {
 		meta = &store.AriaMeta{
 			Provider: a.prov.Name(),
-			Model:    a.model,
+			Model:    a.currentModel(),
 			Cwd:      a.cwd,
 			Root:     a.root,
 		}
@@ -400,7 +417,7 @@ func (a *Agent) Info() FigaroInfo {
 		Label:            a.label,
 		State:            state,
 		Provider:         a.prov.Name(),
-		Model:            a.model,
+		Model:            a.currentModel(),
 		MessageCount:     len(msgs),
 		TokensIn:         a.tokensIn,
 		TokensOut:        a.tokensOut,
@@ -438,8 +455,8 @@ func (a *Agent) Kill() {
 	}
 
 	// Close the translation log.
-	if a.translog != nil {
-		if err := a.translog.Close(); err != nil {
+	if a.transStream != nil {
+		if err := a.transStream.Close(); err != nil {
 			fmt.Fprintf(os.Stderr, "figaro %s: translation log close error: %v\n", a.id, err)
 		}
 	}
@@ -476,7 +493,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		// the on-disk NDJSON has the last persisted state and
 		// FileStream replays it at Open.
 		a.mu.Lock()
-		a.figStream = a.newStream()
+		a.figStream = a.newStream(a.currentModel())
 		a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Durable()))
 		a.mu.Unlock()
 
@@ -494,7 +511,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		// Swap the inbox. Old goroutines captured the old inbox —
 		// their SendSelfish calls will return false (closed).
 		a.inbox.Close()
-		a.inbox = NewInbox(ctx, a.figStream, a.translog)
+		a.inbox = NewInbox(ctx, a.figStream, a.transStream)
 
 		// Reset turn state.
 		a.pendingTools = 0
@@ -575,7 +592,7 @@ func (a *Agent) act(ctx context.Context) {
 				turnCtx, span := figOtel.Start(ctx, "figaro.prompt",
 					figOtel.WithAttributes(
 						attribute.String("figaro.id", a.id),
-						attribute.String("figaro.model", a.model),
+						attribute.String("figaro.model", a.currentModel()),
 						attribute.String("figaro.provider", a.prov.Name()),
 					),
 				)

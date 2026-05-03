@@ -25,7 +25,7 @@ import (
 // rehydrate tic that establishes system.prompt gets the system block
 // array entry instead, written below.
 func (a *Agent) persistProjectionSummary(msgs []message.Message, summary provider.ProjectionSummary) {
-	if a.translog == nil {
+	if a.transStream == nil {
 		return
 	}
 	fp := summary.Fingerprint
@@ -53,12 +53,12 @@ func (a *Agent) maybeAppendTranslation(figaroLT uint64, payload []json.RawMessag
 	if figaroLT == 0 {
 		return
 	}
-	if existing, ok := a.translog.Lookup(figaroLT); ok {
+	if existing, ok := a.transStream.Lookup(figaroLT); ok {
 		if existing.Fingerprint == fp && rawMessagesEqual(existing.Payload, payload) {
 			return
 		}
 	}
-	if _, err := a.translog.Append(store.Entry[[]json.RawMessage]{
+	if _, err := a.transStream.Append(store.Entry[[]json.RawMessage]{
 		FigaroLT: figaroLT, Payload: payload, Fingerprint: fp,
 	}, true); err != nil {
 		fmt.Fprintf(os.Stderr, "figaro %s: translation stream append: %v\n", a.id, err)
@@ -81,19 +81,19 @@ func rawMessagesEqual(a, b []json.RawMessage) bool {
 // persisted entry's fingerprint disagrees with the provider's current
 // Fingerprint(). The stream is a derivable cache.
 func (a *Agent) invalidateTranslogIfStale() {
-	if a.translog == nil || a.prov == nil {
+	if a.transStream == nil || a.prov == nil {
 		return
 	}
 	want := a.prov.Fingerprint()
 	if want == "" {
 		return
 	}
-	for _, e := range a.translog.Durable() {
+	for _, e := range a.transStream.Durable() {
 		if e.Fingerprint == "" {
 			continue
 		}
 		if e.Fingerprint != want {
-			if err := a.translog.Clear(); err != nil {
+			if err := a.transStream.Clear(); err != nil {
 				fmt.Fprintf(os.Stderr, "figaro %s: translation stream clear: %v\n", a.id, err)
 				return
 			}
@@ -105,35 +105,67 @@ func (a *Agent) invalidateTranslogIfStale() {
 	}
 }
 
-// synchronize translates a freshly Recv'd event into the figaro
-// events the act loop will dispatch. Pure translation — no fan-out.
-// Notifications come from the act loop's switch on figaro events.
-//
-//   - eventTransLive: parse the live native chunk into a figaro
-//     delta event (text + content type).
-//   - eventSendComplete: condense the translog live tail using the
-//     assembled native bytes from the summary, decode into IR, append
-//     to figStream, emit one eventFigaro per assistant message, then
-//     pass through the eventSendComplete so the loop can endTurn.
-//   - everything else: pass through unchanged.
+// synchronize is the translation orchestrator. After Recv, it scans
+// the translation stream for entries the figaro stream hasn't caught
+// up to yet, decodes each via the provider, and emits the resulting
+// figaro events. eventSendComplete additionally condenses the live
+// tail using the assembled assistant bytes Send returned. The act
+// loop only ever sees figaro / control events.
 func (a *Agent) synchronize(raw event) []event {
-	switch raw.typ {
-	case eventTransLive:
-		return decodeDelta(raw.transPayload)
-	case eventSendComplete:
-		out := a.condenseAndDecode(raw.sendAssistant, raw.sendSummary.Fingerprint)
-		if raw.err == nil && a.translog != nil {
-			a.persistProjectionSummary(unwrapMessages(a.figStream.Durable()), raw.sendSummary)
-		}
-		return append(out, raw)
-	default:
-		return []event{raw}
+	if raw.typ == eventSendComplete && raw.err == nil && len(raw.sendAssistant) > 0 && a.transStream != nil {
+		a.transStream.Condense(store.Entry[[]json.RawMessage]{
+			Payload:     raw.sendAssistant,
+			Fingerprint: raw.sendSummary.Fingerprint,
+		})
+		a.persistProjectionSummary(unwrapMessages(a.figStream.Durable()), raw.sendSummary)
 	}
+	out := a.catchUpFigaro()
+	if raw.typ != eventTransLive {
+		out = append(out, raw)
+	}
+	return out
 }
 
-// decodeDelta turns one translog live payload into a figaro delta
-// event. Returns nil for empty / unparseable payloads.
-func decodeDelta(payload []json.RawMessage) []event {
+// catchUpFigaro decodes any new translation entries (live + durable)
+// into figaro events. Watermarks ensure each entry decodes once.
+func (a *Agent) catchUpFigaro() []event {
+	if a.transStream == nil {
+		return nil
+	}
+	var out []event
+	for _, e := range a.transStream.Durable() {
+		if e.LT <= a.lastDecodedTransLT {
+			continue
+		}
+		a.lastDecodedTransLT = e.LT
+		decoded, err := a.prov.Decode(e.Payload)
+		if err != nil {
+			continue
+		}
+		for _, m := range decoded {
+			if m.Role != message.RoleAssistant {
+				continue
+			}
+			a.figStream.Append(store.Entry[message.Message]{Payload: m}, true)
+			out = append(out, event{typ: eventFigaro, figMsg: m})
+		}
+	}
+	live := a.transStream.Live()
+	if len(live) < a.lastDecodedLiveLen {
+		a.lastDecodedLiveLen = 0
+	}
+	for i := a.lastDecodedLiveLen; i < len(live); i++ {
+		if d := decodeDelta(live[i].Payload); d != nil {
+			out = append(out, *d)
+		}
+	}
+	a.lastDecodedLiveLen = len(live)
+	return out
+}
+
+// decodeDelta parses one translog live payload into a figaro delta
+// event. Nil for empty / unparseable payloads.
+func decodeDelta(payload []json.RawMessage) *event {
 	if len(payload) == 0 {
 		return nil
 	}
@@ -144,35 +176,7 @@ func decodeDelta(payload []json.RawMessage) []event {
 	if json.Unmarshal(payload[0], &d) != nil || d.Delta == "" {
 		return nil
 	}
-	return []event{{typ: eventFigaroDelta, deltaText: d.Delta, deltaCT: d.ContentType}}
-}
-
-// condenseAndDecode condenses the translog live tail into one durable
-// entry using the assembled bytes Send returned, decodes into IR, and
-// appends each assistant message to figStream. Returns one eventFigaro
-// per appended message.
-func (a *Agent) condenseAndDecode(assistant []json.RawMessage, fp string) []event {
-	if a.translog == nil || len(assistant) == 0 {
-		return nil
-	}
-	if _, err := a.translog.Condense(store.Entry[[]json.RawMessage]{
-		Payload: assistant, Fingerprint: fp,
-	}); err != nil {
-		return nil
-	}
-	decoded, err := a.prov.Decode(assistant)
-	if err != nil {
-		return nil
-	}
-	var out []event
-	for _, m := range decoded {
-		if m.Role != message.RoleAssistant {
-			continue
-		}
-		a.figStream.Append(store.Entry[message.Message]{Payload: m}, true)
-		out = append(out, event{typ: eventFigaro, figMsg: m})
-	}
-	return out
+	return &event{typ: eventFigaroDelta, deltaText: d.Delta, deltaCT: d.ContentType}
 }
 
 // buildPriorTranslations returns a CausalSlice indexed in lockstep
@@ -180,9 +184,9 @@ func (a *Agent) condenseAndDecode(assistant []json.RawMessage, fp string) []even
 // msgs[i].LogicalTime when known, zero otherwise.
 func (a *Agent) buildPriorTranslations(msgs []message.Message) causal.Slice[message.ProviderTranslation] {
 	out := make([]message.ProviderTranslation, len(msgs))
-	if a.translog != nil {
+	if a.transStream != nil {
 		for i, m := range msgs {
-			if entry, ok := a.translog.Lookup(m.LogicalTime); ok {
+			if entry, ok := a.transStream.Lookup(m.LogicalTime); ok {
 				out[i] = message.ProviderTranslation{
 					Messages: entry.Payload, Fingerprint: entry.Fingerprint,
 				}

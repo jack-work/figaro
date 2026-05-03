@@ -15,7 +15,7 @@ import (
 // bootstrapIfNeeded runs the Scribe once on a fresh aria and emits a
 // state-only tic carrying the system.* patch. Idempotent on restored
 // arias whose chalkboard already has system.prompt.
-func (a *Agent) bootstrapIfNeeded() {
+func (a *Agent) bootstrapIfNeeded(model string) {
 	if a.chalkboard == nil || a.scribe == nil {
 		return
 	}
@@ -30,7 +30,7 @@ func (a *Agent) bootstrapIfNeeded() {
 
 	patch := chalkboard.Patch{Set: map[string]json.RawMessage{}}
 	patch.Set2("system.prompt", prompt)
-	patch.Set2("system.model", a.model)
+	patch.Set2("system.model", model)
 	patch.Set2("system.provider", a.prov.Name())
 
 	if skills, err := a.scribe.Skills(); err == nil && len(skills) > 0 {
