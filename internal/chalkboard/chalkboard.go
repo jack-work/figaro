@@ -55,6 +55,16 @@ func (s Snapshot) Clone() Snapshot {
 	return out
 }
 
+func (s Snapshot) Lookup(key string) *string {
+	if raw, ok := s[key]; ok {
+		var s string
+		if json.Unmarshal(raw, &s) == nil {
+			return &s
+		}
+	}
+	return nil
+}
+
 // Patch is a re-export of message.Patch so callers within the
 // chalkboard package can refer to the IR delta type by an unqualified
 // local name. Methods defined on message.Patch (IsEmpty) are usable

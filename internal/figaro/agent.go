@@ -62,6 +62,7 @@ type event struct {
 
 	// eventFigaro
 	figMsg message.Message
+	figLT  uint64
 
 	// eventFigaroDelta
 	deltaText string

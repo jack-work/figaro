@@ -530,7 +530,9 @@ func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, sna
 	req := nativeRequest{
 		Model: model, MaxTokens: maxTokens, Stream: true,
 		System: systemBlocks(snapshot, oauth),
-		Tools:  projectTools(tools),
+		// agent:
+		// TODO: tools should also just be put onto the chalkboard and extracted with string, as an ordered list.  we should optimize the chalkboard around a byte for byte exactness when roundtrip, so we don't have to worry about tools messing up the cache.
+		Tools: projectTools(tools),
 	}
 	for _, entry := range perMessage {
 		for _, raw := range entry {
@@ -544,20 +546,11 @@ func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, sna
 			req.Messages = append(req.Messages, nm)
 		}
 	}
-	markCacheBreakpoints(&req)
-	return req, nil
-}
 
-// snapshotModel reads chalkboard.system.model. Provider state
-// (a.Model) is the fallback only.
-func snapshotModel(snap chalkboard.Snapshot) string {
-	if raw, ok := snap["system.model"]; ok {
-		var s string
-		if json.Unmarshal(raw, &s) == nil {
-			return s
-		}
+	if cacheSetting := snapshot.Lookup("system.cache_control"); cacheSetting != nil {
+		markCacheBreakpoints(&req, *cacheSetting)
 	}
-	return ""
+	return req, nil
 }
 
 // encodeAll encodes a slice of IR messages into per-message wire
@@ -580,22 +573,22 @@ func (a *Anthropic) encodeAll(msgs []message.Message) [][]json.RawMessage {
 	return out
 }
 
-// markCacheBreakpoints attaches cache_control:ephemeral to the last
+// markCacheBreakpoints attaches cache_control:(input) to the last
 // block of each cacheable region: system prefix, tool list, and the
 // second-to-last message's last content block (the prior endTurn
 // leaf). The OAuth + claude-code-20250219 beta path silently
 // ignores client-controlled cache_control.
-func markCacheBreakpoints(req *nativeRequest) {
+func markCacheBreakpoints(req *nativeRequest, setting string) {
 	if n := len(req.System); n > 0 {
-		req.System[n-1].CacheControl = &cacheControl{Type: "ephemeral"}
+		req.System[n-1].CacheControl = &cacheControl{Type: setting}
 	}
 	if n := len(req.Tools); n > 0 {
-		req.Tools[n-1].CacheControl = &cacheControl{Type: "ephemeral"}
+		req.Tools[n-1].CacheControl = &cacheControl{Type: setting}
 	}
 	if n := len(req.Messages); n >= 2 {
 		m := &req.Messages[n-2]
 		if k := len(m.Content); k > 0 {
-			m.Content[k-1].CacheControl = &cacheControl{Type: "ephemeral"}
+			m.Content[k-1].CacheControl = &cacheControl{Type: setting}
 		}
 	}
 }
@@ -611,16 +604,19 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return fmt.Errorf("resolve token: %w", err)
 	}
-	model := snapshotModel(in.Snapshot)
-	if model == "" {
+
+	var model *string
+	if model = in.Snapshot.Lookup("system.model"); model == nil {
 		a.mu.Lock()
-		model = a.Model
+		model = &a.Model
 		a.mu.Unlock()
 	}
-	req, err := a.projectMessagesWithModel(in.PerMessage, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), model)
+
+	req, err := a.projectMessagesWithModel(in.PerMessage, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), *model)
 	if err != nil {
 		return err
 	}
+
 	body, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
@@ -630,6 +626,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
+
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", apiVersion)
 	if isOAuthToken(apiKey) {
@@ -651,7 +648,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		errBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
 	}
-	consumeSSE(resp.Body, bus, model)
+	consumeSSE(resp.Body, bus)
 	return nil
 }
 
@@ -670,15 +667,14 @@ type liveDelta struct {
 // consumeSSE forwards every SSE event to the bus and exits when the
 // stream closes. No accumulation — Assemble re-runs the state
 // machine at condense time.
-func consumeSSE(body io.ReadCloser, bus provider.Bus, model string) {
+func consumeSSE(body io.ReadCloser, bus provider.Bus) {
 	defer body.Close()
-	log("sse: stream started, model=%s", model)
 
 	push := func(eventType string, data []byte) {
 		entry, _ := json.Marshal(liveDelta{Event: eventType, Data: json.RawMessage(data)})
 		bus.Push(provider.Event{Payload: []json.RawMessage{entry}})
 	}
-	startEntry, _ := json.Marshal(liveDelta{Event: "_start", Model: model})
+	startEntry, _ := json.Marshal(liveDelta{Event: "_start"})
 	bus.Push(provider.Event{Payload: []json.RawMessage{startEntry}})
 
 	pr, pw := io.Pipe()
