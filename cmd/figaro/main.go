@@ -281,11 +281,9 @@ func runPrompt(loaded *config.Loaded, prompt string) {
 		// Create a new figaro.
 		figaroID, figaroEP = mustCreateAndBind(ctx, acli, loaded, ppid)
 	}
-	_ = figaroID
-
 	// Connect to figaro and prompt.
 	echoPromptIfEnabled(loaded, prompt)
-	mustPromptFigaro(ctx, figaroEP, prompt, loaded.Log().RPCFile)
+	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
 }
 
 // --- CLI: new ---
@@ -303,10 +301,10 @@ func runNewPrompt(loaded *config.Loaded, prompt string) {
 	acli.Unbind(ctx, ppid)
 
 	// Create new figaro and bind.
-	_, figaroEP := mustCreateAndBind(ctx, acli, loaded, ppid)
+	figaroID, figaroEP := mustCreateAndBind(ctx, acli, loaded, ppid)
 
 	echoPromptIfEnabled(loaded, prompt)
-	mustPromptFigaro(ctx, figaroEP, prompt, loaded.Log().RPCFile)
+	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
 }
 
 // --- CLI: plain (raw, ephemeral, pipe-friendly) ---
@@ -1383,9 +1381,17 @@ func echoPromptIfEnabled(loaded *config.Loaded, prompt string) {
 	fmt.Println()
 }
 
-func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string, rpcLogPath string) {
+func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prompt string, loaded *config.Loaded) {
+	rpcLogPath := loaded.Log().RPCFile
+
 	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
+
+	// Status-line banner above the response.
+	startedAt := time.Now()
+	if loaded.StatusLine() {
+		writeStatusLine(os.Stdout, figaroID, startedAt, 0)
+	}
 
 	// Derive a cancellable child so Ctrl+D (stdin EOF) can cancel the same
 	// context used for SIGINT. Go's signal.NotifyContext already wires
@@ -1561,6 +1567,63 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string,
 		resumeIfSuspended()
 		sw.Flush()
 		fmt.Fprintln(os.Stderr, "interrupted")
+	}
+
+	// Trailing status line — same banner with elapsed time. Helps
+	// when the response scrolled the top banner off-viewport.
+	if loaded.StatusLine() {
+		writeStatusLine(os.Stdout, figaroID, time.Now(), time.Since(startedAt))
+	}
+}
+
+// writeStatusLine prints a dimmed banner across the terminal width:
+//
+//	─── 060bab89 · 12:34:56 ───────────────────────────────────────
+//	─── 060bab89 · 12:34:58 · 2.3s ────────────────────────────────
+//
+// elapsed=0 omits the duration (top banner). When the file isn't a
+// TTY we skip ANSI dim and use a fixed 80-col width.
+func writeStatusLine(w *os.File, figaroID string, ts time.Time, elapsed time.Duration) {
+	width := 80
+	tty := term.IsTerminal(int(w.Fd()))
+	if tty {
+		if c, _, err := term.GetSize(int(w.Fd())); err == nil && c > 20 {
+			width = c
+		}
+	}
+
+	body := fmt.Sprintf(" %s · %s", figaroID, ts.Format("15:04:05"))
+	if elapsed > 0 {
+		body += fmt.Sprintf(" · %s", formatElapsed(elapsed))
+	}
+	body += " "
+
+	// Fill to width with horizontal-line glyphs. Leading three for a
+	// little hanging indent.
+	const lead = "─── "
+	const glyph = "─"
+	remaining := width - len(lead) - len(body)
+	if remaining < 0 {
+		remaining = 0
+	}
+	line := lead + body + strings.Repeat(glyph, remaining)
+
+	if tty {
+		// ANSI dim. Reset at end so subsequent output isn't dimmed.
+		fmt.Fprintf(w, "\033[2m%s\033[0m\n", line)
+	} else {
+		fmt.Fprintln(w, line)
+	}
+}
+
+func formatElapsed(d time.Duration) string {
+	switch {
+	case d < time.Second:
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	case d < time.Minute:
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	default:
+		return d.Truncate(100 * time.Millisecond).String()
 	}
 }
 

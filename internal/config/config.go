@@ -39,6 +39,11 @@ type Config struct {
 	// lives only on the CLI side; it never enters the conversation.
 	EchoPrompt *bool `toml:"echo_prompt"`
 
+	// StatusLine controls whether the CLI prints a status banner
+	// (aria id, timestamp, elapsed) at the start and end of each
+	// response. Default true.
+	StatusLine *bool `toml:"status_line"`
+
 	// Log configures output destinations.
 	Log LogConfig `toml:"log"`
 }
@@ -50,6 +55,15 @@ func (l *Loaded) EchoPrompt() bool {
 		return true
 	}
 	return *l.Config.EchoPrompt
+}
+
+// StatusLine returns whether the CLI should print a banner before /
+// after each response. Defaults to true.
+func (l *Loaded) StatusLine() bool {
+	if l.Config.StatusLine == nil {
+		return true
+	}
+	return *l.Config.StatusLine
 }
 
 // LogConfig controls where structured output goes.
