@@ -545,17 +545,24 @@ secondDone:
 	assert.GreaterOrEqual(t, msgCount, 2, "should have at least user + assistant on disk")
 
 	// meta.json holds derived stats (counts, tokens). Configured
-	// fields (provider, model) moved to chalkboard.json.
+	// fields (provider, model) moved to chalkboard.json. The
+	// summary derivation is async — poll for the latest tick to
+	// land.
 	metaPath := filepath.Join(ariaDir, "meta.json")
-	mdata, err := os.ReadFile(metaPath)
-	require.NoError(t, err, "meta.json should exist after prompt")
 	var meta struct {
 		MessageCount int `json:"message_count"`
 		TurnCount    int `json:"turn_count"`
 	}
-	require.NoError(t, json.Unmarshal(mdata, &meta))
-	assert.GreaterOrEqual(t, meta.MessageCount, 2)
-	assert.GreaterOrEqual(t, meta.TurnCount, 1)
+	require.Eventually(t, func() bool {
+		data, err := os.ReadFile(metaPath)
+		if err != nil {
+			return false
+		}
+		if json.Unmarshal(data, &meta) != nil {
+			return false
+		}
+		return meta.MessageCount >= 2 && meta.TurnCount >= 1
+	}, 2*time.Second, 10*time.Millisecond, "meta.json should reflect user+assistant")
 }
 
 func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
