@@ -289,36 +289,10 @@ func parseFrontmatter(content string) (name, description, body string) {
 	return
 }
 
-// FormatSkills formats skills for appending to the system prompt.
-func FormatSkills(skills []Skill) string {
-	var b strings.Builder
-	b.WriteString("# Available Skills\n\n")
-	b.WriteString("Use the read tool to load a skill's file when the task matches its description.\n\n")
-	for _, s := range skills {
-		b.WriteString(fmt.Sprintf("## %s\n", s.Name))
-		if s.Description != "" {
-			b.WriteString(fmt.Sprintf("*%s*\n", s.Description))
-		}
-		b.WriteString(fmt.Sprintf("File: `%s`\n\n", s.FilePath))
-	}
-	return b.String()
-}
-
-// --- Helpers ---
-
 func fileModTime(path string) time.Time {
 	info, err := os.Stat(path)
 	if err != nil {
 		return time.Time{}
 	}
-	return info.ModTime()
-}
-
-func dirModTime(path string) time.Time {
-	info, err := os.Stat(path)
-	if err != nil {
-		return time.Time{}
-	}
-	// Use the directory's own mod time (changes when files are added/removed).
 	return info.ModTime()
 }

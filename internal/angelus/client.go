@@ -66,14 +66,6 @@ func (c *Client) Unbind(ctx context.Context, pid int) error {
 	return c.cli.Call(ctx, rpc.MethodUnbind, rpc.UnbindRequest{PID: pid}, nil)
 }
 
-func (c *Client) Status(ctx context.Context) (*rpc.StatusResponse, error) {
-	var resp rpc.StatusResponse
-	if err := c.cli.Call(ctx, rpc.MethodStatus, nil, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
 // SaveBindings asks the angelus to persist its current PID→figaro
 // bindings to disk. Called by `figaro rest --keep-pids` just before
 // sending SIGTERM so the bindings survive the restart.

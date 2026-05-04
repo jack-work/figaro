@@ -29,13 +29,7 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 	return &Client{cli: cli}, nil
 }
 
-// Prompt sends a prompt to the figaro and returns immediately (enqueued).
-func (c *Client) Prompt(ctx context.Context, text string) error {
-	return c.cli.Call(ctx, rpc.MethodPrompt, rpc.PromptRequest{Text: text}, nil)
-}
-
 // PromptWithChalkboard sends a prompt with an optional chalkboard input.
-// Pass nil for the input to behave identically to Prompt.
 func (c *Client) PromptWithChalkboard(ctx context.Context, text string, cb *rpc.ChalkboardInput) error {
 	return c.cli.Call(ctx, rpc.MethodPrompt, rpc.PromptRequest{Text: text, Chalkboard: cb}, nil)
 }
@@ -47,20 +41,6 @@ func (c *Client) Context(ctx context.Context) (*rpc.ContextResponse, error) {
 		return nil, err
 	}
 	return &resp, nil
-}
-
-// Info returns the figaro's metadata.
-func (c *Client) Info(ctx context.Context) (*rpc.FigaroInfoResponse, error) {
-	var resp rpc.FigaroInfoResponse
-	if err := c.cli.Call(ctx, rpc.MethodFigaroInfo, nil, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
-// SetModel changes the figaro's model.
-func (c *Client) SetModel(ctx context.Context, model string) error {
-	return c.cli.Call(ctx, rpc.MethodSetModel, rpc.SetModelRequest{Model: model}, nil)
 }
 
 // SetLabel sets the aria's human-readable label. Persists to disk.

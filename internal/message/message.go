@@ -141,23 +141,10 @@ func ImageContent(mimeType, data string) Content {
 	return Content{Type: ContentImage, MimeType: mimeType, Data: data}
 }
 
-func ToolCallContent(id, name string, args map[string]interface{}) Content {
-	return Content{
-		Type: ContentToolCall, ToolCallID: id,
-		ToolName: name, Arguments: args,
-	}
-}
-
-// ToolResultContent constructs a tool_result content block. Used by
-// the agent loop to append a tool's result to the in-progress tic.
-// Multiple tool_result blocks can coexist in one user-role Message
-// (one per tool that completed since the last assistant turn).
-//
-// The result data goes into the Text field; for richer payloads
-// (images, structured content) callers can use TextContent / ImageContent
-// in a separate block — but Anthropic's wire shape expects a single
-// text or image inside each tool_result, so this helper keeps it
-// simple.
+// ToolResultContent constructs one tool_result content block.
+// Multiple coexist in one user-role Message (one per completed
+// tool). Anthropic's wire shape expects a single text per
+// tool_result; richer payloads need separate blocks.
 func ToolResultContent(toolCallID, toolName, text string, isErr bool) Content {
 	return Content{
 		Type:       ContentToolResult,
@@ -165,16 +152,5 @@ func ToolResultContent(toolCallID, toolName, text string, isErr bool) Content {
 		ToolName:   toolName,
 		Text:       text,
 		IsError:    isErr,
-	}
-}
-
-func NewToolResult(toolCallID, toolName string, content []Content, isError bool, lt uint64, ts int64) Message {
-	for i := range content {
-		content[i].IsError = isError
-	}
-	return Message{
-		Role: RoleToolResult, Content: content,
-		ToolCallID: toolCallID, ToolName: toolName,
-		LogicalTime: lt, Timestamp: ts,
 	}
 }

@@ -336,19 +336,6 @@ func (c *Client) Call(ctx context.Context, method string, params, result interfa
 	}
 }
 
-// Notify sends a notification to the server (no response expected).
-func (c *Client) Notify(ctx context.Context, method string, params interface{}) error {
-	paramsJSON, err := json.Marshal(params)
-	if err != nil {
-		return err
-	}
-	return c.conn.Send(Message{
-		JSONRPC: "2.0",
-		Method:  method,
-		Params:  paramsJSON,
-	})
-}
-
 // Close closes the connection and waits for the read loop to exit.
 func (c *Client) Close() error {
 	err := c.conn.Close()

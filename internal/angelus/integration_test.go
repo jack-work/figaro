@@ -196,7 +196,7 @@ func TestIntegration_CreateAndPrompt(t *testing.T) {
 	require.NoError(t, err)
 	defer fcli.Close()
 
-	err = fcli.Prompt(ctx, "what is the answer?")
+	err = fcli.PromptWithChalkboard(ctx, "what is the answer?", nil)
 	require.NoError(t, err)
 
 	// Wait for done notification.
@@ -206,10 +206,10 @@ func TestIntegration_CreateAndPrompt(t *testing.T) {
 		t.Fatal("timeout waiting for stream.done")
 	}
 
-	// Verify via info that the message was processed.
-	info, err := fcli.Info(ctx)
+	// Verify via context that messages were processed.
+	cresp, err := fcli.Context(ctx)
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, info.MessageCount, 2) // user + assistant
+	assert.GreaterOrEqual(t, len(cresp.Messages), 2) // user + assistant
 
 	// --- Angelus client: kill ---
 	err = acli.Kill(ctx, createResp.FigaroID)

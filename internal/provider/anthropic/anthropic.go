@@ -421,25 +421,6 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snap
 	return nativeMessage{}, false
 }
 
-// projectMessages renders msgs into the wire shape and the
-// parallel-indexed per-message bytes (length = len(msgs); nil entries
-// for state-only tics). Pure helper used by tests.
-func (a *Anthropic) projectMessages(msgs []message.Message) (result []nativeMessage, perFLT []json.RawMessage) {
-	perFLT = make([]json.RawMessage, len(msgs))
-	prevSnap := chalkboard.Snapshot{}
-	for i, msg := range msgs {
-		nm, ok := a.renderMessage(msg, &prevSnap)
-		if !ok {
-			continue
-		}
-		result = append(result, nm)
-		if raw, err := json.Marshal(nm); err == nil {
-			perFLT[i] = raw
-		}
-	}
-	return result, perFLT
-}
-
 func (a *Anthropic) renderPatchBlocks(patches []message.Patch, prevSnap *chalkboard.Snapshot) []nativeBlock {
 	if len(patches) == 0 || a.Templates == nil {
 		for _, p := range patches {
@@ -551,26 +532,6 @@ func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, sna
 		markCacheBreakpoints(&req, *cacheSetting)
 	}
 	return req, nil
-}
-
-// encodeAll encodes a slice of IR messages into per-message wire
-// bytes. Convenience for tests; production goes through the
-// translator cache via Agent.catchUpTranslator.
-func (a *Anthropic) encodeAll(msgs []message.Message) [][]json.RawMessage {
-	out := make([][]json.RawMessage, 0, len(msgs))
-	prevSnap := chalkboard.Snapshot{}
-	for _, msg := range msgs {
-		nm, ok := a.renderMessage(msg, &prevSnap)
-		if !ok {
-			continue
-		}
-		raw, err := json.Marshal(nm)
-		if err != nil {
-			continue
-		}
-		out = append(out, []json.RawMessage{raw})
-	}
-	return out
 }
 
 // markCacheBreakpoints attaches cache_control:(input) to the last
