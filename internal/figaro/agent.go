@@ -614,12 +614,15 @@ func (a *Agent) act(ctx context.Context) {
 				}
 				if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
 					fmt.Fprintf(os.Stderr, "figaro %s: rehydrate append: %v\n", a.id, err)
+					a.inbox.Yield()
 					continue
 				}
 				a.chalkboard.Apply(evt.rehydratePatch)
 				if err := a.chalkboard.Save(); err != nil {
 					fmt.Fprintf(os.Stderr, "figaro %s: rehydrate chalkboard save: %v\n", a.id, err)
 				}
+				a.derived.Tick(0, a.chalkboard.Snapshot())
+				a.inbox.Yield()
 
 			case eventSet:
 				fmt.Fprintf(os.Stderr, "agent: event=Set set=%d remove=%d\n",
@@ -631,12 +634,15 @@ func (a *Agent) act(ctx context.Context) {
 				}
 				if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
 					fmt.Fprintf(os.Stderr, "figaro %s: set append: %v\n", a.id, err)
+					a.inbox.Yield()
 					continue
 				}
 				a.chalkboard.Apply(evt.setPatch)
 				if err := a.chalkboard.Save(); err != nil {
 					fmt.Fprintf(os.Stderr, "figaro %s: set chalkboard save: %v\n", a.id, err)
 				}
+				a.derived.Tick(0, a.chalkboard.Snapshot())
+				a.inbox.Yield()
 
 			case eventInterrupt:
 				if a.inbox.IsIdle() || a.interrupted {
