@@ -236,18 +236,20 @@ func TestFileBackend_MetaPersistence(t *testing.T) {
 	require.NoError(t, err)
 
 	meta := &AriaMeta{
-		Provider: "anthropic",
-		Model:    "claude-sonnet-4-20250514",
-		Cwd:      "/home/test",
-		Root:     "/home/test/project",
+		MessageCount: 7,
+		TurnCount:    3,
+		TokensIn:     1024,
+		TokensOut:    256,
 	}
 	require.NoError(t, b.SetMeta("aria-1", meta))
 
 	got, err := b.Meta("aria-1")
 	require.NoError(t, err)
 	require.NotNil(t, got)
-	assert.Equal(t, meta.Provider, got.Provider)
-	assert.Equal(t, meta.Model, got.Model)
+	assert.Equal(t, meta.MessageCount, got.MessageCount)
+	assert.Equal(t, meta.TurnCount, got.TurnCount)
+	assert.Equal(t, meta.TokensIn, got.TokensIn)
+	assert.Equal(t, meta.TokensOut, got.TokensOut)
 }
 
 func TestFileBackend_Meta_Missing(t *testing.T) {

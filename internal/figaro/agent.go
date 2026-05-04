@@ -101,12 +101,9 @@ type Config struct {
 // TODO: child-process isolation via --figaro flag.
 type Agent struct {
 	id         string
-	label      string
 	socketPath string
 	prov       provider.Provider
 	scribe     credo.Scribe
-	cwd        string
-	root       string
 	maxTokens  int
 	tools      *tool.Registry
 	figStream  store.Stream[message.Message]
@@ -157,12 +154,9 @@ func NewAgent(cfg Config) *Agent {
 
 	a := &Agent{
 		id:          cfg.ID,
-		label:       cfg.Label,
 		socketPath:  cfg.SocketPath,
 		prov:        cfg.Provider,
 		scribe:      cfg.Scribe,
-		cwd:         cfg.Cwd,
-		root:        cfg.Root,
 		maxTokens:   cfg.MaxTokens,
 		tools:       cfg.Tools,
 		backend:     cfg.Backend,
@@ -184,9 +178,25 @@ func NewAgent(cfg Config) *Agent {
 		// flow stays uniform.
 		a.chalkboard, _ = chalkboard.Open("")
 	}
+	// Seed configured fields into the chalkboard. system.* keys
+	// are the canonical source of truth; nothing else stores them.
+	seed := chalkboard.Patch{Set: map[string]json.RawMessage{}}
 	if cfg.Model != "" {
-		seed := chalkboard.Patch{Set: map[string]json.RawMessage{}}
 		seed.Set2("system.model", cfg.Model)
+	}
+	if cfg.Label != "" {
+		seed.Set2("system.label", cfg.Label)
+	}
+	if cfg.Cwd != "" {
+		seed.Set2("system.cwd", cfg.Cwd)
+	}
+	if cfg.Root != "" {
+		seed.Set2("system.root", cfg.Root)
+	}
+	if cfg.Provider != nil {
+		seed.Set2("system.provider", cfg.Provider.Name())
+	}
+	if !seed.IsEmpty() {
 		a.chalkboard.Apply(seed)
 	}
 	a.inbox = NewInbox(ctx, a.figStream, a.translator)
@@ -209,26 +219,11 @@ func NewAgent(cfg Config) *Agent {
 	// arias/{id}/meta.json + per-translation .meta.json based on
 	// durable state. Only lives for backed agents (ephemeral arias
 	// have nothing to materialize to).
-	a.derived = NewDerived(ctx, a.id, a.prov.Name(), a.backend, a.figStream, a.translator, a.snapshotConfigured)
+	a.derived = NewDerived(ctx, a.id, a.prov.Name(), a.backend, a.figStream, a.translator)
 	a.derived.Tick(0) // initial materialization
 
 	go a.runWithRecovery(ctx)
 	return a
-}
-
-// snapshotConfigured returns the agent-owned slice of AriaMeta for
-// the Derived actor to splice into its rewrite. Read under a.mu so
-// SetLabel / SetModel writes are observed atomically.
-func (a *Agent) snapshotConfigured() ConfiguredMeta {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return ConfiguredMeta{
-		Provider: a.prov.Name(),
-		Model:    a.currentModel(),
-		Cwd:      a.cwd,
-		Root:     a.root,
-		Label:    a.label,
-	}
 }
 
 // newStream opens the figaro IR stream — FileStream when persisted,
@@ -242,34 +237,19 @@ func (a *Agent) newStream(model string) store.Stream[message.Message] {
 		fmt.Fprintf(os.Stderr, "figaro %s: backend open error: %v (falling back to ephemeral)\n", a.id, err)
 		return store.NewMemStream[message.Message]()
 	}
-	label := a.label
-	if label == "" {
-		if existing, _ := a.backend.Meta(a.id); existing != nil {
-			label = existing.Label
-		}
-	}
-	if err := a.backend.SetMeta(a.id, &store.AriaMeta{
-		Provider: a.prov.Name(),
-		Model:    model,
-		Cwd:      a.cwd,
-		Root:     a.root,
-		Label:    label,
-	}); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: backend set meta: %v\n", a.id, err)
-	}
-	a.label = label
 	return stream
 }
 
 func (a *Agent) ID() string         { return a.id }
 func (a *Agent) SocketPath() string { return a.socketPath }
 
-// currentModel reads chalkboard.system.model — the source of truth.
-func (a *Agent) currentModel() string {
+// chalkboardString reads a system.* string key. Empty when missing
+// or the chalkboard isn't configured.
+func (a *Agent) chalkboardString(key string) string {
 	if a.chalkboard == nil {
 		return ""
 	}
-	raw, ok := a.chalkboard.Snapshot()["system.model"]
+	raw, ok := a.chalkboard.Snapshot()[key]
 	if !ok {
 		return ""
 	}
@@ -277,6 +257,9 @@ func (a *Agent) currentModel() string {
 	json.Unmarshal(raw, &s)
 	return s
 }
+
+func (a *Agent) currentModel() string { return a.chalkboardString("system.model") }
+func (a *Agent) currentLabel() string { return a.chalkboardString("system.label") }
 
 func (a *Agent) SetModel(m string) {
 	p := chalkboard.Patch{Set: map[string]json.RawMessage{}}
@@ -286,27 +269,21 @@ func (a *Agent) SetModel(m string) {
 	a.prov.SetModel(m)
 }
 
-// SetLabel sets the aria's label and persists it. Empty clears.
-// No-op for ephemeral arias.
+// SetLabel writes system.label to the chalkboard. Empty removes
+// the key.
 func (a *Agent) SetLabel(label string) error {
-	a.mu.Lock()
-	a.label = label
-	a.mu.Unlock()
-
-	if a.backend == nil {
+	if a.chalkboard == nil {
 		return nil
 	}
-	meta, _ := a.backend.Meta(a.id)
-	if meta == nil {
-		meta = &store.AriaMeta{
-			Provider: a.prov.Name(),
-			Model:    a.currentModel(),
-			Cwd:      a.cwd,
-			Root:     a.root,
-		}
+	p := chalkboard.Patch{}
+	if label == "" {
+		p.Remove = []string{"system.label"}
+	} else {
+		p.Set = map[string]json.RawMessage{}
+		p.Set2("system.label", label)
 	}
-	meta.Label = label
-	return a.backend.SetMeta(a.id, meta)
+	a.chalkboard.Apply(p)
+	return a.chalkboard.Save()
 }
 
 func (a *Agent) Prompt(text string) {
@@ -383,7 +360,7 @@ func (a *Agent) Info() FigaroInfo {
 
 	return FigaroInfo{
 		ID:               a.id,
-		Label:            a.label,
+		Label:            a.currentLabel(),
 		State:            state,
 		Provider:         a.prov.Name(),
 		Model:            a.currentModel(),

@@ -12,39 +12,23 @@ import (
 )
 
 // Derived is the per-figaro materialized-view actor. One inbox, one
-// goroutine, one tick processed at a time. After every condense /
-// endTurn, the agent calls Tick(figLT); the loop coalesces redundant
-// ticks (channel buffer 1, non-blocking send) and re-derives both
-// the aria meta and the per-translator meta from durable state.
-//
-// Reads are concurrent-safe (FileStream's mutex serializes them
-// against concurrent writes). Writes go through Backend.SetMeta /
-// SetTranslationMeta which use atomic write-then-rename.
+// goroutine, one tick at a time. Reads durable streams; writes
+// AriaMeta + TranslationMeta as derived statistics. Configured
+// fields (label, model, etc.) live in chalkboard.json — Derived
+// doesn't touch them.
 type Derived struct {
-	id            string
-	providerName  string
-	backend       store.Backend
-	figStream     store.Stream[message.Message]
-	translator    store.Stream[[]json.RawMessage]
-	configured    func() ConfiguredMeta // snapshot of agent-owned fields
+	id           string
+	providerName string
+	backend      store.Backend
+	figStream    store.Stream[message.Message]
+	translator   store.Stream[[]json.RawMessage]
 
 	inbox chan tick
 	done  chan struct{}
 }
 
-// ConfiguredMeta is the slice of AriaMeta the agent owns. Derived
-// reads it via the configured() snapshot to avoid touching agent
-// state directly.
-type ConfiguredMeta struct {
-	Provider string
-	Model    string
-	Cwd      string
-	Root     string
-	Label    string
-}
-
 type tick struct {
-	figaroLT uint64 // watermark: durable state through this LT
+	figaroLT uint64
 }
 
 // NewDerived spawns the actor. Returns nil when backend is nil
@@ -55,7 +39,6 @@ func NewDerived(
 	backend store.Backend,
 	figStream store.Stream[message.Message],
 	translator store.Stream[[]json.RawMessage],
-	configured func() ConfiguredMeta,
 ) *Derived {
 	if backend == nil {
 		return nil
@@ -66,7 +49,6 @@ func NewDerived(
 		backend:      backend,
 		figStream:    figStream,
 		translator:   translator,
-		configured:   configured,
 		inbox:        make(chan tick, 1),
 		done:         make(chan struct{}),
 	}
@@ -75,8 +57,8 @@ func NewDerived(
 }
 
 // Tick coalesces. If a tick is already pending, the new one is
-// dropped (the loop will pick up the latest durable state when it
-// processes the pending one).
+// dropped — the loop catches the latest durable state when it
+// processes the pending one.
 func (d *Derived) Tick(figaroLT uint64) {
 	if d == nil {
 		return
@@ -108,16 +90,10 @@ func (d *Derived) run(ctx context.Context) {
 }
 
 func (d *Derived) process(t tick) {
-	cfg := d.configured()
 	now := time.Now().UnixMilli()
 
 	msgs := unwrapMessages(d.figStream.Durable())
 	aria := store.AriaMeta{
-		Provider:     cfg.Provider,
-		Model:        cfg.Model,
-		Cwd:          cfg.Cwd,
-		Root:         cfg.Root,
-		Label:        cfg.Label,
 		MessageCount: len(msgs),
 		LastActiveMS: now,
 		LastFigaroLT: t.figaroLT,

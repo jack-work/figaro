@@ -110,6 +110,42 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 	return st
 }
 
+// fillFromChalkboard reads arias/<id>/chalkboard.json off disk and
+// splices the configured fields (Label, Provider, Model) into the
+// list entry. Cheap — chalkboard.json is small.
+func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoResponse) {
+	fb, ok := h.angelus.Backend.(interface{ Dir() string })
+	if !ok {
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(fb.Dir(), ariaID, "chalkboard.json"))
+	if err != nil {
+		return
+	}
+	var snap map[string]json.RawMessage
+	if json.Unmarshal(data, &snap) != nil {
+		return
+	}
+	get := func(key string) string {
+		raw, ok := snap[key]
+		if !ok {
+			return ""
+		}
+		var s string
+		_ = json.Unmarshal(raw, &s)
+		return s
+	}
+	if entry.Label == "" {
+		entry.Label = get("system.label")
+	}
+	if entry.Provider == "" {
+		entry.Provider = get("system.provider")
+	}
+	if entry.Model == "" {
+		entry.Model = get("system.model")
+	}
+}
+
 // openAriaTranslation returns a per-aria, per-provider translation
 // stream via the backend. Returns nil when the angelus has no Backend
 // or the open fails — the agent runs without translation caching in
@@ -276,9 +312,6 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 				LastActive:   aria.LastModified.UnixMilli(),
 			}
 			if aria.Meta != nil {
-				entry.Label = aria.Meta.Label
-				entry.Provider = aria.Meta.Provider
-				entry.Model = aria.Meta.Model
 				entry.TokensIn = aria.Meta.TokensIn
 				entry.TokensOut = aria.Meta.TokensOut
 				entry.CacheReadTokens = aria.Meta.CacheReadTokens
@@ -287,6 +320,8 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 					entry.LastActive = aria.Meta.LastActiveMS
 				}
 			}
+			// Configured fields live in the chalkboard, not meta.
+			h.fillFromChalkboard(aria.ID, &entry)
 			result = append(result, entry)
 		}
 	}
@@ -387,16 +422,34 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figar
 // arias with no metadata or no messages (the latter are cleaned up).
 // Returns the registered Figaro on success.
 func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.Figaro, error) {
-	if aria.Meta == nil {
-		return nil, fmt.Errorf("restore %s: no metadata", aria.ID)
-	}
 	if aria.MessageCount == 0 {
 		h.angelus.Backend.Remove(aria.ID)
 		return nil, fmt.Errorf("restore %s: empty aria, removed", aria.ID)
 	}
 
-	meta := aria.Meta
-	prov, err := h.factory(meta.Provider, meta.Model)
+	// Configured fields live in chalkboard.json; meta is purely
+	// derived now.
+	cb := h.openAriaChalkboard(aria.ID)
+	if cb == nil {
+		return nil, fmt.Errorf("restore %s: chalkboard unavailable", aria.ID)
+	}
+	cbSnap := cb.Snapshot()
+	cbStr := func(key string) string {
+		raw, ok := cbSnap[key]
+		if !ok {
+			return ""
+		}
+		var s string
+		_ = json.Unmarshal(raw, &s)
+		return s
+	}
+	provName := cbStr("system.provider")
+	model := cbStr("system.model")
+	label := cbStr("system.label")
+	cwd := cbStr("system.cwd")
+	root := cbStr("system.root")
+
+	prov, err := h.factory(provName, model)
 	if err != nil {
 		return nil, fmt.Errorf("restore %s: create provider: %w", aria.ID, err)
 	}
@@ -406,8 +459,6 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), aria.ID+".sock")
 	scribe := credo.NewDefaultScribe(h.config.ConfigDir)
 
-	cwd := meta.Cwd
-	root := meta.Root
 	if _, err := os.Stat(cwd); err != nil {
 		cwd, _ = os.Getwd()
 	}
@@ -417,10 +468,10 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 
 	agent := figaro.NewAgent(figaro.Config{
 		ID:               aria.ID,
-		Label:            meta.Label,
+		Label:            label,
 		SocketPath:       sockPath,
 		Provider:         prov,
-		Model:            meta.Model,
+		Model:            model,
 		Scribe:           scribe,
 		Cwd:              cwd,
 		Root:             root,
@@ -428,7 +479,7 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 		Tools:            tool.DefaultRegistry(cwd),
 		LogDir:           logDir,
 		Backend:          h.angelus.Backend,
-		Chalkboard:       h.openAriaChalkboard(aria.ID),
+		Chalkboard:       cb,
 		TranslatorStream: h.openAriaTranslation(aria.ID, prov.Name()),
 	})
 
@@ -440,6 +491,6 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 	go agent.StartSocket(ctx)
 
 	h.angelus.Logger.Printf("restored figaro %s, provider=%s, model=%s, messages=%d",
-		aria.ID, meta.Provider, meta.Model, aria.MessageCount)
+		aria.ID, provName, model, aria.MessageCount)
 	return agent, nil
 }

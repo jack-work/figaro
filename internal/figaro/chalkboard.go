@@ -80,7 +80,16 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 		}
 	}
 
-	patch := desired.Diff(systemNSOnly(a.chalkboard.Snapshot()))
+	// Diff only against the scribe-managed keys. Other system.*
+	// values (system.label, system.cwd, system.root) are configured
+	// independently and shouldn't be marked for removal.
+	current := chalkboard.Snapshot{}
+	for _, k := range []string{"system.prompt", "system.model", "system.provider", "system.skills"} {
+		if v, ok := a.chalkboard.Snapshot()[k]; ok {
+			current[k] = v
+		}
+	}
+	patch := desired.Diff(current)
 	for k := range patch.Set {
 		set = append(set, k)
 	}

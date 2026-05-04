@@ -544,17 +544,18 @@ secondDone:
 	// At minimum, the first prompt's flush wrote user + assistant (2 messages).
 	assert.GreaterOrEqual(t, msgCount, 2, "should have at least user + assistant on disk")
 
-	// meta.json should be present and parseable.
+	// meta.json holds derived stats (counts, tokens). Configured
+	// fields (provider, model) moved to chalkboard.json.
 	metaPath := filepath.Join(ariaDir, "meta.json")
 	mdata, err := os.ReadFile(metaPath)
 	require.NoError(t, err, "meta.json should exist after prompt")
 	var meta struct {
-		Provider string `json:"provider"`
-		Model    string `json:"model"`
+		MessageCount int `json:"message_count"`
+		TurnCount    int `json:"turn_count"`
 	}
 	require.NoError(t, json.Unmarshal(mdata, &meta))
-	assert.Equal(t, "mock", meta.Provider)
-	assert.Equal(t, "mock-model-v1", meta.Model)
+	assert.GreaterOrEqual(t, meta.MessageCount, 2)
+	assert.GreaterOrEqual(t, meta.TurnCount, 1)
 }
 
 func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {

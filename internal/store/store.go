@@ -15,21 +15,11 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// AriaMeta is the per-aria summary at arias/{id}/meta.json — a
-// materialized view of the aria's durable state. The Derived actor
-// owns writes; the agent only seeds the configured fields
-// (Provider, Model, Cwd, Root, Label) at NewAgent time.
+// AriaMeta is the per-aria materialized summary at
+// arias/{id}/meta.json — purely derived statistics. Configured
+// fields (label, root, model, provider, cwd) live in the
+// chalkboard; readers wanting them read chalkboard.json directly.
 type AriaMeta struct {
-	// Configured (set at NewAgent / SetLabel; preserved across
-	// derived rewrites).
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
-	Cwd      string `json:"cwd"`
-	Root     string `json:"root"`
-	Label    string `json:"label,omitempty"`
-
-	// Derived (owned by the Derived actor, recomputed on each
-	// condense / endTurn tick from figStream).
 	MessageCount     int    `json:"message_count,omitempty"`
 	TurnCount        int    `json:"turn_count,omitempty"` // assistant messages
 	TokensIn         int    `json:"tokens_in,omitempty"`
@@ -37,7 +27,7 @@ type AriaMeta struct {
 	CacheReadTokens  int    `json:"cache_read_tokens,omitempty"`
 	CacheWriteTokens int    `json:"cache_write_tokens,omitempty"`
 	LastActiveMS     int64  `json:"last_active_ms,omitempty"`
-	LastFigaroLT     uint64 `json:"last_figaro_lt,omitempty"` // watermark for the last derive
+	LastFigaroLT     uint64 `json:"last_figaro_lt,omitempty"`
 }
 
 // TranslationMeta is the per-(aria, provider) summary at
