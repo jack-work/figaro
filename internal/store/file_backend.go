@@ -94,6 +94,37 @@ func (b *FileBackend) SetMeta(ariaID string, meta *AriaMeta) error {
 	return writeAtomic(filepath.Join(ariaDir, metaFile), data)
 }
 
+func (b *FileBackend) TranslationMeta(ariaID, providerName string) (*TranslationMeta, error) {
+	path := filepath.Join(b.dir, ariaID, "translations", providerName+".meta.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("file backend: read translation meta: %w", err)
+	}
+	var m TranslationMeta
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("file backend: parse translation meta: %w", err)
+	}
+	return &m, nil
+}
+
+func (b *FileBackend) SetTranslationMeta(ariaID, providerName string, meta *TranslationMeta) error {
+	if meta == nil {
+		return nil
+	}
+	dir := filepath.Join(b.dir, ariaID, "translations")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("file backend: create translations dir: %w", err)
+	}
+	data, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("file backend: marshal translation meta: %w", err)
+	}
+	return writeAtomic(filepath.Join(dir, providerName+".meta.json"), data)
+}
+
 func (b *FileBackend) List() ([]AriaInfo, error) {
 	return listAriasInDir(b.dir)
 }

@@ -113,6 +113,7 @@ type Agent struct {
 	translator store.Stream[[]json.RawMessage]
 	backend    store.Backend // nil = ephemeral
 	chalkboard *chalkboard.State
+	derived    *Derived // nil = ephemeral; materialized-view actor
 
 	// Live-tail watermark for catchUpFigaroDelta; reset by condenseLive.
 	lastDecodedLiveLen int
@@ -204,8 +205,30 @@ func NewAgent(cfg Config) *Agent {
 	a.invalidateTranslatorIfStale()
 	a.bootstrapIfNeeded(cfg.Model)
 
+	// Spin up the derived metadata actor — its loop maintains
+	// arias/{id}/meta.json + per-translation .meta.json based on
+	// durable state. Only lives for backed agents (ephemeral arias
+	// have nothing to materialize to).
+	a.derived = NewDerived(ctx, a.id, a.prov.Name(), a.backend, a.figStream, a.translator, a.snapshotConfigured)
+	a.derived.Tick(0) // initial materialization
+
 	go a.runWithRecovery(ctx)
 	return a
+}
+
+// snapshotConfigured returns the agent-owned slice of AriaMeta for
+// the Derived actor to splice into its rewrite. Read under a.mu so
+// SetLabel / SetModel writes are observed atomically.
+func (a *Agent) snapshotConfigured() ConfiguredMeta {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return ConfiguredMeta{
+		Provider: a.prov.Name(),
+		Model:    a.currentModel(),
+		Cwd:      a.cwd,
+		Root:     a.root,
+		Label:    a.label,
+	}
 }
 
 // newStream opens the figaro IR stream — FileStream when persisted,
@@ -694,12 +717,7 @@ func (a *Agent) endTurn(reason string) {
 			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard save: %v\n", a.id, err)
 		}
 	}
-	if a.backend != nil {
-		if meta, _ := a.backend.Meta(a.id); meta != nil {
-			meta.MessageCount = len(a.figStream.Durable())
-			_ = a.backend.SetMeta(a.id, meta)
-		}
-	}
+	a.derived.Tick(0)
 
 	a.pendingTools = 0
 	a.pendingToolCalls = nil

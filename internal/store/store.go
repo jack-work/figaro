@@ -15,15 +15,41 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// AriaMeta is the per-aria summary at arias/{id}/meta.json. Holds
-// what `figaro list` needs without opening aria.jsonl.
+// AriaMeta is the per-aria summary at arias/{id}/meta.json — a
+// materialized view of the aria's durable state. The Derived actor
+// owns writes; the agent only seeds the configured fields
+// (Provider, Model, Cwd, Root, Label) at NewAgent time.
 type AriaMeta struct {
+	// Configured (set at NewAgent / SetLabel; preserved across
+	// derived rewrites).
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Cwd      string `json:"cwd"`
+	Root     string `json:"root"`
+	Label    string `json:"label,omitempty"`
+
+	// Derived (owned by the Derived actor, recomputed on each
+	// condense / endTurn tick from figStream).
+	MessageCount     int    `json:"message_count,omitempty"`
+	TurnCount        int    `json:"turn_count,omitempty"` // assistant messages
+	TokensIn         int    `json:"tokens_in,omitempty"`
+	TokensOut        int    `json:"tokens_out,omitempty"`
+	CacheReadTokens  int    `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int    `json:"cache_write_tokens,omitempty"`
+	LastActiveMS     int64  `json:"last_active_ms,omitempty"`
+	LastFigaroLT     uint64 `json:"last_figaro_lt,omitempty"` // watermark for the last derive
+}
+
+// TranslationMeta is the per-(aria, provider) summary at
+// arias/{id}/translations/{provider}.meta.json. Same Derived actor
+// rewrites it.
+type TranslationMeta struct {
 	Provider     string `json:"provider"`
-	Model        string `json:"model"`
-	Cwd          string `json:"cwd"`
-	Root         string `json:"root"`
-	Label        string `json:"label,omitempty"`
-	MessageCount int    `json:"message_count,omitempty"`
+	EntryCount   int    `json:"entry_count,omitempty"`
+	TotalBytes   int    `json:"total_bytes,omitempty"`
+	Fingerprint  string `json:"fingerprint,omitempty"`
+	LastTransLT  uint64 `json:"last_trans_lt,omitempty"`
+	LastUpdateMS int64  `json:"last_update_ms,omitempty"`
 }
 
 // Backend is the aria storage provider. One per angelus lifetime.
@@ -48,6 +74,13 @@ type Backend interface {
 
 	// SetMeta sets the aria metadata.
 	SetMeta(ariaID string, meta *AriaMeta) error
+
+	// TranslationMeta returns the per-provider translator summary,
+	// or nil if unset.
+	TranslationMeta(ariaID, providerName string) (*TranslationMeta, error)
+
+	// SetTranslationMeta writes the per-provider translator summary.
+	SetTranslationMeta(ariaID, providerName string, meta *TranslationMeta) error
 
 	// List returns metadata for every persisted aria. Used by `figaro
 	// list` (which merges this with live registry entries) and by

@@ -279,6 +279,13 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 				entry.Label = aria.Meta.Label
 				entry.Provider = aria.Meta.Provider
 				entry.Model = aria.Meta.Model
+				entry.TokensIn = aria.Meta.TokensIn
+				entry.TokensOut = aria.Meta.TokensOut
+				entry.CacheReadTokens = aria.Meta.CacheReadTokens
+				entry.CacheWriteTokens = aria.Meta.CacheWriteTokens
+				if aria.Meta.LastActiveMS != 0 {
+					entry.LastActive = aria.Meta.LastActiveMS
+				}
 			}
 			result = append(result, entry)
 		}

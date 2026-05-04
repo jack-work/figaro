@@ -133,6 +133,7 @@ func (a *Agent) condenseLive() []event {
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "figaro %s: condense: %v\n", a.id, err)
 	}
+	a.derived.Tick(lastFigaroLT)
 	return out
 }
 
