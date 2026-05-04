@@ -94,6 +94,16 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 	return set, removed, true, nil
 }
 
+// Snapshot returns the agent's current chalkboard snapshot. Empty
+// when no chalkboard is configured. The returned map is a defensive
+// clone — callers may mutate it safely.
+func (a *Agent) Snapshot() chalkboard.Snapshot {
+	if a.chalkboard == nil {
+		return chalkboard.Snapshot{}
+	}
+	return a.chalkboard.Snapshot()
+}
+
 // Set applies a chalkboard patch as a state-only tic. Same handler
 // as Rehydrate (figStream append + chalkboard apply + save), but
 // driven by an explicit client patch rather than the Scribe. No LLM

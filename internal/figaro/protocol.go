@@ -133,6 +133,9 @@ func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 			}
 			return rpc.SetResponse{OK: true, Set: set, Remove: removed}, nil
 		},
+		rpc.MethodChalkboardSnapshot: func(ctx context.Context, params json.RawMessage) (any, error) {
+			return rpc.ChalkboardSnapshotResponse{Snapshot: a.Snapshot()}, nil
+		},
 	}
 
 	srv := jsonrpc.NewServer(jconn, handlers)

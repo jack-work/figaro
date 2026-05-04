@@ -64,6 +64,15 @@ func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch) (*rpc.SetRe
 	return &resp, nil
 }
 
+// ChalkboardSnapshot returns the agent's current chalkboard snapshot.
+func (c *Client) ChalkboardSnapshot(ctx context.Context) (*rpc.ChalkboardSnapshotResponse, error) {
+	var resp rpc.ChalkboardSnapshotResponse
+	if err := c.cli.Call(ctx, rpc.MethodChalkboardSnapshot, nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Rehydrate re-runs the credo and writes the resulting system.* keys
 // to the chalkboard as a state-only tic. With dryRun set, the diff is
 // returned without persisting anything.

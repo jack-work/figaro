@@ -21,9 +21,10 @@ const (
 	MethodFigaroInfo = "figaro.info"
 	MethodSetModel   = "figaro.set_model"
 	MethodSetLabel   = "figaro.set_label"
-	MethodInterrupt  = "figaro.interrupt"
-	MethodRehydrate  = "figaro.rehydrate"
-	MethodSet        = "figaro.set"
+	MethodInterrupt          = "figaro.interrupt"
+	MethodRehydrate          = "figaro.rehydrate"
+	MethodSet                = "figaro.set"
+	MethodChalkboardSnapshot = "figaro.chalkboard_snapshot"
 	// figaro.subscribe is handled at the transport level (long-lived connection).
 )
 
@@ -136,6 +137,13 @@ type SetResponse struct {
 	OK     bool     `json:"ok"`
 	Set    []string `json:"set,omitempty"`
 	Remove []string `json:"remove,omitempty"`
+}
+
+// ChalkboardSnapshotResponse returns the agent's current snapshot.
+// Sorted is up to the caller — keys come back as the underlying map
+// iteration provides them.
+type ChalkboardSnapshotResponse struct {
+	Snapshot map[string]json.RawMessage `json:"snapshot"`
 }
 
 type FigaroInfoResponse struct {

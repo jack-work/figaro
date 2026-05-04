@@ -24,6 +24,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -39,6 +41,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropic"
@@ -128,6 +131,12 @@ func main() {
 			return
 		case "unset":
 			runUnset(loaded)
+			return
+		case "chalkboard":
+			runChalkboard(loaded)
+			return
+		case "aria":
+			runAria(loaded)
 			return
 		case "new":
 			prompt := extractPrompt(os.Args[2:])
@@ -632,6 +641,237 @@ func mustCallSet(loaded *config.Loaded, patch rpc.ChalkboardPatch) setResult {
 		die("set: %s", err)
 	}
 	return setResult{figaroID: r.FigaroID, resp: resp}
+}
+
+// --- CLI: chalkboard ---
+
+// runChalkboard prints the current chalkboard snapshot of the
+// figaro bound to this shell. Keys are sorted alphabetically.
+func runChalkboard(loaded *config.Loaded) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	r, err := acli.Resolve(ctx, os.Getppid())
+	if err != nil {
+		die("resolve: %s", err)
+	}
+	if !r.Found {
+		die("no figaro bound to this shell")
+	}
+	ep := transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}
+	fcli, err := figaro.DialClient(ep, nil)
+	if err != nil {
+		die("connect figaro: %s", err)
+	}
+	defer fcli.Close()
+
+	resp, err := fcli.ChalkboardSnapshot(ctx)
+	if err != nil {
+		die("chalkboard: %s", err)
+	}
+	printSnapshot(os.Stdout, resp.Snapshot)
+}
+
+func printSnapshot(w io.Writer, snap map[string]json.RawMessage) {
+	keys := make([]string, 0, len(snap))
+	for k := range snap {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(w, "%s = %s\n", k, snap[k])
+	}
+}
+
+// --- CLI: aria ---
+
+// runAria renders the last N messages of the bound figaro's aria
+// file as markdown to stdout (via largo). N defaults to 10.
+//
+// Usage: figaro aria [N] [--verbose|-v]
+//
+// --verbose: also dumps the chalkboard snapshot and surfaces patches
+// on each tic.
+func runAria(loaded *config.Loaded) {
+	n := 10
+	verbose := false
+	for _, arg := range os.Args[2:] {
+		switch arg {
+		case "-v", "--verbose":
+			verbose = true
+		default:
+			parsed, err := strconv.Atoi(arg)
+			if err != nil {
+				die("usage: figaro aria [N] [-v|--verbose]")
+			}
+			n = parsed
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	r, err := acli.Resolve(ctx, os.Getppid())
+	if err != nil {
+		die("resolve: %s", err)
+	}
+	if !r.Found {
+		die("no figaro bound to this shell")
+	}
+	figaroID := r.FigaroID
+
+	home, _ := os.UserHomeDir()
+	ariaPath := filepath.Join(home, ".local", "state", "figaro", "arias", figaroID, "aria.jsonl")
+	fs, err := store.OpenFileStream[message.Message](ariaPath)
+	if err != nil {
+		die("open aria: %s", err)
+	}
+	entries := fs.Durable()
+	if len(entries) == 0 {
+		fmt.Fprintln(os.Stderr, "(empty aria)")
+		return
+	}
+	start := 0
+	if len(entries) > n {
+		start = len(entries) - n
+	}
+
+	sw, err := largo.NewWriter(os.Stdout, largo.Options{})
+	if err != nil {
+		die("largo: %s", err)
+	}
+
+	fmt.Fprintf(sw, "# aria %s — showing %d of %d messages\n\n", figaroID, len(entries)-start, len(entries))
+	for _, e := range entries[start:] {
+		renderMessage(sw, e.Payload, e.LT, verbose)
+	}
+	sw.Flush()
+
+	if verbose {
+		fmt.Println()
+		fmt.Println("---")
+		fmt.Println("## chalkboard")
+		fmt.Println()
+		// Read snapshot from disk (cheaper + matches what's persisted).
+		cbPath := filepath.Join(home, ".local", "state", "figaro", "arias", figaroID, "chalkboard.json")
+		cbData, err := os.ReadFile(cbPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "read chalkboard: %s\n", err)
+			return
+		}
+		var snap map[string]json.RawMessage
+		if err := json.Unmarshal(cbData, &snap); err != nil {
+			fmt.Fprintf(os.Stderr, "parse chalkboard: %s\n", err)
+			return
+		}
+		printSnapshot(os.Stdout, snap)
+	}
+}
+
+// renderMessage writes one IR message as markdown.
+func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
+	switch m.Role {
+	case message.RoleUser:
+		var text string
+		var toolResults []message.Content
+		for _, c := range m.Content {
+			switch c.Type {
+			case message.ContentText:
+				if text != "" {
+					text += "\n\n"
+				}
+				text += c.Text
+			case message.ContentToolResult:
+				toolResults = append(toolResults, c)
+			}
+		}
+		if text != "" {
+			fmt.Fprintf(w, "**you** [#%d]\n\n> %s\n\n", lt, indentBlockquote(text))
+		}
+		for _, c := range toolResults {
+			marker := "↩"
+			if c.IsError {
+				marker = "⚠"
+			}
+			fmt.Fprintf(w, "%s **%s** result\n\n```\n%s\n```\n\n", marker, c.ToolName, truncate(c.Text, 800))
+		}
+		if verbose && len(m.Patches) > 0 {
+			fmt.Fprintf(w, "*patch [#%d]: ", lt)
+			first := true
+			for _, p := range m.Patches {
+				for k := range p.Set {
+					if !first {
+						fmt.Fprint(w, ", ")
+					}
+					fmt.Fprintf(w, "set %s", k)
+					first = false
+				}
+				for _, k := range p.Remove {
+					if !first {
+						fmt.Fprint(w, ", ")
+					}
+					fmt.Fprintf(w, "remove %s", k)
+					first = false
+				}
+			}
+			fmt.Fprint(w, "*\n\n")
+		}
+
+	case message.RoleAssistant:
+		header := fmt.Sprintf("**figaro** [#%d]", lt)
+		if m.StopReason != "" {
+			header += fmt.Sprintf(" *(%s)*", m.StopReason)
+		}
+		fmt.Fprintf(w, "%s\n\n", header)
+		for _, c := range m.Content {
+			switch c.Type {
+			case message.ContentText:
+				fmt.Fprintf(w, "%s\n\n", c.Text)
+			case message.ContentThinking:
+				if verbose {
+					fmt.Fprintf(w, "> *🤔 %s*\n\n", c.Text)
+				}
+			case message.ContentToolCall:
+				fmt.Fprintf(w, "→ **%s** %s\n\n", c.ToolName, toolCallSummary(c))
+			}
+		}
+		if verbose && m.Usage != nil {
+			fmt.Fprintf(w, "*tokens: in=%d out=%d cache_r=%d cache_w=%d*\n\n",
+				m.Usage.InputTokens, m.Usage.OutputTokens,
+				m.Usage.CacheReadTokens, m.Usage.CacheWriteTokens)
+		}
+	}
+}
+
+func indentBlockquote(s string) string {
+	return strings.ReplaceAll(s, "\n", "\n> ")
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + fmt.Sprintf("\n... (%d more bytes)", len(s)-n)
+}
+
+func toolCallSummary(c message.Content) string {
+	switch c.ToolName {
+	case "bash":
+		if cmd, ok := c.Arguments["command"].(string); ok {
+			return "`" + truncate(cmd, 120) + "`"
+		}
+	case "read", "write", "edit":
+		if path, ok := c.Arguments["path"].(string); ok {
+			return "`" + path + "`"
+		}
+	}
+	return ""
 }
 
 // --- CLI: detach ---
@@ -1435,6 +1675,8 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "       figaro rehydrate [--dry-run]")
 	fmt.Fprintln(os.Stderr, "       figaro set <key> <value>   (chalkboard patch, no LLM round-trip)")
 	fmt.Fprintln(os.Stderr, "       figaro unset <key> [<key>...]")
+	fmt.Fprintln(os.Stderr, "       figaro chalkboard          (current snapshot of bound figaro)")
+	fmt.Fprintln(os.Stderr, "       figaro aria [N] [-v]       (last N messages as markdown; default 10)")
 	fmt.Fprintln(os.Stderr, "       figaro list")
 	fmt.Fprintln(os.Stderr, "       figaro kill <id>")
 	fmt.Fprintln(os.Stderr, "       figaro models")
