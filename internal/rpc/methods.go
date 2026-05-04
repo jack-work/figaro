@@ -23,6 +23,7 @@ const (
 	MethodSetLabel   = "figaro.set_label"
 	MethodInterrupt  = "figaro.interrupt"
 	MethodRehydrate  = "figaro.rehydrate"
+	MethodSet        = "figaro.set"
 	// figaro.subscribe is handled at the transport level (long-lived connection).
 )
 
@@ -122,6 +123,19 @@ type RehydrateResponse struct {
 	Applied    bool     `json:"applied"`
 	SetKeys    []string `json:"set_keys,omitempty"`
 	RemoveKeys []string `json:"remove_keys,omitempty"`
+}
+
+// SetRequest applies a chalkboard patch directly — no LLM
+// round-trip. Used by the `figaro set` / `figaro unset` CLI to
+// configure runtime knobs (e.g. system.cache_control).
+type SetRequest struct {
+	Patch ChalkboardPatch `json:"patch"`
+}
+
+type SetResponse struct {
+	OK     bool     `json:"ok"`
+	Set    []string `json:"set,omitempty"`
+	Remove []string `json:"remove,omitempty"`
 }
 
 type FigaroInfoResponse struct {

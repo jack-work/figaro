@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/jsonrpc"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
@@ -119,6 +120,18 @@ func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 			return rpc.RehydrateResponse{
 				Applied: applied, SetKeys: set, RemoveKeys: removed,
 			}, nil
+		},
+		rpc.MethodSet: func(ctx context.Context, params json.RawMessage) (any, error) {
+			var req rpc.SetRequest
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, err
+			}
+			patch := chalkboard.Patch{Set: req.Patch.Set, Remove: req.Patch.Remove}
+			set, removed, err := a.Set(patch)
+			if err != nil {
+				return nil, err
+			}
+			return rpc.SetResponse{OK: true, Set: set, Remove: removed}, nil
 		},
 	}
 

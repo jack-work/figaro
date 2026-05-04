@@ -31,6 +31,7 @@ const (
 	eventToolResult
 	eventInterrupt
 	eventRehydrate
+	eventSet
 	eventFigaro         // durable assistant Message landed in figStream
 	eventFigaroDelta    // partial assistant text — translated from a translator live entry
 	eventTranslatorLive // routed to translator live on Recv (translated by synchronize)
@@ -57,8 +58,9 @@ type event struct {
 	isErr   bool
 	err     error
 
-	// eventRehydrate
+	// eventRehydrate / eventSet
 	rehydratePatch message.Patch
+	setPatch       message.Patch
 
 	// eventFigaro
 	figMsg message.Message
@@ -616,6 +618,23 @@ func (a *Agent) act(ctx context.Context) {
 				a.chalkboard.Apply(evt.rehydratePatch)
 				if err := a.chalkboard.Save(); err != nil {
 					fmt.Fprintf(os.Stderr, "figaro %s: rehydrate chalkboard save: %v\n", a.id, err)
+				}
+
+			case eventSet:
+				fmt.Fprintf(os.Stderr, "agent: event=Set set=%d remove=%d\n",
+					len(evt.setPatch.Set), len(evt.setPatch.Remove))
+				tic := message.Message{
+					Role:      message.RoleUser,
+					Patches:   []message.Patch{evt.setPatch},
+					Timestamp: time.Now().UnixMilli(),
+				}
+				if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
+					fmt.Fprintf(os.Stderr, "figaro %s: set append: %v\n", a.id, err)
+					continue
+				}
+				a.chalkboard.Apply(evt.setPatch)
+				if err := a.chalkboard.Save(); err != nil {
+					fmt.Fprintf(os.Stderr, "figaro %s: set chalkboard save: %v\n", a.id, err)
 				}
 
 			case eventInterrupt:

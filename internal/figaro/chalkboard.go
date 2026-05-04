@@ -94,6 +94,25 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 	return set, removed, true, nil
 }
 
+// Set applies a chalkboard patch as a state-only tic. Same handler
+// as Rehydrate (figStream append + chalkboard apply + save), but
+// driven by an explicit client patch rather than the Scribe. No LLM
+// round-trip. Returns the keys actually set / removed.
+func (a *Agent) Set(patch chalkboard.Patch) (set, removed []string, err error) {
+	if a.chalkboard == nil {
+		return nil, nil, fmt.Errorf("set requires a chalkboard")
+	}
+	if patch.IsEmpty() {
+		return nil, nil, nil
+	}
+	for k := range patch.Set {
+		set = append(set, k)
+	}
+	removed = append(removed, patch.Remove...)
+	a.inbox.SendPatient(event{typ: eventSet, setPatch: patch})
+	return set, removed, nil
+}
+
 func withoutSystemNS(s chalkboard.Snapshot) chalkboard.Snapshot {
 	out := make(chalkboard.Snapshot, len(s))
 	for k, v := range s {

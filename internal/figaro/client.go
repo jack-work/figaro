@@ -55,6 +55,15 @@ func (c *Client) Interrupt(ctx context.Context) error {
 	return c.cli.Call(ctx, rpc.MethodInterrupt, rpc.InterruptRequest{}, nil)
 }
 
+// Set applies a chalkboard patch directly. No LLM round-trip.
+func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch) (*rpc.SetResponse, error) {
+	var resp rpc.SetResponse
+	if err := c.cli.Call(ctx, rpc.MethodSet, rpc.SetRequest{Patch: patch}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Rehydrate re-runs the credo and writes the resulting system.* keys
 // to the chalkboard as a state-only tic. With dryRun set, the diff is
 // returned without persisting anything.

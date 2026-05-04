@@ -123,6 +123,12 @@ func main() {
 		case "rehydrate":
 			runRehydrate(loaded)
 			return
+		case "set":
+			runSet(loaded)
+			return
+		case "unset":
+			runUnset(loaded)
+			return
 		case "new":
 			prompt := extractPrompt(os.Args[2:])
 			if prompt == "" {
@@ -194,7 +200,6 @@ func runAngelus() {
 	// without chalkboard, with a warning to the log.
 	cbTmpls := buildChalkboard(logger)
 
-	// TODO: answer over the chat what this does exactly, then remove this comment.
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -262,6 +267,7 @@ func runPrompt(loaded *config.Loaded, prompt string) {
 	_ = figaroID
 
 	// Connect to figaro and prompt.
+	echoPromptIfEnabled(loaded, prompt)
 	mustPromptFigaro(ctx, figaroEP, prompt, loaded.Log().RPCFile)
 }
 
@@ -282,6 +288,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string) {
 	// Create new figaro and bind.
 	_, figaroEP := mustCreateAndBind(ctx, acli, loaded, ppid)
 
+	echoPromptIfEnabled(loaded, prompt)
 	mustPromptFigaro(ctx, figaroEP, prompt, loaded.Log().RPCFile)
 }
 
@@ -552,6 +559,79 @@ func runLabel(loaded *config.Loaded) {
 	} else {
 		fmt.Fprintf(os.Stderr, "labeled %s: %q\n", figaroID, label)
 	}
+}
+
+// --- CLI: set / unset ---
+
+// runSet patches a chalkboard key on the figaro bound to this shell.
+// Usage: figaro set <key> <value>
+//
+// The value is parsed as JSON if possible (so `figaro set foo 42` and
+// `figaro set foo true` work as you'd expect); otherwise it's stored
+// as a JSON string. No LLM round-trip — the patch lands as a
+// state-only tic, just like rehydrate.
+func runSet(loaded *config.Loaded) {
+	if len(os.Args) < 4 {
+		die("usage: figaro set <key> <value>")
+	}
+	key := os.Args[2]
+	raw := os.Args[3]
+
+	value := json.RawMessage(raw)
+	if !json.Valid(value) {
+		// fall back to treating it as a string literal
+		s, _ := json.Marshal(raw)
+		value = s
+	}
+
+	patch := rpc.ChalkboardPatch{Set: map[string]json.RawMessage{key: value}}
+	resp := mustCallSet(loaded, patch)
+	fmt.Fprintf(os.Stderr, "set %s = %s (figaro %s)\n", key, value, resp.figaroID)
+}
+
+// runUnset removes one or more chalkboard keys.
+// Usage: figaro unset <key> [<key>...]
+func runUnset(loaded *config.Loaded) {
+	if len(os.Args) < 3 {
+		die("usage: figaro unset <key> [<key>...]")
+	}
+	keys := os.Args[2:]
+	patch := rpc.ChalkboardPatch{Remove: keys}
+	resp := mustCallSet(loaded, patch)
+	fmt.Fprintf(os.Stderr, "unset %s (figaro %s)\n", strings.Join(keys, ", "), resp.figaroID)
+}
+
+type setResult struct {
+	figaroID string
+	resp     *rpc.SetResponse
+}
+
+func mustCallSet(loaded *config.Loaded, patch rpc.ChalkboardPatch) setResult {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	r, err := acli.Resolve(ctx, os.Getppid())
+	if err != nil {
+		die("resolve: %s", err)
+	}
+	if !r.Found {
+		die("no figaro bound to this shell")
+	}
+	ep := transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}
+	fcli, err := figaro.DialClient(ep, nil)
+	if err != nil {
+		die("connect figaro: %s", err)
+	}
+	defer fcli.Close()
+
+	resp, err := fcli.Set(ctx, patch)
+	if err != nil {
+		die("set: %s", err)
+	}
+	return setResult{figaroID: r.FigaroID, resp: resp}
 }
 
 // --- CLI: detach ---
@@ -933,6 +1013,18 @@ func openRPCLog(path string) (*json.Encoder, *os.File) {
 		return nil, nil
 	}
 	return json.NewEncoder(f), f
+}
+
+// echoPromptIfEnabled prints the user's prompt to stdout so the
+// reader can see what was asked alongside the response. Local CLI
+// behavior; nothing reaches the conversation. Toggled via
+// `echo_prompt` in ~/.config/figaro/config.toml (default true).
+func echoPromptIfEnabled(loaded *config.Loaded, prompt string) {
+	if !loaded.EchoPrompt() {
+		return
+	}
+	fmt.Println("> " + prompt)
+	fmt.Println()
 }
 
 func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, prompt string, rpcLogPath string) {
@@ -1341,6 +1433,8 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "       figaro label <id> <label>")
 	fmt.Fprintln(os.Stderr, "       figaro context [id]")
 	fmt.Fprintln(os.Stderr, "       figaro rehydrate [--dry-run]")
+	fmt.Fprintln(os.Stderr, "       figaro set <key> <value>   (chalkboard patch, no LLM round-trip)")
+	fmt.Fprintln(os.Stderr, "       figaro unset <key> [<key>...]")
 	fmt.Fprintln(os.Stderr, "       figaro list")
 	fmt.Fprintln(os.Stderr, "       figaro kill <id>")
 	fmt.Fprintln(os.Stderr, "       figaro models")

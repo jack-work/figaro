@@ -33,8 +33,23 @@ type Config struct {
 	// DefaultModel overrides the provider's default model (optional).
 	DefaultModel string `toml:"default_model"`
 
+	// EchoPrompt controls whether the CLI prints the user's prompt
+	// before the response streams. Pointer so we can distinguish
+	// "unset → default true" from "explicit false". The setting
+	// lives only on the CLI side; it never enters the conversation.
+	EchoPrompt *bool `toml:"echo_prompt"`
+
 	// Log configures output destinations.
 	Log LogConfig `toml:"log"`
+}
+
+// EchoPrompt returns whether the CLI should echo the user's prompt
+// back before streaming the response. Defaults to true.
+func (l *Loaded) EchoPrompt() bool {
+	if l.Config.EchoPrompt == nil {
+		return true
+	}
+	return *l.Config.EchoPrompt
 }
 
 // LogConfig controls where structured output goes.
