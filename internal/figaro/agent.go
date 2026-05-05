@@ -139,9 +139,8 @@ type Agent struct {
 	endTurnSpan      func()
 	interrupted      bool // true if current turn was interrupted; suppress error noise
 
-	mu          sync.RWMutex
-	subscribers map[chan rpc.Notification]struct{} // tests
-	serverSubs  map[*serverSubscriber]struct{}     // socket clients
+	mu   sync.RWMutex
+	subs map[Notifier]struct{} // socket clients + in-process listeners
 
 	createdAt  time.Time
 	lastActive time.Time
@@ -172,7 +171,6 @@ func NewAgent(cfg Config) *Agent {
 		backend:      cfg.Backend,
 		chalkboard:   cfg.Chalkboard,
 		translator:   cfg.TranslatorStream,
-		subscribers:  make(map[chan rpc.Notification]struct{}),
 		createdAt:    time.Now(),
 		lastActive:   time.Now(),
 		cancel:       cancel,
@@ -322,28 +320,27 @@ func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 	return out
 }
 
-// agent: pretty sure this is unused
-func (a *Agent) Subscribe() <-chan rpc.Notification {
-	ch := make(chan rpc.Notification, 128)
-	a.mu.Lock()
-	a.subscribers[ch] = struct{}{}
-	a.mu.Unlock()
-	return ch
+// Notifier is a sink for fanout notifications. *jsonrpc.Server
+// implements it natively (writes JSON-RPC frames down a socket); tests
+// register an in-memory adapter.
+type Notifier interface {
+	Notify(method string, params any) error
 }
 
-// agent: pretty sure this is unused
-func (a *Agent) Unsubscribe(ch <-chan rpc.Notification) {
-	// The receive-only channel we got from Subscribe doesn't compare
-	// equal to the send-side key in the map; iterate to match.
+// Subscribe registers a Notifier for fanout. The returned function
+// removes it.
+func (a *Agent) Subscribe(n Notifier) func() {
 	a.mu.Lock()
-	for sch := range a.subscribers {
-		if sch == ch {
-			delete(a.subscribers, sch)
-			close(sch)
-			break
-		}
+	if a.subs == nil {
+		a.subs = make(map[Notifier]struct{})
 	}
+	a.subs[n] = struct{}{}
 	a.mu.Unlock()
+	return func() {
+		a.mu.Lock()
+		delete(a.subs, n)
+		a.mu.Unlock()
+	}
 }
 
 func (a *Agent) Info() FigaroInfo {
@@ -382,10 +379,7 @@ func (a *Agent) Kill() {
 	a.derived.Wait() // wait for derivation loops (so disk writes finish before close)
 
 	a.mu.Lock()
-	for ch := range a.subscribers {
-		close(ch)
-	}
-	a.subscribers = nil
+	a.subs = nil
 	a.mu.Unlock()
 
 	if err := a.figStream.Close(); err != nil {
@@ -963,15 +957,8 @@ func (a *Agent) fanOut(n rpc.Notification) {
 	if a.logEncoder != nil {
 		a.logEncoder.Encode(n)
 	}
-	for ch := range a.subscribers {
-		select {
-		case ch <- n:
-		default:
-			// Slow subscriber — drop rather than block the agent.
-		}
-	}
-	for sub := range a.serverSubs {
-		if err := sub.srv.Notify(n.Method, n.Params); err != nil {
+	for sub := range a.subs {
+		if err := sub.Notify(n.Method, n.Params); err != nil {
 			fmt.Fprintf(os.Stderr, "figaro: notify error: %v\n", err)
 		}
 	}

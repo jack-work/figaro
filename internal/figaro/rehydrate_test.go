@@ -32,8 +32,8 @@ func setCredo(t *testing.T, cb *chalkboard.State, body string) {
 // has time to fold onto the first tic.
 func promptOnceAndWait(t *testing.T, a *figaro.Agent, text string) {
 	t.Helper()
-	sub := a.Subscribe()
-	defer a.Unsubscribe(sub)
+	sub, unsub := subscribeChan(a)
+	defer unsub()
 	a.Prompt(text)
 	deadline := time.After(2 * time.Second)
 	for {

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figaro/internal/rpc"
 )
 
 // Figaro is a single agent instance.
@@ -36,13 +35,6 @@ type Figaro interface {
 
 	// Context returns all messages in the chat history.
 	Context() []message.Message
-
-	// Subscribe returns a channel that receives live notifications.
-	// Multiple subscribers are supported (fan-out).
-	Subscribe() <-chan rpc.Notification
-
-	// Unsubscribe removes a subscriber channel.
-	Unsubscribe(ch <-chan rpc.Notification)
 
 	// Info returns current metadata.
 	Info() FigaroInfo

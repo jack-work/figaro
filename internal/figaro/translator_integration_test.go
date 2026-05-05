@@ -58,8 +58,8 @@ func TestTranslator_AssistantResponseAppendsEntry(t *testing.T) {
 	})
 	t.Cleanup(func() { a.Kill() })
 
-	sub := a.Subscribe()
-	defer a.Unsubscribe(sub)
+	sub, unsub := subscribeChan(a)
+	defer unsub()
 	a.Prompt("hello")
 
 	deadline := time.After(2 * time.Second)
@@ -164,8 +164,8 @@ func TestTranslator_PopulatedTranslationLands(t *testing.T) {
 	})
 	t.Cleanup(func() { a.Kill() })
 
-	sub := a.Subscribe()
-	defer a.Unsubscribe(sub)
+	sub, unsub := subscribeChan(a)
+	defer unsub()
 	a.Prompt("hello")
 
 	deadline := time.After(2 * time.Second)

@@ -47,16 +47,15 @@ func (a *Agent) StartSocket(ctx context.Context) error {
 
 // serveConn handles a single JSON-RPC connection to this figaro. The
 // per-method dispatch lives on Agent.Handle (see server.go);
-// serveConn just builds the wire-shape handler map and runs the
-// server.
+// serveConn just builds the wire-shape handler map, registers the
+// jsonrpc.Server as a Notifier so fanout writes back down this conn,
+// and runs the server.
 func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 	jconn := jsonrpc.NewConn(conn)
 	srv := jsonrpc.NewServer(jconn, buildHandlers(a))
 
-	// Register this server as a subscriber. Notifications are pushed
-	// via srv.Notify — ordered, single writer.
-	sub := a.addServerSubscriber(srv)
-	defer a.removeServerSubscriber(sub)
+	unsub := a.Subscribe(srv)
+	defer unsub()
 
 	done := make(chan struct{})
 	go func() {
@@ -71,28 +70,6 @@ func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 	}
 }
 
-// --- Server-based subscriber management ---
-
-type serverSubscriber struct {
-	srv *jsonrpc.Server
-}
-
-func (a *Agent) addServerSubscriber(srv *jsonrpc.Server) *serverSubscriber {
-	sub := &serverSubscriber{srv: srv}
-	a.mu.Lock()
-	if a.serverSubs == nil {
-		a.serverSubs = make(map[*serverSubscriber]struct{})
-	}
-	a.serverSubs[sub] = struct{}{}
-	a.mu.Unlock()
-	return sub
-}
-
-func (a *Agent) removeServerSubscriber(sub *serverSubscriber) {
-	a.mu.Lock()
-	delete(a.serverSubs, sub)
-	a.mu.Unlock()
-}
-
 var _ Figaro = (*Agent)(nil) // compile-time interface check
 var _ AgentServer = (*Agent)(nil)
+var _ Notifier = (*jsonrpc.Server)(nil)

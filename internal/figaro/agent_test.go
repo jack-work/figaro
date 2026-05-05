@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -139,6 +140,52 @@ func mockDecode(payload []json.RawMessage) ([]message.Message, error) {
 	return out, nil
 }
 
+// --- Test helpers ---
+
+// chanNotifier is the test-side adapter for figaro.Notifier — pipes
+// every fanout call into a buffered channel so tests can assert on
+// notification ordering. close-once is guarded by mu so unsub is safe
+// to call from anywhere.
+type chanNotifier struct {
+	mu     sync.Mutex
+	ch     chan rpc.Notification
+	closed bool
+}
+
+func (c *chanNotifier) Notify(method string, params any) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return nil
+	}
+	select {
+	case c.ch <- rpc.Notification{JSONRPC: "2.0", Method: method, Params: params}:
+	default:
+	}
+	return nil
+}
+
+func (c *chanNotifier) closeOnce() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.closed {
+		c.closed = true
+		close(c.ch)
+	}
+}
+
+// subscribeChan registers a chanNotifier on the agent and returns the
+// receive end + an unsubscribe func that drops the registration AND
+// closes the channel.
+func subscribeChan(a *figaro.Agent) (<-chan rpc.Notification, func()) {
+	sink := &chanNotifier{ch: make(chan rpc.Notification, 128)}
+	unsub := a.Subscribe(sink)
+	return sink.ch, func() {
+		unsub()
+		sink.closeOnce()
+	}
+}
+
 // --- Tests ---
 
 func newTestAgent(response string) *figaro.Agent {
@@ -173,7 +220,7 @@ func TestAgent_PromptAndSubscribe(t *testing.T) {
 	defer a.Kill()
 
 	// Subscribe before prompting.
-	ch := a.Subscribe()
+	ch, _ := subscribeChan(a)
 
 	a.Prompt("What is 2+2?")
 
@@ -206,7 +253,7 @@ func TestAgent_Context(t *testing.T) {
 	a := newTestAgent("hello")
 	defer a.Kill()
 
-	ch := a.Subscribe()
+	ch, _ := subscribeChan(a)
 
 	// Initially empty.
 	assert.Empty(t, a.Context())
@@ -247,7 +294,7 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 	})
 	defer a.Kill()
 
-	ch := a.Subscribe()
+	ch, _ := subscribeChan(a)
 
 	// Enqueue two prompts rapidly.
 	a.Prompt("first")
@@ -278,8 +325,8 @@ func TestAgent_MultipleSubscribers(t *testing.T) {
 	a := newTestAgent("hi")
 	defer a.Kill()
 
-	ch1 := a.Subscribe()
-	ch2 := a.Subscribe()
+	ch1, _ := subscribeChan(a)
+	ch2, _ := subscribeChan(a)
 
 	a.Prompt("hello")
 
@@ -306,23 +353,30 @@ func TestAgent_Unsubscribe(t *testing.T) {
 	a := newTestAgent("hi")
 	defer a.Kill()
 
-	ch := a.Subscribe()
-	a.Unsubscribe(ch)
+	ch, unsub := subscribeChan(a)
+	unsub()
 
-	// Channel should be closed.
+	// Channel should be closed by the unsubscribe func.
 	_, open := <-ch
 	assert.False(t, open, "unsubscribed channel should be closed")
 }
 
 func TestAgent_Kill(t *testing.T) {
 	a := newTestAgent("hi")
-	ch := a.Subscribe()
+	ch, _ := subscribeChan(a)
 
 	a.Kill()
 
-	// Subscriber channel should be closed.
-	_, open := <-ch
-	assert.False(t, open, "subscriber channel should be closed after kill")
+	// Kill clears subscribers but doesn't close test channels — they're
+	// the test's own resource. Confirm no further notifications arrive.
+	select {
+	case n, ok := <-ch:
+		if ok {
+			t.Fatalf("unexpected notification after Kill: %+v", n)
+		}
+	case <-time.After(50 * time.Millisecond):
+		// expected: nothing else queued
+	}
 }
 
 // --- Panicking provider ---
@@ -365,7 +419,7 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	})
 	defer a.Kill()
 
-	ch := a.Subscribe()
+	ch, _ := subscribeChan(a)
 
 	// First prompt — will panic inside the agent. The new contract is
 	// that every turn (success or failure) must terminate with Done so
@@ -424,7 +478,7 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 	})
 	defer a.Kill()
 
-	ch := a.Subscribe()
+	ch, _ := subscribeChan(a)
 
 	// Trigger panic.
 	a.Prompt("boom")
@@ -482,7 +536,7 @@ func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 	})
 	defer a.Kill()
 
-	ch := a.Subscribe()
+	ch, _ := subscribeChan(a)
 	a.Prompt("save me")
 
 	// Wait for done.
@@ -566,7 +620,7 @@ func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 		Backend:    backend,
 	})
 
-	ch := a1.Subscribe()
+	ch, _ := subscribeChan(a1)
 	a1.Prompt("hello")
 
 	timeout := time.After(5 * time.Second)
@@ -611,7 +665,7 @@ func TestAgent_PersistenceKillFlushes(t *testing.T) {
 		Backend:    backend,
 	})
 
-	ch := a.Subscribe()
+	ch, _ := subscribeChan(a)
 	a.Prompt("save on kill")
 
 	timeout := time.After(5 * time.Second)
@@ -647,7 +701,7 @@ func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
 		// Backend deliberately omitted.
 	})
 
-	ch := a.Subscribe()
+	ch, _ := subscribeChan(a)
 	a.Prompt("vanish")
 
 	timeout := time.After(5 * time.Second)
@@ -713,7 +767,7 @@ func TestAgent_Interrupt(t *testing.T) {
 	})
 	defer a.Kill()
 
-	ch := a.Subscribe()
+	ch, _ := subscribeChan(a)
 	a.Prompt("take forever please")
 
 	// Wait for the provider to actually be streaming before interrupting,
@@ -767,7 +821,7 @@ func TestAgent_InterruptWhenIdle(t *testing.T) {
 	a := newTestAgent("hi")
 	defer a.Kill()
 
-	ch := a.Subscribe()
+	ch, _ := subscribeChan(a)
 	a.Interrupt()
 
 	select {

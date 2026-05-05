@@ -80,8 +80,8 @@ func (p *chalkSpyProvider) lastTurnPatches() []message.Patch {
 // for the turn to complete (via stream.done).
 func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.ChalkboardInput) {
 	t.Helper()
-	sub := a.Subscribe()
-	defer a.Unsubscribe(sub)
+	sub, unsub := subscribeChan(a)
+	defer unsub()
 
 	a.SubmitPrompt(rpc.QuaRequest{Text: text, Chalkboard: cb})
 
