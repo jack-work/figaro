@@ -83,7 +83,7 @@ func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.ChalkboardIn
 	sub := a.Subscribe()
 	defer a.Unsubscribe(sub)
 
-	a.SubmitPrompt(rpc.PromptRequest{Text: text, Chalkboard: cb})
+	a.SubmitPrompt(rpc.QuaRequest{Text: text, Chalkboard: cb})
 
 	deadline := time.After(2 * time.Second)
 	for {

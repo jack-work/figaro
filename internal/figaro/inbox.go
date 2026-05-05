@@ -150,8 +150,3 @@ func (b *Inbox) Subscribe(fn func(event)) func() {
 func (b *Inbox) Push(ev provider.Event) {
 	b.SendSelfish(event{typ: eventTranslatorLive, translatorPayload: ev.Payload})
 }
-
-// PublishFigaro queues a figaro IR event for figStream.
-func (b *Inbox) PublishFigaro(msg message.Message) {
-	b.SendSelfish(event{typ: eventFigaro, figMsg: msg})
-}

@@ -16,15 +16,12 @@ const (
 	MethodError      = "stream.error"
 
 	// Requests: client → figaro (response expected).
-	MethodPrompt             = "figaro.prompt"
-	MethodContext            = "figaro.context"
-	MethodFigaroInfo         = "figaro.info"
-	MethodSetModel           = "figaro.set_model"
-	MethodSetLabel           = "figaro.set_label"
-	MethodInterrupt          = "figaro.interrupt"
-	MethodRehydrate          = "figaro.rehydrate"
-	MethodSet                = "figaro.set"
-	MethodChalkboardSnapshot = "figaro.chalkboard_snapshot"
+	MethodQua          = "figaro.qua"
+	MethodContext      = "figaro.context"
+	MethodInterrupt    = "figaro.interrupt"
+	MethodReloadConfig = "figaro.reload_config"
+	MethodSet          = "figaro.set"
+	MethodChalkboard   = "figaro.chalkboard"
 	// figaro.subscribe is handled at the transport level (long-lived connection).
 )
 
@@ -46,7 +43,10 @@ const (
 
 // --- Figaro socket: request/response types ---
 
-type PromptRequest struct {
+// QuaRequest is the figaro.qua call — "Figaro, qua!" — the user's
+// next move. Optional chalkboard input rides along for one-shot
+// state mutations.
+type QuaRequest struct {
 	Text       string           `json:"text"`
 	Chalkboard *ChalkboardInput `json:"chalkboard,omitempty"`
 }
@@ -77,23 +77,7 @@ type ChalkboardPatch struct {
 	Remove []string                   `json:"remove,omitempty"`
 }
 
-type PromptResponse struct {
-	OK bool `json:"ok"`
-}
-
-type SetModelRequest struct {
-	Model string `json:"model"`
-}
-
-type SetModelResponse struct {
-	OK bool `json:"ok"`
-}
-
-type SetLabelRequest struct {
-	Label string `json:"label"`
-}
-
-type SetLabelResponse struct {
+type QuaResponse struct {
 	OK bool `json:"ok"`
 }
 
@@ -109,18 +93,18 @@ type ContextResponse struct {
 	Messages []interface{} `json:"messages"` // []message.Message, but interface{} for serialization flexibility
 }
 
-// RehydrateRequest re-runs the Scribe and writes the resulting
-// system.* keys into the chalkboard. With DryRun set, the server
-// computes the diff and returns it without persisting — useful for
-// `figaro rehydrate --dry-run`.
-type RehydrateRequest struct {
+// ReloadConfigRequest re-runs the Outfitter's bootstrap phase and
+// writes the resulting scribe-managed keys (system.prompt,
+// system.skills) into the chalkboard. With DryRun set, the server
+// computes the diff and returns it without persisting.
+type ReloadConfigRequest struct {
 	DryRun bool `json:"dry_run,omitempty"`
 }
 
-// RehydrateResponse describes the patch produced by rehydrate.
-// SetKeys / RemoveKeys list the keys that changed; Applied is true if
-// the patch was actually written to the chalkboard (false on dry-run).
-type RehydrateResponse struct {
+// ReloadConfigResponse describes the patch produced by reload_config.
+// SetKeys / RemoveKeys list the keys that changed; Applied is true
+// when the patch was written to the chalkboard (false on dry-run).
+type ReloadConfigResponse struct {
 	Applied    bool     `json:"applied"`
 	SetKeys    []string `json:"set_keys,omitempty"`
 	RemoveKeys []string `json:"remove_keys,omitempty"`
@@ -139,10 +123,10 @@ type SetResponse struct {
 	Remove []string `json:"remove,omitempty"`
 }
 
-// ChalkboardSnapshotResponse returns the agent's current snapshot.
-// Sorted is up to the caller — keys come back as the underlying map
-// iteration provides them.
-type ChalkboardSnapshotResponse struct {
+// ChalkboardResponse returns the agent's current snapshot. Sorted is
+// up to the caller — keys come back as the underlying map iteration
+// provides them.
+type ChalkboardResponse struct {
 	Snapshot map[string]json.RawMessage `json:"snapshot"`
 }
 

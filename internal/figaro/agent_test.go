@@ -456,15 +456,6 @@ errorReceived:
 	assert.Equal(t, 0, info.TokensOut)
 }
 
-func TestAgent_SetModel(t *testing.T) {
-	a := newTestAgent("hi")
-	defer a.Kill()
-
-	assert.Equal(t, "mock-model-v1", a.Info().Model)
-	a.SetModel("mock-model-v2")
-	assert.Equal(t, "mock-model-v2", a.Info().Model)
-}
-
 func TestAgent_Info(t *testing.T) {
 	a := newTestAgent("hi")
 	defer a.Kill()

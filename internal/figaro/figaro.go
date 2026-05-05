@@ -44,13 +44,6 @@ type Figaro interface {
 	// Unsubscribe removes a subscriber channel.
 	Unsubscribe(ch <-chan rpc.Notification)
 
-	// SetModel changes the model for subsequent prompts.
-	SetModel(model string)
-
-	// SetLabel sets the aria's human-readable label and persists it.
-	// Empty string clears the label. Returns any persistence error.
-	SetLabel(label string) error
-
 	// Info returns current metadata.
 	Info() FigaroInfo
 

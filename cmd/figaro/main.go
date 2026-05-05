@@ -399,7 +399,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string) int 
 	}
 	defer fcli.Close()
 
-	if err := fcli.PromptWithChalkboard(ctx, prompt, buildPromptChalkboard()); err != nil {
+	if err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
 		fmt.Fprintln(os.Stderr, "error: prompt:", err)
 		return 1
 	}
@@ -563,7 +563,15 @@ func runLabel(loaded *config.Loaded) {
 	}
 	defer fcli.Close()
 
-	if err := fcli.SetLabel(ctx, label); err != nil {
+	// SetLabel is gone — labels are just system.label on the chalkboard.
+	patch := rpc.ChalkboardPatch{}
+	if label == "" {
+		patch.Remove = []string{"system.label"}
+	} else {
+		b, _ := json.Marshal(label)
+		patch.Set = map[string]json.RawMessage{"system.label": b}
+	}
+	if _, err := fcli.Set(ctx, patch); err != nil {
 		die("set label: %s", err)
 	}
 	if label == "" {
@@ -671,7 +679,7 @@ func runChalkboard(loaded *config.Loaded) {
 	}
 	defer fcli.Close()
 
-	resp, err := fcli.ChalkboardSnapshot(ctx)
+	resp, err := fcli.Chalkboard(ctx)
 	if err != nil {
 		die("chalkboard: %s", err)
 	}
@@ -743,7 +751,7 @@ func runSearch(loaded *config.Loaded, args []string) {
 	}
 	defer fcli.Close()
 
-	cbResp, err := fcli.ChalkboardSnapshot(ctx)
+	cbResp, err := fcli.Chalkboard(ctx)
 	if err != nil {
 		die("chalkboard: %s", err)
 	}
@@ -1087,7 +1095,7 @@ func runRehydrate(loaded *config.Loaded) {
 	}
 	defer fcli.Close()
 
-	rresp, err := fcli.Rehydrate(ctx, dryRun)
+	rresp, err := fcli.ReloadConfig(ctx, dryRun)
 	if err != nil {
 		die("rehydrate: %s", err)
 	}
@@ -1527,7 +1535,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 	defer fcli.Close()
 
-	if err := fcli.PromptWithChalkboard(ctx, prompt, buildPromptChalkboard()); err != nil {
+	if err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
 		die("prompt: %s", err)
 	}
 

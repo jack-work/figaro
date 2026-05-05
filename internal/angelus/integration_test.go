@@ -204,7 +204,7 @@ model = "mock-model"
 	require.NoError(t, err)
 	defer fcli.Close()
 
-	err = fcli.PromptWithChalkboard(ctx, "what is the answer?", nil)
+	err = fcli.Qua(ctx, "what is the answer?", nil)
 	require.NoError(t, err)
 
 	// Wait for done notification.

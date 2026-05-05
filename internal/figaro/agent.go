@@ -90,9 +90,17 @@ type Config struct {
 	Backend    store.Backend // nil = ephemeral
 
 	// Chalkboard carries the aria's configured state. Nil creates
-	// an in-memory one (callers must Apply their seed patch first
-	// for runtime values to be visible). Closed by Kill.
+	// an in-memory one. When the chalkboard has no keys at first
+	// prompt, the agent treats the aria as fresh and applies
+	// LoadoutPatch (if set). Closed by Kill.
 	Chalkboard *chalkboard.State
+
+	// LoadoutPatch is the loadout-derived seed the agent applies
+	// on first prompt only when the chalkboard is empty (i.e. this
+	// is a fresh aria). Restored arias load from chalkboard.json
+	// and ignore this. nil = no loadout to apply.
+	LoadoutPatch *chalkboard.Patch
+
 	// TranslatorStream — per-aria, per-provider cache. Nil falls
 	// back to MemStream. Closed by Kill.
 	TranslatorStream store.Stream[[]json.RawMessage]
@@ -102,16 +110,17 @@ type Config struct {
 // goroutine — no concurrent dispatch.
 // TODO: child-process isolation via --figaro flag.
 type Agent struct {
-	id         string
-	socketPath string
-	prov       provider.Provider
-	outfitter  *outfit.Outfitter
-	tools      *tool.Registry
-	figStream  store.Stream[message.Message]
-	translator store.Stream[[]json.RawMessage]
-	backend    store.Backend // nil = ephemeral
-	chalkboard *chalkboard.State
-	derived    *derivedFanout // nil = ephemeral; per-figaro durable derivations
+	id           string
+	socketPath   string
+	prov         provider.Provider
+	outfitter    *outfit.Outfitter
+	loadoutPatch *chalkboard.Patch
+	tools        *tool.Registry
+	figStream    store.Stream[message.Message]
+	translator   store.Stream[[]json.RawMessage]
+	backend      store.Backend // nil = ephemeral
+	chalkboard   *chalkboard.State
+	derived      *derivedFanout // nil = ephemeral; per-figaro durable derivations
 
 	// Live-tail watermark for catchUpFigaroDelta; reset by condenseLive.
 	lastDecodedLiveLen int
@@ -154,19 +163,20 @@ func NewAgent(cfg Config) *Agent {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	a := &Agent{
-		id:          cfg.ID,
-		socketPath:  cfg.SocketPath,
-		prov:        cfg.Provider,
-		outfitter:   cfg.Outfitter,
-		tools:       cfg.Tools,
-		backend:     cfg.Backend,
-		chalkboard:  cfg.Chalkboard,
-		translator:  cfg.TranslatorStream,
-		subscribers: make(map[chan rpc.Notification]struct{}),
-		createdAt:   time.Now(),
-		lastActive:  time.Now(),
-		cancel:      cancel,
-		done:        make(chan struct{}),
+		id:           cfg.ID,
+		socketPath:   cfg.SocketPath,
+		prov:         cfg.Provider,
+		outfitter:    cfg.Outfitter,
+		loadoutPatch: cfg.LoadoutPatch,
+		tools:        cfg.Tools,
+		backend:      cfg.Backend,
+		chalkboard:   cfg.Chalkboard,
+		translator:   cfg.TranslatorStream,
+		subscribers:  make(map[chan rpc.Notification]struct{}),
+		createdAt:    time.Now(),
+		lastActive:   time.Now(),
+		cancel:       cancel,
+		done:         make(chan struct{}),
 	}
 
 	a.figStream = a.newStream()
@@ -177,6 +187,23 @@ func NewAgent(cfg Config) *Agent {
 		// Ephemeral arias get an in-memory chalkboard so system prompt
 		// flow stays uniform.
 		a.chalkboard, _ = chalkboard.Open("")
+	}
+	// Chalkboard is a derived view of the figStream's tic patches. If
+	// it loaded empty (file missing, ephemeral, or freshly opened),
+	// replay the stream so prior patches materialize. The on-disk
+	// chalkboard.json is just a cache of this projection — see
+	// derived.go for the analogous summary/translator/usage actors.
+	if len(a.chalkboard.Snapshot()) == 0 {
+		replayed := false
+		for _, entry := range a.figStream.Durable() {
+			for _, p := range entry.Payload.Patches {
+				a.chalkboard.Apply(p)
+				replayed = true
+			}
+		}
+		if replayed {
+			_ = a.chalkboard.Save()
+		}
 	}
 	a.inbox = NewInbox(ctx, a.figStream, a.translator)
 
@@ -255,39 +282,14 @@ func (a *Agent) chalkboardInt(key string) int {
 func (a *Agent) currentModel() string { return a.chalkboardString("system.model") }
 func (a *Agent) currentLabel() string { return a.chalkboardString("system.label") }
 
-func (a *Agent) SetModel(m string) {
-	p := chalkboard.Patch{Set: map[string]json.RawMessage{}}
-	p.Set2("system.model", m)
-	a.chalkboard.Apply(p)
-	_ = a.chalkboard.Save()
-	a.prov.SetModel(m)
-}
-
-// SetLabel writes system.label to the chalkboard. Empty removes
-// the key.
-func (a *Agent) SetLabel(label string) error {
-	if a.chalkboard == nil {
-		return nil
-	}
-	p := chalkboard.Patch{}
-	if label == "" {
-		p.Remove = []string{"system.label"}
-	} else {
-		p.Set = map[string]json.RawMessage{}
-		p.Set2("system.label", label)
-	}
-	a.chalkboard.Apply(p)
-	return a.chalkboard.Save()
-}
-
-// agent:
-// This appears only to be used in tests — see plans/dead-code-audit.md.
+// Prompt is a tests-only helper; plans/dead-code-audit.md tracks
+// the eventual removal.
 func (a *Agent) Prompt(text string) {
 	a.inbox.SendPatient(event{typ: eventUserPrompt, text: text})
 }
 
 // SubmitPrompt enqueues a prompt with optional chalkboard input.
-func (a *Agent) SubmitPrompt(req rpc.PromptRequest) {
+func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 	a.inbox.SendPatient(event{
 		typ:        eventUserPrompt,
 		text:       req.Text,
@@ -320,6 +322,7 @@ func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 	return out
 }
 
+// agent: pretty sure this is unused
 func (a *Agent) Subscribe() <-chan rpc.Notification {
 	ch := make(chan rpc.Notification, 128)
 	a.mu.Lock()
@@ -328,6 +331,7 @@ func (a *Agent) Subscribe() <-chan rpc.Notification {
 	return ch
 }
 
+// agent: pretty sure this is unused
 func (a *Agent) Unsubscribe(ch <-chan rpc.Notification) {
 	// The receive-only channel we got from Subscribe doesn't compare
 	// equal to the send-side key in the map; iterate to match.

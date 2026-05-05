@@ -29,9 +29,10 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 	return &Client{cli: cli}, nil
 }
 
-// PromptWithChalkboard sends a prompt with an optional chalkboard input.
-func (c *Client) PromptWithChalkboard(ctx context.Context, text string, cb *rpc.ChalkboardInput) error {
-	return c.cli.Call(ctx, rpc.MethodPrompt, rpc.PromptRequest{Text: text, Chalkboard: cb}, nil)
+// Qua sends a prompt with optional chalkboard input — the figaro.qua
+// call ("Figaro, qua!").
+func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) error {
+	return c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, nil)
 }
 
 // Context returns all messages in the figaro's chat history.
@@ -43,14 +44,7 @@ func (c *Client) Context(ctx context.Context) (*rpc.ContextResponse, error) {
 	return &resp, nil
 }
 
-// SetLabel sets the aria's human-readable label. Persists to disk.
-func (c *Client) SetLabel(ctx context.Context, label string) error {
-	return c.cli.Call(ctx, rpc.MethodSetLabel, rpc.SetLabelRequest{Label: label}, nil)
-}
-
-// Interrupt asks the figaro to abort its current turn. Returns as soon
-// as the agent has accepted the signal — the actual cancellation is
-// asynchronous (the agent will emit stream.error + stream.done).
+// Interrupt asks the figaro to abort its current turn.
 func (c *Client) Interrupt(ctx context.Context) error {
 	return c.cli.Call(ctx, rpc.MethodInterrupt, rpc.InterruptRequest{}, nil)
 }
@@ -64,21 +58,22 @@ func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch) (*rpc.SetRe
 	return &resp, nil
 }
 
-// ChalkboardSnapshot returns the agent's current chalkboard snapshot.
-func (c *Client) ChalkboardSnapshot(ctx context.Context) (*rpc.ChalkboardSnapshotResponse, error) {
-	var resp rpc.ChalkboardSnapshotResponse
-	if err := c.cli.Call(ctx, rpc.MethodChalkboardSnapshot, nil, &resp); err != nil {
+// Chalkboard returns the agent's current chalkboard snapshot.
+func (c *Client) Chalkboard(ctx context.Context) (*rpc.ChalkboardResponse, error) {
+	var resp rpc.ChalkboardResponse
+	if err := c.cli.Call(ctx, rpc.MethodChalkboard, nil, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
 }
 
-// Rehydrate re-runs the credo and writes the resulting system.* keys
-// to the chalkboard as a state-only tic. With dryRun set, the diff is
-// returned without persisting anything.
-func (c *Client) Rehydrate(ctx context.Context, dryRun bool) (*rpc.RehydrateResponse, error) {
-	var resp rpc.RehydrateResponse
-	if err := c.cli.Call(ctx, rpc.MethodRehydrate, rpc.RehydrateRequest{DryRun: dryRun}, &resp); err != nil {
+// ReloadConfig re-runs the Outfitter's bootstrap phase and writes
+// the resulting scribe-managed system.* keys to the chalkboard as a
+// state-only tic. With dryRun set, the diff is returned without
+// persisting.
+func (c *Client) ReloadConfig(ctx context.Context, dryRun bool) (*rpc.ReloadConfigResponse, error) {
+	var resp rpc.ReloadConfigResponse
+	if err := c.cli.Call(ctx, rpc.MethodReloadConfig, rpc.ReloadConfigRequest{DryRun: dryRun}, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -90,8 +85,7 @@ func (c *Client) Close() error {
 }
 
 // Done returns a channel that is closed when the underlying connection
-// is closed (server died, EOF, network error). Selectable from CLI
-// loops to detect agent crashes mid-turn.
+// is closed (server died, EOF, network error).
 func (c *Client) Done() <-chan struct{} {
 	return c.cli.Done()
 }

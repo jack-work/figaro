@@ -40,8 +40,8 @@ func roundTrip[T any](t *testing.T, fixture string, expected T) {
 
 // --- Figaro socket types ---
 
-func TestPromptRequest(t *testing.T) {
-	roundTrip(t, "prompt_request.json", rpc.PromptRequest{
+func TestQuaRequest(t *testing.T) {
+	roundTrip(t, "qua_request.json", rpc.QuaRequest{
 		Text: "explain this code",
 	})
 }
@@ -129,7 +129,7 @@ func TestMethodConstants(t *testing.T) {
 	// Verify method names follow naming convention.
 	assert.Equal(t, "stream.delta", rpc.MethodDelta)
 	assert.Equal(t, "stream.done", rpc.MethodDone)
-	assert.Equal(t, "figaro.prompt", rpc.MethodPrompt)
+	assert.Equal(t, "figaro.qua", rpc.MethodQua)
 	assert.Equal(t, "figaro.context", rpc.MethodContext)
 	assert.Equal(t, "figaro.create", rpc.MethodCreate)
 	assert.Equal(t, "figaro.kill", rpc.MethodKill)
