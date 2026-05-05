@@ -181,6 +181,9 @@ func NewAgent(cfg Config) *Agent {
 	// Seed configured fields into the chalkboard. system.* keys
 	// are the canonical source of truth; nothing else stores them.
 	seed := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+	// agent: remove all these specially typed arguments.  These should always be
+	// passed via chalkboard.  Any that are passed via these arguments now should be passed
+	// via the chalkboard.
 	if cfg.Model != "" {
 		seed.Set2("system.model", cfg.Model)
 	}
@@ -240,7 +243,9 @@ func (a *Agent) newStream(model string) store.Stream[message.Message] {
 	return stream
 }
 
-func (a *Agent) ID() string         { return a.id }
+func (a *Agent) ID() string { return a.id }
+
+// agent: is this (and the socket path in general) only used for tests?  if so then just remove it.
 func (a *Agent) SocketPath() string { return a.socketPath }
 
 // chalkboardString reads a system.* string key. Empty when missing
@@ -286,6 +291,8 @@ func (a *Agent) SetLabel(label string) error {
 	return a.chalkboard.Save()
 }
 
+// agent:
+// This appears only to be used in tests — see plans/dead-code-audit.md.
 func (a *Agent) Prompt(text string) {
 	a.inbox.SendPatient(event{typ: eventUserPrompt, text: text})
 }
@@ -378,7 +385,7 @@ func (a *Agent) Info() FigaroInfo {
 
 func (a *Agent) Kill() {
 	a.cancel()
-	<-a.done       // wait for drain loop to exit
+	<-a.done         // wait for drain loop to exit
 	a.derived.Wait() // wait for derivation loops (so disk writes finish before close)
 
 	a.mu.Lock()
