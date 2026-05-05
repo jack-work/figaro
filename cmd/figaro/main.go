@@ -1391,6 +1391,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	startedAt := time.Now()
 	if loaded.StatusLine() {
 		writeStatusLine(os.Stdout, figaroID, startedAt, 0)
+		fmt.Println()
 	}
 
 	// Derive a cancellable child so Ctrl+D (stdin EOF) can cancel the same
