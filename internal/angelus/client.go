@@ -22,18 +22,21 @@ func DialClient(ep transport.Endpoint) (*Client, error) {
 	return &Client{cli: jsonrpc.NewClient(conn, nil)}, nil
 }
 
-func (c *Client) Create(ctx context.Context, provider, model string) (*rpc.CreateResponse, error) {
+// Create asks the angelus to start a new figaro. loadout names the
+// TOML config that seeds the chalkboard ("" → "config"). patch is
+// optional runtime overrides applied on top.
+func (c *Client) Create(ctx context.Context, loadout string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
-	err := c.cli.Call(ctx, rpc.MethodCreate, rpc.CreateRequest{Provider: provider, Model: model}, &resp)
+	err := c.cli.Call(ctx, rpc.MethodCreate, rpc.CreateRequest{Loadout: loadout, Patch: patch}, &resp)
 	return &resp, err
 }
 
 // CreateEphemeral creates a figaro whose state lives in memory only.
 // No aria file is written; the agent vanishes when killed.
-func (c *Client) CreateEphemeral(ctx context.Context, provider, model string) (*rpc.CreateResponse, error) {
+func (c *Client) CreateEphemeral(ctx context.Context, loadout string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
 	err := c.cli.Call(ctx, rpc.MethodCreate, rpc.CreateRequest{
-		Provider: provider, Model: model, Ephemeral: true,
+		Loadout: loadout, Patch: patch, Ephemeral: true,
 	}, &resp)
 	return &resp, err
 }

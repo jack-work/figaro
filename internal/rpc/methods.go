@@ -8,19 +8,19 @@ const (
 	// Notifications: figaro → subscriber (no response expected).
 	MethodDelta      = "stream.delta"
 	MethodToolOutput = "stream.tool_output"
-	MethodThinking  = "stream.thinking"
-	MethodToolStart = "stream.tool_start"
-	MethodToolEnd   = "stream.tool_end"
-	MethodMessage   = "stream.message"
-	MethodDone      = "stream.done"
-	MethodError     = "stream.error"
+	MethodThinking   = "stream.thinking"
+	MethodToolStart  = "stream.tool_start"
+	MethodToolEnd    = "stream.tool_end"
+	MethodMessage    = "stream.message"
+	MethodDone       = "stream.done"
+	MethodError      = "stream.error"
 
 	// Requests: client → figaro (response expected).
-	MethodPrompt     = "figaro.prompt"
-	MethodContext    = "figaro.context"
-	MethodFigaroInfo = "figaro.info"
-	MethodSetModel   = "figaro.set_model"
-	MethodSetLabel   = "figaro.set_label"
+	MethodPrompt             = "figaro.prompt"
+	MethodContext            = "figaro.context"
+	MethodFigaroInfo         = "figaro.info"
+	MethodSetModel           = "figaro.set_model"
+	MethodSetLabel           = "figaro.set_label"
 	MethodInterrupt          = "figaro.interrupt"
 	MethodRehydrate          = "figaro.rehydrate"
 	MethodSet                = "figaro.set"
@@ -31,17 +31,17 @@ const (
 // --- Angelus socket methods (registry ops) ---
 
 const (
-	MethodCreate  = "figaro.create"
-	MethodKill    = "figaro.kill"
-	MethodList    = "figaro.list"
+	MethodCreate      = "figaro.create"
+	MethodKill        = "figaro.kill"
+	MethodList        = "figaro.list"
 	MethodAngelusInfo = "angelus.info"
 
 	MethodBind    = "pid.bind"
 	MethodResolve = "pid.resolve"
 	MethodUnbind  = "pid.unbind"
 
-	MethodStatus        = "angelus.status"
-	MethodSaveBindings  = "angelus.save_bindings"
+	MethodStatus       = "angelus.status"
+	MethodSaveBindings = "angelus.save_bindings"
 )
 
 // --- Figaro socket: request/response types ---
@@ -166,10 +166,15 @@ type FigaroInfoResponse struct {
 
 // --- Angelus socket: request/response types ---
 
+// CreateRequest names the loadout that seeds the new aria's chalkboard.
+// Lookup is `<configDir>/loadouts/<Loadout>.toml`, falling back to
+// `<configDir>/providers/<Loadout>/config.toml`. Empty defaults to
+// "config". Patch overlays the resolved loadout — used for runtime
+// overrides like a one-shot model.
 type CreateRequest struct {
-	Provider  string `json:"provider"`
-	Model     string `json:"model"`
-	Ephemeral bool   `json:"ephemeral,omitempty"` // if true, no aria file is written (in-memory only)
+	Loadout   string           `json:"loadout,omitempty"`
+	Patch     *ChalkboardPatch `json:"patch,omitempty"`
+	Ephemeral bool             `json:"ephemeral,omitempty"`
 }
 
 type CreateResponse struct {
@@ -225,7 +230,7 @@ type UnbindResponse struct {
 }
 
 type StatusResponse struct {
-	Uptime      int64 `json:"uptime_ms"`     // millis since angelus start
+	Uptime      int64 `json:"uptime_ms"` // millis since angelus start
 	FigaroCount int   `json:"figaro_count"`
 	BoundPIDs   int   `json:"bound_pids"`
 }

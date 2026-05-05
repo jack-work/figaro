@@ -17,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/jsonrpc"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/outfit"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
@@ -171,14 +172,33 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 
+	// Resolve the named loadout — TOML → chalkboard patch.
+	base, err := outfit.Load(h.config.ConfigDir, req.Loadout)
+	if err != nil {
+		return nil, fmt.Errorf("create: load loadout %q: %w", req.Loadout, err)
+	}
+	if req.Patch != nil {
+		if base.Set == nil {
+			base.Set = map[string]json.RawMessage{}
+		}
+		for k, v := range req.Patch.Set {
+			base.Set[k] = v
+		}
+		base.Remove = append(base.Remove, req.Patch.Remove...)
+	}
+
+	provName := patchString(base, "system.provider")
+	model := patchString(base, "system.model")
+
 	span.SetAttributes(
-		attribute.String("figaro.provider", req.Provider),
-		attribute.String("figaro.model", req.Model),
+		attribute.String("figaro.loadout", req.Loadout),
+		attribute.String("figaro.provider", provName),
+		attribute.String("figaro.model", model),
 	)
 
-	prov, err := h.factory(req.Provider, req.Model)
+	prov, err := h.factory(provName, model)
 	if err != nil {
-		return nil, fmt.Errorf("create provider: %w", err)
+		return nil, fmt.Errorf("create provider %q: %w", provName, err)
 	}
 
 	id := uuid.New().String()[:8]
@@ -190,29 +210,29 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	home, _ := os.UserHomeDir()
 	logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
 
-	// Ephemeral figaros skip the backend entirely — WAL lives only in
-	// RAM, no file written, agent vanishes on Kill.
+	// Ephemeral figaros skip the on-disk backend; the chalkboard is
+	// still created in-memory so the loadout values seed it.
 	backend := h.angelus.Backend
 	if req.Ephemeral {
 		backend = nil
 	}
 
-	// Ephemeral figaros skip the chalkboard — no persistence path makes
-	// sense for a transient prompt. Persistent figaros open a per-aria
-	// chalkboard.State at arias/{id}/chalkboard.json and a translator
-	// stream at arias/{id}/translations/{provider}.jsonl.
 	var cbState *chalkboard.State
 	var translator store.Stream[[]json.RawMessage]
 	if !req.Ephemeral {
 		cbState = h.openAriaChalkboard(id)
 		translator = h.openAriaTranslation(id, prov.Name())
 	}
+	if cbState == nil {
+		cbState, _ = chalkboard.Open("")
+	}
+	cbState.Apply(base)
 
 	agent := figaro.NewAgent(figaro.Config{
 		ID:               id,
 		SocketPath:       sockPath,
 		Provider:         prov,
-		Model:            req.Model,
+		Model:            model,
 		Scribe:           scribe,
 		Cwd:              cwd,
 		Root:             cwd,
@@ -231,7 +251,8 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	go agent.StartSocket(h.ctx)
 
-	h.angelus.Logger.Printf("created figaro %s, model=%s, socket=%s", id, req.Model, sockPath)
+	h.angelus.Logger.Printf("created figaro %s, loadout=%s, provider=%s, model=%s, socket=%s",
+		id, req.Loadout, provName, model, sockPath)
 
 	return rpc.CreateResponse{
 		FigaroID: id,
@@ -240,6 +261,17 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 			Address: sockPath,
 		},
 	}, nil
+}
+
+// patchString reads a string value from a chalkboard.Patch's Set map.
+func patchString(p chalkboard.Patch, key string) string {
+	raw, ok := p.Set[key]
+	if !ok {
+		return ""
+	}
+	var s string
+	_ = json.Unmarshal(raw, &s)
+	return s
 }
 
 func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{}, error) {

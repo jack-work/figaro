@@ -321,10 +321,7 @@ func runPlainPrompt(loaded *config.Loaded, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	provName := loaded.Config.DefaultProvider
-	model := defaultModel(loaded, provName)
-
-	createResp, err := acli.CreateEphemeral(ctx, provName, model)
+	createResp, err := acli.CreateEphemeral(ctx, "", nil)
 	if err != nil {
 		die("create figaro: %s", err)
 	}
@@ -1328,10 +1325,7 @@ func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
 }
 
 func mustCreateAndBind(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int) (string, transport.Endpoint) {
-	provName := loaded.Config.DefaultProvider
-	model := defaultModel(loaded, provName)
-
-	createResp, err := acli.Create(ctx, provName, model)
+	createResp, err := acli.Create(ctx, "", nil)
 	if err != nil {
 		die("create figaro: %s", err)
 	}

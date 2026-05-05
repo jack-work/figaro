@@ -49,6 +49,22 @@ func (a *Agent) StartSocket(ctx context.Context) error {
 }
 
 // serveConn handles a single JSON-RPC connection to this figaro.
+// Agent should implement json rpc methods.  There should also be fewer.
+// Context, FigaroInfo
+// SetModel should also be removed and replaced with a chalkboard value, which should be validated by the provider independently.
+// If the provider rejects it, the figaro should shut down.
+// SetLabel -- I'm not sure what the label was ever for.  Do we need it for anything?  If not please remove it.  whatever it is looks
+// like it can purely be set from the chalkboard.
+// ChalkboardSnapshot should be renamed to Chalkboard
+// Prompt should be renamed and rebranded to "qua", for "figaro, qua"
+// Rehydrate should be renamed to "reload config"
+// That should leave us with Qua, Set, ReloadConfig, Interrupt, and Chalkboard
+// All these should be implemented by the agent rather than the serveConn.
+// Agent should implement "AgentServer" interface, and that interface should define
+// func (a *Agent) StartSocket(ctx context.Context) error {
+// The "AgentServer" should specify only a single Handler function for the Agent to implement.
+// It will implement the handler map, this class will just assemble the map from
+// methods on the interface.  Understood?  AgentServer should go into its own file
 func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 	jconn := jsonrpc.NewConn(conn)
 

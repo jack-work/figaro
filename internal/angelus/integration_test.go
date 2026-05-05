@@ -110,6 +110,14 @@ func TestIntegration_CreateAndPrompt(t *testing.T) {
 	dir := t.TempDir()
 	logger := log.New(os.Stderr, "integration: ", log.LstdFlags)
 
+	// Mock loadout — the create path resolves it via outfit.
+	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
+	require.NoError(t, os.WriteFile(dir+"/loadouts/mock.toml", []byte(`
+[system]
+provider = "mock"
+model = "mock-model"
+`), 0600))
+
 	// Create and start angelus.
 	a := angelus.New(angelus.Config{RuntimeDir: dir, Logger: logger})
 
@@ -147,7 +155,7 @@ func TestIntegration_CreateAndPrompt(t *testing.T) {
 	require.NoError(t, err)
 	defer acli.Close()
 
-	createResp, err := acli.Create(ctx, "mock", "mock-model")
+	createResp, err := acli.Create(ctx, "mock", nil)
 	require.NoError(t, err)
 	assert.NotEmpty(t, createResp.FigaroID)
 	assert.Equal(t, "unix", createResp.Endpoint.Scheme)

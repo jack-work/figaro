@@ -72,8 +72,12 @@ func TestFigaroInfoResponse(t *testing.T) {
 
 func TestCreateRequest(t *testing.T) {
 	roundTrip(t, "create_request.json", rpc.CreateRequest{
-		Provider: "anthropic",
-		Model:    "claude-sonnet-4-20250514",
+		Loadout: "anthropic",
+		Patch: &rpc.ChalkboardPatch{
+			Set: map[string]json.RawMessage{
+				"system.model": json.RawMessage(`"claude-sonnet-4-20250514"`),
+			},
+		},
 	})
 }
 
