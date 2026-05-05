@@ -653,6 +653,13 @@ func (a *Agent) act(ctx context.Context) {
 				if a.turnCancel != nil {
 					a.turnCancel()
 				}
+				// Synthesize tool_result blocks for any tool_uses
+				// that didn't complete. Without this, figStream is
+				// left with an assistant tool_use that has no
+				// matching tool_result, and the next request body
+				// is rejected with "tool_use ids were found
+				// without tool_result blocks immediately after".
+				a.completeInterruptedToolUses()
 				a.fanOut(rpc.Notification{
 					JSONRPC: "2.0",
 					Method:  rpc.MethodError,
@@ -661,6 +668,74 @@ func (a *Agent) act(ctx context.Context) {
 				a.endTurn("interrupted")
 			}
 		}
+	}
+}
+
+// completeInterruptedToolUses pairs every tool_use in the most
+// recent assistant message with a tool_result. Real results that
+// already landed (in inProgressTic) are kept; missing ones get a
+// synthetic "interrupted" result so Anthropic's strict pairing
+// rule isn't violated on the next request.
+//
+// Called from the interrupt handler. Commits the resulting user
+// tic to figStream directly (we don't go through finalizeAndSend
+// because that would queue an LLM round-trip — we just want the
+// conversation well-formed).
+func (a *Agent) completeInterruptedToolUses() {
+	// Find the most recent assistant message. If we hit a user tic
+	// with tool_results first, the previous turn was already paired
+	// — nothing to do.
+	var lastAssistant *message.Message
+	for _, e := range a.figStream.ScanFromEnd(8) {
+		m := e.Payload
+		if m.Role == message.RoleAssistant {
+			lastAssistant = &m
+			break
+		}
+		for _, c := range m.Content {
+			if c.Type == message.ContentToolResult {
+				return
+			}
+		}
+	}
+	if lastAssistant == nil {
+		return
+	}
+
+	// Which tool_call_ids already have results in inProgressTic?
+	completed := map[string]bool{}
+	if a.inProgressTic != nil {
+		for _, c := range a.inProgressTic.Content {
+			if c.Type == message.ContentToolResult {
+				completed[c.ToolCallID] = true
+			}
+		}
+	}
+
+	// Append synthetic tool_results for any tool_use that didn't
+	// land a real one.
+	var added int
+	for _, c := range lastAssistant.Content {
+		if c.Type != message.ContentToolCall {
+			continue
+		}
+		if completed[c.ToolCallID] {
+			continue
+		}
+		a.ensureInProgressTic()
+		a.inProgressTic.Content = append(a.inProgressTic.Content,
+			message.ToolResultContent(c.ToolCallID, c.ToolName, "interrupted", true))
+		added++
+	}
+
+	// Commit if we added any synthetic results OR there were
+	// already real ones staged that endTurn would otherwise drop.
+	if a.inProgressTic == nil || (added == 0 && len(a.inProgressTic.Content) == 0) {
+		return
+	}
+	tic := *a.inProgressTic
+	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
+		fmt.Fprintf(os.Stderr, "figaro %s: interrupt synth append: %v\n", a.id, err)
 	}
 }
 
