@@ -16,8 +16,8 @@ import (
 	"github.com/jack-work/figaro/internal/tool"
 )
 
-// setCredo replaces system.credo on cb. The next Rehydrate run will
-// re-template against this body.
+// setCredo replaces system.credo on cb. The next Outfitter.Bootstrap
+// run will re-template against this body.
 func setCredo(t *testing.T, cb *chalkboard.State, body string) {
 	t.Helper()
 	b, err := json.Marshal(body)
@@ -25,6 +25,27 @@ func setCredo(t *testing.T, cb *chalkboard.State, body string) {
 	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
 		"system.credo": b,
 	}})
+}
+
+// promptOnceAndWait sends a prompt and waits for the full turn (the
+// chalkSpyProvider always closes with "ok"), so the bootstrap patch
+// has time to fold onto the first tic.
+func promptOnceAndWait(t *testing.T, a *figaro.Agent, text string) {
+	t.Helper()
+	sub := a.Subscribe()
+	defer a.Unsubscribe(sub)
+	a.Prompt(text)
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case n := <-sub:
+			if n.Method == "stream.done" {
+				return
+			}
+		case <-deadline:
+			t.Fatal("turn never completed")
+		}
+	}
 }
 
 func TestRehydrate_DryRun_DoesNotMutateChalkboard(t *testing.T) {
@@ -42,6 +63,9 @@ func TestRehydrate_DryRun_DoesNotMutateChalkboard(t *testing.T) {
 		Chalkboard: cb,
 	})
 	t.Cleanup(func() { a.Kill() })
+
+	// Drive a prompt to fire bootstrap and seed system.prompt.
+	promptOnceAndWait(t, a, "first")
 
 	// Mutate the source credo → next Rehydrate should detect a diff.
 	setCredo(t, cb, "version two")
@@ -73,7 +97,8 @@ func TestRehydrate_Apply_EmitsStateOnlyTic(t *testing.T) {
 	})
 	t.Cleanup(func() { a.Kill() })
 
-	require.Len(t, a.Context(), 1, "bootstrap tic must already exist")
+	promptOnceAndWait(t, a, "first")
+	startCount := len(a.Context())
 
 	setCredo(t, cb, "version two")
 	set, removed, applied, err := a.Rehydrate(false)
@@ -87,16 +112,17 @@ func TestRehydrate_Apply_EmitsStateOnlyTic(t *testing.T) {
 	var msgs []message.Message
 	for time.Now().Before(deadline) {
 		msgs = a.Context()
-		if len(msgs) == 2 {
+		if len(msgs) > startCount {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	require.Len(t, msgs, 2, "rehydrate must append a state-only tic")
-	assert.Equal(t, message.RoleUser, msgs[1].Role)
-	assert.Empty(t, msgs[1].Content, "rehydrate tic carries only Patches")
-	require.Len(t, msgs[1].Patches, 1)
-	assert.Contains(t, msgs[1].Patches[0].Set, "system.prompt")
+	require.Greater(t, len(msgs), startCount, "rehydrate must append a state-only tic")
+	tic := msgs[len(msgs)-1]
+	assert.Equal(t, message.RoleUser, tic.Role)
+	assert.Empty(t, tic.Content, "rehydrate tic carries only Patches")
+	require.Len(t, tic.Patches, 1)
+	assert.Contains(t, tic.Patches[0].Set, "system.prompt")
 
 	// Chalkboard now reflects "version two".
 	snap := cb.Snapshot()
@@ -119,7 +145,8 @@ func TestRehydrate_NoChanges_NoTic(t *testing.T) {
 	})
 	t.Cleanup(func() { a.Kill() })
 
-	require.Len(t, a.Context(), 1)
+	promptOnceAndWait(t, a, "first")
+	startCount := len(a.Context())
 
 	set, removed, applied, err := a.Rehydrate(false)
 	require.NoError(t, err)
@@ -129,5 +156,6 @@ func TestRehydrate_NoChanges_NoTic(t *testing.T) {
 
 	// Give the actor a moment in case anything was queued anyway.
 	time.Sleep(50 * time.Millisecond)
-	assert.Len(t, a.Context(), 1, "no rehydrate tic must be appended when there's no diff")
+	assert.Len(t, a.Context(), startCount,
+		"no rehydrate tic must be appended when there's no diff")
 }

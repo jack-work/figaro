@@ -192,7 +192,6 @@ func NewAgent(cfg Config) *Agent {
 	}
 
 	a.invalidateTranslatorIfStale()
-	a.bootstrapIfNeeded()
 
 	// Spin up the per-figaro durable-derivation fanout. Each
 	// registered DurableDerivation gets its own goroutine + inbox;
@@ -514,6 +513,21 @@ func (a *Agent) act(ctx context.Context) {
 				fmt.Fprintf(os.Stderr, "agent: event=UserPrompt text=%q\n", truncLog(evt.text, 60))
 
 				a.ensureInProgressTic()
+				// First message in a fresh aria — fold the outfitter's
+				// bootstrap patch (templated credo, skill catalog) onto
+				// this tic. Outfitter.Bootstrap is idempotent on
+				// system.prompt so restored arias produce an empty patch
+				// and nothing rides along.
+				if len(a.figStream.Durable()) == 0 && a.outfitter != nil && a.chalkboard != nil {
+					if patch, err := a.outfitter.Bootstrap(a.chalkboard.Snapshot(),
+						outfit.CurrentBootCtx(a.prov.Name(), a.id)); err != nil {
+						fmt.Fprintf(os.Stderr, "figaro %s: bootstrap: %v\n", a.id, err)
+					} else if !patch.IsEmpty() {
+						a.inProgressTic.Patches = append(a.inProgressTic.Patches, patch)
+						a.chalkboard.Apply(patch)
+						_ = a.chalkboard.Save()
+					}
+				}
 				a.inProgressTic.Content = append(a.inProgressTic.Content, message.TextContent(evt.text))
 				a.finalizeAndSend(inbox)
 

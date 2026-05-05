@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,23 @@ func seedCredo(t *testing.T, cb *chalkboard.State, body string) {
 	}})
 }
 
-func TestBootstrap_FreshAria_EmitsStateOnlyTic(t *testing.T) {
+// waitForFirstUserTic blocks until the agent's figStream has at least
+// one user-role message (i.e. the first prompt has been finalized).
+func waitForFirstUserTic(t *testing.T, a *figaro.Agent) message.Message {
+	t.Helper()
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		msgs := a.Context()
+		if len(msgs) > 0 && msgs[0].Role == message.RoleUser {
+			return msgs[0]
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("first user tic never landed")
+	return message.Message{}
+}
+
+func TestBootstrap_FirstPromptCarriesPatch(t *testing.T) {
 	dir := t.TempDir()
 	cb, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
@@ -42,29 +59,29 @@ func TestBootstrap_FreshAria_EmitsStateOnlyTic(t *testing.T) {
 	})
 	t.Cleanup(func() { a.Kill() })
 
-	// One state-only tic: Role=user, no Content, Patches set system.prompt.
-	msgs := a.Context()
-	require.Len(t, msgs, 1, "fresh aria must have exactly one bootstrap tic")
-	assert.Equal(t, message.RoleUser, msgs[0].Role)
-	assert.Empty(t, msgs[0].Content, "bootstrap tic carries no Content")
-	require.Len(t, msgs[0].Patches, 1)
-	set := msgs[0].Patches[0].Set
+	// Fresh aria — figStream is empty until the first prompt.
+	require.Empty(t, a.Context(), "no bootstrap tic on construction")
+
+	a.Prompt("hello")
+	tic := waitForFirstUserTic(t, a)
+	require.NotEmpty(t, tic.Content, "first tic carries the user text")
+	require.Len(t, tic.Patches, 1, "first tic carries the bootstrap patch")
+	set := tic.Patches[0].Set
 	assert.Contains(t, set, "system.prompt")
 
 	var sp string
 	require.NoError(t, json.Unmarshal(set["system.prompt"], &sp))
 	assert.Equal(t, "you are figaro", sp)
 
-	// Chalkboard snapshot should reflect the patch.
-	snap := cb.Snapshot()
-	assert.Contains(t, snap, "system.prompt")
+	// Chalkboard reflects the applied patch.
+	assert.Contains(t, cb.Snapshot(), "system.prompt")
 }
 
-func TestBootstrap_RestoredAria_SkipsBootstrap(t *testing.T) {
+func TestBootstrap_RestoredAriaSkipsBootstrap(t *testing.T) {
 	dir := t.TempDir()
 	cbPath := filepath.Join(dir, "chalkboard.json")
 
-	// First lifetime: bootstrap fires.
+	// First lifetime: prompt fires the bootstrap.
 	cb, err := chalkboard.Open(cbPath)
 	require.NoError(t, err)
 	seedCredo(t, cb, "first prompt")
@@ -76,16 +93,16 @@ func TestBootstrap_RestoredAria_SkipsBootstrap(t *testing.T) {
 		Tools:      tool.NewRegistry(),
 		Chalkboard: cb,
 	})
-	require.Len(t, a1.Context(), 1)
+	a1.Prompt("hello")
+	waitForFirstUserTic(t, a1)
 	a1.Kill()
 
-	// Second lifetime: re-open chalkboard from the saved file. system.prompt
-	// is already set, so the second-phase outfit returns an empty patch
-	// and no new tic is emitted.
+	// Second lifetime: chalkboard already has system.prompt. Bootstrap
+	// returns an empty patch — the next first-prompt tic carries no
+	// patches.
 	cb2, err := chalkboard.Open(cbPath)
 	require.NoError(t, err)
-	snap := cb2.Snapshot()
-	require.Contains(t, snap, "system.prompt")
+	require.Contains(t, cb2.Snapshot(), "system.prompt")
 
 	a2 := figaro.NewAgent(figaro.Config{
 		ID:         "boot-aria",
@@ -96,6 +113,8 @@ func TestBootstrap_RestoredAria_SkipsBootstrap(t *testing.T) {
 		Chalkboard: cb2,
 	})
 	t.Cleanup(func() { a2.Kill() })
-	assert.Empty(t, a2.Context(),
-		"restored aria with system.prompt already set must not emit a second bootstrap tic")
+
+	a2.Prompt("hello again")
+	tic := waitForFirstUserTic(t, a2)
+	assert.Empty(t, tic.Patches, "restored aria's first prompt carries no bootstrap patch")
 }
