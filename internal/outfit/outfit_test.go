@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
@@ -21,7 +22,7 @@ friendly_name = "Figaro"
 user_id = 7
 `), 0600))
 
-	patch, err := outfit.Load(dir, "config")
+	patch, err := outfit.New(dir).Load("config")
 	require.NoError(t, err)
 	assert.Equal(t, `"claude-x"`, string(patch.Set["system.model"]))
 	assert.Equal(t, `1024`, string(patch.Set["system.max_tokens"]))
@@ -42,7 +43,7 @@ system = { model = "override-model" }
 friendly_name = "Top"
 `), 0600))
 
-	patch, err := outfit.Load(dir, "config")
+	patch, err := outfit.New(dir).Load("config")
 	require.NoError(t, err)
 	assert.Equal(t, `"override-model"`, string(patch.Set["system.model"]))
 	assert.Equal(t, `8192`, string(patch.Set["system.max_tokens"]))
@@ -57,7 +58,7 @@ func TestLoad_FileName(t *testing.T) {
 system = { credo = { fileName = "credo.md" } }
 `), 0600))
 
-	patch, err := outfit.Load(dir, "config")
+	patch, err := outfit.New(dir).Load("config")
 	require.NoError(t, err)
 	var body string
 	require.NoError(t, json.Unmarshal(patch.Set["system.credo"], &body))
@@ -74,7 +75,7 @@ func TestLoad_DirName(t *testing.T) {
 system = { skills = { dirName = "skills" } }
 `), 0600))
 
-	patch, err := outfit.Load(dir, "config")
+	patch, err := outfit.New(dir).Load("config")
 	require.NoError(t, err)
 	var skills map[string]string
 	require.NoError(t, json.Unmarshal(patch.Set["system.skills"], &skills))
@@ -88,7 +89,7 @@ func TestLoad_CycleDetected(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "a.toml"), []byte(`source = "b"`), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "b.toml"), []byte(`source = "a"`), 0600))
 
-	_, err := outfit.Load(dir, "a")
+	_, err := outfit.New(dir).Load("a")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cycle")
 }
@@ -98,7 +99,56 @@ func TestLoad_DefaultsToConfigName(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"), []byte(`x = 1`), 0600))
 
-	patch, err := outfit.Load(dir, "")
+	patch, err := outfit.New(dir).Load("")
 	require.NoError(t, err)
 	assert.Equal(t, `1`, string(patch.Set["x"]))
+}
+
+func TestBootstrap_TemplatesCredo(t *testing.T) {
+	dir := t.TempDir()
+	o := outfit.New(dir)
+	cb := snap(`{"system.credo":"hello {{.Provider}} {{.FigaroID}}"}`)
+
+	patch, err := o.Bootstrap(cb, outfit.BootCtx{Provider: "anthropic", FigaroID: "abc123"})
+	require.NoError(t, err)
+	assert.Equal(t, `"hello anthropic abc123"`, string(patch.Set["system.prompt"]))
+}
+
+func TestBootstrap_IdempotentWhenPromptSet(t *testing.T) {
+	o := outfit.New(t.TempDir())
+	cb := snap(`{"system.prompt":"already done","system.credo":"new body"}`)
+
+	patch, err := o.Bootstrap(cb, outfit.BootCtx{})
+	require.NoError(t, err)
+	assert.True(t, patch.IsEmpty(), "Bootstrap is a no-op when system.prompt is set")
+}
+
+func TestBootstrap_BuildsSkillCatalog(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "skills"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "skills", "go.md"),
+		[]byte("---\nname: go\ndescription: writes go\n---\nbody"), 0600))
+
+	patch, err := outfit.New(dir).Bootstrap(snap(`{"system.credo":"x"}`), outfit.BootCtx{})
+	require.NoError(t, err)
+
+	var entries []outfit.SkillCatalogEntry
+	require.NoError(t, json.Unmarshal(patch.Set["system.skills"], &entries))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "go", entries[0].Name)
+	assert.Equal(t, "writes go", entries[0].Description)
+	assert.Equal(t, filepath.Join(dir, "skills", "go.md"), entries[0].FilePath)
+}
+
+// snap builds a chalkboard.Snapshot from a JSON object literal.
+func snap(jsonObj string) chalkboard.Snapshot {
+	out := chalkboard.Snapshot{}
+	raw := map[string]json.RawMessage{}
+	if err := json.Unmarshal([]byte(jsonObj), &raw); err != nil {
+		panic(err)
+	}
+	for k, v := range raw {
+		out[k] = v
+	}
+	return out
 }

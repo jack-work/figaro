@@ -1,12 +1,11 @@
 package figaro
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/credo"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
@@ -53,37 +52,37 @@ func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
 	a.chalkboard.Apply(combined)
 }
 
-// Rehydrate re-runs the Scribe and emits a state-only tic with the
-// diff. dryRun returns the would-be diff without persisting.
+// Rehydrate re-runs the Outfitter's bootstrap phase against a
+// snapshot stripped of system.prompt / system.skills, then diffs the
+// result. dryRun returns the would-be diff without persisting.
 func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied bool, err error) {
-	if a.chalkboard == nil || a.scribe == nil {
-		return nil, nil, false, fmt.Errorf("rehydrate requires both a chalkboard and a scribe")
-	}
-	prompt, buildErr := a.scribe.Build(credo.CurrentContext(a.prov.Name(), a.id))
-	if buildErr != nil {
-		return nil, nil, false, fmt.Errorf("rehydrate build: %w", buildErr)
+	if a.chalkboard == nil || a.outfitter == nil {
+		return nil, nil, false, fmt.Errorf("rehydrate requires both a chalkboard and an outfitter")
 	}
 
+	// Bootstrap is idempotent on system.prompt; force a re-run by
+	// hiding the current values from the snapshot we hand it.
+	snap := a.chalkboard.Snapshot()
+	stripped := make(chalkboard.Snapshot, len(snap))
+	for k, v := range snap {
+		if k == "system.prompt" || k == "system.skills" {
+			continue
+		}
+		stripped[k] = v
+	}
+
+	desiredPatch, err := a.outfitter.Bootstrap(stripped, outfit.CurrentBootCtx(a.prov.Name(), a.id))
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("rehydrate: %w", err)
+	}
 	desired := chalkboard.Snapshot{}
-	setStr := func(k, v string) {
-		if b, mErr := json.Marshal(v); mErr == nil {
-			desired[k] = b
-		}
-	}
-	setStr("system.prompt", prompt)
-
-	if skills, sErr := a.scribe.Skills(); sErr == nil && len(skills) > 0 {
-		if b, mErr := json.Marshal(skillCatalog(skills)); mErr == nil {
-			desired["system.skills"] = b
-		}
+	for k, v := range desiredPatch.Set {
+		desired[k] = v
 	}
 
-	// Diff only against the scribe-managed keys. Configured values
-	// (system.model, system.provider, system.label, …) live on the
-	// chalkboard via the loadout and aren't rehydrate's concern.
 	current := chalkboard.Snapshot{}
 	for _, k := range []string{"system.prompt", "system.skills"} {
-		if v, ok := a.chalkboard.Snapshot()[k]; ok {
+		if v, ok := snap[k]; ok {
 			current[k] = v
 		}
 	}

@@ -13,9 +13,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/credo"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
@@ -84,7 +84,7 @@ type Config struct {
 	ID         string
 	SocketPath string
 	Provider   provider.Provider
-	Scribe     credo.Scribe
+	Outfitter  *outfit.Outfitter
 	Tools      *tool.Registry
 	LogDir     string        // empty = no per-agent event log
 	Backend    store.Backend // nil = ephemeral
@@ -105,7 +105,7 @@ type Agent struct {
 	id         string
 	socketPath string
 	prov       provider.Provider
-	scribe     credo.Scribe
+	outfitter  *outfit.Outfitter
 	tools      *tool.Registry
 	figStream  store.Stream[message.Message]
 	translator store.Stream[[]json.RawMessage]
@@ -157,7 +157,7 @@ func NewAgent(cfg Config) *Agent {
 		id:          cfg.ID,
 		socketPath:  cfg.SocketPath,
 		prov:        cfg.Provider,
-		scribe:      cfg.Scribe,
+		outfitter:   cfg.Outfitter,
 		tools:       cfg.Tools,
 		backend:     cfg.Backend,
 		chalkboard:  cfg.Chalkboard,

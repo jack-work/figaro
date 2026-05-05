@@ -9,38 +9,40 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/credo"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/tool"
 )
 
-// fakeScribe returns a fixed prompt — the bootstrap path doesn't need a
-// real credo template on disk.
-type fakeScribe struct {
-	prompt string
-	skills []credo.Skill
+// seedCredo writes system.credo onto a chalkboard so Outfitter.Bootstrap
+// has something to template into system.prompt.
+func seedCredo(t *testing.T, cb *chalkboard.State, body string) {
+	t.Helper()
+	b, err := json.Marshal(body)
+	require.NoError(t, err)
+	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"system.credo": b,
+	}})
 }
-
-func (f *fakeScribe) Build(credo.Context) (string, error) { return f.prompt, nil }
-func (f *fakeScribe) Skills() ([]credo.Skill, error)      { return f.skills, nil }
 
 func TestBootstrap_FreshAria_EmitsStateOnlyTic(t *testing.T) {
 	dir := t.TempDir()
 	cb, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
+	seedCredo(t, cb, "you are figaro")
 
 	a := figaro.NewAgent(figaro.Config{
-		ID:                  "boot-aria",
-		SocketPath:          dir + "/sock",
-		Provider:            &chalkSpyProvider{},
-		Scribe:              &fakeScribe{prompt: "you are figaro"},
-		Tools:               tool.NewRegistry(),
-		Chalkboard:          cb,
+		ID:         "boot-aria",
+		SocketPath: dir + "/sock",
+		Provider:   &chalkSpyProvider{},
+		Outfitter:  outfit.New(dir),
+		Tools:      tool.NewRegistry(),
+		Chalkboard: cb,
 	})
 	t.Cleanup(func() { a.Kill() })
 
-	// One state-only tic: Role=user, no Content, Patches set system.*
+	// One state-only tic: Role=user, no Content, Patches set system.prompt.
 	msgs := a.Context()
 	require.Len(t, msgs, 1, "fresh aria must have exactly one bootstrap tic")
 	assert.Equal(t, message.RoleUser, msgs[0].Role)
@@ -62,38 +64,36 @@ func TestBootstrap_RestoredAria_SkipsBootstrap(t *testing.T) {
 	dir := t.TempDir()
 	cbPath := filepath.Join(dir, "chalkboard.json")
 
-	// First lifetime: create an agent so the bootstrap fires.
+	// First lifetime: bootstrap fires.
 	cb, err := chalkboard.Open(cbPath)
 	require.NoError(t, err)
+	seedCredo(t, cb, "first prompt")
 	a1 := figaro.NewAgent(figaro.Config{
-		ID:                  "boot-aria",
-		SocketPath:          dir + "/sock",
-		Provider:            &chalkSpyProvider{},
-		Scribe:              &fakeScribe{prompt: "first prompt"},
-		Tools:               tool.NewRegistry(),
-		Chalkboard:          cb,
+		ID:         "boot-aria",
+		SocketPath: dir + "/sock",
+		Provider:   &chalkSpyProvider{},
+		Outfitter:  outfit.New(dir),
+		Tools:      tool.NewRegistry(),
+		Chalkboard: cb,
 	})
 	require.Len(t, a1.Context(), 1)
 	a1.Kill()
 
-	// Second lifetime: re-open chalkboard from the saved file. The
-	// system.prompt key already exists, so no new bootstrap tic.
+	// Second lifetime: re-open chalkboard from the saved file. system.prompt
+	// is already set, so the second-phase outfit returns an empty patch
+	// and no new tic is emitted.
 	cb2, err := chalkboard.Open(cbPath)
 	require.NoError(t, err)
 	snap := cb2.Snapshot()
 	require.Contains(t, snap, "system.prompt")
 
-	// Note: a2 has no Backend so memStore starts empty (the bootstrap
-	// tic from a1 was never persisted to disk). What we're testing is
-	// the chalkboard short-circuit: bootstrap doesn't double-run when
-	// system.prompt is already set, regardless of memStore state.
 	a2 := figaro.NewAgent(figaro.Config{
-		ID:                  "boot-aria",
-		SocketPath:          dir + "/sock2",
-		Provider:            &chalkSpyProvider{},
-		Scribe:              &fakeScribe{prompt: "second prompt"},
-		Tools:               tool.NewRegistry(),
-		Chalkboard:          cb2,
+		ID:         "boot-aria",
+		SocketPath: dir + "/sock2",
+		Provider:   &chalkSpyProvider{},
+		Outfitter:  outfit.New(dir),
+		Tools:      tool.NewRegistry(),
+		Chalkboard: cb2,
 	})
 	t.Cleanup(func() { a2.Kill() })
 	assert.Empty(t, a2.Context(),

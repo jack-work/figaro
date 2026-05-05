@@ -13,7 +13,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/credo"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/jsonrpc"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -53,11 +52,12 @@ type Handlers struct {
 // NewHandlers creates the handler set for the angelus socket.
 func NewHandlers(cfg ServerConfig) *Handlers {
 	h := &handlers{
-		angelus: cfg.Angelus,
-		config:  cfg.Config,
-		factory: cfg.ProviderFactory,
-		ctx:     cfg.Ctx,
-		cbTmpls: cfg.ChalkboardTemplates,
+		angelus:   cfg.Angelus,
+		config:    cfg.Config,
+		factory:   cfg.ProviderFactory,
+		ctx:       cfg.Ctx,
+		cbTmpls:   cfg.ChalkboardTemplates,
+		outfitter: outfit.New(cfg.Config.ConfigDir),
 	}
 	return &Handlers{
 		Map: map[string]jsonrpc.HandlerFunc{
@@ -82,11 +82,12 @@ func (hs *Handlers) Restore(ctx context.Context, ariaID string) (figaro.Figaro, 
 }
 
 type handlers struct {
-	angelus *Angelus
-	config  *config.Loaded
-	factory ProviderFactory
-	ctx     context.Context
-	cbTmpls *template.Template
+	angelus   *Angelus
+	config    *config.Loaded
+	factory   ProviderFactory
+	ctx       context.Context
+	cbTmpls   *template.Template
+	outfitter *outfit.Outfitter
 }
 
 // openAriaChalkboard returns a *chalkboard.State at
@@ -173,7 +174,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	}
 
 	// Resolve the named loadout — TOML → chalkboard patch.
-	base, err := outfit.Load(h.config.ConfigDir, req.Loadout)
+	base, err := h.outfitter.Load(req.Loadout)
 	if err != nil {
 		return nil, fmt.Errorf("create: load loadout %q: %w", req.Loadout, err)
 	}
@@ -203,8 +204,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	id := uuid.New().String()[:8]
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
-
-	scribe := credo.NewDefaultScribe(h.config.ConfigDir)
 
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
@@ -246,7 +245,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		ID:               id,
 		SocketPath:       sockPath,
 		Provider:         prov,
-		Scribe:           scribe,
+		Outfitter:        h.outfitter,
 		Tools:            tool.DefaultRegistry(cwd),
 		LogDir:           logDir,
 		Backend:          backend,
@@ -497,7 +496,6 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 	home, _ := os.UserHomeDir()
 	logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), aria.ID+".sock")
-	scribe := credo.NewDefaultScribe(h.config.ConfigDir)
 
 	// Restored aria's cwd may no longer exist — fall back so tools
 	// don't choke. Persisted snapshot keeps the original.
@@ -510,7 +508,7 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 		ID:               aria.ID,
 		SocketPath:       sockPath,
 		Provider:         prov,
-		Scribe:           scribe,
+		Outfitter:        h.outfitter,
 		Tools:            tool.DefaultRegistry(toolRoot),
 		LogDir:           logDir,
 		Backend:          h.angelus.Backend,

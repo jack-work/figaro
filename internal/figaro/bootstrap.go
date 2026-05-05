@@ -1,42 +1,33 @@
 package figaro
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/credo"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// bootstrapIfNeeded runs the Scribe on a fresh aria and emits a
-// state-only tic with the credo prompt + skills catalog. Configured
-// values (model, provider, max_tokens) are already on the chalkboard
-// from the loadout. Idempotent — arias whose chalkboard already has
-// system.prompt skip. See plans/bootstrap-event-question.md.
+// bootstrapIfNeeded runs the Outfitter's second-phase outfit on a
+// fresh aria — templates the credo into system.prompt, builds the
+// skill catalog at system.skills — and emits a state-only tic with
+// the resulting patch. Idempotent: when system.prompt is already on
+// the chalkboard the Outfitter returns an empty patch and no tic is
+// written.
 func (a *Agent) bootstrapIfNeeded() {
-	if a.chalkboard == nil || a.scribe == nil {
+	if a.chalkboard == nil || a.outfitter == nil {
 		return
 	}
-	if _, ok := a.chalkboard.Snapshot()["system.prompt"]; ok {
-		return
-	}
-	prompt, err := a.scribe.Build(credo.CurrentContext(a.prov.Name(), a.id))
+	patch, err := a.outfitter.Bootstrap(a.chalkboard.Snapshot(),
+		outfit.CurrentBootCtx(a.prov.Name(), a.id))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap credo build: %v\n", a.id, err)
+		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap: %v\n", a.id, err)
 		return
 	}
-
-	patch := chalkboard.Patch{Set: map[string]json.RawMessage{}}
-	patch.Set2("system.prompt", prompt)
-
-	if skills, err := a.scribe.Skills(); err == nil && len(skills) > 0 {
-		if b, err := json.Marshal(skillCatalog(skills)); err == nil {
-			patch.Set["system.skills"] = b
-		}
+	if patch.IsEmpty() {
+		return
 	}
 
 	tic := message.Message{
@@ -52,14 +43,4 @@ func (a *Agent) bootstrapIfNeeded() {
 	if err := a.chalkboard.Save(); err != nil {
 		fmt.Fprintf(os.Stderr, "figaro %s: bootstrap chalkboard save: %v\n", a.id, err)
 	}
-}
-
-func skillCatalog(skills []credo.Skill) []credo.SkillCatalogEntry {
-	out := make([]credo.SkillCatalogEntry, len(skills))
-	for i, s := range skills {
-		out[i] = credo.SkillCatalogEntry{
-			Name: s.Name, Description: s.Description, FilePath: s.FilePath,
-		}
-	}
-	return out
 }

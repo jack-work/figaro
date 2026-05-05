@@ -1,6 +1,7 @@
 package figaro_test
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,34 +12,46 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/tool"
 )
+
+// setCredo replaces system.credo on cb. The next Rehydrate run will
+// re-template against this body.
+func setCredo(t *testing.T, cb *chalkboard.State, body string) {
+	t.Helper()
+	b, err := json.Marshal(body)
+	require.NoError(t, err)
+	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"system.credo": b,
+	}})
+}
 
 func TestRehydrate_DryRun_DoesNotMutateChalkboard(t *testing.T) {
 	dir := t.TempDir()
 	cb, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
+	setCredo(t, cb, "version one")
 
-	scribe := &fakeScribe{prompt: "version one"}
 	a := figaro.NewAgent(figaro.Config{
-		ID:                  "rehydrate-aria",
-		SocketPath:          dir + "/sock",
-		Provider:            &chalkSpyProvider{},
-		Scribe:              scribe,
-		Tools:               tool.NewRegistry(),
-		Chalkboard:          cb,
+		ID:         "rehydrate-aria",
+		SocketPath: dir + "/sock",
+		Provider:   &chalkSpyProvider{},
+		Outfitter:  outfit.New(dir),
+		Tools:      tool.NewRegistry(),
+		Chalkboard: cb,
 	})
 	t.Cleanup(func() { a.Kill() })
 
-	// Mutate the credo "on disk" → next Rehydrate should detect a diff.
-	scribe.prompt = "version two"
+	// Mutate the source credo → next Rehydrate should detect a diff.
+	setCredo(t, cb, "version two")
 	set, removed, applied, err := a.Rehydrate(true /* dryRun */)
 	require.NoError(t, err)
 	assert.False(t, applied, "dry-run must not persist")
 	assert.Contains(t, set, "system.prompt")
 	assert.Empty(t, removed)
 
-	// Chalkboard.system.prompt should still be "version one".
+	// system.prompt is still the bootstrap-time render ("version one").
 	snap := cb.Snapshot()
 	require.Contains(t, snap, "system.prompt")
 	assert.Contains(t, string(snap["system.prompt"]), "version one")
@@ -48,21 +61,21 @@ func TestRehydrate_Apply_EmitsStateOnlyTic(t *testing.T) {
 	dir := t.TempDir()
 	cb, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
+	setCredo(t, cb, "version one")
 
-	scribe := &fakeScribe{prompt: "version one"}
 	a := figaro.NewAgent(figaro.Config{
-		ID:                  "rehydrate-aria",
-		SocketPath:          dir + "/sock",
-		Provider:            &chalkSpyProvider{},
-		Scribe:              scribe,
-		Tools:               tool.NewRegistry(),
-		Chalkboard:          cb,
+		ID:         "rehydrate-aria",
+		SocketPath: dir + "/sock",
+		Provider:   &chalkSpyProvider{},
+		Outfitter:  outfit.New(dir),
+		Tools:      tool.NewRegistry(),
+		Chalkboard: cb,
 	})
 	t.Cleanup(func() { a.Kill() })
 
 	require.Len(t, a.Context(), 1, "bootstrap tic must already exist")
 
-	scribe.prompt = "version two"
+	setCredo(t, cb, "version two")
 	set, removed, applied, err := a.Rehydrate(false)
 	require.NoError(t, err)
 	assert.True(t, applied)
@@ -94,14 +107,15 @@ func TestRehydrate_NoChanges_NoTic(t *testing.T) {
 	dir := t.TempDir()
 	cb, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
+	setCredo(t, cb, "stable")
 
 	a := figaro.NewAgent(figaro.Config{
-		ID:                  "rehydrate-aria",
-		SocketPath:          dir + "/sock",
-		Provider:            &chalkSpyProvider{},
-		Scribe:              &fakeScribe{prompt: "stable"},
-		Tools:               tool.NewRegistry(),
-		Chalkboard:          cb,
+		ID:         "rehydrate-aria",
+		SocketPath: dir + "/sock",
+		Provider:   &chalkSpyProvider{},
+		Outfitter:  outfit.New(dir),
+		Tools:      tool.NewRegistry(),
+		Chalkboard: cb,
 	})
 	t.Cleanup(func() { a.Kill() })
 

@@ -25,7 +25,7 @@ import (
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/credo"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	hush "github.com/jack-work/hush/client"
@@ -487,9 +487,9 @@ func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 		out = append(out, systemBlock{Type: "text", Text: systemText})
 	}
 	if raw, ok := snapshot["system.skills"]; ok && len(raw) > 0 {
-		var entries []credo.SkillCatalogEntry
+		var entries []outfit.SkillCatalogEntry
 		if json.Unmarshal(raw, &entries) == nil && len(entries) > 0 {
-			body := credo.FormatSkillCatalog(entries)
+			body := outfit.FormatSkillCatalog(entries)
 			if body != "" {
 				out = append(out, systemBlock{Type: "text", Text: body})
 			}
