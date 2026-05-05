@@ -142,12 +142,17 @@ func mockDecode(payload []json.RawMessage) ([]message.Message, error) {
 // --- Tests ---
 
 func newTestAgent(response string) *figaro.Agent {
+	cb, _ := chalkboard.Open("")
+	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"system.model":      json.RawMessage(`"mock-model-v1"`),
+		"system.provider":   json.RawMessage(`"mock"`),
+		"system.max_tokens": json.RawMessage(`1024`),
+	}})
 	return figaro.NewAgent(figaro.Config{
 		ID:         "test-001",
 		SocketPath: "/tmp/test-figaro.sock",
 		Provider:   &mockProvider{response: response},
-		Model:      "mock-model-v1",
-		MaxTokens:  1024,
+		Chalkboard: cb,
 	})
 }
 
@@ -239,8 +244,6 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 		ID:         "fifo-test",
 		SocketPath: "/tmp/test-fifo.sock",
 		Provider:   &mockProvider{response: "ok"},
-		Model:      "mock-model-v1",
-		MaxTokens:  1024,
 	})
 	defer a.Kill()
 
@@ -359,8 +362,6 @@ func TestAgent_PanicRecovery(t *testing.T) {
 		ID:         "panic-test",
 		SocketPath: "/tmp/panic-test.sock",
 		Provider:   prov,
-		Model:      "mock-model",
-		MaxTokens:  1024,
 	})
 	defer a.Kill()
 
@@ -420,8 +421,6 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 		ID:         "panic-ctx-test",
 		SocketPath: "/tmp/panic-ctx-test.sock",
 		Provider:   prov,
-		Model:      "mock-model",
-		MaxTokens:  1024,
 	})
 	defer a.Kill()
 
@@ -488,8 +487,6 @@ func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 		ID:         "persist-001",
 		SocketPath: "/tmp/persist-test.sock",
 		Provider:   &mockProvider{response: "persisted reply"},
-		Model:      "mock-model-v1",
-		MaxTokens:  1024,
 		Backend:    backend,
 	})
 	defer a.Kill()
@@ -575,8 +572,6 @@ func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 		ID:         "restore-001",
 		SocketPath: "/tmp/restore-test.sock",
 		Provider:   &mockProvider{response: "first reply"},
-		Model:      "mock-model-v1",
-		MaxTokens:  1024,
 		Backend:    backend,
 	})
 
@@ -602,8 +597,6 @@ firstDone:
 		ID:         "restore-001",
 		SocketPath: "/tmp/restore-test2.sock",
 		Provider:   &mockProvider{response: "second reply"},
-		Model:      "mock-model-v1",
-		MaxTokens:  1024,
 		Backend:    backend,
 	})
 	defer a2.Kill()
@@ -624,8 +617,6 @@ func TestAgent_PersistenceKillFlushes(t *testing.T) {
 		ID:         "killflush-001",
 		SocketPath: "/tmp/killflush-test.sock",
 		Provider:   &mockProvider{response: "will be saved"},
-		Model:      "mock-model-v1",
-		MaxTokens:  1024,
 		Backend:    backend,
 	})
 
@@ -662,8 +653,6 @@ func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
 		ID:         "ephemeral-001",
 		SocketPath: "/tmp/ephemeral-test.sock",
 		Provider:   &mockProvider{response: "gone"},
-		Model:      "mock-model-v1",
-		MaxTokens:  1024,
 		// Backend deliberately omitted.
 	})
 
@@ -730,8 +719,6 @@ func TestAgent_Interrupt(t *testing.T) {
 		ID:         "interrupt-001",
 		SocketPath: "/tmp/interrupt-test.sock",
 		Provider:   &slowProvider{started: started},
-		Model:      "slow-model",
-		MaxTokens:  1024,
 	})
 	defer a.Kill()
 

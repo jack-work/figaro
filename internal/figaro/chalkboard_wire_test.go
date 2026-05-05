@@ -111,10 +111,6 @@ func newAgentWithChalkboard(t *testing.T) (*figaro.Agent, *chalkSpyProvider, *ch
 		ID:                  "test-aria",
 		SocketPath:          dir + "/sock",
 		Provider:            prov,
-		Model:               "claude-test",
-		Cwd:                 "/tmp",
-		Root:                "/tmp",
-		MaxTokens:           1024,
 		Tools:               tool.NewRegistry(),
 		Chalkboard:          cb,
 	})

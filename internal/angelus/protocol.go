@@ -226,17 +226,27 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	if cbState == nil {
 		cbState, _ = chalkboard.Open("")
 	}
+	// Runtime values that aren't in the loadout — record them on the
+	// patch so the chalkboard ends up with everything in one shot.
+	if base.Set == nil {
+		base.Set = map[string]json.RawMessage{}
+	}
+	if _, ok := base.Set["system.cwd"]; !ok {
+		base.Set["system.cwd"], _ = json.Marshal(cwd)
+	}
+	if _, ok := base.Set["system.root"]; !ok {
+		base.Set["system.root"], _ = json.Marshal(cwd)
+	}
+	if _, ok := base.Set["system.max_tokens"]; !ok {
+		base.Set["system.max_tokens"] = json.RawMessage(`8192`)
+	}
 	cbState.Apply(base)
 
 	agent := figaro.NewAgent(figaro.Config{
 		ID:               id,
 		SocketPath:       sockPath,
 		Provider:         prov,
-		Model:            model,
 		Scribe:           scribe,
-		Cwd:              cwd,
-		Root:             cwd,
-		MaxTokens:        8192,
 		Tools:            tool.DefaultRegistry(cwd),
 		LogDir:           logDir,
 		Backend:          backend,
@@ -477,9 +487,7 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 	}
 	provName := cbStr("system.provider")
 	model := cbStr("system.model")
-	label := cbStr("system.label")
 	cwd := cbStr("system.cwd")
-	root := cbStr("system.root")
 
 	prov, err := h.factory(provName, model)
 	if err != nil {
@@ -491,24 +499,19 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), aria.ID+".sock")
 	scribe := credo.NewDefaultScribe(h.config.ConfigDir)
 
-	if _, err := os.Stat(cwd); err != nil {
-		cwd, _ = os.Getwd()
-	}
-	if _, err := os.Stat(root); err != nil {
-		root = cwd
+	// Restored aria's cwd may no longer exist — fall back so tools
+	// don't choke. Persisted snapshot keeps the original.
+	toolRoot := cwd
+	if _, err := os.Stat(toolRoot); err != nil {
+		toolRoot, _ = os.Getwd()
 	}
 
 	agent := figaro.NewAgent(figaro.Config{
 		ID:               aria.ID,
-		Label:            label,
 		SocketPath:       sockPath,
 		Provider:         prov,
-		Model:            model,
 		Scribe:           scribe,
-		Cwd:              cwd,
-		Root:             root,
-		MaxTokens:        8192,
-		Tools:            tool.DefaultRegistry(cwd),
+		Tools:            tool.DefaultRegistry(toolRoot),
 		LogDir:           logDir,
 		Backend:          h.angelus.Backend,
 		Chalkboard:       cb,

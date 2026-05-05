@@ -53,10 +53,6 @@ func TestTranslator_AssistantResponseAppendsEntry(t *testing.T) {
 		ID:               "translator-test",
 		SocketPath:       dir + "/sock",
 		Provider:         prov,
-		Model:            "claude-test",
-		Cwd:              "/tmp",
-		Root:             "/tmp",
-		MaxTokens:        1024,
 		Tools:            tool.NewRegistry(),
 		TranslatorStream: stream,
 	})
@@ -110,10 +106,6 @@ func TestTranslator_StaleEntriesClearedOnOpen(t *testing.T) {
 		ID:               "translator-stale",
 		SocketPath:       dir + "/sock",
 		Provider:         translatorMockProvider{}, // Fingerprint() == "tlp/v0"
-		Model:            "tlp-model",
-		Cwd:              "/tmp",
-		Root:             "/tmp",
-		MaxTokens:        1024,
 		Tools:            tool.NewRegistry(),
 		TranslatorStream: stream,
 	})
@@ -146,10 +138,6 @@ func TestTranslator_MatchingEntriesPreserved(t *testing.T) {
 		ID:               "translator-fresh",
 		SocketPath:       dir + "/sock",
 		Provider:         translatorMockProvider{}, // Fingerprint() == "tlp/v0"
-		Model:            "tlp-model",
-		Cwd:              "/tmp",
-		Root:             "/tmp",
-		MaxTokens:        1024,
 		Tools:            tool.NewRegistry(),
 		TranslatorStream: stream,
 	})
@@ -171,10 +159,6 @@ func TestTranslator_PopulatedTranslationLands(t *testing.T) {
 		ID:               "translator-test-2",
 		SocketPath:       dir + "/sock",
 		Provider:         translatorMockProvider{},
-		Model:            "tlp-model",
-		Cwd:              "/tmp",
-		Root:             "/tmp",
-		MaxTokens:        1024,
 		Tools:            tool.NewRegistry(),
 		TranslatorStream: stream,
 	})

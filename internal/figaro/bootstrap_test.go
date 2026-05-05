@@ -34,11 +34,7 @@ func TestBootstrap_FreshAria_EmitsStateOnlyTic(t *testing.T) {
 		ID:                  "boot-aria",
 		SocketPath:          dir + "/sock",
 		Provider:            &chalkSpyProvider{},
-		Model:               "claude-test",
 		Scribe:              &fakeScribe{prompt: "you are figaro"},
-		Cwd:                 "/tmp",
-		Root:                "/tmp",
-		MaxTokens:           1024,
 		Tools:               tool.NewRegistry(),
 		Chalkboard:          cb,
 	})
@@ -52,8 +48,6 @@ func TestBootstrap_FreshAria_EmitsStateOnlyTic(t *testing.T) {
 	require.Len(t, msgs[0].Patches, 1)
 	set := msgs[0].Patches[0].Set
 	assert.Contains(t, set, "system.prompt")
-	assert.Contains(t, set, "system.model")
-	assert.Contains(t, set, "system.provider")
 
 	var sp string
 	require.NoError(t, json.Unmarshal(set["system.prompt"], &sp))
@@ -75,11 +69,7 @@ func TestBootstrap_RestoredAria_SkipsBootstrap(t *testing.T) {
 		ID:                  "boot-aria",
 		SocketPath:          dir + "/sock",
 		Provider:            &chalkSpyProvider{},
-		Model:               "claude-test",
 		Scribe:              &fakeScribe{prompt: "first prompt"},
-		Cwd:                 "/tmp",
-		Root:                "/tmp",
-		MaxTokens:           1024,
 		Tools:               tool.NewRegistry(),
 		Chalkboard:          cb,
 	})
@@ -101,11 +91,7 @@ func TestBootstrap_RestoredAria_SkipsBootstrap(t *testing.T) {
 		ID:                  "boot-aria",
 		SocketPath:          dir + "/sock2",
 		Provider:            &chalkSpyProvider{},
-		Model:               "claude-test",
 		Scribe:              &fakeScribe{prompt: "second prompt"},
-		Cwd:                 "/tmp",
-		Root:                "/tmp",
-		MaxTokens:           1024,
 		Tools:               tool.NewRegistry(),
 		Chalkboard:          cb2,
 	})

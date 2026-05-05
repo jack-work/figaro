@@ -71,8 +71,6 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 		}
 	}
 	setStr("system.prompt", prompt)
-	setStr("system.model", a.currentModel())
-	setStr("system.provider", a.prov.Name())
 
 	if skills, sErr := a.scribe.Skills(); sErr == nil && len(skills) > 0 {
 		if b, mErr := json.Marshal(skillCatalog(skills)); mErr == nil {
@@ -80,11 +78,11 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 		}
 	}
 
-	// Diff only against the scribe-managed keys. Other system.*
-	// values (system.label, system.cwd, system.root) are configured
-	// independently and shouldn't be marked for removal.
+	// Diff only against the scribe-managed keys. Configured values
+	// (system.model, system.provider, system.label, …) live on the
+	// chalkboard via the loadout and aren't rehydrate's concern.
 	current := chalkboard.Snapshot{}
-	for _, k := range []string{"system.prompt", "system.model", "system.provider", "system.skills"} {
+	for _, k := range []string{"system.prompt", "system.skills"} {
 		if v, ok := a.chalkboard.Snapshot()[k]; ok {
 			current[k] = v
 		}

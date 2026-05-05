@@ -75,21 +75,23 @@ type event struct {
 }
 
 // Config is the constructor input for NewAgent.
+//
+// Configured values (model, label, cwd, root, max_tokens, …) live on
+// the Chalkboard under `system.*` keys — callers seed them there
+// before construction. The typed fields below are runtime
+// dependencies, not user config.
 type Config struct {
 	ID         string
-	Label      string
 	SocketPath string
 	Provider   provider.Provider
-	Model      string
 	Scribe     credo.Scribe
-	Cwd        string
-	Root       string
-	MaxTokens  int
 	Tools      *tool.Registry
 	LogDir     string        // empty = no per-agent event log
 	Backend    store.Backend // nil = ephemeral
 
-	// Chalkboard — nil creates an in-memory one. Closed by Kill.
+	// Chalkboard carries the aria's configured state. Nil creates
+	// an in-memory one (callers must Apply their seed patch first
+	// for runtime values to be visible). Closed by Kill.
 	Chalkboard *chalkboard.State
 	// TranslatorStream — per-aria, per-provider cache. Nil falls
 	// back to MemStream. Closed by Kill.
@@ -104,7 +106,6 @@ type Agent struct {
 	socketPath string
 	prov       provider.Provider
 	scribe     credo.Scribe
-	maxTokens  int
 	tools      *tool.Registry
 	figStream  store.Stream[message.Message]
 	translator store.Stream[[]json.RawMessage]
@@ -157,7 +158,6 @@ func NewAgent(cfg Config) *Agent {
 		socketPath:  cfg.SocketPath,
 		prov:        cfg.Provider,
 		scribe:      cfg.Scribe,
-		maxTokens:   cfg.MaxTokens,
 		tools:       cfg.Tools,
 		backend:     cfg.Backend,
 		chalkboard:  cfg.Chalkboard,
@@ -169,7 +169,7 @@ func NewAgent(cfg Config) *Agent {
 		done:        make(chan struct{}),
 	}
 
-	a.figStream = a.newStream(cfg.Model)
+	a.figStream = a.newStream()
 	if a.translator == nil {
 		a.translator = store.NewMemStream[[]json.RawMessage]()
 	}
@@ -177,30 +177,6 @@ func NewAgent(cfg Config) *Agent {
 		// Ephemeral arias get an in-memory chalkboard so system prompt
 		// flow stays uniform.
 		a.chalkboard, _ = chalkboard.Open("")
-	}
-	// Seed configured fields into the chalkboard. system.* keys
-	// are the canonical source of truth; nothing else stores them.
-	seed := chalkboard.Patch{Set: map[string]json.RawMessage{}}
-	// agent: remove all these specially typed arguments.  These should always be
-	// passed via chalkboard.  Any that are passed via these arguments now should be passed
-	// via the chalkboard.
-	if cfg.Model != "" {
-		seed.Set2("system.model", cfg.Model)
-	}
-	if cfg.Label != "" {
-		seed.Set2("system.label", cfg.Label)
-	}
-	if cfg.Cwd != "" {
-		seed.Set2("system.cwd", cfg.Cwd)
-	}
-	if cfg.Root != "" {
-		seed.Set2("system.root", cfg.Root)
-	}
-	if cfg.Provider != nil {
-		seed.Set2("system.provider", cfg.Provider.Name())
-	}
-	if !seed.IsEmpty() {
-		a.chalkboard.Apply(seed)
 	}
 	a.inbox = NewInbox(ctx, a.figStream, a.translator)
 
@@ -216,7 +192,7 @@ func NewAgent(cfg Config) *Agent {
 	}
 
 	a.invalidateTranslatorIfStale()
-	a.bootstrapIfNeeded(cfg.Model)
+	a.bootstrapIfNeeded()
 
 	// Spin up the per-figaro durable-derivation fanout. Each
 	// registered DurableDerivation gets its own goroutine + inbox;
@@ -231,7 +207,7 @@ func NewAgent(cfg Config) *Agent {
 
 // newStream opens the figaro IR stream — FileStream when persisted,
 // MemStream when ephemeral.
-func (a *Agent) newStream(model string) store.Stream[message.Message] {
+func (a *Agent) newStream() store.Stream[message.Message] {
 	if a.backend == nil {
 		return store.NewMemStream[message.Message]()
 	}
@@ -261,6 +237,20 @@ func (a *Agent) chalkboardString(key string) string {
 	var s string
 	json.Unmarshal(raw, &s)
 	return s
+}
+
+// chalkboardInt reads a numeric system.* key. Zero when missing.
+func (a *Agent) chalkboardInt(key string) int {
+	if a.chalkboard == nil {
+		return 0
+	}
+	raw, ok := a.chalkboard.Snapshot()[key]
+	if !ok {
+		return 0
+	}
+	var n int
+	json.Unmarshal(raw, &n)
+	return n
 }
 
 func (a *Agent) currentModel() string { return a.chalkboardString("system.model") }
@@ -431,7 +421,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		}
 
 		a.mu.Lock()
-		a.figStream = a.newStream(a.currentModel())
+		a.figStream = a.newStream()
 		a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Durable()))
 		a.mu.Unlock()
 
@@ -810,7 +800,7 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 		PerMessage: perMsg,
 		Snapshot:   a.chalkboard.Snapshot(),
 		Tools:      a.toolDefs(),
-		MaxTokens:  a.maxTokens,
+		MaxTokens:  a.chalkboardInt("system.max_tokens"),
 	}
 	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d entries in context\n", len(perMsg))
 	go func() {
