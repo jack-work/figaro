@@ -6,51 +6,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/outfit"
-	"github.com/jack-work/figaro/internal/rpc"
 )
-
-// applyChalkboardInput merges client input with the persisted
-// snapshot, attaches the patch to the in-progress tic, advances
-// chalkboard.State.
-//
-//   - patch only        → apply patch directly
-//   - context only      → diff context vs current, apply diff
-//   - context + patch   → diff first, then patch on top
-//   - neither           → no-op
-//
-// system.* keys are stripped from the diff base — harness-reserved.
-func (a *Agent) applyChalkboardInput(input *rpc.ChalkboardInput) {
-	if a.chalkboard == nil || input == nil {
-		return
-	}
-
-	var clientPatch chalkboard.Patch
-	if input.Patch != nil {
-		clientPatch = chalkboard.Patch{Set: input.Patch.Set, Remove: input.Patch.Remove}
-	}
-
-	snap := withoutSystemNS(a.chalkboard.Snapshot())
-
-	var combined chalkboard.Patch
-	switch {
-	case input.Context != nil && input.Patch != nil:
-		ctx := withoutSystemNS(chalkboard.Snapshot(input.Context))
-		combined = chalkboard.Merge(ctx.Diff(snap), clientPatch)
-	case input.Context != nil:
-		ctx := withoutSystemNS(chalkboard.Snapshot(input.Context))
-		combined = ctx.Diff(snap)
-	case input.Patch != nil:
-		combined = clientPatch
-	}
-
-	if combined.IsEmpty() {
-		return
-	}
-
-	a.ensureInProgressTic()
-	a.inProgressTic.Patches = append(a.inProgressTic.Patches, combined)
-	a.chalkboard.Apply(combined)
-}
 
 // Rehydrate re-runs the Outfitter's bootstrap phase against a
 // snapshot stripped of system.prompt / system.skills, then diffs the

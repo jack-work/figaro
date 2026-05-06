@@ -9,35 +9,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestInbox_PatientDeliveredWhenIdle(t *testing.T) {
+// Stage 2 collapsed Patient/Selfish/Yield into a plain FIFO. Tests
+// here cover the surviving surface: enqueue, dequeue, close.
+
+func TestInbox_FIFO(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	b := NewInbox(ctx)
-	b.SendPatient(event{typ: eventUserPrompt, text: "hello"})
+	b.Send(event{typ: eventUserPrompt, text: "first"})
+	b.Send(event{typ: eventUserPrompt, text: "second"})
 
-	evt, ok := b.Recv()
-	require.True(t, ok)
-	assert.Equal(t, eventUserPrompt, evt.typ)
-	assert.Equal(t, "hello", evt.text)
-}
-
-func TestInbox_PatientHeldWhenBusy(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	b := NewInbox(ctx)
-
-	// First patient makes it busy.
-	b.SendPatient(event{typ: eventUserPrompt, text: "first"})
 	evt, ok := b.Recv()
 	require.True(t, ok)
 	assert.Equal(t, "first", evt.text)
 
-	// Second patient should be held.
-	b.SendPatient(event{typ: eventUserPrompt, text: "second"})
+	evt, ok = b.Recv()
+	require.True(t, ok)
+	assert.Equal(t, "second", evt.text)
+}
 
-	// Verify it's not deliverable yet.
+func TestInbox_RecvBlocksWhenEmpty(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := NewInbox(ctx)
+
 	done := make(chan bool, 1)
 	go func() {
 		_, ok := b.Recv()
@@ -46,106 +42,28 @@ func TestInbox_PatientHeldWhenBusy(t *testing.T) {
 
 	select {
 	case <-done:
-		t.Fatal("Recv should block — patient message should be held")
+		t.Fatal("Recv should block on empty inbox")
 	case <-time.After(50 * time.Millisecond):
-		// Expected — patient is waiting.
 	}
 
-	// Yield releases it.
-	b.Yield()
+	b.Send(event{typ: eventUserPrompt, text: "wakeup"})
 	select {
-	case ok := <-done:
-		assert.True(t, ok)
+	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("Recv should have returned after Yield")
+		t.Fatal("Recv should have unblocked after Send")
 	}
 }
 
-func TestInbox_SelfishAlwaysDelivered(t *testing.T) {
+func TestInbox_IsIdle(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	b := NewInbox(ctx)
-
-	// Make it busy (not yielded).
-	b.SendPatient(event{typ: eventUserPrompt, text: "prompt"})
-	b.Recv() // consume the patient
-
-	// Now busy — selfish should still be delivered.
-	ok := b.SendSelfish(event{typ: eventInterrupt})
-	require.True(t, ok)
-
-	evt, ok := b.Recv()
-	require.True(t, ok)
-	assert.Equal(t, eventInterrupt, evt.typ)
-}
-
-func TestInbox_YieldReleasesPatient(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	b := NewInbox(ctx)
-
-	// Start a turn.
-	b.SendPatient(event{typ: eventUserPrompt, text: "first"})
-	b.Recv()
-
-	// Queue a patient while busy.
-	b.SendPatient(event{typ: eventUserPrompt, text: "second"})
-
-	// Yield should release it.
-	b.Yield()
-
-	evt, ok := b.Recv()
-	require.True(t, ok)
-	assert.Equal(t, "second", evt.text)
-}
-
-func TestInbox_YieldWhenEmpty(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	b := NewInbox(ctx)
-
-	// Start and finish a turn.
-	b.SendPatient(event{typ: eventUserPrompt, text: "prompt"})
-	b.Recv()
-	b.Yield() // no waiting patients → yielded=true
 
 	assert.True(t, b.IsIdle())
-
-	// Next patient should deliver immediately (yielded).
-	b.SendPatient(event{typ: eventUserPrompt, text: "next"})
-	evt, ok := b.Recv()
-	require.True(t, ok)
-	assert.Equal(t, "next", evt.text)
-}
-
-func TestInbox_SelfishPriority(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	b := NewInbox(ctx)
-
-	// Start a turn.
-	b.SendPatient(event{typ: eventUserPrompt, text: "prompt"})
-	b.Recv()
-
-	// Queue a patient and a selfish.
-	b.SendPatient(event{typ: eventUserPrompt, text: "patient"})
-	b.SendSelfish(event{typ: eventInterrupt})
-
-	// Selfish should come first (it's in active; patient is in waiting).
-	evt, ok := b.Recv()
-	require.True(t, ok)
-	assert.Equal(t, eventInterrupt, evt.typ)
-
-	// Yield to release the patient.
-	b.Yield()
-	evt, ok = b.Recv()
-	require.True(t, ok)
-	assert.Equal(t, eventUserPrompt, evt.typ)
-	assert.Equal(t, "patient", evt.text)
+	b.Send(event{typ: eventUserPrompt})
+	assert.False(t, b.IsIdle())
+	_, _ = b.Recv()
+	assert.True(t, b.IsIdle())
 }
 
 func TestInbox_CloseUnblocksRecv(t *testing.T) {
@@ -153,7 +71,6 @@ func TestInbox_CloseUnblocksRecv(t *testing.T) {
 	defer cancel()
 
 	b := NewInbox(ctx)
-
 	done := make(chan bool, 1)
 	go func() {
 		_, ok := b.Recv()
@@ -170,15 +87,14 @@ func TestInbox_CloseUnblocksRecv(t *testing.T) {
 	}
 }
 
-func TestInbox_ClosedSendReturnsFalse(t *testing.T) {
+func TestInbox_SendAfterCloseReturnsFalse(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	b := NewInbox(ctx)
 	b.Close()
 
-	ok := b.SendSelfish(event{typ: eventInterrupt})
-	assert.False(t, ok, "SendSelfish on closed inbox should return false")
+	assert.False(t, b.Send(event{typ: eventUserPrompt}))
 }
 
 func TestInbox_ContextCancelCloses(t *testing.T) {
@@ -199,34 +115,4 @@ func TestInbox_ContextCancelCloses(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("Recv should have unblocked after context cancel")
 	}
-}
-
-func TestInbox_MultipleYields(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	b := NewInbox(ctx)
-
-	// Start a turn, queue two patient messages.
-	b.SendPatient(event{typ: eventUserPrompt, text: "first"})
-	b.Recv()
-
-	b.SendPatient(event{typ: eventUserPrompt, text: "second"})
-	b.SendPatient(event{typ: eventUserPrompt, text: "third"})
-
-	// First yield releases "second".
-	b.Yield()
-	evt, ok := b.Recv()
-	require.True(t, ok)
-	assert.Equal(t, "second", evt.text)
-
-	// Second yield releases "third".
-	b.Yield()
-	evt, ok = b.Recv()
-	require.True(t, ok)
-	assert.Equal(t, "third", evt.text)
-
-	// Third yield with nothing waiting → idle.
-	b.Yield()
-	assert.True(t, b.IsIdle())
 }
