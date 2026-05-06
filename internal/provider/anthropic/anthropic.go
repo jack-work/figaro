@@ -1,11 +1,10 @@
 // Package anthropic implements the figaro Provider for the Anthropic Messages API.
 //
-// Per-message encoding (Encode) is cached in the agent's translator
-// stream. Send takes the cached bytes plus the snapshot and assembles
-// the request body internally before shipping. SSE deltas are pushed
-// raw to the bus; Assemble folds them into the final assistant bytes
-// at end-of-turn. Decode reverses native bytes back to IR uniformly
-// for both durable per-message entries and live tail delta payloads.
+// Send drives one turn end-to-end: catches up the translator from the
+// figStream, POSTs, streams SSE chunks (each chunk lands on the
+// translator's live tail and emits a figaro IR delta on the bus),
+// and on EOF assembles the live tail into a durable assistant
+// message — appended to figStream and condensed into the translator.
 package anthropic
 
 import (

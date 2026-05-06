@@ -72,9 +72,10 @@ type Config struct {
 	TranslatorStream store.Stream[[]json.RawMessage]
 }
 
-// Agent is the actor implementation of Figaro. One inbox, one drain
-// goroutine — no concurrent dispatch.
-// TODO: child-process isolation via --figaro flag.
+// Agent is the Figaro implementation. Single drain goroutine reads
+// user-RPC events from the inbox; each user prompt fires a
+// synchronous runTurn (turn.go) which owns provider streaming and
+// tool dispatch. TODO: child-process isolation via --figaro flag.
 type Agent struct {
 	id           string
 	socketPath   string
@@ -190,7 +191,6 @@ func (a *Agent) newStream() store.Stream[message.Message] {
 
 func (a *Agent) ID() string { return a.id }
 
-// agent: is this (and the socket path in general) only used for tests?  if so then just remove it.
 func (a *Agent) SocketPath() string { return a.socketPath }
 
 // chalkboardString reads a system.* string key. Empty when missing
@@ -422,12 +422,9 @@ func (a *Agent) actProtected(ctx context.Context) (panicked bool) {
 	return false
 }
 
-// act is the single event loop: Recv → synchronize → dispatch.
-// The act loop dispatches inbox events. The provider owns translator
-// catch-up and condense; the loop only sees user-RPC events. Each
-// user prompt drives a synchronous runTurn (provider → tools → repeat
-// or done). Interrupt is a direct method call on Agent, bypassing
-// the inbox so it can cancel mid-turn.
+// act is the inbox drain loop. Only user-RPC events land here; each
+// user prompt drives a synchronous runTurn. Interrupt bypasses the
+// inbox (Agent.Interrupt cancels turnCtx directly).
 func (a *Agent) act(ctx context.Context) {
 	for {
 		evt, ok := a.inbox.Recv()

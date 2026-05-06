@@ -1,12 +1,15 @@
 // Package figaro implements the agent primitive — a long-lived AI agent
-// that owns a chat context, provider, model, and prompt queue.
+// that owns a chat context, provider, model, and a chalkboard.
 //
-// Each figaro listens on its own unix socket and speaks JSON-RPC 2.0.
-// Any client in any language can connect, send prompts, and subscribe
-// to the notification stream.
+// Concurrency: one inbox goroutine per agent. User-RPC events come in
+// via the inbox; each user prompt drives a synchronous runTurn (see
+// turn.go) that owns the full provider → tools → repeat-or-done
+// lifecycle. Provider deltas + tool events live inside the turn,
+// not on the inbox. Interrupt is a direct method that cancels the
+// active turn's context.
 //
-// Currently implemented as a goroutine inside the angelus process.
-// TODO: convert to child process via --figaro flag for full isolation.
+// Each figaro listens on its own unix socket and speaks JSON-RPC 2.0
+// — see protocol.go / server.go for the surface.
 package figaro
 
 import (
