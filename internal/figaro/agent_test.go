@@ -27,117 +27,74 @@ type mockProvider struct {
 	response string
 }
 
-func (m *mockProvider) Name() string                                          { return "mock" }
-func (m *mockProvider) Fingerprint() string                                   { return "mock/v0" }
-func (m *mockProvider) SetModel(model string)                                 {}
+func (m *mockProvider) Name() string                                             { return "mock" }
+func (m *mockProvider) Fingerprint() string                                      { return "mock/v0" }
+func (m *mockProvider) SetModel(model string)                                    {}
 func (m *mockProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (m *mockProvider) Decode(payload []json.RawMessage) ([]message.Message, error) {
-	return mockDecode(payload)
-}
-func (m *mockProvider) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (m *mockProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
 	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
 }
-func (m *mockProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
-	return mockAssemble(deltas)
-}
-func (m *mockProvider) Send(ctx context.Context, _ provider.SendInput, bus provider.Bus) error {
-	mockPushAssistant(bus, m.response)
+
+func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	mockCatchUp(in.FigStream, in.Translator, m.encode, m.Fingerprint())
+	mockPushAssistant(in.FigStream, in.Translator, bus, m.encode, m.Fingerprint(), m.response)
 	return nil
 }
 
-// mockNativeAssistant is the test envelope: one text block + stop_reason.
-type mockNativeAssistant struct {
-	Role       string              `json:"role"`
-	Content    []mockNativeContent `json:"content"`
-	StopReason string              `json:"stop_reason,omitempty"`
+// mockEncodeFn matches the per-message encoder shape. Provider mocks
+// supply their own implementations so spies (chalkSpyProvider) can
+// record what they would have encoded.
+type mockEncodeFn func(msg message.Message, prev chalkboard.Snapshot) ([]json.RawMessage, error)
+
+// mockCatchUp catches up the translator from the durable figStream
+// using the given encoder. Mirrors what real providers do at the top
+// of Send.
+func mockCatchUp(figStream store.Stream[message.Message], translator store.Stream[[]json.RawMessage], encode mockEncodeFn, fingerprint string) {
+	snap := chalkboard.Snapshot{}
+	for _, e := range figStream.Durable() {
+		msg := e.Payload
+		msg.LogicalTime = e.LT
+		if _, ok := translator.Lookup(msg.LogicalTime); !ok {
+			if payload, err := encode(msg, snap); err == nil {
+				_, _ = translator.Append(store.Entry[[]json.RawMessage]{
+					FigaroLT:    msg.LogicalTime,
+					Payload:     payload,
+					Fingerprint: fingerprint,
+				}, true)
+			}
+		}
+		for _, p := range msg.Patches {
+			snap = snap.Apply(p)
+		}
+	}
 }
 
-type mockNativeContent struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
-}
-
-type mockDelta struct {
-	Delta       string              `json:"delta"`
-	ContentType message.ContentType `json:"content_type,omitempty"`
-}
-
-// mockPushAssistant pushes one delta event carrying the full text. The
-// agent's synchronize will call mockAssemble to fold it into a final
-// nativeMessage.
-func mockPushAssistant(bus provider.Bus, text string) {
+// mockPushAssistant simulates a streaming turn: emits the text as a
+// delta, appends a final assistant message to figStream, condenses
+// the encoding into the translator, and pushes figaro so the act
+// loop dispatches.
+func mockPushAssistant(figStream store.Stream[message.Message], translator store.Stream[[]json.RawMessage], bus provider.Bus, encode mockEncodeFn, fingerprint, text string) {
 	if text == "" {
 		return
 	}
-	delta, _ := json.Marshal(mockDelta{Delta: text, ContentType: message.ContentText})
-	bus.Push(provider.Event{Payload: []json.RawMessage{delta}})
-}
-
-func mockAssemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
-	var text string
-	for _, payload := range deltas {
-		if len(payload) == 0 {
-			continue
-		}
-		var d mockDelta
-		if json.Unmarshal(payload[0], &d) == nil {
-			text += d.Delta
-		}
+	bus.PushDelta(message.Content{Type: message.ContentText, Text: text})
+	msg := message.Message{
+		Role:       message.RoleAssistant,
+		Content:    []message.Content{message.TextContent(text)},
+		StopReason: message.StopEnd,
 	}
-	if text == "" {
-		return nil, nil
-	}
-	nm := mockNativeAssistant{
-		Role:       "assistant",
-		Content:    []mockNativeContent{{Type: "text", Text: text}},
-		StopReason: "end_turn",
-	}
-	raw, _ := json.Marshal(nm)
-	return []json.RawMessage{raw}, nil
-}
-
-// mockDecode handles both shapes of payload uniformly. Live tail
-// entries are mockDelta; durable entries are mockNativeAssistant.
-func mockDecode(payload []json.RawMessage) ([]message.Message, error) {
-	out := make([]message.Message, 0, len(payload))
-	for _, r := range payload {
-		if len(r) == 0 {
-			continue
-		}
-		var d mockDelta
-		if json.Unmarshal(r, &d) == nil && d.Delta != "" {
-			ct := d.ContentType
-			if ct == "" {
-				ct = message.ContentText
-			}
-			out = append(out, message.Message{
-				Role:    message.RoleAssistant,
-				Content: []message.Content{{Type: ct, Text: d.Delta}},
+	entry, err := figStream.Append(store.Entry[message.Message]{Payload: msg}, true)
+	if err == nil {
+		msg.LogicalTime = entry.LT
+		if payload, eErr := encode(msg, chalkboard.Snapshot{}); eErr == nil {
+			_, _ = translator.Condense(store.Entry[[]json.RawMessage]{
+				FigaroLT:    entry.LT,
+				Payload:     payload,
+				Fingerprint: fingerprint,
 			})
-			continue
 		}
-		var nm mockNativeAssistant
-		if err := json.Unmarshal(r, &nm); err != nil {
-			return nil, err
-		}
-		if nm.Role == "" {
-			continue
-		}
-		msg := message.Message{Role: message.Role(nm.Role)}
-		for _, c := range nm.Content {
-			if c.Type == "text" {
-				msg.Content = append(msg.Content, message.TextContent(c.Text))
-			}
-		}
-		switch nm.StopReason {
-		case "end_turn", "stop":
-			msg.StopReason = message.StopEnd
-		case "tool_use":
-			msg.StopReason = message.StopToolUse
-		}
-		out = append(out, msg)
 	}
-	return out, nil
+	bus.PushFigaro(msg)
 }
 
 // --- Test helpers ---
@@ -386,25 +343,21 @@ type panicProvider struct {
 	response   string
 }
 
-func (p *panicProvider) Name() string                                          { return "panic-mock" }
-func (p *panicProvider) Fingerprint() string                                   { return "panic-mock/v0" }
-func (p *panicProvider) SetModel(model string)                                 {}
+func (p *panicProvider) Name() string                                             { return "panic-mock" }
+func (p *panicProvider) Fingerprint() string                                      { return "panic-mock/v0" }
+func (p *panicProvider) SetModel(model string)                                    {}
 func (p *panicProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (p *panicProvider) Decode(payload []json.RawMessage) ([]message.Message, error) {
-	return mockDecode(payload)
-}
-func (p *panicProvider) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (p *panicProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
 	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
 }
-func (p *panicProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
-	return mockAssemble(deltas)
-}
-func (p *panicProvider) Send(ctx context.Context, _ provider.SendInput, bus provider.Bus) error {
+
+func (p *panicProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	if p.panicCount > 0 {
 		p.panicCount--
 		panic("simulated crash")
 	}
-	mockPushAssistant(bus, p.response)
+	mockCatchUp(in.FigStream, in.Translator, p.encode, p.Fingerprint())
+	mockPushAssistant(in.FigStream, in.Translator, bus, p.encode, p.Fingerprint(), p.response)
 	return nil
 }
 
@@ -729,19 +682,10 @@ type slowProvider struct {
 	started chan struct{} // closed once Send has been entered
 }
 
-func (s *slowProvider) Name() string                                          { return "slow" }
-func (s *slowProvider) Fingerprint() string                                   { return "slow/v0" }
-func (s *slowProvider) SetModel(model string)                                 {}
+func (s *slowProvider) Name() string                                             { return "slow" }
+func (s *slowProvider) Fingerprint() string                                      { return "slow/v0" }
+func (s *slowProvider) SetModel(model string)                                    {}
 func (s *slowProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (s *slowProvider) Decode(payload []json.RawMessage) ([]message.Message, error) {
-	return mockDecode(payload)
-}
-func (s *slowProvider) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
-	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
-}
-func (s *slowProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
-	return mockAssemble(deltas)
-}
 
 // Send blocks until ctx is cancelled, then returns the cancellation
 // error — mirroring what a real HTTP SSE stream does when its request

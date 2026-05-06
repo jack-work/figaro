@@ -4,8 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+	"log/slog"
 	"runtime"
 	"sync"
 	"time"
@@ -32,9 +31,8 @@ const (
 	eventInterrupt
 	eventRehydrate
 	eventSet
-	eventFigaro         // durable assistant Message landed in figStream
-	eventFigaroDelta    // partial assistant text — translated from a translator live entry
-	eventTranslatorLive // routed to translator live on Recv (translated by synchronize)
+	eventFigaro         // assembled assistant Message landed in figStream (provider.Bus.PushFigaro)
+	eventFigaroDelta    // partial assistant content — provider.Bus.PushDelta
 	eventStartLLMStream // figStream is finalized for this turn; ship it
 	eventSendComplete
 )
@@ -69,9 +67,6 @@ type event struct {
 	// eventFigaroDelta
 	deltaText string
 	deltaCT   message.ContentType
-
-	// eventTranslatorLive
-	translatorPayload []json.RawMessage
 }
 
 // Config is the constructor input for NewAgent.
@@ -86,7 +81,6 @@ type Config struct {
 	Provider   provider.Provider
 	Outfitter  *outfit.Outfitter
 	Tools      *tool.Registry
-	LogDir     string        // empty = no per-agent event log
 	Backend    store.Backend // nil = ephemeral
 
 	// Chalkboard carries the aria's configured state. Nil creates
@@ -122,9 +116,6 @@ type Agent struct {
 	chalkboard   *chalkboard.State
 	derived      *derivedFanout // nil = ephemeral; per-figaro durable derivations
 
-	// Live-tail watermark for catchUpFigaroDelta; reset by condenseLive.
-	lastDecodedLiveLen int
-
 	// User-role Message accumulated across one turn (text + tool
 	// results). Finalized by finalizeAndSend.
 	inProgressTic *message.Message
@@ -148,9 +139,6 @@ type Agent struct {
 	tokensOut  int
 	cacheRead  int
 	cacheWrite int
-
-	logEncoder *json.Encoder
-	logFile    *os.File
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -189,7 +177,7 @@ func NewAgent(cfg Config) *Agent {
 	// Chalkboard is a derived view of the figStream's tic patches. If
 	// it loaded empty (file missing, ephemeral, or freshly opened),
 	// replay the stream so prior patches materialize. The on-disk
-	// chalkboard.json is just a cache of this projection — see
+	// chalkboard.json is just a cache of this projection.  See
 	// derived.go for the analogous summary/translator/usage actors.
 	if len(a.chalkboard.Snapshot()) == 0 {
 		replayed := false
@@ -203,18 +191,9 @@ func NewAgent(cfg Config) *Agent {
 			_ = a.chalkboard.Save()
 		}
 	}
-	a.inbox = NewInbox(ctx, a.figStream, a.translator)
+	a.inbox = NewInbox(ctx)
 
 	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Durable()))
-
-	if cfg.LogDir != "" {
-		os.MkdirAll(cfg.LogDir, 0700)
-		logPath := filepath.Join(cfg.LogDir, cfg.ID+".jsonl")
-		if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600); err == nil {
-			a.logFile = f
-			a.logEncoder = json.NewEncoder(f)
-		}
-	}
 
 	a.invalidateTranslatorIfStale()
 
@@ -237,7 +216,7 @@ func (a *Agent) newStream() store.Stream[message.Message] {
 	}
 	stream, err := a.backend.Open(a.id)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: backend open error: %v (falling back to ephemeral)\n", a.id, err)
+		slog.Warn("backend open (falling back to ephemeral)", "aria", a.id, "err", err)
 		return store.NewMemStream[message.Message]()
 	}
 	return stream
@@ -383,20 +362,17 @@ func (a *Agent) Kill() {
 	a.mu.Unlock()
 
 	if err := a.figStream.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: figStream close: %v\n", a.id, err)
+		slog.Error("figStream close", "aria", a.id, "err", err)
 	}
 	if a.chalkboard != nil {
 		if err := a.chalkboard.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard close: %v\n", a.id, err)
+			slog.Error("chalkboard close", "aria", a.id, "err", err)
 		}
 	}
 	if a.translator != nil {
 		if err := a.translator.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "figaro %s: translator close: %v\n", a.id, err)
+			slog.Error("translator close", "aria", a.id, "err", err)
 		}
-	}
-	if a.logFile != nil {
-		a.logFile.Close()
 	}
 }
 
@@ -432,7 +408,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		}
 
 		a.inbox.Close()
-		a.inbox = NewInbox(ctx, a.figStream, a.translator)
+		a.inbox = NewInbox(ctx)
 
 		a.pendingTools = 0
 		a.pendingToolCalls = nil
@@ -454,7 +430,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 			Params:  rpc.DoneParams{Reason: "error: " + crashMsg},
 		})
 
-		fmt.Fprintf(os.Stderr, "figaro %s: restarted after panic\n", a.id)
+		slog.Error("restarted after panic", "aria", a.id)
 	}
 }
 
@@ -466,7 +442,7 @@ func (a *Agent) actProtected(ctx context.Context) (panicked bool) {
 			// Log the panic and stack trace.
 			stack := make([]byte, 4096)
 			n := runtime.Stack(stack, false)
-			fmt.Fprintf(os.Stderr, "figaro %s: panic: %v\n%s\n", a.id, r, stack[:n])
+			slog.Error("panic", "aria", a.id, "panic", r, "stack", string(stack[:n]))
 			panicked = true
 		}
 	}()
@@ -476,206 +452,207 @@ func (a *Agent) actProtected(ctx context.Context) (panicked bool) {
 }
 
 // act is the single event loop: Recv → synchronize → dispatch.
-// synchronize handles all translator orchestration; the switch only
-// sees figaro / control events.
+// The act loop dispatches inbox events. The provider owns translator
+// catch-up and condense; the loop sees only figaro IR + control events.
 func (a *Agent) act(ctx context.Context) {
 	for {
-		raw, ok := a.inbox.Recv()
+		evt, ok := a.inbox.Recv()
 		if !ok {
 			return
 		}
-		for _, evt := range a.synchronize(raw) {
-			switch evt.typ {
+		switch evt.typ {
 
-			case eventUserPrompt:
-				// Capture inbox in case panic recovery swaps it.
-				inbox := a.inbox
-
-				a.mu.Lock()
-				a.lastActive = time.Now()
-				a.mu.Unlock()
-
-				turnCtx, span := figOtel.Start(ctx, "figaro.prompt",
-					figOtel.WithAttributes(
-						attribute.String("figaro.id", a.id),
-						attribute.String("figaro.model", a.currentModel()),
-						attribute.String("figaro.provider", a.prov.Name()),
-					),
-				)
-				turnCtx, turnCancel := context.WithCancel(turnCtx)
-				a.turnCtx = turnCtx
-				a.turnCancel = turnCancel
-				a.interrupted = false
-				a.endTurnSpan = func() { span.End() }
-
-				fmt.Fprintf(os.Stderr, "agent: event=UserPrompt text=%q\n", truncLog(evt.text, 60))
-
-				a.ensureInProgressTic()
-				// First message in a fresh aria — fold the outfitter's
-				// bootstrap patch (templated credo, skill catalog) onto
-				// this tic. Outfitter.Bootstrap is idempotent on
-				// system.prompt so restored arias produce an empty patch
-				// and nothing rides along.
-				if len(a.figStream.Durable()) == 0 && a.outfitter != nil && a.chalkboard != nil {
-					if patch, err := a.outfitter.Bootstrap(a.chalkboard.Snapshot(),
-						outfit.CurrentBootCtx(a.prov.Name(), a.id)); err != nil {
-						fmt.Fprintf(os.Stderr, "figaro %s: bootstrap: %v\n", a.id, err)
-					} else if !patch.IsEmpty() {
-						a.inProgressTic.Patches = append(a.inProgressTic.Patches, patch)
-						a.chalkboard.Apply(patch)
-						_ = a.chalkboard.Save()
-					}
-				}
-				a.inProgressTic.Content = append(a.inProgressTic.Content, message.TextContent(evt.text))
-				a.finalizeAndSend(inbox)
-
-			case eventFigaro:
-				a.handleFigaro(evt.figMsg)
-
-			case eventFigaroDelta:
-				if a.interrupted {
-					continue
-				}
-				a.fanOut(rpc.Notification{
-					JSONRPC: "2.0",
-					Method:  rpc.MethodDelta,
-					Params:  rpc.DeltaParams{Text: evt.deltaText, ContentType: evt.deltaCT},
-				})
-
-			case eventStartLLMStream:
-				if a.interrupted {
-					continue
-				}
-				a.startLLMStream(a.turnCtx, a.inbox)
-
-			case eventSendComplete:
-				a.handleSendComplete(evt.err)
-
-			case eventToolOutput:
-				if a.interrupted {
-					continue
-				}
-				a.fanOut(rpc.Notification{
-					JSONRPC: "2.0",
-					Method:  rpc.MethodToolOutput,
-					Params: rpc.ToolOutputParams{
-						ToolCallID: evt.toolCallID,
-						ToolName:   evt.toolName,
-						Chunk:      evt.chunk,
-					},
-				})
-
-			case eventToolResult:
-				if a.interrupted {
-					fmt.Fprintf(os.Stderr, "agent: event=ToolResult (post-interrupt, suppressed) tool=%s\n", evt.toolName)
-					continue
-				}
-				var resultText string
-				for _, c := range evt.content {
-					if c.Type == message.ContentText {
-						resultText += c.Text
-					}
-				}
-				fmt.Fprintf(os.Stderr, "agent: event=ToolResult tool=%s err=%v result_len=%d\n",
-					evt.toolName, evt.isErr, len(resultText))
-				a.fanOut(rpc.Notification{
-					JSONRPC: "2.0",
-					Method:  rpc.MethodToolEnd,
-					Params: rpc.ToolEndParams{
-						ToolCallID: evt.toolCallID, ToolName: evt.toolName,
-						Result: resultText, IsError: evt.isErr,
-					},
-				})
-
-				// All tool results from one assistant turn accumulate
-				// onto one user-role tic, finalized when the last
-				// tool finishes.
-				a.ensureInProgressTic()
-				a.inProgressTic.Content = append(a.inProgressTic.Content,
-					message.ToolResultContent(evt.toolCallID, evt.toolName, resultText, evt.isErr))
-
-				a.pendingTools--
-
-				if len(a.pendingToolCalls) > 0 {
-					inbox := a.inbox
-					tc := a.pendingToolCalls[0]
-					a.pendingToolCalls = a.pendingToolCalls[1:]
-					a.fanOut(rpc.Notification{
-						JSONRPC: "2.0",
-						Method:  rpc.MethodToolStart,
-						Params: rpc.ToolStartParams{
-							ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-							Arguments: tc.Arguments,
-						},
-					})
-					go a.runToolAsync(a.turnCtx, inbox, tc)
-				} else if a.pendingTools == 0 {
-					a.finalizeAndSend(a.inbox)
-				}
-
-			case eventRehydrate:
-				fmt.Fprintf(os.Stderr, "agent: event=Rehydrate set=%d remove=%d\n",
-					len(evt.rehydratePatch.Set), len(evt.rehydratePatch.Remove))
-				tic := message.Message{
-					Role:      message.RoleUser,
-					Patches:   []message.Patch{evt.rehydratePatch},
-					Timestamp: time.Now().UnixMilli(),
-				}
-				if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
-					fmt.Fprintf(os.Stderr, "figaro %s: rehydrate append: %v\n", a.id, err)
-					a.inbox.Yield()
-					continue
-				}
-				a.chalkboard.Apply(evt.rehydratePatch)
-				if err := a.chalkboard.Save(); err != nil {
-					fmt.Fprintf(os.Stderr, "figaro %s: rehydrate chalkboard save: %v\n", a.id, err)
-				}
-				a.derived.Tick(0, a.chalkboard.Snapshot())
-				a.inbox.Yield()
-
-			case eventSet:
-				fmt.Fprintf(os.Stderr, "agent: event=Set set=%d remove=%d\n",
-					len(evt.setPatch.Set), len(evt.setPatch.Remove))
-				tic := message.Message{
-					Role:      message.RoleUser,
-					Patches:   []message.Patch{evt.setPatch},
-					Timestamp: time.Now().UnixMilli(),
-				}
-				if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
-					fmt.Fprintf(os.Stderr, "figaro %s: set append: %v\n", a.id, err)
-					a.inbox.Yield()
-					continue
-				}
-				a.chalkboard.Apply(evt.setPatch)
-				if err := a.chalkboard.Save(); err != nil {
-					fmt.Fprintf(os.Stderr, "figaro %s: set chalkboard save: %v\n", a.id, err)
-				}
-				a.derived.Tick(0, a.chalkboard.Snapshot())
-				a.inbox.Yield()
-
-			case eventInterrupt:
-				if a.inbox.IsIdle() || a.interrupted {
-					continue
-				}
-				fmt.Fprintf(os.Stderr, "agent: event=Interrupt\n")
-				a.interrupted = true
-				if a.turnCancel != nil {
-					a.turnCancel()
-				}
-				// Synthesize tool_result blocks for any tool_uses
-				// that didn't complete. Without this, figStream is
-				// left with an assistant tool_use that has no
-				// matching tool_result, and the next request body
-				// is rejected with "tool_use ids were found
-				// without tool_result blocks immediately after".
-				a.completeInterruptedToolUses()
-				a.fanOut(rpc.Notification{
-					JSONRPC: "2.0",
-					Method:  rpc.MethodError,
-					Params:  rpc.ErrorParams{Message: "interrupted"},
-				})
-				a.endTurn("interrupted")
+		case eventUserPrompt:
+			if evt.chalkboard != nil {
+				a.applyChalkboardInput(evt.chalkboard)
 			}
+			// Capture inbox in case panic recovery swaps it.
+			inbox := a.inbox
+
+			a.mu.Lock()
+			a.lastActive = time.Now()
+			a.mu.Unlock()
+
+			turnCtx, span := figOtel.Start(ctx, "figaro.prompt",
+				figOtel.WithAttributes(
+					attribute.String("figaro.id", a.id),
+					attribute.String("figaro.model", a.currentModel()),
+					attribute.String("figaro.provider", a.prov.Name()),
+				),
+			)
+			turnCtx, turnCancel := context.WithCancel(turnCtx)
+			a.turnCtx = turnCtx
+			a.turnCancel = turnCancel
+			a.interrupted = false
+			a.endTurnSpan = func() { span.End() }
+
+			slog.DebugContext(turnCtx, "event UserPrompt", "aria", a.id, "text", truncLog(evt.text, 60))
+
+			a.ensureInProgressTic()
+			// First message in a fresh aria — fold the outfitter's
+			// bootstrap patch (templated credo, skill catalog) onto
+			// this tic. Outfitter.Bootstrap is idempotent on
+			// system.prompt so restored arias produce an empty patch
+			// and nothing rides along.
+			if len(a.figStream.Durable()) == 0 && a.outfitter != nil && a.chalkboard != nil {
+				if patch, err := a.outfitter.Bootstrap(a.chalkboard.Snapshot(),
+					outfit.CurrentBootCtx(a.prov.Name(), a.id)); err != nil {
+					slog.Error("bootstrap", "aria", a.id, "err", err)
+				} else if !patch.IsEmpty() {
+					a.inProgressTic.Patches = append(a.inProgressTic.Patches, patch)
+					a.chalkboard.Apply(patch)
+					_ = a.chalkboard.Save()
+				}
+			}
+			a.inProgressTic.Content = append(a.inProgressTic.Content, message.TextContent(evt.text))
+			a.finalizeAndSend(inbox)
+
+		case eventFigaro:
+			a.handleFigaro(evt.figMsg)
+
+		case eventFigaroDelta:
+			if a.interrupted {
+				continue
+			}
+			a.fanOut(rpc.Notification{
+				JSONRPC: "2.0",
+				Method:  rpc.MethodDelta,
+				Params:  rpc.DeltaParams{Text: evt.deltaText, ContentType: evt.deltaCT},
+			})
+
+		case eventStartLLMStream:
+			if a.interrupted {
+				continue
+			}
+			a.startLLMStream(a.turnCtx, a.inbox)
+
+		case eventSendComplete:
+			a.handleSendComplete(evt.err)
+
+		case eventToolOutput:
+			if a.interrupted {
+				continue
+			}
+			a.fanOut(rpc.Notification{
+				JSONRPC: "2.0",
+				Method:  rpc.MethodToolOutput,
+				Params: rpc.ToolOutputParams{
+					ToolCallID: evt.toolCallID,
+					ToolName:   evt.toolName,
+					Chunk:      evt.chunk,
+				},
+			})
+
+		case eventToolResult:
+			if a.interrupted {
+				slog.DebugContext(a.turnCtx, "event ToolResult (post-interrupt, suppressed)", "aria", a.id, "tool", evt.toolName)
+				continue
+			}
+			var resultText string
+			for _, c := range evt.content {
+				if c.Type == message.ContentText {
+					resultText += c.Text
+				}
+			}
+			slog.DebugContext(a.turnCtx, "event ToolResult",
+				"aria", a.id, "tool", evt.toolName, "is_error", evt.isErr, "result_len", len(resultText))
+			a.fanOut(rpc.Notification{
+				JSONRPC: "2.0",
+				Method:  rpc.MethodToolEnd,
+				Params: rpc.ToolEndParams{
+					ToolCallID: evt.toolCallID, ToolName: evt.toolName,
+					Result: resultText, IsError: evt.isErr,
+				},
+			})
+
+			// All tool results from one assistant turn accumulate
+			// onto one user-role tic, finalized when the last
+			// tool finishes.
+			a.ensureInProgressTic()
+			a.inProgressTic.Content = append(a.inProgressTic.Content,
+				message.ToolResultContent(evt.toolCallID, evt.toolName, resultText, evt.isErr))
+
+			a.pendingTools--
+
+			if len(a.pendingToolCalls) > 0 {
+				inbox := a.inbox
+				tc := a.pendingToolCalls[0]
+				a.pendingToolCalls = a.pendingToolCalls[1:]
+				a.fanOut(rpc.Notification{
+					JSONRPC: "2.0",
+					Method:  rpc.MethodToolStart,
+					Params: rpc.ToolStartParams{
+						ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
+						Arguments: tc.Arguments,
+					},
+				})
+				go a.runToolAsync(a.turnCtx, inbox, tc)
+			} else if a.pendingTools == 0 {
+				a.finalizeAndSend(a.inbox)
+			}
+
+		case eventRehydrate:
+			slog.Debug("event Rehydrate",
+				"aria", a.id, "set", len(evt.rehydratePatch.Set), "remove", len(evt.rehydratePatch.Remove))
+			tic := message.Message{
+				Role:      message.RoleUser,
+				Patches:   []message.Patch{evt.rehydratePatch},
+				Timestamp: time.Now().UnixMilli(),
+			}
+			if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
+				slog.Error("rehydrate append", "aria", a.id, "err", err)
+				a.inbox.Yield()
+				continue
+			}
+			a.chalkboard.Apply(evt.rehydratePatch)
+			if err := a.chalkboard.Save(); err != nil {
+				slog.Error("rehydrate chalkboard save", "aria", a.id, "err", err)
+			}
+			a.derived.Tick(0, a.chalkboard.Snapshot())
+			a.inbox.Yield()
+
+		case eventSet:
+			slog.Debug("event Set",
+				"aria", a.id, "set", len(evt.setPatch.Set), "remove", len(evt.setPatch.Remove))
+			tic := message.Message{
+				Role:      message.RoleUser,
+				Patches:   []message.Patch{evt.setPatch},
+				Timestamp: time.Now().UnixMilli(),
+			}
+			if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
+				slog.Error("set append", "aria", a.id, "err", err)
+				a.inbox.Yield()
+				continue
+			}
+			a.chalkboard.Apply(evt.setPatch)
+			if err := a.chalkboard.Save(); err != nil {
+				slog.Error("set chalkboard save", "aria", a.id, "err", err)
+			}
+			a.derived.Tick(0, a.chalkboard.Snapshot())
+			a.inbox.Yield()
+
+		case eventInterrupt:
+			if a.inbox.IsIdle() || a.interrupted {
+				continue
+			}
+			slog.Debug("event Interrupt", "aria", a.id)
+			a.interrupted = true
+			if a.turnCancel != nil {
+				a.turnCancel()
+			}
+			// Synthesize tool_result blocks for any tool_uses
+			// that didn't complete. Without this, figStream is
+			// left with an assistant tool_use that has no
+			// matching tool_result, and the next request body
+			// is rejected with "tool_use ids were found
+			// without tool_result blocks immediately after".
+			a.completeInterruptedToolUses()
+			a.fanOut(rpc.Notification{
+				JSONRPC: "2.0",
+				Method:  rpc.MethodError,
+				Params:  rpc.ErrorParams{Message: "interrupted"},
+			})
+			a.endTurn("interrupted")
 		}
 	}
 }
@@ -744,7 +721,7 @@ func (a *Agent) completeInterruptedToolUses() {
 	}
 	tic := *a.inProgressTic
 	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: interrupt synth append: %v\n", a.id, err)
+		slog.Error("interrupt synth append", "aria", a.id, "err", err)
 	}
 }
 
@@ -782,7 +759,7 @@ func (a *Agent) endTurn(reason string) {
 
 	if a.chalkboard != nil {
 		if err := a.chalkboard.Save(); err != nil {
-			fmt.Fprintf(os.Stderr, "figaro %s: chalkboard save: %v\n", a.id, err)
+			slog.Error("chalkboard save", "aria", a.id, "err", err)
 		}
 	}
 	a.derived.Tick(0, a.chalkboard.Snapshot())
@@ -793,30 +770,24 @@ func (a *Agent) endTurn(reason string) {
 	a.inbox.Yield()
 }
 
-// startLLMStream projects translator.Durable() to perMsg and hands
-// it to Send. The cache was caught up by synchronize.
+// startLLMStream hands the streams + snapshot to provider.Send. The
+// provider catches up the translator, POSTs, streams deltas through
+// the bus, condenses the live tail into a durable assistant message,
+// and announces via bus.PushFigaro before returning.
 func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
-	durable := a.translator.Durable()
-	perMsg := make([][]json.RawMessage, 0, len(durable))
-	for _, e := range durable {
-		if len(e.Payload) == 0 {
-			continue
-		}
-		perMsg = append(perMsg, e.Payload)
-	}
-	if len(perMsg) == 0 {
-		inbox.SendSelfish(event{typ: eventSendComplete, err: fmt.Errorf("empty context")})
-		return
-	}
 	in := provider.SendInput{
-		PerMessage: perMsg,
+		FigStream:  a.figStream,
+		Translator: a.translator,
 		Snapshot:   a.chalkboard.Snapshot(),
 		Tools:      a.toolDefs(),
 		MaxTokens:  a.chalkboardInt("system.max_tokens"),
 	}
-	fmt.Fprintf(os.Stderr, "agent: starting LLM stream, %d entries in context\n", len(perMsg))
+	slog.DebugContext(ctx, "starting LLM stream", "aria", a.id, "entries", len(a.figStream.Durable()))
+	provName := a.prov.Name()
+	model := a.currentModel()
 	go func() {
 		var sendErr error
+		started := time.Now()
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -825,6 +796,15 @@ func (a *Agent) startLLMStream(ctx context.Context, inbox *Inbox) {
 			}()
 			sendErr = a.prov.Send(ctx, in, inbox)
 		}()
+		status := "success"
+		if sendErr != nil {
+			status = "failure"
+		}
+		figOtel.RecordRequestDuration(ctx, time.Since(started),
+			attribute.String("provider", provName),
+			attribute.String("model", model),
+			attribute.String("status", status),
+		)
 		inbox.SendSelfish(event{typ: eventSendComplete, err: sendErr})
 	}()
 }
@@ -900,8 +880,10 @@ func (a *Agent) handleSendComplete(sendErr error) {
 // runToolAsync runs one tool call in a goroutine and pushes
 // selfish events back to the captured inbox.
 func (a *Agent) runToolAsync(ctx context.Context, inbox *Inbox, tc message.Content) {
+	toolAttr := attribute.String("tool", tc.ToolName)
 	t, ok := a.tools.Get(tc.ToolName)
 	if !ok {
+		figOtel.RecordToolCall(ctx, "failure", toolAttr, attribute.String("reason", "unknown_tool"))
 		inbox.SendSelfish(event{
 			typ:        eventToolResult,
 			toolCallID: tc.ToolCallID,
@@ -921,6 +903,7 @@ func (a *Agent) runToolAsync(ctx context.Context, inbox *Inbox, tc message.Conte
 	}
 	content, err := t.Execute(ctx, tc.Arguments, onOutput)
 	if err != nil {
+		figOtel.RecordToolCall(ctx, "failure", toolAttr)
 		inbox.SendSelfish(event{
 			typ:        eventToolResult,
 			toolCallID: tc.ToolCallID,
@@ -930,6 +913,7 @@ func (a *Agent) runToolAsync(ctx context.Context, inbox *Inbox, tc message.Conte
 		})
 		return
 	}
+	figOtel.RecordToolCall(ctx, "success", toolAttr)
 	inbox.SendSelfish(event{
 		typ:        eventToolResult,
 		toolCallID: tc.ToolCallID,
@@ -954,12 +938,15 @@ func (a *Agent) fanOut(n rpc.Notification) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	if a.logEncoder != nil {
-		a.logEncoder.Encode(n)
+	ctx := a.turnCtx
+	if ctx == nil {
+		ctx = context.Background()
 	}
+	slog.DebugContext(ctx, "rpc notify", "aria", a.id, "method", n.Method, "params", n.Params)
+
 	for sub := range a.subs {
 		if err := sub.Notify(n.Method, n.Params); err != nil {
-			fmt.Fprintf(os.Stderr, "figaro: notify error: %v\n", err)
+			slog.Warn("notify subscriber", "aria", a.id, "err", err)
 		}
 	}
 }
@@ -991,7 +978,7 @@ func (a *Agent) finalizeAndSend(inbox *Inbox) {
 	a.inProgressTic = nil
 
 	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
-		fmt.Fprintf(os.Stderr, "figaro %s: append tic: %v\n", a.id, err)
+		slog.Error("append tic", "aria", a.id, "err", err)
 		a.fanOut(rpc.Notification{
 			JSONRPC: "2.0",
 			Method:  rpc.MethodError,

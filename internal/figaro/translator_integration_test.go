@@ -21,21 +21,18 @@ import (
 // translatorMockProvider stamps a fixed fingerprint and replies "ok".
 type translatorMockProvider struct{}
 
-func (translatorMockProvider) Name() string                                           { return "tlp" }
-func (translatorMockProvider) Fingerprint() string                                    { return "tlp/v0" }
-func (translatorMockProvider) SetModel(string)                                        {}
-func (translatorMockProvider) Models(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (translatorMockProvider) Decode(payload []json.RawMessage) ([]message.Message, error) {
-	return mockDecode(payload)
+func (translatorMockProvider) Name() string        { return "tlp" }
+func (translatorMockProvider) Fingerprint() string { return "tlp/v0" }
+func (translatorMockProvider) SetModel(string)     {}
+func (translatorMockProvider) Models(_ context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
 }
-func (translatorMockProvider) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (translatorMockProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
 	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
 }
-func (translatorMockProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
-	return mockAssemble(deltas)
-}
-func (translatorMockProvider) Send(_ context.Context, _ provider.SendInput, bus provider.Bus) error {
-	mockPushAssistant(bus, "ok")
+func (p translatorMockProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
+	mockCatchUp(in.FigStream, in.Translator, p.encode, p.Fingerprint())
+	mockPushAssistant(in.FigStream, in.Translator, bus, p.encode, p.Fingerprint(), "ok")
 	return nil
 }
 

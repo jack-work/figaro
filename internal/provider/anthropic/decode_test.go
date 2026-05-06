@@ -85,7 +85,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			assert.Equal(t, string(wire), string(perFLT[0]), "encode parity")
 
 			// Decode parity: fixture → IR == expected.
-			decoded, err := a.Decode([]json.RawMessage{wire})
+			decoded, err := a.decode([]json.RawMessage{wire})
 			require.NoError(t, err)
 			require.Len(t, decoded, 1)
 			assertIRMessageEqual(t, tc.ir, decoded[0])

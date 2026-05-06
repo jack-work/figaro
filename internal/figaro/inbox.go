@@ -2,22 +2,15 @@ package figaro
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/store"
 )
 
-// Inbox is the per-aria event bus. Implements provider.Bus. Owns
-// the figaro IR + translator streams. Push / SendSelfish /
-// SendPatient enqueue; Recv dequeues, runs the routing subscriber,
-// returns the event for the act loop.
+// Inbox is the per-aria event queue. SendSelfish and SendPatient
+// enqueue; Recv dequeues for the act loop. The provider's bus surface
+// (PushDelta / PushFigaro) maps to selfish events on this queue.
 type Inbox struct {
-	Figaro     store.Stream[message.Message]
-	Translator store.Stream[[]json.RawMessage]
-
 	mu      sync.Mutex
 	cond    *sync.Cond
 	active  []event
@@ -28,30 +21,14 @@ type Inbox struct {
 	subs []func(event)
 }
 
-func NewInbox(ctx context.Context, fig store.Stream[message.Message], translator store.Stream[[]json.RawMessage]) *Inbox {
-	b := &Inbox{Figaro: fig, Translator: translator, yielded: true}
+func NewInbox(ctx context.Context) *Inbox {
+	b := &Inbox{yielded: true}
 	b.cond = sync.NewCond(&b.mu)
-	b.subs = append(b.subs, b.routeToStreams)
 	go func() {
 		<-ctx.Done()
 		b.Close()
 	}()
 	return b
-}
-
-// routeToStreams places figaro / live-translator events on their
-// streams as they're Recv'd. Other types pass through.
-func (b *Inbox) routeToStreams(ev event) {
-	switch ev.typ {
-	case eventFigaro:
-		if b.Figaro != nil {
-			b.Figaro.Append(store.Entry[message.Message]{Payload: ev.figMsg}, true)
-		}
-	case eventTranslatorLive:
-		if b.Translator != nil {
-			b.Translator.Append(store.Entry[[]json.RawMessage]{Payload: ev.translatorPayload}, false)
-		}
-	}
 }
 
 func (b *Inbox) SendSelfish(evt event) bool {
@@ -145,8 +122,15 @@ func (b *Inbox) Subscribe(fn func(event)) func() {
 	}
 }
 
-// Push implements provider.Bus — native events land on the
-// translator's live tail; condenseLive folds at turn end.
-func (b *Inbox) Push(ev provider.Event) {
-	b.SendSelfish(event{typ: eventTranslatorLive, translatorPayload: ev.Payload})
+// PushDelta implements provider.Bus — emits a figaro IR content block
+// delta as a selfish event for the act loop to fan out to subscribers.
+func (b *Inbox) PushDelta(c message.Content) {
+	b.SendSelfish(event{typ: eventFigaroDelta, deltaText: c.Text, deltaCT: c.Type})
+}
+
+// PushFigaro implements provider.Bus — signals an assembled assistant
+// message has been appended to figStream. The act loop fans out a
+// stream.message notification and dispatches any tool calls.
+func (b *Inbox) PushFigaro(msg message.Message) {
+	b.SendSelfish(event{typ: eventFigaro, figMsg: msg})
 }

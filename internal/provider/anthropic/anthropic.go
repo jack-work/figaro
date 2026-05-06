@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -25,9 +26,10 @@ import (
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/store"
 	hush "github.com/jack-work/hush/client"
 )
 
@@ -168,7 +170,7 @@ func (a *Anthropic) SetModel(model string) {
 // (durable per-message entries). Live deltas yield a partial Message
 // with only the streamed fragment as content; non-text events
 // (block start/stop, message_start, etc.) yield no message.
-func (a *Anthropic) Decode(payload []json.RawMessage) ([]message.Message, error) {
+func (a *Anthropic) decode(payload []json.RawMessage) ([]message.Message, error) {
 	out := make([]message.Message, 0, len(payload))
 	for i, r := range payload {
 		if len(r) == 0 {
@@ -285,10 +287,6 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 	return m
 }
 
-func log(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "anthropic: "+format+"\n", args...)
-}
-
 // --- Native types ---
 
 type nativeRequest struct {
@@ -351,7 +349,7 @@ type nativeTool struct {
 
 // Encode projects one IR message to native wire bytes. Returns nil
 // for state-only tics.
-func (a *Anthropic) Encode(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error) {
+func (a *Anthropic) encode(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error) {
 	snap := prevSnapshot
 	nm, ok := a.renderMessage(msg, &snap)
 	if !ok {
@@ -429,13 +427,13 @@ func (a *Anthropic) renderPatchBlocks(patches []message.Patch, prevSnap *chalkbo
 		return nil
 	}
 	if a.ReminderRenderer == "tool" {
-		log("warning: reminder_renderer=tool not supported inline; using tag")
+		slog.Warn("anthropic: reminder_renderer=tool not supported inline; using tag")
 	}
 	var out []nativeBlock
 	for _, p := range patches {
 		rendered, err := chalkboard.Render(p, *prevSnap, a.Templates)
 		if err != nil {
-			log("warning: render patch: %v", err)
+			slog.Warn("anthropic: render patch", "err", err)
 		} else {
 			for _, r := range rendered {
 				text := fmt.Sprintf("<system-reminder name=\"%s\">\n%s\n</system-reminder>",
@@ -556,24 +554,37 @@ func markCacheBreakpoints(req *nativeRequest, setting string) {
 
 // --- Send: assemble → HTTP → SSE ---
 
-// Send assembles the request body from in.PerMessage + in.Snapshot,
-// POSTs it, and pushes raw native deltas to the bus until the
-// stream closes. Model: snapshot["system.model"] wins, a.Model is
-// the fallback.
+// Send drives one turn end-to-end. It catches up the translator from
+// the figStream, projects the request from the cached per-message
+// bytes, POSTs, streams SSE chunks to the translator's live tail
+// (decoding figaro IR deltas onto the bus as they go), and on EOF
+// assembles the live tail into a durable assistant message — appended
+// to figStream, condensed into the translator, and announced via
+// bus.PushFigaro.
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	if err := a.catchUpTranslator(in.FigStream, in.Translator); err != nil {
+		return err
+	}
+
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
 		return fmt.Errorf("resolve token: %w", err)
 	}
 
-	var model *string
-	if model = in.Snapshot.Lookup("system.model"); model == nil {
-		a.mu.Lock()
-		model = &a.Model
-		a.mu.Unlock()
+	model := a.resolveModel(in.Snapshot)
+
+	durable := in.Translator.Durable()
+	perMessage := make([][]json.RawMessage, 0, len(durable))
+	for _, e := range durable {
+		if len(e.Payload) > 0 {
+			perMessage = append(perMessage, e.Payload)
+		}
+	}
+	if len(perMessage) == 0 {
+		return fmt.Errorf("empty context")
 	}
 
-	req, err := a.projectMessagesWithModel(in.PerMessage, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), *model)
+	req, err := a.projectMessagesWithModel(perMessage, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), model)
 	if err != nil {
 		return err
 	}
@@ -609,7 +620,112 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		errBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
 	}
-	consumeSSE(resp.Body, bus)
+
+	consumeSSE(resp.Body, in.Translator, bus)
+	return a.condense(in.FigStream, in.Translator, bus)
+}
+
+func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
+	if v := snap.Lookup("system.model"); v != nil {
+		return *v
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.Model
+}
+
+// catchUpTranslator encodes any figStream entries that don't yet
+// have a corresponding translator entry. Idempotent.
+func (a *Anthropic) catchUpTranslator(figStream store.Stream[message.Message], translator store.Stream[[]json.RawMessage]) error {
+	fp := a.Fingerprint()
+	snap := chalkboard.Snapshot{}
+	for _, e := range figStream.Durable() {
+		msg := e.Payload
+		msg.LogicalTime = e.LT
+		if _, ok := translator.Lookup(msg.LogicalTime); !ok {
+			payload, err := a.encode(msg, snap)
+			if err != nil {
+				slog.Error("anthropic encode", "flt", msg.LogicalTime, "err", err)
+			} else if _, err := translator.Append(store.Entry[[]json.RawMessage]{
+				FigaroLT:    msg.LogicalTime,
+				Payload:     payload,
+				Fingerprint: fp,
+			}, true); err != nil {
+				slog.Error("anthropic translator append", "flt", msg.LogicalTime, "err", err)
+			}
+		}
+		for _, p := range msg.Patches {
+			snap = snap.Apply(p)
+		}
+	}
+	return nil
+}
+
+// condense folds the live tail into one durable assistant entry:
+// assemble → decode → figStream.Append → re-encode (input-ready) →
+// translator.Condense → bus.PushFigaro.
+func (a *Anthropic) condense(figStream store.Stream[message.Message], translator store.Stream[[]json.RawMessage], bus provider.Bus) error {
+	live := translator.Live()
+	if len(live) == 0 {
+		return nil
+	}
+
+	payloads := make([][]json.RawMessage, len(live))
+	for i, e := range live {
+		payloads[i] = e.Payload
+	}
+	assembled, err := a.assemble(payloads)
+	if err != nil {
+		_ = translator.DiscardLive()
+		return fmt.Errorf("assemble: %w", err)
+	}
+	if len(assembled) == 0 {
+		_ = translator.DiscardLive()
+		return nil
+	}
+	decoded, err := a.decode(assembled)
+	if err != nil {
+		_ = translator.DiscardLive()
+		return fmt.Errorf("decode assembled: %w", err)
+	}
+
+	var (
+		lastFigaroLT uint64
+		inputReady   []json.RawMessage
+	)
+	for _, m := range decoded {
+		if m.Role != message.RoleAssistant {
+			continue
+		}
+		entry, err := figStream.Append(store.Entry[message.Message]{Payload: m}, true)
+		if err != nil {
+			slog.Error("anthropic append assistant", "err", err)
+			continue
+		}
+		lastFigaroLT = entry.LT
+		m.LogicalTime = entry.LT
+		bus.PushFigaro(m)
+
+		// Re-encode strips inbound-only fields (stop_reason etc.) the
+		// API rejects on input. Cached bytes go in clean.
+		encoded, err := a.encode(m, chalkboard.Snapshot{})
+		if err != nil {
+			slog.Error("anthropic re-encode assistant", "err", err)
+			continue
+		}
+		inputReady = append(inputReady, encoded...)
+	}
+	if len(inputReady) == 0 {
+		_ = translator.DiscardLive()
+		return nil
+	}
+	if _, err := translator.Condense(store.Entry[[]json.RawMessage]{
+		FigaroLT:    lastFigaroLT,
+		Payload:     inputReady,
+		Fingerprint: a.Fingerprint(),
+	}); err != nil {
+		return fmt.Errorf("condense: %w", err)
+	}
 	return nil
 }
 
@@ -625,18 +741,28 @@ type liveDelta struct {
 	Model string          `json:"model,omitempty"`
 }
 
-// consumeSSE forwards every SSE event to the bus and exits when the
-// stream closes. No accumulation — Assemble re-runs the state
-// machine at condense time.
-func consumeSSE(body io.ReadCloser, bus provider.Bus) {
+// consumeSSE writes every SSE event to the translator's live tail
+// and decodes content deltas onto the bus. Returns when the stream
+// closes. No accumulation — assemble re-runs the state machine at
+// condense time.
+func consumeSSE(body io.ReadCloser, translator store.Stream[[]json.RawMessage], bus provider.Bus) {
 	defer body.Close()
 
 	push := func(eventType string, data []byte) {
-		entry, _ := json.Marshal(liveDelta{Event: eventType, Data: json.RawMessage(data)})
-		bus.Push(provider.Event{Payload: []json.RawMessage{entry}})
+		ld := liveDelta{Event: eventType, Data: json.RawMessage(data)}
+		entry, _ := json.Marshal(ld)
+		_, _ = translator.Append(store.Entry[[]json.RawMessage]{
+			Payload: []json.RawMessage{entry},
+		}, false)
+		if msg, ok := decodeLiveDelta(ld); ok {
+			for _, c := range msg.Content {
+				if c.Text != "" {
+					bus.PushDelta(c)
+				}
+			}
+		}
 	}
-	startEntry, _ := json.Marshal(liveDelta{Event: "_start"})
-	bus.Push(provider.Event{Payload: []json.RawMessage{startEntry}})
+	push("_start", nil)
 
 	pr, pw := io.Pipe()
 	go func() {
@@ -649,7 +775,7 @@ func consumeSSE(body io.ReadCloser, bus provider.Bus) {
 			}
 			if err != nil {
 				if err != io.EOF {
-					log("sse: body read error: %v", err)
+					slog.Warn("anthropic sse body read", "err", err)
 				}
 				return
 			}
@@ -684,14 +810,14 @@ func consumeSSE(body io.ReadCloser, bus provider.Bus) {
 			scanNext()
 		case err := <-scanErr:
 			if err != nil {
-				log("sse: scanner error after %d lines: %v", lines, err)
+				slog.Warn("anthropic sse scanner", "lines", lines, "err", err)
 			} else {
-				log("sse: stream ended after %d lines (EOF)", lines)
+				slog.Debug("anthropic sse stream ended", "lines", lines)
 			}
 			push("_eof", nil)
 			return
 		case <-time.After(sseReadTimeout):
-			log("sse: read timeout after %d lines", lines)
+			slog.Warn("anthropic sse read timeout", "lines", lines)
 			push("_eof", nil)
 			return
 		}
@@ -715,7 +841,7 @@ func consumeSSE(body io.ReadCloser, bus provider.Bus) {
 // Assemble runs the SSE accumulator over the live tail, producing
 // the assembled assistant nativeMessage bytes. Returns nil for an
 // empty/malformed tail.
-func (a *Anthropic) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
+func (a *Anthropic) assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
 	var (
 		nm         nativeMessage
 		usage      nativeUsage

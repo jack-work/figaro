@@ -13,7 +13,7 @@ func TestInbox_PatientDeliveredWhenIdle(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx, nil, nil)
+	b := NewInbox(ctx)
 	b.SendPatient(event{typ: eventUserPrompt, text: "hello"})
 
 	evt, ok := b.Recv()
@@ -26,7 +26,7 @@ func TestInbox_PatientHeldWhenBusy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx, nil, nil)
+	b := NewInbox(ctx)
 
 	// First patient makes it busy.
 	b.SendPatient(event{typ: eventUserPrompt, text: "first"})
@@ -65,7 +65,7 @@ func TestInbox_SelfishAlwaysDelivered(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx, nil, nil)
+	b := NewInbox(ctx)
 
 	// Make it busy (not yielded).
 	b.SendPatient(event{typ: eventUserPrompt, text: "prompt"})
@@ -84,7 +84,7 @@ func TestInbox_YieldReleasesPatient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx, nil, nil)
+	b := NewInbox(ctx)
 
 	// Start a turn.
 	b.SendPatient(event{typ: eventUserPrompt, text: "first"})
@@ -105,7 +105,7 @@ func TestInbox_YieldWhenEmpty(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx, nil, nil)
+	b := NewInbox(ctx)
 
 	// Start and finish a turn.
 	b.SendPatient(event{typ: eventUserPrompt, text: "prompt"})
@@ -125,7 +125,7 @@ func TestInbox_SelfishPriority(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx, nil, nil)
+	b := NewInbox(ctx)
 
 	// Start a turn.
 	b.SendPatient(event{typ: eventUserPrompt, text: "prompt"})
@@ -152,7 +152,7 @@ func TestInbox_CloseUnblocksRecv(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx, nil, nil)
+	b := NewInbox(ctx)
 
 	done := make(chan bool, 1)
 	go func() {
@@ -174,7 +174,7 @@ func TestInbox_ClosedSendReturnsFalse(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx, nil, nil)
+	b := NewInbox(ctx)
 	b.Close()
 
 	ok := b.SendSelfish(event{typ: eventInterrupt})
@@ -183,7 +183,7 @@ func TestInbox_ClosedSendReturnsFalse(t *testing.T) {
 
 func TestInbox_ContextCancelCloses(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	b := NewInbox(ctx, nil, nil)
+	b := NewInbox(ctx)
 
 	done := make(chan bool, 1)
 	go func() {
@@ -205,7 +205,7 @@ func TestInbox_MultipleYields(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b := NewInbox(ctx, nil, nil)
+	b := NewInbox(ctx)
 
 	// Start a turn, queue two patient messages.
 	b.SendPatient(event{typ: eventUserPrompt, text: "first"})

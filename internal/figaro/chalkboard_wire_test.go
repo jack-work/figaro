@@ -28,32 +28,26 @@ type chalkSpyProvider struct {
 	sentRuns int
 }
 
-func (p *chalkSpyProvider) Name() string                                          { return "spy" }
-func (p *chalkSpyProvider) Fingerprint() string                                   { return "spy/v0" }
+func (p *chalkSpyProvider) Name() string                                           { return "spy" }
+func (p *chalkSpyProvider) Fingerprint() string                                    { return "spy/v0" }
 func (p *chalkSpyProvider) Models(_ context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (p *chalkSpyProvider) SetModel(string)                                       {}
-func (p *chalkSpyProvider) Decode(payload []json.RawMessage) ([]message.Message, error) {
-	return mockDecode(payload)
-}
+func (p *chalkSpyProvider) SetModel(string)                                        {}
 
-// Encode records every message it's asked to encode. Returns a stub
-// payload so the cache lookup hits next turn.
-func (p *chalkSpyProvider) Encode(msg message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+// encode records every message it's asked to encode. Returns a stub
+// payload so the translator lookup hits next turn.
+func (p *chalkSpyProvider) encode(msg message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
 	p.mu.Lock()
 	p.encoded = append(p.encoded, msg)
 	p.mu.Unlock()
 	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
 }
 
-func (p *chalkSpyProvider) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
-	return mockAssemble(deltas)
-}
-
-func (p *chalkSpyProvider) Send(ctx context.Context, _ provider.SendInput, bus provider.Bus) error {
+func (p *chalkSpyProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	p.mu.Lock()
 	p.sentRuns++
 	p.mu.Unlock()
-	mockPushAssistant(bus, "ok")
+	mockCatchUp(in.FigStream, in.Translator, p.encode, p.Fingerprint())
+	mockPushAssistant(in.FigStream, in.Translator, bus, p.encode, p.Fingerprint(), "ok")
 	return nil
 }
 
@@ -108,11 +102,11 @@ func newAgentWithChalkboard(t *testing.T) (*figaro.Agent, *chalkSpyProvider, *ch
 
 	prov := &chalkSpyProvider{}
 	a := figaro.NewAgent(figaro.Config{
-		ID:                  "test-aria",
-		SocketPath:          dir + "/sock",
-		Provider:            prov,
-		Tools:               tool.NewRegistry(),
-		Chalkboard:          cb,
+		ID:         "test-aria",
+		SocketPath: dir + "/sock",
+		Provider:   prov,
+		Tools:      tool.NewRegistry(),
+		Chalkboard: cb,
 	})
 	t.Cleanup(func() { a.Kill() })
 	return a, prov, cb

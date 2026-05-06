@@ -3,7 +3,6 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"os"
 	"testing"
 	"time"
@@ -12,15 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// mockProviderForIntegration echoes a fixed response.
+// mockProviderForIntegration echoes "42" through the new bus shape.
 type mockProviderForIntegration struct{}
 
 func (m *mockProviderForIntegration) Name() string                                          { return "mock" }
@@ -28,87 +27,24 @@ func (m *mockProviderForIntegration) Fingerprint() string                       
 func (m *mockProviderForIntegration) SetModel(model string)                                 {}
 func (m *mockProviderForIntegration) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 
-type mockIntegNative struct {
-	Role       string                   `json:"role"`
-	Content    []map[string]interface{} `json:"content"`
-	StopReason string                   `json:"stop_reason,omitempty"`
-}
-
-func (m *mockProviderForIntegration) Decode(payload []json.RawMessage) ([]message.Message, error) {
-	out := make([]message.Message, 0, len(payload))
-	for _, r := range payload {
-		// Live tail deltas have a "delta" field.
-		var d struct {
-			Delta string `json:"delta"`
-		}
-		if json.Unmarshal(r, &d) == nil && d.Delta != "" {
-			out = append(out, message.Message{
-				Role:    message.RoleAssistant,
-				Content: []message.Content{message.TextContent(d.Delta)},
-			})
-			continue
-		}
-		var nm mockIntegNative
-		if err := json.Unmarshal(r, &nm); err != nil {
-			return nil, err
-		}
-		if nm.Role == "" {
-			continue
-		}
-		msg := message.Message{Role: message.Role(nm.Role)}
-		for _, c := range nm.Content {
-			if t, _ := c["type"].(string); t == "text" {
-				if txt, _ := c["text"].(string); txt != "" {
-					msg.Content = append(msg.Content, message.TextContent(txt))
-				}
-			}
-		}
-		if nm.StopReason == "end_turn" {
-			msg.StopReason = message.StopEnd
-		}
-		out = append(out, msg)
+func (m *mockProviderForIntegration) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
+	bus.PushDelta(message.TextContent("42"))
+	msg := message.Message{
+		Role:       message.RoleAssistant,
+		Content:    []message.Content{message.TextContent("42")},
+		StopReason: message.StopEnd,
 	}
-	return out, nil
-}
-
-func (m *mockProviderForIntegration) Encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
-	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
-}
-func (m *mockProviderForIntegration) Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
-	var text string
-	for _, p := range deltas {
-		if len(p) == 0 {
-			continue
-		}
-		var d struct {
-			Delta string `json:"delta"`
-		}
-		if json.Unmarshal(p[0], &d) == nil {
-			text += d.Delta
-		}
+	entry, err := in.FigStream.Append(store.Entry[message.Message]{Payload: msg}, true)
+	if err != nil {
+		return err
 	}
-	if text == "" {
-		text = "42"
-	}
-	nm := mockIntegNative{
-		Role:       "assistant",
-		Content:    []map[string]interface{}{{"type": "text", "text": text}},
-		StopReason: "end_turn",
-	}
-	raw, _ := json.Marshal(nm)
-	return []json.RawMessage{raw}, nil
-}
-func (m *mockProviderForIntegration) Send(_ context.Context, _ provider.SendInput, bus provider.Bus) error {
-	delta, _ := json.Marshal(struct {
-		Delta string `json:"delta"`
-	}{"42"})
-	bus.Push(provider.Event{Payload: []json.RawMessage{delta}})
+	msg.LogicalTime = entry.LT
+	bus.PushFigaro(msg)
 	return nil
 }
 
 func TestIntegration_CreateAndPrompt(t *testing.T) {
 	dir := t.TempDir()
-	logger := log.New(os.Stderr, "integration: ", log.LstdFlags)
 
 	// Mock loadout — the create path resolves it via outfit.
 	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
@@ -119,7 +55,7 @@ model = "mock-model"
 `), 0600))
 
 	// Create and start angelus.
-	a := angelus.New(angelus.Config{RuntimeDir: dir, Logger: logger})
+	a := angelus.New(angelus.Config{RuntimeDir: dir})
 
 	// Wire the provider factory.
 	factory := func(providerName, model string) (provider.Provider, error) {

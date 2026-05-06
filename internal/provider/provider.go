@@ -1,4 +1,11 @@
 // Package provider defines the interface that LLM providers implement.
+//
+// Stage 1 of the actor refactor: the provider owns synchronize. It
+// receives the figStream + translator stream directly, catches up the
+// translator before sending, streams deltas through the bus while the
+// HTTP response arrives, and on EOF condenses the live tail into a
+// durable assistant message — all without the agent reaching across
+// the abstraction.
 package provider
 
 import (
@@ -7,6 +14,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/store"
 )
 
 type ModelInfo struct {
@@ -23,58 +31,41 @@ type Tool struct {
 	Parameters  interface{} `json:"parameters"`
 }
 
-// Event is one Push to the Bus during Send. Lands on the translator
-// stream's live tail.
-type Event struct {
-	Payload []json.RawMessage
-}
-
-// Bus is the publish surface for streaming providers. Implemented
-// by the agent's Inbox.
+// Bus is the agent-side sink for the provider's per-turn output. The
+// Inbox implements it: PushDelta drives UX streaming; PushFigaro
+// signals that an assembled assistant message has landed in figStream
+// (the provider has already written it).
 type Bus interface {
-	Push(Event)
+	PushDelta(content message.Content)
+	PushFigaro(msg message.Message)
 }
 
-// SendInput is one turn's input: cached per-message bytes (from
-// Encode), the chalkboard snapshot the system prefix derives from,
-// tool defs, and the token budget. The provider assembles the
-// request body internally.
+// SendInput is one turn's input. The provider catches up the
+// translator from FigStream, builds the request body from
+// Translator.Durable + Snapshot, POSTs, streams deltas through bus,
+// and on EOF appends the assembled assistant message to FigStream
+// and the input-ready bytes to Translator.
 type SendInput struct {
-	PerMessage [][]json.RawMessage
+	FigStream  store.Stream[message.Message]
+	Translator store.Stream[[]json.RawMessage]
 	Snapshot   chalkboard.Snapshot
 	Tools      []Tool
 	MaxTokens  int
 }
 
-// Provider is the LLM provider interface. Encode + Decode + Assemble
-// + Send. The implementation owns request assembly.
+// Provider is the LLM provider interface.
 type Provider interface {
 	Name() string
 
 	// Fingerprint hashes the encoder config. Mismatch invalidates
-	// translator entries.
+	// cached translator entries.
 	Fingerprint() string
 
 	Models(ctx context.Context) ([]ModelInfo, error)
 	SetModel(model string)
 
-	// Encode projects one IR message into native wire bytes.
-	// prevSnapshot is the chalkboard state before msg's patches.
-	// Returns nil for state-only messages.
-	Encode(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error)
-
-	// Decode reverses native bytes back to IR. Uniform over durable
-	// per-message entries and live tail delta payloads — the result
-	// for a delta is a partial Message with only the streamed
-	// fragment as content.
-	Decode(payload []json.RawMessage) ([]message.Message, error)
-
-	// Send ships one turn: assembles the request body from
-	// in.PerMessage + in.Snapshot, POSTs, pushes raw native deltas
-	// to the bus, returns when the stream closes.
+	// Send drives a turn end-to-end. Returns when the SSE stream has
+	// closed and condensation is finished. Encode / Decode / Assemble
+	// are private to each implementation.
 	Send(ctx context.Context, in SendInput, bus Bus) error
-
-	// Assemble folds the live tail into the assembled assistant
-	// nativeMessage bytes. Run by synchronize at condense time.
-	Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error)
 }
