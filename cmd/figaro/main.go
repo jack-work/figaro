@@ -252,7 +252,6 @@ func runPrompt(loaded *config.Loaded, prompt string) {
 		figaroID, figaroEP = mustCreateAndBind(ctx, acli, loaded, ppid)
 	}
 	// Connect to figaro and prompt.
-	echoPromptIfEnabled(loaded, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
 }
 
@@ -273,7 +272,6 @@ func runNewPrompt(loaded *config.Loaded, prompt string) {
 	// Create new figaro and bind.
 	figaroID, figaroEP := mustCreateAndBind(ctx, acli, loaded, ppid)
 
-	echoPromptIfEnabled(loaded, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
 }
 
@@ -1712,26 +1710,25 @@ func mustCreateAndBind(ctx context.Context, acli *angelus.Client, loaded *config
 	return createResp.FigaroID, ep
 }
 
-// echoPromptIfEnabled prints the user's prompt to stdout so the
-// reader can see what was asked alongside the response. Local CLI
-// behavior; nothing reaches the conversation. Toggled via
-// `echo_prompt` in ~/.config/figaro/config.toml (default true).
-func echoPromptIfEnabled(loaded *config.Loaded, prompt string) {
-	if !loaded.EchoPrompt() {
-		return
-	}
-	fmt.Println("> " + prompt)
-	fmt.Println()
-}
-
 func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prompt string, loaded *config.Loaded) {
 	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
 
-	// Status-line banner above the response.
+	// Frame the turn: top status banner → optional echoed prompt →
+	// thin separator → response. The separator gives the response a
+	// clean visual top boundary that mirrors the tool-call rules,
+	// instead of letting the prompt and the response collide.
 	startedAt := time.Now()
 	if loaded.StatusLine() {
 		writeStatusLine(os.Stdout, figaroID, startedAt, 0)
+	}
+	if loaded.EchoPrompt() {
+		fmt.Println()
+		fmt.Println("> " + prompt)
+		fmt.Println()
+		writeSeparator(os.Stdout)
+	} else if loaded.StatusLine() {
+		// Without an echo we still want a blank line under the banner.
 		fmt.Println()
 	}
 
@@ -1796,9 +1793,19 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// row to ✓ / ✗ as tools complete. See toolBatchState.
 	var batch *toolBatchState
 
+	// solo is non-nil while a *single* tool is in flight (no batch).
+	// It animates the header glyph in place until the first output
+	// chunk arrives, then freezes the header so streaming output
+	// below doesn't collide with cursor-up redraws. See toolSoloState.
+	var solo *toolSoloState
+
 	// resumeIfSuspended is idempotent: safe to call before any
 	// transition that needs largo back in markdown-rendering mode.
 	resumeIfSuspended := func() {
+		if solo != nil {
+			solo.Freeze()
+			solo = nil
+		}
 		if rawOut == nil {
 			return
 		}
@@ -1876,7 +1883,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 					batch.MarkRunning(p.ToolCallID)
 					return
 				}
-				// Single-tool path: live streaming.
+				// Single-tool path: live streaming with an animated
+				// header that pulses until the first output arrives.
 				if rawOut == nil {
 					// Drain paced runes and flush pending markdown
 					// (preamble) before switching to the raw pass-through
@@ -1886,16 +1894,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 					sw.Flush()
 					rawOut = sw.Suspend()
 				}
-				detail := toolDetail(p)
-				if len(detail) > 200 {
-					detail = detail[:200] + "…"
-				}
-				header := "\n\033[2m─── ▶ " + p.ToolName
-				if detail != "" {
-					header += " · " + detail
-				}
-				header += " ───\033[0m\n"
-				rawOut.Write([]byte(header))
+				solo = newToolSoloState(rawOut, p.ToolName, toolDetail(p))
+				solo.Start()
 			}
 
 		case rpc.MethodToolOutput:
@@ -1908,6 +1908,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 					// post-mortem on error.
 					batch.AppendOutput(p.ToolCallID, p.Chunk)
 					return
+				}
+				if solo != nil {
+					solo.Freeze()
 				}
 				if rawOut != nil {
 					rawOut.Write([]byte(p.Chunk))
@@ -1923,7 +1926,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				if batch != nil {
 					batch.MarkDone(p.ToolCallID, p.Result, p.IsError)
 				} else if rawOut != nil {
-					// Single-tool path: live trailer.
+					// Single-tool path: stop the spinner (mark done in
+					// place with ✓/✗) then write the live trailer below.
+					if solo != nil {
+						solo.Done(p.IsError)
+						solo = nil
+					}
 					if p.IsError {
 						rawOut.Write([]byte("\n\033[31m⚠ error:\033[0m " + p.Result + "\n"))
 					}
@@ -2059,6 +2067,27 @@ func writeStatusLine(w *os.File, figaroID string, ts time.Time, elapsed time.Dur
 		fmt.Fprintf(w, "\033[2m%s\033[0m\n", line)
 	} else {
 		fmt.Fprintln(w, line)
+	}
+}
+
+// writeSeparator prints a thin dimmed rule across the terminal
+// width — used to visually fence off the echoed prompt from the
+// streaming response below it. Mirrors the tool-call separator
+// glyph so the framing reads consistently throughout a turn.
+func writeSeparator(w *os.File) {
+	width := 80
+	tty := term.IsTerminal(int(w.Fd()))
+	if tty {
+		if c, _, err := term.GetSize(int(w.Fd())); err == nil && c > 20 {
+			width = c
+		}
+	}
+	line := strings.Repeat("─", width)
+	if tty {
+		fmt.Fprintf(w, "\033[2m%s\033[0m\n\n", line)
+	} else {
+		fmt.Fprintln(w, line)
+		fmt.Fprintln(w)
 	}
 }
 
