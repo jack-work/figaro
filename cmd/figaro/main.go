@@ -45,6 +45,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/pacer"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropic"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -1531,6 +1532,17 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		die("largo: %s", err)
 	}
 
+	// pace wraps largo with a steady-rate emitter so bursty provider
+	// deltas land in the terminal one rune at a time at a configurable
+	// CPS. TargetCPS=0 disables pacing entirely (synchronous writes).
+	// All assistant text deltas go through pace.Push; tool output and
+	// decorative chrome bypass it (raw pass-through region).
+	pace := pacer.New(sw, pacer.Options{
+		TargetCPS:       loaded.StreamCPS(),
+		FirstByteBypass: time.Duration(loaded.StreamFirstByteBypassMs()) * time.Millisecond,
+	})
+	defer pace.Close()
+
 	// rawOut is non-nil while a tool call is streaming output through
 	// largo's pass-through region.
 	var rawOut io.Writer
@@ -1560,7 +1572,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				figOtel.Event(ctx, "cli.recv.delta",
 					attribute.String("text", p.Text),
 				)
-				sw.Write([]byte(p.Text))
+				pace.Push(p.Text)
 			}
 
 		case rpc.MethodThinking:
@@ -1570,13 +1582,14 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			}
 
 		case rpc.MethodMessage:
-			// Provider has finished the SSE turn for this round. Flush
-			// any markdown still sitting in largo's buffer so the
+			// Provider has finished the SSE turn for this round. Drain
+			// any paced runes into largo first, then flush largo so the
 			// assistant's preamble renders before any tool header lands.
 			// Without this, text that doesn't end in a blank line stays
 			// raw on screen until tool_start (or done) triggers a flush,
 			// producing the "all at once" feel right before tool calls.
 			figOtel.Event(ctx, "cli.recv.message")
+			pace.Flush()
 			sw.Flush()
 
 		case rpc.MethodToolStart:
@@ -1591,8 +1604,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				// panic. Track open tools and only Suspend on 0→1 and
 				// Resume on 1→0.
 				if rawOut == nil {
-					// Flush pending markdown (preamble) before switching
-					// to the raw pass-through region.
+					// Drain paced runes and flush pending markdown
+					// (preamble) before switching to the raw pass-through
+					// region. Otherwise queued runes would arrive mid-tool
+					// or after Resume, splattered across the wrong region.
+					pace.Flush()
 					sw.Flush()
 					rawOut = sw.Suspend()
 				}
@@ -1645,12 +1661,14 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			// continue. Don't terminate the CLI on Error alone.
 			var p rpc.ErrorParams
 			if json.Unmarshal(params, &p) == nil {
+				pace.Flush()
 				resumeIfSuspended()
 				sw.Write([]byte("\n**❌ error:** " + largo.EscapeInline(p.Message) + "\n\n"))
 			}
 
 		case rpc.MethodDone:
 			openTools = 0
+			pace.Flush()
 			resumeIfSuspended()
 			sw.Flush()
 			select {
@@ -1683,6 +1701,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	case <-fcli.Done():
 		// Agent socket closed before stream.done. The agent died,
 		// was killed, or the angelus shut down mid-turn. Don't hang.
+		pace.Flush()
 		resumeIfSuspended()
 		sw.Flush()
 		fmt.Fprintln(os.Stderr, "\nerror: agent disconnected before turn completed")
@@ -1702,6 +1721,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		case <-time.After(3 * time.Second):
 			// Agent didn't ack in time — bail out anyway.
 		}
+		pace.Flush()
 		resumeIfSuspended()
 		sw.Flush()
 		fmt.Fprintln(os.Stderr, "interrupted")

@@ -43,6 +43,19 @@ type Config struct {
 	// (aria id, timestamp, elapsed) at the start and end of each
 	// response. Default true.
 	StatusLine *bool `toml:"status_line"`
+
+	// StreamCPS is the target characters-per-second emission rate
+	// for the streaming pacer. The pacer smooths bursty provider
+	// deltas into a steady character-by-character stream so the
+	// terminal feels like the model is typing rather than pasting
+	// in chunks. 0 disables pacing (synchronous passthrough). The
+	// pointer distinguishes "unset → default" from "explicit 0".
+	StreamCPS *int `toml:"stream_cps"`
+
+	// StreamFirstByteBypassMs is the duration in milliseconds during
+	// which the pacer skips queuing and writes synchronously to
+	// preserve time-to-first-token. 0 disables the bypass. Default 80.
+	StreamFirstByteBypassMs *int `toml:"stream_first_byte_bypass_ms"`
 }
 
 // EchoPrompt returns whether the CLI should echo the user's prompt
@@ -61,6 +74,23 @@ func (l *Loaded) StatusLine() bool {
 		return true
 	}
 	return *l.Config.StatusLine
+}
+
+// StreamCPS returns the target characters-per-second rate for the
+// pacer. Defaults to 200. 0 disables pacing.
+func (l *Loaded) StreamCPS() int {
+	if l.Config.StreamCPS == nil {
+		return 200
+	}
+	return *l.Config.StreamCPS
+}
+
+// StreamFirstByteBypassMs returns the bypass window. Defaults to 80 ms.
+func (l *Loaded) StreamFirstByteBypassMs() int {
+	if l.Config.StreamFirstByteBypassMs == nil {
+		return 80
+	}
+	return *l.Config.StreamFirstByteBypassMs
 }
 
 // AnthropicProvider is the concrete config for an anthropic provider directory.
