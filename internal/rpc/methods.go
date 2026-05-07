@@ -6,14 +6,16 @@ import "encoding/json"
 
 const (
 	// Notifications: figaro → subscriber (no response expected).
-	MethodDelta      = "stream.delta"
-	MethodToolOutput = "stream.tool_output"
-	MethodThinking   = "stream.thinking"
-	MethodToolStart  = "stream.tool_start"
-	MethodToolEnd    = "stream.tool_end"
-	MethodMessage    = "stream.message"
-	MethodDone       = "stream.done"
-	MethodError      = "stream.error"
+	MethodDelta          = "stream.delta"
+	MethodToolOutput     = "stream.tool_output"
+	MethodThinking       = "stream.thinking"
+	MethodToolStart      = "stream.tool_start"
+	MethodToolEnd        = "stream.tool_end"
+	MethodToolBatchStart = "stream.tool_batch_start"
+	MethodToolBatchEnd   = "stream.tool_batch_end"
+	MethodMessage        = "stream.message"
+	MethodDone           = "stream.done"
+	MethodError          = "stream.error"
 
 	// Requests: client → figaro (response expected).
 	MethodQua          = "figaro.qua"

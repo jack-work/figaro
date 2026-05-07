@@ -65,4 +65,32 @@ type ErrorParams struct {
 	Message string `json:"message"`
 }
 
+// ToolBatchStartParams brackets a parallel tool dispatch round.
+// The agent emits this *before* any tool_start notifications when a
+// round contains more than one tool call. The CLI uses this to
+// switch into batch render mode: pre-allocate N status rows,
+// suppress per-chunk streaming, summarize on completion. For
+// single-tool rounds the agent skips this notification entirely
+// (Size would be 1, redundant), preserving the live-streaming UX.
+type ToolBatchStartParams struct {
+	Size  int                  `json:"size"`
+	Tools []ToolBatchToolEntry `json:"tools"`
+}
+
+// ToolBatchToolEntry is a single tool entry in a batch start. It
+// matches the fields the CLI needs to render the pending row
+// (name + a short detail), without forcing the client to wait for
+// each tool_start to arrive.
+type ToolBatchToolEntry struct {
+	ToolCallID string                 `json:"tool_call_id"`
+	ToolName   string                 `json:"tool_name"`
+	Arguments  map[string]interface{} `json:"arguments,omitempty"`
+}
+
+// ToolBatchEndParams closes a batch. Emitted after every tool_end
+// in the round has been delivered.
+type ToolBatchEndParams struct {
+	Size int `json:"size"`
+}
+
 

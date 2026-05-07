@@ -223,6 +223,11 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 // returns the matching tool_result content blocks in input order.
 // Tool output chunks fan out as MethodToolOutput; tool ends as
 // MethodToolEnd. Cancellation via turnCtx propagates to each tool.
+//
+// For rounds with more than one tool call we bracket the run with
+// MethodToolBatchStart / MethodToolBatchEnd notifications so the CLI
+// can switch into a summary render mode. Single-tool rounds skip the
+// batch notifications and keep their live-streaming UX.
 func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []message.Content {
 	type res struct {
 		idx     int
@@ -230,6 +235,23 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 		isErr   bool
 	}
 	ch := make(chan res, len(calls))
+
+	isBatch := len(calls) > 1
+	if isBatch {
+		entries := make([]rpc.ToolBatchToolEntry, len(calls))
+		for i, tc := range calls {
+			entries[i] = rpc.ToolBatchToolEntry{
+				ToolCallID: tc.ToolCallID,
+				ToolName:   tc.ToolName,
+				Arguments:  tc.Arguments,
+			}
+		}
+		a.fanOut(rpc.Notification{
+			JSONRPC: "2.0",
+			Method:  rpc.MethodToolBatchStart,
+			Params:  rpc.ToolBatchStartParams{Size: len(calls), Tools: entries},
+		})
+	}
 
 	// Fan-out start notifications + spawn workers.
 	for i, tc := range calls {
@@ -290,6 +312,13 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 			},
 		})
 		results[r.idx] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, resultText, r.isErr)
+	}
+	if isBatch {
+		a.fanOut(rpc.Notification{
+			JSONRPC: "2.0",
+			Method:  rpc.MethodToolBatchEnd,
+			Params:  rpc.ToolBatchEndParams{Size: len(calls)},
+		})
 	}
 	return results
 }

@@ -1552,6 +1552,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// would panic in largo.
 	openTools := 0
 
+	// batch is non-nil while a parallel tool batch is being rendered.
+	// In batch mode we pre-allocate one terminal row per tool with a
+	// pending marker, suppress per-chunk streaming, and update each
+	// row to ✓ / ✗ as tools complete. See toolBatchState.
+	var batch *toolBatchState
+
 	// resumeIfSuspended is idempotent: safe to call before any
 	// transition that needs largo back in markdown-rendering mode.
 	resumeIfSuspended := func() {
@@ -1592,17 +1598,47 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			pace.Flush()
 			sw.Flush()
 
+		case rpc.MethodToolBatchStart:
+			var p rpc.ToolBatchStartParams
+			if json.Unmarshal(params, &p) == nil && p.Size > 1 {
+				figOtel.Event(ctx, "cli.recv.tool_batch_start",
+					attribute.Int("size", p.Size))
+				// Drain everything that came before. The batch summary
+				// is decorative chrome and lives in the suspended region,
+				// so flush markdown first.
+				pace.Flush()
+				sw.Flush()
+				if rawOut == nil {
+					rawOut = sw.Suspend()
+				}
+				batch = newToolBatchState(rawOut, p.Tools)
+				batch.RenderInitial()
+			}
+
+		case rpc.MethodToolBatchEnd:
+			figOtel.Event(ctx, "cli.recv.tool_batch_end")
+			if batch != nil {
+				batch.Finalize()
+				batch = nil
+			}
+			// Tool ends already balanced openTools; resume here so the
+			// next round (if any) starts clean.
+			if openTools == 0 {
+				resumeIfSuspended()
+			}
+
 		case rpc.MethodToolStart:
 			var p rpc.ToolStartParams
 			if json.Unmarshal(params, &p) == nil {
 				figOtel.Event(ctx, "cli.recv.tool_start",
 					attribute.String("tool", p.ToolName))
-				// Suspend on the *first* concurrent tool only. With
-				// parallel tool calls (Anthropic can emit several
-				// tool_use blocks per round) tool_start arrives N times
-				// in a row before any tool_end; double-Suspend would
-				// panic. Track open tools and only Suspend on 0→1 and
-				// Resume on 1→0.
+				openTools++
+				if batch != nil {
+					// Pre-rendered by RenderInitial. Mark running.
+					batch.MarkRunning(p.ToolCallID)
+					return
+				}
+				// Single-tool path: live streaming.
 				if rawOut == nil {
 					// Drain paced runes and flush pending markdown
 					// (preamble) before switching to the raw pass-through
@@ -1622,15 +1658,22 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				}
 				header += " ───\033[0m\n"
 				rawOut.Write([]byte(header))
-				openTools++
 			}
 
 		case rpc.MethodToolOutput:
 			var p rpc.ToolOutputParams
-			if json.Unmarshal(params, &p) == nil && rawOut != nil {
+			if json.Unmarshal(params, &p) == nil {
 				figOtel.Event(ctx, "cli.recv.tool_output",
 					attribute.Int("bytes", len(p.Chunk)))
-				rawOut.Write([]byte(p.Chunk))
+				if batch != nil {
+					// Suppress live painting; buffer per-tool for
+					// post-mortem on error.
+					batch.AppendOutput(p.ToolCallID, p.Chunk)
+					return
+				}
+				if rawOut != nil {
+					rawOut.Write([]byte(p.Chunk))
+				}
 			}
 
 		case rpc.MethodToolEnd:
@@ -1639,8 +1682,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				figOtel.Event(ctx, "cli.recv.tool_end",
 					attribute.String("tool", p.ToolName),
 					attribute.Bool("error", p.IsError))
-				// Stay in suspended/raw mode while writing the trailer.
-				if rawOut != nil {
+				if batch != nil {
+					batch.MarkDone(p.ToolCallID, p.Result, p.IsError)
+				} else if rawOut != nil {
+					// Single-tool path: live trailer.
 					if p.IsError {
 						rawOut.Write([]byte("\n\033[31m⚠ error:\033[0m " + p.Result + "\n"))
 					}
@@ -1649,8 +1694,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				if openTools > 0 {
 					openTools--
 				}
-				// Resume only when the last concurrent tool has ended.
-				if openTools == 0 {
+				// In batch mode we wait for ToolBatchEnd before resuming
+				// so the entire summary stays in the suspended region.
+				if openTools == 0 && batch == nil {
 					resumeIfSuspended()
 				}
 			}
@@ -1668,6 +1714,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 
 		case rpc.MethodDone:
 			openTools = 0
+			if batch != nil {
+				batch.Finalize()
+				batch = nil
+			}
 			pace.Flush()
 			resumeIfSuspended()
 			sw.Flush()
