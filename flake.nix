@@ -33,17 +33,8 @@
             "-X github.com/jack-work/figaro/internal/credo.version=${rev}"
           ];
 
-          # Multi-call shims: figaro inspects argv[0] and rewrites
-          #   q <prompt>          → figaro -- <prompt>
-          #   l <prompt>          → figaro plain -- <prompt>
-          #   x <instruction>     → figaro x -- <instruction>
-          # See cmd/figaro/main.go. Relative symlinks resolve through
-          # the nix-profile chain since q/l/x live next to figaro.
-          postInstall = ''
-            ln -s figaro $out/bin/q
-            ln -s figaro $out/bin/l
-            ln -s figaro $out/bin/x
-          '';
+          # Multi-call shims used to live here (q/l/x symlinks); they
+          # were moved to user shell aliases. See ~/.config/fish/config.fish.
 
           meta.mainProgram = "figaro";
         };
