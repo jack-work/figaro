@@ -148,7 +148,40 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 
 	// Drain deltas + figaro. Both channels close when provider.Send
 	// returns (its goroutine closes them via the defer).
+	//
+	// Wire-order matters: MethodMessage *must* arrive after every
+	// MethodDelta for that turn. The CLI uses MethodMessage as a
+	// "round complete, flush largo now" trigger; a stray delta after
+	// the flush would sit in largo's buffer un-rendered until the
+	// next flush trigger (tool_start or stream.done).
+	//
+	// Both channels are independent and can be ready at the same
+	// time after message_stop. Provider contract: PushFigaro is the
+	// last thing the producer does for the turn. So when we observe
+	// a fig on the channel, every delta has already been pushed —
+	// we just need to drain the deltas buffer fully before fanning
+	// out the fig notification.
 	var lastFig message.Message
+	drainDeltasOnce := func() {
+		for {
+			select {
+			case d, ok := <-bus.deltas:
+				if !ok {
+					bus.deltas = nil
+					return
+				}
+				if !a.isInterrupted() {
+					a.fanOut(rpc.Notification{
+						JSONRPC: "2.0",
+						Method:  rpc.MethodDelta,
+						Params:  rpc.DeltaParams{Text: d.Text, ContentType: d.Type},
+					})
+				}
+			default:
+				return
+			}
+		}
+	}
 	for bus.deltas != nil || bus.figs != nil {
 		select {
 		case d, ok := <-bus.deltas:
@@ -167,6 +200,12 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 			if !ok {
 				bus.figs = nil
 				continue
+			}
+			// Provider is done producing deltas (PushFigaro is the
+			// last act). Drain anything still buffered before fanning
+			// out MethodMessage so the CLI receives all deltas first.
+			if bus.deltas != nil {
+				drainDeltasOnce()
 			}
 			lastFig = m
 			a.fanOutFigaro(m)
