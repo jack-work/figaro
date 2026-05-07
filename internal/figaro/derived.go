@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -25,6 +26,12 @@ type DurableDerivation interface {
 	OnTick(w io.Writer, evt DerivationEvent) error
 }
 
+// agent: todo: let's give the derivation loop access to more than just the
+// chalkboard snapshot.  Let's give it the full figaro log that it can freely
+// read.  That way we can accumulate state for tracing and stuff.
+// In order to do that it has to be a thread safe pointer to a limit in the underlying list,
+// which is append only, so it will always be safe.
+//
 // DerivationEvent is one tick. Snapshot is the chalkboard state at
 // tick-emission time (a defensive clone, safe to read off-goroutine).
 type DerivationEvent struct {
@@ -182,14 +189,14 @@ func (l *derivationLoop) run(ctx context.Context) {
 func (l *derivationLoop) process(evt DerivationEvent) {
 	var buf bytes.Buffer
 	if err := l.impl.OnTick(&buf, evt); err != nil {
-		fmt.Fprintf(os.Stderr, "derivation %s: ontick: %v\n", l.alias, err)
+		slog.Warn("derivation ontick", "alias", l.alias, "err", err)
 		return
 	}
 	if err := writeAtomic(l.path, buf.Bytes()); err != nil {
 		// ENOENT means the parent dir was removed under us (test
 		// teardown of t.TempDir, an aria deletion, etc). Silent.
 		if !os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "derivation %s: write %s: %v\n", l.alias, l.path, err)
+			slog.Warn("derivation write", "alias", l.alias, "path", l.path, "err", err)
 		}
 	}
 }

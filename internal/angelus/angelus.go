@@ -3,7 +3,7 @@ package angelus
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -31,7 +31,6 @@ type Angelus struct {
 	Backend    store.Backend                  // aria persistence (nil = ephemeral-only)
 	SocketPath string
 	RuntimeDir string
-	Logger     *log.Logger
 	StartedAt  time.Time
 
 	listener net.Listener
@@ -41,7 +40,6 @@ type Angelus struct {
 // Config holds the settings for creating an Angelus.
 type Config struct {
 	RuntimeDir string        // e.g. $XDG_RUNTIME_DIR/figaro
-	Logger     *log.Logger
 	Backend    store.Backend // aria persistence (nil = ephemeral-only)
 }
 
@@ -53,7 +51,6 @@ func New(cfg Config) *Angelus {
 		Backend:    cfg.Backend,
 		SocketPath: filepath.Join(cfg.RuntimeDir, "angelus.sock"),
 		RuntimeDir: cfg.RuntimeDir,
-		Logger:     cfg.Logger,
 	}
 }
 
@@ -85,12 +82,9 @@ func (a *Angelus) Run(ctx context.Context) error {
 	)
 	defer span.End()
 
-	// Create runtime directories.
 	if err := os.MkdirAll(a.FigaroSocketDir(), 0700); err != nil {
 		return err
 	}
-
-	// Clean stale socket.
 	os.Remove(a.SocketPath)
 
 	ln, err := net.Listen("unix", a.SocketPath)
@@ -104,7 +98,6 @@ func (a *Angelus) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Write PID file for clean shutdown.
 	pidPath := filepath.Join(a.RuntimeDir, "angelus.pid")
 	os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
 	defer os.Remove(pidPath)
@@ -114,12 +107,10 @@ func (a *Angelus) Run(ctx context.Context) error {
 	// of this file).
 	defer os.Remove(a.SocketPath)
 
-	a.Logger.Printf("angelus started, pid=%d, socket=%s", os.Getpid(), a.SocketPath)
+	slog.Info("angelus started", "pid", os.Getpid(), "socket", a.SocketPath)
 
-	// Start PID monitor.
 	go a.pidMonitor(ctx)
 
-	// Accept loop.
 	go func() {
 		<-ctx.Done()
 		ln.Close()
@@ -130,10 +121,10 @@ func (a *Angelus) Run(ctx context.Context) error {
 		if err != nil {
 			select {
 			case <-ctx.Done():
-				a.Logger.Printf("angelus shutting down")
+				slog.Info("angelus shutting down")
 				return nil
 			default:
-				a.Logger.Printf("accept error: %v", err)
+				slog.Warn("angelus accept", "err", err)
 				continue
 			}
 		}
@@ -184,7 +175,7 @@ func (a *Angelus) reapDeadPIDs() {
 	pids := a.Registry.AllPIDs()
 	for _, pid := range pids {
 		if !isAlive(pid) {
-			a.Logger.Printf("pid %d died, unbinding", pid)
+			slog.Info("pid died, unbinding", "pid", pid)
 			a.Registry.Unbind(pid)
 		}
 	}
@@ -210,55 +201,44 @@ func (a *Angelus) Stop() {
 //     up to perAgentGrace, then call Kill() which flushes the store.
 //  3. Cancel the angelus context so the accept loop exits.
 //
-// Idempotent. Safe to call from a signal handler. Returns when every
-// figaro has been killed (or its grace expired).
+// Idempotent. Safe to call from a signal handler.
 func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 	if a.Registry == nil {
 		a.Stop()
 		return
 	}
 	if a.Registry.IsDraining() {
-		return // already shutting down
+		return
 	}
 	a.Registry.SetDraining()
 
 	figaros := a.Registry.All()
-	if a.Logger != nil {
-		a.Logger.Printf("angelus: graceful shutdown beginning, %d figaro(s) to drain", len(figaros))
-	}
+	slog.Info("angelus graceful shutdown beginning", "figaros", len(figaros))
 
-	// Phase 1: ask everyone to interrupt their current turn.
 	for _, f := range figaros {
 		f.Interrupt()
 	}
 
-	// Phase 2: wait for each one to reach idle, then kill it. We do
-	// this in parallel — one slow figaro shouldn't starve the others.
 	var wg sync.WaitGroup
 	for _, f := range figaros {
 		wg.Add(1)
 		go func(f figaro.Figaro) {
 			defer wg.Done()
 			waitForIdle(f, perAgentGrace)
-			if err := a.Registry.Kill(f.ID()); err != nil && a.Logger != nil {
-				a.Logger.Printf("angelus: kill %s: %v", f.ID(), err)
+			if err := a.Registry.Kill(f.ID()); err != nil {
+				slog.Error("angelus kill", "id", f.ID(), "err", err)
 			}
 		}(f)
 	}
 	wg.Wait()
 
-	if a.Logger != nil {
-		a.Logger.Printf("angelus: graceful shutdown complete")
-	}
+	slog.Info("angelus graceful shutdown complete")
 
-	// Phase 3: stop the accept loop.
 	a.Stop()
 
-	// Phase 4: close the backend. Safe now that every agent has
-	// flushed its Downstream handle in phase 2. No-op for FileBackend.
 	if a.Backend != nil {
-		if err := a.Backend.Close(); err != nil && a.Logger != nil {
-			a.Logger.Printf("angelus: backend close: %v", err)
+		if err := a.Backend.Close(); err != nil {
+			slog.Error("angelus backend close", "err", err)
 		}
 	}
 }

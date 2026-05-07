@@ -2,7 +2,6 @@ package angelus_test
 
 import (
 	"context"
-	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -19,10 +18,8 @@ import (
 func newTestAngelus(t *testing.T) (*angelus.Angelus, context.CancelFunc) {
 	t.Helper()
 	dir := t.TempDir()
-	logger := log.New(os.Stderr, "test-angelus: ", log.LstdFlags)
 	a := angelus.New(angelus.Config{
 		RuntimeDir: dir,
-		Logger:     logger,
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -123,10 +120,8 @@ func TestAngelus_StaleSocketCleanup(t *testing.T) {
 	// Create a stale socket file.
 	require.NoError(t, os.WriteFile(sockPath, []byte("stale"), 0600))
 
-	logger := log.New(os.Stderr, "test-angelus: ", log.LstdFlags)
 	a := angelus.New(angelus.Config{
 		RuntimeDir: dir,
-		Logger:     logger,
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -80,14 +80,14 @@ type AriaRestorer func(ariaID string) error
 // For each surviving binding, restore is called first to lazy-load
 // the target aria into the registry. A nil restore skips the lazy
 // step (caller is expected to have populated the registry already).
-func RestoreBindings(r *Registry, path string, logger *log.Logger, restore AriaRestorer) {
+func RestoreBindings(r *Registry, path string, restore AriaRestorer) {
 	if r == nil {
 		return
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if !os.IsNotExist(err) && logger != nil {
-			logger.Printf("bindings: read %s: %v", path, err)
+		if !os.IsNotExist(err) {
+			slog.Warn("bindings read", "path", path, "err", err)
 		}
 		return
 	}
@@ -96,9 +96,7 @@ func RestoreBindings(r *Registry, path string, logger *log.Logger, restore AriaR
 
 	var file bindingsFile
 	if err := json.Unmarshal(data, &file); err != nil {
-		if logger != nil {
-			logger.Printf("bindings: parse %s: %v", path, err)
-		}
+		slog.Warn("bindings parse", "path", path, "err", err)
 		return
 	}
 
@@ -108,36 +106,27 @@ func RestoreBindings(r *Registry, path string, logger *log.Logger, restore AriaR
 			skipped++
 			continue
 		}
-		// Verify process identity when we have a recorded start time.
-		// A zero recorded StartTime means the saver couldn't read it;
-		// we accept the liveness probe alone in that case.
 		if b.StartTime != 0 && pidStartTime(b.PID) != b.StartTime {
-			if logger != nil {
-				logger.Printf("bindings: pid %d reused, skipping", b.PID)
-			}
+			slog.Info("bindings pid reused, skipping", "pid", b.PID)
 			skipped++
 			continue
 		}
 		if restore != nil {
 			if err := restore(b.FigaroID); err != nil {
-				if logger != nil {
-					logger.Printf("bindings: restore %s for pid=%d: %v", b.FigaroID, b.PID, err)
-				}
+				slog.Warn("bindings restore", "figaro", b.FigaroID, "pid", b.PID, "err", err)
 				skipped++
 				continue
 			}
 		}
 		if err := r.Bind(b.PID, b.FigaroID); err != nil {
-			if logger != nil {
-				logger.Printf("bindings: bind pid=%d figaro=%s: %v", b.PID, b.FigaroID, err)
-			}
+			slog.Warn("bindings bind", "pid", b.PID, "figaro", b.FigaroID, "err", err)
 			skipped++
 			continue
 		}
 		restored++
 	}
-	if logger != nil && (restored > 0 || skipped > 0) {
-		logger.Printf("bindings: restored=%d skipped=%d", restored, skipped)
+	if restored > 0 || skipped > 0 {
+		slog.Info("bindings restored", "restored", restored, "skipped", skipped)
 	}
 }
 

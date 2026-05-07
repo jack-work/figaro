@@ -43,9 +43,6 @@ type Config struct {
 	// (aria id, timestamp, elapsed) at the start and end of each
 	// response. Default true.
 	StatusLine *bool `toml:"status_line"`
-
-	// Log configures output destinations.
-	Log LogConfig `toml:"log"`
 }
 
 // EchoPrompt returns whether the CLI should echo the user's prompt
@@ -64,11 +61,6 @@ func (l *Loaded) StatusLine() bool {
 		return true
 	}
 	return *l.Config.StatusLine
-}
-
-// LogConfig controls where structured output goes.
-type LogConfig struct {
-	RPCFile string `toml:"rpc_file"`
 }
 
 // AnthropicProvider is the concrete config for an anthropic provider directory.
@@ -143,14 +135,6 @@ func (l *Loaded) LoadProviderConfig(name string, target interface{}) error {
 	return nil
 }
 
-// Log returns the log config with paths expanded.
-func (l *Loaded) Log() LogConfig {
-	log := l.Config.Log
-	home, _ := os.UserHomeDir()
-	log.RPCFile = expandHome(log.RPCFile, home)
-	return log
-}
-
 // DefaultConfigDir returns the config directory, respecting XDG.
 func DefaultConfigDir() string {
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
@@ -182,18 +166,7 @@ func Load(configDir string) (*Loaded, error) {
 }
 
 func defaultConfig() Config {
-	home, _ := os.UserHomeDir()
 	return Config{
 		DefaultProvider: "anthropic",
-		Log: LogConfig{
-			RPCFile: filepath.Join(home, ".local", "state", "figaro", "rpc.jsonl"),
-		},
 	}
-}
-
-func expandHome(path, home string) string {
-	if len(path) > 1 && path[:2] == "~/" {
-		return filepath.Join(home, path[2:])
-	}
-	return path
 }

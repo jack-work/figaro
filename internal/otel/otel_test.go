@@ -13,40 +13,36 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
-func TestInit_CreatesTraceFile(t *testing.T) {
-	dir := t.TempDir()
-	traceFile := filepath.Join(dir, "sub", "traces.jsonl")
+func TestInit_CreatesStateDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sub")
 
 	ctx := context.Background()
-	shutdown, err := figOtel.Init(ctx, traceFile)
+	shutdown, err := figOtel.Init(ctx, dir)
 	require.NoError(t, err)
 	defer shutdown(ctx)
 
-	_, err = os.Stat(traceFile)
-	assert.NoError(t, err, "trace file should be created including parent dirs")
+	for _, name := range []string{"traces.jsonl", "logs.jsonl", "metrics.jsonl"} {
+		_, err := os.Stat(filepath.Join(dir, name))
+		assert.NoError(t, err, "%s should be created", name)
+	}
 }
 
 func TestInit_RecordsSpans(t *testing.T) {
 	dir := t.TempDir()
-	traceFile := filepath.Join(dir, "traces.jsonl")
 
 	ctx := context.Background()
-	shutdown, err := figOtel.Init(ctx, traceFile)
+	shutdown, err := figOtel.Init(ctx, dir)
 	require.NoError(t, err)
 
-	// Create a span.
 	ctx, span := figOtel.Start(ctx, "test.operation")
 	span.End()
 
-	// Flush — shutdown writes pending spans.
 	require.NoError(t, shutdown(ctx))
 
-	// Read the trace file and verify a span was written.
-	data, err := os.ReadFile(traceFile)
+	data, err := os.ReadFile(filepath.Join(dir, "traces.jsonl"))
 	require.NoError(t, err)
 	assert.NotEmpty(t, data, "trace file should contain span data")
 
-	// The stdout exporter writes one JSON object per span.
 	var spanData map[string]interface{}
 	err = json.Unmarshal(data, &spanData)
 	require.NoError(t, err, "trace output should be valid JSON")
@@ -55,10 +51,9 @@ func TestInit_RecordsSpans(t *testing.T) {
 
 func TestTracer_ReturnsFigaroTracer(t *testing.T) {
 	dir := t.TempDir()
-	traceFile := filepath.Join(dir, "traces.jsonl")
 
 	ctx := context.Background()
-	shutdown, err := figOtel.Init(ctx, traceFile)
+	shutdown, err := figOtel.Init(ctx, dir)
 	require.NoError(t, err)
 	defer shutdown(ctx)
 
@@ -68,16 +63,12 @@ func TestTracer_ReturnsFigaroTracer(t *testing.T) {
 
 func TestStart_PropagatesContext(t *testing.T) {
 	dir := t.TempDir()
-	traceFile := filepath.Join(dir, "traces.jsonl")
 
 	ctx := context.Background()
-	shutdown, err := figOtel.Init(ctx, traceFile)
+	shutdown, err := figOtel.Init(ctx, dir)
 	require.NoError(t, err)
 
-	// Parent span.
 	ctx, parent := figOtel.Start(ctx, "parent")
-
-	// Child span — should inherit trace ID from parent.
 	_, child := figOtel.Start(ctx, "child")
 
 	parentTraceID := parent.SpanContext().TraceID()
