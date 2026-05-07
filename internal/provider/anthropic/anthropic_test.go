@@ -94,7 +94,9 @@ func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 		{Name: "beta", Description: "second", Parameters: fakeSchema()},
 	}
 
-	req, _ := a.projectMessagesWithModel(a.encodeAll(msgs), systemSnapshot(t, "you are a test agent"), tools, 1024, false, "claude-test")
+	snap := systemSnapshot(t, "you are a test agent")
+	snap["system.cache_control"] = json.RawMessage(`"ephemeral"`)
+	req, _ := a.projectMessagesWithModel(a.encodeAll(msgs), snap, tools, 1024, false, "claude-test")
 
 	require.NotEmpty(t, req.System, "system must be present")
 	last := req.System[len(req.System)-1]
@@ -172,11 +174,45 @@ func TestProjectMessages_OAuthSystemArray(t *testing.T) {
 		{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
 	}
 
-	req, _ := a.projectMessagesWithModel(a.encodeAll(msgs), systemSnapshot(t, "you are figaro"), nil, 1024, true, "claude-test")
+	snap := systemSnapshot(t, "you are figaro")
+	snap["system.cache_control"] = json.RawMessage(`"ephemeral"`)
+	req, _ := a.projectMessagesWithModel(a.encodeAll(msgs), snap, nil, 1024, true, "claude-test")
 
 	require.Len(t, req.System, 2, "OAuth system must have two blocks: Claude Code identity + credo")
 	assert.Contains(t, req.System[0].Text, "Claude Code")
 	assert.Contains(t, req.System[1].Text, "you are figaro")
 	assert.Nil(t, req.System[0].CacheControl, "first OAuth system block must not carry cache_control")
 	require.NotNil(t, req.System[1].CacheControl, "last OAuth system block must carry cache_control")
+}
+
+// TestProjectMessages_PerLTTag verifies that a `system.tags[<lt>].cache_control`
+// chalkboard entry attaches cache_control to the wire message whose
+// figStream LT matches.
+func TestProjectMessages_PerLTTag(t *testing.T) {
+	a := &Anthropic{}
+	msgs := []message.Message{
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("turn one")}},
+		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("reply one")}},
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("turn two")}},
+	}
+	pre := a.encodeAll(msgs)
+	lts := []uint64{10, 11, 12}
+
+	snap := systemSnapshot(t, "you are a test agent")
+	snap["system.tags"] = json.RawMessage(`{"11":{"cache_control":"ephemeral"}}`)
+
+	req, err := a.projectMessagesWithLTs(pre, lts, snap, nil, 1024, false, "claude-test")
+	require.NoError(t, err)
+	require.Len(t, req.Messages, 3)
+
+	// The assistant turn at LT 11 (index 1) should carry the marker.
+	tagged := req.Messages[1]
+	require.NotEmpty(t, tagged.Content)
+	require.NotNil(t, tagged.Content[len(tagged.Content)-1].CacheControl,
+		"message at LT 11 must carry cache_control from system.tags")
+	assert.Equal(t, "ephemeral", tagged.Content[len(tagged.Content)-1].CacheControl.Type)
+
+	// Other messages should not carry it (no system.cache_control set).
+	assert.Nil(t, req.Messages[0].Content[0].CacheControl)
+	assert.Nil(t, req.Messages[2].Content[0].CacheControl)
 }

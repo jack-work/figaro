@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -480,6 +481,13 @@ func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 // bytes + snapshot + tools → nativeRequest with cache markers. No
 // auth resolution; used by Send and tests.
 func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
+	return a.projectMessagesWithLTs(perMessage, nil, snapshot, tools, maxTokens, oauth, model)
+}
+
+// projectMessagesWithLTs is the actual assembler. lts[i] is the
+// figStream logical time corresponding to perMessage[i]; pass nil to
+// skip per-message tag application.
+func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts []uint64, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
 	}
@@ -493,7 +501,12 @@ func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, sna
 		// TODO: tools should also just be put onto the chalkboard and extracted with string, as an ordered list.  we should optimize the chalkboard around a byte for byte exactness when roundtrip, so we don't have to worry about tools messing up the cache.
 		Tools: projectTools(tools),
 	}
-	for _, entry := range perMessage {
+	var msgLTs []uint64
+	for i, entry := range perMessage {
+		var lt uint64
+		if i < len(lts) {
+			lt = lts[i]
+		}
 		for _, raw := range entry {
 			if len(raw) == 0 {
 				continue
@@ -503,13 +516,65 @@ func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, sna
 				return nativeRequest{}, fmt.Errorf("unmarshal cached message: %w", err)
 			}
 			req.Messages = append(req.Messages, nm)
+			msgLTs = append(msgLTs, lt)
 		}
 	}
 
 	if cacheSetting := snapshot.Lookup("system.cache_control"); cacheSetting != nil {
 		markCacheBreakpoints(&req, *cacheSetting)
 	}
+	applyMessageTags(&req, msgLTs, snapshot)
 	return req, nil
+}
+
+// applyMessageTags reads `system.tags` from the snapshot and applies
+// per-message overrides. The shape is:
+//
+//	{"<lt>": {"cache_control": "ephemeral"}}
+//
+// For each lt that maps to a wire message, the named cache_control
+// type is attached to that message's last content block. Unknown lts
+// are silently ignored — the tag will activate when (or if) that
+// message ever appears in the wire stream.
+func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.Snapshot) {
+	raw, ok := snapshot["system.tags"]
+	if !ok || len(raw) == 0 {
+		return
+	}
+	var tags map[string]struct {
+		CacheControl string `json:"cache_control"`
+	}
+	if err := json.Unmarshal(raw, &tags); err != nil {
+		return
+	}
+	if len(tags) == 0 {
+		return
+	}
+	// Build lt → last wire-index map (last wins for multi-block messages).
+	lastIdx := make(map[uint64]int, len(msgLTs))
+	for i, lt := range msgLTs {
+		if lt == 0 {
+			continue
+		}
+		lastIdx[lt] = i
+	}
+	for key, tag := range tags {
+		if tag.CacheControl == "" {
+			continue
+		}
+		lt, err := strconv.ParseUint(key, 10, 64)
+		if err != nil {
+			continue
+		}
+		idx, ok := lastIdx[lt]
+		if !ok {
+			continue
+		}
+		m := &req.Messages[idx]
+		if k := len(m.Content); k > 0 {
+			m.Content[k-1].CacheControl = &cacheControl{Type: tag.CacheControl}
+		}
+	}
 }
 
 // markCacheBreakpoints attaches cache_control:(input) to the last
@@ -542,7 +607,7 @@ func markCacheBreakpoints(req *nativeRequest, setting string) {
 // per-message entries — no live tail.
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	cache := a.cacheFor(in.AriaID)
-	perMessage := a.catchUp(in.FigStream, cache)
+	perMessage, lts := a.catchUp(in.FigStream, cache)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -553,7 +618,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	}
 	model := a.resolveModel(in.Snapshot)
 
-	req, err := a.projectMessagesWithModel(perMessage, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), model)
+	req, err := a.projectMessagesWithLTs(perMessage, lts, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), model)
 	if err != nil {
 		return err
 	}
@@ -634,10 +699,11 @@ func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
 // hit and returns the per-message wire bytes for the request body.
 // Cache write is best-effort — encoding always produces the bytes
 // regardless.
-func (a *Anthropic) catchUp(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage]) [][]json.RawMessage {
+func (a *Anthropic) catchUp(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage]) ([][]json.RawMessage, []uint64) {
 	fp := a.Fingerprint()
 	snap := chalkboard.Snapshot{}
 	var perMessage [][]json.RawMessage
+	var lts []uint64
 	for _, e := range figStream.Durable() {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
@@ -662,12 +728,13 @@ func (a *Anthropic) catchUp(figStream store.Stream[message.Message], cache store
 		}
 		if len(bytes) > 0 {
 			perMessage = append(perMessage, bytes)
+			lts = append(lts, msg.LogicalTime)
 		}
 		for _, p := range msg.Patches {
 			snap = snap.Apply(p)
 		}
 	}
-	return perMessage
+	return perMessage, lts
 }
 
 const sseReadTimeout = 5 * time.Minute
