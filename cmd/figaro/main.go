@@ -76,6 +76,12 @@ func main() {
 		os.Args = append([]string{"figaro", "plain", "--"}, os.Args[1:]...)
 	}
 
+	// Multi-call: "x" → "figaro x --". Generate bash and execute it.
+	// Create the symlink: ln -s $(which figaro) ~/go/bin/x
+	if filepath.Base(os.Args[0]) == "x" {
+		os.Args = append([]string{"figaro", "x", "--"}, os.Args[1:]...)
+	}
+
 	// Internal flag: run as angelus supervisor.
 	if len(os.Args) > 1 && os.Args[1] == "--angelus" {
 		runAngelus()

@@ -36,8 +36,9 @@
           # Multi-call shims: figaro inspects argv[0] and rewrites
           #   q <prompt>          → figaro -- <prompt>
           #   l <prompt>          → figaro plain -- <prompt>
+          #   x <instruction>     → figaro x -- <instruction>
           # See cmd/figaro/main.go. Relative symlinks resolve through
-          # the nix-profile chain since q/l live next to figaro.
+          # the nix-profile chain since q/l/x live next to figaro.
           postInstall = ''
             ln -s figaro $out/bin/q
             ln -s figaro $out/bin/l
