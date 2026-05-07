@@ -3,11 +3,33 @@ package main
 import (
 	"bytes"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jack-work/figaro/internal/rpc"
 )
+
+// safeBuf is a goroutine-safe wrapper around bytes.Buffer for the
+// batch tests. The spinner goroutine writes concurrently with test
+// goroutine reads; without locking, the race detector (rightly)
+// complains.
+type safeBuf struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuf) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuf) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 func entries() []rpc.ToolBatchToolEntry {
 	return []rpc.ToolBatchToolEntry{
@@ -41,15 +63,19 @@ func stripANSI(s string) string {
 }
 
 func TestBatchInitialRender(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuf
 	b := newToolBatchState(&buf, entries())
 	b.RenderInitial()
+	defer b.Finalize()
 
 	visible := stripANSI(buf.String())
 	if !strings.Contains(visible, "batch (3)") {
 		t.Fatalf("expected opening rule, got:\n%s", visible)
 	}
-	for _, want := range []string{"⏳ bash · pwd", "⏳ bash · ls", "⏳ bash · uname -a"} {
+	// Pending rows show a spinner glyph (any of spinnerFrames) plus
+	// the tool detail. We only assert detail strings — the spinner
+	// frame is animated and may have advanced.
+	for _, want := range []string{"bash · pwd", "bash · ls", "bash · uname -a"} {
 		if !strings.Contains(visible, want) {
 			t.Fatalf("missing pending row %q in:\n%s", want, visible)
 		}
@@ -57,7 +83,7 @@ func TestBatchInitialRender(t *testing.T) {
 }
 
 func TestBatchMarkDoneRewritesRow(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuf
 	b := newToolBatchState(&buf, entries())
 	b.RenderInitial()
 	b.MarkRunning("a")
@@ -66,26 +92,23 @@ func TestBatchMarkDoneRewritesRow(t *testing.T) {
 
 	b.MarkDone("a", "ok", false)
 	b.MarkDone("b", "boom", true)
+	b.Finalize()
 
-	out := buf.String()
-	// rewriteRow uses cursor-up + erase-line. We won't assert exact
-	// escape sequences; just that the fresh row text appears
-	// somewhere after the initial paint.
-	visible := stripANSI(out)
+	visible := stripANSI(buf.String())
 	if !strings.Contains(visible, "✓ bash · pwd") {
 		t.Fatalf("expected updated success row in output:\n%s", visible)
 	}
 	if !strings.Contains(visible, "✗ bash · ls") {
 		t.Fatalf("expected updated error row in output:\n%s", visible)
 	}
-	// The third tool was never marked done; should still show ⏳.
-	if strings.Count(visible, "⏳") < 1 {
-		t.Fatalf("expected at least one pending row remaining:\n%s", visible)
+	// 'c' was never marked done; should NOT appear with ✓ or ✗.
+	if strings.Contains(visible, "✓ bash · uname -a") || strings.Contains(visible, "✗ bash · uname -a") {
+		t.Fatalf("row c should remain non-finalized, got:\n%s", visible)
 	}
 }
 
 func TestBatchFinalizeDumpsErrorOutput(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuf
 	b := newToolBatchState(&buf, entries())
 	b.RenderInitial()
 	b.MarkRunning("a")
@@ -102,9 +125,10 @@ func TestBatchFinalizeDumpsErrorOutput(t *testing.T) {
 }
 
 func TestBatchAppendOutputCap(t *testing.T) {
-	var buf bytes.Buffer
+	var buf safeBuf
 	b := newToolBatchState(&buf, entries())
 	b.RenderInitial()
+	defer b.Finalize()
 	// Write more than 64 KiB; assert capped.
 	huge := strings.Repeat("x", 70*1024)
 	b.AppendOutput("a", huge)
