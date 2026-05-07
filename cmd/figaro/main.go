@@ -1876,7 +1876,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			var p rpc.ToolStartParams
 			if json.Unmarshal(params, &p) == nil {
 				figOtel.Event(ctx, "cli.recv.tool_start",
-					attribute.String("tool", p.ToolName))
+					attribute.String("tool", p.ToolName),
+					attribute.String("tool_call_id", p.ToolCallID),
+				)
 				openTools++
 				if batch != nil {
 					// Pre-rendered by RenderInitial. Mark running.
@@ -1896,13 +1898,19 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				}
 				solo = newToolSoloState(rawOut, p.ToolName, toolDetail(p))
 				solo.Start()
+				figOtel.Event(ctx, "cli.tool.first_paint",
+					attribute.String("tool", p.ToolName),
+					attribute.String("tool_call_id", p.ToolCallID),
+				)
 			}
 
 		case rpc.MethodToolOutput:
 			var p rpc.ToolOutputParams
 			if json.Unmarshal(params, &p) == nil {
 				figOtel.Event(ctx, "cli.recv.tool_output",
-					attribute.Int("bytes", len(p.Chunk)))
+					attribute.Int("bytes", len(p.Chunk)),
+					attribute.String("tool_call_id", p.ToolCallID),
+				)
 				if batch != nil {
 					// Suppress live painting; buffer per-tool for
 					// post-mortem on error.
@@ -1911,8 +1919,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				}
 				if solo != nil {
 					solo.Freeze()
-				}
-				if rawOut != nil {
+					// Route through solo.Write so it can count
+					// newlines and reposition the header on Done.
+					solo.Write([]byte(p.Chunk))
+				} else if rawOut != nil {
 					rawOut.Write([]byte(p.Chunk))
 				}
 			}
@@ -1922,6 +1932,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			if json.Unmarshal(params, &p) == nil {
 				figOtel.Event(ctx, "cli.recv.tool_end",
 					attribute.String("tool", p.ToolName),
+					attribute.String("tool_call_id", p.ToolCallID),
 					attribute.Bool("error", p.IsError))
 				if batch != nil {
 					batch.MarkDone(p.ToolCallID, p.Result, p.IsError)

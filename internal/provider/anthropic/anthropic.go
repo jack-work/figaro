@@ -653,8 +653,12 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		return fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
 	}
 
-	nm, err := a.drainSSE(resp.Body, model, bus)
+	nm, err := a.drainSSE(ctx, resp.Body, model, bus)
 	if err != nil {
+		// Broken stream (interrupt, EOF mid-message, scanner error,
+		// timeout, error event). Drop everything drainSSE buffered —
+		// no append, no PushFigaro, no cache write. The next turn
+		// starts from a well-formed figStream.
 		return err
 	}
 	if len(nm.Content) == 0 {
@@ -742,9 +746,15 @@ const sseReadTimeout = 5 * time.Minute
 // drainSSE is the SSE pipeline: read events one at a time, fold each
 // content_block_delta into the in-memory accumulator and emit a
 // figaro IR delta on the bus, return the final nativeMessage at
-// message_stop / EOF / timeout. No external state is touched and
-// nothing gets persisted — the live deltas are purely ephemeral.
-func (a *Anthropic) drainSSE(body io.ReadCloser, model string, bus provider.Bus) (nativeMessage, error) {
+// message_stop. No external state is touched and nothing gets
+// persisted — the live deltas are purely ephemeral.
+//
+// Returns a nil error only on a clean message_stop. Any other
+// termination (context cancel / interrupt, scanner error, EOF
+// before message_stop, read timeout, SSE error event) returns a
+// non-nil error and the caller MUST drop the partial nm — it is
+// not safe to persist (tool_use blocks may have unclosed inputs).
+func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model string, bus provider.Bus) (nativeMessage, error) {
 	nm := nativeMessage{Role: "assistant", Model: model}
 	var (
 		usage      nativeUsage
@@ -784,12 +794,9 @@ func (a *Anthropic) drainSSE(body io.ReadCloser, model string, bus provider.Bus)
 		}()
 	}
 
-	finalize := func() (nativeMessage, error) {
-		if len(nm.Content) == 0 {
-			return nm, nil
-		}
+	finalizeClean := func() (nativeMessage, error) {
 		if stopReason == "" {
-			stopReason = "aborted"
+			stopReason = "end_turn"
 		}
 		nm.StopReason = stopReason
 		nm.Usage = &usage
@@ -804,19 +811,22 @@ func (a *Anthropic) drainSSE(body io.ReadCloser, model string, bus provider.Bus)
 	for {
 		var line string
 		select {
+		case <-ctx.Done():
+			slog.Debug("anthropic sse interrupted", "lines", lines, "err", ctx.Err())
+			return nm, ctx.Err()
 		case line = <-scanCh:
 			lines++
 			scanNext()
 		case err := <-scanErr:
 			if err != nil {
 				slog.Warn("anthropic sse scanner", "lines", lines, "err", err)
-			} else {
-				slog.Debug("anthropic sse stream ended", "lines", lines)
+				return nm, fmt.Errorf("sse scanner: %w", err)
 			}
-			return finalize()
+			slog.Warn("anthropic sse stream ended before message_stop", "lines", lines)
+			return nm, fmt.Errorf("sse stream ended before message_stop")
 		case <-time.After(sseReadTimeout):
 			slog.Warn("anthropic sse read timeout", "lines", lines)
-			return finalize()
+			return nm, fmt.Errorf("sse read timeout")
 		}
 		if strings.HasPrefix(line, "event: ") {
 			eventType = strings.TrimPrefix(line, "event: ")
@@ -827,8 +837,11 @@ func (a *Anthropic) drainSSE(body io.ReadCloser, model string, bus provider.Bus)
 		}
 		data := []byte(strings.TrimPrefix(line, "data: "))
 		a.foldSSEEvent(eventType, data, &nm, &usage, &stopReason, bus)
-		if eventType == "message_stop" || eventType == "error" {
-			return finalize()
+		if eventType == "message_stop" {
+			return finalizeClean()
+		}
+		if eventType == "error" {
+			return nm, fmt.Errorf("sse error event: %s", string(data))
 		}
 	}
 }
@@ -941,7 +954,7 @@ func (a *Anthropic) foldSSEEvent(eventType string, data []byte, nm *nativeMessag
 			}
 		}
 	case "message_stop":
-		// terminator; finalize() runs from drainSSE
+		// terminator; finalizeClean() runs from drainSSE
 	case "error":
 		*stopReason = "error"
 	}

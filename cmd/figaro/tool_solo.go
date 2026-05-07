@@ -41,6 +41,15 @@ type toolSoloState struct {
 	state  toolRowState // running / OK / err
 	frozen bool         // true once cursor is no longer above the header
 
+	// linesBelow tracks how many newlines of streamed tool output
+	// have been written since Freeze. Together with lastWasNL it
+	// lets Done compute the exact cursor-up distance to reach the
+	// header row and rewrite it in place (replacing the running
+	// spinner glyph with ✓ / ✗) instead of stranding a stale
+	// spinner above and a duplicate header below.
+	linesBelow int
+	lastWasNL  bool
+
 	stopCh chan struct{}
 	doneCh chan struct{}
 }
@@ -56,8 +65,12 @@ func newToolSoloState(out io.Writer, name, detail string) *toolSoloState {
 		name:   name,
 		detail: detail,
 		state:  toolRowRunning,
-		stopCh: make(chan struct{}),
-		doneCh: make(chan struct{}),
+		// After Start prints the header and trailing newline the
+		// cursor is at column 0 of a fresh line — equivalent state
+		// to having just emitted a '\n'.
+		lastWasNL: true,
+		stopCh:    make(chan struct{}),
+		doneCh:    make(chan struct{}),
 	}
 }
 
@@ -95,6 +108,15 @@ func (s *toolSoloState) Freeze() {
 
 // Done marks the tool as completed (success or error). Calling Done
 // while the spinner is still running freezes it first.
+//
+// When the tool produced no output, the header line is the line
+// directly above the cursor and rewriteHeaderLocked replaces it in
+// place. When output has streamed below the header, Done walks the
+// cursor back up linesBelow+1 rows, rewrites the header with the
+// completion glyph, then walks the cursor back down so the trailer
+// the caller is about to write lands at the right spot. The net
+// effect is: the running spinner is *erased* and replaced by ✓ / ✗
+// at its original location, even after a chatty tool.
 func (s *toolSoloState) Done(isError bool) {
 	s.mu.Lock()
 	if isError {
@@ -108,10 +130,26 @@ func (s *toolSoloState) Done(isError bool) {
 		s.Freeze()
 		return
 	}
-	// Already frozen → just repaint the header with the new glyph.
 	s.mu.Lock()
-	s.rewriteHeaderLocked()
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+	if s.linesBelow == 0 && s.lastWasNL {
+		// No output streamed: classic one-line in-place rewrite.
+		s.rewriteHeaderLocked()
+		return
+	}
+	// Output streamed. Make sure we start from column 0 on a clean
+	// line; if the last byte wasn't a newline we have to push one
+	// out ourselves (and account for it in the up-distance).
+	up := s.linesBelow
+	if !s.lastWasNL {
+		fmt.Fprint(s.out, "\n")
+		up++
+		s.lastWasNL = true
+	}
+	// up is the count of streamed newlines from the cursor back to
+	// the line directly under the header. The header itself sits
+	// one row above that, so we go up up+1.
+	fmt.Fprintf(s.out, "\033[%dA\r\033[2K%s\033[%dB\r", up+1, s.formatHeader(), up+1)
 }
 
 // tick is the spinner animation goroutine. It advances the frame
@@ -146,6 +184,29 @@ func (s *toolSoloState) rewriteHeaderLocked() {
 	// Up one line, carriage return, erase to end of line.
 	fmt.Fprint(s.out, "\033[1A\r\033[2K")
 	fmt.Fprintln(s.out, s.formatHeader())
+}
+
+// Write streams a chunk of tool output through the underlying
+// writer while tracking how many newlines have appeared since
+// Freeze. The CLI calls this on every stream.tool_output for the
+// solo path; Done relies on the counter to find the header row.
+//
+// Implements io.Writer. Safe to call concurrently with the ticker
+// (mu serializes), but in practice all calls come from the single
+// RPC reader goroutine after Freeze has already stopped the ticker.
+func (s *toolSoloState) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, err := s.out.Write(p)
+	for i := 0; i < n; i++ {
+		if p[i] == '\n' {
+			s.linesBelow++
+			s.lastWasNL = true
+		} else {
+			s.lastWasNL = false
+		}
+	}
+	return n, err
 }
 
 // formatHeader returns the header line *without* a trailing newline.

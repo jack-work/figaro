@@ -8,8 +8,11 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -232,9 +235,11 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 
 // Interrupt aborts the current turn. Cancels turnCtx so the
 // in-flight provider HTTP request and any running tools observe the
-// cancellation; runTurn handles the cleanup (synthesizes missing
-// tool_results so figStream stays well-formed, fans out the error,
-// emits stream.done). Idempotent when idle.
+// cancellation; runTurn fans out the error and emits stream.done.
+// On interrupt the partial assistant turn is dropped (the provider
+// returns ctx.Err() rather than persisting a half-formed message),
+// so figStream stays well-formed without any synthetic patching.
+// Idempotent when idle.
 func (a *Agent) Interrupt() {
 	a.mu.Lock()
 	if a.turnCancel == nil {
@@ -450,55 +455,6 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	a.derived.Tick(0, a.chalkboard.Snapshot())
 }
 
-// completeInterruptedToolUses pairs every tool_use in the most
-// recent assistant message with a tool_result. Real results that
-// already landed (in inProgressTic) are kept; missing ones get a
-// synthetic "interrupted" result so Anthropic's strict pairing
-// rule isn't violated on the next request.
-//
-// Called from the interrupt handler. Commits the resulting user
-// tic to figStream directly (we don't go through finalizeAndSend
-// because that would queue an LLM round-trip — we just want the
-// conversation well-formed).
-func (a *Agent) completeInterruptedToolUses() {
-	// Synthesize tool_result blocks for every tool_use in the most
-	// recent assistant message, so figStream stays well-formed (the
-	// API rejects requests where a tool_use isn't followed by a
-	// matching tool_result). Skip if a user tic with results already
-	// followed.
-	var lastAssistant *message.Message
-	for _, e := range a.figStream.ScanFromEnd(8) {
-		m := e.Payload
-		if m.Role == message.RoleAssistant {
-			lastAssistant = &m
-			break
-		}
-		for _, c := range m.Content {
-			if c.Type == message.ContentToolResult {
-				return
-			}
-		}
-	}
-	if lastAssistant == nil {
-		return
-	}
-
-	tic := message.Message{Role: message.RoleUser, Timestamp: time.Now().UnixMilli()}
-	for _, c := range lastAssistant.Content {
-		if c.Type != message.ContentToolCall {
-			continue
-		}
-		tic.Content = append(tic.Content,
-			message.ToolResultContent(c.ToolCallID, c.ToolName, "interrupted", true))
-	}
-	if len(tic.Content) == 0 {
-		return
-	}
-	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
-		slog.Error("interrupt synth append", "aria", a.id, "err", err)
-	}
-}
-
 // endTurn fans out stream.done with the reason (LLM stop_reason or
 // "error: …"), persists chalkboard + meta.
 func (a *Agent) endTurn(reason string) {
@@ -551,11 +507,18 @@ func (a *Agent) fanOut(n rpc.Notification) {
 	}
 	slog.DebugContext(ctx, "rpc notify", "aria", a.id, "method", n.Method, "params", n.Params)
 
+	figOtel.Event(ctx, "agent.fanout.pre",
+		attribute.String("method", n.Method),
+		attribute.Int("subscribers", len(a.subs)),
+	)
 	for sub := range a.subs {
 		if err := sub.Notify(n.Method, n.Params); err != nil {
 			slog.Warn("notify subscriber", "aria", a.id, "err", err)
 		}
 	}
+	figOtel.Event(ctx, "agent.fanout.post",
+		attribute.String("method", n.Method),
+	)
 }
 
 func truncLog(s string, n int) string {

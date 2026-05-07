@@ -214,7 +214,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	sendErr := <-sendDone
 
 	if a.isInterrupted() {
-		a.completeInterruptedToolUses()
 		a.fanOutError("interrupted")
 		a.endTurn("interrupted")
 		return true
@@ -238,7 +237,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 
 	results := a.runTools(turnCtx, calls)
 	if a.isInterrupted() {
-		a.completeInterruptedToolUses()
 		a.fanOutError("interrupted")
 		a.endTurn("interrupted")
 		return true
@@ -294,6 +292,10 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 
 	// Fan-out start notifications + spawn workers.
 	for i, tc := range calls {
+		figOtel.Event(turnCtx, "agent.tool_start.fanout_pre",
+			attribute.String("tool", tc.ToolName),
+			attribute.String("tool_call_id", tc.ToolCallID),
+		)
 		a.fanOut(rpc.Notification{
 			JSONRPC: "2.0",
 			Method:  rpc.MethodToolStart,
@@ -302,15 +304,32 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 				Arguments: tc.Arguments,
 			},
 		})
+		figOtel.Event(turnCtx, "agent.tool_start.fanout_post",
+			attribute.String("tool", tc.ToolName),
+			attribute.String("tool_call_id", tc.ToolCallID),
+		)
 		go func(i int, tc message.Content) {
+			figOtel.Event(turnCtx, "agent.tool.goroutine_enter",
+				attribute.String("tool", tc.ToolName),
+				attribute.String("tool_call_id", tc.ToolCallID),
+			)
 			t, ok := a.tools.Get(tc.ToolName)
 			if !ok {
 				ch <- res{i, []message.Content{message.TextContent(fmt.Sprintf("Unknown tool: %s", tc.ToolName))}, true}
 				return
 			}
+			var firstChunk bool
 			onChunk := func(chunk []byte) {
 				if a.isInterrupted() {
 					return
+				}
+				if !firstChunk {
+					firstChunk = true
+					figOtel.Event(turnCtx, "agent.tool.first_chunk",
+						attribute.String("tool", tc.ToolName),
+						attribute.String("tool_call_id", tc.ToolCallID),
+						attribute.Int("bytes", len(chunk)),
+					)
 				}
 				a.fanOut(rpc.Notification{
 					JSONRPC: "2.0",
@@ -322,7 +341,16 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 					},
 				})
 			}
+			figOtel.Event(turnCtx, "agent.tool.execute_pre",
+				attribute.String("tool", tc.ToolName),
+				attribute.String("tool_call_id", tc.ToolCallID),
+			)
 			content, err := t.Execute(turnCtx, tc.Arguments, onChunk)
+			figOtel.Event(turnCtx, "agent.tool.execute_post",
+				attribute.String("tool", tc.ToolName),
+				attribute.String("tool_call_id", tc.ToolCallID),
+				attribute.Bool("err", err != nil),
+			)
 			if err != nil {
 				ch <- res{i, []message.Content{message.TextContent(fmt.Sprintf("Error: %s", err))}, true}
 				return
@@ -350,6 +378,11 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 				Result: resultText, IsError: r.isErr,
 			},
 		})
+		figOtel.Event(turnCtx, "agent.tool_end.fanout_post",
+			attribute.String("tool", tc.ToolName),
+			attribute.String("tool_call_id", tc.ToolCallID),
+			attribute.Bool("err", r.isErr),
+		)
 		results[r.idx] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, resultText, r.isErr)
 	}
 	if isBatch {
@@ -370,11 +403,21 @@ func (a *Agent) fanOutFigaro(m message.Message) {
 	}
 	stamped := tail.Payload
 	stamped.LogicalTime = tail.LT
+	ctx := a.turnCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	figOtel.Event(ctx, "agent.message.fanout_pre",
+		attribute.Int64("logical_time", int64(tail.LT)),
+	)
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
 		Method:  rpc.MethodMessage,
 		Params:  rpc.MessageParams{LogicalTime: tail.LT, Message: stamped},
 	})
+	figOtel.Event(ctx, "agent.message.fanout_post",
+		attribute.Int64("logical_time", int64(tail.LT)),
+	)
 }
 
 func (a *Agent) fanOutError(msg string) {
