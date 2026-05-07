@@ -294,6 +294,7 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 	return results
 }
 
+// agent: what listens to these messages?
 func (a *Agent) fanOutFigaro(m message.Message) {
 	tail, ok := a.figStream.PeekTail()
 	if !ok {

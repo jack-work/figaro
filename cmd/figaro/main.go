@@ -14,6 +14,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -157,6 +158,13 @@ func main() {
 				die("usage: figaro plain -- <prompt>")
 			}
 			runPlainPrompt(loaded, prompt)
+			return
+		case "x", "exec":
+			prompt := extractPrompt(os.Args[2:])
+			if prompt == "" {
+				die("usage: figaro x -- <instruction>")
+			}
+			runExecPrompt(loaded, os.Args[2:], prompt)
 			return
 		}
 	}
@@ -321,23 +329,138 @@ func runPlainPrompt(loaded *config.Loaded, prompt string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	exitCode := plainPrompt(ctx, figaroEP, prompt)
+	exitCode := plainPrompt(ctx, figaroEP, prompt, os.Stdout)
 	if exitCode != 0 {
 		os.Exit(exitCode)
 	}
 }
 
+// runExecPrompt asks an ephemeral figaro to emit bash for the given
+// instruction, then executes the captured bash locally via `bash -c`.
+// The bash is never echoed through any agent context: it is produced by
+// a fresh ephemeral figaro (server-side, identical to `l`/plain) and
+// the CLI captures the raw stream instead of streaming it to stdout.
+//
+// Flags (before --):
+//
+//	-n / --dry-run   print the bash to stdout instead of executing
+//	-y / --yes       skip the confirmation prompt
+func runExecPrompt(loaded *config.Loaded, rawArgs []string, instruction string) {
+	dryRun := false
+	skipConfirm := false
+	for _, a := range rawArgs {
+		if a == "--" {
+			break
+		}
+		switch a {
+		case "-n", "--dry-run":
+			dryRun = true
+		case "-y", "--yes":
+			skipConfirm = true
+		}
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	createResp, err := acli.CreateEphemeral(ctx, "", nil)
+	if err != nil {
+		die("create figaro: %s", err)
+	}
+	figaroID := createResp.FigaroID
+	figaroEP := transport.Endpoint{
+		Scheme:  createResp.Endpoint.Scheme,
+		Address: createResp.Endpoint.Address,
+	}
+	defer func() {
+		killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer killCancel()
+		_ = acli.Kill(killCtx, figaroID)
+	}()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, serr := os.Stat(figaroEP.Address); serr == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Wrap the user's instruction with a strict format directive.
+	// Server sees this as a normal `l`-style prompt; no special handling.
+	prompt := "You will write a bash script. Output ONLY raw bash, " +
+		"no markdown fences, no prose, no commentary, no explanations. " +
+		"The script will be executed verbatim via `bash -c`. " +
+		"Instruction: " + instruction
+
+	var buf bytes.Buffer
+	exitCode := plainPrompt(ctx, figaroEP, prompt, &buf)
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
+
+	script := stripBashFences(buf.String())
+	if strings.TrimSpace(script) == "" {
+		die("figaro x: empty script from agent")
+	}
+
+	if dryRun {
+		fmt.Print(script)
+		if !strings.HasSuffix(script, "\n") {
+			fmt.Println()
+		}
+		return
+	}
+
+	if !skipConfirm && term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprintln(os.Stderr, "--- figaro x: about to execute ---")
+		fmt.Fprintln(os.Stderr, script)
+		fmt.Fprintln(os.Stderr, "--- press enter to run, ctrl-c to abort ---")
+		bufio.NewReader(os.Stdin).ReadString('\n')
+	}
+
+	sh := exec.Command("bash", "-c", script)
+	sh.Stdin = os.Stdin
+	sh.Stdout = os.Stdout
+	sh.Stderr = os.Stderr
+	if err := sh.Run(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			os.Exit(ee.ExitCode())
+		}
+		die("figaro x: bash: %s", err)
+	}
+}
+
+// stripBashFences removes a leading ```bash / ``` fence and trailing ```
+// if the model emits them despite instructions to the contrary.
+func stripBashFences(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "```") {
+		// drop first line (the opening fence + optional language tag)
+		if nl := strings.IndexByte(s, '\n'); nl >= 0 {
+			s = s[nl+1:]
+		} else {
+			s = ""
+		}
+		if idx := strings.LastIndex(s, "```"); idx >= 0 {
+			s = s[:idx]
+		}
+	}
+	return s
+}
+
 // plainPrompt streams the assistant's response (and any tool output)
-// verbatim to stdout. Returns a process exit code: 0 on clean Done,
+// to the given writer. Returns a process exit code: 0 on clean Done,
 // 1 on error, 130 on interrupt.
-func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string) int {
+func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out io.Writer) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	doneCh := make(chan struct{}, 1)
 	var sawError bool
-
-	out := os.Stdout
 
 	deliverEvent := func(method string, params json.RawMessage) {
 		switch method {
@@ -1796,6 +1919,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "usage: figaro -- <prompt>")
 	fmt.Fprintln(os.Stderr, "       figaro new -- <prompt>")
 	fmt.Fprintln(os.Stderr, "       figaro plain -- <prompt>   (raw, ephemeral, pipe-friendly; also 'l')")
+	fmt.Fprintln(os.Stderr, "       figaro x [-n|-y] -- <instruction>   (ask figaro to write bash and exec it locally)")
 	fmt.Fprintln(os.Stderr, "       figaro attend <id>")
 	fmt.Fprintln(os.Stderr, "       figaro detach")
 	fmt.Fprintln(os.Stderr, "       figaro label <id> <label>")

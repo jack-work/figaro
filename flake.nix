@@ -41,6 +41,7 @@
           postInstall = ''
             ln -s figaro $out/bin/q
             ln -s figaro $out/bin/l
+            ln -s figaro $out/bin/x
           '';
 
           meta.mainProgram = "figaro";
