@@ -2,7 +2,9 @@
 //
 // Usage:
 //
-//	figaro -- <prompt>               # prompt (resolved via ppid)
+//	figaro -- <prompt>               # shorthand for `figaro qua -- <prompt>`
+//	figaro qua -- <prompt>           # prompt the shell-bound figaro (or create one)
+//	figaro qua <id> -- <prompt>      # one-shot prompt to an arbitrary aria
 //	figaro new -- <prompt>           # new figaro + prompt
 //	figaro context                   # show chat history
 //	figaro list                      # list all figaros
@@ -134,6 +136,9 @@ func main() {
 		case "aria":
 			runAria(loaded)
 			return
+		case "qua":
+			runQua(loaded, os.Args[2:])
+			return
 		case "new":
 			prompt := extractPrompt(os.Args[2:])
 			if prompt == "" {
@@ -253,6 +258,68 @@ func runPrompt(loaded *config.Loaded, prompt string) {
 	}
 	// Connect to figaro and prompt.
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
+}
+
+// --- CLI: qua ---
+
+// runQua handles the explicit `figaro qua` subcommand.
+//
+//	figaro qua -- <prompt>           # same as bare `figaro -- <prompt>`
+//	figaro qua <id> -- <prompt>      # one-shot send to an arbitrary aria
+//
+// In the targeted form, the shell's PPID binding is left untouched —
+// this is a send, not an attend. The reply is rendered to stdout with
+// the usual formatted output, just like the shell-bound prompt path.
+func runQua(loaded *config.Loaded, args []string) {
+	// Detect leading aria-id (anything before `--` that isn't itself `--`).
+	var targetID string
+	promptArgs := args
+	if len(args) > 0 && args[0] != "--" {
+		targetID = args[0]
+		promptArgs = args[1:]
+	}
+
+	prompt := extractPrompt(promptArgs)
+	if prompt == "" {
+		die("usage: figaro qua [<id>] -- <prompt>")
+	}
+
+	if targetID == "" {
+		runPrompt(loaded, prompt)
+		return
+	}
+	runQuaTarget(loaded, targetID, prompt)
+}
+
+// runQuaTarget sends a one-shot prompt to a specific aria by id,
+// without touching the shell's PPID binding.
+func runQuaTarget(loaded *config.Loaded, figaroID, prompt string) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	// Verify the aria exists (no dedicated resolve-by-id RPC; mirror runLabel).
+	listCtx, listCancel := context.WithTimeout(ctx, 10*time.Second)
+	resp, err := acli.List(listCtx)
+	listCancel()
+	if err != nil {
+		die("list: %s", err)
+	}
+	found := false
+	for _, f := range resp.Figaros {
+		if f.ID == figaroID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		die("no figaro with id %q", figaroID)
+	}
+
+	ep := transport.UnixEndpoint(filepath.Join(angelusRuntimeDir(), "figaros", figaroID+".sock"))
+	mustPromptFigaro(ctx, ep, figaroID, prompt, loaded)
 }
 
 // --- CLI: new ---
@@ -2330,7 +2397,9 @@ func extractPrompt(args []string) string {
 }
 
 func printUsage() {
-	fmt.Fprintln(os.Stderr, "usage: figaro -- <prompt>")
+	fmt.Fprintln(os.Stderr, "usage: figaro -- <prompt>                    (shorthand for `figaro qua`)")
+	fmt.Fprintln(os.Stderr, "       figaro qua -- <prompt>                (prompt the shell-bound figaro)")
+	fmt.Fprintln(os.Stderr, "       figaro qua <id> -- <prompt>           (one-shot send to an arbitrary aria)")
 	fmt.Fprintln(os.Stderr, "       figaro new -- <prompt>")
 	fmt.Fprintln(os.Stderr, "       figaro plain -- <prompt>   (raw, ephemeral, pipe-friendly; also 'l')")
 	fmt.Fprintln(os.Stderr, "       figaro x [-n|-y] -- <instruction>   (ask figaro to write bash and exec it locally)")
