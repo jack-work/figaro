@@ -894,21 +894,42 @@ func unquote(raw json.RawMessage) string {
 // runAria renders the last N messages of the bound figaro's aria
 // file as markdown to stdout (via largo). N defaults to 10.
 //
-// Usage: figaro aria [N] [--verbose|-v]
+// Usage: figaro aria [N] [--verbose|-v] [--literal|-l]
 //
 // --verbose: also dumps the chalkboard snapshot and surfaces patches
 // on each tic.
+// --literal: emit raw markdown source (no terminal rendering); useful
+// for piping into files, pagers, or scripts.
 func runAria(loaded *config.Loaded) {
 	n := 10
 	verbose := false
-	for _, arg := range os.Args[2:] {
+	literal := false
+	all := false
+	// Expand bundled short flags: -alv → -a -l -v. Long flags (--foo)
+	// and bare numbers pass through untouched. Anything starting with
+	// '-' but not '--' and longer than two chars is treated as a bundle.
+	args := make([]string, 0, len(os.Args)-2)
+	for _, a := range os.Args[2:] {
+		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
+			for _, r := range a[1:] {
+				args = append(args, "-"+string(r))
+			}
+			continue
+		}
+		args = append(args, a)
+	}
+	for _, arg := range args {
 		switch arg {
 		case "-v", "--verbose":
 			verbose = true
+		case "-l", "--literal":
+			literal = true
+		case "-a", "--all":
+			all = true
 		default:
 			parsed, err := strconv.Atoi(arg)
 			if err != nil {
-				die("usage: figaro aria [N] [-v|--verbose]")
+				die("usage: figaro aria [N] [-v|--verbose] [-l|--literal] [-a|--all]")
 			}
 			n = parsed
 		}
@@ -941,20 +962,29 @@ func runAria(loaded *config.Loaded) {
 		return
 	}
 	start := 0
-	if len(entries) > n {
+	if !all && len(entries) > n {
 		start = len(entries) - n
 	}
 
-	sw, err := largo.NewWriter(os.Stdout, largo.Options{})
-	if err != nil {
-		die("largo: %s", err)
+	// Output sink: largo for fancy terminal markdown, raw stdout for
+	// --literal. We use io.Writer + a Flush hook so the rest of the
+	// function stays identical for both modes.
+	var w io.Writer = os.Stdout
+	flush := func() {}
+	if !literal {
+		sw, err := largo.NewWriter(os.Stdout, largo.Options{})
+		if err != nil {
+			die("largo: %s", err)
+		}
+		w = sw
+		flush = func() { sw.Flush() }
 	}
 
-	fmt.Fprintf(sw, "# aria %s — showing %d of %d messages\n\n", figaroID, len(entries)-start, len(entries))
+	fmt.Fprintf(w, "# aria %s — showing %d of %d messages\n\n", figaroID, len(entries)-start, len(entries))
 	for _, e := range entries[start:] {
-		renderMessage(sw, e.Payload, e.LT, verbose)
+		renderMessage(w, e.Payload, e.LT, verbose)
 	}
-	sw.Flush()
+	flush()
 
 	if verbose {
 		fmt.Println()
@@ -1504,6 +1534,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// rawOut is non-nil while a tool call is streaming output through
 	// largo's pass-through region.
 	var rawOut io.Writer
+	// openTools counts in-flight tool calls. Anthropic can fan out
+	// multiple tool_use blocks per round; we only Suspend on the
+	// first start and Resume after the last end. Double-Suspend
+	// would panic in largo.
+	openTools := 0
 
 	// resumeIfSuspended is idempotent: safe to call before any
 	// transition that needs largo back in markdown-rendering mode.
@@ -1534,32 +1569,74 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				sw.Write([]byte("\n> *🤔 " + largo.EscapeInline(p.Text) + "*\n\n"))
 			}
 
+		case rpc.MethodMessage:
+			// Provider has finished the SSE turn for this round. Flush
+			// any markdown still sitting in largo's buffer so the
+			// assistant's preamble renders before any tool header lands.
+			// Without this, text that doesn't end in a blank line stays
+			// raw on screen until tool_start (or done) triggers a flush,
+			// producing the "all at once" feel right before tool calls.
+			figOtel.Event(ctx, "cli.recv.message")
+			sw.Flush()
+
 		case rpc.MethodToolStart:
 			var p rpc.ToolStartParams
 			if json.Unmarshal(params, &p) == nil {
-				header := "\n---\n`▶ " + p.ToolName + "`"
-				if detail := toolDetail(p); detail != "" {
-					header += " " + largo.InlineCode(detail)
+				figOtel.Event(ctx, "cli.recv.tool_start",
+					attribute.String("tool", p.ToolName))
+				// Suspend on the *first* concurrent tool only. With
+				// parallel tool calls (Anthropic can emit several
+				// tool_use blocks per round) tool_start arrives N times
+				// in a row before any tool_end; double-Suspend would
+				// panic. Track open tools and only Suspend on 0→1 and
+				// Resume on 1→0.
+				if rawOut == nil {
+					// Flush pending markdown (preamble) before switching
+					// to the raw pass-through region.
+					sw.Flush()
+					rawOut = sw.Suspend()
 				}
-				header += "\n\n"
-				sw.Write([]byte(header))
-				rawOut = sw.Suspend()
+				detail := toolDetail(p)
+				if len(detail) > 200 {
+					detail = detail[:200] + "…"
+				}
+				header := "\n\033[2m─── ▶ " + p.ToolName
+				if detail != "" {
+					header += " · " + detail
+				}
+				header += " ───\033[0m\n"
+				rawOut.Write([]byte(header))
+				openTools++
 			}
 
 		case rpc.MethodToolOutput:
 			var p rpc.ToolOutputParams
 			if json.Unmarshal(params, &p) == nil && rawOut != nil {
+				figOtel.Event(ctx, "cli.recv.tool_output",
+					attribute.Int("bytes", len(p.Chunk)))
 				rawOut.Write([]byte(p.Chunk))
 			}
 
 		case rpc.MethodToolEnd:
 			var p rpc.ToolEndParams
 			if json.Unmarshal(params, &p) == nil {
-				resumeIfSuspended()
-				if p.IsError {
-					sw.Write([]byte("\n**⚠ error:** " + largo.EscapeInline(p.Result) + "\n\n"))
+				figOtel.Event(ctx, "cli.recv.tool_end",
+					attribute.String("tool", p.ToolName),
+					attribute.Bool("error", p.IsError))
+				// Stay in suspended/raw mode while writing the trailer.
+				if rawOut != nil {
+					if p.IsError {
+						rawOut.Write([]byte("\n\033[31m⚠ error:\033[0m " + p.Result + "\n"))
+					}
+					rawOut.Write([]byte("\033[2m───\033[0m\n\n"))
 				}
-				sw.Write([]byte("\n---\n\n"))
+				if openTools > 0 {
+					openTools--
+				}
+				// Resume only when the last concurrent tool has ended.
+				if openTools == 0 {
+					resumeIfSuspended()
+				}
 			}
 
 		case rpc.MethodError:
@@ -1573,6 +1650,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			}
 
 		case rpc.MethodDone:
+			openTools = 0
 			resumeIfSuspended()
 			sw.Flush()
 			select {
@@ -1916,7 +1994,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "       figaro set <key> <value>   (chalkboard patch, no LLM round-trip)")
 	fmt.Fprintln(os.Stderr, "       figaro unset <key> [<key>...]")
 	fmt.Fprintln(os.Stderr, "       figaro chalkboard          (current snapshot of bound figaro)")
-	fmt.Fprintln(os.Stderr, "       figaro aria [N] [-v]       (last N messages as markdown; default 10)")
+	fmt.Fprintln(os.Stderr, "       figaro aria [N] [-v] [-l] [-a]   (last N messages as markdown; default 10; -l literal, -a all)")
 	fmt.Fprintln(os.Stderr, "       figaro -s <alias> [-json]  (read a registered DurableDerivation; e.g. usage)")
 	fmt.Fprintln(os.Stderr, "       figaro list")
 	fmt.Fprintln(os.Stderr, "       figaro kill <id>")
