@@ -122,11 +122,11 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	bus := newTurnBus()
 	in := provider.SendInput{
-		FigStream:  a.figStream,
-		Translator: a.translator,
-		Snapshot:   a.chalkboard.Snapshot(),
-		Tools:      a.toolDefs(),
-		MaxTokens:  a.chalkboardInt("system.max_tokens"),
+		AriaID:    a.id,
+		FigStream: a.figStream,
+		Snapshot:  a.chalkboard.Snapshot(),
+		Tools:     a.toolDefs(),
+		MaxTokens: a.chalkboardInt("system.max_tokens"),
 	}
 	sendDone := make(chan error, 1)
 	go func() {
@@ -316,6 +316,9 @@ func (a *Agent) fanOutError(msg string) {
 	})
 }
 
+// Is there a way to break apart our events such that interruption could be sent in as an
+// event and we could guarantee all events run to completion and that our tasks are small
+// and parallelizable and can't change global state?
 func (a *Agent) isInterrupted() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()

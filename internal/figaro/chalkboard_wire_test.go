@@ -16,6 +16,7 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
 )
 
@@ -26,6 +27,7 @@ type chalkSpyProvider struct {
 	mu       sync.Mutex
 	encoded  []message.Message
 	sentRuns int
+	cache    store.Stream[[]json.RawMessage] // optional, set by tests that inspect cache state
 }
 
 func (p *chalkSpyProvider) Name() string                                           { return "spy" }
@@ -34,7 +36,7 @@ func (p *chalkSpyProvider) Models(_ context.Context) ([]provider.ModelInfo, erro
 func (p *chalkSpyProvider) SetModel(string)                                        {}
 
 // encode records every message it's asked to encode. Returns a stub
-// payload so the translator lookup hits next turn.
+// payload so the cache lookup hits next turn.
 func (p *chalkSpyProvider) encode(msg message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
 	p.mu.Lock()
 	p.encoded = append(p.encoded, msg)
@@ -46,8 +48,8 @@ func (p *chalkSpyProvider) Send(ctx context.Context, in provider.SendInput, bus 
 	p.mu.Lock()
 	p.sentRuns++
 	p.mu.Unlock()
-	mockCatchUp(in.FigStream, in.Translator, p.encode, p.Fingerprint())
-	mockPushAssistant(in.FigStream, in.Translator, bus, p.encode, p.Fingerprint(), "ok")
+	mockCatchUp(in.FigStream, p.cache, p.encode, p.Fingerprint())
+	mockPushAssistant(in.FigStream, p.cache, bus, p.encode, p.Fingerprint(), "ok")
 	return nil
 }
 

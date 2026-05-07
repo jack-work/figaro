@@ -66,10 +66,6 @@ type Config struct {
 	// is a fresh aria). Restored arias load from chalkboard.json
 	// and ignore this. nil = no loadout to apply.
 	LoadoutPatch *chalkboard.Patch
-
-	// TranslatorStream — per-aria, per-provider cache. Nil falls
-	// back to MemStream. Closed by Kill.
-	TranslatorStream store.Stream[[]json.RawMessage]
 }
 
 // Agent is the Figaro implementation. Single drain goroutine reads
@@ -84,7 +80,6 @@ type Agent struct {
 	loadoutPatch *chalkboard.Patch
 	tools        *tool.Registry
 	figStream    store.Stream[message.Message]
-	translator   store.Stream[[]json.RawMessage]
 	backend      store.Backend // nil = ephemeral
 	chalkboard   *chalkboard.State
 	derived      *derivedFanout // nil = ephemeral; per-figaro durable derivations
@@ -125,7 +120,6 @@ func NewAgent(cfg Config) *Agent {
 		tools:        cfg.Tools,
 		backend:      cfg.Backend,
 		chalkboard:   cfg.Chalkboard,
-		translator:   cfg.TranslatorStream,
 		createdAt:    time.Now(),
 		lastActive:   time.Now(),
 		cancel:       cancel,
@@ -133,9 +127,6 @@ func NewAgent(cfg Config) *Agent {
 	}
 
 	a.figStream = a.newStream()
-	if a.translator == nil {
-		a.translator = store.NewMemStream[[]json.RawMessage]()
-	}
 	if a.chalkboard == nil {
 		// Ephemeral arias get an in-memory chalkboard so system prompt
 		// flow stays uniform.
@@ -162,13 +153,12 @@ func NewAgent(cfg Config) *Agent {
 
 	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Durable()))
 
-	a.invalidateTranslatorIfStale()
-
 	// Spin up the per-figaro durable-derivation fanout. Each
 	// registered DurableDerivation gets its own goroutine + inbox;
 	// each writes to arias/<id>/<filename>. Only lives for backed
-	// agents.
-	a.derived = startDerived(ctx, a.id, a.prov.Name(), a.backend, a.figStream, a.translator)
+	// agents. The translator stream is owned by the provider now;
+	// derivations that need cache stats would need a different hook.
+	a.derived = startDerived(ctx, a.id, a.prov.Name(), a.backend, a.figStream, nil)
 	a.derived.Tick(0, a.chalkboard.Snapshot()) // initial materialization
 
 	go a.runWithRecovery(ctx)
@@ -346,11 +336,7 @@ func (a *Agent) Kill() {
 			slog.Error("chalkboard close", "aria", a.id, "err", err)
 		}
 	}
-	if a.translator != nil {
-		if err := a.translator.Close(); err != nil {
-			slog.Error("translator close", "aria", a.id, "err", err)
-		}
-	}
+	// translator/cache close is the provider's responsibility now.
 }
 
 // runWithRecovery drives the drain loop and restarts it on panic.

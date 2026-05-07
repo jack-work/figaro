@@ -25,6 +25,7 @@ import (
 
 type mockProvider struct {
 	response string
+	cache    store.Stream[[]json.RawMessage] // nil = no cache (tests don't need one)
 }
 
 func (m *mockProvider) Name() string                                             { return "mock" }
@@ -36,8 +37,8 @@ func (m *mockProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.
 }
 
 func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
-	mockCatchUp(in.FigStream, in.Translator, m.encode, m.Fingerprint())
-	mockPushAssistant(in.FigStream, in.Translator, bus, m.encode, m.Fingerprint(), m.response)
+	mockCatchUp(in.FigStream, m.cache, m.encode, m.Fingerprint())
+	mockPushAssistant(in.FigStream, m.cache, bus, m.encode, m.Fingerprint(), m.response)
 	return nil
 }
 
@@ -46,22 +47,26 @@ func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus prov
 // record what they would have encoded.
 type mockEncodeFn func(msg message.Message, prev chalkboard.Snapshot) ([]json.RawMessage, error)
 
-// mockCatchUp catches up the translator from the durable figStream
-// using the given encoder. Mirrors what real providers do at the top
-// of Send.
-func mockCatchUp(figStream store.Stream[message.Message], translator store.Stream[[]json.RawMessage], encode mockEncodeFn, fingerprint string) {
+// mockCatchUp catches up the cache from the durable figStream using
+// the given encoder. Mirrors what real providers do at the top of
+// Send. Skipped when cache is nil (ephemeral tests).
+func mockCatchUp(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage], encode mockEncodeFn, fingerprint string) {
 	snap := chalkboard.Snapshot{}
 	for _, e := range figStream.Durable() {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
-		if _, ok := translator.Lookup(msg.LogicalTime); !ok {
-			if payload, err := encode(msg, snap); err == nil {
-				_, _ = translator.Append(store.Entry[[]json.RawMessage]{
-					FigaroLT:    msg.LogicalTime,
-					Payload:     payload,
-					Fingerprint: fingerprint,
-				}, true)
+		if cache != nil {
+			if _, ok := cache.Lookup(msg.LogicalTime); !ok {
+				if payload, err := encode(msg, snap); err == nil {
+					_, _ = cache.Append(store.Entry[[]json.RawMessage]{
+						FigaroLT:    msg.LogicalTime,
+						Payload:     payload,
+						Fingerprint: fingerprint,
+					}, true)
+				}
 			}
+		} else {
+			_, _ = encode(msg, snap)
 		}
 		for _, p := range msg.Patches {
 			snap = snap.Apply(p)
@@ -70,10 +75,10 @@ func mockCatchUp(figStream store.Stream[message.Message], translator store.Strea
 }
 
 // mockPushAssistant simulates a streaming turn: emits the text as a
-// delta, appends a final assistant message to figStream, condenses
-// the encoding into the translator, and pushes figaro so the act
-// loop dispatches.
-func mockPushAssistant(figStream store.Stream[message.Message], translator store.Stream[[]json.RawMessage], bus provider.Bus, encode mockEncodeFn, fingerprint, text string) {
+// delta, appends a final assistant message to figStream, writes it
+// into the cache (if any), and pushes figaro so the act loop
+// dispatches.
+func mockPushAssistant(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage], bus provider.Bus, encode mockEncodeFn, fingerprint, text string) {
 	if text == "" {
 		return
 	}
@@ -86,12 +91,14 @@ func mockPushAssistant(figStream store.Stream[message.Message], translator store
 	entry, err := figStream.Append(store.Entry[message.Message]{Payload: msg}, true)
 	if err == nil {
 		msg.LogicalTime = entry.LT
-		if payload, eErr := encode(msg, chalkboard.Snapshot{}); eErr == nil {
-			_, _ = translator.Condense(store.Entry[[]json.RawMessage]{
-				FigaroLT:    entry.LT,
-				Payload:     payload,
-				Fingerprint: fingerprint,
-			})
+		if cache != nil {
+			if payload, eErr := encode(msg, chalkboard.Snapshot{}); eErr == nil {
+				_, _ = cache.Append(store.Entry[[]json.RawMessage]{
+					FigaroLT:    entry.LT,
+					Payload:     payload,
+					Fingerprint: fingerprint,
+				}, true)
+			}
 		}
 	}
 	bus.PushFigaro(msg)
@@ -356,8 +363,8 @@ func (p *panicProvider) Send(ctx context.Context, in provider.SendInput, bus pro
 		p.panicCount--
 		panic("simulated crash")
 	}
-	mockCatchUp(in.FigStream, in.Translator, p.encode, p.Fingerprint())
-	mockPushAssistant(in.FigStream, in.Translator, bus, p.encode, p.Fingerprint(), p.response)
+	mockCatchUp(in.FigStream, nil, p.encode, p.Fingerprint())
+	mockPushAssistant(in.FigStream, nil, bus, p.encode, p.Fingerprint(), p.response)
 	return nil
 }
 

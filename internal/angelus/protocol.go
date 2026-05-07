@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"text/template"
@@ -106,7 +107,7 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 	path := filepath.Join(fb.Dir(), ariaID, "chalkboard.json")
 	st, err := chalkboard.Open(path)
 	if err != nil {
-		h.angelus.Logger.Printf("warning: chalkboard open %s: %v (chalkboard disabled for this aria)", path, err)
+		slog.Warn("chalkboard open (disabled for aria)", "path", path, "err", err)
 		return nil
 	}
 	return st
@@ -158,7 +159,7 @@ func (h *handlers) openAriaTranslation(ariaID, providerName string) store.Stream
 	}
 	stream, err := h.angelus.Backend.OpenTranslation(ariaID, providerName)
 	if err != nil {
-		h.angelus.Logger.Printf("warning: translator stream open %s/%s: %v (cache disabled for this aria)", ariaID, providerName, err)
+		slog.Warn("translator stream open (cache disabled for aria)", "aria", ariaID, "provider", providerName, "err", err)
 		return nil
 	}
 	return stream
@@ -206,8 +207,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
 
 	cwd, _ := os.Getwd()
-	home, _ := os.UserHomeDir()
-	logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
 
 	// Ephemeral figaros skip the on-disk backend; the chalkboard is
 	// still created in-memory so the loadout values seed it.
@@ -217,10 +216,8 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	}
 
 	var cbState *chalkboard.State
-	var translator store.Stream[[]json.RawMessage]
 	if !req.Ephemeral {
 		cbState = h.openAriaChalkboard(id)
-		translator = h.openAriaTranslation(id, prov.Name())
 	}
 	if cbState == nil {
 		cbState, _ = chalkboard.Open("")
@@ -242,15 +239,13 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	cbState.Apply(base)
 
 	agent := figaro.NewAgent(figaro.Config{
-		ID:               id,
-		SocketPath:       sockPath,
-		Provider:         prov,
-		Outfitter:        h.outfitter,
-		Tools:            tool.DefaultRegistry(cwd),
-		LogDir:           logDir,
-		Backend:          backend,
-		Chalkboard:       cbState,
-		TranslatorStream: translator,
+		ID:         id,
+		SocketPath: sockPath,
+		Provider:   prov,
+		Outfitter:  h.outfitter,
+		Tools:      tool.DefaultRegistry(cwd),
+		Backend:    backend,
+		Chalkboard: cbState,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -260,8 +255,8 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	go agent.StartSocket(h.ctx)
 
-	h.angelus.Logger.Printf("created figaro %s, loadout=%s, provider=%s, model=%s, socket=%s",
-		id, req.Loadout, provName, model, sockPath)
+	slog.Info("created figaro",
+		"id", id, "loadout", req.Loadout, "provider", provName, "model", model, "socket", sockPath)
 
 	return rpc.CreateResponse{
 		FigaroID: id,
@@ -299,11 +294,11 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 
 	if h.angelus.Backend != nil {
 		if err := h.angelus.Backend.Remove(req.FigaroID); err != nil {
-			h.angelus.Logger.Printf("warning: failed to remove aria for %s: %v", req.FigaroID, err)
+			slog.Warn("remove aria failed", "id", req.FigaroID, "err", err)
 		}
 	}
 
-	h.angelus.Logger.Printf("killed figaro %s", req.FigaroID)
+	slog.Info("killed figaro", "id", req.FigaroID)
 	return rpc.KillResponse{OK: true}, nil
 }
 
@@ -340,7 +335,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 	if h.angelus.Backend != nil {
 		arias, err := h.angelus.Backend.List()
 		if err != nil {
-			h.angelus.Logger.Printf("list: backend enumerate: %v", err)
+			slog.Warn("list backend enumerate", "err", err)
 		}
 		for _, aria := range arias {
 			if _, ok := seen[aria.ID]; ok {
@@ -427,7 +422,7 @@ func (h *handlers) saveBindings(ctx context.Context, params json.RawMessage) (in
 	if err := SaveBindings(h.angelus.Registry, path); err != nil {
 		return nil, err
 	}
-	h.angelus.Logger.Printf("saved pid bindings to %s (%d)", path, h.angelus.Registry.BoundPIDCount())
+	slog.Info("saved pid bindings", "path", path, "count", h.angelus.Registry.BoundPIDCount())
 	return rpc.SaveBindingsResponse{
 		OK:    true,
 		Count: h.angelus.Registry.BoundPIDCount(),
@@ -493,8 +488,6 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 		return nil, fmt.Errorf("restore %s: create provider: %w", aria.ID, err)
 	}
 
-	home, _ := os.UserHomeDir()
-	logDir := filepath.Join(home, ".local", "state", "figaro", "figaros")
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), aria.ID+".sock")
 
 	// Restored aria's cwd may no longer exist — fall back so tools
@@ -505,15 +498,13 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 	}
 
 	agent := figaro.NewAgent(figaro.Config{
-		ID:               aria.ID,
-		SocketPath:       sockPath,
-		Provider:         prov,
-		Outfitter:        h.outfitter,
-		Tools:            tool.DefaultRegistry(toolRoot),
-		LogDir:           logDir,
-		Backend:          h.angelus.Backend,
-		Chalkboard:       cb,
-		TranslatorStream: h.openAriaTranslation(aria.ID, prov.Name()),
+		ID:         aria.ID,
+		SocketPath: sockPath,
+		Provider:   prov,
+		Outfitter:  h.outfitter,
+		Tools:      tool.DefaultRegistry(toolRoot),
+		Backend:    h.angelus.Backend,
+		Chalkboard: cb,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -523,7 +514,7 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 
 	go agent.StartSocket(ctx)
 
-	h.angelus.Logger.Printf("restored figaro %s, provider=%s, model=%s, messages=%d",
-		aria.ID, provName, model, aria.MessageCount)
+	slog.Info("restored figaro",
+		"id", aria.ID, "provider", provName, "model", model, "messages", aria.MessageCount)
 	return agent, nil
 }

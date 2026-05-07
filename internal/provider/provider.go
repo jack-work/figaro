@@ -1,16 +1,13 @@
 // Package provider defines the interface that LLM providers implement.
 //
-// Stage 1 of the actor refactor: the provider owns synchronize. It
-// receives the figStream + translator stream directly, catches up the
-// translator before sending, streams deltas through the bus while the
-// HTTP response arrives, and on EOF condenses the live tail into a
-// durable assistant message — all without the agent reaching across
-// the abstraction.
+// Each provider owns its own per-aria translation cache (stored on
+// disk by the agent's Backend) and drives one turn end-to-end via
+// Send: catch up cache → POST → stream deltas through the Bus →
+// land the assembled assistant message in figStream + cache.
 package provider
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
@@ -40,17 +37,17 @@ type Bus interface {
 	PushFigaro(msg message.Message)
 }
 
-// SendInput is one turn's input. The provider catches up the
-// translator from FigStream, builds the request body from
-// Translator.Durable + Snapshot, POSTs, streams deltas through bus,
-// and on EOF appends the assembled assistant message to FigStream
-// and the input-ready bytes to Translator.
+// SendInput is one turn's input. The provider catches up its own
+// per-aria cache from FigStream, builds the request body, POSTs,
+// streams deltas through the bus, and on EOF appends the assembled
+// assistant message to FigStream + cache. AriaID identifies the
+// per-aria cache slot — providers open and own that file end-to-end.
 type SendInput struct {
-	FigStream  store.Stream[message.Message]
-	Translator store.Stream[[]json.RawMessage]
-	Snapshot   chalkboard.Snapshot
-	Tools      []Tool
-	MaxTokens  int
+	AriaID    string
+	FigStream store.Stream[message.Message]
+	Snapshot  chalkboard.Snapshot
+	Tools     []Tool
+	MaxTokens int
 }
 
 // Provider is the LLM provider interface.

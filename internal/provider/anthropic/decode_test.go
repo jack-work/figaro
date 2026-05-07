@@ -85,13 +85,13 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			assert.Equal(t, string(wire), string(perFLT[0]), "encode parity")
 
 			// Decode parity: fixture → IR == expected.
-			decoded, err := a.decode([]json.RawMessage{wire})
-			require.NoError(t, err)
-			require.Len(t, decoded, 1)
-			assertIRMessageEqual(t, tc.ir, decoded[0])
+			var nm nativeMessage
+			require.NoError(t, json.Unmarshal(wire, &nm))
+			decoded := decodeNativeMessage(nm)
+			assertIRMessageEqual(t, tc.ir, decoded)
 
 			// Round trip: fixture → IR → wire == fixture.
-			_, perFLT2 := a.projectMessages(decoded)
+			_, perFLT2 := a.projectMessages([]message.Message{decoded})
 			require.Len(t, perFLT2, 1)
 			assert.Equal(t, string(wire), string(perFLT2[0]), "decode→encode round trip")
 		})

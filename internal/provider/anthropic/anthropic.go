@@ -52,9 +52,18 @@ type Anthropic struct {
 	// per-message Patches as system-reminder content blocks. Optional;
 	// nil means patches are dropped (no reminder content emitted).
 	Templates *template.Template
+
+	// CacheOpen opens the on-disk per-aria translation cache. Nil
+	// disables caching (ephemeral arias). The provider owns the
+	// returned stream's lifetime — opens lazily on first Send for
+	// each aria and keeps it open for the agent's life.
+	CacheOpen func(aria string) (store.Stream[[]json.RawMessage], error)
+	caches    map[string]store.Stream[[]json.RawMessage] // guarded by mu
 }
 
-func New(cfg config.AnthropicProvider, authPath string, hushClient *hush.Client) (*Anthropic, error) {
+// New constructs an Anthropic provider. cacheOpen is the per-aria
+// cache file opener; nil = ephemeral (no caching).
+func New(cfg config.AnthropicProvider, authPath string, hushClient *hush.Client, cacheOpen func(aria string) (store.Stream[[]json.RawMessage], error)) (*Anthropic, error) {
 	resolver, err := buildResolver(cfg.APIKey, authPath, hushClient)
 	if err != nil {
 		return nil, err
@@ -69,7 +78,46 @@ func New(cfg config.AnthropicProvider, authPath string, hushClient *hush.Client)
 		MaxTokens:        cfg.MaxTokens,
 		HTTPClient:       &http.Client{Timeout: 10 * time.Minute},
 		ReminderRenderer: rr,
+		CacheOpen:        cacheOpen,
+		caches:           map[string]store.Stream[[]json.RawMessage]{},
 	}, nil
+}
+
+// cacheFor returns the per-aria cache, opening it lazily on first
+// use. Stale entries (Fingerprint mismatch) get cleared at open. nil
+// when no cache is configured or the open failed (provider runs
+// without caching for that aria).
+func (a *Anthropic) cacheFor(aria string) store.Stream[[]json.RawMessage] {
+	if aria == "" || a.CacheOpen == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if s, ok := a.caches[aria]; ok {
+		return s
+	}
+	s, err := a.CacheOpen(aria)
+	if err != nil {
+		slog.Warn("anthropic cache open", "aria", aria, "err", err)
+		return nil
+	}
+	a.invalidateIfStale(s)
+	a.caches[aria] = s
+	return s
+}
+
+// invalidateIfStale clears the cache when stored Fingerprint doesn't
+// match the current encoder config.
+func (a *Anthropic) invalidateIfStale(s store.Stream[[]json.RawMessage]) {
+	want := a.Fingerprint()
+	for _, e := range s.Durable() {
+		if e.Fingerprint == "" || e.Fingerprint == want {
+			continue
+		}
+		_ = s.Clear()
+		slog.Info("anthropic cleared stale cache", "stored", e.Fingerprint, "current", want)
+		return
+	}
 }
 
 func buildResolver(apiKey, authPath string, hushClient *hush.Client) (auth.TokenResolver, error) {
@@ -162,73 +210,6 @@ func (a *Anthropic) SetModel(model string) {
 	a.mu.Lock()
 	a.Model = model
 	a.mu.Unlock()
-}
-
-// Decode reverses native wire bytes to IR. Auto-detects between
-// liveDelta (live tail entries from consumeSSE) and nativeMessage
-// (durable per-message entries). Live deltas yield a partial Message
-// with only the streamed fragment as content; non-text events
-// (block start/stop, message_start, etc.) yield no message.
-func (a *Anthropic) decode(payload []json.RawMessage) ([]message.Message, error) {
-	out := make([]message.Message, 0, len(payload))
-	for i, r := range payload {
-		if len(r) == 0 {
-			continue
-		}
-		// Live tail entry? — has an "event" field.
-		var ld liveDelta
-		if json.Unmarshal(r, &ld) == nil && ld.Event != "" {
-			if msg, ok := decodeLiveDelta(ld); ok {
-				out = append(out, msg)
-			}
-			continue
-		}
-		// Otherwise: a durable nativeMessage.
-		var nm nativeMessage
-		if err := json.Unmarshal(r, &nm); err != nil {
-			return nil, fmt.Errorf("anthropic decode [%d]: %w", i, err)
-		}
-		if nm.Role == "" {
-			continue
-		}
-		out = append(out, decodeNativeMessage(nm))
-	}
-	return out, nil
-}
-
-func decodeLiveDelta(ld liveDelta) (message.Message, bool) {
-	if ld.Event != "content_block_delta" {
-		return message.Message{}, false
-	}
-	var d struct {
-		Delta struct {
-			Type     string `json:"type"`
-			Text     string `json:"text,omitempty"`
-			Thinking string `json:"thinking,omitempty"`
-		} `json:"delta"`
-	}
-	if json.Unmarshal(ld.Data, &d) != nil {
-		return message.Message{}, false
-	}
-	switch d.Delta.Type {
-	case "text_delta":
-		if d.Delta.Text == "" {
-			return message.Message{}, false
-		}
-		return message.Message{
-			Role:    message.RoleAssistant,
-			Content: []message.Content{{Type: message.ContentText, Text: d.Delta.Text}},
-		}, true
-	case "thinking_delta":
-		if d.Delta.Thinking == "" {
-			return message.Message{}, false
-		}
-		return message.Message{
-			Role:    message.RoleAssistant,
-			Content: []message.Content{{Type: message.ContentThinking, Text: d.Delta.Thinking}},
-		}, true
-	}
-	return message.Message{}, false
 }
 
 func decodeNativeMessage(nm nativeMessage) message.Message {
@@ -551,43 +532,31 @@ func markCacheBreakpoints(req *nativeRequest, setting string) {
 	}
 }
 
-// --- Send: assemble → HTTP → SSE ---
+// --- Send: pipeline SSE → assistant message ---
 
-// Send drives one turn end-to-end. It catches up the translator from
-// the figStream, projects the request from the cached per-message
-// bytes, POSTs, streams SSE chunks to the translator's live tail
-// (decoding figaro IR deltas onto the bus as they go), and on EOF
-// assembles the live tail into a durable assistant message — appended
-// to figStream, condensed into the translator, and announced via
-// bus.PushFigaro.
+// Send drives one turn end-to-end: catches up the per-aria translator
+// (cache) from the figStream, POSTs, streams SSE chunks (decoding
+// inline so figaro IR deltas hit the bus as they arrive), and on EOF
+// lands the assembled assistant message in figStream + cache, then
+// announces via bus.PushFigaro. The cache stores only durable
+// per-message entries — no live tail.
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
-	if err := a.catchUpTranslator(in.FigStream, in.Translator); err != nil {
-		return err
+	cache := a.cacheFor(in.AriaID)
+	perMessage := a.catchUp(in.FigStream, cache)
+	if len(perMessage) == 0 {
+		return fmt.Errorf("empty context")
 	}
 
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
 		return fmt.Errorf("resolve token: %w", err)
 	}
-
 	model := a.resolveModel(in.Snapshot)
-
-	durable := in.Translator.Durable()
-	perMessage := make([][]json.RawMessage, 0, len(durable))
-	for _, e := range durable {
-		if len(e.Payload) > 0 {
-			perMessage = append(perMessage, e.Payload)
-		}
-	}
-	if len(perMessage) == 0 {
-		return fmt.Errorf("empty context")
-	}
 
 	req, err := a.projectMessagesWithModel(perMessage, in.Snapshot, in.Tools, in.MaxTokens, isOAuthToken(apiKey), model)
 	if err != nil {
 		return err
 	}
-
 	body, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
@@ -597,7 +566,6 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
-
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", apiVersion)
 	if isOAuthToken(apiKey) {
@@ -614,14 +582,43 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if err != nil {
 		return fmt.Errorf("http request: %w", err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
 		errBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
 	}
 
-	consumeSSE(resp.Body, in.Translator, bus)
-	return a.condense(in.FigStream, in.Translator, bus)
+	nm, err := a.drainSSE(resp.Body, model, bus)
+	if err != nil {
+		return err
+	}
+	if len(nm.Content) == 0 {
+		return nil
+	}
+
+	// Land the assistant message: figStream → push figaro → cache.
+	msg := decodeNativeMessage(nm)
+	entry, err := in.FigStream.Append(store.Entry[message.Message]{Payload: msg}, true)
+	if err != nil {
+		return fmt.Errorf("append assistant: %w", err)
+	}
+	msg.LogicalTime = entry.LT
+	bus.PushFigaro(msg)
+
+	if cache != nil {
+		// Re-encode strips inbound-only fields the API rejects (stop_reason
+		// etc.). Cached bytes go in input-ready.
+		if encoded, err := a.encode(msg, chalkboard.Snapshot{}); err == nil {
+			_, _ = cache.Append(store.Entry[[]json.RawMessage]{
+				FigaroLT:    entry.LT,
+				Payload:     encoded,
+				Fingerprint: a.Fingerprint(),
+			}, true)
+		} else {
+			slog.Error("anthropic re-encode assistant", "err", err)
+		}
+	}
+	return nil
 }
 
 func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
@@ -633,135 +630,59 @@ func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
 	return a.Model
 }
 
-// catchUpTranslator encodes any figStream entries that don't yet
-// have a corresponding translator entry. Idempotent.
-func (a *Anthropic) catchUpTranslator(figStream store.Stream[message.Message], translator store.Stream[[]json.RawMessage]) error {
+// catchUp encodes any figStream entries that don't yet have a cache
+// hit and returns the per-message wire bytes for the request body.
+// Cache write is best-effort — encoding always produces the bytes
+// regardless.
+func (a *Anthropic) catchUp(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage]) [][]json.RawMessage {
 	fp := a.Fingerprint()
 	snap := chalkboard.Snapshot{}
+	var perMessage [][]json.RawMessage
 	for _, e := range figStream.Durable() {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
-		if _, ok := translator.Lookup(msg.LogicalTime); !ok {
-			payload, err := a.encode(msg, snap)
+		var bytes []json.RawMessage
+		if cache != nil {
+			if existing, ok := cache.Lookup(msg.LogicalTime); ok && len(existing.Payload) > 0 {
+				bytes = existing.Payload
+			}
+		}
+		if bytes == nil {
+			encoded, err := a.encode(msg, snap)
 			if err != nil {
 				slog.Error("anthropic encode", "flt", msg.LogicalTime, "err", err)
-			} else if _, err := translator.Append(store.Entry[[]json.RawMessage]{
-				FigaroLT:    msg.LogicalTime,
-				Payload:     payload,
-				Fingerprint: fp,
-			}, true); err != nil {
-				slog.Error("anthropic translator append", "flt", msg.LogicalTime, "err", err)
+			} else {
+				bytes = encoded
+				if cache != nil {
+					_, _ = cache.Append(store.Entry[[]json.RawMessage]{
+						FigaroLT: msg.LogicalTime, Payload: bytes, Fingerprint: fp,
+					}, true)
+				}
 			}
+		}
+		if len(bytes) > 0 {
+			perMessage = append(perMessage, bytes)
 		}
 		for _, p := range msg.Patches {
 			snap = snap.Apply(p)
 		}
 	}
-	return nil
-}
-
-// condense folds the live tail into one durable assistant entry:
-// assemble → decode → figStream.Append → re-encode (input-ready) →
-// translator.Condense → bus.PushFigaro.
-func (a *Anthropic) condense(figStream store.Stream[message.Message], translator store.Stream[[]json.RawMessage], bus provider.Bus) error {
-	live := translator.Live()
-	if len(live) == 0 {
-		return nil
-	}
-
-	payloads := make([][]json.RawMessage, len(live))
-	for i, e := range live {
-		payloads[i] = e.Payload
-	}
-	assembled, err := a.assemble(payloads)
-	if err != nil {
-		_ = translator.DiscardLive()
-		return fmt.Errorf("assemble: %w", err)
-	}
-	if len(assembled) == 0 {
-		_ = translator.DiscardLive()
-		return nil
-	}
-	decoded, err := a.decode(assembled)
-	if err != nil {
-		_ = translator.DiscardLive()
-		return fmt.Errorf("decode assembled: %w", err)
-	}
-
-	var (
-		lastFigaroLT uint64
-		inputReady   []json.RawMessage
-	)
-	for _, m := range decoded {
-		if m.Role != message.RoleAssistant {
-			continue
-		}
-		entry, err := figStream.Append(store.Entry[message.Message]{Payload: m}, true)
-		if err != nil {
-			slog.Error("anthropic append assistant", "err", err)
-			continue
-		}
-		lastFigaroLT = entry.LT
-		m.LogicalTime = entry.LT
-		bus.PushFigaro(m)
-
-		// Re-encode strips inbound-only fields (stop_reason etc.) the
-		// API rejects on input. Cached bytes go in clean.
-		encoded, err := a.encode(m, chalkboard.Snapshot{})
-		if err != nil {
-			slog.Error("anthropic re-encode assistant", "err", err)
-			continue
-		}
-		inputReady = append(inputReady, encoded...)
-	}
-	if len(inputReady) == 0 {
-		_ = translator.DiscardLive()
-		return nil
-	}
-	if _, err := translator.Condense(store.Entry[[]json.RawMessage]{
-		FigaroLT:    lastFigaroLT,
-		Payload:     inputReady,
-		Fingerprint: a.Fingerprint(),
-	}); err != nil {
-		return fmt.Errorf("condense: %w", err)
-	}
-	return nil
+	return perMessage
 }
 
 const sseReadTimeout = 5 * time.Minute
 
-// liveDelta is one entry on the translator's live tail. Event is
-// the SSE event name; Data is the SSE data payload. Model is set
-// only on the synthetic "_start" entry so Assemble can stamp the
-// model the API actually used (real SSE doesn't echo it back).
-type liveDelta struct {
-	Event string          `json:"event"`
-	Data  json.RawMessage `json:"data"`
-	Model string          `json:"model,omitempty"`
-}
-
-// consumeSSE writes every SSE event to the translator's live tail
-// and decodes content deltas onto the bus. Returns when the stream
-// closes. No accumulation — assemble re-runs the state machine at
-// condense time.
-func consumeSSE(body io.ReadCloser, translator store.Stream[[]json.RawMessage], bus provider.Bus) {
-	defer body.Close()
-
-	push := func(eventType string, data []byte) {
-		ld := liveDelta{Event: eventType, Data: json.RawMessage(data)}
-		entry, _ := json.Marshal(ld)
-		_, _ = translator.Append(store.Entry[[]json.RawMessage]{
-			Payload: []json.RawMessage{entry},
-		}, false)
-		if msg, ok := decodeLiveDelta(ld); ok {
-			for _, c := range msg.Content {
-				if c.Text != "" {
-					bus.PushDelta(c)
-				}
-			}
-		}
-	}
-	push("_start", nil)
+// drainSSE is the SSE pipeline: read events one at a time, fold each
+// content_block_delta into the in-memory accumulator and emit a
+// figaro IR delta on the bus, return the final nativeMessage at
+// message_stop / EOF / timeout. No external state is touched and
+// nothing gets persisted — the live deltas are purely ephemeral.
+func (a *Anthropic) drainSSE(body io.ReadCloser, model string, bus provider.Bus) (nativeMessage, error) {
+	nm := nativeMessage{Role: "assistant", Model: model}
+	var (
+		usage      nativeUsage
+		stopReason string
+	)
 
 	pr, pw := io.Pipe()
 	go func() {
@@ -796,6 +717,18 @@ func consumeSSE(body io.ReadCloser, translator store.Stream[[]json.RawMessage], 
 		}()
 	}
 
+	finalize := func() (nativeMessage, error) {
+		if len(nm.Content) == 0 {
+			return nm, nil
+		}
+		if stopReason == "" {
+			stopReason = "aborted"
+		}
+		nm.StopReason = stopReason
+		nm.Usage = &usage
+		return nm, nil
+	}
+
 	var (
 		eventType string
 		lines     int
@@ -813,12 +746,10 @@ func consumeSSE(body io.ReadCloser, translator store.Stream[[]json.RawMessage], 
 			} else {
 				slog.Debug("anthropic sse stream ended", "lines", lines)
 			}
-			push("_eof", nil)
-			return
+			return finalize()
 		case <-time.After(sseReadTimeout):
 			slog.Warn("anthropic sse read timeout", "lines", lines)
-			push("_eof", nil)
-			return
+			return finalize()
 		}
 		if strings.HasPrefix(line, "event: ") {
 			eventType = strings.TrimPrefix(line, "event: ")
@@ -827,159 +758,124 @@ func consumeSSE(body io.ReadCloser, translator store.Stream[[]json.RawMessage], 
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
-		data := strings.TrimPrefix(line, "data: ")
-		push(eventType, []byte(data))
+		data := []byte(strings.TrimPrefix(line, "data: "))
+		a.foldSSEEvent(eventType, data, &nm, &usage, &stopReason, bus)
 		if eventType == "message_stop" || eventType == "error" {
-			return
+			return finalize()
 		}
 	}
 }
 
-// --- Live tail accumulation ---
-
-// Assemble runs the SSE accumulator over the live tail, producing
-// the assembled assistant nativeMessage bytes. Returns nil for an
-// empty/malformed tail.
-func (a *Anthropic) assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error) {
-	var (
-		nm         nativeMessage
-		usage      nativeUsage
-		stopReason string
-	)
-	nm.Role = "assistant"
-
-	for _, payload := range deltas {
-		if len(payload) == 0 {
-			continue
+// foldSSEEvent updates the accumulator nm + usage + stopReason with
+// one decoded SSE event and pushes any figaro IR delta on the bus.
+func (a *Anthropic) foldSSEEvent(eventType string, data []byte, nm *nativeMessage, usage *nativeUsage, stopReason *string, bus provider.Bus) {
+	switch eventType {
+	case "content_block_start":
+		var block struct {
+			Index        int `json:"index"`
+			ContentBlock struct {
+				Type string `json:"type"`
+				ID   string `json:"id,omitempty"`
+				Name string `json:"name,omitempty"`
+			} `json:"content_block"`
 		}
-		var ld liveDelta
-		if err := json.Unmarshal(payload[0], &ld); err != nil {
-			continue
+		if json.Unmarshal(data, &block) != nil {
+			return
 		}
-		switch ld.Event {
-		case "_start":
-			if ld.Model != "" {
-				nm.Model = ld.Model
+		for len(nm.Content) <= block.Index {
+			nm.Content = append(nm.Content, nativeBlock{})
+		}
+		switch block.ContentBlock.Type {
+		case "text":
+			nm.Content[block.Index] = nativeBlock{Type: "text"}
+		case "thinking":
+			nm.Content[block.Index] = nativeBlock{Type: "thinking"}
+		case "tool_use":
+			nm.Content[block.Index] = nativeBlock{
+				Type: "tool_use", ID: block.ContentBlock.ID, Name: block.ContentBlock.Name,
 			}
-		case "_eof":
-			if stopReason == "" {
-				stopReason = "aborted"
+		}
+	case "content_block_delta":
+		var d struct {
+			Index int `json:"index"`
+			Delta struct {
+				Type        string `json:"type"`
+				Text        string `json:"text,omitempty"`
+				Thinking    string `json:"thinking,omitempty"`
+				PartialJSON string `json:"partial_json,omitempty"`
+			} `json:"delta"`
+		}
+		if json.Unmarshal(data, &d) != nil || d.Index >= len(nm.Content) {
+			return
+		}
+		b := &nm.Content[d.Index]
+		switch d.Delta.Type {
+		case "text_delta":
+			b.Text += d.Delta.Text
+			if d.Delta.Text != "" {
+				bus.PushDelta(message.Content{Type: message.ContentText, Text: d.Delta.Text})
 			}
-		case "content_block_start":
-			var block struct {
-				Index        int `json:"index"`
-				ContentBlock struct {
-					Type string `json:"type"`
-					ID   string `json:"id,omitempty"`
-					Name string `json:"name,omitempty"`
-				} `json:"content_block"`
+		case "thinking_delta":
+			b.Thinking += d.Delta.Thinking
+			if d.Delta.Thinking != "" {
+				bus.PushDelta(message.Content{Type: message.ContentThinking, Text: d.Delta.Thinking})
 			}
-			if json.Unmarshal(ld.Data, &block) != nil {
-				continue
+		case "input_json_delta":
+			if s, ok := b.Input.(string); ok {
+				b.Input = s + d.Delta.PartialJSON
+			} else {
+				b.Input = d.Delta.PartialJSON
 			}
-			for len(nm.Content) <= block.Index {
-				nm.Content = append(nm.Content, nativeBlock{})
-			}
-			switch block.ContentBlock.Type {
-			case "text":
-				nm.Content[block.Index] = nativeBlock{Type: "text"}
-			case "thinking":
-				nm.Content[block.Index] = nativeBlock{Type: "thinking"}
-			case "tool_use":
-				nm.Content[block.Index] = nativeBlock{
-					Type: "tool_use", ID: block.ContentBlock.ID, Name: block.ContentBlock.Name,
+		}
+	case "content_block_stop":
+		var stop struct{ Index int }
+		if json.Unmarshal(data, &stop) != nil || stop.Index >= len(nm.Content) {
+			return
+		}
+		b := &nm.Content[stop.Index]
+		if b.Type == "tool_use" {
+			if s, ok := b.Input.(string); ok && s != "" {
+				var args map[string]interface{}
+				if json.Unmarshal([]byte(s), &args) == nil {
+					b.Input = args
 				}
+			} else if b.Input == nil {
+				b.Input = map[string]interface{}{}
 			}
-		case "content_block_delta":
-			var d struct {
-				Index int `json:"index"`
-				Delta struct {
-					Type        string `json:"type"`
-					Text        string `json:"text,omitempty"`
-					Thinking    string `json:"thinking,omitempty"`
-					PartialJSON string `json:"partial_json,omitempty"`
-				} `json:"delta"`
-			}
-			if json.Unmarshal(ld.Data, &d) != nil || d.Index >= len(nm.Content) {
-				continue
-			}
-			b := &nm.Content[d.Index]
-			switch d.Delta.Type {
-			case "text_delta":
-				b.Text += d.Delta.Text
-			case "thinking_delta":
-				b.Thinking += d.Delta.Thinking
-			case "input_json_delta":
-				if s, ok := b.Input.(string); ok {
-					b.Input = s + d.Delta.PartialJSON
-				} else {
-					b.Input = d.Delta.PartialJSON
-				}
-			}
-		case "content_block_stop":
-			var stop struct{ Index int }
-			if json.Unmarshal(ld.Data, &stop) != nil || stop.Index >= len(nm.Content) {
-				continue
-			}
-			b := &nm.Content[stop.Index]
-			if b.Type == "tool_use" {
-				if s, ok := b.Input.(string); ok && s != "" {
-					var args map[string]interface{}
-					if json.Unmarshal([]byte(s), &args) == nil {
-						b.Input = args
-					}
-				} else if b.Input == nil {
-					b.Input = map[string]interface{}{}
-				}
-			}
-		case "message_start":
-			var ms struct {
-				Message struct {
-					Usage struct {
-						InputTokens int `json:"input_tokens"`
-						CacheRead   int `json:"cache_read_input_tokens"`
-						CacheCreate int `json:"cache_creation_input_tokens"`
-					} `json:"usage"`
-				} `json:"message"`
-			}
-			if json.Unmarshal(ld.Data, &ms) == nil {
-				usage.InputTokens = ms.Message.Usage.InputTokens
-				usage.CacheRead = ms.Message.Usage.CacheRead
-				usage.CacheCreate = ms.Message.Usage.CacheCreate
-			}
-		case "message_delta":
-			var md struct {
-				Delta struct {
-					StopReason string `json:"stop_reason"`
-				} `json:"delta"`
+		}
+	case "message_start":
+		var ms struct {
+			Message struct {
 				Usage struct {
-					OutputTokens int `json:"output_tokens"`
+					InputTokens int `json:"input_tokens"`
+					CacheRead   int `json:"cache_read_input_tokens"`
+					CacheCreate int `json:"cache_creation_input_tokens"`
 				} `json:"usage"`
-			}
-			if json.Unmarshal(ld.Data, &md) == nil {
-				usage.OutputTokens = md.Usage.OutputTokens
-				if md.Delta.StopReason != "" {
-					stopReason = md.Delta.StopReason
-				}
-			}
-		case "message_stop":
-			// terminator; nothing more to fold
-		case "error":
-			stopReason = "error"
+			} `json:"message"`
 		}
+		if json.Unmarshal(data, &ms) == nil {
+			usage.InputTokens = ms.Message.Usage.InputTokens
+			usage.CacheRead = ms.Message.Usage.CacheRead
+			usage.CacheCreate = ms.Message.Usage.CacheCreate
+		}
+	case "message_delta":
+		var md struct {
+			Delta struct {
+				StopReason string `json:"stop_reason"`
+			} `json:"delta"`
+			Usage struct {
+				OutputTokens int `json:"output_tokens"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(data, &md) == nil {
+			usage.OutputTokens = md.Usage.OutputTokens
+			if md.Delta.StopReason != "" {
+				*stopReason = md.Delta.StopReason
+			}
+		}
+	case "message_stop":
+		// terminator; finalize() runs from drainSSE
+	case "error":
+		*stopReason = "error"
 	}
-
-	if len(nm.Content) == 0 {
-		return nil, nil
-	}
-	if stopReason == "" {
-		stopReason = "aborted"
-	}
-	nm.StopReason = stopReason
-	nm.Usage = &usage
-	raw, err := json.Marshal(nm)
-	if err != nil {
-		return nil, fmt.Errorf("marshal assembled: %w", err)
-	}
-	return []json.RawMessage{raw}, nil
 }

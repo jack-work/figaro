@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -83,10 +84,7 @@ func main() {
 	ctx := context.Background()
 	loaded := mustLoadConfig()
 
-	// Initialize OpenTelemetry.
-	logCfg := loaded.Log()
-	traceFile := filepath.Join(filepath.Dir(logCfg.RPCFile), "traces.jsonl")
-	shutdown, err := figOtel.Init(ctx, traceFile)
+	shutdown, err := figOtel.Init(ctx, stateDir())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: otel init: %s\n", err)
 	} else {
@@ -178,44 +176,26 @@ func runAngelus() {
 	loaded := mustLoadConfig()
 	runtimeDir := angelusRuntimeDir()
 
-	// Initialize otel in the angelus process.
-	logCfg := loaded.Log()
-	traceFile := filepath.Join(filepath.Dir(logCfg.RPCFile), "traces.jsonl")
-	otelShutdown, err := figOtel.Init(context.Background(), traceFile)
+	otelShutdown, err := figOtel.Init(context.Background(), stateDir())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: otel init: %s\n", err)
 	} else {
 		defer otelShutdown(context.Background())
 	}
 
-	logger, logFile := mustOpenLog()
-	defer logFile.Close()
-
-	// Redirect the daemon's stderr to the angelus log so library code that
-	// writes via fmt.Fprintf(os.Stderr, ...) (provider, agent, etc.) is
-	// captured. The daemon's stderr is /dev/null by default (see
-	// ensureAngelus); without this, those writes are lost.
-	if err := syscall.Dup2(int(logFile.Fd()), int(os.Stderr.Fd())); err != nil {
-		logger.Printf("warning: stderr redirect failed: %v", err)
-	}
-
 	backend, err := ariaBackend()
 	if err != nil {
-		logger.Fatalf("angelus: aria backend: %v", err)
+		slog.Error("angelus aria backend", "err", err)
+		fmt.Fprintf(os.Stderr, "angelus: aria backend: %v\n", err)
+		os.Exit(1)
 	}
 
 	a := angelus.New(angelus.Config{
 		RuntimeDir: runtimeDir,
-		Logger:     logger,
 		Backend:    backend,
 	})
 
-	// Build the chalkboard plumbing: the embedded default body templates
-	// (plus any user overrides). Per-aria State handles are opened by
-	// the protocol handlers under arias/{id}/chalkboard.json — see
-	// protocol.go. Failure here is non-fatal — the angelus runs
-	// without chalkboard, with a warning to the log.
-	cbTmpls := buildChalkboard(logger)
+	cbTmpls := buildChalkboard()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -223,34 +203,27 @@ func runAngelus() {
 	handlers := angelus.NewHandlers(angelus.ServerConfig{
 		Angelus:             a,
 		Config:              loaded,
-		ProviderFactory:     buildProviderFactory(loaded, cbTmpls),
+		ProviderFactory:     buildProviderFactory(loaded, cbTmpls, backend),
 		Ctx:                 ctx,
 		ChalkboardTemplates: cbTmpls,
 	})
 	a.Handlers = handlers.Map
 
-	// Reattach any PID bindings persisted from the previous angelus
-	// lifetime (via `figaro rest --keep-pids`). Dead or recycled PIDs
-	// are filtered out; the file is consumed on read. Each surviving
-	// binding lazy-restores its target aria into the registry — arias
-	// without a binding stay dormant on disk until first access (Bind
-	// or List walks them in).
-	angelus.RestoreBindings(a.Registry, a.BindingsPath(), logger, func(ariaID string) error {
+	angelus.RestoreBindings(a.Registry, a.BindingsPath(), func(ariaID string) error {
 		_, err := handlers.Restore(ctx, ariaID)
 		return err
 	})
 
-	// Watch for SIGINT/SIGTERM and run a graceful shutdown so active
-	// figaros get a chance to interrupt their turns and flush state
-	// before the process exits.
 	go func() {
 		<-ctx.Done()
-		logger.Printf("angelus: signal received, draining figaros")
+		slog.Info("angelus signal received, draining figaros")
 		a.Shutdown(5 * time.Second)
 	}()
 
 	if err := a.Run(ctx); err != nil {
-		logger.Fatalf("angelus: %v", err)
+		slog.Error("angelus run", "err", err)
+		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
+		os.Exit(1)
 	}
 }
 
@@ -1359,18 +1332,6 @@ func mustCreateAndBind(ctx context.Context, acli *angelus.Client, loaded *config
 	return createResp.FigaroID, ep
 }
 
-func openRPCLog(path string) (*json.Encoder, *os.File) {
-	if path == "" {
-		return nil, nil
-	}
-	os.MkdirAll(filepath.Dir(path), 0700)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-	if err != nil {
-		return nil, nil
-	}
-	return json.NewEncoder(f), f
-}
-
 // echoPromptIfEnabled prints the user's prompt to stdout so the
 // reader can see what was asked alongside the response. Local CLI
 // behavior; nothing reaches the conversation. Toggled via
@@ -1384,8 +1345,6 @@ func echoPromptIfEnabled(loaded *config.Loaded, prompt string) {
 }
 
 func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prompt string, loaded *config.Loaded) {
-	rpcLogPath := loaded.Log().RPCFile
-
 	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
 
@@ -1420,12 +1379,6 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		}()
 	}
 
-	// Open CLI RPC log.
-	rpcEnc, rpcFile := openRPCLog(rpcLogPath)
-	if rpcFile != nil {
-		defer rpcFile.Close()
-	}
-
 	doneCh := make(chan struct{}, 1)
 
 	// One largo writer owns the entire output stream. Every event below
@@ -1452,14 +1405,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 
 	deliverEvent := func(method string, params json.RawMessage) {
-		// Log to CLI RPC file.
-		if rpcEnc != nil {
-			rpcEnc.Encode(map[string]interface{}{
-				"jsonrpc": "2.0",
-				"method":  method,
-				"params":  json.RawMessage(params),
-			})
-		}
+		slog.Debug("rpc recv", "method", method, "params", json.RawMessage(params))
 
 		switch method {
 		case rpc.MethodDelta:
@@ -1649,7 +1595,7 @@ func toolDetail(p rpc.ToolStartParams) string {
 
 // --- Provider construction (used by angelus and models) ---
 
-func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template) angelus.ProviderFactory {
+func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
 	return func(providerName, model string) (providerPkg.Provider, error) {
 		switch providerName {
 		case "anthropic":
@@ -1664,7 +1610,13 @@ func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template) ang
 			}
 			authPath := loaded.ProviderAuthPath(providerName)
 			h := mustHush()
-			a, err := anthropic.New(acfg, authPath, h.Client())
+			cacheOpen := func(aria string) (store.Stream[[]json.RawMessage], error) {
+				if backend == nil {
+					return nil, fmt.Errorf("no backend")
+				}
+				return backend.OpenTranslation(aria, providerName)
+			}
+			a, err := anthropic.New(acfg, authPath, h.Client(), cacheOpen)
 			if err != nil {
 				return nil, err
 			}
@@ -1690,7 +1642,9 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 		}
 		authPath := loaded.ProviderAuthPath(name)
 		h := mustHush()
-		p, err := anthropic.New(acfg, authPath, h.Client())
+		// buildProvider is for query-only flows (figaro models); no
+		// cache needed.
+		p, err := anthropic.New(acfg, authPath, h.Client(), nil)
 		if err != nil {
 			return nil, 0
 		}
@@ -1799,14 +1753,13 @@ func buildPromptChalkboard() *rpc.ChalkboardInput {
 
 // buildChalkboard loads the embedded default body templates plus any
 // user overrides from ~/.config/figaro/chalkboard/. Returns nil with a
-// logged warning if loading fails — the angelus continues to function
-// without chalkboard, just without state-driven reminders. Per-aria
-// chalkboard.State handles are opened by the protocol handlers, not
-// here.
-func buildChalkboard(logger *log.Logger) *template.Template {
+// warning if loading fails — the angelus continues to function without
+// chalkboard. Per-aria chalkboard.State handles are opened by the
+// protocol handlers, not here.
+func buildChalkboard() *template.Template {
 	tmpls, err := chalkboard.LoadDefaultTemplates()
 	if err != nil {
-		logger.Printf("warning: chalkboard templates load failed: %v (chalkboard disabled)", err)
+		slog.Warn("chalkboard templates load failed (disabled)", "err", err)
 		return nil
 	}
 	home, _ := os.UserHomeDir()
@@ -1815,22 +1768,15 @@ func buildChalkboard(logger *log.Logger) *template.Template {
 		if t, err := chalkboard.LoadOverrideTemplates(tmpls, overrideDir); err == nil {
 			tmpls = t
 		} else {
-			logger.Printf("warning: chalkboard override templates failed: %v (using defaults only)", err)
+			slog.Warn("chalkboard override templates (using defaults)", "err", err)
 		}
 	}
 	return tmpls
 }
 
-func mustOpenLog() (*log.Logger, *os.File) {
+func stateDir() string {
 	home, _ := os.UserHomeDir()
-	logDir := filepath.Join(home, ".local", "state", "figaro")
-	os.MkdirAll(logDir, 0700)
-	logPath := filepath.Join(logDir, "angelus.log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-	if err != nil {
-		die("open log: %s", err)
-	}
-	return log.New(f, "angelus: ", log.LstdFlags), f
+	return filepath.Join(home, ".local", "state", "figaro")
 }
 
 func extractPrompt(args []string) string {
