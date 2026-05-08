@@ -65,6 +65,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodCreate:       h.create,
 			rpc.MethodKill:         h.kill,
 			rpc.MethodList:         h.list,
+			rpc.MethodAttach:       h.attach,
 			rpc.MethodBind:         h.bind,
 			rpc.MethodResolve:      h.resolve,
 			rpc.MethodUnbind:       h.unbind,
@@ -203,7 +204,25 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, fmt.Errorf("create provider %q: %w", provName, err)
 	}
 
-	id := uuid.New().String()[:8]
+	// Resolve aria id: caller-supplied (validated, conflict-checked)
+	// or angelus-generated (8-char uuid prefix).
+	var id string
+	if req.ID != "" {
+		if err := rpc.ValidateAriaID(req.ID); err != nil {
+			return nil, err
+		}
+		if h.angelus.Registry.Get(req.ID) != nil {
+			return nil, fmt.Errorf("aria %q is already live", req.ID)
+		}
+		if !req.Ephemeral && h.angelus.Backend != nil {
+			if meta, _ := h.angelus.Backend.Meta(req.ID); meta != nil {
+				return nil, fmt.Errorf("aria %q already exists on disk", req.ID)
+			}
+		}
+		id = req.ID
+	} else {
+		id = uuid.New().String()[:8]
+	}
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
 
 	cwd, _ := os.Getwd()
@@ -379,6 +398,30 @@ func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{
 		return nil, err
 	}
 	return rpc.BindResponse{OK: true}, nil
+}
+
+// attach restores a dormant aria into the live registry without
+// touching pid bindings. No-op (and still returns the live endpoint)
+// if the aria is already in the registry.
+func (h *handlers) attach(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.AttachRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	if err := rpc.ValidateAriaID(req.FigaroID); err != nil {
+		return nil, err
+	}
+	f, err := h.restoreByID(ctx, req.FigaroID)
+	if err != nil {
+		return nil, fmt.Errorf("attach %s: %w", req.FigaroID, err)
+	}
+	return rpc.AttachResponse{
+		FigaroID: req.FigaroID,
+		Endpoint: rpc.Endpoint{
+			Scheme:  "unix",
+			Address: f.SocketPath(),
+		},
+	}, nil
 }
 
 func (h *handlers) resolve(ctx context.Context, params json.RawMessage) (interface{}, error) {

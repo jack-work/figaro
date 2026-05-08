@@ -33,6 +33,7 @@ const (
 	MethodCreate      = "figaro.create"
 	MethodKill        = "figaro.kill"
 	MethodList        = "figaro.list"
+	MethodAttach      = "figaro.attach"
 	MethodAngelusInfo = "angelus.info"
 
 	MethodBind    = "pid.bind"
@@ -157,7 +158,13 @@ type FigaroInfoResponse struct {
 // `<configDir>/providers/<Loadout>/config.toml`. Empty defaults to
 // "config". Patch overlays the resolved loadout — used for runtime
 // overrides like a one-shot model.
+//
+// ID is optional. Empty (the default) → angelus generates an 8-char
+// UUID prefix. Non-empty → angelus uses the supplied id verbatim;
+// must match `[A-Za-z0-9_-]{1,64}` and must not collide with a live
+// figaro or an aria already on disk. Conflict returns an error.
 type CreateRequest struct {
+	ID        string           `json:"id,omitempty"`
 	Loadout   string           `json:"loadout,omitempty"`
 	Patch     *ChalkboardPatch `json:"patch,omitempty"`
 	Ephemeral bool             `json:"ephemeral,omitempty"`
@@ -182,6 +189,19 @@ type KillRequest struct {
 
 type KillResponse struct {
 	OK bool `json:"ok"`
+}
+
+// AttachRequest restores a dormant aria into the live registry without
+// binding any pid. Used by `figaro aria <id> -- ...` to address a
+// named aria without disturbing the shell's binding. No-op if the aria
+// is already live; errors if the id is unknown to the backend.
+type AttachRequest struct {
+	FigaroID string `json:"figaro_id"`
+}
+
+type AttachResponse struct {
+	FigaroID string   `json:"figaro_id"`
+	Endpoint Endpoint `json:"endpoint"`
 }
 
 type ListResponse struct {

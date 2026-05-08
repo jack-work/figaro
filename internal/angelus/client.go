@@ -31,6 +31,17 @@ func (c *Client) Create(ctx context.Context, loadout string, patch *rpc.Chalkboa
 	return &resp, err
 }
 
+// CreateWithID is like Create but pins the new figaro to a
+// caller-supplied id. The angelus validates the id and refuses if it
+// collides with a live figaro or an aria already on disk.
+func (c *Client) CreateWithID(ctx context.Context, id, loadout string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
+	var resp rpc.CreateResponse
+	err := c.cli.Call(ctx, rpc.MethodCreate, rpc.CreateRequest{
+		ID: id, Loadout: loadout, Patch: patch,
+	}, &resp)
+	return &resp, err
+}
+
 // CreateEphemeral creates a figaro whose state lives in memory only.
 // No aria file is written; the agent vanishes when killed.
 func (c *Client) CreateEphemeral(ctx context.Context, loadout string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
@@ -48,6 +59,17 @@ func (c *Client) Kill(ctx context.Context, figaroID string) error {
 func (c *Client) List(ctx context.Context) (*rpc.ListResponse, error) {
 	var resp rpc.ListResponse
 	if err := c.cli.Call(ctx, rpc.MethodList, nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// Attach asks the angelus to bring a dormant aria into the live
+// registry without binding any pid. Returns the live endpoint. If
+// the aria is unknown, returns an error; if already live, no-op.
+func (c *Client) Attach(ctx context.Context, figaroID string) (*rpc.AttachResponse, error) {
+	var resp rpc.AttachResponse
+	if err := c.cli.Call(ctx, rpc.MethodAttach, rpc.AttachRequest{FigaroID: figaroID}, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
