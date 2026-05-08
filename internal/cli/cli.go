@@ -84,7 +84,7 @@ func Run(args []string) {
 			runChalkboard(loaded)
 			return
 		case "aria":
-			runAria(loaded)
+			runAria(loaded, args[1:])
 			return
 		case "qua":
 			runQua(loaded, args[1:])

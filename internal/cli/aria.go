@@ -16,30 +16,83 @@ import (
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// runAria renders the last N messages of the bound figaro's aria
-// file as markdown to stdout (via largo). N defaults to 10.
+// runAria handles the unified aria verb. Two shapes:
 //
-// Usage: figaro aria [N] [--verbose|-v] [--literal|-l] [--all|-a]
-func runAria(loaded *config.Loaded) {
+//	figaro aria [id] [N] [-v] [-l] [-a]            → render history
+//	figaro aria [id] -- <prompt>                    → prompt the aria
+//
+// Without an id, the pid-bound aria is used. With an id that doesn't
+// exist, a new aria is created with that id (no pid binding). With an
+// id that does exist (live or dormant), it is dialed (the angelus
+// restores dormant arias on demand). Render mode is selected when no
+// `--` is present in args; prompt mode when `--` is present.
+func runAria(loaded *config.Loaded, args []string) {
+	// Split args at the first `--`. Everything before is selectors
+	// (id, N, flags); everything after is the prompt body.
+	var head, tail []string
+	dashIdx := -1
+	for i, a := range args {
+		if a == "--" {
+			dashIdx = i
+			break
+		}
+	}
+	if dashIdx >= 0 {
+		head = args[:dashIdx]
+		tail = args[dashIdx+1:]
+	} else {
+		head = args
+	}
+
+	// Pull a leading id if present. An id is the first head arg that
+	// validates as an aria id, isn't numeric (back-compat: bare N
+	// still means N), and isn't a flag.
+	var id string
+	if len(head) > 0 {
+		candidate := head[0]
+		if _, err := strconv.Atoi(candidate); err != nil &&
+			!strings.HasPrefix(candidate, "-") &&
+			rpc.ValidateAriaID(candidate) == nil {
+			id = candidate
+			head = head[1:]
+		}
+	}
+
+	if dashIdx >= 0 {
+		prompt := strings.Join(tail, " ")
+		if prompt == "" {
+			die("usage: figaro aria [<id>] -- <prompt>")
+		}
+		promptAria(loaded, id, prompt)
+		return
+	}
+
+	renderAria(loaded, id, head)
+}
+
+// renderAria parses the render-mode flags and prints history. If id
+// is empty, the pid-bound aria is used.
+func renderAria(loaded *config.Loaded, id string, args []string) {
 	n := 10
 	verbose := false
 	literal := false
 	all := false
 	// Expand bundled short flags: -alv → -a -l -v.
-	args := make([]string, 0, len(os.Args)-2)
-	for _, a := range os.Args[2:] {
+	expanded := make([]string, 0, len(args))
+	for _, a := range args {
 		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
 			for _, r := range a[1:] {
-				args = append(args, "-"+string(r))
+				expanded = append(expanded, "-"+string(r))
 			}
 			continue
 		}
-		args = append(args, a)
+		expanded = append(expanded, a)
 	}
-	for _, arg := range args {
+	for _, arg := range expanded {
 		switch arg {
 		case "-v", "--verbose":
 			verbose = true
@@ -50,26 +103,27 @@ func runAria(loaded *config.Loaded) {
 		default:
 			parsed, err := strconv.Atoi(arg)
 			if err != nil {
-				die("usage: figaro aria [N] [-v|--verbose] [-l|--literal] [-a|--all]")
+				die("usage: figaro aria [<id>] [N] [-v|--verbose] [-l|--literal] [-a|--all]")
 			}
 			n = parsed
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-
-	r, err := acli.Resolve(ctx, os.Getppid())
-	if err != nil {
-		die("resolve: %s", err)
+	figaroID := id
+	if figaroID == "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		acli := mustConnectAngelus(loaded)
+		defer acli.Close()
+		r, err := acli.Resolve(ctx, os.Getppid())
+		if err != nil {
+			die("resolve: %s", err)
+		}
+		if !r.Found {
+			die("no figaro bound to this shell")
+		}
+		figaroID = r.FigaroID
 	}
-	if !r.Found {
-		die("no figaro bound to this shell")
-	}
-	figaroID := r.FigaroID
 
 	home, _ := os.UserHomeDir()
 	ariaPath := filepath.Join(home, ".local", "state", "figaro", "arias", figaroID, "aria.jsonl")
