@@ -312,7 +312,7 @@ type summaryDerivation struct {
 func (s *summaryDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 	now := time.Now().UnixMilli()
 	out := store.AriaMeta{LastActiveMS: now, LastFigaroLT: evt.FigaroLT}
-	for _, e := range s.figStream.Durable() {
+	for _, e := range s.figStream.Read() {
 		out.MessageCount++
 		m := e.Payload
 		if m.Role == message.RoleAssistant {
@@ -338,7 +338,7 @@ type translatorDerivation struct {
 func (t *translatorDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 	out := store.TranslationMeta{Provider: t.providerName, LastUpdateMS: time.Now().UnixMilli()}
 	if t.translator != nil {
-		entries := t.translator.Durable()
+		entries := t.translator.Read()
 		for _, e := range entries {
 			for _, p := range e.Payload {
 				out.TotalBytes += len(p)
@@ -384,7 +384,7 @@ func (u *usageDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 		LastFigaroLT: evt.FigaroLT,
 		LastUpdateMS: time.Now().UnixMilli(),
 	}
-	for _, e := range u.figStream.Durable() {
+	for _, e := range u.figStream.Read() {
 		out.MessageCount++
 		m := e.Payload
 		if m.Role == message.RoleAssistant {

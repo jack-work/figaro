@@ -17,7 +17,7 @@ import (
 func TestFileStream_EmptyStart(t *testing.T) {
 	s, err := OpenFileStream[message.Message](filepath.Join(t.TempDir(), "aria.jsonl"))
 	require.NoError(t, err)
-	assert.Empty(t, s.Durable())
+	assert.Empty(t, s.Read())
 	_, ok := s.PeekTail()
 	assert.False(t, ok)
 }
@@ -31,7 +31,7 @@ func TestFileStream_AppendPersists(t *testing.T) {
 
 	entry, err := s.Append(Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
-	}, true)
+	})
 	require.NoError(t, err)
 	assert.Equal(t, uint64(1), entry.LT)
 	assert.Equal(t, uint64(1), entry.FigaroLT, "canonical stream: LT == FigaroLT")
@@ -39,7 +39,7 @@ func TestFileStream_AppendPersists(t *testing.T) {
 	// Reload from disk.
 	s2, err := OpenFileStream[message.Message](path)
 	require.NoError(t, err)
-	d := s2.Durable()
+	d := s2.Read()
 	require.Len(t, d, 1)
 	assert.Equal(t, "hello", d[0].Payload.Content[0].Text)
 	assert.Equal(t, uint64(1), d[0].LT)
@@ -55,7 +55,7 @@ func TestFileStream_LogicalTimeContinuity(t *testing.T) {
 	for _, text := range []string{"one", "two", "three"} {
 		_, err := s.Append(Entry[message.Message]{
 			Payload: message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent(text)}},
-		}, true)
+		})
 		require.NoError(t, err)
 	}
 
@@ -63,7 +63,7 @@ func TestFileStream_LogicalTimeContinuity(t *testing.T) {
 	require.NoError(t, err)
 	e4, err := s2.Append(Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("four")}},
-	}, true)
+	})
 	require.NoError(t, err)
 	assert.Equal(t, uint64(4), e4.LT)
 }
@@ -75,7 +75,7 @@ func TestFileStream_Lookup(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		_, err := s.Append(Entry[message.Message]{
 			Payload: message.Message{Role: message.RoleUser},
-		}, true)
+		})
 		require.NoError(t, err)
 	}
 
@@ -95,7 +95,7 @@ func TestFileStream_ScanFromEnd(t *testing.T) {
 	for _, text := range []string{"one", "two", "three", "four"} {
 		_, err := s.Append(Entry[message.Message]{
 			Payload: message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent(text)}},
-		}, true)
+		})
 		require.NoError(t, err)
 	}
 
@@ -109,46 +109,16 @@ func TestFileStream_ScanFromEnd(t *testing.T) {
 	assert.Len(t, all, 4)
 }
 
-func TestFileStream_LiveAndCondense(t *testing.T) {
-	s, err := OpenFileStream[string](filepath.Join(t.TempDir(), "live.jsonl"))
-	require.NoError(t, err)
-
-	for _, chunk := range []string{"hel", "lo, ", "world"} {
-		_, err := s.Append(Entry[string]{Payload: chunk}, false)
-		require.NoError(t, err)
-	}
-	assert.Len(t, s.Live(), 3)
-
-	entry, err := s.Condense(Entry[string]{Payload: "hello, world"})
-	require.NoError(t, err)
-	assert.Equal(t, uint64(1), entry.LT)
-	assert.Empty(t, s.Live(), "live tail empty after condense")
-	assert.Equal(t, "hello, world", entry.Payload)
-}
-
-func TestFileStream_DiscardLive(t *testing.T) {
-	s, err := OpenFileStream[string](filepath.Join(t.TempDir(), "live.jsonl"))
-	require.NoError(t, err)
-
-	_, _ = s.Append(Entry[string]{Payload: "partial"}, false)
-	_, _ = s.Append(Entry[string]{Payload: "more partial"}, false)
-	require.Len(t, s.Live(), 2)
-
-	require.NoError(t, s.DiscardLive())
-	assert.Empty(t, s.Live())
-	assert.Empty(t, s.Durable(), "discard must not produce a durable entry")
-}
-
 func TestFileStream_Clear(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "aria.jsonl")
 
 	s, err := OpenFileStream[message.Message](path)
 	require.NoError(t, err)
-	_, _ = s.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}, true)
+	_, _ = s.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}})
 
 	require.NoError(t, s.Clear())
-	assert.Empty(t, s.Durable())
+	assert.Empty(t, s.Read())
 	_, err = os.Stat(path)
 	assert.True(t, os.IsNotExist(err))
 }
@@ -163,7 +133,7 @@ func TestFileStream_Translation_FK(t *testing.T) {
 		FigaroLT:    7,
 		Payload:     []json.RawMessage{json.RawMessage(`{"role":"assistant"}`)},
 		Fingerprint: "anth/v1",
-	}, true)
+	})
 	require.NoError(t, err)
 	assert.Equal(t, uint64(1), entry.LT, "alt is stream-local, starts at 1")
 	assert.Equal(t, uint64(7), entry.FigaroLT, "FK preserved")
@@ -179,17 +149,17 @@ func TestFileStream_Translation_FK(t *testing.T) {
 func TestMemStream_Standalone(t *testing.T) {
 	s := NewMemStream[message.Message]()
 
-	assert.Empty(t, s.Durable())
+	assert.Empty(t, s.Read())
 
 	entry, err := s.Append(Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
-	}, true)
+	})
 	require.NoError(t, err)
 	assert.Equal(t, uint64(1), entry.LT)
 
-	require.Len(t, s.Durable(), 1)
+	require.Len(t, s.Read(), 1)
 	require.NoError(t, s.Clear())
-	assert.Empty(t, s.Durable())
+	assert.Empty(t, s.Read())
 }
 
 // --- FileBackend tests ---
@@ -204,7 +174,7 @@ func TestFileBackend_OpenAndRoundTrip(t *testing.T) {
 
 	_, err = s.Append(Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hi")}},
-	}, true)
+	})
 	require.NoError(t, err)
 
 	// Check file landed in the expected per-aria layout.
@@ -223,7 +193,7 @@ func TestFileBackend_OpenTranslation(t *testing.T) {
 	_, err = s.Append(Entry[[]json.RawMessage]{
 		FigaroLT: 1,
 		Payload:  []json.RawMessage{json.RawMessage(`{}`)},
-	}, true)
+	})
 	require.NoError(t, err)
 
 	_, err = os.Stat(filepath.Join(dir, "abc", "translations", "anthropic.jsonl"))
@@ -270,7 +240,7 @@ func TestFileBackend_List(t *testing.T) {
 		require.NoError(t, err)
 		_, err = s.Append(Entry[message.Message]{
 			Payload: message.Message{Role: message.RoleUser},
-		}, true)
+		})
 		require.NoError(t, err)
 		require.NoError(t, b.SetMeta(id, &AriaMeta{MessageCount: i + 1}))
 	}
@@ -292,7 +262,7 @@ func TestFileBackend_Remove(t *testing.T) {
 	b, _ := NewFileBackend(dir)
 
 	s, _ := b.Open("doomed")
-	_, _ = s.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}, true)
+	_, _ = s.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}})
 
 	require.NoError(t, b.Remove("doomed"))
 	_, err := os.Stat(filepath.Join(dir, "doomed"))

@@ -88,7 +88,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 			a.chalkboard.Apply(combined)
 		}
 	}
-	if len(a.figStream.Durable()) == 0 && a.outfitter != nil && a.chalkboard != nil {
+	if len(a.figStream.Read()) == 0 && a.outfitter != nil && a.chalkboard != nil {
 		if patch, err := a.outfitter.Bootstrap(a.chalkboard.Snapshot(),
 			outfit.CurrentBootCtx(a.prov.Name(), a.id)); err == nil && !patch.IsEmpty() {
 			tic.Patches = append(tic.Patches, patch)
@@ -99,7 +99,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	if prompt.text != "" {
 		tic.Content = append(tic.Content, message.TextContent(prompt.text))
 	}
-	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
+	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
 		a.fanOutError(fmt.Sprintf("append user tic: %s", err))
 		a.endTurn("error: append tic")
 		return
@@ -248,7 +248,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		Content:   results,
 		Timestamp: time.Now().UnixMilli(),
 	}
-	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: resultTic}, true); err != nil {
+	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: resultTic}); err != nil {
 		a.fanOutError(fmt.Sprintf("append tool_result tic: %s", err))
 		a.endTurn("error: append tool_result")
 		return true

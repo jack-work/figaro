@@ -142,7 +142,7 @@ func NewAgent(cfg Config) *Agent {
 	// derived.go for the analogous summary/translator/usage actors.
 	if len(a.chalkboard.Snapshot()) == 0 {
 		replayed := false
-		for _, entry := range a.figStream.Durable() {
+		for _, entry := range a.figStream.Read() {
 			for _, p := range entry.Payload.Patches {
 				a.chalkboard.Apply(p)
 				replayed = true
@@ -154,7 +154,7 @@ func NewAgent(cfg Config) *Agent {
 	}
 	a.inbox = NewInbox(ctx)
 
-	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Durable()))
+	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Read()))
 
 	// Spin up the per-figaro durable-derivation fanout. Each
 	// registered DurableDerivation gets its own goroutine + inbox;
@@ -252,7 +252,7 @@ func (a *Agent) Interrupt() {
 }
 
 func (a *Agent) Context() []message.Message {
-	return unwrapMessages(a.figStream.Durable())
+	return unwrapMessages(a.figStream.Read())
 }
 
 // unwrapMessages projects entries to a flat []Message, stamping
@@ -361,7 +361,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 
 		a.mu.Lock()
 		a.figStream = a.newStream()
-		a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Durable()))
+		a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Read()))
 		if a.turnCancel != nil {
 			a.turnCancel()
 			a.turnCancel = nil
@@ -442,7 +442,7 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 		Patches:   []message.Patch{patch},
 		Timestamp: time.Now().UnixMilli(),
 	}
-	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}, true); err != nil {
+	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
 		slog.Error(kind+" append", "aria", a.id, "err", err)
 		return
 	}

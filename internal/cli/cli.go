@@ -65,9 +65,6 @@ func Run(args []string) {
 		case "detach":
 			runDetach(loaded)
 			return
-		case "context":
-			runContext(loaded)
-			return
 		case "rehydrate":
 			runRehydrate(loaded)
 			return

@@ -1,10 +1,9 @@
 // Package anthropic implements the figaro Provider for the Anthropic Messages API.
 //
 // Send drives one turn end-to-end: catches up the translator from the
-// figStream, POSTs, streams SSE chunks (each chunk lands on the
-// translator's live tail and emits a figaro IR delta on the bus),
-// and on EOF assembles the live tail into a durable assistant
-// message — appended to figStream and condensed into the translator.
+// figStream, POSTs, streams SSE chunks (decoded inline so figaro IR
+// deltas hit the bus as they arrive), and on EOF appends the
+// assembled assistant message to figStream and the translator cache.
 package anthropic
 
 import (
@@ -111,7 +110,7 @@ func (a *Anthropic) cacheFor(aria string) store.Stream[[]json.RawMessage] {
 // match the current encoder config.
 func (a *Anthropic) invalidateIfStale(s store.Stream[[]json.RawMessage]) {
 	want := a.Fingerprint()
-	for _, e := range s.Durable() {
+	for _, e := range s.Read() {
 		if e.Fingerprint == "" || e.Fingerprint == want {
 			continue
 		}
@@ -603,8 +602,8 @@ func markCacheBreakpoints(req *nativeRequest, setting string) {
 // (cache) from the figStream, POSTs, streams SSE chunks (decoding
 // inline so figaro IR deltas hit the bus as they arrive), and on EOF
 // lands the assembled assistant message in figStream + cache, then
-// announces via bus.PushFigaro. The cache stores only durable
-// per-message entries — no live tail.
+// announces via bus.PushFigaro. The cache stores one entry per
+// message.
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	cache := a.cacheFor(in.AriaID)
 	perMessage, lts := a.catchUp(in.FigStream, cache)
@@ -667,7 +666,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 
 	// Land the assistant message: figStream → push figaro → cache.
 	msg := decodeNativeMessage(nm)
-	entry, err := in.FigStream.Append(store.Entry[message.Message]{Payload: msg}, true)
+	entry, err := in.FigStream.Append(store.Entry[message.Message]{Payload: msg})
 	if err != nil {
 		return fmt.Errorf("append assistant: %w", err)
 	}
@@ -682,7 +681,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 				FigaroLT:    entry.LT,
 				Payload:     encoded,
 				Fingerprint: a.Fingerprint(),
-			}, true)
+			})
 		} else {
 			slog.Error("anthropic re-encode assistant", "err", err)
 		}
@@ -708,7 +707,7 @@ func (a *Anthropic) catchUp(figStream store.Stream[message.Message], cache store
 	snap := chalkboard.Snapshot{}
 	var perMessage [][]json.RawMessage
 	var lts []uint64
-	for _, e := range figStream.Durable() {
+	for _, e := range figStream.Read() {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
 		var bytes []json.RawMessage
@@ -726,7 +725,7 @@ func (a *Anthropic) catchUp(figStream store.Stream[message.Message], cache store
 				if cache != nil {
 					_, _ = cache.Append(store.Entry[[]json.RawMessage]{
 						FigaroLT: msg.LogicalTime, Payload: bytes, Fingerprint: fp,
-					}, true)
+					})
 				}
 			}
 		}

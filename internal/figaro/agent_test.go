@@ -52,7 +52,7 @@ type mockEncodeFn func(msg message.Message, prev chalkboard.Snapshot) ([]json.Ra
 // Send. Skipped when cache is nil (ephemeral tests).
 func mockCatchUp(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage], encode mockEncodeFn, fingerprint string) {
 	snap := chalkboard.Snapshot{}
-	for _, e := range figStream.Durable() {
+	for _, e := range figStream.Read() {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
 		if cache != nil {
@@ -62,7 +62,7 @@ func mockCatchUp(figStream store.Stream[message.Message], cache store.Stream[[]j
 						FigaroLT:    msg.LogicalTime,
 						Payload:     payload,
 						Fingerprint: fingerprint,
-					}, true)
+					})
 				}
 			}
 		} else {
@@ -88,7 +88,7 @@ func mockPushAssistant(figStream store.Stream[message.Message], cache store.Stre
 		Content:    []message.Content{message.TextContent(text)},
 		StopReason: message.StopEnd,
 	}
-	entry, err := figStream.Append(store.Entry[message.Message]{Payload: msg}, true)
+	entry, err := figStream.Append(store.Entry[message.Message]{Payload: msg})
 	if err == nil {
 		msg.LogicalTime = entry.LT
 		if cache != nil {
@@ -97,7 +97,7 @@ func mockPushAssistant(figStream store.Stream[message.Message], cache store.Stre
 					FigaroLT:    entry.LT,
 					Payload:     payload,
 					Fingerprint: fingerprint,
-				}, true)
+				})
 			}
 		}
 	}

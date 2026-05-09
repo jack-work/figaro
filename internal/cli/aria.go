@@ -131,7 +131,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	if err != nil {
 		die("open aria: %s", err)
 	}
-	entries := fs.Durable()
+	entries := fs.Read()
 	if len(entries) == 0 {
 		fmt.Fprintln(os.Stderr, "(empty aria)")
 		return

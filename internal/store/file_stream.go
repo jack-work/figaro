@@ -11,16 +11,14 @@ import (
 )
 
 // FileStream[T] is a Stream[T] backed by an NDJSON file. One line per
-// durable Entry; appends fsync per write. Durable head is loaded into
-// memory at Open. Live tail is in-memory only.
+// Entry; appends fsync per write. Entries are loaded into memory at
+// Open.
 type FileStream[T any] struct {
 	mu         sync.Mutex
 	path       string
 	entries    []Entry[T]
 	byFigaroLT map[uint64]int
 	nextLT     uint64
-
-	live []Entry[T]
 }
 
 var _ Stream[any] = (*FileStream[any])(nil)
@@ -71,7 +69,7 @@ func (s *FileStream[T]) load() error {
 	return scanner.Err()
 }
 
-func (s *FileStream[T]) Durable() []Entry[T] {
+func (s *FileStream[T]) Read() []Entry[T] {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.entries
@@ -114,41 +112,13 @@ func (s *FileStream[T]) ScanFromEnd(n int) []Entry[T] {
 	return out
 }
 
-func (s *FileStream[T]) Live() []Entry[T] {
+func (s *FileStream[T]) Append(e Entry[T]) (Entry[T], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.live
+	return s.appendLocked(e)
 }
 
-func (s *FileStream[T]) Append(e Entry[T], durable bool) (Entry[T], error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !durable {
-		s.live = append(s.live, e)
-		return e, nil
-	}
-	return s.appendDurableLocked(e)
-}
-
-func (s *FileStream[T]) Condense(e Entry[T]) (Entry[T], error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stamped, err := s.appendDurableLocked(e)
-	if err != nil {
-		return Entry[T]{}, err
-	}
-	s.live = nil
-	return stamped, nil
-}
-
-func (s *FileStream[T]) DiscardLive() error {
-	s.mu.Lock()
-	s.live = nil
-	s.mu.Unlock()
-	return nil
-}
-
-func (s *FileStream[T]) appendDurableLocked(e Entry[T]) (Entry[T], error) {
+func (s *FileStream[T]) appendLocked(e Entry[T]) (Entry[T], error) {
 	e.LT = s.nextLT
 	if e.FigaroLT == 0 {
 		e.FigaroLT = e.LT
@@ -188,7 +158,6 @@ func (s *FileStream[T]) Clear() error {
 	s.entries = nil
 	s.byFigaroLT = make(map[uint64]int)
 	s.nextLT = 1
-	s.live = nil
 	if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("file stream: clear: %w", err)
 	}

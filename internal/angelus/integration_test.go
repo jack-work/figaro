@@ -22,10 +22,12 @@ import (
 // mockProviderForIntegration echoes "42" through the new bus shape.
 type mockProviderForIntegration struct{}
 
-func (m *mockProviderForIntegration) Name() string                                          { return "mock" }
-func (m *mockProviderForIntegration) Fingerprint() string                                   { return "mock/v0" }
-func (m *mockProviderForIntegration) SetModel(model string)                                 {}
-func (m *mockProviderForIntegration) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (m *mockProviderForIntegration) Name() string          { return "mock" }
+func (m *mockProviderForIntegration) Fingerprint() string   { return "mock/v0" }
+func (m *mockProviderForIntegration) SetModel(model string) {}
+func (m *mockProviderForIntegration) Models(ctx context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
 
 func (m *mockProviderForIntegration) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	bus.PushDelta(message.TextContent("42"))
@@ -34,7 +36,7 @@ func (m *mockProviderForIntegration) Send(_ context.Context, in provider.SendInp
 		Content:    []message.Content{message.TextContent("42")},
 		StopReason: message.StopEnd,
 	}
-	entry, err := in.FigStream.Append(store.Entry[message.Message]{Payload: msg}, true)
+	entry, err := in.FigStream.Append(store.Entry[message.Message]{Payload: msg})
 	if err != nil {
 		return err
 	}
