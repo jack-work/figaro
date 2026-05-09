@@ -46,7 +46,7 @@ type event struct {
 
 // Config is the constructor input for NewAgent.
 //
-// Configured values (model, label, cwd, root, max_tokens, …) live on
+// Configured values (model, cwd, root, max_tokens, …) live on
 // the Chalkboard under `system.*` keys — callers seed them there
 // before construction. The typed fields below are runtime
 // dependencies, not user config.
@@ -216,7 +216,6 @@ func (a *Agent) chalkboardInt(key string) int {
 }
 
 func (a *Agent) currentModel() string { return a.chalkboardString("system.model") }
-func (a *Agent) currentLabel() string { return a.chalkboardString("system.label") }
 
 // Prompt is a tests-only helper; plans/dead-code-audit.md tracks
 // the eventual removal.
@@ -308,7 +307,6 @@ func (a *Agent) Info() FigaroInfo {
 
 	return FigaroInfo{
 		ID:               a.id,
-		Label:            a.currentLabel(),
 		State:            state,
 		Provider:         a.prov.Name(),
 		Model:            a.currentModel(),

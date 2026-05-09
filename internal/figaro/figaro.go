@@ -49,7 +49,6 @@ type Figaro interface {
 // FigaroInfo holds metadata about a running figaro.
 type FigaroInfo struct {
 	ID               string    `json:"id"`
-	Label            string    `json:"label,omitempty"`
 	State            string    `json:"state"` // "active", "idle"
 	Provider         string    `json:"provider"`
 	Model            string    `json:"model"`

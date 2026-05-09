@@ -115,8 +115,8 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 }
 
 // fillFromChalkboard reads arias/<id>/chalkboard.json off disk and
-// splices the configured fields (Label, Provider, Model) into the
-// list entry. Cheap — chalkboard.json is small.
+// splices the configured fields (Provider, Model) into the list
+// entry. Cheap — chalkboard.json is small.
 func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoResponse) {
 	fb, ok := h.angelus.Backend.(interface{ Dir() string })
 	if !ok {
@@ -138,9 +138,6 @@ func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoRespon
 		var s string
 		_ = json.Unmarshal(raw, &s)
 		return s
-	}
-	if entry.Label == "" {
-		entry.Label = get("system.label")
 	}
 	if entry.Provider == "" {
 		entry.Provider = get("system.provider")
@@ -334,7 +331,6 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		seen[info.ID] = struct{}{}
 		result = append(result, rpc.FigaroInfoResponse{
 			ID:               info.ID,
-			Label:            info.Label,
 			State:            info.State,
 			Provider:         info.Provider,
 			Model:            info.Model,

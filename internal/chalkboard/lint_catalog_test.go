@@ -36,7 +36,6 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 			"datetime":           rawString("Wednesday, April 29, 2026, 10AM EDT"),
 			"model":              rawString("claude-opus-4-6"),
 			"root":               rawString("/home/figaro/dev"),
-			"label":              rawString("morning-aria"),
 			"truncation":         rawString("File foo.go truncated to 2000 lines"),
 			"token_budget":       rawString("80%"),
 		},
@@ -85,7 +84,6 @@ func TestDefaultTemplates_AllBodiesAreFactual(t *testing.T) {
 			"datetime": rawString("Wednesday, April 29, 2026, 10AM EDT"),
 			"model":    rawString("claude-opus-4-6"),
 			"root":     rawString("/home/figaro"),
-			"label":    rawString("aria"),
 		},
 	}
 	rendered, err := chalkboard.Render(patch, chalkboard.Snapshot{}, tmpls)

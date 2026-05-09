@@ -135,7 +135,6 @@ type ChalkboardResponse struct {
 
 type FigaroInfoResponse struct {
 	ID               string `json:"id"`
-	Label            string `json:"label,omitempty"`
 	State            string `json:"state"`
 	Provider         string `json:"provider"`
 	Model            string `json:"model"`

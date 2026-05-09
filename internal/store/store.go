@@ -17,8 +17,8 @@ import (
 
 // AriaMeta is the per-aria materialized summary at
 // arias/{id}/meta.json — purely derived statistics. Configured
-// fields (label, root, model, provider, cwd) live in the
-// chalkboard; readers wanting them read chalkboard.json directly.
+// fields (root, model, provider, cwd) live in the chalkboard;
+// readers wanting them read chalkboard.json directly.
 type AriaMeta struct {
 	MessageCount     int    `json:"message_count,omitempty"`
 	TurnCount        int    `json:"turn_count,omitempty"` // assistant messages

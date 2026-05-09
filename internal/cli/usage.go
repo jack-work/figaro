@@ -32,7 +32,6 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "       figaro x [-n|-y] -- <instruction>     (ask figaro to write bash and exec it locally)")
 	fmt.Fprintln(os.Stderr, "       figaro attend <id>")
 	fmt.Fprintln(os.Stderr, "       figaro detach")
-	fmt.Fprintln(os.Stderr, "       figaro label <id> <label>")
 	fmt.Fprintln(os.Stderr, "       figaro context [id]")
 	fmt.Fprintln(os.Stderr, "       figaro rehydrate [--dry-run]")
 	fmt.Fprintln(os.Stderr, "       figaro set <key> <value>              (chalkboard patch, no LLM round-trip)")

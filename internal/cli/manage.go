@@ -2,19 +2,14 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/rpc"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // runList prints the registry of all figaros (live and dormant).
@@ -31,7 +26,7 @@ func runList(loaded *config.Loaded) {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(w, "\tID\tLABEL\tSTATE\tMODEL\tMSGS\tCONTEXT\tCACHE\tPIDS\n")
+	fmt.Fprintf(w, "\tID\tSTATE\tMODEL\tMSGS\tCONTEXT\tCACHE\tPIDS\n")
 	for _, f := range resp.Figaros {
 		pids := make([]string, len(f.BoundPIDs))
 		for i, p := range f.BoundPIDs {
@@ -53,12 +48,8 @@ func runList(loaded *config.Loaded) {
 		if slices.Contains(f.BoundPIDs, os.Getppid()) {
 			current = "*"
 		}
-		label := f.Label
-		if label == "" {
-			label = "-"
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
-			current, f.ID, label, f.State, f.Model, f.MessageCount, ctxStr, cacheStr, pidStr)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
+			current, f.ID, f.State, f.Model, f.MessageCount, ctxStr, cacheStr, pidStr)
 	}
 	w.Flush()
 }
@@ -127,59 +118,4 @@ func runDetach(loaded *config.Loaded) {
 		die("unbind: %s", err)
 	}
 	fmt.Fprintf(os.Stderr, "detached from %s\n", resp.FigaroID)
-}
-
-// runLabel sets a human-readable label on an aria.
-// Usage: figaro label <id> <label words...>
-// An empty label (no words after id) clears the label.
-func runLabel(loaded *config.Loaded) {
-	if len(os.Args) < 3 {
-		die("usage: figaro label <id> <label>")
-	}
-	figaroID := os.Args[2]
-	label := strings.Join(os.Args[3:], " ")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-
-	resp, err := acli.List(ctx)
-	if err != nil {
-		die("list: %s", err)
-	}
-	var found bool
-	for _, f := range resp.Figaros {
-		if f.ID == figaroID {
-			found = true
-			break
-		}
-	}
-	if !found {
-		die("no figaro with id %q", figaroID)
-	}
-
-	ep := transport.UnixEndpoint(filepath.Join(angelusRuntimeDir(), "figaros", figaroID+".sock"))
-	fcli, err := figaro.DialClient(ep, nil)
-	if err != nil {
-		die("connect figaro: %s", err)
-	}
-	defer fcli.Close()
-
-	patch := rpc.ChalkboardPatch{}
-	if label == "" {
-		patch.Remove = []string{"system.label"}
-	} else {
-		b, _ := json.Marshal(label)
-		patch.Set = map[string]json.RawMessage{"system.label": b}
-	}
-	if _, err := fcli.Set(ctx, patch); err != nil {
-		die("set label: %s", err)
-	}
-	if label == "" {
-		fmt.Fprintf(os.Stderr, "cleared label on %s\n", figaroID)
-	} else {
-		fmt.Fprintf(os.Stderr, "labeled %s: %q\n", figaroID, label)
-	}
 }
