@@ -11,9 +11,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/rpc"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // runSet patches a chalkboard key on the figaro bound to this shell.
@@ -108,31 +106,16 @@ func runUnsetArgs(loaded *config.Loaded, args []string) {
 // runChalkboard prints the current chalkboard snapshot of the
 // figaro bound to this shell. Keys are sorted alphabetically.
 func runChalkboard(loaded *config.Loaded) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-
-	r, err := acli.Resolve(ctx, os.Getppid())
-	if err != nil {
-		die("resolve: %s", err)
-	}
-	if !r.Found {
-		die("no figaro bound to this shell")
-	}
-	ep := transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}
-	fcli, err := figaro.DialClient(ep, nil)
-	if err != nil {
-		die("connect figaro: %s", err)
-	}
-	defer fcli.Close()
-
-	resp, err := fcli.Chalkboard(ctx)
-	if err != nil {
-		die("chalkboard: %s", err)
-	}
-	printSnapshot(os.Stdout, resp.Snapshot)
+	WithSession(loaded, func(s *Session) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		resp, err := s.Figaro.Chalkboard(ctx)
+		if err != nil {
+			die("chalkboard: %s", err)
+		}
+		printSnapshot(os.Stdout, resp.Snapshot)
+		return nil
+	})
 }
 
 func printSnapshot(w io.Writer, snap map[string]json.RawMessage) {
@@ -291,28 +274,18 @@ func deepDeleteWalk(obj map[string]any, path []string) bool {
 }
 
 func mustFetchChalkboardKey(loaded *config.Loaded, key string) json.RawMessage {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-	r, err := acli.Resolve(ctx, os.Getppid())
-	if err != nil {
-		die("resolve: %s", err)
-	}
-	if !r.Found {
-		die("no figaro bound to this shell")
-	}
-	ep := transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}
-	fcli, err := figaro.DialClient(ep, nil)
-	if err != nil {
-		die("connect figaro: %s", err)
-	}
-	defer fcli.Close()
-	resp, err := fcli.Chalkboard(ctx)
-	if err != nil {
-		die("chalkboard: %s", err)
-	}
-	return resp.Snapshot[key]
+	var result json.RawMessage
+	WithSession(loaded, func(s *Session) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		resp, err := s.Figaro.Chalkboard(ctx)
+		if err != nil {
+			die("chalkboard: %s", err)
+		}
+		result = resp.Snapshot[key]
+		return nil
+	})
+	return result
 }
 
 type setResult struct {
@@ -321,29 +294,16 @@ type setResult struct {
 }
 
 func mustCallSet(loaded *config.Loaded, patch rpc.ChalkboardPatch) setResult {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-
-	r, err := acli.Resolve(ctx, os.Getppid())
-	if err != nil {
-		die("resolve: %s", err)
-	}
-	if !r.Found {
-		die("no figaro bound to this shell")
-	}
-	ep := transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}
-	fcli, err := figaro.DialClient(ep, nil)
-	if err != nil {
-		die("connect figaro: %s", err)
-	}
-	defer fcli.Close()
-
-	resp, err := fcli.Set(ctx, patch)
-	if err != nil {
-		die("set: %s", err)
-	}
-	return setResult{figaroID: r.FigaroID, resp: resp}
+	var result setResult
+	WithSession(loaded, func(s *Session) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		resp, err := s.Figaro.Set(ctx, patch)
+		if err != nil {
+			die("set: %s", err)
+		}
+		result = setResult{figaroID: s.AriaID, resp: resp}
+		return nil
+	})
+	return result
 }

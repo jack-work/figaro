@@ -9,7 +9,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // runSearch reads a registered durable derivation off disk and
@@ -36,60 +35,45 @@ func runSearch(loaded *config.Loaded, args []string) {
 		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	WithSession(loaded, func(s *Session) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
+		cbResp, err := s.Figaro.Chalkboard(ctx)
+		if err != nil {
+			die("chalkboard: %s", err)
+		}
+		providerName := unquote(cbResp.Snapshot["system.provider"])
 
-	r, err := acli.Resolve(ctx, os.Getppid())
-	if err != nil {
-		die("resolve: %s", err)
-	}
-	if !r.Found {
-		die("no figaro bound to this shell")
-	}
+		backend, err := ariaBackend()
+		if err != nil {
+			die("aria backend: %s", err)
+		}
+		deps := figaro.DurDerivDeps{AriaID: s.AriaID, ProviderName: providerName}
+		path := figaro.DerivationFilePath(backend, deps, reg)
+		if path == "" {
+			die("derivation %q has no on-disk path (backend doesn't support file derivations)", alias)
+		}
 
-	ep := transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}
-	fcli, err := figaro.DialClient(ep, nil)
-	if err != nil {
-		die("connect figaro: %s", err)
-	}
-	defer fcli.Close()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			die("read %s: %s", path, err)
+		}
 
-	cbResp, err := fcli.Chalkboard(ctx)
-	if err != nil {
-		die("chalkboard: %s", err)
-	}
-	providerName := unquote(cbResp.Snapshot["system.provider"])
-
-	backend, err := ariaBackend()
-	if err != nil {
-		die("aria backend: %s", err)
-	}
-	deps := figaro.DurDerivDeps{AriaID: r.FigaroID, ProviderName: providerName}
-	path := figaro.DerivationFilePath(backend, deps, reg)
-	if path == "" {
-		die("derivation %q has no on-disk path (backend doesn't support file derivations)", alias)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		die("read %s: %s", path, err)
-	}
-
-	if rawJSON {
-		os.Stdout.Write(data)
-		return
-	}
-	var any interface{}
-	if err := json.Unmarshal(data, &any); err != nil {
-		os.Stdout.Write(data)
-		return
-	}
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(any)
+		if rawJSON {
+			os.Stdout.Write(data)
+			return nil
+		}
+		var any interface{}
+		if err := json.Unmarshal(data, &any); err != nil {
+			os.Stdout.Write(data)
+			return nil
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(any)
+		return nil
+	})
 }
 
 func listAliases() {

@@ -392,10 +392,15 @@ func formatRow(r *toolRow, frame int) string {
 	}
 
 	detail := r.detail
-	// One-line clamp; the row must not wrap or our cursor math breaks.
-	const maxDetail = 80
-	if len(detail) > maxDetail {
-		detail = detail[:maxDetail] + "…"
+	// Clamp detail so the row never wraps — wrapping breaks cursor math.
+	// Row skeleton: "  X name · detail  (stat)"
+	// Overhead: 2 (indent) + 1 (icon) + 1 (space) + len(name) + 3 (" · ") + ~20 (stat)
+	const rowOverhead = 27
+	maxDetail := term.Width() - rowOverhead - len([]rune(r.name))
+	if maxDetail < 4 {
+		detail = ""
+	} else if len([]rune(detail)) > maxDetail {
+		detail = string([]rune(detail)[:maxDetail-1]) + "…"
 	}
 
 	stat := ""

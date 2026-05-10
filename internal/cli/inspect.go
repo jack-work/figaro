@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/transport"
 )
 
 // runRehydrate re-runs the credo on the figaro currently bound to
@@ -28,41 +26,24 @@ func runRehydrate(loaded *config.Loaded) {
 }
 
 func runRehydrateWithFlag(loaded *config.Loaded, dryRun bool) {
+	WithSession(loaded, func(s *Session) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+		rresp, err := s.Figaro.ReloadConfig(ctx, dryRun)
+		if err != nil {
+			die("rehydrate: %s", err)
+		}
 
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-
-	ppid := os.Getppid()
-	resp, err := acli.Resolve(ctx, ppid)
-	if err != nil {
-		die("resolve: %s", err)
-	}
-	if !resp.Found {
-		die("no figaro bound to this shell")
-	}
-
-	figaroEP := transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
-	fcli, err := figaro.DialClient(figaroEP, nil)
-	if err != nil {
-		die("connect figaro: %s", err)
-	}
-	defer fcli.Close()
-
-	rresp, err := fcli.ReloadConfig(ctx, dryRun)
-	if err != nil {
-		die("rehydrate: %s", err)
-	}
-
-	if len(rresp.SetKeys) == 0 && len(rresp.RemoveKeys) == 0 {
-		fmt.Fprintln(os.Stderr, "rehydrate: no changes")
-		return
-	}
-	verb := "applied"
-	if dryRun {
-		verb = "would apply"
-	}
-	fmt.Fprintf(os.Stderr, "rehydrate: %s set=%v remove=%v\n", verb, rresp.SetKeys, rresp.RemoveKeys)
+		if len(rresp.SetKeys) == 0 && len(rresp.RemoveKeys) == 0 {
+			fmt.Fprintln(os.Stderr, "rehydrate: no changes")
+			return nil
+		}
+		verb := "applied"
+		if dryRun {
+			verb = "would apply"
+		}
+		fmt.Fprintf(os.Stderr, "rehydrate: %s set=%v remove=%v\n", verb, rresp.SetKeys, rresp.RemoveKeys)
+		return nil
+	})
 }

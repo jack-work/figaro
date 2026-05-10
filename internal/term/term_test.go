@@ -53,3 +53,51 @@ func TestWidth(t *testing.T) {
 		t.Errorf("Width() = %d, expected >= 20", w)
 	}
 }
+
+func TestVisibleLen(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"hello", 5},
+		{"\033[2mhello\033[0m", 5},
+		{"\033[31m\033[2mab\033[0mcd", 4},
+		{"", 0},
+		{"───", 3},
+	}
+	for _, tc := range cases {
+		got := VisibleLen(tc.in)
+		if got != tc.want {
+			t.Errorf("VisibleLen(%q) = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestTruncateVisible(t *testing.T) {
+	got := TruncateVisible("hello world", 6)
+	vl := VisibleLen(got)
+	if vl > 6 {
+		t.Errorf("TruncateVisible visible len = %d, want <= 6; got %q", vl, got)
+	}
+	if !strings.Contains(got, "…") {
+		t.Errorf("expected ellipsis in %q", got)
+	}
+}
+
+func TestWrapCount(t *testing.T) {
+	cases := []struct {
+		visLen, w, want int
+	}{
+		{80, 80, 1},
+		{81, 80, 2},
+		{160, 80, 2},
+		{161, 80, 3},
+		{0, 80, 1},
+	}
+	for _, tc := range cases {
+		got := WrapCount(tc.visLen, tc.w)
+		if got != tc.want {
+			t.Errorf("WrapCount(%d, %d) = %d, want %d", tc.visLen, tc.w, got, tc.want)
+		}
+	}
+}

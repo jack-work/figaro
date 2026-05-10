@@ -43,6 +43,12 @@ type toolSoloState struct {
 	state  toolRowState // running / OK / err
 	frozen bool         // true once cursor is no longer above the header
 
+	// headerRows is the number of terminal rows the header occupies
+	// after printing. Normally 1, but if the header wraps (e.g. very
+	// narrow terminal) it can be 2+. Used by rewriteHeaderLocked to
+	// erase the correct number of lines.
+	headerRows int
+
 	// linesBelow tracks how many newlines of streamed tool output
 	// have been written since Freeze. Together with lastWasNL it
 	// lets Done compute the exact cursor-up distance to reach the
@@ -178,9 +184,11 @@ func (s *toolSoloState) UpdateDetail(detail string) {
 // ticker. Call exactly once.
 func (s *toolSoloState) Start() {
 	s.mu.Lock()
+	header := s.formatHeader()
 	// Leading blank to match the static header style and breathe.
 	fmt.Fprintln(s.out)
-	fmt.Fprintln(s.out, s.formatHeader())
+	fmt.Fprintln(s.out, header)
+	s.headerRows = term.WrapCount(term.VisibleLen(header), term.Width())
 	s.mu.Unlock()
 	go s.tick()
 }
@@ -246,9 +254,26 @@ func (s *toolSoloState) Done(isError bool) {
 		s.lastWasNL = true
 	}
 	// up is the count of streamed newlines from the cursor back to
-	// the line directly under the header. The header itself sits
-	// one row above that, so we go up up+1.
-	fmt.Fprintf(s.out, "%s%s%s\r", term.CursorUp(up+1)+term.EraseLine, s.formatHeader(), term.CursorDown(up+1))
+	// the line directly under the header. The header may span
+	// headerRows terminal rows (usually 1), so we go up by
+	// up + headerRows to reach the top of the header.
+	hdr := s.headerRows
+	if hdr < 1 {
+		hdr = 1
+	}
+	header := s.formatHeader()
+	fmt.Fprint(s.out, term.CursorUp(up+hdr))
+	for i := 0; i < hdr; i++ {
+		fmt.Fprint(s.out, term.EraseLine)
+		if i < hdr-1 {
+			fmt.Fprint(s.out, "\n")
+		}
+	}
+	fmt.Fprint(s.out, term.EraseLine)
+	fmt.Fprint(s.out, header)
+	newRows := term.WrapCount(term.VisibleLen(header), term.Width())
+	s.headerRows = newRows
+	fmt.Fprintf(s.out, "%s\r", term.CursorDown(up+1))
 }
 
 // tick is the spinner animation goroutine. It advances the frame
@@ -280,9 +305,21 @@ func (s *toolSoloState) tick() {
 // row immediately after the header so subsequent streamed output
 // flows naturally below it.
 func (s *toolSoloState) rewriteHeaderLocked() {
-	// Up one line, carriage return, erase to end of line.
-	fmt.Fprint(s.out, term.CursorUp(1)+term.EraseLine)
-	fmt.Fprintln(s.out, s.formatHeader())
+	header := s.formatHeader()
+	visLen := term.VisibleLen(header)
+	w := term.Width()
+	newRows := term.WrapCount(visLen, w)
+
+	// Erase the old header (which may span multiple rows if wrapped).
+	oldRows := s.headerRows
+	if oldRows < 1 {
+		oldRows = 1
+	}
+	for i := 0; i < oldRows; i++ {
+		fmt.Fprint(s.out, term.CursorUp(1)+term.EraseLine)
+	}
+	fmt.Fprintln(s.out, header)
+	s.headerRows = newRows
 }
 
 // Write streams a chunk of tool output through the underlying
@@ -327,9 +364,28 @@ func (s *toolSoloState) formatHeader() string {
 		icon = "▶"
 		colorFn = term.Dim
 	}
+	// Build the header, truncating the detail so the visible text
+	// never exceeds terminal width. Wrapping would break cursor
+	// math in rewriteHeaderLocked / Done.
+	//
+	// Skeleton: "─── X ▶ name · detail ───"
+	// Overhead: 4 (lead) + 1 (icon) + 3 (" ▶ ") + 3 (" · ") + 4 (trail) = 15
+	const overhead = 15
+	width := term.Width()
+	nameRunes := len([]rune(s.name))
+	avail := width - overhead - nameRunes
+
+	detail := s.detail
+	if avail < 4 {
+		// No room for detail at all.
+		detail = ""
+	} else if len([]rune(detail)) > avail {
+		detail = string([]rune(detail)[:avail-1]) + "…"
+	}
+
 	header := term.Dim("─── ") + colorFn(icon) + term.Dim(" ▶ "+s.name)
-	if s.detail != "" {
-		header += term.Dim(" · " + s.detail)
+	if detail != "" {
+		header += term.Dim(" · " + detail)
 	}
 	header += term.Dim(" ───")
 	return header

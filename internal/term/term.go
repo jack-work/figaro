@@ -138,6 +138,79 @@ func Cyan(s string) string {
 	return codeCyan + s + reset
 }
 
+// --- Visible length / truncation (ANSI-aware) ---
+
+// VisibleLen returns the number of visible columns a string occupies,
+// ignoring ANSI escape sequences. Each rune counts as 1 column
+// (CJK full-width is not handled — add runewidth if needed).
+func VisibleLen(s string) int {
+	n := 0
+	inEsc := false
+	for _, r := range s {
+		if inEsc {
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+				inEsc = false
+			}
+			continue
+		}
+		if r == '\033' {
+			inEsc = true
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// TruncateVisible truncates s so its visible width is at most maxCols,
+// appending "…" if truncation occurred. ANSI sequences are preserved
+// (an unclosed sequence is closed with reset).
+func TruncateVisible(s string, maxCols int) string {
+	if maxCols <= 0 {
+		return ""
+	}
+	vis := 0
+	inEsc := false
+	var out []rune
+	for _, r := range s {
+		if inEsc {
+			out = append(out, r)
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+				inEsc = false
+			}
+			continue
+		}
+		if r == '\033' {
+			inEsc = true
+			out = append(out, r)
+			continue
+		}
+		if vis >= maxCols-1 { // -1 to leave room for "…"
+			out = append(out, '…')
+			// Close any open ANSI sequence.
+			out = append(out, []rune(reset)...)
+			return string(out)
+		}
+		out = append(out, r)
+		vis++
+	}
+	return string(out) // no truncation needed
+}
+
+// WrapCount returns the number of terminal rows a string of visible
+// width visLen occupies when the terminal is termWidth columns wide.
+// Always >= 1.
+func WrapCount(visLen, termWidth int) int {
+	if termWidth <= 0 || visLen <= 0 {
+		return 1
+	}
+	lines := (visLen + termWidth - 1) / termWidth
+	if lines < 1 {
+		lines = 1
+	}
+	return lines
+}
+
 // --- Cursor control (always emitted — used only in TTY paths) ---
 
 // CursorUp returns the ANSI sequence to move the cursor up n lines.
