@@ -236,7 +236,7 @@ func (a *Anthropic) Fingerprint() string {
 	if rr == "" {
 		rr = "tag"
 	}
-	return "anthropic/" + rr + "/v3"
+	return "anthropic/" + rr + "/v4"
 }
 
 func (a *Anthropic) SetModel(model string) {
@@ -419,8 +419,18 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snap
 			case message.ContentThinking:
 				blocks = append(blocks, nativeBlock{Type: "thinking", Thinking: c.Text})
 			case message.ContentToolCall:
+				// Anthropic requires tool_use.input even when empty.
+				// Arguments may be nil after a WAL roundtrip (omitempty
+				// drops empty maps), so force a literal "{}" rather than
+				// trusting json.Marshal of a nil map.
+				var input interface{}
+				if len(c.Arguments) == 0 {
+					input = json.RawMessage("{}")
+				} else {
+					input = c.Arguments
+				}
 				blocks = append(blocks, nativeBlock{
-					Type: "tool_use", ID: c.ToolCallID, Name: c.ToolName, Input: c.Arguments,
+					Type: "tool_use", ID: c.ToolCallID, Name: c.ToolName, Input: input,
 				})
 			}
 		}

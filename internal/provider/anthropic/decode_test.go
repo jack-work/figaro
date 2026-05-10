@@ -61,6 +61,22 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			},
 		},
 		{
+			// Regression: a tool_use with no arguments must still
+			// emit "input":{} on the wire. omitempty on Arguments
+			// drops empty maps during a WAL roundtrip, so the
+			// encoder receives Arguments=nil and previously emitted
+			// no input field at all (Anthropic 400s).
+			name:    "empty_args_tool_call",
+			fixture: "empty_args_tool_call.json",
+			ir: message.Message{
+				Role: message.RoleAssistant,
+				Content: []message.Content{{
+					Type: message.ContentToolCall, ToolCallID: "toolu_empty",
+					ToolName: "edit",
+				}},
+			},
+		},
+		{
 			name:    "multi_text_user",
 			fixture: "multi_text_user.json",
 			ir: message.Message{
@@ -114,9 +130,15 @@ func assertIRMessageEqual(t *testing.T, want, got message.Message) {
 		assert.Equal(t, wc.IsError, gc.IsError, "block %d is_error", i)
 		if wc.Type == message.ContentToolCall {
 			assert.Equal(t, wc.ToolName, gc.ToolName, "block %d tool_name", i)
-			wb, _ := json.Marshal(wc.Arguments)
-			gb, _ := json.Marshal(gc.Arguments)
-			assert.JSONEq(t, string(wb), string(gb), "block %d args", i)
+			// nil and empty map both represent zero arguments; the
+			// encoder normalizes both to "{}" on the wire.
+			wEmpty := len(wc.Arguments) == 0
+			gEmpty := len(gc.Arguments) == 0
+			if !(wEmpty && gEmpty) {
+				wb, _ := json.Marshal(wc.Arguments)
+				gb, _ := json.Marshal(gc.Arguments)
+				assert.JSONEq(t, string(wb), string(gb), "block %d args", i)
+			}
 		}
 	}
 }
