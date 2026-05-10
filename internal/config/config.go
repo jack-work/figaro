@@ -94,6 +94,13 @@ func (l *Loaded) StreamFirstByteBypassMs() int {
 }
 
 // AnthropicProvider is the concrete config for an anthropic provider directory.
+//
+// Credentials are resolved lazily on each request by walking a
+// priority-ordered list of strategies (env var → APIKey here →
+// hush-encrypted secret file → OAuth in auth.toml). The first
+// strategy with a credential available wins. APIKey is the
+// plaintext field for the config-value strategy; leave it empty to
+// fall through to encrypted/oauth.
 type AnthropicProvider struct {
 	Model     string `toml:"model"`
 	MaxTokens int    `toml:"max_tokens"`

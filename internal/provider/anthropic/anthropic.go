@@ -15,7 +15,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,7 +28,6 @@ import (
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
-	hush "github.com/jack-work/hush/client"
 )
 
 const (
@@ -61,12 +59,13 @@ type Anthropic struct {
 	caches    map[string]store.Stream[[]json.RawMessage] // guarded by mu
 }
 
-// New constructs an Anthropic provider. cacheOpen is the per-aria
-// cache file opener; nil = ephemeral (no caching).
-func New(cfg config.AnthropicProvider, authPath string, hushClient *hush.Client, cacheOpen func(aria string) (store.Stream[[]json.RawMessage], error)) (*Anthropic, error) {
-	resolver, err := buildResolver(cfg.APIKey, authPath, hushClient)
-	if err != nil {
-		return nil, err
+// New constructs an Anthropic provider. resolver supplies the API
+// token on each request; cacheOpen is the per-aria cache file opener,
+// nil = ephemeral (no caching). Credential strategy (OAuth vs static
+// key) is the caller's choice and is hidden behind resolver.
+func New(cfg config.AnthropicProvider, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Stream[[]json.RawMessage], error)) (*Anthropic, error) {
+	if resolver == nil {
+		return nil, fmt.Errorf("anthropic: nil token resolver")
 	}
 	rr := cfg.ReminderRenderer
 	if rr == "" {
@@ -120,47 +119,81 @@ func (a *Anthropic) invalidateIfStale(s store.Stream[[]json.RawMessage]) {
 	}
 }
 
-func buildResolver(apiKey, authPath string, hushClient *hush.Client) (auth.TokenResolver, error) {
-	if apiKey != "" {
-		return &auth.StaticKey{Key: apiKey}, nil
-	}
-	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		return &auth.StaticKey{Key: key}, nil
-	}
-	if hushClient == nil {
-		return nil, fmt.Errorf(
-			"no API key and no hush client available.\n" +
-				"  Set api_key in config, ANTHROPIC_API_KEY env, or run: figaro login",
-		)
-	}
-	mgr := auth.NewManager(hushClient, auth.AnthropicOAuth, authPath)
-	return &auth.OAuthResolver{Manager: mgr}, nil
-}
-
-func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
-	apiKey, err := a.auth.Resolve()
-	if err != nil {
-		return nil, fmt.Errorf("resolve token: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "GET", apiBaseURL+"/models?limit=100", nil)
-	if err != nil {
-		return nil, err
-	}
+// setAuthHeaders applies the auth + protocol headers to a request.
+// Called both for the initial send and the on-401 retry. The shape
+// (Bearer + claude-code beta vs x-api-key) is decided per token by
+// the sk-ant-oat prefix.
+func (a *Anthropic) setAuthHeaders(req *http.Request, apiKey string, betas string) {
 	req.Header.Set("anthropic-version", apiVersion)
 	if isOAuthToken(apiKey) {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		req.Header.Set("anthropic-beta", "claude-code-20250219,oauth-2025-04-20")
+		req.Header.Set("anthropic-beta", betas)
 		req.Header.Set("User-Agent", "claude-cli/"+claudeCodeVersion)
 		req.Header.Set("x-app", "cli")
 		req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
 	} else {
 		req.Header.Set("x-api-key", apiKey)
 	}
+}
 
+const (
+	betaModels   = "claude-code-20250219,oauth-2025-04-20"
+	betaMessages = "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31"
+)
+
+// doWithAuthRetry executes build(apiKey)→Do once; on 401 it
+// invalidates the token, resolves a fresh one, and retries exactly
+// once. Returns the final response (caller closes body) plus the
+// token that was actually accepted.
+func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey string) (*http.Request, error)) (*http.Response, string, error) {
+	apiKey, err := a.auth.Resolve()
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve token: %w", err)
+	}
+	req, err := build(apiKey)
+	if err != nil {
+		return nil, apiKey, err
+	}
 	resp, err := a.HTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http: %w", err)
+		return nil, apiKey, fmt.Errorf("http: %w", err)
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		return resp, apiKey, nil
+	}
+	// 401: drain & close, then retry once with a fresh token.
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	a.auth.Invalidate(apiKey)
+	newKey, rerr := a.auth.Resolve()
+	if rerr != nil {
+		return nil, apiKey, fmt.Errorf("resolve after 401: %w", rerr)
+	}
+	if newKey == apiKey {
+		return nil, apiKey, fmt.Errorf("anthropic 401: token unchanged after invalidate")
+	}
+	req2, err := build(newKey)
+	if err != nil {
+		return nil, newKey, err
+	}
+	resp2, err := a.HTTPClient.Do(req2)
+	if err != nil {
+		return nil, newKey, fmt.Errorf("http retry: %w", err)
+	}
+	return resp2, newKey, nil
+}
+
+func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
+	resp, _, err := a.doWithAuthRetry(ctx, func(apiKey string) (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, "GET", apiBaseURL+"/models?limit=100", nil)
+		if err != nil {
+			return nil, err
+		}
+		a.setAuthHeaders(req, apiKey, betaModels)
+		return req, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -626,25 +659,17 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		return fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", apiMessagesURL, bytes.NewReader(body))
+	resp, _, err := a.doWithAuthRetry(ctx, func(token string) (*http.Request, error) {
+		httpReq, herr := http.NewRequestWithContext(ctx, "POST", apiMessagesURL, bytes.NewReader(body))
+		if herr != nil {
+			return nil, fmt.Errorf("create request: %w", herr)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		a.setAuthHeaders(httpReq, token, betaMessages)
+		return httpReq, nil
+	})
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("anthropic-version", apiVersion)
-	if isOAuthToken(apiKey) {
-		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-		httpReq.Header.Set("anthropic-beta", "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31")
-		httpReq.Header.Set("User-Agent", "claude-cli/"+claudeCodeVersion)
-		httpReq.Header.Set("x-app", "cli")
-		httpReq.Header.Set("anthropic-dangerous-direct-browser-access", "true")
-	} else {
-		httpReq.Header.Set("x-api-key", apiKey)
-	}
-
-	resp, err := a.HTTPClient.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("http request: %w", err)
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

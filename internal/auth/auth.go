@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -47,7 +48,9 @@ type TokenManager struct {
 	config   OAuthConfig
 	filePath string
 
-	// In-memory cache (plaintext, never written to disk)
+	// In-memory cache (plaintext, never written to disk).
+	// Guarded by mu — Resolve and Invalidate may race.
+	mu        sync.Mutex
 	cached    string
 	expiresAt int64
 }
@@ -67,6 +70,9 @@ func NewManager(hushClient *hush.Client, config OAuthConfig, filePath string) *T
 // AccessToken returns a valid access token, refreshing if expired.
 // Requires the hush agent to be running.
 func (m *TokenManager) AccessToken() (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// 1. Check in-memory cache
 	if m.cached != "" && time.Now().UnixMilli() < m.expiresAt {
 		return m.cached, nil
@@ -115,7 +121,23 @@ func (m *TokenManager) AccessToken() (string, error) {
 
 // SaveLogin encrypts and persists tokens from a fresh login.
 func (m *TokenManager) SaveLogin(accessToken, refreshToken string, expiresIn int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.saveTokens(accessToken, refreshToken, expiresIn)
+}
+
+// Invalidate discards the cached access token if it matches the
+// supplied value, forcing the next AccessToken call to re-read disk
+// and refresh. The token-arg gate prevents racing callers from
+// blowing away a token that has already been refreshed since they
+// last read.
+func (m *TokenManager) Invalidate(token string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cached == token {
+		m.cached = ""
+		m.expiresAt = 0
+	}
 }
 
 // --- internal helpers ---

@@ -7,23 +7,10 @@ type TokenResolver interface {
 	// Resolve returns a valid API token. It may refresh expired
 	// OAuth tokens or simply return a static key.
 	Resolve() (string, error)
-}
 
-// StaticKey is a TokenResolver that always returns the same API key.
-type StaticKey struct {
-	Key string
-}
-
-func (s *StaticKey) Resolve() (string, error) {
-	return s.Key, nil
-}
-
-// OAuthResolver wraps a TokenManager as a TokenResolver.
-// It handles decryption via hush and automatic refresh.
-type OAuthResolver struct {
-	Manager *TokenManager
-}
-
-func (o *OAuthResolver) Resolve() (string, error) {
-	return o.Manager.AccessToken()
+	// Invalidate signals that the given token was rejected by the
+	// upstream API (e.g. 401). Implementations must compare the
+	// supplied token against any cached value and only clear on
+	// match — concurrent callers may have already advanced past it.
+	Invalidate(token string)
 }
