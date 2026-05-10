@@ -116,13 +116,21 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 			a.chalkboard.Apply(combined)
 		}
 	}
-	if len(a.figStream.Read()) == 0 && a.outfitter != nil && a.chalkboard != nil {
-		if patch, err := a.outfitter.Bootstrap(a.chalkboard.Snapshot(),
-			outfit.CurrentBootCtx(a.prov.Name(), a.id)); err == nil && !patch.IsEmpty() {
-			tic.Patches = append(tic.Patches, patch)
-			a.chalkboard.Apply(patch)
-			_ = a.chalkboard.Save()
+	if len(a.figStream.Read()) == 0 && a.chalkboard != nil {
+		// Outfitter bootstrap: system.prompt, system.skills.
+		if a.outfitter != nil {
+			if patch, err := a.outfitter.Bootstrap(a.chalkboard.Snapshot(),
+				outfit.CurrentBootCtx(a.prov.Name(), a.id)); err == nil && !patch.IsEmpty() {
+				tic.Patches = append(tic.Patches, patch)
+				a.chalkboard.Apply(patch)
+			}
 		}
+		// Allowlisted env vars → system.environment.* one-shot.
+		if envPatch := chalkboard.EnvironmentPatch(); !envPatch.IsEmpty() {
+			tic.Patches = append(tic.Patches, envPatch)
+			a.chalkboard.Apply(envPatch)
+		}
+		_ = a.chalkboard.Save()
 	}
 	if prompt.text != "" {
 		tic.Content = append(tic.Content, message.TextContent(prompt.text))

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"text/template"
 
@@ -17,24 +16,15 @@ import (
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
-// installWireLog wraps the provider's HTTPClient with a logging
-// RoundTripper when FIGARO_WIRE_DIR is set. Each Send writes a pair
-// of files per request:
-//
-//	<dir>/<aria>/<unix_ns>.req.http
-//	<dir>/<aria>/<unix_ns>.resp.http
-//
-// SSE response bytes are tee'd as they stream. No-op when the env
-// var is empty.
+// installWireLog always wraps the provider's HTTPClient with the
+// wirelog Transport. Whether per-request body dumps actually happen
+// is decided per-call from the chalkboard
+// (`system.environment.figaro_wire_dir`); the Transport's "always-on"
+// path emits a control-metadata span event on every request
+// regardless. Cheap unconditional wrap — the Transport short-circuits
+// to passthrough when ctx isn't stamped.
 func installWireLog(a *anthropic.Anthropic) {
-	dir := os.Getenv("FIGARO_WIRE_DIR")
-	if dir == "" {
-		return
-	}
-	a.HTTPClient.Transport = &wirelog.Transport{
-		Inner: http.DefaultTransport,
-		Dir:   dir,
-	}
+	a.HTTPClient.Transport = &wirelog.Transport{Inner: http.DefaultTransport}
 }
 
 // buildResolver assembles a lazy + adaptive credential resolver for

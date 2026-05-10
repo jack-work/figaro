@@ -1,13 +1,19 @@
-// Package wirelog provides an http.RoundTripper that captures the
-// raw bytes flowing to and from an upstream HTTP service. Intended
-// for debugging — particularly the Anthropic provider's SSE stream
-// where you want to see what was actually sent and received for a
-// specific aria.
+// Package wirelog provides an http.RoundTripper that emits
+// per-request control metadata as OTel span events and, when the
+// caller opts in via WithLogging, mirrors raw bytes (request + tee'd
+// response) to disk under a per-aria directory.
 //
-// The transport is opt-in per request: it only logs when the
-// request's context has been stamped with WithAria. Empty Dir or
-// no aria id means full passthrough; logging never fails the
-// underlying request.
+// Two channels of telemetry, kept deliberately separate:
+//
+//   - Always-on span events on the surrounding turn span, carrying
+//     non-PII control fields (method, url, status, duration,
+//     request_id, byte counts). Cheap, queryable, safe to retain.
+//   - Opt-in raw-byte dumps to <Dir>/<aria>/<unix_ns>.{req,resp}.http
+//     for byte-for-byte replay/debug. Contains tokens and prompt
+//     content — gate behind a chalkboard / env-var setting per aria.
+//
+// Logging never fails the underlying request: any I/O error in the
+// telemetry path falls through to a passthrough.
 package wirelog
 
 import (
@@ -20,38 +26,41 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
 type ctxKey struct{}
 
-// WithAria stamps ctx with an aria id. Transport.RoundTrip extracts
-// the id and uses it as the per-aria subdirectory under Dir.
-// No-op when ariaID is empty.
-func WithAria(ctx context.Context, ariaID string) context.Context {
-	if ariaID == "" {
+type cfg struct {
+	aria string
+	dir  string
+}
+
+// WithLogging stamps ctx so the Transport will dump raw request and
+// response bytes for this call to <dir>/<aria>/<unix_ns>.{req,resp}.http.
+// Empty aria or dir → no stamp; the Transport falls back to the
+// always-on metadata-only path.
+func WithLogging(ctx context.Context, ariaID, dir string) context.Context {
+	if ariaID == "" || dir == "" {
 		return ctx
 	}
-	return context.WithValue(ctx, ctxKey{}, ariaID)
+	return context.WithValue(ctx, ctxKey{}, cfg{aria: ariaID, dir: dir})
 }
 
-func ariaFromContext(ctx context.Context) string {
-	a, _ := ctx.Value(ctxKey{}).(string)
-	return a
+func cfgFromContext(ctx context.Context) (cfg, bool) {
+	c, ok := ctx.Value(ctxKey{}).(cfg)
+	return c, ok
 }
 
-// Transport is an http.RoundTripper that mirrors request and
-// response bytes to disk. With Dir set and ctx carrying an aria,
-// it writes:
-//
-//	<Dir>/<aria>/<unix_ns>.req.http   request line + headers + body
-//	<Dir>/<aria>/<unix_ns>.resp.http  status line + headers + body (tee'd live)
-//
-// SSE responses are tee'd as they stream — no buffering. Logging
-// failures are swallowed so the underlying request never fails
-// because of telemetry.
+// Transport wraps an http.RoundTripper. It always emits a
+// "http.request" span event on the request's surrounding span with
+// control metadata; it additionally writes raw request and response
+// bytes to disk when ctx has been stamped via WithLogging.
 type Transport struct {
 	Inner http.RoundTripper
-	Dir   string
 }
 
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -59,49 +68,84 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if inner == nil {
 		inner = http.DefaultTransport
 	}
-	aria := ariaFromContext(req.Context())
-	if t.Dir == "" || aria == "" {
-		return inner.RoundTrip(req)
-	}
 
-	dir := filepath.Join(t.Dir, sanitize(aria))
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return inner.RoundTrip(req)
-	}
-	base := filepath.Join(dir, fmt.Sprintf("%d", time.Now().UnixNano()))
+	logCfg, doLog := cfgFromContext(req.Context())
+	var (
+		bodyBytes []byte
+		logBase   string // file path without suffix; empty when not logging
+	)
 
-	// Capture+replay the request body so we can both log and forward.
-	var bodyBytes []byte
-	if req.Body != nil {
-		var err error
-		bodyBytes, err = io.ReadAll(req.Body)
-		req.Body.Close()
-		if err != nil {
-			return inner.RoundTrip(req)
+	if doLog {
+		dir := filepath.Join(logCfg.dir, sanitize(logCfg.aria))
+		if err := os.MkdirAll(dir, 0o700); err == nil {
+			logBase = filepath.Join(dir, fmt.Sprintf("%d", time.Now().UnixNano()))
 		}
-		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
-	writeReqLog(base+".req.http", req, bodyBytes)
 
+	// Materialize + replay the body only when we're actually going
+	// to write it to disk. Skipping this in the metadata-only path
+	// keeps multi-MB request bodies streaming without an extra
+	// in-memory copy.
+	if logBase != "" && req.Body != nil {
+		b, err := io.ReadAll(req.Body)
+		req.Body.Close()
+		if err == nil {
+			bodyBytes = b
+			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		}
+		writeReqLog(logBase+".req.http", req, bodyBytes)
+	}
+
+	start := time.Now()
 	resp, err := inner.RoundTrip(req)
-	if err != nil {
+	duration := time.Since(start)
+
+	// Always emit metadata, even on transport error.
+	emitMeta(req, resp, duration, len(bodyBytes), logBase, err)
+
+	if err != nil || resp == nil {
 		return resp, err
 	}
 
-	respFile, ferr := os.Create(base + ".resp.http")
-	if ferr != nil {
-		return resp, nil
+	if logBase != "" {
+		respFile, ferr := os.Create(logBase + ".resp.http")
+		if ferr == nil {
+			fmt.Fprintf(respFile, "%s %s\r\n", resp.Proto, resp.Status)
+			resp.Header.Write(respFile)
+			fmt.Fprintf(respFile, "\r\n")
+			resp.Body = &teeBody{
+				body: resp.Body,
+				tee:  io.TeeReader(resp.Body, respFile),
+				out:  respFile,
+			}
+		}
 	}
-	fmt.Fprintf(respFile, "%s %s\r\n", resp.Proto, resp.Status)
-	resp.Header.Write(respFile)
-	fmt.Fprintf(respFile, "\r\n")
 
-	resp.Body = &teeBody{
-		body: resp.Body,
-		tee:  io.TeeReader(resp.Body, respFile),
-		out:  respFile,
-	}
 	return resp, nil
+}
+
+func emitMeta(req *http.Request, resp *http.Response, duration time.Duration, reqBytes int, logBase string, err error) {
+	attrs := []attribute.KeyValue{
+		attribute.String("http.method", req.Method),
+		attribute.String("http.url", req.URL.String()),
+		attribute.Int64("http.duration_ms", duration.Milliseconds()),
+		attribute.Int("http.req_bytes", reqBytes),
+	}
+	if resp != nil {
+		attrs = append(attrs, attribute.Int("http.status_code", resp.StatusCode))
+		if rid := resp.Header.Get("request-id"); rid != "" {
+			attrs = append(attrs, attribute.String("http.request_id", rid))
+		} else if rid := resp.Header.Get("x-request-id"); rid != "" {
+			attrs = append(attrs, attribute.String("http.request_id", rid))
+		}
+	}
+	if err != nil {
+		attrs = append(attrs, attribute.String("http.error", err.Error()))
+	}
+	if logBase != "" {
+		attrs = append(attrs, attribute.String("wirelog.path", logBase))
+	}
+	figOtel.Event(req.Context(), "http.request", attrs...)
 }
 
 func writeReqLog(path string, req *http.Request, body []byte) {
@@ -136,10 +180,9 @@ func (t *teeBody) Close() error {
 	return err2
 }
 
-// sanitize keeps only the characters that are valid in a figaro
-// aria id (`[A-Za-z0-9_-]`); anything else becomes `_`. Defense in
-// depth — aria ids should already be safe, but the dir name is
-// untrusted from the transport's perspective.
+// sanitize defends against a hostile aria id leaking into the
+// filesystem. Aria ids today are constrained to [A-Za-z0-9_-] so
+// this is normally a no-op.
 func sanitize(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {

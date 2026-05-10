@@ -652,7 +652,9 @@ func markCacheBreakpoints(req *nativeRequest, setting string) {
 // announces via bus.PushFigaro. The cache stores one entry per
 // message.
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
-	ctx = wirelog.WithAria(ctx, in.AriaID)
+	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
+		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
+	}
 	cache := a.cacheFor(in.AriaID)
 	perMessage, lts := a.catchUp(in.FigStream, cache)
 	if len(perMessage) == 0 {
