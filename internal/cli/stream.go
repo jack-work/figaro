@@ -81,11 +81,13 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 
 	var batch *toolBatchState
 	var solo *toolSoloState
+	var soloToolCallID string // tool_call_id the active solo was launched for
 
 	resumeIfSuspended := func() {
 		if solo != nil {
 			solo.Freeze()
 			solo = nil
+			soloToolCallID = ""
 		}
 		if rawOut == nil {
 			return
@@ -118,11 +120,62 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			pace.Flush()
 			sw.Flush()
 
+		case rpc.MethodToolUseStart:
+			// Server-side: the assistant has begun emitting a tool_use
+			// block. Args are still streaming, but we know the tool
+			// name. Render a placeholder spinner now so the user sees
+			// activity instead of a frozen prompt during long input
+			// streams (e.g. large file writes). MethodToolStart later
+			// refines the detail via UpdateDetail.
+			//
+			// Only the first tool_use block in a turn drives the
+			// placeholder — subsequent ones are absorbed by the
+			// eventual MethodToolBatchStart for multi-tool turns.
+			var p rpc.ToolUseStartParams
+			if json.Unmarshal(params, &p) == nil {
+				figOtel.Event(ctx, "cli.recv.tool_use_start",
+					attribute.String("tool", p.ToolName),
+					attribute.String("tool_call_id", p.ToolCallID),
+				)
+				if batch == nil && solo == nil {
+					pace.Flush()
+					sw.Flush()
+					if rawOut == nil {
+						rawOut = sw.Suspend()
+					}
+					solo = newToolSoloState(rawOut, p.ToolName, "")
+					solo.Start()
+					soloToolCallID = p.ToolCallID
+				}
+			}
+
+		case rpc.MethodToolUseDelta:
+			// No visual update for now — partial JSON isn't safely
+			// parseable mid-stream and chunk-by-chunk repaints would
+			// fight the ticker. Recorded as an OTel event so trace
+			// readers can see the input streaming cadence.
+			var p rpc.ToolUseDeltaParams
+			if json.Unmarshal(params, &p) == nil {
+				figOtel.Event(ctx, "cli.recv.tool_use_delta",
+					attribute.String("tool_call_id", p.ToolCallID),
+					attribute.Int("bytes", len(p.PartialJSON)),
+				)
+			}
+
 		case rpc.MethodToolBatchStart:
 			var p rpc.ToolBatchStartParams
 			if json.Unmarshal(params, &p) == nil && p.Size > 1 {
 				figOtel.Event(ctx, "cli.recv.tool_batch_start",
 					attribute.Int("size", p.Size))
+				// If we showed an early placeholder for the first
+				// tool_use, freeze it before the batch view paints
+				// below. The frozen header stays as a visual artifact
+				// noting which tool was streamed first.
+				if solo != nil {
+					solo.Freeze()
+					solo = nil
+					soloToolCallID = ""
+				}
 				pace.Flush()
 				sw.Flush()
 				if rawOut == nil {
@@ -154,13 +207,21 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 					batch.MarkRunning(p.ToolCallID)
 					return
 				}
-				if rawOut == nil {
-					pace.Flush()
-					sw.Flush()
-					rawOut = sw.Suspend()
+				// Reuse an existing placeholder spinner if it was
+				// launched for this same tool by the earlier
+				// MethodToolUseStart. Otherwise create one fresh.
+				if solo != nil && soloToolCallID == p.ToolCallID {
+					solo.UpdateDetail(toolDetail(p))
+				} else {
+					if rawOut == nil {
+						pace.Flush()
+						sw.Flush()
+						rawOut = sw.Suspend()
+					}
+					solo = newToolSoloState(rawOut, p.ToolName, toolDetail(p))
+					solo.Start()
+					soloToolCallID = p.ToolCallID
 				}
-				solo = newToolSoloState(rawOut, p.ToolName, toolDetail(p))
-				solo.Start()
 				figOtel.Event(ctx, "cli.tool.first_paint",
 					attribute.String("tool", p.ToolName),
 					attribute.String("tool_call_id", p.ToolCallID),

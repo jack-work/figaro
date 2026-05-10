@@ -76,6 +76,25 @@ func newToolSoloState(out io.Writer, name, detail string) *toolSoloState {
 	}
 }
 
+// UpdateDetail replaces the right-hand detail string and forces a
+// repaint. Used when an early ToolUseStart created the spinner with
+// no detail and a later ToolStart arrives with parsed args. No-op
+// once the spinner has been frozen — the header is no longer above
+// the cursor at that point and rewriting it would race streamed
+// output.
+func (s *toolSoloState) UpdateDetail(detail string) {
+	if len(detail) > 200 {
+		detail = detail[:200] + "…"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.frozen {
+		return
+	}
+	s.detail = detail
+	s.rewriteHeaderLocked()
+}
+
 // Start prints the initial header line and launches the spinner
 // ticker. Call exactly once.
 func (s *toolSoloState) Start() {
