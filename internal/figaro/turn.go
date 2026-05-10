@@ -287,10 +287,26 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	}
 
 	results := a.runTools(turnCtx, calls)
+
+	// Whether or not the turn was interrupted, we must always append
+	// tool_result tics to match the assistant's tool_use blocks.
+	// Without them the conversation is structurally broken: the
+	// Anthropic API requires every tool_use to have a corresponding
+	// tool_result in the next user message.
+	//
+	// If interrupted, the results slice may contain partial output or
+	// may be incomplete. Fill in any missing slots with synthetic
+	// error results so the stream is always well-formed.
 	if a.isInterrupted() {
-		a.fanOutError("interrupted")
-		a.endTurn("interrupted")
-		return true
+		for i, tc := range calls {
+			if results[i].Type == "" {
+				results[i] = message.ToolResultContent(
+					tc.ToolCallID, tc.ToolName,
+					"interrupted: tool execution was cancelled",
+					true,
+				)
+			}
+		}
 	}
 
 	// Tool-result tic feeds the next round.
@@ -302,6 +318,12 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: resultTic}); err != nil {
 		a.fanOutError(fmt.Sprintf("append tool_result tic: %s", err))
 		a.endTurn("error: append tool_result")
+		return true
+	}
+
+	if a.isInterrupted() {
+		a.fanOutError("interrupted")
+		a.endTurn("interrupted")
 		return true
 	}
 	return false

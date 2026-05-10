@@ -91,4 +91,28 @@ func (s *MemStream[T]) Clear() error {
 	return nil
 }
 
+func (s *MemStream[T]) Truncate(afterLT uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var kept []Entry[T]
+	for _, e := range s.entries {
+		if e.LT <= afterLT {
+			kept = append(kept, e)
+		}
+	}
+	s.entries = kept
+	s.byFigaroLT = make(map[uint64]int)
+	for i, e := range s.entries {
+		if e.FigaroLT > 0 {
+			s.byFigaroLT[e.FigaroLT] = i
+		}
+	}
+	if len(kept) > 0 {
+		s.nextLT = kept[len(kept)-1].LT + 1
+	} else {
+		s.nextLT = 1
+	}
+	return nil
+}
+
 func (s *MemStream[T]) Close() error { return nil }

@@ -25,6 +25,11 @@ type Stream[T any] interface {
 	// Append stamps e with a fresh LT and writes it to the stream.
 	Append(e Entry[T]) (Entry[T], error)
 
+	// Truncate removes all entries with LT > afterLT. Used for
+	// stream repair (e.g. injecting synthetic tool_results after a
+	// dangling tool_use).
+	Truncate(afterLT uint64) error
+
 	Clear() error
 	Close() error
 }

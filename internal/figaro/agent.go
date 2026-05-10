@@ -130,6 +130,7 @@ func NewAgent(cfg Config) *Agent {
 	}
 
 	a.figStream = a.newStream()
+	repairDanglingToolUse(a.figStream, a.id)
 	if a.chalkboard == nil {
 		// Ephemeral arias get an in-memory chalkboard so system prompt
 		// flow stays uniform.

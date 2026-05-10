@@ -164,6 +164,48 @@ func (s *FileStream[T]) Clear() error {
 	return nil
 }
 
+func (s *FileStream[T]) Truncate(afterLT uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var kept []Entry[T]
+	for _, e := range s.entries {
+		if e.LT <= afterLT {
+			kept = append(kept, e)
+		}
+	}
+	s.entries = kept
+	s.byFigaroLT = make(map[uint64]int)
+	for i, e := range s.entries {
+		if e.FigaroLT > 0 {
+			s.byFigaroLT[e.FigaroLT] = i
+		}
+	}
+	if len(kept) > 0 {
+		s.nextLT = kept[len(kept)-1].LT + 1
+	} else {
+		s.nextLT = 1
+	}
+	// Rewrite the file with only the kept entries.
+	return s.rewriteFile()
+}
+
+// rewriteFile serializes the in-memory entries back to disk. Called
+// by Truncate after modifying the in-memory slice.
+func (s *FileStream[T]) rewriteFile() error {
+	f, err := os.Create(s.path)
+	if err != nil {
+		return fmt.Errorf("file stream: rewrite: %w", err)
+	}
+	defer f.Close()
+	enc := json.NewEncoder(f)
+	for _, e := range s.entries {
+		if err := enc.Encode(e); err != nil {
+			return fmt.Errorf("file stream: rewrite entry LT=%d: %w", e.LT, err)
+		}
+	}
+	return nil
+}
+
 func (s *FileStream[T]) Close() error { return nil }
 
 func (s *FileStream[T]) Path() string { return s.path }
