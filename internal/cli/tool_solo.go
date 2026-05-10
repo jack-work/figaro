@@ -52,8 +52,45 @@ type toolSoloState struct {
 	linesBelow int
 	lastWasNL  bool
 
-	stopCh chan struct{}
-	doneCh chan struct{}
+	stopCh   chan struct{}
+	doneCh   chan struct{}
+	stopOnce sync.Once
+}
+
+// stopTicker closes stopCh and waits for the ticker goroutine to
+// exit. Idempotent — Freeze, FinalizeWithRowsBelow, and the
+// public StopTicker all funnel through here so concurrent or
+// repeat calls don't double-close the channel.
+func (s *toolSoloState) stopTicker() {
+	s.stopOnce.Do(func() {
+		close(s.stopCh)
+		<-s.doneCh
+	})
+}
+
+// StopTicker pauses the spinner animation without finalizing the
+// header (no ✓/✗ flip). Used when the solo is being repurposed as
+// a batch wrapper and the batch's own ticker takes over header
+// repaints via RepaintWrappedHeader. Safe to call multiple times.
+func (s *toolSoloState) StopTicker() { s.stopTicker() }
+
+// RepaintWrappedHeader walks the cursor up rowsBelow+1 lines,
+// rewrites the header in place with the supplied frame index, and
+// walks back down. Designed to be driven from another ticker (e.g.
+// the wrapped batch's) when this solo is acting as the batch's
+// title row and rows have been printed beneath the header by code
+// other than s.Write. No-op once frozen.
+func (s *toolSoloState) RepaintWrappedHeader(rowsBelow, frame int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.frozen {
+		return
+	}
+	s.frame = frame
+	fmt.Fprintf(s.out, "%s%s%s\r",
+		term.CursorUp(rowsBelow+1)+term.EraseLine,
+		s.formatHeader(),
+		term.CursorDown(rowsBelow+1))
 }
 
 // newToolSoloState prepares a solo state. Nothing is written until
@@ -74,6 +111,48 @@ func newToolSoloState(out io.Writer, name, detail string) *toolSoloState {
 		stopCh:    make(chan struct{}),
 		doneCh:    make(chan struct{}),
 	}
+}
+
+// UpdateHeader replaces both the name and detail strings and forces
+// a repaint of the header line. Used when an early placeholder
+// spinner is repurposed as a batch wrapper (name "edit" → "batch",
+// detail "" → "(5)") on MethodToolBatchStart. No-op once frozen.
+func (s *toolSoloState) UpdateHeader(name, detail string) {
+	if len(detail) > 200 {
+		detail = detail[:200] + "…"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.frozen {
+		return
+	}
+	s.name = name
+	s.detail = detail
+	s.rewriteHeaderLocked()
+}
+
+// FinalizeWithRowsBelow stops the ticker, walks the cursor up over
+// the supplied number of below-rows to the header line, repaints
+// the header with ✓ or ✗, then walks back down. Use when the
+// caller (not solo.Write) emitted the rows beneath the header — for
+// example, when solo wraps a tool batch and the batch printed its
+// own row content. The solo's own linesBelow tracking is bypassed.
+func (s *toolSoloState) FinalizeWithRowsBelow(rowsBelow int, isError bool) {
+	s.mu.Lock()
+	if isError {
+		s.state = toolRowErr
+	} else {
+		s.state = toolRowOK
+	}
+	s.frozen = true
+	s.mu.Unlock()
+	s.stopTicker()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fmt.Fprintf(s.out, "%s%s%s\r",
+		term.CursorUp(rowsBelow+1)+term.EraseLine,
+		s.formatHeader(),
+		term.CursorDown(rowsBelow+1))
 }
 
 // UpdateDetail replaces the right-hand detail string and forces a
@@ -118,8 +197,7 @@ func (s *toolSoloState) Freeze() {
 	s.frozen = true
 	s.mu.Unlock()
 
-	close(s.stopCh)
-	<-s.doneCh
+	s.stopTicker()
 
 	// Last paint to leave the header in a stable, clean state.
 	s.mu.Lock()

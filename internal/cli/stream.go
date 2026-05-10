@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/jack-work/largo"
@@ -84,6 +83,22 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	var soloToolCallID string // tool_call_id the active solo was launched for
 
 	resumeIfSuspended := func() {
+		// Wrapped-batch teardown takes precedence — solo.Freeze would
+		// walk up 1 line, which is wrong when N rows sit between the
+		// cursor and the wrapper header. Finalize the batch rows
+		// first, then flip the wrapper in place.
+		if batch != nil {
+			if batch.wrapped && solo != nil {
+				rows, anyErr := batch.FinalizeRowsOnly()
+				solo.FinalizeWithRowsBelow(rows, anyErr)
+				solo = nil
+				soloToolCallID = ""
+				batch.PrintErrorDumps()
+			} else {
+				batch.Finalize()
+			}
+			batch = nil
+		}
 		if solo != nil {
 			solo.Freeze()
 			solo = nil
@@ -167,28 +182,45 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			if json.Unmarshal(params, &p) == nil && p.Size > 1 {
 				figOtel.Event(ctx, "cli.recv.tool_batch_start",
 					attribute.Int("size", p.Size))
-				// If we showed an early placeholder for the first
-				// tool_use, freeze it before the batch view paints
-				// below. The frozen header stays as a visual artifact
-				// noting which tool was streamed first.
+				// Repurpose the placeholder spinner (raised by an
+				// earlier MethodToolUseStart) as the batch wrapper:
+				// header keeps spinning, becomes ✓/✗ on batch_end.
+				wrapped := false
 				if solo != nil {
-					solo.Freeze()
-					solo = nil
-					soloToolCallID = ""
-				}
-				pace.Flush()
-				sw.Flush()
-				if rawOut == nil {
-					rawOut = sw.Suspend()
+					solo.UpdateHeader("batch", fmt.Sprintf("(%d)", p.Size))
+					// Hand spinner duty to the batch's ticker — solo's
+					// own ticker would otherwise walk up 1 line on
+					// every frame and clobber the bottom batch row.
+					solo.StopTicker()
+					wrapped = true
+				} else {
+					pace.Flush()
+					sw.Flush()
+					if rawOut == nil {
+						rawOut = sw.Suspend()
+					}
 				}
 				batch = newToolBatchState(rawOut, p.Tools)
+				batch.wrapped = wrapped
+				if wrapped {
+					batch.wrapperSolo = solo
+				}
 				batch.RenderInitial()
 			}
 
 		case rpc.MethodToolBatchEnd:
 			figOtel.Event(ctx, "cli.recv.tool_batch_end")
 			if batch != nil {
-				batch.Finalize()
+				if batch.wrapped && solo != nil {
+					rows, anyErr := batch.FinalizeRowsOnly()
+					solo.FinalizeWithRowsBelow(rows, anyErr)
+					solo = nil
+					soloToolCallID = ""
+					fmt.Fprintln(rawOut, term.Dim("───"))
+					batch.PrintErrorDumps()
+				} else {
+					batch.Finalize()
+				}
 				batch = nil
 			}
 			if openTools == 0 {
@@ -341,39 +373,22 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 }
 
-// writeStatusLine prints a dimmed banner across the terminal width.
-// elapsed=0 omits the duration (top banner). When the file isn't a
-// TTY we skip ANSI dim and use a fixed 80-col width.
+// writeStatusLine prints a short dimmed banner. elapsed=0 omits the
+// duration (top banner). Kept short rather than terminal-width so
+// soft-wrap behaves predictably across narrow / resized terminals.
 func writeStatusLine(w *os.File, figaroID string, ts time.Time, elapsed time.Duration) {
-	width := term.WidthFd(int(w.Fd()))
-
-	body := fmt.Sprintf(" %s · %s", figaroID, ts.Format("15:04:05"))
+	body := fmt.Sprintf("%s · %s", figaroID, ts.Format("15:04:05"))
 	if elapsed > 0 {
 		body += fmt.Sprintf(" · %s", formatElapsed(elapsed))
 	}
-	body += " "
-
-	const lead = "─── "
-	const glyph = "─"
-	// Use rune count for the glyph (3 bytes each in UTF-8).
-	leadRunes := len([]rune(lead))
-	bodyRunes := len([]rune(body))
-	remaining := width - leadRunes - bodyRunes
-	if remaining < 0 {
-		remaining = 0
-	}
-	line := lead + body + strings.Repeat(glyph, remaining)
-
-	fmt.Fprintln(w, term.Dim(line))
+	fmt.Fprintln(w, term.Dim("─── "+body+" ───"))
 }
 
-// writeSeparator prints a thin dimmed rule across the terminal
-// width — used to visually fence off the echoed prompt from the
-// streaming response below it.
+// writeSeparator prints a short dimmed rule between the echoed
+// prompt and the streaming response. Short by design — see
+// writeStatusLine.
 func writeSeparator(w *os.File) {
-	width := term.WidthFd(int(w.Fd()))
-	line := strings.Repeat("─", width)
-	fmt.Fprintln(w, term.Dim(line))
+	fmt.Fprintln(w, term.Dim("───"))
 	fmt.Fprintln(w)
 }
 

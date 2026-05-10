@@ -60,6 +60,13 @@ type toolBatchState struct {
 	cursorRow int // current row index of the cursor relative to row 0
 	closed    bool
 
+	// wrapped means a wrapping toolSoloState owns the header / footer
+	// chrome; this batch should only paint per-tool rows. The caller
+	// (stream.go) is responsible for finalizing the wrapper and
+	// printing error dumps after FinalizeRowsOnly.
+	wrapped     bool
+	wrapperSolo *toolSoloState // when wrapped, repainted on each tick
+
 	// spinner animation
 	tickStop chan struct{}
 	tickDone chan struct{}
@@ -119,13 +126,16 @@ func newToolBatchState(out io.Writer, entries []rpc.ToolBatchToolEntry) *toolBat
 	}
 }
 
-// RenderInitial paints the opening rule and one pending row per tool.
-// Cursor lands one row below the last pending row (i.e., on what will
-// become the footer line) so subsequent in-place updates can navigate
-// up by row index. Also starts the spinner animation goroutine.
+// RenderInitial paints one pending row per tool. In standalone mode
+// the rows are bracketed by an opening rule and the cursor lands on
+// what will become the closing rule; in wrapped mode the header is
+// owned by a toolSoloState above and only rows are emitted. Also
+// starts the spinner animation goroutine.
 func (b *toolBatchState) RenderInitial() {
 	b.mu.Lock()
-	fmt.Fprintf(b.out, "\n%s\n", term.Dim(fmt.Sprintf("─── batch (%d) ───", len(b.rows))))
+	if !b.wrapped {
+		fmt.Fprintf(b.out, "\n%s\n", term.Dim(fmt.Sprintf("─── batch (%d) ───", len(b.rows))))
+	}
 	for _, r := range b.rows {
 		fmt.Fprintln(b.out, formatRow(r, b.frame))
 	}
@@ -198,8 +208,53 @@ func (b *toolBatchState) MarkDone(id, result string, isError bool) {
 // Finalize closes the batch: stops the spinner, dumps error tool
 // buffers (if any) and repositions the cursor below all the chrome
 // so subsequent output (next round, status line, etc.) flows
-// naturally. Idempotent.
+// naturally. Idempotent. In wrapped mode this only paints the final
+// row state and leaves the closing chrome to the caller — see
+// FinalizeRowsOnly + PrintErrorDumps.
 func (b *toolBatchState) Finalize() {
+	if b.wrapped {
+		b.FinalizeRowsOnly()
+		return
+	}
+	b.finalizeRowsLocked()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	fmt.Fprintln(b.out, term.Dim("───"))
+	b.printErrorDumpsLocked()
+	fmt.Fprintln(b.out)
+}
+
+// FinalizeRowsOnly stops the ticker and paints the final row state.
+// Returns the row count and whether any tool errored, for the
+// wrapping toolSoloState's FinalizeWithRowsBelow call. Caller must
+// follow with PrintErrorDumps after the wrapper is finalized.
+func (b *toolBatchState) FinalizeRowsOnly() (rows int, anyError bool) {
+	b.finalizeRowsLocked()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, r := range b.rows {
+		if r.isError {
+			anyError = true
+			break
+		}
+	}
+	return len(b.rows), anyError
+}
+
+// PrintErrorDumps emits the error sub-blocks (if any) and a final
+// blank line. Used by stream.go in wrapped mode after the wrapping
+// solo header has been finalized in place.
+func (b *toolBatchState) PrintErrorDumps() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.printErrorDumpsLocked()
+	fmt.Fprintln(b.out)
+}
+
+// finalizeRowsLocked stops the spinner ticker and repaints every
+// row one final time. Idempotent. Drops b.mu while waiting on the
+// ticker to exit so we don't deadlock against tickLoop.
+func (b *toolBatchState) finalizeRowsLocked() {
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
@@ -208,24 +263,19 @@ func (b *toolBatchState) Finalize() {
 	b.closed = true
 	b.mu.Unlock()
 
-	// Stop the ticker and wait for it to exit so we don't race on
-	// out writes during the finalize sequence.
 	close(b.tickStop)
 	<-b.tickDone
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
-
-	// One last paint of every row in case any chunk landed between
-	// the last tick and stop.
 	for i := range b.rows {
 		b.rewriteRowLocked(i)
 	}
+}
 
-	// Print the footer rule.
-	fmt.Fprintln(b.out, term.Dim("───"))
-	// Dump any error tool's buffered output. Each error gets its own
-	// sub-header so the user can correlate by tool detail.
+// printErrorDumpsLocked emits one error sub-block per errored tool.
+// Caller holds b.mu.
+func (b *toolBatchState) printErrorDumpsLocked() {
 	for _, r := range b.rows {
 		if !r.isError {
 			continue
@@ -238,16 +288,11 @@ func (b *toolBatchState) Finalize() {
 		if buffered != "" {
 			fmt.Fprintln(b.out, buffered)
 		}
-		if r.result != "" {
-			// Only print result if it's distinct from the buffered
-			// stream — for the bash tool they often overlap.
-			if !strings.Contains(buffered, r.result) {
-				fmt.Fprintln(b.out, r.result)
-			}
+		if r.result != "" && !strings.Contains(buffered, r.result) {
+			fmt.Fprintln(b.out, r.result)
 		}
 		fmt.Fprintln(b.out, term.Dim("───"))
 	}
-	fmt.Fprintln(b.out)
 }
 
 // tickLoop advances the spinner frame and repaints any running rows
@@ -275,6 +320,15 @@ func (b *toolBatchState) tickLoop() {
 						anyRunning = true
 					}
 				}
+			}
+			// In wrapped mode the wrapping solo owns the header line
+			// above all rows. Repaint it with the current frame so
+			// the wrapper spinner stays in lockstep with the row
+			// spinners. Walk-back distance is exactly len(rows) — the
+			// header sits one line above row 0, cursor is one line
+			// below row N-1.
+			if b.wrapped && b.wrapperSolo != nil {
+				b.wrapperSolo.RepaintWrappedHeader(len(b.rows), b.frame)
 			}
 			b.mu.Unlock()
 			// If nothing's running we can ease up — but cheaper to
