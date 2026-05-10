@@ -21,11 +21,14 @@ import (
 	"text/template"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/outfit"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -870,7 +873,7 @@ func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model stri
 			continue
 		}
 		data := []byte(strings.TrimPrefix(line, "data: "))
-		a.foldSSEEvent(eventType, data, &nm, &usage, &stopReason, bus)
+		a.foldSSEEvent(ctx, eventType, data, &nm, &usage, &stopReason, bus)
 		if eventType == "message_stop" {
 			return finalizeClean()
 		}
@@ -882,7 +885,7 @@ func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model stri
 
 // foldSSEEvent updates the accumulator nm + usage + stopReason with
 // one decoded SSE event and pushes any figaro IR delta on the bus.
-func (a *Anthropic) foldSSEEvent(eventType string, data []byte, nm *nativeMessage, usage *nativeUsage, stopReason *string, bus provider.Bus) {
+func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []byte, nm *nativeMessage, usage *nativeUsage, stopReason *string, bus provider.Bus) {
 	switch eventType {
 	case "content_block_start":
 		var block struct {
@@ -908,6 +911,13 @@ func (a *Anthropic) foldSSEEvent(eventType string, data []byte, nm *nativeMessag
 			nm.Content[block.Index] = nativeBlock{
 				Type: "tool_use", ID: block.ContentBlock.ID, Name: block.ContentBlock.Name,
 			}
+			// Surface the tool announcement immediately so the CLI
+			// can render a spinner before input streaming completes.
+			bus.PushToolUseStart(block.ContentBlock.ID, block.ContentBlock.Name)
+			figOtel.Event(ctx, "provider.tool_use.block_start",
+				attribute.String("tool_call_id", block.ContentBlock.ID),
+				attribute.String("tool_name", block.ContentBlock.Name),
+			)
 		}
 	case "content_block_delta":
 		var d struct {
@@ -939,6 +949,14 @@ func (a *Anthropic) foldSSEEvent(eventType string, data []byte, nm *nativeMessag
 				b.Input = s + d.Delta.PartialJSON
 			} else {
 				b.Input = d.Delta.PartialJSON
+				figOtel.Event(ctx, "provider.tool_use.first_input_delta",
+					attribute.String("tool_call_id", b.ID),
+					attribute.String("tool_name", b.Name),
+					attribute.Int("bytes", len(d.Delta.PartialJSON)),
+				)
+			}
+			if d.Delta.PartialJSON != "" {
+				bus.PushToolUseDelta(b.ID, d.Delta.PartialJSON)
 			}
 		}
 	case "content_block_stop":
@@ -948,7 +966,9 @@ func (a *Anthropic) foldSSEEvent(eventType string, data []byte, nm *nativeMessag
 		}
 		b := &nm.Content[stop.Index]
 		if b.Type == "tool_use" {
+			var rawLen int
 			if s, ok := b.Input.(string); ok && s != "" {
+				rawLen = len(s)
 				var args map[string]interface{}
 				if json.Unmarshal([]byte(s), &args) == nil {
 					b.Input = args
@@ -956,6 +976,11 @@ func (a *Anthropic) foldSSEEvent(eventType string, data []byte, nm *nativeMessag
 			} else if b.Input == nil {
 				b.Input = map[string]interface{}{}
 			}
+			figOtel.Event(ctx, "provider.tool_use.block_stop",
+				attribute.String("tool_call_id", b.ID),
+				attribute.String("tool_name", b.Name),
+				attribute.Int("input_bytes", rawLen),
+			)
 		}
 	case "message_start":
 		var ms struct {

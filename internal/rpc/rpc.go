@@ -33,6 +33,28 @@ type ThinkingParams struct {
 	Text string `json:"text"`
 }
 
+// ToolUseStartParams fires the moment the assistant begins emitting a
+// tool_use block — well before the full args have been streamed and
+// before the assistant message lands. Lets the CLI render a spinner
+// for the upcoming tool without waiting for content_block_stop.
+// MethodToolStart still fires later (with the parsed args) once the
+// message is finalized; the two events bracket "tool announced" vs
+// "tool executing".
+type ToolUseStartParams struct {
+	ToolCallID string `json:"tool_call_id"`
+	ToolName   string `json:"tool_name"`
+}
+
+// ToolUseDeltaParams carries a chunk of partial JSON for the tool's
+// input as the model streams it. Best-effort — chunks may be dropped
+// under back-pressure. Useful for showing progress (bytes streamed)
+// or, if the client is willing to parse partial JSON, previewing the
+// args mid-stream.
+type ToolUseDeltaParams struct {
+	ToolCallID  string `json:"tool_call_id"`
+	PartialJSON string `json:"partial_json"`
+}
+
 type ToolStartParams struct {
 	ToolCallID string                 `json:"tool_call_id"`
 	ToolName   string                 `json:"tool_name"`

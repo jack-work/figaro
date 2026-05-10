@@ -9,6 +9,8 @@ const (
 	MethodDelta          = "stream.delta"
 	MethodToolOutput     = "stream.tool_output"
 	MethodThinking       = "stream.thinking"
+	MethodToolUseStart   = "stream.tool_use_start"
+	MethodToolUseDelta   = "stream.tool_use_delta"
 	MethodToolStart      = "stream.tool_start"
 	MethodToolEnd        = "stream.tool_end"
 	MethodToolBatchStart = "stream.tool_batch_start"

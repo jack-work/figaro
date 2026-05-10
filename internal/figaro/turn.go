@@ -17,18 +17,22 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// turnBus is the per-turn provider.Bus. It feeds a buffered channel
-// the runTurn loop drains; PushDelta/PushFigaro never block. Closed
-// by runTurn after provider.Send returns.
+// turnBus is the per-turn provider.Bus. It feeds buffered channels
+// the runTurn loop drains; pushes never block. Closed by runTurn
+// after provider.Send returns. notifs is a catch-all channel for
+// non-text/non-figaro events (tool_use_start, tool_use_delta) so new
+// event types can be added without growing the channel set.
 type turnBus struct {
 	deltas chan message.Content
 	figs   chan message.Message
+	notifs chan rpc.Notification
 }
 
 func newTurnBus() *turnBus {
 	return &turnBus{
 		deltas: make(chan message.Content, 64),
 		figs:   make(chan message.Message, 4),
+		notifs: make(chan rpc.Notification, 256),
 	}
 }
 
@@ -42,6 +46,30 @@ func (b *turnBus) PushDelta(c message.Content) {
 
 func (b *turnBus) PushFigaro(m message.Message) {
 	b.figs <- m
+}
+
+func (b *turnBus) PushToolUseStart(toolCallID, toolName string) {
+	b.pushNotif(rpc.Notification{
+		JSONRPC: "2.0",
+		Method:  rpc.MethodToolUseStart,
+		Params:  rpc.ToolUseStartParams{ToolCallID: toolCallID, ToolName: toolName},
+	})
+}
+
+func (b *turnBus) PushToolUseDelta(toolCallID, partialJSON string) {
+	b.pushNotif(rpc.Notification{
+		JSONRPC: "2.0",
+		Method:  rpc.MethodToolUseDelta,
+		Params:  rpc.ToolUseDeltaParams{ToolCallID: toolCallID, PartialJSON: partialJSON},
+	})
+}
+
+func (b *turnBus) pushNotif(n rpc.Notification) {
+	select {
+	case b.notifs <- n:
+	default:
+		// Drop if full — UX progress signals are best-effort.
+	}
 }
 
 // runTurn drives one user prompt to completion. Builds the user tic,
@@ -136,6 +164,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 			}
 			close(bus.deltas)
 			close(bus.figs)
+			close(bus.notifs)
 		}()
 		started := time.Now()
 		err := a.prov.Send(turnCtx, in, bus)
@@ -146,29 +175,27 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		sendDone <- err
 	}()
 
-	// Drain deltas + figaro. Both channels close when provider.Send
-	// returns (its goroutine closes them via the defer).
+	// Drain deltas + notifs + figaro. All channels close when
+	// provider.Send returns (its goroutine closes them via the defer).
 	//
 	// Wire-order matters: MethodMessage *must* arrive after every
-	// MethodDelta for that turn. The CLI uses MethodMessage as a
-	// "round complete, flush largo now" trigger; a stray delta after
-	// the flush would sit in largo's buffer un-rendered until the
-	// next flush trigger (tool_start or stream.done).
+	// MethodDelta and MethodToolUse* for that turn. The CLI uses
+	// MethodMessage as a "round complete, flush largo now" trigger;
+	// a stray delta after the flush would sit in largo's buffer
+	// un-rendered until the next flush trigger.
 	//
-	// Both channels are independent and can be ready at the same
-	// time after message_stop. Provider contract: PushFigaro is the
-	// last thing the producer does for the turn. So when we observe
-	// a fig on the channel, every delta has already been pushed —
-	// we just need to drain the deltas buffer fully before fanning
-	// out the fig notification.
+	// Provider contract: PushFigaro is the last thing the producer
+	// does for the turn. So when we observe a fig on the channel,
+	// every delta and notif has already been pushed — we just need
+	// to drain those buffers fully before fanning out MethodMessage.
 	var lastFig message.Message
-	drainDeltasOnce := func() {
+	drainPreFigOnce := func() {
 		for {
 			select {
 			case d, ok := <-bus.deltas:
 				if !ok {
 					bus.deltas = nil
-					return
+					continue
 				}
 				if !a.isInterrupted() {
 					a.fanOut(rpc.Notification{
@@ -177,12 +204,20 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 						Params:  rpc.DeltaParams{Text: d.Text, ContentType: d.Type},
 					})
 				}
+			case n, ok := <-bus.notifs:
+				if !ok {
+					bus.notifs = nil
+					continue
+				}
+				if !a.isInterrupted() {
+					a.fanOut(n)
+				}
 			default:
 				return
 			}
 		}
 	}
-	for bus.deltas != nil || bus.figs != nil {
+	for bus.deltas != nil || bus.figs != nil || bus.notifs != nil {
 		select {
 		case d, ok := <-bus.deltas:
 			if !ok {
@@ -196,6 +231,14 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 					Params:  rpc.DeltaParams{Text: d.Text, ContentType: d.Type},
 				})
 			}
+		case n, ok := <-bus.notifs:
+			if !ok {
+				bus.notifs = nil
+				continue
+			}
+			if !a.isInterrupted() {
+				a.fanOut(n)
+			}
 		case m, ok := <-bus.figs:
 			if !ok {
 				bus.figs = nil
@@ -204,8 +247,8 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 			// Provider is done producing deltas (PushFigaro is the
 			// last act). Drain anything still buffered before fanning
 			// out MethodMessage so the CLI receives all deltas first.
-			if bus.deltas != nil {
-				drainDeltasOnce()
+			if bus.deltas != nil || bus.notifs != nil {
+				drainPreFigOnce()
 			}
 			lastFig = m
 			a.fanOutFigaro(m)

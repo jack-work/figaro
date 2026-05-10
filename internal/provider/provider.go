@@ -29,12 +29,22 @@ type Tool struct {
 }
 
 // Bus is the agent-side sink for the provider's per-turn output. The
-// Inbox implements it: PushDelta drives UX streaming; PushFigaro
+// turnBus implements it: PushDelta drives UX streaming; PushFigaro
 // signals that an assembled assistant message has landed in figStream
-// (the provider has already written it).
+// (the provider has already written it). PushToolUseStart and
+// PushToolUseDelta let the provider surface assistant tool-call
+// activity in real time so the client can render a spinner / progress
+// without waiting for the assistant message to finalize.
 type Bus interface {
 	PushDelta(content message.Content)
 	PushFigaro(msg message.Message)
+	// PushToolUseStart fires when the assistant begins emitting a
+	// tool_use content block — args may not be known yet.
+	PushToolUseStart(toolCallID, toolName string)
+	// PushToolUseDelta carries one chunk of partial input JSON for an
+	// in-progress tool_use block. Best-effort; may be dropped under
+	// back-pressure.
+	PushToolUseDelta(toolCallID, partialJSON string)
 }
 
 // SendInput is one turn's input. The provider catches up its own
