@@ -3,6 +3,8 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
 	"path/filepath"
 	"text/template"
 
@@ -12,7 +14,28 @@ import (
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropic"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/wirelog"
 )
+
+// installWireLog wraps the provider's HTTPClient with a logging
+// RoundTripper when FIGARO_WIRE_DIR is set. Each Send writes a pair
+// of files per request:
+//
+//	<dir>/<aria>/<unix_ns>.req.http
+//	<dir>/<aria>/<unix_ns>.resp.http
+//
+// SSE response bytes are tee'd as they stream. No-op when the env
+// var is empty.
+func installWireLog(a *anthropic.Anthropic) {
+	dir := os.Getenv("FIGARO_WIRE_DIR")
+	if dir == "" {
+		return
+	}
+	a.HTTPClient.Transport = &wirelog.Transport{
+		Inner: http.DefaultTransport,
+		Dir:   dir,
+	}
+}
 
 // buildResolver assembles a lazy + adaptive credential resolver for
 // the given provider directory: every Resolve walks env → config
@@ -91,6 +114,7 @@ func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, bac
 				return nil, err
 			}
 			a.Templates = cbTmpls
+			installWireLog(a)
 			return a, nil
 		default:
 			return nil, fmt.Errorf("unknown provider: %q", providerName)
@@ -120,6 +144,7 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 		if err != nil {
 			return nil, 0
 		}
+		installWireLog(p)
 		return p, acfg.MaxTokens
 	default:
 		return nil, 0

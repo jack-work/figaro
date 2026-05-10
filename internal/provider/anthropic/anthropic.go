@@ -31,6 +31,7 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/wirelog"
 )
 
 const (
@@ -651,6 +652,7 @@ func markCacheBreakpoints(req *nativeRequest, setting string) {
 // announces via bus.PushFigaro. The cache stores one entry per
 // message.
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	ctx = wirelog.WithAria(ctx, in.AriaID)
 	cache := a.cacheFor(in.AriaID)
 	perMessage, lts := a.catchUp(in.FigStream, cache)
 	if len(perMessage) == 0 {

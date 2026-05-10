@@ -190,8 +190,7 @@ model = "mock-model"
 	loaded, err := config.Load(dir)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	a.Handlers = angelus.NewHandlers(angelus.ServerConfig{
 		Angelus:         a,
