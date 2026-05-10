@@ -2,42 +2,40 @@
 
 *Largo al factotum della città.*
 
-A coding agent that lives behind a JSON-RPC socket. One Go binary plays the CLI, the supervisor (the *angelus*), and the agent itself — pick your role with a flag.
+An LLM harness written in Go. One binary serves as a CLI, a supervisor daemon, and the agent runtime. Everything talks JSON-RPC over unix sockets — the wire is the API.
+
+Figaro manages persistent conversations called *arias*. Each aria is an append-only message log in a provider-agnostic IR, with per-provider translation caches that preserve byte-stability for prompt caching. Arias bind to your shell by PID, survive daemon restarts, and can be addressed by name from any terminal.
 
 ```
-q explain this function
-q now refactor it, per favore
+figaro -- explain this function
+figaro -- now refactor it, per favore
 figaro list
 ```
 
-`q` is *"Figaro, qua!"* — the call that summons the barber.
+The default verb is `figaro.qua` — the call that summons the barber.
 
-## What it is today
+## Shape of the thing
 
-- A bidirectional translator between Anthropic's wire format and a provider-agnostic IR — both directions, byte-stable in the cache prefix. Re-encoding a turn's prefix yields the **same bytes**, so Anthropic's `cache_control` actually hits.
-- A JSON-RPC protocol over Unix sockets. Three sockets, three roles. The wire is the API; build any frontend.
-- A CLI. Not a TUI. Streaming markdown via [largo](https://github.com/jack-work/largo) renders incrementally to your terminal.
-- An actor-model agent. One inbox, one drain loop, no races. Survives panics with credo intact.
-- Persistent conversations (*arias*) on disk. `q` from any shell finds your aria; `figaro list` shows them all.
+- Provider-agnostic message IR. Anthropic backend today; the interface is small.
+- Chalkboard: per-aria structured state that travels as patches on the message stream and surfaces to the model as system reminders.
+- Tools: bash, read, write, edit. Parallel dispatch when the model emits multiple calls.
+- Loadout system: TOML configs with inheritance, file/dir inlining, templated system prompts.
+- Durable derivations: background workers that materialize per-aria views (usage stats, translator metadata) on each turn.
 - OAuth via [hush](https://github.com/jack-work/hush). Tokens encrypted at rest.
 
-## What it's becoming
+## Status
 
-A lingua franca of assistantry. The provider interface is small (`Encode`, `Decode`, `Send`, `Assemble`) and provider-agnostic; the IR sits between. New backends slot in. Richer client IRs follow.
+In active development. The core loop works and I use it daily. The goal is a general-purpose harness that can be scripted, composed, and extended to cover as much of my working surface as possible — not a product, but a tool that grows with the work.
 
 ## Setup
 
 ```bash
 nix profile install github:jack-work/figaro      # or go install
 figaro login anthropic
-q buongiorno
+figaro -- buongiorno
 ```
 
-Config lives at `~/.config/figaro/`. Personality in `credo.md`, skills in `skills/`.
-
-## The cache works
-
-The translator stream caches per-message wire bytes once (`Encode`) and splices them verbatim into the next request. No re-encoding per turn. The prefix is byte-identical across requests within an aria's lifetime — that's the invariant Anthropic's prompt cache needs.
+Config lives at `~/.config/figaro/`.
 
 ---
 
