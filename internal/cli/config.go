@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/jack-work/hush/managed"
-	"golang.org/x/term"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 func mustLoadConfig() *config.Loaded {

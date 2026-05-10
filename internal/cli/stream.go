@@ -12,13 +12,13 @@ import (
 
 	"github.com/jack-work/largo"
 	"go.opentelemetry.io/otel/attribute"
-	"golang.org/x/term"
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/pacer"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
@@ -201,9 +201,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 						solo = nil
 					}
 					if p.IsError {
-						rawOut.Write([]byte("\n\033[31m⚠ error:\033[0m " + p.Result + "\n"))
+						rawOut.Write([]byte("\n" + term.Red("⚠ error:") + " " + p.Result + "\n"))
 					}
-					rawOut.Write([]byte("\033[2m───\033[0m\n\n"))
+					rawOut.Write([]byte(term.Dim("───") + "\n\n"))
 				}
 				if openTools > 0 {
 					openTools--
@@ -284,13 +284,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 // elapsed=0 omits the duration (top banner). When the file isn't a
 // TTY we skip ANSI dim and use a fixed 80-col width.
 func writeStatusLine(w *os.File, figaroID string, ts time.Time, elapsed time.Duration) {
-	width := 80
-	tty := term.IsTerminal(int(w.Fd()))
-	if tty {
-		if c, _, err := term.GetSize(int(w.Fd())); err == nil && c > 20 {
-			width = c
-		}
-	}
+	width := term.WidthFd(int(w.Fd()))
 
 	body := fmt.Sprintf(" %s · %s", figaroID, ts.Format("15:04:05"))
 	if elapsed > 0 {
@@ -300,37 +294,26 @@ func writeStatusLine(w *os.File, figaroID string, ts time.Time, elapsed time.Dur
 
 	const lead = "─── "
 	const glyph = "─"
-	remaining := width - len(lead) - len(body)
+	// Use rune count for the glyph (3 bytes each in UTF-8).
+	leadRunes := len([]rune(lead))
+	bodyRunes := len([]rune(body))
+	remaining := width - leadRunes - bodyRunes
 	if remaining < 0 {
 		remaining = 0
 	}
 	line := lead + body + strings.Repeat(glyph, remaining)
 
-	if tty {
-		fmt.Fprintf(w, "\033[2m%s\033[0m\n", line)
-	} else {
-		fmt.Fprintln(w, line)
-	}
+	fmt.Fprintln(w, term.Dim(line))
 }
 
 // writeSeparator prints a thin dimmed rule across the terminal
 // width — used to visually fence off the echoed prompt from the
 // streaming response below it.
 func writeSeparator(w *os.File) {
-	width := 80
-	tty := term.IsTerminal(int(w.Fd()))
-	if tty {
-		if c, _, err := term.GetSize(int(w.Fd())); err == nil && c > 20 {
-			width = c
-		}
-	}
+	width := term.WidthFd(int(w.Fd()))
 	line := strings.Repeat("─", width)
-	if tty {
-		fmt.Fprintf(w, "\033[2m%s\033[0m\n\n", line)
-	} else {
-		fmt.Fprintln(w, line)
-		fmt.Fprintln(w)
-	}
+	fmt.Fprintln(w, term.Dim(line))
+	fmt.Fprintln(w)
 }
 
 func formatElapsed(d time.Duration) string {

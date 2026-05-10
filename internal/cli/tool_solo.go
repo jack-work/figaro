@@ -5,6 +5,8 @@ import (
 	"io"
 	"sync"
 	"time"
+
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // toolSoloState animates the header of a single in-flight tool call.
@@ -149,7 +151,7 @@ func (s *toolSoloState) Done(isError bool) {
 	// up is the count of streamed newlines from the cursor back to
 	// the line directly under the header. The header itself sits
 	// one row above that, so we go up up+1.
-	fmt.Fprintf(s.out, "\033[%dA\r\033[2K%s\033[%dB\r", up+1, s.formatHeader(), up+1)
+	fmt.Fprintf(s.out, "%s%s%s\r", term.CursorUp(up+1)+term.EraseLine, s.formatHeader(), term.CursorDown(up+1))
 }
 
 // tick is the spinner animation goroutine. It advances the frame
@@ -182,7 +184,7 @@ func (s *toolSoloState) tick() {
 // flows naturally below it.
 func (s *toolSoloState) rewriteHeaderLocked() {
 	// Up one line, carriage return, erase to end of line.
-	fmt.Fprint(s.out, "\033[1A\r\033[2K")
+	fmt.Fprint(s.out, term.CursorUp(1)+term.EraseLine)
 	fmt.Fprintln(s.out, s.formatHeader())
 }
 
@@ -212,26 +214,26 @@ func (s *toolSoloState) Write(p []byte) (int, error) {
 // formatHeader returns the header line *without* a trailing newline.
 // Animated glyph for the running state; ✓/✗ for completed.
 func (s *toolSoloState) formatHeader() string {
-	var icon, color string
+	var icon string
+	var colorFn func(string) string
 	switch s.state {
 	case toolRowRunning:
 		icon = string(spinnerFrames[s.frame%len(spinnerFrames)])
-		color = "\033[36m" // cyan
+		colorFn = term.Cyan
 	case toolRowOK:
 		icon = "✓"
-		color = "\033[32m" // green
+		colorFn = term.Green
 	case toolRowErr:
 		icon = "✗"
-		color = "\033[31m" // red
+		colorFn = term.Red
 	default:
 		icon = "▶"
-		color = "\033[2m"
+		colorFn = term.Dim
 	}
-	const reset = "\033[0m"
-	header := fmt.Sprintf("\033[2m─── %s%s%s \033[2m▶ %s", color, icon, reset, s.name)
+	header := term.Dim("─── ") + colorFn(icon) + term.Dim(" ▶ "+s.name)
 	if s.detail != "" {
-		header += " · " + s.detail
+		header += term.Dim(" · " + s.detail)
 	}
-	header += " ───\033[0m"
+	header += term.Dim(" ───")
 	return header
 }

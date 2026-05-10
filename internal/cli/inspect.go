@@ -24,6 +24,10 @@ func runRehydrate(loaded *config.Loaded) {
 			die("unknown flag: %s", arg)
 		}
 	}
+	runRehydrateWithFlag(loaded, dryRun)
+}
+
+func runRehydrateWithFlag(loaded *config.Loaded, dryRun bool) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

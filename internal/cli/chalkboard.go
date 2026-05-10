@@ -27,8 +27,10 @@ func runSet(loaded *config.Loaded) {
 	if len(os.Args) < 4 {
 		die("usage: figaro set <key> <value>")
 	}
-	keyArg := os.Args[2]
-	raw := os.Args[3]
+	runSetArgs(loaded, os.Args[2], os.Args[3])
+}
+
+func runSetArgs(loaded *config.Loaded, keyArg, raw string) {
 
 	value := json.RawMessage(raw)
 	if !json.Valid(value) {
@@ -64,7 +66,10 @@ func runUnset(loaded *config.Loaded) {
 	if len(os.Args) < 3 {
 		die("usage: figaro unset <key> [<key>...]")
 	}
-	args := os.Args[2:]
+	runUnsetArgs(loaded, os.Args[2:])
+}
+
+func runUnsetArgs(loaded *config.Loaded, args []string) {
 	patch := rpc.ChalkboardPatch{}
 	for _, keyArg := range args {
 		top, path, err := parseChalkboardPath(keyArg)

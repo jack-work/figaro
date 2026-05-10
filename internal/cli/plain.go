@@ -16,8 +16,8 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
-	"golang.org/x/term"
 )
 
 // runPlainPrompt creates a fresh ephemeral figaro, streams the

@@ -21,6 +21,12 @@ import (
 // straight to SIGKILL. `--keep-pids` first asks the angelus to
 // persist its PID→figaro bindings so the next angelus startup
 // can reattach.
+//
+// This should probably be packaged with the CLI as sort of a local controller
+// implementation which runs the daemon on first command, which I think is
+// totally reasonable.  On start is obtrusive or intrusive or some combo of the
+// two.
+// The same can probably be said for an entire layer across the cli.
 func runRest() {
 	force := false
 	keepPIDs := false
@@ -32,6 +38,10 @@ func runRest() {
 			keepPIDs = true
 		}
 	}
+	runRestWithFlags(force, keepPIDs)
+}
+
+func runRestWithFlags(force, keepPIDs bool) {
 
 	sockPath := angelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
@@ -42,6 +52,8 @@ func runRest() {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// Save bindings shouldn't be sent by the client.  Server should automatically save the bindings.
+		// Also I don't think this is even loaded properly on rehydration anyway.
 		resp, err := cli.SaveBindings(ctx)
 		cancel()
 		cli.Close()
@@ -126,7 +138,10 @@ func runLogin(loaded *config.Loaded) {
 	if len(os.Args) < 3 {
 		die("usage: figaro login <provider>")
 	}
-	providerName := os.Args[2]
+	runLoginByName(loaded, os.Args[2])
+}
+
+func runLoginByName(loaded *config.Loaded, providerName string) {
 
 	h := mustHush()
 	hushClient := h.Client()

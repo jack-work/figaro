@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // toolBatchState renders a parallel tool batch as a stack of pending
@@ -124,7 +125,7 @@ func newToolBatchState(out io.Writer, entries []rpc.ToolBatchToolEntry) *toolBat
 // up by row index. Also starts the spinner animation goroutine.
 func (b *toolBatchState) RenderInitial() {
 	b.mu.Lock()
-	fmt.Fprintf(b.out, "\n\033[2m─── batch (%d) ───\033[0m\n", len(b.rows))
+	fmt.Fprintf(b.out, "\n%s\n", term.Dim(fmt.Sprintf("─── batch (%d) ───", len(b.rows))))
 	for _, r := range b.rows {
 		fmt.Fprintln(b.out, formatRow(r, b.frame))
 	}
@@ -222,7 +223,7 @@ func (b *toolBatchState) Finalize() {
 	}
 
 	// Print the footer rule.
-	fmt.Fprintln(b.out, "\033[2m───\033[0m")
+	fmt.Fprintln(b.out, term.Dim("───"))
 	// Dump any error tool's buffered output. Each error gets its own
 	// sub-header so the user can correlate by tool detail.
 	for _, r := range b.rows {
@@ -233,7 +234,7 @@ func (b *toolBatchState) Finalize() {
 		if buffered == "" && r.result == "" {
 			continue
 		}
-		fmt.Fprintf(b.out, "\n\033[31m✗ %s\033[0m %s\n", r.name, r.detail)
+		fmt.Fprintf(b.out, "\n%s %s\n", term.Red("✗ "+r.name), r.detail)
 		if buffered != "" {
 			fmt.Fprintln(b.out, buffered)
 		}
@@ -244,7 +245,7 @@ func (b *toolBatchState) Finalize() {
 				fmt.Fprintln(b.out, r.result)
 			}
 		}
-		fmt.Fprintln(b.out, "\033[2m───\033[0m")
+		fmt.Fprintln(b.out, term.Dim("───"))
 	}
 	fmt.Fprintln(b.out)
 }
@@ -297,16 +298,16 @@ func (b *toolBatchState) rewriteRowLocked(i int) {
 		up = 0
 	}
 	if up > 0 {
-		fmt.Fprintf(b.out, "\033[%dA", up)
+		fmt.Fprint(b.out, term.CursorUp(up))
 	}
 	// Clear current line, write fresh content. Note: the row content
 	// itself ends with no newline; we add one explicitly so cursor
 	// advances to row i+1.
-	fmt.Fprintf(b.out, "\r\033[2K%s\n", formatRow(b.rows[i], b.frame))
+	fmt.Fprintf(b.out, "%s%s\n", term.EraseLine, formatRow(b.rows[i], b.frame))
 	// Restore cursor to bottom (row len(rows)).
 	down := len(b.rows) - (i + 1)
 	if down > 0 {
-		fmt.Fprintf(b.out, "\033[%dB", down)
+		fmt.Fprint(b.out, term.CursorDown(down))
 	}
 	// Always reset to column 0 after vertical motion; some terminals
 	// preserve column on B but not all.
@@ -319,22 +320,22 @@ func (b *toolBatchState) rewriteRowLocked(i int) {
 // red for err. Frame parameter rotates the spinner glyph for
 // running rows.
 func formatRow(r *toolRow, frame int) string {
-	var icon, color string
+	var icon string
+	var colorFn func(string) string
 	switch r.state {
 	case toolRowPending:
 		icon = string(spinnerFrames[frame%len(spinnerFrames)])
-		color = "\033[2m" // dim
+		colorFn = term.Dim
 	case toolRowRunning:
 		icon = string(spinnerFrames[frame%len(spinnerFrames)])
-		color = "\033[36m" // cyan — alive and working
+		colorFn = term.Cyan
 	case toolRowOK:
 		icon = "✓"
-		color = "\033[32m" // green
+		colorFn = term.Green
 	case toolRowErr:
 		icon = "✗"
-		color = "\033[31m" // red
+		colorFn = term.Red
 	}
-	const reset = "\033[0m"
 
 	detail := r.detail
 	// One-line clamp; the row must not wrap or our cursor math breaks.
@@ -349,7 +350,7 @@ func formatRow(r *toolRow, frame int) string {
 		// Live elapsed + buffered byte count so the eye can see
 		// real-time progress on each row independently.
 		elapsed := time.Since(r.startedAt)
-		stat = "  " + dim(fmt.Sprintf("(%s, %s)", formatRowElapsed(elapsed), formatBytes(r.output.Len())))
+		stat = "  " + term.Dim(fmt.Sprintf("(%s, %s)", formatRowElapsed(elapsed), formatBytes(r.output.Len())))
 	case toolRowOK, toolRowErr:
 		elapsed := r.endedAt.Sub(r.startedAt)
 		if r.startedAt.IsZero() {
@@ -362,17 +363,15 @@ func formatRow(r *toolRow, frame int) string {
 				lines++
 			}
 		}
-		stat = "  " + dim(fmt.Sprintf("(%s, %s)", formatRowElapsed(elapsed), pluralLines(lines)))
+		stat = "  " + term.Dim(fmt.Sprintf("(%s, %s)", formatRowElapsed(elapsed), pluralLines(lines)))
 	}
 
-	prefix := fmt.Sprintf("  %s%s%s %s", color, icon, reset, r.name)
+	prefix := fmt.Sprintf("  %s %s", colorFn(icon), r.name)
 	if detail != "" {
-		prefix += " " + dim("·") + " " + detail
+		prefix += " " + term.Dim("·") + " " + detail
 	}
 	return prefix + stat
 }
-
-func dim(s string) string { return "\033[2m" + s + "\033[0m" }
 
 func formatRowElapsed(d time.Duration) string {
 	switch {

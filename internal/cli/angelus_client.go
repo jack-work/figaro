@@ -51,7 +51,8 @@ func ensureAngelus() {
 		die("find executable: %s", err)
 	}
 
-	cmd := exec.Command(exe, "--angelus")
+	cmd := exec.Command(exe)
+	cmd.Env = append(os.Environ(), "_FIGARO_DAEMON=1")
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil

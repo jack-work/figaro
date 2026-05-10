@@ -58,7 +58,10 @@ func runKill(loaded *config.Loaded) {
 	if len(os.Args) < 3 {
 		die("usage: figaro kill <id>")
 	}
-	figaroID := os.Args[2]
+	runKillByID(loaded, os.Args[2])
+}
+
+func runKillByID(loaded *config.Loaded, figaroID string) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -76,7 +79,10 @@ func runAttend(loaded *config.Loaded) {
 	if len(os.Args) < 3 {
 		die("usage: figaro attend <id>")
 	}
-	figaroID := os.Args[2]
+	runAttendByID(loaded, os.Args[2])
+}
+
+func runAttendByID(loaded *config.Loaded, figaroID string) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
