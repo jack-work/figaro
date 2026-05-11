@@ -6,25 +6,13 @@ import (
 	"strings"
 )
 
-// EnvironmentAllowlist names the process env vars that get reflected
-// into the chalkboard at aria bootstrap under
-// `system.environment.<lower(name)>`. Values are captured as plain
-// strings. Adding a name here makes the value available to providers
-// and tools through the snapshot without further plumbing — opt-in
-// keeps the chalkboard from picking up arbitrary process state.
-//
-// Bootstrap is one-shot: once an aria has its first patch, future
-// env-var changes don't propagate. Override at runtime with
-// `figaro set system.environment.<key> "<value>"`.
+// EnvironmentAllowlist is the set of env vars captured into the
+// chalkboard at bootstrap (one-shot).
 var EnvironmentAllowlist = []string{
 	"FIGARO_WIRE_DIR",
 }
 
-// EnvironmentPatch reads the allowlisted env vars and returns a
-// chalkboard patch that sets `system.environment.<lower>` for each
-// non-empty value. Unset/empty vars are skipped (no Remove —
-// bootstrap doesn't unset stale state that may have been set by the
-// user explicitly).
+// EnvironmentPatch returns a patch with allowlisted env vars.
 func EnvironmentPatch() Patch {
 	var set map[string]json.RawMessage
 	for _, name := range EnvironmentAllowlist {

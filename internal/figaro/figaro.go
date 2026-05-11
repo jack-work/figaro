@@ -1,15 +1,9 @@
-// Package figaro implements the agent primitive — a long-lived AI agent
-// that owns a chat context, provider, model, and a chalkboard.
+// Package figaro implements the agent: a long-lived process owning
+// a chat context, provider, model, and chalkboard.
 //
-// Concurrency: one inbox goroutine per agent. User-RPC events come in
-// via the inbox; each user prompt drives a synchronous runTurn (see
-// turn.go) that owns the full provider → tools → repeat-or-done
-// lifecycle. Provider deltas + tool events live inside the turn,
-// not on the inbox. Interrupt is a direct method that cancels the
-// active turn's context.
-//
-// Each figaro listens on its own unix socket and speaks JSON-RPC 2.0
-// — see protocol.go / server.go for the surface.
+// One inbox goroutine per agent. User prompts drive synchronous
+// runTurn (turn.go) which owns provider streaming and tool dispatch.
+// Each figaro listens on a unix socket speaking JSON-RPC 2.0.
 package figaro
 
 import (
@@ -19,34 +13,17 @@ import (
 )
 
 // Figaro is a single agent instance.
-// See package doc for lifecycle and concurrency model.
 type Figaro interface {
-	// ID returns the figaro's unique identifier.
 	ID() string
-
-	// SocketPath returns the path to this figaro's unix socket.
 	SocketPath() string
-
-	// Prompt enqueues a prompt. Processed FIFO by a single goroutine.
-	// Returns immediately after enqueuing.
 	Prompt(text string)
-
-	// Interrupt asks the figaro to abort its current turn. Selfish
-	// signal — cuts ahead of pending LLM/tool events. Idempotent and
-	// safe to call when idle (no-op).
 	Interrupt()
-
-	// Context returns all messages in the chat history.
 	Context() []message.Message
-
-	// Info returns current metadata.
 	Info() FigaroInfo
-
-	// Kill terminates the figaro, closes its socket, releases resources.
 	Kill()
 }
 
-// FigaroInfo holds metadata about a running figaro.
+// FigaroInfo holds metadata about a figaro.
 type FigaroInfo struct {
 	ID               string    `json:"id"`
 	State            string    `json:"state"` // "active", "idle"

@@ -26,9 +26,7 @@ func mustLoadConfig() *config.Loaded {
 	return loaded
 }
 
-// hushOnce lazily initializes the managed hush instance. The managed
-// package detects a running hush agent (ModeExternal) or starts one
-// via the hush CLI or embedded re-exec (ModeEmbedded).
+// hushOnce lazily initializes the managed hush instance.
 var (
 	hushInstance *managed.Hush
 	hushOnce     sync.Once
@@ -47,9 +45,7 @@ func mustHush() *managed.Hush {
 	return hushInstance
 }
 
-// ensureHush initializes hush and starts the agent if needed.
-// Must be called from the CLI process (not the angelus) so it can
-// prompt for a passphrase on the terminal.
+// ensureHush initializes hush. Must be called from the CLI process.
 func ensureHush() {
 	h := mustHush()
 	if !h.HasIdentity() {
@@ -71,8 +67,7 @@ func ensureHush() {
 	}
 }
 
-// buildPromptChalkboard collects the per-prompt chalkboard values the
-// CLI surfaces to its figaro: cwd and datetime (hour-precision).
+// buildPromptChalkboard collects per-prompt chalkboard values.
 func buildPromptChalkboard() *rpc.ChalkboardInput {
 	cwd, _ := os.Getwd()
 	snap := map[string]json.RawMessage{}
@@ -91,8 +86,7 @@ func buildPromptChalkboard() *rpc.ChalkboardInput {
 	return &rpc.ChalkboardInput{Context: snap}
 }
 
-// buildChalkboard loads the embedded default body templates plus any
-// user overrides from ~/.config/figaro/chalkboard/.
+// buildChalkboard loads body templates with user overrides.
 func buildChalkboard() *template.Template {
 	tmpls, err := chalkboard.LoadDefaultTemplates()
 	if err != nil {

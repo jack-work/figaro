@@ -13,8 +13,7 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
-// runAngelus runs the supervisor side of the binary. Spawned by
-// ensureAngelus via `figaro --angelus`.
+// runAngelus runs the supervisor side of the binary.
 func runAngelus() {
 	loaded := mustLoadConfig()
 	runtimeDir := angelusRuntimeDir()

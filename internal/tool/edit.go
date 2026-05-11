@@ -9,18 +9,13 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// EditRequest is the typed input to the edit tool. A single call can
-// carry multiple disjoint replacements; all are matched against the
-// same original file content, sorted, checked for overlap, and applied
-// in one write.
+// EditRequest is the typed input to the edit tool.
 type EditRequest struct {
 	Path  string
 	Edits []EditOp
 }
 
-// EditResult reports what the edit tool did. Diff is a line-numbered
-// unified-ish diff; FirstChangedLine is the 1-indexed new-file line
-// where the first change appears.
+// EditResult reports what the edit tool did.
 type EditResult struct {
 	Path             string // absolute path actually written
 	EditsApplied     int
@@ -33,8 +28,7 @@ type Editor interface {
 	Edit(ctx context.Context, req EditRequest) (EditResult, error)
 }
 
-// EditTool implements both Editor and the generic Tool interface.
-// Edits are serialized per absolute path via WithFileMutex.
+// EditTool implements Editor and Tool. Serialized per path.
 type EditTool struct {
 	Cwd string
 }
@@ -155,11 +149,7 @@ func (e *EditTool) Edit(ctx context.Context, req EditRequest) (EditResult, error
 	return result, nil
 }
 
-// TODO: figure out a better way to parse arguments here.
-// parseEditArgs lifts the JSON-map arg shape used by the Tool interface
-// into a typed EditRequest. Expects:
-//
-//	{ "path": "...", "edits": [ { "old_text": "...", "new_text": "..." }, ... ] }
+// parseEditArgs lifts the JSON-map arg shape into EditRequest.
 func parseEditArgs(args map[string]interface{}) (EditRequest, error) {
 	path, _ := args["path"].(string)
 	if path == "" {

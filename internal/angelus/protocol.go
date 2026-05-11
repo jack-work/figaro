@@ -34,17 +34,11 @@ type ServerConfig struct {
 	ProviderFactory ProviderFactory
 	Ctx             context.Context
 
-	// ChalkboardTemplates is the shared body-template set used by
-	// providers to render per-message Patches as system reminders.
-	// Optional — nil disables chalkboard reminder rendering. Per-aria
-	// chalkboard.State handles are opened on demand by the create /
-	// restoreByID paths under arias/{id}/chalkboard.json, alongside
-	// aria.jsonl.
+	// ChalkboardTemplates renders Patches as system reminders. nil = skip.
 	ChalkboardTemplates *template.Template
 }
 
-// Handlers wraps the angelus JSON-RPC handler map and provides
-// additional methods like aria restoration.
+// Handlers wraps the angelus JSON-RPC handler map.
 type Handlers struct {
 	Map map[string]jsonrpc.HandlerFunc
 	h   *handlers
@@ -76,9 +70,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	}
 }
 
-// Restore lazily re-creates the agent for ariaID if it isn't already
-// in the registry. Returns the live Figaro on success. Used by
-// RestoreBindings to revive an aria just before binding a PID to it.
+// Restore lazily re-creates the agent for ariaID.
 func (hs *Handlers) Restore(ctx context.Context, ariaID string) (figaro.Figaro, error) {
 	return hs.h.restoreByID(ctx, ariaID)
 }
@@ -92,11 +84,7 @@ type handlers struct {
 	outfitter *outfit.Outfitter
 }
 
-// openAriaChalkboard returns a *chalkboard.State at
-// arias/{ariaID}/chalkboard.json (sibling to aria.jsonl). Returns nil
-// when the angelus has no FileBackend (chalkboard persistence is
-// FileBackend-specific) or the open fails — in either case the agent
-// runs without a chalkboard and a warning is logged.
+// openAriaChalkboard opens the chalkboard for an aria. nil on failure.
 func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 	if h.cbTmpls == nil {
 		return nil
@@ -114,9 +102,7 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 	return st
 }
 
-// fillFromChalkboard reads arias/<id>/chalkboard.json off disk and
-// splices the configured fields (Provider, Model) into the list
-// entry. Cheap — chalkboard.json is small.
+// fillFromChalkboard reads chalkboard.json and fills Provider/Model.
 func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoResponse) {
 	fb, ok := h.angelus.Backend.(interface{ Dir() string })
 	if !ok {
@@ -147,10 +133,7 @@ func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoRespon
 	}
 }
 
-// openAriaTranslation returns a per-aria, per-provider translation
-// stream via the backend. Returns nil when the angelus has no Backend
-// or the open fails — the agent runs without translation caching in
-// that case.
+// openAriaTranslation opens the per-aria translation cache. nil on failure.
 func (h *handlers) openAriaTranslation(ariaID, providerName string) store.Stream[[]json.RawMessage] {
 	if h.angelus.Backend == nil {
 		return nil
@@ -172,7 +155,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 
-	// Resolve the named loadout — TOML → chalkboard patch.
+	// Resolve loadout -> chalkboard patch.
 	base, err := h.outfitter.Load(req.Loadout)
 	if err != nil {
 		return nil, fmt.Errorf("create: load loadout %q: %w", req.Loadout, err)
@@ -201,8 +184,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, fmt.Errorf("create provider %q: %w", provName, err)
 	}
 
-	// Resolve aria id: caller-supplied (validated, conflict-checked)
-	// or angelus-generated (8-char uuid prefix).
+	// Resolve aria id.
 	var id string
 	if req.ID != "" {
 		if err := rpc.ValidateAriaID(req.ID); err != nil {
@@ -224,8 +206,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	cwd, _ := os.Getwd()
 
-	// Ephemeral figaros skip the on-disk backend; the chalkboard is
-	// still created in-memory so the loadout values seed it.
+	// Ephemeral: in-memory only.
 	backend := h.angelus.Backend
 	if req.Ephemeral {
 		backend = nil
@@ -238,8 +219,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	if cbState == nil {
 		cbState, _ = chalkboard.Open("")
 	}
-	// Runtime values that aren't in the loadout — record them on the
-	// patch so the chalkboard ends up with everything in one shot.
+	// Record runtime values on the patch.
 	if base.Set == nil {
 		base.Set = map[string]json.RawMessage{}
 	}
@@ -300,8 +280,7 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 		return nil, err
 	}
 
-	// Live agent: tear it down through the registry. Dormant aria:
-	// nothing to kill in memory, just remove from disk below.
+	// Kill live agent or just remove dormant from disk.
 	if h.angelus.Registry.Get(req.FigaroID) != nil {
 		if err := h.angelus.Registry.Kill(req.FigaroID); err != nil {
 			return nil, err
@@ -318,11 +297,7 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	return rpc.KillResponse{OK: true}, nil
 }
 
-// list merges live registry entries with persisted-but-dormant arias.
-// Live entries carry full state (token counts, message count from the
-// in-memory store, etc.); dormant entries are synthesized from the
-// backend's AriaInfo and report state="dormant" to signal the agent
-// is not yet loaded. Binding a PID to a dormant aria revives it.
+// list merges live and dormant arias.
 func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	live := h.angelus.Registry.List()
 	result := make([]rpc.FigaroInfoResponse, 0, len(live))
@@ -371,7 +346,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 					entry.LastActive = aria.Meta.LastActiveMS
 				}
 			}
-			// Configured fields live in the chalkboard, not meta.
+
 			h.fillFromChalkboard(aria.ID, &entry)
 			result = append(result, entry)
 		}
@@ -385,8 +360,7 @@ func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	// Lazy-restore the target aria if it lives on disk but isn't yet
-	// in the registry. Bind would otherwise fail with "not found".
+	// Lazy-restore dormant arias before bind.
 	if _, err := h.restoreByID(ctx, req.FigaroID); err != nil {
 		return nil, fmt.Errorf("bind: restore %s: %w", req.FigaroID, err)
 	}
@@ -396,9 +370,7 @@ func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{
 	return rpc.BindResponse{OK: true}, nil
 }
 
-// attach restores a dormant aria into the live registry without
-// touching pid bindings. No-op (and still returns the live endpoint)
-// if the aria is already in the registry.
+// attach restores a dormant aria without touching pid bindings.
 func (h *handlers) attach(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.AttachRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -468,11 +440,7 @@ func (h *handlers) saveBindings(ctx context.Context, params json.RawMessage) (in
 	}, nil
 }
 
-// restoreByID looks up the aria in the backend and, if present,
-// re-creates the figaro agent and registers it. Returns the live
-// Figaro on success. If the aria is already registered, returns the
-// existing Figaro without re-creating it. Returns an error when no
-// backend is configured, the aria is unknown, or restoration fails.
+// restoreByID re-creates a figaro from the backend.
 func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figaro, error) {
 	if f := h.angelus.Registry.Get(ariaID); f != nil {
 		return f, nil
@@ -493,17 +461,14 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figar
 	return nil, fmt.Errorf("aria %q not found on disk", ariaID)
 }
 
-// restoreOne builds a figaro from an AriaInfo and registers it. Skips
-// arias with no metadata or no messages (the latter are cleaned up).
-// Returns the registered Figaro on success.
+// restoreOne builds and registers a figaro from AriaInfo.
 func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.Figaro, error) {
 	if aria.MessageCount == 0 {
 		h.angelus.Backend.Remove(aria.ID)
 		return nil, fmt.Errorf("restore %s: empty aria, removed", aria.ID)
 	}
 
-	// Configured fields live in chalkboard.json; meta is purely
-	// derived now.
+
 	cb := h.openAriaChalkboard(aria.ID)
 	if cb == nil {
 		return nil, fmt.Errorf("restore %s: chalkboard unavailable", aria.ID)
@@ -529,8 +494,7 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), aria.ID+".sock")
 
-	// Restored aria's cwd may no longer exist — fall back so tools
-	// don't choke. Persisted snapshot keeps the original.
+	// Fall back if restored cwd no longer exists.
 	toolRoot := cwd
 	if _, err := os.Stat(toolRoot); err != nil {
 		toolRoot, _ = os.Getwd()

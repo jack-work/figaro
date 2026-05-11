@@ -7,8 +7,7 @@ import (
 	"time"
 )
 
-// AriaInfo is what `figaro list` shows for a persisted aria. Read
-// from meta.json + the aria.jsonl mtime; we don't open aria.jsonl.
+// AriaInfo is persisted aria metadata for `figaro list`.
 type AriaInfo struct {
 	ID           string
 	MessageCount int

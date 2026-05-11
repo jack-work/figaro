@@ -1,20 +1,4 @@
-// Package config loads figaro's configuration.
-//
-// Layout:
-//
-//	~/.config/figaro/
-//	  config.toml              # top-level: default provider, log
-//	  providers/
-//	    anthropic/
-//	      config.toml          # provider-specific settings
-//	      auth.json            # hush-encrypted credentials
-//	    openai/
-//	      config.toml
-//	      auth.json
-//
-// The top-level config.toml names the default provider. Each provider
-// directory contains its own config and auth. Main discovers all
-// configured providers by scanning the providers directory.
+// Package config loads figaro's configuration from ~/.config/figaro/.
 package config
 
 import (
@@ -30,36 +14,26 @@ type Config struct {
 	// DefaultProvider is the provider used when -p is not specified.
 	DefaultProvider string `toml:"default_provider"`
 
-	// DefaultModel overrides the provider's default model (optional).
+	// DefaultModel overrides the provider's default model.
 	DefaultModel string `toml:"default_model"`
 
-	// EchoPrompt controls whether the CLI prints the user's prompt
-	// before the response streams. Pointer so we can distinguish
-	// "unset → default true" from "explicit false". The setting
-	// lives only on the CLI side; it never enters the conversation.
+	// EchoPrompt controls whether the CLI echoes the prompt.
+	// Pointer to distinguish unset (default true) from explicit false.
 	EchoPrompt *bool `toml:"echo_prompt"`
 
-	// StatusLine controls whether the CLI prints a status banner
-	// (aria id, timestamp, elapsed) at the start and end of each
-	// response. Default true.
+	// StatusLine controls the status banner. Default true.
 	StatusLine *bool `toml:"status_line"`
 
-	// StreamCPS is the target characters-per-second emission rate
-	// for the streaming pacer. The pacer smooths bursty provider
-	// deltas into a steady character-by-character stream so the
-	// terminal feels like the model is typing rather than pasting
-	// in chunks. 0 disables pacing (synchronous passthrough). The
-	// pointer distinguishes "unset → default" from "explicit 0".
+	// StreamCPS is the pacer's target chars/sec. 0 disables pacing.
+	// Pointer to distinguish unset (default) from explicit 0.
 	StreamCPS *int `toml:"stream_cps"`
 
-	// StreamFirstByteBypassMs is the duration in milliseconds during
-	// which the pacer skips queuing and writes synchronously to
-	// preserve time-to-first-token. 0 disables the bypass. Default 80.
+	// StreamFirstByteBypassMs is the sync-write window for TTFT.
+	// Default 80.
 	StreamFirstByteBypassMs *int `toml:"stream_first_byte_bypass_ms"`
 }
 
-// EchoPrompt returns whether the CLI should echo the user's prompt
-// back before streaming the response. Defaults to true.
+// EchoPrompt returns whether to echo the prompt. Default true.
 func (l *Loaded) EchoPrompt() bool {
 	if l.Config.EchoPrompt == nil {
 		return true
@@ -67,8 +41,7 @@ func (l *Loaded) EchoPrompt() bool {
 	return *l.Config.EchoPrompt
 }
 
-// StatusLine returns whether the CLI should print a banner before /
-// after each response. Defaults to true.
+// StatusLine returns whether to show status banners. Default true.
 func (l *Loaded) StatusLine() bool {
 	if l.Config.StatusLine == nil {
 		return true
@@ -76,8 +49,7 @@ func (l *Loaded) StatusLine() bool {
 	return *l.Config.StatusLine
 }
 
-// StreamCPS returns the target characters-per-second rate for the
-// pacer. Defaults to 200. 0 disables pacing.
+// StreamCPS returns the pacer rate. Default 200.
 func (l *Loaded) StreamCPS() int {
 	if l.Config.StreamCPS == nil {
 		return 200
@@ -85,7 +57,7 @@ func (l *Loaded) StreamCPS() int {
 	return *l.Config.StreamCPS
 }
 
-// StreamFirstByteBypassMs returns the bypass window. Defaults to 80 ms.
+// StreamFirstByteBypassMs returns the TTFT bypass window. Default 80ms.
 func (l *Loaded) StreamFirstByteBypassMs() int {
 	if l.Config.StreamFirstByteBypassMs == nil {
 		return 80
@@ -93,27 +65,15 @@ func (l *Loaded) StreamFirstByteBypassMs() int {
 	return *l.Config.StreamFirstByteBypassMs
 }
 
-// AnthropicProvider is the concrete config for an anthropic provider directory.
-//
-// Credentials are resolved lazily on each request by walking a
-// priority-ordered list of strategies (env var → APIKey here →
-// hush-encrypted secret file → OAuth in auth.toml). The first
-// strategy with a credential available wins. APIKey is the
-// plaintext field for the config-value strategy; leave it empty to
-// fall through to encrypted/oauth.
+// AnthropicProvider is the config for an anthropic provider.
 type AnthropicProvider struct {
 	Model     string `toml:"model"`
 	MaxTokens int    `toml:"max_tokens"`
 	APIKey    string `toml:"api_key"`
 
-	// ReminderRenderer selects how chalkboard reminders are surfaced
-	// to the model. "tag" (default) wraps each rendered body in
-	// <system-reminder name="…">…</system-reminder> blocks attached to
-	// the latest user message. "tool" emits a synthetic assistant
-	// tool_use + user tool_result pair after the latest user message.
-	// The synthetic tool is NOT declared in the request's tools list,
-	// so the model cannot call it going forward — it reads as
-	// "I called something, got something back, moving on."
+	// ReminderRenderer selects how chalkboard reminders are projected.
+	// "tag" (default) uses <system-reminder> blocks. "tool" uses
+	// synthetic tool_use/tool_result pairs.
 	ReminderRenderer string `toml:"reminder_renderer"`
 }
 
@@ -139,8 +99,7 @@ func (l *Loaded) ProviderAuthPath(name string) string {
 	return filepath.Join(l.ProviderDir(name), "auth.toml")
 }
 
-// ListProviders returns the names of all configured providers
-// by scanning the providers directory.
+// ListProviders returns all configured provider names.
 func (l *Loaded) ListProviders() []string {
 	dir := filepath.Join(l.ConfigDir, "providers")
 	entries, err := os.ReadDir(dir)
@@ -172,7 +131,7 @@ func (l *Loaded) LoadProviderConfig(name string, target interface{}) error {
 	return nil
 }
 
-// DefaultConfigDir returns the config directory, respecting XDG.
+// DefaultConfigDir returns the config directory (XDG-aware).
 func DefaultConfigDir() string {
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
 		return filepath.Join(d, "figaro")
@@ -181,8 +140,7 @@ func DefaultConfigDir() string {
 	return filepath.Join(home, ".config", "figaro")
 }
 
-// Load reads the top-level config. Returns defaults if the file
-// doesn't exist.
+// Load reads the top-level config. Returns defaults if missing.
 func Load(configDir string) (*Loaded, error) {
 	configPath := filepath.Join(configDir, "config.toml")
 	cfg := defaultConfig()

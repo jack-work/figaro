@@ -10,18 +10,12 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// AgentServer is the figaro-side JSON-RPC contract. Implementations
-// receive a method name + raw params and produce the response. The
-// per-method routing stays inside the implementation; the wire layer
-// in protocol.go just dispatches calls and shuttles bytes.
+// AgentServer is the figaro-side JSON-RPC contract.
 type AgentServer interface {
 	Handle(ctx context.Context, method string, params json.RawMessage) (any, error)
 }
 
-// agentMethods is the closed set of methods the figaro socket
-// exposes — Qua, Context, Set, ReloadConfig, Interrupt, Chalkboard.
-// Add a new method by adding to this list AND wiring a case into
-// Agent.Handle.
+// agentMethods is the set of methods the figaro socket exposes.
 var agentMethods = []string{
 	rpc.MethodQua,
 	rpc.MethodContext,
@@ -31,9 +25,7 @@ var agentMethods = []string{
 	rpc.MethodChalkboard,
 }
 
-// buildHandlers wires AgentServer.Handle behind the handler map shape
-// jsonrpc.Server expects. Each method in agentMethods becomes a
-// closure that re-enters Handle with the method name preserved.
+// buildHandlers wires AgentServer.Handle into the jsonrpc handler map.
 func buildHandlers(srv AgentServer) map[string]jsonrpc.HandlerFunc {
 	handlers := make(map[string]jsonrpc.HandlerFunc, len(agentMethods))
 	for _, m := range agentMethods {
@@ -45,8 +37,7 @@ func buildHandlers(srv AgentServer) map[string]jsonrpc.HandlerFunc {
 	return handlers
 }
 
-// Handle is the Agent's AgentServer implementation. The switch is the
-// only place that knows about specific RPC types.
+// Handle dispatches RPC methods.
 func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	switch method {
 	case rpc.MethodQua:

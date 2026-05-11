@@ -9,8 +9,7 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// StartSocket starts the figaro's JSON-RPC socket listener.
-// Blocks until ctx is cancelled. Should be called in a goroutine.
+// StartSocket starts the JSON-RPC socket listener.
 func (a *Agent) StartSocket(ctx context.Context) error {
 	ep := transport.UnixEndpoint(a.socketPath)
 
@@ -45,11 +44,7 @@ func (a *Agent) StartSocket(ctx context.Context) error {
 	}
 }
 
-// serveConn handles a single JSON-RPC connection to this figaro. The
-// per-method dispatch lives on Agent.Handle (see server.go);
-// serveConn just builds the wire-shape handler map, registers the
-// jsonrpc.Server as a Notifier so fanout writes back down this conn,
-// and runs the server.
+// serveConn handles a single JSON-RPC connection.
 func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 	jconn := jsonrpc.NewConn(conn)
 	srv := jsonrpc.NewServer(jconn, buildHandlers(a))

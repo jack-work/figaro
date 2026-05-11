@@ -5,9 +5,7 @@ import (
 	"sync"
 )
 
-// fileMutex wraps a sync.Mutex with a refcount so we can drop the map
-// entry once nobody is using it. Without the refcount the map grows
-// without bound in long-running processes.
+// fileMutex wraps a sync.Mutex with a refcount.
 type fileMutex struct {
 	mu       sync.Mutex
 	refCount int
@@ -18,10 +16,7 @@ var (
 	fileLocks   = make(map[string]*fileMutex)
 )
 
-// fileLockKey resolves a path to a canonical key for the lock map.
-// filepath.Clean is enough for our use: symlinks to the same file
-// would share a lock only if they resolve identically, but we serialize
-// the common "same path written twice" case which is what matters.
+// fileLockKey resolves a path to a canonical key.
 func fileLockKey(path string) string {
 	abs := path
 	if !filepath.IsAbs(abs) {
@@ -55,9 +50,7 @@ func releaseFileMutex(key string, m *fileMutex) {
 	fileLocksMu.Unlock()
 }
 
-// WithFileMutex serializes fn against any other WithFileMutex call
-// targeting the same absolute path. Different paths run concurrently.
-// The caller's error is returned unchanged.
+// WithFileMutex serializes fn per absolute path.
 func WithFileMutex(path string, fn func() error) error {
 	key := fileLockKey(path)
 	m := acquireFileMutex(key)

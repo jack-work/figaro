@@ -1,12 +1,5 @@
-// Package jsonrpc implements a minimal JSON-RPC 2.0 client and server
-// over any io.ReadWriteCloser, framed as newline-delimited JSON.
-//
-// Ordering is guaranteed by the transport (TCP, unix socket, websocket).
-// One reader goroutine, one writer goroutine. No goroutine pools,
-// no concurrent dispatch.
-//
-// This replaces creachadair/jrpc2 which dispatches OnNotify from
-// concurrent goroutines, causing reordering.
+// Package jsonrpc implements minimal JSON-RPC 2.0 over NDJSON.
+// One reader goroutine, one writer goroutine, ordered delivery.
 package jsonrpc
 
 import (
@@ -19,8 +12,6 @@ import (
 )
 
 // Message is a JSON-RPC 2.0 message.
-// It can be a request (ID + Method), response (ID + Result/Error),
-// or notification (Method, no ID).
 type Message struct {
 	JSONRPC string           `json:"jsonrpc"`
 	ID      *int64           `json:"id,omitempty"`
@@ -55,11 +46,8 @@ func (m *Message) IsNotification() bool {
 	return m.ID == nil && m.Method != ""
 }
 
-// --- Conn: ordered JSON-RPC read/write over a stream ---
-
 // Conn wraps an io.ReadWriteCloser with JSON-RPC 2.0 encoding.
-// Send is safe for concurrent use (mutex-protected).
-// Recv must be called from a single goroutine.
+// Send is mutex-protected; Recv is single-goroutine.
 type Conn struct {
 	rwc io.ReadWriteCloser
 	dec *json.Decoder
@@ -67,7 +55,7 @@ type Conn struct {
 	enc *json.Encoder
 }
 
-// NewConn wraps a stream (net.Conn, pipe, etc.) as a JSON-RPC connection.
+// NewConn wraps a stream as a JSON-RPC connection.
 func NewConn(rwc io.ReadWriteCloser) *Conn {
 	return &Conn{
 		rwc: rwc,
@@ -76,15 +64,14 @@ func NewConn(rwc io.ReadWriteCloser) *Conn {
 	}
 }
 
-// Send writes a message to the connection. Safe for concurrent use.
+// Send writes a message. Goroutine-safe.
 func (c *Conn) Send(msg Message) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.enc.Encode(msg)
 }
 
-// Recv reads the next message from the connection. Blocks until a
-// message is available. Must be called from a single goroutine.
+// Recv reads the next message. Blocks. Single-goroutine.
 func (c *Conn) Recv() (Message, error) {
 	var msg Message
 	if err := c.dec.Decode(&msg); err != nil {
@@ -98,17 +85,10 @@ func (c *Conn) Close() error {
 	return c.rwc.Close()
 }
 
-// --- HandlerFunc ---
-
-// HandlerFunc handles a JSON-RPC request. params is the raw JSON params.
-// Returns the result to be sent in the response, or an error.
+// HandlerFunc handles a JSON-RPC request.
 type HandlerFunc func(ctx context.Context, params json.RawMessage) (interface{}, error)
 
-// --- Server: serves one connection ---
-
-// Server reads requests from a Conn, dispatches to handlers, and sends
-// responses. Notifications to the client are sent via Notify(), which
-// goes through the same Conn.Send (mutex-protected, ordered).
+// Server dispatches requests from a Conn to handlers.
 type Server struct {
 	conn     *Conn
 	handlers map[string]HandlerFunc
@@ -117,7 +97,7 @@ type Server struct {
 	done     chan struct{}
 }
 
-// NewServer creates a server for a single connection.
+// NewServer creates a server for one connection.
 func NewServer(conn *Conn, handlers map[string]HandlerFunc) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
@@ -129,8 +109,7 @@ func NewServer(conn *Conn, handlers map[string]HandlerFunc) *Server {
 	}
 }
 
-// Serve reads and processes messages until the connection closes or
-// ctx is cancelled. Blocks.
+// Serve processes messages until close or cancel. Blocks.
 func (s *Server) Serve(ctx context.Context) error {
 	defer close(s.done)
 
@@ -146,7 +125,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		if msg.IsRequest() {
 			s.handleRequest(ctx, msg)
 		}
-		// Notifications from client and responses are ignored.
+
 	}
 }
 
@@ -188,8 +167,7 @@ func (s *Server) handleRequest(ctx context.Context, msg Message) {
 	})
 }
 
-// Notify sends a notification to the client. Thread-safe, ordered
-// with respect to other Send calls (responses, other notifications).
+// Notify sends a notification. Goroutine-safe.
 func (s *Server) Notify(method string, params interface{}) error {
 	paramsJSON, err := json.Marshal(params)
 	if err != nil {
@@ -213,15 +191,10 @@ func (s *Server) Wait() {
 	<-s.done
 }
 
-// --- Client: sends requests, receives responses + notifications ---
-
-// NotifyFunc is called for each notification from the server.
-// Called synchronously on the reader goroutine — in wire order.
+// NotifyFunc handles server notifications (called in wire order).
 type NotifyFunc func(method string, params json.RawMessage)
 
 // Client sends requests and receives responses over a Conn.
-// Server notifications are delivered to OnNotify synchronously
-// on the reader goroutine — ordered, no goroutine pool.
 type Client struct {
 	conn     *Conn
 	onNotify NotifyFunc
@@ -233,9 +206,7 @@ type Client struct {
 	done     chan struct{}
 }
 
-// NewClient creates a client. onNotify is called for each server
-// notification, synchronously on the reader goroutine (ordered).
-// May be nil to discard notifications.
+// NewClient creates a client. onNotify may be nil.
 func NewClient(conn *Conn, onNotify NotifyFunc) *Client {
 	c := &Client{
 		conn:     conn,
@@ -247,15 +218,13 @@ func NewClient(conn *Conn, onNotify NotifyFunc) *Client {
 	return c
 }
 
-// readLoop reads messages from the connection. Responses are routed
-// to pending Call waiters. Notifications are delivered to onNotify.
-// Runs on a single goroutine — all delivery is ordered.
+// readLoop routes responses to callers and delivers notifications.
 func (c *Client) readLoop() {
 	defer close(c.done)
 	for {
 		msg, err := c.conn.Recv()
 		if err != nil {
-			// Connection closed or error — wake all pending calls.
+			// Connection closed; wake pending calls.
 			c.mu.Lock()
 			c.closed = true
 			for _, ch := range c.pending {
@@ -284,7 +253,7 @@ func (c *Client) readLoop() {
 	}
 }
 
-// Call sends a request and blocks until the response arrives.
+// Call sends a request and blocks for the response.
 func (c *Client) Call(ctx context.Context, method string, params, result interface{}) error {
 	id := c.nextID.Add(1)
 
@@ -293,7 +262,7 @@ func (c *Client) Call(ctx context.Context, method string, params, result interfa
 		return fmt.Errorf("marshal params: %w", err)
 	}
 
-	// Register before sending so we don't miss the response.
+
 	ch := make(chan Message, 1)
 	c.mu.Lock()
 	if c.closed {
@@ -315,7 +284,7 @@ func (c *Client) Call(ctx context.Context, method string, params, result interfa
 		return fmt.Errorf("send: %w", err)
 	}
 
-	// Wait for response or context cancellation.
+
 	select {
 	case resp, ok := <-ch:
 		if !ok {
@@ -336,17 +305,14 @@ func (c *Client) Call(ctx context.Context, method string, params, result interfa
 	}
 }
 
-// Close closes the connection and waits for the read loop to exit.
+// Close closes the connection.
 func (c *Client) Close() error {
 	err := c.conn.Close()
 	<-c.done
 	return err
 }
 
-// Done returns a channel that is closed when the client's read loop
-// exits — i.e. when the underlying connection is closed by either
-// side, or hits an unrecoverable read error. Useful for detecting an
-// agent that died mid-turn.
+// Done returns a channel closed when the connection dies.
 func (c *Client) Done() <-chan struct{} {
 	return c.done
 }

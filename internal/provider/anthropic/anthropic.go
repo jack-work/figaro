@@ -1,9 +1,4 @@
-// Package anthropic implements the figaro Provider for the Anthropic Messages API.
-//
-// Send drives one turn end-to-end: catches up the translator from the
-// figStream, POSTs, streams SSE chunks (decoded inline so figaro IR
-// deltas hit the bus as they arrive), and on EOF appends the
-// assembled assistant message to figStream and the translator cache.
+// Package anthropic implements the Provider for the Anthropic Messages API.
 package anthropic
 
 import (
@@ -50,23 +45,15 @@ type Anthropic struct {
 	HTTPClient       *http.Client
 	ReminderRenderer string // "tag" (default) or "tool"
 
-	// Templates is the chalkboard body-template set used to render
-	// per-message Patches as system-reminder content blocks. Optional;
-	// nil means patches are dropped (no reminder content emitted).
+	// Templates renders Patches as system-reminder blocks. nil = skip.
 	Templates *template.Template
 
-	// CacheOpen opens the on-disk per-aria translation cache. Nil
-	// disables caching (ephemeral arias). The provider owns the
-	// returned stream's lifetime — opens lazily on first Send for
-	// each aria and keeps it open for the agent's life.
+	// CacheOpen opens the per-aria translation cache. nil = no caching.
 	CacheOpen func(aria string) (store.Stream[[]json.RawMessage], error)
 	caches    map[string]store.Stream[[]json.RawMessage] // guarded by mu
 }
 
-// New constructs an Anthropic provider. resolver supplies the API
-// token on each request; cacheOpen is the per-aria cache file opener,
-// nil = ephemeral (no caching). Credential strategy (OAuth vs static
-// key) is the caller's choice and is hidden behind resolver.
+// New constructs an Anthropic provider.
 func New(cfg config.AnthropicProvider, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Stream[[]json.RawMessage], error)) (*Anthropic, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("anthropic: nil token resolver")
@@ -86,10 +73,8 @@ func New(cfg config.AnthropicProvider, resolver auth.TokenResolver, cacheOpen fu
 	}, nil
 }
 
-// cacheFor returns the per-aria cache, opening it lazily on first
-// use. Stale entries (Fingerprint mismatch) get cleared at open. nil
-// when no cache is configured or the open failed (provider runs
-// without caching for that aria).
+// cacheFor returns the per-aria cache, opening lazily. nil if
+// unconfigured or open failed.
 func (a *Anthropic) cacheFor(aria string) store.Stream[[]json.RawMessage] {
 	if aria == "" || a.CacheOpen == nil {
 		return nil
@@ -109,8 +94,7 @@ func (a *Anthropic) cacheFor(aria string) store.Stream[[]json.RawMessage] {
 	return s
 }
 
-// invalidateIfStale clears the cache when stored Fingerprint doesn't
-// match the current encoder config.
+// invalidateIfStale clears the cache on fingerprint mismatch.
 func (a *Anthropic) invalidateIfStale(s store.Stream[[]json.RawMessage]) {
 	want := a.Fingerprint()
 	for _, e := range s.Read() {
@@ -123,10 +107,7 @@ func (a *Anthropic) invalidateIfStale(s store.Stream[[]json.RawMessage]) {
 	}
 }
 
-// setAuthHeaders applies the auth + protocol headers to a request.
-// Called both for the initial send and the on-401 retry. The shape
-// (Bearer + claude-code beta vs x-api-key) is decided per token by
-// the sk-ant-oat prefix.
+// setAuthHeaders applies auth + protocol headers.
 func (a *Anthropic) setAuthHeaders(req *http.Request, apiKey string, betas string) {
 	req.Header.Set("anthropic-version", apiVersion)
 	if isOAuthToken(apiKey) {
@@ -145,10 +126,7 @@ const (
 	betaMessages = "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31"
 )
 
-// doWithAuthRetry executes build(apiKey)→Do once; on 401 it
-// invalidates the token, resolves a fresh one, and retries exactly
-// once. Returns the final response (caller closes body) plus the
-// token that was actually accepted.
+// doWithAuthRetry executes a request, retrying once on 401.
 func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey string) (*http.Request, error)) (*http.Response, string, error) {
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
@@ -165,7 +143,7 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 	if resp.StatusCode != http.StatusUnauthorized {
 		return resp, apiKey, nil
 	}
-	// 401: drain & close, then retry once with a fresh token.
+	// 401: retry with fresh token.
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	a.auth.Invalidate(apiKey)
@@ -233,8 +211,7 @@ func isOAuthToken(key string) bool {
 
 func (a *Anthropic) Name() string { return providerName }
 
-// Fingerprint hashes the encoder config. Mismatch invalidates the
-// translator cache.
+// Fingerprint hashes the encoder config.
 func (a *Anthropic) Fingerprint() string {
 	rr := a.ReminderRenderer
 	if rr == "" {
@@ -304,7 +281,7 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 	return m
 }
 
-// --- Native types ---
+
 
 type nativeRequest struct {
 	Model     string          `json:"model"`
@@ -362,10 +339,7 @@ type nativeTool struct {
 	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
-// --- Encoding ---
-
-// Encode projects one IR message to native wire bytes. Returns nil
-// for state-only tics.
+// encode projects one IR message to native wire bytes.
 func (a *Anthropic) encode(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error) {
 	snap := prevSnapshot
 	nm, ok := a.renderMessage(msg, &snap)
@@ -379,8 +353,7 @@ func (a *Anthropic) encode(msg message.Message, prevSnapshot chalkboard.Snapshot
 	return []json.RawMessage{raw}, nil
 }
 
-// renderMessage produces the wire shape and advances prevSnap so
-// callers chaining renders stay in step.
+// renderMessage produces the wire shape.
 func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snapshot) (nativeMessage, bool) {
 	switch msg.Role {
 	case message.RoleUser:
@@ -423,10 +396,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snap
 			case message.ContentThinking:
 				blocks = append(blocks, nativeBlock{Type: "thinking", Thinking: c.Text})
 			case message.ContentToolCall:
-				// Anthropic requires tool_use.input even when empty.
-				// Arguments may be nil after a WAL roundtrip (omitempty
-				// drops empty maps), so force a literal "{}" rather than
-				// trusting json.Marshal of a nil map.
+				// Force non-nil input (API requires it).
 				var input interface{}
 				if len(c.Arguments) == 0 {
 					input = json.RawMessage("{}")
@@ -488,11 +458,7 @@ func projectTools(tools []provider.Tool) []nativeTool {
 	return result
 }
 
-// --- System blocks + request assembly ---
-
-// systemBlocks builds the system prefix in order: OAuth preamble
-// (oauth only), credo (system.prompt), skill catalog
-// (system.skills). No cache_control.
+// systemBlocks builds the system prefix: preamble, credo, skills.
 func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 	var out []systemBlock
 	var systemText string
@@ -523,16 +489,13 @@ func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 	return out
 }
 
-// projectMessagesWithModel is the pure assembler: cached per-message
-// bytes + snapshot + tools → nativeRequest with cache markers. No
-// auth resolution; used by Send and tests.
+// projectMessagesWithModel assembles a nativeRequest from cached
+// per-message bytes.
 func (a *Anthropic) projectMessagesWithModel(perMessage [][]json.RawMessage, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
 	return a.projectMessagesWithLTs(perMessage, nil, snapshot, tools, maxTokens, oauth, model)
 }
 
-// projectMessagesWithLTs is the actual assembler. lts[i] is the
-// figStream logical time corresponding to perMessage[i]; pass nil to
-// skip per-message tag application.
+// projectMessagesWithLTs is the assembler with per-message LTs.
 func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts []uint64, snapshot chalkboard.Snapshot, tools []provider.Tool, maxTokens int, oauth bool, model string) (nativeRequest, error) {
 	if maxTokens == 0 {
 		maxTokens = a.MaxTokens
@@ -543,8 +506,7 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 	req := nativeRequest{
 		Model: model, MaxTokens: maxTokens, Stream: true,
 		System: systemBlocks(snapshot, oauth),
-		// agent:
-		// TODO: tools should also just be put onto the chalkboard and extracted with string, as an ordered list.  we should optimize the chalkboard around a byte for byte exactness when roundtrip, so we don't have to worry about tools messing up the cache.
+		// TODO: put tools on the chalkboard as an ordered list.
 		Tools: projectTools(tools),
 	}
 	var msgLTs []uint64
@@ -573,15 +535,8 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 	return req, nil
 }
 
-// applyMessageTags reads `system.tags` from the snapshot and applies
-// per-message overrides. The shape is:
-//
-//	{"<lt>": {"cache_control": "ephemeral"}}
-//
-// For each lt that maps to a wire message, the named cache_control
-// type is attached to that message's last content block. Unknown lts
-// are silently ignored — the tag will activate when (or if) that
-// message ever appears in the wire stream.
+// applyMessageTags reads system.tags and applies per-message
+// cache_control overrides keyed by logical time.
 func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.Snapshot) {
 	raw, ok := snapshot["system.tags"]
 	if !ok || len(raw) == 0 {
@@ -596,7 +551,7 @@ func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.S
 	if len(tags) == 0 {
 		return
 	}
-	// Build lt → last wire-index map (last wins for multi-block messages).
+
 	lastIdx := make(map[uint64]int, len(msgLTs))
 	for i, lt := range msgLTs {
 		if lt == 0 {
@@ -623,11 +578,8 @@ func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.S
 	}
 }
 
-// markCacheBreakpoints attaches cache_control:(input) to the last
-// block of each cacheable region: system prefix, tool list, and the
-// second-to-last message's last content block (the prior endTurn
-// leaf). The OAuth + claude-code-20250219 beta path silently
-// ignores client-controlled cache_control.
+// markCacheBreakpoints attaches cache_control to the last block of
+// each cacheable region.
 func markCacheBreakpoints(req *nativeRequest, setting string) {
 	if n := len(req.System); n > 0 {
 		req.System[n-1].CacheControl = &cacheControl{Type: setting}
@@ -643,14 +595,8 @@ func markCacheBreakpoints(req *nativeRequest, setting string) {
 	}
 }
 
-// --- Send: pipeline SSE → assistant message ---
-
-// Send drives one turn end-to-end: catches up the per-aria translator
-// (cache) from the figStream, POSTs, streams SSE chunks (decoding
-// inline so figaro IR deltas hit the bus as they arrive), and on EOF
-// lands the assembled assistant message in figStream + cache, then
-// announces via bus.PushFigaro. The cache stores one entry per
-// message.
+// Send drives one turn: catch up cache, POST, stream SSE, land
+// the assistant message in figStream + cache.
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
@@ -696,10 +642,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 
 	nm, err := a.drainSSE(ctx, resp.Body, model, bus)
 	if err != nil {
-		// Broken stream (interrupt, EOF mid-message, scanner error,
-		// timeout, error event). Drop everything drainSSE buffered —
-		// no append, no PushFigaro, no cache write. The next turn
-		// starts from a well-formed figStream.
+		// Broken stream: drop partial data.
 		return err
 	}
 	if len(nm.Content) == 0 {
@@ -716,8 +659,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	bus.PushFigaro(msg)
 
 	if cache != nil {
-		// Re-encode strips inbound-only fields the API rejects (stop_reason
-		// etc.). Cached bytes go in input-ready.
+		// Re-encode for cache (strips inbound-only fields).
 		if encoded, err := a.encode(msg, chalkboard.Snapshot{}); err == nil {
 			_, _ = cache.Append(store.Entry[[]json.RawMessage]{
 				FigaroLT:    entry.LT,
@@ -740,10 +682,8 @@ func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
 	return a.Model
 }
 
-// catchUp encodes any figStream entries that don't yet have a cache
-// hit and returns the per-message wire bytes for the request body.
-// Cache write is best-effort — encoding always produces the bytes
-// regardless.
+// catchUp encodes uncached figStream entries and returns per-message
+// wire bytes.
 func (a *Anthropic) catchUp(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage]) ([][]json.RawMessage, []uint64) {
 	fp := a.Fingerprint()
 	snap := chalkboard.Snapshot{}
@@ -784,17 +724,9 @@ func (a *Anthropic) catchUp(figStream store.Stream[message.Message], cache store
 
 const sseReadTimeout = 5 * time.Minute
 
-// drainSSE is the SSE pipeline: read events one at a time, fold each
-// content_block_delta into the in-memory accumulator and emit a
-// figaro IR delta on the bus, return the final nativeMessage at
-// message_stop. No external state is touched and nothing gets
-// persisted — the live deltas are purely ephemeral.
-//
-// Returns a nil error only on a clean message_stop. Any other
-// termination (context cancel / interrupt, scanner error, EOF
-// before message_stop, read timeout, SSE error event) returns a
-// non-nil error and the caller MUST drop the partial nm — it is
-// not safe to persist (tool_use blocks may have unclosed inputs).
+// drainSSE reads SSE events, folds deltas into an accumulator,
+// and returns the final message at message_stop. Non-nil error
+// means the partial message must be dropped.
 func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model string, bus provider.Bus) (nativeMessage, error) {
 	nm := nativeMessage{Role: "assistant", Model: model}
 	var (
@@ -887,8 +819,7 @@ func (a *Anthropic) drainSSE(ctx context.Context, body io.ReadCloser, model stri
 	}
 }
 
-// foldSSEEvent updates the accumulator nm + usage + stopReason with
-// one decoded SSE event and pushes any figaro IR delta on the bus.
+// foldSSEEvent updates the accumulator with one SSE event.
 func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []byte, nm *nativeMessage, usage *nativeUsage, stopReason *string, bus provider.Bus) {
 	switch eventType {
 	case "content_block_start":
@@ -915,8 +846,7 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 			nm.Content[block.Index] = nativeBlock{
 				Type: "tool_use", ID: block.ContentBlock.ID, Name: block.ContentBlock.Name,
 			}
-			// Surface the tool announcement immediately so the CLI
-			// can render a spinner before input streaming completes.
+			// Announce tool so CLI can show a spinner.
 			bus.PushToolUseStart(block.ContentBlock.ID, block.ContentBlock.Name)
 			figOtel.Event(ctx, "provider.tool_use.block_start",
 				attribute.String("tool_call_id", block.ContentBlock.ID),
@@ -1017,7 +947,7 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 			}
 		}
 	case "message_stop":
-		// terminator; finalizeClean() runs from drainSSE
+
 	case "error":
 		*stopReason = "error"
 	}

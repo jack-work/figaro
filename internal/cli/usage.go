@@ -6,9 +6,7 @@ import (
 	"strings"
 )
 
-// extractPrompt pulls the prompt text out of an argv tail of the form
-// `... -- words words words`. Returns "" if no `--` separator is found
-// or if there are no words after it.
+// extractPrompt extracts the prompt after `--` in argv.
 func extractPrompt(args []string) string {
 	for i, arg := range args {
 		if arg == "--" {
@@ -22,8 +20,7 @@ func extractPrompt(args []string) string {
 	return ""
 }
 
-// die prints to stderr and exits 1. The message is the same for all
-// fatal CLI paths (config load, RPC failures, missing args).
+// die prints to stderr and exits 1.
 func die(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
 	os.Exit(1)

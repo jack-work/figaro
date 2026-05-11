@@ -95,9 +95,7 @@ func runAttendByID(loaded *config.Loaded, figaroID string) {
 	})
 }
 
-// runDetach unbinds this shell's PPID from whatever figaro it is
-// currently attached to. The figaro stays alive; the next `q` call
-// from this shell will create a fresh figaro (or prompt for attend).
+// runDetach unbinds this shell's PPID from its figaro.
 func runDetach(loaded *config.Loaded) {
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

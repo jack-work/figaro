@@ -10,9 +10,7 @@ import (
 	"sync"
 )
 
-// FileStream[T] is a Stream[T] backed by an NDJSON file. One line per
-// Entry; appends fsync per write. Entries are loaded into memory at
-// Open.
+// FileStream[T] is an NDJSON-backed Stream[T]. Entries loaded at Open.
 type FileStream[T any] struct {
 	mu         sync.Mutex
 	path       string
@@ -185,12 +183,11 @@ func (s *FileStream[T]) Truncate(afterLT uint64) error {
 	} else {
 		s.nextLT = 1
 	}
-	// Rewrite the file with only the kept entries.
+
 	return s.rewriteFile()
 }
 
-// rewriteFile serializes the in-memory entries back to disk. Called
-// by Truncate after modifying the in-memory slice.
+// rewriteFile serializes in-memory entries back to disk.
 func (s *FileStream[T]) rewriteFile() error {
 	f, err := os.Create(s.path)
 	if err != nil {

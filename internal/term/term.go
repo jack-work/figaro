@@ -1,7 +1,5 @@
-// Package term provides terminal color, width, and TTY detection
-// utilities. It respects NO_COLOR (https://no-color.org/) and
-// FORCE_COLOR environment variables, and can be used across projects
-// with no application-specific dependencies.
+// Package term provides terminal color, width, and TTY detection.
+// Respects NO_COLOR and FORCE_COLOR.
 package term
 
 import (
@@ -95,7 +93,7 @@ func WidthFd(fd int) int {
 	return 80
 }
 
-// --- ANSI escape sequences ---
+
 
 const (
 	reset = "\033[0m"
@@ -138,11 +136,7 @@ func Cyan(s string) string {
 	return codeCyan + s + reset
 }
 
-// --- Visible length / truncation (ANSI-aware) ---
-
-// VisibleLen returns the number of visible columns a string occupies,
-// ignoring ANSI escape sequences. Each rune counts as 1 column
-// (CJK full-width is not handled — add runewidth if needed).
+// VisibleLen returns visible columns ignoring ANSI escapes.
 func VisibleLen(s string) int {
 	n := 0
 	inEsc := false
@@ -162,9 +156,7 @@ func VisibleLen(s string) int {
 	return n
 }
 
-// TruncateVisible truncates s so its visible width is at most maxCols,
-// appending "…" if truncation occurred. ANSI sequences are preserved
-// (an unclosed sequence is closed with reset).
+// TruncateVisible truncates to maxCols visible width.
 func TruncateVisible(s string, maxCols int) string {
 	if maxCols <= 0 {
 		return ""
@@ -187,7 +179,7 @@ func TruncateVisible(s string, maxCols int) string {
 		}
 		if vis >= maxCols-1 { // -1 to leave room for "…"
 			out = append(out, '…')
-			// Close any open ANSI sequence.
+
 			out = append(out, []rune(reset)...)
 			return string(out)
 		}
@@ -197,9 +189,7 @@ func TruncateVisible(s string, maxCols int) string {
 	return string(out) // no truncation needed
 }
 
-// WrapCount returns the number of terminal rows a string of visible
-// width visLen occupies when the terminal is termWidth columns wide.
-// Always >= 1.
+// WrapCount returns how many rows visLen occupies at termWidth.
 func WrapCount(visLen, termWidth int) int {
 	if termWidth <= 0 || visLen <= 0 {
 		return 1
@@ -211,9 +201,7 @@ func WrapCount(visLen, termWidth int) int {
 	return lines
 }
 
-// --- Cursor control (always emitted — used only in TTY paths) ---
-
-// CursorUp returns the ANSI sequence to move the cursor up n lines.
+// CursorUp returns the ANSI cursor-up sequence.
 func CursorUp(n int) string {
 	return fmt.Sprintf("\033[%dA", n)
 }

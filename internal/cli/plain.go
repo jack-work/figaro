@@ -20,11 +20,7 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// runPlainPrompt creates a fresh ephemeral figaro, streams the
-// response verbatim to stdout, and kills the figaro on exit. No
-// PID binding, no aria file, no ANSI, no markdown rendering, no
-// tool decorations. Tool output is still streamed raw so that
-// flows like `l 'run: ls' | sort` work naturally.
+// runPlainPrompt creates an ephemeral figaro and streams raw output.
 func runPlainPrompt(loaded *config.Loaded, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -62,13 +58,7 @@ func runPlainPrompt(loaded *config.Loaded, prompt string) {
 	}
 }
 
-// runExecPrompt asks an ephemeral figaro to emit bash for the given
-// instruction, then executes the captured bash locally via `bash -c`.
-//
-// Flags (before --):
-//
-//	-n / --dry-run   print the bash to stdout instead of executing
-//	-y / --yes       skip the confirmation prompt
+// runExecPrompt asks a figaro for bash, then executes it.
 func runExecPrompt(loaded *config.Loaded, rawArgs []string, instruction string) {
 	dryRun := false
 	skipConfirm := false
@@ -156,8 +146,7 @@ func runExecPrompt(loaded *config.Loaded, rawArgs []string, instruction string) 
 	}
 }
 
-// stripBashFences removes a leading ```bash / ``` fence and trailing ```
-// if the model emits them despite instructions to the contrary.
+// stripBashFences removes markdown code fences.
 func stripBashFences(s string) string {
 	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "```") {
@@ -173,9 +162,7 @@ func stripBashFences(s string) string {
 	return s
 }
 
-// plainPrompt streams the assistant's response (and any tool output)
-// to the given writer. Returns a process exit code: 0 on clean Done,
-// 1 on error, 130 on interrupt.
+// plainPrompt streams the response and returns an exit code.
 func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out io.Writer) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

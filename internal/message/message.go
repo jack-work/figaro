@@ -1,12 +1,5 @@
-// Package message defines the canonical IR (intermediate representation)
-// for figaro's message types.
-//
-// These types are provider-agnostic. They serve as the common spec
-// between providers, avoiding NxM translations. Each message carries
-// per-provider "translation" entries — cached wire-format projections
-// from the originating provider. When sending back to the same
-// provider, it can pull from the cached translation directly instead
-// of re-converting from the IR.
+// Package message defines the provider-agnostic IR for figaro messages.
+// Per-provider wire-format projections are cached alongside each message.
 package message
 
 // Role identifies the participant in a conversation turn.
@@ -41,39 +34,24 @@ const (
 	ContentToolResult ContentType = "tool_result" // user-role tic carries these (one block per tool that completed)
 )
 
-// Content is a single block within a message.
-//
-// The block's Type determines which other fields carry meaningful data:
-//
-//   - text      → Text
-//   - thinking  → Text (the thinking content; signature is provider-side)
-//   - image     → MimeType + Data
-//   - tool_call → ToolCallID + ToolName + Arguments (assistant turn)
-//   - tool_result → ToolCallID + Text (or Image fields) + IsError
-//     (user-role tic; one block per tool that completed since the
-//     last assistant turn)
+// Content is a single block within a message. Type determines
+// which fields are populated.
 type Content struct {
 	Type ContentType `json:"type"`
 
-	// Text content (type == "text", "thinking", or "tool_result"
-	// when the result is text)
+
 	Text string `json:"text,omitempty"`
 
-	// Image content (type == "image", or "tool_result" when the
-	// result is an image)
+
 	MimeType string `json:"mime_type,omitempty"`
 	Data     string `json:"data,omitempty"` // base64
 
-	// Tool identifiers. Used by:
-	//   - tool_call:   ToolCallID + ToolName (and Arguments)
-	//   - tool_result: ToolCallID (matching the tool_call this answers)
-	//                  ToolName is also populated for human-readable logs
+
 	ToolCallID string                 `json:"tool_call_id,omitempty"`
 	ToolName   string                 `json:"tool_name,omitempty"`
 	Arguments  map[string]interface{} `json:"arguments,omitempty"`
 
-	// IsError is set on tool_result blocks when the tool execution
-	// returned an error.
+
 	IsError bool `json:"is_error,omitempty"`
 }
 
@@ -85,27 +63,14 @@ type Usage struct {
 	CacheWriteTokens int `json:"cache_write_tokens"`
 }
 
-// Message is the canonical IR unit — both for conversational turns
-// (a user message, a tic accumulating events between agent responses,
-// or an assistant response) and for state-only timeline events
-// (bootstrap and rehydrate, which are user-role Messages with only
-// Patches and no Content). See plans/aria-storage/log-unification.md.
-//
-// All providers project to and from Message. Per-provider wire-format
-// projections are cached in a parallel translator stream
-// (arias/{id}/translations/{provider}.jsonl), keyed by
-// Message.LogicalTime. The agent re-uses cached bytes on re-send and
-// re-encodes on miss.
+// Message is the canonical IR unit for conversation turns and
+// state-only events. Per-provider wire projections are cached
+// in translator streams keyed by LogicalTime.
 type Message struct {
 	Role    Role      `json:"role"`
 	Content []Content `json:"content"`
 
-	// Patches are chalkboard mutations that arrived during the time
-	// delta this Message represents. Populated for user-role
-	// Messages whose tic carried state changes; nil otherwise.
-	// State-only tics (bootstrap, rehydrate) carry only Patches
-	// (no Content) and emit zero wire output but contribute to the
-	// chalkboard snapshot the projection reads.
+	// Patches are chalkboard mutations for this tic.
 	Patches []Patch `json:"patches,omitempty"`
 
 	// Assistant-only metadata
@@ -114,24 +79,18 @@ type Message struct {
 	Usage      *Usage     `json:"usage,omitempty"`
 	StopReason StopReason `json:"stop_reason,omitempty"`
 
-	// Tool result metadata (role == "tool_result").
-	//
-	// Deprecated: scheduled to retire in a follow-up Stage A commit;
-	// tool_result data moves to per-Content-block fields when the
-	// ContentToolResult content type lands. New code should not rely
-	// on these Message-level fields.
+	// Deprecated: tool result metadata moving to Content blocks.
 	ToolCallID string `json:"tool_call_id,omitempty"`
 	ToolName   string `json:"tool_name,omitempty"`
 
-	// Logical time: monotonic counter, one per tic.
-	// Uniquely identifies this message in the session.
+	// Logical time: monotonic counter, unique per session.
 	LogicalTime uint64 `json:"logical_time"`
 
-	// Timestamp in unix millis (wall clock, informational).
+
 	Timestamp int64 `json:"timestamp"`
 }
 
-// --- convenience constructors ---
+
 
 func TextContent(text string) Content {
 	return Content{Type: ContentText, Text: text}
@@ -141,10 +100,7 @@ func ImageContent(mimeType, data string) Content {
 	return Content{Type: ContentImage, MimeType: mimeType, Data: data}
 }
 
-// ToolResultContent constructs one tool_result content block.
-// Multiple coexist in one user-role Message (one per completed
-// tool). Anthropic's wire shape expects a single text per
-// tool_result; richer payloads need separate blocks.
+// ToolResultContent constructs a tool_result content block.
 func ToolResultContent(toolCallID, toolName, text string, isErr bool) Content {
 	return Content{
 		Type:       ContentToolResult,

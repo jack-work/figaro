@@ -1,11 +1,4 @@
-// Package tokens provides context-size estimation for arias.
-//
-// The primary function, ContextSize, returns the token count for a
-// conversation block. It uses authoritative Usage data from the last
-// assistant message when available, falling back to a chars/4
-// heuristic for any messages appended after the last watermark.
-//
-// This is a pure function of the block — no network, no state.
+// Package tokens provides context-size estimation.
 package tokens
 
 import (
@@ -14,20 +7,14 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// ContextSize returns the estimated token count for a conversation
-// slice.
-//
-// It walks backwards to find the last assistant message with Usage
-// (a "watermark"). If found, it uses InputTokens + OutputTokens as
-// the authoritative base, then adds a chars/4 heuristic for any
-// messages appended after. exact is true only when the watermark is
-// the last message in the slice.
+// ContextSize returns estimated tokens. Uses Usage data as a watermark
+// and falls back to chars/4 for messages after it.
 func ContextSize(msgs []message.Message) (tokens int, exact bool) {
 	if len(msgs) == 0 {
 		return 0, true
 	}
 
-	// Find last assistant message with Usage.
+
 	watermark := -1
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if msgs[i].Usage != nil {
@@ -37,7 +24,7 @@ func ContextSize(msgs []message.Message) (tokens int, exact bool) {
 	}
 
 	if watermark < 0 {
-		// No authoritative data — estimate everything.
+		// No usage data; estimate everything.
 		total := 0
 		for _, m := range msgs {
 			total += EstimateMessage(m)
@@ -52,7 +39,7 @@ func ContextSize(msgs []message.Message) (tokens int, exact bool) {
 		return base, true
 	}
 
-	// Heuristic tail for messages after the watermark.
+
 	tail := 0
 	for _, m := range msgs[watermark+1:] {
 		tail += EstimateMessage(m)
@@ -60,8 +47,7 @@ func ContextSize(msgs []message.Message) (tokens int, exact bool) {
 	return base + tail, false
 }
 
-// EstimateMessage returns a chars/4 token estimate for a single message.
-// Images are estimated at 1200 tokens (4800 chars) per pi-mono convention.
+// EstimateMessage returns a chars/4 estimate. Images = 1200 tokens.
 func EstimateMessage(m message.Message) int {
 	chars := 0
 	for _, c := range m.Content {

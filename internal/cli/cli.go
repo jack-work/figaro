@@ -1,9 +1,4 @@
 // Package cli implements the figaro command-line interface.
-//
-// The package owns subcommand dispatch, terminal rendering of streams,
-// chalkboard editing helpers, and the angelus-spawn / angelus-mode
-// entrypoints. The cmd/figaro binary is a thin wrapper that handles
-// the hush re-exec guard and then calls Run.
 package cli
 
 import (
@@ -16,13 +11,9 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
-// Run dispatches a single CLI invocation. args is the process arguments
-// excluding argv[0]. The function calls os.Exit on terminal errors and
-// returns normally on success — callers are expected to return immediately
-// after Run.
+// Run dispatches a CLI invocation.
 func Run(args []string) {
-	// Internal mode: run as angelus supervisor. Triggered by env var
-	// to keep the user-facing flag namespace clean.
+	// Internal: angelus mode.
 	if os.Getenv("_FIGARO_DAEMON") == "1" || (len(args) > 0 && args[0] == "--angelus") {
 		runAngelus()
 		return
@@ -40,9 +31,7 @@ func Run(args []string) {
 
 	router := buildRouter(loaded)
 
-	// If the args contain `--` and don't start with a known command,
-	// treat the whole invocation as `figaro -- <prompt>` (the default
-	// verb — prompt the pid-bound aria).
+	// Bare `figaro -- <prompt>` defaults to prompt verb.
 	if prompt := extractPrompt(args); prompt != "" {
 		if len(args) == 0 || !router.HasCommand(args[0]) {
 			runPrompt(loaded, prompt)
@@ -60,7 +49,7 @@ func buildRouter(loaded *config.Loaded) *cmdkit.Router {
 
 
 
-	// --- Prompt commands ---
+
 
 	r.Register(&cmdkit.Command{
 		Name:    "aria",
@@ -143,7 +132,7 @@ Flags:
 		},
 	})
 
-	// --- Session management ---
+
 
 	r.Register(&cmdkit.Command{
 		Name:    "list",
@@ -198,7 +187,7 @@ Flags:
 		},
 	})
 
-	// --- State ---
+
 
 	r.Register(&cmdkit.Command{
 		Name:    "state",
@@ -270,7 +259,7 @@ Flags:
 		},
 	})
 
-	// --- System ---
+
 
 	r.Register(&cmdkit.Command{
 		Name:  "login",

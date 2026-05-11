@@ -1,11 +1,4 @@
 // Package auth manages OAuth tokens with encrypted storage via hush.
-//
-// Tokens (access + refresh) are encrypted at rest using the hush agent.
-// The hush agent must be running for figaro to start. This package
-// never touches raw key material on disk.
-//
-// The design is provider-agnostic via OAuthConfig, so it can be
-// extracted into hush as a managed-token-refresh feature later.
 package auth
 
 import (
@@ -23,8 +16,7 @@ import (
 	hush "github.com/jack-work/hush/client"
 )
 
-// OAuthConfig describes an OAuth provider's endpoints and parameters.
-// Provider-agnostic: pass different configs for Anthropic, GitHub, etc.
+// OAuthConfig describes an OAuth provider's endpoints.
 type OAuthConfig struct {
 	ProviderName string // key in auth file, e.g. "anthropic"
 	AuthorizeURL string
@@ -34,8 +26,7 @@ type OAuthConfig struct {
 	Scopes       string
 }
 
-// StoredCredentials is the on-disk format (auth.toml) for a provider's tokens.
-// Each provider directory has its own auth.toml, so this is the root type.
+// StoredCredentials is the on-disk format for provider tokens.
 type StoredCredentials struct {
 	AccessToken  string `toml:"access_token"`  // AGE-ENC[...] or plaintext
 	RefreshToken string `toml:"refresh_token"` // AGE-ENC[...]
@@ -48,15 +39,13 @@ type TokenManager struct {
 	config   OAuthConfig
 	filePath string
 
-	// In-memory cache (plaintext, never written to disk).
-	// Guarded by mu — Resolve and Invalidate may race.
+	// In-memory cache. Guarded by mu.
 	mu        sync.Mutex
 	cached    string
 	expiresAt int64
 }
 
-// NewManager creates a TokenManager for the given provider config.
-// filePath is the path to the auth file (e.g. ~/.config/figaro/auth.json).
+// NewManager creates a TokenManager.
 func NewManager(hushClient *hush.Client, config OAuthConfig, filePath string) *TokenManager {
 	return &TokenManager{
 		hush:     hushClient,
@@ -67,29 +56,28 @@ func NewManager(hushClient *hush.Client, config OAuthConfig, filePath string) *T
 
 
 
-// AccessToken returns a valid access token, refreshing if expired.
-// Requires the hush agent to be running.
+// AccessToken returns a valid access token, refreshing if needed.
 func (m *TokenManager) AccessToken() (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 1. Check in-memory cache
+
 	if m.cached != "" && time.Now().UnixMilli() < m.expiresAt {
 		return m.cached, nil
 	}
 
-	// 2. Ping hush agent
+
 	if err := m.hush.Ping(); err != nil {
 		return "", fmt.Errorf("hush agent is not running. Start it: hush up -d")
 	}
 
-	// 3. Read auth file
+
 	creds, err := m.readCredentials()
 	if err != nil {
 		return "", fmt.Errorf("not logged in. Run: figaro login")
 	}
 
-	// 4. If access token not expired, decrypt and return it
+
 	if time.Now().UnixMilli() < creds.ExpiresAt-5*60*1000 {
 		token, err := m.decrypt(creds.AccessToken)
 		if err != nil {
@@ -100,7 +88,7 @@ func (m *TokenManager) AccessToken() (string, error) {
 		return token, nil
 	}
 
-	// 5. Expired — decrypt refresh token and refresh
+
 	refreshToken, err := m.decrypt(creds.RefreshToken)
 	if err != nil {
 		return "", fmt.Errorf("decrypt refresh token: %w", err)
@@ -111,7 +99,7 @@ func (m *TokenManager) AccessToken() (string, error) {
 		return "", fmt.Errorf("refresh failed. Run: figaro login\n  detail: %w", err)
 	}
 
-	// 6. Encrypt and persist new tokens
+
 	if err := m.saveTokens(newAccess, newRefresh, expiresIn); err != nil {
 		return "", fmt.Errorf("save refreshed tokens: %w", err)
 	}
@@ -126,11 +114,7 @@ func (m *TokenManager) SaveLogin(accessToken, refreshToken string, expiresIn int
 	return m.saveTokens(accessToken, refreshToken, expiresIn)
 }
 
-// Invalidate discards the cached access token if it matches the
-// supplied value, forcing the next AccessToken call to re-read disk
-// and refresh. The token-arg gate prevents racing callers from
-// blowing away a token that has already been refreshed since they
-// last read.
+// Invalidate clears the cached token if it matches, forcing refresh.
 func (m *TokenManager) Invalidate(token string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -140,7 +124,7 @@ func (m *TokenManager) Invalidate(token string) {
 	}
 }
 
-// --- internal helpers ---
+
 
 func (m *TokenManager) readCredentials() (*StoredCredentials, error) {
 	data, err := os.ReadFile(m.filePath)

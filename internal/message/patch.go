@@ -2,15 +2,7 @@ package message
 
 import "encoding/json"
 
-// Patch is a chalkboard delta — a set of new or changed keys plus a
-// list of keys to remove. It is the IR shape for state mutations
-// that ride alongside conversation messages (or, in bootstrap and
-// rehydrate cases, stand alone as state-only timeline events).
-//
-// The chalkboard package owns the runtime-state machinery (Snapshot,
-// Diff, Apply, Merge); this package owns the IR data shape so other
-// IR types (Message) can carry Patches as a field without depending
-// on the chalkboard package.
+// Patch is a chalkboard delta: keys to set plus keys to remove.
 type Patch struct {
 	Set    map[string]json.RawMessage `json:"set,omitempty"`
 	Remove []string                   `json:"remove,omitempty"`

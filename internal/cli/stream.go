@@ -21,16 +21,12 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// mustPromptFigaro is the canonical interactive prompt path: dial the
-// figaro endpoint, ship the prompt, render the streaming response with
-// largo + pacer + tool-call decorations, and unwind on done / error /
-// interrupt. Used by `figaro -- <prompt>`, `figaro qua`, and `figaro new`.
+// mustPromptFigaro is the interactive prompt path.
 func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prompt string, loaded *config.Loaded) {
 	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
 
-	// Frame the turn: top status banner → optional echoed prompt →
-	// thin separator → response.
+
 	startedAt := time.Now()
 	if loaded.StatusLine() {
 		writeStatusLine(os.Stdout, figaroID, startedAt, 0)
@@ -47,8 +43,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Watch stdin for EOF (Ctrl+D) in the background. When we detect it,
-	// cancel the context — same path as Ctrl+C.
+	// Watch stdin for EOF (Ctrl+D).
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		go func() {
 			buf := make([]byte, 256)
@@ -83,10 +78,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	var soloToolCallID string // tool_call_id the active solo was launched for
 
 	resumeIfSuspended := func() {
-		// Wrapped-batch teardown takes precedence — solo.Freeze would
-		// walk up 1 line, which is wrong when N rows sit between the
-		// cursor and the wrapper header. Finalize the batch rows
-		// first, then flip the wrapper in place.
+		// Wrapped-batch teardown takes precedence over solo.Freeze.
 		if batch != nil {
 			if batch.wrapped && solo != nil {
 				rows, anyErr := batch.FinalizeRowsOnly()
@@ -136,16 +128,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			sw.Flush()
 
 		case rpc.MethodToolUseStart:
-			// Server-side: the assistant has begun emitting a tool_use
-			// block. Args are still streaming, but we know the tool
-			// name. Render a placeholder spinner now so the user sees
-			// activity instead of a frozen prompt during long input
-			// streams (e.g. large file writes). MethodToolStart later
-			// refines the detail via UpdateDetail.
-			//
-			// Only the first tool_use block in a turn drives the
-			// placeholder — subsequent ones are absorbed by the
-			// eventual MethodToolBatchStart for multi-tool turns.
+			// Show a placeholder spinner for the first tool_use.
 			var p rpc.ToolUseStartParams
 			if json.Unmarshal(params, &p) == nil {
 				figOtel.Event(ctx, "cli.recv.tool_use_start",
@@ -165,10 +148,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			}
 
 		case rpc.MethodToolUseDelta:
-			// No visual update for now — partial JSON isn't safely
-			// parseable mid-stream and chunk-by-chunk repaints would
-			// fight the ticker. Recorded as an OTel event so trace
-			// readers can see the input streaming cadence.
+			// No visual update; recorded as OTel event.
 			var p rpc.ToolUseDeltaParams
 			if json.Unmarshal(params, &p) == nil {
 				figOtel.Event(ctx, "cli.recv.tool_use_delta",
@@ -182,15 +162,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			if json.Unmarshal(params, &p) == nil && p.Size > 1 {
 				figOtel.Event(ctx, "cli.recv.tool_batch_start",
 					attribute.Int("size", p.Size))
-				// Repurpose the placeholder spinner (raised by an
-				// earlier MethodToolUseStart) as the batch wrapper:
-				// header keeps spinning, becomes ✓/✗ on batch_end.
+				// Repurpose placeholder spinner as batch wrapper.
 				wrapped := false
 				if solo != nil {
 					solo.UpdateHeader("batch", fmt.Sprintf("(%d)", p.Size))
-					// Hand spinner duty to the batch's ticker — solo's
-					// own ticker would otherwise walk up 1 line on
-					// every frame and clobber the bottom batch row.
+					// Hand spinner duty to batch's ticker.
 					solo.StopTicker()
 					wrapped = true
 				} else {
@@ -239,9 +215,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 					batch.MarkRunning(p.ToolCallID)
 					return
 				}
-				// Reuse an existing placeholder spinner if it was
-				// launched for this same tool by the earlier
-				// MethodToolUseStart. Otherwise create one fresh.
+				// Reuse existing placeholder or create one.
 				if solo != nil && soloToolCallID == p.ToolCallID {
 					solo.UpdateDetail(toolDetail(p))
 				} else {
@@ -373,9 +347,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 }
 
-// writeStatusLine prints a short dimmed banner. elapsed=0 omits the
-// duration (top banner). Kept short rather than terminal-width so
-// soft-wrap behaves predictably across narrow / resized terminals.
+// writeStatusLine prints a short dimmed banner.
 func writeStatusLine(w *os.File, figaroID string, ts time.Time, elapsed time.Duration) {
 	body := fmt.Sprintf("%s · %s", figaroID, ts.Format("15:04:05"))
 	if elapsed > 0 {
@@ -384,9 +356,7 @@ func writeStatusLine(w *os.File, figaroID string, ts time.Time, elapsed time.Dur
 	fmt.Fprintln(w, term.Dim("─── "+body+" ───"))
 }
 
-// writeSeparator prints a short dimmed rule between the echoed
-// prompt and the streaming response. Short by design — see
-// writeStatusLine.
+// writeSeparator prints a dimmed rule.
 func writeSeparator(w *os.File) {
 	fmt.Fprintln(w, term.Dim("───"))
 	fmt.Fprintln(w)
@@ -403,8 +373,7 @@ func formatElapsed(d time.Duration) string {
 	}
 }
 
-// toolDetail returns the most useful single-line detail for a tool
-// call: the bash command, the file path, etc.
+// toolDetail returns a one-line summary for a tool call.
 func toolDetail(p rpc.ToolStartParams) string {
 	switch p.ToolName {
 	case "bash":

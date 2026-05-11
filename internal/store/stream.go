@@ -1,10 +1,7 @@
 package store
 
-// Entry is one record on a Stream. LT and FigaroLT are set when the
-// entry is stamped on append.
-//
-// Fingerprint is optional; populated for translation entries to
-// detect encoder-config drift.
+// Entry is one record on a Stream. LT/FigaroLT are stamped on
+// append. Fingerprint detects encoder-config drift in translations.
 type Entry[T any] struct {
 	LT          uint64
 	FigaroLT    uint64
@@ -12,9 +9,7 @@ type Entry[T any] struct {
 	Fingerprint string
 }
 
-// Stream is one column of the per-aria multi-column log. Pure data
-// store: Append/Read/Lookup, no pub/sub. The bus (Inbox) is the
-// only place subscribers fire.
+// Stream is one column of the per-aria log.
 type Stream[T any] interface {
 	// TODO: Pass direction iota, ascending or descending.
 	Read() []Entry[T]
@@ -25,9 +20,7 @@ type Stream[T any] interface {
 	// Append stamps e with a fresh LT and writes it to the stream.
 	Append(e Entry[T]) (Entry[T], error)
 
-	// Truncate removes all entries with LT > afterLT. Used for
-	// stream repair (e.g. injecting synthetic tool_results after a
-	// dangling tool_use).
+	// Truncate removes entries with LT > afterLT.
 	Truncate(afterLT uint64) error
 
 	Clear() error

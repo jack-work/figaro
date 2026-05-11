@@ -9,9 +9,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// runRehydrate re-runs the credo on the figaro currently bound to
-// this shell, applying the diff to its chalkboard.system.* keys as a
-// state-only tic. With --dry-run, the diff is printed but not applied.
+// runRehydrate re-runs the credo on the bound figaro.
 func runRehydrate(loaded *config.Loaded) {
 	dryRun := false
 	for _, arg := range os.Args[2:] {

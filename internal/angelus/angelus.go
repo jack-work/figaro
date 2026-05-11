@@ -23,8 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Angelus is the figaro supervisor. It owns the registry, listens on
-// a unix socket for JSON-RPC requests, and monitors bound PIDs.
+// Angelus is the figaro supervisor.
 type Angelus struct {
 	Registry   *Registry
 	Handlers   map[string]jsonrpc.HandlerFunc // set before Run()
@@ -60,15 +59,11 @@ func (a *Angelus) FigaroSocketDir() string {
 }
 
 // BindingsPath returns the path for persisted PID bindings.
-// Consumed on startup by RestoreBindings (which lazy-restores each
-// binding's target aria); written by SaveBindings when the user asks
-// for `figaro rest --keep-pids`.
 func (a *Angelus) BindingsPath() string {
 	return filepath.Join(a.RuntimeDir, "bindings.json")
 }
 
-// Run starts the angelus: creates directories, listens on the socket,
-// starts the PID monitor, and blocks until ctx is cancelled.
+// Run starts the angelus and blocks until ctx is cancelled.
 func (a *Angelus) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	a.cancel = cancel
@@ -102,9 +97,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
 	defer os.Remove(pidPath)
 
-	// Remove the socket file on exit so `figaro rest` can detect that
-	// the angelus has finished shutting down (it polls for the absence
-	// of this file).
+	// Remove socket on exit so `figaro rest` can detect shutdown.
 	defer os.Remove(a.SocketPath)
 
 	slog.Info("angelus started", "pid", os.Getpid(), "socket", a.SocketPath)
@@ -193,15 +186,7 @@ func (a *Angelus) Stop() {
 	}
 }
 
-// Shutdown drains the registry and stops every figaro gracefully.
-// It runs in three phases:
-//
-//  1. Mark the registry as draining (rejects new figaro.create).
-//  2. For each figaro: send Interrupt(), poll its Info().State for
-//     up to perAgentGrace, then call Kill() which flushes the store.
-//  3. Cancel the angelus context so the accept loop exits.
-//
-// Idempotent. Safe to call from a signal handler.
+// Shutdown drains the registry and stops every figaro. Idempotent.
 func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 	if a.Registry == nil {
 		a.Stop()
@@ -243,8 +228,7 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 	}
 }
 
-// waitForIdle polls the figaro's State, returning early as soon as
-// it reads "idle" or after the grace deadline.
+// waitForIdle polls until State is "idle" or deadline.
 func waitForIdle(f figaro.Figaro, grace time.Duration) {
 	deadline := time.Now().Add(grace)
 	for time.Now().Before(deadline) {

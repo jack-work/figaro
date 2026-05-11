@@ -9,42 +9,26 @@ import (
 	"github.com/pmezard/go-difflib/difflib"
 )
 
-// EditOp is a single find/replace pair within an edit request. All ops
-// in a multi-edit call are matched against the same original content.
+// EditOp is a single find/replace pair.
 type EditOp struct {
 	OldText string
 	NewText string
 }
 
-// appliedEdits is the intermediate result of matching, sorting, and
-// applying a batch of EditOps. baseContent is what we diffed against
-// (either the LF-normalized content, or the fuzzy-normalized version
-// if any edit needed fuzzy matching). newContent is post-application.
+// appliedEdits holds the result of matching and applying EditOps.
 type appliedEdits struct {
 	baseContent string
 	newContent  string
 }
 
-// applyEditsToNormalized runs a batch of edits against already-LF-normalized
-// content. It enforces uniqueness, non-overlap, and at-least-one change.
-//
-// Match semantics:
-//   - Each edit is matched against the SAME baseContent, not incrementally.
-//     This means the model provides oldText slices as they appear in the
-//     original file, without having to reason about earlier edits.
-//   - Replacements are applied in reverse offset order so earlier edit
-//     offsets stay valid.
-//   - If any edit needs fuzzy matching, the baseContent switches to the
-//     fuzzy-normalized form for ALL edits. The resulting file will have
-//     normalized quotes/dashes/whitespace — an acceptable side effect of
-//     fixing formatting drift.
+// applyEditsToNormalized matches and applies edits against LF-normalized
+// content. Falls back to fuzzy-normalized matching if needed.
 func applyEditsToNormalized(normalized string, edits []EditOp, displayPath string) (appliedEdits, error) {
 	if len(edits) == 0 {
 		return appliedEdits{}, fmt.Errorf("edits must contain at least one replacement")
 	}
 
-	// Normalize every oldText/newText to LF so the model doesn't have to
-	// care about line endings.
+	// Normalize to LF.
 	normEdits := make([]EditOp, len(edits))
 	for i, e := range edits {
 		if e.OldText == "" {
@@ -56,9 +40,7 @@ func applyEditsToNormalized(normalized string, edits []EditOp, displayPath strin
 		}
 	}
 
-	// Probe each edit against the raw normalized content first. If any
-	// match falls through to fuzzy, rebase everything onto the
-	// fuzzy-normalized content.
+	// Try exact match first, fall back to fuzzy.
 	initialNeedsFuzzy := false
 	for _, e := range normEdits {
 		m := FuzzyFind(normalized, e.OldText)
@@ -84,7 +66,7 @@ func applyEditsToNormalized(normalized string, edits []EditOp, displayPath strin
 		if !m.Found {
 			return appliedEdits{}, notFoundError(displayPath, i, len(normEdits))
 		}
-		// Uniqueness check. Count in the (possibly fuzzy) base space.
+
 		occ := CountFuzzyOccurrences(base, e.OldText)
 		if occ > 1 {
 			return appliedEdits{}, duplicateMatchError(displayPath, i, len(normEdits), occ)
@@ -109,7 +91,7 @@ func applyEditsToNormalized(normalized string, edits []EditOp, displayPath strin
 		}
 	}
 
-	// Apply in reverse order so earlier offsets remain valid.
+
 	out := base
 	for i := len(resolved) - 1; i >= 0; i-- {
 		r := resolved[i]
@@ -122,8 +104,7 @@ func applyEditsToNormalized(normalized string, edits []EditOp, displayPath strin
 	return appliedEdits{baseContent: base, newContent: out}, nil
 }
 
-// --- error helpers (tuned to match pi-mono's messages loosely so the
-// model gets the same actionable hints) ---
+
 
 func notFoundError(path string, idx, total int) error {
 	if total == 1 {
@@ -153,21 +134,13 @@ func noChangeError(path string, total int) error {
 	return fmt.Errorf("no changes made to %s. The replacements produced identical content.", path)
 }
 
-// --- diff rendering ---
-
-// DiffResult is returned by GenerateDiff. Diff is a human-readable,
-// line-numbered unified-ish diff; FirstChangedLine is the 1-indexed
-// line in the new file where the first change appears (useful for
-// editors that want to jump there). FirstChangedLine is 0 if the
-// two sides are identical.
+// DiffResult holds a human-readable diff and the first changed line.
 type DiffResult struct {
 	Diff             string
 	FirstChangedLine int
 }
 
-// splitForDiff splits by '\n' and drops a trailing empty element so
-// "a\nb\n" becomes ["a","b"] instead of ["a","b",""]. Empty input
-// becomes a single empty line for stable comparison.
+// splitForDiff splits by newline, dropping trailing empty element.
 func splitForDiff(s string) []string {
 	lines := strings.Split(s, "\n")
 	if len(lines) > 1 && lines[len(lines)-1] == "" {
@@ -176,18 +149,8 @@ func splitForDiff(s string) []string {
 	return lines
 }
 
-// GenerateDiff produces a compact line-numbered unified-ish diff
-// between oldContent and newContent. contextLines controls how many
-// surrounding unchanged lines are shown around each change; passing
-// <= 0 uses a sensible default of 4.
-//
-// NOTE (LCS learning TODO): this currently delegates the actual
-// sequence matching to go-difflib's SequenceMatcher, which uses the
-// Ratcliff/Obershelp "gestalt pattern matching" algorithm rather than
-// classic longest-common-subsequence. The rendering layer on top is
-// all ours. Revisit and hand-roll an LCS-based matcher here once you
-// want to learn the algorithm — the public API (GenerateDiff in/out)
-// can stay unchanged.
+// GenerateDiff produces a line-numbered diff. contextLines defaults
+// to 4 if <= 0.
 func GenerateDiff(oldContent, newContent string, contextLines int) DiffResult {
 	if contextLines <= 0 {
 		contextLines = 4
@@ -272,7 +235,7 @@ func GenerateDiff(oldContent, newContent string, contextLines int) DiffResult {
 			continue
 		}
 
-		// Non-equal op — delete, insert, or replace.
+
 		if firstChanged == 0 {
 			firstChanged = op.J1 + 1
 		}

@@ -9,21 +9,7 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// FileBackend is the directory-backed Backend. Each aria is its own
-// subdirectory containing the figaro IR stream + per-provider
-// translator streams + meta.
-//
-// Layout:
-//
-//	{root}/
-//	├── {ariaID-1}/
-//	│   ├── aria.jsonl                NDJSON of Entry[Message] (figaro IR stream)
-//	│   ├── meta.json                 AriaMeta (transitional)
-//	│   └── translations/
-//	│       └── {provider}.jsonl      NDJSON of Entry[[]RawMessage]
-//	├── {ariaID-2}/...
-//
-// Zero external dependencies.
+// FileBackend is a directory-backed Backend. One subdirectory per aria.
 type FileBackend struct {
 	dir string
 }
@@ -139,7 +125,7 @@ func (b *FileBackend) Remove(ariaID string) error {
 
 func (b *FileBackend) Close() error { return nil }
 
-// writeAtomic writes data to path via the rewrite-tmp-rename pattern.
+// writeAtomic writes via tmp+rename.
 func writeAtomic(path string, data []byte) error {
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {

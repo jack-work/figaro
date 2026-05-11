@@ -11,15 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// Session holds the resolved connections for a command that needs
-// to talk to the pid-bound figaro. The three tiers of CLI commands:
-//
-//   - No connection needed: login, models, stop, completion
-//   - Angelus only: list, kill, attend, detach
-//   - Full session: prompt, set, unset, state, rehydrate, derive, aria
-//
-// WithSession and WithAngelus handle setup and teardown so each
-// command's Run function is just business logic.
+// Session holds the resolved connections for a CLI command.
 type Session struct {
 	Loaded   *config.Loaded
 	Angelus  *angelus.Client
@@ -28,8 +20,7 @@ type Session struct {
 	Endpoint transport.Endpoint
 }
 
-// WithAngelus ensures hush + angelus are running, connects, and
-// calls fn with the client. The client is closed on return.
+// WithAngelus connects to the angelus and calls fn.
 func WithAngelus(loaded *config.Loaded, fn func(acli *angelus.Client) error) {
 	ensureHush()
 	ensureAngelus()
@@ -44,8 +35,7 @@ func WithAngelus(loaded *config.Loaded, fn func(acli *angelus.Client) error) {
 	}
 }
 
-// WithSession resolves the pid-bound figaro and calls fn with the
-// full session. Both angelus and figaro clients are closed on return.
+// WithSession resolves the pid-bound figaro and calls fn.
 func WithSession(loaded *config.Loaded, fn func(s *Session) error) {
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

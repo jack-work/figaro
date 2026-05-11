@@ -14,13 +14,8 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// runSet patches a chalkboard key on the figaro bound to this shell.
-// Usage: figaro set <key> <value>
-//
-// The key may be a simple top-level chalkboard name, or a path with
-// `.field` and `[index]` segments — e.g. `system.tags[42].cache_control`.
-// In path mode, the existing top-level value is fetched, the leaf is
-// merged in, and the resulting top-level value is sent back as a Set.
+// runSet patches a chalkboard key. Supports dotted paths like
+// system.tags[42].cache_control.
 func runSet(loaded *config.Loaded) {
 	if len(os.Args) < 4 {
 		die("usage: figaro set <key> <value>")
@@ -58,8 +53,7 @@ func runSetArgs(loaded *config.Loaded, keyArg, raw string) {
 	fmt.Fprintf(os.Stderr, "set %s = %s (figaro %s)\n", keyArg, value, resp.figaroID)
 }
 
-// runUnset removes one or more chalkboard keys.
-// Usage: figaro unset <key> [<key>...]
+// runUnset removes chalkboard keys.
 func runUnset(loaded *config.Loaded) {
 	if len(os.Args) < 3 {
 		die("usage: figaro unset <key> [<key>...]")
@@ -103,8 +97,7 @@ func runUnsetArgs(loaded *config.Loaded, args []string) {
 	fmt.Fprintf(os.Stderr, "unset %s (figaro %s)\n", strings.Join(args, ", "), resp.figaroID)
 }
 
-// runChalkboard prints the current chalkboard snapshot of the
-// figaro bound to this shell. Keys are sorted alphabetically.
+// runChalkboard prints the current chalkboard snapshot.
 func runChalkboard(loaded *config.Loaded) {
 	WithSession(loaded, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -129,9 +122,7 @@ func printSnapshot(w io.Writer, snap map[string]json.RawMessage) {
 	}
 }
 
-// parseChalkboardPath splits a key like `system.tags[42].cache_control`
-// into a top-level chalkboard key (`system.tags`) and a path of leaf
-// segments (`["42", "cache_control"]`).
+// parseChalkboardPath splits a dotted key into top-level key + segments.
 func parseChalkboardPath(s string) (string, []string, error) {
 	if s == "" {
 		return "", nil, fmt.Errorf("empty key")
@@ -185,8 +176,7 @@ func parseChalkboardPath(s string) (string, []string, error) {
 	return top, path, nil
 }
 
-// deepSetJSON walks/creates an object path inside `current` and sets
-// the leaf to `value`.
+// deepSetJSON sets a value at a nested path.
 func deepSetJSON(current json.RawMessage, path []string, value json.RawMessage) (json.RawMessage, error) {
 	var root any
 	if len(current) == 0 || string(current) == "null" {
@@ -222,10 +212,8 @@ func deepSetJSON(current json.RawMessage, path []string, value json.RawMessage) 
 	return out, nil
 }
 
-// deepDeleteJSON walks an object path inside `current` and deletes the
-// leaf segment. Returns the resulting top-level JSON, or `nil` (signal
-// for the caller to remove the top-level chalkboard key entirely) if
-// pruning empty parents bubbles all the way to the root.
+// deepDeleteJSON deletes a value at a nested path. Returns nil if the
+// top-level key should be removed.
 func deepDeleteJSON(current json.RawMessage, path []string) (json.RawMessage, bool, error) {
 	if len(path) == 0 {
 		return nil, true, nil

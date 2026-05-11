@@ -20,19 +20,10 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// runAria handles the unified aria verb. Two shapes:
-//
-//	figaro aria [id] [N] [-v] [-l] [-a]            → render history
-//	figaro aria [id] -- <prompt>                    → prompt the aria
-//
-// Without an id, the pid-bound aria is used. With an id that doesn't
-// exist, a new aria is created with that id (no pid binding). With an
-// id that does exist (live or dormant), it is dialed (the angelus
-// restores dormant arias on demand). Render mode is selected when no
-// `--` is present in args; prompt mode when `--` is present.
+// runAria handles `figaro aria [id] [N] [flags]` (render) or
+// `figaro aria [id] -- <prompt>` (prompt).
 func runAria(loaded *config.Loaded, args []string) {
-	// Split args at the first `--`. Everything before is selectors
-	// (id, N, flags); everything after is the prompt body.
+	// Split at `--`.
 	var head, tail []string
 	dashIdx := -1
 	for i, a := range args {
@@ -48,9 +39,7 @@ func runAria(loaded *config.Loaded, args []string) {
 		head = args
 	}
 
-	// Pull a leading id if present. An id is the first head arg that
-	// validates as an aria id, isn't numeric (back-compat: bare N
-	// still means N), and isn't a flag.
+	// Pull a leading id if present.
 	var id string
 	if len(head) > 0 {
 		candidate := head[0]
@@ -74,14 +63,13 @@ func runAria(loaded *config.Loaded, args []string) {
 	renderAria(loaded, id, head)
 }
 
-// renderAria parses the render-mode flags and prints history. If id
-// is empty, the pid-bound aria is used.
+// renderAria prints history for an aria.
 func renderAria(loaded *config.Loaded, id string, args []string) {
 	n := 10
 	verbose := false
 	literal := false
 	all := false
-	// Expand bundled short flags: -alv → -a -l -v.
+	// Expand bundled short flags.
 	expanded := make([]string, 0, len(args))
 	for _, a := range args {
 		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
@@ -197,9 +185,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 }
 
-// printTransitions walks the aria stream and prints every patch in
-// LT order, so a verbose `figaro aria` reader can see the full
-// timeline of chalkboard mutations that produced the current state.
+// printTransitions prints all chalkboard patches in LT order.
 func printTransitions(w io.Writer, entries []store.Entry[message.Message]) {
 	any := false
 	for _, e := range entries {

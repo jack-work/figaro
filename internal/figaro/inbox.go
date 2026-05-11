@@ -5,11 +5,7 @@ import (
 	"sync"
 )
 
-// Inbox is the per-aria user-RPC event queue. SendPatient and
-// SendSelfish are aliases for "enqueue" — kept so existing test
-// helpers compile. Recv dequeues for the act loop. Provider deltas,
-// tool events, and turn-progress signals do NOT flow here — runTurn
-// owns those internally.
+// Inbox is the per-aria user-RPC event queue.
 type Inbox struct {
 	mu     sync.Mutex
 	cond   *sync.Cond
@@ -27,7 +23,7 @@ func NewInbox(ctx context.Context) *Inbox {
 	return b
 }
 
-// Send enqueues an event. False when the inbox has been closed.
+// Send enqueues an event. Returns false if closed.
 func (b *Inbox) Send(evt event) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -39,14 +35,11 @@ func (b *Inbox) Send(evt event) bool {
 	return true
 }
 
-// SendSelfish / SendPatient are kept as method names for test
-// helpers; both behave identically now (FIFO).
+// SendSelfish/SendPatient are aliases for Send (legacy test compat).
 func (b *Inbox) SendSelfish(evt event) bool { return b.Send(evt) }
 func (b *Inbox) SendPatient(evt event)      { b.Send(evt) }
 
-// Yield is a no-op left in place for callers that still reference
-// it. The Patient/Selfish/Yield gating from the pre-runTurn world
-// is gone.
+// Yield is a no-op (legacy compat).
 func (b *Inbox) Yield() {}
 
 func (b *Inbox) Recv() (event, bool) {

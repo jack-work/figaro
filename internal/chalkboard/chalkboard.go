@@ -1,15 +1,9 @@
-// Package chalkboard manages structured per-aria state that the harness
-// surfaces to LLM providers as system reminders.
+// Package chalkboard manages structured per-aria state surfaced to
+// providers as system reminders.
 //
-// A Snapshot is a full key-value view of an aria's state. A Patch is the
-// delta between two snapshots: keys to set (new or changed) plus keys to
-// remove. Patches are the canonical unit of communication — clients
-// ship them over the wire, the agent persists them in the conversation
-// log, and providers translate them to native API forms.
-//
-// The schema is open: keys are whatever a client populates. Values are
-// opaque JSON. Templates (see render.go) handle the per-key
-// transformation from value → reminder body.
+// Snapshot is a full key-value view. Patch is the delta: keys to set
+// plus keys to remove. Schema is open (keys are arbitrary, values are
+// raw JSON). See render.go for value-to-body templates.
 package chalkboard
 
 import (
@@ -21,32 +15,11 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// Snapshot is a full state view: an open-schema key-value map.
-//
-// Today's shape is intentionally untyped — values are raw JSON, and
-// callers that need a typed view extract their key and json.Unmarshal
-// it themselves. This is fine for the current use cases (renderer
-// templates read with .NewString / .OldString, harness code reads
-// system.* with json.Unmarshal into a string).
-//
-// Future direction: embed Snapshot in a typed envelope where a fixed
-// set of harness-known fields (e.g. system.reminder_policy,
-// system.prompt, system.model) are typed Go fields, and an "extra"
-// map[string]json.RawMessage carries client-defined keys. Renderers
-// would then read policy values via typed accessors instead of
-// string-extracting from raw JSON. The migration path is to add the
-// envelope, leave the existing map accessors in place, and move
-// callers over one by one.
-//
-// One concrete near-term motivation: a reminder-policy field that
-// switches projection between "render only patched keys" (today's
-// behavior) and "render the full snapshot every turn" — see the
-// snapshot threading in the Anthropic projection's projectMessages.
-// That switch wants a typed value rather than a stringly-typed lookup.
+// Snapshot is an untyped key-value map. Values are raw JSON;
+// callers json.Unmarshal what they need.
 type Snapshot map[string]json.RawMessage
 
-// Clone returns a copy. Useful when mutating a snapshot derived from a
-// shared source.
+// Clone returns a deep copy.
 func (s Snapshot) Clone() Snapshot {
 	out := make(Snapshot, len(s))
 	for k, v := range s {
@@ -65,20 +38,11 @@ func (s Snapshot) Lookup(key string) *string {
 	return nil
 }
 
-// Patch is a re-export of message.Patch so callers within the
-// chalkboard package can refer to the IR delta type by an unqualified
-// local name. Methods defined on message.Patch (IsEmpty) are usable
-// via this alias. Methods that depend on Snapshot — see PatchEntries
-// below — live in this package as package-level functions.
+// Patch re-exports message.Patch for local use.
 type Patch = message.Patch
 
-// Diff computes a patch that, when applied to prev, produces s.
-//   - keys present in s with a different value than prev → Set
-//   - keys present in prev but absent in s → Remove
-//
-// Equality is byte-exact on the raw JSON. Callers wanting semantic
-// equality (e.g. independent of object key order) should normalize
-// values before passing them in.
+// Diff computes a patch that transforms prev into s.
+// Equality is byte-exact on raw JSON.
 func (s Snapshot) Diff(prev Snapshot) Patch {
 	var p Patch
 	for k, v := range s {
@@ -98,8 +62,7 @@ func (s Snapshot) Diff(prev Snapshot) Patch {
 	return p
 }
 
-// Apply returns a new snapshot with the patch applied. The receiver is
-// not modified.
+// Apply returns a new snapshot with the patch applied.
 func (s Snapshot) Apply(p Patch) Snapshot {
 	next := make(Snapshot, len(s)+len(p.Set))
 	for k, v := range s {
@@ -114,10 +77,7 @@ func (s Snapshot) Apply(p Patch) Snapshot {
 	return next
 }
 
-// Merge combines two patches into one that applies p first, then q.
-// If both patches mutate the same key, q wins. Used to fold a
-// trigger-driven patch on top of a client-driven patch before
-// rendering.
+// Merge combines two patches (p then q). q wins on conflicts.
 func Merge(p, q Patch) Patch {
 	var out Patch
 	for k, v := range p.Set {
@@ -134,11 +94,11 @@ func Merge(p, q Patch) Patch {
 			out.Set = make(map[string]json.RawMessage)
 		}
 		out.Set[k] = v
-		// q sets it: cancel any prior remove of the same key.
+		// q sets it: cancel any prior remove.
 		out.Remove = removeString(out.Remove, k)
 	}
 	for _, k := range q.Remove {
-		// q removes it: drop any prior set, append to remove if not present.
+		// q removes it: drop any prior set.
 		delete(out.Set, k)
 		if !containsString(out.Remove, k) {
 			out.Remove = append(out.Remove, k)
@@ -152,20 +112,18 @@ func Merge(p, q Patch) Patch {
 }
 
 // Entry is a single change in a patch, expanded with the prior value.
-// Used as the binding for body templates.
 type Entry struct {
 	Key string
 	Old json.RawMessage // nil if newly set
 	New json.RawMessage // nil if removed
 }
 
-// NewString decodes the New value as a JSON string. If the value is not
-// a JSON string, returns the raw bytes as Go string. Empty for removals.
+// NewString decodes New as a JSON string, falling back to raw bytes.
 func (e Entry) NewString() string {
 	return decodeStringOrRaw(e.New)
 }
 
-// OldString is the symmetric helper for the prior value.
+// OldString decodes Old as a JSON string.
 func (e Entry) OldString() string {
 	return decodeStringOrRaw(e.Old)
 }
@@ -175,10 +133,7 @@ func (e Entry) IsRemoval() bool {
 	return e.New == nil
 }
 
-// PatchEntries returns the entries from a patch in stable,
-// deterministic order (sorted by key). Defined as a package-level
-// function rather than a method on Patch because Patch's canonical
-// home is the message package and Snapshot lives here.
+// PatchEntries returns the entries from a patch, sorted by key.
 func PatchEntries(p Patch, prev Snapshot) []Entry {
 	keys := make([]string, 0, len(p.Set)+len(p.Remove))
 	for k := range p.Set {

@@ -11,10 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 )
 
-// runSearch reads a registered durable derivation off disk and
-// prints it. Default: pretty-printed JSON. With -json: raw bytes.
-//
-// Usage: figaro -s <alias> [-json]
+// runSearch prints a durable derivation from disk.
 func runSearch(loaded *config.Loaded, args []string) {
 	if len(args) == 0 {
 		listAliases()

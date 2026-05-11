@@ -12,20 +12,17 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// ReadRequest is the typed input to the read tool. Use this directly
-// from Go code; the Tool interface wrapper handles the JSON map form.
+// ReadRequest is the typed input to the read tool.
 type ReadRequest struct {
-	// Path to the file. Relative paths resolve against the tool's Cwd.
+
 	Path string
-	// Offset is the 1-indexed starting line. Zero means "from line 1".
+
 	Offset int
-	// Limit is the maximum number of lines to read. Zero means "no user
-	// limit" — truncation will still apply.
+
 	Limit int
 }
 
-// ReadResult bundles the text output shown to the model together with
-// structured truncation metadata (if any).
+// ReadResult is the output with optional truncation metadata.
 type ReadResult struct {
 	Content    string
 	Truncation *TruncationResult
@@ -69,10 +66,7 @@ func (r *ReadTool) Parameters() interface{} {
 	}
 }
 
-// Execute is the Tool-interface entry point used by the agent. It
-// decodes the JSON args, delegates to Read, and renders the result.
-// For image files, returns an image content block. For text files,
-// returns a text content block.
+// Execute decodes args and delegates to Read or returns image content.
 func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) ([]message.Content, error) {
 	path, _ := args["path"].(string)
 	if path == "" {
@@ -84,7 +78,7 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 		absPath = filepath.Join(r.Cwd, absPath)
 	}
 
-	// Check if the file is an image — return as image content block.
+
 	if mimeType, ok := detectImageMIME(absPath); ok {
 		data, err := os.ReadFile(absPath)
 		if err != nil {
@@ -101,7 +95,7 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 		}, nil
 	}
 
-	// Text file path — use the existing Read logic.
+
 	req := ReadRequest{Path: path}
 	if off, ok := args["offset"].(float64); ok && off > 0 {
 		req.Offset = int(off)
@@ -120,9 +114,7 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 	return []message.Content{message.TextContent(res.Content)}, nil
 }
 
-// detectImageMIME sniffs the file to see if it's an image type
-// supported by the Anthropic vision API. Returns the MIME type and
-// true if supported, or ("", false) otherwise.
+// detectImageMIME checks if a file is a supported image type.
 func detectImageMIME(path string) (string, bool) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -145,8 +137,7 @@ func detectImageMIME(path string) (string, bool) {
 	}
 }
 
-// Read is the typed Go API. Other programs can call this directly
-// without the JSON-map plumbing.
+// Read is the typed Go API.
 func (r *ReadTool) Read(ctx context.Context, req ReadRequest) (ReadResult, error) {
 	if req.Path == "" {
 		return ReadResult{}, fmt.Errorf("path is required")
@@ -189,8 +180,7 @@ func (r *ReadTool) Read(ctx context.Context, req ReadRequest) (ReadResult, error
 	trunc := TruncateHead(selected, TruncationOptions{})
 	startDisplay := startLine + 1
 
-	// First-line-too-big fallback. The selected slice starts at startLine,
-	// so the offending line number in the original file is startDisplay.
+	// First-line-too-big fallback.
 	if trunc.FirstLineExceedsLimit {
 		lineBytes := len(allLines[startLine])
 		output := fmt.Sprintf(

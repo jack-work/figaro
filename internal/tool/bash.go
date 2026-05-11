@@ -14,14 +14,11 @@ import (
 // BashRequest is the typed input to the bash tool.
 type BashRequest struct {
 	Command string
-	// Timeout is the wall-clock limit for the command. Zero means no
-	// timeout (the context still applies).
+	// Timeout is the wall-clock limit. Zero = no timeout.
 	Timeout time.Duration
 }
 
-// BashResult bundles the final output string with metadata about how
-// the command finished. Output is the (possibly truncated) captured
-// stdout+stderr and is what the model sees.
+// BashResult is the tool's output and exit metadata.
 type BashResult struct {
 	Output     string
 	ExitCode   int
@@ -81,9 +78,7 @@ func (b *BashTool) Execute(ctx context.Context, args map[string]interface{}, onO
 	return []message.Content{message.TextContent(res.Output)}, nil
 }
 
-// Run is the typed Go API. Non-zero exit codes are not returned as an
-// error — they're surfaced in the BashResult.ExitCode field and
-// reflected in the formatted Output string.
+// Run is the typed Go API.
 func (b *BashTool) Run(ctx context.Context, req BashRequest) (BashResult, error) {
 	return b.run(ctx, req, nil)
 }
@@ -93,8 +88,7 @@ func (b *BashTool) run(ctx context.Context, req BashRequest, onOutput OnOutput) 
 		return BashResult{}, fmt.Errorf("command is required")
 	}
 
-	// We manage killing ourselves rather than using exec.CommandContext,
-	// because we need to kill the entire process group (Setpgid).
+	// Kill the process group ourselves (Setpgid).
 	cmd := exec.Command("bash", "-c", req.Command)
 	cmd.Dir = b.Cwd
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -177,7 +171,7 @@ func killProcessGroup(cmd *exec.Cmd) {
 	}
 }
 
-// streamWriter captures all output and optionally streams chunks to a callback.
+// streamWriter captures output and optionally streams chunks.
 type streamWriter struct {
 	buf      bytes.Buffer
 	onOutput OnOutput

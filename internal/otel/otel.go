@@ -1,16 +1,4 @@
-// Package otel is the only place in figaro that imports the OpenTelemetry
-// SDK. Every other package interacts via the stdlib slog logger that Init
-// installs as the default, plus the narrow tracer/metric helpers below.
-//
-// Usage:
-//
-//	shutdown, err := otel.Init(ctx, "~/.local/state/figaro")
-//	defer shutdown(ctx)
-//
-//	ctx, span := otel.Start(ctx, "figaro.prompt")
-//	defer span.End()
-//
-//	slog.Info("agent started", "id", id)
+// Package otel wraps OpenTelemetry SDK init, tracing, and metrics.
 package otel
 
 import (
@@ -79,9 +67,7 @@ func (h *leveledHandler) WithGroup(name string) slog.Handler {
 	return &leveledHandler{inner: h.inner.WithGroup(name), level: h.level}
 }
 
-// Init wires tracer, logger, and meter providers writing JSONL files in dir.
-// Installs slog.Default() so callers can use stdlib slog directly. The
-// returned shutdown flushes pending records and closes files.
+// Init wires OTel providers writing to dir. Installs slog.Default().
 func Init(ctx context.Context, dir string) (func(context.Context) error, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("state dir: %w", err)
@@ -210,7 +196,7 @@ func Event(ctx context.Context, name string, attrs ...attribute.KeyValue) {
 	}
 }
 
-// RecordRequestDuration records a provider request roundtrip in ms.
+// RecordRequestDuration records a request roundtrip.
 func RecordRequestDuration(ctx context.Context, d time.Duration, attrs ...attribute.KeyValue) {
 	if requestDuration == nil {
 		return
@@ -218,7 +204,7 @@ func RecordRequestDuration(ctx context.Context, d time.Duration, attrs ...attrib
 	requestDuration.Record(ctx, float64(d.Milliseconds()), otelmetric.WithAttributes(attrs...))
 }
 
-// RecordToolCall counts a tool dispatch outcome. status is "success" or "failure".
+// RecordToolCall counts a tool dispatch outcome.
 func RecordToolCall(ctx context.Context, status string, attrs ...attribute.KeyValue) {
 	if toolCallCounter == nil {
 		return

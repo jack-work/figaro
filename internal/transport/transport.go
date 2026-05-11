@@ -1,16 +1,5 @@
-// Package transport defines the connection abstraction between figaro components.
-//
-// All inter-component communication is JSON-RPC 2.0 over NDJSON
-// (newline-delimited JSON). The jsonrpc.Conn wraps any net.Conn
-// with ordered read/write.
-//
-// An Endpoint is a serializable descriptor that tells a client how to
-// connect. It uses URI syntax with the scheme as the transport discriminator:
-//
-//	unix:///run/user/1000/figaro/figaros/abc.sock
-//	tcp://192.168.1.5:9090
-//
-// Currently only "unix" and "tcp" are implemented.
+// Package transport defines connection abstractions between components.
+// Endpoints use URI syntax (unix:// or tcp://).
 package transport
 
 import (

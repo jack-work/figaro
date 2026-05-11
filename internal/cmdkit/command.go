@@ -1,7 +1,4 @@
-// Package cmdkit is a minimal command-routing framework for CLI
-// applications. It provides command registration, dispatch, --help
-// generation, did-you-mean suggestions, and shell completion —
-// without application-specific dependencies.
+// Package cmdkit is a minimal CLI command-routing framework.
 package cmdkit
 
 // Command defines a single CLI subcommand.

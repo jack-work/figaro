@@ -1,9 +1,4 @@
-// Package provider defines the interface that LLM providers implement.
-//
-// Each provider owns its own per-aria translation cache (stored on
-// disk by the agent's Backend) and drives one turn end-to-end via
-// Send: catch up cache → POST → stream deltas through the Bus →
-// land the assembled assistant message in figStream + cache.
+// Package provider defines the LLM provider interface.
 package provider
 
 import (
@@ -28,30 +23,17 @@ type Tool struct {
 	Parameters  interface{} `json:"parameters"`
 }
 
-// Bus is the agent-side sink for the provider's per-turn output. The
-// turnBus implements it: PushDelta drives UX streaming; PushFigaro
-// signals that an assembled assistant message has landed in figStream
-// (the provider has already written it). PushToolUseStart and
-// PushToolUseDelta let the provider surface assistant tool-call
-// activity in real time so the client can render a spinner / progress
-// without waiting for the assistant message to finalize.
+// Bus is the sink for per-turn provider output.
 type Bus interface {
 	PushDelta(content message.Content)
 	PushFigaro(msg message.Message)
-	// PushToolUseStart fires when the assistant begins emitting a
-	// tool_use content block — args may not be known yet.
+	// PushToolUseStart fires when the assistant begins a tool_use block.
 	PushToolUseStart(toolCallID, toolName string)
-	// PushToolUseDelta carries one chunk of partial input JSON for an
-	// in-progress tool_use block. Best-effort; may be dropped under
-	// back-pressure.
+	// PushToolUseDelta carries partial input JSON. Best-effort.
 	PushToolUseDelta(toolCallID, partialJSON string)
 }
 
-// SendInput is one turn's input. The provider catches up its own
-// per-aria cache from FigStream, builds the request body, POSTs,
-// streams deltas through the bus, and on EOF appends the assembled
-// assistant message to FigStream + cache. AriaID identifies the
-// per-aria cache slot — providers open and own that file end-to-end.
+// SendInput is one turn's input.
 type SendInput struct {
 	AriaID    string
 	FigStream store.Stream[message.Message]
@@ -64,15 +46,12 @@ type SendInput struct {
 type Provider interface {
 	Name() string
 
-	// Fingerprint hashes the encoder config. Mismatch invalidates
-	// cached translator entries.
+	// Fingerprint hashes the encoder config.
 	Fingerprint() string
 
 	Models(ctx context.Context) ([]ModelInfo, error)
 	SetModel(model string)
 
-	// Send drives a turn end-to-end. Returns when the SSE stream has
-	// closed and condensation is finished. Encode / Decode / Assemble
-	// are private to each implementation.
+	// Send drives one turn end-to-end.
 	Send(ctx context.Context, in SendInput, bus Bus) error
 }

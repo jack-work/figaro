@@ -1,6 +1,4 @@
-// Package angelus implements the figaro supervisor — a per-user process
-// that manages the lifecycle of figaro agents, maintains the pid→figaro
-// index, and monitors bound PIDs for liveness.
+// Package angelus implements the figaro supervisor.
 package angelus
 
 import (
@@ -11,25 +9,20 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 )
 
-// Registry holds all running figaros and the pid→figaro index.
-//
-// The pid index is a strict 1:1 map: one pid maps to exactly one figaro.
-// Bind always unbinds the pid first if it was bound elsewhere.
-// Attempting to bind a pid to the figaro it's already bound to is a no-op.
+// Registry holds running figaros and the pid->figaro index (1:1).
 type Registry struct {
 	mu sync.RWMutex
 
-	// figaros maps figaro ID → Figaro instance.
+
 	figaros map[string]figaro.Figaro
 
-	// pidToFigaro maps caller PID → figaro ID (1:1, strict).
+
 	pidToFigaro map[int]string
 
-	// figaroPIDs maps figaro ID → set of bound PIDs (reverse index for cleanup).
+
 	figaroPIDs map[string]map[int]struct{}
 
-	// draining is set during graceful shutdown. Read by Register to
-	// reject new figaros while the angelus is winding down.
+
 	draining atomic.Bool
 }
 
@@ -42,8 +35,7 @@ func NewRegistry() *Registry {
 	}
 }
 
-// Register adds a figaro to the registry. Returns an error if the ID
-// is already registered, or if the registry is draining.
+// Register adds a figaro to the registry.
 func (r *Registry) Register(f figaro.Figaro) error {
 	if r.draining.Load() {
 		return fmt.Errorf("angelus: shutting down, refusing new figaros")
@@ -67,8 +59,7 @@ func (r *Registry) Get(id string) figaro.Figaro {
 	return r.figaros[id]
 }
 
-// Kill removes a figaro from the registry, unbinds all its PIDs,
-// and calls Kill() on it. Returns an error if not found.
+// Kill removes a figaro, unbinds its PIDs, and kills it.
 func (r *Registry) Kill(id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -78,7 +69,7 @@ func (r *Registry) Kill(id string) error {
 		return fmt.Errorf("figaro %q not found", id)
 	}
 
-	// Unbind all PIDs pointing to this figaro.
+
 	for pid := range r.figaroPIDs[id] {
 		delete(r.pidToFigaro, pid)
 	}
@@ -89,10 +80,7 @@ func (r *Registry) Kill(id string) error {
 	return nil
 }
 
-// Bind maps a pid to a figaro. If the pid was previously bound to a
-// different figaro, it is unbound first (the old figaro stays alive).
-// Binding a pid to the figaro it's already bound to is a no-op.
-// Returns an error if the figaro ID is not registered.
+// Bind maps a pid to a figaro. Unbinds from any previous figaro.
 func (r *Registry) Bind(pid int, figaroID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -101,12 +89,12 @@ func (r *Registry) Bind(pid int, figaroID string) error {
 		return fmt.Errorf("figaro %q not found", figaroID)
 	}
 
-	// Already bound to this figaro — no-op.
+
 	if existing, ok := r.pidToFigaro[pid]; ok && existing == figaroID {
 		return nil
 	}
 
-	// Unbind from previous figaro if any.
+
 	r.unbindLocked(pid)
 
 	r.pidToFigaro[pid] = figaroID
@@ -114,8 +102,7 @@ func (r *Registry) Bind(pid int, figaroID string) error {
 	return nil
 }
 
-// Resolve returns the figaro ID and instance for a pid.
-// Returns ("", nil) if the pid is not bound.
+// Resolve returns the figaro for a pid.
 func (r *Registry) Resolve(pid int) (string, figaro.Figaro) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -127,8 +114,7 @@ func (r *Registry) Resolve(pid int) (string, figaro.Figaro) {
 	return id, r.figaros[id]
 }
 
-// Unbind removes a pid binding. The figaro stays alive.
-// No-op if the pid is not bound.
+// Unbind removes a pid binding.
 func (r *Registry) Unbind(pid int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -194,8 +180,7 @@ func (r *Registry) FigaroCount() int {
 	return len(r.figaros)
 }
 
-// SetDraining marks the registry as shutting down. Subsequent Register
-// calls will fail. Idempotent.
+// SetDraining marks the registry as shutting down.
 func (r *Registry) SetDraining() {
 	r.draining.Store(true)
 }
@@ -205,8 +190,7 @@ func (r *Registry) IsDraining() bool {
 	return r.draining.Load()
 }
 
-// All returns a snapshot of all registered figaros. Safe for the
-// shutdown loop to iterate without holding the registry mutex.
+// All returns a snapshot of all registered figaros.
 func (r *Registry) All() []figaro.Figaro {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

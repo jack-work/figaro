@@ -22,18 +22,14 @@ func DialClient(ep transport.Endpoint) (*Client, error) {
 	return &Client{cli: jsonrpc.NewClient(conn, nil)}, nil
 }
 
-// Create asks the angelus to start a new figaro. loadout names the
-// TOML config that seeds the chalkboard ("" → "config"). patch is
-// optional runtime overrides applied on top.
+// Create starts a new figaro with the named loadout.
 func (c *Client) Create(ctx context.Context, loadout string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
 	err := c.cli.Call(ctx, rpc.MethodCreate, rpc.CreateRequest{Loadout: loadout, Patch: patch}, &resp)
 	return &resp, err
 }
 
-// CreateWithID is like Create but pins the new figaro to a
-// caller-supplied id. The angelus validates the id and refuses if it
-// collides with a live figaro or an aria already on disk.
+// CreateWithID creates a figaro with a specific id.
 func (c *Client) CreateWithID(ctx context.Context, id, loadout string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
 	err := c.cli.Call(ctx, rpc.MethodCreate, rpc.CreateRequest{
@@ -42,8 +38,7 @@ func (c *Client) CreateWithID(ctx context.Context, id, loadout string, patch *rp
 	return &resp, err
 }
 
-// CreateEphemeral creates a figaro whose state lives in memory only.
-// No aria file is written; the agent vanishes when killed.
+// CreateEphemeral creates an in-memory-only figaro.
 func (c *Client) CreateEphemeral(ctx context.Context, loadout string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
 	err := c.cli.Call(ctx, rpc.MethodCreate, rpc.CreateRequest{
@@ -64,9 +59,7 @@ func (c *Client) List(ctx context.Context) (*rpc.ListResponse, error) {
 	return &resp, nil
 }
 
-// Attach asks the angelus to bring a dormant aria into the live
-// registry without binding any pid. Returns the live endpoint. If
-// the aria is unknown, returns an error; if already live, no-op.
+// Attach restores a dormant aria without binding a pid.
 func (c *Client) Attach(ctx context.Context, figaroID string) (*rpc.AttachResponse, error) {
 	var resp rpc.AttachResponse
 	if err := c.cli.Call(ctx, rpc.MethodAttach, rpc.AttachRequest{FigaroID: figaroID}, &resp); err != nil {
@@ -91,9 +84,7 @@ func (c *Client) Unbind(ctx context.Context, pid int) error {
 	return c.cli.Call(ctx, rpc.MethodUnbind, rpc.UnbindRequest{PID: pid}, nil)
 }
 
-// SaveBindings asks the angelus to persist its current PID→figaro
-// bindings to disk. Called by `figaro rest --keep-pids` just before
-// sending SIGTERM so the bindings survive the restart.
+// SaveBindings persists PID->figaro bindings to disk.
 func (c *Client) SaveBindings(ctx context.Context) (*rpc.SaveBindingsResponse, error) {
 	var resp rpc.SaveBindingsResponse
 	if err := c.cli.Call(ctx, rpc.MethodSaveBindings, nil, &resp); err != nil {

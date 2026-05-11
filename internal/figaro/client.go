@@ -9,8 +9,7 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// NotifyHandler is called for each server-pushed notification.
-// Called synchronously on the reader goroutine — in wire order.
+// NotifyHandler handles server-pushed notifications (wire order).
 type NotifyHandler func(method string, params json.RawMessage)
 
 // Client is a typed JSON-RPC client for talking to a figaro agent socket.
@@ -18,8 +17,7 @@ type Client struct {
 	cli *jsonrpc.Client
 }
 
-// DialClient connects to a figaro agent at the given endpoint.
-// onNotify is called for each notification, in wire order. May be nil.
+// DialClient connects to a figaro agent.
 func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) {
 	conn, err := transport.Dial(ep)
 	if err != nil {
@@ -29,8 +27,7 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 	return &Client{cli: cli}, nil
 }
 
-// Qua sends a prompt with optional chalkboard input — the figaro.qua
-// call ("Figaro, qua!").
+// Qua sends a prompt.
 func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) error {
 	return c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, nil)
 }
@@ -67,10 +64,7 @@ func (c *Client) Chalkboard(ctx context.Context) (*rpc.ChalkboardResponse, error
 	return &resp, nil
 }
 
-// ReloadConfig re-runs the Outfitter's bootstrap phase and writes
-// the resulting scribe-managed system.* keys to the chalkboard as a
-// state-only tic. With dryRun set, the diff is returned without
-// persisting.
+// ReloadConfig re-runs bootstrap.
 func (c *Client) ReloadConfig(ctx context.Context, dryRun bool) (*rpc.ReloadConfigResponse, error) {
 	var resp rpc.ReloadConfigResponse
 	if err := c.cli.Call(ctx, rpc.MethodReloadConfig, rpc.ReloadConfigRequest{DryRun: dryRun}, &resp); err != nil {
@@ -84,8 +78,7 @@ func (c *Client) Close() error {
 	return c.cli.Close()
 }
 
-// Done returns a channel that is closed when the underlying connection
-// is closed (server died, EOF, network error).
+// Done returns a channel closed when the connection dies.
 func (c *Client) Done() <-chan struct{} {
 	return c.cli.Done()
 }

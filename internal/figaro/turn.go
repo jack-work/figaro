@@ -17,11 +17,8 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// turnBus is the per-turn provider.Bus. It feeds buffered channels
-// the runTurn loop drains; pushes never block. Closed by runTurn
-// after provider.Send returns. notifs is a catch-all channel for
-// non-text/non-figaro events (tool_use_start, tool_use_delta) so new
-// event types can be added without growing the channel set.
+// turnBus is the per-turn provider.Bus. Buffered channels, never-block
+// pushes. Closed after provider.Send returns.
 type turnBus struct {
 	deltas chan message.Content
 	figs   chan message.Message
@@ -40,7 +37,7 @@ func (b *turnBus) PushDelta(c message.Content) {
 	select {
 	case b.deltas <- c:
 	default:
-		// Drop if full — UX streaming is best-effort.
+		// Drop if full.
 	}
 }
 
@@ -68,15 +65,12 @@ func (b *turnBus) pushNotif(n rpc.Notification) {
 	select {
 	case b.notifs <- n:
 	default:
-		// Drop if full — UX progress signals are best-effort.
+		// Drop if full.
 	}
 }
 
-// runTurn drives one user prompt to completion. Builds the user tic,
-// loops provider.Send → tool dispatch until the assistant message
-// has no tool_use blocks (or interrupt / error). Tool execution
-// happens synchronously inside this function; concurrency comes from
-// goroutines fanning into a channel.
+// runTurn drives one prompt to completion: user tic, provider.Send,
+// tool dispatch, repeat until done/interrupt/error.
 func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.mu.Lock()
 	a.lastActive = time.Now()
@@ -104,8 +98,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		cancel()
 	}()
 
-	// User tic = prompt text + any chalkboard input + bootstrap patch
-	// on a fresh aria.
+	// Build user tic.
 	tic := message.Message{
 		Role:      message.RoleUser,
 		Timestamp: time.Now().UnixMilli(),
@@ -117,7 +110,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		}
 	}
 	if len(a.figStream.Read()) == 0 && a.chalkboard != nil {
-		// Outfitter bootstrap: system.prompt, system.skills.
+		// Bootstrap: system.prompt, system.skills.
 		if a.outfitter != nil {
 			if patch, err := a.outfitter.Bootstrap(a.chalkboard.Snapshot(),
 				outfit.CurrentBootCtx(a.prov.Name(), a.id)); err == nil && !patch.IsEmpty() {
@@ -125,7 +118,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 				a.chalkboard.Apply(patch)
 			}
 		}
-		// Allowlisted env vars → system.environment.* one-shot.
+		// Allowlisted env vars -> system.environment.*.
 		if envPatch := chalkboard.EnvironmentPatch(); !envPatch.IsEmpty() {
 			tic.Patches = append(tic.Patches, envPatch)
 			a.chalkboard.Apply(envPatch)
@@ -141,7 +134,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		return
 	}
 
-	// Drive: provider → tools → repeat or done.
+	// Drive: provider -> tools -> repeat.
 	for {
 		stop := a.driveOneRound(turnCtx)
 		if stop {
@@ -150,11 +143,8 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	}
 }
 
-// driveOneRound runs one provider.Send + (if needed) tool dispatch
-// cycle. Returns true when the turn is complete (done, error, or
-// interrupted) — the caller exits. Returns false when more rounds
-// are needed (assistant emitted tool_use; tools ran; user-role
-// tool_result tic appended; loop again).
+// driveOneRound runs one provider.Send + tool dispatch cycle.
+// Returns true when the turn is complete, false when more rounds needed.
 func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	bus := newTurnBus()
 	in := provider.SendInput{
@@ -183,19 +173,10 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		sendDone <- err
 	}()
 
-	// Drain deltas + notifs + figaro. All channels close when
-	// provider.Send returns (its goroutine closes them via the defer).
-	//
-	// Wire-order matters: MethodMessage *must* arrive after every
-	// MethodDelta and MethodToolUse* for that turn. The CLI uses
-	// MethodMessage as a "round complete, flush largo now" trigger;
-	// a stray delta after the flush would sit in largo's buffer
-	// un-rendered until the next flush trigger.
-	//
-	// Provider contract: PushFigaro is the last thing the producer
-	// does for the turn. So when we observe a fig on the channel,
-	// every delta and notif has already been pushed — we just need
-	// to drain those buffers fully before fanning out MethodMessage.
+	// Drain deltas + notifs + figaro. Wire-order: MethodMessage must
+	// arrive after all MethodDelta/MethodToolUse* for the turn.
+	// PushFigaro is the producer's last act, so when we see a fig
+	// we drain remaining deltas/notifs before fanning out MethodMessage.
 	var lastFig message.Message
 	drainPreFigOnce := func() {
 		for {
@@ -252,9 +233,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 				bus.figs = nil
 				continue
 			}
-			// Provider is done producing deltas (PushFigaro is the
-			// last act). Drain anything still buffered before fanning
-			// out MethodMessage so the CLI receives all deltas first.
+			// Drain remaining deltas before fanning out MethodMessage.
 			if bus.deltas != nil || bus.notifs != nil {
 				drainPreFigOnce()
 			}
@@ -275,7 +254,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		return true
 	}
 
-	// Tool dispatch?
+
 	calls := assistantToolCalls(lastFig)
 	if len(calls) == 0 {
 		stopReason := lastFig.StopReason
@@ -288,15 +267,8 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 
 	results := a.runTools(turnCtx, calls)
 
-	// Whether or not the turn was interrupted, we must always append
-	// tool_result tics to match the assistant's tool_use blocks.
-	// Without them the conversation is structurally broken: the
-	// Anthropic API requires every tool_use to have a corresponding
-	// tool_result in the next user message.
-	//
-	// If interrupted, the results slice may contain partial output or
-	// may be incomplete. Fill in any missing slots with synthetic
-	// error results so the stream is always well-formed.
+	// Always append tool_results to match tool_use blocks, even on
+	// interrupt. Fill missing slots with synthetic error results.
 	if a.isInterrupted() {
 		for i, tc := range calls {
 			if results[i].Type == "" {
@@ -309,7 +281,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		}
 	}
 
-	// Tool-result tic feeds the next round.
+
 	resultTic := message.Message{
 		Role:      message.RoleUser,
 		Content:   results,
@@ -329,15 +301,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	return false
 }
 
-// runTools executes the assistant's tool_use blocks in parallel and
-// returns the matching tool_result content blocks in input order.
-// Tool output chunks fan out as MethodToolOutput; tool ends as
-// MethodToolEnd. Cancellation via turnCtx propagates to each tool.
-//
-// For rounds with more than one tool call we bracket the run with
-// MethodToolBatchStart / MethodToolBatchEnd notifications so the CLI
-// can switch into a summary render mode. Single-tool rounds skip the
-// batch notifications and keep their live-streaming UX.
+// runTools executes tool_use blocks in parallel and returns matching
+// tool_result blocks. Multi-tool rounds are bracketed with batch
+// start/end notifications.
 func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []message.Content {
 	type res struct {
 		idx     int
@@ -363,7 +329,7 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 		})
 	}
 
-	// Fan-out start notifications + spawn workers.
+
 	for i, tc := range calls {
 		figOtel.Event(turnCtx, "agent.tool_start.fanout_pre",
 			attribute.String("tool", tc.ToolName),
@@ -432,7 +398,7 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 		}(i, tc)
 	}
 
-	// Fan-in.
+
 	results := make([]message.Content, len(calls))
 	for n := 0; n < len(calls); n++ {
 		r := <-ch
@@ -468,7 +434,7 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 	return results
 }
 
-// agent: what listens to these messages?
+
 func (a *Agent) fanOutFigaro(m message.Message) {
 	tail, ok := a.figStream.PeekTail()
 	if !ok {
@@ -501,9 +467,7 @@ func (a *Agent) fanOutError(msg string) {
 	})
 }
 
-// Is there a way to break apart our events such that interruption could be sent in as an
-// event and we could guarantee all events run to completion and that our tasks are small
-// and parallelizable and can't change global state?
+// TODO: could interruption be an event with guaranteed completion?
 func (a *Agent) isInterrupted() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -523,9 +487,8 @@ func assistantToolCalls(m message.Message) []message.Content {
 	return out
 }
 
-// combineChalkboardInput merges client-supplied chalkboard input with
-// the persisted snapshot — see chalkboard.go's applyChalkboardInput
-// for the original logic. Returns the patch to attach.
+// combineChalkboardInput merges client-supplied chalkboard input
+// with the persisted snapshot.
 func (a *Agent) combineChalkboardInput(input *rpc.ChalkboardInput) chalkboard.Patch {
 	if a.chalkboard == nil || input == nil {
 		return chalkboard.Patch{}

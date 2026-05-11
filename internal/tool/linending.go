@@ -2,8 +2,7 @@ package tool
 
 import "strings"
 
-// LineEnding is either LF or CRLF. Mixed-ending files are detected by
-// which sequence appears first and are normalized to LF internally.
+// LineEnding is LF or CRLF.
 type LineEnding string
 
 const (
@@ -11,8 +10,7 @@ const (
 	LineEndingCRLF LineEnding = "\r\n"
 )
 
-// DetectLineEnding returns CRLF if the first line break in content is
-// "\r\n", otherwise LF. Empty / single-line content reports LF.
+// DetectLineEnding returns CRLF if the first break is \r\n, else LF.
 func DetectLineEnding(content string) LineEnding {
 	lf := strings.Index(content, "\n")
 	if lf == -1 {
@@ -47,9 +45,7 @@ func RestoreLineEndings(content string, ending LineEnding) string {
 // UTF-8 BOM (EF BB BF).
 const utf8BOM = "\uFEFF"
 
-// StripBOM splits off a leading UTF-8 BOM if present. The returned bom
-// string is empty or the BOM itself; text is the content without it.
-// Callers should prepend bom back onto content before writing.
+// StripBOM splits off a leading UTF-8 BOM if present.
 func StripBOM(content string) (bom, text string) {
 	if strings.HasPrefix(content, utf8BOM) {
 		return utf8BOM, content[len(utf8BOM):]

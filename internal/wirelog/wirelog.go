@@ -1,19 +1,6 @@
-// Package wirelog provides an http.RoundTripper that emits
-// per-request control metadata as OTel span events and, when the
-// caller opts in via WithLogging, mirrors raw bytes (request + tee'd
-// response) to disk under a per-aria directory.
-//
-// Two channels of telemetry, kept deliberately separate:
-//
-//   - Always-on span events on the surrounding turn span, carrying
-//     non-PII control fields (method, url, status, duration,
-//     request_id, byte counts). Cheap, queryable, safe to retain.
-//   - Opt-in raw-byte dumps to <Dir>/<aria>/<unix_ns>.{req,resp}.http
-//     for byte-for-byte replay/debug. Contains tokens and prompt
-//     content — gate behind a chalkboard / env-var setting per aria.
-//
-// Logging never fails the underlying request: any I/O error in the
-// telemetry path falls through to a passthrough.
+// Package wirelog wraps http.RoundTripper to emit OTel span events
+// (always-on metadata) and optionally dump raw bytes to disk
+// (opt-in via WithLogging). Logging errors never fail requests.
 package wirelog
 
 import (
@@ -39,10 +26,7 @@ type cfg struct {
 	dir  string
 }
 
-// WithLogging stamps ctx so the Transport will dump raw request and
-// response bytes for this call to <dir>/<aria>/<unix_ns>.{req,resp}.http.
-// Empty aria or dir → no stamp; the Transport falls back to the
-// always-on metadata-only path.
+// WithLogging stamps ctx to enable raw byte dumps for this call.
 func WithLogging(ctx context.Context, ariaID, dir string) context.Context {
 	if ariaID == "" || dir == "" {
 		return ctx
@@ -55,10 +39,7 @@ func cfgFromContext(ctx context.Context) (cfg, bool) {
 	return c, ok
 }
 
-// Transport wraps an http.RoundTripper. It always emits a
-// "http.request" span event on the request's surrounding span with
-// control metadata; it additionally writes raw request and response
-// bytes to disk when ctx has been stamped via WithLogging.
+// Transport wraps an http.RoundTripper with telemetry.
 type Transport struct {
 	Inner http.RoundTripper
 }
@@ -82,10 +63,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 
-	// Materialize + replay the body only when we're actually going
-	// to write it to disk. Skipping this in the metadata-only path
-	// keeps multi-MB request bodies streaming without an extra
-	// in-memory copy.
+	// Only materialize the body when writing to disk.
 	if logBase != "" && req.Body != nil {
 		b, err := io.ReadAll(req.Body)
 		req.Body.Close()
@@ -100,7 +78,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := inner.RoundTrip(req)
 	duration := time.Since(start)
 
-	// Always emit metadata, even on transport error.
+
 	emitMeta(req, resp, duration, len(bodyBytes), logBase, err)
 
 	if err != nil || resp == nil {
@@ -180,9 +158,7 @@ func (t *teeBody) Close() error {
 	return err2
 }
 
-// sanitize defends against a hostile aria id leaking into the
-// filesystem. Aria ids today are constrained to [A-Za-z0-9_-] so
-// this is normally a no-op.
+// sanitize prevents path traversal from aria ids.
 func sanitize(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {

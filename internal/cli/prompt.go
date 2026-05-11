@@ -13,8 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// runPrompt is the default verb: resolve the shell-bound figaro (or
-// create one) and prompt it.
+// runPrompt resolves the shell-bound figaro and prompts it.
 func runPrompt(loaded *config.Loaded, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -41,12 +40,7 @@ func runPrompt(loaded *config.Loaded, prompt string) {
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
 }
 
-// runQua is sugar over the unified aria-prompt path.
-//
-//	figaro qua -- <prompt>           # same as bare `figaro -- <prompt>`
-//	figaro qua <id> -- <prompt>      # one-shot send to a named aria
-//
-// In the targeted form, the shell's PPID binding is left untouched.
+// runQua prompts the bound or named aria.
 func runQua(loaded *config.Loaded, args []string) {
 	var targetID string
 	promptArgs := args
@@ -67,8 +61,7 @@ func runQua(loaded *config.Loaded, args []string) {
 	promptAria(loaded, targetID, prompt)
 }
 
-// runNewPrompt unbinds any current figaro from this shell, creates a
-// fresh one, and prompts it.
+// runNewPrompt creates a fresh figaro and prompts it.
 func runNewPrompt(loaded *config.Loaded, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -83,10 +76,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string) {
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
 }
 
-// promptAria sends a prompt to a named aria. If the aria is live or
-// dormant, attach it; if unknown, create it with the supplied id.
-// The shell's pid binding is intentionally left untouched — named
-// arias are explicitly addressed.
+// promptAria sends a prompt to a named aria.
 func promptAria(loaded *config.Loaded, ariaID, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -101,10 +91,7 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string) {
 	mustPromptFigaro(ctx, ep, ariaID, prompt, loaded)
 }
 
-// resolveOrCreate brings a named aria up. Tries Attach first
-// (succeeds if live or dormant-on-disk); falls back to CreateWithID
-// when Attach reports the id is unknown to the backend. Returns the
-// live endpoint either way.
+// resolveOrCreate attaches or creates a named aria.
 func resolveOrCreate(ctx context.Context, acli *angelus.Client, ariaID string) (transport.Endpoint, error) {
 	attachCtx, attachCancel := context.WithTimeout(ctx, 10*time.Second)
 	resp, err := acli.Attach(attachCtx, ariaID)
@@ -118,8 +105,7 @@ func resolveOrCreate(ctx context.Context, acli *angelus.Client, ariaID string) (
 		return ep, nil
 	}
 
-	// Attach failed. Distinguish "not found on disk" (→ create) from
-	// genuine errors (→ propagate).
+	// Not found -> create; other errors -> propagate.
 	msg := err.Error()
 	if !strings.Contains(msg, "not found") {
 		return transport.Endpoint{}, fmt.Errorf("attach %q: %w", ariaID, err)
@@ -139,9 +125,7 @@ func resolveOrCreate(ctx context.Context, acli *angelus.Client, ariaID string) (
 	return ep, nil
 }
 
-// waitForSocket polls until the unix socket file exists or timeout
-// elapses. The angelus creates the figaro in a goroutine, so newly
-// created agents need a brief moment before their socket is dialable.
+// waitForSocket polls until the socket exists or timeout.
 func waitForSocket(path string, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {

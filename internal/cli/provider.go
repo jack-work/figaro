@@ -16,23 +16,13 @@ import (
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
-// installWireLog always wraps the provider's HTTPClient with the
-// wirelog Transport. Whether per-request body dumps actually happen
-// is decided per-call from the chalkboard
-// (`system.environment.figaro_wire_dir`); the Transport's "always-on"
-// path emits a control-metadata span event on every request
-// regardless. Cheap unconditional wrap — the Transport short-circuits
-// to passthrough when ctx isn't stamped.
+// installWireLog wraps the provider's HTTPClient with wirelog.
 func installWireLog(a *anthropic.Anthropic) {
 	a.HTTPClient.Transport = &wirelog.Transport{Inner: http.DefaultTransport}
 }
 
-// buildResolver assembles a lazy + adaptive credential resolver for
-// the given provider directory: every Resolve walks env → config
-// value → hush-encrypted secret file → OAuth, picking the first
-// strategy that currently has a credential. Strategies that need
-// hush share one client; the agent is only contacted when a
-// hush-using strategy actually fires.
+// buildResolver assembles a credential resolver for a provider.
+// Walks env -> config -> hush -> OAuth in priority order.
 func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolver, error) {
 	h := mustHush()
 	hushClient := h.Client()
@@ -74,8 +64,7 @@ func oauthConfigFor(providerName string) (auth.OAuthConfig, bool) {
 	return auth.OAuthConfig{}, false
 }
 
-// buildProviderFactory wires the angelus's per-aria provider construction.
-// Used by runAngelus to populate angelus.ServerConfig.ProviderFactory.
+// buildProviderFactory wires per-aria provider construction.
 func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
 	return func(providerName, model string) (providerPkg.Provider, error) {
 		switch providerName {
@@ -112,8 +101,7 @@ func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, bac
 	}
 }
 
-// buildProvider constructs a one-off provider for query-only flows
-// (figaro models). No cache is needed for read-only operations.
+// buildProvider constructs a one-off provider for read-only flows.
 func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, int) {
 	switch name {
 	case "anthropic":
@@ -141,9 +129,7 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 	}
 }
 
-// defaultModel returns the configured default model id for a given
-// provider. Not currently called from Run, but kept for parity with
-// the original main.go API.
+// defaultModel returns the configured default model for a provider.
 func defaultModel(loaded *config.Loaded, providerName string) string {
 	if loaded.Config.DefaultModel != "" {
 		return loaded.Config.DefaultModel

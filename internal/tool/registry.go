@@ -6,9 +6,7 @@ import (
 	"sync"
 )
 
-// Registry is a name-keyed collection of Tools. The agent injects one
-// at startup and looks tools up by name when dispatching tool calls.
-// Safe for concurrent use.
+// Registry is a name-keyed collection of Tools.
 type Registry struct {
 	mu    sync.RWMutex
 	tools map[string]Tool
@@ -19,8 +17,7 @@ func NewRegistry() *Registry {
 	return &Registry{tools: make(map[string]Tool)}
 }
 
-// Register adds t to the registry. Returns an error if a tool with the
-// same name is already registered.
+// Register adds a tool. Error on duplicate name.
 func (r *Registry) Register(t Tool) error {
 	if t == nil {
 		return fmt.Errorf("cannot register nil tool")
@@ -38,8 +35,7 @@ func (r *Registry) Register(t Tool) error {
 	return nil
 }
 
-// MustRegister adds one or more tools to the registry. Panics on error.
-// Convenience for static startup wiring.
+// MustRegister adds tools, panicking on error.
 func (r *Registry) MustRegister(tools ...Tool) {
 	for _, t := range tools {
 		if err := r.Register(t); err != nil {
@@ -56,7 +52,7 @@ func (r *Registry) Get(name string) (Tool, bool) {
 	return t, ok
 }
 
-// List returns all registered tools in stable alphabetical order by name.
+// List returns all tools sorted by name.
 func (r *Registry) List() []Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -68,7 +64,7 @@ func (r *Registry) List() []Tool {
 	return out
 }
 
-// Names returns all registered tool names in stable alphabetical order.
+// Names returns all tool names sorted.
 func (r *Registry) Names() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -87,10 +83,7 @@ func (r *Registry) Len() int {
 	return len(r.tools)
 }
 
-// DefaultRegistry returns a Registry pre-populated with the standard
-// coding tools (bash, read, write, edit), all bound to cwd. Intended
-// as a one-liner for both the agent and external Go programs that
-// want the same toolset.
+// DefaultRegistry returns a registry with bash, read, write, edit.
 func DefaultRegistry(cwd string) *Registry {
 	r := NewRegistry()
 	r.MustRegister(

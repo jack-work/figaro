@@ -26,9 +26,7 @@ type Writer interface {
 	Write(ctx context.Context, req WriteRequest) (WriteResult, error)
 }
 
-// WriteTool implements both Writer and the generic Tool interface.
-// Writes are serialized per absolute path via WithFileMutex so
-// concurrent callers never interleave on the same file.
+// WriteTool implements Writer and Tool. Serialized per path.
 type WriteTool struct {
 	Cwd string
 }

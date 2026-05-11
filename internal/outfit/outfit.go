@@ -1,21 +1,7 @@
-// Package outfit assembles an aria's chalkboard from on-disk
-// configuration. The Outfitter owns two phases:
+// Package outfit assembles an aria's chalkboard from on-disk config.
 //
-//  1. Load — read a named loadout TOML, follow its `source` chain,
-//     flatten inline tables to dotted chalkboard keys, expand
-//     `{ fileName = … }` and `{ dirName = … }` single-key tables as
-//     inlined contents. Returns the patch the caller applies before
-//     constructing the agent.
-//
-//  2. Bootstrap — second-phase outfitting on a populated chalkboard:
-//     templates `system.credo` (raw body) into `system.prompt`, parses
-//     the skills directory into a structured catalog at
-//     `system.skills`. Idempotent; skipped when system.prompt is
-//     already set.
-//
-// Loadout lookup tries `<configDir>/loadouts/<name>.toml` first, then
-// falls back to `<configDir>/providers/<name>/config.toml` — providers
-// are loadouts, just stored under a sibling directory.
+// Load reads a named loadout TOML chain and returns a chalkboard patch.
+// Bootstrap templates system.credo into system.prompt and parses skills.
 package outfit
 
 import (
@@ -33,14 +19,12 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 )
 
-// Outfitter assembles chalkboards from on-disk loadouts. One instance
-// per angelus is sufficient — the configDir is the only state.
+// Outfitter assembles chalkboards from on-disk loadouts.
 type Outfitter struct {
 	configDir string
 }
 
-// New returns an Outfitter rooted at configDir (typically
-// ~/.config/figaro).
+// New returns an Outfitter rooted at configDir.
 func New(configDir string) *Outfitter {
 	return &Outfitter{configDir: configDir}
 }
@@ -52,8 +36,7 @@ type BootCtx struct {
 	Version  string
 }
 
-// CurrentBootCtx fills BootCtx with the runtime values an agent
-// knows about: provider name, figaro id, and the build's VCS rev.
+// CurrentBootCtx fills BootCtx with runtime values.
 func CurrentBootCtx(provider, figaroID string) BootCtx {
 	return BootCtx{
 		Provider: provider,
@@ -62,8 +45,7 @@ func CurrentBootCtx(provider, figaroID string) BootCtx {
 	}
 }
 
-// Load resolves the named loadout and returns the chalkboard patch
-// to apply. Empty name resolves to "config".
+// Load resolves a loadout and returns the chalkboard patch.
 func (o *Outfitter) Load(name string) (chalkboard.Patch, error) {
 	if name == "" {
 		name = "config"
@@ -76,11 +58,8 @@ func (o *Outfitter) Load(name string) (chalkboard.Patch, error) {
 	return chalkboard.Patch{Set: flat}, nil
 }
 
-// Bootstrap is the second-phase outfitting. It reads the
-// loadout-populated snapshot and produces the patch that finishes
-// dressing the aria — templates the credo into system.prompt and
-// parses the skills directory into system.skills. Returns an empty
-// patch when system.prompt is already set (restored arias).
+// Bootstrap templates system.credo -> system.prompt and parses
+// skills. No-op when system.prompt is already set.
 func (o *Outfitter) Bootstrap(snap chalkboard.Snapshot, ctx BootCtx) (chalkboard.Patch, error) {
 	if _, ok := snap["system.prompt"]; ok {
 		return chalkboard.Patch{}, nil
@@ -88,8 +67,7 @@ func (o *Outfitter) Bootstrap(snap chalkboard.Snapshot, ctx BootCtx) (chalkboard
 
 	patch := chalkboard.Patch{Set: map[string]json.RawMessage{}}
 
-	// Credo: take the raw template body that the loadout's
-	// fileName-resolution wrote into system.credo, render it.
+	// Render credo template into system.prompt.
 	var credoBody string
 	if raw, ok := snap["system.credo"]; ok {
 		_ = json.Unmarshal(raw, &credoBody)
@@ -107,10 +85,7 @@ func (o *Outfitter) Bootstrap(snap chalkboard.Snapshot, ctx BootCtx) (chalkboard
 		patch.Set["system.prompt"] = b
 	}
 
-	// Skills: read the configured skills directory off disk so we
-	// have absolute paths to expose to the model. The loadout's
-	// generic dirName-loaded value (basename → body map) is
-	// overwritten with the structured catalog the providers consume.
+	// Parse skills directory into structured catalog.
 	skillsDir := filepath.Join(o.configDir, "skills")
 	if catalog, err := loadSkillCatalog(skillsDir); err == nil && len(catalog) > 0 {
 		if b, mErr := json.Marshal(catalog); mErr == nil {
@@ -121,8 +96,7 @@ func (o *Outfitter) Bootstrap(snap chalkboard.Snapshot, ctx BootCtx) (chalkboard
 	return patch, nil
 }
 
-// loadInto resolves <name>, recursively visiting `source` first, then
-// overlays the current loadout's values onto flat.
+// loadInto resolves a loadout recursively via source chains.
 func (o *Outfitter) loadInto(name string, flat map[string]json.RawMessage, visited map[string]bool) error {
 	if visited[name] {
 		return fmt.Errorf("outfit: cycle in source chain at %q", name)
@@ -148,8 +122,7 @@ func (o *Outfitter) loadInto(name string, flat map[string]json.RawMessage, visit
 	return o.flatten("", raw, flat)
 }
 
-// resolvePath looks up a loadout file by name. Tries loadouts/ first,
-// then providers/.
+// resolvePath finds a loadout file (loadouts/ then providers/).
 func (o *Outfitter) resolvePath(name string) (string, error) {
 	candidates := []string{
 		filepath.Join(o.configDir, "loadouts", name+".toml"),
@@ -163,10 +136,8 @@ func (o *Outfitter) resolvePath(name string) (string, error) {
 	return "", fmt.Errorf("outfit: loadout %q not found (checked %s)", name, strings.Join(candidates, ", "))
 }
 
-// flatten walks a parsed TOML tree and writes dotted-key entries into
-// out. Inline tables with a single fileName / dirName key are
-// expanded: fileName → file body as JSON string, dirName → JSON
-// object keyed by file basename.
+// flatten walks a TOML tree into dotted chalkboard keys, expanding
+// fileName/dirName single-key tables.
 func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]json.RawMessage) error {
 	for k, v := range in {
 		key := k
@@ -213,9 +184,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 	return nil
 }
 
-// loadDir reads regular files from dir and returns a map of basename
-// (without extension) → file body. Subdirectories are skipped.
-// Missing dir is not an error — returns an empty map.
+// loadDir reads files from dir into a basename->body map.
 func loadDir(dir string) (map[string]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -242,12 +211,10 @@ func loadDir(dir string) (map[string]string, error) {
 	return out, nil
 }
 
-// version can be set at link time via:
-//
-//	-X github.com/jack-work/figaro/internal/outfit.version=abc1234
+// version can be set at link time.
 var version string
 
-// buildVersion extracts the VCS revision from Go's embedded build info.
+// buildVersion extracts the VCS revision from build info.
 func buildVersion() string {
 	if version != "" {
 		return version

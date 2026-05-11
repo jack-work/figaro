@@ -10,13 +10,8 @@ import (
 	"strconv"
 )
 
-// bindingEntry is one persisted PID→figaro binding.
-//
-// StartTime is the process's start time in jiffies since boot, read
-// from /proc/<pid>/stat (field 22). It detects PID reuse: on restore
-// we refuse to rebind a PID whose recorded StartTime doesn't match
-// the live process. A zero StartTime means "unchecked" (non-Linux,
-// or /proc unavailable) — the check degrades to a liveness probe.
+// bindingEntry is one persisted PID->figaro binding. StartTime
+// detects PID reuse (from /proc/<pid>/stat field 22).
 type bindingEntry struct {
 	PID       int    `json:"pid"`
 	FigaroID  string `json:"figaro_id"`
@@ -27,9 +22,7 @@ type bindingsFile struct {
 	Bindings []bindingEntry `json:"bindings"`
 }
 
-// SaveBindings writes the registry's current PID→figaro bindings to
-// path atomically (write-to-tmp + rename). Each binding's PID start
-// time is captured so RestoreBindings can reject re-used PIDs.
+// SaveBindings persists PID->figaro bindings atomically.
 func SaveBindings(r *Registry, path string) error {
 	if r == nil {
 		return fmt.Errorf("nil registry")
@@ -67,19 +60,11 @@ func SaveBindings(r *Registry, path string) error {
 	return nil
 }
 
-// AriaRestorer revives a dormant aria into the registry by ID. Used by
-// RestoreBindings to lazy-restore each aria whose PID survived. Returns
-// an error when the aria can't be restored (unknown, corrupt, etc.).
+// AriaRestorer revives a dormant aria by ID.
 type AriaRestorer func(ariaID string) error
 
-// RestoreBindings loads path, rebinds surviving PIDs to their figaros
-// in the registry, then removes the file. A PID survives if it is
-// alive AND its current start time matches the saved value (or both
-// are zero — "unchecked"). Non-fatal: errors are logged and skipped.
-//
-// For each surviving binding, restore is called first to lazy-load
-// the target aria into the registry. A nil restore skips the lazy
-// step (caller is expected to have populated the registry already).
+// RestoreBindings loads saved bindings, rebinds surviving PIDs,
+// and removes the file. Errors are logged and skipped.
 func RestoreBindings(r *Registry, path string, restore AriaRestorer) {
 	if r == nil {
 		return
@@ -91,7 +76,7 @@ func RestoreBindings(r *Registry, path string, restore AriaRestorer) {
 		}
 		return
 	}
-	// One-shot: always remove after reading, even on parse error.
+
 	defer os.Remove(path)
 
 	var file bindingsFile
@@ -130,13 +115,7 @@ func RestoreBindings(r *Registry, path string, restore AriaRestorer) {
 	}
 }
 
-// pidStartTime returns the process's starttime field from
-// /proc/<pid>/stat (field 22, jiffies since boot). Returns 0 if
-// /proc is unavailable, the process is gone, or parsing fails.
-//
-// The comm field (field 2) is wrapped in parentheses and may itself
-// contain spaces or parentheses, so we parse from the LAST ')' to
-// avoid splitting inside comm.
+// pidStartTime returns field 22 from /proc/<pid>/stat. 0 on failure.
 func pidStartTime(pid int) uint64 {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
@@ -146,9 +125,7 @@ func pidStartTime(pid int) uint64 {
 	if i < 0 || i+1 >= len(data) {
 		return 0
 	}
-	// After the last ')' comes: " <state> <ppid> ... <starttime> ..."
-	// State is field 3, starttime is field 22. So from after the ')',
-	// the starttime is the 20th space-separated token.
+	// starttime is the 20th token after the last ')'.
 	fields := bytes.Fields(data[i+1:])
 	if len(fields) < 20 {
 		return 0

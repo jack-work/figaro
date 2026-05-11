@@ -8,16 +8,13 @@ import (
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
-// Rehydrate re-runs the Outfitter's bootstrap phase against a
-// snapshot stripped of system.prompt / system.skills, then diffs the
-// result. dryRun returns the would-be diff without persisting.
+// Rehydrate re-runs bootstrap and diffs the result.
 func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied bool, err error) {
 	if a.chalkboard == nil || a.outfitter == nil {
 		return nil, nil, false, fmt.Errorf("rehydrate requires both a chalkboard and an outfitter")
 	}
 
-	// Bootstrap is idempotent on system.prompt; force a re-run by
-	// hiding the current values from the snapshot we hand it.
+	// Force re-run by hiding current system.prompt/system.skills.
 	snap := a.chalkboard.Snapshot()
 	stripped := make(chalkboard.Snapshot, len(snap))
 	for k, v := range snap {
@@ -56,9 +53,7 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 	return set, removed, true, nil
 }
 
-// Snapshot returns the agent's current chalkboard snapshot. Empty
-// when no chalkboard is configured. The returned map is a defensive
-// clone — callers may mutate it safely.
+// Snapshot returns a clone of the agent's chalkboard.
 func (a *Agent) Snapshot() chalkboard.Snapshot {
 	if a.chalkboard == nil {
 		return chalkboard.Snapshot{}
@@ -66,10 +61,7 @@ func (a *Agent) Snapshot() chalkboard.Snapshot {
 	return a.chalkboard.Snapshot()
 }
 
-// Set applies a chalkboard patch as a state-only tic. Same handler
-// as Rehydrate (figStream append + chalkboard apply + save), but
-// driven by an explicit client patch rather than the Scribe. No LLM
-// round-trip. Returns the keys actually set / removed.
+// Set applies a chalkboard patch. No LLM round-trip.
 func (a *Agent) Set(patch chalkboard.Patch) (set, removed []string, err error) {
 	if a.chalkboard == nil {
 		return nil, nil, fmt.Errorf("set requires a chalkboard")

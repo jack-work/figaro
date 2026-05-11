@@ -7,18 +7,15 @@ import (
 	"strings"
 )
 
-// SkillCatalogEntry is the wire shape stored at chalkboard
-// system.skills — the model-facing catalog. Bodies are deliberately
-// omitted; the model loads a skill via the read tool when the task
-// matches its description.
+// SkillCatalogEntry is the model-facing skill catalog entry.
+// Bodies are omitted; the model loads them via read.
 type SkillCatalogEntry struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	FilePath    string `json:"file_path"`
 }
 
-// FormatSkillCatalog renders a catalog as the markdown-shaped system
-// block the provider emits.
+// FormatSkillCatalog renders a catalog as a markdown system block.
 func FormatSkillCatalog(entries []SkillCatalogEntry) string {
 	if len(entries) == 0 {
 		return ""
@@ -36,9 +33,7 @@ func FormatSkillCatalog(entries []SkillCatalogEntry) string {
 	return b.String()
 }
 
-// loadSkillCatalog reads .md files from dir, parses YAML-ish
-// frontmatter for name + description, and returns the model-facing
-// catalog. Missing dir → empty catalog, no error.
+// loadSkillCatalog reads .md files with frontmatter from dir.
 func loadSkillCatalog(dir string) ([]SkillCatalogEntry, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -66,8 +61,7 @@ func loadSkillCatalog(dir string) ([]SkillCatalogEntry, error) {
 	return out, nil
 }
 
-// parseFrontmatter extracts name + description from YAML-style
-// frontmatter:
+// parseFrontmatter extracts name + description from:
 //
 //	---
 //	name: foo

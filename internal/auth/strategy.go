@@ -10,24 +10,15 @@ import (
 	hush "github.com/jack-work/hush/client"
 )
 
-// CredentialStrategy is one source of API credentials. The Aggregate
-// walks strategies in priority order and the first to return ok=true
-// wins. ok=false with err==nil means "I have nothing right now, try
-// the next strategy". A non-nil err means the strategy believes it
-// owns the credential but failed to produce one.
+// CredentialStrategy is one source of API credentials.
 type CredentialStrategy interface {
 	TryResolve() (token string, ok bool, err error)
-	// Invalidate is called when an upstream API rejects a token
-	// (typically a 401). Cache-bearing strategies must clear the
-	// matching cached value.
+	// Invalidate is called when a token is rejected (e.g. 401).
 	Invalidate(token string)
 }
 
-// Aggregate is a TokenResolver backed by a priority-ordered list of
-// strategies. Each Resolve walks the list until one returns ok=true.
-// Lazy + adaptive: each call re-evaluates every strategy, so env
-// vars, config edits, and new on-disk credentials are picked up
-// without a restart.
+// Aggregate is a TokenResolver that walks strategies in priority
+// order. Re-evaluates on each call (picks up config changes).
 type Aggregate struct {
 	Strategies []CredentialStrategy
 }
@@ -55,8 +46,7 @@ func (a *Aggregate) Invalidate(token string) {
 	}
 }
 
-// EnvVar reads a token from a process environment variable on every
-// call. Empty → skip.
+// EnvVar reads a token from an env var.
 type EnvVar struct {
 	Name string
 }
@@ -74,10 +64,7 @@ func (e *EnvVar) TryResolve() (string, bool, error) {
 
 func (*EnvVar) Invalidate(string) {}
 
-// ConfigValue reads a plaintext token via a closure each call. The
-// closure is the wiring layer's hook to re-read provider config —
-// adaptivity is the closure's responsibility (typically: re-parse
-// config.toml).
+// ConfigValue reads a plaintext token via a closure.
 type ConfigValue struct {
 	Get func() string
 }
@@ -95,10 +82,8 @@ func (c *ConfigValue) TryResolve() (string, bool, error) {
 
 func (*ConfigValue) Invalidate(string) {}
 
-// EncryptedConfig reads a hush-encrypted secret from a file. The
-// file content is the ciphertext (no TOML wrapper); leading/trailing
-// whitespace is trimmed. Decrypted plaintext is mtime-cached so
-// repeat calls don't re-decrypt the same bytes.
+// EncryptedConfig reads a hush-encrypted secret from a file.
+// Mtime-cached to avoid re-decrypting.
 type EncryptedConfig struct {
 	Hush *hush.Client
 	Path string
@@ -151,9 +136,7 @@ func (e *EncryptedConfig) Invalidate(token string) {
 	}
 }
 
-// OAuth bridges TokenManager into the strategy interface. "Has
-// credential" is decided by whether the auth file exists; once it
-// does, the manager's expiry/refresh logic takes over.
+// OAuth bridges TokenManager into the strategy interface.
 type OAuth struct {
 	Manager *TokenManager
 }

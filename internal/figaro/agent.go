@@ -23,9 +23,7 @@ import (
 
 type eventType int
 
-// Inbox event set, post-Stage-2: user-RPC only. Provider deltas, tool
-// results, and the turn-progress signals all live inside runTurn now
-// — they never see the inbox.
+// Inbox event types (user-RPC only).
 const (
 	eventUserPrompt eventType = iota
 	eventRehydrate
@@ -44,12 +42,8 @@ type event struct {
 	setPatch       message.Patch
 }
 
-// Config is the constructor input for NewAgent.
-//
-// Configured values (model, cwd, root, max_tokens, …) live on
-// the Chalkboard under `system.*` keys — callers seed them there
-// before construction. The typed fields below are runtime
-// dependencies, not user config.
+// Config is the constructor input for NewAgent. Configured values
+// (model, cwd, etc.) live on the chalkboard under system.* keys.
 type Config struct {
 	ID         string
 	SocketPath string
@@ -58,23 +52,17 @@ type Config struct {
 	Tools      *tool.Registry
 	Backend    store.Backend // nil = ephemeral
 
-	// Chalkboard carries the aria's configured state. Nil creates
-	// an in-memory one. When the chalkboard has no keys at first
-	// prompt, the agent treats the aria as fresh and applies
-	// LoadoutPatch (if set). Closed by Kill.
+	// Chalkboard carries the aria's state. Nil creates an in-memory
+	// one. Empty at first prompt means fresh aria. Closed by Kill.
 	Chalkboard *chalkboard.State
 
-	// LoadoutPatch is the loadout-derived seed the agent applies
-	// on first prompt only when the chalkboard is empty (i.e. this
-	// is a fresh aria). Restored arias load from chalkboard.json
-	// and ignore this. nil = no loadout to apply.
+	// LoadoutPatch seeds the chalkboard on first prompt of a fresh
+	// aria. Ignored for restored arias. nil = no loadout.
 	LoadoutPatch *chalkboard.Patch
 }
 
-// Agent is the Figaro implementation. Single drain goroutine reads
-// user-RPC events from the inbox; each user prompt fires a
-// synchronous runTurn (turn.go) which owns provider streaming and
-// tool dispatch. TODO: child-process isolation via --figaro flag.
+// Agent is the Figaro implementation.
+// TODO: child-process isolation via --figaro flag.
 type Agent struct {
 	id           string
 	socketPath   string
@@ -89,8 +77,7 @@ type Agent struct {
 
 	inbox *Inbox
 
-	// Turn state — owned by runTurn while a turn is active. Guarded
-	// by mu so Interrupt() can read turnCancel from any goroutine.
+	// Turn state. Guarded by mu for Interrupt().
 	turnCtx     context.Context
 	turnCancel  context.CancelFunc
 	interrupted bool
@@ -110,7 +97,6 @@ type Agent struct {
 }
 
 // NewAgent creates and starts a figaro agent.
-// The agent begins draining its inbox immediately.
 func NewAgent(cfg Config) *Agent {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -132,15 +118,11 @@ func NewAgent(cfg Config) *Agent {
 	a.figStream = a.newStream()
 	repairDanglingToolUse(a.figStream, a.id)
 	if a.chalkboard == nil {
-		// Ephemeral arias get an in-memory chalkboard so system prompt
-		// flow stays uniform.
+		// Ephemeral arias get an in-memory chalkboard.
 		a.chalkboard, _ = chalkboard.Open("")
 	}
-	// Chalkboard is a derived view of the figStream's tic patches. If
-	// it loaded empty (file missing, ephemeral, or freshly opened),
-	// replay the stream so prior patches materialize. The on-disk
-	// chalkboard.json is just a cache of this projection.  See
-	// derived.go for the analogous summary/translator/usage actors.
+	// If chalkboard loaded empty, replay stream patches to rebuild it.
+	// On-disk chalkboard.json is just a cache of this projection.
 	if len(a.chalkboard.Snapshot()) == 0 {
 		replayed := false
 		for _, entry := range a.figStream.Read() {
@@ -157,11 +139,7 @@ func NewAgent(cfg Config) *Agent {
 
 	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Read()))
 
-	// Spin up the per-figaro durable-derivation fanout. Each
-	// registered DurableDerivation gets its own goroutine + inbox;
-	// each writes to arias/<id>/<filename>. Only lives for backed
-	// agents. The translator stream is owned by the provider now;
-	// derivations that need cache stats would need a different hook.
+	// Spin up durable-derivation fanout (backed agents only).
 	a.derived = startDerived(ctx, a.id, a.prov.Name(), a.backend, a.figStream, nil)
 	a.derived.Tick(0, a.chalkboard.Snapshot()) // initial materialization
 
@@ -169,8 +147,7 @@ func NewAgent(cfg Config) *Agent {
 	return a
 }
 
-// newStream opens the figaro IR stream — FileStream when persisted,
-// MemStream when ephemeral.
+// newStream opens the figaro IR stream.
 func (a *Agent) newStream() store.Stream[message.Message] {
 	if a.backend == nil {
 		return store.NewMemStream[message.Message]()
@@ -187,8 +164,7 @@ func (a *Agent) ID() string { return a.id }
 
 func (a *Agent) SocketPath() string { return a.socketPath }
 
-// chalkboardString reads a system.* string key. Empty when missing
-// or the chalkboard isn't configured.
+// chalkboardString reads a system.* string key. Empty when missing.
 func (a *Agent) chalkboardString(key string) string {
 	if a.chalkboard == nil {
 		return ""
@@ -202,7 +178,7 @@ func (a *Agent) chalkboardString(key string) string {
 	return s
 }
 
-// chalkboardInt reads a numeric system.* key. Zero when missing.
+// chalkboardInt reads a numeric system.* key.
 func (a *Agent) chalkboardInt(key string) int {
 	if a.chalkboard == nil {
 		return 0
@@ -218,13 +194,12 @@ func (a *Agent) chalkboardInt(key string) int {
 
 func (a *Agent) currentModel() string { return a.chalkboardString("system.model") }
 
-// Prompt is a tests-only helper; plans/dead-code-audit.md tracks
-// the eventual removal.
+// Prompt is a tests-only helper.
 func (a *Agent) Prompt(text string) {
 	a.inbox.SendPatient(event{typ: eventUserPrompt, text: text})
 }
 
-// SubmitPrompt enqueues a prompt with optional chalkboard input.
+// SubmitPrompt enqueues a prompt.
 func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 	a.inbox.SendPatient(event{
 		typ:        eventUserPrompt,
@@ -233,13 +208,7 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 	})
 }
 
-// Interrupt aborts the current turn. Cancels turnCtx so the
-// in-flight provider HTTP request and any running tools observe the
-// cancellation; runTurn fans out the error and emits stream.done.
-// On interrupt the partial assistant turn is dropped (the provider
-// returns ctx.Err() rather than persisting a half-formed message),
-// so figStream stays well-formed without any synthetic patching.
-// Idempotent when idle.
+// Interrupt aborts the current turn. Idempotent when idle.
 func (a *Agent) Interrupt() {
 	a.mu.Lock()
 	if a.turnCancel == nil {
@@ -256,9 +225,7 @@ func (a *Agent) Context() []message.Message {
 	return unwrapMessages(a.figStream.Read())
 }
 
-// unwrapMessages projects entries to a flat []Message, stamping
-// LogicalTime from the entry LT. Result shares storage with the
-// stream — read-only.
+// unwrapMessages projects entries to a flat []Message.
 func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 	if len(entries) == 0 {
 		return nil
@@ -271,15 +238,12 @@ func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 	return out
 }
 
-// Notifier is a sink for fanout notifications. *jsonrpc.Server
-// implements it natively (writes JSON-RPC frames down a socket); tests
-// register an in-memory adapter.
+// Notifier is a sink for fanout notifications.
 type Notifier interface {
 	Notify(method string, params any) error
 }
 
-// Subscribe registers a Notifier for fanout. The returned function
-// removes it.
+// Subscribe registers a Notifier. Returns an unsubscribe function.
 func (a *Agent) Subscribe(n Notifier) func() {
 	a.mu.Lock()
 	if a.subs == nil {
@@ -340,13 +304,10 @@ func (a *Agent) Kill() {
 			slog.Error("chalkboard close", "aria", a.id, "err", err)
 		}
 	}
-	// translator/cache close is the provider's responsibility now.
+
 }
 
-// runWithRecovery drives the drain loop and restarts it on panic.
-// Identity (id, registry entry, PID bindings, socket, credo)
-// survives — recovery is invisible to the model. Operators get the
-// stderr line.
+// runWithRecovery drives the drain loop and restarts on panic.
 func (a *Agent) runWithRecovery(ctx context.Context) {
 	defer close(a.done)
 
@@ -395,12 +356,11 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 	}
 }
 
-// actProtected runs the drain loop under a panic recover. Returns
-// true on panic, false on clean exit.
+// actProtected runs the drain loop under recover.
 func (a *Agent) actProtected(ctx context.Context) (panicked bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			// Log the panic and stack trace.
+
 			stack := make([]byte, 4096)
 			n := runtime.Stack(stack, false)
 			slog.Error("panic", "aria", a.id, "panic", r, "stack", string(stack[:n]))
@@ -412,9 +372,7 @@ func (a *Agent) actProtected(ctx context.Context) (panicked bool) {
 	return false
 }
 
-// act is the inbox drain loop. Only user-RPC events land here; each
-// user prompt drives a synchronous runTurn. Interrupt bypasses the
-// inbox (Agent.Interrupt cancels turnCtx directly).
+// act is the inbox drain loop.
 func (a *Agent) act(ctx context.Context) {
 	for {
 		evt, ok := a.inbox.Recv()
@@ -433,9 +391,7 @@ func (a *Agent) act(ctx context.Context) {
 	}
 }
 
-// applyControlPatch persists a state-only patch (figaro.set or
-// figaro.reload_config). No LLM round-trip — the patch lands as a
-// state-only tic on the figStream and the chalkboard advances.
+// applyControlPatch persists a state-only patch. No LLM round-trip.
 func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Set), "remove", len(patch.Remove))
 	tic := message.Message{
@@ -454,8 +410,7 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	a.derived.Tick(0, a.chalkboard.Snapshot())
 }
 
-// endTurn fans out stream.done with the reason (LLM stop_reason or
-// "error: …"), persists chalkboard + meta.
+// endTurn fans out stream.done and persists chalkboard + meta.
 func (a *Agent) endTurn(reason string) {
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
@@ -527,8 +482,7 @@ func truncLog(s string, n int) string {
 	return s[:n] + "..."
 }
 
-// sumUsage totals tokens across messages. Seeds cumulative counters
-// after restore / panic recovery.
+// sumUsage totals tokens across messages.
 func sumUsage(msgs []message.Message) (in, out, cacheRead, cacheWrite int) {
 	for _, m := range msgs {
 		if m.Usage != nil {

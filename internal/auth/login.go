@@ -10,27 +10,22 @@ import (
 	"strings"
 )
 
-// Login performs the full OAuth PKCE login flow:
-// 1. Generate PKCE verifier/challenge
-// 2. Open browser to authorize URL
-// 3. Prompt user to paste authorization code
-// 4. Exchange code for tokens
-// 5. Encrypt and save via hush
+// Login performs the full OAuth PKCE login flow.
 func Login(mgr *TokenManager, promptCode func() (string, error)) error {
 	cfg := mgr.config
 
-	// Check hush agent
+
 	if err := mgr.hush.Ping(); err != nil {
 		return fmt.Errorf("hush agent is not running. Start it: hush up -d")
 	}
 
-	// Generate PKCE
+
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return fmt.Errorf("generate PKCE: %w", err)
 	}
 
-	// Build authorization URL
+
 	params := url.Values{
 		"code":                  {"true"},
 		"client_id":             {cfg.ClientID},
@@ -43,14 +38,14 @@ func Login(mgr *TokenManager, promptCode func() (string, error)) error {
 	}
 	authURL := cfg.AuthorizeURL + "?" + params.Encode()
 
-	// Open browser
+
 	fmt.Println("Opening browser for login...")
 	fmt.Println()
 	fmt.Println("  " + authURL)
 	fmt.Println()
 	openBrowser(authURL)
 
-	// Prompt for code
+
 	fmt.Print("Paste the authorization code: ")
 	codeInput, err := promptCode()
 	if err != nil {
@@ -58,7 +53,7 @@ func Login(mgr *TokenManager, promptCode func() (string, error)) error {
 	}
 	codeInput = strings.TrimSpace(codeInput)
 
-	// Parse code#state format
+
 	parts := strings.SplitN(codeInput, "#", 2)
 	code := parts[0]
 	state := ""
@@ -66,7 +61,7 @@ func Login(mgr *TokenManager, promptCode func() (string, error)) error {
 		state = parts[1]
 	}
 
-	// Exchange code for tokens
+
 	tokenBody, _ := json.Marshal(map[string]string{
 		"grant_type":    "authorization_code",
 		"client_id":     cfg.ClientID,
@@ -97,7 +92,7 @@ func Login(mgr *TokenManager, promptCode func() (string, error)) error {
 		return fmt.Errorf("parse token response: %w", err)
 	}
 
-	// Save encrypted via hush
+
 	if err := mgr.SaveLogin(tokenResp.AccessToken, tokenResp.RefreshToken, tokenResp.ExpiresIn); err != nil {
 		return fmt.Errorf("save credentials: %w", err)
 	}

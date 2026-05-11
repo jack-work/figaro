@@ -17,16 +17,7 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// runRest puts the angelus to rest. `figaro rest --force` jumps
-// straight to SIGKILL. `--keep-pids` first asks the angelus to
-// persist its PID→figaro bindings so the next angelus startup
-// can reattach.
-//
-// This should probably be packaged with the CLI as sort of a local controller
-// implementation which runs the daemon on first command, which I think is
-// totally reasonable.  On start is obtrusive or intrusive or some combo of the
-// two.
-// The same can probably be said for an entire layer across the cli.
+// runRest puts the angelus to rest.
 func runRest() {
 	force := false
 	keepPIDs := false
@@ -52,8 +43,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		// Save bindings shouldn't be sent by the client.  Server should automatically save the bindings.
-		// Also I don't think this is even loaded properly on rehydration anyway.
+		// TODO: server should save bindings automatically.
 		resp, err := cli.SaveBindings(ctx)
 		cancel()
 		cli.Close()
@@ -103,7 +93,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 		"angelus (pid %d) did not rest within 15s; try `figaro rest --force`\n", pid)
 }
 
-// runModels is client-side, no angelus. Lists provider models.
+// runModels lists provider models.
 func runModels(loaded *config.Loaded) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -133,7 +123,7 @@ func runModels(loaded *config.Loaded) {
 	w.Flush()
 }
 
-// runLogin is client-side, no angelus. OAuth flow.
+// runLogin runs the OAuth flow.
 func runLogin(loaded *config.Loaded) {
 	if len(os.Args) < 3 {
 		die("usage: figaro login <provider>")

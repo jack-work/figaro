@@ -343,28 +343,18 @@ func (b *toolBatchState) tickLoop() {
 // immediately below the last row (cursorRow == len(rows)). Caller
 // must hold b.mu.
 func (b *toolBatchState) rewriteRowLocked(i int) {
-	// Up by (cursorRow - i) lines. We're at cursorRow; want to be on
-	// row i. After printing one line of content we'll be on row i+1,
-	// so we need to come back down by (len(rows) - (i+1)) lines.
 	up := b.cursorRow - i
 	if up < 0 {
-		// Should never happen in current usage but guard anyway.
 		up = 0
 	}
 	if up > 0 {
 		fmt.Fprint(b.out, term.CursorUp(up))
 	}
-	// Clear current line, write fresh content. Note: the row content
-	// itself ends with no newline; we add one explicitly so cursor
-	// advances to row i+1.
 	fmt.Fprintf(b.out, "%s%s\n", term.EraseLine, formatRow(b.rows[i], b.frame))
-	// Restore cursor to bottom (row len(rows)).
 	down := len(b.rows) - (i + 1)
 	if down > 0 {
 		fmt.Fprint(b.out, term.CursorDown(down))
 	}
-	// Always reset to column 0 after vertical motion; some terminals
-	// preserve column on B but not all.
 	fmt.Fprint(b.out, "\r")
 	b.cursorRow = len(b.rows)
 }

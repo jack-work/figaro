@@ -14,9 +14,7 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// ariaBackend constructs the angelus's aria storage backend. Today
-// this is always a FileBackend at ~/.local/state/figaro/arias; once
-// a DB backend lands, this is the single switch point.
+// ariaBackend constructs the aria storage backend.
 func ariaBackend() (store.Backend, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -37,7 +35,7 @@ func angelusSocketPath() string {
 	return filepath.Join(angelusRuntimeDir(), "angelus.sock")
 }
 
-// ensureAngelus starts the angelus if it's not running.
+// ensureAngelus starts the angelus if needed.
 func ensureAngelus() {
 	sockPath := angelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)

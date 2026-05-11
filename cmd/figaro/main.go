@@ -1,8 +1,4 @@
 // figaro is a minimal CLI coding agent.
-//
-// Run `figaro --help` for the full command listing. All CLI behavior
-// lives in internal/cli (routed via internal/cmdkit). This file is
-// the binary entrypoint plus the hush re-exec guard.
 package main
 
 import (
@@ -15,8 +11,7 @@ import (
 )
 
 func main() {
-	// Re-exec guard: if we were spawned by managed.SpawnDaemon to serve
-	// as the embedded hush agent, run it and exit immediately.
+	// Re-exec guard for embedded hush agent.
 	if managed.IsAgentChild() {
 		if err := managed.RunAgentChild(); err != nil {
 			log.Fatal(err)

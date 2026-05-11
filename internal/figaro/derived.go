@@ -17,30 +17,23 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// DurableDerivation is the per-aria worker for a registered
-// derivation. OnTick runs from a single goroutine, one event at a
-// time. Write derived bytes to w; the framework atomically replaces
-// the destination file when OnTick returns nil. Anything written on
-// error is discarded.
+// DurableDerivation is a per-aria derivation worker. OnTick writes
+// derived bytes to w; the file is atomically replaced on nil error.
 type DurableDerivation interface {
 	OnTick(w io.Writer, evt DerivationEvent) error
 }
 
-// agent: todo: let's give the derivation loop access to more than just the
-// chalkboard snapshot.  Let's give it the full figaro log that it can freely
-// read.  That way we can accumulate state for tracing and stuff.
-// In order to do that it has to be a thread safe pointer to a limit in the underlying list,
-// which is append only, so it will always be safe.
+// TODO: give derivations access to the full figaro log, not just
+// the chalkboard snapshot. The log is append-only so a read cursor
+// would be safe.
 //
-// DerivationEvent is one tick. Snapshot is the chalkboard state at
-// tick-emission time (a defensive clone, safe to read off-goroutine).
+// DerivationEvent is one tick with a cloned chalkboard snapshot.
 type DerivationEvent struct {
 	FigaroLT uint64
 	Snapshot chalkboard.Snapshot
 }
 
-// DurDerivDeps is what Make / Resolve receive — the per-aria slice
-// of construction state.
+// DurDerivDeps is per-aria construction state for Make/Resolve.
 type DurDerivDeps struct {
 	AriaID       string
 	ProviderName string
@@ -48,15 +41,9 @@ type DurDerivDeps struct {
 	Translator   store.Stream[[]json.RawMessage]
 }
 
-// DurDerivReg registers a durable derivation under an alias.
-//
-//   - Alias is the CLI key: figaro -s <Alias>.
-//   - Filename is the path relative to arias/<id>/, e.g. "meta.json"
-//     or "derived/usage.json". Static.
-//   - Resolve, when set, takes precedence over Filename and lets
-//     the registration compute a dynamic destination from per-aria
-//     deps (used for translations/<provider>.meta.json).
-//   - Make is the per-aria factory.
+// DurDerivReg registers a durable derivation.
+// Alias is the CLI key (figaro -s <Alias>). Filename is relative to
+// arias/<id>/. Resolve overrides Filename with a dynamic path.
 type DurDerivReg struct {
 	Alias    string
 	Filename string
@@ -76,8 +63,7 @@ var (
 	regs   []DurDerivReg
 )
 
-// Register adds a derivation to the global registry. Call from
-// init() in derivation packages.
+// Register adds a derivation to the global registry.
 func Register(reg DurDerivReg) {
 	if reg.Alias == "" || (reg.Filename == "" && reg.Resolve == nil) || reg.Make == nil {
 		panic(fmt.Sprintf("durable derivation registration missing fields: %+v", reg))
@@ -92,7 +78,7 @@ func Register(reg DurDerivReg) {
 	regs = append(regs, reg)
 }
 
-// Registrations returns a snapshot of the registered derivations.
+// Registrations returns a copy of the registered derivations.
 func Registrations() []DurDerivReg {
 	regsMu.RLock()
 	defer regsMu.RUnlock()
@@ -101,8 +87,7 @@ func Registrations() []DurDerivReg {
 	return out
 }
 
-// LookupRegistration returns the registration with the given alias,
-// or false.
+// LookupRegistration finds a registration by alias.
 func LookupRegistration(alias string) (DurDerivReg, bool) {
 	regsMu.RLock()
 	defer regsMu.RUnlock()
@@ -114,8 +99,7 @@ func LookupRegistration(alias string) (DurDerivReg, bool) {
 	return DurDerivReg{}, false
 }
 
-// AriaDir returns the per-aria directory (arias/<id>/) for a
-// FileBackend, "" otherwise.
+// AriaDir returns the per-aria directory, "" if not file-backed.
 func AriaDir(backend store.Backend, ariaID string) string {
 	fb, ok := backend.(interface{ Dir() string })
 	if !ok {
@@ -124,8 +108,7 @@ func AriaDir(backend store.Backend, ariaID string) string {
 	return filepath.Join(fb.Dir(), ariaID)
 }
 
-// DerivationFilePath joins ariaDir with a registration's resolved
-// filename. Used by the CLI to find a derivation's on-disk file.
+// DerivationFilePath returns the on-disk path for a derivation.
 func DerivationFilePath(backend store.Backend, deps DurDerivDeps, reg DurDerivReg) string {
 	dir := AriaDir(backend, deps.AriaID)
 	if dir == "" {
@@ -134,8 +117,7 @@ func DerivationFilePath(backend store.Backend, deps DurDerivDeps, reg DurDerivRe
 	return filepath.Join(dir, reg.filenameFor(deps))
 }
 
-// derivationLoop is one goroutine + coalescing inbox per
-// (figaro, registration). Owns the destination file path.
+// derivationLoop is one goroutine per (figaro, registration).
 type derivationLoop struct {
 	alias string
 	path  string
@@ -169,9 +151,7 @@ func (l *derivationLoop) run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			// Drain pending ticks (select picks pseudo-randomly
-			// when both cases are ready, so a queued tick could
-			// otherwise be lost).
+			// Drain pending ticks before exit.
 			for {
 				select {
 				case evt := <-l.inbox:
@@ -193,8 +173,7 @@ func (l *derivationLoop) process(evt DerivationEvent) {
 		return
 	}
 	if err := writeAtomic(l.path, buf.Bytes()); err != nil {
-		// ENOENT means the parent dir was removed under us (test
-		// teardown of t.TempDir, an aria deletion, etc). Silent.
+		// ENOENT = parent dir removed (test teardown, aria deletion).
 		if !os.IsNotExist(err) {
 			slog.Warn("derivation write", "alias", l.alias, "path", l.path, "err", err)
 		}
@@ -216,14 +195,12 @@ func writeAtomic(path string, data []byte) error {
 	return nil
 }
 
-// derivedFanout owns all per-figaro derivation loops. The agent
-// holds one and ticks it after condense / endTurn.
+// derivedFanout owns all per-figaro derivation loops.
 type derivedFanout struct {
 	loops []*derivationLoop
 }
 
-// startDerived spins up one loop per registration. Returns nil when
-// the backend isn't file-backed.
+// startDerived spins up one loop per registration.
 func startDerived(
 	ctx context.Context,
 	ariaID, providerName string,
@@ -271,7 +248,7 @@ func (f *derivedFanout) Wait() {
 	}
 }
 
-// --- Built-in derivations ---
+
 
 func init() {
 	Register(DurDerivReg{
@@ -303,8 +280,7 @@ func init() {
 	})
 }
 
-// summaryDerivation writes arias/<id>/meta.json — the AriaMeta
-// shape, consumed by `figaro list`.
+// summaryDerivation writes arias/<id>/meta.json.
 type summaryDerivation struct {
 	figStream store.Stream[message.Message]
 }
@@ -328,8 +304,7 @@ func (s *summaryDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 	return json.NewEncoder(w).Encode(out)
 }
 
-// translatorDerivation writes per-provider translator stats to
-// arias/<id>/translations/<provider>.meta.json.
+// translatorDerivation writes per-provider cache stats.
 type translatorDerivation struct {
 	providerName string
 	translator   store.Stream[[]json.RawMessage]
@@ -355,15 +330,14 @@ func (t *translatorDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 	return json.NewEncoder(w).Encode(out)
 }
 
-// usageDerivation writes arias/<id>/derived/usage.json — token +
-// cache stats, consumed by `figaro -s usage`.
+// usageDerivation writes arias/<id>/derived/usage.json.
 type usageDerivation struct {
 	ariaID       string
 	providerName string
 	figStream    store.Stream[message.Message]
 }
 
-// Usage is the on-disk shape of usage.json.
+// Usage is the on-disk shape for usage.json.
 type Usage struct {
 	AriaID           string `json:"aria_id"`
 	Provider         string `json:"provider,omitempty"`

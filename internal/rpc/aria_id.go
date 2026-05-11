@@ -2,16 +2,10 @@ package rpc
 
 import "fmt"
 
-// MaxAriaIDLen is the longest accepted aria id. Capped so that the
-// derived unix socket path (`$XDG_RUNTIME_DIR/figaro/figaros/<id>.sock`)
-// stays comfortably under the 108-byte sun_path limit on Linux.
+// MaxAriaIDLen caps id length to fit unix socket sun_path.
 const MaxAriaIDLen = 64
 
-// ValidateAriaID enforces the character set and length policy for
-// caller-supplied aria ids. Allowed: ASCII letters, digits, underscore,
-// hyphen. Length: 1..64. The id becomes both a filesystem directory
-// component and a unix socket filename, so anything that could cause
-// path traversal or shell quoting trouble is rejected.
+// ValidateAriaID enforces [A-Za-z0-9_-]{1,64}.
 func ValidateAriaID(id string) error {
 	if len(id) == 0 {
 		return fmt.Errorf("aria id is empty")
