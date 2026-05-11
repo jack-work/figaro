@@ -68,6 +68,9 @@ func ensureHush() {
 }
 
 // buildPromptChalkboard collects per-prompt chalkboard values.
+// These are read in the CLI process (which inherits the user's
+// shell env) and sent with every prompt so the agent always has
+// up-to-date values.
 func buildPromptChalkboard() *rpc.ChalkboardInput {
 	cwd, _ := os.Getwd()
 	snap := map[string]json.RawMessage{}
@@ -79,6 +82,10 @@ func buildPromptChalkboard() *rpc.ChalkboardInput {
 	dt := time.Now().Format("Monday, January 2, 2006, 3PM MST")
 	if b, err := json.Marshal(dt); err == nil {
 		snap["datetime"] = b
+	}
+	// Allowlisted env vars from the caller's shell.
+	for k, v := range chalkboard.EnvironmentSnapshot() {
+		snap[k] = v
 	}
 	if len(snap) == 0 {
 		return nil
