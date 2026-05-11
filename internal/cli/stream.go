@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jack-work/largo"
@@ -77,6 +78,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	var solo *toolSoloState
 	var soloToolCallID string // tool_call_id the active solo was launched for
 
+	// Accumulates partial tool input JSON per tool_call_id so the
+	// CLI can extract and render tool details (command, path)
+	// progressively as deltas arrive rather than waiting for the
+	// full message. Maps tool_call_id → {toolName, partialJSON}.
+	pendingToolArgs := map[string]*pendingToolArg{}
+
 	resumeIfSuspended := func() {
 		// Wrapped-batch teardown takes precedence over solo.Freeze.
 		if batch != nil {
@@ -135,6 +142,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 					attribute.String("tool", p.ToolName),
 					attribute.String("tool_call_id", p.ToolCallID),
 				)
+				pendingToolArgs[p.ToolCallID] = &pendingToolArg{toolName: p.ToolName}
 				if batch == nil && solo == nil {
 					pace.Flush()
 					sw.Flush()
@@ -148,13 +156,20 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			}
 
 		case rpc.MethodToolUseDelta:
-			// No visual update; recorded as OTel event.
 			var p rpc.ToolUseDeltaParams
 			if json.Unmarshal(params, &p) == nil {
 				figOtel.Event(ctx, "cli.recv.tool_use_delta",
 					attribute.String("tool_call_id", p.ToolCallID),
 					attribute.Int("bytes", len(p.PartialJSON)),
 				)
+				if pt, ok := pendingToolArgs[p.ToolCallID]; ok {
+					pt.json += p.PartialJSON
+					if detail := extractPartialDetail(pt.toolName, pt.json); detail != "" {
+						if solo != nil && soloToolCallID == p.ToolCallID {
+							solo.UpdateDetail(detail)
+						}
+					}
+				}
 			}
 
 		case rpc.MethodToolBatchStart:
@@ -386,4 +401,61 @@ func toolDetail(p rpc.ToolStartParams) string {
 		}
 	}
 	return ""
+}
+
+// pendingToolArg accumulates streamed tool input JSON so the CLI can
+// extract the detail string (command, path) progressively.
+type pendingToolArg struct {
+	toolName string
+	json     string
+}
+
+// extractPartialDetail pulls the displayable detail from an
+// incomplete JSON input string. The Anthropic API streams tool
+// arguments left-to-right as JSON text, so we see:
+//
+//	{"command": "figaro --help 2>&1 | hea
+//
+// before the string (or the object) is closed. We find the value
+// for the key we care about and return whatever we have so far.
+func extractPartialDetail(toolName, partial string) string {
+	var key string
+	switch toolName {
+	case "bash":
+		key = `"command": "`
+	case "read", "write", "edit":
+		key = `"path": "`
+	default:
+		return ""
+	}
+
+	idx := strings.Index(partial, key)
+	if idx < 0 {
+		return ""
+	}
+	// Start after the opening quote of the value.
+	valStart := idx + len(key)
+	if valStart >= len(partial) {
+		return ""
+	}
+
+	// Scan forward for the closing quote, handling \" escapes.
+	// If we don't find one, return everything we have (it's still
+	// streaming).
+	var b strings.Builder
+	for i := valStart; i < len(partial); i++ {
+		ch := partial[i]
+		if ch == '\\' && i+1 < len(partial) {
+			// Escaped character — take the next byte literally.
+			i++
+			b.WriteByte(partial[i])
+			continue
+		}
+		if ch == '"' {
+			// Closing quote — value is complete.
+			break
+		}
+		b.WriteByte(ch)
+	}
+	return b.String()
 }
