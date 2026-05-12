@@ -132,14 +132,8 @@ func runLogin(loaded *config.Loaded) {
 }
 
 func runLoginByName(loaded *config.Loaded, providerName string) {
-
 	h := mustHush()
 	hushClient := h.Client()
-
-	authPath := loaded.ProviderAuthPath(providerName)
-	if err := os.MkdirAll(filepath.Dir(authPath), 0700); err != nil {
-		die("create provider dir: %s", err)
-	}
 
 	var oauthCfg auth.OAuthConfig
 	switch providerName {
@@ -149,8 +143,7 @@ func runLoginByName(loaded *config.Loaded, providerName string) {
 		die("no OAuth config for provider %q", providerName)
 	}
 
-	mgr := auth.NewManager(hushClient, oauthCfg, authPath)
-	err := auth.Login(mgr, func() (string, error) {
+	err := auth.Login(hushClient, oauthCfg, func() (string, error) {
 		reader := bufio.NewReader(os.Stdin)
 		line, err := reader.ReadString('\n')
 		return strings.TrimSpace(line), err

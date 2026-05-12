@@ -41,9 +41,10 @@ func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 			Path: filepath.Join(dir, "secret"),
 		},
 	}
-	if oauthCfg, ok := oauthConfigFor(providerName); ok {
+	if _, ok := oauthConfigFor(providerName); ok {
 		strategies = append(strategies, &auth.OAuth{
-			Manager: auth.NewManager(hushClient, oauthCfg, loaded.ProviderAuthPath(providerName)),
+			Hush: hushClient,
+			Name: providerName,
 		})
 	}
 	return &auth.Aggregate{Strategies: strategies}, nil

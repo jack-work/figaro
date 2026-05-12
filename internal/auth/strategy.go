@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -136,27 +137,35 @@ func (e *EncryptedConfig) Invalidate(token string) {
 	}
 }
 
-// OAuth bridges TokenManager into the strategy interface.
+// OAuth reads the access token for a named credential from the hush
+// agent. Refresh is the agent's responsibility; this strategy only
+// fetches the current value and forces a refresh on Invalidate so the
+// next call sees a new token.
 type OAuth struct {
-	Manager *TokenManager
+	Hush *hush.Client
+	Name string
 }
 
 func (o *OAuth) TryResolve() (string, bool, error) {
-	if o.Manager == nil {
+	if o.Hush == nil || o.Name == "" {
 		return "", false, nil
 	}
-	if _, err := os.Stat(o.Manager.filePath); os.IsNotExist(err) {
-		return "", false, nil
-	}
-	tok, err := o.Manager.AccessToken()
+	tok, err := o.Hush.OAuthGet(o.Name)
 	if err != nil {
+		if errors.Is(err, hush.ErrOAuthNotFound) {
+			return "", false, nil
+		}
 		return "", false, err
 	}
 	return tok, true, nil
 }
 
 func (o *OAuth) Invalidate(token string) {
-	if o.Manager != nil {
-		o.Manager.Invalidate(token)
+	if o.Hush == nil || o.Name == "" {
+		return
+	}
+	_, err := o.Hush.OAuthRefresh(o.Name)
+	if err != nil && errors.Is(err, hush.ErrOAuthRefreshPermanent) {
+		fmt.Fprintf(os.Stderr, "OAuth refresh for %q rejected. Run: figaro login %s\n", o.Name, o.Name)
 	}
 }

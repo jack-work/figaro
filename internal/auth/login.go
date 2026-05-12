@@ -8,23 +8,22 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+
+	hush "github.com/jack-work/hush/client"
 )
 
-// Login performs the full OAuth PKCE login flow.
-func Login(mgr *TokenManager, promptCode func() (string, error)) error {
-	cfg := mgr.config
-
-
-	if err := mgr.hush.Ping(); err != nil {
+// Login runs the OAuth PKCE flow against the provider, exchanges the auth
+// code for tokens, and registers the result with the hush agent. The
+// agent owns refresh from that point on.
+func Login(hushClient *hush.Client, cfg OAuthConfig, promptCode func() (string, error)) error {
+	if err := hushClient.Ping(); err != nil {
 		return fmt.Errorf("hush agent is not running. Start it: hush up -d")
 	}
-
 
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return fmt.Errorf("generate PKCE: %w", err)
 	}
-
 
 	params := url.Values{
 		"code":                  {"true"},
@@ -38,13 +37,11 @@ func Login(mgr *TokenManager, promptCode func() (string, error)) error {
 	}
 	authURL := cfg.AuthorizeURL + "?" + params.Encode()
 
-
 	fmt.Println("Opening browser for login...")
 	fmt.Println()
 	fmt.Println("  " + authURL)
 	fmt.Println()
 	openBrowser(authURL)
-
 
 	fmt.Print("Paste the authorization code: ")
 	codeInput, err := promptCode()
@@ -53,14 +50,12 @@ func Login(mgr *TokenManager, promptCode func() (string, error)) error {
 	}
 	codeInput = strings.TrimSpace(codeInput)
 
-
 	parts := strings.SplitN(codeInput, "#", 2)
 	code := parts[0]
 	state := ""
 	if len(parts) > 1 {
 		state = parts[1]
 	}
-
 
 	tokenBody, _ := json.Marshal(map[string]string{
 		"grant_type":    "authorization_code",
@@ -92,9 +87,18 @@ func Login(mgr *TokenManager, promptCode func() (string, error)) error {
 		return fmt.Errorf("parse token response: %w", err)
 	}
 
-
-	if err := mgr.SaveLogin(tokenResp.AccessToken, tokenResp.RefreshToken, tokenResp.ExpiresIn); err != nil {
-		return fmt.Errorf("save credentials: %w", err)
+	if err := hushClient.OAuthRegister(hush.OAuthRegisterRequest{
+		Name:         cfg.ProviderName,
+		AuthorizeURL: cfg.AuthorizeURL,
+		TokenURL:     cfg.TokenURL,
+		RedirectURI:  cfg.RedirectURI,
+		ClientID:     cfg.ClientID,
+		Scopes:       cfg.Scopes,
+		AccessToken:  tokenResp.AccessToken,
+		RefreshToken: tokenResp.RefreshToken,
+		ExpiresIn:    tokenResp.ExpiresIn,
+	}); err != nil {
+		return fmt.Errorf("register with hush: %w", err)
 	}
 
 	fmt.Printf("Logged in. Access token expires in %d seconds.\n", tokenResp.ExpiresIn)
