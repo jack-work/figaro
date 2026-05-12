@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -65,6 +66,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodUnbind:       h.unbind,
 			rpc.MethodStatus:       h.status,
 			rpc.MethodSaveBindings: h.saveBindings,
+			rpc.MethodAriaRead:     h.ariaRead,
 		},
 		h: h,
 	}
@@ -438,6 +440,90 @@ func (h *handlers) saveBindings(ctx context.Context, params json.RawMessage) (in
 	return rpc.SaveBindingsResponse{
 		OK:    true,
 		Count: h.angelus.Registry.BoundPIDCount(),
+	}, nil
+}
+
+// ariaReadHardCap bounds Limit on aria.read regardless of what the
+// client asks for, so a misconfigured client can't pull megabytes of
+// IR in a single RPC.
+const ariaReadHardCap = 1000
+
+// ariaRead serves IR entries for an aria through the shared LogCache.
+// Live agents share the same Log instance, so reads run lock-free
+// against the agent's writes. For dormant arias the cache opens on
+// miss and the entry TTLs out naturally.
+func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.AriaReadRequest
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("aria.read: parse params: %w", err)
+		}
+	}
+	if req.FigaroID == "" {
+		return nil, errors.New("aria.read: empty figaro_id")
+	}
+	if h.angelus.LogCache == nil {
+		return nil, errors.New("aria.read: no log cache (ephemeral angelus)")
+	}
+
+	// Validate that the aria has on-disk state before touching the
+	// cache; otherwise AcquireIR would MkdirAll an empty figwal dir
+	// for typo'd IDs.
+	if fb, ok := h.angelus.Backend.(*store.FileBackend); ok {
+		ariaRoot := filepath.Join(fb.Dir(), req.FigaroID)
+		if _, err := os.Stat(ariaRoot); os.IsNotExist(err) {
+			return nil, fmt.Errorf("aria.read: no aria %q on disk", req.FigaroID)
+		}
+	}
+
+	log, release, err := h.angelus.LogCache.AcquireIR(req.FigaroID)
+	if err != nil {
+		return nil, fmt.Errorf("aria.read: acquire: %w", err)
+	}
+	defer release()
+
+	all := log.Read()
+	total := len(all)
+
+	from := req.From
+	startIdx := 0
+	if from > 0 {
+		for i, e := range all {
+			if e.LT >= from {
+				startIdx = i
+				break
+			}
+			if i == len(all)-1 {
+				startIdx = len(all)
+			}
+		}
+	}
+
+	limit := req.Limit
+	if limit <= 0 || limit > ariaReadHardCap {
+		limit = ariaReadHardCap
+	}
+	endIdx := startIdx + limit
+	if endIdx > len(all) {
+		endIdx = len(all)
+	}
+
+	out := make([]rpc.AriaReadEntry, 0, endIdx-startIdx)
+	for _, e := range all[startIdx:endIdx] {
+		raw, mErr := json.Marshal(e.Payload)
+		if mErr != nil {
+			return nil, fmt.Errorf("aria.read: marshal LT=%d: %w", e.LT, mErr)
+		}
+		out = append(out, rpc.AriaReadEntry{LT: e.LT, Payload: raw})
+	}
+	var nextFrom uint64
+	if endIdx < len(all) {
+		nextFrom = all[endIdx].LT
+	}
+	return rpc.AriaReadResponse{
+		Entries:  out,
+		Total:    total,
+		NextFrom: nextFrom,
 	}, nil
 }
 

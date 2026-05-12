@@ -97,12 +97,13 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		}
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
 	figaroID := id
 	if figaroID == "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		acli := mustConnectAngelus(loaded)
-		defer acli.Close()
 		r, err := acli.Resolve(ctx, os.Getppid())
 		if err != nil {
 			die("resolve: %s", err)
@@ -113,24 +114,23 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		figaroID = r.FigaroID
 	}
 
-	home, _ := os.UserHomeDir()
-	ariasDir := filepath.Join(home, ".local", "state", "figaro", "arias")
-	if _, err := os.Stat(filepath.Join(ariasDir, figaroID)); os.IsNotExist(err) {
-		die("no aria %q on disk", figaroID)
-	}
-	backend, err := store.NewFileBackend(ariasDir)
+	// Read through the angelus's shared LogCache. The angelus is the
+	// single owner of the figwal log so we don't race the live agent
+	// on the active segment.
+	resp, err := acli.AriaRead(ctx, figaroID, 0, 0)
 	if err != nil {
-		die("open arias dir: %s", err)
+		die("aria.read: %s", err)
 	}
-	fs, err := backend.Open(figaroID)
-	if err != nil {
-		die("open aria: %s", err)
-	}
-	defer fs.Close()
-	entries := fs.Read()
-	if len(entries) == 0 {
+	if len(resp.Entries) == 0 && resp.Total == 0 {
 		fmt.Fprintln(os.Stderr, "(empty aria)")
 		return
+	}
+	entries := make([]store.Entry[message.Message], len(resp.Entries))
+	for i, e := range resp.Entries {
+		entries[i].LT = e.LT
+		if err := json.Unmarshal(e.Payload, &entries[i].Payload); err != nil {
+			die("aria.read: parse LT=%d: %s", e.LT, err)
+		}
 	}
 	start := 0
 	if !all && len(entries) > n {
@@ -159,6 +159,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		fmt.Println("---")
 		fmt.Println("## system prompt")
 		fmt.Println()
+		home, _ := os.UserHomeDir()
 		cbPath := filepath.Join(home, ".local", "state", "figaro", "arias", figaroID, "chalkboard.json")
 		cbData, err := os.ReadFile(cbPath)
 		if err != nil {

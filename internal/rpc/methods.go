@@ -42,6 +42,11 @@ const (
 	MethodResolve = "pid.resolve"
 	MethodUnbind  = "pid.unbind"
 
+	// MethodAriaRead returns IR entries for an aria, serving through
+	// the angelus's shared LogCache so live writes and reads don't
+	// race across processes.
+	MethodAriaRead = "aria.read"
+
 	MethodStatus       = "angelus.status"
 	MethodSaveBindings = "angelus.save_bindings"
 )
@@ -203,4 +208,26 @@ type StatusResponse struct {
 type SaveBindingsResponse struct {
 	OK    bool `json:"ok"`
 	Count int  `json:"count"` // number of bindings written
+}
+
+// AriaReadRequest names the aria and the window of entries to return.
+// From is inclusive; Limit==0 means "no upper bound". The angelus
+// caps responses to a sensible upper bound regardless.
+type AriaReadRequest struct {
+	FigaroID string `json:"figaro_id"`
+	From     uint64 `json:"from,omitempty"`
+	Limit    int    `json:"limit,omitempty"`
+}
+
+// AriaReadEntry is one IR entry on the wire, with LT separated from
+// the payload so clients can ignore the figaro-internal envelope.
+type AriaReadEntry struct {
+	LT      uint64          `json:"lt"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+type AriaReadResponse struct {
+	Entries  []AriaReadEntry `json:"entries"`
+	Total    int             `json:"total"`               // total entries in the aria
+	NextFrom uint64          `json:"next_from,omitempty"` // 0 when no more
 }
