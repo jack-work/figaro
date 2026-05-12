@@ -101,3 +101,54 @@ func TestPatch_AliasIdentity(t *testing.T) {
 	mp := message.Patch{Set: map[string]json.RawMessage{}, Remove: []string{"x"}}
 	assert.False(t, chalkboard.Patch(mp).IsEmpty())
 }
+
+func TestNewInterruptSentinel_NamesAllToolCalls(t *testing.T) {
+	calls := []message.Content{
+		{Type: message.ContentToolCall, ToolCallID: "tc_a", ToolName: "bash"},
+		{Type: message.ContentToolCall, ToolCallID: "tc_b", ToolName: "read"},
+		// Non-tool_call blocks must be ignored.
+		message.TextContent("commentary"),
+	}
+	sentinel := message.NewInterruptSentinel(message.InterruptAgentExit, "agent exited mid-tool-use", calls)
+
+	assert.Equal(t, message.RoleSystemInterrupt, sentinel.Role)
+	require.Len(t, sentinel.Content, 2)
+	assert.Equal(t, message.ContentInterrupt, sentinel.Content[0].Type)
+	assert.Equal(t, "tc_a", sentinel.Content[0].ToolCallID)
+	assert.Equal(t, message.InterruptAgentExit, sentinel.Content[0].Reason)
+	assert.Equal(t, "agent exited mid-tool-use", sentinel.Content[0].Text)
+	assert.Equal(t, "tc_b", sentinel.Content[1].ToolCallID)
+
+	assert.True(t, message.IsInterruptSentinel(sentinel))
+	assert.Equal(t, []string{"tc_a", "tc_b"}, message.DanglingToolCallIDs(sentinel))
+}
+
+func TestInterruptSentinel_NonSentinel_NoIDs(t *testing.T) {
+	user := message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hi")}}
+	assert.False(t, message.IsInterruptSentinel(user))
+	assert.Nil(t, message.DanglingToolCallIDs(user))
+}
+
+func TestInterruptSentinel_Roundtrip(t *testing.T) {
+	original := message.NewInterruptSentinel(
+		message.InterruptUserInterrupt,
+		"user pressed Ctrl-C",
+		[]message.Content{
+			{Type: message.ContentToolCall, ToolCallID: "tc_1", ToolName: "bash"},
+		},
+	)
+	original.LogicalTime = 12
+	original.Timestamp = 1700000000000
+
+	b, err := json.Marshal(original)
+	require.NoError(t, err)
+
+	var decoded message.Message
+	require.NoError(t, json.Unmarshal(b, &decoded))
+
+	assert.Equal(t, message.RoleSystemInterrupt, decoded.Role)
+	require.Len(t, decoded.Content, 1)
+	assert.Equal(t, "tc_1", decoded.Content[0].ToolCallID)
+	assert.Equal(t, message.InterruptUserInterrupt, decoded.Content[0].Reason)
+	assert.Equal(t, uint64(12), decoded.LogicalTime)
+}

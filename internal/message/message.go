@@ -10,6 +10,24 @@ const (
 	RoleAssistant  Role = "assistant"
 	RoleToolResult Role = "tool_result"
 	RoleSystem     Role = "system" // compacted summary header
+
+	// RoleSystemInterrupt is a sentinel inserted when a turn left
+	// unmatched tool_use blocks (interrupt, fault, agent exit). The
+	// IR stays append-only; the translator is responsible for
+	// emitting a provider-acceptable surrogate (e.g., a synthetic
+	// tool_result block) into the wire stream.
+	RoleSystemInterrupt Role = "system.interrupt"
+)
+
+// InterruptReason classifies why a system.interrupt sentinel was
+// inserted. Travels on each interrupt content block as Text-prefixed
+// metadata; kept open-coded so unknown values pass through.
+type InterruptReason string
+
+const (
+	InterruptFault         InterruptReason = "fault"
+	InterruptUserInterrupt InterruptReason = "user_interrupt"
+	InterruptAgentExit     InterruptReason = "agent_exit"
 )
 
 // StopReason indicates why the assistant stopped generating.
@@ -32,6 +50,13 @@ const (
 	ContentThinking   ContentType = "thinking"
 	ContentToolCall   ContentType = "tool_call"   // assistant emits these
 	ContentToolResult ContentType = "tool_result" // user-role tic carries these (one block per tool that completed)
+
+	// ContentInterrupt blocks live on a RoleSystemInterrupt message,
+	// one per dangling tool_call_id from the prior assistant turn.
+	// ToolCallID names the unmatched call; Reason carries a short
+	// machine-readable classification; Text carries a human-readable
+	// description echoed into the synthetic wire surrogate.
+	ContentInterrupt ContentType = "interrupt"
 )
 
 // Content is a single block within a message. Type determines
@@ -53,6 +78,9 @@ type Content struct {
 
 
 	IsError bool `json:"is_error,omitempty"`
+
+	// Reason populates ContentInterrupt blocks.
+	Reason InterruptReason `json:"reason,omitempty"`
 }
 
 // Usage tracks token consumption for a single assistant response.
@@ -109,4 +137,51 @@ func ToolResultContent(toolCallID, toolName, text string, isErr bool) Content {
 		Text:       text,
 		IsError:    isErr,
 	}
+}
+
+// InterruptContent constructs a single interrupt block naming one
+// dangling tool_call_id.
+func InterruptContent(toolCallID, toolName string, reason InterruptReason, text string) Content {
+	return Content{
+		Type:       ContentInterrupt,
+		ToolCallID: toolCallID,
+		ToolName:   toolName,
+		Reason:     reason,
+		Text:       text,
+	}
+}
+
+// NewInterruptSentinel constructs a RoleSystemInterrupt message naming
+// every tool_call from the provided assistant content blocks. Callers
+// pass the tool_call blocks from the dangling assistant turn.
+func NewInterruptSentinel(reason InterruptReason, text string, calls []Content) Message {
+	blocks := make([]Content, 0, len(calls))
+	for _, c := range calls {
+		if c.Type != ContentToolCall {
+			continue
+		}
+		blocks = append(blocks, InterruptContent(c.ToolCallID, c.ToolName, reason, text))
+	}
+	return Message{
+		Role:    RoleSystemInterrupt,
+		Content: blocks,
+	}
+}
+
+// IsInterruptSentinel reports whether m is a system.interrupt message.
+func IsInterruptSentinel(m Message) bool { return m.Role == RoleSystemInterrupt }
+
+// DanglingToolCallIDs returns the tool_call_ids named by the
+// ContentInterrupt blocks in m. Empty for non-sentinel messages.
+func DanglingToolCallIDs(m Message) []string {
+	if !IsInterruptSentinel(m) {
+		return nil
+	}
+	ids := make([]string, 0, len(m.Content))
+	for _, c := range m.Content {
+		if c.Type == ContentInterrupt && c.ToolCallID != "" {
+			ids = append(ids, c.ToolCallID)
+		}
+	}
+	return ids
 }
