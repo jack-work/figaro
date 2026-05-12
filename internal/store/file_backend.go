@@ -17,8 +17,15 @@ type FileBackend struct {
 var _ Backend = (*FileBackend)(nil)
 
 const (
-	ariaFile = "aria.jsonl"
+	ariaFile = "aria.jsonl"   // legacy: NDJSON file per aria
+	ariaDir  = "aria"         // figwal: dir of segments per aria
 	metaFile = "meta.json"
+
+	// envUseFigwal, when set to a truthy value, makes new arias and
+	// new translator caches default to the figwal-backed Stream. The
+	// on-disk evidence (a file vs a dir) still takes precedence for
+	// existing arias.
+	envUseFigwal = "FIGARO_USE_FIGWAL"
 )
 
 // NewFileBackend opens (or creates) a directory-backed aria store.
@@ -39,15 +46,45 @@ func (b *FileBackend) Open(ariaID string) (Stream[message.Message], error) {
 	if ariaID == "" {
 		return nil, fmt.Errorf("file backend: empty aria id")
 	}
-	return OpenFileStream[message.Message](filepath.Join(b.dir, ariaID, ariaFile))
+	ariaRoot := filepath.Join(b.dir, ariaID)
+	walDir := filepath.Join(ariaRoot, ariaDir)
+	jsonlPath := filepath.Join(ariaRoot, ariaFile)
+	if useFigwal := pickStreamFormat(walDir, jsonlPath); useFigwal {
+		return OpenFigwalStream[message.Message](walDir)
+	}
+	return OpenFileStream[message.Message](jsonlPath)
 }
 
 func (b *FileBackend) OpenTranslation(ariaID, providerName string) (Stream[[]json.RawMessage], error) {
 	if ariaID == "" || providerName == "" {
 		return nil, fmt.Errorf("file backend: empty aria id or provider name")
 	}
-	path := filepath.Join(b.dir, ariaID, "translations", providerName+".jsonl")
-	return OpenFileStream[[]json.RawMessage](path)
+	tDir := filepath.Join(b.dir, ariaID, "translations")
+	walDir := filepath.Join(tDir, providerName)
+	jsonlPath := filepath.Join(tDir, providerName+".jsonl")
+	if useFigwal := pickStreamFormat(walDir, jsonlPath); useFigwal {
+		return OpenFigwalStream[[]json.RawMessage](walDir)
+	}
+	return OpenFileStream[[]json.RawMessage](jsonlPath)
+}
+
+// pickStreamFormat returns true when the figwal-backed format should
+// be used. On-disk evidence wins: if the figwal dir already exists, we
+// must use figwal; if the legacy file already exists, we must use the
+// legacy stream. For a brand-new stream, the FIGARO_USE_FIGWAL env var
+// selects the default.
+func pickStreamFormat(walDir, legacyFile string) bool {
+	if info, err := os.Stat(walDir); err == nil && info.IsDir() {
+		return true
+	}
+	if _, err := os.Stat(legacyFile); err == nil {
+		return false
+	}
+	switch os.Getenv(envUseFigwal) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 func (b *FileBackend) Meta(ariaID string) (*AriaMeta, error) {

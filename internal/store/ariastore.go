@@ -29,13 +29,19 @@ func listAriasInDir(dir string) ([]AriaInfo, error) {
 		if !e.IsDir() {
 			continue
 		}
-		ariaDir := filepath.Join(dir, e.Name())
-		ariaStat, err := os.Stat(filepath.Join(ariaDir, ariaFile))
-		if err != nil {
+		ariaRoot := filepath.Join(dir, e.Name())
+		// Either layout counts as an aria: legacy aria.jsonl file, or
+		// figwal aria/ subdir.
+		var modTime time.Time
+		if st, err := os.Stat(filepath.Join(ariaRoot, ariaFile)); err == nil {
+			modTime = st.ModTime()
+		} else if st, err := os.Stat(filepath.Join(ariaRoot, ariaDir)); err == nil && st.IsDir() {
+			modTime = st.ModTime()
+		} else {
 			continue
 		}
 		var meta *AriaMeta
-		if mdata, err := os.ReadFile(filepath.Join(ariaDir, metaFile)); err == nil {
+		if mdata, err := os.ReadFile(filepath.Join(ariaRoot, metaFile)); err == nil {
 			var m AriaMeta
 			if json.Unmarshal(mdata, &m) == nil {
 				meta = &m
@@ -43,7 +49,7 @@ func listAriasInDir(dir string) ([]AriaInfo, error) {
 		}
 		info := AriaInfo{
 			ID:           e.Name(),
-			LastModified: ariaStat.ModTime(),
+			LastModified: modTime,
 			Meta:         meta,
 		}
 		if meta != nil {

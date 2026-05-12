@@ -257,6 +257,78 @@ func TestFileBackend_List(t *testing.T) {
 	assert.Equal(t, 2, byID["b"].MessageCount)
 }
 
+func TestFileBackend_FigwalGate(t *testing.T) {
+	// With the gate set, new arias open as figwal-backed; on-disk
+	// shape matches (aria/ dir, not aria.jsonl file).
+	t.Setenv("FIGARO_USE_FIGWAL", "1")
+	dir := t.TempDir()
+	b, err := NewFileBackend(dir)
+	require.NoError(t, err)
+	s, err := b.Open("aw")
+	require.NoError(t, err)
+	_, err = s.Append(Entry[message.Message]{
+		Payload: message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hi")}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+
+	// figwal layout on disk: arias/aw/aria/ dir, no aria.jsonl file.
+	st, err := os.Stat(filepath.Join(dir, "aw", "aria"))
+	require.NoError(t, err)
+	assert.True(t, st.IsDir())
+	_, err = os.Stat(filepath.Join(dir, "aw", "aria.jsonl"))
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestFileBackend_DefaultIsLegacy(t *testing.T) {
+	// Default (env unset): new arias use the legacy NDJSON FileStream.
+	t.Setenv("FIGARO_USE_FIGWAL", "")
+	dir := t.TempDir()
+	b, err := NewFileBackend(dir)
+	require.NoError(t, err)
+	s, err := b.Open("legacy")
+	require.NoError(t, err)
+	_, err = s.Append(Entry[message.Message]{
+		Payload: message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hi")}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+
+	_, err = os.Stat(filepath.Join(dir, "legacy", "aria.jsonl"))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(dir, "legacy", "aria"))
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestFileBackend_OnDiskEvidenceWins(t *testing.T) {
+	// If the figwal dir already exists, Open ignores the env and uses
+	// figwal so we don't fork into a parallel format mid-aria.
+	t.Setenv("FIGARO_USE_FIGWAL", "")
+	dir := t.TempDir()
+	b, err := NewFileBackend(dir)
+	require.NoError(t, err)
+
+	// Seed an aria with a figwal-backed stream.
+	t.Setenv("FIGARO_USE_FIGWAL", "1")
+	s, err := b.Open("mixed")
+	require.NoError(t, err)
+	_, err = s.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}})
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+
+	// Now unset the gate and reopen; should still pick figwal because
+	// the dir exists.
+	t.Setenv("FIGARO_USE_FIGWAL", "")
+	s2, err := b.Open("mixed")
+	require.NoError(t, err)
+	defer s2.Close()
+	assert.Len(t, s2.Read(), 1, "figwal-backed entry visible after gate flip")
+	// Type assertion would couple this test to internal types; instead
+	// confirm no legacy file ever appeared.
+	_, err = os.Stat(filepath.Join(dir, "mixed", "aria.jsonl"))
+	assert.True(t, os.IsNotExist(err))
+}
+
 func TestFileBackend_Remove(t *testing.T) {
 	dir := t.TempDir()
 	b, _ := NewFileBackend(dir)
