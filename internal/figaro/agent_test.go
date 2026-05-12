@@ -529,18 +529,22 @@ firstDone:
 secondDone:
 
 	// The aria directory should exist on disk (flushed after first prompt).
+	// figwal layout: arias/<id>/aria/<segment>.jsonl
 	ariaDir := filepath.Join(storeDir, "persist-001")
-	ariaPath := filepath.Join(ariaDir, "aria.jsonl")
-	data, err := os.ReadFile(ariaPath)
-	require.NoError(t, err, "aria.jsonl should exist after prompt")
-	require.NotEmpty(t, data)
-
-	// aria.jsonl is NDJSON; count non-empty lines.
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	walDir := filepath.Join(ariaDir, "aria")
+	segments, err := os.ReadDir(walDir)
+	require.NoError(t, err, "figwal aria dir should exist after prompt")
 	var msgCount int
-	for _, line := range lines {
-		if strings.TrimSpace(line) != "" {
-			msgCount++
+	for _, seg := range segments {
+		if seg.IsDir() || filepath.Ext(seg.Name()) != ".jsonl" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(walDir, seg.Name()))
+		require.NoError(t, err)
+		for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+			if strings.TrimSpace(line) != "" {
+				msgCount++
+			}
 		}
 	}
 	// At minimum, the first prompt's flush wrote user + assistant (2 messages).
@@ -644,10 +648,11 @@ done:
 	// Kill the agent (should flush + close).
 	a.Kill()
 
-	// Verify data is on disk.
-	ariaPath := filepath.Join(storeDir, "killflush-001", "aria.jsonl")
-	_, statErr := os.Stat(ariaPath)
-	assert.NoError(t, statErr, "aria.jsonl should exist after kill")
+	// Verify data is on disk. figwal layout: aria/ dir with segments.
+	walDir := filepath.Join(storeDir, "killflush-001", "aria")
+	st, statErr := os.Stat(walDir)
+	require.NoError(t, statErr, "figwal aria dir should exist after kill")
+	assert.True(t, st.IsDir())
 }
 
 // TestAgent_BootInsertsSentinelForDanglingToolUse builds an aria

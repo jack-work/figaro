@@ -17,15 +17,9 @@ type FileBackend struct {
 var _ Backend = (*FileBackend)(nil)
 
 const (
-	ariaFile = "aria.jsonl"   // legacy: NDJSON file per aria
-	ariaDir  = "aria"         // figwal: dir of segments per aria
+	ariaFile = "aria.jsonl" // legacy: NDJSON file per aria
+	ariaDir  = "aria"       // figwal: dir of segments per aria
 	metaFile = "meta.json"
-
-	// envUseFigwal, when set to a truthy value, makes new arias and
-	// new translator caches default to the figwal-backed Stream. The
-	// on-disk evidence (a file vs a dir) still takes precedence for
-	// existing arias.
-	envUseFigwal = "FIGARO_USE_FIGWAL"
 )
 
 // NewFileBackend opens (or creates) a directory-backed aria store.
@@ -49,7 +43,7 @@ func (b *FileBackend) Open(ariaID string) (Log[message.Message], error) {
 	ariaRoot := filepath.Join(b.dir, ariaID)
 	walDir := filepath.Join(ariaRoot, ariaDir)
 	jsonlPath := filepath.Join(ariaRoot, ariaFile)
-	if useFigwal := pickStreamFormat(walDir, jsonlPath); useFigwal {
+	if useFigwal := pickLogFormat(walDir, jsonlPath); useFigwal {
 		return OpenFigwalLog[message.Message](walDir)
 	}
 	return OpenFileLog[message.Message](jsonlPath)
@@ -62,29 +56,20 @@ func (b *FileBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	tDir := filepath.Join(b.dir, ariaID, "translations")
 	walDir := filepath.Join(tDir, providerName)
 	jsonlPath := filepath.Join(tDir, providerName+".jsonl")
-	if useFigwal := pickStreamFormat(walDir, jsonlPath); useFigwal {
+	if useFigwal := pickLogFormat(walDir, jsonlPath); useFigwal {
 		return OpenFigwalLog[[]json.RawMessage](walDir)
 	}
 	return OpenFileLog[[]json.RawMessage](jsonlPath)
 }
 
-// pickStreamFormat returns true when the figwal-backed format should
-// be used. On-disk evidence wins: if the figwal dir already exists, we
-// must use figwal; if the legacy file already exists, we must use the
-// legacy log. For a brand-new log, the FIGARO_USE_FIGWAL env var
-// selects the default.
-func pickStreamFormat(walDir, legacyFile string) bool {
-	if info, err := os.Stat(walDir); err == nil && info.IsDir() {
-		return true
-	}
+// pickLogFormat returns true when the figwal-backed format should be
+// used. On-disk evidence wins: a legacy file means use the legacy log;
+// otherwise (figwal dir present, or fresh aria) use figwal.
+func pickLogFormat(walDir, legacyFile string) bool {
 	if _, err := os.Stat(legacyFile); err == nil {
 		return false
 	}
-	switch os.Getenv(envUseFigwal) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
+	return true
 }
 
 func (b *FileBackend) Meta(ariaID string) (*AriaMeta, error) {
