@@ -150,7 +150,7 @@ func markCacheBreakpoints(params *anthropic.MessageNewParams, setting string) {
 }
 
 // applyMessageTags reads system.tags and attaches per-message
-// cache_control overrides keyed by the figStream logical time.
+// cache_control overrides keyed by the figLog logical time.
 func applyMessageTags(params *anthropic.MessageNewParams, msgLTs []uint64, snap chalkboard.Snapshot) {
 	raw, ok := snap["system.tags"]
 	if !ok || len(raw) == 0 {

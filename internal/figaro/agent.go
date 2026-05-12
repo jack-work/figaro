@@ -52,6 +52,12 @@ type Config struct {
 	Tools      *tool.Registry
 	Backend    store.Backend // nil = ephemeral
 
+	// LogCache is the shared process-wide refcounted cache of aria
+	// logs. When set, NewAgent acquires the IR log through the cache
+	// (so a concurrent read RPC sees the same instance) and releases
+	// on Kill. When nil, the agent falls back to Backend.Open.
+	LogCache *store.LogCache
+
 	// Chalkboard carries the aria's state. Nil creates an in-memory
 	// one. Empty at first prompt means fresh aria. Closed by Kill.
 	Chalkboard *chalkboard.State
@@ -70,8 +76,10 @@ type Agent struct {
 	outfitter    *outfit.Outfitter
 	loadoutPatch *chalkboard.Patch
 	tools        *tool.Registry
-	figStream    store.Stream[message.Message]
-	backend      store.Backend // nil = ephemeral
+	figLog        store.Log[message.Message]
+	figLogRelease func() // nil unless figLog came from LogCache
+	logCache      *store.LogCache
+	backend       store.Backend // nil = ephemeral
 	chalkboard   *chalkboard.State
 	derived      *derivedFanout // nil = ephemeral; per-figaro durable derivations
 
@@ -108,6 +116,7 @@ func NewAgent(cfg Config) *Agent {
 		loadoutPatch: cfg.LoadoutPatch,
 		tools:        cfg.Tools,
 		backend:      cfg.Backend,
+		logCache:     cfg.LogCache,
 		chalkboard:   cfg.Chalkboard,
 		createdAt:    time.Now(),
 		lastActive:   time.Now(),
@@ -115,8 +124,8 @@ func NewAgent(cfg Config) *Agent {
 		done:         make(chan struct{}),
 	}
 
-	a.figStream = a.newStream()
-	repairDanglingToolUse(a.figStream, a.id)
+	a.figLog = a.newLog()
+	appendInterruptSentinelIfDangling(a.figLog, a.id)
 	if a.chalkboard == nil {
 		// Ephemeral arias get an in-memory chalkboard.
 		a.chalkboard, _ = chalkboard.Open("")
@@ -125,7 +134,7 @@ func NewAgent(cfg Config) *Agent {
 	// On-disk chalkboard.json is just a cache of this projection.
 	if len(a.chalkboard.Snapshot()) == 0 {
 		replayed := false
-		for _, entry := range a.figStream.Read() {
+		for _, entry := range a.figLog.Read() {
 			for _, p := range entry.Payload.Patches {
 				a.chalkboard.Apply(p)
 				replayed = true
@@ -137,27 +146,37 @@ func NewAgent(cfg Config) *Agent {
 	}
 	a.inbox = NewInbox(ctx)
 
-	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Read()))
+	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figLog.Read()))
 
 	// Spin up durable-derivation fanout (backed agents only).
-	a.derived = startDerived(ctx, a.id, a.prov.Name(), a.backend, a.figStream, nil)
+	a.derived = startDerived(ctx, a.id, a.prov.Name(), a.backend, a.figLog, nil)
 	a.derived.Tick(0, a.chalkboard.Snapshot()) // initial materialization
 
 	go a.runWithRecovery(ctx)
 	return a
 }
 
-// newStream opens the figaro IR stream.
-func (a *Agent) newStream() store.Stream[message.Message] {
-	if a.backend == nil {
-		return store.NewMemStream[message.Message]()
+// newLog opens the figaro IR log, preferring the shared LogCache so
+// concurrent readers see the same instance. Records the release
+// callback when one is returned; Kill calls it.
+func (a *Agent) newLog() store.Log[message.Message] {
+	if a.logCache != nil {
+		log, release, err := a.logCache.AcquireIR(a.id)
+		if err == nil {
+			a.figLogRelease = release
+			return log
+		}
+		slog.Warn("log cache acquire (falling back)", "aria", a.id, "err", err)
 	}
-	stream, err := a.backend.Open(a.id)
+	if a.backend == nil {
+		return store.NewMemLog[message.Message]()
+	}
+	log, err := a.backend.Open(a.id)
 	if err != nil {
 		slog.Warn("backend open (falling back to ephemeral)", "aria", a.id, "err", err)
-		return store.NewMemStream[message.Message]()
+		return store.NewMemLog[message.Message]()
 	}
-	return stream
+	return log
 }
 
 func (a *Agent) ID() string { return a.id }
@@ -222,7 +241,7 @@ func (a *Agent) Interrupt() {
 }
 
 func (a *Agent) Context() []message.Message {
-	return unwrapMessages(a.figStream.Read())
+	return unwrapMessages(a.figLog.Read())
 }
 
 // unwrapMessages projects entries to a flat []Message.
@@ -296,8 +315,13 @@ func (a *Agent) Kill() {
 	a.subs = nil
 	a.mu.Unlock()
 
-	if err := a.figStream.Close(); err != nil {
-		slog.Error("figStream close", "aria", a.id, "err", err)
+	// When the log came from the LogCache, the cache owns the
+	// underlying instance and closes it on eviction. We only call
+	// Close directly for ephemeral / fallback logs.
+	if a.figLogRelease != nil {
+		a.figLogRelease()
+	} else if err := a.figLog.Close(); err != nil {
+		slog.Error("figLog close", "aria", a.id, "err", err)
 	}
 	if a.chalkboard != nil {
 		if err := a.chalkboard.Close(); err != nil {
@@ -322,8 +346,8 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		}
 
 		a.mu.Lock()
-		a.figStream = a.newStream()
-		a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figStream.Read()))
+		a.figLog = a.newLog()
+		a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figLog.Read()))
 		if a.turnCancel != nil {
 			a.turnCancel()
 			a.turnCancel = nil
@@ -399,7 +423,7 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 		Patches:   []message.Patch{patch},
 		Timestamp: time.Now().UnixMilli(),
 	}
-	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
+	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
 		slog.Error(kind+" append", "aria", a.id, "err", err)
 		return
 	}
@@ -420,7 +444,7 @@ func (a *Agent) endTurn(reason string) {
 
 	a.mu.Lock()
 	a.lastActive = time.Now()
-	for _, e := range a.figStream.ScanFromEnd(64) {
+	for _, e := range a.figLog.ScanFromEnd(64) {
 		if u := e.Payload.Usage; u != nil {
 			a.tokensIn += u.InputTokens
 			a.tokensOut += u.OutputTokens

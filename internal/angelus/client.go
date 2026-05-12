@@ -93,6 +93,19 @@ func (c *Client) SaveBindings(ctx context.Context) (*rpc.SaveBindingsResponse, e
 	return &resp, nil
 }
 
+// AriaRead fetches IR entries for an aria through the angelus's
+// shared LogCache.
+func (c *Client) AriaRead(ctx context.Context, figaroID string, from uint64, limit int) (*rpc.AriaReadResponse, error) {
+	var resp rpc.AriaReadResponse
+	err := c.cli.Call(ctx, rpc.MethodAriaRead, rpc.AriaReadRequest{
+		FigaroID: figaroID, From: from, Limit: limit,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Client) Close() error {
 	return c.cli.Close()
 }

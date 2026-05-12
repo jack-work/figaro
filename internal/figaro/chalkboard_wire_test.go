@@ -27,7 +27,7 @@ type chalkSpyProvider struct {
 	mu       sync.Mutex
 	encoded  []message.Message
 	sentRuns int
-	cache    store.Stream[[]json.RawMessage] // optional, set by tests that inspect cache state
+	cache    store.Log[[]json.RawMessage] // optional, set by tests that inspect cache state
 }
 
 func (p *chalkSpyProvider) Name() string                                           { return "spy" }
@@ -48,8 +48,8 @@ func (p *chalkSpyProvider) Send(ctx context.Context, in provider.SendInput, bus 
 	p.mu.Lock()
 	p.sentRuns++
 	p.mu.Unlock()
-	mockCatchUp(in.FigStream, p.cache, p.encode, p.Fingerprint())
-	mockPushAssistant(in.FigStream, p.cache, bus, p.encode, p.Fingerprint(), "ok")
+	mockCatchUp(in.FigLog, p.cache, p.encode, p.Fingerprint())
+	mockPushAssistant(in.FigLog, p.cache, bus, p.encode, p.Fingerprint(), "ok")
 	return nil
 }
 

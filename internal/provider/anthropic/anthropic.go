@@ -49,12 +49,12 @@ type Anthropic struct {
 	Templates *template.Template
 
 	// CacheOpen opens the per-aria translation cache. nil = no caching.
-	CacheOpen func(aria string) (store.Stream[[]json.RawMessage], error)
-	caches    map[string]store.Stream[[]json.RawMessage] // guarded by mu
+	CacheOpen func(aria string) (store.Log[[]json.RawMessage], error)
+	caches    map[string]store.Log[[]json.RawMessage] // guarded by mu
 }
 
 // New constructs an Anthropic provider.
-func New(cfg config.AnthropicProvider, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Stream[[]json.RawMessage], error)) (*Anthropic, error) {
+func New(cfg config.AnthropicProvider, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Anthropic, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("anthropic: nil token resolver")
 	}
@@ -69,13 +69,13 @@ func New(cfg config.AnthropicProvider, resolver auth.TokenResolver, cacheOpen fu
 		HTTPClient:       &http.Client{Timeout: 10 * time.Minute},
 		ReminderRenderer: rr,
 		CacheOpen:        cacheOpen,
-		caches:           map[string]store.Stream[[]json.RawMessage]{},
+		caches:           map[string]store.Log[[]json.RawMessage]{},
 	}, nil
 }
 
 // cacheFor returns the per-aria cache, opening lazily. nil if
 // unconfigured or open failed.
-func (a *Anthropic) cacheFor(aria string) store.Stream[[]json.RawMessage] {
+func (a *Anthropic) cacheFor(aria string) store.Log[[]json.RawMessage] {
 	if aria == "" || a.CacheOpen == nil {
 		return nil
 	}
@@ -95,7 +95,7 @@ func (a *Anthropic) cacheFor(aria string) store.Stream[[]json.RawMessage] {
 }
 
 // invalidateIfStale clears the cache on fingerprint mismatch.
-func (a *Anthropic) invalidateIfStale(s store.Stream[[]json.RawMessage]) {
+func (a *Anthropic) invalidateIfStale(s store.Log[[]json.RawMessage]) {
 	want := a.Fingerprint()
 	for _, e := range s.Read() {
 		if e.Fingerprint == "" || e.Fingerprint == want {
@@ -412,6 +412,31 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snap
 			return nativeMessage{}, false
 		}
 		return nativeMessage{Role: "assistant", Content: blocks}, true
+
+	case message.RoleSystemInterrupt:
+		// Surrogate: synthetic user-role tool_result blocks per
+		// dangling tool_use_id, IsError=true. Anthropic requires each
+		// tool_use to be followed by a tool_result; this satisfies
+		// that for an interrupted turn.
+		var blocks []nativeBlock
+		for _, c := range msg.Content {
+			if c.Type != message.ContentInterrupt || c.ToolCallID == "" {
+				continue
+			}
+			text := c.Text
+			if text == "" {
+				text = "(tool execution was interrupted)"
+			}
+			blocks = append(blocks, nativeBlock{
+				Type: "tool_result", ToolUseID: c.ToolCallID,
+				IsError: true,
+				Content: []nativeBlock{{Type: "text", Text: text}},
+			})
+		}
+		if len(blocks) == 0 {
+			return nativeMessage{}, false
+		}
+		return nativeMessage{Role: "user", Content: blocks}, true
 	}
 	return nativeMessage{}, false
 }
@@ -596,13 +621,13 @@ func markCacheBreakpoints(req *nativeRequest, setting string) {
 }
 
 // Send drives one turn: catch up cache, POST, stream SSE, land
-// the assistant message in figStream + cache.
+// the assistant message in figLog + cache.
 func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
 	cache := a.cacheFor(in.AriaID)
-	perMessage, lts := a.catchUp(in.FigStream, cache)
+	perMessage, lts := a.catchUp(in.FigLog, cache)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -649,9 +674,9 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		return nil
 	}
 
-	// Land the assistant message: figStream → push figaro → cache.
+	// Land the assistant message: figLog → push figaro → cache.
 	msg := decodeNativeMessage(nm)
-	entry, err := in.FigStream.Append(store.Entry[message.Message]{Payload: msg})
+	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
 	if err != nil {
 		return fmt.Errorf("append assistant: %w", err)
 	}
@@ -682,14 +707,14 @@ func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
 	return a.Model
 }
 
-// catchUp encodes uncached figStream entries and returns per-message
+// catchUp encodes uncached figLog entries and returns per-message
 // wire bytes.
-func (a *Anthropic) catchUp(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage]) ([][]json.RawMessage, []uint64) {
+func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage]) ([][]json.RawMessage, []uint64) {
 	fp := a.Fingerprint()
 	snap := chalkboard.Snapshot{}
 	var perMessage [][]json.RawMessage
 	var lts []uint64
-	for _, e := range figStream.Read() {
+	for _, e := range figLog.Read() {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
 		var bytes []json.RawMessage

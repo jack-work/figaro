@@ -44,12 +44,12 @@ type Provider struct {
 	Templates *template.Template
 
 	// CacheOpen opens the per-aria translation cache. nil disables caching.
-	CacheOpen func(aria string) (store.Stream[[]json.RawMessage], error)
-	caches    map[string]store.Stream[[]json.RawMessage]
+	CacheOpen func(aria string) (store.Log[[]json.RawMessage], error)
+	caches    map[string]store.Log[[]json.RawMessage]
 }
 
 // New constructs the SDK-backed provider.
-func New(cfg config.AnthropicProvider, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Stream[[]json.RawMessage], error)) (*Provider, error) {
+func New(cfg config.AnthropicProvider, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Provider, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("anthropicsdk: nil token resolver")
 	}
@@ -64,7 +64,7 @@ func New(cfg config.AnthropicProvider, resolver auth.TokenResolver, cacheOpen fu
 		reminder:   rr,
 		httpClient: &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
 		CacheOpen:  cacheOpen,
-		caches:     map[string]store.Stream[[]json.RawMessage]{},
+		caches:     map[string]store.Log[[]json.RawMessage]{},
 	}, nil
 }
 
@@ -119,7 +119,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 
 	cache := p.cacheFor(in.AriaID)
-	perMessage, lts := p.catchUp(in.FigStream, cache)
+	perMessage, lts := p.catchUp(in.FigLog, cache)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -162,7 +162,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return nil
 	}
 
-	entry, err := in.FigStream.Append(store.Entry[message.Message]{Payload: msg})
+	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
 	if err != nil {
 		return fmt.Errorf("append assistant: %w", err)
 	}

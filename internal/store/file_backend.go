@@ -17,7 +17,8 @@ type FileBackend struct {
 var _ Backend = (*FileBackend)(nil)
 
 const (
-	ariaFile = "aria.jsonl"
+	ariaFile = "aria.jsonl" // legacy: NDJSON file per aria
+	ariaDir  = "aria"       // figwal: dir of segments per aria
 	metaFile = "meta.json"
 )
 
@@ -35,19 +36,40 @@ func NewFileBackend(dir string) (*FileBackend, error) {
 // Dir returns the root backing directory path.
 func (b *FileBackend) Dir() string { return b.dir }
 
-func (b *FileBackend) Open(ariaID string) (Stream[message.Message], error) {
+func (b *FileBackend) Open(ariaID string) (Log[message.Message], error) {
 	if ariaID == "" {
 		return nil, fmt.Errorf("file backend: empty aria id")
 	}
-	return OpenFileStream[message.Message](filepath.Join(b.dir, ariaID, ariaFile))
+	ariaRoot := filepath.Join(b.dir, ariaID)
+	walDir := filepath.Join(ariaRoot, ariaDir)
+	jsonlPath := filepath.Join(ariaRoot, ariaFile)
+	if useFigwal := pickLogFormat(walDir, jsonlPath); useFigwal {
+		return OpenFigwalLog[message.Message](walDir)
+	}
+	return OpenFileLog[message.Message](jsonlPath)
 }
 
-func (b *FileBackend) OpenTranslation(ariaID, providerName string) (Stream[[]json.RawMessage], error) {
+func (b *FileBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error) {
 	if ariaID == "" || providerName == "" {
 		return nil, fmt.Errorf("file backend: empty aria id or provider name")
 	}
-	path := filepath.Join(b.dir, ariaID, "translations", providerName+".jsonl")
-	return OpenFileStream[[]json.RawMessage](path)
+	tDir := filepath.Join(b.dir, ariaID, "translations")
+	walDir := filepath.Join(tDir, providerName)
+	jsonlPath := filepath.Join(tDir, providerName+".jsonl")
+	if useFigwal := pickLogFormat(walDir, jsonlPath); useFigwal {
+		return OpenFigwalLog[[]json.RawMessage](walDir)
+	}
+	return OpenFileLog[[]json.RawMessage](jsonlPath)
+}
+
+// pickLogFormat returns true when the figwal-backed format should be
+// used. On-disk evidence wins: a legacy file means use the legacy log;
+// otherwise (figwal dir present, or fresh aria) use figwal.
+func pickLogFormat(walDir, legacyFile string) bool {
+	if _, err := os.Stat(legacyFile); err == nil {
+		return false
+	}
+	return true
 }
 
 func (b *FileBackend) Meta(ariaID string) (*AriaMeta, error) {

@@ -25,7 +25,7 @@ import (
 
 type mockProvider struct {
 	response string
-	cache    store.Stream[[]json.RawMessage] // nil = no cache (tests don't need one)
+	cache    store.Log[[]json.RawMessage] // nil = no cache (tests don't need one)
 }
 
 func (m *mockProvider) Name() string                                             { return "mock" }
@@ -37,8 +37,8 @@ func (m *mockProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.
 }
 
 func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
-	mockCatchUp(in.FigStream, m.cache, m.encode, m.Fingerprint())
-	mockPushAssistant(in.FigStream, m.cache, bus, m.encode, m.Fingerprint(), m.response)
+	mockCatchUp(in.FigLog, m.cache, m.encode, m.Fingerprint())
+	mockPushAssistant(in.FigLog, m.cache, bus, m.encode, m.Fingerprint(), m.response)
 	return nil
 }
 
@@ -47,12 +47,12 @@ func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus prov
 // record what they would have encoded.
 type mockEncodeFn func(msg message.Message, prev chalkboard.Snapshot) ([]json.RawMessage, error)
 
-// mockCatchUp catches up the cache from the durable figStream using
+// mockCatchUp catches up the cache from the durable figLog using
 // the given encoder. Mirrors what real providers do at the top of
 // Send. Skipped when cache is nil (ephemeral tests).
-func mockCatchUp(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage], encode mockEncodeFn, fingerprint string) {
+func mockCatchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], encode mockEncodeFn, fingerprint string) {
 	snap := chalkboard.Snapshot{}
-	for _, e := range figStream.Read() {
+	for _, e := range figLog.Read() {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
 		if cache != nil {
@@ -75,10 +75,10 @@ func mockCatchUp(figStream store.Stream[message.Message], cache store.Stream[[]j
 }
 
 // mockPushAssistant simulates a streaming turn: emits the text as a
-// delta, appends a final assistant message to figStream, writes it
+// delta, appends a final assistant message to figLog, writes it
 // into the cache (if any), and pushes figaro so the act loop
 // dispatches.
-func mockPushAssistant(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage], bus provider.Bus, encode mockEncodeFn, fingerprint, text string) {
+func mockPushAssistant(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], bus provider.Bus, encode mockEncodeFn, fingerprint, text string) {
 	if text == "" {
 		return
 	}
@@ -88,7 +88,7 @@ func mockPushAssistant(figStream store.Stream[message.Message], cache store.Stre
 		Content:    []message.Content{message.TextContent(text)},
 		StopReason: message.StopEnd,
 	}
-	entry, err := figStream.Append(store.Entry[message.Message]{Payload: msg})
+	entry, err := figLog.Append(store.Entry[message.Message]{Payload: msg})
 	if err == nil {
 		msg.LogicalTime = entry.LT
 		if cache != nil {
@@ -363,8 +363,8 @@ func (p *panicProvider) Send(ctx context.Context, in provider.SendInput, bus pro
 		p.panicCount--
 		panic("simulated crash")
 	}
-	mockCatchUp(in.FigStream, nil, p.encode, p.Fingerprint())
-	mockPushAssistant(in.FigStream, nil, bus, p.encode, p.Fingerprint(), p.response)
+	mockCatchUp(in.FigLog, nil, p.encode, p.Fingerprint())
+	mockPushAssistant(in.FigLog, nil, bus, p.encode, p.Fingerprint(), p.response)
 	return nil
 }
 
@@ -458,7 +458,7 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 errorReceived:
 
 	// Send-path panics no longer wipe the conversation — the user
-	// prompt that triggered the panic stays in the figaro stream and
+	// prompt that triggered the panic stays in the figaro log and
 	// the agent emits an Error notification. Token counters stay at
 	// zero because no assistant response landed.
 	msgs := a.Context()
@@ -529,18 +529,22 @@ firstDone:
 secondDone:
 
 	// The aria directory should exist on disk (flushed after first prompt).
+	// figwal layout: arias/<id>/aria/<segment>.jsonl
 	ariaDir := filepath.Join(storeDir, "persist-001")
-	ariaPath := filepath.Join(ariaDir, "aria.jsonl")
-	data, err := os.ReadFile(ariaPath)
-	require.NoError(t, err, "aria.jsonl should exist after prompt")
-	require.NotEmpty(t, data)
-
-	// aria.jsonl is NDJSON; count non-empty lines.
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	walDir := filepath.Join(ariaDir, "aria")
+	segments, err := os.ReadDir(walDir)
+	require.NoError(t, err, "figwal aria dir should exist after prompt")
 	var msgCount int
-	for _, line := range lines {
-		if strings.TrimSpace(line) != "" {
-			msgCount++
+	for _, seg := range segments {
+		if seg.IsDir() || filepath.Ext(seg.Name()) != ".jsonl" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(walDir, seg.Name()))
+		require.NoError(t, err)
+		for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+			if strings.TrimSpace(line) != "" {
+				msgCount++
+			}
 		}
 	}
 	// At minimum, the first prompt's flush wrote user + assistant (2 messages).
@@ -644,10 +648,62 @@ done:
 	// Kill the agent (should flush + close).
 	a.Kill()
 
-	// Verify data is on disk.
-	ariaPath := filepath.Join(storeDir, "killflush-001", "aria.jsonl")
-	_, statErr := os.Stat(ariaPath)
-	assert.NoError(t, statErr, "aria.jsonl should exist after kill")
+	// Verify data is on disk. figwal layout: aria/ dir with segments.
+	walDir := filepath.Join(storeDir, "killflush-001", "aria")
+	st, statErr := os.Stat(walDir)
+	require.NoError(t, statErr, "figwal aria dir should exist after kill")
+	assert.True(t, st.IsDir())
+}
+
+// TestAgent_BootInsertsSentinelForDanglingToolUse builds an aria
+// directory on disk whose tail is an assistant turn ending in
+// stop_reason=tool_use with no matching tool_results, opens an Agent
+// against the same Backend, and verifies the boot path appends a
+// RoleSystemInterrupt sentinel.
+func TestAgent_BootInsertsSentinelForDanglingToolUse(t *testing.T) {
+	storeDir := t.TempDir()
+	backend, err := store.NewFileBackend(storeDir)
+	require.NoError(t, err)
+
+	// Seed the stream with [user, assistant.tool_use] using a
+	// pre-agent FileStream directly.
+	pre, err := backend.Open("danglingboot")
+	require.NoError(t, err)
+	_, err = pre.Append(store.Entry[message.Message]{
+		Payload: message.Message{
+			Role:    message.RoleUser,
+			Content: []message.Content{message.TextContent("run a tool")},
+		},
+	})
+	require.NoError(t, err)
+	_, err = pre.Append(store.Entry[message.Message]{
+		Payload: message.Message{
+			Role: message.RoleAssistant,
+			Content: []message.Content{
+				{Type: message.ContentToolCall, ToolCallID: "tc_boot", ToolName: "bash"},
+			},
+			StopReason: message.StopToolUse,
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, pre.Close())
+
+	// Boot an agent on the same store; NewAgent runs the boot-time
+	// repair.
+	a := figaro.NewAgent(figaro.Config{
+		ID:         "danglingboot",
+		SocketPath: "/tmp/danglingboot-test.sock",
+		Provider:   &mockProvider{response: "ignored"},
+		Backend:    backend,
+	})
+	defer a.Kill()
+
+	// Read history from the agent (also flushes/projects).
+	msgs := a.Context()
+	require.GreaterOrEqual(t, len(msgs), 3, "boot should have appended a sentinel")
+	tail := msgs[len(msgs)-1]
+	assert.True(t, message.IsInterruptSentinel(tail), "tail should be the sentinel")
+	assert.Equal(t, []string{"tc_boot"}, message.DanglingToolCallIDs(tail))
 }
 
 func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
