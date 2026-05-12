@@ -9,7 +9,10 @@ type Entry[T any] struct {
 	Fingerprint string
 }
 
-// Stream is one column of the per-aria log.
+// Stream is one column of the per-aria log. Streams are append-only;
+// dangling state at the tail is repaired with an interrupt sentinel,
+// not by truncation. Clear is supported for translator caches that
+// invalidate wholesale on fingerprint mismatch.
 type Stream[T any] interface {
 	// TODO: Pass direction iota, ascending or descending.
 	Read() []Entry[T]
@@ -19,9 +22,6 @@ type Stream[T any] interface {
 
 	// Append stamps e with a fresh LT and writes it to the stream.
 	Append(e Entry[T]) (Entry[T], error)
-
-	// Truncate removes entries with LT > afterLT.
-	Truncate(afterLT uint64) error
 
 	Clear() error
 	Close() error
