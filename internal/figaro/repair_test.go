@@ -13,9 +13,9 @@ import (
 
 // buildStream constructs an in-memory stream pre-populated with the
 // given messages. LTs are assigned by Append in order.
-func buildStream(t *testing.T, msgs ...message.Message) store.Stream[message.Message] {
+func buildStream(t *testing.T, msgs ...message.Message) store.Log[message.Message] {
 	t.Helper()
-	s := store.NewMemStream[message.Message]()
+	s := store.NewMemLog[message.Message]()
 	for _, m := range msgs {
 		_, err := s.Append(store.Entry[message.Message]{Payload: m})
 		require.NoError(t, err)
@@ -143,7 +143,7 @@ func TestAppendSentinel_FileBackedPersists(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "aria.jsonl")
 
-	s1, err := store.OpenFileStream[message.Message](path)
+	s1, err := store.OpenFileLog[message.Message](path)
 	require.NoError(t, err)
 	_, err = s1.Append(store.Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")}},
@@ -160,13 +160,13 @@ func TestAppendSentinel_FileBackedPersists(t *testing.T) {
 	require.NoError(t, s1.Close())
 
 	// Reopen, run repair, close.
-	s2, err := store.OpenFileStream[message.Message](path)
+	s2, err := store.OpenFileLog[message.Message](path)
 	require.NoError(t, err)
 	appendInterruptSentinelIfDangling(s2, "aria-disk")
 	require.NoError(t, s2.Close())
 
 	// Final reopen sees the sentinel as the tail.
-	s3, err := store.OpenFileStream[message.Message](path)
+	s3, err := store.OpenFileLog[message.Message](path)
 	require.NoError(t, err)
 	defer s3.Close()
 	entries := s3.Read()

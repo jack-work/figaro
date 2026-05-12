@@ -11,7 +11,7 @@ import (
 
 // cacheFor returns the per-aria byte cache, opening lazily. Returns
 // nil if caching is unconfigured or the open failed.
-func (p *Provider) cacheFor(aria string) store.Stream[[]json.RawMessage] {
+func (p *Provider) cacheFor(aria string) store.Log[[]json.RawMessage] {
 	if aria == "" || p.CacheOpen == nil {
 		return nil
 	}
@@ -31,7 +31,7 @@ func (p *Provider) cacheFor(aria string) store.Stream[[]json.RawMessage] {
 }
 
 // invalidateIfStale clears the cache on fingerprint mismatch.
-func (p *Provider) invalidateIfStale(s store.Stream[[]json.RawMessage]) {
+func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) {
 	want := p.Fingerprint()
 	for _, e := range s.Read() {
 		if e.Fingerprint == "" || e.Fingerprint == want {
@@ -43,14 +43,14 @@ func (p *Provider) invalidateIfStale(s store.Stream[[]json.RawMessage]) {
 	}
 }
 
-// catchUp encodes any figStream entries not yet in the cache and
+// catchUp encodes any figLog entries not yet in the cache and
 // returns per-message wire bytes plus their logical times.
-func (p *Provider) catchUp(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage]) ([][]json.RawMessage, []uint64) {
+func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage]) ([][]json.RawMessage, []uint64) {
 	fp := p.Fingerprint()
 	snap := chalkboard.Snapshot{}
 	var perMessage [][]json.RawMessage
 	var lts []uint64
-	for _, e := range figStream.Read() {
+	for _, e := range figLog.Read() {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
 		var bytes []json.RawMessage

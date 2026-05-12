@@ -109,7 +109,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 			a.chalkboard.Apply(combined)
 		}
 	}
-	if len(a.figStream.Read()) == 0 && a.chalkboard != nil {
+	if len(a.figLog.Read()) == 0 && a.chalkboard != nil {
 		// Bootstrap: system.prompt, system.skills.
 		if a.outfitter != nil {
 			if patch, err := a.outfitter.Bootstrap(a.chalkboard.Snapshot(),
@@ -133,8 +133,8 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// IR still has a dangling tool_use at the tail. Boot-time repair
 	// usually catches this, but cover the case where the boot check
 	// missed (e.g. dangling state appeared after boot).
-	appendInterruptSentinelIfDangling(a.figStream, a.id)
-	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
+	appendInterruptSentinelIfDangling(a.figLog, a.id)
+	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
 		a.fanOutError(fmt.Sprintf("append user tic: %s", err))
 		a.endTurn("error: append tic")
 		return
@@ -155,7 +155,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	bus := newTurnBus()
 	in := provider.SendInput{
 		AriaID:    a.id,
-		FigStream: a.figStream,
+		FigLog: a.figLog,
 		Snapshot:  a.chalkboard.Snapshot(),
 		Tools:     a.toolDefs(),
 		MaxTokens: a.chalkboardInt("system.max_tokens"),
@@ -293,7 +293,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		Content:   results,
 		Timestamp: time.Now().UnixMilli(),
 	}
-	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: resultTic}); err != nil {
+	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: resultTic}); err != nil {
 		a.fanOutError(fmt.Sprintf("append tool_result tic: %s", err))
 		a.endTurn("error: append tool_result")
 		return true
@@ -442,7 +442,7 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 
 
 func (a *Agent) fanOutFigaro(m message.Message) {
-	tail, ok := a.figStream.PeekTail()
+	tail, ok := a.figLog.PeekTail()
 	if !ok {
 		return
 	}

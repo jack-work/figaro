@@ -187,7 +187,7 @@ func TestProjectMessages_OAuthSystemArray(t *testing.T) {
 
 // TestProjectMessages_PerLTTag verifies that a `system.tags[<lt>].cache_control`
 // chalkboard entry attaches cache_control to the wire message whose
-// figStream LT matches.
+// figLog LT matches.
 func TestProjectMessages_PerLTTag(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{

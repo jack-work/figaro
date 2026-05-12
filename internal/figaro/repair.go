@@ -13,7 +13,7 @@ import (
 // wire surrogate so the model sees why the tool result is missing.
 const interruptSentinelText = "tool execution was interrupted (recovered on reload)"
 
-// appendInterruptSentinelIfDangling inspects the tail of the IR stream
+// appendInterruptSentinelIfDangling inspects the tail of the IR log
 // and, if it ends on an assistant turn with unmatched tool_use blocks,
 // appends a RoleSystemInterrupt sentinel naming the dangling
 // tool_call_ids. The IR remains append-only; downstream translators
@@ -24,7 +24,7 @@ const interruptSentinelText = "tool execution was interrupted (recovered on relo
 // unchanged. If the dangling assistant turn is not the last entry,
 // no sentinel is inserted (the stream is in an unrecoverable shape
 // under append-only semantics; operator-driven repair is needed).
-func appendInterruptSentinelIfDangling(stream store.Stream[message.Message], ariaID string) {
+func appendInterruptSentinelIfDangling(stream store.Log[message.Message], ariaID string) {
 	entries := stream.Read()
 	if len(entries) == 0 {
 		return

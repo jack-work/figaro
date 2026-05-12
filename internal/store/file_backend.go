@@ -42,7 +42,7 @@ func NewFileBackend(dir string) (*FileBackend, error) {
 // Dir returns the root backing directory path.
 func (b *FileBackend) Dir() string { return b.dir }
 
-func (b *FileBackend) Open(ariaID string) (Stream[message.Message], error) {
+func (b *FileBackend) Open(ariaID string) (Log[message.Message], error) {
 	if ariaID == "" {
 		return nil, fmt.Errorf("file backend: empty aria id")
 	}
@@ -50,12 +50,12 @@ func (b *FileBackend) Open(ariaID string) (Stream[message.Message], error) {
 	walDir := filepath.Join(ariaRoot, ariaDir)
 	jsonlPath := filepath.Join(ariaRoot, ariaFile)
 	if useFigwal := pickStreamFormat(walDir, jsonlPath); useFigwal {
-		return OpenFigwalStream[message.Message](walDir)
+		return OpenFigwalLog[message.Message](walDir)
 	}
-	return OpenFileStream[message.Message](jsonlPath)
+	return OpenFileLog[message.Message](jsonlPath)
 }
 
-func (b *FileBackend) OpenTranslation(ariaID, providerName string) (Stream[[]json.RawMessage], error) {
+func (b *FileBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error) {
 	if ariaID == "" || providerName == "" {
 		return nil, fmt.Errorf("file backend: empty aria id or provider name")
 	}
@@ -63,15 +63,15 @@ func (b *FileBackend) OpenTranslation(ariaID, providerName string) (Stream[[]jso
 	walDir := filepath.Join(tDir, providerName)
 	jsonlPath := filepath.Join(tDir, providerName+".jsonl")
 	if useFigwal := pickStreamFormat(walDir, jsonlPath); useFigwal {
-		return OpenFigwalStream[[]json.RawMessage](walDir)
+		return OpenFigwalLog[[]json.RawMessage](walDir)
 	}
-	return OpenFileStream[[]json.RawMessage](jsonlPath)
+	return OpenFileLog[[]json.RawMessage](jsonlPath)
 }
 
 // pickStreamFormat returns true when the figwal-backed format should
 // be used. On-disk evidence wins: if the figwal dir already exists, we
 // must use figwal; if the legacy file already exists, we must use the
-// legacy stream. For a brand-new stream, the FIGARO_USE_FIGWAL env var
+// legacy log. For a brand-new log, the FIGARO_USE_FIGWAL env var
 // selects the default.
 func pickStreamFormat(walDir, legacyFile string) bool {
 	if info, err := os.Stat(walDir); err == nil && info.IsDir() {

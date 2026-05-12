@@ -10,8 +10,8 @@ import (
 	"sync"
 )
 
-// FileStream[T] is an NDJSON-backed Stream[T]. Entries loaded at Open.
-type FileStream[T any] struct {
+// FileLog[T] is an NDJSON-backed Log[T]. Entries loaded at Open.
+type FileLog[T any] struct {
 	mu         sync.Mutex
 	path       string
 	entries    []Entry[T]
@@ -19,13 +19,13 @@ type FileStream[T any] struct {
 	nextLT     uint64
 }
 
-var _ Stream[any] = (*FileStream[any])(nil)
+var _ Log[any] = (*FileLog[any])(nil)
 
-func OpenFileStream[T any](path string) (*FileStream[T], error) {
+func OpenFileLog[T any](path string) (*FileLog[T], error) {
 	if path == "" {
-		return nil, fmt.Errorf("file stream: empty path")
+		return nil, fmt.Errorf("file log: empty path")
 	}
-	s := &FileStream[T]{
+	s := &FileLog[T]{
 		path:       path,
 		byFigaroLT: make(map[uint64]int),
 		nextLT:     1,
@@ -36,13 +36,13 @@ func OpenFileStream[T any](path string) (*FileStream[T], error) {
 	return s, nil
 }
 
-func (s *FileStream[T]) load() error {
+func (s *FileLog[T]) load() error {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("file stream: read %s: %w", s.path, err)
+		return fmt.Errorf("file log: read %s: %w", s.path, err)
 	}
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
@@ -53,7 +53,7 @@ func (s *FileStream[T]) load() error {
 		}
 		var e Entry[T]
 		if err := json.Unmarshal(line, &e); err != nil {
-			return fmt.Errorf("file stream: parse line in %s: %w", s.path, err)
+			return fmt.Errorf("file log: parse line in %s: %w", s.path, err)
 		}
 		idx := len(s.entries)
 		s.entries = append(s.entries, e)
@@ -67,13 +67,13 @@ func (s *FileStream[T]) load() error {
 	return scanner.Err()
 }
 
-func (s *FileStream[T]) Read() []Entry[T] {
+func (s *FileLog[T]) Read() []Entry[T] {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.entries
 }
 
-func (s *FileStream[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
+func (s *FileLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	idx, ok := s.byFigaroLT[figaroLT]
@@ -84,7 +84,7 @@ func (s *FileStream[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	return s.entries[idx], true
 }
 
-func (s *FileStream[T]) PeekTail() (Entry[T], bool) {
+func (s *FileLog[T]) PeekTail() (Entry[T], bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.entries) == 0 {
@@ -94,7 +94,7 @@ func (s *FileStream[T]) PeekTail() (Entry[T], bool) {
 	return s.entries[len(s.entries)-1], true
 }
 
-func (s *FileStream[T]) ScanFromEnd(n int) []Entry[T] {
+func (s *FileLog[T]) ScanFromEnd(n int) []Entry[T] {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if n <= 0 || len(s.entries) == 0 {
@@ -110,13 +110,13 @@ func (s *FileStream[T]) ScanFromEnd(n int) []Entry[T] {
 	return out
 }
 
-func (s *FileStream[T]) Append(e Entry[T]) (Entry[T], error) {
+func (s *FileLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.appendLocked(e)
 }
 
-func (s *FileStream[T]) appendLocked(e Entry[T]) (Entry[T], error) {
+func (s *FileLog[T]) appendLocked(e Entry[T]) (Entry[T], error) {
 	e.LT = s.nextLT
 	if e.FigaroLT == 0 {
 		e.FigaroLT = e.LT
@@ -131,37 +131,37 @@ func (s *FileStream[T]) appendLocked(e Entry[T]) (Entry[T], error) {
 	return e, nil
 }
 
-func (s *FileStream[T]) appendLineLocked(e Entry[T]) error {
+func (s *FileLog[T]) appendLineLocked(e Entry[T]) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-		return fmt.Errorf("file stream: mkdir: %w", err)
+		return fmt.Errorf("file log: mkdir: %w", err)
 	}
 	line, err := json.Marshal(e)
 	if err != nil {
-		return fmt.Errorf("file stream: marshal: %w", err)
+		return fmt.Errorf("file log: marshal: %w", err)
 	}
 	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("file stream: open: %w", err)
+		return fmt.Errorf("file log: open: %w", err)
 	}
 	defer f.Close()
 	if _, err := f.Write(append(line, '\n')); err != nil {
-		return fmt.Errorf("file stream: write: %w", err)
+		return fmt.Errorf("file log: write: %w", err)
 	}
 	return nil
 }
 
-func (s *FileStream[T]) Clear() error {
+func (s *FileLog[T]) Clear() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.entries = nil
 	s.byFigaroLT = make(map[uint64]int)
 	s.nextLT = 1
 	if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("file stream: clear: %w", err)
+		return fmt.Errorf("file log: clear: %w", err)
 	}
 	return nil
 }
 
-func (s *FileStream[T]) Close() error { return nil }
+func (s *FileLog[T]) Close() error { return nil }
 
-func (s *FileStream[T]) Path() string { return s.path }
+func (s *FileLog[T]) Path() string { return s.path }

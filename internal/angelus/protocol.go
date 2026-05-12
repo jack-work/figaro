@@ -134,7 +134,7 @@ func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoRespon
 }
 
 // openAriaTranslation opens the per-aria translation cache. nil on failure.
-func (h *handlers) openAriaTranslation(ariaID, providerName string) store.Stream[[]json.RawMessage] {
+func (h *handlers) openAriaTranslation(ariaID, providerName string) store.Log[[]json.RawMessage] {
 	if h.angelus.Backend == nil {
 		return nil
 	}

@@ -27,7 +27,7 @@ func seedCredo(t *testing.T, cb *chalkboard.State, body string) {
 	}})
 }
 
-// waitForFirstUserTic blocks until the agent's figStream has at least
+// waitForFirstUserTic blocks until the agent's figLog has at least
 // one user-role message (i.e. the first prompt has been finalized).
 func waitForFirstUserTic(t *testing.T, a *figaro.Agent) message.Message {
 	t.Helper()
@@ -59,7 +59,7 @@ func TestBootstrap_FirstPromptCarriesPatch(t *testing.T) {
 	})
 	t.Cleanup(func() { a.Kill() })
 
-	// Fresh aria — figStream is empty until the first prompt.
+	// Fresh aria — figLog is empty until the first prompt.
 	require.Empty(t, a.Context(), "no bootstrap tic on construction")
 
 	a.Prompt("hello")

@@ -12,21 +12,21 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// --- FileStream[T] tests (canonical figaro IR) ---
+// --- FileLog[T] tests (canonical figaro IR) ---
 
-func TestFileStream_EmptyStart(t *testing.T) {
-	s, err := OpenFileStream[message.Message](filepath.Join(t.TempDir(), "aria.jsonl"))
+func TestFileLog_EmptyStart(t *testing.T) {
+	s, err := OpenFileLog[message.Message](filepath.Join(t.TempDir(), "aria.jsonl"))
 	require.NoError(t, err)
 	assert.Empty(t, s.Read())
 	_, ok := s.PeekTail()
 	assert.False(t, ok)
 }
 
-func TestFileStream_AppendPersists(t *testing.T) {
+func TestFileLog_AppendPersists(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "aria.jsonl")
 
-	s, err := OpenFileStream[message.Message](path)
+	s, err := OpenFileLog[message.Message](path)
 	require.NoError(t, err)
 
 	entry, err := s.Append(Entry[message.Message]{
@@ -34,10 +34,10 @@ func TestFileStream_AppendPersists(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, uint64(1), entry.LT)
-	assert.Equal(t, uint64(1), entry.FigaroLT, "canonical stream: LT == FigaroLT")
+	assert.Equal(t, uint64(1), entry.FigaroLT, "canonical log: LT == FigaroLT")
 
 	// Reload from disk.
-	s2, err := OpenFileStream[message.Message](path)
+	s2, err := OpenFileLog[message.Message](path)
 	require.NoError(t, err)
 	d := s2.Read()
 	require.Len(t, d, 1)
@@ -45,11 +45,11 @@ func TestFileStream_AppendPersists(t *testing.T) {
 	assert.Equal(t, uint64(1), d[0].LT)
 }
 
-func TestFileStream_LogicalTimeContinuity(t *testing.T) {
+func TestFileLog_LogicalTimeContinuity(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "aria.jsonl")
 
-	s, err := OpenFileStream[message.Message](path)
+	s, err := OpenFileLog[message.Message](path)
 	require.NoError(t, err)
 
 	for _, text := range []string{"one", "two", "three"} {
@@ -59,7 +59,7 @@ func TestFileStream_LogicalTimeContinuity(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	s2, err := OpenFileStream[message.Message](path)
+	s2, err := OpenFileLog[message.Message](path)
 	require.NoError(t, err)
 	e4, err := s2.Append(Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("four")}},
@@ -68,8 +68,8 @@ func TestFileStream_LogicalTimeContinuity(t *testing.T) {
 	assert.Equal(t, uint64(4), e4.LT)
 }
 
-func TestFileStream_Lookup(t *testing.T) {
-	s, err := OpenFileStream[message.Message](filepath.Join(t.TempDir(), "aria.jsonl"))
+func TestFileLog_Lookup(t *testing.T) {
+	s, err := OpenFileLog[message.Message](filepath.Join(t.TempDir(), "aria.jsonl"))
 	require.NoError(t, err)
 
 	for i := 0; i < 3; i++ {
@@ -88,8 +88,8 @@ func TestFileStream_Lookup(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestFileStream_ScanFromEnd(t *testing.T) {
-	s, err := OpenFileStream[message.Message](filepath.Join(t.TempDir(), "aria.jsonl"))
+func TestFileLog_ScanFromEnd(t *testing.T) {
+	s, err := OpenFileLog[message.Message](filepath.Join(t.TempDir(), "aria.jsonl"))
 	require.NoError(t, err)
 
 	for _, text := range []string{"one", "two", "three", "four"} {
@@ -109,11 +109,11 @@ func TestFileStream_ScanFromEnd(t *testing.T) {
 	assert.Len(t, all, 4)
 }
 
-func TestFileStream_Clear(t *testing.T) {
+func TestFileLog_Clear(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "aria.jsonl")
 
-	s, err := OpenFileStream[message.Message](path)
+	s, err := OpenFileLog[message.Message](path)
 	require.NoError(t, err)
 	_, _ = s.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}})
 
@@ -123,10 +123,10 @@ func TestFileStream_Clear(t *testing.T) {
 	assert.True(t, os.IsNotExist(err))
 }
 
-// --- Translator stream (Stream[[]json.RawMessage]) tests ---
+// --- Translator log (Log[[]json.RawMessage]) tests ---
 
-func TestFileStream_Translation_FK(t *testing.T) {
-	s, err := OpenFileStream[[]json.RawMessage](filepath.Join(t.TempDir(), "anthropic.jsonl"))
+func TestFileLog_Translation_FK(t *testing.T) {
+	s, err := OpenFileLog[[]json.RawMessage](filepath.Join(t.TempDir(), "anthropic.jsonl"))
 	require.NoError(t, err)
 
 	entry, err := s.Append(Entry[[]json.RawMessage]{
@@ -135,7 +135,7 @@ func TestFileStream_Translation_FK(t *testing.T) {
 		Fingerprint: "anth/v1",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, uint64(1), entry.LT, "alt is stream-local, starts at 1")
+	assert.Equal(t, uint64(1), entry.LT, "alt is log-local, starts at 1")
 	assert.Equal(t, uint64(7), entry.FigaroLT, "FK preserved")
 
 	got, ok := s.Lookup(7)
@@ -144,10 +144,10 @@ func TestFileStream_Translation_FK(t *testing.T) {
 	require.Len(t, got.Payload, 1)
 }
 
-// --- MemStream[T] tests (ephemeral) ---
+// --- MemLog[T] tests (ephemeral) ---
 
-func TestMemStream_Standalone(t *testing.T) {
-	s := NewMemStream[message.Message]()
+func TestMemLog_Standalone(t *testing.T) {
+	s := NewMemLog[message.Message]()
 
 	assert.Empty(t, s.Read())
 
@@ -281,7 +281,7 @@ func TestFileBackend_FigwalGate(t *testing.T) {
 }
 
 func TestFileBackend_DefaultIsLegacy(t *testing.T) {
-	// Default (env unset): new arias use the legacy NDJSON FileStream.
+	// Default (env unset): new arias use the legacy NDJSON FileLog.
 	t.Setenv("FIGARO_USE_FIGWAL", "")
 	dir := t.TempDir()
 	b, err := NewFileBackend(dir)
@@ -308,7 +308,7 @@ func TestFileBackend_OnDiskEvidenceWins(t *testing.T) {
 	b, err := NewFileBackend(dir)
 	require.NoError(t, err)
 
-	// Seed an aria with a figwal-backed stream.
+	// Seed an aria with a figwal-backed log.
 	t.Setenv("FIGARO_USE_FIGWAL", "1")
 	s, err := b.Open("mixed")
 	require.NoError(t, err)

@@ -37,8 +37,8 @@ type DerivationEvent struct {
 type DurDerivDeps struct {
 	AriaID       string
 	ProviderName string
-	FigStream    store.Stream[message.Message]
-	Translator   store.Stream[[]json.RawMessage]
+	FigLog    store.Log[message.Message]
+	Translator   store.Log[[]json.RawMessage]
 }
 
 // DurDerivReg registers a durable derivation.
@@ -205,8 +205,8 @@ func startDerived(
 	ctx context.Context,
 	ariaID, providerName string,
 	backend store.Backend,
-	figStream store.Stream[message.Message],
-	translator store.Stream[[]json.RawMessage],
+	figLog store.Log[message.Message],
+	translator store.Log[[]json.RawMessage],
 ) *derivedFanout {
 	dir := AriaDir(backend, ariaID)
 	if dir == "" {
@@ -215,7 +215,7 @@ func startDerived(
 	deps := DurDerivDeps{
 		AriaID:       ariaID,
 		ProviderName: providerName,
-		FigStream:    figStream,
+		FigLog:    figLog,
 		Translator:   translator,
 	}
 	rs := Registrations()
@@ -255,7 +255,7 @@ func init() {
 		Alias:    "summary",
 		Filename: "meta.json",
 		Make: func(d DurDerivDeps) DurableDerivation {
-			return &summaryDerivation{figStream: d.FigStream}
+			return &summaryDerivation{figLog: d.FigLog}
 		},
 	})
 	Register(DurDerivReg{
@@ -274,7 +274,7 @@ func init() {
 			return &usageDerivation{
 				ariaID:       d.AriaID,
 				providerName: d.ProviderName,
-				figStream:    d.FigStream,
+				figLog:    d.FigLog,
 			}
 		},
 	})
@@ -282,13 +282,13 @@ func init() {
 
 // summaryDerivation writes arias/<id>/meta.json.
 type summaryDerivation struct {
-	figStream store.Stream[message.Message]
+	figLog store.Log[message.Message]
 }
 
 func (s *summaryDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 	now := time.Now().UnixMilli()
 	out := store.AriaMeta{LastActiveMS: now, LastFigaroLT: evt.FigaroLT}
-	for _, e := range s.figStream.Read() {
+	for _, e := range s.figLog.Read() {
 		out.MessageCount++
 		m := e.Payload
 		if m.Role == message.RoleAssistant {
@@ -307,7 +307,7 @@ func (s *summaryDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 // translatorDerivation writes per-provider cache stats.
 type translatorDerivation struct {
 	providerName string
-	translator   store.Stream[[]json.RawMessage]
+	translator   store.Log[[]json.RawMessage]
 }
 
 func (t *translatorDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
@@ -334,7 +334,7 @@ func (t *translatorDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 type usageDerivation struct {
 	ariaID       string
 	providerName string
-	figStream    store.Stream[message.Message]
+	figLog    store.Log[message.Message]
 }
 
 // Usage is the on-disk shape for usage.json.
@@ -358,7 +358,7 @@ func (u *usageDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 		LastFigaroLT: evt.FigaroLT,
 		LastUpdateMS: time.Now().UnixMilli(),
 	}
-	for _, e := range u.figStream.Read() {
+	for _, e := range u.figLog.Read() {
 		out.MessageCount++
 		m := e.Payload
 		if m.Role == message.RoleAssistant {

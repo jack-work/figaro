@@ -33,10 +33,10 @@ type TranslationMeta struct {
 // Backend is the aria storage provider. One per angelus.
 type Backend interface {
 	// Open returns the figaro IR Stream for an aria.
-	Open(ariaID string) (Stream[message.Message], error)
+	Open(ariaID string) (Log[message.Message], error)
 
 	// OpenTranslation returns the per-provider translator Stream.
-	OpenTranslation(ariaID, providerName string) (Stream[[]json.RawMessage], error)
+	OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error)
 
 	// Meta returns the aria metadata, or nil if unset.
 	Meta(ariaID string) (*AriaMeta, error)

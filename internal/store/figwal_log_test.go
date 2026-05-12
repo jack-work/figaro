@@ -12,8 +12,8 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-func TestFigwalStream_EmptyStart(t *testing.T) {
-	s, err := OpenFigwalStream[message.Message](t.TempDir())
+func TestFigwalLog_EmptyStart(t *testing.T) {
+	s, err := OpenFigwalLog[message.Message](t.TempDir())
 	require.NoError(t, err)
 	defer s.Close()
 	assert.Empty(t, s.Read())
@@ -21,10 +21,10 @@ func TestFigwalStream_EmptyStart(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestFigwalStream_AppendPersists(t *testing.T) {
+func TestFigwalLog_AppendPersists(t *testing.T) {
 	dir := t.TempDir()
 
-	s, err := OpenFigwalStream[message.Message](dir)
+	s, err := OpenFigwalLog[message.Message](dir)
 	require.NoError(t, err)
 
 	entry, err := s.Append(Entry[message.Message]{
@@ -32,11 +32,11 @@ func TestFigwalStream_AppendPersists(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, uint64(1), entry.LT)
-	assert.Equal(t, uint64(1), entry.FigaroLT, "canonical stream: LT == FigaroLT")
+	assert.Equal(t, uint64(1), entry.FigaroLT, "canonical log: LT == FigaroLT")
 	require.NoError(t, s.Close())
 
 	// Reload from disk and confirm the entry comes back.
-	s2, err := OpenFigwalStream[message.Message](dir)
+	s2, err := OpenFigwalLog[message.Message](dir)
 	require.NoError(t, err)
 	defer s2.Close()
 	d := s2.Read()
@@ -45,10 +45,10 @@ func TestFigwalStream_AppendPersists(t *testing.T) {
 	assert.Equal(t, uint64(1), d[0].LT)
 }
 
-func TestFigwalStream_LogicalTimeContinuity(t *testing.T) {
+func TestFigwalLog_LogicalTimeContinuity(t *testing.T) {
 	dir := t.TempDir()
 
-	s, err := OpenFigwalStream[message.Message](dir)
+	s, err := OpenFigwalLog[message.Message](dir)
 	require.NoError(t, err)
 	for _, text := range []string{"one", "two", "three"} {
 		_, err := s.Append(Entry[message.Message]{
@@ -58,7 +58,7 @@ func TestFigwalStream_LogicalTimeContinuity(t *testing.T) {
 	}
 	require.NoError(t, s.Close())
 
-	s2, err := OpenFigwalStream[message.Message](dir)
+	s2, err := OpenFigwalLog[message.Message](dir)
 	require.NoError(t, err)
 	defer s2.Close()
 	e4, err := s2.Append(Entry[message.Message]{
@@ -68,8 +68,8 @@ func TestFigwalStream_LogicalTimeContinuity(t *testing.T) {
 	assert.Equal(t, uint64(4), e4.LT, "LT continues across reopen")
 }
 
-func TestFigwalStream_Lookup(t *testing.T) {
-	s, err := OpenFigwalStream[message.Message](t.TempDir())
+func TestFigwalLog_Lookup(t *testing.T) {
+	s, err := OpenFigwalLog[message.Message](t.TempDir())
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -89,8 +89,8 @@ func TestFigwalStream_Lookup(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestFigwalStream_ScanFromEnd(t *testing.T) {
-	s, err := OpenFigwalStream[message.Message](t.TempDir())
+func TestFigwalLog_ScanFromEnd(t *testing.T) {
+	s, err := OpenFigwalLog[message.Message](t.TempDir())
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -110,9 +110,9 @@ func TestFigwalStream_ScanFromEnd(t *testing.T) {
 	assert.Len(t, all, 4)
 }
 
-func TestFigwalStream_Clear(t *testing.T) {
+func TestFigwalLog_Clear(t *testing.T) {
 	dir := t.TempDir()
-	s, err := OpenFigwalStream[message.Message](dir)
+	s, err := OpenFigwalLog[message.Message](dir)
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -127,8 +127,8 @@ func TestFigwalStream_Clear(t *testing.T) {
 	assert.Equal(t, uint64(1), e.LT)
 }
 
-func TestFigwalStream_PeekTail(t *testing.T) {
-	s, err := OpenFigwalStream[message.Message](t.TempDir())
+func TestFigwalLog_PeekTail(t *testing.T) {
+	s, err := OpenFigwalLog[message.Message](t.TempDir())
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -143,8 +143,8 @@ func TestFigwalStream_PeekTail(t *testing.T) {
 	assert.Equal(t, "beta", tail.Payload.Content[0].Text)
 }
 
-func TestFigwalStream_Translation_FK(t *testing.T) {
-	s, err := OpenFigwalStream[[]json.RawMessage](t.TempDir())
+func TestFigwalLog_Translation_FK(t *testing.T) {
+	s, err := OpenFigwalLog[[]json.RawMessage](t.TempDir())
 	require.NoError(t, err)
 	defer s.Close()
 
@@ -154,7 +154,7 @@ func TestFigwalStream_Translation_FK(t *testing.T) {
 		Fingerprint: "anth/v1",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, uint64(1), entry.LT, "translator LT is stream-local")
+	assert.Equal(t, uint64(1), entry.LT, "translator LT is log-local")
 	assert.Equal(t, uint64(7), entry.FigaroLT, "FK preserved")
 
 	got, ok := s.Lookup(7)
@@ -163,11 +163,11 @@ func TestFigwalStream_Translation_FK(t *testing.T) {
 	require.Len(t, got.Payload, 1)
 }
 
-func TestFigwalStream_OnDiskFormatIsJSONL(t *testing.T) {
-	// Sanity: the figwal-backed stream writes JSONL segments, not a
+func TestFigwalLog_OnDiskFormatIsJSONL(t *testing.T) {
+	// Sanity: the figwal-backed log writes JSONL segments, not a
 	// single .jsonl file.
 	dir := t.TempDir()
-	s, err := OpenFigwalStream[message.Message](dir)
+	s, err := OpenFigwalLog[message.Message](dir)
 	require.NoError(t, err)
 	_, err = s.Append(Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("on-disk")}},

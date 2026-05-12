@@ -115,7 +115,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 
 	home, _ := os.UserHomeDir()
 	ariaPath := filepath.Join(home, ".local", "state", "figaro", "arias", figaroID, "aria.jsonl")
-	fs, err := store.OpenFileStream[message.Message](ariaPath)
+	fs, err := store.OpenFileLog[message.Message](ariaPath)
 	if err != nil {
 		die("open aria: %s", err)
 	}

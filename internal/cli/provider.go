@@ -83,7 +83,7 @@ func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, bac
 			if err != nil {
 				return nil, err
 			}
-			cacheOpen := func(aria string) (store.Stream[[]json.RawMessage], error) {
+			cacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
 				if backend == nil {
 					return nil, fmt.Errorf("no backend")
 				}

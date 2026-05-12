@@ -36,7 +36,7 @@ func (m *mockProviderForIntegration) Send(_ context.Context, in provider.SendInp
 		Content:    []message.Content{message.TextContent("42")},
 		StopReason: message.StopEnd,
 	}
-	entry, err := in.FigStream.Append(store.Entry[message.Message]{Payload: msg})
+	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
 	if err != nil {
 		return err
 	}

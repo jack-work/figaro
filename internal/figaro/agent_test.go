@@ -25,7 +25,7 @@ import (
 
 type mockProvider struct {
 	response string
-	cache    store.Stream[[]json.RawMessage] // nil = no cache (tests don't need one)
+	cache    store.Log[[]json.RawMessage] // nil = no cache (tests don't need one)
 }
 
 func (m *mockProvider) Name() string                                             { return "mock" }
@@ -37,8 +37,8 @@ func (m *mockProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.
 }
 
 func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
-	mockCatchUp(in.FigStream, m.cache, m.encode, m.Fingerprint())
-	mockPushAssistant(in.FigStream, m.cache, bus, m.encode, m.Fingerprint(), m.response)
+	mockCatchUp(in.FigLog, m.cache, m.encode, m.Fingerprint())
+	mockPushAssistant(in.FigLog, m.cache, bus, m.encode, m.Fingerprint(), m.response)
 	return nil
 }
 
@@ -47,12 +47,12 @@ func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus prov
 // record what they would have encoded.
 type mockEncodeFn func(msg message.Message, prev chalkboard.Snapshot) ([]json.RawMessage, error)
 
-// mockCatchUp catches up the cache from the durable figStream using
+// mockCatchUp catches up the cache from the durable figLog using
 // the given encoder. Mirrors what real providers do at the top of
 // Send. Skipped when cache is nil (ephemeral tests).
-func mockCatchUp(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage], encode mockEncodeFn, fingerprint string) {
+func mockCatchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], encode mockEncodeFn, fingerprint string) {
 	snap := chalkboard.Snapshot{}
-	for _, e := range figStream.Read() {
+	for _, e := range figLog.Read() {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
 		if cache != nil {
@@ -75,10 +75,10 @@ func mockCatchUp(figStream store.Stream[message.Message], cache store.Stream[[]j
 }
 
 // mockPushAssistant simulates a streaming turn: emits the text as a
-// delta, appends a final assistant message to figStream, writes it
+// delta, appends a final assistant message to figLog, writes it
 // into the cache (if any), and pushes figaro so the act loop
 // dispatches.
-func mockPushAssistant(figStream store.Stream[message.Message], cache store.Stream[[]json.RawMessage], bus provider.Bus, encode mockEncodeFn, fingerprint, text string) {
+func mockPushAssistant(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], bus provider.Bus, encode mockEncodeFn, fingerprint, text string) {
 	if text == "" {
 		return
 	}
@@ -88,7 +88,7 @@ func mockPushAssistant(figStream store.Stream[message.Message], cache store.Stre
 		Content:    []message.Content{message.TextContent(text)},
 		StopReason: message.StopEnd,
 	}
-	entry, err := figStream.Append(store.Entry[message.Message]{Payload: msg})
+	entry, err := figLog.Append(store.Entry[message.Message]{Payload: msg})
 	if err == nil {
 		msg.LogicalTime = entry.LT
 		if cache != nil {
@@ -363,8 +363,8 @@ func (p *panicProvider) Send(ctx context.Context, in provider.SendInput, bus pro
 		p.panicCount--
 		panic("simulated crash")
 	}
-	mockCatchUp(in.FigStream, nil, p.encode, p.Fingerprint())
-	mockPushAssistant(in.FigStream, nil, bus, p.encode, p.Fingerprint(), p.response)
+	mockCatchUp(in.FigLog, nil, p.encode, p.Fingerprint())
+	mockPushAssistant(in.FigLog, nil, bus, p.encode, p.Fingerprint(), p.response)
 	return nil
 }
 
@@ -458,7 +458,7 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 errorReceived:
 
 	// Send-path panics no longer wipe the conversation — the user
-	// prompt that triggered the panic stays in the figaro stream and
+	// prompt that triggered the panic stays in the figaro log and
 	// the agent emits an Error notification. Token counters stay at
 	// zero because no assistant response landed.
 	msgs := a.Context()
