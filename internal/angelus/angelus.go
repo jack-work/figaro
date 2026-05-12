@@ -28,6 +28,7 @@ type Angelus struct {
 	Registry   *Registry
 	Handlers   map[string]jsonrpc.HandlerFunc // set before Run()
 	Backend    store.Backend                  // aria persistence (nil = ephemeral-only)
+	LogCache   *store.LogCache                // refcount + TTL cache shared with agents
 	SocketPath string
 	RuntimeDir string
 	StartedAt  time.Time
@@ -40,17 +41,30 @@ type Angelus struct {
 type Config struct {
 	RuntimeDir string        // e.g. $XDG_RUNTIME_DIR/figaro
 	Backend    store.Backend // aria persistence (nil = ephemeral-only)
+
+	// LogCacheTTL is how long an aria's log stays cached after its
+	// last release. Zero defaults to 5 minutes. Ignored when Backend
+	// is nil.
+	LogCacheTTL time.Duration
 }
 
 // New creates an Angelus. Call Run() to start it.
 // Set a.Handlers before calling Run() to enable JSON-RPC.
 func New(cfg Config) *Angelus {
-	return &Angelus{
+	a := &Angelus{
 		Registry:   NewRegistry(),
 		Backend:    cfg.Backend,
 		SocketPath: filepath.Join(cfg.RuntimeDir, "angelus.sock"),
 		RuntimeDir: cfg.RuntimeDir,
 	}
+	if cfg.Backend != nil {
+		ttl := cfg.LogCacheTTL
+		if ttl == 0 {
+			ttl = 5 * time.Minute
+		}
+		a.LogCache = store.NewLogCache(cfg.Backend, ttl)
+	}
+	return a
 }
 
 // FigaroSocketDir returns the directory for figaro sockets.
@@ -221,6 +235,13 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 
 	a.Stop()
 
+	// Close the log cache before the backend; cache eviction may
+	// touch backend resources.
+	if a.LogCache != nil {
+		if err := a.LogCache.Close(); err != nil {
+			slog.Error("angelus log cache close", "err", err)
+		}
+	}
 	if a.Backend != nil {
 		if err := a.Backend.Close(); err != nil {
 			slog.Error("angelus backend close", "err", err)

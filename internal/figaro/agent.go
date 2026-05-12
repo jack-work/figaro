@@ -52,6 +52,12 @@ type Config struct {
 	Tools      *tool.Registry
 	Backend    store.Backend // nil = ephemeral
 
+	// LogCache is the shared process-wide refcounted cache of aria
+	// logs. When set, NewAgent acquires the IR log through the cache
+	// (so a concurrent read RPC sees the same instance) and releases
+	// on Kill. When nil, the agent falls back to Backend.Open.
+	LogCache *store.LogCache
+
 	// Chalkboard carries the aria's state. Nil creates an in-memory
 	// one. Empty at first prompt means fresh aria. Closed by Kill.
 	Chalkboard *chalkboard.State
@@ -70,8 +76,10 @@ type Agent struct {
 	outfitter    *outfit.Outfitter
 	loadoutPatch *chalkboard.Patch
 	tools        *tool.Registry
-	figLog    store.Log[message.Message]
-	backend      store.Backend // nil = ephemeral
+	figLog        store.Log[message.Message]
+	figLogRelease func() // nil unless figLog came from LogCache
+	logCache      *store.LogCache
+	backend       store.Backend // nil = ephemeral
 	chalkboard   *chalkboard.State
 	derived      *derivedFanout // nil = ephemeral; per-figaro durable derivations
 
@@ -108,6 +116,7 @@ func NewAgent(cfg Config) *Agent {
 		loadoutPatch: cfg.LoadoutPatch,
 		tools:        cfg.Tools,
 		backend:      cfg.Backend,
+		logCache:     cfg.LogCache,
 		chalkboard:   cfg.Chalkboard,
 		createdAt:    time.Now(),
 		lastActive:   time.Now(),
@@ -147,17 +156,27 @@ func NewAgent(cfg Config) *Agent {
 	return a
 }
 
-// newLog opens the figaro IR log.
+// newLog opens the figaro IR log, preferring the shared LogCache so
+// concurrent readers see the same instance. Records the release
+// callback when one is returned; Kill calls it.
 func (a *Agent) newLog() store.Log[message.Message] {
+	if a.logCache != nil {
+		log, release, err := a.logCache.AcquireIR(a.id)
+		if err == nil {
+			a.figLogRelease = release
+			return log
+		}
+		slog.Warn("log cache acquire (falling back)", "aria", a.id, "err", err)
+	}
 	if a.backend == nil {
 		return store.NewMemLog[message.Message]()
 	}
-	stream, err := a.backend.Open(a.id)
+	log, err := a.backend.Open(a.id)
 	if err != nil {
 		slog.Warn("backend open (falling back to ephemeral)", "aria", a.id, "err", err)
 		return store.NewMemLog[message.Message]()
 	}
-	return stream
+	return log
 }
 
 func (a *Agent) ID() string { return a.id }
@@ -296,7 +315,12 @@ func (a *Agent) Kill() {
 	a.subs = nil
 	a.mu.Unlock()
 
-	if err := a.figLog.Close(); err != nil {
+	// When the log came from the LogCache, the cache owns the
+	// underlying instance and closes it on eviction. We only call
+	// Close directly for ephemeral / fallback logs.
+	if a.figLogRelease != nil {
+		a.figLogRelease()
+	} else if err := a.figLog.Close(); err != nil {
 		slog.Error("figLog close", "aria", a.id, "err", err)
 	}
 	if a.chalkboard != nil {

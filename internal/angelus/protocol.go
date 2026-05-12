@@ -241,6 +241,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		Outfitter:  h.outfitter,
 		Tools:      tool.DefaultRegistry(cwd),
 		Backend:    backend,
+		LogCache:   h.angelus.LogCache,
 		Chalkboard: cbState,
 	})
 
@@ -507,6 +508,7 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 		Outfitter:  h.outfitter,
 		Tools:      tool.DefaultRegistry(toolRoot),
 		Backend:    h.angelus.Backend,
+		LogCache:   h.angelus.LogCache,
 		Chalkboard: cb,
 	})
 
