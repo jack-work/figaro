@@ -75,6 +75,11 @@ type AnthropicProvider struct {
 	// "tag" (default) uses <system-reminder> blocks. "tool" uses
 	// synthetic tool_use/tool_result pairs.
 	ReminderRenderer string `toml:"reminder_renderer"`
+
+	// UseOfficialSDK routes Anthropic traffic through the official
+	// anthropic-sdk-go-backed provider (internal/provider/anthropicsdk).
+	// The legacy in-tree implementation stays the default.
+	UseOfficialSDK bool `toml:"use_official_sdk"`
 }
 
 // Loaded holds the parsed top-level config plus path context.

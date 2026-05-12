@@ -19,6 +19,15 @@ func Run(args []string) {
 		return
 	}
 
+	// --version / -V pre-empt the router so they need no config or session.
+	if len(args) > 0 {
+		switch args[0] {
+		case "--version", "-V":
+			runVersion()
+			return
+		}
+	}
+
 	ctx := context.Background()
 	loaded := mustLoadConfig()
 
@@ -299,6 +308,18 @@ Flags:
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			runRestWithFlags(ctx.BoolFlag("force"), ctx.BoolFlag("keep-pids"))
+			return nil
+		},
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:    "version",
+		Aliases: []string{"v"},
+		Group:   "System",
+		Short:   "Print build identity (revision, exe path, Go version)",
+		Usage:   "version",
+		Run: func(ctx *cmdkit.RunContext) error {
+			runVersion()
 			return nil
 		},
 	})

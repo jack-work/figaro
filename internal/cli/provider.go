@@ -12,6 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropic"
+	"github.com/jack-work/figaro/internal/provider/anthropicsdk"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
@@ -88,6 +89,14 @@ func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, bac
 				}
 				return backend.OpenTranslation(aria, providerName)
 			}
+			if acfg.UseOfficialSDK {
+				p, err := anthropicsdk.New(acfg, resolver, cacheOpen)
+				if err != nil {
+					return nil, err
+				}
+				p.Templates = cbTmpls
+				return p, nil
+			}
 			a, err := anthropic.New(acfg, resolver, cacheOpen)
 			if err != nil {
 				return nil, err
@@ -117,6 +126,13 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 		resolver, err := buildResolver(loaded, name)
 		if err != nil {
 			return nil, 0
+		}
+		if acfg.UseOfficialSDK {
+			p, err := anthropicsdk.New(acfg, resolver, nil)
+			if err != nil {
+				return nil, 0
+			}
+			return p, acfg.MaxTokens
 		}
 		p, err := anthropic.New(acfg, resolver, nil)
 		if err != nil {

@@ -23,14 +23,23 @@
           pname = "figaro";
           version = "0.1.0";
           src = self;
-          vendorHash = "sha256-CPNb97sxh1KYXY6IdwFjU3iXu053NvV3JP3TfCnlw04=";
+          vendorHash = "sha256-1jf88RDX9q4laQwoMx1JMsWfGu2/tx7lpA7FTWc+I0M=";
           subPackages = [ "cmd/figaro" ];
           env.CGO_ENABLED = 0;
 
-          rev = self.shortRev or self.dirtyShortRev or "unknown";
+          # self.shortRev is a clean 7-char hash; dirtyShortRev appends
+          # "-dirty". Strip the suffix so cli.commit gets the bare rev
+          # and cli.commitDirty carries the dirty signal separately.
+          rev =
+            if self ? rev then builtins.substring 0 12 self.rev
+            else if self ? dirtyRev then builtins.substring 0 12 self.dirtyRev
+            else "unknown";
+          dirty = if self ? dirtyRev then "true" else "";
           ldflags = [
             "-s" "-w"
             "-X github.com/jack-work/figaro/internal/credo.version=${rev}"
+            "-X github.com/jack-work/figaro/internal/cli.commit=${rev}"
+            "-X github.com/jack-work/figaro/internal/cli.commitDirty=${dirty}"
           ];
 
           # Multi-call shims used to live here (q/l/x symlinks); they
