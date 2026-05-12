@@ -71,6 +71,28 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *chalkboard.Snaps
 			return anthropic.MessageParam{}, false
 		}
 		return anthropic.NewAssistantMessage(blocks...), true
+
+	case message.RoleSystemInterrupt:
+		// Surrogate: one synthetic user-role tool_result block per
+		// dangling tool_use_id, IsError=true. Anthropic requires each
+		// tool_use to be followed by a tool_result; this sentinel
+		// supplies one so the assistant turn is closeable from the
+		// next prompt onward.
+		var blocks []anthropic.ContentBlockParamUnion
+		for _, c := range msg.Content {
+			if c.Type != message.ContentInterrupt || c.ToolCallID == "" {
+				continue
+			}
+			text := c.Text
+			if text == "" {
+				text = "(tool execution was interrupted)"
+			}
+			blocks = append(blocks, anthropic.NewToolResultBlock(c.ToolCallID, text, true))
+		}
+		if len(blocks) == 0 {
+			return anthropic.MessageParam{}, false
+		}
+		return anthropic.NewUserMessage(blocks...), true
 	}
 	return anthropic.MessageParam{}, false
 }

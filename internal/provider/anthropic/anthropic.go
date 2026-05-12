@@ -412,6 +412,31 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snap
 			return nativeMessage{}, false
 		}
 		return nativeMessage{Role: "assistant", Content: blocks}, true
+
+	case message.RoleSystemInterrupt:
+		// Surrogate: synthetic user-role tool_result blocks per
+		// dangling tool_use_id, IsError=true. Anthropic requires each
+		// tool_use to be followed by a tool_result; this satisfies
+		// that for an interrupted turn.
+		var blocks []nativeBlock
+		for _, c := range msg.Content {
+			if c.Type != message.ContentInterrupt || c.ToolCallID == "" {
+				continue
+			}
+			text := c.Text
+			if text == "" {
+				text = "(tool execution was interrupted)"
+			}
+			blocks = append(blocks, nativeBlock{
+				Type: "tool_result", ToolUseID: c.ToolCallID,
+				IsError: true,
+				Content: []nativeBlock{{Type: "text", Text: text}},
+			})
+		}
+		if len(blocks) == 0 {
+			return nativeMessage{}, false
+		}
+		return nativeMessage{Role: "user", Content: blocks}, true
 	}
 	return nativeMessage{}, false
 }
