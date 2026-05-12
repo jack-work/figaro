@@ -63,6 +63,8 @@ github.com/invopop/jsonschema v0.13.0 h1:KvpoAJWEjR3uD9Kbm2HWJmqsEaHt8lBUpd0qHcI
 github.com/invopop/jsonschema v0.13.0/go.mod h1:ffZ5Km5SWWRAIN6wbDXItl95euhFz2uON45H2qjYt+0=
 github.com/jack-work/figwal v0.0.0-20260512064715-7f6b2520a3a1 h1:DpWn1sPOTBk9yR0Ozw/fqrNVbJNhnP84lIKKFUvpkiE=
 github.com/jack-work/figwal v0.0.0-20260512064715-7f6b2520a3a1/go.mod h1:Z8jdAyQX7X5gQN7r31Gc6vLX7f2/ayRyaiPUupE8yWw=
+github.com/jack-work/figwal v0.2.0 h1:Yd7ZKd4AHGEk1Fy1uTv+sQoCyH225ak95cbIj1RiEPw=
+github.com/jack-work/figwal v0.2.0/go.mod h1:Z8jdAyQX7X5gQN7r31Gc6vLX7f2/ayRyaiPUupE8yWw=
 github.com/jack-work/hush v0.5.0 h1:ImF4B9IDLte/sbOnepkErMdhkbQkoEFf7P0uv7a5SW0=
 github.com/jack-work/hush v0.5.0/go.mod h1:SxxPxRdbEjySfclnhYFwEyCUKxOkwCqwU/O4U8Y7jjo=
 github.com/jack-work/largo v0.1.0 h1:kKZcCpLV8eDa4SdK3qZaE6j1A1m4Unk6yKxm55gel8k=

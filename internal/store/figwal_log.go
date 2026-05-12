@@ -21,7 +21,7 @@ import (
 // on Append.
 type FigwalLog[T any] struct {
 	dir        string
-	cached     *figLog.Cached
+	log        *figLog.Log
 	mu         sync.Mutex
 	byFigaroLT map[uint64]uint64
 }
@@ -36,13 +36,13 @@ func OpenFigwalLog[T any](dir string) (*FigwalLog[T], error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("figwal log: mkdir %s: %w", dir, err)
 	}
-	c, err := figLog.OpenCached(dir, figLog.Options{Codec: segment.JSONLCodec{}})
+	c, err := figLog.Open(dir, figLog.Options{Codec: segment.JSONLCodec{}})
 	if err != nil {
 		return nil, fmt.Errorf("figwal log: open %s: %w", dir, err)
 	}
 	s := &FigwalLog[T]{
 		dir:        dir,
-		cached:     c,
+		log:        c,
 		byFigaroLT: make(map[uint64]uint64),
 	}
 	if err := s.rebuildIndex(); err != nil {
@@ -53,7 +53,7 @@ func OpenFigwalLog[T any](dir string) (*FigwalLog[T], error) {
 }
 
 func (s *FigwalLog[T]) rebuildIndex() error {
-	snap := s.cached.Snapshot()
+	snap := s.log.Snapshot()
 	first := snap.FirstIndex()
 	if first == 0 {
 		return nil
@@ -73,7 +73,7 @@ func (s *FigwalLog[T]) rebuildIndex() error {
 }
 
 func (s *FigwalLog[T]) Read() []Entry[T] {
-	snap := s.cached.Snapshot()
+	snap := s.log.Snapshot()
 	first := snap.FirstIndex()
 	if first == 0 {
 		return nil
@@ -96,7 +96,7 @@ func (s *FigwalLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	if !ok {
 		return Entry[T]{}, false
 	}
-	payload, err := s.cached.Read(idx)
+	payload, err := s.log.Read(idx)
 	if err != nil {
 		return Entry[T]{}, false
 	}
@@ -104,7 +104,7 @@ func (s *FigwalLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 }
 
 func (s *FigwalLog[T]) PeekTail() (Entry[T], bool) {
-	snap := s.cached.Snapshot()
+	snap := s.log.Snapshot()
 	last := snap.LastIndex()
 	if last == 0 || last < snap.FirstIndex() {
 		return Entry[T]{}, false
@@ -120,7 +120,7 @@ func (s *FigwalLog[T]) ScanFromEnd(n int) []Entry[T] {
 	if n <= 0 {
 		return nil
 	}
-	snap := s.cached.Snapshot()
+	snap := s.log.Snapshot()
 	last := snap.LastIndex()
 	first := snap.FirstIndex()
 	if first == 0 || last < first {
@@ -149,7 +149,7 @@ func (s *FigwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	next := s.cached.LastIndex() + 1
+	next := s.log.LastIndex() + 1
 	e.LT = next
 	if e.FigaroLT == 0 {
 		e.FigaroLT = next
@@ -158,7 +158,7 @@ func (s *FigwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	if err != nil {
 		return Entry[T]{}, fmt.Errorf("figwal log: marshal: %w", err)
 	}
-	if err := s.cached.Write(next, body); err != nil {
+	if err := s.log.Write(next, body); err != nil {
 		return Entry[T]{}, fmt.Errorf("figwal log: write idx=%d: %w", next, err)
 	}
 	s.byFigaroLT[e.FigaroLT] = next
@@ -170,7 +170,7 @@ func (s *FigwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 func (s *FigwalLog[T]) Clear() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.cached.Close(); err != nil {
+	if err := s.log.Close(); err != nil {
 		return fmt.Errorf("figwal log clear: close: %w", err)
 	}
 	if err := os.RemoveAll(s.dir); err != nil {
@@ -179,17 +179,17 @@ func (s *FigwalLog[T]) Clear() error {
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
 		return fmt.Errorf("figwal log clear: mkdir %s: %w", s.dir, err)
 	}
-	c, err := figLog.OpenCached(s.dir, figLog.Options{Codec: segment.JSONLCodec{}})
+	c, err := figLog.Open(s.dir, figLog.Options{Codec: segment.JSONLCodec{}})
 	if err != nil {
 		return fmt.Errorf("figwal log clear: reopen %s: %w", s.dir, err)
 	}
-	s.cached = c
+	s.log = c
 	s.byFigaroLT = make(map[uint64]uint64)
 	return nil
 }
 
 func (s *FigwalLog[T]) Close() error {
-	return s.cached.Close()
+	return s.log.Close()
 }
 
 // decodeEntry unmarshals the on-disk payload into Entry[T] and
