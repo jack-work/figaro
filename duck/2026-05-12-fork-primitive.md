@@ -1,8 +1,8 @@
 # 2026-05-12 — Fork primitive for figaro
 
-**Status:** brainstorm (substrate shipped, fork-proper not started). Folded into
-work on the `worktree-fork-sentinel` branch through commit `4c09402`. Pending
-phases noted inline.
+**Status:** brainstorm (substrate shipped, fork-proper not started). Folded
+into work on the `worktree-fork-sentinel` branch through commit `75b50ba`.
+Pending phases noted inline.
 
 ## Goal
 
@@ -92,6 +92,49 @@ work). Whole interface renamed `Stream[T]` → `Log[T]`.
 
 Commits: `38b2c2a` `6fcf983` `fac87a6` `926acc1` `4c09402` on the worktree
 branch.
+
+## figwal v0.2.0 rename — SHIPPED upstream
+
+`Cached` is gone. The user-facing type in `figwal/log` is `Log`, with all
+of the cached/lock-free semantics that used to be on `Cached`. The
+disk-backed segment manager moved to `figwal/disk` as `disk.Log`. `log`
+re-exports `Options`, `SyncMode`, `ErrNotFound`, `ErrReadOnly` so a
+single import still suffices for callers. `disk.Log` gained
+`Parent()`, `ForkBase()`, `RangeOwn(from, fn)` accessors so the cache
+layer can build snapshots across the package boundary.
+
+Tagged as **v0.2.0** on `figwal` (`fc1b63b`). figaro tracks the new
+API in commit `d48e54e` on this branch.
+
+## Shared LogCache (read routing) — SHIPPED in `worktree-fork-sentinel`
+
+The post-migration `figaro aria` CLI was reading from disk directly,
+which races the live agent on figwal's active segment recovery. Fix
+shape: a single process owns each figwal log; everyone else asks that
+process.
+
+- **`store.LogCache`** — process-wide refcount-and-TTL cache of aria
+  Logs keyed by ID (and by `(aria, provider)` for translator caches).
+  Multiple acquirers share one instance, lock-free reads against the
+  live writer. Background GC sweeps entries where `refs == 0` and
+  `lastAccess > ttl ago` and closes them.
+- **angelus owns it** — `Angelus.LogCache` created at construction
+  (default TTL 5 minutes), closed in `Shutdown`. Passed to every
+  agent on spawn via `figaro.Config.LogCache`.
+- **agent uses it lazily-via-refcount** — `agent.newLog` acquires
+  through the cache on spawn and releases on `Kill`. While the agent
+  is alive its ref keeps the entry from eviction; when the agent
+  dies the entry idles and may evict.
+- **`aria.read` RPC** — new method on the angelus socket. Pulls
+  entries through `LogCache.AcquireIR(id)` and returns a paginated
+  window `{entries, total, next_from}`. Hard-capped at 1000 entries
+  per call.
+- **CLI cut-over** — `figaro aria` now calls `acli.AriaRead` instead
+  of opening the FileBackend directly, eliminating the cross-process
+  recovery hazard. Both legacy `aria.jsonl` and figwal `aria/`
+  layouts read through the same path.
+
+Commits: `85728c2` `75b50ba` on the worktree branch.
 
 ## Disk layout — what fork *will* produce (NOT shipped)
 
@@ -210,14 +253,19 @@ type ChildInfo struct {
 2. **figaro:** interrupt sentinel. ✅ `20f7b28` `a1516a4` `fff5439` `02b5d78`.
 3. **figaro:** figwal `Log[T]` migration (Stream → Log rename included).
    ✅ `38b2c2a` `6fcf983` `fac87a6` `926acc1` `4c09402`.
-4. **figaro:** hierarchical aria IDs (validator, socket name, recursive
+4. **figwal v0.2.0:** rename `Cached` → `Log`; disk WAL into `figwal/disk`
+   subpackage. ✅ figwal `fc1b63b`; figaro `d48e54e`.
+5. **figaro:** shared `LogCache` (refcount + TTL) and `aria.read` RPC; CLI
+   reads route through the cache so live agents and CLI share one figwal
+   instance. ✅ `85728c2` `75b50ba`.
+6. **figaro:** hierarchical aria IDs (validator, socket name, recursive
    `Backend.List`, tree rendering). Land standalone, no behavior change yet.
-5. **figaro:** `figaro.fork` agent RPC + CLI for the IR log only. Hand-test on
+7. **figaro:** `figaro.fork` agent RPC + CLI for the IR log only. Hand-test on
    a throwaway aria.
-6. **figaro:** extend fork to coordinate translator logs.
-7. **figaro:** chalkboard rollback + per-child meta.json recompute.
-8. **figaro:** `pid.bind` branch-point response + CLI selection loop.
-9. **figaro:** `figaro list` tree rendering + branch-point annotation.
+8. **figaro:** extend fork to coordinate translator logs.
+9. **figaro:** chalkboard rollback + per-child meta.json recompute.
+10. **figaro:** `pid.bind` branch-point response + CLI selection loop.
+11. **figaro:** `figaro list` tree rendering + branch-point annotation.
 
 Each phase commits independently and runs the slice loop from the `figaro-dev`
 skill.
