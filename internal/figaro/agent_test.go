@@ -650,6 +650,57 @@ done:
 	assert.NoError(t, statErr, "aria.jsonl should exist after kill")
 }
 
+// TestAgent_BootInsertsSentinelForDanglingToolUse builds an aria
+// directory on disk whose tail is an assistant turn ending in
+// stop_reason=tool_use with no matching tool_results, opens an Agent
+// against the same Backend, and verifies the boot path appends a
+// RoleSystemInterrupt sentinel.
+func TestAgent_BootInsertsSentinelForDanglingToolUse(t *testing.T) {
+	storeDir := t.TempDir()
+	backend, err := store.NewFileBackend(storeDir)
+	require.NoError(t, err)
+
+	// Seed the stream with [user, assistant.tool_use] using a
+	// pre-agent FileStream directly.
+	pre, err := backend.Open("danglingboot")
+	require.NoError(t, err)
+	_, err = pre.Append(store.Entry[message.Message]{
+		Payload: message.Message{
+			Role:    message.RoleUser,
+			Content: []message.Content{message.TextContent("run a tool")},
+		},
+	})
+	require.NoError(t, err)
+	_, err = pre.Append(store.Entry[message.Message]{
+		Payload: message.Message{
+			Role: message.RoleAssistant,
+			Content: []message.Content{
+				{Type: message.ContentToolCall, ToolCallID: "tc_boot", ToolName: "bash"},
+			},
+			StopReason: message.StopToolUse,
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, pre.Close())
+
+	// Boot an agent on the same store; NewAgent runs the boot-time
+	// repair.
+	a := figaro.NewAgent(figaro.Config{
+		ID:         "danglingboot",
+		SocketPath: "/tmp/danglingboot-test.sock",
+		Provider:   &mockProvider{response: "ignored"},
+		Backend:    backend,
+	})
+	defer a.Kill()
+
+	// Read history from the agent (also flushes/projects).
+	msgs := a.Context()
+	require.GreaterOrEqual(t, len(msgs), 3, "boot should have appended a sentinel")
+	tail := msgs[len(msgs)-1]
+	assert.True(t, message.IsInterruptSentinel(tail), "tail should be the sentinel")
+	assert.Equal(t, []string{"tc_boot"}, message.DanglingToolCallIDs(tail))
+}
+
 func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
 	// No Backend — should behave as before (no files written).
 	tmpDir := t.TempDir()
