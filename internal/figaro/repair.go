@@ -2,22 +2,35 @@ package figaro
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// repairDanglingToolUse fixes a stream where the last assistant
-// message has stop_reason=tool_use but no matching tool_results.
-// Happens on interrupt/crash/SIGKILL. Appends synthetic error
-// tool_results to make the stream well-formed.
-func repairDanglingToolUse(stream store.Stream[message.Message], ariaID string) {
+// interruptSentinelText is the human-readable Text echoed into each
+// ContentInterrupt block. Translators surface it inside the synthetic
+// wire surrogate so the model sees why the tool result is missing.
+const interruptSentinelText = "tool execution was interrupted (recovered on reload)"
+
+// appendInterruptSentinelIfDangling inspects the tail of the IR stream
+// and, if it ends on an assistant turn with unmatched tool_use blocks,
+// appends a RoleSystemInterrupt sentinel naming the dangling
+// tool_call_ids. The IR remains append-only; downstream translators
+// map the sentinel to a provider-acceptable surrogate.
+//
+// Idempotent: a stream whose tail is already a sentinel (or whose
+// dangling tool_use is followed by complete tool_results) is left
+// unchanged. If the dangling assistant turn is not the last entry,
+// no sentinel is inserted (the stream is in an unrecoverable shape
+// under append-only semantics; operator-driven repair is needed).
+func appendInterruptSentinelIfDangling(stream store.Stream[message.Message], ariaID string) {
 	entries := stream.Read()
 	if len(entries) == 0 {
 		return
 	}
 
-
+	// Find the last assistant turn.
 	lastAssistantIdx := -1
 	for i := len(entries) - 1; i >= 0; i-- {
 		if entries[i].Payload.Role == message.RoleAssistant {
@@ -34,82 +47,65 @@ func repairDanglingToolUse(stream store.Stream[message.Message], ariaID string) 
 		return
 	}
 
-
-	var calls []message.Content
-	for _, c := range assistant.Content {
-		if c.Type == message.ContentToolCall {
-			calls = append(calls, c)
-		}
-	}
+	calls := assistantToolCalls(assistant)
 	if len(calls) == 0 {
 		return
 	}
 
-
-	if lastAssistantIdx+1 < len(entries) {
-		next := entries[lastAssistantIdx+1].Payload
-		if next.Role == message.RoleUser && hasAllToolResults(next, calls) {
-			return // stream is well-formed
-		}
-	}
-
-	// Truncate trailing non-tool-result messages, append synthetic
-	// tool_results, then re-append any orphaned messages.
-	trailingAfterAssistant := entries[lastAssistantIdx+1:]
-
-	if len(trailingAfterAssistant) > 0 {
-		slog.Warn("repairing dangling tool_use: truncating and re-appending trailing messages",
+	// Anything between the dangling assistant and the tail?
+	trailing := entries[lastAssistantIdx+1:]
+	switch {
+	case len(trailing) == 0:
+		// Dangling tool_use at the tail. Append a sentinel.
+	case isResultTicCovering(trailing[0].Payload, calls):
+		// Already satisfied by a real tool_result tic.
+		return
+	case message.IsInterruptSentinel(trailing[0].Payload):
+		// Already repaired by a prior boot.
+		return
+	default:
+		// Some other entry sits between the dangling assistant and the
+		// tail. Under append-only we cannot splice in front of it; log
+		// and leave for an operator to inspect.
+		slog.Warn("dangling tool_use followed by unrelated entries; not appending sentinel",
 			"aria", ariaID,
 			"assistant_lt", entries[lastAssistantIdx].LT,
-			"trailing_count", len(trailingAfterAssistant),
+			"trailing_count", len(trailing),
 		)
-
-		stream.Truncate(entries[lastAssistantIdx].LT)
-	} else {
-		slog.Warn("repairing dangling tool_use: appending synthetic tool_results",
-			"aria", ariaID,
-			"assistant_lt", entries[lastAssistantIdx].LT,
-			"tool_count", len(calls),
-		)
-	}
-
-
-	var results []message.Content
-	for _, tc := range calls {
-		results = append(results, message.ToolResultContent(
-			tc.ToolCallID, tc.ToolName,
-			"error: tool execution was interrupted (recovered on reload)",
-			true,
-		))
-	}
-	resultTic := message.Message{
-		Role:    message.RoleUser,
-		Content: results,
-	}
-	if _, err := stream.Append(store.Entry[message.Message]{Payload: resultTic}); err != nil {
-		slog.Error("repair: append synthetic tool_result", "aria", ariaID, "err", err)
 		return
 	}
 
-
-	for _, e := range trailingAfterAssistant {
-		if _, err := stream.Append(store.Entry[message.Message]{Payload: e.Payload}); err != nil {
-			slog.Error("repair: re-append trailing message", "aria", ariaID, "err", err)
-			return
-		}
+	sentinel := message.NewInterruptSentinel(
+		message.InterruptFault,
+		interruptSentinelText,
+		calls,
+	)
+	sentinel.Timestamp = time.Now().UnixMilli()
+	if _, err := stream.Append(store.Entry[message.Message]{Payload: sentinel}); err != nil {
+		slog.Error("append interrupt sentinel", "aria", ariaID, "err", err)
+		return
 	}
+	slog.Warn("appended interrupt sentinel for dangling tool_use",
+		"aria", ariaID,
+		"assistant_lt", entries[lastAssistantIdx].LT,
+		"tool_count", len(calls),
+	)
 }
 
-// hasAllToolResults checks if a user message has results for all calls.
-func hasAllToolResults(m message.Message, calls []message.Content) bool {
-	resultIDs := make(map[string]bool)
+// isResultTicCovering reports whether m is a user-role tic carrying
+// tool_result blocks for every call.
+func isResultTicCovering(m message.Message, calls []message.Content) bool {
+	if m.Role != message.RoleUser {
+		return false
+	}
+	have := make(map[string]bool, len(m.Content))
 	for _, c := range m.Content {
 		if c.Type == message.ContentToolResult {
-			resultIDs[c.ToolCallID] = true
+			have[c.ToolCallID] = true
 		}
 	}
 	for _, tc := range calls {
-		if !resultIDs[tc.ToolCallID] {
+		if !have[tc.ToolCallID] {
 			return false
 		}
 	}

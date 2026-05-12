@@ -116,7 +116,7 @@ func NewAgent(cfg Config) *Agent {
 	}
 
 	a.figStream = a.newStream()
-	repairDanglingToolUse(a.figStream, a.id)
+	appendInterruptSentinelIfDangling(a.figStream, a.id)
 	if a.chalkboard == nil {
 		// Ephemeral arias get an in-memory chalkboard.
 		a.chalkboard, _ = chalkboard.Open("")

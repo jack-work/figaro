@@ -128,6 +128,12 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	if prompt.text != "" {
 		tic.Content = append(tic.Content, message.TextContent(prompt.text))
 	}
+	// Belt-and-suspenders: if a prior turn died after the assistant
+	// tool_use was logged but before tool_results were appended, the
+	// IR still has a dangling tool_use at the tail. Boot-time repair
+	// usually catches this, but cover the case where the boot check
+	// missed (e.g. dangling state appeared after boot).
+	appendInterruptSentinelIfDangling(a.figStream, a.id)
 	if _, err := a.figStream.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
 		a.fanOutError(fmt.Sprintf("append user tic: %s", err))
 		a.endTurn("error: append tic")
