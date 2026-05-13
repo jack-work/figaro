@@ -280,10 +280,10 @@ func init() {
 		},
 	})
 	Register(DurDerivReg{
-		Alias:    "list",
-		Filename: "derived/list.json",
+		Alias:    "meta",
+		Filename: "derived/meta.json",
 		Make: func(d DurDerivDeps) DurableDerivation {
-			return &listDerivation{
+			return &metaDerivation{
 				ariaID:       d.AriaID,
 				providerName: d.ProviderName,
 				figLog:    d.FigLog,
@@ -388,27 +388,27 @@ func (u *usageDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 	return enc.Encode(out)
 }
 
-// listDerivation writes arias/<id>/derived/list.json: a self-
-// contained snapshot of every column the `figaro list` table needs.
-// The angelus list handler reads this for dormant arias so the
-// rendered table doesn't show "~0k" / blank model for figaros that
-// aren't currently live.
+// metaDerivation writes arias/<id>/derived/meta.json: a self-
+// contained snapshot of every column the `figaro list` and
+// `figaro status` views need. The angelus list handler reads this
+// for dormant arias so the rendered table doesn't show "~0k" /
+// blank model for figaros that aren't currently live.
 //
 // Source of truth: the IR log + the chalkboard snapshot we already
 // receive each tick. Provider/Model are pulled from the snapshot
 // (system.provider / system.model). ContextTokens uses the same
 // estimator the live agent uses (tokens.ContextSize) so the dormant
 // view matches what the user saw right before the figaro went idle.
-type listDerivation struct {
+type metaDerivation struct {
 	ariaID       string
 	providerName string
 	figLog       store.Log[message.Message]
 }
 
-// ListSnapshot is the on-disk shape for derived/list.json. Field
+// MetaSnapshot is the on-disk shape for derived/meta.json. Field
 // names mirror rpc.FigaroInfoResponse so the angelus handler can map
 // directly without a translation layer.
-type ListSnapshot struct {
+type MetaSnapshot struct {
 	AriaID           string `json:"aria_id"`
 	Provider         string `json:"provider,omitempty"`
 	Model            string `json:"model,omitempty"`
@@ -423,8 +423,8 @@ type ListSnapshot struct {
 	LastUpdateMS     int64  `json:"last_update_ms"`
 }
 
-func (l *listDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
-	out := ListSnapshot{
+func (l *metaDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
+	out := MetaSnapshot{
 		AriaID:       l.ariaID,
 		Provider:     l.providerName,
 		LastFigaroLT: evt.FigaroLT,

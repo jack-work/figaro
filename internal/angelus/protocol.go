@@ -135,21 +135,21 @@ func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoRespon
 	}
 }
 
-// fillFromListSnapshot reads derived/list.json and fills any fields
-// the dormant entry is still missing. The list derivation runs on
+// fillFromMetaSnapshot reads derived/meta.json and fills any fields
+// the dormant entry is still missing. The meta derivation runs on
 // every turn for live arias, so this is the freshest accurate view
 // for figaros that have since gone dormant. Silent on missing file:
 // older arias predate the derivation.
-func (h *handlers) fillFromListSnapshot(ariaID string, entry *rpc.FigaroInfoResponse) {
+func (h *handlers) fillFromMetaSnapshot(ariaID string, entry *rpc.FigaroInfoResponse) {
 	fb, ok := h.angelus.Backend.(interface{ Dir() string })
 	if !ok {
 		return
 	}
-	data, err := os.ReadFile(filepath.Join(fb.Dir(), ariaID, "derived", "list.json"))
+	data, err := os.ReadFile(filepath.Join(fb.Dir(), ariaID, "derived", "meta.json"))
 	if err != nil {
 		return
 	}
-	var snap figaro.ListSnapshot
+	var snap figaro.MetaSnapshot
 	if json.Unmarshal(data, &snap) != nil {
 		return
 	}
@@ -396,7 +396,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			}
 
 			h.fillFromChalkboard(aria.ID, &entry)
-			h.fillFromListSnapshot(aria.ID, &entry)
+			h.fillFromMetaSnapshot(aria.ID, &entry)
 			result = append(result, entry)
 		}
 	}

@@ -259,11 +259,26 @@ Flags:
 		Group:   "State",
 		Short:   "Read a registered durable derivation",
 		Usage:   "derive <alias> [--json]",
-		Long:    "Reads a DurableDerivation off disk and prints it.\nWith no alias, lists available derivations.",
+		Long:    "Reads a DurableDerivation off disk and prints it.\nWith no alias, lists available derivations.\n\nExamples:\n  figaro derive meta      # context/usage snapshot used by `list` and `status`\n  figaro derive usage     # message + token totals\n  figaro derive summary   # top-level aria meta",
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			runSearch(ld, ctx.RawArgs)
+			return nil
+		},
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:    "status",
+		Aliases: []string{"info"},
+		Group:   "Session",
+		Short:   "Show a focused view of one aria",
+		Usage:   "status [<id>]",
+		Long:    "Prints provider, model, message count, context size and last-active\ntime for the named aria (or the one bound to this shell). Reads the\nsame data the `list` table uses; dormant arias are backfilled from\nderived/meta.json (see `figaro derive meta`).",
+		PassRaw: true,
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			runStatus(ld, ctx.RawArgs)
 			return nil
 		},
 	})

@@ -30,7 +30,7 @@ func (m *memLog) Append(e store.Entry[message.Message]) (store.Entry[message.Mes
 func (m *memLog) Clear() error { return nil }
 func (m *memLog) Close() error { return nil }
 
-func TestListDerivation_PopulatesContextAndChalkboardFields(t *testing.T) {
+func TestMetaDerivation_PopulatesContextAndChalkboardFields(t *testing.T) {
 	mlog := &memLog{
 		entries: []store.Entry[message.Message]{
 			{LT: 1, Payload: message.Message{
@@ -48,7 +48,7 @@ func TestListDerivation_PopulatesContextAndChalkboardFields(t *testing.T) {
 			}},
 		},
 	}
-	d := &listDerivation{
+	d := &metaDerivation{
 		ariaID:       "test-aria",
 		providerName: "anthropic",
 		figLog:       mlog,
@@ -61,7 +61,7 @@ func TestListDerivation_PopulatesContextAndChalkboardFields(t *testing.T) {
 	if err := d.OnTick(&buf, DerivationEvent{FigaroLT: 2, Snapshot: snap}); err != nil {
 		t.Fatalf("OnTick: %v", err)
 	}
-	var got ListSnapshot
+	var got MetaSnapshot
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal: %v\nraw: %s", err, buf.String())
 	}
@@ -90,13 +90,13 @@ func TestListDerivation_PopulatesContextAndChalkboardFields(t *testing.T) {
 	}
 }
 
-func TestListDerivation_EmptyLog(t *testing.T) {
-	d := &listDerivation{ariaID: "empty", figLog: &memLog{}}
+func TestMetaDerivation_EmptyLog(t *testing.T) {
+	d := &metaDerivation{ariaID: "empty", figLog: &memLog{}}
 	var buf bytes.Buffer
 	if err := d.OnTick(&buf, DerivationEvent{Snapshot: chalkboard.Snapshot{}}); err != nil {
 		t.Fatalf("OnTick: %v", err)
 	}
-	var got ListSnapshot
+	var got MetaSnapshot
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
