@@ -35,20 +35,27 @@ func runList(loaded *config.Loaded) {
 			if pidStr == "" {
 				pidStr = "-"
 			}
-			ctxStr := fmt.Sprintf("%dk", f.ContextTokens/1000)
-			if !f.ContextExact {
-				ctxStr = "~" + ctxStr
+			ctxStr := "-"
+			if f.ContextTokens > 0 {
+				ctxStr = fmt.Sprintf("%dk", f.ContextTokens/1000)
+				if !f.ContextExact {
+					ctxStr = "~" + ctxStr
+				}
 			}
 			cacheStr := "-"
 			if f.CacheReadTokens > 0 || f.CacheWriteTokens > 0 {
 				cacheStr = fmt.Sprintf("%dk/%dk", f.CacheReadTokens/1000, f.CacheWriteTokens/1000)
+			}
+			model := f.Model
+			if model == "" {
+				model = "-"
 			}
 			current := ""
 			if slices.Contains(f.BoundPIDs, os.Getppid()) {
 				current = "*"
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
-				current, f.ID, f.State, f.Model, f.MessageCount, ctxStr, cacheStr, pidStr)
+				current, f.ID, f.State, model, f.MessageCount, ctxStr, cacheStr, pidStr)
 		}
 		w.Flush()
 		return nil

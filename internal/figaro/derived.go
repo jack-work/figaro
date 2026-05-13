@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/tokens"
 )
 
 // DurableDerivation is a per-aria derivation worker. OnTick writes
@@ -278,6 +279,17 @@ func init() {
 			}
 		},
 	})
+	Register(DurDerivReg{
+		Alias:    "list",
+		Filename: "derived/list.json",
+		Make: func(d DurDerivDeps) DurableDerivation {
+			return &listDerivation{
+				ariaID:       d.AriaID,
+				providerName: d.ProviderName,
+				figLog:    d.FigLog,
+			}
+		},
+	})
 }
 
 // summaryDerivation writes arias/<id>/meta.json.
@@ -371,6 +383,75 @@ func (u *usageDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 			out.CacheWriteTokens += m.Usage.CacheWriteTokens
 		}
 	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
+// listDerivation writes arias/<id>/derived/list.json: a self-
+// contained snapshot of every column the `figaro list` table needs.
+// The angelus list handler reads this for dormant arias so the
+// rendered table doesn't show "~0k" / blank model for figaros that
+// aren't currently live.
+//
+// Source of truth: the IR log + the chalkboard snapshot we already
+// receive each tick. Provider/Model are pulled from the snapshot
+// (system.provider / system.model). ContextTokens uses the same
+// estimator the live agent uses (tokens.ContextSize) so the dormant
+// view matches what the user saw right before the figaro went idle.
+type listDerivation struct {
+	ariaID       string
+	providerName string
+	figLog       store.Log[message.Message]
+}
+
+// ListSnapshot is the on-disk shape for derived/list.json. Field
+// names mirror rpc.FigaroInfoResponse so the angelus handler can map
+// directly without a translation layer.
+type ListSnapshot struct {
+	AriaID           string `json:"aria_id"`
+	Provider         string `json:"provider,omitempty"`
+	Model            string `json:"model,omitempty"`
+	MessageCount     int    `json:"message_count"`
+	TokensIn         int    `json:"tokens_in,omitempty"`
+	TokensOut        int    `json:"tokens_out,omitempty"`
+	CacheReadTokens  int    `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int    `json:"cache_write_tokens,omitempty"`
+	ContextTokens    int    `json:"context_tokens"`
+	ContextExact     bool   `json:"context_exact"`
+	LastFigaroLT     uint64 `json:"last_figaro_lt,omitempty"`
+	LastUpdateMS     int64  `json:"last_update_ms"`
+}
+
+func (l *listDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
+	out := ListSnapshot{
+		AriaID:       l.ariaID,
+		Provider:     l.providerName,
+		LastFigaroLT: evt.FigaroLT,
+		LastUpdateMS: time.Now().UnixMilli(),
+	}
+	if p := evt.Snapshot.Lookup("system.provider"); p != nil && *p != "" {
+		out.Provider = *p
+	}
+	if m := evt.Snapshot.Lookup("system.model"); m != nil {
+		out.Model = *m
+	}
+
+	entries := l.figLog.Read()
+	msgs := make([]message.Message, 0, len(entries))
+	for _, e := range entries {
+		out.MessageCount++
+		m := e.Payload
+		msgs = append(msgs, m)
+		if m.Usage != nil {
+			out.TokensIn += m.Usage.InputTokens
+			out.TokensOut += m.Usage.OutputTokens
+			out.CacheReadTokens += m.Usage.CacheReadTokens
+			out.CacheWriteTokens += m.Usage.CacheWriteTokens
+		}
+	}
+	out.ContextTokens, out.ContextExact = tokens.ContextSize(msgs)
+
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)

@@ -135,6 +135,51 @@ func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoRespon
 	}
 }
 
+// fillFromListSnapshot reads derived/list.json and fills any fields
+// the dormant entry is still missing. The list derivation runs on
+// every turn for live arias, so this is the freshest accurate view
+// for figaros that have since gone dormant. Silent on missing file:
+// older arias predate the derivation.
+func (h *handlers) fillFromListSnapshot(ariaID string, entry *rpc.FigaroInfoResponse) {
+	fb, ok := h.angelus.Backend.(interface{ Dir() string })
+	if !ok {
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(fb.Dir(), ariaID, "derived", "list.json"))
+	if err != nil {
+		return
+	}
+	var snap figaro.ListSnapshot
+	if json.Unmarshal(data, &snap) != nil {
+		return
+	}
+	if entry.Provider == "" {
+		entry.Provider = snap.Provider
+	}
+	if entry.Model == "" {
+		entry.Model = snap.Model
+	}
+	if entry.MessageCount == 0 {
+		entry.MessageCount = snap.MessageCount
+	}
+	if entry.TokensIn == 0 {
+		entry.TokensIn = snap.TokensIn
+	}
+	if entry.TokensOut == 0 {
+		entry.TokensOut = snap.TokensOut
+	}
+	if entry.CacheReadTokens == 0 {
+		entry.CacheReadTokens = snap.CacheReadTokens
+	}
+	if entry.CacheWriteTokens == 0 {
+		entry.CacheWriteTokens = snap.CacheWriteTokens
+	}
+	if entry.ContextTokens == 0 {
+		entry.ContextTokens = snap.ContextTokens
+		entry.ContextExact = snap.ContextExact
+	}
+}
+
 // openAriaTranslation opens the per-aria translation cache. nil on failure.
 func (h *handlers) openAriaTranslation(ariaID, providerName string) store.Log[[]json.RawMessage] {
 	if h.angelus.Backend == nil {
@@ -351,6 +396,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			}
 
 			h.fillFromChalkboard(aria.ID, &entry)
+			h.fillFromListSnapshot(aria.ID, &entry)
 			result = append(result, entry)
 		}
 	}
