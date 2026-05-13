@@ -90,11 +90,17 @@ func (s *toolSoloState) UpdateHeader(name, detail string) {
 	}
 	s.name = name
 	s.detail = detail
-	s.rewriteHeaderLocked()
+	s.repaintHeaderLocked()
 }
 
 // FinalizeWithRowsBelow stops the ticker, walks up past rowsBelow
 // rows to rewrite the header, then walks back down.
+//
+// TODO: this and RepaintWrappedHeader still use bespoke cursor math
+// because rowsBelow comes from a wrapping batch, not solo's own
+// linesBelow. Migrate to repaintHeaderLocked once the batch path is
+// touched (likely by teaching the primitive to accept an explicit
+// rowsBelow override).
 func (s *toolSoloState) FinalizeWithRowsBelow(rowsBelow int, isError bool) {
 	s.mu.Lock()
 	if isError {
@@ -125,7 +131,7 @@ func (s *toolSoloState) UpdateDetail(detail string) {
 		return
 	}
 	s.detail = detail
-	s.rewriteHeaderLocked()
+	s.repaintHeaderLocked()
 }
 
 // Start prints the header and launches the spinner.
@@ -139,7 +145,8 @@ func (s *toolSoloState) Start() {
 	go s.tick()
 }
 
-// Freeze stops the spinner. Idempotent.
+// Freeze stops the spinner and locks the header in place.
+// Idempotent.
 func (s *toolSoloState) Freeze() {
 	s.mu.Lock()
 	if s.frozen {
@@ -152,12 +159,13 @@ func (s *toolSoloState) Freeze() {
 	s.stopTicker()
 
 	s.mu.Lock()
-	s.rewriteHeaderLocked()
+	s.repaintHeaderLocked()
 	s.mu.Unlock()
 }
 
-// Done marks the tool as completed. Rewrites the header in place
-// with the final glyph, walking the cursor if output was streamed.
+// Done marks the tool as completed and repaints the header with the
+// final glyph (✓ / ✗). Safe whether or not output streamed first,
+// and whether or not Freeze was called explicitly.
 func (s *toolSoloState) Done(isError bool) {
 	s.mu.Lock()
 	if isError {
@@ -165,43 +173,14 @@ func (s *toolSoloState) Done(isError bool) {
 	} else {
 		s.state = toolRowOK
 	}
-	wasFrozen := s.frozen
+	s.frozen = true
 	s.mu.Unlock()
-	if !wasFrozen {
-		s.Freeze()
-		return
-	}
+
+	s.stopTicker()
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.linesBelow == 0 && s.lastWasNL {
-		// No output: in-place rewrite.
-		s.rewriteHeaderLocked()
-		return
-	}
-	// Output streamed. Ensure we're at column 0.
-	up := s.linesBelow
-	if !s.lastWasNL {
-		fmt.Fprint(s.out, "\n")
-		up++
-		s.lastWasNL = true
-	}
-	hdr := s.headerRows
-	if hdr < 1 {
-		hdr = 1
-	}
-	header := s.formatHeader()
-	fmt.Fprint(s.out, term.CursorUp(up+hdr))
-	for i := 0; i < hdr; i++ {
-		fmt.Fprint(s.out, term.EraseLine)
-		if i < hdr-1 {
-			fmt.Fprint(s.out, "\n")
-		}
-	}
-	fmt.Fprint(s.out, term.EraseLine)
-	fmt.Fprint(s.out, header)
-	newRows := term.WrapCount(term.VisibleLen(header), term.Width())
-	s.headerRows = newRows
-	fmt.Fprintf(s.out, "%s\r", term.CursorDown(up+1))
+	s.repaintHeaderLocked()
+	s.mu.Unlock()
 }
 
 // tick is the spinner goroutine.
@@ -220,28 +199,58 @@ func (s *toolSoloState) tick() {
 				return
 			}
 			s.frame++
-			s.rewriteHeaderLocked()
+			s.repaintHeaderLocked()
 			s.mu.Unlock()
 		}
 	}
 }
 
-// rewriteHeaderLocked rewrites the header in place. Caller holds mu.
-func (s *toolSoloState) rewriteHeaderLocked() {
-	header := s.formatHeader()
-	visLen := term.VisibleLen(header)
-	w := term.Width()
-	newRows := term.WrapCount(visLen, w)
-
+// repaintHeaderLocked is the single header-repaint primitive. It
+// walks the cursor up past any streamed output (linesBelow rows)
+// plus the header's own row count, erases the old header (handling
+// wrap), reprints, then walks back to the original position. Caller
+// holds mu.
+//
+// Invariant the callers must uphold: when no output has streamed,
+// linesBelow==0 and lastWasNL==true; the cursor sits one row below
+// the header. After Write streams chunks, linesBelow tracks the
+// number of \n bytes emitted and lastWasNL tracks the trailing
+// byte.
+func (s *toolSoloState) repaintHeaderLocked() {
+	extraDown := 0
+	if !s.lastWasNL {
+		fmt.Fprint(s.out, "\n")
+		s.lastWasNL = true
+		extraDown = 1
+	}
 	oldRows := s.headerRows
 	if oldRows < 1 {
 		oldRows = 1
 	}
+	totalDown := s.linesBelow + extraDown
+
+	// Walk up to the first row of the (old) header.
+	fmt.Fprint(s.out, term.CursorUp(totalDown+oldRows))
+	// Erase each old header row. Cursor is at col 0 after the up
+	// (terminal cursor moves preserve column, and we entered this
+	// path from col 0 — either after a \n or after the \r below).
 	for i := 0; i < oldRows; i++ {
-		fmt.Fprint(s.out, term.CursorUp(1)+term.EraseLine)
+		fmt.Fprint(s.out, term.EraseLine)
+		if i < oldRows-1 {
+			fmt.Fprint(s.out, "\n")
+		}
 	}
-	fmt.Fprintln(s.out, header)
+	// Cursor is on the LAST old header row; move back to the first.
+	if oldRows > 1 {
+		fmt.Fprint(s.out, term.CursorUp(oldRows-1))
+	}
+	header := s.formatHeader()
+	fmt.Fprint(s.out, header)
+	newRows := term.WrapCount(term.VisibleLen(header), term.Width())
 	s.headerRows = newRows
+	// After printing, cursor sits on the last header row. Return to
+	// col 0 on the row strictly below all output.
+	fmt.Fprintf(s.out, "\r%s", term.CursorDown(totalDown+1))
 }
 
 // Write streams tool output, tracking newlines for cursor math.

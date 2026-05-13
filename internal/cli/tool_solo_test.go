@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -91,7 +92,7 @@ func TestSoloDoneAfterStreamedOutputErasesSpinner(t *testing.T) {
 		t.Fatalf("expected ✓ header after cursor-up; got:\n%q", after)
 	}
 	// And the matching down-by-4 should also appear.
-	if !strings.Contains(raw, "\033[4B\r") {
+	if !strings.Contains(raw, "\r\033[4B") {
 		t.Fatalf("expected matching cursor-down sequence in raw output:\n%q", raw)
 	}
 }
@@ -120,5 +121,122 @@ func TestSoloDoneAfterFreezeWithoutOutput(t *testing.T) {
 	if !strings.Contains(visible, "✗") {
 		t.Fatalf("expected ✗ after error Done, got:\n%s", visible)
 	}
+}
+
+// TestSoloDoneAfterStreamedOutputWithoutFreeze covers the regression
+// the unified repaint primitive was introduced to fix: a tool that
+// streams output between Start and Done with no intermediate Freeze.
+// The previous Done shortcut delegated to Freeze in that case, which
+// repainted at the wrong cursor location and left the original
+// running-spinner header on screen alongside the new ✓ header.
+func TestSoloDoneAfterStreamedOutputWithoutFreeze(t *testing.T) {
+	var buf safeBuf
+	s := newToolSoloState(&buf, "bash", "echo hi")
+	s.Start()
+	s.Write([]byte("alpha\nbeta\ngamma\n"))
+	s.Done(false)
+
+	rendered := renderTermGrid(buf.String())
+	// Headers in the grid: each row that contains the "▶ bash" tag.
+	headerRows := 0
+	for _, row := range rendered {
+		if strings.Contains(row, "▶ bash") {
+			headerRows++
+		}
+	}
+	if headerRows != 1 {
+		t.Fatalf("expected exactly one header row in rendered grid, got %d:\n%s",
+			headerRows, strings.Join(rendered, "\n"))
+	}
+	// And the surviving header must carry the ✓ glyph.
+	found := false
+	for _, row := range rendered {
+		if strings.Contains(row, "▶ bash") && strings.Contains(row, "✓") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected ✓ in surviving header row, grid was:\n%s",
+			strings.Join(rendered, "\n"))
+	}
+}
+
+// renderTermGrid replays a byte stream into a tiny VT100 emulator
+// (CUU/CUD/EL only — enough for solo header repaints) and returns the
+// resulting rows with ANSI stripped. Lets us assert what a real
+// terminal would actually display. Operates on bytes, not runes:
+// good enough for our header-byte-equality assertions and avoids
+// having to handle multi-byte UTF-8 column accounting.
+func renderTermGrid(s string) []string {
+	rows := [][]byte{nil}
+	r, c := 0, 0
+	ensure := func(idx int) {
+		for len(rows) <= idx {
+			rows = append(rows, nil)
+		}
+	}
+	put := func(b byte) {
+		ensure(r)
+		row := rows[r]
+		for len(row) <= c {
+			row = append(row, ' ')
+		}
+		row[c] = b
+		rows[r] = row
+		c++
+	}
+	i := 0
+	for i < len(s) {
+		if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '[' {
+			j := i + 2
+			for j < len(s) && ((s[j] >= '0' && s[j] <= '9') || s[j] == ';') {
+				j++
+			}
+			if j >= len(s) {
+				break
+			}
+			param := s[i+2 : j]
+			cmd := s[j]
+			n := 1
+			if param != "" {
+				fmt.Sscanf(param, "%d", &n)
+			}
+			switch cmd {
+			case 'A':
+				r -= n
+				if r < 0 {
+					r = 0
+				}
+			case 'B':
+				r += n
+				ensure(r)
+			case 'K':
+				ensure(r)
+				rows[r] = nil
+				c = 0
+			case 'm', 'J':
+				// SGR / erase display — ignore.
+			}
+			i = j + 1
+			continue
+		}
+		switch s[i] {
+		case '\n':
+			r++
+			c = 0
+			ensure(r)
+		case '\r':
+			c = 0
+		default:
+			put(s[i])
+		}
+		i++
+	}
+	out := make([]string, len(rows))
+	for i, row := range rows {
+		out[i] = stripANSI(string(row))
+	}
+	return out
 }
 
