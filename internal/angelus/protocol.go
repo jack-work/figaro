@@ -241,7 +241,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		SocketPath: sockPath,
 		Provider:   prov,
 		Outfitter:  h.outfitter,
-		Tools:      tool.DefaultRegistry(cwd),
+		Tools:      tool.DefaultRegistryFn(cwdFromChalkboard(cbState, cwd)),
 		Backend:    backend,
 		LogCache:   h.angelus.LogCache,
 		Chalkboard: cbState,
@@ -592,7 +592,7 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 		SocketPath: sockPath,
 		Provider:   prov,
 		Outfitter:  h.outfitter,
-		Tools:      tool.DefaultRegistry(toolRoot),
+		Tools:      tool.DefaultRegistryFn(cwdFromChalkboard(cb, toolRoot)),
 		Backend:    h.angelus.Backend,
 		LogCache:   h.angelus.LogCache,
 		Chalkboard: cb,
@@ -608,4 +608,22 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 	slog.Info("restored figaro",
 		"id", aria.ID, "provider", provName, "model", model, "messages", aria.MessageCount)
 	return agent, nil
+}
+
+// cwdFromChalkboard returns a closure that reads system.cwd from
+// cbState at call time, falling back to fallback when the key is
+// unset, the chalkboard is nil, or the value isn't a JSON string.
+//
+// This is the seam that lets the bash tool honor a runtime
+// `figaro set system.cwd …` without rebuilding the registry.
+func cwdFromChalkboard(cbState *chalkboard.State, fallback string) func() string {
+	return func() string {
+		if cbState == nil {
+			return fallback
+		}
+		if s := cbState.Snapshot().Lookup("system.cwd"); s != nil && *s != "" {
+			return *s
+		}
+		return fallback
+	}
 }

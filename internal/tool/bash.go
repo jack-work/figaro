@@ -33,12 +33,41 @@ type Runner interface {
 }
 
 // BashTool implements both Runner and the generic Tool interface.
+//
+// The actual subprocess invocation is delegated to an Executor; the
+// tool just translates between figaro's tool-call shape and
+// ExecRequest/ExecResult, plus formats the captured output.
 type BashTool struct {
-	Cwd string
+	// CwdFn returns the working directory for each invocation.
+	// Called at run time so updates to the chalkboard (system.cwd)
+	// take effect immediately. If nil or returns "", the executor
+	// picks the default.
+	CwdFn func() string
+
+	// Executor runs the request. Defaults to a bare LocalExecutor
+	// (no transformers, no env sanitization) — agent wiring is
+	// expected to supply a properly-configured executor.
+	Executor Executor
 }
 
-// NewBashTool constructs a BashTool bound to cwd.
-func NewBashTool(cwd string) *BashTool { return &BashTool{Cwd: cwd} }
+// NewBashTool constructs a BashTool with a static cwd and the default
+// (unsanitized) local executor. Kept for tests and trivial callers;
+// production wiring should use NewBashToolWith.
+func NewBashTool(cwd string) *BashTool {
+	return &BashTool{
+		CwdFn:    func() string { return cwd },
+		Executor: NewLocalExecutor(),
+	}
+}
+
+// NewBashToolWith constructs a BashTool with an explicit cwd function
+// and executor.
+func NewBashToolWith(cwdFn func() string, executor Executor) *BashTool {
+	if executor == nil {
+		executor = NewLocalExecutor()
+	}
+	return &BashTool{CwdFn: cwdFn, Executor: executor}
+}
 
 func (b *BashTool) Name() string { return "bash" }
 func (b *BashTool) Description() string {
@@ -88,45 +117,28 @@ func (b *BashTool) run(ctx context.Context, req BashRequest, onOutput OnOutput) 
 		return BashResult{}, fmt.Errorf("command is required")
 	}
 
-	// Kill the process group ourselves (Setpgid).
-	cmd := exec.Command("bash", "-c", req.Command)
-	cmd.Dir = b.Cwd
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cwd := ""
+	if b.CwdFn != nil {
+		cwd = b.CwdFn()
+	}
 
 	sw := &streamWriter{onOutput: onOutput}
-	cmd.Stdout = sw
-	cmd.Stderr = sw
-
-	if err := cmd.Start(); err != nil {
-		return BashResult{}, fmt.Errorf("start command: %w", err)
+	execReq := ExecRequest{
+		Command: req.Command,
+		Cwd:     cwd,
+		Timeout: req.Timeout,
+	}
+	res, err := b.Executor.Execute(ctx, execReq, func(chunk []byte) {
+		sw.Write(chunk)
+	})
+	if err != nil {
+		return BashResult{}, err
 	}
 
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-
-	var timeoutCh <-chan time.Time
-	if req.Timeout > 0 {
-		timer := time.NewTimer(req.Timeout)
-		defer timer.Stop()
-		timeoutCh = timer.C
-	}
-
-	var timedOut, canceled bool
-	select {
-	case err := <-done:
-		return b.formatResult(sw.String(), err, false, false, req.Timeout)
-	case <-timeoutCh:
-		timedOut = true
-	case <-ctx.Done():
-		canceled = true
-	}
-
-	killProcessGroup(cmd)
-	<-done
-	return b.formatResult(sw.String(), nil, timedOut, canceled, req.Timeout)
+	return b.formatResult(sw.String(), res.ExitCode, res.TimedOut, res.Canceled, req.Timeout)
 }
 
-func (b *BashTool) formatResult(raw string, execErr error, timedOut, canceled bool, timeout time.Duration) (BashResult, error) {
+func (b *BashTool) formatResult(raw string, exitCode int, timedOut, canceled bool, timeout time.Duration) (BashResult, error) {
 	trunc := TruncateTail(raw, TruncationOptions{})
 	output := trunc.Content
 	if output == "" {
@@ -135,15 +147,6 @@ func (b *BashTool) formatResult(raw string, execErr error, timedOut, canceled bo
 
 	if trunc.Truncated {
 		output += fmt.Sprintf("\n\n[Output truncated to last %d lines / %dKB]", MaxOutputLines, MaxOutputBytes/1024)
-	}
-
-	exitCode := 0
-	if execErr != nil {
-		if exitErr, ok := execErr.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			return BashResult{}, execErr
-		}
 	}
 
 	switch {

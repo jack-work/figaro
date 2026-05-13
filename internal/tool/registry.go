@@ -84,13 +84,32 @@ func (r *Registry) Len() int {
 }
 
 // DefaultRegistry returns a registry with bash, read, write, edit.
+//
+// The bash tool gets a LocalExecutor with the default daemon-env
+// sanitizer wired in, so child processes don't inherit
+// _FIGARO_DAEMON / HUSH_* and silently re-enter daemon mode.
 func DefaultRegistry(cwd string) *Registry {
+	return DefaultRegistryFn(func() string { return cwd })
+}
+
+// DefaultRegistryFn is like DefaultRegistry but reads cwd at call time
+// via cwdFn. Agent wiring should pass a closure that pulls system.cwd
+// from the chalkboard.
+func DefaultRegistryFn(cwdFn func() string) *Registry {
 	r := NewRegistry()
+	executor := NewLocalExecutor(
+		NewDefaultEnvSanitizer(),
+		CwdResolver{Fn: cwdFn},
+	)
+	staticCwd := ""
+	if cwdFn != nil {
+		staticCwd = cwdFn()
+	}
 	r.MustRegister(
-		NewBashTool(cwd),
-		NewReadTool(cwd),
-		NewWriteTool(cwd),
-		NewEditTool(cwd),
+		NewBashToolWith(cwdFn, executor),
+		NewReadTool(staticCwd),
+		NewWriteTool(staticCwd),
+		NewEditTool(staticCwd),
 	)
 	return r
 }
