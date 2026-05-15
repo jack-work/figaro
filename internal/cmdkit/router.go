@@ -33,11 +33,18 @@ type Router struct {
 
 // NewRouter creates a router with the given binary name.
 func NewRouter(name string) *Router {
-	return &Router{
+	r := &Router{
 		Name:   name,
 		index:  make(map[string]*Command),
 		Stderr: os.Stderr,
 	}
+	r.Register(&Command{
+		Name:    completeVerb,
+		Hidden:  true,
+		PassRaw: true,
+		Run:     r.runComplete,
+	})
+	return r
 }
 
 // HasCommand reports whether name matches a registered command or alias.

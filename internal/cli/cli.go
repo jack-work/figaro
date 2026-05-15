@@ -28,6 +28,14 @@ func Run(args []string) {
 		}
 	}
 
+	// __complete is the hidden dispatcher for shell autocompletion.
+	// Skip otel init and tolerate config errors: completion must be
+	// cheap and never appear broken.
+	if len(args) > 0 && args[0] == "__complete" {
+		loaded, _ := config.Load(config.DefaultConfigDir())
+		os.Exit(buildRouter(loaded).Run(args))
+	}
+
 	ctx := context.Background()
 	loaded := mustLoadConfig()
 
@@ -223,6 +231,7 @@ Flags:
 			runSetArgs(ld, ctx.Args[0], ctx.Args[1])
 			return nil
 		},
+		CompleteArgs: completeChalkboardKeys,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -236,6 +245,7 @@ Flags:
 			runUnsetArgs(ld, ctx.Args)
 			return nil
 		},
+		CompleteArgs: completeChalkboardKeys,
 	})
 
 	r.Register(&cmdkit.Command{

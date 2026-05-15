@@ -43,6 +43,22 @@ type Command struct {
 	// everything after the command name goes into RunContext.RawArgs.
 	// Used for commands like prompt that use `-- <text>` conventions.
 	PassRaw bool
+
+	// CompleteArgs is an optional callback that returns dynamic
+	// completion candidates for this command's positional arguments.
+	// The shell filters by the current partial token; return all
+	// candidates without prefix-filtering. Return nil to fall back
+	// to no completion. Invoked by the hidden __complete dispatcher.
+	CompleteArgs func(ctx *CompleteContext) []string
+}
+
+// CompleteContext carries state into a CompleteArgs callback.
+type CompleteContext struct {
+	// Args are the tokens after the command verb, before the cursor.
+	Args []string
+
+	// Extra mirrors Router.Extra (e.g. *config.Loaded).
+	Extra interface{}
 }
 
 // FlagDef describes a flag accepted by a command.
