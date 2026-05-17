@@ -44,9 +44,21 @@ func (r *Router) runComplete(ctx *RunContext) error {
 	for len(tail) > 0 && tail[0] == "--" {
 		tail = tail[1:]
 	}
+	// Any "--" that survives the leading-strip is one the user typed
+	// themselves (the conventional flags/prompt separator). Detect it
+	// and surface it through CompleteContext so callbacks can switch
+	// candidate pools when the cursor lives past it.
+	pastSep := false
+	for _, tok := range tail {
+		if tok == "--" {
+			pastSep = true
+			break
+		}
+	}
 	cands := cmd.CompleteArgs(&CompleteContext{
-		Args:  tail,
-		Extra: r.Extra,
+		Args:          tail,
+		PastSeparator: pastSep,
+		Extra:         r.Extra,
 	})
 	for _, c := range cands {
 		fmt.Println(c)

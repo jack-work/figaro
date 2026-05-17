@@ -55,7 +55,18 @@ type Command struct {
 // CompleteContext carries state into a CompleteArgs callback.
 type CompleteContext struct {
 	// Args are the tokens after the command verb, before the cursor.
+	// Note: a literal "--" token typed by the user (the conventional
+	// flags/prompt separator) IS preserved here so callbacks can
+	// distinguish "completing a flag/value" from "completing the
+	// prompt body past --". See PastSeparator for the digested form.
 	Args []string
+
+	// PastSeparator is true iff the user has already typed a bare "--"
+	// token before the cursor (i.e. the cursor lives in the prompt
+	// body of `figaro <verb> [flags] -- <body...>`). Useful for
+	// switching the candidate pool from flags/ids to prompt-context
+	// (chalkboard refs, CWD entries, etc.).
+	PastSeparator bool
 
 	// Extra mirrors Router.Extra (e.g. *config.Loaded).
 	Extra interface{}

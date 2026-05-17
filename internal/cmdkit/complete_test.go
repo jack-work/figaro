@@ -107,6 +107,45 @@ func TestCompleteContextArgs(t *testing.T) {
 	}
 }
 
+func TestCompleteContextPastSeparator(t *testing.T) {
+	r := NewRouter("test")
+	r.Stderr = &bytes.Buffer{}
+	var sawPast bool
+	var sawArgs []string
+	r.Register(&Command{
+		Name: "send",
+		Run:  func(*RunContext) error { return nil },
+		CompleteArgs: func(ctx *CompleteContext) []string {
+			sawPast = ctx.PastSeparator
+			sawArgs = ctx.Args
+			return nil
+		},
+	})
+
+	// Without a user "--": PastSeparator must be false. The leading
+	// "--" here is the dispatcher's own boundary marker and must NOT
+	// count as a user separator.
+	captureStdout(t, func() {
+		r.Run([]string{"__complete", "send", "--", "--id", "myid"})
+	})
+	if sawPast {
+		t.Errorf("PastSeparator true with no user --; args=%v", sawArgs)
+	}
+
+	// With a user "--" in the tail: PastSeparator must be true and
+	// the "--" must be preserved in Args so downstream logic can
+	// locate it.
+	captureStdout(t, func() {
+		r.Run([]string{"__complete", "send", "--", "--id", "myid", "--", "hello"})
+	})
+	if !sawPast {
+		t.Errorf("PastSeparator false with user --; args=%v", sawArgs)
+	}
+	if len(sawArgs) != 4 || sawArgs[2] != "--" {
+		t.Errorf("Args = %v (expected the user -- preserved)", sawArgs)
+	}
+}
+
 func TestCompletionScriptsMentionDispatcher(t *testing.T) {
 	r := NewRouter("figaro")
 	r.Register(&Command{Name: "set", Short: "Patch a chalkboard key"})
