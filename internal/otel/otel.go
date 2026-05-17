@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -194,6 +195,22 @@ func Event(ctx context.Context, name string, attrs ...attribute.KeyValue) {
 	if span.IsRecording() {
 		span.AddEvent(name, trace.WithAttributes(attrs...))
 	}
+}
+
+// RecordError attaches an error to the span in ctx and flips its status
+// to Error with the given description. Also emits a span event named
+// `name` carrying the supplied attributes plus the error string, so the
+// failure is greppable in traces.jsonl even before consulting Status.
+// No-op if no active span.
+func RecordError(ctx context.Context, name string, err error, attrs ...attribute.KeyValue) {
+	span := trace.SpanFromContext(ctx)
+	if !span.IsRecording() {
+		return
+	}
+	all := append([]attribute.KeyValue{attribute.String("error", err.Error())}, attrs...)
+	span.AddEvent(name, trace.WithAttributes(all...))
+	span.RecordError(err, trace.WithAttributes(all...))
+	span.SetStatus(codes.Error, name)
 }
 
 // RecordRequestDuration records a request roundtrip.

@@ -2,6 +2,8 @@ package anthropicsdk
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -13,17 +15,33 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
+// dumpBytes is the per-side byte budget for span events that carry
+// captured tool-input bytes. Keeps spans bounded while still giving
+// us enough to reconstruct the corruption upstream.
+const dumpBytes = 2048
+
 // drainStream consumes the SDK SSE stream, forwards deltas to the
 // bus, and returns the assembled assistant message at message_stop.
 //
 // The SDK's MessageAccumulator could fold deltas for us, but we need
 // to emit live PushDelta / PushToolUseStart / PushToolUseDelta calls,
 // so we walk the events ourselves and accumulate in parallel.
+//
+// Observability: per-tool-block byte tallies are reported on
+// `provider.tool_use.block_stop`. If `acc.Accumulate` rejects a
+// stream (typically because the model emitted malformed
+// `input_json_delta` chunks that don't reassemble into valid JSON),
+// the offending block's accumulated bytes are captured on the span
+// via `provider.accumulate.failed` so the failure is diagnosable
+// from `traces.jsonl` alone — no wire-dir replay required.
 func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.MessageStreamEventUnion], model string, bus provider.Bus) (message.Message, error) {
 	acc := anthropic.Message{Model: anthropic.Model(model)}
 	// Tracks per-tool-use indices that have already emitted a
 	// first-delta telemetry event. Keyed by block index in acc.Content.
 	seenInputDelta := map[int]bool{}
+	// Per-block running byte count of accumulated input_json_delta
+	// payloads. Reported on block_stop and dumped on failure.
+	bytesByIdx := map[int]int64{}
 
 	for stream.Next() {
 		if err := ctx.Err(); err != nil {
@@ -38,20 +56,28 @@ func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.Message
 		case anthropic.ContentBlockStartEvent:
 			handleBlockStart(ctx, v, bus)
 		case anthropic.ContentBlockDeltaEvent:
-			handleBlockDelta(ctx, v, &acc, bus, seenInputDelta)
+			handleBlockDelta(ctx, v, &acc, bus, seenInputDelta, bytesByIdx)
 		case anthropic.ContentBlockStopEvent:
-			handleBlockStop(ctx, v, &acc)
+			handleBlockStop(ctx, v, &acc, bytesByIdx)
 		case anthropic.MessageStopEvent:
 			// Accumulator captures stop_reason + usage; no side effect.
 		}
 
 		if err := acc.Accumulate(event); err != nil {
+			recordAccumulateFailure(ctx, event, &acc, bytesByIdx, err)
 			return message.Message{}, fmt.Errorf("accumulate: %w", err)
 		}
 	}
 	if err := stream.Err(); err != nil {
+		figOtel.RecordError(ctx, "provider.stream.error", err,
+			attribute.Int("n_content_blocks", len(acc.Content)),
+		)
 		return message.Message{}, err
 	}
+	figOtel.Event(ctx, "provider.stream.complete",
+		attribute.Int("n_content_blocks", len(acc.Content)),
+		attribute.String("stop_reason", string(acc.StopReason)),
+	)
 	return decodeAssistantMessage(acc), nil
 }
 
@@ -66,7 +92,7 @@ func handleBlockStart(ctx context.Context, ev anthropic.ContentBlockStartEvent, 
 	}
 }
 
-func handleBlockDelta(ctx context.Context, ev anthropic.ContentBlockDeltaEvent, acc *anthropic.Message, bus provider.Bus, seen map[int]bool) {
+func handleBlockDelta(ctx context.Context, ev anthropic.ContentBlockDeltaEvent, acc *anthropic.Message, bus provider.Bus, seen map[int]bool, bytesByIdx map[int]int64) {
 	switch d := ev.Delta.AsAny().(type) {
 	case anthropic.TextDelta:
 		if d.Text != "" {
@@ -89,6 +115,7 @@ func handleBlockDelta(ctx context.Context, ev anthropic.ContentBlockDeltaEvent, 
 			return
 		}
 		bus.PushToolUseDelta(owner.ID, d.PartialJSON)
+		bytesByIdx[idx] += int64(len(d.PartialJSON))
 		if !seen[idx] {
 			seen[idx] = true
 			figOtel.Event(ctx, "provider.tool_use.first_input_delta",
@@ -100,7 +127,7 @@ func handleBlockDelta(ctx context.Context, ev anthropic.ContentBlockDeltaEvent, 
 	}
 }
 
-func handleBlockStop(ctx context.Context, ev anthropic.ContentBlockStopEvent, acc *anthropic.Message) {
+func handleBlockStop(ctx context.Context, ev anthropic.ContentBlockStopEvent, acc *anthropic.Message, bytesByIdx map[int]int64) {
 	idx := int(ev.Index)
 	if idx < 0 || idx >= len(acc.Content) {
 		return
@@ -112,6 +139,87 @@ func handleBlockStop(ctx context.Context, ev anthropic.ContentBlockStopEvent, ac
 	figOtel.Event(ctx, "provider.tool_use.block_stop",
 		attribute.String("tool_call_id", b.ID),
 		attribute.String("tool_name", b.Name),
+		attribute.Int64("input_bytes", bytesByIdx[idx]),
 	)
 }
 
+// recordAccumulateFailure dumps the most-likely offending block's
+// accumulated bytes onto the active span. The SDK appends each
+// `input_json_delta` chunk to `acc.Content[idx].Input` *before*
+// calling `json.Marshal` on the block at `content_block_stop`; when
+// that marshal fails (json.RawMessage validates), the malformed
+// buffer is still sitting in `Input` — we just have to read it.
+//
+// We pick the last tool_use block as the offender heuristic: text
+// and thinking blocks don't route through json.RawMessage marshaling
+// and so can't be the cause of this error class.
+func recordAccumulateFailure(ctx context.Context, ev anthropic.MessageStreamEventUnion, acc *anthropic.Message, bytesByIdx map[int]int64, cause error) {
+	attrs := []attribute.KeyValue{
+		attribute.String("event_type", ev.Type),
+		attribute.Int("n_content_blocks", len(acc.Content)),
+	}
+	for i := len(acc.Content) - 1; i >= 0; i-- {
+		b := acc.Content[i]
+		if b.Type != "tool_use" {
+			continue
+		}
+		raw := []byte(b.Input)
+		attrs = append(attrs,
+			attribute.Int("offender.idx", i),
+			attribute.String("offender.tool_call_id", b.ID),
+			attribute.String("offender.tool_name", b.Name),
+			attribute.Int("offender.input_len", len(raw)),
+			attribute.Int64("offender.bytes_streamed", bytesByIdx[i]),
+			attribute.String("offender.input_head", safeHead(raw, dumpBytes)),
+			attribute.String("offender.input_tail", safeTail(raw, dumpBytes)),
+		)
+		if off := jsonSyntaxOffset(cause); off >= 0 {
+			attrs = append(attrs,
+				attribute.Int64("offender.err_offset", off),
+				attribute.String("offender.err_window", windowAround(raw, int(off), 200)),
+			)
+		}
+		break
+	}
+	figOtel.RecordError(ctx, "provider.accumulate.failed", cause, attrs...)
+}
+
+func safeHead(b []byte, n int) string {
+	if len(b) <= n {
+		return string(b)
+	}
+	return string(b[:n])
+}
+
+func safeTail(b []byte, n int) string {
+	if len(b) <= n {
+		return string(b)
+	}
+	return string(b[len(b)-n:])
+}
+
+func windowAround(b []byte, off, radius int) string {
+	lo, hi := off-radius, off+radius
+	if lo < 0 {
+		lo = 0
+	}
+	if hi > len(b) {
+		hi = len(b)
+	}
+	if lo > hi {
+		return ""
+	}
+	return string(b[lo:hi])
+}
+
+// jsonSyntaxOffset unwraps an error chain looking for a
+// *json.SyntaxError and returns its byte Offset, or -1 if not found.
+// The SDK wraps the marshal error with fmt.Errorf, so a naive type
+// assertion fails — errors.As walks the chain for us.
+func jsonSyntaxOffset(err error) int64 {
+	var se *json.SyntaxError
+	if errors.As(err, &se) {
+		return se.Offset
+	}
+	return -1
+}
