@@ -20,36 +20,47 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// runPlainPrompt creates an ephemeral figaro and streams raw output.
-func runPlainPrompt(loaded *config.Loaded, prompt string) {
+// runPlainPrompt streams raw output from an aria. With no --id, it
+// creates an ephemeral aria, streams, and kills it. With --id, it
+// scopes to that aria (auto-creating if missing) and leaves it alive.
+func runPlainPrompt(loaded *config.Loaded, rawArgs []string) {
+	id, rest, err := extractIDFlag(rawArgs)
+	if err != nil {
+		die("plain: %s", err)
+	}
+	prompt := extractPrompt(rest)
+	if prompt == "" {
+		die("usage: figaro plain [--id <id>] -- <prompt>")
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	createResp, err := acli.CreateEphemeral(ctx, "", nil)
-	if err != nil {
-		die("create figaro: %s", err)
-	}
-	figaroID := createResp.FigaroID
-	figaroEP := transport.Endpoint{
-		Scheme:  createResp.Endpoint.Scheme,
-		Address: createResp.Endpoint.Address,
-	}
+	var figaroID string
+	var figaroEP transport.Endpoint
+	ephemeral := id == ""
 
-	defer func() {
-		killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer killCancel()
-		_ = acli.Kill(killCtx, figaroID)
-	}()
-
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, serr := os.Stat(figaroEP.Address); serr == nil {
-			break
+	if ephemeral {
+		createResp, err := acli.CreateEphemeral(ctx, "", nil)
+		if err != nil {
+			die("create figaro: %s", err)
 		}
-		time.Sleep(20 * time.Millisecond)
+		figaroID = createResp.FigaroID
+		figaroEP = transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
+		defer func() {
+			killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer killCancel()
+			_ = acli.Kill(killCtx, figaroID)
+		}()
+		waitForSocket(figaroEP.Address, 3*time.Second)
+	} else {
+		figaroID, figaroEP, err = resolveTargetEndpoint(ctx, loaded, acli, id, true)
+		if err != nil {
+			die("%s", err)
+		}
 	}
 
 	exitCode := plainPrompt(ctx, figaroEP, prompt, os.Stdout)
@@ -58,11 +69,23 @@ func runPlainPrompt(loaded *config.Loaded, prompt string) {
 	}
 }
 
-// runExecPrompt asks a figaro for bash, then executes it.
-func runExecPrompt(loaded *config.Loaded, rawArgs []string, instruction string) {
+// runExecPrompt asks a figaro for bash, then executes it. With --id
+// the prompt is scoped to that aria (auto-created if missing) and the
+// aria is left alive afterward; without --id, an ephemeral aria is
+// spun up and killed.
+func runExecPrompt(loaded *config.Loaded, rawArgs []string) {
+	id, rest, err := extractIDFlag(rawArgs)
+	if err != nil {
+		die("x: %s", err)
+	}
+	instruction := extractPrompt(rest)
+	if instruction == "" {
+		die("usage: figaro x [--id <id>] [-n|-y] -- <instruction>")
+	}
+
 	dryRun := false
 	skipConfirm := false
-	for _, a := range rawArgs {
+	for _, a := range rest {
 		if a == "--" {
 			break
 		}
@@ -80,28 +103,30 @@ func runExecPrompt(loaded *config.Loaded, rawArgs []string, instruction string) 
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	createResp, err := acli.CreateEphemeral(ctx, "", nil)
-	if err != nil {
-		die("create figaro: %s", err)
-	}
-	figaroID := createResp.FigaroID
-	figaroEP := transport.Endpoint{
-		Scheme:  createResp.Endpoint.Scheme,
-		Address: createResp.Endpoint.Address,
-	}
-	defer func() {
-		killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer killCancel()
-		_ = acli.Kill(killCtx, figaroID)
-	}()
+	var figaroID string
+	var figaroEP transport.Endpoint
+	ephemeral := id == ""
 
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, serr := os.Stat(figaroEP.Address); serr == nil {
-			break
+	if ephemeral {
+		createResp, err := acli.CreateEphemeral(ctx, "", nil)
+		if err != nil {
+			die("create figaro: %s", err)
 		}
-		time.Sleep(20 * time.Millisecond)
+		figaroID = createResp.FigaroID
+		figaroEP = transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
+		defer func() {
+			killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer killCancel()
+			_ = acli.Kill(killCtx, figaroID)
+		}()
+		waitForSocket(figaroEP.Address, 3*time.Second)
+	} else {
+		figaroID, figaroEP, err = resolveTargetEndpoint(ctx, loaded, acli, id, true)
+		if err != nil {
+			die("%s", err)
+		}
 	}
+	_ = figaroID
 
 	prompt := "You will write a bash script. Output ONLY raw bash, " +
 		"no markdown fences, no prose, no commentary, no explanations. " +

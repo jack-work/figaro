@@ -16,51 +16,12 @@ import (
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// runAria handles `figaro aria [id] [N] [flags]` (render) or
-// `figaro aria [id] -- <prompt>` (prompt).
-func runAria(loaded *config.Loaded, args []string) {
-	// Split at `--`.
-	var head, tail []string
-	dashIdx := -1
-	for i, a := range args {
-		if a == "--" {
-			dashIdx = i
-			break
-		}
-	}
-	if dashIdx >= 0 {
-		head = args[:dashIdx]
-		tail = args[dashIdx+1:]
-	} else {
-		head = args
-	}
-
-	// Pull a leading id if present.
-	var id string
-	if len(head) > 0 {
-		candidate := head[0]
-		if _, err := strconv.Atoi(candidate); err != nil &&
-			!strings.HasPrefix(candidate, "-") &&
-			rpc.ValidateAriaID(candidate) == nil {
-			id = candidate
-			head = head[1:]
-		}
-	}
-
-	if dashIdx >= 0 {
-		prompt := strings.Join(tail, " ")
-		if prompt == "" {
-			die("usage: figaro aria [<id>] -- <prompt>")
-		}
-		promptAria(loaded, id, prompt)
-		return
-	}
-
-	renderAria(loaded, id, head)
+// runShow handles `figaro show [--id <id>] [N] [-v|-l|-a]`.
+func runShow(loaded *config.Loaded, idFlag string, args []string) {
+	renderAria(loaded, idFlag, args)
 }
 
 // renderAria prints history for an aria.
@@ -91,7 +52,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		default:
 			parsed, err := strconv.Atoi(arg)
 			if err != nil {
-				die("usage: figaro aria [<id>] [N] [-v|--verbose] [-l|--literal] [-a|--all]")
+				die("usage: figaro show [--id <id>] [N] [-v|--verbose] [-l|--literal] [-a|--all]")
 			}
 			n = parsed
 		}

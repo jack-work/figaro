@@ -14,16 +14,9 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// runSet patches a chalkboard key. Supports dotted paths like
+// runSetArgs patches a chalkboard key. Supports dotted paths like
 // system.tags[42].cache_control.
-func runSet(loaded *config.Loaded) {
-	if len(os.Args) < 4 {
-		die("usage: figaro set <key> <value>")
-	}
-	runSetArgs(loaded, os.Args[2], os.Args[3])
-}
-
-func runSetArgs(loaded *config.Loaded, keyArg, raw string) {
+func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 
 	value := json.RawMessage(raw)
 	if !json.Valid(value) {
@@ -40,7 +33,7 @@ func runSetArgs(loaded *config.Loaded, keyArg, raw string) {
 	if len(path) == 0 {
 		topValue = value
 	} else {
-		current := mustFetchChalkboardKey(loaded, top)
+		current := mustFetchChalkboardKey(loaded, ariaID, top)
 		merged, err := deepSetJSON(current, path, value)
 		if err != nil {
 			die("set: %s", err)
@@ -49,19 +42,12 @@ func runSetArgs(loaded *config.Loaded, keyArg, raw string) {
 	}
 
 	patch := rpc.ChalkboardPatch{Set: map[string]json.RawMessage{top: topValue}}
-	resp := mustCallSet(loaded, patch)
+	resp := mustCallSet(loaded, ariaID, patch)
 	fmt.Fprintf(os.Stderr, "set %s = %s (figaro %s)\n", keyArg, value, resp.figaroID)
 }
 
-// runUnset removes chalkboard keys.
-func runUnset(loaded *config.Loaded) {
-	if len(os.Args) < 3 {
-		die("usage: figaro unset <key> [<key>...]")
-	}
-	runUnsetArgs(loaded, os.Args[2:])
-}
-
-func runUnsetArgs(loaded *config.Loaded, args []string) {
+// runUnsetArgs removes chalkboard keys.
+func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 	patch := rpc.ChalkboardPatch{}
 	for _, keyArg := range args {
 		top, path, err := parseChalkboardPath(keyArg)
@@ -72,7 +58,7 @@ func runUnsetArgs(loaded *config.Loaded, args []string) {
 			patch.Remove = append(patch.Remove, top)
 			continue
 		}
-		current := mustFetchChalkboardKey(loaded, top)
+		current := mustFetchChalkboardKey(loaded, ariaID, top)
 		if len(current) == 0 {
 			continue
 		}
@@ -93,13 +79,13 @@ func runUnsetArgs(loaded *config.Loaded, args []string) {
 		fmt.Fprintln(os.Stderr, "unset: nothing to do")
 		return
 	}
-	resp := mustCallSet(loaded, patch)
+	resp := mustCallSet(loaded, ariaID, patch)
 	fmt.Fprintf(os.Stderr, "unset %s (figaro %s)\n", strings.Join(args, ", "), resp.figaroID)
 }
 
 // runChalkboard prints the current chalkboard snapshot.
-func runChalkboard(loaded *config.Loaded) {
-	WithSession(loaded, func(s *Session) error {
+func runChalkboard(loaded *config.Loaded, ariaID string) {
+	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		resp, err := s.Figaro.Chalkboard(ctx)
@@ -261,9 +247,9 @@ func deepDeleteWalk(obj map[string]any, path []string) bool {
 	return changed
 }
 
-func mustFetchChalkboardKey(loaded *config.Loaded, key string) json.RawMessage {
+func mustFetchChalkboardKey(loaded *config.Loaded, ariaID, key string) json.RawMessage {
 	var result json.RawMessage
-	WithSession(loaded, func(s *Session) error {
+	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		resp, err := s.Figaro.Chalkboard(ctx)
@@ -281,9 +267,9 @@ type setResult struct {
 	resp     *rpc.SetResponse
 }
 
-func mustCallSet(loaded *config.Loaded, patch rpc.ChalkboardPatch) setResult {
+func mustCallSet(loaded *config.Loaded, ariaID string, patch rpc.ChalkboardPatch) setResult {
 	var result setResult
-	WithSession(loaded, func(s *Session) error {
+	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		resp, err := s.Figaro.Set(ctx, patch)

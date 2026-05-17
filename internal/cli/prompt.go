@@ -40,25 +40,23 @@ func runPrompt(loaded *config.Loaded, prompt string) {
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
 }
 
-// runQua prompts the bound or named aria.
-func runQua(loaded *config.Loaded, args []string) {
-	var targetID string
-	promptArgs := args
-	if len(args) > 0 && args[0] != "--" {
-		targetID = args[0]
-		promptArgs = args[1:]
+// runSend prompts the target aria. `figaro send [--id <id>] -- <prompt>`.
+// Resolution: --id > pid binding. If --id names a missing aria, it is
+// created (matching the old `aria <id> --` behavior).
+func runSend(loaded *config.Loaded, rawArgs []string) {
+	id, rest, err := extractIDFlag(rawArgs)
+	if err != nil {
+		die("send: %s", err)
 	}
-
-	prompt := extractPrompt(promptArgs)
+	prompt := extractPrompt(rest)
 	if prompt == "" {
-		die("usage: figaro qua [<id>] -- <prompt>")
+		die("usage: figaro send [--id <id>] -- <prompt>")
 	}
-
-	if targetID == "" {
+	if id == "" {
 		runPrompt(loaded, prompt)
 		return
 	}
-	promptAria(loaded, targetID, prompt)
+	promptAria(loaded, id, prompt)
 }
 
 // runNewPrompt creates a fresh figaro and prompts it.

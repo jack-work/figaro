@@ -71,21 +71,60 @@ func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 	r.Extra = loaded
 
 	r.Register(&cmdkit.Command{
-		Name:    "aria",
+		Name:    "show",
+		Aliases: []string{"history"},
+		Group:   "Prompt",
+		Short:   "Render an aria's message history",
+		Usage:   "show [--id <id>] [N] [-v] [-l] [-a]",
+		Long: `Render the message history of an aria. Defaults to the last 10
+messages of the pid-bound aria; --id scopes to a different aria.
+
+  figaro show                      last 10 of the bound aria
+  figaro show 20                   last 20 of the bound aria
+  figaro show --id myid 50 -v      last 50 of myid, verbose
+  figaro show --id myid -a -l      all messages of myid, literal output`,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id (overrides pid binding)"},
+			{Long: "verbose", Short: "v", IsBool: true, Description: "Include patches, thinking, usage"},
+			{Long: "literal", Short: "l", IsBool: true, Description: "No ANSI / markdown rendering"},
+			{Long: "all", Short: "a", IsBool: true, Description: "Show every message, not just last N"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			// renderAria parses -v/-l/-a/N from argv. Reassemble what
+			// the router parsed back into its expected shape.
+			var args []string
+			if ctx.BoolFlag("verbose") {
+				args = append(args, "-v")
+			}
+			if ctx.BoolFlag("literal") {
+				args = append(args, "-l")
+			}
+			if ctx.BoolFlag("all") {
+				args = append(args, "-a")
+			}
+			args = append(args, ctx.Args...)
+			runShow(ld, ctx.Flag("id"), args)
+			return nil
+		},
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:    "send",
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
-		Short:   "Prompt or view history of an aria",
-		Usage:   "aria [<id>] -- <prompt>  |  aria [<id>] [N] [-v] [-l] [-a]",
-		Long: `Prompt a named or pid-bound aria, or render its history.
+		Short:   "Send a prompt to an aria",
+		Usage:   "send [--id <id>] -- <prompt>",
+		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
+aria (creating one if this shell has no binding). With --id, targets
+the named aria, creating it if it does not yet exist.
 
-  figaro aria -- <prompt>          prompt the pid-bound aria
-  figaro aria myid -- <prompt>     prompt a named aria (create if absent)
-  figaro aria 20 -v                show last 20 messages with verbose info
-  figaro aria -a -l                show all messages in literal (no markdown)`,
+  figaro send -- <prompt>             prompt the pid-bound aria
+  figaro send --id myid -- <prompt>   prompt a named aria (create if absent)`,
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runAria(ld, ctx.RawArgs)
+			runSend(ld, ctx.RawArgs)
 			return nil
 		},
 	})
@@ -112,17 +151,13 @@ func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 		Name:    "plain",
 		Aliases: []string{"l"},
 		Group:   "Prompt",
-		Short:   "Raw ephemeral prompt (pipe-friendly, no formatting)",
-		Usage:   "plain -- <prompt>",
-		Long:    "Creates an ephemeral aria, streams the response verbatim to stdout\n(no ANSI, no markdown rendering), then kills the aria. Ideal for piping.",
+		Short:   "Raw prompt (pipe-friendly, no formatting)",
+		Usage:   "plain [--id <id>] -- <prompt>",
+		Long:    "Without --id: creates an ephemeral aria, streams the response\nverbatim to stdout (no ANSI, no markdown), then kills the aria.\nWith --id: scopes to the named aria (auto-creating if missing) and\nleaves it alive afterward \u2014 useful for pipeable interactions with\na persistent aria.",
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			prompt := extractPrompt(ctx.RawArgs)
-			if prompt == "" {
-				return fmt.Errorf("usage: figaro plain -- <prompt>")
-			}
-			runPlainPrompt(ld, prompt)
+			runPlainPrompt(ld, ctx.RawArgs)
 			return nil
 		},
 	})
@@ -132,9 +167,12 @@ func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 		Aliases: []string{"exec"},
 		Group:   "Prompt",
 		Short:   "Generate bash from instruction and execute it",
-		Usage:   "x [-n|-y] -- <instruction>",
+		Usage:   "x [--id <id>] [-n|-y] -- <instruction>",
 		Long: `Ask figaro to write a bash script for the given instruction,
 then execute it locally via bash -c.
+
+With --id, scopes to the named aria (auto-created if missing) so the
+scripts share context across invocations.
 
 Flags:
   -n, --dry-run    Print the script to stdout instead of executing
@@ -142,11 +180,7 @@ Flags:
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			prompt := extractPrompt(ctx.RawArgs)
-			if prompt == "" {
-				return fmt.Errorf("usage: figaro x -- <instruction>")
-			}
-			runExecPrompt(ld, ctx.RawArgs, prompt)
+			runExecPrompt(ld, ctx.RawArgs)
 			return nil
 		},
 	})
@@ -194,12 +228,15 @@ Flags:
 		Name:    "kill",
 		Group:   "Session",
 		Short:   "Terminate and remove an aria",
-		Usage:   "kill <id>",
-		ArgsMin: 1,
+		Usage:   "kill [--id <id> | <id>]",
+		ArgsMin: 0,
 		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id"},
+		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runKillByID(ld, ctx.Args[0])
+			runKill(ld, ctx.Flag("id"), ctx.Args)
 			return nil
 		},
 	})
@@ -209,10 +246,13 @@ Flags:
 		Aliases: []string{"chalkboard"},
 		Group:   "State",
 		Short:   "Show the current chalkboard snapshot",
-		Usage:   "state",
+		Usage:   "state [--id <id>]",
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id (overrides pid binding)"},
+		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runChalkboard(ld)
+			runChalkboard(ld, ctx.Flag("id"))
 			return nil
 		},
 	})
@@ -221,12 +261,15 @@ Flags:
 		Name:    "set",
 		Group:   "State",
 		Short:   "Patch a chalkboard key (no LLM round-trip)",
-		Usage:   "set <key> <value>",
+		Usage:   "set [--id <id>] <key> <value>",
 		ArgsMin: 2,
 		ArgsMax: 2,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id (overrides pid binding)"},
+		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runSetArgs(ld, ctx.Args[0], ctx.Args[1])
+			runSetArgs(ld, ctx.Flag("id"), ctx.Args[0], ctx.Args[1])
 			return nil
 		},
 		CompleteArgs: completeChalkboardKeys,
@@ -236,11 +279,14 @@ Flags:
 		Name:    "unset",
 		Group:   "State",
 		Short:   "Remove chalkboard key(s)",
-		Usage:   "unset <key> [<key>...]",
+		Usage:   "unset [--id <id>] <key> [<key>...]",
 		ArgsMin: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id (overrides pid binding)"},
+		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runUnsetArgs(ld, ctx.Args)
+			runUnsetArgs(ld, ctx.Flag("id"), ctx.Args)
 			return nil
 		},
 		CompleteArgs: completeChalkboardKeys,
@@ -250,13 +296,14 @@ Flags:
 		Name:  "rehydrate",
 		Group: "State",
 		Short: "Re-run credo and apply state diff",
-		Usage: "rehydrate [--dry-run]",
+		Usage: "rehydrate [--id <id>] [--dry-run]",
 		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id (overrides pid binding)"},
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Print diff without applying"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runRehydrateWithFlag(ld, ctx.BoolFlag("dry-run"))
+			runRehydrateWithFlag(ld, ctx.Flag("id"), ctx.BoolFlag("dry-run"))
 			return nil
 		},
 	})
@@ -281,12 +328,16 @@ Flags:
 		Aliases: []string{"info"},
 		Group:   "Session",
 		Short:   "Show a focused view of one aria",
-		Usage:   "status [<id>]",
+		Usage:   "status [--id <id> | <id>]",
 		Long:    "Prints provider, model, message count, context size and last-active\ntime for the named aria (or the one bound to this shell). Reads the\nsame data the `list` table uses; dormant arias are backfilled from\nderived/meta.json (see `figaro derive meta`).",
-		PassRaw: true,
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id"},
+		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runStatus(ld, ctx.RawArgs)
+			runStatus(ld, ctx.Flag("id"), ctx.Args)
 			return nil
 		},
 	})

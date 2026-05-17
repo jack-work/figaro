@@ -13,12 +13,12 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// runStatus prints a focused single-aria view of the figaro bound to
-// this shell (or named by argument). Reads the same FigaroInfoResponse
-// the list view uses; for dormant arias the angelus backfills from
-// derived/meta.json. With no live data and no derivation file, fields
-// will read "-".
-func runStatus(loaded *config.Loaded, args []string) {
+// runStatus prints a focused single-aria view of the target figaro.
+// Target resolution: --id flag > positional arg > pid-bound. Reads the
+// same FigaroInfoResponse the list view uses; for dormant arias the
+// angelus backfills from derived/meta.json. With no live data and no
+// derivation file, fields will read "-".
+func runStatus(loaded *config.Loaded, idFlag string, args []string) {
 	var nameArg string
 	if len(args) > 0 {
 		nameArg = args[0]
@@ -28,14 +28,17 @@ func runStatus(loaded *config.Loaded, args []string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		ariaID := nameArg
+		ariaID := idFlag
+		if ariaID == "" {
+			ariaID = nameArg
+		}
 		if ariaID == "" {
 			r, err := acli.Resolve(ctx, os.Getppid())
 			if err != nil {
 				return fmt.Errorf("resolve: %w", err)
 			}
 			if !r.Found {
-				die("no figaro bound to this shell (try: figaro status <id>)")
+				die("no figaro bound to this shell (try: figaro status --id <id> or figaro status <id>)")
 			}
 			ariaID = r.FigaroID
 		}

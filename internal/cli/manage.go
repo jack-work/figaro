@@ -62,11 +62,15 @@ func runList(loaded *config.Loaded) {
 	})
 }
 
-func runKill(loaded *config.Loaded) {
-	if len(os.Args) < 3 {
-		die("usage: figaro kill <id>")
+func runKill(loaded *config.Loaded, idFlag string, args []string) {
+	ariaID := idFlag
+	if ariaID == "" && len(args) > 0 {
+		ariaID = args[0]
 	}
-	runKillByID(loaded, os.Args[2])
+	if ariaID == "" {
+		die("usage: figaro kill [--id <id> | <id>]")
+	}
+	runKillByID(loaded, ariaID)
 }
 
 func runKillByID(loaded *config.Loaded, figaroID string) {
@@ -81,11 +85,11 @@ func runKillByID(loaded *config.Loaded, figaroID string) {
 	})
 }
 
-func runAttend(loaded *config.Loaded) {
-	if len(os.Args) < 3 {
+func runAttend(loaded *config.Loaded, args []string) {
+	if len(args) == 0 {
 		die("usage: figaro attend <id>")
 	}
-	runAttendByID(loaded, os.Args[2])
+	runAttendByID(loaded, args[0])
 }
 
 func runAttendByID(loaded *config.Loaded, figaroID string) {

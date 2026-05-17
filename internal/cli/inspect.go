@@ -9,22 +9,9 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// runRehydrate re-runs the credo on the bound figaro.
-func runRehydrate(loaded *config.Loaded) {
-	dryRun := false
-	for _, arg := range os.Args[2:] {
-		switch arg {
-		case "--dry-run", "-n":
-			dryRun = true
-		default:
-			die("unknown flag: %s", arg)
-		}
-	}
-	runRehydrateWithFlag(loaded, dryRun)
-}
-
-func runRehydrateWithFlag(loaded *config.Loaded, dryRun bool) {
-	WithSession(loaded, func(s *Session) error {
+// runRehydrateWithFlag re-runs the credo on the target figaro.
+func runRehydrateWithFlag(loaded *config.Loaded, ariaID string, dryRun bool) {
+	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
