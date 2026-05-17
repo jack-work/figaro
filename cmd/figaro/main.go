@@ -4,6 +4,7 @@ package main
 import (
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/jack-work/hush/managed"
 
@@ -19,5 +20,8 @@ func main() {
 		return
 	}
 
-	cli.Run(os.Args[1:])
+	// argv[0] basename is the invocation name. Symlinks like `fig`
+	// (see flake.nix postInstall) flow through here so help/usage/
+	// completion output the name the user actually typed.
+	cli.Run(filepath.Base(os.Args[0]), os.Args[1:])
 }

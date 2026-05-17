@@ -12,6 +12,8 @@ figaro -- now refactor it, per favore
 figaro list
 ```
 
+Also reachable as `fig` (installed alongside `figaro`).
+
 The default verb is `figaro.qua` — the call that summons the barber.
 
 ## Shape of the thing
@@ -34,6 +36,16 @@ nix profile install github:jack-work/figaro      # or go install
 figaro login anthropic
 figaro -- buongiorno
 ```
+
+If you installed via `go install` and want the short `fig` name as well:
+
+```bash
+ln -s figaro "$(go env GOPATH)/bin/fig"
+```
+
+The Nix package installs that symlink for you. The binary inspects
+`argv[0]` so `fig --help` prints `Usage: fig ...` — same surface, shorter
+name.
 
 Config lives at `~/.config/figaro/`.
 

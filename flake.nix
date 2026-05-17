@@ -44,6 +44,15 @@
 
           # Multi-call shims used to live here (q/l/x symlinks); they
           # were moved to user shell aliases. See ~/.config/fish/config.fish.
+          #
+          # `fig` is different — it's a pure rename (no argv rewrite),
+          # so we install it as a symlink next to figaro. main.go uses
+          # filepath.Base(os.Args[0]) so help/usage/completion reflect
+          # whichever name was invoked. Users installing via `go install`
+          # can replicate this with: ln -s figaro $(go env GOPATH)/bin/fig
+          postInstall = ''
+            ln -s figaro $out/bin/fig
+          '';
 
           meta.mainProgram = "figaro";
         };

@@ -11,8 +11,14 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
-// Run dispatches a CLI invocation.
-func Run(args []string) {
+// Run dispatches a CLI invocation. progName is the basename of argv[0]
+// (e.g. "figaro" or "fig"); it threads through to the router so help,
+// errors, and shell completion reflect the name the user actually typed.
+func Run(progName string, args []string) {
+	if progName == "" {
+		progName = "figaro"
+	}
+
 	// Internal: angelus mode.
 	if os.Getenv("_FIGARO_DAEMON") == "1" || (len(args) > 0 && args[0] == "--angelus") {
 		runAngelus()
@@ -33,7 +39,7 @@ func Run(args []string) {
 	// cheap and never appear broken.
 	if len(args) > 0 && args[0] == "__complete" {
 		loaded, _ := config.Load(config.DefaultConfigDir())
-		os.Exit(buildRouter(loaded).Run(args))
+		os.Exit(buildRouter(progName, loaded).Run(args))
 	}
 
 	ctx := context.Background()
@@ -46,7 +52,7 @@ func Run(args []string) {
 		defer shutdown(ctx)
 	}
 
-	router := buildRouter(loaded)
+	router := buildRouter(progName, loaded)
 
 	// Bare `figaro -- <prompt>` defaults to prompt verb.
 	if prompt := extractPrompt(args); prompt != "" {
@@ -60,13 +66,9 @@ func Run(args []string) {
 	os.Exit(code)
 }
 
-func buildRouter(loaded *config.Loaded) *cmdkit.Router {
-	r := cmdkit.NewRouter("figaro")
+func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
+	r := cmdkit.NewRouter(progName)
 	r.Extra = loaded
-
-
-
-
 
 	r.Register(&cmdkit.Command{
 		Name:    "aria",
@@ -89,11 +91,11 @@ func buildRouter(loaded *config.Loaded) *cmdkit.Router {
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:  "new",
-		Group: "Prompt",
-		Short: "Start a fresh aria and prompt it",
-		Usage: "new -- <prompt>",
-		Long:  "Creates a new aria (with server-generated id), binds it to this shell, and sends the prompt.",
+		Name:    "new",
+		Group:   "Prompt",
+		Short:   "Start a fresh aria and prompt it",
+		Usage:   "new -- <prompt>",
+		Long:    "Creates a new aria (with server-generated id), binds it to this shell, and sends the prompt.",
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
@@ -149,8 +151,6 @@ Flags:
 		},
 	})
 
-
-
 	r.Register(&cmdkit.Command{
 		Name:    "list",
 		Aliases: []string{"ls"},
@@ -203,8 +203,6 @@ Flags:
 			return nil
 		},
 	})
-
-
 
 	r.Register(&cmdkit.Command{
 		Name:    "state",
@@ -293,13 +291,11 @@ Flags:
 		},
 	})
 
-
-
 	r.Register(&cmdkit.Command{
-		Name:  "login",
-		Group: "System",
-		Short: "OAuth login for a provider",
-		Usage: "login <provider>",
+		Name:    "login",
+		Group:   "System",
+		Short:   "OAuth login for a provider",
+		Usage:   "login <provider>",
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {
