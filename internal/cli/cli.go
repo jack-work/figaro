@@ -107,6 +107,7 @@ messages of the pid-bound aria; --id scopes to a different aria.
 			runShow(ld, ctx.Flag("id"), args)
 			return nil
 		},
+		CompleteArgs: completeAriaIDsAfterFlag(nil),
 	})
 
 	r.Register(&cmdkit.Command{
@@ -127,6 +128,7 @@ the named aria, creating it if it does not yet exist.
 			runSend(ld, ctx.RawArgs)
 			return nil
 		},
+		CompleteArgs: completeAriaIDsAfterFlag(nil),
 	})
 
 	r.Register(&cmdkit.Command{
@@ -160,6 +162,7 @@ the named aria, creating it if it does not yet exist.
 			runPlainPrompt(ld, ctx.RawArgs)
 			return nil
 		},
+		CompleteArgs: completeAriaIDsAfterFlag(nil),
 	})
 
 	r.Register(&cmdkit.Command{
@@ -183,6 +186,7 @@ Flags:
 			runExecPrompt(ld, ctx.RawArgs)
 			return nil
 		},
+		CompleteArgs: completeAriaIDsAfterFlag(nil),
 	})
 
 	r.Register(&cmdkit.Command{
@@ -210,6 +214,7 @@ Flags:
 			runAttendByID(ld, ctx.Args[0])
 			return nil
 		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -239,6 +244,7 @@ Flags:
 			runKill(ld, ctx.Flag("id"), ctx.Args)
 			return nil
 		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -255,6 +261,7 @@ Flags:
 			runChalkboard(ld, ctx.Flag("id"))
 			return nil
 		},
+		CompleteArgs: completeAriaIDsAfterFlag(nil),
 	})
 
 	r.Register(&cmdkit.Command{
@@ -272,7 +279,7 @@ Flags:
 			runSetArgs(ld, ctx.Flag("id"), ctx.Args[0], ctx.Args[1])
 			return nil
 		},
-		CompleteArgs: completeChalkboardKeys,
+		CompleteArgs: completeAriaIDsAfterFlag(completeChalkboardKeys),
 	})
 
 	r.Register(&cmdkit.Command{
@@ -289,7 +296,7 @@ Flags:
 			runUnsetArgs(ld, ctx.Flag("id"), ctx.Args)
 			return nil
 		},
-		CompleteArgs: completeChalkboardKeys,
+		CompleteArgs: completeAriaIDsAfterFlag(completeChalkboardKeys),
 	})
 
 	r.Register(&cmdkit.Command{
@@ -306,6 +313,7 @@ Flags:
 			runRehydrateWithFlag(ld, ctx.Flag("id"), ctx.BoolFlag("dry-run"))
 			return nil
 		},
+		CompleteArgs: completeAriaIDsAfterFlag(nil),
 	})
 
 	r.Register(&cmdkit.Command{
@@ -340,6 +348,7 @@ Flags:
 			runStatus(ld, ctx.Flag("id"), ctx.Args)
 			return nil
 		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
 	})
 
 	r.Register(&cmdkit.Command{
