@@ -352,13 +352,29 @@ Flags:
 	r.Register(&cmdkit.Command{
 		Name:  "completion",
 		Group: "System",
-		Short: "Generate shell completion script",
-		Usage: "completion <bash|zsh|fish>",
-		Long:  "Print a shell completion script to stdout.\nSource it in your shell profile:\n  eval \"$(figaro completion bash)\"",
+		Short: "Generate or install a shell completion script",
+		Usage: "completion <bash|zsh|fish>  |  completion install [<shell>]",
+		Long: `Print a completion script to stdout, or install it where the shell will
+auto-load it on the next tab.
+
+  figaro completion bash               # print bash script to stdout
+  figaro completion install            # auto-detect $SHELL, write to autoload path
+  figaro completion install fish       # explicit shell`,
 		ArgsMin: 1,
-		ArgsMax: 1,
+		ArgsMax: 2,
 		Run: func(ctx *cmdkit.RunContext) error {
-			return r.WriteCompletion(os.Stdout, cmdkit.CompletionShell(ctx.Args[0]))
+			first := ctx.Args[0]
+			if first == "install" {
+				shell := ""
+				if len(ctx.Args) > 1 {
+					shell = ctx.Args[1]
+				}
+				return runCompletionInstall(r, shell)
+			}
+			if len(ctx.Args) > 1 {
+				return fmt.Errorf("usage: completion <shell> | completion install [<shell>]")
+			}
+			return r.WriteCompletion(os.Stdout, cmdkit.CompletionShell(first))
 		},
 	})
 
