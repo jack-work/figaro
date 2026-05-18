@@ -23,8 +23,9 @@ type Message struct {
 
 // Error is a JSON-RPC 2.0 error object.
 type Error struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
 func (e *Error) Error() string {
@@ -142,10 +143,18 @@ func (s *Server) handleRequest(ctx context.Context, msg Message) {
 
 	result, err := handler(ctx, msg.Params)
 	if err != nil {
+		// If the handler returned a typed *Error, pass it through
+		// verbatim (preserves Code + Data); otherwise wrap in -32000.
+		var jerr *Error
+		if typed, ok := err.(*Error); ok {
+			jerr = typed
+		} else {
+			jerr = &Error{Code: -32000, Message: err.Error()}
+		}
 		s.conn.Send(Message{
 			JSONRPC: "2.0",
 			ID:      msg.ID,
-			Error:   &Error{Code: -32000, Message: err.Error()},
+			Error:   jerr,
 		})
 		return
 	}

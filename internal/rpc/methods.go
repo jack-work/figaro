@@ -25,9 +25,33 @@ const (
 	MethodInterrupt    = "figaro.interrupt"
 	MethodReloadConfig = "figaro.reload_config"
 	MethodSet          = "figaro.set"
+	MethodLoadout      = "figaro.loadout"
 	MethodChalkboard   = "figaro.chalkboard"
-
 )
+
+// Typed JSON-RPC error codes for figaro. The -32000..-32099 range
+// is reserved by JSON-RPC 2.0 for application errors.
+const (
+	// ErrNoDefaultLoadout: config.toml has no default_loadout and the
+	// request omitted one. Data: ErrorData{AvailableProviders}.
+	ErrNoDefaultLoadout = -32010
+
+	// ErrNoProvider: resolved loadout has no system.provider key.
+	// Data: ErrorData{AvailableProviders, Loadout}.
+	ErrNoProvider = -32011
+
+	// ErrLoadoutNotFound: named loadout is not on disk.
+	// Data: ErrorData{Name, SearchPaths}.
+	ErrLoadoutNotFound = -32012
+)
+
+// ErrorData is the structured payload attached to typed JSON-RPC errors.
+type ErrorData struct {
+	AvailableProviders []string `json:"available_providers,omitempty"`
+	Loadout            string   `json:"loadout,omitempty"`
+	Name               string   `json:"name,omitempty"`
+	SearchPaths        []string `json:"search_paths,omitempty"`
+}
 
 
 
@@ -106,6 +130,19 @@ type SetResponse struct {
 	OK     bool     `json:"ok"`
 	Set    []string `json:"set,omitempty"`
 	Remove []string `json:"remove,omitempty"`
+}
+
+// LoadoutRequest names a loadout to apply additively to the aria's
+// current chalkboard. Keys with values equal to the current snapshot
+// are skipped; no removals are performed.
+type LoadoutRequest struct {
+	Name string `json:"name"`
+}
+
+// LoadoutResponse lists the keys created or updated.
+type LoadoutResponse struct {
+	OK  bool     `json:"ok"`
+	Set []string `json:"set,omitempty"`
 }
 
 // ChalkboardResponse returns the agent's current snapshot.
