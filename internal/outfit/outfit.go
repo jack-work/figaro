@@ -150,16 +150,20 @@ func (o *Outfitter) resolvePath(name string) (string, error) {
 // flatten walks a TOML tree into dotted chalkboard keys, expanding
 // fileName/dirName single-key tables.
 //
-// Both `fileName` and `dirName` produce content-envelope objects:
+// `fileName` produces a content-envelope object at the table's key:
 //
 //	{ "frontmatter": "...", "filePath": "..." }   // if file begins with ---
 //	{ "content":     "...", "filePath": "..." }   // otherwise
 //
+// `dirName` fans each file out as its own dotted key under the
+// table — `skills = { dirName = "skills" }` yields `skills.<base>`
+// entries, each carrying a full envelope. This shape lets completion
+// pickers see each item individually rather than receiving one opaque
+// JSON blob.
+//
 // `frontmatter` is the raw frontmatter text (between the fences),
 // unparsed; the agent reads the file when it wants the body. When
 // no frontmatter is present, the full body lands in `content`.
-// `dirName` produces a map basename->envelope; `fileName` produces a
-// single envelope.
 func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]json.RawMessage) error {
 	for k, v := range in {
 		key := k
@@ -187,11 +191,13 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				if err != nil {
 					return fmt.Errorf("outfit: %s dirName=%q: %w", key, dn, err)
 				}
-				b, err := json.Marshal(m)
-				if err != nil {
-					return err
+				for name, env := range m {
+					b, err := json.Marshal(env)
+					if err != nil {
+						return err
+					}
+					out[key+"."+name] = b
 				}
-				out[key] = b
 				continue
 			}
 			if err := o.flatten(key, val, out); err != nil {

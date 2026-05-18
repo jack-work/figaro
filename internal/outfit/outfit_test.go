@@ -98,16 +98,23 @@ skills = { dirName = "skills" }
 
 	patch, err := outfit.New(dir).Load("config")
 	require.NoError(t, err)
-	var skills map[string]outfit.ContentEnvelope
-	require.NoError(t, json.Unmarshal(patch.Set["skills"], &skills))
 
-	assert.Equal(t, "go body", skills["go"].Content)
-	assert.Empty(t, skills["go"].Frontmatter)
-	assert.Equal(t, filepath.Join(dir, "skills", "go.md"), skills["go"].FilePath)
+	// dirName fans entries out as dotted keys (skills.<base>) so each
+	// envelope is independently visible to completion pickers.
+	_, packedExists := patch.Set["skills"]
+	assert.False(t, packedExists, "dirName must not produce a packed parent key")
 
-	assert.Equal(t, "name: bravo\ndescription: B", skills["bravo"].Frontmatter)
-	assert.Empty(t, skills["bravo"].Content)
-	assert.Equal(t, filepath.Join(dir, "skills", "bravo.md"), skills["bravo"].FilePath)
+	var goEnv outfit.ContentEnvelope
+	require.NoError(t, json.Unmarshal(patch.Set["skills.go"], &goEnv))
+	assert.Equal(t, "go body", goEnv.Content)
+	assert.Empty(t, goEnv.Frontmatter)
+	assert.Equal(t, filepath.Join(dir, "skills", "go.md"), goEnv.FilePath)
+
+	var bravoEnv outfit.ContentEnvelope
+	require.NoError(t, json.Unmarshal(patch.Set["skills.bravo"], &bravoEnv))
+	assert.Equal(t, "name: bravo\ndescription: B", bravoEnv.Frontmatter)
+	assert.Empty(t, bravoEnv.Content)
+	assert.Equal(t, filepath.Join(dir, "skills", "bravo.md"), bravoEnv.FilePath)
 }
 
 func TestLoad_CycleDetected(t *testing.T) {
