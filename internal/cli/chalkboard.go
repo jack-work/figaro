@@ -103,8 +103,14 @@ func printSnapshot(w io.Writer, snap map[string]json.RawMessage) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	enc := json.NewEncoder(w)
 	for _, k := range keys {
-		fmt.Fprintf(w, "%s = %s\n", k, snap[k])
+		if err := enc.Encode(struct {
+			Key   string          `json:"key"`
+			Value json.RawMessage `json:"value"`
+		}{Key: k, Value: snap[k]}); err != nil {
+			fmt.Fprintf(w, "{\"key\":%q,\"error\":%q}\n", k, err.Error())
+		}
 	}
 }
 
