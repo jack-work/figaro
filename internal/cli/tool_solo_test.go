@@ -165,6 +165,26 @@ func TestSoloRollingTailBoundedByViewport(t *testing.T) {
 	}
 }
 
+// Regression: a tool argument with embedded newlines (heredoc-style
+// `git commit -m '...\n...'`) used to expand the header onto multiple
+// terminal rows, breaking the 1-row-header assumption and desyncing
+// every subsequent cursor walk. formatHeader sanitizes the detail
+// (newlines → spaces) so this never happens regardless of the input.
+func TestSoloMultilineDetailStaysOneRow(t *testing.T) {
+	const multiline = `git commit -m 'jsonrpc: typed errors carry Data; pass *Error through verbatim
+Handler returns of type *jsonrpc.Error are now passed through.'`
+	var buf safeBuf
+	s := newToolSoloState(&buf, "bash", multiline)
+	s.Start()
+	s.Write([]byte("[main abc1234] msg\n"))
+	s.Done(false)
+
+	raw := stripANSI(buf.String())
+	if strings.Contains(raw, "verbatim\n") {
+		t.Fatalf("multiline detail leaked literal '\\n' into output:\n%s", raw)
+	}
+}
+
 func TestSoloDoneAfterWrappedStreamErasesSpinner(t *testing.T) {
 	width := term.Width()
 	// Wrap deterministically across three rows: width + width + half.

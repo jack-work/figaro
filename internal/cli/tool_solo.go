@@ -3,11 +3,41 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/internal/term"
 )
+
+// sanitizeOneLine collapses whitespace runs (incl. newlines) so the
+// returned string renders on a single terminal row regardless of
+// width. Used on the header detail because multi-line tool arguments
+// (e.g., bash heredocs) would otherwise expand the header onto
+// multiple rows and desync every subsequent cursor walk.
+func sanitizeOneLine(s string) string {
+	if !strings.ContainsAny(s, "\n\r\t") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	prevSpace := false
+	for _, r := range s {
+		if r == '\n' || r == '\r' || r == '\t' {
+			r = ' '
+		}
+		if r == ' ' {
+			if prevSpace {
+				continue
+			}
+			prevSpace = true
+		} else {
+			prevSpace = false
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
 
 // toolSoloState renders one tool call as a fixed-size live region:
 // a spinner header on top, followed by an in-place rolling tail of
@@ -400,7 +430,12 @@ func (s *toolSoloState) formatHeader() string {
 	}
 	avail := width - baseOverhead - chipOverhead - nameRunes
 
-	detail := s.detail
+	// Sanitize first: a multi-line tool argument (e.g., a `git
+	// commit -m '...heredoc...'` body) carries literal \n that
+	// would expand the rendered header across multiple terminal
+	// rows, desyncing the entire cursor model. Truncation by rune
+	// count doesn't help if those runes include newlines.
+	detail := sanitizeOneLine(s.detail)
 	if avail < 4 {
 		detail = ""
 	} else if len([]rune(detail)) > avail {
