@@ -110,7 +110,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		}
 	}
 	if len(a.figLog.Read()) == 0 && a.chalkboard != nil {
-		// Bootstrap: system.prompt, system.skills.
+		// Bootstrap: system.prompt, system.skills.<name>.
 		if a.outfitter != nil {
 			if patch, err := a.outfitter.Bootstrap(a.chalkboard.Snapshot(),
 				outfit.CurrentBootCtx(a.prov.Name(), a.id)); err == nil && !patch.IsEmpty() {

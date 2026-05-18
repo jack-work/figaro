@@ -49,7 +49,7 @@ func WellKnownKeys() []KeyDoc {
 	return []KeyDoc{
 		{Key: "system.credo", Short: "Credo template; bootstrap renders into system.prompt", Mode: KeyUserSettable},
 		{Key: "system.prompt", Short: "Rendered system prompt (overrides credo bootstrap)", Mode: KeyUserSettable},
-		{Key: "system.skills", Short: "Loaded skill manifests (JSON array)", Mode: KeyUserSettable},
+		{Key: "system.skills.<name>", Short: "Per-skill manifest entry (description + file_path)", Mode: KeySystemManaged},
 		{Key: "system.tags", Short: "Per-LT annotations (e.g. system.tags[42].cache_control)", Mode: KeyUserSettable},
 		{Key: "system.cache_control", Short: `Auto cache-marker policy ("ephemeral" enables)`, Mode: KeyUserSettable},
 		{Key: "system.environment.<name>", Short: "Allowlisted env var capture", Mode: KeyUserSettable},

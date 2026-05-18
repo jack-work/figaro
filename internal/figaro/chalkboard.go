@@ -14,11 +14,12 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 		return nil, nil, false, fmt.Errorf("rehydrate requires both a chalkboard and an outfitter")
 	}
 
-	// Force re-run by hiding current system.prompt/system.skills.
+	// Force re-run by hiding current system.prompt and any
+	// system.skills.* entries (Bootstrap rewrites them all).
 	snap := a.chalkboard.Snapshot()
 	stripped := make(chalkboard.Snapshot, len(snap))
 	for k, v := range snap {
-		if k == "system.prompt" || k == "system.skills" {
+		if k == "system.prompt" || strings.HasPrefix(k, "system.skills.") {
 			continue
 		}
 		stripped[k] = v
@@ -34,8 +35,8 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 	}
 
 	current := chalkboard.Snapshot{}
-	for _, k := range []string{"system.prompt", "system.skills"} {
-		if v, ok := snap[k]; ok {
+	for k, v := range snap {
+		if k == "system.prompt" || strings.HasPrefix(k, "system.skills.") {
 			current[k] = v
 		}
 	}

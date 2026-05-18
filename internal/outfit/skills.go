@@ -1,16 +1,26 @@
 package outfit
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
-// SkillCatalogEntry is the model-facing skill catalog entry.
-// Bodies are omitted; the model loads them via read.
+// SkillCatalogEntry is the model-facing skill catalog entry as
+// returned by the on-disk loader. Bodies are omitted; the model
+// loads them via read.
 type SkillCatalogEntry struct {
 	Name        string `json:"name"`
+	Description string `json:"description"`
+	FilePath    string `json:"file_path"`
+}
+
+// SkillEntry is the chalkboard shape stored under
+// `system.skills.<name>` — name is implicit in the key.
+type SkillEntry struct {
 	Description string `json:"description"`
 	FilePath    string `json:"file_path"`
 }
@@ -31,6 +41,35 @@ func FormatSkillCatalog(entries []SkillCatalogEntry) string {
 		b.WriteString(fmt.Sprintf("File: `%s`\n\n", e.FilePath))
 	}
 	return b.String()
+}
+
+// SkillsFromSnapshot collects `system.skills.<name>` keys out of
+// snap into a deterministic catalog. Returns nil if none present.
+func SkillsFromSnapshot(snap map[string]json.RawMessage) []SkillCatalogEntry {
+	const prefix = "system.skills."
+	var names []string
+	for k := range snap {
+		if strings.HasPrefix(k, prefix) && len(k) > len(prefix) {
+			names = append(names, k[len(prefix):])
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	sort.Strings(names)
+	out := make([]SkillCatalogEntry, 0, len(names))
+	for _, name := range names {
+		var e SkillEntry
+		if err := json.Unmarshal(snap[prefix+name], &e); err != nil {
+			continue
+		}
+		out = append(out, SkillCatalogEntry{
+			Name:        name,
+			Description: e.Description,
+			FilePath:    e.FilePath,
+		})
+	}
+	return out
 }
 
 // loadSkillCatalog reads .md files with frontmatter from dir.

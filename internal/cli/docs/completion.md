@@ -105,9 +105,11 @@ Used by `set` and `unset`.
 `completePromptContext` returns:
 
 - **If `Current` starts with `@`**: chalkboard keys, each prefixed
-  with `@`. The shell prefix-filter then narrows to matching keys
-  and the inserted candidate round-trips as a literal `@key`
-  reference (which `expandAtRefs` substitutes at send time).
+  with `@` (no trailing `!`). The shell prefix-filter narrows to
+  matching keys; the inserted candidate is a literal `@key`
+  reference. Expansion is opt-in via a manually-typed `!`
+  terminator (`@key!`); without it the reference passes literally
+  to the model.
 - **Otherwise**: chalkboard keys (un-prefixed) + CWD entries.
   Directories get a trailing `/`. Hidden entries are filtered.
   Names with shell-unsafe characters are dropped (the bash/zsh
@@ -121,29 +123,29 @@ handling. Used by `send`, `plain`, `x`, `new`.
 `completePromptContext` is also wired as the bare-prompt callback in
 `buildRouter`, so `q ` and `figaro -- ` see the same pool.
 
-## `@key` expansion (`atref.go`)
+## `@key!` expansion (`atref.go`)
 
 ### Grammar
 
 ```
-@ <key>
+@ <key> !
 key = [a-zA-Z_] [a-zA-Z0-9_.]*
 ```
 
-Brace form (`@{key}`) is **not** supported.
+The trailing `!` is an **explicit terminator**: without it, the `@`
+is literal. Brace form (`@{key}`) is not supported.
 
-A reference is recognized only at a word boundary: the character
-before `@` must be start-of-string or a non-word character (anything
-that is not a letter, digit, or underscore). This keeps email
-addresses literal (`me@example.com` — letter before `@`) while
-permitting punctuation-bounded refs like `(@cwd)` and `=@count`.
+The terminator removes all word-boundary heuristics. Email addresses
+(`me@example.com`), Twitter handles, code snippets, anything with a
+stray `@` passes through untouched. Expansion is unambiguously
+opt-in.
 
 ### Resolution
 
-Unknown keys are **permissive**: left literal in the prompt. Typos
-and accidental `@`-tokens pass through untouched — no scary error,
-no surprise omission. The LLM will see the literal `@nope` and the
-user notices.
+Unknown keys are **permissive**: `@nope!` is left literal (including
+the `!`) in the prompt. Typos and accidental references pass through
+untouched — no scary error, no surprise omission. The LLM sees
+literal `@nope!` and the user notices.
 
 Snapshot values are unwrapped: strings emit as-is, other JSON types
 are re-marshaled to a compact JSON form (`42`, `true`, `[1,2,3]`).
@@ -183,10 +185,11 @@ every prompt entry point: `runPrompt`, `runNewPrompt`, `promptAria`,
 ```
 figaro send --id <TAB>           # aria ids
 figaro send -- in<TAB>           # → internal/
-figaro send -- @mod<TAB>         # → @model!
+figaro send -- @mod<TAB>         # → @model   (user adds ! to expand)
 figaro send -- summarize @cwd!   # sends: summarize /home/user/dev/...
-q @<TAB>                         # bare-prompt alias, @<key>! candidates
-q me@example.com                 # left literal (no terminator)
+figaro send -- read @cwd         # sends: read @cwd   (literal, no !)
+q @<TAB>                         # bare-prompt alias, @<key> candidates
+q me@example.com                 # left literal (no ! terminator)
 figaro x -- list files in @cwd!  # @cwd! expanded before instruction
 ```
 
@@ -203,5 +206,5 @@ figaro x -- list files in @cwd!  # @cwd! expanded before instruction
   blocks long.
 - Upgrading figaro does not regenerate the on-disk completion script.
   Re-run `figaro completion install` after any change.
-- `@key` expansion does one pass. If `@foo` resolves to a string
-  containing `@bar`, `@bar` is **not** re-expanded.
+- `@key!` expansion does one pass. If `@foo!` resolves to a string
+  containing `@bar!`, `@bar!` is **not** re-expanded.

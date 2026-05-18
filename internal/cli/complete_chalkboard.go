@@ -35,9 +35,14 @@ func completeChalkboardKeys(_ *cmdkit.CompleteContext) []string {
 	}
 	for _, d := range chalkboard.WellKnownKeys() {
 		if strings.HasSuffix(d.Key, "<name>") {
-			prefix := strings.TrimSuffix(d.Key, "<name>")
-			for _, name := range chalkboard.EnvironmentAllowlist {
-				add(prefix + strings.ToLower(name))
+			// Only the environment template has a known expander; other
+			// <name>-shaped catalog entries are documentation-only and
+			// rely on softFetchLiveKeys() to surface concrete instances.
+			if d.Key == "system.environment.<name>" {
+				prefix := strings.TrimSuffix(d.Key, "<name>")
+				for _, name := range chalkboard.EnvironmentAllowlist {
+					add(prefix + strings.ToLower(name))
+				}
 			}
 			continue
 		}

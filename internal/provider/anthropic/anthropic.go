@@ -502,13 +502,9 @@ func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 	} else if systemText != "" {
 		out = append(out, systemBlock{Type: "text", Text: systemText})
 	}
-	if raw, ok := snapshot["system.skills"]; ok && len(raw) > 0 {
-		var entries []outfit.SkillCatalogEntry
-		if json.Unmarshal(raw, &entries) == nil && len(entries) > 0 {
-			body := outfit.FormatSkillCatalog(entries)
-			if body != "" {
-				out = append(out, systemBlock{Type: "text", Text: body})
-			}
+	if entries := outfit.SkillsFromSnapshot(snapshot); len(entries) > 0 {
+		if body := outfit.FormatSkillCatalog(entries); body != "" {
+			out = append(out, systemBlock{Type: "text", Text: body})
 		}
 	}
 	return out

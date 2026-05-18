@@ -132,12 +132,29 @@ func TestBootstrap_BuildsSkillCatalog(t *testing.T) {
 	patch, err := outfit.New(dir).Bootstrap(snap(`{"system.credo":"x"}`), outfit.BootCtx{})
 	require.NoError(t, err)
 
-	var entries []outfit.SkillCatalogEntry
-	require.NoError(t, json.Unmarshal(patch.Set["system.skills"], &entries))
-	require.Len(t, entries, 1)
-	assert.Equal(t, "go", entries[0].Name)
-	assert.Equal(t, "writes go", entries[0].Description)
-	assert.Equal(t, filepath.Join(dir, "skills", "go.md"), entries[0].FilePath)
+	var entry outfit.SkillEntry
+	require.NoError(t, json.Unmarshal(patch.Set["system.skills.go"], &entry))
+	assert.Equal(t, "writes go", entry.Description)
+	assert.Equal(t, filepath.Join(dir, "skills", "go.md"), entry.FilePath)
+}
+
+func TestSkillsFromSnapshot_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "skills"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "skills", "alpha.md"),
+		[]byte("---\nname: alpha\ndescription: A\n---"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "skills", "bravo.md"),
+		[]byte("---\nname: bravo\ndescription: B\n---"), 0600))
+
+	patch, err := outfit.New(dir).Bootstrap(snap(`{"system.credo":"x"}`), outfit.BootCtx{})
+	require.NoError(t, err)
+
+	catalog := outfit.SkillsFromSnapshot(patch.Set)
+	require.Len(t, catalog, 2)
+	// Sorted alphabetically.
+	assert.Equal(t, "alpha", catalog[0].Name)
+	assert.Equal(t, "A", catalog[0].Description)
+	assert.Equal(t, "bravo", catalog[1].Name)
 }
 
 // snap builds a chalkboard.Snapshot from a JSON object literal.

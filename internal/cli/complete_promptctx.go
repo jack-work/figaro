@@ -40,7 +40,7 @@ func completePromptContext(c *cmdkit.CompleteContext) []string {
 		keys := completeChalkboardKeys(nil)
 		out := make([]string, len(keys))
 		for i, k := range keys {
-			out[i] = "@" + k + "!"
+			out[i] = "@" + k
 		}
 		return out
 	}

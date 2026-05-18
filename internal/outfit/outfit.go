@@ -85,11 +85,16 @@ func (o *Outfitter) Bootstrap(snap chalkboard.Snapshot, ctx BootCtx) (chalkboard
 		patch.Set["system.prompt"] = b
 	}
 
-	// Parse skills directory into structured catalog.
+	// Parse skills directory; expose each skill as its own
+	// `system.skills.<name>` key so they're individually addressable
+	// (e.g. via @system.skills.figaro-dev! or tab-completion).
 	skillsDir := filepath.Join(o.configDir, "skills")
-	if catalog, err := loadSkillCatalog(skillsDir); err == nil && len(catalog) > 0 {
-		if b, mErr := json.Marshal(catalog); mErr == nil {
-			patch.Set["system.skills"] = b
+	if catalog, err := loadSkillCatalog(skillsDir); err == nil {
+		for _, e := range catalog {
+			entry := SkillEntry{Description: e.Description, FilePath: e.FilePath}
+			if b, mErr := json.Marshal(entry); mErr == nil {
+				patch.Set["system.skills."+e.Name] = b
+			}
 		}
 	}
 

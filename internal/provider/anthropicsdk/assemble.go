@@ -68,12 +68,9 @@ func systemBlocks(snap chalkboard.Snapshot, oauth bool) []anthropic.TextBlockPar
 	} else if systemText != "" {
 		out = append(out, anthropic.TextBlockParam{Text: systemText})
 	}
-	if raw, ok := snap["system.skills"]; ok && len(raw) > 0 {
-		var entries []outfit.SkillCatalogEntry
-		if json.Unmarshal(raw, &entries) == nil && len(entries) > 0 {
-			if body := outfit.FormatSkillCatalog(entries); body != "" {
-				out = append(out, anthropic.TextBlockParam{Text: body})
-			}
+	if entries := outfit.SkillsFromSnapshot(snap); len(entries) > 0 {
+		if body := outfit.FormatSkillCatalog(entries); body != "" {
+			out = append(out, anthropic.TextBlockParam{Text: body})
 		}
 	}
 	return out
