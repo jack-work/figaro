@@ -107,6 +107,43 @@ func TestCompleteContextArgs(t *testing.T) {
 	}
 }
 
+func TestCompleteContextCurrent(t *testing.T) {
+	r := NewRouter("test")
+	r.Stderr = &bytes.Buffer{}
+	var sawCurrent string
+	var sawArgs []string
+	r.Register(&Command{
+		Name: "send",
+		Run:  func(*RunContext) error { return nil },
+		CompleteArgs: func(ctx *CompleteContext) []string {
+			sawCurrent = ctx.Current
+			sawArgs = ctx.Args
+			return nil
+		},
+	})
+
+	// With --current present: dispatcher must pop it off and surface
+	// it in Current; Args must not contain it.
+	captureStdout(t, func() {
+		r.Run([]string{"__complete", "send", "--current", "@mod", "--", "hello"})
+	})
+	if sawCurrent != "@mod" {
+		t.Errorf("Current = %q, want %q", sawCurrent, "@mod")
+	}
+	if len(sawArgs) != 1 || sawArgs[0] != "hello" {
+		t.Errorf("Args = %v, want [hello]", sawArgs)
+	}
+
+	// Without --current: backward-compatible; Current is empty.
+	sawCurrent = "sentinel"
+	captureStdout(t, func() {
+		r.Run([]string{"__complete", "send", "--", "hello"})
+	})
+	if sawCurrent != "" {
+		t.Errorf("Current = %q, want empty when --current omitted", sawCurrent)
+	}
+}
+
 func TestCompleteContextPastSeparator(t *testing.T) {
 	r := NewRouter("test")
 	r.Stderr = &bytes.Buffer{}

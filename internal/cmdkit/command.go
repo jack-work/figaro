@@ -61,6 +61,15 @@ type CompleteContext struct {
 	// prompt body past --". See PastSeparator for the digested form.
 	Args []string
 
+	// Current is the partial token under the cursor (may be empty if
+	// the cursor sits on a fresh word boundary). Callbacks that want
+	// to switch candidate pools based on a sigil prefix (e.g. emit
+	// "@key" candidates only when Current starts with "@") use this.
+	// The shell-side scripts pass the shell's notion of the current
+	// word: ${COMP_WORDS[COMP_CWORD]} in bash, $words[CURRENT] in
+	// zsh, (commandline -ct) in fish.
+	Current string
+
 	// PastSeparator is true iff the user has already typed a bare "--"
 	// token before the cursor (i.e. the cursor lives in the prompt
 	// body of `figaro <verb> [flags] -- <body...>`). Useful for

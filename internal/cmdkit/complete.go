@@ -3,7 +3,6 @@ package cmdkit
 import (
 	"fmt"
 	"io"
-	"slices"
 	"strings"
 )
 
@@ -17,6 +16,15 @@ const completeVerb = "__complete"
 // to `figaro -- `). The dispatcher recognizes it and routes to the
 // bare-prompt completer registered via SetBarePromptComplete.
 const barePromptSentinel = "__bare_prompt"
+
+// currentFlag is the optional flag the shell-side scripts use to
+// pass the cursor's current partial token. Wire format:
+//
+//	__complete <verb> [--current <cur>] -- <tokens before cursor>
+//
+// Old scripts that omit it still work; the dispatcher leaves
+// CompleteContext.Current empty in that case.
+const currentFlag = "--current"
 
 // CompletionShell identifies a shell for completion script generation.
 type CompletionShell string
@@ -39,14 +47,13 @@ func (r *Router) SetBarePromptComplete(fn func(*CompleteContext) []string) {
 
 // runComplete is the hidden __complete dispatcher. Args layout:
 //
-//	__complete <verb> -- <tokens before cursor>
+//	__complete <verb> [--current <cur>] -- <tokens before cursor>
 //
 // Prints one candidate per line on stdout. Unknown verb or missing
 // callback exits silently with code 0 so completion never appears
 // broken to the user.
 func (r *Router) runComplete(ctx *RunContext) error {
 	raw := ctx.RawArgs
-
 	// The router may have left a leading "--" boundary marker from
 	// PassRaw. There is at most one such marker; strip exactly one,
 	// not more, so a user-typed "--" sitting in second position
@@ -57,13 +64,17 @@ func (r *Router) runComplete(ctx *RunContext) error {
 	if len(raw) == 0 {
 		return nil
 	}
-
 	verb := raw[0]
 	tail := raw[1:]
-
-	// Same logic for the boundary marker between verb and tokens:
-	// the shell-side completion scripts insert exactly one "--" here.
-	// Strip one, never more.
+	// Optional --current <cur> immediately after the verb.
+	var current string
+	if len(tail) >= 2 && tail[0] == currentFlag {
+		current = tail[1]
+		tail = tail[2:]
+	}
+	// Same logic for the boundary marker between verb/flags and
+	// tokens: the shell-side completion scripts insert exactly one
+	// "--" here. Strip one, never more.
 	if len(tail) > 0 && tail[0] == "--" {
 		tail = tail[1:]
 	}
@@ -71,7 +82,13 @@ func (r *Router) runComplete(ctx *RunContext) error {
 	// conventional flags/prompt separator). Detect it and surface it
 	// through CompleteContext so callbacks can switch candidate pools
 	// when the cursor lives past it.
-	pastSep := slices.Contains(tail, "--")
+	pastSep := false
+	for _, tok := range tail {
+		if tok == "--" {
+			pastSep = true
+			break
+		}
+	}
 
 	// Resolve which CompleteArgs to call: bare-prompt sentinel goes
 	// to the dedicated callback (cursor is conceptually past --);
@@ -96,6 +113,7 @@ func (r *Router) runComplete(ctx *RunContext) error {
 
 	cands := fn(&CompleteContext{
 		Args:          tail,
+		Current:       current,
 		PastSeparator: pastSep,
 		Extra:         r.Extra,
 	})
@@ -128,6 +146,10 @@ func (r *Router) writeBashCompletion(w io.Writer) error {
 	//   - Beyond:    resolve the verb. If verb == "--", route to the
 	//     bare-prompt completer (cursor lives past --). Otherwise
 	//     dispatch by verb name.
+	//
+	// The cursor's current partial token (${COMP_WORDS[COMP_CWORD]})
+	// is passed via --current so callbacks can switch pools based on
+	// a sigil prefix like "@".
 	fmt.Fprintf(w, `# bash completion for %s
 _%s_completions() {
     COMPREPLY=()
@@ -148,7 +170,7 @@ _%s_completions() {
         args=("${COMP_WORDS[@]:2:$count}")
     fi
     local candidates
-    candidates=$(%s %s "$verb" -- "${args[@]}" 2>/dev/null)
+    candidates=$(%s %s "$verb" --current "$cur" -- "${args[@]}" 2>/dev/null)
     if [ -n "$candidates" ]; then
         COMPREPLY=($(compgen -W "$candidates" -- "$cur"))
     fi
@@ -182,12 +204,13 @@ __%s_dynamic() {
     if [[ $verb == "--" ]]; then
         verb=$sentinel
     fi
+    local cur=$words[CURRENT]
     local -a args
     if (( CURRENT > 3 )); then
         args=( "${words[@]:2:$((CURRENT - 3))}" )
     fi
     local -a candidates
-    candidates=( ${(f)"$(%s %s $verb -- $args 2>/dev/null)"} )
+    candidates=( ${(f)"$(%s %s $verb --current $cur -- $args 2>/dev/null)"} )
     if (( ${#candidates} )); then
         compadd -- $candidates
     fi
@@ -218,7 +241,9 @@ func (r *Router) writeFishCompletion(w io.Writer) error {
 	//
 	// The dynamic function detects the bare-prompt form (`figaro --`
 	// or an alias expanding to it) and substitutes the sentinel verb
-	// so the dispatcher routes to the bare-prompt completer.
+	// so the dispatcher routes to the bare-prompt completer. The
+	// cursor's current partial token (commandline -ct) is passed via
+	// --current.
 	fmt.Fprintf(w, `# fish completion for %s
 function __%s_dynamic
     set -l tokens (commandline -opc)
@@ -230,11 +255,12 @@ function __%s_dynamic
     if test "$verb" = "--"
         set verb $sentinel
     end
+    set -l cur (commandline -ct)
     set -l args
     if test (count $tokens) -gt 2
         set args $tokens[3..-1]
     end
-    %s %s $verb -- $args 2>/dev/null
+    %s %s $verb --current "$cur" -- $args 2>/dev/null
 end
 
 # Bare-prompt detector: when the first token after the program name
