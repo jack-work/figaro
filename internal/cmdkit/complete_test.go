@@ -144,6 +144,23 @@ func TestCompleteContextPastSeparator(t *testing.T) {
 	if len(sawArgs) != 4 || sawArgs[2] != "--" {
 		t.Errorf("Args = %v (expected the user -- preserved)", sawArgs)
 	}
+
+	// Regression: a user "--" immediately following the dispatcher's
+	// own boundary marker (i.e. `figaro send -- <cursor>`, which the
+	// shell turns into `__complete send -- --`) must NOT be eaten by
+	// the leading-strip. The dispatcher inserts exactly one boundary
+	// "--"; any additional ones are user-typed.
+	sawPast = false
+	sawArgs = nil
+	captureStdout(t, func() {
+		r.Run([]string{"__complete", "send", "--", "--"})
+	})
+	if !sawPast {
+		t.Errorf("PastSeparator false for `verb -- <cursor>`; args=%v", sawArgs)
+	}
+	if len(sawArgs) != 1 || sawArgs[0] != "--" {
+		t.Errorf("Args = %v (expected single user --)", sawArgs)
+	}
 }
 
 func TestCompletionScriptsMentionDispatcher(t *testing.T) {

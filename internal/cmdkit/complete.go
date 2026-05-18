@@ -28,8 +28,11 @@ const (
 // broken to the user.
 func (r *Router) runComplete(ctx *RunContext) error {
 	raw := ctx.RawArgs
-	// Strip leading "--" if present (router doesn't for PassRaw).
-	for len(raw) > 0 && raw[0] == "--" {
+	// The router may have left a leading "--" boundary marker from
+	// PassRaw. There is at most one such marker; strip exactly one,
+	// not more, so a user-typed "--" sitting in second position
+	// (the prompt-body separator in `verb -- <body>`) survives.
+	if len(raw) > 0 && raw[0] == "--" {
 		raw = raw[1:]
 	}
 	if len(raw) == 0 {
@@ -41,13 +44,16 @@ func (r *Router) runComplete(ctx *RunContext) error {
 		return nil
 	}
 	tail := raw[1:]
-	for len(tail) > 0 && tail[0] == "--" {
+	// Same logic for the boundary marker between verb and tokens:
+	// the shell-side completion scripts insert exactly one "--" here.
+	// Strip one, never more.
+	if len(tail) > 0 && tail[0] == "--" {
 		tail = tail[1:]
 	}
-	// Any "--" that survives the leading-strip is one the user typed
-	// themselves (the conventional flags/prompt separator). Detect it
-	// and surface it through CompleteContext so callbacks can switch
-	// candidate pools when the cursor lives past it.
+	// Any "--" that survives is one the user typed themselves (the
+	// conventional flags/prompt separator). Detect it and surface it
+	// through CompleteContext so callbacks can switch candidate pools
+	// when the cursor lives past it.
 	pastSep := false
 	for _, tok := range tail {
 		if tok == "--" {
@@ -154,11 +160,15 @@ _%s "$@"
 }
 
 func (r *Router) writeFishCompletion(w io.Writer) error {
+	// Note: we do NOT call `complete -c <name> -f` to disable fish's
+	// native filename fallback. The __complete dispatcher emits a
+	// best-effort candidate pool (e.g. chalkboard keys + a filtered
+	// CWD listing past --), but it deliberately drops names with
+	// shell-unsafe characters and hidden entries. Fish's built-in
+	// file completion handles those cases natively and is far more
+	// polished than anything we'd reinvent — so we let it ride
+	// alongside our dynamic candidates.
 	fmt.Fprintf(w, `# fish completion for %s
-# Disable filename fallback for this command — completion is fully
-# driven by the rules below plus the dynamic __complete dispatcher.
-complete -c %s -f
-
 function __%s_dynamic
     set -l tokens (commandline -opc)
     if test (count $tokens) -lt 2
@@ -171,7 +181,7 @@ function __%s_dynamic
     end
     %s %s $verb -- $args 2>/dev/null
 end
-`, r.Name, r.Name, r.Name, r.Name, completeVerb)
+`, r.Name, r.Name, r.Name, completeVerb)
 	for _, cmd := range r.commands {
 		if cmd.Hidden {
 			continue
@@ -180,7 +190,7 @@ end
 		fmt.Fprintf(w, "complete -c %s -n '__fish_use_subcommand' -a %s -d '%s'\n",
 			r.Name, cmd.Name, desc)
 	}
-	fmt.Fprintf(w, "complete -c %s -n 'not __fish_use_subcommand' -f -a '(__%s_dynamic)'\n",
+	fmt.Fprintf(w, "complete -c %s -n 'not __fish_use_subcommand' -a '(__%s_dynamic)'\n",
 		r.Name, r.Name)
 	return nil
 }
