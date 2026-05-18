@@ -117,6 +117,47 @@ func TestCompletePromptContext_UnionOfChalkboardAndCWD(t *testing.T) {
 	}
 }
 
+func TestCompletePromptContext_AtPrefixNarrowsToChalkboardKeys(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "cwd_entry.txt"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prev, _ := os.Getwd()
+	defer os.Chdir(prev)
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	got := completePromptContext(&cmdkit.CompleteContext{
+		Current:       "@cw",
+		PastSeparator: true,
+	})
+
+	// Every candidate must be prefixed with @.
+	for _, c := range got {
+		if !strings.HasPrefix(c, "@") {
+			t.Errorf("candidate %q missing @ prefix", c)
+		}
+	}
+	// CWD entries must NOT appear in the narrowed pool.
+	for _, c := range got {
+		if c == "@cwd_entry.txt" || c == "cwd_entry.txt" {
+			t.Errorf("CWD entry leaked into @-pool: %v", got)
+		}
+	}
+	// At least one well-known chalkboard key must be present, @-prefixed.
+	found := false
+	for _, c := range got {
+		if c == "@cwd" || c == "@model" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("no @-prefixed chalkboard key in candidates: %v", got)
+	}
+}
+
 func TestCompletePromptOrIDFlag_Routing(t *testing.T) {
 	// nil ctx -> nil, no panic.
 	if got := completePromptOrIDFlag(nil); got != nil {

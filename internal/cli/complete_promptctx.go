@@ -10,7 +10,14 @@ import (
 
 // completePromptContext is the candidate pool for the cursor when it
 // has passed the `--` separator in `figaro <verb> [flags] -- <body>`.
-// It emits:
+//
+// When the cursor's current partial token (ctx.Current) starts with
+// "@", the candidate pool narrows to chalkboard-key references:
+// every key is emitted with an "@" prefix so it round-trips as a
+// literal @key reference in the prompt body (which expandAtRefs
+// then substitutes at send time).
+//
+// Otherwise the pool is the union of:
 //
 //   - chalkboard keys (well-known + live snapshot, via the existing
 //     completeChalkboardKeys plumbing — same source the `set` and
@@ -27,7 +34,15 @@ import (
 // Hidden entries (leading ".") are skipped: without knowing the
 // cursor's current prefix we'd pollute the suggestion list with
 // every dotfile.
-func completePromptContext(_ *cmdkit.CompleteContext) []string {
+func completePromptContext(c *cmdkit.CompleteContext) []string {
+	if c != nil && strings.HasPrefix(c.Current, "@") {
+		keys := completeChalkboardKeys(nil)
+		out := make([]string, len(keys))
+		for i, k := range keys {
+			out[i] = "@" + k
+		}
+		return out
+	}
 	out := completeChalkboardKeys(nil)
 	out = append(out, listCWD()...)
 	sort.Strings(out)
