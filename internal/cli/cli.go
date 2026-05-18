@@ -115,24 +115,31 @@ messages of the pid-bound aria; --id scopes to a different aria.
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-e|--ephemeral] [-x|--exec] [-n] [-y] -- <prompt>",
+		Usage:   "send [--id <id>] [-e|--ephemeral] [-r|--raw] [-x|--exec] [-n] [-y] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding). With --id, targets
 the named aria, creating it if it does not yet exist.
 
+Persistence (--ephemeral) and formatting (--raw) are orthogonal.
+
 Flags:
   --id <id>      Target a specific aria (create if missing)
   -e, --ephemeral
-                 Spin a one-shot in-memory aria; raw-stream stdout;
-                 kill it on completion. Contradicts --id.
+                 Spin a one-shot in-memory aria; kill it on completion.
+                 Contradicts --id. Says nothing about formatting.
+  -r, --raw      Stream verbatim to stdout: no ANSI, no markdown.
+                 Pipe-friendly. Says nothing about persistence.
   -x, --exec     Treat the prompt as a bash instruction. The reply is
-                 piped to bash -c. Combine with -e for ephemeral exec.
+                 piped to bash -c. --raw is silently ignored here
+                 because the script governs its own output.
   -n, --dry-run  --exec only: print the script without running it.
   -y, --yes      --exec only: skip the confirmation prompt.
 
-  figaro send -- <prompt>              prompt the pid-bound aria
-  figaro send --id myid -- <prompt>    prompt a named aria (create if absent)
-  figaro send -e -- <prompt>           ephemeral, raw stream, killed after
+  figaro send -- <prompt>              prompt the pid-bound aria, rich
+  figaro send --id myid -- <prompt>    prompt a named aria (rich)
+  figaro send -r -- <prompt>           bound aria, raw stream
+  figaro send -e -- <prompt>           ephemeral, rich
+  figaro send -er -- <prompt>          ephemeral + raw (was: ` + "`figaro plain`" + `)
   figaro send -ex -y -- <instruction>  ephemeral exec, no confirmation`,
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
@@ -166,13 +173,13 @@ Flags:
 		Name:    "plain",
 		Aliases: []string{"l"},
 		Group:   "Prompt",
-		Short:   "(deprecated) Raw prompt — use `send -e` / `send --id <id>`",
+		Short:   "(deprecated) Raw prompt — use `send -er` / `send -r --id <id>`",
 		Usage:   "plain [--id <id>] -- <prompt>",
-		Long:    "Deprecated. Without --id, equivalent to `figaro send --ephemeral`.\nWith --id, equivalent to `figaro send --id <id>` against a persistent aria\nbut streaming raw output. Will be removed in a future release.",
+		Long:    "Deprecated. Without --id, equivalent to `figaro send -er`\n(ephemeral + raw). With --id, equivalent to `figaro send -r --id <id>`.\nWill be removed in a future release.",
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			fmt.Fprintln(os.Stderr, "figaro plain: deprecated; use `figaro send -e` (ephemeral) or `figaro send --id <id>` instead.")
+			fmt.Fprintln(os.Stderr, "figaro plain: deprecated; use `figaro send -er` (ephemeral+raw) or `figaro send -r --id <id>` (named, raw) instead.")
 			runPlainPrompt(ld, ctx.RawArgs)
 			return nil
 		},

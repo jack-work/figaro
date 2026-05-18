@@ -57,6 +57,24 @@ func TestExtractSendFlags(t *testing.T) {
 			wantRest: []string{"--", "p"},
 		},
 		{
+			name:     "bundled er",
+			in:       []string{"-er", "--", "p"},
+			wantOpts: sendOpts{ephemeral: true, raw: true},
+			wantRest: []string{"--", "p"},
+		},
+		{
+			name:     "raw long",
+			in:       []string{"--raw", "--", "p"},
+			wantOpts: sendOpts{raw: true},
+			wantRest: []string{"--", "p"},
+		},
+		{
+			name:     "raw short",
+			in:       []string{"-r", "--", "p"},
+			wantOpts: sendOpts{raw: true},
+			wantRest: []string{"--", "p"},
+		},
+		{
 			name:     "bundled exy",
 			in:       []string{"-exy", "--", "p"},
 			wantOpts: sendOpts{ephemeral: true, exec: true, skipYes: true},

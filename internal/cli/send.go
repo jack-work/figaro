@@ -21,6 +21,7 @@ import (
 type sendOpts struct {
 	id        string
 	ephemeral bool
+	raw       bool // --raw / -r: raw stream, no ANSI/markdown
 	exec      bool
 	dryRun    bool // --exec only
 	skipYes   bool // --exec only
@@ -52,7 +53,7 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			allBool := true
 			for _, r := range letters {
 				switch r {
-				case 'e', 'x', 'n', 'y':
+				case 'e', 'r', 'x', 'n', 'y':
 					// known bool short
 				default:
 					allBool = false
@@ -106,6 +107,10 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			opts.ephemeral = true
 			i++
 			continue
+		case a == "--raw", a == "-r":
+			opts.raw = true
+			i++
+			continue
 		case a == "--exec", a == "-x":
 			opts.exec = true
 			i++
@@ -137,10 +142,13 @@ func validateSendID(id string) error {
 // runSend is the unified send dispatcher. Branches:
 //
 //	--ephemeral + --id    -> error (contradictory)
-//	--ephemeral + --exec  -> ephemeral aria, bash wrapper, kill after
-//	--ephemeral           -> ephemeral aria, raw stream, kill after
-//	--exec                -> bound/named aria, bash wrapper
+//	--exec                -> bash wrapper; --raw is silently ignored
+//	                         (the script governs its own output)
+//	--ephemeral           -> one-shot in-memory aria, killed after
+//	--raw                 -> raw stream, no ANSI/markdown
 //	(no flags)            -> bound/named aria, interactive stream
+//
+// Persistence (--ephemeral) and formatting (--raw) are orthogonal.
 func runSend(loaded *config.Loaded, rawArgs []string) {
 	opts, rest, err := extractSendFlags(rawArgs)
 	if err != nil {
@@ -148,7 +156,7 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 	}
 	prompt := extractPrompt(rest)
 	if prompt == "" {
-		die("usage: figaro send [--id <id>] [-e|--ephemeral] [-x|--exec] [-n] [-y] -- <prompt>")
+		die("usage: figaro send [--id <id>] [-e|--ephemeral] [-r|--raw] [-x|--exec] [-n] [-y] -- <prompt>")
 	}
 
 	if opts.ephemeral && opts.id != "" {
@@ -161,8 +169,12 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 	switch {
 	case opts.exec:
 		runSendExec(loaded, opts, prompt)
+	case opts.ephemeral && opts.raw:
+		runSendEphemeralRaw(loaded, prompt)
 	case opts.ephemeral:
-		runSendEphemeralPlain(loaded, prompt)
+		runSendEphemeralRich(loaded, prompt)
+	case opts.raw:
+		runSendRaw(loaded, opts.id, prompt)
 	default:
 		// Today's interactive send: pid-bound or --id named.
 		if opts.id == "" {
@@ -173,9 +185,9 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 	}
 }
 
-// runSendEphemeralPlain spins an ephemeral aria, streams raw output,
-// kills it. Today's `figaro plain` with no --id.
-func runSendEphemeralPlain(loaded *config.Loaded, prompt string) {
+// runSendEphemeralRaw spins an ephemeral aria, streams raw output
+// to stdout, kills it. Today's `figaro plain` with no --id.
+func runSendEphemeralRaw(loaded *config.Loaded, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -194,6 +206,54 @@ func runSendEphemeralPlain(loaded *config.Loaded, prompt string) {
 		_ = acli.Kill(killCtx, figaroID)
 	}()
 	waitForSocket(figaroEP.Address, 3*time.Second)
+
+	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
+	exitCode := plainPrompt(ctx, figaroEP, prompt, os.Stdout)
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
+}
+
+// runSendEphemeralRich spins an ephemeral aria, interactive (rich)
+// stream, kills it. Useful for one-off conversations the user wants
+// to see formatted but not persist.
+func runSendEphemeralRich(loaded *config.Loaded, prompt string) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	createResp, err := acli.CreateEphemeral(ctx, "", nil)
+	if err != nil {
+		die("create figaro: %s", err)
+	}
+	figaroID := createResp.FigaroID
+	figaroEP := transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
+	defer func() {
+		killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer killCancel()
+		_ = acli.Kill(killCtx, figaroID)
+	}()
+	waitForSocket(figaroEP.Address, 3*time.Second)
+
+	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
+	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
+}
+
+// runSendRaw streams raw output from a persistent aria (bound or
+// named). The aria is left alive; only the formatting is raw.
+func runSendRaw(loaded *config.Loaded, ariaID, prompt string) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	_, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, true)
+	if err != nil {
+		die("%s", err)
+	}
 
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	exitCode := plainPrompt(ctx, figaroEP, prompt, os.Stdout)
