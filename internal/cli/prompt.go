@@ -37,6 +37,7 @@ func runPrompt(loaded *config.Loaded, prompt string) {
 	} else {
 		figaroID, figaroEP = mustCreateAndBind(ctx, acli, loaded, ppid)
 	}
+	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
 }
 
@@ -71,6 +72,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string) {
 	acli.Unbind(ctx, ppid)
 
 	figaroID, figaroEP := mustCreateAndBind(ctx, acli, loaded, ppid)
+	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
 }
 
@@ -86,6 +88,7 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string) {
 	if err != nil {
 		die("%s", err)
 	}
+	prompt = expandAtRefsForEndpoint(ctx, ep, prompt)
 	mustPromptFigaro(ctx, ep, ariaID, prompt, loaded)
 }
 

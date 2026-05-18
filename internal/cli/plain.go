@@ -63,6 +63,7 @@ func runPlainPrompt(loaded *config.Loaded, rawArgs []string) {
 		}
 	}
 
+	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	exitCode := plainPrompt(ctx, figaroEP, prompt, os.Stdout)
 	if exitCode != 0 {
 		os.Exit(exitCode)
@@ -128,6 +129,7 @@ func runExecPrompt(loaded *config.Loaded, rawArgs []string) {
 	}
 	_ = figaroID
 
+	instruction = expandAtRefsForEndpoint(ctx, figaroEP, instruction)
 	prompt := "You will write a bash script. Output ONLY raw bash, " +
 		"no markdown fences, no prose, no commentary, no explanations. " +
 		"The script will be executed verbatim via `bash -c`. " +
