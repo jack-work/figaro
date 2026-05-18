@@ -18,26 +18,28 @@ import (
 // back to leaving @-references literal (permissive mode).
 const atExpandTimeout = 500 * time.Millisecond
 
-// expandAtRefs substitutes @key references in prompt with their
-// string values from snap. Permissive: unknown keys are left literal
-// (an @ followed by a non-key word, e.g. "me@example.com", is also
-// left untouched so common false-positives don't break prompts).
+// expandAtRefs substitutes @key! references in prompt with their
+// string values from snap. The trailing "!" is the explicit
+// terminator that marks a reference: without it, any @ is literal.
+// This is what keeps email addresses, code snippets, and other
+// stray @-tokens out of the expansion path with zero ambiguity.
 //
 // Reference grammar:
 //
-//	@ <key>
+//	@ <key> !
 //	key = [a-zA-Z_] [a-zA-Z0-9_.]*
 //
-// Brace form (@{...}) is NOT supported; only bare @key. A reference
-// is recognized only at a word boundary: the character immediately
-// before @ must be start-of-string or a non-word character (anything
-// that is not a letter, digit, or underscore). This keeps email
-// addresses literal (`me@example.com` — letter before @) while still
-// permitting punctuation-bounded refs like `=@count` and `(@cwd)`.
+// Permissive on unknown keys: an `@nope!` where "nope" isn't in
+// the snapshot is left literal (including the !), so typos surface
+// to the user instead of silently dropping content.
 //
-// Non-string snapshot values are rendered via JSON unmarshal into
-// any: strings unwrap to their text, everything else is rendered via
-// fmt.Sprintf("%v"). Empty snapshot is a valid no-op.
+// Brace form (@{...}) is NOT supported. The "!" terminator is
+// consumed by the expansion (it's punctuation belonging to the
+// reference syntax, not to the prompt text).
+//
+// Non-string snapshot values are rendered via JSON unmarshal:
+// strings unwrap to their text, everything else is re-marshaled
+// to a compact JSON form. Empty snapshot is a valid no-op.
 func expandAtRefs(prompt string, snap map[string]json.RawMessage) string {
 	if len(snap) == 0 || !strings.ContainsRune(prompt, '@') {
 		return prompt
@@ -52,43 +54,28 @@ func expandAtRefs(prompt string, snap map[string]json.RawMessage) string {
 			i++
 			continue
 		}
-		// Word-boundary check: the @ must be at start-of-string or
-		// directly after whitespace. Anything else (letter, digit,
-		// punctuation) means we're in the middle of a token like
-		// "me@example.com" — leave the @ literal.
-		if i > 0 && !isExpansionBoundary(prompt[i-1]) {
-			out.WriteByte(c)
-			i++
-			continue
-		}
 		key, advance := readAtKey(prompt[i+1:])
-		if key == "" {
+		// Must have a non-empty key AND a "!" immediately after it.
+		// Anything else (no key, no terminator) leaves the @ literal.
+		if key == "" || i+1+advance >= len(prompt) || prompt[i+1+advance] != '!' {
 			out.WriteByte(c)
 			i++
 			continue
 		}
 		raw, ok := snap[key]
 		if !ok {
-			// Permissive: unknown key left literal so typos and
-			// non-references (e.g. email addresses we didn't catch
-			// at the boundary check) pass through untouched.
+			// Permissive: unknown key (with terminator!) left fully
+			// literal — including the "!" — so typos surface clearly
+			// in the prompt the model sees.
 			out.WriteByte(c)
 			i++
 			continue
 		}
 		out.WriteString(snapshotValueToString(raw))
-		i += 1 + advance
+		// Consume @, key, and the trailing "!".
+		i += 1 + advance + 1
 	}
 	return out.String()
-}
-
-// isExpansionBoundary reports whether b is a character that can
-// precede a recognized @key reference. Anything that's NOT a letter,
-// digit, or underscore qualifies. This keeps email addresses literal
-// (`me@example.com` — letter before @) while still permitting
-// punctuation-bounded refs like `=@count`, `(@cwd)`, `"@model"`.
-func isExpansionBoundary(b byte) bool {
-	return !(isAlpha(b) || isDigit(b) || b == '_')
 }
 
 // readAtKey reads a chalkboard key off the head of s and returns the
@@ -175,7 +162,7 @@ func fetchSnapshotForEndpoint(parent context.Context, ep transport.Endpoint) map
 }
 
 // expandAtRefsForEndpoint is the convenience wrapper used by the
-// prompt entry points: fetch the snapshot for ep and substitute @key
+// prompt entry points: fetch the snapshot for ep and substitute @key!
 // references in prompt. Safe to call with a nil-ish endpoint; falls
 // through to the unexpanded prompt on any failure.
 func expandAtRefsForEndpoint(ctx context.Context, ep transport.Endpoint, prompt string) string {

@@ -25,15 +25,13 @@ func TestExpandAtRefs_BasicSubstitution(t *testing.T) {
 		"model": "sonnet-9.5",
 	})
 	cases := map[string]string{
-		"summarize @cwd":                            "summarize /home/gluck/dev",
-		"@model running in @cwd":                    "sonnet-9.5 running in /home/gluck/dev",
-		"start @model":                              "start sonnet-9.5",
-		"@cwd":                                      "/home/gluck/dev",
-		"plain text":                                "plain text",
-		"":                                          "",
-		"trailing @model.":                          "trailing sonnet-9.5.",
-		"comma @model,end":                          "comma sonnet-9.5,end",
-		"newline\n@model\nafter":                    "newline\nsonnet-9.5\nafter",
+		"summarize @cwd!":         "summarize /home/gluck/dev",
+		"@model! running in @cwd!": "sonnet-9.5 running in /home/gluck/dev",
+		"start @model!":           "start sonnet-9.5",
+		"@cwd!":                   "/home/gluck/dev",
+		"plain text":              "plain text",
+		"":                        "",
+		"newline\n@model!\nafter": "newline\nsonnet-9.5\nafter",
 	}
 	for in, want := range cases {
 		got := expandAtRefs(in, snap)
@@ -43,14 +41,42 @@ func TestExpandAtRefs_BasicSubstitution(t *testing.T) {
 	}
 }
 
+func TestExpandAtRefs_RequiresBangTerminator(t *testing.T) {
+	snap := mkSnap(t, map[string]any{
+		"cwd":   "/x",
+		"model": "m",
+	})
+	// Without a trailing "!" no expansion happens — the @ is literal.
+	// This is the whole point of the explicit terminator: zero false
+	// positives. Email addresses, code snippets, twitter handles all
+	// pass through untouched.
+	cases := []string{
+		"summarize @cwd",          // no !
+		"summarize @cwd then",     // ! never appears
+		"me@example.com",          // typical email
+		"foo@cwd@model",           // chained @s with no terminator
+		"start @model.",           // sentence punctuation, no !
+		"@cwd,end",                // comma, no !
+		"@cwd ",                   // whitespace, no !
+		"hi @cwd@@",               // garbage tail, no !
+	}
+	for _, in := range cases {
+		got := expandAtRefs(in, snap)
+		if got != in {
+			t.Errorf("expandAtRefs(%q) expanded to %q; want literal", in, got)
+		}
+	}
+}
+
 func TestExpandAtRefs_PermissiveOnMissing(t *testing.T) {
 	snap := mkSnap(t, map[string]any{"cwd": "/x"})
+	// Even with a "!" terminator, unknown keys are left literal so
+	// typos surface in the prompt the model sees.
 	cases := []string{
-		"@missing key",
-		"unknown @nope here",
-		"@",      // bare @
-		"@.foo",  // invalid key shape
-		"@_okay", // valid shape, but missing -> literal
+		"start @missing! key",
+		"@nope!",
+		"@!",      // empty key with terminator
+		"@.foo!",  // invalid key shape, terminator present
 	}
 	for _, in := range cases {
 		got := expandAtRefs(in, snap)
@@ -60,24 +86,24 @@ func TestExpandAtRefs_PermissiveOnMissing(t *testing.T) {
 	}
 }
 
-func TestExpandAtRefs_WordBoundary_PreservesEmailAndPaths(t *testing.T) {
+func TestExpandAtRefs_EmailsAndCodeStayLiteral(t *testing.T) {
 	snap := mkSnap(t, map[string]any{
 		"example": "EXPANDED",
 		"com":     "COM",
+		"cwd":     "/x",
 	})
-	// @ that is preceded by an alphanumeric or underscore character
-	// (i.e. inside a word like an email address) must NOT expand.
 	cases := map[string]string{
-		"me@example.com":   "me@example.com",
-		"foo@example":      "foo@example",
-		// Punctuation boundaries DO permit expansion: someone writing
-		// `path/@example` or `=@count` is opting in.
-		"path/@example":    "path/EXPANDED",
-		"(@example)":       "(EXPANDED)",
-		// And a leading @, or @ after whitespace, expands as expected.
-		"@example here":    "EXPANDED here",
-		"hi @example":      "hi EXPANDED",
-		"\t@example":       "\tEXPANDED",
+		// Emails: no terminator, no expansion. This is the headline case.
+		"me@example.com":      "me@example.com",
+		"foo@example":         "foo@example",
+		"a@b.c":               "a@b.c",
+		// Code-ish: still no terminator, still literal.
+		"path/@example":       "path/@example",
+		"(@example)":          "(@example)",
+		"\"@example\"":        "\"@example\"",
+		// But with explicit "!", expansion fires regardless of context.
+		"me@example.com is @cwd!": "me@example.com is /x",
+		"(@example!)":            "(EXPANDED)",
 	}
 	for in, want := range cases {
 		got := expandAtRefs(in, snap)
@@ -92,19 +118,26 @@ func TestExpandAtRefs_DottedKey(t *testing.T) {
 		"system.environment.path": "/usr/bin",
 		"system":                  "WHOLE",
 	})
-	// Longest valid prefix wins via greedy match; "system.environment.path"
-	// is preferred over "system" when the longer key is in the snapshot.
-	got := expandAtRefs("env @system.environment.path end", snap)
+	got := expandAtRefs("env @system.environment.path! end", snap)
 	want := "env /usr/bin end"
 	if got != want {
 		t.Errorf("expandAtRefs(dotted) = %q, want %q", got, want)
 	}
 
-	// Trailing dot is not part of the key (it's sentence punctuation).
+	// A trailing dot is not part of the key; without a "!" right
+	// after the key, no expansion.
 	got = expandAtRefs("end with @system.", snap)
+	want = "end with @system."
+	if got != want {
+		t.Errorf("expandAtRefs(trailing dot no bang) = %q, want %q", got, want)
+	}
+
+	// "@system!." — terminator immediately after the key, then a dot
+	// of sentence punctuation. Expands.
+	got = expandAtRefs("end with @system!.", snap)
 	want = "end with WHOLE."
 	if got != want {
-		t.Errorf("expandAtRefs(trailing dot) = %q, want %q", got, want)
+		t.Errorf("expandAtRefs(bang then dot) = %q, want %q", got, want)
 	}
 }
 
@@ -115,9 +148,9 @@ func TestExpandAtRefs_NonStringValues(t *testing.T) {
 		"list":  []int{1, 2, 3},
 	})
 	cases := map[string]string{
-		"n=@count":  "n=42",
-		"f=@flag":   "f=true",
-		"l=@list":   "l=[1,2,3]",
+		"n=@count!": "n=42",
+		"f=@flag!":  "f=true",
+		"l=@list!":  "l=[1,2,3]",
 	}
 	for in, want := range cases {
 		got := expandAtRefs(in, snap)
@@ -128,17 +161,17 @@ func TestExpandAtRefs_NonStringValues(t *testing.T) {
 }
 
 func TestExpandAtRefs_EmptySnapshotNoop(t *testing.T) {
-	got := expandAtRefs("hi @cwd there", nil)
-	if got != "hi @cwd there" {
+	got := expandAtRefs("hi @cwd! there", nil)
+	if got != "hi @cwd! there" {
 		t.Errorf("nil snapshot must passthrough, got %q", got)
 	}
-	got = expandAtRefs("hi @cwd there", map[string]json.RawMessage{})
-	if got != "hi @cwd there" {
+	got = expandAtRefs("hi @cwd! there", map[string]json.RawMessage{})
+	if got != "hi @cwd! there" {
 		t.Errorf("empty snapshot must passthrough, got %q", got)
 	}
 }
 
-func TestExpandAtRefs_NoAtMeansNoAlloc(t *testing.T) {
+func TestExpandAtRefs_NoAtMeansPassthrough(t *testing.T) {
 	snap := mkSnap(t, map[string]any{"k": "v"})
 	in := strings.Repeat("plain text without any sigil. ", 100)
 	got := expandAtRefs(in, snap)

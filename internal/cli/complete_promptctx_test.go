@@ -133,28 +133,34 @@ func TestCompletePromptContext_AtPrefixNarrowsToChalkboardKeys(t *testing.T) {
 		PastSeparator: true,
 	})
 
-	// Every candidate must be prefixed with @.
+	// Every candidate must be of the form @<key>! — prefixed with @
+	// and terminated with !, so the accepted candidate is a complete
+	// reference that expandAtRefs will substitute.
 	for _, c := range got {
 		if !strings.HasPrefix(c, "@") {
 			t.Errorf("candidate %q missing @ prefix", c)
 		}
+		if !strings.HasSuffix(c, "!") {
+			t.Errorf("candidate %q missing ! terminator", c)
+		}
 	}
 	// CWD entries must NOT appear in the narrowed pool.
 	for _, c := range got {
-		if c == "@cwd_entry.txt" || c == "cwd_entry.txt" {
+		if strings.Contains(c, "cwd_entry") {
 			t.Errorf("CWD entry leaked into @-pool: %v", got)
 		}
 	}
-	// At least one well-known chalkboard key must be present, @-prefixed.
+	// At least one well-known chalkboard key must be present in the
+	// expected @<key>! form.
 	found := false
 	for _, c := range got {
-		if c == "@cwd" || c == "@model" {
+		if c == "@cwd!" || c == "@model!" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("no @-prefixed chalkboard key in candidates: %v", got)
+		t.Errorf("no @<key>! chalkboard candidate in %v", got)
 	}
 }
 

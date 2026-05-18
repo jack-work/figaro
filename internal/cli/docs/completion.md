@@ -183,11 +183,11 @@ every prompt entry point: `runPrompt`, `runNewPrompt`, `promptAria`,
 ```
 figaro send --id <TAB>           # aria ids
 figaro send -- in<TAB>           # → internal/
-figaro send -- @mod<TAB>         # → @model
-figaro send -- summarize @cwd    # sends: summarize /home/user/dev/...
-q @<TAB>                         # bare-prompt alias, @-prefixed keys
-q me@example.com                 # left literal (word-boundary check)
-figaro x -- list files in @cwd   # deprecated alias for `figaro send -x`
+figaro send -- @mod<TAB>         # → @model!
+figaro send -- summarize @cwd!   # sends: summarize /home/user/dev/...
+q @<TAB>                         # bare-prompt alias, @<key>! candidates
+q me@example.com                 # left literal (no terminator)
+figaro x -- list files in @cwd!  # @cwd! expanded before instruction
 ```
 
 ## Known limitations

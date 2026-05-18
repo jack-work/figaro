@@ -13,9 +13,10 @@ import (
 //
 // When the cursor's current partial token (ctx.Current) starts with
 // "@", the candidate pool narrows to chalkboard-key references:
-// every key is emitted with an "@" prefix so it round-trips as a
-// literal @key reference in the prompt body (which expandAtRefs
-// then substitutes at send time).
+// every key is emitted as "@<key>!" so the accepted candidate is
+// a complete reference (terminator included). expandAtRefs requires
+// the trailing "!" to substitute, so emitting it here means the
+// user doesn't have to type it manually.
 //
 // Otherwise the pool is the union of:
 //
@@ -39,7 +40,7 @@ func completePromptContext(c *cmdkit.CompleteContext) []string {
 		keys := completeChalkboardKeys(nil)
 		out := make([]string, len(keys))
 		for i, k := range keys {
-			out[i] = "@" + k
+			out[i] = "@" + k + "!"
 		}
 		return out
 	}
