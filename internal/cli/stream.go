@@ -88,8 +88,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		// Wrapped-batch teardown takes precedence over solo.Freeze.
 		if batch != nil {
 			if batch.wrapped && solo != nil {
-				rows, anyErr := batch.FinalizeRowsOnly()
-				solo.FinalizeWithRowsBelow(rows, anyErr)
+				anyErr := batch.FinalizeRowsOnly()
+				solo.Done(anyErr)
 				solo = nil
 				soloToolCallID = ""
 				batch.PrintErrorDumps()
@@ -203,8 +203,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			figOtel.Event(ctx, "cli.recv.tool_batch_end")
 			if batch != nil {
 				if batch.wrapped && solo != nil {
-					rows, anyErr := batch.FinalizeRowsOnly()
-					solo.FinalizeWithRowsBelow(rows, anyErr)
+					anyErr := batch.FinalizeRowsOnly()
+					solo.Done(anyErr)
 					solo = nil
 					soloToolCallID = ""
 					fmt.Fprintln(rawOut, term.Dim("───"))

@@ -62,8 +62,8 @@ type toolBatchState struct {
 
 	// wrapped means a wrapping toolSoloState owns the header / footer
 	// chrome; this batch should only paint per-tool rows. The caller
-	// (stream.go) is responsible for finalizing the wrapper and
-	// printing error dumps after FinalizeRowsOnly.
+	// (stream.go) is responsible for finalizing the wrapper (via
+	// solo.Done) and printing error dumps after FinalizeRowsOnly.
 	wrapped     bool
 	wrapperSolo *toolSoloState // when wrapped, repainted on each tick
 
@@ -129,8 +129,9 @@ func newToolBatchState(out io.Writer, entries []rpc.ToolBatchToolEntry) *toolBat
 // RenderInitial paints one pending row per tool. In standalone mode
 // the rows are bracketed by an opening rule and the cursor lands on
 // what will become the closing rule; in wrapped mode the header is
-// owned by a toolSoloState above and only rows are emitted. Also
-// starts the spinner animation goroutine.
+// owned by a toolSoloState above and only rows are emitted (and the
+// wrapper is told how many rows were added so its repaint math can
+// account for them). Also starts the spinner animation goroutine.
 func (b *toolBatchState) RenderInitial() {
 	b.mu.Lock()
 	if !b.wrapped {
@@ -140,6 +141,9 @@ func (b *toolBatchState) RenderInitial() {
 		fmt.Fprintln(b.out, formatRow(r, b.frame))
 	}
 	b.cursorRow = len(b.rows)
+	if b.wrapped && b.wrapperSolo != nil {
+		b.wrapperSolo.AddRowsBelow(len(b.rows))
+	}
 	b.mu.Unlock()
 	go b.tickLoop()
 }
@@ -225,10 +229,10 @@ func (b *toolBatchState) Finalize() {
 }
 
 // FinalizeRowsOnly stops the ticker and paints the final row state.
-// Returns the row count and whether any tool errored, for the
-// wrapping toolSoloState's FinalizeWithRowsBelow call. Caller must
-// follow with PrintErrorDumps after the wrapper is finalized.
-func (b *toolBatchState) FinalizeRowsOnly() (rows int, anyError bool) {
+// Returns whether any tool errored, for the wrapping toolSoloState's
+// Done call. Caller must follow with PrintErrorDumps after the
+// wrapper is finalized.
+func (b *toolBatchState) FinalizeRowsOnly() (anyError bool) {
 	b.finalizeRowsLocked()
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -238,7 +242,7 @@ func (b *toolBatchState) FinalizeRowsOnly() (rows int, anyError bool) {
 			break
 		}
 	}
-	return len(b.rows), anyError
+	return anyError
 }
 
 // PrintErrorDumps emits the error sub-blocks (if any) and a final
@@ -324,11 +328,10 @@ func (b *toolBatchState) tickLoop() {
 			// In wrapped mode the wrapping solo owns the header line
 			// above all rows. Repaint it with the current frame so
 			// the wrapper spinner stays in lockstep with the row
-			// spinners. Walk-back distance is exactly len(rows) — the
-			// header sits one line above row 0, cursor is one line
-			// below row N-1.
+			// spinners — solo's own rowsBelow already counts our
+			// rows (bumped by RenderInitial).
 			if b.wrapped && b.wrapperSolo != nil {
-				b.wrapperSolo.RepaintWrappedHeader(len(b.rows), b.frame)
+				b.wrapperSolo.RepaintAtFrame(b.frame)
 			}
 			b.mu.Unlock()
 			// If nothing's running we can ease up — but cheaper to

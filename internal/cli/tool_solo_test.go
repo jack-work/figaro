@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jack-work/figaro/internal/term"
 )
 
 func TestSoloStartPaintsHeader(t *testing.T) {
@@ -136,8 +138,33 @@ func TestSoloDoneAfterStreamedOutputWithoutFreeze(t *testing.T) {
 	s.Write([]byte("alpha\nbeta\ngamma\n"))
 	s.Done(false)
 
-	rendered := renderTermGrid(buf.String())
-	// Headers in the grid: each row that contains the "▶ bash" tag.
+	rendered := renderTermGrid(buf.String(), 0)
+	assertSingleCheckedHeader(t, rendered)
+}
+
+// Regression: a tool output line longer than the terminal width
+// wraps onto multiple physical rows. Before the wrap-aware cursor
+// tracker, rowsBelow only counted '\n' bytes, so the header repaint
+// walked too few rows up — the original spinner header survived on
+// screen and the ✓ header was painted somewhere lower.
+func TestSoloDoneAfterWrappedStreamErasesSpinner(t *testing.T) {
+	width := term.Width()
+	// Wrap deterministically across three rows: width + width + half.
+	long := strings.Repeat("A", width*2+width/2)
+
+	var buf safeBuf
+	s := newToolSoloState(&buf, "bash", "ls")
+	s.Start()
+	s.Write([]byte(long))
+	s.Write([]byte("\n"))
+	s.Done(false)
+
+	rendered := renderTermGrid(buf.String(), width)
+	assertSingleCheckedHeader(t, rendered)
+}
+
+func assertSingleCheckedHeader(t *testing.T, rendered []string) {
+	t.Helper()
 	headerRows := 0
 	for _, row := range rendered {
 		if strings.Contains(row, "▶ bash") {
@@ -148,18 +175,13 @@ func TestSoloDoneAfterStreamedOutputWithoutFreeze(t *testing.T) {
 		t.Fatalf("expected exactly one header row in rendered grid, got %d:\n%s",
 			headerRows, strings.Join(rendered, "\n"))
 	}
-	// And the surviving header must carry the ✓ glyph.
-	found := false
 	for _, row := range rendered {
 		if strings.Contains(row, "▶ bash") && strings.Contains(row, "✓") {
-			found = true
-			break
+			return
 		}
 	}
-	if !found {
-		t.Fatalf("expected ✓ in surviving header row, grid was:\n%s",
-			strings.Join(rendered, "\n"))
-	}
+	t.Fatalf("expected ✓ in surviving header row, grid was:\n%s",
+		strings.Join(rendered, "\n"))
 }
 
 // renderTermGrid replays a byte stream into a tiny VT100 emulator
@@ -168,7 +190,10 @@ func TestSoloDoneAfterStreamedOutputWithoutFreeze(t *testing.T) {
 // terminal would actually display. Operates on bytes, not runes:
 // good enough for our header-byte-equality assertions and avoids
 // having to handle multi-byte UTF-8 column accounting.
-func renderTermGrid(s string) []string {
+//
+// width > 0 makes printable bytes auto-wrap at that column (mirroring
+// what a real terminal does); width == 0 disables wrap.
+func renderTermGrid(s string, width int) []string {
 	rows := [][]byte{nil}
 	r, c := 0, 0
 	ensure := func(idx int) {
@@ -185,6 +210,11 @@ func renderTermGrid(s string) []string {
 		row[c] = b
 		rows[r] = row
 		c++
+		if width > 0 && c >= width {
+			r++
+			c = 0
+			ensure(r)
+		}
 	}
 	i := 0
 	for i < len(s) {
