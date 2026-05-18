@@ -3,11 +3,27 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/internal/term"
 )
+
+// soloDebug writes one line to /tmp/figaro_solo.log per significant
+// solo state event. Enabled when FIGARO_SOLO_DEBUG=1. No locking —
+// solo's caller already holds s.mu.
+func soloDebug(format string, args ...any) {
+	if os.Getenv("FIGARO_SOLO_DEBUG") != "1" {
+		return
+	}
+	f, err := os.OpenFile("/tmp/figaro_solo.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, format+"\n", args...)
+}
 
 // toolSoloState animates the header of a single tool call.
 // Start -> Freeze (on first output) -> Done. All state under mu.
@@ -208,6 +224,8 @@ func (s *toolSoloState) repaintHeaderLocked() {
 		s.cursor.col = 0
 	}
 	up := s.rowsBelow + 1
+	soloDebug("repaint state=%d frozen=%v rowsBelow=%d col=%d width=%d up=%d",
+		s.state, s.frozen, s.rowsBelow, s.cursor.col, term.Width(), up)
 	fmt.Fprintf(s.out, "%s%s%s\r%s",
 		term.CursorUp(up),
 		term.EraseLine,
@@ -223,11 +241,15 @@ func (s *toolSoloState) repaintHeaderLocked() {
 func (s *toolSoloState) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	beforeRows := s.rowsBelow
+	beforeCol := s.cursor.col
 	n, err := s.out.Write(p)
 	width := term.Width()
 	for i := 0; i < n; i++ {
 		s.rowsBelow += s.cursor.advance(p[i], width)
 	}
+	soloDebug("write len=%d width=%d rowsBelow %d->%d col %d->%d",
+		n, width, beforeRows, s.rowsBelow, beforeCol, s.cursor.col)
 	return n, err
 }
 
