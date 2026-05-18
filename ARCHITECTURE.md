@@ -116,7 +116,8 @@ The `system.*` namespace is harness-reserved (set at bootstrap, refreshed on reh
 | Command | Description |
 |---------|-------------|
 | `q <prompt>` / `figaro -- <prompt>` | Prompt (auto-resolves or creates) |
-| `figaro new -- <prompt>` | New conversation |
+| `figaro send [--id <id>] [-e] [-x] -- <prompt>` | Explicit prompt; `-e` ephemeral, `-x` bash exec, `-ex` both |
+| `figaro new -- <prompt>` | New conversation with chosen loadout/patch |
 | `figaro list` | List all arias (live + dormant) |
 | `figaro kill <id>` | Kill + delete aria |
 | `figaro attend <id>` | Rebind this shell |

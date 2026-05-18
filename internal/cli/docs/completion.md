@@ -187,7 +187,7 @@ figaro send -- @mod<TAB>         # → @model
 figaro send -- summarize @cwd    # sends: summarize /home/user/dev/...
 q @<TAB>                         # bare-prompt alias, @-prefixed keys
 q me@example.com                 # left literal (word-boundary check)
-figaro x -- list files in @cwd   # @cwd expanded before instruction
+figaro x -- list files in @cwd   # deprecated alias for `figaro send -x`
 ```
 
 ## Known limitations
