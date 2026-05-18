@@ -1,7 +1,9 @@
 package figaro
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"runtime/debug"
 	"time"
@@ -110,7 +112,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		}
 	}
 	if len(a.figLog.Read()) == 0 && a.chalkboard != nil {
-		// Bootstrap: system.prompt, system.skills.<name>.
+		// Bootstrap: system.prompt.
 		if a.outfitter != nil {
 			if patch, err := a.outfitter.Bootstrap(a.chalkboard.Snapshot(),
 				outfit.CurrentBootCtx(a.prov.Name(), a.id)); err == nil && !patch.IsEmpty() {
@@ -495,6 +497,20 @@ func assistantToolCalls(m message.Message) []message.Content {
 
 // combineChalkboardInput merges client-supplied chalkboard input
 // with the persisted snapshot.
+//
+// Two shapes, two contracts:
+//
+//   - Context is *purely additive*. It carries the client's view of
+//     state-at-send-time; the agent sets keys whose values differ
+//     from the snapshot but never derives removals from absence.
+//     This lets clients ship a full chalkboard copy without racing
+//     concurrent set/unset from another shell.
+//   - Patch is explicit set + remove; mutations the client really
+//     means. `figaro set`/`unset`/rehydrate land here.
+//
+// system.* on Context is dropped: the harness owns that namespace,
+// and a stale client view must not clobber it. Patch is left intact
+// (it's the user explicitly mutating; trust them).
 func (a *Agent) combineChalkboardInput(input *rpc.ChalkboardInput) chalkboard.Patch {
 	if a.chalkboard == nil || input == nil {
 		return chalkboard.Patch{}
@@ -503,18 +519,38 @@ func (a *Agent) combineChalkboardInput(input *rpc.ChalkboardInput) chalkboard.Pa
 	if input.Patch != nil {
 		clientPatch = chalkboard.Patch{Set: input.Patch.Set, Remove: input.Patch.Remove}
 	}
-	snap := withoutSystemNS(a.chalkboard.Snapshot())
+	var ctxPatch chalkboard.Patch
+	if input.Context != nil {
+		ctx := withoutSystemNS(chalkboard.Snapshot(input.Context))
+		snap := a.chalkboard.Snapshot()
+		ctxPatch = additivePatch(ctx, snap)
+	}
 	switch {
-	case input.Context != nil && input.Patch != nil:
-		ctxSnap := withoutSystemNS(chalkboard.Snapshot(input.Context))
-		return chalkboard.Merge(ctxSnap.Diff(snap), clientPatch)
-	case input.Context != nil:
-		ctxSnap := withoutSystemNS(chalkboard.Snapshot(input.Context))
-		return ctxSnap.Diff(snap)
-	case input.Patch != nil:
+	case !ctxPatch.IsEmpty() && !clientPatch.IsEmpty():
+		return chalkboard.Merge(ctxPatch, clientPatch)
+	case !ctxPatch.IsEmpty():
+		return ctxPatch
+	case !clientPatch.IsEmpty():
 		return clientPatch
 	}
 	return chalkboard.Patch{}
+}
+
+// additivePatch returns a Set-only patch with ctx entries whose
+// values differ from snap. Keys present in snap but absent from ctx
+// are NOT removed — Context is purely additive by contract.
+func additivePatch(ctx, snap chalkboard.Snapshot) chalkboard.Patch {
+	var p chalkboard.Patch
+	for k, v := range ctx {
+		if old, ok := snap[k]; ok && bytes.Equal(old, v) {
+			continue
+		}
+		if p.Set == nil {
+			p.Set = map[string]json.RawMessage{}
+		}
+		p.Set[k] = v
+	}
+	return p
 }
 
 func statusOf(err error) string {

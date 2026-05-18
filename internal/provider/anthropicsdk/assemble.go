@@ -8,7 +8,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/provider"
 )
 
@@ -49,7 +48,7 @@ func buildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.S
 }
 
 // systemBlocks builds the system prefix: identity preamble (OAuth
-// only), credo, skills.
+// only) + credo.
 func systemBlocks(snap chalkboard.Snapshot, oauth bool) []anthropic.TextBlockParam {
 	var out []anthropic.TextBlockParam
 	var systemText string
@@ -67,11 +66,6 @@ func systemBlocks(snap chalkboard.Snapshot, oauth bool) []anthropic.TextBlockPar
 		}
 	} else if systemText != "" {
 		out = append(out, anthropic.TextBlockParam{Text: systemText})
-	}
-	if entries := outfit.SkillsFromSnapshot(snap); len(entries) > 0 {
-		if body := outfit.FormatSkillCatalog(entries); body != "" {
-			out = append(out, anthropic.TextBlockParam{Text: body})
-		}
 	}
 	return out
 }

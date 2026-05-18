@@ -22,7 +22,6 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figaro/internal/outfit"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -483,7 +482,7 @@ func projectTools(tools []provider.Tool) []nativeTool {
 	return result
 }
 
-// systemBlocks builds the system prefix: preamble, credo, skills.
+// systemBlocks builds the system prefix: preamble + credo.
 func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 	var out []systemBlock
 	var systemText string
@@ -501,11 +500,6 @@ func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 		}
 	} else if systemText != "" {
 		out = append(out, systemBlock{Type: "text", Text: systemText})
-	}
-	if entries := outfit.SkillsFromSnapshot(snapshot); len(entries) > 0 {
-		if body := outfit.FormatSkillCatalog(entries); body != "" {
-			out = append(out, systemBlock{Type: "text", Text: body})
-		}
 	}
 	return out
 }

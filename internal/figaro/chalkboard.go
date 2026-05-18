@@ -14,12 +14,12 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 		return nil, nil, false, fmt.Errorf("rehydrate requires both a chalkboard and an outfitter")
 	}
 
-	// Force re-run by hiding current system.prompt and any
-	// system.skills.* entries (Bootstrap rewrites them all).
+	// Force re-run by hiding current system.prompt; Bootstrap will
+	// re-render it from system.credo.
 	snap := a.chalkboard.Snapshot()
 	stripped := make(chalkboard.Snapshot, len(snap))
 	for k, v := range snap {
-		if k == "system.prompt" || strings.HasPrefix(k, "system.skills.") {
+		if k == "system.prompt" {
 			continue
 		}
 		stripped[k] = v
@@ -35,10 +35,8 @@ func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied 
 	}
 
 	current := chalkboard.Snapshot{}
-	for k, v := range snap {
-		if k == "system.prompt" || strings.HasPrefix(k, "system.skills.") {
-			current[k] = v
-		}
+	if v, ok := snap["system.prompt"]; ok {
+		current["system.prompt"] = v
 	}
 	patch := desired.Diff(current)
 	for k := range patch.Set {
@@ -82,16 +80,6 @@ func withoutSystemNS(s chalkboard.Snapshot) chalkboard.Snapshot {
 	out := make(chalkboard.Snapshot, len(s))
 	for k, v := range s {
 		if !strings.HasPrefix(k, "system.") {
-			out[k] = v
-		}
-	}
-	return out
-}
-
-func systemNSOnly(s chalkboard.Snapshot) chalkboard.Snapshot {
-	out := chalkboard.Snapshot{}
-	for k, v := range s {
-		if strings.HasPrefix(k, "system.") {
 			out[k] = v
 		}
 	}

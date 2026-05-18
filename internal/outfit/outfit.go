@@ -1,7 +1,7 @@
 // Package outfit assembles an aria's chalkboard from on-disk config.
 //
 // Load reads a named loadout TOML chain and returns a chalkboard patch.
-// Bootstrap templates system.credo into system.prompt and parses skills.
+// Bootstrap templates system.credo into system.prompt.
 package outfit
 
 import (
@@ -58,8 +58,9 @@ func (o *Outfitter) Load(name string) (chalkboard.Patch, error) {
 	return chalkboard.Patch{Set: flat}, nil
 }
 
-// Bootstrap templates system.credo -> system.prompt and parses
-// skills. No-op when system.prompt is already set.
+// Bootstrap templates system.credo -> system.prompt. No-op when
+// system.prompt is already set. Skills are no longer touched here —
+// the loader writes them directly via the dirName form.
 func (o *Outfitter) Bootstrap(snap chalkboard.Snapshot, ctx BootCtx) (chalkboard.Patch, error) {
 	if _, ok := snap["system.prompt"]; ok {
 		return chalkboard.Patch{}, nil
@@ -67,10 +68,21 @@ func (o *Outfitter) Bootstrap(snap chalkboard.Snapshot, ctx BootCtx) (chalkboard
 
 	patch := chalkboard.Patch{Set: map[string]json.RawMessage{}}
 
-	// Render credo template into system.prompt.
+	// Render credo template into system.prompt. system.credo arrives
+	// from the loader as a ContentEnvelope; read its content (or
+	// frontmatter, if that's all the user gave us). Older configs that
+	// stored a bare string still work via the fallback.
 	var credoBody string
 	if raw, ok := snap["system.credo"]; ok {
-		_ = json.Unmarshal(raw, &credoBody)
+		var env ContentEnvelope
+		if json.Unmarshal(raw, &env) == nil && (env.Content != "" || env.Frontmatter != "") {
+			credoBody = env.Content
+			if credoBody == "" {
+				credoBody = env.Frontmatter
+			}
+		} else {
+			_ = json.Unmarshal(raw, &credoBody)
+		}
 	}
 	if credoBody != "" {
 		tmpl, err := template.New("credo").Parse(credoBody)
@@ -83,19 +95,6 @@ func (o *Outfitter) Bootstrap(snap chalkboard.Snapshot, ctx BootCtx) (chalkboard
 		}
 		b, _ := json.Marshal(buf.String())
 		patch.Set["system.prompt"] = b
-	}
-
-	// Parse skills directory; expose each skill as its own
-	// `system.skills.<name>` key so they're individually addressable
-	// (e.g. via @system.skills.figaro-dev! or tab-completion).
-	skillsDir := filepath.Join(o.configDir, "skills")
-	if catalog, err := loadSkillCatalog(skillsDir); err == nil {
-		for _, e := range catalog {
-			entry := SkillEntry{Description: e.Description, FilePath: e.FilePath}
-			if b, mErr := json.Marshal(entry); mErr == nil {
-				patch.Set["system.skills."+e.Name] = b
-			}
-		}
 	}
 
 	return patch, nil
@@ -143,6 +142,17 @@ func (o *Outfitter) resolvePath(name string) (string, error) {
 
 // flatten walks a TOML tree into dotted chalkboard keys, expanding
 // fileName/dirName single-key tables.
+//
+// Both `fileName` and `dirName` produce content-envelope objects:
+//
+//	{ "frontmatter": "...", "filePath": "..." }   // if file begins with ---
+//	{ "content":     "...", "filePath": "..." }   // otherwise
+//
+// `frontmatter` is the raw frontmatter text (between the fences),
+// unparsed; the agent reads the file when it wants the body. When
+// no frontmatter is present, the full body lands in `content`.
+// `dirName` produces a map basename->envelope; `fileName` produces a
+// single envelope.
 func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]json.RawMessage) error {
 	for k, v := range in {
 		key := k
@@ -152,11 +162,13 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 		switch val := v.(type) {
 		case map[string]any:
 			if fn, ok := val["fileName"].(string); ok && len(val) == 1 {
-				body, err := os.ReadFile(filepath.Join(o.configDir, fn))
+				path := filepath.Join(o.configDir, fn)
+				body, err := os.ReadFile(path)
 				if err != nil {
 					return fmt.Errorf("outfit: %s fileName=%q: %w", key, fn, err)
 				}
-				b, err := json.Marshal(string(body))
+				env := contentEnvelope(string(body), path)
+				b, err := json.Marshal(env)
 				if err != nil {
 					return err
 				}
@@ -189,21 +201,61 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 	return nil
 }
 
-// loadDir reads files from dir into a basename->body map.
-func loadDir(dir string) (map[string]string, error) {
+// ContentEnvelope is the chalkboard shape for fileName/dirName-loaded
+// content. Exactly one of Frontmatter or Content is non-empty: if the
+// file began with a `---` fence, the raw frontmatter text goes in
+// Frontmatter and the body is omitted; otherwise the full body goes
+// in Content. FilePath is always set so the agent can read the body
+// when it needs the elided text.
+type ContentEnvelope struct {
+	Frontmatter string `json:"frontmatter,omitempty"`
+	Content     string `json:"content,omitempty"`
+	FilePath    string `json:"filePath"`
+}
+
+// contentEnvelope builds an envelope: frontmatter-only if the body
+// begins with a `---` fence and the close fence is found; full
+// content otherwise.
+func contentEnvelope(body, path string) ContentEnvelope {
+	if fm, ok := extractFrontmatter(body); ok {
+		return ContentEnvelope{Frontmatter: fm, FilePath: path}
+	}
+	return ContentEnvelope{Content: body, FilePath: path}
+}
+
+// extractFrontmatter returns the raw text between the opening and
+// closing `---` fences, or ("", false) if no parseable frontmatter
+// block is found. The body must begin with `---\n` (BOM and leading
+// whitespace are not tolerated — frontmatter is opt-in).
+func extractFrontmatter(body string) (string, bool) {
+	if !strings.HasPrefix(body, "---\n") {
+		return "", false
+	}
+	rest := body[4:]
+	end := strings.Index(rest, "\n---")
+	if end < 0 {
+		return "", false
+	}
+	return rest[:end], true
+}
+
+// loadDir reads files from dir into a basename->ContentEnvelope map.
+// Basenames drop their extension. Subdirectories are skipped.
+func loadDir(dir string) (map[string]ContentEnvelope, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string]string{}, nil
+			return map[string]ContentEnvelope{}, nil
 		}
 		return nil, err
 	}
-	out := map[string]string{}
+	out := map[string]ContentEnvelope{}
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		path := filepath.Join(dir, e.Name())
+		body, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}
@@ -211,7 +263,7 @@ func loadDir(dir string) (map[string]string, error) {
 		if ext := filepath.Ext(name); ext != "" {
 			name = strings.TrimSuffix(name, ext)
 		}
-		out[name] = string(body)
+		out[name] = contentEnvelope(string(body), path)
 	}
 	return out, nil
 }

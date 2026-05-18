@@ -212,7 +212,11 @@ func TestWire_NeitherContextNorPatch_NoOp(t *testing.T) {
 	assert.Empty(t, prov.lastTurnPatches(), "no chalkboard input → no patches")
 }
 
-func TestWire_ContextRemoval(t *testing.T) {
+func TestWire_Context_IsAdditive(t *testing.T) {
+	// Context is purely additive: keys present in the snapshot but
+	// absent from a subsequent Context are NOT removed. This lets
+	// clients ship a partial view (just the keys they own — cwd,
+	// datetime, env) without racing concurrent set/unset.
 	a, prov, _ := newAgentWithChalkboard(t)
 
 	runOneTurn(t, a, "first", &rpc.ChalkboardInput{
@@ -225,8 +229,37 @@ func TestWire_ContextRemoval(t *testing.T) {
 		Context: map[string]json.RawMessage{},
 	})
 	require.Equal(t, 2, prov.sendCount())
+	assert.Empty(t, prov.lastTurnPatches(), "empty Context must not produce a removal patch")
+}
+
+func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
+	// A bootstrapped chalkboard may contain keys (skills, loadout
+	// values, etc.) the client never carries in Context. Sending a
+	// Context turn whose contents differ from those keys must not
+	// remove them — only set the keys the client explicitly named.
+	a, prov, cb := newAgentWithChalkboard(t)
+
+	// Seed something the client does NOT carry in Context.
+	cb.Apply(chalkboard.Patch{
+		Set: map[string]json.RawMessage{
+			"skills.go": json.RawMessage(`{"description":"go body"}`),
+		},
+	})
+
+	runOneTurn(t, a, "first", &rpc.ChalkboardInput{
+		Context: map[string]json.RawMessage{
+			"cwd": json.RawMessage(`"/home/alpha"`),
+		},
+	})
+	require.Equal(t, 1, prov.sendCount())
 	patches := prov.lastTurnPatches()
-	require.Len(t, patches, 1, "removal must still attach a patch (the timeline records it)")
-	require.Empty(t, patches[0].Set)
-	assert.ElementsMatch(t, []string{"cwd"}, patches[0].Remove)
+	for _, p := range patches {
+		assert.Empty(t, p.Remove, "Context must never emit Remove")
+		_, hadSkills := p.Set["skills.go"]
+		assert.False(t, hadSkills, "Context must not republish snapshot-only keys")
+	}
+	// Snapshot key survives.
+	snap := cb.Snapshot()
+	_, ok := snap["skills.go"]
+	assert.True(t, ok, "skills.go must remain on the chalkboard")
 }
