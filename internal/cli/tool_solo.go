@@ -278,16 +278,21 @@ func (s *toolSoloState) formatHeader() string {
 // to count physical rows (including terminal-driven wrap) so the
 // header repaint walks the right number of rows up.
 //
-// The state machine is byte-oriented and intentionally minimal:
+// The state machine is byte-oriented and matches xterm's pending-wrap
+// behavior: filling the last column of a row leaves the cursor in a
+// "pending wrap" state at col == width; the row-break only fires on
+// the next *visible* byte (not on '\n', which just moves down and
+// clears pending). Without this, a line whose length is exactly a
+// multiple of width would over-count by one row per wrap point.
+//
+// Other minimal rules:
 //   - ESC starts an escape sequence; the first ASCII letter ends it.
-//     (Matches the same heuristic as term.VisibleLen.)
-//   - '\r' resets col without producing a row break.
-//   - '\n' resets col and produces one row break.
+//     (Same heuristic as term.VisibleLen.)
+//   - '\r' resets col and clears pending wrap.
+//   - '\n' resets col, clears pending wrap, produces one row break.
 //   - UTF-8 continuation bytes (10xxxxxx) don't advance col — only
 //     the leading byte of a rune does. Ignores east-asian-wide runes;
 //     close-enough for header math.
-//   - Any other byte advances col; when col reaches width it wraps to
-//     0 and produces one row break.
 type vtCursor struct {
 	col   int
 	inEsc bool
@@ -316,10 +321,11 @@ func (c *vtCursor) advance(b byte, width int) int {
 	if b&0xc0 == 0x80 {
 		return 0
 	}
-	c.col++
+	rows := 0
 	if c.col >= width {
 		c.col = 0
-		return 1
+		rows = 1
 	}
-	return 0
+	c.col++
+	return rows
 }

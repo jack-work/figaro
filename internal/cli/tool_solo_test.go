@@ -196,12 +196,19 @@ func assertSingleCheckedHeader(t *testing.T, rendered []string) {
 func renderTermGrid(s string, width int) []string {
 	rows := [][]byte{nil}
 	r, c := 0, 0
+	pending := false // xterm pending-wrap: cursor at col==width, no row break yet
 	ensure := func(idx int) {
 		for len(rows) <= idx {
 			rows = append(rows, nil)
 		}
 	}
 	put := func(b byte) {
+		if pending {
+			r++
+			c = 0
+			pending = false
+			ensure(r)
+		}
 		ensure(r)
 		row := rows[r]
 		for len(row) <= c {
@@ -211,9 +218,7 @@ func renderTermGrid(s string, width int) []string {
 		rows[r] = row
 		c++
 		if width > 0 && c >= width {
-			r++
-			c = 0
-			ensure(r)
+			pending = true
 		}
 	}
 	i := 0
@@ -238,13 +243,16 @@ func renderTermGrid(s string, width int) []string {
 				if r < 0 {
 					r = 0
 				}
+				pending = false
 			case 'B':
 				r += n
 				ensure(r)
+				pending = false
 			case 'K':
 				ensure(r)
 				rows[r] = nil
 				c = 0
+				pending = false
 			case 'm', 'J':
 				// SGR / erase display — ignore.
 			}
@@ -255,9 +263,11 @@ func renderTermGrid(s string, width int) []string {
 		case '\n':
 			r++
 			c = 0
+			pending = false
 			ensure(r)
 		case '\r':
 			c = 0
+			pending = false
 		default:
 			put(s[i])
 		}
