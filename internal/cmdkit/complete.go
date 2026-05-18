@@ -3,6 +3,7 @@ package cmdkit
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -45,6 +46,7 @@ func (r *Router) SetBarePromptComplete(fn func(*CompleteContext) []string) {
 // broken to the user.
 func (r *Router) runComplete(ctx *RunContext) error {
 	raw := ctx.RawArgs
+
 	// The router may have left a leading "--" boundary marker from
 	// PassRaw. There is at most one such marker; strip exactly one,
 	// not more, so a user-typed "--" sitting in second position
@@ -55,8 +57,10 @@ func (r *Router) runComplete(ctx *RunContext) error {
 	if len(raw) == 0 {
 		return nil
 	}
+
 	verb := raw[0]
 	tail := raw[1:]
+
 	// Same logic for the boundary marker between verb and tokens:
 	// the shell-side completion scripts insert exactly one "--" here.
 	// Strip one, never more.
@@ -67,13 +71,7 @@ func (r *Router) runComplete(ctx *RunContext) error {
 	// conventional flags/prompt separator). Detect it and surface it
 	// through CompleteContext so callbacks can switch candidate pools
 	// when the cursor lives past it.
-	pastSep := false
-	for _, tok := range tail {
-		if tok == "--" {
-			pastSep = true
-			break
-		}
-	}
+	pastSep := slices.Contains(tail, "--")
 
 	// Resolve which CompleteArgs to call: bare-prompt sentinel goes
 	// to the dedicated callback (cursor is conceptually past --);

@@ -9,6 +9,9 @@ import (
 )
 
 // Client is a typed JSON-RPC client for talking to the angelus supervisor.
+// agent:
+// this should probably be called ......... idk not cli, it could be
+// an sdk.
 type Client struct {
 	cli *jsonrpc.Client
 }
