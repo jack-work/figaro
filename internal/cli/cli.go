@@ -347,6 +347,32 @@ Flags:
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:    "loadout",
+		Group:   "State",
+		Short:   "Apply a named loadout additively to an aria",
+		Usage:   "loadout [--id <id>] <name> | loadout --list",
+		Long:    "Loads ~/.config/figaro/loadouts/<name>.toml and applies it as an\nadditive chalkboard patch: keys whose values match the current\nsnapshot are skipped, and no keys are ever removed.\n\nExamples:\n  figaro loadout focus            # apply 'focus' loadout to the bound aria\n  figaro loadout --id myid focus  # apply to a specific aria\n  figaro loadout --list           # show available loadouts",
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id (overrides pid binding)"},
+			{Long: "list", IsBool: true, Description: "List available loadouts and exit"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			if ctx.BoolFlag("list") {
+				runLoadoutList(ld)
+				return nil
+			}
+			if len(ctx.Args) == 0 {
+				die("usage: figaro loadout [--id <id>] <name>")
+			}
+			runLoadout(ld, ctx.Flag("id"), ctx.Args[0])
+			return nil
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:    "status",
 		Aliases: []string{"info"},
 		Group:   "Session",

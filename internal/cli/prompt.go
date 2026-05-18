@@ -10,6 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
@@ -65,7 +66,7 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	ep, err := resolveOrCreate(ctx, acli, ariaID)
+	ep, err := resolveOrCreate(ctx, acli, loaded, ariaID)
 	if err != nil {
 		die("%s", err)
 	}
@@ -74,7 +75,7 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string) {
 }
 
 // resolveOrCreate attaches or creates a named aria.
-func resolveOrCreate(ctx context.Context, acli *angelus.Client, ariaID string) (transport.Endpoint, error) {
+func resolveOrCreate(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ariaID string) (transport.Endpoint, error) {
 	attachCtx, attachCancel := context.WithTimeout(ctx, 10*time.Second)
 	resp, err := acli.Attach(attachCtx, ariaID)
 	attachCancel()
@@ -95,7 +96,7 @@ func resolveOrCreate(ctx context.Context, acli *angelus.Client, ariaID string) (
 
 	createCtx, createCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer createCancel()
-	createResp, err := acli.CreateWithID(createCtx, ariaID, "", nil)
+	createResp, err := createWithFirstRun(createCtx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateWithID(createCtx, ariaID, "", nil) })
 	if err != nil {
 		return transport.Endpoint{}, fmt.Errorf("create %q: %w", ariaID, err)
 	}

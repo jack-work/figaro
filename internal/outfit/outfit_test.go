@@ -32,13 +32,12 @@ user_id = 7
 
 func TestLoad_SourceChain(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "providers", "anthropic"), 0700))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "providers", "anthropic", "config.toml"), []byte(`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "base.toml"), []byte(`
 system = { model = "default-model", max_tokens = 8192 }
 `), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"), []byte(`
-source = "anthropic"
+source = "base"
 system = { model = "override-model" }
 friendly_name = "Top"
 `), 0600))
@@ -122,14 +121,24 @@ func TestLoad_CycleDetected(t *testing.T) {
 	assert.Contains(t, err.Error(), "cycle")
 }
 
-func TestLoad_DefaultsToConfigName(t *testing.T) {
+func TestLoad_EmptyNameReturnsEmptyPatch(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"), []byte(`x = 1`), 0600))
 
+	// Empty name no longer defaults to "config" — callers must
+	// resolve the name (e.g. via config.DefaultLoadout) themselves.
 	patch, err := outfit.New(dir).Load("")
 	require.NoError(t, err)
-	assert.Equal(t, `1`, string(patch.Set["x"]))
+	assert.True(t, patch.IsEmpty(), "empty loadout name must yield empty patch")
+}
+
+func TestLoad_MissingFileIsNotAnError(t *testing.T) {
+	dir := t.TempDir()
+	// No loadouts/ directory at all.
+	patch, err := outfit.New(dir).Load("nonexistent")
+	require.NoError(t, err)
+	assert.True(t, patch.IsEmpty(), "missing loadout must yield empty patch (graceful)")
 }
 
 func TestBootstrap_TemplatesCredo(t *testing.T) {

@@ -5,17 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
 
-// Config is the top-level figaro configuration.
+// Config is the top-level figaro configuration. Provider/model knobs
+// have moved into loadouts; this file holds only the chosen loadout
+// and CLI-side ergonomics.
 type Config struct {
-	// DefaultProvider is the provider used when -p is not specified.
-	DefaultProvider string `toml:"default_provider"`
-
-	// DefaultModel overrides the provider's default model.
-	DefaultModel string `toml:"default_model"`
+	// DefaultLoadout names the loadout used when -L is not specified.
+	// Empty triggers the first-run flow (see rpc.ErrNoDefaultLoadout).
+	DefaultLoadout string `toml:"default_loadout"`
 
 	// EchoPrompt controls whether the CLI echoes the prompt.
 	// Pointer to distinguish unset (default true) from explicit false.
@@ -65,21 +66,19 @@ func (l *Loaded) StreamFirstByteBypassMs() int {
 	return *l.Config.StreamFirstByteBypassMs
 }
 
-// AnthropicProvider is the config for an anthropic provider.
-type AnthropicProvider struct {
-	Model     string `toml:"model"`
-	MaxTokens int    `toml:"max_tokens"`
-	APIKey    string `toml:"api_key"`
+// ProviderAuth holds credentials for one provider. The on-disk file
+// lives at providers/<name>.toml (flat — no per-provider subdirectory).
+// Secret fields are AGE-encrypted at rest; callers must decrypt
+// through hush before use.
+type ProviderAuth struct {
+	// APIKey is an opaque static credential. AGE-ENC[...] when
+	// encrypted; plain string otherwise.
+	APIKey string `toml:"api_key"`
 
-	// ReminderRenderer selects how chalkboard reminders are projected.
-	// "tag" (default) uses <system-reminder> blocks. "tool" uses
-	// synthetic tool_use/tool_result pairs.
-	ReminderRenderer string `toml:"reminder_renderer"`
-
-	// UseOfficialSDK routes Anthropic traffic through the official
-	// anthropic-sdk-go-backed provider (internal/provider/anthropicsdk).
-	// The legacy in-tree implementation stays the default.
-	UseOfficialSDK bool `toml:"use_official_sdk"`
+	// OAuth tokens (AGE-encrypted when present).
+	AccessToken  string `toml:"access_token"`
+	RefreshToken string `toml:"refresh_token"`
+	ExpiresAt    int64  `toml:"expires_at"`
 }
 
 // Loaded holds the parsed top-level config plus path context.
@@ -89,22 +88,23 @@ type Loaded struct {
 	ConfigPath string // e.g. ~/.config/figaro/config.toml
 }
 
-// ProviderDir returns the path to a named provider's directory.
-func (l *Loaded) ProviderDir(name string) string {
-	return filepath.Join(l.ConfigDir, "providers", name)
-}
-
-// ProviderConfigPath returns the path to a provider's config.toml.
-func (l *Loaded) ProviderConfigPath(name string) string {
-	return filepath.Join(l.ProviderDir(name), "config.toml")
-}
-
-// ProviderAuthPath returns the path to a provider's auth.toml.
+// ProviderAuthPath returns the path to a provider's auth file
+// (providers/<name>.toml — flat, no subdirectory).
 func (l *Loaded) ProviderAuthPath(name string) string {
-	return filepath.Join(l.ProviderDir(name), "auth.toml")
+	return filepath.Join(l.ConfigDir, "providers", name+".toml")
 }
 
-// ListProviders returns all configured provider names.
+// LoadoutsDir returns the directory housing loadout TOML files.
+func (l *Loaded) LoadoutsDir() string {
+	return filepath.Join(l.ConfigDir, "loadouts")
+}
+
+// LoadoutPath returns the path to a named loadout file.
+func (l *Loaded) LoadoutPath(name string) string {
+	return filepath.Join(l.LoadoutsDir(), name+".toml")
+}
+
+// ListProviders returns provider names with auth files on disk.
 func (l *Loaded) ListProviders() []string {
 	dir := filepath.Join(l.ConfigDir, "providers")
 	entries, err := os.ReadDir(dir)
@@ -114,19 +114,46 @@ func (l *Loaded) ListProviders() []string {
 	var names []string
 	for _, e := range entries {
 		if e.IsDir() {
-			names = append(names, e.Name())
+			continue
 		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".toml") {
+			continue
+		}
+		names = append(names, strings.TrimSuffix(name, ".toml"))
 	}
 	return names
 }
 
-// LoadProviderConfig decodes a provider's config.toml into target.
-func (l *Loaded) LoadProviderConfig(name string, target interface{}) error {
-	path := l.ProviderConfigPath(name)
+// ListLoadouts returns the names of every loadout file on disk.
+func (l *Loaded) ListLoadouts() []string {
+	entries, err := os.ReadDir(l.LoadoutsDir())
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".toml") {
+			continue
+		}
+		names = append(names, strings.TrimSuffix(name, ".toml"))
+	}
+	return names
+}
+
+// LoadProviderAuth decodes a provider's auth.toml into target.
+// Returns nil with no error when the file is absent (lets callers
+// fall back to other strategies).
+func (l *Loaded) LoadProviderAuth(name string, target interface{}) error {
+	path := l.ProviderAuthPath(name)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil // no config file means use defaults
+			return nil
 		}
 		return fmt.Errorf("read %s: %w", path, err)
 	}
@@ -166,7 +193,6 @@ func Load(configDir string) (*Loaded, error) {
 }
 
 func defaultConfig() Config {
-	return Config{
-		DefaultProvider: "anthropic",
-	}
+	// No DefaultLoadout: empty triggers the first-run flow.
+	return Config{}
 }

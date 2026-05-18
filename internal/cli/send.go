@@ -194,7 +194,7 @@ func runSendEphemeralRaw(loaded *config.Loaded, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	createResp, err := acli.CreateEphemeral(ctx, "", nil)
+	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, "", nil) })
 	if err != nil {
 		die("create figaro: %s", err)
 	}
@@ -224,7 +224,7 @@ func runSendEphemeralRich(loaded *config.Loaded, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	createResp, err := acli.CreateEphemeral(ctx, "", nil)
+	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, "", nil) })
 	if err != nil {
 		die("create figaro: %s", err)
 	}
@@ -273,7 +273,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 
 	var figaroEP transport.Endpoint
 	if opts.ephemeral || opts.id == "" {
-		createResp, err := acli.CreateEphemeral(ctx, "", nil)
+		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, "", nil) })
 		if err != nil {
 			die("create figaro: %s", err)
 		}

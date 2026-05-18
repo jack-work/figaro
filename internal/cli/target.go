@@ -117,7 +117,7 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *ang
 
 	createCtx, ccancel := context.WithTimeout(ctx, 10*time.Second)
 	defer ccancel()
-	createResp, err := acli.CreateWithID(createCtx, explicitID, "", nil)
+	createResp, err := createWithFirstRun(createCtx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateWithID(createCtx, explicitID, "", nil) })
 	if err != nil {
 		return "", transport.Endpoint{}, fmt.Errorf("create %q: %w", explicitID, err)
 	}

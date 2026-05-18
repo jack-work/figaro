@@ -1,10 +1,18 @@
+// Package cli — provider wiring for the CLI process.
+//
+// Provider factories take operational knobs (model, max_tokens,
+// reminder_renderer, use_official_sdk) extracted by the angelus
+// from the loadout's system.* chalkboard keys. Credentials are
+// resolved through the auth strategy chain: env var, plaintext
+// api_key in providers/<name>.toml, hush-encrypted api_key in
+// providers/<name>.toml, OAuth via hush.
 package cli
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/jack-work/figaro/internal/angelus"
@@ -17,28 +25,37 @@ import (
 	"github.com/jack-work/figaro/internal/wirelog"
 )
 
+// KnownProviders lists the provider names the factory can construct.
+// Surfaced to the angelus so typed JSON-RPC errors can drive the
+// first-run picker.
+var KnownProviders = []string{"anthropic"}
+
 // installWireLog wraps the provider's HTTPClient with wirelog.
 func installWireLog(a *anthropic.Anthropic) {
 	a.HTTPClient.Transport = &wirelog.Transport{Inner: http.DefaultTransport}
 }
 
 // buildResolver assembles a credential resolver for a provider.
-// Walks env -> config -> hush -> OAuth in priority order.
+// Walks env -> plaintext api_key -> encrypted api_key -> OAuth.
 func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolver, error) {
 	h := mustHush()
 	hushClient := h.Client()
-	dir := loaded.ProviderDir(providerName)
 
 	strategies := []auth.CredentialStrategy{
 		&auth.EnvVar{Name: envVarFor(providerName)},
 		&auth.ConfigValue{Get: func() string {
-			var c config.AnthropicProvider
-			_ = loaded.LoadProviderConfig(providerName, &c)
-			return c.APIKey
+			var pa config.ProviderAuth
+			_ = loaded.LoadProviderAuth(providerName, &pa)
+			// Plaintext api_key only. AGE-ENC values are handled
+			// by the encrypted strategy below.
+			if pa.APIKey == "" || strings.HasPrefix(pa.APIKey, "AGE-ENC[") {
+				return ""
+			}
+			return pa.APIKey
 		}},
-		&auth.EncryptedConfig{
-			Hush: hushClient,
-			Path: filepath.Join(dir, "secret"),
+		&encryptedAPIKey{
+			Hush:       hushClient,
+			ConfigPath: loaded.ProviderAuthPath(providerName),
 		},
 	}
 	if _, ok := oauthConfigFor(providerName); ok {
@@ -66,19 +83,15 @@ func oauthConfigFor(providerName string) (auth.OAuthConfig, bool) {
 	return auth.OAuthConfig{}, false
 }
 
-// buildProviderFactory wires per-aria provider construction.
+// buildProviderFactory wires per-aria provider construction. The
+// angelus extracts knobs from the loadout's system.* chalkboard
+// keys and passes them here.
 func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, backend store.Backend) angelus.ProviderFactory {
-	return func(providerName, model string) (providerPkg.Provider, error) {
+	return func(providerName string, knobs providerPkg.Knobs) (providerPkg.Provider, error) {
 		switch providerName {
 		case "anthropic":
-			var acfg config.AnthropicProvider
-			acfg.Model = model
-			acfg.MaxTokens = 8192
-			if err := loaded.LoadProviderConfig(providerName, &acfg); err != nil {
-				return nil, err
-			}
-			if model != "" {
-				acfg.Model = model
+			if knobs.MaxTokens == 0 {
+				knobs.MaxTokens = 8192
 			}
 			resolver, err := buildResolver(loaded, providerName)
 			if err != nil {
@@ -90,15 +103,15 @@ func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, bac
 				}
 				return backend.OpenTranslation(aria, providerName)
 			}
-			if acfg.UseOfficialSDK {
-				p, err := anthropicsdk.New(acfg, resolver, cacheOpen)
+			if knobs.UseOfficialSDK {
+				p, err := anthropicsdk.New(knobs, resolver, cacheOpen)
 				if err != nil {
 					return nil, err
 				}
 				p.Templates = cbTmpls
 				return p, nil
 			}
-			a, err := anthropic.New(acfg, resolver, cacheOpen)
+			a, err := anthropic.New(knobs, resolver, cacheOpen)
 			if err != nil {
 				return nil, err
 			}
@@ -111,52 +124,63 @@ func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, bac
 	}
 }
 
-// buildProvider constructs a one-off provider for read-only flows.
+// buildProvider constructs a one-off provider for read-only flows
+// (e.g. `figaro models`). Reads knobs from the default loadout when
+// configured; otherwise uses bare defaults.
 func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, int) {
+	knobs := defaultLoadoutKnobs(loaded)
 	switch name {
 	case "anthropic":
-		var acfg config.AnthropicProvider
-		acfg.Model = "claude-sonnet-4-20250514"
-		acfg.MaxTokens = 8192
-		if err := loaded.LoadProviderConfig(name, &acfg); err != nil {
-			return nil, 0
+		if knobs.Model == "" {
+			knobs.Model = "claude-sonnet-4-20250514"
 		}
-		if loaded.Config.DefaultModel != "" {
-			acfg.Model = loaded.Config.DefaultModel
+		if knobs.MaxTokens == 0 {
+			knobs.MaxTokens = 8192
 		}
 		resolver, err := buildResolver(loaded, name)
 		if err != nil {
 			return nil, 0
 		}
-		if acfg.UseOfficialSDK {
-			p, err := anthropicsdk.New(acfg, resolver, nil)
+		if knobs.UseOfficialSDK {
+			p, err := anthropicsdk.New(knobs, resolver, nil)
 			if err != nil {
 				return nil, 0
 			}
-			return p, acfg.MaxTokens
+			return p, knobs.MaxTokens
 		}
-		p, err := anthropic.New(acfg, resolver, nil)
+		p, err := anthropic.New(knobs, resolver, nil)
 		if err != nil {
 			return nil, 0
 		}
 		installWireLog(p)
-		return p, acfg.MaxTokens
+		return p, knobs.MaxTokens
 	default:
 		return nil, 0
 	}
 }
 
-// defaultModel returns the configured default model for a provider.
+// defaultModel returns the configured default model for a provider,
+// read from the default loadout's system.model.
 func defaultModel(loaded *config.Loaded, providerName string) string {
-	if loaded.Config.DefaultModel != "" {
-		return loaded.Config.DefaultModel
+	knobs := defaultLoadoutKnobs(loaded)
+	if knobs.Model != "" {
+		return knobs.Model
 	}
 	switch providerName {
 	case "anthropic":
-		var acfg config.AnthropicProvider
-		acfg.Model = "claude-sonnet-4-20250514"
-		loaded.LoadProviderConfig(providerName, &acfg)
-		return acfg.Model
+		return "claude-sonnet-4-20250514"
 	}
 	return ""
+}
+
+// defaultLoadoutKnobs reads the default loadout (if any) and returns
+// its system.* operational knobs. Empty Knobs on any failure.
+func defaultLoadoutKnobs(loaded *config.Loaded) providerPkg.Knobs {
+	if loaded == nil || loaded.Config.DefaultLoadout == "" {
+		return providerPkg.Knobs{}
+	}
+	// Read the loadout via the outfitter so source-chain inheritance
+	// is respected. Import locally to avoid a package-level cycle
+	// (cli -> outfit is already present elsewhere; this is fine).
+	return readLoadoutKnobs(loaded, loaded.Config.DefaultLoadout)
 }

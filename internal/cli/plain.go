@@ -44,7 +44,7 @@ func runPlainPrompt(loaded *config.Loaded, rawArgs []string) {
 	ephemeral := id == ""
 
 	if ephemeral {
-		createResp, err := acli.CreateEphemeral(ctx, "", nil)
+		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, "", nil) })
 		if err != nil {
 			die("create figaro: %s", err)
 		}
@@ -109,7 +109,7 @@ func runExecPrompt(loaded *config.Loaded, rawArgs []string) {
 	ephemeral := id == ""
 
 	if ephemeral {
-		createResp, err := acli.CreateEphemeral(ctx, "", nil)
+		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, "", nil) })
 		if err != nil {
 			die("create figaro: %s", err)
 		}

@@ -46,13 +46,21 @@ func CurrentBootCtx(provider, figaroID string) BootCtx {
 }
 
 // Load resolves a loadout and returns the chalkboard patch.
+//
+// A missing loadout file is NOT an error: an empty patch is
+// returned. The caller decides whether the resulting absence of
+// system.provider is fatal. Parse errors and source-chain cycles
+// still bubble up.
 func (o *Outfitter) Load(name string) (chalkboard.Patch, error) {
 	if name == "" {
-		name = "config"
+		return chalkboard.Patch{}, nil
 	}
 	flat := map[string]json.RawMessage{}
 	visited := map[string]bool{}
 	if err := o.loadInto(name, flat, visited); err != nil {
+		if os.IsNotExist(err) {
+			return chalkboard.Patch{}, nil
+		}
 		return chalkboard.Patch{}, err
 	}
 	return chalkboard.Patch{Set: flat}, nil
@@ -126,18 +134,17 @@ func (o *Outfitter) loadInto(name string, flat map[string]json.RawMessage, visit
 	return o.flatten("", raw, flat)
 }
 
-// resolvePath finds a loadout file (loadouts/ then providers/).
+// resolvePath finds a loadout file (loadouts/<name>.toml). The
+// legacy providers/<name>/config.toml fallback has been removed:
+// provider directories now only carry auth credentials.
 func (o *Outfitter) resolvePath(name string) (string, error) {
-	candidates := []string{
-		filepath.Join(o.configDir, "loadouts", name+".toml"),
-		filepath.Join(o.configDir, "providers", name, "config.toml"),
+	path := filepath.Join(o.configDir, "loadouts", name+".toml")
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("outfit: stat %s: %w", path, err)
 	}
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			return p, nil
-		}
-	}
-	return "", fmt.Errorf("outfit: loadout %q not found (checked %s)", name, strings.Join(candidates, ", "))
+	return "", &os.PathError{Op: "open", Path: path, Err: os.ErrNotExist}
 }
 
 // flatten walks a TOML tree into dotted chalkboard keys, expanding

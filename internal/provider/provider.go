@@ -23,6 +23,16 @@ type Tool struct {
 	Parameters  interface{} `json:"parameters"`
 }
 
+// Knobs are operational provider settings derived from the loadout's
+// system.* chalkboard keys. The harness reads these to construct the
+// provider; the agent never sees them (no rendering template).
+type Knobs struct {
+	Model            string
+	MaxTokens        int
+	ReminderRenderer string // "tag" (default) or "tool"
+	UseOfficialSDK   bool
+}
+
 // Bus is the sink for per-turn provider output.
 type Bus interface {
 	PushDelta(content message.Content)

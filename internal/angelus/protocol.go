@@ -25,8 +25,8 @@ import (
 	"github.com/jack-work/figaro/internal/tool"
 )
 
-// ProviderFactory creates a provider from a name and model.
-type ProviderFactory func(providerName, model string) (providerPkg.Provider, error)
+// ProviderFactory creates a provider from a name and operational knobs.
+type ProviderFactory func(providerName string, knobs providerPkg.Knobs) (providerPkg.Provider, error)
 
 // ServerConfig holds dependencies for the angelus JSON-RPC handlers.
 type ServerConfig struct {
@@ -34,6 +34,11 @@ type ServerConfig struct {
 	Config          *config.Loaded
 	ProviderFactory ProviderFactory
 	Ctx             context.Context
+
+	// AvailableProviders is the list of provider names the factory
+	// knows how to construct. Surfaced in typed JSON-RPC errors so
+	// clients can drive first-run provider selection.
+	AvailableProviders []string
 
 	// ChalkboardTemplates renders Patches as system reminders. nil = skip.
 	ChalkboardTemplates *template.Template
@@ -48,12 +53,13 @@ type Handlers struct {
 // NewHandlers creates the handler set for the angelus socket.
 func NewHandlers(cfg ServerConfig) *Handlers {
 	h := &handlers{
-		angelus:   cfg.Angelus,
-		config:    cfg.Config,
-		factory:   cfg.ProviderFactory,
-		ctx:       cfg.Ctx,
-		cbTmpls:   cfg.ChalkboardTemplates,
-		outfitter: outfit.New(cfg.Config.ConfigDir),
+		angelus:            cfg.Angelus,
+		config:             cfg.Config,
+		factory:            cfg.ProviderFactory,
+		ctx:                cfg.Ctx,
+		cbTmpls:            cfg.ChalkboardTemplates,
+		outfitter:          outfit.New(cfg.Config.ConfigDir),
+		availableProviders: cfg.AvailableProviders,
 	}
 	return &Handlers{
 		Map: map[string]jsonrpc.HandlerFunc{
@@ -78,12 +84,13 @@ func (hs *Handlers) Restore(ctx context.Context, ariaID string) (figaro.Figaro, 
 }
 
 type handlers struct {
-	angelus   *Angelus
-	config    *config.Loaded
-	factory   ProviderFactory
-	ctx       context.Context
-	cbTmpls   *template.Template
-	outfitter *outfit.Outfitter
+	angelus            *Angelus
+	config             *config.Loaded
+	factory            ProviderFactory
+	ctx                context.Context
+	cbTmpls            *template.Template
+	outfitter          *outfit.Outfitter
+	availableProviders []string
 }
 
 // openAriaChalkboard opens the chalkboard for an aria. nil on failure.
@@ -202,10 +209,22 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 
-	// Resolve loadout -> chalkboard patch.
-	base, err := h.outfitter.Load(req.Loadout)
+	// Resolve the loadout name. Empty request → configured default →
+	// typed JSON-RPC error so the client can drive first-run setup.
+	loadoutName := req.Loadout
+	if loadoutName == "" {
+		loadoutName = h.config.Config.DefaultLoadout
+	}
+	if loadoutName == "" {
+		return nil, h.errNoDefaultLoadout()
+	}
+
+	// Resolve loadout -> chalkboard patch. Missing files are not
+	// fatal; the patch comes back empty and req.Patch may still
+	// supply system.provider.
+	base, err := h.outfitter.Load(loadoutName)
 	if err != nil {
-		return nil, fmt.Errorf("create: load loadout %q: %w", req.Loadout, err)
+		return nil, h.errLoadoutNotFound(loadoutName, err)
 	}
 	if req.Patch != nil {
 		if base.Set == nil {
@@ -218,15 +237,18 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	}
 
 	provName := patchString(base, "system.provider")
-	model := patchString(base, "system.model")
+	if provName == "" {
+		return nil, h.errNoProvider(loadoutName)
+	}
+	knobs := knobsFromPatch(base)
 
 	span.SetAttributes(
-		attribute.String("figaro.loadout", req.Loadout),
+		attribute.String("figaro.loadout", loadoutName),
 		attribute.String("figaro.provider", provName),
-		attribute.String("figaro.model", model),
+		attribute.String("figaro.model", knobs.Model),
 	)
 
-	prov, err := h.factory(provName, model)
+	prov, err := h.factory(provName, knobs)
 	if err != nil {
 		return nil, fmt.Errorf("create provider %q: %w", provName, err)
 	}
@@ -300,7 +322,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	go agent.StartSocket(h.ctx)
 
 	slog.Info("created figaro",
-		"id", id, "loadout", req.Loadout, "provider", provName, "model", model, "socket", sockPath)
+		"id", id, "loadout", loadoutName, "provider", provName, "model", knobs.Model, "socket", sockPath)
 
 	return rpc.CreateResponse{
 		FigaroID: id,
@@ -320,6 +342,39 @@ func patchString(p chalkboard.Patch, key string) string {
 	var s string
 	_ = json.Unmarshal(raw, &s)
 	return s
+}
+
+// patchInt reads an int value from a chalkboard.Patch's Set map.
+func patchInt(p chalkboard.Patch, key string) int {
+	raw, ok := p.Set[key]
+	if !ok {
+		return 0
+	}
+	var n int
+	_ = json.Unmarshal(raw, &n)
+	return n
+}
+
+// patchBool reads a bool value from a chalkboard.Patch's Set map.
+func patchBool(p chalkboard.Patch, key string) bool {
+	raw, ok := p.Set[key]
+	if !ok {
+		return false
+	}
+	var b bool
+	_ = json.Unmarshal(raw, &b)
+	return b
+}
+
+// knobsFromPatch extracts the operational provider knobs from a
+// loadout patch's system.* keys.
+func knobsFromPatch(p chalkboard.Patch) providerPkg.Knobs {
+	return providerPkg.Knobs{
+		Model:            patchString(p, "system.model"),
+		MaxTokens:        patchInt(p, "system.max_tokens"),
+		ReminderRenderer: patchString(p, "system.reminder_renderer"),
+		UseOfficialSDK:   patchBool(p, "system.use_official_sdk"),
+	}
 }
 
 func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -616,11 +671,34 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 		_ = json.Unmarshal(raw, &s)
 		return s
 	}
+	cbInt := func(key string) int {
+		raw, ok := cbSnap[key]
+		if !ok {
+			return 0
+		}
+		var n int
+		_ = json.Unmarshal(raw, &n)
+		return n
+	}
+	cbBool := func(key string) bool {
+		raw, ok := cbSnap[key]
+		if !ok {
+			return false
+		}
+		var b bool
+		_ = json.Unmarshal(raw, &b)
+		return b
+	}
 	provName := cbStr("system.provider")
-	model := cbStr("system.model")
+	knobs := providerPkg.Knobs{
+		Model:            cbStr("system.model"),
+		MaxTokens:        cbInt("system.max_tokens"),
+		ReminderRenderer: cbStr("system.reminder_renderer"),
+		UseOfficialSDK:   cbBool("system.use_official_sdk"),
+	}
 	cwd := cbStr("system.cwd")
 
-	prov, err := h.factory(provName, model)
+	prov, err := h.factory(provName, knobs)
 	if err != nil {
 		return nil, fmt.Errorf("restore %s: create provider: %w", aria.ID, err)
 	}
@@ -652,7 +730,7 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 	go agent.StartSocket(ctx)
 
 	slog.Info("restored figaro",
-		"id", aria.ID, "provider", provName, "model", model, "messages", aria.MessageCount)
+		"id", aria.ID, "provider", provName, "model", knobs.Model, "messages", aria.MessageCount)
 	return agent, nil
 }
 
@@ -671,5 +749,44 @@ func cwdFromChalkboard(cbState *chalkboard.State, fallback string) func() string
 			return *s
 		}
 		return fallback
+	}
+}
+
+// errNoDefaultLoadout builds a typed JSON-RPC error directing the
+// client to drive first-run loadout selection.
+func (h *handlers) errNoDefaultLoadout() error {
+	data, _ := json.Marshal(rpc.ErrorData{AvailableProviders: h.availableProviders})
+	return &jsonrpc.Error{
+		Code:    rpc.ErrNoDefaultLoadout,
+		Message: "no default loadout configured",
+		Data:    data,
+	}
+}
+
+// errNoProvider builds a typed JSON-RPC error indicating the
+// resolved loadout has no system.provider key.
+func (h *handlers) errNoProvider(loadoutName string) error {
+	data, _ := json.Marshal(rpc.ErrorData{
+		AvailableProviders: h.availableProviders,
+		Loadout:            loadoutName,
+	})
+	return &jsonrpc.Error{
+		Code:    rpc.ErrNoProvider,
+		Message: fmt.Sprintf("loadout %q has no system.provider", loadoutName),
+		Data:    data,
+	}
+}
+
+// errLoadoutNotFound builds a typed JSON-RPC error for a missing
+// named loadout. cause carries the underlying outfit error.
+func (h *handlers) errLoadoutNotFound(name string, cause error) error {
+	data, _ := json.Marshal(rpc.ErrorData{
+		Name:        name,
+		SearchPaths: []string{h.config.LoadoutPath(name)},
+	})
+	return &jsonrpc.Error{
+		Code:    rpc.ErrLoadoutNotFound,
+		Message: fmt.Sprintf("loadout %q not found: %s", name, cause),
+		Data:    data,
 	}
 }

@@ -55,6 +55,16 @@ func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch) (*rpc.SetRe
 	return &resp, nil
 }
 
+// Loadout applies a named loadout additively to the chalkboard. No
+// keys are removed; values equal to the current snapshot are skipped.
+func (c *Client) Loadout(ctx context.Context, name string) (*rpc.LoadoutResponse, error) {
+	var resp rpc.LoadoutResponse
+	if err := c.cli.Call(ctx, rpc.MethodLoadout, rpc.LoadoutRequest{Name: name}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Chalkboard returns the agent's current chalkboard snapshot.
 func (c *Client) Chalkboard(ctx context.Context) (*rpc.ChalkboardResponse, error) {
 	var resp rpc.ChalkboardResponse

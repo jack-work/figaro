@@ -60,7 +60,7 @@ model = "mock-model"
 	a := angelus.New(angelus.Config{RuntimeDir: dir})
 
 	// Wire the provider factory.
-	factory := func(providerName, model string) (provider.Provider, error) {
+	factory := func(providerName string, knobs provider.Knobs) (provider.Provider, error) {
 		return &mockProviderForIntegration{}, nil
 	}
 	loaded, err := config.Load(dir) // empty config dir, uses defaults
@@ -184,7 +184,7 @@ model = "mock-model"
 
 	a := angelus.New(angelus.Config{RuntimeDir: dir, Backend: backend})
 
-	factory := func(providerName, model string) (provider.Provider, error) {
+	factory := func(providerName string, knobs provider.Knobs) (provider.Provider, error) {
 		return &mockProviderForIntegration{}, nil
 	}
 	loaded, err := config.Load(dir)
@@ -301,7 +301,7 @@ model = "mock-model"
 
 	a := angelus.New(angelus.Config{RuntimeDir: dir, Backend: backend})
 
-	factory := func(providerName, model string) (provider.Provider, error) {
+	factory := func(providerName string, knobs provider.Knobs) (provider.Provider, error) {
 		return &mockProviderForIntegration{}, nil
 	}
 	loaded, err := config.Load(dir)

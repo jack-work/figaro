@@ -100,7 +100,8 @@ func runModels(loaded *config.Loaded) {
 
 	providerNames := loaded.ListProviders()
 	if len(providerNames) == 0 {
-		providerNames = []string{loaded.Config.DefaultProvider}
+		// Fall back to the providers the factory knows how to build.
+		providerNames = KnownProviders
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)

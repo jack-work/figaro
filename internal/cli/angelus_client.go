@@ -10,6 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/transport"
 )
@@ -83,8 +84,9 @@ func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
 }
 
 func mustCreateAndBind(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int) (string, transport.Endpoint) {
-	_ = loaded
-	createResp, err := acli.Create(ctx, "", nil)
+	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) {
+		return acli.Create(ctx, "", nil)
+	})
 	if err != nil {
 		die("create figaro: %s", err)
 	}

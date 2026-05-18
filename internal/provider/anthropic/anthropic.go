@@ -20,7 +20,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
@@ -53,18 +52,18 @@ type Anthropic struct {
 }
 
 // New constructs an Anthropic provider.
-func New(cfg config.AnthropicProvider, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Anthropic, error) {
+func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Anthropic, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("anthropic: nil token resolver")
 	}
-	rr := cfg.ReminderRenderer
+	rr := knobs.ReminderRenderer
 	if rr == "" {
 		rr = "tag"
 	}
 	return &Anthropic{
 		auth:             resolver,
-		Model:            cfg.Model,
-		MaxTokens:        cfg.MaxTokens,
+		Model:            knobs.Model,
+		MaxTokens:        knobs.MaxTokens,
 		HTTPClient:       &http.Client{Timeout: 10 * time.Minute},
 		ReminderRenderer: rr,
 		CacheOpen:        cacheOpen,

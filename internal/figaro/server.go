@@ -22,6 +22,7 @@ var agentMethods = []string{
 	rpc.MethodInterrupt,
 	rpc.MethodReloadConfig,
 	rpc.MethodSet,
+	rpc.MethodLoadout,
 	rpc.MethodChalkboard,
 }
 
@@ -84,6 +85,17 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			return nil, err
 		}
 		return rpc.SetResponse{OK: true, Set: set, Remove: removed}, nil
+
+	case rpc.MethodLoadout:
+		var req rpc.LoadoutRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+		set, err := a.ApplyLoadout(req.Name)
+		if err != nil {
+			return nil, err
+		}
+		return rpc.LoadoutResponse{OK: true, Set: set}, nil
 
 	case rpc.MethodChalkboard:
 		return rpc.ChalkboardResponse{Snapshot: a.Snapshot()}, nil

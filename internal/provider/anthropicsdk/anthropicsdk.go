@@ -21,7 +21,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -49,18 +48,18 @@ type Provider struct {
 }
 
 // New constructs the SDK-backed provider.
-func New(cfg config.AnthropicProvider, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Provider, error) {
+func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria string) (store.Log[[]json.RawMessage], error)) (*Provider, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("anthropicsdk: nil token resolver")
 	}
-	rr := cfg.ReminderRenderer
+	rr := knobs.ReminderRenderer
 	if rr == "" {
 		rr = "tag"
 	}
 	return &Provider{
 		resolver:   resolver,
-		model:      cfg.Model,
-		maxTokens:  cfg.MaxTokens,
+		model:      knobs.Model,
+		maxTokens:  knobs.MaxTokens,
 		reminder:   rr,
 		httpClient: &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
 		CacheOpen:  cacheOpen,
