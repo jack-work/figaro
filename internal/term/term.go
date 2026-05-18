@@ -82,6 +82,19 @@ func Width() int {
 	return 80
 }
 
+// Height returns the terminal height (rows), defaulting to 24 if
+// not a TTY or if detection fails. Mirrors Width's 80-col default so
+// height-dependent layout has something to work with in pipes/tests.
+func Height() int {
+	if !isTTY {
+		return 24
+	}
+	if _, r, err := term.GetSize(int(os.Stdout.Fd())); err == nil && r > 0 {
+		return r
+	}
+	return 24
+}
+
 // WidthFd returns the terminal width for a specific fd.
 func WidthFd(fd int) int {
 	if !term.IsTerminal(fd) {

@@ -3,41 +3,27 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/internal/term"
 )
 
-// soloDebug writes one line to /tmp/figaro_solo.log per significant
-// solo state event. Enabled when FIGARO_SOLO_DEBUG=1. No locking —
-// solo's caller already holds s.mu.
-func soloDebug(format string, args ...any) {
-	if os.Getenv("FIGARO_SOLO_DEBUG") != "1" {
-		return
-	}
-	f, err := os.OpenFile("/tmp/figaro_solo.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	fmt.Fprintf(f, format+"\n", args...)
-}
-
-// toolSoloState animates the header of a single tool call.
-// Start -> Freeze (on first output) -> Done. All state under mu.
+// toolSoloState renders one tool call as a fixed-size live region:
+// a spinner header on top, followed by an in-place rolling tail of
+// the most recent N physical lines of streamed output. Once the tail
+// fills, older lines drop off as new ones arrive — so the region's
+// total height never exceeds the viewport. Without that cap, output
+// taller than the viewport would scroll the spinner header into
+// scrollback where CursorUp can no longer reach it.
 //
-// The header is always one terminal row by construction: formatHeader
-// truncates its detail string so the painted line fits within
-// term.Width(). That lets repaint use a single CursorUp/EraseLine
-// rather than walking a variable number of rows.
+// Lifecycle: Start → (UpdateDetail|tick)* → Freeze → Write* → Done.
+// All state under mu.
 //
-// Position tracking: rowsBelow + cursor.col describe where the cursor
-// sits relative to the header. Write feeds streamed bytes through a
-// VT-aware cursor so wrapped lines bump rowsBelow correctly — without
-// that, terminal-driven wrap silently desynced the up-walk and left
-// the running spinner header on screen alongside the final ✓ header.
+// In wrapped mode (a parallel batch reuses solo as its header anchor)
+// solo doesn't own a tail — the batch paints rows directly below the
+// header and tells solo via AddRowsBelow. Solo's repaint stays out of
+// the batch's row range and just rewrites the header in place.
 
 type toolSoloState struct {
 	out    io.Writer
@@ -46,21 +32,53 @@ type toolSoloState struct {
 
 	mu     sync.Mutex
 	frame  int
-	state  toolRowState // running / OK / err
-	frozen bool         // true once cursor is no longer above the header
+	state  toolRowState
+	frozen bool
 
-	// rowsBelow + cursor track physical rows / column relative to the
-	// row just below the header. Mutated by Write; consulted by repaint
-	// to compute the up-walk distance.
-	rowsBelow int
-	cursor    vtCursor
+	// Rolling tail (standalone mode only).
+	maxRows int      // tail capacity; min(viewport-3, 0) capped to 0+
+	tail    []string // committed physical lines, len ≤ maxRows
+	partial []byte   // current in-progress line (no terminator yet)
+	cursor  vtCursor // tracks col / inEsc for wrap + ANSI handling
+
+	// liveRows: physical rows below the header currently painted on
+	// screen. Standalone: derived from the last repaint. Wrapped:
+	// incremented by AddRowsBelow from the batch.
+	liveRows int
+
+	// wrapped: a batch owns the rows below the header. Repaints only
+	// touch the header row; the rest is the batch's domain.
+	wrapped bool
 
 	stopCh   chan struct{}
 	doneCh   chan struct{}
 	stopOnce sync.Once
 }
 
-// stopTicker stops the spinner goroutine. Idempotent.
+// newToolSoloState prepares a solo state. maxRows is derived from
+// term.Height(): the live region is capped to leave the header and at
+// least one row of cursor breathing room below the tail. A tiny
+// viewport collapses to header-only (maxRows = 0).
+func newToolSoloState(out io.Writer, name, detail string) *toolSoloState {
+	if len(detail) > 200 {
+		detail = detail[:200] + "…"
+	}
+	h := term.Height()
+	maxRows := h - 3
+	if maxRows < 0 {
+		maxRows = 0
+	}
+	return &toolSoloState{
+		out:     out,
+		name:    name,
+		detail:  detail,
+		state:   toolRowRunning,
+		maxRows: maxRows,
+		stopCh:  make(chan struct{}),
+		doneCh:  make(chan struct{}),
+	}
+}
+
 func (s *toolSoloState) stopTicker() {
 	s.stopOnce.Do(func() {
 		close(s.stopCh)
@@ -71,23 +89,10 @@ func (s *toolSoloState) stopTicker() {
 // StopTicker pauses the spinner without finalizing.
 func (s *toolSoloState) StopTicker() { s.stopTicker() }
 
-// newToolSoloState prepares a solo state.
-func newToolSoloState(out io.Writer, name, detail string) *toolSoloState {
-	if len(detail) > 200 {
-		detail = detail[:200] + "…"
-	}
-	return &toolSoloState{
-		out:    out,
-		name:   name,
-		detail: detail,
-		state:  toolRowRunning,
-		stopCh: make(chan struct{}),
-		doneCh: make(chan struct{}),
-	}
-}
-
-// UpdateHeader replaces name and detail, forces repaint. No-op
-// once frozen.
+// UpdateHeader replaces name and detail, forces repaint. Used by
+// stream.go to repurpose the solo as a batch wrapper: this also
+// flips solo into wrapped mode so subsequent repaints don't trample
+// the batch's rows.
 func (s *toolSoloState) UpdateHeader(name, detail string) {
 	if len(detail) > 200 {
 		detail = detail[:200] + "…"
@@ -99,11 +104,11 @@ func (s *toolSoloState) UpdateHeader(name, detail string) {
 	}
 	s.name = name
 	s.detail = detail
-	s.repaintHeaderLocked()
+	s.wrapped = true
+	s.repaintLocked()
 }
 
-// UpdateDetail replaces the detail string and repaints. No-op
-// once frozen.
+// UpdateDetail replaces the detail string and repaints.
 func (s *toolSoloState) UpdateDetail(detail string) {
 	if len(detail) > 200 {
 		detail = detail[:200] + "…"
@@ -114,21 +119,20 @@ func (s *toolSoloState) UpdateDetail(detail string) {
 		return
 	}
 	s.detail = detail
-	s.repaintHeaderLocked()
+	s.repaintLocked()
 }
 
-// AddRowsBelow tells solo that n rows of foreign output were rendered
-// below its header. Used by a wrapping batch so its rows participate
-// in solo's repaint cursor math without duplicating the bookkeeping.
+// AddRowsBelow tells solo that n rows of foreign content were just
+// rendered below the header (by a wrapping batch). Used so solo's
+// header repaint walks the right distance back up.
 func (s *toolSoloState) AddRowsBelow(n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.rowsBelow += n
+	s.liveRows += n
 }
 
-// RepaintAtFrame advances the spinner frame and repaints. Used by a
-// foreign ticker (wrapping batch) that has taken over solo's
-// animation. No-op once frozen.
+// RepaintAtFrame is called by a foreign ticker (wrapping batch) to
+// drive the spinner animation while solo's own ticker is stopped.
 func (s *toolSoloState) RepaintAtFrame(frame int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -136,10 +140,10 @@ func (s *toolSoloState) RepaintAtFrame(frame int) {
 		return
 	}
 	s.frame = frame
-	s.repaintHeaderLocked()
+	s.repaintLocked()
 }
 
-// Start prints the header and launches the spinner.
+// Start prints the initial header. Cursor lands one row below.
 func (s *toolSoloState) Start() {
 	s.mu.Lock()
 	fmt.Fprintln(s.out)
@@ -148,8 +152,7 @@ func (s *toolSoloState) Start() {
 	go s.tick()
 }
 
-// Freeze stops the spinner and locks the header in place.
-// Idempotent.
+// Freeze stops the spinner and locks the header in place. Idempotent.
 func (s *toolSoloState) Freeze() {
 	s.mu.Lock()
 	if s.frozen {
@@ -158,17 +161,13 @@ func (s *toolSoloState) Freeze() {
 	}
 	s.frozen = true
 	s.mu.Unlock()
-
 	s.stopTicker()
-
 	s.mu.Lock()
-	s.repaintHeaderLocked()
+	s.repaintLocked()
 	s.mu.Unlock()
 }
 
-// Done marks the tool as completed and repaints the header with the
-// final glyph (✓ / ✗). Safe whether or not output streamed first,
-// and whether or not Freeze was called explicitly.
+// Done marks the tool complete and repaints with the final glyph.
 func (s *toolSoloState) Done(isError bool) {
 	s.mu.Lock()
 	if isError {
@@ -178,15 +177,12 @@ func (s *toolSoloState) Done(isError bool) {
 	}
 	s.frozen = true
 	s.mu.Unlock()
-
 	s.stopTicker()
-
 	s.mu.Lock()
-	s.repaintHeaderLocked()
+	s.repaintLocked()
 	s.mu.Unlock()
 }
 
-// tick is the spinner goroutine.
 func (s *toolSoloState) tick() {
 	defer close(s.doneCh)
 	t := time.NewTicker(spinnerTick)
@@ -202,30 +198,124 @@ func (s *toolSoloState) tick() {
 				return
 			}
 			s.frame++
-			s.repaintHeaderLocked()
+			s.repaintLocked()
 			s.mu.Unlock()
 		}
 	}
 }
 
-// repaintHeaderLocked is the single header-repaint primitive. Walks
-// the cursor up to the header row, erases it, prints the current
-// header, then returns the cursor to col 0 on the row strictly below
-// all output. Caller holds mu.
-//
-// Invariant: the header is one terminal row (formatHeader truncates).
-// If cursor is mid-row when called, an extra '\n' is emitted first so
-// the up-walk starts from col 0 — that newline counts as an output
-// row, so rowsBelow is bumped to match.
-func (s *toolSoloState) repaintHeaderLocked() {
-	if s.cursor.col != 0 {
-		fmt.Fprint(s.out, "\n")
-		s.rowsBelow++
-		s.cursor.col = 0
+// Write streams tool output. Each byte feeds the line buffer via a
+// VT-aware cursor; \n and width-driven wraps both commit a line. The
+// committed-lines ring drops the oldest when full. Repaints the live
+// region in place at end of call.
+func (s *toolSoloState) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	width := term.Width()
+	for _, b := range p {
+		s.ingest(b, width)
 	}
-	up := s.rowsBelow + 1
-	soloDebug("repaint state=%d frozen=%v rowsBelow=%d col=%d width=%d up=%d",
-		s.state, s.frozen, s.rowsBelow, s.cursor.col, term.Width(), up)
+	s.repaintLocked()
+	return len(p), nil
+}
+
+// ingest feeds one byte through the line buffer. Handles wrap, ANSI
+// escapes, \n, \r, and UTF-8 continuation bytes.
+func (s *toolSoloState) ingest(b byte, width int) {
+	if s.cursor.inEsc {
+		s.partial = append(s.partial, b)
+		if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') {
+			s.cursor.inEsc = false
+		}
+		return
+	}
+	switch b {
+	case 0x1b:
+		s.cursor.inEsc = true
+		s.partial = append(s.partial, b)
+		return
+	case '\n':
+		s.commitLine()
+		return
+	case '\r':
+		// Cursor visually resets to col 0; keep partial bytes so far.
+		// Real terminals would overwrite on subsequent chars; for our
+		// live tail that's close enough.
+		s.cursor.col = 0
+		return
+	}
+	if b&0xc0 == 0x80 {
+		s.partial = append(s.partial, b)
+		return
+	}
+	if s.cursor.col >= width {
+		s.commitLine()
+	}
+	s.partial = append(s.partial, b)
+	s.cursor.col++
+}
+
+// commitLine pushes the current partial as a finished line onto the
+// tail ring (dropping oldest if at capacity), and resets state for
+// the next line.
+func (s *toolSoloState) commitLine() {
+	line := string(s.partial)
+	s.partial = s.partial[:0]
+	s.cursor.col = 0
+	if s.maxRows == 0 {
+		return
+	}
+	if len(s.tail) >= s.maxRows {
+		copy(s.tail, s.tail[1:])
+		s.tail[len(s.tail)-1] = line
+	} else {
+		s.tail = append(s.tail, line)
+	}
+}
+
+// repaintLocked is the canonical paint. In wrapped mode it only
+// rewrites the header. In standalone mode it rewrites the header
+// followed by the visible tail (committed lines + the current
+// partial as a bottom row). The cursor returns to "below tail" =
+// 1 row below all painted rows. Caller holds mu.
+func (s *toolSoloState) repaintLocked() {
+	if s.wrapped {
+		s.repaintHeaderOnlyLocked()
+		return
+	}
+	visible := s.visibleTail()
+	newLiveRows := len(visible)
+
+	// Walk up past the live region to the header row.
+	fmt.Fprint(s.out, term.CursorUp(s.liveRows+1))
+	fmt.Fprintf(s.out, "%s%s\r", term.EraseLine, s.formatHeader())
+
+	for _, line := range visible {
+		fmt.Fprintf(s.out, "\n%s%s", term.EraseLine, line)
+	}
+	// If the tail shrunk (rare; e.g., \r reset partial), erase any
+	// leftover row from the previous paint so it doesn't ghost on
+	// screen.
+	for i := newLiveRows; i < s.liveRows; i++ {
+		fmt.Fprintf(s.out, "\n%s", term.EraseLine)
+	}
+	paintedRows := newLiveRows
+	if s.liveRows > paintedRows {
+		paintedRows = s.liveRows
+	}
+	// Cursor sits at end of last printed row. Move to col 0 of the
+	// row strictly below all painted rows. \r + \n works whether or
+	// not the row ended in a pending-wrap.
+	fmt.Fprint(s.out, "\r\n")
+	_ = paintedRows
+	s.liveRows = newLiveRows
+}
+
+// repaintHeaderOnlyLocked walks up past the live region, rewrites
+// the header in place, and returns the cursor without touching any
+// content rows. Used for the wrapped-batch case.
+func (s *toolSoloState) repaintHeaderOnlyLocked() {
+	up := s.liveRows + 1
 	fmt.Fprintf(s.out, "%s%s%s\r%s",
 		term.CursorUp(up),
 		term.EraseLine,
@@ -233,24 +323,26 @@ func (s *toolSoloState) repaintHeaderLocked() {
 		term.CursorDown(up))
 }
 
-// Write streams tool output. Each byte is fed through a VT-aware
-// cursor so wrap, ANSI escape sequences, and UTF-8 continuation
-// bytes are accounted for when bumping rowsBelow. term.Width is
-// re-read on every call so a mid-stream resize at least gets the
-// next chunk's wrap math right.
-func (s *toolSoloState) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	beforeRows := s.rowsBelow
-	beforeCol := s.cursor.col
-	n, err := s.out.Write(p)
-	width := term.Width()
-	for i := 0; i < n; i++ {
-		s.rowsBelow += s.cursor.advance(p[i], width)
+// visibleTail returns the lines to paint below the header. The
+// in-progress partial appears as the bottom row when non-empty,
+// displacing the oldest line if the ring is already full.
+func (s *toolSoloState) visibleTail() []string {
+	if s.maxRows == 0 {
+		return nil
 	}
-	soloDebug("write len=%d width=%d rowsBelow %d->%d col %d->%d",
-		n, width, beforeRows, s.rowsBelow, beforeCol, s.cursor.col)
-	return n, err
+	if len(s.partial) == 0 {
+		return s.tail
+	}
+	if len(s.tail) < s.maxRows {
+		out := make([]string, len(s.tail)+1)
+		copy(out, s.tail)
+		out[len(s.tail)] = string(s.partial)
+		return out
+	}
+	out := make([]string, s.maxRows)
+	copy(out, s.tail[1:])
+	out[s.maxRows-1] = string(s.partial)
+	return out
 }
 
 // formatHeader returns the header line without trailing newline.
@@ -295,59 +387,12 @@ func (s *toolSoloState) formatHeader() string {
 	return header
 }
 
-// vtCursor tracks the column position of a stream of bytes as they
-// would render on a terminal of a given width. Used by toolSoloState
-// to count physical rows (including terminal-driven wrap) so the
-// header repaint walks the right number of rows up.
-//
-// The state machine is byte-oriented and matches xterm's pending-wrap
-// behavior: filling the last column of a row leaves the cursor in a
-// "pending wrap" state at col == width; the row-break only fires on
-// the next *visible* byte (not on '\n', which just moves down and
-// clears pending). Without this, a line whose length is exactly a
-// multiple of width would over-count by one row per wrap point.
-//
-// Other minimal rules:
-//   - ESC starts an escape sequence; the first ASCII letter ends it.
-//     (Same heuristic as term.VisibleLen.)
-//   - '\r' resets col and clears pending wrap.
-//   - '\n' resets col, clears pending wrap, produces one row break.
-//   - UTF-8 continuation bytes (10xxxxxx) don't advance col — only
-//     the leading byte of a rune does. Ignores east-asian-wide runes;
-//     close-enough for header math.
+// vtCursor: minimal byte-level VT cursor used by the line-buffer
+// ingest. Tracks col with pending-wrap semantics (filling the last
+// column leaves the cursor at col == width; the wrap-event fires on
+// the next visible byte). ANSI escape sequences and UTF-8
+// continuation bytes are visible-width zero.
 type vtCursor struct {
 	col   int
 	inEsc bool
-}
-
-// advance ingests one byte and returns the number of physical row
-// breaks it produced (0 or 1).
-func (c *vtCursor) advance(b byte, width int) int {
-	if c.inEsc {
-		if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') {
-			c.inEsc = false
-		}
-		return 0
-	}
-	switch b {
-	case 0x1b:
-		c.inEsc = true
-		return 0
-	case '\n':
-		c.col = 0
-		return 1
-	case '\r':
-		c.col = 0
-		return 0
-	}
-	if b&0xc0 == 0x80 {
-		return 0
-	}
-	rows := 0
-	if c.col >= width {
-		c.col = 0
-		rows = 1
-	}
-	c.col++
-	return rows
 }

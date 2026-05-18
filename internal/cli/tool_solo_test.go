@@ -70,32 +70,21 @@ func TestSoloDoneAfterStreamedOutputErasesSpinner(t *testing.T) {
 	var buf safeBuf
 	s := newToolSoloState(&buf, "bash", "head -30 file.md")
 	s.Start()
-	// Simulate live tool output arriving — first chunk triggers
-	// Freeze (mirrors what MethodToolOutput does) and then writes
-	// through solo so newlines are counted.
+	// First chunk triggers Freeze (mirrors MethodToolOutput) then
+	// streams content through solo so newlines feed the tail buffer.
 	s.Freeze()
 	s.Write([]byte("line one\nline two\nline three\n"))
 	s.Done(false)
 
-	raw := buf.String()
-	// On a real TTY the cursor-up sequence relocates the cursor to
-	// the original header row before the rewrite. We can't render a
-	// VT in a unit test, but we can assert the byte stream contains
-	// the up-by-N+1 cursor-move where N is the streamed newline
-	// count (3 here, so N+1 = 4) and that the byte directly after
-	// the move is the erase-line + new ✓ header.
-	want := "\033[4A\r\033[2K"
-	if !strings.Contains(raw, want) {
-		t.Fatalf("expected cursor-up sequence %q in raw output:\n%q", want, raw)
-	}
-	idx := strings.Index(raw, want)
-	after := stripANSI(raw[idx+len(want):])
-	if !strings.Contains(after, "✓") {
-		t.Fatalf("expected ✓ header after cursor-up; got:\n%q", after)
-	}
-	// And the matching down-by-4 should also appear.
-	if !strings.Contains(raw, "\r\033[4B") {
-		t.Fatalf("expected matching cursor-down sequence in raw output:\n%q", raw)
+	rendered := renderTermGrid(buf.String(), term.Width())
+	assertSingleCheckedHeader(t, rendered)
+
+	// The streamed lines must be in the rendered grid below the header.
+	joined := strings.Join(rendered, "\n")
+	for _, want := range []string{"line one", "line two", "line three"} {
+		if !strings.Contains(stripANSI(joined), want) {
+			t.Fatalf("expected %q in rendered grid:\n%s", want, joined)
+		}
 	}
 }
 
@@ -142,11 +131,40 @@ func TestSoloDoneAfterStreamedOutputWithoutFreeze(t *testing.T) {
 	assertSingleCheckedHeader(t, rendered)
 }
 
-// Regression: a tool output line longer than the terminal width
-// wraps onto multiple physical rows. Before the wrap-aware cursor
-// tracker, rowsBelow only counted '\n' bytes, so the header repaint
-// walked too few rows up — the original spinner header survived on
-// screen and the ✓ header was painted somewhere lower.
+// Regression: when streamed output is taller than the viewport, the
+// pre-buffered design would scroll the spinner header into scrollback
+// where CursorUp can't reach it; the ✓ header would land somewhere
+// in the middle of the visible output. The rolling tail caps the
+// live region at term.Height-3 so the header stays on screen.
+func TestSoloRollingTailBoundedByViewport(t *testing.T) {
+	// term.Height() returns 24 in tests, so maxRows = 21.
+	// Stream 100 logical lines — way over the cap. Expect:
+	//  - exactly one header (✓) in the grid
+	//  - the live region (header + visible tail) is at most maxRows+1
+	//  - the LAST committed line is visible (tail keeps the recent end)
+	//  - the FIRST committed line has been evicted from the visible tail
+	var buf safeBuf
+	s := newToolSoloState(&buf, "bash", "tall")
+	s.Start()
+	var sb strings.Builder
+	for i := 0; i < 100; i++ {
+		fmt.Fprintf(&sb, "line %d\n", i)
+	}
+	s.Write([]byte(sb.String()))
+	s.Done(false)
+
+	rendered := renderTermGrid(buf.String(), term.Width())
+	assertSingleCheckedHeader(t, rendered)
+
+	joined := stripANSI(strings.Join(rendered, "\n"))
+	if !strings.Contains(joined, "line 99") {
+		t.Fatalf("tail should include latest line (line 99); grid:\n%s", joined)
+	}
+	if strings.Contains(joined, "line 0\n") || strings.HasPrefix(joined, "line 0") {
+		t.Fatalf("tail should NOT include line 0 (evicted); grid:\n%s", joined)
+	}
+}
+
 func TestSoloDoneAfterWrappedStreamErasesSpinner(t *testing.T) {
 	width := term.Width()
 	// Wrap deterministically across three rows: width + width + half.
