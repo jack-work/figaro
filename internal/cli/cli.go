@@ -128,7 +128,7 @@ the named aria, creating it if it does not yet exist.
 			runSend(ld, ctx.RawArgs)
 			return nil
 		},
-		CompleteArgs: completeAriaIDsAfterFlag(nil),
+		CompleteArgs: completePromptOrIDFlag,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -147,6 +147,7 @@ the named aria, creating it if it does not yet exist.
 			runNewPrompt(ld, prompt)
 			return nil
 		},
+		CompleteArgs: completePromptOrIDFlag,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -162,7 +163,7 @@ the named aria, creating it if it does not yet exist.
 			runPlainPrompt(ld, ctx.RawArgs)
 			return nil
 		},
-		CompleteArgs: completeAriaIDsAfterFlag(nil),
+		CompleteArgs: completePromptOrIDFlag,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -186,7 +187,7 @@ Flags:
 			runExecPrompt(ld, ctx.RawArgs)
 			return nil
 		},
-		CompleteArgs: completeAriaIDsAfterFlag(nil),
+		CompleteArgs: completePromptOrIDFlag,
 	})
 
 	r.Register(&cmdkit.Command{
