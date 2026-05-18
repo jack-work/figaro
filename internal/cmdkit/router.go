@@ -29,6 +29,11 @@ type Router struct {
 
 	// Stderr is the output for help and errors. Defaults to os.Stderr.
 	Stderr io.Writer
+
+	// barePromptComplete is the CompleteArgs callback invoked when
+	// the user is in the bare-prompt form (`<prog> -- <body>`, or an
+	// alias thereof). See SetBarePromptComplete.
+	barePromptComplete func(*CompleteContext) []string
 }
 
 // NewRouter creates a router with the given binary name.

@@ -435,5 +435,10 @@ auto-load it on the next tab.
 		},
 	})
 
+	// Bare-prompt completion: when the user invokes `figaro -- <body>`
+	// (or an alias such as `q ` expanding to it), the cursor in <body>
+	// should pull from the prompt-context pool, not the verb list.
+	r.SetBarePromptComplete(completePromptContext)
+
 	return r
 }

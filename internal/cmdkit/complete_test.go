@@ -163,6 +163,34 @@ func TestCompleteContextPastSeparator(t *testing.T) {
 	}
 }
 
+func TestCompleteBarePromptSentinel(t *testing.T) {
+	r := NewRouter("test")
+	r.Stderr = &bytes.Buffer{}
+	var sawPast bool
+	var called bool
+	r.SetBarePromptComplete(func(ctx *CompleteContext) []string {
+		called = true
+		sawPast = ctx.PastSeparator
+		return []string{"prompt-candidate"}
+	})
+
+	out := captureStdout(t, func() {
+		// Shell-side substitution: the user typed `figaro -- <cursor>`
+		// (or an alias of it), the script swaps the verb position from
+		// "--" to the sentinel before calling __complete.
+		r.Run([]string{"__complete", "__bare_prompt"})
+	})
+	if !called {
+		t.Fatalf("bare-prompt callback not invoked")
+	}
+	if !sawPast {
+		t.Errorf("PastSeparator must be true in bare-prompt path")
+	}
+	if strings.TrimSpace(out) != "prompt-candidate" {
+		t.Errorf("output = %q", out)
+	}
+}
+
 func TestCompletionScriptsMentionDispatcher(t *testing.T) {
 	r := NewRouter("figaro")
 	r.Register(&Command{Name: "set", Short: "Patch a chalkboard key"})

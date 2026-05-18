@@ -10,6 +10,13 @@ import (
 // scripts shell out to for dynamic candidates.
 const completeVerb = "__complete"
 
+// barePromptSentinel is the verb-position token the shell-side
+// completion scripts substitute when the user is in the bare-prompt
+// form (`figaro -- <body>` or any alias of it, e.g. `q ` expanding
+// to `figaro -- `). The dispatcher recognizes it and routes to the
+// bare-prompt completer registered via SetBarePromptComplete.
+const barePromptSentinel = "__bare_prompt"
+
 // CompletionShell identifies a shell for completion script generation.
 type CompletionShell string
 
@@ -18,6 +25,16 @@ const (
 	ShellZsh  CompletionShell = "zsh"
 	ShellFish CompletionShell = "fish"
 )
+
+// SetBarePromptComplete registers a CompleteArgs callback that fires
+// when the user is typing in the bare-prompt form: `figaro -- <body>`
+// (or an alias such as `q ` that expands to that). The cursor lives
+// past the `--`, so callbacks should behave as if PastSeparator is
+// true. Callers typically wire this to completePromptContext or its
+// composition.
+func (r *Router) SetBarePromptComplete(fn func(*CompleteContext) []string) {
+	r.barePromptComplete = fn
+}
 
 // runComplete is the hidden __complete dispatcher. Args layout:
 //
@@ -39,10 +56,6 @@ func (r *Router) runComplete(ctx *RunContext) error {
 		return nil
 	}
 	verb := raw[0]
-	cmd, ok := r.index[verb]
-	if !ok || cmd.CompleteArgs == nil {
-		return nil
-	}
 	tail := raw[1:]
 	// Same logic for the boundary marker between verb and tokens:
 	// the shell-side completion scripts insert exactly one "--" here.
@@ -61,7 +74,29 @@ func (r *Router) runComplete(ctx *RunContext) error {
 			break
 		}
 	}
-	cands := cmd.CompleteArgs(&CompleteContext{
+
+	// Resolve which CompleteArgs to call: bare-prompt sentinel goes
+	// to the dedicated callback (cursor is conceptually past --);
+	// every other verb goes through the command registry.
+	var fn func(*CompleteContext) []string
+	if verb == barePromptSentinel {
+		fn = r.barePromptComplete
+		// The bare-prompt path is *always* past-separator from the
+		// callback's perspective: the user has already invoked the
+		// program with a "--" boundary (or an alias of it).
+		pastSep = true
+	} else {
+		cmd, ok := r.index[verb]
+		if !ok {
+			return nil
+		}
+		fn = cmd.CompleteArgs
+	}
+	if fn == nil {
+		return nil
+	}
+
+	cands := fn(&CompleteContext{
 		Args:          tail,
 		PastSeparator: pastSep,
 		Extra:         r.Extra,
@@ -89,16 +124,26 @@ func (r *Router) WriteCompletion(w io.Writer, shell CompletionShell) error {
 
 func (r *Router) writeBashCompletion(w io.Writer) error {
 	cmds := r.visibleCommandNames()
+	// Bash logic:
+	//   - At word 1: emit the verb list (or, if word 1 is "--", route
+	//     to the bare-prompt completer instead).
+	//   - Beyond:    resolve the verb. If verb == "--", route to the
+	//     bare-prompt completer (cursor lives past --). Otherwise
+	//     dispatch by verb name.
 	fmt.Fprintf(w, `# bash completion for %s
 _%s_completions() {
     COMPREPLY=()
     local cur="${COMP_WORDS[COMP_CWORD]}"
+    local verb="${COMP_WORDS[1]}"
+    local sentinel="%s"
     if [ "$COMP_CWORD" -eq 1 ]; then
         local commands="%s"
         COMPREPLY=($(compgen -W "$commands" -- "$cur"))
         return
     fi
-    local verb="${COMP_WORDS[1]}"
+    if [ "$verb" = "--" ]; then
+        verb="$sentinel"
+    fi
     local count=$((COMP_CWORD - 2))
     local args=()
     if [ "$count" -gt 0 ]; then
@@ -111,7 +156,7 @@ _%s_completions() {
     fi
 }
 complete -F _%s_completions %s
-`, r.Name, r.Name, strings.Join(cmds, " "), r.Name, completeVerb, r.Name, r.Name)
+`, r.Name, r.Name, barePromptSentinel, strings.Join(cmds, " "), r.Name, completeVerb, r.Name, r.Name)
 	return nil
 }
 
@@ -135,6 +180,10 @@ __%s_commands() {
 
 __%s_dynamic() {
     local verb=$words[2]
+    local sentinel="%s"
+    if [[ $verb == "--" ]]; then
+        verb=$sentinel
+    fi
     local -a args
     if (( CURRENT > 3 )); then
         args=( "${words[@]:2:$((CURRENT - 3))}" )
@@ -155,7 +204,7 @@ _%s() {
 }
 
 _%s "$@"
-`, r.Name, r.Name, completeVerb, r.Name, r.Name, r.Name, r.Name)
+`, r.Name, r.Name, barePromptSentinel, completeVerb, r.Name, r.Name, r.Name, r.Name)
 	return nil
 }
 
@@ -168,6 +217,10 @@ func (r *Router) writeFishCompletion(w io.Writer) error {
 	// file completion handles those cases natively and is far more
 	// polished than anything we'd reinvent — so we let it ride
 	// alongside our dynamic candidates.
+	//
+	// The dynamic function detects the bare-prompt form (`figaro --`
+	// or an alias expanding to it) and substitutes the sentinel verb
+	// so the dispatcher routes to the bare-prompt completer.
 	fmt.Fprintf(w, `# fish completion for %s
 function __%s_dynamic
     set -l tokens (commandline -opc)
@@ -175,23 +228,43 @@ function __%s_dynamic
         return
     end
     set -l verb $tokens[2]
+    set -l sentinel %s
+    if test "$verb" = "--"
+        set verb $sentinel
+    end
     set -l args
     if test (count $tokens) -gt 2
         set args $tokens[3..-1]
     end
     %s %s $verb -- $args 2>/dev/null
 end
-`, r.Name, r.Name, r.Name, completeVerb)
+
+# Bare-prompt detector: when the first token after the program name
+# is "--" (or an alias has placed us in that form), suggest from the
+# dynamic pool — not the subcommand list.
+function __%s_is_bare_prompt
+    set -l tokens (commandline -opc)
+    test (count $tokens) -ge 2; and test $tokens[2] = "--"
+end
+`, r.Name, r.Name, barePromptSentinel, r.Name, completeVerb, r.Name)
 	for _, cmd := range r.commands {
 		if cmd.Hidden {
 			continue
 		}
 		desc := strings.ReplaceAll(cmd.Short, "'", "\\'")
-		fmt.Fprintf(w, "complete -c %s -n '__fish_use_subcommand' -a %s -d '%s'\n",
-			r.Name, cmd.Name, desc)
+		// Subcommand suggestions: only when fish thinks we are at
+		// the subcommand position AND we're not in the bare-prompt
+		// form (so `q <TAB>` doesn't get a verb list).
+		fmt.Fprintf(w, "complete -c %s -n '__fish_use_subcommand; and not __%s_is_bare_prompt' -a %s -d '%s'\n",
+			r.Name, r.Name, cmd.Name, desc)
 	}
 	fmt.Fprintf(w, "complete -c %s -n 'not __fish_use_subcommand' -a '(__%s_dynamic)'\n",
 		r.Name, r.Name)
+	// Also surface dynamic candidates at the subcommand position
+	// when we're in the bare-prompt form (the negative condition
+	// above suppresses verbs in that case).
+	fmt.Fprintf(w, "complete -c %s -n '__fish_use_subcommand; and __%s_is_bare_prompt' -a '(__%s_dynamic)'\n",
+		r.Name, r.Name, r.Name)
 	return nil
 }
 
