@@ -261,7 +261,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 					return
 				}
 				if solo != nil {
-					solo.Freeze()
+					// No Freeze: the ticker keeps animating during
+					// output (mu serializes ticker, Write, and repaint).
 					solo.Write([]byte(p.Chunk))
 				} else if rawOut != nil {
 					rawOut.Write([]byte(p.Chunk))

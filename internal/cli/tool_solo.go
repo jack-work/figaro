@@ -198,7 +198,10 @@ func (s *toolSoloState) tick() {
 				return
 			}
 			s.frame++
-			s.repaintLocked()
+			// Header-only repaint: the spinner glyph changes but the
+			// tail content (if any) is whatever the last Write left
+			// on screen, so there's no need to redraw it every tick.
+			s.repaintHeaderOnlyLocked()
 			s.mu.Unlock()
 		}
 	}
