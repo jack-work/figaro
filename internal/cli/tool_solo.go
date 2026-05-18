@@ -50,6 +50,13 @@ type toolSoloState struct {
 	// touch the header row; the rest is the batch's domain.
 	wrapped bool
 
+	// Stats chip: elapsed + size live in the header. Ticker repaint
+	// keeps the elapsed counter advancing once per spinnerTick.
+	startedAt     time.Time // set in Start
+	endedAt       time.Time // set in Done
+	totalBytes    int       // bytes ingested via Write (pre-truncation)
+	committedRows int       // physical lines committed (total, not just visible)
+
 	stopCh   chan struct{}
 	doneCh   chan struct{}
 	stopOnce sync.Once
@@ -146,6 +153,7 @@ func (s *toolSoloState) RepaintAtFrame(frame int) {
 // Start prints the initial header. Cursor lands one row below.
 func (s *toolSoloState) Start() {
 	s.mu.Lock()
+	s.startedAt = time.Now()
 	fmt.Fprintln(s.out)
 	fmt.Fprintln(s.out, s.formatHeader())
 	s.mu.Unlock()
@@ -175,6 +183,7 @@ func (s *toolSoloState) Done(isError bool) {
 	} else {
 		s.state = toolRowOK
 	}
+	s.endedAt = time.Now()
 	s.frozen = true
 	s.mu.Unlock()
 	s.stopTicker()
@@ -214,6 +223,7 @@ func (s *toolSoloState) tick() {
 func (s *toolSoloState) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.totalBytes += len(p)
 	width := term.Width()
 	for _, b := range p {
 		s.ingest(b, width)
@@ -265,6 +275,7 @@ func (s *toolSoloState) commitLine() {
 	line := string(s.partial)
 	s.partial = s.partial[:0]
 	s.cursor.col = 0
+	s.committedRows++
 	if s.maxRows == 0 {
 		return
 	}
@@ -350,7 +361,13 @@ func (s *toolSoloState) visibleTail() []string {
 
 // formatHeader returns the header line without trailing newline.
 // Truncates detail to the current terminal width so the result
-// always renders in one row.
+// always renders in one row. Format:
+//
+//	─── X ▶ name · detail · (elapsed, size) ───
+//
+// where the stats chip is omitted before Start, and the detail
+// is truncated to whatever room is left after reserving space for
+// name + chip + box-drawing chrome.
 func (s *toolSoloState) formatHeader() string {
 	var icon string
 	var colorFn func(string) string
@@ -368,12 +385,20 @@ func (s *toolSoloState) formatHeader() string {
 		icon = "▶"
 		colorFn = term.Dim
 	}
-	// Skeleton: "─── X ▶ name · detail ───"
-	// Overhead: 4 (lead) + 1 (icon) + 3 (" ▶ ") + 3 (" · ") + 4 (trail) = 15
-	const overhead = 15
+	chip := s.statChipLocked()
+
+	// Baseline overhead: 4 ("─── ") + 1 (icon) + 3 (" ▶ ") + 3
+	// (" · " before detail) + 4 (" ───") = 15. Chip adds another
+	// 3 (" · ") plus its own length.
+	const baseOverhead = 15
 	width := term.Width()
 	nameRunes := len([]rune(s.name))
-	avail := width - overhead - nameRunes
+	chipRunes := len([]rune(chip))
+	chipOverhead := 0
+	if chip != "" {
+		chipOverhead = 3 + chipRunes
+	}
+	avail := width - baseOverhead - chipOverhead - nameRunes
 
 	detail := s.detail
 	if avail < 4 {
@@ -386,8 +411,37 @@ func (s *toolSoloState) formatHeader() string {
 	if detail != "" {
 		header += term.Dim(" · " + detail)
 	}
+	if chip != "" {
+		header += term.Dim(" · " + chip)
+	}
 	header += term.Dim(" ───")
 	return header
+}
+
+// statChipLocked returns the stats chip rendered into the header:
+// running tools get "(elapsed, bytes)", completed tools get
+// "(elapsed, lines)". Empty string before Start (when startedAt is
+// zero). Caller holds mu.
+func (s *toolSoloState) statChipLocked() string {
+	if s.startedAt.IsZero() {
+		return ""
+	}
+	switch s.state {
+	case toolRowRunning:
+		elapsed := time.Since(s.startedAt)
+		return fmt.Sprintf("(%s, %s)", formatRowElapsed(elapsed), formatBytes(s.totalBytes))
+	case toolRowOK, toolRowErr:
+		end := s.endedAt
+		if end.IsZero() {
+			end = time.Now()
+		}
+		lines := s.committedRows
+		if len(s.partial) > 0 {
+			lines++
+		}
+		return fmt.Sprintf("(%s, %s)", formatRowElapsed(end.Sub(s.startedAt)), pluralLines(lines))
+	}
+	return ""
 }
 
 // vtCursor: minimal byte-level VT cursor used by the line-buffer
