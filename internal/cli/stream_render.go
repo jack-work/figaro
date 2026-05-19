@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jack-work/largo"
@@ -48,10 +49,20 @@ func recordWireTrace(w io.Writer, method string, params json.RawMessage) {
 // events.
 //
 // Threading: Handle is called from a single goroutine (the JSON-RPC
-// notify pump). All state lives on the struct; no internal locks
-// needed.
+// notify pump). However, the pacer drainer is a separate goroutine
+// that writes to sw on a ticker. Any Suspend/Resume cycle on sw
+// must be serialized against that drainer or largo panics on a
+// write to a suspended writer. The writeMu mutex guards every write
+// path that targets sw — pacer goes through a pacedWriter shim
+// which acquires writeMu; the renderer's direct sw.Write and
+// Suspend/Resume calls acquire it inline.
 type streamRenderer struct {
 	ctx context.Context
+
+	// writeMu serializes all writes through sw against
+	// Suspend/Resume transitions. Held briefly for each Write and
+	// across the (Flush, Suspend) and Resume transitions.
+	writeMu sync.Mutex
 
 	// Output sinks. `sw` is the largo (markdown) writer wrapped
 	// around stdout; `pace` rate-limits character delivery; `rawOut`
@@ -112,11 +123,10 @@ type invokedTool struct {
 	args map[string]interface{} // populated by tool_invoke_ready
 }
 
-func newStreamRenderer(ctx context.Context, sw *largo.Writer, pace *pacer.Pacer) *streamRenderer {
+func newStreamRenderer(ctx context.Context, sw *largo.Writer) *streamRenderer {
 	r := &streamRenderer{
 		ctx:            ctx,
 		sw:             sw,
-		pace:           pace,
 		pendingOutput:  map[string][]string{},
 		streamedDetail: map[string]*pendingToolArg{},
 		done:           make(chan struct{}, 1),
@@ -131,16 +141,57 @@ func newStreamRenderer(ctx context.Context, sw *largo.Writer, pace *pacer.Pacer)
 	return r
 }
 
+// SetPacer wires the pacer into the renderer. The pacer must be
+// constructed against r.PacedOut() so its drainer writes go through
+// the renderer's writeMu.
+func (r *streamRenderer) SetPacer(p *pacer.Pacer) {
+	r.pace = p
+}
+
+// pacedWriter wraps writes from the pacer drainer goroutine through
+// the renderer's writeMu. The pacer drains text from the LLM stream
+// on a ticker; without this serialization a Write can race a
+// Suspend() call and trigger largo's panic.
+type pacedWriter struct{ r *streamRenderer }
+
+func (pw *pacedWriter) Write(p []byte) (int, error) {
+	pw.r.writeMu.Lock()
+	defer pw.r.writeMu.Unlock()
+	if pw.r.rawOut != nil {
+		// Tool rendering owns the terminal; drop the pacer write.
+		// (Should not happen in practice — the pacer is Flushed
+		// before Suspend — but be defensive.)
+		return len(p), nil
+	}
+	return pw.r.sw.Write(p)
+}
+
+// PacedOut returns the io.Writer the pacer should be constructed
+// against. Calling this between newStreamRenderer and the pacer's
+// New() is how we hook the serialization in.
+func (r *streamRenderer) PacedOut() io.Writer { return &pacedWriter{r: r} }
+
 // Done returns a channel that closes when MethodDone has fired.
 func (r *streamRenderer) Done() <-chan struct{} { return r.done }
 
 // suspendIfNeeded transitions stdout from largo/markdown mode to raw
-// mode, returning a raw io.Writer the tool renderers can use.
+// mode, returning a raw io.Writer the tool renderers can use. The
+// writeMu lock is held across pace.Flush(), sw.Flush(), and
+// sw.Suspend() so the pacer drainer can't sneak a Write between
+// Flush and Suspend.
 func (r *streamRenderer) suspendIfNeeded() io.Writer {
 	if r.rawOut != nil {
 		return r.rawOut
 	}
+	// Flush the pacer queue *before* acquiring writeMu — Flush has
+	// its own internal spin and will eventually re-enter the pacer
+	// drainer via pacedWriter.Write, which would deadlock if we held
+	// writeMu here. After Flush returns, the queue is empty; any
+	// concurrent drainer wakeup would then see no work.
 	r.pace.Flush()
+
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
 	r.sw.Flush()
 	r.rawOut = r.sw.Suspend()
 	return r.rawOut
@@ -166,6 +217,8 @@ func (r *streamRenderer) resumeIfSuspended() {
 	if r.rawOut == nil {
 		return
 	}
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
 	_ = r.sw.Resume()
 	r.rawOut = nil
 }
@@ -224,8 +277,10 @@ func (r *streamRenderer) finalizeRendering() {
 		r.solo = nil
 	}
 	if r.rawOut != nil {
+		r.writeMu.Lock()
 		_ = r.sw.Resume()
 		r.rawOut = nil
+		r.writeMu.Unlock()
 	}
 }
 
@@ -317,13 +372,17 @@ func (r *streamRenderer) Handle(method string, params json.RawMessage) {
 	case rpc.MethodThinking:
 		var p rpc.ThinkingParams
 		if json.Unmarshal(params, &p) == nil {
+			r.writeMu.Lock()
 			r.sw.Write([]byte("\n> *🤔 " + largo.EscapeInline(p.Text) + "*\n\n"))
+			r.writeMu.Unlock()
 		}
 
 	case rpc.MethodMessage:
 		figOtel.Event(r.ctx, "cli.recv.message")
 		r.pace.Flush()
+		r.writeMu.Lock()
 		r.sw.Flush()
+		r.writeMu.Unlock()
 		r.resetRound()
 
 	case rpc.MethodMessageEnd:
@@ -488,7 +547,9 @@ func (r *streamRenderer) Handle(method string, params json.RawMessage) {
 		if json.Unmarshal(params, &p) == nil {
 			r.pace.Flush()
 			r.resumeIfSuspended()
+			r.writeMu.Lock()
 			r.sw.Write([]byte("\n**❌ error:** " + largo.EscapeInline(p.Message) + "\n\n"))
+			r.writeMu.Unlock()
 		}
 
 	case rpc.MethodDone:
@@ -496,7 +557,9 @@ func (r *streamRenderer) Handle(method string, params json.RawMessage) {
 		r.roundCommitted = true
 		r.finalizeRendering()
 		r.pace.Flush()
+		r.writeMu.Lock()
 		r.sw.Flush()
+		r.writeMu.Unlock()
 		select {
 		case r.done <- struct{}{}:
 		default:

@@ -138,14 +138,16 @@ func (p *Pacer) run() {
 	for {
 		select {
 		case <-p.stopCh:
-			// Final drain.
+			// Final drain. Hold the lock through the Write so a
+			// concurrent Suspend() on p.out cannot race the underlying
+			// writer (largo panics if Write hits a suspended state).
 			p.mu.Lock()
 			rest := p.buf
 			p.buf = nil
-			p.mu.Unlock()
 			if len(rest) > 0 {
 				p.out.Write([]byte(string(rest)))
 			}
+			p.mu.Unlock()
 			return
 		case <-ticker.C:
 		}
@@ -157,10 +159,10 @@ func (p *Pacer) run() {
 			if p.closed {
 				rest := p.buf
 				p.buf = nil
-				p.mu.Unlock()
 				if len(rest) > 0 {
 					p.out.Write([]byte(string(rest)))
 				}
+				p.mu.Unlock()
 				return
 			}
 			p.mu.Unlock()
@@ -183,8 +185,11 @@ func (p *Pacer) run() {
 		emit := make([]rune, n)
 		copy(emit, p.buf[:n])
 		p.buf = p.buf[n:]
-		p.mu.Unlock()
 
+		// Write under the lock. Flush() and Suspend()-issuers wait on
+		// p.mu, so this guarantees no Write is in flight after
+		// Flush() returns. Cheap: emit is typically 1–8 runes.
 		p.out.Write([]byte(string(emit)))
+		p.mu.Unlock()
 	}
 }

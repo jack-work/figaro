@@ -23,8 +23,9 @@ func newTestRenderer(t *testing.T) (*streamRenderer, *safeBuf) {
 	out := &safeBuf{}
 	sw, err := largo.NewWriter(out, largo.Options{})
 	require.NoError(t, err)
-	pace := pacer.New(sw, pacer.Options{})
-	r := newStreamRenderer(context.Background(), sw, pace)
+	r := newStreamRenderer(context.Background(), sw)
+	pace := pacer.New(r.PacedOut(), pacer.Options{})
+	r.SetPacer(pace)
 	t.Cleanup(func() {
 		pace.Close()
 	})

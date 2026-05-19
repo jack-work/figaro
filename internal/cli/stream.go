@@ -62,13 +62,13 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		die("largo: %s", err)
 	}
 
-	pace := pacer.New(sw, pacer.Options{
+	renderer := newStreamRenderer(ctx, sw)
+	pace := pacer.New(renderer.PacedOut(), pacer.Options{
 		TargetCPS:       loaded.StreamCPS(),
 		FirstByteBypass: time.Duration(loaded.StreamFirstByteBypassMs()) * time.Millisecond,
 	})
 	defer pace.Close()
-
-	renderer := newStreamRenderer(ctx, sw, pace)
+	renderer.SetPacer(pace)
 	go func() {
 		<-renderer.Done()
 		select {
