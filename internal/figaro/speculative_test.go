@@ -59,6 +59,7 @@ func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus
 			return err
 		}
 		msg.LogicalTime = entry.LT
+		bus.PushMessageEnd(string(msg.StopReason))
 		bus.PushFigaro(msg)
 		return nil
 	}
@@ -121,6 +122,7 @@ func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus
 		return err
 	}
 	msg.LogicalTime = entry.LT
+	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 	return nil
 }
@@ -364,4 +366,89 @@ func TestSpeculativeDispatch_BatchStartBeforeAnyToolStart(t *testing.T) {
 	assert.Less(t, firstBatchStartAt, firstToolStartAt,
 		"batch_start (ord=%d) must come before first tool_start (ord=%d)",
 		firstBatchStartAt, firstToolStartAt)
+}
+
+// TestInvokeLifecycle_WireOrdering asserts the new lifecycle events
+// (MethodToolInvokeReady, MethodMessageEnd) flow in the expected
+// order relative to the rest of the wire: per-tool invoke_ready
+// arrives before MessageEnd, which arrives before the per-tool
+// Start (execution), which arrives before MethodMessage.
+func TestInvokeLifecycle_WireOrdering(t *testing.T) {
+	zero := time.Now()
+	rec := &recordingTool{name: "rec", dur: 5 * time.Millisecond, zero: zero}
+	reg := tool.NewRegistry()
+	require.NoError(t, reg.Register(rec))
+
+	prov := &staggeredProvider{
+		tools: []specTool{
+			{id: "tc_a", name: "rec", args: map[string]interface{}{"id": "tc_a"}, readyAt: 10 * time.Millisecond},
+			{id: "tc_b", name: "rec", args: map[string]interface{}{"id": "tc_b"}, readyAt: 20 * time.Millisecond},
+		},
+		streamEnd: 100 * time.Millisecond,
+	}
+
+	cb, _ := chalkboard.Open("")
+	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"system.model":    json.RawMessage(`"mock"`),
+		"system.provider": json.RawMessage(`"staggered"`),
+	}})
+	a := figaro.NewAgent(figaro.Config{
+		ID:         "invoke-001",
+		SocketPath: "/tmp/invoke-test.sock",
+		Provider:   prov,
+		Tools:      reg,
+		Chalkboard: cb,
+	})
+	defer a.Kill()
+
+	ch, _ := subscribeChan(a)
+	a.Prompt("go")
+
+	// Collect the methods in order.
+	var methods []string
+	timeout := time.After(5 * time.Second)
+	var sawDone bool
+	for !sawDone {
+		select {
+		case n := <-ch:
+			methods = append(methods, n.Method)
+			if n.Method == rpc.MethodDone {
+				sawDone = true
+			}
+		case <-timeout:
+			t.Fatal("timeout")
+		}
+	}
+	t.Logf("methods: %v", methods)
+
+	// Both invoke_ready events should arrive before MessageEnd.
+	invokeReadyA := indexOf(methods, rpc.MethodToolInvokeReady)
+	require.GreaterOrEqual(t, invokeReadyA, 0, "expected at least one MethodToolInvokeReady")
+	messageEnd := indexOf(methods, rpc.MethodMessageEnd)
+	require.GreaterOrEqual(t, messageEnd, 0, "expected MethodMessageEnd")
+	assert.Less(t, invokeReadyA, messageEnd,
+		"MethodToolInvokeReady must precede MethodMessageEnd; got %v", methods)
+
+	// MessageEnd must precede the assistant MethodMessage payload.
+	message := indexOf(methods, rpc.MethodMessage)
+	require.GreaterOrEqual(t, message, 0, "expected MethodMessage")
+	assert.Less(t, messageEnd, message,
+		"MethodMessageEnd must precede MethodMessage; got %v", methods)
+
+	// And the assistant MethodMessage must precede the per-tool
+	// execution starts (those happen in runTools after the message
+	// is appended and fanned out).
+	toolStart := indexOf(methods, rpc.MethodToolStart)
+	require.GreaterOrEqual(t, toolStart, 0, "expected MethodToolStart")
+	assert.Less(t, message, toolStart,
+		"MethodMessage must precede MethodToolStart; got %v", methods)
+}
+
+func indexOf(haystack []string, needle string) int {
+	for i, v := range haystack {
+		if v == needle {
+			return i
+		}
+	}
+	return -1
 }

@@ -166,6 +166,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return fmt.Errorf("append assistant: %w", err)
 	}
 	msg.LogicalTime = entry.LT
+	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 
 	if cache != nil {

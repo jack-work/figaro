@@ -670,6 +670,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		return fmt.Errorf("append assistant: %w", err)
 	}
 	msg.LogicalTime = entry.LT
+	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 
 	if cache != nil {
@@ -861,7 +862,7 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 				Type: "tool_use", ID: block.ContentBlock.ID, Name: block.ContentBlock.Name,
 			}
 			// Announce tool so CLI can show a spinner.
-			bus.PushToolUseStart(block.ContentBlock.ID, block.ContentBlock.Name)
+			bus.PushToolInvokeStart(block.ContentBlock.ID, block.ContentBlock.Name)
 			figOtel.Event(ctx, "provider.tool_use.block_start",
 				attribute.String("tool_call_id", block.ContentBlock.ID),
 				attribute.String("tool_name", block.ContentBlock.Name),
@@ -904,7 +905,7 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 				)
 			}
 			if d.Delta.PartialJSON != "" {
-				bus.PushToolUseDelta(b.ID, d.Delta.PartialJSON)
+				bus.PushToolInvokeDelta(b.ID, d.Delta.PartialJSON)
 			}
 		}
 	case "content_block_stop":

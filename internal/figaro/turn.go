@@ -50,19 +50,31 @@ func (b *turnBus) PushFigaro(m message.Message) {
 	b.figs <- m
 }
 
-func (b *turnBus) PushToolUseStart(toolCallID, toolName string) {
+func (b *turnBus) PushToolInvokeStart(toolCallID, toolName string) {
 	b.pushNotif(rpc.Notification{
 		JSONRPC: "2.0",
-		Method:  rpc.MethodToolUseStart,
-		Params:  rpc.ToolUseStartParams{ToolCallID: toolCallID, ToolName: toolName},
+		Method:  rpc.MethodToolInvokeStart,
+		Params:  rpc.ToolInvokeStartParams{ToolCallID: toolCallID, ToolName: toolName},
 	})
 }
 
-func (b *turnBus) PushToolUseDelta(toolCallID, partialJSON string) {
+func (b *turnBus) PushToolInvokeDelta(toolCallID, partialJSON string) {
 	b.pushNotif(rpc.Notification{
 		JSONRPC: "2.0",
-		Method:  rpc.MethodToolUseDelta,
-		Params:  rpc.ToolUseDeltaParams{ToolCallID: toolCallID, PartialJSON: partialJSON},
+		Method:  rpc.MethodToolInvokeDelta,
+		Params:  rpc.ToolInvokeDeltaParams{ToolCallID: toolCallID, PartialJSON: partialJSON},
+	})
+}
+
+// PushMessageEnd fans out the wire-level message_end notification
+// announcing the stop reason. Fires before PushFigaro so the CLI has
+// the metadata it needs to settle rendering decisions (solo vs
+// batch) before the full payload arrives.
+func (b *turnBus) PushMessageEnd(stopReason string) {
+	b.pushNotif(rpc.Notification{
+		JSONRPC: "2.0",
+		Method:  rpc.MethodMessageEnd,
+		Params:  rpc.MessageEndParams{StopReason: stopReason},
 	})
 }
 
@@ -78,7 +90,20 @@ func (b *turnBus) pushNotif(n rpc.Notification) {
 // at content_block_stop on a tool_use block so the harness can start
 // executing the tool before the stream finishes. Best-effort; harness
 // also reconciles against the final assembled message in PushFigaro.
+//
+// Also fans out a MethodToolInvokeReady wire notification so the CLI
+// learns that the model has finished authoring this invocation — the
+// signal it uses to settle solo-vs-batch rendering decisions.
 func (b *turnBus) PushToolReady(call message.Content) {
+	b.pushNotif(rpc.Notification{
+		JSONRPC: "2.0",
+		Method:  rpc.MethodToolInvokeReady,
+		Params: rpc.ToolInvokeReadyParams{
+			ToolCallID: call.ToolCallID,
+			ToolName:   call.ToolName,
+			Arguments:  call.Arguments,
+		},
+	})
 	select {
 	case b.toolsReady <- call:
 	default:
@@ -216,9 +241,10 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	}()
 
 	// Drain deltas + notifs + figaro. Wire-order: MethodMessage must
-	// arrive after all MethodDelta/MethodToolUse* for the turn.
-	// PushFigaro is the producer's last act, so when we see a fig
-	// we drain remaining deltas/notifs before fanning out MethodMessage.
+	// arrive after all MethodDelta/MethodToolInvoke*/MethodMessageEnd
+	// for the turn. PushFigaro is the producer's last act, so when we
+	// see a fig we drain remaining deltas/notifs before fanning out
+	// MethodMessage.
 	var lastFig message.Message
 	drainPreFigOnce := func() {
 		for {

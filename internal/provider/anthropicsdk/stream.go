@@ -24,7 +24,7 @@ const dumpBytes = 2048
 // bus, and returns the assembled assistant message at message_stop.
 //
 // The SDK's MessageAccumulator could fold deltas for us, but we need
-// to emit live PushDelta / PushToolUseStart / PushToolUseDelta calls,
+// to emit live PushDelta / PushToolInvokeStart / PushToolInvokeDelta calls,
 // so we walk the events ourselves and accumulate in parallel.
 //
 // Observability: per-tool-block byte tallies are reported on
@@ -84,7 +84,7 @@ func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.Message
 func handleBlockStart(ctx context.Context, ev anthropic.ContentBlockStartEvent, bus provider.Bus) {
 	switch cb := ev.ContentBlock.AsAny().(type) {
 	case anthropic.ToolUseBlock:
-		bus.PushToolUseStart(cb.ID, cb.Name)
+		bus.PushToolInvokeStart(cb.ID, cb.Name)
 		figOtel.Event(ctx, "provider.tool_use.block_start",
 			attribute.String("tool_call_id", cb.ID),
 			attribute.String("tool_name", cb.Name),
@@ -114,7 +114,7 @@ func handleBlockDelta(ctx context.Context, ev anthropic.ContentBlockDeltaEvent, 
 		if owner.Type != "tool_use" {
 			return
 		}
-		bus.PushToolUseDelta(owner.ID, d.PartialJSON)
+		bus.PushToolInvokeDelta(owner.ID, d.PartialJSON)
 		bytesByIdx[idx] += int64(len(d.PartialJSON))
 		if !seen[idx] {
 			seen[idx] = true

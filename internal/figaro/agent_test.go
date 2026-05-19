@@ -101,6 +101,7 @@ func mockPushAssistant(figLog store.Log[message.Message], cache store.Log[[]json
 			}
 		}
 	}
+	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 }
 

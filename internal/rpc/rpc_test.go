@@ -53,17 +53,31 @@ func TestDeltaParams(t *testing.T) {
 	})
 }
 
-func TestToolUseStartParams(t *testing.T) {
-	roundTrip(t, "tool_use_start.json", rpc.ToolUseStartParams{
+func TestToolInvokeStartParams(t *testing.T) {
+	roundTrip(t, "tool_invoke_start.json", rpc.ToolInvokeStartParams{
 		ToolCallID: "toolu_01ABC",
 		ToolName:   "edit",
 	})
 }
 
-func TestToolUseDeltaParams(t *testing.T) {
-	roundTrip(t, "tool_use_delta.json", rpc.ToolUseDeltaParams{
+func TestToolInvokeDeltaParams(t *testing.T) {
+	roundTrip(t, "tool_invoke_delta.json", rpc.ToolInvokeDeltaParams{
 		ToolCallID:  "toolu_01ABC",
 		PartialJSON: `{"path":"x.go"`,
+	})
+}
+
+func TestToolInvokeReadyParams(t *testing.T) {
+	roundTrip(t, "tool_invoke_ready.json", rpc.ToolInvokeReadyParams{
+		ToolCallID: "toolu_01ABC",
+		ToolName:   "edit",
+		Arguments:  map[string]interface{}{"path": "x.go"},
+	})
+}
+
+func TestMessageEndParams(t *testing.T) {
+	roundTrip(t, "message_end.json", rpc.MessageEndParams{
+		StopReason: "tool_use",
 	})
 }
 
@@ -142,8 +156,10 @@ func TestStatusResponse(t *testing.T) {
 func TestMethodConstants(t *testing.T) {
 	// Verify method names follow naming convention.
 	assert.Equal(t, "stream.delta", rpc.MethodDelta)
-	assert.Equal(t, "stream.tool_use_start", rpc.MethodToolUseStart)
-	assert.Equal(t, "stream.tool_use_delta", rpc.MethodToolUseDelta)
+	assert.Equal(t, "stream.tool_invoke_start", rpc.MethodToolInvokeStart)
+	assert.Equal(t, "stream.tool_invoke_delta", rpc.MethodToolInvokeDelta)
+	assert.Equal(t, "stream.tool_invoke_ready", rpc.MethodToolInvokeReady)
+	assert.Equal(t, "stream.message_end", rpc.MethodMessageEnd)
 	assert.Equal(t, "stream.done", rpc.MethodDone)
 	assert.Equal(t, "figaro.qua", rpc.MethodQua)
 	assert.Equal(t, "figaro.context", rpc.MethodContext)

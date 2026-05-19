@@ -37,10 +37,13 @@ type Knobs struct {
 type Bus interface {
 	PushDelta(content message.Content)
 	PushFigaro(msg message.Message)
-	// PushToolUseStart fires when the assistant begins a tool_use block.
-	PushToolUseStart(toolCallID, toolName string)
-	// PushToolUseDelta carries partial input JSON. Best-effort.
-	PushToolUseDelta(toolCallID, partialJSON string)
+	// PushToolInvokeStart fires when the assistant begins a tool_use
+	// block (Anthropic vocabulary). On the figaro wire this becomes
+	// MethodToolInvokeStart — the lifecycle of the model *authoring*
+	// an invocation, distinct from `tool_start` (execution begins).
+	PushToolInvokeStart(toolCallID, toolName string)
+	// PushToolInvokeDelta carries partial input JSON. Best-effort.
+	PushToolInvokeDelta(toolCallID, partialJSON string)
 	// PushToolReady fires when a tool_use block's input JSON is fully
 	// decoded — typically at content_block_stop. The harness may dispatch
 	// the tool immediately, before PushFigaro / message_stop arrives.
@@ -50,6 +53,10 @@ type Bus interface {
 	// dispatch may omit calls to this method; the harness falls back to
 	// dispatching from PushFigaro's assembled message.
 	PushToolReady(call message.Content)
+	// PushMessageEnd fires at message_stop, before PushFigaro. Carries
+	// the stop reason so the CLI can commit to rendering decisions
+	// without parsing the full assistant message body.
+	PushMessageEnd(stopReason string)
 }
 
 // SendInput is one turn's input.

@@ -78,11 +78,76 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	var solo *toolSoloState
 	var soloToolCallID string // tool_call_id the active solo was launched for
 
+	// State machine input for solo-vs-batch commit. The CLI no longer
+	// trusts the server to declare batch mode — it counts
+	// tool_invoke_start events seen this round. One tool → solo. Two
+	// or more → upgrade to batch on the second invoke_start.
+	type invokedTool struct {
+		id   string
+		name string
+		args map[string]interface{} // populated by tool_invoke_ready
+	}
+	var roundInvokes []*invokedTool
+	resetRound := func() {
+		roundInvokes = roundInvokes[:0]
+	}
+	recordInvokeStart := func(id, name string) {
+		roundInvokes = append(roundInvokes, &invokedTool{id: id, name: name})
+	}
+	recordInvokeReady := func(id string, args map[string]interface{}) {
+		for _, t := range roundInvokes {
+			if t.id == id {
+				t.args = args
+				return
+			}
+		}
+	}
+
 	// Accumulates partial tool input JSON per tool_call_id so the
 	// CLI can extract and render tool details (command, path)
 	// progressively as deltas arrive rather than waiting for the
 	// full message. Maps tool_call_id → {toolName, partialJSON}.
 	pendingToolArgs := map[string]*pendingToolArg{}
+
+	// upgradeToBatch is called on the second tool_invoke_start of a
+	// round, before MethodMessageEnd. It tears down the pending solo
+	// (if any) and opens a batch frame, carrying the buffered solo's
+	// state forward as the first row. Subsequent tools become
+	// additional rows. The batch frame opens "early" with however
+	// many tools have been observed so far; more rows are appended
+	// as additional tool_invoke_starts arrive.
+	upgradeToBatch := func() {
+		if batch != nil {
+			return
+		}
+		// Build initial row list from observed invokes.
+		entries := make([]rpc.ToolBatchToolEntry, 0, len(roundInvokes))
+		for _, t := range roundInvokes {
+			entries = append(entries, rpc.ToolBatchToolEntry{
+				ToolCallID: t.id,
+				ToolName:   t.name,
+				Arguments:  t.args,
+			})
+		}
+		wrapped := false
+		if solo != nil {
+			solo.UpdateHeader("batch", fmt.Sprintf("(%d)", len(entries)))
+			solo.StopTicker()
+			wrapped = true
+		} else {
+			pace.Flush()
+			sw.Flush()
+			if rawOut == nil {
+				rawOut = sw.Suspend()
+			}
+		}
+		batch = newToolBatchState(rawOut, entries)
+		batch.wrapped = wrapped
+		if wrapped {
+			batch.wrapperSolo = solo
+		}
+		batch.RenderInitial()
+	}
 
 	resumeIfSuspended := func() {
 		// Wrapped-batch teardown takes precedence over solo.Freeze.
@@ -133,17 +198,34 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			figOtel.Event(ctx, "cli.recv.message")
 			pace.Flush()
 			sw.Flush()
+			resetRound()
 
-		case rpc.MethodToolUseStart:
-			// Show a placeholder spinner for the first tool_use.
-			var p rpc.ToolUseStartParams
+		case rpc.MethodMessageEnd:
+			var p rpc.MessageEndParams
 			if json.Unmarshal(params, &p) == nil {
-				figOtel.Event(ctx, "cli.recv.tool_use_start",
+				figOtel.Event(ctx, "cli.recv.message_end",
+					attribute.String("stop_reason", p.StopReason))
+				// Commit point. If we've seen ≥2 invokes the batch is
+				// already open (upgradeToBatch was called on the second
+				// invoke_start). If we've seen exactly 1, we're staying
+				// in solo and there's nothing further to commit — the
+				// solo placeholder is already painted.
+			}
+
+		case rpc.MethodToolInvokeStart:
+			var p rpc.ToolInvokeStartParams
+			if json.Unmarshal(params, &p) == nil {
+				figOtel.Event(ctx, "cli.recv.tool_invoke_start",
 					attribute.String("tool", p.ToolName),
 					attribute.String("tool_call_id", p.ToolCallID),
 				)
 				pendingToolArgs[p.ToolCallID] = &pendingToolArg{toolName: p.ToolName}
-				if batch == nil && solo == nil {
+				recordInvokeStart(p.ToolCallID, p.ToolName)
+
+				switch {
+				case len(roundInvokes) == 1 && batch == nil && solo == nil:
+					// First tool: open a solo placeholder. If only one
+					// tool arrives this round it stays solo.
 					pace.Flush()
 					sw.Flush()
 					if rawOut == nil {
@@ -152,13 +234,19 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 					solo = newToolSoloState(rawOut, p.ToolName, "")
 					solo.Start()
 					soloToolCallID = p.ToolCallID
+				case len(roundInvokes) == 2 && batch == nil:
+					// Second tool: commit to batch mode now.
+					upgradeToBatch()
+				case len(roundInvokes) > 2 && batch != nil:
+					// Additional tools beyond the second: append rows.
+					batch.AppendRow(p.ToolCallID, p.ToolName, nil)
 				}
 			}
 
-		case rpc.MethodToolUseDelta:
-			var p rpc.ToolUseDeltaParams
+		case rpc.MethodToolInvokeDelta:
+			var p rpc.ToolInvokeDeltaParams
 			if json.Unmarshal(params, &p) == nil {
-				figOtel.Event(ctx, "cli.recv.tool_use_delta",
+				figOtel.Event(ctx, "cli.recv.tool_invoke_delta",
 					attribute.String("tool_call_id", p.ToolCallID),
 					attribute.Int("bytes", len(p.PartialJSON)),
 				)
@@ -167,56 +255,36 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 					if detail := extractPartialDetail(pt.toolName, pt.json); detail != "" {
 						if solo != nil && soloToolCallID == p.ToolCallID {
 							solo.UpdateDetail(detail)
+						} else if batch != nil {
+							batch.UpdateDetail(p.ToolCallID, detail)
 						}
 					}
 				}
 			}
 
-		case rpc.MethodToolBatchStart:
-			var p rpc.ToolBatchStartParams
-			if json.Unmarshal(params, &p) == nil && p.Size > 1 {
-				figOtel.Event(ctx, "cli.recv.tool_batch_start",
-					attribute.Int("size", p.Size))
-				// Repurpose placeholder spinner as batch wrapper.
-				wrapped := false
-				if solo != nil {
-					solo.UpdateHeader("batch", fmt.Sprintf("(%d)", p.Size))
-					// Hand spinner duty to batch's ticker.
-					solo.StopTicker()
-					wrapped = true
-				} else {
-					pace.Flush()
-					sw.Flush()
-					if rawOut == nil {
-						rawOut = sw.Suspend()
+		case rpc.MethodToolInvokeReady:
+			var p rpc.ToolInvokeReadyParams
+			if json.Unmarshal(params, &p) == nil {
+				figOtel.Event(ctx, "cli.recv.tool_invoke_ready",
+					attribute.String("tool_call_id", p.ToolCallID),
+				)
+				recordInvokeReady(p.ToolCallID, p.Arguments)
+				// Refresh the visible detail with fully-decoded args.
+				detail := toolDetailFromArgs(p.ToolName, p.Arguments)
+				if detail != "" {
+					if solo != nil && soloToolCallID == p.ToolCallID {
+						solo.UpdateDetail(detail)
+					} else if batch != nil {
+						batch.UpdateDetail(p.ToolCallID, detail)
 					}
 				}
-				batch = newToolBatchState(rawOut, p.Tools)
-				batch.wrapped = wrapped
-				if wrapped {
-					batch.wrapperSolo = solo
-				}
-				batch.RenderInitial()
 			}
 
-		case rpc.MethodToolBatchEnd:
-			figOtel.Event(ctx, "cli.recv.tool_batch_end")
-			if batch != nil {
-				if batch.wrapped && solo != nil {
-					anyErr := batch.FinalizeRowsOnly()
-					solo.Done(anyErr)
-					solo = nil
-					soloToolCallID = ""
-					fmt.Fprintln(rawOut, term.Dim("───"))
-					batch.PrintErrorDumps()
-				} else {
-					batch.Finalize()
-				}
-				batch = nil
-			}
-			if openTools == 0 {
-				resumeIfSuspended()
-			}
+		case rpc.MethodToolBatchStart, rpc.MethodToolBatchEnd:
+			// Legacy server-driven batch declaration; the CLI now
+			// derives batch mode from tool_invoke_start observation.
+			// Kept as a no-op while the server still emits these;
+			// removed in a follow-up commit.
 
 		case rpc.MethodToolStart:
 			var p rpc.ToolStartParams
@@ -291,7 +359,22 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				if openTools > 0 {
 					openTools--
 				}
-				if openTools == 0 && batch == nil {
+				if openTools == 0 {
+					// Round's tools are all done. Finalize whatever
+					// rendering mode we committed to.
+					if batch != nil {
+						if batch.wrapped && solo != nil {
+							anyErr := batch.FinalizeRowsOnly()
+							solo.Done(anyErr)
+							solo = nil
+							soloToolCallID = ""
+							fmt.Fprintln(rawOut, term.Dim("───"))
+							batch.PrintErrorDumps()
+						} else {
+							batch.Finalize()
+						}
+						batch = nil
+					}
 					resumeIfSuspended()
 				}
 			}

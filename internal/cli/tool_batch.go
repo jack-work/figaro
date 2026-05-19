@@ -162,6 +162,47 @@ func (b *toolBatchState) MarkRunning(id string) {
 	b.rewriteRowLocked(i)
 }
 
+// AppendRow adds a new pending row to the batch at runtime — used
+// when additional tool_invoke_start events arrive after the batch
+// frame has already opened. The new row is printed immediately
+// below the existing rows.
+func (b *toolBatchState) AppendRow(id, name string, args map[string]interface{}) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if _, exists := b.rowIndex[id]; exists {
+		return
+	}
+	r := &toolRow{
+		id:     id,
+		name:   name,
+		detail: toolDetailFromArgs(name, args),
+		state:  toolRowPending,
+	}
+	b.rows = append(b.rows, r)
+	b.rowIndex[id] = len(b.rows) - 1
+	// Cursor is at cursorRow == old len(b.rows). Print the new row
+	// on the next line; cursorRow advances by 1.
+	fmt.Fprintln(b.out, formatRow(r, b.frame))
+	b.cursorRow = len(b.rows)
+	if b.wrapped && b.wrapperSolo != nil {
+		b.wrapperSolo.AddRowsBelow(1)
+	}
+}
+
+// UpdateDetail refreshes a row's detail string (e.g. when fully
+// decoded args arrive via tool_invoke_ready, replacing the partial
+// streamed detail from tool_invoke_delta).
+func (b *toolBatchState) UpdateDetail(id, detail string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	i, ok := b.rowIndex[id]
+	if !ok {
+		return
+	}
+	b.rows[i].detail = detail
+	b.rewriteRowLocked(i)
+}
+
 // AppendOutput buffers a tool_output chunk for post-mortem on error.
 // In normal (success) batches the buffer is discarded.
 func (b *toolBatchState) AppendOutput(id, chunk string) {
