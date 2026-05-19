@@ -171,6 +171,15 @@ func (pw *pacedWriter) Write(p []byte) (int, error) {
 // New() is how we hook the serialization in.
 func (r *streamRenderer) PacedOut() io.Writer { return &pacedWriter{r: r} }
 
+// lockedFlush calls sw.Flush() under writeMu. External callers in
+// shutdown paths (mustPromptFigaro's error / interrupt branches)
+// use this to avoid racing the pacer drainer.
+func (r *streamRenderer) lockedFlush() {
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
+	r.sw.Flush()
+}
+
 // Done returns a channel that closes when MethodDone has fired.
 func (r *streamRenderer) Done() <-chan struct{} { return r.done }
 

@@ -99,7 +99,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	case <-fcli.Done():
 		pace.Flush()
 		renderer.resumeIfSuspended()
-		sw.Flush()
+		renderer.lockedFlush()
 		fmt.Fprintln(os.Stderr, "\nerror: agent disconnected before turn completed")
 		os.Exit(1)
 	case <-ctx.Done():
@@ -115,7 +115,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		}
 		pace.Flush()
 		renderer.resumeIfSuspended()
-		sw.Flush()
+		renderer.lockedFlush()
 		fmt.Fprintln(os.Stderr, "interrupted")
 	}
 
