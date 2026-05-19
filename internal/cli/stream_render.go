@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/jack-work/largo"
 	"go.opentelemetry.io/otel/attribute"
@@ -16,6 +18,28 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
 )
+
+// recordWireTrace appends one NDJSON line documenting one wire event.
+// Best-effort; failures are silent because tracing must not interfere
+// with the run.
+func recordWireTrace(w io.Writer, method string, params json.RawMessage) {
+	rec := map[string]interface{}{
+		"t":      time.Now().UnixMicro(),
+		"method": method,
+	}
+	var peek struct {
+		ToolCallID string `json:"tool_call_id"`
+	}
+	if json.Unmarshal(params, &peek) == nil && peek.ToolCallID != "" {
+		rec["id"] = peek.ToolCallID
+	}
+	b, err := json.Marshal(rec)
+	if err != nil {
+		return
+	}
+	b = append(b, '\n')
+	_, _ = w.Write(b)
+}
 
 // streamRenderer is the per-prompt CLI state machine. One instance
 // handles every wire notification for the lifetime of a prompt; it
@@ -55,6 +79,12 @@ type streamRenderer struct {
 	// "round's tools are all done."
 	openInvokes int
 
+	// soloCommitted flips true on MessageEnd when we've committed to
+	// solo rendering for the round (one invocation only). After this
+	// point tool_output for the solo's id can stream directly to
+	// solo.Write — no risk of upgrade-to-batch repositioning it.
+	soloCommitted bool
+
 	// pendingOutput buffers tool_output chunks for tools whose
 	// rendering container hasn't been opened yet. Keyed by
 	// tool_call_id. Flushed into the row/solo on tool_start (or
@@ -69,6 +99,10 @@ type streamRenderer struct {
 
 	// done becomes non-nil when MethodDone has fired.
 	done chan struct{}
+
+	// wireTrace, when non-nil, receives one JSON line per Handle()
+	// call. Opt-in via FIGARO_WIRE_TRACE=/path/to/file.
+	wireTrace io.Writer
 }
 
 // invokedTool records one tool_invoke_start for the current round.
@@ -79,7 +113,7 @@ type invokedTool struct {
 }
 
 func newStreamRenderer(ctx context.Context, sw *largo.Writer, pace *pacer.Pacer) *streamRenderer {
-	return &streamRenderer{
+	r := &streamRenderer{
 		ctx:            ctx,
 		sw:             sw,
 		pace:           pace,
@@ -87,6 +121,14 @@ func newStreamRenderer(ctx context.Context, sw *largo.Writer, pace *pacer.Pacer)
 		streamedDetail: map[string]*pendingToolArg{},
 		done:           make(chan struct{}, 1),
 	}
+	if path := os.Getenv("FIGARO_WIRE_TRACE"); path != "" {
+		if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
+			r.wireTrace = f
+		} else {
+			slog.Warn("FIGARO_WIRE_TRACE open failed", "path", path, "err", err)
+		}
+	}
+	return r
 }
 
 // Done returns a channel that closes when MethodDone has fired.
@@ -148,6 +190,7 @@ func (r *streamRenderer) recordInvokeReady(id string, args map[string]interface{
 func (r *streamRenderer) resetRound() {
 	r.roundInvokes = r.roundInvokes[:0]
 	r.roundCommitted = false
+	r.soloCommitted = false
 }
 
 // commitRoundIfReady fires the rendering-finalize path when the round
@@ -253,6 +296,14 @@ func (r *streamRenderer) flushPendingOutputTo(id string, dst func(string)) {
 func (r *streamRenderer) Handle(method string, params json.RawMessage) {
 	slog.Debug("rpc recv", "method", method, "params", json.RawMessage(params))
 
+	// Per-event wire trace, opt-in via FIGARO_WIRE_TRACE=/path/to/file.
+	// Appends one JSON object per event with timestamp, method, and
+	// (when present) tool_call_id. Cheap escape hatch when the UI
+	// looks wrong and we need to confirm the wire was sane.
+	if r.wireTrace != nil {
+		recordWireTrace(r.wireTrace, method, params)
+	}
+
 	switch method {
 	case rpc.MethodDelta:
 		var p rpc.DeltaParams
@@ -281,6 +332,16 @@ func (r *streamRenderer) Handle(method string, params json.RawMessage) {
 			figOtel.Event(r.ctx, "cli.recv.message_end",
 				attribute.String("stop_reason", p.StopReason))
 			r.roundCommitted = true
+			// If we committed to solo (one invocation this round),
+			// flush any buffered output for it into the solo now. The
+			// solo placeholder is now a committed surface; subsequent
+			// chunks (and the eventual tool_end) can write straight to it.
+			if r.batch == nil && r.solo != nil {
+				r.flushPendingOutputTo(r.solo.callID, func(c string) {
+					r.solo.Write([]byte(c))
+				})
+				r.soloCommitted = true
+			}
 			r.commitRoundIfReady()
 		}
 
@@ -357,16 +418,13 @@ func (r *streamRenderer) Handle(method string, params json.RawMessage) {
 			})
 			return
 		}
-		// Solo path: this is the first tool of the round and we're
-		// still in solo. Refresh its detail with the fully-decoded
-		// args (in case invoke_ready hadn't landed yet).
+		// Solo path: refresh detail with decoded args. Don't flush
+		// pending output yet — MessageEnd commits the solo, and only
+		// then is it safe to write to the terminal.
 		if r.solo != nil && r.solo.callID == p.ToolCallID {
 			if d := toolDetail(p); d != "" {
 				r.solo.UpdateDetail(d)
 			}
-			r.flushPendingOutputTo(p.ToolCallID, func(c string) {
-				r.solo.Write([]byte(c))
-			})
 		}
 
 	case rpc.MethodToolOutput:
@@ -378,13 +436,17 @@ func (r *streamRenderer) Handle(method string, params json.RawMessage) {
 			attribute.Int("bytes", len(p.Chunk)),
 			attribute.String("tool_call_id", p.ToolCallID),
 		)
-		// Route by tool_call_id. If we have a container ready for
-		// this id, send the chunk there. Otherwise buffer until
-		// tool_start opens it (or upgradeToBatch flushes it).
+		// Route by tool_call_id. The batch frame is a committed
+		// rendering surface — once it's open we can stream chunks
+		// directly into the row by id. The solo placeholder is
+		// committed only once MessageEnd confirms only one
+		// invocation arrived (soloCommitted = true). Until then,
+		// writing to the solo immediately would leak the chunk to
+		// terminal scrollback above any subsequent batch frame.
 		switch {
 		case r.batch != nil:
 			r.batch.AppendOutput(p.ToolCallID, p.Chunk)
-		case r.solo != nil && r.solo.callID == p.ToolCallID:
+		case r.soloCommitted && r.solo != nil && r.solo.callID == p.ToolCallID:
 			r.solo.Write([]byte(p.Chunk))
 		default:
 			r.pendingOutput[p.ToolCallID] = append(r.pendingOutput[p.ToolCallID], p.Chunk)
@@ -405,7 +467,10 @@ func (r *streamRenderer) Handle(method string, params json.RawMessage) {
 				r.batch.AppendOutput(p.ToolCallID, c)
 			})
 			r.batch.MarkDone(p.ToolCallID, p.Result, p.IsError)
-		} else if r.solo != nil && r.solo.callID == p.ToolCallID {
+		} else if r.soloCommitted && r.solo != nil && r.solo.callID == p.ToolCallID {
+			// Only flush to solo if it's already committed. Pre-commit,
+			// the buffer stays in pendingOutput — MessageEnd will
+			// commit and flush, or upgradeToBatch will transplant.
 			r.flushPendingOutputTo(p.ToolCallID, func(c string) {
 				r.solo.Write([]byte(c))
 			})

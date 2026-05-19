@@ -172,60 +172,138 @@ func TestStreamRenderer_PrematureFinalize(t *testing.T) {
 }
 
 // TestStreamRenderer_OutputBeforeStart ensures tool_output arriving
-// before tool_start for a given id is handled cleanly. In the
-// solo-only path (one tool, output before its tool_start arrives),
-// chunks must be buffered and flushed on tool_start — not dumped to
-// rawOut. In the batch path, output routes to the row directly.
+// before MessageEnd is buffered rather than streamed directly to the
+// solo placeholder. This prevents the leak-above-batch bug: if the
+// CLI later upgrades to batch, anything already streamed to the solo
+// would land above the batch frame.
 func TestStreamRenderer_OutputBeforeStart(t *testing.T) {
-	r, out := newTestRenderer(t)
+	r, _ := newTestRenderer(t)
 
-	// Only one tool authored.
 	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
 		ToolCallID: "tc_a", ToolName: "read",
 	})
 
-	// Output arrives before tool_start. The solo for tc_a is open
-	// but the tool_start signal hasn't fired — we still want this
-	// chunk to land in the solo, not get dropped. Since solo is keyed
-	// by callID, it should match and route directly.
+	// Output arrives during the streaming window. Buffer it.
 	notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
 		ToolCallID: "tc_a", ToolName: "read", Chunk: "EARLY_OUTPUT_A",
 	})
 
-	// The chunk should have landed in the solo, not in the
-	// pendingOutput buffer (because the solo's callID matches).
-	assert.Empty(t, r.pendingOutput["tc_a"],
-		"output should route to solo when callID matches")
+	assert.Equal(t, []string{"EARLY_OUTPUT_A"}, r.pendingOutput["tc_a"],
+		"output should buffer pre-MessageEnd so a possible upgrade-to-batch can transplant it")
+
+	// MessageEnd commits solo and flushes.
+	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
+		StopReason: "tool_invoke",
+	})
+	assert.True(t, r.soloCommitted, "soloCommitted must flip on MessageEnd")
+	assert.NotContains(t, r.pendingOutput, "tc_a",
+		"buffer should be empty after MessageEnd flushed the solo")
 
 	// Cleanup.
-	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
-		ToolCallID: "tc_a", ToolName: "read",
-	})
 	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
 		ToolCallID: "tc_a", ToolName: "read", Result: "done-a",
+	})
+}
+
+// TestStreamRenderer_SoloOutputThenUpgrade captures the real-world
+// interleaving the user reported: tool 1's invoke_start arrives, then
+// tool 1's output starts streaming (because the dispatcher executes
+// speculatively), and only THEN does tool 2's invoke_start arrive
+// to trigger upgradeToBatch. The bug: tool 1's output was written
+// directly to the terminal via solo.Write, so by the time the batch
+// frame opens, the file content is already in scrollback ABOVE the
+// batch frame.
+//
+// Correct behavior: solo output is buffered until either MessageEnd
+// confirms solo (commit and flush) or a second invoke arrives
+// (upgradeToBatch transplants the buffer into row 0). Never write
+// directly to the terminal while we might still upgrade.
+func TestStreamRenderer_SoloOutputThenUpgrade(t *testing.T) {
+	r, out := newTestRenderer(t)
+
+	// Tool 1 invoke + start + a chunk of output.
+	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
+		ToolCallID: "tc_1", ToolName: "read",
+	})
+	notify(t, r, rpc.MethodToolInvokeReady, rpc.ToolInvokeReadyParams{
+		ToolCallID: "tc_1", ToolName: "read",
+		Arguments:  map[string]interface{}{"path": "/tmp/x.md"},
+	})
+	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
+		ToolCallID: "tc_1", ToolName: "read",
+		Arguments:  map[string]interface{}{"path": "/tmp/x.md"},
+	})
+	notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
+		ToolCallID: "tc_1", ToolName: "read",
+		Chunk:      "FILE_CONTENT_OF_TC1",
+	})
+
+	// Now tool 2 arrives — we upgrade to batch.
+	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
+		ToolCallID: "tc_2", ToolName: "read",
+	})
+
+	// At this moment the batch frame has just opened. Look at the
+	// rendered buffer: FILE_CONTENT_OF_TC1 should NOT appear above
+	// the batch frame.
+	rendered := stripANSIRendered(out.String())
+	t.Logf("rendered after upgrade:\n%s", rendered)
+	batchIdx := strings.Index(rendered, "batch")
+	require.Greater(t, batchIdx, 0, "expected a batch frame to be drawn")
+	preBatch := rendered[:batchIdx]
+	assert.NotContains(t, preBatch, "FILE_CONTENT_OF_TC1",
+		"solo's output leaked above the batch frame; should have been buffered until upgrade")
+
+	// Finish both tools.
+	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
+		ToolCallID: "tc_1", ToolName: "read", Result: "FILE_CONTENT_OF_TC1",
+	})
+	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
+		ToolCallID: "tc_2", ToolName: "read",
+	})
+	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
+		ToolCallID: "tc_2", ToolName: "read", Result: "ok",
 	})
 	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
 		StopReason: "tool_invoke",
 	})
-
-	_ = out
 }
 
-// TestStreamRenderer_OutputForUnknownTool covers the case where
-// tool_output for an id arrives before any invoke or tool_start has
-// opened a container for it. Should be buffered, not dumped to
-// rawOut.
-func TestStreamRenderer_OutputForUnknownTool(t *testing.T) {
-	r, _ := newTestRenderer(t)
+// TestStreamRenderer_SingleToolStreams verifies the happy solo path:
+// one tool, output streams during execution, MessageEnd confirms solo,
+// and the output is flushed to the solo at that point (not earlier
+// and not into a buffer that leaks out as orphan).
+func TestStreamRenderer_SingleToolStreams(t *testing.T) {
+	r, out := newTestRenderer(t)
 
-	// No invoke_start has fired. Output arrives anyway (theoretical
-	// edge: e.g. an out-of-order wire frame). It should buffer.
-	notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
-		ToolCallID: "tc_x", ToolName: "read", Chunk: "ORPHAN",
+	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
+		ToolCallID: "tc_1", ToolName: "read",
 	})
-	require.Contains(t, r.pendingOutput, "tc_x",
-		"orphan output must buffer, not dump to rawOut")
-	assert.Equal(t, []string{"ORPHAN"}, r.pendingOutput["tc_x"])
+	notify(t, r, rpc.MethodToolInvokeReady, rpc.ToolInvokeReadyParams{
+		ToolCallID: "tc_1", ToolName: "read",
+		Arguments:  map[string]interface{}{"path": "/tmp/x.md"},
+	})
+	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
+		ToolCallID: "tc_1", ToolName: "read",
+		Arguments:  map[string]interface{}{"path": "/tmp/x.md"},
+	})
+	notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
+		ToolCallID: "tc_1", ToolName: "read",
+		Chunk:      "SOLO_OUTPUT_PAYLOAD",
+	})
+	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
+		ToolCallID: "tc_1", ToolName: "read", Result: "SOLO_OUTPUT_PAYLOAD",
+	})
+	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
+		StopReason: "tool_invoke",
+	})
+	notify(t, r, rpc.MethodMessage, rpc.MessageParams{})
+	notify(t, r, rpc.MethodDone, rpc.DoneParams{Reason: "stop"})
+	<-r.Done()
+
+	rendered := stripANSIRendered(out.String())
+	assert.Contains(t, rendered, "SOLO_OUTPUT_PAYLOAD",
+		"solo output should render eventually; got %q", rendered)
 }
 
 func min(a, b int) int {
