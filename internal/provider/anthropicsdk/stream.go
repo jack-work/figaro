@@ -58,7 +58,7 @@ func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.Message
 		case anthropic.ContentBlockDeltaEvent:
 			handleBlockDelta(ctx, v, &acc, bus, seenInputDelta, bytesByIdx)
 		case anthropic.ContentBlockStopEvent:
-			handleBlockStop(ctx, v, &acc, bytesByIdx)
+			handleBlockStop(ctx, v, &acc, bytesByIdx, bus)
 		case anthropic.MessageStopEvent:
 			// Accumulator captures stop_reason + usage; no side effect.
 		}
@@ -127,7 +127,7 @@ func handleBlockDelta(ctx context.Context, ev anthropic.ContentBlockDeltaEvent, 
 	}
 }
 
-func handleBlockStop(ctx context.Context, ev anthropic.ContentBlockStopEvent, acc *anthropic.Message, bytesByIdx map[int]int64) {
+func handleBlockStop(ctx context.Context, ev anthropic.ContentBlockStopEvent, acc *anthropic.Message, bytesByIdx map[int]int64, bus provider.Bus) {
 	idx := int(ev.Index)
 	if idx < 0 || idx >= len(acc.Content) {
 		return
@@ -141,6 +141,24 @@ func handleBlockStop(ctx context.Context, ev anthropic.ContentBlockStopEvent, ac
 		attribute.String("tool_name", b.Name),
 		attribute.Int64("input_bytes", bytesByIdx[idx]),
 	)
+	// Speculative dispatch: the SDK has finished accumulating this
+	// tool_use block's input JSON. Decode it and signal the harness so
+	// the tool can begin executing in parallel with the rest of the
+	// stream.
+	var args map[string]interface{}
+	if raw := []byte(b.Input); len(raw) > 0 {
+		if err := json.Unmarshal(raw, &args); err != nil || args == nil {
+			return
+		}
+	} else {
+		args = map[string]interface{}{}
+	}
+	bus.PushToolReady(message.Content{
+		Type:       message.ContentToolCall,
+		ToolCallID: b.ID,
+		ToolName:   b.Name,
+		Arguments:  args,
+	})
 }
 
 // recordAccumulateFailure dumps the most-likely offending block's

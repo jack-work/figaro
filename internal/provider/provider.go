@@ -41,6 +41,15 @@ type Bus interface {
 	PushToolUseStart(toolCallID, toolName string)
 	// PushToolUseDelta carries partial input JSON. Best-effort.
 	PushToolUseDelta(toolCallID, partialJSON string)
+	// PushToolReady fires when a tool_use block's input JSON is fully
+	// decoded — typically at content_block_stop. The harness may dispatch
+	// the tool immediately, before PushFigaro / message_stop arrives.
+	//
+	// The content must be a ContentToolCall with ToolCallID, ToolName,
+	// and Arguments populated. Providers that don't support per-block
+	// dispatch may omit calls to this method; the harness falls back to
+	// dispatching from PushFigaro's assembled message.
+	PushToolReady(call message.Content)
 }
 
 // SendInput is one turn's input.

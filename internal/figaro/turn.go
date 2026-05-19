@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -22,16 +23,18 @@ import (
 // turnBus is the per-turn provider.Bus. Buffered channels, never-block
 // pushes. Closed after provider.Send returns.
 type turnBus struct {
-	deltas chan message.Content
-	figs   chan message.Message
-	notifs chan rpc.Notification
+	deltas     chan message.Content
+	figs       chan message.Message
+	notifs     chan rpc.Notification
+	toolsReady chan message.Content
 }
 
 func newTurnBus() *turnBus {
 	return &turnBus{
-		deltas: make(chan message.Content, 64),
-		figs:   make(chan message.Message, 4),
-		notifs: make(chan rpc.Notification, 256),
+		deltas:     make(chan message.Content, 64),
+		figs:       make(chan message.Message, 4),
+		notifs:     make(chan rpc.Notification, 256),
+		toolsReady: make(chan message.Content, 64),
 	}
 }
 
@@ -68,6 +71,20 @@ func (b *turnBus) pushNotif(n rpc.Notification) {
 	case b.notifs <- n:
 	default:
 		// Drop if full.
+	}
+}
+
+// PushToolReady is the speculative-dispatch hook: providers call this
+// at content_block_stop on a tool_use block so the harness can start
+// executing the tool before the stream finishes. Best-effort; harness
+// also reconciles against the final assembled message in PushFigaro.
+func (b *turnBus) PushToolReady(call message.Content) {
+	select {
+	case b.toolsReady <- call:
+	default:
+		// Buffer full — drop. The post-stream reconciliation pass
+		// in driveOneRound will dispatch any tool_calls in lastFig
+		// that we didn't dispatch speculatively.
 	}
 }
 
@@ -171,6 +188,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 			close(bus.deltas)
 			close(bus.figs)
 			close(bus.notifs)
+			close(bus.toolsReady)
 		}()
 		started := time.Now()
 		err := a.prov.Send(turnCtx, in, bus)
@@ -179,6 +197,22 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 			attribute.String("model", a.currentModel()),
 			attribute.String("status", statusOf(err)))
 		sendDone <- err
+	}()
+
+	// Speculative tool dispatcher: every PushToolReady kicks off the
+	// tool's goroutine immediately, in parallel with the still-running
+	// LLM stream. Results land in `spec` keyed by tool_call_id; the
+	// post-stream collector in runTools reconciles against lastFig.
+	spec := newSpecDispatcher()
+	specDone := make(chan struct{})
+	go func() {
+		defer close(specDone)
+		for tc := range bus.toolsReady {
+			if a.isInterrupted() {
+				continue
+			}
+			spec.dispatch(turnCtx, a, tc)
+		}
 	}()
 
 	// Drain deltas + notifs + figaro. Wire-order: MethodMessage must
@@ -265,6 +299,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 
 	calls := assistantToolCalls(lastFig)
 	if len(calls) == 0 {
+		// No tools to run; drain the speculative dispatcher (it shouldn't
+		// have anything, since no tool_use blocks landed) and finish.
+		<-specDone
 		stopReason := lastFig.StopReason
 		if stopReason == "" {
 			stopReason = message.StopEnd
@@ -273,7 +310,13 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		return true
 	}
 
-	results := a.runTools(turnCtx, calls)
+	// Wait for the speculative dispatcher to consume the closed
+	// toolsReady channel (it's only closed once Send returns, which is
+	// already true at this point). After this point spec.results is
+	// safe to read for any ID we know about.
+	<-specDone
+
+	results := a.runTools(turnCtx, calls, spec)
 
 	// Always append tool_results to match tool_use blocks, even on
 	// interrupt. Fill missing slots with synthetic error results.
@@ -309,17 +352,118 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	return false
 }
 
-// runTools executes tool_use blocks in parallel and returns matching
-// tool_result blocks. Multi-tool rounds are bracketed with batch
-// start/end notifications.
-func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []message.Content {
-	type res struct {
-		idx     int
-		content []message.Content
-		isErr   bool
-	}
-	ch := make(chan res, len(calls))
+// toolOutcome holds the result of a single dispatched tool execution.
+type toolOutcome struct {
+	content []message.Content
+	isErr   bool
+}
 
+// toolPending tracks one in-flight (or completed) speculative tool.
+type toolPending struct {
+	call    message.Content
+	done    chan struct{}
+	outcome toolOutcome // valid after done is closed
+}
+
+// specDispatcher kicks off tool executions as soon as a provider
+// signals PushToolReady, well before the LLM stream completes. It is
+// the producer half of Slice A's parallelism story; runTools is the
+// consumer that emits the wire notifications in canonical order.
+//
+// Dispatch is idempotent per tool_call_id: a second call with the same
+// ID is a no-op. This lets runTools' reconciliation pass call
+// dispatch() for every call in lastFig without worrying about whether
+// the provider already emitted PushToolReady for it.
+type specDispatcher struct {
+	mu      sync.Mutex
+	pending map[string]*toolPending
+}
+
+func newSpecDispatcher() *specDispatcher {
+	return &specDispatcher{pending: make(map[string]*toolPending)}
+}
+
+// dispatch launches a goroutine for tc unless one is already in
+// flight for that tool_call_id. Returns the toolPending so callers
+// can wait on completion.
+func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.Content) *toolPending {
+	if tc.Type != message.ContentToolCall || tc.ToolCallID == "" {
+		return nil
+	}
+	s.mu.Lock()
+	if p, ok := s.pending[tc.ToolCallID]; ok {
+		s.mu.Unlock()
+		return p
+	}
+	p := &toolPending{call: tc, done: make(chan struct{})}
+	s.pending[tc.ToolCallID] = p
+	s.mu.Unlock()
+
+	go func() {
+		defer close(p.done)
+		figOtel.Event(turnCtx, "agent.tool.goroutine_enter",
+			attribute.String("tool", tc.ToolName),
+			attribute.String("tool_call_id", tc.ToolCallID),
+			attribute.Bool("speculative", true),
+		)
+		t, ok := a.tools.Get(tc.ToolName)
+		if !ok {
+			p.outcome = toolOutcome{
+				content: []message.Content{message.TextContent(fmt.Sprintf("Unknown tool: %s", tc.ToolName))},
+				isErr:   true,
+			}
+			return
+		}
+		var firstChunk bool
+		onChunk := func(chunk []byte) {
+			if a.isInterrupted() {
+				return
+			}
+			if !firstChunk {
+				firstChunk = true
+				figOtel.Event(turnCtx, "agent.tool.first_chunk",
+					attribute.String("tool", tc.ToolName),
+					attribute.String("tool_call_id", tc.ToolCallID),
+					attribute.Int("bytes", len(chunk)),
+				)
+			}
+			a.fanOut(rpc.Notification{
+				JSONRPC: "2.0",
+				Method:  rpc.MethodToolOutput,
+				Params: rpc.ToolOutputParams{
+					ToolCallID: tc.ToolCallID,
+					ToolName:   tc.ToolName,
+					Chunk:      string(chunk),
+				},
+			})
+		}
+		figOtel.Event(turnCtx, "agent.tool.execute_pre",
+			attribute.String("tool", tc.ToolName),
+			attribute.String("tool_call_id", tc.ToolCallID),
+		)
+		content, err := t.Execute(turnCtx, tc.Arguments, onChunk)
+		figOtel.Event(turnCtx, "agent.tool.execute_post",
+			attribute.String("tool", tc.ToolName),
+			attribute.String("tool_call_id", tc.ToolCallID),
+			attribute.Bool("err", err != nil),
+		)
+		if err != nil {
+			p.outcome = toolOutcome{
+				content: []message.Content{message.TextContent(fmt.Sprintf("Error: %s", err))},
+				isErr:   true,
+			}
+			return
+		}
+		p.outcome = toolOutcome{content: content, isErr: false}
+	}()
+	return p
+}
+
+// runTools emits batch / per-tool notifications in canonical order and
+// collects results from the speculative dispatcher. Any call that
+// wasn't speculatively dispatched (provider didn't emit PushToolReady,
+// or the buffer dropped it) is dispatched here as a fallback.
+func (a *Agent) runTools(turnCtx context.Context, calls []message.Content, spec *specDispatcher) []message.Content {
 	isBatch := len(calls) > 1
 	if isBatch {
 		entries := make([]rpc.ToolBatchToolEntry, len(calls))
@@ -337,7 +481,15 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 		})
 	}
 
+	// Reconcile: for every call in the final assistant message, make
+	// sure a goroutine is in flight. dispatch() is idempotent so
+	// duplicates are cheap.
+	pendings := make([]*toolPending, len(calls))
+	for i, tc := range calls {
+		pendings[i] = spec.dispatch(turnCtx, a, tc)
+	}
 
+	results := make([]message.Content, len(calls))
 	for i, tc := range calls {
 		figOtel.Event(turnCtx, "agent.tool_start.fanout_pre",
 			attribute.String("tool", tc.ToolName),
@@ -355,64 +507,25 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 			attribute.String("tool", tc.ToolName),
 			attribute.String("tool_call_id", tc.ToolCallID),
 		)
-		go func(i int, tc message.Content) {
-			figOtel.Event(turnCtx, "agent.tool.goroutine_enter",
-				attribute.String("tool", tc.ToolName),
-				attribute.String("tool_call_id", tc.ToolCallID),
-			)
-			t, ok := a.tools.Get(tc.ToolName)
-			if !ok {
-				ch <- res{i, []message.Content{message.TextContent(fmt.Sprintf("Unknown tool: %s", tc.ToolName))}, true}
-				return
-			}
-			var firstChunk bool
-			onChunk := func(chunk []byte) {
-				if a.isInterrupted() {
-					return
-				}
-				if !firstChunk {
-					firstChunk = true
-					figOtel.Event(turnCtx, "agent.tool.first_chunk",
-						attribute.String("tool", tc.ToolName),
-						attribute.String("tool_call_id", tc.ToolCallID),
-						attribute.Int("bytes", len(chunk)),
-					)
-				}
-				a.fanOut(rpc.Notification{
-					JSONRPC: "2.0",
-					Method:  rpc.MethodToolOutput,
-					Params: rpc.ToolOutputParams{
-						ToolCallID: tc.ToolCallID,
-						ToolName:   tc.ToolName,
-						Chunk:      string(chunk),
-					},
-				})
-			}
-			figOtel.Event(turnCtx, "agent.tool.execute_pre",
-				attribute.String("tool", tc.ToolName),
-				attribute.String("tool_call_id", tc.ToolCallID),
-			)
-			content, err := t.Execute(turnCtx, tc.Arguments, onChunk)
-			figOtel.Event(turnCtx, "agent.tool.execute_post",
-				attribute.String("tool", tc.ToolName),
-				attribute.String("tool_call_id", tc.ToolCallID),
-				attribute.Bool("err", err != nil),
-			)
-			if err != nil {
-				ch <- res{i, []message.Content{message.TextContent(fmt.Sprintf("Error: %s", err))}, true}
-				return
-			}
-			ch <- res{i, content, false}
-		}(i, tc)
-	}
 
-
-	results := make([]message.Content, len(calls))
-	for n := 0; n < len(calls); n++ {
-		r := <-ch
-		tc := calls[r.idx]
+		p := pendings[i]
+		if p == nil {
+			// Malformed call (no ID); synthesize an error.
+			results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName,
+				"Error: missing tool_call_id", true)
+			a.fanOut(rpc.Notification{
+				JSONRPC: "2.0",
+				Method:  rpc.MethodToolEnd,
+				Params: rpc.ToolEndParams{
+					ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
+					Result: "Error: missing tool_call_id", IsError: true,
+				},
+			})
+			continue
+		}
+		<-p.done
 		var resultText string
-		for _, c := range r.content {
+		for _, c := range p.outcome.content {
 			if c.Type == message.ContentText {
 				resultText += c.Text
 			}
@@ -422,15 +535,15 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content) []mes
 			Method:  rpc.MethodToolEnd,
 			Params: rpc.ToolEndParams{
 				ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-				Result: resultText, IsError: r.isErr,
+				Result: resultText, IsError: p.outcome.isErr,
 			},
 		})
 		figOtel.Event(turnCtx, "agent.tool_end.fanout_post",
 			attribute.String("tool", tc.ToolName),
 			attribute.String("tool_call_id", tc.ToolCallID),
-			attribute.Bool("err", r.isErr),
+			attribute.Bool("err", p.outcome.isErr),
 		)
-		results[r.idx] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, resultText, r.isErr)
+		results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, resultText, p.outcome.isErr)
 	}
 	if isBatch {
 		a.fanOut(rpc.Notification{

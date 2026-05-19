@@ -929,6 +929,17 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 				attribute.String("tool_name", b.Name),
 				attribute.Int("input_bytes", rawLen),
 			)
+			// Speculative dispatch: signal the harness that this tool's
+			// input is fully decoded so it can start executing now,
+			// without waiting for the rest of the stream.
+			if args, ok := b.Input.(map[string]interface{}); ok {
+				bus.PushToolReady(message.Content{
+					Type:       message.ContentToolCall,
+					ToolCallID: b.ID,
+					ToolName:   b.Name,
+					Arguments:  args,
+				})
+			}
 		}
 	case "message_start":
 		var ms struct {
