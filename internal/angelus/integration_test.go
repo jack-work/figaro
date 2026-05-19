@@ -41,6 +41,7 @@ func (m *mockProviderForIntegration) Send(_ context.Context, in provider.SendInp
 		return err
 	}
 	msg.LogicalTime = entry.LT
+	bus.PushMessageEnd(string(msg.StopReason))
 	bus.PushFigaro(msg)
 	return nil
 }

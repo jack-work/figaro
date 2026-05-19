@@ -14,8 +14,6 @@ const (
 	MethodToolInvokeReady  = "stream.tool_invoke_ready"
 	MethodToolStart        = "stream.tool_start"
 	MethodToolEnd          = "stream.tool_end"
-	MethodToolBatchStart   = "stream.tool_batch_start"
-	MethodToolBatchEnd     = "stream.tool_batch_end"
 	MethodMessageEnd       = "stream.message_end"
 	MethodMessage          = "stream.message"
 	MethodDone             = "stream.done"

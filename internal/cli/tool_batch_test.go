@@ -6,8 +6,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/jack-work/figaro/internal/rpc"
 )
 
 // safeBuf is a goroutine-safe wrapper around bytes.Buffer for the
@@ -31,8 +29,8 @@ func (b *safeBuf) String() string {
 	return b.buf.String()
 }
 
-func entries() []rpc.ToolBatchToolEntry {
-	return []rpc.ToolBatchToolEntry{
+func entries() []batchToolEntry {
+	return []batchToolEntry{
 		{ToolCallID: "a", ToolName: "bash", Arguments: map[string]interface{}{"command": "pwd"}},
 		{ToolCallID: "b", ToolName: "bash", Arguments: map[string]interface{}{"command": "ls"}},
 		{ToolCallID: "c", ToolName: "bash", Arguments: map[string]interface{}{"command": "uname -a"}},

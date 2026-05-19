@@ -121,9 +121,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			return
 		}
 		// Build initial row list from observed invokes.
-		entries := make([]rpc.ToolBatchToolEntry, 0, len(roundInvokes))
+		entries := make([]batchToolEntry, 0, len(roundInvokes))
 		for _, t := range roundInvokes {
-			entries = append(entries, rpc.ToolBatchToolEntry{
+			entries = append(entries, batchToolEntry{
 				ToolCallID: t.id,
 				ToolName:   t.name,
 				Arguments:  t.args,
@@ -279,12 +279,6 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 					}
 				}
 			}
-
-		case rpc.MethodToolBatchStart, rpc.MethodToolBatchEnd:
-			// Legacy server-driven batch declaration; the CLI now
-			// derives batch mode from tool_invoke_start observation.
-			// Kept as a no-op while the server still emits these;
-			// removed in a follow-up commit.
 
 		case rpc.MethodToolStart:
 			var p rpc.ToolStartParams

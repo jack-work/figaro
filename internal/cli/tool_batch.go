@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -102,9 +101,18 @@ var spinnerFrames = []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧
 
 const spinnerTick = 100 * time.Millisecond
 
+// batchToolEntry describes one tool when constructing a batch state.
+// CLI-local; the wire used to carry an equivalent rpc.ToolBatchToolEntry
+// but the rendering decision is now driven by per-tool wire events.
+type batchToolEntry struct {
+	ToolCallID string
+	ToolName   string
+	Arguments  map[string]interface{}
+}
+
 // newToolBatchState pre-builds rows from the batch start payload. No
 // rendering happens until RenderInitial.
-func newToolBatchState(out io.Writer, entries []rpc.ToolBatchToolEntry) *toolBatchState {
+func newToolBatchState(out io.Writer, entries []batchToolEntry) *toolBatchState {
 	rows := make([]*toolRow, len(entries))
 	idx := make(map[string]int, len(entries))
 	for i, e := range entries {

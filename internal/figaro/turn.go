@@ -485,28 +485,14 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 	return p
 }
 
-// runTools emits batch / per-tool notifications in canonical order and
-// collects results from the speculative dispatcher. Any call that
-// wasn't speculatively dispatched (provider didn't emit PushToolReady,
-// or the buffer dropped it) is dispatched here as a fallback.
+// runTools emits per-tool notifications and collects results from the
+// speculative dispatcher. The CLI infers batch-vs-solo rendering from
+// the per-tool stream itself (the count of MethodToolInvokeStart
+// events seen this round), so the harness no longer wraps the round
+// in MethodToolBatchStart/End frames. Any call that wasn't
+// speculatively dispatched (provider didn't emit PushToolReady, or
+// the buffer dropped it) is dispatched here as a fallback.
 func (a *Agent) runTools(turnCtx context.Context, calls []message.Content, spec *specDispatcher) []message.Content {
-	isBatch := len(calls) > 1
-	if isBatch {
-		entries := make([]rpc.ToolBatchToolEntry, len(calls))
-		for i, tc := range calls {
-			entries[i] = rpc.ToolBatchToolEntry{
-				ToolCallID: tc.ToolCallID,
-				ToolName:   tc.ToolName,
-				Arguments:  tc.Arguments,
-			}
-		}
-		a.fanOut(rpc.Notification{
-			JSONRPC: "2.0",
-			Method:  rpc.MethodToolBatchStart,
-			Params:  rpc.ToolBatchStartParams{Size: len(calls), Tools: entries},
-		})
-	}
-
 	// Reconcile: for every call in the final assistant message, make
 	// sure a goroutine is in flight. dispatch() is idempotent so
 	// duplicates are cheap.
@@ -570,13 +556,6 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content, spec 
 			attribute.Bool("err", p.outcome.isErr),
 		)
 		results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, resultText, p.outcome.isErr)
-	}
-	if isBatch {
-		a.fanOut(rpc.Notification{
-			JSONRPC: "2.0",
-			Method:  rpc.MethodToolBatchEnd,
-			Params:  rpc.ToolBatchEndParams{Size: len(calls)},
-		})
 	}
 	return results
 }

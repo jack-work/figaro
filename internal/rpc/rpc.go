@@ -87,24 +87,3 @@ type ErrorParams struct {
 	Message string `json:"message"`
 }
 
-// ToolBatchStartParams brackets a parallel tool dispatch round.
-// Emitted before tool_start for multi-tool rounds. Single-tool
-// rounds skip this.
-type ToolBatchStartParams struct {
-	Size  int                  `json:"size"`
-	Tools []ToolBatchToolEntry `json:"tools"`
-}
-
-// ToolBatchToolEntry describes one tool in a batch start.
-type ToolBatchToolEntry struct {
-	ToolCallID string                 `json:"tool_call_id"`
-	ToolName   string                 `json:"tool_name"`
-	Arguments  map[string]interface{} `json:"arguments,omitempty"`
-}
-
-// ToolBatchEndParams closes a batch.
-type ToolBatchEndParams struct {
-	Size int `json:"size"`
-}
-
-
