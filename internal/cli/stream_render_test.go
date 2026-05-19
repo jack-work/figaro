@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jack-work/largo"
 	"github.com/stretchr/testify/assert"
@@ -312,4 +313,73 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// TestStreamRenderer_PacerSuspendRace hammers the very race the panic
+// originally surfaced: the pacer drainer ticking concurrently with a
+// suspend transition driven by Handle(). In production Handle() is
+// invoked from a single goroutine (the JSON-RPC notify pump), so we
+// model that here — only the pacer drainer is the concurrent
+// adversary. The test pumps text deltas in via Handle (which calls
+// pace.Push), then transitions into and out of suspend repeatedly.
+//
+// If writeMu serialization is complete, this test panics-free. If a
+// path was missed, it'll trip largo's panic.
+func TestStreamRenderer_PacerSuspendRace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("stress race test")
+	}
+
+	out := &safeBuf{}
+	sw, err := largo.NewWriter(out, largo.Options{})
+	require.NoError(t, err)
+	r := newStreamRenderer(context.Background(), sw)
+	pace := pacer.New(r.PacedOut(), pacer.Options{
+		TargetCPS:       10000,
+		FirstByteBypass: 0,
+	})
+	r.SetPacer(pace)
+	t.Cleanup(func() { pace.Close() })
+
+	defer func() {
+		if rec := recover(); rec != nil {
+			t.Fatalf("renderer panicked under pacer/suspend race: %v", rec)
+		}
+	}()
+
+	deadline := time.After(200 * time.Millisecond)
+	turn := 0
+	for {
+		select {
+		case <-deadline:
+			return
+		default:
+		}
+		// Stream some text deltas (the pacer drainer ticks in the
+		// background, writing to sw).
+		for i := 0; i < 5; i++ {
+			notify(t, r, rpc.MethodDelta, rpc.DeltaParams{
+				Text: "streaming text ", ContentType: "text",
+			})
+		}
+		// Now a tool invocation: suspendIfNeeded fires inside Handle.
+		id := fmt.Sprintf("tc_%d", turn)
+		notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
+			ToolCallID: id, ToolName: "read",
+		})
+		notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
+			ToolCallID: id, ToolName: "read",
+		})
+		notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
+			ToolCallID: id, ToolName: "read", Chunk: "chunk",
+		})
+		notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
+			ToolCallID: id, ToolName: "read", Result: "chunk",
+		})
+		notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
+			StopReason: "tool_invoke",
+		})
+		notify(t, r, rpc.MethodMessage, rpc.MessageParams{})
+		turn++
+	}
 }
