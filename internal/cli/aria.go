@@ -242,7 +242,7 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 				if verbose {
 					fmt.Fprintf(w, "> *🤔 %s*\n\n", c.Text)
 				}
-			case message.ContentToolCall:
+			case message.ContentToolInvoke:
 				fmt.Fprintf(w, "→ **%s** %s\n\n", c.ToolName, toolCallSummary(c))
 			}
 		}

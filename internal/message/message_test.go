@@ -104,8 +104,8 @@ func TestPatch_AliasIdentity(t *testing.T) {
 
 func TestNewInterruptSentinel_NamesAllToolCalls(t *testing.T) {
 	calls := []message.Content{
-		{Type: message.ContentToolCall, ToolCallID: "tc_a", ToolName: "bash"},
-		{Type: message.ContentToolCall, ToolCallID: "tc_b", ToolName: "read"},
+		{Type: message.ContentToolInvoke, ToolCallID: "tc_a", ToolName: "bash"},
+		{Type: message.ContentToolInvoke, ToolCallID: "tc_b", ToolName: "read"},
 		// Non-tool_call blocks must be ignored.
 		message.TextContent("commentary"),
 	}
@@ -134,7 +134,7 @@ func TestInterruptSentinel_Roundtrip(t *testing.T) {
 		message.InterruptUserInterrupt,
 		"user pressed Ctrl-C",
 		[]message.Content{
-			{Type: message.ContentToolCall, ToolCallID: "tc_1", ToolName: "bash"},
+			{Type: message.ContentToolInvoke, ToolCallID: "tc_1", ToolName: "bash"},
 		},
 	)
 	original.LogicalTime = 12

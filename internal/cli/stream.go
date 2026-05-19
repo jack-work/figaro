@@ -4,14 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/jack-work/largo"
-	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -71,330 +68,17 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	})
 	defer pace.Close()
 
-	var rawOut io.Writer
-	openTools := 0
-
-	var batch *toolBatchState
-	var solo *toolSoloState
-	var soloToolCallID string // tool_call_id the active solo was launched for
-
-	// State machine input for solo-vs-batch commit. The CLI no longer
-	// trusts the server to declare batch mode — it counts
-	// tool_invoke_start events seen this round. One tool → solo. Two
-	// or more → upgrade to batch on the second invoke_start.
-	type invokedTool struct {
-		id   string
-		name string
-		args map[string]interface{} // populated by tool_invoke_ready
-	}
-	var roundInvokes []*invokedTool
-	resetRound := func() {
-		roundInvokes = roundInvokes[:0]
-	}
-	recordInvokeStart := func(id, name string) {
-		roundInvokes = append(roundInvokes, &invokedTool{id: id, name: name})
-	}
-	recordInvokeReady := func(id string, args map[string]interface{}) {
-		for _, t := range roundInvokes {
-			if t.id == id {
-				t.args = args
-				return
-			}
+	renderer := newStreamRenderer(ctx, sw, pace)
+	go func() {
+		<-renderer.Done()
+		select {
+		case doneCh <- struct{}{}:
+		default:
 		}
-	}
-
-	// Accumulates partial tool input JSON per tool_call_id so the
-	// CLI can extract and render tool details (command, path)
-	// progressively as deltas arrive rather than waiting for the
-	// full message. Maps tool_call_id → {toolName, partialJSON}.
-	pendingToolArgs := map[string]*pendingToolArg{}
-
-	// upgradeToBatch is called on the second tool_invoke_start of a
-	// round, before MethodMessageEnd. It tears down the pending solo
-	// (if any) and opens a batch frame, carrying the buffered solo's
-	// state forward as the first row. Subsequent tools become
-	// additional rows. The batch frame opens "early" with however
-	// many tools have been observed so far; more rows are appended
-	// as additional tool_invoke_starts arrive.
-	upgradeToBatch := func() {
-		if batch != nil {
-			return
-		}
-		// Build initial row list from observed invokes.
-		entries := make([]batchToolEntry, 0, len(roundInvokes))
-		for _, t := range roundInvokes {
-			entries = append(entries, batchToolEntry{
-				ToolCallID: t.id,
-				ToolName:   t.name,
-				Arguments:  t.args,
-			})
-		}
-		wrapped := false
-		if solo != nil {
-			solo.UpdateHeader("batch", fmt.Sprintf("(%d)", len(entries)))
-			solo.StopTicker()
-			wrapped = true
-		} else {
-			pace.Flush()
-			sw.Flush()
-			if rawOut == nil {
-				rawOut = sw.Suspend()
-			}
-		}
-		batch = newToolBatchState(rawOut, entries)
-		batch.wrapped = wrapped
-		if wrapped {
-			batch.wrapperSolo = solo
-		}
-		batch.RenderInitial()
-	}
-
-	resumeIfSuspended := func() {
-		// Wrapped-batch teardown takes precedence over solo.Freeze.
-		if batch != nil {
-			if batch.wrapped && solo != nil {
-				anyErr := batch.FinalizeRowsOnly()
-				solo.Done(anyErr)
-				solo = nil
-				soloToolCallID = ""
-				batch.PrintErrorDumps()
-			} else {
-				batch.Finalize()
-			}
-			batch = nil
-		}
-		if solo != nil {
-			solo.Freeze()
-			solo = nil
-			soloToolCallID = ""
-		}
-		if rawOut == nil {
-			return
-		}
-		_ = sw.Resume()
-		rawOut = nil
-	}
+	}()
 
 	deliverEvent := func(method string, params json.RawMessage) {
-		slog.Debug("rpc recv", "method", method, "params", json.RawMessage(params))
-
-		switch method {
-		case rpc.MethodDelta:
-			var p rpc.DeltaParams
-			if json.Unmarshal(params, &p) == nil {
-				figOtel.Event(ctx, "cli.recv.delta",
-					attribute.String("text", p.Text),
-				)
-				pace.Push(p.Text)
-			}
-
-		case rpc.MethodThinking:
-			var p rpc.ThinkingParams
-			if json.Unmarshal(params, &p) == nil {
-				sw.Write([]byte("\n> *🤔 " + largo.EscapeInline(p.Text) + "*\n\n"))
-			}
-
-		case rpc.MethodMessage:
-			figOtel.Event(ctx, "cli.recv.message")
-			pace.Flush()
-			sw.Flush()
-			resetRound()
-
-		case rpc.MethodMessageEnd:
-			var p rpc.MessageEndParams
-			if json.Unmarshal(params, &p) == nil {
-				figOtel.Event(ctx, "cli.recv.message_end",
-					attribute.String("stop_reason", p.StopReason))
-				// Commit point. If we've seen ≥2 invokes the batch is
-				// already open (upgradeToBatch was called on the second
-				// invoke_start). If we've seen exactly 1, we're staying
-				// in solo and there's nothing further to commit — the
-				// solo placeholder is already painted.
-			}
-
-		case rpc.MethodToolInvokeStart:
-			var p rpc.ToolInvokeStartParams
-			if json.Unmarshal(params, &p) == nil {
-				figOtel.Event(ctx, "cli.recv.tool_invoke_start",
-					attribute.String("tool", p.ToolName),
-					attribute.String("tool_call_id", p.ToolCallID),
-				)
-				pendingToolArgs[p.ToolCallID] = &pendingToolArg{toolName: p.ToolName}
-				recordInvokeStart(p.ToolCallID, p.ToolName)
-
-				switch {
-				case len(roundInvokes) == 1 && batch == nil && solo == nil:
-					// First tool: open a solo placeholder. If only one
-					// tool arrives this round it stays solo.
-					pace.Flush()
-					sw.Flush()
-					if rawOut == nil {
-						rawOut = sw.Suspend()
-					}
-					solo = newToolSoloState(rawOut, p.ToolName, "")
-					solo.Start()
-					soloToolCallID = p.ToolCallID
-				case len(roundInvokes) == 2 && batch == nil:
-					// Second tool: commit to batch mode now.
-					upgradeToBatch()
-				case len(roundInvokes) > 2 && batch != nil:
-					// Additional tools beyond the second: append rows.
-					batch.AppendRow(p.ToolCallID, p.ToolName, nil)
-				}
-			}
-
-		case rpc.MethodToolInvokeDelta:
-			var p rpc.ToolInvokeDeltaParams
-			if json.Unmarshal(params, &p) == nil {
-				figOtel.Event(ctx, "cli.recv.tool_invoke_delta",
-					attribute.String("tool_call_id", p.ToolCallID),
-					attribute.Int("bytes", len(p.PartialJSON)),
-				)
-				if pt, ok := pendingToolArgs[p.ToolCallID]; ok {
-					pt.json += p.PartialJSON
-					if detail := extractPartialDetail(pt.toolName, pt.json); detail != "" {
-						if solo != nil && soloToolCallID == p.ToolCallID {
-							solo.UpdateDetail(detail)
-						} else if batch != nil {
-							batch.UpdateDetail(p.ToolCallID, detail)
-						}
-					}
-				}
-			}
-
-		case rpc.MethodToolInvokeReady:
-			var p rpc.ToolInvokeReadyParams
-			if json.Unmarshal(params, &p) == nil {
-				figOtel.Event(ctx, "cli.recv.tool_invoke_ready",
-					attribute.String("tool_call_id", p.ToolCallID),
-				)
-				recordInvokeReady(p.ToolCallID, p.Arguments)
-				// Refresh the visible detail with fully-decoded args.
-				detail := toolDetailFromArgs(p.ToolName, p.Arguments)
-				if detail != "" {
-					if solo != nil && soloToolCallID == p.ToolCallID {
-						solo.UpdateDetail(detail)
-					} else if batch != nil {
-						batch.UpdateDetail(p.ToolCallID, detail)
-					}
-				}
-			}
-
-		case rpc.MethodToolStart:
-			var p rpc.ToolStartParams
-			if json.Unmarshal(params, &p) == nil {
-				figOtel.Event(ctx, "cli.recv.tool_start",
-					attribute.String("tool", p.ToolName),
-					attribute.String("tool_call_id", p.ToolCallID),
-				)
-				openTools++
-				if batch != nil {
-					batch.MarkRunning(p.ToolCallID)
-					return
-				}
-				// Reuse existing placeholder or create one.
-				if solo != nil && soloToolCallID == p.ToolCallID {
-					solo.UpdateDetail(toolDetail(p))
-				} else {
-					if rawOut == nil {
-						pace.Flush()
-						sw.Flush()
-						rawOut = sw.Suspend()
-					}
-					solo = newToolSoloState(rawOut, p.ToolName, toolDetail(p))
-					solo.Start()
-					soloToolCallID = p.ToolCallID
-				}
-				figOtel.Event(ctx, "cli.tool.first_paint",
-					attribute.String("tool", p.ToolName),
-					attribute.String("tool_call_id", p.ToolCallID),
-				)
-			}
-
-		case rpc.MethodToolOutput:
-			var p rpc.ToolOutputParams
-			if json.Unmarshal(params, &p) == nil {
-				figOtel.Event(ctx, "cli.recv.tool_output",
-					attribute.Int("bytes", len(p.Chunk)),
-					attribute.String("tool_call_id", p.ToolCallID),
-				)
-				if batch != nil {
-					batch.AppendOutput(p.ToolCallID, p.Chunk)
-					return
-				}
-				if solo != nil {
-					// No Freeze: the ticker keeps animating during
-					// output (mu serializes ticker, Write, and repaint).
-					solo.Write([]byte(p.Chunk))
-				} else if rawOut != nil {
-					rawOut.Write([]byte(p.Chunk))
-				}
-			}
-
-		case rpc.MethodToolEnd:
-			var p rpc.ToolEndParams
-			if json.Unmarshal(params, &p) == nil {
-				figOtel.Event(ctx, "cli.recv.tool_end",
-					attribute.String("tool", p.ToolName),
-					attribute.String("tool_call_id", p.ToolCallID),
-					attribute.Bool("error", p.IsError))
-				if batch != nil {
-					batch.MarkDone(p.ToolCallID, p.Result, p.IsError)
-				} else if rawOut != nil {
-					if solo != nil {
-						solo.Done(p.IsError)
-						solo = nil
-					}
-					if p.IsError {
-						rawOut.Write([]byte("\n" + term.Red("⚠ error:") + " " + p.Result + "\n"))
-					}
-					rawOut.Write([]byte(term.Dim("───") + "\n\n"))
-				}
-				if openTools > 0 {
-					openTools--
-				}
-				if openTools == 0 {
-					// Round's tools are all done. Finalize whatever
-					// rendering mode we committed to.
-					if batch != nil {
-						if batch.wrapped && solo != nil {
-							anyErr := batch.FinalizeRowsOnly()
-							solo.Done(anyErr)
-							solo = nil
-							soloToolCallID = ""
-							fmt.Fprintln(rawOut, term.Dim("───"))
-							batch.PrintErrorDumps()
-						} else {
-							batch.Finalize()
-						}
-						batch = nil
-					}
-					resumeIfSuspended()
-				}
-			}
-
-		case rpc.MethodError:
-			var p rpc.ErrorParams
-			if json.Unmarshal(params, &p) == nil {
-				pace.Flush()
-				resumeIfSuspended()
-				sw.Write([]byte("\n**❌ error:** " + largo.EscapeInline(p.Message) + "\n\n"))
-			}
-
-		case rpc.MethodDone:
-			openTools = 0
-			if batch != nil {
-				batch.Finalize()
-				batch = nil
-			}
-			pace.Flush()
-			resumeIfSuspended()
-			sw.Flush()
-			select {
-			case doneCh <- struct{}{}:
-			default:
-			}
-		}
+		renderer.Handle(method, params)
 	}
 
 	fcli, err := figaro.DialClient(ep, func(method string, params json.RawMessage) {
@@ -414,7 +98,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		fmt.Println()
 	case <-fcli.Done():
 		pace.Flush()
-		resumeIfSuspended()
+		renderer.resumeIfSuspended()
 		sw.Flush()
 		fmt.Fprintln(os.Stderr, "\nerror: agent disconnected before turn completed")
 		os.Exit(1)
@@ -430,7 +114,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		case <-time.After(3 * time.Second):
 		}
 		pace.Flush()
-		resumeIfSuspended()
+		renderer.resumeIfSuspended()
 		sw.Flush()
 		fmt.Fprintln(os.Stderr, "interrupted")
 	}

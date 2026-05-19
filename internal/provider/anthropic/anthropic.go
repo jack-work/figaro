@@ -239,7 +239,7 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 		case "tool_use":
 			args, _ := b.Input.(map[string]interface{})
 			m.Content = append(m.Content, message.Content{
-				Type: message.ContentToolCall, ToolCallID: b.ID, ToolName: b.Name, Arguments: args,
+				Type: message.ContentToolInvoke, ToolCallID: b.ID, ToolName: b.Name, Arguments: args,
 			})
 		case "tool_result":
 			var text string
@@ -266,7 +266,7 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 	case "max_tokens", "length":
 		m.StopReason = message.StopLength
 	case "tool_use":
-		m.StopReason = message.StopToolUse
+		m.StopReason = message.StopToolInvoke
 	}
 	if nm.Usage != nil {
 		m.Usage = &message.Usage{
@@ -393,7 +393,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snap
 				blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
 			case message.ContentThinking:
 				blocks = append(blocks, nativeBlock{Type: "thinking", Thinking: c.Text})
-			case message.ContentToolCall:
+			case message.ContentToolInvoke:
 				// Force non-nil input (API requires it).
 				var input interface{}
 				if len(c.Arguments) == 0 {
@@ -935,7 +935,7 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 			// without waiting for the rest of the stream.
 			if args, ok := b.Input.(map[string]interface{}); ok {
 				bus.PushToolReady(message.Content{
-					Type:       message.ContentToolCall,
+					Type:       message.ContentToolInvoke,
 					ToolCallID: b.ID,
 					ToolName:   b.Name,
 					Arguments:  args,

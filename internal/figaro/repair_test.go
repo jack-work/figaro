@@ -24,7 +24,7 @@ func buildStream(t *testing.T, msgs ...message.Message) store.Log[message.Messag
 }
 
 func toolCall(id, name string) message.Content {
-	return message.Content{Type: message.ContentToolCall, ToolCallID: id, ToolName: name}
+	return message.Content{Type: message.ContentToolInvoke, ToolCallID: id, ToolName: name}
 }
 
 func toolResult(id string) message.Content {
@@ -55,7 +55,7 @@ func TestAppendSentinel_DanglingToolUseAtTail(t *testing.T) {
 		message.Message{
 			Role:       message.RoleAssistant,
 			Content:    []message.Content{toolCall("tc_a", "bash"), toolCall("tc_b", "read")},
-			StopReason: message.StopToolUse,
+			StopReason: message.StopToolInvoke,
 		},
 	)
 	appendInterruptSentinelIfDangling(s, "aria")
@@ -72,7 +72,7 @@ func TestAppendSentinel_Idempotent(t *testing.T) {
 		message.Message{
 			Role:       message.RoleAssistant,
 			Content:    []message.Content{toolCall("tc_a", "bash")},
-			StopReason: message.StopToolUse,
+			StopReason: message.StopToolInvoke,
 		},
 	)
 	appendInterruptSentinelIfDangling(s, "aria")
@@ -90,7 +90,7 @@ func TestAppendSentinel_WellFormedToolResultNoOp(t *testing.T) {
 		message.Message{
 			Role:       message.RoleAssistant,
 			Content:    []message.Content{toolCall("tc_a", "bash")},
-			StopReason: message.StopToolUse,
+			StopReason: message.StopToolInvoke,
 		},
 		message.Message{
 			Role:    message.RoleUser,
@@ -112,7 +112,7 @@ func TestAppendSentinel_PartialToolResultsLeavesUnrecoverable(t *testing.T) {
 		message.Message{
 			Role:       message.RoleAssistant,
 			Content:    []message.Content{toolCall("tc_a", "bash"), toolCall("tc_b", "read")},
-			StopReason: message.StopToolUse,
+			StopReason: message.StopToolInvoke,
 		},
 		message.Message{Role: message.RoleUser, Content: []message.Content{toolResult("tc_a")}},
 	)
@@ -128,7 +128,7 @@ func TestAppendSentinel_NoToolCallsNoOp(t *testing.T) {
 		message.Message{
 			Role:       message.RoleAssistant,
 			Content:    []message.Content{message.TextContent("thinking…")},
-			StopReason: message.StopToolUse,
+			StopReason: message.StopToolInvoke,
 		},
 	)
 	before := len(s.Read())
@@ -153,7 +153,7 @@ func TestAppendSentinel_FileBackedPersists(t *testing.T) {
 		Payload: message.Message{
 			Role:       message.RoleAssistant,
 			Content:    []message.Content{toolCall("tc_disk", "bash")},
-			StopReason: message.StopToolUse,
+			StopReason: message.StopToolInvoke,
 		},
 	})
 	require.NoError(t, err)

@@ -30,6 +30,11 @@ type toolSoloState struct {
 	name   string
 	detail string
 
+	// callID is the tool_call_id this solo was opened for. Set by
+	// the caller after construction; used by the stream renderer to
+	// route tool_output and tool_end events.
+	callID string
+
 	mu     sync.Mutex
 	frame  int
 	state  toolRowState

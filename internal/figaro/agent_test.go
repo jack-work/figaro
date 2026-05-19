@@ -681,9 +681,9 @@ func TestAgent_BootInsertsSentinelForDanglingToolUse(t *testing.T) {
 		Payload: message.Message{
 			Role: message.RoleAssistant,
 			Content: []message.Content{
-				{Type: message.ContentToolCall, ToolCallID: "tc_boot", ToolName: "bash"},
+				{Type: message.ContentToolInvoke, ToolCallID: "tc_boot", ToolName: "bash"},
 			},
-			StopReason: message.StopToolUse,
+			StopReason: message.StopToolInvoke,
 		},
 	})
 	require.NoError(t, err)

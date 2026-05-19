@@ -73,7 +73,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 					{Type: message.ContentThinking, Text: "Let me check the files."},
 					message.TextContent("Listing now."),
 					{
-						Type: message.ContentToolCall, ToolCallID: "toolu_abc",
+						Type: message.ContentToolInvoke, ToolCallID: "toolu_abc",
 						ToolName:  "bash",
 						Arguments: map[string]interface{}{"command": "ls -la"},
 					},
@@ -98,7 +98,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			message.Message{
 				Role: message.RoleAssistant,
 				Content: []message.Content{{
-					Type: message.ContentToolCall, ToolCallID: "toolu_empty",
+					Type: message.ContentToolInvoke, ToolCallID: "toolu_empty",
 					ToolName: "edit",
 				}},
 			},
@@ -165,11 +165,11 @@ func TestDecodeAssistantMessage_ToolUse(t *testing.T) {
 	assert.Equal(t, message.RoleAssistant, ir.Role)
 	require.Len(t, ir.Content, 2)
 	assert.Equal(t, message.ContentText, ir.Content[0].Type)
-	assert.Equal(t, message.ContentToolCall, ir.Content[1].Type)
+	assert.Equal(t, message.ContentToolInvoke, ir.Content[1].Type)
 	assert.Equal(t, "toolu_abc", ir.Content[1].ToolCallID)
 	assert.Equal(t, "bash", ir.Content[1].ToolName)
 	assert.Equal(t, "ls", ir.Content[1].Arguments["command"])
-	assert.Equal(t, message.StopToolUse, ir.StopReason)
+	assert.Equal(t, message.StopToolInvoke, ir.StopReason)
 	require.NotNil(t, ir.Usage)
 	assert.Equal(t, 10, ir.Usage.InputTokens)
 	assert.Equal(t, 5, ir.Usage.OutputTokens)

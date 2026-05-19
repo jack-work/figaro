@@ -154,7 +154,7 @@ func handleBlockStop(ctx context.Context, ev anthropic.ContentBlockStopEvent, ac
 		args = map[string]interface{}{}
 	}
 	bus.PushToolReady(message.Content{
-		Type:       message.ContentToolCall,
+		Type:       message.ContentToolInvoke,
 		ToolCallID: b.ID,
 		ToolName:   b.Name,
 		Arguments:  args,

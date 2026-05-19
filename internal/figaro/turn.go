@@ -323,7 +323,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	}
 
 
-	calls := assistantToolCalls(lastFig)
+	calls := assistantToolInvokes(lastFig)
 	if len(calls) == 0 {
 		// No tools to run; drain the speculative dispatcher (it shouldn't
 		// have anything, since no tool_use blocks landed) and finish.
@@ -411,9 +411,14 @@ func newSpecDispatcher() *specDispatcher {
 
 // dispatch launches a goroutine for tc unless one is already in
 // flight for that tool_call_id. Returns the toolPending so callers
-// can wait on completion.
+// can wait on completion. The goroutine owns the full wire-level
+// execution lifecycle for this tool: it fans out MethodToolStart,
+// streams MethodToolOutput chunks from the tool's onChunk, then
+// fans out MethodToolEnd before signaling completion via p.done.
+// runTools only consumes the resulting toolPending for IR assembly
+// — it does not emit wire events for execution.
 func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.Content) *toolPending {
-	if tc.Type != message.ContentToolCall || tc.ToolCallID == "" {
+	if tc.Type != message.ContentToolInvoke || tc.ToolCallID == "" {
 		return nil
 	}
 	s.mu.Lock()
@@ -432,12 +437,37 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 			attribute.String("tool_call_id", tc.ToolCallID),
 			attribute.Bool("speculative", true),
 		)
+
+		// Execution-lifecycle wire: tool_start fires the moment we
+		// begin running. Output streams from onChunk. tool_end fires
+		// just before we signal completion. This is what makes the
+		// CLI see "tool 1 started, tool 1 finished" interleaved with
+		// other tools whose invokes are still arriving — the wire
+		// reflects execution truth.
+		a.fanOut(rpc.Notification{
+			JSONRPC: "2.0",
+			Method:  rpc.MethodToolStart,
+			Params: rpc.ToolStartParams{
+				ToolCallID: tc.ToolCallID,
+				ToolName:   tc.ToolName,
+				Arguments:  tc.Arguments,
+			},
+		})
+
 		t, ok := a.tools.Get(tc.ToolName)
 		if !ok {
 			p.outcome = toolOutcome{
 				content: []message.Content{message.TextContent(fmt.Sprintf("Unknown tool: %s", tc.ToolName))},
 				isErr:   true,
 			}
+			a.fanOut(rpc.Notification{
+				JSONRPC: "2.0",
+				Method:  rpc.MethodToolEnd,
+				Params: rpc.ToolEndParams{
+					ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
+					Result: fmt.Sprintf("Unknown tool: %s", tc.ToolName), IsError: true,
+				},
+			})
 			return
 		}
 		var firstChunk bool
@@ -473,29 +503,46 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 			attribute.String("tool_call_id", tc.ToolCallID),
 			attribute.Bool("err", err != nil),
 		)
+		var resultText string
+		var isErr bool
 		if err != nil {
+			resultText = fmt.Sprintf("Error: %s", err)
+			isErr = true
 			p.outcome = toolOutcome{
-				content: []message.Content{message.TextContent(fmt.Sprintf("Error: %s", err))},
+				content: []message.Content{message.TextContent(resultText)},
 				isErr:   true,
 			}
-			return
+		} else {
+			for _, c := range content {
+				if c.Type == message.ContentText {
+					resultText += c.Text
+				}
+			}
+			p.outcome = toolOutcome{content: content, isErr: false}
 		}
-		p.outcome = toolOutcome{content: content, isErr: false}
+
+		a.fanOut(rpc.Notification{
+			JSONRPC: "2.0",
+			Method:  rpc.MethodToolEnd,
+			Params: rpc.ToolEndParams{
+				ToolCallID: tc.ToolCallID,
+				ToolName:   tc.ToolName,
+				Result:     resultText,
+				IsError:    isErr,
+			},
+		})
 	}()
 	return p
 }
 
-// runTools emits per-tool notifications and collects results from the
-// speculative dispatcher. The CLI infers batch-vs-solo rendering from
-// the per-tool stream itself (the count of MethodToolInvokeStart
-// events seen this round), so the harness no longer wraps the round
-// in MethodToolBatchStart/End frames. Any call that wasn't
-// speculatively dispatched (provider didn't emit PushToolReady, or
-// the buffer dropped it) is dispatched here as a fallback.
+// runTools assembles tool_result content blocks in canonical order
+// for the next user-role tic. It does not emit wire events — the
+// speculative dispatcher owns the entire execution-lifecycle wire
+// (MethodToolStart, MethodToolOutput, MethodToolEnd) from inside
+// each tool's goroutine. Any call that wasn't speculatively
+// dispatched (provider didn't emit PushToolReady, or the buffer
+// dropped it) is dispatched here as a fallback.
 func (a *Agent) runTools(turnCtx context.Context, calls []message.Content, spec *specDispatcher) []message.Content {
-	// Reconcile: for every call in the final assistant message, make
-	// sure a goroutine is in flight. dispatch() is idempotent so
-	// duplicates are cheap.
 	pendings := make([]*toolPending, len(calls))
 	for i, tc := range calls {
 		pendings[i] = spec.dispatch(turnCtx, a, tc)
@@ -503,36 +550,14 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content, spec 
 
 	results := make([]message.Content, len(calls))
 	for i, tc := range calls {
-		figOtel.Event(turnCtx, "agent.tool_start.fanout_pre",
-			attribute.String("tool", tc.ToolName),
-			attribute.String("tool_call_id", tc.ToolCallID),
-		)
-		a.fanOut(rpc.Notification{
-			JSONRPC: "2.0",
-			Method:  rpc.MethodToolStart,
-			Params: rpc.ToolStartParams{
-				ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-				Arguments: tc.Arguments,
-			},
-		})
-		figOtel.Event(turnCtx, "agent.tool_start.fanout_post",
-			attribute.String("tool", tc.ToolName),
-			attribute.String("tool_call_id", tc.ToolCallID),
-		)
-
 		p := pendings[i]
 		if p == nil {
-			// Malformed call (no ID); synthesize an error.
+			// Malformed call (no ID); synthesize an error result. The
+			// dispatcher refused this call, so no wire events were
+			// emitted for it — leave it that way; the IR still gets
+			// a well-formed pair.
 			results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName,
 				"Error: missing tool_call_id", true)
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodToolEnd,
-				Params: rpc.ToolEndParams{
-					ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-					Result: "Error: missing tool_call_id", IsError: true,
-				},
-			})
 			continue
 		}
 		<-p.done
@@ -542,19 +567,6 @@ func (a *Agent) runTools(turnCtx context.Context, calls []message.Content, spec 
 				resultText += c.Text
 			}
 		}
-		a.fanOut(rpc.Notification{
-			JSONRPC: "2.0",
-			Method:  rpc.MethodToolEnd,
-			Params: rpc.ToolEndParams{
-				ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-				Result: resultText, IsError: p.outcome.isErr,
-			},
-		})
-		figOtel.Event(turnCtx, "agent.tool_end.fanout_post",
-			attribute.String("tool", tc.ToolName),
-			attribute.String("tool_call_id", tc.ToolCallID),
-			attribute.Bool("err", p.outcome.isErr),
-		)
 		results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, resultText, p.outcome.isErr)
 	}
 	return results
@@ -600,13 +612,13 @@ func (a *Agent) isInterrupted() bool {
 	return a.interrupted
 }
 
-func assistantToolCalls(m message.Message) []message.Content {
+func assistantToolInvokes(m message.Message) []message.Content {
 	if m.Role != message.RoleAssistant {
 		return nil
 	}
 	var out []message.Content
 	for _, c := range m.Content {
-		if c.Type == message.ContentToolCall {
+		if c.Type == message.ContentToolInvoke {
 			out = append(out, c)
 		}
 	}

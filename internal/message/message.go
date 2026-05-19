@@ -12,7 +12,7 @@ const (
 	RoleSystem     Role = "system" // compacted summary header
 
 	// RoleSystemInterrupt is a sentinel inserted when a turn left
-	// unmatched tool_use blocks (interrupt, fault, agent exit). The
+	// unmatched tool_invoke blocks (interrupt, fault, agent exit). The
 	// IR stays append-only; the translator is responsible for
 	// emitting a provider-acceptable surrogate (e.g., a synthetic
 	// tool_result block) into the wire stream.
@@ -34,11 +34,11 @@ const (
 type StopReason string
 
 const (
-	StopEnd     StopReason = "stop"
-	StopLength  StopReason = "length"
-	StopToolUse StopReason = "tool_use"
-	StopError   StopReason = "error"
-	StopAborted StopReason = "aborted"
+	StopEnd        StopReason = "stop"
+	StopLength     StopReason = "length"
+	StopToolInvoke StopReason = "tool_invoke"
+	StopError      StopReason = "error"
+	StopAborted    StopReason = "aborted"
 )
 
 // ContentType tags a content block.
@@ -48,7 +48,7 @@ const (
 	ContentText       ContentType = "text"
 	ContentImage      ContentType = "image"
 	ContentThinking   ContentType = "thinking"
-	ContentToolCall   ContentType = "tool_call"   // assistant emits these
+	ContentToolInvoke ContentType = "tool_invoke" // assistant emits these
 	ContentToolResult ContentType = "tool_result" // user-role tic carries these (one block per tool that completed)
 
 	// ContentInterrupt blocks live on a RoleSystemInterrupt message,
@@ -152,12 +152,12 @@ func InterruptContent(toolCallID, toolName string, reason InterruptReason, text 
 }
 
 // NewInterruptSentinel constructs a RoleSystemInterrupt message naming
-// every tool_call from the provided assistant content blocks. Callers
-// pass the tool_call blocks from the dangling assistant turn.
+// every tool_invoke from the provided assistant content blocks. Callers
+// pass the tool_invoke blocks from the dangling assistant turn.
 func NewInterruptSentinel(reason InterruptReason, text string, calls []Content) Message {
 	blocks := make([]Content, 0, len(calls))
 	for _, c := range calls {
-		if c.Type != ContentToolCall {
+		if c.Type != ContentToolInvoke {
 			continue
 		}
 		blocks = append(blocks, InterruptContent(c.ToolCallID, c.ToolName, reason, text))

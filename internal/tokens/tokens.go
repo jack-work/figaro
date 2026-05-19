@@ -56,7 +56,7 @@ func EstimateMessage(m message.Message) int {
 			chars += len(c.Text)
 		case message.ContentImage:
 			chars += 4800
-		case message.ContentToolCall:
+		case message.ContentToolInvoke:
 			chars += len(c.ToolName)
 			if c.Arguments != nil {
 				if b, err := json.Marshal(c.Arguments); err == nil {

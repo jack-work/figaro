@@ -41,7 +41,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 					{Type: message.ContentThinking, Text: "Let me check the files."},
 					message.TextContent("Listing now."),
 					{
-						Type: message.ContentToolCall, ToolCallID: "toolu_abc",
+						Type: message.ContentToolInvoke, ToolCallID: "toolu_abc",
 						ToolName:  "bash",
 						Arguments: map[string]interface{}{"command": "ls -la"},
 					},
@@ -71,7 +71,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			ir: message.Message{
 				Role: message.RoleAssistant,
 				Content: []message.Content{{
-					Type: message.ContentToolCall, ToolCallID: "toolu_empty",
+					Type: message.ContentToolInvoke, ToolCallID: "toolu_empty",
 					ToolName: "edit",
 				}},
 			},
@@ -128,7 +128,7 @@ func assertIRMessageEqual(t *testing.T, want, got message.Message) {
 		assert.Equal(t, wc.Text, gc.Text, "block %d text", i)
 		assert.Equal(t, wc.ToolCallID, gc.ToolCallID, "block %d tool_call_id", i)
 		assert.Equal(t, wc.IsError, gc.IsError, "block %d is_error", i)
-		if wc.Type == message.ContentToolCall {
+		if wc.Type == message.ContentToolInvoke {
 			assert.Equal(t, wc.ToolName, gc.ToolName, "block %d tool_name", i)
 			// nil and empty map both represent zero arguments; the
 			// encoder normalizes both to "{}" on the wire.

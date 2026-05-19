@@ -20,8 +20,8 @@ func TestRenderMessage_InterruptSentinel(t *testing.T) {
 		message.InterruptFault,
 		"tool execution was interrupted (recovered on reload)",
 		[]message.Content{
-			{Type: message.ContentToolCall, ToolCallID: "toolu_a", ToolName: "bash"},
-			{Type: message.ContentToolCall, ToolCallID: "toolu_b", ToolName: "read"},
+			{Type: message.ContentToolInvoke, ToolCallID: "toolu_a", ToolName: "bash"},
+			{Type: message.ContentToolInvoke, ToolCallID: "toolu_b", ToolName: "read"},
 		},
 	)
 	snap := chalkboard.Snapshot{}

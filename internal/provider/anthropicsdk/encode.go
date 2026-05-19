@@ -62,7 +62,7 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *chalkboard.Snaps
 				// Signature comes from the model on real turns;
 				// re-encoding stored history won't have it.
 				blocks = append(blocks, anthropic.NewThinkingBlock("", c.Text))
-			case message.ContentToolCall:
+			case message.ContentToolInvoke:
 				input := toolInput(c.Arguments)
 				blocks = append(blocks, anthropic.NewToolUseBlock(c.ToolCallID, input, c.ToolName))
 			}

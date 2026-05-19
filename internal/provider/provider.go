@@ -48,7 +48,7 @@ type Bus interface {
 	// decoded — typically at content_block_stop. The harness may dispatch
 	// the tool immediately, before PushFigaro / message_stop arrives.
 	//
-	// The content must be a ContentToolCall with ToolCallID, ToolName,
+	// The content must be a ContentToolInvoke with ToolCallID, ToolName,
 	// and Arguments populated. Providers that don't support per-block
 	// dispatch may omit calls to this method; the harness falls back to
 	// dispatching from PushFigaro's assembled message.

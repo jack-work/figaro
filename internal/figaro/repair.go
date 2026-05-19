@@ -43,11 +43,11 @@ func appendInterruptSentinelIfDangling(stream store.Log[message.Message], ariaID
 	}
 
 	assistant := entries[lastAssistantIdx].Payload
-	if assistant.StopReason != message.StopToolUse {
+	if assistant.StopReason != message.StopToolInvoke {
 		return
 	}
 
-	calls := assistantToolCalls(assistant)
+	calls := assistantToolInvokes(assistant)
 	if len(calls) == 0 {
 		return
 	}

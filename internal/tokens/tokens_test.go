@@ -100,7 +100,7 @@ func TestEstimateMessage_Image(t *testing.T) {
 func TestEstimateMessage_ToolCall(t *testing.T) {
 	m := message.Message{Content: []message.Content{
 		{
-			Type:      message.ContentToolCall,
+			Type:      message.ContentToolInvoke,
 			ToolName:  "bash",
 			Arguments: map[string]interface{}{"command": "ls -la"},
 		},

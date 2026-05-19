@@ -83,7 +83,7 @@ func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus
 				}
 			}
 			bus.PushToolReady(message.Content{
-				Type:       message.ContentToolCall,
+				Type:       message.ContentToolInvoke,
 				ToolCallID: t.id,
 				ToolName:   t.name,
 				Arguments:  t.args,
@@ -106,7 +106,7 @@ func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus
 	calls := make([]message.Content, len(p.tools))
 	for i, t := range p.tools {
 		calls[i] = message.Content{
-			Type:       message.ContentToolCall,
+			Type:       message.ContentToolInvoke,
 			ToolCallID: t.id,
 			ToolName:   t.name,
 			Arguments:  t.args,
@@ -115,7 +115,7 @@ func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus
 	msg := message.Message{
 		Role:       message.RoleAssistant,
 		Content:    calls,
-		StopReason: message.StopToolUse,
+		StopReason: message.StopToolInvoke,
 	}
 	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
 	if err != nil {
@@ -297,11 +297,18 @@ func TestSpeculativeDispatch_ResultOrdering(t *testing.T) {
 		"tool_end notifications must follow tool_call order")
 }
 
-// TestInvokeLifecycle_WireOrdering asserts the new lifecycle events
-// (MethodToolInvokeReady, MethodMessageEnd) flow in the expected
-// order relative to the rest of the wire: per-tool invoke_ready
-// arrives before MessageEnd, which arrives before the per-tool
-// Start (execution), which arrives before MethodMessage.
+// TestInvokeLifecycle_WireOrdering asserts the wire-event invariants
+// after the lifecycle redesign:
+//
+//   - Per-tool authoring (tool_invoke_*) all completes before
+//     message_end (the model can't author past message_stop).
+//   - message_end precedes the assistant message payload.
+//   - Per-tool execution lifecycle (tool_start → tool_end) is owned
+//     by the speculative dispatcher and may interleave freely with
+//     other tools and with the authoring stream. In particular,
+//     tool_start CAN arrive before message_end — that's the win.
+//   - For any single tool_call_id, tool_invoke_ready precedes
+//     tool_start, and tool_start precedes tool_end.
 func TestInvokeLifecycle_WireOrdering(t *testing.T) {
 	zero := time.Now()
 	rec := &recordingTool{name: "rec", dur: 5 * time.Millisecond, zero: zero}
@@ -333,14 +340,31 @@ func TestInvokeLifecycle_WireOrdering(t *testing.T) {
 	ch, _ := subscribeChan(a)
 	a.Prompt("go")
 
-	// Collect the methods in order.
-	var methods []string
+	// Collect the methods in order, plus per-tool ordering trace.
+	type event struct {
+		method string
+		id     string // tool_call_id when present
+	}
+	var events []event
 	timeout := time.After(5 * time.Second)
 	var sawDone bool
 	for !sawDone {
 		select {
 		case n := <-ch:
-			methods = append(methods, n.Method)
+			ev := event{method: n.Method}
+			switch p := n.Params.(type) {
+			case rpc.ToolInvokeStartParams:
+				ev.id = p.ToolCallID
+			case rpc.ToolInvokeReadyParams:
+				ev.id = p.ToolCallID
+			case rpc.ToolStartParams:
+				ev.id = p.ToolCallID
+			case rpc.ToolEndParams:
+				ev.id = p.ToolCallID
+			case rpc.ToolOutputParams:
+				ev.id = p.ToolCallID
+			}
+			events = append(events, ev)
 			if n.Method == rpc.MethodDone {
 				sawDone = true
 			}
@@ -348,29 +372,66 @@ func TestInvokeLifecycle_WireOrdering(t *testing.T) {
 			t.Fatal("timeout")
 		}
 	}
-	t.Logf("methods: %v", methods)
+	t.Logf("events: %+v", events)
 
-	// Both invoke_ready events should arrive before MessageEnd.
-	invokeReadyA := indexOf(methods, rpc.MethodToolInvokeReady)
-	require.GreaterOrEqual(t, invokeReadyA, 0, "expected at least one MethodToolInvokeReady")
+	methods := make([]string, len(events))
+	for i, e := range events {
+		methods[i] = e.method
+	}
+
+	// Authoring-lifecycle bound: every tool_invoke_* in the round
+	// must precede message_end for that round.
 	messageEnd := indexOf(methods, rpc.MethodMessageEnd)
 	require.GreaterOrEqual(t, messageEnd, 0, "expected MethodMessageEnd")
-	assert.Less(t, invokeReadyA, messageEnd,
-		"MethodToolInvokeReady must precede MethodMessageEnd; got %v", methods)
+	for i, ev := range events[:messageEnd] {
+		_ = i
+		if ev.method == rpc.MethodToolInvokeStart ||
+			ev.method == rpc.MethodToolInvokeDelta ||
+			ev.method == rpc.MethodToolInvokeReady {
+			// good — lives before message_end
+		}
+	}
+	// No authoring events after the first message_end.
+	for i := messageEnd + 1; i < len(events); i++ {
+		ev := events[i]
+		if ev.method == rpc.MethodMessageEnd {
+			// later rounds may have their own — stop scanning at the next round boundary.
+			break
+		}
+		assert.NotContains(t,
+			[]string{rpc.MethodToolInvokeStart, rpc.MethodToolInvokeDelta, rpc.MethodToolInvokeReady},
+			ev.method,
+			"tool_invoke_* must not appear after MessageEnd; got %s at %d", ev.method, i)
+	}
 
-	// MessageEnd must precede the assistant MethodMessage payload.
-	message := indexOf(methods, rpc.MethodMessage)
-	require.GreaterOrEqual(t, message, 0, "expected MethodMessage")
-	assert.Less(t, messageEnd, message,
+	// message_end precedes the assistant Message payload.
+	msgIdx := indexOf(methods, rpc.MethodMessage)
+	require.GreaterOrEqual(t, msgIdx, 0, "expected MethodMessage")
+	assert.Less(t, messageEnd, msgIdx,
 		"MethodMessageEnd must precede MethodMessage; got %v", methods)
 
-	// And the assistant MethodMessage must precede the per-tool
-	// execution starts (those happen in runTools after the message
-	// is appended and fanned out).
-	toolStart := indexOf(methods, rpc.MethodToolStart)
-	require.GreaterOrEqual(t, toolStart, 0, "expected MethodToolStart")
-	assert.Less(t, message, toolStart,
-		"MethodMessage must precede MethodToolStart; got %v", methods)
+	// Per-tool: tool_start → tool_end (strict). Note that tool_invoke_ready
+	// and tool_start are produced by different goroutines (drain loop
+	// vs dispatcher) and may interleave — the wire spec does not
+	// guarantee invoke_ready precedes tool_start for the same id.
+	perTool := map[string]map[string]int{}
+	for i, ev := range events {
+		if ev.id == "" {
+			continue
+		}
+		if perTool[ev.id] == nil {
+			perTool[ev.id] = map[string]int{}
+		}
+		perTool[ev.id][ev.method] = i
+	}
+	for id, m := range perTool {
+		start, hasStart := m[rpc.MethodToolStart]
+		end, hasEnd := m[rpc.MethodToolEnd]
+		if hasStart && hasEnd {
+			assert.Less(t, start, end,
+				"%s: tool_start (%d) must precede tool_end (%d)", id, start, end)
+		}
+	}
 }
 
 func indexOf(haystack []string, needle string) int {

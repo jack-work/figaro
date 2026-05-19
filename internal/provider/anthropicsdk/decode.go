@@ -24,7 +24,7 @@ func decodeAssistantMessage(m anthropic.Message) message.Message {
 			out.Content = append(out.Content, message.Content{Type: message.ContentThinking, Text: v.Thinking})
 		case anthropic.ToolUseBlock:
 			out.Content = append(out.Content, message.Content{
-				Type:       message.ContentToolCall,
+				Type:       message.ContentToolInvoke,
 				ToolCallID: v.ID,
 				ToolName:   v.Name,
 				Arguments:  asArgsMap(v.Input),
@@ -60,7 +60,7 @@ func mapStopReason(s anthropic.StopReason) message.StopReason {
 	case anthropic.StopReasonMaxTokens:
 		return message.StopLength
 	case anthropic.StopReasonToolUse:
-		return message.StopToolUse
+		return message.StopToolInvoke
 	}
 	return ""
 }
