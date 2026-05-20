@@ -315,6 +315,71 @@ func min(a, b int) int {
 	return b
 }
 
+// TestStreamRenderer_FirstToolEndsBeforeUpgrade nails the exact bug
+// the user reported visually as "row 1 stuck spinning forever". The
+// dispatcher fires tool 1's tool_end (with the file content) before
+// the model's stream has emitted tool 2's invoke_start. With my
+// previous renderer, tool 1's end was dropped on the floor:
+//
+//   - r.batch == nil (no upgrade yet)
+//   - r.soloCommitted == false (no MessageEnd yet)
+//
+// Both branches in MethodToolEnd skip, openInvokes decrements, and
+// the result text is gone. When tool 2's invoke later triggers
+// upgradeToBatch, row 1 is created in toolRowPending and never gets
+// MarkDone'd because the end already came and went.
+//
+// Correct behavior: buffer pending ends (the result + isError) keyed
+// by id; flush into the matching row on upgradeToBatch or solo
+// commit.
+func TestStreamRenderer_FirstToolEndsBeforeUpgrade(t *testing.T) {
+	r, _ := newTestRenderer(t)
+
+	// Tool 1: full lifecycle while still in solo (no upgrade yet).
+	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
+		ToolCallID: "tc_1", ToolName: "read",
+	})
+	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
+		ToolCallID: "tc_1", ToolName: "read",
+	})
+	notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
+		ToolCallID: "tc_1", ToolName: "read", Chunk: "file content",
+	})
+	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
+		ToolCallID: "tc_1", ToolName: "read", Result: "file content",
+	})
+
+	// Tool 2 arrives — upgrade to batch.
+	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
+		ToolCallID: "tc_2", ToolName: "read",
+	})
+
+	require.NotNil(t, r.batch, "expected batch after second invoke")
+	// Row 1 (tc_1) must have absorbed its pending end — not still
+	// be in toolRowPending or toolRowRunning.
+	idx, ok := r.batch.rowIndex["tc_1"]
+	require.True(t, ok, "row for tc_1 should exist in batch")
+	row := r.batch.rows[idx]
+	assert.NotEqual(t, toolRowPending, row.state,
+		"row 1 must not still be Pending after upgrade absorbed its end")
+	assert.NotEqual(t, toolRowRunning, row.state,
+		"row 1 must not still be Running after upgrade absorbed its end")
+	assert.Equal(t, toolRowOK, row.state,
+		"row 1's end fired before upgrade; should be OK after transplant")
+
+	// Finish tool 2 + MessageEnd; whole round should finalize cleanly.
+	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
+		ToolCallID: "tc_2", ToolName: "read",
+	})
+	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
+		ToolCallID: "tc_2", ToolName: "read", Result: "ok",
+	})
+	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
+		StopReason: "tool_invoke",
+	})
+	assert.Nil(t, r.batch, "batch should be finalized")
+}
+
 // TestStreamRenderer_PacerSuspendRace hammers the very race the panic
 // originally surfaced: the pacer drainer ticking concurrently with a
 // suspend transition driven by Handle(). In production Handle() is

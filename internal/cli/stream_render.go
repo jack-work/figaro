@@ -103,6 +103,19 @@ type streamRenderer struct {
 	// rawOut when a chunk arrives before its container exists.
 	pendingOutput map[string][]string
 
+	// pendingStart records which ids have seen MethodToolStart while
+	// no committed container was open. Flushed into the matching row
+	// on upgradeToBatch / solo commit so the row transitions from
+	// Pending → Running.
+	pendingStart map[string]bool
+
+	// pendingEnd buffers tool_end outcomes for ids whose container
+	// wasn't open at the time the end arrived. Flushed into the row
+	// on upgradeToBatch / solo commit. Without this, a fast tool that
+	// completes during the solo-streaming window has its end dropped
+	// and its row sticks on the spinner forever.
+	pendingEnd map[string]toolEndRecord
+
 	// streamedDetail tracks the partial input JSON streamed via
 	// tool_invoke_delta, so the CLI can update detail strings
 	// progressively before tool_invoke_ready arrives.
@@ -114,6 +127,13 @@ type streamRenderer struct {
 	// wireTrace, when non-nil, receives one JSON line per Handle()
 	// call. Opt-in via FIGARO_WIRE_TRACE=/path/to/file.
 	wireTrace io.Writer
+}
+
+// toolEndRecord captures the params of a MethodToolEnd that arrived
+// before its rendering container existed.
+type toolEndRecord struct {
+	result  string
+	isError bool
 }
 
 // invokedTool records one tool_invoke_start for the current round.
@@ -128,6 +148,8 @@ func newStreamRenderer(ctx context.Context, sw *largo.Writer) *streamRenderer {
 		ctx:            ctx,
 		sw:             sw,
 		pendingOutput:  map[string][]string{},
+		pendingStart:   map[string]bool{},
+		pendingEnd:     map[string]toolEndRecord{},
 		streamedDetail: map[string]*pendingToolArg{},
 		done:           make(chan struct{}, 1),
 	}
@@ -253,6 +275,16 @@ func (r *streamRenderer) resetRound() {
 	r.roundInvokes = r.roundInvokes[:0]
 	r.roundCommitted = false
 	r.soloCommitted = false
+	// Stale pending entries belong to a finished round.
+	for k := range r.pendingOutput {
+		delete(r.pendingOutput, k)
+	}
+	for k := range r.pendingStart {
+		delete(r.pendingStart, k)
+	}
+	for k := range r.pendingEnd {
+		delete(r.pendingEnd, k)
+	}
 }
 
 // commitRoundIfReady fires the rendering-finalize path when the round
@@ -331,6 +363,19 @@ func (r *streamRenderer) upgradeToBatch() {
 		}
 		delete(r.pendingOutput, id)
 	}
+	// Flush any pending tool_starts that arrived before the batch.
+	for id := range r.pendingStart {
+		r.batch.MarkRunning(id)
+		delete(r.pendingStart, id)
+	}
+	// Flush any pending tool_ends. This is the critical bit: a fast
+	// tool whose end arrived while we were still in solo would
+	// otherwise leave its row stuck Running forever. Apply MarkDone
+	// AFTER MarkRunning so the state transition is well-formed.
+	for id, end := range r.pendingEnd {
+		r.batch.MarkDone(id, end.result, end.isError)
+		delete(r.pendingEnd, id)
+	}
 }
 
 // updateBatchSize re-renders the batch header to reflect the current
@@ -405,10 +450,21 @@ func (r *streamRenderer) Handle(method string, params json.RawMessage) {
 			// solo placeholder is now a committed surface; subsequent
 			// chunks (and the eventual tool_end) can write straight to it.
 			if r.batch == nil && r.solo != nil {
-				r.flushPendingOutputTo(r.solo.callID, func(c string) {
+				id := r.solo.callID
+				r.flushPendingOutputTo(id, func(c string) {
 					r.solo.Write([]byte(c))
 				})
 				r.soloCommitted = true
+				// If the tool's end already came in pre-commit,
+				// finalize the solo here — otherwise the spinner
+				// keeps running with no event coming to stop it.
+				if end, ok := r.pendingEnd[id]; ok {
+					if end.isError && r.rawOut != nil {
+						r.rawOut.Write([]byte("\n" + term.Red("⚠ error:") + " " + end.result + "\n"))
+					}
+					delete(r.pendingEnd, id)
+				}
+				delete(r.pendingStart, id)
 			}
 			r.commitRoundIfReady()
 		}
@@ -494,6 +550,10 @@ func (r *streamRenderer) Handle(method string, params json.RawMessage) {
 				r.solo.UpdateDetail(d)
 			}
 		}
+		// Record the start for later: if a batch upgrade follows, the
+		// row needs to flip to Running. (If we stay solo, the solo
+		// already has a spinner up; no action needed.)
+		r.pendingStart[p.ToolCallID] = true
 
 	case rpc.MethodToolOutput:
 		var p rpc.ToolOutputParams
@@ -529,22 +589,27 @@ func (r *streamRenderer) Handle(method string, params json.RawMessage) {
 			attribute.String("tool", p.ToolName),
 			attribute.String("tool_call_id", p.ToolCallID),
 			attribute.Bool("error", p.IsError))
-		if r.batch != nil {
-			// Flush any buffered output (in case tool_start was missed).
+		switch {
+		case r.batch != nil:
 			r.flushPendingOutputTo(p.ToolCallID, func(c string) {
 				r.batch.AppendOutput(p.ToolCallID, c)
 			})
 			r.batch.MarkDone(p.ToolCallID, p.Result, p.IsError)
-		} else if r.soloCommitted && r.solo != nil && r.solo.callID == p.ToolCallID {
-			// Only flush to solo if it's already committed. Pre-commit,
-			// the buffer stays in pendingOutput — MessageEnd will
-			// commit and flush, or upgradeToBatch will transplant.
+			delete(r.pendingStart, p.ToolCallID)
+		case r.soloCommitted && r.solo != nil && r.solo.callID == p.ToolCallID:
 			r.flushPendingOutputTo(p.ToolCallID, func(c string) {
 				r.solo.Write([]byte(c))
 			})
 			if p.IsError && r.rawOut != nil {
 				r.rawOut.Write([]byte("\n" + term.Red("⚠ error:") + " " + p.Result + "\n"))
 			}
+			delete(r.pendingStart, p.ToolCallID)
+		default:
+			// No committed container yet. Record the end so a future
+			// upgradeToBatch (or soloCommit) can transition the row
+			// past Running. Without this, a fast tool whose end arrives
+			// during the solo-streaming window leaves its row stuck.
+			r.pendingEnd[p.ToolCallID] = toolEndRecord{result: p.Result, isError: p.IsError}
 		}
 		if r.openInvokes > 0 {
 			r.openInvokes--
