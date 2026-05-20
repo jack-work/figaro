@@ -267,35 +267,84 @@ func (s *toolSoloState) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// ingest feeds one byte through the line buffer. Handles wrap, ANSI
-// escapes, \n, \r, and UTF-8 continuation bytes.
+// tabStop is the column increment for ASCII HT (0x09). Most terminals
+// (xterm, tmux, screen, kitty, alacritty) use a fixed 8-col tab stop
+// unless explicitly reconfigured via TBC/HTS. We don't track per-line
+// tab stops; 8 is good enough for the live tail and matches what
+// `go test`, `cat`, and the shell prompt usually expect.
+const tabStop = 8
+
+// ingest feeds one byte through the line buffer. The model mirrors
+// xterm's pending-wrap semantics: the row-break for a full-width row
+// only fires on the NEXT visible byte, not on the byte that filled
+// the row. Control bytes (tab, backspace, bell) and ANSI CSI/OSC
+// sequences are accounted for so the model's notion of "visible col"
+// stays in sync with the actual rendered output. Anything the model
+// can't predict (cursor-positioning escapes like CUP, mouse events)
+// will desync; tools that emit those need to be handled separately.
 func (s *toolSoloState) ingest(b byte, width int) {
 	if s.cursor.inEsc {
 		s.partial = append(s.partial, b)
-		if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') {
+		// CSI / OSC / DCS / SS2/SS3 all share roughly the same idea:
+		// the sequence ends on the first letter (A–Z, a–z) or, for
+		// OSC, on BEL (0x07) / ST (0x9c) / ESC \. We collapse all
+		// terminators to "first ASCII letter or BEL". Good enough for
+		// the SGR/colors/cursor-move sequences typical tools emit;
+		// anything more exotic will leave the model briefly stuck in
+		// inEsc, which is preferable to mis-counting bytes as cols.
+		if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || b == 0x07 {
 			s.cursor.inEsc = false
 		}
 		return
 	}
 	switch b {
-	case 0x1b:
+	case 0x1b: // ESC
 		s.cursor.inEsc = true
 		s.partial = append(s.partial, b)
 		return
-	case '\n':
+	case '\n': // LF
 		s.commitLine()
 		return
-	case '\r':
+	case '\r': // CR
 		// Cursor visually resets to col 0; keep partial bytes so far.
 		// Real terminals would overwrite on subsequent chars; for our
 		// live tail that's close enough.
 		s.cursor.col = 0
+		s.partial = append(s.partial, b)
+		return
+	case '\t': // HT — advance to next tab stop, capped at width
+		// Same pending-wrap semantics as visible bytes: if we're
+		// already at width, this tab consumes the pending wrap.
+		if s.cursor.col >= width {
+			s.commitLine()
+		}
+		next := ((s.cursor.col / tabStop) + 1) * tabStop
+		if next > width {
+			next = width
+		}
+		s.cursor.col = next
+		s.partial = append(s.partial, b)
+		return
+	case '\b': // BS — backspace, col-- (clamped)
+		if s.cursor.col > 0 {
+			s.cursor.col--
+		}
+		s.partial = append(s.partial, b)
+		return
+	case 0x07: // BEL — no col change, no print effect (most terms)
+		s.partial = append(s.partial, b)
+		return
+	case 0x0b, 0x0c: // VT, FF — most terms treat as LF
+		s.commitLine()
 		return
 	}
+	// UTF-8 continuation byte: part of a multi-byte rune, no col change.
 	if b&0xc0 == 0x80 {
 		s.partial = append(s.partial, b)
 		return
 	}
+	// Visible byte. Pending-wrap: if col is already at width, this
+	// byte triggers the wrap.
 	if s.cursor.col >= width {
 		s.commitLine()
 	}

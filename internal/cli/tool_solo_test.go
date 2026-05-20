@@ -165,6 +165,62 @@ func TestSoloRollingTailBoundedByViewport(t *testing.T) {
 	}
 }
 
+// Regression: ASCII HT (0x09) used to advance the model's col by 1
+// instead of jumping to the next 8-col tab stop. For Go test output
+// — which interleaves tabs between the "ok" prefix, the package
+// path, and the timing — that underestimated post-tab col positions
+// by up to 7. The terminal's REAL wraps fired at different points
+// than the model expected, the rolling-tail row count drifted off
+// the truth, and Done's CursorUp landed inside the live tail
+// instead of on the spinner header.
+//
+// This test exercises a width where the fix flips a 1-row line into
+// a 2-row line (i.e., where the post-tab col difference crosses the
+// width threshold), so it caught the bug class directly.
+func TestSoloIngestTabAdvancesToTabStop(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		width    int
+		content  string // no trailing \n; the test appends one
+		wantRows int    // physical rows that the LOGICAL line occupies
+	}{
+		{
+			// "ok" col 2, "\t" → col 8, 40 chars → col 48. width 45
+			// → wraps mid-content. 2 rows.
+			// Pre-fix: "\t" treated as 1 col → col 3, 40 chars → col 43.
+			// No wrap. 1 row. Off by 1.
+			name:     "tab_pushes_line_over_width",
+			width:    45,
+			content:  "ok\t" + strings.Repeat("a", 40),
+			wantRows: 2,
+		},
+		{
+			// Two tabs interleaved with text — mirrors `go test`
+			// output shape. width=45, "ok\t" col 8, 37 chars → col
+			// 45 pending wrap, next char (the 't') wraps, 'term' → col
+			// 4, '\t' → col 8 (next 8-stop on new row), '0.002s'
+			// → col 14, \n commits. Total 2 rows for the logical line.
+			name:     "go_test_line_shape",
+			width:    45,
+			content:  "ok\t" + "github.com/jack-work/figaro/internal/term" + "\t" + "0.002s",
+			wantRows: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf safeBuf
+			s := newToolSoloState(&buf, "test", "")
+			s.maxRows = 1000 // disable rolling-tail eviction for this test
+			for _, b := range []byte(tc.content + "\n") {
+				s.ingest(b, tc.width)
+			}
+			if s.committedRows != tc.wantRows {
+				t.Fatalf("committedRows=%d, want %d (width=%d, content=%q)",
+					s.committedRows, tc.wantRows, tc.width, tc.content)
+			}
+		})
+	}
+}
+
 // Regression: a tool argument with embedded newlines (heredoc-style
 // `git commit -m '...\n...'`) used to expand the header onto multiple
 // terminal rows, breaking the 1-row-header assumption and desyncing
