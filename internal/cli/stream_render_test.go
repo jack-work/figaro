@@ -315,6 +315,42 @@ func min(a, b int) int {
 	return b
 }
 
+// TestStreamRenderer_SoloEmitsRoundTerminator asserts that a solo
+// round (one tool, no upgrade) emits the dim '───' divider line
+// after the solo's closing header. Without it, the next round's
+// content (a text reply, status line, the next round's solo header)
+// snaps flush against the previous solo's closer with no visual
+// breathing room. Older code emitted this terminator inside
+// MethodToolEnd; the refactor moved finalize to commitRoundIfReady
+// and the terminator was dropped along the way.
+func TestStreamRenderer_SoloEmitsRoundTerminator(t *testing.T) {
+	r, out := newTestRenderer(t)
+
+	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
+		ToolCallID: "tc_1", ToolName: "bash",
+	})
+	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
+		ToolCallID: "tc_1", ToolName: "bash",
+	})
+	notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
+		ToolCallID: "tc_1", ToolName: "bash", Chunk: "some output\n",
+	})
+	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
+		ToolCallID: "tc_1", ToolName: "bash", Result: "some output\n",
+	})
+	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
+		StopReason: "tool_invoke",
+	})
+
+	// At this point finalizeRendering should have run: solo.Done
+	// wrote the closing header, then we emit the '───' divider.
+	rendered := stripANSIRendered(out.String())
+	count := strings.Count(rendered, "───")
+	assert.GreaterOrEqual(t, count, 2,
+		"expected at least two '───' occurrences (solo header brackets + round terminator); got %d in:\n%s",
+		count, rendered)
+}
+
 // TestStreamRenderer_FirstToolEndsBeforeUpgrade nails the exact bug
 // the user reported visually as "row 1 stuck spinning forever". The
 // dispatcher fires tool 1's tool_end (with the file content) before

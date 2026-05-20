@@ -316,6 +316,12 @@ func (r *streamRenderer) finalizeRendering() {
 		// header/output via Write; Done writes the closing rule.
 		r.solo.Done(false)
 		r.solo = nil
+		// Per-round terminator. Without this the next round's content
+		// (text reply, next tool, status line) snaps flush against
+		// the solo's closing header.
+		if r.rawOut != nil {
+			fmt.Fprintln(r.rawOut, term.Dim("───"))
+		}
 	}
 	if r.rawOut != nil {
 		r.writeMu.Lock()
