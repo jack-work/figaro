@@ -165,6 +165,12 @@ func (l *Loaded) LoadProviderAuth(name string, target interface{}) error {
 
 // DefaultConfigDir returns the config directory (XDG-aware).
 func DefaultConfigDir() string {
+	// FIGARO_CONFIG_DIR is an explicit override used as-is (no
+	// "figaro" suffix appended) — lets dev shells point at an
+	// isolated config tree without touching the user's real one.
+	if d := os.Getenv("FIGARO_CONFIG_DIR"); d != "" {
+		return d
+	}
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
 		return filepath.Join(d, "figaro")
 	}

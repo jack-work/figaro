@@ -88,13 +88,145 @@
         default = figaro;
       });
 
-      devShells = forAllSystems ({ pkgs }: {
-        default = pkgs.mkShell {
+      devShells = forAllSystems ({ pkgs }: let
+        figaroPkg = self.packages.${pkgs.system}.default;
+
+        # Each override knob is an attribute on a profile. A null
+        # value means "inherit from the real user environment" — the
+        # corresponding env var is left untouched. A string means
+        # "set this env var"; "@dev" is a sentinel expanded to a
+        # dev-scoped path under $FIGARO_DEV_ROOT/<knob>.
+        #
+        # The dev-shell knobs are:
+        #
+        #   runtime  → FIGARO_RUNTIME_DIR  (socket, bindings, PID)
+        #   config   → FIGARO_CONFIG_DIR   (loadouts, providers, config.toml)
+        #   state    → FIGARO_STATE_DIR    (arias, OTel data)
+        #   hush     → FIGARO_HUSH_APP     (hush identity + socket)
+        #
+        # All four default to "@dev" in the helper, so the helper
+        # caller only overrides what they want to share. The named
+        # presets at the bottom show common compositions.
+        #
+        # Note: hush's @dev sentinel resolves to a string AppName
+        # like "figaro-dev-<profile>", not a path, because hush
+        # derives its own dirs from AppName internally. To share the
+        # global hush identity, set hush = null.
+        mkFigaroShell = {
+          name,
+          runtime ? "@dev",
+          config  ? "@dev",
+          state   ? "@dev",
+          hush    ? "@dev",
+        }: let
+          # Translate a knob value into a shell snippet that either
+          # exports the env var or leaves it inherited. "@dev" is
+          # expanded to a path under $FIGARO_DEV_ROOT.
+          #
+          # All branches use `: "''${VAR:=...}"` instead of `export
+          # VAR=...` so a pre-set env var from the caller's shell
+          # wins. This makes the presets composable from outside:
+          # `FIGARO_HUSH_APP=figaro nix develop .#clean` will keep
+          # the caller's value rather than overwriting it.
+          mkKnob = envVar: subdir: value:
+            if value == null then ''
+              # ${envVar}: inheriting real user environment
+            ''
+            else if value == "@dev" then ''
+              : "''${${envVar}:=$FIGARO_DEV_ROOT/${subdir}}"
+              export ${envVar}
+              mkdir -p "''${${envVar}}"
+            ''
+            else ''
+              : "''${${envVar}:=${value}}"
+              export ${envVar}
+            '';
+          mkHushKnob = value:
+            if value == null then ''
+              # FIGARO_HUSH_APP: inheriting (uses real "figaro" identity)
+            ''
+            else if value == "@dev" then ''
+              : "''${FIGARO_HUSH_APP:=figaro-dev-${name}}"
+              export FIGARO_HUSH_APP
+            ''
+            else ''
+              : "''${FIGARO_HUSH_APP:=${value}}"
+              export FIGARO_HUSH_APP
+            '';
+        in pkgs.mkShell {
+          inherit name;
           buildInputs = with pkgs; [
-            go
-            gopls
-            gotools
-          ] ++ [ self.packages.${pkgs.system}.default ];
+            go gopls gotools
+          ] ++ [ figaroPkg ];
+
+          shellHook = ''
+            export FIGARO_DEV_ROOT="''${XDG_RUNTIME_DIR:-/tmp}/figaro-dev-${name}"
+            mkdir -p "$FIGARO_DEV_ROOT"
+            chmod 700 "$FIGARO_DEV_ROOT"
+
+            ${mkKnob "FIGARO_RUNTIME_DIR" "run"    runtime}
+            ${mkKnob "FIGARO_CONFIG_DIR"  "config" config}
+            ${mkKnob "FIGARO_STATE_DIR"   "state"  state}
+            ${mkHushKnob hush}
+
+            # Expose `q` as a third name for the dev binary. `figaro`
+            # and `fig` arrive via buildInputs (the figaro package's
+            # postInstall installs `fig` as a symlink alongside
+            # `figaro`); `q` is a per-shell symlink in a bin dir
+            # prepended to PATH so it always points at the same Nix
+            # store build.
+            export FIGARO_DEV_BIN="$FIGARO_DEV_ROOT/bin"
+            mkdir -p "$FIGARO_DEV_BIN"
+            ln -sf "${figaroPkg}/bin/figaro" "$FIGARO_DEV_BIN/q"
+            export PATH="$FIGARO_DEV_BIN:$PATH"
+
+            echo "[figaro-dev:${name}] figaro       = $(command -v figaro)" >&2
+            for v in FIGARO_RUNTIME_DIR FIGARO_CONFIG_DIR FIGARO_STATE_DIR FIGARO_HUSH_APP; do
+              if [ -n "''${!v:-}" ]; then
+                printf "[figaro-dev:${name}] %-20s = %s\n" "$v" "''${!v}" >&2
+              else
+                printf "[figaro-dev:${name}] %-20s = (inherited)\n" "$v" >&2
+              fi
+            done
+          '';
+        };
+      in {
+        # The default shell — fully inherited environment. Use this
+        # to develop against the real daemon/config/state/hush. The
+        # in-shell binary is still the worktree build (via
+        # buildInputs), so you're testing your changes against your
+        # real data. Equivalent to the old default.
+        default = mkFigaroShell {
+          name = "default";
+          runtime = null;
+          config  = null;
+          state   = null;
+          hush    = null;
+        };
+
+        # Fully hermetic — every singleton path is dev-scoped.
+        # First invocation will trigger the hush + figaro first-run
+        # flow. Use this for testing first-run UX or for completely
+        # blank-slate experiments.
+        clean = mkFigaroShell { name = "clean"; };
+
+        # Share the global hush identity (so you don't have to
+        # re-add provider keys) but isolate runtime/config/state.
+        # Useful for testing new loadouts/configs against real
+        # provider credentials without polluting the real config.
+        share-hush = mkFigaroShell {
+          name = "share-hush";
+          hush = null;
+        };
+
+        # Share hush + config (real providers, real loadouts) but
+        # isolate runtime + state. Useful for testing changes that
+        # affect the daemon or aria store without touching the
+        # user's real socket or aria archive.
+        share-config = mkFigaroShell {
+          name = "share-config";
+          config = null;
+          hush   = null;
         };
 
         # `nix develop .#swap` enters a shell that swaps the user's

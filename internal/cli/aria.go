@@ -120,8 +120,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		fmt.Println("---")
 		fmt.Println("## system prompt")
 		fmt.Println()
-		home, _ := os.UserHomeDir()
-		cbPath := filepath.Join(home, ".local", "state", "figaro", "arias", figaroID, "chalkboard.json")
+		cbPath := filepath.Join(stateDir(), "arias", figaroID, "chalkboard.json")
 		cbData, err := os.ReadFile(cbPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "read chalkboard: %s\n", err)

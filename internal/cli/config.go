@@ -35,8 +35,15 @@ var (
 
 func mustHush() *managed.Hush {
 	hushOnce.Do(func() {
+		// FIGARO_HUSH_APP lets dev shells pivot the entire hush
+		// surface (identity, encrypted providers, socket) onto an
+		// isolated AppName without touching the user's real one.
+		appName := os.Getenv("FIGARO_HUSH_APP")
+		if appName == "" {
+			appName = "figaro"
+		}
 		hushInstance, hushErr = managed.New(managed.Options{
-			AppName: "figaro",
+			AppName: appName,
 		})
 	})
 	if hushErr != nil {
@@ -100,8 +107,7 @@ func buildChalkboard() *template.Template {
 		slog.Warn("chalkboard templates load failed (disabled)", "err", err)
 		return nil
 	}
-	home, _ := os.UserHomeDir()
-	overrideDir := filepath.Join(home, ".config", "figaro", "chalkboard")
+	overrideDir := filepath.Join(config.DefaultConfigDir(), "chalkboard")
 	if _, err := os.Stat(overrideDir); err == nil {
 		if t, err := chalkboard.LoadOverrideTemplates(tmpls, overrideDir); err == nil {
 			tmpls = t
@@ -112,7 +118,16 @@ func buildChalkboard() *template.Template {
 	return tmpls
 }
 
+// stateDir returns the directory for persistent figaro state
+// (OTel data, aria archives, aria chalkboards). XDG_STATE_HOME and
+// FIGARO_STATE_DIR are honored to allow dev-shell isolation.
 func stateDir() string {
+	if d := os.Getenv("FIGARO_STATE_DIR"); d != "" {
+		return d
+	}
+	if d := os.Getenv("XDG_STATE_HOME"); d != "" {
+		return filepath.Join(d, "figaro")
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".local", "state", "figaro")
 }

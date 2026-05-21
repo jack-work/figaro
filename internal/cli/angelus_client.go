@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,17 +14,20 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// ariaBackend constructs the aria storage backend.
+// ariaBackend constructs the aria storage backend, rooted under
+// stateDir() so FIGARO_STATE_DIR / XDG_STATE_HOME isolate it.
 func ariaBackend() (store.Backend, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("user home: %w", err)
-	}
-	dir := filepath.Join(home, ".local", "state", "figaro", "arias")
+	dir := filepath.Join(stateDir(), "arias")
 	return store.NewFileBackend(dir)
 }
 
 func angelusRuntimeDir() string {
+	// FIGARO_RUNTIME_DIR is an explicit override used as-is (no
+	// "figaro" suffix appended) — lets dev shells point at an
+	// isolated runtime without colliding with the user's daemon.
+	if d := os.Getenv("FIGARO_RUNTIME_DIR"); d != "" {
+		return d
+	}
 	if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
 		return filepath.Join(d, "figaro")
 	}
