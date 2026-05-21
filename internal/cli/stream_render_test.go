@@ -315,6 +315,53 @@ func min(a, b int) int {
 	return b
 }
 
+// TestStreamRenderer_DeltaDuringSuspendIsBuffered guards the bug
+// that lost the first half of the assistant's reply after a tool
+// call. While a tool's solo/batch frame is rendering, sw is
+// suspended; the pacer drainer's writes to sw used to be silently
+// dropped because rawOut != nil. New deltas for the next round
+// would accumulate in the pacer buffer, then the drainer would pop
+// them, see suspended, and discard — leaving the front of the
+// post-tool message missing.
+//
+// Now they're buffered in suspendBuf and flushed into sw on resume.
+func TestStreamRenderer_DeltaDuringSuspendIsBuffered(t *testing.T) {
+	r, out := newTestRenderer(t)
+
+	// Round 1: a quick tool round, no deltas during suspend yet.
+	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
+		ToolCallID: "tc_1", ToolName: "bash",
+	})
+	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
+		ToolCallID: "tc_1", ToolName: "bash",
+	})
+
+	// While suspended, the pacer drainer would have tried to push
+	// deltas — simulate that directly by writing through the paced
+	// writer (this is what the drainer goroutine does).
+	pw := r.PacedOut()
+	_, err := pw.Write([]byte("LATE_TEXT_FRONT"))
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, r.suspendBuf,
+		"pacer write during suspend must buffer, not drop")
+
+	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
+		ToolCallID: "tc_1", ToolName: "bash", Result: "ok",
+	})
+	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
+		StopReason: "tool_invoke",
+	})
+
+	// finalizeRendering ran. suspendBuf should be drained.
+	assert.Empty(t, r.suspendBuf,
+		"suspendBuf should be flushed by finalize")
+
+	rendered := stripANSIRendered(out.String())
+	assert.Contains(t, rendered, "LATE_TEXT_FRONT",
+		"buffered pacer text must appear in rendered output after resume; got %q", rendered)
+}
+
 // TestStreamRenderer_SoloEmitsRoundTerminator asserts that a solo
 // round (one tool, no upgrade) emits the dim '───' divider line
 // after the solo's closing header. Without it, the next round's

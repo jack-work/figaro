@@ -64,6 +64,12 @@ type streamRenderer struct {
 	// across the (Flush, Suspend) and Resume transitions.
 	writeMu sync.Mutex
 
+	// suspendBuf accumulates bytes that the pacer drainer tries to
+	// write while rawOut != nil. Without this, deltas arriving for
+	// round N+1 while round N's tool is still rendering get silently
+	// discarded. Flushed into sw on resume.
+	suspendBuf []byte
+
 	// Output sinks. `sw` is the largo (markdown) writer wrapped
 	// around stdout; `pace` rate-limits character delivery; `rawOut`
 	// is the un-paced sink used while tool rendering owns the
@@ -180,12 +186,26 @@ func (pw *pacedWriter) Write(p []byte) (int, error) {
 	pw.r.writeMu.Lock()
 	defer pw.r.writeMu.Unlock()
 	if pw.r.rawOut != nil {
-		// Tool rendering owns the terminal; drop the pacer write.
-		// (Should not happen in practice — the pacer is Flushed
-		// before Suspend — but be defensive.)
+		// sw is suspended; tool rendering owns the terminal. Buffer
+		// the bytes; flushSuspendBufLocked will dump them into sw
+		// when finalizeRendering / resumeIfSuspended re-enables it.
+		// Without this, the first deltas of every post-tool round
+		// were silently dropped while the tool was still rendering.
+		pw.r.suspendBuf = append(pw.r.suspendBuf, p...)
 		return len(p), nil
 	}
 	return pw.r.sw.Write(p)
+}
+
+// flushSuspendBufLocked dumps any bytes buffered during a suspend
+// window into sw, now that sw is resumed. Caller holds writeMu.
+func (r *streamRenderer) flushSuspendBufLocked() {
+	if len(r.suspendBuf) == 0 {
+		return
+	}
+	buf := r.suspendBuf
+	r.suspendBuf = nil
+	_, _ = r.sw.Write(buf)
 }
 
 // PacedOut returns the io.Writer the pacer should be constructed
@@ -252,6 +272,7 @@ func (r *streamRenderer) resumeIfSuspended() {
 	defer r.writeMu.Unlock()
 	_ = r.sw.Resume()
 	r.rawOut = nil
+	r.flushSuspendBufLocked()
 }
 
 // recordInvokeStart appends a new invokedTool to the round.
@@ -327,6 +348,7 @@ func (r *streamRenderer) finalizeRendering() {
 		r.writeMu.Lock()
 		_ = r.sw.Resume()
 		r.rawOut = nil
+		r.flushSuspendBufLocked()
 		r.writeMu.Unlock()
 	}
 }
