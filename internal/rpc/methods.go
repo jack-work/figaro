@@ -23,7 +23,6 @@ const (
 	MethodQua          = "figaro.qua"
 	MethodContext      = "figaro.context"
 	MethodInterrupt    = "figaro.interrupt"
-	MethodReloadConfig = "figaro.reload_config"
 	MethodSet          = "figaro.set"
 	MethodLoadout      = "figaro.loadout"
 	MethodChalkboard   = "figaro.chalkboard"
@@ -107,18 +106,6 @@ type ContextRequest struct{}
 
 type ContextResponse struct {
 	Messages []interface{} `json:"messages"` // []message.Message, but interface{} for serialization flexibility
-}
-
-// ReloadConfigRequest re-runs bootstrap.
-type ReloadConfigRequest struct {
-	DryRun bool `json:"dry_run,omitempty"`
-}
-
-// ReloadConfigResponse describes the reload_config result.
-type ReloadConfigResponse struct {
-	Applied    bool     `json:"applied"`
-	SetKeys    []string `json:"set_keys,omitempty"`
-	RemoveKeys []string `json:"remove_keys,omitempty"`
 }
 
 // SetRequest applies a chalkboard patch directly.

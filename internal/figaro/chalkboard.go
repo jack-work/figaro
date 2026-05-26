@@ -7,52 +7,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/outfit"
 )
-
-// Rehydrate re-runs bootstrap and diffs the result.
-func (a *Agent) Rehydrate(dryRun bool) (set []string, removed []string, applied bool, err error) {
-	if a.chalkboard == nil || a.outfitter == nil {
-		return nil, nil, false, fmt.Errorf("rehydrate requires both a chalkboard and an outfitter")
-	}
-
-	// Force re-run by hiding current system.prompt; Bootstrap will
-	// re-render it from system.credo.
-	snap := a.chalkboard.Snapshot()
-	stripped := make(chalkboard.Snapshot, len(snap))
-	for k, v := range snap {
-		if k == "system.prompt" {
-			continue
-		}
-		stripped[k] = v
-	}
-
-	desiredPatch, err := a.outfitter.Bootstrap(stripped, outfit.CurrentBootCtx(a.prov.Name(), a.id))
-	if err != nil {
-		return nil, nil, false, fmt.Errorf("rehydrate: %w", err)
-	}
-	desired := chalkboard.Snapshot{}
-	for k, v := range desiredPatch.Set {
-		desired[k] = v
-	}
-
-	current := chalkboard.Snapshot{}
-	if v, ok := snap["system.prompt"]; ok {
-		current["system.prompt"] = v
-	}
-	patch := desired.Diff(current)
-	for k := range patch.Set {
-		set = append(set, k)
-	}
-	removed = append(removed, patch.Remove...)
-
-	if patch.IsEmpty() || dryRun {
-		return set, removed, false, nil
-	}
-
-	a.inbox.SendPatient(event{typ: eventRehydrate, rehydratePatch: patch})
-	return set, removed, true, nil
-}
 
 // Snapshot returns a clone of the agent's chalkboard.
 func (a *Agent) Snapshot() chalkboard.Snapshot {

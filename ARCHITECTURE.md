@@ -95,21 +95,21 @@ The translator stream stores **input-ready** bytes. Assistant entries get re-enc
 
 The per-message bytes are written exactly once and reused on every subsequent turn. The prefix is **byte-identical** across requests within an aria's lifetime — Anthropic's `cache_control` markers actually hit.
 
-## Bootstrap and rehydrate
+## Credo
 
-On a fresh aria, `bootstrapIfNeeded` runs the Scribe once and snapshots the system prompt + skill catalog into `chalkboard.system.{prompt, model, provider, skills}` as a state-only tic. Subsequent turns read those keys from the snapshot — Scribe doesn't re-run. `figaro.rehydrate` re-runs Scribe and emits a state-only tic with the diff.
+Providers read `system.credo` from the chalkboard and inject it as the API's system prompt. The credo is a literal string (or a `ContentEnvelope` `{content, frontmatter, filePath}` when sourced via the outfitter's `fileName=` loader). No derivation, no templating — what you put in `system.credo` is what the model sees. To pick up edits to the on-disk credo file, re-apply the loadout: `figaro loadout <name>`.
 
 ## Chalkboard
 
 Structured per-aria state. Patches ride on the user-role tic in `aria.jsonl`; the current snapshot is cached at `chalkboard.json`. Each key has a body template (`internal/chalkboard/templates/`); the provider renders patches as `<system-reminder name="…">…</system-reminder>` text blocks on the user message that carries them.
 
-The `system.*` namespace is harness-reserved (set at bootstrap, refreshed on rehydrate). Clients write under any other key.
+The `system.*` namespace is harness-reserved. Clients write under any other key.
 
 ## JSON-RPC surface
 
 **Angelus socket:** `figaro.create`, `figaro.kill`, `figaro.list`, `pid.bind`, `pid.resolve`, `pid.unbind`, `angelus.status`, `angelus.save_bindings`.
 
-**Figaro socket:** `figaro.prompt` (with optional `chalkboard` field), `figaro.interrupt`, `figaro.context`, `figaro.info`, `figaro.set_model`, `figaro.set_label`, `figaro.rehydrate`. Notifications: `stream.delta`, `stream.thinking`, `stream.tool_start`, `stream.tool_output`, `stream.tool_end`, `stream.message`, `stream.done`, `stream.error`.
+**Figaro socket:** `figaro.prompt` (with optional `chalkboard` field), `figaro.interrupt`, `figaro.context`, `figaro.info`, `figaro.set_model`, `figaro.set_label`, `figaro.loadout`, `figaro.set`, `figaro.chalkboard`. Notifications: `stream.delta`, `stream.thinking`, `stream.tool_start`, `stream.tool_output`, `stream.tool_end`, `stream.message`, `stream.done`, `stream.error`.
 
 ## CLI
 

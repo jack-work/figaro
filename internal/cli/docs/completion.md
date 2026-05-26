@@ -177,7 +177,6 @@ every prompt entry point: `runPrompt`, `runNewPrompt`, `promptAria`,
 | `state`          | `completeAriaIDsAfterFlag(nil)`                    |
 | `set`            | `completeAriaIDsAfterFlag(completeChalkboardKeys)` |
 | `unset`          | `completeAriaIDsAfterFlag(completeChalkboardKeys)` |
-| `rehydrate`      | `completeAriaIDsAfterFlag(nil)`                    |
 | bare prompt (`--`) | `completePromptContext`                          |
 
 ## Worked examples

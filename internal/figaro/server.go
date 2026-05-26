@@ -20,7 +20,6 @@ var agentMethods = []string{
 	rpc.MethodQua,
 	rpc.MethodContext,
 	rpc.MethodInterrupt,
-	rpc.MethodReloadConfig,
 	rpc.MethodSet,
 	rpc.MethodLoadout,
 	rpc.MethodChalkboard,
@@ -60,19 +59,6 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 	case rpc.MethodInterrupt:
 		a.Interrupt()
 		return rpc.InterruptResponse{OK: true}, nil
-
-	case rpc.MethodReloadConfig:
-		var req rpc.ReloadConfigRequest
-		if len(params) > 0 {
-			if err := json.Unmarshal(params, &req); err != nil {
-				return nil, err
-			}
-		}
-		set, removed, applied, err := a.Rehydrate(req.DryRun)
-		if err != nil {
-			return nil, err
-		}
-		return rpc.ReloadConfigResponse{Applied: applied, SetKeys: set, RemoveKeys: removed}, nil
 
 	case rpc.MethodSet:
 		var req rpc.SetRequest

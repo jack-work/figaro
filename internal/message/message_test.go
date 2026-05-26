@@ -59,10 +59,10 @@ func TestMessage_Roundtrip_WithPatches(t *testing.T) {
 }
 
 // TestMessage_StateOnlyTic verifies that a user-role Message carrying
-// only Patches (no Content) — bootstrap or rehydrate — round-trips
-// correctly.
+// only Patches (no Content) — e.g. the first-turn env-var seed or a
+// `figaro set` — round-trips correctly.
 func TestMessage_StateOnlyTic(t *testing.T) {
-	bootstrap := message.Message{
+	tic := message.Message{
 		Role:        message.RoleUser,
 		LogicalTime: 1,
 		Timestamp:   1700000000000,
@@ -70,7 +70,7 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 		Patches: []message.Patch{
 			{
 				Set: map[string]json.RawMessage{
-					"system.prompt":            json.RawMessage(`"you are figaro"`),
+					"system.credo":             json.RawMessage(`"you are figaro"`),
 					"system.model":             json.RawMessage(`"claude-opus-4-6"`),
 					"system.reminder_renderer": json.RawMessage(`"tag"`),
 				},
@@ -78,7 +78,7 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 		},
 	}
 
-	b, err := json.Marshal(bootstrap)
+	b, err := json.Marshal(tic)
 	require.NoError(t, err)
 
 	var decoded message.Message
@@ -87,7 +87,7 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 	assert.Equal(t, message.RoleUser, decoded.Role)
 	assert.Empty(t, decoded.Content, "state-only tic has no Content")
 	require.Len(t, decoded.Patches, 1)
-	assert.Equal(t, json.RawMessage(`"you are figaro"`), decoded.Patches[0].Set["system.prompt"])
+	assert.Equal(t, json.RawMessage(`"you are figaro"`), decoded.Patches[0].Set["system.credo"])
 }
 
 // TestPatch_AliasIdentity verifies the type-alias contract — a value

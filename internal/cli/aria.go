@@ -118,7 +118,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	if verbose {
 		fmt.Println()
 		fmt.Println("---")
-		fmt.Println("## system prompt")
+		fmt.Println("## credo")
 		fmt.Println()
 		cbPath := filepath.Join(stateDir(), "arias", figaroID, "chalkboard.json")
 		cbData, err := os.ReadFile(cbPath)
@@ -131,15 +131,29 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 			fmt.Fprintf(os.Stderr, "parse chalkboard: %s\n", err)
 			return
 		}
-		if raw, ok := snap["system.prompt"]; ok {
-			var sp string
-			if err := json.Unmarshal(raw, &sp); err == nil {
-				fmt.Println(sp)
-			} else {
-				fmt.Println(string(raw))
+		if raw, ok := snap["system.credo"]; ok {
+			// system.credo may be a bare string or a ContentEnvelope
+			// object ({content, frontmatter, filePath}). Prefer content,
+			// fall back to frontmatter, then to the raw string.
+			var env struct {
+				Content     string `json:"content,omitempty"`
+				Frontmatter string `json:"frontmatter,omitempty"`
+			}
+			switch {
+			case json.Unmarshal(raw, &env) == nil && env.Content != "":
+				fmt.Println(env.Content)
+			case env.Frontmatter != "":
+				fmt.Println(env.Frontmatter)
+			default:
+				var s string
+				if json.Unmarshal(raw, &s) == nil {
+					fmt.Println(s)
+				} else {
+					fmt.Println(string(raw))
+				}
 			}
 		} else {
-			fmt.Println("(no system.prompt on chalkboard)")
+			fmt.Println("(no system.credo on chalkboard)")
 		}
 		fmt.Println()
 		fmt.Println("---")

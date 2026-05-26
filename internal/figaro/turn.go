@@ -14,7 +14,6 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
@@ -154,14 +153,6 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		}
 	}
 	if len(a.figLog.Read()) == 0 && a.chalkboard != nil {
-		// Bootstrap: system.prompt.
-		if a.outfitter != nil {
-			if patch, err := a.outfitter.Bootstrap(a.chalkboard.Snapshot(),
-				outfit.CurrentBootCtx(a.prov.Name(), a.id)); err == nil && !patch.IsEmpty() {
-				tic.Patches = append(tic.Patches, patch)
-				a.chalkboard.Apply(patch)
-			}
-		}
 		// Allowlisted env vars -> system.environment.*.
 		if envPatch := chalkboard.EnvironmentPatch(); !envPatch.IsEmpty() {
 			tic.Patches = append(tic.Patches, envPatch)
@@ -636,7 +627,7 @@ func assistantToolInvokes(m message.Message) []message.Content {
 //     This lets clients ship a full chalkboard copy without racing
 //     concurrent set/unset from another shell.
 //   - Patch is explicit set + remove; mutations the client really
-//     means. `figaro set`/`unset`/rehydrate land here.
+//     means. `figaro set`/`unset`/`loadout` land here.
 //
 // system.* on Context is dropped: the harness owns that namespace,
 // and a stale client view must not clobber it. Patch is left intact

@@ -28,8 +28,8 @@ func TestState_ApplyAndSave_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	patch := chalkboard.Patch{Set: map[string]json.RawMessage{
-		"system.prompt": json.RawMessage(`"you are figaro"`),
-		"cwd":           json.RawMessage(`"/home/figaro"`),
+		"system.credo": json.RawMessage(`"you are figaro"`),
+		"cwd":          json.RawMessage(`"/home/figaro"`),
 	}}
 	post := s.Apply(patch)
 	assert.Equal(t, json.RawMessage(`"/home/figaro"`), post["cwd"])
@@ -41,7 +41,7 @@ func TestState_ApplyAndSave_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	defer s2.Close()
 	snap := s2.Snapshot()
-	assert.Equal(t, json.RawMessage(`"you are figaro"`), snap["system.prompt"])
+	assert.Equal(t, json.RawMessage(`"you are figaro"`), snap["system.credo"])
 	assert.Equal(t, json.RawMessage(`"/home/figaro"`), snap["cwd"])
 }
 

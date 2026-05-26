@@ -48,16 +48,12 @@ func buildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.S
 }
 
 // systemBlocks builds the system prefix: identity preamble (OAuth
-// only) + credo.
+// only) + credo. Credo lives at `system.credo` and may be a bare
+// string or a ContentEnvelope object (from the outfitter's fileName
+// loader). See readCredo for unwrap rules.
 func systemBlocks(snap chalkboard.Snapshot, oauth bool) []anthropic.TextBlockParam {
 	var out []anthropic.TextBlockParam
-	var systemText string
-	if raw, ok := snap["system.prompt"]; ok {
-		var s string
-		if json.Unmarshal(raw, &s) == nil {
-			systemText = s
-		}
-	}
+	systemText := readCredo(snap)
 	if oauth {
 		out = append(out, anthropic.TextBlockParam{Text: "You are Claude Code, Anthropic's official CLI for Claude."})
 		if systemText != "" {
@@ -68,6 +64,32 @@ func systemBlocks(snap chalkboard.Snapshot, oauth bool) []anthropic.TextBlockPar
 		out = append(out, anthropic.TextBlockParam{Text: systemText})
 	}
 	return out
+}
+
+// readCredo extracts the credo text from a chalkboard snapshot,
+// handling both the bare-string and ContentEnvelope shapes
+// ({content, frontmatter, filePath}). Prefers content, falls back
+// to frontmatter, then to a bare string.
+func readCredo(snap chalkboard.Snapshot) string {
+	raw, ok := snap["system.credo"]
+	if !ok {
+		return ""
+	}
+	var env struct {
+		Content     string `json:"content,omitempty"`
+		Frontmatter string `json:"frontmatter,omitempty"`
+	}
+	if json.Unmarshal(raw, &env) == nil && (env.Content != "" || env.Frontmatter != "") {
+		if env.Content != "" {
+			return env.Content
+		}
+		return env.Frontmatter
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	return ""
 }
 
 func toolUnions(tools []provider.Tool) []anthropic.ToolUnionParam {

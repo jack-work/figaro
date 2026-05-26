@@ -74,15 +74,6 @@ func (c *Client) Chalkboard(ctx context.Context) (*rpc.ChalkboardResponse, error
 	return &resp, nil
 }
 
-// ReloadConfig re-runs bootstrap.
-func (c *Client) ReloadConfig(ctx context.Context, dryRun bool) (*rpc.ReloadConfigResponse, error) {
-	var resp rpc.ReloadConfigResponse
-	if err := c.cli.Call(ctx, rpc.MethodReloadConfig, rpc.ReloadConfigRequest{DryRun: dryRun}, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
-
 // Close closes the connection.
 func (c *Client) Close() error {
 	return c.cli.Close()

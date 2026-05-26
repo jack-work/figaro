@@ -15,7 +15,7 @@ func TestParseChalkboardPath(t *testing.T) {
 		path   []string
 		hasErr bool
 	}{
-		{"system.prompt", "system.prompt", nil, false},
+		{"system.credo", "system.credo", nil, false},
 		{"system.tags[42].cache_control", "system.tags", []string{"42", "cache_control"}, false},
 		{"system.tags[42]", "system.tags", []string{"42"}, false},
 		{`foo["weird key"].bar`, "foo", []string{"weird key", "bar"}, false},

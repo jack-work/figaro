@@ -1,18 +1,16 @@
 // Package outfit assembles an aria's chalkboard from on-disk config.
 //
 // Load reads a named loadout TOML chain and returns a chalkboard patch.
-// Bootstrap templates system.credo into system.prompt.
+// Providers read `system.credo` (and other system keys) straight off
+// the chalkboard — no derivation step.
 package outfit
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
-	"text/template"
 
 	"github.com/BurntSushi/toml"
 
@@ -27,22 +25,6 @@ type Outfitter struct {
 // New returns an Outfitter rooted at configDir.
 func New(configDir string) *Outfitter {
 	return &Outfitter{configDir: configDir}
-}
-
-// BootCtx carries identity fields exposed to the credo template.
-type BootCtx struct {
-	Provider string
-	FigaroID string
-	Version  string
-}
-
-// CurrentBootCtx fills BootCtx with runtime values.
-func CurrentBootCtx(provider, figaroID string) BootCtx {
-	return BootCtx{
-		Provider: provider,
-		FigaroID: figaroID,
-		Version:  buildVersion(),
-	}
 }
 
 // Load resolves a loadout and returns the chalkboard patch.
@@ -64,48 +46,6 @@ func (o *Outfitter) Load(name string) (chalkboard.Patch, error) {
 		return chalkboard.Patch{}, err
 	}
 	return chalkboard.Patch{Set: flat}, nil
-}
-
-// Bootstrap templates system.credo -> system.prompt. No-op when
-// system.prompt is already set. Skills are no longer touched here —
-// the loader writes them directly via the dirName form.
-func (o *Outfitter) Bootstrap(snap chalkboard.Snapshot, ctx BootCtx) (chalkboard.Patch, error) {
-	if _, ok := snap["system.prompt"]; ok {
-		return chalkboard.Patch{}, nil
-	}
-
-	patch := chalkboard.Patch{Set: map[string]json.RawMessage{}}
-
-	// Render credo template into system.prompt. system.credo arrives
-	// from the loader as a ContentEnvelope; read its content (or
-	// frontmatter, if that's all the user gave us). Older configs that
-	// stored a bare string still work via the fallback.
-	var credoBody string
-	if raw, ok := snap["system.credo"]; ok {
-		var env ContentEnvelope
-		if json.Unmarshal(raw, &env) == nil && (env.Content != "" || env.Frontmatter != "") {
-			credoBody = env.Content
-			if credoBody == "" {
-				credoBody = env.Frontmatter
-			}
-		} else {
-			_ = json.Unmarshal(raw, &credoBody)
-		}
-	}
-	if credoBody != "" {
-		tmpl, err := template.New("credo").Parse(credoBody)
-		if err != nil {
-			return chalkboard.Patch{}, fmt.Errorf("outfit: parse credo template: %w", err)
-		}
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, ctx); err != nil {
-			return chalkboard.Patch{}, fmt.Errorf("outfit: execute credo template: %w", err)
-		}
-		b, _ := json.Marshal(buf.String())
-		patch.Set["system.prompt"] = b
-	}
-
-	return patch, nil
 }
 
 // loadInto resolves a loadout recursively via source chains.
@@ -279,36 +219,4 @@ func loadDir(dir string) (map[string]ContentEnvelope, error) {
 		out[name] = contentEnvelope(string(body), path)
 	}
 	return out, nil
-}
-
-// version can be set at link time.
-var version string
-
-// buildVersion extracts the VCS revision from build info.
-func buildVersion() string {
-	if version != "" {
-		return version
-	}
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "unknown"
-	}
-	var rev, dirty string
-	for _, s := range info.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			rev = s.Value
-		case "vcs.modified":
-			if s.Value == "true" {
-				dirty = "-dirty"
-			}
-		}
-	}
-	if rev == "" {
-		return "unknown"
-	}
-	if len(rev) > 8 {
-		rev = rev[:8]
-	}
-	return rev + dirty
 }

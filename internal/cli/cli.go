@@ -315,23 +315,6 @@ Flags:
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:  "rehydrate",
-		Group: "State",
-		Short: "Re-run credo and apply state diff",
-		Usage: "rehydrate [--id <id>] [--dry-run]",
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (overrides pid binding)"},
-			{Long: "dry-run", Short: "n", IsBool: true, Description: "Print diff without applying"},
-		},
-		Run: func(ctx *cmdkit.RunContext) error {
-			ld := ctx.Extra.(*config.Loaded)
-			runRehydrateWithFlag(ld, ctx.Flag("id"), ctx.BoolFlag("dry-run"))
-			return nil
-		},
-		CompleteArgs: completeAriaIDsAfterFlag(nil),
-	})
-
-	r.Register(&cmdkit.Command{
 		Name:    "derive",
 		Aliases: []string{"search"},
 		Group:   "State",

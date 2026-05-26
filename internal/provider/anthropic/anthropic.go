@@ -482,15 +482,14 @@ func projectTools(tools []provider.Tool) []nativeTool {
 }
 
 // systemBlocks builds the system prefix: preamble + credo.
+//
+// The credo lives on the chalkboard at `system.credo`. It may be a
+// bare string (inline TOML) or a ContentEnvelope object emitted by
+// the outfitter's fileName loader: {content, frontmatter, filePath}.
+// Prefer content, fall back to frontmatter, then to a bare string.
 func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 	var out []systemBlock
-	var systemText string
-	if raw, ok := snapshot["system.prompt"]; ok {
-		var s string
-		if json.Unmarshal(raw, &s) == nil {
-			systemText = s
-		}
-	}
+	systemText := readCredo(snapshot)
 	if oauth {
 		out = append(out, systemBlock{Type: "text", Text: "You are Claude Code, Anthropic's official CLI for Claude."})
 		if systemText != "" {
@@ -501,6 +500,30 @@ func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 		out = append(out, systemBlock{Type: "text", Text: systemText})
 	}
 	return out
+}
+
+// readCredo extracts the credo text from a chalkboard snapshot,
+// handling both the bare-string and ContentEnvelope shapes.
+func readCredo(snapshot chalkboard.Snapshot) string {
+	raw, ok := snapshot["system.credo"]
+	if !ok {
+		return ""
+	}
+	var env struct {
+		Content     string `json:"content,omitempty"`
+		Frontmatter string `json:"frontmatter,omitempty"`
+	}
+	if json.Unmarshal(raw, &env) == nil && (env.Content != "" || env.Frontmatter != "") {
+		if env.Content != "" {
+			return env.Content
+		}
+		return env.Frontmatter
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	return ""
 }
 
 // projectMessagesWithModel assembles a nativeRequest from cached

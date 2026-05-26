@@ -26,7 +26,6 @@ type eventType int
 // Inbox event types (user-RPC only).
 const (
 	eventUserPrompt eventType = iota
-	eventRehydrate
 	eventSet
 )
 
@@ -37,9 +36,8 @@ type event struct {
 	text       string
 	chalkboard *rpc.ChalkboardInput
 
-	// eventRehydrate / eventSet
-	rehydratePatch message.Patch
-	setPatch       message.Patch
+	// eventSet
+	setPatch message.Patch
 }
 
 // Config is the constructor input for NewAgent. Configured values
@@ -61,10 +59,6 @@ type Config struct {
 	// Chalkboard carries the aria's state. Nil creates an in-memory
 	// one. Empty at first prompt means fresh aria. Closed by Kill.
 	Chalkboard *chalkboard.State
-
-	// LoadoutPatch seeds the chalkboard on first prompt of a fresh
-	// aria. Ignored for restored arias. nil = no loadout.
-	LoadoutPatch *chalkboard.Patch
 }
 
 // Agent is the Figaro implementation.
@@ -74,7 +68,6 @@ type Agent struct {
 	socketPath   string
 	prov         provider.Provider
 	outfitter    *outfit.Outfitter
-	loadoutPatch *chalkboard.Patch
 	tools        *tool.Registry
 	figLog        store.Log[message.Message]
 	figLogRelease func() // nil unless figLog came from LogCache
@@ -113,7 +106,6 @@ func NewAgent(cfg Config) *Agent {
 		socketPath:   cfg.SocketPath,
 		prov:         cfg.Provider,
 		outfitter:    cfg.Outfitter,
-		loadoutPatch: cfg.LoadoutPatch,
 		tools:        cfg.Tools,
 		backend:      cfg.Backend,
 		logCache:     cfg.LogCache,
@@ -407,8 +399,6 @@ func (a *Agent) act(ctx context.Context) {
 		case eventUserPrompt:
 			slog.Debug("event UserPrompt", "aria", a.id, "text", truncLog(evt.text, 60))
 			a.runTurn(ctx, evt)
-		case eventRehydrate:
-			a.applyControlPatch(evt.rehydratePatch, "rehydrate")
 		case eventSet:
 			a.applyControlPatch(evt.setPatch, "set")
 		}

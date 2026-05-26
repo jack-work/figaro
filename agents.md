@@ -55,7 +55,7 @@ Load-bearing. Breaking them produces races, lost messages, or silent corruption.
 
 ## Hot spots
 
-- `internal/figaro/agent.go` — drain loop, turn lifecycle, interrupt handling, panic recovery, in-progress-tic accumulation, bootstrap + rehydrate dispatch.
+- `internal/figaro/agent.go` — drain loop, turn lifecycle, interrupt handling, panic recovery, in-progress-tic accumulation, set/loadout patch dispatch.
 - `internal/figaro/translator.go` — `synchronize` and its three sub-passes. The bidirectional sync between figStream and the translator stream.
 - `internal/figaro/inbox.go` — selfish vs. patient semantics, routing subscriber.
 - `internal/angelus/protocol.go` — supervisor JSON-RPC handlers, dormant-aria handling, lazy restore.

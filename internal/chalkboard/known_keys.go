@@ -18,7 +18,8 @@ const (
 	// harness behavior.
 	KeyUserSettable KeyMode = iota
 
-	// KeySystemManaged: written by the harness (bootstrap, providers,
+	// KeySystemManaged: written by the harness (providers, derive
+	// pipeline). Read-only from the agent's perspective.
 	// derived metrics). Visible in `figaro state`; setting by hand is
 	// rarely meaningful and may be overwritten.
 	KeySystemManaged
@@ -47,13 +48,12 @@ type KeyDoc struct {
 // harness reads or writes. Order is stable; callers may filter by Mode.
 func WellKnownKeys() []KeyDoc {
 	return []KeyDoc{
-		{Key: "system.credo", Short: "Credo source (string or {content,filePath,frontmatter}); bootstrap renders into system.prompt", Mode: KeyUserSettable},
-		{Key: "system.prompt", Short: "Rendered system prompt (overrides credo bootstrap)", Mode: KeyUserSettable},
+		{Key: "system.credo", Short: "Credo source (string or {content,filePath,frontmatter}); providers read this as the system prompt", Mode: KeyUserSettable},
 		{Key: "system.tags", Short: "Per-LT annotations (e.g. system.tags[42].cache_control)", Mode: KeyUserSettable},
 		{Key: "system.cache_control", Short: `Auto cache-marker policy ("ephemeral" enables)`, Mode: KeyUserSettable},
 		{Key: "system.environment.<name>", Short: "Allowlisted env var capture", Mode: KeyUserSettable},
 
-		{Key: "system.cwd", Short: "Canonical working directory (bootstrap)", Mode: KeySystemManaged},
+		{Key: "system.cwd", Short: "Canonical working directory (set at create time)", Mode: KeySystemManaged},
 		{Key: "model", Short: "Active model ID", Mode: KeySystemManaged},
 		{Key: "root", Short: "Project root path", Mode: KeySystemManaged},
 		{Key: "token_budget", Short: "Context window usage indicator", Mode: KeySystemManaged},

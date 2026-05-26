@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/outfit"
 )
 
@@ -148,61 +147,3 @@ func TestLoad_MissingFileIsNotAnError(t *testing.T) {
 	assert.True(t, patch.IsEmpty(), "missing loadout must yield empty patch (graceful)")
 }
 
-func TestBootstrap_TemplatesCredo(t *testing.T) {
-	dir := t.TempDir()
-	o := outfit.New(dir)
-	cb := snap(`{"system.credo":"hello {{.Provider}} {{.FigaroID}}"}`)
-
-	patch, err := o.Bootstrap(cb, outfit.BootCtx{Provider: "anthropic", FigaroID: "abc123"})
-	require.NoError(t, err)
-	assert.Equal(t, `"hello anthropic abc123"`, string(patch.Set["system.prompt"]))
-}
-
-func TestBootstrap_TemplatesCredoFromEnvelope(t *testing.T) {
-	dir := t.TempDir()
-	o := outfit.New(dir)
-	// Loader-shape: system.credo is an envelope object whose body
-	// lives in `content` (no frontmatter on the credo file).
-	cb := snap(`{"system.credo":{"content":"hello {{.Provider}}","filePath":"/x"}}`)
-
-	patch, err := o.Bootstrap(cb, outfit.BootCtx{Provider: "anthropic"})
-	require.NoError(t, err)
-	assert.Equal(t, `"hello anthropic"`, string(patch.Set["system.prompt"]))
-}
-
-func TestBootstrap_IdempotentWhenPromptSet(t *testing.T) {
-	o := outfit.New(t.TempDir())
-	cb := snap(`{"system.prompt":"already done","system.credo":"new body"}`)
-
-	patch, err := o.Bootstrap(cb, outfit.BootCtx{})
-	require.NoError(t, err)
-	assert.True(t, patch.IsEmpty(), "Bootstrap is a no-op when system.prompt is set")
-}
-
-func TestBootstrap_DoesNotTouchSkills(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "skills"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "skills", "go.md"),
-		[]byte("---\nname: go\n---\nbody"), 0600))
-
-	// Bootstrap should only produce system.prompt now; skills are the
-	// loader's responsibility via the dirName form.
-	patch, err := outfit.New(dir).Bootstrap(snap(`{"system.credo":"x"}`), outfit.BootCtx{})
-	require.NoError(t, err)
-	for k := range patch.Set {
-		assert.NotContains(t, k, "skills", "Bootstrap must not touch skills keys; got %q", k)
-	}
-}
-
-// snap builds a chalkboard.Snapshot from a JSON object literal.
-func snap(jsonObj string) chalkboard.Snapshot {
-	out := chalkboard.Snapshot{}
-	raw := map[string]json.RawMessage{}
-	if err := json.Unmarshal([]byte(jsonObj), &raw); err != nil {
-		panic(err)
-	}
-	for k, v := range raw {
-		out[k] = v
-	}
-	return out
-}

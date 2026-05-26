@@ -8,7 +8,7 @@ import (
 
 // EnvironmentAllowlist is the set of env vars captured into the
 // chalkboard. Read by the CLI on every prompt (so the agent sees
-// the caller's current env) and also at bootstrap in the agent
+// the caller's current env) and also on the first turn in the agent
 // (fallback for vars set before the daemon started).
 var EnvironmentAllowlist = []string{
 	"FIGARO_WIRE_DIR",

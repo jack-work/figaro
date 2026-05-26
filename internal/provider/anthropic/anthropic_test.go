@@ -24,13 +24,13 @@ func fakeSchema() interface{} {
 }
 
 // systemSnapshot returns a chalkboard snapshot that injects the given
-// text as system.prompt — the canonical source for the projection's
+// text as system.credo — the canonical source for the projection's
 // system block.
 func systemSnapshot(t *testing.T, text string) chalkboard.Snapshot {
 	t.Helper()
 	raw, err := json.Marshal(text)
 	require.NoError(t, err)
-	return chalkboard.Snapshot{"system.prompt": raw}
+	return chalkboard.Snapshot{"system.credo": raw}
 }
 
 // TestProjectTools_Deterministic verifies that two consecutive

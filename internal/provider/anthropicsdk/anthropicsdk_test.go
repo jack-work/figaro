@@ -30,7 +30,7 @@ func systemSnapshot(t *testing.T, text string) chalkboard.Snapshot {
 	t.Helper()
 	raw, err := json.Marshal(text)
 	require.NoError(t, err)
-	return chalkboard.Snapshot{"system.prompt": raw}
+	return chalkboard.Snapshot{"system.credo": raw}
 }
 
 // encodeAll mirrors the agent's catchUp: encode each IR message into
