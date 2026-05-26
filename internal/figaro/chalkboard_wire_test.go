@@ -139,13 +139,17 @@ func patchSets(ps []message.Patch) []string {
 func TestWire_ContextOnly_DiffsAndApplies(t *testing.T) {
 	a, prov, _ := newAgentWithChalkboard(t)
 
+	// First turn always carries the bootstrap patch — burn it off
+	// so the assertions test steady-state Context/Patch semantics.
+	runOneTurn(t, a, "boot", nil)
+
 	cb1 := &rpc.ChalkboardInput{
 		Context: map[string]json.RawMessage{
 			"cwd": json.RawMessage(`"/home/alpha"`),
 		},
 	}
 	runOneTurn(t, a, "first", cb1)
-	require.Equal(t, 1, prov.sendCount())
+	require.Equal(t, 2, prov.sendCount())
 	patches := prov.lastTurnPatches()
 	require.Len(t, patches, 1, "first turn should attach 1 combined patch")
 	assert.ElementsMatch(t, []string{"cwd"}, patchSets(patches))
@@ -186,6 +190,7 @@ func TestWire_PatchOnly_AppliesDirectly(t *testing.T) {
 
 func TestWire_ContextAndPatch_Combined(t *testing.T) {
 	a, prov, _ := newAgentWithChalkboard(t)
+	runOneTurn(t, a, "boot", nil) // burn off bootstrap turn
 
 	cb := &rpc.ChalkboardInput{
 		Context: map[string]json.RawMessage{
@@ -198,7 +203,7 @@ func TestWire_ContextAndPatch_Combined(t *testing.T) {
 		},
 	}
 	runOneTurn(t, a, "first", cb)
-	require.Equal(t, 1, prov.sendCount())
+	require.Equal(t, 2, prov.sendCount())
 	patches := prov.lastTurnPatches()
 	require.Len(t, patches, 1, "context + patch are merged into one combined patch")
 	assert.ElementsMatch(t, []string{"cwd", "model"}, patchSets(patches))
@@ -206,9 +211,10 @@ func TestWire_ContextAndPatch_Combined(t *testing.T) {
 
 func TestWire_NeitherContextNorPatch_NoOp(t *testing.T) {
 	a, prov, _ := newAgentWithChalkboard(t)
+	runOneTurn(t, a, "boot", nil) // burn off bootstrap turn
 
 	runOneTurn(t, a, "first", nil)
-	require.Equal(t, 1, prov.sendCount())
+	require.Equal(t, 2, prov.sendCount())
 	assert.Empty(t, prov.lastTurnPatches(), "no chalkboard input → no patches")
 }
 
@@ -233,7 +239,7 @@ func TestWire_Context_IsAdditive(t *testing.T) {
 }
 
 func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
-	// A bootstrapped chalkboard may contain keys (skills, loadout
+	// A loaded chalkboard may contain keys (skills, loadout
 	// values, etc.) the client never carries in Context. Sending a
 	// Context turn whose contents differ from those keys must not
 	// remove them — only set the keys the client explicitly named.

@@ -288,20 +288,6 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	if cbState == nil {
 		cbState, _ = chalkboard.Open("")
 	}
-	// Record runtime values on the patch.
-	if base.Set == nil {
-		base.Set = map[string]json.RawMessage{}
-	}
-	if _, ok := base.Set["system.cwd"]; !ok {
-		base.Set["system.cwd"], _ = json.Marshal(cwd)
-	}
-	if _, ok := base.Set["system.root"]; !ok {
-		base.Set["system.root"], _ = json.Marshal(cwd)
-	}
-	if _, ok := base.Set["system.max_tokens"]; !ok {
-		base.Set["system.max_tokens"] = json.RawMessage(`8192`)
-	}
-	cbState.Apply(base)
 
 	agent := figaro.NewAgent(figaro.Config{
 		ID:         id,
@@ -312,6 +298,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		Backend:    backend,
 		LogCache:   h.angelus.LogCache,
 		Chalkboard: cbState,
+		BootPatch:  &base,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {

@@ -59,6 +59,14 @@ type Config struct {
 	// Chalkboard carries the aria's state. Nil creates an in-memory
 	// one. Empty at first prompt means fresh aria. Closed by Kill.
 	Chalkboard *chalkboard.State
+
+	// BootPatch is applied to the chalkboard AND folded onto the
+	// first user tic of a fresh aria (figLog empty). Carries the
+	// loadout-resolved values (credo, skills, model knobs) plus
+	// runtime fill-ins (system.cwd, system.root, system.max_tokens).
+	// Ignored when the aria is restored — the chalkboard file already
+	// holds those keys and the log already records their arrival.
+	BootPatch *chalkboard.Patch
 }
 
 // Agent is the Figaro implementation.
@@ -68,6 +76,7 @@ type Agent struct {
 	socketPath   string
 	prov         provider.Provider
 	outfitter    *outfit.Outfitter
+	bootPatch    *chalkboard.Patch
 	tools        *tool.Registry
 	figLog        store.Log[message.Message]
 	figLogRelease func() // nil unless figLog came from LogCache
@@ -106,6 +115,7 @@ func NewAgent(cfg Config) *Agent {
 		socketPath:   cfg.SocketPath,
 		prov:         cfg.Provider,
 		outfitter:    cfg.Outfitter,
+		bootPatch:    cfg.BootPatch,
 		tools:        cfg.Tools,
 		backend:      cfg.Backend,
 		logCache:     cfg.LogCache,

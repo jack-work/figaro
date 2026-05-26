@@ -158,7 +158,7 @@ func TestRender_DefaultTemplates_Model_Old_New(t *testing.T) {
 	assert.Equal(t, "Model changed from claude-sonnet to claude-opus.", rendered[0].Body)
 }
 
-func TestRender_UnknownKey_SilentlySkipped(t *testing.T) {
+func TestRender_UnknownKey_FallsBackToGeneric(t *testing.T) {
 	tmpls, err := chalkboard.LoadDefaultTemplates()
 	require.NoError(t, err)
 
@@ -168,7 +168,25 @@ func TestRender_UnknownKey_SilentlySkipped(t *testing.T) {
 
 	rendered, err := chalkboard.Render(p, prev, tmpls)
 	require.NoError(t, err)
-	assert.Empty(t, rendered, "keys without templates produce no rendered entries")
+	require.Len(t, rendered, 1, "untemplated non-system keys render via the generic fallback")
+	assert.Equal(t, "unknown_key", rendered[0].Key)
+	assert.Equal(t, "v", rendered[0].Body)
+}
+
+func TestRender_SystemKey_SilentlySkipped(t *testing.T) {
+	tmpls, err := chalkboard.LoadDefaultTemplates()
+	require.NoError(t, err)
+
+	prev := chalkboard.Snapshot{}
+	next := chalkboard.Snapshot{
+		"system.credo":       raw(t, "you are figaro"),
+		"system.environment": raw(t, "env"),
+	}
+	p := next.Diff(prev)
+
+	rendered, err := chalkboard.Render(p, prev, tmpls)
+	require.NoError(t, err)
+	assert.Empty(t, rendered, "system.* keys must never produce reminder blocks; providers consume them directly")
 }
 
 func TestRender_EmptyPatch(t *testing.T) {

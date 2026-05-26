@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -146,19 +147,62 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		Role:      message.RoleUser,
 		Timestamp: time.Now().UnixMilli(),
 	}
+	var combined chalkboard.Patch
 	if prompt.chalkboard != nil {
-		if combined := a.combineChalkboardInput(prompt.chalkboard); !combined.IsEmpty() {
-			tic.Patches = append(tic.Patches, combined)
-			a.chalkboard.Apply(combined)
-		}
+		combined = a.combineChalkboardInput(prompt.chalkboard)
 	}
 	if len(a.figLog.Read()) == 0 && a.chalkboard != nil {
+		// First-turn bootstrap: fold the boot patch (loadout values +
+		// runtime fill-ins), the env-var capture, and any client input
+		// into a single patch that rides on this tic. The chalkboard
+		// renderer then projects each key as a <system-reminder> block
+		// on the wire — that's how the model learns about skills,
+		// credo, cwd, etc.
+		boot := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+		if a.bootPatch != nil && !a.bootPatch.IsEmpty() {
+			for k, v := range a.bootPatch.Set {
+				boot.Set[k] = v
+			}
+			boot.Remove = append(boot.Remove, a.bootPatch.Remove...)
+		}
+		// Runtime fill-ins. The loadout may not have these; the agent
+		// stamps them at first-turn from its own process state.
+		cwd, _ := os.Getwd()
+		if _, ok := boot.Set["system.cwd"]; !ok {
+			if b, err := json.Marshal(cwd); err == nil {
+				boot.Set["system.cwd"] = b
+			}
+		}
+		if _, ok := boot.Set["system.root"]; !ok {
+			if b, err := json.Marshal(cwd); err == nil {
+				boot.Set["system.root"] = b
+			}
+		}
+		if _, ok := boot.Set["system.max_tokens"]; !ok {
+			boot.Set["system.max_tokens"] = json.RawMessage(`8192`)
+		}
 		// Allowlisted env vars -> system.environment.*.
 		if envPatch := chalkboard.EnvironmentPatch(); !envPatch.IsEmpty() {
-			tic.Patches = append(tic.Patches, envPatch)
-			a.chalkboard.Apply(envPatch)
+			for k, v := range envPatch.Set {
+				boot.Set[k] = v
+			}
+		}
+		// Client input wins on conflict — they explicitly named the key.
+		if !combined.IsEmpty() {
+			for k, v := range combined.Set {
+				boot.Set[k] = v
+			}
+			boot.Remove = append(boot.Remove, combined.Remove...)
+		}
+		a.bootPatch = nil // consumed; never re-applied
+		if !boot.IsEmpty() {
+			tic.Patches = append(tic.Patches, boot)
+			a.chalkboard.Apply(boot)
 		}
 		_ = a.chalkboard.Save()
+	} else if !combined.IsEmpty() {
+		tic.Patches = append(tic.Patches, combined)
+		a.chalkboard.Apply(combined)
 	}
 	if prompt.text != "" {
 		tic.Content = append(tic.Content, message.TextContent(prompt.text))

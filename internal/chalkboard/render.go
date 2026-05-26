@@ -69,8 +69,12 @@ func LoadOverrideTemplates(base *template.Template, dir string) (*template.Templ
 	return root, nil
 }
 
-// Render produces bodies for each patch entry. Entries without a
-// matching template are skipped.
+// Render produces bodies for each patch entry. Keys with a matching
+// template render via that template. Keys in the harness-reserved
+// `system.*` namespace are silently skipped — providers consume those
+// directly. Other keys without a template fall back to a generic
+// body so new chalkboard data is visible by default without needing
+// a hand-rolled template per key.
 func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, error) {
 	if p.IsEmpty() {
 		return nil, nil
@@ -78,8 +82,16 @@ func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, 
 	entries := PatchEntries(p, prev)
 	out := make([]RenderedEntry, 0, len(entries))
 	for _, e := range entries {
+		if strings.HasPrefix(e.Key, "system.") {
+			continue
+		}
 		t := tmpls.Lookup(e.Key)
 		if t == nil {
+			body := genericBody(e)
+			if body == "" {
+				continue
+			}
+			out = append(out, RenderedEntry{Key: e.Key, Body: body})
 			continue
 		}
 		var buf bytes.Buffer
@@ -93,4 +105,17 @@ func Render(p Patch, prev Snapshot, tmpls *template.Template) ([]RenderedEntry, 
 		out = append(out, RenderedEntry{Key: e.Key, Body: body})
 	}
 	return out, nil
+}
+
+// genericBody is the fallback renderer for untemplated keys. Removal
+// entries produce an empty body (caller skips). String values render
+// as the bare string; object/array values render as their JSON.
+func genericBody(e Entry) string {
+	if e.IsRemoval() {
+		return ""
+	}
+	if s := e.NewString(); s != "" {
+		return s
+	}
+	return string(e.New)
 }
