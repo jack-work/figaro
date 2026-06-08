@@ -23,7 +23,7 @@
           pname = "figaro";
           version = "0.1.0";
           src = self;
-          vendorHash = "sha256-eIAK/9DY9a8aD6js3LhO1qnvUIydsrcOVeR5fU3huLM=";
+          vendorHash = "sha256-Zc0cCOBRCBh92Agn4i89Z9IoWGS82w4IJdDdZLKsgeQ=";
           subPackages = [ "cmd/figaro" ];
           env.CGO_ENABLED = 0;
 

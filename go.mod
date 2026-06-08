@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jack-work/figwal v0.2.0
 	github.com/jack-work/hush v0.5.1-0.20260512215342-7fe4be3054ea
-	github.com/jack-work/largo v0.1.0
+	github.com/jack-work/largo v0.2.3
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/contrib/bridges/otelslog v0.18.0
