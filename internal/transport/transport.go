@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/jack-work/figaro/internal/jsonrpc"
+	"github.com/jack-work/jkrpc"
 )
 
 // Endpoint describes how to reach a figaro component (angelus or figaro agent).
@@ -20,13 +20,13 @@ func UnixEndpoint(path string) Endpoint {
 	return Endpoint{Scheme: "unix", Address: path}
 }
 
-// Dial connects to an endpoint and returns a jsonrpc.Conn.
-func Dial(ep Endpoint) (*jsonrpc.Conn, error) {
+// Dial connects to an endpoint and returns a jkrpc.Conn.
+func Dial(ep Endpoint) (*jkrpc.Conn, error) {
 	conn, err := DialRaw(ep)
 	if err != nil {
 		return nil, err
 	}
-	return jsonrpc.NewConn(conn), nil
+	return jkrpc.NewConn(conn), nil
 }
 
 // DialRaw connects to an endpoint and returns the raw net.Conn.

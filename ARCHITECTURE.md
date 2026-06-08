@@ -28,7 +28,6 @@ internal/chalkboard/       per-aria structured state + system-reminder rendering
 internal/config/           TOML config loader
 internal/credo/            personality body + skill catalog
 internal/figaro/           actor: agent loop, inbox, translator orchestration
-internal/jsonrpc/          NDJSON-framed JSON-RPC 2.0
 internal/message/          provider-agnostic IR (Message, Content, Patch)
 internal/otel/             OpenTelemetry init + span helpers
 internal/provider/         Provider interface + anthropic implementation

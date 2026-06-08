@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/jack-work/figaro/internal/jsonrpc"
+	"github.com/jack-work/jkrpc"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
 )
@@ -14,7 +14,7 @@ type NotifyHandler func(method string, params json.RawMessage)
 
 // Client is a typed JSON-RPC client for talking to a figaro agent socket.
 type Client struct {
-	cli *jsonrpc.Client
+	cli *jkrpc.Client
 }
 
 // DialClient connects to a figaro agent.
@@ -23,7 +23,7 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 	if err != nil {
 		return nil, err
 	}
-	cli := jsonrpc.NewClient(conn, jsonrpc.NotifyFunc(onNotify))
+	cli := jkrpc.NewClient(conn, jkrpc.NotifyFunc(onNotify))
 	return &Client{cli: cli}, nil
 }
 

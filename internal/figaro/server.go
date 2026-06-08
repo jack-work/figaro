@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/jsonrpc"
+	"github.com/jack-work/jkrpc"
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
@@ -26,8 +26,8 @@ var agentMethods = []string{
 }
 
 // buildHandlers wires AgentServer.Handle into the jsonrpc handler map.
-func buildHandlers(srv AgentServer) map[string]jsonrpc.HandlerFunc {
-	handlers := make(map[string]jsonrpc.HandlerFunc, len(agentMethods))
+func buildHandlers(srv AgentServer) map[string]jkrpc.HandlerFunc {
+	handlers := make(map[string]jkrpc.HandlerFunc, len(agentMethods))
 	for _, m := range agentMethods {
 		method := m
 		handlers[method] = func(ctx context.Context, params json.RawMessage) (any, error) {

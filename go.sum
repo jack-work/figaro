@@ -65,6 +65,8 @@ github.com/jack-work/figwal v0.2.0 h1:Yd7ZKd4AHGEk1Fy1uTv+sQoCyH225ak95cbIj1RiEP
 github.com/jack-work/figwal v0.2.0/go.mod h1:Z8jdAyQX7X5gQN7r31Gc6vLX7f2/ayRyaiPUupE8yWw=
 github.com/jack-work/hush v0.5.1-0.20260512215342-7fe4be3054ea h1:i4VImLqzDBpEbtzocjDT7Id0w20AH/QSLuB4DibVPwo=
 github.com/jack-work/hush v0.5.1-0.20260512215342-7fe4be3054ea/go.mod h1:SxxPxRdbEjySfclnhYFwEyCUKxOkwCqwU/O4U8Y7jjo=
+github.com/jack-work/jkrpc v0.1.0 h1:qx03oLiVLuCL/2j3MDy0KLPvGs0Soja/oaQ4YlM9cVg=
+github.com/jack-work/jkrpc v0.1.0/go.mod h1:eY1OORs32+NWXRfbMPaX2q7jg58/7kDPB/PyoKJXZcY=
 github.com/jack-work/largo v0.1.0 h1:kKZcCpLV8eDa4SdK3qZaE6j1A1m4Unk6yKxm55gel8k=
 github.com/jack-work/largo v0.1.0/go.mod h1:lE69RHx9tIvcLMsYE70T/UHtYeYFPZJLhoaSdMWxj5s=
 github.com/josharian/intern v1.0.0/go.mod h1:5DoeVV0s6jJacbCEi61lwdGj/aVlrQvzHFFd8Hwg//Y=

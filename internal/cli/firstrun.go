@@ -28,7 +28,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/jsonrpc"
+	"github.com/jack-work/jkrpc"
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
@@ -62,7 +62,7 @@ func createWithFirstRun(ctx context.Context, loaded *config.Loaded, fn createFn)
 // decodeTypedError extracts the (Data, Code) pair from a typed
 // JSON-RPC error. Returns ok=false for any other error type.
 func decodeTypedError(err error) (rpc.ErrorData, int, bool) {
-	var jerr *jsonrpc.Error
+	var jerr *jkrpc.Error
 	if !errors.As(err, &jerr) {
 		return rpc.ErrorData{}, 0, false
 	}

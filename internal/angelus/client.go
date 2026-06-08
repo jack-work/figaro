@@ -3,7 +3,7 @@ package angelus
 import (
 	"context"
 
-	"github.com/jack-work/figaro/internal/jsonrpc"
+	"github.com/jack-work/jkrpc"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
 )
@@ -13,7 +13,7 @@ import (
 // this should probably be called ......... idk not cli, it could be
 // an sdk.
 type Client struct {
-	cli *jsonrpc.Client
+	cli *jkrpc.Client
 }
 
 // DialClient connects to the angelus at the given endpoint.
@@ -22,7 +22,7 @@ func DialClient(ep transport.Endpoint) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{cli: jsonrpc.NewClient(conn, nil)}, nil
+	return &Client{cli: jkrpc.NewClient(conn, nil)}, nil
 }
 
 // Create starts a new figaro with the named loadout.

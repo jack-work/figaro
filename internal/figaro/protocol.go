@@ -5,7 +5,7 @@ import (
 	"net"
 	"os"
 
-	"github.com/jack-work/figaro/internal/jsonrpc"
+	"github.com/jack-work/jkrpc"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
@@ -46,8 +46,8 @@ func (a *Agent) StartSocket(ctx context.Context) error {
 
 // serveConn handles a single JSON-RPC connection.
 func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
-	jconn := jsonrpc.NewConn(conn)
-	srv := jsonrpc.NewServer(jconn, buildHandlers(a))
+	jconn := jkrpc.NewConn(conn)
+	srv := jkrpc.NewServer(jconn, buildHandlers(a))
 
 	unsub := a.Subscribe(srv)
 	defer unsub()
@@ -67,4 +67,4 @@ func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 
 var _ Figaro = (*Agent)(nil) // compile-time interface check
 var _ AgentServer = (*Agent)(nil)
-var _ Notifier = (*jsonrpc.Server)(nil)
+var _ Notifier = (*jkrpc.Server)(nil)

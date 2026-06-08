@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/jsonrpc"
+	"github.com/jack-work/jkrpc"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/store"
 
@@ -26,7 +26,7 @@ import (
 // Angelus is the figaro supervisor.
 type Angelus struct {
 	Registry   *Registry
-	Handlers   map[string]jsonrpc.HandlerFunc // set before Run()
+	Handlers   map[string]jkrpc.HandlerFunc // set before Run()
 	Backend    store.Backend                  // aria persistence (nil = ephemeral-only)
 	LogCache   *store.LogCache                // refcount + TTL cache shared with agents
 	SocketPath string
@@ -146,8 +146,8 @@ func (a *Angelus) handleConn(ctx context.Context, conn net.Conn) {
 		return
 	}
 
-	jconn := jsonrpc.NewConn(conn)
-	srv := jsonrpc.NewServer(jconn, a.Handlers)
+	jconn := jkrpc.NewConn(conn)
+	srv := jkrpc.NewServer(jconn, a.Handlers)
 
 	done := make(chan struct{})
 	go func() {

@@ -16,7 +16,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/jsonrpc"
+	"github.com/jack-work/jkrpc"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
@@ -46,7 +46,7 @@ type ServerConfig struct {
 
 // Handlers wraps the angelus JSON-RPC handler map.
 type Handlers struct {
-	Map map[string]jsonrpc.HandlerFunc
+	Map map[string]jkrpc.HandlerFunc
 	h   *handlers
 }
 
@@ -62,7 +62,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		availableProviders: cfg.AvailableProviders,
 	}
 	return &Handlers{
-		Map: map[string]jsonrpc.HandlerFunc{
+		Map: map[string]jkrpc.HandlerFunc{
 			rpc.MethodCreate:       h.create,
 			rpc.MethodKill:         h.kill,
 			rpc.MethodList:         h.list,
@@ -743,7 +743,7 @@ func cwdFromChalkboard(cbState *chalkboard.State, fallback string) func() string
 // client to drive first-run loadout selection.
 func (h *handlers) errNoDefaultLoadout() error {
 	data, _ := json.Marshal(rpc.ErrorData{AvailableProviders: h.availableProviders})
-	return &jsonrpc.Error{
+	return &jkrpc.Error{
 		Code:    rpc.ErrNoDefaultLoadout,
 		Message: "no default loadout configured",
 		Data:    data,
@@ -757,7 +757,7 @@ func (h *handlers) errNoProvider(loadoutName string) error {
 		AvailableProviders: h.availableProviders,
 		Loadout:            loadoutName,
 	})
-	return &jsonrpc.Error{
+	return &jkrpc.Error{
 		Code:    rpc.ErrNoProvider,
 		Message: fmt.Sprintf("loadout %q has no system.provider", loadoutName),
 		Data:    data,
@@ -771,7 +771,7 @@ func (h *handlers) errLoadoutNotFound(name string, cause error) error {
 		Name:        name,
 		SearchPaths: []string{h.config.LoadoutPath(name)},
 	})
-	return &jsonrpc.Error{
+	return &jkrpc.Error{
 		Code:    rpc.ErrLoadoutNotFound,
 		Message: fmt.Sprintf("loadout %q not found: %s", name, cause),
 		Data:    data,

@@ -13,7 +13,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/jsonrpc"
+	"github.com/jack-work/jkrpc"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
@@ -80,7 +80,7 @@ func TestCreate_NoDefaultLoadout_ReturnsTypedError(t *testing.T) {
 	_, err = acli.Create(ctx, "", nil)
 	require.Error(t, err)
 
-	var jerr *jsonrpc.Error
+	var jerr *jkrpc.Error
 	require.True(t, errors.As(err, &jerr), "expected typed jsonrpc error, got %T: %v", err, err)
 	assert.Equal(t, rpc.ErrNoDefaultLoadout, jerr.Code)
 
@@ -112,7 +112,7 @@ model = "some-model"
 	_, err = acli.Create(ctx, "", nil)
 	require.Error(t, err)
 
-	var jerr *jsonrpc.Error
+	var jerr *jkrpc.Error
 	require.True(t, errors.As(err, &jerr))
 	assert.Equal(t, rpc.ErrNoProvider, jerr.Code)
 
@@ -141,7 +141,7 @@ func TestCreate_MissingLoadoutName_ReturnsTypedError(t *testing.T) {
 	_, err = acli.Create(ctx, "", nil)
 	require.Error(t, err)
 
-	var jerr *jsonrpc.Error
+	var jerr *jkrpc.Error
 	require.True(t, errors.As(err, &jerr))
 	assert.Equal(t, rpc.ErrNoProvider, jerr.Code,
 		"missing loadout file is graceful-empty; surfaced as no-provider")
