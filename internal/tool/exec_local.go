@@ -1,6 +1,7 @@
 package tool
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"syscall"
 	"time"
 	"unicode"
+
+	"github.com/creack/pty"
 )
 
 // LocalExecutor runs commands as direct child processes via exec.Command.
@@ -20,6 +23,11 @@ import (
 // materialize a full env slice.
 type LocalExecutor struct {
 	Transformers []ExecTransformer
+
+	// ptyStart starts cmd through a PTY and returns the master. Nil
+	// means pty.Start; tests override it to force a spawn failure and
+	// exercise the pipe fallback.
+	ptyStart func(*exec.Cmd) (*os.File, error)
 }
 
 // NewLocalExecutor builds a LocalExecutor with the supplied transformer
@@ -37,10 +45,23 @@ func (e *LocalExecutor) Execute(ctx context.Context, req ExecRequest, onChunk fu
 	}
 
 	base := stripDenied(os.Environ(), e.Transformers)
+	newCmd := func() *exec.Cmd {
+		cmd := exec.Command("bash", "-c", req.Command)
+		cmd.Dir = req.Cwd
+		cmd.Env = mergeEnv(base, req.Env)
+		return cmd
+	}
 
-	cmd := exec.Command("bash", "-c", req.Command)
-	cmd.Dir = req.Cwd
-	cmd.Env = mergeEnv(base, req.Env)
+	if req.PTY {
+		res, err, ok := e.execPTY(ctx, newCmd(), req, onChunk)
+		if ok {
+			return res, err
+		}
+		// PTY spawn failed; warning already emitted via onChunk. Fall
+		// through to the unchanged pipe path with a fresh command.
+	}
+
+	cmd := newCmd()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	sw := &streamWriter{onOutput: onChunk}
@@ -51,17 +72,85 @@ func (e *LocalExecutor) Execute(ctx context.Context, req ExecRequest, onChunk fu
 		return ExecResult{}, fmt.Errorf("start command: %w", err)
 	}
 
+	exitCode, timedOut, canceled, err := waitCmd(ctx, cmd, req.Timeout)
+	if err != nil {
+		return ExecResult{}, err
+	}
+	return ExecResult{ExitCode: exitCode, TimedOut: timedOut, Canceled: canceled}, nil
+}
+
+// dsrQuery is the "report cursor position" (DSR) escape a TUI emits
+// when it wants to know where the cursor is; dsrReport is the synthetic
+// answer we feed back so the child doesn't hang waiting for one.
+var (
+	dsrQuery  = []byte("\x1b[6n")
+	dsrReport = []byte("\x1b[1;1R")
+)
+
+// execPTY runs cmd through a pseudo-terminal. The ok return is false
+// only when the PTY spawn itself fails — in that case a warning has
+// been written to onChunk and the caller should retry on the pipe path.
+// Once the PTY is up, any subsequent error is returned with ok=true.
+func (e *LocalExecutor) execPTY(ctx context.Context, cmd *exec.Cmd, req ExecRequest, onChunk func([]byte)) (ExecResult, error, bool) {
+	start := e.ptyStart
+	if start == nil {
+		start = pty.Start
+	}
+	ptmx, err := start(cmd)
+	if err != nil {
+		if onChunk != nil {
+			onChunk([]byte(fmt.Sprintf("PTY spawn failed, fell back to pipe: %v\n", err)))
+		}
+		return ExecResult{}, nil, false
+	}
+	defer ptmx.Close()
+
+	copyDone := make(chan struct{})
+	go func() {
+		defer close(copyDone)
+		buf := make([]byte, 32*1024)
+		for {
+			n, rerr := ptmx.Read(buf)
+			if n > 0 {
+				if bytes.Contains(buf[:n], dsrQuery) {
+					ptmx.Write(dsrReport)
+				}
+				if onChunk != nil {
+					chunk := make([]byte, n)
+					copy(chunk, buf[:n])
+					onChunk(chunk)
+				}
+			}
+			if rerr != nil {
+				return
+			}
+		}
+	}()
+
+	exitCode, timedOut, canceled, werr := waitCmd(ctx, cmd, req.Timeout)
+	ptmx.Close()
+	<-copyDone
+	if werr != nil {
+		return ExecResult{}, werr, true
+	}
+	return ExecResult{ExitCode: exitCode, TimedOut: timedOut, Canceled: canceled}, nil, true
+}
+
+// waitCmd waits for an already-started cmd, enforcing timeout and ctx
+// cancellation by killing the process group. A nil error with the
+// returned flags is the normal path; a non-nil error is an unexpected
+// wait failure (not a non-zero exit).
+func waitCmd(ctx context.Context, cmd *exec.Cmd, timeout time.Duration) (exitCode int, timedOut, canceled bool, err error) {
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 
 	var timeoutCh <-chan time.Time
-	if req.Timeout > 0 {
-		timer := time.NewTimer(req.Timeout)
+	if timeout > 0 {
+		timer := time.NewTimer(timeout)
 		defer timer.Stop()
 		timeoutCh = timer.C
 	}
 
-	var timedOut, canceled bool
 	var waitErr error
 	select {
 	case waitErr = <-done:
@@ -75,20 +164,14 @@ func (e *LocalExecutor) Execute(ctx context.Context, req ExecRequest, onChunk fu
 		waitErr = drainAfterKill(done)
 	}
 
-	exitCode := 0
 	if waitErr != nil {
 		if exitErr, ok := waitErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		} else if !timedOut && !canceled {
-			return ExecResult{}, waitErr
+			return 0, timedOut, canceled, waitErr
 		}
 	}
-
-	return ExecResult{
-		ExitCode: exitCode,
-		TimedOut: timedOut,
-		Canceled: canceled,
-	}, nil
+	return exitCode, timedOut, canceled, nil
 }
 
 // killGraceWindow is how long, after SIGKILL, we wait for the process's

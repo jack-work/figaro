@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -80,7 +81,7 @@ func TestSanitizeOutput(t *testing.T) {
 		{"tab newline cr preserved", "a\tb\nc\rd", "a\tb\nc\rd"},
 		{"multibyte rune preserved", "café — 日本語 🎉", "café — 日本語 🎉"},
 		{"del stripped", "a\x7fb", "ab"},
-		{"format char stripped", "a\u200bb", "ab"},
+		{"format char stripped", "a​b", "ab"},
 		{"c0 controls stripped", "\x01\x1fok", "ok"},
 	}
 	for _, tt := range tests {
@@ -138,6 +139,34 @@ func TestTruncateMiddle(t *testing.T) {
 	}
 }
 
+func TestTruncateMiddle_PreservesHeadAndTail(t *testing.T) {
+	in := "HEAD" + strings.Repeat("x", 1000) + "TAIL"
+	got := truncateMiddle(in, 20)
+
+	if !strings.HasPrefix(got, "HEAD") {
+		t.Errorf("head not preserved: %q", got)
+	}
+	if !strings.HasSuffix(got, "TAIL") {
+		t.Errorf("tail not preserved: %q", got)
+	}
+}
+
+func TestMaxOutputChars_EnvOverride(t *testing.T) {
+	if got := maxOutputChars(); got != MaxOutputChars {
+		t.Fatalf("default cap = %d, want %d", got, MaxOutputChars)
+	}
+
+	t.Setenv("FIGARO_BASH_MAX_OUTPUT_CHARS", "500")
+	if got := maxOutputChars(); got != 500 {
+		t.Fatalf("override cap = %d, want 500", got)
+	}
+
+	t.Setenv("FIGARO_BASH_MAX_OUTPUT_CHARS", "garbage")
+	if got := maxOutputChars(); got != MaxOutputChars {
+		t.Fatalf("invalid override should fall back to %d, got %d", MaxOutputChars, got)
+	}
+}
+
 // TestLocalExecutor_TimeoutDrainsLateOutput proves the post-SIGKILL
 // grace window: the command emits output and then spawns a setsid
 // grandchild that escapes the process group and keeps the stdio pipe
@@ -189,31 +218,89 @@ func TestLocalExecutor_TimeoutDrainsLateOutput(t *testing.T) {
 	}
 }
 
-func TestTruncateMiddle_PreservesHeadAndTail(t *testing.T) {
-	in := "HEAD" + strings.Repeat("x", 1000) + "TAIL"
-	got := truncateMiddle(in, 20)
-
-	if !strings.HasPrefix(got, "HEAD") {
-		t.Errorf("head not preserved: %q", got)
+// TestLocalExecutor_PTY covers the pseudo-terminal path: output is
+// captured like the pipe path, the child sees a real TTY, and when the
+// PTY spawn is forced to fail the executor warns and falls back to the
+// pipe instead of erroring.
+func TestLocalExecutor_PTY(t *testing.T) {
+	tests := []struct {
+		name      string
+		command   string
+		forceFail bool
+		wantOut   string
+		wantWarn  bool
+	}{
+		{
+			name:    "captures output",
+			command: "echo hello-pty",
+			wantOut: "hello-pty",
+		},
+		{
+			name:    "child reports a tty",
+			command: "test -t 1 && echo IS_TTY || echo NOT_TTY",
+			wantOut: "IS_TTY",
+		},
+		{
+			name:      "fallback warns and still runs",
+			command:   "echo after-fallback",
+			forceFail: true,
+			wantOut:   "after-fallback",
+			wantWarn:  true,
+		},
 	}
-	if !strings.HasSuffix(got, "TAIL") {
-		t.Errorf("tail not preserved: %q", got)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exe := NewLocalExecutor()
+			if tt.forceFail {
+				exe.ptyStart = func(*exec.Cmd) (*os.File, error) {
+					return nil, fmt.Errorf("forced pty failure")
+				}
+			}
+
+			var out strings.Builder
+			res, err := exe.Execute(context.Background(),
+				ExecRequest{Command: tt.command, PTY: true},
+				func(chunk []byte) { out.Write(chunk) })
+			if err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+			if res.ExitCode != 0 {
+				t.Fatalf("exit %d, output: %s", res.ExitCode, out.String())
+			}
+			if !strings.Contains(out.String(), tt.wantOut) {
+				t.Errorf("output %q missing %q", out.String(), tt.wantOut)
+			}
+			gotWarn := strings.Contains(out.String(), "PTY spawn failed, fell back to pipe")
+			if gotWarn != tt.wantWarn {
+				t.Errorf("warn=%v, want %v; output: %s", gotWarn, tt.wantWarn, out.String())
+			}
+		})
 	}
 }
 
-func TestMaxOutputChars_EnvOverride(t *testing.T) {
-	if got := maxOutputChars(); got != MaxOutputChars {
-		t.Fatalf("default cap = %d, want %d", got, MaxOutputChars)
-	}
+// TestLocalExecutor_PTY_DSR verifies a child blocking on a cursor-
+// position request (DSR, ESC[6n) gets a synthetic reply and completes,
+// rather than hanging until the timeout.
+func TestLocalExecutor_PTY_DSR(t *testing.T) {
+	exe := NewLocalExecutor()
+	// In raw mode (as real TUIs use), emit a DSR query then block on a
+	// single byte of the reply. Without the synthetic answer this read
+	// never returns and the 5s timeout fires.
+	cmd := `stty raw; printf '\033[6n'; dd bs=1 count=1 >/dev/null 2>&1; echo DSR_OK`
 
-	t.Setenv("FIGARO_BASH_MAX_OUTPUT_CHARS", "500")
-	if got := maxOutputChars(); got != 500 {
-		t.Fatalf("override cap = %d, want 500", got)
+	var out strings.Builder
+	res, err := exe.Execute(context.Background(),
+		ExecRequest{Command: cmd, PTY: true, Timeout: 5 * time.Second},
+		func(chunk []byte) { out.Write(chunk) })
+	if err != nil {
+		t.Fatalf("execute: %v", err)
 	}
-
-	t.Setenv("FIGARO_BASH_MAX_OUTPUT_CHARS", "garbage")
-	if got := maxOutputChars(); got != MaxOutputChars {
-		t.Fatalf("invalid override should fall back to %d, got %d", MaxOutputChars, got)
+	if res.TimedOut {
+		t.Fatalf("child hung waiting for DSR reply; output: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "DSR_OK") {
+		t.Errorf("output %q missing DSR_OK", out.String())
 	}
 }
 
