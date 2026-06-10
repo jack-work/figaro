@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // TestLocalExecutor_EnvSanitizer_StripsDaemonVars verifies that the
@@ -63,6 +65,57 @@ func TestLocalExecutor_NoSanitizer_PassesEverything(t *testing.T) {
 	}
 	if !strings.Contains(captured.String(), "_FIGARO_DAEMON=1") {
 		t.Fatal("expected unsanitized executor to leak _FIGARO_DAEMON, but it didn't")
+	}
+}
+
+// TestLocalExecutor_TimeoutDrainsLateOutput proves the post-SIGKILL
+// grace window: the command emits output and then spawns a setsid
+// grandchild that escapes the process group and keeps the stdio pipe
+// open, so cmd.Wait never returns on its own. Without the grace window
+// the executor would block forever on <-done; with it, it gives up
+// after killGraceWindow, reports TimedOut, and still captures the
+// output that drained before the kill.
+func TestLocalExecutor_TimeoutDrainsLateOutput(t *testing.T) {
+	exe := NewLocalExecutor()
+
+	type result struct {
+		res ExecResult
+		out string
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		var mu sync.Mutex
+		var captured strings.Builder
+		res, err := exe.Execute(context.Background(),
+			ExecRequest{
+				Command: "echo DRAINED; setsid sleep 30 & sleep 30",
+				Timeout: 200 * time.Millisecond,
+			},
+			func(chunk []byte) {
+				mu.Lock()
+				captured.Write(chunk)
+				mu.Unlock()
+			})
+		mu.Lock()
+		out := captured.String()
+		mu.Unlock()
+		ch <- result{res, out, err}
+	}()
+
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			t.Fatalf("execute: %v", r.err)
+		}
+		if !r.res.TimedOut {
+			t.Errorf("expected TimedOut, got %+v", r.res)
+		}
+		if !strings.Contains(r.out, "DRAINED") {
+			t.Errorf("pre-kill output not drained; got %q", r.out)
+		}
+	case <-time.After(killGraceWindow + 5*time.Second):
+		t.Fatal("Execute did not return within the grace window; SIGKILL drain blocked")
 	}
 }
 

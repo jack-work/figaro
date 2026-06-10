@@ -67,11 +67,11 @@ func (e *LocalExecutor) Execute(ctx context.Context, req ExecRequest, onChunk fu
 	case <-timeoutCh:
 		timedOut = true
 		killProcessGroup(cmd)
-		<-done
+		waitErr = drainAfterKill(done)
 	case <-ctx.Done():
 		canceled = true
 		killProcessGroup(cmd)
-		<-done
+		waitErr = drainAfterKill(done)
 	}
 
 	exitCode := 0
@@ -88,6 +88,26 @@ func (e *LocalExecutor) Execute(ctx context.Context, req ExecRequest, onChunk fu
 		TimedOut: timedOut,
 		Canceled: canceled,
 	}, nil
+}
+
+// killGraceWindow is how long, after SIGKILL, we wait for the process's
+// own Wait to return so its buffered stdout/stderr drains naturally into
+// the aggregated output. If it elapses (e.g. a grandchild escaped the
+// process group and holds the stdio pipe open), we synthesize the
+// outcome rather than block forever.
+const killGraceWindow = time.Second
+
+// drainAfterKill waits up to killGraceWindow for done. It returns the
+// process's wait error if it arrives in time, otherwise nil.
+func drainAfterKill(done <-chan error) error {
+	timer := time.NewTimer(killGraceWindow)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err
+	case <-timer.C:
+		return nil
+	}
 }
 
 // stripDenied removes denylisted keys (gathered from EnvSanitizer
