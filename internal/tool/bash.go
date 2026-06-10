@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 
@@ -174,14 +175,19 @@ func killProcessGroup(cmd *exec.Cmd) {
 	}
 }
 
-// streamWriter captures output and optionally streams chunks.
+// streamWriter captures output and optionally streams chunks. Writes
+// may continue on a stdio-copy goroutine after a timeout's grace window
+// elapses, so the buffer is mutex-guarded against a concurrent String().
 type streamWriter struct {
+	mu       sync.Mutex
 	buf      bytes.Buffer
 	onOutput OnOutput
 }
 
 func (w *streamWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
 	n, err := w.buf.Write(p)
+	w.mu.Unlock()
 	if w.onOutput != nil && n > 0 {
 		chunk := make([]byte, n)
 		copy(chunk, p[:n])
@@ -190,4 +196,8 @@ func (w *streamWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (w *streamWriter) String() string { return w.buf.String() }
+func (w *streamWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
