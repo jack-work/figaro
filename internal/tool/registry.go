@@ -105,8 +105,12 @@ func DefaultRegistryFn(cwdFn func() string) *Registry {
 	if cwdFn != nil {
 		staticCwd = cwdFn()
 	}
+	// bash and process share one session registry so backgrounded
+	// commands are reachable across both tools.
+	sessions := NewSessionRegistry(DefaultSessionTTL)
 	r.MustRegister(
-		NewBashToolWith(cwdFn, executor),
+		NewBashToolWith(cwdFn, executor, sessions),
+		NewProcessTool(sessions, nil),
 		NewReadTool(staticCwd),
 		NewWriteTool(staticCwd),
 		NewEditTool(staticCwd),
