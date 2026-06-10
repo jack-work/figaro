@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -144,12 +145,15 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 	// 401: retry with fresh token.
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
-	a.auth.Invalidate(apiKey)
+	ierr := a.auth.Invalidate(apiKey)
 	newKey, rerr := a.auth.Resolve()
 	if rerr != nil {
-		return nil, apiKey, fmt.Errorf("resolve after 401: %w", rerr)
+		return nil, apiKey, fmt.Errorf("resolve after 401: %w", errors.Join(ierr, rerr))
 	}
 	if newKey == apiKey {
+		if ierr != nil {
+			return nil, apiKey, fmt.Errorf("anthropic 401: invalidate failed: %w", ierr)
+		}
 		return nil, apiKey, fmt.Errorf("anthropic 401: token unchanged after invalidate")
 	}
 	req2, err := build(newKey)

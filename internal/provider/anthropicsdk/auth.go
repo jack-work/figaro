@@ -68,12 +68,15 @@ func (p *Provider) callWithAuthRetry(ctx context.Context, do func(opts []option.
 	if !isUnauthorized(err) {
 		return err
 	}
-	p.resolver.Invalidate(token)
+	ierr := p.resolver.Invalidate(token)
 	fresh, rerr := p.resolver.Resolve()
 	if rerr != nil {
-		return fmt.Errorf("resolve after 401: %w", rerr)
+		return fmt.Errorf("resolve after 401: %w", errors.Join(ierr, rerr))
 	}
 	if fresh == token {
+		if ierr != nil {
+			return fmt.Errorf("anthropicsdk 401: invalidate failed: %w", ierr)
+		}
 		return fmt.Errorf("anthropicsdk 401: token unchanged after invalidate")
 	}
 	return do(p.authOptions(fresh, betaMessages))

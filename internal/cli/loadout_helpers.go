@@ -116,13 +116,14 @@ func (e *encryptedAPIKey) TryResolve() (string, bool, error) {
 	return plain, true, nil
 }
 
-func (e *encryptedAPIKey) Invalidate(token string) {
+func (e *encryptedAPIKey) Invalidate(token string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.cached == token {
 		e.cached = ""
 		e.cachedAt = time.Time{}
 	}
+	return nil
 }
 
 // loadProviderAuthFrom decodes a provider auth TOML file. Thin

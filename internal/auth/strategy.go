@@ -14,8 +14,10 @@ import (
 // CredentialStrategy is one source of API credentials.
 type CredentialStrategy interface {
 	TryResolve() (token string, ok bool, err error)
-	// Invalidate is called when a token is rejected (e.g. 401).
-	Invalidate(token string)
+	// Invalidate is called when a token is rejected (e.g. 401). A
+	// non-nil error means invalidation itself failed (e.g. an OAuth
+	// refresh was rejected).
+	Invalidate(token string) error
 }
 
 // Aggregate is a TokenResolver that walks strategies in priority
@@ -41,10 +43,14 @@ func (a *Aggregate) Resolve() (string, error) {
 	return "", fmt.Errorf("no credential available (no strategy returned a token)")
 }
 
-func (a *Aggregate) Invalidate(token string) {
+func (a *Aggregate) Invalidate(token string) error {
+	var errs []error
 	for _, s := range a.Strategies {
-		s.Invalidate(token)
+		if err := s.Invalidate(token); err != nil {
+			errs = append(errs, err)
+		}
 	}
+	return errors.Join(errs...)
 }
 
 // EnvVar reads a token from an env var.
@@ -63,7 +69,7 @@ func (e *EnvVar) TryResolve() (string, bool, error) {
 	return v, true, nil
 }
 
-func (*EnvVar) Invalidate(string) {}
+func (*EnvVar) Invalidate(string) error { return nil }
 
 // ConfigValue reads a plaintext token via a closure.
 type ConfigValue struct {
@@ -81,7 +87,7 @@ func (c *ConfigValue) TryResolve() (string, bool, error) {
 	return v, true, nil
 }
 
-func (*ConfigValue) Invalidate(string) {}
+func (*ConfigValue) Invalidate(string) error { return nil }
 
 // EncryptedConfig reads a hush-encrypted secret from a file.
 // Mtime-cached to avoid re-decrypting.
@@ -128,13 +134,14 @@ func (e *EncryptedConfig) TryResolve() (string, bool, error) {
 	return plain, true, nil
 }
 
-func (e *EncryptedConfig) Invalidate(token string) {
+func (e *EncryptedConfig) Invalidate(token string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.cached == token {
 		e.cached = ""
 		e.cachedAt = time.Time{}
 	}
+	return nil
 }
 
 // OAuth reads the access token for a named credential from the hush
@@ -160,12 +167,16 @@ func (o *OAuth) TryResolve() (string, bool, error) {
 	return tok, true, nil
 }
 
-func (o *OAuth) Invalidate(token string) {
+func (o *OAuth) Invalidate(token string) error {
 	if o.Hush == nil || o.Name == "" {
-		return
+		return nil
 	}
 	_, err := o.Hush.OAuthRefresh(o.Name)
-	if err != nil && errors.Is(err, hush.ErrOAuthRefreshPermanent) {
-		fmt.Fprintf(os.Stderr, "OAuth refresh for %q rejected. Run: figaro login %s\n", o.Name, o.Name)
+	if err == nil {
+		return nil
 	}
+	if errors.Is(err, hush.ErrOAuthRefreshPermanent) {
+		return fmt.Errorf("oauth refresh for %q rejected (run: figaro login %s): %w", o.Name, o.Name, err)
+	}
+	return fmt.Errorf("oauth refresh for %q: %w", o.Name, err)
 }
