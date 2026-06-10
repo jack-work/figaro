@@ -139,6 +139,7 @@ func (b *BashTool) run(ctx context.Context, req BashRequest, onOutput OnOutput) 
 }
 
 func (b *BashTool) formatResult(raw string, exitCode int, timedOut, canceled bool, timeout time.Duration) (BashResult, error) {
+	raw = truncateMiddle(raw, maxOutputChars())
 	trunc := TruncateTail(raw, TruncationOptions{})
 	output := trunc.Content
 	if output == "" {
