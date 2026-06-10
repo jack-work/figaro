@@ -16,6 +16,9 @@ type BashRequest struct {
 	Command string
 	// Timeout is the wall-clock limit. Zero = no timeout.
 	Timeout time.Duration
+	// PTY spawns the command through a pseudo-terminal, with graceful
+	// fallback to a pipe if the PTY spawn fails.
+	PTY bool
 }
 
 // BashResult is the tool's output and exit metadata.
@@ -85,6 +88,7 @@ func (b *BashTool) Parameters() interface{} {
 		"properties": map[string]interface{}{
 			"command": map[string]interface{}{"type": "string", "description": "Bash command to execute"},
 			"timeout": map[string]interface{}{"type": "number", "description": "Timeout in seconds (optional, no default timeout)"},
+			"pty":     map[string]interface{}{"type": "boolean", "description": "Spawn through a pseudo-terminal for TTY-requiring programs (TUIs, coding agents). Falls back to a pipe with a warning if the PTY spawn fails."},
 		},
 		"required": []string{"command"},
 	}
@@ -99,8 +103,9 @@ func (b *BashTool) Execute(ctx context.Context, args map[string]interface{}, onO
 	if t, ok := args["timeout"].(float64); ok && t > 0 {
 		timeout = time.Duration(t * float64(time.Second))
 	}
+	usePTY, _ := args["pty"].(bool)
 
-	res, err := b.run(ctx, BashRequest{Command: command, Timeout: timeout}, onOutput)
+	res, err := b.run(ctx, BashRequest{Command: command, Timeout: timeout, PTY: usePTY}, onOutput)
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +132,7 @@ func (b *BashTool) run(ctx context.Context, req BashRequest, onOutput OnOutput) 
 		Command: req.Command,
 		Cwd:     cwd,
 		Timeout: req.Timeout,
+		PTY:     req.PTY,
 	}
 	res, err := b.Executor.Execute(ctx, execReq, func(chunk []byte) {
 		sw.Write(chunk)

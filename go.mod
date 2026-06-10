@@ -27,6 +27,8 @@ require (
 	golang.org/x/text v0.31.0
 )
 
+require github.com/creack/pty v1.1.24
+
 require (
 	filippo.io/age v1.3.1 // indirect
 	filippo.io/hpke v0.4.0 // indirect

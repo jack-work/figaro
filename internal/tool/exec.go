@@ -26,6 +26,12 @@ type ExecRequest struct {
 
 	// Timeout is the wall-clock limit. Zero means no timeout.
 	Timeout time.Duration
+
+	// PTY requests the command be spawned through a pseudo-terminal so
+	// TTY-requiring programs (TUIs, coding agents) behave. If the PTY
+	// spawn fails, the executor falls back to a plain pipe and prepends
+	// a warning to the output rather than erroring.
+	PTY bool
 }
 
 // ExecResult is what an Executor returns.
