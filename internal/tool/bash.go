@@ -135,7 +135,7 @@ func (b *BashTool) run(ctx context.Context, req BashRequest, onOutput OnOutput) 
 		return BashResult{}, err
 	}
 
-	return b.formatResult(sw.String(), res.ExitCode, res.TimedOut, res.Canceled, req.Timeout)
+	return b.formatResult(sanitizeOutput(sw.String()), res.ExitCode, res.TimedOut, res.Canceled, req.Timeout)
 }
 
 func (b *BashTool) formatResult(raw string, exitCode int, timedOut, canceled bool, timeout time.Duration) (BashResult, error) {

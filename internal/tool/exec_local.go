@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 )
 
 // LocalExecutor runs commands as direct child processes via exec.Command.
@@ -174,6 +175,25 @@ func NewDefaultEnvSanitizer() EnvSanitizer {
 
 // Apply is a no-op: the strip happens in LocalExecutor.stripDenied.
 func (s EnvSanitizer) Apply(req ExecRequest) ExecRequest { return req }
+
+// sanitizeOutput strips control and format runes that would poison the
+// conversation log: C0 controls (except tab, newline, carriage return),
+// DEL, Unicode format characters, and surrogate code points. Printable
+// UTF-8 is left untouched.
+func sanitizeOutput(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t' || r == '\n' || r == '\r':
+			return r
+		case r < 0x20 || r == 0x7f:
+			return -1
+		case unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Cs, r):
+			return -1
+		default:
+			return r
+		}
+	}, s)
+}
 
 // CwdResolver fills in req.Cwd when it's empty. The Fn is invoked at
 // call time so the source (typically the chalkboard) can change
