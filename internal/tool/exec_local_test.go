@@ -66,6 +66,28 @@ func TestLocalExecutor_NoSanitizer_PassesEverything(t *testing.T) {
 	}
 }
 
+func TestSanitizeOutput(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"nul stripped", "a\x00b", "ab"},
+		{"tab newline cr preserved", "a\tb\nc\rd", "a\tb\nc\rd"},
+		{"multibyte rune preserved", "café — 日本語 🎉", "café — 日本語 🎉"},
+		{"del stripped", "a\x7fb", "ab"},
+		{"format char stripped", "a\u200bb", "ab"},
+		{"c0 controls stripped", "\x01\x1fok", "ok"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sanitizeOutput(tt.in); got != tt.want {
+				t.Errorf("sanitizeOutput(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestCwdResolver_CalledPerInvocation ensures the resolver re-reads
 // the source on every call, not once at construction. This is the
 // regression test for the figwal symptom: a stale cwd captured at
