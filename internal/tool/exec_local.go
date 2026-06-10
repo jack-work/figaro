@@ -3,6 +3,7 @@ package tool
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -27,20 +28,28 @@ func NewLocalExecutor(transformers ...ExecTransformer) *LocalExecutor {
 	return &LocalExecutor{Transformers: transformers}
 }
 
-func (e *LocalExecutor) Execute(ctx context.Context, req ExecRequest, onChunk func([]byte)) (ExecResult, error) {
+// buildCmd applies the transformer chain and assembles the *exec.Cmd
+// (its own process group, sanitized+merged env, cwd) ready to Start.
+func (e *LocalExecutor) buildCmd(req ExecRequest) (*exec.Cmd, error) {
 	for _, t := range e.Transformers {
 		req = t.Apply(req)
 	}
 	if req.Command == "" {
-		return ExecResult{}, fmt.Errorf("command is required")
+		return nil, fmt.Errorf("command is required")
 	}
-
 	base := stripDenied(os.Environ(), e.Transformers)
-
 	cmd := exec.Command("bash", "-c", req.Command)
 	cmd.Dir = req.Cwd
 	cmd.Env = mergeEnv(base, req.Env)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	return cmd, nil
+}
+
+func (e *LocalExecutor) Execute(ctx context.Context, req ExecRequest, onChunk func([]byte)) (ExecResult, error) {
+	cmd, err := e.buildCmd(req)
+	if err != nil {
+		return ExecResult{}, err
+	}
 
 	sw := &streamWriter{onOutput: onChunk}
 	cmd.Stdout = sw
@@ -89,6 +98,68 @@ func (e *LocalExecutor) Execute(ctx context.Context, req ExecRequest, onChunk fu
 		Canceled: canceled,
 	}, nil
 }
+
+// Start launches the command and returns a Process whose lifetime is
+// independent of any context — the caller (a session) owns when to
+// wait, signal, or kill it. Output streams to onChunk for as long as
+// the process runs.
+func (e *LocalExecutor) Start(req ExecRequest, onChunk func([]byte)) (Process, error) {
+	cmd, err := e.buildCmd(req)
+	if err != nil {
+		return nil, err
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stdin pipe: %w", err)
+	}
+	sw := &streamWriter{onOutput: onChunk}
+	cmd.Stdout = sw
+	cmd.Stderr = sw
+	if err := cmd.Start(); err != nil {
+		stdin.Close()
+		return nil, fmt.Errorf("start command: %w", err)
+	}
+	p := &localProcess{cmd: cmd, stdin: stdin, done: make(chan struct{})}
+	go func() {
+		waitErr := cmd.Wait()
+		p.exitCode = exitCode(waitErr)
+		close(p.done)
+	}()
+	return p, nil
+}
+
+// exitCode extracts a process exit code from cmd.Wait's error.
+func exitCode(waitErr error) int {
+	if waitErr == nil {
+		return 0
+	}
+	if exitErr, ok := waitErr.(*exec.ExitError); ok {
+		return exitErr.ExitCode()
+	}
+	return -1
+}
+
+// localProcess is a LocalExecutor-started command. cmd.Wait runs once
+// in a goroutine started by Start; Wait here just blocks on done.
+type localProcess struct {
+	cmd      *exec.Cmd
+	stdin    io.WriteCloser
+	done     chan struct{}
+	exitCode int
+}
+
+func (p *localProcess) Pid() int { return p.cmd.Process.Pid }
+
+func (p *localProcess) Wait() int {
+	<-p.done
+	return p.exitCode
+}
+
+func (p *localProcess) Signal(sig syscall.Signal) error {
+	return syscall.Kill(-p.cmd.Process.Pid, sig)
+}
+
+func (p *localProcess) Write(b []byte) (int, error) { return p.stdin.Write(b) }
 
 // stripDenied removes denylisted keys (gathered from EnvSanitizer
 // transformers) from base.

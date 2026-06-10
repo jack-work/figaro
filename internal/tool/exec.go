@@ -2,6 +2,7 @@ package tool
 
 import (
 	"context"
+	"syscall"
 	"time"
 )
 
@@ -43,6 +44,28 @@ type ExecResult struct {
 // container, or hand off to a remote agent.
 type Executor interface {
 	Execute(ctx context.Context, req ExecRequest, onChunk func([]byte)) (ExecResult, error)
+}
+
+// Process is a started command whose lifetime is decoupled from the
+// call that launched it. Output is streamed to the onChunk callback
+// passed to Start; this handle carries control over the live process.
+type Process interface {
+	// Pid is the process-group leader's pid.
+	Pid() int
+	// Wait blocks until the process exits and returns its exit code.
+	// Safe to call once; the result is delivered to a single caller.
+	Wait() int
+	// Signal sends sig to the whole process group.
+	Signal(sig syscall.Signal) error
+	// Write feeds bytes to the process's stdin.
+	Write(p []byte) (int, error)
+}
+
+// BackgroundExecutor starts a Process without waiting for it. An
+// Executor that also implements this can back yield-to-background exec
+// sessions; one that doesn't falls back to blocking Execute.
+type BackgroundExecutor interface {
+	Start(req ExecRequest, onChunk func([]byte)) (Process, error)
 }
 
 // ExecTransformer rewrites a request before the executor runs it.
