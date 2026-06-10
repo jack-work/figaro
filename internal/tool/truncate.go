@@ -2,6 +2,8 @@ package tool
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 )
 
@@ -9,7 +11,39 @@ import (
 const (
 	MaxOutputLines = 2000
 	MaxOutputBytes = 50 * 1024 // 50KB
+	MaxOutputChars = 30000
 )
+
+// maxOutputChars returns the rune cap for aggregated command output,
+// honoring the FIGARO_BASH_MAX_OUTPUT_CHARS override.
+func maxOutputChars() int {
+	if v := os.Getenv("FIGARO_BASH_MAX_OUTPUT_CHARS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return MaxOutputChars
+}
+
+// truncateMiddle bounds s to max runes, eliding the middle and keeping
+// the first and last half of the budget. The dropped span is replaced
+// with a marker reporting how many runes were cut. Rune-safe: it never
+// splits a multi-byte rune. max <= 0 disables truncation.
+func truncateMiddle(s string, max int) string {
+	if max <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	head := max / 2
+	tail := max - head
+	dropped := len(runes) - head - tail
+	return string(runes[:head]) +
+		fmt.Sprintf("\n… [%d characters truncated] …\n", dropped) +
+		string(runes[len(runes)-tail:])
+}
 
 // TruncationResult describes what truncation did.
 type TruncationResult struct {

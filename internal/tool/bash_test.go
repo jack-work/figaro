@@ -138,6 +138,20 @@ func TestBash_LargeOutputByteTruncation(t *testing.T) {
 	_ = lines
 }
 
+func TestBash_MiddleTruncationCharCap(t *testing.T) {
+	t.Setenv("FIGARO_BASH_MAX_OUTPUT_CHARS", "200")
+	b := tool.NewBashTool(t.TempDir())
+	result, err := b.Execute(context.Background(), map[string]interface{}{
+		"command": "echo START; head -c 5000 /dev/zero | tr '\\0' x; echo; echo END",
+	}, nil)
+	require.NoError(t, err)
+	text := resultText(result)
+
+	assert.Contains(t, text, "START", "head should survive middle truncation")
+	assert.Contains(t, text, "END", "tail should survive middle truncation")
+	assert.Contains(t, text, "characters truncated")
+}
+
 func TestBash_ProcessTreeKill(t *testing.T) {
 	b := tool.NewBashTool(t.TempDir())
 	// Spawn a child that spawns a grandchild. Timeout should kill both.
