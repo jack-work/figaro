@@ -47,7 +47,9 @@ func (a *Agent) StartSocket(ctx context.Context) error {
 // serveConn handles a single JSON-RPC connection.
 func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 	jconn := jkrpc.NewConn(conn)
-	srv := jkrpc.NewServer(jconn, buildHandlers(a))
+	sess := &connSession{a: a}
+	srv := jkrpc.NewServer(jconn, buildHandlers(sess))
+	sess.sub = srv
 
 	unsub := a.Subscribe(srv)
 	defer unsub()

@@ -93,7 +93,7 @@ type Agent struct {
 	interrupted bool
 
 	mu   sync.RWMutex
-	subs map[Notifier]struct{} // socket clients + in-process listeners
+	subs map[Notifier]*subState // socket clients + in-process listeners
 
 	// Open-tail snapshot, published by the drain loop's fanOpen and read
 	// by follow-reads / crash recovery. openLive is true while a message
@@ -276,19 +276,41 @@ type Notifier interface {
 	Notify(method string, params any) error
 }
 
-// Subscribe registers a Notifier. Returns an unsubscribe function.
+// subState is the per-subscriber fanout mode. delta selects PatchEntry
+// (log.patch) deltas for the open tail instead of full OpenEntry
+// (log.open) re-sends.
+type subState struct {
+	delta bool
+}
+
+// Subscribe registers a Notifier in full mode. Returns an unsubscribe.
 func (a *Agent) Subscribe(n Notifier) func() {
+	return a.SubscribeMode(n, false)
+}
+
+// SubscribeMode registers a Notifier with an explicit open-tail mode.
+func (a *Agent) SubscribeMode(n Notifier, delta bool) func() {
 	a.mu.Lock()
 	if a.subs == nil {
-		a.subs = make(map[Notifier]struct{})
+		a.subs = make(map[Notifier]*subState)
 	}
-	a.subs[n] = struct{}{}
+	a.subs[n] = &subState{delta: delta}
 	a.mu.Unlock()
 	return func() {
 		a.mu.Lock()
 		delete(a.subs, n)
 		a.mu.Unlock()
 	}
+}
+
+// SetSubscriberMode flips an existing subscription's open-tail mode.
+// Used when a connection negotiates delta mode via qua/read.
+func (a *Agent) SetSubscriberMode(n Notifier, delta bool) {
+	a.mu.Lock()
+	if s, ok := a.subs[n]; ok {
+		s.delta = delta
+	}
+	a.mu.Unlock()
 }
 
 func (a *Agent) Info() FigaroInfo {

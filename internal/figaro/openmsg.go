@@ -132,31 +132,28 @@ func (b *openBuilder) openBlock(c message.Content) int {
 	return i
 }
 
-// snapshot returns the current full IR state for a full-mode OpenEntry,
-// stamping the next version.
-func (b *openBuilder) snapshot() rpc.OpenEntry {
+// commit stamps the next version and returns both renderings of the
+// current state for the SAME version: the full OpenEntry (full mode)
+// and a PatchEntry of the ops since the last commit (delta mode, nil
+// when there were none). The drain loop sends whichever each subscriber
+// opted into, keeping their version sequences identical.
+func (b *openBuilder) commit() (rpc.OpenEntry, *rpc.PatchEntry) {
+	from := b.version
 	b.version++
+	ops := b.ops
 	b.ops = nil
-	return rpc.OpenEntry{
+
+	open := rpc.OpenEntry{
 		Index:   b.index,
 		Version: b.version,
 		Open:    true,
 		Message: cloneMessage(b.msg),
 	}
-}
-
-// drainPatch returns the ops accumulated since the last drain as a
-// delta-mode PatchEntry, stamping the next version. Returns nil when
-// nothing changed.
-func (b *openBuilder) drainPatch() *rpc.PatchEntry {
-	if len(b.ops) == 0 {
-		return nil
+	var patch *rpc.PatchEntry
+	if len(ops) > 0 {
+		patch = &rpc.PatchEntry{Index: b.index, Version: b.version, From: from, Ops: ops}
 	}
-	from := b.version
-	b.version++
-	ops := b.ops
-	b.ops = nil
-	return &rpc.PatchEntry{Index: b.index, Version: b.version, From: from, Ops: ops}
+	return open, patch
 }
 
 // dirty reports whether there are unemitted changes.

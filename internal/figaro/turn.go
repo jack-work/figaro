@@ -602,17 +602,26 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 
 // --- fan-out helpers (log.* frames) ---
 
-// fanOpen publishes the current open-tail state as a full-mode
-// OpenEntry and records it on the agent for follow-reads and recovery.
+// fanOpen publishes the current open-tail state, recording it on the
+// agent for follow-reads and recovery, then notifying each subscriber
+// in its chosen mode: full-mode subscribers get the OpenEntry, delta-mode
+// subscribers get the PatchEntry (falling back to the full frame when
+// there are no ops, e.g. a no-op recommit).
 func (a *Agent) fanOpen(b *openBuilder) {
-	e := b.snapshot()
+	open, patch := b.commit()
 	a.mu.Lock()
-	a.openIdx = e.Index
-	a.openVer = e.Version
-	a.openMsg = e.Message
+	a.openIdx = open.Index
+	a.openVer = open.Version
+	a.openMsg = open.Message
 	a.openLive = true
+	for n, s := range a.subs {
+		if s.delta && patch != nil {
+			_ = n.Notify(rpc.MethodLogPatch, *patch)
+		} else {
+			_ = n.Notify(rpc.MethodLogOpen, open)
+		}
+	}
 	a.mu.Unlock()
-	a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodLogOpen, Params: e})
 }
 
 // fanLogEntry publishes a sealed message and clears the open slot if
