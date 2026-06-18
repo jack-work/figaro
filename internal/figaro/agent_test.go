@@ -794,8 +794,8 @@ func (s *slowProvider) Send(ctx context.Context, _ provider.SendInput, bus provi
 }
 
 // TestAgent_Interrupt verifies that Interrupt cancels an in-flight
-// turn, emits stream.error + stream.done, and leaves the agent idle
-// and usable for a second prompt.
+// turn, ends it with turn.done (reason "interrupted"), and leaves the
+// agent idle and usable for a second prompt.
 func TestAgent_Interrupt(t *testing.T) {
 	started := make(chan struct{})
 	a := figaro.NewAgent(figaro.Config{

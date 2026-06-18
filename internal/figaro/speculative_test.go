@@ -206,7 +206,7 @@ func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 				sawDone = true
 			}
 		case <-timeout:
-			t.Fatal("timeout waiting for stream.done")
+			t.Fatal("timeout waiting for turn.done")
 		}
 	}
 

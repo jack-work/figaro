@@ -73,7 +73,7 @@ func (p *chalkSpyProvider) lastTurnPatches() []message.Patch {
 }
 
 // runOneTurn submits a prompt with the given chalkboard input and waits
-// for the turn to complete (via stream.done).
+// for the turn to complete (via turn.done).
 func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.ChalkboardInput) {
 	t.Helper()
 	sub, unsub := subscribeChan(a)
@@ -89,7 +89,7 @@ func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.ChalkboardIn
 				return
 			}
 		case <-deadline:
-			t.Fatal("timed out waiting for stream.done")
+			t.Fatal("timed out waiting for turn.done")
 		}
 	}
 }
