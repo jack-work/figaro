@@ -106,9 +106,21 @@ The `system.*` namespace is harness-reserved. Clients write under any other key.
 
 ## JSON-RPC surface
 
-**Angelus socket:** `figaro.create`, `figaro.kill`, `figaro.list`, `pid.bind`, `pid.resolve`, `pid.unbind`, `angelus.status`, `angelus.save_bindings`.
+**Angelus socket:** `figaro.create`, `figaro.attach`, `figaro.kill`, `figaro.list`, `aria.read`, `pid.bind`, `pid.resolve`, `pid.unbind`, `angelus.status`, `angelus.save_bindings`.
 
-**Figaro socket:** `figaro.prompt` (with optional `chalkboard` field), `figaro.interrupt`, `figaro.context`, `figaro.info`, `figaro.set_model`, `figaro.set_label`, `figaro.loadout`, `figaro.set`, `figaro.chalkboard`. Notifications: `stream.delta`, `stream.thinking`, `stream.tool_start`, `stream.tool_output`, `stream.tool_end`, `stream.message`, `stream.done`, `stream.error`.
+**Figaro socket (requests):** `figaro.qua` (prompt; optional `chalkboard`, `delta_mode`; returns the user tic's index), `figaro.read` (windowed log read: `from`/`last`/`limit`/`follow`/`delta_mode`), `figaro.interrupt`, `figaro.context`, `figaro.set`, `figaro.loadout`, `figaro.chalkboard`.
+
+### Streaming: the log.* tail model
+
+What travels on the socket is the serialized Figaro IR. A conversation is an append-only log of `message.Message` at gapless 1-based indices (`LT`); a client consumes catch-up history and live streaming through one shape — a read that may stay open. Notifications:
+
+- `log.entry` `{index, message}` — a sealed, immutable message (the bare IR). Render once.
+- `log.open` `{index, version, open, message}` — the current full state of the open (unsealed) tail (full mode).
+- `log.patch` `{index, version, from, ops}` — block-addressed deltas against the open tail (delta mode; opt-in per subscription).
+- `log.abort` `{index, reason}` — the open tail was burned before sealing (interrupt/fault); its index is reused by the next message.
+- `turn.done` `{reason}` — the turn went idle.
+
+A turn streams its assistant reply as an open message that seals into a `log.entry`; if it called tools, their execution streams as an open `tool_result` message that seals in turn. The seal *is* the arrival of the closed `log.entry` at that index. Provider `Bus` calls are folded into the open tail by the drain loop's `openBuilder`; providers are unchanged.
 
 ## CLI
 
