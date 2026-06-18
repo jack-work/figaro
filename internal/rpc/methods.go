@@ -5,7 +5,19 @@ import "encoding/json"
 
 
 const (
-	// Notifications (no response).
+	// Log/stream notifications (server -> client). The wire payload is
+	// the serialized Figaro IR: a sealed message is the bare
+	// message.Message; the open tail rides a thin envelope. These
+	// supersede the stream.* vocabulary below.
+	MethodLogEntry = "log.entry" // a sealed message.Message at its durable index
+	MethodLogOpen  = "log.open"  // the open (unsealed) tail message, full state
+	MethodLogPatch = "log.patch" // a delta against the open tail (delta mode)
+	MethodLogAbort = "log.abort" // the open tail was burned (interrupt/fault/exit)
+	MethodTurnDone = "turn.done" // the turn went idle
+
+	// Deprecated: the stream.* lifecycle vocabulary, retired in favor
+	// of the log.* frames above. Kept until the producer/consumer
+	// cutover removes their last references.
 	MethodDelta            = "stream.delta"
 	MethodToolOutput       = "stream.tool_output"
 	MethodThinking         = "stream.thinking"
@@ -20,12 +32,13 @@ const (
 	MethodError            = "stream.error"
 
 	// Requests.
-	MethodQua          = "figaro.qua"
-	MethodContext      = "figaro.context"
-	MethodInterrupt    = "figaro.interrupt"
-	MethodSet          = "figaro.set"
-	MethodLoadout      = "figaro.loadout"
-	MethodChalkboard   = "figaro.chalkboard"
+	MethodQua        = "figaro.qua"
+	MethodRead       = "figaro.read"
+	MethodContext    = "figaro.context"
+	MethodInterrupt  = "figaro.interrupt"
+	MethodSet        = "figaro.set"
+	MethodLoadout    = "figaro.loadout"
+	MethodChalkboard = "figaro.chalkboard"
 )
 
 // Typed JSON-RPC error codes for figaro. The -32000..-32099 range
@@ -78,6 +91,10 @@ const (
 type QuaRequest struct {
 	Text       string           `json:"text"`
 	Chalkboard *ChalkboardInput `json:"chalkboard,omitempty"`
+
+	// DeltaMode opts this connection's live stream into PatchEntry
+	// deltas for the open tail instead of full OpenEntry re-sends.
+	DeltaMode bool `json:"delta_mode,omitempty"`
 }
 
 // ChalkboardInput carries an optional state update.
@@ -94,6 +111,33 @@ type ChalkboardPatch struct {
 
 type QuaResponse struct {
 	OK bool `json:"ok"`
+
+	// Index is the durable LT the appended user tic is expected to
+	// occupy. On an idle aria it is exact; with prompts already queued
+	// it is the index at enqueue time plus the queue depth. Clients
+	// that need an exact cursor should figaro.read instead of trusting
+	// this for anything load-bearing.
+	Index uint64 `json:"index"`
+}
+
+// ReadRequest reads the aria log from an index, optionally following
+// live. See the stream respec §3.3.
+type ReadRequest struct {
+	From      uint64 `json:"from,omitempty"`       // inclusive start; 0 = beginning
+	Last      uint64 `json:"last,omitempty"`       // relative window: last N messages (overrides From)
+	Limit     uint64 `json:"limit,omitempty"`      // max sealed messages this batch; 0 = server max
+	Follow    bool   `json:"follow,omitempty"`     // keep open and stream new entries live
+	DeltaMode bool   `json:"delta_mode,omitempty"` // open tail as PatchEntry deltas (only with Follow)
+}
+
+// ReadResponse is the catch-up batch returned by figaro.read. With
+// Follow, further entries arrive as log.* notifications afterward.
+type ReadResponse struct {
+	Entries  []LogEntry `json:"entries"`            // sealed messages, ascending by index
+	Open     *OpenEntry `json:"open,omitempty"`     // present iff the tail is mid-stream and in range
+	NextFrom uint64     `json:"next_from"`          // resume cursor; == tail+1 when caught up
+	Tail     uint64     `json:"tail"`               // highest sealed index at read time
+	Live     bool       `json:"live"`               // true iff a turn is currently streaming
 }
 
 type InterruptRequest struct{}
