@@ -18,6 +18,7 @@ type AgentServer interface {
 // agentMethods is the set of methods the figaro socket exposes.
 var agentMethods = []string{
 	rpc.MethodQua,
+	rpc.MethodRead,
 	rpc.MethodContext,
 	rpc.MethodInterrupt,
 	rpc.MethodSet,
@@ -47,6 +48,15 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		}
 		idx := a.SubmitPrompt(req)
 		return rpc.QuaResponse{OK: true, Index: idx}, nil
+
+	case rpc.MethodRead:
+		var req rpc.ReadRequest
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, err
+			}
+		}
+		return a.Read(req), nil
 
 	case rpc.MethodContext:
 		msgs := a.Context()

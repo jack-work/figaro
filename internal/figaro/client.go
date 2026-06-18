@@ -36,6 +36,17 @@ func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) 
 	return resp.Index, nil
 }
 
+// Read fetches a windowed slice of the aria log (and the open tail).
+// With req.Follow, live log.* frames continue arriving on this
+// connection's notify handler after the catch-up batch returns.
+func (c *Client) Read(ctx context.Context, req rpc.ReadRequest) (*rpc.ReadResponse, error) {
+	var resp rpc.ReadResponse
+	if err := c.cli.Call(ctx, rpc.MethodRead, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Context returns all messages in the figaro's chat history.
 func (c *Client) Context(ctx context.Context) (*rpc.ContextResponse, error) {
 	var resp rpc.ContextResponse
