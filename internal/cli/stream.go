@@ -87,7 +87,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 	defer fcli.Close()
 
-	if err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
+	if _, err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
 		die("prompt: %s", err)
 	}
 

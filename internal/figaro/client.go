@@ -27,9 +27,13 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 	return &Client{cli: cli}, nil
 }
 
-// Qua sends a prompt.
-func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) error {
-	return c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, nil)
+// Qua sends a prompt and returns the index its user tic occupies.
+func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) (uint64, error) {
+	var resp rpc.QuaResponse
+	if err := c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, &resp); err != nil {
+		return 0, err
+	}
+	return resp.Index, nil
 }
 
 // Context returns all messages in the figaro's chat history.

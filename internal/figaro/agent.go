@@ -228,13 +228,17 @@ func (a *Agent) Prompt(text string) {
 	a.inbox.SendPatient(event{typ: eventUserPrompt, text: text})
 }
 
-// SubmitPrompt enqueues a prompt.
-func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
+// SubmitPrompt enqueues a prompt and returns the index its user tic is
+// expected to occupy. Exact on an idle aria; with prompts already queued
+// it is a lower bound (the real index is stamped at append time).
+func (a *Agent) SubmitPrompt(req rpc.QuaRequest) uint64 {
+	idx := a.nextIndex()
 	a.inbox.SendPatient(event{
 		typ:        eventUserPrompt,
 		text:       req.Text,
 		chalkboard: req.Chalkboard,
 	})
+	return idx
 }
 
 // Interrupt aborts the current turn. Idempotent when idle.

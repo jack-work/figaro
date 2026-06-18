@@ -205,7 +205,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	}
 	defer fcli.Close()
 
-	if err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
+	if _, err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
 		fmt.Fprintln(os.Stderr, "error: prompt:", err)
 		return 1
 	}

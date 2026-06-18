@@ -45,8 +45,8 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		a.SubmitPrompt(req)
-		return rpc.QuaResponse{OK: true}, nil
+		idx := a.SubmitPrompt(req)
+		return rpc.QuaResponse{OK: true, Index: idx}, nil
 
 	case rpc.MethodContext:
 		msgs := a.Context()
