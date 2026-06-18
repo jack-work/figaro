@@ -1,533 +1,119 @@
 package cli
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
-	"fmt"
-	"strings"
 	"testing"
-	"time"
 
-	"github.com/jack-work/largo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/pacer"
+	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// newTestRenderer constructs a streamRenderer wired to a safeBuf.
-// Returns the renderer plus the buffer so tests can inspect the
-// rendered output.
-func newTestRenderer(t *testing.T) (*streamRenderer, *safeBuf) {
+// mustParams marshals a frame body to json.RawMessage for handle().
+func mustParams(t *testing.T, v any) json.RawMessage {
 	t.Helper()
-	out := &safeBuf{}
-	sw, err := largo.NewWriter(out, largo.Options{})
+	b, err := json.Marshal(v)
 	require.NoError(t, err)
-	r := newStreamRenderer(context.Background(), sw)
-	pace := pacer.New(r.PacedOut(), pacer.Options{})
-	r.SetPacer(pace)
-	t.Cleanup(func() {
-		pace.Close()
-	})
-	return r, out
-}
-
-// notify is a tiny helper to construct + dispatch a wire notification.
-func notify(t *testing.T, r *streamRenderer, method string, params interface{}) {
-	t.Helper()
-	b, err := json.Marshal(params)
-	require.NoError(t, err)
-	r.Handle(method, b)
-}
-
-// TestStreamRenderer_TwentyToolBatch is the regression test for the
-// scenario that broke previously: twenty parallel reads, output
-// arriving from the dispatcher before per-tool tool_start has fired,
-// and tool_end events ticking openInvokes back to zero between
-// invokes. The renderer must:
-//
-//   - open a solo for tool 1, upgrade to batch on tool 2
-//   - extend the batch with rows for tools 3..20 (no orphan solos)
-//   - route every chunk of tool_output by tool_call_id (no raw dump)
-//   - keep the batch open until BOTH message_end AND all tool_ends
-//     have arrived (no premature finalize)
-func TestStreamRenderer_TwentyToolBatch(t *testing.T) {
-	r, out := newTestRenderer(t)
-
-	const n = 20
-	const fileBody = "FILECONTENT_LINE_X"
-
-	// Phase 1: the model streams 20 tool_use blocks, all "read" with
-	// the same path arg. We send for each: invoke_start, one delta,
-	// invoke_ready.
-	for i := 0; i < n; i++ {
-		id := fmt.Sprintf("tc_%02d", i)
-		notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
-			ToolCallID: id, ToolName: "read",
-		})
-		notify(t, r, rpc.MethodToolInvokeDelta, rpc.ToolInvokeDeltaParams{
-			ToolCallID: id, PartialJSON: `{"path":"/tmp/x.md"}`,
-		})
-		notify(t, r, rpc.MethodToolInvokeReady, rpc.ToolInvokeReadyParams{
-			ToolCallID: id, ToolName: "read",
-			Arguments: map[string]interface{}{"path": "/tmp/x.md"},
-		})
-	}
-
-	// Phase 2: dispatcher fires tool_start + tool_output (one chunk
-	// per tool) + tool_end for each tool, all BEFORE message_end.
-	// This mirrors the speculative-dispatch reality with Slice A.
-	for i := 0; i < n; i++ {
-		id := fmt.Sprintf("tc_%02d", i)
-		notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
-			ToolCallID: id, ToolName: "read",
-			Arguments: map[string]interface{}{"path": "/tmp/x.md"},
-		})
-		notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
-			ToolCallID: id, ToolName: "read", Chunk: fileBody,
-		})
-		notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
-			ToolCallID: id, ToolName: "read", Result: fileBody,
-		})
-	}
-
-	// Phase 3: model finishes. message_end + message + done.
-	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
-		StopReason: "tool_invoke",
-	})
-	notify(t, r, rpc.MethodMessage, rpc.MessageParams{})
-	notify(t, r, rpc.MethodDone, rpc.DoneParams{Reason: "stop"})
-
-	<-r.Done()
-
-	rendered := stripANSIRendered(out.String())
-	t.Logf("rendered (first 600 chars):\n%s", rendered[:min(600, len(rendered))])
-
-	// The batch header must reflect the full count, not 2.
-	assert.NotContains(t, rendered, "batch (2)",
-		"batch header stuck at (2) — third+ tools weren't appended")
-	// We do want it to mention the full size somewhere.
-	assert.Contains(t, rendered, "(20)",
-		"batch header should reflect the actual tool count (20)")
-
-	// FILECONTENT should not appear as raw dump (it should be
-	// buffered inside the row, only visible on error or omitted on
-	// success). We assert it's NOT plastered as bare lines outside
-	// any batch frame. The batch's success path collapses output;
-	// we'll check no FILECONTENT lines bleed above the batch frame.
-	idx := strings.Index(rendered, "batch")
-	if idx > 0 {
-		preBatch := rendered[:idx]
-		assert.NotContains(t, preBatch, fileBody,
-			"tool_output leaked into the pre-batch area; should have been buffered/routed")
-	}
-}
-
-// TestStreamRenderer_PrematureFinalize is the specific test for the
-// openTools-hits-zero-too-early bug. With tool 1 reaching tool_end
-// before tool 2's tool_start (possible under speculative dispatch),
-// the batch must NOT finalize. Only message_end + all-tools-ended
-// triggers the finalize.
-func TestStreamRenderer_PrematureFinalize(t *testing.T) {
-	r, _ := newTestRenderer(t)
-
-	// Two invokes authored.
-	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
-		ToolCallID: "tc_1", ToolName: "read",
-	})
-	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
-		ToolCallID: "tc_2", ToolName: "read",
-	})
-
-	// Tool 1 fully runs (start+end) before tool 2 even starts.
-	// Pre-fix this would have nil'd the batch.
-	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
-		ToolCallID: "tc_1", ToolName: "read",
-	})
-	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
-		ToolCallID: "tc_1", ToolName: "read", Result: "ok",
-	})
-
-	assert.NotNil(t, r.batch,
-		"batch finalized after tool 1's end while tool 2 still pending — premature finalize bug")
-	assert.False(t, r.roundCommitted,
-		"round must not be committed before message_end")
-
-	// Now finish tool 2 and message_end (in either order).
-	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
-		ToolCallID: "tc_2", ToolName: "read",
-	})
-	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
-		ToolCallID: "tc_2", ToolName: "read", Result: "ok",
-	})
-
-	// Still no message_end → still not committed.
-	assert.NotNil(t, r.batch, "batch finalized before message_end")
-
-	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
-		StopReason: "tool_invoke",
-	})
-
-	// Now it should be finalized.
-	assert.Nil(t, r.batch, "batch should be finalized after message_end + all tool_ends")
-}
-
-// TestStreamRenderer_OutputBeforeStart ensures tool_output arriving
-// before MessageEnd is buffered rather than streamed directly to the
-// solo placeholder. This prevents the leak-above-batch bug: if the
-// CLI later upgrades to batch, anything already streamed to the solo
-// would land above the batch frame.
-func TestStreamRenderer_OutputBeforeStart(t *testing.T) {
-	r, _ := newTestRenderer(t)
-
-	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
-		ToolCallID: "tc_a", ToolName: "read",
-	})
-
-	// Output arrives during the streaming window. Buffer it.
-	notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
-		ToolCallID: "tc_a", ToolName: "read", Chunk: "EARLY_OUTPUT_A",
-	})
-
-	assert.Equal(t, []string{"EARLY_OUTPUT_A"}, r.pendingOutput["tc_a"],
-		"output should buffer pre-MessageEnd so a possible upgrade-to-batch can transplant it")
-
-	// MessageEnd commits solo and flushes.
-	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
-		StopReason: "tool_invoke",
-	})
-	assert.True(t, r.soloCommitted, "soloCommitted must flip on MessageEnd")
-	assert.NotContains(t, r.pendingOutput, "tc_a",
-		"buffer should be empty after MessageEnd flushed the solo")
-
-	// Cleanup.
-	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
-		ToolCallID: "tc_a", ToolName: "read", Result: "done-a",
-	})
-}
-
-// TestStreamRenderer_SoloOutputThenUpgrade captures the real-world
-// interleaving the user reported: tool 1's invoke_start arrives, then
-// tool 1's output starts streaming (because the dispatcher executes
-// speculatively), and only THEN does tool 2's invoke_start arrive
-// to trigger upgradeToBatch. The bug: tool 1's output was written
-// directly to the terminal via solo.Write, so by the time the batch
-// frame opens, the file content is already in scrollback ABOVE the
-// batch frame.
-//
-// Correct behavior: solo output is buffered until either MessageEnd
-// confirms solo (commit and flush) or a second invoke arrives
-// (upgradeToBatch transplants the buffer into row 0). Never write
-// directly to the terminal while we might still upgrade.
-func TestStreamRenderer_SoloOutputThenUpgrade(t *testing.T) {
-	r, out := newTestRenderer(t)
-
-	// Tool 1 invoke + start + a chunk of output.
-	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
-		ToolCallID: "tc_1", ToolName: "read",
-	})
-	notify(t, r, rpc.MethodToolInvokeReady, rpc.ToolInvokeReadyParams{
-		ToolCallID: "tc_1", ToolName: "read",
-		Arguments:  map[string]interface{}{"path": "/tmp/x.md"},
-	})
-	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
-		ToolCallID: "tc_1", ToolName: "read",
-		Arguments:  map[string]interface{}{"path": "/tmp/x.md"},
-	})
-	notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
-		ToolCallID: "tc_1", ToolName: "read",
-		Chunk:      "FILE_CONTENT_OF_TC1",
-	})
-
-	// Now tool 2 arrives — we upgrade to batch.
-	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
-		ToolCallID: "tc_2", ToolName: "read",
-	})
-
-	// At this moment the batch frame has just opened. Look at the
-	// rendered buffer: FILE_CONTENT_OF_TC1 should NOT appear above
-	// the batch frame.
-	rendered := stripANSIRendered(out.String())
-	t.Logf("rendered after upgrade:\n%s", rendered)
-	batchIdx := strings.Index(rendered, "batch")
-	require.Greater(t, batchIdx, 0, "expected a batch frame to be drawn")
-	preBatch := rendered[:batchIdx]
-	assert.NotContains(t, preBatch, "FILE_CONTENT_OF_TC1",
-		"solo's output leaked above the batch frame; should have been buffered until upgrade")
-
-	// Finish both tools.
-	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
-		ToolCallID: "tc_1", ToolName: "read", Result: "FILE_CONTENT_OF_TC1",
-	})
-	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
-		ToolCallID: "tc_2", ToolName: "read",
-	})
-	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
-		ToolCallID: "tc_2", ToolName: "read", Result: "ok",
-	})
-	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
-		StopReason: "tool_invoke",
-	})
-}
-
-// TestStreamRenderer_SingleToolStreams verifies the happy solo path:
-// one tool, output streams during execution, MessageEnd confirms solo,
-// and the output is flushed to the solo at that point (not earlier
-// and not into a buffer that leaks out as orphan).
-func TestStreamRenderer_SingleToolStreams(t *testing.T) {
-	r, out := newTestRenderer(t)
-
-	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
-		ToolCallID: "tc_1", ToolName: "read",
-	})
-	notify(t, r, rpc.MethodToolInvokeReady, rpc.ToolInvokeReadyParams{
-		ToolCallID: "tc_1", ToolName: "read",
-		Arguments:  map[string]interface{}{"path": "/tmp/x.md"},
-	})
-	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
-		ToolCallID: "tc_1", ToolName: "read",
-		Arguments:  map[string]interface{}{"path": "/tmp/x.md"},
-	})
-	notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
-		ToolCallID: "tc_1", ToolName: "read",
-		Chunk:      "SOLO_OUTPUT_PAYLOAD",
-	})
-	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
-		ToolCallID: "tc_1", ToolName: "read", Result: "SOLO_OUTPUT_PAYLOAD",
-	})
-	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
-		StopReason: "tool_invoke",
-	})
-	notify(t, r, rpc.MethodMessage, rpc.MessageParams{})
-	notify(t, r, rpc.MethodDone, rpc.DoneParams{Reason: "stop"})
-	<-r.Done()
-
-	rendered := stripANSIRendered(out.String())
-	assert.Contains(t, rendered, "SOLO_OUTPUT_PAYLOAD",
-		"solo output should render eventually; got %q", rendered)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
 	return b
 }
 
-// TestStreamRenderer_DeltaDuringSuspendIsBuffered guards the bug
-// that lost the first half of the assistant's reply after a tool
-// call. While a tool's solo/batch frame is rendering, sw is
-// suspended; the pacer drainer's writes to sw used to be silently
-// dropped because rawOut != nil. New deltas for the next round
-// would accumulate in the pacer buffer, then the drainer would pop
-// them, see suspended, and discard — leaving the front of the
-// post-tool message missing.
-//
-// Now they're buffered in suspendBuf and flushed into sw on resume.
-func TestStreamRenderer_DeltaDuringSuspendIsBuffered(t *testing.T) {
-	r, out := newTestRenderer(t)
-
-	// Round 1: a quick tool round, no deltas during suspend yet.
-	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
-		ToolCallID: "tc_1", ToolName: "bash",
-	})
-	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
-		ToolCallID: "tc_1", ToolName: "bash",
-	})
-
-	// While suspended, the pacer drainer would have tried to push
-	// deltas — simulate that directly by writing through the paced
-	// writer (this is what the drainer goroutine does).
-	pw := r.PacedOut()
-	_, err := pw.Write([]byte("LATE_TEXT_FRONT"))
-	require.NoError(t, err)
-
-	assert.NotEmpty(t, r.suspendBuf,
-		"pacer write during suspend must buffer, not drop")
-
-	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
-		ToolCallID: "tc_1", ToolName: "bash", Result: "ok",
-	})
-	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
-		StopReason: "tool_invoke",
-	})
-
-	// finalizeRendering ran. suspendBuf should be drained.
-	assert.Empty(t, r.suspendBuf,
-		"suspendBuf should be flushed by finalize")
-
-	rendered := stripANSIRendered(out.String())
-	assert.Contains(t, rendered, "LATE_TEXT_FRONT",
-		"buffered pacer text must appear in rendered output after resume; got %q", rendered)
+func newTestSink() (*plainSink, *bytes.Buffer) {
+	out := &bytes.Buffer{}
+	return &plainSink{out: out, printed: map[int]int{}, doneCh: make(chan struct{}, 1)}, out
 }
 
-// TestStreamRenderer_SoloEmitsRoundTerminator asserts that a solo
-// round (one tool, no upgrade) emits the dim '───' divider line
-// after the solo's closing header. Without it, the next round's
-// content (a text reply, status line, the next round's solo header)
-// snaps flush against the previous solo's closer with no visual
-// breathing room. Older code emitted this terminator inside
-// MethodToolEnd; the refactor moved finalize to commitRoundIfReady
-// and the terminator was dropped along the way.
-func TestStreamRenderer_SoloEmitsRoundTerminator(t *testing.T) {
-	r, out := newTestRenderer(t)
+func TestPlainSink_AssistantStreamsThenSeals(t *testing.T) {
+	s, out := newTestSink()
 
-	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
-		ToolCallID: "tc_1", ToolName: "bash",
-	})
-	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
-		ToolCallID: "tc_1", ToolName: "bash",
-	})
-	notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
-		ToolCallID: "tc_1", ToolName: "bash", Chunk: "some output\n",
-	})
-	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
-		ToolCallID: "tc_1", ToolName: "bash", Result: "some output\n",
-	})
-	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
-		StopReason: "tool_invoke",
-	})
+	// Full-mode open frames carry the whole message each time; the sink
+	// must emit only the new suffix, never re-printing.
+	s.handle(rpc.MethodLogOpen, mustParams(t, rpc.OpenEntry{
+		Index: 2, Version: 1, Open: true,
+		Message: message.Message{Role: message.RoleAssistant, Content: []message.Content{{Type: message.ContentText, Text: "Hel"}}},
+	}))
+	s.handle(rpc.MethodLogOpen, mustParams(t, rpc.OpenEntry{
+		Index: 2, Version: 2, Open: true,
+		Message: message.Message{Role: message.RoleAssistant, Content: []message.Content{{Type: message.ContentText, Text: "Hello, wor"}}},
+	}))
+	s.handle(rpc.MethodLogEntry, mustParams(t, rpc.LogEntry{
+		Index: 2,
+		Message: message.Message{Role: message.RoleAssistant, Content: []message.Content{{Type: message.ContentText, Text: "Hello, world"}}},
+	}))
 
-	// At this point finalizeRendering should have run: solo.Done
-	// wrote the closing header, then we emit the '───' divider.
-	rendered := stripANSIRendered(out.String())
-	count := strings.Count(rendered, "───")
-	assert.GreaterOrEqual(t, count, 2,
-		"expected at least two '───' occurrences (solo header brackets + round terminator); got %d in:\n%s",
-		count, rendered)
+	assert.Equal(t, "Hello, world", out.String())
 }
 
-// TestStreamRenderer_FirstToolEndsBeforeUpgrade nails the exact bug
-// the user reported visually as "row 1 stuck spinning forever". The
-// dispatcher fires tool 1's tool_end (with the file content) before
-// the model's stream has emitted tool 2's invoke_start. With my
-// previous renderer, tool 1's end was dropped on the floor:
-//
-//   - r.batch == nil (no upgrade yet)
-//   - r.soloCommitted == false (no MessageEnd yet)
-//
-// Both branches in MethodToolEnd skip, openInvokes decrements, and
-// the result text is gone. When tool 2's invoke later triggers
-// upgradeToBatch, row 1 is created in toolRowPending and never gets
-// MarkDone'd because the end already came and went.
-//
-// Correct behavior: buffer pending ends (the result + isError) keyed
-// by id; flush into the matching row on upgradeToBatch or solo
-// commit.
-func TestStreamRenderer_FirstToolEndsBeforeUpgrade(t *testing.T) {
-	r, _ := newTestRenderer(t)
+func TestPlainSink_SkipsUserPromptTic(t *testing.T) {
+	s, out := newTestSink()
 
-	// Tool 1: full lifecycle while still in solo (no upgrade yet).
-	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
-		ToolCallID: "tc_1", ToolName: "read",
-	})
-	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
-		ToolCallID: "tc_1", ToolName: "read",
-	})
-	notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
-		ToolCallID: "tc_1", ToolName: "read", Chunk: "file content",
-	})
-	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
-		ToolCallID: "tc_1", ToolName: "read", Result: "file content",
-	})
+	// A user prompt tic must not be echoed back.
+	s.handle(rpc.MethodLogEntry, mustParams(t, rpc.LogEntry{
+		Index:   1,
+		Message: message.Message{Role: message.RoleUser, Content: []message.Content{{Type: message.ContentText, Text: "what is 2+2?"}}},
+	}))
+	// The assistant reply is rendered.
+	s.handle(rpc.MethodLogEntry, mustParams(t, rpc.LogEntry{
+		Index:   2,
+		Message: message.Message{Role: message.RoleAssistant, Content: []message.Content{{Type: message.ContentText, Text: "4"}}},
+	}))
 
-	// Tool 2 arrives — upgrade to batch.
-	notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
-		ToolCallID: "tc_2", ToolName: "read",
-	})
-
-	require.NotNil(t, r.batch, "expected batch after second invoke")
-	// Row 1 (tc_1) must have absorbed its pending end — not still
-	// be in toolRowPending or toolRowRunning.
-	idx, ok := r.batch.rowIndex["tc_1"]
-	require.True(t, ok, "row for tc_1 should exist in batch")
-	row := r.batch.rows[idx]
-	assert.NotEqual(t, toolRowPending, row.state,
-		"row 1 must not still be Pending after upgrade absorbed its end")
-	assert.NotEqual(t, toolRowRunning, row.state,
-		"row 1 must not still be Running after upgrade absorbed its end")
-	assert.Equal(t, toolRowOK, row.state,
-		"row 1's end fired before upgrade; should be OK after transplant")
-
-	// Finish tool 2 + MessageEnd; whole round should finalize cleanly.
-	notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
-		ToolCallID: "tc_2", ToolName: "read",
-	})
-	notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
-		ToolCallID: "tc_2", ToolName: "read", Result: "ok",
-	})
-	notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
-		StopReason: "tool_invoke",
-	})
-	assert.Nil(t, r.batch, "batch should be finalized")
+	assert.Equal(t, "4", out.String())
 }
 
-// TestStreamRenderer_PacerSuspendRace hammers the very race the panic
-// originally surfaced: the pacer drainer ticking concurrently with a
-// suspend transition driven by Handle(). In production Handle() is
-// invoked from a single goroutine (the JSON-RPC notify pump), so we
-// model that here — only the pacer drainer is the concurrent
-// adversary. The test pumps text deltas in via Handle (which calls
-// pace.Push), then transitions into and out of suspend repeatedly.
-//
-// If writeMu serialization is complete, this test panics-free. If a
-// path was missed, it'll trip largo's panic.
-func TestStreamRenderer_PacerSuspendRace(t *testing.T) {
-	if testing.Short() {
-		t.Skip("stress race test")
+func TestPlainSink_ToolResultOutput(t *testing.T) {
+	s, out := newTestSink()
+
+	// Tool execution streams as an open tool_result message (role user).
+	s.handle(rpc.MethodLogOpen, mustParams(t, rpc.OpenEntry{
+		Index: 3, Version: 1, Open: true,
+		Message: message.Message{Role: message.RoleUser, Content: []message.Content{
+			{Type: message.ContentToolResult, ToolCallID: "tc_1", ToolName: "bash", Text: "line1\n"},
+		}},
+	}))
+	s.handle(rpc.MethodLogEntry, mustParams(t, rpc.LogEntry{
+		Index: 3,
+		Message: message.Message{Role: message.RoleUser, Content: []message.Content{
+			{Type: message.ContentToolResult, ToolCallID: "tc_1", ToolName: "bash", Text: "line1\nline2\n"},
+		}},
+	}))
+
+	assert.Equal(t, "line1\nline2\n", out.String())
+}
+
+func TestPlainSink_AbortDropsOpenTail(t *testing.T) {
+	s, out := newTestSink()
+
+	s.handle(rpc.MethodLogOpen, mustParams(t, rpc.OpenEntry{
+		Index: 2, Version: 1, Open: true,
+		Message: message.Message{Role: message.RoleAssistant, Content: []message.Content{{Type: message.ContentText, Text: "partial"}}},
+	}))
+	s.handle(rpc.MethodLogAbort, mustParams(t, rpc.AbortEntry{Index: 2, Reason: "user_interrupt"}))
+	// A fresh message reuses the burned index; its content renders cleanly.
+	s.handle(rpc.MethodLogEntry, mustParams(t, rpc.LogEntry{
+		Index:   2,
+		Message: message.Message{Role: message.RoleAssistant, Content: []message.Content{{Type: message.ContentText, Text: "fresh"}}},
+	}))
+
+	assert.Equal(t, "partialfresh", out.String())
+}
+
+func TestPlainSink_TurnDoneSignals(t *testing.T) {
+	s, _ := newTestSink()
+
+	s.handle(rpc.MethodTurnDone, mustParams(t, rpc.DoneEntry{Reason: "stop"}))
+	select {
+	case <-s.doneCh:
+	default:
+		t.Fatal("turn.done did not signal doneCh")
 	}
+	assert.False(t, s.sawError)
+}
 
-	out := &safeBuf{}
-	sw, err := largo.NewWriter(out, largo.Options{})
-	require.NoError(t, err)
-	r := newStreamRenderer(context.Background(), sw)
-	pace := pacer.New(r.PacedOut(), pacer.Options{
-		TargetCPS:       10000,
-		FirstByteBypass: 0,
-	})
-	r.SetPacer(pace)
-	t.Cleanup(func() { pace.Close() })
-
-	defer func() {
-		if rec := recover(); rec != nil {
-			t.Fatalf("renderer panicked under pacer/suspend race: %v", rec)
-		}
-	}()
-
-	deadline := time.After(200 * time.Millisecond)
-	turn := 0
-	for {
-		select {
-		case <-deadline:
-			return
-		default:
-		}
-		// Stream some text deltas (the pacer drainer ticks in the
-		// background, writing to sw).
-		for i := 0; i < 5; i++ {
-			notify(t, r, rpc.MethodDelta, rpc.DeltaParams{
-				Text: "streaming text ", ContentType: "text",
-			})
-		}
-		// Now a tool invocation: suspendIfNeeded fires inside Handle.
-		id := fmt.Sprintf("tc_%d", turn)
-		notify(t, r, rpc.MethodToolInvokeStart, rpc.ToolInvokeStartParams{
-			ToolCallID: id, ToolName: "read",
-		})
-		notify(t, r, rpc.MethodToolStart, rpc.ToolStartParams{
-			ToolCallID: id, ToolName: "read",
-		})
-		notify(t, r, rpc.MethodToolOutput, rpc.ToolOutputParams{
-			ToolCallID: id, ToolName: "read", Chunk: "chunk",
-		})
-		notify(t, r, rpc.MethodToolEnd, rpc.ToolEndParams{
-			ToolCallID: id, ToolName: "read", Result: "chunk",
-		})
-		notify(t, r, rpc.MethodMessageEnd, rpc.MessageEndParams{
-			StopReason: "tool_invoke",
-		})
-		notify(t, r, rpc.MethodMessage, rpc.MessageParams{})
-		turn++
-	}
+func TestPlainSink_TurnDoneError(t *testing.T) {
+	s, _ := newTestSink()
+	s.handle(rpc.MethodTurnDone, mustParams(t, rpc.DoneEntry{Reason: "error: boom"}))
+	assert.True(t, s.sawError)
 }

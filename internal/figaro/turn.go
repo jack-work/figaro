@@ -20,96 +20,72 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// turnBus is the per-turn provider.Bus. Buffered channels, never-block
-// pushes. Closed after provider.Send returns.
+// busEventKind tags one ordered event from the provider Bus.
+type busEventKind int
+
+const (
+	evDelta     busEventKind = iota // text/thinking content delta
+	evToolStart                     // tool_invoke block opened
+	evToolArgs                      // tool_invoke partial argument JSON
+	evToolReady                     // tool_invoke arguments decoded
+	evFigaro                        // assembled message (provider appended it)
+)
+
+// busEvent is one provider Bus call, carried in order to the drain
+// loop so it can fold the open tail message single-threaded.
+type busEvent struct {
+	kind    busEventKind
+	content message.Content
+	id      string
+	name    string
+	partial string
+	args    map[string]interface{}
+	msg     message.Message
+}
+
+// turnBus is the per-turn provider.Bus. events carries the ordered
+// stream the drain loop folds into the open tail; toolsReady feeds the
+// speculative dispatcher. events is blocking (no drop) so the open
+// message never loses content; toolsReady is best-effort (the post-stream
+// reconciliation re-dispatches any dropped call).
 type turnBus struct {
-	deltas     chan message.Content
-	figs       chan message.Message
-	notifs     chan rpc.Notification
+	events     chan busEvent
 	toolsReady chan message.Content
 }
 
 func newTurnBus() *turnBus {
 	return &turnBus{
-		deltas:     make(chan message.Content, 64),
-		figs:       make(chan message.Message, 4),
-		notifs:     make(chan rpc.Notification, 256),
+		events:     make(chan busEvent, 256),
 		toolsReady: make(chan message.Content, 64),
 	}
 }
 
-func (b *turnBus) PushDelta(c message.Content) {
-	select {
-	case b.deltas <- c:
-	default:
-		// Drop if full.
-	}
-}
+func (b *turnBus) PushDelta(c message.Content) { b.events <- busEvent{kind: evDelta, content: c} }
 
-func (b *turnBus) PushFigaro(m message.Message) {
-	b.figs <- m
-}
+func (b *turnBus) PushFigaro(m message.Message) { b.events <- busEvent{kind: evFigaro, msg: m} }
 
 func (b *turnBus) PushToolInvokeStart(toolCallID, toolName string) {
-	b.pushNotif(rpc.Notification{
-		JSONRPC: "2.0",
-		Method:  rpc.MethodToolInvokeStart,
-		Params:  rpc.ToolInvokeStartParams{ToolCallID: toolCallID, ToolName: toolName},
-	})
+	b.events <- busEvent{kind: evToolStart, id: toolCallID, name: toolName}
 }
 
 func (b *turnBus) PushToolInvokeDelta(toolCallID, partialJSON string) {
-	b.pushNotif(rpc.Notification{
-		JSONRPC: "2.0",
-		Method:  rpc.MethodToolInvokeDelta,
-		Params:  rpc.ToolInvokeDeltaParams{ToolCallID: toolCallID, PartialJSON: partialJSON},
-	})
+	b.events <- busEvent{kind: evToolArgs, id: toolCallID, partial: partialJSON}
 }
 
-// PushMessageEnd fans out the wire-level message_end notification
-// announcing the stop reason. Fires before PushFigaro so the CLI has
-// the metadata it needs to settle rendering decisions (solo vs
-// batch) before the full payload arrives.
-func (b *turnBus) PushMessageEnd(stopReason string) {
-	b.pushNotif(rpc.Notification{
-		JSONRPC: "2.0",
-		Method:  rpc.MethodMessageEnd,
-		Params:  rpc.MessageEndParams{StopReason: stopReason},
-	})
-}
+// PushMessageEnd is a no-op under the log.* model: the stop reason rides
+// the sealed message.Message (log.entry), so there is no separate
+// pre-seal metadata frame.
+func (b *turnBus) PushMessageEnd(string) {}
 
-func (b *turnBus) pushNotif(n rpc.Notification) {
-	select {
-	case b.notifs <- n:
-	default:
-		// Drop if full.
-	}
-}
-
-// PushToolReady is the speculative-dispatch hook: providers call this
-// at content_block_stop on a tool_use block so the harness can start
-// executing the tool before the stream finishes. Best-effort; harness
-// also reconciles against the final assembled message in PushFigaro.
-//
-// Also fans out a MethodToolInvokeReady wire notification so the CLI
-// learns that the model has finished authoring this invocation — the
-// signal it uses to settle solo-vs-batch rendering decisions.
+// PushToolReady records the decoded invocation in the open message and
+// arms speculative dispatch.
 func (b *turnBus) PushToolReady(call message.Content) {
-	b.pushNotif(rpc.Notification{
-		JSONRPC: "2.0",
-		Method:  rpc.MethodToolInvokeReady,
-		Params: rpc.ToolInvokeReadyParams{
-			ToolCallID: call.ToolCallID,
-			ToolName:   call.ToolName,
-			Arguments:  call.Arguments,
-		},
-	})
+	b.events <- busEvent{kind: evToolReady, id: call.ToolCallID, name: call.ToolName, args: call.Arguments}
 	select {
 	case b.toolsReady <- call:
 	default:
-		// Buffer full — drop. The post-stream reconciliation pass
-		// in driveOneRound will dispatch any tool_calls in lastFig
-		// that we didn't dispatch speculatively.
+		// Buffer full — drop. driveOneRound re-dispatches any call in
+		// the sealed assistant message that wasn't dispatched here.
 	}
 }
 
@@ -212,12 +188,15 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// IR still has a dangling tool_use at the tail. Boot-time repair
 	// usually catches this, but cover the case where the boot check
 	// missed (e.g. dangling state appeared after boot).
-	appendInterruptSentinelIfDangling(a.figLog, a.id)
-	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
-		a.fanOutError(fmt.Sprintf("append user tic: %s", err))
-		a.endTurn("error: append tic")
+	if sentinel, ok := appendInterruptSentinelIfDangling(a.figLog, a.id); ok {
+		a.fanLogEntry(sentinel)
+	}
+	stamped, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic})
+	if err != nil {
+		a.endTurn(fmt.Sprintf("error: append tic: %s", err))
 		return
 	}
+	a.fanLogEntry(stamped)
 
 	// Drive: provider -> tools -> repeat.
 	for {
@@ -228,13 +207,16 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	}
 }
 
-// driveOneRound runs one provider.Send + tool dispatch cycle.
-// Returns true when the turn is complete, false when more rounds needed.
+// driveOneRound runs one provider.Send + tool dispatch cycle. The
+// assistant reply streams as an open message that seals into a log
+// entry; if it called tools, their execution streams as an open
+// tool_result message that seals in turn. Returns true when the turn
+// is complete, false when another round is needed.
 func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	bus := newTurnBus()
 	in := provider.SendInput{
 		AriaID:    a.id,
-		FigLog: a.figLog,
+		FigLog:    a.figLog,
 		Snapshot:  a.chalkboard.Snapshot(),
 		Tools:     a.toolDefs(),
 		MaxTokens: a.chalkboardInt("system.max_tokens"),
@@ -245,9 +227,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 			if r := recover(); r != nil {
 				sendDone <- fmt.Errorf("provider send panic: %v\n%s", r, debug.Stack())
 			}
-			close(bus.deltas)
-			close(bus.figs)
-			close(bus.notifs)
+			close(bus.events)
 			close(bus.toolsReady)
 		}()
 		started := time.Now()
@@ -259,11 +239,16 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		sendDone <- err
 	}()
 
+	// Provisional index for the assistant message. Gapless single-writer:
+	// the provider appends at exactly tail+1.
+	assistantIdx := a.nextIndex()
+
 	// Speculative tool dispatcher: every PushToolReady kicks off the
 	// tool's goroutine immediately, in parallel with the still-running
-	// LLM stream. Results land in `spec` keyed by tool_call_id; the
-	// post-stream collector in runTools reconciles against lastFig.
-	spec := newSpecDispatcher()
+	// LLM stream. Tool lifecycle events flow back through toolEvents so
+	// the drain loop folds them into one open tool_result message.
+	toolEvents := make(chan toolEvent, 64)
+	spec := newSpecDispatcher(toolEvents)
 	specDone := make(chan struct{})
 	go func() {
 		defer close(specDone)
@@ -275,93 +260,72 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		}
 	}()
 
-	// Drain deltas + notifs + figaro. Wire-order: MethodMessage must
-	// arrive after all MethodDelta/MethodToolInvoke*/MethodMessageEnd
-	// for the turn. PushFigaro is the producer's last act, so when we
-	// see a fig we drain remaining deltas/notifs before fanning out
-	// MethodMessage.
-	var lastFig message.Message
-	drainPreFigOnce := func() {
-		for {
-			select {
-			case d, ok := <-bus.deltas:
-				if !ok {
-					bus.deltas = nil
-					continue
-				}
-				if !a.isInterrupted() {
-					a.fanOut(rpc.Notification{
-						JSONRPC: "2.0",
-						Method:  rpc.MethodDelta,
-						Params:  rpc.DeltaParams{Text: d.Text, ContentType: d.Type},
-					})
-				}
-			case n, ok := <-bus.notifs:
-				if !ok {
-					bus.notifs = nil
-					continue
-				}
-				if !a.isInterrupted() {
-					a.fanOut(n)
-				}
-			default:
-				return
-			}
-		}
-	}
-	for bus.deltas != nil || bus.figs != nil || bus.notifs != nil {
+	// Phase 1: fold the assistant stream into an open message. Tool
+	// lifecycle events that arrive speculatively (before the assistant
+	// seals) are buffered — at most one message is open at a time.
+	ab := newOpenBuilder(assistantIdx, message.RoleAssistant)
+	var toolBuf []toolEvent
+	events := bus.events
+	for events != nil {
 		select {
-		case d, ok := <-bus.deltas:
+		case ev, ok := <-events:
 			if !ok {
-				bus.deltas = nil
+				events = nil
 				continue
 			}
-			if !a.isInterrupted() {
-				a.fanOut(rpc.Notification{
-					JSONRPC: "2.0",
-					Method:  rpc.MethodDelta,
-					Params:  rpc.DeltaParams{Text: d.Text, ContentType: d.Type},
-				})
+			switch ev.kind {
+			case evDelta:
+				ab.addText(ev.content.Type, ev.content.Text)
+			case evToolStart:
+				ab.toolOpen(ev.id, ev.name)
+			case evToolArgs:
+				ab.toolArgs(ev.id, ev.partial)
+			case evToolReady:
+				ab.toolReady(ev.id, ev.name, ev.args)
+			case evFigaro:
+				// Provider has appended; the seal is handled after the
+				// loop from the durable tail.
 			}
-		case n, ok := <-bus.notifs:
-			if !ok {
-				bus.notifs = nil
-				continue
+			if !a.isInterrupted() && ab.dirty() {
+				a.fanOpen(ab)
 			}
-			if !a.isInterrupted() {
-				a.fanOut(n)
-			}
-		case m, ok := <-bus.figs:
-			if !ok {
-				bus.figs = nil
-				continue
-			}
-			// Drain remaining deltas before fanning out MethodMessage.
-			if bus.deltas != nil || bus.notifs != nil {
-				drainPreFigOnce()
-			}
-			lastFig = m
-			a.fanOutFigaro(m)
+		case te := <-toolEvents:
+			toolBuf = append(toolBuf, te)
 		}
 	}
 	sendErr := <-sendDone
 
+	// Seal the assistant message from the durable tail.
+	var lastFig message.Message
+	sealEntry, sealed := a.sealedTail(assistantIdx, message.RoleAssistant)
+	if sealed {
+		lastFig = sealEntry.Payload
+		a.fanLogEntry(sealEntry)
+	}
+
 	if a.isInterrupted() {
-		a.fanOutError("interrupted")
+		if !sealed {
+			a.fanAbort(assistantIdx, string(message.InterruptUserInterrupt))
+		}
 		a.endTurn("interrupted")
 		return true
 	}
 	if sendErr != nil {
-		a.fanOutError(sendErr.Error())
+		if !sealed {
+			a.fanAbort(assistantIdx, string(message.InterruptFault))
+		}
 		a.endTurn("error: " + sendErr.Error())
 		return true
 	}
-
+	if !sealed {
+		// Empty response: the provider returned without appending.
+		<-specDone
+		a.endTurn(string(message.StopEnd))
+		return true
+	}
 
 	calls := assistantToolInvokes(lastFig)
 	if len(calls) == 0 {
-		// No tools to run; drain the speculative dispatcher (it shouldn't
-		// have anything, since no tool_use blocks landed) and finish.
 		<-specDone
 		stopReason := lastFig.StopReason
 		if stopReason == "" {
@@ -371,46 +335,153 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		return true
 	}
 
-	// Wait for the speculative dispatcher to consume the closed
-	// toolsReady channel (it's only closed once Send returns, which is
-	// already true at this point). After this point spec.results is
-	// safe to read for any ID we know about.
+	// Wait for the speculative dispatcher to drain toolsReady (closed
+	// once Send returned, already true here).
 	<-specDone
 
-	results := a.runTools(turnCtx, calls, spec)
+	// Phase 2: tool execution as an open tool_result message at the
+	// next index.
+	resultTic := a.streamToolResults(turnCtx, assistantIdx+1, calls, spec, toolEvents, toolBuf)
 
-	// Always append tool_results to match tool_use blocks, even on
-	// interrupt. Fill missing slots with synthetic error results.
+	stamped, err := a.figLog.Append(store.Entry[message.Message]{Payload: resultTic})
+	if err != nil {
+		a.fanAbort(assistantIdx+1, string(message.InterruptFault))
+		a.endTurn(fmt.Sprintf("error: append tool_result: %s", err))
+		return true
+	}
+	a.fanLogEntry(stamped)
+
+	if a.isInterrupted() {
+		a.endTurn("interrupted")
+		return true
+	}
+	return false
+}
+
+// streamToolResults dispatches every call (idempotent), folds the
+// tools' execution lifecycle into one open tool_result message at
+// resultIdx, and returns the sealed tool_result tic in canonical
+// (calls) order. toolBuf holds events that arrived during phase 1.
+func (a *Agent) streamToolResults(
+	turnCtx context.Context,
+	resultIdx uint64,
+	calls []message.Content,
+	spec *specDispatcher,
+	toolEvents chan toolEvent,
+	toolBuf []toolEvent,
+) message.Message {
+	expect := make(map[string]bool, len(calls))
+	for _, tc := range calls {
+		if p := spec.dispatch(turnCtx, a, tc); p != nil {
+			expect[tc.ToolCallID] = true
+		}
+	}
+
+	rb := newOpenBuilder(resultIdx, message.RoleUser)
+	for _, tc := range calls {
+		if expect[tc.ToolCallID] {
+			rb.resultOpen(tc.ToolCallID, tc.ToolName)
+		}
+	}
+	if !a.isInterrupted() && rb.dirty() {
+		a.fanOpen(rb)
+	}
+
+	outcomes := make(map[string]toolOutcome, len(calls))
+	process := func(te toolEvent) {
+		switch te.kind {
+		case toolBegin:
+			// Block already opened above.
+		case toolChunk:
+			rb.resultChunk(te.id, te.chunk)
+		case toolEnd:
+			rb.resultFinal(te.id, te.final)
+			outcomes[te.id] = te.outcome
+		}
+		if !a.isInterrupted() && rb.dirty() {
+			a.fanOpen(rb)
+		}
+	}
+	for _, te := range toolBuf {
+		process(te)
+	}
+	for len(outcomes) < len(expect) {
+		te, ok := <-toolEvents
+		if !ok {
+			break
+		}
+		process(te)
+	}
+
+	results := make([]message.Content, len(calls))
+	for i, tc := range calls {
+		if !expect[tc.ToolCallID] {
+			results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, "Error: missing tool_call_id", true)
+			continue
+		}
+		oc := outcomes[tc.ToolCallID]
+		var text string
+		for _, c := range oc.content {
+			if c.Type == message.ContentText {
+				text += c.Text
+			}
+		}
+		results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, text, oc.isErr)
+	}
+	// On interrupt, any tool that never produced a result gets a
+	// synthetic error so the tool_use/tool_result pairing stays intact.
 	if a.isInterrupted() {
 		for i, tc := range calls {
 			if results[i].Type == "" {
 				results[i] = message.ToolResultContent(
 					tc.ToolCallID, tc.ToolName,
-					"interrupted: tool execution was cancelled",
-					true,
-				)
+					"interrupted: tool execution was cancelled", true)
 			}
 		}
 	}
-
-
-	resultTic := message.Message{
+	return message.Message{
 		Role:      message.RoleUser,
 		Content:   results,
 		Timestamp: time.Now().UnixMilli(),
 	}
-	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: resultTic}); err != nil {
-		a.fanOutError(fmt.Sprintf("append tool_result tic: %s", err))
-		a.endTurn("error: append tool_result")
-		return true
-	}
+}
 
-	if a.isInterrupted() {
-		a.fanOutError("interrupted")
-		a.endTurn("interrupted")
-		return true
+// nextIndex returns the LT the next appended message will occupy.
+func (a *Agent) nextIndex() uint64 {
+	if e, ok := a.figLog.PeekTail(); ok {
+		return e.LT + 1
 	}
-	return false
+	return 1
+}
+
+// sealedTail returns the durable tail entry iff it sits at expectIdx
+// with the expected role — i.e. the provider actually appended it.
+func (a *Agent) sealedTail(expectIdx uint64, role message.Role) (store.Entry[message.Message], bool) {
+	e, ok := a.figLog.PeekTail()
+	if !ok || e.LT != expectIdx || e.Payload.Role != role {
+		return store.Entry[message.Message]{}, false
+	}
+	return e, true
+}
+
+// toolEventKind tags one tool execution lifecycle event.
+type toolEventKind int
+
+const (
+	toolBegin toolEventKind = iota
+	toolChunk
+	toolEnd
+)
+
+// toolEvent carries one tool's execution lifecycle back to the drain
+// loop, which folds it into the open tool_result message.
+type toolEvent struct {
+	kind    toolEventKind
+	id      string
+	name    string
+	chunk   string
+	final   message.Content // toolEnd: the sealed tool_result block
+	outcome toolOutcome     // toolEnd: raw content for IR assembly
 }
 
 // toolOutcome holds the result of a single dispatched tool execution.
@@ -427,31 +498,24 @@ type toolPending struct {
 }
 
 // specDispatcher kicks off tool executions as soon as a provider
-// signals PushToolReady, well before the LLM stream completes. It is
-// the producer half of Slice A's parallelism story; runTools is the
-// consumer that emits the wire notifications in canonical order.
-//
-// Dispatch is idempotent per tool_call_id: a second call with the same
-// ID is a no-op. This lets runTools' reconciliation pass call
-// dispatch() for every call in lastFig without worrying about whether
-// the provider already emitted PushToolReady for it.
+// signals PushToolReady, well before the LLM stream completes, and
+// reports each tool's lifecycle on events. Dispatch is idempotent per
+// tool_call_id, so the post-stream reconciliation pass can call
+// dispatch() for every call without double-launching.
 type specDispatcher struct {
 	mu      sync.Mutex
 	pending map[string]*toolPending
+	events  chan toolEvent
 }
 
-func newSpecDispatcher() *specDispatcher {
-	return &specDispatcher{pending: make(map[string]*toolPending)}
+func newSpecDispatcher(events chan toolEvent) *specDispatcher {
+	return &specDispatcher{pending: make(map[string]*toolPending), events: events}
 }
 
-// dispatch launches a goroutine for tc unless one is already in
-// flight for that tool_call_id. Returns the toolPending so callers
-// can wait on completion. The goroutine owns the full wire-level
-// execution lifecycle for this tool: it fans out MethodToolStart,
-// streams MethodToolOutput chunks from the tool's onChunk, then
-// fans out MethodToolEnd before signaling completion via p.done.
-// runTools only consumes the resulting toolPending for IR assembly
-// — it does not emit wire events for execution.
+// dispatch launches a goroutine for tc unless one is already in flight
+// for that tool_call_id. The goroutine runs the tool and reports
+// toolBegin / toolChunk / toolEnd on s.events; the drain loop folds
+// those into the open tool_result message.
 func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.Content) *toolPending {
 	if tc.Type != message.ContentToolInvoke || tc.ToolCallID == "" {
 		return nil
@@ -472,36 +536,30 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 			attribute.String("tool_call_id", tc.ToolCallID),
 			attribute.Bool("speculative", true),
 		)
+		s.events <- toolEvent{kind: toolBegin, id: tc.ToolCallID, name: tc.ToolName}
 
-		// Execution-lifecycle wire: tool_start fires the moment we
-		// begin running. Output streams from onChunk. tool_end fires
-		// just before we signal completion. This is what makes the
-		// CLI see "tool 1 started, tool 1 finished" interleaved with
-		// other tools whose invokes are still arriving — the wire
-		// reflects execution truth.
-		a.fanOut(rpc.Notification{
-			JSONRPC: "2.0",
-			Method:  rpc.MethodToolStart,
-			Params: rpc.ToolStartParams{
-				ToolCallID: tc.ToolCallID,
-				ToolName:   tc.ToolName,
-				Arguments:  tc.Arguments,
-			},
-		})
+		emitEnd := func(oc toolOutcome) {
+			var text string
+			for _, c := range oc.content {
+				if c.Type == message.ContentText {
+					text += c.Text
+				}
+			}
+			p.outcome = oc
+			s.events <- toolEvent{
+				kind:    toolEnd,
+				id:      tc.ToolCallID,
+				name:    tc.ToolName,
+				final:   message.ToolResultContent(tc.ToolCallID, tc.ToolName, text, oc.isErr),
+				outcome: oc,
+			}
+		}
 
 		t, ok := a.tools.Get(tc.ToolName)
 		if !ok {
-			p.outcome = toolOutcome{
+			emitEnd(toolOutcome{
 				content: []message.Content{message.TextContent(fmt.Sprintf("Unknown tool: %s", tc.ToolName))},
 				isErr:   true,
-			}
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodToolEnd,
-				Params: rpc.ToolEndParams{
-					ToolCallID: tc.ToolCallID, ToolName: tc.ToolName,
-					Result: fmt.Sprintf("Unknown tool: %s", tc.ToolName), IsError: true,
-				},
 			})
 			return
 		}
@@ -518,15 +576,7 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 					attribute.Int("bytes", len(chunk)),
 				)
 			}
-			a.fanOut(rpc.Notification{
-				JSONRPC: "2.0",
-				Method:  rpc.MethodToolOutput,
-				Params: rpc.ToolOutputParams{
-					ToolCallID: tc.ToolCallID,
-					ToolName:   tc.ToolName,
-					Chunk:      string(chunk),
-				},
-			})
+			s.events <- toolEvent{kind: toolChunk, id: tc.ToolCallID, name: tc.ToolName, chunk: string(chunk)}
 		}
 		figOtel.Event(turnCtx, "agent.tool.execute_pre",
 			attribute.String("tool", tc.ToolName),
@@ -538,109 +588,73 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 			attribute.String("tool_call_id", tc.ToolCallID),
 			attribute.Bool("err", err != nil),
 		)
-		var resultText string
-		var isErr bool
 		if err != nil {
-			resultText = fmt.Sprintf("Error: %s", err)
-			isErr = true
-			p.outcome = toolOutcome{
-				content: []message.Content{message.TextContent(resultText)},
+			emitEnd(toolOutcome{
+				content: []message.Content{message.TextContent(fmt.Sprintf("Error: %s", err))},
 				isErr:   true,
-			}
-		} else {
-			for _, c := range content {
-				if c.Type == message.ContentText {
-					resultText += c.Text
-				}
-			}
-			p.outcome = toolOutcome{content: content, isErr: false}
+			})
+			return
 		}
-
-		a.fanOut(rpc.Notification{
-			JSONRPC: "2.0",
-			Method:  rpc.MethodToolEnd,
-			Params: rpc.ToolEndParams{
-				ToolCallID: tc.ToolCallID,
-				ToolName:   tc.ToolName,
-				Result:     resultText,
-				IsError:    isErr,
-			},
-		})
+		emitEnd(toolOutcome{content: content, isErr: false})
 	}()
 	return p
 }
 
-// runTools assembles tool_result content blocks in canonical order
-// for the next user-role tic. It does not emit wire events — the
-// speculative dispatcher owns the entire execution-lifecycle wire
-// (MethodToolStart, MethodToolOutput, MethodToolEnd) from inside
-// each tool's goroutine. Any call that wasn't speculatively
-// dispatched (provider didn't emit PushToolReady, or the buffer
-// dropped it) is dispatched here as a fallback.
-func (a *Agent) runTools(turnCtx context.Context, calls []message.Content, spec *specDispatcher) []message.Content {
-	pendings := make([]*toolPending, len(calls))
-	for i, tc := range calls {
-		pendings[i] = spec.dispatch(turnCtx, a, tc)
-	}
+// --- fan-out helpers (log.* frames) ---
 
-	results := make([]message.Content, len(calls))
-	for i, tc := range calls {
-		p := pendings[i]
-		if p == nil {
-			// Malformed call (no ID); synthesize an error result. The
-			// dispatcher refused this call, so no wire events were
-			// emitted for it — leave it that way; the IR still gets
-			// a well-formed pair.
-			results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName,
-				"Error: missing tool_call_id", true)
-			continue
-		}
-		<-p.done
-		var resultText string
-		for _, c := range p.outcome.content {
-			if c.Type == message.ContentText {
-				resultText += c.Text
-			}
-		}
-		results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, resultText, p.outcome.isErr)
-	}
-	return results
+// fanOpen publishes the current open-tail state as a full-mode
+// OpenEntry and records it on the agent for follow-reads and recovery.
+func (a *Agent) fanOpen(b *openBuilder) {
+	e := b.snapshot()
+	a.mu.Lock()
+	a.openIdx = e.Index
+	a.openVer = e.Version
+	a.openMsg = e.Message
+	a.openLive = true
+	a.mu.Unlock()
+	a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodLogOpen, Params: e})
 }
 
-
-func (a *Agent) fanOutFigaro(m message.Message) {
-	tail, ok := a.figLog.PeekTail()
-	if !ok {
-		return
+// fanLogEntry publishes a sealed message and clears the open slot if
+// this entry seals it.
+func (a *Agent) fanLogEntry(e store.Entry[message.Message]) {
+	m := e.Payload
+	m.LogicalTime = e.LT
+	a.mu.Lock()
+	if a.openIdx == e.LT {
+		a.clearOpenLocked()
 	}
-	stamped := tail.Payload
-	stamped.LogicalTime = tail.LT
-	ctx := a.turnCtx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	figOtel.Event(ctx, "agent.message.fanout_pre",
-		attribute.Int64("logical_time", int64(tail.LT)),
-	)
+	a.mu.Unlock()
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
-		Method:  rpc.MethodMessage,
-		Params:  rpc.MessageParams{LogicalTime: tail.LT, Message: stamped},
-	})
-	figOtel.Event(ctx, "agent.message.fanout_post",
-		attribute.Int64("logical_time", int64(tail.LT)),
-	)
-}
-
-func (a *Agent) fanOutError(msg string) {
-	a.fanOut(rpc.Notification{
-		JSONRPC: "2.0",
-		Method:  rpc.MethodError,
-		Params:  rpc.ErrorParams{Message: msg},
+		Method:  rpc.MethodLogEntry,
+		Params:  rpc.LogEntry{Index: e.LT, Message: m},
 	})
 }
 
-// TODO: could interruption be an event with guaranteed completion?
+// fanAbort burns a never-sealed open tail.
+func (a *Agent) fanAbort(index uint64, reason string) {
+	a.mu.Lock()
+	if a.openIdx == index {
+		a.clearOpenLocked()
+	}
+	a.mu.Unlock()
+	a.fanOut(rpc.Notification{
+		JSONRPC: "2.0",
+		Method:  rpc.MethodLogAbort,
+		Params:  rpc.AbortEntry{Index: index, Reason: reason},
+	})
+}
+
+// clearOpenLocked resets the open-tail snapshot. Caller holds a.mu.
+func (a *Agent) clearOpenLocked() {
+	a.openLive = false
+	a.openIdx = 0
+	a.openVer = 0
+	a.openMsg = message.Message{}
+}
+
+// isInterrupted reports whether the current turn was interrupted.
 func (a *Agent) isInterrupted() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()

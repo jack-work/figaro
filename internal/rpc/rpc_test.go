@@ -8,8 +8,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/rpc"
 )
+
+// roundTripValue marshals v, unmarshals it back, and asserts equality.
+// For shapes without a golden fixture.
+func roundTripValue[T any](t *testing.T, v T) {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	var back T
+	require.NoError(t, json.Unmarshal(b, &back))
+	assert.Equal(t, v, back)
+}
 
 // loadFixture reads a testdata file.
 func loadFixture(t *testing.T, name string) []byte {
@@ -46,39 +58,48 @@ func TestQuaRequest(t *testing.T) {
 	})
 }
 
-func TestDeltaParams(t *testing.T) {
-	roundTrip(t, "delta_notification.json", rpc.DeltaParams{
-		Text:        "Hello",
-		ContentType: "text",
+func TestLogEntry(t *testing.T) {
+	roundTripValue(t, rpc.LogEntry{
+		Index: 2,
+		Message: message.Message{
+			Role:        message.RoleAssistant,
+			Content:     []message.Content{{Type: message.ContentText, Text: "hi"}},
+			StopReason:  message.StopEnd,
+			LogicalTime: 2,
+		},
 	})
 }
 
-func TestToolInvokeStartParams(t *testing.T) {
-	roundTrip(t, "tool_invoke_start.json", rpc.ToolInvokeStartParams{
-		ToolCallID: "toolu_01ABC",
-		ToolName:   "edit",
+func TestOpenEntry(t *testing.T) {
+	roundTripValue(t, rpc.OpenEntry{
+		Index:   2,
+		Version: 3,
+		Open:    true,
+		Message: message.Message{
+			Role:    message.RoleAssistant,
+			Content: []message.Content{{Type: message.ContentText, Text: "stream"}},
+		},
 	})
 }
 
-func TestToolInvokeDeltaParams(t *testing.T) {
-	roundTrip(t, "tool_invoke_delta.json", rpc.ToolInvokeDeltaParams{
-		ToolCallID:  "toolu_01ABC",
-		PartialJSON: `{"path":"x.go"`,
+func TestPatchEntry(t *testing.T) {
+	roundTripValue(t, rpc.PatchEntry{
+		Index:   2,
+		Version: 4,
+		From:    3,
+		Ops: []rpc.BlockOp{
+			{Op: "append", Block: 0, Text: "more"},
+			{Op: "open", Block: 1, Content: &message.Content{Type: message.ContentToolInvoke, ToolCallID: "tc_1", ToolName: "bash"}},
+		},
 	})
 }
 
-func TestToolInvokeReadyParams(t *testing.T) {
-	roundTrip(t, "tool_invoke_ready.json", rpc.ToolInvokeReadyParams{
-		ToolCallID: "toolu_01ABC",
-		ToolName:   "edit",
-		Arguments:  map[string]interface{}{"path": "x.go"},
-	})
+func TestAbortEntry(t *testing.T) {
+	roundTripValue(t, rpc.AbortEntry{Index: 2, Reason: "user_interrupt"})
 }
 
-func TestMessageEndParams(t *testing.T) {
-	roundTrip(t, "message_end.json", rpc.MessageEndParams{
-		StopReason: "tool_use",
-	})
+func TestDoneEntry(t *testing.T) {
+	roundTripValue(t, rpc.DoneEntry{Reason: "stop"})
 }
 
 func TestFigaroInfoResponse(t *testing.T) {
@@ -155,13 +176,13 @@ func TestStatusResponse(t *testing.T) {
 
 func TestMethodConstants(t *testing.T) {
 	// Verify method names follow naming convention.
-	assert.Equal(t, "stream.delta", rpc.MethodDelta)
-	assert.Equal(t, "stream.tool_invoke_start", rpc.MethodToolInvokeStart)
-	assert.Equal(t, "stream.tool_invoke_delta", rpc.MethodToolInvokeDelta)
-	assert.Equal(t, "stream.tool_invoke_ready", rpc.MethodToolInvokeReady)
-	assert.Equal(t, "stream.message_end", rpc.MethodMessageEnd)
-	assert.Equal(t, "stream.done", rpc.MethodDone)
+	assert.Equal(t, "log.entry", rpc.MethodLogEntry)
+	assert.Equal(t, "log.open", rpc.MethodLogOpen)
+	assert.Equal(t, "log.patch", rpc.MethodLogPatch)
+	assert.Equal(t, "log.abort", rpc.MethodLogAbort)
+	assert.Equal(t, "turn.done", rpc.MethodTurnDone)
 	assert.Equal(t, "figaro.qua", rpc.MethodQua)
+	assert.Equal(t, "figaro.read", rpc.MethodRead)
 	assert.Equal(t, "figaro.context", rpc.MethodContext)
 	assert.Equal(t, "figaro.create", rpc.MethodCreate)
 	assert.Equal(t, "figaro.kill", rpc.MethodKill)

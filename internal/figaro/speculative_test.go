@@ -202,7 +202,7 @@ func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 	for !sawDone {
 		select {
 		case n := <-ch:
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				sawDone = true
 			}
 		case <-timeout:
@@ -272,44 +272,55 @@ func TestSpeculativeDispatch_ResultOrdering(t *testing.T) {
 	ch, _ := subscribeChan(a)
 	a.Prompt("go")
 
-	// Collect tool_end notifications in arrival order.
-	var ends []string
+	// The sealed tool_result message carries one tool_result block per
+	// call, in canonical (call) order, even though the tools finished
+	// out of order.
+	var toolResult *message.Message
 	timeout := time.After(5 * time.Second)
 	var sawDone bool
 	for !sawDone {
 		select {
 		case n := <-ch:
 			switch n.Method {
-			case rpc.MethodToolEnd:
-				if p, ok := n.Params.(rpc.ToolEndParams); ok {
-					ends = append(ends, p.ToolCallID)
+			case rpc.MethodLogEntry:
+				if p, ok := n.Params.(rpc.LogEntry); ok && hasToolResultBlocks(p.Message) {
+					m := p.Message
+					toolResult = &m
 				}
-			case rpc.MethodDone:
+			case rpc.MethodTurnDone:
 				sawDone = true
 			}
 		case <-timeout:
 			t.Fatal("timeout")
 		}
 	}
-	// Tool_end notifications are emitted in canonical (call) order by
-	// runTools, even though the goroutines finished out of order.
-	assert.Equal(t, []string{"tc_fast", "tc_slow"}, ends,
-		"tool_end notifications must follow tool_call order")
+	require.NotNil(t, toolResult, "expected a sealed tool_result message")
+	var ids []string
+	for _, c := range toolResult.Content {
+		if c.Type == message.ContentToolResult {
+			ids = append(ids, c.ToolCallID)
+		}
+	}
+	assert.Equal(t, []string{"tc_fast", "tc_slow"}, ids,
+		"tool_result blocks must follow tool_call order")
 }
 
-// TestInvokeLifecycle_WireOrdering asserts the wire-event invariants
-// after the lifecycle redesign:
-//
-//   - Per-tool authoring (tool_invoke_*) all completes before
-//     message_end (the model can't author past message_stop).
-//   - message_end precedes the assistant message payload.
-//   - Per-tool execution lifecycle (tool_start → tool_end) is owned
-//     by the speculative dispatcher and may interleave freely with
-//     other tools and with the authoring stream. In particular,
-//     tool_start CAN arrive before message_end — that's the win.
-//   - For any single tool_call_id, tool_invoke_ready precedes
-//     tool_start, and tool_start precedes tool_end.
-func TestInvokeLifecycle_WireOrdering(t *testing.T) {
+// hasToolResultBlocks reports whether m carries any tool_result block.
+func hasToolResultBlocks(m message.Message) bool {
+	for _, c := range m.Content {
+		if c.Type == message.ContentToolResult {
+			return true
+		}
+	}
+	return false
+}
+
+// TestToolTurn_FrameOrdering asserts the log.* frame shape of a
+// tool-calling turn: the sealed entries arrive in index order —
+// user prompt, assistant (tool_invoke), tool_result, assistant (final)
+// — and the assistant's tool_invoke message seals before the
+// tool_result message it triggers. turn.done fires last.
+func TestToolTurn_FrameOrdering(t *testing.T) {
 	zero := time.Now()
 	rec := &recordingTool{name: "rec", dur: 5 * time.Millisecond, zero: zero}
 	reg := tool.NewRegistry()
@@ -340,105 +351,63 @@ func TestInvokeLifecycle_WireOrdering(t *testing.T) {
 	ch, _ := subscribeChan(a)
 	a.Prompt("go")
 
-	// Collect the methods in order, plus per-tool ordering trace.
-	type event struct {
-		method string
-		id     string // tool_call_id when present
-	}
-	var events []event
+	// Collect sealed entries (log.entry) in order, plus the terminal
+	// turn.done.
+	var sealed []rpc.LogEntry
+	var doneSeen bool
 	timeout := time.After(5 * time.Second)
-	var sawDone bool
-	for !sawDone {
+	for !doneSeen {
 		select {
 		case n := <-ch:
-			ev := event{method: n.Method}
-			switch p := n.Params.(type) {
-			case rpc.ToolInvokeStartParams:
-				ev.id = p.ToolCallID
-			case rpc.ToolInvokeReadyParams:
-				ev.id = p.ToolCallID
-			case rpc.ToolStartParams:
-				ev.id = p.ToolCallID
-			case rpc.ToolEndParams:
-				ev.id = p.ToolCallID
-			case rpc.ToolOutputParams:
-				ev.id = p.ToolCallID
-			}
-			events = append(events, ev)
-			if n.Method == rpc.MethodDone {
-				sawDone = true
+			switch n.Method {
+			case rpc.MethodLogEntry:
+				if p, ok := n.Params.(rpc.LogEntry); ok {
+					sealed = append(sealed, p)
+				}
+			case rpc.MethodTurnDone:
+				doneSeen = true
 			}
 		case <-timeout:
 			t.Fatal("timeout")
 		}
 	}
-	t.Logf("events: %+v", events)
 
-	methods := make([]string, len(events))
-	for i, e := range events {
-		methods[i] = e.method
+	roles := make([]message.Role, len(sealed))
+	for i, e := range sealed {
+		roles[i] = e.Message.Role
 	}
+	require.Equal(t, []message.Role{
+		message.RoleUser,      // prompt tic
+		message.RoleAssistant, // tool_invoke
+		message.RoleUser,      // tool_result
+		message.RoleAssistant, // final reply
+	}, roles, "tool-turn sealed entries must follow this index order")
 
-	// Authoring-lifecycle bound: every tool_invoke_* in the round
-	// must precede message_end for that round.
-	messageEnd := indexOf(methods, rpc.MethodMessageEnd)
-	require.GreaterOrEqual(t, messageEnd, 0, "expected MethodMessageEnd")
-	for i, ev := range events[:messageEnd] {
-		_ = i
-		if ev.method == rpc.MethodToolInvokeStart ||
-			ev.method == rpc.MethodToolInvokeDelta ||
-			ev.method == rpc.MethodToolInvokeReady {
-			// good — lives before message_end
-		}
-	}
-	// No authoring events after the first message_end.
-	for i := messageEnd + 1; i < len(events); i++ {
-		ev := events[i]
-		if ev.method == rpc.MethodMessageEnd {
-			// later rounds may have their own — stop scanning at the next round boundary.
-			break
-		}
-		assert.NotContains(t,
-			[]string{rpc.MethodToolInvokeStart, rpc.MethodToolInvokeDelta, rpc.MethodToolInvokeReady},
-			ev.method,
-			"tool_invoke_* must not appear after MessageEnd; got %s at %d", ev.method, i)
+	// Entries are sealed in strictly increasing index order.
+	for i := 1; i < len(sealed); i++ {
+		assert.Greater(t, sealed[i].Index, sealed[i-1].Index,
+			"entries must seal in increasing index order")
 	}
 
-	// message_end precedes the assistant Message payload.
-	msgIdx := indexOf(methods, rpc.MethodMessage)
-	require.GreaterOrEqual(t, msgIdx, 0, "expected MethodMessage")
-	assert.Less(t, messageEnd, msgIdx,
-		"MethodMessageEnd must precede MethodMessage; got %v", methods)
+	// The assistant entry stops on tool_invoke and carries both calls.
+	assistant := sealed[1].Message
+	assert.Equal(t, message.StopToolInvoke, assistant.StopReason)
+	assert.Len(t, assistantToolInvokeIDs(assistant), 2)
 
-	// Per-tool: tool_start → tool_end (strict). Note that tool_invoke_ready
-	// and tool_start are produced by different goroutines (drain loop
-	// vs dispatcher) and may interleave — the wire spec does not
-	// guarantee invoke_ready precedes tool_start for the same id.
-	perTool := map[string]map[string]int{}
-	for i, ev := range events {
-		if ev.id == "" {
-			continue
-		}
-		if perTool[ev.id] == nil {
-			perTool[ev.id] = map[string]int{}
-		}
-		perTool[ev.id][ev.method] = i
-	}
-	for id, m := range perTool {
-		start, hasStart := m[rpc.MethodToolStart]
-		end, hasEnd := m[rpc.MethodToolEnd]
-		if hasStart && hasEnd {
-			assert.Less(t, start, end,
-				"%s: tool_start (%d) must precede tool_end (%d)", id, start, end)
-		}
-	}
+	// The tool_result entry pairs one result per call.
+	toolResult := sealed[2].Message
+	assert.True(t, hasToolResultBlocks(toolResult))
+	assert.Len(t, toolResult.Content, 2)
 }
 
-func indexOf(haystack []string, needle string) int {
-	for i, v := range haystack {
-		if v == needle {
-			return i
+// assistantToolInvokeIDs returns the tool_call_ids of an assistant
+// message's tool_invoke blocks.
+func assistantToolInvokeIDs(m message.Message) []string {
+	var ids []string
+	for _, c := range m.Content {
+		if c.Type == message.ContentToolInvoke {
+			ids = append(ids, c.ToolCallID)
 		}
 	}
-	return -1
+	return ids
 }

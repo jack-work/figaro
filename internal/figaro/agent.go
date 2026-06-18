@@ -95,6 +95,14 @@ type Agent struct {
 	mu   sync.RWMutex
 	subs map[Notifier]struct{} // socket clients + in-process listeners
 
+	// Open-tail snapshot, published by the drain loop's fanOpen and read
+	// by follow-reads / crash recovery. openLive is true while a message
+	// is mid-stream; the fields hold its current full state. Guarded by mu.
+	openLive bool
+	openIdx  uint64
+	openVer  uint64
+	openMsg  message.Message
+
 	createdAt  time.Time
 	lastActive time.Time
 	tokensIn   int
@@ -367,16 +375,15 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		} else {
 			crashMsg += "; context lost"
 		}
-		a.fanOut(rpc.Notification{
-			JSONRPC: "2.0",
-			Method:  rpc.MethodError,
-			Params:  rpc.ErrorParams{Message: crashMsg},
-		})
-		a.fanOut(rpc.Notification{
-			JSONRPC: "2.0",
-			Method:  rpc.MethodDone,
-			Params:  rpc.DoneParams{Reason: "error: " + crashMsg},
-		})
+		// Burn any open tail the panic left behind, then end the turn.
+		a.mu.Lock()
+		openIdx, openLive := a.openIdx, a.openLive
+		a.clearOpenLocked()
+		a.mu.Unlock()
+		if openLive {
+			a.fanAbort(openIdx, string(message.InterruptFault))
+		}
+		a.endTurn("error: " + crashMsg)
 
 		slog.Error("restarted after panic", "aria", a.id)
 	}
@@ -423,10 +430,12 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 		Patches:   []message.Patch{patch},
 		Timestamp: time.Now().UnixMilli(),
 	}
-	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
+	stamped, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic})
+	if err != nil {
 		slog.Error(kind+" append", "aria", a.id, "err", err)
 		return
 	}
+	a.fanLogEntry(stamped)
 	a.chalkboard.Apply(patch)
 	if err := a.chalkboard.Save(); err != nil {
 		slog.Error(kind+" chalkboard save", "aria", a.id, "err", err)
@@ -434,12 +443,12 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	a.derived.Tick(0, a.chalkboard.Snapshot())
 }
 
-// endTurn fans out stream.done and persists chalkboard + meta.
+// endTurn fans out turn.done and persists chalkboard + meta.
 func (a *Agent) endTurn(reason string) {
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
-		Method:  rpc.MethodDone,
-		Params:  rpc.DoneParams{Reason: reason},
+		Method:  rpc.MethodTurnDone,
+		Params:  rpc.DoneEntry{Reason: reason},
 	})
 
 	a.mu.Lock()

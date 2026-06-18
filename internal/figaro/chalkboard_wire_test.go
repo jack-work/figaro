@@ -85,7 +85,7 @@ func runOneTurn(t *testing.T, a *figaro.Agent, text string, cb *rpc.ChalkboardIn
 	for {
 		select {
 		case n := <-sub:
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				return
 			}
 		case <-deadline:

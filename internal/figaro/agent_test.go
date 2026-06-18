@@ -197,7 +197,7 @@ loop:
 		select {
 		case n := <-ch:
 			notifications = append(notifications, n)
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				break loop
 			}
 		case <-timeout:
@@ -210,8 +210,8 @@ loop:
 	for i, n := range notifications {
 		methods[i] = n.Method
 	}
-	assert.Contains(t, methods, rpc.MethodDelta)
-	assert.Contains(t, methods, rpc.MethodDone)
+	assert.Contains(t, methods, rpc.MethodLogOpen)
+	assert.Contains(t, methods, rpc.MethodTurnDone)
 }
 
 func TestAgent_Context(t *testing.T) {
@@ -230,7 +230,7 @@ func TestAgent_Context(t *testing.T) {
 	for {
 		select {
 		case n := <-ch:
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				goto done
 			}
 		case <-timeout:
@@ -271,7 +271,7 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 	for doneCount < 2 {
 		select {
 		case n := <-ch:
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				doneCount++
 			}
 		case <-timeout:
@@ -301,11 +301,11 @@ func TestAgent_MultipleSubscribers(t *testing.T) {
 	for !got1 || !got2 {
 		select {
 		case n := <-ch1:
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				got1 = true
 			}
 		case n := <-ch2:
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				got2 = true
 			}
 		case <-timeout:
@@ -383,25 +383,27 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	ch, _ := subscribeChan(a)
 
 	// First prompt — will panic inside the agent. The new contract is
-	// that every turn (success or failure) must terminate with Done so
-	// the CLI never hangs. We expect Error followed eventually by Done.
+	// that every turn (success or failure) terminates with turn.done so
+	// the CLI never hangs; an error surfaces as the done reason.
 	a.Prompt("trigger panic")
 
 	timeout := time.After(5 * time.Second)
-	gotError, gotDone := false, false
-	for !(gotError && gotDone) {
+	var doneReason string
+	gotDone := false
+	for !gotDone {
 		select {
 		case n := <-ch:
-			if n.Method == rpc.MethodError {
-				gotError = true
-			}
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
+				if p, ok := n.Params.(rpc.DoneEntry); ok {
+					doneReason = p.Reason
+				}
 				gotDone = true
 			}
 		case <-timeout:
-			t.Fatalf("timeout: gotError=%v gotDone=%v", gotError, gotDone)
+			t.Fatal("timeout waiting for turn.done after panic")
 		}
 	}
+	assert.Contains(t, doneReason, "error", "panic should surface as an error turn.done")
 
 	// Second prompt — should work because the agent restarted.
 	a.Prompt("after recovery")
@@ -411,7 +413,7 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	for !gotDone {
 		select {
 		case n := <-ch:
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				gotDone = true
 			}
 		case <-timeout:
@@ -444,12 +446,12 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 	// Trigger panic.
 	a.Prompt("boom")
 
-	// Wait for error.
+	// Wait for the error to surface as the turn.done reason.
 	timeout := time.After(5 * time.Second)
 	for {
 		select {
 		case n := <-ch:
-			if n.Method == rpc.MethodError {
+			if n.Method == rpc.MethodTurnDone {
 				goto errorReceived
 			}
 		case <-timeout:
@@ -505,7 +507,7 @@ func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 	for {
 		select {
 		case n := <-ch:
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				goto firstDone
 			}
 		case <-timeout:
@@ -520,7 +522,7 @@ firstDone:
 	for {
 		select {
 		case n := <-ch:
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				goto secondDone
 			}
 		case <-timeout:
@@ -592,7 +594,7 @@ func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 	for {
 		select {
 		case n := <-ch:
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				goto firstDone
 			}
 		case <-timeout:
@@ -637,7 +639,7 @@ func TestAgent_PersistenceKillFlushes(t *testing.T) {
 	for {
 		select {
 		case n := <-ch:
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				goto done
 			}
 		case <-timeout:
@@ -725,7 +727,7 @@ func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
 	for {
 		select {
 		case n := <-ch:
-			if n.Method == rpc.MethodDone {
+			if n.Method == rpc.MethodTurnDone {
 				goto done
 			}
 		case <-timeout:
@@ -788,22 +790,17 @@ func TestAgent_Interrupt(t *testing.T) {
 
 	a.Interrupt()
 
-	// Collect notifications until Done. We should see one Error
-	// carrying the interrupt message, followed by Done.
-	var sawError bool
+	// Collect notifications until turn.done. The interrupt surfaces as
+	// the done reason; an open tail (if one had started) is burned with
+	// a log.abort first.
 	var doneReason string
 	timeout := time.After(3 * time.Second)
 loop:
 	for {
 		select {
 		case n := <-ch:
-			switch n.Method {
-			case rpc.MethodError:
-				if p, ok := n.Params.(rpc.ErrorParams); ok && p.Message == "interrupted" {
-					sawError = true
-				}
-			case rpc.MethodDone:
-				if p, ok := n.Params.(rpc.DoneParams); ok {
+			if n.Method == rpc.MethodTurnDone {
+				if p, ok := n.Params.(rpc.DoneEntry); ok {
 					doneReason = p.Reason
 				}
 				break loop
@@ -813,7 +810,6 @@ loop:
 		}
 	}
 
-	assert.True(t, sawError, "expected stream.error(\"interrupted\")")
 	assert.Equal(t, "interrupted", doneReason)
 
 	// Agent should be idle and reusable after the interrupt.

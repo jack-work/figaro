@@ -33,14 +33,15 @@ type Knobs struct {
 	UseOfficialSDK   bool
 }
 
-// Bus is the sink for per-turn provider output.
+// Bus is the sink for per-turn provider output. The figaro side folds
+// these calls into the open tail message and emits log.* frames; the
+// provider vocabulary is unchanged by the wire respec.
 type Bus interface {
 	PushDelta(content message.Content)
 	PushFigaro(msg message.Message)
 	// PushToolInvokeStart fires when the assistant begins a tool_use
-	// block (Anthropic vocabulary). On the figaro wire this becomes
-	// MethodToolInvokeStart — the lifecycle of the model *authoring*
-	// an invocation, distinct from `tool_start` (execution begins).
+	// block — the model starts *authoring* an invocation. The figaro
+	// side opens a tool_invoke block on the open assistant message.
 	PushToolInvokeStart(toolCallID, toolName string)
 	// PushToolInvokeDelta carries partial input JSON. Best-effort.
 	PushToolInvokeDelta(toolCallID, partialJSON string)
@@ -53,9 +54,9 @@ type Bus interface {
 	// dispatch may omit calls to this method; the harness falls back to
 	// dispatching from PushFigaro's assembled message.
 	PushToolReady(call message.Content)
-	// PushMessageEnd fires at message_stop, before PushFigaro. Carries
-	// the stop reason so the CLI can commit to rendering decisions
-	// without parsing the full assistant message body.
+	// PushMessageEnd fires at message_stop, before PushFigaro. Under the
+	// log.* model the figaro side ignores it (the stop reason rides the
+	// sealed message), but providers still call it.
 	PushMessageEnd(stopReason string)
 }
 

@@ -129,11 +129,11 @@ model = "mock-model"
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// Connect with notification handler to wait for stream.done.
+	// Connect with notification handler to wait for turn.done.
 	// Notifications are delivered in wire order — no envelopes, no reordering.
 	doneCh := make(chan struct{}, 1)
 	fcli, err := figaro.DialClient(figaroEP, func(method string, params json.RawMessage) {
-		if method == "stream.done" {
+		if method == "turn.done" {
 			select {
 			case doneCh <- struct{}{}:
 			default:
@@ -150,7 +150,7 @@ model = "mock-model"
 	select {
 	case <-doneCh:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for stream.done")
+		t.Fatal("timeout waiting for turn.done")
 	}
 
 	// Verify via context that messages were processed.
@@ -240,7 +240,7 @@ model = "mock-model"
 	}
 	doneCh := make(chan struct{}, 1)
 	fcli, err := figaro.DialClient(figaroEP, func(method string, params json.RawMessage) {
-		if method == "stream.done" {
+		if method == "turn.done" {
 			select {
 			case doneCh <- struct{}{}:
 			default:
@@ -252,7 +252,7 @@ model = "mock-model"
 	select {
 	case <-doneCh:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for stream.done")
+		t.Fatal("timeout waiting for turn.done")
 	}
 	fcli.Close()
 

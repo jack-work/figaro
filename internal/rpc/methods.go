@@ -15,22 +15,6 @@ const (
 	MethodLogAbort = "log.abort" // the open tail was burned (interrupt/fault/exit)
 	MethodTurnDone = "turn.done" // the turn went idle
 
-	// Deprecated: the stream.* lifecycle vocabulary, retired in favor
-	// of the log.* frames above. Kept until the producer/consumer
-	// cutover removes their last references.
-	MethodDelta            = "stream.delta"
-	MethodToolOutput       = "stream.tool_output"
-	MethodThinking         = "stream.thinking"
-	MethodToolInvokeStart  = "stream.tool_invoke_start"
-	MethodToolInvokeDelta  = "stream.tool_invoke_delta"
-	MethodToolInvokeReady  = "stream.tool_invoke_ready"
-	MethodToolStart        = "stream.tool_start"
-	MethodToolEnd          = "stream.tool_end"
-	MethodMessageEnd       = "stream.message_end"
-	MethodMessage          = "stream.message"
-	MethodDone             = "stream.done"
-	MethodError            = "stream.error"
-
 	// Requests.
 	MethodQua        = "figaro.qua"
 	MethodRead       = "figaro.read"

@@ -15,6 +15,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
@@ -194,36 +195,10 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	doneCh := make(chan struct{}, 1)
-	var sawError bool
+	sink := &plainSink{out: out, printed: map[int]int{}, doneCh: make(chan struct{}, 1)}
+	doneCh := sink.doneCh
 
-	deliverEvent := func(method string, params json.RawMessage) {
-		switch method {
-		case rpc.MethodDelta:
-			var p rpc.DeltaParams
-			if json.Unmarshal(params, &p) == nil {
-				out.Write([]byte(p.Text))
-			}
-		case rpc.MethodToolOutput:
-			var p rpc.ToolOutputParams
-			if json.Unmarshal(params, &p) == nil {
-				out.Write([]byte(p.Chunk))
-			}
-		case rpc.MethodError:
-			var p rpc.ErrorParams
-			if json.Unmarshal(params, &p) == nil {
-				fmt.Fprintln(os.Stderr, "error:", p.Message)
-				sawError = true
-			}
-		case rpc.MethodDone:
-			select {
-			case doneCh <- struct{}{}:
-			default:
-			}
-		}
-	}
-
-	fcli, err := figaro.DialClient(ep, deliverEvent)
+	fcli, err := figaro.DialClient(ep, sink.handle)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error: connect figaro:", err)
 		return 1
@@ -237,7 +212,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 
 	select {
 	case <-doneCh:
-		if sawError {
+		if sink.sawError {
 			return 1
 		}
 		return 0
@@ -254,5 +229,68 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 		case <-time.After(3 * time.Second):
 		}
 		return 130
+	}
+}
+
+// plainSink folds the log.* tail into raw text on out: assistant prose
+// and tool_result output, skipping the user's own prompt tics. It tracks
+// per-block emitted lengths so each full-mode frame writes only the new
+// suffix.
+type plainSink struct {
+	out      io.Writer
+	openIdx  uint64
+	printed  map[int]int
+	doneCh   chan struct{}
+	sawError bool
+}
+
+func (s *plainSink) handle(method string, params json.RawMessage) {
+	switch method {
+	case rpc.MethodLogOpen:
+		var e rpc.OpenEntry
+		if json.Unmarshal(params, &e) == nil {
+			s.render(e.Index, e.Message, false)
+		}
+	case rpc.MethodLogEntry:
+		var e rpc.LogEntry
+		if json.Unmarshal(params, &e) == nil {
+			s.render(e.Index, e.Message, true)
+		}
+	case rpc.MethodLogAbort:
+		s.openIdx = 0
+		clear(s.printed)
+	case rpc.MethodTurnDone:
+		var d rpc.DoneEntry
+		_ = json.Unmarshal(params, &d)
+		if len(d.Reason) >= 6 && d.Reason[:6] == "error:" {
+			fmt.Fprintln(os.Stderr, d.Reason)
+			s.sawError = true
+		}
+		select {
+		case s.doneCh <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (s *plainSink) render(idx uint64, msg message.Message, sealed bool) {
+	if idx != s.openIdx {
+		clear(s.printed)
+		s.openIdx = idx
+	}
+	for i, c := range msg.Content {
+		switch c.Type {
+		case message.ContentText:
+			if msg.Role == message.RoleAssistant {
+				s.out.Write([]byte(c.Text[min(s.printed[i], len(c.Text)):]))
+				s.printed[i] = len(c.Text)
+			}
+		case message.ContentToolResult:
+			s.out.Write([]byte(c.Text[min(s.printed[i], len(c.Text)):]))
+			s.printed[i] = len(c.Text)
+		}
+	}
+	if sealed && idx == s.openIdx {
+		s.openIdx = 0
 	}
 }
