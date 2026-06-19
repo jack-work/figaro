@@ -27,7 +27,7 @@ func TestMarkdown_TextAndThinking(t *testing.T) {
 	md := Markdown([]message.Message{assistant(
 		message.Content{Type: message.ContentThinking, Text: "let me think"},
 		message.Content{Type: message.ContentText, Text: "Here is the answer."},
-	)})
+	)}, nil)
 	if !strings.Contains(md, "> let me think") {
 		t.Fatalf("thinking should be a blockquote:\n%s", md)
 	}
@@ -37,7 +37,7 @@ func TestMarkdown_TextAndThinking(t *testing.T) {
 }
 
 func TestMarkdown_RunningTool(t *testing.T) {
-	md := Markdown([]message.Message{assistant(invoke("t1", "bash", "ls -la"))})
+	md := Markdown([]message.Message{assistant(invoke("t1", "bash", "ls -la"))}, nil)
 	if !strings.Contains(md, "## bash") {
 		t.Fatalf("tool heading missing:\n%s", md)
 	}
@@ -45,7 +45,18 @@ func TestMarkdown_RunningTool(t *testing.T) {
 		t.Fatalf("running tool should carry the spinner sentinel + detail:\n%q", md)
 	}
 	if strings.Contains(md, "```") {
-		t.Fatal("a running tool must not emit a fence yet")
+		t.Fatal("a running tool with no output must not emit a fence")
+	}
+}
+
+func TestMarkdown_RunningToolWithOutput(t *testing.T) {
+	partials := map[string]string{"t1": "line1\nline2\n"}
+	md := Markdown([]message.Message{assistant(invoke("t1", "bash", "tail -f log"))}, partials)
+	if !strings.ContainsRune(md, livedoc.SpinnerSentinel) {
+		t.Fatal("a running tool must still carry the spinner sentinel")
+	}
+	if !strings.Contains(md, "```console\nline1\nline2\n```") {
+		t.Fatalf("running tool should stream its partial output in a fence:\n%s", md)
 	}
 }
 
@@ -53,7 +64,7 @@ func TestMarkdown_CompletedTool(t *testing.T) {
 	md := Markdown([]message.Message{
 		assistant(invoke("t1", "bash", "echo hi")),
 		toolResultTic(result("t1", "bash", "hi\n", false)),
-	})
+	}, nil)
 	if !strings.Contains(md, "✓ echo hi") {
 		t.Fatalf("completed tool should show ✓ + detail:\n%s", md)
 	}
@@ -69,7 +80,7 @@ func TestMarkdown_FailedTool(t *testing.T) {
 	md := Markdown([]message.Message{
 		assistant(invoke("t1", "bash", "false")),
 		toolResultTic(result("t1", "bash", "boom", true)),
-	})
+	}, nil)
 	if !strings.Contains(md, "✗ false") {
 		t.Fatalf("failed tool should show ✗:\n%s", md)
 	}
@@ -80,11 +91,11 @@ func TestMarkdown_SkipsUserPromptAndDeterministic(t *testing.T) {
 		{Role: message.RoleUser, Content: []message.Content{{Type: message.ContentText, Text: "do the thing"}}},
 		assistant(message.Content{Type: message.ContentText, Text: "on it"}),
 	}
-	md := Markdown(msgs)
+	md := Markdown(msgs, nil)
 	if strings.Contains(md, "do the thing") {
 		t.Fatalf("the user's prompt must not appear in the agent turn blob:\n%s", md)
 	}
-	if Markdown(msgs) != md {
+	if Markdown(msgs, nil) != md {
 		t.Fatal("Markdown is not deterministic")
 	}
 }
@@ -100,7 +111,7 @@ func TestMarkdown_RendersThroughPipeline(t *testing.T) {
 		assistant(invoke("t1", "bash", "seq 50")),
 		toolResultTic(result("t1", "bash", big.String(), false)),
 		assistant(invoke("t2", "bash", "sleep 9")), // still running
-	})
+	}, nil)
 
 	res := render.Render(md, render.Options{Width: 100, BashCap: 10, Tick: 2})
 	out := strings.Join(res.Lines, "\n")

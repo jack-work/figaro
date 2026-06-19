@@ -204,6 +204,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.emitCommit()
 	}
 	a.turnStart = len(a.figLog.Read())
+	a.partials = map[string]string{}
 	a.emitSnapshot("assistant", "")
 
 	// Drive: provider -> tools -> repeat.
@@ -293,6 +294,12 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 			}
 		case te := <-toolEvents:
 			toolBuf = append(toolBuf, te)
+			// Stream speculative tool output live under its (still
+			// in-flight) heading.
+			if te.kind == toolChunk && !a.isInterrupted() {
+				a.partials[te.id] += te.chunk
+				a.emitDelta(a.composeTurn(asmMsg.message()))
+			}
 		}
 	}
 	sendErr := <-sendDone
@@ -376,20 +383,29 @@ func (a *Agent) collectToolResults(
 	}
 
 	outcomes := make(map[string]toolOutcome, len(calls))
-	process := func(te toolEvent) {
+	// Phase-1 events were already partial-accumulated as they arrived;
+	// here we only need their outcomes.
+	for _, te := range toolBuf {
 		if te.kind == toolEnd {
 			outcomes[te.id] = te.outcome
 		}
 	}
-	for _, te := range toolBuf {
-		process(te)
-	}
+	// Live phase-2 events: stream output under the running tool, collect
+	// outcomes.
 	for len(outcomes) < len(expect) {
 		te, ok := <-toolEvents
 		if !ok {
 			break
 		}
-		process(te)
+		switch te.kind {
+		case toolChunk:
+			if !a.isInterrupted() {
+				a.partials[te.id] += te.chunk
+				a.emitDelta(a.composeTurn(nil))
+			}
+		case toolEnd:
+			outcomes[te.id] = te.outcome
+		}
 	}
 
 	results := make([]message.Content, len(calls))
@@ -595,7 +611,7 @@ func (a *Agent) composeTurn(inflight *message.Message) string {
 	if inflight != nil {
 		msgs = append(msgs, *inflight)
 	}
-	return compose.Markdown(msgs)
+	return compose.Markdown(msgs, a.partials)
 }
 
 // emitSnapshot establishes the current live unit's full blob.

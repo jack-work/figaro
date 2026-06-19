@@ -27,8 +27,15 @@ import (
 
 const spinner = string(livedoc.SpinnerSentinel)
 
+// composeBashCap bounds how many source lines of tool output the blob
+// carries; the renderer further clamps the display. Full output lives in
+// the canonical Content IR.
+const composeBashCap = 200
+
 // Markdown composes the blob for a turn from its messages in order.
-func Markdown(msgs []message.Message) string {
+// partials carries streamed output for tools still running (keyed by
+// tool_call_id); nil/absent means a tool shows only its spinner.
+func Markdown(msgs []message.Message, partials map[string]string) string {
 	results := indexResults(msgs)
 
 	var b strings.Builder
@@ -43,7 +50,7 @@ func Markdown(msgs []message.Message) string {
 			case message.ContentThinking:
 				writeBlock(&b, blockquote(c.Text))
 			case message.ContentToolInvoke:
-				writeBlock(&b, tool(c, results))
+				writeBlock(&b, tool(c, results, partials))
 			}
 		}
 	}
@@ -62,9 +69,13 @@ func indexResults(msgs []message.Message) map[string]message.Content {
 	return out
 }
 
-// tool renders one tool_invoke block: heading + status line, plus a
-// clamped console fence once the result has arrived.
-func tool(inv message.Content, results map[string]message.Content) string {
+// tool renders one tool_invoke block: heading + status line + a clamped
+// console fence. While running it shows the spinner sentinel and any
+// streamed partial output; once sealed it shows ✓/✗ and the final result.
+// The fence is always closed — the sentinel in the status line keeps a
+// running tool's region live in the renderer, so closing it is safe even
+// with later (parallel) tool blocks.
+func tool(inv message.Content, results map[string]message.Content, partials map[string]string) string {
 	name := inv.ToolName
 	if name == "" {
 		name = "tool"
@@ -75,9 +86,11 @@ func tool(inv message.Content, results map[string]message.Content) string {
 	var sb strings.Builder
 	sb.WriteString("## " + name + "\n")
 	if !done {
-		// Running: animated sentinel, no fence yet (unsealed → renderer
-		// keeps it live; no body until output arrives via the producer).
 		sb.WriteString(spinner + " " + orDefault(detail, "running"))
+		if p := partials[inv.ToolCallID]; strings.TrimSpace(p) != "" {
+			sb.WriteString("\n\n")
+			writeFence(&sb, p)
+		}
 		return sb.String()
 	}
 	glyph := "✓"
@@ -85,12 +98,22 @@ func tool(inv message.Content, results map[string]message.Content) string {
 		glyph = "✗"
 	}
 	sb.WriteString(glyph + " " + orDefault(detail, statusWord(res.IsError)) + "\n\n")
+	writeFence(&sb, res.Text)
+	return sb.String()
+}
+
+// writeFence writes a closed console fence of text, tail-bounded to
+// composeBashCap source lines (full output stays in the IR).
+func writeFence(sb *strings.Builder, text string) {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	if len(lines) > composeBashCap {
+		lines = lines[len(lines)-composeBashCap:]
+	}
 	sb.WriteString("```console\n")
-	if t := strings.TrimRight(res.Text, "\n"); t != "" {
-		sb.WriteString(t + "\n")
+	if len(lines) > 0 && !(len(lines) == 1 && lines[0] == "") {
+		sb.WriteString(strings.Join(lines, "\n") + "\n")
 	}
 	sb.WriteString("```")
-	return sb.String()
 }
 
 // toolDetail extracts the one-line displayable argument for a tool call.

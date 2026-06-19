@@ -97,9 +97,11 @@ type Agent struct {
 
 	// Live-render state, owned by the drain loop. liveBlob is the current
 	// unit's blob as last sent (deltas diff against it); turnStart is the
-	// figLog index where the current turn's agent messages begin.
+	// figLog index where the current turn's agent messages begin; partials
+	// holds streamed output for in-flight tools (keyed by tool_call_id).
 	liveBlob  string
 	turnStart int
+	partials  map[string]string
 
 	createdAt  time.Time
 	lastActive time.Time
