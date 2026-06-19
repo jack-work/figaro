@@ -270,8 +270,12 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	}()
 
 	// Phase 1: fold the assistant stream into an in-flight message,
-	// recompose the turn blob on each change, and emit a splice.
+	// recompose the turn blob on each change, and emit a splice. Once the
+	// provider seals (evFigaro = it has appended the assistant to the
+	// log), drop the in-flight copy so compose reads it from the log
+	// instead — otherwise it would be counted twice.
 	asmMsg := newAsm(message.RoleAssistant)
+	sealedInline := false
 	var toolBuf []toolEvent
 	events := bus.events
 	for events != nil {
@@ -288,9 +292,15 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 				asmMsg.toolOpen(ev.id, ev.name)
 			case evToolReady:
 				asmMsg.toolReady(ev.id, ev.name, ev.args)
+			case evFigaro:
+				sealedInline = true
 			}
 			if !a.isInterrupted() {
-				a.emitDelta(a.composeTurn(asmMsg.message()))
+				inflight := asmMsg.message()
+				if sealedInline {
+					inflight = nil
+				}
+				a.emitDelta(a.composeTurn(inflight))
 			}
 		case te := <-toolEvents:
 			toolBuf = append(toolBuf, te)
@@ -298,7 +308,11 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 			// in-flight) heading.
 			if te.kind == toolChunk && !a.isInterrupted() {
 				a.partials[te.id] += te.chunk
-				a.emitDelta(a.composeTurn(asmMsg.message()))
+				inflight := asmMsg.message()
+				if sealedInline {
+					inflight = nil
+				}
+				a.emitDelta(a.composeTurn(inflight))
 			}
 		}
 	}
