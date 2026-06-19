@@ -108,19 +108,18 @@ The `system.*` namespace is harness-reserved. Clients write under any other key.
 
 **Angelus socket:** `figaro.create`, `figaro.attach`, `figaro.kill`, `figaro.list`, `aria.read`, `pid.bind`, `pid.resolve`, `pid.unbind`, `angelus.status`, `angelus.save_bindings`.
 
-**Figaro socket (requests):** `figaro.qua` (prompt; optional `chalkboard`, `delta_mode`; returns the user tic's index), `figaro.read` (windowed log read: `from`/`last`/`limit`/`follow`/`delta_mode`), `figaro.interrupt`, `figaro.context`, `figaro.set`, `figaro.loadout`, `figaro.chalkboard`.
+**Figaro socket (requests):** `figaro.qua` (prompt; optional `chalkboard`), `figaro.interrupt`, `figaro.context`, `figaro.set`, `figaro.loadout`, `figaro.chalkboard`.
 
-### Streaming: the log.* tail model
+### Streaming: the live-render blob model
 
-What travels on the socket is the serialized Figaro IR. A conversation is an append-only log of `message.Message` at gapless 1-based indices (`LT`); a client consumes catch-up history and live streaming through one shape — a read that may stay open. Notifications:
+What travels on the socket is a **markdown blob**, not the IR. Each conversational message (the user's prompt, then the agent's turn) is one unit: a markdown string that mutates only by single-region splices. The `message.Content` IR stays canonical on disk and is the provider's input; the producer *translates* a turn into a blob (`internal/compose`), the renderer turns the blob into terminal rows or DOM (`internal/render` / `web/conversation.html`), and the splice codec (`internal/livedoc`) is shared by both ends. Notifications:
 
-- `log.entry` `{index, message}` — a sealed, immutable message (the bare IR). Render once.
-- `log.open` `{index, version, open, message}` — the current full state of the open (unsealed) tail (full mode).
-- `log.patch` `{index, version, from, ops}` — block-addressed deltas against the open tail (delta mode; opt-in per subscription).
-- `log.abort` `{index, reason}` — the open tail was burned before sealing (interrupt/fault); its index is reused by the next message.
-- `turn.done` `{reason}` — the turn went idle.
+- `log.snapshot` `{role, markdown}` — establish the current live unit's full blob.
+- `log.delta` `{at, del, ins}` — a rune-aligned, single-region splice on the live unit.
+- `log.commit` — freeze the live unit; the next snapshot/delta is a new one.
+- `turn.done` `{reason}` — the turn went idle (reason carries an error string on failure).
 
-A turn streams its assistant reply as an open message that seals into a `log.entry`; if it called tools, their execution streams as an open `tool_result` message that seals in turn. The seal *is* the arrival of the closed `log.entry` at that index. Provider `Bus` calls are folded into the open tail by the drain loop's `openBuilder`; providers are unchanged.
+A turn emits the user prompt as one committed unit, then the agent reply as a live unit: `snapshot` → `delta`s as the blob grows (the drain loop recomposes from the IR and `livedoc.Diff`s) → `commit`. Running tools carry a spinner sentinel rune that the **consumer** animates locally (zero wire traffic until the tool completes); bash/tool output renders clamped to its last N lines. There is no unit index — the server copy is authoritative and a faulted client reconnects and re-snapshots. Provider `Bus` calls are unchanged.
 
 ## CLI
 
