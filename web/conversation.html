@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>figaro · conversation</title>
+  <!--
+    Reference frontend (NOT yet wired to a live figaro). It consumes the
+    same protocol the terminal does — snapshot / delta / commit — so one
+    figaro can drive both. The codec (diff/applyDelta), the markdown
+    renderer (mdToHtml), and the bash clamp (renderFence) are carried
+    over from plan.html unchanged; this file generalizes the single live
+    doc into an append-only conversation and animates spinners locally.
+
+    Transport seam: the UI talks to a ConversationStream. A MockStream
+    replays scripted scenarios today; a WebSocketStream that bridges the
+    figaro Unix socket (a thin gateway forwarding the same frames) drops
+    into the same interface later — see the comment near MockStream.
+  -->
+  <style>
+    :root {
+      --bg:#0f1115; --panel:#15181f; --well:#0b0d12; --line:#222733; --line2:#2b3140;
+      --ink:#d7dbe3; --dim:#8b92a1; --faint:#5b6271; --accent:#6aa3ff;
+      --run:#e3a83e; --ok:#4cc98a; --fail:#ff6b6b;
+      --mono: ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+      --sans: ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    }
+    * { box-sizing:border-box }
+    html,body { margin:0; height:100% }
+    body { background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:15px; line-height:1.5;
+           display:flex; flex-direction:column; height:100vh }
+    header { padding:12px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px }
+    header h1 { font:600 14px var(--mono); margin:0; letter-spacing:-.2px }
+    header .note { color:var(--faint); font-size:12px }
+    .bar { margin-left:auto; display:flex; gap:8px; align-items:center }
+    select,button { background:var(--panel); color:var(--ink); border:1px solid var(--line2); border-radius:7px;
+                    padding:6px 11px; font:500 12.5px var(--sans); cursor:pointer }
+    button.primary { background:var(--accent); color:#0b0f17; border-color:transparent }
+    .conv { flex:1; overflow:auto; padding:18px; display:flex; flex-direction:column; gap:14px }
+    .msg { display:flex; gap:11px; max-width:880px; width:100% }
+    .msg .who { flex:0 0 64px; color:var(--faint); font:600 11px var(--mono); text-transform:uppercase; padding-top:3px }
+    .msg.user .who { color:var(--accent) }
+    .msg .body { flex:1; min-width:0 }
+    .msg.live .body { border-left:2px solid var(--accent); padding-left:11px; margin-left:-13px }
+    /* rendered markdown */
+    .body h1 { font:600 20px var(--sans); margin:10px 0 4px }
+    .body h2 { font:600 14px var(--mono); margin:16px 0 2px; padding-left:9px; border-left:3px solid var(--line2) }
+    .body p { margin:5px 0 }
+    .body p.status.run { color:var(--run) } .body p.status.ok { color:var(--ok) } .body p.status.fail { color:var(--fail) }
+    .body ul,.body ol { margin:5px 0; padding-left:22px }
+    .body :not(pre)>code { font:500 12.5px var(--mono); background:#1c2230; color:#b9c6e6; padding:1px 5px; border-radius:5px }
+    .cb { margin:7px 0; background:var(--well); border:1px solid var(--line); border-radius:8px; overflow:hidden }
+    .cb pre { margin:0; padding:10px 12px; overflow-x:auto } .cb code { font:500 12.5px/1.55 var(--mono); color:#c4cde0; white-space:pre }
+    .cb.bash .cb-head { display:flex; justify-content:space-between; padding:5px 11px; background:#0e1118;
+                        border-bottom:1px solid var(--line); font:500 11px var(--mono); color:var(--faint) }
+    ::-webkit-scrollbar { width:10px } ::-webkit-scrollbar-thumb { background:#2a3140; border-radius:6px; border:2px solid transparent; background-clip:content-box }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>figaro <span style="color:var(--accent)">·</span> conversation</h1>
+    <span class="note">reference frontend — snapshot/delta/commit over a mock stream</span>
+    <div class="bar">
+      <select id="scenario"></select>
+      <button class="primary" id="play">Play</button>
+    </div>
+  </header>
+  <div class="conv" id="conv"></div>
+
+  <script>
+    "use strict";
+
+    /* ============================================================
+       Shared protocol constants — mirror internal/livedoc.
+       ============================================================ */
+    const SENTINEL = '\ue000';               // running-spinner sentinel
+    const BRAILLE = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
+    const BASH_CAP = 10;
+
+    /* ============================================================
+       1. DELTA CODEC  (single-region splice; from plan.html, but the
+          consumer only ever needs applyDelta — diff lives in the mock).
+       ============================================================ */
+    function diff(o, n) {
+      if (o === n) return null;
+      const oL = o.length, nL = n.length, min = Math.min(oL, nL);
+      let a = 0; while (a < min && o.charCodeAt(a) === n.charCodeAt(a)) a++;
+      let z = 0; while (z < min - a && o.charCodeAt(oL - 1 - z) === n.charCodeAt(nL - 1 - z)) z++;
+      return { at: a, del: oL - a - z, ins: n.slice(a, nL - z) };
+    }
+    function applyDelta(s, d) { return s.slice(0, d.at) + d.ins + s.slice(d.at + d.del); }
+
+    /* ============================================================
+       2. RENDERER  (mdToHtml + bash clamp; from plan.html). The only
+          addition: substitute the running sentinel for a braille frame.
+       ============================================================ */
+    function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+    function inline(t){
+      const codes=[]; t=t.replace(/`([^`]+)`/g,(m,c)=>{codes.push(c);return '\u0000'+(codes.length-1)+'\u0000';});
+      t=escapeHtml(t);
+      t=t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,(m,a,b)=>'<a href="'+b+'" target="_blank" rel="noopener">'+a+'</a>');
+      t=t.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+      t=t.replace(/(^|[^*])\*([^*]+)\*/g,'$1<em>$2</em>');
+      t=t.replace(/\u0000(\d+)\u0000/g,(m,k)=>'<code>'+escapeHtml(codes[k])+'</code>');
+      return t;
+    }
+    function renderFence(lang, body, cap){
+      const isBash=/^(bash|sh|shell|zsh|console|log)$/.test(lang);
+      let shown=body, total=body.length, hidden=0;
+      if(isBash && body.length>cap){ hidden=body.length-cap; shown=body.slice(body.length-cap); }
+      const code=escapeHtml(shown.join('\n'));
+      if(isBash){
+        const meta = hidden>0 ? 'last '+cap+' of '+total+' lines' : total+' line'+(total===1?'':'s');
+        return '<div class="cb bash"><div class="cb-head"><span>'+(lang||'bash')+'</span><span>'+meta+'</span></div><pre><code>'+code+'</code></pre></div>';
+      }
+      return '<div class="cb"><pre><code>'+code+'</code></pre></div>';
+    }
+    function mdToHtml(md, cap){
+      const lines=md.split('\n'), out=[]; let i=0;
+      const stop=l=>/^\s*$/.test(l)||/^\s*```/.test(l)||/^#{1,6}\s/.test(l)||/^\s*[-*+]\s+/.test(l)||/^\s*\d+[.)]\s+/.test(l)||/^\s*>\s?/.test(l);
+      while(i<lines.length){
+        const line=lines[i];
+        if(/^\s*```/.test(line)){
+          const lang=line.replace(/^\s*```/,'').trim().toLowerCase(); const body=[]; i++;
+          while(i<lines.length && !/^\s*```/.test(lines[i])){body.push(lines[i]);i++;}
+          i++; out.push(renderFence(lang,body,cap)); continue;
+        }
+        const h=line.match(/^(#{1,6})\s+(.*)$/);
+        if(h){const n=h[1].length; out.push('<h'+n+'>'+inline(h[2])+'</h'+n+'>'); i++; continue;}
+        if(/^\s*$/.test(line)){i++; continue;}
+        if(/^\s*[-*+]\s+/.test(line)){const it=[]; while(i<lines.length&&/^\s*[-*+]\s+/.test(lines[i])){it.push('<li>'+inline(lines[i].replace(/^\s*[-*+]\s+/,''))+'</li>');i++;} out.push('<ul>'+it.join('')+'</ul>'); continue;}
+        if(/^\s*\d+[.)]\s+/.test(line)){const it=[]; while(i<lines.length&&/^\s*\d+[.)]\s+/.test(lines[i])){it.push('<li>'+inline(lines[i].replace(/^\s*\d+[.)]\s+/,''))+'</li>');i++;} out.push('<ol>'+it.join('')+'</ol>'); continue;}
+        if(/^\s*>\s?/.test(line)){const q=[]; while(i<lines.length&&/^\s*>\s?/.test(lines[i])){q.push(lines[i].replace(/^\s*>\s?/,''));i++;} out.push('<blockquote>'+inline(q.join(' '))+'</blockquote>'); continue;}
+        const para=[line]; i++; while(i<lines.length&&!stop(lines[i])){para.push(lines[i]);i++;}
+        out.push('<p>'+inline(para.join(' '))+'</p>');
+      }
+      return out.join('\n');
+    }
+    function substituteSpinner(md, tick){ return md.split(SENTINEL).join(BRAILLE[tick % BRAILLE.length]); }
+    function colorStatus(root){
+      root.querySelectorAll('h2').forEach(h=>{
+        const p=h.nextElementSibling; if(!p||p.tagName!=='P') return;
+        const g=p.textContent.trim()[0]; let cls='run';
+        if(g==='✓')cls='ok'; else if(g==='✗')cls='fail';
+        p.classList.add('status',cls);
+      });
+    }
+
+    /* ============================================================
+       3. CONVERSATION  (append-only; past frozen, last live)
+       ============================================================ */
+    class Conversation {
+      constructor(el){ this.el=el; this.live=null; this.tick=0;
+        setInterval(()=>this.spin(), 90); }
+      reset(){ this.el.innerHTML=''; this.live=null; }
+      onSnapshot({role, markdown}){
+        const node=document.createElement('div'); node.className='msg live '+role;
+        node.innerHTML='<div class="who">'+role+'</div><div class="body"></div>';
+        this.el.appendChild(node);
+        this.live={role, blob:markdown, body:node.querySelector('.body'), node};
+        this.render(); this.scroll();
+      }
+      onDelta(d){ if(!this.live) return; this.live.blob=applyDelta(this.live.blob,d); this.render(); this.scroll(); }
+      onCommit(){ if(!this.live) return; this.render(); this.live.node.classList.remove('live'); this.live=null; }
+      render(){ if(!this.live) return;
+        this.live.body.innerHTML=mdToHtml(substituteSpinner(this.live.blob,this.tick), BASH_CAP);
+        colorStatus(this.live.body);
+      }
+      spin(){ if(this.live && this.live.blob.includes(SENTINEL)){ this.tick++; this.render(); } }
+      scroll(){ this.el.scrollTop=this.el.scrollHeight; }
+    }
+
+    /* ============================================================
+       4. ConversationStream + MockStream
+          A live backend (WebSocketStream) bridging the figaro Unix
+          socket would implement the same three callbacks; the gateway
+          forwards snapshot/delta/commit frames verbatim. Not built here.
+       ============================================================ */
+    // interface ConversationStream { onSnapshot(cb); onDelta(cb); onCommit(cb); start(); }
+
+    class MockStream {
+      constructor(script){ this.script=script; this.cbs={}; }
+      onSnapshot(cb){ this.cbs.snap=cb; } onDelta(cb){ this.cbs.delta=cb; } onCommit(cb){ this.cbs.commit=cb; }
+      async start(){
+        for(const ev of this.script){
+          await sleep(ev.wait||0);
+          if(ev.snapshot) this.cbs.snap(ev.snapshot);
+          else if(ev.delta) this.cbs.delta(ev.delta);
+          else if(ev.commit) this.cbs.commit();
+        }
+      }
+    }
+    const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+    /* ---- scenario builder: turns a sequence of (role, blob) frames
+       into snapshot/delta/commit events, diffing consecutive blobs of
+       the live unit so spinners stay local (no per-frame deltas). ---- */
+    function buildScript(units){
+      const ev=[];
+      for(const u of units){
+        ev.push({snapshot:{role:u.role, markdown:u.frames[0]}, wait:120});
+        let prev=u.frames[0];
+        for(let k=1;k<u.frames.length;k++){
+          const d=diff(prev, u.frames[k]); prev=u.frames[k];
+          if(d) ev.push({delta:d, wait:u.step||140});
+        }
+        ev.push({commit:true, wait:80});
+      }
+      return ev;
+    }
+
+    /* compose an assistant blob from a tiny task model (mirrors the Go
+       producer's ComposeMarkdown: ## tool, sentinel|✓|✗, ```bash log). */
+    function compose(intro, tasks){
+      let md = intro ? intro+'\n\n' : '';
+      for(const t of tasks){
+        md += '## '+t.title+'\n';
+        md += (t.done ? (t.ok===false?'✗ ':'✓ ') : SENTINEL+' ') + t.text + '\n\n';
+        if(t.log && t.log.length) md += '```bash\n'+t.log.join('\n')+'\n```\n\n';
+      }
+      return md.replace(/\s+$/,'')+'\n';
+    }
+
+    const SCENARIOS = {
+      spinners: () => {
+        const T=(done)=>([
+          {title:'fetch',  text: done>=1?'done':'loading…',  done:done>=1},
+          {title:'parse',  text: done>=2?'done':'loading…',  done:done>=2},
+          {title:'render', text: done>=3?'done':'loading…',  done:done>=3},
+        ]);
+        const f=[]; for(let d=0;d<=3;d++) f.push(compose('# Tasks', T(d)));
+        return [
+          {role:'user', frames:['Kick off the three tasks.']},
+          {role:'assistant', frames:f, step:500},
+        ];
+      },
+      pipeline: () => {
+        const frames=[];
+        const log={b:[],t:[],d:[]};
+        const snap=(tasks)=>frames.push(compose('# Deploy pipeline\n\nCommit `a1b2c3d`.', tasks));
+        const mk=(bd,bl,td,tl,dd,dl)=>([
+          {title:'build', text: bd?'done':'building…', done:bd, log:bl},
+          {title:'test',  text: td?'done':'running…',  done:td, log:tl},
+          {title:'deploy',text: dd?'done':'queued…',   done:dd, log:dl},
+        ]);
+        log.b.push('$ npm ci'); snap(mk(0,log.b,0,log.t,0,log.d));
+        log.b.push('added 358 packages'); snap(mk(0,log.b,0,log.t,0,log.d));
+        log.b.push('✓ built in 2.31s'); snap(mk(1,log.b,0,log.t,0,log.d));
+        log.t.push('✓ utils.test.ts'); log.t.push('✓ store.test.ts'); snap(mk(1,log.b,0,log.t,0,log.d));
+        log.t.push('✓ api.test.ts'); snap(mk(1,log.b,1,log.t,0,log.d));
+        for(let p=0;p<=100;p+=25){ log.d.push('uploading… '+p+'%'); snap(mk(1,log.b,1,log.t,0,log.d)); }
+        log.d.push('live → https://app.example.com'); snap(mk(1,log.b,1,log.t,1,log.d));
+        return [
+          {role:'user', frames:['Deploy the latest commit.']},
+          {role:'assistant', frames, step:300},
+        ];
+      },
+      firehose: () => {
+        const frames=[]; const lg=[];
+        for(let n=1;n<=40;n++){ lg.push('chunk '+String(n).padStart(3,'0')+'  ·  '+Math.round(n/40*100)+'%');
+          frames.push(compose('# Fetch dataset', [{title:'download', text:'streaming…', done:0, log:lg.slice()}])); }
+        frames.push(compose('# Fetch dataset', [{title:'download', text:'done', done:1, log:lg.slice()}]));
+        return [
+          {role:'user', frames:['Download the dataset.']},
+          {role:'assistant', frames, step:90},
+        ];
+      },
+    };
+
+    /* ============================================================
+       5. WIRING
+       ============================================================ */
+    const conv = new Conversation(document.getElementById('conv'));
+    const sel = document.getElementById('scenario');
+    Object.keys(SCENARIOS).forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k; sel.appendChild(o); });
+    async function play(){
+      conv.reset();
+      const units=SCENARIOS[sel.value]();
+      const stream=new MockStream(buildScript(units));
+      stream.onSnapshot(s=>conv.onSnapshot(s));
+      stream.onDelta(d=>conv.onDelta(d));
+      stream.onCommit(()=>conv.onCommit());
+      await stream.start();
+    }
+    document.getElementById('play').onclick=play;
+    sel.value='pipeline';
+    play();
+  </script>
+</body>
+</html>
