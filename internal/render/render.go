@@ -48,8 +48,15 @@ type Options struct {
 
 // Result is the rendered output: physical wrapped rows, each fully
 // ANSI-styled, none with a trailing newline.
+//
+// StableRows is the number of leading rows guaranteed not to change
+// again this turn — the commit watermark. A row is stable if its block
+// is final: no running spinner sentinel, a closed bash fence, and not
+// the last (still-active) block. The consumer flushes Lines[:StableRows]
+// to scrollback once and only ever line-diffs Lines[StableRows:].
 type Result struct {
-	Lines []string
+	Lines      []string
+	StableRows int
 }
 
 // Render maps a markdown blob to terminal rows at the given width.
@@ -63,27 +70,59 @@ func Render(md string, opts Options) Result {
 		cap = defaultBashCap
 	}
 
+	segs := splitSegments(md)
+	firstLive := liveSegmentIndex(segs)
+
 	var lines []string
-	for _, seg := range splitSegments(md) {
+	stableRows := 0
+	for i, seg := range segs {
+		var rows []string
 		if seg.bash {
-			lines = append(lines, renderBash(seg.lang, seg.body, cap, width)...)
+			rows = renderBash(seg.lang, seg.body, cap, width)
 		} else {
-			lines = append(lines, renderMarkdown(seg.text, width, opts.Tick)...)
+			rows = renderMarkdown(seg.text, width, opts.Tick)
 		}
+		if i < firstLive {
+			stableRows += len(rows)
+		}
+		lines = append(lines, rows...)
 	}
 	if lines == nil {
 		lines = []string{}
 	}
-	return Result{Lines: lines}
+	if stableRows > len(lines) {
+		stableRows = len(lines)
+	}
+	return Result{Lines: lines, StableRows: stableRows}
+}
+
+// liveSegmentIndex returns the index of the first segment that is still
+// mutating — one with a running spinner sentinel or an unclosed bash
+// fence, else the last segment (always treated as live; it's the active
+// tail). Everything before it is stable. Returns len(segs) for none.
+func liveSegmentIndex(segs []segment) int {
+	for i, s := range segs {
+		if !s.bash && strings.ContainsRune(s.text, SpinnerSentinel) {
+			return i
+		}
+		if s.bash && !s.closed {
+			return i
+		}
+	}
+	if len(segs) == 0 {
+		return 0
+	}
+	return len(segs) - 1
 }
 
 // segment is a maximal run of the blob: either a bash-family fence or a
 // markdown chunk (which may itself contain non-bash fences).
 type segment struct {
-	bash bool
-	lang string
-	body []string // bash: raw source lines
-	text string   // markdown: reconstructed source
+	bash   bool
+	lang   string
+	body   []string // bash: raw source lines
+	text   string   // markdown: reconstructed source
+	closed bool     // bash: closing fence seen (vs. still streaming)
 }
 
 // splitSegments walks the blob, peeling bash fences into their own
@@ -110,12 +149,13 @@ func splitSegments(md string) []segment {
 				body = append(body, lines[i])
 				i++
 			}
-			if i < len(lines) { // consume closing fence
+			closed := i < len(lines) // stopped on a closing fence, not EOF
+			if closed {              // consume it
 				i++
 			}
 			if bashLangs[lang] {
 				flush()
-				segs = append(segs, segment{bash: true, lang: lang, body: body})
+				segs = append(segs, segment{bash: true, lang: lang, body: body, closed: closed})
 			} else {
 				mdbuf = append(mdbuf, line)
 				mdbuf = append(mdbuf, body...)
