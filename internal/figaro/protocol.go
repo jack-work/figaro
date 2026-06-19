@@ -5,8 +5,8 @@ import (
 	"net"
 	"os"
 
-	"github.com/jack-work/jkrpc"
 	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/jkrpc"
 )
 
 // StartSocket starts the JSON-RPC socket listener.
@@ -47,9 +47,7 @@ func (a *Agent) StartSocket(ctx context.Context) error {
 // serveConn handles a single JSON-RPC connection.
 func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
 	jconn := jkrpc.NewConn(conn)
-	sess := &connSession{a: a}
-	srv := jkrpc.NewServer(jconn, buildHandlers(sess))
-	sess.sub = srv
+	srv := jkrpc.NewServer(jconn, buildHandlers(a))
 
 	unsub := a.Subscribe(srv)
 	defer unsub()

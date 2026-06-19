@@ -13,6 +13,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/compose"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
@@ -188,15 +190,21 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// IR still has a dangling tool_use at the tail. Boot-time repair
 	// usually catches this, but cover the case where the boot check
 	// missed (e.g. dangling state appeared after boot).
-	if sentinel, ok := appendInterruptSentinelIfDangling(a.figLog, a.id); ok {
-		a.fanLogEntry(sentinel)
-	}
-	stamped, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic})
-	if err != nil {
+	appendInterruptSentinelIfDangling(a.figLog, a.id)
+	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
 		a.endTurn(fmt.Sprintf("error: append tic: %s", err))
 		return
 	}
-	a.fanLogEntry(stamped)
+
+	// The user prompt is its own committed unit; the agent's reply is the
+	// live unit that follows, composed from every message appended after
+	// this point.
+	if prompt.text != "" {
+		a.emitSnapshot("user", prompt.text)
+		a.emitCommit()
+	}
+	a.turnStart = len(a.figLog.Read())
+	a.emitSnapshot("assistant", "")
 
 	// Drive: provider -> tools -> repeat.
 	for {
@@ -243,10 +251,10 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	// the provider appends at exactly tail+1.
 	assistantIdx := a.nextIndex()
 
-	// Speculative tool dispatcher: every PushToolReady kicks off the
-	// tool's goroutine immediately, in parallel with the still-running
-	// LLM stream. Tool lifecycle events flow back through toolEvents so
-	// the drain loop folds them into one open tool_result message.
+	// Speculative tool dispatcher: PushToolReady kicks each tool off
+	// immediately, in parallel with the LLM stream. Tool lifecycle events
+	// flow back on toolEvents for IR assembly only — not the wire; the
+	// running spinner animates locally on the consumer (zero traffic).
 	toolEvents := make(chan toolEvent, 64)
 	spec := newSpecDispatcher(toolEvents)
 	specDone := make(chan struct{})
@@ -260,10 +268,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		}
 	}()
 
-	// Phase 1: fold the assistant stream into an open message. Tool
-	// lifecycle events that arrive speculatively (before the assistant
-	// seals) are buffered — at most one message is open at a time.
-	ab := newOpenBuilder(assistantIdx, message.RoleAssistant)
+	// Phase 1: fold the assistant stream into an in-flight message,
+	// recompose the turn blob on each change, and emit a splice.
+	asmMsg := newAsm(message.RoleAssistant)
 	var toolBuf []toolEvent
 	events := bus.events
 	for events != nil {
@@ -275,19 +282,14 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 			}
 			switch ev.kind {
 			case evDelta:
-				ab.addText(ev.content.Type, ev.content.Text)
+				asmMsg.addText(ev.content.Type, ev.content.Text)
 			case evToolStart:
-				ab.toolOpen(ev.id, ev.name)
-			case evToolArgs:
-				ab.toolArgs(ev.id, ev.partial)
+				asmMsg.toolOpen(ev.id, ev.name)
 			case evToolReady:
-				ab.toolReady(ev.id, ev.name, ev.args)
-			case evFigaro:
-				// Provider has appended; the seal is handled after the
-				// loop from the durable tail.
+				asmMsg.toolReady(ev.id, ev.name, ev.args)
 			}
-			if !a.isInterrupted() && ab.dirty() {
-				a.fanOpen(ab)
+			if !a.isInterrupted() {
+				a.emitDelta(a.composeTurn(asmMsg.message()))
 			}
 		case te := <-toolEvents:
 			toolBuf = append(toolBuf, te)
@@ -295,25 +297,22 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	}
 	sendErr := <-sendDone
 
-	// Seal the assistant message from the durable tail.
+	// Seal: the provider appended the assistant message. Recompose from
+	// the durable tail (the in-flight assembly is now canonical).
 	var lastFig message.Message
 	sealEntry, sealed := a.sealedTail(assistantIdx, message.RoleAssistant)
 	if sealed {
 		lastFig = sealEntry.Payload
-		a.fanLogEntry(sealEntry)
+		if !a.isInterrupted() {
+			a.emitDelta(a.composeTurn(nil))
+		}
 	}
 
 	if a.isInterrupted() {
-		if !sealed {
-			a.fanAbort(assistantIdx, string(message.InterruptUserInterrupt))
-		}
 		a.endTurn("interrupted")
 		return true
 	}
 	if sendErr != nil {
-		if !sealed {
-			a.fanAbort(assistantIdx, string(message.InterruptFault))
-		}
 		a.endTurn("error: " + sendErr.Error())
 		return true
 	}
@@ -335,21 +334,20 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		return true
 	}
 
-	// Wait for the speculative dispatcher to drain toolsReady (closed
-	// once Send returned, already true here).
 	<-specDone
 
-	// Phase 2: tool execution as an open tool_result message at the
-	// next index.
-	resultTic := a.streamToolResults(turnCtx, assistantIdx+1, calls, spec, toolEvents, toolBuf)
-
-	stamped, err := a.figLog.Append(store.Entry[message.Message]{Payload: resultTic})
-	if err != nil {
-		a.fanAbort(assistantIdx+1, string(message.InterruptFault))
+	// Phase 2: run the tools (IR assembly), append the tool_result tic,
+	// and recompose so completed tools show their clamped output. The
+	// spinner animates locally between here and the seal — no wire
+	// traffic until the result lands.
+	resultTic := a.collectToolResults(turnCtx, calls, spec, toolEvents, toolBuf)
+	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: resultTic}); err != nil {
 		a.endTurn(fmt.Sprintf("error: append tool_result: %s", err))
 		return true
 	}
-	a.fanLogEntry(stamped)
+	if !a.isInterrupted() {
+		a.emitDelta(a.composeTurn(nil))
+	}
 
 	if a.isInterrupted() {
 		a.endTurn("interrupted")
@@ -358,13 +356,13 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	return false
 }
 
-// streamToolResults dispatches every call (idempotent), folds the
-// tools' execution lifecycle into one open tool_result message at
-// resultIdx, and returns the sealed tool_result tic in canonical
-// (calls) order. toolBuf holds events that arrived during phase 1.
-func (a *Agent) streamToolResults(
+// collectToolResults dispatches every call (idempotent), waits for each
+// to finish, and assembles the tool_result tic in canonical (calls)
+// order. It emits nothing on the wire — the blob is recomposed by the
+// caller after the tic is appended. toolBuf holds events that arrived
+// during phase 1.
+func (a *Agent) collectToolResults(
 	turnCtx context.Context,
-	resultIdx uint64,
 	calls []message.Content,
 	spec *specDispatcher,
 	toolEvents chan toolEvent,
@@ -377,29 +375,10 @@ func (a *Agent) streamToolResults(
 		}
 	}
 
-	rb := newOpenBuilder(resultIdx, message.RoleUser)
-	for _, tc := range calls {
-		if expect[tc.ToolCallID] {
-			rb.resultOpen(tc.ToolCallID, tc.ToolName)
-		}
-	}
-	if !a.isInterrupted() && rb.dirty() {
-		a.fanOpen(rb)
-	}
-
 	outcomes := make(map[string]toolOutcome, len(calls))
 	process := func(te toolEvent) {
-		switch te.kind {
-		case toolBegin:
-			// Block already opened above.
-		case toolChunk:
-			rb.resultChunk(te.id, te.chunk)
-		case toolEnd:
-			rb.resultFinal(te.id, te.final)
+		if te.kind == toolEnd {
 			outcomes[te.id] = te.outcome
-		}
-		if !a.isInterrupted() && rb.dirty() {
-			a.fanOpen(rb)
 		}
 	}
 	for _, te := range toolBuf {
@@ -600,67 +579,108 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 	return p
 }
 
-// --- fan-out helpers (log.* frames) ---
+// --- live-render blob emission ---
 
-// fanOpen publishes the current open-tail state, recording it on the
-// agent for follow-reads and recovery, then notifying each subscriber
-// in its chosen mode: full-mode subscribers get the OpenEntry, delta-mode
-// subscribers get the PatchEntry (falling back to the full frame when
-// there are no ops, e.g. a no-op recommit).
-func (a *Agent) fanOpen(b *openBuilder) {
-	open, patch := b.commit()
-	a.mu.Lock()
-	a.openIdx = open.Index
-	a.openVer = open.Version
-	a.openMsg = open.Message
-	a.openLive = true
-	for n, s := range a.subs {
-		if s.delta && patch != nil {
-			_ = n.Notify(rpc.MethodLogPatch, *patch)
-		} else {
-			_ = n.Notify(rpc.MethodLogOpen, open)
-		}
+// composeTurn renders the current turn's blob: the messages appended
+// since the user prompt, plus the in-flight assistant message (nil once
+// it has sealed into the log).
+func (a *Agent) composeTurn(inflight *message.Message) string {
+	entries := a.figLog.Read()
+	var msgs []message.Message
+	for i := a.turnStart; i < len(entries); i++ {
+		m := entries[i].Payload
+		m.LogicalTime = entries[i].LT
+		msgs = append(msgs, m)
 	}
-	a.mu.Unlock()
+	if inflight != nil {
+		msgs = append(msgs, *inflight)
+	}
+	return compose.Markdown(msgs)
 }
 
-// fanLogEntry publishes a sealed message and clears the open slot if
-// this entry seals it.
-func (a *Agent) fanLogEntry(e store.Entry[message.Message]) {
-	m := e.Payload
-	m.LogicalTime = e.LT
-	a.mu.Lock()
-	if a.openIdx == e.LT {
-		a.clearOpenLocked()
-	}
-	a.mu.Unlock()
+// emitSnapshot establishes the current live unit's full blob.
+func (a *Agent) emitSnapshot(role, md string) {
+	a.liveBlob = md
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
-		Method:  rpc.MethodLogEntry,
-		Params:  rpc.LogEntry{Index: e.LT, Message: m},
+		Method:  rpc.MethodLogSnapshot,
+		Params:  rpc.SnapshotEntry{Role: role, Markdown: md},
 	})
 }
 
-// fanAbort burns a never-sealed open tail.
-func (a *Agent) fanAbort(index uint64, reason string) {
-	a.mu.Lock()
-	if a.openIdx == index {
-		a.clearOpenLocked()
+// emitDelta diffs blob against the last sent and emits a single-region
+// splice when it changed.
+func (a *Agent) emitDelta(blob string) {
+	d, ok := livedoc.Diff(a.liveBlob, blob)
+	if !ok {
+		return
 	}
-	a.mu.Unlock()
+	a.liveBlob = blob
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
-		Method:  rpc.MethodLogAbort,
-		Params:  rpc.AbortEntry{Index: index, Reason: reason},
+		Method:  rpc.MethodLogDelta,
+		Params:  rpc.DeltaEntry{At: d.At, Del: d.Del, Ins: d.Ins},
 	})
 }
 
-// clearOpenLocked resets the open-tail snapshot. Caller holds a.mu.
-func (a *Agent) clearOpenLocked() {
-	a.openLive = false
-	a.openIdx = 0
-	a.openVer = 0
-	a.openMsg = message.Message{}
+// emitCommit freezes the current live unit.
+func (a *Agent) emitCommit() {
+	a.liveBlob = ""
+	a.fanOut(rpc.Notification{
+		JSONRPC: "2.0",
+		Method:  rpc.MethodLogCommit,
+		Params:  rpc.CommitEntry{},
+	})
+}
+
+// asm assembles the in-flight assistant message from provider Bus events
+// so the turn blob can be recomposed mid-stream (before the provider
+// seals it into the log).
+type asm struct {
+	msg     message.Message
+	toolIdx map[string]int
+}
+
+func newAsm(role message.Role) *asm {
+	return &asm{msg: message.Message{Role: role}, toolIdx: map[string]int{}}
+}
+
+func (s *asm) addText(kind message.ContentType, text string) {
+	if text == "" {
+		return
+	}
+	n := len(s.msg.Content)
+	if n > 0 && s.msg.Content[n-1].Type == kind {
+		s.msg.Content[n-1].Text += text
+		return
+	}
+	s.msg.Content = append(s.msg.Content, message.Content{Type: kind, Text: text})
+}
+
+func (s *asm) toolOpen(id, name string) {
+	s.toolIdx[id] = len(s.msg.Content)
+	s.msg.Content = append(s.msg.Content,
+		message.Content{Type: message.ContentToolInvoke, ToolCallID: id, ToolName: name})
+}
+
+func (s *asm) toolReady(id, name string, args map[string]interface{}) {
+	i, ok := s.toolIdx[id]
+	if !ok {
+		s.toolOpen(id, name)
+		i = s.toolIdx[id]
+	}
+	s.msg.Content[i].Arguments = args
+	if name != "" {
+		s.msg.Content[i].ToolName = name
+	}
+}
+
+// message returns the in-flight message, or nil when nothing has streamed.
+func (s *asm) message() *message.Message {
+	if len(s.msg.Content) == 0 {
+		return nil
+	}
+	return &s.msg
 }
 
 // isInterrupted reports whether the current turn was interrupted.

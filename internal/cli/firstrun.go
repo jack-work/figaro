@@ -28,8 +28,8 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/jkrpc"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/jkrpc"
 )
 
 // createFn is the shape of the `acli.Create*` family. We accept a

@@ -283,8 +283,6 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 	return m
 }
 
-
-
 type nativeRequest struct {
 	Model     string          `json:"model"`
 	MaxTokens int             `json:"max_tokens"`

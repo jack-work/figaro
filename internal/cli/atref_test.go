@@ -25,13 +25,13 @@ func TestExpandAtRefs_BasicSubstitution(t *testing.T) {
 		"model": "sonnet-9.5",
 	})
 	cases := map[string]string{
-		"summarize @cwd!":         "summarize /home/gluck/dev",
+		"summarize @cwd!":          "summarize /home/gluck/dev",
 		"@model! running in @cwd!": "sonnet-9.5 running in /home/gluck/dev",
-		"start @model!":           "start sonnet-9.5",
-		"@cwd!":                   "/home/gluck/dev",
-		"plain text":              "plain text",
-		"":                        "",
-		"newline\n@model!\nafter": "newline\nsonnet-9.5\nafter",
+		"start @model!":            "start sonnet-9.5",
+		"@cwd!":                    "/home/gluck/dev",
+		"plain text":               "plain text",
+		"":                         "",
+		"newline\n@model!\nafter":  "newline\nsonnet-9.5\nafter",
 	}
 	for in, want := range cases {
 		got := expandAtRefs(in, snap)
@@ -51,14 +51,14 @@ func TestExpandAtRefs_RequiresBangTerminator(t *testing.T) {
 	// positives. Email addresses, code snippets, twitter handles all
 	// pass through untouched.
 	cases := []string{
-		"summarize @cwd",          // no !
-		"summarize @cwd then",     // ! never appears
-		"me@example.com",          // typical email
-		"foo@cwd@model",           // chained @s with no terminator
-		"start @model.",           // sentence punctuation, no !
-		"@cwd,end",                // comma, no !
-		"@cwd ",                   // whitespace, no !
-		"hi @cwd@@",               // garbage tail, no !
+		"summarize @cwd",      // no !
+		"summarize @cwd then", // ! never appears
+		"me@example.com",      // typical email
+		"foo@cwd@model",       // chained @s with no terminator
+		"start @model.",       // sentence punctuation, no !
+		"@cwd,end",            // comma, no !
+		"@cwd ",               // whitespace, no !
+		"hi @cwd@@",           // garbage tail, no !
 	}
 	for _, in := range cases {
 		got := expandAtRefs(in, snap)
@@ -75,8 +75,8 @@ func TestExpandAtRefs_PermissiveOnMissing(t *testing.T) {
 	cases := []string{
 		"start @missing! key",
 		"@nope!",
-		"@!",      // empty key with terminator
-		"@.foo!",  // invalid key shape, terminator present
+		"@!",     // empty key with terminator
+		"@.foo!", // invalid key shape, terminator present
 	}
 	for _, in := range cases {
 		got := expandAtRefs(in, snap)
@@ -94,16 +94,16 @@ func TestExpandAtRefs_EmailsAndCodeStayLiteral(t *testing.T) {
 	})
 	cases := map[string]string{
 		// Emails: no terminator, no expansion. This is the headline case.
-		"me@example.com":      "me@example.com",
-		"foo@example":         "foo@example",
-		"a@b.c":               "a@b.c",
+		"me@example.com": "me@example.com",
+		"foo@example":    "foo@example",
+		"a@b.c":          "a@b.c",
 		// Code-ish: still no terminator, still literal.
-		"path/@example":       "path/@example",
-		"(@example)":          "(@example)",
-		"\"@example\"":        "\"@example\"",
+		"path/@example": "path/@example",
+		"(@example)":    "(@example)",
+		"\"@example\"":  "\"@example\"",
 		// But with explicit "!", expansion fires regardless of context.
 		"me@example.com is @cwd!": "me@example.com is /x",
-		"(@example!)":            "(EXPANDED)",
+		"(@example!)":             "(EXPANDED)",
 	}
 	for in, want := range cases {
 		got := expandAtRefs(in, snap)

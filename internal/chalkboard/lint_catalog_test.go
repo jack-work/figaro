@@ -32,12 +32,12 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 	}
 	patch := chalkboard.Patch{
 		Set: map[string]json.RawMessage{
-			"cwd":                rawString("/home/figaro/dev"),
-			"datetime":           rawString("Wednesday, April 29, 2026, 10AM EDT"),
-			"model":              rawString("claude-opus-4-6"),
-			"root":               rawString("/home/figaro/dev"),
-			"truncation":         rawString("File foo.go truncated to 2000 lines"),
-			"token_budget":       rawString("80%"),
+			"cwd":          rawString("/home/figaro/dev"),
+			"datetime":     rawString("Wednesday, April 29, 2026, 10AM EDT"),
+			"model":        rawString("claude-opus-4-6"),
+			"root":         rawString("/home/figaro/dev"),
+			"truncation":   rawString("File foo.go truncated to 2000 lines"),
+			"token_budget": rawString("80%"),
 		},
 	}
 

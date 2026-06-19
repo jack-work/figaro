@@ -91,7 +91,6 @@ func applyEditsToNormalized(normalized string, edits []EditOp, displayPath strin
 		}
 	}
 
-
 	out := base
 	for i := len(resolved) - 1; i >= 0; i-- {
 		r := resolved[i]
@@ -103,8 +102,6 @@ func applyEditsToNormalized(normalized string, edits []EditOp, displayPath strin
 	}
 	return appliedEdits{baseContent: base, newContent: out}, nil
 }
-
-
 
 func notFoundError(path string, idx, total int) error {
 	if total == 1 {
@@ -234,7 +231,6 @@ func GenerateDiff(oldContent, newContent string, contextLines int) DiffResult {
 			}
 			continue
 		}
-
 
 		if firstChanged == 0 {
 			firstChanged = op.J1 + 1

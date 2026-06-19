@@ -14,9 +14,9 @@ import (
 type ColorMode int
 
 const (
-	ColorAuto  ColorMode = iota // detect from TTY + env
-	ColorNever                  // NO_COLOR or explicit disable
-	ColorAlways                 // FORCE_COLOR or explicit enable
+	ColorAuto   ColorMode = iota // detect from TTY + env
+	ColorNever                   // NO_COLOR or explicit disable
+	ColorAlways                  // FORCE_COLOR or explicit enable
 )
 
 var (
@@ -105,8 +105,6 @@ func WidthFd(fd int) int {
 	}
 	return 80
 }
-
-
 
 const (
 	reset = "\033[0m"

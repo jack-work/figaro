@@ -109,7 +109,6 @@ func TruncateHead(content string, opts TruncationOptions) TruncationResult {
 		}
 	}
 
-
 	if len(lines[0]) > opts.MaxBytes {
 		return TruncationResult{
 			Content:               "",
@@ -124,7 +123,6 @@ func TruncateHead(content string, opts TruncationOptions) TruncationResult {
 			MaxBytes:              opts.MaxBytes,
 		}
 	}
-
 
 	var kept []string
 	byteCount := 0

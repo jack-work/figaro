@@ -14,7 +14,6 @@ func ContextSize(msgs []message.Message) (tokens int, exact bool) {
 		return 0, true
 	}
 
-
 	watermark := -1
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if msgs[i].Usage != nil {
@@ -38,7 +37,6 @@ func ContextSize(msgs []message.Message) (tokens int, exact bool) {
 	if watermark == len(msgs)-1 {
 		return base, true
 	}
-
 
 	tail := 0
 	for _, m := range msgs[watermark+1:] {

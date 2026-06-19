@@ -15,7 +15,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
@@ -195,7 +195,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	sink := &plainSink{out: out, printed: map[int]int{}, doneCh: make(chan struct{}, 1)}
+	sink := &plainSink{out: out, doneCh: make(chan struct{}, 1)}
 	doneCh := sink.doneCh
 
 	fcli, err := figaro.DialClient(ep, sink.handle)
@@ -205,7 +205,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	}
 	defer fcli.Close()
 
-	if _, err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
+	if err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
 		fmt.Fprintln(os.Stderr, "error: prompt:", err)
 		return 1
 	}
@@ -232,37 +232,45 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	}
 }
 
-// plainSink folds the log.* tail into raw text on out: assistant prose
-// and tool_result output, skipping the user's own prompt tics. It tracks
-// per-block emitted lengths so each full-mode frame writes only the new
-// suffix.
+// plainSink streams the assistant unit's blob to out as raw text for
+// pipes/scripts: it maintains the current unit's blob from snapshot/delta
+// and writes the new tail on each update (spinner sentinel stripped). The
+// user's prompt unit is skipped. Markdown chrome passes through; raw mode
+// callers (figaro x) prompt the model for plain output anyway.
 type plainSink struct {
 	out      io.Writer
-	openIdx  uint64
-	printed  map[int]int
+	role     string
+	blob     string
+	printed  int
 	doneCh   chan struct{}
 	sawError bool
 }
 
 func (s *plainSink) handle(method string, params json.RawMessage) {
 	switch method {
-	case rpc.MethodLogOpen:
-		var e rpc.OpenEntry
+	case rpc.MethodLogSnapshot:
+		var e rpc.SnapshotEntry
 		if json.Unmarshal(params, &e) == nil {
-			s.render(e.Index, e.Message, false)
+			s.role = e.Role
+			s.blob = e.Markdown
+			s.printed = 0
+			s.flush()
 		}
-	case rpc.MethodLogEntry:
-		var e rpc.LogEntry
+	case rpc.MethodLogDelta:
+		var e rpc.DeltaEntry
 		if json.Unmarshal(params, &e) == nil {
-			s.render(e.Index, e.Message, true)
+			s.blob = livedoc.Apply(s.blob, livedoc.Delta{At: e.At, Del: e.Del, Ins: e.Ins})
+			s.flush()
 		}
-	case rpc.MethodLogAbort:
-		s.openIdx = 0
-		clear(s.printed)
+	case rpc.MethodLogCommit:
+		s.flush()
+		s.role = ""
+		s.blob = ""
+		s.printed = 0
 	case rpc.MethodTurnDone:
 		var d rpc.DoneEntry
 		_ = json.Unmarshal(params, &d)
-		if len(d.Reason) >= 6 && d.Reason[:6] == "error:" {
+		if strings.HasPrefix(d.Reason, "error:") {
 			fmt.Fprintln(os.Stderr, d.Reason)
 			s.sawError = true
 		}
@@ -273,24 +281,12 @@ func (s *plainSink) handle(method string, params json.RawMessage) {
 	}
 }
 
-func (s *plainSink) render(idx uint64, msg message.Message, sealed bool) {
-	if idx != s.openIdx {
-		clear(s.printed)
-		s.openIdx = idx
+// flush writes the assistant unit's new tail (sentinel stripped).
+func (s *plainSink) flush() {
+	if s.role != "assistant" || s.printed >= len(s.blob) {
+		return
 	}
-	for i, c := range msg.Content {
-		switch c.Type {
-		case message.ContentText:
-			if msg.Role == message.RoleAssistant {
-				s.out.Write([]byte(c.Text[min(s.printed[i], len(c.Text)):]))
-				s.printed[i] = len(c.Text)
-			}
-		case message.ContentToolResult:
-			s.out.Write([]byte(c.Text[min(s.printed[i], len(c.Text)):]))
-			s.printed[i] = len(c.Text)
-		}
-	}
-	if sealed && idx == s.openIdx {
-		s.openIdx = 0
-	}
+	suffix := s.blob[s.printed:]
+	s.printed = len(s.blob)
+	s.out.Write([]byte(strings.ReplaceAll(suffix, string(livedoc.SpinnerSentinel), "")))
 }

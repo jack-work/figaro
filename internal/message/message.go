@@ -64,18 +64,14 @@ const (
 type Content struct {
 	Type ContentType `json:"type"`
 
-
 	Text string `json:"text,omitempty"`
-
 
 	MimeType string `json:"mime_type,omitempty"`
 	Data     string `json:"data,omitempty"` // base64
 
-
 	ToolCallID string                 `json:"tool_call_id,omitempty"`
 	ToolName   string                 `json:"tool_name,omitempty"`
 	Arguments  map[string]interface{} `json:"arguments,omitempty"`
-
 
 	IsError bool `json:"is_error,omitempty"`
 
@@ -114,11 +110,8 @@ type Message struct {
 	// Logical time: monotonic counter, unique per session.
 	LogicalTime uint64 `json:"logical_time"`
 
-
 	Timestamp int64 `json:"timestamp"`
 }
-
-
 
 func TextContent(text string) Content {
 	return Content{Type: ContentText, Text: text}

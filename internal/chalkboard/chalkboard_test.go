@@ -41,7 +41,7 @@ func TestDiff_AddSetRemove(t *testing.T) {
 		"label": raw(t, "alpha"),
 	}
 	next := chalkboard.Snapshot{
-		"cwd":   raw(t, "/bar"),       // changed
+		"cwd":   raw(t, "/bar"),            // changed
 		"model": raw(t, "claude-opus-4-6"), // added
 		// label removed
 	}

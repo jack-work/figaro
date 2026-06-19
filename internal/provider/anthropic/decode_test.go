@@ -14,9 +14,10 @@ import (
 )
 
 // Each case asserts byte-for-byte parity in three directions:
-//   IR → wire == fixture
-//   fixture → IR == expected
-//   fixture → IR → wire == fixture
+//
+//	IR → wire == fixture
+//	fixture → IR == expected
+//	fixture → IR → wire == fixture
 func TestEncodeDecodeRoundTrip(t *testing.T) {
 	a := &Anthropic{}
 	cases := []struct {

@@ -78,7 +78,6 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := inner.RoundTrip(req)
 	duration := time.Since(start)
 
-
 	emitMeta(req, resp, duration, len(bodyBytes), logBase, err)
 
 	if err != nil || resp == nil {

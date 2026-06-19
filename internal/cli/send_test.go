@@ -8,11 +8,11 @@ import (
 
 func TestExtractSendFlags(t *testing.T) {
 	cases := []struct {
-		name      string
-		in        []string
-		wantOpts  sendOpts
-		wantRest  []string
-		wantErr   string
+		name     string
+		in       []string
+		wantOpts sendOpts
+		wantRest []string
+		wantErr  string
 	}{
 		{
 			name:     "bare prompt",

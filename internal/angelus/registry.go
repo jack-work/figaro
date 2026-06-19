@@ -13,15 +13,11 @@ import (
 type Registry struct {
 	mu sync.RWMutex
 
-
 	figaros map[string]figaro.Figaro
-
 
 	pidToFigaro map[int]string
 
-
 	figaroPIDs map[string]map[int]struct{}
-
 
 	draining atomic.Bool
 }
@@ -69,7 +65,6 @@ func (r *Registry) Kill(id string) error {
 		return fmt.Errorf("figaro %q not found", id)
 	}
 
-
 	for pid := range r.figaroPIDs[id] {
 		delete(r.pidToFigaro, pid)
 	}
@@ -89,11 +84,9 @@ func (r *Registry) Bind(pid int, figaroID string) error {
 		return fmt.Errorf("figaro %q not found", figaroID)
 	}
 
-
 	if existing, ok := r.pidToFigaro[pid]; ok && existing == figaroID {
 		return nil
 	}
-
 
 	r.unbindLocked(pid)
 

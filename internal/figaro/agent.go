@@ -72,18 +72,18 @@ type Config struct {
 // Agent is the Figaro implementation.
 // TODO: child-process isolation via --figaro flag.
 type Agent struct {
-	id           string
-	socketPath   string
-	prov         provider.Provider
-	outfitter    *outfit.Outfitter
-	bootPatch    *chalkboard.Patch
-	tools        *tool.Registry
+	id            string
+	socketPath    string
+	prov          provider.Provider
+	outfitter     *outfit.Outfitter
+	bootPatch     *chalkboard.Patch
+	tools         *tool.Registry
 	figLog        store.Log[message.Message]
 	figLogRelease func() // nil unless figLog came from LogCache
 	logCache      *store.LogCache
 	backend       store.Backend // nil = ephemeral
-	chalkboard   *chalkboard.State
-	derived      *derivedFanout // nil = ephemeral; per-figaro durable derivations
+	chalkboard    *chalkboard.State
+	derived       *derivedFanout // nil = ephemeral; per-figaro durable derivations
 
 	inbox *Inbox
 
@@ -93,15 +93,13 @@ type Agent struct {
 	interrupted bool
 
 	mu   sync.RWMutex
-	subs map[Notifier]*subState // socket clients + in-process listeners
+	subs map[Notifier]struct{} // socket clients + in-process listeners
 
-	// Open-tail snapshot, published by the drain loop's fanOpen and read
-	// by follow-reads / crash recovery. openLive is true while a message
-	// is mid-stream; the fields hold its current full state. Guarded by mu.
-	openLive bool
-	openIdx  uint64
-	openVer  uint64
-	openMsg  message.Message
+	// Live-render state, owned by the drain loop. liveBlob is the current
+	// unit's blob as last sent (deltas diff against it); turnStart is the
+	// figLog index where the current turn's agent messages begin.
+	liveBlob  string
+	turnStart int
 
 	createdAt  time.Time
 	lastActive time.Time
@@ -119,19 +117,19 @@ func NewAgent(cfg Config) *Agent {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	a := &Agent{
-		id:           cfg.ID,
-		socketPath:   cfg.SocketPath,
-		prov:         cfg.Provider,
-		outfitter:    cfg.Outfitter,
-		bootPatch:    cfg.BootPatch,
-		tools:        cfg.Tools,
-		backend:      cfg.Backend,
-		logCache:     cfg.LogCache,
-		chalkboard:   cfg.Chalkboard,
-		createdAt:    time.Now(),
-		lastActive:   time.Now(),
-		cancel:       cancel,
-		done:         make(chan struct{}),
+		id:         cfg.ID,
+		socketPath: cfg.SocketPath,
+		prov:       cfg.Provider,
+		outfitter:  cfg.Outfitter,
+		bootPatch:  cfg.BootPatch,
+		tools:      cfg.Tools,
+		backend:    cfg.Backend,
+		logCache:   cfg.LogCache,
+		chalkboard: cfg.Chalkboard,
+		createdAt:  time.Now(),
+		lastActive: time.Now(),
+		cancel:     cancel,
+		done:       make(chan struct{}),
 	}
 
 	a.figLog = a.newLog()
@@ -228,17 +226,13 @@ func (a *Agent) Prompt(text string) {
 	a.inbox.SendPatient(event{typ: eventUserPrompt, text: text})
 }
 
-// SubmitPrompt enqueues a prompt and returns the index its user tic is
-// expected to occupy. Exact on an idle aria; with prompts already queued
-// it is a lower bound (the real index is stamped at append time).
-func (a *Agent) SubmitPrompt(req rpc.QuaRequest) uint64 {
-	idx := a.nextIndex()
+// SubmitPrompt enqueues a prompt; the reply streams as log.* frames.
+func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 	a.inbox.SendPatient(event{
 		typ:        eventUserPrompt,
 		text:       req.Text,
 		chalkboard: req.Chalkboard,
 	})
-	return idx
 }
 
 // Interrupt aborts the current turn. Idempotent when idle.
@@ -276,41 +270,20 @@ type Notifier interface {
 	Notify(method string, params any) error
 }
 
-// subState is the per-subscriber fanout mode. delta selects PatchEntry
-// (log.patch) deltas for the open tail instead of full OpenEntry
-// (log.open) re-sends.
-type subState struct {
-	delta bool
-}
-
-// Subscribe registers a Notifier in full mode. Returns an unsubscribe.
+// Subscribe registers a Notifier for the live-render frame stream.
+// Returns an unsubscribe func.
 func (a *Agent) Subscribe(n Notifier) func() {
-	return a.SubscribeMode(n, false)
-}
-
-// SubscribeMode registers a Notifier with an explicit open-tail mode.
-func (a *Agent) SubscribeMode(n Notifier, delta bool) func() {
 	a.mu.Lock()
 	if a.subs == nil {
-		a.subs = make(map[Notifier]*subState)
+		a.subs = make(map[Notifier]struct{})
 	}
-	a.subs[n] = &subState{delta: delta}
+	a.subs[n] = struct{}{}
 	a.mu.Unlock()
 	return func() {
 		a.mu.Lock()
 		delete(a.subs, n)
 		a.mu.Unlock()
 	}
-}
-
-// SetSubscriberMode flips an existing subscription's open-tail mode.
-// Used when a connection negotiates delta mode via qua/read.
-func (a *Agent) SetSubscriberMode(n Notifier, delta bool) {
-	a.mu.Lock()
-	if s, ok := a.subs[n]; ok {
-		s.delta = delta
-	}
-	a.mu.Unlock()
 }
 
 func (a *Agent) Info() FigaroInfo {
@@ -401,14 +374,8 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		} else {
 			crashMsg += "; context lost"
 		}
-		// Burn any open tail the panic left behind, then end the turn.
-		a.mu.Lock()
-		openIdx, openLive := a.openIdx, a.openLive
-		a.clearOpenLocked()
-		a.mu.Unlock()
-		if openLive {
-			a.fanAbort(openIdx, string(message.InterruptFault))
-		}
+		// Freeze whatever partial unit the panic left behind, then end
+		// the turn (endTurn commits the live unit + emits turn.done).
 		a.endTurn("error: " + crashMsg)
 
 		slog.Error("restarted after panic", "aria", a.id)
@@ -456,12 +423,10 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 		Patches:   []message.Patch{patch},
 		Timestamp: time.Now().UnixMilli(),
 	}
-	stamped, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic})
-	if err != nil {
+	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
 		slog.Error(kind+" append", "aria", a.id, "err", err)
 		return
 	}
-	a.fanLogEntry(stamped)
 	a.chalkboard.Apply(patch)
 	if err := a.chalkboard.Save(); err != nil {
 		slog.Error(kind+" chalkboard save", "aria", a.id, "err", err)
@@ -471,6 +436,7 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 
 // endTurn fans out turn.done and persists chalkboard + meta.
 func (a *Agent) endTurn(reason string) {
+	a.emitCommit() // freeze the live unit before signaling the turn idle
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
 		Method:  rpc.MethodTurnDone,

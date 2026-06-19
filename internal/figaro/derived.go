@@ -38,7 +38,7 @@ type DerivationEvent struct {
 type DurDerivDeps struct {
 	AriaID       string
 	ProviderName string
-	FigLog    store.Log[message.Message]
+	FigLog       store.Log[message.Message]
 	Translator   store.Log[[]json.RawMessage]
 }
 
@@ -216,7 +216,7 @@ func startDerived(
 	deps := DurDerivDeps{
 		AriaID:       ariaID,
 		ProviderName: providerName,
-		FigLog:    figLog,
+		FigLog:       figLog,
 		Translator:   translator,
 	}
 	rs := Registrations()
@@ -249,8 +249,6 @@ func (f *derivedFanout) Wait() {
 	}
 }
 
-
-
 func init() {
 	Register(DurDerivReg{
 		Alias:    "summary",
@@ -275,7 +273,7 @@ func init() {
 			return &usageDerivation{
 				ariaID:       d.AriaID,
 				providerName: d.ProviderName,
-				figLog:    d.FigLog,
+				figLog:       d.FigLog,
 			}
 		},
 	})
@@ -286,7 +284,7 @@ func init() {
 			return &metaDerivation{
 				ariaID:       d.AriaID,
 				providerName: d.ProviderName,
-				figLog:    d.FigLog,
+				figLog:       d.FigLog,
 			}
 		},
 	})
@@ -346,7 +344,7 @@ func (t *translatorDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 type usageDerivation struct {
 	ariaID       string
 	providerName string
-	figLog    store.Log[message.Message]
+	figLog       store.Log[message.Message]
 }
 
 // Usage is the on-disk shape for usage.json.

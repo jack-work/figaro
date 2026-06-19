@@ -34,10 +34,10 @@ type Pacer struct {
 	buf    []rune
 	closed bool
 
-	startedAt    time.Time
-	pastBypass   bool
-	stopCh       chan struct{}
-	drainedCh    chan struct{}
+	startedAt  time.Time
+	pastBypass bool
+	stopCh     chan struct{}
+	drainedCh  chan struct{}
 }
 
 // New creates and starts a Pacer. Call Close when done.

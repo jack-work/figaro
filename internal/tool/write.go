@@ -34,8 +34,10 @@ type WriteTool struct {
 // NewWriteTool constructs a WriteTool bound to cwd.
 func NewWriteTool(cwd string) *WriteTool { return &WriteTool{Cwd: cwd} }
 
-func (w *WriteTool) Name() string        { return "write" }
-func (w *WriteTool) Description() string { return "Write content to a file. Creates parent directories." }
+func (w *WriteTool) Name() string { return "write" }
+func (w *WriteTool) Description() string {
+	return "Write content to a file. Creates parent directories."
+}
 
 func (w *WriteTool) Parameters() interface{} {
 	return map[string]interface{}{

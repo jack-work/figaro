@@ -143,7 +143,7 @@ model = "mock-model"
 	require.NoError(t, err)
 	defer fcli.Close()
 
-	_, err = fcli.Qua(ctx, "what is the answer?", nil)
+	err = fcli.Qua(ctx, "what is the answer?", nil)
 	require.NoError(t, err)
 
 	// Wait for done notification.
@@ -248,8 +248,7 @@ model = "mock-model"
 		}
 	})
 	require.NoError(t, err)
-	_, quaErr := fcli.Qua(ctx, "hello", nil)
-	require.NoError(t, quaErr)
+	require.NoError(t, fcli.Qua(ctx, "hello", nil))
 	select {
 	case <-doneCh:
 	case <-time.After(5 * time.Second):

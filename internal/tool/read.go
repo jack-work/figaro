@@ -14,7 +14,6 @@ import (
 
 // ReadRequest is the typed input to the read tool.
 type ReadRequest struct {
-
 	Path string
 
 	Offset int
@@ -78,7 +77,6 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 		absPath = filepath.Join(r.Cwd, absPath)
 	}
 
-
 	if mimeType, ok := detectImageMIME(absPath); ok {
 		data, err := os.ReadFile(absPath)
 		if err != nil {
@@ -94,7 +92,6 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 			message.ImageContent(mimeType, encoded),
 		}, nil
 	}
-
 
 	req := ReadRequest{Path: path}
 	if off, ok := args["offset"].(float64); ok && off > 0 {

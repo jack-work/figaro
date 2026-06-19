@@ -13,10 +13,10 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/jkrpc"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/jkrpc"
 )
 
 // bootAngelus starts an angelus rooted at dir with the given config.

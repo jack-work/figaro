@@ -3,9 +3,9 @@ package angelus
 import (
 	"context"
 
-	"github.com/jack-work/jkrpc"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/jkrpc"
 )
 
 // Client is a typed JSON-RPC client for talking to the angelus supervisor.

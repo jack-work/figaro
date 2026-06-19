@@ -21,15 +21,15 @@ type mockFigaro struct {
 	killed     bool
 }
 
-func (m *mockFigaro) ID() string                              { return m.id }
-func (m *mockFigaro) SocketPath() string                      { return m.socketPath }
-func (m *mockFigaro) Prompt(text string)                      {}
-func (m *mockFigaro) Interrupt()                              {}
-func (m *mockFigaro) Context() []message.Message               { return nil }
-func (m *mockFigaro) Subscribe() <-chan rpc.Notification       { return make(chan rpc.Notification) }
-func (m *mockFigaro) Unsubscribe(ch <-chan rpc.Notification)   {}
-func (m *mockFigaro) SetModel(model string)                    {}
-func (m *mockFigaro) Kill()                                    { m.killed = true }
+func (m *mockFigaro) ID() string                             { return m.id }
+func (m *mockFigaro) SocketPath() string                     { return m.socketPath }
+func (m *mockFigaro) Prompt(text string)                     {}
+func (m *mockFigaro) Interrupt()                             {}
+func (m *mockFigaro) Context() []message.Message             { return nil }
+func (m *mockFigaro) Subscribe() <-chan rpc.Notification     { return make(chan rpc.Notification) }
+func (m *mockFigaro) Unsubscribe(ch <-chan rpc.Notification) {}
+func (m *mockFigaro) SetModel(model string)                  {}
+func (m *mockFigaro) Kill()                                  { m.killed = true }
 func (m *mockFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{
 		ID:        m.id,

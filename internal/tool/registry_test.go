@@ -17,9 +17,9 @@ type fakeTool struct {
 	name string
 }
 
-func (f *fakeTool) Name() string             { return f.name }
-func (f *fakeTool) Description() string      { return "fake " + f.name }
-func (f *fakeTool) Parameters() interface{}  { return map[string]interface{}{} }
+func (f *fakeTool) Name() string            { return f.name }
+func (f *fakeTool) Description() string     { return "fake " + f.name }
+func (f *fakeTool) Parameters() interface{} { return map[string]interface{}{} }
 func (f *fakeTool) Execute(_ context.Context, _ map[string]interface{}, _ tool.OnOutput) ([]message.Content, error) {
 	return []message.Content{message.TextContent("ok")}, nil
 }

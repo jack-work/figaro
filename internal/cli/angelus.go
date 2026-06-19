@@ -69,4 +69,3 @@ func runAngelus() {
 		os.Exit(1)
 	}
 }
-

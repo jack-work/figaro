@@ -138,5 +138,3 @@ func truncateDuration(d time.Duration) string {
 		return d.Round(time.Minute).String()
 	}
 }
-
-

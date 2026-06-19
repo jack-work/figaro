@@ -63,7 +63,7 @@ type Bus interface {
 // SendInput is one turn's input.
 type SendInput struct {
 	AriaID    string
-	FigLog store.Log[message.Message]
+	FigLog    store.Log[message.Message]
 	Snapshot  chalkboard.Snapshot
 	Tools     []Tool
 	MaxTokens int

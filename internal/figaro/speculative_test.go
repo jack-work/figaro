@@ -28,9 +28,9 @@ import (
 // what the real Anthropic provider does: tool_use blocks become
 // dispatchable well before the full message arrives.
 type staggeredProvider struct {
-	tools     []specTool      // ordered by emission
-	streamEnd time.Duration   // when to PushFigaro after Send starts
-	calls     atomic.Int32    // counts Send invocations
+	tools     []specTool    // ordered by emission
+	streamEnd time.Duration // when to PushFigaro after Send starts
+	calls     atomic.Int32  // counts Send invocations
 }
 
 type specTool struct {
@@ -40,10 +40,12 @@ type specTool struct {
 	readyAt time.Duration // delay from Send-start to PushToolReady
 }
 
-func (p *staggeredProvider) Name() string                                             { return "staggered" }
-func (p *staggeredProvider) Fingerprint() string                                      { return "staggered/v0" }
-func (p *staggeredProvider) SetModel(string)                                          {}
-func (p *staggeredProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (p *staggeredProvider) Name() string        { return "staggered" }
+func (p *staggeredProvider) Fingerprint() string { return "staggered/v0" }
+func (p *staggeredProvider) SetModel(string)     {}
+func (p *staggeredProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
 
 func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	if p.calls.Add(1) > 1 {
@@ -136,9 +138,9 @@ type recordingTool struct {
 	starts sync.Map // map[toolCallID]time.Duration
 }
 
-func (rt *recordingTool) Name() string         { return rt.name }
-func (rt *recordingTool) Description() string  { return "test tool" }
-func (rt *recordingTool) Parameters() any      { return map[string]any{} }
+func (rt *recordingTool) Name() string        { return rt.name }
+func (rt *recordingTool) Description() string { return "test tool" }
+func (rt *recordingTool) Parameters() any     { return map[string]any{} }
 
 func (rt *recordingTool) Execute(ctx context.Context, args map[string]any, _ tool.OnOutput) ([]message.Content, error) {
 	id, _ := args["id"].(string)
@@ -271,30 +273,12 @@ func TestSpeculativeDispatch_ResultOrdering(t *testing.T) {
 
 	ch, _ := subscribeChan(a)
 	a.Prompt("go")
+	waitTurnDone(t, ch)
 
-	// The sealed tool_result message carries one tool_result block per
-	// call, in canonical (call) order, even though the tools finished
-	// out of order.
-	var toolResult *message.Message
-	timeout := time.After(5 * time.Second)
-	var sawDone bool
-	for !sawDone {
-		select {
-		case n := <-ch:
-			switch n.Method {
-			case rpc.MethodLogEntry:
-				if p, ok := n.Params.(rpc.LogEntry); ok && hasToolResultBlocks(p.Message) {
-					m := p.Message
-					toolResult = &m
-				}
-			case rpc.MethodTurnDone:
-				sawDone = true
-			}
-		case <-timeout:
-			t.Fatal("timeout")
-		}
-	}
-	require.NotNil(t, toolResult, "expected a sealed tool_result message")
+	// The tool_result message carries one block per call, in canonical
+	// (call) order, even though the tools finished out of order.
+	toolResult := findToolResult(a.Context())
+	require.NotNil(t, toolResult, "expected a tool_result message in the IR")
 	var ids []string
 	for _, c := range toolResult.Content {
 		if c.Type == message.ContentToolResult {
@@ -303,6 +287,32 @@ func TestSpeculativeDispatch_ResultOrdering(t *testing.T) {
 	}
 	assert.Equal(t, []string{"tc_fast", "tc_slow"}, ids,
 		"tool_result blocks must follow tool_call order")
+}
+
+// waitTurnDone drains ch until a turn.done notification.
+func waitTurnDone(t *testing.T, ch <-chan rpc.Notification) {
+	t.Helper()
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case n := <-ch:
+			if n.Method == rpc.MethodTurnDone {
+				return
+			}
+		case <-timeout:
+			t.Fatal("timeout waiting for turn.done")
+		}
+	}
+}
+
+// findToolResult returns the last message carrying tool_result blocks.
+func findToolResult(msgs []message.Message) *message.Message {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if hasToolResultBlocks(msgs[i]) {
+			return &msgs[i]
+		}
+	}
+	return nil
 }
 
 // hasToolResultBlocks reports whether m carries any tool_result block.
@@ -315,12 +325,10 @@ func hasToolResultBlocks(m message.Message) bool {
 	return false
 }
 
-// TestToolTurn_FrameOrdering asserts the log.* frame shape of a
-// tool-calling turn: the sealed entries arrive in index order —
-// user prompt, assistant (tool_invoke), tool_result, assistant (final)
-// — and the assistant's tool_invoke message seals before the
-// tool_result message it triggers. turn.done fires last.
-func TestToolTurn_FrameOrdering(t *testing.T) {
+// TestToolTurn_IRStructure asserts a tool-calling turn lands the right
+// message sequence in the IR: user prompt, assistant (tool_invoke),
+// tool_result, assistant (final reply), with one result per call.
+func TestToolTurn_IRStructure(t *testing.T) {
 	zero := time.Now()
 	rec := &recordingTool{name: "rec", dur: 5 * time.Millisecond, zero: zero}
 	reg := tool.NewRegistry()
@@ -350,52 +358,27 @@ func TestToolTurn_FrameOrdering(t *testing.T) {
 
 	ch, _ := subscribeChan(a)
 	a.Prompt("go")
+	waitTurnDone(t, ch)
 
-	// Collect sealed entries (log.entry) in order, plus the terminal
-	// turn.done.
-	var sealed []rpc.LogEntry
-	var doneSeen bool
-	timeout := time.After(5 * time.Second)
-	for !doneSeen {
-		select {
-		case n := <-ch:
-			switch n.Method {
-			case rpc.MethodLogEntry:
-				if p, ok := n.Params.(rpc.LogEntry); ok {
-					sealed = append(sealed, p)
-				}
-			case rpc.MethodTurnDone:
-				doneSeen = true
-			}
-		case <-timeout:
-			t.Fatal("timeout")
-		}
-	}
-
-	roles := make([]message.Role, len(sealed))
-	for i, e := range sealed {
-		roles[i] = e.Message.Role
+	// The turn lands the right message sequence in the IR: user prompt,
+	// assistant (tool_invoke), tool_result, assistant (final reply).
+	msgs := a.Context()
+	roles := make([]message.Role, len(msgs))
+	for i, m := range msgs {
+		roles[i] = m.Role
 	}
 	require.Equal(t, []message.Role{
-		message.RoleUser,      // prompt tic
-		message.RoleAssistant, // tool_invoke
-		message.RoleUser,      // tool_result
-		message.RoleAssistant, // final reply
-	}, roles, "tool-turn sealed entries must follow this index order")
+		message.RoleUser,
+		message.RoleAssistant,
+		message.RoleUser,
+		message.RoleAssistant,
+	}, roles, "tool turn must produce this message sequence")
 
-	// Entries are sealed in strictly increasing index order.
-	for i := 1; i < len(sealed); i++ {
-		assert.Greater(t, sealed[i].Index, sealed[i-1].Index,
-			"entries must seal in increasing index order")
-	}
-
-	// The assistant entry stops on tool_invoke and carries both calls.
-	assistant := sealed[1].Message
+	assistant := msgs[1]
 	assert.Equal(t, message.StopToolInvoke, assistant.StopReason)
 	assert.Len(t, assistantToolInvokeIDs(assistant), 2)
 
-	// The tool_result entry pairs one result per call.
-	toolResult := sealed[2].Message
+	toolResult := msgs[2]
 	assert.True(t, hasToolResultBlocks(toolResult))
 	assert.Len(t, toolResult.Content, 2)
 }

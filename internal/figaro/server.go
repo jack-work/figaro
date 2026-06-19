@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/jkrpc"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/jkrpc"
 )
 
 // AgentServer is the figaro-side JSON-RPC contract.
@@ -15,35 +15,9 @@ type AgentServer interface {
 	Handle(ctx context.Context, method string, params json.RawMessage) (any, error)
 }
 
-// connSession wraps the agent for one connection so per-connection
-// concerns (open-tail delta mode) can be negotiated from requests. It
-// holds the connection's notifier (the jkrpc server) so qua/read can
-// flip this subscription's fanout mode.
-type connSession struct {
-	a   *Agent
-	sub Notifier
-}
-
-func (s *connSession) Handle(ctx context.Context, method string, params json.RawMessage) (any, error) {
-	switch method {
-	case rpc.MethodQua:
-		var req rpc.QuaRequest
-		if json.Unmarshal(params, &req) == nil && req.DeltaMode {
-			s.a.SetSubscriberMode(s.sub, true)
-		}
-	case rpc.MethodRead:
-		var req rpc.ReadRequest
-		if json.Unmarshal(params, &req) == nil && req.DeltaMode {
-			s.a.SetSubscriberMode(s.sub, true)
-		}
-	}
-	return s.a.Handle(ctx, method, params)
-}
-
 // agentMethods is the set of methods the figaro socket exposes.
 var agentMethods = []string{
 	rpc.MethodQua,
-	rpc.MethodRead,
 	rpc.MethodContext,
 	rpc.MethodInterrupt,
 	rpc.MethodSet,
@@ -71,17 +45,8 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		idx := a.SubmitPrompt(req)
-		return rpc.QuaResponse{OK: true, Index: idx}, nil
-
-	case rpc.MethodRead:
-		var req rpc.ReadRequest
-		if len(params) > 0 {
-			if err := json.Unmarshal(params, &req); err != nil {
-				return nil, err
-			}
-		}
-		return a.Read(req), nil
+		a.SubmitPrompt(req)
+		return rpc.QuaResponse{OK: true}, nil
 
 	case rpc.MethodContext:
 		msgs := a.Context()

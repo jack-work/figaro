@@ -13,9 +13,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/jkrpc"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/jkrpc"
 
 	// NOTE: golang.org/x/sys/unix is Linux/macOS only. For future Windows
 	// support, PID monitoring will need a build-tagged alternative using
@@ -27,8 +27,8 @@ import (
 type Angelus struct {
 	Registry   *Registry
 	Handlers   map[string]jkrpc.HandlerFunc // set before Run()
-	Backend    store.Backend                  // aria persistence (nil = ephemeral-only)
-	LogCache   *store.LogCache                // refcount + TTL cache shared with agents
+	Backend    store.Backend                // aria persistence (nil = ephemeral-only)
+	LogCache   *store.LogCache              // refcount + TTL cache shared with agents
 	SocketPath string
 	RuntimeDir string
 	StartedAt  time.Time

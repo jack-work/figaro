@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/jack-work/jkrpc"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/jkrpc"
 )
 
 // NotifyHandler handles server-pushed notifications (wire order).
@@ -27,24 +27,9 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 	return &Client{cli: cli}, nil
 }
 
-// Qua sends a prompt and returns the index its user tic occupies.
-func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) (uint64, error) {
-	var resp rpc.QuaResponse
-	if err := c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, &resp); err != nil {
-		return 0, err
-	}
-	return resp.Index, nil
-}
-
-// Read fetches a windowed slice of the aria log (and the open tail).
-// With req.Follow, live log.* frames continue arriving on this
-// connection's notify handler after the catch-up batch returns.
-func (c *Client) Read(ctx context.Context, req rpc.ReadRequest) (*rpc.ReadResponse, error) {
-	var resp rpc.ReadResponse
-	if err := c.cli.Call(ctx, rpc.MethodRead, req, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
+// Qua sends a prompt. The reply streams as log.* notifications.
+func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) error {
+	return c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, nil)
 }
 
 // Context returns all messages in the figaro's chat history.

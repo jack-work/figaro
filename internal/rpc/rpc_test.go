@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
@@ -58,44 +57,16 @@ func TestQuaRequest(t *testing.T) {
 	})
 }
 
-func TestLogEntry(t *testing.T) {
-	roundTripValue(t, rpc.LogEntry{
-		Index: 2,
-		Message: message.Message{
-			Role:        message.RoleAssistant,
-			Content:     []message.Content{{Type: message.ContentText, Text: "hi"}},
-			StopReason:  message.StopEnd,
-			LogicalTime: 2,
-		},
-	})
+func TestSnapshotEntry(t *testing.T) {
+	roundTripValue(t, rpc.SnapshotEntry{Role: "assistant", Markdown: "# hi\n\nthere"})
 }
 
-func TestOpenEntry(t *testing.T) {
-	roundTripValue(t, rpc.OpenEntry{
-		Index:   2,
-		Version: 3,
-		Open:    true,
-		Message: message.Message{
-			Role:    message.RoleAssistant,
-			Content: []message.Content{{Type: message.ContentText, Text: "stream"}},
-		},
-	})
+func TestDeltaEntry(t *testing.T) {
+	roundTripValue(t, rpc.DeltaEntry{At: 5, Del: 2, Ins: "world"})
 }
 
-func TestPatchEntry(t *testing.T) {
-	roundTripValue(t, rpc.PatchEntry{
-		Index:   2,
-		Version: 4,
-		From:    3,
-		Ops: []rpc.BlockOp{
-			{Op: "append", Block: 0, Text: "more"},
-			{Op: "open", Block: 1, Content: &message.Content{Type: message.ContentToolInvoke, ToolCallID: "tc_1", ToolName: "bash"}},
-		},
-	})
-}
-
-func TestAbortEntry(t *testing.T) {
-	roundTripValue(t, rpc.AbortEntry{Index: 2, Reason: "user_interrupt"})
+func TestCommitEntry(t *testing.T) {
+	roundTripValue(t, rpc.CommitEntry{})
 }
 
 func TestDoneEntry(t *testing.T) {
@@ -176,13 +147,11 @@ func TestStatusResponse(t *testing.T) {
 
 func TestMethodConstants(t *testing.T) {
 	// Verify method names follow naming convention.
-	assert.Equal(t, "log.entry", rpc.MethodLogEntry)
-	assert.Equal(t, "log.open", rpc.MethodLogOpen)
-	assert.Equal(t, "log.patch", rpc.MethodLogPatch)
-	assert.Equal(t, "log.abort", rpc.MethodLogAbort)
+	assert.Equal(t, "log.snapshot", rpc.MethodLogSnapshot)
+	assert.Equal(t, "log.delta", rpc.MethodLogDelta)
+	assert.Equal(t, "log.commit", rpc.MethodLogCommit)
 	assert.Equal(t, "turn.done", rpc.MethodTurnDone)
 	assert.Equal(t, "figaro.qua", rpc.MethodQua)
-	assert.Equal(t, "figaro.read", rpc.MethodRead)
 	assert.Equal(t, "figaro.context", rpc.MethodContext)
 	assert.Equal(t, "figaro.create", rpc.MethodCreate)
 	assert.Equal(t, "figaro.kill", rpc.MethodKill)

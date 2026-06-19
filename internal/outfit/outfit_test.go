@@ -146,4 +146,3 @@ func TestLoad_MissingFileIsNotAnError(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, patch.IsEmpty(), "missing loadout must yield empty patch (graceful)")
 }
-

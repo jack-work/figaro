@@ -205,41 +205,15 @@ loop:
 		}
 	}
 
-	// Should have received at least a delta and a done.
+	// The turn opens a unit (snapshot), streams the reply (delta), and
+	// ends (turn.done).
 	methods := make([]string, len(notifications))
 	for i, n := range notifications {
 		methods[i] = n.Method
 	}
-	assert.Contains(t, methods, rpc.MethodLogOpen)
+	assert.Contains(t, methods, rpc.MethodLogSnapshot)
+	assert.Contains(t, methods, rpc.MethodLogDelta)
 	assert.Contains(t, methods, rpc.MethodTurnDone)
-}
-
-func TestAgent_SubmitPromptReturnsIndex(t *testing.T) {
-	a := newTestAgent("ok")
-	defer a.Kill()
-
-	ch, _ := subscribeChan(a)
-
-	// Fresh aria: the first user tic lands at index 1.
-	idx := a.SubmitPrompt(rpc.QuaRequest{Text: "hello"})
-	assert.Equal(t, uint64(1), idx)
-
-	// Drain to turn.done (user tic 1, assistant 2).
-	timeout := time.After(5 * time.Second)
-	for done := false; !done; {
-		select {
-		case n := <-ch:
-			if n.Method == rpc.MethodTurnDone {
-				done = true
-			}
-		case <-timeout:
-			t.Fatal("timeout")
-		}
-	}
-
-	// Next prompt's user tic lands at index 3.
-	idx2 := a.SubmitPrompt(rpc.QuaRequest{Text: "again"})
-	assert.Equal(t, uint64(3), idx2)
 }
 
 func TestAgent_Context(t *testing.T) {

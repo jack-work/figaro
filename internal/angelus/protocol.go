@@ -16,13 +16,13 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/jkrpc"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/jkrpc"
 )
 
 // ProviderFactory creates a provider from a name and operational knobs.
@@ -642,7 +642,6 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 		h.angelus.Backend.Remove(aria.ID)
 		return nil, fmt.Errorf("restore %s: empty aria, removed", aria.ID)
 	}
-
 
 	cb := h.openAriaChalkboard(aria.ID)
 	if cb == nil {
