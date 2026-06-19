@@ -191,7 +191,15 @@ model = "mock-model"
 	loaded, err := config.Load(dir)
 	require.NoError(t, err)
 
-	ctx := t.Context()
+	// Own the context, and tear down via Shutdown (not just ctx cancel):
+	// figaro lifecycles run on their own background context, so a plain
+	// cancel leaves their derivation writers running. Shutdown wg.Waits
+	// each figaro's Kill -> derived.Wait, flushing all derived-file writes
+	// before this function returns — i.e. before t.TempDir's RemoveAll —
+	// so the writes can't race the directory teardown ("directory not
+	// empty"). Defers run before t.Cleanup, so ordering holds.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	a.Handlers = angelus.NewHandlers(angelus.ServerConfig{
 		Angelus:         a,
@@ -202,6 +210,10 @@ model = "mock-model"
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- a.Run(ctx) }()
+	defer func() {
+		a.Shutdown(0)
+		<-errCh
+	}()
 
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
