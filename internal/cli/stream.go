@@ -20,7 +20,7 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-const spinnerFPS = 11
+const pacingFPS = 30
 
 // mustPromptFigaro is the interactive (TTY) prompt path: it drives a
 // liveRegion from the snapshot/delta/commit frame stream, animating
@@ -56,8 +56,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		width = 80
 	}
 	lr := newLiveRegion(os.Stdout, width, 0) // 0 → render's default bash cap (10)
+	pl := newPacedLive(lr, loaded.StreamCPS(), pacingFPS)
 
-	// The liveRegion is single-threaded; the notify pump, the spinner
+	// pacedLive is single-threaded; the notify pump, the pacing/spinner
 	// ticker, and SIGWINCH all serialize on lrMu.
 	var lrMu sync.Mutex
 	doneCh := make(chan struct{}, 1)
@@ -69,15 +70,15 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		case rpc.MethodLogSnapshot:
 			var e rpc.SnapshotEntry
 			if json.Unmarshal(params, &e) == nil {
-				lr.snapshot(e.Markdown)
+				pl.snapshot(e.Markdown)
 			}
 		case rpc.MethodLogDelta:
 			var e rpc.DeltaEntry
 			if json.Unmarshal(params, &e) == nil {
-				lr.applyDelta(livedoc.Delta{At: e.At, Del: e.Del, Ins: e.Ins})
+				pl.queueDelta(livedoc.Delta{At: e.At, Del: e.Del, Ins: e.Ins})
 			}
 		case rpc.MethodLogCommit:
-			lr.commit()
+			pl.commit()
 		case rpc.MethodTurnDone:
 			var d rpc.DoneEntry
 			_ = json.Unmarshal(params, &d)
@@ -97,23 +98,24 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 	defer fcli.Close()
 
-	// Local spinner animation: zero wire traffic.
-	stopSpin := make(chan struct{})
+	// Pacing + local spinner animation: reveals queued deltas typewriter-
+	// style and ticks the spinner; zero extra wire traffic.
+	stopTick := make(chan struct{})
 	go func() {
-		t := time.NewTicker(time.Second / spinnerFPS)
+		t := time.NewTicker(time.Second / pacingFPS)
 		defer t.Stop()
 		for {
 			select {
-			case <-stopSpin:
+			case <-stopTick:
 				return
 			case <-t.C:
 				lrMu.Lock()
-				lr.tickSpin()
+				pl.tick()
 				lrMu.Unlock()
 			}
 		}
 	}()
-	defer close(stopSpin)
+	defer close(stopTick)
 
 	// Reflow the live tail on resize.
 	winch := make(chan os.Signal, 1)
@@ -123,7 +125,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		for range winch {
 			w := term.Width()
 			lrMu.Lock()
-			lr.resize(w)
+			pl.resize(w)
 			lrMu.Unlock()
 		}
 	}()
