@@ -16,7 +16,9 @@ import (
 
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // runShow handles `figaro show [--id <id>] [N] [-v|-l|-a]`.
@@ -73,6 +75,14 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 			die("no figaro bound to this shell")
 		}
 		figaroID = r.FigaroID
+	}
+
+	// Default view: render the figwal ui translation (the live-render blob
+	// model) through the pure renderer. --literal (raw IR) and --verbose
+	// (inline state transitions + extras) fall through to the IR path
+	// below, as does an aria with no cached translation.
+	if !literal && !verbose && renderAriaUI(figaroID, n, all) {
+		return
 	}
 
 	// Read through the angelus's shared LogCache. The angelus is the
@@ -265,6 +275,51 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 				m.Usage.CacheReadTokens, m.Usage.CacheWriteTokens)
 		}
 	}
+}
+
+// renderAriaUI renders an aria's cached ui translation (derived/ui.json):
+// committed conversational units as markdown blobs, drawn through the pure
+// renderer. Returns false (so the caller falls back to the IR path) when
+// the translation is missing or empty.
+func renderAriaUI(figaroID string, n int, all bool) bool {
+	path := filepath.Join(stateDir(), "arias", figaroID, "derived", "ui.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var doc struct {
+		Units []struct {
+			Role     string `json:"role"`
+			Markdown string `json:"markdown"`
+		} `json:"units"`
+	}
+	if json.Unmarshal(data, &doc) != nil || len(doc.Units) == 0 {
+		return false
+	}
+
+	start := 0
+	if !all && len(doc.Units) > n {
+		start = len(doc.Units) - n
+	}
+
+	width := term.Width()
+	if width <= 0 {
+		width = 80
+	}
+
+	fmt.Printf("# aria %s — showing %d of %d units\n\n", figaroID, len(doc.Units)-start, len(doc.Units))
+	for _, u := range doc.Units[start:] {
+		label := "› you"
+		if u.Role == "assistant" {
+			label = "‹ figaro"
+		}
+		fmt.Println(term.Dim(label))
+		fmt.Println()
+		res := render.Render(u.Markdown, render.Options{Width: width})
+		fmt.Println(strings.Join(res.Lines, "\n"))
+		fmt.Println()
+	}
+	return true
 }
 
 func indentBlockquote(s string) string {

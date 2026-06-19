@@ -27,6 +27,11 @@ import (
 
 const spinner = string(livedoc.SpinnerSentinel)
 
+// Version fingerprints the IR→blob mapping. A cached ui translation
+// stamped with a different Version predates a compose change and should
+// be regenerated rather than trusted.
+const Version = "compose/v1"
+
 // composeBashCap bounds how many source lines of tool output the blob
 // carries; the renderer further clamps the display. Full output lives in
 // the canonical Content IR.
@@ -60,8 +65,8 @@ func Markdown(msgs []message.Message, partials map[string]string) string {
 // Unit is one committed conversational unit: a user prompt or an
 // assistant turn, as a markdown blob.
 type Unit struct {
-	Role     string
-	Markdown string
+	Role     string `json:"role"`
+	Markdown string `json:"markdown"`
 }
 
 // Units folds a message log into committed conversational units in
