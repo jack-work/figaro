@@ -7,10 +7,10 @@ import (
 
 func TestApply(t *testing.T) {
 	cases := []struct {
-		name      string
-		blob      string
-		d         Delta
-		want      string
+		name string
+		blob string
+		d    Delta
+		want string
 	}{
 		{"append", "abc", Delta{At: 3, Del: 0, Ins: "de"}, "abcde"},
 		{"prepend", "abc", Delta{At: 0, Del: 0, Ins: "X"}, "Xabc"},

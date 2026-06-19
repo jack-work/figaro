@@ -23,15 +23,16 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/termenv"
+
+	"github.com/jack-work/figaro/internal/livedoc"
 )
 
 // SpinnerSentinel is the reserved rune (Unicode PUA) the producer writes
 // into the blob to mark a running spinner. Render replaces it with the
 // braille frame for Options.Tick. Shared with the producer/composer.
-const SpinnerSentinel = ''
+const SpinnerSentinel = livedoc.SpinnerSentinel
 
-// SpinnerFrames is the braille animation set, shared with the web client.
-var SpinnerFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+var SpinnerFrames = livedoc.SpinnerFrames
 
 const defaultBashCap = 10
 

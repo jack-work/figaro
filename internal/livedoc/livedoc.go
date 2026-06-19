@@ -16,6 +16,17 @@ package livedoc
 
 import "unicode/utf8"
 
+// SpinnerSentinel is the reserved blob rune (Unicode PUA U+E000) the
+// producer writes to mark a running spinner. The renderer replaces it
+// with a braille frame locally, so animation never touches the wire. It
+// lives here, in the protocol core, so both the producer (which must not
+// depend on the renderer/glamour) and the renderer share one definition.
+const SpinnerSentinel = '\ue000'
+
+// SpinnerFrames is the braille animation set, shared with every renderer
+// (terminal and web).
+var SpinnerFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+
 // Delta is a single-region splice in byte offsets: replace [At, At+Del)
 // with Ins. At and At+Del are always rune-aligned.
 type Delta struct {
