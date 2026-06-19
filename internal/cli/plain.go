@@ -241,7 +241,7 @@ type plainSink struct {
 	out      io.Writer
 	role     string
 	blob     string
-	printed  int
+	written  string // exactly what's been emitted for this unit (sentinel-stripped)
 	doneCh   chan struct{}
 	sawError bool
 }
@@ -253,20 +253,21 @@ func (s *plainSink) handle(method string, params json.RawMessage) {
 		if json.Unmarshal(params, &e) == nil {
 			s.role = e.Role
 			s.blob = e.Markdown
-			s.printed = 0
-			s.flush()
+			s.written = ""
+			s.emit()
 		}
 	case rpc.MethodLogDelta:
 		var e rpc.DeltaEntry
 		if json.Unmarshal(params, &e) == nil {
 			s.blob = livedoc.Apply(s.blob, livedoc.Delta{At: e.At, Del: e.Del, Ins: e.Ins})
-			s.flush()
+			s.emit()
 		}
 	case rpc.MethodLogCommit:
-		s.flush()
-		s.role = ""
-		s.blob = ""
-		s.printed = 0
+		s.emit()
+		if s.role == "assistant" && s.written != "" {
+			s.out.Write([]byte("\n")) // terminate the unit's line
+		}
+		s.role, s.blob, s.written = "", "", ""
 	case rpc.MethodTurnDone:
 		var d rpc.DoneEntry
 		_ = json.Unmarshal(params, &d)
@@ -281,12 +282,22 @@ func (s *plainSink) handle(method string, params json.RawMessage) {
 	}
 }
 
-// flush writes the assistant unit's new tail (sentinel stripped).
-func (s *plainSink) flush() {
-	if s.role != "assistant" || s.printed >= len(s.blob) {
+// emit writes the assistant unit's new tail. It only emits when output
+// grows monotonically (the streaming-prose case); a structural change
+// that rewrites already-printed text (a spinner flip, a reformatted
+// reseal) is swallowed rather than reprinted — raw mode keeps the
+// streamed copy. Sentinel runes are stripped.
+func (s *plainSink) emit() {
+	if s.role != "assistant" {
 		return
 	}
-	suffix := s.blob[s.printed:]
-	s.printed = len(s.blob)
-	s.out.Write([]byte(strings.ReplaceAll(suffix, string(livedoc.SpinnerSentinel), "")))
+	// compose always tail-pads the blob with a trailing newline and grows
+	// text just *before* it, so the raw blob is never a clean prefix of its
+	// successor. Compare on the newline-trimmed body; the commit handler
+	// re-adds a single terminating newline.
+	b := strings.TrimRight(strings.ReplaceAll(s.blob, string(livedoc.SpinnerSentinel), ""), "\n")
+	if strings.HasPrefix(b, s.written) {
+		s.out.Write([]byte(b[len(s.written):]))
+	}
+	s.written = b
 }
