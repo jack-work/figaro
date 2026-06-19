@@ -216,6 +216,48 @@ loop:
 	assert.Contains(t, methods, rpc.MethodTurnDone)
 }
 
+func TestAgent_ReadCatchUp(t *testing.T) {
+	a := newTestAgent("the reply")
+	defer a.Kill()
+
+	// Idle, empty: nothing to catch up.
+	if r := a.Read(); len(r.Committed) != 0 || r.Live != nil {
+		t.Fatalf("fresh agent: want empty read, got %+v", r)
+	}
+
+	ch, _ := subscribeChan(a)
+	a.Prompt("the question")
+
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case n := <-ch:
+			if n.Method == rpc.MethodTurnDone {
+				goto done
+			}
+		case <-timeout:
+			t.Fatal("timeout")
+		}
+	}
+done:
+
+	// After the turn settles, the prompt and reply are committed units and
+	// no unit is live.
+	r := a.Read()
+	if r.Live != nil {
+		t.Fatalf("idle agent should have no live unit: %+v", r.Live)
+	}
+	if len(r.Committed) != 2 {
+		t.Fatalf("want user + assistant units, got %d: %+v", len(r.Committed), r.Committed)
+	}
+	if r.Committed[0].Role != "user" || !strings.Contains(r.Committed[0].Markdown, "the question") {
+		t.Errorf("committed[0] = %+v", r.Committed[0])
+	}
+	if r.Committed[1].Role != "assistant" || !strings.Contains(r.Committed[1].Markdown, "the reply") {
+		t.Errorf("committed[1] = %+v", r.Committed[1])
+	}
+}
+
 func TestAgent_Context(t *testing.T) {
 	a := newTestAgent("hello")
 	defer a.Kill()

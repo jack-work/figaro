@@ -23,6 +23,7 @@ var agentMethods = []string{
 	rpc.MethodSet,
 	rpc.MethodLoadout,
 	rpc.MethodChalkboard,
+	rpc.MethodRead,
 }
 
 // buildHandlers wires AgentServer.Handle into the jsonrpc handler map.
@@ -85,6 +86,9 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 
 	case rpc.MethodChalkboard:
 		return rpc.ChalkboardResponse{Snapshot: a.Snapshot()}, nil
+
+	case rpc.MethodRead:
+		return a.Read(), nil
 	}
 	return nil, fmt.Errorf("unknown method: %s", method)
 }

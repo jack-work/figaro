@@ -18,6 +18,12 @@ const (
 	MethodSet        = "figaro.set"
 	MethodLoadout    = "figaro.loadout"
 	MethodChalkboard = "figaro.chalkboard"
+
+	// MethodRead returns the conversation so far as committed unit blobs
+	// plus the in-flight live unit, so a freshly-connected client can
+	// rebuild scrollback and then follow live log.* frames on the same
+	// (already-subscribed) connection.
+	MethodRead = "figaro.read"
 )
 
 // Typed JSON-RPC error codes for figaro. The -32000..-32099 range
@@ -125,6 +131,18 @@ type LoadoutResponse struct {
 // ChalkboardResponse returns the agent's current snapshot.
 type ChalkboardResponse struct {
 	Snapshot map[string]json.RawMessage `json:"snapshot"`
+}
+
+// ReadRequest is the (currently empty) catch-up request; the whole
+// conversation is returned.
+type ReadRequest struct{}
+
+// ReadResponse carries the catch-up batch: committed units to flush to
+// scrollback, then the in-flight live unit (nil when idle) to seed the
+// live region before following log.* frames.
+type ReadResponse struct {
+	Committed []SnapshotEntry `json:"committed,omitempty"`
+	Live      *SnapshotEntry  `json:"live,omitempty"`
 }
 
 type FigaroInfoResponse struct {

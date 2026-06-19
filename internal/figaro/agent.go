@@ -95,13 +95,19 @@ type Agent struct {
 	mu   sync.RWMutex
 	subs map[Notifier]struct{} // socket clients + in-process listeners
 
-	// Live-render state, owned by the drain loop. liveBlob is the current
-	// unit's blob as last sent (deltas diff against it); turnStart is the
-	// figLog index where the current turn's agent messages begin; partials
-	// holds streamed output for in-flight tools (keyed by tool_call_id).
-	liveBlob  string
-	turnStart int
-	partials  map[string]string
+	// Live-render state. The drain loop owns liveBlob/turnStart/liveActive
+	// for mutation; liveMu guards them so a concurrent figaro.read sees a
+	// consistent (committed-prefix, live-unit) pair and never a delta
+	// mid-broadcast. liveBlob is the current unit's blob as last sent
+	// (deltas diff against it); turnStart is the figLog index where the
+	// current turn's agent messages begin; liveActive is true while an
+	// assistant turn unit is live; partials holds streamed output for
+	// in-flight tools (keyed by tool_call_id, drain-loop only).
+	liveMu     sync.Mutex
+	liveBlob   string
+	turnStart  int
+	liveActive bool
+	partials   map[string]string
 
 	createdAt  time.Time
 	lastActive time.Time
@@ -439,6 +445,9 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 // endTurn fans out turn.done and persists chalkboard + meta.
 func (a *Agent) endTurn(reason string) {
 	a.emitCommit() // freeze the live unit before signaling the turn idle
+	a.liveMu.Lock()
+	a.liveActive = false
+	a.liveMu.Unlock()
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
 		Method:  rpc.MethodTurnDone,

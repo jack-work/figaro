@@ -57,6 +57,56 @@ func Markdown(msgs []message.Message, partials map[string]string) string {
 	return strings.TrimRight(b.String(), "\n") + "\n"
 }
 
+// Unit is one committed conversational unit: a user prompt or an
+// assistant turn, as a markdown blob.
+type Unit struct {
+	Role     string
+	Markdown string
+}
+
+// Units folds a message log into committed conversational units in
+// order, mirroring the live wire's segmentation: each text-bearing user
+// message is its own prompt unit, and the assistant messages following
+// it (with their tool results) compose into one turn unit. A catch-up
+// read replays these to reproduce the same scrollback the live stream
+// would have produced.
+func Units(msgs []message.Message) []Unit {
+	var units []Unit
+	var group []message.Message
+	flush := func() {
+		if len(group) == 0 {
+			return
+		}
+		if blob := Markdown(group, nil); strings.TrimSpace(blob) != "" {
+			units = append(units, Unit{Role: "assistant", Markdown: blob})
+		}
+		group = nil
+	}
+	for _, m := range msgs {
+		if m.Role == message.RoleUser {
+			if txt := messageText(m); txt != "" {
+				flush()
+				units = append(units, Unit{Role: "user", Markdown: txt})
+			}
+		}
+		group = append(group, m)
+	}
+	flush()
+	return units
+}
+
+// messageText joins a message's text blocks; "" when it carries none
+// (e.g. a tool-result tic or a control-only patch).
+func messageText(m message.Message) string {
+	var parts []string
+	for _, c := range m.Content {
+		if c.Type == message.ContentText && strings.TrimSpace(c.Text) != "" {
+			parts = append(parts, c.Text)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
 func indexResults(msgs []message.Message) map[string]message.Content {
 	out := map[string]message.Content{}
 	for _, m := range msgs {

@@ -74,6 +74,17 @@ func (c *Client) Chalkboard(ctx context.Context) (*rpc.ChalkboardResponse, error
 	return &resp, nil
 }
 
+// Read fetches the catch-up batch: committed unit blobs plus the
+// in-flight live unit. Call right after dialing (the connection is
+// already subscribed) to rebuild scrollback before following frames.
+func (c *Client) Read(ctx context.Context) (*rpc.ReadResponse, error) {
+	var resp rpc.ReadResponse
+	if err := c.cli.Call(ctx, rpc.MethodRead, rpc.ReadRequest{}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Close closes the connection.
 func (c *Client) Close() error {
 	return c.cli.Close()

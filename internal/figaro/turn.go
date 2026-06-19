@@ -203,7 +203,10 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.emitSnapshot("user", prompt.text)
 		a.emitCommit()
 	}
+	a.liveMu.Lock()
 	a.turnStart = len(a.figLog.Read())
+	a.liveActive = true
+	a.liveMu.Unlock()
 	a.partials = map[string]string{}
 	a.emitSnapshot("assistant", "")
 
@@ -628,8 +631,12 @@ func (a *Agent) composeTurn(inflight *message.Message) string {
 	return compose.Markdown(msgs, a.partials)
 }
 
-// emitSnapshot establishes the current live unit's full blob.
+// emitSnapshot establishes the current live unit's full blob. liveMu is
+// held through the fanout so a concurrent figaro.read can't observe the
+// new blob before its frame is broadcast (which would double-apply).
 func (a *Agent) emitSnapshot(role, md string) {
+	a.liveMu.Lock()
+	defer a.liveMu.Unlock()
 	a.liveBlob = md
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
@@ -641,6 +648,8 @@ func (a *Agent) emitSnapshot(role, md string) {
 // emitDelta diffs blob against the last sent and emits a single-region
 // splice when it changed.
 func (a *Agent) emitDelta(blob string) {
+	a.liveMu.Lock()
+	defer a.liveMu.Unlock()
 	d, ok := livedoc.Diff(a.liveBlob, blob)
 	if !ok {
 		return
@@ -655,6 +664,8 @@ func (a *Agent) emitDelta(blob string) {
 
 // emitCommit freezes the current live unit.
 func (a *Agent) emitCommit() {
+	a.liveMu.Lock()
+	defer a.liveMu.Unlock()
 	a.liveBlob = ""
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
