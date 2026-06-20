@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tokens"
@@ -268,13 +267,6 @@ func init() {
 		},
 	})
 	Register(DurDerivReg{
-		Alias:    "ui",
-		Filename: "derived/ui.json",
-		Make: func(d DurDerivDeps) DurableDerivation {
-			return &uiDerivation{figLog: d.FigLog}
-		},
-	})
-	Register(DurDerivReg{
 		Alias:    "usage",
 		Filename: "derived/usage.json",
 		Make: func(d DurDerivDeps) DurableDerivation {
@@ -346,36 +338,6 @@ func (t *translatorDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 		out.EntryCount = len(entries)
 	}
 	return json.NewEncoder(w).Encode(out)
-}
-
-// uiDerivation writes arias/<id>/derived/ui.json: the committed
-// conversational units as markdown blobs, the figwal-backed translation
-// of the IR into the live-render blob model. Regenerated wholesale each
-// turn boundary (sealed turns are immutable, so only the tail changes);
-// a dormant-aria viewer renders these blobs instead of recomposing the
-// IR. Stamped with compose.Version so a stale cache is detectable.
-type uiDerivation struct {
-	figLog store.Log[message.Message]
-}
-
-// UIDoc is the on-disk shape for derived/ui.json.
-type UIDoc struct {
-	Fingerprint  string         `json:"fingerprint"`
-	LastFigaroLT uint64         `json:"last_figaro_lt,omitempty"`
-	LastUpdateMS int64          `json:"last_update_ms"`
-	Units        []compose.Unit `json:"units"`
-}
-
-func (u *uiDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
-	doc := UIDoc{
-		Fingerprint:  compose.Version,
-		LastFigaroLT: evt.FigaroLT,
-		LastUpdateMS: time.Now().UnixMilli(),
-		Units:        compose.Units(unwrapMessages(u.figLog.Read())),
-	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(doc)
 }
 
 // usageDerivation writes arias/<id>/derived/usage.json.

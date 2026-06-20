@@ -24,11 +24,6 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// Version fingerprints the IR→node mapping. A cached ui translation
-// stamped with a different Version predates a compose change and should
-// be regenerated rather than trusted.
-const Version = "compose/v2"
-
 // composeBashCap bounds how many source lines of tool output a node
 // carries; the renderer further clamps the display. Full output lives in
 // the canonical Content IR.
