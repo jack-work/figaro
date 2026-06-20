@@ -331,6 +331,10 @@ model = "mock-model"
 	}).Map
 
 	go a.Run(ctx)
+	// Tear down via Shutdown so each figaro's derivation writers drain
+	// before t.TempDir's RemoveAll (a plain ctx cancel leaves them racing
+	// the directory teardown → "directory not empty").
+	defer a.Shutdown(0)
 
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
