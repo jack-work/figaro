@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 
@@ -44,7 +45,32 @@ func buildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.S
 		markCacheBreakpoints(&params, *cc)
 	}
 	applyMessageTags(&params, msgLTs, snap)
+	applyThinking(&params, snap)
 	return params, nil
+}
+
+// applyThinking enables extended thinking when system.thinking_budget is a
+// positive integer (the budget in tokens; the API floor is 1024). It also
+// guarantees MaxTokens exceeds the budget, which the API requires
+// (max_tokens must leave room for the response after the thinking budget).
+func applyThinking(params *anthropic.MessageNewParams, snap chalkboard.Snapshot) {
+	v := snap.Lookup("system.thinking_budget")
+	if v == nil {
+		return
+	}
+	budget, err := strconv.Atoi(strings.TrimSpace(*v))
+	if err != nil || budget <= 0 {
+		return
+	}
+	if budget < 1024 {
+		budget = 1024
+	}
+	params.Thinking = anthropic.ThinkingConfigParamUnion{
+		OfEnabled: &anthropic.ThinkingConfigEnabledParam{BudgetTokens: int64(budget)},
+	}
+	if params.MaxTokens <= int64(budget) {
+		params.MaxTokens = int64(budget) + 4096 // headroom for the reply after thinking
+	}
 }
 
 // systemBlocks builds the system prefix: identity preamble (OAuth

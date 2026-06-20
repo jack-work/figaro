@@ -51,6 +51,7 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.credo", Short: "Credo source (string or {content,filePath,frontmatter}); providers read this as the system prompt", Mode: KeyUserSettable},
 		{Key: "system.tags", Short: "Per-LT annotations (e.g. system.tags[42].cache_control)", Mode: KeyUserSettable},
 		{Key: "system.cache_control", Short: `Auto cache-marker policy ("ephemeral" enables)`, Mode: KeyUserSettable},
+		{Key: "system.thinking_budget", Short: "Extended-thinking token budget (>=1024 enables; unset/0 = off)", Mode: KeyUserSettable},
 		{Key: "system.environment.<name>", Short: "Allowlisted env var capture", Mode: KeyUserSettable},
 
 		{Key: "system.cwd", Short: "Canonical working directory (set at create time)", Mode: KeySystemManaged},
