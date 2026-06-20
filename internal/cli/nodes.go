@@ -35,12 +35,11 @@ func renderNodes(nodes []livedoc.Node, width, bashCap int, tick uint64) ([]strin
 			nr = renderToolNode(n, width, bashCap, tick)
 		default:
 			nr = renderProseNode(n, width)
-			// Give prose breathing room above: a blank line before text
-			// that follows another node (most visibly, after a tool's
-			// output). The first node sits flush against the unit's top.
-			if i > 0 {
-				nr = append([]string{""}, nr...)
-			}
+		}
+		// One blank line between any two adjacent blocks (prose, thinking,
+		// or tool) for separation. The first node sits flush to the top.
+		if i > 0 {
+			nr = append([]string{""}, nr...)
 		}
 		if i < firstLive {
 			stable += len(nr)
