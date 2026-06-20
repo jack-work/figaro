@@ -27,16 +27,27 @@ func runShow(loaded *config.Loaded, idFlag string, args []string) {
 	renderAria(loaded, idFlag, args)
 }
 
-// renderAria prints history for an aria.
+// showOpts is the parsed flag state of `figaro show`.
+type showOpts struct {
+	last     int // last N units (default 10)
+	from, to int // unit-index range; -1 = unset
+	all      bool
+	jsonOut  bool
+	verbose  bool
+	literal  bool
+}
+
+// renderAria prints history for an aria. The default view derives the
+// conversational units from the IR and renders them through the node
+// widget renderer. --json emits those units verbatim (materialized, no
+// delta compression). N / --last N / --from A [--to B] / --all select a
+// unit range. --verbose and --literal use the raw IR path.
 func renderAria(loaded *config.Loaded, id string, args []string) {
-	n := 10
-	verbose := false
-	literal := false
-	all := false
-	// Expand bundled short flags.
+	opts := showOpts{last: 10, from: -1, to: -1}
+
 	expanded := make([]string, 0, len(args))
 	for _, a := range args {
-		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
+		if len(a) > 2 && a[0] == '-' && a[1] != '-' { // expand bundled bool shorts (-vj)
 			for _, r := range a[1:] {
 				expanded = append(expanded, "-"+string(r))
 			}
@@ -44,20 +55,44 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		}
 		expanded = append(expanded, a)
 	}
-	for _, arg := range expanded {
-		switch arg {
-		case "-v", "--verbose":
-			verbose = true
-		case "-l", "--literal":
-			literal = true
-		case "-a", "--all":
-			all = true
+	needInt := func(i int) int {
+		if i+1 >= len(expanded) {
+			die("show: %s requires a value", expanded[i])
+		}
+		return mustAtoi(expanded[i+1])
+	}
+	for i := 0; i < len(expanded); i++ {
+		a := expanded[i]
+		switch {
+		case a == "-v" || a == "--verbose":
+			opts.verbose = true
+		case a == "-l" || a == "--literal":
+			opts.literal = true
+		case a == "-a" || a == "--all":
+			opts.all = true
+		case a == "-j" || a == "--json":
+			opts.jsonOut = true
+		case a == "--from":
+			opts.from = needInt(i)
+			i++
+		case a == "--to":
+			opts.to = needInt(i)
+			i++
+		case a == "--last":
+			opts.last = needInt(i)
+			i++
+		case strings.HasPrefix(a, "--from="):
+			opts.from = mustAtoi(strings.TrimPrefix(a, "--from="))
+		case strings.HasPrefix(a, "--to="):
+			opts.to = mustAtoi(strings.TrimPrefix(a, "--to="))
+		case strings.HasPrefix(a, "--last="):
+			opts.last = mustAtoi(strings.TrimPrefix(a, "--last="))
 		default:
-			parsed, err := strconv.Atoi(arg)
+			n, err := strconv.Atoi(a)
 			if err != nil {
-				die("usage: figaro show [--id <id>] [N] [-v|--verbose] [-l|--literal] [-a|--all]")
+				die("usage: figaro show [--id <id>] [N | --last N | --from A [--to B] | -a] [-j|--json] [-v] [-l]")
 			}
-			n = parsed
+			opts.last = n
 		}
 	}
 
@@ -78,17 +113,9 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		figaroID = r.FigaroID
 	}
 
-	// Default view: render the figwal ui translation (the live-render blob
-	// model) through the pure renderer. --literal (raw IR) and --verbose
-	// (inline state transitions + extras) fall through to the IR path
-	// below, as does an aria with no cached translation.
-	if !literal && !verbose && renderAriaUI(figaroID, n, all) {
-		return
-	}
-
-	// Read through the angelus's shared LogCache. The angelus is the
-	// single owner of the figwal log so we don't race the live agent
-	// on the active segment.
+	// Read the IR through the angelus's shared LogCache (single owner of
+	// the figwal log, so we don't race the live agent on the active
+	// segment). The IR is canonical; the unit view is derived from it.
 	resp, err := acli.AriaRead(ctx, figaroID, 0, 0)
 	if err != nil {
 		die("aria.read: %s", err)
@@ -104,14 +131,108 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 			die("aria.read: parse LT=%d: %s", e.LT, err)
 		}
 	}
+
+	// --verbose / --literal: the raw IR path (inline transitions + extras,
+	// or unrendered IR markdown).
+	if opts.verbose || opts.literal {
+		renderAriaIR(figaroID, entries, opts)
+		return
+	}
+
+	// Default + --json: conversational units derived from the IR.
+	msgs := make([]message.Message, len(entries))
+	for i, e := range entries {
+		msgs[i] = e.Payload
+		msgs[i].LogicalTime = e.LT
+	}
+	units := compose.Units(msgs)
+	lo, hi := selectUnitRange(len(units), opts)
+
+	if opts.jsonOut {
+		type jUnit struct {
+			Index int            `json:"index"`
+			Role  string         `json:"role"`
+			Nodes []livedoc.Node `json:"nodes"`
+		}
+		out := make([]jUnit, 0, hi-lo)
+		for i := lo; i < hi; i++ {
+			out = append(out, jUnit{Index: i, Role: units[i].Role, Nodes: units[i].Nodes})
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(out); err != nil {
+			die("json: %s", err)
+		}
+		return
+	}
+
+	width := termWidth()
+	fmt.Printf("# aria %s — units %d–%d of %d\n\n", figaroID, lo, hi-1, len(units))
+	for i := lo; i < hi; i++ {
+		u := units[i]
+		label := fmt.Sprintf("[%d] › you", i)
+		if u.Role == "assistant" {
+			label = fmt.Sprintf("[%d] ‹ figaro", i)
+		}
+		fmt.Println(term.Dim(label))
+		fmt.Println()
+		rows, _ := renderNodes(u.Nodes, width, 0, 0)
+		fmt.Println(strings.Join(rows, "\n"))
+		fmt.Println()
+	}
+}
+
+func mustAtoi(s string) int {
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		die("show: want an integer, got %q", s)
+	}
+	return v
+}
+
+// selectUnitRange resolves the [lo,hi) unit window from the flags:
+// --all = everything; --from/--to = an inclusive index range; otherwise
+// the last N (default 10).
+func selectUnitRange(total int, o showOpts) (int, int) {
+	if o.all {
+		return 0, total
+	}
+	if o.from >= 0 || o.to >= 0 {
+		lo := 0
+		if o.from > 0 {
+			lo = o.from
+		}
+		hi := total
+		if o.to >= 0 && o.to+1 < total {
+			hi = o.to + 1
+		}
+		if lo > total {
+			lo = total
+		}
+		if hi < lo {
+			hi = lo
+		}
+		return lo, hi
+	}
+	lo := 0
+	if o.last > 0 && total > o.last {
+		lo = total - o.last
+	}
+	return lo, total
+}
+
+// renderAriaIR is the raw IR path for --verbose / --literal: it renders
+// each message (markdown via largo, or unrendered when --literal) and, in
+// verbose mode, appends credo / state transitions / chalkboard.
+func renderAriaIR(figaroID string, entries []store.Entry[message.Message], opts showOpts) {
 	start := 0
-	if !all && len(entries) > n {
-		start = len(entries) - n
+	if !opts.all && len(entries) > opts.last {
+		start = len(entries) - opts.last
 	}
 
 	var w io.Writer = os.Stdout
 	flush := func() {}
-	if !literal {
+	if !opts.literal {
 		sw, err := largo.NewWriter(os.Stdout, largo.Options{})
 		if err != nil {
 			die("largo: %s", err)
@@ -122,61 +243,62 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 
 	fmt.Fprintf(w, "# aria %s — showing %d of %d messages\n\n", figaroID, len(entries)-start, len(entries))
 	for _, e := range entries[start:] {
-		renderMessage(w, e.Payload, e.LT, verbose)
+		renderMessage(w, e.Payload, e.LT, opts.verbose)
 	}
 	flush()
 
-	if verbose {
-		fmt.Println()
-		fmt.Println("---")
-		fmt.Println("## credo")
-		fmt.Println()
-		cbPath := filepath.Join(stateDir(), "arias", figaroID, "chalkboard.json")
-		cbData, err := os.ReadFile(cbPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "read chalkboard: %s\n", err)
-			return
-		}
-		var snap map[string]json.RawMessage
-		if err := json.Unmarshal(cbData, &snap); err != nil {
-			fmt.Fprintf(os.Stderr, "parse chalkboard: %s\n", err)
-			return
-		}
-		if raw, ok := snap["system.credo"]; ok {
-			// system.credo may be a bare string or a ContentEnvelope
-			// object ({content, frontmatter, filePath}). Prefer content,
-			// fall back to frontmatter, then to the raw string.
-			var env struct {
-				Content     string `json:"content,omitempty"`
-				Frontmatter string `json:"frontmatter,omitempty"`
-			}
-			switch {
-			case json.Unmarshal(raw, &env) == nil && env.Content != "":
-				fmt.Println(env.Content)
-			case env.Frontmatter != "":
-				fmt.Println(env.Frontmatter)
-			default:
-				var s string
-				if json.Unmarshal(raw, &s) == nil {
-					fmt.Println(s)
-				} else {
-					fmt.Println(string(raw))
-				}
-			}
-		} else {
-			fmt.Println("(no system.credo on chalkboard)")
-		}
-		fmt.Println()
-		fmt.Println("---")
-		fmt.Println("## state transitions")
-		fmt.Println()
-		printTransitions(os.Stdout, entries)
-		fmt.Println()
-		fmt.Println("---")
-		fmt.Println("## chalkboard")
-		fmt.Println()
-		printSnapshot(os.Stdout, snap)
+	if !opts.verbose {
+		return
 	}
+	fmt.Println()
+	fmt.Println("---")
+	fmt.Println("## credo")
+	fmt.Println()
+	cbPath := filepath.Join(stateDir(), "arias", figaroID, "chalkboard.json")
+	cbData, err := os.ReadFile(cbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "read chalkboard: %s\n", err)
+		return
+	}
+	var snap map[string]json.RawMessage
+	if err := json.Unmarshal(cbData, &snap); err != nil {
+		fmt.Fprintf(os.Stderr, "parse chalkboard: %s\n", err)
+		return
+	}
+	if raw, ok := snap["system.credo"]; ok {
+		// system.credo may be a bare string or a ContentEnvelope object
+		// ({content, frontmatter, filePath}). Prefer content, fall back to
+		// frontmatter, then to the raw string.
+		var env struct {
+			Content     string `json:"content,omitempty"`
+			Frontmatter string `json:"frontmatter,omitempty"`
+		}
+		switch {
+		case json.Unmarshal(raw, &env) == nil && env.Content != "":
+			fmt.Println(env.Content)
+		case env.Frontmatter != "":
+			fmt.Println(env.Frontmatter)
+		default:
+			var s string
+			if json.Unmarshal(raw, &s) == nil {
+				fmt.Println(s)
+			} else {
+				fmt.Println(string(raw))
+			}
+		}
+	} else {
+		fmt.Println("(no system.credo on chalkboard)")
+	}
+	fmt.Println()
+	fmt.Println("---")
+	fmt.Println("## state transitions")
+	fmt.Println()
+	printTransitions(os.Stdout, entries)
+	fmt.Println()
+	fmt.Println("---")
+	fmt.Println("## chalkboard")
+	fmt.Println()
+	printSnapshot(os.Stdout, snap)
 }
 
 // printTransitions prints all chalkboard patches in LT order.
@@ -276,53 +398,6 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 				m.Usage.CacheReadTokens, m.Usage.CacheWriteTokens)
 		}
 	}
-}
-
-// renderAriaUI renders an aria's cached ui translation (derived/ui.json):
-// committed conversational units as typed nodes, drawn through the pure
-// renderer. Returns false (so the caller falls back to the IR path) when
-// the translation is missing, empty, or stamped with a stale fingerprint
-// (a pre-node cache).
-func renderAriaUI(figaroID string, n int, all bool) bool {
-	path := filepath.Join(stateDir(), "arias", figaroID, "derived", "ui.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	var doc struct {
-		Fingerprint string `json:"fingerprint"`
-		Units       []struct {
-			Role  string         `json:"role"`
-			Nodes []livedoc.Node `json:"nodes"`
-		} `json:"units"`
-	}
-	if json.Unmarshal(data, &doc) != nil || len(doc.Units) == 0 || doc.Fingerprint != compose.Version {
-		return false
-	}
-
-	start := 0
-	if !all && len(doc.Units) > n {
-		start = len(doc.Units) - n
-	}
-
-	width := term.Width()
-	if width <= 0 {
-		width = 80
-	}
-
-	fmt.Printf("# aria %s — showing %d of %d units\n\n", figaroID, len(doc.Units)-start, len(doc.Units))
-	for _, u := range doc.Units[start:] {
-		label := "› you"
-		if u.Role == "assistant" {
-			label = "‹ figaro"
-		}
-		fmt.Println(term.Dim(label))
-		fmt.Println()
-		rows, _ := renderNodes(u.Nodes, width, 0, 0)
-		fmt.Println(strings.Join(rows, "\n"))
-		fmt.Println()
-	}
-	return true
 }
 
 func indentBlockquote(s string) string {

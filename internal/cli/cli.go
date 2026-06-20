@@ -75,24 +75,34 @@ func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 		Aliases: []string{"history"},
 		Group:   "Prompt",
 		Short:   "Render an aria's message history",
-		Usage:   "show [--id <id>] [N] [-v] [-l] [-a]",
-		Long: `Render the message history of an aria. Defaults to the last 10
-messages of the pid-bound aria; --id scopes to a different aria.
+		Usage:   "show [--id <id>] [N | --last N | --from A [--to B] | -a] [-j|--json] [-v] [-l]",
+		Long: `Render an aria's history as conversational units (the prompt and
+each agent turn). Defaults to the last 10 units of the pid-bound aria;
+--id scopes to a different aria. Units are 0-indexed (shown in the
+output) so ranges can target them.
 
-  figaro show                      last 10 of the bound aria
-  figaro show 20                   last 20 of the bound aria
-  figaro show --id myid 50 -v      last 50 of myid, verbose
-  figaro show --id myid -a -l      all messages of myid, literal output`,
+  figaro show                      last 10 units of the bound aria
+  figaro show 20                   last 20 units
+  figaro show --from 4             units 4..end ("after index 4")
+  figaro show --from 1 --to 3      units 1..3 inclusive
+  figaro show -a                   every unit
+  figaro show -j                   units as raw JSON (materialized, no deltas)
+  figaro show --id myid 50 -v      last 50 messages of myid, verbose IR
+  figaro show -l                   raw IR, no rendering`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
-			{Long: "verbose", Short: "v", IsBool: true, Description: "Include patches, thinking, usage"},
+			{Long: "verbose", Short: "v", IsBool: true, Description: "Raw IR with patches, thinking, usage, transitions"},
 			{Long: "literal", Short: "l", IsBool: true, Description: "No ANSI / markdown rendering"},
-			{Long: "all", Short: "a", IsBool: true, Description: "Show every message, not just last N"},
+			{Long: "all", Short: "a", IsBool: true, Description: "Show every unit, not just last N"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Emit units as raw JSON (no delta compression)"},
+			{Long: "from", Description: "Start unit index (inclusive)"},
+			{Long: "to", Description: "End unit index (inclusive)"},
+			{Long: "last", Description: "Show the last N units"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			// renderAria parses -v/-l/-a/N from argv. Reassemble what
-			// the router parsed back into its expected shape.
+			// renderAria has its own flag parser; reassemble what the
+			// router parsed back into its expected shape.
 			var args []string
 			if ctx.BoolFlag("verbose") {
 				args = append(args, "-v")
@@ -102,6 +112,18 @@ messages of the pid-bound aria; --id scopes to a different aria.
 			}
 			if ctx.BoolFlag("all") {
 				args = append(args, "-a")
+			}
+			if ctx.BoolFlag("json") {
+				args = append(args, "-j")
+			}
+			if v := ctx.Flag("from"); v != "" {
+				args = append(args, "--from", v)
+			}
+			if v := ctx.Flag("to"); v != "" {
+				args = append(args, "--to", v)
+			}
+			if v := ctx.Flag("last"); v != "" {
+				args = append(args, "--last", v)
 			}
 			args = append(args, ctx.Args...)
 			runShow(ld, ctx.Flag("id"), args)
