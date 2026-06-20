@@ -18,7 +18,7 @@ func (a *Agent) Read() rpc.ReadResponse {
 	a.liveMu.Lock()
 	turnStart := a.turnStart
 	liveActive := a.liveActive
-	liveBlob := a.liveBlob
+	liveNodes := a.liveNodes
 	a.liveMu.Unlock()
 
 	entries := a.figLog.Read()
@@ -30,10 +30,10 @@ func (a *Agent) Read() rpc.ReadResponse {
 
 	resp := rpc.ReadResponse{}
 	for _, u := range compose.Units(committed) {
-		resp.Committed = append(resp.Committed, rpc.SnapshotEntry{Role: u.Role, Markdown: u.Markdown})
+		resp.Committed = append(resp.Committed, rpc.SnapshotEntry{Role: u.Role, Nodes: u.Nodes})
 	}
 	if liveActive {
-		resp.Live = &rpc.SnapshotEntry{Role: "assistant", Markdown: liveBlob}
+		resp.Live = &rpc.SnapshotEntry{Role: "assistant", Nodes: liveNodes}
 	}
 	return resp
 }

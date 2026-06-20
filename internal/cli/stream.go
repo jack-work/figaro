@@ -20,7 +20,7 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-const pacingFPS = 30
+const spinnerFPS = 11 // spinner frames per second (~90ms/frame)
 
 // mustPromptFigaro is the interactive (TTY) prompt path: it drives a
 // liveRegion from the snapshot/delta/commit frame stream, animating
@@ -55,11 +55,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	if width <= 0 {
 		width = 80
 	}
-	lr := newLiveRegion(os.Stdout, width, 0) // 0 → render's default bash cap (10)
-	pl := newPacedLive(lr, loaded.StreamCPS(), pacingFPS)
+	lr := newLiveRegion(os.Stdout, width, 0) // 0 → renderer's default bash cap (10)
 
-	// pacedLive is single-threaded; the notify pump, the pacing/spinner
-	// ticker, and SIGWINCH all serialize on lrMu.
+	// liveRegion is single-threaded; the notify pump, the spinner ticker,
+	// and SIGWINCH all serialize on lrMu.
 	var lrMu sync.Mutex
 	doneCh := make(chan struct{}, 1)
 
@@ -70,15 +69,25 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		case rpc.MethodLogSnapshot:
 			var e rpc.SnapshotEntry
 			if json.Unmarshal(params, &e) == nil {
-				pl.snapshot(e.Markdown)
+				lr.snapshot(e.Nodes)
 			}
-		case rpc.MethodLogDelta:
-			var e rpc.DeltaEntry
+		case rpc.MethodNodeOpen:
+			var e rpc.NodeOpenEntry
 			if json.Unmarshal(params, &e) == nil {
-				pl.queueDelta(livedoc.Delta{At: e.At, Del: e.Del, Ins: e.Ins})
+				lr.applyOp(livedoc.Op{Kind: livedoc.OpOpen, Index: e.Index, Node: &e.Node})
+			}
+		case rpc.MethodNodePatch:
+			var e rpc.NodePatchEntry
+			if json.Unmarshal(params, &e) == nil {
+				lr.applyOp(livedoc.Op{Kind: livedoc.OpPatch, Index: e.Index, Field: e.Field, At: e.At, Del: e.Del, Ins: e.Ins})
+			}
+		case rpc.MethodNodeSet:
+			var e rpc.NodeSetEntry
+			if json.Unmarshal(params, &e) == nil {
+				lr.applyOp(livedoc.Op{Kind: livedoc.OpSet, Index: e.Index, Status: e.Status})
 			}
 		case rpc.MethodLogCommit:
-			pl.commit()
+			lr.commit()
 		case rpc.MethodTurnDone:
 			var d rpc.DoneEntry
 			_ = json.Unmarshal(params, &d)
@@ -98,11 +107,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 	defer fcli.Close()
 
-	// Pacing + local spinner animation: reveals queued deltas typewriter-
-	// style and ticks the spinner; zero extra wire traffic.
+	// Local spinner animation: ticks any running tool's spinner; zero
+	// extra wire traffic (output streams via server node ops).
 	stopTick := make(chan struct{})
 	go func() {
-		t := time.NewTicker(time.Second / pacingFPS)
+		t := time.NewTicker(time.Second / spinnerFPS)
 		defer t.Stop()
 		for {
 			select {
@@ -110,7 +119,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				return
 			case <-t.C:
 				lrMu.Lock()
-				pl.tick()
+				lr.tickSpin()
 				lrMu.Unlock()
 			}
 		}
@@ -125,7 +134,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		for range winch {
 			w := term.Width()
 			lrMu.Lock()
-			pl.resize(w)
+			lr.resize(w)
 			lrMu.Unlock()
 		}
 	}()

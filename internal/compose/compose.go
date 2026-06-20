@@ -1,21 +1,20 @@
 // Package compose maps the Figaro IR (a turn's message.Message blocks)
-// to the canonical live-render blob: one markdown string. It is the
-// producer-side translation, analogous to a provider Encode — pure,
-// deterministic, and dependency-light (no renderer/glamour), so the
+// to the canonical live-render unit: an ordered list of typed nodes. It
+// is the producer-side translation, analogous to a provider Encode —
+// pure, deterministic, and dependency-light (no renderer/glamour), so the
 // agent can compose without importing the terminal renderer.
 //
-// Block → markdown mapping (each block is one contiguous span, in order,
-// so an edit to one block localizes to a single-region delta):
-//   - text      → prose
-//   - thinking  → dim blockquote
-//   - tool_invoke, still running (no result yet) → "## tool\n⟨spinner⟩ detail"
-//   - tool_invoke, completed → "## tool\n✓/✗ detail" + a ```console fence
-//     of the result (closed = final; the renderer clamps it to a tail)
+// Block → node mapping (each assistant content block is one node, in
+// order, so an edit to one block localizes to a single node op):
+//   - text      → prose node (markdown)
+//   - thinking  → prose node (dim blockquote)
+//   - tool_invoke → tool node {name, args, status, output}; its result
+//     (or streamed partial) folds in as output, status running→ok/error
 //
-// A running tool carries the spinner sentinel (animated locally by the
-// renderer, off the wire). Tool-result tics (user role) are folded under
-// their invoke via tool_call_id; the user's own prompt is a separate
-// committed unit and is not part of the agent-turn blob.
+// The spinner is the consumer's concern (animated locally per running
+// tool); compose emits no sentinel. Tool-result tics (user role) fold
+// under their invoke via tool_call_id; the user's own prompt is a
+// separate committed unit and is not part of the agent turn.
 package compose
 
 import (
@@ -25,56 +24,98 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-const spinner = string(livedoc.SpinnerSentinel)
-
-// Version fingerprints the IR→blob mapping. A cached ui translation
+// Version fingerprints the IR→node mapping. A cached ui translation
 // stamped with a different Version predates a compose change and should
 // be regenerated rather than trusted.
-const Version = "compose/v1"
+const Version = "compose/v2"
 
-// composeBashCap bounds how many source lines of tool output the blob
+// composeBashCap bounds how many source lines of tool output a node
 // carries; the renderer further clamps the display. Full output lives in
 // the canonical Content IR.
 const composeBashCap = 200
 
-// Markdown composes the blob for a turn from its messages in order.
-// partials carries streamed output for tools still running (keyed by
-// tool_call_id); nil/absent means a tool shows only its spinner.
-func Markdown(msgs []message.Message, partials map[string]string) string {
+// Nodes maps a turn's messages to the live node list: each assistant
+// content block becomes a node in order — text/thinking → prose, tool
+// invoke → a tool node folding in its result (or streamed partial). A
+// tool with no result yet is left status=running with whatever output has
+// streamed.
+func Nodes(msgs []message.Message, partials map[string]string) []livedoc.Node {
 	results := indexResults(msgs)
-
-	var b strings.Builder
+	var nodes []livedoc.Node
 	for _, m := range msgs {
 		if m.Role != message.RoleAssistant {
-			continue // tool_result tics fold under their invoke; user prompts aren't in the turn blob
+			continue // tool_result tics fold under their invoke; user prompts aren't in the turn
 		}
 		for _, c := range m.Content {
 			switch c.Type {
 			case message.ContentText:
-				writeBlock(&b, c.Text)
+				if strings.TrimSpace(c.Text) == "" {
+					continue
+				}
+				nodes = append(nodes, livedoc.Node{Type: livedoc.NodeProse, Markdown: strings.TrimRight(c.Text, "\n")})
 			case message.ContentThinking:
-				writeBlock(&b, blockquote(c.Text))
+				if strings.TrimSpace(c.Text) == "" {
+					continue
+				}
+				nodes = append(nodes, livedoc.Node{Type: livedoc.NodeProse, Markdown: blockquote(c.Text)})
 			case message.ContentToolInvoke:
-				writeBlock(&b, tool(c, results, partials))
+				nodes = append(nodes, toolNode(c, results, partials))
 			}
 		}
 	}
-	return strings.TrimRight(b.String(), "\n") + "\n"
+	return nodes
+}
+
+func toolNode(inv message.Content, results map[string]message.Content, partials map[string]string) livedoc.Node {
+	name := inv.ToolName
+	if name == "" {
+		name = "tool"
+	}
+	n := livedoc.Node{
+		Type: livedoc.NodeTool,
+		ID:   inv.ToolCallID,
+		Name: name,
+		Args: inv.Arguments,
+	}
+	if res, done := results[inv.ToolCallID]; done {
+		n.Status = livedoc.StatusOK
+		if res.IsError {
+			n.Status = livedoc.StatusError
+		}
+		n.Output = tailBound(res.Text)
+	} else {
+		n.Status = livedoc.StatusRunning
+		n.Output = tailBound(partials[inv.ToolCallID])
+	}
+	return n
+}
+
+// tailBound clamps streamed tool output to the last composeBashCap source
+// lines; the full result stays in the canonical Content IR.
+func tailBound(text string) string {
+	if text == "" {
+		return ""
+	}
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	if len(lines) > composeBashCap {
+		lines = lines[len(lines)-composeBashCap:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Unit is one committed conversational unit: a user prompt or an
-// assistant turn, as a markdown blob.
+// assistant turn, as a typed node list.
 type Unit struct {
-	Role     string `json:"role"`
-	Markdown string `json:"markdown"`
+	Role  string         `json:"role"`
+	Nodes []livedoc.Node `json:"nodes"`
 }
 
 // Units folds a message log into committed conversational units in
 // order, mirroring the live wire's segmentation: each text-bearing user
-// message is its own prompt unit, and the assistant messages following
-// it (with their tool results) compose into one turn unit. A catch-up
-// read replays these to reproduce the same scrollback the live stream
-// would have produced.
+// message is its own prompt unit (one prose node), and the assistant
+// messages following it (with their tool results) compose into one turn
+// unit. A catch-up read replays these to reproduce the same scrollback
+// the live stream would have produced.
 func Units(msgs []message.Message) []Unit {
 	var units []Unit
 	var group []message.Message
@@ -82,8 +123,8 @@ func Units(msgs []message.Message) []Unit {
 		if len(group) == 0 {
 			return
 		}
-		if blob := Markdown(group, nil); strings.TrimSpace(blob) != "" {
-			units = append(units, Unit{Role: "assistant", Markdown: blob})
+		if nodes := Nodes(group, nil); len(nodes) > 0 {
+			units = append(units, Unit{Role: "assistant", Nodes: nodes})
 		}
 		group = nil
 	}
@@ -91,7 +132,7 @@ func Units(msgs []message.Message) []Unit {
 		if m.Role == message.RoleUser {
 			if txt := messageText(m); txt != "" {
 				flush()
-				units = append(units, Unit{Role: "user", Markdown: txt})
+				units = append(units, Unit{Role: "user", Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: txt}}})
 			}
 		}
 		group = append(group, m)
@@ -124,96 +165,10 @@ func indexResults(msgs []message.Message) map[string]message.Content {
 	return out
 }
 
-// tool renders one tool_invoke block: heading + status line + a clamped
-// console fence. While running it shows the spinner sentinel and any
-// streamed partial output; once sealed it shows ✓/✗ and the final result.
-// The fence is always closed — the sentinel in the status line keeps a
-// running tool's region live in the renderer, so closing it is safe even
-// with later (parallel) tool blocks.
-func tool(inv message.Content, results map[string]message.Content, partials map[string]string) string {
-	name := inv.ToolName
-	if name == "" {
-		name = "tool"
-	}
-	detail := toolDetail(inv.ToolName, inv.Arguments)
-
-	res, done := results[inv.ToolCallID]
-	var sb strings.Builder
-	sb.WriteString("## " + name + "\n")
-	if !done {
-		sb.WriteString(spinner + " " + orDefault(detail, "running"))
-		if p := partials[inv.ToolCallID]; strings.TrimSpace(p) != "" {
-			sb.WriteString("\n\n")
-			writeFence(&sb, p)
-		}
-		return sb.String()
-	}
-	glyph := "✓"
-	if res.IsError {
-		glyph = "✗"
-	}
-	sb.WriteString(glyph + " " + orDefault(detail, statusWord(res.IsError)) + "\n\n")
-	writeFence(&sb, res.Text)
-	return sb.String()
-}
-
-// writeFence writes a closed console fence of text, tail-bounded to
-// composeBashCap source lines (full output stays in the IR).
-func writeFence(sb *strings.Builder, text string) {
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	if len(lines) > composeBashCap {
-		lines = lines[len(lines)-composeBashCap:]
-	}
-	sb.WriteString("```console\n")
-	if len(lines) > 0 && !(len(lines) == 1 && lines[0] == "") {
-		sb.WriteString(strings.Join(lines, "\n") + "\n")
-	}
-	sb.WriteString("```")
-}
-
-// toolDetail extracts the one-line displayable argument for a tool call.
-func toolDetail(name string, args map[string]interface{}) string {
-	switch name {
-	case "bash":
-		if cmd, ok := args["command"].(string); ok {
-			return cmd
-		}
-	case "read", "write", "edit":
-		if path, ok := args["path"].(string); ok {
-			return path
-		}
-	}
-	return ""
-}
-
 func blockquote(text string) string {
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	for i, l := range lines {
 		lines[i] = "> " + l
 	}
 	return strings.Join(lines, "\n")
-}
-
-// writeBlock appends a block as one contiguous span followed by a blank
-// line, so blocks stay block-addressable and diffs localize.
-func writeBlock(b *strings.Builder, span string) {
-	if strings.TrimSpace(span) == "" {
-		return
-	}
-	b.WriteString(strings.TrimRight(span, "\n"))
-	b.WriteString("\n\n")
-}
-
-func orDefault(s, def string) string {
-	if s == "" {
-		return def
-	}
-	return s
-}
-
-func statusWord(isErr bool) string {
-	if isErr {
-		return "failed"
-	}
-	return "done"
 }

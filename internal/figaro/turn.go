@@ -200,7 +200,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// live unit that follows, composed from every message appended after
 	// this point.
 	if prompt.text != "" {
-		a.emitSnapshot("user", prompt.text)
+		a.emitSnapshot("user", []livedoc.Node{{Type: livedoc.NodeProse, Markdown: prompt.text}})
 		a.emitCommit()
 	}
 	a.liveMu.Lock()
@@ -208,7 +208,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.liveActive = true
 	a.liveMu.Unlock()
 	a.partials = map[string]string{}
-	a.emitSnapshot("assistant", "")
+	a.emitSnapshot("assistant", nil)
 
 	// Drive: provider -> tools -> repeat.
 	for {
@@ -612,12 +612,12 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 	return p
 }
 
-// --- live-render blob emission ---
+// --- live-render node emission ---
 
-// composeTurn renders the current turn's blob: the messages appended
+// composeTurn builds the current turn's node list: the messages appended
 // since the user prompt, plus the in-flight assistant message (nil once
 // it has sealed into the log).
-func (a *Agent) composeTurn(inflight *message.Message) string {
+func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 	entries := a.figLog.Read()
 	var msgs []message.Message
 	for i := a.turnStart; i < len(entries); i++ {
@@ -628,45 +628,58 @@ func (a *Agent) composeTurn(inflight *message.Message) string {
 	if inflight != nil {
 		msgs = append(msgs, *inflight)
 	}
-	return compose.Markdown(msgs, a.partials)
+	return compose.Nodes(msgs, a.partials)
 }
 
-// emitSnapshot establishes the current live unit's full blob. liveMu is
-// held through the fanout so a concurrent figaro.read can't observe the
-// new blob before its frame is broadcast (which would double-apply).
-func (a *Agent) emitSnapshot(role, md string) {
+// emitSnapshot establishes the current live unit's full node list. liveMu
+// is held through the fanout so a concurrent figaro.read can't observe
+// the new state before its frame is broadcast (which would double-apply).
+func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
 	a.liveMu.Lock()
 	defer a.liveMu.Unlock()
-	a.liveBlob = md
+	a.liveNodes = nodes
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
 		Method:  rpc.MethodLogSnapshot,
-		Params:  rpc.SnapshotEntry{Role: role, Markdown: md},
+		Params:  rpc.SnapshotEntry{Role: role, Nodes: nodes},
 	})
 }
 
-// emitDelta diffs blob against the last sent and emits a single-region
-// splice when it changed.
-func (a *Agent) emitDelta(blob string) {
+// emitDelta diffs the node list against the last sent and fans out one
+// op (open/patch/set) per change.
+func (a *Agent) emitDelta(nodes []livedoc.Node) {
 	a.liveMu.Lock()
 	defer a.liveMu.Unlock()
-	d, ok := livedoc.Diff(a.liveBlob, blob)
-	if !ok {
+	ops := livedoc.DiffNodes(a.liveNodes, nodes)
+	if len(ops) == 0 {
 		return
 	}
-	a.liveBlob = blob
-	a.fanOut(rpc.Notification{
-		JSONRPC: "2.0",
-		Method:  rpc.MethodLogDelta,
-		Params:  rpc.DeltaEntry{At: d.At, Del: d.Del, Ins: d.Ins},
-	})
+	a.liveNodes = nodes
+	for _, op := range ops {
+		a.fanOut(opNotification(op))
+	}
+}
+
+// opNotification maps a node op to its wire notification.
+func opNotification(op livedoc.Op) rpc.Notification {
+	switch op.Kind {
+	case livedoc.OpOpen:
+		return rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodNodeOpen,
+			Params: rpc.NodeOpenEntry{Index: op.Index, Node: *op.Node}}
+	case livedoc.OpSet:
+		return rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodNodeSet,
+			Params: rpc.NodeSetEntry{Index: op.Index, Status: op.Status}}
+	default: // OpPatch
+		return rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodNodePatch,
+			Params: rpc.NodePatchEntry{Index: op.Index, Field: op.Field, At: op.At, Del: op.Del, Ins: op.Ins}}
+	}
 }
 
 // emitCommit freezes the current live unit.
 func (a *Agent) emitCommit() {
 	a.liveMu.Lock()
 	defer a.liveMu.Unlock()
-	a.liveBlob = ""
+	a.liveNodes = nil
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
 		Method:  rpc.MethodLogCommit,

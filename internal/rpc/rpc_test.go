@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
@@ -58,11 +59,22 @@ func TestQuaRequest(t *testing.T) {
 }
 
 func TestSnapshotEntry(t *testing.T) {
-	roundTripValue(t, rpc.SnapshotEntry{Role: "assistant", Markdown: "# hi\n\nthere"})
+	roundTripValue(t, rpc.SnapshotEntry{Role: "assistant", Nodes: []livedoc.Node{
+		{Type: livedoc.NodeProse, Markdown: "# hi\n\nthere"},
+		{Type: livedoc.NodeTool, ID: "t1", Name: "bash", Status: livedoc.StatusOK, Output: "done"},
+	}})
 }
 
-func TestDeltaEntry(t *testing.T) {
-	roundTripValue(t, rpc.DeltaEntry{At: 5, Del: 2, Ins: "world"})
+func TestNodeOpenEntry(t *testing.T) {
+	roundTripValue(t, rpc.NodeOpenEntry{Index: 1, Node: livedoc.Node{Type: livedoc.NodeProse, Markdown: "hi"}})
+}
+
+func TestNodePatchEntry(t *testing.T) {
+	roundTripValue(t, rpc.NodePatchEntry{Index: 0, Field: "output", At: 5, Del: 2, Ins: "world"})
+}
+
+func TestNodeSetEntry(t *testing.T) {
+	roundTripValue(t, rpc.NodeSetEntry{Index: 2, Status: livedoc.StatusError})
 }
 
 func TestCommitEntry(t *testing.T) {
@@ -148,7 +160,9 @@ func TestStatusResponse(t *testing.T) {
 func TestMethodConstants(t *testing.T) {
 	// Verify method names follow naming convention.
 	assert.Equal(t, "log.snapshot", rpc.MethodLogSnapshot)
-	assert.Equal(t, "log.delta", rpc.MethodLogDelta)
+	assert.Equal(t, "node.open", rpc.MethodNodeOpen)
+	assert.Equal(t, "node.patch", rpc.MethodNodePatch)
+	assert.Equal(t, "node.set", rpc.MethodNodeSet)
 	assert.Equal(t, "log.commit", rpc.MethodLogCommit)
 	assert.Equal(t, "turn.done", rpc.MethodTurnDone)
 	assert.Equal(t, "figaro.qua", rpc.MethodQua)

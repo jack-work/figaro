@@ -232,16 +232,16 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	}
 }
 
-// plainSink streams the assistant unit's blob to out as raw text for
-// pipes/scripts: it maintains the current unit's blob from snapshot/delta
-// and writes the new tail on each update (spinner sentinel stripped). The
-// user's prompt unit is skipped. Markdown chrome passes through; raw mode
-// callers (figaro x) prompt the model for plain output anyway.
+// plainSink streams the assistant unit to out as raw text for
+// pipes/scripts: it maintains the current unit's node list and writes the
+// new tail of its flattened text on each update. The user's prompt unit
+// is skipped. Tool nodes contribute their raw output (no widget chrome);
+// raw-mode callers (figaro x) prompt the model for plain output anyway.
 type plainSink struct {
 	out      io.Writer
 	role     string
-	blob     string
-	written  string // exactly what's been emitted for this unit (sentinel-stripped)
+	nodes    []livedoc.Node
+	written  string // exactly what's been emitted for this unit
 	doneCh   chan struct{}
 	sawError bool
 }
@@ -252,14 +252,26 @@ func (s *plainSink) handle(method string, params json.RawMessage) {
 		var e rpc.SnapshotEntry
 		if json.Unmarshal(params, &e) == nil {
 			s.role = e.Role
-			s.blob = e.Markdown
+			s.nodes = e.Nodes
 			s.written = ""
 			s.emit()
 		}
-	case rpc.MethodLogDelta:
-		var e rpc.DeltaEntry
+	case rpc.MethodNodeOpen:
+		var e rpc.NodeOpenEntry
 		if json.Unmarshal(params, &e) == nil {
-			s.blob = livedoc.Apply(s.blob, livedoc.Delta{At: e.At, Del: e.Del, Ins: e.Ins})
+			s.nodes = livedoc.ApplyOp(s.nodes, livedoc.Op{Kind: livedoc.OpOpen, Index: e.Index, Node: &e.Node})
+			s.emit()
+		}
+	case rpc.MethodNodePatch:
+		var e rpc.NodePatchEntry
+		if json.Unmarshal(params, &e) == nil {
+			s.nodes = livedoc.ApplyOp(s.nodes, livedoc.Op{Kind: livedoc.OpPatch, Index: e.Index, Field: e.Field, At: e.At, Del: e.Del, Ins: e.Ins})
+			s.emit()
+		}
+	case rpc.MethodNodeSet:
+		var e rpc.NodeSetEntry
+		if json.Unmarshal(params, &e) == nil {
+			s.nodes = livedoc.ApplyOp(s.nodes, livedoc.Op{Kind: livedoc.OpSet, Index: e.Index, Status: e.Status})
 			s.emit()
 		}
 	case rpc.MethodLogCommit:
@@ -267,7 +279,7 @@ func (s *plainSink) handle(method string, params json.RawMessage) {
 		if s.role == "assistant" && s.written != "" {
 			s.out.Write([]byte("\n")) // terminate the unit's line
 		}
-		s.role, s.blob, s.written = "", "", ""
+		s.role, s.nodes, s.written = "", nil, ""
 	case rpc.MethodTurnDone:
 		var d rpc.DoneEntry
 		_ = json.Unmarshal(params, &d)
@@ -282,22 +294,36 @@ func (s *plainSink) handle(method string, params json.RawMessage) {
 	}
 }
 
-// emit writes the assistant unit's new tail. It only emits when output
-// grows monotonically (the streaming-prose case); a structural change
-// that rewrites already-printed text (a spinner flip, a reformatted
-// reseal) is swallowed rather than reprinted — raw mode keeps the
-// streamed copy. Sentinel runes are stripped.
+// emit writes the assistant unit's new text tail. It only emits when the
+// flattened text grows monotonically (the streaming case); a structural
+// change that rewrites already-printed text is swallowed rather than
+// reprinted — raw mode keeps the streamed copy.
 func (s *plainSink) emit() {
 	if s.role != "assistant" {
 		return
 	}
-	// compose always tail-pads the blob with a trailing newline and grows
-	// text just *before* it, so the raw blob is never a clean prefix of its
-	// successor. Compare on the newline-trimmed body; the commit handler
-	// re-adds a single terminating newline.
-	b := strings.TrimRight(strings.ReplaceAll(s.blob, string(livedoc.SpinnerSentinel), ""), "\n")
+	b := strings.TrimRight(plainText(s.nodes), "\n")
 	if strings.HasPrefix(b, s.written) {
 		s.out.Write([]byte(b[len(s.written):]))
 	}
 	s.written = b
+}
+
+// plainText flattens a node list to raw text: prose markdown verbatim,
+// tool nodes as their streamed output.
+func plainText(nodes []livedoc.Node) string {
+	var parts []string
+	for _, n := range nodes {
+		switch n.Type {
+		case livedoc.NodeTool:
+			if strings.TrimSpace(n.Output) != "" {
+				parts = append(parts, n.Output)
+			}
+		default:
+			if strings.TrimSpace(n.Markdown) != "" {
+				parts = append(parts, n.Markdown)
+			}
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }

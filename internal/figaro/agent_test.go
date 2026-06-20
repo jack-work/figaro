@@ -15,6 +15,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -212,7 +213,7 @@ loop:
 		methods[i] = n.Method
 	}
 	assert.Contains(t, methods, rpc.MethodLogSnapshot)
-	assert.Contains(t, methods, rpc.MethodLogDelta)
+	assert.Contains(t, methods, rpc.MethodNodeOpen)
 	assert.Contains(t, methods, rpc.MethodTurnDone)
 }
 
@@ -250,12 +251,22 @@ done:
 	if len(r.Committed) != 2 {
 		t.Fatalf("want user + assistant units, got %d: %+v", len(r.Committed), r.Committed)
 	}
-	if r.Committed[0].Role != "user" || !strings.Contains(r.Committed[0].Markdown, "the question") {
+	if r.Committed[0].Role != "user" || !nodesContain(r.Committed[0].Nodes, "the question") {
 		t.Errorf("committed[0] = %+v", r.Committed[0])
 	}
-	if r.Committed[1].Role != "assistant" || !strings.Contains(r.Committed[1].Markdown, "the reply") {
+	if r.Committed[1].Role != "assistant" || !nodesContain(r.Committed[1].Nodes, "the reply") {
 		t.Errorf("committed[1] = %+v", r.Committed[1])
 	}
+}
+
+// nodesContain reports whether any prose node's markdown contains sub.
+func nodesContain(nodes []livedoc.Node, sub string) bool {
+	for _, n := range nodes {
+		if strings.Contains(n.Markdown, sub) || strings.Contains(n.Output, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAgent_Context(t *testing.T) {

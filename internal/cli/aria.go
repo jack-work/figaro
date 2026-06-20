@@ -14,9 +14,10 @@ import (
 
 	"github.com/jack-work/largo"
 
+	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/term"
 )
@@ -278,9 +279,10 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 }
 
 // renderAriaUI renders an aria's cached ui translation (derived/ui.json):
-// committed conversational units as markdown blobs, drawn through the pure
+// committed conversational units as typed nodes, drawn through the pure
 // renderer. Returns false (so the caller falls back to the IR path) when
-// the translation is missing or empty.
+// the translation is missing, empty, or stamped with a stale fingerprint
+// (a pre-node cache).
 func renderAriaUI(figaroID string, n int, all bool) bool {
 	path := filepath.Join(stateDir(), "arias", figaroID, "derived", "ui.json")
 	data, err := os.ReadFile(path)
@@ -288,12 +290,13 @@ func renderAriaUI(figaroID string, n int, all bool) bool {
 		return false
 	}
 	var doc struct {
-		Units []struct {
-			Role     string `json:"role"`
-			Markdown string `json:"markdown"`
+		Fingerprint string `json:"fingerprint"`
+		Units       []struct {
+			Role  string         `json:"role"`
+			Nodes []livedoc.Node `json:"nodes"`
 		} `json:"units"`
 	}
-	if json.Unmarshal(data, &doc) != nil || len(doc.Units) == 0 {
+	if json.Unmarshal(data, &doc) != nil || len(doc.Units) == 0 || doc.Fingerprint != compose.Version {
 		return false
 	}
 
@@ -315,8 +318,8 @@ func renderAriaUI(figaroID string, n int, all bool) bool {
 		}
 		fmt.Println(term.Dim(label))
 		fmt.Println()
-		res := render.Render(u.Markdown, render.Options{Width: width})
-		fmt.Println(strings.Join(res.Lines, "\n"))
+		rows, _ := renderNodes(u.Nodes, width, 0, 0)
+		fmt.Println(strings.Join(rows, "\n"))
 		fmt.Println()
 	}
 	return true

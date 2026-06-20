@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
@@ -95,16 +96,16 @@ type Agent struct {
 	mu   sync.RWMutex
 	subs map[Notifier]struct{} // socket clients + in-process listeners
 
-	// Live-render state. The drain loop owns liveBlob/turnStart/liveActive
+	// Live-render state. The drain loop owns liveNodes/turnStart/liveActive
 	// for mutation; liveMu guards them so a concurrent figaro.read sees a
-	// consistent (committed-prefix, live-unit) pair and never a delta
-	// mid-broadcast. liveBlob is the current unit's blob as last sent
-	// (deltas diff against it); turnStart is the figLog index where the
+	// consistent (committed-prefix, live-unit) pair and never an op
+	// mid-broadcast. liveNodes is the current unit's node list as last sent
+	// (ops diff against it); turnStart is the figLog index where the
 	// current turn's agent messages begin; liveActive is true while an
 	// assistant turn unit is live; partials holds streamed output for
 	// in-flight tools (keyed by tool_call_id, drain-loop only).
 	liveMu     sync.Mutex
-	liveBlob   string
+	liveNodes  []livedoc.Node
 	turnStart  int
 	liveActive bool
 	partials   map[string]string

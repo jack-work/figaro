@@ -6,8 +6,10 @@ const (
 	// Live-render notifications (server -> client). Each unit is one
 	// markdown blob mutated by single-region splices; the renderer (CLI
 	// or web) turns the blob into rows/DOM.
-	MethodLogSnapshot = "log.snapshot" // establish the current live unit's full blob
-	MethodLogDelta    = "log.delta"    // a single-region splice on the live unit
+	MethodLogSnapshot = "log.snapshot" // establish the current live unit's full node list
+	MethodNodeOpen    = "node.open"    // append a node to the live unit
+	MethodNodePatch   = "node.patch"   // splice a node's streamed string field
+	MethodNodeSet     = "node.set"     // update a tool node's scalar status
 	MethodLogCommit   = "log.commit"   // freeze the live unit; next is a new one
 	MethodTurnDone    = "turn.done"    // the turn went idle
 

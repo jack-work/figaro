@@ -26,27 +26,38 @@ func capture(buf *bytes.Buffer, fn func()) string {
 	return buf.String()[start:]
 }
 
+func prose(md string) livedoc.Node { return livedoc.Node{Type: livedoc.NodeProse, Markdown: md} }
+func toolNode(name, status, output string) livedoc.Node {
+	return livedoc.Node{Type: livedoc.NodeTool, Name: name, Status: status, Output: output}
+}
+
+// patchOutput builds the op that splices a tool node's output old→new.
+func patchOutput(idx int, old, next string) livedoc.Op {
+	d, _ := livedoc.Diff(old, next)
+	return livedoc.Op{Kind: livedoc.OpPatch, Index: idx, Field: "output", At: d.At, Del: d.Del, Ins: d.Ins}
+}
+
 func TestLive_SnapshotRendersContent(t *testing.T) {
 	var buf bytes.Buffer
 	lr := newLiveRegion(&buf, 80, 10)
-	lr.snapshot("Hello, **world**.")
+	lr.snapshot([]livedoc.Node{prose("Hello, **world**.")})
 	if !strings.Contains(liveStrip(buf.String()), "Hello, world.") {
 		t.Fatalf("snapshot did not render content; got %q", liveStrip(buf.String()))
 	}
 }
 
-func TestLive_TailAppendRewritesOnlyTail(t *testing.T) {
+func TestLive_ToolOutputAppendRewritesOnlyTail(t *testing.T) {
 	var buf bytes.Buffer
 	lr := newLiveRegion(&buf, 80, 50)
-	// Streaming (unclosed) bash: one row per source line, no reflow.
-	lr.snapshot("```bash\nalpha\nbravo\n")
-	d, _ := livedoc.Diff("```bash\nalpha\nbravo\n", "```bash\nalpha\nbravo\ncharlie\n")
-	paint := capture(&buf, func() { lr.applyDelta(d) })
+	lr.snapshot([]livedoc.Node{toolNode("bash", livedoc.StatusRunning, "alpha\nbravo")})
+	paint := capture(&buf, func() {
+		lr.applyOp(patchOutput(0, "alpha\nbravo", "alpha\nbravo\ncharlie"))
+	})
 
-	// header line changed (line count 2→3) + one new row = 2 rewrites;
-	// the alpha/bravo rows are untouched.
-	if got := eraseCount(paint); got != 2 {
-		t.Fatalf("append should rewrite header + new row (2), got %d:\n%q", got, paint)
+	// Only the new output row is written; the header + alpha/bravo rows are
+	// untouched (same spinner frame, same content).
+	if got := eraseCount(paint); got != 1 {
+		t.Fatalf("append should rewrite only the new row (1), got %d:\n%q", got, paint)
 	}
 	if strings.Contains(liveStrip(paint), "alpha") || strings.Contains(liveStrip(paint), "bravo") {
 		t.Fatalf("untouched rows were rewritten:\n%q", liveStrip(paint))
@@ -56,41 +67,42 @@ func TestLive_TailAppendRewritesOnlyTail(t *testing.T) {
 	}
 }
 
-func TestLive_SpinnerTickRewritesOneRow(t *testing.T) {
+func TestLive_SpinnerTickRewritesHeaderOnly(t *testing.T) {
 	var buf bytes.Buffer
 	lr := newLiveRegion(&buf, 80, 10)
-	sentinel := string(render.SpinnerSentinel)
-	lr.snapshot("## task\n\n" + sentinel + " running\n\ntail stays put\n")
+	lr.snapshot([]livedoc.Node{toolNode("bash", livedoc.StatusRunning, "line\nstays put")})
 	if !lr.running() {
 		t.Fatal("expected a running spinner")
 	}
 	paint := capture(&buf, func() { lr.tickSpin() })
 
 	if got := eraseCount(paint); got != 1 {
-		t.Fatalf("spinner tick must rewrite exactly the spinner row (1), got %d:\n%q", got, paint)
+		t.Fatalf("spinner tick must rewrite exactly the header row (1), got %d:\n%q", got, paint)
 	}
 	if !strings.ContainsRune(liveStrip(paint), render.SpinnerFrames[1]) {
 		t.Fatalf("spinner did not advance to frame 1:\n%q", liveStrip(paint))
 	}
-	if strings.Contains(liveStrip(paint), "tail stays put") {
-		t.Fatal("the row below the spinner was rewritten")
+	if strings.Contains(liveStrip(paint), "stays put") {
+		t.Fatal("an output row was rewritten by a spinner tick")
 	}
 }
 
 func TestLive_FinalizedPrefixFlushedOnceNeverRewritten(t *testing.T) {
 	var buf bytes.Buffer
 	lr := newLiveRegion(&buf, 80, 50)
-	// A finalized prose block, then a streaming (unclosed) bash tail.
-	base := "first block done.\n\n```bash\nout1\n"
-	snap := capture(&buf, func() { lr.snapshot(base) })
-	if !strings.Contains(liveStrip(snap), "first block done.") {
+	// A completed tool (stable), then a running tool (live tail).
+	nodes := []livedoc.Node{
+		toolNode("bash", livedoc.StatusOK, "first done"),
+		toolNode("bash", livedoc.StatusRunning, "out1"),
+	}
+	snap := capture(&buf, func() { lr.snapshot(nodes) })
+	if !strings.Contains(liveStrip(snap), "first done") {
 		t.Fatalf("stable block missing from initial flush:\n%q", liveStrip(snap))
 	}
 
-	d, _ := livedoc.Diff(base, base+"out2\n")
-	paint := capture(&buf, func() { lr.applyDelta(d) })
-	if strings.Contains(liveStrip(paint), "first block done.") {
-		t.Fatalf("flushed stable block was rewritten on a tail delta:\n%q", liveStrip(paint))
+	paint := capture(&buf, func() { lr.applyOp(patchOutput(1, "out1", "out1\nout2")) })
+	if strings.Contains(liveStrip(paint), "first done") {
+		t.Fatalf("flushed stable block was rewritten on a tail op:\n%q", liveStrip(paint))
 	}
 	if !strings.Contains(liveStrip(paint), "out2") {
 		t.Fatalf("tail update missing:\n%q", liveStrip(paint))
@@ -100,21 +112,21 @@ func TestLive_FinalizedPrefixFlushedOnceNeverRewritten(t *testing.T) {
 func TestLive_CommitDropsBelowAndResets(t *testing.T) {
 	var buf bytes.Buffer
 	lr := newLiveRegion(&buf, 80, 10)
-	lr.snapshot("some content")
+	lr.snapshot([]livedoc.Node{prose("some content")})
 	out := capture(&buf, func() { lr.commit() })
 	if !strings.Contains(out, term.CursorDown(1)[:2]) { // CSI ... B prefix
 		t.Fatalf("commit should move the cursor below the region; got %q", out)
 	}
-	if lr.blob != "" || lr.live != nil || lr.flushed != 0 {
-		t.Fatalf("commit did not reset state: blob=%q live=%v flushed=%d", lr.blob, lr.live, lr.flushed)
+	if lr.nodes != nil || lr.live != nil || lr.flushed != 0 {
+		t.Fatalf("commit did not reset state: nodes=%v live=%v flushed=%d", lr.nodes, lr.live, lr.flushed)
 	}
 }
 
 func TestLive_SnapshotResyncClearsAndRepaints(t *testing.T) {
 	var buf bytes.Buffer
 	lr := newLiveRegion(&buf, 80, 10)
-	lr.snapshot("first version")
-	out := capture(&buf, func() { lr.snapshot("second version") })
+	lr.snapshot([]livedoc.Node{prose("first version")})
+	out := capture(&buf, func() { lr.snapshot([]livedoc.Node{prose("second version")}) })
 	if !strings.Contains(out, eraseToEnd) {
 		t.Fatal("resync snapshot should clear the prior live region")
 	}

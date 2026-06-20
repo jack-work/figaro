@@ -4,7 +4,6 @@ import (
 	"io"
 
 	"github.com/jack-work/figaro/internal/livedoc"
-	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -22,7 +21,7 @@ type liveRegion struct {
 	width   int
 	bashCap int
 
-	blob    string
+	nodes   []livedoc.Node
 	tick    uint64
 	flushed int      // rows committed to scrollback this unit
 	live    []string // rows currently shown in the live region
@@ -32,37 +31,32 @@ func newLiveRegion(out io.Writer, width, bashCap int) *liveRegion {
 	return &liveRegion{out: out, width: width, bashCap: bashCap}
 }
 
-// snapshot replaces the unit's blob wholesale (unit start or resync) and
-// repaints from scratch: any on-screen live rows are cleared first.
-func (lr *liveRegion) snapshot(blob string) {
+// snapshot replaces the unit's node list wholesale (unit start or resync)
+// and repaints from scratch: any on-screen live rows are cleared first.
+func (lr *liveRegion) snapshot(nodes []livedoc.Node) {
 	if len(lr.live) > 0 || lr.flushed > 0 {
 		io.WriteString(lr.out, eraseToEnd)
 	}
-	lr.blob = blob
+	lr.nodes = nodes
 	lr.flushed = 0
 	lr.live = nil
 	lr.repaint(true)
 }
 
-// applyDelta folds one splice into the blob and repaints.
-func (lr *liveRegion) applyDelta(d livedoc.Delta) {
-	lr.blob = livedoc.Apply(lr.blob, d)
+// applyOp folds one node op (open/patch/set) into the unit and repaints.
+func (lr *liveRegion) applyOp(op livedoc.Op) {
+	lr.nodes = livedoc.ApplyOp(lr.nodes, op)
 	lr.repaint(true)
 }
 
-// running reports whether a spinner is animating (the blob carries a
-// sentinel), so the caller can run/stop its tick timer.
+// running reports whether any tool node is still running, so the caller
+// can run/stop its spinner tick timer.
 func (lr *liveRegion) running() bool {
-	for _, r := range lr.blob {
-		if r == render.SpinnerSentinel {
-			return true
-		}
-	}
-	return false
+	return nodesRunning(lr.nodes)
 }
 
-// tickSpin advances the spinner one frame and repaints (no-op if no
-// spinner is running).
+// tickSpin advances the spinner one frame and repaints (no-op if no tool
+// is running).
 func (lr *liveRegion) tickSpin() {
 	if !lr.running() {
 		return
@@ -91,20 +85,18 @@ func (lr *liveRegion) commit() {
 		io.WriteString(lr.out, term.CursorDown(n))
 		io.WriteString(lr.out, "\r")
 	}
-	lr.blob = ""
+	lr.nodes = nil
 	lr.tick = 0
 	lr.flushed = 0
 	lr.live = nil
 }
 
-// repaint renders the blob, flushes any newly-stable rows to scrollback,
-// and line-diffs the remaining tail. With allowFlush=false the watermark
-// is pinned (used by resize so already-committed rows aren't reprinted).
+// repaint renders the node list, flushes any newly-stable rows to
+// scrollback, and line-diffs the remaining tail. With allowFlush=false
+// the watermark is pinned (used by resize so already-committed rows aren't
+// reprinted).
 func (lr *liveRegion) repaint(allowFlush bool) {
-	res := render.Render(lr.blob, render.Options{Width: lr.width, BashCap: lr.bashCap, Tick: lr.tick})
-	rows := res.Lines
-
-	stable := res.StableRows
+	rows, stable := renderNodes(lr.nodes, lr.width, lr.bashCap, lr.tick)
 	if !allowFlush && stable > lr.flushed {
 		stable = lr.flushed
 	}

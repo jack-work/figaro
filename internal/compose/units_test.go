@@ -4,11 +4,25 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 )
 
 func userPrompt(text string) message.Message {
 	return message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent(text)}}
+}
+
+// unitText flattens a unit's nodes to one string for assertions.
+func unitText(u Unit) string {
+	var b strings.Builder
+	for _, n := range u.Nodes {
+		if n.Type == livedoc.NodeTool {
+			b.WriteString(n.Name + " " + n.Output + "\n")
+		} else {
+			b.WriteString(n.Markdown + "\n")
+		}
+	}
+	return b.String()
 }
 
 func TestUnits_SegmentsByPrompt(t *testing.T) {
@@ -38,13 +52,14 @@ func TestUnits_SegmentsByPrompt(t *testing.T) {
 		if units[i].Role != w.role {
 			t.Errorf("unit %d: role %q want %q", i, units[i].Role, w.role)
 		}
-		if !strings.Contains(units[i].Markdown, w.contains) {
-			t.Errorf("unit %d: %q missing %q", i, units[i].Markdown, w.contains)
+		if !strings.Contains(unitText(units[i]), w.contains) {
+			t.Errorf("unit %d: %q missing %q", i, unitText(units[i]), w.contains)
 		}
 	}
-	// The second assistant turn folds the tool invoke + result together.
-	if !strings.Contains(units[3].Markdown, "## bash") || !strings.Contains(units[3].Markdown, "hi") {
-		t.Errorf("assistant turn should carry the folded tool output:\n%s", units[3].Markdown)
+	// The second assistant turn folds the tool invoke + result together:
+	// a prose node plus a tool node carrying its output.
+	if got := unitText(units[3]); !strings.Contains(got, "bash") || !strings.Contains(got, "hi") {
+		t.Errorf("assistant turn should carry the folded tool output:\n%s", got)
 	}
 }
 
