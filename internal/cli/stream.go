@@ -38,19 +38,6 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Watch stdin for EOF (Ctrl+D).
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		go func() {
-			buf := make([]byte, 256)
-			for {
-				if _, err := os.Stdin.Read(buf); err != nil {
-					cancel()
-					return
-				}
-			}
-		}()
-	}
-
 	width := term.Width()
 	if width <= 0 {
 		width = 80
@@ -154,6 +141,43 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			lrMu.Unlock()
 		}
 	}()
+
+	// Live keybindings: in cbreak mode (per-key, no echo, SIGINT intact)
+	// Ctrl-O toggles tool-input expansion and Ctrl-T toggles thinking,
+	// re-rendering the open unit immediately. Ctrl-D ends the turn. Non-TTY
+	// input is skipped (the flags still set the initial state).
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		if restore, err := term.MakeCbreak(int(os.Stdin.Fd())); err == nil {
+			defer restore()
+			go func() {
+				buf := make([]byte, 64)
+				for {
+					n, err := os.Stdin.Read(buf)
+					if err != nil {
+						cancel()
+						return
+					}
+					for _, b := range buf[:n] {
+						switch b {
+						case 0x04: // Ctrl-D
+							cancel()
+							return
+						case 0x0f: // Ctrl-O
+							lrMu.Lock()
+							set.expandTools = !set.expandTools
+							lr.setSettings(set)
+							lrMu.Unlock()
+						case 0x14: // Ctrl-T
+							lrMu.Lock()
+							set.showThinking = !set.showThinking
+							lr.setSettings(set)
+							lrMu.Unlock()
+						}
+					}
+				}
+			}()
+		}
+	}
 
 	if err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
 		die("prompt: %s", err)
