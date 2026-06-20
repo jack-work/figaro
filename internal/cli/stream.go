@@ -67,6 +67,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// and SIGWINCH all serialize on lrMu.
 	var lrMu sync.Mutex
 	doneCh := make(chan struct{}, 1)
+	prevRole := "" // role of the last unit snapshot, for inter-unit separation
 
 	onNotify := func(method string, params json.RawMessage) {
 		lrMu.Lock()
@@ -75,6 +76,14 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		case rpc.MethodLogSnapshot:
 			var e rpc.SnapshotEntry
 			if json.Unmarshal(params, &e) == nil {
+				// Set off the agent's reply from the echoed prompt with a
+				// rule and a blank line (the cursor is parked below the
+				// just-committed user unit; this is plain scrollback above
+				// the new live region).
+				if e.Role == "assistant" && prevRole == "user" {
+					fmt.Fprint(os.Stdout, "  "+term.Dim("───")+"\n\n")
+				}
+				prevRole = e.Role
 				lr.snapshot(e.Nodes)
 			}
 		case rpc.MethodNodeOpen:
