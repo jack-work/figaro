@@ -110,16 +110,18 @@ The `system.*` namespace is harness-reserved. Clients write under any other key.
 
 **Figaro socket (requests):** `figaro.qua` (prompt; optional `chalkboard`), `figaro.interrupt`, `figaro.context`, `figaro.set`, `figaro.loadout`, `figaro.chalkboard`.
 
-### Streaming: the live-render blob model
+### Streaming: the live-render node model
 
-What travels on the socket is a **markdown blob**, not the IR. Each conversational message (the user's prompt, then the agent's turn) is one unit: a markdown string that mutates only by single-region splices. The `message.Content` IR stays canonical on disk and is the provider's input; the producer *translates* a turn into a blob (`internal/compose`), the renderer turns the blob into terminal rows or DOM (`internal/render` / `web/conversation.html`), and the splice codec (`internal/livedoc`) is shared by both ends. Notifications:
+What travels on the socket is a **typed node list**, not the IR. Each conversational message (the user's prompt, then the agent's turn) is one unit: an append-only, positionally stable list of nodes — `prose` (a markdown span) or `tool` (`{name, args, status, output}`). The two long streamed fields, prose `markdown` and tool `output`, mutate by single-region splices; nodes are appended, never reordered. The `message.Content` IR stays canonical on disk and is the provider's input; the producer *translates* a turn into nodes (`internal/compose`), each consumer renders nodes its own way — prose as markdown, tools as native widgets (`internal/cli` tool widget / `web/conversation.html`) — and the node model + diff/apply (`internal/livedoc`) is shared by both ends. Notifications:
 
-- `log.snapshot` `{role, markdown}` — establish the current live unit's full blob.
-- `log.delta` `{at, del, ins}` — a rune-aligned, single-region splice on the live unit.
-- `log.commit` — freeze the live unit; the next snapshot/delta is a new one.
+- `log.snapshot` `{role, nodes}` — establish the current live unit's full node list.
+- `node.open` `{index, node}` — append a node.
+- `node.patch` `{index, field, at, del, ins}` — a rune-aligned, single-region splice on a node's `markdown` or `output`.
+- `node.set` `{index, status}` — update a tool node's status (`running`→`ok`/`error`).
+- `log.commit` — freeze the live unit; the next snapshot/op is a new one.
 - `turn.done` `{reason}` — the turn went idle (reason carries an error string on failure).
 
-A turn emits the user prompt as one committed unit, then the agent reply as a live unit: `snapshot` → `delta`s as the blob grows (the drain loop recomposes from the IR and `livedoc.Diff`s) → `commit`. Running tools carry a spinner sentinel rune that the **consumer** animates locally (zero wire traffic until the tool completes); bash/tool output renders clamped to its last N lines. There is no unit index — the server copy is authoritative and a faulted client reconnects and re-snapshots. Provider `Bus` calls are unchanged.
+A turn emits the user prompt as one committed unit, then the agent reply as a live unit: `snapshot` (empty) → `open`/`patch`/`set` ops as the node list grows (the drain loop recomposes from the IR and `livedoc.DiffNodes`) → `commit`. Each tool is an independently addressable node, so parallel tools stream side by side without contending for one document; a running tool animates its spinner on the **consumer** (zero wire traffic), and output is clamped to its last N lines. There is no unit index — the server copy is authoritative and a faulted client reconnects and re-snapshots (`figaro.read` returns committed units + the live unit as node lists). Provider `Bus` calls are unchanged.
 
 ## CLI
 
