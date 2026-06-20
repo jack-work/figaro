@@ -178,4 +178,10 @@ const (
 	cursorNextNew = "\r\n"
 	// eraseToEnd clears from the cursor to the end of the screen.
 	eraseToEnd = "\x1b[J"
+	// autowrap toggles the terminal's auto-margin (DECAWM). The painter
+	// drives the cursor explicitly and assumes one logical row per physical
+	// line, so it disables auto-wrap while live: a row at/over the viewport
+	// width must not wrap onto a second line and desync the cursor math.
+	autowrapOff = "\x1b[?7l"
+	autowrapOn  = "\x1b[?7h"
 )

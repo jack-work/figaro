@@ -57,6 +57,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 	lr := newLiveRegion(os.Stdout, width, 0) // 0 → renderer's default bash cap (10)
 
+	// The painter owns the cursor and assumes one row per line; disable the
+	// terminal's auto-margin for the live session so a full-width row never
+	// wraps and desyncs that math. Restored on exit (incl. interrupt).
+	fmt.Fprint(os.Stdout, autowrapOff)
+	defer fmt.Fprint(os.Stdout, autowrapOn)
+
 	// liveRegion is single-threaded; the notify pump, the spinner ticker,
 	// and SIGWINCH all serialize on lrMu.
 	var lrMu sync.Mutex

@@ -44,7 +44,50 @@ func renderNodes(nodes []livedoc.Node, width, bashCap int, tick uint64) ([]strin
 	if stable > len(rows) {
 		stable = len(rows)
 	}
+	// Guarantee every row fits the viewport: a row wider than width would
+	// wrap onto a second physical line and desync the painter's
+	// one-row-per-line cursor math. (The live session also disables
+	// auto-wrap; this keeps the invariant even there and for static views.)
+	for i := range rows {
+		rows[i] = clipToWidth(rows[i], width)
+	}
 	return rows, stable
+}
+
+// clipToWidth truncates a styled row to at most width display columns,
+// passing ANSI escape sequences through uncounted and appending a reset so
+// a cut mid-color doesn't bleed.
+func clipToWidth(s string, width int) string {
+	col := 0
+	var b strings.Builder
+	rs := []rune(s)
+	clipped := false
+	for i := 0; i < len(rs); {
+		if rs[i] == '\x1b' { // copy the whole escape sequence, uncounted
+			j := i + 1
+			for j < len(rs) && !((rs[j] >= 'A' && rs[j] <= 'Z') || (rs[j] >= 'a' && rs[j] <= 'z')) {
+				j++
+			}
+			if j < len(rs) {
+				j++
+			}
+			b.WriteString(string(rs[i:j]))
+			i = j
+			continue
+		}
+		w := runewidth.RuneWidth(rs[i])
+		if col+w > width {
+			clipped = true
+			break
+		}
+		b.WriteRune(rs[i])
+		col += w
+		i++
+	}
+	if clipped {
+		b.WriteString("\x1b[0m")
+	}
+	return b.String()
 }
 
 // liveNodeIndex returns the index of the first node still mutating (a

@@ -251,14 +251,23 @@ func rendererFor(width int) *glamour.TermRenderer {
 	if r, ok := rendererCache[width]; ok {
 		return r
 	}
+	// The dark style adds a 2-column document margin on top of the wrap
+	// width, so glamour emits rows up to width+2 wide. Wrap to width-2 so
+	// rendered rows fit within width — a row that overflows the viewport
+	// auto-wraps in the terminal and desyncs the live painter's
+	// one-row-per-line cursor math.
+	wrap := width - 2
+	if wrap < 1 {
+		wrap = 1
+	}
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStandardStyle("dark"),
 		glamour.WithColorProfile(termenv.TrueColor), // pinned: determinism, not env-detected
-		glamour.WithWordWrap(width),
+		glamour.WithWordWrap(wrap),
 	)
 	if err != nil {
 		// Width-only fallback; should not happen with a standard style.
-		r, _ = glamour.NewTermRenderer(glamour.WithWordWrap(width))
+		r, _ = glamour.NewTermRenderer(glamour.WithWordWrap(wrap))
 	}
 	rendererCache[width] = r
 	return r
