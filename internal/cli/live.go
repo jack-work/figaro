@@ -23,6 +23,7 @@ type liveRegion struct {
 	bashCap int
 
 	settings renderSettings // display toggles (tool expand, thinking)
+	bookend  func() string  // optional status line pinned below the content
 	nodes    []livedoc.Node
 	tick     uint64
 	flushed  int      // rows committed to scrollback this unit
@@ -110,6 +111,13 @@ func (lr *liveRegion) commit() {
 // reprinted).
 func (lr *liveRegion) repaint(allowFlush bool) {
 	rows, stable := renderNodes(lr.nodes, lr.width, lr.bashCap, lr.tick, lr.settings)
+	// A content-relative bookend: a blank line + status rule pinned just
+	// below the rendered content. Always part of the live tail (beyond the
+	// stable watermark), so it's redrawn as content grows but never flushed
+	// to scrollback. It persists as the final line after commit.
+	if lr.bookend != nil {
+		rows = append(rows, "", clipToWidth(lr.bookend(), lr.width))
+	}
 	if !allowFlush && stable > lr.flushed {
 		stable = lr.flushed
 	}
@@ -197,4 +205,8 @@ const (
 	// width must not wrap onto a second line and desync the cursor math.
 	autowrapOff = "\x1b[?7l"
 	autowrapOn  = "\x1b[?7h"
+	// cursorHide/cursorShow toggle the text cursor so it doesn't sit
+	// highlighted on the actively-rendered line during streaming.
+	cursorHide = "\x1b[?25l"
+	cursorShow = "\x1b[?25h"
 )

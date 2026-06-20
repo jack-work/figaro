@@ -30,10 +30,6 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	defer span.End()
 
 	startedAt := time.Now()
-	if loaded.StatusLine() {
-		writeStatusLine(os.Stdout, figaroID, startedAt, 0)
-		fmt.Println()
-	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -45,11 +41,19 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	lr := newLiveRegion(os.Stdout, width, 0) // 0 → renderer's default bash cap (10)
 	lr.settings = set
 
-	// The painter owns the cursor and assumes one row per line; disable the
-	// terminal's auto-margin for the live session so a full-width row never
-	// wraps and desyncs that math. Restored on exit (incl. interrupt).
-	fmt.Fprint(os.Stdout, autowrapOff)
-	defer fmt.Fprint(os.Stdout, autowrapOn)
+	// The painter owns the cursor and assumes one row per line: disable the
+	// terminal's auto-margin so a full-width row never wraps, and hide the
+	// text cursor so it doesn't sit on the live line. Both restored on exit.
+	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
+	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
+
+	// Bookend: a status rule (aria id + start time) pinned just below the
+	// agent's reply and persisting as the final line after the turn. Gated
+	// on the status-line config.
+	var bookendFn func() string
+	if loaded.StatusLine() {
+		bookendFn = func() string { return statusBanner(figaroID, startedAt) }
+	}
 
 	// liveRegion is single-threaded; the notify pump, the spinner ticker,
 	// and SIGWINCH all serialize on lrMu.
@@ -70,6 +74,13 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				// the new live region).
 				if e.Role == "assistant" && prevRole == "user" {
 					fmt.Fprint(os.Stdout, dimRule(width)+"\n\n")
+				}
+				// The bookend follows the live agent unit only; the echoed
+				// prompt unit has none.
+				if e.Role == "assistant" {
+					lr.bookend = bookendFn
+				} else {
+					lr.bookend = nil
 				}
 				prevRole = e.Role
 				lr.snapshot(e.Nodes)
@@ -185,7 +196,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 
 	select {
 	case <-doneCh:
-		fmt.Println()
+		// The committed bookend is the final line; commit left the cursor on
+		// a fresh line below it. Nothing more to print.
 	case <-fcli.Done():
 		fmt.Fprintln(os.Stderr, "\nerror: agent disconnected before turn completed")
 		os.Exit(1)
@@ -201,26 +213,18 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		}
 		fmt.Fprintln(os.Stderr, "interrupted")
 	}
-
-	if loaded.StatusLine() {
-		writeStatusLine(os.Stdout, figaroID, time.Now(), time.Since(startedAt))
-	}
 }
 
-// writeStatusLine prints a full-width dimmed banner: "─── id · time ───…"
-// extended with box-drawing dashes to the viewport width, so it bookends
-// the output as a clean rule.
-func writeStatusLine(w *os.File, figaroID string, ts time.Time, elapsed time.Duration) {
+// statusBanner returns a full-width dimmed bookend: "─── id · time ───…"
+// extended with box-drawing dashes to the viewport width.
+func statusBanner(figaroID string, ts time.Time) string {
 	body := fmt.Sprintf("%s · %s", figaroID, ts.Format("15:04:05"))
-	if elapsed > 0 {
-		body += fmt.Sprintf(" · %s", formatElapsed(elapsed))
-	}
 	prefix := "─── " + body + " " // 4 cols + body + 1 col (body is ASCII)
 	fill := termWidth() - 4 - len(body) - 1
 	if fill < 3 {
 		fill = 3
 	}
-	fmt.Fprintln(w, term.Dim(prefix+strings.Repeat("─", fill)))
+	return term.Dim(prefix + strings.Repeat("─", fill))
 }
 
 // dimRule returns a dim full-width horizontal rule.
