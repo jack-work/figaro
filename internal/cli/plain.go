@@ -232,6 +232,80 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	}
 }
 
+// verbatimPrompt dumps the raw wire frames as JSON (one object per line)
+// and returns an exit code. No formatting, no delta application — the
+// literal protocol stream.
+func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out io.Writer) int {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sink := &verbatimSink{out: out, doneCh: make(chan struct{}, 1)}
+	doneCh := sink.doneCh
+
+	fcli, err := figaro.DialClient(ep, sink.handle)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error: connect figaro:", err)
+		return 1
+	}
+	defer fcli.Close()
+
+	if err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
+		fmt.Fprintln(os.Stderr, "error: prompt:", err)
+		return 1
+	}
+
+	select {
+	case <-doneCh:
+		if sink.sawError {
+			return 1
+		}
+		return 0
+	case <-fcli.Done():
+		fmt.Fprintln(os.Stderr, "error: agent disconnected before turn completed")
+		return 1
+	case <-ctx.Done():
+		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_ = fcli.Interrupt(intCtx)
+		intCancel()
+		select {
+		case <-doneCh:
+		case <-fcli.Done():
+		case <-time.After(3 * time.Second):
+		}
+		return 130
+	}
+}
+
+// verbatimSink writes every wire notification as a JSON line
+// {"method","params"} — the protocol exactly as it arrives, no decoding.
+type verbatimSink struct {
+	out      io.Writer
+	doneCh   chan struct{}
+	sawError bool
+}
+
+func (s *verbatimSink) handle(method string, params json.RawMessage) {
+	line, err := json.Marshal(struct {
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"`
+	}{method, params})
+	if err == nil {
+		s.out.Write(line)
+		s.out.Write([]byte("\n"))
+	}
+	if method == rpc.MethodTurnDone {
+		var d rpc.DoneEntry
+		_ = json.Unmarshal(params, &d)
+		if strings.HasPrefix(d.Reason, "error:") {
+			s.sawError = true
+		}
+		select {
+		case s.doneCh <- struct{}{}:
+		default:
+		}
+	}
+}
+
 // plainSink streams the assistant unit to out as raw text for
 // pipes/scripts: it maintains the current unit's node list and writes the
 // new tail of its flattened text on each update. The user's prompt unit

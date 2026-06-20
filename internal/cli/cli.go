@@ -115,7 +115,7 @@ messages of the pid-bound aria; --id scopes to a different aria.
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-e|--ephemeral] [-r|--raw] [-x|--exec] [-n] [-y] -- <prompt>",
+		Usage:   "send [--id <id>] [-e|--ephemeral] [-r|--raw] [-v|--verbatim] [-x|--exec] [-n] [-y] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding). With --id, targets
 the named aria, creating it if it does not yet exist.
@@ -129,6 +129,9 @@ Flags:
                  Contradicts --id. Says nothing about formatting.
   -r, --raw      Stream verbatim to stdout: no ANSI, no markdown.
                  Pipe-friendly. Says nothing about persistence.
+  -v, --verbatim Dump the raw wire frames as JSON (one {"method","params"}
+                 per line) — the literal protocol stream, no formatting,
+                 no delta application.
   -x, --exec     Treat the prompt as a bash instruction. The reply is
                  piped to bash -c. --raw is silently ignored here
                  because the script governs its own output.

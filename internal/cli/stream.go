@@ -81,7 +81,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				// just-committed user unit; this is plain scrollback above
 				// the new live region).
 				if e.Role == "assistant" && prevRole == "user" {
-					fmt.Fprint(os.Stdout, "  "+term.Dim("───")+"\n\n")
+					fmt.Fprint(os.Stdout, dimRule(width)+"\n\n")
 				}
 				prevRole = e.Role
 				lr.snapshot(e.Nodes)
@@ -182,13 +182,36 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 }
 
-// writeStatusLine prints a short dimmed banner.
+// writeStatusLine prints a full-width dimmed banner: "─── id · time ───…"
+// extended with box-drawing dashes to the viewport width, so it bookends
+// the output as a clean rule.
 func writeStatusLine(w *os.File, figaroID string, ts time.Time, elapsed time.Duration) {
 	body := fmt.Sprintf("%s · %s", figaroID, ts.Format("15:04:05"))
 	if elapsed > 0 {
 		body += fmt.Sprintf(" · %s", formatElapsed(elapsed))
 	}
-	fmt.Fprintln(w, term.Dim("─── "+body+" ───"))
+	prefix := "─── " + body + " " // 4 cols + body + 1 col (body is ASCII)
+	fill := termWidth() - 4 - len(body) - 1
+	if fill < 3 {
+		fill = 3
+	}
+	fmt.Fprintln(w, term.Dim(prefix+strings.Repeat("─", fill)))
+}
+
+// dimRule returns a dim full-width horizontal rule.
+func dimRule(width int) string {
+	if width < 3 {
+		width = 3
+	}
+	return term.Dim(strings.Repeat("─", width))
+}
+
+// termWidth returns the terminal width, defaulting to 80.
+func termWidth() int {
+	if w := term.Width(); w > 0 {
+		return w
+	}
+	return 80
 }
 
 // writeSeparator prints a dimmed rule.

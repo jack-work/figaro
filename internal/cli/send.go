@@ -22,6 +22,7 @@ type sendOpts struct {
 	id        string
 	ephemeral bool
 	raw       bool // --raw / -r: raw stream, no ANSI/markdown
+	verbatim  bool // --verbatim / -v: dump raw wire frames as JSON
 	exec      bool
 	dryRun    bool // --exec only
 	skipYes   bool // --exec only
@@ -53,7 +54,7 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			allBool := true
 			for _, r := range letters {
 				switch r {
-				case 'e', 'r', 'x', 'n', 'y':
+				case 'e', 'r', 'v', 'x', 'n', 'y':
 					// known bool short
 				default:
 					allBool = false
@@ -111,6 +112,10 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			opts.raw = true
 			i++
 			continue
+		case a == "--verbatim", a == "-v":
+			opts.verbatim = true
+			i++
+			continue
 		case a == "--exec", a == "-x":
 			opts.exec = true
 			i++
@@ -156,7 +161,7 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 	}
 	prompt := extractPrompt(rest)
 	if prompt == "" {
-		die("usage: figaro send [--id <id>] [-e|--ephemeral] [-r|--raw] [-x|--exec] [-n] [-y] -- <prompt>")
+		die("usage: figaro send [--id <id>] [-e|--ephemeral] [-r|--raw] [-v|--verbatim] [-x|--exec] [-n] [-y] -- <prompt>")
 	}
 
 	if opts.ephemeral && opts.id != "" {
@@ -167,6 +172,8 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 	}
 
 	switch {
+	case opts.verbatim:
+		runSendVerbatim(loaded, opts, prompt)
 	case opts.exec:
 		runSendExec(loaded, opts, prompt)
 	case opts.ephemeral && opts.raw:
@@ -258,6 +265,43 @@ func runSendRaw(loaded *config.Loaded, ariaID, prompt string) {
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	exitCode := plainPrompt(ctx, figaroEP, prompt, os.Stdout)
 	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
+}
+
+// runSendVerbatim dumps the raw wire frames (one JSON object per line:
+// {"method","params"}) with no formatting — the literal protocol stream.
+// Ephemeral when -e, else the bound/named aria (left alive).
+func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	var figaroEP transport.Endpoint
+	if opts.ephemeral {
+		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, "", nil) })
+		if err != nil {
+			die("create figaro: %s", err)
+		}
+		figaroEP = transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
+		defer func() {
+			killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer killCancel()
+			_ = acli.Kill(killCtx, createResp.FigaroID)
+		}()
+		waitForSocket(figaroEP.Address, 3*time.Second)
+	} else {
+		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true)
+		if err != nil {
+			die("%s", err)
+		}
+		figaroEP = ep
+	}
+
+	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
+	if exitCode := verbatimPrompt(ctx, figaroEP, prompt, os.Stdout); exitCode != 0 {
 		os.Exit(exitCode)
 	}
 }
