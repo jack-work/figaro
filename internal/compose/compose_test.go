@@ -27,12 +27,12 @@ func TestNodes_TextAndThinking(t *testing.T) {
 		message.Content{Type: message.ContentText, Text: "Here is the answer."},
 	)}, nil)
 	if len(nodes) != 2 {
-		t.Fatalf("want 2 prose nodes, got %d: %+v", len(nodes), nodes)
+		t.Fatalf("want thinking + text node, got %d: %+v", len(nodes), nodes)
 	}
-	if nodes[0].Type != livedoc.NodeProse || nodes[0].Markdown != "> let me think" {
-		t.Errorf("thinking should be a blockquote prose node: %+v", nodes[0])
+	if nodes[0].Type != livedoc.NodeThinking || nodes[0].Markdown != "let me think" {
+		t.Errorf("thinking should be a thinking node with raw text: %+v", nodes[0])
 	}
-	if nodes[1].Markdown != "Here is the answer." {
+	if nodes[1].Type != livedoc.NodeProse || nodes[1].Markdown != "Here is the answer." {
 		t.Errorf("assistant text node wrong: %+v", nodes[1])
 	}
 }

@@ -205,7 +205,7 @@ func streamingStates() [][]livedoc.Node {
 }
 
 func expectedScreen(width int, states [][]livedoc.Node) []string {
-	rows, _ := renderNodes(states[len(states)-1], width, 10, 0)
+	rows, _ := renderNodes(states[len(states)-1], width, 10, 0, renderSettings{})
 	var want []string
 	for _, r := range rows {
 		want = append(want, liveStrip(strings.TrimRight(r, " ")))
@@ -284,7 +284,7 @@ func TestRenderNodes_RowsFitWidth(t *testing.T) {
 	states := streamingStates()
 	for _, W := range []int{30, 40, 70, 100, 160} {
 		for si, st := range states {
-			rows, _ := renderNodes(st, W, 10, 3)
+			rows, _ := renderNodes(st, W, 10, 3, renderSettings{})
 			for ri, r := range rows {
 				if vis := runewidth.StringWidth(liveStrip(r)); vis > W {
 					t.Errorf("width=%d state=%d row=%d is %d cols (> width): %q", W, si, ri, vis, liveStrip(r))

@@ -25,7 +25,7 @@ const spinnerFPS = 11 // spinner frames per second (~90ms/frame)
 // mustPromptFigaro is the interactive (TTY) prompt path: it drives a
 // liveRegion from the snapshot/delta/commit frame stream, animating
 // spinners locally and reflowing on resize.
-func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prompt string, loaded *config.Loaded) {
+func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prompt string, loaded *config.Loaded, set renderSettings) {
 	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
 
@@ -56,6 +56,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		width = 80
 	}
 	lr := newLiveRegion(os.Stdout, width, 0) // 0 → renderer's default bash cap (10)
+	lr.settings = set
 
 	// The painter owns the cursor and assumes one row per line; disable the
 	// terminal's auto-margin for the live session so a full-width row never

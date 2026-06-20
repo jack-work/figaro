@@ -15,7 +15,7 @@ import (
 )
 
 // runPrompt resolves the shell-bound figaro and prompts it.
-func runPrompt(loaded *config.Loaded, prompt string) {
+func runPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -39,11 +39,11 @@ func runPrompt(loaded *config.Loaded, prompt string) {
 		figaroID, figaroEP = mustCreateAndBind(ctx, acli, loaded, ppid)
 	}
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
-	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
+	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
 
 // runNewPrompt creates a fresh figaro and prompts it.
-func runNewPrompt(loaded *config.Loaded, prompt string) {
+func runNewPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -55,11 +55,11 @@ func runNewPrompt(loaded *config.Loaded, prompt string) {
 
 	figaroID, figaroEP := mustCreateAndBind(ctx, acli, loaded, ppid)
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
-	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
+	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
 
 // promptAria sends a prompt to a named aria.
-func promptAria(loaded *config.Loaded, ariaID, prompt string) {
+func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -71,7 +71,7 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string) {
 		die("%s", err)
 	}
 	prompt = expandAtRefsForEndpoint(ctx, ep, prompt)
-	mustPromptFigaro(ctx, ep, ariaID, prompt, loaded)
+	mustPromptFigaro(ctx, ep, ariaID, prompt, loaded, set)
 }
 
 // resolveOrCreate attaches or creates a named aria.

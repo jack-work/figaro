@@ -7,7 +7,7 @@
 // Block → node mapping (each assistant content block is one node, in
 // order, so an edit to one block localizes to a single node op):
 //   - text      → prose node (markdown)
-//   - thinking  → prose node (dim blockquote)
+//   - thinking  → thinking node (rendered dim/blockquote by the client)
 //   - tool_invoke → tool node {name, args, status, output}; its result
 //     (or streamed partial) folds in as output, status running→ok/error
 //
@@ -52,7 +52,7 @@ func Nodes(msgs []message.Message, partials map[string]string) []livedoc.Node {
 				if strings.TrimSpace(c.Text) == "" {
 					continue
 				}
-				nodes = append(nodes, livedoc.Node{Type: livedoc.NodeProse, Markdown: blockquote(c.Text)})
+				nodes = append(nodes, livedoc.Node{Type: livedoc.NodeThinking, Markdown: strings.TrimRight(c.Text, "\n")})
 			case message.ContentToolInvoke:
 				nodes = append(nodes, toolNode(c, results, partials))
 			}
@@ -158,12 +158,4 @@ func indexResults(msgs []message.Message) map[string]message.Content {
 		}
 	}
 	return out
-}
-
-func blockquote(text string) string {
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	for i, l := range lines {
-		lines[i] = "> " + l
-	}
-	return strings.Join(lines, "\n")
 }

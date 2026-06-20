@@ -389,6 +389,8 @@ func plainText(nodes []livedoc.Node) string {
 	var parts []string
 	for _, n := range nodes {
 		switch n.Type {
+		case livedoc.NodeThinking:
+			// Thinking is omitted from raw output (it's for pipes/scripts).
 		case livedoc.NodeTool:
 			if strings.TrimSpace(n.Output) != "" {
 				parts = append(parts, n.Output)

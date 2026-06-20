@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -11,14 +12,27 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-const nodeBashCapDefault = 10
+const (
+	nodeBashCapDefault = 10
+	toolArgCap         = 80 // default truncation for a tool's arg summary
+)
+
+// renderSettings are the consumer-side presentation toggles: whether to
+// expand tool inputs (vs a truncated summary) and whether to show thinking
+// blocks. The wire/IR always carries the full data; these only affect
+// display, so they can be flipped live and the unit re-rendered.
+type renderSettings struct {
+	expandTools  bool
+	showThinking bool
+}
 
 // renderNodes renders a unit's node list to terminal rows plus the
 // stable-row watermark — the rows belonging to leading nodes that are
-// final (a completed tool, or a prose block followed by a later node) and
-// will not change again this unit. Each returned row fits within width so
-// the painter's one-row-per-line cursor math holds.
-func renderNodes(nodes []livedoc.Node, width, bashCap int, tick uint64) ([]string, int) {
+// final (a completed tool, or a block followed by a later node) and will
+// not change again this unit. Each returned row fits within width so the
+// painter's one-row-per-line cursor math holds. Hidden thinking nodes
+// contribute nothing.
+func renderNodes(nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) ([]string, int) {
 	if width <= 0 {
 		width = 80
 	}
@@ -27,24 +41,30 @@ func renderNodes(nodes []livedoc.Node, width, bashCap int, tick uint64) ([]strin
 	}
 	firstLive := liveNodeIndex(nodes)
 	var rows []string
-	stable := 0
+	stable, emitted := 0, 0
 	for i, n := range nodes {
+		if n.Type == livedoc.NodeThinking && !set.showThinking {
+			continue
+		}
 		var nr []string
 		switch n.Type {
 		case livedoc.NodeTool:
-			nr = renderToolNode(n, width, bashCap, tick)
+			nr = renderToolNode(n, width, bashCap, tick, set.expandTools)
+		case livedoc.NodeThinking:
+			nr = renderThinkingNode(n, width)
 		default:
 			nr = renderProseNode(n, width)
 		}
-		// One blank line between any two adjacent blocks (prose, thinking,
-		// or tool) for separation. The first node sits flush to the top.
-		if i > 0 {
+		// One blank line between any two adjacent (visible) blocks. The
+		// first emitted block sits flush to the top.
+		if emitted > 0 {
 			nr = append([]string{""}, nr...)
 		}
 		if i < firstLive {
 			stable += len(nr)
 		}
 		rows = append(rows, nr...)
+		emitted++
 	}
 	if stable > len(rows) {
 		stable = len(rows)
@@ -128,11 +148,18 @@ func renderProseNode(n livedoc.Node, width int) []string {
 	return render.Render(n.Markdown, render.Options{Width: width}).Lines
 }
 
+// renderThinkingNode renders extended-thinking text as a dim blockquote
+// (glamour styles "> " spans), visually distinct from the agent's prose.
+func renderThinkingNode(n livedoc.Node, width int) []string {
+	return render.Render(blockquote(n.Markdown), render.Options{Width: width}).Lines
+}
+
 // renderToolNode draws a tool as a widget: a status header (animated
-// spinner while running, ✓/✗ when done) with the tool name and a one-line
-// argument summary, then the streamed output under a dim gutter,
-// tail-clamped to bashCap lines.
-func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64) []string {
+// spinner while running, ✓/✗ when done) with the tool name and an argument
+// summary, then the streamed output under a dim gutter, tail-clamped to
+// bashCap lines. With expand, the full arguments are shown wrapped beneath
+// the header instead of a truncated one-liner.
+func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool) []string {
 	var glyph string
 	switch n.Status {
 	case livedoc.StatusOK:
@@ -148,10 +175,20 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64) []string {
 		name = "tool"
 	}
 	header := glyph + " " + term.Cyan(name)
-	if detail := toolArgSummary(n); detail != "" {
-		header += " " + term.Dim(truncCols(detail, width-runewidth.StringWidth(name)-4))
-	}
+	detail := toolArgSummary(n)
 	rows := []string{header}
+
+	if detail != "" {
+		const g = "  "
+		if expand {
+			// Full arguments, wrapped under the header.
+			for _, l := range hardWrap(detail, width-len(g)) {
+				rows = append(rows, term.Dim(g+l))
+			}
+		} else {
+			rows[0] = header + " " + term.Dim(truncCols(detail, toolArgCap))
+		}
+	}
 
 	if strings.TrimSpace(n.Output) != "" {
 		lines := strings.Split(strings.TrimRight(n.Output, "\n"), "\n")
@@ -167,8 +204,8 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64) []string {
 	return rows
 }
 
-// toolArgSummary extracts the one-line displayable argument for common
-// tools (bash command, file path), else "".
+// toolArgSummary renders a tool's arguments as a one-line string: the
+// command for bash, the path for file tools, else compact key=value pairs.
 func toolArgSummary(n livedoc.Node) string {
 	if n.Args == nil {
 		return ""
@@ -183,7 +220,54 @@ func toolArgSummary(n livedoc.Node) string {
 			return p
 		}
 	}
-	return ""
+	keys := make([]string, 0, len(n.Args))
+	for k := range n.Args {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%v", k, n.Args[k]))
+	}
+	return strings.Join(parts, " ")
+}
+
+// blockquote prefixes each line of s with "> " (markdown blockquote).
+func blockquote(s string) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	for i, l := range lines {
+		lines[i] = "> " + l
+	}
+	return strings.Join(lines, "\n")
+}
+
+// hardWrap char-wraps s (runewidth-aware) to at most w columns per line,
+// preserving explicit newlines.
+func hardWrap(s string, w int) []string {
+	if w < 1 {
+		w = 1
+	}
+	var rows []string
+	for _, para := range strings.Split(s, "\n") {
+		if para == "" {
+			rows = append(rows, "")
+			continue
+		}
+		col := 0
+		var b strings.Builder
+		for _, r := range para {
+			rw := runewidth.RuneWidth(r)
+			if col+rw > w {
+				rows = append(rows, b.String())
+				b.Reset()
+				col = 0
+			}
+			b.WriteRune(r)
+			col += rw
+		}
+		rows = append(rows, b.String())
+	}
+	return rows
 }
 
 // truncCols truncates s to at most w display columns (runewidth-aware).

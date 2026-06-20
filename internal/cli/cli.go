@@ -57,7 +57,7 @@ func Run(progName string, args []string) {
 	// Bare `figaro -- <prompt>` defaults to prompt verb.
 	if prompt := extractPrompt(args); prompt != "" {
 		if len(args) == 0 || !router.HasCommand(args[0]) {
-			runPrompt(loaded, prompt)
+			runPrompt(loaded, prompt, renderSettings{})
 			return
 		}
 	}
@@ -137,7 +137,7 @@ output) so ranges can target them.
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-e|--ephemeral] [-r|--raw] [-v|--verbatim] [-x|--exec] [-n] [-y] -- <prompt>",
+		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-t] [-x] [-n] [-y] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding). With --id, targets
 the named aria, creating it if it does not yet exist.
@@ -154,6 +154,8 @@ Flags:
   -v, --verbatim Dump the raw wire frames as JSON (one {"method","params"}
                  per line) — the literal protocol stream, no formatting,
                  no delta application.
+  -o, --expand   Show full tool inputs (else truncated). Ctrl-O toggles live.
+  -t, --thinking Show extended-thinking blocks. Ctrl-T toggles live.
   -x, --exec     Treat the prompt as a bash instruction. The reply is
                  piped to bash -c. --raw is silently ignored here
                  because the script governs its own output.
@@ -188,7 +190,7 @@ Flags:
 			if prompt == "" {
 				return fmt.Errorf("usage: figaro new -- <prompt>")
 			}
-			runNewPrompt(ld, prompt)
+			runNewPrompt(ld, prompt, renderSettings{})
 			return nil
 		},
 		CompleteArgs: completePromptOrIDFlag,

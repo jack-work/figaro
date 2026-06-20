@@ -19,13 +19,15 @@ import (
 
 // sendOpts captures the parsed flag state of the send command.
 type sendOpts struct {
-	id        string
-	ephemeral bool
-	raw       bool // --raw / -r: raw stream, no ANSI/markdown
-	verbatim  bool // --verbatim / -v: dump raw wire frames as JSON
-	exec      bool
-	dryRun    bool // --exec only
-	skipYes   bool // --exec only
+	id           string
+	ephemeral    bool
+	raw          bool // --raw / -r: raw stream, no ANSI/markdown
+	verbatim     bool // --verbatim / -v: dump raw wire frames as JSON
+	expandTools  bool // --expand / -o: show full tool inputs (Ctrl-O toggles live)
+	showThinking bool // --thinking / -t: show thinking blocks (Ctrl-T toggles live)
+	exec         bool
+	dryRun       bool // --exec only
+	skipYes      bool // --exec only
 }
 
 // extractSendFlags scans a PassRaw arg list for the send command's
@@ -54,7 +56,7 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			allBool := true
 			for _, r := range letters {
 				switch r {
-				case 'e', 'r', 'v', 'x', 'n', 'y':
+				case 'e', 'r', 'v', 'o', 't', 'x', 'n', 'y':
 					// known bool short
 				default:
 					allBool = false
@@ -116,6 +118,14 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			opts.verbatim = true
 			i++
 			continue
+		case a == "--expand", a == "-o":
+			opts.expandTools = true
+			i++
+			continue
+		case a == "--thinking", a == "-t":
+			opts.showThinking = true
+			i++
+			continue
 		case a == "--exec", a == "-x":
 			opts.exec = true
 			i++
@@ -171,6 +181,7 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 		die("send: -n / -y only meaningful with --exec")
 	}
 
+	set := renderSettings{expandTools: opts.expandTools, showThinking: opts.showThinking}
 	switch {
 	case opts.verbatim:
 		runSendVerbatim(loaded, opts, prompt)
@@ -179,16 +190,16 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 	case opts.ephemeral && opts.raw:
 		runSendEphemeralRaw(loaded, prompt)
 	case opts.ephemeral:
-		runSendEphemeralRich(loaded, prompt)
+		runSendEphemeralRich(loaded, prompt, set)
 	case opts.raw:
 		runSendRaw(loaded, opts.id, prompt)
 	default:
 		// Today's interactive send: pid-bound or --id named.
 		if opts.id == "" {
-			runPrompt(loaded, prompt)
+			runPrompt(loaded, prompt, set)
 			return
 		}
-		promptAria(loaded, opts.id, prompt)
+		promptAria(loaded, opts.id, prompt, set)
 	}
 }
 
@@ -224,7 +235,7 @@ func runSendEphemeralRaw(loaded *config.Loaded, prompt string) {
 // runSendEphemeralRich spins an ephemeral aria, interactive (rich)
 // stream, kills it. Useful for one-off conversations the user wants
 // to see formatted but not persist.
-func runSendEphemeralRich(loaded *config.Loaded, prompt string) {
+func runSendEphemeralRich(loaded *config.Loaded, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -245,7 +256,7 @@ func runSendEphemeralRich(loaded *config.Loaded, prompt string) {
 	waitForSocket(figaroEP.Address, 3*time.Second)
 
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
-	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded)
+	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
 
 // runSendRaw streams raw output from a persistent aria (bound or

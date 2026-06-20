@@ -22,14 +22,24 @@ type liveRegion struct {
 	width   int
 	bashCap int
 
-	nodes   []livedoc.Node
-	tick    uint64
-	flushed int      // rows committed to scrollback this unit
-	live    []string // rows currently shown in the live region
+	settings renderSettings // display toggles (tool expand, thinking)
+	nodes    []livedoc.Node
+	tick     uint64
+	flushed  int      // rows committed to scrollback this unit
+	live     []string // rows currently shown in the live region
 }
 
 func newLiveRegion(out io.Writer, width, bashCap int) *liveRegion {
 	return &liveRegion{out: out, width: width, bashCap: bashCap}
+}
+
+// setSettings replaces the display toggles and repaints the live tail so a
+// live toggle (Ctrl-O / Ctrl-T) takes effect immediately.
+func (lr *liveRegion) setSettings(s renderSettings) {
+	lr.settings = s
+	if lr.nodes != nil || lr.flushed > 0 {
+		lr.repaint(true)
+	}
 }
 
 // snapshot replaces the unit's node list wholesale (unit start or resync)
@@ -99,7 +109,7 @@ func (lr *liveRegion) commit() {
 // the watermark is pinned (used by resize so already-committed rows aren't
 // reprinted).
 func (lr *liveRegion) repaint(allowFlush bool) {
-	rows, stable := renderNodes(lr.nodes, lr.width, lr.bashCap, lr.tick)
+	rows, stable := renderNodes(lr.nodes, lr.width, lr.bashCap, lr.tick, lr.settings)
 	if !allowFlush && stable > lr.flushed {
 		stable = lr.flushed
 	}

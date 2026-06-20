@@ -11,8 +11,9 @@ package livedoc
 type NodeType string
 
 const (
-	NodeProse NodeType = "prose" // a markdown span (text or thinking)
-	NodeTool  NodeType = "tool"  // a tool invocation + its streamed result
+	NodeProse    NodeType = "prose"    // a markdown span (assistant text)
+	NodeThinking NodeType = "thinking" // extended-thinking text (Markdown field)
+	NodeTool     NodeType = "tool"     // a tool invocation + its streamed result
 )
 
 // Tool status values.
@@ -91,7 +92,7 @@ func DiffNodes(old, next []Node) []Op {
 		}
 		o, n := old[i], next[i]
 		switch n.Type {
-		case NodeProse:
+		case NodeProse, NodeThinking:
 			if d, ok := Diff(o.Markdown, n.Markdown); ok {
 				ops = append(ops, Op{Kind: OpPatch, Index: i, Field: "markdown", At: d.At, Del: d.Del, Ins: d.Ins})
 			}
