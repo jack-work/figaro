@@ -2,6 +2,7 @@ package cli
 
 import (
 	"io"
+	"strings"
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/term"
@@ -79,11 +80,13 @@ func (lr *liveRegion) resize(width int) {
 }
 
 // commit freezes the unit: drop the cursor below the live region (its
-// rows are already final on screen) and reset for the next unit.
+// rows are already final on screen) and reset for the next unit. The
+// descent uses real newlines, not CursorDown — at the viewport bottom CUD
+// clamps instead of scrolling, which would land the next unit on top of
+// the last live row when the conversation has scrolled.
 func (lr *liveRegion) commit() {
 	if n := len(lr.live); n > 0 {
-		io.WriteString(lr.out, term.CursorDown(n))
-		io.WriteString(lr.out, "\r")
+		io.WriteString(lr.out, strings.Repeat("\n", n))
 	}
 	lr.nodes = nil
 	lr.tick = 0

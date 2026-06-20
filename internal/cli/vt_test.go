@@ -20,11 +20,28 @@ type vt struct {
 	lines    [][]rune
 	row, col int
 	width    int
+	height   int  // viewport rows; 0 = unbounded (no scrolling)
+	top      int  // absolute index of the viewport's first line
 	autowrap bool // DECAWM; the live session disables it
 	pending  bool // deferred-wrap latch (cursor sat at the right margin)
 }
 
 func newVT(width int, autowrap bool) *vt { return &vt{width: width, autowrap: autowrap} }
+
+// newVTH is a viewport of fixed height that scrolls — newlines past the
+// bottom push the viewport down, while CUD/CUU clamp at the viewport edges
+// (real terminal behavior). This is what exposes scroll-related cursor
+// desyncs the unbounded model can't see.
+func newVTH(width, height int, autowrap bool) *vt {
+	return &vt{width: width, height: height, autowrap: autowrap}
+}
+
+// scrollIfNeeded keeps the cursor inside the viewport by advancing top.
+func (v *vt) scrollIfNeeded() {
+	if v.height > 0 && v.row > v.top+v.height-1 {
+		v.top = v.row - (v.height - 1)
+	}
+}
 
 var vtCSI = regexp.MustCompile(`^\x1b\[\??([0-9;]*)([A-Za-z])`)
 
@@ -38,6 +55,7 @@ func (v *vt) putRune(r rune) {
 		v.row++
 		v.col = 0
 		v.pending = false
+		v.scrollIfNeeded()
 	}
 	v.ensure(v.row)
 	for len(v.lines[v.row]) <= v.col {
@@ -65,14 +83,21 @@ func (v *vt) feed(s string) {
 			n := 0
 			fmt.Sscanf(m[1], "%d", &n)
 			switch m[2] {
-			case "A":
+			case "A": // cursor up — clamps at the viewport top
 				v.row -= n
+				lo := v.top
+				if v.row < lo {
+					v.row = lo
+				}
 				if v.row < 0 {
 					v.row = 0
 				}
 				v.pending = false
-			case "B":
+			case "B": // cursor down — clamps at the viewport bottom (no scroll)
 				v.row += n
+				if v.height > 0 && v.row > v.top+v.height-1 {
+					v.row = v.top + v.height - 1
+				}
 				v.ensure(v.row)
 				v.pending = false
 			case "K": // erase line (2K)
@@ -103,6 +128,7 @@ func (v *vt) feed(s string) {
 			v.row++
 			v.col = 0
 			v.pending = false
+			v.scrollIfNeeded()
 			v.ensure(v.row)
 		default:
 			v.putRune(rs[i])
@@ -207,6 +233,46 @@ func TestVT_LiveSessionNoDuplication(t *testing.T) {
 		if g != w {
 			t.Errorf("row %d:\n got %q\nwant %q", i, g, w)
 		}
+	}
+}
+
+// When the conversation has scrolled (the turn renders near the viewport
+// bottom), committing a multi-row unit must scroll, not CursorDown — CUD
+// clamps at the bottom and the next unit lands on top of the last row.
+// This drives a unit boundary at the bottom of a short viewport and checks
+// the prompt's wrapped 2nd line survives. (Reverting commit() to
+// CursorDown makes this fail.)
+func TestVT_ScrollUnitBoundaryNoClobber(t *testing.T) {
+	const W, H = 80, 8
+	pr := func(s string) livedoc.Node { return livedoc.Node{Type: livedoc.NodeProse, Markdown: s} }
+	var buf bytes.Buffer
+	lr := newLiveRegion(&buf, W, 10)
+	v := newVTH(W, H, true)
+	flush := func() { v.feed(buf.String()); buf.Reset() }
+	v.feed(strings.Repeat("filler\n", H)) // push the cursor to the viewport bottom
+
+	buf.WriteString(autowrapOff)
+	lr.snapshot([]livedoc.Node{pr("Reply in two short paragraphs: first greet me warmly in one sentence, then restate exactly what I asked.")})
+	lr.commit()
+	flush()
+	lr.snapshot(nil)
+	var prev []livedoc.Node
+	for _, st := range [][]livedoc.Node{
+		{pr("Buonasera, maestro!")},
+		{pr("Buonasera, maestro!"), pr("You asked me to greet and restate.")},
+	} {
+		for _, op := range livedoc.DiffNodes(prev, st) {
+			lr.applyOp(op)
+			flush()
+		}
+		prev = st
+	}
+	lr.commit()
+	flush()
+
+	all := strings.Join(v.screen(), "\n")
+	if !strings.Contains(all, "restate exactly what I asked.") {
+		t.Fatalf("prompt's wrapped 2nd line was clobbered at the unit boundary under scroll:\n%s", all)
 	}
 }
 

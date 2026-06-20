@@ -114,8 +114,8 @@ func TestLive_CommitDropsBelowAndResets(t *testing.T) {
 	lr := newLiveRegion(&buf, 80, 10)
 	lr.snapshot([]livedoc.Node{prose("some content")})
 	out := capture(&buf, func() { lr.commit() })
-	if !strings.Contains(out, term.CursorDown(1)[:2]) { // CSI ... B prefix
-		t.Fatalf("commit should move the cursor below the region; got %q", out)
+	if !strings.Contains(out, "\n") { // real newline, not CursorDown (scroll-safe)
+		t.Fatalf("commit should move below the region with a newline; got %q", out)
 	}
 	if lr.nodes != nil || lr.live != nil || lr.flushed != 0 {
 		t.Fatalf("commit did not reset state: nodes=%v live=%v flushed=%d", lr.nodes, lr.live, lr.flushed)
