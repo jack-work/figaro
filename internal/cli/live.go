@@ -20,6 +20,7 @@ import (
 type liveRegion struct {
 	out     io.Writer
 	width   int
+	height  int // viewport rows; 0 = unbounded (no overflow flushing)
 	bashCap int
 
 	settings renderSettings // display toggles (tool expand, thinking)
@@ -126,6 +127,21 @@ func (lr *liveRegion) repaint(allowFlush bool) {
 	}
 
 	oldFlushed := lr.flushed
+	// Bound the live region to the viewport: diffPaint navigates with
+	// relative cursor moves that clamp at the viewport edges, so a live
+	// region taller than the viewport desyncs the cursor (duplicated rows,
+	// an occluded bookend). Flush the overflow off the top to scrollback —
+	// but only rows already on screen identically, so glamour's reflow of
+	// the still-streaming tail never re-flushes a changed row.
+	if allowFlush && lr.height > 0 {
+		for len(rows)-stable > lr.height {
+			i := stable - oldFlushed // index into the on-screen live rows
+			if i < 0 || i >= len(lr.live) || lr.live[i] != rows[stable] {
+				break
+			}
+			stable++
+		}
+	}
 	// Freeze rows[oldFlushed:stable] into scrollback. They are the top of
 	// the current live region; reprinting them in place (identical) and
 	// dropping below leaves the cursor at the new live-region top.

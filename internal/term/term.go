@@ -77,6 +77,18 @@ func Width() int {
 	return 80
 }
 
+// Height returns the terminal height in rows, defaulting to 24 if not a
+// TTY or if detection fails.
+func Height() int {
+	if !isTTY {
+		return 24
+	}
+	if _, r, err := term.GetSize(int(os.Stdout.Fd())); err == nil && r > 2 {
+		return r
+	}
+	return 24
+}
+
 const (
 	reset = "\033[0m"
 
