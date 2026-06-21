@@ -137,7 +137,7 @@ output) so ranges can target them.
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-t] [-x] [-n] [-y] -- <prompt>",
+		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-x] [-n] [-y] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding). With --id, targets
 the named aria, creating it if it does not yet exist.
@@ -154,8 +154,8 @@ Flags:
   -v, --verbatim Dump the raw wire frames as JSON (one {"method","params"}
                  per line) — the literal protocol stream, no formatting,
                  no delta application.
-  -o, --expand   Show full tool inputs (else truncated). Ctrl-O toggles live.
-  -t, --thinking Show extended-thinking blocks. Ctrl-T toggles live.
+  -o, --verbose  Verbose: expand full tool inputs (else truncated). Thinking
+                 blocks are always shown (muted). Ctrl-O (or Ctrl-T) toggles live.
   -x, --exec     Treat the prompt as a bash instruction. The reply is
                  piped to bash -c. --raw is silently ignored here
                  because the script governs its own output.

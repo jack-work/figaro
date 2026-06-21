@@ -17,21 +17,19 @@ const (
 	toolArgCap         = 80 // default truncation for a tool's arg summary
 )
 
-// renderSettings are the consumer-side presentation toggles: whether to
-// expand tool inputs (vs a truncated summary) and whether to show thinking
-// blocks. The wire/IR always carries the full data; these only affect
-// display, so they can be flipped live and the unit re-rendered.
+// renderSettings is the consumer-side verbosity toggle. The wire/IR always
+// carries the full data; this only affects display, so it can be flipped live
+// (Ctrl-O) and the unit re-rendered. Thinking blocks are always shown (muted);
+// verbose additionally expands tool inputs to the full wrapped command.
 type renderSettings struct {
-	expandTools  bool
-	showThinking bool
+	verbose bool
 }
 
 // renderNodes renders a unit's node list to terminal rows plus the
 // stable-row watermark — the rows belonging to leading nodes that are
 // final (a completed tool, or a block followed by a later node) and will
 // not change again this unit. Each returned row fits within width so the
-// painter's one-row-per-line cursor math holds. Hidden thinking nodes
-// contribute nothing.
+// painter's one-row-per-line cursor math holds.
 func renderNodes(nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) ([]string, int) {
 	if width <= 0 {
 		width = 80
@@ -43,13 +41,10 @@ func renderNodes(nodes []livedoc.Node, width, bashCap int, tick uint64, set rend
 	var rows []string
 	stable, emitted := 0, 0
 	for i, n := range nodes {
-		if n.Type == livedoc.NodeThinking && !set.showThinking {
-			continue
-		}
 		var nr []string
 		switch n.Type {
 		case livedoc.NodeTool:
-			nr = renderToolNode(n, width, bashCap, tick, set.expandTools)
+			nr = renderToolNode(n, width, bashCap, tick, set.verbose)
 		case livedoc.NodeThinking:
 			nr = renderThinkingNode(n, width)
 		default:

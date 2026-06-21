@@ -176,7 +176,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		}
 		fmt.Println(term.Dim(label))
 		fmt.Println()
-		rows, _ := renderNodes(u.Nodes, width, 0, 0, renderSettings{expandTools: true, showThinking: true})
+		rows, _ := renderNodes(u.Nodes, width, 0, 0, renderSettings{verbose: true})
 		fmt.Println(strings.Join(rows, "\n"))
 		fmt.Println()
 	}

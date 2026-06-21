@@ -19,15 +19,14 @@ import (
 
 // sendOpts captures the parsed flag state of the send command.
 type sendOpts struct {
-	id           string
-	ephemeral    bool
-	raw          bool // --raw / -r: raw stream, no ANSI/markdown
-	verbatim     bool // --verbatim / -v: dump raw wire frames as JSON
-	expandTools  bool // --expand / -o: show full tool inputs (Ctrl-O toggles live)
-	showThinking bool // --thinking / -t: show thinking blocks (Ctrl-T toggles live)
-	exec         bool
-	dryRun       bool // --exec only
-	skipYes      bool // --exec only
+	id        string
+	ephemeral bool
+	raw       bool // --raw / -r: raw stream, no ANSI/markdown
+	verbatim  bool // --verbatim / -v: dump raw wire frames as JSON
+	verbose   bool // --verbose / -o (or -t alias): expand tool inputs (Ctrl-O toggles live)
+	exec      bool
+	dryRun    bool // --exec only
+	skipYes   bool // --exec only
 }
 
 // extractSendFlags scans a PassRaw arg list for the send command's
@@ -118,12 +117,8 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			opts.verbatim = true
 			i++
 			continue
-		case a == "--expand", a == "-o":
-			opts.expandTools = true
-			i++
-			continue
-		case a == "--thinking", a == "-t":
-			opts.showThinking = true
+		case a == "--verbose", a == "--expand", a == "-o", a == "--thinking", a == "-t":
+			opts.verbose = true
 			i++
 			continue
 		case a == "--exec", a == "-x":
@@ -181,7 +176,7 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 		die("send: -n / -y only meaningful with --exec")
 	}
 
-	set := renderSettings{expandTools: opts.expandTools, showThinking: opts.showThinking}
+	set := renderSettings{verbose: opts.verbose}
 	switch {
 	case opts.verbatim:
 		runSendVerbatim(loaded, opts, prompt)

@@ -160,9 +160,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}()
 
 	// Live keybindings: in cbreak mode (per-key, no echo, SIGINT intact)
-	// Ctrl-O toggles tool-input expansion and Ctrl-T toggles thinking,
+	// Ctrl-O (or Ctrl-T, its alias) toggles verbosity — expanded tool inputs —
 	// re-rendering the open unit immediately. Ctrl-D ends the turn. Non-TTY
-	// input is skipped (the flags still set the initial state).
+	// input is skipped (the flag still sets the initial state).
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		if restore, err := term.MakeCbreak(int(os.Stdin.Fd())); err == nil {
 			defer restore()
@@ -179,14 +179,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 						case 0x04: // Ctrl-D
 							cancel()
 							return
-						case 0x0f: // Ctrl-O
+						case 0x0f, 0x14: // Ctrl-O / Ctrl-T (alias): toggle verbosity
 							lrMu.Lock()
-							set.expandTools = !set.expandTools
-							lr.setSettings(set)
-							lrMu.Unlock()
-						case 0x14: // Ctrl-T
-							lrMu.Lock()
-							set.showThinking = !set.showThinking
+							set.verbose = !set.verbose
 							lr.setSettings(set)
 							lrMu.Unlock()
 						}
