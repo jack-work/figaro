@@ -95,7 +95,10 @@ func renderNodesFrom(nodes []livedoc.Node, start int, leadBlank bool, width, bas
 
 // clipToWidth truncates a styled row to at most width display columns,
 // passing ANSI escape sequences through uncounted and appending a reset so
-// a cut mid-color doesn't bleed.
+// a cut mid-color doesn't bleed. Embedded control characters (newlines,
+// tabs, CR) are flattened to spaces: a row must be exactly one physical
+// line or it desyncs the painter's one-row-per-line cursor math (a
+// multi-line bash command in a tool's arg summary is the common culprit).
 func clipToWidth(s string, width int) string {
 	col := 0
 	var b strings.Builder
@@ -114,12 +117,16 @@ func clipToWidth(s string, width int) string {
 			i = j
 			continue
 		}
-		w := runewidth.RuneWidth(rs[i])
+		r := rs[i]
+		if r < 0x20 || r == 0x7f { // control char → space (keeps the row one physical line)
+			r = ' '
+		}
+		w := runewidth.RuneWidth(r)
 		if col+w > width {
 			clipped = true
 			break
 		}
-		b.WriteRune(rs[i])
+		b.WriteRune(r)
 		col += w
 		i++
 	}

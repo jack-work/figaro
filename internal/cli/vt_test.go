@@ -564,3 +564,57 @@ func TestRenderNodes_RowsFitWidth(t *testing.T) {
 		}
 	}
 }
+
+// A tool whose command spans multiple lines must never emit a row with an
+// embedded newline (or other control char): a multi-physical-line row
+// desyncs the painter's one-row-per-line cursor math and duplicates output.
+func TestRenderNodes_NoEmbeddedControlChars(t *testing.T) {
+	cmd := "aws iam attach-user-policy \\\n  --user-name terraform \\\n  --policy-arn arn:aws:iam::aws:policy/AdministratorAccess"
+	tool := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: "ok",
+		Args: map[string]interface{}{"command": cmd}, Output: "ok\ndone"}
+	for _, verbose := range []bool{false, true} {
+		for _, W := range []int{40, 80, 160} {
+			rows, _ := renderNodes([]livedoc.Node{tool}, W, 10, 0, renderSettings{verbose: verbose})
+			for ri, r := range rows {
+				for _, c := range liveStrip(r) {
+					if c < 0x20 || c == 0x7f {
+						t.Fatalf("verbose=%v W=%d row %d has control char %q: %q", verbose, W, ri, c, r)
+					}
+				}
+			}
+		}
+	}
+}
+
+// The multi-line-command tool, streamed running→ok then prose, must not
+// duplicate its output (the embedded-newline desync repro).
+func TestVT_MultilineCommandNoDup(t *testing.T) {
+	cmd := "aws iam attach-user-policy \\\n  --user-name terraform \\\n  --policy-arn arn:aws:iam::aws:policy/AdministratorAccess"
+	mk := func(status string) livedoc.Node {
+		return livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: status,
+			Args: map[string]interface{}{"command": cmd}, Output: "MARKER_OUT line"}
+	}
+	pr := livedoc.Node{Type: livedoc.NodeProse, Markdown: "done."}
+	var buf bytes.Buffer
+	lr := newLiveRegion(&buf, 70, 10)
+	lr.height = 10
+	v := newVTH(70, 10, true)
+	flush := func() { v.feed(buf.String()); buf.Reset() }
+	buf.WriteString(autowrapOff)
+	lr.snapshot(nil)
+	var prev []livedoc.Node
+	for _, st := range [][]livedoc.Node{{mk("running")}, {mk("ok")}, {mk("ok"), pr}} {
+		for _, op := range livedoc.DiffNodes(prev, st) {
+			lr.applyOp(op)
+			flush()
+			lr.tickSpin()
+			flush()
+		}
+		prev = st
+	}
+	lr.commit()
+	flush()
+	if n := strings.Count(liveStrip(strings.Join(v.screen(), "\n")), "MARKER_OUT"); n != 1 {
+		t.Fatalf("tool output appears %d times (want 1):\n%s", n, liveStrip(strings.Join(v.screen(), "\n")))
+	}
+}
