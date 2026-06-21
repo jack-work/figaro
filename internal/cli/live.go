@@ -180,18 +180,25 @@ func (lr *liveRegion) repaint(allowFlush bool) {
 		remOld = nil
 	}
 
+	// The live region is everything past what we just froze, indexed in THIS
+	// frame's rows (old base). Using the post-advance flushedRows here would
+	// re-paint a just-flushed node back into the live region for one frame
+	// (a transient duplicate the next op then clears).
+	consumed := lr.flushedRows + flush
+	newLive := rows[consumed:]
+
 	// Advance the watermark. When whole nodes flushed, their render is now in
-	// scrollback and the next frame renders from flushedNodes onward, so any
+	// scrollback and the NEXT frame renders from flushedNodes onward, so any
 	// rows flushed off the top of the OLD first node are subsumed — reset
 	// flushedRows to just the overflow rows still inside the new first node.
-	newFlushedRows := lr.flushedRows + flush
+	// This is the next-frame base, not an index into this frame's rows.
+	newFlushedRows := consumed
 	if flushedNodes > lr.flushedNodes {
 		newFlushedRows = extraRows
 	}
 	lr.flushedNodes = flushedNodes
 	lr.flushedRows = newFlushedRows
 
-	newLive := rows[lr.flushedRows:]
 	lr.diffPaint(newLive, remOld)
 	lr.live = newLive
 }
