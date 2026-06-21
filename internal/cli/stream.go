@@ -242,20 +242,3 @@ func termWidth() int {
 	}
 	return 80
 }
-
-// writeSeparator prints a dimmed rule.
-func writeSeparator(w *os.File) {
-	fmt.Fprintln(w, term.Dim("───"))
-	fmt.Fprintln(w)
-}
-
-func formatElapsed(d time.Duration) string {
-	switch {
-	case d < time.Second:
-		return fmt.Sprintf("%dms", d.Milliseconds())
-	case d < time.Minute:
-		return fmt.Sprintf("%.1fs", d.Seconds())
-	default:
-		return d.Truncate(100 * time.Millisecond).String()
-	}
-}

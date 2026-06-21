@@ -35,9 +35,6 @@ type Delta struct {
 	Ins string `json:"ins"`
 }
 
-// IsEmpty reports whether d changes nothing.
-func (d Delta) IsEmpty() bool { return d.Del == 0 && d.Ins == "" }
-
 // Apply returns blob with d applied. Out-of-range offsets are clamped
 // rather than panicking, so a malformed delta degrades to a no-op-ish
 // splice instead of crashing a consumer (faults resync via snapshot).

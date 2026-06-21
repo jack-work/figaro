@@ -55,11 +55,6 @@ func Enabled() bool {
 	}
 }
 
-// IsTTY reports whether stdout is a terminal.
-func IsTTY() bool {
-	return isTTY
-}
-
 // IsTerminal reports whether the given fd is a terminal.
 func IsTerminal(fd int) bool {
 	return term.IsTerminal(fd)
@@ -77,30 +72,6 @@ func Width() int {
 		return 80
 	}
 	if c, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && c > 20 {
-		return c
-	}
-	return 80
-}
-
-// Height returns the terminal height (rows), defaulting to 24 if
-// not a TTY or if detection fails. Mirrors Width's 80-col default so
-// height-dependent layout has something to work with in pipes/tests.
-func Height() int {
-	if !isTTY {
-		return 24
-	}
-	if _, r, err := term.GetSize(int(os.Stdout.Fd())); err == nil && r > 0 {
-		return r
-	}
-	return 24
-}
-
-// WidthFd returns the terminal width for a specific fd.
-func WidthFd(fd int) int {
-	if !term.IsTerminal(fd) {
-		return 80
-	}
-	if c, _, err := term.GetSize(fd); err == nil && c > 20 {
 		return c
 	}
 	return 80
@@ -190,7 +161,6 @@ func TruncateVisible(s string, maxCols int) string {
 		}
 		if vis >= maxCols-1 { // -1 to leave room for "…"
 			out = append(out, '…')
-
 			out = append(out, []rune(reset)...)
 			return string(out)
 		}

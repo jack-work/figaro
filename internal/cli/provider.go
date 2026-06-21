@@ -159,20 +159,6 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 	}
 }
 
-// defaultModel returns the configured default model for a provider,
-// read from the default loadout's system.model.
-func defaultModel(loaded *config.Loaded, providerName string) string {
-	knobs := defaultLoadoutKnobs(loaded)
-	if knobs.Model != "" {
-		return knobs.Model
-	}
-	switch providerName {
-	case "anthropic":
-		return "claude-sonnet-4-20250514"
-	}
-	return ""
-}
-
 // defaultLoadoutKnobs reads the default loadout (if any) and returns
 // its system.* operational knobs. Empty Knobs on any failure.
 func defaultLoadoutKnobs(loaded *config.Loaded) providerPkg.Knobs {

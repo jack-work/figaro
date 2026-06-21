@@ -4,9 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
-	"sync"
-	"time"
 
 	hush "github.com/jack-work/hush/client"
 )
@@ -88,61 +85,6 @@ func (c *ConfigValue) TryResolve() (string, bool, error) {
 }
 
 func (*ConfigValue) Invalidate(string) error { return nil }
-
-// EncryptedConfig reads a hush-encrypted secret from a file.
-// Mtime-cached to avoid re-decrypting.
-type EncryptedConfig struct {
-	Hush *hush.Client
-	Path string
-
-	mu       sync.Mutex
-	cached   string
-	cachedAt time.Time
-}
-
-func (e *EncryptedConfig) TryResolve() (string, bool, error) {
-	if e.Hush == nil || e.Path == "" {
-		return "", false, nil
-	}
-	info, err := os.Stat(e.Path)
-	if os.IsNotExist(err) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, fmt.Errorf("stat %s: %w", e.Path, err)
-	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.cached != "" && info.ModTime().Equal(e.cachedAt) {
-		return e.cached, true, nil
-	}
-	data, err := os.ReadFile(e.Path)
-	if err != nil {
-		return "", false, fmt.Errorf("read %s: %w", e.Path, err)
-	}
-	cipher := strings.TrimSpace(string(data))
-	if cipher == "" {
-		return "", false, nil
-	}
-	res, err := e.Hush.Decrypt(map[string]string{"v": cipher})
-	if err != nil {
-		return "", false, fmt.Errorf("hush decrypt %s: %w", e.Path, err)
-	}
-	plain := res["v"]
-	e.cached = plain
-	e.cachedAt = info.ModTime()
-	return plain, true, nil
-}
-
-func (e *EncryptedConfig) Invalidate(token string) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.cached == token {
-		e.cached = ""
-		e.cachedAt = time.Time{}
-	}
-	return nil
-}
 
 // OAuth reads the access token for a named credential from the hush
 // agent. Refresh is the agent's responsibility; this strategy only

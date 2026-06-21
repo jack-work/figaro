@@ -42,16 +42,6 @@ type Node struct {
 	Output string                 `json:"output,omitempty"` // streamed result text
 }
 
-// patchField returns the splice-patchable string for a node field name.
-func (n Node) patchField(field string) string {
-	switch field {
-	case "output":
-		return n.Output
-	default:
-		return n.Markdown
-	}
-}
-
 // OpKind discriminates a node mutation on the wire.
 type OpKind string
 

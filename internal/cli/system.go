@@ -17,21 +17,6 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// runRest puts the angelus to rest.
-func runRest() {
-	force := false
-	keepPIDs := false
-	for _, arg := range os.Args[2:] {
-		switch arg {
-		case "--force", "-f":
-			force = true
-		case "--keep-pids", "-k":
-			keepPIDs = true
-		}
-	}
-	runRestWithFlags(force, keepPIDs)
-}
-
 func runRestWithFlags(force, keepPIDs bool) {
 
 	sockPath := angelusSocketPath()
@@ -122,14 +107,6 @@ func runModels(loaded *config.Loaded) {
 		}
 	}
 	w.Flush()
-}
-
-// runLogin runs the OAuth flow.
-func runLogin(loaded *config.Loaded) {
-	if len(os.Args) < 3 {
-		die("usage: figaro login <provider>")
-	}
-	runLoginByName(loaded, os.Args[2])
 }
 
 func runLoginByName(loaded *config.Loaded, providerName string) {

@@ -64,26 +64,6 @@ func extractIDFlag(args []string) (id string, rest []string, err error) {
 	return id, rest, nil
 }
 
-// resolveTargetAria returns the aria id to operate on, honoring (in
-// order): explicit id > pid binding > error. It does NOT auto-create
-// anything; callers that want create-on-miss should follow up with
-// CreateWithID.
-//
-// Connects to the angelus internally when explicitID is empty.
-func resolveTargetAria(ctx context.Context, acli *angelus.Client, explicitID string) (string, error) {
-	if explicitID != "" {
-		return explicitID, nil
-	}
-	r, err := acli.Resolve(ctx, os.Getppid())
-	if err != nil {
-		return "", fmt.Errorf("resolve: %w", err)
-	}
-	if !r.Found {
-		return "", fmt.Errorf("no figaro bound to this shell (try: --id <id> or attend <id>)")
-	}
-	return r.FigaroID, nil
-}
-
 // resolveTargetEndpoint resolves both id and endpoint. Used by verbs
 // that talk to the figaro directly (send, plain, x, set, state...).
 // When explicitID names a missing aria and autoCreate is true, creates

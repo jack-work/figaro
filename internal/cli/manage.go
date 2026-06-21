@@ -85,13 +85,6 @@ func runKillByID(loaded *config.Loaded, figaroID string) {
 	})
 }
 
-func runAttend(loaded *config.Loaded, args []string) {
-	if len(args) == 0 {
-		die("usage: figaro attend <id>")
-	}
-	runAttendByID(loaded, args[0])
-}
-
 func runAttendByID(loaded *config.Loaded, figaroID string) {
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
