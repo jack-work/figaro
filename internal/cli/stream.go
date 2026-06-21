@@ -98,7 +98,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		case rpc.MethodNodeSet:
 			var e rpc.NodeSetEntry
 			if json.Unmarshal(params, &e) == nil {
-				lr.applyOp(livedoc.Op{Kind: livedoc.OpSet, Index: e.Index, Status: e.Status})
+				lr.applyOp(livedoc.Op{Kind: livedoc.OpSet, Index: e.Index, Status: e.Status, Name: e.Name, Args: e.Args})
 			}
 		case rpc.MethodLogCommit:
 			lr.commit()

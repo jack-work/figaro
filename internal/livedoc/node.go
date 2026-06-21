@@ -1,5 +1,7 @@
 package livedoc
 
+import "reflect"
+
 // A live unit is an ordered, append-only list of typed Nodes. Prose and
 // tool calls are distinct node types so a consumer can render a tool as a
 // native widget instead of baked-in markdown. Within a unit the list only
@@ -56,8 +58,9 @@ type OpKind string
 const (
 	OpOpen  OpKind = "open"  // append a new node at Index
 	OpPatch OpKind = "patch" // splice a string field of an existing node
-	OpSet   OpKind = "set"   // replace scalar tool fields (status, and on
-	// completion the final args) of an existing node
+	OpSet   OpKind = "set"   // update a tool node's scalar fields (status,
+	// name, args) — e.g. when the streamed tool_use arguments arrive after
+	// the block first opened
 )
 
 // Op is one mutation against a unit's node list, addressed by Index.
@@ -74,7 +77,10 @@ type Op struct {
 	Del   int    `json:"del,omitempty"`
 	Ins   string `json:"ins,omitempty"`
 
-	Status string `json:"status,omitempty"` // set
+	// set: a tool node's scalar fields.
+	Status string                 `json:"status,omitempty"`
+	Name   string                 `json:"name,omitempty"`
+	Args   map[string]interface{} `json:"args,omitempty"`
 }
 
 // DiffNodes derives the minimal op sequence turning old into next. The
@@ -100,8 +106,10 @@ func DiffNodes(old, next []Node) []Op {
 			if d, ok := Diff(o.Output, n.Output); ok {
 				ops = append(ops, Op{Kind: OpPatch, Index: i, Field: "output", At: d.At, Del: d.Del, Ins: d.Ins})
 			}
-			if o.Status != n.Status {
-				ops = append(ops, Op{Kind: OpSet, Index: i, Status: n.Status})
+			// Tool args/name stream in after the block opens, so a Set
+			// carries them (and status) whenever any scalar field changes.
+			if o.Status != n.Status || o.Name != n.Name || !sameArgs(o.Args, n.Args) {
+				ops = append(ops, Op{Kind: OpSet, Index: i, Status: n.Status, Name: n.Name, Args: n.Args})
 			}
 		}
 	}
@@ -134,6 +142,20 @@ func ApplyOp(nodes []Node, op Op) []Node {
 			return nodes
 		}
 		nodes[op.Index].Status = op.Status
+		if op.Name != "" {
+			nodes[op.Index].Name = op.Name
+		}
+		if op.Args != nil {
+			nodes[op.Index].Args = op.Args
+		}
 	}
 	return nodes
+}
+
+// sameArgs reports whether two tool-argument maps are equal.
+func sameArgs(a, b map[string]interface{}) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	return reflect.DeepEqual(a, b)
 }

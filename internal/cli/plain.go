@@ -345,7 +345,7 @@ func (s *plainSink) handle(method string, params json.RawMessage) {
 	case rpc.MethodNodeSet:
 		var e rpc.NodeSetEntry
 		if json.Unmarshal(params, &e) == nil {
-			s.nodes = livedoc.ApplyOp(s.nodes, livedoc.Op{Kind: livedoc.OpSet, Index: e.Index, Status: e.Status})
+			s.nodes = livedoc.ApplyOp(s.nodes, livedoc.Op{Kind: livedoc.OpSet, Index: e.Index, Status: e.Status, Name: e.Name, Args: e.Args})
 			s.emit()
 		}
 	case rpc.MethodLogCommit:

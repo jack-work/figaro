@@ -72,6 +72,26 @@ func TestDiffNodes_ToolOutputStreamThenComplete(t *testing.T) {
 	}
 }
 
+// A tool block opens (name, no args) before its streamed arguments
+// arrive; the later args must reach the consumer via a Set op, else the
+// rendered widget never shows the command.
+func TestDiffNodes_ToolArgsArriveAfterOpen(t *testing.T) {
+	old := []Node{{Type: NodeTool, ID: "a", Name: "bash", Status: StatusRunning}}
+	next := []Node{{Type: NodeTool, ID: "a", Name: "bash", Status: StatusRunning,
+		Args: map[string]interface{}{"command": "ls -la"}}}
+	ops := DiffNodes(old, next)
+	if len(ops) != 1 || ops[0].Kind != OpSet {
+		t.Fatalf("want one Set op carrying the args, got %+v", ops)
+	}
+	if ops[0].Args["command"] != "ls -la" {
+		t.Fatalf("Set op didn't carry args: %+v", ops[0])
+	}
+	got := applyAll([]Node{{Type: NodeTool, ID: "a", Name: "bash", Status: StatusRunning}}, ops)
+	if got[0].Args["command"] != "ls -la" {
+		t.Fatalf("ApplyOp didn't set args: %+v", got[0])
+	}
+}
+
 func TestDiffNodes_NoChange(t *testing.T) {
 	n := []Node{{Type: NodeProse, Markdown: "x"}, {Type: NodeTool, ID: "a", Status: StatusOK}}
 	if ops := DiffNodes(n, n); ops != nil {

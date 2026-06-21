@@ -47,11 +47,14 @@ type NodePatchEntry struct {
 	Ins   string `json:"ins"`
 }
 
-// NodeSetEntry updates a tool node's scalar status. Params for
+// NodeSetEntry updates a tool node's scalar fields (status, and the
+// name/args that stream in after the block opens). Params for
 // MethodNodeSet.
 type NodeSetEntry struct {
-	Index  int    `json:"index"`
-	Status string `json:"status"`
+	Index  int                    `json:"index"`
+	Status string                 `json:"status"`
+	Name   string                 `json:"name,omitempty"`
+	Args   map[string]interface{} `json:"args,omitempty"`
 }
 
 // CommitEntry freezes the current live unit. Params for MethodLogCommit.

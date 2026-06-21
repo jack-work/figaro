@@ -668,7 +668,7 @@ func opNotification(op livedoc.Op) rpc.Notification {
 			Params: rpc.NodeOpenEntry{Index: op.Index, Node: *op.Node}}
 	case livedoc.OpSet:
 		return rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodNodeSet,
-			Params: rpc.NodeSetEntry{Index: op.Index, Status: op.Status}}
+			Params: rpc.NodeSetEntry{Index: op.Index, Status: op.Status, Name: op.Name, Args: op.Args}}
 	default: // OpPatch
 		return rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodNodePatch,
 			Params: rpc.NodePatchEntry{Index: op.Index, Field: op.Field, At: op.At, Del: op.Del, Ins: op.Ins}}
