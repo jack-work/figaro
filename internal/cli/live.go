@@ -27,8 +27,16 @@ type liveRegion struct {
 	bookend  func() string  // optional status line pinned below the content
 	nodes    []livedoc.Node
 	tick     uint64
-	flushed  int      // rows committed to scrollback this unit
-	live     []string // rows currently shown in the live region
+
+	// Flush watermark. Native scrollback is immutable: once a node's rows are
+	// committed they are never re-rendered. The watermark is a NODE index, not
+	// a row count, so a verbosity toggle (which changes the rendered height of
+	// already-flushed nodes) can never reach back into scrollback. The live
+	// region is the render of nodes[flushedNodes:], minus flushedRows already
+	// flushed off its top.
+	flushedNodes int      // leading nodes fully committed to scrollback
+	flushedRows  int      // rows flushed off the top of the first not-yet-final node (viewport overflow)
+	live         []string // rows currently shown in the live region
 }
 
 func newLiveRegion(out io.Writer, width, bashCap int) *liveRegion {
@@ -39,7 +47,7 @@ func newLiveRegion(out io.Writer, width, bashCap int) *liveRegion {
 // live toggle (Ctrl-O / Ctrl-T) takes effect immediately.
 func (lr *liveRegion) setSettings(s renderSettings) {
 	lr.settings = s
-	if lr.nodes != nil || lr.flushed > 0 {
+	if lr.nodes != nil || lr.flushedNodes > 0 {
 		lr.repaint(true)
 	}
 }
@@ -47,11 +55,12 @@ func (lr *liveRegion) setSettings(s renderSettings) {
 // snapshot replaces the unit's node list wholesale (unit start or resync)
 // and repaints from scratch: any on-screen live rows are cleared first.
 func (lr *liveRegion) snapshot(nodes []livedoc.Node) {
-	if len(lr.live) > 0 || lr.flushed > 0 {
+	if len(lr.live) > 0 || lr.flushedNodes > 0 {
 		io.WriteString(lr.out, eraseToEnd)
 	}
 	lr.nodes = nodes
-	lr.flushed = 0
+	lr.flushedNodes = 0
+	lr.flushedRows = 0
 	lr.live = nil
 	lr.repaint(true)
 }
@@ -102,70 +111,88 @@ func (lr *liveRegion) commit() {
 	}
 	lr.nodes = nil
 	lr.tick = 0
-	lr.flushed = 0
+	lr.flushedNodes = 0
+	lr.flushedRows = 0
 	lr.live = nil
 }
 
-// repaint renders the node list, flushes any newly-stable rows to
-// scrollback, and line-diffs the remaining tail. With allowFlush=false
-// the watermark is pinned (used by resize so already-committed rows aren't
-// reprinted).
+// repaint renders the unflushed node tail, flushes any newly-final nodes (and
+// any viewport overflow) to scrollback, and line-diffs the remaining live
+// rows. With allowFlush=false the watermark is pinned (used by resize so
+// already-committed rows aren't reprinted).
+//
+// rows is the render of nodes[flushedNodes:]; its first flushedRows are
+// already in scrollback (viewport overflow within the first not-yet-final
+// node), so the on-screen live region is rows[flushedRows:].
 func (lr *liveRegion) repaint(allowFlush bool) {
-	rows, stable := renderNodes(lr.nodes, lr.width, lr.bashCap, lr.tick, lr.settings)
+	rows, stableRows, stableNodes := renderNodesFrom(
+		lr.nodes, lr.flushedNodes, lr.flushedNodes > 0,
+		lr.width, lr.bashCap, lr.tick, lr.settings)
 	// A content-relative bookend: a blank line + status rule pinned just
-	// below the rendered content. Always part of the live tail (beyond the
-	// stable watermark), so it's redrawn as content grows but never flushed
-	// to scrollback. It persists as the final line after commit.
+	// below the rendered content. Always part of the live tail, so it's
+	// redrawn as content grows but never flushed to scrollback. It persists
+	// as the final line after commit.
 	if lr.bookend != nil {
 		rows = append(rows, "", clipToWidth(lr.bookend(), lr.width))
 	}
-	if !allowFlush && stable > lr.flushed {
-		stable = lr.flushed
-	}
-	if stable < lr.flushed {
-		stable = lr.flushed // the watermark only rises
+
+	// flush is how many of rows[flushedRows:] to commit to scrollback this
+	// frame. Whole newly-final nodes (rows[flushedRows:stableRows]) flush
+	// first; that part is reflow-stable by construction.
+	flush := 0
+	flushedNodes := lr.flushedNodes
+	if allowFlush && stableRows > lr.flushedRows {
+		flush = stableRows - lr.flushedRows
+		flushedNodes += stableNodes
 	}
 
-	oldFlushed := lr.flushed
-	// Bound the live region to the viewport: diffPaint navigates with
-	// relative cursor moves that clamp at the viewport edges, so a live
-	// region taller than the viewport desyncs the cursor (duplicated rows,
-	// an occluded bookend). Flush the overflow off the top to scrollback —
-	// but only rows already on screen identically, so glamour's reflow of
-	// the still-streaming tail never re-flushes a changed row.
+	// Viewport overflow: diffPaint navigates with relative cursor moves that
+	// clamp at the viewport edges, so a live region taller than the viewport
+	// desyncs the cursor. Flush extra rows off the top — but only rows already
+	// on screen identically, so glamour's reflow of the still-streaming tail
+	// never re-flushes a changed row. These rows live inside the first
+	// not-yet-final node, so they advance flushedRows, not flushedNodes.
+	extraRows := 0
 	if allowFlush && lr.height > 0 {
-		for len(rows)-stable > lr.height {
-			i := stable - oldFlushed // index into the on-screen live rows
-			if i < 0 || i >= len(lr.live) || lr.live[i] != rows[stable] {
+		for len(rows)-(lr.flushedRows+flush) > lr.height {
+			i := flush // index into the current on-screen live rows
+			if i < 0 || i >= len(lr.live) || lr.live[i] != rows[lr.flushedRows+flush] {
 				break
 			}
-			stable++
+			flush++
+			extraRows++
 		}
 	}
-	// Freeze rows[oldFlushed:stable] into scrollback. They are the top of
-	// the current live region; reprinting them in place (identical) and
-	// dropping below leaves the cursor at the new live-region top.
-	for i := oldFlushed; i < stable && i < len(rows); i++ {
+
+	// Freeze rows[flushedRows : flushedRows+flush] into scrollback. They are
+	// the top of the current live region; reprinting them in place (identical)
+	// and dropping below leaves the cursor at the new live-region top.
+	for i := lr.flushedRows; i < lr.flushedRows+flush && i < len(rows); i++ {
 		io.WriteString(lr.out, term.EraseLine)
 		io.WriteString(lr.out, rows[i])
 		io.WriteString(lr.out, "\n")
 	}
 
-	consumed := stable - oldFlushed
 	remOld := lr.live
-	if consumed <= len(remOld) {
-		remOld = remOld[consumed:]
+	if flush <= len(remOld) {
+		remOld = remOld[flush:]
 	} else {
 		remOld = nil
 	}
 
-	var newLive []string
-	if stable < len(rows) {
-		newLive = rows[stable:]
+	// Advance the watermark. When whole nodes flushed, their render is now in
+	// scrollback and the next frame renders from flushedNodes onward, so any
+	// rows flushed off the top of the OLD first node are subsumed — reset
+	// flushedRows to just the overflow rows still inside the new first node.
+	newFlushedRows := lr.flushedRows + flush
+	if flushedNodes > lr.flushedNodes {
+		newFlushedRows = extraRows
 	}
-	lr.diffPaint(newLive, remOld)
+	lr.flushedNodes = flushedNodes
+	lr.flushedRows = newFlushedRows
 
-	lr.flushed = stable
+	newLive := rows[lr.flushedRows:]
+	lr.diffPaint(newLive, remOld)
 	lr.live = newLive
 }
 

@@ -117,8 +117,8 @@ func TestLive_CommitDropsBelowAndResets(t *testing.T) {
 	if !strings.Contains(out, "\n") { // real newline, not CursorDown (scroll-safe)
 		t.Fatalf("commit should move below the region with a newline; got %q", out)
 	}
-	if lr.nodes != nil || lr.live != nil || lr.flushed != 0 {
-		t.Fatalf("commit did not reset state: nodes=%v live=%v flushed=%d", lr.nodes, lr.live, lr.flushed)
+	if lr.nodes != nil || lr.live != nil || lr.flushedNodes != 0 || lr.flushedRows != 0 {
+		t.Fatalf("commit did not reset state: nodes=%v live=%v flushedNodes=%d flushedRows=%d", lr.nodes, lr.live, lr.flushedNodes, lr.flushedRows)
 	}
 }
 

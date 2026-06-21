@@ -25,22 +25,38 @@ type renderSettings struct {
 	verbose bool
 }
 
-// renderNodes renders a unit's node list to terminal rows plus the
-// stable-row watermark — the rows belonging to leading nodes that are
-// final (a completed tool, or a block followed by a later node) and will
-// not change again this unit. Each returned row fits within width so the
-// painter's one-row-per-line cursor math holds.
+// renderNodes renders a unit's whole node list to terminal rows plus the
+// stable-row watermark. Static views (aria) and tests use this; the live
+// painter uses renderNodesFrom to render only the unflushed tail.
 func renderNodes(nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) ([]string, int) {
+	rows, stableRows, _ := renderNodesFrom(nodes, 0, false, width, bashCap, tick, set)
+	return rows, stableRows
+}
+
+// renderNodesFrom renders nodes[start:] to terminal rows. With leadBlank it
+// prepends a single blank separator (the inter-block spacing that separates
+// the first live node from flushed content above). It reports the rows AND
+// the node count of the leading FINAL prefix of the slice (final = a
+// completed tool, or a block followed by a later node) plus that prefix's
+// row count. Finality is judged against the WHOLE list, so a node's status
+// is the same whether rendered here or as part of the full render. Each
+// returned row fits within width so the painter's one-row-per-line cursor
+// math holds.
+func renderNodesFrom(nodes []livedoc.Node, start int, leadBlank bool, width, bashCap int, tick uint64, set renderSettings) (rows []string, stableRows, stableNodes int) {
 	if width <= 0 {
 		width = 80
 	}
 	if bashCap <= 0 {
 		bashCap = nodeBashCapDefault
 	}
+	if start < 0 {
+		start = 0
+	}
 	firstLive := liveNodeIndex(nodes)
-	var rows []string
-	stable, emitted := 0, 0
-	for i, n := range nodes {
+	wantLead := leadBlank && start > 0 && start < len(nodes)
+	emitted := 0
+	for i := start; i < len(nodes); i++ {
+		n := nodes[i]
 		var nr []string
 		switch n.Type {
 		case livedoc.NodeTool:
@@ -51,18 +67,21 @@ func renderNodes(nodes []livedoc.Node, width, bashCap int, tick uint64, set rend
 			nr = renderProseNode(n, width)
 		}
 		// One blank line between any two adjacent (visible) blocks. The
-		// first emitted block sits flush to the top.
-		if emitted > 0 {
+		// first emitted block sits flush to the top — except a leading
+		// separator (wantLead) ties it to the flushed content above; that
+		// blank belongs to this node and flushes with it.
+		if emitted > 0 || (emitted == 0 && wantLead) {
 			nr = append([]string{""}, nr...)
 		}
 		if i < firstLive {
-			stable += len(nr)
+			stableRows += len(nr)
+			stableNodes = i - start + 1
 		}
 		rows = append(rows, nr...)
 		emitted++
 	}
-	if stable > len(rows) {
-		stable = len(rows)
+	if stableRows > len(rows) {
+		stableRows = len(rows)
 	}
 	// Guarantee every row fits the viewport: a row wider than width would
 	// wrap onto a second physical line and desync the painter's
@@ -71,7 +90,7 @@ func renderNodes(nodes []livedoc.Node, width, bashCap int, tick uint64, set rend
 	for i := range rows {
 		rows[i] = clipToWidth(rows[i], width)
 	}
-	return rows, stable
+	return rows, stableRows, stableNodes
 }
 
 // clipToWidth truncates a styled row to at most width display columns,

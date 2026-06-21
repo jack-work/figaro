@@ -399,6 +399,154 @@ func TestVT_LiveTailExceedsViewportNoDup(t *testing.T) {
 	}
 }
 
+// bashTool builds a bash tool node with a long command arg so that toggling
+// verbose changes its rendered height (collapsed: 1 header row; verbose: the
+// full wrapped command beneath the header).
+func bashTool(status, cmd, out string) livedoc.Node {
+	return livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: status,
+		Args: map[string]any{"command": cmd}, Output: out}
+}
+
+// Toggling verbosity (Ctrl-O) after a tool node has flushed to scrollback must
+// NOT corrupt the live region: the flushed tool stays frozen (collapsed) and
+// the live prose below it is neither duplicated nor erased. Pre-fix this
+// duplicated the flushed tool's rows because the watermark was a row count and
+// the toggle changed the flushed nodes' rendered height. Unbounded vt.
+func TestVT_VerbosityToggleAfterFlushNoCorruption(t *testing.T) {
+	const W = 70
+	longCmd := "grep -rn 'some quite long pattern that wraps across the terminal width' internal/cli/*.go | sort -u"
+	var buf bytes.Buffer
+	lr := newLiveRegion(&buf, W, 10)
+	v := newVT(W, false)
+	flush := func() { v.feed(buf.String()); buf.Reset() }
+	fmt.Fprint(&buf, autowrapOff)
+	lr.snapshot(nil)
+
+	states := [][]livedoc.Node{
+		{bashTool(livedoc.StatusRunning, longCmd, "")},
+		{bashTool(livedoc.StatusOK, longCmd, "done")},
+		{bashTool(livedoc.StatusOK, longCmd, "done"), prose("All set, the command finished cleanly.")},
+	}
+	var prev []livedoc.Node
+	for _, st := range states {
+		for _, op := range livedoc.DiffNodes(prev, st) {
+			lr.applyOp(op)
+			flush()
+		}
+		prev = st
+	}
+	lr.setSettings(renderSettings{verbose: true})
+	flush()
+
+	assertNoDupAndProse(t, v.screen(), W, states[len(states)-1])
+}
+
+// Same toggle bug under a finite scrolling viewport, where a desync also
+// erases a line.
+func TestVT_VerbosityToggleAfterFlushNoCorruptionViewport(t *testing.T) {
+	const W, H = 70, 12
+	longCmd := "grep -rn 'some quite long pattern that wraps across the terminal width' internal/cli/*.go | sort -u"
+	var buf bytes.Buffer
+	lr := newLiveRegion(&buf, W, 10)
+	lr.height = H
+	v := newVTH(W, H, false)
+	flush := func() { v.feed(buf.String()); buf.Reset() }
+	fmt.Fprint(&buf, autowrapOff)
+	lr.snapshot(nil)
+
+	states := [][]livedoc.Node{
+		{bashTool(livedoc.StatusRunning, longCmd, "")},
+		{bashTool(livedoc.StatusOK, longCmd, "done")},
+		{bashTool(livedoc.StatusOK, longCmd, "done"), prose("All set, the command finished cleanly.")},
+	}
+	var prev []livedoc.Node
+	for _, st := range states {
+		for _, op := range livedoc.DiffNodes(prev, st) {
+			lr.applyOp(op)
+			flush()
+		}
+		prev = st
+	}
+	lr.setSettings(renderSettings{verbose: true})
+	flush()
+
+	assertNoDupAndProse(t, v.screen(), W, states[len(states)-1])
+}
+
+// assertNoDupAndProse checks that after a post-flush verbosity toggle: the
+// prose line is still present, no content line is duplicated beyond its
+// canonical count (collapsed tool — the flushed node never expands), and the
+// flushed collapsed header survives.
+func assertNoDupAndProse(t *testing.T, after []string, width int, final []livedoc.Node) {
+	t.Helper()
+	all := strings.Join(after, "\n")
+	if !strings.Contains(liveStrip(all), "All set, the command finished cleanly.") {
+		t.Fatalf("prose line lost after toggle:\n%s", all)
+	}
+	// The flushed tool stays COLLAPSED (frozen in scrollback): the verbose
+	// per-line wrapped command must NOT appear.
+	wantCollapsed, _ := renderNodes(final, width, 10, 0, renderSettings{})
+	want := map[string]int{}
+	for _, r := range wantCollapsed {
+		if s := strings.TrimRight(liveStrip(r), " "); s != "" {
+			want[s]++
+		}
+	}
+	seen := map[string]int{}
+	for _, r := range after {
+		s := strings.TrimRight(liveStrip(r), " ")
+		if s == "" {
+			continue
+		}
+		seen[s]++
+		if seen[s] > want[s] {
+			t.Fatalf("duplicated/expanded content line %q (seen %d, want %d) after toggle:\n%s",
+				s, seen[s], want[s], all)
+		}
+	}
+}
+
+// Toggling verbose while a tool is still LIVE (not yet flushed) DOES expand it
+// — the toggle still takes effect on live content.
+func TestVT_VerbosityToggleWhileLiveExpands(t *testing.T) {
+	const W = 70
+	longCmd := "grep -rn 'some quite long pattern that wraps across the terminal width' internal/cli/*.go | sort -u"
+	var buf bytes.Buffer
+	lr := newLiveRegion(&buf, W, 10)
+	v := newVT(W, false)
+	flush := func() { v.feed(buf.String()); buf.Reset() }
+	fmt.Fprint(&buf, autowrapOff)
+	lr.snapshot(nil)
+
+	st := []livedoc.Node{bashTool(livedoc.StatusRunning, longCmd, "out")}
+	for _, op := range livedoc.DiffNodes(nil, st) {
+		lr.applyOp(op)
+		flush()
+	}
+	collapsedRows := len(v.screen())
+
+	lr.setSettings(renderSettings{verbose: true})
+	flush()
+	expandedRows := len(v.screen())
+
+	if expandedRows <= collapsedRows {
+		t.Fatalf("live tool did not expand on verbose toggle: collapsed=%d expanded=%d",
+			collapsedRows, expandedRows)
+	}
+	// The wrapped command lines should now be on screen.
+	wantRows, _ := renderNodes(st, W, 10, lr.tick, renderSettings{verbose: true})
+	got := strings.Join(v.screen(), "\n")
+	for _, r := range wantRows {
+		s := strings.TrimRight(liveStrip(r), " ")
+		if s == "" {
+			continue
+		}
+		if !strings.Contains(liveStrip(got), s) {
+			t.Fatalf("verbose row %q missing after live toggle:\n%s", s, got)
+		}
+	}
+}
+
 // The painter's one-row-per-line invariant rests on renderNodes never
 // emitting a row wider than the viewport (a wide row wraps and desyncs the
 // cursor math). glamour's margin pushes rows past the requested width, so
