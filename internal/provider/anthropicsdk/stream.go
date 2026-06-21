@@ -34,7 +34,7 @@ const dumpBytes = 2048
 // the offending block's accumulated bytes are captured on the span
 // via `provider.accumulate.failed` so the failure is diagnosable
 // from `traces.jsonl` alone — no wire-dir replay required.
-func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.MessageStreamEventUnion], model string, bus provider.Bus) (message.Message, error) {
+func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.MessageStreamEventUnion], model string, bus provider.Bus) (message.Message, anthropic.Message, error) {
 	acc := anthropic.Message{Model: anthropic.Model(model)}
 	// Tracks per-tool-use indices that have already emitted a
 	// first-delta telemetry event. Keyed by block index in acc.Content.
@@ -45,7 +45,7 @@ func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.Message
 
 	for stream.Next() {
 		if err := ctx.Err(); err != nil {
-			return message.Message{}, err
+			return message.Message{}, anthropic.Message{}, err
 		}
 		event := stream.Current()
 
@@ -65,20 +65,20 @@ func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.Message
 
 		if err := acc.Accumulate(event); err != nil {
 			recordAccumulateFailure(ctx, event, &acc, bytesByIdx, err)
-			return message.Message{}, fmt.Errorf("accumulate: %w", err)
+			return message.Message{}, anthropic.Message{}, fmt.Errorf("accumulate: %w", err)
 		}
 	}
 	if err := stream.Err(); err != nil {
 		figOtel.RecordError(ctx, "provider.stream.error", err,
 			attribute.Int("n_content_blocks", len(acc.Content)),
 		)
-		return message.Message{}, err
+		return message.Message{}, anthropic.Message{}, err
 	}
 	figOtel.Event(ctx, "provider.stream.complete",
 		attribute.Int("n_content_blocks", len(acc.Content)),
 		attribute.String("stop_reason", string(acc.StopReason)),
 	)
-	return decodeAssistantMessage(acc), nil
+	return decodeAssistantMessage(acc), acc, nil
 }
 
 func handleBlockStart(ctx context.Context, ev anthropic.ContentBlockStartEvent, bus provider.Bus) {

@@ -21,6 +21,8 @@ func decodeAssistantMessage(m anthropic.Message) message.Message {
 		case anthropic.TextBlock:
 			out.Content = append(out.Content, message.Content{Type: message.ContentText, Text: v.Text})
 		case anthropic.ThinkingBlock:
+			// Text only — for display and other providers. The signature
+			// lives in the cached wire bytes (acc.ToParam), never the IR.
 			out.Content = append(out.Content, message.Content{Type: message.ContentThinking, Text: v.Thinking})
 		case anthropic.ToolUseBlock:
 			out.Content = append(out.Content, message.Content{

@@ -59,9 +59,10 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *chalkboard.Snaps
 			case message.ContentText:
 				blocks = append(blocks, anthropic.NewTextBlock(c.Text))
 			case message.ContentThinking:
-				// Signature comes from the model on real turns;
-				// re-encoding stored history won't have it.
-				blocks = append(blocks, anthropic.NewThinkingBlock("", c.Text))
+				// Dropped. This path is the cache-miss fallback only; the
+				// signed wire form is cached at production (acc.ToParam).
+				// The IR carries no signature, and an unsigned thinking
+				// block is a 400 once extended thinking is enabled.
 			case message.ContentToolInvoke:
 				input := toolInput(c.Arguments)
 				blocks = append(blocks, anthropic.NewToolUseBlock(c.ToolCallID, input, c.ToolName))

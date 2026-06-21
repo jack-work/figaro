@@ -133,6 +133,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 
 	var msg message.Message
+	var acc anthropic.Message
 	err := p.callWithAuthRetry(ctx, func(opts []option.RequestOption) error {
 		// Resolve token to decide OAuth vs API-key system shape.
 		// p.callWithAuthRetry already injects the auth option; we
@@ -147,11 +148,12 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		}
 		client := anthropic.NewClient(opts...)
 		stream := client.Messages.NewStreaming(ctx, params, opts...)
-		assembled, serr := drainStream(ctx, stream, model, bus)
+		assembled, raw, serr := drainStream(ctx, stream, model, bus)
 		if serr != nil {
 			return serr
 		}
 		msg = assembled
+		acc = raw
 		return nil
 	})
 	if err != nil {
@@ -170,15 +172,20 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	bus.PushFigaro(msg)
 
 	if cache != nil {
-		// Re-encode strips inbound-only fields (stop_reason, model, usage).
-		if encoded, err := p.encode(msg, chalkboard.Snapshot{}); err == nil {
+		// Cache the exact accumulated wire form via the SDK's
+		// response→request projection. ToParam preserves thinking-block
+		// signatures and redacted_thinking verbatim — re-encoding from the
+		// figaro IR would drop them (the IR is provider-agnostic and holds
+		// no signature), and an unsigned thinking block is a 400 once
+		// extended thinking is enabled with tool use.
+		if raw, err := json.Marshal(acc.ToParam()); err == nil {
 			_, _ = cache.Append(store.Entry[[]json.RawMessage]{
 				FigaroLT:    entry.LT,
-				Payload:     encoded,
+				Payload:     []json.RawMessage{raw},
 				Fingerprint: p.Fingerprint(),
 			})
 		} else {
-			slog.Error("anthropicsdk re-encode assistant", "err", err)
+			slog.Error("anthropicsdk cache assistant ToParam", "err", err)
 		}
 	}
 	return nil
