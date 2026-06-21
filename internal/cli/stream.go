@@ -39,6 +39,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		width = 80
 	}
 	lr := newLiveRegion(os.Stdout, width, 0) // 0 → renderer's default bash cap (10)
+	lr.height = term.Height()
 	lr.settings = set
 
 	// The painter owns the cursor and assumes one row per line: disable the
@@ -152,6 +153,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		for range winch {
 			w := term.Width()
 			lrMu.Lock()
+			lr.height = term.Height()
 			lr.resize(w)
 			lrMu.Unlock()
 		}

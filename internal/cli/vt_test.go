@@ -319,6 +319,86 @@ func TestVT_ScrollUnitBoundaryNoClobber(t *testing.T) {
 	}
 }
 
+// driveH runs a node-list progression through the painter into a FINITE
+// scrolling viewport (newVTH) with a pinned bookend, then commits. It mimics
+// the live CLI session brackets (auto-wrap off) and feeds after every op.
+func driveH(width, height int, bookend func() string, states [][]livedoc.Node) []string {
+	var buf bytes.Buffer
+	lr := newLiveRegion(&buf, width, 10)
+	lr.height = height
+	lr.bookend = bookend
+	v := newVTH(width, height, true)
+	flush := func() { v.feed(buf.String()); buf.Reset() }
+	fmt.Fprint(&buf, autowrapOff)
+	lr.snapshot(nil)
+	flush()
+	var prev []livedoc.Node
+	for _, st := range states {
+		for _, op := range livedoc.DiffNodes(prev, st) {
+			lr.applyOp(op)
+			flush()
+		}
+		prev = st
+	}
+	lr.commit()
+	fmt.Fprint(&buf, autowrapOn)
+	flush()
+	return v.screen()
+}
+
+// A long multi-paragraph prose node, streamed in growing chunks (glamour
+// reflows the whole prose every delta), with a pinned bookend, where the live
+// tail (prose + bookend) grows TALLER than the viewport. The painter must not
+// duplicate content lines, must not leave a run of trailing blank lines before
+// the bookend, and the bookend must remain the last visible line.
+func TestVT_LiveTailExceedsViewportNoDup(t *testing.T) {
+	const W, H = 70, 10
+	body := "First paragraph that wraps across a couple of terminal lines so the prose has some height to it.\n\n" +
+		"Second paragraph, also long enough to wrap, adding more rows so the rendered prose plus the bookend overflows the short viewport.\n\n" +
+		"Third paragraph closes things out, e si sente la cucina canta. Quattro tagli, quattro specchi — ecco fatto and the live tail is now well past the viewport height."
+	var states [][]livedoc.Node
+	for n := 20; n < len(body); n += 23 {
+		states = append(states, []livedoc.Node{prose(body[:n])})
+	}
+	states = append(states, []livedoc.Node{prose(body)})
+
+	got := driveH(W, H, func() string { return "BOOKEND" }, states)
+
+	all := strings.Join(got, "\n")
+	if len(got) == 0 || got[len(got)-1] != "BOOKEND" {
+		t.Fatalf("bookend is not the last visible line:\n%s", all)
+	}
+	// At most the single by-design blank separator before the bookend — not
+	// a run of trailing blanks (the whitespace-occlusion symptom).
+	blanks := 0
+	for i := len(got) - 2; i >= 0 && strings.TrimSpace(got[i]) == ""; i-- {
+		blanks++
+	}
+	if blanks > 1 {
+		t.Fatalf("%d blank line(s) between content and bookend (expected ≤1):\n%s", blanks, all)
+	}
+	// No duplicated content lines (the duplication symptom). Compare the
+	// non-blank, non-bookend visible rows to the canonical final render.
+	want := map[string]int{}
+	finalRows, _ := renderNodes(states[len(states)-1], W, 10, 0, renderSettings{})
+	for _, r := range finalRows {
+		if s := strings.TrimRight(liveStrip(r), " "); s != "" {
+			want[s]++
+		}
+	}
+	seen := map[string]int{}
+	for _, r := range got {
+		s := strings.TrimRight(liveStrip(r), " ")
+		if s == "" || s == "BOOKEND" {
+			continue
+		}
+		seen[s]++
+		if seen[s] > want[s] {
+			t.Fatalf("duplicated content line %q (seen %d, want %d):\n%s", s, seen[s], want[s], all)
+		}
+	}
+}
+
 // The painter's one-row-per-line invariant rests on renderNodes never
 // emitting a row wider than the viewport (a wide row wraps and desyncs the
 // cursor math). glamour's margin pushes rows past the requested width, so
