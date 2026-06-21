@@ -145,6 +145,13 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		}
 		// Runtime fill-ins. The loadout may not have these; the agent
 		// stamps them at first-turn from its own process state.
+		// aria_id is non-system so it renders as a reminder the agent can
+		// read (e.g. to `figaro set --id <id> mantra ...` over bash).
+		if _, ok := boot.Set["aria_id"]; !ok {
+			if b, err := json.Marshal(a.id); err == nil {
+				boot.Set["aria_id"] = b
+			}
+		}
 		cwd, _ := os.Getwd()
 		if _, ok := boot.Set["system.cwd"]; !ok {
 			if b, err := json.Marshal(cwd); err == nil {

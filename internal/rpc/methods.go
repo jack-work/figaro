@@ -161,6 +161,8 @@ type FigaroInfoResponse struct {
 	ContextExact     bool   `json:"context_exact"`      // true if from Usage watermark
 	CreatedAt        int64  `json:"created_at"`         // unix millis
 	LastActive       int64  `json:"last_active"`        // unix millis
+	Mantra           string `json:"mantra"`             // agent-maintained essence phrase (chalkboard "mantra")
+	Cwd              string `json:"cwd"`                // working directory (chalkboard "system.cwd")
 	BoundPIDs        []int  `json:"bound_pids"`
 }
 

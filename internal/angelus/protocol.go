@@ -140,6 +140,12 @@ func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoRespon
 	if entry.Model == "" {
 		entry.Model = get("system.model")
 	}
+	if entry.Mantra == "" {
+		entry.Mantra = get("mantra")
+	}
+	if entry.Cwd == "" {
+		entry.Cwd = get("system.cwd")
+	}
 }
 
 // fillFromMetaSnapshot reads derived/meta.json and fills any fields
@@ -394,7 +400,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 	seen := make(map[string]struct{}, len(live))
 	for _, info := range live {
 		seen[info.ID] = struct{}{}
-		result = append(result, rpc.FigaroInfoResponse{
+		entry := rpc.FigaroInfoResponse{
 			ID:               info.ID,
 			State:            info.State,
 			Provider:         info.Provider,
@@ -409,7 +415,9 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			CreatedAt:        info.CreatedAt.UnixMilli(),
 			LastActive:       info.LastActive.UnixMilli(),
 			BoundPIDs:        h.angelus.Registry.BoundPIDs(info.ID),
-		})
+		}
+		h.fillFromChalkboard(info.ID, &entry) // mantra + cwd from the saved chalkboard
+		result = append(result, entry)
 	}
 
 	if h.angelus.Backend != nil {

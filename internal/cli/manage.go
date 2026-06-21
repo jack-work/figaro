@@ -25,7 +25,7 @@ func runList(loaded *config.Loaded) {
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(w, "\tID\tSTATE\tMODEL\tMSGS\tCONTEXT\tCACHE\tPIDS\n")
+		fmt.Fprintf(w, "\tID\tSTATE\tAGE\tMODEL\tMSGS\tCONTEXT\tCACHE\tPIDS\tCWD\tMANTRA\n")
 		for _, f := range resp.Figaros {
 			pids := make([]string, len(f.BoundPIDs))
 			for i, p := range f.BoundPIDs {
@@ -54,12 +54,56 @@ func runList(loaded *config.Loaded) {
 			if slices.Contains(f.BoundPIDs, os.Getppid()) {
 				current = "*"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
-				current, f.ID, f.State, model, f.MessageCount, ctxStr, cacheStr, pidStr)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+				current, f.ID, f.State, relAge(f.LastActive), model, f.MessageCount,
+				ctxStr, cacheStr, pidStr, shortCwd(f.Cwd), dash(f.Mantra))
 		}
 		w.Flush()
 		return nil
 	})
+}
+
+// dash returns "-" for an empty string.
+func dash(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "-"
+	}
+	return s
+}
+
+// relAge renders a unix-millis timestamp as a compact age (e.g. "4m", "2h",
+// "3d"); "-" when unknown.
+func relAge(ms int64) string {
+	if ms <= 0 {
+		return "-"
+	}
+	d := time.Since(time.UnixMilli(ms))
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
+}
+
+// shortCwd shortens a path for the table: $HOME → ~, then keep the tail if
+// it's long. "-" when empty.
+func shortCwd(p string) string {
+	if p == "" {
+		return "-"
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(p, home) {
+		p = "~" + strings.TrimPrefix(p, home)
+	}
+	const max = 28
+	if len(p) > max {
+		p = "…" + p[len(p)-max+1:]
+	}
+	return p
 }
 
 func runKill(loaded *config.Loaded, idFlag string, args []string) {
