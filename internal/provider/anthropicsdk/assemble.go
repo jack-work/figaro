@@ -54,12 +54,21 @@ func buildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.S
 // guarantees MaxTokens exceeds the budget, which the API requires
 // (max_tokens must leave room for the response after the thinking budget).
 func applyThinking(params *anthropic.MessageNewParams, snap chalkboard.Snapshot) {
-	v := snap.Lookup("system.thinking_budget")
-	if v == nil {
+	raw, ok := snap["system.thinking_budget"]
+	if !ok {
 		return
 	}
-	budget, err := strconv.Atoi(strings.TrimSpace(*v))
-	if err != nil || budget <= 0 {
+	// Loadout knobs are JSON numbers (max_tokens etc.), but tolerate a
+	// quoted string too.
+	var budget int
+	if json.Unmarshal(raw, &budget) != nil {
+		var s string
+		if json.Unmarshal(raw, &s) != nil {
+			return
+		}
+		budget, _ = strconv.Atoi(strings.TrimSpace(s))
+	}
+	if budget <= 0 {
 		return
 	}
 	if budget < 1024 {
