@@ -45,41 +45,88 @@ func buildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.S
 		markCacheBreakpoints(&params, *cc)
 	}
 	applyMessageTags(&params, msgLTs, snap)
-	applyThinking(&params, snap)
+	applyThinking(&params, snap, model)
 	return params, nil
+}
+
+// adaptiveThinkingModels reason adaptively: they decide when and how much to
+// think from an effort level (output_config), ignoring a token budget. Older
+// models take an explicit budget instead. See pi-mono's supportsAdaptiveThinking.
+func isAdaptiveThinkingModel(model string) bool {
+	for _, frag := range []string{"opus-4-6", "opus-4.6", "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "sonnet-4-6", "sonnet-4.6"} {
+		if strings.Contains(model, frag) {
+			return true
+		}
+	}
+	return false
 }
 
 // applyThinking enables extended thinking when system.thinking_budget is a
 // positive integer (the budget in tokens; the API floor is 1024). It also
 // guarantees MaxTokens exceeds the budget, which the API requires
 // (max_tokens must leave room for the response after the thinking budget).
-func applyThinking(params *anthropic.MessageNewParams, snap chalkboard.Snapshot) {
-	raw, ok := snap["system.thinking_budget"]
-	if !ok {
+func applyThinking(params *anthropic.MessageNewParams, snap chalkboard.Snapshot, model string) {
+	budget := thinkingInt(snap["system.thinking_budget"])
+	effort := thinkingStr(snap["system.thinking_effort"])
+	if budget <= 0 && effort == "" {
 		return
 	}
-	// Loadout knobs are JSON numbers (max_tokens etc.), but tolerate a
-	// quoted string too.
-	var budget int
-	if json.Unmarshal(raw, &budget) != nil {
-		var s string
-		if json.Unmarshal(raw, &s) != nil {
-			return
+	// display=summarized makes the API return the (summarized) thinking text;
+	// the default over the Claude-Code/OAuth path is omitted (signature only,
+	// empty thinking field), so it must be set explicitly to surface thinking.
+	if isAdaptiveThinkingModel(model) {
+		params.Thinking = anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
+				Display: anthropic.ThinkingConfigAdaptiveDisplaySummarized,
+			},
 		}
-		budget, _ = strconv.Atoi(strings.TrimSpace(s))
+		if effort == "" {
+			effort = "high" // always think; medium/low let the model skip
+		}
+		params.OutputConfig = anthropic.OutputConfigParam{Effort: anthropic.OutputConfigEffort(effort)}
+		return
 	}
 	if budget <= 0 {
-		return
+		budget = 1024
 	}
 	if budget < 1024 {
 		budget = 1024
 	}
 	params.Thinking = anthropic.ThinkingConfigParamUnion{
-		OfEnabled: &anthropic.ThinkingConfigEnabledParam{BudgetTokens: int64(budget)},
+		OfEnabled: &anthropic.ThinkingConfigEnabledParam{
+			BudgetTokens: int64(budget),
+			Display:      anthropic.ThinkingConfigEnabledDisplaySummarized,
+		},
 	}
 	if params.MaxTokens <= int64(budget) {
 		params.MaxTokens = int64(budget) + 4096 // headroom for the reply after thinking
 	}
+}
+
+// thinkingInt reads a chalkboard number (tolerating a quoted string); 0 if absent.
+func thinkingInt(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var n int
+	if json.Unmarshal(raw, &n) == nil {
+		return n
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		n, _ = strconv.Atoi(strings.TrimSpace(s))
+	}
+	return n
+}
+
+// thinkingStr reads a chalkboard string; "" if absent.
+func thinkingStr(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	json.Unmarshal(raw, &s)
+	return strings.TrimSpace(s)
 }
 
 // systemBlocks builds the system prefix: identity preamble (OAuth
