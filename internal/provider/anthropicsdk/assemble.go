@@ -41,8 +41,8 @@ func buildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.S
 		}
 	}
 
-	if cc := snap.Lookup("system.cache_control"); cc != nil {
-		markCacheBreakpoints(&params, *cc)
+	if setting := resolveCacheControl(snap); setting != "" {
+		markCacheBreakpoints(&params, setting)
 	}
 	applyMessageTags(&params, msgLTs, snap)
 	applyThinking(&params, snap, model)
@@ -227,8 +227,37 @@ func toolInputSchema(params any) anthropic.ToolInputSchemaParam {
 	return schema
 }
 
-// markCacheBreakpoints attaches cache_control to the last system
-// block, the last tool, and the leaf of the second-to-last message.
+// resolveCacheControl decides the automatic cache_control setting. Caching is
+// ON by default at short (5m) ephemeral retention — the static prefix (system
+// + tools) is then a cache read on every turn after the first, and the rolling
+// breakpoint caches the growing transcript. system.cache_control overrides:
+// "none"/"off"/"false" disable it; "ephemeral"/"5m"/"1h" force a TTL.
+//
+// FUTURE (conversation forks): retention becomes a per-span score rather than
+// one flat setting. When the IR carries a fork graph, a provider-implemented
+// scorer will read each cache-eligible span's node range plus a pointer into
+// that graph — chiefly its descendant/child count, i.e. how many branches
+// reuse the prefix — memoize the score across breakpoints (so a shared prefix
+// isn't recomputed per fork), and promote spans above a threshold to long (1h)
+// retention. (1h additionally needs the extended-cache-ttl beta we don't send
+// yet.) Keep that decision funnelled through here.
+func resolveCacheControl(snap chalkboard.Snapshot) string {
+	if cc := snap.Lookup("system.cache_control"); cc != nil {
+		switch strings.ToLower(strings.TrimSpace(*cc)) {
+		case "none", "off", "false", "":
+			return ""
+		default:
+			return *cc
+		}
+	}
+	return "ephemeral" // default: short automatic caching
+}
+
+// markCacheBreakpoints attaches cache_control to the static prefix (last
+// system block + last tool) and the rolling tail (leaf of the LAST input
+// message), caching the whole prompt-so-far so the next turn reads it. This is
+// 3 of Anthropic's 4 breakpoints, leaving one for a future per-fork long-
+// retention marker (see resolveCacheControl).
 func markCacheBreakpoints(params *anthropic.MessageNewParams, setting string) {
 	cc := cacheControlOf(setting)
 	if n := len(params.System); n > 0 {
@@ -239,8 +268,8 @@ func markCacheBreakpoints(params *anthropic.MessageNewParams, setting string) {
 			t.CacheControl = cc
 		}
 	}
-	if n := len(params.Messages); n >= 2 {
-		setLeafCache(&params.Messages[n-2], cc)
+	if n := len(params.Messages); n >= 1 {
+		setLeafCache(&params.Messages[n-1], cc)
 	}
 }
 

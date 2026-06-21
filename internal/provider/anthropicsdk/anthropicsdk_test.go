@@ -177,7 +177,8 @@ func TestDecodeAssistantMessage_ToolUse(t *testing.T) {
 
 // TestBuildParams_CacheBreakpoints verifies that markCacheBreakpoints
 // sets cache_control on the last system block, the last tool, and the
-// leaf of the second-to-last message.
+// leaf of the LAST input message (the rolling tail), and that earlier
+// messages are not stamped.
 func TestBuildParams_CacheBreakpoints(t *testing.T) {
 	p := &Provider{}
 	msgs := []message.Message{
@@ -206,22 +207,22 @@ func TestBuildParams_CacheBreakpoints(t *testing.T) {
 	require.NotNil(t, lastTool)
 	assertCacheStamp(t, lastTool.CacheControl, "last tool")
 
-	// Messages: second-to-last leaf stamped, leaf message unstamped.
+	// Messages: last leaf stamped (rolling tail), second-to-last unstamped.
 	require.GreaterOrEqual(t, len(params.Messages), 2)
-	stm := params.Messages[len(params.Messages)-2]
-	require.NotEmpty(t, stm.Content)
-	stmLeaf := stm.Content[len(stm.Content)-1]
-	require.NotNil(t, stmLeaf.OfText)
-	assertCacheStamp(t, stmLeaf.OfText.CacheControl, "second-to-last message leaf")
-
 	last := params.Messages[len(params.Messages)-1]
 	require.NotEmpty(t, last.Content)
-	require.NotNil(t, last.Content[len(last.Content)-1].OfText)
-	assert.True(t, isUnstamped(last.Content[len(last.Content)-1].OfText.CacheControl),
-		"leaf user prompt must NOT carry cache_control")
+	lastLeaf := last.Content[len(last.Content)-1]
+	require.NotNil(t, lastLeaf.OfText)
+	assertCacheStamp(t, lastLeaf.OfText.CacheControl, "last message leaf")
+
+	stm := params.Messages[len(params.Messages)-2]
+	require.NotEmpty(t, stm.Content)
+	require.NotNil(t, stm.Content[len(stm.Content)-1].OfText)
+	assert.True(t, isUnstamped(stm.Content[len(stm.Content)-1].OfText.CacheControl),
+		"second-to-last message must NOT carry cache_control")
 }
 
-func TestBuildParams_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
+func TestBuildParams_SingleMessageBreakpoint(t *testing.T) {
 	p := &Provider{}
 	msgs := []message.Message{
 		{Role: message.RoleUser, Content: []message.Content{message.TextContent("only message")}},
@@ -236,7 +237,33 @@ func TestBuildParams_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
 	require.NotEmpty(t, params.Messages[0].Content)
 	leaf := params.Messages[0].Content[0]
 	require.NotNil(t, leaf.OfText)
-	assert.True(t, isUnstamped(leaf.OfText.CacheControl), "single message must not carry cache_control")
+	assertCacheStamp(t, leaf.OfText.CacheControl, "single message leaf (whole-prompt cache)")
+}
+
+// Caching is on by default (short) with no system.cache_control set, and
+// "none" disables it entirely.
+func TestBuildParams_CacheDefaultsOnAndNoneDisables(t *testing.T) {
+	p := &Provider{}
+	msgs := []message.Message{
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("hi")}},
+	}
+
+	// Default: unset → caching applied.
+	on := systemSnapshot(t, "agent")
+	params, err := buildParams(encodeAll(p, msgs), []uint64{1}, on, nil, 1024, false, "claude-test")
+	require.NoError(t, err)
+	require.NotEmpty(t, params.System)
+	assertCacheStamp(t, params.System[len(params.System)-1].CacheControl, "default-on system block")
+
+	// "none" → no stamps anywhere.
+	off := systemSnapshot(t, "agent")
+	off["system.cache_control"] = json.RawMessage(`"none"`)
+	params, err = buildParams(encodeAll(p, msgs), []uint64{1}, off, nil, 1024, false, "claude-test")
+	require.NoError(t, err)
+	require.NotEmpty(t, params.System)
+	assert.True(t, isUnstamped(params.System[len(params.System)-1].CacheControl), "none must not stamp system")
+	require.NotEmpty(t, params.Messages[0].Content)
+	assert.True(t, isUnstamped(params.Messages[0].Content[0].OfText.CacheControl), "none must not stamp message")
 }
 
 func TestBuildParams_StableAcrossCalls(t *testing.T) {
@@ -294,6 +321,7 @@ func TestBuildParams_PerLTTag(t *testing.T) {
 	lts := []uint64{10, 11, 12}
 
 	snap := systemSnapshot(t, "you are a test agent")
+	snap["system.cache_control"] = json.RawMessage(`"none"`) // isolate per-LT tagging from auto-breakpoints
 	snap["system.tags"] = json.RawMessage(`{"11":{"cache_control":"ephemeral"}}`)
 
 	params, err := buildParams(pre, lts, snap, nil, 1024, false, "claude-test")
