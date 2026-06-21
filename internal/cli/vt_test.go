@@ -236,6 +236,49 @@ func TestVT_LiveSessionNoDuplication(t *testing.T) {
 	}
 }
 
+// A prose code block streamed token-by-token (the fence open for many
+// frames before it closes) must converge to the same render as the final
+// state — the synth-closed mid-stream code block keeps the structure
+// stable, so there's no restructure churn when "```" finally arrives.
+func TestVT_StreamingCodeBlockConverges(t *testing.T) {
+	const W = 72
+	full := "Final layout:\n\n```\ngym/\n├── bootstrap/\n│   └── main.tf\n└── infra/live/dev/\n```\n\nThe S3 backend has the real state."
+	var buf bytes.Buffer
+	lr := newLiveRegion(&buf, W, 10)
+	v := newVT(W, true)
+	flush := func() { v.feed(buf.String()); buf.Reset() }
+	fmt.Fprint(&buf, autowrapOff)
+	lr.snapshot(nil)
+	var prev []livedoc.Node
+	for n := 4; n < len(full); n += 11 { // grow in chunks, fence open for a while
+		st := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: full[:n]}}
+		for _, op := range livedoc.DiffNodes(prev, st) {
+			lr.applyOp(op)
+		}
+		prev = st
+		flush()
+	}
+	st := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: full}}
+	for _, op := range livedoc.DiffNodes(prev, st) {
+		lr.applyOp(op)
+	}
+	lr.commit()
+	fmt.Fprint(&buf, autowrapOn)
+	flush()
+
+	got := v.screen()
+	want := expectedScreen(W, [][]livedoc.Node{st})
+	if len(got) != len(want) {
+		t.Fatalf("streamed code block didn't converge: screen=%d want=%d rows\n--- screen ---\n%s",
+			len(got), len(want), strings.Join(got, "\n"))
+	}
+	for i := range want {
+		if g, w := strings.TrimRight(got[i], " "), strings.TrimRight(want[i], " "); g != w {
+			t.Errorf("row %d:\n got %q\nwant %q", i, g, w)
+		}
+	}
+}
+
 // When the conversation has scrolled (the turn renders near the viewport
 // bottom), committing a multi-row unit must scroll, not CursorDown — CUD
 // clamps at the bottom and the next unit lands on top of the last row.

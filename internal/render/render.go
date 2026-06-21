@@ -207,6 +207,20 @@ func renderBash(lang string, body []string, cap, width int) []string {
 	return out
 }
 
+// Prose renders a full markdown string through glamour — code blocks,
+// tables, lists, and syntax highlighting all get glamour's styling
+// (indent, surrounding blank lines, color). Unlike Render it does NOT peel
+// bash-family fences into the clamped, col-0 tool-output form: in the node
+// model prose carries code *snippets*, not tool output (which renders as a
+// tool-node widget). A trailing unclosed fence (mid-stream) is synth-closed
+// so a code block renders stably as it streams in.
+func Prose(md string, width int) []string {
+	if strings.Count(md, "```")%2 == 1 {
+		md += "\n```"
+	}
+	return renderMarkdown(md, width, 0)
+}
+
 // renderMarkdown renders a non-bash chunk via glamour (tables, syntax
 // highlighting), after substituting the spinner sentinel for the
 // current braille frame. Output rows are glamour's word-wrapped lines

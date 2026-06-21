@@ -145,13 +145,13 @@ func nodesRunning(nodes []livedoc.Node) bool {
 }
 
 func renderProseNode(n livedoc.Node, width int) []string {
-	return render.Render(n.Markdown, render.Options{Width: width}).Lines
+	return render.Prose(n.Markdown, width)
 }
 
 // renderThinkingNode renders extended-thinking text as a dim blockquote
 // (glamour styles "> " spans), visually distinct from the agent's prose.
 func renderThinkingNode(n livedoc.Node, width int) []string {
-	return render.Render(blockquote(n.Markdown), render.Options{Width: width}).Lines
+	return render.Prose(blockquote(n.Markdown), width)
 }
 
 // renderToolNode draws a tool as a widget: a status header (animated
