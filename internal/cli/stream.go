@@ -68,10 +68,14 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		case rpc.MethodLogSnapshot:
 			var e rpc.SnapshotEntry
 			if json.Unmarshal(params, &e) == nil {
-				// Set off the agent's reply from the echoed prompt with a
-				// rule and a blank line (the cursor is parked below the
-				// just-committed user unit; this is plain scrollback above
-				// the new live region).
+				// Separate figaro's echoed prompt from the verbatim
+				// command line the user typed into the shell, and set off
+				// the agent's reply from that echoed prompt. Each is a rule
+				// + blank line above plain scrollback (the cursor is parked
+				// below the prior unit, above the new live region).
+				if e.Role == "user" && prevRole == "" {
+					fmt.Fprint(os.Stdout, dimRule(width)+"\n\n")
+				}
 				if e.Role == "assistant" && prevRole == "user" {
 					fmt.Fprint(os.Stdout, dimRule(width)+"\n\n")
 				}
