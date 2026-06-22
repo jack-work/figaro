@@ -64,6 +64,15 @@
           # call from cross builds, the scripts just won't be present.
           postInstall = ''
             ln -s figaro $out/bin/fig
+
+            # First-party skills ship alongside the binary at
+            # $out/share/figaro/skills; outfit's loader merges them under any
+            # `dirName = "skills"` table (user config overrides by name). See
+            # bundledSkillsRoot (<exe>/../share/figaro).
+            if [ -d "$src/skills" ]; then
+              mkdir -p $out/share/figaro
+              cp -r $src/skills $out/share/figaro/skills
+            fi
           '' + final.lib.optionalString
             (final.stdenv.buildPlatform.canExecute final.stdenv.hostPlatform) ''
             installShellCompletion --cmd figaro \

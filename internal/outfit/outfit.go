@@ -127,9 +127,26 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				continue
 			}
 			if dn, ok := val["dirName"].(string); ok && len(val) == 1 {
-				m, err := loadDir(filepath.Join(o.configDir, dn))
+				// Bundled (first-party, shipped with the binary) skills load
+				// first; the user's config dir loads second and overrides by
+				// name. So a user can shadow a bundled skill, and first-party
+				// skills appear without copying anything into config.
+				m := map[string]ContentEnvelope{}
+				if root := bundledSkillsRoot(); root != "" {
+					b, err := loadDir(filepath.Join(root, dn))
+					if err != nil {
+						return fmt.Errorf("outfit: %s bundled dirName=%q: %w", key, dn, err)
+					}
+					for name, env := range b {
+						m[name] = env
+					}
+				}
+				u, err := loadDir(filepath.Join(o.configDir, dn))
 				if err != nil {
 					return fmt.Errorf("outfit: %s dirName=%q: %w", key, dn, err)
+				}
+				for name, env := range u {
+					m[name] = env
 				}
 				for name, env := range m {
 					b, err := json.Marshal(env)
@@ -205,6 +222,16 @@ func loadDir(dir string) (map[string]ContentEnvelope, error) {
 	out := map[string]ContentEnvelope{}
 	for _, e := range entries {
 		if e.IsDir() {
+			// A subdirectory holding a SKILL.md is ONE skill keyed by the
+			// directory name; its other files are sections the agent reads on
+			// demand via paths referenced from SKILL.md. Subdirs without a
+			// SKILL.md are ignored.
+			skillPath := filepath.Join(dir, e.Name(), "SKILL.md")
+			body, err := os.ReadFile(skillPath)
+			if err != nil {
+				continue
+			}
+			out[e.Name()] = contentEnvelope(string(body), skillPath)
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
@@ -219,4 +246,24 @@ func loadDir(dir string) (map[string]ContentEnvelope, error) {
 		out[name] = contentEnvelope(string(body), path)
 	}
 	return out, nil
+}
+
+// bundledSkillsRoot returns the directory holding first-party skills shipped
+// with the binary (its parent is <exe>/../share/figaro, so dirName="skills"
+// resolves to <exe>/../share/figaro/skills). FIGARO_BUNDLED_SKILLS overrides:
+// a path uses that root; "0"/"off"/"" disables bundled skills entirely.
+func bundledSkillsRoot() string {
+	if v, ok := os.LookupEnv("FIGARO_BUNDLED_SKILLS"); ok {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "", "0", "off", "false":
+			return ""
+		default:
+			return v
+		}
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(exe), "..", "share", "figaro")
 }

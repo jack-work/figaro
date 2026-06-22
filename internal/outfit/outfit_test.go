@@ -146,3 +146,43 @@ func TestLoad_MissingFileIsNotAnError(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, patch.IsEmpty(), "missing loadout must yield empty patch (graceful)")
 }
+
+// A subdirectory with a SKILL.md is one skill keyed by the dir name; bundled
+// first-party skills merge under the user's, which override by name.
+func TestLoad_DirSkill_AndBundledMerge(t *testing.T) {
+	bundled := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(bundled, "skills", "figaro"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(bundled, "skills", "figaro", "SKILL.md"),
+		[]byte("---\nname: figaro\ndescription: bundled\n---\nbody"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(bundled, "skills", "figaro", "architecture.md"),
+		[]byte("arch"), 0600)) // a section, NOT surfaced as its own skill
+	require.NoError(t, os.WriteFile(filepath.Join(bundled, "skills", "shared.md"),
+		[]byte("bundled shared"), 0600))
+	t.Setenv("FIGARO_BUNDLED_SKILLS", bundled)
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "skills"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "skills", "mine.md"), []byte("user mine"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "skills", "shared.md"), []byte("user shared"), 0600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"),
+		[]byte("skills = { dirName = \"skills\" }\n"), 0600))
+
+	patch, err := outfit.New(dir).Load("config")
+	require.NoError(t, err)
+
+	// Directory-as-skill: one key from SKILL.md; sections not surfaced.
+	var fig outfit.ContentEnvelope
+	require.NoError(t, json.Unmarshal(patch.Set["skills.figaro"], &fig))
+	assert.Equal(t, "name: figaro\ndescription: bundled", fig.Frontmatter)
+	assert.Equal(t, filepath.Join(bundled, "skills", "figaro", "SKILL.md"), fig.FilePath)
+	_, hasArch := patch.Set["skills.architecture"]
+	assert.False(t, hasArch, "section files must not surface as their own skills")
+
+	// Merge: user-only present; shared overridden by user.
+	var mine, shared outfit.ContentEnvelope
+	require.NoError(t, json.Unmarshal(patch.Set["skills.mine"], &mine))
+	assert.Equal(t, "user mine", mine.Content)
+	require.NoError(t, json.Unmarshal(patch.Set["skills.shared"], &shared))
+	assert.Equal(t, "user shared", shared.Content, "user skill overrides bundled by name")
+}
