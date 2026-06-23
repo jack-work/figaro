@@ -41,12 +41,46 @@ func buildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.S
 		}
 	}
 
+	// Anthropic requires roles to alternate after the first message.
+	// Consecutive same-role tics happen when a turn errors (the user tic is
+	// committed but no assistant reply follows) and the next prompt appends
+	// another user tic — replaying that verbatim is a malformed request. Merge
+	// adjacent same-role messages by concatenating their content blocks.
+	params.Messages, msgLTs = coalesceMessages(params.Messages, msgLTs)
+
 	if setting := resolveCacheControl(snap); setting != "" {
 		markCacheBreakpoints(&params, setting)
 	}
 	applyMessageTags(&params, msgLTs, snap)
 	applyThinking(&params, snap, model)
 	return params, nil
+}
+
+// coalesceMessages merges adjacent same-role messages (concatenating content)
+// so the wire alternates roles as the API requires. The parallel lts slice is
+// kept aligned (the merged message keeps the later tic's LT, which is the one
+// per-LT cache tags would target).
+func coalesceMessages(msgs []anthropic.MessageParam, lts []uint64) ([]anthropic.MessageParam, []uint64) {
+	if len(msgs) < 2 {
+		return msgs, lts
+	}
+	outMsgs := msgs[:1]
+	outLTs := lts[:1]
+	for i := 1; i < len(msgs); i++ {
+		last := len(outMsgs) - 1
+		if msgs[i].Role == outMsgs[last].Role {
+			outMsgs[last].Content = append(outMsgs[last].Content, msgs[i].Content...)
+			if i < len(lts) {
+				outLTs[last] = lts[i]
+			}
+			continue
+		}
+		outMsgs = append(outMsgs, msgs[i])
+		if i < len(lts) {
+			outLTs = append(outLTs, lts[i])
+		}
+	}
+	return outMsgs, outLTs
 }
 
 // adaptiveThinkingModels reason adaptively: they decide when and how much to
