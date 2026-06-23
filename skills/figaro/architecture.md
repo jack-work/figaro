@@ -137,6 +137,34 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
   flags. `anthropic-beta` does not need `interleaved-thinking` for adaptive
   models.
 
+## Tools: bash & backgrounding
+
+The bash tool (`internal/tool/bash.go`, `exec_local.go`) runs each command via
+`bash -c` in its **own process group** (`Setpgid`). It waits up to `yieldMs`
+(default 10s); if the command is still running it **auto-backgrounds as a
+tracked session** (not killed) — follow up with the **`process`** tool. Args:
+`background:true` (background immediately), `timeout` (hard-kill deadline,
+default 30m), `pty`, `yieldMs`. `killProcessGroup` SIGKILLs the whole group
+only on **timeout or cancel**, never on normal completion.
+
+Completion is signalled by the stdout/stderr **pipe reaching EOF**, not the
+foreground exit — and that has consequences for `&`:
+
+- A bare `cmd &` child **inherits** the stdout/stderr pipe, so the command
+  keeps "running" until that child finishes and backgrounds as a session. Its
+  work is captured, but **not done when the call returns** — poll via the
+  `process` tool, or use `cmd & wait`, or just run serially. (An agent that
+  fires parallel `git clone … &` and immediately `ls` will see incomplete
+  results — it must wait.)
+- A **redirected** `cmd >/dev/null 2>&1 &` releases the pipe, so the call
+  returns immediately and that child **orphans**: it keeps running to
+  completion but is untracked — no captured output, no supervision, invisible
+  to the `process` tool. Fine for true fire-and-forget (e.g. a quick
+  `figaro set … &`); don't rely on it for work you need to observe.
+
+Rule of thumb: don't background with bare `&` and assume completion. Use
+`background:true` + the `process` tool, `& wait`, or serial commands.
+
 ## Storage
 
 State root `~/.local/state/figaro/arias/<id>/`: `aria/<NNN>.jsonl` (IR
