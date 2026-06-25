@@ -7,7 +7,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.42.0
 	github.com/google/uuid v1.6.0
 	github.com/jack-work/figwal v0.3.0
-	github.com/jack-work/hush v0.5.1-0.20260610165650-210b97a5f0e7
+	github.com/jack-work/hush v0.5.1-0.20260625055014-6724da7ddf70
 	github.com/jack-work/largo v0.2.3
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/stretchr/testify v1.11.1
@@ -28,6 +28,14 @@ require (
 )
 
 require github.com/creack/pty v1.1.24
+
+require (
+	github.com/danieljoos/wincred v1.2.3 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/spf13/cobra v1.10.2 // indirect
+	github.com/zalando/go-keyring v0.2.8 // indirect
+)
 
 require (
 	filippo.io/age v1.3.1 // indirect
