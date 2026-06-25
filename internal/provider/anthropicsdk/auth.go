@@ -17,8 +17,15 @@ const claudeCodeVersion = "2.1.62"
 
 // Anthropic-beta values declared by the existing implementation.
 // Kept in sync so OAuth-bound tokens see the same flags.
+//
+// fine-grained-tool-streaming was dropped: it streams tool_use input
+// without the usual valid-JSON guarantee, so a large/complex tool input
+// (e.g. an `edit` with code) can accumulate to malformed JSON and crash
+// the turn at content_block_stop with "error converting content block to
+// JSON: json.RawMessage: invalid char". Standard tool streaming buffers
+// each block to valid JSON. (pi-mono hit the same and dropped it too.)
 const (
-	betaMessages = "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31"
+	betaMessages = "claude-code-20250219,oauth-2025-04-20,prompt-caching-2024-07-31"
 	betaModels   = "claude-code-20250219,oauth-2025-04-20"
 )
 
