@@ -2,7 +2,6 @@ package cli
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -15,7 +14,6 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/rpc"
-	"github.com/jack-work/figaro/internal/term"
 )
 
 func mustLoadConfig() *config.Loaded {
@@ -53,22 +51,13 @@ func mustHush() *managed.Hush {
 }
 
 // ensureHush initializes hush. Must be called from the CLI process.
+//
+// The first-run identity flow (prompt for passphrase, init the age
+// identity, persist to keyring) is owned by hush's managed package —
+// figaro is just a consumer here. Anything more elaborate (provider
+// selection, default loadout) is layered above via runFirstRunIfNeeded.
 func ensureHush() {
 	h := mustHush()
-	if !h.HasIdentity() {
-		fmt.Fprintln(os.Stderr, "No hush identity found. Creating one...")
-		fmt.Fprint(os.Stderr, "Passphrase (for encrypting secrets at rest): ")
-		passphrase, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr)
-		if err != nil {
-			die("read passphrase: %s", err)
-		}
-		pub, err := h.Init(passphrase)
-		if err != nil {
-			die("init hush identity: %s", err)
-		}
-		fmt.Fprintf(os.Stderr, "Identity created. Public key: %s\n", pub)
-	}
 	if err := h.EnsureReady(); err != nil {
 		die("hush: %s", err)
 	}
