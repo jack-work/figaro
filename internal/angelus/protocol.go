@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"text/template"
 
 	"github.com/google/uuid"
@@ -91,6 +92,36 @@ type handlers struct {
 	cbTmpls            *template.Template
 	outfitter          *outfit.Outfitter
 	availableProviders []string
+
+	// configMu guards config against concurrent reload + read. The
+	// reload-from-disk is cheap, but other handlers may dereference
+	// h.config concurrently.
+	configMu sync.Mutex
+}
+
+// reloadConfigIfChanged re-reads config.toml from disk when the
+// in-memory copy looks stale relative to a wizard write. We're
+// conservative: only reload when the in-memory DefaultLoadout is
+// empty AND a config.toml exists on disk. This means tests that
+// inject loaded.Config.DefaultLoadout in memory without a backing
+// file are untouched, while the production case (first-run wizard
+// writes config.toml + a loadout, then retries Create) sees the
+// fresh value.
+func (h *handlers) reloadConfigIfChanged() {
+	h.configMu.Lock()
+	defer h.configMu.Unlock()
+	if h.config.Config.DefaultLoadout != "" {
+		return // already have one in memory; nothing the wizard could change
+	}
+	if _, err := os.Stat(h.config.ConfigPath); err != nil {
+		return // no file on disk; can't possibly have new state
+	}
+	fresh, err := config.Load(h.config.ConfigDir)
+	if err != nil {
+		return
+	}
+	h.config = fresh
+	h.outfitter = outfit.New(fresh.ConfigDir)
 }
 
 // openAriaChalkboard opens the chalkboard for an aria. nil on failure.
@@ -217,6 +248,13 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	// Resolve the loadout name. Empty request → configured default →
 	// typed JSON-RPC error so the client can drive first-run setup.
+	//
+	// We re-read config.toml from disk first so that wizard-driven
+	// changes (the first-run flow scaffolds a loadout + sets
+	// default_loadout, then retries this Create call) are picked up
+	// without a daemon restart. One os.ReadFile + toml.Unmarshal per
+	// request is cheap relative to anything downstream.
+	h.reloadConfigIfChanged()
 	loadoutName := req.Loadout
 	if loadoutName == "" {
 		loadoutName = h.config.Config.DefaultLoadout
