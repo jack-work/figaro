@@ -212,7 +212,13 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 	}
 
 	if strings.TrimSpace(n.Output) != "" {
-		lines := strings.Split(strings.TrimRight(n.Output, "\n"), "\n")
+		// Tool stdout is the most likely vector for terminal-state
+		// escapes that could break the painter (alt-screen, cursor
+		// visibility, line wrap, mouse modes, OSC). Sanitize before
+		// rendering so a wayward bubbletea / huh / less / etc. can
+		// never bleed its escapes into the host terminal.
+		safe := render.SanitizeForTerminal(strings.TrimRight(n.Output, "\n"))
+		lines := strings.Split(safe, "\n")
 		if total := len(lines); total > bashCap {
 			lines = lines[total-bashCap:]
 			rows = append(rows, term.Dim(fmt.Sprintf("  │ … last %d of %d lines", bashCap, total)))

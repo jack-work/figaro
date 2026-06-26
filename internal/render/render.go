@@ -24,11 +24,16 @@ var SpinnerFrames = livedoc.SpinnerFrames
 // surrounding blank lines, chroma syntax highlighting). A trailing
 // unclosed fence (mid-stream) is synth-closed so a code block renders with
 // a stable structure as it streams in.
+//
+// Every returned row is run through SanitizeForTerminal so embedded
+// terminal-state escapes (alt-screen, cursor visibility, line wrap,
+// mouse modes, OSC) from tool output or model-emitted text can never
+// reach the host terminal.
 func Prose(md string, width int) []string {
 	if strings.Count(md, "```")%2 == 1 {
 		md += "\n```"
 	}
-	return renderMarkdown(md, width)
+	return SanitizeRows(renderMarkdown(md, width))
 }
 
 // renderMarkdown renders markdown via glamour. Output rows are glamour's
