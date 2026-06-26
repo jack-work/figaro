@@ -136,6 +136,51 @@ func clipToWidth(s string, width int) string {
 	return b.String()
 }
 
+// scrolledGlyph marks a tool header that the viewport-overflow flush committed
+// to scrollback while the tool was still running. Scrollback is immutable, so
+// the tool's eventual ✓/✗ can never land there; freezing the live spinner frame
+// would leave a half-drawn animation stuck in history forever.
+const scrolledGlyph = '◦'
+
+// stabilizeForScrollback rewrites a row about to be frozen into immutable
+// scrollback so it carries no animated state. Today that means replacing a
+// leading spinner frame (a running tool's header glyph) with a static marker:
+// when many parallel tools overflow the viewport, the top ones get flushed
+// before they finish, and an animated frame would otherwise stick in history.
+// Rows whose first visible glyph isn't a spinner frame pass through unchanged,
+// so it is safe to apply to every flushed row (final tool headers carry ✓/✗,
+// prose carries text).
+func stabilizeForScrollback(row string) string {
+	rs := []rune(row)
+	for i := 0; i < len(rs); {
+		if rs[i] == '\x1b' { // skip an escape sequence; the glyph sits after the color codes
+			j := i + 1
+			for j < len(rs) && !((rs[j] >= 'A' && rs[j] <= 'Z') || (rs[j] >= 'a' && rs[j] <= 'z')) {
+				j++
+			}
+			if j < len(rs) {
+				j++
+			}
+			i = j
+			continue
+		}
+		if isSpinnerFrame(rs[i]) { // the first visible glyph is an animated spinner
+			rs[i] = scrolledGlyph
+		}
+		break // only the leading glyph matters
+	}
+	return string(rs)
+}
+
+func isSpinnerFrame(r rune) bool {
+	for _, f := range livedoc.SpinnerFrames {
+		if f == r {
+			return true
+		}
+	}
+	return false
+}
+
 // liveNodeIndex returns the index of the first node still mutating (a
 // running tool, or the last node — the active tail). Everything before it
 // is final. Returns len(nodes) when all are final.

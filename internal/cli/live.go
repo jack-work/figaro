@@ -169,7 +169,7 @@ func (lr *liveRegion) repaint(allowFlush bool) {
 	// and dropping below leaves the cursor at the new live-region top.
 	for i := lr.flushedRows; i < lr.flushedRows+flush && i < len(rows); i++ {
 		io.WriteString(lr.out, term.EraseLine)
-		io.WriteString(lr.out, rows[i])
+		io.WriteString(lr.out, stabilizeForScrollback(rows[i]))
 		io.WriteString(lr.out, "\n")
 	}
 
