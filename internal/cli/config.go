@@ -14,6 +14,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/tui"
 )
 
 func mustLoadConfig() *config.Loaded {
@@ -42,6 +43,13 @@ func mustHush() *managed.Hush {
 		}
 		hushInstance, hushErr = managed.New(managed.Options{
 			AppName: appName,
+			// Drive the first-run passphrase UX from figaro's TUI
+			// so hush doesn't try to read /dev/tty in parallel with
+			// a bubbletea form holding the terminal. Falls back to a
+			// plain numbered prompt when the env can't host the TUI.
+			PromptPassphrase: func() ([]byte, error) {
+				return tui.PromptPassphrase(appName)
+			},
 		})
 	})
 	if hushErr != nil {

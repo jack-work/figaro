@@ -44,6 +44,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
+	"github.com/jack-work/figaro/internal/tui"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -169,7 +170,7 @@ func runWizard(loaded *config.Loaded, data rpc.ErrorData) error {
 	fmt.Fprintln(os.Stderr, dim("     Where should your prompts go? You can add more later with `figaro login`."))
 	fmt.Fprintln(os.Stderr)
 
-	chosen, err := pickFromMenu(options)
+	chosen, err := pickFromMenu(loaded, options)
 	if err != nil {
 		return err
 	}
@@ -198,10 +199,36 @@ func runWizard(loaded *config.Loaded, data rpc.ErrorData) error {
 	return nil
 }
 
-// pickFromMenu prints a numbered list and returns the chosen entry.
-// The first entry is the default (Enter selects it). Reads from
-// stdin via bufio (line-buffered).
-func pickFromMenu(options []providerChoice) (providerChoice, error) {
+// pickFromMenu uses the TUI picker when interactive mode is on (the
+// default); falls back to a numbered prompt otherwise. The first
+// option is the default (Enter / no input selects it).
+func pickFromMenu(loaded *config.Loaded, options []providerChoice) (providerChoice, error) {
+	if loaded != nil && !loaded.Interactive() {
+		return pickFromMenuNumbered(options)
+	}
+	tuiOpts := make([]tui.ProviderOption, len(options))
+	for i, o := range options {
+		tuiOpts[i] = tui.ProviderOption{
+			Key:   strconv.Itoa(i), // index round-trip; cleaner than label match
+			Label: o.label,
+			Hint:  o.hint,
+		}
+	}
+	key, err := tui.PickProvider("Provider", tuiOpts)
+	if err != nil {
+		return providerChoice{}, err
+	}
+	idx, err := strconv.Atoi(key)
+	if err != nil || idx < 0 || idx >= len(options) {
+		return providerChoice{}, fmt.Errorf("invalid TUI selection %q", key)
+	}
+	return options[idx], nil
+}
+
+// pickFromMenuNumbered prints a numbered list and returns the chosen
+// entry. The first entry is the default (Enter selects it). Used as
+// the explicit-non-interactive fallback when interactive=false.
+func pickFromMenuNumbered(options []providerChoice) (providerChoice, error) {
 	for i, opt := range options {
 		num := fmt.Sprintf("[%d]", i+1)
 		hint := ""

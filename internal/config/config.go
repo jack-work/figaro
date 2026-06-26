@@ -25,6 +25,12 @@ type Config struct {
 	// StatusLine controls the status banner. Default true.
 	StatusLine *bool `toml:"status_line"`
 
+	// Interactive controls whether the first-run wizard uses a rich
+	// bubbletea/huh-driven TUI. Default true. When false, falls back
+	// to plain numbered prompts (the pre-TUI behavior). Useful for
+	// CI / scripted invocations that prefer not to deal with raw mode.
+	Interactive *bool `toml:"interactive"`
+
 	// StreamCPS is the pacer's target chars/sec. 0 disables pacing.
 	// Pointer to distinguish unset (default) from explicit 0.
 	StreamCPS *int `toml:"stream_cps"`
@@ -48,6 +54,15 @@ func (l *Loaded) StatusLine() bool {
 		return true
 	}
 	return *l.Config.StatusLine
+}
+
+// Interactive returns whether the first-run wizard should use a rich
+// TUI. Default true.
+func (l *Loaded) Interactive() bool {
+	if l.Config.Interactive == nil {
+		return true
+	}
+	return *l.Config.Interactive
 }
 
 // StreamCPS returns the pacer rate. Default 200.
