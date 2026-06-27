@@ -348,6 +348,13 @@ model = "mock-model"
 	assert.Equal(t, alt.ID, alt.Trunk, "alternative trunk is itself")
 	assert.True(t, root.Frozen, "forked parent is frozen")
 
+	// A fresh continuation is immediately re-forkable (no turn needed) —
+	// it owns a genesis tic so the chalkboard seed and the next fork point
+	// don't collide.
+	fr2, err := acli.Fork(ctx, fr.Continuation)
+	require.NoError(t, err, "fresh continuation must be re-forkable")
+	require.NotEqual(t, fr2.Continuation, fr2.Alternative)
+
 	// The frozen parent refuses a re-fork.
 	_, err = acli.Fork(ctx, created.FigaroID)
 	require.Error(t, err, "frozen node cannot be re-forked")

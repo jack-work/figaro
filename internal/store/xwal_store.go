@@ -240,7 +240,10 @@ func (s *XwalStore) forkAtLocked(rec *nodeRec, atMainLT uint64) (string, string,
 
 	// First fork: the alternative child, naming the old-future (if any)
 	// as the continuation. An interior fork re-homes the original suffix
-	// into contID; a head fork creates no old-future.
+	// into contID; a head fork creates no old-future. The alternative is
+	// always a fresh empty child, so seed it on the handle Fork returns
+	// (writing the genesis on a re-opened head-fork branch does not
+	// persist to the main channel — only the live fork handle does).
 	x, err := xwal.Open(s.root, s.cfg, rec.Branch...)
 	if err != nil {
 		return "", "", err
@@ -250,10 +253,16 @@ func (s *XwalStore) forkAtLocked(rec *nodeRec, atMainLT uint64) (string, string,
 	if err != nil {
 		return "", "", fmt.Errorf("xwal store: fork %q: %w", rec.ID, err)
 	}
+	if err := s.seedChildHandle(altX); err != nil {
+		altX.Close()
+		return "", "", fmt.Errorf("xwal store: seed alt %q: %w", altID, err)
+	}
 	altX.Close()
 
 	// Head fork: no old-future was created, so spawn the continuation as
-	// an N-ary sibling of the now-frozen node.
+	// an N-ary sibling of the now-frozen node and seed it. An interior
+	// fork's continuation is the re-homed old-future — it already owns the
+	// suffix entries, so it needs no seed.
 	if !s.irBranchExists(rec, contID) {
 		fx, err := xwal.Open(s.root, s.cfg, rec.Branch...)
 		if err != nil {
@@ -263,6 +272,10 @@ func (s *XwalStore) forkAtLocked(rec *nodeRec, atMainLT uint64) (string, string,
 		fx.Close()
 		if err != nil {
 			return "", "", fmt.Errorf("xwal store: continuation fork %q: %w", rec.ID, err)
+		}
+		if err := s.seedChildHandle(cX); err != nil {
+			cX.Close()
+			return "", "", fmt.Errorf("xwal store: seed continuation %q: %w", contID, err)
 		}
 		cX.Close()
 	}
@@ -290,28 +303,29 @@ func (s *XwalStore) forkAtLocked(rec *nodeRec, atMainLT uint64) (string, string,
 			Trunk:     c.trunk,
 			Vector:    append(append([]int(nil), rec.Vector...), c.index),
 		}
-		if err := s.seedChalkboard(c.id); err != nil {
-			return "", "", err
-		}
 	}
 	rec.Children = append(rec.Children, contID, altID)
 	rec.Frozen = true
 	return contID, altID, s.saveIndex()
 }
 
-// seedChalkboard writes an empty chalkboard patch to a freshly-forked
-// child so its OWN chalkboard log is non-empty and re-forkable (a head
-// fork inherits chalkboard via watermark but owns no entries). The empty
-// patch is a no-op fold and renders nothing.
-func (s *XwalStore) seedChalkboard(childID string) error {
-	rec := s.idx.Nodes[childID]
-	x, err := xwal.Open(s.root, s.cfg, rec.Branch...)
+// seedChildHandle gives a freshly-forked child its OWN genesis IR tic plus
+// an empty chalkboard patch keyed to that tic, written on the live fork
+// handle (the one Fork returned). This mirrors forkChildLocked, which works
+// — appending the genesis on a *re-opened* head-fork branch does not
+// persist to the main channel, leaving the IR own-log empty. The genesis
+// matters for re-forkability: it advances the child's own tail so the
+// chalkboard seed and the next fork point don't collide at the channel's
+// own base index (which figwal refuses to fork at). The genesis is filtered
+// from rendering.
+func (s *XwalStore) seedChildHandle(x *xwal.XWAL) error {
+	gen, _ := json.Marshal(message.Message{Role: message.RoleGenesis, Timestamp: s.now()})
+	glt, err := x.AppendMain(gen, nil)
 	if err != nil {
 		return err
 	}
-	defer x.Close()
 	pb, _ := json.Marshal(message.Patch{})
-	_, err = x.Append(chanChalkboard, irLast(x)+1, pb, nil)
+	_, err = x.Append(chanChalkboard, glt, pb, nil)
 	return err
 }
 
