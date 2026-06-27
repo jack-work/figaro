@@ -4,6 +4,32 @@ Everything runs against an **isolated** daemon (its own runtime + state
 dirs) so it never touches your live figaro. Config, hush, and auth are
 inherited from your normal setup, so real provider turns work.
 
+## Option A — nix dev shell (recommended)
+
+The flake's dev shells put **this worktree's build** on `PATH` as
+`figaro` / `fig` / `q`. Use the `share-config` preset: it isolates
+runtime + state but inherits your real config + hush (so providers and
+keys just work).
+
+```fish
+cd ~/dev/figaro-qua/xwal-forking
+nix develop .#share-config
+# inside the shell, `figaro` is the worktree build; RT/ST are dev-scoped:
+#   FIGARO_RUNTIME_DIR = $XDG_RUNTIME_DIR/figaro-dev-share-config/run
+#   FIGARO_STATE_DIR   = $XDG_RUNTIME_DIR/figaro-dev-share-config/state
+```
+
+Then jump to step 3 below (`figaro list`, a turn, `fork`, …). The fork
+tree lives under `$FIGARO_STATE_DIR/arias/`. To start from a blank slate,
+`rm -rf $FIGARO_STATE_DIR` (or use `nix develop .#clean` for fully
+hermetic incl. a fresh hush + first-run).
+
+Note: the dev-shell state dir persists across shell entries (it's a
+stable path, not a fresh tempdir) — delete it when you want a clean run.
+`fig stop` / `pkill -f figaro` stops the dev daemon.
+
+## Option B — plain go build + tempdirs
+
 ## 1. Build
 
 ```fish
