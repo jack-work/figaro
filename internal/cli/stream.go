@@ -38,15 +38,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	if width <= 0 {
 		width = 80
 	}
-	lr := newLiveRegion(os.Stdout, width, 0) // 0 → renderer's default bash cap (10)
-	lr.height = term.Height()
-	lr.settings = set
-
-	// The painter owns the cursor and assumes one row per line: disable the
-	// terminal's auto-margin so a full-width row never wraps, and hide the
-	// text cursor so it doesn't sit on the live line. Both restored on exit.
-	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
-	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
+	height := term.Height()
 
 	// Bookend: a status rule (aria id + start time) pinned just below the
 	// agent's reply and persisting as the final line after the turn. Gated
@@ -54,6 +46,34 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	var bookendFn func() string
 	if loaded.StatusLine() {
 		bookendFn = func() string { return statusBanner(figaroID, startedAt) }
+	}
+
+	lr := newLiveRegion(os.Stdout, width, 0) // 0 → renderer's default bash cap (10)
+	lr.height = height
+	lr.settings = set
+
+	// FIGARO_LIVELOG=1 renders the turn through the livelog module (pi-style,
+	// owns the alternate screen so it full-redraws cleanly on a terminal resize)
+	// instead of the inline liveRegion painter. Opt-in so it can be A/B'd.
+	var lt *livelogTurn
+	if os.Getenv("FIGARO_LIVELOG") != "" {
+		lt = newLivelogTurn(os.Stdout, width, height, &set, bookendFn)
+	}
+
+	// The painter owns the cursor and assumes one row per line: disable the
+	// terminal's auto-margin so a full-width row never wraps, and hide the text
+	// cursor. livelog additionally takes the alternate screen so it can clear and
+	// repaint on resize without disturbing the scrollback history above; on exit
+	// it prints the settled result to the normal screen so it persists.
+	if lt != nil {
+		fmt.Fprint(os.Stdout, altScreenOn+autowrapOff+cursorHide)
+		defer func() {
+			fmt.Fprint(os.Stdout, cursorShow+autowrapOn+altScreenOff)
+			fmt.Fprint(os.Stdout, lt.finalText(width))
+		}()
+	} else {
+		fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
+		defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
 	}
 
 	// liveRegion is single-threaded; the notify pump, the spinner ticker,
@@ -94,6 +114,21 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		lrMu.Lock()
 		defer lrMu.Unlock()
 		trace("frame", method, params)
+		if lt != nil {
+			lt.handle(method, params)
+			if method == rpc.MethodTurnDone {
+				var d rpc.DoneEntry
+				_ = json.Unmarshal(params, &d)
+				if strings.HasPrefix(d.Reason, "error:") {
+					fmt.Fprintln(os.Stderr, "\n"+d.Reason)
+				}
+				select {
+				case doneCh <- struct{}{}:
+				default:
+				}
+			}
+			return
+		}
 		switch method {
 		case rpc.MethodLogSnapshot:
 			var e rpc.SnapshotEntry
@@ -168,7 +203,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			case <-t.C:
 				lrMu.Lock()
 				trace("tick", "", nil)
-				lr.tickSpin()
+				if lt != nil {
+					lt.tick()
+				} else {
+					lr.tickSpin()
+				}
 				lrMu.Unlock()
 			}
 		}
@@ -181,10 +220,14 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	defer signal.Stop(winch)
 	go func() {
 		for range winch {
-			w := term.Width()
+			w, h := term.Width(), term.Height()
 			lrMu.Lock()
-			lr.height = term.Height()
-			lr.resize(w)
+			if lt != nil {
+				lt.resize(w, h)
+			} else {
+				lr.height = h
+				lr.resize(w)
+			}
 			lrMu.Unlock()
 		}
 	}()
@@ -212,7 +255,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 						case 0x0f, 0x14: // Ctrl-O / Ctrl-T (alias): toggle verbosity
 							lrMu.Lock()
 							set.verbose = !set.verbose
-							lr.setSettings(set)
+							if lt != nil {
+								lt.render()
+							} else {
+								lr.setSettings(set)
+							}
 							lrMu.Unlock()
 						}
 					}
