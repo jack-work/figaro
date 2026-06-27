@@ -165,6 +165,15 @@ type FigaroInfoResponse struct {
 	Mantra           string `json:"mantra"`             // agent-maintained essence phrase (chalkboard "mantra")
 	Cwd              string `json:"cwd"`                // working directory (chalkboard "system.cwd")
 	BoundPIDs        []int  `json:"bound_pids"`
+
+	// Fork-forest position (conversation nodes). Vector is the
+	// child-index path (0, 0.0, 0.1, …); Trunk is the thread id that
+	// flows down the continuation line; Parent is the node forked from;
+	// Frozen marks a fork point (read-only index node).
+	Vector []int  `json:"vector,omitempty"`
+	Trunk  string `json:"trunk,omitempty"`
+	Parent string `json:"parent,omitempty"`
+	Frozen bool   `json:"frozen,omitempty"`
 }
 
 // CreateRequest names the loadout for a new aria. The system mints the

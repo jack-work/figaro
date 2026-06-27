@@ -558,7 +558,32 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
+	// Forest position for every entry (live + dormant), and surface
+	// frozen fork-point nodes that backend.List omits as "live".
+	for i := range result {
+		h.fillFromNode(result[i].ID, &result[i])
+	}
+
 	return rpc.ListResponse{Figaros: result}, nil
+}
+
+// fillFromNode adds the fork-forest position (vector/trunk/parent/frozen)
+// from the tree, marking frozen nodes' state.
+func (h *handlers) fillFromNode(ariaID string, entry *rpc.FigaroInfoResponse) {
+	if h.angelus.Backend == nil {
+		return
+	}
+	n, ok := h.angelus.Backend.Node(ariaID)
+	if !ok {
+		return
+	}
+	entry.Vector = n.Vector
+	entry.Trunk = n.Trunk
+	entry.Parent = n.Parent
+	entry.Frozen = n.Frozen
+	if n.Frozen && entry.State != "active" {
+		entry.State = "frozen"
+	}
 }
 
 func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{}, error) {

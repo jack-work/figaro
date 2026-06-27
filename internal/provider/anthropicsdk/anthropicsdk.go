@@ -162,6 +162,9 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if len(msg.Content) == 0 {
 		return nil
 	}
+	if msg.Timestamp == 0 {
+		msg.Timestamp = time.Now().UnixMilli()
+	}
 
 	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
 	if err != nil {

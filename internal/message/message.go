@@ -116,8 +116,10 @@ type Message struct {
 	ToolCallID string `json:"tool_call_id,omitempty"`
 	ToolName   string `json:"tool_name,omitempty"`
 
-	// Logical time: monotonic counter, unique per session.
-	LogicalTime uint64 `json:"logical_time"`
+	// Logical time: monotonic counter, unique per session. Populated on
+	// read from the WAL frame index (the authoritative LT); omitempty so
+	// it isn't persisted as a meaningless 0 in the payload.
+	LogicalTime uint64 `json:"logical_time,omitempty"`
 
 	Timestamp int64 `json:"timestamp"`
 }

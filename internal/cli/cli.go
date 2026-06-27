@@ -235,11 +235,14 @@ Flags:
 		Name:    "list",
 		Aliases: []string{"ls"},
 		Group:   "Session",
-		Short:   "List all arias (live and dormant)",
-		Usage:   "list",
+		Short:   "List the conversation forest (live, dormant, frozen)",
+		Usage:   "list [-j|--json]",
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "Emit entries as JSON"},
+		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runList(ld)
+			runList(ld, ctx.BoolFlag("json"))
 			return nil
 		},
 	})

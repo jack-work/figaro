@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/transport"
 )
@@ -329,6 +330,23 @@ model = "mock-model"
 	}
 	assert.Equal(t, 1, countUser(fr.Continuation, "first prompt"), "continuation shares prefix")
 	assert.Equal(t, 1, countUser(fr.Alternative, "first prompt"), "alternative shares prefix")
+
+	// Forest position: root [0]; continuation [0 0] keeps the root's
+	// trunk; alternative [0 1] founds its own trunk.
+	lst, err := acli.List(ctx)
+	require.NoError(t, err)
+	byID := map[string]rpc.FigaroInfoResponse{}
+	for _, f := range lst.Figaros {
+		byID[f.ID] = f
+	}
+	root, cont, alt := byID[created.FigaroID], byID[fr.Continuation], byID[fr.Alternative]
+	assert.Equal(t, []int{0}, root.Vector, "root vector")
+	assert.Equal(t, []int{0, 0}, cont.Vector, "continuation vector")
+	assert.Equal(t, []int{0, 1}, alt.Vector, "alternative vector")
+	assert.Equal(t, root.Trunk, cont.Trunk, "continuation inherits the trunk")
+	assert.NotEqual(t, root.Trunk, alt.Trunk, "alternative founds a new trunk")
+	assert.Equal(t, alt.ID, alt.Trunk, "alternative trunk is itself")
+	assert.True(t, root.Frozen, "forked parent is frozen")
 
 	// The frozen parent refuses a re-fork.
 	_, err = acli.Fork(ctx, created.FigaroID)

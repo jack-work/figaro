@@ -97,6 +97,17 @@ type nodeRec struct {
 	Frozen    bool     `json:"frozen,omitempty"`
 	CreatedMS int64    `json:"created_ms"`
 	LastMS    int64    `json:"last_ms,omitempty"`
+
+	// Trunk + Vector model the conversation forest for the UI.
+	// Trunk is the thread identity that flows DOWN the continuation line:
+	// a root conversation founds its own trunk (Trunk == its own id), a
+	// fork's continuation inherits the parent's Trunk, and a fork's
+	// alternative founds a new trunk. Vector is the child-index path from
+	// the root conversation (continuation appends 0, alternative 1), so it
+	// reads as 0, 0.0, 0.0.0 down a trunk and 0.1, 0.1.0 for an alternate
+	// limb. Both are empty for the null/loadout infrastructure nodes.
+	Trunk  string `json:"trunk,omitempty"`
+	Vector []int  `json:"vector,omitempty"`
 }
 
 type nodeIndex struct {
@@ -257,16 +268,29 @@ func (s *XwalStore) forkAtLocked(rec *nodeRec, atMainLT uint64) (string, string,
 	}
 
 	now := s.now()
-	for _, cid := range []string{contID, altID} {
-		s.idx.Nodes[cid] = &nodeRec{
-			ID:        cid,
-			Branch:    append(append([]string(nil), rec.Branch...), cid),
+	// Continuation inherits the parent's trunk (same thread); the
+	// alternative founds a new trunk. Vector appends 0 for the
+	// continuation, 1 for the alternative.
+	children := []struct {
+		id    string
+		trunk string
+		index int
+	}{
+		{contID, rec.Trunk, 0},
+		{altID, altID, 1},
+	}
+	for _, c := range children {
+		s.idx.Nodes[c.id] = &nodeRec{
+			ID:        c.id,
+			Branch:    append(append([]string(nil), rec.Branch...), c.id),
 			Parent:    rec.ID,
 			Kind:      kindConversation,
 			CreatedMS: now,
 			LastMS:    now,
+			Trunk:     c.trunk,
+			Vector:    append(append([]int(nil), rec.Vector...), c.index),
 		}
-		if err := s.seedChalkboard(cid); err != nil {
+		if err := s.seedChalkboard(c.id); err != nil {
 			return "", "", err
 		}
 	}
@@ -321,7 +345,7 @@ func (s *XwalStore) forkChildLocked(parentID, childID string, kind nodeKind, cbP
 	}
 	defer child.Close()
 
-	gen, _ := json.Marshal(message.Message{Role: birthRole})
+	gen, _ := json.Marshal(message.Message{Role: birthRole, Timestamp: s.now()})
 	glt, err := child.AppendMain(gen, nil)
 	if err != nil {
 		return err
@@ -339,7 +363,7 @@ func (s *XwalStore) forkChildLocked(parentID, childID string, kind nodeKind, cbP
 	}
 
 	now := s.now()
-	s.idx.Nodes[childID] = &nodeRec{
+	childRec := &nodeRec{
 		ID:        childID,
 		Branch:    append(append([]string(nil), parent.Branch...), childID),
 		Parent:    parentID,
@@ -347,9 +371,28 @@ func (s *XwalStore) forkChildLocked(parentID, childID string, kind nodeKind, cbP
 		CreatedMS: now,
 		LastMS:    now,
 	}
+	// A root conversation (fork of a loadout) founds its own trunk and
+	// takes the next root slot in the forest vector.
+	if kind == kindConversation {
+		childRec.Trunk = childID
+		childRec.Vector = []int{s.rootCountLocked()}
+	}
+	s.idx.Nodes[childID] = childRec
 	parent.Children = append(parent.Children, childID)
 	parent.Frozen = true
 	return nil
+}
+
+// rootCountLocked counts existing root conversations (Vector length 1) —
+// the next root conversation's leading vector component.
+func (s *XwalStore) rootCountLocked() int {
+	n := 0
+	for _, r := range s.idx.Nodes {
+		if r.Kind == kindConversation && len(r.Vector) == 1 {
+			n++
+		}
+	}
+	return n
 }
 
 // irLast returns the IR channel's last index for an open node.
@@ -395,7 +438,7 @@ func (s *XwalStore) ensureNull() error {
 		return err
 	}
 	defer x.Close()
-	gen, _ := json.Marshal(message.Message{Role: message.RoleGenesis})
+	gen, _ := json.Marshal(message.Message{Role: message.RoleGenesis, Timestamp: s.now()})
 	glt, err := x.AppendMain(gen, nil)
 	if err != nil {
 		return err
@@ -458,6 +501,8 @@ type NodeView struct {
 	Children  []string
 	Frozen    bool
 	Depth     int
+	Trunk     string
+	Vector    []int
 	CreatedMS int64
 	LastMS    int64
 }
@@ -473,7 +518,8 @@ func (s *XwalStore) view(r *nodeRec) NodeView {
 	return NodeView{
 		ID: r.ID, Parent: r.Parent, Kind: string(r.Kind), Loadout: r.Loadout,
 		Version: r.Version, Children: append([]string(nil), r.Children...),
-		Frozen: r.Frozen, Depth: depth, CreatedMS: r.CreatedMS, LastMS: r.LastMS,
+		Frozen: r.Frozen, Depth: depth, Trunk: r.Trunk,
+		Vector: append([]int(nil), r.Vector...), CreatedMS: r.CreatedMS, LastMS: r.LastMS,
 	}
 }
 

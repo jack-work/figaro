@@ -690,6 +690,9 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 
 	// Land the assistant message: figLog → push figaro → cache.
 	msg := decodeNativeMessage(nm)
+	if msg.Timestamp == 0 {
+		msg.Timestamp = time.Now().UnixMilli()
+	}
 	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
 	if err != nil {
 		return fmt.Errorf("append assistant: %w", err)
