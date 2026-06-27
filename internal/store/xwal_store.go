@@ -181,6 +181,119 @@ func (s *XwalStore) CreateConversation(loadoutID string) (string, error) {
 	return id, s.saveIndex()
 }
 
+// Fork branches a conversation at its current head (fork the present).
+// See ForkAt.
+func (s *XwalStore) Fork(id string) (cont, alt string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec := s.idx.Nodes[id]
+	if rec == nil {
+		return "", "", fmt.Errorf("xwal store: unknown aria %q", id)
+	}
+	x, err := xwal.Open(s.root, s.cfg, rec.Branch...)
+	if err != nil {
+		return "", "", err
+	}
+	tail := irLast(x)
+	x.Close()
+	return s.forkAtLocked(rec, tail+1)
+}
+
+// ForkAt branches a node at main-LT atMainLT. The node freezes and keeps
+// its id as a closed index node; BOTH continuations get fresh ids — the
+// original continuation and the new alternative. For an interior fork the
+// original suffix becomes the continuation; for a head fork both children
+// start empty from the head, sharing the frozen prefix.
+func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec := s.idx.Nodes[id]
+	if rec == nil {
+		return "", "", fmt.Errorf("xwal store: unknown aria %q", id)
+	}
+	return s.forkAtLocked(rec, atMainLT)
+}
+
+func (s *XwalStore) forkAtLocked(rec *nodeRec, atMainLT uint64) (string, string, error) {
+	if rec.Frozen {
+		return "", "", fmt.Errorf("xwal store: %q is already a frozen node", rec.ID)
+	}
+	contID, altID := newID(), newID()
+
+	// First fork: the alternative child, naming the old-future (if any)
+	// as the continuation. An interior fork re-homes the original suffix
+	// into contID; a head fork creates no old-future.
+	x, err := xwal.Open(s.root, s.cfg, rec.Branch...)
+	if err != nil {
+		return "", "", err
+	}
+	altX, err := x.Fork(atMainLT, altID, contID)
+	x.Close()
+	if err != nil {
+		return "", "", fmt.Errorf("xwal store: fork %q: %w", rec.ID, err)
+	}
+	altX.Close()
+
+	// Head fork: no old-future was created, so spawn the continuation as
+	// an N-ary sibling of the now-frozen node.
+	if !s.irBranchExists(rec, contID) {
+		fx, err := xwal.Open(s.root, s.cfg, rec.Branch...)
+		if err != nil {
+			return "", "", err
+		}
+		cX, err := fx.Fork(atMainLT, contID, "_x")
+		fx.Close()
+		if err != nil {
+			return "", "", fmt.Errorf("xwal store: continuation fork %q: %w", rec.ID, err)
+		}
+		cX.Close()
+	}
+
+	now := s.now()
+	for _, cid := range []string{contID, altID} {
+		s.idx.Nodes[cid] = &nodeRec{
+			ID:        cid,
+			Branch:    append(append([]string(nil), rec.Branch...), cid),
+			Parent:    rec.ID,
+			Kind:      kindConversation,
+			CreatedMS: now,
+			LastMS:    now,
+		}
+		if err := s.seedChalkboard(cid); err != nil {
+			return "", "", err
+		}
+	}
+	rec.Children = append(rec.Children, contID, altID)
+	rec.Frozen = true
+	return contID, altID, s.saveIndex()
+}
+
+// seedChalkboard writes an empty chalkboard patch to a freshly-forked
+// child so its OWN chalkboard log is non-empty and re-forkable (a head
+// fork inherits chalkboard via watermark but owns no entries). The empty
+// patch is a no-op fold and renders nothing.
+func (s *XwalStore) seedChalkboard(childID string) error {
+	rec := s.idx.Nodes[childID]
+	x, err := xwal.Open(s.root, s.cfg, rec.Branch...)
+	if err != nil {
+		return err
+	}
+	defer x.Close()
+	pb, _ := json.Marshal(message.Patch{})
+	_, err = x.Append(chanChalkboard, irLast(x)+1, pb, nil)
+	return err
+}
+
+// irBranchExists reports whether a child branch dir exists in the IR
+// channel for a node — used to tell an interior fork (old-future made)
+// from a head fork (none).
+func (s *XwalStore) irBranchExists(parent *nodeRec, name string) bool {
+	parts := append([]string{s.root, chanIR}, parent.Branch...)
+	parts = append(parts, name)
+	_, err := os.Stat(filepath.Join(parts...))
+	return err == nil
+}
+
 // forkChildLocked forks parent into a new child node, writes the child's
 // genesis tic, and applies an optional chalkboard patch (loadout stamp).
 // The parent becomes a frozen branch point. Caller holds s.mu and saves.
@@ -206,11 +319,16 @@ func (s *XwalStore) forkChildLocked(parentID, childID string, kind nodeKind, cbP
 	if err != nil {
 		return err
 	}
+	// Always write a chalkboard genesis entry (empty patch if no loadout
+	// stamp), so the child's OWN chalkboard log is non-empty and can later
+	// be forked — figwal won't fork an empty log even with a parent.
+	patch := message.Patch{}
 	if cbPatch != nil {
-		pb, _ := json.Marshal(*cbPatch)
-		if _, err := child.Append(chanChalkboard, glt, pb, nil); err != nil {
-			return err
-		}
+		patch = *cbPatch
+	}
+	pb, _ := json.Marshal(patch)
+	if _, err := child.Append(chanChalkboard, glt, pb, nil); err != nil {
+		return err
 	}
 
 	now := s.now()
