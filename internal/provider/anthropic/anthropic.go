@@ -641,7 +641,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
 	cache := a.cacheFor(in.AriaID)
-	perMessage, lts := a.catchUp(in.FigLog, cache)
+	perMessage, lts := a.catchUp(in.FigLog, cache, in.Chalkboard)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -724,7 +724,7 @@ func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
 
 // catchUp encodes uncached figLog entries and returns per-message
 // wire bytes.
-func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage]) ([][]json.RawMessage, []uint64) {
+func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
 	fp := a.Fingerprint()
 	snap := chalkboard.Snapshot{}
 	var perMessage [][]json.RawMessage
@@ -732,6 +732,12 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[
 	for _, e := range figLog.Read() {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
+		if msg.Role == message.RoleGenesis {
+			continue // structural birth tic; never rendered
+		}
+		if chalk != nil {
+			msg.Patches = chalk.PatchesAt(e.LT)
+		}
 		var bytes []json.RawMessage
 		if cache != nil {
 			if existing, ok := cache.Lookup(msg.LogicalTime); ok && len(existing.Payload) > 0 {

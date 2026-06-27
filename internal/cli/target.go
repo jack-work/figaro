@@ -66,9 +66,12 @@ func extractIDFlag(args []string) (id string, rest []string, err error) {
 
 // resolveTargetEndpoint resolves both id and endpoint. Used by verbs
 // that talk to the figaro directly (send, plain, x, set, state...).
-// When explicitID names a missing aria and autoCreate is true, creates
-// it; otherwise returns a "not found"-shaped error.
+// Aria ids are system-minted, so a missing explicitID is always an
+// error — there is no create-by-name. autoCreate is retained for call
+// compatibility but no longer creates.
 func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, explicitID string, autoCreate bool) (string, transport.Endpoint, error) {
+	_ = loaded
+	_ = autoCreate
 	if explicitID == "" {
 		r, err := acli.Resolve(ctx, os.Getppid())
 		if err != nil {
@@ -88,20 +91,8 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *ang
 		waitForSocket(ep.Address, 3*time.Second)
 		return explicitID, ep, nil
 	}
-	if !strings.Contains(err.Error(), "not found") {
-		return "", transport.Endpoint{}, fmt.Errorf("attach %q: %w", explicitID, err)
-	}
-	if !autoCreate {
+	if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "not in tree") {
 		return "", transport.Endpoint{}, fmt.Errorf("no such aria: %s", explicitID)
 	}
-
-	createCtx, ccancel := context.WithTimeout(ctx, 10*time.Second)
-	defer ccancel()
-	createResp, err := createWithFirstRun(createCtx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateWithID(createCtx, explicitID, "", nil) })
-	if err != nil {
-		return "", transport.Endpoint{}, fmt.Errorf("create %q: %w", explicitID, err)
-	}
-	ep := transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
-	waitForSocket(ep.Address, 3*time.Second)
-	return explicitID, ep, nil
+	return "", transport.Endpoint{}, fmt.Errorf("attach %q: %w", explicitID, err)
 }

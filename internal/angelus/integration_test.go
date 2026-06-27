@@ -167,136 +167,6 @@ model = "mock-model"
 	assert.Empty(t, listResp.Figaros)
 }
 
-// TestIntegration_CreateWithID exercises the caller-supplied id path:
-// success on a clean id, conflict against a live figaro, conflict
-// against a dormant aria on disk, and validation failure.
-func TestIntegration_CreateWithID(t *testing.T) {
-	dir := t.TempDir()
-
-	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
-	require.NoError(t, os.WriteFile(dir+"/loadouts/mock.toml", []byte(`
-[system]
-provider = "mock"
-model = "mock-model"
-`), 0600))
-
-	backend, err := store.NewFileBackend(dir + "/arias")
-	require.NoError(t, err)
-
-	a := angelus.New(angelus.Config{RuntimeDir: dir, Backend: backend})
-
-	factory := func(providerName string, knobs provider.Knobs) (provider.Provider, error) {
-		return &mockProviderForIntegration{}, nil
-	}
-	loaded, err := config.Load(dir)
-	require.NoError(t, err)
-
-	// Own the context, and tear down via Shutdown (not just ctx cancel):
-	// figaro lifecycles run on their own background context, so a plain
-	// cancel leaves their derivation writers running. Shutdown wg.Waits
-	// each figaro's Kill -> derived.Wait, flushing all derived-file writes
-	// before this function returns — i.e. before t.TempDir's RemoveAll —
-	// so the writes can't race the directory teardown ("directory not
-	// empty"). Defers run before t.Cleanup, so ordering holds.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	a.Handlers = angelus.NewHandlers(angelus.ServerConfig{
-		Angelus:         a,
-		Config:          loaded,
-		ProviderFactory: factory,
-		Ctx:             ctx,
-	}).Map
-
-	errCh := make(chan error, 1)
-	go func() { errCh <- a.Run(ctx) }()
-	defer func() {
-		a.Shutdown(0)
-		<-errCh
-	}()
-
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(a.SocketPath); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
-	require.NoError(t, err)
-	defer acli.Close()
-
-	// Happy path: caller-supplied id.
-	resp, err := acli.CreateWithID(ctx, "my-named-aria", "mock", nil)
-	require.NoError(t, err)
-	assert.Equal(t, "my-named-aria", resp.FigaroID)
-
-	// Conflict: same id while still live.
-	_, err = acli.CreateWithID(ctx, "my-named-aria", "mock", nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "already live")
-
-	// Persist the aria to disk so we can test the dormant-on-disk path.
-	// Drive a turn through the figaro so SetMeta fires.
-	figaroEP := transport.Endpoint{
-		Scheme:  resp.Endpoint.Scheme,
-		Address: resp.Endpoint.Address,
-	}
-	deadline = time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(figaroEP.Address); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	doneCh := make(chan struct{}, 1)
-	fcli, err := figaro.DialClient(figaroEP, func(method string, params json.RawMessage) {
-		if method == "turn.done" {
-			select {
-			case doneCh <- struct{}{}:
-			default:
-			}
-		}
-	})
-	require.NoError(t, err)
-	require.NoError(t, fcli.Qua(ctx, "hello", nil))
-	select {
-	case <-doneCh:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for turn.done")
-	}
-	fcli.Close()
-
-	// Kill the live figaro; the aria stays on disk.
-	require.NoError(t, acli.Kill(ctx, "my-named-aria"))
-
-	// Recreate the backend's view by writing a meta file directly —
-	// Kill removes the dir, so we need a fresh dormant aria to test
-	// the on-disk conflict path. Use a different id.
-	require.NoError(t, os.MkdirAll(dir+"/arias/persisted-aria", 0700))
-	require.NoError(t, os.WriteFile(
-		dir+"/arias/persisted-aria/meta.json",
-		[]byte(`{"id":"persisted-aria","created_at":"2024-01-01T00:00:00Z"}`),
-		0600,
-	))
-
-	_, err = acli.CreateWithID(ctx, "persisted-aria", "mock", nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "already exists on disk")
-
-	// Validation: bad characters.
-	_, err = acli.CreateWithID(ctx, "bad/id", "mock", nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid char")
-
-	// Validation: empty falls back to server-generated, no error.
-	resp2, err := acli.CreateWithID(ctx, "", "mock", nil)
-	require.NoError(t, err)
-	assert.NotEmpty(t, resp2.FigaroID)
-	assert.NotEqual(t, "", resp2.FigaroID)
-}
-
 // TestIntegration_Attach exercises figaro.attach for live, dormant,
 // and unknown ids.
 func TestIntegration_Attach(t *testing.T) {
@@ -309,7 +179,7 @@ provider = "mock"
 model = "mock-model"
 `), 0600))
 
-	backend, err := store.NewFileBackend(dir + "/arias")
+	backend, err := store.NewXwalBackend(dir + "/arias")
 	require.NoError(t, err)
 
 	a := angelus.New(angelus.Config{RuntimeDir: dir, Backend: backend})
@@ -331,9 +201,6 @@ model = "mock-model"
 	}).Map
 
 	go a.Run(ctx)
-	// Tear down via Shutdown so each figaro's derivation writers drain
-	// before t.TempDir's RemoveAll (a plain ctx cancel leaves them racing
-	// the directory teardown → "directory not empty").
 	defer a.Shutdown(0)
 
 	deadline := time.Now().Add(3 * time.Second)
@@ -356,13 +223,13 @@ model = "mock-model"
 	_, err = acli.Attach(ctx, "bad/id")
 	require.Error(t, err)
 
-	// Create a live aria, then Attach should be a no-op success.
-	resp, err := acli.CreateWithID(ctx, "live-one", "mock", nil)
+	// Create a live aria (system-minted id), then Attach is a no-op success.
+	resp, err := acli.Create(ctx, "mock", nil)
 	require.NoError(t, err)
-	assert.Equal(t, "live-one", resp.FigaroID)
+	require.NotEmpty(t, resp.FigaroID)
 
-	att, err := acli.Attach(ctx, "live-one")
+	att, err := acli.Attach(ctx, resp.FigaroID)
 	require.NoError(t, err)
-	assert.Equal(t, "live-one", att.FigaroID)
+	assert.Equal(t, resp.FigaroID, att.FigaroID)
 	assert.Equal(t, resp.Endpoint.Address, att.Endpoint.Address)
 }

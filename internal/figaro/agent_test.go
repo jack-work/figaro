@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -167,6 +166,50 @@ func newTestAgent(response string) *figaro.Agent {
 		Provider:   &mockProvider{response: response},
 		Chalkboard: cb,
 	})
+}
+
+// backedConv builds an XwalBackend, materializes a loadout + a fresh
+// conversation, and returns the backend and the minted conversation id.
+// The caller builds the agent (so it can set the response, seed the
+// chalkboard, etc.).
+func backedConv(t *testing.T, dir string) (store.Backend, string) {
+	t.Helper()
+	b, err := store.NewXwalBackend(dir)
+	require.NoError(t, err)
+	l, err := b.CreateLoadout("d", message.Patch{Set: map[string]json.RawMessage{
+		"system.model":      json.RawMessage(`"mock-model-v1"`),
+		"system.provider":   json.RawMessage(`"mock"`),
+		"system.max_tokens": json.RawMessage(`1024`),
+	}})
+	require.NoError(t, err)
+	conv, err := b.CreateConversation(l)
+	require.NoError(t, err)
+	return b, conv
+}
+
+// unwrapForTest projects log entries to messages.
+func unwrapForTest(entries []store.Entry[message.Message]) []message.Message {
+	out := make([]message.Message, len(entries))
+	for i, e := range entries {
+		out[i] = e.Payload
+	}
+	return out
+}
+
+// nonGenesis returns the content-bearing turns (drops structural birth
+// tics and the loadout's empty-content reminder tic).
+func nonGenesis(msgs []message.Message) []message.Message {
+	var out []message.Message
+	for _, m := range msgs {
+		if m.Role == message.RoleGenesis {
+			continue
+		}
+		if m.Role == message.RoleUser && len(m.Content) == 0 && len(m.Patches) == 0 {
+			continue // loadout birth tic
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 func TestAgent_ID(t *testing.T) {
@@ -543,11 +586,10 @@ func TestAgent_Info(t *testing.T) {
 
 func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 	storeDir := t.TempDir()
-	backend, err := store.NewFileBackend(storeDir)
-	require.NoError(t, err)
+	backend, conv := backedConv(t, storeDir)
 
 	a := figaro.NewAgent(figaro.Config{
-		ID:         "persist-001",
+		ID:         conv,
 		SocketPath: "/tmp/persist-test.sock",
 		Provider:   &mockProvider{response: "persisted reply"},
 		Backend:    backend,
@@ -557,7 +599,6 @@ func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 	ch, _ := subscribeChan(a)
 	a.Prompt("save me")
 
-	// Wait for done.
 	timeout := time.After(5 * time.Second)
 	for {
 		select {
@@ -571,72 +612,22 @@ func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 	}
 firstDone:
 
-	// Send a second prompt — by the time it starts processing,
-	// the first prompt's flush is guaranteed complete (FIFO drain loop).
-	a.Prompt("second")
-	for {
-		select {
-		case n := <-ch:
-			if n.Method == rpc.MethodTurnDone {
-				goto secondDone
-			}
-		case <-timeout:
-			t.Fatal("timeout on second prompt")
-		}
-	}
-secondDone:
-
-	// The aria directory should exist on disk (flushed after first prompt).
-	// figwal layout: arias/<id>/aria/<segment>.jsonl
-	ariaDir := filepath.Join(storeDir, "persist-001")
-	walDir := filepath.Join(ariaDir, "aria")
-	segments, err := os.ReadDir(walDir)
-	require.NoError(t, err, "figwal aria dir should exist after prompt")
-	var msgCount int
-	for _, seg := range segments {
-		if seg.IsDir() || filepath.Ext(seg.Name()) != ".jsonl" {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(walDir, seg.Name()))
-		require.NoError(t, err)
-		for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
-			if strings.TrimSpace(line) != "" {
-				msgCount++
-			}
-		}
-	}
-	// At minimum, the first prompt's flush wrote user + assistant (2 messages).
-	assert.GreaterOrEqual(t, msgCount, 2, "should have at least user + assistant on disk")
-
-	// meta.json holds derived stats (counts, tokens). Configured
-	// fields (provider, model) moved to chalkboard.json. The
-	// summary derivation is async — poll for the latest tick to
-	// land.
-	metaPath := filepath.Join(ariaDir, "meta.json")
-	var meta struct {
-		MessageCount int `json:"message_count"`
-		TurnCount    int `json:"turn_count"`
-	}
-	require.Eventually(t, func() bool {
-		data, err := os.ReadFile(metaPath)
-		if err != nil {
-			return false
-		}
-		if json.Unmarshal(data, &meta) != nil {
-			return false
-		}
-		return meta.MessageCount >= 2 && meta.TurnCount >= 1
-	}, 2*time.Second, 10*time.Millisecond, "meta.json should reflect user+assistant")
+	// Re-open the IR through the backend: the user + assistant turns are
+	// durable (the backend returns the same shared, persisted log).
+	log, err := backend.Open(conv)
+	require.NoError(t, err)
+	turns := nonGenesis(unwrapForTest(log.Read()))
+	require.GreaterOrEqual(t, len(turns), 2, "user + assistant should be durable")
+	assert.Equal(t, message.RoleUser, turns[0].Role)
+	assert.Equal(t, message.RoleAssistant, turns[1].Role)
 }
 
 func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 	storeDir := t.TempDir()
-	backend, err := store.NewFileBackend(storeDir)
-	require.NoError(t, err)
+	backend, conv := backedConv(t, storeDir)
 
-	// First agent: prompt and kill (which flushes to disk).
 	a1 := figaro.NewAgent(figaro.Config{
-		ID:         "restore-001",
+		ID:         conv,
 		SocketPath: "/tmp/restore-test.sock",
 		Provider:   &mockProvider{response: "first reply"},
 		Backend:    backend,
@@ -659,29 +650,27 @@ func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 firstDone:
 	a1.Kill()
 
-	// Second agent with the same ID and Backend — should seed from disk.
+	// Second agent with the same conversation id + backend — restores.
 	a2 := figaro.NewAgent(figaro.Config{
-		ID:         "restore-001",
+		ID:         conv,
 		SocketPath: "/tmp/restore-test2.sock",
 		Provider:   &mockProvider{response: "second reply"},
 		Backend:    backend,
 	})
 	defer a2.Kill()
 
-	// Context should already have the first conversation.
-	msgs := a2.Context()
-	require.GreaterOrEqual(t, len(msgs), 2, "should restore messages from disk")
-	assert.Equal(t, message.RoleUser, msgs[0].Role)
-	assert.Equal(t, message.RoleAssistant, msgs[1].Role)
+	turns := nonGenesis(a2.Context())
+	require.GreaterOrEqual(t, len(turns), 2, "should restore messages from disk")
+	assert.Equal(t, message.RoleUser, turns[0].Role)
+	assert.Equal(t, message.RoleAssistant, turns[1].Role)
 }
 
 func TestAgent_PersistenceKillFlushes(t *testing.T) {
 	storeDir := t.TempDir()
-	backend, err := store.NewFileBackend(storeDir)
-	require.NoError(t, err)
+	backend, conv := backedConv(t, storeDir)
 
 	a := figaro.NewAgent(figaro.Config{
-		ID:         "killflush-001",
+		ID:         conv,
 		SocketPath: "/tmp/killflush-test.sock",
 		Provider:   &mockProvider{response: "will be saved"},
 		Backend:    backend,
@@ -702,30 +691,26 @@ func TestAgent_PersistenceKillFlushes(t *testing.T) {
 		}
 	}
 done:
-
-	// Kill the agent (should flush + close).
 	a.Kill()
 
-	// Verify data is on disk. figwal layout: aria/ dir with segments.
-	walDir := filepath.Join(storeDir, "killflush-001", "aria")
-	st, statErr := os.Stat(walDir)
-	require.NoError(t, statErr, "figwal aria dir should exist after kill")
-	assert.True(t, st.IsDir())
+	// Re-open a fresh backend on the same dir: the turn is on disk.
+	b2, err := store.NewXwalBackend(storeDir)
+	require.NoError(t, err)
+	defer b2.Close()
+	log, err := b2.Open(conv)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, len(nonGenesis(unwrapForTest(log.Read()))), 2)
 }
 
-// TestAgent_BootInsertsSentinelForDanglingToolUse builds an aria
-// directory on disk whose tail is an assistant turn ending in
-// stop_reason=tool_use with no matching tool_results, opens an Agent
-// against the same Backend, and verifies the boot path appends a
-// RoleSystemInterrupt sentinel.
+// TestAgent_BootInsertsSentinelForDanglingToolUse seeds a conversation
+// whose tail is an assistant turn ending in stop_reason=tool_use with no
+// matching tool_results, opens an Agent on it, and verifies the boot
+// path appends a RoleSystemInterrupt sentinel.
 func TestAgent_BootInsertsSentinelForDanglingToolUse(t *testing.T) {
 	storeDir := t.TempDir()
-	backend, err := store.NewFileBackend(storeDir)
-	require.NoError(t, err)
+	backend, conv := backedConv(t, storeDir)
 
-	// Seed the stream with [user, assistant.tool_use] using a
-	// pre-agent FileStream directly.
-	pre, err := backend.Open("danglingboot")
+	pre, err := backend.Open(conv)
 	require.NoError(t, err)
 	_, err = pre.Append(store.Entry[message.Message]{
 		Payload: message.Message{
@@ -744,21 +729,17 @@ func TestAgent_BootInsertsSentinelForDanglingToolUse(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	require.NoError(t, pre.Close())
 
-	// Boot an agent on the same store; NewAgent runs the boot-time
-	// repair.
+	// Boot an agent on the same conversation; NewAgent runs boot repair.
 	a := figaro.NewAgent(figaro.Config{
-		ID:         "danglingboot",
+		ID:         conv,
 		SocketPath: "/tmp/danglingboot-test.sock",
 		Provider:   &mockProvider{response: "ignored"},
 		Backend:    backend,
 	})
 	defer a.Kill()
 
-	// Read history from the agent (also flushes/projects).
 	msgs := a.Context()
-	require.GreaterOrEqual(t, len(msgs), 3, "boot should have appended a sentinel")
 	tail := msgs[len(msgs)-1]
 	assert.True(t, message.IsInterruptSentinel(tail), "tail should be the sentinel")
 	assert.Equal(t, []string{"tc_boot"}, message.DanglingToolCallIDs(tail))

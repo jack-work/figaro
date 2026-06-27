@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
+	"log/slog"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -120,7 +120,13 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		cancel()
 	}()
 
-	// Build user tic.
+	// Build user tic. Chalkboard state lives in the reducible channel
+	// (loadout values inherited via the fork watermark; runtime fill-ins
+	// written at conversation creation). The only per-turn state change
+	// is the client's chalkboard input, which we record on the channel
+	// keyed to this tic's LT so it renders as a transition on this
+	// message. Ephemeral arias (no backend, no channel) keep folding
+	// patches inline onto the tic.
 	tic := message.Message{
 		Role:      message.RoleUser,
 		Timestamp: time.Now().UnixMilli(),
@@ -129,65 +135,24 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	if prompt.chalkboard != nil {
 		combined = a.combineChalkboardInput(prompt.chalkboard)
 	}
-	if len(a.figLog.Read()) == 0 && a.chalkboard != nil {
-		// First-turn bootstrap: fold the boot patch (loadout values +
-		// runtime fill-ins), the env-var capture, and any client input
-		// into a single patch that rides on this tic. The chalkboard
-		// renderer then projects each key as a <system-reminder> block
-		// on the wire — that's how the model learns about skills,
-		// credo, cwd, etc.
-		boot := chalkboard.Patch{Set: map[string]json.RawMessage{}}
-		if a.bootPatch != nil && !a.bootPatch.IsEmpty() {
-			for k, v := range a.bootPatch.Set {
-				boot.Set[k] = v
+	if !combined.IsEmpty() {
+		if a.backend != nil {
+			if err := a.backend.ApplyChalkboard(a.id, combined); err != nil {
+				slog.Error("turn chalkboard append", "aria", a.id, "err", err)
 			}
-			boot.Remove = append(boot.Remove, a.bootPatch.Remove...)
+		} else {
+			tic.Patches = append(tic.Patches, combined)
 		}
-		// Runtime fill-ins. The loadout may not have these; the agent
-		// stamps them at first-turn from its own process state.
-		// aria_id is non-system so it renders as a reminder the agent can
-		// read (e.g. to `figaro set --id <id> mantra ...` over bash).
-		if _, ok := boot.Set["aria_id"]; !ok {
-			if b, err := json.Marshal(a.id); err == nil {
-				boot.Set["aria_id"] = b
-			}
-		}
-		cwd, _ := os.Getwd()
-		if _, ok := boot.Set["system.cwd"]; !ok {
-			if b, err := json.Marshal(cwd); err == nil {
-				boot.Set["system.cwd"] = b
-			}
-		}
-		if _, ok := boot.Set["system.root"]; !ok {
-			if b, err := json.Marshal(cwd); err == nil {
-				boot.Set["system.root"] = b
-			}
-		}
-		if _, ok := boot.Set["system.max_tokens"]; !ok {
-			boot.Set["system.max_tokens"] = json.RawMessage(`8192`)
-		}
-		// Allowlisted env vars -> system.environment.*.
-		if envPatch := chalkboard.EnvironmentPatch(); !envPatch.IsEmpty() {
-			for k, v := range envPatch.Set {
-				boot.Set[k] = v
-			}
-		}
-		// Client input wins on conflict — they explicitly named the key.
-		if !combined.IsEmpty() {
-			for k, v := range combined.Set {
-				boot.Set[k] = v
-			}
-			boot.Remove = append(boot.Remove, combined.Remove...)
-		}
-		a.bootPatch = nil // consumed; never re-applied
-		if !boot.IsEmpty() {
-			tic.Patches = append(tic.Patches, boot)
-			a.chalkboard.Apply(boot)
-		}
-		_ = a.chalkboard.Save()
-	} else if !combined.IsEmpty() {
-		tic.Patches = append(tic.Patches, combined)
 		a.chalkboard.Apply(combined)
+	}
+	// Ephemeral first tic: fold the boot patch inline so the loadout
+	// reminders render (no channel to hold the transition). State is
+	// already seeded by the caller, so this is render-only.
+	if a.backend == nil && a.inlineBoot != nil && len(a.figLog.Read()) == 0 {
+		if !a.inlineBoot.IsEmpty() {
+			tic.Patches = append(tic.Patches, *a.inlineBoot)
+		}
+		a.inlineBoot = nil
 	}
 	if prompt.text != "" {
 		tic.Content = append(tic.Content, message.TextContent(prompt.text))
@@ -234,11 +199,12 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	bus := newTurnBus()
 	in := provider.SendInput{
-		AriaID:    a.id,
-		FigLog:    a.figLog,
-		Snapshot:  a.chalkboard.Snapshot(),
-		Tools:     a.toolDefs(),
-		MaxTokens: a.chalkboardInt("system.max_tokens"),
+		AriaID:     a.id,
+		FigLog:     a.figLog,
+		Snapshot:   a.chalkboard.Snapshot(),
+		Chalkboard: a.chalkAccessor(),
+		Tools:      a.toolDefs(),
+		MaxTokens:  a.chalkboardInt("system.max_tokens"),
 	}
 	sendDone := make(chan error, 1)
 	go func() {

@@ -157,7 +157,11 @@ func (s *XwalStore) CreateLoadout(name string, patch message.Patch) (string, err
 	}
 	id := newID()
 	stamped := stampLoadout(patch, name, ver)
-	if err := s.forkChildLocked(NullAriaID, id, kindLoadout, &stamped); err != nil {
+	// The loadout node's birth tic is renderable (RoleUser, empty
+	// content): its chalkboard patch renders as the loadout's
+	// <system-reminder> blocks ONCE in this shared prefix, and every
+	// conversation forked from it inherits that cached, rendered prefix.
+	if err := s.forkChildLocked(NullAriaID, id, kindLoadout, &stamped, message.RoleUser); err != nil {
 		return "", err
 	}
 	rec := s.idx.Nodes[id]
@@ -175,7 +179,10 @@ func (s *XwalStore) CreateConversation(loadoutID string) (string, error) {
 		return "", fmt.Errorf("xwal store: %q is not a loadout node", loadoutID)
 	}
 	id := newID()
-	if err := s.forkChildLocked(loadoutID, id, kindConversation, nil); err != nil {
+	// The conversation's birth tic is a filtered genesis: it inherits
+	// the loadout's rendered prefix via the fork watermark and adds no
+	// transition of its own (runtime fill-ins are written by the caller).
+	if err := s.forkChildLocked(loadoutID, id, kindConversation, nil, message.RoleGenesis); err != nil {
 		return "", err
 	}
 	return id, s.saveIndex()
@@ -297,7 +304,7 @@ func (s *XwalStore) irBranchExists(parent *nodeRec, name string) bool {
 // forkChildLocked forks parent into a new child node, writes the child's
 // genesis tic, and applies an optional chalkboard patch (loadout stamp).
 // The parent becomes a frozen branch point. Caller holds s.mu and saves.
-func (s *XwalStore) forkChildLocked(parentID, childID string, kind nodeKind, cbPatch *message.Patch) error {
+func (s *XwalStore) forkChildLocked(parentID, childID string, kind nodeKind, cbPatch *message.Patch, birthRole message.Role) error {
 	parent := s.idx.Nodes[parentID]
 	if parent == nil {
 		return fmt.Errorf("xwal store: unknown parent %q", parentID)
@@ -314,7 +321,7 @@ func (s *XwalStore) forkChildLocked(parentID, childID string, kind nodeKind, cbP
 	}
 	defer child.Close()
 
-	gen, _ := json.Marshal(message.Message{Role: message.RoleGenesis})
+	gen, _ := json.Marshal(message.Message{Role: birthRole})
 	glt, err := child.AppendMain(gen, nil)
 	if err != nil {
 		return err

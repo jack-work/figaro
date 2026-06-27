@@ -32,6 +32,12 @@ type ariaHandle struct {
 	xw    *xwal.XWAL
 	ir    *cachedLog[message.Message]
 	trans map[string]*cachedLog[[]json.RawMessage]
+
+	// cbSnap memoizes the folded chalkboard snapshot against the
+	// channel tail it was computed at; a read re-folds only when the
+	// tail has moved (the watermark keeps StateAt cheap regardless).
+	cbSnap chalkboard.Snapshot
+	cbAt   uint64
 }
 
 func NewXwalBackend(root string) (*XwalBackend, error) {
@@ -108,17 +114,21 @@ func channelExists(x *xwal.XWAL, name string) bool {
 
 // ---- chalkboard (re-derived via StateAt; mutation appends a patch) ----
 
-// ChalkboardState folds the aria's chalkboard channel to current state.
+// ChalkboardState folds the aria's chalkboard channel to current state,
+// memoized against the channel tail (re-folds only when the tail moves).
 func (b *XwalBackend) ChalkboardState(ariaID string) (chalkboard.Snapshot, error) {
 	b.mu.Lock()
+	defer b.mu.Unlock()
 	h, err := b.handleLocked(ariaID)
-	b.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
 	last := channelLast(h.xw, chanChalkboard)
 	if last == 0 {
 		return chalkboard.Snapshot{}, nil
+	}
+	if h.cbSnap != nil && h.cbAt == last {
+		return h.cbSnap.Clone(), nil
 	}
 	st, err := h.xw.StateAt(chanChalkboard, last)
 	if err != nil {
@@ -128,7 +138,41 @@ func (b *XwalBackend) ChalkboardState(ariaID string) (chalkboard.Snapshot, error
 	if err := json.Unmarshal(st, &snap); err != nil {
 		return nil, err
 	}
-	return snap, nil
+	h.cbSnap, h.cbAt = snap, last
+	return snap.Clone(), nil
+}
+
+// ChalkboardPatches reads the whole chalkboard channel once and groups
+// the (non-empty) patches by the IR LT they are keyed to.
+func (b *XwalBackend) ChalkboardPatches(ariaID string) (map[uint64][]message.Patch, error) {
+	b.mu.Lock()
+	h, err := b.handleLocked(ariaID)
+	b.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	var first, last uint64
+	for _, c := range h.xw.Channels() {
+		if c.Name == chanChalkboard {
+			first, last = c.First, c.Last
+		}
+	}
+	out := map[uint64][]message.Patch{}
+	for lt := first; lt >= 1 && lt <= last; lt++ {
+		rec, err := h.xw.ReadAt(chanChalkboard, lt)
+		if err != nil {
+			return nil, err
+		}
+		var p message.Patch
+		if err := json.Unmarshal(rec.Payload, &p); err != nil {
+			return nil, err
+		}
+		if p.IsEmpty() {
+			continue
+		}
+		out[rec.MainLT] = append(out[rec.MainLT], p)
+	}
+	return out, nil
 }
 
 // ApplyChalkboard appends a patch to the chalkboard channel, keyed to the
@@ -166,6 +210,9 @@ func (b *XwalBackend) Fork(ariaID string) (cont, alt string, err error) {
 	b.evict(ariaID) // it becomes frozen; drop any cached handle
 	return b.store.Fork(ariaID)
 }
+
+func (b *XwalBackend) Node(id string) (NodeView, bool) { return b.store.Node(id) }
+func (b *XwalBackend) Nodes() []NodeView               { return b.store.Nodes() }
 
 func (b *XwalBackend) evict(id string) {
 	b.mu.Lock()
@@ -212,7 +259,9 @@ func writeJSON(path string, v any) error {
 	return os.Rename(tmp, path)
 }
 
-func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) { return readJSON[AriaMeta](b.metaPath(ariaID)) }
+func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) {
+	return readJSON[AriaMeta](b.metaPath(ariaID))
+}
 func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
 	return writeJSON(b.metaPath(ariaID), meta)
 }

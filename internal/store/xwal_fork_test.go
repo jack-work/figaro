@@ -40,7 +40,10 @@ func irTexts(t *testing.T, x *xwal.XWAL) []string {
 			Text string `json:"text"`
 		}
 		json.Unmarshal(payload, &m)
-		if m.Role == "user" {
+		// Skip the loadout node's empty-content birth tic (RoleUser with
+		// no text); it carries the loadout transition via the chalkboard
+		// channel, not IR text.
+		if m.Role == "user" && m.Text != "" {
 			out = append(out, m.Text)
 		}
 	}
