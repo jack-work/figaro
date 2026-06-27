@@ -65,6 +65,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 	return &Handlers{
 		Map: map[string]jkrpc.HandlerFunc{
 			rpc.MethodCreate:       h.create,
+			rpc.MethodFork:         h.fork,
 			rpc.MethodKill:         h.kill,
 			rpc.MethodList:         h.list,
 			rpc.MethodAttach:       h.attach,
@@ -124,46 +125,40 @@ func (h *handlers) reloadConfigIfChanged() {
 	h.outfitter = outfit.New(fresh.ConfigDir)
 }
 
-// openAriaChalkboard opens the chalkboard for an aria. nil on failure.
+// openAriaChalkboard returns the in-memory chalkboard hot view for an
+// aria, seeded from its reducible chalkboard channel (the durable
+// truth — there is no chalkboard.json). nil on failure.
 func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
-	if h.cbTmpls == nil {
+	if h.cbTmpls == nil || h.angelus.Backend == nil {
 		return nil
 	}
-	fb, ok := h.angelus.Backend.(interface{ Dir() string })
-	if !ok {
-		return nil
-	}
-	path := filepath.Join(fb.Dir(), ariaID, "chalkboard.json")
-	st, err := chalkboard.Open(path)
+	snap, err := h.angelus.Backend.ChalkboardState(ariaID)
 	if err != nil {
-		slog.Warn("chalkboard open (disabled for aria)", "path", path, "err", err)
+		slog.Warn("chalkboard state (disabled for aria)", "aria", ariaID, "err", err)
 		return nil
+	}
+	st, _ := chalkboard.Open("")
+	if len(snap) > 0 {
+		st.Apply(chalkboard.Patch{Set: snap})
 	}
 	return st
 }
 
-// fillFromChalkboard reads chalkboard.json and fills Provider/Model.
+// fillFromChalkboard fills Provider/Model/Mantra/Cwd from the aria's
+// chalkboard channel state.
 func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoResponse) {
-	fb, ok := h.angelus.Backend.(interface{ Dir() string })
-	if !ok {
+	if h.angelus.Backend == nil {
 		return
 	}
-	data, err := os.ReadFile(filepath.Join(fb.Dir(), ariaID, "chalkboard.json"))
+	snap, err := h.angelus.Backend.ChalkboardState(ariaID)
 	if err != nil {
 		return
 	}
-	var snap map[string]json.RawMessage
-	if json.Unmarshal(data, &snap) != nil {
-		return
-	}
 	get := func(key string) string {
-		raw, ok := snap[key]
-		if !ok {
-			return ""
+		if s := snap.Lookup(key); s != nil {
+			return *s
 		}
-		var s string
-		_ = json.Unmarshal(raw, &s)
-		return s
+		return ""
 	}
 	if entry.Provider == "" {
 		entry.Provider = get("system.provider")
@@ -176,51 +171,6 @@ func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoRespon
 	}
 	if entry.Cwd == "" {
 		entry.Cwd = get("system.cwd")
-	}
-}
-
-// fillFromMetaSnapshot reads derived/meta.json and fills any fields
-// the dormant entry is still missing. The meta derivation runs on
-// every turn for live arias, so this is the freshest accurate view
-// for figaros that have since gone dormant. Silent on missing file:
-// older arias predate the derivation.
-func (h *handlers) fillFromMetaSnapshot(ariaID string, entry *rpc.FigaroInfoResponse) {
-	fb, ok := h.angelus.Backend.(interface{ Dir() string })
-	if !ok {
-		return
-	}
-	data, err := os.ReadFile(filepath.Join(fb.Dir(), ariaID, "derived", "meta.json"))
-	if err != nil {
-		return
-	}
-	var snap figaro.MetaSnapshot
-	if json.Unmarshal(data, &snap) != nil {
-		return
-	}
-	if entry.Provider == "" {
-		entry.Provider = snap.Provider
-	}
-	if entry.Model == "" {
-		entry.Model = snap.Model
-	}
-	if entry.MessageCount == 0 {
-		entry.MessageCount = snap.MessageCount
-	}
-	if entry.TokensIn == 0 {
-		entry.TokensIn = snap.TokensIn
-	}
-	if entry.TokensOut == 0 {
-		entry.TokensOut = snap.TokensOut
-	}
-	if entry.CacheReadTokens == 0 {
-		entry.CacheReadTokens = snap.CacheReadTokens
-	}
-	if entry.CacheWriteTokens == 0 {
-		entry.CacheWriteTokens = snap.CacheWriteTokens
-	}
-	if entry.ContextTokens == 0 {
-		entry.ContextTokens = snap.ContextTokens
-		entry.ContextExact = snap.ContextExact
 	}
 }
 
@@ -265,15 +215,19 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	// Resolve loadout -> chalkboard patch. Missing files are not
 	// fatal; the patch comes back empty and req.Patch may still
-	// supply system.provider.
-	base, err := h.outfitter.Load(loadoutName)
+	// supply system.provider. loadoutPatch is the STABLE loadout (it
+	// defines the loadout node's identity/version); base layers the
+	// per-create req.Patch overrides on top for provider/knob resolution.
+	loadoutPatch, err := h.outfitter.Load(loadoutName)
 	if err != nil {
 		return nil, h.errLoadoutNotFound(loadoutName, err)
 	}
+	base := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+	for k, v := range loadoutPatch.Set {
+		base.Set[k] = v
+	}
+	base.Remove = append(base.Remove, loadoutPatch.Remove...)
 	if req.Patch != nil {
-		if base.Set == nil {
-			base.Set = map[string]json.RawMessage{}
-		}
 		for k, v := range req.Patch.Set {
 			base.Set[k] = v
 		}
@@ -297,41 +251,59 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, fmt.Errorf("create provider %q: %w", provName, err)
 	}
 
-	// Resolve aria id.
-	var id string
-	if req.ID != "" {
-		if err := rpc.ValidateAriaID(req.ID); err != nil {
-			return nil, err
-		}
-		if h.angelus.Registry.Get(req.ID) != nil {
-			return nil, fmt.Errorf("aria %q is already live", req.ID)
-		}
-		if !req.Ephemeral && h.angelus.Backend != nil {
-			if meta, _ := h.angelus.Backend.Meta(req.ID); meta != nil {
-				return nil, fmt.Errorf("aria %q already exists on disk", req.ID)
-			}
-		}
-		id = req.ID
-	} else {
-		id = uuid.New().String()[:8]
-	}
-	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
-
 	cwd, _ := os.Getwd()
 
-	// Ephemeral: in-memory only.
+	// Ephemeral: in-memory only, no tree.
 	backend := h.angelus.Backend
 	if req.Ephemeral {
 		backend = nil
 	}
 
-	var cbState *chalkboard.State
-	if !req.Ephemeral {
-		cbState = h.openAriaChalkboard(id)
+	// The chalkboard channel is the durable truth; cbState is the
+	// in-memory hot view (no chalkboard.json). System mints all ids.
+	cbState, _ := chalkboard.Open("")
+	var id string
+	var inlineBoot *chalkboard.Patch
+
+	if backend == nil {
+		// Ephemeral: no channel. Seed state with the full loadout +
+		// runtime fill-ins, and fold the same patch on the first tic so
+		// reminders render.
+		id = uuid.New().String()[:8]
+		boot := bootPatchEphemeral(base, "", cwd) // id filled below
+		boot = withAriaID(boot, id)
+		cbState.Apply(boot)
+		bp := boot
+		inlineBoot = &bp
+	} else {
+		// Materialize/reuse the loadout node (identity = stable loadout
+		// patch), fork it into a fresh conversation, then write the
+		// per-conversation boot transition (runtime fill-ins + req.Patch
+		// overrides) to its chalkboard channel. The loadout's own
+		// reminders render in the shared loadout-node prefix.
+		loadoutID, lerr := backend.CreateLoadout(loadoutName, loadoutPatch)
+		if lerr != nil {
+			return nil, fmt.Errorf("create loadout node: %w", lerr)
+		}
+		var cerr error
+		id, cerr = backend.CreateConversation(loadoutID)
+		if cerr != nil {
+			return nil, fmt.Errorf("create conversation: %w", cerr)
+		}
+		boot := convBootPatch(req.Patch, id, cwd)
+		if !boot.IsEmpty() {
+			if aerr := backend.ApplyChalkboard(id, boot); aerr != nil {
+				return nil, fmt.Errorf("seed conversation chalkboard: %w", aerr)
+			}
+		}
+		snap, serr := backend.ChalkboardState(id)
+		if serr != nil {
+			return nil, fmt.Errorf("read conversation chalkboard: %w", serr)
+		}
+		cbState.Apply(chalkboard.Patch{Set: snap})
 	}
-	if cbState == nil {
-		cbState, _ = chalkboard.Open("")
-	}
+
+	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
 
 	agent := figaro.NewAgent(figaro.Config{
 		ID:         id,
@@ -340,9 +312,8 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		Outfitter:  h.outfitter,
 		Tools:      tool.DefaultRegistryFn(cwdFromChalkboard(cbState, cwd)),
 		Backend:    backend,
-		LogCache:   h.angelus.LogCache,
 		Chalkboard: cbState,
-		BootPatch:  &base,
+		InlineBoot: inlineBoot,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -362,6 +333,105 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 			Address: sockPath,
 		},
 	}, nil
+}
+
+// fork branches a conversation at its head. The live agent (if any) is
+// killed first — the node freezes and keeps its id as a read-only index
+// node — and both fresh children become dormant conversations the
+// caller can attach to.
+func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.ForkRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	if h.angelus.Backend == nil {
+		return nil, errors.New("fork: no backend (ephemeral angelus)")
+	}
+	node, ok := h.angelus.Backend.Node(req.FigaroID)
+	if !ok {
+		return nil, fmt.Errorf("fork: no aria %q", req.FigaroID)
+	}
+	if node.Kind != "conversation" {
+		return nil, fmt.Errorf("fork: %q is a %s node, not a conversation", req.FigaroID, node.Kind)
+	}
+	// Stop the live agent so it releases the node before it freezes.
+	if h.angelus.Registry.Get(req.FigaroID) != nil {
+		if err := h.angelus.Registry.Kill(req.FigaroID); err != nil {
+			return nil, fmt.Errorf("fork: kill live agent: %w", err)
+		}
+	}
+	cont, alt, err := h.angelus.Backend.Fork(req.FigaroID)
+	if err != nil {
+		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
+	}
+	slog.Info("forked figaro", "parent", req.FigaroID, "continuation", cont, "alternative", alt)
+	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt}, nil
+}
+
+// runtimeFillins returns the per-process boot keys the loadout can't
+// supply: the working dir (system.cwd/root), allowlisted env vars, and
+// the aria id (non-system, so the agent can read it from a reminder and
+// `figaro set --id <id> mantra …`).
+func runtimeFillins(ariaID, cwd string) chalkboard.Patch {
+	p := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+	if b, err := json.Marshal(ariaID); err == nil && ariaID != "" {
+		p.Set["aria_id"] = b
+	}
+	if b, err := json.Marshal(cwd); err == nil {
+		p.Set["system.cwd"] = b
+		p.Set["system.root"] = b
+	}
+	if env := chalkboard.EnvironmentPatch(); !env.IsEmpty() {
+		for k, v := range env.Set {
+			p.Set[k] = v
+		}
+	}
+	return p
+}
+
+// convBootPatch is the conversation's boot transition: runtime fill-ins
+// plus the per-create req.Patch overrides. The loadout itself is NOT
+// re-stated here — it is inherited via the fork watermark and rendered
+// in the shared loadout-node prefix.
+func convBootPatch(reqPatch *rpc.ChalkboardPatch, ariaID, cwd string) chalkboard.Patch {
+	p := runtimeFillins(ariaID, cwd)
+	if reqPatch != nil {
+		for k, v := range reqPatch.Set {
+			p.Set[k] = v
+		}
+		p.Remove = append(p.Remove, reqPatch.Remove...)
+	}
+	return p
+}
+
+// bootPatchEphemeral is the ephemeral boot: the full resolved loadout
+// (no channel to inherit from) plus runtime fill-ins. max_tokens
+// defaults when the loadout omits it.
+func bootPatchEphemeral(base chalkboard.Patch, ariaID, cwd string) chalkboard.Patch {
+	p := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+	for k, v := range base.Set {
+		p.Set[k] = v
+	}
+	p.Remove = append(p.Remove, base.Remove...)
+	for k, v := range runtimeFillins(ariaID, cwd).Set {
+		p.Set[k] = v
+	}
+	if _, ok := p.Set["system.max_tokens"]; !ok {
+		p.Set["system.max_tokens"] = json.RawMessage(`8192`)
+	}
+	return p
+}
+
+// withAriaID returns p with aria_id set (used once the ephemeral id is
+// minted).
+func withAriaID(p chalkboard.Patch, ariaID string) chalkboard.Patch {
+	if b, err := json.Marshal(ariaID); err == nil {
+		if p.Set == nil {
+			p.Set = map[string]json.RawMessage{}
+		}
+		p.Set["aria_id"] = b
+	}
+	return p
 }
 
 // patchString reads a string value from a chalkboard.Patch's Set map.
@@ -484,12 +554,36 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			}
 
 			h.fillFromChalkboard(aria.ID, &entry)
-			h.fillFromMetaSnapshot(aria.ID, &entry)
 			result = append(result, entry)
 		}
 	}
 
+	// Forest position for every entry (live + dormant), and surface
+	// frozen fork-point nodes that backend.List omits as "live".
+	for i := range result {
+		h.fillFromNode(result[i].ID, &result[i])
+	}
+
 	return rpc.ListResponse{Figaros: result}, nil
+}
+
+// fillFromNode adds the fork-forest position (vector/trunk/parent/frozen)
+// from the tree, marking frozen nodes' state.
+func (h *handlers) fillFromNode(ariaID string, entry *rpc.FigaroInfoResponse) {
+	if h.angelus.Backend == nil {
+		return
+	}
+	n, ok := h.angelus.Backend.Node(ariaID)
+	if !ok {
+		return
+	}
+	entry.Vector = n.Vector
+	entry.Trunk = n.Trunk
+	entry.Parent = n.Parent
+	entry.Frozen = n.Frozen
+	if n.Frozen && entry.State != "active" {
+		entry.State = "frozen"
+	}
 }
 
 func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -596,25 +690,22 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 	if req.FigaroID == "" {
 		return nil, errors.New("aria.read: empty figaro_id")
 	}
-	if h.angelus.LogCache == nil {
-		return nil, errors.New("aria.read: no log cache (ephemeral angelus)")
+	if h.angelus.Backend == nil {
+		return nil, errors.New("aria.read: no backend (ephemeral angelus)")
 	}
 
-	// Validate that the aria has on-disk state before touching the
-	// cache; otherwise AcquireIR would MkdirAll an empty figwal dir
-	// for typo'd IDs.
-	if fb, ok := h.angelus.Backend.(*store.FileBackend); ok {
-		ariaRoot := filepath.Join(fb.Dir(), req.FigaroID)
-		if _, err := os.Stat(ariaRoot); os.IsNotExist(err) {
-			return nil, fmt.Errorf("aria.read: no aria %q on disk", req.FigaroID)
-		}
+	// The node must exist in the tree; otherwise Open would materialize
+	// an empty branch for a typo'd id.
+	if _, ok := h.angelus.Backend.Node(req.FigaroID); !ok {
+		return nil, fmt.Errorf("aria.read: no aria %q in tree", req.FigaroID)
 	}
 
-	log, release, err := h.angelus.LogCache.AcquireIR(req.FigaroID)
+	// The backend returns the same shared, memoized IR instance the live
+	// agent holds, so reads run lock-free against its writes.
+	log, err := h.angelus.Backend.Open(req.FigaroID)
 	if err != nil {
-		return nil, fmt.Errorf("aria.read: acquire: %w", err)
+		return nil, fmt.Errorf("aria.read: open: %w", err)
 	}
-	defer release()
 
 	all := log.Read()
 	total := len(all)
@@ -661,7 +752,7 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 	}, nil
 }
 
-// restoreByID re-creates a figaro from the backend.
+// restoreByID re-creates a figaro from the backend tree.
 func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figaro, error) {
 	if f := h.angelus.Registry.Get(ariaID); f != nil {
 		return f, nil
@@ -669,29 +760,25 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figar
 	if h.angelus.Backend == nil {
 		return nil, fmt.Errorf("no backend configured")
 	}
-	arias, err := h.angelus.Backend.List()
-	if err != nil {
-		return nil, fmt.Errorf("backend list: %w", err)
+	node, ok := h.angelus.Backend.Node(ariaID)
+	if !ok {
+		return nil, fmt.Errorf("aria %q not found in tree", ariaID)
 	}
-	for _, aria := range arias {
-		if aria.ID != ariaID {
-			continue
-		}
-		return h.restoreOne(ctx, aria)
+	if node.Kind != "conversation" {
+		return nil, fmt.Errorf("aria %q is a %s node, not a conversation", ariaID, node.Kind)
 	}
-	return nil, fmt.Errorf("aria %q not found on disk", ariaID)
+	if node.Frozen {
+		return nil, fmt.Errorf("aria %q is frozen (a fork point); attach a child", ariaID)
+	}
+	return h.restoreOne(ctx, ariaID)
 }
 
-// restoreOne builds and registers a figaro from AriaInfo.
-func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.Figaro, error) {
-	if aria.MessageCount == 0 {
-		h.angelus.Backend.Remove(aria.ID)
-		return nil, fmt.Errorf("restore %s: empty aria, removed", aria.ID)
-	}
-
-	cb := h.openAriaChalkboard(aria.ID)
+// restoreOne builds and registers a figaro for an existing conversation
+// node, seeding its chalkboard from the channel.
+func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro, error) {
+	cb := h.openAriaChalkboard(ariaID)
 	if cb == nil {
-		return nil, fmt.Errorf("restore %s: chalkboard unavailable", aria.ID)
+		return nil, fmt.Errorf("restore %s: chalkboard unavailable", ariaID)
 	}
 	cbSnap := cb.Snapshot()
 	cbStr := func(key string) string {
@@ -732,10 +819,10 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 
 	prov, err := h.factory(provName, knobs)
 	if err != nil {
-		return nil, fmt.Errorf("restore %s: create provider: %w", aria.ID, err)
+		return nil, fmt.Errorf("restore %s: create provider: %w", ariaID, err)
 	}
 
-	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), aria.ID+".sock")
+	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), ariaID+".sock")
 
 	// Fall back if restored cwd no longer exists.
 	toolRoot := cwd
@@ -744,25 +831,24 @@ func (h *handlers) restoreOne(ctx context.Context, aria store.AriaInfo) (figaro.
 	}
 
 	agent := figaro.NewAgent(figaro.Config{
-		ID:         aria.ID,
+		ID:         ariaID,
 		SocketPath: sockPath,
 		Provider:   prov,
 		Outfitter:  h.outfitter,
 		Tools:      tool.DefaultRegistryFn(cwdFromChalkboard(cb, toolRoot)),
 		Backend:    h.angelus.Backend,
-		LogCache:   h.angelus.LogCache,
 		Chalkboard: cb,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
 		agent.Kill()
-		return nil, fmt.Errorf("restore %s: register: %w", aria.ID, err)
+		return nil, fmt.Errorf("restore %s: register: %w", ariaID, err)
 	}
 
 	go agent.StartSocket(ctx)
 
 	slog.Info("restored figaro",
-		"id", aria.ID, "provider", provName, "model", knobs.Model, "messages", aria.MessageCount)
+		"id", ariaID, "provider", provName, "model", knobs.Model)
 	return agent, nil
 }
 

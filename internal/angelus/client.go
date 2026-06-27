@@ -32,12 +32,11 @@ func (c *Client) Create(ctx context.Context, loadout string, patch *rpc.Chalkboa
 	return &resp, err
 }
 
-// CreateWithID creates a figaro with a specific id.
-func (c *Client) CreateWithID(ctx context.Context, id, loadout string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
-	var resp rpc.CreateResponse
-	err := c.cli.Call(ctx, rpc.MethodCreate, rpc.CreateRequest{
-		ID: id, Loadout: loadout, Patch: patch,
-	}, &resp)
+// Fork branches a conversation at its head: the node freezes and both
+// children get fresh system-minted ids.
+func (c *Client) Fork(ctx context.Context, figaroID string) (*rpc.ForkResponse, error) {
+	var resp rpc.ForkResponse
+	err := c.cli.Call(ctx, rpc.MethodFork, rpc.ForkRequest{FigaroID: figaroID}, &resp)
 	return &resp, err
 }
 

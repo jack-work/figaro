@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,11 +15,45 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// ariaBackend constructs the aria storage backend, rooted under
-// stateDir() so FIGARO_STATE_DIR / XDG_STATE_HOME isolate it.
+// ariaBackend constructs the aria storage backend (the XwalBackend fork
+// tree), rooted under stateDir() so FIGARO_STATE_DIR / XDG_STATE_HOME
+// isolate it. A pre-fork-tree (legacy FileBackend) store is backed up to
+// a timestamped sibling and a fresh tree is started — no dual-read.
 func ariaBackend() (store.Backend, error) {
 	dir := filepath.Join(stateDir(), "arias")
-	return store.NewFileBackend(dir)
+	if err := backupLegacyAriaDir(dir); err != nil {
+		return nil, err
+	}
+	return store.NewXwalBackend(dir)
+}
+
+// backupLegacyAriaDir renames a legacy aria store (per-aria subdirs, no
+// index.json) out of the way so a fresh fork tree can take its place.
+// No-op for an existing tree (index.json present), a fresh/absent dir,
+// or an empty dir.
+func backupLegacyAriaDir(dir string) error {
+	if _, err := os.Stat(filepath.Join(dir, "index.json")); err == nil {
+		return nil // already a fork tree
+	}
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil // fresh
+	}
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		return nil // empty; nothing to preserve
+	}
+	bak := dir + ".legacy-" + time.Now().Format("20060102-150405")
+	if err := os.Rename(dir, bak); err != nil {
+		if os.IsNotExist(err) {
+			return nil // raced another process that already moved it
+		}
+		return err
+	}
+	slog.Warn("backed up legacy aria store; starting a fresh fork tree", "from", dir, "to", bak)
+	return nil
 }
 
 func angelusRuntimeDir() string {

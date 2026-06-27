@@ -54,6 +54,7 @@ type ErrorData struct {
 
 const (
 	MethodCreate      = "figaro.create"
+	MethodFork        = "figaro.fork"
 	MethodKill        = "figaro.kill"
 	MethodList        = "figaro.list"
 	MethodAttach      = "figaro.attach"
@@ -164,12 +165,20 @@ type FigaroInfoResponse struct {
 	Mantra           string `json:"mantra"`             // agent-maintained essence phrase (chalkboard "mantra")
 	Cwd              string `json:"cwd"`                // working directory (chalkboard "system.cwd")
 	BoundPIDs        []int  `json:"bound_pids"`
+
+	// Fork-forest position (conversation nodes). Vector is the
+	// child-index path (0, 0.0, 0.1, …); Trunk is the thread id that
+	// flows down the continuation line; Parent is the node forked from;
+	// Frozen marks a fork point (read-only index node).
+	Vector []int  `json:"vector,omitempty"`
+	Trunk  string `json:"trunk,omitempty"`
+	Parent string `json:"parent,omitempty"`
+	Frozen bool   `json:"frozen,omitempty"`
 }
 
-// CreateRequest names the loadout for a new aria. ID is optional;
-// empty = auto-generated.
+// CreateRequest names the loadout for a new aria. The system mints the
+// aria id; callers cannot choose it.
 type CreateRequest struct {
-	ID        string           `json:"id,omitempty"`
 	Loadout   string           `json:"loadout,omitempty"`
 	Patch     *ChalkboardPatch `json:"patch,omitempty"`
 	Ephemeral bool             `json:"ephemeral,omitempty"`
@@ -178,6 +187,19 @@ type CreateRequest struct {
 type CreateResponse struct {
 	FigaroID string   `json:"figaro_id"`
 	Endpoint Endpoint `json:"endpoint"`
+}
+
+// ForkRequest branches a conversation at its head.
+type ForkRequest struct {
+	FigaroID string `json:"figaro_id"`
+}
+
+// ForkResponse returns the two fresh child ids. The parent freezes and
+// keeps its id as a navigable (read-only) index node.
+type ForkResponse struct {
+	Parent       string `json:"parent"`
+	Continuation string `json:"continuation"`
+	Alternative  string `json:"alternative"`
 }
 
 // Endpoint describes how to connect to a figaro.

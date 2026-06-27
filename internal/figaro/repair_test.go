@@ -1,7 +1,6 @@
 package figaro
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -137,19 +136,25 @@ func TestAppendSentinel_NoToolCallsNoOp(t *testing.T) {
 }
 
 // TestAppendSentinel_FileBackedPersists drives the same flow against a
-// real FileStream. The dangling state is written to disk; the function
-// inserts a sentinel; a fresh OpenFileStream sees it on reload.
+// real figwal-backed conversation. The dangling state is written to
+// disk; the function inserts a sentinel; reopening the backend sees it
+// on reload (the cachedLog re-materializes from the segments).
 func TestAppendSentinel_FileBackedPersists(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "aria.jsonl")
 
-	s1, err := store.OpenFileLog[message.Message](path)
+	b1, err := store.NewXwalBackend(dir)
 	require.NoError(t, err)
-	_, err = s1.Append(store.Entry[message.Message]{
+	l, err := b1.CreateLoadout("d", message.Patch{})
+	require.NoError(t, err)
+	conv, err := b1.CreateConversation(l)
+	require.NoError(t, err)
+	log1, err := b1.Open(conv)
+	require.NoError(t, err)
+	_, err = log1.Append(store.Entry[message.Message]{
 		Payload: message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")}},
 	})
 	require.NoError(t, err)
-	_, err = s1.Append(store.Entry[message.Message]{
+	_, err = log1.Append(store.Entry[message.Message]{
 		Payload: message.Message{
 			Role:       message.RoleAssistant,
 			Content:    []message.Content{toolCall("tc_disk", "bash")},
@@ -157,20 +162,25 @@ func TestAppendSentinel_FileBackedPersists(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	require.NoError(t, s1.Close())
+	require.NoError(t, b1.Close())
 
 	// Reopen, run repair, close.
-	s2, err := store.OpenFileLog[message.Message](path)
+	b2, err := store.NewXwalBackend(dir)
 	require.NoError(t, err)
-	appendInterruptSentinelIfDangling(s2, "aria-disk")
-	require.NoError(t, s2.Close())
+	log2, err := b2.Open(conv)
+	require.NoError(t, err)
+	appendInterruptSentinelIfDangling(log2, conv)
+	require.NoError(t, b2.Close())
 
 	// Final reopen sees the sentinel as the tail.
-	s3, err := store.OpenFileLog[message.Message](path)
+	b3, err := store.NewXwalBackend(dir)
 	require.NoError(t, err)
-	defer s3.Close()
-	entries := s3.Read()
-	require.Len(t, entries, 3)
-	assert.True(t, message.IsInterruptSentinel(entries[2].Payload))
-	assert.Equal(t, []string{"tc_disk"}, message.DanglingToolCallIDs(entries[2].Payload))
+	defer b3.Close()
+	log3, err := b3.Open(conv)
+	require.NoError(t, err)
+	entries := log3.Read()
+	require.NotEmpty(t, entries)
+	tail := entries[len(entries)-1].Payload
+	assert.True(t, message.IsInterruptSentinel(tail))
+	assert.Equal(t, []string{"tc_disk"}, message.DanglingToolCallIDs(tail))
 }

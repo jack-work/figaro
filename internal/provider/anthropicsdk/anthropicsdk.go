@@ -118,7 +118,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 
 	cache := p.cacheFor(in.AriaID)
-	perMessage, lts := p.catchUp(in.FigLog, cache)
+	perMessage, lts := p.catchUp(in.FigLog, cache, in.Chalkboard)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -161,6 +161,9 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 	if len(msg.Content) == 0 {
 		return nil
+	}
+	if msg.Timestamp == 0 {
+		msg.Timestamp = time.Now().UnixMilli()
 	}
 
 	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})

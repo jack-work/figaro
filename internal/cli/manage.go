@@ -2,9 +2,12 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -13,8 +16,12 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 )
 
-// runList prints the registry of all figaros (live and dormant).
-func runList(loaded *config.Loaded) {
+// runList prints the conversation forest (live, dormant, and frozen fork
+// points), ordered as a depth-first walk of the fork tree so each trunk's
+// lineage reads top-to-bottom. The leading VECTOR column (0, 0.0, 0.1, …)
+// shows fork depth + branch; MANTRA is the thread's essence. With jsonOut
+// the raw entries are emitted instead.
+func runList(loaded *config.Loaded, jsonOut bool) {
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -24,9 +31,25 @@ func runList(loaded *config.Loaded) {
 			die("list: %s", err)
 		}
 
+		// Depth-first preorder by vector: component-wise compare, so
+		// 0 < 0.0 < 0.0.0 < 0.1 < 0.1.0. Vectorless entries sink last.
+		figs := resp.Figaros
+		sort.SliceStable(figs, func(i, j int) bool {
+			return vectorLess(figs[i].Vector, figs[j].Vector)
+		})
+
+		if jsonOut {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(figs); err != nil {
+				die("list --json: %s", err)
+			}
+			return nil
+		}
+
 		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(w, "\tID\tSTATE\tAGE\tMODEL\tMSGS\tCONTEXT\tCACHE\tPIDS\tCWD\tMANTRA\n")
-		for _, f := range resp.Figaros {
+		fmt.Fprintf(w, "\tVECTOR\tMANTRA\tID\tSTATE\tAGE\tMODEL\tMSGS\tCONTEXT\tCACHE\tPIDS\tCWD\n")
+		for _, f := range figs {
 			pids := make([]string, len(f.BoundPIDs))
 			for i, p := range f.BoundPIDs {
 				pids[i] = fmt.Sprintf("%d", p)
@@ -54,13 +77,46 @@ func runList(loaded *config.Loaded) {
 			if slices.Contains(f.BoundPIDs, os.Getppid()) {
 				current = "*"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
-				current, f.ID, f.State, relAge(f.LastActive), model, f.MessageCount,
-				ctxStr, cacheStr, pidStr, shortCwd(f.Cwd), dash(f.Mantra))
+			// Indent the mantra by fork depth so the limb structure reads
+			// visually alongside the dotted vector.
+			depth := 0
+			if len(f.Vector) > 0 {
+				depth = len(f.Vector) - 1
+			}
+			mantra := strings.Repeat("  ", depth) + dash(f.Mantra)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
+				current, vectorString(f.Vector), mantra, f.ID, f.State, relAge(f.LastActive),
+				model, f.MessageCount, ctxStr, cacheStr, pidStr, shortCwd(f.Cwd))
 		}
 		w.Flush()
 		return nil
 	})
+}
+
+// vectorString renders a fork vector as a dotted path ("0.1.0"); "-" if empty.
+func vectorString(v []int) string {
+	if len(v) == 0 {
+		return "-"
+	}
+	parts := make([]string, len(v))
+	for i, c := range v {
+		parts[i] = strconv.Itoa(c)
+	}
+	return strings.Join(parts, ".")
+}
+
+// vectorLess orders fork vectors as a depth-first preorder; an empty
+// vector sorts after any non-empty one.
+func vectorLess(a, b []int) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return len(a) != 0 // non-empty before empty
+	}
+	for i := 0; i < len(a) && i < len(b); i++ {
+		if a[i] != b[i] {
+			return a[i] < b[i]
+		}
+	}
+	return len(a) < len(b)
 }
 
 // dash returns "-" for an empty string.
@@ -125,6 +181,41 @@ func runKillByID(loaded *config.Loaded, figaroID string) {
 			die("kill: %s", err)
 		}
 		fmt.Fprintf(os.Stderr, "killed %s\n", figaroID)
+		return nil
+	})
+}
+
+// runFork branches a conversation at its head. The parent freezes
+// (keeps its id as an index node); two fresh children are minted. This
+// shell rebinds to the continuation so work carries on there.
+func runFork(loaded *config.Loaded, idFlag string, args []string) {
+	ariaID := idFlag
+	if ariaID == "" && len(args) > 0 {
+		ariaID = args[0]
+	}
+	WithAngelus(loaded, func(acli *angelus.Client) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		ppid := os.Getppid()
+		if ariaID == "" {
+			r, err := acli.Resolve(ctx, ppid)
+			if err != nil || !r.Found {
+				die("fork: no aria bound to this shell (try: --id <id> or <id>)")
+			}
+			ariaID = r.FigaroID
+		}
+		resp, err := acli.Fork(ctx, ariaID)
+		if err != nil {
+			die("fork: %s", err)
+		}
+		// Rebind this shell to the continuation.
+		acli.Unbind(ctx, ppid)
+		if err := acli.Bind(ctx, ppid, resp.Continuation); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not bind shell to continuation: %s\n", err)
+		}
+		fmt.Fprintf(os.Stderr,
+			"forked %s (now a frozen fork point)\n  continuation %s  (this shell)\n  alternative  %s  (attend it to diverge)\n",
+			resp.Parent, resp.Continuation, resp.Alternative)
 		return nil
 	})
 }

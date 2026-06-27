@@ -6,6 +6,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -44,8 +45,11 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) {
 }
 
 // catchUp encodes any figLog entries not yet in the cache and
-// returns per-message wire bytes plus their logical times.
-func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage]) ([][]json.RawMessage, []uint64) {
+// returns per-message wire bytes plus their logical times. Chalkboard
+// transitions are sourced per-LT from chalk (the reducible channel); a
+// nil chalk falls back to whatever patches ride inline on the IR tic
+// (ephemeral arias, tests).
+func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
 	fp := p.Fingerprint()
 	snap := chalkboard.Snapshot{}
 	var perMessage [][]json.RawMessage
@@ -53,6 +57,12 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 	for _, e := range figLog.Read() {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
+		if msg.Role == message.RoleGenesis {
+			continue // structural birth tic; never rendered
+		}
+		if chalk != nil {
+			msg.Patches = chalk.PatchesAt(e.LT)
+		}
 		var bytes []json.RawMessage
 		if cache != nil {
 			if existing, ok := cache.Lookup(msg.LogicalTime); ok && len(existing.Payload) > 0 {

@@ -51,40 +51,33 @@ type Config struct {
 	Tools      *tool.Registry
 	Backend    store.Backend // nil = ephemeral
 
-	// LogCache is the shared process-wide refcounted cache of aria
-	// logs. When set, NewAgent acquires the IR log through the cache
-	// (so a concurrent read RPC sees the same instance) and releases
-	// on Kill. When nil, the agent falls back to Backend.Open.
-	LogCache *store.LogCache
-
-	// Chalkboard carries the aria's state. Nil creates an in-memory
-	// one. Empty at first prompt means fresh aria. Closed by Kill.
+	// Chalkboard carries the aria's state, pre-seeded from the
+	// reducible chalkboard channel (backed) or empty (ephemeral). The
+	// channel is the durable truth; State is the in-memory hot view the
+	// agent reads (model/max_tokens/cwd) and write-throughs on set.
+	// Nil creates an empty in-memory one. Closed by Kill.
 	Chalkboard *chalkboard.State
 
-	// BootPatch is applied to the chalkboard AND folded onto the
-	// first user tic of a fresh aria (figLog empty). Carries the
-	// loadout-resolved values (credo, skills, model knobs) plus
-	// runtime fill-ins (system.cwd, system.root, system.max_tokens).
-	// Ignored when the aria is restored — the chalkboard file already
-	// holds those keys and the log already records their arrival.
-	BootPatch *chalkboard.Patch
+	// InlineBoot is the ephemeral-only boot patch. Backed arias hold
+	// their boot transition in the chalkboard channel; ephemeral arias
+	// have no channel, so this patch is folded onto the first IR tic so
+	// the loadout reminders still render. Ignored when Backend != nil.
+	InlineBoot *chalkboard.Patch
 }
 
 // Agent is the Figaro implementation.
 // TODO: child-process isolation via --figaro flag.
 type Agent struct {
-	id            string
-	socketPath    string
-	prov          provider.Provider
-	outfitter     *outfit.Outfitter
-	bootPatch     *chalkboard.Patch
-	tools         *tool.Registry
-	figLog        store.Log[message.Message]
-	figLogRelease func() // nil unless figLog came from LogCache
-	logCache      *store.LogCache
-	backend       store.Backend // nil = ephemeral
-	chalkboard    *chalkboard.State
-	derived       *derivedFanout // nil = ephemeral; per-figaro durable derivations
+	id         string
+	socketPath string
+	prov       provider.Provider
+	outfitter  *outfit.Outfitter
+	tools      *tool.Registry
+	inlineBoot *chalkboard.Patch // ephemeral first-tic boot fold
+	figLog     store.Log[message.Message]
+	backend    store.Backend // nil = ephemeral
+	chalkboard *chalkboard.State
+	derived    *derivedFanout // nil = ephemeral; per-figaro durable derivations
 
 	inbox *Inbox
 
@@ -130,10 +123,9 @@ func NewAgent(cfg Config) *Agent {
 		socketPath: cfg.SocketPath,
 		prov:       cfg.Provider,
 		outfitter:  cfg.Outfitter,
-		bootPatch:  cfg.BootPatch,
 		tools:      cfg.Tools,
+		inlineBoot: cfg.InlineBoot,
 		backend:    cfg.Backend,
-		logCache:   cfg.LogCache,
 		chalkboard: cfg.Chalkboard,
 		createdAt:  time.Now(),
 		lastActive: time.Now(),
@@ -144,22 +136,9 @@ func NewAgent(cfg Config) *Agent {
 	a.figLog = a.newLog()
 	appendInterruptSentinelIfDangling(a.figLog, a.id)
 	if a.chalkboard == nil {
-		// Ephemeral arias get an in-memory chalkboard.
+		// Ephemeral arias get an in-memory chalkboard. Backed arias are
+		// pre-seeded from the reducible chalkboard channel by the caller.
 		a.chalkboard, _ = chalkboard.Open("")
-	}
-	// If chalkboard loaded empty, replay stream patches to rebuild it.
-	// On-disk chalkboard.json is just a cache of this projection.
-	if len(a.chalkboard.Snapshot()) == 0 {
-		replayed := false
-		for _, entry := range a.figLog.Read() {
-			for _, p := range entry.Payload.Patches {
-				a.chalkboard.Apply(p)
-				replayed = true
-			}
-		}
-		if replayed {
-			_ = a.chalkboard.Save()
-		}
 	}
 	a.inbox = NewInbox(ctx)
 
@@ -173,18 +152,11 @@ func NewAgent(cfg Config) *Agent {
 	return a
 }
 
-// newLog opens the figaro IR log, preferring the shared LogCache so
-// concurrent readers see the same instance. Records the release
-// callback when one is returned; Kill calls it.
+// newLog opens the figaro IR log. The backend owns and memoizes one
+// shared instance per aria (so a concurrent aria.read RPC sees the same
+// rows, lock-free), and closes it on Fork/Remove/Close — the agent never
+// closes what Open returns.
 func (a *Agent) newLog() store.Log[message.Message] {
-	if a.logCache != nil {
-		log, release, err := a.logCache.AcquireIR(a.id)
-		if err == nil {
-			a.figLogRelease = release
-			return log
-		}
-		slog.Warn("log cache acquire (falling back)", "aria", a.id, "err", err)
-	}
 	if a.backend == nil {
 		return store.NewMemLog[message.Message]()
 	}
@@ -333,12 +305,10 @@ func (a *Agent) Kill() {
 	a.subs = nil
 	a.mu.Unlock()
 
-	// When the log came from the LogCache, the cache owns the
-	// underlying instance and closes it on eviction. We only call
-	// Close directly for ephemeral / fallback logs.
-	if a.figLogRelease != nil {
-		a.figLogRelease()
-	} else if err := a.figLog.Close(); err != nil {
+	// The backend owns the shared IR instance for backed arias and
+	// closes it on Fork/Remove/Close; cachedLog.Close is a no-op there.
+	// For ephemeral MemLog this is the real close.
+	if err := a.figLog.Close(); err != nil {
 		slog.Error("figLog close", "aria", a.id, "err", err)
 	}
 	if a.chalkboard != nil {
@@ -425,23 +395,50 @@ func (a *Agent) act(ctx context.Context) {
 }
 
 // applyControlPatch persists a state-only patch. No LLM round-trip.
+// Backed arias append it to the reducible chalkboard channel (keyed to
+// the next IR LT, so it rides the next tic as a transition); ephemeral
+// arias fold it onto an IR control-tic (no channel to hold it).
 func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Set), "remove", len(patch.Remove))
-	tic := message.Message{
-		Role:      message.RoleUser,
-		Patches:   []message.Patch{patch},
-		Timestamp: time.Now().UnixMilli(),
-	}
-	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
-		slog.Error(kind+" append", "aria", a.id, "err", err)
-		return
+	if a.backend != nil {
+		if err := a.backend.ApplyChalkboard(a.id, patch); err != nil {
+			slog.Error(kind+" chalkboard append", "aria", a.id, "err", err)
+			return
+		}
+	} else {
+		tic := message.Message{
+			Role:      message.RoleUser,
+			Patches:   []message.Patch{patch},
+			Timestamp: time.Now().UnixMilli(),
+		}
+		if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
+			slog.Error(kind+" append", "aria", a.id, "err", err)
+			return
+		}
 	}
 	a.chalkboard.Apply(patch)
-	if err := a.chalkboard.Save(); err != nil {
-		slog.Error(kind+" chalkboard save", "aria", a.id, "err", err)
-	}
 	a.derived.Tick(0, a.chalkboard.Snapshot())
 }
+
+// chalkAccessor returns the per-LT transition source for the provider:
+// for backed arias, the reducible chalkboard channel grouped by IR LT;
+// nil for ephemeral (the provider falls back to inline IR patches).
+func (a *Agent) chalkAccessor() provider.Chalkboard {
+	if a.backend == nil {
+		return nil
+	}
+	m, err := a.backend.ChalkboardPatches(a.id)
+	if err != nil {
+		slog.Warn("chalkboard patches (transitions disabled this turn)", "aria", a.id, "err", err)
+		return nil
+	}
+	return patchMap(m)
+}
+
+// patchMap implements provider.Chalkboard over a pre-read LT->patches map.
+type patchMap map[uint64][]message.Patch
+
+func (m patchMap) PatchesAt(lt uint64) []message.Patch { return m[lt] }
 
 // endTurn fans out turn.done and persists chalkboard + meta.
 func (a *Agent) endTurn(reason string) {
@@ -468,12 +465,38 @@ func (a *Agent) endTurn(reason string) {
 	}
 	a.mu.Unlock()
 
-	if a.chalkboard != nil {
-		if err := a.chalkboard.Save(); err != nil {
-			slog.Error("chalkboard save", "aria", a.id, "err", err)
-		}
-	}
+	a.writeMeta()
 	a.derived.Tick(0, a.chalkboard.Snapshot())
+}
+
+// writeMeta persists the per-aria summary sidecar so `figaro list` shows
+// counts/tokens/recency for dormant arias. Backed arias only.
+func (a *Agent) writeMeta() {
+	if a.backend == nil {
+		return
+	}
+	a.mu.RLock()
+	meta := &store.AriaMeta{
+		TokensIn:         a.tokensIn,
+		TokensOut:        a.tokensOut,
+		CacheReadTokens:  a.cacheRead,
+		CacheWriteTokens: a.cacheWrite,
+		LastActiveMS:     a.lastActive.UnixMilli(),
+	}
+	a.mu.RUnlock()
+	for _, e := range a.figLog.Read() {
+		if message.IsGenesis(e.Payload) {
+			continue
+		}
+		meta.MessageCount++
+		if e.Payload.Role == message.RoleAssistant {
+			meta.TurnCount++
+		}
+		meta.LastFigaroLT = e.LT
+	}
+	if err := a.backend.SetMeta(a.id, meta); err != nil {
+		slog.Warn("write aria meta", "aria", a.id, "err", err)
+	}
 }
 
 func (a *Agent) toolDefs() []provider.Tool {

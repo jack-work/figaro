@@ -10,7 +10,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
@@ -66,7 +65,7 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	ep, err := resolveOrCreate(ctx, acli, loaded, ariaID)
+	ep, err := resolveAria(ctx, acli, ariaID)
 	if err != nil {
 		die("%s", err)
 	}
@@ -74,8 +73,10 @@ func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings
 	mustPromptFigaro(ctx, ep, ariaID, prompt, loaded, set)
 }
 
-// resolveOrCreate attaches or creates a named aria.
-func resolveOrCreate(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ariaID string) (transport.Endpoint, error) {
+// resolveAria attaches to an existing named aria. Aria ids are
+// system-minted, so an unknown id is an error — a new conversation
+// comes from the no-id flow (`figaro`), not by naming one here.
+func resolveAria(ctx context.Context, acli *angelus.Client, ariaID string) (transport.Endpoint, error) {
 	attachCtx, attachCancel := context.WithTimeout(ctx, 10*time.Second)
 	resp, err := acli.Attach(attachCtx, ariaID)
 	attachCancel()
@@ -87,25 +88,10 @@ func resolveOrCreate(ctx context.Context, acli *angelus.Client, loaded *config.L
 		waitForSocket(ep.Address, 3*time.Second)
 		return ep, nil
 	}
-
-	// Not found -> create; other errors -> propagate.
-	msg := err.Error()
-	if !strings.Contains(msg, "not found") {
-		return transport.Endpoint{}, fmt.Errorf("attach %q: %w", ariaID, err)
+	if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "not in tree") {
+		return transport.Endpoint{}, fmt.Errorf("no such aria %q (ids are system-minted; run `figaro` to start one)", ariaID)
 	}
-
-	createCtx, createCancel := context.WithTimeout(ctx, 10*time.Second)
-	defer createCancel()
-	createResp, err := createWithFirstRun(createCtx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateWithID(createCtx, ariaID, "", nil) })
-	if err != nil {
-		return transport.Endpoint{}, fmt.Errorf("create %q: %w", ariaID, err)
-	}
-	ep := transport.Endpoint{
-		Scheme:  createResp.Endpoint.Scheme,
-		Address: createResp.Endpoint.Address,
-	}
-	waitForSocket(ep.Address, 3*time.Second)
-	return ep, nil
+	return transport.Endpoint{}, fmt.Errorf("attach %q: %w", ariaID, err)
 }
 
 // waitForSocket polls until the socket exists or timeout.

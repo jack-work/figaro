@@ -235,11 +235,14 @@ Flags:
 		Name:    "list",
 		Aliases: []string{"ls"},
 		Group:   "Session",
-		Short:   "List all arias (live and dormant)",
-		Usage:   "list",
+		Short:   "List the conversation forest (live, dormant, frozen)",
+		Usage:   "list [-j|--json]",
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "Emit entries as JSON"},
+		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runList(ld)
+			runList(ld, ctx.BoolFlag("json"))
 			return nil
 		},
 	})
@@ -269,6 +272,24 @@ Flags:
 			runDetach(ld)
 			return nil
 		},
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:    "fork",
+		Group:   "Session",
+		Short:   "Branch a conversation: freeze it, mint two children",
+		Usage:   "fork [--id <id> | <id>]",
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id (defaults to this shell's)"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			runFork(ld, ctx.Flag("id"), ctx.Args)
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
 	})
 
 	r.Register(&cmdkit.Command{
