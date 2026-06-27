@@ -17,7 +17,16 @@ const (
 	// emitting a provider-acceptable surrogate (e.g., a synthetic
 	// tool_result block) into the wire stream.
 	RoleSystemInterrupt Role = "system.interrupt"
+
+	// RoleGenesis marks a node's birth tic in the IR — written when a
+	// fork node is created (null root, loadout node, conversation) so the
+	// log is non-empty and forkable, and to anchor provenance. It is
+	// filtered from provider rendering (it is structural, not a turn).
+	RoleGenesis Role = "genesis"
 )
+
+// IsGenesis reports whether m is a structural birth tic.
+func IsGenesis(m Message) bool { return m.Role == RoleGenesis }
 
 // InterruptReason classifies why a system.interrupt sentinel was
 // inserted. Travels on each interrupt content block as Text-prefixed
