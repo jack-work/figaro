@@ -210,6 +210,10 @@ func (b *XwalBackend) Fork(ariaID string) (cont, alt string, err error) {
 	b.evict(ariaID) // it becomes frozen; drop any cached handle
 	return b.store.Fork(ariaID)
 }
+func (b *XwalBackend) ForkAt(ariaID string, atMainLT uint64) (cont, alt string, err error) {
+	b.evict(ariaID)
+	return b.store.ForkAt(ariaID, atMainLT)
+}
 
 func (b *XwalBackend) Node(id string) (NodeView, bool) { return b.store.Node(id) }
 func (b *XwalBackend) Nodes() []NodeView               { return b.store.Nodes() }

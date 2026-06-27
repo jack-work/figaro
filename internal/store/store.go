@@ -69,6 +69,12 @@ type Backend interface {
 	// keeps its id as an index node; both children get fresh ids.
 	Fork(ariaID string) (cont, alt string, err error)
 
+	// ForkAt branches a conversation at main-LT atMainLT (an interior
+	// fork): the shared prefix below atMainLT freezes, the original
+	// suffix becomes the continuation, and a fresh alternative starts
+	// empty from atMainLT. Both children get fresh ids.
+	ForkAt(ariaID string, atMainLT uint64) (cont, alt string, err error)
+
 	// Node / Nodes expose the tree for lineage + listing.
 	Node(id string) (NodeView, bool)
 	Nodes() []NodeView

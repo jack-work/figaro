@@ -189,9 +189,12 @@ type CreateResponse struct {
 	Endpoint Endpoint `json:"endpoint"`
 }
 
-// ForkRequest branches a conversation at its head.
+// ForkRequest branches a conversation. AtMainLT == 0 forks at the head;
+// a positive value is an interior fork at that IR logical time (the
+// shared prefix below it freezes).
 type ForkRequest struct {
 	FigaroID string `json:"figaro_id"`
+	AtMainLT uint64 `json:"at_main_lt,omitempty"`
 }
 
 // ForkResponse returns the two fresh child ids. The parent freezes and

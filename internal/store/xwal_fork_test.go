@@ -111,3 +111,53 @@ func TestXwalStore_ForkConversation(t *testing.T) {
 		t.Fatalf("fork of live child failed: %v", err)
 	}
 }
+
+func TestXwalStore_ForkAt(t *testing.T) {
+	dir := t.TempDir()
+	s, err := OpenXwalStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, _ := s.CreateLoadout("default", patchSet(map[string]string{"system.credo": "x"}))
+	c, _ := s.CreateConversation(l)
+	appendIR(t, s, c, "a")
+	appendIR(t, s, c, "b")
+	appendIR(t, s, c, "c")
+
+	// Find the LT of "c" (the tail) and fork there: history below it
+	// ([a, b]) is shared; the suffix [c] becomes the continuation.
+	x, _ := s.OpenNode(c)
+	tail := irLast(x)
+	x.Close()
+
+	cont, alt, err := s.ForkAt(c, tail)
+	if err != nil {
+		t.Fatalf("forkAt: %v", err)
+	}
+	if !s.idx.Nodes[c].Frozen {
+		t.Fatal("parent not frozen after interior fork")
+	}
+
+	cx, _ := s.OpenNode(cont)
+	cg := irTexts(t, cx)
+	cx.Close()
+	ax, _ := s.OpenNode(alt)
+	ag := irTexts(t, ax)
+	ax.Close()
+
+	// Continuation keeps the full line [a, b, c]; the alternative shares
+	// the frozen prefix [a, b] only.
+	if len(cg) != 3 || cg[2] != "c" {
+		t.Fatalf("continuation = %v, want [a b c]", cg)
+	}
+	if len(ag) != 2 || ag[0] != "a" || ag[1] != "b" {
+		t.Fatalf("alternative = %v, want [a b]", ag)
+	}
+	// Continuation inherits the trunk; alternative founds its own.
+	if s.idx.Nodes[cont].Trunk != s.idx.Nodes[c].Trunk {
+		t.Fatal("continuation should inherit the trunk")
+	}
+	if s.idx.Nodes[alt].Trunk != alt {
+		t.Fatal("alternative should found its own trunk")
+	}
+}

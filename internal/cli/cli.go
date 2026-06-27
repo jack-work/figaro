@@ -140,12 +140,12 @@ output) so ranges can target them.
 		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-x] [-n] [-y] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding). With --id, targets
-the named aria, creating it if it does not yet exist.
+the named aria, which must already exist (aria ids are system-minted).
 
 Persistence (--ephemeral) and formatting (--raw) are orthogonal.
 
 Flags:
-  --id <id>      Target a specific aria (create if missing)
+  --id <id>      Target a specific existing aria
   -e, --ephemeral
                  Spin a one-shot in-memory aria; kill it on completion.
                  Contradicts --id. Says nothing about formatting.
@@ -275,18 +275,32 @@ Flags:
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:    "fork",
-		Group:   "Session",
-		Short:   "Branch a conversation: freeze it, mint two children",
-		Usage:   "fork [--id <id> | <id>]",
+		Name:  "fork",
+		Group: "Session",
+		Short: "Branch a conversation: freeze it, mint two children",
+		Usage: "fork [--id <id> | <id>[:<LT>]] [--stay]",
+		Long: `Branch a conversation. The target freezes (its id becomes a
+read-only index node) and two fresh children are minted: the
+continuation (the original line) and an empty alternative.
+
+  figaro fork                 branch the bound aria at its head
+  figaro fork <id>            branch another aria at its head (maintenance)
+  figaro fork <id>:42         interior fork — history below LT 42 is shared,
+                              the original suffix becomes the continuation
+  figaro fork --stay          branch but do not rebind this shell
+
+Forking your own bound aria rebinds this shell to the continuation
+(same trunk/mantra, new id) since the bound aria just froze. Forking
+any other aria, or passing --stay, leaves your session untouched.`,
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (defaults to this shell's)"},
+			{Long: "id", Description: "Target aria id (defaults to this shell's); :<LT> for an interior fork"},
+			{Long: "stay", IsBool: true, Description: "Do not rebind this shell to the continuation"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runFork(ld, ctx.Flag("id"), ctx.Args)
+			runFork(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("stay"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,

@@ -360,11 +360,17 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			return nil, fmt.Errorf("fork: kill live agent: %w", err)
 		}
 	}
-	cont, alt, err := h.angelus.Backend.Fork(req.FigaroID)
+	var cont, alt string
+	var err error
+	if req.AtMainLT > 0 {
+		cont, alt, err = h.angelus.Backend.ForkAt(req.FigaroID, req.AtMainLT)
+	} else {
+		cont, alt, err = h.angelus.Backend.Fork(req.FigaroID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
-	slog.Info("forked figaro", "parent", req.FigaroID, "continuation", cont, "alternative", alt)
+	slog.Info("forked figaro", "parent", req.FigaroID, "at", req.AtMainLT, "continuation", cont, "alternative", alt)
 	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt}, nil
 }
 

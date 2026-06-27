@@ -304,7 +304,7 @@ model = "mock-model"
 	fcli.Close()
 
 	// Fork: two fresh children, parent frozen.
-	fr, err := acli.Fork(ctx, created.FigaroID)
+	fr, err := acli.Fork(ctx, created.FigaroID, 0)
 	require.NoError(t, err)
 	require.NotEqual(t, fr.Continuation, fr.Alternative)
 	require.NotEqual(t, created.FigaroID, fr.Continuation)
@@ -351,11 +351,11 @@ model = "mock-model"
 	// A fresh continuation is immediately re-forkable (no turn needed) —
 	// it owns a genesis tic so the chalkboard seed and the next fork point
 	// don't collide.
-	fr2, err := acli.Fork(ctx, fr.Continuation)
+	fr2, err := acli.Fork(ctx, fr.Continuation, 0)
 	require.NoError(t, err, "fresh continuation must be re-forkable")
 	require.NotEqual(t, fr2.Continuation, fr2.Alternative)
 
 	// The frozen parent refuses a re-fork.
-	_, err = acli.Fork(ctx, created.FigaroID)
+	_, err = acli.Fork(ctx, created.FigaroID, 0)
 	require.Error(t, err, "frozen node cannot be re-forked")
 }

@@ -185,37 +185,78 @@ func runKillByID(loaded *config.Loaded, figaroID string) {
 	})
 }
 
-// runFork branches a conversation at its head. The parent freezes
-// (keeps its id as an index node); two fresh children are minted. This
-// shell rebinds to the continuation so work carries on there.
-func runFork(loaded *config.Loaded, idFlag string, args []string) {
-	ariaID := idFlag
-	if ariaID == "" && len(args) > 0 {
-		ariaID = args[0]
+// runFork branches a conversation. The target freezes (keeps its id as
+// an index node) and two fresh children are minted: the continuation
+// (the original line) and an empty alternative.
+//
+// Target forms: bare (the shell-bound aria), `<id>`, or `<id>:<LT>` for
+// an interior fork at that IR logical time (history below <LT> is shared;
+// the original suffix becomes the continuation).
+//
+// Rescoping: when you fork your OWN bound aria, the shell rebinds to the
+// continuation so work carries on seamlessly (same trunk/mantra, new id)
+// — the bound aria froze, so you must move. Forking any OTHER aria, or
+// passing --stay, is a maintenance fork: your session is left untouched.
+func runFork(loaded *config.Loaded, idFlag string, args []string, stay bool) {
+	target := idFlag
+	if target == "" && len(args) > 0 {
+		target = args[0]
 	}
+	// Split an optional :<LT> suffix off the target.
+	var atMainLT uint64
+	if i := strings.LastIndex(target, ":"); i >= 0 {
+		lt, err := strconv.ParseUint(target[i+1:], 10, 64)
+		if err != nil {
+			die("fork: bad :<LT> in %q (want <id>:<n>)", target)
+		}
+		atMainLT = lt
+		target = target[:i]
+	}
+
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		ppid := os.Getppid()
-		if ariaID == "" {
-			r, err := acli.Resolve(ctx, ppid)
-			if err != nil || !r.Found {
-				die("fork: no aria bound to this shell (try: --id <id> or <id>)")
-			}
-			ariaID = r.FigaroID
+
+		bound := ""
+		if r, err := acli.Resolve(ctx, ppid); err == nil && r.Found {
+			bound = r.FigaroID
 		}
-		resp, err := acli.Fork(ctx, ariaID)
+		if target == "" {
+			if bound == "" {
+				die("fork: no aria bound to this shell (try: <id> or <id>:<LT>)")
+			}
+			target = bound
+		}
+
+		resp, err := acli.Fork(ctx, target, atMainLT)
 		if err != nil {
 			die("fork: %s", err)
 		}
-		// Rebind this shell to the continuation.
-		acli.Unbind(ctx, ppid)
-		if err := acli.Bind(ctx, ppid, resp.Continuation); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not bind shell to continuation: %s\n", err)
+
+		// Rebind only when we forked our own bound aria (it just froze, so
+		// the continuation is where "we" continue) and --stay wasn't given.
+		rescoped := false
+		if target == bound && !stay {
+			acli.Unbind(ctx, ppid)
+			if err := acli.Bind(ctx, ppid, resp.Continuation); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not bind shell to continuation: %s\n", err)
+			} else {
+				rescoped = true
+			}
+		}
+
+		at := "head"
+		if atMainLT > 0 {
+			at = fmt.Sprintf("LT %d", atMainLT)
+		}
+		contNote := "(attend to continue)"
+		if rescoped {
+			contNote = "(this shell)"
 		}
 		fmt.Fprintf(os.Stderr,
-			"forked %s (now a frozen fork point)\n  continuation %s  (this shell)\n  alternative  %s  (attend it to diverge)\n",
-			resp.Parent, resp.Continuation, resp.Alternative)
+			"forked %s at %s (now a frozen fork point)\n  continuation %s  %s\n  alternative  %s  (attend it to diverge)\n",
+			resp.Parent, at, resp.Continuation, contNote, resp.Alternative)
 		return nil
 	})
 }
