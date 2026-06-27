@@ -104,6 +104,14 @@ dual-read. (User approved.)
   leaf's mantra as the readable label, recency + depth markers. Brainstorm/optionally
   web-search a good compact-ancestry layout when building this.
 
+## Known edge (revisit)
+- A chalkboard `set` keyed to the next IR LT, with a fork at that exact LT and
+  NO intervening turn, lands the pending patch on the fork boundary — so it rides
+  only with the continuation, not the alternative. Realistic flow (set rides with
+  its committed turn) inherits to both. Proper fix: a reducible channel should
+  inherit entries keyed beyond the main tail (pending/future) on fork — a small
+  xwal refinement.
+
 ## Build order
 1. store: `xwalLog` + `XwalBackend` + chalkboard State view (+ unit tests, green).
 2. null-root genesis + loadout-node materialization + version hash + index.

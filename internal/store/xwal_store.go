@@ -440,3 +440,114 @@ func newID() string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
+
+// NodeView is a read-only snapshot of a tree node (for listing/lineage).
+type NodeView struct {
+	ID        string
+	Parent    string
+	Kind      string
+	Loadout   string
+	Version   string
+	Children  []string
+	Frozen    bool
+	Depth     int
+	CreatedMS int64
+	LastMS    int64
+}
+
+func (s *XwalStore) view(r *nodeRec) NodeView {
+	depth := 0
+	for p := r.Parent; p != ""; p = s.idx.Nodes[p].Parent {
+		depth++
+		if s.idx.Nodes[p] == nil {
+			break
+		}
+	}
+	return NodeView{
+		ID: r.ID, Parent: r.Parent, Kind: string(r.Kind), Loadout: r.Loadout,
+		Version: r.Version, Children: append([]string(nil), r.Children...),
+		Frozen: r.Frozen, Depth: depth, CreatedMS: r.CreatedMS, LastMS: r.LastMS,
+	}
+}
+
+// Nodes returns a view of every node in the tree.
+func (s *XwalStore) Nodes() []NodeView {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]NodeView, 0, len(s.idx.Nodes))
+	for _, r := range s.idx.Nodes {
+		out = append(out, s.view(r))
+	}
+	return out
+}
+
+// Node returns a single node view.
+func (s *XwalStore) Node(id string) (NodeView, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r := s.idx.Nodes[id]
+	if r == nil {
+		return NodeView{}, false
+	}
+	return s.view(r), true
+}
+
+// Touch records last-activity on a node.
+func (s *XwalStore) Touch(id string, ms int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if r := s.idx.Nodes[id]; r != nil {
+		r.LastMS = ms
+		_ = s.saveIndex()
+	}
+}
+
+// RemoveLeaf deletes a childless node and its on-disk branch. The null
+// root and nodes with children are refused (delete children first).
+func (s *XwalStore) RemoveLeaf(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r := s.idx.Nodes[id]
+	if r == nil {
+		return fmt.Errorf("xwal store: unknown aria %q", id)
+	}
+	if r.Kind == kindNull {
+		return fmt.Errorf("xwal store: cannot remove the null root")
+	}
+	if len(r.Children) > 0 {
+		return fmt.Errorf("xwal store: %q has children; remove them first", id)
+	}
+	removeBranchDirs(s.root, r.Branch)
+	if p := s.idx.Nodes[r.Parent]; p != nil {
+		p.Children = removeStr(p.Children, id)
+	}
+	if r.Kind == kindLoadout {
+		delete(s.idx.Loadouts, r.Loadout+"@"+r.Version)
+	}
+	delete(s.idx.Nodes, id)
+	return s.saveIndex()
+}
+
+func removeBranchDirs(root string, branch []string) {
+	if len(branch) == 0 {
+		return
+	}
+	sub := filepath.Join(branch...)
+	for _, ch := range []string{chanIR, chanChalkboard} {
+		_ = os.RemoveAll(filepath.Join(root, ch, sub))
+	}
+	provs, _ := filepath.Glob(filepath.Join(root, "translations", "*"))
+	for _, p := range provs {
+		_ = os.RemoveAll(filepath.Join(p, sub))
+	}
+}
+
+func removeStr(ss []string, x string) []string {
+	out := ss[:0]
+	for _, s := range ss {
+		if s != x {
+			out = append(out, s)
+		}
+	}
+	return out
+}
