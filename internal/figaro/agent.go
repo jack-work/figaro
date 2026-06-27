@@ -465,7 +465,38 @@ func (a *Agent) endTurn(reason string) {
 	}
 	a.mu.Unlock()
 
+	a.writeMeta()
 	a.derived.Tick(0, a.chalkboard.Snapshot())
+}
+
+// writeMeta persists the per-aria summary sidecar so `figaro list` shows
+// counts/tokens/recency for dormant arias. Backed arias only.
+func (a *Agent) writeMeta() {
+	if a.backend == nil {
+		return
+	}
+	a.mu.RLock()
+	meta := &store.AriaMeta{
+		TokensIn:         a.tokensIn,
+		TokensOut:        a.tokensOut,
+		CacheReadTokens:  a.cacheRead,
+		CacheWriteTokens: a.cacheWrite,
+		LastActiveMS:     a.lastActive.UnixMilli(),
+	}
+	a.mu.RUnlock()
+	for _, e := range a.figLog.Read() {
+		if message.IsGenesis(e.Payload) {
+			continue
+		}
+		meta.MessageCount++
+		if e.Payload.Role == message.RoleAssistant {
+			meta.TurnCount++
+		}
+		meta.LastFigaroLT = e.LT
+	}
+	if err := a.backend.SetMeta(a.id, meta); err != nil {
+		slog.Warn("write aria meta", "aria", a.id, "err", err)
+	}
 }
 
 func (a *Agent) toolDefs() []provider.Tool {

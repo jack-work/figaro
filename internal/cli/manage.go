@@ -129,6 +129,41 @@ func runKillByID(loaded *config.Loaded, figaroID string) {
 	})
 }
 
+// runFork branches a conversation at its head. The parent freezes
+// (keeps its id as an index node); two fresh children are minted. This
+// shell rebinds to the continuation so work carries on there.
+func runFork(loaded *config.Loaded, idFlag string, args []string) {
+	ariaID := idFlag
+	if ariaID == "" && len(args) > 0 {
+		ariaID = args[0]
+	}
+	WithAngelus(loaded, func(acli *angelus.Client) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		ppid := os.Getppid()
+		if ariaID == "" {
+			r, err := acli.Resolve(ctx, ppid)
+			if err != nil || !r.Found {
+				die("fork: no aria bound to this shell (try: --id <id> or <id>)")
+			}
+			ariaID = r.FigaroID
+		}
+		resp, err := acli.Fork(ctx, ariaID)
+		if err != nil {
+			die("fork: %s", err)
+		}
+		// Rebind this shell to the continuation.
+		acli.Unbind(ctx, ppid)
+		if err := acli.Bind(ctx, ppid, resp.Continuation); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not bind shell to continuation: %s\n", err)
+		}
+		fmt.Fprintf(os.Stderr,
+			"forked %s (now a frozen fork point)\n  continuation %s  (this shell)\n  alternative  %s  (attend it to diverge)\n",
+			resp.Parent, resp.Continuation, resp.Alternative)
+		return nil
+	})
+}
+
 func runAttendByID(loaded *config.Loaded, figaroID string) {
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

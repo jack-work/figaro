@@ -272,6 +272,24 @@ Flags:
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:    "fork",
+		Group:   "Session",
+		Short:   "Branch a conversation: freeze it, mint two children",
+		Usage:   "fork [--id <id> | <id>]",
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id (defaults to this shell's)"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			runFork(ld, ctx.Flag("id"), ctx.Args)
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:    "kill",
 		Group:   "Session",
 		Short:   "Terminate and remove an aria",

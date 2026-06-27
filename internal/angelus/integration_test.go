@@ -233,3 +233,104 @@ model = "mock-model"
 	assert.Equal(t, resp.FigaroID, att.FigaroID)
 	assert.Equal(t, resp.Endpoint.Address, att.Endpoint.Address)
 }
+
+// TestIntegration_Fork drives a turn, forks the conversation, and
+// verifies both children share the pre-fork prefix while diverging
+// independently — the whole daemon fork path end to end (mock provider).
+func TestIntegration_Fork(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
+	require.NoError(t, os.WriteFile(dir+"/loadouts/mock.toml", []byte(`
+[system]
+provider = "mock"
+model = "mock-model"
+`), 0600))
+
+	backend, err := store.NewXwalBackend(dir + "/arias")
+	require.NoError(t, err)
+	a := angelus.New(angelus.Config{RuntimeDir: dir, Backend: backend})
+	factory := func(string, provider.Knobs) (provider.Provider, error) {
+		return &mockProviderForIntegration{}, nil
+	}
+	loaded, err := config.Load(dir)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a.Handlers = angelus.NewHandlers(angelus.ServerConfig{
+		Angelus: a, Config: loaded, ProviderFactory: factory, Ctx: ctx,
+	}).Map
+	go a.Run(ctx)
+	defer a.Shutdown(0)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(a.SocketPath); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
+	require.NoError(t, err)
+	defer acli.Close()
+
+	// Create + drive one turn.
+	created, err := acli.Create(ctx, "mock", nil)
+	require.NoError(t, err)
+	figEP := transport.Endpoint{Scheme: created.Endpoint.Scheme, Address: created.Endpoint.Address}
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(figEP.Address); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	doneCh := make(chan struct{}, 1)
+	fcli, err := figaro.DialClient(figEP, func(method string, _ json.RawMessage) {
+		if method == "turn.done" {
+			select {
+			case doneCh <- struct{}{}:
+			default:
+			}
+		}
+	})
+	require.NoError(t, err)
+	require.NoError(t, fcli.Qua(ctx, "first prompt", nil))
+	select {
+	case <-doneCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout on turn")
+	}
+	fcli.Close()
+
+	// Fork: two fresh children, parent frozen.
+	fr, err := acli.Fork(ctx, created.FigaroID)
+	require.NoError(t, err)
+	require.NotEqual(t, fr.Continuation, fr.Alternative)
+	require.NotEqual(t, created.FigaroID, fr.Continuation)
+	require.NotEqual(t, created.FigaroID, fr.Alternative)
+
+	// Both children see the pre-fork prompt (shared prefix).
+	countUser := func(id, want string) int {
+		resp, rerr := acli.AriaRead(ctx, id, 0, 0)
+		require.NoError(t, rerr)
+		n := 0
+		for _, e := range resp.Entries {
+			var m message.Message
+			if json.Unmarshal(e.Payload, &m) != nil {
+				continue
+			}
+			for _, c := range m.Content {
+				if c.Type == message.ContentText && c.Text == want {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	assert.Equal(t, 1, countUser(fr.Continuation, "first prompt"), "continuation shares prefix")
+	assert.Equal(t, 1, countUser(fr.Alternative, "first prompt"), "alternative shares prefix")
+
+	// The frozen parent refuses a re-fork.
+	_, err = acli.Fork(ctx, created.FigaroID)
+	require.Error(t, err, "frozen node cannot be re-forked")
+}

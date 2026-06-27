@@ -263,6 +263,9 @@ func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) {
 	return readJSON[AriaMeta](b.metaPath(ariaID))
 }
 func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
+	if meta != nil && meta.LastActiveMS != 0 {
+		b.store.Touch(ariaID, meta.LastActiveMS) // recency for `figaro list`
+	}
 	return writeJSON(b.metaPath(ariaID), meta)
 }
 func (b *XwalBackend) TranslationMeta(ariaID, providerName string) (*TranslationMeta, error) {
