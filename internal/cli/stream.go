@@ -62,9 +62,38 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	doneCh := make(chan struct{}, 1)
 	prevRole := "" // role of the last unit snapshot, for inter-unit separation
 
+	// Render trace: FIGARO_WIRE_LOG=<file> records the EXACT ordered stream of
+	// painter actions — every received frame AND every spinner tick,
+	// timestamped — while rendering normally. A glitch caught in real use then
+	// replays deterministically offline (no agent, no tokens): the file order is
+	// the order the painter applied actions (everything serializes on lrMu).
+	// Line shapes: {"op":"init","w":N,"h":N} | {"t":ns,"op":"frame","method","params"} | {"t":ns,"op":"tick"}.
+	trace := func(string, string, json.RawMessage) {}
+	if p := os.Getenv("FIGARO_WIRE_LOG"); p != "" {
+		if f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
+			defer f.Close()
+			start := time.Now()
+			fmt.Fprintf(f, "{\"op\":\"init\",\"w\":%d,\"h\":%d}\n", width, lr.height)
+			trace = func(op, method string, params json.RawMessage) {
+				rec := struct {
+					T      int64           `json:"t"`
+					Op     string          `json:"op"`
+					Method string          `json:"method,omitempty"`
+					Params json.RawMessage `json:"params,omitempty"`
+				}{time.Since(start).Nanoseconds(), op, method, params}
+				if line, err := json.Marshal(rec); err == nil {
+					f.Write(append(line, '\n'))
+				}
+			}
+		} else {
+			fmt.Fprintln(os.Stderr, "warning: FIGARO_WIRE_LOG open failed:", err)
+		}
+	}
+
 	onNotify := func(method string, params json.RawMessage) {
 		lrMu.Lock()
 		defer lrMu.Unlock()
+		trace("frame", method, params)
 		switch method {
 		case rpc.MethodLogSnapshot:
 			var e rpc.SnapshotEntry
@@ -138,6 +167,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				return
 			case <-t.C:
 				lrMu.Lock()
+				trace("tick", "", nil)
 				lr.tickSpin()
 				lrMu.Unlock()
 			}
