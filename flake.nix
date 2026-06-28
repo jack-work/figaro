@@ -187,15 +187,18 @@
             ${mkKnob "FIGARO_STATE_DIR"   "state"  state}
             ${mkHushKnob hush}
 
-            # Expose `q` as a third name for the dev binary. `figaro`
-            # and `fig` arrive via buildInputs (the figaro package's
-            # postInstall installs `fig` as a symlink alongside
-            # `figaro`); `q` is a per-shell symlink in a bin dir
-            # prepended to PATH so it always points at the same Nix
-            # store build.
+            # Point figaro/fig/q at THIS worktree's build, in a bin dir
+            # prepended to PATH. We symlink all three names (not just q) so a
+            # global figaro install can't shadow the dev binary. NOTE: an
+            # interactive shell launched inside the dev shell (e.g. fish) may
+            # re-prepend its own ~/go/bin or ~/.nix-profile to PATH and shadow
+            # this again — guard it by re-prepending $FIGARO_DEV_BIN at the end
+            # of your shell rc when it is set (see ~/.config/fish/config.fish).
             export FIGARO_DEV_BIN="$FIGARO_DEV_ROOT/bin"
             mkdir -p "$FIGARO_DEV_BIN"
-            ln -sf "${figaroPkg}/bin/figaro" "$FIGARO_DEV_BIN/q"
+            for n in figaro fig q; do
+              ln -sf "${figaroPkg}/bin/figaro" "$FIGARO_DEV_BIN/$n"
+            done
             export PATH="$FIGARO_DEV_BIN:$PATH"
 
             echo "[figaro-dev:${name}] figaro       = $(command -v figaro)" >&2
