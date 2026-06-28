@@ -212,3 +212,42 @@ func TestXwalBackend_CauterizedLoadoutFork(t *testing.T) {
 		t.Fatalf("loadout %s should still resolve", l)
 	}
 }
+
+func TestXwalBackend_LiveBlob(t *testing.T) {
+	b, err := NewXwalBackend(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	l, _ := b.CreateLoadout("d", patchSet(nil))
+	conv, _ := b.CreateConversation(l)
+
+	if blob, err := b.LiveBlob(conv); err != nil || blob != nil {
+		t.Fatalf("fresh trunk has no live blob: %v %q", err, blob)
+	}
+	// Optimistic in-place updates (last write wins).
+	if err := b.SetLiveBlob(conv, []byte(`{"v":0,"nodes":[]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetLiveBlob(conv, []byte(`{"v":1,"nodes":[{"type":"prose"}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := b.LiveBlob(conv)
+	if err != nil || string(got) != `{"v":1,"nodes":[{"type":"prose"}]}` {
+		t.Fatalf("live blob = %q err=%v", got, err)
+	}
+	// Survives reopen (durable across a daemon restart).
+	b.Close()
+	b2, _ := NewXwalBackend(b.root)
+	defer b2.Close()
+	if got, _ := b2.LiveBlob(conv); string(got) != `{"v":1,"nodes":[{"type":"prose"}]}` {
+		t.Fatalf("live blob not durable across reopen: %q", got)
+	}
+	// Clear on commit/close.
+	if err := b2.ClearLive(conv); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := b2.LiveBlob(conv); got != nil {
+		t.Fatalf("live blob not cleared: %q", got)
+	}
+}
