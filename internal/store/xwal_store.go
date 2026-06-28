@@ -307,25 +307,27 @@ func (s *XwalStore) kindOf(id string) nodeKind {
 
 // NodeView is a read-only snapshot of an aria (trunk) for listing/lineage.
 type NodeView struct {
-	ID        string
-	Parent    string
-	Kind      string
-	Loadout   string
-	Version   string
-	Children  []string
-	Frozen    bool
-	Depth     int
-	Trunk     string
-	Vector    []int
-	CreatedMS int64
-	LastMS    int64
+	ID         string
+	Parent     string
+	Kind       string
+	Loadout    string
+	Version    string
+	Children   []string
+	Frozen     bool
+	Depth      int
+	Trunk      string
+	Vector     []int
+	BranchedLT uint64 // main-LT this trunk diverged from its parent
+	CreatedMS  int64
+	LastMS     int64
 }
 
 // view renders a live (conversation) trunk. Kind is always conversation —
 // closed ceremonial trunks (null/loadout) aren't in List().
 func (s *XwalStore) view(t xwal.TrunkInfo, vec map[string][]int) NodeView {
 	return NodeView{
-		ID: t.ID, Parent: t.Parent, Kind: string(kindConversation), Trunk: t.ID, Vector: vec[t.ID],
+		ID: t.ID, Parent: t.Parent, Kind: string(kindConversation), Trunk: t.ID,
+		Vector: vec[t.ID], BranchedLT: t.BranchedLT,
 	}
 }
 

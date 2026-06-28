@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -135,6 +136,16 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	var combined chalkboard.Patch
 	if prompt.chalkboard != nil {
 		combined = a.combineChalkboardInput(prompt.chalkboard)
+	}
+	// Seed the mantra from the first user message's opening text, so every
+	// conversation has a stable title (the first n chars) without the agent
+	// having to set one. Only when unset, so it stays fixed to the opener.
+	if prompt.text != "" && a.chalkboardString("mantra") == "" {
+		if combined.Set == nil {
+			combined.Set = map[string]json.RawMessage{}
+		}
+		mv, _ := json.Marshal(firstChars(prompt.text, 60))
+		combined.Set["mantra"] = mv
 	}
 	if !combined.IsEmpty() {
 		if a.backend != nil {
@@ -645,6 +656,17 @@ func (a *Agent) persistLive(nodes []livedoc.Node) {
 	if err := a.backend.SetLiveBlob(a.id, blob); err != nil {
 		slog.Error("persist live message", "aria", a.id, "err", err)
 	}
+}
+
+// firstChars returns the first n runes of s's opening line (newlines folded
+// to spaces), ellipsized when cut — used to seed a conversation's mantra.
+func firstChars(s string, n int) string {
+	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimSpace(string(r[:n])) + "…"
 }
 
 // clearLive drops the durable open-message blob.

@@ -587,6 +587,7 @@ func (h *handlers) fillFromNode(ariaID string, entry *rpc.FigaroInfoResponse) {
 	entry.Trunk = n.Trunk
 	entry.Parent = n.Parent
 	entry.Frozen = n.Frozen
+	entry.BranchedLT = n.BranchedLT
 	if n.Frozen && entry.State != "active" {
 		entry.State = "frozen"
 	}

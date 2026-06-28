@@ -82,7 +82,7 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int) {
 
 		// Flatten to rendered rows: tree glyphs in an ARIA cell.
 		type row struct {
-			aria, trunk, age, msgs, ctx, cwd string
+			aria, id, fork, age, msgs, ctx, cwd string
 		}
 		var rows []row
 		ppid := os.Getppid()
@@ -106,7 +106,7 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int) {
 			}
 			label := f.Mantra
 			if label == "" {
-				label = "trunk " + f.ID
+				label = "aria " + f.ID
 			}
 			ctxStr := "-"
 			if f.ContextTokens > 0 {
@@ -115,9 +115,16 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int) {
 					ctxStr = "~" + ctxStr
 				}
 			}
+			// Branches show the LT they were forked AT (the last shared LT,
+			// = what `send/fork :N` reproduces). BranchedLT is the first own
+			// LT, so the fork point is BranchedLT-1. Roots are top-level.
+			fork := "-"
+			if len(f.Vector) > 1 && f.BranchedLT > 1 {
+				fork = fmt.Sprintf("@%d", f.BranchedLT-1)
+			}
 			rows = append(rows, row{
-				aria:  glyph + marker(f) + " " + truncRunes(label, 44),
-				trunk: f.ID, age: relAge(f.LastActive),
+				aria: glyph + marker(f) + " " + truncRunes(label, 44),
+				id:   f.ID, fork: fork, age: relAge(f.LastActive),
 				msgs: fmt.Sprintf("%d", f.MessageCount), ctx: ctxStr, cwd: shortCwd(f.Cwd),
 			})
 			cp := prefix
@@ -154,9 +161,9 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int) {
 			len(roots), branches, shown, total)
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(w, "ARIA\tTRUNK\tAGE\tMSGS\tCTX\tCWD\n")
+		fmt.Fprintf(w, "ARIA\tID\tFORK\tAGE\tMSGS\tCTX\tCWD\n")
 		for _, r := range rows {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.aria, r.trunk, r.age, r.msgs, r.ctx, r.cwd)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.aria, r.id, r.fork, r.age, r.msgs, r.ctx, r.cwd)
 		}
 		w.Flush()
 		if limit > 0 && total > limit {
