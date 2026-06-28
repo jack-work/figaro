@@ -11,7 +11,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
@@ -103,6 +105,13 @@ type Agent struct {
 	liveActive bool
 	partials   map[string]string
 
+	// ariaSrv is the rendered conversation (committed units + the open one),
+	// the single source of the aria-read wire: it serves both the live push
+	// (MethodAriaFrame) and the catch-up pull (figaro.read). unitLT is the
+	// monotonic figaro LT assigned to each unit as it opens.
+	ariaSrv *aria.Server
+	unitLT  int
+
 	createdAt  time.Time
 	lastActive time.Time
 	tokensIn   int
@@ -143,6 +152,18 @@ func NewAgent(cfg Config) *Agent {
 	a.inbox = NewInbox(ctx)
 
 	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figLog.Read()))
+
+	// Build the rendered conversation from the log (each prior unit a closed
+	// aria message), then register the broadcast: every aria-server change is
+	// pushed to subscribers as one aria read.
+	a.ariaSrv = aria.NewServer()
+	for i, u := range compose.Units(unwrapMessages(a.figLog.Read())) {
+		a.unitLT = i + 1
+		a.ariaSrv.Commit(aria.Message{LT: a.unitLT, Role: u.Role, Nodes: u.Nodes})
+	}
+	a.ariaSrv.Subscribe(0, func(r aria.AriaRead) {
+		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: r})
+	})
 
 	// Spin up durable-derivation fanout (backed agents only).
 	a.derived = startDerived(ctx, a.id, a.prov.Name(), a.backend, a.figLog, nil)

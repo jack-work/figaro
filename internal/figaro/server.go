@@ -88,7 +88,13 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		return rpc.ChalkboardResponse{Snapshot: a.Snapshot()}, nil
 
 	case rpc.MethodRead:
-		return a.Read(), nil
+		var req rpc.ReadRequest
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, err
+			}
+		}
+		return a.Read(req.SinceLT), nil
 	}
 	return nil, fmt.Errorf("unknown method: %s", method)
 }

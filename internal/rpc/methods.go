@@ -3,15 +3,12 @@ package rpc
 import "encoding/json"
 
 const (
-	// Live-render notifications (server -> client). Each unit is one
-	// markdown blob mutated by single-region splices; the renderer (CLI
-	// or web) turns the blob into rows/DOM.
-	MethodLogSnapshot = "log.snapshot" // establish the current live unit's full node list
-	MethodNodeOpen    = "node.open"    // append a node to the live unit
-	MethodNodePatch   = "node.patch"   // splice a node's streamed string field
-	MethodNodeSet     = "node.set"     // update a tool node's scalar status
-	MethodLogCommit   = "log.commit"   // freeze the live unit; next is a new one
-	MethodTurnDone    = "turn.done"    // the turn went idle
+	// Live-render wire (server -> client). The conversation is delivered as
+	// aria reads: MethodAriaFrame pushes them live (server-pushed pagination),
+	// and MethodRead pulls one for catch-up from a figaro LT. Both carry an
+	// aria.AriaRead. MethodTurnDone is the one control signal (turn went idle).
+	MethodAriaFrame = "figaro.aria" // push one aria read (committed + live delta)
+	MethodTurnDone  = "turn.done"   // the turn went idle
 
 	// Requests.
 	MethodQua        = "figaro.qua"
@@ -21,10 +18,10 @@ const (
 	MethodLoadout    = "figaro.loadout"
 	MethodChalkboard = "figaro.chalkboard"
 
-	// MethodRead returns the conversation so far as committed unit blobs
-	// plus the in-flight live unit, so a freshly-connected client can
-	// rebuild scrollback and then follow live log.* frames on the same
-	// (already-subscribed) connection.
+	// MethodRead pulls one aria read caught up from a figaro LT (the
+	// catch-up half of the same paginated read the MethodAriaFrame stream
+	// pushes), so a (re)connecting client can rebuild from its cursor and
+	// then follow the live frames on the same connection.
 	MethodRead = "figaro.read"
 )
 
@@ -137,15 +134,10 @@ type ChalkboardResponse struct {
 }
 
 // ReadRequest is the (currently empty) catch-up request; the whole
-// conversation is returned.
-type ReadRequest struct{}
-
-// ReadResponse carries the catch-up batch: committed units to flush to
-// scrollback, then the in-flight live unit (nil when idle) to seed the
-// live region before following log.* frames.
-type ReadResponse struct {
-	Committed []SnapshotEntry `json:"committed,omitempty"`
-	Live      *SnapshotEntry  `json:"live,omitempty"`
+// conversation is returned. The result is an aria.AriaRead caught up from
+// SinceLT (a figaro LT cursor; 0 = from the beginning).
+type ReadRequest struct {
+	SinceLT int `json:"sinceLT,omitempty"`
 }
 
 type FigaroInfoResponse struct {

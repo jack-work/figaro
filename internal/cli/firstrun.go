@@ -4,18 +4,18 @@
 // before figaro has enough configuration to satisfy it. It runs in
 // three stations, each independent and skippable:
 //
-//   1. Hush identity (owned by hush's `managed` package; we just call
-//      EnsureReady and let it prompt for a passphrase + persist to the
-//      OS keyring). Invisible if the identity already exists.
+//  1. Hush identity (owned by hush's `managed` package; we just call
+//     EnsureReady and let it prompt for a passphrase + persist to the
+//     OS keyring). Invisible if the identity already exists.
 //
-//   2. Provider + credentials. Picks a provider/mode from a numbered
-//      menu, then runs that mode's credential setup (OAuth flow or
-//      API-key prompt). Stores the result through hush so secrets
-//      never touch disk in plaintext.
+//  2. Provider + credentials. Picks a provider/mode from a numbered
+//     menu, then runs that mode's credential setup (OAuth flow or
+//     API-key prompt). Stores the result through hush so secrets
+//     never touch disk in plaintext.
 //
-//   3. Default loadout. Scaffolds a minimal `loadouts/default.toml`
-//      bound to the provider chosen in (2) and points config.toml's
-//      default_loadout at it. So `fig "..."` works after this returns.
+//  3. Default loadout. Scaffolds a minimal `loadouts/default.toml`
+//     bound to the provider chosen in (2) and points config.toml's
+//     default_loadout at it. So `fig "..."` works after this returns.
 //
 // Triggers: angelus emits a typed JSON-RPC error
 // (ErrNoDefaultLoadout / ErrNoProvider). createWithFirstRun catches

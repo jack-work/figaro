@@ -249,14 +249,12 @@ loop:
 		}
 	}
 
-	// The turn opens a unit (snapshot), streams the reply (delta), and
-	// ends (turn.done).
+	// The turn streams aria reads and ends with turn.done.
 	methods := make([]string, len(notifications))
 	for i, n := range notifications {
 		methods[i] = n.Method
 	}
-	assert.Contains(t, methods, rpc.MethodLogSnapshot)
-	assert.Contains(t, methods, rpc.MethodNodeOpen)
+	assert.Contains(t, methods, rpc.MethodAriaFrame)
 	assert.Contains(t, methods, rpc.MethodTurnDone)
 }
 
@@ -265,7 +263,7 @@ func TestAgent_ReadCatchUp(t *testing.T) {
 	defer a.Kill()
 
 	// Idle, empty: nothing to catch up.
-	if r := a.Read(); len(r.Committed) != 0 || r.Live != nil {
+	if r := a.Read(0); len(r.Committed) != 0 || r.Live != nil {
 		t.Fatalf("fresh agent: want empty read, got %+v", r)
 	}
 
@@ -287,7 +285,7 @@ done:
 
 	// After the turn settles, the prompt and reply are committed units and
 	// no unit is live.
-	r := a.Read()
+	r := a.Read(0)
 	if r.Live != nil {
 		t.Fatalf("idle agent should have no live unit: %+v", r.Live)
 	}

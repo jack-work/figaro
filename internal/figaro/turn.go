@@ -604,60 +604,54 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 	return compose.Nodes(msgs, a.partials)
 }
 
-// emitSnapshot establishes the current live unit's full node list. liveMu
-// is held through the fanout so a concurrent figaro.read can't observe
-// the new state before its frame is broadcast (which would double-apply).
+// emitSnapshot opens a new unit at the next figaro LT and sets its initial
+// nodes. liveNodes holds the last-composed list that emitDelta diffs against.
 func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
 	a.liveMu.Lock()
-	defer a.liveMu.Unlock()
+	a.unitLT++
+	lt := a.unitLT
 	a.liveNodes = nodes
-	a.fanOut(rpc.Notification{
-		JSONRPC: "2.0",
-		Method:  rpc.MethodLogSnapshot,
-		Params:  rpc.SnapshotEntry{Role: role, Nodes: nodes},
-	})
+	a.liveMu.Unlock()
+
+	a.ariaSrv.Open(lt, role)
+	for i, n := range nodes {
+		a.ariaSrv.Set(blockID(i, n), n)
+	}
 }
 
-// emitDelta diffs the node list against the last sent and fans out one
-// op (open/patch/set) per change.
+// emitDelta diffs the node list against the last sent and writes each changed
+// block (full text, Phase 1) into the open unit; the aria server versions them
+// and pushes the live delta to subscribers.
 func (a *Agent) emitDelta(nodes []livedoc.Node) {
 	a.liveMu.Lock()
-	defer a.liveMu.Unlock()
 	ops := livedoc.DiffNodes(a.liveNodes, nodes)
-	if len(ops) == 0 {
-		return
-	}
 	a.liveNodes = nodes
+	a.liveMu.Unlock()
+
+	seen := map[int]bool{}
 	for _, op := range ops {
-		a.fanOut(opNotification(op))
+		if seen[op.Index] {
+			continue
+		}
+		seen[op.Index] = true
+		a.ariaSrv.Set(blockID(op.Index, nodes[op.Index]), nodes[op.Index])
 	}
 }
 
-// opNotification maps a node op to its wire notification.
-func opNotification(op livedoc.Op) rpc.Notification {
-	switch op.Kind {
-	case livedoc.OpOpen:
-		return rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodNodeOpen,
-			Params: rpc.NodeOpenEntry{Index: op.Index, Node: *op.Node}}
-	case livedoc.OpSet:
-		return rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodNodeSet,
-			Params: rpc.NodeSetEntry{Index: op.Index, Status: op.Status, Name: op.Name, Args: op.Args}}
-	default: // OpPatch
-		return rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodNodePatch,
-			Params: rpc.NodePatchEntry{Index: op.Index, Field: op.Field, At: op.At, Del: op.Del, Ins: op.Ins}}
-	}
-}
-
-// emitCommit freezes the current live unit.
+// emitCommit closes the open unit; it becomes a committed aria message.
 func (a *Agent) emitCommit() {
 	a.liveMu.Lock()
-	defer a.liveMu.Unlock()
 	a.liveNodes = nil
-	a.fanOut(rpc.Notification{
-		JSONRPC: "2.0",
-		Method:  rpc.MethodLogCommit,
-		Params:  rpc.CommitEntry{},
-	})
+	a.liveMu.Unlock()
+	a.ariaSrv.Close()
+}
+
+// blockID is a node's stable handle: its tool_call_id, or its positional id.
+func blockID(i int, n livedoc.Node) string {
+	if n.ID != "" {
+		return n.ID
+	}
+	return fmt.Sprintf("n%d", i)
 }
 
 // asm assembles the in-flight assistant message from provider Bus events

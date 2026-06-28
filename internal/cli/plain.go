@@ -16,6 +16,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
@@ -195,7 +196,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	sink := &plainSink{out: out, doneCh: make(chan struct{}, 1)}
+	sink := newPlainSink(out)
 	doneCh := sink.doneCh
 
 	fcli, err := figaro.DialClient(ep, sink.handle)
@@ -313,47 +314,39 @@ func (s *verbatimSink) handle(method string, params json.RawMessage) {
 // raw-mode callers (figaro x) prompt the model for plain output anyway.
 type plainSink struct {
 	out      io.Writer
-	role     string
-	nodes    []livedoc.Node
-	written  string // exactly what's been emitted for this unit
+	client   *aria.Client
+	written  string // exactly what's been emitted for the current assistant unit
 	doneCh   chan struct{}
 	sawError bool
 }
 
-func (s *plainSink) handle(method string, params json.RawMessage) {
-	switch method {
-	case rpc.MethodLogSnapshot:
-		var e rpc.SnapshotEntry
-		if json.Unmarshal(params, &e) == nil {
-			s.role = e.Role
-			s.nodes = e.Nodes
-			s.written = ""
-			s.emit()
+func newPlainSink(out io.Writer) *plainSink {
+	s := &plainSink{out: out, doneCh: make(chan struct{}, 1), client: aria.NewClient()}
+	s.client.OnLive = func(_ int, role string, nodes []livedoc.Node) {
+		if role == "assistant" {
+			s.emit(plainText(nodes))
 		}
-	case rpc.MethodNodeOpen:
-		var e rpc.NodeOpenEntry
-		if json.Unmarshal(params, &e) == nil {
-			s.nodes = livedoc.ApplyOp(s.nodes, livedoc.Op{Kind: livedoc.OpOpen, Index: e.Index, Node: &e.Node})
-			s.emit()
+	}
+	s.client.OnClosed = func(m aria.Message) {
+		if m.Role != "assistant" {
+			return
 		}
-	case rpc.MethodNodePatch:
-		var e rpc.NodePatchEntry
-		if json.Unmarshal(params, &e) == nil {
-			s.nodes = livedoc.ApplyOp(s.nodes, livedoc.Op{Kind: livedoc.OpPatch, Index: e.Index, Field: e.Field, At: e.At, Del: e.Del, Ins: e.Ins})
-			s.emit()
-		}
-	case rpc.MethodNodeSet:
-		var e rpc.NodeSetEntry
-		if json.Unmarshal(params, &e) == nil {
-			s.nodes = livedoc.ApplyOp(s.nodes, livedoc.Op{Kind: livedoc.OpSet, Index: e.Index, Status: e.Status, Name: e.Name, Args: e.Args})
-			s.emit()
-		}
-	case rpc.MethodLogCommit:
-		s.emit()
-		if s.role == "assistant" && s.written != "" {
+		s.emit(plainText(m.Nodes))
+		if s.written != "" {
 			s.out.Write([]byte("\n")) // terminate the unit's line
 		}
-		s.role, s.nodes, s.written = "", nil, ""
+		s.written = ""
+	}
+	return s
+}
+
+func (s *plainSink) handle(method string, params json.RawMessage) {
+	switch method {
+	case rpc.MethodAriaFrame:
+		var r aria.AriaRead
+		if json.Unmarshal(params, &r) == nil {
+			s.client.Apply(r)
+		}
 	case rpc.MethodTurnDone:
 		var d rpc.DoneEntry
 		_ = json.Unmarshal(params, &d)
@@ -372,11 +365,8 @@ func (s *plainSink) handle(method string, params json.RawMessage) {
 // flattened text grows monotonically (the streaming case); a structural
 // change that rewrites already-printed text is swallowed rather than
 // reprinted — raw mode keeps the streamed copy.
-func (s *plainSink) emit() {
-	if s.role != "assistant" {
-		return
-	}
-	b := strings.TrimRight(plainText(s.nodes), "\n")
+func (s *plainSink) emit(text string) {
+	b := strings.TrimRight(text, "\n")
 	if strings.HasPrefix(b, s.written) {
 		s.out.Write([]byte(b[len(s.written):]))
 	}
