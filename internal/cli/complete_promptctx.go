@@ -37,14 +37,14 @@ import (
 // every dotfile.
 func completePromptContext(c *cmdkit.CompleteContext) []string {
 	if c != nil && strings.HasPrefix(c.Current, "@") {
-		keys := completeChalkboardKeys(nil)
+		keys := completeChalkboardKeys(c)
 		out := make([]string, len(keys))
 		for i, k := range keys {
 			out[i] = "@" + k
 		}
 		return out
 	}
-	out := completeChalkboardKeys(nil)
+	out := completeChalkboardKeys(c)
 	out = append(out, listCWD()...)
 	sort.Strings(out)
 	return out
