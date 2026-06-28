@@ -31,6 +31,11 @@ const (
 type Node struct {
 	Type NodeType `json:"type"`
 
+	// Version bumps on every mutation of this node while its message is open,
+	// so a UI element bound to (ID, Version) knows when to repaint and a client
+	// can detect a missed update. Meaningful only in the live section.
+	Version int `json:"v,omitempty"`
+
 	// prose
 	Markdown string `json:"markdown,omitempty"`
 

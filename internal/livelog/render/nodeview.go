@@ -1,6 +1,9 @@
 package render
 
-import "github.com/jack-work/figaro/internal/livelog/aria"
+import "github.com/jack-work/figaro/internal/livedoc"
+
+// defaultFrames is the braille spinner used for running blocks.
+var defaultFrames = []rune("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 
 // NodeText is a minimal NodeView: a header (status glyph + type + optional name)
 // and the streamed body under a gutter. Tools show output; prose/thinking show
@@ -9,14 +12,14 @@ type NodeText struct {
 	Frames []rune // spinner frames; defaultFrames if nil
 }
 
-func (r NodeText) Render(n aria.Node, width, tick int) []string {
-	header := r.glyph(n.Status, tick) + " " + n.Type
+func (r NodeText) Render(n livedoc.Node, width, tick int) []string {
+	header := r.glyph(n.Status, tick) + " " + string(n.Type)
 	if n.Name != "" {
 		header += " " + n.Name
 	}
 	out := []string{clip(header, width)}
 	body := n.Markdown
-	if n.Type == "tool" {
+	if n.Type == livedoc.NodeTool {
 		body = n.Output
 	}
 	if body != "" {
@@ -29,11 +32,11 @@ func (r NodeText) Render(n aria.Node, width, tick int) []string {
 
 func (r NodeText) glyph(status string, tick int) string {
 	switch status {
-	case "ok":
+	case livedoc.StatusOK:
 		return "✓"
-	case "error":
+	case livedoc.StatusError:
 		return "✗"
-	case "running":
+	case livedoc.StatusRunning:
 		f := r.Frames
 		if len(f) == 0 {
 			f = defaultFrames

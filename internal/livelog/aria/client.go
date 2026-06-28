@@ -1,6 +1,10 @@
 package aria
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/jack-work/figaro/internal/livedoc"
+)
 
 // Client folds AriaReads into a local view. Application is idempotent — committed
 // by LT, live blocks by version — so a catch-up/live overlap or a redundant page
@@ -20,15 +24,15 @@ type Client struct {
 	openLT    int
 	openRole  string
 	openOrder []string
-	openBlock map[string]Node
+	openBlock map[string]livedoc.Node
 
 	OnClosed func(Message)
-	OnLive   func(lt int, role string, nodes []Node)
+	OnLive   func(lt int, role string, nodes []livedoc.Node)
 }
 
 // NewClient returns a fresh client at cursor 0.
 func NewClient() *Client {
-	return &Client{closedSeen: map[int]bool{}, openBlock: map[string]Node{}}
+	return &Client{closedSeen: map[int]bool{}, openBlock: map[string]livedoc.Node{}}
 }
 
 // Cursor is the highest committed LT applied — pass it to Read/Subscribe to
@@ -39,8 +43,8 @@ func (c *Client) Cursor() int {
 	return c.lastLT
 }
 
-// Apply folds one page. It returns the finalized messages and the current open
-// view so callers without the OnClosed/OnLive hooks can also drive a renderer.
+// Apply folds one page, firing OnClosed for finalized messages and OnLive for
+// the current open view.
 func (c *Client) Apply(r AriaRead) {
 	c.mu.Lock()
 	var finalized []Message
@@ -62,10 +66,9 @@ func (c *Client) Apply(r AriaRead) {
 			// a well-formed connection); record the boundary, no content.
 			finalized = append(finalized, Message{LT: cm.LT})
 		default:
-			// A full closed message. If we were streaming it live (e.g. it
-			// closed while we were disconnected and we reconnected with an
-			// earlier cursor), adopt the canonical content and drop our stale
-			// open state.
+			// A full closed message. If we were streaming it live (it closed
+			// while we were disconnected and we reconnected with an earlier
+			// cursor), adopt the canonical content and drop our stale open state.
 			if cm.LT == c.openLT {
 				c.resetOpen()
 			}
@@ -79,14 +82,14 @@ func (c *Client) Apply(r AriaRead) {
 		haveLive  bool
 		liveLT    int
 		liveRole  string
-		liveNodes []Node
+		liveNodes []livedoc.Node
 	)
 	if r.Live != nil {
 		if c.openLT != r.Live.LT {
 			c.openLT = r.Live.LT
 			c.openRole = r.Live.Role
 			c.openOrder = nil
-			c.openBlock = map[string]Node{}
+			c.openBlock = map[string]livedoc.Node{}
 		}
 		for _, n := range r.Live.Nodes {
 			if cur, ok := c.openBlock[n.ID]; ok && n.Version <= cur.Version {
@@ -128,8 +131,8 @@ func (c *Client) View() View {
 }
 
 // openNodes returns the open message's blocks in arrival order. Caller holds mu.
-func (c *Client) openNodes() []Node {
-	out := make([]Node, 0, len(c.openOrder))
+func (c *Client) openNodes() []livedoc.Node {
+	out := make([]livedoc.Node, 0, len(c.openOrder))
 	for _, id := range c.openOrder {
 		out = append(out, c.openBlock[id])
 	}
@@ -141,5 +144,5 @@ func (c *Client) resetOpen() {
 	c.openLT = 0
 	c.openRole = ""
 	c.openOrder = nil
-	c.openBlock = map[string]Node{}
+	c.openBlock = map[string]livedoc.Node{}
 }

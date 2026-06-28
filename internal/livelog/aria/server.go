@@ -1,6 +1,10 @@
 package aria
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/jack-work/figaro/internal/livedoc"
+)
 
 // Server is the authoritative aria state: an ordered list of closed messages and
 // at most one open message (whose blocks are versioned). One routine —
@@ -20,8 +24,8 @@ type Server struct {
 type openMsg struct {
 	lt    int
 	role  string
-	order []string        // block ids, in arrival order
-	block map[string]Node // id -> current node (carrying its version)
+	order []string                // block ids, in arrival order
+	block map[string]livedoc.Node // id -> current node (carrying its version)
 }
 
 type subscriber struct {
@@ -43,14 +47,14 @@ func NewServer() *Server { return &Server{subs: map[int]*subscriber{}} }
 // Open starts a new open message at lt (close any prior one first).
 func (s *Server) Open(lt int, role string) {
 	s.mu.Lock()
-	s.open = &openMsg{lt: lt, role: role, block: map[string]Node{}}
+	s.open = &openMsg{lt: lt, role: role, block: map[string]livedoc.Node{}}
 	s.mu.Unlock()
 	s.broadcast()
 }
 
 // Set adds or updates a block in the open message, assigning the next version.
-// In Phase 1 n carries the block's full current representation.
-func (s *Server) Set(id string, n Node) {
+// n carries the block's full current representation (Phase 1).
+func (s *Server) Set(id string, n livedoc.Node) {
 	s.mu.Lock()
 	if s.open != nil {
 		n.ID = id
@@ -158,7 +162,7 @@ func (s *Server) produce(c *ConnState) (AriaRead, bool) {
 			c.liveLT = s.open.lt
 			c.liveSeen = map[string]int{}
 		}
-		var changed []Node
+		var changed []livedoc.Node
 		for _, id := range s.open.order {
 			b := s.open.block[id]
 			if c.liveSeen[id] < b.Version {

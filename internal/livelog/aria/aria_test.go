@@ -2,10 +2,12 @@ package aria
 
 import (
 	"testing"
+
+	"github.com/jack-work/figaro/internal/livedoc"
 )
 
-func tool(name, status, out string) Node {
-	return Node{Type: "tool", Name: name, Status: status, Output: out,
+func tool(name, status, out string) livedoc.Node {
+	return livedoc.Node{Type: "tool", Name: name, Status: status, Output: out,
 		Args: map[string]interface{}{"command": name}}
 }
 
@@ -26,9 +28,9 @@ func committedLTs(pages []AriaRead) []int {
 
 func TestRead_CatchupShapes(t *testing.T) {
 	s := NewServer()
-	s.Commit(Message{LT: 1, Role: "user", Nodes: []Node{{ID: "u0", Version: 1, Type: "prose", Markdown: "q"}}})
+	s.Commit(Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Version: 1, Type: "prose", Markdown: "q"}}})
 	s.Open(2, "assistant")
-	s.Set("n0", Node{Type: "thinking", Markdown: "thinking"})
+	s.Set("n0", livedoc.Node{Type: "thinking", Markdown: "thinking"})
 	s.Set("n1", tool("bash", "running", "out"))
 
 	// Fresh catch-up: committed = the closed user message (FULL), live = the open
@@ -67,7 +69,7 @@ func TestStream_LiveDeltasThenClosePatch(t *testing.T) {
 	cancel := s.Subscribe(0, rc.push)
 	defer cancel()
 
-	s.Commit(Message{LT: 1, Role: "user", Nodes: []Node{{ID: "u0", Version: 1, Type: "prose", Markdown: "q"}}})
+	s.Commit(Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Version: 1, Type: "prose", Markdown: "q"}}})
 	s.Open(2, "assistant")
 	s.Set("n1", tool("bash", "running", ""))
 	s.Set("n1", tool("bash", "running", "a\n"))
@@ -103,7 +105,7 @@ func TestInvariant_LTAppearsOncePerConnection(t *testing.T) {
 	defer cancel()
 	for lt := 1; lt <= 4; lt++ {
 		s.Open(lt, "assistant")
-		s.Set("n", Node{Type: "prose", Markdown: "m"})
+		s.Set("n", livedoc.Node{Type: "prose", Markdown: "m"})
 		s.Close()
 	}
 	seen := map[int]int{}
@@ -126,11 +128,11 @@ func TestInvariant_LTAppearsOncePerConnection(t *testing.T) {
 func TestReconnect_ConvergesFromCursor(t *testing.T) {
 	s := NewServer()
 	c := NewClient()
-	s.Commit(Message{LT: 1, Role: "user", Nodes: []Node{{ID: "u0", Version: 1, Type: "prose", Markdown: "q"}}})
+	s.Commit(Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Version: 1, Type: "prose", Markdown: "q"}}})
 
 	cancel := s.Subscribe(c.Cursor(), c.Apply) // streams: committed LT1 + opens LT2
 	s.Open(2, "assistant")
-	s.Set("n0", Node{Type: "prose", Markdown: "partial"})
+	s.Set("n0", livedoc.Node{Type: "prose", Markdown: "partial"})
 	cursor := c.Cursor()
 	if cursor != 1 {
 		t.Fatalf("cursor after streaming open msg = %d, want 1 (LT2 not yet closed)", cursor)
@@ -139,9 +141,9 @@ func TestReconnect_ConvergesFromCursor(t *testing.T) {
 	cancel() // --- disconnect ---
 
 	// Server works while the client is away.
-	s.Set("n0", Node{Type: "prose", Markdown: "partial then done"})
+	s.Set("n0", livedoc.Node{Type: "prose", Markdown: "partial then done"})
 	s.Close() // LT2 closes
-	s.Commit(Message{LT: 3, Role: "user", Nodes: []Node{{ID: "u1", Version: 1, Type: "prose", Markdown: "again"}}})
+	s.Commit(Message{LT: 3, Role: "user", Nodes: []livedoc.Node{{ID: "u1", Version: 1, Type: "prose", Markdown: "again"}}})
 
 	// --- reconnect from cursor: one read recovers the gap ---
 	c.Apply(s.Read(cursor))

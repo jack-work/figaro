@@ -5,13 +5,40 @@ import (
 	"io"
 	"strings"
 
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
-// NodeView renders one aria block to terminal rows. Each row must be a single
+// NodeView renders one block to terminal rows. Each row must be a single
 // physical line ≤ width (use clip). tick advances animations (spinners).
 type NodeView interface {
-	Render(n aria.Node, width, tick int) []string
+	Render(n livedoc.Node, width, tick int) []string
+}
+
+// diffRange returns the first and last indices where old and next differ
+// (-1,-1 if identical), so only the changed row span is repainted.
+func diffRange(old, next []string) (first, last int) {
+	first, last = -1, -1
+	n := len(next)
+	if len(old) > n {
+		n = len(old)
+	}
+	for i := 0; i < n; i++ {
+		var o, x string
+		if i < len(old) {
+			o = old[i]
+		}
+		if i < len(next) {
+			x = next[i]
+		}
+		if o != x {
+			if first == -1 {
+				first = i
+			}
+			last = i
+		}
+	}
+	return
 }
 
 // Inline renders an aria stream inline — no alternate screen. Closed messages
@@ -63,7 +90,7 @@ func (i *Inline) Seal(m aria.Message) {
 }
 
 // Open paints (or repaints) the open message's blocks as the live region.
-func (i *Inline) Open(lt int, role string, nodes []aria.Node) {
+func (i *Inline) Open(lt int, role string, nodes []livedoc.Node) {
 	if lt != i.liveLT {
 		// A new open message without a prior Seal: release whatever was live.
 		if i.liveLT != 0 {
@@ -76,7 +103,7 @@ func (i *Inline) Open(lt int, role string, nodes []aria.Node) {
 }
 
 // Tick advances spinner animation and repaints the open message.
-func (i *Inline) Tick(nodes []aria.Node) {
+func (i *Inline) Tick(nodes []livedoc.Node) {
 	if i.liveLT == 0 {
 		return
 	}
@@ -86,7 +113,7 @@ func (i *Inline) Tick(nodes []aria.Node) {
 
 // Resize repaints the open message at the new width — clearing from the live
 // region's top downward only, so scrollback above is untouched.
-func (i *Inline) Resize(nodes []aria.Node) {
+func (i *Inline) Resize(nodes []livedoc.Node) {
 	if i.liveLT == 0 {
 		return
 	}
@@ -96,7 +123,7 @@ func (i *Inline) Resize(nodes []aria.Node) {
 	i.paint(i.compose(nodes))
 }
 
-func (i *Inline) compose(nodes []aria.Node) []string {
+func (i *Inline) compose(nodes []livedoc.Node) []string {
 	rows := i.renderNodes(nodes)
 	if i.Bookend != nil {
 		w, _ := i.term.Size()
@@ -105,7 +132,7 @@ func (i *Inline) compose(nodes []aria.Node) []string {
 	return rows
 }
 
-func (i *Inline) renderNodes(nodes []aria.Node) []string {
+func (i *Inline) renderNodes(nodes []livedoc.Node) []string {
 	w, _ := i.term.Size()
 	if w <= 0 {
 		w = 80

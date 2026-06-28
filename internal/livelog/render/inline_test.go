@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
@@ -14,15 +15,15 @@ func TestInline_SealOnce_OpenLive(t *testing.T) {
 	in := NewInline(ft, NodeText{})
 
 	// a closed user message → scrollback once
-	in.Seal(aria.Message{LT: 1, Role: "user", Nodes: []aria.Node{{ID: "u0", Type: "prose", Markdown: "hello?"}}})
+	in.Seal(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hello?"}}})
 	// open assistant message, streaming a tool
-	nodes := []aria.Node{{ID: "n0", Type: "thinking", Markdown: "thinking"}}
+	nodes := []livedoc.Node{{ID: "n0", Type: "thinking", Markdown: "thinking"}}
 	in.Open(2, "assistant", nodes)
-	nodes = append(nodes, aria.Node{ID: "n1", Type: "tool", Name: "bash", Status: "running", Output: ""})
+	nodes = append(nodes, livedoc.Node{ID: "n1", Type: "tool", Name: "bash", Status: "running", Output: ""})
 	in.Open(2, "assistant", nodes)
-	nodes[1] = aria.Node{ID: "n1", Type: "tool", Name: "bash", Status: "running", Output: "x\ny"}
+	nodes[1] = livedoc.Node{ID: "n1", Type: "tool", Name: "bash", Status: "running", Output: "x\ny"}
 	in.Open(2, "assistant", nodes)
-	nodes[1] = aria.Node{ID: "n1", Type: "tool", Name: "bash", Status: "ok", Output: "x\ny"}
+	nodes[1] = livedoc.Node{ID: "n1", Type: "tool", Name: "bash", Status: "ok", Output: "x\ny"}
 	in.Open(2, "assistant", nodes)
 	in.Seal(aria.Message{LT: 2, Role: "assistant", Nodes: nodes})
 
@@ -45,9 +46,9 @@ func TestInline_ResizeKeepsSealed_RedrawsOpen(t *testing.T) {
 	ft := NewFakeTerminal(70, 16)
 	in := NewInline(ft, NodeText{})
 
-	in.Seal(aria.Message{LT: 1, Role: "user", Nodes: []aria.Node{{ID: "u0", Type: "prose", Markdown: "list the dir"}}})
+	in.Seal(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "list the dir"}}})
 
-	nodes := []aria.Node{
+	nodes := []livedoc.Node{
 		{ID: "t", Type: "thinking", Markdown: "I'll run ls."},
 		{ID: "b", Type: "tool", Name: "bash", Status: "running",
 			Output: "l1\nl2\nl3\nl4\nl5\nl6"},
