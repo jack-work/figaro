@@ -5,12 +5,12 @@ import "testing"
 func TestDiffApply_RoundTrip(t *testing.T) {
 	cases := []struct{ a, b string }{
 		{"", "hello"},
-		{"hello", "hello world"},   // append
-		{"hello world", "hello"},   // truncate
-		{"abcdef", "abXYef"},       // middle replace
-		{"café", "café au lait"},   // multibyte append
-		{"日本語テスト", "日本語のテスト"}, // multibyte middle insert
-		{"same", "same"},           // no change
+		{"hello", "hello world"}, // append
+		{"hello world", "hello"}, // truncate
+		{"abcdef", "abXYef"},     // middle replace
+		{"café", "café au lait"}, // multibyte append
+		{"日本語テスト", "日本語のテスト"},    // multibyte middle insert
+		{"same", "same"},         // no change
 	}
 	for _, c := range cases {
 		d, ok := Diff(c.a, c.b)

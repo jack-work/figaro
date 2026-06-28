@@ -52,29 +52,22 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	lr.height = height
 	lr.settings = set
 
-	// FIGARO_LIVELOG=1 renders the turn through the livelog module (pi-style,
-	// owns the alternate screen so it full-redraws cleanly on a terminal resize)
-	// instead of the inline liveRegion painter. Opt-in so it can be A/B'd.
+	// FIGARO_LIVELOG=1 renders the turn through the inline-seal renderer
+	// (internal/livelog): closed messages seal to native scrollback once and only
+	// the open message stays a live region, so a mid-turn terminal resize repaints
+	// just that bounded part and can't duplicate committed content. Opt-in so it
+	// can be A/B'd against the default liveRegion painter.
 	var lt *livelogTurn
 	if os.Getenv("FIGARO_LIVELOG") != "" {
 		lt = newLivelogTurn(os.Stdout, width, height, &set, bookendFn)
 	}
 
-	// The painter owns the cursor and assumes one row per line: disable the
-	// terminal's auto-margin so a full-width row never wraps, and hide the text
-	// cursor. livelog additionally takes the alternate screen so it can clear and
-	// repaint on resize without disturbing the scrollback history above; on exit
-	// it prints the settled result to the normal screen so it persists.
-	if lt != nil {
-		fmt.Fprint(os.Stdout, altScreenOn+autowrapOff+cursorHide)
-		defer func() {
-			fmt.Fprint(os.Stdout, cursorShow+autowrapOn+altScreenOff)
-			fmt.Fprint(os.Stdout, lt.finalText(width))
-		}()
-	} else {
-		fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
-		defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
-	}
+	// Both painters own the cursor and assume one row per line: disable the
+	// terminal's auto-margin so a full-width row never wraps, and hide the cursor.
+	// The inline-seal renderer draws inline too (no alternate screen) — its sealed
+	// output is already in the normal scrollback.
+	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
+	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
 
 	// liveRegion is single-threaded; the notify pump, the spinner ticker,
 	// and SIGWINCH all serialize on lrMu.

@@ -1,69 +1,54 @@
 # livelog
 
-A pi-styled renderer for a **loosely append-only log**, live-updated from a
-stream of events, with **catch-up on (re)connect** over a **paginated, delta-
-compressed** API.
+The live-render layer for figaro: an **aria read** protocol plus an **inline-seal**
+terminal renderer. Standard-library only (no deps outside the figaro module), in
+isolation-testable packages.
 
-It is a self-contained Go module (`github.com/jack-work/figaro/internal/livelog`) with no
-dependencies outside the standard library, so it builds and tests in isolation:
+## The one API: a paginated read keyed by figaro LT
 
-```
-cd livelog && go test ./...
-```
+There is a single read API — a paginated read. The live stream is just the server
+*pushing* that pagination as state changes, so a subscription is semantically
+identical to repeatedly calling `read(sinceLT)`. The cursor is a figaro **LT**
+(logical time): to catch up after a missed event or a reconnect, a client reads
+from its last received LT.
 
-## Why
+An `AriaRead` (one page) has two optional sections — omitted when empty to save
+bytes on noisy chats:
 
-figaro's live painter flushes finalized rows into native scrollback and drives
-the rest with relative cursor moves. That makes a mid-stream terminal **resize**
-unrecoverable: the painter can't reflow what's already in scrollback, so a
-non-focused/relaid-out tmux pane (a SIGWINCH while a tool is still running)
-duplicated content and stranded spinners. `livelog` fixes the class by owning its
-screen, pi-style: it holds the whole frame and, on a resize or any change to an
-off-screen line, does a **clean full redraw** instead of a doomed in-place reflow.
+- **`committed`** — closed messages, each by LT. A *full* entry (role+nodes) is
+  content for a client that lacks it (catch-up); a *close-patch* (`closed:true`,
+  no nodes) just signals that a message the connection streamed live has now
+  closed. Close-patches sort before newer full messages (lower LT first).
+- **`live`** — the currently-open message: an ordered set of **blocks**, each with
+  a stable **id** and a monotonic **version** (it binds to one UI element).
 
-## Layers
+**Invariants** (per connection): an LT appears in `committed` at most once; a
+message appears there once and never again; a message may spend time in `live`
+before it closes. The close signal *is* the LT appearing in `committed`.
 
-Three packages, each independently testable behind an interface:
+**Phase 1** (here): each block carries its full text on every update.
+**Phase 2**: that text becomes a splice patch on the prior version — the same
+item, compressed. `doc.Delta` (Diff/Apply) is the Phase-2 primitive.
 
-| package  | role                                                              |
-|----------|------------------------------------------------------------------|
-| `doc`    | pure model: `Block`, `Event`, `Doc` (the fold), `Delta`/`Diff`/`Apply` (delta compression). No IO. |
-| `stream` | catch-up + live follow: a `Feed` (paginated `Snapshot` + delta-`Tail` + `Subscribe`), a `Server` (journal + materialized state), a `Client` (catch-up, reconnect gap-recovery, Seq-idempotent apply). |
-| `render` | pi-style differential renderer over a `Terminal` + `BlockRenderer` interface; ships a `FakeTerminal` (in-memory VT) as the shared test mock. |
+## Packages
 
-`livelog.Viewer` wires all three: subscribe → catch up → render every update →
-recover on reconnect.
+- **`aria`** — the protocol. `Server` (Open/Set/Close/Commit + Read/Subscribe;
+  one `produce` serves both read and push) and `Client` (idempotent fold to a
+  `View`; `Cursor()` is the resume point). No I/O — pure, fully unit-tested
+  (catch-up shapes, live deltas, close-patch, the LT-once invariant, and
+  reconnect-converges-from-cursor).
+- **`render`** — `Inline`: renders inline (no alternate screen). Closed messages
+  seal to native scrollback **once** and are never redrawn; only the open message
+  is a live region, so a terminal resize repaints just that bounded part. The
+  immutability boundary (a sealed message) is the resize boundary — which is what
+  makes the resize/duplication corruption unrepresentable. `FakeTerminal` is a VT
+  mock for deterministic rendering tests.
+- **`doc`** — block/delta model utilities (Phase-2 delta compression).
 
-## Isolation testing
+## In figaro
 
-Every boundary is an interface with a substitutable implementation:
-
-- `render.Terminal` → `render.FakeTerminal` (deterministic in-memory VT; asserts
-  on the exact transcript a real terminal would show — no tty).
-- `render.BlockRenderer` → inject a trivial one to test the differ apart from
-  content.
-- `stream.Feed` → use `*stream.Server` directly or a mock to test the `Client`'s
-  catch-up/reconnect logic apart from any transport.
-
-## Catch-up model
-
-- **Fresh connect** → page the `Snapshot` (current blocks, O(blocks)) then drain
-  the `Tail` for anything published while paging. Cheap regardless of history
-  depth.
-- **Reconnect** → page only the `Tail` from the client's cursor, recovering the
-  gap. Events carry `Delta`s, so the tail is delta-compressed.
-- Application is idempotent by sequence number, so the catch-up/live overlap
-  (and any Follow-before-Catchup ordering) converges exactly.
-
-## Usage
-
-```go
-feed := stream.NewServer()                       // or any stream.Feed
-term := render.NewANSITerminal(os.Stdout, w, h)  // SetSize on SIGWINCH
-v := livelog.NewViewer(term, render.TextRenderer{}, 64)
-disconnect := v.Connect(feed)                    // catch up + follow
-// ... on SIGWINCH: term.SetSize(w,h); v.Tick()
-// ... on a dropped connection: disconnect(); v.Reconnect(feed)
-```
-
-Provide a custom `render.BlockRenderer` to draw tools/thinking/prose as widgets.
+`internal/cli/livelog_bridge.go` (opt-in via `FIGARO_LIVELOG`) translates figaro's
+wire ops into aria blocks and drives `Inline`, reusing figaro's own node renderers
+so on-screen content matches the default painter. The server-side `aria.Server` +
+a real `figaro.read(sinceLT)` RPC (true catch-up / a persistent `listen`) is the
+next phase.

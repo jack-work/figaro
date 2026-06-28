@@ -100,9 +100,18 @@ func (t *FakeTerminal) csi(params, final string) {
 		} else if t.col < len(t.lines[t.row]) {
 			t.lines[t.row] = t.lines[t.row][:t.col]
 		}
-	case "J": // 2J clear screen, 3J clear scrollback; we model a full reset
-		t.lines = nil
-		t.row, t.col, t.top = 0, 0, 0
+	case "J":
+		switch n {
+		case 2, 3: // clear screen / scrollback — full reset (the pi full-redraw)
+			t.lines = nil
+			t.row, t.col, t.top = 0, 0, 0
+		default: // 0J: erase from the cursor to the end of screen (scrollback above kept)
+			t.ensure(t.row)
+			if t.col < len(t.lines[t.row]) {
+				t.lines[t.row] = t.lines[t.row][:t.col]
+			}
+			t.lines = t.lines[:t.row+1]
+		}
 	}
 }
 

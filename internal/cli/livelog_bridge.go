@@ -4,158 +4,199 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/jack-work/figaro/internal/livedoc"
-	"github.com/jack-work/figaro/internal/rpc"
-	lddoc "github.com/jack-work/figaro/internal/livelog/doc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// livelogTurn renders a turn through the livelog module (pi-style differential
-// rendering that owns its screen) instead of the inline liveRegion painter. It
-// is opt-in via FIGARO_LIVELOG and runs in the alternate screen, which is what
-// lets it full-redraw cleanly on a terminal resize — the case that duplicated
-// content under the inline painter.
+// livelogTurn renders a turn through the inline-seal renderer (internal/livelog),
+// opt-in via FIGARO_LIVELOG. Closed messages are sealed to native scrollback once
+// and never redrawn; only the open message is a live region, so a terminal resize
+// repaints just that bounded part — the structural fix for the resize/dup class.
 //
-// It translates figaro's positional wire ops into livelog doc events and reuses
-// figaro's own node renderers (glamour prose, tool widgets) via figaroView, so
-// content looks identical; only the cursor/diff/resize machinery is livelog's.
+// It translates figaro's positional wire ops into aria blocks (id "n<index>",
+// monotonic version) and reuses figaro's own node renderers via ariaView, so the
+// on-screen content is identical to the default painter. Phase 1 carries each
+// block's full text; deltas (Phase 2) are pure compression of the same item.
 type livelogTurn struct {
-	d        *lddoc.Doc
-	r        *ldrender.Renderer
-	term     *ldrender.ANSITerminal
-	view     *figaroView
-	unit     int // bumped per snapshot so block IDs are unique across units
-	settings *renderSettings
+	in   *ldrender.Inline
+	term *ldrender.ANSITerminal
+	view *ariaView
+
+	nextLT int
+	openLT int
+	order  []string // open-message block ids, in order
+	node   map[string]aria.Node
 }
 
 func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend func() string) *livelogTurn {
-	t := ldrender.NewANSITerminal(out, w, h)
-	v := &figaroView{settings: settings}
-	r := ldrender.New(t, v)
-	r.Bookend = bookend
-	return &livelogTurn{d: lddoc.New(), r: r, term: t, view: v, settings: settings}
+	term := ldrender.NewANSITerminal(out, w, h)
+	view := &ariaView{settings: settings}
+	in := ldrender.NewInline(term, view)
+	in.Bookend = bookend
+	return &livelogTurn{in: in, term: term, view: view, node: map[string]aria.Node{}}
 }
 
-// handle decodes a wire notification and folds it into the document, repainting.
-// Returns true if it consumed the method (turn.done is left to the caller).
-func (lt *livelogTurn) handle(method string, params json.RawMessage) bool {
+func (t *livelogTurn) handle(method string, params json.RawMessage) {
 	switch method {
 	case rpc.MethodLogSnapshot:
 		var e rpc.SnapshotEntry
-		if json.Unmarshal(params, &e) == nil {
-			lt.unit++
+		if json.Unmarshal(params, &e) != nil {
+			return
+		}
+		if e.Role == "assistant" {
+			t.openLT = t.nextSeq()
+			t.order, t.node = nil, map[string]aria.Node{}
 			for i, n := range e.Nodes {
-				lt.d.Apply(lddoc.Append(lt.block(i, n)))
+				t.setBlock(i, n)
 			}
-			lt.render()
+			t.repaint()
+		} else {
+			// a closed (e.g. user) message — seal it once.
+			lt := t.nextSeq()
+			var nodes []aria.Node
+			for i, n := range e.Nodes {
+				nodes = append(nodes, toAria(fmt.Sprintf("u%d", i), 1, n))
+			}
+			t.in.Seal(aria.Message{LT: lt, Role: e.Role, Nodes: nodes})
 		}
 	case rpc.MethodNodeOpen:
 		var e rpc.NodeOpenEntry
 		if json.Unmarshal(params, &e) == nil {
-			lt.d.Apply(lddoc.Append(lt.block(e.Index, e.Node)))
-			lt.render()
+			t.setBlock(e.Index, e.Node)
+			t.repaint()
 		}
 	case rpc.MethodNodePatch:
 		var e rpc.NodePatchEntry
 		if json.Unmarshal(params, &e) == nil {
-			// figaro nodes carry a single streamed field; route output|markdown to Body.
-			lt.d.Apply(lddoc.Patch(lt.id(e.Index), lddoc.Delta{At: e.At, Del: e.Del, Ins: e.Ins}))
-			lt.render()
+			t.patchBlock(e.Index, e.Field, e.At, e.Del, e.Ins)
+			t.repaint()
 		}
 	case rpc.MethodNodeSet:
 		var e rpc.NodeSetEntry
 		if json.Unmarshal(params, &e) == nil {
-			id := lt.id(e.Index)
-			lt.d.Apply(lddoc.SetStatus(id, statusOf(e.Status)))
-			attrs := map[string]string{"fstatus": e.Status}
-			if e.Name != "" {
-				attrs["name"] = e.Name
-			}
-			if e.Args != nil {
-				if a, err := json.Marshal(e.Args); err == nil {
-					attrs["args"] = string(a)
-				}
-			}
-			lt.d.Apply(lddoc.SetAttrs(id, attrs))
-			lt.render()
+			t.setScalars(e.Index, e.Status, e.Name, e.Args)
+			t.repaint()
 		}
 	case rpc.MethodLogCommit:
-		lt.d.Apply(lddoc.Seal())
-		lt.render()
-	default:
-		return false
+		t.in.Seal(aria.Message{LT: t.openLT, Role: "assistant", Nodes: t.openNodes()})
+		t.openLT, t.order, t.node = 0, nil, map[string]aria.Node{}
 	}
-	return true
 }
 
-func (lt *livelogTurn) tick()           { lt.r.Tick() }
-func (lt *livelogTurn) resize(w, h int) { lt.term.SetSize(w, h); lt.render() }
-func (lt *livelogTurn) render()         { lt.r.Render(lt.d.Blocks()) }
+func (t *livelogTurn) tick()           { t.in.Tick(t.openNodes()) }
+func (t *livelogTurn) resize(w, h int) { t.term.SetSize(w, h); t.in.Resize(t.openNodes()) }
+func (t *livelogTurn) render()         { t.repaint() } // re-render open (e.g. after a verbosity toggle)
 
-func (lt *livelogTurn) id(i int) string { return fmt.Sprintf("u%d-%d", lt.unit, i) }
-
-func (lt *livelogTurn) block(i int, n livedoc.Node) lddoc.Block {
-	body := n.Markdown
-	if n.Type == livedoc.NodeTool {
-		body = n.Output
+func (t *livelogTurn) repaint() {
+	if t.openLT != 0 {
+		t.in.Open(t.openLT, "assistant", t.openNodes())
 	}
-	attrs := map[string]string{"name": n.Name, "fstatus": n.Status}
-	if a, err := json.Marshal(n.Args); err == nil {
-		attrs["args"] = string(a)
-	}
-	return lddoc.Block{ID: lt.id(i), Kind: kindOf(n.Type), Status: statusOf(n.Status), Body: body, Attrs: attrs}
 }
 
-// finalText renders the settled document to plain rows for printing to the
-// normal screen after the alternate screen is torn down, so the result persists
-// in scrollback.
-func (lt *livelogTurn) finalText(width int) string {
-	var b strings.Builder
-	for bi, blk := range lt.d.Blocks() {
-		if bi > 0 {
-			b.WriteByte('\n')
-		}
-		for _, l := range lt.view.Render(blk, width, 0) {
-			b.WriteString(l)
-			b.WriteByte('\n')
-		}
+func (t *livelogTurn) nextSeq() int { t.nextLT++; return t.nextLT }
+
+func (t *livelogTurn) id(index int) string { return fmt.Sprintf("n%d", index) }
+
+func (t *livelogTurn) setBlock(index int, n livedoc.Node) {
+	id := t.id(index)
+	cur, ok := t.node[id]
+	if !ok {
+		t.order = append(t.order, id)
 	}
-	return b.String()
+	t.node[id] = toAria(id, cur.Version+1, n)
 }
 
-// figaroView is the livelog BlockRenderer that reuses figaro's existing node
-// renderers, so the on-screen content is identical to the inline painter's.
-type figaroView struct{ settings *renderSettings }
-
-func (v *figaroView) Render(b lddoc.Block, width, tick int) []string {
-	n := livedoc.Node{Type: typeOf(b.Kind), Name: b.Attrs["name"], Status: b.Attrs["fstatus"]}
-	if s := b.Attrs["args"]; s != "" && s != "null" {
-		_ = json.Unmarshal([]byte(s), &n.Args)
+func (t *livelogTurn) patchBlock(index int, field string, at, del int, ins string) {
+	id := t.id(index)
+	cur, ok := t.node[id]
+	if !ok {
+		t.order = append(t.order, id)
+		cur.ID = id
 	}
-	switch n.Type {
+	if field == "output" {
+		cur.Output = splice(cur.Output, at, del, ins)
+	} else {
+		cur.Markdown = splice(cur.Markdown, at, del, ins)
+	}
+	cur.Version++
+	t.node[id] = cur
+}
+
+func (t *livelogTurn) setScalars(index int, status, name string, args map[string]interface{}) {
+	id := t.id(index)
+	cur, ok := t.node[id]
+	if !ok {
+		t.order = append(t.order, id)
+		cur.ID = id
+	}
+	if status != "" {
+		cur.Status = status
+	}
+	if name != "" {
+		cur.Name = name
+	}
+	if args != nil {
+		cur.Args = args
+	}
+	cur.Version++
+	t.node[id] = cur
+}
+
+func (t *livelogTurn) openNodes() []aria.Node {
+	out := make([]aria.Node, 0, len(t.order))
+	for _, id := range t.order {
+		out = append(out, t.node[id])
+	}
+	return out
+}
+
+// toAria converts a figaro wire node into an aria block at the given version.
+func toAria(id string, version int, n livedoc.Node) aria.Node {
+	return aria.Node{
+		ID: id, Version: version,
+		Type: string(n.Type), Markdown: n.Markdown,
+		Name: n.Name, Args: n.Args, Status: n.Status, Output: n.Output,
+	}
+}
+
+// splice applies a clamped single-region edit (the wire's delta primitive).
+func splice(s string, at, del int, ins string) string {
+	if at < 0 {
+		at = 0
+	}
+	if at > len(s) {
+		at = len(s)
+	}
+	end := at + del
+	if end < at {
+		end = at
+	}
+	if end > len(s) {
+		end = len(s)
+	}
+	return s[:at] + ins + s[end:]
+}
+
+// ariaView renders an aria block by reconstructing a figaro node and reusing
+// figaro's existing renderers (glamour prose, tool widgets), so content matches
+// the default painter exactly.
+type ariaView struct{ settings *renderSettings }
+
+func (v *ariaView) Render(n aria.Node, width, tick int) []string {
+	ln := livedoc.Node{Type: typeOf(n.Type), Name: n.Name, Status: n.Status, Args: n.Args}
+	switch ln.Type {
 	case livedoc.NodeTool:
-		n.Output = b.Body
-		expand := v.settings != nil && v.settings.verbose
-		return renderToolNode(n, width, nodeBashCapDefault, uint64(tick), expand)
+		ln.Output = n.Output
+		return renderToolNode(ln, width, nodeBashCapDefault, uint64(tick), v.settings != nil && v.settings.verbose)
 	case livedoc.NodeThinking:
-		n.Markdown = b.Body
-		return renderThinkingNode(n, width)
+		ln.Markdown = n.Markdown
+		return renderThinkingNode(ln, width)
 	default:
-		n.Markdown = b.Body
-		return renderProseNode(n, width)
-	}
-}
-
-func kindOf(t livedoc.NodeType) string {
-	switch t {
-	case livedoc.NodeTool:
-		return "tool"
-	case livedoc.NodeThinking:
-		return "thinking"
-	default:
-		return "prose"
+		ln.Markdown = n.Markdown
+		return renderProseNode(ln, width)
 	}
 }
 
@@ -169,21 +210,3 @@ func typeOf(k string) livedoc.NodeType {
 		return livedoc.NodeProse
 	}
 }
-
-func statusOf(figaroStatus string) lddoc.Status {
-	switch figaroStatus {
-	case livedoc.StatusOK:
-		return lddoc.StatusOK
-	case livedoc.StatusError:
-		return lddoc.StatusError
-	case livedoc.StatusRunning:
-		return lddoc.StatusActive
-	default:
-		return ""
-	}
-}
-
-const (
-	altScreenOn  = "\x1b[?1049h" // enter the alternate screen buffer
-	altScreenOff = "\x1b[?1049l" // leave it, restoring the normal screen
-)
