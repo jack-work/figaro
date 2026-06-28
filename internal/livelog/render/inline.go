@@ -58,6 +58,7 @@ type Inline struct {
 
 	// Open-message live region:
 	liveLT int
+	role   string   // open message's role; the bookend rides "assistant" only
 	live   []string // rows on screen for the open message
 	vt     int      // rows of the live region scrolled above the viewport
 	cur    int      // cursor row within the live region (0 = top)
@@ -89,6 +90,39 @@ func (i *Inline) Seal(m aria.Message) {
 	io.WriteString(i.term, b.String())
 }
 
+// Resume rebuilds the inline view after the transcript pager closes. The
+// alt-screen restored whatever partial live region was on screen when the pager
+// opened; this clears it, prints the given closed messages to scrollback in full
+// (the bookend follows the assistant only), and — if a message is still
+// streaming — starts a fresh live region. The cursor lands on a new line below
+// everything, so input resumes after the content like `figaro show`.
+func (i *Inline) Resume(closed []aria.Message, openLT int, openRole string, open []livedoc.Node) {
+	io.WriteString(i.term, "\x1b[J") // clear the restored partial region
+	i.reset()
+	for _, m := range closed {
+		i.printMessage(m)
+	}
+	if openLT != 0 {
+		i.Open(openLT, openRole, open)
+	}
+}
+
+// printMessage writes a closed message's rows to scrollback (bookend after an
+// assistant message), leaving the cursor on a fresh line below. Each message is
+// prefaced with a blank line — the same leading-space rule Seal/compose apply.
+func (i *Inline) printMessage(m aria.Message) {
+	body := i.renderNodes(m.Nodes)
+	if len(body) == 0 {
+		return
+	}
+	rows := append([]string{""}, body...)
+	if m.Role == "assistant" && i.Bookend != nil {
+		w, _ := i.term.Size()
+		rows = append(rows, "", clip(i.Bookend(), w))
+	}
+	io.WriteString(i.term, strings.Join(rows, "\r\n")+"\r\n")
+}
+
 // Open paints (or repaints) the open message's blocks as the live region.
 func (i *Inline) Open(lt int, role string, nodes []livedoc.Node) {
 	if lt != i.liveLT {
@@ -99,6 +133,7 @@ func (i *Inline) Open(lt int, role string, nodes []livedoc.Node) {
 		i.reset()
 		i.liveLT = lt
 	}
+	i.role = role
 	i.paint(i.compose(nodes))
 }
 
@@ -130,7 +165,7 @@ func (i *Inline) compose(nodes []livedoc.Node) []string {
 	rows := make([]string, 0, len(body)+3)
 	rows = append(rows, "")
 	rows = append(rows, body...)
-	if i.Bookend != nil {
+	if i.role == "assistant" && i.Bookend != nil {
 		w, _ := i.term.Size()
 		rows = append(rows, "", clip(i.Bookend(), w))
 	}
@@ -220,5 +255,5 @@ func (i *Inline) dropBelow() {
 }
 
 func (i *Inline) reset() {
-	i.liveLT, i.live, i.vt, i.cur = 0, nil, 0, 0
+	i.liveLT, i.role, i.live, i.vt, i.cur = 0, "", nil, 0, 0
 }

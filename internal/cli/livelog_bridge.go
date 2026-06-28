@@ -38,6 +38,9 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend f
 	t.client.OnClosed = func(m aria.Message) {
 		if t.tr.active {
 			t.pendingSeals = append(t.pendingSeals, m)
+			if m.LT == t.openLT {
+				t.openLT, t.open = 0, nil // closed: don't re-open it on pager exit
+			}
 			t.tr.render()
 		} else {
 			t.in.Seal(m)
@@ -98,13 +101,8 @@ func (t *livelogTurn) transcriptKey(b byte) (exited bool) {
 		return false
 	}
 	t.tr.leave()
-	for _, m := range t.pendingSeals {
-		t.in.Seal(m)
-	}
+	t.in.Resume(t.pendingSeals, t.openLT, t.openRole, t.open)
 	t.pendingSeals = nil
-	if t.openLT != 0 {
-		t.in.Open(t.openLT, t.openRole, t.open)
-	}
 	return true
 }
 
