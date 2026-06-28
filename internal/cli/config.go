@@ -9,6 +9,7 @@ import (
 	"text/template"
 	"time"
 
+	hushconfig "github.com/jack-work/hush/config"
 	"github.com/jack-work/hush/managed"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
@@ -41,7 +42,7 @@ func mustHush() *managed.Hush {
 		if appName == "" {
 			appName = "figaro"
 		}
-		hushInstance, hushErr = managed.New(managed.Options{
+		opts := managed.Options{
 			AppName: appName,
 			// Drive the first-run passphrase UX from figaro's TUI
 			// so hush doesn't try to read /dev/tty in parallel with
@@ -50,7 +51,22 @@ func mustHush() *managed.Hush {
 			PromptPassphrase: func() ([]byte, error) {
 				return tui.PromptPassphrase(appName)
 			},
-		})
+		}
+		// FIGARO_HUSH_DIR pins a fully isolated, EMBEDDED hush rooted at one
+		// directory (its own identity, encrypted secrets, and agent socket
+		// under <dir>/run). Hermetic dev shells set it so figaro runs its
+		// own hush instance — re-authenticated per shell — instead of
+		// reaching the user's shared agent, whose socket isn't visible
+		// inside the sandbox. Without it, hush resolves its normal surface.
+		if dir := os.Getenv("FIGARO_HUSH_DIR"); dir != "" {
+			opts.Mode = managed.ModeEmbedded
+			opts.Dirs = &hushconfig.Dirs{
+				ConfigDir:  filepath.Join(dir, "config"),
+				StateDir:   filepath.Join(dir, "state"),
+				RuntimeDir: filepath.Join(dir, "run"),
+			}
+		}
+		hushInstance, hushErr = managed.New(opts)
 	})
 	if hushErr != nil {
 		die("hush: %s", hushErr)

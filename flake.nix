@@ -157,6 +157,15 @@
             else if value == "@dev" then ''
               : "''${FIGARO_HUSH_APP:=figaro-dev-${name}}"
               export FIGARO_HUSH_APP
+              # Isolated, EMBEDDED hush rooted under the dev root: its own
+              # identity + encrypted secrets + agent socket (<dir>/run),
+              # re-authenticated per shell. Stable per shell (not the
+              # nix-shell $TMPDIR), so figaro runs its own hush instance
+              # instead of reaching the user's shared agent (whose socket
+              # isn't reachable from inside the sandbox).
+              : "''${FIGARO_HUSH_DIR:=$FIGARO_DEV_ROOT/hush}"
+              export FIGARO_HUSH_DIR
+              mkdir -p "''${FIGARO_HUSH_DIR}"
             ''
             else ''
               : "''${FIGARO_HUSH_APP:=${value}}"
@@ -228,14 +237,18 @@
           hush = null;
         };
 
-        # Share hush + config (real providers, real loadouts) but
-        # isolate runtime + state. Useful for testing changes that
-        # affect the daemon or aria store without touching the
-        # user's real socket or aria archive.
+        # Share config (real providers, real loadouts) but isolate
+        # runtime + state AND run an isolated, embedded hush (its own
+        # identity, re-authenticated per shell — `q login` or set
+        # ANTHROPIC_API_KEY on first use). The shared agent's socket
+        # isn't reachable from inside the sandbox, so this gives a
+        # self-contained hush instead. NOTE: AGE-ENC provider keys in
+        # the shared config can't be decrypted by the fresh identity —
+        # re-auth the provider (OAuth/login or a plaintext/env key).
         share-config = mkFigaroShell {
           name = "share-config";
           config = null;
-          hush   = null;
+          hush   = "@dev";
         };
 
         # `nix develop .#swap` enters a shell that swaps the user's
