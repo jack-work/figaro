@@ -10,10 +10,28 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/transport"
 )
+
+// completeLoadouts completes the `loadout` command: available loadout names
+// for the positional slot (sourced from the config, so it works with no aria
+// attached), or aria ids after --id.
+func completeLoadouts(c *cmdkit.CompleteContext) []string {
+	if c == nil {
+		return nil
+	}
+	if len(c.Args) > 0 && c.Args[len(c.Args)-1] == "--id" {
+		return softFetchAriaIDs()
+	}
+	loaded, _ := c.Extra.(*config.Loaded)
+	if loaded == nil {
+		return nil
+	}
+	return loaded.ListLoadouts()
+}
 
 // runLoadout calls figaro.loadout on the targeted aria.
 func runLoadout(loaded *config.Loaded, ariaID, loadoutName string) {

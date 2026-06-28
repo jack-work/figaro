@@ -82,7 +82,7 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int) {
 
 		// Flatten to rendered rows: tree glyphs in an ARIA cell.
 		type row struct {
-			aria, id, fork, age, msgs, ctx, cwd string
+			aria, id, loadout, ver, fork, age, msgs, ctx, cwd string
 		}
 		var rows []row
 		ppid := os.Getppid()
@@ -124,7 +124,8 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int) {
 			}
 			rows = append(rows, row{
 				aria: glyph + marker(f) + " " + truncRunes(label, 44),
-				id:   f.ID, fork: fork, age: relAge(f.LastActive),
+				id:   f.ID, loadout: dash(f.LoadoutName), ver: dash(f.LoadoutVer),
+				fork: fork, age: relAge(f.LastActive),
 				msgs: fmt.Sprintf("%d", f.MessageCount), ctx: ctxStr, cwd: shortCwd(f.Cwd),
 			})
 			cp := prefix
@@ -161,9 +162,9 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int) {
 			len(roots), branches, shown, total)
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(w, "ARIA\tID\tFORK\tAGE\tMSGS\tCTX\tCWD\n")
+		fmt.Fprintf(w, "ARIA\tID\tLOADOUT\tVER\tFORK\tAGE\tMSGS\tCTX\tCWD\n")
 		for _, r := range rows {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.aria, r.id, r.fork, r.age, r.msgs, r.ctx, r.cwd)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.aria, r.id, r.loadout, r.ver, r.fork, r.age, r.msgs, r.ctx, r.cwd)
 		}
 		w.Flush()
 		if limit > 0 && total > limit {

@@ -23,6 +23,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figwal/segment"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -172,6 +173,46 @@ func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoRespon
 	if entry.Cwd == "" {
 		entry.Cwd = get("system.cwd")
 	}
+	// Loadout: the name + whether the conversation's stamped content hash is
+	// still the current one ("live") or an older version (its short hash).
+	if name := get("system.loadout_name"); name != "" {
+		entry.LoadoutName = name
+		stamped := get("system.loadout_version")
+		entry.LoadoutVer = loadoutVerLabel(stamped, h.currentLoadoutHash(name))
+	}
+}
+
+// currentLoadoutHash is the content hash the loadout would have right now
+// (recomputed from the on-disk definition), or "" if it can't be loaded.
+func (h *handlers) currentLoadoutHash(name string) string {
+	if h.outfitter == nil {
+		return ""
+	}
+	p, err := h.outfitter.Load(name)
+	if err != nil {
+		return ""
+	}
+	body, err := json.Marshal(p)
+	if err != nil {
+		return ""
+	}
+	hash, _ := segment.ValueHash(body)
+	return hash
+}
+
+// loadoutVerLabel renders the version column: "live" when the stamped hash
+// matches the current one, else the stamped hash's first 8 chars.
+func loadoutVerLabel(stamped, current string) string {
+	if stamped == "" {
+		return ""
+	}
+	if current != "" && stamped == current {
+		return "live"
+	}
+	if len(stamped) > 8 {
+		return stamped[:8]
+	}
+	return stamped
 }
 
 // openAriaTranslation opens the per-aria translation cache. nil on failure.

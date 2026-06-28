@@ -428,6 +428,7 @@ any other aria, or passing --stay, leaves your session untouched.`,
 			runLoadout(ld, ctx.Flag("id"), ctx.Args[0])
 			return nil
 		},
+		CompleteArgs: completeLoadouts,
 	})
 
 	r.Register(&cmdkit.Command{
