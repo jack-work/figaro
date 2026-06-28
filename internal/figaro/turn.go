@@ -605,53 +605,24 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 }
 
 // emitSnapshot opens a new unit at the next figaro LT and sets its initial
-// nodes. liveNodes holds the last-composed list that emitDelta diffs against.
+// nodes. The aria server diffs subsequent Updates against this internally.
 func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
-	a.liveMu.Lock()
 	a.unitLT++
-	lt := a.unitLT
-	a.liveNodes = nodes
-	a.liveMu.Unlock()
-
-	a.ariaSrv.Open(lt, role)
-	for i, n := range nodes {
-		a.ariaSrv.Set(blockID(i, n), n)
+	a.ariaSrv.Open(a.unitLT, role)
+	if len(nodes) > 0 {
+		a.ariaSrv.Update(nodes)
 	}
 }
 
-// emitDelta diffs the node list against the last sent and writes each changed
-// block (full text, Phase 1) into the open unit; the aria server versions them
-// and pushes the live delta to subscribers.
+// emitDelta hands the current full node list to the aria server, which computes
+// the field-level delta vs the prior frame and broadcasts it (versioned).
 func (a *Agent) emitDelta(nodes []livedoc.Node) {
-	a.liveMu.Lock()
-	ops := livedoc.DiffNodes(a.liveNodes, nodes)
-	a.liveNodes = nodes
-	a.liveMu.Unlock()
-
-	seen := map[int]bool{}
-	for _, op := range ops {
-		if seen[op.Index] {
-			continue
-		}
-		seen[op.Index] = true
-		a.ariaSrv.Set(blockID(op.Index, nodes[op.Index]), nodes[op.Index])
-	}
+	a.ariaSrv.Update(nodes)
 }
 
 // emitCommit closes the open unit; it becomes a committed aria message.
 func (a *Agent) emitCommit() {
-	a.liveMu.Lock()
-	a.liveNodes = nil
-	a.liveMu.Unlock()
 	a.ariaSrv.Close()
-}
-
-// blockID is a node's stable handle: its tool_call_id, or its positional id.
-func blockID(i int, n livedoc.Node) string {
-	if n.ID != "" {
-		return n.ID
-	}
-	return fmt.Sprintf("n%d", i)
 }
 
 // asm assembles the in-flight assistant message from provider Bus events

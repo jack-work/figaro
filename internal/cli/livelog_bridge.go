@@ -35,10 +35,11 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend f
 	return t
 }
 
-func (t *livelogTurn) apply(r aria.AriaRead) { t.client.Apply(r) }
-func (t *livelogTurn) tick()                 { t.in.Tick(t.open) }
-func (t *livelogTurn) resize(w, h int)       { t.term.SetSize(w, h); t.in.Resize(t.open) }
-func (t *livelogTurn) cursor() int           { return t.client.Cursor() }
+func (t *livelogTurn) apply(r aria.AriaRead)  { t.client.Apply(r) }
+func (t *livelogTurn) setDesync(fn func(int)) { t.client.OnDesync = fn }
+func (t *livelogTurn) tick()                  { t.in.Tick(t.open) }
+func (t *livelogTurn) resize(w, h int)        { t.term.SetSize(w, h); t.in.Resize(t.open) }
+func (t *livelogTurn) cursor() int            { return t.client.Cursor() }
 
 // render re-paints the open message (e.g. after a verbosity toggle).
 func (t *livelogTurn) render() {

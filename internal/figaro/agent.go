@@ -12,7 +12,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/compose"
-	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -91,16 +90,11 @@ type Agent struct {
 	mu   sync.RWMutex
 	subs map[Notifier]struct{} // socket clients + in-process listeners
 
-	// Live-render state. The drain loop owns liveNodes/turnStart/liveActive
-	// for mutation; liveMu guards them so a concurrent figaro.read sees a
-	// consistent (committed-prefix, live-unit) pair and never an op
-	// mid-broadcast. liveNodes is the current unit's node list as last sent
-	// (ops diff against it); turnStart is the figLog index where the
-	// current turn's agent messages begin; liveActive is true while an
-	// assistant turn unit is live; partials holds streamed output for
-	// in-flight tools (keyed by tool_call_id, drain-loop only).
+	// Live-render state (drain-loop owned; liveMu guards liveActive). turnStart
+	// is the figLog index where the current turn's agent messages begin;
+	// liveActive is true while an assistant unit is live; partials holds streamed
+	// output for in-flight tools (keyed by tool_call_id).
 	liveMu     sync.Mutex
-	liveNodes  []livedoc.Node
 	turnStart  int
 	liveActive bool
 	partials   map[string]string
@@ -161,7 +155,7 @@ func NewAgent(cfg Config) *Agent {
 		a.unitLT = i + 1
 		a.ariaSrv.Commit(aria.Message{LT: a.unitLT, Role: u.Role, Nodes: u.Nodes})
 	}
-	a.ariaSrv.Subscribe(0, func(r aria.AriaRead) {
+	a.ariaSrv.Subscribe(func(r aria.AriaRead) {
 		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: r})
 	})
 

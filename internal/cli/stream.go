@@ -100,6 +100,22 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 	defer fcli.Close()
 
+	// On a version desync, re-read from the last fully-committed LT and re-apply
+	// the full snapshot (off the notify path so the pump isn't blocked).
+	lt.setDesync(func(sinceLT int) {
+		go func() {
+			rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer rcancel()
+			r, rerr := fcli.Read(rctx, sinceLT)
+			if rerr != nil {
+				return
+			}
+			mu.Lock()
+			lt.apply(r)
+			mu.Unlock()
+		}()
+	})
+
 	// Local spinner animation: ticks the open message's running tool; zero extra
 	// wire traffic (output streams via aria frames).
 	stopTick := make(chan struct{})

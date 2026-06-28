@@ -2,29 +2,27 @@
 //
 // An AriaRead is one "aria read": a page of the conversation. The live stream
 // pushes AriaReads as state changes — server-pushed pagination — so subscribing
-// is semantically identical to repeatedly calling read(sinceLT). The cursor is a
-// figaro LT (logical time): to catch up after a missed event or a reconnect, a
-// client reads from its last received LT.
+// is equivalent to repeatedly calling read(sinceLT). The cursor is a figaro LT.
 //
-// There is one representation throughout: livedoc.Node, the very block the
-// terminal renders. The wire carries it directly — no separate node type, no
-// translation. Its ID is the stable handle a UI element binds to; its Version
-// bumps on each mutation.
+// The open message streams as field-level deltas. Each live frame carries a
+// record version V (server-controlled, 0-indexed, incremented per frame) and the
+// nodes that changed, each as a NodeDelta: `set` merges fields (creating the node
+// on first set, where `type` must appear), `unset` removes them, `patch` splices
+// a streamed string field on the previous version's value. A frame's nodes are
+// ordered; a new id appends at that position.
 //
-// Empty sections are omitted to save bytes on noisy chats: an absent committed
-// section means "no newly-closed messages", an absent live section means "no
-// open-message change".
+// A message in `committed` is closed. Two forms: a close marker {lt, v} — you
+// streamed it live, so promote your materialized copy iff your highest seen
+// version equals v — or a full snapshot {lt, role, nodes} (catch-up: adopt
+// wholesale). On any version mismatch the client reconnects and re-reads from its
+// last fully-committed LT.
 //
-// Invariants (per stream connection):
-//   - a given LT appears in the committed section at most once.
-//   - a message appears in committed once and never again on that connection.
-//   - a message may spend time in the live section (its nodes updating) before
-//     it closes into committed; the close signal IS the LT appearing in committed.
+// Empty sections are omitted.
 package aria
 
 import "github.com/jack-work/figaro/internal/livedoc"
 
-// AriaRead is one page — returned by Read or pushed live; the two are equivalent.
+// AriaRead is one page — pushed live or returned by Read; the two are equivalent.
 type AriaRead struct {
 	Committed []Committed `json:"committed,omitempty"`
 	Live      *Live       `json:"live,omitempty"`
@@ -33,26 +31,39 @@ type AriaRead struct {
 // Empty reports whether the page carries nothing (so it isn't sent).
 func (r AriaRead) Empty() bool { return len(r.Committed) == 0 && r.Live == nil }
 
-// Committed is a closed message, in one of two shapes:
-//
-//	full  — Role+Nodes present: the message's content (catch-up / first delivery)
-//	patch — Closed=true, Nodes absent: the message at LT just closed; the client
-//	        already streamed its content live, so only the close transition is
-//	        signaled. A close-patch sorts before any newly-created full messages
-//	        in the same page (it has the lower LT).
-type Committed struct {
-	LT     int            `json:"lt"`
-	Closed bool           `json:"closed,omitempty"`
-	Role   string         `json:"role,omitempty"`
-	Nodes  []livedoc.Node `json:"nodes,omitempty"`
+// Live is one frame of the open message: its record version and the per-node
+// field deltas. Role appears on the first frame (v 0) and on catch-up snapshots.
+type Live struct {
+	LT    int         `json:"lt"`
+	V     int         `json:"v"`
+	Role  string      `json:"role,omitempty"`
+	Nodes []NodeDelta `json:"nodes"`
 }
 
-// Live is the currently-open message and the blocks that changed.
-type Live struct {
-	LT    int            `json:"lt"`
-	Role  string         `json:"role,omitempty"`
-	Nodes []livedoc.Node `json:"nodes"`
+// NodeDelta is a field-level change to one block, addressed by stable id.
+type NodeDelta struct {
+	ID    string                   `json:"id"`
+	Set   map[string]any           `json:"set,omitempty"`   // merge fields (create on first set; type required)
+	Unset []string                 `json:"unset,omitempty"` // remove fields
+	Patch map[string]livedoc.Delta `json:"patch,omitempty"` // splice a streamed string field on its prev value
 }
+
+// Empty reports whether the delta changes nothing.
+func (d NodeDelta) Empty() bool {
+	return len(d.Set) == 0 && len(d.Unset) == 0 && len(d.Patch) == 0
+}
+
+// Committed is a closed message: a close marker {lt, v} (promote iff seen==v) or
+// a full snapshot {lt, role, nodes} (adopt wholesale). Presence implies closed.
+type Committed struct {
+	LT    int            `json:"lt"`
+	V     int            `json:"v,omitempty"`
+	Role  string         `json:"role,omitempty"`
+	Nodes []livedoc.Node `json:"nodes,omitempty"`
+}
+
+// Full reports whether this is a content snapshot (vs a close marker).
+func (c Committed) Full() bool { return c.Nodes != nil }
 
 // Message is a closed (immutable) message, identified by its figaro LT.
 type Message struct {

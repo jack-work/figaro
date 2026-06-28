@@ -6,156 +6,114 @@ import (
 	"github.com/jack-work/figaro/internal/livedoc"
 )
 
-func tool(name, status, out string) livedoc.Node {
-	return livedoc.Node{Type: "tool", Name: name, Status: status, Output: out,
-		Args: map[string]interface{}{"command": name}}
+func tool(status, out string) livedoc.Node {
+	return livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: status, Output: out,
+		Args: map[string]any{"command": "ls"}}
+}
+func prose(md string) livedoc.Node {
+	return livedoc.Node{Type: livedoc.NodeProse, Markdown: md}
 }
 
 type rec struct{ pages []AriaRead }
 
 func (r *rec) push(a AriaRead) { r.pages = append(r.pages, a) }
 
-// committedLTs flattens every committed LT delivered across a connection's pages.
-func committedLTs(pages []AriaRead) []int {
-	var out []int
-	for _, p := range pages {
-		for _, c := range p.Committed {
-			out = append(out, c.LT)
-		}
-	}
-	return out
-}
-
-func TestRead_CatchupShapes(t *testing.T) {
-	s := NewServer()
-	s.Commit(Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Version: 1, Type: "prose", Markdown: "q"}}})
-	s.Open(2, "assistant")
-	s.Set("n0", livedoc.Node{Type: "thinking", Markdown: "thinking"})
-	s.Set("n1", tool("bash", "running", "out"))
-
-	// Fresh catch-up: committed = the closed user message (FULL), live = the open
-	// assistant message's blocks.
-	r := s.Read(0)
-	if len(r.Committed) != 1 || r.Committed[0].LT != 1 || r.Committed[0].Closed || r.Committed[0].Role != "user" {
-		t.Fatalf("catch-up committed = %+v, want one full user message", r.Committed)
-	}
-	if r.Live == nil || r.Live.LT != 2 || len(r.Live.Nodes) != 2 {
-		t.Fatalf("catch-up live = %+v, want open msg with 2 blocks", r.Live)
-	}
-
-	// Catch-up from LT 1: committed omitted (nothing newly closed), live present.
-	r = s.Read(1)
-	if len(r.Committed) != 0 {
-		t.Fatalf("read(1) committed should be empty, got %+v", r.Committed)
-	}
-	if r.Live == nil || r.Live.LT != 2 {
-		t.Fatalf("read(1) live missing")
-	}
-
-	// Once closed, a fresh read returns it as a FULL committed message, no live.
-	s.Close()
-	r = s.Read(1)
-	if len(r.Committed) != 1 || r.Committed[0].LT != 2 || r.Committed[0].Closed || len(r.Committed[0].Nodes) != 2 {
-		t.Fatalf("read(1) after close = %+v, want full message LT2", r.Committed)
-	}
-	if r.Live != nil {
-		t.Fatalf("no open message, live should be nil; got %+v", r.Live)
-	}
-}
-
-func TestStream_LiveDeltasThenClosePatch(t *testing.T) {
+func TestServer_DeltasVersionClose(t *testing.T) {
 	s := NewServer()
 	rc := &rec{}
-	cancel := s.Subscribe(0, rc.push)
-	defer cancel()
+	defer s.Subscribe(rc.push)()
 
-	s.Commit(Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Version: 1, Type: "prose", Markdown: "q"}}})
 	s.Open(2, "assistant")
-	s.Set("n1", tool("bash", "running", ""))
-	s.Set("n1", tool("bash", "running", "a\n"))
-	s.Set("n1", tool("bash", "ok", "a\n"))
-	s.Close()
+	s.Update([]livedoc.Node{tool("running", "")})    // v0: create
+	s.Update([]livedoc.Node{tool("running", "a\n")}) // v1: output appears
+	s.Update([]livedoc.Node{tool("ok", "a\n")})      // v2: status flips
+	s.Close()                                        // committed {lt2, v2}
 
-	last := rc.pages[len(rc.pages)-1]
-	// Closing a message the connection streamed live yields a CLOSE-PATCH, not a
-	// full re-send.
-	if len(last.Committed) != 1 || last.Committed[0].LT != 2 || !last.Committed[0].Closed || len(last.Committed[0].Nodes) != 0 {
-		t.Fatalf("close should be a patch {LT2,Closed}; got %+v", last.Committed)
+	if len(rc.pages) != 4 {
+		t.Fatalf("want 4 frames, got %d: %+v", len(rc.pages), rc.pages)
 	}
-	// Block n1's versions advanced across the live pushes.
-	maxV := 0
-	for _, p := range rc.pages {
-		if p.Live != nil {
-			for _, n := range p.Live.Nodes {
-				if n.ID == "n1" && n.Version > maxV {
-					maxV = n.Version
-				}
-			}
-		}
+	f0 := rc.pages[0].Live
+	if f0 == nil || f0.V != 0 || f0.Role != "assistant" || len(f0.Nodes) != 1 ||
+		f0.Nodes[0].ID != "n0" || f0.Nodes[0].Set["type"] != "tool" || f0.Nodes[0].Set["status"] != "running" {
+		t.Fatalf("v0 create frame wrong: %+v", f0)
 	}
-	if maxV < 3 {
-		t.Fatalf("n1 should reach version >=3 over the stream, got %d", maxV)
+	if f1 := rc.pages[1].Live; f1 == nil || f1.V != 1 || f1.Role != "" || f1.Nodes[0].Set["output"] != "a\n" {
+		t.Fatalf("v1 frame wrong: %+v", f1)
+	}
+	if f2 := rc.pages[2].Live; f2 == nil || f2.V != 2 || f2.Nodes[0].Set["status"] != "ok" || f2.Nodes[0].Set["output"] != nil {
+		t.Fatalf("v2 should set only status: %+v", f2)
+	}
+	last := rc.pages[3].Committed
+	if len(last) != 1 || last[0].LT != 2 || last[0].V != 2 || last[0].Full() {
+		t.Fatalf("close marker wrong: %+v", last)
 	}
 }
 
-func TestInvariant_LTAppearsOncePerConnection(t *testing.T) {
+func TestServer_Unset(t *testing.T) {
 	s := NewServer()
 	rc := &rec{}
-	cancel := s.Subscribe(0, rc.push)
-	defer cancel()
-	for lt := 1; lt <= 4; lt++ {
-		s.Open(lt, "assistant")
-		s.Set("n", livedoc.Node{Type: "prose", Markdown: "m"})
-		s.Close()
-	}
-	seen := map[int]int{}
-	for _, lt := range committedLTs(rc.pages) {
-		seen[lt]++
-	}
-	for lt, n := range seen {
-		if n > 1 {
-			t.Fatalf("invariant violated: LT %d appeared %d times in committed", lt, n)
-		}
-	}
-	if len(seen) != 4 {
-		t.Fatalf("expected 4 distinct committed LTs, got %d", len(seen))
+	defer s.Subscribe(rc.push)()
+	s.Open(2, "assistant")
+	s.Update([]livedoc.Node{tool("ok", "x")}) // v0 with output
+	s.Update([]livedoc.Node{tool("ok", "")})  // v1: output cleared
+	f := rc.pages[1].Live
+	if f == nil || len(f.Nodes) != 1 || len(f.Nodes[0].Unset) != 1 || f.Nodes[0].Unset[0] != "output" {
+		t.Fatalf("expected unset[output], got %+v", f)
 	}
 }
 
-// The headline: a client disconnects mid-message, the server moves on, and the
-// client reconnects from its cursor and converges exactly — no re-delivery of
-// already-final messages, the gap recovered as full content.
-func TestReconnect_ConvergesFromCursor(t *testing.T) {
+func TestClient_FoldAndPromote(t *testing.T) {
 	s := NewServer()
 	c := NewClient()
-	s.Commit(Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Version: 1, Type: "prose", Markdown: "q"}}})
+	var done []Message
+	c.OnClosed = func(m Message) { done = append(done, m) }
+	defer s.Subscribe(c.Apply)()
 
-	cancel := s.Subscribe(c.Cursor(), c.Apply) // streams: committed LT1 + opens LT2
 	s.Open(2, "assistant")
-	s.Set("n0", livedoc.Node{Type: "prose", Markdown: "partial"})
-	cursor := c.Cursor()
-	if cursor != 1 {
-		t.Fatalf("cursor after streaming open msg = %d, want 1 (LT2 not yet closed)", cursor)
+	s.Update([]livedoc.Node{tool("running", "")})
+	s.Update([]livedoc.Node{tool("running", "a\n")})
+	s.Update([]livedoc.Node{tool("ok", "a\nb\n")})
+	s.Close()
+
+	if len(done) != 1 {
+		t.Fatalf("want 1 finalized, got %d", len(done))
 	}
-
-	cancel() // --- disconnect ---
-
-	// Server works while the client is away.
-	s.Set("n0", livedoc.Node{Type: "prose", Markdown: "partial then done"})
-	s.Close() // LT2 closes
-	s.Commit(Message{LT: 3, Role: "user", Nodes: []livedoc.Node{{ID: "u1", Version: 1, Type: "prose", Markdown: "again"}}})
-
-	// --- reconnect from cursor: one read recovers the gap ---
-	c.Apply(s.Read(cursor))
-
-	got := c.View()
-	if len(got.Closed) != 3 {
-		t.Fatalf("closed=%d want 3 (LT1,2,3)", len(got.Closed))
+	if m := done[0]; m.LT != 2 || len(m.Nodes) != 1 || m.Nodes[0].Output != "a\nb\n" || m.Nodes[0].Status != "ok" {
+		t.Fatalf("promoted node wrong: %+v", m.Nodes)
 	}
-	if got.Closed[1].LT != 2 || len(got.Closed[1].Nodes) != 1 || got.Closed[1].Nodes[0].Markdown != "partial then done" {
-		t.Fatalf("LT2 not recovered with final content: %+v", got.Closed[1])
+}
+
+func TestClient_DesyncOnVersionMismatch(t *testing.T) {
+	c := NewClient()
+	desync := -1
+	c.OnDesync = func(since int) { desync = since }
+
+	c.Apply(AriaRead{Committed: []Committed{{LT: 1, Role: "user", Nodes: []livedoc.Node{prose("q")}}}})
+	// open lt2, observe only v0
+	c.Apply(AriaRead{Live: &Live{LT: 2, V: 0, Role: "assistant",
+		Nodes: []NodeDelta{{ID: "n0", Set: map[string]any{"type": "prose", "markdown": "o"}}}}})
+	// close says v2 — we only saw v0 → desync from last committed LT (1)
+	c.Apply(AriaRead{Committed: []Committed{{LT: 2, V: 2}}})
+
+	if desync != 1 {
+		t.Fatalf("want desync from LT 1, got %d", desync)
 	}
-	if got.Open != nil {
-		t.Fatalf("no open message after reconnect; got %+v", got.Open)
+}
+
+func TestServer_ReadSnapshot(t *testing.T) {
+	s := NewServer()
+	s.Commit(Message{LT: 1, Role: "user", Nodes: []livedoc.Node{prose("q")}})
+	s.Open(2, "assistant")
+	s.Update([]livedoc.Node{tool("running", "a\n")})
+
+	r := s.Read(0)
+	if len(r.Committed) != 1 || !r.Committed[0].Full() || r.Committed[0].LT != 1 {
+		t.Fatalf("read(0) committed: %+v", r.Committed)
+	}
+	if r.Live == nil || r.Live.LT != 2 || len(r.Live.Nodes) != 1 || r.Live.Nodes[0].Set["output"] != "a\n" {
+		t.Fatalf("read(0) live snapshot (full-set): %+v", r.Live)
+	}
+	if r2 := s.Read(1); len(r2.Committed) != 0 || r2.Live == nil {
+		t.Fatalf("read(1) should omit committed, keep live: %+v", r2)
 	}
 }

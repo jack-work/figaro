@@ -6,73 +6,70 @@ import (
 	"github.com/jack-work/figaro/internal/livedoc"
 )
 
-// Client folds AriaReads into a local view. Application is idempotent — committed
-// by LT, live blocks by version — so a catch-up/live overlap or a redundant page
-// can't double-apply. The cursor (highest committed LT) is what you re-read from
-// after a disconnect.
+// Client folds AriaReads into a local view. Live frames are folded into
+// materialized livedoc.Node instances by id; a close marker promotes them iff the
+// seen record version matches; any mismatch fires OnDesync with the last
+// fully-committed LT so the caller can reconnect and re-read.
 //
-// OnClosed fires when a message finalizes (the renderer seals it to scrollback,
-// once). OnLive fires with the open message's current ordered blocks (the
-// renderer repaints just this — the only mutable region).
+// OnClosed fires when a message finalizes; OnLive fires with the open message's
+// current ordered nodes; OnDesync requests a catch-up from the given LT.
 type Client struct {
 	mu sync.Mutex
 
-	lastLT     int          // highest committed LT applied (the catch-up cursor)
-	closedSeen map[int]bool // LTs already finalized (invariant guard)
-	closed     []Message    // finalized messages, in delivery order
+	closed          []Message
+	closedSeen      map[int]bool
+	lastCommittedLT int
 
 	openLT    int
 	openRole  string
+	openV     int
 	openOrder []string
 	openBlock map[string]livedoc.Node
 
 	OnClosed func(Message)
 	OnLive   func(lt int, role string, nodes []livedoc.Node)
+	OnDesync func(sinceLT int)
 }
 
-// NewClient returns a fresh client at cursor 0.
+// NewClient returns a fresh client.
 func NewClient() *Client {
 	return &Client{closedSeen: map[int]bool{}, openBlock: map[string]livedoc.Node{}}
 }
 
-// Cursor is the highest committed LT applied — pass it to Read/Subscribe to
-// resume after a disconnect.
+// Cursor is the highest fully-committed LT — the resume point for a re-read.
 func (c *Client) Cursor() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.lastLT
+	return c.lastCommittedLT
 }
 
-// Apply folds one page, firing OnClosed for finalized messages and OnLive for
-// the current open view.
+// Apply folds one page.
 func (c *Client) Apply(r AriaRead) {
 	c.mu.Lock()
 	var finalized []Message
+	desync := -1
 	for _, cm := range r.Committed {
-		if c.closedSeen[cm.LT] {
-			continue // invariant: a given LT finalizes once per connection
-		}
-		c.closedSeen[cm.LT] = true
-		if cm.LT > c.lastLT {
-			c.lastLT = cm.LT
-		}
 		switch {
-		case cm.Closed && c.openLT == cm.LT:
-			// close-patch for the message we were streaming: promote our blocks.
-			finalized = append(finalized, Message{LT: cm.LT, Role: c.openRole, Nodes: c.openNodes()})
-			c.resetOpen()
-		case cm.Closed:
-			// a close-patch for a message we never streamed (shouldn't happen on
-			// a well-formed connection); record the boundary, no content.
-			finalized = append(finalized, Message{LT: cm.LT})
-		default:
-			// A full closed message. If we were streaming it live (it closed
-			// while we were disconnected and we reconnected with an earlier
-			// cursor), adopt the canonical content and drop our stale open state.
+		case cm.Full():
+			if !c.closedSeen[cm.LT] {
+				c.closedSeen[cm.LT] = true
+				finalized = append(finalized, Message{LT: cm.LT, Role: cm.Role, Nodes: cm.Nodes})
+			}
 			if cm.LT == c.openLT {
 				c.resetOpen()
 			}
-			finalized = append(finalized, Message{LT: cm.LT, Role: cm.Role, Nodes: cm.Nodes})
+			c.advanceCommitted(cm.LT)
+		case c.openLT == cm.LT && c.openV == cm.V:
+			// close marker for what we streamed, versions agree: promote.
+			if !c.closedSeen[cm.LT] {
+				c.closedSeen[cm.LT] = true
+				finalized = append(finalized, Message{LT: cm.LT, Role: c.openRole, Nodes: c.openNodes()})
+			}
+			c.advanceCommitted(cm.LT)
+			c.resetOpen()
+		default:
+			// version mismatch / message we don't hold open: catch up.
+			desync = c.lastCommittedLT
 		}
 	}
 
@@ -85,20 +82,24 @@ func (c *Client) Apply(r AriaRead) {
 		liveNodes []livedoc.Node
 	)
 	if r.Live != nil {
-		if c.openLT != r.Live.LT {
-			c.openLT = r.Live.LT
-			c.openRole = r.Live.Role
+		f := r.Live
+		if c.openLT != f.LT {
+			c.openLT = f.LT
+			c.openRole = f.Role
 			c.openOrder = nil
 			c.openBlock = map[string]livedoc.Node{}
 		}
-		for _, n := range r.Live.Nodes {
-			if cur, ok := c.openBlock[n.ID]; ok && n.Version <= cur.Version {
-				continue // already have this version or newer
-			} else if !ok {
-				c.openOrder = append(c.openOrder, n.ID)
-			}
-			c.openBlock[n.ID] = n
+		if f.Role != "" {
+			c.openRole = f.Role
 		}
+		for _, nd := range f.Nodes {
+			cur, ok := c.openBlock[nd.ID]
+			if !ok {
+				c.openOrder = append(c.openOrder, nd.ID)
+			}
+			c.openBlock[nd.ID] = foldDelta(cur, nd)
+		}
+		c.openV = f.V
 		haveLive, liveLT, liveRole, liveNodes = true, c.openLT, c.openRole, c.openNodes()
 	}
 	c.mu.Unlock()
@@ -111,12 +112,15 @@ func (c *Client) Apply(r AriaRead) {
 	if haveLive && c.OnLive != nil {
 		c.OnLive(liveLT, liveRole, liveNodes)
 	}
+	if desync >= 0 && c.OnDesync != nil {
+		c.OnDesync(desync)
+	}
 }
 
-// View is the client's local reconstruction of the aria.
+// View is the client's local reconstruction.
 type View struct {
 	Closed []Message
-	Open   *Message // the open message (nil if none)
+	Open   *Message
 }
 
 // View returns a snapshot of the current local state.
@@ -130,7 +134,12 @@ func (c *Client) View() View {
 	return v
 }
 
-// openNodes returns the open message's blocks in arrival order. Caller holds mu.
+func (c *Client) advanceCommitted(lt int) {
+	if lt > c.lastCommittedLT {
+		c.lastCommittedLT = lt
+	}
+}
+
 func (c *Client) openNodes() []livedoc.Node {
 	out := make([]livedoc.Node, 0, len(c.openOrder))
 	for _, id := range c.openOrder {
@@ -139,10 +148,56 @@ func (c *Client) openNodes() []livedoc.Node {
 	return out
 }
 
-// resetOpen clears the open-message state. Caller holds mu.
 func (c *Client) resetOpen() {
-	c.openLT = 0
-	c.openRole = ""
+	c.openLT, c.openRole, c.openV = 0, "", 0
 	c.openOrder = nil
 	c.openBlock = map[string]livedoc.Node{}
+}
+
+// foldDelta applies a NodeDelta to a node: set merges fields, unset clears them,
+// patch splices a streamed string field on its previous value.
+func foldDelta(n livedoc.Node, d NodeDelta) livedoc.Node {
+	for k, v := range d.Set {
+		setField(&n, k, v)
+	}
+	for _, f := range d.Unset {
+		setField(&n, f, nil)
+	}
+	for f, dl := range d.Patch {
+		switch f {
+		case "markdown":
+			n.Markdown = livedoc.Apply(n.Markdown, dl)
+		case "output":
+			n.Output = livedoc.Apply(n.Output, dl)
+		}
+	}
+	return n
+}
+
+func setField(n *livedoc.Node, field string, v any) {
+	switch field {
+	case "type":
+		n.Type = livedoc.NodeType(asStr(v))
+	case "name":
+		n.Name = asStr(v)
+	case "status":
+		n.Status = asStr(v)
+	case "markdown":
+		n.Markdown = asStr(v)
+	case "output":
+		n.Output = asStr(v)
+	case "id":
+		n.ID = asStr(v)
+	case "args":
+		if v == nil {
+			n.Args = nil
+		} else if m, ok := v.(map[string]any); ok {
+			n.Args = m
+		}
+	}
+}
+
+func asStr(v any) string {
+	s, _ := v.(string)
+	return s
 }

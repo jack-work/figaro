@@ -1,119 +1,123 @@
 package aria
 
 import (
+	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/jack-work/figaro/internal/livedoc"
 )
 
-// Server is the authoritative aria state: an ordered list of closed messages and
-// at most one open message (whose blocks are versioned). One routine —
-// produce — serves both a one-shot Read(sinceLT) and a live subscription, so the
-// stream is literally server-pushed pagination of the same read.
-//
-// Safe for concurrent use. Push callbacks run outside the lock and must not
-// re-enter the Server.
+// Server is the authoritative aria state: closed messages plus at most one open
+// message. Live subscribers get incremental frames (the field deltas of each
+// update, versioned); Read returns a catch-up snapshot (closed messages in full
+// + the open message as a full-create frame). Push callbacks run outside the lock
+// and must not re-enter the Server.
 type Server struct {
 	mu     sync.Mutex
 	closed []Message
 	open   *openMsg
-	subs   map[int]*subscriber
+	subs   map[int]func(AriaRead)
 	nextID int
 }
 
 type openMsg struct {
 	lt    int
 	role  string
-	order []string                // block ids, in arrival order
-	block map[string]livedoc.Node // id -> current node (carrying its version)
-}
-
-type subscriber struct {
-	conn ConnState
-	push func(AriaRead)
-}
-
-// ConnState is what a connection has been delivered: the highest committed LT,
-// and — for the open message — which block versions it has seen.
-type ConnState struct {
-	committedLT int
-	liveLT      int
-	liveSeen    map[string]int
+	order []string
+	block map[string]livedoc.Node
+	ver   int // next frame version (0-indexed); last emitted is ver-1
 }
 
 // NewServer returns an empty aria server.
-func NewServer() *Server { return &Server{subs: map[int]*subscriber{}} }
+func NewServer() *Server { return &Server{subs: map[int]func(AriaRead){}} }
 
-// Open starts a new open message at lt (close any prior one first).
+// Open starts a new open message at lt (close any prior one first). It emits no
+// frame; the first Update carries the role at v 0.
 func (s *Server) Open(lt int, role string) {
 	s.mu.Lock()
 	s.open = &openMsg{lt: lt, role: role, block: map[string]livedoc.Node{}}
 	s.mu.Unlock()
-	s.broadcast()
 }
 
-// Set adds or updates a block in the open message, assigning the next version.
-// n carries the block's full current representation (Phase 1).
-func (s *Server) Set(id string, n livedoc.Node) {
+// Update applies the new full node list to the open message and broadcasts a
+// frame of the field deltas vs the prior state (v++ if anything changed).
+func (s *Server) Update(nodes []livedoc.Node) {
 	s.mu.Lock()
-	if s.open != nil {
-		n.ID = id
-		n.Version = s.open.block[id].Version + 1
-		if _, ok := s.open.block[id]; !ok {
+	if s.open == nil {
+		s.mu.Unlock()
+		return
+	}
+	var deltas []NodeDelta
+	for i, n := range nodes {
+		id := blockID(i, n)
+		old, existed := s.open.block[id]
+		if d := delta(id, old, existed, n); !d.Empty() {
+			deltas = append(deltas, d)
+		}
+		if !existed {
 			s.open.order = append(s.open.order, id)
 		}
 		s.open.block[id] = n
 	}
+	if len(deltas) == 0 {
+		s.mu.Unlock()
+		return
+	}
+	v := s.open.ver
+	role := ""
+	if v == 0 {
+		role = s.open.role
+	}
+	s.open.ver++
+	frame := AriaRead{Live: &Live{LT: s.open.lt, V: v, Role: role, Nodes: deltas}}
+	subs := s.subsLocked()
 	s.mu.Unlock()
-	s.broadcast()
+	deliver(subs, frame)
 }
 
-// Close finalizes the open message into the committed list (clearing open).
+// Close finalizes the open message and broadcasts a close marker {lt, v} where v
+// is the last emitted frame version.
 func (s *Server) Close() {
 	s.mu.Lock()
-	if s.open != nil {
-		m := Message{LT: s.open.lt, Role: s.open.role}
-		for _, id := range s.open.order {
-			m.Nodes = append(m.Nodes, s.open.block[id])
-		}
-		s.closed = append(s.closed, m)
-		s.open = nil
+	if s.open == nil {
+		s.mu.Unlock()
+		return
 	}
+	m := Message{LT: s.open.lt, Role: s.open.role}
+	for _, id := range s.open.order {
+		m.Nodes = append(m.Nodes, s.open.block[id])
+	}
+	lastV := s.open.ver - 1
+	if lastV < 0 {
+		lastV = 0
+	}
+	s.closed = append(s.closed, m)
+	s.open = nil
+	frame := AriaRead{Committed: []Committed{{LT: m.LT, V: lastV}}}
+	subs := s.subsLocked()
 	s.mu.Unlock()
-	s.broadcast()
+	deliver(subs, frame)
 }
 
-// Commit appends an already-closed message (e.g. the user's prompt).
+// Commit appends an already-closed message (history rebuild, or a non-streamed
+// message) and broadcasts it as a full snapshot.
 func (s *Server) Commit(m Message) {
 	s.mu.Lock()
 	s.closed = append(s.closed, m)
+	subs := s.subsLocked()
 	s.mu.Unlock()
-	s.broadcast()
+	deliver(subs, AriaRead{Committed: []Committed{{LT: m.LT, Role: m.Role, Nodes: m.Nodes}}})
 }
 
-// Read produces a catch-up page from sinceLT — used for a one-shot read or to
-// seed a (re)connecting client.
-func (s *Server) Read(sinceLT int) AriaRead {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	c := ConnState{committedLT: sinceLT}
-	r, _ := s.produce(&c)
-	return r
-}
-
-// Subscribe registers a live pusher seeded at sinceLT: it immediately receives a
-// catch-up page (if non-empty), then a page on every change. Returns unsubscribe.
-func (s *Server) Subscribe(sinceLT int, push func(AriaRead)) (cancel func()) {
+// Subscribe registers a live pusher for subsequent frames (no initial snapshot;
+// use Read to catch up). Returns unsubscribe.
+func (s *Server) Subscribe(push func(AriaRead)) (cancel func()) {
 	s.mu.Lock()
 	id := s.nextID
 	s.nextID++
-	sub := &subscriber{conn: ConnState{committedLT: sinceLT}, push: push}
-	s.subs[id] = sub
-	r, changed := s.produce(&sub.conn)
+	s.subs[id] = push
 	s.mu.Unlock()
-	if changed {
-		push(r)
-	}
 	return func() {
 		s.mu.Lock()
 		delete(s.subs, id)
@@ -121,58 +125,112 @@ func (s *Server) Subscribe(sinceLT int, push func(AriaRead)) (cancel func()) {
 	}
 }
 
-// broadcast computes each subscriber's delta (mutating its ConnState under the
-// lock) and delivers outside the lock.
-func (s *Server) broadcast() {
+// Read returns a catch-up snapshot from sinceLT: closed messages after it in
+// full, plus the open message (if any) as a full-create frame at its version.
+func (s *Server) Read(sinceLT int) AriaRead {
 	s.mu.Lock()
-	var pending []func()
-	for _, sub := range s.subs {
-		if r, changed := s.produce(&sub.conn); changed {
-			r, push := r, sub.push
-			pending = append(pending, func() { push(r) })
+	defer s.mu.Unlock()
+	var r AriaRead
+	for _, m := range s.closed {
+		if m.LT <= sinceLT {
+			continue
 		}
+		r.Committed = append(r.Committed, Committed{LT: m.LT, Role: m.Role, Nodes: m.Nodes})
 	}
-	s.mu.Unlock()
-	for _, p := range pending {
-		p()
+	if s.open != nil && len(s.open.order) > 0 {
+		deltas := make([]NodeDelta, 0, len(s.open.order))
+		for _, id := range s.open.order {
+			deltas = append(deltas, fullSet(id, s.open.block[id]))
+		}
+		v := s.open.ver - 1
+		if v < 0 {
+			v = 0
+		}
+		r.Live = &Live{LT: s.open.lt, V: v, Role: s.open.role, Nodes: deltas}
+	}
+	return r
+}
+
+func (s *Server) subsLocked() []func(AriaRead) {
+	out := make([]func(AriaRead), 0, len(s.subs))
+	for _, f := range s.subs {
+		out = append(out, f)
+	}
+	return out
+}
+
+func deliver(subs []func(AriaRead), r AriaRead) {
+	for _, f := range subs {
+		f(r)
 	}
 }
 
-// produce computes the AriaRead delta for conn and advances conn. Caller holds
-// s.mu. This single function is the whole protocol: closed messages past the
-// cursor (as full, or as a close-patch if the connection streamed them live),
-// then the open message's changed blocks.
-func (s *Server) produce(c *ConnState) (AriaRead, bool) {
-	var r AriaRead
-	for _, m := range s.closed { // closed list is LT-ordered, so patches precede newer fulls
-		if m.LT <= c.committedLT {
-			continue
+// delta computes the field-level change from old (when existed) to n for block id.
+func delta(id string, old livedoc.Node, existed bool, n livedoc.Node) NodeDelta {
+	if !existed {
+		return fullSet(id, n)
+	}
+	d := NodeDelta{ID: id}
+	set := map[string]any{}
+	var unset []string
+	scalar := func(field, ov, nv string) {
+		if nv == ov {
+			return
 		}
-		if m.LT == c.liveLT {
-			// This connection already streamed this message's content live, so
-			// only signal the close transition.
-			r.Committed = append(r.Committed, Committed{LT: m.LT, Closed: true})
+		if nv == "" {
+			unset = append(unset, field)
 		} else {
-			r.Committed = append(r.Committed, Committed{LT: m.LT, Role: m.Role, Nodes: m.Nodes})
-		}
-		c.committedLT = m.LT
-	}
-	if s.open != nil {
-		if c.liveLT != s.open.lt {
-			c.liveLT = s.open.lt
-			c.liveSeen = map[string]int{}
-		}
-		var changed []livedoc.Node
-		for _, id := range s.open.order {
-			b := s.open.block[id]
-			if c.liveSeen[id] < b.Version {
-				changed = append(changed, b)
-				c.liveSeen[id] = b.Version
-			}
-		}
-		if len(changed) > 0 {
-			r.Live = &Live{LT: s.open.lt, Role: s.open.role, Nodes: changed}
+			set[field] = nv
 		}
 	}
-	return r, !r.Empty()
+	if n.Type != old.Type {
+		set["type"] = string(n.Type)
+	}
+	scalar("name", old.Name, n.Name)
+	scalar("status", old.Status, n.Status)
+	// Streamed string fields. Phase 1: whole value via set/unset. (Phase 2
+	// replaces this with `patch` splices.)
+	scalar("markdown", old.Markdown, n.Markdown)
+	scalar("output", old.Output, n.Output)
+	if !reflect.DeepEqual(old.Args, n.Args) {
+		if n.Args == nil {
+			unset = append(unset, "args")
+		} else {
+			set["args"] = n.Args
+		}
+	}
+	if len(set) > 0 {
+		d.Set = set
+	}
+	d.Unset = unset
+	return d
+}
+
+// fullSet is the creation/snapshot delta: every non-zero field in set.
+func fullSet(id string, n livedoc.Node) NodeDelta {
+	set := map[string]any{"type": string(n.Type)}
+	if n.Name != "" {
+		set["name"] = n.Name
+	}
+	if n.Args != nil {
+		set["args"] = n.Args
+	}
+	if n.Status != "" {
+		set["status"] = n.Status
+	}
+	if n.Markdown != "" {
+		set["markdown"] = n.Markdown
+	}
+	if n.Output != "" {
+		set["output"] = n.Output
+	}
+	return NodeDelta{ID: id, Set: set}
+}
+
+// blockID is a node's stable handle: its tool_call_id, or its positional id.
+func blockID(i int, n livedoc.Node) string {
+	if n.ID != "" {
+		return n.ID
+	}
+	return fmt.Sprintf("n%d", i)
 }

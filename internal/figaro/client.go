@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/jkrpc"
@@ -27,9 +28,18 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 	return &Client{cli: cli}, nil
 }
 
-// Qua sends a prompt. The reply streams as log.* notifications.
+// Qua sends a prompt. The reply streams as figaro.aria notifications.
 func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) error {
 	return c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, nil)
+}
+
+// Read pulls one aria read caught up from sinceLT (the catch-up half of the
+// figaro.aria stream) — used to recover after a version desync, or to seed a
+// (re)connecting listener.
+func (c *Client) Read(ctx context.Context, sinceLT int) (aria.AriaRead, error) {
+	var r aria.AriaRead
+	err := c.cli.Call(ctx, rpc.MethodRead, rpc.ReadRequest{SinceLT: sinceLT}, &r)
+	return r, err
 }
 
 // Context returns all messages in the figaro's chat history.
