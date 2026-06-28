@@ -117,3 +117,28 @@ func TestServer_ReadSnapshot(t *testing.T) {
 		t.Fatalf("read(1) should omit committed, keep live: %+v", r2)
 	}
 }
+
+func TestServer_PatchOnGrowth(t *testing.T) {
+	s := NewServer()
+	rc := &rec{}
+	defer s.Subscribe(rc.push)()
+	s.Open(2, "assistant")
+	s.Update([]livedoc.Node{tool("running", "a\n")})    // v0 create (output set)
+	s.Update([]livedoc.Node{tool("running", "a\nb\n")}) // v1 grow → patch
+	f := rc.pages[1].Live
+	if f == nil || len(f.Nodes) != 1 || f.Nodes[0].Set["output"] != nil || len(f.Nodes[0].Patch) == 0 {
+		t.Fatalf("growth should be a patch not set: %+v", f.Nodes[0])
+	}
+	if d := f.Nodes[0].Patch["output"]; d.Ins != "b\n" || d.At != 2 || d.Del != 0 {
+		t.Fatalf("patch should append 'b\\n' at 2: %+v", d)
+	}
+	c := NewClient()
+	var got string
+	c.OnLive = func(_ int, _ string, nodes []livedoc.Node) { got = nodes[0].Output }
+	for _, p := range rc.pages {
+		c.Apply(p)
+	}
+	if got != "a\nb\n" {
+		t.Fatalf("client patch fold: got %q", got)
+	}
+}

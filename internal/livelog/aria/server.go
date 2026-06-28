@@ -173,6 +173,7 @@ func delta(id string, old livedoc.Node, existed bool, n livedoc.Node) NodeDelta 
 	d := NodeDelta{ID: id}
 	set := map[string]any{}
 	var unset []string
+	patch := map[string]livedoc.Delta{}
 	scalar := func(field, ov, nv string) {
 		if nv == ov {
 			return
@@ -183,15 +184,30 @@ func delta(id string, old livedoc.Node, existed bool, n livedoc.Node) NodeDelta 
 			set[field] = nv
 		}
 	}
+	// streamed handles the growable string fields: cleared -> unset, first
+	// appearance -> set (whole), otherwise a splice on the previous value.
+	streamed := func(field, ov, nv string) {
+		switch {
+		case nv == ov:
+		case nv == "":
+			unset = append(unset, field)
+		case ov == "":
+			set[field] = nv
+		default:
+			if dl, ok := livedoc.Diff(ov, nv); ok {
+				patch[field] = dl
+			} else {
+				set[field] = nv
+			}
+		}
+	}
 	if n.Type != old.Type {
 		set["type"] = string(n.Type)
 	}
 	scalar("name", old.Name, n.Name)
 	scalar("status", old.Status, n.Status)
-	// Streamed string fields. Phase 1: whole value via set/unset. (Phase 2
-	// replaces this with `patch` splices.)
-	scalar("markdown", old.Markdown, n.Markdown)
-	scalar("output", old.Output, n.Output)
+	streamed("markdown", old.Markdown, n.Markdown)
+	streamed("output", old.Output, n.Output)
 	if !reflect.DeepEqual(old.Args, n.Args) {
 		if n.Args == nil {
 			unset = append(unset, "args")
@@ -203,6 +219,9 @@ func delta(id string, old livedoc.Node, existed bool, n livedoc.Node) NodeDelta 
 		d.Set = set
 	}
 	d.Unset = unset
+	if len(patch) > 0 {
+		d.Patch = patch
+	}
 	return d
 }
 
