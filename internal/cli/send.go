@@ -299,7 +299,7 @@ func runSendEphemeralRaw(loaded *config.Loaded, prompt string) {
 	defer func() {
 		killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer killCancel()
-		_ = acli.Kill(killCtx, figaroID)
+		_ = acli.Kill(killCtx, figaroID, false)
 	}()
 	waitForSocket(figaroEP.Address, 3*time.Second)
 
@@ -329,7 +329,7 @@ func runSendEphemeralRich(loaded *config.Loaded, prompt string, set renderSettin
 	defer func() {
 		killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer killCancel()
-		_ = acli.Kill(killCtx, figaroID)
+		_ = acli.Kill(killCtx, figaroID, false)
 	}()
 	waitForSocket(figaroEP.Address, 3*time.Second)
 
@@ -378,7 +378,7 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 		defer func() {
 			killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer killCancel()
-			_ = acli.Kill(killCtx, createResp.FigaroID)
+			_ = acli.Kill(killCtx, createResp.FigaroID, false)
 		}()
 		waitForSocket(figaroEP.Address, 3*time.Second)
 	} else {
@@ -414,7 +414,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 		defer func() {
 			killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer killCancel()
-			_ = acli.Kill(killCtx, createResp.FigaroID)
+			_ = acli.Kill(killCtx, createResp.FigaroID, false)
 		}()
 		waitForSocket(figaroEP.Address, 3*time.Second)
 	} else {

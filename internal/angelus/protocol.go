@@ -498,8 +498,8 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 	}
 
 	if h.angelus.Backend != nil {
-		if err := h.angelus.Backend.Remove(req.FigaroID); err != nil {
-			slog.Warn("remove aria failed", "id", req.FigaroID, "err", err)
+		if err := h.angelus.Backend.Remove(req.FigaroID, req.Recursive); err != nil {
+			return nil, err // surface "has live branches" etc. to the caller
 		}
 	}
 

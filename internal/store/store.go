@@ -108,8 +108,10 @@ type Backend interface {
 	// List returns metadata for every persisted aria.
 	List() ([]AriaInfo, error)
 
-	// Remove deletes an aria. Close the agent first.
-	Remove(ariaID string) error
+	// Remove deletes a trunk (its subtree). Close the agent first. recursive
+	// also removes any live branches; without it, a trunk with branches is
+	// refused.
+	Remove(ariaID string, recursive bool) error
 
 	// Close releases backend resources.
 	Close() error

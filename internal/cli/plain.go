@@ -55,7 +55,7 @@ func runPlainPrompt(loaded *config.Loaded, rawArgs []string) {
 		defer func() {
 			killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer killCancel()
-			_ = acli.Kill(killCtx, figaroID)
+			_ = acli.Kill(killCtx, figaroID, false)
 		}()
 		waitForSocket(figaroEP.Address, 3*time.Second)
 	} else {
@@ -120,7 +120,7 @@ func runExecPrompt(loaded *config.Loaded, rawArgs []string) {
 		defer func() {
 			killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer killCancel()
-			_ = acli.Kill(killCtx, figaroID)
+			_ = acli.Kill(killCtx, figaroID, false)
 		}()
 		waitForSocket(figaroEP.Address, 3*time.Second)
 	} else {

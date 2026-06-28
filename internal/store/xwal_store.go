@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -319,10 +321,62 @@ type NodeView struct {
 	LastMS    int64
 }
 
-func (s *XwalStore) view(t xwal.TrunkInfo) NodeView {
+// view renders a live (conversation) trunk. Kind is always conversation —
+// closed ceremonial trunks (null/loadout) aren't in List().
+func (s *XwalStore) view(t xwal.TrunkInfo, vec map[string][]int) NodeView {
 	return NodeView{
-		ID: t.ID, Parent: t.Parent, Kind: string(s.kindOf(t.ID)), Trunk: t.ID,
+		ID: t.ID, Parent: t.Parent, Kind: string(kindConversation), Trunk: t.ID, Vector: vec[t.ID],
 	}
+}
+
+// vectorsLocked assigns each conversation trunk its fork-forest vector: the
+// child-index path among conversation trunks — roots are [0],[1],…, a branch
+// is parentVec+[k] — ordered by trunk number (creation order). Caller holds mu.
+func (s *XwalStore) vectorsLocked() map[string][]int {
+	infos := s.trunks.List()
+	live := make(map[string]bool, len(infos))
+	for _, ti := range infos {
+		live[ti.ID] = true
+	}
+	kids := map[string][]string{}
+	var roots []string
+	for _, ti := range infos {
+		if ti.Parent != "" && live[ti.Parent] {
+			kids[ti.Parent] = append(kids[ti.Parent], ti.ID) // branch of a conversation
+		} else {
+			roots = append(roots, ti.ID) // root conversation (parent is a loadout/null)
+		}
+	}
+	byNum := func(ids []string) {
+		sort.Slice(ids, func(i, j int) bool { return trunkNum(ids[i]) < trunkNum(ids[j]) })
+	}
+	byNum(roots)
+	for k := range kids {
+		byNum(kids[k])
+	}
+	vec := map[string][]int{}
+	var assign func(id string, prefix []int)
+	assign = func(id string, prefix []int) {
+		vec[id] = prefix
+		for i, c := range kids[id] {
+			assign(c, append(append([]int(nil), prefix...), i))
+		}
+	}
+	for i, r := range roots {
+		assign(r, []int{i})
+	}
+	return vec
+}
+
+func trunkNum(id string) int {
+	if len(id) < 2 || id[0] != 't' {
+		return 1 << 30
+	}
+	n, err := strconv.Atoi(id[1:])
+	if err != nil {
+		return 1 << 30
+	}
+	return n
 }
 
 // Nodes returns a view of every conversation trunk plus the loadout/null
@@ -330,9 +384,10 @@ func (s *XwalStore) view(t xwal.TrunkInfo) NodeView {
 func (s *XwalStore) Nodes() []NodeView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	vec := s.vectorsLocked()
 	out := make([]NodeView, 0)
 	for _, t := range s.trunks.List() {
-		out = append(out, s.view(t))
+		out = append(out, s.view(t, vec))
 	}
 	// Closed ceremonial trunks (null + loadouts) aren't in List().
 	out = append(out, NodeView{ID: s.pol.Null, Kind: string(kindNull), Trunk: s.pol.Null})
@@ -358,7 +413,7 @@ func (s *XwalStore) Node(id string) (NodeView, bool) {
 	}
 	for _, t := range s.trunks.List() {
 		if t.ID == id {
-			return s.view(t), true
+			return s.view(t, s.vectorsLocked()), true
 		}
 	}
 	return NodeView{}, false
@@ -376,9 +431,12 @@ func splitLoadoutKey(key string) (name, ver string) {
 // Touch is a no-op now: list recency comes from the per-aria meta sidecar.
 func (s *XwalStore) Touch(id string, ms int64) {}
 
-// RemoveLeaf is not yet supported on the trunk model (no trunk delete op).
-func (s *XwalStore) RemoveLeaf(id string) error {
-	return fmt.Errorf("xwal store: remove not yet supported on trunks")
+// RemoveLeaf deletes a trunk (its subtree) via xwal.Trunks. Trunk-addressed;
+// refuses a trunk with live branches unless recursive.
+func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.trunks.Remove(id, recursive)
 }
 
 func (s *XwalStore) loadPolicy() error {

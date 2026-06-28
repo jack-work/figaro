@@ -204,7 +204,8 @@ type Endpoint struct {
 }
 
 type KillRequest struct {
-	FigaroID string `json:"figaro_id"`
+	FigaroID  string `json:"figaro_id"`
+	Recursive bool   `json:"recursive,omitempty"` // also remove the trunk's live branches
 }
 
 type KillResponse struct {

@@ -50,8 +50,8 @@ func (c *Client) CreateEphemeral(ctx context.Context, loadout string, patch *rpc
 	return &resp, err
 }
 
-func (c *Client) Kill(ctx context.Context, figaroID string) error {
-	return c.cli.Call(ctx, rpc.MethodKill, rpc.KillRequest{FigaroID: figaroID}, nil)
+func (c *Client) Kill(ctx context.Context, figaroID string, recursive bool) error {
+	return c.cli.Call(ctx, rpc.MethodKill, rpc.KillRequest{FigaroID: figaroID, Recursive: recursive}, nil)
 }
 
 func (c *Client) List(ctx context.Context) (*rpc.ListResponse, error) {

@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/anthropics/anthropic-sdk-go v1.42.0
 	github.com/google/uuid v1.6.0
-	github.com/jack-work/figwal v0.6.3
+	github.com/jack-work/figwal v0.6.4
 	github.com/jack-work/hush v0.5.1-0.20260626045930-05fcb763e568
 	github.com/jack-work/largo v0.2.3
 	github.com/pmezard/go-difflib v1.0.0

@@ -14,6 +14,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/rpc"
 )
 
 // runList prints the conversation forest (live, dormant, and frozen fork
@@ -21,7 +22,7 @@ import (
 // lineage reads top-to-bottom. The leading VECTOR column (0, 0.0, 0.1, …)
 // shows fork depth + branch; MANTRA is the thread's essence. With jsonOut
 // the raw entries are emitted instead.
-func runList(loaded *config.Loaded, jsonOut bool) {
+func runList(loaded *config.Loaded, jsonOut bool, limit int) {
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -30,15 +31,10 @@ func runList(loaded *config.Loaded, jsonOut bool) {
 		if err != nil {
 			die("list: %s", err)
 		}
-
-		// Depth-first preorder by vector: component-wise compare, so
-		// 0 < 0.0 < 0.0.0 < 0.1 < 0.1.0. Vectorless entries sink last.
 		figs := resp.Figaros
-		sort.SliceStable(figs, func(i, j int) bool {
-			return vectorLess(figs[i].Vector, figs[j].Vector)
-		})
 
 		if jsonOut {
+			sort.SliceStable(figs, func(i, j int) bool { return vectorLess(figs[i].Vector, figs[j].Vector) })
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			if err := enc.Encode(figs); err != nil {
@@ -47,16 +43,70 @@ func runList(loaded *config.Loaded, jsonOut bool) {
 			return nil
 		}
 
-		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(w, "\tVECTOR\tMANTRA\tID\tSTATE\tAGE\tMODEL\tMSGS\tCONTEXT\tCACHE\tPIDS\tCWD\n")
+		// Build the fork forest: index by vector, group children, collect
+		// roots (depth-0 conversations). Trees float up by their most-recent
+		// member; within a tree, children sort by branch order (vector).
+		byVec := map[string]rpc.FigaroInfoResponse{}
+		kids := map[string][]rpc.FigaroInfoResponse{}
+		var roots []rpc.FigaroInfoResponse
 		for _, f := range figs {
-			pids := make([]string, len(f.BoundPIDs))
-			for i, p := range f.BoundPIDs {
-				pids[i] = fmt.Sprintf("%d", p)
+			if len(f.Vector) == 0 {
+				continue
 			}
-			pidStr := strings.Join(pids, ",")
-			if pidStr == "" {
-				pidStr = "-"
+			byVec[vecKey(f.Vector)] = f
+			if len(f.Vector) == 1 {
+				roots = append(roots, f)
+			} else {
+				pk := vecKey(f.Vector[:len(f.Vector)-1])
+				kids[pk] = append(kids[pk], f)
+			}
+		}
+		lastComp := func(v []int) int { return v[len(v)-1] }
+		for k := range kids {
+			ks := kids[k]
+			sort.Slice(ks, func(i, j int) bool { return lastComp(ks[i].Vector) < lastComp(ks[j].Vector) })
+		}
+		var subtreeRecency func(f rpc.FigaroInfoResponse) int64
+		subtreeRecency = func(f rpc.FigaroInfoResponse) int64 {
+			best := f.LastActive
+			for _, c := range kids[vecKey(f.Vector)] {
+				if r := subtreeRecency(c); r > best {
+					best = r
+				}
+			}
+			return best
+		}
+		sort.SliceStable(roots, func(i, j int) bool {
+			return subtreeRecency(roots[i]) > subtreeRecency(roots[j])
+		})
+
+		// Flatten to rendered rows: tree glyphs in an ARIA cell.
+		type row struct {
+			aria, trunk, age, msgs, ctx, cwd string
+		}
+		var rows []row
+		ppid := os.Getppid()
+		marker := func(f rpc.FigaroInfoResponse) string {
+			if slices.Contains(f.BoundPIDs, ppid) {
+				return "●"
+			}
+			if f.State == "active" {
+				return "▸"
+			}
+			return "○"
+		}
+		var emit func(f rpc.FigaroInfoResponse, prefix string, isLast, isRoot bool)
+		emit = func(f rpc.FigaroInfoResponse, prefix string, isLast, isRoot bool) {
+			glyph := ""
+			if !isRoot {
+				glyph = prefix + "├─"
+				if isLast {
+					glyph = prefix + "└─"
+				}
+			}
+			label := f.Mantra
+			if label == "" {
+				label = "trunk " + f.ID
 			}
 			ctxStr := "-"
 			if f.ContextTokens > 0 {
@@ -65,32 +115,73 @@ func runList(loaded *config.Loaded, jsonOut bool) {
 					ctxStr = "~" + ctxStr
 				}
 			}
-			cacheStr := "-"
-			if f.CacheReadTokens > 0 || f.CacheWriteTokens > 0 {
-				cacheStr = fmt.Sprintf("%dk/%dk", f.CacheReadTokens/1000, f.CacheWriteTokens/1000)
+			rows = append(rows, row{
+				aria:  glyph + marker(f) + " " + truncRunes(label, 44),
+				trunk: f.ID, age: relAge(f.LastActive),
+				msgs: fmt.Sprintf("%d", f.MessageCount), ctx: ctxStr, cwd: shortCwd(f.Cwd),
+			})
+			cp := prefix
+			if !isRoot {
+				if isLast {
+					cp += "  "
+				} else {
+					cp += "│ "
+				}
 			}
-			model := f.Model
-			if model == "" {
-				model = "-"
+			ck := kids[vecKey(f.Vector)]
+			for i, c := range ck {
+				emit(c, cp, i == len(ck)-1, false)
 			}
-			current := ""
-			if slices.Contains(f.BoundPIDs, os.Getppid()) {
-				current = "*"
+		}
+		for _, r := range roots {
+			emit(r, "", true, true)
+		}
+
+		total := len(rows)
+		shown := total
+		if limit > 0 && total > limit {
+			rows = rows[:limit]
+			shown = limit
+		}
+
+		branches := 0
+		for _, f := range figs {
+			if len(f.Vector) > 1 {
+				branches++
 			}
-			// Indent the mantra by fork depth so the limb structure reads
-			// visually alongside the dotted vector.
-			depth := 0
-			if len(f.Vector) > 0 {
-				depth = len(f.Vector) - 1
-			}
-			mantra := strings.Repeat("  ", depth) + dash(f.Mantra)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
-				current, vectorString(f.Vector), mantra, f.ID, f.State, relAge(f.LastActive),
-				model, f.MessageCount, ctxStr, cacheStr, pidStr, shortCwd(f.Cwd))
+		}
+		fmt.Fprintf(os.Stderr, "%d trunk(s), %d branch(es) · showing %d of %d        ●=this shell  ▸=running  ○=idle\n\n",
+			len(roots), branches, shown, total)
+
+		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintf(w, "ARIA\tTRUNK\tAGE\tMSGS\tCTX\tCWD\n")
+		for _, r := range rows {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.aria, r.trunk, r.age, r.msgs, r.ctx, r.cwd)
 		}
 		w.Flush()
+		if limit > 0 && total > limit {
+			fmt.Fprintf(os.Stderr, "\n… %d more (--all to show every trunk)\n", total-limit)
+		}
 		return nil
 	})
+}
+
+// vecKey joins a vector into a stable map key (e.g. [0,1] -> "0.1").
+func vecKey(v []int) string {
+	parts := make([]string, len(v))
+	for i, n := range v {
+		parts[i] = strconv.Itoa(n)
+	}
+	return strings.Join(parts, ".")
+}
+
+// truncRunes shortens s to at most n runes, appending ".." when cut.
+func truncRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-2]) + ".."
 }
 
 // vectorString renders a fork vector as a dotted path ("0.1.0"); "-" if empty.
@@ -162,22 +253,22 @@ func shortCwd(p string) string {
 	return p
 }
 
-func runKill(loaded *config.Loaded, idFlag string, args []string) {
+func runKill(loaded *config.Loaded, idFlag string, args []string, recursive bool) {
 	ariaID := idFlag
 	if ariaID == "" && len(args) > 0 {
 		ariaID = args[0]
 	}
 	if ariaID == "" {
-		die("usage: figaro kill [--id <id> | <id>]")
+		die("usage: figaro kill [--id <trunk> | <trunk>] [--recursive]")
 	}
-	runKillByID(loaded, ariaID)
+	runKillByID(loaded, ariaID, recursive)
 }
 
-func runKillByID(loaded *config.Loaded, figaroID string) {
+func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := acli.Kill(ctx, figaroID); err != nil {
+		if err := acli.Kill(ctx, figaroID, recursive); err != nil {
 			die("kill: %s", err)
 		}
 		fmt.Fprintf(os.Stderr, "killed %s\n", figaroID)

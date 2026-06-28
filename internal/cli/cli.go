@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
@@ -235,14 +236,25 @@ Flags:
 		Name:    "list",
 		Aliases: []string{"ls"},
 		Group:   "Session",
-		Short:   "List the conversation forest (live, dormant, frozen)",
-		Usage:   "list [-j|--json]",
+		Short:   "List the conversation forest (indented by fork)",
+		Usage:   "list [-j|--json] [-a|--all] [-n <count>]",
 		Flags: []cmdkit.FlagDef{
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit entries as JSON"},
+			{Long: "all", Short: "a", IsBool: true, Description: "Show every trunk (default: 10 most recent)"},
+			{Long: "limit", Short: "n", Description: "Max rows to show (default 10)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runList(ld, ctx.BoolFlag("json"))
+			limit := 10
+			if v := ctx.Flag("limit"); v != "" {
+				if n, err := strconv.Atoi(v); err == nil && n > 0 {
+					limit = n
+				}
+			}
+			if ctx.BoolFlag("all") {
+				limit = 0
+			}
+			runList(ld, ctx.BoolFlag("json"), limit)
 			return nil
 		},
 	})
@@ -309,16 +321,17 @@ any other aria, or passing --stay, leaves your session untouched.`,
 	r.Register(&cmdkit.Command{
 		Name:    "kill",
 		Group:   "Session",
-		Short:   "Terminate and remove an aria",
-		Usage:   "kill [--id <id> | <id>]",
+		Short:   "Terminate and remove a trunk",
+		Usage:   "kill [--id <trunk> | <trunk>] [--recursive]",
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id"},
+			{Long: "id", Description: "Target trunk id"},
+			{Long: "recursive", Short: "r", IsBool: true, Description: "Also remove the trunk's live branches"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runKill(ld, ctx.Flag("id"), ctx.Args)
+			runKill(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("recursive"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,

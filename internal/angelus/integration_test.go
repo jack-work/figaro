@@ -160,7 +160,7 @@ model = "mock-model"
 	assert.GreaterOrEqual(t, len(cresp.Messages), 2) // user + assistant
 
 	// --- Angelus client: kill ---
-	err = acli.Kill(ctx, createResp.FigaroID)
+	err = acli.Kill(ctx, createResp.FigaroID, false)
 	require.NoError(t, err)
 
 	listResp, err = acli.List(ctx)

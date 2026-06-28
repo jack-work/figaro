@@ -342,10 +342,11 @@ func (b *XwalBackend) List() ([]AriaInfo, error) {
 	return out, nil
 }
 
-func (b *XwalBackend) Remove(ariaID string) error {
+func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
 	b.evict(ariaID)
 	_ = os.Remove(b.metaPath(ariaID))
-	return b.store.RemoveLeaf(ariaID)
+	_ = b.ClearLive(ariaID)
+	return b.store.RemoveLeaf(ariaID, recursive)
 }
 
 func (b *XwalBackend) Close() error {

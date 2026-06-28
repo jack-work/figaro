@@ -251,3 +251,39 @@ func TestXwalBackend_LiveBlob(t *testing.T) {
 		t.Fatalf("live blob not cleared: %q", got)
 	}
 }
+
+func TestXwalBackend_ForestVectors(t *testing.T) {
+	b, err := NewXwalBackend(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	l, _ := b.CreateLoadout("d", patchSet(nil))
+	c1, _ := b.CreateConversation(l) // root [0]
+	c2, _ := b.CreateConversation(l) // root [1]
+	// give c1 a turn so it's interior-forkable, then fork it -> a branch [0,0]
+	ir, _ := b.Open(c1)
+	ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}})
+	_, alt, err := b.Fork(c1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]int{c1: {0}, c2: {1}, alt: {0, 0}}
+	got := map[string][]int{}
+	for _, n := range b.Nodes() {
+		if n.Kind == string(kindConversation) {
+			got[n.ID] = n.Vector
+		}
+	}
+	for id, wv := range want {
+		gv := got[id]
+		if len(gv) != len(wv) {
+			t.Fatalf("%s vector = %v, want %v (all: %v)", id, gv, wv, got)
+		}
+		for i := range wv {
+			if gv[i] != wv[i] {
+				t.Fatalf("%s vector = %v, want %v", id, gv, wv)
+			}
+		}
+	}
+}

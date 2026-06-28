@@ -109,6 +109,8 @@ github.com/jack-work/figwal v0.6.2 h1:bbFawyUG4DC0LmP3XyHYsZ8yuV/2KM2ahQMUKh46tM
 github.com/jack-work/figwal v0.6.2/go.mod h1:Z8jdAyQX7X5gQN7r31Gc6vLX7f2/ayRyaiPUupE8yWw=
 github.com/jack-work/figwal v0.6.3 h1:zmzPzMdB7gq0MXAhMk43fpzsoKlY9BZCtR7afxslKdI=
 github.com/jack-work/figwal v0.6.3/go.mod h1:Z8jdAyQX7X5gQN7r31Gc6vLX7f2/ayRyaiPUupE8yWw=
+github.com/jack-work/figwal v0.6.4 h1:fzY+CoZlELIPUkIbtq6mEsB27SJCCQcRE2p2M2mq2Ns=
+github.com/jack-work/figwal v0.6.4/go.mod h1:Z8jdAyQX7X5gQN7r31Gc6vLX7f2/ayRyaiPUupE8yWw=
 github.com/jack-work/hush v0.5.1-0.20260626045930-05fcb763e568 h1:0xXvSkFQpVjNaDWNW/fcyTp2/w8XCwq7L0yHdjQji6s=
 github.com/jack-work/hush v0.5.1-0.20260626045930-05fcb763e568/go.mod h1:S2nzmzxe6Gyi+7uINrRsWiw4GeiaCaVk+byWZnCLaU8=
 github.com/jack-work/jkrpc v0.1.0 h1:qx03oLiVLuCL/2j3MDy0KLPvGs0Soja/oaQ4YlM9cVg=
