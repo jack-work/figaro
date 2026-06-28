@@ -229,10 +229,10 @@ func (a *Anthropic) SetModel(model string) {
 }
 
 func decodeNativeMessage(nm nativeMessage) message.Message {
+	// model/provider are not on the IR message — they live in the
+	// chalkboard (system.model / system.provider), derived on read.
 	m := message.Message{
-		Role:     message.Role(nm.Role),
-		Provider: providerName,
-		Model:    nm.Model,
+		Role: message.Role(nm.Role),
 	}
 	for _, b := range nm.Content {
 		switch b.Type {

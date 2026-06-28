@@ -11,10 +11,10 @@ import (
 // decodeAssistantMessage projects an SDK Message (the final
 // accumulated assistant turn) to the figaro IR.
 func decodeAssistantMessage(m anthropic.Message) message.Message {
+	// model/provider are not on the IR message — they live in the
+	// chalkboard (system.model / system.provider), derived on read.
 	out := message.Message{
-		Role:     message.RoleAssistant,
-		Provider: providerName,
-		Model:    string(m.Model),
+		Role: message.RoleAssistant,
 	}
 	for _, b := range m.Content {
 		switch v := b.AsAny().(type) {

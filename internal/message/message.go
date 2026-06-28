@@ -109,9 +109,8 @@ type Message struct {
 	// Patches are chalkboard mutations for this message.
 	Patches []Patch `json:"patches,omitempty"`
 
-	// Assistant-only metadata
-	Model      string     `json:"model,omitempty"`
-	Provider   string     `json:"provider,omitempty"`
+	// Assistant-only metadata. (model/provider are NOT here — they are
+	// chalkboard values: system.model / system.provider, derived on read.)
 	Usage      *Usage     `json:"usage,omitempty"`
 	StopReason StopReason `json:"stop_reason,omitempty"`
 
