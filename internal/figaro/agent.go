@@ -469,7 +469,7 @@ func (a *Agent) endTurn(reason string) {
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
 		Method:  rpc.MethodTurnDone,
-		Params:  rpc.DoneEntry{Reason: reason},
+		Params:  rpc.DoneEntry{Reason: reason, Idle: a.inbox.IsIdle()},
 	})
 
 	a.mu.Lock()

@@ -16,5 +16,6 @@ type Notification struct {
 
 // DoneEntry signals the turn went idle. Params for MethodTurnDone.
 type DoneEntry struct {
-	Reason string `json:"reason"` // stop reason, or an error string
+	Reason string `json:"reason"`         // stop reason, or an error string
+	Idle   bool   `json:"idle,omitempty"` // true when the agent has no more queued work
 }

@@ -90,6 +90,11 @@ type ChalkboardPatch struct {
 
 type QuaResponse struct {
 	OK bool `json:"ok"`
+	// Cursor is the highest committed figaro LT at the moment the prompt was
+	// accepted. The client streams from here: everything after it (the prompt's
+	// own turn, or the live turn it steers) arrives as updates, and the stream
+	// ends on the turn.done that reports the agent idle.
+	Cursor int `json:"cursor"`
 }
 
 type InterruptRequest struct{}

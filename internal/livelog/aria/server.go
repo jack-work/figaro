@@ -32,6 +32,17 @@ type openMsg struct {
 // NewServer returns an empty aria server.
 func NewServer() *Server { return &Server{subs: map[int]func(AriaRead){}} }
 
+// LastCommittedLT returns the LT of the most recently committed message (0 if
+// none) — the cursor a client streams from.
+func (s *Server) LastCommittedLT() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.closed) == 0 {
+		return 0
+	}
+	return s.closed[len(s.closed)-1].LT
+}
+
 // Open starts a new open message at lt (close any prior one first). It emits no
 // frame; the first Update carries the role at v 0.
 func (s *Server) Open(lt int, role string) {

@@ -81,6 +81,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	var mu sync.Mutex
 	doneCh := make(chan struct{}, 1)
 	turnDone := false // turn ended while the pager was up; exit on pager close
+	sendCursor := -1  // cursor from Qua; stop only once committed past it and idle
 
 	onNotify := func(method string, params json.RawMessage) {
 		mu.Lock()
@@ -94,12 +95,21 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		case rpc.MethodTurnDone:
 			var d rpc.DoneEntry
 			_ = json.Unmarshal(params, &d)
-			if strings.HasPrefix(d.Reason, "error:") {
+			isErr := strings.HasPrefix(d.Reason, "error:")
+			if isErr {
 				if strings.Contains(d.Reason, "no credential") || strings.Contains(d.Reason, "resolve token") {
 					fmt.Fprint(os.Stderr, "\n"+providerSetupHint())
 				} else {
 					fmt.Fprintln(os.Stderr, "\n"+d.Reason)
 				}
+			}
+			// Settle when the agent is idle AND our prompt's turn has committed
+			// past the cursor Qua gave us — so a turn that ended with more work
+			// queued, or a stale idle from before our prompt, can't end us early.
+			// An error always settles.
+			settled := isErr || (sendCursor >= 0 && d.Idle && lt.cursor() > sendCursor)
+			if !settled {
+				break
 			}
 			if lt.transcriptActive() {
 				turnDone = true // let the user keep reading; exit when they close the pager
@@ -224,9 +234,13 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		}
 	}
 
-	if err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
-		die("prompt: %s", err)
+	cursor, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard())
+	if qerr != nil {
+		die("prompt: %s", qerr)
 	}
+	mu.Lock()
+	sendCursor = cursor
+	mu.Unlock()
 
 	select {
 	case <-doneCh:
