@@ -186,11 +186,17 @@ func (s *XwalStore) CreateConversation(loadoutID string) (string, error) {
 
 // Fork branches a conversation at its head. The aria id is STABLE — the
 // trunk continues under the same id (cont == id); only the alternative is
-// new. (bind-to-trunk: forking your trunk doesn't move you.)
+// new. (bind-to-trunk: forking your trunk doesn't move you.) A cauterized
+// trunk (null/loadout) never continues — a fork there mints a fresh child
+// trunk beneath it (a loadoutless conversation, or one sharing the loadout).
 func (s *XwalStore) Fork(id string) (cont, alt string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	alt, err = s.trunks.ForkTail(id)
+	if s.cauterized(id) {
+		alt, err = s.trunks.SpawnChild(id)
+	} else {
+		alt, err = s.trunks.ForkTail(id)
+	}
 	if err != nil {
 		return "", "", err
 	}
@@ -200,14 +206,35 @@ func (s *XwalStore) Fork(id string) (cont, alt string, err error) {
 // ForkAt branches at an interior main-LT (imperative — no message): shares
 // [1..atMainLT], mints an empty alternative diverging at atMainLT+1; the id
 // is stable (cont == id). At/past the tail it degenerates to a tail fork.
+//
+// Cauterization: if atMainLT is owned by a ceremonial trunk (the null root or
+// a loadout), it is NOT re-split into a continuation — a new child trunk is
+// spawned beneath the owner (a new loadoutless conversation, or a new
+// conversation sharing that loadout). Forking a conversation's own turns (or a
+// parent conversation's) re-splits normally.
 func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	alt, err = s.trunks.ForkAt(id, atMainLT)
+	owner, oerr := s.trunks.OwnerTrunk(id, atMainLT)
+	if oerr != nil {
+		return "", "", oerr
+	}
+	if s.cauterized(owner) {
+		alt, err = s.trunks.SpawnChild(owner)
+	} else {
+		alt, err = s.trunks.ForkAt(id, atMainLT)
+	}
 	if err != nil {
 		return "", "", err
 	}
 	return id, alt, nil
+}
+
+// cauterized reports whether a trunk is ceremonial (the null root or a
+// loadout) — ops "at" it spawn a child trunk rather than appending/re-splitting.
+func (s *XwalStore) cauterized(id string) bool {
+	k := s.kindOf(id)
+	return k == kindNull || k == kindLoadout
 }
 
 // writeBirth appends a birth tic to a fresh trunk's IR plus its chalkboard

@@ -168,3 +168,47 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 		t.Fatalf("send to forked alt: %v", err)
 	}
 }
+
+func TestXwalBackend_CauterizedLoadoutFork(t *testing.T) {
+	b, err := NewXwalBackend(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	l, _ := b.CreateLoadout("d", patchSet(map[string]string{"system.model": "m"}))
+	conv, _ := b.CreateConversation(l)
+	// Give conv a couple own turns so LT 2 (the loadout birth) is clearly an
+	// inherited, ceremonial LT.
+	ir, _ := b.Open(conv)
+	for i := 0; i < 2; i++ {
+		ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}})
+	}
+	// Fork conv at LT 2 — owned by the LOADOUT. Cauterized => a NEW conversation
+	// sharing the loadout, NOT a re-split of the loadout into a continuation.
+	cont, sib, err := b.ForkAt(conv, 2)
+	if err != nil {
+		t.Fatalf("cauterized fork at loadout LT: %v", err)
+	}
+	if cont != conv {
+		t.Fatalf("cont should stay conv: %s != %s", cont, conv)
+	}
+	if sib == conv || sib == l || sib == "" {
+		t.Fatalf("sib must be a fresh conversation trunk, got %q", sib)
+	}
+	// The sibling shares the loadout chalkboard and is itself sendable.
+	snap, err := b.ChalkboardState(sib)
+	if err != nil {
+		t.Fatalf("sib chalkboard: %v", err)
+	}
+	if str(snap["system.model"]) != "m" {
+		t.Fatalf("sib lost the shared loadout model: %q", str(snap["system.model"]))
+	}
+	sibIR, _ := b.Open(sib)
+	if _, err := sibIR.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}); err != nil {
+		t.Fatalf("send to cauterized sibling: %v", err)
+	}
+	// And the loadout still has NO live head of its own (stays ceremonial).
+	if _, ok := b.Node(l); !ok {
+		t.Fatalf("loadout %s should still resolve", l)
+	}
+}
