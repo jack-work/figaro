@@ -167,13 +167,14 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 
 	width := termWidth()
-	fmt.Printf("# aria %s — units %d–%d of %d\n\n", figaroID, lo, hi-1, len(units))
+	fmt.Printf("# aria %s — %d units (showing %d–%d) · [N] is the LT to fork/send at\n\n", figaroID, len(units), lo+1, hi)
 	for i := lo; i < hi; i++ {
 		u := units[i]
-		label := fmt.Sprintf("[%d] › you", i)
+		who := "› you"
 		if u.Role == "assistant" {
-			label = fmt.Sprintf("[%d] ‹ figaro", i)
+			who = "‹ figaro"
 		}
+		label := fmt.Sprintf("[%d] %s", u.LT, who)
 		fmt.Println(term.Dim(label))
 		fmt.Println()
 		rows, _ := renderNodes(u.Nodes, width, 0, 0, renderSettings{verbose: true})

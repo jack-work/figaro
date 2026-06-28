@@ -99,10 +99,13 @@ func tailBound(text string) string {
 }
 
 // Unit is one committed conversational unit: a user prompt or an
-// assistant turn, as a typed node list.
+// assistant turn, as a typed node list. LT is the figwal main-LT of the
+// unit's last message — the coordinate `send`/`fork <trunk>:<LT>` address —
+// so a renderer can label units with the LT a fork would target.
 type Unit struct {
 	Role  string         `json:"role"`
 	Nodes []livedoc.Node `json:"nodes"`
+	LT    uint64         `json:"lt,omitempty"`
 }
 
 // Units folds a message log into committed conversational units in
@@ -119,7 +122,7 @@ func Units(msgs []message.Message) []Unit {
 			return
 		}
 		if nodes := Nodes(group, nil); len(nodes) > 0 {
-			units = append(units, Unit{Role: "assistant", Nodes: nodes})
+			units = append(units, Unit{Role: "assistant", Nodes: nodes, LT: group[len(group)-1].LogicalTime})
 		}
 		group = nil
 	}
@@ -127,7 +130,7 @@ func Units(msgs []message.Message) []Unit {
 		if m.Role == message.RoleUser {
 			if txt := messageText(m); txt != "" {
 				flush()
-				units = append(units, Unit{Role: "user", Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: txt}}})
+				units = append(units, Unit{Role: "user", Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: txt}}, LT: m.LogicalTime})
 			}
 		}
 		group = append(group, m)
