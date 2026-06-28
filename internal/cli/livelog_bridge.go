@@ -116,6 +116,8 @@ func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
 		return renderToolNode(n, width, nodeBashCapDefault, uint64(tick), v.settings != nil && v.settings.verbose)
 	case livedoc.NodeThinking:
 		return renderThinkingNode(n, width)
+	case livedoc.NodeSteering:
+		return renderSteeringNode(n, width)
 	default:
 		return renderProseNode(n, width)
 	}

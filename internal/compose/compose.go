@@ -38,6 +38,20 @@ func Nodes(msgs []message.Message, partials map[string]string) []livedoc.Node {
 	results := indexResults(msgs)
 	var nodes []livedoc.Node
 	for _, m := range msgs {
+		if m.Role == message.RoleUser {
+			// A user message inside a turn group is a tool_result tic; its
+			// tool_result blocks fold under their invoke (indexResults). If it
+			// ALSO carries text, that's a steering interjection — emit it as a
+			// node, positioned where it arrived (after the tool nodes).
+			if hasToolResult(m) {
+				for _, c := range m.Content {
+					if c.Type == message.ContentProse && strings.TrimSpace(c.Text) != "" {
+						nodes = append(nodes, livedoc.Node{Type: livedoc.NodeSteering, Markdown: strings.TrimRight(c.Text, "\n")})
+					}
+				}
+			}
+			continue
+		}
 		if m.Role != message.RoleAssistant {
 			continue // tool_result messages fold under their invoke; user prompts aren't in the turn
 		}
@@ -127,7 +141,10 @@ func Units(msgs []message.Message) []Unit {
 		group = nil
 	}
 	for _, m := range msgs {
-		if m.Role == message.RoleUser {
+		// A pure-text user message starts a new prompt unit. A user message
+		// carrying a tool_result stays in the turn group even if it also has
+		// text (a steering interjection) — that text becomes a steering node.
+		if m.Role == message.RoleUser && !hasToolResult(m) {
 			if txt := messageText(m); txt != "" {
 				flush()
 				units = append(units, Unit{Role: "user", Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: txt}}, LT: m.LogicalTime})
@@ -149,6 +166,17 @@ func messageText(m message.Message) string {
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+// hasToolResult reports whether a message carries any tool_result block — i.e.
+// it's a tool-result tic (part of the turn) rather than a fresh user prompt.
+func hasToolResult(m message.Message) bool {
+	for _, c := range m.Content {
+		if c.Type == message.ContentToolResult {
+			return true
+		}
+	}
+	return false
 }
 
 func indexResults(msgs []message.Message) map[string]message.Content {

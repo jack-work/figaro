@@ -58,6 +58,23 @@ func (b *Inbox) Recv() (event, bool) {
 	return evt, true
 }
 
+// TakeUserPrompts removes and returns all queued user-prompt events (steering
+// messages), leaving other events (e.g. control patches) in place. Non-blocking.
+func (b *Inbox) TakeUserPrompts() []event {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var taken, keep []event
+	for _, e := range b.queue {
+		if e.typ == eventUserPrompt {
+			taken = append(taken, e)
+		} else {
+			keep = append(keep, e)
+		}
+	}
+	b.queue = keep
+	return taken
+}
+
 // IsIdle reports whether the inbox is empty (no events queued).
 func (b *Inbox) IsIdle() bool {
 	b.mu.Lock()

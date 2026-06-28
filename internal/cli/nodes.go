@@ -220,6 +220,14 @@ func renderThinkingNode(n livedoc.Node, width int) []string {
 	return render.Prose(blockquote(n.Markdown), width)
 }
 
+// renderSteeringNode renders a user message injected mid-turn — a steering
+// interjection — under a marked gutter so it reads as the user's voice inside
+// the assistant's turn, distinct from prose and thinking.
+func renderSteeringNode(n livedoc.Node, width int) []string {
+	rows := render.Prose(n.Markdown, width)
+	return append([]string{term.Dim("↳ you")}, rows...)
+}
+
 // renderToolNode draws a tool as a widget: a status header (animated
 // spinner while running, ✓/✗ when done) with the tool name and an argument
 // summary, then the streamed output under a dim gutter, tail-clamped to

@@ -436,11 +436,21 @@ func (a *Agent) collectToolResults(
 			}
 		}
 	}
-	return message.Message{
+	tic := message.Message{
 		Role:      message.RoleUser,
 		Content:   results,
 		Timestamp: time.Now().UnixMilli(),
 	}
+	// Steering: fold any user prompts that arrived during this round into the
+	// tool_result tic as text blocks, so the model sees them on the next call.
+	// (compose renders them as steering nodes; the provider accepts text
+	// alongside tool_result on a user message.)
+	for _, e := range a.inbox.TakeUserPrompts() {
+		if e.text != "" {
+			tic.Content = append(tic.Content, message.TextContent(e.text))
+		}
+	}
+	return tic
 }
 
 // nextIndex returns the LT the next appended message will occupy.

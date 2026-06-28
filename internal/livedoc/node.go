@@ -16,6 +16,7 @@ const (
 	NodeProse    NodeType = "prose"    // a markdown span (assistant text)
 	NodeThinking NodeType = "thinking" // extended-thinking text (Markdown field)
 	NodeTool     NodeType = "tool"     // a tool invocation + its streamed result
+	NodeSteering NodeType = "steering" // a user message injected mid-turn (Markdown field)
 )
 
 // Tool status values.
