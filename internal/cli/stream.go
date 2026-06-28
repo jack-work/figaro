@@ -89,7 +89,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			var d rpc.DoneEntry
 			_ = json.Unmarshal(params, &d)
 			if strings.HasPrefix(d.Reason, "error:") {
-				fmt.Fprintln(os.Stderr, "\n"+d.Reason)
+				if strings.Contains(d.Reason, "no credential") || strings.Contains(d.Reason, "resolve token") {
+					fmt.Fprint(os.Stderr, "\n"+providerSetupHint())
+				} else {
+					fmt.Fprintln(os.Stderr, "\n"+d.Reason)
+				}
 			}
 			select {
 			case doneCh <- struct{}{}:

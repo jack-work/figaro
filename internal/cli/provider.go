@@ -67,6 +67,23 @@ func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 	return &auth.Aggregate{Strategies: strategies}, nil
 }
 
+// providerSetupHint is the user-facing guidance shown when a turn fails for
+// lack of a credential — what providers exist and how to connect each.
+func providerSetupHint() string {
+	var b strings.Builder
+	b.WriteString("No provider connected — figaro has no credential to reach a model.\n\n")
+	b.WriteString("Connect one and retry:\n")
+	for _, p := range KnownProviders {
+		if _, ok := oauthConfigFor(p); ok {
+			fmt.Fprintf(&b, "  • %-10s Claude subscription (OAuth):  fig login %s\n", p, p)
+		}
+		if ev := envVarFor(p); ev != "" {
+			fmt.Fprintf(&b, "  • %-10s API key:                      export %s=sk-…\n", p, ev)
+		}
+	}
+	return b.String()
+}
+
 func envVarFor(providerName string) string {
 	switch providerName {
 	case "anthropic":
