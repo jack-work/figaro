@@ -110,3 +110,18 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		}
 	}
 }
+
+func patchSet(kv map[string]string) message.Patch {
+	set := map[string]json.RawMessage{}
+	for k, v := range kv {
+		b, _ := json.Marshal(v)
+		set[k] = b
+	}
+	return message.Patch{Set: set}
+}
+
+func str(raw json.RawMessage) string {
+	var s string
+	_ = json.Unmarshal(raw, &s)
+	return s
+}

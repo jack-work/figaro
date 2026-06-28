@@ -303,11 +303,12 @@ model = "mock-model"
 	}
 	fcli.Close()
 
-	// Fork: two fresh children, parent frozen.
+	// Fork (trunk model): the aria id is STABLE — the continuation keeps it
+	// (cont == id, bind-to-trunk), only the alternative is new.
 	fr, err := acli.Fork(ctx, created.FigaroID, 0)
 	require.NoError(t, err)
 	require.NotEqual(t, fr.Continuation, fr.Alternative)
-	require.NotEqual(t, created.FigaroID, fr.Continuation)
+	require.Equal(t, created.FigaroID, fr.Continuation)
 	require.NotEqual(t, created.FigaroID, fr.Alternative)
 
 	// Both children see the pre-fork prompt (shared prefix).
@@ -331,31 +332,23 @@ model = "mock-model"
 	assert.Equal(t, 1, countUser(fr.Continuation, "first prompt"), "continuation shares prefix")
 	assert.Equal(t, 1, countUser(fr.Alternative, "first prompt"), "alternative shares prefix")
 
-	// Forest position: root [0]; continuation [0 0] keeps the root's
-	// trunk; alternative [0 1] founds its own trunk.
+	// Trunk model: the continuation keeps the original trunk id (cont ==
+	// created.FigaroID); the alternative founds its own trunk.
 	lst, err := acli.List(ctx)
 	require.NoError(t, err)
 	byID := map[string]rpc.FigaroInfoResponse{}
 	for _, f := range lst.Figaros {
 		byID[f.ID] = f
 	}
-	root, cont, alt := byID[created.FigaroID], byID[fr.Continuation], byID[fr.Alternative]
-	assert.Equal(t, []int{0}, root.Vector, "root vector")
-	assert.Equal(t, []int{0, 0}, cont.Vector, "continuation vector")
-	assert.Equal(t, []int{0, 1}, alt.Vector, "alternative vector")
-	assert.Equal(t, root.Trunk, cont.Trunk, "continuation inherits the trunk")
-	assert.NotEqual(t, root.Trunk, alt.Trunk, "alternative founds a new trunk")
+	cont, alt := byID[fr.Continuation], byID[fr.Alternative]
+	assert.Equal(t, created.FigaroID, cont.Trunk, "continuation keeps the trunk")
+	assert.NotEqual(t, cont.Trunk, alt.Trunk, "alternative founds a new trunk")
 	assert.Equal(t, alt.ID, alt.Trunk, "alternative trunk is itself")
-	assert.True(t, root.Frozen, "forked parent is frozen")
 
-	// A fresh continuation is immediately re-forkable (no turn needed) —
-	// it owns a genesis tic so the chalkboard seed and the next fork point
-	// don't collide.
-	fr2, err := acli.Fork(ctx, fr.Continuation, 0)
-	require.NoError(t, err, "fresh continuation must be re-forkable")
+	// The trunk is stable and stays live — re-forking the same id again
+	// just adds another alternative (bind-to-trunk: forking doesn't move you).
+	fr2, err := acli.Fork(ctx, created.FigaroID, 0)
+	require.NoError(t, err, "the trunk stays live and re-forkable")
 	require.NotEqual(t, fr2.Continuation, fr2.Alternative)
-
-	// The frozen parent refuses a re-fork.
-	_, err = acli.Fork(ctx, created.FigaroID, 0)
-	require.Error(t, err, "frozen node cannot be re-forked")
+	require.Equal(t, created.FigaroID, fr2.Continuation)
 }
