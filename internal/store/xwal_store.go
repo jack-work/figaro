@@ -19,12 +19,13 @@ package store
 // figwal; figaro persists only the null trunk id + the loadout dedup map.
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
@@ -33,6 +34,15 @@ import (
 	"github.com/jack-work/figwal/segment"
 	"github.com/jack-work/figwal/xwal"
 )
+
+// hexTrunkID mints an opaque aria/trunk id (the same 4-byte hex form figaro
+// has always used for aria handles), so ids read like real handles rather
+// than sequential "t<N>".
+func hexTrunkID() string {
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 const (
 	chanIR           = "ir"
@@ -74,9 +84,10 @@ func storeConfig() xwal.Config {
 	// read back as an empty-role message in the IR.
 	genesis, _ := json.Marshal(message.Message{Role: message.RoleGenesis})
 	return xwal.Config{
-		Main:    chanIR,
-		Codec:   "jsonl",
-		Genesis: genesis,
+		Main:        chanIR,
+		Codec:       "jsonl",
+		Genesis:     genesis,
+		MintTrunkID: hexTrunkID,
 		Registry: map[string]xwal.Reducer{
 			reducerJSONMerge: {Reduce: chalkboardReduce, Initial: []byte("{}")},
 		},
@@ -333,7 +344,8 @@ func (s *XwalStore) view(t xwal.TrunkInfo, vec map[string][]int) NodeView {
 
 // vectorsLocked assigns each conversation trunk its fork-forest vector: the
 // child-index path among conversation trunks — roots are [0],[1],…, a branch
-// is parentVec+[k] — ordered by trunk number (creation order). Caller holds mu.
+// is parentVec+[k]. Siblings are ordered by id (stable; display re-sorts by
+// recency). Caller holds mu.
 func (s *XwalStore) vectorsLocked() map[string][]int {
 	infos := s.trunks.List()
 	live := make(map[string]bool, len(infos))
@@ -349,12 +361,9 @@ func (s *XwalStore) vectorsLocked() map[string][]int {
 			roots = append(roots, ti.ID) // root conversation (parent is a loadout/null)
 		}
 	}
-	byNum := func(ids []string) {
-		sort.Slice(ids, func(i, j int) bool { return trunkNum(ids[i]) < trunkNum(ids[j]) })
-	}
-	byNum(roots)
+	sort.Strings(roots)
 	for k := range kids {
-		byNum(kids[k])
+		sort.Strings(kids[k])
 	}
 	vec := map[string][]int{}
 	var assign func(id string, prefix []int)
@@ -368,17 +377,6 @@ func (s *XwalStore) vectorsLocked() map[string][]int {
 		assign(r, []int{i})
 	}
 	return vec
-}
-
-func trunkNum(id string) int {
-	if len(id) < 2 || id[0] != 't' {
-		return 1 << 30
-	}
-	n, err := strconv.Atoi(id[1:])
-	if err != nil {
-		return 1 << 30
-	}
-	return n
 }
 
 // Nodes returns a view of every conversation trunk plus the loadout/null
