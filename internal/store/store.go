@@ -50,11 +50,11 @@ type Backend interface {
 	ChalkboardState(ariaID string) (chalkboard.Snapshot, error)
 
 	// ApplyChalkboard appends a state patch to the chalkboard channel,
-	// keyed to the next IR LT (the transition the next tic carries).
+	// keyed to the next IR LT (the transition the next message carries).
 	ApplyChalkboard(ariaID string, patch message.Patch) error
 
 	// ChalkboardPatches returns every chalkboard patch grouped by the IR
-	// logical time it is keyed to (the transitions to render per tic).
+	// logical time it is keyed to (the transitions to render per message).
 	// Empty patches (genesis/seed no-ops) are omitted.
 	ChalkboardPatches(ariaID string) (map[uint64][]message.Patch, error)
 

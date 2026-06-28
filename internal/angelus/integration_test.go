@@ -322,7 +322,7 @@ model = "mock-model"
 				continue
 			}
 			for _, c := range m.Content {
-				if c.Type == message.ContentText && c.Text == want {
+				if c.Type == message.ContentProse && c.Text == want {
 					n++
 				}
 			}

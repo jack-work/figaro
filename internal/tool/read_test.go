@@ -26,7 +26,7 @@ func writeTestFile(t *testing.T, dir, name, content string) string {
 func readResultText(content []message.Content) string {
 	var sb strings.Builder
 	for _, c := range content {
-		if c.Type == message.ContentText {
+		if c.Type == message.ContentProse {
 			sb.WriteString(c.Text)
 		}
 	}
@@ -233,7 +233,7 @@ func TestRead_Image(t *testing.T) {
 	}, nil)
 	require.NoError(t, err)
 	require.Len(t, result, 2)
-	assert.Equal(t, message.ContentText, result[0].Type)
+	assert.Equal(t, message.ContentProse, result[0].Type)
 	assert.Contains(t, result[0].Text, "image/png")
 	assert.Equal(t, message.ContentImage, result[1].Type)
 	assert.Equal(t, "image/png", result[1].MimeType)

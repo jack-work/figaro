@@ -47,7 +47,7 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) {
 // catchUp encodes any figLog entries not yet in the cache and
 // returns per-message wire bytes plus their logical times. Chalkboard
 // transitions are sourced per-LT from chalk (the reducible channel); a
-// nil chalk falls back to whatever patches ride inline on the IR tic
+// nil chalk falls back to whatever patches ride inline on the IR message
 // (ephemeral arias, tests).
 func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
 	fp := p.Fingerprint()
@@ -58,7 +58,7 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 		msg := e.Payload
 		msg.LogicalTime = e.LT
 		if msg.Role == message.RoleGenesis {
-			continue // structural birth tic; never rendered
+			continue // structural birth message; never rendered
 		}
 		if chalk != nil {
 			msg.Patches = chalk.PatchesAt(e.LT)

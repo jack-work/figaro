@@ -61,7 +61,7 @@ type Config struct {
 
 	// InlineBoot is the ephemeral-only boot patch. Backed arias hold
 	// their boot transition in the chalkboard channel; ephemeral arias
-	// have no channel, so this patch is folded onto the first IR tic so
+	// have no channel, so this patch is folded onto the first IR turn so
 	// the loadout reminders still render. Ignored when Backend != nil.
 	InlineBoot *chalkboard.Patch
 }
@@ -74,7 +74,7 @@ type Agent struct {
 	prov       provider.Provider
 	outfitter  *outfit.Outfitter
 	tools      *tool.Registry
-	inlineBoot *chalkboard.Patch // ephemeral first-tic boot fold
+	inlineBoot *chalkboard.Patch // ephemeral first-turn boot fold
 	figLog     store.Log[message.Message]
 	backend    store.Backend // nil = ephemeral
 	chalkboard *chalkboard.State
@@ -411,8 +411,8 @@ func (a *Agent) act(ctx context.Context) {
 
 // applyControlPatch persists a state-only patch. No LLM round-trip.
 // Backed arias append it to the reducible chalkboard channel (keyed to
-// the next IR LT, so it rides the next tic as a transition); ephemeral
-// arias fold it onto an IR control-tic (no channel to hold it).
+// the next IR LT, so it rides the next turn as a transition); ephemeral
+// arias fold it onto an IR control-turn (no channel to hold it).
 func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Set), "remove", len(patch.Remove))
 	if a.backend != nil {
@@ -421,12 +421,12 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 			return
 		}
 	} else {
-		tic := message.Message{
+		turn := message.Message{
 			Role:      message.RoleUser,
 			Patches:   []message.Patch{patch},
 			Timestamp: time.Now().UnixMilli(),
 		}
-		if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
+		if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: turn}); err != nil {
 			slog.Error(kind+" append", "aria", a.id, "err", err)
 			return
 		}

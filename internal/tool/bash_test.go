@@ -16,7 +16,7 @@ import (
 func resultText(content []message.Content) string {
 	var sb strings.Builder
 	for _, c := range content {
-		if c.Type == message.ContentText {
+		if c.Type == message.ContentProse {
 			sb.WriteString(c.Text)
 		}
 	}

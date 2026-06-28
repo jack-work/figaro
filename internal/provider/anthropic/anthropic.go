@@ -237,7 +237,7 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 	for _, b := range nm.Content {
 		switch b.Type {
 		case "text":
-			m.Content = append(m.Content, message.Content{Type: message.ContentText, Text: b.Text})
+			m.Content = append(m.Content, message.Content{Type: message.ContentProse, Text: b.Text})
 		case "thinking":
 			m.Content = append(m.Content, message.Content{Type: message.ContentThinking, Text: b.Thinking})
 		case "tool_use":
@@ -360,7 +360,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snap
 		var blocks []nativeBlock
 		for _, c := range msg.Content {
 			switch c.Type {
-			case message.ContentText:
+			case message.ContentProse:
 				blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
 			case message.ContentImage:
 				blocks = append(blocks, nativeBlock{
@@ -391,7 +391,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snap
 		var blocks []nativeBlock
 		for _, c := range msg.Content {
 			switch c.Type {
-			case message.ContentText:
+			case message.ContentProse:
 				blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
 			case message.ContentThinking:
 				blocks = append(blocks, nativeBlock{Type: "thinking", Thinking: c.Text})
@@ -736,7 +736,7 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[
 		msg := e.Payload
 		msg.LogicalTime = e.LT
 		if msg.Role == message.RoleGenesis {
-			continue // structural birth tic; never rendered
+			continue // structural birth message; never rendered
 		}
 		if chalk != nil {
 			msg.Patches = chalk.PatchesAt(e.LT)
@@ -920,7 +920,7 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 		case "text_delta":
 			b.Text += d.Delta.Text
 			if d.Delta.Text != "" {
-				bus.PushDelta(message.Content{Type: message.ContentText, Text: d.Delta.Text})
+				bus.PushDelta(message.Content{Type: message.ContentProse, Text: d.Delta.Text})
 			}
 		case "thinking_delta":
 			b.Thinking += d.Delta.Thinking

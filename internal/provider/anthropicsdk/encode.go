@@ -34,7 +34,7 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *chalkboard.Snaps
 		var blocks []anthropic.ContentBlockParamUnion
 		for _, c := range msg.Content {
 			switch c.Type {
-			case message.ContentText:
+			case message.ContentProse:
 				blocks = append(blocks, anthropic.NewTextBlock(c.Text))
 			case message.ContentImage:
 				blocks = append(blocks, anthropic.NewImageBlockBase64(c.MimeType, c.Data))
@@ -56,7 +56,7 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *chalkboard.Snaps
 		var blocks []anthropic.ContentBlockParamUnion
 		for _, c := range msg.Content {
 			switch c.Type {
-			case message.ContentText:
+			case message.ContentProse:
 				blocks = append(blocks, anthropic.NewTextBlock(c.Text))
 			case message.ContentThinking:
 				// Dropped. This path is the cache-miss fallback only; the

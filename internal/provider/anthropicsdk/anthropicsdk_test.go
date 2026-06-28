@@ -164,7 +164,7 @@ func TestDecodeAssistantMessage_ToolUse(t *testing.T) {
 	ir := decodeAssistantMessage(msg)
 	assert.Equal(t, message.RoleAssistant, ir.Role)
 	require.Len(t, ir.Content, 2)
-	assert.Equal(t, message.ContentText, ir.Content[0].Type)
+	assert.Equal(t, message.ContentProse, ir.Content[0].Type)
 	assert.Equal(t, message.ContentToolInvoke, ir.Content[1].Type)
 	assert.Equal(t, "toolu_abc", ir.Content[1].ToolCallID)
 	assert.Equal(t, "bash", ir.Content[1].ToolName)

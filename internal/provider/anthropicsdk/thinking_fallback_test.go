@@ -20,7 +20,7 @@ func TestEncodeDropsUnsignedThinking(t *testing.T) {
 		Role: message.RoleAssistant,
 		Content: []message.Content{
 			{Type: message.ContentThinking, Text: "internal reasoning"},
-			{Type: message.ContentText, Text: "the answer"},
+			{Type: message.ContentProse, Text: "the answer"},
 			{Type: message.ContentToolInvoke, ToolCallID: "tu_1", ToolName: "read"},
 		},
 	}, &snap)

@@ -337,7 +337,7 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 		var toolResults []message.Content
 		for _, c := range m.Content {
 			switch c.Type {
-			case message.ContentText:
+			case message.ContentProse:
 				if text != "" {
 					text += "\n\n"
 				}
@@ -382,7 +382,7 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 		fmt.Fprintf(w, "%s\n\n", header)
 		for _, c := range m.Content {
 			switch c.Type {
-			case message.ContentText:
+			case message.ContentProse:
 				fmt.Fprintf(w, "%s\n\n", c.Text)
 			case message.ContentThinking:
 				if verbose {

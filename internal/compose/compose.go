@@ -12,7 +12,7 @@
 //     (or streamed partial) folds in as output, status running→ok/error
 //
 // The spinner is the consumer's concern (animated locally per running
-// tool); compose emits no sentinel. Tool-result tics (user role) fold
+// tool); compose emits no sentinel. Tool-result messages (user role) fold
 // under their invoke via tool_call_id; the user's own prompt is a
 // separate committed unit and is not part of the agent turn.
 package compose
@@ -39,11 +39,11 @@ func Nodes(msgs []message.Message, partials map[string]string) []livedoc.Node {
 	var nodes []livedoc.Node
 	for _, m := range msgs {
 		if m.Role != message.RoleAssistant {
-			continue // tool_result tics fold under their invoke; user prompts aren't in the turn
+			continue // tool_result messages fold under their invoke; user prompts aren't in the turn
 		}
 		for _, c := range m.Content {
 			switch c.Type {
-			case message.ContentText:
+			case message.ContentProse:
 				if strings.TrimSpace(c.Text) == "" {
 					continue
 				}
@@ -137,11 +137,11 @@ func Units(msgs []message.Message) []Unit {
 }
 
 // messageText joins a message's text blocks; "" when it carries none
-// (e.g. a tool-result tic or a control-only patch).
+// (e.g. a tool-result message or a control-only patch).
 func messageText(m message.Message) string {
 	var parts []string
 	for _, c := range m.Content {
-		if c.Type == message.ContentText && strings.TrimSpace(c.Text) != "" {
+		if c.Type == message.ContentProse && strings.TrimSpace(c.Text) != "" {
 			parts = append(parts, c.Text)
 		}
 	}

@@ -42,9 +42,9 @@ func buildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.S
 	}
 
 	// Anthropic requires roles to alternate after the first message.
-	// Consecutive same-role tics happen when a turn errors (the user tic is
+	// Consecutive same-role messages happen when a turn errors (the user message is
 	// committed but no assistant reply follows) and the next prompt appends
-	// another user tic — replaying that verbatim is a malformed request. Merge
+	// another user message — replaying that verbatim is a malformed request. Merge
 	// adjacent same-role messages by concatenating their content blocks.
 	params.Messages, msgLTs = coalesceMessages(params.Messages, msgLTs)
 
@@ -58,7 +58,7 @@ func buildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.S
 
 // coalesceMessages merges adjacent same-role messages (concatenating content)
 // so the wire alternates roles as the API requires. The parallel lts slice is
-// kept aligned (the merged message keeps the later tic's LT, which is the one
+// kept aligned (the merged message keeps the later message's LT, which is the one
 // per-LT cache tags would target).
 func coalesceMessages(msgs []anthropic.MessageParam, lts []uint64) ([]anthropic.MessageParam, []uint64) {
 	if len(msgs) < 2 {

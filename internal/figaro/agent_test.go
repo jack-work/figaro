@@ -82,7 +82,7 @@ func mockPushAssistant(figLog store.Log[message.Message], cache store.Log[[]json
 	if text == "" {
 		return
 	}
-	bus.PushDelta(message.Content{Type: message.ContentText, Text: text})
+	bus.PushDelta(message.Content{Type: message.ContentProse, Text: text})
 	msg := message.Message{
 		Role:       message.RoleAssistant,
 		Content:    []message.Content{message.TextContent(text)},

@@ -60,7 +60,7 @@ func appendInterruptSentinelIfDangling(stream store.Log[message.Message], ariaID
 	case len(trailing) == 0:
 		// Dangling tool_use at the tail. Append a sentinel.
 	case isResultTicCovering(trailing[0].Payload, calls):
-		// Already satisfied by a real tool_result tic.
+		// Already satisfied by a real tool_result message.
 		return store.Entry[message.Message]{}, false
 	case message.IsInterruptSentinel(trailing[0].Payload):
 		// Already repaired by a prior boot.
@@ -96,7 +96,7 @@ func appendInterruptSentinelIfDangling(stream store.Log[message.Message], ariaID
 	return stamped, true
 }
 
-// isResultTicCovering reports whether m is a user-role tic carrying
+// isResultTicCovering reports whether m is a user-role message carrying
 // tool_result blocks for every call.
 func isResultTicCovering(m message.Message, calls []message.Content) bool {
 	if m.Role != message.RoleUser {

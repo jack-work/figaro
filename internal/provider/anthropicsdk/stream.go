@@ -96,7 +96,7 @@ func handleBlockDelta(ctx context.Context, ev anthropic.ContentBlockDeltaEvent, 
 	switch d := ev.Delta.AsAny().(type) {
 	case anthropic.TextDelta:
 		if d.Text != "" {
-			bus.PushDelta(message.Content{Type: message.ContentText, Text: d.Text})
+			bus.PushDelta(message.Content{Type: message.ContentProse, Text: d.Text})
 		}
 	case anthropic.ThinkingDelta:
 		if d.Thinking != "" {

@@ -91,7 +91,7 @@ func (b *turnBus) PushToolReady(call message.Content) {
 	}
 }
 
-// runTurn drives one prompt to completion: user tic, provider.Send,
+// runTurn drives one prompt to completion: user turn, provider.Send,
 // tool dispatch, repeat until done/interrupt/error.
 func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.mu.Lock()
@@ -120,14 +120,14 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		cancel()
 	}()
 
-	// Build user tic. Chalkboard state lives in the reducible channel
+	// Build user turn. Chalkboard state lives in the reducible channel
 	// (loadout values inherited via the fork watermark; runtime fill-ins
 	// written at conversation creation). The only per-turn state change
 	// is the client's chalkboard input, which we record on the channel
-	// keyed to this tic's LT so it renders as a transition on this
+	// keyed to this turn's LT so it renders as a transition on this
 	// message. Ephemeral arias (no backend, no channel) keep folding
-	// patches inline onto the tic.
-	tic := message.Message{
+	// patches inline onto the turn.
+	turn := message.Message{
 		Role:      message.RoleUser,
 		Timestamp: time.Now().UnixMilli(),
 	}
@@ -141,21 +141,21 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 				slog.Error("turn chalkboard append", "aria", a.id, "err", err)
 			}
 		} else {
-			tic.Patches = append(tic.Patches, combined)
+			turn.Patches = append(turn.Patches, combined)
 		}
 		a.chalkboard.Apply(combined)
 	}
-	// Ephemeral first tic: fold the boot patch inline so the loadout
+	// Ephemeral first turn: fold the boot patch inline so the loadout
 	// reminders render (no channel to hold the transition). State is
 	// already seeded by the caller, so this is render-only.
 	if a.backend == nil && a.inlineBoot != nil && len(a.figLog.Read()) == 0 {
 		if !a.inlineBoot.IsEmpty() {
-			tic.Patches = append(tic.Patches, *a.inlineBoot)
+			turn.Patches = append(turn.Patches, *a.inlineBoot)
 		}
 		a.inlineBoot = nil
 	}
 	if prompt.text != "" {
-		tic.Content = append(tic.Content, message.TextContent(prompt.text))
+		turn.Content = append(turn.Content, message.TextContent(prompt.text))
 	}
 	// Belt-and-suspenders: if a prior turn died after the assistant
 	// tool_use was logged but before tool_results were appended, the
@@ -163,8 +163,8 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// usually catches this, but cover the case where the boot check
 	// missed (e.g. dangling state appeared after boot).
 	appendInterruptSentinelIfDangling(a.figLog, a.id)
-	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: tic}); err != nil {
-		a.endTurn(fmt.Sprintf("error: append tic: %s", err))
+	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: turn}); err != nil {
+		a.endTurn(fmt.Sprintf("error: append turn: %s", err))
 		return
 	}
 
@@ -333,7 +333,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 
 	<-specDone
 
-	// Phase 2: run the tools (IR assembly), append the tool_result tic,
+	// Phase 2: run the tools (IR assembly), append the tool_result turn,
 	// and recompose so completed tools show their clamped output. The
 	// spinner animates locally between here and the seal — no wire
 	// traffic until the result lands.
@@ -354,9 +354,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 }
 
 // collectToolResults dispatches every call (idempotent), waits for each
-// to finish, and assembles the tool_result tic in canonical (calls)
+// to finish, and assembles the tool_result turn in canonical (calls)
 // order. It emits nothing on the wire — the blob is recomposed by the
-// caller after the tic is appended. toolBuf holds events that arrived
+// caller after the turn is appended. toolBuf holds events that arrived
 // during phase 1.
 func (a *Agent) collectToolResults(
 	turnCtx context.Context,
@@ -407,7 +407,7 @@ func (a *Agent) collectToolResults(
 		oc := outcomes[tc.ToolCallID]
 		var text string
 		for _, c := range oc.content {
-			if c.Type == message.ContentText {
+			if c.Type == message.ContentProse {
 				text += c.Text
 			}
 		}
@@ -526,7 +526,7 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 		emitEnd := func(oc toolOutcome) {
 			var text string
 			for _, c := range oc.content {
-				if c.Type == message.ContentText {
+				if c.Type == message.ContentProse {
 					text += c.Text
 				}
 			}

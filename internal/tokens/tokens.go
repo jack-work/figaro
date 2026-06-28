@@ -50,7 +50,7 @@ func EstimateMessage(m message.Message) int {
 	chars := 0
 	for _, c := range m.Content {
 		switch c.Type {
-		case message.ContentText, message.ContentThinking:
+		case message.ContentProse, message.ContentThinking:
 			chars += len(c.Text)
 		case message.ContentImage:
 			chars += 4800

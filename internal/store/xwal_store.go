@@ -8,7 +8,7 @@ package store
 //	                                                  ──ForkTail/interior fork──> branch…
 //
 //   - null: the root trunk (xwal.CreateTrunks genesis). Ceremonial, closed.
-//   - loadout: SpawnChild(null) + a renderable RoleUser birth tic carrying
+//   - loadout: SpawnChild(null) + a renderable RoleUser birth message carrying
 //     the loadout's chalkboard stamp (system.loadout_name/version). One per
 //     (name, content-version); deduped in a small policy side-file. Closed.
 //   - conversation: SpawnChild(loadout) — inherits the loadout's rendered
@@ -157,7 +157,7 @@ func (s *XwalStore) CreateLoadout(name string, patch message.Patch) (string, err
 	if err != nil {
 		return "", fmt.Errorf("xwal store: spawn loadout: %w", err)
 	}
-	// The loadout's birth tic is renderable (RoleUser, empty content): its
+	// The loadout's birth message is renderable (RoleUser, empty content): its
 	// chalkboard patch renders as the loadout's <system-reminder> blocks
 	// ONCE in this shared prefix, inherited (cached) by every conversation.
 	stamped := stampLoadout(patch, name, ver)
@@ -179,7 +179,7 @@ func (s *XwalStore) CreateConversation(loadoutID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("xwal store: spawn conversation: %w", err)
 	}
-	// No birth tic: the conversation inherits the loadout's rendered prefix
+	// No birth message: the conversation inherits the loadout's rendered prefix
 	// via the fork watermark; its own IR starts empty (first turn appends).
 	return id, nil
 }
@@ -237,7 +237,7 @@ func (s *XwalStore) cauterized(id string) bool {
 	return k == kindNull || k == kindLoadout
 }
 
-// writeBirth appends a birth tic to a fresh trunk's IR plus its chalkboard
+// writeBirth appends a birth message to a fresh trunk's IR plus its chalkboard
 // patch (the loadout stamp, or empty). Caller holds s.mu.
 func (s *XwalStore) writeBirth(id string, role message.Role, cbPatch *message.Patch) error {
 	x, err := s.trunks.Head(id)

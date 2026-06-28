@@ -24,7 +24,7 @@ func result(id, name, text string, isErr bool) message.Content {
 func TestNodes_TextAndThinking(t *testing.T) {
 	nodes := Nodes([]message.Message{assistant(
 		message.Content{Type: message.ContentThinking, Text: "let me think"},
-		message.Content{Type: message.ContentText, Text: "Here is the answer."},
+		message.Content{Type: message.ContentProse, Text: "Here is the answer."},
 	)}, nil)
 	if len(nodes) != 2 {
 		t.Fatalf("want thinking + text node, got %d: %+v", len(nodes), nodes)
@@ -84,8 +84,8 @@ func TestNodes_CompletedAndFailedTool(t *testing.T) {
 
 func TestNodes_SkipsUserPromptAndDeterministic(t *testing.T) {
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{{Type: message.ContentText, Text: "do the thing"}}},
-		assistant(message.Content{Type: message.ContentText, Text: "on it"}),
+		{Role: message.RoleUser, Content: []message.Content{{Type: message.ContentProse, Text: "do the thing"}}},
+		assistant(message.Content{Type: message.ContentProse, Text: "on it"}),
 	}
 	nodes := Nodes(msgs, nil)
 	if len(nodes) != 1 || nodes[0].Markdown != "on it" {

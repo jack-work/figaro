@@ -61,11 +61,11 @@ type Bus interface {
 }
 
 // Chalkboard is the per-LT transition accessor. Chalkboard patches no
-// longer ride inline on IR tics; they live in a reducible channel keyed
+// longer ride inline on IR messages; they live in a reducible channel keyed
 // by IR logical time. PatchesAt returns the transitions to render on the
-// tic at lt — the encoder folds them into that message's wire bytes
+// message at lt — the encoder folds them into that message's wire bytes
 // exactly as it did the inline patches, so per-LT caching stays sound
-// (a tic's bytes depend only on state up to that tic). Live state for the
+// (a message's bytes depend only on state up to that message). Live state for the
 // system prefix still arrives via SendInput.Snapshot, which is rebuilt
 // each turn and never cached per-LT.
 type Chalkboard interface {

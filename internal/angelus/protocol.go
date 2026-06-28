@@ -267,7 +267,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	if backend == nil {
 		// Ephemeral: no channel. Seed state with the full loadout +
-		// runtime fill-ins, and fold the same patch on the first tic so
+		// runtime fill-ins, and fold the same patch on the first message so
 		// reminders render.
 		id = uuid.New().String()[:8]
 		boot := bootPatchEphemeral(base, "", cwd) // id filled below

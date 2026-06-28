@@ -35,11 +35,11 @@ func TestMetaDerivation_PopulatesContextAndChalkboardFields(t *testing.T) {
 		entries: []store.Entry[message.Message]{
 			{LT: 1, Payload: message.Message{
 				Role:    message.RoleUser,
-				Content: []message.Content{{Type: message.ContentText, Text: "hi"}},
+				Content: []message.Content{{Type: message.ContentProse, Text: "hi"}},
 			}},
 			{LT: 2, Payload: message.Message{
 				Role:    message.RoleAssistant,
-				Content: []message.Content{{Type: message.ContentText, Text: "hello"}},
+				Content: []message.Content{{Type: message.ContentProse, Text: "hello"}},
 				Usage: &message.Usage{
 					InputTokens:     1234,
 					OutputTokens:    56,

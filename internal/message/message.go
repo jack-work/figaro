@@ -18,14 +18,14 @@ const (
 	// tool_result block) into the wire stream.
 	RoleSystemInterrupt Role = "system.interrupt"
 
-	// RoleGenesis marks a node's birth tic in the IR — written when a
+	// RoleGenesis marks a node's birth message in the IR — written when a
 	// fork node is created (null root, loadout node, conversation) so the
 	// log is non-empty and forkable, and to anchor provenance. It is
 	// filtered from provider rendering (it is structural, not a turn).
 	RoleGenesis Role = "genesis"
 )
 
-// IsGenesis reports whether m is a structural birth tic.
+// IsGenesis reports whether m is a structural birth message.
 func IsGenesis(m Message) bool { return m.Role == RoleGenesis }
 
 // InterruptReason classifies why a system.interrupt sentinel was
@@ -54,11 +54,14 @@ const (
 type ContentType string
 
 const (
-	ContentText       ContentType = "text"
+	// ContentProse is an assistant/user markdown span. Named to match the
+	// UI IR's "prose" node (livedoc.NodeProse) — figaro IR and UI IR are
+	// converging on shared primitive names (prose / thinking / tool / image).
+	ContentProse      ContentType = "prose"
 	ContentImage      ContentType = "image"
 	ContentThinking   ContentType = "thinking"
 	ContentToolInvoke ContentType = "tool_invoke" // assistant emits these
-	ContentToolResult ContentType = "tool_result" // user-role tic carries these (one block per tool that completed)
+	ContentToolResult ContentType = "tool_result" // user-role message carries these (one block per tool that completed)
 
 	// ContentInterrupt blocks live on a RoleSystemInterrupt message,
 	// one per dangling tool_call_id from the prior assistant turn.
@@ -103,7 +106,7 @@ type Message struct {
 	Role    Role      `json:"role"`
 	Content []Content `json:"content"`
 
-	// Patches are chalkboard mutations for this tic.
+	// Patches are chalkboard mutations for this message.
 	Patches []Patch `json:"patches,omitempty"`
 
 	// Assistant-only metadata
@@ -125,7 +128,7 @@ type Message struct {
 }
 
 func TextContent(text string) Content {
-	return Content{Type: ContentText, Text: text}
+	return Content{Type: ContentProse, Text: text}
 }
 
 func ImageContent(mimeType, data string) Content {
