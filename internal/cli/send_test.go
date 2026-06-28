@@ -142,3 +142,33 @@ func TestExtractSendFlags(t *testing.T) {
 		})
 	}
 }
+
+func TestParseSendTarget(t *testing.T) {
+	cases := []struct {
+		spec    string
+		trunk   string
+		lt      uint64
+		hasLT   bool
+		wantErr bool
+	}{
+		{"", "", 0, false, false},
+		{":6", "", 6, true, false},
+		{"t1:6", "t1", 6, true, false},
+		{"t1", "t1", 0, false, false},
+		{":", "", 0, false, true},
+		{"t1:x", "", 0, false, true},
+	}
+	for _, c := range cases {
+		trunk, lt, hasLT, err := parseSendTarget(c.spec)
+		if (err != nil) != c.wantErr {
+			t.Errorf("%q: err=%v wantErr=%v", c.spec, err, c.wantErr)
+			continue
+		}
+		if c.wantErr {
+			continue
+		}
+		if trunk != c.trunk || lt != c.lt || hasLT != c.hasLT {
+			t.Errorf("%q: got (%q,%d,%v) want (%q,%d,%v)", c.spec, trunk, lt, hasLT, c.trunk, c.lt, c.hasLT)
+		}
+	}
+}

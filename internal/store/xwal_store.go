@@ -197,10 +197,17 @@ func (s *XwalStore) Fork(id string) (cont, alt string, err error) {
 	return id, alt, nil
 }
 
-// ForkAt branches at an interior main-LT. (Not yet supported on the trunk
-// model without sending — interior divergence is reached via send <id>:<LT>.)
+// ForkAt branches at an interior main-LT (imperative — no message): shares
+// [1..atMainLT], mints an empty alternative diverging at atMainLT+1; the id
+// is stable (cont == id). At/past the tail it degenerates to a tail fork.
 func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err error) {
-	return "", "", fmt.Errorf("xwal store: interior fork (id:LT) not yet supported on trunks; use send")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	alt, err = s.trunks.ForkAt(id, atMainLT)
+	if err != nil {
+		return "", "", err
+	}
+	return id, alt, nil
 }
 
 // writeBirth appends a birth tic to a fresh trunk's IR plus its chalkboard

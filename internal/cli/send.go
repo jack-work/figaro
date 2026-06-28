@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 // sendOpts captures the parsed flag state of the send command.
 type sendOpts struct {
 	id        string
+	target    string // positional [<trunk>]:<LT> target (alt to --id)
+	stay      bool   // --attend=false / --stay: don't rebind to the new branch
 	ephemeral bool
 	raw       bool // --raw / -r: raw stream, no ANSI/markdown
 	verbatim  bool // --verbatim / -v: dump raw wire frames as JSON
@@ -39,6 +42,16 @@ type sendOpts struct {
 func extractSendFlags(args []string) (sendOpts, []string, error) {
 	var opts sendOpts
 	rest := make([]string, 0, len(args))
+
+	// A bare positional is the target only in the `… -- <prompt>` form;
+	// without a `--`, bare args are the prompt itself.
+	hasDoubleDash := false
+	for _, a := range args {
+		if a == "--" {
+			hasDoubleDash = true
+			break
+		}
+	}
 
 	// First pass: expand bundled bool short flags so -ex -> -e -x,
 	// but stop at `--`.
@@ -133,11 +146,56 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			opts.skipYes = true
 			i++
 			continue
+		case a == "--stay", a == "--no-attend", a == "--attend=false", a == "--attend=0":
+			opts.stay = true
+			i++
+			continue
+		case a == "--attend", a == "--attend=true", a == "--attend=1":
+			opts.stay = false
+			i++
+			continue
+		}
+		// First bare positional before a `--` boundary is the target
+		// ([<trunk>]:<LT>). Without `--`, bare args are the prompt, so only
+		// capture a target when a `--` is present.
+		if hasDoubleDash && opts.target == "" && opts.id == "" && a != "" && !strings.HasPrefix(a, "-") {
+			opts.target = a
+			i++
+			continue
 		}
 		rest = append(rest, a)
 		i++
 	}
 	return opts, rest, nil
+}
+
+// parseSendTarget splits a send target spec into a trunk id and an optional
+// :<LT>. "" -> bound trunk, no LT. ":6" -> bound trunk at LT 6. "t1:6" ->
+// trunk t1 at LT 6. "t1" -> trunk t1, no LT.
+func parseSendTarget(spec string) (trunk string, atMainLT uint64, hasLT bool, err error) {
+	if spec == "" {
+		return "", 0, false, nil
+	}
+	if i := strings.LastIndex(spec, ":"); i >= 0 {
+		trunk = spec[:i]
+		ltStr := spec[i+1:]
+		if ltStr == "" {
+			return "", 0, false, fmt.Errorf("bad target %q (want [<trunk>]:<LT>)", spec)
+		}
+		lt, perr := strconv.ParseUint(ltStr, 10, 64)
+		if perr != nil {
+			return "", 0, false, fmt.Errorf("bad :<LT> in %q (want [<trunk>]:<n>)", spec)
+		}
+		hasLT, atMainLT = true, lt
+	} else {
+		trunk = spec
+	}
+	if trunk != "" {
+		if verr := validateSendID(trunk); verr != nil {
+			return "", 0, false, verr
+		}
+	}
+	return trunk, atMainLT, hasLT, nil
 }
 
 // validateSendID wraps rpc.ValidateAriaID with a friendlier error
@@ -169,14 +227,39 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 		die("usage: figaro send [--id <id>] [-e|--ephemeral] [-r|--raw] [-v|--verbatim] [-x|--exec] [-n] [-y] -- <prompt>")
 	}
 
-	if opts.ephemeral && opts.id != "" {
-		die("send: --ephemeral and --id are contradictory")
+	spec := opts.id
+	if spec == "" {
+		spec = opts.target
+	}
+	trunkID, atMainLT, hasLT, perr := parseSendTarget(spec)
+	if perr != nil {
+		die("send: %s", perr)
+	}
+
+	if opts.ephemeral && (opts.id != "" || opts.target != "") {
+		die("send: --ephemeral and a target are contradictory")
 	}
 	if (opts.dryRun || opts.skipYes) && !opts.exec {
 		die("send: -n / -y only meaningful with --exec")
 	}
 
 	set := renderSettings{verbose: opts.verbose}
+
+	// `send <trunk>:<LT>` — fork at LT, then send. The message lands on
+	// whichever trunk we end up attended to: the new alternative by default
+	// (rebind), or the original with --attend=false/--stay.
+	if hasLT {
+		if opts.ephemeral || opts.exec || opts.verbatim {
+			die("send: <trunk>:<LT> is not compatible with --ephemeral/--exec/--verbatim")
+		}
+		runSendForkAt(loaded, trunkID, atMainLT, opts.stay, prompt, set)
+		return
+	}
+	// No LT: a positional target is just the aria to send to.
+	if opts.id == "" {
+		opts.id = trunkID
+	}
+
 	switch {
 	case opts.verbatim:
 		runSendVerbatim(loaded, opts, prompt)

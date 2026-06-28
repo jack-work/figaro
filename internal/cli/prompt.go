@@ -57,6 +57,54 @@ func runNewPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
 
+// runSendForkAt implements `send <trunk>:<LT>`: fork the trunk at atMainLT
+// (imperative interior fork, empty alternative), then send the prompt to the
+// trunk we end up attended to. By default we rebind this shell to the new
+// alternative and send there; with stay (--attend=false) we leave the shell
+// on the original trunk and send there (the alternative is parked at LT).
+func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay bool, prompt string, set renderSettings) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	ppid := os.Getppid()
+	if trunkID == "" {
+		r, err := acli.Resolve(ctx, ppid)
+		if err != nil || !r.Found {
+			die("send: no trunk bound to this shell (try: <id>:<LT> or attend <id>)")
+		}
+		trunkID = r.FigaroID
+	}
+
+	fctx, fcancel := context.WithTimeout(ctx, 10*time.Second)
+	fr, err := acli.Fork(fctx, trunkID, atMainLT)
+	fcancel()
+	if err != nil {
+		die("send: fork %s at LT %d: %s", trunkID, atMainLT, err)
+	}
+
+	target := fr.Alternative
+	if stay {
+		target = trunkID // parked alternative; shell stays on the original
+		fmt.Fprintf(os.Stderr, "forked %s at LT %d -> %s (parked; staying on %s)\n", trunkID, atMainLT, fr.Alternative, trunkID)
+	} else {
+		acli.Unbind(ctx, ppid)
+		if err := acli.Bind(ctx, ppid, fr.Alternative); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not attend %s: %s\n", fr.Alternative, err)
+		}
+		fmt.Fprintf(os.Stderr, "forked %s at LT %d -> attending %s\n", trunkID, atMainLT, fr.Alternative)
+	}
+
+	ep, err := resolveAria(ctx, acli, target)
+	if err != nil {
+		die("%s", err)
+	}
+	prompt = expandAtRefsForEndpoint(ctx, ep, prompt)
+	mustPromptFigaro(ctx, ep, target, prompt, loaded, set)
+}
+
 // promptAria sends a prompt to a named aria.
 func promptAria(loaded *config.Loaded, ariaID, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)

@@ -125,3 +125,46 @@ func str(raw json.RawMessage) string {
 	_ = json.Unmarshal(raw, &s)
 	return s
 }
+
+func TestXwalBackend_ForkAtInterior(t *testing.T) {
+	b, err := NewXwalBackend(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	l, _ := b.CreateLoadout("d", patchSet(map[string]string{"system.model": "m"}))
+	conv, _ := b.CreateConversation(l)
+
+	ir, _ := b.Open(conv)
+	for _, r := range []message.Role{message.RoleUser, message.RoleAssistant, message.RoleUser} {
+		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: r}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Interior fork: store.ForkAt via the backend. cont == conv (stable id).
+	cont, alt, err := b.ForkAt(conv, 4) // within conv's own range (inherited prefix is frozen)
+	if err != nil {
+		t.Fatalf("ForkAt interior: %v", err)
+	}
+	if cont != conv {
+		t.Fatalf("cont should equal conv (stable id): cont=%s conv=%s", cont, conv)
+	}
+	if alt == conv || alt == "" {
+		t.Fatalf("alt must be a fresh trunk, got %q", alt)
+	}
+	// The alternative inherits the chalkboard prefix and is sendable.
+	snap, err := b.ChalkboardState(alt)
+	if err != nil {
+		t.Fatalf("alt chalkboard: %v", err)
+	}
+	if str(snap["system.model"]) != "m" {
+		t.Fatalf("alt lost inherited model: %q", str(snap["system.model"]))
+	}
+	altIR, err := b.Open(alt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := altIR.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}); err != nil {
+		t.Fatalf("send to forked alt: %v", err)
+	}
+}
