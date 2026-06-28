@@ -67,6 +67,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
 	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
 
+	// Static opening rule: a single dim horizontal line separating the user's
+	// shell prompt from the response stream. Printed once, lives in scrollback.
+	fmt.Fprintln(os.Stdout, term.Dim(strings.Repeat("─", width)))
+
 	// The renderer is single-threaded; the notify pump, the spinner ticker, the
 	// SIGWINCH handler, and keybindings all serialize on mu.
 	var mu sync.Mutex

@@ -70,7 +70,9 @@ func NewInline(term Terminal, view NodeView) *Inline {
 
 // Seal finalizes a closed message. If it's the message currently live, its rows
 // are already on screen — drop the cursor below them and release the region.
-// Otherwise (a message we never streamed — catch-up) print its rows fresh.
+// Otherwise (a message we never streamed — catch-up) print its rows fresh,
+// prefaced with a blank line (same leading-space rule the live region applies
+// via compose).
 func (i *Inline) Seal(m aria.Message) {
 	if m.LT == i.liveLT && i.liveLT != 0 {
 		i.dropBelow()
@@ -79,13 +81,11 @@ func (i *Inline) Seal(m aria.Message) {
 	}
 	rows := i.renderNodes(m.Nodes)
 	var b strings.Builder
-	for k, r := range rows {
-		if k > 0 {
-			b.WriteString("\r\n")
-		}
+	b.WriteString("\r\n") // leading blank — every message is prefaced with a newline
+	for _, r := range rows {
 		b.WriteString(r)
+		b.WriteString("\r\n")
 	}
-	b.WriteString("\r\n")
 	io.WriteString(i.term, b.String())
 }
 
@@ -124,7 +124,12 @@ func (i *Inline) Resize(nodes []livedoc.Node) {
 }
 
 func (i *Inline) compose(nodes []livedoc.Node) []string {
-	rows := i.renderNodes(nodes)
+	body := i.renderNodes(nodes)
+	// Every message is prefaced with a blank row — seals the leading newline
+	// into scrollback alongside the rest of the live region.
+	rows := make([]string, 0, len(body)+3)
+	rows = append(rows, "")
+	rows = append(rows, body...)
 	if i.Bookend != nil {
 		w, _ := i.term.Size()
 		rows = append(rows, "", clip(i.Bookend(), w))
