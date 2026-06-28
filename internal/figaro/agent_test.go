@@ -618,6 +618,11 @@ firstDone:
 	require.GreaterOrEqual(t, len(turns), 2, "user + assistant should be durable")
 	assert.Equal(t, message.RoleUser, turns[0].Role)
 	assert.Equal(t, message.RoleAssistant, turns[1].Role)
+
+	// The open-message blob is cleared once the turn commits to the IR.
+	blob, err := backend.LiveBlob(conv)
+	require.NoError(t, err)
+	assert.Nil(t, blob, "live blob should be cleared after the turn commits")
 }
 
 func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {

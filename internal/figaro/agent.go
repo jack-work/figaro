@@ -103,8 +103,9 @@ type Agent struct {
 	// the single source of the aria-read wire: it serves both the live push
 	// (MethodAriaFrame) and the catch-up pull (figaro.read). unitLT is the
 	// monotonic figaro LT assigned to each unit as it opens.
-	ariaSrv *aria.Server
-	unitLT  int
+	ariaSrv  *aria.Server
+	unitLT   int
+	liveRole string // role of the currently-open (live) message, for its durable blob
 
 	createdAt  time.Time
 	lastActive time.Time
@@ -155,6 +156,10 @@ func NewAgent(cfg Config) *Agent {
 		a.unitLT = i + 1
 		a.ariaSrv.Commit(aria.Message{LT: a.unitLT, Role: u.Role, Nodes: u.Nodes})
 	}
+	// Discard any leftover open-message blob from a prior crash: the partial
+	// turn never reached the IR (the committed messages above are rebuilt from
+	// it), so we resume from the last committed message. (Policy: discard.)
+	a.clearLive()
 	a.ariaSrv.Subscribe(func(r aria.AriaRead) {
 		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: r})
 	})
@@ -421,12 +426,12 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 			return
 		}
 	} else {
-		turn := message.Message{
+		msg := message.Message{
 			Role:      message.RoleUser,
 			Patches:   []message.Patch{patch},
 			Timestamp: time.Now().UnixMilli(),
 		}
-		if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: turn}); err != nil {
+		if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
 			slog.Error(kind+" append", "aria", a.id, "err", err)
 			return
 		}

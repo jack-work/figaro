@@ -91,6 +91,20 @@ type Backend interface {
 	// SetTranslationMeta writes the per-provider translator summary.
 	SetTranslationMeta(ariaID, providerName string, meta *TranslationMeta) error
 
+	// LiveBlob returns the persisted open (in-progress) UI message for a
+	// trunk, or nil if none is open. Committed messages live in the
+	// append-only IR; the single open message mutates, so it is kept as a
+	// plain r/w blob (opaque to the store) off the WAL.
+	LiveBlob(ariaID string) ([]byte, error)
+
+	// SetLiveBlob overwrites the open-message blob (optimistic in-place
+	// update as deltas stream).
+	SetLiveBlob(ariaID string, blob []byte) error
+
+	// ClearLive removes the open-message blob (on commit/close, or to
+	// discard a leftover partial on restart).
+	ClearLive(ariaID string) error
+
 	// List returns metadata for every persisted aria.
 	List() ([]AriaInfo, error)
 

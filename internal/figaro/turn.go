@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
@@ -120,14 +121,14 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		cancel()
 	}()
 
-	// Build user turn. Chalkboard state lives in the reducible channel
-	// (loadout values inherited via the fork watermark; runtime fill-ins
-	// written at conversation creation). The only per-turn state change
-	// is the client's chalkboard input, which we record on the channel
-	// keyed to this turn's LT so it renders as a transition on this
-	// message. Ephemeral arias (no backend, no channel) keep folding
-	// patches inline onto the turn.
-	turn := message.Message{
+	// Build the user message. Chalkboard state lives in the reducible
+	// channel (loadout values inherited via the fork watermark; runtime
+	// fill-ins written at conversation creation). The only per-turn state
+	// change is the client's chalkboard input, which we record on the
+	// channel keyed to this message's LT so it renders as a transition on
+	// this message. Ephemeral arias (no backend, no channel) keep folding
+	// patches inline onto the message.
+	msg := message.Message{
 		Role:      message.RoleUser,
 		Timestamp: time.Now().UnixMilli(),
 	}
@@ -141,21 +142,21 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 				slog.Error("turn chalkboard append", "aria", a.id, "err", err)
 			}
 		} else {
-			turn.Patches = append(turn.Patches, combined)
+			msg.Patches = append(msg.Patches, combined)
 		}
 		a.chalkboard.Apply(combined)
 	}
-	// Ephemeral first turn: fold the boot patch inline so the loadout
+	// Ephemeral first message: fold the boot patch inline so the loadout
 	// reminders render (no channel to hold the transition). State is
 	// already seeded by the caller, so this is render-only.
 	if a.backend == nil && a.inlineBoot != nil && len(a.figLog.Read()) == 0 {
 		if !a.inlineBoot.IsEmpty() {
-			turn.Patches = append(turn.Patches, *a.inlineBoot)
+			msg.Patches = append(msg.Patches, *a.inlineBoot)
 		}
 		a.inlineBoot = nil
 	}
 	if prompt.text != "" {
-		turn.Content = append(turn.Content, message.TextContent(prompt.text))
+		msg.Content = append(msg.Content, message.TextContent(prompt.text))
 	}
 	// Belt-and-suspenders: if a prior turn died after the assistant
 	// tool_use was logged but before tool_results were appended, the
@@ -163,8 +164,8 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// usually catches this, but cover the case where the boot check
 	// missed (e.g. dangling state appeared after boot).
 	appendInterruptSentinelIfDangling(a.figLog, a.id)
-	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: turn}); err != nil {
-		a.endTurn(fmt.Sprintf("error: append turn: %s", err))
+	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
+		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
 
@@ -608,21 +609,52 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 // nodes. The aria server diffs subsequent Updates against this internally.
 func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
 	a.unitLT++
+	a.liveRole = role
 	a.ariaSrv.Open(a.unitLT, role)
 	if len(nodes) > 0 {
 		a.ariaSrv.Update(nodes)
 	}
+	a.persistLive(nodes)
 }
 
 // emitDelta hands the current full node list to the aria server, which computes
 // the field-level delta vs the prior frame and broadcasts it (versioned).
 func (a *Agent) emitDelta(nodes []livedoc.Node) {
 	a.ariaSrv.Update(nodes)
+	a.persistLive(nodes)
 }
 
-// emitCommit closes the open unit; it becomes a committed aria message.
+// emitCommit closes the open unit; it becomes a committed aria message (now in
+// the append-only IR), so the durable live blob is cleared.
 func (a *Agent) emitCommit() {
 	a.ariaSrv.Close()
+	a.clearLive()
+}
+
+// persistLive mirrors the open (in-progress) UI message to its durable
+// per-trunk blob, so a read can serve it and a restart can recover/discard it.
+// Committed messages are the fig IR; only the single open one needs this.
+func (a *Agent) persistLive(nodes []livedoc.Node) {
+	if a.backend == nil {
+		return
+	}
+	blob, err := json.Marshal(aria.Message{LT: a.unitLT, Role: a.liveRole, Nodes: nodes})
+	if err != nil {
+		return
+	}
+	if err := a.backend.SetLiveBlob(a.id, blob); err != nil {
+		slog.Error("persist live message", "aria", a.id, "err", err)
+	}
+}
+
+// clearLive drops the durable open-message blob.
+func (a *Agent) clearLive() {
+	if a.backend == nil {
+		return
+	}
+	if err := a.backend.ClearLive(a.id); err != nil {
+		slog.Error("clear live message", "aria", a.id, "err", err)
+	}
 }
 
 // asm assembles the in-flight assistant message from provider Bus events
