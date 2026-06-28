@@ -66,6 +66,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// normal scrollback.
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
 	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
+	defer func() {
+		if lt.transcriptActive() {
+			fmt.Fprint(os.Stdout, altScreenOff)
+		}
+	}()
 
 	// Static opening rule: a single dim horizontal line separating the user's
 	// shell prompt from the response stream. Printed once, lives in scrollback.
@@ -75,6 +80,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// SIGWINCH handler, and keybindings all serialize on mu.
 	var mu sync.Mutex
 	doneCh := make(chan struct{}, 1)
+	turnDone := false // turn ended while the pager was up; exit on pager close
 
 	onNotify := func(method string, params json.RawMessage) {
 		mu.Lock()
@@ -95,9 +101,13 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 					fmt.Fprintln(os.Stderr, "\n"+d.Reason)
 				}
 			}
-			select {
-			case doneCh <- struct{}{}:
-			default:
+			if lt.transcriptActive() {
+				turnDone = true // let the user keep reading; exit when they close the pager
+			} else {
+				select {
+				case doneCh <- struct{}{}:
+				default:
+				}
 			}
 		}
 	}
@@ -170,14 +180,42 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 						return
 					}
 					for _, b := range buf[:n] {
+						mu.Lock()
+						active := lt.transcriptActive()
+						mu.Unlock()
+						if active {
+							// In the pager: every key drives it; on exit, if the
+							// turn already finished, end the command.
+							mu.Lock()
+							exited := lt.transcriptKey(b)
+							fire := exited && turnDone
+							mu.Unlock()
+							if fire {
+								select {
+								case doneCh <- struct{}{}:
+								default:
+								}
+							}
+							continue
+						}
 						switch b {
-						case 0x04: // Ctrl-D
+						case 0x04: // Ctrl-D: end the turn
 							cancel()
 							return
-						case 0x0f, 0x14: // Ctrl-O / Ctrl-T: toggle verbosity
+						case 0x0f: // Ctrl-O: toggle verbosity
 							mu.Lock()
 							set.verbose = !set.verbose
 							lt.render()
+							mu.Unlock()
+						case 0x14: // Ctrl-T: open the full-screen transcript pager
+							rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+							r, rerr := fcli.Read(rctx, 0) // catch the model up to full history
+							rcancel()
+							mu.Lock()
+							lt.enterTranscript()
+							if rerr == nil {
+								lt.apply(r)
+							}
 							mu.Unlock()
 						}
 					}

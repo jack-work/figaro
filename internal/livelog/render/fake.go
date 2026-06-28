@@ -90,8 +90,25 @@ func (t *FakeTerminal) csi(params, final string) {
 			t.row = t.top + t.height - 1
 		}
 		t.ensure(t.row)
-	case "H": // home: top-left of a fresh screen
-		t.row, t.col, t.top = 0, 0, 0
+	case "H": // cursor position (CUP): 1-based row;col, default 1;1
+		row, col := 1, 1
+		if params != "" {
+			p := strings.SplitN(params, ";", 2)
+			if p[0] != "" {
+				row, _ = strconv.Atoi(p[0])
+			}
+			if len(p) > 1 && p[1] != "" {
+				col, _ = strconv.Atoi(p[1])
+			}
+		}
+		t.row, t.col = row-1, col-1
+		if t.row < 0 {
+			t.row = 0
+		}
+		if t.col < 0 {
+			t.col = 0
+		}
+		t.ensure(t.row)
 	case "K": // erase line (0K from cursor, 2K whole line)
 		t.ensure(t.row)
 		if n == 2 {
