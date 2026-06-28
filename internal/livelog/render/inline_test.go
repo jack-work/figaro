@@ -75,3 +75,22 @@ func TestInline_ResizeKeepsSealed_RedrawsOpen(t *testing.T) {
 		t.Fatalf("stranded spinner after resize+complete:\n%s", scr)
 	}
 }
+
+func TestInline_NoTrailingBlanksAfterScrolledSeal(t *testing.T) {
+	ft := NewFakeTerminal(40, 6) // short viewport so the message scrolls
+	in := NewInline(ft, NodeText{})
+	in.Bookend = func() string { return "=== bookend ===" }
+	var nodes []livedoc.Node
+	for i := 0; i < 10; i++ {
+		nodes = append(nodes, livedoc.Node{ID: "p" + string(rune('0'+i)), Type: livedoc.NodeProse, Markdown: "line"})
+	}
+	in.Open(2, "assistant", nodes)
+	top := ft.Row() // cursor parked at the region's visible top
+	in.Seal(aria.Message{LT: 2, Role: "assistant", Nodes: nodes})
+	// Sealing a scrolled region must move the cursor past only the VISIBLE rows
+	// (<= viewport height); using the full region height leaves the scrolled-off
+	// count as blank lines after the bookend.
+	if adv := ft.Row() - top; adv > 6 {
+		t.Fatalf("seal advanced %d rows (> viewport 6) → trailing blank lines", adv)
+	}
+}

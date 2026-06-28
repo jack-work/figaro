@@ -142,6 +142,10 @@ func (t *FakeTerminal) put(r rune) {
 	}
 }
 
+// Row returns the current cursor row (absolute, untrimmed) — lets tests assert
+// where the cursor lands, which Screen() can't show (it trims trailing blanks).
+func (t *FakeTerminal) Row() int { return t.row }
+
 // Screen returns the full transcript (scrollback + viewport), trailing blank
 // lines trimmed.
 func (t *FakeTerminal) Screen() []string {

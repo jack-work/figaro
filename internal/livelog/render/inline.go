@@ -205,8 +205,11 @@ func (i *Inline) vmove(b *strings.Builder, target int) {
 }
 
 func (i *Inline) dropBelow() {
-	if n := len(i.live); n > 0 {
-		// cursor is at the region top; move to just past the last row.
+	// The cursor is parked at the region's visible top (logical row i.vt). When
+	// the region scrolled taller than the viewport, its first i.vt rows are above
+	// the screen, so the visible span is len-i.vt — using len would leave i.vt
+	// blank lines after the bookend.
+	if n := len(i.live) - i.vt; n > 0 {
 		io.WriteString(i.term, strings.Repeat("\r\n", n))
 	}
 }
