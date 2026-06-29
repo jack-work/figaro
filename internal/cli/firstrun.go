@@ -282,7 +282,7 @@ func runOAuthInline(providerName string, cfg auth.OAuthConfig) error {
 	h := mustHush()
 	hushClient := h.Client()
 	return auth.Login(hushClient, cfg, func() (string, error) {
-		fmt.Fprint(os.Stderr, "       Paste the code here: ")
+		// Login prints the (styled) paste prompt; we only read.
 		reader := bufio.NewReader(os.Stdin)
 		line, err := reader.ReadString('\n')
 		return strings.TrimSpace(line), err

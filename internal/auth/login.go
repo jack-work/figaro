@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 
+	"github.com/jack-work/figaro/internal/term"
 	hush "github.com/jack-work/hush/client"
 )
 
@@ -37,13 +39,16 @@ func Login(hushClient *hush.Client, cfg OAuthConfig, promptCode func() (string, 
 	}
 	authURL := cfg.AuthorizeURL + "?" + params.Encode()
 
-	fmt.Println("Opening browser for login...")
-	fmt.Println()
-	fmt.Println("  " + authURL)
-	fmt.Println()
+	// All presentation goes to stderr, indented + dimmed to match the
+	// first-run TUI; the promptCode callback only reads (it must not print
+	// its own prompt, or the prompt doubles up).
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "       "+term.Dim("Opening your browser to sign in. If it doesn't open, visit:"))
+	fmt.Fprintln(os.Stderr, "       "+term.Cyan(authURL))
+	fmt.Fprintln(os.Stderr)
 	openBrowser(authURL)
 
-	fmt.Print("Paste the authorization code: ")
+	fmt.Fprint(os.Stderr, "       Paste the code here: ")
 	codeInput, err := promptCode()
 	if err != nil {
 		return fmt.Errorf("read code: %w", err)
@@ -101,7 +106,7 @@ func Login(hushClient *hush.Client, cfg OAuthConfig, promptCode func() (string, 
 		return fmt.Errorf("register with hush: %w", err)
 	}
 
-	fmt.Printf("Logged in. Access token expires in %d seconds.\n", tokenResp.ExpiresIn)
+	fmt.Fprintln(os.Stderr, "       "+term.Green("✓")+" Logged in"+term.Dim(fmt.Sprintf(" · token expires in %ds", tokenResp.ExpiresIn)))
 	return nil
 }
 
