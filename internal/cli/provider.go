@@ -30,6 +30,17 @@ import (
 // first-run picker.
 var KnownProviders = []string{"anthropic"}
 
+// defaultModelFor returns a sensible starter model id for a provider —
+// used to scaffold a first-run loadout and as buildProvider's fallback,
+// so a fresh setup always has an explicit system.model.
+func defaultModelFor(providerName string) string {
+	switch providerName {
+	case "anthropic":
+		return "claude-sonnet-4-20250514"
+	}
+	return ""
+}
+
 // installWireLog wraps the provider's HTTPClient with wirelog.
 func installWireLog(a *anthropic.Anthropic) {
 	a.HTTPClient.Transport = &wirelog.Transport{Inner: http.DefaultTransport}
@@ -110,6 +121,9 @@ func buildProviderFactory(loaded *config.Loaded, cbTmpls *template.Template, bac
 			if knobs.MaxTokens == 0 {
 				knobs.MaxTokens = 8192
 			}
+			if knobs.Model == "" {
+				knobs.Model = defaultModelFor(providerName)
+			}
 			resolver, err := buildResolver(loaded, providerName)
 			if err != nil {
 				return nil, err
@@ -149,7 +163,7 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 	switch name {
 	case "anthropic":
 		if knobs.Model == "" {
-			knobs.Model = "claude-sonnet-4-20250514"
+			knobs.Model = defaultModelFor(name)
 		}
 		if knobs.MaxTokens == 0 {
 			knobs.MaxTokens = 8192

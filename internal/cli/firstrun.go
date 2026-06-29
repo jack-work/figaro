@@ -363,6 +363,9 @@ func writeStarterLoadout(path, providerName string) error {
 [system]
 provider = %q
 `, providerName)
+	if m := defaultModelFor(providerName); m != "" {
+		body += fmt.Sprintf("model = %q\n", m)
+	}
 	return os.WriteFile(path, []byte(body), 0600)
 }
 
