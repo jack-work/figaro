@@ -375,17 +375,22 @@ any other aria, or passing --stay, leaves your session untouched.`,
 		Aliases: []string{"chalkboard"},
 		Group:   "State",
 		Short:   "Show the current chalkboard snapshot",
-		Usage:   "state [--id <id>] [-j]",
+		Usage:   "state [<id> | --id <id>] [-j]",
+		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit the snapshot as a JSON object"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runChalkboard(ld, ctx.Flag("id"), ctx.BoolFlag("json"))
+			id := ctx.Flag("id")
+			if id == "" && len(ctx.Args) > 0 {
+				id = ctx.Args[0]
+			}
+			runChalkboard(ld, id, ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsAfterFlag(nil),
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
 	})
 
 	r.Register(&cmdkit.Command{
