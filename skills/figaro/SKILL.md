@@ -22,9 +22,14 @@ overriding by name. Edit the source copy, not a config copy.
 ## The one rule: never test against the live daemon
 
 Reinstalling figaro into `~/.nix-profile` stomps the running angelus, the
-user's arias, and the hush identity. Always test a worktree build through a
-**dev shell** that puts the freshly-built binary on `PATH` from the Nix
-store, isolated to taste:
+user's arias, and the hush identity. The angelus is a strict singleton via an
+exclusive flock on `<store>/arias/.daemon.lock`, taken **before** it opens the
+backend or binds the socket — so a second daemon against the same store loses
+the lock and exits cleanly (a loser never opens the store or steals the live
+socket). That protects against accidental races, **not** against you pointing
+a test build at the real store: the lock makes them contend, it doesn't make
+sharing safe. Always test a worktree build through a **dev shell** that puts
+the freshly-built binary on `PATH` from the Nix store, isolated to taste:
 
 ```
 nix develop                  # worktree binary; real config/runtime/state/hush
@@ -65,8 +70,11 @@ These live beside this file; read the one whose topic is in play.
 - **architecture.md** — the three roles, the IR, the chalkboard, the
   JSON-RPC + live-render wire protocol, the live-render node model and
   painter invariants, the provider/translation layer, and storage.
-- **arias.md** — how an aria is laid out on disk and the two ways to read
-  one (the `figaro` CLI vs raw JSONL).
+- **arias.md** — how an aria is laid out on disk (the figwal trunk store) and
+  the two ways to read one (the `figaro` CLI vs raw JSONL).
+- **trunks.md** — the forking model: a trunk is a root-to-leaf path with a
+  stable id, loadout/conversation cauterization, LT numbering, and the
+  `attend`/`ls`(=`cd`)/`fork`/`kill` surface.
 - **mantra.md** — maintaining your aria's mantra (the essence phrase shown
   in `figaro list`).
 - **cache-control.md** — how automatic prompt caching works and how to
