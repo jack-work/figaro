@@ -260,6 +260,21 @@ func deepDeleteWalk(obj map[string]any, path []string) bool {
 	return changed
 }
 
+// fetchChalkboardSnapshot returns the aria's live chalkboard snapshot via the
+// angelus, or nil on failure (best-effort — callers degrade gracefully).
+func fetchChalkboardSnapshot(loaded *config.Loaded, ariaID string) map[string]json.RawMessage {
+	var snap map[string]json.RawMessage
+	WithSessionFor(loaded, ariaID, func(s *Session) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if resp, err := s.Figaro.Chalkboard(ctx); err == nil {
+			snap = resp.Snapshot
+		}
+		return nil
+	})
+	return snap
+}
+
 func mustFetchChalkboardKey(loaded *config.Loaded, ariaID, key string) json.RawMessage {
 	var result json.RawMessage
 	WithSessionFor(loaded, ariaID, func(s *Session) error {

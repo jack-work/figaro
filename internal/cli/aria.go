@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -135,7 +134,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	// --verbose / --literal: the raw IR path (inline transitions + extras,
 	// or unrendered IR markdown).
 	if opts.verbose || opts.literal {
-		renderAriaIR(figaroID, entries, opts)
+		renderAriaIR(loaded, figaroID, entries, opts)
 		return
 	}
 
@@ -225,7 +224,7 @@ func selectUnitRange(total int, o showOpts) (int, int) {
 // renderAriaIR is the raw IR path for --verbose / --literal: it renders
 // each message (markdown via largo, or unrendered when --literal) and, in
 // verbose mode, appends credo / state transitions / chalkboard.
-func renderAriaIR(figaroID string, entries []store.Entry[message.Message], opts showOpts) {
+func renderAriaIR(loaded *config.Loaded, figaroID string, entries []store.Entry[message.Message], opts showOpts) {
 	start := 0
 	if !opts.all && len(entries) > opts.last {
 		start = len(entries) - opts.last
@@ -255,17 +254,10 @@ func renderAriaIR(figaroID string, entries []store.Entry[message.Message], opts 
 	fmt.Println("---")
 	fmt.Println("## credo")
 	fmt.Println()
-	cbPath := filepath.Join(stateDir(), "arias", figaroID, "chalkboard.json")
-	cbData, err := os.ReadFile(cbPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "read chalkboard: %s\n", err)
-		return
-	}
-	var snap map[string]json.RawMessage
-	if err := json.Unmarshal(cbData, &snap); err != nil {
-		fmt.Fprintf(os.Stderr, "parse chalkboard: %s\n", err)
-		return
-	}
+	// The chalkboard is a reducible channel now (there is no chalkboard.json);
+	// fetch the live snapshot through the angelus. Best-effort: the credo and
+	// chalkboard sections degrade to empty rather than aborting the dump.
+	snap := fetchChalkboardSnapshot(loaded, figaroID)
 	if raw, ok := snap["system.credo"]; ok {
 		// system.credo may be a bare string or a ContentEnvelope object
 		// ({content, frontmatter, filePath}). Prefer content, fall back to
