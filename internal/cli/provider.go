@@ -32,11 +32,13 @@ var KnownProviders = []string{"anthropic"}
 
 // defaultModelFor returns a sensible starter model id for a provider —
 // used to scaffold a first-run loadout and as buildProvider's fallback,
-// so a fresh setup always has an explicit system.model.
+// so a fresh setup always has an explicit system.model. Bump when the
+// upstream catalog moves; first-run users will inherit whatever lives
+// here on the day they ran the wizard.
 func defaultModelFor(providerName string) string {
 	switch providerName {
 	case "anthropic":
-		return "claude-sonnet-4-20250514"
+		return "claude-sonnet-4-5"
 	}
 	return ""
 }

@@ -351,8 +351,12 @@ func createDefaultLoadout(loaded *config.Loaded, providerName string) (string, e
 	return name, nil
 }
 
-// writeStarterLoadout writes a minimal loadout file. Parent
-// directories are created with 0700.
+// writeStarterLoadout writes a minimal loadout file plus a starter
+// skills directory containing the bundled `howto` onboarding skill.
+// Parent directories are created with 0700. The loadout references
+// the skills directory via `skills = { dirName = "skills" }` so the
+// agent sees the howto on every new aria — a brand-new user can run
+// `figaro -- teach me how to use figaro` and the lesson kicks off.
 func writeStarterLoadout(path, providerName string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
@@ -360,13 +364,36 @@ func writeStarterLoadout(path, providerName string) error {
 	body := fmt.Sprintf(`# Scaffolded by figaro first-run setup.
 # Edit to taste; see docs/loadouts for the schema.
 
+# Skills are markdown files referenced from the chalkboard. The
+# dirName form fans every *.md in skills/ out as skills.<name>.
+skills = { dirName = "skills" }
+
 [system]
 provider = %q
 `, providerName)
 	if m := defaultModelFor(providerName); m != "" {
 		body += fmt.Sprintf("model = %q\n", m)
 	}
-	return os.WriteFile(path, []byte(body), 0600)
+	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+		return err
+	}
+	// Drop the bundled howto skill next to the loadout so the new user
+	// has at least one skill on day one. Path resolution: the loadout
+	// lives at <config>/loadouts/<name>.toml, so the skills dir is
+	// <config>/skills.
+	cfgRoot := filepath.Dir(filepath.Dir(path))
+	skillsDir := filepath.Join(cfgRoot, "skills")
+	if err := os.MkdirAll(skillsDir, 0700); err != nil {
+		return err
+	}
+	howtoPath := filepath.Join(skillsDir, "howto.md")
+	// Don't clobber an existing howto — the user may have edited it.
+	if _, err := os.Stat(howtoPath); os.IsNotExist(err) {
+		if err := os.WriteFile(howtoPath, []byte(starterHowToSkill), 0600); err != nil {
+			return fmt.Errorf("write starter howto skill: %w", err)
+		}
+	}
+	return nil
 }
 
 // patchDefaultLoadout rewrites config.toml in place to set
