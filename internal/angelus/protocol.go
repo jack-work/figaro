@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
@@ -99,6 +100,19 @@ type handlers struct {
 	// reload-from-disk is cheap, but other handlers may dereference
 	// h.config concurrently.
 	configMu sync.Mutex
+
+	// loadoutHashCache memoizes currentLoadoutHash with a short TTL. List
+	// calls it once per aria, but loadout content is shared and expensive to
+	// hash (outfitter.Load re-reads every skill file), so without this an
+	// 8-aria list re-read all skills 8× (~0.5s) and starved completion's
+	// short-timeout List call.
+	loadoutHashMu    sync.Mutex
+	loadoutHashCache map[string]loadoutHashEntry
+}
+
+type loadoutHashEntry struct {
+	hash string
+	at   time.Time
 }
 
 // reloadConfigIfChanged re-reads config.toml from disk when the
@@ -188,15 +202,25 @@ func (h *handlers) currentLoadoutHash(name string) string {
 	if h.outfitter == nil {
 		return ""
 	}
-	p, err := h.outfitter.Load(name)
-	if err != nil {
-		return ""
+	h.loadoutHashMu.Lock()
+	if h.loadoutHashCache == nil {
+		h.loadoutHashCache = map[string]loadoutHashEntry{}
 	}
-	body, err := json.Marshal(p)
-	if err != nil {
-		return ""
+	if e, ok := h.loadoutHashCache[name]; ok && time.Since(e.at) < 3*time.Second {
+		h.loadoutHashMu.Unlock()
+		return e.hash
 	}
-	hash, _ := segment.ValueHash(body)
+	h.loadoutHashMu.Unlock()
+
+	hash := ""
+	if p, err := h.outfitter.Load(name); err == nil {
+		if body, merr := json.Marshal(p); merr == nil {
+			hash, _ = segment.ValueHash(body)
+		}
+	}
+	h.loadoutHashMu.Lock()
+	h.loadoutHashCache[name] = loadoutHashEntry{hash: hash, at: time.Now()}
+	h.loadoutHashMu.Unlock()
 	return hash
 }
 

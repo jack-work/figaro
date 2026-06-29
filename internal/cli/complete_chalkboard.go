@@ -92,7 +92,7 @@ func loadoutFallbackKeys(c *cmdkit.CompleteContext) []string {
 // autostart the daemon, prompt the user, or block long.
 func softFetchLiveKeys() []string {
 	ep := transport.UnixEndpoint(angelusSocketPath())
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	acli, err := angelus.DialClient(ep)
 	if err != nil {

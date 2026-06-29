@@ -17,7 +17,7 @@ import (
 // the source of truth, the CLI never touches the on-disk aria dir.
 func softFetchAriaIDs() []string {
 	ep := transport.UnixEndpoint(angelusSocketPath())
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	acli, err := angelus.DialClient(ep)
 	if err != nil {
