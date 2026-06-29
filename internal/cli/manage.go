@@ -33,15 +33,17 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int, rootID string) {
 		}
 		figs := resp.Figaros
 
-		// `ls`-relative-to-`cd`: with no argument, root at the attended trunk
-		// (subtree only); detached, show the whole forest. "/" forces the
+		// `ls`-relative-to-`cd`: with no argument, root at the attended trunk's
+		// whole conversation tree — its top-level ancestor — so you see the
+		// parent spine + siblings with `●` marking where you are (not just
+		// what's below you). Detached shows the whole forest; "/" forces the
 		// whole forest even while attended.
 		switch {
 		case rootID == "/":
 			rootID = ""
 		case rootID == "":
 			if r, rerr := acli.Resolve(ctx, os.Getppid()); rerr == nil && r.Found {
-				rootID = r.FigaroID
+				rootID = topLevelAncestor(figs, r.FigaroID)
 			}
 		}
 
@@ -221,6 +223,28 @@ func vecKey(v []int) string {
 		parts[i] = strconv.Itoa(n)
 	}
 	return strings.Join(parts, ".")
+}
+
+// topLevelAncestor returns the id of the top-level conversation trunk that
+// contains id (the trunk whose vector is the first component of id's vector) —
+// i.e. the root of id's whole fork tree. Falls back to id if not found.
+func topLevelAncestor(figs []rpc.FigaroInfoResponse, id string) string {
+	var vec []int
+	for _, f := range figs {
+		if f.ID == id {
+			vec = f.Vector
+			break
+		}
+	}
+	if len(vec) == 0 {
+		return id
+	}
+	for _, f := range figs {
+		if len(f.Vector) == 1 && f.Vector[0] == vec[0] {
+			return f.ID
+		}
+	}
+	return id
 }
 
 // hasVecPrefix reports whether v lies at or below prefix in the fork forest
