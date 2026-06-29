@@ -268,6 +268,11 @@ Flags:
 			var rootID string
 			if len(ctx.Args) > 0 {
 				rootID = ctx.Args[0]
+			} else if ctx.BoolFlag("all") {
+				// -a with no id means "everything" — break out of the attended
+				// scope and show the whole forest (root down), not just the
+				// current tree.
+				rootID = "/"
 			}
 			runList(ld, ctx.BoolFlag("json"), limit, rootID)
 			return nil

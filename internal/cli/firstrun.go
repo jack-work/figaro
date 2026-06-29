@@ -520,4 +520,3 @@ func pickModelOrFallback(loaded *config.Loaded, providerName string) string {
 	}
 	return key
 }
-
