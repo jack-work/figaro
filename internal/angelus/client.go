@@ -71,8 +71,8 @@ func (c *Client) Attach(ctx context.Context, figaroID string) (*rpc.AttachRespon
 	return &resp, nil
 }
 
-func (c *Client) Bind(ctx context.Context, pid int, figaroID string) error {
-	return c.cli.Call(ctx, rpc.MethodBind, rpc.BindRequest{PID: pid, FigaroID: figaroID}, nil)
+func (c *Client) Bind(ctx context.Context, pid int, figaroID string, atMainLT uint64) error {
+	return c.cli.Call(ctx, rpc.MethodBind, rpc.BindRequest{PID: pid, FigaroID: figaroID, AtMainLT: atMainLT}, nil)
 }
 
 func (c *Client) Resolve(ctx context.Context, pid int) (*rpc.ResolveResponse, error) {

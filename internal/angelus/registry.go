@@ -17,6 +17,11 @@ type Registry struct {
 
 	pidToFigaro map[int]string
 
+	// pidToLT is a per-pid pending fork-point (figaro main-LT). 0 = none:
+	// the bound aria's leaf. Set by `attend <id>:<LT>`; consumed by the next
+	// prompt (which forks there and rebinds to the new branch, clearing it).
+	pidToLT map[int]uint64
+
 	figaroPIDs map[string]map[int]struct{}
 
 	draining atomic.Bool
@@ -27,6 +32,7 @@ func NewRegistry() *Registry {
 	return &Registry{
 		figaros:     make(map[string]figaro.Figaro),
 		pidToFigaro: make(map[int]string),
+		pidToLT:     make(map[int]uint64),
 		figaroPIDs:  make(map[string]map[int]struct{}),
 	}
 }
@@ -76,7 +82,10 @@ func (r *Registry) Kill(id string) error {
 }
 
 // Bind maps a pid to a figaro. Unbinds from any previous figaro.
-func (r *Registry) Bind(pid int, figaroID string) error {
+// Bind binds pid to figaroID with an optional pending fork-point lt (0 = the
+// trunk's leaf). lt is always (re)set, so a plain rebind clears any prior
+// pending LT.
+func (r *Registry) Bind(pid int, figaroID string, lt uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -85,26 +94,28 @@ func (r *Registry) Bind(pid int, figaroID string) error {
 	}
 
 	if existing, ok := r.pidToFigaro[pid]; ok && existing == figaroID {
+		r.pidToLT[pid] = lt
 		return nil
 	}
 
 	r.unbindLocked(pid)
 
 	r.pidToFigaro[pid] = figaroID
+	r.pidToLT[pid] = lt
 	r.figaroPIDs[figaroID][pid] = struct{}{}
 	return nil
 }
 
 // Resolve returns the figaro for a pid.
-func (r *Registry) Resolve(pid int) (string, figaro.Figaro) {
+func (r *Registry) Resolve(pid int) (string, figaro.Figaro, uint64) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	id, ok := r.pidToFigaro[pid]
 	if !ok {
-		return "", nil
+		return "", nil, 0
 	}
-	return id, r.figaros[id]
+	return id, r.figaros[id], r.pidToLT[pid]
 }
 
 // Unbind removes a pid binding.
@@ -121,6 +132,7 @@ func (r *Registry) unbindLocked(pid int) {
 		return
 	}
 	delete(r.pidToFigaro, pid)
+	delete(r.pidToLT, pid)
 	if pids, exists := r.figaroPIDs[id]; exists {
 		delete(pids, pid)
 	}

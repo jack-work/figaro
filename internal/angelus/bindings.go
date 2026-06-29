@@ -103,7 +103,7 @@ func RestoreBindings(r *Registry, path string, restore AriaRestorer) {
 				continue
 			}
 		}
-		if err := r.Bind(b.PID, b.FigaroID); err != nil {
+		if err := r.Bind(b.PID, b.FigaroID, 0); err != nil {
 			slog.Warn("bindings bind", "pid", b.PID, "figaro", b.FigaroID, "err", err)
 			skipped++
 			continue

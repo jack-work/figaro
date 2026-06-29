@@ -101,7 +101,7 @@ model = "mock-model"
 	assert.Equal(t, "unix", createResp.Endpoint.Scheme)
 
 	// --- Angelus client: bind a pid ---
-	err = acli.Bind(ctx, 99999, createResp.FigaroID)
+	err = acli.Bind(ctx, 99999, createResp.FigaroID, 0)
 	require.NoError(t, err)
 
 	// --- Angelus client: resolve ---

@@ -380,7 +380,7 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay bool) {
 		rescoped := false
 		if target == bound && !stay {
 			acli.Unbind(ctx, ppid)
-			if err := acli.Bind(ctx, ppid, resp.Continuation); err != nil {
+			if err := acli.Bind(ctx, ppid, resp.Continuation, 0); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not bind shell to continuation: %s\n", err)
 			} else {
 				rescoped = true
@@ -402,16 +402,34 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay bool) {
 	})
 }
 
-func runAttendByID(loaded *config.Loaded, figaroID string) {
+// runAttend binds this shell to a target spec: <id>, <id>:<LT>, or :<LT>.
+// A bare id pins the trunk's leaf; an LT pins a pending fork-point (the next
+// prompt forks there and moves to the new branch). The :<LT> form re-pins the
+// already-bound aria.
+func runAttend(loaded *config.Loaded, spec string) {
+	trunk, atMainLT, hasLT, err := parseSendTarget(spec)
+	if err != nil {
+		die("attend: %s", err)
+	}
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		ppid := os.Getppid()
-		acli.Unbind(ctx, ppid)
-		if err := acli.Bind(ctx, ppid, figaroID); err != nil {
+		if trunk == "" {
+			r, rerr := acli.Resolve(ctx, ppid)
+			if rerr != nil || !r.Found {
+				die("attend: :<LT> needs an already-bound aria (use attend <id>:<LT>)")
+			}
+			trunk = r.FigaroID
+		}
+		if err := acli.Bind(ctx, ppid, trunk, atMainLT); err != nil {
 			die("attend: %s", err)
 		}
-		fmt.Fprintf(os.Stderr, "attending %s\n", figaroID)
+		if hasLT {
+			fmt.Fprintf(os.Stderr, "attending %s at LT %d (next prompt forks there)\n", trunk, atMainLT)
+		} else {
+			fmt.Fprintf(os.Stderr, "attending %s\n", trunk)
+		}
 		return nil
 	})
 }

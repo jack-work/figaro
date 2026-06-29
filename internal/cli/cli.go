@@ -275,13 +275,14 @@ Flags:
 	r.Register(&cmdkit.Command{
 		Name:    "attend",
 		Group:   "Session",
-		Short:   "Bind this shell to an existing aria",
-		Usage:   "attend <id>",
+		Short:   "Bind this shell to an existing aria (optionally at an LT)",
+		Usage:   "attend <id> | <id>:<LT> | :<LT>",
+		Long:    "Binds this shell to an aria. With :<LT> the binding carries a pending\nfork-point — the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<LT>` alone re-pins the already-bound aria.",
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runAttendByID(ld, ctx.Args[0])
+			runAttend(ld, ctx.Args[0])
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,

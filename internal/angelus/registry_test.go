@@ -85,16 +85,16 @@ func TestRegistry_KillUnbindsPIDs(t *testing.T) {
 	r := angelus.NewRegistry()
 	m := newMock("abc")
 	require.NoError(t, r.Register(m))
-	require.NoError(t, r.Bind(1234, "abc"))
-	require.NoError(t, r.Bind(5678, "abc"))
+	require.NoError(t, r.Bind(1234, "abc", 0))
+	require.NoError(t, r.Bind(5678, "abc", 0))
 
 	require.NoError(t, r.Kill("abc"))
 
 	// Both PIDs should be unbound.
-	id, f := r.Resolve(1234)
+	id, f, _ := r.Resolve(1234)
 	assert.Empty(t, id)
 	assert.Nil(t, f)
-	id, f = r.Resolve(5678)
+	id, f, _ = r.Resolve(5678)
 	assert.Empty(t, id)
 	assert.Nil(t, f)
 }
@@ -105,23 +105,23 @@ func TestRegistry_BindAndResolve(t *testing.T) {
 	r := angelus.NewRegistry()
 	require.NoError(t, r.Register(newMock("abc")))
 
-	require.NoError(t, r.Bind(1234, "abc"))
+	require.NoError(t, r.Bind(1234, "abc", 0))
 
-	id, f := r.Resolve(1234)
+	id, f, _ := r.Resolve(1234)
 	assert.Equal(t, "abc", id)
 	assert.NotNil(t, f)
 }
 
 func TestRegistry_ResolveUnbound(t *testing.T) {
 	r := angelus.NewRegistry()
-	id, f := r.Resolve(9999)
+	id, f, _ := r.Resolve(9999)
 	assert.Empty(t, id)
 	assert.Nil(t, f)
 }
 
 func TestRegistry_BindToNonexistentFigaro(t *testing.T) {
 	r := angelus.NewRegistry()
-	err := r.Bind(1234, "nonexistent")
+	err := r.Bind(1234, "nonexistent", 0)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
@@ -129,8 +129,8 @@ func TestRegistry_BindToNonexistentFigaro(t *testing.T) {
 func TestRegistry_BindSamePidSameFigaro_Noop(t *testing.T) {
 	r := angelus.NewRegistry()
 	require.NoError(t, r.Register(newMock("abc")))
-	require.NoError(t, r.Bind(1234, "abc"))
-	require.NoError(t, r.Bind(1234, "abc")) // no-op
+	require.NoError(t, r.Bind(1234, "abc", 0))
+	require.NoError(t, r.Bind(1234, "abc", 0)) // no-op
 
 	assert.Equal(t, 1, r.BoundPIDCount())
 	pids := r.BoundPIDs("abc")
@@ -142,11 +142,11 @@ func TestRegistry_BindRebindsToNewFigaro(t *testing.T) {
 	require.NoError(t, r.Register(newMock("abc")))
 	require.NoError(t, r.Register(newMock("def")))
 
-	require.NoError(t, r.Bind(1234, "abc"))
-	require.NoError(t, r.Bind(1234, "def")) // rebind
+	require.NoError(t, r.Bind(1234, "abc", 0))
+	require.NoError(t, r.Bind(1234, "def", 0)) // rebind
 
 	// Should now resolve to def.
-	id, _ := r.Resolve(1234)
+	id, _, _ := r.Resolve(1234)
 	assert.Equal(t, "def", id)
 
 	// abc should have no bound PIDs.
@@ -163,8 +163,8 @@ func TestRegistry_MultiplePIDsSameFigaro(t *testing.T) {
 	r := angelus.NewRegistry()
 	require.NoError(t, r.Register(newMock("abc")))
 
-	require.NoError(t, r.Bind(1234, "abc"))
-	require.NoError(t, r.Bind(5678, "abc"))
+	require.NoError(t, r.Bind(1234, "abc", 0))
+	require.NoError(t, r.Bind(5678, "abc", 0))
 
 	assert.Equal(t, 2, r.BoundPIDCount())
 	pids := r.BoundPIDs("abc")
@@ -175,11 +175,11 @@ func TestRegistry_MultiplePIDsSameFigaro(t *testing.T) {
 func TestRegistry_Unbind(t *testing.T) {
 	r := angelus.NewRegistry()
 	require.NoError(t, r.Register(newMock("abc")))
-	require.NoError(t, r.Bind(1234, "abc"))
+	require.NoError(t, r.Bind(1234, "abc", 0))
 
 	r.Unbind(1234)
 
-	id, f := r.Resolve(1234)
+	id, f, _ := r.Resolve(1234)
 	assert.Empty(t, id)
 	assert.Nil(t, f)
 	assert.Empty(t, r.BoundPIDs("abc"))
@@ -211,7 +211,7 @@ func TestRegistry_Counts(t *testing.T) {
 	assert.Equal(t, 0, r.BoundPIDCount())
 
 	require.NoError(t, r.Register(newMock("abc")))
-	require.NoError(t, r.Bind(1234, "abc"))
+	require.NoError(t, r.Bind(1234, "abc", 0))
 
 	assert.Equal(t, 1, r.FigaroCount())
 	assert.Equal(t, 1, r.BoundPIDCount())
@@ -221,8 +221,8 @@ func TestRegistry_AllPIDs(t *testing.T) {
 	r := angelus.NewRegistry()
 	require.NoError(t, r.Register(newMock("abc")))
 	require.NoError(t, r.Register(newMock("def")))
-	require.NoError(t, r.Bind(1234, "abc"))
-	require.NoError(t, r.Bind(5678, "def"))
+	require.NoError(t, r.Bind(1234, "abc", 0))
+	require.NoError(t, r.Bind(5678, "def", 0))
 
 	pids := r.AllPIDs()
 	assert.ElementsMatch(t, []int{1234, 5678}, pids)

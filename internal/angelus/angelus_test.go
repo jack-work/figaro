@@ -94,7 +94,7 @@ func TestAngelus_PIDMonitorUnbindsDeadPID(t *testing.T) {
 	deadPID := cmd.Process.Pid
 	require.NoError(t, cmd.Wait()) // now dead
 
-	require.NoError(t, a.Registry.Bind(deadPID, "abc"))
+	require.NoError(t, a.Registry.Bind(deadPID, "abc", 0))
 
 	// Wait for the monitor to reap it (polls every 2s).
 	deadline := time.Now().Add(5 * time.Second)

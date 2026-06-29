@@ -32,6 +32,12 @@ func runPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 	var figaroEP transport.Endpoint
 
 	if resp.Found {
+		// Bound at a pending fork-point (attend <id>:<LT>): this prompt forks
+		// there and moves to the new branch (one-shot — the rebind clears it).
+		if resp.AtMainLT > 0 {
+			runSendForkAt(loaded, resp.FigaroID, resp.AtMainLT, false, prompt, set)
+			return
+		}
 		figaroID = resp.FigaroID
 		figaroEP = transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
 	} else {
@@ -91,7 +97,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay 
 		fmt.Fprintf(os.Stderr, "forked %s at LT %d -> %s (parked; staying on %s)\n", trunkID, atMainLT, fr.Alternative, trunkID)
 	} else {
 		acli.Unbind(ctx, ppid)
-		if err := acli.Bind(ctx, ppid, fr.Alternative); err != nil {
+		if err := acli.Bind(ctx, ppid, fr.Alternative, 0); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not attend %s: %s\n", fr.Alternative, err)
 		}
 		fmt.Fprintf(os.Stderr, "forked %s at LT %d -> attending %s\n", trunkID, atMainLT, fr.Alternative)

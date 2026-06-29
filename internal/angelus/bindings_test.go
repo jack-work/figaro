@@ -20,8 +20,8 @@ func TestSaveAndRestoreBindings_LivePIDs(t *testing.T) {
 	require.NoError(t, r.Register(newMock("aria-two")))
 
 	self := os.Getpid()
-	require.NoError(t, r.Bind(self, "aria-one"))
-	require.NoError(t, r.Bind(os.Getppid(), "aria-two"))
+	require.NoError(t, r.Bind(self, "aria-one", 0))
+	require.NoError(t, r.Bind(os.Getppid(), "aria-two", 0))
 
 	require.NoError(t, angelus.SaveBindings(r, path))
 	_, err := os.Stat(path)
@@ -34,11 +34,11 @@ func TestSaveAndRestoreBindings_LivePIDs(t *testing.T) {
 
 	angelus.RestoreBindings(r2, path, nil)
 
-	id, f := r2.Resolve(self)
+	id, f, _ := r2.Resolve(self)
 	assert.NotNil(t, f)
 	assert.Equal(t, "aria-one", id)
 
-	id, f = r2.Resolve(os.Getppid())
+	id, f, _ = r2.Resolve(os.Getppid())
 	assert.NotNil(t, f)
 	assert.Equal(t, "aria-two", id)
 
@@ -61,7 +61,7 @@ func TestRestoreBindings_SkipsDeadPID(t *testing.T) {
 
 	angelus.RestoreBindings(r, path, nil)
 
-	_, f := r.Resolve(deadPID)
+	_, f, _ := r.Resolve(deadPID)
 	assert.Nil(t, f, "dead pid should not be rebound")
 
 	_, err := os.Stat(path)

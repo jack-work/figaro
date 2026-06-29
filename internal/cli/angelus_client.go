@@ -128,7 +128,7 @@ func mustCreateAndBind(ctx context.Context, acli *angelus.Client, loaded *config
 		die("create figaro: %s", err)
 	}
 
-	if err := acli.Bind(ctx, ppid, createResp.FigaroID); err != nil {
+	if err := acli.Bind(ctx, ppid, createResp.FigaroID, 0); err != nil {
 		die("bind: %s", err)
 	}
 

@@ -232,6 +232,7 @@ type ListResponse struct {
 type BindRequest struct {
 	PID      int    `json:"pid"`
 	FigaroID string `json:"figaro_id"`
+	AtMainLT uint64 `json:"at_main_lt,omitempty"` // pending fork-point; 0 = leaf
 }
 
 type BindResponse struct {
@@ -246,6 +247,7 @@ type ResolveResponse struct {
 	FigaroID string   `json:"figaro_id,omitempty"`
 	Endpoint Endpoint `json:"endpoint,omitempty"`
 	Found    bool     `json:"found"`
+	AtMainLT uint64   `json:"at_main_lt,omitempty"` // pending fork-point bound to this pid
 }
 
 type UnbindRequest struct {

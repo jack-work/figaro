@@ -643,7 +643,7 @@ func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{
 	if _, err := h.restoreByID(ctx, req.FigaroID); err != nil {
 		return nil, fmt.Errorf("bind: restore %s: %w", req.FigaroID, err)
 	}
-	if err := h.angelus.Registry.Bind(req.PID, req.FigaroID); err != nil {
+	if err := h.angelus.Registry.Bind(req.PID, req.FigaroID, req.AtMainLT); err != nil {
 		return nil, err
 	}
 	return rpc.BindResponse{OK: true}, nil
@@ -676,7 +676,7 @@ func (h *handlers) resolve(ctx context.Context, params json.RawMessage) (interfa
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	id, f := h.angelus.Registry.Resolve(req.PID)
+	id, f, lt := h.angelus.Registry.Resolve(req.PID)
 	if f == nil {
 		return rpc.ResolveResponse{Found: false}, nil
 	}
@@ -686,7 +686,8 @@ func (h *handlers) resolve(ctx context.Context, params json.RawMessage) (interfa
 			Scheme:  "unix",
 			Address: f.SocketPath(),
 		},
-		Found: true,
+		Found:    true,
+		AtMainLT: lt,
 	}, nil
 }
 
