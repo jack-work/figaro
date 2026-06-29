@@ -84,13 +84,20 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 }
 
 // runChalkboard prints the current chalkboard snapshot.
-func runChalkboard(loaded *config.Loaded, ariaID string) {
+func runChalkboard(loaded *config.Loaded, ariaID string, jsonOut bool) {
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		resp, err := s.Figaro.Chalkboard(ctx)
 		if err != nil {
 			die("chalkboard: %s", err)
+		}
+		if jsonOut {
+			// One JSON object (keys sorted by encoding/json) instead of the
+			// default JSONL stream.
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(resp.Snapshot)
 		}
 		printSnapshot(os.Stdout, resp.Snapshot)
 		return nil

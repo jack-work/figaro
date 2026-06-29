@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -16,9 +17,10 @@ import (
 // runStatus prints a focused single-aria view of the target figaro.
 // Target resolution: --id flag > positional arg > pid-bound. Reads the
 // same FigaroInfoResponse the list view uses; for dormant arias the
-// angelus backfills from derived/meta.json. With no live data and no
-// derivation file, fields will read "-".
-func runStatus(loaded *config.Loaded, idFlag string, args []string) {
+// angelus backfills from the meta derivation. With no live data and no
+// derivation file, fields will read "-". more surfaces the derived/extra
+// detail; jsonOut emits the whole response as JSON.
+func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOut bool) {
 	var nameArg string
 	if len(args) > 0 {
 		nameArg = args[0]
@@ -58,7 +60,12 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string) {
 			die("no aria %q (try: figaro list)", ariaID)
 		}
 
-		printStatusPanel(os.Stdout, f)
+		if jsonOut {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(f)
+		}
+		printStatusPanel(os.Stdout, f, more)
 		return nil
 	})
 }
@@ -66,7 +73,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string) {
 // printStatusPanel renders a key/value view of a single figaro. Empty
 // or zero fields collapse to "-" so the user can tell what's known
 // vs. unknown rather than guessing whether "0" is real or stale.
-func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse) {
+func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool) {
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	row := func(k, v string) { fmt.Fprintf(w, "  %s:\t%s\n", k, v) }
 	rowf := func(k, format string, args ...any) { row(k, fmt.Sprintf(format, args...)) }
@@ -122,6 +129,26 @@ func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse) {
 		pids = strings.Join(strs, ",")
 	}
 	row("bound-pids", pids)
+
+	// Derived / extra detail (formerly the `derive` command's territory).
+	if more {
+		row("mantra", dash(f.Mantra))
+		row("cwd", dash(f.Cwd))
+		loadout := dash(f.LoadoutName)
+		if f.LoadoutVer != "" {
+			loadout += " (" + f.LoadoutVer + ")"
+		}
+		row("loadout", loadout)
+		if f.CreatedAt != 0 {
+			row("created", time.UnixMilli(f.CreatedAt).Format("2006-01-02 15:04:05"))
+		}
+		if f.Parent != "" {
+			rowf("forked-from", "%s @ LT %d", f.Parent, f.BranchedLT-1)
+		}
+		if f.Frozen {
+			row("frozen", "yes")
+		}
+	}
 
 	w.Flush()
 }

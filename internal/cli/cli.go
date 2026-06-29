@@ -76,34 +76,41 @@ func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 		Aliases: []string{"history"},
 		Group:   "Prompt",
 		Short:   "Render an aria's message history",
-		Usage:   "show [--id <id>] [N | --last N | --from A [--to B] | -a] [-j|--json] [-v] [-l]",
+		Usage:   "show [<id>] [-n N | --from A [--to B] | -a] [-j] [-v] [-l]",
 		Long: `Render an aria's history as conversational units (the prompt and
-each agent turn). Defaults to the last 10 units of the pid-bound aria;
---id scopes to a different aria. Units are 0-indexed (shown in the
-output) so ranges can target them.
+each agent turn). The optional positional is the target aria id;
+default is the pid-bound aria. Everything else is a flag. Units are
+labeled by their figaro LT (the coordinate send/fork <id>:<LT> target).
 
   figaro show                      last 10 units of the bound aria
-  figaro show 20                   last 20 units
+  figaro show eac16fef             last 10 units of aria eac16fef
+  figaro show -n 20                last 20 units
+  figaro show eac16fef -n 20       last 20 units of eac16fef
   figaro show --from 4             units 4..end ("after index 4")
   figaro show --from 1 --to 3      units 1..3 inclusive
   figaro show -a                   every unit
   figaro show -j                   units as raw JSON (materialized, no deltas)
-  figaro show --id myid 50 -v      last 50 messages of myid, verbose IR
+  figaro show eac16fef -v          verbose IR
   figaro show -l                   raw IR, no rendering`,
+		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (overrides pid binding)"},
+			{Long: "id", Description: "Target aria id (alias for the positional)"},
 			{Long: "verbose", Short: "v", IsBool: true, Description: "Raw IR with patches, thinking, usage, transitions"},
 			{Long: "literal", Short: "l", IsBool: true, Description: "No ANSI / markdown rendering"},
 			{Long: "all", Short: "a", IsBool: true, Description: "Show every unit, not just last N"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit units as raw JSON (no delta compression)"},
 			{Long: "from", Description: "Start unit index (inclusive)"},
 			{Long: "to", Description: "End unit index (inclusive)"},
-			{Long: "last", Description: "Show the last N units"},
+			{Long: "last", Short: "n", Description: "Show the last N units"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			// renderAria has its own flag parser; reassemble what the
-			// router parsed back into its expected shape.
+			// Positional (or --id) is the aria; everything else is a flag.
+			ariaID := ctx.Flag("id")
+			if ariaID == "" && len(ctx.Args) > 0 {
+				ariaID = ctx.Args[0]
+			}
+			// renderAria has its own flag parser; reassemble the parsed flags.
 			var args []string
 			if ctx.BoolFlag("verbose") {
 				args = append(args, "-v")
@@ -126,11 +133,10 @@ output) so ranges can target them.
 			if v := ctx.Flag("last"); v != "" {
 				args = append(args, "--last", v)
 			}
-			args = append(args, ctx.Args...)
-			runShow(ld, ctx.Flag("id"), args)
+			runShow(ld, ariaID, args)
 			return nil
 		},
-		CompleteArgs: completeAriaIDsAfterFlag(nil),
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -342,13 +348,14 @@ any other aria, or passing --stay, leaves your session untouched.`,
 		Aliases: []string{"chalkboard"},
 		Group:   "State",
 		Short:   "Show the current chalkboard snapshot",
-		Usage:   "state [--id <id>]",
+		Usage:   "state [--id <id>] [-j]",
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Emit the snapshot as a JSON object"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runChalkboard(ld, ctx.Flag("id"))
+			runChalkboard(ld, ctx.Flag("id"), ctx.BoolFlag("json"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsAfterFlag(nil),
@@ -390,21 +397,6 @@ any other aria, or passing --stay, leaves your session untouched.`,
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:    "derive",
-		Aliases: []string{"search"},
-		Group:   "State",
-		Short:   "Read a registered durable derivation",
-		Usage:   "derive <alias> [--json]",
-		Long:    "Reads a DurableDerivation off disk and prints it.\nWith no alias, lists available derivations.\n\nExamples:\n  figaro derive meta      # context/usage snapshot used by `list` and `status`\n  figaro derive usage     # message + token totals\n  figaro derive summary   # top-level aria meta",
-		PassRaw: true,
-		Run: func(ctx *cmdkit.RunContext) error {
-			ld := ctx.Extra.(*config.Loaded)
-			runSearch(ld, ctx.RawArgs)
-			return nil
-		},
-	})
-
-	r.Register(&cmdkit.Command{
 		Name:    "loadout",
 		Group:   "State",
 		Short:   "Apply a named loadout additively to an aria",
@@ -436,16 +428,18 @@ any other aria, or passing --stay, leaves your session untouched.`,
 		Aliases: []string{"info"},
 		Group:   "Session",
 		Short:   "Show a focused view of one aria",
-		Usage:   "status [--id <id> | <id>]",
-		Long:    "Prints provider, model, message count, context size and last-active\ntime for the named aria (or the one bound to this shell). Reads the\nsame data the `list` table uses; dormant arias are backfilled from\nderived/meta.json (see `figaro derive meta`).",
+		Usage:   "status [<id> | --id <id>] [-m] [-j]",
+		Long:    "Prints provider, model, message count, context size and last-active\ntime for the named aria (or the one bound to this shell). Reads the\nsame data the `list` table uses; dormant arias are backfilled from the\nmeta derivation.\n\n  -m/--more   also surface the derived/extra detail (mantra, cwd,\n              loadout version, fork origin, created)\n  -j/--json   emit the full status as JSON (combine: -mj)",
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id"},
+			{Long: "more", Short: "m", IsBool: true, Description: "Surface derived/extra detail"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Emit the full status as JSON"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runStatus(ld, ctx.Flag("id"), ctx.Args)
+			runStatus(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("more"), ctx.BoolFlag("json"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
