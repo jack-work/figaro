@@ -32,8 +32,16 @@ func ariaBackend() (store.Backend, error) {
 // No-op for an existing tree (index.json present), a fresh/absent dir,
 // or an empty dir.
 func backupLegacyAriaDir(dir string) error {
+	// "Already a fork tree" — never back up. The CURRENT figwal trunk store is
+	// marked by its manifest `xwal.json`; the older fork tree used `index.json`.
+	// Either marker means this is NOT a pre-fork-tree (legacy FileBackend) store.
+	// (Missing this check renamed the whole trunk store to arias.legacy-* and
+	// started fresh on every daemon restart — catastrophic data loss.)
+	if _, err := os.Stat(filepath.Join(dir, "xwal.json")); err == nil {
+		return nil
+	}
 	if _, err := os.Stat(filepath.Join(dir, "index.json")); err == nil {
-		return nil // already a fork tree
+		return nil
 	}
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {

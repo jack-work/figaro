@@ -20,7 +20,10 @@ import (
 // acquired. A crashed holder's lock is released by the kernel, so the next
 // daemon can take over.
 func lockStore() (*os.File, bool) {
-	dir := filepath.Join(stateDir(), "arias")
+	// The lock lives in the state dir, NOT inside arias/ — a lock file inside
+	// arias/ would make backupLegacyAriaDir see a "non-empty" store and move it
+	// aside before the real store opens.
+	dir := stateDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, false
 	}
