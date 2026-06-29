@@ -69,6 +69,41 @@ name.
 
 Config lives at `~/.config/figaro/`.
 
+## Releasing
+
+Figaro is consumed via `go install` and via the Nix flake. Both pull from
+git tags, so the release dance is just: keep `go.mod` clean, tag, push.
+
+1. **Verify `go.mod` has no `replace` directives.** Local-path replaces
+   make the module uninstallable from outside your machine — the Go
+   toolchain refuses with *"go.mod file ... contains one or more replace
+   directives"*. Use a `go.work` file for local development instead; Go
+   ignores it when the module is fetched as a dependency.
+
+   ```bash
+   grep -n '^replace' go.mod && echo "strip these before tagging" || echo ok
+   ```
+
+2. **Tag and push.** Versions are immutable on `proxy.golang.org` once
+   fetched, so a botched release means bumping — you cannot reuse a
+   number.
+
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+3. **Smoke-test from a clean machine** (or `GOPATH=$(mktemp -d)`):
+
+   ```bash
+   GOPROXY=https://proxy.golang.org go install \
+     github.com/jack-work/figaro/cmd/figaro@vX.Y.Z
+   ```
+
+4. **Bump the Nix flake** if you want `nix profile install` to pick up
+   the new version: update `version` and the `vendorHash` in
+   `flake.nix`, commit, push.
+
 ---
 
 *Tutti mi chiedono, tutti mi vogliono.* MIT.
