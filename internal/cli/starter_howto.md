@@ -313,6 +313,24 @@ Offer one concrete next step calibrated to their score — e.g.
 "want to set up a skill for your current project?" for a coder, or
 "want to try a longer conversation?" for someone newer.
 
+### Then — offer to remove this skill
+
+This onboarding skill is **not meant to stick around**. Every aria
+the user opens from here on will load it as context, which is
+wasteful once the lesson is done. Ask, plainly:
+
+> "This onboarding skill loads on every new aria. Now that you've
+> been through it, want me to delete it? (`~/.config/figaro/skills/howto.md`)"
+
+If yes — remove it with `rm ~/.config/figaro/skills/howto.md` and
+confirm with `ls ~/.config/figaro/skills/`. New arias will no longer
+carry the howto.
+
+If no — leave it. They can delete it themselves later.
+
+Do not delete it without asking. Do not delete anything else in the
+skills directory.
+
 ---
 
 ## Anti-patterns (for you, the teaching agent)
