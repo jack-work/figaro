@@ -243,7 +243,9 @@ Flags:
 		Aliases: []string{"ls"},
 		Group:   "Session",
 		Short:   "List the conversation forest (indented by fork)",
-		Usage:   "list [-j|--json] [-a|--all] [-n <count>]",
+		Usage:   "list [<id>] [-j|--json] [-a|--all] [-n <count>]",
+		Long:    "Lists the conversation forest. With a positional aria id, scopes to\nthat trunk and everything forked below it (the subtree rooted there).",
+		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit entries as JSON"},
 			{Long: "all", Short: "a", IsBool: true, Description: "Show every trunk (default: 10 most recent)"},
@@ -260,9 +262,14 @@ Flags:
 			if ctx.BoolFlag("all") {
 				limit = 0
 			}
-			runList(ld, ctx.BoolFlag("json"), limit)
+			var rootID string
+			if len(ctx.Args) > 0 {
+				rootID = ctx.Args[0]
+			}
+			runList(ld, ctx.BoolFlag("json"), limit, rootID)
 			return nil
 		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
 	})
 
 	r.Register(&cmdkit.Command{

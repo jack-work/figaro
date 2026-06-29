@@ -22,7 +22,7 @@ import (
 // lineage reads top-to-bottom. The leading VECTOR column (0, 0.0, 0.1, …)
 // shows fork depth + branch; MANTRA is the thread's essence. With jsonOut
 // the raw entries are emitted instead.
-func runList(loaded *config.Loaded, jsonOut bool, limit int) {
+func runList(loaded *config.Loaded, jsonOut bool, limit int, rootID string) {
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -32,6 +32,28 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int) {
 			die("list: %s", err)
 		}
 		figs := resp.Figaros
+
+		// Subtree scope: keep only the named trunk and everything forked
+		// below it (vectors with its vector as a prefix).
+		if rootID != "" {
+			var rootVec []int
+			for i := range figs {
+				if figs[i].ID == rootID {
+					rootVec = figs[i].Vector
+					break
+				}
+			}
+			if rootVec == nil {
+				die("no aria %q (try: figaro list)", rootID)
+			}
+			kept := figs[:0:0]
+			for _, f := range figs {
+				if hasVecPrefix(f.Vector, rootVec) {
+					kept = append(kept, f)
+				}
+			}
+			figs = kept
+		}
 
 		if jsonOut {
 			sort.SliceStable(figs, func(i, j int) bool { return vectorLess(figs[i].Vector, figs[j].Vector) })
@@ -54,7 +76,13 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int) {
 				continue
 			}
 			byVec[vecKey(f.Vector)] = f
-			if len(f.Vector) == 1 {
+			// Roots are depth-0 conversations, or — when scoped to a subtree —
+			// the named trunk itself; everything else nests under its parent.
+			isRoot := len(f.Vector) == 1
+			if rootID != "" {
+				isRoot = f.ID == rootID
+			}
+			if isRoot {
 				roots = append(roots, f)
 			} else {
 				pk := vecKey(f.Vector[:len(f.Vector)-1])
@@ -181,6 +209,20 @@ func vecKey(v []int) string {
 		parts[i] = strconv.Itoa(n)
 	}
 	return strings.Join(parts, ".")
+}
+
+// hasVecPrefix reports whether v lies at or below prefix in the fork forest
+// (prefix is an ancestor-or-self of v).
+func hasVecPrefix(v, prefix []int) bool {
+	if len(v) < len(prefix) {
+		return false
+	}
+	for i := range prefix {
+		if v[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // truncRunes shortens s to at most n runes, appending ".." when cut.
