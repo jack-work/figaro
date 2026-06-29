@@ -4,7 +4,12 @@ Status: **shipped** (the trunk pass is built and on `main`). This document is th
 canonical reference for figaro's conversation-forking model: the figwal/xwal substrate
 it sits on, the terminology, and the codepaths as they exist today. Read it before
 touching anything under `internal/store`, the angelus fork/create/bind handlers, or the
-`fig send`/`fork`/`attend`/`kill` CLI verbs.
+`fig send`/`fork`/`attend`/`kill`/`ls` CLI verbs.
+
+> The word **trunk** echoes opera's *aria di baule* — the "trunk aria" (or "suitcase
+> aria") a singer carried from production to production, packed in their travel trunk and
+> inserted wherever it fit. A figaro **trunk** is likewise the portable canonical line a
+> conversation carries through its forks.
 
 It is written so someone with zero prior context can follow the whole stack from the
 physical log up to the CLI. (A user-facing condensed version lives in the first-party
@@ -127,16 +132,25 @@ interface.
 - **`policy`** (persisted to `{root}/policy.json`) is the *only* figaro side-state — the
   two things not derivable from the figwal trunk tree: `Null` (the root trunk id) and
   `Loadouts map["name@version"]trunkID` (the loadout dedup map).
-- **The tree:** `null` root (genesis, ceremonial, **closed**) → **loadout trunks**
-  (`SpawnChild(null)`, content-versioned via `segment.ValueHash` over the stable loadout
-  patch, dedup'd by `name@version`; each carries a renderable `RoleUser` birth message
-  stamping the loadout chalkboard; **closed**) → **conversation trunks**
-  (`CreateConversation` = `SpawnChild(loadout)`; inherit the loadout's rendered prefix via
-  the fork watermark; **live**).
-- **Cauterization** (`cauterized` = kind is null or loadout): a fork/send "at" a cauterized
-  trunk does **not** re-split it. `Fork`/`ForkAt` redirect to `SpawnChild(owner)` — a fresh
-  child conversation — instead of `ForkTail`/`ForkAt`. This is why "create" and "fork a
-  loadout" are one mechanism.
+- **The full tree (four layers):**
+  - **`null`** — the genesis root, **one per store** (`xwal.CreateTrunks`). Ceremonial,
+    **closed**. Pure structure.
+  - **`loadout(name@content-hash)` trunks** — `SpawnChild(null)`, **one per distinct
+    loadout name + content-version** (content-versioned via `segment.ValueHash` over the
+    stable loadout patch, dedup'd by `name@version` in `policy.Loadouts`). Each carries a
+    renderable `RoleUser` birth message stamping that loadout's chalkboard — `skills.*`,
+    `system.credo`, `system.model`, the `keyLoadoutName`/`keyLoadoutVer` stamp — baked
+    **once** into a shared prefix. **Closed.**
+  - **`conversation` trunks** — `CreateConversation` = `SpawnChild(loadout)`; inherit the
+    loadout's rendered prefix via the fork watermark. **Live.** A conversation whose parent
+    is a loadout is a **top-level aria** (a root of the conversation forest).
+  - **branches** — forks of conversations; a conversation whose parent is *another
+    conversation*. (Still `kindConversation`; the distinction is lineage.)
+- **Cauterization** (`cauterized` = kind is null or loadout): null + loadout trunks are
+  **closed** — you can't append to or continue them; they are structure, not conversation.
+  A fork/send "at" a cauterized trunk does **not** re-split it: `Fork`/`ForkAt` redirect to
+  `SpawnChild(owner)` — a fresh child conversation — instead of `ForkTail`/`ForkAt`. This
+  is why "create" and "fork a loadout" are one mechanism.
 - **The aria id is the trunk id**, returned stable from `Fork`/`ForkAt` as `cont == id`
   (bind-to-trunk: forking your own trunk doesn't move you).
 - **Forest vectors** (`vectorsLocked`): each conversation trunk gets a child-index path
@@ -158,17 +172,22 @@ interface.
   `system.credo`, `system.model`, …).
 - **Fork**: kills the live agent; `ForkAt`/`Fork`; returns `{Parent, Continuation,
   Alternative}` (Continuation == the stable aria id).
-- **Attend/bind**: `pid → trunkID` map, persisted with PID start-time for reuse detection;
-  `Bind`/`Resolve`/`Unbind` RPCs. Bind carries an optional `atMainLT` — a **one-shot pending
-  fork-point** consumed by the next bare prompt. The client resolves "current" via
-  `os.Getppid()`. Attendance is CLI-native: the binding authority is consulted by the client,
-  the conversation RPCs are fully resolved to a trunk before the call.
+- **Attend/bind**: `pid → trunkID` map (the angelus binding registry), persisted with PID
+  start-time for reuse detection; `Bind`/`Resolve`/`Unbind` RPCs. Bind carries an optional
+  `atMainLT` — a **one-shot pending fork-point** consumed by the next bare prompt. The
+  client resolves "current" via `os.Getppid()`. Attendance is **entirely CLI-side state**:
+  the figwal layer knows nothing of it, the binding authority is consulted by the client,
+  and the conversation RPCs are fully resolved to a trunk before the call. `attend ~` (the
+  required literal) is "go home" — `Unbind`; new conversations then default to the live
+  loadout. Attending a **cauterized** (null/loadout) aria is rejected with a nudge toward
+  `attend ~` / `ls -h` / `ls -g`.
 - **The store flock**: the angelus is a strict singleton via an exclusive flock on
   `<store>/arias/.daemon.lock`, acquired **before** the backend opens and before the socket
   binds (`cli/angelus.go:lockStore`). Fixed a TOCTOU where two daemons could race-spawn and
   both open the store, corrupting it.
-- **CLI verbs** (`cli.go`): `send`/`fork`/`attend`(`at`)/`detach`/`kill`/`list`(`ls`)/
-  `show`/`status`/`state`. `send <id>:<LT> -- …` forks at LT then sends to the new branch
+- **CLI verbs** (`cli.go`): `send`/`fork`/`attend`(`at`)/`kill`/`list`(`ls`)/
+  `show`/`status`/`state`. (`detach` was **removed** — `attend ~` is the unbind.)
+  `send <id>:<LT> -- …` forks at LT then sends to the new branch
   (rebinds; `--stay` to park). `fork [<id>[:<LT>]] [--stay]` is the imperative no-prompt
   branch (`runFork`, `manage.go`). `kill <id>` removes a trunk + subtree (`--recursive` for
   live branches). `show [<id>]` takes the aria id **positionally** (bare-N replaced by
@@ -233,7 +252,10 @@ ids are plumbing; you address `T0`.
 angelus binding registry) is treated by the client as a **separate system** — a binding
 authority it consults to resolve "current," not a thing the conversation API is aware of.
 The client owns: `pid → attended trunk` (plus an optional one-shot pending fork-point LT).
-`attend <id>`/`<id>:<LT>`/`:<LT>` set it; `detach` clears it.
+`attend <id>`/`<id>:<LT>`/`:<LT>` set it; **`attend ~`** (the required literal) clears it —
+"go home," after which new conversations default to the live loadout. There is **no
+`detach`** (removed). Attending a cauterized (null/loadout) aria is rejected with a nudge
+toward `attend ~` / `ls -h` / `ls -g`.
 
 ### 4.2 `send` vs `fork`
 - **`send <trunk>:<LT> -- …`** — fork the trunk at `<LT>`, then send to the new branch and
@@ -257,6 +279,7 @@ The client owns: `pid → attended trunk` (plus an optional one-shot pending for
 | `send <trunk>:<LT> -- msg` | — | same |
 | `fork [<trunk>[:<LT>]]` | pid → trunk if bare | imperative tail/interior fork, no message |
 | `attend <id>` / `:<LT>` | pid → trunk | bind shell (+ one-shot pending fork-point) |
+| `attend ~` | — | unbind (go home); next conversation defaults to the live loadout |
 | `kill <trunk>` | — | remove trunk + subtree (`-r` for live branches) |
 | `send` *unattended* / `new` | resolve default/named loadout trunk | spawn a conversation under it, send |
 
@@ -289,13 +312,22 @@ The client owns: `pid → attended trunk` (plus an optional one-shot pending for
   chain: `1`=genesis, `2`=loadout birth, `3+`=conversation turns. `send`/`fork`/`attend`
   `:<LT>` resolves which (possibly closed) trunk owns LT (`OwnerTrunk`); `show` labels each
   unit by the same LT, **realigned** so the shown number is the `:N` fork coordinate.
-- **`list`/`ls` is the conversation forest, with `attend` as `cd`.** Attended, it roots at the
-  bound trunk's whole conversation tree (top-level ancestor) and marks the current with `●`;
-  detached (or `ls /`) it shows the whole forest; a positional id (`fig list <id>`) roots at
-  that subtree. Columns: **ARIA** (mantra or `aria <id>`, tree glyphs +
-  `●`this/`▸`running/`○`idle), **ID**, **LOADOUT**, **VER** (`live` or short content-hash),
-  **FORK** (`@N` = the LT a branch was taken at, blank for roots), **AGE**, **MSGS**, **CTX**,
-  **CWD**. Flags: `-j/--json`, `-a/--all`, `-n <count>` (default 10).
+- **`list`/`ls` is the conversation forest, with `attend` as `cd`.** The shipped navigation
+  surface:
+  - **`figaro ls`** — *current scope*: **attended** → your aria's fork tree (top-level
+    ancestor's whole tree, `●` marking you); **detached** → home (all top-level arias).
+  - **`figaro ls <id>`** — scope to that aria's subtree.
+  - **`-h`/`--home`** — the home view (all top-level arias + branches) **without unbinding**;
+    `●` stays on your real aria.
+  - **`-g`/`--global`** — home **plus** the null + versioned-loadout anchors drawn *above*
+    the conversations (the infrastructure trunks).
+  - **cap:** default = the **10 most-recently-used**; **`-a`/`--all`** removes the cap;
+    **`-n N`** sets it (`-a`/`-n` mutually exclusive).
+  - **`--json`** — a pro/dev escape hatch: the global state of **all** arias incl. null +
+    loadouts, **always**; rejects every other flag.
+  - Columns: **ARIA** (mantra or `aria <id>`, tree glyphs + `●`this/`▸`running/`○`idle),
+    **ID**, **LOADOUT**, **VER** (`live` or short content-hash), **FORK** (`@N` = the LT a
+    branch was taken at, blank for top-level arias), **AGE**, **MSGS**, **CTX**, **CWD**.
 
 ---
 
@@ -308,14 +340,18 @@ The client owns: `pid → attended trunk` (plus an optional one-shot pending for
 - **Aria id = trunk id, stable across forks** (continuation keeps it; `cont == id`).
   Bind-to-trunk: forking your own trunk doesn't move you.
 - **One `send` path**: `send <id>:<LT>` forks-then-sends (rebinds; `--stay`); bare `send`
-  appends. `fork [<id>[:<LT>]] [--stay]` is the imperative no-prompt branch. `attend`/`at`,
-  `detach`, `kill <id>` (+ subtree, `-r`).
-- **Cauterization**: null/loadout trunks never append — forking/sending "at" them spawns a
+  appends. `fork [<id>[:<LT>]] [--stay]` is the imperative no-prompt branch. `attend`/`at`
+  (with `attend ~` to go home — `detach` **removed**), `kill <id>` (+ subtree, `-r`).
+- **Cauterization**: null/loadout trunks are closed — forking/sending "at" them spawns a
   child conversation (`OwnerTrunk` + `SpawnChild`). Create = spawn under a loadout.
-- **Content-versioned loadout trunks**, dedup'd by `name@version`; conversations inherit the
-  loadout chalkboard.
-- **Trunk forest `list`/`ls`** (attend = `cd`), `-j`/`-a`/`-n`; `status -m/-j`, `state -j`,
-  positional `show <id>` with `-n/--last`; LT realigned so shown N == `:N`.
+- **The four-layer loadout tree**: `null` → content-versioned **loadout** trunks (dedup'd by
+  `name@version`) → **top-level arias** (conversations under a loadout) → **branches** (forks
+  of conversations); conversations inherit the loadout chalkboard.
+- **Trunk forest `list`/`ls`** (attend = `cd`): current-scope `ls`, `ls <id>` subtree,
+  `-h/--home` (view without unbinding), `-g/--global` (+ null/loadout anchors), cap
+  `-a/--all` | `-n N` (default 10), `--json` (all arias incl. null + loadouts, rejects other
+  flags); `status -m/-j`, `state -j`, positional `show <id>` with `-n/--last`; LT realigned
+  so shown N == `:N`.
 - **Single-daemon flock** on `<store>/arias/.daemon.lock` (`cli/angelus.go`).
 - **`derive` verb removed** (its values surface in `status --more`; workers still run).
 

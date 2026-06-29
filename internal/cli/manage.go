@@ -17,34 +17,73 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
-// runList prints the conversation forest (live, dormant, and frozen fork
-// points), ordered as a depth-first walk of the fork tree so each trunk's
-// lineage reads top-to-bottom. The leading VECTOR column (0, 0.0, 0.1, …)
-// shows fork depth + branch; MANTRA is the thread's essence. With jsonOut
-// the raw entries are emitted instead.
-func runList(loaded *config.Loaded, jsonOut bool, limit int, rootID string) {
+// lsOpts captures the parsed `ls` flags. Scope: home/global/subtree(rootID);
+// cap: limit (0 = all). See the `list` command for the flag surface.
+type lsOpts struct {
+	jsonOut bool
+	home    bool
+	global  bool
+	limit   int
+	rootID  string
+}
+
+func runList(loaded *config.Loaded, o lsOpts) {
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
+		// --json: the prodev escape hatch — the whole store (incl. the null +
+		// loadout anchors) as one JSON array. No scoping, no rendering.
+		if o.jsonOut {
+			resp, err := acli.ListGlobal(ctx)
+			if err != nil {
+				die("list: %s", err)
+			}
+			figs := resp.Figaros
+			sort.SliceStable(figs, func(i, j int) bool { return vectorLess(figs[i].Vector, figs[j].Vector) })
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(figs); err != nil {
+				die("list --json: %s", err)
+			}
+			return nil
+		}
+
+		boundID := ""
+		if r, rerr := acli.Resolve(ctx, os.Getppid()); rerr == nil && r.Found {
+			boundID = r.FigaroID
+		}
+
+		// Global view: the full null → loadout → conversation → branch tree.
+		if o.global {
+			resp, err := acli.ListGlobal(ctx)
+			if err != nil {
+				die("list: %s", err)
+			}
+			renderGlobal(resp.Figaros, boundID, o.limit)
+			return nil
+		}
+
+		limit := o.limit
 		resp, err := acli.List(ctx)
 		if err != nil {
 			die("list: %s", err)
 		}
 		figs := resp.Figaros
 
-		// `ls`-relative-to-`cd`: with no argument, root at the attended trunk's
-		// whole conversation tree — its top-level ancestor — so you see the
-		// parent spine + siblings with `●` marking where you are (not just
-		// what's below you). Detached shows the whole forest; "/" forces the
-		// whole forest even while attended.
+		// Scope. `<id>` → that subtree. `-h`/--home → the whole forest (● stays
+		// on you). Default: attended scopes to your conversation's tree;
+		// detached shows the whole forest. "/" forces the whole forest.
+		rootID := o.rootID
 		switch {
 		case rootID == "/":
 			rootID = ""
-		case rootID == "":
-			if r, rerr := acli.Resolve(ctx, os.Getppid()); rerr == nil && r.Found {
-				rootID = topLevelAncestor(figs, r.FigaroID)
-			}
+		case rootID != "":
+			// explicit subtree — keep
+		case o.home:
+			rootID = ""
+		case boundID != "":
+			rootID = topLevelAncestor(figs, boundID)
 		}
 
 		// Subtree scope: keep only the named trunk and everything forked
@@ -67,16 +106,6 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int, rootID string) {
 				}
 			}
 			figs = kept
-		}
-
-		if jsonOut {
-			sort.SliceStable(figs, func(i, j int) bool { return vectorLess(figs[i].Vector, figs[j].Vector) })
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(figs); err != nil {
-				die("list --json: %s", err)
-			}
-			return nil
 		}
 
 		// Build the fork forest: index by vector, group children, collect
@@ -200,8 +229,16 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int, rootID string) {
 				branches++
 			}
 		}
-		fmt.Fprintf(os.Stderr, "%d trunk(s), %d branch(es) · showing %d of %d        ●=this shell  ▸=running  ○=idle\n\n",
-			len(roots), branches, shown, total)
+		hint := " · home"
+		if boundID != "" {
+			if o.home {
+				hint = " · home (attending " + boundID + ")"
+			} else {
+				hint = " · attending " + boundID
+			}
+		}
+		fmt.Fprintf(os.Stderr, "%d top-level aria(s), %d branch(es) · showing %d of %d%s        ●=here ▸=running ○=idle\n\n",
+			len(roots), branches, shown, total, hint)
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 		fmt.Fprintf(w, "ARIA\tID\tLOADOUT\tVER\tFORK\tAGE\tMSGS\tCTX\tCWD\n")
@@ -210,10 +247,115 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int, rootID string) {
 		}
 		w.Flush()
 		if limit > 0 && total > limit {
-			fmt.Fprintf(os.Stderr, "\n… %d more (--all to show every trunk)\n", total-limit)
+			fmt.Fprintf(os.Stderr, "\n… %d more (-a for all, -n N for N)\n", total-limit)
 		}
 		return nil
 	})
+}
+
+// renderGlobal prints the full hierarchy — null → loadouts → conversations →
+// branches — by parent links. ● marks the attended aria, or, when detached,
+// the live loadout (your implicit home).
+func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
+	byID := map[string]rpc.FigaroInfoResponse{}
+	childrenOf := map[string][]string{}
+	nullID := ""
+	for _, f := range figs {
+		byID[f.ID] = f
+		childrenOf[f.Parent] = append(childrenOf[f.Parent], f.ID)
+		if f.Kind == "null" {
+			nullID = f.ID
+		}
+	}
+	for p := range childrenOf {
+		ids := childrenOf[p]
+		sort.SliceStable(ids, func(i, j int) bool { return byID[ids[i]].LastActive > byID[ids[j]].LastActive })
+	}
+	liveLoadout := ""
+	if boundID == "" {
+		for _, f := range figs {
+			if f.Kind == "loadout" && f.LoadoutVer == "live" {
+				liveLoadout = f.ID
+				break
+			}
+		}
+	}
+	ppid := os.Getppid()
+	mark := func(f rpc.FigaroInfoResponse) string {
+		if slices.Contains(f.BoundPIDs, ppid) || (f.ID != "" && f.ID == liveLoadout) {
+			return "●"
+		}
+		if f.State == "active" {
+			return "▸"
+		}
+		return "○"
+	}
+	type row struct{ aria, id, detail string }
+	var rows []row
+	var emit func(id, prefix string, isLast, isRoot bool)
+	emit = func(id, prefix string, isLast, isRoot bool) {
+		f := byID[id]
+		glyph := ""
+		if !isRoot {
+			glyph = prefix + "├─"
+			if isLast {
+				glyph = prefix + "└─"
+			}
+		}
+		var label, detail string
+		switch f.Kind {
+		case "null":
+			label, detail = "null", "genesis root · ceremonial"
+		case "loadout":
+			ver := f.LoadoutVer
+			if ver == "" {
+				ver = "?"
+			}
+			label, detail = "loadout "+dash(f.LoadoutName)+"@"+ver, "ceremonial"
+		default:
+			label = f.Mantra
+			if label == "" {
+				label = "aria " + f.ID
+			}
+			detail = fmt.Sprintf("%d msgs", f.MessageCount)
+		}
+		rows = append(rows, row{aria: glyph + mark(f) + " " + truncRunes(label, 46), id: f.ID, detail: detail})
+		cp := prefix
+		if !isRoot {
+			if isLast {
+				cp += "  "
+			} else {
+				cp += "│ "
+			}
+		}
+		ck := childrenOf[id]
+		for i, c := range ck {
+			emit(c, cp, i == len(ck)-1, false)
+		}
+	}
+	if nullID != "" {
+		emit(nullID, "", true, true)
+	}
+	total := len(rows)
+	shown := total
+	if limit > 0 && total > limit {
+		rows = rows[:limit]
+		shown = limit
+	}
+	hint := " · attending " + boundID
+	if boundID == "" {
+		hint = " · home (live loadout)"
+	}
+	fmt.Fprintf(os.Stderr, "global · showing %d of %d%s        ●=here ▸=running ○=idle\n\n", shown, total, hint)
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintf(w, "ARIA\tID\tDETAIL\n")
+	for _, r := range rows {
+		fmt.Fprintf(w, "%s\t%s\t%s\n", r.aria, r.id, r.detail)
+	}
+	w.Flush()
+	if limit > 0 && total > limit {
+		fmt.Fprintf(os.Stderr, "\n… %d more (-a for all, -n N for N)\n", total-limit)
+	}
 }
 
 // vecKey joins a vector into a stable map key (e.g. [0,1] -> "0.1").
@@ -443,6 +585,19 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay bool) {
 // prompt forks there and moves to the new branch). The :<LT> form re-pins the
 // already-bound aria.
 func runAttend(loaded *config.Loaded, spec string) {
+	// "~" is home: drop this shell's binding (the angelus pid→aria map). New
+	// conversations then default to the live loadout. `~` is a required literal;
+	// there is no `detach`.
+	if spec == "~" {
+		WithAngelus(loaded, func(acli *angelus.Client) error {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = acli.Unbind(ctx, os.Getppid())
+			fmt.Fprintln(os.Stderr, "home — unbound; new conversations will use the live loadout")
+			return nil
+		})
+		return
+	}
 	trunk, atMainLT, hasLT, err := parseSendTarget(spec)
 	if err != nil {
 		die("attend: %s", err)
@@ -459,6 +614,17 @@ func runAttend(loaded *config.Loaded, spec string) {
 			trunk = r.FigaroID
 		}
 		if err := acli.Bind(ctx, ppid, trunk, atMainLT); err != nil {
+			// A cauterized anchor (null/loadout) can't be attended — nudge.
+			if r, e := acli.ListGlobal(ctx); e == nil {
+				for _, f := range r.Figaros {
+					if f.ID == trunk && (f.Kind == "null" || f.Kind == "loadout") {
+						die("%s is a %s — a closed anchor, not a conversation; it can't be attended.\n"+
+							"  figaro attend ~     go home (unbind; new conversations use the live loadout)\n"+
+							"  figaro ls -h        lists top-level conversations (use -a or -n N to show all or N most recent in scope)\n"+
+							"  figaro ls -g        show the full hierarchy (null + loadouts + conversations)", trunk, f.Kind)
+					}
+				}
+			}
 			die("attend: %s", err)
 		}
 		if hasLT {
@@ -466,28 +632,6 @@ func runAttend(loaded *config.Loaded, spec string) {
 		} else {
 			fmt.Fprintf(os.Stderr, "attending %s\n", trunk)
 		}
-		return nil
-	})
-}
-
-// runDetach unbinds this shell's PPID from its figaro.
-func runDetach(loaded *config.Loaded) {
-	WithAngelus(loaded, func(acli *angelus.Client) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		ppid := os.Getppid()
-		resp, err := acli.Resolve(ctx, ppid)
-		if err != nil {
-			die("resolve: %s", err)
-		}
-		if !resp.Found {
-			fmt.Fprintln(os.Stderr, "no figaro bound to this shell")
-			return nil
-		}
-		if err := acli.Unbind(ctx, ppid); err != nil {
-			die("unbind: %s", err)
-		}
-		fmt.Fprintf(os.Stderr, "detached from %s\n", resp.FigaroID)
 		return nil
 	})
 }

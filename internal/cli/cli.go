@@ -245,36 +245,58 @@ Flags:
 		Name:    "list",
 		Aliases: []string{"ls"},
 		Group:   "Session",
-		Short:   "List the conversation forest (indented by fork)",
-		Usage:   "list [<id> | /] [-j|--json] [-a|--all] [-n <count>]",
-		Long:    "Lists the conversation forest, `ls`-style relative to where you're\nattended (attend is the `cd`): with no argument it roots at the\ntrunk this shell is bound to and shows only its subtree; detached, it\nshows the whole forest. A positional id roots at that trunk; `/`\nforces the whole forest even while attended.",
+		Short:   "List arias — scoped to where you're attended (attend is `cd`)",
+		Usage:   "list [<id>] [-h|--home | -g|--global] [-a|--all | -n <count>] [-j|--json]",
+		Long: "Lists arias `ls`-style relative to where you're attended (attend is\nthe `cd`).\n\n" +
+			"Scope:\n" +
+			"  (default)     attended → your conversation's tree (● = you);\n" +
+			"                detached → home (all top-level arias)\n" +
+			"  <id>          that aria's subtree\n" +
+			"  -h, --home    the home view (all top-level arias) without unbinding\n" +
+			"  -g, --global  home plus the null + loadout anchors (the full tree)\n\n" +
+			"Cap (mutually exclusive):\n" +
+			"  (default)     10 most-recently-used\n" +
+			"  -a, --all     no cap\n" +
+			"  -n <count>    cap to <count>\n\n" +
+			"  -j, --json    pro/dev: every aria incl. null + loadouts as JSON;\n" +
+			"                takes no other flags",
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
-			{Long: "json", Short: "j", IsBool: true, Description: "Emit entries as JSON"},
-			{Long: "all", Short: "a", IsBool: true, Description: "Show every trunk (default: 10 most recent)"},
-			{Long: "limit", Short: "n", Description: "Max rows to show (default 10)"},
+			{Long: "home", Short: "h", IsBool: true, Description: "Home view: all top-level arias, without unbinding"},
+			{Long: "global", Short: "g", IsBool: true, Description: "Full hierarchy incl. the null + loadout anchors"},
+			{Long: "all", Short: "a", IsBool: true, Description: "Show all (remove the 10-most-recent cap)"},
+			{Long: "limit", Short: "n", Description: "Cap to N rows (default 10)"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Pro/dev: all arias (incl. anchors) as JSON; no other flags"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			limit := 10
-			if v := ctx.Flag("limit"); v != "" {
-				if n, err := strconv.Atoi(v); err == nil && n > 0 {
-					limit = n
-				}
+			o := lsOpts{
+				jsonOut: ctx.BoolFlag("json"),
+				home:    ctx.BoolFlag("home"),
+				global:  ctx.BoolFlag("global"),
+				limit:   10,
+			}
+			if len(ctx.Args) > 0 {
+				o.rootID = ctx.Args[0]
+			}
+			hasN := ctx.Flag("limit") != ""
+			if o.jsonOut && (o.home || o.global || ctx.BoolFlag("all") || hasN || o.rootID != "") {
+				die("ls --json is the global escape hatch and takes no other flags")
+			}
+			if ctx.BoolFlag("all") && hasN {
+				die("ls: -a/--all and -n are mutually exclusive")
+			}
+			if o.home && o.global {
+				die("ls: -h/--home and -g/--global are mutually exclusive")
 			}
 			if ctx.BoolFlag("all") {
-				limit = 0
+				o.limit = 0
+			} else if hasN {
+				if n, err := strconv.Atoi(ctx.Flag("limit")); err == nil && n > 0 {
+					o.limit = n
+				}
 			}
-			var rootID string
-			if len(ctx.Args) > 0 {
-				rootID = ctx.Args[0]
-			} else if ctx.BoolFlag("all") {
-				// -a with no id means "everything" — break out of the attended
-				// scope and show the whole forest (root down), not just the
-				// current tree.
-				rootID = "/"
-			}
-			runList(ld, ctx.BoolFlag("json"), limit, rootID)
+			runList(ld, o)
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
@@ -295,18 +317,6 @@ Flags:
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
-	})
-
-	r.Register(&cmdkit.Command{
-		Name:  "detach",
-		Group: "Session",
-		Short: "Unbind this shell from its current aria",
-		Usage: "detach",
-		Run: func(ctx *cmdkit.RunContext) error {
-			ld := ctx.Extra.(*config.Loaded)
-			runDetach(ld)
-			return nil
-		},
 	})
 
 	r.Register(&cmdkit.Command{

@@ -6,6 +6,11 @@ forks** — the continuation line keeps it. This file is the model: trunks,
 cauterization, LT numbering, and the `attend`/`ls`/`fork`/`kill` surface. For
 how the bytes sit on disk, see [arias.md](arias.md).
 
+> The word **trunk** echoes opera's *aria di baule* — the "trunk aria" (or
+> "suitcase aria") a singer carried from production to production, packed in
+> their travel trunk and slotted in wherever it fit. A figaro **trunk** is
+> likewise the portable canonical line a conversation carries through its forks.
+
 ## A trunk is a path, not a node
 
 The store is a fork *forest* of nodes (`n0/n1/…`). A **trunk is a
@@ -16,23 +21,37 @@ under you — forking your own trunk doesn't relocate you.
 
 Node ids are pure plumbing; nothing in the CLI ever addresses them.
 
-## Trunk kinds (the policy layer)
+## The loadout tree (the policy layer)
 
-figaro layers three kinds over figwal's generic trunks:
+figaro layers **four kinds** over figwal's generic trunks
+(`kindNull`/`kindLoadout`/`kindConversation`; `kindOf` derives the kind from
+lineage, nothing is stored). The full tree, top to bottom:
 
-- **null** — the root genesis trunk (one per store). Ceremonial, **closed**.
-- **loadout** — `SpawnChild` of null; **one per `name@content-version`**
-  (deduped in `policy.json`). Carries the loadout's chalkboard stamp
-  (`system.loadout_name/version`, plus the whole loadout chalkboard:
-  `skills.*`, `system.credo`, `system.model`, …). **Closed.**
-- **conversation** — `SpawnChild` of a loadout; inherits the loadout's
-  rendered prefix (cached once, shared by every conversation under it). The
-  only **live** kind. A conversation inherits the loadout's full chalkboard.
+- **null** — the genesis root, **one per store** (`xwal.CreateTrunks`).
+  Ceremonial, **closed**. Pure structure.
+- **loadout** (`name@content-hash`) — `SpawnChild(null)`; **one per distinct
+  loadout name + content-version** (deduped in `policy.Loadouts`, keyed
+  `"name@version"`). Each carries that loadout's chalkboard stamp baked once
+  into a **shared prefix**: `system.loadout_name`/`system.loadout_version`,
+  plus the whole loadout chalkboard — `skills.*`, `system.credo`,
+  `system.model`, …. **Closed.**
+- **conversation** — `SpawnChild` of a *loadout*; inherits the loadout's
+  rendered prefix via the fork watermark (cached once, shared by every
+  conversation under it). The only **live** kind.
+- **branch** — a fork of a conversation. Also a conversation, just one whose
+  parent is another conversation rather than a loadout.
 
-**Cauterization:** the null and loadout trunks **never append**. Forking or
-sending "at" a cauterized trunk does *not* re-split it — it spawns a **new
-child conversation** beneath it instead. (This is why "create" and "fork a
-loadout" are the same mechanism.)
+**Top-level aria vs branch.** A **top-level aria** is a conversation whose
+parent is a loadout — a root of the conversation forest. A **branch** is a
+conversation whose parent is another conversation. (Both are `kindConversation`
+on disk; the distinction is lineage.)
+
+**Cauterization:** the null and loadout trunks are **closed** — you can't
+append to or continue them; they're structure, not conversation. Forking or
+sending "at" a cauterized trunk does *not* re-split it — it spawns a **fresh
+child conversation** beneath it instead (`Fork`/`ForkAt` redirect to
+`SpawnChild(owner)`). This is why "create" and "fork a loadout" are the same
+mechanism.
 
 ## LT numbering
 
@@ -57,29 +76,51 @@ realigned so `show`'s N == the `:N` you pass).
   `:<LT>` = tail fork. Forking your **own** bound aria rebinds you to the
   continuation (same trunk/mantra, the alternative is the new branch);
   forking any other aria, or `--stay`, leaves your session untouched.
-- **`attend <id>` / `<id>:<LT>` / `:<LT>`** (alias **`at`**) — bind this
-  shell. CLI-native attendance: the pid↔trunk map is the binding authority.
-  An `:<LT>` sets a **one-shot pending fork-point** consumed by the next bare
+- **`attend <id>` / `<id>:<LT>` / `:<LT>`** (alias **`at`**) — bind this shell,
+  like `cd`. CLI-native attendance: the pid↔trunk map (the angelus binding
+  registry) is the binding authority; the figwal layer knows nothing of it. An
+  `:<LT>` sets a **one-shot pending fork-point** consumed by the next bare
   prompt (`fig -- …` forks there and moves to the new branch); `:<LT>` alone
-  re-pins the already-bound aria. **`detach`** unbinds.
+  re-pins the already-bound aria.
+- **`attend ~`** (the literal `~`) — **go home**: unbind the shell. New
+  conversations then default to the live loadout. There is **no `detach`**
+  (removed) — `attend ~` is the unbind. Attending a cauterized (null/loadout)
+  aria is rejected with a nudge toward `attend ~` / `ls -h` / `ls -g`.
 - **`kill <id>`** — remove a trunk **and its whole subtree** (children
   included). Needs `--recursive`/`-r` to remove a trunk that has live
   branches.
 
 ## ls / list — attend is `cd`
 
-`attend` is the `cd` of the forest; `ls`/`list` is relative to it:
+`attend` is the `cd` of the forest; `ls`/`list` navigate relative to it.
 
-- **attended** → `figaro ls` roots at the bound trunk's **whole conversation
-  tree** (its top-level ancestor) and marks the current trunk with `●`.
-- **detached**, or **`ls /`** (or `ls <id>`) → the whole forest (`<id>` roots
-  at that subtree). `fig list <id>` likewise scopes to a subtree.
+**Scope:**
+
+- **`figaro ls`** — current scope. **Attended** → your aria's fork tree
+  (with `●` marking you); **detached** → home (all top-level arias).
+- **`figaro ls <id>`** — scope to that aria's subtree.
+
+**Views (don't unbind you):**
+
+- **`-h`/`--home`** — the home view (all top-level arias + their branches)
+  *without* unbinding; `●` stays on your real aria.
+- **`-g`/`--global`** — home **plus** the null + versioned-loadout anchors,
+  drawn above the conversations (the infrastructure trunks).
+
+**Cap:**
+
+- default = the **10 most-recently-used**; **`-a`/`--all`** removes the cap;
+  **`-n N`** sets it. `-a` and `-n` are mutually exclusive.
+
+**JSON:**
+
+- **`--json`** — a pro/dev escape hatch: the global state of **all** arias
+  incl. null + loadouts, **always**. Rejects every other flag.
 
 Columns: **ARIA** (mantra, or `aria <id>`, with tree glyphs + a
 `●`this-shell / `▸`running / `○`idle marker), **ID** (opaque hex), **LOADOUT**,
 **VER** (`live` or a short content-hash), **FORK** (`@N` — the LT a branch was
-taken at, blank for roots), AGE, MSGS, CTX, CWD. `-j/--json`, `-a/--all`,
-`-n <count>`.
+taken at, blank for top-level arias), AGE, MSGS, CTX, CWD.
 
 ## promote (planned, not built)
 

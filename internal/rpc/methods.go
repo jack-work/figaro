@@ -174,6 +174,7 @@ type FigaroInfoResponse struct {
 	Parent     string `json:"parent,omitempty"`
 	Frozen     bool   `json:"frozen,omitempty"`
 	BranchedLT uint64 `json:"branched_lt,omitempty"` // main-LT this trunk diverged at
+	Kind       string `json:"kind,omitempty"`        // "conversation" | "loadout" | "null" (set in global listings)
 }
 
 // CreateRequest names the loadout for a new aria. The system mints the
@@ -232,9 +233,12 @@ type AttachResponse struct {
 
 // ListRequest options. IDsOnly skips the per-aria chalkboard + forest fills
 // (mantra, cwd, loadout hash, vector) — much cheaper when the caller only needs
-// the ids (e.g. shell completion).
+// the ids (e.g. shell completion). Global also includes the ceremonial anchors
+// (the null genesis trunk + every versioned loadout) with Kind/Parent set, for
+// the `ls -g` hierarchy and the `--json` escape hatch.
 type ListRequest struct {
 	IDsOnly bool `json:"ids_only,omitempty"`
+	Global  bool `json:"global,omitempty"`
 }
 
 type ListResponse struct {

@@ -72,6 +72,17 @@ func (c *Client) ListIDs(ctx context.Context) (*rpc.ListResponse, error) {
 	return &resp, nil
 }
 
+// ListGlobal returns the aria list including the ceremonial anchors (the null
+// genesis trunk + every versioned loadout), each with Kind/Parent set — for the
+// `ls -g` hierarchy and the `--json` escape hatch.
+func (c *Client) ListGlobal(ctx context.Context) (*rpc.ListResponse, error) {
+	var resp rpc.ListResponse
+	if err := c.cli.Call(ctx, rpc.MethodList, rpc.ListRequest{Global: true}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Attach restores a dormant aria without binding a pid.
 func (c *Client) Attach(ctx context.Context, figaroID string) (*rpc.AttachResponse, error) {
 	var resp rpc.AttachResponse

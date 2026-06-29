@@ -638,6 +638,22 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
+	// Global: also surface the ceremonial anchors — the null genesis trunk and
+	// every versioned loadout — that backend.List() filters out. fillFromNode
+	// below stamps their Kind/Loadout/Version/Parent.
+	if req.Global && h.angelus.Backend != nil {
+		for _, n := range h.angelus.Backend.Nodes() {
+			if n.Kind == conversationKind {
+				continue
+			}
+			if _, ok := seen[n.ID]; ok {
+				continue
+			}
+			seen[n.ID] = struct{}{}
+			result = append(result, rpc.FigaroInfoResponse{ID: n.ID, State: "anchor"})
+		}
+	}
+
 	// Forest position for every entry (live + dormant), and surface
 	// frozen fork-point nodes that backend.List omits as "live".
 	if !req.IDsOnly {
@@ -664,10 +680,25 @@ func (h *handlers) fillFromNode(ariaID string, entry *rpc.FigaroInfoResponse) {
 	entry.Parent = n.Parent
 	entry.Frozen = n.Frozen
 	entry.BranchedLT = n.BranchedLT
+	entry.Kind = n.Kind
+	// Ceremonial loadout anchors carry their name + a live/stale label here
+	// (conversations get those from their chalkboard stamp instead).
+	if n.Kind == string(loadoutKind) {
+		entry.LoadoutName = n.Loadout
+		entry.LoadoutVer = loadoutVerLabel(n.Version, h.currentLoadoutHash(n.Loadout))
+	}
 	if n.Frozen && entry.State != "active" {
 		entry.State = "frozen"
 	}
 }
+
+// loadoutKind / nullKind / conversationKind mirror the store's nodeKind string
+// values (the store package's constants are unexported).
+const (
+	nullKind         = "null"
+	loadoutKind      = "loadout"
+	conversationKind = "conversation"
+)
 
 func (h *handlers) bind(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.BindRequest
