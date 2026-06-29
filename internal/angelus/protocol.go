@@ -574,6 +574,11 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 
 // list merges live and dormant arias.
 func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	// IDsOnly skips the per-aria chalkboard + node fills (the slow part) — used
+	// by completion, which only needs the ids. Tolerant of nil/empty params.
+	var req rpc.ListRequest
+	_ = json.Unmarshal(params, &req)
+
 	live := h.angelus.Registry.List()
 	result := make([]rpc.FigaroInfoResponse, 0, len(live))
 	seen := make(map[string]struct{}, len(live))
@@ -595,7 +600,9 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			LastActive:       info.LastActive.UnixMilli(),
 			BoundPIDs:        h.angelus.Registry.BoundPIDs(info.ID),
 		}
-		h.fillFromChalkboard(info.ID, &entry) // mantra + cwd from the saved chalkboard
+		if !req.IDsOnly {
+			h.fillFromChalkboard(info.ID, &entry) // mantra + cwd from the saved chalkboard
+		}
 		result = append(result, entry)
 	}
 
@@ -624,15 +631,19 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 				}
 			}
 
-			h.fillFromChalkboard(aria.ID, &entry)
+			if !req.IDsOnly {
+				h.fillFromChalkboard(aria.ID, &entry)
+			}
 			result = append(result, entry)
 		}
 	}
 
 	// Forest position for every entry (live + dormant), and surface
 	// frozen fork-point nodes that backend.List omits as "live".
-	for i := range result {
-		h.fillFromNode(result[i].ID, &result[i])
+	if !req.IDsOnly {
+		for i := range result {
+			h.fillFromNode(result[i].ID, &result[i])
+		}
 	}
 
 	return rpc.ListResponse{Figaros: result}, nil

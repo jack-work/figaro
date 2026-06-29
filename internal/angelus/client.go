@@ -62,6 +62,16 @@ func (c *Client) List(ctx context.Context) (*rpc.ListResponse, error) {
 	return &resp, nil
 }
 
+// ListIDs returns the aria list with only ids populated (skips the expensive
+// per-aria chalkboard/forest fills). For completion and other id-only callers.
+func (c *Client) ListIDs(ctx context.Context) (*rpc.ListResponse, error) {
+	var resp rpc.ListResponse
+	if err := c.cli.Call(ctx, rpc.MethodList, rpc.ListRequest{IDsOnly: true}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Attach restores a dormant aria without binding a pid.
 func (c *Client) Attach(ctx context.Context, figaroID string) (*rpc.AttachResponse, error) {
 	var resp rpc.AttachResponse

@@ -230,6 +230,13 @@ type AttachResponse struct {
 	Endpoint Endpoint `json:"endpoint"`
 }
 
+// ListRequest options. IDsOnly skips the per-aria chalkboard + forest fills
+// (mantra, cwd, loadout hash, vector) — much cheaper when the caller only needs
+// the ids (e.g. shell completion).
+type ListRequest struct {
+	IDsOnly bool `json:"ids_only,omitempty"`
+}
+
 type ListResponse struct {
 	Figaros []FigaroInfoResponse `json:"figaros"`
 }

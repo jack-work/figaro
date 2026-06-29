@@ -24,7 +24,7 @@ func softFetchAriaIDs() []string {
 		return nil
 	}
 	defer acli.Close()
-	resp, err := acli.List(ctx)
+	resp, err := acli.ListIDs(ctx)
 	if err != nil {
 		return nil
 	}
