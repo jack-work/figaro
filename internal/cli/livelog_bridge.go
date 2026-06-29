@@ -60,7 +60,6 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, 
 
 func (t *livelogTurn) apply(r aria.AriaRead)  { t.client.Apply(r) }
 func (t *livelogTurn) setDesync(fn func(int)) { t.client.OnDesync = fn }
-func (t *livelogTurn) cursor() int            { return t.client.Cursor() }
 func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 
 func (t *livelogTurn) tick() {

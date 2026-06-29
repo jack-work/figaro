@@ -142,3 +142,35 @@ func TestServer_PatchOnGrowth(t *testing.T) {
 		t.Fatalf("client patch fold: got %q", got)
 	}
 }
+
+// View must return closed messages in LT order even when they arrive
+// out of order — a live-sealed message (this session) followed by a
+// catch-up Read of older history. Otherwise the transcript renders the
+// newest turn above older ones.
+func TestClient_ViewSortedByLT(t *testing.T) {
+	c := NewClient()
+	// Live-seal the current turn first (higher LTs).
+	c.Apply(AriaRead{Committed: []Committed{{LT: 7, Role: "user", Nodes: []livedoc.Node{prose("seven")}}}})
+	c.Apply(AriaRead{Committed: []Committed{{LT: 8, Role: "assistant", Nodes: []livedoc.Node{prose("eight")}}}})
+	// Then a catch-up Read(0) brings older history.
+	c.Apply(AriaRead{Committed: []Committed{
+		{LT: 1, Role: "user", Nodes: []livedoc.Node{prose("one")}},
+		{LT: 2, Role: "assistant", Nodes: []livedoc.Node{prose("two")}},
+		{LT: 7, Role: "user", Nodes: []livedoc.Node{prose("seven")}},      // already seen → skipped
+		{LT: 8, Role: "assistant", Nodes: []livedoc.Node{prose("eight")}}, // already seen → skipped
+	}})
+	v := c.View()
+	var got []int
+	for _, m := range v.Closed {
+		got = append(got, m.LT)
+	}
+	want := []int{1, 2, 7, 8}
+	if len(got) != len(want) {
+		t.Fatalf("View closed LTs = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("View closed LTs = %v, want %v (out of order)", got, want)
+		}
+	}
+}

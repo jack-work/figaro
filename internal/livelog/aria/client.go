@@ -1,6 +1,7 @@
 package aria
 
 import (
+	"sort"
 	"sync"
 
 	"github.com/jack-work/figaro/internal/livedoc"
@@ -127,7 +128,12 @@ type View struct {
 func (c *Client) View() View {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	v := View{Closed: append([]Message(nil), c.closed...)}
+	closed := append([]Message(nil), c.closed...)
+	// c.closed is in arrival order, which interleaves when a live-sealed message
+	// (this session) precedes a catch-up Read of older history. Sort by LT so the
+	// transcript renders the conversation in order.
+	sort.SliceStable(closed, func(i, j int) bool { return closed[i].LT < closed[j].LT })
+	v := View{Closed: closed}
 	if c.openLT != 0 {
 		v.Open = &Message{LT: c.openLT, Role: c.openRole, Nodes: c.openNodes()}
 	}

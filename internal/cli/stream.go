@@ -103,11 +103,15 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 					fmt.Fprintln(os.Stderr, "\n"+d.Reason)
 				}
 			}
-			// Settle when the agent is idle AND our prompt's turn has committed
-			// past the cursor Qua gave us — so a turn that ended with more work
-			// queued, or a stale idle from before our prompt, can't end us early.
-			// An error always settles.
-			settled := isErr || (sendCursor >= 0 && d.Idle && lt.cursor() > sendCursor)
+			// Settle when the agent reports idle (inbox empty, no turn running):
+			// a turn that ended with our steer still queued reports idle=false,
+			// so we correctly wait for our own turn. We only act once our prompt
+			// has been submitted (sendCursor set after Qua returns), so a
+			// turn.done that predates our send can't end us early. An error
+			// always settles. (Do NOT gate on lt.cursor() advancing — the final
+			// commit can arrive via async desync recovery AFTER this one-shot
+			// turn.done, which would strand us and hang the command.)
+			settled := isErr || (sendCursor >= 0 && d.Idle)
 			if !settled {
 				break
 			}
