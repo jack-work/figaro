@@ -58,7 +58,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		bookendFn = func() string { return statusBanner(figaroID, startedAt) }
 	}
 
-	lt := newLivelogTurn(os.Stdout, width, height, &set, bookendFn)
+	lt := newLivelogTurn(os.Stdout, width, height, &set, bookendFn, dimRule)
 
 	// The renderer owns the cursor and assumes one row per line: disable the
 	// terminal's auto-margin so a full-width row never wraps, and hide the
@@ -74,7 +74,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 
 	// Static opening rule: a single dim horizontal line separating the user's
 	// shell prompt from the response stream. Printed once, lives in scrollback.
-	fmt.Fprintln(os.Stdout, term.Dim(strings.Repeat("─", width)))
+	fmt.Fprintln(os.Stdout, dimRule())
 
 	// The renderer is single-threaded; the notify pump, the spinner ticker, the
 	// SIGWINCH handler, and keybindings all serialize on mu.
@@ -261,6 +261,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		fmt.Fprintln(os.Stderr, "interrupted")
 	}
 }
+
+// dimRule returns a plain dim full-width horizontal rule — the opening rule and
+// the seal after a non-assistant (user/steering) message.
+func dimRule() string { return term.Dim(strings.Repeat("─", termWidth())) }
 
 // statusBanner returns a full-width dimmed bookend: "─── id · time ───…"
 // extended with box-drawing dashes to the viewport width.

@@ -28,11 +28,12 @@ type livelogTurn struct {
 	pendingSeals []aria.Message // closed while in the pager; flushed inline on exit
 }
 
-func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend func() string) *livelogTurn {
+func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, rule func() string) *livelogTurn {
 	view := &ariaView{settings: settings}
 	term := ldrender.NewANSITerminal(out, w, h)
 	in := ldrender.NewInline(term, view)
 	in.Bookend = bookend
+	in.Rule = rule
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view}
 	t.tr = newTranscript(out, w, h, view, t.client)
 	t.client.OnClosed = func(m aria.Message) {

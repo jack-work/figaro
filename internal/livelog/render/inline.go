@@ -52,13 +52,14 @@ func diffRange(old, next []string) (first, last int) {
 type Inline struct {
 	term    Terminal
 	view    NodeView
-	Bookend func() string
+	Bookend func() string // sealed after an assistant message (the id·time watermark)
+	Rule    func() string // sealed after any other message (a plain full-width rule)
 
 	tick int
 
 	// Open-message live region:
 	liveLT int
-	role   string   // open message's role; the bookend rides "assistant" only
+	role   string   // open message's role; selects Bookend (assistant) vs Rule
 	live   []string // rows on screen for the open message
 	vt     int      // rows of the live region scrolled above the viewport
 	cur    int      // cursor row within the live region (0 = top)
@@ -116,9 +117,9 @@ func (i *Inline) printMessage(m aria.Message) {
 		return
 	}
 	rows := append([]string{""}, body...)
-	if m.Role == "assistant" && i.Bookend != nil {
+	if seal := i.seal(m.Role); seal != "" {
 		w, _ := i.term.Size()
-		rows = append(rows, "", clip(i.Bookend(), w))
+		rows = append(rows, "", clip(seal, w))
 	}
 	io.WriteString(i.term, strings.Join(rows, "\r\n")+"\r\n")
 }
@@ -165,11 +166,24 @@ func (i *Inline) compose(nodes []livedoc.Node) []string {
 	rows := make([]string, 0, len(body)+3)
 	rows = append(rows, "")
 	rows = append(rows, body...)
-	if i.role == "assistant" && i.Bookend != nil {
+	if seal := i.seal(i.role); seal != "" {
 		w, _ := i.term.Size()
-		rows = append(rows, "", clip(i.Bookend(), w))
+		rows = append(rows, "", clip(seal, w))
 	}
 	return rows
+}
+
+// seal returns the line that closes a message of the given role: the id·time
+// bookend after an assistant message, otherwise a plain full-width rule (so the
+// user's prompt is still separated from the reply). "" if neither is configured.
+func (i *Inline) seal(role string) string {
+	if role == "assistant" && i.Bookend != nil {
+		return i.Bookend()
+	}
+	if i.Rule != nil {
+		return i.Rule()
+	}
+	return ""
 }
 
 func (i *Inline) renderNodes(nodes []livedoc.Node) []string {
