@@ -16,6 +16,10 @@ type Notification struct {
 
 // DoneEntry signals the turn went idle. Params for MethodTurnDone.
 type DoneEntry struct {
-	Reason string `json:"reason"`         // stop reason, or an error string
-	Idle   bool   `json:"idle,omitempty"` // true when the agent has no more queued work
+	Reason string `json:"reason"` // stop reason, or an error string
+	// Idle is true when the agent has no more queued work. A pointer so the
+	// client can distinguish "absent" (a daemon predating this field — treat as
+	// settled, the pre-steering behavior) from an explicit false (a turn that
+	// ended with a steer still queued — keep waiting).
+	Idle *bool `json:"idle,omitempty"`
 }

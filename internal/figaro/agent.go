@@ -466,10 +466,11 @@ func (a *Agent) endTurn(reason string) {
 	a.liveMu.Lock()
 	a.liveActive = false
 	a.liveMu.Unlock()
+	idle := a.inbox.IsIdle()
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
 		Method:  rpc.MethodTurnDone,
-		Params:  rpc.DoneEntry{Reason: reason, Idle: a.inbox.IsIdle()},
+		Params:  rpc.DoneEntry{Reason: reason, Idle: &idle},
 	})
 
 	a.mu.Lock()
