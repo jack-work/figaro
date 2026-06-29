@@ -34,8 +34,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -187,7 +189,13 @@ func runWizard(loaded *config.Loaded, data rpc.ErrorData) error {
 	fmt.Fprintln(os.Stderr, dim("     when you don't pass flags. We'll make one for you and set it as default."))
 	fmt.Fprintln(os.Stderr)
 
-	loadoutName, err := createDefaultLoadout(loaded, chosen.provider)
+	// Try to fetch the live model list and let the user pick. If the
+	// listing fails for any reason (transient API hiccup, OAuth token
+	// not yet active, provider missing a /models endpoint), we silently
+	// fall back to defaultModelFor so first-run never blocks on it.
+	chosenModel := pickModelOrFallback(loaded, chosen.provider)
+
+	loadoutName, err := createDefaultLoadout(loaded, chosen.provider, chosenModel)
 	if err != nil {
 		return fmt.Errorf("loadout: %w", err)
 	}
@@ -335,13 +343,18 @@ func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
 
 // createDefaultLoadout writes loadouts/default.toml (or
 // default-<provider>.toml if the former exists) and points
-// config.toml's default_loadout at it. Returns the loadout name.
-func createDefaultLoadout(loaded *config.Loaded, providerName string) (string, error) {
+// config.toml's default_loadout at it. model is the explicit model id
+// to write under [system]; pass "" to use defaultModelFor(providerName).
+// Returns the loadout name.
+func createDefaultLoadout(loaded *config.Loaded, providerName, model string) (string, error) {
 	name := "default"
 	if _, err := os.Stat(loaded.LoadoutPath(name)); err == nil {
 		name = "default-" + providerName
 	}
-	if err := writeStarterLoadout(loaded.LoadoutPath(name), providerName); err != nil {
+	if model == "" {
+		model = defaultModelFor(providerName)
+	}
+	if err := writeStarterLoadout(loaded.LoadoutPath(name), providerName, model); err != nil {
 		return "", fmt.Errorf("scaffold loadout: %w", err)
 	}
 	if err := patchDefaultLoadout(loaded.ConfigPath, name); err != nil {
@@ -357,7 +370,9 @@ func createDefaultLoadout(loaded *config.Loaded, providerName string) (string, e
 // the skills directory via `skills = { dirName = "skills" }` so the
 // agent sees the howto on every new aria — a brand-new user can run
 // `figaro -- teach me how to use figaro` and the lesson kicks off.
-func writeStarterLoadout(path, providerName string) error {
+//
+// model is written as [system].model when non-empty.
+func writeStarterLoadout(path, providerName, model string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
@@ -371,8 +386,8 @@ skills = { dirName = "skills" }
 [system]
 provider = %q
 `, providerName)
-	if m := defaultModelFor(providerName); m != "" {
-		body += fmt.Sprintf("model = %q\n", m)
+	if model != "" {
+		body += fmt.Sprintf("model = %q\n", model)
 	}
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		return err
@@ -464,3 +479,45 @@ func isStdinTTY() bool {
 	}
 	return (info.Mode() & os.ModeCharDevice) != 0
 }
+
+// pickModelOrFallback queries the freshly-credentialed provider for
+// its model list and prompts the user to pick one. On any failure
+// (no network, listing endpoint missing, user dismisses the prompt)
+// it falls back to defaultModelFor(providerName). Never blocks the
+// wizard — the loadout always gets *some* model.
+func pickModelOrFallback(loaded *config.Loaded, providerName string) string {
+	fallback := defaultModelFor(providerName)
+
+	prov, _ := buildProvider(loaded, providerName)
+	if prov == nil {
+		return fallback
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	models, err := prov.Models(ctx)
+	if err != nil || len(models) == 0 {
+		fmt.Fprintln(os.Stderr, dim("     (could not list models; using built-in default "+fallback+")"))
+		return fallback
+	}
+
+	// Newest-first when ids carry a sortable suffix; otherwise stable.
+	sort.SliceStable(models, func(i, j int) bool { return models[i].ID > models[j].ID })
+
+	opts := make([]tui.ProviderOption, len(models))
+	for i, m := range models {
+		label := m.ID
+		hint := m.Name
+		if i == 0 {
+			hint = strings.TrimSpace(hint + " (default)")
+		}
+		opts[i] = tui.ProviderOption{Key: m.ID, Label: label, Hint: hint}
+	}
+
+	fmt.Fprintln(os.Stderr, dim("     Choose a model (Enter for the newest):"))
+	key, err := tui.PickProvider("Model", opts)
+	if err != nil || key == "" {
+		return fallback
+	}
+	return key
+}
+

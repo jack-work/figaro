@@ -313,6 +313,22 @@ Offer one concrete next step calibrated to their score — e.g.
 "want to set up a skill for your current project?" for a coder, or
 "want to try a longer conversation?" for someone newer.
 
+### Optional finishing touch — shell completions
+
+Before offering to delete this skill, mention tab-completion. It's
+opt-in because Go's `go install` doesn't touch the user's shell.
+
+> "One last thing: `figaro completion install` writes tab-completion
+> for your shell (bash / zsh / fish). On a bare-bones WSL or minimal
+> container, bash users may also need `sudo apt install bash-completion`
+> for the loader hook to fire. Want me to run it?"
+
+If yes — run `figaro completion install` for them and read back the
+"wrote ... completion to ..." line plus any note the command prints
+(e.g. zsh needs an `fpath` line in `.zshrc` before `compinit`).
+
+If no — move on. It's reversible: `rm` the file later if they hate it.
+
 ### Then — offer to remove this skill
 
 This onboarding skill is **not meant to stick around**. Every aria
