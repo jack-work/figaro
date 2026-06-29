@@ -33,6 +33,18 @@ func runList(loaded *config.Loaded, jsonOut bool, limit int, rootID string) {
 		}
 		figs := resp.Figaros
 
+		// `ls`-relative-to-`cd`: with no argument, root at the attended trunk
+		// (subtree only); detached, show the whole forest. "/" forces the
+		// whole forest even while attended.
+		switch {
+		case rootID == "/":
+			rootID = ""
+		case rootID == "":
+			if r, rerr := acli.Resolve(ctx, os.Getppid()); rerr == nil && r.Found {
+				rootID = r.FigaroID
+			}
+		}
+
 		// Subtree scope: keep only the named trunk and everything forked
 		// below it (vectors with its vector as a prefix).
 		if rootID != "" {

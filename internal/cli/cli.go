@@ -67,6 +67,9 @@ func Run(progName string, args []string) {
 	os.Exit(code)
 }
 
+// figaro:
+// There has to be a better way to maintain these, like in declarative configurations perhaps.
+// Evaluate the necessity and the churn in the source's version history.
 func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 	r := cmdkit.NewRouter(progName)
 	r.Extra = loaded
@@ -243,8 +246,8 @@ Flags:
 		Aliases: []string{"ls"},
 		Group:   "Session",
 		Short:   "List the conversation forest (indented by fork)",
-		Usage:   "list [<id>] [-j|--json] [-a|--all] [-n <count>]",
-		Long:    "Lists the conversation forest. With a positional aria id, scopes to\nthat trunk and everything forked below it (the subtree rooted there).",
+		Usage:   "list [<id> | /] [-j|--json] [-a|--all] [-n <count>]",
+		Long:    "Lists the conversation forest, `ls`-style relative to where you're\nattended (attend is the `cd`): with no argument it roots at the\ntrunk this shell is bound to and shows only its subtree; detached, it\nshows the whole forest. A positional id roots at that trunk; `/`\nforces the whole forest even while attended.",
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit entries as JSON"},
@@ -274,6 +277,7 @@ Flags:
 
 	r.Register(&cmdkit.Command{
 		Name:    "attend",
+		Aliases: []string{"at"},
 		Group:   "Session",
 		Short:   "Bind this shell to an existing aria (optionally at an LT)",
 		Usage:   "attend <id> | <id>:<LT> | :<LT>",
