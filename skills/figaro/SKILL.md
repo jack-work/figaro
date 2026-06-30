@@ -33,11 +33,33 @@ the freshly-built binary on `PATH` from the Nix store, isolated to taste:
 
 ```
 nix develop                  # worktree binary; real config/runtime/state/hush
-nix develop .#share-hush     # isolate runtime/config/state; share hush (real keys)
-nix develop .#share-config   # isolate runtime/state; share config + hush  ← usual choice
+nix develop .#share-hush     # isolate runtime/config/state; share hush — real OAuth + keys
+nix develop .#share-config   # isolate runtime/state + run an embedded dev hush; share config
 nix develop .#clean          # fully hermetic; triggers first-run flow
 nix develop .#swap           # swap nix-profile to the worktree binary, restore on exit
 ```
+
+The two "share-*" presets cross opposite axes — pick by what you're
+actually exercising:
+
+- **`share-hush`** keeps the real hush agent (and so real provider OAuth
+  registrations + AGE-encrypted keys) reachable, but isolates config —
+  you'll hit the first-run loadout picker. Use this when the *credential
+  resolution / refresh path* is what you want to test against a live
+  provider.
+- **`share-config`** keeps the real loadouts/`providers/*.toml` reachable
+  but runs an **embedded dev hush** rooted at `$FIGARO_DEV_ROOT/hush` with
+  its own AGE identity, re-authenticated per shell (`fig login <provider>`
+  or `ANTHROPIC_API_KEY=…`). AGE-ENC values in the shared config can't be
+  decrypted by the fresh identity, so plan to re-auth. Use this when
+  you're iterating on loadout/agent logic and don't care about exercising
+  the real refresh wire.
+- **`clean`** isolates everything including hush — the truth-test for the
+  first-run flow and any auth migration.
+
+All three persist their dev root across shell entries (`$FIGARO_DEV_ROOT`
+is stable, not a fresh tmpdir). `rm -rf $FIGARO_STATE_DIR` for a clean
+slate.
 
 Inside a shell `figaro`/`fig`/`q` resolve to the same store binary; `which
 figaro` should show `/nix/store/...`, not `~/.nix-profile`. Four knobs
@@ -58,8 +80,10 @@ command). The shell here is zsh — globs abort on no-match.
 
 1. Change one slice. Keep commits itemized and self-contained.
 2. `go build ./... && go vet ./... && go test ./...` — keep it green.
-3. Exercise it in a `.#share-config` shell (or a temp-dir `go build`), with
-   `FIGARO_WIRE_DIR` when the wire matters.
+3. Exercise it in a dev shell (or a temp-dir `go build`), with
+   `FIGARO_WIRE_DIR` when the wire matters. Pick the preset by what's
+   under test: `.#share-hush` for credential/refresh work, `.#share-config`
+   for loadout/agent iteration, `.#clean` for first-run / migration paths.
 4. Update the docs that the change touched — this skill and its sections are
    the canonical record. A skill that lies is worse than no skill.
 
