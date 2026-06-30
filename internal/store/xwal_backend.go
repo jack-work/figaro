@@ -364,9 +364,41 @@ func (b *XwalBackend) List() ([]AriaInfo, error) {
 			info.Meta = m
 			info.MessageCount = m.MessageCount
 		}
+		// SINGLE SOURCE OF TRUTH: the count is the canonical conversational
+		// message count of the live head's IR — not whatever a stale sidecar
+		// (possibly written by an older binary with a different convention, or
+		// before a heal) happens to hold. The head is now a single
+		// deterministic leaf (figwal multi-head fix + heal), so this is
+		// order-independent. Self-heal the sidecar when it disagrees.
+		if c, ok := b.canonicalCount(n.ID); ok {
+			info.MessageCount = c
+			if info.Meta != nil && info.Meta.MessageCount != c {
+				m := *info.Meta
+				m.MessageCount = c
+				_ = b.SetMeta(n.ID, &m)
+				info.Meta = &m
+			}
+		}
 		out = append(out, info)
 	}
 	return out, nil
+}
+
+// canonicalCount recomputes a trunk's conversational message count from its
+// live head IR via message.CountMessages — the single derivation every count
+// path shares. Returns false if the head can't be opened (the sidecar value,
+// if any, then stands).
+func (b *XwalBackend) canonicalCount(id string) (int, bool) {
+	lg, err := b.Open(id)
+	if err != nil {
+		return 0, false
+	}
+	entries := lg.Read()
+	msgs := make([]message.Message, 0, len(entries))
+	for _, e := range entries {
+		msgs = append(msgs, e.Payload)
+	}
+	return message.CountMessages(msgs), true
 }
 
 func (b *XwalBackend) Remove(ariaID string, recursive bool) error {

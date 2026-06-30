@@ -28,6 +28,46 @@ const (
 // IsGenesis reports whether m is a structural birth message.
 func IsGenesis(m Message) bool { return m.Role == RoleGenesis }
 
+// IsCeremonial reports whether m is a structural/inherited marker rather than
+// a conversational message: the root genesis sentinel, or the loadout-birth
+// (a RoleUser message with no renderable content — it carries only the
+// loadout's chalkboard stamp, inherited by every conversation in the shared
+// prefix). These anchor the IR but are not turns, so the conversation's
+// message count must not include them.
+func IsCeremonial(m Message) bool {
+	if m.Role == RoleGenesis {
+		return true
+	}
+	if m.Role == RoleUser {
+		for _, c := range m.Content {
+			if c.Type == ContentProse && c.Text != "" {
+				return false
+			}
+			if c.Type == ContentImage || c.Type == ContentToolResult {
+				return false
+			}
+		}
+		return true // empty user marker (loadout birth)
+	}
+	return false
+}
+
+// CountMessages is the SINGLE SOURCE OF TRUTH for a conversation's message
+// count: the number of conversational (non-ceremonial) messages in an IR
+// timeline. Every derivation (live FigaroInfo, the meta sidecar, the durable
+// usage/meta snapshots) routes through this so the count is identical no
+// matter where it is computed — and, because the figwal head is now a single
+// deterministic leaf, it does not depend on fork head-selection order.
+func CountMessages(msgs []Message) int {
+	n := 0
+	for _, m := range msgs {
+		if !IsCeremonial(m) {
+			n++
+		}
+	}
+	return n
+}
+
 // InterruptReason classifies why a system.interrupt sentinel was
 // inserted. Travels on each interrupt content block as Text-prefixed
 // metadata; kept open-coded so unknown values pass through.
