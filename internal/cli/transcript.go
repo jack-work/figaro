@@ -39,10 +39,16 @@ type transcript struct {
 
 	inSearch bool
 	query    string
+
+	// rowCache memoizes the rendered rows of committed (immutable) messages by
+	// LT, so the expensive markdown render runs once per message instead of on
+	// every frame. Invalidated wholesale when the width changes (cacheW).
+	rowCache map[int][]string
+	cacheW   int
 }
 
 func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client) *transcript {
-	return &transcript{out: out, view: view, client: client, w: w, h: h}
+	return &transcript{out: out, view: view, client: client, w: w, h: h, rowCache: map[int][]string{}}
 }
 
 // enter switches to the alternate screen and draws the transcript at the bottom.
@@ -68,28 +74,47 @@ func (t *transcript) resize(w, h int) {
 }
 
 // lines renders the whole conversation (committed messages + the open one) to
-// physical rows, separated by a rule.
+// physical rows, separated by a rule. Committed messages are immutable, so their
+// rendered rows are cached by LT — only the open message renders every frame.
 func (t *transcript) lines() []string {
+	if t.cacheW != t.w { // width changed: cached rows are stale
+		t.rowCache = map[int][]string{}
+		t.cacheW = t.w
+	}
 	v := t.client.View()
 	var out []string
-	emit := func(m aria.Message) {
-		for k, n := range m.Nodes {
-			if k > 0 {
-				out = append(out, "")
-			}
-			for _, l := range t.view.Render(n, t.w, t.tick) {
-				out = append(out, clipToWidth(l, t.w))
-			}
-		}
-		out = append(out, "", dimTransRule(t.w), "")
-	}
+	rule := func() { out = append(out, "", dimTransRule(t.w), "") }
 	for _, m := range v.Closed {
-		emit(m)
+		rows, ok := t.rowCache[m.LT]
+		if !ok {
+			rows = t.renderMsg(m)
+			t.rowCache[m.LT] = rows
+		}
+		out = append(out, rows...)
+		rule()
 	}
 	if v.Open != nil {
-		emit(*v.Open)
+		out = append(out, t.renderMsg(*v.Open)...)
+		rule()
 	}
 	return out
+}
+
+// renderMsg renders one message's nodes to clipped physical rows (blank line
+// between nodes). The spinner tick only affects a running tool, which lives on
+// the open message — committed messages render identically every time, so their
+// result is safe to cache.
+func (t *transcript) renderMsg(m aria.Message) []string {
+	var rows []string
+	for k, n := range m.Nodes {
+		if k > 0 {
+			rows = append(rows, "")
+		}
+		for _, l := range t.view.Render(n, t.w, t.tick) {
+			rows = append(rows, clipToWidth(l, t.w))
+		}
+	}
+	return rows
 }
 
 func (t *transcript) render() {

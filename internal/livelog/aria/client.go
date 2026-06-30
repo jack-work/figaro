@@ -44,6 +44,23 @@ func (c *Client) Cursor() int {
 	return c.lastCommittedLT
 }
 
+// OpenAnimating reports whether the open message has a running tool — i.e. a
+// spinner that needs the periodic tick repaint. When false, a renderer can skip
+// its timer-driven redraw entirely (content updates still arrive via Apply).
+func (c *Client) OpenAnimating() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.openLT == 0 {
+		return false
+	}
+	for _, n := range c.openBlock {
+		if n.Type == livedoc.NodeTool && n.Status == livedoc.StatusRunning {
+			return true
+		}
+	}
+	return false
+}
+
 // Apply folds one page.
 func (c *Client) Apply(r AriaRead) {
 	c.mu.Lock()

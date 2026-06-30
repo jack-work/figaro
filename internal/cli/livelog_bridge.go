@@ -64,8 +64,13 @@ func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 
 func (t *livelogTurn) tick() {
 	if t.tr.active {
-		t.tr.tick++
-		t.tr.render()
+		// Only the spinner needs the periodic repaint; if nothing is animating,
+		// skip it so a big transcript doesn't re-render every frame at idle.
+		// Content changes still repaint via the OnLive/OnClosed hooks.
+		if t.client.OpenAnimating() {
+			t.tr.tick++
+			t.tr.render()
+		}
 	} else {
 		t.in.Tick(t.open)
 	}
