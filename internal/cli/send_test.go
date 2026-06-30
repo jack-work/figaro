@@ -81,6 +81,24 @@ func TestExtractSendFlags(t *testing.T) {
 			wantRest: []string{"--", "p"},
 		},
 		{
+			name:     "forget long",
+			in:       []string{"--forget", "--", "p"},
+			wantOpts: sendOpts{forget: true},
+			wantRest: []string{"--", "p"},
+		},
+		{
+			name:     "forget short",
+			in:       []string{"-f", "--", "p"},
+			wantOpts: sendOpts{forget: true},
+			wantRest: []string{"--", "p"},
+		},
+		{
+			name:     "bundled rf",
+			in:       []string{"-rf", "--", "p"},
+			wantOpts: sendOpts{raw: true, forget: true},
+			wantRest: []string{"--", "p"},
+		},
+		{
 			name:     "dry-run",
 			in:       []string{"-x", "-n", "--", "ls"},
 			wantOpts: sendOpts{exec: true, dryRun: true},

@@ -147,7 +147,7 @@ labeled by their figaro LT (the coordinate send/fork <id>:<LT> target).
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-x] [-n] [-y] -- <prompt>",
+		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-x] [-n] [-y] [-f] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding). With --id, targets
 the named aria, which must already exist (aria ids are system-minted).
@@ -171,13 +171,17 @@ Flags:
                  because the script governs its own output.
   -n, --dry-run  --exec only: print the script without running it.
   -y, --yes      --exec only: skip the confirmation prompt.
+  -f, --forget   Submit the prompt and exit immediately. Do not attach
+                 to the stream; do not send figaro.interrupt on Ctrl-C.
+                 Use ` + "`figaro listen <id>`" + ` later to follow.
 
   figaro send -- <prompt>              prompt the pid-bound aria, rich
   figaro send --id myid -- <prompt>    prompt a named aria (rich)
   figaro send -r -- <prompt>           bound aria, raw stream
   figaro send -e -- <prompt>           ephemeral, rich
   figaro send -er -- <prompt>          ephemeral + raw (was: ` + "`figaro plain`" + `)
-  figaro send -ex -y -- <instruction>  ephemeral exec, no confirmation`,
+  figaro send -ex -y -- <instruction>  ephemeral exec, no confirmation
+  figaro send -f --id myid -- <prompt> fire-and-forget; do not stream`,
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)

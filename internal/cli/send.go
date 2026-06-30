@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
@@ -30,6 +32,7 @@ type sendOpts struct {
 	exec      bool
 	dryRun    bool // --exec only
 	skipYes   bool // --exec only
+	forget    bool // --forget / -f: submit and exit; do not stream
 }
 
 // extractSendFlags scans a PassRaw arg list for the send command's
@@ -68,7 +71,7 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			allBool := true
 			for _, r := range letters {
 				switch r {
-				case 'e', 'r', 'v', 'o', 't', 'x', 'n', 'y':
+				case 'e', 'r', 'v', 'o', 't', 'x', 'n', 'y', 'f':
 					// known bool short
 				default:
 					allBool = false
@@ -144,6 +147,10 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			continue
 		case a == "--yes", a == "-y":
 			opts.skipYes = true
+			i++
+			continue
+		case a == "--forget", a == "-f":
+			opts.forget = true
 			i++
 			continue
 		case a == "--stay", a == "--no-attend", a == "--attend=false", a == "--attend=0":
@@ -242,6 +249,12 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 	if (opts.dryRun || opts.skipYes) && !opts.exec {
 		die("send: -n / -y only meaningful with --exec")
 	}
+	if opts.forget && (opts.exec || opts.verbatim) {
+		die("send: --forget contradicts --exec/--verbatim")
+	}
+	if opts.forget && opts.ephemeral {
+		die("send: --forget contradicts --ephemeral (the aria would be killed before the turn ran)")
+	}
 
 	set := renderSettings{verbose: opts.verbose}
 
@@ -261,6 +274,8 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 	}
 
 	switch {
+	case opts.forget:
+		runSendForget(loaded, opts, prompt)
 	case opts.verbatim:
 		runSendVerbatim(loaded, opts, prompt)
 	case opts.exec:
@@ -467,4 +482,34 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 		}
 		die("figaro send --exec: bash: %s", err)
 	}
+}
+
+// runSendForget submits a prompt and exits — fire-and-forget. The daemon
+// keeps the turn alive; the CLI does not attach to the stream and never
+// sends figaro.interrupt. Useful from scripts, or when you want a prompt
+// to run and check on it later via `figaro show` / `figaro listen`.
+func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	ariaID, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true)
+	if err != nil {
+		die("%s", err)
+	}
+
+	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
+
+	fcli, derr := figaro.DialClient(figaroEP, func(string, json.RawMessage) {})
+	if derr != nil {
+		die("connect figaro: %s", derr)
+	}
+	defer fcli.Close()
+
+	if _, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard()); qerr != nil {
+		die("prompt: %s", qerr)
+	}
+	fmt.Fprintf(os.Stderr, "forgot %s — use `figaro listen %s` to follow\n", ariaID, ariaID)
 }
