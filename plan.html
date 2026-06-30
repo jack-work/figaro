@@ -1,0 +1,1105 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Markdown over deltas</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #15181f;
+      --panel-2: #11141b;
+      --well: #0b0d12;
+      --line: #222733;
+      --line-2: #2b3140;
+      --ink: #d7dbe3;
+      --dim: #8b92a1;
+      --faint: #5b6271;
+      --accent: #6aa3ff;
+      --run: #e3a83e;
+      --ok: #4cc98a;
+      --fail: #ff6b6b;
+      --retry: #e3a83e;
+      --add: #4cc98a;
+      --del: #ff7d8d;
+      --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --r: 9px;
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      margin: 0
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.5;
+      padding: 22px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrap {
+      max-width: 1120px;
+      margin: 0 auto
+    }
+
+    header {
+      margin-bottom: 14px
+    }
+
+    h1.title {
+      font: 600 19px/1.2 var(--mono);
+      letter-spacing: -.2px;
+      margin: 0 0 4px
+    }
+
+    h1.title .arrow {
+      color: var(--accent)
+    }
+
+    .lede {
+      color: var(--dim);
+      font-size: 13.5px;
+      margin: 0;
+      max-width: 74ch
+    }
+
+    /* controls */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      margin: 14px 0 10px;
+    }
+
+    .group {
+      display: flex;
+      align-items: center;
+      gap: 6px
+    }
+
+    .group+.group {
+      padding-left: 10px;
+      border-left: 1px solid var(--line-2)
+    }
+
+    .seg {
+      display: flex;
+      background: var(--panel-2);
+      border: 1px solid var(--line-2);
+      border-radius: 7px;
+      overflow: hidden
+    }
+
+    .seg button {
+      background: transparent;
+      color: var(--dim);
+      border: 0;
+      padding: 6px 11px;
+      font: 500 12.5px var(--sans);
+      cursor: pointer;
+    }
+
+    .seg button+button {
+      border-left: 1px solid var(--line-2)
+    }
+
+    .seg button[aria-pressed="true"] {
+      background: var(--accent);
+      color: #0b0f17
+    }
+
+    .seg button:hover:not([aria-pressed="true"]) {
+      color: var(--ink)
+    }
+
+    .btn {
+      background: var(--panel-2);
+      color: var(--ink);
+      border: 1px solid var(--line-2);
+      border-radius: 7px;
+      padding: 6px 12px;
+      font: 500 12.5px var(--sans);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 84px;
+      justify-content: center;
+    }
+
+    .btn:hover {
+      border-color: #3a4252
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      color: #0b0f17;
+      border-color: transparent
+    }
+
+    label.ctl {
+      font-size: 12px;
+      color: var(--dim);
+      display: flex;
+      align-items: center;
+      gap: 8px
+    }
+
+    input[type=range] {
+      width: 120px;
+      accent-color: var(--accent)
+    }
+
+    input[type=number] {
+      width: 54px;
+      background: var(--well);
+      color: var(--ink);
+      border: 1px solid var(--line-2);
+      border-radius: 6px;
+      padding: 4px 6px;
+      font: 500 12.5px var(--mono);
+    }
+
+    .val {
+      font: 600 12px var(--mono);
+      color: var(--ink);
+      min-width: 34px;
+      text-align: right
+    }
+
+    .toggle {
+      font-size: 12px;
+      color: var(--dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none
+    }
+
+    .toggle input {
+      accent-color: var(--accent)
+    }
+
+    /* stats bar */
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+      align-items: baseline;
+      padding: 9px 14px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      margin-bottom: 14px;
+      font: 500 12px var(--mono);
+      color: var(--dim);
+    }
+
+    .stats b {
+      color: var(--ink);
+      font-weight: 600
+    }
+
+    .stats .saved {
+      color: var(--add)
+    }
+
+    .stats .sync.ok {
+      color: var(--add)
+    }
+
+    .stats .sync.bad {
+      color: var(--del)
+    }
+
+    .dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--faint);
+      margin-right: 6px;
+      vertical-align: middle
+    }
+
+    .dot.live {
+      background: var(--ok);
+      box-shadow: 0 0 0 0 rgba(76, 201, 138, .6);
+      animation: ping 1.4s ease-out infinite
+    }
+
+    @keyframes ping {
+      0% {
+        box-shadow: 0 0 0 0 rgba(76, 201, 138, .5)
+      }
+
+      100% {
+        box-shadow: 0 0 0 7px rgba(76, 201, 138, 0)
+      }
+    }
+
+    /* main layout */
+    .main {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start
+    }
+
+    .col {
+      min-width: 0
+    }
+
+    .col.view {
+      flex: 1 1 auto
+    }
+
+    .col.aside {
+      flex: 0 0 360px;
+      max-width: 360px
+    }
+
+    @media (max-width:880px) {
+      .main {
+        flex-direction: column
+      }
+
+      .col.aside {
+        flex-basis: auto;
+        max-width: none;
+        width: 100%
+      }
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      overflow: hidden
+    }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 13px;
+      border-bottom: 1px solid var(--line);
+      font: 600 11px var(--mono);
+      letter-spacing: .3px;
+      color: var(--faint);
+      text-transform: uppercase;
+    }
+
+    .legend {
+      display: flex;
+      gap: 12px;
+      text-transform: none;
+      letter-spacing: 0;
+      font-weight: 500
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--dim)
+    }
+
+    .legend i {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      display: inline-block
+    }
+
+    .legend .l-run {
+      background: var(--run)
+    }
+
+    .legend .l-ok {
+      background: var(--ok)
+    }
+
+    .legend .l-fail {
+      background: var(--fail)
+    }
+
+    /* rendered markdown */
+    .render {
+      padding: 6px 18px 16px
+    }
+
+    .render h1 {
+      font: 600 22px/1.25 var(--sans);
+      margin: 18px 0 6px;
+      letter-spacing: -.3px
+    }
+
+    .render h2 {
+      font: 600 15px/1.3 var(--mono);
+      margin: 22px 0 2px;
+      padding-left: 11px;
+      border-left: 3px solid var(--line-2);
+      color: var(--ink);
+      letter-spacing: -.1px;
+    }
+
+    .render h3 {
+      font: 600 13.5px var(--sans);
+      margin: 16px 0 4px;
+      color: var(--dim)
+    }
+
+    .render p {
+      margin: 6px 0
+    }
+
+    .render a {
+      color: var(--accent);
+      text-decoration: none
+    }
+
+    .render a:hover {
+      text-decoration: underline
+    }
+
+    .render ul,
+    .render ol {
+      margin: 6px 0;
+      padding-left: 22px
+    }
+
+    .render blockquote {
+      margin: 8px 0;
+      padding: 2px 12px;
+      border-left: 3px solid var(--line-2);
+      color: var(--dim)
+    }
+
+    .render hr {
+      border: 0;
+      border-top: 1px solid var(--line);
+      margin: 14px 0
+    }
+
+    .render :not(pre)>code {
+      font: 500 12.5px var(--mono);
+      background: #1c2230;
+      color: #b9c6e6;
+      padding: 1px 5px;
+      border-radius: 5px;
+    }
+
+    /* status line (paragraph directly after an h2) */
+    .render p.status {
+      font: 500 13px var(--mono);
+      margin-top: 3px;
+      color: var(--dim);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    p.status.run {
+      color: var(--run)
+    }
+
+    p.status.ok {
+      color: var(--ok)
+    }
+
+    p.status.fail {
+      color: var(--fail)
+    }
+
+    p.status.retry {
+      color: var(--retry)
+    }
+
+    /* code / bash blocks */
+    .cb {
+      margin: 8px 0;
+      background: var(--well);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden
+    }
+
+    .cb pre {
+      margin: 0;
+      padding: 11px 13px;
+      overflow-x: auto
+    }
+
+    .cb code {
+      font: 500 12.5px/1.55 var(--mono);
+      color: #c4cde0;
+      white-space: pre
+    }
+
+    .cb.bash .cb-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 12px;
+      background: #0e1118;
+      border-bottom: 1px solid var(--line);
+      font: 500 11px var(--mono);
+      color: var(--faint);
+    }
+
+    .cb.bash .cb-lang {
+      color: var(--dim)
+    }
+
+    .cb.bash .cb-trunc {
+      color: var(--faint)
+    }
+
+    .cb.bash pre {
+      position: relative
+    }
+
+    /* soft fade at the very top to imply the log is a tail */
+    .cb.bash pre::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 14px;
+      background: linear-gradient(to bottom, var(--well), rgba(11, 13, 18, 0));
+      pointer-events: none;
+    }
+
+    /* aside: deltas + source */
+    .aside .card+.card {
+      margin-top: 14px
+    }
+
+    .stream {
+      max-height: 300px;
+      overflow: auto;
+      padding: 6px 0
+    }
+
+    .drow {
+      display: grid;
+      grid-template-columns: auto auto auto 1fr;
+      gap: 9px;
+      padding: 2px 13px;
+      font: 500 11.5px/1.5 var(--mono);
+      white-space: nowrap;
+      animation: slidein .18s ease-out;
+    }
+
+    @keyframes slidein {
+      from {
+        opacity: 0;
+        transform: translateY(-2px)
+      }
+
+      to {
+        opacity: 1;
+        transform: none
+      }
+    }
+
+    .drow .at {
+      color: var(--accent)
+    }
+
+    .drow .d {
+      color: var(--del)
+    }
+
+    .drow .a {
+      color: var(--add)
+    }
+
+    .drow .note {
+      color: var(--faint);
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    .source {
+      max-height: 340px;
+      overflow: auto;
+      margin: 0;
+      padding: 11px 13px;
+      font: 500 12px/1.5 var(--mono);
+      color: #aeb7c9;
+      white-space: pre-wrap;
+      word-break: break-word
+    }
+
+    .hidden {
+      display: none !important
+    }
+
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #2a3140;
+      border-radius: 6px;
+      border: 2px solid transparent;
+      background-clip: content-box
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .dot.live {
+        animation: none
+      }
+
+      .drow {
+        animation: none
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <h1 class="title">markdown <span class="arrow">⟶</span> deltas <span class="arrow">⟶</span> client render</h1>
+      <p class="lede">The server keeps the state, renders the whole document to markdown, then sends only the diff
+        from the previous version. The client holds the markdown string, applies each delta, and re-renders.
+        Bash blocks are capped to the last few lines — a client-only render rule.</p>
+    </header>
+
+    <div class="controls">
+      <div class="group">
+        <div class="seg" id="scenarios"></div>
+      </div>
+      <div class="group">
+        <button class="btn primary" id="playBtn">Play</button>
+        <button class="btn" id="restartBtn">Restart</button>
+      </div>
+      <div class="group">
+        <label class="ctl">Speed
+          <input type="range" id="fps" min="1" max="20" value="8" />
+          <span class="val" id="fpsVal">8 fps</span>
+        </label>
+      </div>
+      <div class="group">
+        <label class="ctl">Bash lines (client cap)
+          <input type="number" id="cap" min="1" max="40" value="10" />
+        </label>
+      </div>
+      <div class="group">
+        <label class="toggle"><input type="checkbox" id="tDeltas"> Deltas</label>
+        <label class="toggle"><input type="checkbox" id="tSource"> Source</label>
+      </div>
+    </div>
+
+    <div class="stats" id="stats">
+      <span><span class="dot" id="liveDot"></span><b id="stDeltas">0</b> deltas</span>
+      <span><b id="stSent">0 B</b> sent</span>
+      <span><b id="stFull">0 B</b> if resent whole doc</span>
+      <span class="saved"><b id="stSaved">0%</b> saved</span>
+      <span class="sync ok" id="stSync">in sync</span>
+      <span id="stDoc"><b id="stDocBytes">0 B</b> document</span>
+    </div>
+
+    <div class="main">
+      <div class="col view">
+        <div class="card">
+          <div class="card-head">
+            <span>client view · rendered markdown</span>
+            <span class="legend">
+              <span><i class="l-run"></i>running</span>
+              <span><i class="l-ok"></i>done</span>
+              <span><i class="l-fail"></i>failed</span>
+            </span>
+          </div>
+          <div class="render" id="view"></div>
+        </div>
+      </div>
+
+      <div class="col aside" id="aside">
+        <div class="card hidden" id="deltasCard">
+          <div class="card-head"><span>delta stream · @offset −delete +insert</span></div>
+          <div class="stream" id="deltas"></div>
+        </div>
+        <div class="card hidden" id="sourceCard">
+          <div class="card-head"><span>client markdown blob</span></div>
+          <pre class="source" id="source"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    "use strict";
+
+    /* ============================================================
+       1. DELTA CODEC  (the "compression")
+       A delta is a single splice: replace [at, at+del) with `ins`.
+       diff() finds the common prefix + common suffix between two
+       strings and sends only the differing middle.
+       ============================================================ */
+    function diff(oldS, newS) {
+      if (oldS === newS) return null;
+      const oLen = oldS.length, nLen = newS.length;
+      const min = Math.min(oLen, nLen);
+      let a = 0;
+      while (a < min && oldS.charCodeAt(a) === newS.charCodeAt(a)) a++;
+      let z = 0;
+      while (z < (min - a) && oldS.charCodeAt(oLen - 1 - z) === newS.charCodeAt(nLen - 1 - z)) z++;
+      return {at: a, del: oLen - a - z, ins: newS.slice(a, nLen - z)};
+    }
+    function applyDelta(s, d) {
+      return s.slice(0, d.at) + d.ins + s.slice(d.at + d.del);
+    }
+
+    /* ============================================================
+       2. CLIENT  (holds the markdown blob; renders it)
+       The ONLY special rule lives here: bash blocks show last N lines.
+       ============================================================ */
+    const enc = new TextEncoder();
+    const blen = s => enc.encode(s).length;
+
+    const client = {
+      el: document.getElementById('view'),
+      md: '',
+      receive(d) {                 // gets a delta off the "wire"
+        this.md = applyDelta(this.md, d);
+        this.render();
+      },
+      render() {
+        this.el.innerHTML = mdToHtml(this.md, CAP);
+        colorStatusLines(this.el);
+        if (sourceOpen) renderSource();
+      }
+    };
+
+    /* --- a compact markdown renderer (enough for this UI) --- */
+    function escapeHtml(s) {return s.replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));}
+    function escapeAttr(s) {return s.replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));}
+
+    function inline(t) {
+      const codes = [];
+      t = t.replace(/`([^`]+)`/g, (m, c) => {codes.push(c); return '\u0000' + (codes.length - 1) + '\u0000';});
+      t = escapeHtml(t);
+      t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, a, b) => '<a href="' + escapeAttr(b) + '" target="_blank" rel="noopener noreferrer">' + a + '</a>');
+      t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      t = t.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+      t = t.replace(/\u0000(\d+)\u0000/g, (m, k) => '<code>' + escapeHtml(codes[k]) + '</code>');
+      return t;
+    }
+
+    function renderFence(lang, body, cap) {
+      const isBash = /^(bash|sh|shell|zsh|console|log)$/.test(lang);
+      let shown = body, total = body.length, hidden = 0;
+      if (isBash && body.length > cap) {           // <-- the client-side cap
+        hidden = body.length - cap;
+        shown = body.slice(body.length - cap);
+      }
+      const code = escapeHtml(shown.join('\n'));
+      if (isBash) {
+        const meta = hidden > 0
+          ? 'last ' + cap + ' of ' + total + ' lines'
+          : total + ' line' + (total === 1 ? '' : 's');
+        return '<div class="cb bash"><div class="cb-head"><span class="cb-lang">'
+          + (lang || 'bash') + '</span><span class="cb-trunc">' + meta
+          + '</span></div><pre><code>' + code + '</code></pre></div>';
+      }
+      return '<div class="cb"><pre><code>' + code + '</code></pre></div>';
+    }
+
+    function mdToHtml(md, cap) {
+      const lines = md.split('\n');
+      const out = [];
+      let i = 0;
+      const stop = l => /^\s*$/.test(l) || /^\s*```/.test(l) || /^#{1,6}\s/.test(l)
+        || /^\s*[-*+]\s+/.test(l) || /^\s*\d+[.)]\s+/.test(l) || /^\s*>\s?/.test(l);
+      while (i < lines.length) {
+        const line = lines[i];
+        if (/^\s*```/.test(line)) {
+          const lang = line.replace(/^\s*```/, '').trim().toLowerCase();
+          const body = []; i++;
+          while (i < lines.length && !/^\s*```/.test(lines[i])) {body.push(lines[i]); i++;}
+          i++; // closing fence
+          out.push(renderFence(lang, body, cap));
+          continue;
+        }
+        const h = line.match(/^(#{1,6})\s+(.*)$/);
+        if (h) {const n = h[1].length; out.push('<h' + n + '>' + inline(h[2]) + '</h' + n + '>'); i++; continue;}
+        if (/^\s*$/.test(line)) {i++; continue;}
+        if (/^\s*[-*+]\s+/.test(line)) {
+          const it = [];
+          while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {it.push('<li>' + inline(lines[i].replace(/^\s*[-*+]\s+/, '')) + '</li>'); i++;}
+          out.push('<ul>' + it.join('') + '</ul>'); continue;
+        }
+        if (/^\s*\d+[.)]\s+/.test(line)) {
+          const it = [];
+          while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) {it.push('<li>' + inline(lines[i].replace(/^\s*\d+[.)]\s+/, '')) + '</li>'); i++;}
+          out.push('<ol>' + it.join('') + '</ol>'); continue;
+        }
+        if (/^\s*>\s?/.test(line)) {
+          const q = [];
+          while (i < lines.length && /^\s*>\s?/.test(lines[i])) {q.push(lines[i].replace(/^\s*>\s?/, '')); i++;}
+          out.push('<blockquote>' + inline(q.join(' ')) + '</blockquote>'); continue;
+        }
+        if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) {out.push('<hr>'); i++; continue;}
+        const para = [line]; i++;
+        while (i < lines.length && !stop(lines[i])) {para.push(lines[i]); i++;}
+        out.push('<p>' + inline(para.join(' ')) + '</p>');
+      }
+      return out.join('\n');
+    }
+
+    /* status line = the <p> directly after an <h2>; color by its leading glyph */
+    function colorStatusLines(root) {
+      root.querySelectorAll('h2').forEach(h => {
+        const p = h.nextElementSibling;
+        if (!p || p.tagName !== 'P') return;
+        const txt = p.textContent.trim();
+        let cls = 'run';
+        const g = txt[0];
+        if (g === '✓') cls = 'ok';
+        else if (g === '✗') cls = 'fail';
+        if (/retry|retrying/i.test(txt)) cls = 'retry';
+        p.classList.add('status', cls);
+      });
+    }
+
+    /* ============================================================
+       3. SERVER  (owns state; renders markdown; emits deltas)
+       ============================================================ */
+    let serverMd = '';
+
+    function renderTasksMarkdown(m) {
+      let md = m.title + '\n\n';
+      if (m.subtitle) md += m.subtitle + '\n\n';
+      for (const t of m.tasks) {
+        md += '## ' + t.title + '\n';
+        md += (t.glyph || '') + ' ' + t.text + '\n\n';
+        if (t.showLog) {
+          md += '```bash\n';
+          if (t.log.length) md += t.log.join('\n') + '\n';
+          md += '```\n\n';
+        }
+      }
+      return md.replace(/\s+$/, '') + '\n';
+    }
+
+    /* commit: re-render server state, diff against last sent, emit the delta */
+    function commit(note) {
+      const next = renderTasksMarkdown(model);
+      const d = diff(serverMd, next);
+      if (!d) return;
+      serverMd = next;
+      transport(d, note);
+    }
+
+    /* the "wire": deliver delta to client + record bandwidth */
+    function transport(d, note) {
+      client.receive(d);
+      const wireBytes = blen(JSON.stringify({at: d.at, del: d.del, ins: d.ins}));
+      stat.deltas++;
+      stat.sent += wireBytes;
+      stat.full += blen(client.md);          // baseline: cost of resending the whole doc
+      recordDeltaRow(d, note);
+      updateStats();
+    }
+
+    /* ============================================================
+       4. SCENARIOS  (server-side state + a timeline of changes)
+       The spinner is advanced automatically every tick for running
+       tasks; steps only encode logs, status text, and completion.
+       ============================================================ */
+    const BRAILLE = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+    function logStreamSteps() {
+      const steps = [];
+      for (let n = 1; n <= 30; n++) {
+        const kb = 8 + (n * 7) % 40;
+        steps.push({t: n, fn: H => H.log('s', 'chunk ' + String(n).padStart(3, '0') + '  ·  +' + kb + ' kB  (' + Math.min(100, Math.round(n / 30 * 100)) + '%)')});
+      }
+      steps.push({t: 32, fn: H => H.finish('s', true)});
+      return steps;
+    }
+
+    const SCENARIOS = {
+      minimal: {
+        label: 'Minimal',
+        frames: ['1', '2', '3'],
+        model: () => ({
+          title: '# Tasks',
+          subtitle: 'The spinner glyph is the only thing that changes — each frame is one tiny delta.',
+          tasks: [
+            {id: 't1', title: 'Task 1', text: 'loading...', running: true, showLog: false, log: []},
+            {id: 't2', title: 'Task 2', text: 'loading...', running: true, showLog: false, log: []},
+            {id: 't3', title: 'Task 3', text: 'loading...', running: true, showLog: false, log: []},
+          ]
+        }),
+        steps: [
+          {t: 12, fn: H => H.finish('t1', true)},
+          {t: 18, fn: H => H.finish('t2', true)},
+          {t: 24, fn: H => H.finish('t3', true)},
+        ]
+      },
+
+      pipeline: {
+        label: 'Pipeline',
+        frames: BRAILLE,
+        model: () => ({
+          title: '# Deploy pipeline',
+          subtitle: 'Commit `a1b2c3d` · three stages stream their logs as deltas. Deploy exceeds the cap.',
+          tasks: [
+            {id: 'b', title: 'build', text: 'starting…', running: true, showLog: true, log: []},
+            {id: 't', title: 'test', text: 'starting…', running: true, showLog: true, log: []},
+            {id: 'd', title: 'deploy', text: 'queued…', running: true, showLog: true, log: []},
+          ]
+        }),
+        steps: [
+          // build
+          {t: 2, fn: H => H.log('b', '$ npm ci')},
+          {t: 5, fn: H => H.log('b', 'added 358 packages in 4.1s')},
+          {t: 8, fn: H => H.log('b', '$ npm run build')},
+          {t: 10, fn: H => H.log('b', 'vite v5 building for production...')},
+          {t: 12, fn: H => H.log('b', 'transforming 412 modules...')},
+          {t: 14, fn: H => H.log('b', '✓ built in 2.31s')},
+          {t: 15, fn: H => H.log('b', 'dist/index-9f2a.js   142.8 kB │ gzip 46.1 kB')},
+          {t: 17, fn: H => H.finish('b', true)},
+          // test (fails once, retries, passes)
+          {t: 3, fn: H => H.log('t', '$ vitest run')},
+          {t: 6, fn: H => H.log('t', 'RUN  v1.6.0')},
+          {t: 9, fn: H => H.log('t', '✓ utils.test.ts (8)')},
+          {t: 12, fn: H => H.log('t', '✓ store.test.ts (15)')},
+          {t: 15, fn: H => H.log('t', '× api.test.ts — timed out in 5000ms')},
+          {t: 16, fn: H => H.status('t', 'retrying… (1/2)')},
+          {t: 18, fn: H => H.log('t', '$ vitest run src/api.test.ts')},
+          {t: 21, fn: H => H.log('t', '✓ api.test.ts (6)')},
+          {t: 24, fn: H => H.finish('t', true)},
+          // deploy (11 lines -> clamped to last 10)
+          {t: 25, fn: H => H.status('d', 'deploying…')},
+          {t: 26, fn: H => H.log('d', '$ deploy --prod dist/')},
+          {t: 28, fn: H => H.log('d', 'packaging dist/ (142.8 kB)')},
+          {t: 30, fn: H => H.log('d', 'uploading… 25%')},
+          {t: 32, fn: H => H.log('d', 'uploading… 50%')},
+          {t: 34, fn: H => H.log('d', 'uploading… 75%')},
+          {t: 36, fn: H => H.log('d', 'uploading… 100%')},
+          {t: 38, fn: H => H.log('d', 'warming 12 edge nodes')},
+          {t: 40, fn: H => H.log('d', 'invalidating CDN cache')},
+          {t: 42, fn: H => H.log('d', 'running smoke tests')},
+          {t: 44, fn: H => H.log('d', '✓ smoke tests passed')},
+          {t: 46, fn: H => H.log('d', 'live → https://app.example.com')},
+          {t: 48, fn: H => H.finish('d', true)},
+        ]
+      },
+
+      stream: {
+        label: 'Log stream',
+        frames: BRAILLE,
+        model: () => ({
+          title: '# Fetch dataset',
+          subtitle: 'One task floods its log. The client renders only the last 10 lines — older lines stay in the blob but are never drawn.',
+          tasks: [
+            {id: 's', title: 'download', text: 'streaming…', running: true, showLog: true, log: []}
+          ]
+        }),
+        steps: logStreamSteps()
+      }
+    };
+
+    /* helpers handed to each step — every mutation triggers one delta */
+    const H = {
+      log(id, line) {const t = getTask(id); t.log.push(line); commit('log ' + id);},
+      status(id, text) {const t = getTask(id); t.text = text; commit('status ' + id);},
+      finish(id, ok) {const t = getTask(id); t.running = false; t.glyph = ok ? '✓' : '✗'; t.text = ok ? 'done' : 'failed'; commit('finish ' + id);}
+    };
+    function getTask(id) {return model.tasks.find(t => t.id === id);}
+
+    /* ============================================================
+       5. ENGINE  (clock; advances spinner + runs steps)
+       ============================================================ */
+    let SC = null, model = null, frames = [], tick = 0;
+    let playing = false, timer = null;
+    let FPS = 8, CAP = 10;
+
+    function loadScenario(key, autoplay) {
+      stopClock();
+      SC = SCENARIOS[key];
+      frames = SC.frames;
+      tick = 0;
+      model = SC.model();
+      model.tasks.forEach(t => {t.frameIdx = 0; if (t.running) t.glyph = frames[0];});
+      resetStats();
+      // First message is the full document (you can't delta from nothing):
+      serverMd = '';
+      client.md = '';
+      commit('initial snapshot');
+      reflectScenarioButtons(key);
+      if (autoplay) play(); else setPlaying(false);
+    }
+
+    function stepTick() {
+      tick++;
+      // advance spinner for running tasks — each is its own minimal delta
+      for (const t of model.tasks) {
+        if (t.running) {
+          t.frameIdx = (t.frameIdx + 1) % frames.length;
+          t.glyph = frames[t.frameIdx];
+          commit('spin ' + t.id);
+        }
+      }
+      // scheduled changes for this tick
+      for (const s of SC.steps) if (s.t === tick) s.fn(H);
+
+      if (model.tasks.every(t => !t.running)) {stopClock(); setPlaying(false);}
+    }
+
+    function clockLoop() {
+      if (!playing) return;
+      stepTick();
+      if (!playing) return;
+      timer = setTimeout(clockLoop, Math.max(25, 1000 / FPS));
+    }
+    function play() {
+      if (!SC || playing) return;
+      if (model.tasks.every(t => !t.running)) loadScenario(currentKey, false); // replay if finished
+      setPlaying(true);
+      clockLoop();
+    }
+    function pause() {setPlaying(false);}
+    function stopClock() {playing = false; if (timer) {clearTimeout(timer); timer = null;} }
+    function setPlaying(v) {
+      playing = v;
+      if (!v && timer) {clearTimeout(timer); timer = null;}
+      playBtn.textContent = v ? 'Pause' : 'Play';
+      liveDot.classList.toggle('live', v);
+    }
+
+    /* ============================================================
+       6. STATS + AUX PANELS
+       ============================================================ */
+    const stat = {deltas: 0, sent: 0, full: 0};
+    function resetStats() {stat.deltas = 0; stat.sent = 0; stat.full = 0; deltasEl.innerHTML = ''; updateStats();}
+    function fmtBytes(n) {return n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB';}
+    function updateStats() {
+      stDeltas.textContent = stat.deltas;
+      stSent.textContent = fmtBytes(stat.sent);
+      stFull.textContent = fmtBytes(stat.full);
+      const saved = stat.full > 0 ? Math.max(0, Math.round((1 - stat.sent / stat.full) * 100)) : 0;
+      stSaved.textContent = saved + '%';
+      stDocBytes.textContent = fmtBytes(blen(client.md));
+      const synced = client.md === serverMd;
+      stSync.textContent = synced ? 'in sync' : 'OUT OF SYNC';
+      stSync.className = 'sync ' + (synced ? 'ok' : 'bad');
+    }
+
+    function recordDeltaRow(d, note) {
+      if (!deltasOpen) return;
+      const insView = JSON.stringify(d.ins.length > 22 ? d.ins.slice(0, 22) + '…' : d.ins);
+      const row = document.createElement('div');
+      row.className = 'drow';
+      row.innerHTML = '<span class="at">@' + d.at + '</span>'
+        + '<span class="d">−' + d.del + '</span>'
+        + '<span class="a">+' + escapeHtml(insView) + '</span>'
+        + '<span class="note">' + escapeHtml(note) + '</span>';
+      deltasEl.appendChild(row);
+      while (deltasEl.children.length > 120) deltasEl.removeChild(deltasEl.firstChild);
+      deltasEl.scrollTop = deltasEl.scrollHeight;
+    }
+
+    function renderSource() {
+      let s = escapeHtml(client.md);
+      s = s.replace(/(\u0060\u0060\u0060[^\n]*)/g, '<span style="color:#6aa3ff">$1</span>'); // fences
+      sourceEl.innerHTML = s;
+    }
+
+    /* ============================================================
+       7. WIRING
+       ============================================================ */
+    const playBtn = document.getElementById('playBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const fpsEl = document.getElementById('fps');
+    const fpsVal = document.getElementById('fpsVal');
+    const capEl = document.getElementById('cap');
+    const tDeltas = document.getElementById('tDeltas');
+    const tSource = document.getElementById('tSource');
+    const deltasEl = document.getElementById('deltas');
+    const sourceEl = document.getElementById('source');
+    const deltasCard = document.getElementById('deltasCard');
+    const sourceCard = document.getElementById('sourceCard');
+    const liveDot = document.getElementById('liveDot');
+    const segEl = document.getElementById('scenarios');
+    const stDeltas = document.getElementById('stDeltas');
+    const stSent = document.getElementById('stSent');
+    const stFull = document.getElementById('stFull');
+    const stSaved = document.getElementById('stSaved');
+    const stSync = document.getElementById('stSync');
+    const stDocBytes = document.getElementById('stDocBytes');
+
+    let currentKey = 'pipeline';
+    let deltasOpen = false, sourceOpen = false;
+
+    // build scenario buttons
+    Object.keys(SCENARIOS).forEach(key => {
+      const b = document.createElement('button');
+      b.textContent = SCENARIOS[key].label;
+      b.dataset.key = key;
+      b.setAttribute('aria-pressed', key === currentKey ? 'true' : 'false');
+      b.onclick = () => {currentKey = key; loadScenario(key, true);};
+      segEl.appendChild(b);
+    });
+    function reflectScenarioButtons(key) {
+      [...segEl.children].forEach(b => b.setAttribute('aria-pressed', b.dataset.key === key ? 'true' : 'false'));
+    }
+
+    playBtn.onclick = () => {if (playing) pause(); else play();};
+    restartBtn.onclick = () => loadScenario(currentKey, true);
+
+    fpsEl.oninput = () => {FPS = +fpsEl.value; fpsVal.textContent = FPS + ' fps';};
+    capEl.oninput = () => {CAP = Math.max(1, +capEl.value || 1); client.render();};
+
+    tDeltas.onchange = () => {
+      deltasOpen = tDeltas.checked;
+      deltasCard.classList.toggle('hidden', !deltasOpen);
+      if (deltasOpen) deltasEl.scrollTop = deltasEl.scrollHeight;
+    };
+    tSource.onchange = () => {
+      sourceOpen = tSource.checked;
+      sourceCard.classList.toggle('hidden', !sourceOpen);
+      if (sourceOpen) renderSource();
+    };
+
+    // space toggles play/pause
+    window.addEventListener('keydown', e => {
+      if (e.code === 'Space' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+        e.preventDefault(); playBtn.onclick();
+      }
+    });
+
+    // boot
+    loadScenario(currentKey, true);
+  </script>
+</body>
+
+</html>

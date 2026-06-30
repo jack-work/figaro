@@ -103,6 +103,12 @@ type Backend interface {
 	Node(id string) (NodeView, bool)
 	Nodes() []NodeView
 
+	// CanonicalCount returns the authoritative conversational message count
+	// for an aria, recomputed from its (single, deterministic) live head IR —
+	// the single source of truth, independent of any stale _meta sidecar. It
+	// self-heals a disagreeing sidecar. ok is false if the head can't open.
+	CanonicalCount(ariaID string) (count int, ok bool)
+
 	// Meta returns the aria metadata, or nil if unset.
 	Meta(ariaID string) (*AriaMeta, error)
 

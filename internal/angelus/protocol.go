@@ -679,7 +679,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		seen[n.ID] = struct{}{}
 		entry := rpc.FigaroInfoResponse{ID: n.ID, State: "dormant"}
 		if m, _ := h.angelus.Backend.Meta(n.ID); m != nil {
-			entry.MessageCount = m.MessageCount
+			entry.MessageCount = m.MessageCount // sidecar fast-path (tokens + IDsOnly)
 			entry.TokensIn = m.TokensIn
 			entry.TokensOut = m.TokensOut
 			entry.CacheReadTokens = m.CacheReadTokens
@@ -689,6 +689,13 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			}
 		}
 		if !req.IDsOnly {
+			// MSGS is the canonical count from the live head (single source of
+			// truth) — not the sidecar, which a pre-heal binary may have written
+			// with a different convention. Self-heals the sidecar. Opens the head
+			// (only when actually displaying, not for id-only completion).
+			if c, ok := h.angelus.Backend.CanonicalCount(n.ID); ok {
+				entry.MessageCount = c
+			}
 			h.fillFromChalkboard(n.ID, &entry)
 		}
 		result = append(result, entry)

@@ -245,6 +245,23 @@ func (b *XwalBackend) evictAll() {
 func (b *XwalBackend) Node(id string) (NodeView, bool) { return b.store.Node(id) }
 func (b *XwalBackend) Nodes() []NodeView               { return b.store.Nodes() }
 
+// CanonicalCount recomputes the conversational message count from the aria's
+// live head IR (message.CountMessages — the shared derivation) and self-heals
+// a stale _meta sidecar that disagrees. The head is a single deterministic
+// leaf (figwal multi-head fix + heal), so this is order-independent.
+func (b *XwalBackend) CanonicalCount(id string) (int, bool) {
+	c, ok := b.canonicalCount(id)
+	if !ok {
+		return 0, false
+	}
+	if m, _ := b.Meta(id); m != nil && m.MessageCount != c {
+		mm := *m
+		mm.MessageCount = c
+		_ = b.SetMeta(id, &mm)
+	}
+	return c, true
+}
+
 func (b *XwalBackend) evict(id string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
