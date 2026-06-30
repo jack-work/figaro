@@ -30,6 +30,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
@@ -37,6 +38,24 @@ import (
 	"github.com/jack-work/figwal/segment"
 	"github.com/jack-work/figwal/xwal"
 )
+
+// trunkScanCount counts calls into figwal's trunk-scanning accessors
+// (Trunks.List + Trunks.Stumps), each of which opens trunk heads on disk.
+// It is the cheap proxy for "how many redundant disk scans does a listing
+// cost" — the benchmark asserts on it so the fan-out regression is caught.
+var trunkScanCount atomic.Int64
+
+// listTrunks / listStumps wrap the figwal accessors so every disk-scanning
+// call is counted. Always go through these inside the store.
+func (s *XwalStore) listTrunks() []xwal.TrunkInfo {
+	trunkScanCount.Add(1)
+	return s.trunks.List()
+}
+
+func (s *XwalStore) listStumps() []xwal.StumpInfo {
+	trunkScanCount.Add(1)
+	return s.trunks.Stumps()
+}
 
 // hexTrunkID mints an opaque aria/trunk id (the same 4-byte hex form figaro
 // has always used for aria handles), so conversation ids read like real
@@ -310,12 +329,12 @@ func (s *XwalStore) kindOf(id string) nodeKind {
 	if id == rootID {
 		return kindNull
 	}
-	for _, st := range s.trunks.Stumps() {
+	for _, st := range s.listStumps() {
 		if st.Name == id {
 			return kindLoadout
 		}
 	}
-	for _, t := range s.trunks.List() {
+	for _, t := range s.listTrunks() {
 		if t.ID == id {
 			return kindConversation
 		}
@@ -361,9 +380,9 @@ func (s *XwalStore) view(t xwal.TrunkInfo, vec map[string][]int) NodeView {
 // vectorsLocked assigns each conversation trunk its fork-forest vector: the
 // child-index path among conversation trunks — roots are [0],[1],…, a branch
 // is parentVec+[k]. Siblings are ordered by id (stable; display re-sorts by
-// recency). Caller holds mu.
-func (s *XwalStore) vectorsLocked() map[string][]int {
-	infos := s.trunks.List()
+// recency). The trunk list is passed in so callers compute it once per
+// request (it costs a full disk scan). Caller holds mu.
+func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string][]int {
 	live := make(map[string]bool, len(infos))
 	for _, ti := range infos {
 		live[ti.ID] = true
@@ -400,13 +419,14 @@ func (s *XwalStore) vectorsLocked() map[string][]int {
 func (s *XwalStore) Nodes() []NodeView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	vec := s.vectorsLocked()
-	out := make([]NodeView, 0)
-	for _, t := range s.trunks.List() {
+	infos := s.listTrunks() // one disk scan, shared by vectors + the view loop
+	vec := s.vectorsLocked(infos)
+	out := make([]NodeView, 0, len(infos)+1)
+	for _, t := range infos {
 		out = append(out, s.view(t, vec))
 	}
 	out = append(out, NodeView{ID: rootID, Kind: string(kindNull), Trunk: rootID})
-	for _, st := range s.trunks.Stumps() {
+	for _, st := range s.listStumps() {
 		name, ver := splitLoadoutKey(st.Name)
 		out = append(out, NodeView{ID: st.Name, Kind: string(kindLoadout), Parent: rootID, Loadout: name, Version: ver})
 	}
@@ -420,14 +440,15 @@ func (s *XwalStore) Node(id string) (NodeView, bool) {
 	if id == rootID {
 		return NodeView{ID: id, Kind: string(kindNull), Trunk: id}, true
 	}
-	for _, st := range s.trunks.Stumps() {
+	for _, st := range s.listStumps() {
 		if st.Name == id {
 			name, ver := splitLoadoutKey(st.Name)
 			return NodeView{ID: id, Kind: string(kindLoadout), Parent: rootID, Loadout: name, Version: ver}, true
 		}
 	}
-	vec := s.vectorsLocked()
-	for _, t := range s.trunks.List() {
+	infos := s.listTrunks()
+	vec := s.vectorsLocked(infos)
+	for _, t := range infos {
 		if t.ID == id {
 			return s.view(t, vec), true
 		}
