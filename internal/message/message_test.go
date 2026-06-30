@@ -152,3 +152,19 @@ func TestInterruptSentinel_Roundtrip(t *testing.T) {
 	assert.Equal(t, message.InterruptUserInterrupt, decoded.Content[0].Reason)
 	assert.Equal(t, uint64(12), decoded.LogicalTime)
 }
+
+func TestCountMessages_ExcludesCeremonial(t *testing.T) {
+	msgs := []message.Message{
+		{Role: message.RoleGenesis},                                                   // ceremonial (genesis)
+		{Role: message.RoleUser},                                                       // ceremonial (empty loadout birth)
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("u1")}}, // counts
+		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("a1")}}, // counts
+		{Role: message.RoleUser, Content: []message.Content{message.ToolResultContent("c", "t", "ok", false)}}, // counts (tool result tic)
+		{Role: message.RoleUser, Content: []message.Content{{Type: message.ContentProse, Text: ""}}}, // empty prose -> ceremonial
+	}
+	assert.Equal(t, 3, message.CountMessages(msgs))
+	assert.True(t, message.IsCeremonial(msgs[0]))
+	assert.True(t, message.IsCeremonial(msgs[1]))
+	assert.False(t, message.IsCeremonial(msgs[2]))
+	assert.True(t, message.IsCeremonial(msgs[5]))
+}

@@ -298,9 +298,10 @@ type summaryDerivation struct {
 func (s *summaryDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 	now := time.Now().UnixMilli()
 	out := store.AriaMeta{LastActiveMS: now, LastFigaroLT: evt.FigaroLT}
+	msgs := make([]message.Message, 0)
 	for _, e := range s.figLog.Read() {
-		out.MessageCount++
 		m := e.Payload
+		msgs = append(msgs, m)
 		if m.Role == message.RoleAssistant {
 			out.TurnCount++
 		}
@@ -311,6 +312,7 @@ func (s *summaryDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 			out.CacheWriteTokens += m.Usage.CacheWriteTokens
 		}
 	}
+	out.MessageCount = message.CountMessages(msgs)
 	return json.NewEncoder(w).Encode(out)
 }
 
@@ -368,9 +370,10 @@ func (u *usageDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 		LastFigaroLT: evt.FigaroLT,
 		LastUpdateMS: time.Now().UnixMilli(),
 	}
+	msgs := make([]message.Message, 0)
 	for _, e := range u.figLog.Read() {
-		out.MessageCount++
 		m := e.Payload
+		msgs = append(msgs, m)
 		if m.Role == message.RoleAssistant {
 			out.TurnCount++
 		}
@@ -381,6 +384,7 @@ func (u *usageDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 			out.CacheWriteTokens += m.Usage.CacheWriteTokens
 		}
 	}
+	out.MessageCount = message.CountMessages(msgs)
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
@@ -438,7 +442,6 @@ func (l *metaDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 	entries := l.figLog.Read()
 	msgs := make([]message.Message, 0, len(entries))
 	for _, e := range entries {
-		out.MessageCount++
 		m := e.Payload
 		msgs = append(msgs, m)
 		if m.Usage != nil {
@@ -448,6 +451,7 @@ func (l *metaDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 			out.CacheWriteTokens += m.Usage.CacheWriteTokens
 		}
 	}
+	out.MessageCount = message.CountMessages(msgs)
 	out.ContextTokens, out.ContextExact = tokens.ContextSize(msgs)
 
 	enc := json.NewEncoder(w)

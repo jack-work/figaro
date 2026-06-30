@@ -304,7 +304,7 @@ func (a *Agent) Info() FigaroInfo {
 		State:            state,
 		Provider:         a.prov.Name(),
 		Model:            a.currentModel(),
-		MessageCount:     len(msgs),
+		MessageCount:     message.CountMessages(msgs),
 		TokensIn:         a.tokensIn,
 		TokensOut:        a.tokensOut,
 		CacheReadTokens:  a.cacheRead,
@@ -506,15 +506,12 @@ func (a *Agent) writeMeta() {
 	}
 	a.mu.RUnlock()
 	for _, e := range a.figLog.Read() {
-		if message.IsGenesis(e.Payload) {
-			continue
-		}
-		meta.MessageCount++
 		if e.Payload.Role == message.RoleAssistant {
 			meta.TurnCount++
 		}
 		meta.LastFigaroLT = e.LT
 	}
+	meta.MessageCount = message.CountMessages(unwrapMessages(a.figLog.Read()))
 	if err := a.backend.SetMeta(a.id, meta); err != nil {
 		slog.Warn("write aria meta", "aria", a.id, "err", err)
 	}
