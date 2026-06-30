@@ -52,8 +52,9 @@ func diffRange(old, next []string) (first, last int) {
 type Inline struct {
 	term    Terminal
 	view    NodeView
-	Bookend func() string // sealed after an assistant message (the id·time watermark)
-	Rule    func() string // sealed after any other message (a plain full-width rule)
+	Bookend func() string       // sealed after an assistant message (the id·time watermark)
+	Rule    func() string       // sealed after any other message (a plain full-width rule)
+	Header  func(role string) string // printed above each message; "" suppresses
 
 	tick int
 
@@ -84,6 +85,11 @@ func (i *Inline) Seal(m aria.Message) {
 	rows := i.renderNodes(m.Nodes)
 	var b strings.Builder
 	b.WriteString("\r\n") // leading blank — every message is prefaced with a newline
+	if h := i.header(m.Role); h != "" {
+		b.WriteString(h)
+		b.WriteString("\r\n")
+		b.WriteString("\r\n")
+	}
 	for _, r := range rows {
 		b.WriteString(r)
 		b.WriteString("\r\n")
@@ -110,13 +116,18 @@ func (i *Inline) Resume(closed []aria.Message, openLT int, openRole string, open
 
 // printMessage writes a closed message's rows to scrollback (bookend after an
 // assistant message), leaving the cursor on a fresh line below. Each message is
-// prefaced with a blank line — the same leading-space rule Seal/compose apply.
+// prefaced with a blank line plus the role header (when configured) — the same
+// leading rule Seal/compose apply.
 func (i *Inline) printMessage(m aria.Message) {
 	body := i.renderNodes(m.Nodes)
 	if len(body) == 0 {
 		return
 	}
-	rows := append([]string{""}, body...)
+	rows := []string{""}
+	if h := i.header(m.Role); h != "" {
+		rows = append(rows, h, "")
+	}
+	rows = append(rows, body...)
 	if seal := i.seal(m.Role); seal != "" {
 		w, _ := i.term.Size()
 		rows = append(rows, "", clip(seal, w))
@@ -161,16 +172,28 @@ func (i *Inline) Resize(nodes []livedoc.Node) {
 
 func (i *Inline) compose(nodes []livedoc.Node) []string {
 	body := i.renderNodes(nodes)
-	// Every message is prefaced with a blank row — seals the leading newline
-	// into scrollback alongside the rest of the live region.
-	rows := make([]string, 0, len(body)+3)
+	// Every message is prefaced with a blank row and (when configured) a role
+	// header — sealed into scrollback alongside the rest of the live region.
+	rows := make([]string, 0, len(body)+5)
 	rows = append(rows, "")
+	if h := i.header(i.role); h != "" {
+		rows = append(rows, h, "")
+	}
 	rows = append(rows, body...)
 	if seal := i.seal(i.role); seal != "" {
 		w, _ := i.term.Size()
 		rows = append(rows, "", clip(seal, w))
 	}
 	return rows
+}
+
+// header returns the role-header line for role (e.g. "❯ you") or "" if no
+// Header function is configured or the role has no glyph.
+func (i *Inline) header(role string) string {
+	if i.Header == nil {
+		return ""
+	}
+	return i.Header(role)
 }
 
 // seal returns the line that closes a message of the given role: the id·time

@@ -169,12 +169,12 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	fmt.Printf("# aria %s — %d units (showing %d–%d) · [N] is the LT to fork/send at\n\n", figaroID, len(units), lo+1, hi)
 	for i := lo; i < hi; i++ {
 		u := units[i]
-		who := "› you"
-		if u.Role == "assistant" {
-			who = "‹ figaro"
+		hdr := messageHeader(u.Role)
+		if hdr == "" {
+			hdr = u.Role // fallback for unknown roles
 		}
-		label := fmt.Sprintf("[%d] %s", u.LT, who)
-		fmt.Println(term.Dim(label))
+		label := fmt.Sprintf("%s   %s", term.Dim(fmt.Sprintf("[%d]", u.LT)), hdr)
+		fmt.Println(label)
 		fmt.Println()
 		rows, _ := renderNodes(u.Nodes, width, 0, 0, renderSettings{verbose: true})
 		fmt.Println(strings.Join(rows, "\n"))

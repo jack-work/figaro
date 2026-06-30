@@ -34,6 +34,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, 
 	in := ldrender.NewInline(term, view)
 	in.Bookend = bookend
 	in.Rule = rule
+	in.Header = messageHeader
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view}
 	t.tr = newTranscript(out, w, h, view, t.client)
 	t.client.OnClosed = func(m aria.Message) {

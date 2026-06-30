@@ -100,12 +100,15 @@ func (t *transcript) lines() []string {
 	return out
 }
 
-// renderMsg renders one message's nodes to clipped physical rows (blank line
-// between nodes). The spinner tick only affects a running tool, which lives on
-// the open message — committed messages render identically every time, so their
-// result is safe to cache.
+// renderMsg renders one message's nodes to clipped physical rows, optionally
+// prefixed with the role header ("❯ you" / "‹ figaro"). The spinner tick only
+// affects a running tool, which lives on the open message — committed messages
+// render identically every time, so their result is safe to cache.
 func (t *transcript) renderMsg(m aria.Message) []string {
 	var rows []string
+	if h := messageHeader(m.Role); h != "" {
+		rows = append(rows, h, "")
+	}
 	for k, n := range m.Nodes {
 		if k > 0 {
 			rows = append(rows, "")
