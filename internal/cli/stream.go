@@ -258,9 +258,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	case <-doneCh:
 		// The committed bookend is the final line; nothing more to print.
 	case <-disconnectCh:
-		fmt.Fprintln(os.Stderr, "\ndisconnected; turn continues. follow: figaro listen "+figaroID)
+		lt.abandon("disconnected — turn continues")
+		fmt.Fprintln(os.Stderr, "follow: figaro listen "+figaroID)
 	case <-fcli.Done():
-		fmt.Fprintln(os.Stderr, "\nerror: agent disconnected before turn completed")
+		lt.abandon("agent disconnected before turn completed")
 		os.Exit(1)
 	case <-ctx.Done():
 		fmt.Fprintln(os.Stderr, "\ninterrupting...")
@@ -271,6 +272,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		case <-doneCh:
 		case <-fcli.Done():
 		case <-time.After(3 * time.Second):
+			lt.abandon("interrupted (agent did not respond)")
 		}
 		fmt.Fprintln(os.Stderr, "interrupted")
 	}
@@ -279,6 +281,19 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 // dimRule returns a plain dim full-width horizontal rule — the opening rule and
 // the seal after a non-assistant (user/steering) message.
 func dimRule() string { return term.Dim(strings.Repeat("─", termWidth())) }
+
+// abandonRule returns a labeled dim rule used when a live region ends without
+// a normal seal (crash, disconnect, interrupt-timeout). Shape: "─── [reason] ───..."
+func abandonRule(reason string) string {
+	w := termWidth()
+	body := " [" + reason + "] "
+	prefix := "───" + body
+	fill := w - len(prefix)
+	if fill < 3 {
+		fill = 3
+	}
+	return term.Dim(prefix + strings.Repeat("─", fill))
+}
 
 // statusBanner returns a full-width dimmed bookend: "─── id · time ───…"
 // extended with box-drawing dashes to the viewport width.

@@ -281,6 +281,32 @@ func (i *Inline) vmove(b *strings.Builder, target int) {
 	i.cur = target
 }
 
+// AbandonOpen ends the live region without a normal Seal (no figaro.aria
+// close frame arrived). It moves the cursor past the live content and prints
+// line on a fresh row as a visual boundary, so the next stream lands on clean
+// ground. Use this when the agent dies mid-turn, the user disconnects with
+// Ctrl-D, or an interrupt times out.
+//
+// line is typically a dim rule with a reason label — the caller owns the
+// formatting (CLI policy). Without a live region, line is still printed.
+func (i *Inline) AbandonOpen(line string) {
+	var b strings.Builder
+	if i.liveLT != 0 {
+		// dropBelow logic: park below the visible live span.
+		if n := len(i.live) - i.vt; n > 0 {
+			b.WriteString(strings.Repeat("\r\n", n))
+		}
+	}
+	if line != "" {
+		w, _ := i.term.Size()
+		b.WriteString("\r\n")
+		b.WriteString(clip(line, w))
+		b.WriteString("\r\n")
+	}
+	io.WriteString(i.term, b.String())
+	i.reset()
+}
+
 func (i *Inline) dropBelow() {
 	// The cursor is parked at the region's visible top (logical row i.vt). When
 	// the region scrolled taller than the viewport, its first i.vt rows are above

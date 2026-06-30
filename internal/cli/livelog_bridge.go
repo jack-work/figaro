@@ -63,6 +63,11 @@ func (t *livelogTurn) apply(r aria.AriaRead)  { t.client.Apply(r) }
 func (t *livelogTurn) setDesync(fn func(int)) { t.client.OnDesync = fn }
 func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 
+// abandon closes a live region without a normal Seal: paint a labeled
+// dim rule across the boundary so what follows isn't glued to the orphaned
+// output. reason is the short label (e.g. "disconnected — turn continues").
+func (t *livelogTurn) abandon(reason string) { t.in.AbandonOpen(abandonRule(reason)) }
+
 func (t *livelogTurn) tick() {
 	if t.tr.active {
 		// Only the spinner needs the periodic repaint; if nothing is animating,
