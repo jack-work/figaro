@@ -268,22 +268,24 @@ func TestXwalBackend_ForestVectors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string][]int{c1: {0}, c2: {1}, alt: {0, 0}}
 	got := map[string][]int{}
 	for _, n := range b.Nodes() {
 		if n.Kind == string(kindConversation) {
 			got[n.ID] = n.Vector
 		}
 	}
-	for id, wv := range want {
-		gv := got[id]
-		if len(gv) != len(wv) {
-			t.Fatalf("%s vector = %v, want %v (all: %v)", id, gv, wv, got)
-		}
-		for i := range wv {
-			if gv[i] != wv[i] {
-				t.Fatalf("%s vector = %v, want %v", id, gv, wv)
-			}
-		}
+	// Sibling roots are ordered by id (random hex), so c1/c2 may land in either
+	// order — assert the structure, not a fixed creation-order assignment: both
+	// top-level roots have distinct length-1 vectors forming the set {[0],[1]},
+	// and alt is c1's branch (its parent's vector + [0]).
+	if len(got[c1]) != 1 || len(got[c2]) != 1 {
+		t.Fatalf("top-level roots must have length-1 vectors: c1=%v c2=%v", got[c1], got[c2])
+	}
+	if !((got[c1][0] == 0 && got[c2][0] == 1) || (got[c1][0] == 1 && got[c2][0] == 0)) {
+		t.Fatalf("root vectors must be {[0],[1]}: c1=%v c2=%v", got[c1], got[c2])
+	}
+	wantAlt := append(append([]int(nil), got[c1]...), 0)
+	if len(got[alt]) != 2 || got[alt][0] != wantAlt[0] || got[alt][1] != wantAlt[1] {
+		t.Fatalf("alt (branch of c1) vector = %v, want %v", got[alt], wantAlt)
 	}
 }
