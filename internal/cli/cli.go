@@ -252,6 +252,38 @@ Keys while streaming:
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:    "listen",
+		Group:   "Prompt",
+		Short:   "Attach to an aria's live stream without sending a prompt",
+		Usage:   "listen [<id>]",
+		Long: `Attach to an aria's live stream. Same view as a send mid-stream:
+catches up to the committed cursor, follows live frames, and supports
+Ctrl-T transcript mode — just without calling figaro.qua. Stays open
+until you close it.
+
+With no id, the pid-bound aria is used.
+
+Keys:
+  Ctrl-C   Interrupt the in-flight turn (like in send).
+  Ctrl-D   Disconnect this CLI; the turn keeps running.
+  Ctrl-T   Open the full-screen transcript pager.
+  Ctrl-O   Toggle verbose tool-input expansion.
+  q / Esc  (in pager) leave pager and return to the inline tail.`,
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			var id string
+			if len(ctx.Args) > 0 {
+				id = ctx.Args[0]
+			}
+			runListen(ld, id)
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:    "list",
 		Aliases: []string{"ls"},
 		Group:   "Session",
