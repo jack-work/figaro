@@ -80,6 +80,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// SIGWINCH handler, and keybindings all serialize on mu.
 	var mu sync.Mutex
 	doneCh := make(chan struct{}, 1)
+	disconnectCh := make(chan struct{}, 1) // Ctrl-D: leave the turn running
 	turnDone := false // turn ended while the pager was up; exit on pager close
 	sendCursor := -1  // cursor from Qua; stop only once committed past it and idle
 
@@ -184,7 +185,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}()
 
 	// Live keybindings (cbreak: per-key, no echo, SIGINT intact). Ctrl-O/Ctrl-T
-	// toggles verbosity and repaints the open message; Ctrl-D ends the turn.
+	// toggles verbosity / opens the pager; Ctrl-D disconnects the CLI without
+	// touching the turn (no figaro.interrupt) — the daemon keeps running.
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		if restore, err := term.MakeCbreak(int(os.Stdin.Fd())); err == nil {
 			defer restore()
@@ -216,8 +218,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 							continue
 						}
 						switch b {
-						case 0x04: // Ctrl-D: end the turn
-							cancel()
+						case 0x04: // Ctrl-D: disconnect the CLI; do NOT interrupt the turn
+							select {
+							case disconnectCh <- struct{}{}:
+							default:
+							}
 							return
 						case 0x0f: // Ctrl-O: toggle verbosity
 							mu.Lock()
@@ -252,6 +257,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	select {
 	case <-doneCh:
 		// The committed bookend is the final line; nothing more to print.
+	case <-disconnectCh:
+		fmt.Fprintln(os.Stderr, "\ndisconnected; turn continues. follow: figaro listen "+figaroID)
 	case <-fcli.Done():
 		fmt.Fprintln(os.Stderr, "\nerror: agent disconnected before turn completed")
 		os.Exit(1)

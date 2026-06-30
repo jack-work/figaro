@@ -175,6 +175,12 @@ Flags:
                  to the stream; do not send figaro.interrupt on Ctrl-C.
                  Use ` + "`figaro listen <id>`" + ` later to follow.
 
+Keys while streaming:
+  Ctrl-C         Interrupt the turn (sends figaro.interrupt).
+  Ctrl-D         Disconnect this CLI; leave the turn running.
+  Ctrl-T         Open the full-screen transcript pager.
+  Ctrl-O         Toggle verbose tool-input expansion.
+
   figaro send -- <prompt>              prompt the pid-bound aria, rich
   figaro send --id myid -- <prompt>    prompt a named aria (rich)
   figaro send -r -- <prompt>           bound aria, raw stream
