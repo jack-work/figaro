@@ -653,43 +653,52 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		result = append(result, entry)
 	}
 
+	// Snapshot the whole forest ONCE per request. Each Backend.Nodes() is a
+	// full disk scan (figwal opens every trunk head for Tip/lineage), so the
+	// dormant-aria fill, the global anchors, AND the per-entry forest position
+	// all share this single snapshot + its id index. (Previously this path
+	// called Backend.List() + Backend.Nodes() + a per-entry Backend.Node() —
+	// O(N) full scans => O(N^2) trunk-head opens on a big tree.)
+	var nodeList []store.NodeView
+	nodeByID := map[string]store.NodeView{}
 	if h.angelus.Backend != nil {
-		arias, err := h.angelus.Backend.List()
-		if err != nil {
-			slog.Warn("list backend enumerate", "err", err)
-		}
-		for _, aria := range arias {
-			if _, ok := seen[aria.ID]; ok {
-				continue
-			}
-			entry := rpc.FigaroInfoResponse{
-				ID:           aria.ID,
-				State:        "dormant",
-				MessageCount: aria.MessageCount,
-				LastActive:   aria.LastModified.UnixMilli(),
-			}
-			if aria.Meta != nil {
-				entry.TokensIn = aria.Meta.TokensIn
-				entry.TokensOut = aria.Meta.TokensOut
-				entry.CacheReadTokens = aria.Meta.CacheReadTokens
-				entry.CacheWriteTokens = aria.Meta.CacheWriteTokens
-				if aria.Meta.LastActiveMS != 0 {
-					entry.LastActive = aria.Meta.LastActiveMS
-				}
-			}
-
-			if !req.IDsOnly {
-				h.fillFromChalkboard(aria.ID, &entry)
-			}
-			result = append(result, entry)
+		nodeList = h.angelus.Backend.Nodes()
+		for _, n := range nodeList {
+			nodeByID[n.ID] = n
 		}
 	}
 
+	// Dormant conversation trunks (not currently registered/live).
+	for _, n := range nodeList {
+		if n.Kind != conversationKind {
+			continue
+		}
+		if _, ok := seen[n.ID]; ok {
+			continue
+		}
+		seen[n.ID] = struct{}{}
+		entry := rpc.FigaroInfoResponse{ID: n.ID, State: "dormant"}
+		if m, _ := h.angelus.Backend.Meta(n.ID); m != nil {
+			entry.MessageCount = m.MessageCount
+			entry.TokensIn = m.TokensIn
+			entry.TokensOut = m.TokensOut
+			entry.CacheReadTokens = m.CacheReadTokens
+			entry.CacheWriteTokens = m.CacheWriteTokens
+			if m.LastActiveMS != 0 {
+				entry.LastActive = m.LastActiveMS
+			}
+		}
+		if !req.IDsOnly {
+			h.fillFromChalkboard(n.ID, &entry)
+		}
+		result = append(result, entry)
+	}
+
 	// Global: also surface the ceremonial anchors — the null genesis trunk and
-	// every versioned loadout — that backend.List() filters out. fillFromNode
-	// below stamps their Kind/Loadout/Version/Parent.
-	if req.Global && h.angelus.Backend != nil {
-		for _, n := range h.angelus.Backend.Nodes() {
+	// every versioned loadout — that the conversation filter above skips.
+	// fillFromNode below stamps their Kind/Loadout/Version/Parent.
+	if req.Global {
+		for _, n := range nodeList {
 			if n.Kind == conversationKind {
 				continue
 			}
@@ -701,11 +710,10 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
-	// Forest position for every entry (live + dormant), and surface
-	// frozen fork-point nodes that backend.List omits as "live".
+	// Forest position for every entry (live + dormant), from the snapshot.
 	if !req.IDsOnly {
 		for i := range result {
-			h.fillFromNode(result[i].ID, &result[i])
+			h.fillFromNode(nodeByID, &result[i])
 		}
 	}
 
@@ -713,12 +721,10 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 }
 
 // fillFromNode adds the fork-forest position (vector/trunk/parent/frozen)
-// from the tree, marking frozen nodes' state.
-func (h *handlers) fillFromNode(ariaID string, entry *rpc.FigaroInfoResponse) {
-	if h.angelus.Backend == nil {
-		return
-	}
-	n, ok := h.angelus.Backend.Node(ariaID)
+// from the tree, marking frozen nodes' state. The forest is snapshotted by
+// the caller (once per request) and indexed by id, so this is a map lookup.
+func (h *handlers) fillFromNode(nodes map[string]store.NodeView, entry *rpc.FigaroInfoResponse) {
+	n, ok := nodes[entry.ID]
 	if !ok {
 		return
 	}
