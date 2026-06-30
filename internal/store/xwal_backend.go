@@ -215,6 +215,33 @@ func (b *XwalBackend) ForkAt(ariaID string, atMainLT uint64) (cont, alt string, 
 	return b.store.ForkAt(ariaID, atMainLT)
 }
 
+// Promote climbs a conversation trunk; it relabels ancestor trunk markers, so
+// any cached handles may go stale — drop them all (they re-open lazily).
+func (b *XwalBackend) Promote(ariaID string, levels int) (int, error) {
+	climbed, err := b.store.Promote(ariaID, levels)
+	if err == nil {
+		b.evictAll()
+	}
+	return climbed, err
+}
+
+func (b *XwalBackend) OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo, error) {
+	o, err := b.store.OwnerOf(ariaID, atMainLT)
+	if err != nil {
+		return OwnerInfo{}, err
+	}
+	return OwnerInfo{Trunk: o.Trunk, Loadout: o.Stump, IsRoot: o.IsRoot}, nil
+}
+
+func (b *XwalBackend) evictAll() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for id, h := range b.open {
+		h.xw.Close()
+		delete(b.open, id)
+	}
+}
+
 func (b *XwalBackend) Node(id string) (NodeView, bool) { return b.store.Node(id) }
 func (b *XwalBackend) Nodes() []NodeView               { return b.store.Nodes() }
 

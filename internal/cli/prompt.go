@@ -90,6 +90,9 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay 
 	if err != nil {
 		die("send: fork %s at LT %d: %s", trunkID, atMainLT, err)
 	}
+	if fr.OwnerNote != "" {
+		fmt.Fprintf(os.Stderr, "%s\n", fr.OwnerNote)
+	}
 
 	target := fr.Alternative
 	if stay {

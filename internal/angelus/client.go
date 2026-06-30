@@ -50,6 +50,14 @@ func (c *Client) CreateEphemeral(ctx context.Context, loadout string, patch *rpc
 	return &resp, err
 }
 
+// Promote climbs a conversation trunk up `levels` stump-bounded levels (it
+// absorbs its parent trunk's run). levels <= 0 means one level.
+func (c *Client) Promote(ctx context.Context, figaroID string, levels int) (*rpc.PromoteResponse, error) {
+	var resp rpc.PromoteResponse
+	err := c.cli.Call(ctx, rpc.MethodPromote, rpc.PromoteRequest{FigaroID: figaroID, Levels: levels}, &resp)
+	return &resp, err
+}
+
 func (c *Client) Kill(ctx context.Context, figaroID string, recursive bool) error {
 	return c.cli.Call(ctx, rpc.MethodKill, rpc.KillRequest{FigaroID: figaroID, Recursive: recursive}, nil)
 }

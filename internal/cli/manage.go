@@ -569,6 +569,9 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay bool) {
 		if atMainLT > 0 {
 			at = fmt.Sprintf("LT %d", atMainLT)
 		}
+		if resp.OwnerNote != "" {
+			fmt.Fprintf(os.Stderr, "%s\n", resp.OwnerNote)
+		}
 		contNote := "(attend to continue)"
 		if rescoped {
 			contNote = "(this shell)"
@@ -576,6 +579,46 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay bool) {
 		fmt.Fprintf(os.Stderr,
 			"forked %s at %s (now a frozen fork point)\n  continuation %s  %s\n  alternative  %s  (attend it to diverge)\n",
 			resp.Parent, at, resp.Continuation, contNote, resp.Alternative)
+		return nil
+	})
+}
+
+// runPromote climbs a conversation trunk up N stump-bounded levels — it
+// becomes the canonical line through its ancestors, absorbing each parent
+// trunk's run. Pure relabeling: no data moves, ids are stable, your binding
+// is untouched.
+func runPromote(loaded *config.Loaded, idFlag string, args []string) {
+	target := idFlag
+	if target == "" && len(args) > 0 {
+		target = args[0]
+	}
+	levels := 1
+	if len(args) > 1 {
+		n, err := strconv.Atoi(args[len(args)-1])
+		if err != nil || n < 1 {
+			die("promote: bad level count %q (want a positive integer)", args[len(args)-1])
+		}
+		levels = n
+	}
+	WithAngelus(loaded, func(acli *angelus.Client) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if target == "" {
+			if r, err := acli.Resolve(ctx, os.Getppid()); err == nil && r.Found {
+				target = r.FigaroID
+			}
+		}
+		if target == "" {
+			die("promote: no aria bound to this shell (try: promote <id> [levels])")
+		}
+		resp, err := acli.Promote(ctx, target, levels)
+		if err != nil {
+			die("promote: %s", err)
+		}
+		if resp.AtStump {
+			die("promote: %s is rooted at a loadout — cannot promote into a loadout; make or edit a loadout instead", target)
+		}
+		fmt.Fprintf(os.Stderr, "promoted %s by %d level(s) — it is now the canonical line through its ancestors\n", target, resp.Climbed)
 		return nil
 	})
 }

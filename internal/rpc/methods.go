@@ -52,6 +52,7 @@ type ErrorData struct {
 const (
 	MethodCreate      = "figaro.create"
 	MethodFork        = "figaro.fork"
+	MethodPromote     = "figaro.promote"
 	MethodKill        = "figaro.kill"
 	MethodList        = "figaro.list"
 	MethodAttach      = "figaro.attach"
@@ -199,11 +200,29 @@ type ForkRequest struct {
 }
 
 // ForkResponse returns the two fresh child ids. The parent freezes and
-// keeps its id as a navigable (read-only) index node.
+// keeps its id as a navigable (read-only) index node. OwnerNote, when set,
+// announces that an interior <id>:<LT> resolved to an owning ancestor (a
+// parent trunk, a loadout, or the genesis root) and what was branched there.
 type ForkResponse struct {
 	Parent       string `json:"parent"`
 	Continuation string `json:"continuation"`
 	Alternative  string `json:"alternative"`
+	OwnerNote    string `json:"owner_note,omitempty"`
+}
+
+// PromoteRequest climbs a conversation trunk up Levels stump-bounded levels,
+// relabeling the canonical trunk path so it absorbs its parent trunk's run.
+type PromoteRequest struct {
+	FigaroID string `json:"figaro_id"`
+	Levels   int    `json:"levels,omitempty"`
+}
+
+// PromoteResponse reports how many levels the trunk actually climbed. AtStump
+// is true when it could not climb at all (the trunk is rooted at a loadout).
+type PromoteResponse struct {
+	FigaroID string `json:"figaro_id"`
+	Climbed  int    `json:"climbed"`
+	AtStump  bool   `json:"at_stump,omitempty"`
 }
 
 // Endpoint describes how to connect to a figaro.

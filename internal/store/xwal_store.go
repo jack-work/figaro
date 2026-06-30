@@ -1,30 +1,33 @@
 package store
 
-// XwalStore is figaro's aria tree, now a thin policy layer over figwal's
+// XwalStore is figaro's aria tree, a thin policy layer over figwal's
 // xwal.Trunks (which owns the fork/trunk mechanics on disk). figaro keeps
 // only policy:
 //
-//	null (root trunk) ──SpawnChild──> loadout trunk ──SpawnChild──> conversation
-//	                                                  ──ForkTail/interior fork──> branch…
+//	root (null) ──CreateStump──> loadout (stump) ──SpawnUnderStump──> conversation
+//	                                                ──ForkTail/interior fork──> branch…
 //
-//   - null: the root trunk (xwal.CreateTrunks genesis). Ceremonial, closed.
-//   - loadout: SpawnChild(null) + a renderable RoleUser birth message carrying
-//     the loadout's chalkboard stamp (system.loadout_name/version). One per
-//     (name, content-version); deduped in a small policy side-file. Closed.
-//   - conversation: SpawnChild(loadout) — inherits the loadout's rendered
-//     prefix via the fork watermark. A live trunk.
+//   - root: the channel dir itself (xwal.CreateTrunks genesis). Markerless,
+//     ceremonial — the "null" anchor. Addressed by the rootID sentinel.
+//   - loadout: a markerless, named stump (CreateStump) holding a renderable
+//     RoleUser birth message that carries the loadout's chalkboard stamp
+//     (system.loadout_name/version). One per (name, content-version); the
+//     stump NAME is "<name>@<content-version>", so the dedup map lives on
+//     disk (Stumps()) — no policy side-file. Ceremonial.
+//   - conversation: SpawnUnderStump(loadout) — inherits the loadout's
+//     rendered prefix via the fork watermark. A live trunk.
 //
 // The aria id IS the trunk id (stable across forks — the continuation keeps
 // it). Trunk identity, the node tree, and fork mechanics live on disk in
-// figwal; figaro persists only the null trunk id + the loadout dedup map.
+// figwal; figaro derives loadouts/null from the stump/root structure.
 
 import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -36,8 +39,8 @@ import (
 )
 
 // hexTrunkID mints an opaque aria/trunk id (the same 4-byte hex form figaro
-// has always used for aria handles), so ids read like real handles rather
-// than sequential "t<N>".
+// has always used for aria handles), so conversation ids read like real
+// handles rather than sequential "t<N>".
 func hexTrunkID() string {
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
@@ -48,10 +51,14 @@ const (
 	chanIR           = "ir"
 	chanChalkboard   = "chalkboard"
 	reducerJSONMerge = "jsonmerge"
-	policyFile       = "policy.json"
 
 	keyLoadoutName = "system.loadout_name"
 	keyLoadoutVer  = "system.loadout_version"
+
+	// rootID is the ceremonial "null" anchor's display id. The root is the
+	// channel dir itself — it carries no trunk id on disk — so figaro names
+	// it with a stable sentinel for listing/lineage.
+	rootID = "null"
 )
 
 type nodeKind string
@@ -79,9 +86,9 @@ func chalkboardReduce(state, patch []byte) ([]byte, error) {
 }
 
 func storeConfig() xwal.Config {
-	// The root trunk's genesis is a figaro RoleGenesis message (filtered
-	// from rendering/context) — not figwal's generic marker, which would
-	// read back as an empty-role message in the IR.
+	// The root genesis is a figaro RoleGenesis message (filtered from
+	// rendering/context) — not figwal's generic marker, which would read back
+	// as an empty-role message in the IR.
 	genesis, _ := json.Marshal(message.Message{Role: message.RoleGenesis})
 	return xwal.Config{
 		Main:        chanIR,
@@ -98,24 +105,17 @@ func storeConfig() xwal.Config {
 	}
 }
 
-// policy is figaro's side-state: the only things not derivable from the
-// figwal trunk tree (the null trunk id and the loadout dedup map).
-type policy struct {
-	Null     string            `json:"null"`
-	Loadouts map[string]string `json:"loadouts"` // "name@version" -> trunk id
-}
-
 // XwalStore owns the aria tree (policy over xwal.Trunks).
 type XwalStore struct {
 	root   string
 	cfg    xwal.Config
 	mu     sync.Mutex
 	trunks *xwal.Trunks
-	pol    policy
 	now    func() int64
 }
 
-// OpenXwalStore opens (creating if absent) the aria tree at root.
+// OpenXwalStore opens (creating if absent) the aria tree at root, migrating a
+// pre-root/stumps store in place if needed.
 func OpenXwalStore(root string) (*XwalStore, error) {
 	if root == "" {
 		return nil, fmt.Errorf("xwal store: empty root")
@@ -124,21 +124,19 @@ func OpenXwalStore(root string) (*XwalStore, error) {
 		return nil, err
 	}
 	s := &XwalStore{root: root, cfg: storeConfig(), now: func() int64 { return time.Now().UnixMilli() }}
-	if err := s.loadPolicy(); err != nil {
-		return nil, err
+	// Heal a pre-root/stumps store (root .trunk marker + loadout trunks) into
+	// the markerless-root + named-stumps layout before opening.
+	if err := migrateToStumps(root); err != nil {
+		return nil, fmt.Errorf("xwal store: migrate: %w", err)
 	}
 	tr, err := xwal.OpenTrunks(root, s.cfg)
 	if err != nil {
-		// Not initialized yet: create the genesis root trunk (the null).
-		tr, nullID, cerr := xwal.CreateTrunks(root, s.cfg)
+		// Not initialized yet: create the genesis root.
+		tr, cerr := xwal.CreateTrunks(root, s.cfg)
 		if cerr != nil {
 			return nil, cerr
 		}
 		s.trunks = tr
-		s.pol.Null = nullID
-		if err := s.savePolicy(); err != nil {
-			return nil, err
-		}
 		return s, nil
 	}
 	s.trunks = tr
@@ -153,8 +151,12 @@ func (s *XwalStore) OpenNode(id string) (*xwal.XWAL, error) {
 	return s.trunks.Head(id)
 }
 
-// CreateLoadout returns the trunk id for (name, content-version-of-patch),
-// materializing it as a SpawnChild of null if it does not exist yet.
+// loadoutStump is the stump name for a (name, content-version) loadout.
+func loadoutStump(name, ver string) string { return name + "@" + ver }
+
+// CreateLoadout returns the loadout id (its stump name) for (name,
+// content-version-of-patch), materializing it as a markerless stump under the
+// root if it does not exist yet.
 func (s *XwalStore) CreateLoadout(name string, patch message.Patch) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -162,33 +164,30 @@ func (s *XwalStore) CreateLoadout(name string, patch message.Patch) (string, err
 	if err != nil {
 		return "", err
 	}
-	key := name + "@" + ver
-	if id := s.pol.Loadouts[key]; id != "" {
-		return id, nil
+	stump := loadoutStump(name, ver)
+	for _, st := range s.trunks.Stumps() {
+		if st.Name == stump {
+			return stump, nil // already materialized
+		}
 	}
-	id, err := s.trunks.SpawnChild(s.pol.Null)
-	if err != nil {
-		return "", fmt.Errorf("xwal store: spawn loadout: %w", err)
+	if err := s.trunks.CreateStump(stump); err != nil {
+		return "", fmt.Errorf("xwal store: create loadout stump: %w", err)
 	}
 	// The loadout's birth message is renderable (RoleUser, empty content): its
-	// chalkboard patch renders as the loadout's <system-reminder> blocks
-	// ONCE in this shared prefix, inherited (cached) by every conversation.
+	// chalkboard patch renders as the loadout's <system-reminder> blocks ONCE
+	// in this shared prefix, inherited (cached) by every conversation.
 	stamped := stampLoadout(patch, name, ver)
-	if err := s.writeBirth(id, message.RoleUser, &stamped); err != nil {
+	if err := s.writeStumpBirth(stump, &stamped); err != nil {
 		return "", err
 	}
-	s.pol.Loadouts[key] = id
-	return id, s.savePolicy()
+	return stump, nil
 }
 
-// CreateConversation spawns a conversation from a loadout trunk.
+// CreateConversation spawns a conversation from a loadout stump.
 func (s *XwalStore) CreateConversation(loadoutID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.kindOf(loadoutID) != kindLoadout {
-		return "", fmt.Errorf("xwal store: %q is not a loadout", loadoutID)
-	}
-	id, err := s.trunks.SpawnChild(loadoutID)
+	id, err := s.trunks.SpawnUnderStump(loadoutID)
 	if err != nil {
 		return "", fmt.Errorf("xwal store: spawn conversation: %w", err)
 	}
@@ -197,19 +196,13 @@ func (s *XwalStore) CreateConversation(loadoutID string) (string, error) {
 	return id, nil
 }
 
-// Fork branches a conversation at its head. The aria id is STABLE — the
-// trunk continues under the same id (cont == id); only the alternative is
-// new. (bind-to-trunk: forking your trunk doesn't move you.) A cauterized
-// trunk (null/loadout) never continues — a fork there mints a fresh child
-// trunk beneath it (a loadoutless conversation, or one sharing the loadout).
+// Fork branches a conversation at its head. The aria id is STABLE — the trunk
+// continues under the same id (cont == id); only the alternative is new.
+// (bind-to-trunk: forking your trunk doesn't move you.)
 func (s *XwalStore) Fork(id string) (cont, alt string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.cauterized(id) {
-		alt, err = s.trunks.SpawnChild(id)
-	} else {
-		alt, err = s.trunks.ForkTail(id)
-	}
+	alt, err = s.trunks.ForkTail(id)
 	if err != nil {
 		return "", "", err
 	}
@@ -217,24 +210,27 @@ func (s *XwalStore) Fork(id string) (cont, alt string, err error) {
 }
 
 // ForkAt branches at an interior main-LT (imperative — no message): shares
-// [1..atMainLT], mints an empty alternative diverging at atMainLT+1; the id
-// is stable (cont == id). At/past the tail it degenerates to a tail fork.
+// [1..atMainLT], mints an empty alternative diverging at atMainLT+1; the id is
+// stable (cont == id). At/past the tail it degenerates to a tail fork.
 //
-// Cauterization: if atMainLT is owned by a ceremonial trunk (the null root or
-// a loadout), it is NOT re-split into a continuation — a new child trunk is
-// spawned beneath the owner (a new loadoutless conversation, or a new
-// conversation sharing that loadout). Forking a conversation's own turns (or a
-// parent conversation's) re-splits normally.
+// Cauterization: if atMainLT is owned by the root or a loadout stump, it is
+// NOT re-split into a continuation — a fresh conversation is spawned beneath
+// the owner (a loadoutless conversation under the root, or one sharing that
+// loadout). Forking a conversation's own turns (or a parent conversation's)
+// re-splits normally.
 func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	owner, oerr := s.trunks.OwnerTrunk(id, atMainLT)
+	owner, oerr := s.trunks.Owner(id, atMainLT)
 	if oerr != nil {
 		return "", "", oerr
 	}
-	if s.cauterized(owner) {
-		alt, err = s.trunks.SpawnChild(owner)
-	} else {
+	switch {
+	case owner.IsRoot:
+		alt, err = s.trunks.SpawnUnderRoot()
+	case owner.Stump != "":
+		alt, err = s.trunks.SpawnUnderStump(owner.Stump)
+	default:
 		alt, err = s.trunks.ForkAt(id, atMainLT)
 	}
 	if err != nil {
@@ -243,22 +239,37 @@ func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err er
 	return id, alt, nil
 }
 
-// cauterized reports whether a trunk is ceremonial (the null root or a
-// loadout) — ops "at" it spawn a child trunk rather than appending/re-splitting.
-func (s *XwalStore) cauterized(id string) bool {
-	k := s.kindOf(id)
-	return k == kindNull || k == kindLoadout
+// Promote climbs a conversation trunk up `levels` stump-bounded levels,
+// relabeling the canonical trunk path (the trunk absorbs its parent trunk's
+// run). Returns the number of levels actually climbed. xwal.ErrAtStump means
+// the trunk is rooted directly at a loadout — there is nothing to promote into.
+func (s *XwalStore) Promote(id string, levels int) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	climbed, err := s.trunks.Promote(id, levels)
+	if errors.Is(err, xwal.ErrAtStump) {
+		return climbed, ErrAtStump
+	}
+	return climbed, err
 }
 
-// writeBirth appends a birth message to a fresh trunk's IR plus its chalkboard
-// patch (the loadout stamp, or empty). Caller holds s.mu.
-func (s *XwalStore) writeBirth(id string, role message.Role, cbPatch *message.Patch) error {
-	x, err := s.trunks.Head(id)
+// OwnerOf resolves which node owns atMainLT along a trunk's lineage (a trunk,
+// a loadout stump, or the root) — for the <trunk>:<LT> addressing announcement.
+func (s *XwalStore) OwnerOf(id string, atMainLT uint64) (xwal.Owner, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.trunks.Owner(id, atMainLT)
+}
+
+// writeStumpBirth appends a loadout stump's renderable birth message (IR +
+// chalkboard stamp). Caller holds s.mu.
+func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error {
+	x, err := s.trunks.StumpHead(stump)
 	if err != nil {
 		return err
 	}
 	defer x.Close()
-	gen, _ := json.Marshal(message.Message{Role: role, Timestamp: s.now()})
+	gen, _ := json.Marshal(message.Message{Role: message.RoleUser, Timestamp: s.now()})
 	glt, err := x.AppendMain(gen, nil)
 	if err != nil {
 		return err
@@ -293,24 +304,20 @@ func stampLoadout(p message.Patch, name, ver string) message.Patch {
 	return message.Patch{Set: set, Remove: p.Remove}
 }
 
-// kindOf derives a trunk's kind from its lineage (no stored kind):
-// the null root, a child of null (loadout), else a conversation.
+// kindOf derives an id's kind: the root sentinel, a loadout stump (by name),
+// else a live conversation trunk.
 func (s *XwalStore) kindOf(id string) nodeKind {
-	if id == s.pol.Null {
+	if id == rootID {
 		return kindNull
+	}
+	for _, st := range s.trunks.Stumps() {
+		if st.Name == id {
+			return kindLoadout
+		}
 	}
 	for _, t := range s.trunks.List() {
 		if t.ID == id {
-			if t.Parent == s.pol.Null {
-				return kindLoadout
-			}
 			return kindConversation
-		}
-	}
-	// Closed trunks (loadouts) aren't in List(); a known loadout id is one.
-	for _, lid := range s.pol.Loadouts {
-		if lid == id {
-			return kindLoadout
 		}
 	}
 	return ""
@@ -333,11 +340,20 @@ type NodeView struct {
 	LastMS     int64
 }
 
-// view renders a live (conversation) trunk. Kind is always conversation —
-// closed ceremonial trunks (null/loadout) aren't in List().
+// view renders a live (conversation) trunk. Its parent for the global
+// hierarchy is its loadout stump (top-level) or its parent conversation trunk
+// (a branch); a loadoutless top-level trunk hangs off the root.
 func (s *XwalStore) view(t xwal.TrunkInfo, vec map[string][]int) NodeView {
+	parent := t.Parent
+	if parent == "" {
+		if t.Stump != "" {
+			parent = t.Stump // top-level conversation: nests under its loadout
+		} else {
+			parent = rootID // loadoutless top-level conversation
+		}
+	}
 	return NodeView{
-		ID: t.ID, Parent: t.Parent, Kind: string(kindConversation), Trunk: t.ID,
+		ID: t.ID, Parent: parent, Kind: string(kindConversation), Trunk: t.ID,
 		Vector: vec[t.ID], BranchedLT: t.BranchedLT,
 	}
 }
@@ -358,7 +374,7 @@ func (s *XwalStore) vectorsLocked() map[string][]int {
 		if ti.Parent != "" && live[ti.Parent] {
 			kids[ti.Parent] = append(kids[ti.Parent], ti.ID) // branch of a conversation
 		} else {
-			roots = append(roots, ti.ID) // root conversation (parent is a loadout/null)
+			roots = append(roots, ti.ID) // top-level conversation (parent is a stump/root)
 		}
 	}
 	sort.Strings(roots)
@@ -379,8 +395,8 @@ func (s *XwalStore) vectorsLocked() map[string][]int {
 	return vec
 }
 
-// Nodes returns a view of every conversation trunk plus the loadout/null
-// infrastructure trunks.
+// Nodes returns a view of every conversation trunk plus the ceremonial
+// anchors (the root + every loadout stump).
 func (s *XwalStore) Nodes() []NodeView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -389,31 +405,31 @@ func (s *XwalStore) Nodes() []NodeView {
 	for _, t := range s.trunks.List() {
 		out = append(out, s.view(t, vec))
 	}
-	// Closed ceremonial trunks (null + loadouts) aren't in List().
-	out = append(out, NodeView{ID: s.pol.Null, Kind: string(kindNull), Trunk: s.pol.Null})
-	for key, lid := range s.pol.Loadouts {
-		name, ver := splitLoadoutKey(key)
-		out = append(out, NodeView{ID: lid, Kind: string(kindLoadout), Trunk: lid, Parent: s.pol.Null, Loadout: name, Version: ver})
+	out = append(out, NodeView{ID: rootID, Kind: string(kindNull), Trunk: rootID})
+	for _, st := range s.trunks.Stumps() {
+		name, ver := splitLoadoutKey(st.Name)
+		out = append(out, NodeView{ID: st.Name, Kind: string(kindLoadout), Parent: rootID, Loadout: name, Version: ver})
 	}
 	return out
 }
 
-// Node returns a single trunk view (incl. closed loadout/null trunks).
+// Node returns a single trunk view (incl. the root + loadout stumps).
 func (s *XwalStore) Node(id string) (NodeView, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if id == s.pol.Null {
+	if id == rootID {
 		return NodeView{ID: id, Kind: string(kindNull), Trunk: id}, true
 	}
-	for key, lid := range s.pol.Loadouts {
-		if lid == id {
-			name, ver := splitLoadoutKey(key)
-			return NodeView{ID: id, Kind: string(kindLoadout), Trunk: id, Parent: s.pol.Null, Loadout: name, Version: ver}, true
+	for _, st := range s.trunks.Stumps() {
+		if st.Name == id {
+			name, ver := splitLoadoutKey(st.Name)
+			return NodeView{ID: id, Kind: string(kindLoadout), Parent: rootID, Loadout: name, Version: ver}, true
 		}
 	}
+	vec := s.vectorsLocked()
 	for _, t := range s.trunks.List() {
 		if t.ID == id {
-			return s.view(t, s.vectorsLocked()), true
+			return s.view(t, vec), true
 		}
 	}
 	return NodeView{}, false
@@ -439,30 +455,9 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 	return s.trunks.Remove(id, recursive)
 }
 
-func (s *XwalStore) loadPolicy() error {
-	data, err := os.ReadFile(filepath.Join(s.root, policyFile))
-	if os.IsNotExist(err) {
-		s.pol = policy{Loadouts: map[string]string{}}
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(data, &s.pol); err != nil {
-		return fmt.Errorf("xwal store: parse policy: %w", err)
-	}
-	if s.pol.Loadouts == nil {
-		s.pol.Loadouts = map[string]string{}
-	}
-	return nil
-}
-
-func (s *XwalStore) savePolicy() error {
-	body, _ := json.MarshalIndent(s.pol, "", "  ")
-	final := filepath.Join(s.root, policyFile)
-	tmp := final + ".tmp"
-	if err := os.WriteFile(tmp, body, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, final)
+// policy is the legacy side-state (null trunk id + loadout dedup map) of a
+// pre-root/stumps store; read only by the migration.
+type policy struct {
+	Null     string            `json:"null"`
+	Loadouts map[string]string `json:"loadouts"` // "name@version" -> trunk id
 }

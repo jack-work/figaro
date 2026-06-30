@@ -352,6 +352,34 @@ any other aria, or passing --stay, leaves your session untouched.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "promote",
+		Group: "Session",
+		Short: "Make a trunk the canonical line through its ancestors",
+		Usage: "promote [--id <id> | <id>] [levels]",
+		Long: `Promote a conversation trunk: it climbs up its ancestry, absorbing
+each parent trunk's run so it becomes the canonical line. Pure
+relabeling — no data moves, ids are stable, your binding is untouched.
+
+  figaro promote              promote the bound aria one level
+  figaro promote <id>         promote another aria one level
+  figaro promote <id> 10      climb up to 10 stump-bounded levels
+
+Promotion stops at the loadout boundary: a top-level conversation has
+nothing to promote into ("cannot promote into a loadout").`,
+		ArgsMin: 0,
+		ArgsMax: 2,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id (defaults to this shell's)"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			runPromote(ld, ctx.Flag("id"), ctx.Args)
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:    "kill",
 		Group:   "Session",
 		Short:   "Terminate and remove a trunk",

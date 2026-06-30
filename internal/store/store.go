@@ -4,10 +4,16 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 )
+
+// ErrAtStump means a Promote could not climb at all: the trunk is rooted
+// directly at a loadout (the cauterization boundary). Callers map it to a
+// domain message ("cannot promote into a loadout; make/edit a loadout").
+var ErrAtStump = errors.New("trunk is rooted at a loadout; cannot promote further")
 
 // AriaMeta is the per-aria summary at arias/{id}/meta.json.
 type AriaMeta struct {
@@ -29,6 +35,15 @@ type TranslationMeta struct {
 	Fingerprint  string `json:"fingerprint,omitempty"`
 	LastTransLT  uint64 `json:"last_trans_lt,omitempty"`
 	LastUpdateMS int64  `json:"last_update_ms,omitempty"`
+}
+
+// OwnerInfo describes which node owns a main-LT along a trunk's lineage:
+// a parent trunk (Trunk set), a loadout (Loadout set, its stump name), or
+// the genesis root (IsRoot). Used for the <id>:<LT> addressing announcement.
+type OwnerInfo struct {
+	Trunk   string
+	Loadout string
+	IsRoot  bool
 }
 
 // Backend is the aria storage provider. One per angelus. The only
@@ -74,6 +89,15 @@ type Backend interface {
 	// suffix becomes the continuation, and a fresh alternative starts
 	// empty from atMainLT. Both children get fresh ids.
 	ForkAt(ariaID string, atMainLT uint64) (cont, alt string, err error)
+
+	// Promote climbs a conversation trunk up `levels` stump-bounded levels
+	// (it absorbs its parent trunk's run). Returns the number of levels
+	// actually climbed; xwal.ErrAtStump means it is rooted at a loadout.
+	Promote(ariaID string, levels int) (climbed int, err error)
+
+	// OwnerResolution reports which node owns atMainLT along a trunk's
+	// lineage (a parent trunk, a loadout, or the genesis root).
+	OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo, error)
 
 	// Node / Nodes expose the tree for lineage + listing.
 	Node(id string) (NodeView, bool)

@@ -68,6 +68,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		Map: map[string]jkrpc.HandlerFunc{
 			rpc.MethodCreate:       h.create,
 			rpc.MethodFork:         h.fork,
+			rpc.MethodPromote:      h.promote,
 			rpc.MethodKill:         h.kill,
 			rpc.MethodList:         h.list,
 			rpc.MethodAttach:       h.attach,
@@ -425,6 +426,23 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			return nil, fmt.Errorf("fork: kill live agent: %w", err)
 		}
 	}
+	// Announce when an interior <id>:<LT> resolves to an owning ancestor —
+	// the LT lives in a parent trunk / loadout / the genesis root, so the
+	// branch is made there, not in this trunk's own range.
+	note := ""
+	if req.AtMainLT > 0 {
+		if o, oerr := h.angelus.Backend.OwnerResolution(req.FigaroID, req.AtMainLT); oerr == nil {
+			switch {
+			case o.IsRoot:
+				note = fmt.Sprintf("LT %d is the genesis root — spawned a fresh loadoutless conversation there", req.AtMainLT)
+			case o.Loadout != "":
+				note = fmt.Sprintf("LT %d is in loadout %s — spawned a fresh conversation under it", req.AtMainLT, o.Loadout)
+			case o.Trunk != "" && o.Trunk != req.FigaroID:
+				note = fmt.Sprintf("LT %d lives in trunk %s — branching there", req.AtMainLT, o.Trunk)
+			}
+		}
+	}
+
 	var cont, alt string
 	var err error
 	if req.AtMainLT > 0 {
@@ -436,7 +454,36 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
 	slog.Info("forked figaro", "parent", req.FigaroID, "at", req.AtMainLT, "continuation", cont, "alternative", alt)
-	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt}, nil
+	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil
+}
+
+// promote climbs a conversation trunk up N stump-bounded levels (it absorbs
+// its parent trunk's run). A live agent on the trunk keeps its id (promotion
+// only relabels ancestor markers), so no agent is killed.
+func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.PromoteRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	if h.angelus.Backend == nil {
+		return nil, errors.New("promote: no backend (ephemeral angelus)")
+	}
+	node, ok := h.angelus.Backend.Node(req.FigaroID)
+	if !ok {
+		return nil, fmt.Errorf("promote: no aria %q", req.FigaroID)
+	}
+	if node.Kind != conversationKind {
+		return nil, fmt.Errorf("promote: %q is a %s node, not a conversation", req.FigaroID, node.Kind)
+	}
+	climbed, err := h.angelus.Backend.Promote(req.FigaroID, req.Levels)
+	if errors.Is(err, store.ErrAtStump) {
+		return rpc.PromoteResponse{FigaroID: req.FigaroID, Climbed: 0, AtStump: true}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("promote %q: %w", req.FigaroID, err)
+	}
+	slog.Info("promoted figaro", "trunk", req.FigaroID, "levels", req.Levels, "climbed", climbed)
+	return rpc.PromoteResponse{FigaroID: req.FigaroID, Climbed: climbed}, nil
 }
 
 // runtimeFillins returns the per-process boot keys the loadout can't
