@@ -87,6 +87,28 @@ command). The shell here is zsh — globs abort on no-match.
 4. Update the docs that the change touched — this skill and its sections are
    the canonical record. A skill that lies is worse than no skill.
 
+## Self-invocation
+
+Figaro can call itself as a subagent — useful for isolated sub-tasks whose
+context shouldn't pollute the current aria, or for pipe-friendly answers.
+Two flags on `figaro send` do the heavy lifting:
+
+- **`-e` ephemeral** — the aria is not persisted; nothing to clean up, no
+  row in `figaro list` afterward.
+- **`-r` raw** — plain text on stdout, stripped of ANSI/live-render chrome.
+  Streamed, not buffered; safe to pipe.
+
+The workhorse pattern is `figaro send -er -- <prompt>` — one-shot,
+isolated, script-clean. Fan several out in parallel (background jobs or
+`xargs -P`) when the sub-questions are independent.
+
+For persistent sub-arias, use `figaro new -- <prompt>` (mints an id you can
+keep talking to via `figaro send --id <id> -r -- <prompt>`), and
+`figaro kill <id>` when done so they don't accumulate in `list`.
+
+See the **figscript** skill for the full scripting recipe (parallel
+fan-out, error handling, JSON extraction).
+
 ## Sections (read on demand)
 
 These live beside this file; read the one whose topic is in play.
