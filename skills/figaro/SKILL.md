@@ -109,6 +109,64 @@ keep talking to via `figaro send --id <id> -r -- <prompt>`), and
 See the **figscript** skill for the full scripting recipe (parallel
 fan-out, error handling, JSON extraction).
 
+## Monitoring aria state (job polling)
+
+Every aria carries a **`state`** field published by the daemon — the way
+to tell whether a subagent is still working or has parked. Three values:
+
+| state | meaning |
+|---|---|
+| `dormant` | not loaded in memory; nothing running |
+| `idle` | loaded, inbox empty (no turn in flight) |
+| `active` | inbox non-empty — currently working a turn |
+
+Source: `state := "idle"; if !a.inbox.IsIdle() { state = "active" }` in
+`internal/figaro/agent.go` (Agent.Info); `dormant` is stamped on by the
+angelus when it merges disk-backed arias into the list response
+(`internal/angelus/protocol.go`).
+
+**One-shot poll (scriptable):**
+
+```sh
+figaro list -j | jq -r '.[] | select(.kind=="conversation") | "\(.state)\t\(.id)\t\(.mantra)"'
+```
+
+**Just one aria:**
+
+```sh
+figaro status <id> -j | jq -r .state
+# or: figaro list -j | jq -r '.[] | select(.id=="<id>") | .state'
+```
+
+`figaro status <id>` (non-JSON) also prints it near the top.
+
+**"Is anything working right now?" — exit-code style:**
+
+```sh
+figaro list -j | jq -e 'any(.state == "active")' >/dev/null && echo busy || echo quiet
+```
+
+**Live tail of one aria's frames** (pushed, not polled):
+
+```sh
+figaro listen <id>
+```
+
+Same live-render stream `send` uses mid-turn — tool calls and text as
+they happen. Ctrl-D detaches without killing the turn.
+
+**Caveats:**
+
+- `active` is edge-triggered off inbox depth. A turn parked waiting on
+  the provider still shows `active`; the flip to `idle` happens when the
+  drain loop finishes the event.
+- `last_active` (ms epoch, in `list -j` / `status -j`) is your recency
+  signal for dormant/idle arias — pair it with `state` if you want
+  "working *and* recently touched".
+- There is no push notification of state transitions on the CLI surface.
+  For reactive monitoring, poll `list -j` on an interval, or `listen` for
+  the frame-level truth.
+
 ## Sections (read on demand)
 
 These live beside this file; read the one whose topic is in play.
