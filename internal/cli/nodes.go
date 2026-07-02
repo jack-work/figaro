@@ -22,7 +22,8 @@ const (
 // (Ctrl-O) and the unit re-rendered. Thinking blocks are always shown (muted);
 // verbose additionally expands tool inputs to the full wrapped command.
 type renderSettings struct {
-	verbose bool
+	verbose  bool
+	jsonMode bool // -j / --json: emit a single {aria_id, ...} JSON line on stdout instead of a live render
 }
 
 // renderNodes renders a unit's whole node list to terminal rows plus the

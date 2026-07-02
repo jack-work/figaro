@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
@@ -35,7 +37,7 @@ func runPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 		// Bound at a pending fork-point (attend <id>:<LT>): this prompt forks
 		// there and moves to the new branch (one-shot — the rebind clears it).
 		if resp.AtMainLT > 0 {
-			runSendForkAt(loaded, resp.FigaroID, resp.AtMainLT, false, prompt, set)
+			runSendForkAt(loaded, resp.FigaroID, resp.AtMainLT, false, false, prompt, set)
 			return
 		}
 		figaroID = resp.FigaroID
@@ -47,7 +49,9 @@ func runPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
 
-// runNewPrompt creates a fresh figaro and prompts it.
+// runNewPrompt creates a fresh figaro and prompts it. Under jsonMode
+// the streaming render is skipped: the aria is created, prompted via a
+// fire-and-forget Qua, and a single JSON line is emitted on stdout.
 func runNewPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -59,12 +63,33 @@ func runNewPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 	unbindBinding(ctx, acli, ppid)
 
 	figaroID, figaroEP := mustCreateAndBind(ctx, acli, loaded, ppid)
+	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
+
+	if set.jsonMode {
+		fcli, derr := figaro.DialClient(figaroEP, func(string, json.RawMessage) {})
+		if derr != nil {
+			die("connect figaro: %s", derr)
+		}
+		defer fcli.Close()
+		qctx, qcancel := context.WithTimeout(ctx, 10*time.Second)
+		if _, qerr := fcli.Qua(qctx, prompt, buildPromptChalkboard()); qerr != nil {
+			qcancel()
+			die("prompt: %s", qerr)
+		}
+		qcancel()
+		enc := json.NewEncoder(os.Stdout)
+		_ = enc.Encode(struct {
+			AriaID string `json:"aria_id"`
+			Mode   string `json:"mode"`
+		}{AriaID: figaroID, Mode: "new"})
+		return
+	}
+
 	// In no-bind mode nothing was bound to the shell, so print the id
 	// to stderr so callers can capture it (mirrors `send -f`'s notice).
 	if bindingDisabled() {
 		fmt.Fprintf(os.Stderr, "created %s\n", figaroID)
 	}
-	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
 
@@ -73,7 +98,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 // trunk we end up attended to. By default we rebind this shell to the new
 // alternative and send there; with stay (--attend=false) we leave the shell
 // on the original trunk and send there (the alternative is parked at LT).
-func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay bool, prompt string, set renderSettings) {
+func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay, asJSON bool, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -102,13 +127,36 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay 
 	target := fr.Alternative
 	if stay {
 		target = trunkID // parked alternative; shell stays on the original
-		fmt.Fprintf(os.Stderr, "forked %s at LT %d -> %s (parked; staying on %s)\n", trunkID, atMainLT, fr.Alternative, trunkID)
+		if !asJSON {
+			fmt.Fprintf(os.Stderr, "forked %s at LT %d -> %s (parked; staying on %s)\n", trunkID, atMainLT, fr.Alternative, trunkID)
+		}
 	} else {
 		unbindBinding(ctx, acli, ppid)
 		if err := bindBinding(ctx, acli, ppid, fr.Alternative, 0); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not attend %s: %s\n", fr.Alternative, err)
 		}
-		fmt.Fprintf(os.Stderr, "forked %s at LT %d -> attending %s\n", trunkID, atMainLT, fr.Alternative)
+		if !asJSON {
+			fmt.Fprintf(os.Stderr, "forked %s at LT %d -> attending %s\n", trunkID, atMainLT, fr.Alternative)
+		}
+	}
+
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		_ = enc.Encode(struct {
+			AriaID       string `json:"aria_id"`
+			Parent       string `json:"parent"`
+			Alternative  string `json:"alternative"`
+			Continuation string `json:"continuation"`
+			AtLT         uint64 `json:"at_lt"`
+			Mode         string `json:"mode"`
+		}{
+			AriaID:       target,
+			Parent:       fr.Parent,
+			Alternative:  fr.Alternative,
+			Continuation: fr.Continuation,
+			AtLT:         atMainLT,
+			Mode:         "fork-send",
+		})
 	}
 
 	ep, err := resolveAria(ctx, acli, target)

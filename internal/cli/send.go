@@ -33,6 +33,7 @@ type sendOpts struct {
 	dryRun    bool // --exec only
 	skipYes   bool // --exec only
 	forget    bool // --forget / -f: submit and exit; do not stream
+	json      bool // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
 }
 
 // extractSendFlags scans a PassRaw arg list for the send command's
@@ -153,6 +154,10 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			opts.forget = true
 			i++
 			continue
+		case a == "--json", a == "-j":
+			opts.json = true
+			i++
+			continue
 		case a == "--stay", a == "--no-attend", a == "--attend=false", a == "--attend=0":
 			opts.stay = true
 			i++
@@ -265,7 +270,7 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 		if opts.ephemeral || opts.exec || opts.verbatim {
 			die("send: <trunk>:<LT> is not compatible with --ephemeral/--exec/--verbatim")
 		}
-		runSendForkAt(loaded, trunkID, atMainLT, opts.stay, prompt, set)
+		runSendForkAt(loaded, trunkID, atMainLT, opts.stay, opts.json, prompt, set)
 		return
 	}
 	// No LT: a positional target is just the aria to send to.
@@ -510,6 +515,14 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 
 	if _, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard()); qerr != nil {
 		die("prompt: %s", qerr)
+	}
+	if opts.json {
+		enc := json.NewEncoder(os.Stdout)
+		_ = enc.Encode(struct {
+			AriaID string `json:"aria_id"`
+			Mode   string `json:"mode"`
+		}{AriaID: ariaID, Mode: "forget"})
+		return
 	}
 	fmt.Fprintf(os.Stderr, "forgot %s — use `figaro listen %s` to follow\n", ariaID, ariaID)
 }

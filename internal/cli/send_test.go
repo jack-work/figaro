@@ -21,6 +21,24 @@ func TestExtractSendFlags(t *testing.T) {
 			wantRest: []string{"--", "hello", "world"},
 		},
 		{
+			name:     "json long",
+			in:       []string{"--json", "--id", "x", "--", "hi"},
+			wantOpts: sendOpts{id: "x", json: true},
+			wantRest: []string{"--", "hi"},
+		},
+		{
+			name:     "json short",
+			in:       []string{"-j", "--id", "y", "--", "hi"},
+			wantOpts: sendOpts{id: "y", json: true},
+			wantRest: []string{"--", "hi"},
+		},
+		{
+			name:     "forget + json",
+			in:       []string{"-f", "-j", "--id", "z", "--", "hi"},
+			wantOpts: sendOpts{id: "z", forget: true, json: true},
+			wantRest: []string{"--", "hi"},
+		},
+		{
 			name:     "id flag",
 			in:       []string{"--id", "myid", "--", "hi"},
 			wantOpts: sendOpts{id: "myid"},

@@ -153,7 +153,7 @@ labeled by their figaro LT (the coordinate send/fork <id>:<LT> target).
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-x] [-n] [-y] [-f] -- <prompt>",
+		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding). With --id, targets
 the named aria, which must already exist (aria ids are system-minted).
@@ -180,6 +180,9 @@ Flags:
   -f, --forget   Submit the prompt and exit immediately. Do not attach
                  to the stream; do not send figaro.interrupt on Ctrl-C.
                  Use ` + "`figaro listen <id>`" + ` later to follow.
+  -j, --json     Emit a single {"aria_id":..., "mode":...} JSON line on
+                 stdout. With --forget: fire, then print. With <id>:<LT>:
+                 fork, then print (mode="fork-send").
 
 Keys while streaming:
   Ctrl-C         Interrupt the turn (sends figaro.interrupt).
@@ -207,8 +210,8 @@ Keys while streaming:
 		Name:    "new",
 		Group:   "Prompt",
 		Short:   "Start a fresh aria and prompt it",
-		Usage:   "new -- <prompt>",
-		Long:    "Creates a new aria (with server-generated id), binds it to this shell, and sends the prompt.",
+		Usage:   "new [-j|--json] -- <prompt>",
+		Long:    "Creates a new aria (with server-generated id), binds it to this shell, and sends the prompt.\n-j/--json emits {aria_id, mode:'new'} on stdout instead of the streaming render.",
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
@@ -216,7 +219,8 @@ Keys while streaming:
 			if prompt == "" {
 				return fmt.Errorf("usage: figaro new -- <prompt>")
 			}
-			runNewPrompt(ld, prompt, renderSettings{})
+			asJSON := hasPreDashFlag(ctx.RawArgs, "--json", "-j")
+			runNewPrompt(ld, prompt, renderSettings{jsonMode: asJSON})
 			return nil
 		},
 		CompleteArgs: completePromptOrIDFlag,

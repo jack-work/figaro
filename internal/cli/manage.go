@@ -566,21 +566,33 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay, asJSON b
 		}
 
 		if asJSON {
+			// aria_id is the "new/current" aria after the fork —
+			// the continuation when we rescoped (this shell moved),
+			// otherwise the alternative (what the caller usually cares
+			// about when scripting: the fresh empty branch).
+			ariaID := resp.Alternative
+			if rescoped {
+				ariaID = resp.Continuation
+			}
 			enc := json.NewEncoder(os.Stdout)
 			_ = enc.Encode(struct {
+				AriaID       string `json:"aria_id"`
 				Parent       string `json:"parent"`
 				Continuation string `json:"continuation"`
 				Alternative  string `json:"alternative"`
 				AtLT         uint64 `json:"at_lt,omitempty"`
 				Rescoped     bool   `json:"rescoped"`
 				OwnerNote    string `json:"owner_note,omitempty"`
+				Mode         string `json:"mode"`
 			}{
+				AriaID:       ariaID,
 				Parent:       resp.Parent,
 				Continuation: resp.Continuation,
 				Alternative:  resp.Alternative,
 				AtLT:         atMainLT,
 				Rescoped:     rescoped,
 				OwnerNote:    resp.OwnerNote,
+				Mode:         "fork",
 			})
 			return nil
 		}
