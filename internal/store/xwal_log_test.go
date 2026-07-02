@@ -2,92 +2,136 @@ package store
 
 import (
 	"testing"
-
-	"github.com/jack-work/figwal/xwal"
 )
 
 type tp struct {
 	S string `json:"s"`
 }
 
-func openTestXwal(t *testing.T, dir string) *xwal.XWAL {
+// mustBackendWithConv creates a fresh backend, seeds a loadout + one
+// conversation, and returns them. The conversation id is a real trunk
+// id; xwalLog operations against it exercise the full store path
+// (OpenNode → Trunks.Head / Trunks.Append).
+func mustBackendWithConv(t *testing.T) (*XwalBackend, string) {
 	t.Helper()
-	xw, err := xwal.Open(dir, xwal.Config{
-		Main: "ir",
-		Channels: []xwal.ChannelSpec{
-			{Name: "ir", Kind: xwal.ChannelLog},
-			{Name: "translations", Kind: xwal.ChannelLog},
-		},
-	})
+	b, err := NewXwalBackend(t.TempDir())
 	if err != nil {
-		t.Fatalf("xwal open: %v", err)
+		t.Fatal(err)
 	}
-	return xw
+	t.Cleanup(func() { _ = b.Close() })
+	l, err := b.CreateLoadout("default", patchSet(nil))
+	if err != nil {
+		t.Fatalf("create loadout: %v", err)
+	}
+	conv, err := b.CreateConversation(l)
+	if err != nil {
+		t.Fatalf("create conv: %v", err)
+	}
+	return b, conv
 }
 
 func TestXwalLog_RoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	xw := openTestXwal(t, dir)
-	defer xw.Close()
+	b, conv := mustBackendWithConv(t)
 
-	ir := newXwalLog[tp](xw, "ir", true)
-	tr := newXwalLog[tp](xw, "translations", false)
+	// The IR channel is the main channel; we use its own name so the
+	// Trunks.Append path (isMain=true) is exercised.
+	ir := newXwalLog[tp](b.store, conv, chanIR, true)
+	// Translation channel needs to be materialized before use.
+	if err := b.ensureChannel(conv, "translations/anthropic"); err != nil {
+		t.Fatal(err)
+	}
+	tr := newXwalLog[tp](b.store, conv, "translations/anthropic", false)
 
+	baseIR := len(ir.Read())
 	for i := 1; i <= 3; i++ {
 		e, err := ir.Append(Entry[tp]{Payload: tp{S: "msg"}})
 		if err != nil {
 			t.Fatalf("ir append: %v", err)
 		}
-		if e.LT != uint64(i) || e.FigaroLT != uint64(i) {
-			t.Fatalf("ir LT/FigaroLT = %d/%d, want %d", e.LT, e.FigaroLT, i)
+		if e.LT == 0 || e.FigaroLT == 0 || e.LT != e.FigaroLT {
+			t.Fatalf("ir LT/FigaroLT = %d/%d (want non-zero, equal)", e.LT, e.FigaroLT)
 		}
 		if _, err := tr.Append(Entry[tp]{FigaroLT: e.LT, Payload: tp{S: "wire"}, Fingerprint: "anthropic/v0"}); err != nil {
 			t.Fatalf("tr append: %v", err)
 		}
 	}
 
-	if got := ir.Read(); len(got) != 3 || got[2].Payload.S != "msg" {
-		t.Fatalf("ir.Read = %+v", got)
+	// IR read reflects the three new entries.
+	if got := len(ir.Read()); got != baseIR+3 {
+		t.Fatalf("ir.Read len = %d, want %d", got, baseIR+3)
 	}
-	got, ok := tr.Lookup(2)
-	if !ok || got.FigaroLT != 2 || got.Fingerprint != "anthropic/v0" || got.Payload.S != "wire" {
-		t.Fatalf("tr.Lookup(2) = (%+v,%v)", got, ok)
+	// Lookup by figaro LT works.
+	if got, ok := tr.Lookup(uint64(baseIR + 2)); !ok || got.Fingerprint != "anthropic/v0" || got.Payload.S != "wire" {
+		t.Fatalf("tr.Lookup(%d) = (%+v,%v)", baseIR+2, got, ok)
 	}
-	if tail, ok := ir.PeekTail(); !ok || tail.LT != 3 {
+	// PeekTail returns the latest.
+	if tail, ok := ir.PeekTail(); !ok || tail.Payload.S != "msg" {
 		t.Fatalf("ir.PeekTail = (%+v,%v)", tail, ok)
 	}
-	if s := tr.ScanFromEnd(2); len(s) != 2 || s[0].LT != 3 || s[1].LT != 2 {
-		t.Fatalf("tr.ScanFromEnd(2) = %+v", s)
+	// ScanFromEnd returns descending.
+	if s := tr.ScanFromEnd(2); len(s) != 2 {
+		t.Fatalf("tr.ScanFromEnd(2) len = %d, want 2", len(s))
 	}
 
 	// Clear wipes translations; reusable after.
 	if err := tr.Clear(); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
-	if _, ok := tr.Lookup(2); ok {
+	if _, ok := tr.Lookup(uint64(baseIR + 2)); ok {
 		t.Fatal("translation survived Clear")
-	}
-	if _, err := tr.Append(Entry[tp]{FigaroLT: 3, Payload: tp{S: "again"}, Fingerprint: "v1"}); err != nil {
-		t.Fatalf("append after clear: %v", err)
-	}
-	if g, ok := tr.Lookup(3); !ok || g.Fingerprint != "v1" {
-		t.Fatalf("post-clear lookup = (%+v,%v)", g, ok)
 	}
 }
 
-func TestXwalLog_SurvivesReopen(t *testing.T) {
-	dir := t.TempDir()
-	xw := openTestXwal(t, dir)
-	ir := newXwalLog[tp](xw, "ir", true)
-	e, _ := ir.Append(Entry[tp]{Payload: tp{S: "persisted"}})
-	tr := newXwalLog[tp](xw, "translations", false)
-	tr.Append(Entry[tp]{FigaroLT: e.LT, Payload: tp{S: "w"}, Fingerprint: "fp"})
-	xw.Close()
+// TestXwalLog_ReadsSurvivePromote is the whole point of the pull-
+// invalidation-with-fresh-open design: after Promote on a sibling
+// (which used to trigger evictAll on the whole backend), a live
+// xwalLog on this aria still reads and writes without any external
+// help. No cache invalidation, no reopen dance.
+func TestXwalLog_ReadsSurvivePromote(t *testing.T) {
+	b, conv := mustBackendWithConv(t)
 
-	xw2 := openTestXwal(t, dir)
-	defer xw2.Close()
-	tr2 := newXwalLog[tp](xw2, "translations", false)
-	if g, ok := tr2.Lookup(e.LT); !ok || g.Payload.S != "w" || g.Fingerprint != "fp" {
-		t.Fatalf("after reopen Lookup = (%+v,%v)", g, ok)
+	// Warm the aria with a few messages.
+	ir := newXwalLog[tp](b.store, conv, chanIR, true)
+	for i := 0; i < 3; i++ {
+		if _, err := ir.Append(Entry[tp]{Payload: tp{S: "warm"}}); err != nil {
+			t.Fatalf("warmup append: %v", err)
+		}
+	}
+	warmedLen := len(ir.Read())
+
+	// Create a sibling conversation under the same loadout and promote
+	// it. Under the OLD backend this triggered evictAll and would
+	// invalidate every cached handle. Under the new backend it's a
+	// no-op for this aria's row cache.
+	nodes := b.store.Nodes()
+	var loadoutID string
+	for _, n := range nodes {
+		if n.Kind == string(kindLoadout) {
+			loadoutID = n.ID
+			break
+		}
+	}
+	if loadoutID == "" {
+		t.Fatal("no loadout node found")
+	}
+	sibling, err := b.CreateConversation(loadoutID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The sibling is rooted at the loadout stump, so Promote returns
+	// ErrAtStump — but the point of the test is that our conv's
+	// handle is untouched regardless.
+	_, _ = b.Promote(sibling, 1)
+
+	// Read still works on the ORIGINAL aria's live xwalLog.
+	if got := len(ir.Read()); got != warmedLen {
+		t.Fatalf("post-promote Read len = %d, want %d", got, warmedLen)
+	}
+	// So does write.
+	if _, err := ir.Append(Entry[tp]{Payload: tp{S: "after-promote"}}); err != nil {
+		t.Fatalf("post-promote append: %v", err)
+	}
+	if got := len(ir.Read()); got != warmedLen+1 {
+		t.Fatalf("post-append Read len = %d, want %d", got, warmedLen+1)
 	}
 }

@@ -325,12 +325,6 @@ func (a *Agent) Kill() {
 	a.subs = nil
 	a.mu.Unlock()
 
-	// The backend owns the shared IR instance for backed arias and
-	// closes it on Fork/Remove/Close; cachedLog.Close is a no-op there.
-	// For ephemeral MemLog this is the real close.
-	if err := a.figLog.Close(); err != nil {
-		slog.Error("figLog close", "aria", a.id, "err", err)
-	}
 	if a.chalkboard != nil {
 		if err := a.chalkboard.Close(); err != nil {
 			slog.Error("chalkboard close", "aria", a.id, "err", err)

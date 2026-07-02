@@ -87,5 +87,3 @@ func (c *cachedLog[T]) Clear() error {
 	c.byFK = map[uint64]int{}
 	return nil
 }
-
-func (c *cachedLog[T]) Close() error { return c.inner.Close() }

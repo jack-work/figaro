@@ -88,5 +88,3 @@ func (s *MemLog[T]) Clear() error {
 	s.nextLT = 1
 	return nil
 }
-
-func (s *MemLog[T]) Close() error { return nil }

@@ -15,10 +15,9 @@ type Entry[T any] struct {
 // translator caches that invalidate wholesale on fingerprint
 // mismatch.
 //
-// Two backing implementations: FileLog (legacy NDJSON file) and
-// FigwalLog (figwal segments). Translator caches use the same Log
-// interface; they are not independently fork-able — forks ride
-// along with the IR log.
+// Two backing implementations: MemLog (ephemeral) and xwalLog (figwal
+// segments). Translator caches use the same Log interface; they are
+// not independently fork-able — forks ride along with the IR log.
 type Log[T any] interface {
 	// TODO: Pass direction iota, ascending or descending.
 	Read() []Entry[T]
@@ -30,5 +29,4 @@ type Log[T any] interface {
 	Append(e Entry[T]) (Entry[T], error)
 
 	Clear() error
-	Close() error
 }
