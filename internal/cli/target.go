@@ -73,11 +73,14 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *ang
 	_ = loaded
 	_ = autoCreate
 	if explicitID == "" {
-		r, err := acli.Resolve(ctx, os.Getppid())
+		r, err := resolveBinding(ctx, acli, os.Getppid())
 		if err != nil {
 			return "", transport.Endpoint{}, fmt.Errorf("resolve: %w", err)
 		}
 		if !r.Found {
+			if bindingDisabled() {
+				return "", transport.Endpoint{}, fmt.Errorf("no aria specified (pass --id <id>; binding disabled in this shell)")
+			}
 			return "", transport.Endpoint{}, fmt.Errorf("no figaro bound to this shell (try: --id <id> or attend <id>)")
 		}
 		return r.FigaroID, transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}, nil

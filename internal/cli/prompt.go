@@ -23,7 +23,7 @@ func runPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 
 	ppid := os.Getppid()
 
-	resp, err := acli.Resolve(ctx, ppid)
+	resp, err := resolveBinding(ctx, acli, ppid)
 	if err != nil {
 		die("resolve: %s", err)
 	}
@@ -56,9 +56,14 @@ func runNewPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 	defer acli.Close()
 
 	ppid := os.Getppid()
-	acli.Unbind(ctx, ppid)
+	unbindBinding(ctx, acli, ppid)
 
 	figaroID, figaroEP := mustCreateAndBind(ctx, acli, loaded, ppid)
+	// In no-bind mode nothing was bound to the shell, so print the id
+	// to stderr so callers can capture it (mirrors `send -f`'s notice).
+	if bindingDisabled() {
+		fmt.Fprintf(os.Stderr, "created %s\n", figaroID)
+	}
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
@@ -77,7 +82,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay 
 
 	ppid := os.Getppid()
 	if trunkID == "" {
-		r, err := acli.Resolve(ctx, ppid)
+		r, err := resolveBinding(ctx, acli, ppid)
 		if err != nil || !r.Found {
 			die("send: no trunk bound to this shell (try: <id>:<LT> or attend <id>)")
 		}
@@ -99,8 +104,8 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay 
 		target = trunkID // parked alternative; shell stays on the original
 		fmt.Fprintf(os.Stderr, "forked %s at LT %d -> %s (parked; staying on %s)\n", trunkID, atMainLT, fr.Alternative, trunkID)
 	} else {
-		acli.Unbind(ctx, ppid)
-		if err := acli.Bind(ctx, ppid, fr.Alternative, 0); err != nil {
+		unbindBinding(ctx, acli, ppid)
+		if err := bindBinding(ctx, acli, ppid, fr.Alternative, 0); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not attend %s: %s\n", fr.Alternative, err)
 		}
 		fmt.Fprintf(os.Stderr, "forked %s at LT %d -> attending %s\n", trunkID, atMainLT, fr.Alternative)

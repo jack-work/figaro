@@ -50,7 +50,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		}
 
 		boundID := ""
-		if r, rerr := acli.Resolve(ctx, os.Getppid()); rerr == nil && r.Found {
+		if r, rerr := resolveBinding(ctx, acli, os.Getppid()); rerr == nil && r.Found {
 			boundID = r.FigaroID
 		}
 
@@ -516,7 +516,7 @@ func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
 // continuation so work carries on seamlessly (same trunk/mantra, new id)
 // — the bound aria froze, so you must move. Forking any OTHER aria, or
 // passing --stay, is a maintenance fork: your session is left untouched.
-func runFork(loaded *config.Loaded, idFlag string, args []string, stay bool) {
+func runFork(loaded *config.Loaded, idFlag string, args []string, stay, asJSON bool) {
 	target := idFlag
 	if target == "" && len(args) > 0 {
 		target = args[0]
@@ -538,7 +538,7 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay bool) {
 		ppid := os.Getppid()
 
 		bound := ""
-		if r, err := acli.Resolve(ctx, ppid); err == nil && r.Found {
+		if r, err := resolveBinding(ctx, acli, ppid); err == nil && r.Found {
 			bound = r.FigaroID
 		}
 		if target == "" {
@@ -557,12 +557,32 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay bool) {
 		// the continuation is where "we" continue) and --stay wasn't given.
 		rescoped := false
 		if target == bound && !stay {
-			acli.Unbind(ctx, ppid)
-			if err := acli.Bind(ctx, ppid, resp.Continuation, 0); err != nil {
+			unbindBinding(ctx, acli, ppid)
+			if err := bindBinding(ctx, acli, ppid, resp.Continuation, 0); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not bind shell to continuation: %s\n", err)
 			} else {
 				rescoped = true
 			}
+		}
+
+		if asJSON {
+			enc := json.NewEncoder(os.Stdout)
+			_ = enc.Encode(struct {
+				Parent       string `json:"parent"`
+				Continuation string `json:"continuation"`
+				Alternative  string `json:"alternative"`
+				AtLT         uint64 `json:"at_lt,omitempty"`
+				Rescoped     bool   `json:"rescoped"`
+				OwnerNote    string `json:"owner_note,omitempty"`
+			}{
+				Parent:       resp.Parent,
+				Continuation: resp.Continuation,
+				Alternative:  resp.Alternative,
+				AtLT:         atMainLT,
+				Rescoped:     rescoped,
+				OwnerNote:    resp.OwnerNote,
+			})
+			return nil
 		}
 
 		at := "head"
@@ -604,7 +624,7 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if target == "" {
-			if r, err := acli.Resolve(ctx, os.Getppid()); err == nil && r.Found {
+			if r, err := resolveBinding(ctx, acli, os.Getppid()); err == nil && r.Found {
 				target = r.FigaroID
 			}
 		}
@@ -628,6 +648,9 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 // prompt forks there and moves to the new branch). The :<LT> form re-pins the
 // already-bound aria.
 func runAttend(loaded *config.Loaded, spec string) {
+	if bindingDisabled() {
+		die("attend: binding disabled (--no-bind, FIGARO_NO_BIND, or non-interactive shell); this command has no effect here")
+	}
 	// "~" is home: drop this shell's binding (the angelus pid→aria map). New
 	// conversations then default to the live loadout. `~` is a required literal;
 	// there is no `detach`.
@@ -635,7 +658,7 @@ func runAttend(loaded *config.Loaded, spec string) {
 		WithAngelus(loaded, func(acli *angelus.Client) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			_ = acli.Unbind(ctx, os.Getppid())
+			_ = unbindBinding(ctx, acli, os.Getppid())
 			fmt.Fprintln(os.Stderr, "home — unbound; new conversations will use the live loadout")
 			return nil
 		})
@@ -650,13 +673,13 @@ func runAttend(loaded *config.Loaded, spec string) {
 		defer cancel()
 		ppid := os.Getppid()
 		if trunk == "" {
-			r, rerr := acli.Resolve(ctx, ppid)
+			r, rerr := resolveBinding(ctx, acli, ppid)
 			if rerr != nil || !r.Found {
 				die("attend: :<LT> needs an already-bound aria (use attend <id>:<LT>)")
 			}
 			trunk = r.FigaroID
 		}
-		if err := acli.Bind(ctx, ppid, trunk, atMainLT); err != nil {
+		if err := bindBinding(ctx, acli, ppid, trunk, atMainLT); err != nil {
 			// A cauterized anchor (null/loadout) can't be attended — nudge.
 			if r, e := acli.ListGlobal(ctx); e == nil {
 				for _, f := range r.Figaros {

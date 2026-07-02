@@ -201,7 +201,7 @@ func (b *BashTool) run(ctx context.Context, req BashRequest, onOutput OnOutput) 
 // run to completion, honoring timeout and ctx cancellation.
 func (b *BashTool) runBlocking(ctx context.Context, req BashRequest, cwd string, onOutput OnOutput) (BashResult, error) {
 	sw := &streamWriter{onOutput: onOutput}
-	execReq := ExecRequest{Command: req.Command, Cwd: cwd, Timeout: req.Timeout, PTY: req.PTY}
+	execReq := ExecRequest{Command: req.Command, Cwd: cwd, Timeout: req.Timeout, PTY: req.PTY, Env: bashToolEnv()}
 	res, err := b.Executor.Execute(ctx, execReq, func(chunk []byte) { sw.Write(chunk) })
 	if err != nil {
 		return BashResult{}, err
@@ -232,7 +232,7 @@ func (b *BashTool) runSession(ctx context.Context, be BackgroundExecutor, req Ba
 			onOutput(chunk)
 		}
 	}
-	proc, err := be.Start(ExecRequest{Command: req.Command, Cwd: cwd}, sink)
+	proc, err := be.Start(ExecRequest{Command: req.Command, Cwd: cwd, Env: bashToolEnv()}, sink)
 	if err != nil {
 		b.Sessions.Remove(scope, sess.ID)
 		return BashResult{}, err

@@ -102,7 +102,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 
 	figaroID := id
 	if figaroID == "" {
-		r, err := acli.Resolve(ctx, os.Getppid())
+		r, err := resolveBinding(ctx, acli, os.Getppid())
 		if err != nil {
 			die("resolve: %s", err)
 		}

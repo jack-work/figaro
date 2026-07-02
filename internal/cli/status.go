@@ -35,7 +35,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 			ariaID = nameArg
 		}
 		if ariaID == "" {
-			r, err := acli.Resolve(ctx, os.Getppid())
+			r, err := resolveBinding(ctx, acli, os.Getppid())
 			if err != nil {
 				return fmt.Errorf("resolve: %w", err)
 			}

@@ -46,6 +46,12 @@ func Run(progName string, args []string) {
 	ctx := context.Background()
 	loaded := mustLoadConfig()
 
+	// Compute binding policy (interactive? --no-bind? env?) once, before
+	// the router dispatches. Consulted by every command that would
+	// otherwise look up the pid-binding.
+	initBindingPolicy()
+	args = extractNoBindFlag(args)
+
 	shutdown, err := figOtel.Init(ctx, stateDir())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: otel init: %s\n", err)
@@ -406,10 +412,11 @@ any other aria, or passing --stay, leaves your session untouched.`,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (defaults to this shell's); :<LT> for an interior fork"},
 			{Long: "stay", IsBool: true, Description: "Do not rebind this shell to the continuation"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Emit machine-readable result on stdout (parent, continuation, alternative, ...)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runFork(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("stay"))
+			runFork(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("stay"), ctx.BoolFlag("json"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,

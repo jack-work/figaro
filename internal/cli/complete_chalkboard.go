@@ -99,7 +99,7 @@ func softFetchLiveKeys() []string {
 		return nil
 	}
 	defer acli.Close()
-	r, err := acli.Resolve(ctx, os.Getppid())
+	r, err := resolveBinding(ctx, acli, os.Getppid())
 	if err != nil || !r.Found {
 		return nil
 	}
