@@ -55,6 +55,7 @@ func New(cfg Config) *Angelus {
 		Backend:    cfg.Backend,
 		SocketPath: filepath.Join(cfg.RuntimeDir, "angelus.sock"),
 		RuntimeDir: cfg.RuntimeDir,
+		StartedAt:  time.Now(), // set-once at construction; read concurrently (Uptime)
 	}
 	return a
 }
@@ -73,7 +74,6 @@ func (a *Angelus) BindingsPath() string {
 func (a *Angelus) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	a.cancel = cancel
-	a.StartedAt = time.Now()
 
 	ctx, span := figOtel.Start(ctx, "angelus.run",
 		figOtel.WithAttributes(
