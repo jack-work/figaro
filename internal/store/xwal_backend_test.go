@@ -2,7 +2,10 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -287,5 +290,103 @@ func TestXwalBackend_ForestVectors(t *testing.T) {
 	wantAlt := append(append([]int(nil), got[c1]...), 0)
 	if len(got[alt]) != 2 || got[alt][0] != wantAlt[0] || got[alt][1] != wantAlt[1] {
 		t.Fatalf("alt (branch of c1) vector = %v, want %v", got[alt], wantAlt)
+	}
+}
+
+// TestNoStranding_SiblingPromoteDoesNotInvalidate reproduces the exact
+// production bug: agent for aria A holds its Log; sibling aria B is
+// promoted (which used to trigger evictAll → close every aria's cached
+// xwal → next A.Append returns "file already closed"). Under the new
+// design A's Log has no cached xwal, so a promote on B is invisible.
+func TestNoStranding_SiblingPromoteDoesNotInvalidate(t *testing.T) {
+	b, err := NewXwalBackend(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	l, _ := b.CreateLoadout("d", patchSet(nil))
+	convA, _ := b.CreateConversation(l)
+	convB, _ := b.CreateConversation(l)
+
+	// Agent A grabs its Log at boot and holds it.
+	logA, err := b.Open(convA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Warm up.
+	for i := 0; i < 3; i++ {
+		if _, err := logA.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}); err != nil {
+			t.Fatalf("warm append: %v", err)
+		}
+	}
+
+	// Sibling gets promoted (even if ErrAtStump; the point is the
+	// backend does NOT evict A's handle).
+	_, _ = b.Promote(convB, 1)
+
+	// A can still append. Under the old evictAll this returned
+	// "append message: write .../n50/...jsonl: file already closed".
+	if _, err := logA.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}); err != nil {
+		t.Fatalf("post-promote-on-sibling append: %v", err)
+	}
+}
+
+// TestNoStranding_ConcurrentAppendsAcrossArias hammers many arias in
+// parallel while promotes and forks fire on some of them. No append
+// should fail, no reads should observe corruption.
+func TestNoStranding_ConcurrentAppendsAcrossArias(t *testing.T) {
+	b, err := NewXwalBackend(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	l, _ := b.CreateLoadout("d", patchSet(nil))
+	const numArias = 4
+	const perWriter = 20
+
+	arias := make([]string, numArias)
+	logs := make([]Log[message.Message], numArias)
+	for i := range arias {
+		id, _ := b.CreateConversation(l)
+		arias[i] = id
+		logs[i], _ = b.Open(id)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, numArias+1)
+
+	// Writers on each aria.
+	for i := range arias {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < perWriter; j++ {
+				if _, err := logs[i].Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}); err != nil {
+					errCh <- fmt.Errorf("aria %d append %d: %w", i, j, err)
+					return
+				}
+			}
+		}()
+	}
+	// Chaos monkey: promote and fork every so often.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for j := 0; j < 10; j++ {
+			// Promote every aria (returns ErrAtStump because they're
+			// rooted at the loadout, but the code path still runs).
+			for _, id := range arias {
+				_, _ = b.Promote(id, 1)
+			}
+			time.Sleep(100 * time.Microsecond)
+		}
+	}()
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatal(err)
 	}
 }
