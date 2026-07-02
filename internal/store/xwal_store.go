@@ -49,7 +49,11 @@ var trunkScanCount atomic.Int64
 // call is counted. Always go through these inside the store.
 func (s *XwalStore) listTrunks() []xwal.TrunkInfo {
 	trunkScanCount.Add(1)
-	return s.trunks.List()
+	// ListLight, not List: figaro never uses TrunkInfo.Tip, and List opens
+	// every trunk's head (a segment scan) just to compute it. ListLight is
+	// all in-memory + a cheap .fork read — the difference is `fig ls` at
+	// ~300ms vs ~tens of ms on a store with many/large arias.
+	return s.trunks.ListLight()
 }
 
 func (s *XwalStore) listStumps() []xwal.StumpInfo {
