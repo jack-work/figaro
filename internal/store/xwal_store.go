@@ -39,14 +39,14 @@ import (
 	"github.com/jack-work/figwal/xwal"
 )
 
-// trunkScanCount counts calls into figwal's trunk-scanning accessors
-// (Trunks.List + Trunks.Stumps), each of which opens trunk heads on disk.
-// It is the cheap proxy for "how many redundant disk scans does a listing
-// cost" — the benchmark asserts on it so the fan-out regression is caught.
+// trunkScanCount counts calls into figwal's trunk-listing accessors
+// (Trunks.ListLight + Trunks.Stumps). It is the proxy the benchmark asserts
+// on to catch a fan-out regression (a listing that rescans the forest N times
+// instead of once). ListLight itself no longer opens trunk heads.
 var trunkScanCount atomic.Int64
 
-// listTrunks / listStumps wrap the figwal accessors so every disk-scanning
-// call is counted. Always go through these inside the store.
+// listTrunks / listStumps wrap the figwal accessors so every forest scan is
+// counted. Always go through these inside the store.
 func (s *XwalStore) listTrunks() []xwal.TrunkInfo {
 	trunkScanCount.Add(1)
 	// ListLight, not List: figaro never uses TrunkInfo.Tip, and List opens
