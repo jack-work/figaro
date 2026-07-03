@@ -82,10 +82,13 @@ realigned so `show`'s N == the `:N` you pass).
   `:<LT>` sets a **one-shot pending fork-point** consumed by the next bare
   prompt (`fig -- …` forks there and moves to the new branch); `:<LT>` alone
   re-pins the already-bound aria.
-- **`attend ~`** (the literal `~`) — **go home**: unbind the shell. New
-  conversations then default to the live loadout. There is **no `detach`**
-  (removed) — `attend ~` is the unbind. Attending a cauterized (null/loadout)
-  aria is rejected with a nudge toward `attend ~` / `ls -h` / `ls -g`.
+- **`attend null`** (the literal `null`) — **go home**: unbind the shell. New
+  conversations then default to the live loadout. The word echoes the
+  **kindNull** genesis root that sits above every loadout. There is **no
+  `detach`** (removed) — `attend null` is the unbind. `attend ~` is kept as
+  a legacy alias (the tilde must be quoted in the shell). Attending a
+  cauterized (null/loadout) aria is rejected with a nudge toward
+  `attend null` / `ls -h` / `ls -g`.
 - **`kill <id>`** — remove a trunk **and its whole subtree** (children
   included). Needs `--recursive`/`-r` to remove a trunk that has live
   branches.

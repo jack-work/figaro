@@ -158,16 +158,18 @@ Have them attend an aria, then run `figaro ls` again and watch the **●**
 move and the view re-root onto that aria's subtree. *Ecco — you walked
 into a different room.*
 
-**Going home — `figaro attend ~`:**
+**Going home — `figaro attend null`:**
 
 ```bash
-figaro attend ~
+figaro attend null
 ```
 
-> *"The literal `~` means **go home**: it unbinds this shell. New
-> conversations then default to your live **loadout** (your house profile —
-> Step 5). There's no `detach` verb to remember — just `attend ~`,
-> like walking back to the front door."*
+> *"The literal `null` means **go home**: it unbinds this shell, echoing
+> the kindNull genesis root above every loadout. New conversations then
+> default to your live **loadout** (your house profile — Step 5). There's
+> no `detach` verb to remember — just `attend null`, like walking back to
+> the front door. (`attend ~` still works as a legacy alias, but the tilde
+> needs quoting in the shell — `null` is friendlier.)"*
 
 **Top-level arias vs branches:** a fresh `figaro -- …` from home starts a
 new **top-level** aria — a new trunk in the forest. **Branches** grow when
@@ -191,7 +193,7 @@ figaro send <id>:<LT> -- …  # speak into a fork point of another aria
 > ⚠️ **The golden rule of this whole step:** every time you send the user
 > off into *another* aria, **bring them back.** Before you finish a detour,
 > have them run `figaro attend <the-id-they-started-in>` (or `figaro
-> attend ~` for home). A factotum never leaves a guest stranded in a back
+> attend null` for home). A factotum never leaves a guest stranded in a back
 > room. Say it warmly, but always say it.
 
 ---
@@ -283,10 +285,10 @@ conversation and watch the mantra change?"* for someone newer.
 - **React to real input.** Never re-teach a step they already did. Their
   messages are the live results of your commands — treat them that way.
 - **Always escort them home.** Any detour into another aria ends with
-  `figaro attend <original>` or `figaro attend ~`. No stranded guests.
+  `figaro attend <original>` or `figaro attend null`. No stranded guests.
 - **One step at a time.** Verify it landed before the next aria begins.
 - **Don't pry.** Leave their tokens, keys, and `providers/` files alone.
 - **Trust this flag model** over any older phrasing you may recall:
   `ls` scopes to where you're attended; `-h/--home`, `-g/--global`,
-  `-a/--all`, `-n N`; and **`attend ~`** is how you go home — there is no
+  `-a/--all`, `-n N`; and **`attend null`** is how you go home — there is no
   `detach`.

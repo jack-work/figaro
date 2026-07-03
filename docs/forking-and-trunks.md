@@ -177,16 +177,18 @@ interface.
   `atMainLT` — a **one-shot pending fork-point** consumed by the next bare prompt. The
   client resolves "current" via `os.Getppid()`. Attendance is **entirely CLI-side state**:
   the figwal layer knows nothing of it, the binding authority is consulted by the client,
-  and the conversation RPCs are fully resolved to a trunk before the call. `attend ~` (the
-  required literal) is "go home" — `Unbind`; new conversations then default to the live
-  loadout. Attending a **cauterized** (null/loadout) aria is rejected with a nudge toward
-  `attend ~` / `ls -h` / `ls -g`.
+  and the conversation RPCs are fully resolved to a trunk before the call. `attend null`
+  (the required literal; `attend ~` is a legacy alias that needs quoting in the shell) is
+  "go home" — `Unbind`; new conversations then default to the live loadout. Attending a
+  **cauterized** (null/loadout) aria is rejected with a nudge toward
+  `attend null` / `ls -h` / `ls -g`.
 - **The store flock**: the angelus is a strict singleton via an exclusive flock on
   `<store>/arias/.daemon.lock`, acquired **before** the backend opens and before the socket
   binds (`cli/angelus.go:lockStore`). Fixed a TOCTOU where two daemons could race-spawn and
   both open the store, corrupting it.
 - **CLI verbs** (`cli.go`): `send`/`fork`/`attend`(`at`)/`kill`/`list`(`ls`)/
-  `show`/`status`/`state`. (`detach` was **removed** — `attend ~` is the unbind.)
+  `show`/`status`/`state`. (`detach` was **removed** — `attend null` is the unbind; `~` is
+  kept as a legacy alias.)
   `send <id>:<LT> -- …` forks at LT then sends to the new branch
   (rebinds; `--stay` to park). `fork [<id>[:<LT>]] [--stay]` is the imperative no-prompt
   branch (`runFork`, `manage.go`). `kill <id>` removes a trunk + subtree (`--recursive` for
@@ -252,10 +254,11 @@ ids are plumbing; you address `T0`.
 angelus binding registry) is treated by the client as a **separate system** — a binding
 authority it consults to resolve "current," not a thing the conversation API is aware of.
 The client owns: `pid → attended trunk` (plus an optional one-shot pending fork-point LT).
-`attend <id>`/`<id>:<LT>`/`:<LT>` set it; **`attend ~`** (the required literal) clears it —
+`attend <id>`/`<id>:<LT>`/`:<LT>` set it; **`attend null`** (the required literal; `~` is a
+legacy alias that needs quoting in the shell) clears it —
 "go home," after which new conversations default to the live loadout. There is **no
 `detach`** (removed). Attending a cauterized (null/loadout) aria is rejected with a nudge
-toward `attend ~` / `ls -h` / `ls -g`.
+toward `attend null` / `ls -h` / `ls -g`.
 
 ### 4.2 `send` vs `fork`
 - **`send <trunk>:<LT> -- …`** — fork the trunk at `<LT>`, then send to the new branch and
@@ -279,7 +282,7 @@ toward `attend ~` / `ls -h` / `ls -g`.
 | `send <trunk>:<LT> -- msg` | — | same |
 | `fork [<trunk>[:<LT>]]` | pid → trunk if bare | imperative tail/interior fork, no message |
 | `attend <id>` / `:<LT>` | pid → trunk | bind shell (+ one-shot pending fork-point) |
-| `attend ~` | — | unbind (go home); next conversation defaults to the live loadout |
+| `attend null` | — | unbind (go home); next conversation defaults to the live loadout |
 | `kill <trunk>` | — | remove trunk + subtree (`-r` for live branches) |
 | `send` *unattended* / `new` | resolve default/named loadout trunk | spawn a conversation under it, send |
 
@@ -341,7 +344,8 @@ toward `attend ~` / `ls -h` / `ls -g`.
   Bind-to-trunk: forking your own trunk doesn't move you.
 - **One `send` path**: `send <id>:<LT>` forks-then-sends (rebinds; `--stay`); bare `send`
   appends. `fork [<id>[:<LT>]] [--stay]` is the imperative no-prompt branch. `attend`/`at`
-  (with `attend ~` to go home — `detach` **removed**), `kill <id>` (+ subtree, `-r`).
+  (with `attend null` to go home — `detach` **removed**, `~` kept as a legacy alias),
+  `kill <id>` (+ subtree, `-r`).
 - **Cauterization**: null/loadout trunks are closed — forking/sending "at" them spawns a
   child conversation (`OwnerTrunk` + `SpawnChild`). Create = spawn under a loadout.
 - **The four-layer loadout tree**: `null` → content-versioned **loadout** trunks (dedup'd by

@@ -663,10 +663,12 @@ func runAttend(loaded *config.Loaded, spec string) {
 	if bindingDisabled() {
 		die("attend: binding disabled (--no-bind, FIGARO_NO_BIND, or non-interactive shell); this command has no effect here")
 	}
-	// "~" is home: drop this shell's binding (the angelus pid→aria map). New
-	// conversations then default to the live loadout. `~` is a required literal;
-	// there is no `detach`.
-	if spec == "~" {
+	// "null" is home: drop this shell's binding (the angelus pid→aria map),
+	// echoing the kindNull genesis root that sits above every loadout. New
+	// conversations then default to the live loadout. `null` is a required
+	// literal; there is no `detach`. `~` is kept as a legacy alias so old
+	// muscle memory still works (it must be quoted in the shell).
+	if spec == "null" || spec == "~" {
 		WithAngelus(loaded, func(acli *angelus.Client) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -697,7 +699,7 @@ func runAttend(loaded *config.Loaded, spec string) {
 				for _, f := range r.Figaros {
 					if f.ID == trunk && (f.Kind == "null" || f.Kind == "loadout") {
 						die("%s is a %s — a closed anchor, not a conversation; it can't be attended.\n"+
-							"  figaro attend ~     go home (unbind; new conversations use the live loadout)\n"+
+							"  figaro attend null  go home (unbind; new conversations use the live loadout)\n"+
 							"  figaro ls -h        lists top-level conversations (use -a or -n N to show all or N most recent in scope)\n"+
 							"  figaro ls -g        show the full hierarchy (null + loadouts + conversations)", trunk, f.Kind)
 					}
