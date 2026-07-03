@@ -49,6 +49,14 @@ func mustHush() *managed.Hush {
 			// a bubbletea form holding the terminal. Falls back to a
 			// plain numbered prompt when the env can't host the TUI.
 			PromptPassphrase: func() ([]byte, error) {
+				// Test/dev bypass: a preset passphrase unlocks the hush without
+				// a TTY prompt, so a detached daemon doesn't hang on first run
+				// (dev shells autogenerate one). Honored ONLY for an isolated
+				// embedded hush (FIGARO_HUSH_DIR set) so it can never touch the
+				// user's real keystore.
+				if pass := os.Getenv("FIGARO_HUSH_PASSPHRASE"); pass != "" && os.Getenv("FIGARO_HUSH_DIR") != "" {
+					return []byte(pass), nil
+				}
 				return tui.PromptPassphrase(appName)
 			},
 		}
