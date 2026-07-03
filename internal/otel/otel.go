@@ -30,6 +30,69 @@ import (
 
 const scopeName = "figaro"
 
+// telemetryFileMax caps each telemetry .jsonl file; at most 2x that lives on
+// disk (the active file + one rolled-over ".1"). Keeps the file exporter — the
+// default when no OTLP agent is configured — from growing without bound in a
+// long-lived daemon.
+const telemetryFileMax = 16 << 20 // 16 MiB
+
+// rotatingWriter is a size-capped append writer for the file exporters: when a
+// write would push the file past maxBytes it rolls the file over (current →
+// path+".1", fresh file started). Writes are serialized (the batch/periodic
+// exporters write from one goroutine, but the lock keeps it correct if that
+// changes). Implements io.Writer + io.Closer.
+type rotatingWriter struct {
+	path     string
+	maxBytes int64
+	mu       sync.Mutex
+	f        *os.File
+	size     int64
+}
+
+func newRotatingWriter(path string, maxBytes int64) (*rotatingWriter, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return nil, err
+	}
+	var size int64
+	if fi, serr := f.Stat(); serr == nil {
+		size = fi.Size()
+	}
+	return &rotatingWriter{path: path, maxBytes: maxBytes, f: f, size: size}, nil
+}
+
+func (w *rotatingWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.size > 0 && w.size+int64(len(p)) > w.maxBytes {
+		if err := w.rotateLocked(); err != nil {
+			return 0, err
+		}
+	}
+	n, err := w.f.Write(p)
+	w.size += int64(n)
+	return n, err
+}
+
+func (w *rotatingWriter) rotateLocked() error {
+	if err := w.f.Close(); err != nil {
+		return err
+	}
+	_ = os.Rename(w.path, w.path+".1") // keep one previous generation
+	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	w.f, w.size = f, 0
+	return nil
+}
+
+func (w *rotatingWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.f.Close()
+}
+
 var (
 	requestDuration otelmetric.Float64Histogram
 	toolCallCounter otelmetric.Int64Counter
@@ -68,6 +131,19 @@ func (h *leveledHandler) WithGroup(name string) slog.Handler {
 	return &leveledHandler{inner: h.inner.WithGroup(name), level: h.level}
 }
 
+// newSpanProcessor picks how spans reach the file exporter. The long-lived
+// daemon (_FIGARO_DAEMON=1) batches, so ending a span never blocks a turn on
+// file I/O. A short-lived CLI process uses the simple (synchronous) processor:
+// its span count is tiny so the cost is negligible, and it flushes on span end
+// — batching there would silently drop spans on the os.Exit / die() paths that
+// skip the deferred shutdown flush.
+func newSpanProcessor(exp sdktrace.SpanExporter) sdktrace.SpanProcessor {
+	if os.Getenv("_FIGARO_DAEMON") == "1" {
+		return sdktrace.NewBatchSpanProcessor(exp)
+	}
+	return sdktrace.NewSimpleSpanProcessor(exp)
+}
+
 // Init wires OTel providers writing to dir. Installs slog.Default().
 func Init(ctx context.Context, dir string) (func(context.Context) error, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -81,7 +157,7 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 		return nil, fmt.Errorf("resource: %w", err)
 	}
 
-	traceFile, err := os.OpenFile(filepath.Join(dir, "traces.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	traceFile, err := newRotatingWriter(filepath.Join(dir, "traces.jsonl"), telemetryFileMax)
 	if err != nil {
 		return nil, fmt.Errorf("open traces: %w", err)
 	}
@@ -91,12 +167,12 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 		return nil, fmt.Errorf("trace exporter: %w", err)
 	}
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithSpanProcessor(sdktrace.NewSimpleSpanProcessor(traceExp)),
+		sdktrace.WithSpanProcessor(newSpanProcessor(traceExp)),
 		sdktrace.WithResource(res),
 	)
 	otel.SetTracerProvider(tp)
 
-	logFile, err := os.OpenFile(filepath.Join(dir, "logs.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	logFile, err := newRotatingWriter(filepath.Join(dir, "logs.jsonl"), telemetryFileMax)
 	if err != nil {
 		traceFile.Close()
 		return nil, fmt.Errorf("open logs: %w", err)
@@ -115,7 +191,7 @@ func Init(ctx context.Context, dir string) (func(context.Context) error, error) 
 	bridge := otelslog.NewHandler(scopeName, otelslog.WithLoggerProvider(lp))
 	slog.SetDefault(slog.New(&leveledHandler{inner: bridge, level: envLogLevel()}))
 
-	metricFile, err := os.OpenFile(filepath.Join(dir, "metrics.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	metricFile, err := newRotatingWriter(filepath.Join(dir, "metrics.jsonl"), telemetryFileMax)
 	if err != nil {
 		traceFile.Close()
 		logFile.Close()
