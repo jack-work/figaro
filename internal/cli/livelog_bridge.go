@@ -69,14 +69,17 @@ func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 func (t *livelogTurn) abandon(reason string) { t.in.AbandonOpen(abandonRule(reason)) }
 
 func (t *livelogTurn) tick() {
+	// Only a running tool's spinner needs the periodic repaint. With nothing
+	// animating the tick would recompose + diff the whole open message every
+	// frame for a no-op paint — pure waste. Content changes still repaint via
+	// the OnLive/OnClosed hooks, so gating here is invisible. (The transcript
+	// branch already did this; the inline branch didn't.)
+	if !t.client.OpenAnimating() {
+		return
+	}
 	if t.tr.active {
-		// Only the spinner needs the periodic repaint; if nothing is animating,
-		// skip it so a big transcript doesn't re-render every frame at idle.
-		// Content changes still repaint via the OnLive/OnClosed hooks.
-		if t.client.OpenAnimating() {
-			t.tr.tick++
-			t.tr.render()
-		}
+		t.tr.tick++
+		t.tr.render()
 	} else {
 		t.in.Tick(t.open)
 	}
