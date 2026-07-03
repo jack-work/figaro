@@ -125,46 +125,128 @@ const (
 	betaMessages = "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31"
 )
 
-// doWithAuthRetry executes a request, retrying once on 401.
+// maxTransientRetries is how many times a transient failure (network, 429, 529
+// overloaded, 5xx) is retried before giving up. Long sessions hit transient
+// overloads; one blip must not kill an hour-long turn.
+const maxTransientRetries = 5
+
+// Backoff bounds — vars so tests can shrink them.
+var (
+	retryBaseDelay = 1 * time.Second
+	retryMaxDelay  = 30 * time.Second
+)
+
+// isTransientStatus reports whether an HTTP status is worth retrying: rate
+// limit (429), anthropic overload (529), and any 5xx.
+func isTransientStatus(code int) bool {
+	return code == 429 || code == 529 || (code >= 500 && code <= 599)
+}
+
+// backoffDelay is exponential backoff (1s, 2s, 4s, …) capped at retryMaxDelay.
+func backoffDelay(attempt int) time.Duration {
+	d := retryBaseDelay << attempt
+	if d > retryMaxDelay || d <= 0 {
+		d = retryMaxDelay
+	}
+	return d
+}
+
+// parseRetryAfter reads a Retry-After header expressed in seconds (0 if absent
+// or non-numeric — HTTP-date form is not honored, exponential backoff covers it).
+func parseRetryAfter(h http.Header) time.Duration {
+	if v := h.Get("Retry-After"); v != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && secs >= 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return 0
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// doWithAuthRetry executes a request. It retries once on 401 (fresh token) and
+// up to maxTransientRetries on transient failures — network errors, 429, 529
+// (overloaded), and 5xx — with backoff (honoring Retry-After). Transient
+// retries happen BEFORE the caller reads the body, so no partial stream is
+// emitted. This is what lets a long turn ride out an overload rather than die.
 func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey string) (*http.Request, error)) (*http.Response, string, error) {
 	apiKey, err := a.auth.Resolve()
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve token: %w", err)
 	}
-	req, err := build(apiKey)
-	if err != nil {
-		return nil, apiKey, err
-	}
-	resp, err := a.HTTPClient.Do(req)
-	if err != nil {
-		return nil, apiKey, fmt.Errorf("http: %w", err)
-	}
-	if resp.StatusCode != http.StatusUnauthorized {
+	authRetried := false
+	var lastErr error
+	var delay time.Duration
+	for attempt := 0; attempt <= maxTransientRetries; attempt++ {
+		if delay > 0 {
+			if !sleepCtx(ctx, delay) {
+				return nil, apiKey, ctx.Err()
+			}
+			delay = 0
+		}
+		req, err := build(apiKey)
+		if err != nil {
+			return nil, apiKey, err
+		}
+		resp, err := a.HTTPClient.Do(req)
+		if err != nil {
+			if ctx.Err() != nil { // cancel/timeout: not transient
+				return nil, apiKey, fmt.Errorf("http: %w", err)
+			}
+			lastErr = fmt.Errorf("http: %w", err)
+			delay = backoffDelay(attempt)
+			slog.Warn("anthropic request failed, retrying", "attempt", attempt+1, "err", err)
+			continue
+		}
+		// 401: invalidate + one retry with a fresh token (a free attempt —
+		// it does not consume the transient budget).
+		if resp.StatusCode == http.StatusUnauthorized && !authRetried {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			authRetried = true
+			ierr := a.auth.Invalidate(apiKey)
+			newKey, rerr := a.auth.Resolve()
+			if rerr != nil {
+				return nil, apiKey, fmt.Errorf("resolve after 401: %w", errors.Join(ierr, rerr))
+			}
+			if newKey == apiKey {
+				if ierr != nil {
+					return nil, apiKey, fmt.Errorf("anthropic 401: invalidate failed: %w", ierr)
+				}
+				return nil, apiKey, fmt.Errorf("anthropic 401: token unchanged after invalidate")
+			}
+			apiKey = newKey
+			attempt-- // don't count the auth retry
+			continue
+		}
+		if isTransientStatus(resp.StatusCode) {
+			ra := parseRetryAfter(resp.Header)
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("anthropic %d (transient)", resp.StatusCode)
+			if ra > 0 {
+				delay = ra
+			} else {
+				delay = backoffDelay(attempt)
+			}
+			slog.Warn("anthropic transient status, retrying", "status", resp.StatusCode, "attempt", attempt+1)
+			continue
+		}
 		return resp, apiKey, nil
 	}
-	// 401: retry with fresh token.
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-	ierr := a.auth.Invalidate(apiKey)
-	newKey, rerr := a.auth.Resolve()
-	if rerr != nil {
-		return nil, apiKey, fmt.Errorf("resolve after 401: %w", errors.Join(ierr, rerr))
+	if lastErr == nil {
+		lastErr = errors.New("exhausted retries")
 	}
-	if newKey == apiKey {
-		if ierr != nil {
-			return nil, apiKey, fmt.Errorf("anthropic 401: invalidate failed: %w", ierr)
-		}
-		return nil, apiKey, fmt.Errorf("anthropic 401: token unchanged after invalidate")
-	}
-	req2, err := build(newKey)
-	if err != nil {
-		return nil, newKey, err
-	}
-	resp2, err := a.HTTPClient.Do(req2)
-	if err != nil {
-		return nil, newKey, fmt.Errorf("http retry: %w", err)
-	}
-	return resp2, newKey, nil
+	return nil, apiKey, fmt.Errorf("anthropic: giving up after %d attempts: %w", maxTransientRetries+1, lastErr)
 }
 
 func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {

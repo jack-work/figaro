@@ -111,6 +111,17 @@ func (s *Server) Close() {
 	deliver(subs, frame)
 }
 
+// Abandon drops the open message without committing it (a turn that failed
+// before the message was sealed into the IR). It broadcasts nothing: connected
+// clients keep showing the partial as their single open unit until the next
+// turn opens at a new LT, which resets it (client.go). Dropping it here keeps a
+// re-read (Read) from resurrecting it as live.
+func (s *Server) Abandon() {
+	s.mu.Lock()
+	s.open = nil
+	s.mu.Unlock()
+}
+
 // Commit appends an already-closed message (history rebuild, or a non-streamed
 // message) and broadcasts it as a full snapshot.
 func (s *Server) Commit(m Message) {

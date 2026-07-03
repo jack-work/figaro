@@ -33,6 +33,22 @@ var (
 	hushErr      error
 )
 
+// hushAgentTTL is how long the embedded hush agent lives before it
+// self-terminates. Upstream defaults to 30m, which silently kills the
+// credential mid-session on a long autonomous run: the daemon issues no CLI
+// activity to respawn the agent, so after 30m every model request fails with
+// "no credential". figaro needs the agent to outlive hour-long+ turns, so we
+// set it long; the daemon also keep-alives/respawns it (see angelus.go).
+// Override with FIGARO_HUSH_TTL (a Go duration) for testing.
+func hushAgentTTL() time.Duration {
+	if v := os.Getenv("FIGARO_HUSH_TTL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 24 * time.Hour
+}
+
 func mustHush() *managed.Hush {
 	hushOnce.Do(func() {
 		// FIGARO_HUSH_APP lets dev shells pivot the entire hush
@@ -42,8 +58,16 @@ func mustHush() *managed.Hush {
 		if appName == "" {
 			appName = "figaro"
 		}
+		ttl := hushAgentTTL()
 		opts := managed.Options{
 			AppName: appName,
+			TTL:     ttl,
+			// opts.TTL only sets THIS parent's view; the re-exec'd embedded
+			// agent re-loads its own config and would use the 30m default.
+			// hush binds HUSH_TTL via viper AutomaticEnv and passes AgentEnv to
+			// the child, so this is what actually gives the agent a long life
+			// (without it, the credential dies every 30m mid-session).
+			AgentEnv: []string{"HUSH_TTL=" + ttl.String()},
 			// Drive the first-run passphrase UX from figaro's TUI
 			// so hush doesn't try to read /dev/tty in parallel with
 			// a bubbletea form holding the terminal. Falls back to a

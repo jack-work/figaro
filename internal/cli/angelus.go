@@ -39,6 +39,36 @@ func lockStore() (*os.File, bool) {
 }
 
 // runAngelus runs the supervisor side of the binary.
+// keepHushAlive pings the embedded hush agent on an interval and respawns it
+// if it has died (EnsureReady), so the token-refresh machinery survives for
+// the whole daemon session. Interval is well under the agent TTL so a dead
+// agent is revived promptly. Errors are logged, never fatal.
+func keepHushAlive(ctx context.Context) {
+	interval := hushAgentTTL() / 3
+	if interval > 5*time.Minute {
+		interval = 5 * time.Minute
+	}
+	if interval < 30*time.Second {
+		interval = 30 * time.Second
+	}
+	h := mustHush()
+	if err := h.EnsureReady(); err != nil {
+		slog.Warn("hush keep-alive: initial ensure failed", "err", err)
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if err := h.EnsureReady(); err != nil {
+				slog.Warn("hush keep-alive: ensure failed", "err", err)
+			}
+		}
+	}
+}
+
 func runAngelus() {
 	loaded := mustLoadConfig()
 	runtimeDir := angelusRuntimeDir()
@@ -88,6 +118,13 @@ func runAngelus() {
 		ChalkboardTemplates: cbTmpls,
 	})
 	a.Handlers = handlers.Map
+
+	// Keep the embedded hush agent alive for the daemon's life. The agent
+	// self-terminates after its TTL, and the daemon (unlike the CLI) issues no
+	// activity to respawn it — so without this, a turn running past the TTL
+	// loses its credential ("No provider connected") mid-session. This is the
+	// primary fix for the long-autonomous-session credential loss.
+	go keepHushAlive(ctx)
 
 	angelus.RestoreBindings(a.Registry, a.BindingsPath(), func(ariaID string) error {
 		_, err := handlers.Restore(ctx, ariaID)

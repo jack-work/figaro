@@ -67,7 +67,6 @@ type Config struct {
 }
 
 // Agent is the Figaro implementation.
-// TODO: child-process isolation via --figaro flag.
 type Agent struct {
 	id         string
 	socketPath string
@@ -455,8 +454,24 @@ type patchMap map[uint64][]message.Patch
 func (m patchMap) PatchesAt(lt uint64) []message.Patch { return m[lt] }
 
 // endTurn fans out turn.done and persists chalkboard + meta.
+// endTurn commits the live unit (it became a real IR message) and signals idle.
 func (a *Agent) endTurn(reason string) {
 	a.emitCommit() // freeze the live unit before signaling the turn idle
+	a.finishTurn(reason)
+}
+
+// endTurnDiscarding ends a turn WITHOUT committing the live unit — for a
+// mid-turn failure where the assistant message never reached figLog. Committing
+// it would leave a UI message the model log doesn't have, so the next turn
+// regenerates equivalent content and the aria shows it twice. Discarding drops
+// the partial; the client resets its single open unit when the next turn opens
+// at a new LT, so nothing duplicates.
+func (a *Agent) endTurnDiscarding(reason string) {
+	a.abandonLive()
+	a.finishTurn(reason)
+}
+
+func (a *Agent) finishTurn(reason string) {
 	a.liveMu.Lock()
 	a.liveActive = false
 	a.liveMu.Unlock()

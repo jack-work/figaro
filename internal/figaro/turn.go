@@ -322,7 +322,14 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		return true
 	}
 	if sendErr != nil {
-		a.endTurn("error: " + sendErr.Error())
+		// If the assistant message never sealed into figLog, discard the partial
+		// live unit instead of committing it — committing a UI message the model
+		// log lacks makes the next turn regenerate it, duplicating the output.
+		if sealed {
+			a.endTurn("error: " + sendErr.Error())
+		} else {
+			a.endTurnDiscarding("error: " + sendErr.Error())
+		}
 		return true
 	}
 	if !sealed {
@@ -649,6 +656,14 @@ func (a *Agent) emitDelta(nodes []livedoc.Node) {
 // the append-only IR), so the durable live blob is cleared.
 func (a *Agent) emitCommit() {
 	a.ariaSrv.Close()
+	a.clearLive()
+}
+
+// abandonLive drops the open unit WITHOUT committing it (a turn that errored
+// before the assistant message reached figLog). The durable blob is cleared so
+// a reconnect/restart doesn't resurrect the partial.
+func (a *Agent) abandonLive() {
+	a.ariaSrv.Abandon()
 	a.clearLive()
 }
 
