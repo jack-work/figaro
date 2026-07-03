@@ -177,6 +177,14 @@
                 ( umask 077; head -c 24 /dev/urandom | base64 | tr -d '\n' > "$FIGARO_DEV_ROOT/hush-passphrase" )
               fi
               export FIGARO_HUSH_PASSPHRASE="$(cat "$FIGARO_DEV_ROOT/hush-passphrase")"
+              # TEST-ONLY hygiene: clear any stale dev-hush keyring entry left by
+              # a prior session so test credentials never accumulate in the login
+              # keyring. Runs on every shell entry (reliable, unlike an EXIT trap
+              # which `nix develop --command` discards); hush transparently
+              # re-populates it from the env passphrase when the daemon boots.
+              # Full teardown is `rm -rf $FIGARO_DEV_ROOT` (passphrase + identity).
+              command -v secret-tool >/dev/null 2>&1 \
+                && secret-tool clear service "$FIGARO_HUSH_APP" username default 2>/dev/null || true
             ''
             else ''
               : "''${FIGARO_HUSH_APP:=${value}}"
