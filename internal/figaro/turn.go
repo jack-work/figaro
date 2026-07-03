@@ -628,7 +628,16 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		msgs = append(msgs, m)
 	}
 	if inflight != nil {
-		msgs = append(msgs, *inflight)
+		// The in-flight message has no LT until it seals. Stamp its provisional
+		// LT — the next main-LT it will seal at — so compose's stable node ids
+		// (LT.blockIdx) match what they'll be post-seal and don't jump at the
+		// boundary. Single writer: no other append lands before this seal.
+		m := *inflight
+		m.LogicalTime = 1
+		if n := len(entries); n > 0 {
+			m.LogicalTime = entries[n-1].LT + 1
+		}
+		msgs = append(msgs, m)
 	}
 	return compose.Nodes(msgs, a.partials)
 }

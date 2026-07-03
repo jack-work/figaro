@@ -18,11 +18,23 @@
 package compose
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 )
+
+// nodeID mints a stable id for an id-less node (thinking/prose/steering) from
+// its primary-IR coordinate: the message's logical time and the content
+// block's index within that message. Both are stable — LT is immutable once
+// assigned and the block index is append-only — so the id doesn't move when
+// the flattened, empty-skipped render position shifts. (Tool nodes key off
+// their ToolCallID instead.) The in-flight message gets a provisional LT from
+// composeTurn so its ids match what they'll be after it seals.
+func nodeID(lt uint64, blockIdx int) string {
+	return fmt.Sprintf("%d.%d", lt, blockIdx)
+}
 
 // composeBashCap bounds how many source lines of tool output a node
 // carries; the renderer further clamps the display. Full output lives in
@@ -44,9 +56,9 @@ func Nodes(msgs []message.Message, partials map[string]string) []livedoc.Node {
 			// ALSO carries text, that's a steering interjection — emit it as a
 			// node, positioned where it arrived (after the tool nodes).
 			if hasToolResult(m) {
-				for _, c := range m.Content {
+				for ci, c := range m.Content {
 					if c.Type == message.ContentProse && strings.TrimSpace(c.Text) != "" {
-						nodes = append(nodes, livedoc.Node{Type: livedoc.NodeSteering, Markdown: strings.TrimRight(c.Text, "\n")})
+						nodes = append(nodes, livedoc.Node{ID: nodeID(m.LogicalTime, ci), Type: livedoc.NodeSteering, Markdown: strings.TrimRight(c.Text, "\n")})
 					}
 				}
 			}
@@ -55,18 +67,18 @@ func Nodes(msgs []message.Message, partials map[string]string) []livedoc.Node {
 		if m.Role != message.RoleAssistant {
 			continue // tool_result messages fold under their invoke; user prompts aren't in the turn
 		}
-		for _, c := range m.Content {
+		for ci, c := range m.Content {
 			switch c.Type {
 			case message.ContentProse:
 				if strings.TrimSpace(c.Text) == "" {
 					continue
 				}
-				nodes = append(nodes, livedoc.Node{Type: livedoc.NodeProse, Markdown: strings.TrimRight(c.Text, "\n")})
+				nodes = append(nodes, livedoc.Node{ID: nodeID(m.LogicalTime, ci), Type: livedoc.NodeProse, Markdown: strings.TrimRight(c.Text, "\n")})
 			case message.ContentThinking:
 				if strings.TrimSpace(c.Text) == "" {
 					continue
 				}
-				nodes = append(nodes, livedoc.Node{Type: livedoc.NodeThinking, Markdown: strings.TrimRight(c.Text, "\n")})
+				nodes = append(nodes, livedoc.Node{ID: nodeID(m.LogicalTime, ci), Type: livedoc.NodeThinking, Markdown: strings.TrimRight(c.Text, "\n")})
 			case message.ContentToolInvoke:
 				nodes = append(nodes, toolNode(c, results, partials))
 			}
