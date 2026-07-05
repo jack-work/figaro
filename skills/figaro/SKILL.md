@@ -66,6 +66,7 @@ figaro` should show `/nix/store/...`, not `~/.nix-profile`. Four knobs
 (`mkFigaroShell`) flip between *share* (`null`) and *isolate*:
 `FIGARO_RUNTIME_DIR` (socket/PID/bindings), `FIGARO_CONFIG_DIR` (config.toml,
 loadouts, providers, credo, skills), `FIGARO_STATE_DIR` (aria store, OTel),
+`FIGARO_CACHE_DIR` (regenerable cache: update-check memo, …),
 `FIGARO_HUSH_APP` (provider credentials). Pre-set env vars win, so presets
 compose: `FIGARO_HUSH_APP=figaro nix develop .#clean`.
 

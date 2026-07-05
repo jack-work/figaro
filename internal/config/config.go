@@ -38,6 +38,18 @@ type Config struct {
 	// StreamFirstByteBypassMs is the sync-write window for TTFT.
 	// Default 80.
 	StreamFirstByteBypassMs *int `toml:"stream_first_byte_bypass_ms"`
+
+	// CheckUpdates controls the passive one-liner nudge on startup
+	// when a newer figaro release is available on the module proxy.
+	// Pointer to distinguish unset (default true) from explicit false.
+	// The explicit `figaro update` command is *always* available;
+	// this only toggles the automatic background hint.
+	CheckUpdates *bool `toml:"check_updates"`
+
+	// UpdateCheckTTLHours bounds how often the proxy is asked. Default
+	// 24. Zero disables caching (each check hits the network) — useful
+	// only for testing.
+	UpdateCheckTTLHours *int `toml:"update_check_ttl_hours"`
 }
 
 // EchoPrompt returns whether to echo the prompt. Default true.
@@ -79,6 +91,24 @@ func (l *Loaded) StreamFirstByteBypassMs() int {
 		return 80
 	}
 	return *l.Config.StreamFirstByteBypassMs
+}
+
+// CheckUpdates returns whether to run the passive startup update check.
+// Default true. Users who prefer silence can set `check_updates = false`
+// in ~/.config/figaro/config.toml.
+func (l *Loaded) CheckUpdates() bool {
+	if l.Config.CheckUpdates == nil {
+		return true
+	}
+	return *l.Config.CheckUpdates
+}
+
+// UpdateCheckTTLHours returns the update-check cache TTL. Default 24h.
+func (l *Loaded) UpdateCheckTTLHours() int {
+	if l.Config.UpdateCheckTTLHours == nil {
+		return 24
+	}
+	return *l.Config.UpdateCheckTTLHours
 }
 
 // ProviderAuth holds credentials for one provider. The on-disk file

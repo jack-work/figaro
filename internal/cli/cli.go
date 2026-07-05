@@ -59,6 +59,13 @@ func Run(progName string, args []string) {
 		defer shutdown(ctx)
 	}
 
+	// Passive update nudge (config-gated, TTY-only, cached).
+	// Never fatal; runs sync but bounded to a short timeout.
+	// Skip for meta verbs where the nudge would be noise or duplicative.
+	if !isMetaVerb(args) {
+		runUpdateCheck(loaded)
+	}
+
 	router := buildRouter(progName, loaded)
 
 	// Bare `figaro -- <prompt>` defaults to prompt verb.
@@ -631,6 +638,35 @@ nothing to promote into ("cannot promote into a loadout").`,
 		Run: func(ctx *cmdkit.RunContext) error {
 			runVersion()
 			return nil
+		},
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "update",
+		Group: "System",
+		Short: "Check for a newer figaro release",
+		Usage: "update [--check] [--json] [--apply]",
+		Long: `Ask the Go module proxy for the latest tagged figaro release,
+compare it against this binary, and tell you how to upgrade — respecting
+whichever install channel you used (` + "`go install`" + `, Nix, dev shell).
+
+By default this is *advisory* — figaro never rewrites its own binary
+unless you pass --apply and are on the go-install channel.
+
+  figaro update                current vs. latest, cached
+  figaro update --check        force a fresh network check
+  figaro update --json         machine-readable output
+  figaro update --apply        (go-install only) shell out to
+                               ` + "`go install …@vX.Y.Z`" + ` for you
+
+The passive one-line startup nudge is controlled by
+` + "`check_updates`" + ` in ~/.config/figaro/config.toml (default true);
+the cache TTL is ` + "`update_check_ttl_hours`" + ` (default 24).
+This command itself is always available regardless of those settings.`,
+		PassRaw: true,
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			return runUpdate(ld, ctx.RawArgs)
 		},
 	})
 

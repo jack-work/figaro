@@ -176,3 +176,17 @@ func stateDir() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".local", "state", "figaro")
 }
+
+// cacheDir returns the directory for ephemeral figaro data that can
+// be regenerated (update-check memo, etc). XDG_CACHE_HOME and
+// FIGARO_CACHE_DIR win in that order.
+func cacheDir() string {
+	if d := os.Getenv("FIGARO_CACHE_DIR"); d != "" {
+		return d
+	}
+	if d := os.Getenv("XDG_CACHE_HOME"); d != "" {
+		return filepath.Join(d, "figaro")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".cache", "figaro")
+}

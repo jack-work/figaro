@@ -69,6 +69,27 @@ name.
 
 Config lives at `~/.config/figaro/`.
 
+### Staying current
+
+```bash
+figaro update           # is there a newer release? print the exact upgrade command
+figaro update --check   # skip the 24h cache and hit the module proxy now
+figaro update --apply   # (go install channel only) shell out to `go install …@vX.Y.Z`
+```
+
+A one-line nudge also appears at the top of stderr when you run a
+verb and a newer tag is available on the module proxy. Silence it in
+`~/.config/figaro/config.toml`:
+
+```toml
+check_updates = false           # default: true
+update_check_ttl_hours = 168    # default: 24
+```
+
+The check is TTY-only, cached, and never mutates the binary on its
+own. Nix installs get an advisory pointing at `nix profile upgrade`;
+dev-shell builds are skipped entirely.
+
 ## Releasing
 
 Figaro is consumed via `go install` and via the Nix flake. Both pull from
