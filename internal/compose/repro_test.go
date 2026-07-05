@@ -99,3 +99,32 @@ func TestRepro_C_BlockUnfills(t *testing.T) {
 	}
 	assertNoDup(t, "C un-fill", drive(frames))
 }
+
+func hasDup(nodes []string) bool {
+	seen := map[string]int{}
+	for _, n := range nodes {
+		seen[n]++
+		if seen[n] > 1 {
+			return true
+		}
+	}
+	return false
+}
+
+// D: the REAL seal-transition churn (SDK + summarized thinking). During
+// streaming the asm omits an empty summarized-thinking block; at seal the
+// provider decode KEEPS it, shifting a later thinking's raw block index. With
+// (LT,blockIdx) ids that churns -> duplicate. The fix makes decode skip empty
+// thinking/prose so the sealed structure matches the asm's.
+func TestRepro_D_SealEmptyThinkingChurn(t *testing.T) {
+	inflight := asstLT(1, tool("A", "bash"), think("real reasoning")) // asm: empty think omitted
+	sealedOldDecode := asstLT(1, think(""), tool("A", "bash"), think("real reasoning"))
+	sealedFixedDecode := asstLT(1, tool("A", "bash"), think("real reasoning"))
+
+	// Mechanism proof: old decode (keeps the empty thinking) DUPLICATES.
+	if !hasDup(drive([][]message.Message{{inflight}, {sealedOldDecode}})) {
+		t.Errorf("expected old decode (empty thinking kept) to duplicate at seal")
+	}
+	// Fixed decode (empty thinking skipped) is clean.
+	assertNoDup(t, "D fixed-decode", drive([][]message.Message{{inflight}, {sealedFixedDecode}}))
+}

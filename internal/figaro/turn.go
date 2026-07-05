@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -639,7 +641,35 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		}
 		msgs = append(msgs, m)
 	}
-	return compose.Nodes(msgs, a.partials)
+	nodes := compose.Nodes(msgs, a.partials)
+	if dir := os.Getenv("FIGARO_NODE_DEBUG"); dir != "" {
+		logComposeFrame(dir, a.id, inflight != nil, nodes)
+	}
+	return nodes
+}
+
+// logComposeFrame (debug, env-gated) appends one line per composed frame so we
+// can see whether a node's id churns across frames / seal — the fingerprint of
+// the duplication bug.
+func logComposeFrame(dir, ariaID string, hasInflight bool, nodes []livedoc.Node) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "seal=%v n=%d:", !hasInflight, len(nodes))
+	for _, n := range nodes {
+		content := n.Markdown
+		if n.Type == livedoc.NodeTool {
+			content = n.Name
+		}
+		if len(content) > 14 {
+			content = content[:14]
+		}
+		fmt.Fprintf(&b, " [%s]%s(%s)", n.ID, n.Type, content)
+	}
+	f, err := os.OpenFile(filepath.Join(dir, ariaID+".frames"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintln(f, b.String())
 }
 
 // emitSnapshot opens a new unit at the next figaro LT and sets its initial

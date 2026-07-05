@@ -319,8 +319,17 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 	for _, b := range nm.Content {
 		switch b.Type {
 		case "text":
+			// Skip empty blocks so the sealed message matches the in-flight
+			// asm (which never creates a node for empty text/thinking); keeping
+			// them shifts later block indices and duplicates the live render.
+			if strings.TrimSpace(b.Text) == "" {
+				continue
+			}
 			m.Content = append(m.Content, message.Content{Type: message.ContentProse, Text: b.Text})
 		case "thinking":
+			if strings.TrimSpace(b.Thinking) == "" {
+				continue
+			}
 			m.Content = append(m.Content, message.Content{Type: message.ContentThinking, Text: b.Thinking})
 		case "tool_use":
 			args, _ := b.Input.(map[string]interface{})
