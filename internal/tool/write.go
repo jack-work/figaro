@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -53,14 +54,27 @@ func (w *WriteTool) Parameters() interface{} {
 func (w *WriteTool) Execute(ctx context.Context, args map[string]interface{}, onOutput OnOutput) ([]message.Content, error) {
 	path, _ := args["path"].(string)
 	content, _ := args["content"].(string)
+	// Stream the content preview line-by-line so the live tool node animates
+	// like bash's stdout — the write itself is still atomic below. SplitAfter
+	// keeps the trailing newline on each chunk, so the live gutter's line-clamp
+	// behaves exactly like bash. The summary (not the content) is the returned
+	// Content, mirroring bash streaming stdout, not its summary.
+	if onOutput != nil {
+		for _, line := range strings.SplitAfter(content, "\n") {
+			if line == "" {
+				continue
+			}
+			if ctx.Err() != nil {
+				break
+			}
+			onOutput([]byte(line))
+		}
+	}
 	res, err := w.Write(ctx, WriteRequest{Path: path, Content: content})
 	if err != nil {
 		return nil, err
 	}
 	result := fmt.Sprintf("Wrote %d bytes to %s", res.BytesWritten, res.Path)
-	if onOutput != nil {
-		onOutput([]byte(result))
-	}
 	return []message.Content{message.TextContent(result)}, nil
 }
 
