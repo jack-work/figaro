@@ -153,6 +153,20 @@
           mkHushKnob = value:
             if value == null then ''
               # FIGARO_HUSH_APP: inheriting (uses real "figaro" identity)
+              #
+              # figaro's managed hush derives its agent-socket dir from
+              # os.TempDir()/<app>-hush — NOT XDG_RUNTIME_DIR, and with no env
+              # override in the shared (nil-Dirs) path. Nix rewrites TMPDIR to a
+              # per-shell dir ($TMPDIR=/tmp/nix-shell.XXX), so inside the shell
+              # figaro would look for the agent at
+              # /tmp/nix-shell.XXX/figaro-hush/agent.sock while the real global
+              # agent (started with the ambient TMPDIR) listens at
+              # /tmp/figaro-hush/agent.sock → "connection refused", no shared
+              # credential. Reset the nix override back to the ambient default so
+              # a shared-hush shell actually reaches the running global agent.
+              case "''${TMPDIR:-}" in
+                /tmp/nix-shell.*|"") export TMPDIR=/tmp ;;
+              esac
             ''
             else if value == "@dev" then ''
               : "''${FIGARO_HUSH_APP:=figaro-dev-${name}}"
