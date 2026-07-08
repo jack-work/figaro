@@ -229,6 +229,81 @@ func renderSteeringNode(n livedoc.Node, width int) []string {
 	return append([]string{term.Dim("↳ you")}, rows...)
 }
 
+// logEmitTools are tools whose output is a transient log stream: shown live
+// while running, but reduced to a one-line done-indication when committed to
+// native scrollback (see Inline.StableForm). The full output stays browsable in
+// the transcript pager (Ctrl-T) and `fig show`.
+var logEmitTools = map[string]bool{"bash": true, "write": true, "process": true}
+
+// renderToolHeader renders a log-emitting tool as a single done-indication row:
+// status glyph + name + a short arg summary, no output body. Used when a
+// finalized log-emit tool is flushed to immutable scrollback, so the streamed
+// logs never pile up in permanent history.
+func renderToolHeader(n livedoc.Node, width int) []string {
+	var glyph string
+	switch n.Status {
+	case livedoc.StatusError:
+		glyph = term.Red("✗")
+	default:
+		glyph = term.Green("✓") // only finalized nodes flush; treat non-error as done
+	}
+	name := n.Name
+	if name == "" {
+		name = "tool"
+	}
+	header := glyph + " " + term.Cyan(name)
+	if d := toolArgSummary(n); d != "" {
+		header += " " + term.Dim(truncCols(d, toolArgCap))
+	}
+	return []string{clipToWidth(header, width)}
+}
+
+// stableForm renders nodes[from:to] in the immutable form committed to native
+// scrollback: log-emitting tools collapse to a done-indication row (no output),
+// everything else renders in full. Blocks are separated by one blank line (no
+// leading/trailing blank); each row is clipped to width and spinner-frozen
+// (defensive — only finalized nodes reach here). This is wired into the inline
+// renderer as Inline.StableForm.
+func stableForm(nodes []livedoc.Node, from, to, width, bashCap int, set renderSettings) []string {
+	if width <= 0 {
+		width = 80
+	}
+	if bashCap <= 0 {
+		bashCap = nodeBashCapDefault
+	}
+	if from < 0 {
+		from = 0
+	}
+	if to > len(nodes) {
+		to = len(nodes)
+	}
+	var rows []string
+	for i := from; i < to; i++ {
+		n := nodes[i]
+		var nr []string
+		switch {
+		case n.Type == livedoc.NodeTool && logEmitTools[n.Name]:
+			nr = renderToolHeader(n, width)
+		case n.Type == livedoc.NodeTool:
+			nr = renderToolNode(n, width, bashCap, 0, set.verbose)
+		case n.Type == livedoc.NodeThinking:
+			nr = renderThinkingNode(n, width)
+		case n.Type == livedoc.NodeSteering:
+			nr = renderSteeringNode(n, width)
+		default:
+			nr = renderProseNode(n, width)
+		}
+		if i > from {
+			rows = append(rows, "")
+		}
+		rows = append(rows, nr...)
+	}
+	for i := range rows {
+		rows[i] = stabilizeForScrollback(clipToWidth(rows[i], width))
+	}
+	return rows
+}
+
 // renderToolNode draws a tool as a widget: a status header (animated
 // spinner while running, ✓/✗ when done) with the tool name and an argument
 // summary, then the streamed output under a dim gutter, tail-clamped to
