@@ -16,11 +16,6 @@ import (
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/jkrpc"
-
-	// NOTE: golang.org/x/sys/unix is Linux/macOS only. For future Windows
-	// support, PID monitoring will need a build-tagged alternative using
-	// golang.org/x/sys/windows or os.FindProcess + signal probing.
-	"golang.org/x/sys/unix"
 )
 
 // Angelus is the figaro supervisor.
@@ -178,11 +173,6 @@ func (a *Angelus) reapDeadPIDs() {
 			a.Registry.Unbind(pid)
 		}
 	}
-}
-
-// isAlive checks if a process is running using kill(pid, 0).
-func isAlive(pid int) bool {
-	return unix.Kill(pid, 0) == nil
 }
 
 // Stop shuts down the angelus.

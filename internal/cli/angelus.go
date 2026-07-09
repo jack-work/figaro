@@ -31,7 +31,7 @@ func lockStore() (*os.File, bool) {
 	if err != nil {
 		return nil, false
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := tryLockFile(f); err != nil {
 		f.Close()
 		return nil, false
 	}

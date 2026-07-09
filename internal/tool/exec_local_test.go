@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/creack/pty"
 )
 
 // TestLocalExecutor_EnvSanitizer_StripsDaemonVars verifies that the
@@ -223,6 +226,20 @@ func TestLocalExecutor_TimeoutDrainsLateOutput(t *testing.T) {
 // PTY spawn is forced to fail the executor warns and falls back to the
 // pipe instead of erroring.
 func TestLocalExecutor_PTY(t *testing.T) {
+	// ConPTY is unavailable in some Windows CI / terminal environments;
+	// the non-forceFail cases need a working PTY.
+	ptyWorks := true
+	if exe := NewLocalExecutor(); exe.ptyStart == nil {
+		func() {
+			defer func() { recover() }()
+			cmd := exec.Command("echo", "probe")
+			if _, err := pty.Start(cmd); err != nil {
+				ptyWorks = false
+			} else {
+				cmd.Wait()
+			}
+		}()
+	}
 	tests := []struct {
 		name      string
 		command   string
@@ -251,6 +268,9 @@ func TestLocalExecutor_PTY(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if !tt.forceFail && !ptyWorks {
+				t.Skip("ConPTY unavailable")
+			}
 			exe := NewLocalExecutor()
 			if tt.forceFail {
 				exe.ptyStart = func(*exec.Cmd) (*os.File, error) {
@@ -327,12 +347,16 @@ func TestCwdResolver_CalledPerInvocation(t *testing.T) {
 		return strings.TrimSpace(out.String())
 	}
 
-	// macOS resolves /tmp -> /private/tmp; compare via os.Stat
-	// equivalence rather than string equality.
+	// macOS resolves /tmp -> /private/tmp; Windows bash returns MSYS2
+	// paths (/tmp/...) for native paths (C:\...\Temp\...). Compare via
+	// os.Stat where possible, fall back to basename match.
 	sameDir := func(a, b string) bool {
 		ai, errA := os.Stat(a)
 		bi, errB := os.Stat(b)
-		return errA == nil && errB == nil && os.SameFile(ai, bi)
+		if errA == nil && errB == nil {
+			return os.SameFile(ai, bi)
+		}
+		return filepath.Base(a) == filepath.Base(b)
 	}
 
 	got := run()

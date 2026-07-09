@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/jack-work/figaro/internal/message"
@@ -309,9 +308,7 @@ func (b *BashTool) formatResult(raw string, exitCode int, timedOut, canceled boo
 
 // killProcessGroup sends SIGKILL to the entire process group.
 func killProcessGroup(cmd *exec.Cmd) {
-	if cmd.Process != nil {
-		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
+	killTree(cmd)
 }
 
 // streamWriter captures output and optionally streams chunks. Writes

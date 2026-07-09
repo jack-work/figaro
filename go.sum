@@ -101,8 +101,8 @@ github.com/invopop/jsonschema v0.13.0 h1:KvpoAJWEjR3uD9Kbm2HWJmqsEaHt8lBUpd0qHcI
 github.com/invopop/jsonschema v0.13.0/go.mod h1:ffZ5Km5SWWRAIN6wbDXItl95euhFz2uON45H2qjYt+0=
 github.com/jack-work/figwal v0.7.4 h1:LnKOI5RQDYaL2bwFB6iT+q0nIZFabzdp3kNAzadcNzw=
 github.com/jack-work/figwal v0.7.4/go.mod h1:Z8jdAyQX7X5gQN7r31Gc6vLX7f2/ayRyaiPUupE8yWw=
-github.com/jack-work/hush v0.5.1-0.20260626045930-05fcb763e568 h1:0xXvSkFQpVjNaDWNW/fcyTp2/w8XCwq7L0yHdjQji6s=
-github.com/jack-work/hush v0.5.1-0.20260626045930-05fcb763e568/go.mod h1:S2nzmzxe6Gyi+7uINrRsWiw4GeiaCaVk+byWZnCLaU8=
+github.com/jack-work/hush v0.6.0 h1:Pmdcyy+kEbr5eDiO9HPv+R3arkhAOiSVdEJxJCqwMGc=
+github.com/jack-work/hush v0.6.0/go.mod h1:798Ylz6CWDvZLvOWvyjWUvke/YwdaKY9X+U6jLu9Gh8=
 github.com/jack-work/jkrpc v0.1.0 h1:qx03oLiVLuCL/2j3MDy0KLPvGs0Soja/oaQ4YlM9cVg=
 github.com/jack-work/jkrpc v0.1.0/go.mod h1:eY1OORs32+NWXRfbMPaX2q7jg58/7kDPB/PyoKJXZcY=
 github.com/jack-work/largo v0.2.3 h1:O69pCn81ymqiwLd7zpY6+RoPhmAQp+J7FmAovGKK6ww=

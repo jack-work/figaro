@@ -76,7 +76,7 @@ func (e *LocalExecutor) Execute(ctx context.Context, req ExecRequest, onChunk fu
 		}
 	}
 
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = procAttr()
 	sw := &streamWriter{onOutput: onChunk}
 	cmd.Stdout = sw
 	cmd.Stderr = sw
@@ -84,6 +84,7 @@ func (e *LocalExecutor) Execute(ctx context.Context, req ExecRequest, onChunk fu
 	if err := cmd.Start(); err != nil {
 		return ExecResult{}, fmt.Errorf("start command: %w", err)
 	}
+	afterStart(cmd)
 
 	exitCode, timedOut, canceled, err := waitCmd(ctx, cmd, req.Timeout)
 	if err != nil {
@@ -101,7 +102,7 @@ func (e *LocalExecutor) Start(req ExecRequest, onChunk func([]byte)) (Process, e
 	if err != nil {
 		return nil, err
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = procAttr()
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdin pipe: %w", err)
@@ -113,6 +114,7 @@ func (e *LocalExecutor) Start(req ExecRequest, onChunk func([]byte)) (Process, e
 		stdin.Close()
 		return nil, fmt.Errorf("start command: %w", err)
 	}
+	afterStart(cmd)
 	p := &localProcess{cmd: cmd, stdin: stdin, done: make(chan struct{})}
 	go func() {
 		waitErr := cmd.Wait()
@@ -150,7 +152,7 @@ func (p *localProcess) Wait() int {
 }
 
 func (p *localProcess) Signal(sig syscall.Signal) error {
-	return syscall.Kill(-p.cmd.Process.Pid, sig)
+	return signalTree(p.cmd, sig)
 }
 
 func (p *localProcess) Write(b []byte) (int, error) { return p.stdin.Write(b) }

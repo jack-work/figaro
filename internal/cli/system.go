@@ -57,13 +57,13 @@ func runRestWithFlags(force, keepPIDs bool) {
 	}
 
 	if force {
-		syscall.Kill(pid, syscall.SIGKILL)
+		killPid(pid, syscall.SIGKILL)
 		os.Remove(sockPath)
 		fmt.Fprintf(os.Stderr, "angelus (pid %d) forcefully terminated\n", pid)
 		return
 	}
 
-	syscall.Kill(pid, syscall.SIGTERM)
+	killPid(pid, syscall.SIGTERM)
 
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {

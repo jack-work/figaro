@@ -2,6 +2,7 @@ package tool_test
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -93,7 +94,13 @@ func TestBash_Cwd(t *testing.T) {
 		"command": "pwd",
 	}, nil)
 	require.NoError(t, err)
-	assert.Contains(t, resultText(result), dir)
+	out := resultText(result)
+	// On Windows, bash reports MSYS2 paths (/tmp/...) while Go uses
+	// native paths (C:\Users\...\Temp\...). Normalize by checking
+	// the basename.
+	if !strings.Contains(out, dir) {
+		assert.Contains(t, out, filepath.Base(dir))
+	}
 }
 
 func TestBash_NoOutput(t *testing.T) {
