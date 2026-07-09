@@ -7,7 +7,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.42.0
 	github.com/google/uuid v1.6.0
 	github.com/jack-work/figwal v0.7.4
-	github.com/jack-work/hush v0.6.0
+	github.com/jack-work/hush v0.6.1
 	github.com/jack-work/largo v0.2.3
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/stretchr/testify v1.11.1
