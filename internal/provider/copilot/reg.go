@@ -59,6 +59,6 @@ func buildFromContext(ctx provider.BuildContext) (provider.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p.Templates = ctx.Templates
+	p.SetTemplates(ctx.Templates)
 	return p, nil
 }

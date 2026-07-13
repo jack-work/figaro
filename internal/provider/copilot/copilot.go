@@ -59,6 +59,12 @@ func New(knobs provider.Knobs, githubToken auth.TokenResolver, enterpriseDomain 
 	return &Copilot{inner: inner, tokenSrc: tokenSrc}, nil
 }
 
+// SetTemplates propagates chalkboard templates to the inner provider.
+func (c *Copilot) SetTemplates(t *template.Template) {
+	c.Templates = t
+	c.inner.Templates = t
+}
+
 func (c *Copilot) Name() string        { return providerName }
 func (c *Copilot) Fingerprint() string  { return c.inner.Fingerprint() }
 func (c *Copilot) SetModel(model string) { c.inner.SetModel(model) }
