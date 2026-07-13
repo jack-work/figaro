@@ -33,6 +33,7 @@ const (
 	ShellBash CompletionShell = "bash"
 	ShellZsh  CompletionShell = "zsh"
 	ShellFish CompletionShell = "fish"
+	ShellPwsh CompletionShell = "powershell"
 )
 
 // SetBarePromptComplete registers a CompleteArgs callback that fires
@@ -133,6 +134,8 @@ func (r *Router) WriteCompletion(w io.Writer, shell CompletionShell) error {
 		return r.writeZshCompletion(w)
 	case ShellFish:
 		return r.writeFishCompletion(w)
+	case ShellPwsh:
+		return r.writePwshCompletion(w)
 	default:
 		return fmt.Errorf("unsupported shell: %q (use bash, zsh, or fish)", shell)
 	}
@@ -302,4 +305,50 @@ func (r *Router) visibleCommandNames() []string {
 		names = append(names, cmd.Aliases...)
 	}
 	return names
+}
+
+func (r *Router) writePwshCompletion(w io.Writer) error {
+	cmds := r.visibleCommandNames()
+	name := strings.TrimSuffix(r.Name, ".exe")
+	fmt.Fprintf(w, "# PowerShell completion for %s\n", name)
+	fmt.Fprintf(w, "Register-ArgumentCompleter -Native -CommandName %s, fig -ScriptBlock {\n", name)
+	// PowerShell's $wordToComplete is unreliable for tokens containing @
+	// or . (it splits on splatting/member-access boundaries). Extract the
+	// current word from the raw line instead.
+	fmt.Fprint(w, `    param($wordToComplete, $ast, $cursorPosition)
+    $line = $ast.ToString().Substring(0, $cursorPosition)
+    # Extract the real current word from the raw line (handles @skills.foo)
+    if ($line -match '(\S+)$') { $curWord = $Matches[1] } else { $curWord = '' }
+    $tokens = @($line -split '\s+' | Where-Object { $_ })
+    if ($tokens.Count -le 1) { return }
+    $verb = $tokens[1]
+    if ($tokens.Count -eq 2 -and $line[-1] -ne ' ') {
+`)
+	fmt.Fprintf(w, "        @(%s) | Where-Object { $_ -like \"$curWord*\" } | ForEach-Object {\n", quotePwshArray(cmds))
+	fmt.Fprint(w, `            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+        return
+    }
+    $prior = @()
+    if ($tokens.Count -gt 2) { $prior = @($tokens[2..($tokens.Count - 1)]) }
+`)
+	fmt.Fprintf(w, "    $sentinel = '%s'\n", barePromptSentinel)
+	fmt.Fprint(w, "    if ($verb -eq '--') { $verb = $sentinel }\n")
+	fmt.Fprintf(w, "    $candidates = & %s %s $verb --current $curWord -- @prior 2>$null\n", name, completeVerb)
+	fmt.Fprint(w, "    if ($candidates) {\n")
+	fmt.Fprint(w, "        $candidates -split \"`n\" | Where-Object { $_ -and $_ -like \"$curWord*\" } | ForEach-Object {\n")
+	fmt.Fprint(w, `            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+    }
+}
+`)
+	return nil
+}
+
+func quotePwshArray(items []string) string {
+	quoted := make([]string, len(items))
+	for i, s := range items {
+		quoted[i] = "'" + s + "'"
+	}
+	return strings.Join(quoted, ", ")
 }

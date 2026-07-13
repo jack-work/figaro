@@ -40,11 +40,23 @@ func Run(progName string, args []string) {
 	// cheap and never appear broken.
 	if len(args) > 0 && args[0] == "__complete" {
 		loaded, _ := config.Load(config.DefaultConfigDir())
+		if loaded != nil {
+			if s, err := loaded.RefSigil(); err == nil {
+				SetRefSigil(s)
+			}
+		}
 		os.Exit(buildRouter(progName, loaded).Run(args))
 	}
 
 	ctx := context.Background()
 	loaded := mustLoadConfig()
+
+	// Apply config-driven sigil for chalkboard references.
+	if sigil, err := loaded.RefSigil(); err != nil {
+		die("%s", err)
+	} else {
+		SetRefSigil(sigil)
+	}
 
 	// Compute binding policy (interactive? --no-bind? env?) once, before
 	// the router dispatches. Consulted by every command that would
@@ -676,7 +688,7 @@ This command itself is always available regardless of those settings.`,
 		Name:  "completion",
 		Group: "System",
 		Short: "Generate or install a shell completion script",
-		Usage: "completion <bash|zsh|fish>  |  completion install [<shell>]",
+		Usage: "completion <bash|zsh|fish|powershell>  |  completion install [<shell>]",
 		Long: `Print a completion script to stdout, or install it where the shell will
 auto-load it on the next tab.
 

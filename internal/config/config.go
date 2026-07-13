@@ -50,6 +50,10 @@ type Config struct {
 	// 24. Zero disables caching (each check hits the network) — useful
 	// only for testing.
 	UpdateCheckTTLHours *int `toml:"update_check_ttl_hours"`
+
+	// RefSigil is the prefix character for chalkboard references in
+	// prompts and tab completion. Must be "@" or ":". Default "@".
+	RefSigil string `toml:"ref_sigil"`
 }
 
 // EchoPrompt returns whether to echo the prompt. Default true.
@@ -75,6 +79,19 @@ func (l *Loaded) Interactive() bool {
 		return true
 	}
 	return *l.Config.Interactive
+}
+
+// RefSigil returns the chalkboard reference sigil. Default "@".
+// Returns an error if the configured value is not "@" or ":".
+func (l *Loaded) RefSigil() (string, error) {
+	s := l.Config.RefSigil
+	if s == "" {
+		return "@", nil
+	}
+	if s == "@" || s == ":" {
+		return s, nil
+	}
+	return "", fmt.Errorf("config: ref_sigil must be \"@\" or \":\", got %q", s)
 }
 
 // StreamCPS returns the pacer rate. Default 200.

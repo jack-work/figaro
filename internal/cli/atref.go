@@ -18,6 +18,18 @@ import (
 // back to leaving @-references literal (permissive mode).
 const atExpandTimeout = 500 * time.Millisecond
 
+// refSigil is the prefix character for chalkboard references.
+// Set from config at startup; default '@'.
+var refSigil byte = '@'
+
+// SetRefSigil configures the chalkboard reference prefix. Called once
+// at CLI startup from the loaded config.
+func SetRefSigil(s string) {
+	if len(s) == 1 && (s[0] == '@' || s[0] == ':') {
+		refSigil = s[0]
+	}
+}
+
 // expandAtRefs substitutes @key! references in prompt with their
 // string values from snap. The trailing "!" is the explicit
 // terminator that marks a reference: without it, any @ is literal.
@@ -41,7 +53,7 @@ const atExpandTimeout = 500 * time.Millisecond
 // strings unwrap to their text, everything else is re-marshaled
 // to a compact JSON form. Empty snapshot is a valid no-op.
 func expandAtRefs(prompt string, snap map[string]json.RawMessage) string {
-	if len(snap) == 0 || !strings.ContainsRune(prompt, '@') {
+	if len(snap) == 0 || !strings.ContainsRune(prompt, rune(refSigil)) {
 		return prompt
 	}
 	var out strings.Builder
@@ -49,7 +61,7 @@ func expandAtRefs(prompt string, snap map[string]json.RawMessage) string {
 	i := 0
 	for i < len(prompt) {
 		c := prompt[i]
-		if c != '@' {
+		if c != refSigil {
 			out.WriteByte(c)
 			i++
 			continue
@@ -166,7 +178,7 @@ func fetchSnapshotForEndpoint(parent context.Context, ep transport.Endpoint) map
 // references in prompt. Safe to call with a nil-ish endpoint; falls
 // through to the unexpanded prompt on any failure.
 func expandAtRefsForEndpoint(ctx context.Context, ep transport.Endpoint, prompt string) string {
-	if !strings.ContainsRune(prompt, '@') {
+	if !strings.ContainsRune(prompt, rune(refSigil)) {
 		return prompt
 	}
 	snap := fetchSnapshotForEndpoint(ctx, ep)

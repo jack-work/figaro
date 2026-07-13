@@ -45,8 +45,10 @@ func resolveShell(arg string) (cmdkit.CompletionShell, error) {
 		switch arg {
 		case "bash", "zsh", "fish":
 			return cmdkit.CompletionShell(arg), nil
+		case "powershell", "pwsh":
+			return cmdkit.ShellPwsh, nil
 		default:
-			return "", fmt.Errorf("unsupported shell %q (use bash, zsh, or fish)", arg)
+			return "", fmt.Errorf("unsupported shell %q (use bash, zsh, fish, or powershell)", arg)
 		}
 	}
 	sh := os.Getenv("SHELL")
@@ -89,6 +91,11 @@ func completionInstallPath(shell cmdkit.CompletionShell) (path, note string, err
 		dir := filepath.Join(home, ".zsh", "completions")
 		return filepath.Join(dir, "_figaro"),
 			fmt.Sprintf("note: ensure %s is on $fpath before `compinit` in your .zshrc:\n  fpath=(%s $fpath)\n  autoload -Uz compinit && compinit", dir, dir), nil
+
+	case cmdkit.ShellPwsh:
+		dir := filepath.Join(home, ".local", "powershell")
+		return filepath.Join(dir, "figaro-completion.ps1"),
+			"note: source it from your profile:\n  . $HOME\\.local\\powershell\\figaro-completion.ps1", nil
 
 	default:
 		return "", "", fmt.Errorf("unsupported shell: %s", shell)

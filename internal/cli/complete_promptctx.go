@@ -36,11 +36,12 @@ import (
 // cursor's current prefix we'd pollute the suggestion list with
 // every dotfile.
 func completePromptContext(c *cmdkit.CompleteContext) []string {
-	if c != nil && strings.HasPrefix(c.Current, "@") {
+	sigil := string(refSigil)
+	if c != nil && strings.HasPrefix(c.Current, sigil) {
 		keys := completeChalkboardKeys(c)
 		out := make([]string, len(keys))
 		for i, k := range keys {
-			out[i] = "@" + k
+			out[i] = sigil + k
 		}
 		return out
 	}
