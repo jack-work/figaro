@@ -1,19 +1,17 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
+	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
@@ -86,7 +84,7 @@ func runModels(loaded *config.Loaded) {
 	providerNames := loaded.ListProviders()
 	if len(providerNames) == 0 {
 		// Fall back to the providers the factory knows how to build.
-		providerNames = KnownProviders
+		providerNames = KnownProviders()
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
@@ -110,23 +108,11 @@ func runModels(loaded *config.Loaded) {
 }
 
 func runLoginByName(loaded *config.Loaded, providerName string) {
-	h := mustHush()
-	hushClient := h.Client()
-
-	var oauthCfg auth.OAuthConfig
-	switch providerName {
-	case "anthropic":
-		oauthCfg = auth.AnthropicOAuth
-	default:
-		die("no OAuth config for provider %q", providerName)
+	reg := providerPkg.Lookup(providerName)
+	if reg == nil || reg.Login == nil {
+		die("no login flow for provider %q", providerName)
 	}
-
-	err := auth.Login(hushClient, oauthCfg, func() (string, error) {
-		reader := bufio.NewReader(os.Stdin)
-		line, err := reader.ReadString('\n')
-		return strings.TrimSpace(line), err
-	})
-	if err != nil {
+	if err := reg.Login(loaded); err != nil {
 		die("%s", err)
 	}
 }

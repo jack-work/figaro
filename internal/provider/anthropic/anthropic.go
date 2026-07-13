@@ -807,6 +807,77 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	return nil
 }
 
+// TransportFn executes a single HTTP request given a serialized body.
+// The copilot provider uses this to inject its own URL and headers while
+// reusing the Anthropic encoder/decoder.
+type TransportFn func(ctx context.Context, body []byte) (*http.Response, error)
+
+// SendWithTransport is like Send but delegates the HTTP call to fn
+// instead of using the built-in auth retry + Anthropic endpoint.
+func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput, bus provider.Bus, fn TransportFn) error {
+	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
+		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
+	}
+	cache := a.cacheFor(in.AriaID)
+	perMessage, lts := a.catchUp(in.FigLog, cache, in.Chalkboard)
+	if len(perMessage) == 0 {
+		return fmt.Errorf("empty context")
+	}
+	model := a.resolveModel(in.Snapshot)
+
+	req, err := a.projectMessagesWithLTs(perMessage, lts, in.Snapshot, in.Tools, in.MaxTokens, true, model)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	resp, err := fn(ctx, body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("copilot API error %d: %s", resp.StatusCode, string(errBody))
+	}
+
+	nm, err := a.drainSSE(ctx, resp.Body, model, bus)
+	if err != nil {
+		return err
+	}
+	if len(nm.Content) == 0 {
+		return nil
+	}
+
+	msg := decodeNativeMessage(nm)
+	if msg.Timestamp == 0 {
+		msg.Timestamp = time.Now().UnixMilli()
+	}
+	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
+	if err != nil {
+		return fmt.Errorf("append assistant: %w", err)
+	}
+	msg.LogicalTime = entry.LT
+	bus.PushMessageEnd(string(msg.StopReason))
+	bus.PushFigaro(msg)
+
+	if cache != nil {
+		if encoded, err := a.encode(msg, chalkboard.Snapshot{}); err == nil {
+			_, _ = cache.Append(store.Entry[[]json.RawMessage]{
+				FigaroLT:    entry.LT,
+				Payload:     encoded,
+				Fingerprint: a.Fingerprint(),
+			})
+		} else {
+			slog.Error("anthropic re-encode assistant", "err", err)
+		}
+	}
+	return nil
+}
+
 func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
 	if v := snap.Lookup("system.model"); v != nil {
 		return *v

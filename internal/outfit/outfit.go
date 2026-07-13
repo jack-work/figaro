@@ -221,7 +221,15 @@ func loadDir(dir string) (map[string]ContentEnvelope, error) {
 	}
 	out := map[string]ContentEnvelope{}
 	for _, e := range entries {
-		if e.IsDir() {
+		isDir := e.IsDir()
+		if e.Type()&os.ModeSymlink != 0 {
+			if info, err := os.Stat(filepath.Join(dir, e.Name())); err == nil {
+				isDir = info.IsDir()
+			} else {
+				continue
+			}
+		}
+		if isDir {
 			// A subdirectory holding a SKILL.md is ONE skill keyed by the
 			// directory name; its other files are sections the agent reads on
 			// demand via paths referenced from SKILL.md. Subdirs without a

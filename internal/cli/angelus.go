@@ -113,7 +113,7 @@ func runAngelus() {
 		Angelus:             a,
 		Config:              loaded,
 		ProviderFactory:     buildProviderFactory(loaded, cbTmpls, backend),
-		AvailableProviders:  KnownProviders,
+		AvailableProviders:  KnownProviders(),
 		Ctx:                 ctx,
 		ChalkboardTemplates: cbTmpls,
 	})

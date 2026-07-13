@@ -44,6 +44,8 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
+	providerPkg "github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/provider/copilot"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/tui"
@@ -58,8 +60,22 @@ import (
 type providerChoice struct {
 	label    string // shown in the menu
 	provider string // value for loadout's [system].provider
-	mode     string // "oauth" | "apikey"
 	hint     string // short description after the label
+	setup    func(loaded *config.Loaded) error
+}
+
+func init() {
+	if r := providerPkg.Lookup("copilot"); r != nil {
+		r.Setup = runCopilotLogin
+		r.Login = runCopilotLogin
+	}
+	if r := providerPkg.Lookup("anthropic"); r != nil {
+		login := func(loaded *config.Loaded) error {
+			return runOAuthInline("anthropic", auth.AnthropicOAuth)
+		}
+		r.Setup = login
+		r.Login = login
+	}
 }
 
 // catalog is the menu shown for each underlying provider. Ordering
@@ -70,16 +86,24 @@ type providerChoice struct {
 // modes. When OpenAI/etc. land, append two more entries here.
 var providerCatalog = []providerChoice{
 	{
+		label:    "GitHub Copilot (device code login)",
+		provider: "copilot",
+		hint:     "recommended — uses your Copilot subscription",
+		setup:    runCopilotLogin,
+	},
+	{
 		label:    "Anthropic (Claude.ai login)",
 		provider: "anthropic",
-		mode:     "oauth",
-		hint:     "recommended — no API key to manage",
+		hint:     "no API key to manage",
+		setup: func(loaded *config.Loaded) error {
+			return runOAuthInline("anthropic", auth.AnthropicOAuth)
+		},
 	},
 	{
 		label:    "Anthropic (API key)",
 		provider: "anthropic",
-		mode:     "apikey",
 		hint:     "paste a key from console.anthropic.com",
+		setup:    func(loaded *config.Loaded) error { return runAPIKeyInline(loaded, "anthropic") },
 	},
 }
 
@@ -270,18 +294,7 @@ func pickFromMenuNumbered(options []providerChoice) (providerChoice, error) {
 // API-key mode prompts (no echo), encrypts via hush, writes to
 // providers/<name>.toml.
 func setupCredentialsFor(loaded *config.Loaded, choice providerChoice) error {
-	switch choice.mode {
-	case "oauth":
-		cfg, ok := oauthConfigFor(choice.provider)
-		if !ok {
-			return fmt.Errorf("provider %q has no OAuth config", choice.provider)
-		}
-		return runOAuthInline(choice.provider, cfg)
-	case "apikey":
-		return runAPIKeyInline(loaded, choice.provider)
-	default:
-		return fmt.Errorf("unknown setup mode %q", choice.mode)
-	}
+	return choice.setup(loaded)
 }
 
 // runOAuthInline calls auth.Login, which drives the PKCE handshake
@@ -299,6 +312,48 @@ func runOAuthInline(providerName string, cfg auth.OAuthConfig) error {
 
 // runAPIKeyInline prompts for a key (no echo), encrypts it via hush,
 // and writes it as `api_key = "AGE-ENC[...]"` in providers/<name>.toml.
+// runCopilotLogin runs the device code flow, then encrypts and stores
+// the GitHub access token as the copilot provider's api_key.
+func runCopilotLogin(loaded *config.Loaded) error {
+	fmt.Fprint(os.Stderr, "       GitHub Enterprise domain (blank for github.com): ")
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("read domain: %w", err)
+	}
+	domain := strings.TrimSpace(line)
+
+	githubToken, err := auth.LoginCopilot(domain)
+	if err != nil {
+		return err
+	}
+
+	h := mustHush()
+	encrypted, err := h.Client().Encrypt(map[string]string{"api_key": githubToken})
+	if err != nil {
+		return fmt.Errorf("encrypt github token: %w", err)
+	}
+
+	cfg := copilot.Config{
+		APIKey:           encrypted["api_key"],
+		EnterpriseDomain: domain,
+	}
+	path := loaded.ProviderAuthPath("copilot")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := toml.NewEncoder(f).Encode(cfg); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	fmt.Fprintln(os.Stderr, "  "+green("\u2713")+" stored encrypted GitHub token \u2192 "+dim(path))
+	return nil
+}
+
 func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
 	fmt.Fprintf(os.Stderr, "       API key: ")
 	key, err := term.ReadPassword(int(os.Stdin.Fd()))
