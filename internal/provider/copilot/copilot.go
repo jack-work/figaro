@@ -130,7 +130,7 @@ func (c *Copilot) Send(ctx context.Context, in provider.SendInput, bus provider.
 		return fmt.Errorf("resolve copilot token: %w", err)
 	}
 	baseURL := baseURLFromToken(token, c.tokenSrc.domain)
-	return c.inner.SendWithTransport(ctx, in, bus, func(ctx context.Context, body []byte) (*http.Response, error) {
+	return c.inner.SendWithTransport(ctx, in, bus, false, func(ctx context.Context, body []byte) (*http.Response, error) {
 		req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/v1/messages", bytes.NewReader(body))
 		if err != nil {
 			return nil, err

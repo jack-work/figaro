@@ -808,13 +808,13 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 }
 
 // TransportFn executes a single HTTP request given a serialized body.
-// The copilot provider uses this to inject its own URL and headers while
-// reusing the Anthropic encoder/decoder.
 type TransportFn func(ctx context.Context, body []byte) (*http.Response, error)
 
 // SendWithTransport is like Send but delegates the HTTP call to fn
 // instead of using the built-in auth retry + Anthropic endpoint.
-func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput, bus provider.Bus, fn TransportFn) error {
+// oauth controls whether the Claude Code identity preamble is injected
+// into the system prompt (false for Copilot, true for Anthropic OAuth).
+func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput, bus provider.Bus, oauth bool, fn TransportFn) error {
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
@@ -825,7 +825,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	}
 	model := a.resolveModel(in.Snapshot)
 
-	req, err := a.projectMessagesWithLTs(perMessage, lts, in.Snapshot, in.Tools, in.MaxTokens, true, model)
+	req, err := a.projectMessagesWithLTs(perMessage, lts, in.Snapshot, in.Tools, in.MaxTokens, oauth, model)
 	if err != nil {
 		return err
 	}
