@@ -23,7 +23,8 @@ func (m *memLog) Lookup(uint64) (store.Entry[message.Message], bool) {
 func (m *memLog) PeekTail() (store.Entry[message.Message], bool) {
 	return store.Entry[message.Message]{}, false
 }
-func (m *memLog) ScanFromEnd(int) []store.Entry[message.Message] { return nil }
+func (m *memLog) ScanFromEnd(int) []store.Entry[message.Message]        { return nil }
+func (m *memLog) ReadBefore(uint64, int) []store.Entry[message.Message] { return nil }
 func (m *memLog) Append(e store.Entry[message.Message]) (store.Entry[message.Message], error) {
 	return e, nil
 }
