@@ -23,6 +23,10 @@ import (
 
 const spinnerFPS = 11 // spinner frames per second (~90ms/frame)
 
+// recentCursor is a beyond-the-end LT: ReadBefore(recentCursor, N) returns the
+// newest N committed messages — the pager's initial (lazy) window.
+const recentCursor = 1 << 60
+
 // Terminal control: disable auto-margin (so a full-width row never wraps) and
 // hide the cursor while the renderer owns the screen.
 const (
@@ -82,8 +86,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	var mu sync.Mutex
 	doneCh := make(chan struct{}, 1)
 	disconnectCh := make(chan struct{}, 1) // Ctrl-D: leave the turn running
-	turnDone := false // turn ended while the pager was up; exit on pager close
-	sendCursor := -1  // cursor from Qua; stop only once committed past it and idle
+	turnDone := false                      // turn ended while the pager was up; exit on pager close
+	sendCursor := -1                       // cursor from Qua; stop only once committed past it and idle
 
 	onNotify := func(method string, params json.RawMessage) {
 		mu.Lock()
@@ -198,6 +202,25 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			go func() {
 				buf := make([]byte, 64)
 				var pending []byte // a mouse/escape sequence split across reads
+				// pageOlder lazily pulls the previous window of history when a
+				// scroll-up in the pager nears the top; the ReadBefore fetch runs
+				// off-lock (so the render mutex isn't held across the RPC).
+				pageOlder := func() {
+					mu.Lock()
+					cur, need := lt.transcriptOlderCursor()
+					mu.Unlock()
+					if !need {
+						return
+					}
+					rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+					r, rerr := fcli.ReadBefore(rctx, cur, transcriptPageSize)
+					rcancel()
+					if rerr == nil {
+						mu.Lock()
+						lt.transcriptApplyOlder(r)
+						mu.Unlock()
+					}
+				}
 				for {
 					n, err := os.Stdin.Read(buf)
 					if err != nil {
@@ -229,6 +252,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 									mu.Lock()
 									lt.transcriptScroll(delta)
 									mu.Unlock()
+									pageOlder()
 								}
 								continue
 							}
@@ -244,6 +268,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 								default:
 								}
 							}
+							pageOlder()
 							continue
 						}
 						b := data[i]
@@ -260,9 +285,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 							set.verbose = !set.verbose
 							lt.render()
 							mu.Unlock()
-						case 0x14: // Ctrl-T: open the full-screen transcript pager
+						case 0x14: // Ctrl-T: open the pager on the recent window
 							rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-							r, rerr := fcli.Read(rctx, 0) // catch the model up to full history
+							// Lazy: load only the recent window; older history pages
+							// in via ReadBefore as the user scrolls toward the top.
+							r, rerr := fcli.ReadBefore(rctx, recentCursor, transcriptPageSize)
 							rcancel()
 							mu.Lock()
 							lt.enterTranscript()

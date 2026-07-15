@@ -41,6 +41,13 @@ type transcript struct {
 	inSearch bool
 	query    string
 
+	// Lazy history paging: the pager opens on the recent window and pulls older
+	// messages via keyset ReadBefore only when you scroll near the top ("like
+	// Twitter"). checkOlder is armed by an upward scroll; noMoreOlder latches
+	// once a fetch comes back empty.
+	checkOlder  bool
+	noMoreOlder bool
+
 	// rowCache memoizes the rendered rows of committed (immutable) messages by
 	// LT, so the expensive markdown render runs once per message instead of on
 	// every frame. Invalidated wholesale when the width changes (cacheW).
@@ -76,6 +83,56 @@ func (t *transcript) scrollBy(delta int) {
 	}
 	t.offset += delta
 	t.follow = false
+	if delta < 0 {
+		t.checkOlder = true // scrolled up: maybe page older history
+	}
+	t.render()
+}
+
+// transcriptPageSize is how many older messages a single scroll-up fetch pulls.
+const transcriptPageSize = 30
+
+// olderCursor returns (beforeLT, true) when a recent upward scroll has brought
+// the viewport near the top and older history may still exist — the caller
+// should fetch ReadBefore(beforeLT, transcriptPageSize) off-lock and hand the
+// result to applyOlder. It consumes the armed flag.
+func (t *transcript) olderCursor() (int, bool) {
+	if !t.checkOlder || t.noMoreOlder {
+		return 0, false
+	}
+	t.checkOlder = false
+	if t.offset >= t.h { // not near the top yet
+		return 0, false
+	}
+	v := t.client.View()
+	if len(v.Closed) == 0 {
+		return 0, false
+	}
+	oldest := v.Closed[0].LT
+	if oldest <= 1 { // LTs start at 1 — nothing older
+		t.noMoreOlder = true
+		return 0, false
+	}
+	return oldest, true
+}
+
+// applyOlder folds paged-in older history into the model and keeps the viewport
+// anchored: older messages sort to the front, so the offset shifts down by the
+// number of rows added above. An empty result latches noMoreOlder.
+func (t *transcript) applyOlder(r aria.AriaRead) {
+	if !t.active {
+		return
+	}
+	if len(r.Committed) == 0 {
+		t.noMoreOlder = true
+		return
+	}
+	before := len(t.lines())
+	t.client.Apply(r)
+	after := len(t.lines())
+	if d := after - before; d > 0 {
+		t.offset += d
+	}
 	t.render()
 }
 
@@ -217,17 +274,20 @@ func (t *transcript) key(b byte) (done bool) {
 	case 'k':
 		t.offset--
 		t.follow = false
+		t.checkOlder = true
 	case 'd':
 		t.offset += t.h / 2
 		t.follow = false
 	case 'u':
 		t.offset -= t.h / 2
 		t.follow = false
+		t.checkOlder = true
 	case 'G':
 		t.follow = true
 	case 'g':
 		if t.pendG {
 			t.offset, t.follow = 0, false
+			t.checkOlder = true
 		}
 	case '/':
 		t.inSearch, t.query = true, ""

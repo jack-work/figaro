@@ -164,6 +164,12 @@ func (t *livelogTurn) transcriptKey(b byte) (exited bool) {
 // transcriptScroll moves the pager viewport by delta lines (native wheel).
 func (t *livelogTurn) transcriptScroll(delta int) { t.tr.scrollBy(delta) }
 
+// transcriptOlderCursor reports whether a scroll-up should lazily page older
+// history, and the LT to page before. transcriptApplyOlder folds the fetched
+// window in (anchored). The fetch itself is done off-lock by the caller.
+func (t *livelogTurn) transcriptOlderCursor() (int, bool)   { return t.tr.olderCursor() }
+func (t *livelogTurn) transcriptApplyOlder(r aria.AriaRead) { t.tr.applyOlder(r) }
+
 // ariaView renders a block by reusing figaro's existing node renderers, so
 // inline and transcript draw identically. One representation: livedoc.Node.
 type ariaView struct{ settings *renderSettings }
