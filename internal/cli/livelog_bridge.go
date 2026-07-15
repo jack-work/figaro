@@ -50,6 +50,13 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, 
 	}
 	t.client.OnLive = func(lt int, role string, nodes []livedoc.Node) {
 		t.openLT, t.openRole, t.open = lt, role, nodes
+		// A turn taller than the viewport can't render inline without scrolling
+		// its own live region off-screen; move it to the scrollable pager
+		// instead (the user can read/scroll/select there). Auto-entered once,
+		// it stays until closed, flushing just the last turn to scrollback.
+		if !t.tr.active && t.openOverflows(nodes) {
+			t.tr.enter()
+		}
 		if t.tr.active {
 			t.tr.render()
 		} else {
@@ -57,6 +64,32 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, 
 		}
 	}
 	return t
+}
+
+// minPagerHeight floors the auto-pager: below this viewport height an
+// overflowing turn stays inline and scrolls natively rather than yanking a tiny
+// pane into the full-screen pager.
+const minPagerHeight = 10
+
+// openOverflows reports whether the open turn's rendered height reaches the
+// viewport, so it belongs in the scrollable pager rather than the inline live
+// region.
+func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
+	w, h := t.term.Size()
+	if h < minPagerHeight {
+		return false
+	}
+	rows := 2 // leading blank + role header
+	for k, n := range nodes {
+		if k > 0 {
+			rows++ // inter-block blank
+		}
+		rows += len(t.view.Render(n, w, 0))
+		if rows >= h {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *livelogTurn) apply(r aria.AriaRead)  { t.client.Apply(r) }
