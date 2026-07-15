@@ -203,6 +203,8 @@ func setField(n *livedoc.Node, field string, v any) {
 		n.Type = livedoc.NodeType(asStr(v))
 	case "name":
 		n.Name = asStr(v)
+	case "summary":
+		n.Summary = asStr(v)
 	case "status":
 		n.Status = asStr(v)
 	case "markdown":

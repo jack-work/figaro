@@ -227,6 +227,7 @@ func delta(id string, old livedoc.Node, existed bool, n livedoc.Node) NodeDelta 
 		set["type"] = string(n.Type)
 	}
 	scalar("name", old.Name, n.Name)
+	scalar("summary", old.Summary, n.Summary)
 	scalar("status", old.Status, n.Status)
 	streamed("markdown", old.Markdown, n.Markdown)
 	streamed("output", old.Output, n.Output)
@@ -252,6 +253,9 @@ func fullSet(id string, n livedoc.Node) NodeDelta {
 	set := map[string]any{"type": string(n.Type)}
 	if n.Name != "" {
 		set["name"] = n.Name
+	}
+	if n.Summary != "" {
+		set["summary"] = n.Summary
 	}
 	if n.Args != nil {
 		set["args"] = n.Args
