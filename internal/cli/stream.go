@@ -14,6 +14,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
@@ -190,21 +191,49 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		if restore, err := term.MakeCbreak(int(os.Stdin.Fd())); err == nil {
 			defer restore()
+			// Belt-and-braces: always disable mouse reporting on exit (harmless
+			// if never enabled) so a crash/interrupt mid-pager can't leave the
+			// shell spewing raw \x1b[<…M. Normal pager exit disables it earlier.
+			defer os.Stdout.WriteString(ldmouse.Disable)
 			go func() {
 				buf := make([]byte, 64)
+				var pending []byte // a mouse/escape sequence split across reads
 				for {
 					n, err := os.Stdin.Read(buf)
 					if err != nil {
 						cancel()
 						return
 					}
-					for _, b := range buf[:n] {
+					data := append(pending, buf[:n]...)
+					pending = nil
+					i := 0
+					for i < len(data) {
 						mu.Lock()
 						active := lt.transcriptActive()
 						mu.Unlock()
 						if active {
-							// In the pager: every key drives it; on exit, if the
-							// turn already finished, end the command.
+							// Native mouse wheel scrolls the pager; other keys drive it.
+							if ev, consumed, ok, need := ldmouse.Parse(data[i:]); need {
+								pending = append(pending, data[i:]...) // wait for the rest
+								break
+							} else if ok {
+								i += consumed
+								delta := 0
+								switch ev.Button {
+								case ldmouse.WheelUp:
+									delta = -3
+								case ldmouse.WheelDown:
+									delta = 3
+								}
+								if delta != 0 {
+									mu.Lock()
+									lt.transcriptScroll(delta)
+									mu.Unlock()
+								}
+								continue
+							}
+							b := data[i]
+							i++
 							mu.Lock()
 							exited := lt.transcriptKey(b)
 							fire := exited && turnDone
@@ -217,6 +246,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 							}
 							continue
 						}
+						b := data[i]
+						i++
 						switch b {
 						case 0x04: // Ctrl-D: disconnect the CLI; do NOT interrupt the turn
 							select {

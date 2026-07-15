@@ -115,10 +115,21 @@ func (t *livelogTurn) transcriptKey(b byte) (exited bool) {
 		return false
 	}
 	t.tr.leave()
-	t.in.Resume(t.pendingSeals, t.openLT, t.openRole, t.open)
+	// Flush ONLY the last turn that closed while paging to native scrollback —
+	// not the whole history the pager showed. You resume with just where you
+	// left off; `fig show -n N` reprints more. (pendingSeals are turns not yet
+	// in the inline scrollback, so the last one never duplicates.)
+	var last []aria.Message
+	if n := len(t.pendingSeals); n > 0 {
+		last = t.pendingSeals[n-1:]
+	}
+	t.in.Resume(last, t.openLT, t.openRole, t.open)
 	t.pendingSeals = nil
 	return true
 }
+
+// transcriptScroll moves the pager viewport by delta lines (native wheel).
+func (t *livelogTurn) transcriptScroll(delta int) { t.tr.scrollBy(delta) }
 
 // ariaView renders a block by reusing figaro's existing node renderers, so
 // inline and transcript draw identically. One representation: livedoc.Node.

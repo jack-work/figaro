@@ -7,6 +7,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
 )
 
 const (
@@ -55,15 +56,27 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query = false, false, ""
-	io.WriteString(t.out, altScreenOn+cursorHide+"\x1b[2J")
+	io.WriteString(t.out, altScreenOn+ldmouse.Enable+cursorHide+"\x1b[2J")
 	t.render()
 }
 
-// leave restores the normal screen.
+// leave restores the normal screen. Mouse reporting is disabled before the
+// alt-screen swap so no stray \x1b[<…M leaks into the shell.
 func (t *transcript) leave() {
 	t.active = false
-	io.WriteString(t.out, "\x1b[2J"+altScreenOff)
+	io.WriteString(t.out, "\x1b[2J"+ldmouse.Disable+altScreenOff)
 	t.prev = nil
+}
+
+// scrollBy moves the viewport by delta lines (native wheel), leaving follow
+// mode; render clamps the offset.
+func (t *transcript) scrollBy(delta int) {
+	if !t.active {
+		return
+	}
+	t.offset += delta
+	t.follow = false
+	t.render()
 }
 
 func (t *transcript) resize(w, h int) {
