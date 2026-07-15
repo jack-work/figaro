@@ -223,6 +223,44 @@ func (l *xwalLog[T]) ScanFromEnd(n int) []Entry[T] {
 	return out
 }
 
+func (l *xwalLog[T]) ReadBefore(figaroLT uint64, n int) []Entry[T] {
+	if n <= 0 || figaroLT == 0 {
+		return nil
+	}
+	var out []Entry[T]
+	_ = l.openOnce(func(xw *xwal.XWAL) error {
+		var first, last uint64
+		for _, c := range xw.Channels() {
+			if c.Name == l.channel {
+				first, last = c.First, c.Last
+				break
+			}
+		}
+		if first == 0 && last > 0 {
+			first = 1
+		}
+		if first == 0 || last < first {
+			return nil
+		}
+		out = make([]Entry[T], 0, n)
+		for lt := last; lt >= first && len(out) < n; lt-- {
+			if r, err := xw.ReadAt(l.channel, lt); err == nil {
+				if e, ok := decodeRecord[T](r); ok && e.FigaroLT < figaroLT {
+					out = append(out, e)
+				}
+			}
+			if lt == 0 {
+				break
+			}
+		}
+		return nil
+	})
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
+}
+
 // Append routes through Trunks.Append / Trunks.AppendChannel, which
 // take Trunks.mu for the whole open→write→close so a concurrent Fork
 // on the same trunk cannot race. No local retry needed.
