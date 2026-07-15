@@ -145,7 +145,8 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		msgs[i] = e.Payload
 		msgs[i].LogicalTime = e.LT
 	}
-	units := compose.Units(msgs, compose.ToolSummary(tool.Summarizer(tool.DefaultRegistry(""))))
+	reg := tool.DefaultRegistry("")
+	units := compose.Units(msgs, compose.ToolSummary(tool.Summarizer(reg)), compose.ToolPreviewArg(tool.PreviewArger(reg)))
 	lo, hi := selectUnitRange(len(units), opts)
 
 	if opts.jsonOut {

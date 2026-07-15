@@ -17,7 +17,7 @@ func drive(frames [][]message.Message) []string {
 	srv.Subscribe(func(r aria.AriaRead) { cli.Apply(r) })
 	srv.Open(1, "assistant")
 	for _, msgs := range frames {
-		srv.Update(Nodes(msgs, nil, nil))
+		srv.Update(Nodes(msgs, nil, nil, nil, nil))
 	}
 	var out []string
 	if v := cli.View().Open; v != nil {

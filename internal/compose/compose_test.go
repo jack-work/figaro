@@ -25,7 +25,7 @@ func TestNodes_TextAndThinking(t *testing.T) {
 	nodes := Nodes([]message.Message{assistant(
 		message.Content{Type: message.ContentThinking, Text: "let me think"},
 		message.Content{Type: message.ContentProse, Text: "Here is the answer."},
-	)}, nil, nil)
+	)}, nil, nil, nil, nil)
 	if len(nodes) != 2 {
 		t.Fatalf("want thinking + text node, got %d: %+v", len(nodes), nodes)
 	}
@@ -38,7 +38,7 @@ func TestNodes_TextAndThinking(t *testing.T) {
 }
 
 func TestNodes_RunningTool(t *testing.T) {
-	nodes := Nodes([]message.Message{assistant(invoke("t1", "bash", "ls -la"))}, nil, nil)
+	nodes := Nodes([]message.Message{assistant(invoke("t1", "bash", "ls -la"))}, nil, nil, nil, nil)
 	if len(nodes) != 1 || nodes[0].Type != livedoc.NodeTool {
 		t.Fatalf("want 1 tool node: %+v", nodes)
 	}
@@ -56,7 +56,7 @@ func TestNodes_RunningTool(t *testing.T) {
 
 func TestNodes_RunningToolWithPartial(t *testing.T) {
 	partials := map[string]string{"t1": "line1\nline2\n"}
-	nodes := Nodes([]message.Message{assistant(invoke("t1", "bash", "tail -f log"))}, partials, nil)
+	nodes := Nodes([]message.Message{assistant(invoke("t1", "bash", "tail -f log"))}, partials, nil, nil, nil)
 	if nodes[0].Status != livedoc.StatusRunning {
 		t.Fatal("tool should still be running")
 	}
@@ -69,14 +69,14 @@ func TestNodes_CompletedAndFailedTool(t *testing.T) {
 	ok := Nodes([]message.Message{
 		assistant(invoke("t1", "bash", "echo hi")),
 		toolResultTic(result("t1", "bash", "hi\n", false)),
-	}, nil, nil)
+	}, nil, nil, nil, nil)
 	if ok[0].Status != livedoc.StatusOK || ok[0].Output != "hi" {
 		t.Errorf("completed tool wrong: %+v", ok[0])
 	}
 	bad := Nodes([]message.Message{
 		assistant(invoke("t2", "bash", "false")),
 		toolResultTic(result("t2", "bash", "boom", true)),
-	}, nil, nil)
+	}, nil, nil, nil, nil)
 	if bad[0].Status != livedoc.StatusError {
 		t.Errorf("failed tool should be error: %+v", bad[0])
 	}
@@ -87,7 +87,7 @@ func TestNodes_SkipsUserPromptAndDeterministic(t *testing.T) {
 		{Role: message.RoleUser, Content: []message.Content{{Type: message.ContentProse, Text: "do the thing"}}},
 		assistant(message.Content{Type: message.ContentProse, Text: "on it"}),
 	}
-	nodes := Nodes(msgs, nil, nil)
+	nodes := Nodes(msgs, nil, nil, nil, nil)
 	if len(nodes) != 1 || nodes[0].Markdown != "on it" {
 		t.Fatalf("the user's prompt must not appear in the agent turn: %+v", nodes)
 	}

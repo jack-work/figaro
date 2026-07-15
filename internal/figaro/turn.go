@@ -194,6 +194,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.liveActive = true
 	a.liveMu.Unlock()
 	a.partials = map[string]string{}
+	a.argPartials = map[string]string{}
 	a.emitSnapshot("assistant", nil)
 
 	// Drive: provider -> tools -> repeat.
@@ -280,6 +281,8 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 				asmMsg.addText(ev.content.Type, ev.content.Text)
 			case evToolStart:
 				asmMsg.toolOpen(ev.id, ev.name)
+			case evToolArgs:
+				a.argPartials[ev.id] += ev.partial
 			case evToolReady:
 				asmMsg.toolReady(ev.id, ev.name, ev.args)
 			case evFigaro:
@@ -641,7 +644,7 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		}
 		msgs = append(msgs, m)
 	}
-	nodes := compose.Nodes(msgs, a.partials, a.summarize)
+	nodes := compose.Nodes(msgs, a.partials, a.argPartials, a.summarize, a.previewArg)
 	if dir := os.Getenv("FIGARO_NODE_DEBUG"); dir != "" {
 		logComposeFrame(dir, a.id, inflight != nil, nodes)
 	}

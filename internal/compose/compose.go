@@ -24,6 +24,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/partialjson"
 )
 
 // nodeID mints a stable id for an id-less node (thinking/prose/steering) from
@@ -48,12 +49,19 @@ const composeBashCap = 200
 // to the generic sorted key=value formatting.
 type ToolSummary func(name string, args map[string]any) string
 
+// ToolPreviewArg returns the name of the "body" argument whose live-streaming
+// value should surface as a running tool node's preview (e.g. "content" for
+// write). Return "" to opt out — the vast majority of tools do.
+type ToolPreviewArg func(name string) string
+
 // Nodes maps a turn's messages to the live node list: each assistant
 // content block becomes a node in order — text/thinking → prose, tool
 // invoke → a tool node folding in its result (or streamed partial). A
 // tool with no result yet is left status=running with whatever output has
-// streamed.
-func Nodes(msgs []message.Message, partials map[string]string, summarize ToolSummary) []livedoc.Node {
+// streamed. argPartials carries the raw, still-truncated tool_use argument
+// JSON per tool_call_id; when execution output hasn't started and the tool
+// declares a preview arg, its live value seeds the node's Output.
+func Nodes(msgs []message.Message, partials, argPartials map[string]string, summarize ToolSummary, previewArg ToolPreviewArg) []livedoc.Node {
 	results := indexResults(msgs)
 	var nodes []livedoc.Node
 	for _, m := range msgs {
@@ -87,14 +95,14 @@ func Nodes(msgs []message.Message, partials map[string]string, summarize ToolSum
 				}
 				nodes = append(nodes, livedoc.Node{ID: nodeID(m.LogicalTime, ci), Type: livedoc.NodeThinking, Markdown: strings.TrimRight(c.Text, "\n")})
 			case message.ContentToolInvoke:
-				nodes = append(nodes, toolNode(c, results, partials, summarize))
+				nodes = append(nodes, toolNode(c, results, partials, argPartials, summarize, previewArg))
 			}
 		}
 	}
 	return nodes
 }
 
-func toolNode(inv message.Content, results map[string]message.Content, partials map[string]string, summarize ToolSummary) livedoc.Node {
+func toolNode(inv message.Content, results map[string]message.Content, partials, argPartials map[string]string, summarize ToolSummary, previewArg ToolPreviewArg) livedoc.Node {
 	name := inv.ToolName
 	if name == "" {
 		name = "tool"
@@ -115,6 +123,16 @@ func toolNode(inv message.Content, results map[string]message.Content, partials 
 	} else {
 		n.Status = livedoc.StatusRunning
 		n.Output = tailBound(partials[inv.ToolCallID])
+		// Generation-phase preview: if the tool has no execution output yet
+		// and declares a body arg, surface its still-streaming value.
+		if n.Output == "" && previewArg != nil {
+			if pa := previewArg(name); pa != "" {
+				if raw := argPartials[inv.ToolCallID]; raw != "" {
+					v, _ := partialjson.StringField([]byte(raw), pa)
+					n.Output = tailBound(v)
+				}
+			}
+		}
 	}
 	return n
 }
@@ -173,14 +191,14 @@ type Unit struct {
 // messages following it (with their tool results) compose into one turn
 // unit. A catch-up read replays these to reproduce the same scrollback
 // the live stream would have produced.
-func Units(msgs []message.Message, summarize ToolSummary) []Unit {
+func Units(msgs []message.Message, summarize ToolSummary, previewArg ToolPreviewArg) []Unit {
 	var units []Unit
 	var group []message.Message
 	flush := func() {
 		if len(group) == 0 {
 			return
 		}
-		if nodes := Nodes(group, nil, summarize); len(nodes) > 0 {
+		if nodes := Nodes(group, nil, nil, summarize, previewArg); len(nodes) > 0 {
 			units = append(units, Unit{Role: "assistant", Nodes: nodes, LT: group[len(group)-1].LogicalTime})
 		}
 		group = nil

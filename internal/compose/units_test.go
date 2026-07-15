@@ -34,7 +34,7 @@ func TestUnits_SegmentsByPrompt(t *testing.T) {
 		toolResultTic(result("t1", "bash", "hi", false)),
 		assistant(message.TextContent("second answer")),
 	}
-	units := Units(msgs, nil)
+	units := Units(msgs, nil, nil)
 
 	want := []struct {
 		role     string
@@ -70,7 +70,7 @@ func TestUnits_SkipsControlOnlyTics(t *testing.T) {
 		control,
 		userPrompt("hello"),
 		assistant(message.TextContent("hi there")),
-	}, nil)
+	}, nil, nil)
 	if len(units) != 2 || units[0].Role != "user" {
 		t.Fatalf("control tic should not produce a unit; got %+v", units)
 	}
@@ -92,7 +92,7 @@ func TestUnits_SteeringFoldsIntoTurn(t *testing.T) {
 			{Type: message.ContentProse, Text: "oh cool sure"},
 		}},
 	}
-	units := Units(msgs, nil)
+	units := Units(msgs, nil, nil)
 	// Two units: the user prompt, then ONE assistant turn (the steer does NOT
 	// start a third unit).
 	if len(units) != 2 {

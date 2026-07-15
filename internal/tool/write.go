@@ -40,6 +40,10 @@ func (w *WriteTool) Summarize(args map[string]any) string {
 	p, _ := args["path"].(string)
 	return p
 }
+
+// PreviewArg names the arg whose live-streaming value should surface as
+// the tool node's preview (the file body being written).
+func (w *WriteTool) PreviewArg() string { return "content" }
 func (w *WriteTool) Description() string {
 	return "Write content to a file. Creates parent directories."
 }

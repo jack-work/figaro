@@ -74,6 +74,7 @@ type Agent struct {
 	outfitter  *outfit.Outfitter
 	tools      *tool.Registry
 	summarize  compose.ToolSummary
+	previewArg compose.ToolPreviewArg
 	inlineBoot *chalkboard.Patch // ephemeral first-turn boot fold
 	figLog     store.Log[message.Message]
 	backend    store.Backend // nil = ephemeral
@@ -94,10 +95,11 @@ type Agent struct {
 	// is the figLog index where the current turn's agent messages begin;
 	// liveActive is true while an assistant unit is live; partials holds streamed
 	// output for in-flight tools (keyed by tool_call_id).
-	liveMu     sync.Mutex
-	turnStart  int
-	liveActive bool
-	partials   map[string]string
+	liveMu      sync.Mutex
+	turnStart   int
+	liveActive  bool
+	partials    map[string]string
+	argPartials map[string]string
 
 	// ariaSrv is the rendered conversation (committed units + the open one),
 	// the single source of the aria-read wire: it serves both the live push
@@ -129,6 +131,7 @@ func NewAgent(cfg Config) *Agent {
 		outfitter:  cfg.Outfitter,
 		tools:      cfg.Tools,
 		summarize:  compose.ToolSummary(tool.Summarizer(cfg.Tools)),
+		previewArg: compose.ToolPreviewArg(tool.PreviewArger(cfg.Tools)),
 		inlineBoot: cfg.InlineBoot,
 		backend:    cfg.Backend,
 		chalkboard: cfg.Chalkboard,
@@ -153,7 +156,7 @@ func NewAgent(cfg Config) *Agent {
 	// aria message), then register the broadcast: every aria-server change is
 	// pushed to subscribers as one aria read.
 	a.ariaSrv = aria.NewServer()
-	for i, u := range compose.Units(unwrapMessages(a.figLog.Read()), a.summarize) {
+	for i, u := range compose.Units(unwrapMessages(a.figLog.Read()), a.summarize, a.previewArg) {
 		a.unitLT = i + 1
 		a.ariaSrv.Commit(aria.Message{LT: a.unitLT, Role: u.Role, Nodes: u.Nodes})
 	}
