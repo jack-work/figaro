@@ -641,7 +641,7 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		}
 		msgs = append(msgs, m)
 	}
-	nodes := compose.Nodes(msgs, a.partials)
+	nodes := compose.Nodes(msgs, a.partials, a.summarize)
 	if dir := os.Getenv("FIGARO_NODE_DEBUG"); dir != "" {
 		logComposeFrame(dir, a.id, inflight != nil, nodes)
 	}

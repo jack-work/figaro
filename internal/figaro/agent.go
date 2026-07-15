@@ -73,6 +73,7 @@ type Agent struct {
 	prov       provider.Provider
 	outfitter  *outfit.Outfitter
 	tools      *tool.Registry
+	summarize  compose.ToolSummary
 	inlineBoot *chalkboard.Patch // ephemeral first-turn boot fold
 	figLog     store.Log[message.Message]
 	backend    store.Backend // nil = ephemeral
@@ -127,6 +128,7 @@ func NewAgent(cfg Config) *Agent {
 		prov:       cfg.Provider,
 		outfitter:  cfg.Outfitter,
 		tools:      cfg.Tools,
+		summarize:  compose.ToolSummary(tool.Summarizer(cfg.Tools)),
 		inlineBoot: cfg.InlineBoot,
 		backend:    cfg.Backend,
 		chalkboard: cfg.Chalkboard,
@@ -151,7 +153,7 @@ func NewAgent(cfg Config) *Agent {
 	// aria message), then register the broadcast: every aria-server change is
 	// pushed to subscribers as one aria read.
 	a.ariaSrv = aria.NewServer()
-	for i, u := range compose.Units(unwrapMessages(a.figLog.Read())) {
+	for i, u := range compose.Units(unwrapMessages(a.figLog.Read()), a.summarize) {
 		a.unitLT = i + 1
 		a.ariaSrv.Commit(aria.Message{LT: a.unitLT, Role: u.Role, Nodes: u.Nodes})
 	}

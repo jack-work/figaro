@@ -117,6 +117,11 @@ func (b *BashTool) scope() string {
 }
 
 func (b *BashTool) Name() string { return "bash" }
+
+func (b *BashTool) Summarize(args map[string]any) string {
+	c, _ := args["command"].(string)
+	return c
+}
 func (b *BashTool) Description() string {
 	return fmt.Sprintf(
 		"Execute a bash command in the current working directory. Returns stdout and stderr. "+

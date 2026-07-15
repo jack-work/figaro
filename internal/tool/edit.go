@@ -38,6 +38,11 @@ func NewEditTool(cwd string) *EditTool { return &EditTool{Cwd: cwd} }
 
 func (e *EditTool) Name() string { return "edit" }
 
+func (e *EditTool) Summarize(args map[string]any) string {
+	p, _ := args["path"].(string)
+	return p
+}
+
 func (e *EditTool) Description() string {
 	return "Edit a single file using one or more exact-text replacements. " +
 		"Every edits[].old_text must match a unique, non-overlapping region of " +

@@ -19,6 +19,7 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/term"
+	"github.com/jack-work/figaro/internal/tool"
 )
 
 // runShow handles `figaro show [--id <id>] [N] [-v|-l|-a]`.
@@ -144,7 +145,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		msgs[i] = e.Payload
 		msgs[i].LogicalTime = e.LT
 	}
-	units := compose.Units(msgs)
+	units := compose.Units(msgs, compose.ToolSummary(tool.Summarizer(tool.DefaultRegistry(""))))
 	lo, hi := selectUnitRange(len(units), opts)
 
 	if opts.jsonOut {
@@ -176,7 +177,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		label := fmt.Sprintf("%s   %s", term.Dim(fmt.Sprintf("[%d]", u.LT)), hdr)
 		fmt.Println(label)
 		fmt.Println()
-		rows, _ := renderNodes(u.Nodes, width, 0, 0, renderSettings{verbose: true})
+		rows := renderNodeList(u.Nodes, width, 0, 0, renderSettings{verbose: true})
 		fmt.Println(strings.Join(rows, "\n"))
 		fmt.Println()
 	}

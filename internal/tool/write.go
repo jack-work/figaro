@@ -35,6 +35,11 @@ type WriteTool struct {
 func NewWriteTool(cwd string) *WriteTool { return &WriteTool{Cwd: cwd} }
 
 func (w *WriteTool) Name() string { return "write" }
+
+func (w *WriteTool) Summarize(args map[string]any) string {
+	p, _ := args["path"].(string)
+	return p
+}
 func (w *WriteTool) Description() string {
 	return "Write content to a file. Creates parent directories."
 }

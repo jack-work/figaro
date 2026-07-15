@@ -14,7 +14,7 @@ import (
 
 const (
 	nodeBashCapDefault = 10
-	toolArgCap         = 80 // default truncation for a tool's arg summary
+	toolSummaryCap     = 80 // default truncation for a tool's summary line
 )
 
 // renderSettings is the consumer-side verbosity toggle. The wire/IR always
@@ -26,72 +26,39 @@ type renderSettings struct {
 	jsonMode bool // -j / --json: emit a single {aria_id, ...} JSON line on stdout instead of a live render
 }
 
-// renderNodes renders a unit's whole node list to terminal rows plus the
-// stable-row watermark. Static views (aria) and tests use this; the live
-// painter uses renderNodesFrom to render only the unflushed tail.
-func renderNodes(nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) ([]string, int) {
-	rows, stableRows, _ := renderNodesFrom(nodes, 0, false, width, bashCap, tick, set)
-	return rows, stableRows
-}
-
-// renderNodesFrom renders nodes[start:] to terminal rows. With leadBlank it
-// prepends a single blank separator (the inter-block spacing that separates
-// the first live node from flushed content above). It reports the rows AND
-// the node count of the leading FINAL prefix of the slice (final = a
-// completed tool, or a block followed by a later node) plus that prefix's
-// row count. Finality is judged against the WHOLE list, so a node's status
-// is the same whether rendered here or as part of the full render. Each
-// returned row fits within width so the painter's one-row-per-line cursor
-// math holds.
-func renderNodesFrom(nodes []livedoc.Node, start int, leadBlank bool, width, bashCap int, tick uint64, set renderSettings) (rows []string, stableRows, stableNodes int) {
+// renderNodeList renders a unit's whole node list to terminal rows. The list
+// is walked uniformly — every tool renders through renderToolNode with no
+// per-tool branching. One blank row separates adjacent blocks; a final
+// clipToWidth pass keeps every row on a single physical line.
+func renderNodeList(nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) []string {
 	if width <= 0 {
 		width = 80
 	}
 	if bashCap <= 0 {
 		bashCap = nodeBashCapDefault
 	}
-	if start < 0 {
-		start = 0
-	}
-	firstLive := liveNodeIndex(nodes)
-	wantLead := leadBlank && start > 0 && start < len(nodes)
-	emitted := 0
-	for i := start; i < len(nodes); i++ {
-		n := nodes[i]
+	var rows []string
+	for i, n := range nodes {
 		var nr []string
 		switch n.Type {
 		case livedoc.NodeTool:
 			nr = renderToolNode(n, width, bashCap, tick, set.verbose)
 		case livedoc.NodeThinking:
 			nr = renderThinkingNode(n, width)
+		case livedoc.NodeSteering:
+			nr = renderSteeringNode(n, width)
 		default:
 			nr = renderProseNode(n, width)
 		}
-		// One blank line between any two adjacent (visible) blocks. The
-		// first emitted block sits flush to the top — except a leading
-		// separator (wantLead) ties it to the flushed content above; that
-		// blank belongs to this node and flushes with it.
-		if emitted > 0 || (emitted == 0 && wantLead) {
+		if i > 0 {
 			nr = append([]string{""}, nr...)
 		}
-		if i < firstLive {
-			stableRows += len(nr)
-			stableNodes = i - start + 1
-		}
 		rows = append(rows, nr...)
-		emitted++
 	}
-	if stableRows > len(rows) {
-		stableRows = len(rows)
-	}
-	// Guarantee every row fits the viewport: a row wider than width would
-	// wrap onto a second physical line and desync the painter's
-	// one-row-per-line cursor math. (The live session also disables
-	// auto-wrap; this keeps the invariant even there and for static views.)
 	for i := range rows {
 		rows[i] = clipToWidth(rows[i], width)
 	}
-	return rows, stableRows, stableNodes
+	return rows
 }
 
 // clipToWidth truncates a styled row to at most width display columns,
@@ -182,24 +149,6 @@ func isSpinnerFrame(r rune) bool {
 	return false
 }
 
-// liveNodeIndex returns the index of the first node still mutating (a
-// running tool, or the last node — the active tail). Everything before it
-// is final. Returns len(nodes) when all are final.
-func liveNodeIndex(nodes []livedoc.Node) int {
-	for i, n := range nodes {
-		final := true
-		if n.Type == livedoc.NodeTool {
-			final = n.Status != livedoc.StatusRunning
-		} else {
-			final = i < len(nodes)-1
-		}
-		if !final {
-			return i
-		}
-	}
-	return len(nodes)
-}
-
 // nodesRunning reports whether any tool node is still running (so the
 // caller animates the spinner).
 func nodesRunning(nodes []livedoc.Node) bool {
@@ -229,11 +178,12 @@ func renderSteeringNode(n livedoc.Node, width int) []string {
 	return append([]string{term.Dim("↳ you")}, rows...)
 }
 
-// renderToolNode draws a tool as a widget: a status header (animated
-// spinner while running, ✓/✗ when done) with the tool name and an argument
-// summary, then the streamed output under a dim gutter, tail-clamped to
-// bashCap lines. With expand, the full arguments are shown wrapped beneath
-// the header instead of a truncated one-liner.
+// renderToolNode draws a tool as a widget with ZERO per-tool control flow:
+// a status glyph, the tool name, and — when set — the producer's Summary
+// (truncated for the header, wrapped in verbose mode); then any streamed
+// output under a dim gutter, tail-clamped to bashCap lines. In verbose mode
+// Args are also rendered generically as sorted key=value lines. The client
+// never inspects n.Name.
 func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool) []string {
 	var glyph string
 	switch n.Status {
@@ -250,18 +200,23 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 		name = "tool"
 	}
 	header := glyph + " " + term.Cyan(name)
-	detail := toolArgSummary(n)
+	if n.Summary != "" {
+		header = header + " " + term.Dim(truncCols(n.Summary, toolSummaryCap))
+	}
 	rows := []string{header}
 
-	if detail != "" {
+	if expand && len(n.Args) > 0 {
 		const g = "  "
-		if expand {
-			// Full arguments, wrapped under the header.
-			for _, l := range hardWrap(detail, width-len(g)) {
+		keys := make([]string, 0, len(n.Args))
+		for k := range n.Args {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			line := fmt.Sprintf("%s=%v", k, n.Args[k])
+			for _, l := range hardWrap(line, width-len(g)) {
 				rows = append(rows, term.Dim(g+l))
 			}
-		} else {
-			rows[0] = header + " " + term.Dim(truncCols(detail, toolArgCap))
 		}
 	}
 
@@ -283,34 +238,6 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 		}
 	}
 	return rows
-}
-
-// toolArgSummary renders a tool's arguments as a one-line string: the
-// command for bash, the path for file tools, else compact key=value pairs.
-func toolArgSummary(n livedoc.Node) string {
-	if n.Args == nil {
-		return ""
-	}
-	switch n.Name {
-	case "bash":
-		if c, ok := n.Args["command"].(string); ok {
-			return c
-		}
-	case "read", "write", "edit":
-		if p, ok := n.Args["path"].(string); ok {
-			return p
-		}
-	}
-	keys := make([]string, 0, len(n.Args))
-	for k := range n.Args {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%s=%v", k, n.Args[k]))
-	}
-	return strings.Join(parts, " ")
 }
 
 // blockquote prefixes each line of s with "> " (markdown blockquote).

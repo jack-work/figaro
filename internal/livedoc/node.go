@@ -44,8 +44,9 @@ type Node struct {
 	ID     string                 `json:"id,omitempty"`     // tool_call_id (stable handle)
 	Name   string                 `json:"name,omitempty"`   // tool name
 	Args   map[string]interface{} `json:"args,omitempty"`   // invocation arguments
-	Status string                 `json:"status,omitempty"` // running | ok | error
-	Output string                 `json:"output,omitempty"` // streamed result text
+	Status  string                 `json:"status,omitempty"`  // running | ok | error
+	Output  string                 `json:"output,omitempty"`  // streamed result text
+	Summary string                 `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
 }
 
 // OpKind discriminates a node mutation on the wire.

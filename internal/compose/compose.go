@@ -19,6 +19,7 @@ package compose
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/livedoc"
@@ -41,12 +42,18 @@ func nodeID(lt uint64, blockIdx int) string {
 // the canonical Content IR.
 const composeBashCap = 200
 
+// ToolSummary returns a one-line display description for a tool call given
+// its name and arguments. It is the ONLY per-tool hook the composer exposes;
+// the client renders the resulting Summary verbatim. Return "" to fall back
+// to the generic sorted key=value formatting.
+type ToolSummary func(name string, args map[string]any) string
+
 // Nodes maps a turn's messages to the live node list: each assistant
 // content block becomes a node in order — text/thinking → prose, tool
 // invoke → a tool node folding in its result (or streamed partial). A
 // tool with no result yet is left status=running with whatever output has
 // streamed.
-func Nodes(msgs []message.Message, partials map[string]string) []livedoc.Node {
+func Nodes(msgs []message.Message, partials map[string]string, summarize ToolSummary) []livedoc.Node {
 	results := indexResults(msgs)
 	var nodes []livedoc.Node
 	for _, m := range msgs {
@@ -80,23 +87,24 @@ func Nodes(msgs []message.Message, partials map[string]string) []livedoc.Node {
 				}
 				nodes = append(nodes, livedoc.Node{ID: nodeID(m.LogicalTime, ci), Type: livedoc.NodeThinking, Markdown: strings.TrimRight(c.Text, "\n")})
 			case message.ContentToolInvoke:
-				nodes = append(nodes, toolNode(c, results, partials))
+				nodes = append(nodes, toolNode(c, results, partials, summarize))
 			}
 		}
 	}
 	return nodes
 }
 
-func toolNode(inv message.Content, results map[string]message.Content, partials map[string]string) livedoc.Node {
+func toolNode(inv message.Content, results map[string]message.Content, partials map[string]string, summarize ToolSummary) livedoc.Node {
 	name := inv.ToolName
 	if name == "" {
 		name = "tool"
 	}
 	n := livedoc.Node{
-		Type: livedoc.NodeTool,
-		ID:   inv.ToolCallID,
-		Name: name,
-		Args: inv.Arguments,
+		Type:    livedoc.NodeTool,
+		ID:      inv.ToolCallID,
+		Name:    name,
+		Args:    inv.Arguments,
+		Summary: summaryFor(name, inv.Arguments, summarize),
 	}
 	if res, done := results[inv.ToolCallID]; done {
 		n.Status = livedoc.StatusOK
@@ -109,6 +117,31 @@ func toolNode(inv message.Content, results map[string]message.Content, partials 
 		n.Output = tailBound(partials[inv.ToolCallID])
 	}
 	return n
+}
+
+// summaryFor computes a tool node's Summary: prefer the caller's per-tool
+// summarizer when non-nil and non-empty; else fall back to generic sorted
+// key=value pairs. This is the only place args are formatted for display
+// generically — no tool names appear.
+func summaryFor(name string, args map[string]any, summarize ToolSummary) string {
+	if summarize != nil {
+		if s := summarize(name, args); s != "" {
+			return s
+		}
+	}
+	if len(args) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(args))
+	for k := range args {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%v", k, args[k]))
+	}
+	return strings.Join(parts, " ")
 }
 
 // tailBound clamps streamed tool output to the last composeBashCap source
@@ -140,14 +173,14 @@ type Unit struct {
 // messages following it (with their tool results) compose into one turn
 // unit. A catch-up read replays these to reproduce the same scrollback
 // the live stream would have produced.
-func Units(msgs []message.Message) []Unit {
+func Units(msgs []message.Message, summarize ToolSummary) []Unit {
 	var units []Unit
 	var group []message.Message
 	flush := func() {
 		if len(group) == 0 {
 			return
 		}
-		if nodes := Nodes(group, nil); len(nodes) > 0 {
+		if nodes := Nodes(group, nil, summarize); len(nodes) > 0 {
 			units = append(units, Unit{Role: "assistant", Nodes: nodes, LT: group[len(group)-1].LogicalTime})
 		}
 		group = nil
