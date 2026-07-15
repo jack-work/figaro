@@ -52,8 +52,8 @@ func diffRange(old, next []string) (first, last int) {
 type Inline struct {
 	term    Terminal
 	view    NodeView
-	Bookend func() string       // sealed after an assistant message (the id·time watermark)
-	Rule    func() string       // sealed after any other message (a plain full-width rule)
+	Bookend func() string            // sealed after an assistant message (the id·time watermark)
+	Rule    func() string            // sealed after any other message (a plain full-width rule)
 	Header  func(role string) string // printed above each message; "" suppresses
 
 	tick int
