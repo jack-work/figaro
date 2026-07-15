@@ -58,6 +58,7 @@ func (p *Provider) authOptions(token, betas string) []option.RequestOption {
 	if betas != "" {
 		opts = append(opts, option.WithHeader("anthropic-beta", betas))
 	}
+	opts = append(opts, p.ExtraOptions...)
 	return opts
 }
 

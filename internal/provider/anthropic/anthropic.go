@@ -381,6 +381,13 @@ type nativeRequest struct {
 	Messages  []nativeMessage `json:"messages"`
 	Tools     []nativeTool    `json:"tools,omitempty"`
 	Stream    bool            `json:"stream"`
+	Thinking  *thinkingParam  `json:"thinking,omitempty"`
+}
+
+type thinkingParam struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+	Display      string `json:"display,omitempty"`
 }
 
 type cacheControl struct {
@@ -662,6 +669,7 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 		markCacheBreakpoints(&req, *cacheSetting)
 	}
 	applyMessageTags(&req, msgLTs, snapshot)
+	applyThinking(&req, snapshot, model)
 	return req, nil
 }
 
@@ -1173,4 +1181,58 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 	case "error":
 		*stopReason = "error"
 	}
+}
+
+// applyThinking enables extended thinking on the request when the
+// chalkboard has system.thinking_budget or system.thinking_effort set.
+func applyThinking(req *nativeRequest, snap chalkboard.Snapshot, model string) {
+	budgetRaw, _ := snap["system.thinking_budget"]
+	effortRaw, _ := snap["system.thinking_effort"]
+
+	var budget int
+	if len(budgetRaw) > 0 {
+		json.Unmarshal(budgetRaw, &budget)
+		if budget == 0 {
+			var s string
+			if json.Unmarshal(budgetRaw, &s) == nil {
+				fmt.Sscanf(s, "%d", &budget)
+			}
+		}
+	}
+	var effort string
+	if len(effortRaw) > 0 {
+		json.Unmarshal(effortRaw, &effort)
+	}
+
+	if budget <= 0 && effort == "" {
+		return
+	}
+
+	if isAdaptiveModel(model) {
+		if effort == "" {
+			effort = "high"
+		}
+		req.Thinking = &thinkingParam{Type: "enabled", BudgetTokens: 10000, Display: "summarized"}
+		return
+	}
+
+	if budget <= 0 {
+		budget = 10000
+	}
+	if budget < 1024 {
+		budget = 1024
+	}
+	req.Thinking = &thinkingParam{Type: "enabled", BudgetTokens: budget, Display: "summarized"}
+	if req.MaxTokens <= budget {
+		req.MaxTokens = budget + 4096
+	}
+}
+
+func isAdaptiveModel(model string) bool {
+	for _, frag := range []string{"opus-4.6", "opus-4.7", "opus-4.8", "sonnet-4.6", "sonnet-4.7", "sonnet-5"} {
+		if strings.Contains(model, frag) {
+			return true
+		}
+	}
+	return false
 }

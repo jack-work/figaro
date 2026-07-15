@@ -42,6 +42,15 @@ type Provider struct {
 
 	Templates *template.Template
 
+	// ExtraOptions are appended to every SDK request. Used by the
+	// Copilot provider to inject base URL and custom headers.
+	ExtraOptions []option.RequestOption
+
+	// OAuthOverride, when true, forces the system prompt to use the
+	// non-OAuth shape (no "You are Claude Code" preamble) regardless
+	// of what the token looks like.
+	NoOAuthIdentity bool
+
 	// CacheOpen opens the per-aria translation cache. nil disables caching.
 	CacheOpen func(aria string) (store.Log[[]json.RawMessage], error)
 	caches    map[string]store.Log[[]json.RawMessage]
@@ -142,7 +151,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		if terr != nil {
 			return fmt.Errorf("resolve token: %w", terr)
 		}
-		params, perr := buildParams(perMessage, lts, in.Snapshot, in.Tools, int64(maxTokens), isOAuthToken(tok), model)
+		params, perr := buildParams(perMessage, lts, in.Snapshot, in.Tools, int64(maxTokens), isOAuthToken(tok) && !p.NoOAuthIdentity, model)
 		if perr != nil {
 			return perr
 		}

@@ -310,19 +310,25 @@ func (r *Router) visibleCommandNames() []string {
 func (r *Router) writePwshCompletion(w io.Writer) error {
 	cmds := r.visibleCommandNames()
 	name := strings.TrimSuffix(r.Name, ".exe")
+	// Resolve the executable path at registration time to avoid recursion
+	// (calling `figaro` inside its own completer re-enters the completer).
 	fmt.Fprintf(w, "# PowerShell completion for %s\n", name)
+	fmt.Fprintf(w, "$global:_FigaroExe = (Get-Command %s -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source\n", name)
+	fmt.Fprintf(w, "if (-not $global:_FigaroExe) { $global:_FigaroExe = '%s.exe' }\n", name)
 	fmt.Fprintf(w, "Register-ArgumentCompleter -Native -CommandName %s, fig -ScriptBlock {\n", name)
 	// PowerShell's $wordToComplete is unreliable for tokens containing @
 	// or . (it splits on splatting/member-access boundaries). Extract the
 	// current word from the raw line instead.
 	fmt.Fprint(w, `    param($wordToComplete, $ast, $cursorPosition)
-    $line = $ast.ToString().Substring(0, $cursorPosition)
-    # Extract the real current word from the raw line (handles @skills.foo)
+    $line = $ast.ToString()
+    # Detect trailing space: cursor past the AST text means the user typed a space after the last token
+    $trailingSpace = $cursorPosition -gt $line.Length
+    if ($cursorPosition -lt $line.Length) { $line = $line.Substring(0, $cursorPosition) }
     if ($line -match '(\S+)$') { $curWord = $Matches[1] } else { $curWord = '' }
     $tokens = @($line -split '\s+' | Where-Object { $_ })
     if ($tokens.Count -le 1) { return }
     $verb = $tokens[1]
-    if ($tokens.Count -eq 2 -and $line[-1] -ne ' ') {
+    if ($tokens.Count -eq 2 -and -not $trailingSpace) {
 `)
 	fmt.Fprintf(w, "        @(%s) | Where-Object { $_ -like \"$curWord*\" } | ForEach-Object {\n", quotePwshArray(cmds))
 	fmt.Fprint(w, `            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
@@ -330,13 +336,13 @@ func (r *Router) writePwshCompletion(w io.Writer) error {
         return
     }
     $prior = @()
-    if ($tokens.Count -gt 2) { $prior = @($tokens[2..($tokens.Count - 1)]) }
+    if ($trailingSpace -and $tokens.Count -gt 2) { $prior = @($tokens[2..($tokens.Count - 1)]) } elseif ($tokens.Count -gt 3) { $prior = @($tokens[2..($tokens.Count - 2)]) }
 `)
 	fmt.Fprintf(w, "    $sentinel = '%s'\n", barePromptSentinel)
 	fmt.Fprint(w, "    if ($verb -eq '--') { $verb = $sentinel }\n")
-	fmt.Fprintf(w, "    $candidates = & %s %s $verb --current $curWord -- @prior 2>$null\n", name, completeVerb)
+	fmt.Fprintf(w, "    $candidates = & $global:_FigaroExe %s $verb --current $wordToComplete -- @prior 2>$null\n", completeVerb)
 	fmt.Fprint(w, "    if ($candidates) {\n")
-	fmt.Fprint(w, "        $candidates -split \"`n\" | Where-Object { $_ -and $_ -like \"$curWord*\" } | ForEach-Object {\n")
+	fmt.Fprint(w, "        @($candidates) | ForEach-Object { $_ -split \"`n\" } | Where-Object { $_.Trim() -and ($wordToComplete -eq '' -or $_ -like \"$wordToComplete*\") } | ForEach-Object {\n")
 	fmt.Fprint(w, `            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }
     }

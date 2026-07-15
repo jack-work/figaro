@@ -15,9 +15,11 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/anthropics/anthropic-sdk-go/option"
+
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/provider"
-	"github.com/jack-work/figaro/internal/provider/anthropic"
+	"github.com/jack-work/figaro/internal/provider/anthropicsdk"
 	"github.com/jack-work/figaro/internal/store"
 )
 
@@ -34,17 +36,13 @@ var copilotStaticHeaders = map[string]string{
 	"Copilot-Integration-Id": "vscode-chat",
 }
 
-// copilotGitHubHeaders are added to GitHub API calls (token exchange,
-// model listing) but NOT to the Anthropic messages endpoint.
 var copilotGitHubHeaders = map[string]string{
 	"X-GitHub-Api-Version": copilotAPIVersion,
 }
 
 type Copilot struct {
-	inner     *anthropic.Anthropic
-	tokenSrc  *CopilotTokenSource
-	mu        sync.Mutex
-	Templates *template.Template
+	inner    *anthropicsdk.Provider
+	tokenSrc *CopilotTokenSource
 }
 
 func New(knobs provider.Knobs, githubToken auth.TokenResolver, enterpriseDomain string, cacheOpen func(string) (store.Log[[]json.RawMessage], error)) (*Copilot, error) {
@@ -52,22 +50,52 @@ func New(knobs provider.Knobs, githubToken auth.TokenResolver, enterpriseDomain 
 		return nil, fmt.Errorf("copilot: nil token resolver (need GitHub access token)")
 	}
 	tokenSrc := NewCopilotTokenSource(githubToken, enterpriseDomain)
-	inner, err := anthropic.New(knobs, tokenSrc, cacheOpen)
+
+	inner, err := anthropicsdk.New(knobs, tokenSrc, cacheOpen)
 	if err != nil {
 		return nil, err
 	}
+	inner.NoOAuthIdentity = true
+	inner.ExtraOptions = copilotRequestOptions(tokenSrc)
+
 	return &Copilot{inner: inner, tokenSrc: tokenSrc}, nil
 }
 
-// SetTemplates propagates chalkboard templates to the inner provider.
-func (c *Copilot) SetTemplates(t *template.Template) {
-	c.Templates = t
-	c.inner.Templates = t
+func copilotRequestOptions(tokenSrc *CopilotTokenSource) []option.RequestOption {
+	opts := []option.RequestOption{
+		option.WithHeaderDel("x-api-key"),
+		option.WithMiddleware(func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+			// Resolve the Copilot token and set the base URL dynamically
+			// (the proxy-ep in the token determines the API host).
+			token, err := tokenSrc.Resolve()
+			if err != nil {
+				return nil, err
+			}
+			baseURL := baseURLFromToken(token, tokenSrc.domain)
+			// Rewrite the URL to the Copilot endpoint
+			req.URL.Scheme = "https"
+			req.URL.Host = baseURL[len("https://"):]
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
+			req.Header.Set("Openai-Intent", "conversation-edits")
+			req.Header.Set("X-Initiator", "user")
+			for k, v := range copilotStaticHeaders {
+				req.Header.Set(k, v)
+			}
+			return next(req)
+		}),
+	}
+	return opts
 }
 
-func (c *Copilot) Name() string        { return providerName }
-func (c *Copilot) Fingerprint() string  { return c.inner.Fingerprint() }
-func (c *Copilot) SetModel(model string) { c.inner.SetModel(model) }
+func (c *Copilot) Name() string                     { return providerName }
+func (c *Copilot) Fingerprint() string              { return c.inner.Fingerprint() }
+func (c *Copilot) SetModel(model string)            { c.inner.SetModel(model) }
+func (c *Copilot) SetTemplates(t *template.Template) { c.inner.Templates = t }
+
+func (c *Copilot) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	return c.inner.Send(ctx, in, bus)
+}
 
 func (c *Copilot) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	token, err := c.tokenSrc.Resolve()
@@ -124,53 +152,7 @@ func (c *Copilot) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	return models, nil
 }
 
-func (c *Copilot) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
-	token, err := c.tokenSrc.Resolve()
-	if err != nil {
-		return fmt.Errorf("resolve copilot token: %w", err)
-	}
-	baseURL := baseURLFromToken(token, c.tokenSrc.domain)
-	return c.inner.SendWithTransport(ctx, in, bus, false, func(ctx context.Context, body []byte) (*http.Response, error) {
-		req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/v1/messages", bytes.NewReader(body))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("anthropic-version", "2023-06-01")
-		req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
-		req.Header.Set("Openai-Intent", "conversation-edits")
-		req.Header.Set("X-Initiator", "user")
-		for k, v := range copilotStaticHeaders {
-			req.Header.Set(k, v)
-		}
-		if os.Getenv("FIGARO_COPILOT_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "\n[copilot debug] POST %s\n", req.URL)
-			for k, v := range req.Header {
-				fmt.Fprintf(os.Stderr, "  %s: %s\n", k, v)
-			}
-			if len(body) < 2000 {
-				fmt.Fprintf(os.Stderr, "  body: %s\n", body)
-			} else {
-				fmt.Fprintf(os.Stderr, "  body: %s...(%d bytes)\n", body[:500], len(body))
-			}
-		}
-		resp, rerr := c.inner.HTTPClient.Do(req)
-		if rerr != nil {
-			return nil, rerr
-		}
-		if os.Getenv("FIGARO_COPILOT_DEBUG") != "" && resp.StatusCode != 200 {
-			respBody, _ := io.ReadAll(resp.Body)
-			fmt.Fprintf(os.Stderr, "  response %d: %s\n", resp.StatusCode, respBody)
-			resp.Body = io.NopCloser(bytes.NewReader(respBody))
-		}
-		return resp, nil
-	})
-}
-
 func baseURLFromToken(token, enterpriseDomain string) string {
-	// Copilot tokens contain proxy-ep=<host> which determines the API endpoint.
 	start := bytes.Index([]byte(token), []byte("proxy-ep="))
 	if start >= 0 {
 		start += len("proxy-ep=")
@@ -273,4 +255,9 @@ func exchangeCopilotToken(githubAccessToken, enterpriseDomain string) (token str
 	}
 	exp := time.Unix(parsed.ExpiresAt, 0).Add(-5 * time.Minute)
 	return parsed.Token, exp, nil
+}
+
+// debug helper (kept; guarded by env var)
+func init() {
+	_ = os.Getenv("FIGARO_COPILOT_DEBUG")
 }

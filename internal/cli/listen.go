@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
@@ -42,7 +43,7 @@ func runListen(loaded *config.Loaded, ariaID string) {
 }
 
 // tailFigaro is the read-only twin of mustPromptFigaro. It opens the
-// same inline-seal renderer, catches up from LT 0, then follows live
+// same incipit-seal renderer, catches up from LT 0, then follows live
 // frames forever. Ctrl-C -> figaro.interrupt; Ctrl-D -> clean
 // disconnect (turn keeps running); Ctrl-T -> transcript pager.
 // Returns when the user disconnects, the agent socket dies, or ctx
@@ -70,22 +71,20 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		bookendFn = func() string { return statusBanner(figaroID, startedAt) }
 	}
 
-	set := renderSettings{}
-	lt := newLivelogTurn(os.Stdout, width, height, &set, bookendFn, dimRule)
+	set := renderSettings{listen: true} // listen stays open past turn-done
+	lt := newLivelogTurn(os.Stdout, width, height, &set, figaroID, startedAt, bookendFn, dimRule)
+	tc := term.NewClient()
 
-	// Inline mode owns the cursor + auto-margin off, same as send.
+	// The renderer owns the cursor + auto-margin off, same as send.
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
 	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
-	defer func() {
-		if lt.transcriptActive() {
-			fmt.Fprint(os.Stdout, altScreenOff)
-		}
-	}()
+	defer lt.leaveTranscript()
 	fmt.Fprintln(os.Stdout, dimRule())
 
 	var mu sync.Mutex
 	doneCh := make(chan struct{}, 1)
 	disconnectCh := make(chan struct{}, 1)
+	listen := true
 
 	onNotify := func(method string, params json.RawMessage) {
 		mu.Lock()
@@ -128,15 +127,13 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		}()
 	})
 
-	// Catch up to full history. Live frames will follow on the same connection.
-	rctx, rcancel := context.WithTimeout(ctx, 5*time.Second)
-	r, rerr := fcli.Read(rctx, 0)
-	rcancel()
-	if rerr == nil {
-		mu.Lock()
-		lt.apply(r)
-		mu.Unlock()
+	// figaro listen opens directly in the transcript (its home): load the recent
+	// window; older history pages in on scroll-up and live frames follow.
+	in := &interactiveInput{
+		tc: tc, lt: lt, fcli: fcli, mu: &mu, set: &set,
+		figaroID: figaroID, listen: &listen, cancel: cancel, disconnectCh: disconnectCh,
 	}
+	in.enterTranscript()
 
 	// Local spinner animation.
 	stopTick := make(chan struct{})
@@ -156,68 +153,20 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	}()
 	defer close(stopTick)
 
-	// Resize handling.
-	winch := make(chan os.Signal, 1)
-	stopWinch := notifyResize(winch)
-	defer stopWinch()
-	go func() {
-		for range winch {
-			w, h := term.Width(), term.Height()
-			mu.Lock()
-			lt.resize(w, h)
-			mu.Unlock()
-		}
-	}()
+	// Resize (SIGWINCH on unix / a console event on Windows, behind the client).
+	defer tc.OnResize(func(w, h int) {
+		mu.Lock()
+		lt.resize(w, h)
+		mu.Unlock()
+	})()
 
-	// Keybindings: same as the send stream, minus the turn-end gate.
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		if restore, err := term.MakeCbreak(int(os.Stdin.Fd())); err == nil {
+	// Keybindings — the same control keys + pager as send, via the shared loop.
+	// MakeRaw so Ctrl-C/Ctrl-D arrive as bytes.
+	if tc.IsTTY() {
+		if restore, err := tc.MakeRaw(); err == nil {
 			defer restore()
-			go func() {
-				buf := make([]byte, 64)
-				for {
-					n, err := os.Stdin.Read(buf)
-					if err != nil {
-						cancel()
-						return
-					}
-					for _, b := range buf[:n] {
-						mu.Lock()
-						active := lt.transcriptActive()
-						mu.Unlock()
-						if active {
-							mu.Lock()
-							exited := lt.transcriptKey(b)
-							mu.Unlock()
-							_ = exited // never auto-close listen on pager exit
-							continue
-						}
-						switch b {
-						case 0x04: // Ctrl-D: disconnect; don't interrupt
-							select {
-							case disconnectCh <- struct{}{}:
-							default:
-							}
-							return
-						case 0x0f: // Ctrl-O: verbose toggle
-							mu.Lock()
-							set.verbose = !set.verbose
-							lt.render()
-							mu.Unlock()
-						case 0x14: // Ctrl-T: open transcript pager
-							rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-							r, rerr := fcli.Read(rctx, 0)
-							rcancel()
-							mu.Lock()
-							lt.enterTranscript()
-							if rerr == nil {
-								lt.apply(r)
-							}
-							mu.Unlock()
-						}
-					}
-				}
-			}()
+			defer os.Stdout.WriteString(ldmouse.Disable)
+			go in.run()
 		}
 	}
 
