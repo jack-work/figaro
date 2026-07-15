@@ -35,17 +35,6 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, 
 	in.Bookend = bookend
 	in.Rule = rule
 	in.Header = messageHeader
-	// Node-level scrollback flush: finalized nodes commit to native scrollback
-	// as they stop mutating (log-emitting tools collapse to a done-indication),
-	// leaving only the live tail redrawable.
-	in.LiveIndex = liveNodeIndex
-	in.StableForm = func(nodes []livedoc.Node, from, to, width int) []string {
-		var s renderSettings
-		if settings != nil {
-			s = *settings
-		}
-		return stableForm(nodes, from, to, width, nodeBashCapDefault, s)
-	}
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view}
 	t.tr = newTranscript(out, w, h, view, t.client)
 	t.client.OnClosed = func(m aria.Message) {
