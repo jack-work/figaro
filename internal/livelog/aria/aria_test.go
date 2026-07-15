@@ -174,3 +174,41 @@ func TestClient_ViewSortedByLT(t *testing.T) {
 		}
 	}
 }
+
+func TestServer_ReadBefore(t *testing.T) {
+	s := NewServer()
+	for lt := 1; lt <= 10; lt++ {
+		s.Commit(Message{LT: lt, Role: "user", Nodes: []livedoc.Node{prose("m")}})
+	}
+	lts := func(r AriaRead) []int {
+		var out []int
+		for _, c := range r.Committed {
+			out = append(out, c.LT)
+		}
+		return out
+	}
+	eq := func(name string, got, want []int) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("%s: got %v want %v", name, got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("%s: got %v want %v", name, got, want)
+			}
+		}
+	}
+	r := s.ReadBefore(6, 3)
+	eq("before=6 limit=3", lts(r), []int{3, 4, 5})
+	if r.Live != nil {
+		t.Fatalf("expected no live")
+	}
+	eq("before=2 limit=5", lts(s.ReadBefore(2, 5)), []int{1})
+	eq("before=100 limit=3", lts(s.ReadBefore(100, 3)), []int{8, 9, 10})
+	if got := lts(s.ReadBefore(0, 3)); got != nil {
+		t.Fatalf("before=0 want empty got %v", got)
+	}
+	if got := lts(s.ReadBefore(6, 0)); got != nil {
+		t.Fatalf("limit=0 want empty got %v", got)
+	}
+}

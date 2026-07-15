@@ -147,6 +147,33 @@ func (s *Server) Subscribe(push func(AriaRead)) (cancel func()) {
 	}
 }
 
+// ReadBefore returns up to limit closed messages with LT < beforeLT, ascending —
+// the (limit) closest below the cursor. beforeLT<=0 or limit<=0 => empty.
+func (s *Server) ReadBefore(beforeLT, limit int) AriaRead {
+	if beforeLT <= 0 || limit <= 0 {
+		return AriaRead{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	hi := 0
+	for _, m := range s.closed {
+		if m.LT < beforeLT {
+			hi++
+		} else {
+			break
+		}
+	}
+	lo := hi - limit
+	if lo < 0 {
+		lo = 0
+	}
+	var r AriaRead
+	for _, m := range s.closed[lo:hi] {
+		r.Committed = append(r.Committed, Committed{LT: m.LT, Role: m.Role, Nodes: m.Nodes})
+	}
+	return r
+}
+
 // Read returns a catch-up snapshot from sinceLT: closed messages after it in
 // full, plus the open message (if any) as a full-create frame at its version.
 func (s *Server) Read(sinceLT int) AriaRead {

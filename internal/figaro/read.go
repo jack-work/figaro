@@ -9,3 +9,10 @@ import "github.com/jack-work/figaro/internal/livelog/aria"
 func (a *Agent) Read(sinceLT int) aria.AriaRead {
 	return a.ariaSrv.Read(sinceLT)
 }
+
+// ReadBefore pulls up to limit closed messages with LT < beforeLT, ascending —
+// the backward keyset half of the same paginated read, so a pager can page into
+// history without loading it all.
+func (a *Agent) ReadBefore(beforeLT, limit int) aria.AriaRead {
+	return a.ariaSrv.ReadBefore(beforeLT, limit)
+}

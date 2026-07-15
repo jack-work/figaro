@@ -45,6 +45,14 @@ func (c *Client) Read(ctx context.Context, sinceLT int) (aria.AriaRead, error) {
 	return r, err
 }
 
+// ReadBefore pulls up to limit closed messages with LT < beforeLT, ascending —
+// the backward keyset half of figaro.read, for a pager to walk history.
+func (c *Client) ReadBefore(ctx context.Context, beforeLT, limit int) (aria.AriaRead, error) {
+	var r aria.AriaRead
+	err := c.cli.Call(ctx, rpc.MethodRead, rpc.ReadRequest{Before: beforeLT, Limit: limit}, &r)
+	return r, err
+}
+
 // Context returns all messages in the figaro's chat history.
 func (c *Client) Context(ctx context.Context) (*rpc.ContextResponse, error) {
 	var resp rpc.ContextResponse

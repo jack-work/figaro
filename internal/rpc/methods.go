@@ -139,11 +139,14 @@ type ChalkboardResponse struct {
 	Snapshot map[string]json.RawMessage `json:"snapshot"`
 }
 
-// ReadRequest is the (currently empty) catch-up request; the whole
-// conversation is returned. The result is an aria.AriaRead caught up from
-// SinceLT (a figaro LT cursor; 0 = from the beginning).
+// ReadRequest is the catch-up request. SinceLT streams forward from a cursor
+// (0 = from the beginning). Before>0 switches to a backward keyset read:
+// return up to Limit closed messages with LT < Before, ascending — for pager
+// history without loading it all. The result is an aria.AriaRead.
 type ReadRequest struct {
 	SinceLT int `json:"sinceLT,omitempty"`
+	Before  int `json:"before,omitempty"`
+	Limit   int `json:"limit,omitempty"`
 }
 
 type FigaroInfoResponse struct {

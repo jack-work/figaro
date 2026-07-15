@@ -95,6 +95,9 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 				return nil, err
 			}
 		}
+		if req.Before > 0 {
+			return a.ReadBefore(req.Before, req.Limit), nil
+		}
 		return a.Read(req.SinceLT), nil
 	}
 	return nil, fmt.Errorf("unknown method: %s", method)
