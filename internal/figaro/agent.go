@@ -21,6 +21,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tokens"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/toolout"
 )
 
 type eventType int
@@ -98,7 +99,8 @@ type Agent struct {
 	liveMu      sync.Mutex
 	turnStart   int
 	liveActive  bool
-	partials    map[string]string
+	gov         *toolout.Governor // bounded live tool-output tails (coalesced emits)
+	lastEmit    time.Time         // throttle for live streaming emits
 	argPartials map[string]string
 
 	// ariaSrv is the rendered conversation (committed units + the open one),

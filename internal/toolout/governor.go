@@ -31,6 +31,11 @@ func (g *Governor) Feed(key, chunk string) {
 
 func (g *Governor) Tail(key string) string { return g.tails[key] }
 
+// Tails exposes the live bounded tails keyed by id for a consumer that reads
+// every key at once (composing a frame). Read-only — the caller must not mutate
+// the returned map. Zero-copy: safe because the governor is single-threaded.
+func (g *Governor) Tails() map[string]string { return g.tails }
+
 func (g *Governor) Dirty() bool { return g.dirty }
 
 func (g *Governor) ClearDirty() { g.dirty = false }

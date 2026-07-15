@@ -24,6 +24,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/toolout"
 )
 
 // busEventKind tags one ordered event from the provider Bus.
@@ -193,7 +194,8 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.turnStart = len(a.figLog.Read())
 	a.liveActive = true
 	a.liveMu.Unlock()
-	a.partials = map[string]string{}
+	a.gov = toolout.New(liveOutputTail)
+	a.lastEmit = time.Time{}
 	a.argPartials = map[string]string{}
 	a.emitSnapshot("assistant", nil)
 
@@ -276,36 +278,42 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 				events = nil
 				continue
 			}
+			// Structural changes (a tool opens, its args decode, the turn
+			// seals) emit immediately; high-frequency text/arg streaming is
+			// coalesced to ~11fps by emitLive so 1000 token deltas don't
+			// trigger 1000 full recompose+socket frames.
+			force := false
 			switch ev.kind {
 			case evDelta:
 				asmMsg.addText(ev.content.Type, ev.content.Text)
 			case evToolStart:
 				asmMsg.toolOpen(ev.id, ev.name)
+				force = true
 			case evToolArgs:
 				a.argPartials[ev.id] += ev.partial
 			case evToolReady:
 				asmMsg.toolReady(ev.id, ev.name, ev.args)
+				force = true
 			case evFigaro:
 				sealedInline = true
+				force = true
 			}
-			if !a.isInterrupted() {
-				inflight := asmMsg.message()
-				if sealedInline {
-					inflight = nil
-				}
-				a.emitDelta(a.composeTurn(inflight))
+			inflight := asmMsg.message()
+			if sealedInline {
+				inflight = nil
 			}
+			a.emitLive(inflight, force)
 		case te := <-toolEvents:
 			toolBuf = append(toolBuf, te)
-			// Stream speculative tool output live under its (still
-			// in-flight) heading.
-			if te.kind == toolChunk && !a.isInterrupted() {
-				a.partials[te.id] += te.chunk
+			// Stream speculative tool output live (bounded tail via the
+			// governor) under its still-in-flight heading, coalesced.
+			if te.kind == toolChunk {
+				a.gov.Feed(te.id, te.chunk)
 				inflight := asmMsg.message()
 				if sealedInline {
 					inflight = nil
 				}
-				a.emitDelta(a.composeTurn(inflight))
+				a.emitLive(inflight, false)
 			}
 		}
 	}
@@ -413,14 +421,13 @@ func (a *Agent) collectToolResults(
 		}
 		switch te.kind {
 		case toolChunk:
-			if !a.isInterrupted() {
-				a.partials[te.id] += te.chunk
-				a.emitDelta(a.composeTurn(nil))
-			}
+			a.gov.Feed(te.id, te.chunk)
+			a.emitLive(nil, false)
 		case toolEnd:
 			outcomes[te.id] = te.outcome
 		}
 	}
+	a.emitLive(nil, true) // flush any throttled tail before the results render
 
 	results := make([]message.Content, len(calls))
 	for i, tc := range calls {
@@ -644,7 +651,7 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		}
 		msgs = append(msgs, m)
 	}
-	nodes := compose.Nodes(msgs, a.partials, a.argPartials, a.summarize, a.previewArg)
+	nodes := compose.Nodes(msgs, a.gov.Tails(), a.argPartials, a.summarize, a.previewArg)
 	if dir := os.Getenv("FIGARO_NODE_DEBUG"); dir != "" {
 		logComposeFrame(dir, a.id, inflight != nil, nodes)
 	}
@@ -685,6 +692,29 @@ func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
 		a.ariaSrv.Update(nodes)
 	}
 	a.persistLive(nodes)
+}
+
+// liveEmitInterval coalesces high-frequency streaming emits (~11fps). Structural
+// changes force an immediate emit; token/output streaming is throttled so a busy
+// turn doesn't recompose+broadcast on every chunk. liveOutputTail bounds the
+// governor's per-tool live tail to the same source-line cap compose renders, so
+// the accumulator can't grow unbounded on a huge tool dump.
+const (
+	liveEmitInterval = 90 * time.Millisecond
+	liveOutputTail   = 200 // matches compose's tailBound source-line cap
+)
+
+// emitLive recomposes+broadcasts, throttled to liveEmitInterval unless force is
+// set (a structural change or a final flush). Interrupted turns emit nothing.
+func (a *Agent) emitLive(inflight *message.Message, force bool) {
+	if a.isInterrupted() {
+		return
+	}
+	if !force && time.Since(a.lastEmit) < liveEmitInterval {
+		return
+	}
+	a.lastEmit = time.Now()
+	a.emitDelta(a.composeTurn(inflight))
 }
 
 // emitDelta hands the current full node list to the aria server, which computes
