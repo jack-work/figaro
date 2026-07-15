@@ -43,7 +43,7 @@ func runListen(loaded *config.Loaded, ariaID string) {
 }
 
 // tailFigaro is the read-only twin of mustPromptFigaro. It opens the
-// same inline-seal renderer, catches up from LT 0, then follows live
+// same incipit-seal renderer, catches up from LT 0, then follows live
 // frames forever. Ctrl-C -> figaro.interrupt; Ctrl-D -> clean
 // disconnect (turn keeps running); Ctrl-T -> transcript pager.
 // Returns when the user disconnects, the agent socket dies, or ctx
@@ -74,7 +74,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	set := renderSettings{}
 	lt := newLivelogTurn(os.Stdout, width, height, &set, bookendFn, dimRule)
 
-	// Inline mode owns the cursor + auto-margin off, same as send.
+	// Incipit mode owns the cursor + auto-margin off, same as send.
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
 	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
 	defer func() {

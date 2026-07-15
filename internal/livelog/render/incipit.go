@@ -41,7 +41,7 @@ func diffRange(old, next []string) (first, last int) {
 	return
 }
 
-// Inline renders an aria stream inline — no alternate screen. Closed messages
+// Incipit renders an aria stream inline — no alternate screen. Closed messages
 // are printed to native scrollback exactly once (Seal) and never touched again;
 // only the open message is a live, redrawable region (Open). A resize repaints
 // just the open message — the bounded, mutable part — so committed history is
@@ -49,7 +49,7 @@ func diffRange(old, next []string) (first, last int) {
 // the immutability boundary (a sealed message) is also the resize boundary.
 //
 // Not safe for concurrent use; the caller serializes Open/Seal/Tick/Resize.
-type Inline struct {
+type Incipit struct {
 	term    Terminal
 	view    NodeView
 	Bookend func() string            // sealed after an assistant message (the id·time watermark)
@@ -66,9 +66,9 @@ type Inline struct {
 	cur    int      // cursor row within the live region (0 = top)
 }
 
-// NewInline returns an inline renderer drawing to term via view.
-func NewInline(term Terminal, view NodeView) *Inline {
-	return &Inline{term: term, view: view}
+// NewIncipit returns an inline renderer drawing to term via view.
+func NewIncipit(term Terminal, view NodeView) *Incipit {
+	return &Incipit{term: term, view: view}
 }
 
 // Seal finalizes a closed message. If it's the message currently live, its rows
@@ -76,7 +76,7 @@ func NewInline(term Terminal, view NodeView) *Inline {
 // Otherwise (a message we never streamed — catch-up) print its rows fresh,
 // prefaced with a blank line (same leading-space rule the live region applies
 // via compose).
-func (i *Inline) Seal(m aria.Message) {
+func (i *Incipit) Seal(m aria.Message) {
 	if m.LT == i.liveLT && i.liveLT != 0 {
 		i.dropBelow()
 		i.reset()
@@ -103,7 +103,7 @@ func (i *Inline) Seal(m aria.Message) {
 // (the bookend follows the assistant only), and — if a message is still
 // streaming — starts a fresh live region. The cursor lands on a new line below
 // everything, so input resumes after the content like `figaro show`.
-func (i *Inline) Resume(closed []aria.Message, openLT int, openRole string, open []livedoc.Node) {
+func (i *Incipit) Resume(closed []aria.Message, openLT int, openRole string, open []livedoc.Node) {
 	io.WriteString(i.term, "\x1b[J") // clear the restored partial region
 	i.reset()
 	for _, m := range closed {
@@ -118,7 +118,7 @@ func (i *Inline) Resume(closed []aria.Message, openLT int, openRole string, open
 // assistant message), leaving the cursor on a fresh line below. Each message is
 // prefaced with a blank line plus the role header (when configured) — the same
 // leading rule Seal/compose apply.
-func (i *Inline) printMessage(m aria.Message) {
+func (i *Incipit) printMessage(m aria.Message) {
 	body := i.renderNodes(m.Nodes)
 	if len(body) == 0 {
 		return
@@ -136,7 +136,7 @@ func (i *Inline) printMessage(m aria.Message) {
 }
 
 // Open paints (or repaints) the open message's blocks as the live region.
-func (i *Inline) Open(lt int, role string, nodes []livedoc.Node) {
+func (i *Incipit) Open(lt int, role string, nodes []livedoc.Node) {
 	if lt != i.liveLT {
 		// A new open message without a prior Seal: release whatever was live.
 		if i.liveLT != 0 {
@@ -150,7 +150,7 @@ func (i *Inline) Open(lt int, role string, nodes []livedoc.Node) {
 }
 
 // Tick advances spinner animation and repaints the open message.
-func (i *Inline) Tick(nodes []livedoc.Node) {
+func (i *Incipit) Tick(nodes []livedoc.Node) {
 	if i.liveLT == 0 {
 		return
 	}
@@ -160,7 +160,7 @@ func (i *Inline) Tick(nodes []livedoc.Node) {
 
 // Resize repaints the open message at the new width — clearing from the live
 // region's top downward only, so scrollback above is untouched.
-func (i *Inline) Resize(nodes []livedoc.Node) {
+func (i *Incipit) Resize(nodes []livedoc.Node) {
 	if i.liveLT == 0 {
 		return
 	}
@@ -170,7 +170,7 @@ func (i *Inline) Resize(nodes []livedoc.Node) {
 	i.paint(i.compose(nodes))
 }
 
-func (i *Inline) compose(nodes []livedoc.Node) []string {
+func (i *Incipit) compose(nodes []livedoc.Node) []string {
 	body := i.renderNodes(nodes)
 	// Every message is prefaced with a blank row and (when configured) a role
 	// header — sealed into scrollback alongside the rest of the live region.
@@ -189,7 +189,7 @@ func (i *Inline) compose(nodes []livedoc.Node) []string {
 
 // header returns the role-header line for role (e.g. "❯ you") or "" if no
 // Header function is configured or the role has no glyph.
-func (i *Inline) header(role string) string {
+func (i *Incipit) header(role string) string {
 	if i.Header == nil {
 		return ""
 	}
@@ -199,7 +199,7 @@ func (i *Inline) header(role string) string {
 // seal returns the line that closes a message of the given role: the id·time
 // bookend after an assistant message, otherwise a plain full-width rule (so the
 // user's prompt is still separated from the reply). "" if neither is configured.
-func (i *Inline) seal(role string) string {
+func (i *Incipit) seal(role string) string {
 	if role == "assistant" && i.Bookend != nil {
 		return i.Bookend()
 	}
@@ -209,7 +209,7 @@ func (i *Inline) seal(role string) string {
 	return ""
 }
 
-func (i *Inline) renderNodes(nodes []livedoc.Node) []string {
+func (i *Incipit) renderNodes(nodes []livedoc.Node) []string {
 	w, _ := i.term.Size()
 	if w <= 0 {
 		w = 80
@@ -228,7 +228,7 @@ func (i *Inline) renderNodes(nodes []livedoc.Node) []string {
 
 // paint line-diffs newRows against the on-screen live region. Cursor enters and
 // leaves at the top of the region.
-func (i *Inline) paint(newRows []string) {
+func (i *Incipit) paint(newRows []string) {
 	first, last := diffRange(i.live, newRows)
 	if first < 0 {
 		return
@@ -272,7 +272,7 @@ func (i *Inline) paint(newRows []string) {
 	i.live = newRows
 }
 
-func (i *Inline) vmove(b *strings.Builder, target int) {
+func (i *Incipit) vmove(b *strings.Builder, target int) {
 	if d := target - i.cur; d > 0 {
 		fmt.Fprintf(b, "\x1b[%dB", d)
 	} else if d < 0 {
@@ -289,7 +289,7 @@ func (i *Inline) vmove(b *strings.Builder, target int) {
 //
 // line is typically a dim rule with a reason label — the caller owns the
 // formatting (CLI policy). Without a live region, line is still printed.
-func (i *Inline) AbandonOpen(line string) {
+func (i *Incipit) AbandonOpen(line string) {
 	var b strings.Builder
 	if i.liveLT != 0 {
 		// dropBelow logic: park below the visible live span.
@@ -307,7 +307,7 @@ func (i *Inline) AbandonOpen(line string) {
 	i.reset()
 }
 
-func (i *Inline) dropBelow() {
+func (i *Incipit) dropBelow() {
 	// The cursor is parked at the region's visible top (logical row i.vt). When
 	// the region scrolled taller than the viewport, its first i.vt rows are above
 	// the screen, so the visible span is len-i.vt — using len would leave i.vt
@@ -317,6 +317,6 @@ func (i *Inline) dropBelow() {
 	}
 }
 
-func (i *Inline) reset() {
+func (i *Incipit) reset() {
 	i.liveLT, i.role, i.live, i.vt, i.cur = 0, "", nil, 0, 0
 }

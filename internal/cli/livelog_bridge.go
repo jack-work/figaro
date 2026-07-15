@@ -8,14 +8,14 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-// livelogTurn renders the aria-read wire. By default it uses the inline-seal
+// livelogTurn renders the aria-read wire. By default it uses the incipit-seal
 // renderer (closed messages seal to scrollback once; the open message is the one
 // live region). Ctrl-T toggles a full-screen transcript pager (see transcript.go)
 // that shares the same aria.Client model, so both render the same conversation;
 // only the active view paints. Messages that close while the pager is up are
 // queued and flushed to the inline scrollback on exit, so nothing is lost.
 type livelogTurn struct {
-	in     *ldrender.Inline
+	in     *ldrender.Incipit
 	term   *ldrender.ANSITerminal
 	client *aria.Client
 	view   *ariaView
@@ -31,7 +31,7 @@ type livelogTurn struct {
 func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, rule func() string) *livelogTurn {
 	view := &ariaView{settings: settings}
 	term := ldrender.NewANSITerminal(out, w, h)
-	in := ldrender.NewInline(term, view)
+	in := ldrender.NewIncipit(term, view)
 	in.Bookend = bookend
 	in.Rule = rule
 	in.Header = messageHeader

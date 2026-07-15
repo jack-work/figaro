@@ -37,7 +37,7 @@ const (
 )
 
 // mustPromptFigaro is the interactive (TTY) prompt path. It renders the
-// aria-read wire through the inline-seal renderer: closed messages seal to
+// aria-read wire through the incipit-seal renderer: closed messages seal to
 // native scrollback once and are never redrawn; only the open message is a live
 // region, so a terminal resize repaints just that bounded part. The renderer
 // folds each aria frame and animates spinners locally (no extra wire traffic).

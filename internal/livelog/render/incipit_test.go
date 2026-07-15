@@ -10,9 +10,9 @@ import (
 
 const spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
-func TestInline_SealOnce_OpenLive(t *testing.T) {
+func TestIncipit_SealOnce_OpenLive(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)
-	in := NewInline(ft, NodeText{})
+	in := NewIncipit(ft, NodeText{})
 
 	// a closed user message → scrollback once
 	in.Seal(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hello?"}}})
@@ -42,9 +42,9 @@ func TestInline_SealOnce_OpenLive(t *testing.T) {
 // The point of the whole exercise: a resize mid-open-message repaints only the
 // open message; the already-sealed message in scrollback is never touched, so it
 // can't duplicate.
-func TestInline_ResizeKeepsSealed_RedrawsOpen(t *testing.T) {
+func TestIncipit_ResizeKeepsSealed_RedrawsOpen(t *testing.T) {
 	ft := NewFakeTerminal(70, 16)
-	in := NewInline(ft, NodeText{})
+	in := NewIncipit(ft, NodeText{})
 
 	in.Seal(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "list the dir"}}})
 
@@ -76,9 +76,9 @@ func TestInline_ResizeKeepsSealed_RedrawsOpen(t *testing.T) {
 	}
 }
 
-func TestInline_NoTrailingBlanksAfterScrolledSeal(t *testing.T) {
+func TestIncipit_NoTrailingBlanksAfterScrolledSeal(t *testing.T) {
 	ft := NewFakeTerminal(40, 6) // short viewport so the message scrolls
-	in := NewInline(ft, NodeText{})
+	in := NewIncipit(ft, NodeText{})
 	in.Bookend = func() string { return "=== bookend ===" }
 	var nodes []livedoc.Node
 	for i := 0; i < 10; i++ {

@@ -37,7 +37,7 @@ item, compressed. `doc.Delta` (Diff/Apply) is the Phase-2 primitive.
   `View`; `Cursor()` is the resume point). No I/O — pure, fully unit-tested
   (catch-up shapes, live deltas, close-patch, the LT-once invariant, and
   reconnect-converges-from-cursor).
-- **`render`** — `Inline`: renders inline (no alternate screen). Closed messages
+- **`render`** — `Incipit`: renders incipit (no alternate screen). Closed messages
   seal to native scrollback **once** and are never redrawn; only the open message
   is a live region, so a terminal resize repaints just that bounded part. The
   immutability boundary (a sealed message) is the resize boundary — which is what
@@ -48,7 +48,7 @@ item, compressed. `doc.Delta` (Diff/Apply) is the Phase-2 primitive.
 ## In figaro
 
 `internal/cli/livelog_bridge.go` (opt-in via `FIGARO_LIVELOG`) translates figaro's
-wire ops into aria blocks and drives `Inline`, reusing figaro's own node renderers
+wire ops into aria blocks and drives `Incipit`, reusing figaro's own node renderers
 so on-screen content matches the default painter. The server-side `aria.Server` +
 a real `figaro.read(sinceLT)` RPC (true catch-up / a persistent `listen`) is the
 next phase.
