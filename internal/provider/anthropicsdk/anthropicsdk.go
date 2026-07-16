@@ -54,6 +54,19 @@ type Provider struct {
 	// CacheOpen opens the per-aria translation cache. nil disables caching.
 	CacheOpen func(aria string) (store.Log[[]json.RawMessage], error)
 	caches    map[string]store.Log[[]json.RawMessage]
+
+	// snapCache stores the accumulated chalkboard snapshot and the
+	// built perMessage/lts arrays from the last catchUp, keyed by aria.
+	// On the next turn, if the figLog has only grown (append-only), we
+	// resume from the cached position without re-walking prior entries.
+	snapCache map[string]*snapCacheEntry
+}
+
+type snapCacheEntry struct {
+	snap       chalkboard.Snapshot
+	perMessage [][]json.RawMessage
+	lts        []uint64
+	nEntries   int // how many figLog entries were processed
 }
 
 // New constructs the SDK-backed provider.
@@ -73,6 +86,7 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 		httpClient: &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
 		CacheOpen:  cacheOpen,
 		caches:     map[string]store.Log[[]json.RawMessage]{},
+		snapCache:  map[string]*snapCacheEntry{},
 	}, nil
 }
 

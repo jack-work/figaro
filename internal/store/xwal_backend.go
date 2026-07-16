@@ -12,6 +12,7 @@ package store
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -165,6 +166,7 @@ func (b *XwalBackend) ChalkboardState(ariaID string) (chalkboard.Snapshot, error
 // ChalkboardPatches reads the whole chalkboard channel once and groups
 // the (non-empty) patches by the IR LT they are keyed to.
 func (b *XwalBackend) ChalkboardPatches(ariaID string) (map[uint64][]message.Patch, error) {
+	t0 := time.Now()
 	xw, err := b.store.OpenNode(ariaID)
 	if err != nil {
 		return nil, err
@@ -190,6 +192,9 @@ func (b *XwalBackend) ChalkboardPatches(ariaID string) (map[uint64][]message.Pat
 			continue
 		}
 		out[rec.MainLT] = append(out[rec.MainLT], p)
+	}
+	if elapsed := time.Since(t0); elapsed > 100*time.Millisecond {
+		slog.Warn("ChalkboardPatches slow", "aria", ariaID, "entries", last-first+1, "elapsed", elapsed)
 	}
 	return out, nil
 }

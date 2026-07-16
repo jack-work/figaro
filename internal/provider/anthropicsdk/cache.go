@@ -3,6 +3,7 @@ package anthropicsdk
 import (
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
@@ -45,20 +46,49 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) {
 }
 
 // catchUp encodes any figLog entries not yet in the cache and
-// returns per-message wire bytes plus their logical times. Chalkboard
-// transitions are sourced per-LT from chalk (the reducible channel); a
-// nil chalk falls back to whatever patches ride inline on the IR message
-// (ephemeral arias, tests).
+// returns per-message wire bytes plus their logical times. Uses an
+// in-memory snapshot cache to avoid re-walking the entire conversation
+// on every turn: only new entries (since the last call) are processed.
 func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
+	t0 := time.Now()
 	fp := p.Fingerprint()
-	snap := chalkboard.Snapshot{}
+	entries := figLog.Read()
+
+	// Resume from the snap cache if the log only grew (append-only invariant).
+	p.mu.Lock()
+	aria := "" // keyed by cache identity
+	if cache != nil {
+		// Use the cache pointer address as a stable key.
+		for k, v := range p.caches {
+			if v == cache {
+				aria = k
+				break
+			}
+		}
+	}
+	sc := p.snapCache[aria]
+	p.mu.Unlock()
+
+	var snap chalkboard.Snapshot
 	var perMessage [][]json.RawMessage
 	var lts []uint64
-	for _, e := range figLog.Read() {
+	startIdx := 0
+
+	if sc != nil && sc.nEntries <= len(entries) {
+		// The log only grew: resume from where we left off.
+		snap = sc.snap
+		perMessage = sc.perMessage
+		lts = sc.lts
+		startIdx = sc.nEntries
+	}
+
+	var nCached, nEncoded int
+	for i := startIdx; i < len(entries); i++ {
+		e := entries[i]
 		msg := e.Payload
 		msg.LogicalTime = e.LT
 		if msg.Role == message.RoleGenesis {
-			continue // structural birth message; never rendered
+			continue
 		}
 		if chalk != nil {
 			msg.Patches = chalk.PatchesAt(e.LT)
@@ -67,6 +97,7 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 		if cache != nil {
 			if existing, ok := cache.Lookup(msg.LogicalTime); ok && len(existing.Payload) > 0 {
 				bytes = existing.Payload
+				nCached++
 			}
 		}
 		if bytes == nil {
@@ -75,6 +106,7 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 				slog.Error("anthropicsdk encode", "flt", msg.LogicalTime, "err", err)
 			} else {
 				bytes = encoded
+				nEncoded++
 				if cache != nil && len(encoded) > 0 {
 					_, _ = cache.Append(store.Entry[[]json.RawMessage]{
 						FigaroLT: msg.LogicalTime, Payload: bytes, Fingerprint: fp,
@@ -89,6 +121,29 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 		for _, patch := range msg.Patches {
 			snap = snap.Apply(patch)
 		}
+	}
+
+	// Store the snapshot for next turn.
+	if aria != "" {
+		p.mu.Lock()
+		p.snapCache[aria] = &snapCacheEntry{
+			snap:       snap,
+			perMessage: perMessage,
+			lts:        lts,
+			nEntries:   len(entries),
+		}
+		p.mu.Unlock()
+	}
+
+	tTotal := time.Since(t0)
+	if tTotal > 200*time.Millisecond {
+		slog.Warn("anthropicsdk catchUp slow",
+			"total", tTotal,
+			"entries", len(entries),
+			"startIdx", startIdx,
+			"cached", nCached,
+			"encoded", nEncoded,
+		)
 	}
 	return perMessage, lts
 }
