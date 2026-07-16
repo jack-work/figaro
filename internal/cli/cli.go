@@ -160,7 +160,7 @@ labeled by their figaro LT (the coordinate send/fork <id>:<LT> target).
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
+		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding). With --id, targets
 the named aria, which must already exist (aria ids are system-minted).
@@ -178,7 +178,9 @@ Flags:
                  per line) — the literal protocol stream, no formatting,
                  no delta application.
   -o, --verbose  Verbose: expand full tool inputs (else truncated). Thinking
-                 blocks are always shown (muted). Ctrl-O (or Ctrl-T) toggles live.
+                 blocks are always shown (muted). Ctrl-O toggles live.
+  -l, --listen   Enter the transcript pager and stay open past turn-done
+                 (until Ctrl-D/Ctrl-C). Ctrl-L does the same mid-stream.
   -x, --exec     Treat the prompt as a bash instruction. The reply is
                  piped to bash -c. --raw is silently ignored here
                  because the script governs its own output.

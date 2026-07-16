@@ -190,10 +190,14 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			// Belt-and-braces: always disable mouse reporting on exit so a crash
 			// mid-pager can't leave the shell spewing raw \x1b[<…M.
 			defer os.Stdout.WriteString(ldmouse.Disable)
-			go (&interactiveInput{
+			in := &interactiveInput{
 				tc: tc, lt: lt, fcli: fcli, mu: &mu, set: &set,
 				figaroID: figaroID, listen: &listen, cancel: cancel, disconnectCh: disconnectCh,
-			}).run()
+			}
+			if listen {
+				in.enterTranscript() // --listen: open the pager immediately
+			}
+			go in.run()
 		}
 	}
 
