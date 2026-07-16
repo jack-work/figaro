@@ -127,4 +127,7 @@ git tags, so the release dance is just: keep `go.mod` clean, tag, push.
 
 ---
 
-*Tutti mi chiedono, tutti mi vogliono.* MIT.
+*Tutti mi chiedono, tutti mi vogliono.*
+
+Licensed under the [NON-AI MPL-2.0](./LICENSE). Copyleft, source available for human use.
+This software may not be used for AI/ML training (see LICENSE §3.6).
