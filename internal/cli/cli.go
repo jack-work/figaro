@@ -59,10 +59,10 @@ func Run(progName string, args []string) {
 		defer shutdown(ctx)
 	}
 
-	// Passive update nudge (config-gated, TTY-only, cached).
-	// Never fatal; runs sync but bounded to a short timeout.
-	// Skip for meta verbs where the nudge would be noise or duplicative.
-	if !isMetaVerb(args) {
+	// Update nudge — help surfaces only (config-gated, TTY-only, cached).
+	// It used to fire on every command, which interleaved with real output;
+	// now it rides along with the help text (and the transcript's '?' panel).
+	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		runUpdateCheck(loaded)
 	}
 

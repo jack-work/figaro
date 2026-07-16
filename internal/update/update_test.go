@@ -109,3 +109,16 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// A dev-stamped current version can't be compared to release tags —
+// the nudge must stay silent instead of claiming any tag is newer.
+func TestNudge_SilentOnDevVersion(t *testing.T) {
+	info := &Info{Current: "dev-da2abf499885", Latest: "v0.3.0", Available: true, Channel: ChannelNix}
+	if msg := Nudge(info, "example.com/mod"); msg != "" {
+		t.Fatalf("dev version must not nudge, got %q", msg)
+	}
+	info = &Info{Current: "v0.2.0", Latest: "v0.3.0", Available: true, Channel: ChannelNix}
+	if msg := Nudge(info, "example.com/mod"); msg == "" {
+		t.Fatalf("semver current with newer latest should nudge")
+	}
+}

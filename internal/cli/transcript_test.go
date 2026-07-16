@@ -3,6 +3,9 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/mattn/go-runewidth"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/livedoc"
@@ -19,7 +22,7 @@ func TestTranscript_ScrollAndSearch(t *testing.T) {
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d body", i)}},
 		}}})
 	}
-	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234")
+	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter() // follows → bottom
 
 	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "msg08") {
@@ -62,7 +65,7 @@ func TestTranscript_FollowVsHold(t *testing.T) {
 	for i := 1; i <= 6; i++ {
 		add(i)
 	}
-	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234")
+	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.key('g')
 	tr.key('g') // scrolled to top, follow=false
@@ -92,7 +95,7 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	for i := 5; i <= 8; i++ { // recent window only (as the lazy initial load gives)
 		client.Apply(aria.AriaRead{Committed: []aria.Committed{msg(i)}})
 	}
-	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234")
+	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	if strings.Contains(strings.Join(ft.Screen(), "\n"), "msg01") {
 		t.Fatalf("older history must not load on enter")
@@ -121,5 +124,83 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	cur, ok = tr.olderCursor()
 	if ok {
 		t.Fatalf("no history should remain below LT 1 (got cursor %d)", cur)
+	}
+}
+
+// The footer must render at exactly the viewport width (display columns — the
+// box-drawing/"·" glyphs are multi-byte, and byte-length math shortened these
+// rules), and the last content line above it must not be a blank separator.
+func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
+	ft := ldrender.NewFakeTerminal(50, 8)
+	client := aria.NewClient()
+	for i := 1; i <= 8; i++ {
+		client.Apply(aria.AriaRead{Committed: []aria.Committed{{
+			LT: i, Role: "assistant",
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d", i)}},
+		}}})
+	}
+	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
+	tr.enter()
+
+	all := tr.lines()
+	if last := all[len(all)-1]; strings.TrimSpace(stripANSI(last)) == "" {
+		t.Fatalf("lines() must not end with a blank/separator (footer seals the last message); got %q", last)
+	}
+	foot := stripANSI(tr.footer(len(all), tr.h-1))
+	if w := runewidth.StringWidth(foot); w != 50 {
+		t.Fatalf("footer display width = %d, want exactly 50: %q", w, foot)
+	}
+	if !strings.Contains(foot, "aria1234") {
+		t.Fatalf("footer missing id: %q", foot)
+	}
+	tr.w = 80 // wide enough for the full token set alongside the position
+	foot = stripANSI(tr.footer(len(all), tr.h-1))
+	if w := runewidth.StringWidth(foot); w != 80 {
+		t.Fatalf("wide footer display width = %d, want exactly 80: %q", w, foot)
+	}
+	for _, tok := range []string{"aria1234", "? help", "live"} {
+		if !strings.Contains(foot, tok) {
+			t.Fatalf("wide footer missing %q: %q", tok, foot)
+		}
+	}
+	// Narrow pane: "? help" (then the time) sheds; the id survives; width exact.
+	tr.w = 24
+	foot = stripANSI(tr.footer(len(all), tr.h-1))
+	if w := runewidth.StringWidth(foot); w != 24 {
+		t.Fatalf("narrow footer width = %d, want 24: %q", w, foot)
+	}
+	if !strings.Contains(foot, "aria1234") {
+		t.Fatalf("narrow footer must keep the id: %q", foot)
+	}
+}
+
+// '?' opens the help panel; any key wipes it; the pager never exits.
+func TestTranscript_HelpPanel(t *testing.T) {
+	ft := ldrender.NewFakeTerminal(60, 14)
+	client := aria.NewClient()
+	client.Apply(aria.AriaRead{Committed: []aria.Committed{{
+		LT: 1, Role: "assistant",
+		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "hello"}},
+	}}})
+	tr := newTranscript(ft, 60, 14, ldrender.NodeText{}, client, "aria1234", time.Now())
+	tr.enter()
+	tr.key('?')
+	if !tr.showHelp {
+		t.Fatalf("? should open the help panel")
+	}
+	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "copy aria id") {
+		t.Fatalf("help panel content missing:\n%s", scr)
+	}
+	tr.key('?')
+	if tr.showHelp {
+		t.Fatalf("? should close the help panel")
+	}
+	tr.key('?')
+	tr.key('j') // any key wipes the panel and still acts
+	if tr.showHelp {
+		t.Fatalf("a nav key should wipe the help panel")
+	}
+	if !tr.active {
+		t.Fatalf("help panel interactions must never exit the pager")
 	}
 }

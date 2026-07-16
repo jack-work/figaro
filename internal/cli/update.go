@@ -22,10 +22,28 @@ func updateCache() *update.Cache {
 	return update.NewCache(filepath.Join(cacheDir(), "figaro"))
 }
 
-// runUpdateCheck is the passive startup nudge. It prints a single
-// stderr line if a newer release is available and the config allows
-// it. All error paths are silent — a failed update check must never
-// interfere with real CLI work.
+// helpVersionLine is the version line for the transcript's '?' panel:
+// "figaro <version>", extended with the update nudge when the CACHE
+// (only — never the network; this runs inside the live pager) says a
+// newer release is comparable and available. The passive nudge lives in
+// the help surfaces exactly so it never interleaves with real output.
+func helpVersionLine() string {
+	cur := update.CurrentVersion(commit)
+	line := "figaro " + cur
+	if info := updateCache().Read(30 * 24 * time.Hour); info != nil {
+		info.Current = cur
+		info.Available = info.Latest != "" && update.Compare(info.Latest, cur) > 0
+		if update.Nudge(info, figaroModule) != "" {
+			line += " · " + info.Latest + " available — run: figaro update"
+		}
+	}
+	return line
+}
+
+// runUpdateCheck is the help-surface update nudge (figaro help /
+// --help). It prints a single stderr line if a newer release is
+// available and the config allows it. All error paths are silent — a
+// failed update check must never interfere with real CLI work.
 func runUpdateCheck(loaded *config.Loaded) {
 	if loaded == nil || !loaded.CheckUpdates() {
 		return
@@ -55,20 +73,6 @@ func isStderrTTY() bool {
 		return false
 	}
 	return (fi.Mode() & os.ModeCharDevice) != 0
-}
-
-// isMetaVerb reports whether the first arg is a command for which the
-// passive update nudge would be tautological or annoying (completion
-// scripts, the update command itself, version, etc.).
-func isMetaVerb(args []string) bool {
-	if len(args) == 0 {
-		return false
-	}
-	switch args[0] {
-	case "update", "version", "v", "completion", "__complete", "stop", "rest":
-		return true
-	}
-	return false
 }
 
 // runUpdate implements `figaro update`. Default behavior is advisory:

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
@@ -23,17 +24,20 @@ const (
 // the shared aria.Client, so it streams live: at the bottom it follows new
 // output, otherwise it holds your scroll position.
 //
-// Keys: j/k line, u/d half-page, gg/G top/bottom, / literal search, q/Esc/Ctrl-T
-// exit. Not safe for concurrent use; the caller serializes all entry points.
+// Keys: j/k line, u/d half-page, gg/G top/bottom, / literal search, ? help
+// panel. Exit is Ctrl-D/Ctrl-C at the input loop. Not safe for concurrent use;
+// the caller serializes all entry points.
 type transcript struct {
-	out      io.Writer
-	view     ldrender.NodeView
-	client   *aria.Client
-	figaroID string // shown in the status line (blank → omitted)
+	out       io.Writer
+	view      ldrender.NodeView
+	client    *aria.Client
+	figaroID  string    // shown in the footer (blank → omitted)
+	startedAt time.Time // session start; the footer time, mirroring the incipit bookend
 
-	active bool
-	w, h   int
-	tick   int
+	active   bool
+	showHelp bool // '?': the footer grows into a key-reference panel
+	w, h     int
+	tick     int
 
 	prev   []string // last painted screen (full-frame diff)
 	lineLT []int    // LT owning each line of lines(), for resize anchoring
@@ -58,8 +62,8 @@ type transcript struct {
 	cacheW   int
 }
 
-func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string) *transcript {
-	return &transcript{out: out, view: view, client: client, figaroID: figaroID, w: w, h: h, rowCache: map[int][]string{}}
+func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string, startedAt time.Time) *transcript {
+	return &transcript{out: out, view: view, client: client, figaroID: figaroID, startedAt: startedAt, w: w, h: h, rowCache: map[int][]string{}}
 }
 
 // enter switches to the alternate screen and draws the transcript at the bottom.
@@ -183,12 +187,14 @@ func (t *transcript) lines() []string {
 	var out []string
 	var lts []int // LT owning each line (0 for separator rules), parallel to out
 	appendMsg := func(rows []string, lt int) {
+		if len(out) > 0 { // rule separator BETWEEN messages only — the footer
+			out = append(out, "", dimTransRule(t.w), "") // seals the last one, so a
+			lts = append(lts, lt, lt, lt)                // trailing rule+blank would
+		} // double up against it
 		for _, r := range rows {
 			out = append(out, r)
 			lts = append(lts, lt)
 		}
-		out = append(out, "", dimTransRule(t.w), "") // rule separator
-		lts = append(lts, lt, lt, lt)
 	}
 	for _, m := range v.Closed {
 		rows, ok := t.rowCache[m.LT]
@@ -230,7 +236,11 @@ func (t *transcript) render() {
 		return
 	}
 	all := t.lines()
-	body := t.h - 1 // bottom row is the status bar
+	foot := []string{}
+	if t.showHelp {
+		foot = t.helpLines()
+	}
+	body := t.h - 1 - len(foot) // bottom rows: help panel (if open) + footer
 	if body < 1 {
 		body = 1
 	}
@@ -253,23 +263,30 @@ func (t *transcript) render() {
 			screen[r] = all[i]
 		}
 	}
-	screen[t.h-1] = t.status(len(all))
+	for k, l := range foot {
+		if r := body + k; r < t.h-1 {
+			screen[r] = l
+		}
+	}
+	screen[t.h-1] = t.footer(len(all), body)
 	t.paint(screen)
 }
 
-// status is a subtle single dim line (not a reserved inverse bar): the aria id
-// on the left and a right-aligned scroll position. Padding is computed by
-// DISPLAY width (runewidth), not rune count, so the wide "↕"/"·" glyphs neither
-// misalign the position nor push the line past the last column. It degrades
-// gracefully: on a narrow pane the "^D exit" hint drops first, keeping the id
-// and position — the two things you actually need — visible.
-func (t *transcript) status(total int) string {
+// footer is the transcript's single status line, in the same rule grammar as
+// the incipit bookend ("─── id · time ───…") so both modes speak one visual
+// language: left tokens are the aria id, session start time, and the "? help"
+// hook; the scroll position sits right-aligned inside the trailing rule. All
+// widths are DISPLAY columns (runewidth) — the box-drawing/"·" glyphs are
+// multi-byte, and byte-length math is what produced the mismatched rule
+// lengths. Degrades on narrow panes by dropping "? help", then the time; the
+// id and position survive last.
+func (t *transcript) footer(total, body int) string {
 	if t.inSearch {
 		return "\x1b[2m" + clipToWidth("/"+t.query, t.w) + "\x1b[0m"
 	}
 	pos := ""
-	if total > t.h-1 {
-		end := t.offset + t.h - 1
+	if total > body {
+		end := t.offset + body
 		if end > total {
 			end = total
 		}
@@ -278,19 +295,56 @@ func (t *transcript) status(total int) string {
 			pos += " live"
 		}
 	}
-	left := "↕ transcript"
-	if t.figaroID != "" {
-		left = "↕ " + t.figaroID
+	right := ""
+	if pos != "" {
+		right = " " + pos + " ───"
 	}
-	const hint = " · ^D exit"
-	if t.w-runewidth.StringWidth(left)-runewidth.StringWidth(pos) >= runewidth.StringWidth(hint)+1 {
-		left += hint // only when it fits alongside the id and position
+	tokens := []string{t.figaroID, t.startedAt.Format("15:04:05"), "? help"}
+	if t.figaroID == "" {
+		tokens = tokens[1:]
 	}
-	gap := t.w - runewidth.StringWidth(left) - runewidth.StringWidth(pos)
-	if gap < 1 {
-		gap = 1
+	for len(tokens) > 1 {
+		left := "─── " + strings.Join(tokens, " · ") + " "
+		if fill := t.w - runewidth.StringWidth(left) - runewidth.StringWidth(right); fill >= 3 {
+			break
+		}
+		tokens = tokens[:len(tokens)-1] // too narrow: shed from the right
 	}
-	return "\x1b[2m" + clipToWidth(left+strings.Repeat(" ", gap)+pos, t.w) + "\x1b[0m"
+	left := "─── " + strings.Join(tokens, " · ") + " "
+	fill := t.w - runewidth.StringWidth(left) - runewidth.StringWidth(right)
+	if fill < 0 {
+		fill = 0
+	}
+	return "\x1b[2m" + clipToWidth(left+strings.Repeat("─", fill)+right, t.w) + "\x1b[0m"
+}
+
+// helpLines is the '?' panel: the footer grown upward into a key reference,
+// drawn above the footer while output keeps streaming past above it. Any key
+// wipes it. (Deliberately a bottom panel, not a floating overlay: the terminal
+// has exactly one alternate buffer, and compositing a float into every live
+// repaint buys nothing over this.)
+func (t *transcript) helpLines() []string {
+	rows := []string{
+		"",
+		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",
+		"  /                   search (Enter jump · Esc cancel)",
+		"  y                   copy aria id",
+		"  ^O                  toggle verbose tool output",
+		"  ^L                  listen — stay open after the turn ends",
+		"  ^D                  detach; the turn keeps running",
+		"  ^C                  interrupt the turn / close",
+		"  ?                   close help",
+	}
+	if v := helpVersionLine(); v != "" {
+		rows = append(rows, "", "  "+v)
+	}
+	if max := t.h - 4; len(rows) > max && max > 0 { // tiny pane: keep the top of the list
+		rows = rows[:max]
+	}
+	for i, r := range rows {
+		rows[i] = "\x1b[2m" + clipToWidth(r, t.w) + "\x1b[0m"
+	}
+	return rows
 }
 
 func (t *transcript) paint(screen []string) {
@@ -319,6 +373,13 @@ func (t *transcript) key(b byte) {
 		t.render()
 		return
 	}
+	if t.showHelp { // any key wipes the panel; nav keys also still act below
+		t.showHelp = false
+		if b == '?' || b == 0x1b || b == 'q' {
+			t.render()
+			return
+		}
+	}
 	switch b {
 	case 'j':
 		t.offset++
@@ -343,6 +404,8 @@ func (t *transcript) key(b byte) {
 		}
 	case '/':
 		t.inSearch, t.query = true, ""
+	case '?':
+		t.showHelp = true
 	}
 	t.pendG = b == 'g' && !t.pendG
 	t.render()

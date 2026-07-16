@@ -106,8 +106,16 @@ func Check(ctx context.Context, cache *Cache, ttl time.Duration, module, current
 // Nudge returns a one-line message when a newer version is available
 // on a channel we can point at, "" otherwise. Formatted to stand out
 // briefly in stderr without dominating the CLI's real output.
+//
+// A non-semver current version (a "dev-<commit>" stamp — the flake
+// package doesn't carry the tag) stays silent: Compare treats it as
+// -inf, so ANY release tag would claim "available", including ones the
+// dev build already contains. `figaro update` still shows full detail.
 func Nudge(info *Info, module string) string {
 	if info == nil || !info.Available || info.Latest == "" {
+		return ""
+	}
+	if _, _, _, ok := parseSemver(info.Current); !ok {
 		return ""
 	}
 	msg := fmt.Sprintf("figaro %s → %s available", info.Current, info.Latest)

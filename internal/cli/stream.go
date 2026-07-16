@@ -17,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
+	"github.com/mattn/go-runewidth"
 )
 
 const spinnerFPS = 11 // spinner frames per second (~90ms/frame)
@@ -62,7 +63,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		bookendFn = func() string { return statusBanner(figaroID, startedAt) }
 	}
 
-	lt := newLivelogTurn(os.Stdout, width, height, &set, figaroID, bookendFn, dimRule)
+	lt := newLivelogTurn(os.Stdout, width, height, &set, figaroID, startedAt, bookendFn, dimRule)
 	tc := term.NewClient() // platform terminal boundary: raw mode, resize, clipboard
 
 	// The renderer owns the cursor and assumes one row per line: disable the
@@ -400,22 +401,23 @@ func dimRule() string { return term.Dim(strings.Repeat("─", termWidth())) }
 // abandonRule returns a labeled dim rule used when a live region ends without
 // a normal seal (crash, disconnect, interrupt-timeout). Shape: "─── [reason] ───..."
 func abandonRule(reason string) string {
-	w := termWidth()
-	body := " [" + reason + "] "
-	prefix := "───" + body
-	fill := w - len(prefix)
-	if fill < 3 {
-		fill = 3
-	}
-	return term.Dim(prefix + strings.Repeat("─", fill))
+	return labeledRule("[" + reason + "]")
 }
 
 // statusBanner returns a full-width dimmed bookend: "─── id · time ───…"
-// extended with box-drawing dashes to the viewport width.
+// extended with box-drawing dashes to the viewport width. Same rule grammar as
+// the transcript footer, so incipit and transcript speak one visual language.
 func statusBanner(figaroID string, ts time.Time) string {
-	body := fmt.Sprintf("%s · %s", figaroID, ts.Format("15:04:05"))
-	prefix := "─── " + body + " " // 4 cols + body + 1 col (body is ASCII)
-	fill := termWidth() - 4 - len(body) - 1
+	return labeledRule(fmt.Sprintf("%s · %s", figaroID, ts.Format("15:04:05")))
+}
+
+// labeledRule builds "─── <label> ───…" filled with box-drawing dashes to the
+// exact viewport width. Widths are DISPLAY columns (runewidth): the dashes and
+// "·" are multi-byte, and byte-length math is what made these rules render
+// shorter than the plain dimRule.
+func labeledRule(label string) string {
+	prefix := "─── " + label + " "
+	fill := termWidth() - runewidth.StringWidth(prefix)
 	if fill < 3 {
 		fill = 3
 	}
