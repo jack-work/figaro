@@ -72,7 +72,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	}
 
 	set := renderSettings{listen: true} // listen stays open past turn-done
-	lt := newLivelogTurn(os.Stdout, width, height, &set, bookendFn, dimRule)
+	lt := newLivelogTurn(os.Stdout, width, height, &set, figaroID, bookendFn, dimRule)
 	tc := term.NewClient()
 
 	// The renderer owns the cursor + auto-margin off, same as send.

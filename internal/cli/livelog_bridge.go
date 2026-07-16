@@ -33,7 +33,7 @@ type livelogTurn struct {
 	lastSealedLT int
 }
 
-func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, rule func() string) *livelogTurn {
+func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID string, bookend, rule func() string) *livelogTurn {
 	view := &ariaView{settings: settings}
 	term := ldrender.NewANSITerminal(out, w, h)
 	in := ldrender.NewIncipit(term, view)
@@ -41,7 +41,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, 
 	in.Rule = rule
 	in.Header = messageHeader
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view}
-	t.tr = newTranscript(out, w, h, view, t.client)
+	t.tr = newTranscript(out, w, h, view, t.client, figaroID)
 	t.client.OnClosed = func(m aria.Message) {
 		if t.tr.active {
 			t.tr.render() // transcript renders from the shared client model

@@ -19,7 +19,7 @@ func TestTranscript_ScrollAndSearch(t *testing.T) {
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d body", i)}},
 		}}})
 	}
-	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client)
+	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234")
 	tr.enter() // follows → bottom
 
 	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "msg08") {
@@ -62,7 +62,7 @@ func TestTranscript_FollowVsHold(t *testing.T) {
 	for i := 1; i <= 6; i++ {
 		add(i)
 	}
-	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client)
+	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234")
 	tr.enter()
 	tr.key('g')
 	tr.key('g') // scrolled to top, follow=false
@@ -92,7 +92,7 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	for i := 5; i <= 8; i++ { // recent window only (as the lazy initial load gives)
 		client.Apply(aria.AriaRead{Committed: []aria.Committed{msg(i)}})
 	}
-	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client)
+	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234")
 	tr.enter()
 	if strings.Contains(strings.Join(ft.Screen(), "\n"), "msg01") {
 		t.Fatalf("older history must not load on enter")

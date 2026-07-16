@@ -8,6 +8,7 @@ import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
+	"github.com/mattn/go-runewidth"
 )
 
 const (
@@ -25,9 +26,10 @@ const (
 // Keys: j/k line, u/d half-page, gg/G top/bottom, / literal search, q/Esc/Ctrl-T
 // exit. Not safe for concurrent use; the caller serializes all entry points.
 type transcript struct {
-	out    io.Writer
-	view   ldrender.NodeView
-	client *aria.Client
+	out      io.Writer
+	view     ldrender.NodeView
+	client   *aria.Client
+	figaroID string // shown in the status line (blank → omitted)
 
 	active bool
 	w, h   int
@@ -56,15 +58,19 @@ type transcript struct {
 	cacheW   int
 }
 
-func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client) *transcript {
-	return &transcript{out: out, view: view, client: client, w: w, h: h, rowCache: map[int][]string{}}
+func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string) *transcript {
+	return &transcript{out: out, view: view, client: client, figaroID: figaroID, w: w, h: h, rowCache: map[int][]string{}}
 }
 
 // enter switches to the alternate screen and draws the transcript at the bottom.
+// autowrapOff is asserted explicitly here (not just inherited from the caller):
+// this is a fixed-canvas pager, and a single wide glyph tipping the bottom-right
+// cell past the last column with autowrap ON scrolls the whole screen up by a
+// row — which reads as the status line "eating" the line above it.
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query = false, false, ""
-	io.WriteString(t.out, altScreenOn+ldmouse.Enable+cursorHide+"\x1b[2J")
+	io.WriteString(t.out, altScreenOn+autowrapOff+ldmouse.Enable+cursorHide+"\x1b[2J")
 	t.render()
 }
 
@@ -251,8 +257,12 @@ func (t *transcript) render() {
 	t.paint(screen)
 }
 
-// status is a subtle single dim line (not a reserved inverse bar): a left hint
-// and a right-aligned scroll position.
+// status is a subtle single dim line (not a reserved inverse bar): the aria id
+// on the left and a right-aligned scroll position. Padding is computed by
+// DISPLAY width (runewidth), not rune count, so the wide "↕"/"·" glyphs neither
+// misalign the position nor push the line past the last column. It degrades
+// gracefully: on a narrow pane the "^D exit" hint drops first, keeping the id
+// and position — the two things you actually need — visible.
 func (t *transcript) status(total int) string {
 	if t.inSearch {
 		return "\x1b[2m" + clipToWidth("/"+t.query, t.w) + "\x1b[0m"
@@ -268,8 +278,15 @@ func (t *transcript) status(total int) string {
 			pos += " live"
 		}
 	}
-	left := "↕ transcript · ^D exit"
-	gap := t.w - len([]rune(left)) - len([]rune(pos))
+	left := "↕ transcript"
+	if t.figaroID != "" {
+		left = "↕ " + t.figaroID
+	}
+	const hint = " · ^D exit"
+	if t.w-runewidth.StringWidth(left)-runewidth.StringWidth(pos) >= runewidth.StringWidth(hint)+1 {
+		left += hint // only when it fits alongside the id and position
+	}
+	gap := t.w - runewidth.StringWidth(left) - runewidth.StringWidth(pos)
 	if gap < 1 {
 		gap = 1
 	}

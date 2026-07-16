@@ -62,7 +62,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		bookendFn = func() string { return statusBanner(figaroID, startedAt) }
 	}
 
-	lt := newLivelogTurn(os.Stdout, width, height, &set, bookendFn, dimRule)
+	lt := newLivelogTurn(os.Stdout, width, height, &set, figaroID, bookendFn, dimRule)
 	tc := term.NewClient() // platform terminal boundary: raw mode, resize, clipboard
 
 	// The renderer owns the cursor and assumes one row per line: disable the
