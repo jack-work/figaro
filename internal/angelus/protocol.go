@@ -18,6 +18,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
@@ -885,6 +886,35 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 	all := log.Read()
 	total := len(all)
 
+	limit := req.Limit
+	if limit <= 0 || limit > ariaReadHardCap {
+		limit = ariaReadHardCap
+	}
+
+	// Keyset pagination: Before takes precedence over From.
+	if req.Before > 0 {
+		var selected []store.Entry[message.Message]
+		for i := len(all) - 1; i >= 0 && len(selected) < limit; i-- {
+			if all[i].LT < req.Before {
+				selected = append(selected, all[i])
+			}
+		}
+		// Reverse to chronological order.
+		for i, j := 0, len(selected)-1; i < j; i, j = i+1, j-1 {
+			selected[i], selected[j] = selected[j], selected[i]
+		}
+		entries := make([]rpc.AriaReadEntry, len(selected))
+		for i, e := range selected {
+			raw, _ := json.Marshal(e.Payload)
+			entries[i] = rpc.AriaReadEntry{LT: e.LT, Payload: raw}
+		}
+		var nextBefore uint64
+		if len(selected) > 0 {
+			nextBefore = selected[0].LT
+		}
+		return &rpc.AriaReadResponse{Entries: entries, Total: total, NextFrom: nextBefore}, nil
+	}
+
 	from := req.From
 	startIdx := 0
 	if from > 0 {
@@ -899,10 +929,6 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 		}
 	}
 
-	limit := req.Limit
-	if limit <= 0 || limit > ariaReadHardCap {
-		limit = ariaReadHardCap
-	}
 	endIdx := startIdx + limit
 	if endIdx > len(all) {
 		endIdx = len(all)

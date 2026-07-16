@@ -313,6 +313,7 @@ type SaveBindingsResponse struct {
 type AriaReadRequest struct {
 	FigaroID string `json:"figaro_id"`
 	From     uint64 `json:"from,omitempty"`
+	Before   uint64 `json:"before,omitempty"` // keyset pagination: return entries with LT < Before
 	Limit    int    `json:"limit,omitempty"`
 }
 

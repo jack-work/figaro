@@ -17,6 +17,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/tool"
@@ -31,6 +32,7 @@ func runShow(loaded *config.Loaded, idFlag string, args []string) {
 type showOpts struct {
 	last     int // last N units (default 10)
 	from, to int // unit-index range; -1 = unset
+	before   int // keyset pagination: show N entries before this LT; -1 = unset
 	all      bool
 	jsonOut  bool
 	verbose  bool
@@ -43,7 +45,7 @@ type showOpts struct {
 // delta compression). N / --last N / --from A [--to B] / --all select a
 // unit range. --verbose and --literal use the raw IR path.
 func renderAria(loaded *config.Loaded, id string, args []string) {
-	opts := showOpts{last: 10, from: -1, to: -1}
+	opts := showOpts{last: 10, from: -1, to: -1, before: -1}
 
 	expanded := make([]string, 0, len(args))
 	for _, a := range args {
@@ -87,6 +89,11 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 			opts.to = mustAtoi(strings.TrimPrefix(a, "--to="))
 		case strings.HasPrefix(a, "--last="):
 			opts.last = mustAtoi(strings.TrimPrefix(a, "--last="))
+		case a == "--before":
+			opts.before = needInt(i)
+			i++
+		case strings.HasPrefix(a, "--before="):
+			opts.before = mustAtoi(strings.TrimPrefix(a, "--before="))
 		default:
 			n, err := strconv.Atoi(a)
 			if err != nil {
@@ -113,10 +120,16 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		figaroID = r.FigaroID
 	}
 
-	// Read the IR through the angelus's shared LogCache (single owner of
-	// the figwal log, so we don't race the live agent on the active
-	// segment). The IR is canonical; the unit view is derived from it.
-	resp, err := acli.AriaRead(ctx, figaroID, 0, 0)
+	// Read the IR through the angelus's shared LogCache.
+	var (
+		resp *rpc.AriaReadResponse
+		err  error
+	)
+	if opts.before >= 0 {
+		resp, err = acli.AriaReadBefore(ctx, figaroID, 0, uint64(opts.before), opts.last)
+	} else {
+		resp, err = acli.AriaRead(ctx, figaroID, 0, 0)
+	}
 	if err != nil {
 		die("aria.read: %s", err)
 	}

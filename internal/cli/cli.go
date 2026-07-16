@@ -104,7 +104,7 @@ func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 		Aliases: []string{"history"},
 		Group:   "Prompt",
 		Short:   "Render an aria's message history",
-		Usage:   "show [<id>] [-n N | --from A [--to B] | -a] [-j] [-v] [-l]",
+		Usage:   "show [<id>] [-n N | --from A [--to B] | --before LT | -a] [-j] [-v] [-l]",
 		Long: `Render an aria's history as conversational units (the prompt and
 each agent turn). The optional positional is the target aria id;
 default is the pid-bound aria. Everything else is a flag. Units are
@@ -116,6 +116,7 @@ labeled by their figaro LT (the coordinate send/fork <id>:<LT> target).
   figaro show eac16fef -n 20       last 20 units of eac16fef
   figaro show --from 4             units 4..end ("after index 4")
   figaro show --from 1 --to 3      units 1..3 inclusive
+  figaro show --before 500 -n 20   20 units before LT 500 (paginate backwards)
   figaro show -a                   every unit
   figaro show -j                   units as raw JSON (materialized, no deltas)
   figaro show eac16fef -v          verbose IR
@@ -129,6 +130,7 @@ labeled by their figaro LT (the coordinate send/fork <id>:<LT> target).
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit units as raw JSON (no delta compression)"},
 			{Long: "from", Description: "Start unit index (inclusive)"},
 			{Long: "to", Description: "End unit index (inclusive)"},
+			{Long: "before", Description: "Show N entries before this LT (paginate backwards)"},
 			{Long: "last", Short: "n", Description: "Show the last N units"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
@@ -157,6 +159,9 @@ labeled by their figaro LT (the coordinate send/fork <id>:<LT> target).
 			}
 			if v := ctx.Flag("to"); v != "" {
 				args = append(args, "--to", v)
+			}
+			if v := ctx.Flag("before"); v != "" {
+				args = append(args, "--before", v)
 			}
 			if v := ctx.Flag("last"); v != "" {
 				args = append(args, "--last", v)
