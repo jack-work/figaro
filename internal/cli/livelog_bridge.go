@@ -24,6 +24,13 @@ type livelogTurn struct {
 	openLT   int
 	openRole string
 	open     []livedoc.Node
+
+	// lastSealedLT is the highest LT incipit has committed to native scrollback
+	// inline (via Seal). It marks the flush boundary: on leaving the pager,
+	// everything past it is (re)printed to scrollback, so the turn you watched in
+	// the pager is left behind like a normal command. 0 means nothing was sealed
+	// inline (we entered the pager cold, e.g. `figaro listen`).
+	lastSealedLT int
 }
 
 func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, rule func() string) *livelogTurn {
@@ -40,6 +47,9 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, 
 			t.tr.render() // transcript renders from the shared client model
 		} else {
 			t.in.Seal(m) // incipit: seal to native scrollback
+			if m.LT > t.lastSealedLT {
+				t.lastSealedLT = m.LT
+			}
 		}
 	}
 	t.client.OnLive = func(lt int, role string, nodes []livedoc.Node) {
@@ -93,7 +103,14 @@ func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 // abandon closes a live region without a normal Seal: paint a labeled
 // dim rule across the boundary so what follows isn't glued to the orphaned
 // output. reason is the short label (e.g. "disconnected — turn continues").
-func (t *livelogTurn) abandon(reason string) { t.in.AbandonOpen(abandonRule(reason)) }
+//
+// If the pager is up, restore the screen and flush the tail to scrollback
+// FIRST (so the labeled rule lands below the recovered turn, not on the
+// about-to-be-torn-down alt screen), then draw the rule.
+func (t *livelogTurn) abandon(reason string) {
+	t.leaveTranscript()
+	t.in.AbandonOpen(abandonRule(reason))
+}
 
 func (t *livelogTurn) tick() {
 	// Only a running tool's spinner needs the periodic repaint. With nothing
@@ -138,12 +155,64 @@ func (t *livelogTurn) enterTranscript() { t.tr.enter() }
 // Transcript never self-exits; leaving is Ctrl-D/Ctrl-C at the input loop.
 func (t *livelogTurn) transcriptKey(b byte) { t.tr.key(b) }
 
-// leaveTranscript restores the normal screen (mouse off, alt-screen off) when
-// the session ends while the pager is up. Idempotent.
+// leaveTranscript restores the normal screen (mouse off, alt-screen off) and
+// flushes the tail of the conversation into native scrollback, so exiting the
+// pager leaves the last turn behind as though it had been a normal inline
+// command. Idempotent; a no-op when the pager isn't up.
 func (t *livelogTurn) leaveTranscript() {
-	if t.tr.active {
-		t.tr.leave()
+	if !t.tr.active {
+		return
 	}
+	t.tr.leave()
+	t.flushTail()
+}
+
+// flushTail (re)prints the un-sealed tail of the conversation to scrollback.
+// Boundary: whatever incipit already sealed inline stays put; only what
+// streamed while the pager was up is emitted. If we entered the pager cold
+// (nothing sealed inline, e.g. `figaro listen`), bound the dump to the last
+// turn rather than replaying the whole history. Resume clears the partial live
+// region the alt-screen restore left behind, prints the closed messages in
+// full, and — if a message is still streaming — reopens a live region.
+func (t *livelogTurn) flushTail() {
+	v := t.client.View()
+	from := t.lastSealedLT + 1
+	if t.lastSealedLT == 0 {
+		from = lastTurnStartLT(v)
+	}
+	var closed []aria.Message
+	for _, m := range v.Closed {
+		if m.LT >= from {
+			closed = append(closed, m)
+		}
+	}
+	openLT, openRole := 0, ""
+	var open []livedoc.Node
+	if v.Open != nil && v.Open.LT >= from {
+		openLT, openRole, open = v.Open.LT, v.Open.Role, v.Open.Nodes
+	}
+	if len(closed) == 0 && openLT == 0 {
+		return
+	}
+	t.in.Resume(closed, openLT, openRole, open)
+}
+
+// lastTurnStartLT returns the LT of the most recent user message (the start of
+// the last turn), or a best-effort fallback, so a cold pager exit records just
+// the final turn rather than the entire conversation.
+func lastTurnStartLT(v aria.View) int {
+	for k := len(v.Closed) - 1; k >= 0; k-- {
+		if v.Closed[k].Role == "user" {
+			return v.Closed[k].LT
+		}
+	}
+	if v.Open != nil {
+		return v.Open.LT
+	}
+	if n := len(v.Closed); n > 0 {
+		return v.Closed[n-1].LT
+	}
+	return 0
 }
 
 // transcriptScroll moves the pager viewport by delta lines (native wheel).
