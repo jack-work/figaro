@@ -357,11 +357,14 @@ func NewDefaultEnvSanitizer() EnvSanitizer {
 // Apply is a no-op: the strip happens in LocalExecutor.stripDenied.
 func (s EnvSanitizer) Apply(req ExecRequest) ExecRequest { return req }
 
-// sanitizeOutput strips control and format runes that would poison the
-// conversation log: C0 controls (except tab, newline, carriage return),
-// DEL, Unicode format characters, and surrogate code points. Printable
-// UTF-8 is left untouched.
+// sanitizeOutput strips ANSI escape sequences and control runes that
+// would poison the conversation log or corrupt the parent's terminal
+// rendering (e.g. a subagent figaro emitting cursor movement). ANSI
+// CSI/OSC sequences are stripped as complete units; remaining C0
+// controls (except tab, newline, CR), DEL, Unicode format characters,
+// and surrogate code points are dropped.
 func sanitizeOutput(s string) string {
+	s = stripANSI(s)
 	return strings.Map(func(r rune) rune {
 		switch {
 		case r == '\t' || r == '\n' || r == '\r':
@@ -374,6 +377,49 @@ func sanitizeOutput(s string) string {
 			return r
 		}
 	}, s)
+}
+
+func stripANSI(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		if s[i] != 0x1b {
+			b.WriteByte(s[i])
+			i++
+			continue
+		}
+		i++
+		if i >= len(s) {
+			break
+		}
+		switch s[i] {
+		case '[': // CSI: ESC [ <params> <terminator>
+			i++
+			for i < len(s) && s[i] >= 0x20 && s[i] < 0x40 {
+				i++
+			}
+			if i < len(s) {
+				i++
+			}
+		case ']': // OSC: ESC ] ... (BEL or ST)
+			i++
+			for i < len(s) {
+				if s[i] == 0x07 {
+					i++
+					break
+				}
+				if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
+					i += 2
+					break
+				}
+				i++
+			}
+		default:
+			i++
+		}
+	}
+	return b.String()
 }
 
 // CwdResolver fills in req.Cwd when it's empty. The Fn is invoked at
