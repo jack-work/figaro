@@ -34,6 +34,7 @@ type transcript struct {
 	tick   int
 
 	prev   []string // last painted screen (full-frame diff)
+	lineLT []int    // LT owning each line of lines(), for resize anchoring
 	offset int      // top line of the viewport into lines()
 	follow bool     // stick to the bottom on new content
 	pendG  bool     // saw one 'g' (for gg)
@@ -137,9 +138,30 @@ func (t *transcript) applyOlder(r aria.AriaRead) {
 }
 
 func (t *transcript) resize(w, h int) {
+	// Anchor on the message at the viewport top: a width change re-wraps rows and
+	// changes line counts, so keeping the raw line offset would jump the view.
+	// Record the top message's LT + how many lines into it we are, then restore
+	// after re-rendering at the new width. (Skipped when following the tail.)
+	anchorLT, within := 0, 0
+	if !t.follow && t.offset < len(t.lineLT) {
+		anchorLT = t.lineLT[t.offset]
+		s := t.offset
+		for s > 0 && t.lineLT[s-1] == anchorLT {
+			s--
+		}
+		within = t.offset - s
+	}
 	t.w, t.h = w, h
-	t.prev = nil
-	io.WriteString(t.out, "\x1b[2J")
+	t.prev = nil // full repaint (diff vs nil); no \x1b[2J, which flickers
+	t.lines()    // re-render at the new width, repopulating lineLT
+	if anchorLT != 0 {
+		for i, lt := range t.lineLT {
+			if lt == anchorLT {
+				t.offset = i + within
+				break
+			}
+		}
+	}
 	t.render()
 }
 
@@ -153,20 +175,27 @@ func (t *transcript) lines() []string {
 	}
 	v := t.client.View()
 	var out []string
-	rule := func() { out = append(out, "", dimTransRule(t.w), "") }
+	var lts []int // LT owning each line (0 for separator rules), parallel to out
+	appendMsg := func(rows []string, lt int) {
+		for _, r := range rows {
+			out = append(out, r)
+			lts = append(lts, lt)
+		}
+		out = append(out, "", dimTransRule(t.w), "") // rule separator
+		lts = append(lts, lt, lt, lt)
+	}
 	for _, m := range v.Closed {
 		rows, ok := t.rowCache[m.LT]
 		if !ok {
 			rows = t.renderMsg(m)
 			t.rowCache[m.LT] = rows
 		}
-		out = append(out, rows...)
-		rule()
+		appendMsg(rows, m.LT)
 	}
 	if v.Open != nil {
-		out = append(out, t.renderMsg(*v.Open)...)
-		rule()
+		appendMsg(t.renderMsg(*v.Open), v.Open.LT)
 	}
+	t.lineLT = lts
 	return out
 }
 
@@ -222,23 +251,29 @@ func (t *transcript) render() {
 	t.paint(screen)
 }
 
+// status is a subtle single dim line (not a reserved inverse bar): a left hint
+// and a right-aligned scroll position.
 func (t *transcript) status(total int) string {
 	if t.inSearch {
-		return "\x1b[7m" + clipToWidth("/"+t.query, t.w) + "\x1b[0m"
+		return "\x1b[2m" + clipToWidth("/"+t.query, t.w) + "\x1b[0m"
 	}
-	pos := "TOP"
+	pos := ""
 	if total > t.h-1 {
 		end := t.offset + t.h - 1
 		if end > total {
 			end = total
 		}
-		pos = fmt.Sprintf("%d-%d/%d", t.offset+1, end, total)
+		pos = fmt.Sprintf("%d–%d/%d", t.offset+1, end, total)
 		if t.follow {
-			pos += " (live)"
+			pos += " live"
 		}
 	}
-	s := fmt.Sprintf(" transcript  %s   j/k u/d  gg/G  / search  q exit ", pos)
-	return "\x1b[7m" + clipToWidth(s, t.w) + "\x1b[0m"
+	left := "↕ transcript · ^D exit"
+	gap := t.w - len([]rune(left)) - len([]rune(pos))
+	if gap < 1 {
+		gap = 1
+	}
+	return "\x1b[2m" + clipToWidth(left+strings.Repeat(" ", gap)+pos, t.w) + "\x1b[0m"
 }
 
 func (t *transcript) paint(screen []string) {
@@ -258,16 +293,16 @@ func (t *transcript) paint(screen []string) {
 	t.prev = screen
 }
 
-// key handles one input byte; returns true when the transcript should close.
-func (t *transcript) key(b byte) (done bool) {
+// key handles one navigation/search input byte. Transcript is a locked mode:
+// keys only scroll or search — it NEVER self-exits. Exit is Ctrl-D / Ctrl-C,
+// handled at the input loop. q, Esc, and Ctrl-T are deliberately inert here.
+func (t *transcript) key(b byte) {
 	if t.inSearch {
 		t.searchKey(b)
 		t.render()
-		return false
+		return
 	}
 	switch b {
-	case 'q', 0x1b, 0x14: // q / Esc / Ctrl-T
-		return true
 	case 'j':
 		t.offset++
 		t.follow = false
@@ -294,7 +329,6 @@ func (t *transcript) key(b byte) (done bool) {
 	}
 	t.pendG = b == 'g' && !t.pendG
 	t.render()
-	return false
 }
 
 func (t *transcript) searchKey(b byte) {

@@ -39,8 +39,12 @@ func TestTranscript_ScrollAndSearch(t *testing.T) {
 	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "msg05") {
 		t.Fatalf("search should jump to msg05:\n%s", scr)
 	}
-	if !tr.key('q') {
-		t.Fatalf("q should exit the pager")
+	// Transcript is locked: q and Esc are inert (exit is Ctrl-D/Ctrl-C at the
+	// input loop), so the pager stays put and keeps rendering.
+	tr.key('q')
+	tr.key(0x1b)
+	if !tr.active {
+		t.Fatalf("q/Esc must NOT exit the locked transcript")
 	}
 }
 

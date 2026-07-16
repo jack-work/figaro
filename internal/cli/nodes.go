@@ -24,6 +24,7 @@ const (
 type renderSettings struct {
 	verbose  bool
 	jsonMode bool // -j / --json: emit a single {aria_id, ...} JSON line on stdout instead of a live render
+	listen   bool // -l / --listen: auto-enter transcript and stay open past turn-done
 }
 
 // renderNodeList renders a unit's whole node list to terminal rows. The list

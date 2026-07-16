@@ -269,10 +269,10 @@ Keys while streaming:
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:    "listen",
-		Group:   "Prompt",
-		Short:   "Attach to an aria's live stream without sending a prompt",
-		Usage:   "listen [<id>]",
+		Name:  "listen",
+		Group: "Prompt",
+		Short: "Attach to an aria's live stream without sending a prompt",
+		Usage: "listen [<id>]",
 		Long: `Attach to an aria's live stream. Same view as a send mid-stream:
 catches up to the committed cursor, follows live frames, and supports
 Ctrl-T transcript mode — just without calling figaro.qua. Stays open
@@ -301,10 +301,10 @@ Keys:
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:    "hup",
-		Group:   "Prompt",
-		Short:   "Hang up: interrupt an aria's current turn",
-		Usage:   "hup [<id>]",
+		Name:  "hup",
+		Group: "Prompt",
+		Short: "Hang up: interrupt an aria's current turn",
+		Usage: "hup [<id>]",
 		Long: `Send figaro.interrupt to a trunk — the same RPC Ctrl-C inside a
 send stream fires. The agent aborts whatever turn is in flight.
 With no id, the pid-bound aria is used.`,

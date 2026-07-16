@@ -8,9 +8,10 @@ import "github.com/jack-work/figaro/internal/term"
 // header for a given role.
 //
 // Convention:
-//   "user"      → "❯ you"     (bright cyan — your voice)
-//   "assistant" → "‹ figaro"  (dim — the agent's voice)
-//   anything else (e.g. "system", "tool") → no header
+//
+//	"user"      → "❯ you"     (bright cyan — your voice)
+//	"assistant" → "‹ figaro"  (dim — the agent's voice)
+//	anything else (e.g. "system", "tool") → no header
 //
 // A steering interjection inside an assistant turn is a NODE
 // (livedoc.NodeSteering), not a message role, and carries its own

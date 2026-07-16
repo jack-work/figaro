@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/signal"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/jack-work/figaro/internal/config"
@@ -46,6 +44,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	defer span.End()
 
 	startedAt := time.Now()
+	listen := set.listen // Ctrl-L / --listen: stay open past turn-done
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -64,18 +63,15 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 
 	lt := newLivelogTurn(os.Stdout, width, height, &set, bookendFn, dimRule)
+	tc := term.NewClient() // platform terminal boundary: raw mode, resize, clipboard
 
 	// The renderer owns the cursor and assumes one row per line: disable the
 	// terminal's auto-margin so a full-width row never wraps, and hide the
-	// cursor. It draws inline (no alternate screen) — sealed output lands in the
-	// normal scrollback.
+	// cursor. It draws in incipit (no alternate screen) — sealed output lands in
+	// the normal scrollback.
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
 	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
-	defer func() {
-		if lt.transcriptActive() {
-			fmt.Fprint(os.Stdout, altScreenOff)
-		}
-	}()
+	defer lt.leaveTranscript() // restore the screen if we exit while in the pager
 
 	// Static opening rule: a single dim horizontal line separating the user's
 	// shell prompt from the response stream. Printed once, lives in scrollback.
@@ -86,7 +82,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	var mu sync.Mutex
 	doneCh := make(chan struct{}, 1)
 	disconnectCh := make(chan struct{}, 1) // Ctrl-D: leave the turn running
-	turnDone := false                      // turn ended while the pager was up; exit on pager close
+	running := true                        // a turn is in flight until turn.done; gates Ctrl-C
 	sendCursor := -1                       // cursor from Qua; stop only once committed past it and idle
 
 	onNotify := func(method string, params json.RawMessage) {
@@ -124,9 +120,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			if !settled {
 				break
 			}
-			if lt.transcriptActive() {
-				turnDone = true // let the user keep reading; exit when they close the pager
-			} else {
+			running = false
+			// Close on turn-done — in incipit OR transcript — UNLESS listening
+			// (Ctrl-L / --listen), which keeps the session open until Ctrl-D/C.
+			if !listen {
 				select {
 				case doneCh <- struct{}{}:
 				default:
@@ -176,131 +173,27 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}()
 	defer close(stopTick)
 
-	// Repaint the open message on resize.
-	winch := make(chan os.Signal, 1)
-	signal.Notify(winch, syscall.SIGWINCH)
-	defer signal.Stop(winch)
-	go func() {
-		for range winch {
-			w, h := term.Width(), term.Height()
-			mu.Lock()
-			lt.resize(w, h)
-			mu.Unlock()
-		}
-	}()
+	// Repaint on resize (platform-abstracted: SIGWINCH on unix, a console event
+	// on Windows — all behind the term.Client boundary).
+	defer tc.OnResize(func(w, h int) {
+		mu.Lock()
+		lt.resize(w, h)
+		mu.Unlock()
+	})()
 
-	// Live keybindings (cbreak: per-key, no echo, SIGINT intact). Ctrl-O/Ctrl-T
-	// toggles verbosity / opens the pager; Ctrl-D disconnects the CLI without
-	// touching the turn (no figaro.interrupt) — the daemon keeps running.
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		if restore, err := term.MakeCbreak(int(os.Stdin.Fd())); err == nil {
+	// Live keybindings. MakeRaw disables signal generation, so Ctrl-C (0x03) and
+	// Ctrl-D (0x04) arrive as input BYTES (portable, and identical in incipit and
+	// transcript) — the input loop owns them, not a SIGINT handler.
+	if tc.IsTTY() {
+		if restore, err := tc.MakeRaw(); err == nil {
 			defer restore()
-			// Belt-and-braces: always disable mouse reporting on exit (harmless
-			// if never enabled) so a crash/interrupt mid-pager can't leave the
-			// shell spewing raw \x1b[<…M. Normal pager exit disables it earlier.
+			// Belt-and-braces: always disable mouse reporting on exit so a crash
+			// mid-pager can't leave the shell spewing raw \x1b[<…M.
 			defer os.Stdout.WriteString(ldmouse.Disable)
-			go func() {
-				buf := make([]byte, 64)
-				var pending []byte // a mouse/escape sequence split across reads
-				// pageOlder lazily pulls the previous window of history when a
-				// scroll-up in the pager nears the top; the ReadBefore fetch runs
-				// off-lock (so the render mutex isn't held across the RPC).
-				pageOlder := func() {
-					mu.Lock()
-					cur, need := lt.transcriptOlderCursor()
-					mu.Unlock()
-					if !need {
-						return
-					}
-					rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-					r, rerr := fcli.ReadBefore(rctx, cur, transcriptPageSize)
-					rcancel()
-					if rerr == nil {
-						mu.Lock()
-						lt.transcriptApplyOlder(r)
-						mu.Unlock()
-					}
-				}
-				for {
-					n, err := os.Stdin.Read(buf)
-					if err != nil {
-						cancel()
-						return
-					}
-					data := append(pending, buf[:n]...)
-					pending = nil
-					i := 0
-					for i < len(data) {
-						mu.Lock()
-						active := lt.transcriptActive()
-						mu.Unlock()
-						if active {
-							// Native mouse wheel scrolls the pager; other keys drive it.
-							if ev, consumed, ok, need := ldmouse.Parse(data[i:]); need {
-								pending = append(pending, data[i:]...) // wait for the rest
-								break
-							} else if ok {
-								i += consumed
-								delta := 0
-								switch ev.Button {
-								case ldmouse.WheelUp:
-									delta = -3
-								case ldmouse.WheelDown:
-									delta = 3
-								}
-								if delta != 0 {
-									mu.Lock()
-									lt.transcriptScroll(delta)
-									mu.Unlock()
-									pageOlder()
-								}
-								continue
-							}
-							b := data[i]
-							i++
-							mu.Lock()
-							exited := lt.transcriptKey(b)
-							fire := exited && turnDone
-							mu.Unlock()
-							if fire {
-								select {
-								case doneCh <- struct{}{}:
-								default:
-								}
-							}
-							pageOlder()
-							continue
-						}
-						b := data[i]
-						i++
-						switch b {
-						case 0x04: // Ctrl-D: disconnect the CLI; do NOT interrupt the turn
-							select {
-							case disconnectCh <- struct{}{}:
-							default:
-							}
-							return
-						case 0x0f: // Ctrl-O: toggle verbosity
-							mu.Lock()
-							set.verbose = !set.verbose
-							lt.render()
-							mu.Unlock()
-						case 0x14: // Ctrl-T: open the pager on the recent window
-							rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-							// Lazy: load only the recent window; older history pages
-							// in via ReadBefore as the user scrolls toward the top.
-							r, rerr := fcli.ReadBefore(rctx, recentCursor, transcriptPageSize)
-							rcancel()
-							mu.Lock()
-							lt.enterTranscript()
-							if rerr == nil {
-								lt.apply(r)
-							}
-							mu.Unlock()
-						}
-					}
-				}
-			}()
+			go (&interactiveInput{
+				tc: tc, lt: lt, fcli: fcli, mu: &mu, set: &set,
+				figaroID: figaroID, listen: &listen, cancel: cancel, disconnectCh: disconnectCh,
+			}).run()
 		}
 	}
 
@@ -322,17 +215,161 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		lt.abandon("agent disconnected before turn completed")
 		os.Exit(1)
 	case <-ctx.Done():
-		fmt.Fprintln(os.Stderr, "\ninterrupting...")
-		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		_ = fcli.Interrupt(intCtx)
-		intCancel()
-		select {
-		case <-doneCh:
-		case <-fcli.Done():
-		case <-time.After(3 * time.Second):
-			lt.abandon("interrupted (agent did not respond)")
+		// Ctrl-C: interrupt the in-flight turn; if nothing's running (e.g.
+		// listening after turn-done), it's just a clean close.
+		mu.Lock()
+		wasRunning := running
+		mu.Unlock()
+		if wasRunning {
+			fmt.Fprintln(os.Stderr, "\ninterrupting...")
+			intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			_ = fcli.Interrupt(intCtx)
+			intCancel()
+			select {
+			case <-doneCh:
+			case <-fcli.Done():
+			case <-time.After(3 * time.Second):
+				lt.abandon("interrupted (agent did not respond)")
+			}
+			fmt.Fprintln(os.Stderr, "interrupted")
 		}
-		fmt.Fprintln(os.Stderr, "interrupted")
+	}
+}
+
+// interactiveInput is the shared control-key + pager input loop for the live
+// TTY commands — send's mustPromptFigaro and listen's tailFigaro. It owns
+// Ctrl-C/D/L/T/O and 'y' (copy id), plus the pager's scroll + mouse, so both
+// commands behave identically in incipit and transcript.
+type interactiveInput struct {
+	tc           term.Client
+	lt           *livelogTurn
+	fcli         *figaro.Client
+	mu           *sync.Mutex
+	set          *renderSettings
+	figaroID     string
+	listen       *bool // Ctrl-L flips it on (stay open past turn-done)
+	cancel       context.CancelFunc
+	disconnectCh chan struct{}
+}
+
+// enterTranscript opens the pager on the recent window (older history pages in
+// on scroll-up); shared by Ctrl-T, Ctrl-L, and listen's auto-enter. No-op when
+// already in the pager.
+func (in *interactiveInput) enterTranscript() {
+	in.mu.Lock()
+	already := in.lt.transcriptActive()
+	in.mu.Unlock()
+	if already {
+		return
+	}
+	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	r, rerr := in.fcli.ReadBefore(rctx, recentCursor, transcriptPageSize)
+	rcancel()
+	in.mu.Lock()
+	in.lt.enterTranscript()
+	if rerr == nil {
+		in.lt.apply(r)
+	}
+	in.mu.Unlock()
+}
+
+func (in *interactiveInput) pageOlder() {
+	in.mu.Lock()
+	cur, need := in.lt.transcriptOlderCursor()
+	in.mu.Unlock()
+	if !need {
+		return
+	}
+	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	r, rerr := in.fcli.ReadBefore(rctx, cur, transcriptPageSize)
+	rcancel()
+	if rerr == nil {
+		in.mu.Lock()
+		in.lt.transcriptApplyOlder(r)
+		in.mu.Unlock()
+	}
+}
+
+// run reads input until stdin errors, Ctrl-C (cancel), or Ctrl-D (disconnect).
+// Call under a MakeRaw session so Ctrl-C/Ctrl-D arrive as bytes.
+func (in *interactiveInput) run() {
+	buf := make([]byte, 64)
+	var pending []byte // a mouse/escape sequence split across reads
+	for {
+		n, err := in.tc.Read(buf)
+		if err != nil {
+			in.cancel()
+			return
+		}
+		data := append(pending, buf[:n]...)
+		pending = nil
+		i := 0
+		for i < len(data) {
+			in.mu.Lock()
+			active := in.lt.transcriptActive()
+			in.mu.Unlock()
+			if active {
+				if ev, consumed, ok, need := ldmouse.Parse(data[i:]); need {
+					pending = append(pending, data[i:]...)
+					break
+				} else if ok {
+					i += consumed
+					delta := 0
+					switch ev.Button {
+					case ldmouse.WheelUp:
+						delta = -3
+					case ldmouse.WheelDown:
+						delta = 3
+					}
+					if delta != 0 {
+						in.mu.Lock()
+						in.lt.transcriptScroll(delta)
+						in.mu.Unlock()
+						in.pageOlder()
+					}
+					continue
+				}
+			}
+			b := data[i]
+			i++
+			// Universal control keys — identical in incipit and transcript.
+			switch b {
+			case 0x03: // Ctrl-C: interrupt (if running) + close
+				in.cancel()
+				return
+			case 0x04: // Ctrl-D: disconnect; the turn keeps running
+				select {
+				case in.disconnectCh <- struct{}{}:
+				default:
+				}
+				return
+			case 0x0c: // Ctrl-L: listen (stay open past turn-done) + transcript
+				in.mu.Lock()
+				*in.listen = true
+				in.mu.Unlock()
+				in.enterTranscript()
+				continue
+			case 0x14: // Ctrl-T: enter transcript (no-op if already there)
+				in.enterTranscript()
+				continue
+			case 0x0f: // Ctrl-O: toggle verbosity
+				in.mu.Lock()
+				in.set.verbose = !in.set.verbose
+				in.lt.render()
+				in.mu.Unlock()
+				continue
+			case 'y': // copy the aria id to the clipboard (OSC 52)
+				in.tc.SetClipboard(in.figaroID)
+				continue
+			}
+			// Remaining keys drive the pager (scroll/search) when active.
+			if active {
+				in.mu.Lock()
+				in.lt.transcriptKey(b)
+				in.mu.Unlock()
+				in.pageOlder()
+			}
+		}
 	}
 }
 

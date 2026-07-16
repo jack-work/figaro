@@ -24,8 +24,6 @@ type livelogTurn struct {
 	openLT   int
 	openRole string
 	open     []livedoc.Node
-
-	pendingSeals []aria.Message // closed while in the pager; flushed inline on exit
 }
 
 func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, rule func() string) *livelogTurn {
@@ -39,13 +37,9 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, bookend, 
 	t.tr = newTranscript(out, w, h, view, t.client)
 	t.client.OnClosed = func(m aria.Message) {
 		if t.tr.active {
-			t.pendingSeals = append(t.pendingSeals, m)
-			if m.LT == t.openLT {
-				t.openLT, t.open = 0, nil // closed: don't re-open it on pager exit
-			}
-			t.tr.render()
+			t.tr.render() // transcript renders from the shared client model
 		} else {
-			t.in.Seal(m)
+			t.in.Seal(m) // incipit: seal to native scrollback
 		}
 	}
 	t.client.OnLive = func(lt int, role string, nodes []livedoc.Node) {
@@ -140,25 +134,16 @@ func (t *livelogTurn) render() {
 // caught the model up via figaro.read so it shows full history).
 func (t *livelogTurn) enterTranscript() { t.tr.enter() }
 
-// transcriptKey routes a key to the pager. On exit it restores the normal
-// screen, flushes messages that closed while paging to the inline scrollback,
-// and resumes inline rendering of the open message. Returns true on exit.
-func (t *livelogTurn) transcriptKey(b byte) (exited bool) {
-	if !t.tr.key(b) {
-		return false
+// transcriptKey routes a navigation/search key to the locked transcript.
+// Transcript never self-exits; leaving is Ctrl-D/Ctrl-C at the input loop.
+func (t *livelogTurn) transcriptKey(b byte) { t.tr.key(b) }
+
+// leaveTranscript restores the normal screen (mouse off, alt-screen off) when
+// the session ends while the pager is up. Idempotent.
+func (t *livelogTurn) leaveTranscript() {
+	if t.tr.active {
+		t.tr.leave()
 	}
-	t.tr.leave()
-	// Flush ONLY the last turn that closed while paging to native scrollback —
-	// not the whole history the pager showed. You resume with just where you
-	// left off; `fig show -n N` reprints more. (pendingSeals are turns not yet
-	// in the inline scrollback, so the last one never duplicates.)
-	var last []aria.Message
-	if n := len(t.pendingSeals); n > 0 {
-		last = t.pendingSeals[n-1:]
-	}
-	t.in.Resume(last, t.openLT, t.openRole, t.open)
-	t.pendingSeals = nil
-	return true
 }
 
 // transcriptScroll moves the pager viewport by delta lines (native wheel).

@@ -34,6 +34,7 @@ type sendOpts struct {
 	skipYes   bool // --exec only
 	forget    bool // --forget / -f: submit and exit; do not stream
 	json      bool // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
+	listen    bool // --listen / -l: auto-enter transcript and stay open past turn-done
 }
 
 // extractSendFlags scans a PassRaw arg list for the send command's
@@ -136,6 +137,10 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			continue
 		case a == "--verbose", a == "--expand", a == "-o", a == "--thinking", a == "-t":
 			opts.verbose = true
+			i++
+			continue
+		case a == "--listen", a == "-l":
+			opts.listen = true
 			i++
 			continue
 		case a == "--exec", a == "-x":
@@ -261,7 +266,7 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 		die("send: --forget contradicts --ephemeral (the aria would be killed before the turn ran)")
 	}
 
-	set := renderSettings{verbose: opts.verbose}
+	set := renderSettings{verbose: opts.verbose, listen: opts.listen}
 
 	// `send <trunk>:<LT>` — fork at LT, then send. The message lands on
 	// whichever trunk we end up attended to: the new alternative by default
