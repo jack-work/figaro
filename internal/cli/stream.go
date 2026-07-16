@@ -259,6 +259,15 @@ type interactiveInput struct {
 // enterTranscript opens the pager on the recent window (older history pages in
 // on scroll-up); shared by Ctrl-T, Ctrl-L, and listen's auto-enter. No-op when
 // already in the pager.
+//
+// Two reads are needed for a viewer joining mid-turn. ReadBefore pulls the
+// recent COMMITTED window (lazy pagination), but it omits the open, in-flight
+// message — so Read(recentCursor) fetches just that (it skips all committed and
+// returns only the open Live frame as a full-create). Without it, a listener
+// that connects while a message is streaming never gets the message's base
+// version, so the field-delta frames that follow can't be applied and the live
+// message doesn't render until the next turn opens a fresh message. That is the
+// "fanout looked broken until I sent again" bug.
 func (in *interactiveInput) enterTranscript() {
 	in.mu.Lock()
 	already := in.lt.transcriptActive()
@@ -268,11 +277,15 @@ func (in *interactiveInput) enterTranscript() {
 	}
 	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
 	r, rerr := in.fcli.ReadBefore(rctx, recentCursor, transcriptPageSize)
+	live, lerr := in.fcli.Read(rctx, recentCursor) // just the open in-flight message
 	rcancel()
 	in.mu.Lock()
 	in.lt.enterTranscript()
 	if rerr == nil {
 		in.lt.apply(r)
+	}
+	if lerr == nil {
+		in.lt.apply(live)
 	}
 	in.mu.Unlock()
 }
