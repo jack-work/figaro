@@ -363,6 +363,9 @@ func (in *interactiveInput) run() {
 				in.mu.Unlock()
 				continue
 			case 'y': // copy the aria id to the clipboard (OSC 52)
+				if active && in.lt.transcriptSearching() {
+					break // typing into the search box — let it fall to the pager
+				}
 				in.tc.SetClipboard(in.figaroID)
 				continue
 			}
