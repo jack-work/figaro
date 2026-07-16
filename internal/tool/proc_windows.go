@@ -3,6 +3,7 @@
 package tool
 
 import (
+	"fmt"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -70,24 +71,28 @@ func assignJob(cmd *exec.Cmd) {
 }
 
 // killTree terminates the entire process tree via the Job Object (if
-// one was assigned), falling back to Process.Kill for the direct child.
+// one was assigned), falling back to taskkill /T for the tree.
 func killTree(cmd *exec.Cmd) {
 	if cmd.Process == nil {
 		return
 	}
+	pid := cmd.Process.Pid
 	jobsMu.Lock()
-	job, ok := jobs[cmd.Process.Pid]
+	job, ok := jobs[pid]
 	if ok {
-		delete(jobs, cmd.Process.Pid)
+		delete(jobs, pid)
 	}
 	jobsMu.Unlock()
 
 	if ok {
 		windows.TerminateJobObject(job, 1)
 		windows.CloseHandle(job)
-	} else {
-		cmd.Process.Kill()
 	}
+	// Always also kill via Process.Kill (direct child) and taskkill /T
+	// (recursive tree kill) as belt-and-suspenders. Job assignment can
+	// fail silently if the process is already in another job.
+	cmd.Process.Kill()
+	exec.Command("taskkill", "/T", "/F", "/PID", fmt.Sprintf("%d", pid)).Run()
 }
 
 // signalTree kills the process tree. On Windows the only reliable tree

@@ -8,5 +8,10 @@ package tool
 //
 // FIGARO_NO_BIND=1 is respected by every binding-touching CLI verb.
 func bashToolEnv() []string {
-	return []string{"FIGARO_NO_BIND=1"}
+	return []string{
+		"FIGARO_NO_BIND=1",
+		"GIT_EDITOR=true",
+		"GIT_SEQUENCE_EDITOR=true",
+		"EDITOR=true",
+	}
 }
