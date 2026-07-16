@@ -51,7 +51,7 @@ func (e *LocalExecutor) buildCmd(req ExecRequest) (*exec.Cmd, error) {
 		return nil, fmt.Errorf("command is required")
 	}
 	base := stripDenied(os.Environ(), e.Transformers)
-	cmd := exec.Command("bash", "-c", req.Command)
+	cmd := exec.Command(bashPath(), "-c", req.Command)
 	cmd.Dir = req.Cwd
 	cmd.Env = mergeEnv(base, req.Env)
 	return cmd, nil
