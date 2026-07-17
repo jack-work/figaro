@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -178,6 +179,9 @@ func TestMaxOutputChars_EnvOverride(t *testing.T) {
 // after killGraceWindow, reports TimedOut, and still captures the
 // output that drained before the kill.
 func TestLocalExecutor_TimeoutDrainsLateOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("setsid process-group escape is Unix-specific")
+	}
 	exe := NewLocalExecutor()
 
 	type result struct {
