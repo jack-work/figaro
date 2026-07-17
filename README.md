@@ -79,6 +79,9 @@ summary; it does not expose raw private chain-of-thought.
 switch starts a new Responses cache lineage so opaque reasoning is never
 replayed under a different model.
 
+For headless or container use, Copilot accepts credentials in this order:
+`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, then `GITHUB_TOKEN`.
+
 ## Core concepts
 
 - **Arias**: persistent conversations, append-only IR log, fork-tree storage via [figwal](https://github.com/jack-work/figwal).

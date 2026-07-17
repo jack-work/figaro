@@ -104,7 +104,7 @@ func providerSetupHint() string {
 			fmt.Fprintf(&b, "  • %-10s %s\n", name, reg.LoginHint)
 		}
 		if reg.EnvVar != "" {
-			fmt.Fprintf(&b, "  • %-10s API key:                      export %s=sk-…\n", name, reg.EnvVar)
+			fmt.Fprintf(&b, "  • %-10s credential:                   export %s=…\n", name, reg.EnvVar)
 		}
 	}
 	return b.String()

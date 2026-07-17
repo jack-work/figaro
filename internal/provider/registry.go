@@ -16,9 +16,11 @@ type Registration struct {
 	Name         string
 	DefaultModel string
 	EnvVar       string
-	EnvVars      []string
-	HasOAuth     bool
-	LoginHint    string
+	// EnvVars lists accepted environment variables in priority order.
+	// When empty, EnvVar is used as the sole source.
+	EnvVars   []string
+	HasOAuth  bool
+	LoginHint string
 
 	// Setup drives the first-run credential acquisition (wizard).
 	// Set by the CLI at startup (avoids circular imports with TUI/hush).
