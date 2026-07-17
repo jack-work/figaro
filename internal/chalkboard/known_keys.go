@@ -58,7 +58,7 @@ func WellKnownKeys() []KeyDoc {
 		{Key: "system.max_context_tokens", Short: "Optional local cap for replayed prompt context tokens", Mode: KeyUserSettable},
 		{Key: "system.thinking_effort", Short: "Reasoning effort for models that support it", Mode: KeyUserSettable},
 		{Key: "system.reasoning_context", Short: `Copilot Responses reasoning retention: "auto", "current_turn", or "all_turns"`, Mode: KeyUserSettable},
-		{Key: "system.reasoning_summary", Short: `Copilot Responses readable reasoning summary: "auto"`, Mode: KeyUserSettable},
+		{Key: "system.reasoning_summary", Short: `Copilot Responses readable reasoning summary: "auto", "concise", or "detailed"`, Mode: KeyUserSettable},
 		{Key: "system.verbosity", Short: "Copilot Responses text verbosity", Mode: KeyUserSettable},
 		{Key: "system.temperature", Short: "Copilot Responses sampling temperature (0 through 2; mutually exclusive with top_p)", Mode: KeyUserSettable},
 		{Key: "system.top_p", Short: "Copilot Responses nucleus sampling (greater than 0 through 1; mutually exclusive with temperature)", Mode: KeyUserSettable},

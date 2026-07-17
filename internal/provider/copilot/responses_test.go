@@ -365,7 +365,7 @@ func TestResponseOptionsRejectInvalidChalkboardParameters(t *testing.T) {
 		{
 			name: "unknown reasoning summary",
 			snap: chalkboard.Snapshot{
-				"system.reasoning_summary": json.RawMessage(`"detailed"`),
+				"system.reasoning_summary": json.RawMessage(`"full"`),
 			},
 		},
 		{

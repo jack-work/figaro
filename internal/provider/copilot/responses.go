@@ -747,8 +747,8 @@ func responseOptionsFor(snap chalkboard.Snapshot) (responseRequestOptions, error
 	if err != nil {
 		return responseRequestOptions{}, err
 	}
-	if reasoningSummary != "" && reasoningSummary != "auto" {
-		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.reasoning_summary must be \"auto\", got %q", reasoningSummary)
+	if reasoningSummary != "" && reasoningSummary != "auto" && reasoningSummary != "concise" && reasoningSummary != "detailed" {
+		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.reasoning_summary must be \"auto\", \"concise\", or \"detailed\", got %q", reasoningSummary)
 	}
 	if reasoningContext != "" || effort != "" || reasoningSummary != "" {
 		options.reasoning = &responseReasoning{

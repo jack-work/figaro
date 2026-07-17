@@ -69,11 +69,12 @@ figaro set system.temperature 0.4
 budget; `system.max_context_tokens` can impose a smaller cap. Figaro rejects
 a turn that would exceed that budget rather than dropping cached history.
 `system.reasoning_context` maps to the Responses API's `auto`,
-`current_turn`, or `all_turns` mode. `system.reasoning_summary = "auto"`
-requests a readable reasoning summary; it does not expose raw private
-chain-of-thought. `system.temperature` and `system.top_p` are mutually
-exclusive. A model switch starts a new Responses cache lineage so opaque
-reasoning is never replayed under a different model.
+`current_turn`, or `all_turns` mode. `system.reasoning_summary` accepts
+`"auto"`, `"concise"`, or `"detailed"` and requests a readable reasoning
+summary; it does not expose raw private chain-of-thought.
+`system.temperature` and `system.top_p` are mutually exclusive. A model
+switch starts a new Responses cache lineage so opaque reasoning is never
+replayed under a different model.
 
 ## Core concepts
 
