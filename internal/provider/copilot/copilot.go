@@ -19,6 +19,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/jack-work/figaro/internal/auth"
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropicsdk"
 	"github.com/jack-work/figaro/internal/store"
@@ -176,6 +177,41 @@ func (c *Copilot) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 		})
 	}
 	return models, nil
+}
+
+// ContextLimit returns the active Responses prompt cap from the catalog already
+// cached while routing the model. It deliberately avoids fetching the catalog
+// so status rendering cannot add network latency.
+func (c *Copilot) ContextLimit(model string, snapshot chalkboard.Snapshot) int {
+	c.mu.RLock()
+	entry, ok := c.catalog[model]
+	c.mu.RUnlock()
+	limit := 0
+	if ok {
+		limits := catalogContextLimits(entry)
+		limit = limits.Default
+		if responseString(snapshot, "system.context_tier") == "long_context" && limits.Long > 0 {
+			limit = limits.Long
+		}
+	}
+	if override, ok := contextLimitOverride(snapshot); ok {
+		if limit == 0 || override < limit {
+			return override
+		}
+	}
+	return limit
+}
+
+func contextLimitOverride(snapshot chalkboard.Snapshot) (int, bool) {
+	raw, ok := snapshot["system.max_context_tokens"]
+	if !ok {
+		return 0, false
+	}
+	var limit int
+	if json.Unmarshal(raw, &limit) != nil || limit <= 0 {
+		return 0, false
+	}
+	return limit, true
 }
 
 type catalogModel struct {

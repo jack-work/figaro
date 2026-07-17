@@ -92,6 +92,22 @@ func TestDiffNodes_ToolArgsArriveAfterOpen(t *testing.T) {
 	}
 }
 
+func TestDiffNodes_ToolTiming(t *testing.T) {
+	old := []Node{{Type: NodeTool, ID: "a", Name: "bash", Status: StatusRunning}}
+	next := []Node{{Type: NodeTool, ID: "a", Name: "bash", Status: StatusOK, StartedAt: 100, FinishedAt: 250}}
+	ops := DiffNodes(old, next)
+	if len(ops) != 1 || ops[0].Kind != OpSet {
+		t.Fatalf("want one timing Set, got %+v", ops)
+	}
+	if ops[0].StartedAt != 100 || ops[0].FinishedAt != 250 {
+		t.Fatalf("timing fields missing from Set: %+v", ops[0])
+	}
+	got := applyAll(old, ops)
+	if got[0].StartedAt != 100 || got[0].FinishedAt != 250 {
+		t.Fatalf("timing fields missing after ApplyOp: %+v", got[0])
+	}
+}
+
 func TestDiffNodes_NoChange(t *testing.T) {
 	n := []Node{{Type: NodeProse, Markdown: "x"}, {Type: NodeTool, ID: "a", Status: StatusOK}}
 	if ops := DiffNodes(n, n); ops != nil {

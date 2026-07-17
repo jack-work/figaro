@@ -590,7 +590,7 @@ nothing to promote into ("cannot promote into a loadout").`,
 		Group:   "Session",
 		Short:   "Show a focused view of one aria",
 		Usage:   "status [<id> | --id <id>] [-m] [-j]",
-		Long:    "Prints provider, model, message count, context size and last-active\ntime for the named aria (or the one bound to this shell). Reads the\nsame data the `list` table uses; dormant arias are backfilled from the\nmeta derivation.\n\n  -m/--more   also surface the derived/extra detail (mantra, cwd,\n              loadout version, fork origin, created)\n  -j/--json   emit the full status as JSON (combine: -mj)",
+		Long:    "Prints mantra, provider, model, message count, context-window usage,\nand cumulative token cost for the named aria (or the one bound to this\nshell). Reads the same data the `list` table uses; dormant arias are\nbackfilled from the meta derivation.\n\n  -m/--more   also surface cwd, loadout version, fork origin, created\n  -j/--json   emit the full status as JSON (combine: -mj)",
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{

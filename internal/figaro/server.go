@@ -56,7 +56,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		for i, m := range msgs {
 			out[i] = m
 		}
-		return rpc.ContextResponse{Messages: out}, nil
+		return rpc.ContextResponse{Messages: out, Metrics: a.sessionMetrics()}, nil
 
 	case rpc.MethodInterrupt:
 		a.Interrupt()

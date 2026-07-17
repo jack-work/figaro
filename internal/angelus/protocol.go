@@ -650,6 +650,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			CacheReadTokens:  info.CacheReadTokens,
 			CacheWriteTokens: info.CacheWriteTokens,
 			ContextTokens:    info.ContextTokens,
+			ContextLimit:     info.ContextLimit,
 			ContextExact:     info.ContextExact,
 			CreatedAt:        info.CreatedAt.UnixMilli(),
 			LastActive:       info.LastActive.UnixMilli(),

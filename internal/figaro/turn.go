@@ -182,6 +182,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
+	a.refreshMetrics()
 
 	// The user prompt is its own committed unit; the agent's reply is the
 	// live unit that follows, composed from every message appended after
@@ -197,6 +198,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.gov = toolout.New(liveOutputTail)
 	a.lastEmit = time.Time{}
 	a.argPartials = map[string]string{}
+	a.toolTimings = map[string]compose.ToolTiming{}
 	a.emitSnapshot("assistant", nil)
 
 	// Drive: provider -> tools -> repeat.
@@ -269,6 +271,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	// instead — otherwise it would be counted twice.
 	asmMsg := newAsm(message.RoleAssistant)
 	sealedInline := false
+	metricsReady := false
 	var toolBuf []toolEvent
 	events := bus.events
 	for events != nil {
@@ -277,6 +280,10 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 			if !ok {
 				events = nil
 				continue
+			}
+			if !metricsReady {
+				a.refreshMetrics()
+				metricsReady = true
 			}
 			// Structural changes (a tool opens, its args decode, the turn
 			// seals) emit immediately; high-frequency text/arg streaming is
@@ -296,6 +303,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 				force = true
 			case evFigaro:
 				sealedInline = true
+				a.refreshMetrics()
 				force = true
 			}
 			inflight := asmMsg.message()
@@ -307,13 +315,28 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 			toolBuf = append(toolBuf, te)
 			// Stream speculative tool output live (bounded tail via the
 			// governor) under its still-in-flight heading, coalesced.
-			if te.kind == toolChunk {
+			switch te.kind {
+			case toolBegin:
+				a.startToolTiming(te.id, te.at)
+				inflight := asmMsg.message()
+				if sealedInline {
+					inflight = nil
+				}
+				a.emitLive(inflight, true)
+			case toolChunk:
 				a.gov.Feed(te.id, te.chunk)
 				inflight := asmMsg.message()
 				if sealedInline {
 					inflight = nil
 				}
 				a.emitLive(inflight, false)
+			case toolEnd:
+				a.finishToolTiming(te.id, te.at)
+				inflight := asmMsg.message()
+				if sealedInline {
+					inflight = nil
+				}
+				a.emitLive(inflight, true)
 			}
 		}
 	}
@@ -374,6 +397,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		a.endTurn(fmt.Sprintf("error: append tool_result: %s", err))
 		return true
 	}
+	a.refreshMetrics()
 	if !a.isInterrupted() {
 		a.emitDelta(a.composeTurn(nil))
 	}
@@ -420,11 +444,16 @@ func (a *Agent) collectToolResults(
 			break
 		}
 		switch te.kind {
+		case toolBegin:
+			a.startToolTiming(te.id, te.at)
+			a.emitLive(nil, true)
 		case toolChunk:
 			a.gov.Feed(te.id, te.chunk)
 			a.emitLive(nil, false)
 		case toolEnd:
+			a.finishToolTiming(te.id, te.at)
 			outcomes[te.id] = te.outcome
+			a.emitLive(nil, true)
 		}
 	}
 	a.emitLive(nil, true) // flush any throttled tail before the results render
@@ -505,6 +534,7 @@ type toolEvent struct {
 	kind    toolEventKind
 	id      string
 	name    string
+	at      int64
 	chunk   string
 	final   message.Content // toolEnd: the sealed tool_result block
 	outcome toolOutcome     // toolEnd: raw content for IR assembly
@@ -562,7 +592,7 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 			attribute.String("tool_call_id", tc.ToolCallID),
 			attribute.Bool("speculative", true),
 		)
-		s.events <- toolEvent{kind: toolBegin, id: tc.ToolCallID, name: tc.ToolName}
+		s.events <- toolEvent{kind: toolBegin, id: tc.ToolCallID, name: tc.ToolName, at: time.Now().UnixMilli()}
 
 		emitEnd := func(oc toolOutcome) {
 			var text string
@@ -576,6 +606,7 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 				kind:    toolEnd,
 				id:      tc.ToolCallID,
 				name:    tc.ToolName,
+				at:      time.Now().UnixMilli(),
 				final:   message.ToolResultContent(tc.ToolCallID, tc.ToolName, text, oc.isErr),
 				outcome: oc,
 			}
@@ -651,11 +682,43 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		}
 		msgs = append(msgs, m)
 	}
-	nodes := compose.Nodes(msgs, a.gov.Tails(), a.argPartials, a.summarize, a.previewArg)
+	nodes := compose.Nodes(msgs, a.gov.Tails(), a.argPartials, a.summarize, a.previewArg, a.toolTimings)
 	if dir := os.Getenv("FIGARO_NODE_DEBUG"); dir != "" {
 		logComposeFrame(dir, a.id, inflight != nil, nodes)
 	}
 	return nodes
+}
+
+func (a *Agent) startToolTiming(id string, at int64) {
+	if id == "" {
+		return
+	}
+	if at == 0 {
+		at = time.Now().UnixMilli()
+	}
+	if a.toolTimings == nil {
+		a.toolTimings = map[string]compose.ToolTiming{}
+	}
+	timing := a.toolTimings[id]
+	if timing.StartedAt == 0 {
+		timing.StartedAt = at
+		a.toolTimings[id] = timing
+	}
+}
+
+func (a *Agent) finishToolTiming(id string, at int64) {
+	if id == "" {
+		return
+	}
+	if at == 0 {
+		at = time.Now().UnixMilli()
+	}
+	a.startToolTiming(id, at)
+	timing := a.toolTimings[id]
+	if timing.FinishedAt == 0 {
+		timing.FinishedAt = at
+		a.toolTimings[id] = timing
+	}
 }
 
 // logComposeFrame (debug, env-gated) appends one line per composed frame so we

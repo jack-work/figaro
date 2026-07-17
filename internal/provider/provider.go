@@ -95,3 +95,10 @@ type Provider interface {
 	// Send drives one turn end-to-end.
 	Send(ctx context.Context, in SendInput, bus Bus) error
 }
+
+// ContextLimitProvider optionally reports the selected model's effective
+// prompt-context cap from already-cached provider metadata. Implementations
+// must not perform network I/O here because callers use it on live UI paths.
+type ContextLimitProvider interface {
+	ContextLimit(model string, snapshot chalkboard.Snapshot) int
+}

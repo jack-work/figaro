@@ -54,6 +54,11 @@ type ToolSummary func(name string, args map[string]any) string
 // write). Return "" to opt out — the vast majority of tools do.
 type ToolPreviewArg func(name string) string
 
+type ToolTiming struct {
+	StartedAt  int64
+	FinishedAt int64
+}
+
 // Nodes maps a turn's messages to the live node list: each assistant
 // content block becomes a node in order — text/thinking → prose, tool
 // invoke → a tool node folding in its result (or streamed partial). A
@@ -61,8 +66,12 @@ type ToolPreviewArg func(name string) string
 // streamed. argPartials carries the raw, still-truncated tool_use argument
 // JSON per tool_call_id; when execution output hasn't started and the tool
 // declares a preview arg, its live value seeds the node's Output.
-func Nodes(msgs []message.Message, partials, argPartials map[string]string, summarize ToolSummary, previewArg ToolPreviewArg) []livedoc.Node {
+func Nodes(msgs []message.Message, partials, argPartials map[string]string, summarize ToolSummary, previewArg ToolPreviewArg, timings ...map[string]ToolTiming) []livedoc.Node {
 	results := indexResults(msgs)
+	var toolTimings map[string]ToolTiming
+	if len(timings) > 0 {
+		toolTimings = timings[0]
+	}
 	var nodes []livedoc.Node
 	for _, m := range msgs {
 		if m.Role == message.RoleUser {
@@ -95,14 +104,14 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 				}
 				nodes = append(nodes, livedoc.Node{ID: nodeID(m.LogicalTime, ci), Type: livedoc.NodeThinking, Markdown: strings.TrimRight(c.Text, "\n")})
 			case message.ContentToolInvoke:
-				nodes = append(nodes, toolNode(c, results, partials, argPartials, summarize, previewArg))
+				nodes = append(nodes, toolNode(c, results, partials, argPartials, summarize, previewArg, toolTimings))
 			}
 		}
 	}
 	return nodes
 }
 
-func toolNode(inv message.Content, results map[string]message.Content, partials, argPartials map[string]string, summarize ToolSummary, previewArg ToolPreviewArg) livedoc.Node {
+func toolNode(inv message.Content, results map[string]message.Content, partials, argPartials map[string]string, summarize ToolSummary, previewArg ToolPreviewArg, timings map[string]ToolTiming) livedoc.Node {
 	name := inv.ToolName
 	if name == "" {
 		name = "tool"
@@ -113,6 +122,10 @@ func toolNode(inv message.Content, results map[string]message.Content, partials,
 		Name:    name,
 		Args:    inv.Arguments,
 		Summary: summaryFor(name, inv.Arguments, summarize),
+	}
+	if timing, ok := timings[inv.ToolCallID]; ok {
+		n.StartedAt = timing.StartedAt
+		n.FinishedAt = timing.FinishedAt
 	}
 	if res, done := results[inv.ToolCallID]; done {
 		n.Status = livedoc.StatusOK

@@ -102,6 +102,7 @@ type Agent struct {
 	gov         *toolout.Governor // bounded live tool-output tails (coalesced emits)
 	lastEmit    time.Time         // throttle for live streaming emits
 	argPartials map[string]string
+	toolTimings map[string]compose.ToolTiming
 
 	// ariaSrv is the rendered conversation (committed units + the open one),
 	// the single source of the aria-read wire: it serves both the live push
@@ -111,12 +112,18 @@ type Agent struct {
 	unitLT   int
 	liveRole string // role of the currently-open (live) message, for its durable blob
 
-	createdAt  time.Time
-	lastActive time.Time
-	tokensIn   int
-	tokensOut  int
-	cacheRead  int
-	cacheWrite int
+	createdAt     time.Time
+	lastActive    time.Time
+	tokensIn      int
+	tokensOut     int
+	cacheRead     int
+	cacheWrite    int
+	messageCount  int
+	contextTokens int
+	contextLimit  int
+	contextExact  bool
+	model         string
+	mantra        string
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -152,7 +159,7 @@ func NewAgent(cfg Config) *Agent {
 	}
 	a.inbox = NewInbox(ctx)
 
-	a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figLog.Read()))
+	a.refreshMetrics()
 
 	// Build the rendered conversation from the log (each prior unit a closed
 	// aria message), then register the broadcast: every aria-server change is
@@ -167,6 +174,7 @@ func NewAgent(cfg Config) *Agent {
 	// it), so we resume from the last committed message. (Policy: discard.)
 	a.clearLive()
 	a.ariaSrv.Subscribe(func(r aria.AriaRead) {
+		r.Metrics = a.sessionMetrics()
 		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: r})
 	})
 
@@ -227,6 +235,59 @@ func (a *Agent) chalkboardInt(key string) int {
 }
 
 func (a *Agent) currentModel() string { return a.chalkboardString("system.model") }
+
+func snapshotString(snapshot chalkboard.Snapshot, key string) string {
+	raw, ok := snapshot[key]
+	if !ok {
+		return ""
+	}
+	var value string
+	_ = json.Unmarshal(raw, &value)
+	return value
+}
+
+func snapshotContextLimit(snapshot chalkboard.Snapshot) int {
+	raw, ok := snapshot["system.max_context_tokens"]
+	if !ok {
+		return 0
+	}
+	var limit int
+	if json.Unmarshal(raw, &limit) != nil || limit <= 0 {
+		return 0
+	}
+	return limit
+}
+
+// refreshMetrics runs at durable message boundaries, never on streaming
+// deltas. That keeps the status path current without making live rendering
+// repeatedly rescan the full conversation.
+func (a *Agent) refreshMetrics() {
+	msgs := a.Context()
+	in, out, cacheRead, cacheWrite := sumUsage(msgs)
+	contextTokens, contextExact := tokens.ContextSize(msgs)
+	snapshot := a.Snapshot()
+	model := snapshotString(snapshot, "system.model")
+	contextLimit := 0
+	if resolver, ok := a.prov.(provider.ContextLimitProvider); ok {
+		contextLimit = resolver.ContextLimit(model, snapshot)
+	}
+	if contextLimit == 0 {
+		contextLimit = snapshotContextLimit(snapshot)
+	}
+
+	a.mu.Lock()
+	a.tokensIn = in
+	a.tokensOut = out
+	a.cacheRead = cacheRead
+	a.cacheWrite = cacheWrite
+	a.messageCount = message.CountMessages(msgs)
+	a.contextTokens = contextTokens
+	a.contextExact = contextExact
+	a.contextLimit = contextLimit
+	a.model = model
+	a.mantra = snapshotString(snapshot, "mantra")
+	a.mu.Unlock()
+}
 
 // Prompt is a tests-only helper.
 func (a *Agent) Prompt(text string) {
@@ -295,30 +356,44 @@ func (a *Agent) Subscribe(n Notifier) func() {
 
 func (a *Agent) Info() FigaroInfo {
 	a.mu.RLock()
-	defer a.mu.RUnlock()
-
-	msgs := a.Context()
 	state := "idle"
-	if !a.inbox.IsIdle() {
+	if a.turnCtx != nil || !a.inbox.IsIdle() {
 		state = "active"
 	}
-
-	ctxTokens, ctxExact := tokens.ContextSize(msgs)
-
-	return FigaroInfo{
+	info := FigaroInfo{
 		ID:               a.id,
 		State:            state,
 		Provider:         a.prov.Name(),
-		Model:            a.currentModel(),
-		MessageCount:     message.CountMessages(msgs),
+		Model:            a.model,
+		MessageCount:     a.messageCount,
 		TokensIn:         a.tokensIn,
 		TokensOut:        a.tokensOut,
 		CacheReadTokens:  a.cacheRead,
 		CacheWriteTokens: a.cacheWrite,
-		ContextTokens:    ctxTokens,
-		ContextExact:     ctxExact,
+		ContextTokens:    a.contextTokens,
+		ContextLimit:     a.contextLimit,
+		ContextExact:     a.contextExact,
 		CreatedAt:        a.createdAt,
 		LastActive:       a.lastActive,
+	}
+	a.mu.RUnlock()
+	return info
+}
+
+func (a *Agent) sessionMetrics() *aria.Metrics {
+	info := a.Info()
+	a.mu.RLock()
+	mantra := a.mantra
+	a.mu.RUnlock()
+	return &aria.Metrics{
+		ContextTokens:    info.ContextTokens,
+		ContextLimit:     info.ContextLimit,
+		ContextExact:     info.ContextExact,
+		TokensIn:         info.TokensIn,
+		TokensOut:        info.TokensOut,
+		CacheReadTokens:  info.CacheReadTokens,
+		CacheWriteTokens: info.CacheWriteTokens,
+		Mantra:           mantra,
 	}
 }
 
@@ -355,7 +430,6 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 
 		a.mu.Lock()
 		a.figLog = a.newLog()
-		a.tokensIn, a.tokensOut, a.cacheRead, a.cacheWrite = sumUsage(unwrapMessages(a.figLog.Read()))
 		if a.turnCancel != nil {
 			a.turnCancel()
 			a.turnCancel = nil
@@ -363,6 +437,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		a.turnCtx = nil
 		a.interrupted = false
 		a.mu.Unlock()
+		a.refreshMetrics()
 
 		a.inbox.Close()
 		a.inbox = NewInbox(ctx)
@@ -437,6 +512,7 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 		}
 	}
 	a.chalkboard.Apply(patch)
+	a.refreshMetrics()
 	a.derived.Tick(0, a.chalkboard.Snapshot())
 }
 
@@ -463,6 +539,7 @@ func (m patchMap) PatchesAt(lt uint64) []message.Patch { return m[lt] }
 // endTurn fans out turn.done and persists chalkboard + meta.
 // endTurn commits the live unit (it became a real IR message) and signals idle.
 func (a *Agent) endTurn(reason string) {
+	a.refreshMetrics()
 	a.emitCommit() // freeze the live unit before signaling the turn idle
 	a.finishTurn(reason)
 }
@@ -474,6 +551,7 @@ func (a *Agent) endTurn(reason string) {
 // the partial; the client resets its single open unit when the next turn opens
 // at a new LT, so nothing duplicates.
 func (a *Agent) endTurnDiscarding(reason string) {
+	a.refreshMetrics()
 	a.abandonLive()
 	a.finishTurn(reason)
 }
@@ -483,24 +561,14 @@ func (a *Agent) finishTurn(reason string) {
 	a.liveActive = false
 	a.liveMu.Unlock()
 	idle := a.inbox.IsIdle()
+	a.mu.Lock()
+	a.lastActive = time.Now()
+	a.mu.Unlock()
 	a.fanOut(rpc.Notification{
 		JSONRPC: "2.0",
 		Method:  rpc.MethodTurnDone,
 		Params:  rpc.DoneEntry{Reason: reason, Idle: &idle},
 	})
-
-	a.mu.Lock()
-	a.lastActive = time.Now()
-	for _, e := range a.figLog.ScanFromEnd(64) {
-		if u := e.Payload.Usage; u != nil {
-			a.tokensIn += u.InputTokens
-			a.tokensOut += u.OutputTokens
-			a.cacheRead += u.CacheReadTokens
-			a.cacheWrite += u.CacheWriteTokens
-			break
-		}
-	}
-	a.mu.Unlock()
 
 	a.writeMeta()
 	a.derived.Tick(0, a.chalkboard.Snapshot())

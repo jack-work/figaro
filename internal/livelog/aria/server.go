@@ -233,6 +233,16 @@ func delta(id string, old livedoc.Node, existed bool, n livedoc.Node) NodeDelta 
 			set[field] = nv
 		}
 	}
+	scalarInt := func(field string, ov, nv int64) {
+		if ov == nv {
+			return
+		}
+		if nv == 0 {
+			unset = append(unset, field)
+			return
+		}
+		set[field] = nv
+	}
 	// streamed handles the growable string fields: cleared -> unset, first
 	// appearance -> set (whole), otherwise a splice on the previous value.
 	streamed := func(field, ov, nv string) {
@@ -256,6 +266,8 @@ func delta(id string, old livedoc.Node, existed bool, n livedoc.Node) NodeDelta 
 	scalar("name", old.Name, n.Name)
 	scalar("summary", old.Summary, n.Summary)
 	scalar("status", old.Status, n.Status)
+	scalarInt("started_at", old.StartedAt, n.StartedAt)
+	scalarInt("finished_at", old.FinishedAt, n.FinishedAt)
 	streamed("markdown", old.Markdown, n.Markdown)
 	streamed("output", old.Output, n.Output)
 	if !reflect.DeepEqual(old.Args, n.Args) {
@@ -289,6 +301,12 @@ func fullSet(id string, n livedoc.Node) NodeDelta {
 	}
 	if n.Status != "" {
 		set["status"] = n.Status
+	}
+	if n.StartedAt != 0 {
+		set["started_at"] = n.StartedAt
+	}
+	if n.FinishedAt != 0 {
+		set["finished_at"] = n.FinishedAt
 	}
 	if n.Markdown != "" {
 		set["markdown"] = n.Markdown

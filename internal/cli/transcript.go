@@ -9,7 +9,6 @@ import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
-	"github.com/mattn/go-runewidth"
 )
 
 const (
@@ -33,6 +32,7 @@ type transcript struct {
 	client    *aria.Client
 	figaroID  string    // shown in the footer (blank → omitted)
 	startedAt time.Time // session start; the footer time, mirroring the incipit bookend
+	status    *sessionStatus
 
 	active   bool
 	showHelp bool // '?': the footer grows into a key-reference panel
@@ -63,7 +63,10 @@ type transcript struct {
 }
 
 func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string, startedAt time.Time) *transcript {
-	return &transcript{out: out, view: view, client: client, figaroID: figaroID, startedAt: startedAt, w: w, h: h, rowCache: map[int][]string{}}
+	return &transcript{
+		out: out, view: view, client: client, figaroID: figaroID, startedAt: startedAt,
+		status: newSessionStatus(figaroID, startedAt), w: w, h: h, rowCache: map[int][]string{},
+	}
 }
 
 // enter switches to the alternate screen and draws the transcript at the bottom.
@@ -274,12 +277,10 @@ func (t *transcript) render() {
 
 // footer is the transcript's single status line, in the same rule grammar as
 // the incipit bookend ("─── id · time ───…") so both modes speak one visual
-// language: left tokens are the aria id, session start time, and the "? help"
-// hook; the scroll position sits right-aligned inside the trailing rule. All
-// widths are DISPLAY columns (runewidth) — the box-drawing/"·" glyphs are
-// multi-byte, and byte-length math is what produced the mismatched rule
-// lengths. Degrades on narrow panes by dropping "? help", then the time; the
-// id and position survive last.
+// language: left tokens are the aria id, mantra, context consumption, token
+// cost, session start time, and the "? help" hook; the scroll position sits
+// right-aligned inside the trailing rule. Narrow panes retain the id and mantra
+// before shedding secondary status details.
 func (t *transcript) footer(total, body int) string {
 	if t.inSearch {
 		return "\x1b[2m" + clipToWidth("/"+t.query, t.w) + "\x1b[0m"
@@ -299,23 +300,7 @@ func (t *transcript) footer(total, body int) string {
 	if pos != "" {
 		right = " " + pos + " ───"
 	}
-	tokens := []string{t.figaroID, t.startedAt.Format("15:04:05"), "? help"}
-	if t.figaroID == "" {
-		tokens = tokens[1:]
-	}
-	for len(tokens) > 1 {
-		left := "─── " + strings.Join(tokens, " · ") + " "
-		if fill := t.w - runewidth.StringWidth(left) - runewidth.StringWidth(right); fill >= 3 {
-			break
-		}
-		tokens = tokens[:len(tokens)-1] // too narrow: shed from the right
-	}
-	left := "─── " + strings.Join(tokens, " · ") + " "
-	fill := t.w - runewidth.StringWidth(left) - runewidth.StringWidth(right)
-	if fill < 0 {
-		fill = 0
-	}
-	return "\x1b[2m" + clipToWidth(left+strings.Repeat("─", fill)+right, t.w) + "\x1b[0m"
+	return "\x1b[2m" + sessionStatusRule(t.status, t.w, right) + "\x1b[0m"
 }
 
 // helpLines is the '?' panel: the footer grown upward into a key reference,

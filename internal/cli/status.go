@@ -86,24 +86,19 @@ func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool) {
 
 	fmt.Fprintf(w, "figaro\t%s\n", f.ID)
 	row("state", dash(f.State))
+	row("mantra", dash(f.Mantra))
 	row("provider", dash(f.Provider))
 	row("model", dash(f.Model))
 	rowf("messages", "%d", f.MessageCount)
 
-	ctxStr := "-"
-	if f.ContextTokens > 0 {
-		ctxStr = fmt.Sprintf("%dk", f.ContextTokens/1000)
-		if !f.ContextExact {
-			ctxStr = "~" + ctxStr
-		}
-	}
-	row("context", ctxStr)
+	row("context", formatContextUsage(f.ContextTokens, f.ContextLimit, f.ContextExact))
 
 	usage := "-"
 	if f.TokensIn > 0 || f.TokensOut > 0 {
 		usage = fmt.Sprintf("%d in / %d out", f.TokensIn, f.TokensOut)
 	}
 	row("tokens", usage)
+	row("cost", formatSessionTokenCost(f.TokensIn, f.TokensOut))
 
 	cache := "-"
 	if f.CacheReadTokens > 0 || f.CacheWriteTokens > 0 {
@@ -132,7 +127,6 @@ func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool) {
 
 	// Derived / extra detail (formerly the `derive` command's territory).
 	if more {
-		row("mantra", dash(f.Mantra))
 		row("cwd", dash(f.Cwd))
 		loadout := dash(f.LoadoutName)
 		if f.LoadoutVer != "" {
@@ -142,7 +136,7 @@ func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool) {
 		if f.CreatedAt != 0 {
 			row("created", time.UnixMilli(f.CreatedAt).Format("2006-01-02 15:04:05"))
 		}
-		if f.Parent != "" {
+		if len(f.Vector) > 1 && f.Parent != "" && f.BranchedLT > 1 {
 			rowf("forked-from", "%s @ LT %d", f.Parent, f.BranchedLT-1)
 		}
 		if f.Frozen {

@@ -1,6 +1,10 @@
 package rpc
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/jack-work/figaro/internal/livelog/aria"
+)
 
 const (
 	// Live-render wire (server -> client). The conversation is delivered as
@@ -108,6 +112,7 @@ type ContextRequest struct{}
 
 type ContextResponse struct {
 	Messages []interface{} `json:"messages"` // []message.Message, but interface{} for serialization flexibility
+	Metrics  *aria.Metrics `json:"metrics,omitempty"`
 }
 
 // SetRequest applies a chalkboard patch directly.
@@ -157,16 +162,17 @@ type FigaroInfoResponse struct {
 	MessageCount     int    `json:"message_count"`
 	TokensIn         int    `json:"tokens_in"`
 	TokensOut        int    `json:"tokens_out"`
-	CacheReadTokens  int    `json:"cache_read_tokens"`      // cumulative cache-hit tokens
-	CacheWriteTokens int    `json:"cache_write_tokens"`     // cumulative cache-write tokens
-	ContextTokens    int    `json:"context_tokens"`         // estimated next-turn input size
-	ContextExact     bool   `json:"context_exact"`          // true if from Usage watermark
-	CreatedAt        int64  `json:"created_at"`             // unix millis
-	LastActive       int64  `json:"last_active"`            // unix millis
-	Mantra           string `json:"mantra"`                 // agent-maintained essence phrase (chalkboard "mantra")
-	Cwd              string `json:"cwd"`                    // working directory (chalkboard "system.cwd")
-	LoadoutName      string `json:"loadout_name,omitempty"` // chalkboard system.loadout_name
-	LoadoutVer       string `json:"loadout_ver,omitempty"`  // "live" if the stamped hash matches the current loadout, else its short hash
+	CacheReadTokens  int    `json:"cache_read_tokens"`       // cumulative cache-hit tokens
+	CacheWriteTokens int    `json:"cache_write_tokens"`      // cumulative cache-write tokens
+	ContextTokens    int    `json:"context_tokens"`          // estimated next-turn input size
+	ContextLimit     int    `json:"context_limit,omitempty"` // effective prompt cap when known
+	ContextExact     bool   `json:"context_exact"`           // true if from Usage watermark
+	CreatedAt        int64  `json:"created_at"`              // unix millis
+	LastActive       int64  `json:"last_active"`             // unix millis
+	Mantra           string `json:"mantra"`                  // agent-maintained essence phrase (chalkboard "mantra")
+	Cwd              string `json:"cwd"`                     // working directory (chalkboard "system.cwd")
+	LoadoutName      string `json:"loadout_name,omitempty"`  // chalkboard system.loadout_name
+	LoadoutVer       string `json:"loadout_ver,omitempty"`   // "live" if the stamped hash matches the current loadout, else its short hash
 	BoundPIDs        []int  `json:"bound_pids"`
 
 	// Fork-forest position (conversation nodes). Vector is the

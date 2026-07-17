@@ -65,6 +65,17 @@ func TestNodes_RunningToolWithPartial(t *testing.T) {
 	}
 }
 
+func TestNodes_ToolTiming(t *testing.T) {
+	nodes := Nodes(
+		[]message.Message{assistant(invoke("t1", "bash", "ls"))},
+		nil, nil, nil, nil,
+		map[string]ToolTiming{"t1": {StartedAt: 100, FinishedAt: 250}},
+	)
+	if nodes[0].StartedAt != 100 || nodes[0].FinishedAt != 250 {
+		t.Fatalf("tool timing = %+v", nodes[0])
+	}
+}
+
 func TestNodes_CompletedAndFailedTool(t *testing.T) {
 	ok := Nodes([]message.Message{
 		assistant(invoke("t1", "bash", "echo hi")),

@@ -66,6 +66,7 @@ func TestRenderToolNode_RunningOutputClampedToBashCap(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		lines = append(lines, "line"+string(rune('A'+i%26)))
 	}
+
 	// Give distinct sentinel content early vs late.
 	lines[0] = "EARLY_LEAK_SENTINEL"
 	lines[len(lines)-1] = "LATE_TAIL_SENTINEL"
@@ -80,5 +81,23 @@ func TestRenderToolNode_RunningOutputClampedToBashCap(t *testing.T) {
 	}
 	if !strings.Contains(joined, "LATE_TAIL_SENTINEL") {
 		t.Errorf("late tail should be visible:\n%s", joined)
+	}
+}
+
+func TestRenderToolNode_TimingAndVerboseDetails(t *testing.T) {
+	n := livedoc.Node{
+		Type:       livedoc.NodeTool,
+		Name:       "bash",
+		Status:     livedoc.StatusOK,
+		StartedAt:  1_700_000_000_000,
+		FinishedAt: 1_700_000_001_250,
+	}
+	rows := renderToolNode(n, 120, 5, 0, true)
+	joined := stripANSI(strings.Join(rows, "\n"))
+	if !strings.Contains(joined, "[1.2s]") {
+		t.Fatalf("duration missing: %s", joined)
+	}
+	if !strings.Contains(joined, "started ") || !strings.Contains(joined, "finished ") {
+		t.Fatalf("verbose timestamps missing: %s", joined)
 	}
 }

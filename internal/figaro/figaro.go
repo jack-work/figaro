@@ -35,6 +35,7 @@ type FigaroInfo struct {
 	CacheReadTokens  int       `json:"cache_read_tokens"`  // cumulative cache-hit tokens
 	CacheWriteTokens int       `json:"cache_write_tokens"` // cumulative cache-write tokens
 	ContextTokens    int       `json:"context_tokens"`     // estimated next-turn input size
+	ContextLimit     int       `json:"context_limit"`      // effective prompt cap when known
 	ContextExact     bool      `json:"context_exact"`      // true if from Usage watermark
 	CreatedAt        time.Time `json:"created_at"`
 	LastActive       time.Time `json:"last_active"`

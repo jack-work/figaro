@@ -41,12 +41,14 @@ type Node struct {
 	Markdown string `json:"markdown,omitempty"`
 
 	// tool
-	ID      string                 `json:"id,omitempty"`      // tool_call_id (stable handle)
-	Name    string                 `json:"name,omitempty"`    // tool name
-	Args    map[string]interface{} `json:"args,omitempty"`    // invocation arguments
-	Status  string                 `json:"status,omitempty"`  // running | ok | error
-	Output  string                 `json:"output,omitempty"`  // streamed result text
-	Summary string                 `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
+	ID         string                 `json:"id,omitempty"`      // tool_call_id (stable handle)
+	Name       string                 `json:"name,omitempty"`    // tool name
+	Args       map[string]interface{} `json:"args,omitempty"`    // invocation arguments
+	Status     string                 `json:"status,omitempty"`  // running | ok | error
+	Output     string                 `json:"output,omitempty"`  // streamed result text
+	Summary    string                 `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
+	StartedAt  int64                  `json:"started_at,omitempty"`
+	FinishedAt int64                  `json:"finished_at,omitempty"`
 }
 
 // OpKind discriminates a node mutation on the wire.
@@ -75,9 +77,11 @@ type Op struct {
 	Ins   string `json:"ins,omitempty"`
 
 	// set: a tool node's scalar fields.
-	Status string                 `json:"status,omitempty"`
-	Name   string                 `json:"name,omitempty"`
-	Args   map[string]interface{} `json:"args,omitempty"`
+	Status     string                 `json:"status,omitempty"`
+	Name       string                 `json:"name,omitempty"`
+	Args       map[string]interface{} `json:"args,omitempty"`
+	StartedAt  int64                  `json:"started_at,omitempty"`
+	FinishedAt int64                  `json:"finished_at,omitempty"`
 }
 
 // DiffNodes derives the minimal op sequence turning old into next. The
@@ -105,8 +109,17 @@ func DiffNodes(old, next []Node) []Op {
 			}
 			// Tool args/name stream in after the block opens, so a Set
 			// carries them (and status) whenever any scalar field changes.
-			if o.Status != n.Status || o.Name != n.Name || !sameArgs(o.Args, n.Args) {
-				ops = append(ops, Op{Kind: OpSet, Index: i, Status: n.Status, Name: n.Name, Args: n.Args})
+			if o.Status != n.Status || o.Name != n.Name || !sameArgs(o.Args, n.Args) ||
+				o.StartedAt != n.StartedAt || o.FinishedAt != n.FinishedAt {
+				ops = append(ops, Op{
+					Kind:       OpSet,
+					Index:      i,
+					Status:     n.Status,
+					Name:       n.Name,
+					Args:       n.Args,
+					StartedAt:  n.StartedAt,
+					FinishedAt: n.FinishedAt,
+				})
 			}
 		}
 	}
@@ -144,6 +157,12 @@ func ApplyOp(nodes []Node, op Op) []Node {
 		}
 		if op.Args != nil {
 			nodes[op.Index].Args = op.Args
+		}
+		if op.StartedAt != 0 {
+			nodes[op.Index].StartedAt = op.StartedAt
+		}
+		if op.FinishedAt != 0 {
+			nodes[op.Index].FinishedAt = op.FinishedAt
 		}
 	}
 	return nodes

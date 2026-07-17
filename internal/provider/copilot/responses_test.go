@@ -435,6 +435,24 @@ func TestCatalogContextLimits(t *testing.T) {
 	assert.Equal(t, responseContextLimits{Default: 128000, Long: 1000000}, catalogContextLimits(model))
 }
 
+func TestCopilotContextLimitUsesCachedCatalog(t *testing.T) {
+	var model catalogModel
+	model.Billing.TokenPrices.Default.MaxPromptTokens = 128000
+	model.Billing.TokenPrices.LongContext.MaxPromptTokens = 1000000
+	c := &Copilot{catalog: map[string]catalogModel{"gpt-5.6-terra": model}}
+
+	assert.Equal(t, 128000, c.ContextLimit("gpt-5.6-terra", chalkboard.Snapshot{}))
+	assert.Equal(t, 1000000, c.ContextLimit("gpt-5.6-terra", chalkboard.Snapshot{
+		"system.context_tier": json.RawMessage(`"long_context"`),
+	}))
+	assert.Equal(t, 120000, c.ContextLimit("gpt-5.6-terra", chalkboard.Snapshot{
+		"system.max_context_tokens": json.RawMessage(`120000`),
+	}))
+	assert.Equal(t, 128000, c.ContextLimit("gpt-5.6-terra", chalkboard.Snapshot{
+		"system.max_context_tokens": json.RawMessage(`2000000`),
+	}))
+}
+
 func TestResponsesProviderInvalidatesCacheOnModelSwitch(t *testing.T) {
 	cache := store.NewMemLog[[]json.RawMessage]()
 	server := newResponseServer(t, func(conn *websocket.Conn) { conn.Close() })

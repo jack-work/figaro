@@ -62,6 +62,33 @@ func TestServer_Unset(t *testing.T) {
 	}
 }
 
+func TestServer_ToolTimingDelta(t *testing.T) {
+	s := NewServer()
+	rc := &rec{}
+	defer s.Subscribe(rc.push)()
+	c := NewClient()
+	defer s.Subscribe(c.Apply)()
+
+	s.Open(2, "assistant")
+	s.Update([]livedoc.Node{{Type: livedoc.NodeTool, ID: "tool", Name: "bash", Status: livedoc.StatusRunning, StartedAt: 100}})
+	s.Update([]livedoc.Node{{Type: livedoc.NodeTool, ID: "tool", Name: "bash", Status: livedoc.StatusOK, StartedAt: 100, FinishedAt: 250}})
+
+	if len(rc.pages) != 2 {
+		t.Fatalf("want two frames, got %d", len(rc.pages))
+	}
+	if got := rc.pages[0].Live.Nodes[0].Set["started_at"]; got != int64(100) {
+		t.Fatalf("start timestamp delta = %#v", got)
+	}
+	second := rc.pages[1].Live.Nodes[0].Set
+	if second["finished_at"] != int64(250) || second["status"] != "ok" {
+		t.Fatalf("finish timestamp delta = %#v", second)
+	}
+	open := c.View().Open
+	if open == nil || open.Nodes[0].StartedAt != 100 || open.Nodes[0].FinishedAt != 250 {
+		t.Fatalf("client timing fold = %+v", open)
+	}
+}
+
 func TestClient_FoldAndPromote(t *testing.T) {
 	s := NewServer()
 	c := NewClient()
@@ -81,6 +108,25 @@ func TestClient_FoldAndPromote(t *testing.T) {
 	if m := done[0]; m.LT != 2 || len(m.Nodes) != 1 || m.Nodes[0].Output != "a\nb\n" || m.Nodes[0].Status != "ok" {
 		t.Fatalf("promoted node wrong: %+v", m.Nodes)
 	}
+}
+
+func TestClient_AppliesMetricsBeforeClosingMessage(t *testing.T) {
+	c := NewClient()
+	metrics := Metrics{ContextTokens: 42, ContextLimit: 128, TokensIn: 30, TokensOut: 12, Mantra: "keep the footer current"}
+	var seen Metrics
+	c.OnMetrics = func(next Metrics) { seen = next }
+	c.OnClosed = func(Message) {
+		if seen != metrics {
+			t.Fatalf("closed before metrics were applied: got %+v want %+v", seen, metrics)
+		}
+	}
+
+	c.Apply(AriaRead{
+		Metrics: &metrics,
+		Committed: []Committed{{
+			LT: 1, Role: "assistant", Nodes: []livedoc.Node{prose("done")},
+		}},
+	})
 }
 
 func TestClient_DesyncOnVersionMismatch(t *testing.T) {

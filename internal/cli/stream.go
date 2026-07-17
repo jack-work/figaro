@@ -46,6 +46,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 
 	startedAt := time.Now()
 	listen := set.listen // Ctrl-L / --listen: stay open past turn-done
+	status := newSessionStatus(figaroID, startedAt)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -60,10 +61,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// agent's reply. Gated on the status-line config.
 	var bookendFn func() string
 	if loaded.StatusLine() {
-		bookendFn = func() string { return statusBanner(figaroID, startedAt) }
+		bookendFn = func() string { return statusBanner(status) }
 	}
 
-	lt := newLivelogTurn(os.Stdout, width, height, &set, figaroID, startedAt, bookendFn, dimRule)
+	lt := newLivelogTurn(os.Stdout, width, height, &set, figaroID, startedAt, status, bookendFn, dimRule)
 	tc := term.NewClient() // platform terminal boundary: raw mode, resize, clipboard
 
 	// The renderer owns the cursor and assumes one row per line: disable the
@@ -407,8 +408,8 @@ func abandonRule(reason string) string {
 // statusBanner returns a full-width dimmed bookend: "─── id · time ───…"
 // extended with box-drawing dashes to the viewport width. Same rule grammar as
 // the transcript footer, so incipit and transcript speak one visual language.
-func statusBanner(figaroID string, ts time.Time) string {
-	return labeledRule(fmt.Sprintf("%s · %s", figaroID, ts.Format("15:04:05")))
+func statusBanner(status *sessionStatus) string {
+	return term.Dim(sessionStatusRule(status, termWidth(), ""))
 }
 
 // labeledRule builds "─── <label> ───…" filled with box-drawing dashes to the

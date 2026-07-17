@@ -26,10 +26,25 @@ import "github.com/jack-work/figaro/internal/livedoc"
 type AriaRead struct {
 	Committed []Committed `json:"committed,omitempty"`
 	Live      *Live       `json:"live,omitempty"`
+	Metrics   *Metrics    `json:"metrics,omitempty"`
 }
 
 // Empty reports whether the page carries nothing (so it isn't sent).
-func (r AriaRead) Empty() bool { return len(r.Committed) == 0 && r.Live == nil }
+func (r AriaRead) Empty() bool { return len(r.Committed) == 0 && r.Live == nil && r.Metrics == nil }
+
+// Metrics summarizes the current session for the status surfaces. ContextLimit
+// is the effective prompt cap when the provider can determine one; zero means
+// the selected model has no available cap metadata.
+type Metrics struct {
+	ContextTokens    int    `json:"context_tokens"`
+	ContextLimit     int    `json:"context_limit,omitempty"`
+	ContextExact     bool   `json:"context_exact"`
+	TokensIn         int    `json:"tokens_in"`
+	TokensOut        int    `json:"tokens_out"`
+	CacheReadTokens  int    `json:"cache_read_tokens"`
+	CacheWriteTokens int    `json:"cache_write_tokens"`
+	Mantra           string `json:"mantra,omitempty"`
+}
 
 // Live is one frame of the open message: its record version and the per-node
 // field deltas. Role appears on the first frame (v 0) and on catch-up snapshots.

@@ -27,9 +27,10 @@ type Client struct {
 	openOrder []string
 	openBlock map[string]livedoc.Node
 
-	OnClosed func(Message)
-	OnLive   func(lt int, role string, nodes []livedoc.Node)
-	OnDesync func(sinceLT int)
+	OnClosed  func(Message)
+	OnLive    func(lt int, role string, nodes []livedoc.Node)
+	OnDesync  func(sinceLT int)
+	OnMetrics func(Metrics)
 }
 
 // NewClient returns a fresh client.
@@ -66,6 +67,7 @@ func (c *Client) Apply(r AriaRead) {
 	c.mu.Lock()
 	var finalized []Message
 	desync := -1
+	metrics := r.Metrics
 	for _, cm := range r.Committed {
 		switch {
 		case cm.Full():
@@ -122,6 +124,9 @@ func (c *Client) Apply(r AriaRead) {
 	}
 	c.mu.Unlock()
 
+	if metrics != nil && c.OnMetrics != nil {
+		c.OnMetrics(*metrics)
+	}
 	for _, m := range finalized {
 		if c.OnClosed != nil {
 			c.OnClosed(m)
@@ -213,6 +218,10 @@ func setField(n *livedoc.Node, field string, v any) {
 		n.Output = asStr(v)
 	case "id":
 		n.ID = asStr(v)
+	case "started_at":
+		n.StartedAt = asInt64(v)
+	case "finished_at":
+		n.FinishedAt = asInt64(v)
 	case "args":
 		if v == nil {
 			n.Args = nil
@@ -225,4 +234,17 @@ func setField(n *livedoc.Node, field string, v any) {
 func asStr(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+func asInt64(v any) int64 {
+	switch n := v.(type) {
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	case float64:
+		return int64(n)
+	default:
+		return 0
+	}
 }

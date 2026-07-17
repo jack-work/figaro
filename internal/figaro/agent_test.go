@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -39,6 +40,66 @@ func (m *mockProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.
 func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
 	mockCatchUp(in.FigLog, m.cache, m.encode, m.Fingerprint())
 	mockPushAssistant(in.FigLog, m.cache, bus, m.encode, m.Fingerprint(), m.response)
+	return nil
+}
+
+type metricsProvider struct{}
+
+func (metricsProvider) Name() string                                         { return "metrics" }
+func (metricsProvider) Fingerprint() string                                  { return "metrics/v1" }
+func (metricsProvider) SetModel(string)                                      {}
+func (metricsProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (metricsProvider) ContextLimit(string, chalkboard.Snapshot) int         { return 128000 }
+func (metricsProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
+	msg := message.Message{
+		Role:       message.RoleAssistant,
+		Content:    []message.Content{message.TextContent("done")},
+		StopReason: message.StopEnd,
+		Usage: &message.Usage{
+			InputTokens:  12000,
+			OutputTokens: 3000,
+		},
+	}
+	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
+	if err != nil {
+		return err
+	}
+	msg.LogicalTime = entry.LT
+	bus.PushDelta(message.TextContent("done"))
+	bus.PushFigaro(msg)
+	return nil
+}
+
+type lateLimitProvider struct {
+	mu    sync.RWMutex
+	limit int
+}
+
+func (p *lateLimitProvider) Name() string                                         { return "late-limit" }
+func (p *lateLimitProvider) Fingerprint() string                                  { return "late-limit/v1" }
+func (p *lateLimitProvider) SetModel(string)                                      {}
+func (p *lateLimitProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (p *lateLimitProvider) ContextLimit(string, chalkboard.Snapshot) int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.limit
+}
+func (p *lateLimitProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
+	p.mu.Lock()
+	p.limit = 128000
+	p.mu.Unlock()
+	bus.PushDelta(message.TextContent("done"))
+	msg := message.Message{
+		Role:       message.RoleAssistant,
+		Content:    []message.Content{message.TextContent("done")},
+		StopReason: message.StopEnd,
+	}
+	entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg})
+	if err != nil {
+		return err
+	}
+	msg.LogicalTime = entry.LT
+	bus.PushFigaro(msg)
 	return nil
 }
 
@@ -247,6 +308,7 @@ loop:
 			if n.Method == rpc.MethodTurnDone {
 				break loop
 			}
+
 		case <-timeout:
 			t.Fatal("timeout waiting for notifications")
 		}
@@ -259,6 +321,92 @@ loop:
 	}
 	assert.Contains(t, methods, rpc.MethodAriaFrame)
 	assert.Contains(t, methods, rpc.MethodTurnDone)
+}
+
+func TestAgentContextMetricsTrackCurrentSession(t *testing.T) {
+	cb, _ := chalkboard.Open("")
+	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
+		"mantra":       json.RawMessage(`"keep session accounting visible"`),
+	}})
+	a := figaro.NewAgent(figaro.Config{
+		ID:         "metrics-001",
+		SocketPath: "/tmp/metrics-test.sock",
+		Provider:   metricsProvider{},
+		Chalkboard: cb,
+	})
+	defer a.Kill()
+
+	ch, _ := subscribeChan(a)
+	a.Prompt("hello")
+	for {
+		select {
+		case n := <-ch:
+			if n.Method == rpc.MethodTurnDone {
+				goto done
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timeout waiting for turn completion")
+		}
+	}
+done:
+
+	info := a.Info()
+	assert.Equal(t, 12000, info.TokensIn)
+	assert.Equal(t, 3000, info.TokensOut)
+	assert.Equal(t, 15000, info.ContextTokens)
+	assert.Equal(t, 128000, info.ContextLimit)
+	assert.True(t, info.ContextExact)
+
+	read := a.Read(0)
+	require.NotNil(t, read.Metrics)
+	assert.Equal(t, "keep session accounting visible", read.Metrics.Mantra)
+	assert.Equal(t, 15000, read.Metrics.ContextTokens)
+
+	raw, err := a.Handle(context.Background(), rpc.MethodContext, nil)
+	require.NoError(t, err)
+	contextResp := raw.(rpc.ContextResponse)
+	require.NotNil(t, contextResp.Metrics)
+	assert.Equal(t, 128000, contextResp.Metrics.ContextLimit)
+}
+
+func TestAgentFirstLiveFrameUsesResolvedContextLimit(t *testing.T) {
+	cb, _ := chalkboard.Open("")
+	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
+	}})
+	a := figaro.NewAgent(figaro.Config{
+		ID:         "late-limit-001",
+		SocketPath: "/tmp/late-limit-test.sock",
+		Provider:   &lateLimitProvider{},
+		Chalkboard: cb,
+	})
+	defer a.Kill()
+
+	ch, _ := subscribeChan(a)
+	a.Prompt("hello")
+	var firstLive *aria.AriaRead
+	for {
+		select {
+		case n := <-ch:
+			if n.Method == rpc.MethodAriaFrame {
+				frame := n.Params.(aria.AriaRead)
+				if frame.Live != nil && frame.Live.Role == "assistant" && firstLive == nil {
+					firstLive = &frame
+				}
+			}
+			if n.Method == rpc.MethodTurnDone {
+				goto done
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timeout waiting for turn completion")
+		}
+	}
+done:
+
+	require.NotNil(t, firstLive)
+	require.NotNil(t, firstLive.Metrics)
+	assert.Equal(t, 128000, firstLive.Metrics.ContextLimit)
 }
 
 func TestAgent_ReadCatchUp(t *testing.T) {
@@ -859,6 +1007,25 @@ loop:
 	// loop didn't die.)
 	info := a.Info()
 	assert.Equal(t, "idle", info.State, "agent should be idle after interrupt")
+}
+
+func TestAgentInfoReportsRunningTurnActive(t *testing.T) {
+	started := make(chan struct{})
+	a := figaro.NewAgent(figaro.Config{
+		ID:         "active-001",
+		SocketPath: "/tmp/active-test.sock",
+		Provider:   &slowProvider{started: started},
+	})
+	defer a.Kill()
+
+	a.Prompt("take forever please")
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("provider never started")
+	}
+	assert.Equal(t, "active", a.Info().State)
+	a.Interrupt()
 }
 
 // TestAgent_InterruptWhenIdle is a no-op: Interrupt on an idle agent

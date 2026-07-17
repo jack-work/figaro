@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mattn/go-runewidth"
 
@@ -204,6 +205,9 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 	if n.Summary != "" {
 		header = header + " " + term.Dim(truncCols(n.Summary, toolSummaryCap))
 	}
+	if n.StartedAt != 0 {
+		header += " " + term.Dim("["+toolDuration(n, time.Now())+"]")
+	}
 	rows := []string{header}
 
 	if expand && len(n.Args) > 0 {
@@ -218,6 +222,12 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 			for _, l := range hardWrap(line, width-len(g)) {
 				rows = append(rows, term.Dim(g+l))
 			}
+		}
+	}
+	if expand && n.StartedAt != 0 {
+		rows = append(rows, term.Dim("  started "+formatToolTime(n.StartedAt)))
+		if n.FinishedAt != 0 {
+			rows = append(rows, term.Dim("  finished "+formatToolTime(n.FinishedAt)))
 		}
 	}
 
@@ -239,6 +249,28 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 		}
 	}
 	return rows
+}
+
+func toolDuration(n livedoc.Node, now time.Time) string {
+	end := n.FinishedAt
+	if end == 0 {
+		end = now.UnixMilli()
+	}
+	d := time.Duration(end-n.StartedAt) * time.Millisecond
+	if d < 0 {
+		d = 0
+	}
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
+}
+
+func formatToolTime(ms int64) string {
+	return time.UnixMilli(ms).Format("2006-01-02 15:04:05.000 MST")
 }
 
 // blockquote prefixes each line of s with "> " (markdown blockquote).

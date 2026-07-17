@@ -53,6 +53,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	defer span.End()
 
 	startedAt := time.Now()
+	status := newSessionStatus(figaroID, startedAt)
 
 	// We want Ctrl-C to mean "interrupt the in-flight turn" (parity
 	// with send). Wrap the parent ctx so SIGINT cancels just our scope.
@@ -68,11 +69,11 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	// Bookend banner: id + start time. Same gating as send.
 	var bookendFn func() string
 	if loaded.StatusLine() {
-		bookendFn = func() string { return statusBanner(figaroID, startedAt) }
+		bookendFn = func() string { return statusBanner(status) }
 	}
 
 	set := renderSettings{listen: true} // listen stays open past turn-done
-	lt := newLivelogTurn(os.Stdout, width, height, &set, figaroID, startedAt, bookendFn, dimRule)
+	lt := newLivelogTurn(os.Stdout, width, height, &set, figaroID, startedAt, status, bookendFn, dimRule)
 	tc := term.NewClient()
 
 	// The renderer owns the cursor + auto-margin off, same as send.

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // lsOpts captures the parsed `ls` flags. Scope: home/global/subtree(rootID);
@@ -25,6 +27,10 @@ type lsOpts struct {
 	global  bool
 	limit   int
 	rootID  string
+}
+
+type listRow struct {
+	aria, id, loadout, ver, fork, age, msgs, ctx, cwd, detail string
 }
 
 func runList(loaded *config.Loaded, o lsOpts) {
@@ -152,10 +158,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		})
 
 		// Flatten to rendered rows: tree glyphs in an ARIA cell.
-		type row struct {
-			aria, id, loadout, ver, fork, age, msgs, ctx, cwd string
-		}
-		var rows []row
+		var rows []listRow
 		ppid := os.Getppid()
 		marker := func(f rpc.FigaroInfoResponse) string {
 			if slices.Contains(f.BoundPIDs, ppid) {
@@ -193,7 +196,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			if len(f.Vector) > 1 && f.BranchedLT > 1 {
 				fork = fmt.Sprintf("@%d", f.BranchedLT-1)
 			}
-			rows = append(rows, row{
+			rows = append(rows, listRow{
 				aria: glyph + marker(f) + " " + truncRunes(label, 44),
 				id:   f.ID, loadout: dash(f.LoadoutName), ver: dash(f.LoadoutVer),
 				fork: fork, age: relAge(f.LastActive),
@@ -237,15 +240,18 @@ func runList(loaded *config.Loaded, o lsOpts) {
 				hint = " · attending " + boundID
 			}
 		}
-		fmt.Fprintf(os.Stderr, "%d top-level aria(s), %d branch(es) · showing %d of %d%s        ●=here ▸=running ○=idle\n\n",
-			len(roots), branches, shown, total, hint)
-
-		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(w, "ARIA\tID\tLOADOUT\tVER\tFORK\tAGE\tMSGS\tCTX\tCWD\n")
-		for _, r := range rows {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", r.aria, r.id, r.loadout, r.ver, r.fork, r.age, r.msgs, r.ctx, r.cwd)
+		width := listOutputWidth()
+		summary := ""
+		if width < listCompactWidth {
+			summary = fmt.Sprintf("%d aria(s) · %d branch(es) · %d/%d%s · ● here ▸ running ○ idle",
+				len(roots), branches, shown, total, hint)
+		} else {
+			summary = fmt.Sprintf("%d top-level aria(s), %d branch(es) · showing %d of %d%s        ●=here ▸=running ○=idle",
+				len(roots), branches, shown, total, hint)
 		}
-		w.Flush()
+		fmt.Fprintln(os.Stderr, truncateVisible(summary, width))
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprint(os.Stdout, renderListRows(rows, width, false))
 		if limit > 0 && total > limit {
 			fmt.Fprintf(os.Stderr, "\n… %d more (-a for all, -n N for N)\n", total-limit)
 		}
@@ -290,8 +296,7 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 		}
 		return "○"
 	}
-	type row struct{ aria, id, detail string }
-	var rows []row
+	var rows []listRow
 	var emit func(id, prefix string, isLast, isRoot bool)
 	emit = func(id, prefix string, isLast, isRoot bool) {
 		f := byID[id]
@@ -319,7 +324,12 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 			}
 			detail = fmt.Sprintf("%d msgs", f.MessageCount)
 		}
-		rows = append(rows, row{aria: glyph + mark(f) + " " + truncRunes(label, 46), id: f.ID, detail: detail})
+		rows = append(rows, listRow{
+			aria:   glyph + mark(f) + " " + truncRunes(label, 46),
+			id:     f.ID,
+			detail: detail,
+			msgs:   strconv.Itoa(f.MessageCount),
+		})
 		cp := prefix
 		if !isRoot {
 			if isLast {
@@ -346,16 +356,104 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 	if boundID == "" {
 		hint = " · home (live loadout)"
 	}
-	fmt.Fprintf(os.Stderr, "global · showing %d of %d%s        ●=here ▸=running ○=idle\n\n", shown, total, hint)
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(w, "ARIA\tID\tDETAIL\n")
-	for _, r := range rows {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", r.aria, r.id, r.detail)
+	width := listOutputWidth()
+	summary := ""
+	if width < listCompactWidth {
+		summary = fmt.Sprintf("global · %d/%d%s · ● here ▸ running ○ idle", shown, total, hint)
+	} else {
+		summary = fmt.Sprintf("global · showing %d of %d%s        ●=here ▸=running ○=idle", shown, total, hint)
 	}
-	w.Flush()
+	fmt.Fprintln(os.Stderr, truncateVisible(summary, width))
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprint(os.Stdout, renderListRows(rows, width, true))
 	if limit > 0 && total > limit {
 		fmt.Fprintf(os.Stderr, "\n… %d more (-a for all, -n N for N)\n", total-limit)
 	}
+}
+
+const (
+	listCompactWidth = 100
+	listFullWidth    = 140
+)
+
+func listOutputWidth() int {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		return 10000
+	}
+	return term.Width()
+}
+
+// renderListRows chooses a table only when it can fit without terminal
+// wrapping. Narrow terminals instead get one clipped hierarchy line per aria.
+func renderListRows(rows []listRow, width int, global bool) string {
+	if width <= 0 {
+		width = 80
+	}
+	if width < listCompactWidth {
+		var out strings.Builder
+		for _, r := range rows {
+			fmt.Fprintln(&out, compactListRow(r, width))
+		}
+		return out.String()
+	}
+
+	var out bytes.Buffer
+	w := tabwriter.NewWriter(&out, 0, 4, 2, ' ', 0)
+	switch {
+	case global:
+		fmt.Fprintln(w, "ARIA\tID\tDETAIL")
+		for _, r := range rows {
+			fmt.Fprintf(w, "%s\t%s\t%s\n", r.aria, r.id, r.detail)
+		}
+	case width < listFullWidth:
+		fmt.Fprintln(w, "ARIA\tID\tLOADOUT\tAGE\tMSGS\tCTX")
+		for _, r := range rows {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				r.aria, r.id, truncRunes(r.loadout, 18), r.age, r.msgs, r.ctx)
+		}
+	default:
+		fmt.Fprintln(w, "ARIA\tID\tLOADOUT\tVER\tFORK\tAGE\tMSGS\tCTX\tCWD")
+		for _, r := range rows {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				r.aria, r.id, r.loadout, r.ver, r.fork, r.age, r.msgs, r.ctx, r.cwd)
+		}
+	}
+	w.Flush()
+
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	var clipped strings.Builder
+	for _, line := range lines {
+		fmt.Fprintln(&clipped, truncateVisible(line, width))
+	}
+	return clipped.String()
+}
+
+func compactListRow(r listRow, width int) string {
+	id := truncRunes(r.id, 8)
+	parts := []string{id}
+	if r.age != "" && r.age != "-" {
+		parts = append(parts, r.age)
+	}
+	if r.msgs != "" {
+		parts = append(parts, r.msgs+"msg")
+	}
+	suffix := strings.Join(parts, " ")
+	labelWidth := width - term.VisibleLen(suffix) - 1
+	if labelWidth < 8 {
+		suffix = id
+		labelWidth = width - term.VisibleLen(suffix) - 1
+	}
+	if labelWidth <= 0 {
+		return truncateVisible(r.aria+" "+suffix, width)
+	}
+	return truncateVisible(r.aria, labelWidth) + " " + suffix
+}
+
+func truncateVisible(s string, width int) string {
+	if term.VisibleLen(s) <= width {
+		return s
+	}
+	return term.TruncateVisible(s, width)
 }
 
 // vecKey joins a vector into a stable map key (e.g. [0,1] -> "0.1").
