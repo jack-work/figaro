@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"text/template"
 	"time"
@@ -41,24 +42,41 @@ var copilotGitHubHeaders = map[string]string{
 }
 
 type Copilot struct {
-	inner    *anthropicsdk.Provider
-	tokenSrc *CopilotTokenSource
+	inner     *anthropicsdk.Provider
+	responses *responsesProvider
+	tokenSrc  *CopilotTokenSource
+
+	mu      sync.RWMutex
+	model   string
+	catalog map[string]catalogModel
 }
 
-func New(knobs provider.Knobs, githubToken auth.TokenResolver, enterpriseDomain string, cacheOpen func(string) (store.Log[[]json.RawMessage], error)) (*Copilot, error) {
+func New(
+	knobs provider.Knobs,
+	githubToken auth.TokenResolver,
+	enterpriseDomain string,
+	messagesCacheOpen func(string) (store.Log[[]json.RawMessage], error),
+	responsesCacheOpen func(string) (store.Log[[]json.RawMessage], error),
+) (*Copilot, error) {
 	if githubToken == nil {
 		return nil, fmt.Errorf("copilot: nil token resolver (need GitHub access token)")
 	}
 	tokenSrc := NewCopilotTokenSource(githubToken, enterpriseDomain)
 
-	inner, err := anthropicsdk.New(knobs, tokenSrc, cacheOpen)
+	inner, err := anthropicsdk.New(knobs, tokenSrc, messagesCacheOpen)
 	if err != nil {
 		return nil, err
 	}
 	inner.NoOAuthIdentity = true
 	inner.ExtraOptions = copilotRequestOptions(tokenSrc)
 
-	return &Copilot{inner: inner, tokenSrc: tokenSrc}, nil
+	return &Copilot{
+		inner:     inner,
+		responses: newResponsesProvider(knobs, tokenSrc, enterpriseDomain, responsesCacheOpen),
+		tokenSrc:  tokenSrc,
+		model:     knobs.Model,
+		catalog:   map[string]catalogModel{},
+	}, nil
 }
 
 func copilotRequestOptions(tokenSrc *CopilotTokenSource) []option.RequestOption {
@@ -88,19 +106,146 @@ func copilotRequestOptions(tokenSrc *CopilotTokenSource) []option.RequestOption 
 	return opts
 }
 
-func (c *Copilot) Name() string                     { return providerName }
-func (c *Copilot) Fingerprint() string              { return c.inner.Fingerprint() }
-func (c *Copilot) SetModel(model string)            { c.inner.SetModel(model) }
-func (c *Copilot) SetTemplates(t *template.Template) { c.inner.Templates = t }
+func (c *Copilot) Name() string { return providerName }
+
+func (c *Copilot) Fingerprint() string {
+	c.mu.RLock()
+	model := c.model
+	route := routeForCatalogModel(c.catalog[model])
+	c.mu.RUnlock()
+	if route == modelRouteResponses {
+		return c.responses.Fingerprint()
+	}
+	return c.inner.Fingerprint()
+}
+
+func (c *Copilot) SetModel(model string) {
+	c.mu.Lock()
+	c.model = model
+	c.mu.Unlock()
+	c.inner.SetModel(model)
+	c.responses.SetModel(model)
+}
+
+func (c *Copilot) SetTemplates(t *template.Template) {
+	c.inner.Templates = t
+	c.responses.SetTemplates(t)
+}
 
 func (c *Copilot) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	model := responseString(in.Snapshot, "system.model")
+	if model == "" {
+		c.mu.RLock()
+		model = c.model
+		c.mu.RUnlock()
+	}
+	route, err := c.routeForModel(ctx, model)
+	if err != nil {
+		return err
+	}
+	if route == modelRouteResponses {
+		return c.responses.Send(ctx, in, bus)
+	}
 	return c.inner.Send(ctx, in, bus)
 }
 
 func (c *Copilot) Models(ctx context.Context) ([]provider.ModelInfo, error) {
+	catalog, err := c.fetchCatalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	models := make([]provider.ModelInfo, 0, len(catalog))
+	for _, model := range catalog {
+		if !model.ModelPickerEnabled || routeForCatalogModel(model) == modelRouteUnknown {
+			continue
+		}
+		name := model.Name
+		if name == "" {
+			name = model.ID
+		}
+		models = append(models, provider.ModelInfo{
+			ID:            model.ID,
+			Name:          name,
+			Provider:      providerName,
+			ContextWindow: model.Capabilities.Limits.MaxContextWindowTokens,
+			MaxTokens:     model.Capabilities.Limits.MaxOutputTokens,
+		})
+	}
+	return models, nil
+}
+
+type catalogModel struct {
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	ModelPickerEnabled bool     `json:"model_picker_enabled"`
+	SupportedEndpoints []string `json:"supported_endpoints"`
+	Capabilities       struct {
+		Limits struct {
+			MaxContextWindowTokens int `json:"max_context_window_tokens"`
+			MaxOutputTokens        int `json:"max_output_tokens"`
+		} `json:"limits"`
+	} `json:"capabilities"`
+}
+
+type modelRoute int
+
+const (
+	modelRouteUnknown modelRoute = iota
+	modelRouteMessages
+	modelRouteResponses
+)
+
+func (c *Copilot) routeForModel(ctx context.Context, model string) (modelRoute, error) {
+	c.mu.RLock()
+	entry, known := c.catalog[model]
+	c.mu.RUnlock()
+	if !known {
+		if _, err := c.fetchCatalog(ctx); err != nil {
+			if isAnthropicModel(model) {
+				return modelRouteMessages, nil
+			}
+			return modelRouteUnknown, fmt.Errorf("copilot: get capabilities for %q: %w", model, err)
+		}
+		c.mu.RLock()
+		entry, known = c.catalog[model]
+		c.mu.RUnlock()
+	}
+	if known {
+		if route := routeForCatalogModel(entry); route != modelRouteUnknown {
+			return route, nil
+		}
+	}
+	if isAnthropicModel(model) {
+		return modelRouteMessages, nil
+	}
+	return modelRouteUnknown, fmt.Errorf("copilot: model %q has no supported direct transport", model)
+}
+
+func routeForCatalogModel(model catalogModel) modelRoute {
+	for _, endpoint := range model.SupportedEndpoints {
+		if strings.Contains(strings.ToLower(endpoint), "responses") {
+			return modelRouteResponses
+		}
+	}
+	for _, endpoint := range model.SupportedEndpoints {
+		if strings.Contains(strings.ToLower(endpoint), "messages") {
+			return modelRouteMessages
+		}
+	}
+	if isAnthropicModel(model.ID) {
+		return modelRouteMessages
+	}
+	return modelRouteUnknown
+}
+
+func isAnthropicModel(model string) bool {
+	return strings.Contains(strings.ToLower(model), "claude")
+}
+
+func (c *Copilot) fetchCatalog(ctx context.Context) ([]catalogModel, error) {
 	token, err := c.tokenSrc.Resolve()
 	if err != nil {
-		return nil, fmt.Errorf("copilot models: %w", err)
+		return nil, fmt.Errorf("copilot models: resolve token: %w", err)
 	}
 	baseURL := baseURLFromToken(token, c.tokenSrc.domain)
 	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/models", nil)
@@ -125,31 +270,18 @@ func (c *Copilot) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 		return nil, fmt.Errorf("copilot models %d: %s", resp.StatusCode, body)
 	}
 	var raw struct {
-		Data []struct {
-			ID                 string `json:"id"`
-			Name               string `json:"name"`
-			ModelPickerEnabled bool   `json:"model_picker_enabled"`
-		} `json:"data"`
+		Data []catalogModel `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, err
 	}
-	var models []provider.ModelInfo
-	for _, m := range raw.Data {
-		if !m.ModelPickerEnabled {
-			continue
-		}
-		name := m.Name
-		if name == "" {
-			name = m.ID
-		}
-		models = append(models, provider.ModelInfo{
-			ID:       m.ID,
-			Name:     name,
-			Provider: providerName,
-		})
+	c.mu.Lock()
+	c.catalog = make(map[string]catalogModel, len(raw.Data))
+	for _, model := range raw.Data {
+		c.catalog[model.ID] = model
 	}
-	return models, nil
+	c.mu.Unlock()
+	return raw.Data, nil
 }
 
 func baseURLFromToken(token, enterpriseDomain string) string {

@@ -48,7 +48,9 @@ arias/{id}/
 ├── chalkboard.json                   per-aria snapshot, atomic rewrite at turn end
 ├── meta.json                         AriaMeta — what `figaro list` reads
 └── translations/
-    └── anthropic.jsonl               translator cache — Stream[[]json.RawMessage]
+    ├── anthropic.jsonl               translator cache — Stream[[]json.RawMessage]
+    ├── copilot-messages.jsonl        Copilot Anthropic-Messages cache
+    └── copilot-responses.jsonl       Copilot Responses cache
 ```
 
 **Figaro IR** is the source of truth. **Translator stream** caches per-provider wire bytes, FK'd back via `Entry.FigaroLT`. Translations are derivable from the IR; on `Provider.Fingerprint()` mismatch the agent clears the stream and lets `synchronize` repopulate.
@@ -76,17 +78,19 @@ type Provider interface {
     Models(ctx) ([]ModelInfo, error)
     SetModel(string)
 
-    Encode(msg Message, prevSnapshot Snapshot) ([]json.RawMessage, error)
-    Decode(payload []json.RawMessage) ([]Message, error)
     Send(ctx, SendInput, Bus) error
-    Assemble(deltas [][]json.RawMessage) ([]json.RawMessage, error)
 }
 ```
 
-- `Encode` is per-message; cached in the translator stream.
-- `Decode` is uniform — handles both durable per-message bytes and live tail delta payloads (returns partial Messages for deltas).
-- `Send` takes `SendInput {PerMessage, Snapshot, Tools, MaxTokens}`, assembles the request internally, ships, and pushes raw native events to the bus.
-- `Assemble` accumulates the live tail into one assembled assistant nativeMessage at end-of-turn.
+- Providers own their per-message IR projection and translation cache.
+- `Send` takes the canonical `FigLog`, current chalkboard snapshot, tools,
+  and token limit; it rebuilds its provider-native request and emits
+  provider-native streaming events through the bus.
+- The Copilot provider routes catalog models by their advertised endpoint:
+  Anthropic Messages-compatible models keep the Messages transport and
+  Responses-compatible models use a direct WebSocket Responses transport.
+  Both paths replay from Figaro's translator cache rather than depending on
+  external session state.
 
 ## Cache prefix
 

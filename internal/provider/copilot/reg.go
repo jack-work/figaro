@@ -49,13 +49,19 @@ func buildFromContext(ctx provider.BuildContext) (provider.Provider, error) {
 		knobs.Model = reg.DefaultModel
 	}
 	cfg := loadConfig(ctx.Loaded)
-	cacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
+	messagesCacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
 		if ctx.Backend == nil {
 			return nil, fmt.Errorf("no backend")
 		}
-		return ctx.Backend.OpenTranslation(aria, "copilot")
+		return ctx.Backend.OpenTranslation(aria, "copilot-messages")
 	}
-	p, err := New(knobs, ctx.Resolver, cfg.EnterpriseDomain, cacheOpen)
+	responsesCacheOpen := func(aria string) (store.Log[[]json.RawMessage], error) {
+		if ctx.Backend == nil {
+			return nil, fmt.Errorf("no backend")
+		}
+		return ctx.Backend.OpenTranslation(aria, "copilot-responses")
+	}
+	p, err := New(knobs, ctx.Resolver, cfg.EnterpriseDomain, messagesCacheOpen, responsesCacheOpen)
 	if err != nil {
 		return nil, err
 	}

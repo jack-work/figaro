@@ -27,6 +27,26 @@ The first prompt triggers a setup wizard (provider, model, loadout). After that,
 
 Run `figaro -- :skills.howto!` to start the interactive tutorial (the howto skill walks you through arias, forking, the chalkboard, and loadouts in character).
 
+### Copilot models
+
+The `copilot` provider routes models by the capability advertised in the
+Copilot catalog. Claude-compatible models use the Anthropic Messages
+transport; Responses-capable models such as `gpt-5.6-terra` use Figaro's
+native WebSocket Responses transport. Figaro does not start a Copilot CLI
+process.
+
+```bash
+figaro models
+```
+
+Choose a catalog model in a loadout:
+
+```toml
+[system]
+provider = "copilot"
+model = "gpt-5.6-terra"
+```
+
 ## Core concepts
 
 - **Arias**: persistent conversations, append-only IR log, fork-tree storage via [figwal](https://github.com/jack-work/figwal).
