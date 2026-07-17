@@ -117,8 +117,21 @@ func (e *LocalExecutor) Start(req ExecRequest, onChunk func([]byte)) (Process, e
 	afterStart(cmd)
 	p := &localProcess{cmd: cmd, stdin: stdin, done: make(chan struct{})}
 	go func() {
-		waitErr := cmd.Wait()
-		p.exitCode = exitCode(waitErr)
+		// Use cmd.Process.Wait (process exit only) rather than cmd.Wait
+		// (process exit + pipe EOF). On Windows, grandchild processes
+		// inherit pipe handles, so cmd.Wait blocks indefinitely even
+		// after bash exits. We give a short grace window for the pipe
+		// copy goroutines to drain buffered output, then proceed.
+		ps, _ := cmd.Process.Wait()
+		p.exitCode = ps.ExitCode()
+		// Grace window: let cmd.Wait finish naturally if the pipes
+		// close quickly (the common case on Linux and short commands).
+		waitDone := make(chan struct{})
+		go func() { cmd.Wait(); close(waitDone) }()
+		select {
+		case <-waitDone:
+		case <-time.After(3 * time.Second):
+		}
 		close(p.done)
 	}()
 	return p, nil
