@@ -6,8 +6,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/mattn/go-runewidth"
+)
+
+type turnStatus uint8
+
+const (
+	turnStatusIdle turnStatus = iota
+	turnStatusThinking
+	turnStatusCompleted
+	turnStatusInterrupted
+	turnStatusError
 )
 
 type sessionStatus struct {
@@ -15,6 +26,8 @@ type sessionStatus struct {
 	figaroID  string
 	startedAt time.Time
 	metrics   aria.Metrics
+	turn      turnStatus
+	tick      uint64
 }
 
 func newSessionStatus(figaroID string, startedAt time.Time) *sessionStatus {
@@ -30,6 +43,45 @@ func (s *sessionStatus) update(metrics aria.Metrics) {
 	s.mu.Unlock()
 }
 
+func (s *sessionStatus) beginTurn() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.turn = turnStatusThinking
+	s.mu.Unlock()
+}
+
+func (s *sessionStatus) finishTurn(reason string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	reason = strings.ToLower(reason)
+	switch {
+	case strings.Contains(reason, "interrupt"):
+		s.turn = turnStatusInterrupted
+	case strings.HasPrefix(reason, "error:"), strings.Contains(reason, "disconnect"):
+		s.turn = turnStatusError
+	default:
+		s.turn = turnStatusCompleted
+	}
+	s.mu.Unlock()
+}
+
+func (s *sessionStatus) advance() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.turn != turnStatusThinking {
+		return false
+	}
+	s.tick++
+	return true
+}
+
 func (s *sessionStatus) footerTokens() []string {
 	if s == nil {
 		return nil
@@ -38,6 +90,17 @@ func (s *sessionStatus) footerTokens() []string {
 	defer s.mu.RUnlock()
 
 	tokens := []string{s.figaroID}
+	switch s.turn {
+	case turnStatusThinking:
+		frames := livedoc.SpinnerFrames
+		tokens = append(tokens, "thinking "+string(frames[int(s.tick)%len(frames)]))
+	case turnStatusCompleted:
+		tokens = append(tokens, "completed ✓")
+	case turnStatusInterrupted:
+		tokens = append(tokens, "interrupted !")
+	case turnStatusError:
+		tokens = append(tokens, "error ✗")
+	}
 	if mantra := strings.Join(strings.Fields(s.metrics.Mantra), " "); mantra != "" {
 		tokens = append(tokens, truncRunes(mantra, 32))
 	}

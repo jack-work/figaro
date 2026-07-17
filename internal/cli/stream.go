@@ -114,11 +114,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			// so an old running daemon doesn't strand the command. We only act
 			// once our prompt has been submitted (sendCursor set after Qua
 			// returns), so a turn.done that predates our send can't end us early.
-			// An error always settles. (Do NOT gate on lt.cursor() advancing —
-			// the final commit can arrive via async desync recovery AFTER this
-			// one-shot turn.done, which would strand us and hang the command.)
+			// Do NOT gate on lt.cursor() advancing — the final commit can arrive
+			// via async desync recovery AFTER this one-shot turn.done, which
+			// would strand us and hang the command.
 			idle := d.Idle == nil || *d.Idle
-			settled := isErr || (sendCursor >= 0 && idle)
+			lt.finishTurn(d.Reason)
+			settled := sendCursor >= 0 && idle
 			if !settled {
 				break
 			}
@@ -189,6 +190,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	if tc.IsTTY() {
 		if restore, err := tc.MakeRaw(); err == nil {
 			defer restore()
+			fmt.Fprint(os.Stdout, enableModifiedKeyReporting)
+			defer fmt.Fprint(os.Stdout, disableModifiedKeyReporting)
 			// Belt-and-braces: always disable mouse reporting on exit so a crash
 			// mid-pager can't leave the shell spewing raw \x1b[<…M.
 			defer os.Stdout.WriteString(ldmouse.Disable)
@@ -209,6 +212,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 	mu.Lock()
 	sendCursor = cursor
+	lt.status.beginTurn()
 	mu.Unlock()
 
 	select {
@@ -349,11 +353,54 @@ func (in *interactiveInput) run() {
 					continue
 				}
 			}
-			b := data[i]
-			i++
+			var b byte
+			if key, consumed, ok, need := parseModifiedKey(data[i:]); need {
+				pending = append(pending, data[i:]...)
+				break
+			} else if ok {
+				i += consumed
+				if key.ctrl && (key.code == 'n' || key.code == 'N' || key.code == 'p' || key.code == 'P') {
+					in.enterTranscript()
+					in.mu.Lock()
+					delta := 1
+					if key.code == 'p' || key.code == 'P' {
+						delta = -1
+					}
+					in.lt.transcriptSelect(delta, key.shift || key.alt)
+					in.mu.Unlock()
+					in.pageOlder()
+					continue
+				}
+				var representable bool
+				b, representable = key.asByte()
+				if !representable {
+					continue
+				}
+			} else {
+				b = data[i]
+				i++
+			}
+			if !active && opensTranscriptFor(b) {
+				in.enterTranscript()
+				in.mu.Lock()
+				active = in.lt.transcriptActive()
+				in.mu.Unlock()
+			}
 			// Universal control keys — identical in incipit and transcript.
 			switch b {
 			case 0x03: // Ctrl-C: interrupt (if running) + close
+				if active {
+					in.mu.Lock()
+					text, selected := in.lt.transcriptSelectedText()
+					if selected {
+						in.lt.clearTranscriptSelection()
+					}
+					in.mu.Unlock()
+					if selected {
+						in.tc.SetClipboard(text)
+						continue
+					}
+				}
 				in.cancel()
 				return
 			case 0x04: // Ctrl-D: disconnect; the turn keeps running
@@ -374,6 +421,7 @@ func (in *interactiveInput) run() {
 			case 0x0f: // Ctrl-O: toggle verbosity
 				in.mu.Lock()
 				in.set.verbose = !in.set.verbose
+				in.lt.invalidateTranscriptRows()
 				in.lt.render()
 				in.mu.Unlock()
 				continue
@@ -392,6 +440,15 @@ func (in *interactiveInput) run() {
 				in.pageOlder()
 			}
 		}
+	}
+}
+
+func opensTranscriptFor(b byte) bool {
+	switch b {
+	case 'j', 'k', 'u', 'd', 'g', 'G', '/', '?', 0x0f, 0x0e, 0x10, 0x0d, 0x0a:
+		return true
+	default:
+		return false
 	}
 }
 

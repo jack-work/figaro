@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
@@ -55,17 +56,20 @@ type transcript struct {
 	checkOlder  bool
 	noMoreOlder bool
 
-	// rowCache memoizes the rendered rows of committed (immutable) messages by
-	// LT, so the expensive markdown render runs once per message instead of on
-	// every frame. Invalidated wholesale when the width changes (cacheW).
-	rowCache map[int][]string
-	cacheW   int
+	// rowCache memoizes unstyled rows of committed messages. Selection is
+	// applied after retrieval, so moving through nodes never re-renders prose.
+	rowCache  map[int]cachedMessage
+	cacheW    int
+	nodeRows  map[nodeRef]nodeSpan
+	selection nodeSelection
+	expanded  map[nodeRef]bool
 }
 
 func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string, startedAt time.Time) *transcript {
 	return &transcript{
 		out: out, view: view, client: client, figaroID: figaroID, startedAt: startedAt,
-		status: newSessionStatus(figaroID, startedAt), w: w, h: h, rowCache: map[int][]string{},
+		status: newSessionStatus(figaroID, startedAt), w: w, h: h,
+		rowCache: map[int]cachedMessage{}, nodeRows: map[nodeRef]nodeSpan{}, expanded: map[nodeRef]bool{},
 	}
 }
 
@@ -178,60 +182,86 @@ func (t *transcript) resize(w, h int) {
 	t.render()
 }
 
+func (t *transcript) invalidateRows() {
+	t.rowCache = map[int]cachedMessage{}
+}
+
 // lines renders the whole conversation (committed messages + the open one) to
 // physical rows, separated by a rule. Committed messages are immutable, so their
 // rendered rows are cached by LT — only the open message renders every frame.
 func (t *transcript) lines() []string {
 	if t.cacheW != t.w { // width changed: cached rows are stale
-		t.rowCache = map[int][]string{}
+		t.rowCache = map[int]cachedMessage{}
 		t.cacheW = t.w
 	}
 	v := t.client.View()
+	marks := t.selectionMarks()
 	var out []string
 	var lts []int // LT owning each line (0 for separator rules), parallel to out
-	appendMsg := func(rows []string, lt int) {
+	t.nodeRows = map[nodeRef]nodeSpan{}
+	appendMsg := func(rows []transcriptRow, lt int) {
 		if len(out) > 0 { // rule separator BETWEEN messages only — the footer
 			out = append(out, "", dimTransRule(t.w), "") // seals the last one, so a
 			lts = append(lts, lt, lt, lt)                // trailing rule+blank would
 		} // double up against it
 		for _, r := range rows {
-			out = append(out, r)
+			line := r.text
+			if r.ref.valid() {
+				line = decorateNodeRow(line, marks[r.ref], t.w)
+				span, ok := t.nodeRows[r.ref]
+				if !ok {
+					span.first = len(out)
+				}
+				span.last = len(out)
+				t.nodeRows[r.ref] = span
+			}
+			out = append(out, line)
 			lts = append(lts, lt)
 		}
 	}
 	for _, m := range v.Closed {
 		rows, ok := t.rowCache[m.LT]
 		if !ok {
-			rows = t.renderMsg(m)
+			rows = t.renderMsgBase(m)
 			t.rowCache[m.LT] = rows
 		}
-		appendMsg(rows, m.LT)
+		appendMsg(rows.rows, m.LT)
 	}
 	if v.Open != nil {
-		appendMsg(t.renderMsg(*v.Open), v.Open.LT)
+		appendMsg(t.renderMsgBase(*v.Open).rows, v.Open.LT)
 	}
 	t.lineLT = lts
 	return out
 }
 
-// renderMsg renders one message's nodes to clipped physical rows, optionally
-// prefixed with the role header ("❯ you" / "‹ figaro"). The spinner tick only
-// affects a running tool, which lives on the open message — committed messages
-// render identically every time, so their result is safe to cache.
-func (t *transcript) renderMsg(m aria.Message) []string {
-	var rows []string
+// renderMsgBase renders one message without selection decoration. Committed
+// instances are cached; open messages are rebuilt on every live frame.
+func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
+	var rows []transcriptRow
 	if h := messageHeader(m.Role); h != "" {
-		rows = append(rows, h, "")
+		rows = append(rows, transcriptRow{text: h}, transcriptRow{})
 	}
 	for k, n := range m.Nodes {
 		if k > 0 {
-			rows = append(rows, "")
+			rows = append(rows, transcriptRow{})
 		}
-		for _, l := range t.view.Render(n, t.w, t.tick) {
-			rows = append(rows, clipToWidth(l, t.w))
+		ref := nodeRef{lt: m.LT, index: k}
+		for _, l := range t.renderNode(n, ref) {
+			rows = append(rows, transcriptRow{text: l, ref: ref})
 		}
 	}
-	return rows
+	return cachedMessage{rows: rows}
+}
+
+func (t *transcript) renderNode(n livedoc.Node, ref nodeRef) []string {
+	width := t.w - 2
+	if width < 1 {
+		width = 1
+	}
+	if view, ok := t.view.(expandableNodeView); ok {
+		return view.RenderExpanded(n, width, t.tick, t.expanded[ref])
+	}
+	return t.view.Render(n, width, t.tick)
 }
 
 func (t *transcript) render() {
@@ -315,6 +345,9 @@ func (t *transcript) helpLines() []string {
 		"  /                   search (Enter jump · Esc cancel)",
 		"  y                   copy aria id",
 		"  ^O                  toggle verbose tool output",
+		"  ^N/^P               select next/previous node",
+		"  ^N/^P + Shift       extend node selection (Alt+^N/^P fallback)",
+		"  Enter / ^C          expand tools / copy selected node(s)",
 		"  ^L                  listen — stay open after the turn ends",
 		"  ^D                  detach; the turn keeps running",
 		"  ^C                  interrupt the turn / close",
@@ -391,6 +424,12 @@ func (t *transcript) key(b byte) {
 		t.inSearch, t.query = true, ""
 	case '?':
 		t.showHelp = true
+	case 0x0e: // Ctrl-N
+		t.selectNode(1, false)
+	case 0x10: // Ctrl-P
+		t.selectNode(-1, false)
+	case 0x0d, 0x0a:
+		t.toggleSelectedTools()
 	}
 	t.pendG = b == 'g' && !t.pendG
 	t.render()

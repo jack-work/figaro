@@ -2,6 +2,7 @@ package cli
 
 import (
 	"io"
+	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/internal/livedoc"
@@ -21,10 +22,13 @@ type livelogTurn struct {
 	client *aria.Client
 	view   *ariaView
 	tr     *transcript
+	status *sessionStatus
 
 	openLT   int
 	openRole string
 	open     []livedoc.Node
+	pending  *aria.Message
+	finished bool
 
 	// lastSealedLT is the highest LT incipit has committed to native scrollback
 	// inline (via Seal). It marks the flush boundary: on leaving the pager,
@@ -41,7 +45,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	in.Bookend = bookend
 	in.Rule = rule
 	in.Header = messageHeader
-	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view}
+	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view, status: status}
 	t.tr = newTranscript(out, w, h, view, t.client, figaroID, startedAt)
 	if status != nil {
 		t.tr.status = status
@@ -50,6 +54,11 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	t.client.OnClosed = func(m aria.Message) {
 		if t.tr.active {
 			t.tr.render() // transcript renders from the shared client model
+		} else if m.Role == "assistant" {
+			t.pending = &m
+			if t.finished {
+				t.sealPending()
+			}
 		} else {
 			t.in.Seal(m) // incipit: seal to native scrollback
 			if m.LT > t.lastSealedLT {
@@ -58,7 +67,14 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 		}
 	}
 	t.client.OnLive = func(lt int, role string, nodes []livedoc.Node) {
+		newOpen := lt != t.openLT
 		t.openLT, t.openRole, t.open = lt, role, nodes
+		if role == "assistant" {
+			if newOpen {
+				t.finished = false
+			}
+			t.status.beginTurn()
+		}
 		// A turn taller than the viewport can't render inline without scrolling
 		// its own live region off-screen; move it to the scrollable pager
 		// instead (the user can read/scroll/select there). Auto-entered once,
@@ -113,6 +129,8 @@ func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 // FIRST (so the labeled rule lands below the recovered turn, not on the
 // about-to-be-torn-down alt screen), then draw the rule.
 func (t *livelogTurn) abandon(reason string) {
+	t.status.finishTurn(reason)
+	t.pending = nil
 	t.leaveTranscript()
 	t.in.AbandonOpen(abandonRule(reason))
 }
@@ -123,7 +141,8 @@ func (t *livelogTurn) tick() {
 	// frame for a no-op paint — pure waste. Content changes still repaint via
 	// the OnLive/OnClosed hooks, so gating here is invisible. (The transcript
 	// branch already did this; the inline branch didn't.)
-	if !t.client.OpenAnimating() {
+	thinking := t.status.advance()
+	if !t.client.OpenAnimating() && !thinking {
 		return
 	}
 	if t.tr.active {
@@ -152,6 +171,34 @@ func (t *livelogTurn) render() {
 	}
 }
 
+func (t *livelogTurn) finishTurn(reason string) {
+	t.status.finishTurn(reason)
+	t.finished = true
+	if t.tr.active {
+		t.tr.render()
+		return
+	}
+	hadPending := t.pending != nil
+	t.sealPending()
+	if !hadPending && t.openLT != 0 && t.openRole == "assistant" {
+		t.in.Open(t.openLT, t.openRole, t.open)
+		if strings.HasPrefix(strings.ToLower(reason), "error:") {
+			t.in.AbandonOpen("")
+		}
+	}
+}
+
+func (t *livelogTurn) sealPending() {
+	if t.pending != nil {
+		t.in.Open(t.pending.LT, t.pending.Role, t.pending.Nodes)
+		t.in.Seal(*t.pending)
+		if t.pending.LT > t.lastSealedLT {
+			t.lastSealedLT = t.pending.LT
+		}
+		t.pending = nil
+	}
+}
+
 // enterTranscript switches to the full-screen pager (the caller has already
 // caught the model up via figaro.read so it shows full history).
 func (t *livelogTurn) enterTranscript() { t.tr.enter() }
@@ -159,6 +206,22 @@ func (t *livelogTurn) enterTranscript() { t.tr.enter() }
 // transcriptKey routes a navigation/search key to the locked transcript.
 // Transcript never self-exits; leaving is Ctrl-D/Ctrl-C at the input loop.
 func (t *livelogTurn) transcriptKey(b byte) { t.tr.key(b) }
+
+func (t *livelogTurn) invalidateTranscriptRows() { t.tr.invalidateRows() }
+
+func (t *livelogTurn) transcriptSelect(delta int, extend bool) {
+	t.tr.selectNode(delta, extend)
+	t.tr.render()
+}
+
+func (t *livelogTurn) transcriptHasSelection() bool { return t.tr.hasSelection() }
+
+func (t *livelogTurn) transcriptSelectedText() (string, bool) { return t.tr.selectedText() }
+
+func (t *livelogTurn) clearTranscriptSelection() {
+	t.tr.clearSelection()
+	t.tr.render()
+}
 
 // leaveTranscript restores the normal screen (mouse off, alt-screen off) and
 // flushes the tail of the conversation into native scrollback, so exiting the
@@ -238,9 +301,17 @@ func (t *livelogTurn) transcriptApplyOlder(r aria.AriaRead) { t.tr.applyOlder(r)
 type ariaView struct{ settings *renderSettings }
 
 func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
+	return v.RenderExpanded(n, width, tick, false)
+}
+
+func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bool) []string {
 	switch n.Type {
 	case livedoc.NodeTool:
-		return renderToolNode(n, width, nodeBashCapDefault, uint64(tick), v.settings != nil && v.settings.verbose)
+		bashCap := nodeBashCapDefault
+		if fullOutput {
+			bashCap = nodeOutputUnlimited
+		}
+		return renderToolNode(n, width, bashCap, uint64(tick), v.settings != nil && v.settings.verbose)
 	case livedoc.NodeThinking:
 		return renderThinkingNode(n, width)
 	case livedoc.NodeSteering:

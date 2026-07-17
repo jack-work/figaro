@@ -101,6 +101,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 			// Just surface error reasons so the user sees them.
 			var d rpc.DoneEntry
 			_ = json.Unmarshal(params, &d)
+			lt.finishTurn(d.Reason)
 			if strings.HasPrefix(d.Reason, "error:") {
 				fmt.Fprintln(os.Stderr, "\n"+d.Reason)
 			}
@@ -166,6 +167,8 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	if tc.IsTTY() {
 		if restore, err := tc.MakeRaw(); err == nil {
 			defer restore()
+			fmt.Fprint(os.Stdout, enableModifiedKeyReporting)
+			defer fmt.Fprint(os.Stdout, disableModifiedKeyReporting)
 			defer os.Stdout.WriteString(ldmouse.Disable)
 			go in.run()
 		}

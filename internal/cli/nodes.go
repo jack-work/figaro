@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	nodeBashCapDefault = 10
-	toolSummaryCap     = 80 // default truncation for a tool's summary line
+	nodeBashCapDefault  = 10
+	nodeOutputUnlimited = -1
+	toolSummaryCap      = 80 // default truncation for a tool's summary line
 )
 
 // renderSettings is the consumer-side verbosity toggle. The wire/IR always
@@ -239,7 +240,7 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 		// never bleed its escapes into the host terminal.
 		safe := render.SanitizeForTerminal(strings.TrimRight(n.Output, "\n"))
 		lines := strings.Split(safe, "\n")
-		if total := len(lines); total > bashCap {
+		if total := len(lines); bashCap >= 0 && total > bashCap {
 			lines = lines[total-bashCap:]
 			rows = append(rows, term.Dim(fmt.Sprintf("  │ … last %d of %d lines", bashCap, total)))
 		}
