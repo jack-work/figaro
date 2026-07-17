@@ -91,7 +91,9 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *ang
 	cancel()
 	if err == nil {
 		ep := transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
-		waitForSocket(ep.Address, 3*time.Second)
+		if err := waitForSocket(ep.Address, 3*time.Second); err != nil {
+			return "", transport.Endpoint{}, err
+		}
 		return explicitID, ep, nil
 	}
 	if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "not in tree") {

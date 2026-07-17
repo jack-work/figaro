@@ -57,7 +57,9 @@ func runPlainPrompt(loaded *config.Loaded, rawArgs []string) {
 			defer killCancel()
 			_ = acli.Kill(killCtx, figaroID, false)
 		}()
-		waitForSocket(figaroEP.Address, 3*time.Second)
+		if err := waitForSocket(figaroEP.Address, 3*time.Second); err != nil {
+			die("plain: %s", err)
+		}
 	} else {
 		figaroID, figaroEP, err = resolveTargetEndpoint(ctx, loaded, acli, id, true)
 		if err != nil {
@@ -122,7 +124,9 @@ func runExecPrompt(loaded *config.Loaded, rawArgs []string) {
 			defer killCancel()
 			_ = acli.Kill(killCtx, figaroID, false)
 		}()
-		waitForSocket(figaroEP.Address, 3*time.Second)
+		if err := waitForSocket(figaroEP.Address, 3*time.Second); err != nil {
+			die("x: %s", err)
+		}
 	} else {
 		figaroID, figaroEP, err = resolveTargetEndpoint(ctx, loaded, acli, id, true)
 		if err != nil {

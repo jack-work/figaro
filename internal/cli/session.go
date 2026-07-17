@@ -57,7 +57,9 @@ func WithSessionFor(loaded *config.Loaded, explicitID string, fn func(s *Session
 			}
 			ariaID = explicitID
 			ep = transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
-			waitForSocket(ep.Address, 3*time.Second)
+			if err := waitForSocket(ep.Address, 3*time.Second); err != nil {
+				return err
+			}
 		} else {
 			r, err := resolveBinding(ctx, acli, os.Getppid())
 			if err != nil {

@@ -195,7 +195,9 @@ func resolveAria(ctx context.Context, acli *angelus.Client, ariaID string) (tran
 			Scheme:  resp.Endpoint.Scheme,
 			Address: resp.Endpoint.Address,
 		}
-		waitForSocket(ep.Address, 3*time.Second)
+		if err := waitForSocket(ep.Address, 3*time.Second); err != nil {
+			return transport.Endpoint{}, err
+		}
 		return ep, nil
 	}
 	if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "not in tree") {
@@ -204,13 +206,23 @@ func resolveAria(ctx context.Context, acli *angelus.Client, ariaID string) (tran
 	return transport.Endpoint{}, fmt.Errorf("attach %q: %w", ariaID, err)
 }
 
-// waitForSocket polls until the socket exists or timeout.
-func waitForSocket(path string, timeout time.Duration) {
+// waitForSocket waits until the socket accepts a connection. Checking only
+// for a path races a restored agent when a stale socket file survived a
+// daemon restart.
+func waitForSocket(path string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
+	var lastErr error
 	for time.Now().Before(deadline) {
-		if _, err := os.Stat(path); err == nil {
-			return
+		conn, err := transport.DialRaw(transport.UnixEndpoint(path))
+		if err == nil {
+			_ = conn.Close()
+			return nil
 		}
+		lastErr = err
 		time.Sleep(20 * time.Millisecond)
 	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("socket was never dialed")
+	}
+	return fmt.Errorf("figaro socket %s did not accept connections within %s: %w", path, timeout, lastErr)
 }

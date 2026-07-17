@@ -326,7 +326,9 @@ func runSendEphemeralRaw(loaded *config.Loaded, prompt string) {
 		defer killCancel()
 		_ = acli.Kill(killCtx, figaroID, false)
 	}()
-	waitForSocket(figaroEP.Address, 3*time.Second)
+	if err := waitForSocket(figaroEP.Address, 3*time.Second); err != nil {
+		die("send: %s", err)
+	}
 
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	exitCode := plainPrompt(ctx, figaroEP, prompt, os.Stdout)
@@ -356,7 +358,9 @@ func runSendEphemeralRich(loaded *config.Loaded, prompt string, set renderSettin
 		defer killCancel()
 		_ = acli.Kill(killCtx, figaroID, false)
 	}()
-	waitForSocket(figaroEP.Address, 3*time.Second)
+	if err := waitForSocket(figaroEP.Address, 3*time.Second); err != nil {
+		die("send: %s", err)
+	}
 
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
@@ -405,7 +409,9 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 			defer killCancel()
 			_ = acli.Kill(killCtx, createResp.FigaroID, false)
 		}()
-		waitForSocket(figaroEP.Address, 3*time.Second)
+		if err := waitForSocket(figaroEP.Address, 3*time.Second); err != nil {
+			die("send: %s", err)
+		}
 	} else {
 		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true)
 		if err != nil {
@@ -441,7 +447,9 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 			defer killCancel()
 			_ = acli.Kill(killCtx, createResp.FigaroID, false)
 		}()
-		waitForSocket(figaroEP.Address, 3*time.Second)
+		if err := waitForSocket(figaroEP.Address, 3*time.Second); err != nil {
+			die("send: %s", err)
+		}
 	} else {
 		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true)
 		if err != nil {
