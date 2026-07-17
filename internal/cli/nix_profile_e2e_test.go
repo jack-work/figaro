@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -21,10 +25,22 @@ func TestNixProfileCopilotE2E(t *testing.T) {
 	wsl, err := exec.LookPath("wsl.exe")
 	require.NoError(t, err)
 
+	t.Setenv("COPILOT_GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
 	resolver, err := buildResolver(mustLoadConfig(), "copilot")
 	require.NoError(t, err)
 	token, err := resolver.Resolve()
 	require.NoError(t, err)
+	client, _ := buildProvider(mustLoadConfig(), "copilot")
+	require.NotNil(t, client)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	models, err := client.Models(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, models)
+	digest := sha256.Sum256([]byte(token))
+	tokenHash := hex.EncodeToString(digest[:])
 
 	const script = `set -eu
 bin="$HOME/.nix-profile/bin/figaro"
@@ -41,6 +57,7 @@ cleanup() {
 }
 trap cleanup EXIT
 test -n "${COPILOT_GITHUB_TOKEN:-}"
+printf 'token-sha=%s\n' "$(printf %s "$COPILOT_GITHUB_TOKEN" | sha256sum | cut -d' ' -f1)"
 mkdir -p "$FIGARO_CONFIG_DIR/loadouts"
 cat > "$FIGARO_CONFIG_DIR/config.toml" <<'EOF'
 default_loadout = "gpt-e2e"
@@ -89,6 +106,7 @@ printf '%s\n' "$result"
 	)
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "token-sha="+tokenHash)
 	require.Contains(t, string(output), "NIX_PROFILE_TOOL_OK")
 	require.Contains(t, string(output), "NIX_PROFILE_GPT_E2E_OK")
 }
