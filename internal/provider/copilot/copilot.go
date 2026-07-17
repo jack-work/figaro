@@ -144,6 +144,10 @@ func (c *Copilot) Send(ctx context.Context, in provider.SendInput, bus provider.
 		return err
 	}
 	if route == modelRouteResponses {
+		c.responses.SetModel(model)
+		c.mu.RLock()
+		c.responses.SetContextLimits(model, catalogContextLimits(c.catalog[model]))
+		c.mu.RUnlock()
 		return c.responses.Send(ctx, in, bus)
 	}
 	return c.inner.Send(ctx, in, bus)
@@ -179,12 +183,36 @@ type catalogModel struct {
 	Name               string   `json:"name"`
 	ModelPickerEnabled bool     `json:"model_picker_enabled"`
 	SupportedEndpoints []string `json:"supported_endpoints"`
-	Capabilities       struct {
+	Billing            struct {
+		TokenPrices struct {
+			Default struct {
+				MaxPromptTokens int `json:"max_prompt_tokens"`
+			} `json:"default"`
+			LongContext struct {
+				MaxPromptTokens int `json:"max_prompt_tokens"`
+			} `json:"long_context"`
+		} `json:"token_prices"`
+	} `json:"billing"`
+	Capabilities struct {
 		Limits struct {
 			MaxContextWindowTokens int `json:"max_context_window_tokens"`
 			MaxOutputTokens        int `json:"max_output_tokens"`
 		} `json:"limits"`
 	} `json:"capabilities"`
+}
+
+func catalogContextLimits(model catalogModel) responseContextLimits {
+	limits := responseContextLimits{
+		Default: model.Billing.TokenPrices.Default.MaxPromptTokens,
+		Long:    model.Billing.TokenPrices.LongContext.MaxPromptTokens,
+	}
+	if limits.Default == 0 {
+		limits.Default = model.Capabilities.Limits.MaxContextWindowTokens
+	}
+	if limits.Long == 0 {
+		limits.Long = model.Capabilities.Limits.MaxContextWindowTokens
+	}
+	return limits
 }
 
 type modelRoute int

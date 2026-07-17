@@ -61,6 +61,8 @@ func EstimateMessage(m message.Message) int {
 					chars += len(b)
 				}
 			}
+		case message.ContentToolResult:
+			chars += len(c.ToolCallID) + len(c.ToolName) + len(c.Text)
 		}
 	}
 	if chars == 0 {

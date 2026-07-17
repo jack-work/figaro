@@ -110,6 +110,14 @@ func TestEstimateMessage_ToolCall(t *testing.T) {
 	assert.Greater(t, tokens, 0)
 }
 
+func TestEstimateMessage_ToolResult(t *testing.T) {
+	m := message.Message{Content: []message.Content{
+		message.ToolResultContent("call-1", "bash", "abcdefgh", false),
+	}}
+	// call-1 (6) + bash (4) + output (8) = 18 chars → 5 tokens
+	assert.Equal(t, 5, EstimateMessage(m))
+}
+
 func TestEstimateMessage_Empty(t *testing.T) {
 	m := message.Message{}
 	assert.Equal(t, 0, EstimateMessage(m))

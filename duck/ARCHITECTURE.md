@@ -91,6 +91,14 @@ type Provider interface {
   Responses-compatible models use a direct WebSocket Responses transport.
   Both paths replay from Figaro's translator cache rather than depending on
   external session state.
+- Copilot Responses reads `system.model`, `system.max_tokens`,
+  `system.context_tier`, `system.max_context_tokens`,
+  `system.reasoning_context`, `system.thinking_effort`,
+  `system.verbosity`, `system.temperature`, `system.top_p`, and
+  `system.parallel_tool_calls` from the chalkboard for every turn. The
+  context tier selects a catalog-backed replay budget; `reasoning_context`
+  maps directly to the Responses API. A Responses model change creates a
+  new translation-cache fingerprint so opaque reasoning never crosses models.
 
 ## Cache prefix
 

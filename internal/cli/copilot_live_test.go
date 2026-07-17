@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -138,4 +139,39 @@ func TestLiveCopilotResponsesToolRoundTrip(t *testing.T) {
 	require.NotEmpty(t, second.messages[0].Content)
 	require.Equal(t, message.StopEnd, second.messages[0].StopReason)
 	require.Equal(t, "FIGARO_TOOL_DONE", strings.TrimSpace(second.messages[0].Content[0].Text))
+}
+
+func TestLiveCopilotResponsesLongContext(t *testing.T) {
+	if os.Getenv("FIGARO_LIVE_COPILOT_TEST") != "1" {
+		t.Skip("set FIGARO_LIVE_COPILOT_TEST=1 to run against the local Copilot credential")
+	}
+
+	loaded := mustLoadConfig()
+	p, _ := buildProvider(loaded, "copilot")
+	require.NotNil(t, p, "configure Copilot before running the live test")
+	p.SetModel("gpt-5.6-terra")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	log := store.NewMemLog[message.Message]()
+	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		Role:    message.RoleUser,
+		Content: []message.Content{message.TextContent("Reply with exactly: FIGARO_LONG_CONTEXT_SMOKE")},
+	}})
+	require.NoError(t, err)
+
+	bus := &copilotLiveBus{}
+	require.NoError(t, p.Send(ctx, provider.SendInput{
+		AriaID: "live-copilot-long-context",
+		FigLog: log,
+		Snapshot: map[string]json.RawMessage{
+			"system.context_tier":      json.RawMessage(`"long_context"`),
+			"system.reasoning_context": json.RawMessage(`"all_turns"`),
+			"system.thinking_effort":   json.RawMessage(`"low"`),
+			"system.verbosity":         json.RawMessage(`"low"`),
+		},
+	}, bus))
+	require.Len(t, bus.messages, 1)
+	require.NotEmpty(t, bus.messages[0].Content)
+	require.Equal(t, "FIGARO_LONG_CONTEXT_SMOKE", strings.TrimSpace(bus.messages[0].Content[0].Text))
 }

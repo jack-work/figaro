@@ -221,8 +221,8 @@ func TestResponsesProviderStreamsAndCachesAssistant(t *testing.T) {
 
 	entries := cache.Read()
 	require.Len(t, entries, 2)
-	assert.Equal(t, responsesFingerprint, entries[0].Fingerprint)
-	assert.Equal(t, responsesFingerprint, entries[1].Fingerprint)
+	assert.Equal(t, p.Fingerprint(), entries[0].Fingerprint)
+	assert.Equal(t, p.Fingerprint(), entries[1].Fingerprint)
 	assert.Contains(t, string(entries[1].Payload[0]), `"output_text"`)
 }
 
@@ -289,6 +289,160 @@ func TestResponsesProviderMapsFunctionCalls(t *testing.T) {
 	assert.Equal(t, message.StopToolInvoke, bus.messages[0].StopReason)
 	require.Len(t, bus.messages[0].Content, 1)
 	assert.Equal(t, message.ContentToolInvoke, bus.messages[0].Content[0].Type)
+}
+
+func TestResponsesProviderAppliesChalkboardParameters(t *testing.T) {
+	requests := make(chan responseCreateRequest, 1)
+	server := newResponseServer(t, func(conn *websocket.Conn) {
+		defer conn.Close()
+		var request responseCreateRequest
+		require.NoError(t, websocket.JSON.Receive(conn, &request))
+		requests <- request
+		require.NoError(t, websocket.JSON.Send(conn, map[string]any{
+			"type": "response.completed",
+			"response": map[string]any{
+				"status": "completed",
+				"output": []any{
+					map[string]any{
+						"type": "message",
+						"role": "assistant",
+						"content": []any{
+							map[string]any{"type": "output_text", "text": "configured"},
+						},
+					},
+				},
+			},
+		}))
+	})
+
+	p := newResponsesTestProvider(server, store.NewMemLog[[]json.RawMessage]())
+	log := newResponsesInputLog(t)
+	temperature := 0.4
+	require.NoError(t, p.Send(context.Background(), provider.SendInput{
+		AriaID: "aria-1",
+		FigLog: log,
+		Snapshot: chalkboard.Snapshot{
+			"system.context_tier":        json.RawMessage(`"long_context"`),
+			"system.thinking_effort":     json.RawMessage(`"high"`),
+			"system.reasoning_context":   json.RawMessage(`"all_turns"`),
+			"system.verbosity":           json.RawMessage(`"low"`),
+			"system.parallel_tool_calls": json.RawMessage(`false`),
+			"system.temperature":         json.RawMessage(`0.4`),
+		},
+	}, &responseTestBus{}))
+
+	request := <-requests
+	require.NotNil(t, request.Reasoning)
+	assert.Equal(t, "all_turns", request.Reasoning.Context)
+	assert.Equal(t, "high", request.Reasoning.Effort)
+	require.NotNil(t, request.Text)
+	assert.Equal(t, "low", request.Text.Verbosity)
+	assert.False(t, request.ParallelToolCalls)
+	require.NotNil(t, request.Temperature)
+	assert.Equal(t, temperature, *request.Temperature)
+	assert.Nil(t, request.TopP)
+}
+
+func TestResponseOptionsRejectInvalidChalkboardParameters(t *testing.T) {
+	tests := []struct {
+		name string
+		snap chalkboard.Snapshot
+	}{
+		{
+			name: "unknown context tier",
+			snap: chalkboard.Snapshot{
+				"system.context_tier": json.RawMessage(`"wide"`),
+			},
+		},
+		{
+			name: "unknown reasoning context",
+			snap: chalkboard.Snapshot{
+				"system.reasoning_context": json.RawMessage(`"forever"`),
+			},
+		},
+		{
+			name: "temperature out of range",
+			snap: chalkboard.Snapshot{
+				"system.temperature": json.RawMessage(`2.1`),
+			},
+		},
+		{
+			name: "top p out of range",
+			snap: chalkboard.Snapshot{
+				"system.top_p": json.RawMessage(`0`),
+			},
+		},
+		{
+			name: "temperature and top p",
+			snap: chalkboard.Snapshot{
+				"system.temperature": json.RawMessage(`0.2`),
+				"system.top_p":       json.RawMessage(`0.8`),
+			},
+		},
+		{
+			name: "parallel tools wrong type",
+			snap: chalkboard.Snapshot{
+				"system.parallel_tool_calls": json.RawMessage(`"yes"`),
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := responseOptionsFor(test.snap)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestResponsesProviderContextTierBudget(t *testing.T) {
+	p := newResponsesTestProvider(newResponseServer(t, func(conn *websocket.Conn) { conn.Close() }), store.NewMemLog[[]json.RawMessage]())
+	p.SetContextLimits("gpt-5.6-terra", responseContextLimits{Default: 20, Long: 200})
+	log := store.NewMemLog[message.Message]()
+	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		Role:    message.RoleUser,
+		Content: []message.Content{message.TextContent(strings.Repeat("x", 100))},
+	}})
+	require.NoError(t, err)
+	in := provider.SendInput{FigLog: log}
+
+	err = p.validateContext(in, "gpt-5.6-terra", responseRequestOptions{contextTier: "default"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "default-context")
+
+	require.NoError(t, p.validateContext(in, "gpt-5.6-terra", responseRequestOptions{contextTier: "long_context"}))
+
+	in.Snapshot = chalkboard.Snapshot{
+		"system.max_context_tokens": json.RawMessage(`21`),
+	}
+	err = p.validateContext(in, "gpt-5.6-terra", responseRequestOptions{contextTier: "default"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds the default-context limit")
+}
+
+func TestCatalogContextLimits(t *testing.T) {
+	var model catalogModel
+	model.Billing.TokenPrices.Default.MaxPromptTokens = 128000
+	model.Billing.TokenPrices.LongContext.MaxPromptTokens = 1000000
+	model.Capabilities.Limits.MaxContextWindowTokens = 1000000
+	assert.Equal(t, responseContextLimits{Default: 128000, Long: 1000000}, catalogContextLimits(model))
+}
+
+func TestResponsesProviderInvalidatesCacheOnModelSwitch(t *testing.T) {
+	cache := store.NewMemLog[[]json.RawMessage]()
+	server := newResponseServer(t, func(conn *websocket.Conn) { conn.Close() })
+	p := newResponsesTestProvider(server, cache)
+	initialFingerprint := p.Fingerprint()
+	_, err := cache.Append(store.Entry[[]json.RawMessage]{
+		FigaroLT:    1,
+		Payload:     []json.RawMessage{json.RawMessage(`{"type":"reasoning","encrypted_content":"opaque"}`)},
+		Fingerprint: initialFingerprint,
+	})
+	require.NoError(t, err)
+
+	p.SetModel("gpt-5.6-luna")
+	assert.NotEqual(t, initialFingerprint, p.Fingerprint())
+	require.NotNil(t, p.cacheFor("aria-1"))
+	assert.Empty(t, cache.Read())
 }
 
 func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
@@ -542,14 +696,14 @@ func TestResponsesInputPreservesCachedAssistantOutput(t *testing.T) {
 	_, err = cache.Append(store.Entry[[]json.RawMessage]{
 		FigaroLT:    first.LT,
 		Payload:     []json.RawMessage{json.RawMessage(`{"type":"message","role":"user","content":[{"type":"input_text","text":"question"}]}`)},
-		Fingerprint: responsesFingerprint,
+		Fingerprint: responseFingerprint("gpt-5.6-terra"),
 	})
 	require.NoError(t, err)
 	rawAssistant := json.RawMessage(`{"type":"reasoning","id":"rs_1","encrypted_content":"opaque"}`)
 	_, err = cache.Append(store.Entry[[]json.RawMessage]{
 		FigaroLT:    second.LT,
 		Payload:     []json.RawMessage{rawAssistant},
-		Fingerprint: responsesFingerprint,
+		Fingerprint: responseFingerprint("gpt-5.6-terra"),
 	})
 	require.NoError(t, err)
 

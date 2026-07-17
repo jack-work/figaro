@@ -19,9 +19,10 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/tokens"
 )
 
-const responsesFingerprint = "copilot-responses/v1"
+const responsesFingerprintPrefix = "copilot-responses/v2"
 
 type responseTokenSource interface {
 	Resolve() (string, error)
@@ -41,6 +42,7 @@ type responsesProvider struct {
 	machineID string
 	caches    map[string]store.Log[[]json.RawMessage]
 	sessions  map[string]string
+	limits    map[string]responseContextLimits
 
 	baseURL func(string) string
 	dial    responseDialer
@@ -60,6 +62,7 @@ func newResponsesProvider(
 		machineID: uuid.NewString(),
 		caches:    map[string]store.Log[[]json.RawMessage]{},
 		sessions:  map[string]string{},
+		limits:    map[string]responseContextLimits{},
 		baseURL:   func(token string) string { return baseURLFromToken(token, enterpriseDomain) },
 		dial:      dialResponses,
 	}
@@ -77,15 +80,41 @@ func (p *responsesProvider) SetTemplates(templates *template.Template) {
 	p.mu.Unlock()
 }
 
-func (p *responsesProvider) Fingerprint() string { return responsesFingerprint }
+func (p *responsesProvider) SetContextLimits(model string, limits responseContextLimits) {
+	if model == "" {
+		return
+	}
+	p.mu.Lock()
+	p.limits[model] = limits
+	p.mu.Unlock()
+}
+
+func (p *responsesProvider) Fingerprint() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return responseFingerprint(p.model)
+}
 
 func (p *responsesProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	if model, ok, err := responseOptionalString(in.Snapshot, "system.model"); err != nil {
+		return err
+	} else if ok && model != "" {
+		p.SetModel(model)
+	}
+	options, err := responseOptionsFor(in.Snapshot)
+	if err != nil {
+		return err
+	}
+	model, _, _ := p.settings()
+	if err := p.validateContext(in, model, options); err != nil {
+		return err
+	}
 	token, err := p.tokenSrc.Resolve()
 	if err != nil {
 		return fmt.Errorf("copilot responses: resolve token: %w", err)
 	}
 
-	err = p.sendWithToken(ctx, token, in, bus)
+	err = p.sendWithToken(ctx, token, in, bus, options)
 	if err == nil || !isResponseUnauthorized(err) {
 		return err
 	}
@@ -96,10 +125,16 @@ func (p *responsesProvider) Send(ctx context.Context, in provider.SendInput, bus
 	if err != nil {
 		return fmt.Errorf("copilot responses: resolve refreshed token: %w", err)
 	}
-	return p.sendWithToken(ctx, token, in, bus)
+	return p.sendWithToken(ctx, token, in, bus, options)
 }
 
-func (p *responsesProvider) sendWithToken(ctx context.Context, token string, in provider.SendInput, bus provider.Bus) error {
+func (p *responsesProvider) sendWithToken(
+	ctx context.Context,
+	token string,
+	in provider.SendInput,
+	bus provider.Bus,
+	options responseRequestOptions,
+) error {
 	input, err := p.inputFor(in)
 	if err != nil {
 		return err
@@ -108,7 +143,7 @@ func (p *responsesProvider) sendWithToken(ctx context.Context, token string, in 
 		return fmt.Errorf("copilot responses: empty context")
 	}
 
-	model, maxTokens, machineID := p.settings(in.Snapshot)
+	model, maxTokens, machineID := p.settings()
 	if model == "" {
 		return fmt.Errorf("copilot responses: model is required")
 	}
@@ -134,18 +169,16 @@ func (p *responsesProvider) sendWithToken(ctx context.Context, token string, in 
 		Input:             input,
 		Instructions:      responseInstructions(in.Snapshot),
 		Model:             model,
-		ParallelToolCalls: true,
+		ParallelToolCalls: options.parallelToolCalls,
+		Reasoning:         options.reasoning,
 		Store:             false,
+		Temperature:       options.temperature,
+		Text:              options.text,
+		TopP:              options.topP,
 		Tools:             responseTools(in.Tools),
 	}
 	if maxTokens > 0 {
 		request.MaxOutputTokens = maxTokens
-	}
-	if effort := responseString(in.Snapshot, "system.thinking_effort"); effort != "" {
-		request.Reasoning = &responseReasoning{Effort: effort}
-	}
-	if verbosity := responseString(in.Snapshot, "system.verbosity"); verbosity != "" {
-		request.Text = &responseText{Verbosity: verbosity}
 	}
 	if err := websocket.JSON.Send(conn, request); err != nil {
 		return fmt.Errorf("copilot responses: send create: %w", err)
@@ -183,15 +216,76 @@ func (p *responsesProvider) sendWithToken(ctx context.Context, token string, in 
 	return nil
 }
 
-func (p *responsesProvider) settings(snap chalkboard.Snapshot) (string, int, string) {
+func (p *responsesProvider) settings() (string, int, string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	model := p.model
-	if configured := responseString(snap, "system.model"); configured != "" {
-		model = configured
+	return p.model, p.maxTokens, p.machineID
+}
+
+type responseContextLimits struct {
+	Default int
+	Long    int
+}
+
+func (p *responsesProvider) validateContext(
+	in provider.SendInput,
+	model string,
+	options responseRequestOptions,
+) error {
+	requestedLimit, limitSet, err := responseOptionalInt(in.Snapshot, "system.max_context_tokens")
+	if err != nil {
+		return err
 	}
-	maxTokens := p.maxTokens
-	return model, maxTokens, p.machineID
+	if limitSet && requestedLimit <= 0 {
+		return fmt.Errorf("copilot responses: system.max_context_tokens must be greater than 0")
+	}
+
+	p.mu.Lock()
+	limits := p.limits[model]
+	p.mu.Unlock()
+	tierLimit := limits.Default
+	if options.contextTier == "long_context" && limits.Long > 0 {
+		tierLimit = limits.Long
+	}
+	if requestedLimit > 0 {
+		if tierLimit > 0 && requestedLimit > tierLimit {
+			return fmt.Errorf(
+				"copilot responses: system.max_context_tokens %d exceeds the %s limit of %d for %q",
+				requestedLimit,
+				contextTierName(options.contextTier),
+				tierLimit,
+				model,
+			)
+		}
+		tierLimit = requestedLimit
+	}
+	if !limitSet && tierLimit == 0 {
+		return nil
+	}
+
+	entries := in.FigLog.Read()
+	messages := make([]message.Message, 0, len(entries))
+	for _, entry := range entries {
+		messages = append(messages, entry.Payload)
+	}
+	used, _ := tokens.ContextSize(messages)
+	if used > tierLimit {
+		return fmt.Errorf(
+			"copilot responses: estimated prompt context %d tokens exceeds the %s limit of %d for %q; compact the aria or set system.context_tier to \"long_context\"",
+			used,
+			contextTierName(options.contextTier),
+			tierLimit,
+			model,
+		)
+	}
+	return nil
+}
+
+func contextTierName(tier string) string {
+	if tier == "long_context" {
+		return "long-context"
+	}
+	return "default-context"
 }
 
 func (p *responsesProvider) sessionIDFor(aria string) string {
@@ -215,21 +309,21 @@ func (p *responsesProvider) cacheFor(aria string) store.Log[[]json.RawMessage] {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if cache, ok := p.caches[aria]; ok {
-		p.invalidateCache(cache)
+		p.invalidateCache(cache, responseFingerprint(p.model))
 		return cache
 	}
 	cache, err := p.cacheOpen(aria)
 	if err != nil {
 		return nil
 	}
-	p.invalidateCache(cache)
+	p.invalidateCache(cache, responseFingerprint(p.model))
 	p.caches[aria] = cache
 	return cache
 }
 
-func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage]) {
+func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage], fingerprint string) {
 	for _, entry := range cache.Read() {
-		if entry.Fingerprint != "" && entry.Fingerprint != p.Fingerprint() {
+		if entry.Fingerprint != "" && entry.Fingerprint != fingerprint {
 			_ = cache.Clear()
 			break
 		}
@@ -353,16 +447,28 @@ type responseCreateRequest struct {
 	ParallelToolCalls bool               `json:"parallel_tool_calls"`
 	Reasoning         *responseReasoning `json:"reasoning,omitempty"`
 	Store             bool               `json:"store"`
+	Temperature       *float64           `json:"temperature,omitempty"`
 	Text              *responseText      `json:"text,omitempty"`
+	TopP              *float64           `json:"top_p,omitempty"`
 	Tools             []responseTool     `json:"tools,omitempty"`
 }
 
 type responseReasoning struct {
-	Effort string `json:"effort"`
+	Context string `json:"context,omitempty"`
+	Effort  string `json:"effort,omitempty"`
 }
 
 type responseText struct {
 	Verbosity string `json:"verbosity"`
+}
+
+type responseRequestOptions struct {
+	contextTier       string
+	parallelToolCalls bool
+	reasoning         *responseReasoning
+	temperature       *float64
+	text              *responseText
+	topP              *float64
 }
 
 type responseTool struct {
@@ -597,6 +703,128 @@ func responseString(snap chalkboard.Snapshot, key string) string {
 	var value string
 	_ = json.Unmarshal(raw, &value)
 	return strings.TrimSpace(value)
+}
+
+func responseFingerprint(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = "unset"
+	}
+	return responsesFingerprintPrefix + "/" + model
+}
+
+func responseOptionsFor(snap chalkboard.Snapshot) (responseRequestOptions, error) {
+	options := responseRequestOptions{parallelToolCalls: true}
+
+	if parallel, ok, err := responseOptionalBool(snap, "system.parallel_tool_calls"); err != nil {
+		return responseRequestOptions{}, err
+	} else if ok {
+		options.parallelToolCalls = parallel
+	}
+
+	contextTier, _, err := responseOptionalString(snap, "system.context_tier")
+	if err != nil {
+		return responseRequestOptions{}, err
+	}
+	if contextTier != "" && contextTier != "default" && contextTier != "long_context" {
+		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.context_tier must be \"default\" or \"long_context\", got %q", contextTier)
+	}
+	options.contextTier = contextTier
+
+	effort, _, err := responseOptionalString(snap, "system.thinking_effort")
+	if err != nil {
+		return responseRequestOptions{}, err
+	}
+	reasoningContext, _, err := responseOptionalString(snap, "system.reasoning_context")
+	if err != nil {
+		return responseRequestOptions{}, err
+	}
+	if reasoningContext != "" && reasoningContext != "auto" && reasoningContext != "current_turn" && reasoningContext != "all_turns" {
+		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.reasoning_context must be \"auto\", \"current_turn\", or \"all_turns\", got %q", reasoningContext)
+	}
+	if reasoningContext != "" || effort != "" {
+		options.reasoning = &responseReasoning{Context: reasoningContext, Effort: effort}
+	}
+
+	if verbosity, _, err := responseOptionalString(snap, "system.verbosity"); err != nil {
+		return responseRequestOptions{}, err
+	} else if verbosity != "" {
+		options.text = &responseText{Verbosity: verbosity}
+	}
+
+	temperature, temperatureSet, err := responseOptionalFloat(snap, "system.temperature")
+	if err != nil {
+		return responseRequestOptions{}, err
+	}
+	if temperatureSet && (temperature < 0 || temperature > 2) {
+		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.temperature must be between 0 and 2")
+	}
+	topP, topPSet, err := responseOptionalFloat(snap, "system.top_p")
+	if err != nil {
+		return responseRequestOptions{}, err
+	}
+	if topPSet && (topP <= 0 || topP > 1) {
+		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.top_p must be greater than 0 and at most 1")
+	}
+	if temperatureSet && topPSet {
+		return responseRequestOptions{}, fmt.Errorf("copilot responses: set either system.temperature or system.top_p, not both")
+	}
+	if temperatureSet {
+		options.temperature = &temperature
+	}
+	if topPSet {
+		options.topP = &topP
+	}
+
+	return options, nil
+}
+
+func responseOptionalString(snap chalkboard.Snapshot, key string) (string, bool, error) {
+	raw, ok := snap[key]
+	if !ok || string(raw) == "null" {
+		return "", false, nil
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", false, fmt.Errorf("copilot responses: %s must be a string: %w", key, err)
+	}
+	return strings.TrimSpace(value), true, nil
+}
+
+func responseOptionalBool(snap chalkboard.Snapshot, key string) (bool, bool, error) {
+	raw, ok := snap[key]
+	if !ok || string(raw) == "null" {
+		return false, false, nil
+	}
+	var value bool
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false, false, fmt.Errorf("copilot responses: %s must be a boolean: %w", key, err)
+	}
+	return value, true, nil
+}
+
+func responseOptionalFloat(snap chalkboard.Snapshot, key string) (float64, bool, error) {
+	raw, ok := snap[key]
+	if !ok || string(raw) == "null" {
+		return 0, false, nil
+	}
+	var value float64
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return 0, false, fmt.Errorf("copilot responses: %s must be a number: %w", key, err)
+	}
+	return value, true, nil
+}
+
+func responseOptionalInt(snap chalkboard.Snapshot, key string) (int, bool, error) {
+	raw, ok := snap[key]
+	if !ok || string(raw) == "null" {
+		return 0, false, nil
+	}
+	var value int
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return 0, false, fmt.Errorf("copilot responses: %s must be an integer: %w", key, err)
+	}
+	return value, true, nil
 }
 
 type responseObject struct {
