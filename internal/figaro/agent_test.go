@@ -184,6 +184,9 @@ func backedConv(t *testing.T, dir string) (store.Backend, string) {
 	require.NoError(t, err)
 	conv, err := b.CreateConversation(l)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, b.Close())
+	})
 	return b, conv
 }
 

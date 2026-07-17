@@ -19,7 +19,7 @@ func newTestAngelus(t *testing.T) (*angelus.Angelus, context.CancelFunc) {
 	t.Helper()
 	dir := t.TempDir()
 	a := angelus.New(angelus.Config{
-		RuntimeDir: dir,
+		RuntimeDir: testRuntimeDir(t, dir),
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -82,7 +82,7 @@ func TestAngelus_PIDMonitorUnbindsDeadPID(t *testing.T) {
 	require.NoError(t, a.Registry.Register(m))
 
 	// Get a guaranteed-dead PID: start a process and let it exit.
-	cmd := exec.Command("true")
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
 	require.NoError(t, cmd.Start())
 	deadPID := cmd.Process.Pid
 	require.NoError(t, cmd.Wait()) // now dead
@@ -108,13 +108,14 @@ func TestAngelus_StartedAt(t *testing.T) {
 
 func TestAngelus_StaleSocketCleanup(t *testing.T) {
 	dir := t.TempDir()
-	sockPath := filepath.Join(dir, "angelus.sock")
+	runtimeDir := testRuntimeDir(t, dir)
+	sockPath := filepath.Join(runtimeDir, "angelus.sock")
 
 	// Create a stale socket file.
 	require.NoError(t, os.WriteFile(sockPath, []byte("stale"), 0600))
 
 	a := angelus.New(angelus.Config{
-		RuntimeDir: dir,
+		RuntimeDir: runtimeDir,
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -129,9 +129,9 @@ func TestBash_OutputTruncation(t *testing.T) {
 
 func TestBash_LargeOutputByteTruncation(t *testing.T) {
 	b := tool.NewBashTool(t.TempDir())
-	// Generate more than MaxOutputBytes.
-	// Each line is ~80 chars, need 50KB / 80 ≈ 640 lines, but use more to be safe.
-	cmd := "for i in $(seq 1 2000); do echo $(head -c 80 /dev/urandom | base64 | head -c 80); done"
+	// Generate more than MaxOutputBytes using Bash built-ins only. This keeps
+	// the test from spawning a large MSYS helper-process tree on Windows.
+	cmd := "for i in {1..2000}; do printf '%080d\\n' \"$i\"; done"
 	result, err := b.Execute(context.Background(), map[string]interface{}{
 		"command": cmd,
 	}, nil)

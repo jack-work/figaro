@@ -1,12 +1,27 @@
 package angelus_test
 
 import (
+	"os"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/transport"
 )
+
+func testRuntimeDir(t *testing.T, fallback string) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return fallback
+	}
+	dir, err := os.MkdirTemp(os.TempDir(), "figaro-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
 
 func waitForAngelus(t *testing.T, path string) {
 	t.Helper()

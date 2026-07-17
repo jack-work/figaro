@@ -124,6 +124,7 @@ func (e *LocalExecutor) Start(req ExecRequest, onChunk func([]byte)) (Process, e
 		// copy goroutines to drain buffered output, then proceed.
 		ps, _ := cmd.Process.Wait()
 		p.exitCode = ps.ExitCode()
+		afterWait(cmd)
 		// Grace window: let cmd.Wait finish naturally if the pipes
 		// close quickly (the common case on Linux and short commands).
 		waitDone := make(chan struct{})
@@ -232,6 +233,7 @@ func (e *LocalExecutor) execPTY(ctx context.Context, cmd *exec.Cmd, req ExecRequ
 // returned flags is the normal path; a non-nil error is an unexpected
 // wait failure (not a non-zero exit).
 func waitCmd(ctx context.Context, cmd *exec.Cmd, timeout time.Duration) (exitCode int, timedOut, canceled bool, err error) {
+	defer afterWait(cmd)
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 

@@ -28,6 +28,29 @@ var (
 
 func afterStart(cmd *exec.Cmd) { assignJob(cmd) }
 
+func afterWait(cmd *exec.Cmd) {
+	if cmd.Process == nil {
+		return
+	}
+	pid := cmd.Process.Pid
+	jobsMu.Lock()
+	job, ok := jobs[pid]
+	if ok {
+		delete(jobs, pid)
+	}
+	jobsMu.Unlock()
+	if ok {
+		info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
+		_, _ = windows.SetInformationJobObject(
+			job,
+			windows.JobObjectExtendedLimitInformation,
+			uintptr(unsafe.Pointer(&info)),
+			uint32(unsafe.Sizeof(info)),
+		)
+		windows.CloseHandle(job)
+	}
+}
+
 // assignJob creates a Job Object, sets KILL_ON_JOB_CLOSE, and assigns
 // the process to it. If anything fails, the caller falls back to
 // Process.Kill (direct child only). Call after cmd.Start().

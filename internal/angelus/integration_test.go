@@ -59,7 +59,7 @@ model = "mock-model"
 `), 0600))
 
 	// Create and start angelus.
-	a := angelus.New(angelus.Config{RuntimeDir: dir})
+	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir)})
 
 	// Wire the provider factory.
 	factory := func(providerName string, knobs provider.Knobs) (provider.Provider, error) {
@@ -169,7 +169,7 @@ model = "mock-model"
 	backend, err := store.NewXwalBackend(dir + "/arias")
 	require.NoError(t, err)
 
-	a := angelus.New(angelus.Config{RuntimeDir: dir, Backend: backend})
+	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})
 
 	factory := func(providerName string, knobs provider.Knobs) (provider.Provider, error) {
 		return &mockProviderForIntegration{}, nil
@@ -229,7 +229,7 @@ model = "mock-model"
 
 	backend, err := store.NewXwalBackend(dir + "/arias")
 	require.NoError(t, err)
-	a := angelus.New(angelus.Config{RuntimeDir: dir, Backend: backend})
+	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})
 	factory := func(string, provider.Knobs) (provider.Provider, error) {
 		return &mockProviderForIntegration{}, nil
 	}

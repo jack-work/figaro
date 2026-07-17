@@ -13,6 +13,8 @@ func procAttr() *syscall.SysProcAttr {
 
 func afterStart(_ *exec.Cmd) {}
 
+func afterWait(_ *exec.Cmd) {}
+
 func killTree(cmd *exec.Cmd) {
 	if cmd.Process != nil {
 		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)

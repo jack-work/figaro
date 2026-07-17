@@ -24,7 +24,7 @@ import (
 // shared with the integration tests' mockProviderForIntegration shape.
 func bootAngelus(t *testing.T, dir string, loaded *config.Loaded) (*angelus.Client, func()) {
 	t.Helper()
-	a := angelus.New(angelus.Config{RuntimeDir: dir})
+	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir)})
 
 	factory := func(providerName string, knobs provider.Knobs) (provider.Provider, error) {
 		return &mockProviderForIntegration{}, nil
