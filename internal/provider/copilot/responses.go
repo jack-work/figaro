@@ -456,6 +456,7 @@ type responseCreateRequest struct {
 type responseReasoning struct {
 	Context string `json:"context,omitempty"`
 	Effort  string `json:"effort,omitempty"`
+	Summary string `json:"summary,omitempty"`
 }
 
 type responseText struct {
@@ -742,8 +743,19 @@ func responseOptionsFor(snap chalkboard.Snapshot) (responseRequestOptions, error
 	if reasoningContext != "" && reasoningContext != "auto" && reasoningContext != "current_turn" && reasoningContext != "all_turns" {
 		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.reasoning_context must be \"auto\", \"current_turn\", or \"all_turns\", got %q", reasoningContext)
 	}
-	if reasoningContext != "" || effort != "" {
-		options.reasoning = &responseReasoning{Context: reasoningContext, Effort: effort}
+	reasoningSummary, _, err := responseOptionalString(snap, "system.reasoning_summary")
+	if err != nil {
+		return responseRequestOptions{}, err
+	}
+	if reasoningSummary != "" && reasoningSummary != "auto" {
+		return responseRequestOptions{}, fmt.Errorf("copilot responses: system.reasoning_summary must be \"auto\", got %q", reasoningSummary)
+	}
+	if reasoningContext != "" || effort != "" || reasoningSummary != "" {
+		options.reasoning = &responseReasoning{
+			Context: reasoningContext,
+			Effort:  effort,
+			Summary: reasoningSummary,
+		}
 	}
 
 	if verbosity, _, err := responseOptionalString(snap, "system.verbosity"); err != nil {

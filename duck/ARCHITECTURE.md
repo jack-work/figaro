@@ -93,7 +93,7 @@ type Provider interface {
   external session state.
 - Copilot Responses reads `system.model`, `system.max_tokens`,
   `system.context_tier`, `system.max_context_tokens`,
-  `system.reasoning_context`, `system.thinking_effort`,
+  `system.reasoning_context`, `system.reasoning_summary`, `system.thinking_effort`,
   `system.verbosity`, `system.temperature`, `system.top_p`, and
   `system.parallel_tool_calls` from the chalkboard for every turn. The
   context tier selects a catalog-backed replay budget; `reasoning_context`

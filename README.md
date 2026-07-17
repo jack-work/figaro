@@ -48,6 +48,7 @@ model = "gpt-5.6-terra"
 context_tier = "long_context"
 thinking_effort = "high"
 reasoning_context = "all_turns"
+reasoning_summary = "auto"
 verbosity = "low"
 max_tokens = 16000
 ```
@@ -58,6 +59,7 @@ Responses settings can change between turns on a live aria:
 figaro set system.model '"gpt-5.6-luna"'
 figaro set system.context_tier '"default"'
 figaro set system.reasoning_context '"current_turn"'
+figaro set system.reasoning_summary '"auto"'
 figaro set system.max_context_tokens 120000
 figaro set system.parallel_tool_calls false
 figaro set system.temperature 0.4
@@ -67,9 +69,11 @@ figaro set system.temperature 0.4
 budget; `system.max_context_tokens` can impose a smaller cap. Figaro rejects
 a turn that would exceed that budget rather than dropping cached history.
 `system.reasoning_context` maps to the Responses API's `auto`,
-`current_turn`, or `all_turns` mode. `system.temperature` and `system.top_p`
-are mutually exclusive. A model switch starts a new Responses cache lineage
-so opaque reasoning is never replayed under a different model.
+`current_turn`, or `all_turns` mode. `system.reasoning_summary = "auto"`
+requests a readable reasoning summary; it does not expose raw private
+chain-of-thought. `system.temperature` and `system.top_p` are mutually
+exclusive. A model switch starts a new Responses cache lineage so opaque
+reasoning is never replayed under a different model.
 
 ## Core concepts
 

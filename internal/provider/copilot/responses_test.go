@@ -325,6 +325,7 @@ func TestResponsesProviderAppliesChalkboardParameters(t *testing.T) {
 			"system.context_tier":        json.RawMessage(`"long_context"`),
 			"system.thinking_effort":     json.RawMessage(`"high"`),
 			"system.reasoning_context":   json.RawMessage(`"all_turns"`),
+			"system.reasoning_summary":   json.RawMessage(`"auto"`),
 			"system.verbosity":           json.RawMessage(`"low"`),
 			"system.parallel_tool_calls": json.RawMessage(`false`),
 			"system.temperature":         json.RawMessage(`0.4`),
@@ -335,6 +336,7 @@ func TestResponsesProviderAppliesChalkboardParameters(t *testing.T) {
 	require.NotNil(t, request.Reasoning)
 	assert.Equal(t, "all_turns", request.Reasoning.Context)
 	assert.Equal(t, "high", request.Reasoning.Effort)
+	assert.Equal(t, "auto", request.Reasoning.Summary)
 	require.NotNil(t, request.Text)
 	assert.Equal(t, "low", request.Text.Verbosity)
 	assert.False(t, request.ParallelToolCalls)
@@ -358,6 +360,12 @@ func TestResponseOptionsRejectInvalidChalkboardParameters(t *testing.T) {
 			name: "unknown reasoning context",
 			snap: chalkboard.Snapshot{
 				"system.reasoning_context": json.RawMessage(`"forever"`),
+			},
+		},
+		{
+			name: "unknown reasoning summary",
+			snap: chalkboard.Snapshot{
+				"system.reasoning_summary": json.RawMessage(`"detailed"`),
 			},
 		},
 		{

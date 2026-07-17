@@ -167,6 +167,7 @@ func TestLiveCopilotResponsesLongContext(t *testing.T) {
 		Snapshot: map[string]json.RawMessage{
 			"system.context_tier":      json.RawMessage(`"long_context"`),
 			"system.reasoning_context": json.RawMessage(`"all_turns"`),
+			"system.reasoning_summary": json.RawMessage(`"auto"`),
 			"system.thinking_effort":   json.RawMessage(`"low"`),
 			"system.verbosity":         json.RawMessage(`"low"`),
 		},
