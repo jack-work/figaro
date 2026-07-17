@@ -78,6 +78,7 @@ func runRestWithFlags(force, keepPIDs bool) {
 
 // runModels lists provider models.
 func runModels(loaded *config.Loaded) {
+	ensureHush()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
