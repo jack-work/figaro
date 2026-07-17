@@ -79,7 +79,11 @@ created=$("$bin" new -j -- "Reply with exactly: NIX_PROFILE_BOOT_OK")
 aria=$(printf '%s\n' "$created" | sed -n 's/.*"aria_id":"\([^"]*\)".*/\1/p')
 test -n "$aria"
 result=$("$bin" send --id "$aria" -r -t -- "Use the bash tool exactly once to run: echo NIX_PROFILE_TOOL_OK. After it finishes, reply with exactly: NIX_PROFILE_GPT_E2E_OK.")
+printf 'nix-send-bytes=%s\n' "${#result}"
 printf '%s\n' "$result"
+if ! printf '%s\n' "$result" | grep -q 'NIX_PROFILE_GPT_E2E_OK'; then
+  "$bin" show --id "$aria" 8 -j -l >&2 || true
+fi
 `
 	cmd := exec.Command(wsl, "-d", "nixos", "--exec", "/bin/sh", "-c", script)
 	wslEnv := os.Getenv("WSLENV")
