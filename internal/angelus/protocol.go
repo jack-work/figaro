@@ -110,24 +110,11 @@ type handlers struct {
 	// short-timeout List call.
 	loadoutHashMu    sync.Mutex
 	loadoutHashCache map[string]loadoutHashEntry
-
-	listChalkboardMu    sync.Mutex
-	listChalkboardCache map[string]listChalkboardEntry
 }
 
 type loadoutHashEntry struct {
 	hash string
 	at   time.Time
-}
-
-type listChalkboardEntry struct {
-	provider    string
-	model       string
-	mantra      string
-	cwd         string
-	loadoutName string
-	loadoutVer  string
-	at          time.Time
 }
 
 type listEnrichment struct {
@@ -186,10 +173,6 @@ func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoRespon
 	if h.angelus.Backend == nil {
 		return
 	}
-	if cached, ok := h.cachedListChalkboard(ariaID); ok {
-		cached.apply(entry)
-		return
-	}
 	snap, err := h.angelus.Backend.ChalkboardState(ariaID)
 	if err != nil {
 		return
@@ -200,62 +183,28 @@ func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoRespon
 		}
 		return ""
 	}
-	cached := listChalkboardEntry{
-		provider: get("system.provider"),
-		model:    get("system.model"),
-		mantra:   get("mantra"),
-		cwd:      get("system.cwd"),
-		at:       time.Now(),
+	if entry.Provider == "" {
+		entry.Provider = get("system.provider")
+	}
+	if entry.Model == "" {
+		entry.Model = get("system.model")
+	}
+	if entry.Mantra == "" {
+		entry.Mantra = get("mantra")
+	}
+	if entry.Cwd == "" {
+		entry.Cwd = get("system.cwd")
 	}
 	// Loadout: the name + whether the conversation's stamped content hash is
 	// still the current one ("live") or an older version (its short hash).
-	if name := get("system.loadout_name"); name != "" {
-		cached.loadoutName = name
-		stamped := get("system.loadout_version")
-		cached.loadoutVer = loadoutVerLabel(stamped, h.currentLoadoutHash(name))
-	}
-	h.cacheListChalkboard(ariaID, cached)
-	cached.apply(entry)
-}
-
-func (e listChalkboardEntry) apply(entry *rpc.FigaroInfoResponse) {
-	if entry.Provider == "" {
-		entry.Provider = e.provider
-	}
-	if entry.Model == "" {
-		entry.Model = e.model
-	}
-	if entry.Mantra == "" {
-		entry.Mantra = e.mantra
-	}
-	if entry.Cwd == "" {
-		entry.Cwd = e.cwd
-	}
 	if entry.LoadoutName == "" {
-		entry.LoadoutName = e.loadoutName
+		entry.LoadoutName = get("system.loadout_name")
 	}
-	if entry.LoadoutVer == "" {
-		entry.LoadoutVer = e.loadoutVer
+	if entry.LoadoutName != "" && entry.LoadoutVer == "" {
+		name := entry.LoadoutName
+		stamped := get("system.loadout_version")
+		entry.LoadoutVer = loadoutVerLabel(stamped, h.currentLoadoutHash(name))
 	}
-}
-
-func (h *handlers) cachedListChalkboard(ariaID string) (listChalkboardEntry, bool) {
-	h.listChalkboardMu.Lock()
-	defer h.listChalkboardMu.Unlock()
-	entry, ok := h.listChalkboardCache[ariaID]
-	if !ok || time.Since(entry.at) > 15*time.Second {
-		return listChalkboardEntry{}, false
-	}
-	return entry, true
-}
-
-func (h *handlers) cacheListChalkboard(ariaID string, entry listChalkboardEntry) {
-	h.listChalkboardMu.Lock()
-	if h.listChalkboardCache == nil {
-		h.listChalkboardCache = map[string]listChalkboardEntry{}
-	}
-	h.listChalkboardCache[ariaID] = entry
-	h.listChalkboardMu.Unlock()
 }
 
 // currentLoadoutHash is the content hash the loadout would have right now
@@ -821,10 +770,8 @@ func (h *handlers) enrichList(result []rpc.FigaroInfoResponse, tasks []listEnric
 							entry.LastActive = meta.LastActiveMS
 						}
 					}
-					if meta == nil || meta.LastFigaroLT == 0 {
-						if count, ok := h.angelus.Backend.CanonicalCount(task.ariaID); ok {
-							entry.MessageCount = count
-						}
+					if count, ok := h.angelus.Backend.CanonicalCount(task.ariaID); ok {
+						entry.MessageCount = count
 					}
 				}
 				h.fillFromChalkboard(task.ariaID, entry)
