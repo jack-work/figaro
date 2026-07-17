@@ -63,6 +63,27 @@ func TestDaemonLikeBash(t *testing.T) {
 	}
 }
 
+func TestBash_ReleasesWindowsJobHandles(t *testing.T) {
+	bash := NewBashTool(t.TempDir())
+	for i := 0; i < 32; i++ {
+		result, err := bash.Execute(context.Background(), map[string]interface{}{
+			"command": "printf FIGARO_JOB_CLEANUP",
+		}, nil)
+		if err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+		if textFromContent(result) != "FIGARO_JOB_CLEANUP" {
+			t.Fatalf("run %d output: %q", i, textFromContent(result))
+		}
+	}
+	jobsMu.Lock()
+	count := len(jobs)
+	jobsMu.Unlock()
+	if count != 0 {
+		t.Fatalf("leaked %d Windows Job handle(s)", count)
+	}
+}
+
 func textFromContent(content []message.Content) string {
 	var text string
 	for _, item := range content {

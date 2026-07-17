@@ -102,6 +102,8 @@ type Backend interface {
 	// Node / Nodes expose the tree for lineage + listing.
 	Node(id string) (NodeView, bool)
 	Nodes() []NodeView
+	Conversations() []NodeView
+	ConversationIDs() []string
 
 	// CanonicalCount returns the authoritative conversational message count
 	// for an aria, recomputed from its (single, deterministic) live head IR —

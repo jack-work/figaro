@@ -38,6 +38,7 @@ func TestCountStable_PromoteAttendPromote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	defer b.Close()
 	l, _ := b.CreateLoadout("d", patchSet(map[string]string{"system.model": "m"}))
 	conv, _ := b.CreateConversation(l)
@@ -92,5 +93,46 @@ func TestCountStable_PromoteAttendPromote(t *testing.T) {
 	defer b2.Close()
 	if c := listCount(t, b2, conv); c != base {
 		t.Fatalf("after reopen count=%d want %d", c, base)
+	}
+}
+
+func TestCanonicalCountCachesUntilTailChanges(t *testing.T) {
+	b, err := NewXwalBackend(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	l, _ := b.CreateLoadout("d", patchSet(map[string]string{"system.model": "m"}))
+	conv, _ := b.CreateConversation(l)
+	ir, err := b.Open(conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ir.Append(Entry[message.Message]{Payload: userText("one")}); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := b.CanonicalCount(conv); !ok || got != 1 {
+		t.Fatalf("initial canonical count = %d, %t; want 1, true", got, ok)
+	}
+
+	b.mu.Lock()
+	h := b.open[conv]
+	firstTail := h.countTail
+	b.mu.Unlock()
+
+	if got, ok := b.CanonicalCount(conv); !ok || got != 1 {
+		t.Fatalf("cached canonical count = %d, %t; want 1, true", got, ok)
+	}
+	if _, err := ir.Append(Entry[message.Message]{Payload: userText("two")}); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := b.CanonicalCount(conv); !ok || got != 2 {
+		t.Fatalf("canonical count after append = %d, %t; want 2, true", got, ok)
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if h.countTail == firstTail {
+		t.Fatalf("cached count tail did not advance from %d", firstTail)
 	}
 }

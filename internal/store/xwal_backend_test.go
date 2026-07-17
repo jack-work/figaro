@@ -16,6 +16,7 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	defer b.Close()
 
 	// create = fork a loadout into a conversation
@@ -111,6 +112,48 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		if str(snap["system.cwd"]) != "/tmp" {
 			t.Fatalf("child %s lost inherited cwd: %q", id, str(snap["system.cwd"]))
 		}
+	}
+}
+
+func TestXwalBackendListRecountsWatermarkedMeta(t *testing.T) {
+	b, err := NewXwalBackend(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	loadout, err := b.CreateLoadout("default", patchSet(map[string]string{"system.credo": "be terse"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conv, err := b.CreateConversation(loadout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ir, err := b.Open(conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := ir.Append(Entry[message.Message]{Payload: userText("one")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetMeta(conv, &AriaMeta{MessageCount: 99, LastFigaroLT: entry.LT}); err != nil {
+		t.Fatal(err)
+	}
+
+	b.dropHandle(conv)
+	list, err := b.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, info := range list {
+		if info.ID == conv && info.MessageCount != 1 {
+			t.Fatalf("watermarked meta count = %d, want canonical count 1", info.MessageCount)
+		}
+	}
+	if meta, _ := b.Meta(conv); meta == nil || meta.MessageCount != 1 {
+		t.Fatalf("self-healed meta = %+v, want message_count 1", meta)
 	}
 }
 

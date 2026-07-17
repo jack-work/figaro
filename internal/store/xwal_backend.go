@@ -33,9 +33,13 @@ type XwalBackend struct {
 }
 
 type ariaHandle struct {
-	id    string
-	ir    *cachedLog[message.Message]
-	trans map[string]*cachedLog[[]json.RawMessage]
+	id          string
+	ir          *cachedLog[message.Message]
+	trans       map[string]*cachedLog[[]json.RawMessage]
+	countMu     sync.Mutex
+	count       int
+	countTail   uint64
+	countCached bool
 }
 
 func NewXwalBackend(root string) (*XwalBackend, error) {
@@ -251,6 +255,8 @@ func (b *XwalBackend) OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo
 
 func (b *XwalBackend) Node(id string) (NodeView, bool) { return b.store.Node(id) }
 func (b *XwalBackend) Nodes() []NodeView               { return b.store.Nodes() }
+func (b *XwalBackend) Conversations() []NodeView       { return b.store.Conversations() }
+func (b *XwalBackend) ConversationIDs() []string       { return b.store.ConversationIDs() }
 
 // CanonicalCount recomputes the conversational message count from the aria's
 // live head IR (message.CountMessages — the shared derivation) and self-heals
@@ -388,12 +394,9 @@ func (b *XwalBackend) List() ([]AriaInfo, error) {
 			info.Meta = m
 			info.MessageCount = m.MessageCount
 		}
-		// SINGLE SOURCE OF TRUTH: the count is the canonical conversational
-		// message count of the live head's IR — not whatever a stale sidecar
-		// (possibly written by an older binary with a different convention, or
-		// before a heal) happens to hold. The head is now a single
-		// deterministic leaf (figwal multi-head fix + heal), so this is
-		// order-independent. Self-heal the sidecar when it disagrees.
+		// The sidecar can predate the canonical counting convention, so the
+		// live head remains authoritative. canonicalCount memoizes by tail
+		// while this backend is alive, avoiding repeated IR walks.
 		if c, ok := b.canonicalCount(n.ID); ok {
 			info.MessageCount = c
 			if info.Meta != nil && info.Meta.MessageCount != c {
@@ -413,16 +416,31 @@ func (b *XwalBackend) List() ([]AriaInfo, error) {
 // path shares. Returns false if the head can't be opened (the sidecar value,
 // if any, then stands).
 func (b *XwalBackend) canonicalCount(id string) (int, bool) {
-	lg, err := b.Open(id)
+	b.mu.Lock()
+	h, err := b.handleLocked(id)
+	b.mu.Unlock()
 	if err != nil {
 		return 0, false
 	}
-	entries := lg.Read()
+	h.countMu.Lock()
+	defer h.countMu.Unlock()
+	tail, hasTail := h.ir.PeekTail()
+	tailLT := uint64(0)
+	if hasTail {
+		tailLT = tail.LT
+	}
+	if h.countCached && h.countTail == tailLT {
+		return h.count, true
+	}
+	entries := h.ir.Read()
 	msgs := make([]message.Message, 0, len(entries))
 	for _, e := range entries {
 		msgs = append(msgs, e.Payload)
 	}
-	return message.CountMessages(msgs), true
+	h.count = message.CountMessages(msgs)
+	h.countTail = tailLT
+	h.countCached = true
+	return h.count, true
 }
 
 func (b *XwalBackend) Remove(ariaID string, recursive bool) error {

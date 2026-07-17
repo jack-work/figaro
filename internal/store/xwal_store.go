@@ -418,6 +418,33 @@ func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string][]int {
 	return vec
 }
 
+// Conversations returns a view of every conversation trunk, including
+// fork-forest vectors but excluding ceremonial anchors.
+func (s *XwalStore) Conversations() []NodeView {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	infos := s.listTrunks() // one disk scan, shared by vectors + the view loop
+	vec := s.vectorsLocked(infos)
+	out := make([]NodeView, 0, len(infos))
+	for _, t := range infos {
+		out = append(out, s.view(t, vec))
+	}
+	return out
+}
+
+// ConversationIDs returns persisted conversation ids without computing
+// vectors or reading ceremonial loadout anchors.
+func (s *XwalStore) ConversationIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	infos := s.listTrunks()
+	out := make([]string, len(infos))
+	for i, t := range infos {
+		out[i] = t.ID
+	}
+	return out
+}
+
 // Nodes returns a view of every conversation trunk plus the ceremonial
 // anchors (the root + every loadout stump).
 func (s *XwalStore) Nodes() []NodeView {

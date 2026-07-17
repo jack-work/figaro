@@ -110,11 +110,30 @@ type handlers struct {
 	// short-timeout List call.
 	loadoutHashMu    sync.Mutex
 	loadoutHashCache map[string]loadoutHashEntry
+
+	listChalkboardMu    sync.Mutex
+	listChalkboardCache map[string]listChalkboardEntry
 }
 
 type loadoutHashEntry struct {
 	hash string
 	at   time.Time
+}
+
+type listChalkboardEntry struct {
+	provider    string
+	model       string
+	mantra      string
+	cwd         string
+	loadoutName string
+	loadoutVer  string
+	at          time.Time
+}
+
+type listEnrichment struct {
+	index   int
+	ariaID  string
+	dormant bool
 }
 
 // reloadConfigIfChanged re-reads config.toml from disk when the
@@ -167,6 +186,10 @@ func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoRespon
 	if h.angelus.Backend == nil {
 		return
 	}
+	if cached, ok := h.cachedListChalkboard(ariaID); ok {
+		cached.apply(entry)
+		return
+	}
 	snap, err := h.angelus.Backend.ChalkboardState(ariaID)
 	if err != nil {
 		return
@@ -177,25 +200,62 @@ func (h *handlers) fillFromChalkboard(ariaID string, entry *rpc.FigaroInfoRespon
 		}
 		return ""
 	}
-	if entry.Provider == "" {
-		entry.Provider = get("system.provider")
-	}
-	if entry.Model == "" {
-		entry.Model = get("system.model")
-	}
-	if entry.Mantra == "" {
-		entry.Mantra = get("mantra")
-	}
-	if entry.Cwd == "" {
-		entry.Cwd = get("system.cwd")
+	cached := listChalkboardEntry{
+		provider: get("system.provider"),
+		model:    get("system.model"),
+		mantra:   get("mantra"),
+		cwd:      get("system.cwd"),
+		at:       time.Now(),
 	}
 	// Loadout: the name + whether the conversation's stamped content hash is
 	// still the current one ("live") or an older version (its short hash).
 	if name := get("system.loadout_name"); name != "" {
-		entry.LoadoutName = name
+		cached.loadoutName = name
 		stamped := get("system.loadout_version")
-		entry.LoadoutVer = loadoutVerLabel(stamped, h.currentLoadoutHash(name))
+		cached.loadoutVer = loadoutVerLabel(stamped, h.currentLoadoutHash(name))
 	}
+	h.cacheListChalkboard(ariaID, cached)
+	cached.apply(entry)
+}
+
+func (e listChalkboardEntry) apply(entry *rpc.FigaroInfoResponse) {
+	if entry.Provider == "" {
+		entry.Provider = e.provider
+	}
+	if entry.Model == "" {
+		entry.Model = e.model
+	}
+	if entry.Mantra == "" {
+		entry.Mantra = e.mantra
+	}
+	if entry.Cwd == "" {
+		entry.Cwd = e.cwd
+	}
+	if entry.LoadoutName == "" {
+		entry.LoadoutName = e.loadoutName
+	}
+	if entry.LoadoutVer == "" {
+		entry.LoadoutVer = e.loadoutVer
+	}
+}
+
+func (h *handlers) cachedListChalkboard(ariaID string) (listChalkboardEntry, bool) {
+	h.listChalkboardMu.Lock()
+	defer h.listChalkboardMu.Unlock()
+	entry, ok := h.listChalkboardCache[ariaID]
+	if !ok || time.Since(entry.at) > 15*time.Second {
+		return listChalkboardEntry{}, false
+	}
+	return entry, true
+}
+
+func (h *handlers) cacheListChalkboard(ariaID string, entry listChalkboardEntry) {
+	h.listChalkboardMu.Lock()
+	if h.listChalkboardCache == nil {
+		h.listChalkboardCache = map[string]listChalkboardEntry{}
+	}
+	h.listChalkboardCache[ariaID] = entry
+	h.listChalkboardMu.Unlock()
 }
 
 // currentLoadoutHash is the content hash the loadout would have right now
@@ -205,14 +265,13 @@ func (h *handlers) currentLoadoutHash(name string) string {
 		return ""
 	}
 	h.loadoutHashMu.Lock()
+	defer h.loadoutHashMu.Unlock()
 	if h.loadoutHashCache == nil {
 		h.loadoutHashCache = map[string]loadoutHashEntry{}
 	}
 	if e, ok := h.loadoutHashCache[name]; ok && time.Since(e.at) < 3*time.Second {
-		h.loadoutHashMu.Unlock()
 		return e.hash
 	}
-	h.loadoutHashMu.Unlock()
 
 	hash := ""
 	if p, err := h.outfitter.Load(name); err == nil {
@@ -220,9 +279,7 @@ func (h *handlers) currentLoadoutHash(name string) string {
 			hash, _ = segment.ValueHash(body)
 		}
 	}
-	h.loadoutHashMu.Lock()
 	h.loadoutHashCache[name] = loadoutHashEntry{hash: hash, at: time.Now()}
-	h.loadoutHashMu.Unlock()
 	return hash
 }
 
@@ -629,6 +686,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 
 	live := h.angelus.Registry.List()
 	result := make([]rpc.FigaroInfoResponse, 0, len(live))
+	enrichments := make([]listEnrichment, 0, len(live))
 	seen := make(map[string]struct{}, len(live))
 	for _, info := range live {
 		seen[info.ID] = struct{}{}
@@ -648,58 +706,67 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			LastActive:       info.LastActive.UnixMilli(),
 			BoundPIDs:        h.angelus.Registry.BoundPIDs(info.ID),
 		}
-		if !req.IDsOnly {
-			h.fillFromChalkboard(info.ID, &entry) // mantra + cwd from the saved chalkboard
-		}
 		result = append(result, entry)
+		if !req.IDsOnly {
+			enrichments = append(enrichments, listEnrichment{
+				index:  len(result) - 1,
+				ariaID: info.ID,
+			})
+		}
 	}
 
-	// Snapshot the whole forest ONCE per request. Each Backend.Nodes() is a
-	// full disk scan (figwal opens every trunk head for Tip/lineage), so the
-	// dormant-aria fill, the global anchors, AND the per-entry forest position
-	// all share this single snapshot + its id index. (Previously this path
-	// called Backend.List() + Backend.Nodes() + a per-entry Backend.Node() —
-	// O(N) full scans => O(N^2) trunk-head opens on a big tree.)
+	// Snapshot the forest once per request. Ordinary lists need conversation
+	// nodes only; global listings also need the ceremonial anchors. ID-only
+	// completion skips vectors and anchors entirely.
 	var nodeList []store.NodeView
 	nodeByID := map[string]store.NodeView{}
+	var conversationIDs []string
 	if h.angelus.Backend != nil {
-		nodeList = h.angelus.Backend.Nodes()
+		switch {
+		case req.IDsOnly && !req.Global:
+			conversationIDs = h.angelus.Backend.ConversationIDs()
+		case req.Global:
+			nodeList = h.angelus.Backend.Nodes()
+		default:
+			nodeList = h.angelus.Backend.Conversations()
+		}
 		for _, n := range nodeList {
-			nodeByID[n.ID] = n
+			if n.Kind == conversationKind {
+				conversationIDs = append(conversationIDs, n.ID)
+			}
+			if !req.IDsOnly {
+				nodeByID[n.ID] = n
+			}
 		}
 	}
 
 	// Dormant conversation trunks (not currently registered/live).
-	for _, n := range nodeList {
-		if n.Kind != conversationKind {
+	for _, id := range conversationIDs {
+		if _, ok := seen[id]; ok {
 			continue
 		}
-		if _, ok := seen[n.ID]; ok {
-			continue
-		}
-		seen[n.ID] = struct{}{}
-		entry := rpc.FigaroInfoResponse{ID: n.ID, State: "dormant"}
-		if m, _ := h.angelus.Backend.Meta(n.ID); m != nil {
-			entry.MessageCount = m.MessageCount // sidecar fast-path (tokens + IDsOnly)
-			entry.TokensIn = m.TokensIn
-			entry.TokensOut = m.TokensOut
-			entry.CacheReadTokens = m.CacheReadTokens
-			entry.CacheWriteTokens = m.CacheWriteTokens
-			if m.LastActiveMS != 0 {
-				entry.LastActive = m.LastActiveMS
+		seen[id] = struct{}{}
+		entry := rpc.FigaroInfoResponse{ID: id, State: "dormant"}
+		if req.IDsOnly {
+			if meta, _ := h.angelus.Backend.Meta(id); meta != nil {
+				entry.MessageCount = meta.MessageCount
+				entry.TokensIn = meta.TokensIn
+				entry.TokensOut = meta.TokensOut
+				entry.CacheReadTokens = meta.CacheReadTokens
+				entry.CacheWriteTokens = meta.CacheWriteTokens
+				if meta.LastActiveMS != 0 {
+					entry.LastActive = meta.LastActiveMS
+				}
 			}
-		}
-		if !req.IDsOnly {
-			// MSGS is the canonical count from the live head (single source of
-			// truth) — not the sidecar, which a pre-heal binary may have written
-			// with a different convention. Self-heals the sidecar. Opens the head
-			// (only when actually displaying, not for id-only completion).
-			if c, ok := h.angelus.Backend.CanonicalCount(n.ID); ok {
-				entry.MessageCount = c
-			}
-			h.fillFromChalkboard(n.ID, &entry)
 		}
 		result = append(result, entry)
+		if !req.IDsOnly {
+			enrichments = append(enrichments, listEnrichment{
+				index:   len(result) - 1,
+				ariaID:  id,
+				dormant: true,
+			})
+		}
 	}
 
 	// Global: also surface the ceremonial anchors — the null genesis trunk and
@@ -720,12 +787,55 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 
 	// Forest position for every entry (live + dormant), from the snapshot.
 	if !req.IDsOnly {
+		h.enrichList(result, enrichments)
 		for i := range result {
 			h.fillFromNode(nodeByID, &result[i])
 		}
 	}
 
 	return rpc.ListResponse{Figaros: result}, nil
+}
+
+func (h *handlers) enrichList(result []rpc.FigaroInfoResponse, tasks []listEnrichment) {
+	if h.angelus.Backend == nil || len(tasks) == 0 {
+		return
+	}
+	workers := min(8, len(tasks))
+	queue := make(chan listEnrichment)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for task := range queue {
+				entry := &result[task.index]
+				if task.dormant {
+					meta, _ := h.angelus.Backend.Meta(task.ariaID)
+					if meta != nil {
+						entry.MessageCount = meta.MessageCount
+						entry.TokensIn = meta.TokensIn
+						entry.TokensOut = meta.TokensOut
+						entry.CacheReadTokens = meta.CacheReadTokens
+						entry.CacheWriteTokens = meta.CacheWriteTokens
+						if meta.LastActiveMS != 0 {
+							entry.LastActive = meta.LastActiveMS
+						}
+					}
+					if meta == nil || meta.LastFigaroLT == 0 {
+						if count, ok := h.angelus.Backend.CanonicalCount(task.ariaID); ok {
+							entry.MessageCount = count
+						}
+					}
+				}
+				h.fillFromChalkboard(task.ariaID, entry)
+			}
+		}()
+	}
+	for _, task := range tasks {
+		queue <- task
+	}
+	close(queue)
+	wg.Wait()
 }
 
 // fillFromNode adds the fork-forest position (vector/trunk/parent/frozen)
