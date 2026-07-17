@@ -39,6 +39,9 @@ process.
 figaro models
 ```
 
+For noninteractive use, Copilot credentials are read in this order:
+`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, then `GITHUB_TOKEN`.
+
 Choose a catalog model in a loadout:
 
 ```toml

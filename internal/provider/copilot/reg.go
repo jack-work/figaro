@@ -32,7 +32,8 @@ func init() {
 	provider.Register(&provider.Registration{
 		Name:         "copilot",
 		DefaultModel: "claude-sonnet-4.5",
-		EnvVar:       "GITHUB_TOKEN",
+		EnvVar:       "COPILOT_GITHUB_TOKEN",
+		EnvVars:      []string{"COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"},
 		HasOAuth:     true,
 		LoginHint:    "Copilot subscription (device code):  figaro login copilot",
 		Build:        buildFromContext,

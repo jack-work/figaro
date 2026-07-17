@@ -16,6 +16,7 @@ type Registration struct {
 	Name         string
 	DefaultModel string
 	EnvVar       string
+	EnvVars      []string
 	HasOAuth     bool
 	LoginHint    string
 

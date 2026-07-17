@@ -43,15 +43,13 @@ func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 	hushClient := h.Client()
 
 	reg := providerPkg.Lookup(providerName)
-	envVar := ""
 	hasOAuth := false
 	if reg != nil {
-		envVar = reg.EnvVar
 		hasOAuth = reg.HasOAuth
 	}
 
-	strategies := []auth.CredentialStrategy{
-		&auth.EnvVar{Name: envVar},
+	strategies := environmentStrategies(reg)
+	strategies = append(strategies,
 		&auth.ConfigValue{Get: func() string {
 			var pa config.ProviderAuth
 			_ = loaded.LoadProviderAuth(providerName, &pa)
@@ -64,7 +62,7 @@ func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 			Hush:       hushClient,
 			ConfigPath: loaded.ProviderAuthPath(providerName),
 		},
-	}
+	)
 	if hasOAuth {
 		strategies = append(strategies, &auth.OAuth{
 			Hush: hushClient,
@@ -72,6 +70,23 @@ func buildResolver(loaded *config.Loaded, providerName string) (auth.TokenResolv
 		})
 	}
 	return &auth.Aggregate{Strategies: strategies}, nil
+}
+
+func environmentStrategies(reg *providerPkg.Registration) []auth.CredentialStrategy {
+	if reg == nil {
+		return nil
+	}
+	names := reg.EnvVars
+	if len(names) == 0 && reg.EnvVar != "" {
+		names = []string{reg.EnvVar}
+	}
+	strategies := make([]auth.CredentialStrategy, 0, len(names))
+	for _, name := range names {
+		if name != "" {
+			strategies = append(strategies, &auth.EnvVar{Name: name})
+		}
+	}
+	return strategies
 }
 
 // providerSetupHint is the user-facing guidance shown when a turn fails
