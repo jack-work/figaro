@@ -127,6 +127,12 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	)
 	if opts.before >= 0 {
 		resp, err = acli.AriaReadBefore(ctx, figaroID, 0, uint64(opts.before), opts.last)
+	} else if opts.from >= 0 {
+		resp, err = acli.AriaRead(ctx, figaroID, uint64(opts.from), 0)
+	} else if !opts.all {
+		// Default tail read: fetch the last N entries from the true tail,
+		// not capped at the first 1000.
+		resp, err = acli.AriaReadBefore(ctx, figaroID, 0, ^uint64(0), opts.last)
 	} else {
 		resp, err = acli.AriaRead(ctx, figaroID, 0, 0)
 	}
