@@ -28,14 +28,7 @@ func newTestAngelus(t *testing.T) (*angelus.Angelus, context.CancelFunc) {
 		errCh <- a.Run(ctx)
 	}()
 
-	// Wait for socket to appear.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(a.SocketPath); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForAngelus(t, a.SocketPath)
 
 	t.Cleanup(func() {
 		cancel()
@@ -130,16 +123,7 @@ func TestAngelus_StaleSocketCleanup(t *testing.T) {
 		errCh <- a.Run(ctx)
 	}()
 
-	// Wait for socket.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		conn, err := net.Dial("unix", sockPath)
-		if err == nil {
-			conn.Close()
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForAngelus(t, sockPath)
 
 	cancel()
 	select {

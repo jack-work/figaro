@@ -43,14 +43,7 @@ func bootAngelus(t *testing.T, dir string, loaded *config.Loaded) (*angelus.Clie
 	errCh := make(chan error, 1)
 	go func() { errCh <- a.Run(ctx) }()
 
-	// Wait for socket.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(a.SocketPath); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForAngelus(t, a.SocketPath)
 
 	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)

@@ -81,14 +81,7 @@ model = "mock-model"
 	errCh := make(chan error, 1)
 	go func() { errCh <- a.Run(ctx) }()
 
-	// Wait for socket.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(a.SocketPath); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForAngelus(t, a.SocketPath)
 
 	// --- Angelus client: create a figaro ---
 	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
@@ -117,18 +110,11 @@ model = "mock-model"
 	assert.Equal(t, createResp.FigaroID, listResp.Figaros[0].ID)
 
 	// --- Figaro client: connect and prompt ---
-	// Wait for figaro socket to appear.
 	figaroEP := transport.Endpoint{
 		Scheme:  createResp.Endpoint.Scheme,
 		Address: createResp.Endpoint.Address,
 	}
-	deadline = time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(figaroEP.Address); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForFigaro(t, figaroEP)
 
 	// Connect with notification handler to wait for turn.done.
 	// Notifications are delivered in wire order — no envelopes, no reordering.
@@ -204,13 +190,7 @@ model = "mock-model"
 	go a.Run(ctx)
 	defer a.Shutdown(0)
 
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(a.SocketPath); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForAngelus(t, a.SocketPath)
 
 	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
@@ -263,13 +243,7 @@ model = "mock-model"
 	go a.Run(ctx)
 	defer a.Shutdown(0)
 
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(a.SocketPath); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForAngelus(t, a.SocketPath)
 	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
 	defer acli.Close()
@@ -278,13 +252,7 @@ model = "mock-model"
 	created, err := acli.Create(ctx, "mock", nil)
 	require.NoError(t, err)
 	figEP := transport.Endpoint{Scheme: created.Endpoint.Scheme, Address: created.Endpoint.Address}
-	deadline = time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(figEP.Address); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForFigaro(t, figEP)
 	doneCh := make(chan struct{}, 1)
 	fcli, err := figaro.DialClient(figEP, func(method string, _ json.RawMessage) {
 		if method == "turn.done" {
