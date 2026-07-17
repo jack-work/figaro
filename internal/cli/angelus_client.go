@@ -145,12 +145,8 @@ func mustCreateAndBind(ctx context.Context, acli *angelus.Client, loaded *config
 		Address: createResp.Endpoint.Address,
 	}
 
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, serr := os.Stat(ep.Address); serr == nil {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
+	if err := waitForSocket(ep.Address, 3*time.Second); err != nil {
+		die("create figaro: %s", err)
 	}
 
 	return createResp.FigaroID, ep

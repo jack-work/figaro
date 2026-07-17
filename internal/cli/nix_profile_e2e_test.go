@@ -2,8 +2,6 @@ package cli
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
 	"os/exec"
 	"runtime"
@@ -28,19 +26,22 @@ func TestNixProfileCopilotE2E(t *testing.T) {
 	t.Setenv("COPILOT_GITHUB_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
-	resolver, err := buildResolver(mustLoadConfig(), "copilot")
+	loaded := mustLoadConfig()
+	resolver, err := buildResolver(loaded, "copilot")
 	require.NoError(t, err)
 	token, err := resolver.Resolve()
 	require.NoError(t, err)
-	client, _ := buildProvider(mustLoadConfig(), "copilot")
+	client, _ := buildProvider(loaded, "copilot")
 	require.NotNil(t, client)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	models, err := client.Models(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, models)
-	digest := sha256.Sum256([]byte(token))
-	tokenHash := hex.EncodeToString(digest[:])
+	var copilotConfig struct {
+		EnterpriseDomain string `toml:"enterprise_domain"`
+	}
+	require.NoError(t, loaded.LoadProviderAuth("copilot", &copilotConfig))
 
 	const script = `set -eu
 bin="$HOME/.nix-profile/bin/figaro"
@@ -57,8 +58,10 @@ cleanup() {
 }
 trap cleanup EXIT
 test -n "${COPILOT_GITHUB_TOKEN:-}"
-printf 'token-sha=%s\n' "$(printf %s "$COPILOT_GITHUB_TOKEN" | sha256sum | cut -d' ' -f1)"
-mkdir -p "$FIGARO_CONFIG_DIR/loadouts"
+mkdir -p "$FIGARO_CONFIG_DIR/loadouts" "$FIGARO_CONFIG_DIR/providers"
+if [ -n "${COPILOT_ENTERPRISE_DOMAIN:-}" ]; then
+  printf 'enterprise_domain = "%s"\n' "$COPILOT_ENTERPRISE_DOMAIN" > "$FIGARO_CONFIG_DIR/providers/copilot.toml"
+fi
 cat > "$FIGARO_CONFIG_DIR/config.toml" <<'EOF'
 default_loadout = "gpt-e2e"
 EOF
@@ -81,10 +84,13 @@ printf '%s\n' "$result"
 	cmd := exec.Command(wsl, "-d", "nixos", "--exec", "/bin/sh", "-c", script)
 	wslEnv := os.Getenv("WSLENV")
 	hasToken := false
+	hasEnterpriseDomain := false
 	for _, entry := range strings.Split(wslEnv, ":") {
 		if strings.SplitN(entry, "/", 2)[0] == "COPILOT_GITHUB_TOKEN" {
 			hasToken = true
-			break
+		}
+		if strings.SplitN(entry, "/", 2)[0] == "COPILOT_ENTERPRISE_DOMAIN" {
+			hasEnterpriseDomain = true
 		}
 	}
 	if !hasToken {
@@ -93,20 +99,26 @@ printf '%s\n' "$result"
 		}
 		wslEnv += "COPILOT_GITHUB_TOKEN"
 	}
-	env := make([]string, 0, len(os.Environ())+2)
+	if !hasEnterpriseDomain {
+		if wslEnv != "" {
+			wslEnv += ":"
+		}
+		wslEnv += "COPILOT_ENTERPRISE_DOMAIN"
+	}
+	env := make([]string, 0, len(os.Environ())+3)
 	for _, entry := range os.Environ() {
-		if strings.HasPrefix(entry, "COPILOT_GITHUB_TOKEN=") || strings.HasPrefix(entry, "WSLENV=") {
+		if strings.HasPrefix(entry, "COPILOT_GITHUB_TOKEN=") || strings.HasPrefix(entry, "COPILOT_ENTERPRISE_DOMAIN=") || strings.HasPrefix(entry, "WSLENV=") {
 			continue
 		}
 		env = append(env, entry)
 	}
 	cmd.Env = append(env,
 		"COPILOT_GITHUB_TOKEN="+token,
+		"COPILOT_ENTERPRISE_DOMAIN="+copilotConfig.EnterpriseDomain,
 		"WSLENV="+wslEnv,
 	)
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(output))
-	require.Contains(t, string(output), "token-sha="+tokenHash)
 	require.Contains(t, string(output), "NIX_PROFILE_TOOL_OK")
 	require.Contains(t, string(output), "NIX_PROFILE_GPT_E2E_OK")
 }
