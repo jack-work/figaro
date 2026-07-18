@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -27,18 +26,25 @@ func (p *Provider) cacheFor(aria string) store.Log[[]json.RawMessage] {
 		slog.Warn("anthropicsdk cache open", "aria", aria, "err", err)
 		return nil
 	}
-	p.invalidateIfStale(s)
+	if !p.invalidateIfStale(s) {
+		return nil
+	}
 	p.cache = s
 	return s
 }
 
 // invalidateIfStale clears the cache on fingerprint mismatch.
-func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) {
+func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 	want := p.Fingerprint()
-	if e, ok := s.PeekTail(); ok && e.Fingerprint != "" && e.Fingerprint != want {
-		_ = s.Clear()
-		slog.Info("anthropicsdk cleared stale cache", "stored", e.Fingerprint, "current", want)
+	stored, cleared, err := provider.ClearStaleTranslationCache(s, want)
+	if err != nil {
+		slog.Warn("anthropicsdk clear stale cache", "stored", stored, "current", want, "err", err)
+		return false
 	}
+	if cleared {
+		slog.Info("anthropicsdk cleared stale cache", "stored", stored, "current", want)
+	}
+	return true
 }
 
 // catchUp encodes any figLog entries not yet in the cache and
@@ -48,92 +54,40 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) {
 func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
 	t0 := time.Now()
 	fp := p.Fingerprint()
-	entries := store.Snapshot(figLog)
-
-	// Resume from the snap cache if the log only grew (append-only invariant).
 	p.mu.Lock()
-	sc := p.snapshot
+	previous := p.projection
 	p.mu.Unlock()
 
-	var snap chalkboard.Snapshot
-	var perMessage [][]json.RawMessage
-	var lts []uint64
-	startIdx := 0
-
-	if sc != nil && sc.nEntries <= len(entries) &&
-		(sc.nEntries == 0 || entries[sc.nEntries-1].LT == sc.lastLT) {
-		// The log only grew: resume from where we left off.
-		snap = sc.snap
-		perMessage = sc.perMessage
-		lts = sc.lts
-		startIdx = sc.nEntries
-	}
-
-	var nCached, nEncoded int
-	for i := startIdx; i < len(entries); i++ {
-		e := entries[i]
-		msg := e.Payload
-		msg.LogicalTime = e.LT
-		if msg.Role == message.RoleGenesis {
-			continue
-		}
-		if chalk != nil {
-			msg.Patches = chalk.PatchesAt(e.LT)
-		}
-		var bytes []json.RawMessage
-		if cache != nil {
-			if existing, ok := cache.Lookup(msg.LogicalTime); ok && len(existing.Payload) > 0 {
-				bytes = existing.Payload
-				nCached++
-			}
-		}
-		if bytes == nil {
-			encoded, err := p.encode(msg, snap)
-			if err != nil {
-				slog.Error("anthropicsdk encode", "flt", msg.LogicalTime, "err", err)
-			} else {
-				bytes = encoded
-				nEncoded++
-				if cache != nil && len(encoded) > 0 {
-					_, _ = cache.Append(store.Entry[[]json.RawMessage]{
-						FigaroLT: msg.LogicalTime, Payload: bytes, Fingerprint: fp,
-					})
-				}
-			}
-		}
-		if len(bytes) > 0 {
-			perMessage = append(perMessage, bytes)
-			lts = append(lts, msg.LogicalTime)
-		}
-		for _, patch := range msg.Patches {
-			snap = snap.Apply(patch)
-		}
-	}
-
-	// Store the snapshot for next turn.
-	var lastLT uint64
-	if len(entries) > 0 {
-		lastLT = entries[len(entries)-1].LT
+	projection, stats, err := provider.ProjectIncrementally(provider.ProjectionConfig[provider.EncodedMessages]{
+		Log:         figLog,
+		Cache:       cache,
+		Chalkboard:  chalk,
+		Previous:    previous,
+		Fingerprint: fp,
+		Encode:      p.encode,
+		Append:      provider.AppendEncodedMessage,
+		HandleEncodeError: func(lt uint64, err error) error {
+			slog.Error("anthropicsdk encode", "flt", lt, "err", err)
+			return nil
+		},
+	})
+	if err != nil {
+		slog.Error("anthropicsdk project", "err", err)
+		return nil, nil
 	}
 	p.mu.Lock()
-	p.snapshot = &translationSnapshot{
-		snap:       snap,
-		perMessage: perMessage,
-		lts:        lts,
-		nEntries:   len(entries),
-		lastLT:     lastLT,
-	}
+	p.projection = projection
 	p.mu.Unlock()
 
 	tTotal := time.Since(t0)
 	if tTotal > 200*time.Millisecond {
 		slog.Warn("anthropicsdk catchUp slow",
 			"total", tTotal,
-			"entries", len(entries),
-			"startIdx", startIdx,
-			"cached", nCached,
-			"encoded", nEncoded,
+			"entries", stats.Entries,
+			"startIdx", stats.StartIndex,
+			"cached", stats.Cached,
+			"encoded", stats.Encoded,
 		)
 	}
-	return perMessage, lts
+	return projection.State.PerMessage, projection.State.LogicalTimes
 }

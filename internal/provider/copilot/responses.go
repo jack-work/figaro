@@ -35,26 +35,18 @@ type responsesProvider struct {
 	tokenSrc  responseTokenSource
 	cacheOpen func(string) (store.Log[[]json.RawMessage], error)
 
-	mu        sync.Mutex
-	model     string
-	maxTokens int
-	templates *template.Template
-	machineID string
-	cache     store.Log[[]json.RawMessage]
-	input     *responseInputSnapshot
-	sessionID string
-	limits    map[string]responseContextLimits
+	mu         sync.Mutex
+	model      string
+	maxTokens  int
+	templates  *template.Template
+	machineID  string
+	cache      store.Log[[]json.RawMessage]
+	projection *provider.IncrementalProjection[[]json.RawMessage]
+	sessionID  string
+	limits     map[string]responseContextLimits
 
 	baseURL func(string) string
 	dial    responseDialer
-}
-
-type responseInputSnapshot struct {
-	fingerprint string
-	snap        chalkboard.Snapshot
-	input       []json.RawMessage
-	nEntries    int
-	lastLT      uint64
 }
 
 func newResponsesProvider(
@@ -354,94 +346,63 @@ func (p *responsesProvider) cacheFor(aria string) store.Log[[]json.RawMessage] {
 	defer p.mu.Unlock()
 	fingerprint := responseFingerprint(p.model)
 	if p.cache != nil {
-		p.invalidateCache(p.cache, fingerprint)
+		if !p.invalidateCache(p.cache, fingerprint) {
+			return nil
+		}
 		return p.cache
 	}
 	cache, err := p.cacheOpen(aria)
 	if err != nil {
 		return nil
 	}
-	p.invalidateCache(cache, fingerprint)
+	if !p.invalidateCache(cache, fingerprint) {
+		return nil
+	}
 	p.cache = cache
 	return cache
 }
 
-func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage], fingerprint string) {
-	if entry, ok := cache.PeekTail(); ok && entry.Fingerprint != "" && entry.Fingerprint != fingerprint {
-		_ = cache.Clear()
-	}
+func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage], fingerprint string) bool {
+	_, _, err := provider.ClearStaleTranslationCache(cache, fingerprint)
+	return err == nil
 }
 
 func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
 	cache := p.cacheFor(in.AriaID)
 	fingerprint := p.Fingerprint()
-	entries := store.Snapshot(in.FigLog)
 	templates := p.templatesForEncoding()
 
-	var input []json.RawMessage
-	snap := chalkboard.Snapshot{}
-	startIdx := 0
 	p.mu.Lock()
-	sc := p.input
+	previous := p.projection
 	p.mu.Unlock()
-	if sc != nil && sc.fingerprint == fingerprint && sc.nEntries <= len(entries) &&
-		(sc.nEntries == 0 || entries[sc.nEntries-1].LT == sc.lastLT) {
-		input = sc.input
-		snap = sc.snap
-		startIdx = sc.nEntries
-	}
 
-	for _, entry := range entries[startIdx:] {
-		msg := entry.Payload
-		if msg.Role == message.RoleGenesis {
-			continue
-		}
-		patches := msg.Patches
-		if in.Chalkboard != nil {
-			patches = in.Chalkboard.PatchesAt(entry.LT)
-		}
-
-		var encoded []json.RawMessage
-		if cache != nil {
-			if cached, ok := cache.Lookup(entry.LT); ok && len(cached.Payload) > 0 {
-				encoded = cached.Payload
-			}
-		}
-		if encoded == nil {
-			var err error
-			encoded, err = encodeResponseMessage(msg, patches, snap, templates)
+	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[[]json.RawMessage]{
+		Log:         in.FigLog,
+		Cache:       cache,
+		Chalkboard:  in.Chalkboard,
+		Previous:    previous,
+		Fingerprint: fingerprint,
+		Encode: func(msg message.Message, snap chalkboard.Snapshot) ([]json.RawMessage, error) {
+			encoded, err := encodeResponseMessage(msg, msg.Patches, snap, templates)
 			if err != nil {
-				return nil, fmt.Errorf("copilot responses: encode message %d: %w", entry.LT, err)
+				return nil, fmt.Errorf("copilot responses: encode message %d: %w", msg.LogicalTime, err)
 			}
-			if cache != nil && len(encoded) > 0 {
-				if _, err := cache.Append(store.Entry[[]json.RawMessage]{
-					FigaroLT:    entry.LT,
-					Payload:     encoded,
-					Fingerprint: p.Fingerprint(),
-				}); err != nil {
-					slog.Error("copilot responses cache message", "aria", in.AriaID, "lt", entry.LT, "err", err)
-				}
-			}
-		}
-		input = append(input, encoded...)
-		for _, patch := range patches {
-			snap = snap.Apply(patch)
-		}
-	}
-	var lastLT uint64
-	if len(entries) > 0 {
-		lastLT = entries[len(entries)-1].LT
+			return encoded, nil
+		},
+		Append: func(input, encoded []json.RawMessage, _ uint64) []json.RawMessage {
+			return append(input, encoded...)
+		},
+		HandleCacheError: func(lt uint64, err error) {
+			slog.Error("copilot responses cache message", "aria", in.AriaID, "lt", lt, "err", err)
+		},
+	})
+	if err != nil {
+		return nil, err
 	}
 	p.mu.Lock()
-	p.input = &responseInputSnapshot{
-		fingerprint: fingerprint,
-		snap:        snap,
-		input:       input,
-		nEntries:    len(entries),
-		lastLT:      lastLT,
-	}
+	p.projection = projection
 	p.mu.Unlock()
-	return input, nil
+	return projection.State, nil
 }
 
 func (p *responsesProvider) templatesForEncoding() *template.Template {

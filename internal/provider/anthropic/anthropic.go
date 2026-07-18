@@ -48,17 +48,9 @@ type Anthropic struct {
 	Templates *template.Template
 
 	// CacheOpen opens the per-aria translation cache. nil = no caching.
-	CacheOpen func(aria string) (store.Log[[]json.RawMessage], error)
-	cache     store.Log[[]json.RawMessage]
-	snapshot  *translationSnapshot
-}
-
-type translationSnapshot struct {
-	snap       chalkboard.Snapshot
-	perMessage [][]json.RawMessage
-	lts        []uint64
-	nEntries   int
-	lastLT     uint64
+	CacheOpen  func(aria string) (store.Log[[]json.RawMessage], error)
+	cache      store.Log[[]json.RawMessage]
+	projection *provider.IncrementalProjection[provider.EncodedMessages]
 }
 
 // New constructs an Anthropic provider.
@@ -96,18 +88,25 @@ func (a *Anthropic) cacheFor(aria string) store.Log[[]json.RawMessage] {
 		slog.Warn("anthropic cache open", "aria", aria, "err", err)
 		return nil
 	}
-	a.invalidateIfStale(s)
+	if !a.invalidateIfStale(s) {
+		return nil
+	}
 	a.cache = s
 	return s
 }
 
 // invalidateIfStale clears the cache on fingerprint mismatch.
-func (a *Anthropic) invalidateIfStale(s store.Log[[]json.RawMessage]) {
+func (a *Anthropic) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 	want := a.Fingerprint()
-	if e, ok := s.PeekTail(); ok && e.Fingerprint != "" && e.Fingerprint != want {
-		_ = s.Clear()
-		slog.Info("anthropic cleared stale cache", "stored", e.Fingerprint, "current", want)
+	stored, cleared, err := provider.ClearStaleTranslationCache(s, want)
+	if err != nil {
+		slog.Warn("anthropic clear stale cache", "stored", stored, "current", want, "err", err)
+		return false
 	}
+	if cleared {
+		slog.Info("anthropic cleared stale cache", "stored", stored, "current", want)
+	}
+	return true
 }
 
 // setAuthHeaders applies auth + protocol headers.
@@ -903,72 +902,31 @@ func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
 // wire bytes.
 func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
 	fp := a.Fingerprint()
-	entries := store.Snapshot(figLog)
 	a.mu.Lock()
-	sc := a.snapshot
+	previous := a.projection
 	a.mu.Unlock()
 
-	snap := chalkboard.Snapshot{}
-	var perMessage [][]json.RawMessage
-	var lts []uint64
-	startIdx := 0
-	if sc != nil && sc.nEntries <= len(entries) &&
-		(sc.nEntries == 0 || entries[sc.nEntries-1].LT == sc.lastLT) {
-		snap = sc.snap
-		perMessage = sc.perMessage
-		lts = sc.lts
-		startIdx = sc.nEntries
-	}
-	for _, e := range entries[startIdx:] {
-		msg := e.Payload
-		msg.LogicalTime = e.LT
-		if msg.Role == message.RoleGenesis {
-			continue // structural birth message; never rendered
-		}
-		if chalk != nil {
-			msg.Patches = chalk.PatchesAt(e.LT)
-		}
-		var bytes []json.RawMessage
-		if cache != nil {
-			if existing, ok := cache.Lookup(msg.LogicalTime); ok && len(existing.Payload) > 0 {
-				bytes = existing.Payload
-			}
-		}
-		if bytes == nil {
-			encoded, err := a.encode(msg, snap)
-			if err != nil {
-				slog.Error("anthropic encode", "flt", msg.LogicalTime, "err", err)
-			} else {
-				bytes = encoded
-				if cache != nil {
-					_, _ = cache.Append(store.Entry[[]json.RawMessage]{
-						FigaroLT: msg.LogicalTime, Payload: bytes, Fingerprint: fp,
-					})
-				}
-			}
-		}
-		if len(bytes) > 0 {
-			perMessage = append(perMessage, bytes)
-			lts = append(lts, msg.LogicalTime)
-		}
-		for _, p := range msg.Patches {
-			snap = snap.Apply(p)
-		}
-	}
-	var lastLT uint64
-	if len(entries) > 0 {
-		lastLT = entries[len(entries)-1].LT
+	projection, _, err := provider.ProjectIncrementally(provider.ProjectionConfig[provider.EncodedMessages]{
+		Log:         figLog,
+		Cache:       cache,
+		Chalkboard:  chalk,
+		Previous:    previous,
+		Fingerprint: fp,
+		Encode:      a.encode,
+		Append:      provider.AppendEncodedMessage,
+		HandleEncodeError: func(lt uint64, err error) error {
+			slog.Error("anthropic encode", "flt", lt, "err", err)
+			return nil
+		},
+	})
+	if err != nil {
+		slog.Error("anthropic project", "err", err)
+		return nil, nil
 	}
 	a.mu.Lock()
-	a.snapshot = &translationSnapshot{
-		snap:       snap,
-		perMessage: perMessage,
-		lts:        lts,
-		nEntries:   len(entries),
-		lastLT:     lastLT,
-	}
+	a.projection = projection
 	a.mu.Unlock()
-	return perMessage, lts
+	return projection.State.PerMessage, projection.State.LogicalTimes
 }
 
 const sseReadTimeout = 5 * time.Minute

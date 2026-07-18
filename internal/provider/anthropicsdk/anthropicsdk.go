@@ -52,18 +52,9 @@ type Provider struct {
 	NoOAuthIdentity bool
 
 	// CacheOpen opens the per-aria translation cache. nil disables caching.
-	CacheOpen func(aria string) (store.Log[[]json.RawMessage], error)
-	cache     store.Log[[]json.RawMessage]
-
-	snapshot *translationSnapshot
-}
-
-type translationSnapshot struct {
-	snap       chalkboard.Snapshot
-	perMessage [][]json.RawMessage
-	lts        []uint64
-	nEntries   int // how many figLog entries were processed
-	lastLT     uint64
+	CacheOpen  func(aria string) (store.Log[[]json.RawMessage], error)
+	cache      store.Log[[]json.RawMessage]
+	projection *provider.IncrementalProjection[provider.EncodedMessages]
 }
 
 // New constructs the SDK-backed provider.
