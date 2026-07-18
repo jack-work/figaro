@@ -253,7 +253,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 type interactiveInput struct {
 	tc           term.Client
 	lt           *livelogTurn
-	fcli         *figaro.Client
+	fcli         transcriptReadClient
 	mu           *sync.Mutex
 	set          *renderSettings
 	figaroID     string
@@ -266,6 +266,15 @@ type interactiveInput struct {
 	copyFailed   bool
 	copyFailedLo selectionPoint
 	copyFailedHi selectionPoint
+	searchCancel context.CancelFunc
+	searchGen    uint64
+	searchQuery  string
+	searchDone   chan struct{}
+}
+
+type transcriptReadClient interface {
+	Read(context.Context, int) (aria.AriaRead, error)
+	ReadBefore(context.Context, int, int) (aria.AriaRead, error)
 }
 
 // enterTranscript opens the pager on the recent window (older history pages in
@@ -303,49 +312,142 @@ func (in *interactiveInput) enterTranscript() {
 }
 
 func (in *interactiveInput) pageTranscript() {
+	in.mu.Lock()
+	if query, searching := in.lt.transcriptHistorySearch(); searching {
+		if in.searchCancel == nil {
+			ctx, cancel := context.WithCancel(context.Background())
+			in.searchGen++
+			gen := in.searchGen
+			done := make(chan struct{})
+			in.searchCancel = cancel
+			in.searchQuery = query
+			in.searchDone = done
+			go in.pageTranscriptSearch(ctx, cancel, done, gen, query)
+		}
+		in.mu.Unlock()
+		return
+	}
+	req, need := in.lt.transcriptPageCursor()
+	in.mu.Unlock()
+	if !need {
+		return
+	}
+
+	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	messages, err := in.readTranscriptPage(rctx, req)
+	rcancel()
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if err != nil {
+		in.lt.transcriptPageFailed()
+		return
+	}
+	in.lt.transcriptApplyPage(req, messages)
+}
+
+func (in *interactiveInput) pageTranscriptSearch(ctx context.Context, cancel context.CancelFunc, done chan struct{}, gen uint64, query string) {
+	defer close(done)
+	defer cancel()
 	for {
 		in.mu.Lock()
-		req, need := in.lt.transcriptPageCursor()
-		in.mu.Unlock()
-		if !need {
+		if !in.searchMatchesLocked(gen, query) {
+			in.mu.Unlock()
 			return
 		}
-		rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-		read := func(before, limit int) (aria.AriaRead, error) {
-			return in.fcli.ReadBefore(rctx, before, limit)
+		req, need := in.lt.transcriptPageCursor()
+		if !need {
+			in.finishSearchWorkerLocked(gen)
+			in.mu.Unlock()
+			return
 		}
-		var r aria.AriaRead
-		var messages []aria.Message
-		var rerr error
-		if len(req.cached) > 0 {
-			messages = req.cached
-		} else if req.after != 0 {
-			r, rerr = readNextPage(req.after, req.watermark, transcriptPageSize, read)
-		} else {
-			limit := transcriptPageSize
-			if req.expected.Count != 0 {
-				limit = req.expected.Count
-			}
-			r, rerr = read(req.before, limit)
-		}
-		if rerr == nil && messages == nil {
-			messages = committedMessages(r.Committed)
-		}
+		in.mu.Unlock()
+
+		rctx, rcancel := context.WithTimeout(ctx, 5*time.Second)
+		messages, err := in.readTranscriptPage(rctx, req)
 		rcancel()
+
 		in.mu.Lock()
-		if rerr != nil {
-			in.lt.transcriptPageFailed()
+		if !in.searchMatchesLocked(gen, query) {
+			in.mu.Unlock()
+			return
+		}
+		if err != nil {
+			if ctx.Err() == nil {
+				in.lt.transcriptPageFailed()
+			}
+			in.finishSearchWorkerLocked(gen)
 			in.mu.Unlock()
 			return
 		}
 		in.lt.transcriptApplyPage(req, messages)
-		searching := in.lt.transcriptSearchingHistory()
-		in.mu.Unlock()
-		if !searching {
+		if _, searching := in.lt.transcriptHistorySearch(); !searching {
+			in.finishSearchWorkerLocked(gen)
+			in.mu.Unlock()
 			return
 		}
+		in.mu.Unlock()
 	}
+}
 
+func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcriptPageRequest) ([]aria.Message, error) {
+	if len(req.cached) > 0 {
+		return req.cached, nil
+	}
+	read := func(before, limit int) (aria.AriaRead, error) {
+		return in.fcli.ReadBefore(ctx, before, limit)
+	}
+	var (
+		r   aria.AriaRead
+		err error
+	)
+	if req.after != 0 {
+		r, err = readNextPage(req.after, req.watermark, transcriptPageSize, read)
+	} else {
+		limit := transcriptPageSize
+		if req.expected.Count != 0 {
+			limit = req.expected.Count
+		}
+		r, err = read(req.before, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return committedMessages(r.Committed), nil
+}
+
+func (in *interactiveInput) searchMatchesLocked(gen uint64, query string) bool {
+	current, searching := in.lt.transcriptHistorySearch()
+	return gen == in.searchGen && in.searchCancel != nil &&
+		in.lt.transcriptActive() && searching &&
+		query == in.searchQuery && query == current
+}
+
+func (in *interactiveInput) finishSearchWorkerLocked(gen uint64) {
+	if gen != in.searchGen {
+		return
+	}
+	in.searchCancel = nil
+	in.searchQuery = ""
+	in.searchDone = nil
+}
+
+func (in *interactiveInput) cancelTranscriptSearchLocked() {
+	if in.searchCancel != nil {
+		in.searchCancel()
+		in.searchCancel = nil
+		in.searchQuery = ""
+		in.searchDone = nil
+		in.searchGen++
+	}
+	if in.lt.transcriptSearchingHistory() {
+		in.lt.transcriptPageFailed()
+	}
+}
+
+func (in *interactiveInput) cancelTranscriptSearch() {
+	in.mu.Lock()
+	in.cancelTranscriptSearchLocked()
+	in.mu.Unlock()
 }
 
 func readNextPage(after, watermark, limit int, read func(int, int) (aria.AriaRead, error)) (aria.AriaRead, error) {
@@ -404,6 +506,7 @@ func filterCommittedAfter(r aria.AriaRead, after int) aria.AriaRead {
 // Call under a MakeRaw session so Ctrl-C/Ctrl-D arrive as bytes.
 func (in *interactiveInput) run() {
 	defer in.cancelSelectionCopy()
+	defer in.cancelTranscriptSearch()
 	buf := make([]byte, 64)
 	var pending []byte // a mouse/escape sequence split across reads
 	for {
@@ -434,6 +537,7 @@ func (in *interactiveInput) run() {
 					}
 					if delta != 0 {
 						in.mu.Lock()
+						in.cancelTranscriptSearchLocked()
 						in.lt.transcriptScroll(delta)
 						in.mu.Unlock()
 						in.pageTranscript()
@@ -450,6 +554,7 @@ func (in *interactiveInput) run() {
 				if key.ctrl && (key.code == 'n' || key.code == 'N' || key.code == 'p' || key.code == 'P') {
 					in.enterTranscript()
 					in.mu.Lock()
+					in.cancelTranscriptSearchLocked()
 					delta := 1
 					if key.code == 'p' || key.code == 'P' {
 						delta = -1
@@ -479,6 +584,7 @@ func (in *interactiveInput) run() {
 			case 0x03: // Ctrl-C: interrupt (if running) + close
 				if active {
 					in.mu.Lock()
+					in.cancelTranscriptSearchLocked()
 					plan, selected := in.lt.transcriptSelectionPlan()
 					if selected && in.copyFailed &&
 						in.copyFailedLo == plan.lo && in.copyFailedHi == plan.hi {
@@ -512,10 +618,12 @@ func (in *interactiveInput) run() {
 					}
 					in.mu.Unlock()
 				}
+				in.cancelTranscriptSearch()
 				in.cancelSelectionCopy()
 				in.cancel()
 				return
 			case 0x04: // Ctrl-D: disconnect; the turn keeps running
+				in.cancelTranscriptSearch()
 				in.cancelSelectionCopy()
 				select {
 				case in.disconnectCh <- struct{}{}:
@@ -524,15 +632,18 @@ func (in *interactiveInput) run() {
 				return
 			case 0x0c: // Ctrl-L: listen (stay open past turn-done) + transcript
 				in.mu.Lock()
+				in.cancelTranscriptSearchLocked()
 				*in.listen = true
 				in.mu.Unlock()
 				in.enterTranscript()
 				continue
 			case 0x14: // Ctrl-T: enter transcript (no-op if already there)
+				in.cancelTranscriptSearch()
 				in.enterTranscript()
 				continue
 			case 0x0f: // Ctrl-O: toggle verbosity
 				in.mu.Lock()
+				in.cancelTranscriptSearchLocked()
 				in.set.verbose = !in.set.verbose
 				in.lt.invalidateTranscriptRows()
 				in.lt.render()
@@ -548,6 +659,7 @@ func (in *interactiveInput) run() {
 			// Remaining keys drive the pager (scroll/search) when active.
 			if active {
 				in.mu.Lock()
+				in.cancelTranscriptSearchLocked()
 				in.lt.transcriptKey(b)
 				in.mu.Unlock()
 				in.pageTranscript()

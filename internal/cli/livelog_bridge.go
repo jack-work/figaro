@@ -318,6 +318,12 @@ func (t *livelogTurn) transcriptApplyPage(req transcriptPageRequest, messages []
 	t.tr.applyPage(req, messages)
 }
 func (t *livelogTurn) transcriptSearchingHistory() bool { return t.tr.searchingHistory() }
+func (t *livelogTurn) transcriptHistorySearch() (string, bool) {
+	if t.tr.search == nil {
+		return "", false
+	}
+	return t.tr.search.query, true
+}
 func (t *livelogTurn) transcriptPageFailed() {
 	t.tr.finishSearch(false)
 	t.tr.checkOlder, t.tr.checkNewer = false, false

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -218,4 +219,44 @@ func BenchmarkTranscriptSelectedLargeToolRender(b *testing.B) {
 	for range b.N {
 		tr.render()
 	}
+}
+
+func BenchmarkTranscriptHistoricalSearchCancel(b *testing.B) {
+	reader := &benchmarkSearchReader{
+		started:  make(chan struct{}, 1),
+		canceled: make(chan struct{}, 1),
+	}
+	in := newSearchInteractiveInput(reader, newSearchInputTerminal())
+	for b.Loop() {
+		b.StopTimer()
+		in.mu.Lock()
+		in.lt.tr.find("absent")
+		in.mu.Unlock()
+		in.pageTranscript()
+		<-reader.started
+		in.mu.Lock()
+		done := in.searchDone
+		in.mu.Unlock()
+		b.StartTimer()
+
+		in.cancelTranscriptSearch()
+		<-done
+		<-reader.canceled
+	}
+}
+
+type benchmarkSearchReader struct {
+	started  chan struct{}
+	canceled chan struct{}
+}
+
+func (r *benchmarkSearchReader) Read(context.Context, int) (aria.AriaRead, error) {
+	return aria.AriaRead{}, nil
+}
+
+func (r *benchmarkSearchReader) ReadBefore(ctx context.Context, _, _ int) (aria.AriaRead, error) {
+	r.started <- struct{}{}
+	<-ctx.Done()
+	r.canceled <- struct{}{}
+	return aria.AriaRead{}, ctx.Err()
 }
