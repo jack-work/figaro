@@ -216,6 +216,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 // tool_result message that seals in turn. Returns true when the turn
 // is complete, false when another round is needed.
 func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
+	a.serviceForks()
 	bus := newTurnBus()
 	in := provider.SendInput{
 		AriaID:     a.id,
@@ -276,6 +277,8 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	events := bus.events
 	for events != nil {
 		select {
+		case <-a.inbox.Wake():
+			a.serviceForks()
 		case ev, ok := <-events:
 			if !ok {
 				events = nil
@@ -370,14 +373,14 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	}
 	if !sealed {
 		// Empty response: the provider returned without appending.
-		<-specDone
+		a.waitWithForks(specDone)
 		a.endTurn(string(message.StopEnd))
 		return true
 	}
 
 	calls := assistantToolInvokes(lastFig)
 	if len(calls) == 0 {
-		<-specDone
+		a.waitWithForks(specDone)
 		stopReason := lastFig.StopReason
 		if stopReason == "" {
 			stopReason = message.StopEnd
@@ -386,7 +389,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		return true
 	}
 
-	<-specDone
+	a.waitWithForks(specDone)
 
 	// Phase 2: run the tools (IR assembly), append the tool_result turn,
 	// and recompose so completed tools show their clamped output. The
@@ -438,10 +441,18 @@ func (a *Agent) collectToolResults(
 	}
 	// Live phase-2 events: stream output under the running tool, collect
 	// outcomes.
+toolLoop:
 	for len(outcomes) < len(expect) {
-		te, ok := <-toolEvents
-		if !ok {
-			break
+		var te toolEvent
+		var ok bool
+		select {
+		case <-a.inbox.Wake():
+			a.serviceForks()
+			continue
+		case te, ok = <-toolEvents:
+			if !ok {
+				break toolLoop
+			}
 		}
 		switch te.kind {
 		case toolBegin:
@@ -458,6 +469,25 @@ func (a *Agent) collectToolResults(
 	}
 	a.emitLive(nil, true) // flush any throttled tail before the results render
 
+	return a.assembleToolResults(calls, expect, outcomes)
+}
+
+func (a *Agent) waitWithForks(done <-chan struct{}) {
+	for {
+		select {
+		case <-done:
+			return
+		case <-a.inbox.Wake():
+			a.serviceForks()
+		}
+	}
+}
+
+func (a *Agent) assembleToolResults(
+	calls []message.Content,
+	expect map[string]bool,
+	outcomes map[string]toolOutcome,
+) message.Message {
 	results := make([]message.Content, len(calls))
 	for i, tc := range calls {
 		if !expect[tc.ToolCallID] {

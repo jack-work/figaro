@@ -3,6 +3,7 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"runtime"
 	"sync"
@@ -30,6 +31,7 @@ type eventType int
 const (
 	eventUserPrompt eventType = iota
 	eventSet
+	eventFork
 )
 
 type event struct {
@@ -41,6 +43,10 @@ type event struct {
 
 	// eventSet
 	setPatch message.Patch
+
+	// eventFork
+	fork     func() error
+	forkDone chan error
 }
 
 // Config is the constructor input for NewAgent. Configured values
@@ -413,6 +419,26 @@ func (a *Agent) Interrupt() {
 	cancel()
 }
 
+// CoordinateFork runs storage fork coordination on the actor goroutine.
+// Active turns service it between stream/tool events without cancellation.
+func (a *Agent) CoordinateFork(run func() error) error {
+	done := make(chan error, 1)
+	if !a.inbox.Send(event{typ: eventFork, fork: run, forkDone: done}) {
+		return fmt.Errorf("figaro %s is stopped", a.id)
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-a.done:
+		select {
+		case err := <-done:
+			return err
+		default:
+			return fmt.Errorf("figaro %s stopped before fork", a.id)
+		}
+	}
+}
+
 func (a *Agent) Context() []message.Message {
 	return unwrapMessages(a.figLog.Read())
 }
@@ -587,7 +613,28 @@ func (a *Agent) act(ctx context.Context) {
 			a.runTurn(ctx, evt)
 		case eventSet:
 			a.applyControlPatch(evt.setPatch, "set")
+		case eventFork:
+			a.executeFork(evt)
 		}
+	}
+}
+
+func (a *Agent) executeFork(evt event) {
+	var err error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("fork coordination panic: %v", r)
+			}
+		}()
+		err = evt.fork()
+	}()
+	evt.forkDone <- err
+}
+
+func (a *Agent) serviceForks() {
+	for _, evt := range a.inbox.TakeReadyForks() {
+		a.executeFork(evt)
 	}
 }
 

@@ -10,11 +10,12 @@ type Inbox struct {
 	mu     sync.Mutex
 	cond   *sync.Cond
 	queue  []event
+	wake   chan struct{} // queue-change signal only; events remain in the FIFO
 	closed bool
 }
 
 func NewInbox(ctx context.Context) *Inbox {
-	b := &Inbox{}
+	b := &Inbox{wake: make(chan struct{}, 1)}
 	b.cond = sync.NewCond(&b.mu)
 	go func() {
 		<-ctx.Done()
@@ -32,6 +33,10 @@ func (b *Inbox) Send(evt event) bool {
 	}
 	b.queue = append(b.queue, evt)
 	b.cond.Signal()
+	select {
+	case b.wake <- struct{}{}:
+	default:
+	}
 	return true
 }
 
@@ -41,6 +46,8 @@ func (b *Inbox) SendPatient(evt event)      { b.Send(evt) }
 
 // Yield is a no-op (legacy compat).
 func (b *Inbox) Yield() {}
+
+func (b *Inbox) Wake() <-chan struct{} { return b.wake }
 
 func (b *Inbox) Recv() (event, bool) {
 	b.mu.Lock()
@@ -72,7 +79,34 @@ func (b *Inbox) TakeUserPrompts() []event {
 		}
 	}
 	b.queue = keep
+	b.signalReadyForkLocked()
 	return taken
+}
+
+func (b *Inbox) TakeReadyForks() []event {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for n < len(b.queue) {
+		if b.queue[n].typ != eventFork {
+			break
+		}
+		n++
+	}
+	taken := append([]event(nil), b.queue[:n]...)
+	copy(b.queue, b.queue[n:])
+	b.queue = b.queue[:len(b.queue)-n]
+	return taken
+}
+
+func (b *Inbox) signalReadyForkLocked() {
+	if len(b.queue) == 0 || b.queue[0].typ != eventFork {
+		return
+	}
+	select {
+	case b.wake <- struct{}{}:
+	default:
+	}
 }
 
 // IsIdle reports whether the inbox is empty (no events queued).

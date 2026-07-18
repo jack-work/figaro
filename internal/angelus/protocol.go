@@ -376,37 +376,54 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if h.angelus.Backend == nil {
 		return nil, errors.New("fork: no backend (ephemeral angelus)")
 	}
-	// Announce when an interior <id>:<LT> resolves to an owning ancestor —
-	// the LT lives in a parent trunk / loadout / the genesis root, so the
-	// branch is made there, not in this trunk's own range.
+	var cont, alt string
 	note := ""
 	var forkOwner store.OwnerInfo
 	if req.AtMainLT > 0 {
-		if o, oerr := h.angelus.Backend.OwnerResolution(req.FigaroID, req.AtMainLT); oerr == nil {
-			forkOwner = o
+		if owner, err := h.angelus.Backend.OwnerResolution(req.FigaroID, req.AtMainLT); err == nil {
+			forkOwner = owner
 			switch {
-			case o.IsRoot:
+			case owner.IsRoot:
 				note = fmt.Sprintf("LT %d is the genesis root — spawned a fresh loadoutless conversation there", req.AtMainLT)
-			case o.Loadout != "":
-				note = fmt.Sprintf("LT %d is in loadout %s — spawned a fresh conversation under it", req.AtMainLT, o.Loadout)
-			case o.Trunk != "" && o.Trunk != req.FigaroID:
-				note = fmt.Sprintf("LT %d lives in trunk %s — branching there", req.AtMainLT, o.Trunk)
+			case owner.Loadout != "":
+				note = fmt.Sprintf("LT %d is in loadout %s — spawned a fresh conversation under it", req.AtMainLT, owner.Loadout)
+			case owner.Trunk != "" && owner.Trunk != req.FigaroID:
+				note = fmt.Sprintf("LT %d lives in trunk %s — branching there", req.AtMainLT, owner.Trunk)
 			}
 		}
 	}
+	runFork := func() error {
+		parentMeta := h.forkMetaSnapshot(req.FigaroID)
+		var err error
+		if req.AtMainLT > 0 {
+			cont, alt, err = h.angelus.Backend.ForkAt(req.FigaroID, req.AtMainLT)
+		} else {
+			cont, alt, err = h.angelus.Backend.Fork(req.FigaroID)
+		}
+		if err != nil {
+			return err
+		}
+		h.seedForkMeta(parentMeta, req.FigaroID, alt, req.AtMainLT, forkOwner)
+		return nil
+	}
 
-	var cont, alt string
 	var err error
-	parentMeta := h.forkMetaSnapshot(req.FigaroID)
-	if req.AtMainLT > 0 {
-		cont, alt, err = h.angelus.Backend.ForkAt(req.FigaroID, req.AtMainLT)
+	coordinatorID := req.FigaroID
+	if forkOwner.Trunk != "" && h.angelus.Registry.Get(forkOwner.Trunk) != nil {
+		coordinatorID = forkOwner.Trunk
+	}
+	if live := h.angelus.Registry.Get(coordinatorID); live != nil {
+		if coordinator, ok := live.(interface{ CoordinateFork(func() error) error }); ok {
+			err = coordinator.CoordinateFork(runFork)
+		} else {
+			err = runFork()
+		}
 	} else {
-		cont, alt, err = h.angelus.Backend.Fork(req.FigaroID)
+		err = runFork()
 	}
 	if err != nil {
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
-	h.seedForkMeta(parentMeta, req.FigaroID, alt, req.AtMainLT, forkOwner)
 	slog.Info("forked figaro", "parent", req.FigaroID, "at", req.AtMainLT, "continuation", cont, "alternative", alt)
 	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil
 }
