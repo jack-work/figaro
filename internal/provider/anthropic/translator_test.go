@@ -22,13 +22,13 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	first, _ := a.catchUp("aria", log, cache, nil)
+	first, _ := a.catchUp(log, cache, nil)
 	prefix := append([]byte(nil), first[0][0]...)
 	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleUser, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
-	second, _ := a.catchUp("aria", log, cache, nil)
+	second, _ := a.catchUp(log, cache, nil)
 
 	require.Len(t, second, 3)
 	assert.Equal(t, prefix, []byte(second[0][0]))

@@ -16,7 +16,7 @@ import (
 func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	cache := store.NewMemLog[[]json.RawMessage]()
-	p := &Provider{reminder: "tag", snapCache: map[string]*snapCacheEntry{}}
+	p := &Provider{reminder: "tag"}
 	for _, role := range []message.Role{message.RoleUser, message.RoleAssistant} {
 		_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 			Role: role, Content: []message.Content{message.TextContent(string(role))},
@@ -24,13 +24,13 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	first, _ := p.catchUp("aria", log, cache, nil)
+	first, _ := p.catchUp(log, cache, nil)
 	prefix := append([]byte(nil), first[0][0]...)
 	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleUser, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
-	second, _ := p.catchUp("aria", log, cache, nil)
+	second, _ := p.catchUp(log, cache, nil)
 
 	require.Len(t, second, 3)
 	assert.Equal(t, prefix, []byte(second[0][0]))
@@ -40,7 +40,7 @@ func TestCatchUpReplaysCachedPrefixSnapshot(t *testing.T) {
 	tmpl := template.Must(template.New("chalkboard").New("mode").Parse(`{{.OldString}}=>{{.NewString}}`))
 	log := store.NewMemLog[message.Message]()
 	cache := store.NewMemLog[[]json.RawMessage]()
-	p := &Provider{reminder: "tag", Templates: tmpl, snapCache: map[string]*snapCacheEntry{}}
+	p := &Provider{reminder: "tag", Templates: tmpl}
 	oldPatch := message.Patch{Set: map[string]json.RawMessage{"mode": json.RawMessage(`"old"`)}}
 	newPatch := message.Patch{Set: map[string]json.RawMessage{"mode": json.RawMessage(`"new"`)}}
 
@@ -59,7 +59,7 @@ func TestCatchUpReplaysCachedPrefixSnapshot(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	perMessage, _ := p.catchUp("aria", log, cache, nil)
+	perMessage, _ := p.catchUp(log, cache, nil)
 	require.Len(t, perMessage, 2)
 	var second struct {
 		Content []struct {

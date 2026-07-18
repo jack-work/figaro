@@ -53,14 +53,14 @@ func BenchmarkCatchUp(b *testing.B) {
 				cache := newCopyingBenchLog[[]json.RawMessage]()
 				a := &Anthropic{ReminderRenderer: "tag"}
 				b.StartTimer()
-				a.catchUp("bench", log, cache, nil)
+				a.catchUp(log, cache, nil)
 			}
 		})
 		b.Run("Warm/"+strconv.Itoa(n), func(b *testing.B) {
 			log := directBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			a := &Anthropic{ReminderRenderer: "tag"}
-			a.catchUp("bench", log, cache, nil)
+			a.catchUp(log, cache, nil)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -72,7 +72,7 @@ func BenchmarkCatchUp(b *testing.B) {
 					Role:    message.RoleAssistant,
 					Content: []message.Content{message.TextContent("warm assistant")},
 				}})
-				a.catchUp("bench", log, cache, nil)
+				a.catchUp(log, cache, nil)
 			}
 		})
 	}

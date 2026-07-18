@@ -11,7 +11,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 )
 
-// cacheFor returns the per-aria byte cache, opening lazily. Returns
+// cacheFor returns this provider's lineage cache, opening lazily. Returns
 // nil if caching is unconfigured or the open failed.
 func (p *Provider) cacheFor(aria string) store.Log[[]json.RawMessage] {
 	if aria == "" || p.CacheOpen == nil {
@@ -19,8 +19,8 @@ func (p *Provider) cacheFor(aria string) store.Log[[]json.RawMessage] {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if s, ok := p.caches[aria]; ok {
-		return s
+	if p.cache != nil {
+		return p.cache
 	}
 	s, err := p.CacheOpen(aria)
 	if err != nil {
@@ -28,7 +28,7 @@ func (p *Provider) cacheFor(aria string) store.Log[[]json.RawMessage] {
 		return nil
 	}
 	p.invalidateIfStale(s)
-	p.caches[aria] = s
+	p.cache = s
 	return s
 }
 
@@ -45,14 +45,14 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) {
 // returns per-message wire bytes plus their logical times. Uses an
 // in-memory snapshot cache to avoid re-walking the entire conversation
 // on every turn: only new entries (since the last call) are processed.
-func (p *Provider) catchUp(aria string, figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
+func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
 	t0 := time.Now()
 	fp := p.Fingerprint()
 	entries := store.Snapshot(figLog)
 
 	// Resume from the snap cache if the log only grew (append-only invariant).
 	p.mu.Lock()
-	sc := p.snapCache[aria]
+	sc := p.snapshot
 	p.mu.Unlock()
 
 	var snap chalkboard.Snapshot
@@ -111,24 +111,19 @@ func (p *Provider) catchUp(aria string, figLog store.Log[message.Message], cache
 	}
 
 	// Store the snapshot for next turn.
-	if aria != "" {
-		var lastLT uint64
-		if len(entries) > 0 {
-			lastLT = entries[len(entries)-1].LT
-		}
-		p.mu.Lock()
-		if p.snapCache == nil {
-			p.snapCache = map[string]*snapCacheEntry{}
-		}
-		p.snapCache[aria] = &snapCacheEntry{
-			snap:       snap,
-			perMessage: perMessage,
-			lts:        lts,
-			nEntries:   len(entries),
-			lastLT:     lastLT,
-		}
-		p.mu.Unlock()
+	var lastLT uint64
+	if len(entries) > 0 {
+		lastLT = entries[len(entries)-1].LT
 	}
+	p.mu.Lock()
+	p.snapshot = &translationSnapshot{
+		snap:       snap,
+		perMessage: perMessage,
+		lts:        lts,
+		nEntries:   len(entries),
+		lastLT:     lastLT,
+	}
+	p.mu.Unlock()
 
 	tTotal := time.Since(t0)
 	if tTotal > 200*time.Millisecond {

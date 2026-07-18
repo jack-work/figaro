@@ -29,7 +29,7 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// ProviderFactory creates a provider from a name and operational knobs.
+// ProviderFactory creates one provider per Agent; instances never span arias.
 type ProviderFactory func(providerName string, knobs providerPkg.Knobs) (providerPkg.Provider, error)
 
 // ServerConfig holds dependencies for the angelus JSON-RPC handlers.

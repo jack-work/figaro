@@ -53,16 +53,12 @@ type Provider struct {
 
 	// CacheOpen opens the per-aria translation cache. nil disables caching.
 	CacheOpen func(aria string) (store.Log[[]json.RawMessage], error)
-	caches    map[string]store.Log[[]json.RawMessage]
+	cache     store.Log[[]json.RawMessage]
 
-	// snapCache stores the accumulated chalkboard snapshot and the
-	// built perMessage/lts arrays from the last catchUp, keyed by aria.
-	// On the next turn, if the figLog has only grown (append-only), we
-	// resume from the cached position without re-walking prior entries.
-	snapCache map[string]*snapCacheEntry
+	snapshot *translationSnapshot
 }
 
-type snapCacheEntry struct {
+type translationSnapshot struct {
 	snap       chalkboard.Snapshot
 	perMessage [][]json.RawMessage
 	lts        []uint64
@@ -86,8 +82,6 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 		reminder:   rr,
 		httpClient: &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
 		CacheOpen:  cacheOpen,
-		caches:     map[string]store.Log[[]json.RawMessage]{},
-		snapCache:  map[string]*snapCacheEntry{},
 	}, nil
 }
 
@@ -142,7 +136,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 
 	cache := p.cacheFor(in.AriaID)
-	perMessage, lts := p.catchUp(in.AriaID, in.FigLog, cache, in.Chalkboard)
+	perMessage, lts := p.catchUp(in.FigLog, cache, in.Chalkboard)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}

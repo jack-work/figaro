@@ -45,9 +45,8 @@ func sdkBenchLog(b *testing.B, n int) *copyingBenchLog[message.Message] {
 
 func sdkBenchProvider(cache store.Log[[]json.RawMessage]) *Provider {
 	return &Provider{
-		reminder:  "tag",
-		caches:    map[string]store.Log[[]json.RawMessage]{"bench": cache},
-		snapCache: map[string]*snapCacheEntry{},
+		reminder: "tag",
+		cache:    cache,
 	}
 }
 
@@ -61,14 +60,14 @@ func BenchmarkCatchUp(b *testing.B) {
 				cache := newCopyingBenchLog[[]json.RawMessage]()
 				p := sdkBenchProvider(cache)
 				b.StartTimer()
-				p.catchUp("bench", log, cache, nil)
+				p.catchUp(log, cache, nil)
 			}
 		})
 		b.Run("Warm/"+strconv.Itoa(n), func(b *testing.B) {
 			log := sdkBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := sdkBenchProvider(cache)
-			p.catchUp("bench", log, cache, nil)
+			p.catchUp(log, cache, nil)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -80,7 +79,7 @@ func BenchmarkCatchUp(b *testing.B) {
 					Role:    message.RoleAssistant,
 					Content: []message.Content{message.TextContent("warm assistant")},
 				}})
-				p.catchUp("bench", log, cache, nil)
+				p.catchUp(log, cache, nil)
 			}
 		})
 	}
@@ -92,7 +91,7 @@ func BenchmarkBuildParams(b *testing.B) {
 			log := sdkBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := sdkBenchProvider(cache)
-			perMessage, lts := p.catchUp("bench", log, cache, nil)
+			perMessage, lts := p.catchUp(log, cache, nil)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {

@@ -40,9 +40,9 @@ type responsesProvider struct {
 	maxTokens int
 	templates *template.Template
 	machineID string
-	caches    map[string]store.Log[[]json.RawMessage]
-	inputs    map[string]*responseInputSnapshot
-	sessions  map[string]string
+	cache     store.Log[[]json.RawMessage]
+	input     *responseInputSnapshot
+	sessionID string
 	limits    map[string]responseContextLimits
 
 	baseURL func(string) string
@@ -69,9 +69,6 @@ func newResponsesProvider(
 		model:     knobs.Model,
 		maxTokens: knobs.MaxTokens,
 		machineID: uuid.NewString(),
-		caches:    map[string]store.Log[[]json.RawMessage]{},
-		inputs:    map[string]*responseInputSnapshot{},
-		sessions:  map[string]string{},
 		limits:    map[string]responseContextLimits{},
 		baseURL:   func(token string) string { return baseURLFromToken(token, enterpriseDomain) },
 		dial:      dialResponses,
@@ -161,7 +158,7 @@ func (p *responsesProvider) sendWithToken(
 		maxTokens = in.MaxTokens
 	}
 	taskID := uuid.NewString()
-	sessionID := p.sessionIDFor(in.AriaID)
+	sessionID := p.sessionIDFor()
 	interactionID := uuid.NewString()
 	endpoint := responsesEndpoint(p.baseURL(token))
 	headers := responseHeaders(token, taskID, sessionID, interactionID, machineID)
@@ -339,18 +336,14 @@ func contextTierName(tier string) string {
 	return "default-context"
 }
 
-func (p *responsesProvider) sessionIDFor(aria string) string {
-	if aria == "" {
-		return uuid.NewString()
-	}
+func (p *responsesProvider) sessionIDFor() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if sessionID := p.sessions[aria]; sessionID != "" {
-		return sessionID
+	if p.sessionID != "" {
+		return p.sessionID
 	}
-	sessionID := uuid.NewString()
-	p.sessions[aria] = sessionID
-	return sessionID
+	p.sessionID = uuid.NewString()
+	return p.sessionID
 }
 
 func (p *responsesProvider) cacheFor(aria string) store.Log[[]json.RawMessage] {
@@ -360,16 +353,16 @@ func (p *responsesProvider) cacheFor(aria string) store.Log[[]json.RawMessage] {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	fingerprint := responseFingerprint(p.model)
-	if cache, ok := p.caches[aria]; ok {
-		p.invalidateCache(cache, fingerprint)
-		return cache
+	if p.cache != nil {
+		p.invalidateCache(p.cache, fingerprint)
+		return p.cache
 	}
 	cache, err := p.cacheOpen(aria)
 	if err != nil {
 		return nil
 	}
 	p.invalidateCache(cache, fingerprint)
-	p.caches[aria] = cache
+	p.cache = cache
 	return cache
 }
 
@@ -388,16 +381,14 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 	var input []json.RawMessage
 	snap := chalkboard.Snapshot{}
 	startIdx := 0
-	if in.AriaID != "" {
-		p.mu.Lock()
-		sc := p.inputs[in.AriaID]
-		p.mu.Unlock()
-		if sc != nil && sc.fingerprint == fingerprint && sc.nEntries <= len(entries) &&
-			(sc.nEntries == 0 || entries[sc.nEntries-1].LT == sc.lastLT) {
-			input = sc.input
-			snap = sc.snap
-			startIdx = sc.nEntries
-		}
+	p.mu.Lock()
+	sc := p.input
+	p.mu.Unlock()
+	if sc != nil && sc.fingerprint == fingerprint && sc.nEntries <= len(entries) &&
+		(sc.nEntries == 0 || entries[sc.nEntries-1].LT == sc.lastLT) {
+		input = sc.input
+		snap = sc.snap
+		startIdx = sc.nEntries
 	}
 
 	for _, entry := range entries[startIdx:] {
@@ -437,21 +428,19 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 			snap = snap.Apply(patch)
 		}
 	}
-	if in.AriaID != "" {
-		var lastLT uint64
-		if len(entries) > 0 {
-			lastLT = entries[len(entries)-1].LT
-		}
-		p.mu.Lock()
-		p.inputs[in.AriaID] = &responseInputSnapshot{
-			fingerprint: fingerprint,
-			snap:        snap,
-			input:       input,
-			nEntries:    len(entries),
-			lastLT:      lastLT,
-		}
-		p.mu.Unlock()
+	var lastLT uint64
+	if len(entries) > 0 {
+		lastLT = entries[len(entries)-1].LT
 	}
+	p.mu.Lock()
+	p.input = &responseInputSnapshot{
+		fingerprint: fingerprint,
+		snap:        snap,
+		input:       input,
+		nEntries:    len(entries),
+		lastLT:      lastLT,
+	}
+	p.mu.Unlock()
 	return input, nil
 }
 
