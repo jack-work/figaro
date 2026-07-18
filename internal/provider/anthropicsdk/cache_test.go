@@ -24,16 +24,25 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	first, _ := p.catchUp(log, cache, nil)
-	prefix := append([]byte(nil), first[0][0]...)
-	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+	first, err := p.catchUp(log, cache, nil)
+	require.NoError(t, err)
+	require.Len(t, first.Messages, 2)
+	firstBlock := first.Messages[0].Content[0].OfText
+	prefixEntry, ok := cache.Lookup(1)
+	require.True(t, ok)
+	prefix := append([]byte(nil), prefixEntry.Payload[0]...)
+	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
 		Role: message.RoleUser, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
-	second, _ := p.catchUp(log, cache, nil)
+	second, err := p.catchUp(log, cache, nil)
+	require.NoError(t, err)
 
-	require.Len(t, second, 3)
-	assert.Equal(t, prefix, []byte(second[0][0]))
+	require.Len(t, second.Messages, 3)
+	assert.Same(t, firstBlock, second.Messages[0].Content[0].OfText)
+	prefixEntry, ok = cache.Lookup(1)
+	require.True(t, ok)
+	assert.Equal(t, prefix, []byte(prefixEntry.Payload[0]))
 }
 
 func TestCatchUpReplaysCachedPrefixSnapshot(t *testing.T) {
@@ -59,16 +68,12 @@ func TestCatchUpReplaysCachedPrefixSnapshot(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	perMessage, _ := p.catchUp(log, cache, nil)
-	require.Len(t, perMessage, 2)
-	var second struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	require.NoError(t, json.Unmarshal(perMessage[1][0], &second))
-	require.Len(t, second.Content, 2)
-	assert.Contains(t, second.Content[1].Text, "old=>new")
+	projected, err := p.catchUp(log, cache, nil)
+	require.NoError(t, err)
+	require.Len(t, projected.Messages, 2)
+	require.Len(t, projected.Messages[1].Content, 2)
+	require.NotNil(t, projected.Messages[1].Content[1].OfText)
+	assert.Contains(t, projected.Messages[1].Content[1].OfText.Text, "old=>new")
 }
 
 func TestInvalidateIfStaleUsesTailFingerprint(t *testing.T) {

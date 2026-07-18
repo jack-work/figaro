@@ -3,6 +3,7 @@ package anthropicsdk
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -50,6 +51,54 @@ func encodeAll(p *Provider, msgs []message.Message) [][]json.RawMessage {
 		out = append(out, []json.RawMessage{raw})
 	}
 	return out
+}
+
+func projectAll(t testing.TB, perMessage [][]json.RawMessage, lts []uint64) projectedMessages {
+	t.Helper()
+	var projected projectedMessages
+	for i, encoded := range perMessage {
+		var lt uint64
+		if i < len(lts) {
+			lt = lts[i]
+		}
+		projected = appendProjectedMessages(projected, encoded, lt)
+	}
+	require.NoError(t, projected.err)
+	return projected
+}
+
+func legacyBuildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.Snapshot, tools []provider.Tool, maxTokens int64, oauth bool, model string) (anthropic.MessageNewParams, error) {
+	params := anthropic.MessageNewParams{
+		MaxTokens: maxTokens,
+		Model:     anthropic.Model(model),
+		System:    systemBlocks(snap, oauth),
+		Tools:     toolUnions(tools),
+	}
+	var msgLTs []uint64
+	for i, entry := range perMessage {
+		var lt uint64
+		if i < len(lts) {
+			lt = lts[i]
+		}
+		for _, raw := range entry {
+			if len(raw) == 0 {
+				continue
+			}
+			var msg anthropic.MessageParam
+			if err := json.Unmarshal(raw, &msg); err != nil {
+				return anthropic.MessageNewParams{}, fmt.Errorf("unmarshal cached message: %w", err)
+			}
+			params.Messages = append(params.Messages, msg)
+			msgLTs = append(msgLTs, lt)
+		}
+	}
+	params.Messages, msgLTs = coalesceMessages(params.Messages, msgLTs)
+	if setting := resolveCacheControl(snap); setting != "" {
+		markCacheBreakpoints(&params, setting)
+	}
+	applyMessageTags(&params, msgLTs, snap)
+	applyThinking(&params, snap, model)
+	return params, nil
 }
 
 func TestEncodeDecodeRoundTrip(t *testing.T) {
@@ -193,8 +242,8 @@ func TestBuildParams_CacheBreakpoints(t *testing.T) {
 	snap := systemSnapshot(t, "you are a test agent")
 	snap["system.cache_control"] = json.RawMessage(`"ephemeral"`)
 
-	params, err := buildParams(encodeAll(p, msgs), []uint64{1, 2, 3}, snap, tools, 1024, false, "claude-test")
-	require.NoError(t, err)
+	projected := projectAll(t, encodeAll(p, msgs), []uint64{1, 2, 3})
+	params := buildParams(projected.Messages, projected.LogicalTimes, snap, tools, 1024, false, "claude-test")
 
 	// System.
 	require.NotEmpty(t, params.System)
@@ -230,8 +279,8 @@ func TestBuildParams_SingleMessageBreakpoint(t *testing.T) {
 	snap := systemSnapshot(t, "you are a test agent")
 	snap["system.cache_control"] = json.RawMessage(`"ephemeral"`)
 
-	params, err := buildParams(encodeAll(p, msgs), []uint64{1}, snap, nil, 1024, false, "claude-test")
-	require.NoError(t, err)
+	projected := projectAll(t, encodeAll(p, msgs), []uint64{1})
+	params := buildParams(projected.Messages, projected.LogicalTimes, snap, nil, 1024, false, "claude-test")
 
 	require.Len(t, params.Messages, 1)
 	require.NotEmpty(t, params.Messages[0].Content)
@@ -250,16 +299,15 @@ func TestBuildParams_CacheDefaultsOnAndNoneDisables(t *testing.T) {
 
 	// Default: unset → caching applied.
 	on := systemSnapshot(t, "agent")
-	params, err := buildParams(encodeAll(p, msgs), []uint64{1}, on, nil, 1024, false, "claude-test")
-	require.NoError(t, err)
+	projected := projectAll(t, encodeAll(p, msgs), []uint64{1})
+	params := buildParams(projected.Messages, projected.LogicalTimes, on, nil, 1024, false, "claude-test")
 	require.NotEmpty(t, params.System)
 	assertCacheStamp(t, params.System[len(params.System)-1].CacheControl, "default-on system block")
 
 	// "none" → no stamps anywhere.
 	off := systemSnapshot(t, "agent")
 	off["system.cache_control"] = json.RawMessage(`"none"`)
-	params, err = buildParams(encodeAll(p, msgs), []uint64{1}, off, nil, 1024, false, "claude-test")
-	require.NoError(t, err)
+	params = buildParams(projected.Messages, projected.LogicalTimes, off, nil, 1024, false, "claude-test")
 	require.NotEmpty(t, params.System)
 	assert.True(t, isUnstamped(params.System[len(params.System)-1].CacheControl), "none must not stamp system")
 	require.NotEmpty(t, params.Messages[0].Content)
@@ -279,11 +327,10 @@ func TestBuildParams_StableAcrossCalls(t *testing.T) {
 	}
 	snap := systemSnapshot(t, "you are a test agent")
 	pre := encodeAll(p, msgs)
+	projected := projectAll(t, pre, []uint64{1, 2, 3})
 
-	r1, err := buildParams(pre, []uint64{1, 2, 3}, snap, tools, 1024, false, "claude-test")
-	require.NoError(t, err)
-	r2, err := buildParams(pre, []uint64{1, 2, 3}, snap, tools, 1024, false, "claude-test")
-	require.NoError(t, err)
+	r1 := buildParams(projected.Messages, projected.LogicalTimes, snap, tools, 1024, false, "claude-test")
+	r2 := buildParams(projected.Messages, projected.LogicalTimes, snap, tools, 1024, false, "claude-test")
 
 	b1, err := json.Marshal(r1)
 	require.NoError(t, err)
@@ -300,8 +347,8 @@ func TestBuildParams_OAuthSystemArray(t *testing.T) {
 	snap := systemSnapshot(t, "you are figaro")
 	snap["system.cache_control"] = json.RawMessage(`"ephemeral"`)
 
-	params, err := buildParams(encodeAll(p, msgs), []uint64{1}, snap, nil, 1024, true, "claude-test")
-	require.NoError(t, err)
+	projected := projectAll(t, encodeAll(p, msgs), []uint64{1})
+	params := buildParams(projected.Messages, projected.LogicalTimes, snap, nil, 1024, true, "claude-test")
 
 	require.Len(t, params.System, 2, "OAuth system must have two blocks: Claude Code identity + credo")
 	assert.Contains(t, params.System[0].Text, "Claude Code")
@@ -319,13 +366,13 @@ func TestBuildParams_PerLTTag(t *testing.T) {
 	}
 	pre := encodeAll(p, msgs)
 	lts := []uint64{10, 11, 12}
+	projected := projectAll(t, pre, lts)
 
 	snap := systemSnapshot(t, "you are a test agent")
 	snap["system.cache_control"] = json.RawMessage(`"none"`) // isolate per-LT tagging from auto-breakpoints
 	snap["system.tags"] = json.RawMessage(`{"11":{"cache_control":"ephemeral"}}`)
 
-	params, err := buildParams(pre, lts, snap, nil, 1024, false, "claude-test")
-	require.NoError(t, err)
+	params := buildParams(projected.Messages, projected.LogicalTimes, snap, nil, 1024, false, "claude-test")
 	require.Len(t, params.Messages, 3)
 
 	tagged := params.Messages[1]
@@ -341,6 +388,100 @@ func TestBuildParams_PerLTTag(t *testing.T) {
 		require.NotNil(t, l.OfText)
 		assert.True(t, isUnstamped(l.OfText.CacheControl), "untagged message must not carry cache_control")
 	}
+}
+
+func TestBuildParams_ByteIdenticalToCachedReconstruction(t *testing.T) {
+	p := &Provider{}
+	perMessage := encodeAll(p, []message.Message{
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("first user")}},
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("adjacent user")}},
+		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("placeholder")}},
+		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("adjacent assistant")}},
+		{Role: message.RoleUser, Content: []message.Content{{
+			Type: message.ContentToolResult, ToolCallID: "toolu_signed", Text: "tool output",
+		}}},
+	})
+	perMessage[2][0] = json.RawMessage(`{"role":"assistant","content":[{"type":"thinking","thinking":"private chain","signature":"signed-thinking"},{"type":"text","text":"calling tool"},{"type":"tool_use","id":"toolu_signed","name":"lookup","input":{"query":"figaro"}}]}`)
+	lts := []uint64{10, 11, 12, 13, 14}
+	projected := projectAll(t, perMessage, lts)
+	immutableBefore, err := json.Marshal(projected.Messages)
+	require.NoError(t, err)
+
+	tools := []provider.Tool{{
+		Name: "lookup", Description: "find a value", Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"query": map[string]interface{}{"type": "string"},
+			},
+			"required": []interface{}{"query"},
+		},
+	}}
+	cases := []struct {
+		name   string
+		snap   chalkboard.Snapshot
+		oauth  bool
+		model  string
+		maxOut int64
+	}{
+		{
+			name:  "cache_markers_and_tools",
+			snap:  systemSnapshot(t, "cache persona"),
+			model: "claude-sonnet-4-5",
+		},
+		{
+			name: "per_lt_tags_after_coalescing",
+			snap: chalkboard.Snapshot{
+				"system.cache_control": json.RawMessage(`"none"`),
+				"system.tags":          json.RawMessage(`{"11":{"cache_control":"1h"},"13":{"cache_control":"5m"},"14":{"cache_control":"ephemeral"}}`),
+			},
+			model: "claude-sonnet-4-5",
+		},
+		{
+			name: "budget_thinking_and_signed_block",
+			snap: chalkboard.Snapshot{
+				"system.cache_control":   json.RawMessage(`"ephemeral"`),
+				"system.thinking_budget": json.RawMessage(`2048`),
+			},
+			model:  "claude-sonnet-4-5",
+			maxOut: 1024,
+		},
+		{
+			name: "adaptive_thinking_model_switch",
+			snap: chalkboard.Snapshot{
+				"system.cache_control":   json.RawMessage(`"5m"`),
+				"system.thinking_effort": json.RawMessage(`"medium"`),
+			},
+			model:  "claude-sonnet-4-6",
+			maxOut: 8192,
+		},
+		{
+			name:   "oauth_system_shape",
+			snap:   systemSnapshot(t, "oauth persona"),
+			oauth:  true,
+			model:  "claude-opus-4-8",
+			maxOut: 8192,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			maxOut := tc.maxOut
+			if maxOut == 0 {
+				maxOut = 8192
+			}
+			want, err := legacyBuildParams(perMessage, lts, tc.snap, tools, maxOut, tc.oauth, tc.model)
+			require.NoError(t, err)
+			got := buildParams(projected.Messages, projected.LogicalTimes, tc.snap, tools, maxOut, tc.oauth, tc.model)
+			wantJSON, err := json.Marshal(want)
+			require.NoError(t, err)
+			gotJSON, err := json.Marshal(got)
+			require.NoError(t, err)
+			assert.Equal(t, string(wantJSON), string(gotJSON))
+		})
+	}
+
+	immutableAfter, err := json.Marshal(projected.Messages)
+	require.NoError(t, err)
+	assert.Equal(t, string(immutableBefore), string(immutableAfter), "request-local changes mutated the parsed projection")
 }
 
 // TestToolUnions_RoundTrip checks projectTools-equivalent stability.

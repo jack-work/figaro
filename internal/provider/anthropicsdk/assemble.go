@@ -2,7 +2,6 @@ package anthropicsdk
 
 import (
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -12,34 +11,16 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 )
 
-// buildParams assembles a MessageNewParams from cached per-message
-// bytes, then layers cache breakpoints and per-LT tags on top.
-func buildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.Snapshot, tools []provider.Tool, maxTokens int64, oauth bool, model string) (anthropic.MessageNewParams, error) {
+// buildParams layers request-local changes over the immutable parsed projection.
+func buildParams(messages []anthropic.MessageParam, lts []uint64, snap chalkboard.Snapshot, tools []provider.Tool, maxTokens int64, oauth bool, model string) anthropic.MessageNewParams {
 	params := anthropic.MessageNewParams{
 		MaxTokens: maxTokens,
 		Model:     anthropic.Model(model),
 		System:    systemBlocks(snap, oauth),
 		Tools:     toolUnions(tools),
+		Messages:  append([]anthropic.MessageParam(nil), messages...),
 	}
-
-	var msgLTs []uint64
-	for i, entry := range perMessage {
-		var lt uint64
-		if i < len(lts) {
-			lt = lts[i]
-		}
-		for _, raw := range entry {
-			if len(raw) == 0 {
-				continue
-			}
-			var mp anthropic.MessageParam
-			if err := json.Unmarshal(raw, &mp); err != nil {
-				return anthropic.MessageNewParams{}, fmt.Errorf("unmarshal cached message: %w", err)
-			}
-			params.Messages = append(params.Messages, mp)
-			msgLTs = append(msgLTs, lt)
-		}
-	}
+	msgLTs := lts
 
 	// Anthropic requires roles to alternate after the first message.
 	// Consecutive same-role messages happen when a turn errors (the user message is
@@ -53,7 +34,7 @@ func buildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkboard.S
 	}
 	applyMessageTags(&params, msgLTs, snap)
 	applyThinking(&params, snap, model)
-	return params, nil
+	return params
 }
 
 // coalesceMessages merges adjacent same-role messages (concatenating content)
@@ -64,12 +45,28 @@ func coalesceMessages(msgs []anthropic.MessageParam, lts []uint64) ([]anthropic.
 	if len(msgs) < 2 {
 		return msgs, lts
 	}
+	needsCoalescing := false
+	for i := 1; i < len(msgs); i++ {
+		if msgs[i].Role == msgs[i-1].Role {
+			needsCoalescing = true
+			break
+		}
+	}
+	if !needsCoalescing {
+		return msgs, lts
+	}
 	outMsgs := msgs[:1]
-	outLTs := lts[:1]
+	outLTs := make([]uint64, 0, len(lts))
+	if len(lts) > 0 {
+		outLTs = append(outLTs, lts[0])
+	}
 	for i := 1; i < len(msgs); i++ {
 		last := len(outMsgs) - 1
 		if msgs[i].Role == outMsgs[last].Role {
-			outMsgs[last].Content = append(outMsgs[last].Content, msgs[i].Content...)
+			content := make([]anthropic.ContentBlockParamUnion, len(outMsgs[last].Content)+len(msgs[i].Content))
+			copy(content, outMsgs[last].Content)
+			copy(content[len(outMsgs[last].Content):], msgs[i].Content)
+			outMsgs[last].Content = content
 			if i < len(lts) {
 				outLTs[last] = lts[i]
 			}
@@ -366,18 +363,29 @@ func setLeafCache(mp *anthropic.MessageParam, cc anthropic.CacheControlEphemeral
 	if mp == nil || len(mp.Content) == 0 {
 		return false
 	}
+	mp.Content = append([]anthropic.ContentBlockParamUnion(nil), mp.Content...)
 	leaf := &mp.Content[len(mp.Content)-1]
 	switch {
 	case leaf.OfText != nil:
-		leaf.OfText.CacheControl = cc
+		block := *leaf.OfText
+		block.CacheControl = cc
+		leaf.OfText = &block
 	case leaf.OfToolUse != nil:
-		leaf.OfToolUse.CacheControl = cc
+		block := *leaf.OfToolUse
+		block.CacheControl = cc
+		leaf.OfToolUse = &block
 	case leaf.OfToolResult != nil:
-		leaf.OfToolResult.CacheControl = cc
+		block := *leaf.OfToolResult
+		block.CacheControl = cc
+		leaf.OfToolResult = &block
 	case leaf.OfImage != nil:
-		leaf.OfImage.CacheControl = cc
+		block := *leaf.OfImage
+		block.CacheControl = cc
+		leaf.OfImage = &block
 	case leaf.OfDocument != nil:
-		leaf.OfDocument.CacheControl = cc
+		block := *leaf.OfDocument
+		block.CacheControl = cc
+		leaf.OfDocument = &block
 	default:
 		return false
 	}

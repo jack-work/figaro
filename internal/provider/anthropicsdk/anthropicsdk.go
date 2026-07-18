@@ -54,7 +54,7 @@ type Provider struct {
 	// CacheOpen opens the per-aria translation cache. nil disables caching.
 	CacheOpen  func(aria string) (store.Log[[]json.RawMessage], error)
 	cache      store.Log[[]json.RawMessage]
-	projection *provider.IncrementalProjection[provider.EncodedMessages]
+	projection *provider.IncrementalProjection[projectedMessages]
 }
 
 // New constructs the SDK-backed provider.
@@ -127,8 +127,11 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 
 	cache := p.cacheFor(in.AriaID)
-	perMessage, lts := p.catchUp(in.FigLog, cache, in.Chalkboard)
-	if len(perMessage) == 0 {
+	projected, err := p.catchUp(in.FigLog, cache, in.Chalkboard)
+	if err != nil {
+		return err
+	}
+	if len(projected.Messages) == 0 {
 		return fmt.Errorf("empty context")
 	}
 
@@ -143,7 +146,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 
 	var msg message.Message
 	var acc anthropic.Message
-	err := p.callWithAuthRetry(ctx, func(opts []option.RequestOption) error {
+	err = p.callWithAuthRetry(ctx, func(opts []option.RequestOption) error {
 		// Resolve token to decide OAuth vs API-key system shape.
 		// p.callWithAuthRetry already injects the auth option; we
 		// read it back from the resolver here for the system shape.
@@ -151,10 +154,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		if terr != nil {
 			return fmt.Errorf("resolve token: %w", terr)
 		}
-		params, perr := buildParams(perMessage, lts, in.Snapshot, in.Tools, int64(maxTokens), isOAuthToken(tok) && !p.NoOAuthIdentity, model)
-		if perr != nil {
-			return perr
-		}
+		params := buildParams(projected.Messages, projected.LogicalTimes, in.Snapshot, in.Tools, int64(maxTokens), isOAuthToken(tok) && !p.NoOAuthIdentity, model)
 		client := anthropic.NewClient(opts...)
 		stream := client.Messages.NewStreaming(ctx, params, opts...)
 		assembled, raw, serr := drainStream(ctx, stream, model, bus)

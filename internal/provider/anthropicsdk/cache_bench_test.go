@@ -91,11 +91,59 @@ func BenchmarkBuildParams(b *testing.B) {
 			log := sdkBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := sdkBenchProvider(cache)
-			perMessage, lts := p.catchUp(log, cache, nil)
+			projected, err := p.catchUp(log, cache, nil)
+			if err != nil {
+				b.Fatal(err)
+			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if _, err := buildParams(perMessage, lts, nil, nil, 1024, false, "claude-test"); err != nil {
+				_ = buildParams(projected.Messages, projected.LogicalTimes, nil, nil, 1024, false, "claude-test")
+			}
+		})
+	}
+}
+
+func BenchmarkParseCachedMessages(b *testing.B) {
+	for _, n := range []int{1_000, 10_000, 50_000} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			log := sdkBenchLog(b, n)
+			cache := newCopyingBenchLog[[]json.RawMessage]()
+			p := sdkBenchProvider(cache)
+			if _, err := p.catchUp(log, cache, nil); err != nil {
+				b.Fatal(err)
+			}
+			entries := cache.Read()
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				var projected projectedMessages
+				for _, entry := range entries {
+					projected = appendProjectedMessages(projected, entry.Payload, entry.LT)
+				}
+				if projected.err != nil {
+					b.Fatal(projected.err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkMarshalParams(b *testing.B) {
+	for _, n := range []int{1_000, 10_000, 50_000} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			log := sdkBenchLog(b, n)
+			cache := newCopyingBenchLog[[]json.RawMessage]()
+			p := sdkBenchProvider(cache)
+			projected, err := p.catchUp(log, cache, nil)
+			if err != nil {
+				b.Fatal(err)
+			}
+			params := buildParams(projected.Messages, projected.LogicalTimes, nil, nil, 1024, false, "claude-test")
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err := json.Marshal(params); err != nil {
 					b.Fatal(err)
 				}
 			}

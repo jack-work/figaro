@@ -2,13 +2,41 @@ package anthropicsdk
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/anthropics/anthropic-sdk-go"
 
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
 )
+
+type projectedMessages struct {
+	Messages     []anthropic.MessageParam
+	LogicalTimes []uint64
+	err          error
+}
+
+func appendProjectedMessages(state projectedMessages, encoded []json.RawMessage, lt uint64) projectedMessages {
+	if state.err != nil {
+		return state
+	}
+	for _, raw := range encoded {
+		if len(raw) == 0 {
+			continue
+		}
+		var msg anthropic.MessageParam
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			state.err = fmt.Errorf("unmarshal cached message: %w", err)
+			return state
+		}
+		state.Messages = append(state.Messages, msg)
+		state.LogicalTimes = append(state.LogicalTimes, lt)
+	}
+	return state
+}
 
 // cacheFor returns this provider's lineage cache, opening lazily. Returns
 // nil if caching is unconfigured or the open failed.
@@ -47,32 +75,32 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) bool {
 	return true
 }
 
-// catchUp encodes any figLog entries not yet in the cache and
-// returns per-message wire bytes plus their logical times. Uses an
-// in-memory snapshot cache to avoid re-walking the entire conversation
-// on every turn: only new entries (since the last call) are processed.
-func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
+// catchUp projects untranslated entries into immutable typed messages.
+// Cached raw bytes are parsed only when their entry first joins the projection.
+func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) (projectedMessages, error) {
 	t0 := time.Now()
 	fp := p.Fingerprint()
 	p.mu.Lock()
 	previous := p.projection
 	p.mu.Unlock()
 
-	projection, stats, err := provider.ProjectIncrementally(provider.ProjectionConfig[provider.EncodedMessages]{
+	projection, stats, err := provider.ProjectIncrementally(provider.ProjectionConfig[projectedMessages]{
 		Log:         figLog,
 		Cache:       cache,
 		Chalkboard:  chalk,
 		Previous:    previous,
 		Fingerprint: fp,
 		Encode:      p.encode,
-		Append:      provider.AppendEncodedMessage,
+		Append:      appendProjectedMessages,
 		ReportEncodeError: func(lt uint64, err error) {
 			slog.Error("anthropicsdk encode", "flt", lt, "err", err)
 		},
 	})
 	if err != nil {
-		slog.Error("anthropicsdk project", "err", err)
-		return nil, nil
+		return projectedMessages{}, fmt.Errorf("project messages: %w", err)
+	}
+	if projection.State.err != nil {
+		return projectedMessages{}, projection.State.err
 	}
 	p.mu.Lock()
 	p.projection = projection
@@ -88,5 +116,5 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 			"encoded", stats.Encoded,
 		)
 	}
-	return projection.State.PerMessage, projection.State.LogicalTimes
+	return projection.State, nil
 }
