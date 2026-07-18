@@ -70,3 +70,15 @@ func TestCatchUpReplaysCachedPrefixSnapshot(t *testing.T) {
 	require.Len(t, second.Content, 2)
 	assert.Contains(t, second.Content[1].Text, "old=>new")
 }
+
+func TestInvalidateIfStaleUsesTailFingerprint(t *testing.T) {
+	cache := store.NewMemLog[[]json.RawMessage]()
+	p := &Provider{reminder: "tag"}
+	_, err := cache.Append(store.Entry[[]json.RawMessage]{
+		FigaroLT: 1, Payload: []json.RawMessage{json.RawMessage(`{}`)}, Fingerprint: "stale",
+	})
+	require.NoError(t, err)
+
+	p.invalidateIfStale(cache)
+	assert.Empty(t, cache.Read())
+}

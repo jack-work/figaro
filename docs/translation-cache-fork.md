@@ -1,55 +1,52 @@
-# Translation Cache Inheritance on Fork
+# Translation Cache Lineages
 
-## Finding
+Translation channels are parallel XWAL channels, not per-aria copies. A fork
+shares the same immutable IR and translation prefix locations as its parent;
+each child directory contains only its divergent suffix and fork metadata.
 
-The translation cache (`translations/<provider>`) does NOT inherit on fork.
-The xwal forks all channels present at fork time, but the translation channel
-is added lazily via `ensureChannel`/`AddChannel` (not part of the initial
-`storeConfig().Channels` list). When a child aria opens its translation cache,
-`ensureChannel` creates a NEW empty channel rather than inheriting the parent's.
+## Required XWAL behavior
 
-The `ir` and `chalkboard` channels inherit correctly because they are declared
-in the xwal Config at tree creation time.
+Adding `translations/<provider>` after a lineage has forked must add the
+channel to that lineage without copying or backfilling inherited records.
+Existing and future descendants resolve the shared prefix through the same
+fork tree as the main channel.
 
-## Impact
+XWAL owns:
 
-Every forked child re-encodes the entire inherited conversation on its first
-turn. For a 1000-message parent, this adds ~20s of pure encoding overhead.
-Subsequent turns are fast (the in-memory snapCache kicks in).
+- immutable decoded channel snapshots and suffix views;
+- the translated-through main-LT watermark;
+- indexed main-LT lookup and bounded tail views;
+- ordered duplicate-key lookup and reducible state at a main-LT watermark;
+- atomic publication of a durable append as the next snapshot;
+- one physical prefix shared by every descendant.
 
-## Root Cause
+Figaro should not place another full-history cache or lock around these views.
+Provider translators retain only their fingerprint, chalkboard state at the
+watermark, and provider-native input projection.
 
-`translations/<provider>` is not in `storeConfig().Channels`. It's created on
-first use via `XwalBackend.ensureChannel` → `xw.AddChannel`. The xwal only
-forks channels that exist on the node at fork time. Since the translation
-channel is added after the loadout/conversation node was created (on the first
-provider Send), it misses the fork.
+## Catch-up
 
-## Possible Fixes
+For a matching fingerprint:
 
-1. **Add translation channels to the config at creation time.** Requires
-   knowing the provider name upfront (dynamic: "anthropic", "copilot").
-   Could register known providers' channels when the loadout is created.
+1. Read the translation tail watermark.
+2. Read the immutable IR suffix after that watermark.
+3. Encode and append only that suffix.
+4. Advance the in-memory projection and watermark.
 
-2. **Copy the parent's translation channel to the child post-fork.** After
-   `ForkTail`/`ForkAt`, check if the parent has translation channels and
-   `AddChannel` + backfill them on the child. The xwal's fork mechanism
-   would handle the inheritance if the channel existed before the fork.
+Normal work is one or two messages regardless of aria length. Fingerprint
+changes explicitly clear and rebuild the translation lineage. Request
+serialization may remain proportional to prompt bytes; cache validation,
+translation lookup, and catch-up may not scan the prefix.
 
-3. **Ensure translation channels exist before any fork.** On first Send,
-   `ensureChannel` runs. If we also ensure it on the loadout node (the
-   common ancestor), all descendants inherit it.
+## Rejected designs
 
-4. **headSnap optimization (partially implemented).** Even without cache
-   inheritance, use `in.Snapshot` (the current chalkboard state from
-   `ChalkboardState`/`StateAt`) to skip the patch replay for cached
-   entries. This was added in the current branch but doesn't help when
-   the translation cache itself is empty (all entries need encoding).
+- copying or backfilling a parent's translation records into a child;
+- predeclaring a fixed list of provider channels;
+- one `Lookup` per historical IR message;
+- rebuilding chalkboard state from the beginning on each turn;
+- treating Figaro's `cachedLog` as the durable hot-state owner.
 
-## Current State
-
-The in-memory `snapCache` makes second+ turns instant (~200ms). The
-`headSnap` optimization avoids patch replay for cached entries. The
-remaining gap is the first turn after fork/daemon-restart when the
-translation cache is empty: all inherited messages must be re-encoded.
-Fix #2 or #3 would close this gap.
+These either duplicate prefix bytes, make provider registration static, or
+move XWAL responsibilities into Figaro. None changes the existing on-disk
+record format: recovery still derives hot snapshots and watermarks from the
+canonical fork tree.

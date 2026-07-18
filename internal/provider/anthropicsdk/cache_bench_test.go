@@ -103,3 +103,22 @@ func BenchmarkBuildParams(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkInvalidateIfStale(b *testing.B) {
+	for _, n := range []int{1_000, 10_000, 50_000} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			cache := newCopyingBenchLog[[]json.RawMessage]()
+			p := sdkBenchProvider(cache)
+			for i := 0; i < n; i++ {
+				_, _ = cache.Append(store.Entry[[]json.RawMessage]{
+					FigaroLT: uint64(i + 1), Payload: []json.RawMessage{json.RawMessage(`{}`)}, Fingerprint: p.Fingerprint(),
+				})
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				p.invalidateIfStale(cache)
+			}
+		})
+	}
+}

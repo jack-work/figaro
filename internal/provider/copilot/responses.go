@@ -381,11 +381,8 @@ func (p *responsesProvider) cacheFor(aria string) store.Log[[]json.RawMessage] {
 }
 
 func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage], fingerprint string) {
-	for _, entry := range store.Snapshot(cache) {
-		if entry.Fingerprint != "" && entry.Fingerprint != fingerprint {
-			_ = cache.Clear()
-			break
-		}
+	if entry, ok := cache.PeekTail(); ok && entry.Fingerprint != "" && entry.Fingerprint != fingerprint {
+		_ = cache.Clear()
 	}
 }
 

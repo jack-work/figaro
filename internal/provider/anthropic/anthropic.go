@@ -106,13 +106,9 @@ func (a *Anthropic) cacheFor(aria string) store.Log[[]json.RawMessage] {
 // invalidateIfStale clears the cache on fingerprint mismatch.
 func (a *Anthropic) invalidateIfStale(s store.Log[[]json.RawMessage]) {
 	want := a.Fingerprint()
-	for _, e := range s.Read() {
-		if e.Fingerprint == "" || e.Fingerprint == want {
-			continue
-		}
+	if e, ok := s.PeekTail(); ok && e.Fingerprint != "" && e.Fingerprint != want {
 		_ = s.Clear()
 		slog.Info("anthropic cleared stale cache", "stored", e.Fingerprint, "current", want)
-		return
 	}
 }
 

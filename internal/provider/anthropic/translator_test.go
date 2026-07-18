@@ -33,3 +33,15 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 	require.Len(t, second, 3)
 	assert.Equal(t, prefix, []byte(second[0][0]))
 }
+
+func TestInvalidateIfStaleUsesTailFingerprint(t *testing.T) {
+	cache := store.NewMemLog[[]json.RawMessage]()
+	a := &Anthropic{ReminderRenderer: "tag"}
+	_, err := cache.Append(store.Entry[[]json.RawMessage]{
+		FigaroLT: 1, Payload: []json.RawMessage{json.RawMessage(`{}`)}, Fingerprint: "stale",
+	})
+	require.NoError(t, err)
+
+	a.invalidateIfStale(cache)
+	assert.Empty(t, cache.Read())
+}
