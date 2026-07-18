@@ -162,3 +162,60 @@ func BenchmarkTranscriptLargeToolOutput(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkTranscriptSelectionRehydrate(b *testing.B) {
+	for _, messages := range []int{1_000, 10_000, 50_000} {
+		b.Run(fmt.Sprintf("%d", messages), func(b *testing.B) {
+			history := transcriptHistory(messages)
+			plan := selectionCopyPlan{
+				lo: testSelectionPoint(1, 0, history[0].Nodes[0]),
+				hi: testSelectionPoint(messages, 0, history[messages-1].Nodes[0]),
+			}
+			b.ResetTimer()
+			for range b.N {
+				_, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.AriaRead, error) {
+					return readBefore(history, before, limit), nil
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkTranscriptDescriptorFallback(b *testing.B) {
+	for _, messages := range []int{1_000, 10_000, 50_000} {
+		b.Run(fmt.Sprintf("%d", messages), func(b *testing.B) {
+			history := transcriptHistory(messages)
+			after := messages / 2
+			probes := 0
+			b.ResetTimer()
+			for range b.N {
+				_, err := readNextPage(after, messages, transcriptPageSize, func(before, limit int) (aria.AriaRead, error) {
+					probes++
+					return readBefore(history, before, limit), nil
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+
+			b.ReportMetric(float64(probes)/float64(b.N), "probes/op")
+		})
+	}
+}
+
+func BenchmarkTranscriptSelectedLargeToolRender(b *testing.B) {
+	output := strings.Repeat("0123456789abcdef0123456789abcdef\n", (1<<20)/33)
+	nodes := []livedoc.Node{{
+		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK, Output: output,
+	}}
+	tr, _ := benchmarkTranscript(b, 1, nodes)
+	tr.enter()
+	tr.selectNode(-1, false)
+	b.ResetTimer()
+	for range b.N {
+		tr.render()
+	}
+}

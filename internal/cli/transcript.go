@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"hash/fnv"
 	"html"
 	"io"
 	"strings"
@@ -57,9 +58,11 @@ type transcript struct {
 	checkNewer  bool
 	noMoreOlder bool
 	pages       []transcriptPage
-	newer       []int
+	newer       []pageDesc
+	payloadLRU  []transcriptPage
 	search      *transcriptSearch
 	heldOpen    *aria.Message
+	committedW  int
 
 	// rowCache memoizes unstyled rows of committed messages. Selection is
 	// applied after retrieval, so moving through nodes never re-renders prose.
@@ -71,14 +74,23 @@ type transcript struct {
 }
 
 type transcriptPage struct {
-	before   int
+	desc     pageDesc
 	messages []aria.Message
+}
+
+// pageDesc is sufficient to replay and verify an evicted immutable page.
+type pageDesc struct {
+	FirstLT      int
+	LastLT       int
+	Count        int
+	ReplayBefore int
+	LTHash       uint64
 }
 
 type transcriptSearch struct {
 	query       string
 	pages       []transcriptPage
-	newer       []int
+	newer       []pageDesc
 	offset      int
 	follow      bool
 	noMoreOlder bool
@@ -95,6 +107,10 @@ const (
 type transcriptPageRequest struct {
 	before    int
 	direction transcriptPageDirection
+	expected  pageDesc
+	after     int
+	watermark int
+	cached    []aria.Message
 }
 
 func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string, startedAt time.Time) *transcript {
@@ -144,9 +160,11 @@ func (t *transcript) scrollBy(delta int) {
 
 // transcriptPageSize is how many older messages a single scroll-up fetch pulls.
 const (
-	transcriptPageSize  = 30
-	transcriptPageLimit = 3
-	transcriptTailLimit = 2 * transcriptPageSize
+	transcriptPageSize        = 30
+	transcriptPageLimit       = 3
+	transcriptTailLimit       = 2 * transcriptPageSize
+	transcriptDescLimit       = 64
+	transcriptPayloadLRULimit = 3
 )
 
 func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
@@ -175,7 +193,20 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 		if t.search == nil && t.offset+t.h < len(t.lineLT) {
 			return transcriptPageRequest{}, false
 		}
-		return transcriptPageRequest{before: t.newer[len(t.newer)-1], direction: pageNewer}, true
+		desc := t.newer[len(t.newer)-1]
+		return transcriptPageRequest{
+			before: desc.ReplayBefore, direction: pageNewer, expected: desc,
+			cached: t.takePayload(desc),
+		}, true
+	}
+	if t.checkNewer {
+		t.checkNewer = false
+		newest, ok := t.newestLT()
+		if ok && newest < t.committedW {
+			return transcriptPageRequest{
+				direction: pageNewer, after: newest, watermark: t.committedW,
+			}, true
+		}
 	}
 	return transcriptPageRequest{}, false
 }
@@ -195,18 +226,28 @@ func (t *transcript) applyPage(req transcriptPageRequest, r aria.AriaRead) {
 		}
 		return
 	}
+	desc := describePage(messages)
+	if req.expected.Count != 0 && !req.expected.equal(desc) {
+		t.newer = nil
+		t.checkNewer = true
+		t.render()
+		return
+	}
+	if t.heldOpen != nil && t.heldOpen.LT >= desc.FirstLT && t.heldOpen.LT <= desc.LastLT {
+		t.heldOpen = nil
+	}
 	searching := t.search != nil
 	anchorLT, within := 0, 0
 	if !searching {
 		anchorLT, within = t.viewportAnchor()
 	}
-	page := transcriptPage{before: req.before, messages: messages}
+	page := transcriptPage{desc: desc, messages: messages}
 	switch req.direction {
 	case pageOlder:
 		t.pages = append([]transcriptPage{page}, t.pages...)
 	case pageNewer:
 		t.pages = append(t.pages, page)
-		if len(t.newer) > 0 {
+		if req.expected.Count != 0 && len(t.newer) > 0 {
 			t.newer = t.newer[:len(t.newer)-1]
 		}
 	}
@@ -215,7 +256,7 @@ func (t *transcript) applyPage(req transcriptPageRequest, r aria.AriaRead) {
 		if t.findPage(t.search.query, messages) {
 			t.search = nil
 		} else if t.search.direction == pageNewer {
-			if len(t.newer) > 0 {
+			if t.hasNewerHistory() {
 				t.checkNewer = true
 			} else {
 				t.wrapSearchOlder()
@@ -249,32 +290,23 @@ func (t *transcript) trimPages(direction transcriptPageDirection) {
 		if direction == pageOlder {
 			drop = len(t.pages) - 1
 		}
-		if t.selection.active && t.pageContainsSelection(t.pages[drop]) {
-			return
-		}
 		page := t.pages[drop]
 		if direction == pageOlder {
-			t.newer = append(t.newer, page.before)
+			t.newer = append(t.newer, page.desc)
+			if len(t.newer) > transcriptDescLimit {
+				copy(t.newer, t.newer[len(t.newer)-transcriptDescLimit:])
+				t.newer = t.newer[:transcriptDescLimit]
+			}
 		}
+		t.rememberPayload(page)
 		t.dropPage(page)
-		t.pages = append(t.pages[:drop], t.pages[drop+1:]...)
+		copy(t.pages[drop:], t.pages[drop+1:])
+		t.pages[len(t.pages)-1] = transcriptPage{}
+		t.pages = t.pages[:len(t.pages)-1]
 		if direction == pageNewer {
 			t.noMoreOlder = false
 		}
 	}
-}
-
-func (t *transcript) pageContainsSelection(page transcriptPage) bool {
-	if len(page.messages) == 0 {
-		return false
-	}
-	first, last := t.selection.anchor.lt, t.selection.focus.lt
-	if first > last {
-		first, last = last, first
-	}
-	pageFirst := page.messages[0].LT
-	pageLast := page.messages[len(page.messages)-1].LT
-	return pageFirst <= last && pageLast >= first
 }
 
 func (t *transcript) dropPage(page transcriptPage) {
@@ -288,6 +320,39 @@ func (t *transcript) dropPage(page transcriptPage) {
 	}
 }
 
+func (t *transcript) rememberPayload(page transcriptPage) {
+	if page.desc.Count == 0 || transcriptPayloadLRULimit == 0 {
+		return
+	}
+	for i := range t.payloadLRU {
+		if t.payloadLRU[i].desc.equal(page.desc) {
+			copy(t.payloadLRU[i:], t.payloadLRU[i+1:])
+			t.payloadLRU[len(t.payloadLRU)-1] = transcriptPage{}
+			t.payloadLRU = t.payloadLRU[:len(t.payloadLRU)-1]
+			break
+		}
+	}
+	t.payloadLRU = append(t.payloadLRU, page)
+	if len(t.payloadLRU) > transcriptPayloadLRULimit {
+		copy(t.payloadLRU, t.payloadLRU[len(t.payloadLRU)-transcriptPayloadLRULimit:])
+		clear(t.payloadLRU[transcriptPayloadLRULimit:])
+		t.payloadLRU = t.payloadLRU[:transcriptPayloadLRULimit]
+	}
+}
+
+func (t *transcript) takePayload(desc pageDesc) []aria.Message {
+	for i := len(t.payloadLRU) - 1; i >= 0; i-- {
+		if t.payloadLRU[i].desc.equal(desc) {
+			messages := t.payloadLRU[i].messages
+			copy(t.payloadLRU[i:], t.payloadLRU[i+1:])
+			t.payloadLRU[len(t.payloadLRU)-1] = transcriptPage{}
+			t.payloadLRU = t.payloadLRU[:len(t.payloadLRU)-1]
+			return messages
+		}
+	}
+	return nil
+}
+
 func (t *transcript) resetToTail() {
 	v := t.client.View()
 	closed := v.Closed
@@ -296,9 +361,13 @@ func (t *transcript) resetToTail() {
 	}
 	t.pages = nil
 	if len(closed) > 0 {
-		t.pages = []transcriptPage{{before: closed[len(closed)-1].LT + 1, messages: closed}}
+		t.pages = []transcriptPage{{desc: describePage(closed), messages: closed}}
+		if closed[len(closed)-1].LT > t.committedW {
+			t.committedW = closed[len(closed)-1].LT
+		}
 	}
 	t.newer = nil
+	t.payloadLRU = nil
 	t.checkNewer = false
 	t.heldOpen = nil
 	t.noMoreOlder = len(closed) > 0 && closed[0].LT <= 1
@@ -343,6 +412,34 @@ func (t *transcript) oldestLT() (int, bool) {
 	return 0, false
 }
 
+func (t *transcript) newestLT() (int, bool) {
+	for i := len(t.pages) - 1; i >= 0; i-- {
+		if n := len(t.pages[i].messages); n > 0 {
+			return t.pages[i].messages[n-1].LT, true
+		}
+	}
+	return 0, false
+}
+
+func (t *transcript) hasNewerHistory() bool {
+	if len(t.newer) > 0 {
+		return true
+	}
+	newest, ok := t.newestLT()
+	return ok && newest < t.committedW
+}
+
+func (t *transcript) observeCommitted(m aria.Message) {
+	if m.LT > t.committedW {
+		t.committedW = m.LT
+	}
+	if t.heldOpen != nil && t.heldOpen.LT == m.LT {
+		copy := m
+		copy.Nodes = append([]livedoc.Node(nil), m.Nodes...)
+		t.heldOpen = &copy
+	}
+}
+
 func (t *transcript) olderCursor() (int, bool) {
 	req, ok := t.pageCursor()
 	return req.before, ok && req.direction == pageOlder
@@ -355,6 +452,32 @@ func (t *transcript) applyOlder(r aria.AriaRead) {
 		return
 	}
 	t.applyPage(transcriptPageRequest{before: messages[0].LT, direction: pageOlder}, r)
+}
+
+func describePage(messages []aria.Message) pageDesc {
+	if len(messages) == 0 {
+		return pageDesc{}
+	}
+	h := fnv.New64a()
+	var b [8]byte
+	for _, m := range messages {
+		v := uint64(m.LT)
+		for i := range b {
+			b[i] = byte(v >> (8 * i))
+		}
+		_, _ = h.Write(b[:])
+	}
+	last := messages[len(messages)-1].LT
+	return pageDesc{
+		FirstLT: messages[0].LT, LastLT: last, Count: len(messages),
+		ReplayBefore: last + 1, LTHash: h.Sum64(),
+	}
+}
+
+func (d pageDesc) equal(other pageDesc) bool {
+	return d.FirstLT == other.FirstLT && d.LastLT == other.LastLT &&
+		d.Count == other.Count && d.ReplayBefore == other.ReplayBefore &&
+		d.LTHash == other.LTHash
 }
 
 func (t *transcript) resize(w, h int) {
@@ -704,12 +827,12 @@ func (t *transcript) find(q string) {
 	}
 	t.search = &transcriptSearch{
 		query: q, pages: append([]transcriptPage(nil), t.pages...),
-		newer: append([]int(nil), t.newer...), offset: t.offset,
+		newer: append([]pageDesc(nil), t.newer...), offset: t.offset,
 		follow: t.follow, noMoreOlder: t.noMoreOlder,
 		direction: pageOlder,
 	}
 	t.stopFollowing()
-	if len(t.newer) > 0 {
+	if t.hasNewerHistory() {
 		t.search.direction = pageNewer
 		t.checkNewer = true
 	} else {
@@ -891,7 +1014,7 @@ func (t *transcript) wrapSearchOlder() {
 	}
 	origin := t.search
 	t.pages = append([]transcriptPage(nil), origin.pages...)
-	t.newer = append([]int(nil), origin.newer...)
+	t.newer = append([]pageDesc(nil), origin.newer...)
 	t.offset = origin.offset
 	t.follow = false
 	t.noMoreOlder = origin.noMoreOlder

@@ -46,15 +46,16 @@ func TestTranscript_ClearSelectionKeepsFocusedEdge(t *testing.T) {
 	client := aria.NewClient()
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	for i := 0; i < 4; i++ {
+		messages := committedMessages(history[i*30 : (i+1)*30])
 		tr.pages = append(tr.pages, transcriptPage{
-			before:   (i + 1) * transcriptPageSize,
-			messages: committedMessages(history[i*30 : (i+1)*30]),
+			desc:     describePage(messages),
+			messages: messages,
 		})
 	}
 	tr.selection = nodeSelection{
 		active: true,
-		anchor: nodeRef{lt: 1, index: 0},
-		focus:  nodeRef{lt: 120, index: 0},
+		anchor: testSelectionPoint(1, 0, history[0].Nodes[0]),
+		focus:  testSelectionPoint(120, 0, history[119].Nodes[0]),
 	}
 	tr.clearSelection()
 	messages := tr.messages()

@@ -260,6 +260,12 @@ type interactiveInput struct {
 	listen       *bool // Ctrl-L flips it on (stay open past turn-done)
 	cancel       context.CancelFunc
 	disconnectCh chan struct{}
+	copyCancel   context.CancelFunc
+	copyGen      uint64
+	copyPlan     selectionCopyPlan
+	copyFailed   bool
+	copyFailedLo selectionPoint
+	copyFailedHi selectionPoint
 }
 
 // enterTranscript opens the pager on the recent window (older history pages in
@@ -305,7 +311,22 @@ func (in *interactiveInput) pageTranscript() {
 			return
 		}
 		rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-		r, rerr := in.fcli.ReadBefore(rctx, req.before, transcriptPageSize)
+		read := func(before, limit int) (aria.AriaRead, error) {
+			return in.fcli.ReadBefore(rctx, before, limit)
+		}
+		var r aria.AriaRead
+		var rerr error
+		if len(req.cached) > 0 {
+			r = ariaReadForMessages(req.cached)
+		} else if req.after != 0 {
+			r, rerr = readNextPage(req.after, req.watermark, transcriptPageSize, read)
+		} else {
+			limit := transcriptPageSize
+			if req.expected.Count != 0 {
+				limit = req.expected.Count
+			}
+			r, rerr = read(req.before, limit)
+		}
 		rcancel()
 		in.mu.Lock()
 		if rerr != nil {
@@ -320,11 +341,75 @@ func (in *interactiveInput) pageTranscript() {
 			return
 		}
 	}
+
+}
+
+func ariaReadForMessages(messages []aria.Message) aria.AriaRead {
+	r := aria.AriaRead{Committed: make([]aria.Committed, 0, len(messages))}
+	for _, m := range messages {
+		r.Committed = append(r.Committed, aria.Committed{
+			LT: m.LT, Role: m.Role, Nodes: m.Nodes,
+		})
+	}
+	return r
+}
+
+func readNextPage(after, watermark, limit int, read func(int, int) (aria.AriaRead, error)) (aria.AriaRead, error) {
+	if after >= watermark || limit <= 0 {
+		return aria.AriaRead{}, nil
+	}
+	high := watermark + 1
+	best, err := read(high, limit)
+	if err != nil {
+		return aria.AriaRead{}, err
+	}
+	if committedAfter(best.Committed, after) < limit {
+		return filterCommittedAfter(best, after), nil
+	}
+	low := after + 1
+	for range 64 {
+		if low >= high {
+			return filterCommittedAfter(best, after), nil
+		}
+		mid := low + (high-low)/2
+		r, err := read(mid, limit)
+		if err != nil {
+			return aria.AriaRead{}, err
+		}
+		if committedAfter(r.Committed, after) >= limit {
+			high, best = mid, r
+		} else {
+			low = mid + 1
+		}
+	}
+	return filterCommittedAfter(best, after), nil
+}
+
+func committedAfter(committed []aria.Committed, after int) int {
+	n := 0
+	for _, m := range committed {
+		if m.LT > after {
+			n++
+		}
+	}
+	return n
+}
+
+func filterCommittedAfter(r aria.AriaRead, after int) aria.AriaRead {
+	out := r
+	out.Committed = nil
+	for _, m := range r.Committed {
+		if m.LT > after {
+			out.Committed = append(out.Committed, m)
+		}
+	}
+	return out
 }
 
 // run reads input until stdin errors, Ctrl-C (cancel), or Ctrl-D (disconnect).
 // Call under a MakeRaw session so Ctrl-C/Ctrl-D arrive as bytes.
 func (in *interactiveInput) run() {
+	defer in.cancelSelectionCopy()
 	buf := make([]byte, 64)
 	var pending []byte // a mouse/escape sequence split across reads
 	for {
@@ -400,19 +485,44 @@ func (in *interactiveInput) run() {
 			case 0x03: // Ctrl-C: interrupt (if running) + close
 				if active {
 					in.mu.Lock()
-					text, selected := in.lt.transcriptSelectedText()
-					if selected {
+					plan, selected := in.lt.transcriptSelectionPlan()
+					if selected && in.copyFailed &&
+						in.copyFailedLo == plan.lo && in.copyFailedHi == plan.hi {
+						in.copyFailed = false
 						in.lt.clearTranscriptSelection()
+						in.mu.Unlock()
+						in.cancelSelectionCopy()
+						in.cancel()
+						return
 					}
-					in.mu.Unlock()
-					if selected {
-						in.tc.SetClipboard(text)
+					if selected && in.copyCancel != nil {
+						in.copyCancel()
+						in.copyCancel = nil
+						in.copyGen++
+						in.copyFailed = true
+						in.copyFailedLo, in.copyFailedHi = in.copyPlan.lo, in.copyPlan.hi
+						in.copyPlan = selectionCopyPlan{}
+						in.mu.Unlock()
 						continue
 					}
+					if selected {
+						copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)
+						in.copyGen++
+						gen := in.copyGen
+						in.copyCancel = copyCancel
+						in.copyPlan = plan
+						in.copyFailed = false
+						in.mu.Unlock()
+						go in.copySelection(copyCtx, copyCancel, gen, plan)
+						continue
+					}
+					in.mu.Unlock()
 				}
+				in.cancelSelectionCopy()
 				in.cancel()
 				return
 			case 0x04: // Ctrl-D: disconnect; the turn keeps running
+				in.cancelSelectionCopy()
 				select {
 				case in.disconnectCh <- struct{}{}:
 				default:
@@ -450,6 +560,43 @@ func (in *interactiveInput) run() {
 			}
 		}
 	}
+}
+
+func (in *interactiveInput) copySelection(ctx context.Context, cancel context.CancelFunc, gen uint64, plan selectionCopyPlan) {
+	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.AriaRead, error) {
+		return in.fcli.ReadBefore(ctx, before, limit)
+	})
+	cancel()
+	in.mu.Lock()
+	if gen != in.copyGen {
+		in.mu.Unlock()
+		return
+	}
+	in.copyCancel = nil
+	in.copyPlan = selectionCopyPlan{}
+	current, active := in.lt.transcriptSelectionPlan()
+	if err == nil && active && current.lo == plan.lo && current.hi == plan.hi {
+		in.lt.clearTranscriptSelection()
+	}
+	if err == nil {
+		in.copyFailed = false
+		in.tc.SetClipboard(text)
+	} else {
+		in.copyFailed = true
+		in.copyFailedLo, in.copyFailedHi = plan.lo, plan.hi
+	}
+	in.mu.Unlock()
+}
+
+func (in *interactiveInput) cancelSelectionCopy() {
+	in.mu.Lock()
+	if in.copyCancel != nil {
+		in.copyCancel()
+		in.copyCancel = nil
+		in.copyPlan = selectionCopyPlan{}
+		in.copyGen++
+	}
+	in.mu.Unlock()
 }
 
 func opensTranscriptFor(b byte) bool {

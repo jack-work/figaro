@@ -27,8 +27,8 @@ func TestTranscript_ForwardSelectionRequestsEvictedPage(t *testing.T) {
 	messages := tr.messages()
 	tr.selection = nodeSelection{
 		active: true,
-		anchor: nodeRef{lt: messages[len(messages)-1].LT, index: 0},
-		focus:  nodeRef{lt: messages[len(messages)-1].LT, index: 0},
+		anchor: testSelectionPoint(messages[len(messages)-1].LT, 0, messages[len(messages)-1].Nodes[0]),
+		focus:  testSelectionPoint(messages[len(messages)-1].LT, 0, messages[len(messages)-1].Nodes[0]),
 	}
 	tr.offset = len(tr.lineLT)
 	tr.selectNode(1, true)
@@ -56,7 +56,7 @@ func TestTranscript_ScrollingPinsOpenMessage(t *testing.T) {
 	}
 }
 
-func TestTranscript_OpenRangePinsIntermediatePages(t *testing.T) {
+func TestTranscript_OpenRangeRehydratesEvictedPages(t *testing.T) {
 	history := transcriptHistory(120)
 	client := aria.NewClient()
 	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
@@ -70,7 +70,8 @@ func TestTranscript_OpenRangePinsIntermediatePages(t *testing.T) {
 	tr.enter()
 	tr.selectNode(-1, false)
 	for range 3 {
-		tr.selection.focus = nodeRef{lt: tr.messages()[0].LT, index: 0}
+		first := tr.messages()[0]
+		tr.selection.focus = testSelectionPoint(first.LT, 0, first.Nodes[0])
 		tr.offset = 0
 		tr.checkOlder = true
 		req, ok := tr.pageCursor()
@@ -79,12 +80,19 @@ func TestTranscript_OpenRangePinsIntermediatePages(t *testing.T) {
 		}
 		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
 	}
-	tr.selection.focus = nodeRef{lt: tr.messages()[0].LT, index: 0}
-	if len(tr.pages) != 4 {
-		t.Fatalf("open range retained %d pages, want 4", len(tr.pages))
+	first := tr.messages()[0]
+	tr.selection.focus = testSelectionPoint(first.LT, 0, first.Nodes[0])
+	if len(tr.pages) != transcriptPageLimit {
+		t.Fatalf("open range retained %d payload pages", len(tr.pages))
 	}
-	text, ok := tr.selectedText()
-	if !ok || !strings.Contains(text, "message-031") || !strings.Contains(text, "open-121") {
-		t.Fatalf("open range copy = %q, %v", text, ok)
+	plan, ok := tr.selectionPlan()
+	if !ok {
+		t.Fatal("open selection endpoints were lost")
+	}
+	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.AriaRead, error) {
+		return readBefore(history, before, limit), nil
+	})
+	if err != nil || !strings.Contains(text, "message-001") || !strings.Contains(text, "open-121") {
+		t.Fatalf("open range copy = %q, %v", text, err)
 	}
 }

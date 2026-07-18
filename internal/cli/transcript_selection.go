@@ -1,7 +1,11 @@
 package cli
 
 import (
+	"encoding/binary"
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
+	"io"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/livedoc"
@@ -18,8 +22,19 @@ func (r nodeRef) valid() bool { return r.lt != 0 }
 
 type nodeSelection struct {
 	active bool
-	anchor nodeRef
-	focus  nodeRef
+	anchor selectionPoint
+	focus  selectionPoint
+}
+
+type selectionPoint struct {
+	nodeRef
+	hash uint64
+}
+
+type selectionCopyPlan struct {
+	lo   selectionPoint
+	hi   selectionPoint
+	open *aria.Message
 }
 
 type transcriptRow struct {
@@ -45,11 +60,14 @@ type selectionMark struct {
 	active   bool
 }
 
-func (t *transcript) nodeRefs() []nodeRef {
-	refs := make([]nodeRef, 0)
+func (t *transcript) nodeRefs() []selectionPoint {
+	refs := make([]selectionPoint, 0)
 	appendMessage := func(m aria.Message) {
-		for i := range m.Nodes {
-			refs = append(refs, nodeRef{lt: m.LT, index: i})
+		for i, n := range m.Nodes {
+			refs = append(refs, selectionPoint{
+				nodeRef: nodeRef{lt: m.LT, index: i},
+				hash:    nodeHash(n),
+			})
 		}
 	}
 	for _, m := range t.messages() {
@@ -65,26 +83,27 @@ func (t *transcript) selectionMarks() map[nodeRef]selectionMark {
 	if !t.selection.active {
 		return nil
 	}
-	refs := t.nodeRefs()
-	anchor, focus := -1, -1
-	for i, ref := range refs {
-		if ref == t.selection.anchor {
-			anchor = i
+	lo, hi := t.selection.anchor, t.selection.focus
+	if pointLess(hi, lo) {
+		lo, hi = hi, lo
+	}
+	marks := make(map[nodeRef]selectionMark)
+	appendMessage := func(m aria.Message) {
+		for i := range m.Nodes {
+			point := selectionPoint{nodeRef: nodeRef{lt: m.LT, index: i}}
+			if !pointLess(point, lo) && !pointLess(hi, point) {
+				marks[point.nodeRef] = selectionMark{
+					selected: true,
+					active:   point.nodeRef == t.selection.focus.nodeRef,
+				}
+			}
 		}
-		if ref == t.selection.focus {
-			focus = i
-		}
 	}
-	if anchor < 0 || focus < 0 {
-		t.selection = nodeSelection{}
-		return nil
+	for _, m := range t.messages() {
+		appendMessage(m)
 	}
-	if anchor > focus {
-		anchor, focus = focus, anchor
-	}
-	marks := make(map[nodeRef]selectionMark, focus-anchor+1)
-	for i := anchor; i <= focus; i++ {
-		marks[refs[i]] = selectionMark{selected: true, active: refs[i] == t.selection.focus}
+	if open := t.openMessage(); open != nil {
+		appendMessage(*open)
 	}
 	return marks
 }
@@ -97,7 +116,7 @@ func (t *transcript) selectNode(delta int, extend bool) {
 	index := -1
 	if t.selection.active {
 		for i, ref := range refs {
-			if ref == t.selection.focus {
+			if ref.nodeRef == t.selection.focus.nodeRef {
 				index = i
 				break
 			}
@@ -111,7 +130,7 @@ func (t *transcript) selectNode(delta int, extend bool) {
 		}
 	} else {
 		next := index + delta
-		if len(t.newer) > 0 && t.heldOpen != nil && next >= 0 && next < len(refs) &&
+		if t.hasNewerHistory() && t.heldOpen != nil && next >= 0 && next < len(refs) &&
 			(refs[index].lt == t.heldOpen.LT || refs[next].lt == t.heldOpen.LT) {
 			t.checkNewer = true
 			return
@@ -136,7 +155,7 @@ func (t *transcript) selectNode(delta int, extend bool) {
 }
 
 func (t *transcript) hasSelection() bool {
-	return len(t.selectionMarks()) > 0
+	return t.selection.active
 }
 
 func (t *transcript) clearSelection() {
@@ -154,28 +173,33 @@ func (t *transcript) clearSelection() {
 }
 
 func (t *transcript) selectedText() (string, bool) {
-	marks := t.selectionMarks()
-	if len(marks) == 0 {
+	plan, ok := t.selectionPlan()
+	if !ok {
 		return "", false
 	}
-	var out []string
-	appendMessage := func(m aria.Message) {
-		for i, n := range m.Nodes {
-			if !marks[nodeRef{lt: m.LT, index: i}].selected {
-				continue
-			}
-			if text := nodeClipboardText(n); text != "" {
-				out = append(out, text)
-			}
-		}
+	messages := t.messages()
+	if plan.open != nil {
+		messages = append(messages, *plan.open)
 	}
-	for _, m := range t.messages() {
-		appendMessage(m)
+	text, err := selectionTextFromMessages(plan, messages)
+	return text, err == nil
+}
+
+func (t *transcript) selectionPlan() (selectionCopyPlan, bool) {
+	if !t.selection.active {
+		return selectionCopyPlan{}, false
 	}
-	if open := t.openMessage(); open != nil {
-		appendMessage(*open)
+	lo, hi := t.selection.anchor, t.selection.focus
+	if pointLess(hi, lo) {
+		lo, hi = hi, lo
 	}
-	return strings.Join(out, "\n\n"), true
+	var open *aria.Message
+	if m := t.openMessage(); m != nil && m.LT >= lo.lt && m.LT <= hi.lt {
+		copy := *m
+		copy.Nodes = append([]livedoc.Node(nil), m.Nodes...)
+		open = &copy
+	}
+	return selectionCopyPlan{lo: lo, hi: hi, open: open}, true
 }
 
 func nodeClipboardText(n livedoc.Node) string {
@@ -196,6 +220,140 @@ func nodeClipboardText(n livedoc.Node) string {
 	default:
 		return n.Markdown
 	}
+}
+
+func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (aria.AriaRead, error)) (string, error) {
+	var newest []string
+	foundLo, foundHi := false, false
+	if plan.open != nil {
+		text, lo, hi, err := selectedMessageText(*plan.open, plan)
+		if err != nil {
+			return "", err
+		}
+		newest = text
+		foundLo, foundHi = lo, hi
+	}
+	if foundLo && foundHi {
+		return strings.Join(newest, "\n\n"), nil
+	}
+	before := plan.hi.lt + 1
+	if plan.open != nil && plan.open.LT == plan.hi.lt {
+		before = plan.open.LT
+	}
+	var pages [][]string
+	for before > plan.lo.lt {
+		r, err := read(before, pageSize)
+		if err != nil {
+			return "", err
+		}
+		messages := committedMessages(r.Committed)
+		if len(messages) == 0 {
+			return "", fmt.Errorf("selection history unavailable before LT %d", before)
+		}
+		var page []string
+		for _, m := range messages {
+			text, lo, hi, err := selectedMessageText(m, plan)
+			if err != nil {
+				return "", err
+			}
+			page = append(page, text...)
+			foundLo = foundLo || lo
+			foundHi = foundHi || hi
+		}
+		pages = append(pages, page)
+		before = messages[0].LT
+		if before <= plan.lo.lt {
+			break
+		}
+	}
+	if !foundLo || !foundHi {
+		return "", fmt.Errorf("selection endpoints unavailable")
+	}
+	var out []string
+	for i := len(pages) - 1; i >= 0; i-- {
+		out = append(out, pages[i]...)
+	}
+	out = append(out, newest...)
+	return strings.Join(out, "\n\n"), nil
+}
+
+func selectionTextFromMessages(plan selectionCopyPlan, messages []aria.Message) (string, error) {
+	var out []string
+	foundLo, foundHi := false, false
+	for _, m := range messages {
+		text, lo, hi, err := selectedMessageText(m, plan)
+		if err != nil {
+			return "", err
+		}
+		out = append(out, text...)
+		foundLo = foundLo || lo
+		foundHi = foundHi || hi
+	}
+	if !foundLo || !foundHi {
+		return "", fmt.Errorf("selection endpoints unavailable")
+	}
+	return strings.Join(out, "\n\n"), nil
+}
+
+func selectedMessageText(m aria.Message, plan selectionCopyPlan) ([]string, bool, bool, error) {
+	var out []string
+	foundLo, foundHi := false, false
+	for i, n := range m.Nodes {
+		ref := nodeRef{lt: m.LT, index: i}
+		var hash uint64
+		if ref == plan.lo.nodeRef || ref == plan.hi.nodeRef {
+			hash = nodeHash(n)
+		}
+		if ref == plan.lo.nodeRef {
+			if hash != plan.lo.hash {
+				return nil, false, false, fmt.Errorf("selection start changed")
+			}
+			foundLo = true
+		}
+		if ref == plan.hi.nodeRef {
+			if hash != plan.hi.hash {
+				return nil, false, false, fmt.Errorf("selection end changed")
+			}
+			foundHi = true
+		}
+		point := selectionPoint{nodeRef: ref}
+		if !pointLess(point, plan.lo) && !pointLess(plan.hi, point) {
+			if text := nodeClipboardText(n); text != "" {
+				out = append(out, text)
+			}
+		}
+	}
+	return out, foundLo, foundHi, nil
+}
+
+func pointLess(a, b selectionPoint) bool {
+	return a.lt < b.lt || a.lt == b.lt && a.index < b.index
+}
+
+func nodeHash(n livedoc.Node) uint64 {
+	h := fnv.New64a()
+	var size [8]byte
+	write := func(s string) {
+		binary.LittleEndian.PutUint64(size[:], uint64(len(s)))
+		_, _ = h.Write(size[:])
+		_, _ = io.WriteString(h, s)
+	}
+	write(string(n.Type))
+	write(n.Name)
+	write(n.Summary)
+	write(n.Status)
+	write(n.Markdown)
+	write(n.Output)
+	binary.LittleEndian.PutUint64(size[:], uint64(n.StartedAt))
+	_, _ = h.Write(size[:])
+	binary.LittleEndian.PutUint64(size[:], uint64(n.FinishedAt))
+	_, _ = h.Write(size[:])
+	if len(n.Args) > 0 {
+		if args, err := json.Marshal(n.Args); err == nil {
+			write(string(args))
+		}
+	}
+	return h.Sum64()
 }
 
 func (t *transcript) toggleSelectedTools() bool {
@@ -245,7 +403,7 @@ func (t *transcript) ensureSelectionVisible() {
 		return
 	}
 	t.lines()
-	span, ok := t.nodeRows[t.selection.focus]
+	span, ok := t.nodeRows[t.selection.focus.nodeRef]
 	if !ok {
 		return
 	}

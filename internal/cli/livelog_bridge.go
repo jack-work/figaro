@@ -55,6 +55,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 		t.client.OnMetrics = status.update
 	}
 	t.client.OnClosed = func(m aria.Message) {
+		t.tr.observeCommitted(m)
 		if t.tr.active {
 			if t.lastSealedLT != 0 {
 				t.pagerClosed = append(t.pagerClosed, m)
@@ -223,6 +224,9 @@ func (t *livelogTurn) transcriptSelect(delta int, extend bool) {
 func (t *livelogTurn) transcriptHasSelection() bool { return t.tr.hasSelection() }
 
 func (t *livelogTurn) transcriptSelectedText() (string, bool) { return t.tr.selectedText() }
+func (t *livelogTurn) transcriptSelectionPlan() (selectionCopyPlan, bool) {
+	return t.tr.selectionPlan()
+}
 
 func (t *livelogTurn) clearTranscriptSelection() {
 	t.tr.clearSelection()

@@ -23,6 +23,10 @@ func transcriptHistory(n int) []aria.Committed {
 	return out
 }
 
+func testSelectionPoint(lt, index int, node livedoc.Node) selectionPoint {
+	return selectionPoint{nodeRef: nodeRef{lt: lt, index: index}, hash: nodeHash(node)}
+}
+
 func readBefore(history []aria.Committed, before, limit int) aria.AriaRead {
 	hi := sort.Search(len(history), func(i int) bool { return history[i].LT >= before })
 	lo := hi - limit
@@ -124,7 +128,7 @@ func TestTranscript_SearchPagesOlderWithBoundedRetention(t *testing.T) {
 	}
 }
 
-func TestTranscript_SelectionPinsPagesUntilCleared(t *testing.T) {
+func TestTranscript_SelectionSurvivesPayloadEviction(t *testing.T) {
 	history := transcriptHistory(200)
 	client := aria.NewClient()
 	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
@@ -133,8 +137,8 @@ func TestTranscript_SelectionPinsPagesUntilCleared(t *testing.T) {
 	tr.follow = false
 	tr.selection = nodeSelection{
 		active: true,
-		anchor: nodeRef{lt: 200, index: 0},
-		focus:  nodeRef{lt: 200, index: 0},
+		anchor: testSelectionPoint(200, 0, history[199].Nodes[0]),
+		focus:  testSelectionPoint(200, 0, history[199].Nodes[0]),
 	}
 	for range transcriptPageLimit {
 		tr.offset = 0
@@ -145,13 +149,19 @@ func TestTranscript_SelectionPinsPagesUntilCleared(t *testing.T) {
 		}
 		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
 	}
-	if len(tr.pages) <= transcriptPageLimit {
-		t.Fatalf("selected anchor page was evicted; pages = %d", len(tr.pages))
+	if len(tr.pages) != transcriptPageLimit {
+		t.Fatalf("selection retained %d payload pages", len(tr.pages))
 	}
-	tr.selection.focus = nodeRef{lt: 111, index: 0}
-	if text, ok := tr.selectedText(); !ok ||
-		!strings.Contains(text, "message-111") || !strings.Contains(text, "message-200") {
-		t.Fatalf("cross-page selected text = %q, %v", text, ok)
+	tr.selection.focus = testSelectionPoint(111, 0, history[110].Nodes[0])
+	plan, ok := tr.selectionPlan()
+	if !ok {
+		t.Fatal("selection endpoints were lost after eviction")
+	}
+	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.AriaRead, error) {
+		return readBefore(history, before, limit), nil
+	})
+	if err != nil || !strings.Contains(text, "message-111") || !strings.Contains(text, "message-200") {
+		t.Fatalf("rehydrated selected text = %q, %v", text, err)
 	}
 	tr.clearSelection()
 	if len(tr.pages) != transcriptPageLimit {

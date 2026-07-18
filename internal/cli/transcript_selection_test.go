@@ -25,12 +25,12 @@ func TestTranscriptNodeSelectionRangeAndCopy(t *testing.T) {
 	tr.enter()
 
 	tr.key(0x0e) // Ctrl-N
-	if !tr.selection.active || tr.selection.focus != (nodeRef{lt: 1, index: 0}) {
+	if !tr.selection.active || tr.selection.focus.nodeRef != (nodeRef{lt: 1, index: 0}) {
 		t.Fatalf("first selection = %+v", tr.selection)
 	}
 	tr.selectNode(1, true)
 	tr.render()
-	if tr.selection.focus != (nodeRef{lt: 1, index: 1}) {
+	if tr.selection.focus.nodeRef != (nodeRef{lt: 1, index: 1}) {
 		t.Fatalf("range focus = %+v", tr.selection)
 	}
 	text, ok := tr.selectedText()
