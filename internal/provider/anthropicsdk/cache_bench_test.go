@@ -43,6 +43,18 @@ func sdkBenchLog(b *testing.B, n int) *copyingBenchLog[message.Message] {
 	return log
 }
 
+func appendSDKBenchSuffix(b *testing.B, log store.Log[message.Message]) {
+	b.Helper()
+	for _, role := range []message.Role{message.RoleUser, message.RoleAssistant} {
+		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+			Role:    role,
+			Content: []message.Content{message.TextContent("warm " + string(role))},
+		}}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func sdkBenchProvider(cache store.Log[[]json.RawMessage]) *Provider {
 	return &Provider{
 		reminder: "tag",
@@ -63,7 +75,43 @@ func BenchmarkCatchUp(b *testing.B) {
 				p.catchUp(log, cache, nil)
 			}
 		})
-		b.Run("Warm/"+strconv.Itoa(n), func(b *testing.B) {
+		b.Run("WarmDeltaEncode/"+strconv.Itoa(n), func(b *testing.B) {
+			prefix := sdkBenchLog(b, n)
+			log := sdkBenchLog(b, n)
+			appendSDKBenchSuffix(b, log)
+			p := sdkBenchProvider(nil)
+			p.catchUp(prefix, nil, nil)
+			prewarmed := p.projection
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.ReportMetric(2, "messages/op")
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				p.projection = prewarmed
+				b.StartTimer()
+				p.catchUp(log, nil, nil)
+			}
+		})
+		b.Run("WarmDeltaCached/"+strconv.Itoa(n), func(b *testing.B) {
+			prefix := sdkBenchLog(b, n)
+			log := sdkBenchLog(b, n)
+			appendSDKBenchSuffix(b, log)
+			cache := newCopyingBenchLog[[]json.RawMessage]()
+			p := sdkBenchProvider(cache)
+			p.catchUp(prefix, cache, nil)
+			prewarmed := p.projection
+			p.catchUp(log, cache, nil)
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.ReportMetric(2, "messages/op")
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				p.projection = prewarmed
+				b.StartTimer()
+				p.catchUp(log, cache, nil)
+			}
+		})
+		b.Run("WarmSteady/"+strconv.Itoa(n), func(b *testing.B) {
 			log := sdkBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := sdkBenchProvider(cache)
@@ -71,14 +119,6 @@ func BenchmarkCatchUp(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, _ = log.Append(store.Entry[message.Message]{Payload: message.Message{
-					Role:    message.RoleUser,
-					Content: []message.Content{message.TextContent("warm user")},
-				}})
-				_, _ = log.Append(store.Entry[message.Message]{Payload: message.Message{
-					Role:    message.RoleAssistant,
-					Content: []message.Content{message.TextContent("warm assistant")},
-				}})
 				p.catchUp(log, cache, nil)
 			}
 		})

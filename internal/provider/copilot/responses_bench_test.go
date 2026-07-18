@@ -49,12 +49,28 @@ func responsesBenchLog(b *testing.B, n int) *copyingBenchLog[message.Message] {
 	return log
 }
 
+func appendResponsesBenchSuffix(b *testing.B, log store.Log[message.Message]) {
+	b.Helper()
+	for _, role := range []message.Role{message.RoleUser, message.RoleAssistant} {
+		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+			Role:    role,
+			Content: []message.Content{message.TextContent("warm " + string(role))},
+		}}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func responsesBenchProvider(cache store.Log[[]json.RawMessage]) *responsesProvider {
+	var cacheOpen func(string) (store.Log[[]json.RawMessage], error)
+	if cache != nil {
+		cacheOpen = func(string) (store.Log[[]json.RawMessage], error) { return cache, nil }
+	}
 	p := newResponsesProvider(
 		provider.Knobs{Model: "gpt-test"},
 		nil,
 		"",
-		func(string) (store.Log[[]json.RawMessage], error) { return cache, nil },
+		cacheOpen,
 	)
 	return p
 }
@@ -75,7 +91,55 @@ func BenchmarkInputFor(b *testing.B) {
 				}
 			}
 		})
-		b.Run("Warm/"+strconv.Itoa(n), func(b *testing.B) {
+		b.Run("WarmDeltaEncode/"+strconv.Itoa(n), func(b *testing.B) {
+			prefix := responsesBenchLog(b, n)
+			log := responsesBenchLog(b, n)
+			appendResponsesBenchSuffix(b, log)
+			p := responsesBenchProvider(nil)
+			if _, err := p.inputFor(provider.SendInput{AriaID: "bench", FigLog: prefix}); err != nil {
+				b.Fatal(err)
+			}
+			prewarmed := p.projection
+			in := provider.SendInput{AriaID: "bench", FigLog: log}
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.ReportMetric(2, "messages/op")
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				p.projection = prewarmed
+				b.StartTimer()
+				if _, err := p.inputFor(in); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		b.Run("WarmDeltaCached/"+strconv.Itoa(n), func(b *testing.B) {
+			prefix := responsesBenchLog(b, n)
+			log := responsesBenchLog(b, n)
+			appendResponsesBenchSuffix(b, log)
+			cache := newCopyingBenchLog[[]json.RawMessage]()
+			p := responsesBenchProvider(cache)
+			if _, err := p.inputFor(provider.SendInput{AriaID: "bench", FigLog: prefix}); err != nil {
+				b.Fatal(err)
+			}
+			prewarmed := p.projection
+			in := provider.SendInput{AriaID: "bench", FigLog: log}
+			if _, err := p.inputFor(in); err != nil {
+				b.Fatal(err)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.ReportMetric(2, "messages/op")
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				p.projection = prewarmed
+				b.StartTimer()
+				if _, err := p.inputFor(in); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		b.Run("WarmSteady/"+strconv.Itoa(n), func(b *testing.B) {
 			log := responsesBenchLog(b, n)
 			cache := newCopyingBenchLog[[]json.RawMessage]()
 			p := responsesBenchProvider(cache)
@@ -86,14 +150,6 @@ func BenchmarkInputFor(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, _ = log.Append(store.Entry[message.Message]{Payload: message.Message{
-					Role:    message.RoleUser,
-					Content: []message.Content{message.TextContent("warm user")},
-				}})
-				_, _ = log.Append(store.Entry[message.Message]{Payload: message.Message{
-					Role:    message.RoleAssistant,
-					Content: []message.Content{message.TextContent("warm assistant")},
-				}})
 				if _, err := p.inputFor(in); err != nil {
 					b.Fatal(err)
 				}
