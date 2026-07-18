@@ -106,3 +106,40 @@ func BenchmarkAgentMetricRefresh10000(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkMetadataPublication10000(b *testing.B) {
+	log := longMemLog(b, 10_000)
+	cb, _ := chalkboard.Open("")
+	backend := &metadataCaptureBackend{}
+	a := &Agent{
+		id:         "perf",
+		figLog:     log,
+		prov:       perfProvider{},
+		chalkboard: cb,
+		backend:    backend,
+	}
+	a.refreshMetrics()
+
+	b.Run("legacy-two-history-reads", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			meta := &store.AriaMeta{}
+			for _, e := range a.figLog.Read() {
+				if e.Payload.Role == message.RoleAssistant {
+					meta.TurnCount++
+				}
+				meta.LastFigaroLT = e.LT
+			}
+			meta.MessageCount = message.CountMessages(unwrapMessages(a.figLog.Read()))
+			if meta.MessageCount != 10_000 {
+				b.Fatalf("message count = %d", meta.MessageCount)
+			}
+		}
+	})
+	b.Run("actor-snapshot", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			a.publishMetadata()
+		}
+	})
+}
