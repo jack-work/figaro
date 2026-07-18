@@ -914,9 +914,8 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[
 		Fingerprint: fp,
 		Encode:      a.encode,
 		Append:      provider.AppendEncodedMessage,
-		HandleEncodeError: func(lt uint64, err error) error {
+		ReportEncodeError: func(lt uint64, err error) {
 			slog.Error("anthropic encode", "flt", lt, "err", err)
-			return nil
 		},
 	})
 	if err != nil {

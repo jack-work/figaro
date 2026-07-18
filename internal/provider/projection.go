@@ -33,7 +33,7 @@ type ProjectionConfig[T any] struct {
 	Encode      func(message.Message, chalkboard.Snapshot) ([]json.RawMessage, error)
 	Append      func(T, []json.RawMessage, uint64) T
 
-	HandleEncodeError func(uint64, error) error
+	ReportEncodeError func(uint64, error)
 	HandleCacheError  func(uint64, error)
 }
 
@@ -77,12 +77,10 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 			var err error
 			encoded, err = config.Encode(msg, snap)
 			if err != nil {
-				if config.HandleEncodeError == nil {
-					return nil, stats, err
+				if config.ReportEncodeError != nil {
+					config.ReportEncodeError(entry.LT, err)
 				}
-				if err = config.HandleEncodeError(entry.LT, err); err != nil {
-					return nil, stats, err
-				}
+				return nil, stats, err
 			} else {
 				stats.Encoded++
 				if config.Cache != nil && len(encoded) > 0 {

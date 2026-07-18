@@ -75,6 +75,54 @@ func TestProjectIncrementallyInvalidatesFingerprint(t *testing.T) {
 	}
 }
 
+func TestProjectIncrementallyDoesNotAdvancePastEncodeFailure(t *testing.T) {
+	log := store.NewMemLog[message.Message]()
+	appendProjectionMessage(t, log, "one")
+	attempts := map[string]int{}
+	config := ProjectionConfig[EncodedMessages]{
+		Log:         log,
+		Fingerprint: "v1",
+		Encode: func(msg message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
+			text := msg.Content[0].Text
+			attempts[text]++
+			if text == "two" && attempts[text] == 1 {
+				return nil, errors.New("transient encode failure")
+			}
+			return []json.RawMessage{json.RawMessage(`"` + text + `"`)}, nil
+		},
+		Append: AppendEncodedMessage,
+	}
+	first, _, err := ProjectIncrementally(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	appendProjectionMessage(t, log, "two")
+	appendProjectionMessage(t, log, "three")
+	config.Previous = first
+	failed, stats, err := ProjectIncrementally(config)
+	if err == nil {
+		t.Fatal("expected encode failure")
+	}
+	if failed != nil {
+		t.Fatal("failed projection must not publish a later watermark")
+	}
+	if stats.StartIndex != 1 || first.Entries != 1 {
+		t.Fatalf("start=%d prior entries=%d", stats.StartIndex, first.Entries)
+	}
+
+	retried, stats, err := ProjectIncrementally(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.StartIndex != 1 || attempts["two"] != 2 || attempts["three"] != 1 {
+		t.Fatalf("start=%d attempts=%v", stats.StartIndex, attempts)
+	}
+	if retried.Entries != 3 || len(retried.State.PerMessage) != 3 {
+		t.Fatalf("entries=%d messages=%d", retried.Entries, len(retried.State.PerMessage))
+	}
+}
+
 func TestProjectIncrementallyUsesInputReadyCache(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	entry := appendProjectionMessage(t, log, "one")
