@@ -34,13 +34,9 @@ type XwalBackend struct {
 }
 
 type ariaHandle struct {
-	id          string
-	ir          *cachedLog[message.Message]
-	trans       map[string]*cachedLog[[]json.RawMessage]
-	countMu     sync.Mutex
-	count       int
-	countTail   uint64
-	countCached bool
+	id    string
+	ir    *cachedLog[message.Message]
+	trans map[string]*cachedLog[[]json.RawMessage]
 }
 
 type chalkCache struct {
@@ -316,13 +312,6 @@ func (b *XwalBackend) Nodes() []NodeView               { return b.store.Nodes() 
 func (b *XwalBackend) Conversations() []NodeView       { return b.store.Conversations() }
 func (b *XwalBackend) ConversationIDs() []string       { return b.store.ConversationIDs() }
 
-// CanonicalCount recomputes the conversational message count from the aria's
-// live head IR (message.CountMessages — the shared derivation). The head is a
-// single deterministic leaf, so this is order-independent.
-func (b *XwalBackend) CanonicalCount(id string) (int, bool) {
-	return b.canonicalCount(id)
-}
-
 // dropHandle removes the aria's handle shell from the open map. Used by
 // Remove after the trunk is gone. No xwal to close — handles don't own
 // any.
@@ -481,53 +470,9 @@ func (b *XwalBackend) List() ([]AriaInfo, error) {
 			info.Meta = m
 			info.MessageCount = m.MessageCount
 		}
-		// The sidecar can predate the canonical counting convention, so the
-		// live head remains authoritative. canonicalCount memoizes by tail
-		// while this backend is alive, avoiding repeated IR walks.
-		if c, ok := b.canonicalCount(n.ID); ok {
-			info.MessageCount = c
-			if info.Meta != nil && info.Meta.MessageCount != c {
-				m := *info.Meta
-				m.MessageCount = c
-				_ = b.SetMeta(n.ID, &m)
-				info.Meta = &m
-			}
-		}
 		out = append(out, info)
 	}
 	return out, nil
-}
-
-// canonicalCount recomputes a trunk's conversational message count from its
-// live head IR via message.CountMessages — the single derivation every count
-// path shares. Returns false if the head can't be opened (the sidecar value,
-// if any, then stands).
-func (b *XwalBackend) canonicalCount(id string) (int, bool) {
-	b.mu.Lock()
-	h, err := b.handleLocked(id)
-	b.mu.Unlock()
-	if err != nil {
-		return 0, false
-	}
-	h.countMu.Lock()
-	defer h.countMu.Unlock()
-	tail, hasTail := h.ir.PeekTail()
-	tailLT := uint64(0)
-	if hasTail {
-		tailLT = tail.LT
-	}
-	if h.countCached && h.countTail == tailLT {
-		return h.count, true
-	}
-	entries := h.ir.Read()
-	msgs := make([]message.Message, 0, len(entries))
-	for _, e := range entries {
-		msgs = append(msgs, e.Payload)
-	}
-	h.count = message.CountMessages(msgs)
-	h.countTail = tailLT
-	h.countCached = true
-	return h.count, true
 }
 
 func (b *XwalBackend) Remove(ariaID string, recursive bool) error {

@@ -25,6 +25,16 @@ type AriaMeta struct {
 	CacheWriteTokens int    `json:"cache_write_tokens,omitempty"`
 	LastActiveMS     int64  `json:"last_active_ms,omitempty"`
 	LastFigaroLT     uint64 `json:"last_figaro_lt,omitempty"`
+	Provider         string `json:"provider,omitempty"`
+	Model            string `json:"model,omitempty"`
+	Mantra           string `json:"mantra,omitempty"`
+	Cwd              string `json:"cwd,omitempty"`
+	LoadoutName      string `json:"loadout_name,omitempty"`
+	LoadoutVersion   string `json:"loadout_version,omitempty"`
+	ContextTokens    int    `json:"context_tokens,omitempty"`
+	ContextLimit     int    `json:"context_limit,omitempty"`
+	ContextExact     bool   `json:"context_exact,omitempty"`
+	CreatedAtMS      int64  `json:"created_at_ms,omitempty"`
 }
 
 // TranslationMeta is the per-provider cache summary.
@@ -104,11 +114,6 @@ type Backend interface {
 	Nodes() []NodeView
 	Conversations() []NodeView
 	ConversationIDs() []string
-
-	// CanonicalCount returns the authoritative conversational message count
-	// for an aria, recomputed from its (single, deterministic) live head IR.
-	// Callers that also read metadata reconcile a disagreement.
-	CanonicalCount(ariaID string) (count int, ok bool)
 
 	// Meta returns the aria metadata, or nil if unset.
 	Meta(ariaID string) (*AriaMeta, error)

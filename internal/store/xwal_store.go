@@ -130,11 +130,20 @@ func storeConfig() xwal.Config {
 
 // XwalStore owns the aria tree (policy over xwal.Trunks).
 type XwalStore struct {
-	root   string
-	cfg    xwal.Config
-	mu     sync.Mutex
-	trunks *xwal.Trunks
-	now    func() int64
+	root     string
+	cfg      xwal.Config
+	mu       sync.Mutex
+	trunks   *xwal.Trunks
+	topology atomic.Pointer[topologySnapshot]
+	now      func() int64
+}
+
+type topologySnapshot struct {
+	version         uint64
+	nodes           []NodeView
+	conversations   []NodeView
+	conversationIDs []string
+	byID            map[string]NodeView
 }
 
 // OpenXwalStore opens (creating if absent) the aria tree at root, migrating a
@@ -418,73 +427,74 @@ func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string][]int {
 	return vec
 }
 
+func (s *XwalStore) topologySnapshot() *topologySnapshot {
+	version := s.trunks.Version()
+	if snapshot := s.topology.Load(); snapshot != nil && snapshot.version == version {
+		return snapshot
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	version = s.trunks.Version()
+	if snapshot := s.topology.Load(); snapshot != nil && snapshot.version == version {
+		return snapshot
+	}
+
+	infos := s.listTrunks()
+	vec := s.vectorsLocked(infos)
+	conversations := make([]NodeView, 0, len(infos))
+	ids := make([]string, 0, len(infos))
+	nodes := make([]NodeView, 0, len(infos)+1)
+	byID := make(map[string]NodeView, len(infos)+1)
+	for _, t := range infos {
+		node := s.view(t, vec)
+		conversations = append(conversations, node)
+		ids = append(ids, node.ID)
+		nodes = append(nodes, node)
+		byID[node.ID] = node
+	}
+	root := NodeView{ID: rootID, Kind: string(kindNull), Trunk: rootID}
+	nodes = append(nodes, root)
+	byID[root.ID] = root
+	for _, st := range s.listStumps() {
+		name, ver := splitLoadoutKey(st.Name)
+		node := NodeView{ID: st.Name, Kind: string(kindLoadout), Parent: rootID, Loadout: name, Version: ver}
+		nodes = append(nodes, node)
+		byID[node.ID] = node
+	}
+	snapshot := &topologySnapshot{
+		version:         version,
+		nodes:           nodes,
+		conversations:   conversations,
+		conversationIDs: ids,
+		byID:            byID,
+	}
+	s.topology.Store(snapshot)
+	return snapshot
+}
+
 // Conversations returns a view of every conversation trunk, including
 // fork-forest vectors but excluding ceremonial anchors.
 func (s *XwalStore) Conversations() []NodeView {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	infos := s.listTrunks() // one disk scan, shared by vectors + the view loop
-	vec := s.vectorsLocked(infos)
-	out := make([]NodeView, 0, len(infos))
-	for _, t := range infos {
-		out = append(out, s.view(t, vec))
-	}
-	return out
+	return append([]NodeView(nil), s.topologySnapshot().conversations...)
 }
 
 // ConversationIDs returns persisted conversation ids without computing
 // vectors or reading ceremonial loadout anchors.
 func (s *XwalStore) ConversationIDs() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	infos := s.listTrunks()
-	out := make([]string, len(infos))
-	for i, t := range infos {
-		out[i] = t.ID
-	}
-	return out
+	return append([]string(nil), s.topologySnapshot().conversationIDs...)
 }
 
 // Nodes returns a view of every conversation trunk plus the ceremonial
 // anchors (the root + every loadout stump).
 func (s *XwalStore) Nodes() []NodeView {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	infos := s.listTrunks() // one disk scan, shared by vectors + the view loop
-	vec := s.vectorsLocked(infos)
-	out := make([]NodeView, 0, len(infos)+1)
-	for _, t := range infos {
-		out = append(out, s.view(t, vec))
-	}
-	out = append(out, NodeView{ID: rootID, Kind: string(kindNull), Trunk: rootID})
-	for _, st := range s.listStumps() {
-		name, ver := splitLoadoutKey(st.Name)
-		out = append(out, NodeView{ID: st.Name, Kind: string(kindLoadout), Parent: rootID, Loadout: name, Version: ver})
-	}
-	return out
+	return append([]NodeView(nil), s.topologySnapshot().nodes...)
 }
 
 // Node returns a single trunk view (incl. the root + loadout stumps).
 func (s *XwalStore) Node(id string) (NodeView, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if id == rootID {
-		return NodeView{ID: id, Kind: string(kindNull), Trunk: id}, true
-	}
-	for _, st := range s.listStumps() {
-		if st.Name == id {
-			name, ver := splitLoadoutKey(st.Name)
-			return NodeView{ID: id, Kind: string(kindLoadout), Parent: rootID, Loadout: name, Version: ver}, true
-		}
-	}
-	infos := s.listTrunks()
-	vec := s.vectorsLocked(infos)
-	for _, t := range infos {
-		if t.ID == id {
-			return s.view(t, vec), true
-		}
-	}
-	return NodeView{}, false
+	node, ok := s.topologySnapshot().byID[id]
+	return node, ok
 }
 
 func splitLoadoutKey(key string) (name, ver string) {

@@ -23,13 +23,16 @@ func (f *liveForkFigaro) Prompt(string)              {}
 func (f *liveForkFigaro) Interrupt()                 {}
 func (f *liveForkFigaro) Context() []message.Message { return nil }
 func (f *liveForkFigaro) Info() figaro.FigaroInfo {
-	return figaro.FigaroInfo{ID: f.id, State: "active"}
+	return figaro.FigaroInfo{ID: f.id, State: "active", MessageCount: 12, Provider: "provider"}
 }
 func (f *liveForkFigaro) Kill() { f.killed = true }
 
 type liveForkBackend struct {
 	store.Backend
-	forked bool
+	forked     bool
+	parentMeta *store.AriaMeta
+	childMeta  *store.AriaMeta
+	owner      store.OwnerInfo
 }
 
 func (b *liveForkBackend) Fork(id string) (string, string, error) {
@@ -37,11 +40,29 @@ func (b *liveForkBackend) Fork(id string) (string, string, error) {
 	return id, "alternative", nil
 }
 
+func (b *liveForkBackend) ForkAt(id string, _ uint64) (string, string, error) {
+	b.forked = true
+	return id, "alternative", nil
+}
+
+func (b *liveForkBackend) OwnerResolution(string, uint64) (store.OwnerInfo, error) {
+	return b.owner, nil
+}
+
+func (b *liveForkBackend) Meta(string) (*store.AriaMeta, error) {
+	return b.parentMeta, nil
+}
+
+func (b *liveForkBackend) SetMeta(_ string, meta *store.AriaMeta) error {
+	b.childMeta = meta
+	return nil
+}
+
 func TestForkKeepsLiveAgentRunning(t *testing.T) {
 	registry := NewRegistry()
 	live := &liveForkFigaro{id: "live"}
 	require.NoError(t, registry.Register(live))
-	backend := &liveForkBackend{}
+	backend := &liveForkBackend{parentMeta: &store.AriaMeta{MessageCount: 12, Provider: "provider"}}
 	h := &handlers{angelus: &Angelus{Registry: registry, Backend: backend}}
 	params, err := json.Marshal(rpc.ForkRequest{FigaroID: live.id})
 	require.NoError(t, err)
@@ -51,6 +72,36 @@ func TestForkKeepsLiveAgentRunning(t *testing.T) {
 	require.True(t, backend.forked)
 	require.False(t, live.killed)
 	require.Same(t, live, registry.Get(live.id))
+	require.Equal(t, 12, backend.childMeta.MessageCount)
+	require.Equal(t, "provider", backend.childMeta.Provider)
+}
+
+func TestInteriorForkAtRootDoesNotCopyConversationState(t *testing.T) {
+	backend := &liveForkBackend{
+		parentMeta: &store.AriaMeta{
+			MessageCount:   12,
+			Provider:       "provider",
+			Model:          "model",
+			Mantra:         "mantra",
+			Cwd:            "work",
+			LoadoutName:    "loadout",
+			LoadoutVersion: "version",
+		},
+		owner: store.OwnerInfo{IsRoot: true},
+	}
+	h := &handlers{angelus: &Angelus{Registry: NewRegistry(), Backend: backend}}
+	params, err := json.Marshal(rpc.ForkRequest{FigaroID: "parent", AtMainLT: 1})
+	require.NoError(t, err)
+
+	_, err = h.fork(t.Context(), params)
+	require.NoError(t, err)
+	require.Zero(t, backend.childMeta.MessageCount)
+	require.Empty(t, backend.childMeta.Provider)
+	require.Empty(t, backend.childMeta.Model)
+	require.Empty(t, backend.childMeta.Mantra)
+	require.Empty(t, backend.childMeta.Cwd)
+	require.Empty(t, backend.childMeta.LoadoutName)
+	require.Empty(t, backend.childMeta.LoadoutVersion)
 }
 
 type blockingInfoFigaro struct {

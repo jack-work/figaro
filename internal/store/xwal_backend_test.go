@@ -115,7 +115,7 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 	}
 }
 
-func TestXwalBackendListRecountsWatermarkedMeta(t *testing.T) {
+func TestXwalBackendListUsesMetadataWithoutOpeningIR(t *testing.T) {
 	b, err := NewXwalBackend(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -148,12 +148,25 @@ func TestXwalBackendListRecountsWatermarkedMeta(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, info := range list {
-		if info.ID == conv && info.MessageCount != 1 {
-			t.Fatalf("watermarked meta count = %d, want canonical count 1", info.MessageCount)
+		if info.ID == conv && info.MessageCount != 99 {
+			t.Fatalf("metadata count = %d, want 99", info.MessageCount)
 		}
 	}
-	if meta, _ := b.Meta(conv); meta == nil || meta.MessageCount != 1 {
-		t.Fatalf("self-healed meta = %+v, want message_count 1", meta)
+	b.mu.Lock()
+	_, opened := b.open[conv]
+	b.mu.Unlock()
+	if opened {
+		t.Fatal("List opened the conversation IR")
+	}
+}
+
+func TestAriaMetaReadsLegacySidecar(t *testing.T) {
+	var meta AriaMeta
+	if err := json.Unmarshal([]byte(`{"message_count":7,"tokens_in":11,"last_figaro_lt":9}`), &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta.MessageCount != 7 || meta.TokensIn != 11 || meta.LastFigaroLT != 9 {
+		t.Fatalf("legacy metadata changed on decode: %#v", meta)
 	}
 }
 

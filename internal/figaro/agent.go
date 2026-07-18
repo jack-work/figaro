@@ -52,6 +52,8 @@ type Config struct {
 	Outfitter  *outfit.Outfitter
 	Tools      *tool.Registry
 	Backend    store.Backend // nil = ephemeral
+	CreatedAt  time.Time
+	LastActive time.Time
 
 	// Chalkboard carries the aria's state, pre-seeded from the
 	// reducible chalkboard channel (backed) or empty (ephemeral). The
@@ -126,6 +128,9 @@ type Agent struct {
 	contextExact  bool
 	model         string
 	mantra        string
+	cwd           string
+	loadoutName   string
+	loadoutVer    string
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -134,6 +139,15 @@ type Agent struct {
 // NewAgent creates and starts a figaro agent.
 func NewAgent(cfg Config) *Agent {
 	ctx, cancel := context.WithCancel(context.Background())
+	now := time.Now()
+	createdAt := cfg.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = now
+	}
+	lastActive := cfg.LastActive
+	if lastActive.IsZero() {
+		lastActive = now
+	}
 
 	a := &Agent{
 		id:         cfg.ID,
@@ -146,8 +160,8 @@ func NewAgent(cfg Config) *Agent {
 		inlineBoot: cfg.InlineBoot,
 		backend:    cfg.Backend,
 		chalkboard: cfg.Chalkboard,
-		createdAt:  time.Now(),
-		lastActive: time.Now(),
+		createdAt:  createdAt,
+		lastActive: lastActive,
 		cancel:     cancel,
 		done:       make(chan struct{}),
 	}
@@ -184,6 +198,7 @@ func NewAgent(cfg Config) *Agent {
 	// Spin up durable-derivation fanout (backed agents only).
 	a.derived = startDerived(ctx, a.id, a.prov.Name(), a.backend, a.figLog, nil)
 	a.derived.Tick(0, a.chalkboard.Snapshot()) // initial materialization
+	a.writeMeta()
 
 	go a.runWithRecovery(ctx)
 	return a
@@ -323,6 +338,9 @@ func (a *Agent) refreshMetrics() {
 	a.contextLimit = contextLimit
 	a.model = model
 	a.mantra = snapshotString(snapshot, "mantra")
+	a.cwd = snapshotString(snapshot, "system.cwd")
+	a.loadoutName = snapshotString(snapshot, "system.loadout_name")
+	a.loadoutVer = snapshotString(snapshot, "system.loadout_version")
 	a.mu.Unlock()
 }
 
@@ -362,6 +380,9 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	a.contextLimit = contextLimit
 	a.model = model
 	a.mantra = snapshotString(snapshot, "mantra")
+	a.cwd = snapshotString(snapshot, "system.cwd")
+	a.loadoutName = snapshotString(snapshot, "system.loadout_name")
+	a.loadoutVer = snapshotString(snapshot, "system.loadout_version")
 	a.mu.Unlock()
 }
 
@@ -451,6 +472,11 @@ func (a *Agent) Info() FigaroInfo {
 		ContextExact:     a.contextExact,
 		CreatedAt:        a.createdAt,
 		LastActive:       a.lastActive,
+		Mantra:           a.mantra,
+		Cwd:              a.cwd,
+		LoadoutName:      a.loadoutName,
+		LoadoutVersion:   a.loadoutVer,
+		LastFigaroLT:     a.metricsLT,
 	}
 	a.mu.RUnlock()
 	return info
@@ -589,6 +615,7 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	}
 	a.chalkboard.Apply(patch)
 	a.refreshMetrics()
+	a.writeMeta()
 	a.derived.Tick(0, a.chalkboard.Snapshot())
 }
 
@@ -665,6 +692,16 @@ func (a *Agent) writeMeta() {
 		CacheReadTokens:  a.cacheRead,
 		CacheWriteTokens: a.cacheWrite,
 		LastActiveMS:     a.lastActive.UnixMilli(),
+		Provider:         a.prov.Name(),
+		Model:            a.model,
+		Mantra:           a.mantra,
+		Cwd:              a.cwd,
+		LoadoutName:      a.loadoutName,
+		LoadoutVersion:   a.loadoutVer,
+		ContextTokens:    a.contextTokens,
+		ContextLimit:     a.contextLimit,
+		ContextExact:     a.contextExact,
+		CreatedAtMS:      a.createdAt.UnixMilli(),
 	}
 	a.mu.RUnlock()
 	if tail, ok := a.figLog.PeekTail(); ok {

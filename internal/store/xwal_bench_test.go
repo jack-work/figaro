@@ -74,11 +74,8 @@ func turn(tb testing.TB, b *XwalBackend, id string, n int) {
 	}
 }
 
-// TestNodes_TrunkScanCount pins the per-request disk-scan fan-out of a single
-// store.Nodes() call. Before the fix Nodes() invoked trunks.List() twice and
-// trunks.Stumps() once (3 full scans); after the fix it is exactly one List
-// + one Stumps (2 scans), independent of tree size. The handler's per-entry
-// Node() calls (the O(N^2) blowup) are gone — angelus snapshots Nodes() once.
+// TestNodes_TrunkScanCount pins the topology snapshot: one List + one Stumps
+// on first use, then no forest scans while Trunks.Version is unchanged.
 func TestNodes_TrunkScanCount(t *testing.T) {
 	b, err := NewXwalBackend(t.TempDir())
 	if err != nil {
@@ -92,6 +89,11 @@ func TestNodes_TrunkScanCount(t *testing.T) {
 	if got := trunkScanCount.Load(); got != 2 {
 		t.Fatalf("Nodes() did %d trunk scans, want exactly 2 (1 List + 1 Stumps)", got)
 	}
+	trunkScanCount.Store(0)
+	_ = b.store.Nodes()
+	if got := trunkScanCount.Load(); got != 0 {
+		t.Fatalf("warm Nodes() did %d trunk scans, want 0", got)
+	}
 }
 
 func TestConversationList_TrunkScanCount(t *testing.T) {
@@ -104,8 +106,8 @@ func TestConversationList_TrunkScanCount(t *testing.T) {
 
 	trunkScanCount.Store(0)
 	nodes := b.store.Conversations()
-	if got := trunkScanCount.Load(); got != 1 {
-		t.Fatalf("Conversations() did %d trunk scans, want exactly 1", got)
+	if got := trunkScanCount.Load(); got != 2 {
+		t.Fatalf("cold Conversations() did %d trunk scans, want exactly 2", got)
 	}
 	if len(nodes) != 36 {
 		t.Fatalf("Conversations() returned %d nodes, want 36", len(nodes))
@@ -113,14 +115,17 @@ func TestConversationList_TrunkScanCount(t *testing.T) {
 
 	trunkScanCount.Store(0)
 	ids := b.store.ConversationIDs()
-	if got := trunkScanCount.Load(); got != 1 {
-		t.Fatalf("ConversationIDs() did %d trunk scans, want exactly 1", got)
+	if got := trunkScanCount.Load(); got != 0 {
+		t.Fatalf("warm ConversationIDs() did %d trunk scans, want 0", got)
 	}
 	if len(ids) != len(nodes) {
 		t.Fatalf("ConversationIDs() returned %d ids, want %d", len(ids), len(nodes))
 	}
 
 	all := b.store.Nodes()
+	if got := trunkScanCount.Load(); got != 0 {
+		t.Fatalf("warm Nodes() did %d trunk scans, want 0", got)
+	}
 	want := make(map[string]NodeView, len(nodes))
 	for _, n := range all {
 		if n.Kind == string(kindConversation) {
@@ -133,6 +138,32 @@ func TestConversationList_TrunkScanCount(t *testing.T) {
 			n.BranchedLT != w.BranchedLT || !slices.Equal(n.Vector, w.Vector) {
 			t.Fatalf("conversation view for %s differs from full forest: got %#v, want %#v", n.ID, n, w)
 		}
+	}
+
+	var loadoutID string
+	for _, n := range all {
+		if n.Kind == string(kindLoadout) {
+			loadoutID = n.ID
+			break
+		}
+	}
+	created, err := b.CreateConversation(loadoutID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trunkScanCount.Store(0)
+	updated := b.store.Conversations()
+	if got := trunkScanCount.Load(); got != 2 {
+		t.Fatalf("Conversations() after topology change did %d scans, want 2", got)
+	}
+	if len(updated) != len(nodes)+1 {
+		t.Fatalf("Conversations() after topology change returned %d nodes, want %d", len(updated), len(nodes)+1)
+	}
+	if _, ok := b.store.Node(created); !ok {
+		t.Fatalf("new conversation %s absent from rebuilt topology", created)
+	}
+	if got := trunkScanCount.Load(); got != 2 {
+		t.Fatalf("warm Node() rescanned topology: scans=%d", got)
 	}
 }
 
@@ -172,33 +203,6 @@ func BenchmarkConversations(b *testing.B) {
 	b.StopTimer()
 	b.ReportMetric(float64(trunkScanCount.Load())/float64(b.N), "scans/op")
 	b.ReportMetric(float64(n), "trunks")
-}
-
-func BenchmarkCanonicalCountCached(b *testing.B) {
-	be, err := NewXwalBackend(b.TempDir())
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer be.Close()
-	l, err := be.CreateLoadout("d", patchSet(map[string]string{"system.model": "m"}))
-	if err != nil {
-		b.Fatal(err)
-	}
-	id, err := be.CreateConversation(l)
-	if err != nil {
-		b.Fatal(err)
-	}
-	turn(b, be, id, 1000)
-	if _, ok := be.CanonicalCount(id); !ok {
-		b.Fatal("initial canonical count failed")
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if _, ok := be.CanonicalCount(id); !ok {
-			b.Fatal("canonical count failed")
-		}
-	}
 }
 
 // BenchmarkListPathAfter / BenchmarkListPathBefore bracket the angelus list

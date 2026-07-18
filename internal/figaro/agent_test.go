@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -227,6 +228,51 @@ func newTestAgent(response string) *figaro.Agent {
 		Provider:   &mockProvider{response: response},
 		Chalkboard: cb,
 	})
+}
+
+func TestAgentPersistsCompleteListMetadata(t *testing.T) {
+	backend, id := backedConv(t, t.TempDir())
+	require.NoError(t, backend.ApplyChalkboard(id, message.Patch{Set: map[string]json.RawMessage{
+		"mantra":     json.RawMessage(`"initial"`),
+		"system.cwd": json.RawMessage(`"work"`),
+	}}))
+	snapshot, err := backend.ChalkboardState(id)
+	require.NoError(t, err)
+	cb, _ := chalkboard.Open("")
+	cb.Apply(chalkboard.Patch{Set: snapshot})
+	createdAt := time.UnixMilli(1_000)
+	lastActive := time.UnixMilli(2_000)
+
+	a := figaro.NewAgent(figaro.Config{
+		ID:         id,
+		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
+		Provider:   &mockProvider{},
+		Backend:    backend,
+		Chalkboard: cb,
+		CreatedAt:  createdAt,
+		LastActive: lastActive,
+	})
+	t.Cleanup(a.Kill)
+
+	meta, err := backend.Meta(id)
+	require.NoError(t, err)
+	require.Equal(t, "mock", meta.Provider)
+	require.Equal(t, "mock-model-v1", meta.Model)
+	require.Equal(t, "initial", meta.Mantra)
+	require.Equal(t, "work", meta.Cwd)
+	require.Equal(t, "d", meta.LoadoutName)
+	require.NotEmpty(t, meta.LoadoutVersion)
+	require.Equal(t, createdAt.UnixMilli(), meta.CreatedAtMS)
+	require.Equal(t, lastActive.UnixMilli(), meta.LastActiveMS)
+
+	_, _, err = a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"mantra": json.RawMessage(`"updated"`),
+	}})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		meta, err = backend.Meta(id)
+		return err == nil && meta != nil && meta.Mantra == "updated"
+	}, time.Second, 10*time.Millisecond)
 }
 
 // backedConv builds an XwalBackend, materializes a loadout + a fresh

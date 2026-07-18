@@ -54,6 +54,7 @@ Load-bearing. Breaking them produces races, lost messages, or silent corruption.
 12. **Harness does not inject overrides.** No "ignore previous", no synthetic system speech mid-conversation. State changes flow through the chalkboard. Credo persists across panics, model switches, and interrupts.
 13. **XWAL owns cache topology.** Parallel channels share the aria tree and its immutable on-disk prefixes; forks inherit parent prefix locations rather than copying or rebuilding them. Keep native hot head/channel snapshots open, serialize writes per lineage, and never reopen/rescan total history per append or block unrelated trunks behind a global tree lock. Prefer Figwal/XWAL snapshots, watermarks, and shared-prefix views over Figaro-side row caches or precautionary locks.
 14. **Translator catch-up is delta work.** In either direction, normal synchronization is O(untranslated messages), usually one or two. O(total history) cache scans, copies, or lookups are a design failure; full walks are reserved for explicit fingerprint invalidation such as a model change.
+15. **Dormant listing is metadata-only.** Agents persist complete `AriaMeta` at initialization, turn boundaries, and state-only patches. `figaro.list` reads that sidecar and a topology snapshot keyed by `Trunks.Version()`; it never opens IR or folds chalkboard history. Repair stale metadata explicitly rather than hiding a history scan in list.
 
 ## Hot spots
 
