@@ -191,10 +191,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.emitSnapshot("user", []livedoc.Node{{Type: livedoc.NodeProse, Markdown: prompt.text}})
 		a.emitCommit()
 	}
-	a.liveMu.Lock()
 	a.turnStart = a.figLog.Len()
-	a.liveActive = true
-	a.liveMu.Unlock()
 	a.gov = toolout.New(liveOutputTail)
 	a.lastEmit = time.Time{}
 	a.argPartials = map[string]string{}

@@ -100,13 +100,9 @@ type Agent struct {
 	mu   sync.RWMutex
 	subs map[Notifier]struct{} // socket clients + in-process listeners
 
-	// Live-render state (drain-loop owned; liveMu guards liveActive). turnStart
-	// is the figLog index where the current turn's agent messages begin;
-	// liveActive is true while an assistant unit is live; partials holds streamed
-	// output for in-flight tools (keyed by tool_call_id).
-	liveMu      sync.Mutex
+	// Live-render state, owned by the drain loop. turnStart is the figLog
+	// index where the current turn's agent messages begin.
 	turnStart   int
-	liveActive  bool
 	gov         *toolout.Governor // bounded live tool-output tails (coalesced emits)
 	lastEmit    time.Time         // throttle for live streaming emits
 	argPartials map[string]string
@@ -707,9 +703,6 @@ func (a *Agent) endTurnDiscarding(reason string) {
 }
 
 func (a *Agent) finishTurn(reason string) {
-	a.liveMu.Lock()
-	a.liveActive = false
-	a.liveMu.Unlock()
 	idle := a.inbox.IsIdle()
 	a.mu.Lock()
 	a.lastActive = time.Now()
