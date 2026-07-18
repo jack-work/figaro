@@ -167,7 +167,7 @@ Rule of thumb: don't background with bare `&` and assume completion. Use
 
 ## Storage
 
-State root `~/.local/state/figaro/arias/<id>/`: `aria/<NNN>.jsonl` (IR
-segments), `chalkboard.json`, `derived/` + `meta.json` (derived stats),
-`translations/<provider>/<NNN>.jsonl` (wire cache, FK'd to the IR by
-`FigaroLT` — cache, not truth). See arias.md for reading these safely.
+State root `~/.local/state/figaro/arias/`: parallel XWAL trees in `ir/`,
+`chalkboard/`, and `translations/<provider>/`, plus `_meta/<id>.json`
+for list/status metadata and `_live/<id>.json` for the open UI message.
+See arias.md for reading these safely.

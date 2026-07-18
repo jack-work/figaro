@@ -2,7 +2,6 @@ package figaro
 
 import (
 	"context"
-	"io"
 	"strings"
 	"testing"
 
@@ -106,39 +105,4 @@ func BenchmarkAgentMetricRefresh10000(b *testing.B) {
 			a.refreshMetrics()
 		}
 	})
-}
-
-func BenchmarkDerivedPublish10000(b *testing.B) {
-	_ = longMemLog(b, 10_000)
-	evt := DerivationEvent{
-		Metadata: store.AriaMeta{
-			MessageCount:     10_000,
-			TurnCount:        5_000,
-			TokensIn:         100_000,
-			TokensOut:        50_000,
-			CacheReadTokens:  25_000,
-			CacheWriteTokens: 5_000,
-			Provider:         "perf",
-			Model:            "perf-model",
-			ContextTokens:    640_000,
-			ContextExact:     true,
-			LastFigaroLT:     10_000,
-		},
-		LastUpdateMS: 1,
-	}
-	derivations := []DurableDerivation{
-		&summaryDerivation{},
-		&usageDerivation{ariaID: "perf", providerName: "perf"},
-		&metaDerivation{ariaID: "perf", providerName: "perf"},
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		for _, derivation := range derivations {
-			if err := derivation.OnTick(io.Discard, evt); err != nil {
-				b.Fatal(err)
-			}
-		}
-	}
 }

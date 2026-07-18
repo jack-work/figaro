@@ -43,8 +43,7 @@ spread across the node dirs along its path.
 │   └── n0/ …                  to the IR by mainLT (preserves thinking sigs)
 ├── _live/<id>.json            the single OPEN/uncommitted UI message per trunk
 │                              (opaque blob, last-write-wins; discarded on restart)
-├── _meta/<id>.json            derived stats (msg count, tokens, last-active)
-├── _meta/<id>.<provider>.tmeta.json   per-provider translation meta
+├── _meta/<id>.json            list/status metadata (msg count, tokens, last-active)
 └── .daemon.lock               the exclusive store flock (one angelus per store)
 ```
 
@@ -144,7 +143,7 @@ sidecars, keyed by aria/trunk id — these are the reliable per-aria stat):
 
 ```bash
 for m in "$ARIAS"/_meta/*.json; do
-  case "$m" in *.tmeta.json) continue;; esac
+  case "$m" in *.tmeta.json) continue;; esac # legacy, no longer produced
   id=$(basename "$m" .json)
   n=$(jq -r '.message_count // 0' "$m" 2>/dev/null)
   printf '%s\t%s\n' "$n" "$id"

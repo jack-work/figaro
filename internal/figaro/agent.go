@@ -88,7 +88,6 @@ type Agent struct {
 	figLog     store.Log[message.Message]
 	backend    store.Backend // nil = ephemeral
 	chalkboard *chalkboard.State
-	derived    *derivedFanout // nil = ephemeral; per-figaro durable derivations
 
 	inbox *Inbox
 
@@ -197,8 +196,6 @@ func NewAgent(cfg Config) *Agent {
 		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: r})
 	})
 
-	// Spin up durable-derivation fanout (backed agents only).
-	a.derived = startDerived(a.id, a.prov.Name(), a.backend, a.figLog, nil)
 	a.publishMetadata()
 
 	go a.runWithRecovery(ctx)
@@ -522,8 +519,7 @@ func (a *Agent) sessionMetrics() *aria.Metrics {
 
 func (a *Agent) Kill() {
 	a.cancel()
-	<-a.done          // wait for drain loop to exit
-	a.derived.Close() // flush derivations after the actor's final publication
+	<-a.done // wait for drain loop to exit
 
 	a.mu.Lock()
 	a.subs = nil
@@ -744,7 +740,6 @@ func (a *Agent) publishMetadata() {
 	if err := a.backend.SetMeta(a.id, meta); err != nil {
 		slog.Warn("write aria meta", "aria", a.id, "err", err)
 	}
-	a.derived.Tick(*meta)
 }
 
 func (a *Agent) toolDefs() []provider.Tool {

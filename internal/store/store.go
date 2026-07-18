@@ -15,7 +15,7 @@ import (
 // domain message ("cannot promote into a loadout; make/edit a loadout").
 var ErrAtStump = errors.New("trunk is rooted at a loadout; cannot promote further")
 
-// AriaMeta is the per-aria summary at arias/{id}/meta.json.
+// AriaMeta is the per-aria summary stored by the backend.
 type AriaMeta struct {
 	MessageCount     int    `json:"message_count,omitempty"`
 	TurnCount        int    `json:"turn_count,omitempty"` // assistant messages
@@ -35,16 +35,6 @@ type AriaMeta struct {
 	ContextLimit     int    `json:"context_limit,omitempty"`
 	ContextExact     bool   `json:"context_exact,omitempty"`
 	CreatedAtMS      int64  `json:"created_at_ms,omitempty"`
-}
-
-// TranslationMeta is the per-provider cache summary.
-type TranslationMeta struct {
-	Provider     string `json:"provider"`
-	EntryCount   int    `json:"entry_count,omitempty"`
-	TotalBytes   int    `json:"total_bytes,omitempty"`
-	Fingerprint  string `json:"fingerprint,omitempty"`
-	LastTransLT  uint64 `json:"last_trans_lt,omitempty"`
-	LastUpdateMS int64  `json:"last_update_ms,omitempty"`
 }
 
 // OwnerInfo describes which node owns a main-LT along a trunk's lineage:
@@ -120,12 +110,6 @@ type Backend interface {
 
 	// SetMeta sets the aria metadata.
 	SetMeta(ariaID string, meta *AriaMeta) error
-
-	// TranslationMeta returns the per-provider summary.
-	TranslationMeta(ariaID, providerName string) (*TranslationMeta, error)
-
-	// SetTranslationMeta writes the per-provider translator summary.
-	SetTranslationMeta(ariaID, providerName string, meta *TranslationMeta) error
 
 	// LiveBlob returns the persisted open (in-progress) UI message for a
 	// trunk, or nil if none is open. Committed messages live in the
