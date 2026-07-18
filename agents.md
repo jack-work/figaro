@@ -56,6 +56,7 @@ Load-bearing. Breaking them produces races, lost messages, or silent corruption.
 14. **Translator catch-up is delta work.** In either direction, normal synchronization is O(untranslated messages), usually one or two. O(total history) cache scans, copies, or lookups are a design failure; full walks are reserved for explicit fingerprint invalidation such as a model change.
 15. **Dormant listing is metadata-only.** Agents persist complete `AriaMeta` at initialization, turn boundaries, and state-only patches. `figaro.list` reads that sidecar and a topology snapshot keyed by `Trunks.Version()`; it never opens IR or folds chalkboard history. Repair stale metadata explicitly rather than hiding a history scan in list.
 16. **Live forks stay live.** Fork coordination enters through the figaro's existing inbox and is serviced between provider/tool stream events. Never kill, interrupt, or restart the addressed actor: its stable trunk ID is the continuation and it resumes appending after the fork.
+17. **Completion metadata is incremental.** The actor folds new IR entries once and publishes one immutable `AriaMeta` snapshot. Summary, usage, and list-metadata writers encode that snapshot; they never read or copy total history at turn completion.
 
 ## Hot spots
 

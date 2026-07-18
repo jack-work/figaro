@@ -198,9 +198,8 @@ func NewAgent(cfg Config) *Agent {
 	})
 
 	// Spin up durable-derivation fanout (backed agents only).
-	a.derived = startDerived(ctx, a.id, a.prov.Name(), a.backend, a.figLog, nil)
-	a.derived.Tick(0, a.chalkboard.Snapshot()) // initial materialization
-	a.writeMeta()
+	a.derived = startDerived(a.id, a.prov.Name(), a.backend, a.figLog, nil)
+	a.publishMetadata()
 
 	go a.runWithRecovery(ctx)
 	return a
@@ -523,8 +522,8 @@ func (a *Agent) sessionMetrics() *aria.Metrics {
 
 func (a *Agent) Kill() {
 	a.cancel()
-	<-a.done         // wait for drain loop to exit
-	a.derived.Wait() // wait for derivation loops (so disk writes finish before close)
+	<-a.done          // wait for drain loop to exit
+	a.derived.Close() // flush derivations after the actor's final publication
 
 	a.mu.Lock()
 	a.subs = nil
@@ -658,8 +657,7 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	}
 	a.chalkboard.Apply(patch)
 	a.refreshMetrics()
-	a.writeMeta()
-	a.derived.Tick(0, a.chalkboard.Snapshot())
+	a.publishMetadata()
 }
 
 // chalkAccessor returns the per-LT transition source for the provider:
@@ -713,13 +711,11 @@ func (a *Agent) finishTurn(reason string) {
 		Params:  rpc.DoneEntry{Reason: reason, Idle: &idle},
 	})
 
-	a.writeMeta()
-	a.derived.Tick(0, a.chalkboard.Snapshot())
+	a.publishMetadata()
 }
 
-// writeMeta persists the per-aria summary sidecar so `figaro list` shows
-// counts/tokens/recency for dormant arias. Backed arias only.
-func (a *Agent) writeMeta() {
+// publishMetadata persists and fans out one actor-owned metrics snapshot.
+func (a *Agent) publishMetadata() {
 	if a.backend == nil {
 		return
 	}
@@ -742,14 +738,13 @@ func (a *Agent) writeMeta() {
 		ContextLimit:     a.contextLimit,
 		ContextExact:     a.contextExact,
 		CreatedAtMS:      a.createdAt.UnixMilli(),
+		LastFigaroLT:     a.metricsLT,
 	}
 	a.mu.RUnlock()
-	if tail, ok := a.figLog.PeekTail(); ok {
-		meta.LastFigaroLT = tail.LT
-	}
 	if err := a.backend.SetMeta(a.id, meta); err != nil {
 		slog.Warn("write aria meta", "aria", a.id, "err", err)
 	}
+	a.derived.Tick(*meta)
 }
 
 func (a *Agent) toolDefs() []provider.Tool {

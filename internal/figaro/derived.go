@@ -2,7 +2,6 @@ package figaro
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,10 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/tokens"
 )
 
 // DurableDerivation is a per-aria derivation worker. OnTick writes
@@ -24,14 +21,10 @@ type DurableDerivation interface {
 	OnTick(w io.Writer, evt DerivationEvent) error
 }
 
-// TODO: give derivations access to the full figaro log, not just
-// the chalkboard snapshot. The log is append-only so a read cursor
-// would be safe.
-//
-// DerivationEvent is one tick with a cloned chalkboard snapshot.
+// DerivationEvent is one publication of the actor's incremental metadata.
 type DerivationEvent struct {
-	FigaroLT uint64
-	Snapshot chalkboard.Snapshot
+	Metadata     store.AriaMeta
+	LastUpdateMS int64
 }
 
 // DurDerivDeps is per-aria construction state for Make/Resolve.
@@ -128,7 +121,7 @@ type derivationLoop struct {
 	done  chan struct{}
 }
 
-func startLoop(ctx context.Context, alias, path string, impl DurableDerivation) *derivationLoop {
+func startLoop(alias, path string, impl DurableDerivation) *derivationLoop {
 	l := &derivationLoop{
 		alias: alias,
 		path:  path,
@@ -136,7 +129,7 @@ func startLoop(ctx context.Context, alias, path string, impl DurableDerivation) 
 		inbox: make(chan DerivationEvent, 1),
 		done:  make(chan struct{}),
 	}
-	go l.run(ctx)
+	go l.run()
 	return l
 }
 
@@ -144,26 +137,21 @@ func (l *derivationLoop) tick(evt DerivationEvent) {
 	select {
 	case l.inbox <- evt:
 	default:
+		select {
+		case <-l.inbox:
+		default:
+		}
+		select {
+		case l.inbox <- evt:
+		default:
+		}
 	}
 }
 
-func (l *derivationLoop) run(ctx context.Context) {
+func (l *derivationLoop) run() {
 	defer close(l.done)
-	for {
-		select {
-		case <-ctx.Done():
-			// Drain pending ticks before exit.
-			for {
-				select {
-				case evt := <-l.inbox:
-					l.process(evt)
-				default:
-					return
-				}
-			}
-		case evt := <-l.inbox:
-			l.process(evt)
-		}
+	for evt := range l.inbox {
+		l.process(evt)
 	}
 }
 
@@ -203,7 +191,6 @@ type derivedFanout struct {
 
 // startDerived spins up one loop per registration.
 func startDerived(
-	ctx context.Context,
 	ariaID, providerName string,
 	backend store.Backend,
 	figLog store.Log[message.Message],
@@ -225,24 +212,27 @@ func startDerived(
 	}
 	f := &derivedFanout{}
 	for _, r := range rs {
-		f.loops = append(f.loops, startLoop(ctx, r.Alias, filepath.Join(dir, r.filenameFor(deps)), r.Make(deps)))
+		f.loops = append(f.loops, startLoop(r.Alias, filepath.Join(dir, r.filenameFor(deps)), r.Make(deps)))
 	}
 	return f
 }
 
-func (f *derivedFanout) Tick(figaroLT uint64, snap chalkboard.Snapshot) {
+func (f *derivedFanout) Tick(meta store.AriaMeta) {
 	if f == nil {
 		return
 	}
-	evt := DerivationEvent{FigaroLT: figaroLT, Snapshot: snap}
+	evt := DerivationEvent{Metadata: meta, LastUpdateMS: time.Now().UnixMilli()}
 	for _, l := range f.loops {
 		l.tick(evt)
 	}
 }
 
-func (f *derivedFanout) Wait() {
+func (f *derivedFanout) Close() {
 	if f == nil {
 		return
+	}
+	for _, l := range f.loops {
+		close(l.inbox)
 	}
 	for _, l := range f.loops {
 		<-l.done
@@ -254,7 +244,7 @@ func init() {
 		Alias:    "summary",
 		Filename: "meta.json",
 		Make: func(d DurDerivDeps) DurableDerivation {
-			return &summaryDerivation{figLog: d.FigLog}
+			return &summaryDerivation{}
 		},
 	})
 	Register(DurDerivReg{
@@ -273,7 +263,6 @@ func init() {
 			return &usageDerivation{
 				ariaID:       d.AriaID,
 				providerName: d.ProviderName,
-				figLog:       d.FigLog,
 			}
 		},
 	})
@@ -284,35 +273,26 @@ func init() {
 			return &metaDerivation{
 				ariaID:       d.AriaID,
 				providerName: d.ProviderName,
-				figLog:       d.FigLog,
 			}
 		},
 	})
 }
 
 // summaryDerivation writes arias/<id>/meta.json.
-type summaryDerivation struct {
-	figLog store.Log[message.Message]
-}
+type summaryDerivation struct{}
 
-func (s *summaryDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
-	now := time.Now().UnixMilli()
-	out := store.AriaMeta{LastActiveMS: now, LastFigaroLT: evt.FigaroLT}
-	msgs := make([]message.Message, 0)
-	for _, e := range s.figLog.Read() {
-		m := e.Payload
-		msgs = append(msgs, m)
-		if m.Role == message.RoleAssistant {
-			out.TurnCount++
-		}
-		if m.Usage != nil {
-			out.TokensIn += m.Usage.InputTokens
-			out.TokensOut += m.Usage.OutputTokens
-			out.CacheReadTokens += m.Usage.CacheReadTokens
-			out.CacheWriteTokens += m.Usage.CacheWriteTokens
-		}
+func (*summaryDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
+	meta := evt.Metadata
+	out := store.AriaMeta{
+		MessageCount:     meta.MessageCount,
+		TurnCount:        meta.TurnCount,
+		TokensIn:         meta.TokensIn,
+		TokensOut:        meta.TokensOut,
+		CacheReadTokens:  meta.CacheReadTokens,
+		CacheWriteTokens: meta.CacheWriteTokens,
+		LastActiveMS:     evt.LastUpdateMS,
+		LastFigaroLT:     meta.LastFigaroLT,
 	}
-	out.MessageCount = message.CountMessages(msgs)
 	return json.NewEncoder(w).Encode(out)
 }
 
@@ -346,7 +326,6 @@ func (t *translatorDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
 type usageDerivation struct {
 	ariaID       string
 	providerName string
-	figLog       store.Log[message.Message]
 }
 
 // Usage is the on-disk shape for usage.json.
@@ -364,47 +343,33 @@ type Usage struct {
 }
 
 func (u *usageDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
+	meta := evt.Metadata
+	providerName := meta.Provider
+	if providerName == "" {
+		providerName = u.providerName
+	}
 	out := Usage{
-		AriaID:       u.ariaID,
-		Provider:     u.providerName,
-		LastFigaroLT: evt.FigaroLT,
-		LastUpdateMS: time.Now().UnixMilli(),
+		AriaID:           u.ariaID,
+		Provider:         providerName,
+		MessageCount:     meta.MessageCount,
+		TurnCount:        meta.TurnCount,
+		TokensIn:         meta.TokensIn,
+		TokensOut:        meta.TokensOut,
+		CacheReadTokens:  meta.CacheReadTokens,
+		CacheWriteTokens: meta.CacheWriteTokens,
+		LastFigaroLT:     meta.LastFigaroLT,
+		LastUpdateMS:     evt.LastUpdateMS,
 	}
-	msgs := make([]message.Message, 0)
-	for _, e := range u.figLog.Read() {
-		m := e.Payload
-		msgs = append(msgs, m)
-		if m.Role == message.RoleAssistant {
-			out.TurnCount++
-		}
-		if m.Usage != nil {
-			out.TokensIn += m.Usage.InputTokens
-			out.TokensOut += m.Usage.OutputTokens
-			out.CacheReadTokens += m.Usage.CacheReadTokens
-			out.CacheWriteTokens += m.Usage.CacheWriteTokens
-		}
-	}
-	out.MessageCount = message.CountMessages(msgs)
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
 }
 
-// metaDerivation writes arias/<id>/derived/meta.json: a self-
-// contained snapshot of every column the `figaro list` and
-// `figaro status` views need. The angelus list handler reads this
-// for dormant arias so the rendered table doesn't show "~0k" /
-// blank model for figaros that aren't currently live.
-//
-// Source of truth: the IR log + the chalkboard snapshot we already
-// receive each tick. Provider/Model are pulled from the snapshot
-// (system.provider / system.model). ContextTokens uses the same
-// estimator the live agent uses (tokens.ContextSize) so the dormant
-// view matches what the user saw right before the figaro went idle.
+// metaDerivation writes arias/<id>/derived/meta.json from the actor's
+// incremental metadata snapshot.
 type metaDerivation struct {
 	ariaID       string
 	providerName string
-	figLog       store.Log[message.Message]
 }
 
 // MetaSnapshot is the on-disk shape for derived/meta.json. Field
@@ -426,33 +391,25 @@ type MetaSnapshot struct {
 }
 
 func (l *metaDerivation) OnTick(w io.Writer, evt DerivationEvent) error {
+	meta := evt.Metadata
+	providerName := meta.Provider
+	if providerName == "" {
+		providerName = l.providerName
+	}
 	out := MetaSnapshot{
-		AriaID:       l.ariaID,
-		Provider:     l.providerName,
-		LastFigaroLT: evt.FigaroLT,
-		LastUpdateMS: time.Now().UnixMilli(),
+		AriaID:           l.ariaID,
+		Provider:         providerName,
+		Model:            meta.Model,
+		MessageCount:     meta.MessageCount,
+		TokensIn:         meta.TokensIn,
+		TokensOut:        meta.TokensOut,
+		CacheReadTokens:  meta.CacheReadTokens,
+		CacheWriteTokens: meta.CacheWriteTokens,
+		ContextTokens:    meta.ContextTokens,
+		ContextExact:     meta.ContextExact,
+		LastFigaroLT:     meta.LastFigaroLT,
+		LastUpdateMS:     evt.LastUpdateMS,
 	}
-	if p := evt.Snapshot.Lookup("system.provider"); p != nil && *p != "" {
-		out.Provider = *p
-	}
-	if m := evt.Snapshot.Lookup("system.model"); m != nil {
-		out.Model = *m
-	}
-
-	entries := l.figLog.Read()
-	msgs := make([]message.Message, 0, len(entries))
-	for _, e := range entries {
-		m := e.Payload
-		msgs = append(msgs, m)
-		if m.Usage != nil {
-			out.TokensIn += m.Usage.InputTokens
-			out.TokensOut += m.Usage.OutputTokens
-			out.CacheReadTokens += m.Usage.CacheReadTokens
-			out.CacheWriteTokens += m.Usage.CacheWriteTokens
-		}
-	}
-	out.MessageCount = message.CountMessages(msgs)
-	out.ContextTokens, out.ContextExact = tokens.ContextSize(msgs)
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
