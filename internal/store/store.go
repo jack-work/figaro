@@ -27,16 +27,6 @@ type AriaMeta struct {
 	LastFigaroLT     uint64 `json:"last_figaro_lt,omitempty"`
 }
 
-// TranslationMeta is the per-provider cache summary.
-type TranslationMeta struct {
-	Provider     string `json:"provider"`
-	EntryCount   int    `json:"entry_count,omitempty"`
-	TotalBytes   int    `json:"total_bytes,omitempty"`
-	Fingerprint  string `json:"fingerprint,omitempty"`
-	LastTransLT  uint64 `json:"last_trans_lt,omitempty"`
-	LastUpdateMS int64  `json:"last_update_ms,omitempty"`
-}
-
 // OwnerInfo describes which node owns a main-LT along a trunk's lineage:
 // a parent trunk (Trunk set), a loadout (Loadout set, its stump name), or
 // the genesis root (IsRoot). Used for the <id>:<LT> addressing announcement.
@@ -116,12 +106,6 @@ type Backend interface {
 
 	// SetMeta sets the aria metadata.
 	SetMeta(ariaID string, meta *AriaMeta) error
-
-	// TranslationMeta returns the per-provider summary.
-	TranslationMeta(ariaID, providerName string) (*TranslationMeta, error)
-
-	// SetTranslationMeta writes the per-provider translator summary.
-	SetTranslationMeta(ariaID, providerName string, meta *TranslationMeta) error
 
 	// LiveBlob returns the persisted open (in-progress) UI message for a
 	// trunk, or nil if none is open. Committed messages live in the

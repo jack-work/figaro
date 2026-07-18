@@ -42,16 +42,12 @@ names are the target: `prose`, `thinking`, `tool`, `image`.
 - **Deferred:** rename `content`/`node` → `block`; the `Content.Text` field →
   `Markdown`; the `TextContent()` constructor → `ProseContent()`.
 
-## Planned near-term
+## Configuration provenance
 
-- **`model`/`provider` are chalkboard values.** Today they sit on
-  `message.Message` (set per assistant turn in `figaro/agent.go`, read in
-  `figaro/derived.go` for list/meta). They should live in the chalkboard
-  (`system.model` / `system.provider` already exist as loadout stamps) and be
-  **derived on read via `ChalkboardState(LT)`** — removing `Message.Model` /
-  `Message.Provider`. Net: the fig IR turn carries content + provenance only;
-  configuration is the chalkboard's job. (Touches the agent write path + the
-  derived/meta read path; do deliberately.)
+`model` and `provider` are chalkboard values. The fig IR carries content and
+provenance; configuration is read from `system.model` and `system.provider`.
+Dormant list metadata comes from the live `_meta` summary, not a second
+derived snapshot.
 
 ## Future (north star + blockers)
 

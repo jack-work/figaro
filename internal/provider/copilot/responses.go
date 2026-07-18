@@ -41,7 +41,6 @@ type responsesProvider struct {
 	templates *template.Template
 	machineID string
 	caches    map[string]store.Log[[]json.RawMessage]
-	cacheFP   map[string]string
 	inputs    map[string]*responseInputSnapshot
 	sessions  map[string]string
 	limits    map[string]responseContextLimits
@@ -71,7 +70,6 @@ func newResponsesProvider(
 		maxTokens: knobs.MaxTokens,
 		machineID: uuid.NewString(),
 		caches:    map[string]store.Log[[]json.RawMessage]{},
-		cacheFP:   map[string]string{},
 		inputs:    map[string]*responseInputSnapshot{},
 		sessions:  map[string]string{},
 		limits:    map[string]responseContextLimits{},
@@ -363,11 +361,7 @@ func (p *responsesProvider) cacheFor(aria string) store.Log[[]json.RawMessage] {
 	defer p.mu.Unlock()
 	fingerprint := responseFingerprint(p.model)
 	if cache, ok := p.caches[aria]; ok {
-		if p.cacheFP[aria] != fingerprint {
-			p.invalidateCache(cache, fingerprint)
-			p.cacheFP[aria] = fingerprint
-			delete(p.inputs, aria)
-		}
+		p.invalidateCache(cache, fingerprint)
 		return cache
 	}
 	cache, err := p.cacheOpen(aria)
@@ -376,7 +370,6 @@ func (p *responsesProvider) cacheFor(aria string) store.Log[[]json.RawMessage] {
 	}
 	p.invalidateCache(cache, fingerprint)
 	p.caches[aria] = cache
-	p.cacheFP[aria] = fingerprint
 	return cache
 }
 

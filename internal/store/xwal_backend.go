@@ -289,9 +289,6 @@ func (b *XwalBackend) dropHandle(id string) {
 func (b *XwalBackend) metaPath(id string) string {
 	return filepath.Join(b.root, "_meta", id+".json")
 }
-func (b *XwalBackend) tmetaPath(id, provider string) string {
-	return filepath.Join(b.root, "_meta", id+"."+provider+".tmeta.json")
-}
 
 func readJSON[T any](path string) (*T, error) {
 	data, err := os.ReadFile(path)
@@ -328,12 +325,6 @@ func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
 		b.store.Touch(ariaID, meta.LastActiveMS) // recency for `figaro list`
 	}
 	return writeJSON(b.metaPath(ariaID), meta)
-}
-func (b *XwalBackend) TranslationMeta(ariaID, providerName string) (*TranslationMeta, error) {
-	return readJSON[TranslationMeta](b.tmetaPath(ariaID, providerName))
-}
-func (b *XwalBackend) SetTranslationMeta(ariaID, providerName string, meta *TranslationMeta) error {
-	return writeJSON(b.tmetaPath(ariaID, providerName), meta)
 }
 
 // ---- live message (the single open/in-progress UI message per trunk) ----

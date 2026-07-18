@@ -80,7 +80,6 @@ type Agent struct {
 	figLog     store.Log[message.Message]
 	backend    store.Backend // nil = ephemeral
 	chalkboard *chalkboard.State
-	derived    *derivedFanout // nil = ephemeral; per-figaro durable derivations
 
 	inbox *Inbox
 
@@ -177,10 +176,6 @@ func NewAgent(cfg Config) *Agent {
 		r.Metrics = a.sessionMetrics()
 		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: r})
 	})
-
-	// Spin up durable-derivation fanout (backed agents only).
-	a.derived = startDerived(ctx, a.id, a.prov.Name(), a.backend, a.figLog, nil)
-	a.derived.Tick(0, a.chalkboard.Snapshot()) // initial materialization
 
 	go a.runWithRecovery(ctx)
 	return a
@@ -399,8 +394,7 @@ func (a *Agent) sessionMetrics() *aria.Metrics {
 
 func (a *Agent) Kill() {
 	a.cancel()
-	<-a.done         // wait for drain loop to exit
-	a.derived.Wait() // wait for derivation loops (so disk writes finish before close)
+	<-a.done
 
 	a.mu.Lock()
 	a.subs = nil
@@ -513,7 +507,6 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	}
 	a.chalkboard.Apply(patch)
 	a.refreshMetrics()
-	a.derived.Tick(0, a.chalkboard.Snapshot())
 }
 
 // chalkAccessor returns the per-LT transition source for the provider:
@@ -571,7 +564,6 @@ func (a *Agent) finishTurn(reason string) {
 	})
 
 	a.writeMeta()
-	a.derived.Tick(0, a.chalkboard.Snapshot())
 }
 
 // writeMeta persists the per-aria summary sidecar so `figaro list` shows
