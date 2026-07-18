@@ -48,8 +48,8 @@ type OwnerInfo struct {
 
 // Backend is the aria storage provider. One per angelus. The only
 // implementation is *XwalBackend (the fork-tree on figwal/xwal); it
-// owns each aria's shared log instance and closes it on Fork / Remove
-// / Close — callers never close what Open returns.
+// owns each aria's shared log instance until Remove / Close — callers
+// never close what Open returns.
 type Backend interface {
 	// Open returns the figaro IR Stream for an aria. The same shared,
 	// memoized instance is returned for every call (so a live agent
@@ -106,9 +106,8 @@ type Backend interface {
 	ConversationIDs() []string
 
 	// CanonicalCount returns the authoritative conversational message count
-	// for an aria, recomputed from its (single, deterministic) live head IR —
-	// the single source of truth, independent of any stale _meta sidecar. It
-	// self-heals a disagreeing sidecar. ok is false if the head can't open.
+	// for an aria, recomputed from its (single, deterministic) live head IR.
+	// Callers that also read metadata reconcile a disagreement.
 	CanonicalCount(ariaID string) (count int, ok bool)
 
 	// Meta returns the aria metadata, or nil if unset.

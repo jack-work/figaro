@@ -27,53 +27,18 @@ const interruptSentinelText = "tool execution was interrupted (recovered on relo
 // Returns the stamped sentinel entry and true when one was appended,
 // so a live caller can fan it out as a log entry.
 func appendInterruptSentinelIfDangling(stream store.Log[message.Message], ariaID string) (store.Entry[message.Message], bool) {
-	entries := stream.Read()
-	if len(entries) == 0 {
+	tail, ok := stream.PeekTail()
+	if !ok || tail.Payload.Role != message.RoleAssistant {
 		return store.Entry[message.Message]{}, false
 	}
 
-	// Find the last assistant turn.
-	lastAssistantIdx := -1
-	for i := len(entries) - 1; i >= 0; i-- {
-		if entries[i].Payload.Role == message.RoleAssistant {
-			lastAssistantIdx = i
-			break
-		}
-	}
-	if lastAssistantIdx < 0 {
-		return store.Entry[message.Message]{}, false
-	}
-
-	assistant := entries[lastAssistantIdx].Payload
+	assistant := tail.Payload
 	if assistant.StopReason != message.StopToolInvoke {
 		return store.Entry[message.Message]{}, false
 	}
 
 	calls := assistantToolInvokes(assistant)
 	if len(calls) == 0 {
-		return store.Entry[message.Message]{}, false
-	}
-
-	// Anything between the dangling assistant and the tail?
-	trailing := entries[lastAssistantIdx+1:]
-	switch {
-	case len(trailing) == 0:
-		// Dangling tool_use at the tail. Append a sentinel.
-	case isResultTicCovering(trailing[0].Payload, calls):
-		// Already satisfied by a real tool_result message.
-		return store.Entry[message.Message]{}, false
-	case message.IsInterruptSentinel(trailing[0].Payload):
-		// Already repaired by a prior boot.
-		return store.Entry[message.Message]{}, false
-	default:
-		// Some other entry sits between the dangling assistant and the
-		// tail. Under append-only we cannot splice in front of it; log
-		// and leave for an operator to inspect.
-		slog.Warn("dangling tool_use followed by unrelated entries; not appending sentinel",
-			"aria", ariaID,
-			"assistant_lt", entries[lastAssistantIdx].LT,
-			"trailing_count", len(trailing),
-		)
 		return store.Entry[message.Message]{}, false
 	}
 
@@ -90,28 +55,8 @@ func appendInterruptSentinelIfDangling(stream store.Log[message.Message], ariaID
 	}
 	slog.Warn("appended interrupt sentinel for dangling tool_use",
 		"aria", ariaID,
-		"assistant_lt", entries[lastAssistantIdx].LT,
+		"assistant_lt", tail.LT,
 		"tool_count", len(calls),
 	)
 	return stamped, true
-}
-
-// isResultTicCovering reports whether m is a user-role message carrying
-// tool_result blocks for every call.
-func isResultTicCovering(m message.Message, calls []message.Content) bool {
-	if m.Role != message.RoleUser {
-		return false
-	}
-	have := make(map[string]bool, len(m.Content))
-	for _, c := range m.Content {
-		if c.Type == message.ContentToolResult {
-			have[c.ToolCallID] = true
-		}
-	}
-	for _, tc := range calls {
-		if !have[tc.ToolCallID] {
-			return false
-		}
-	}
-	return true
 }

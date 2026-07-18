@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figwal/xwal"
 )
 
 // TestMain silences figwal's INFO segment/log chatter (it logs via the
@@ -283,4 +284,84 @@ func BenchmarkBackendList(b *testing.B) {
 	}
 	b.StopTimer()
 	b.ReportMetric(float64(trunkScanCount.Load())/float64(b.N), "scans/op")
+}
+
+func BenchmarkChalkboardState10000(b *testing.B) {
+	be, err := NewXwalBackend(b.TempDir())
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer be.Close()
+	loadout, err := be.CreateLoadout("perf", patchSet(map[string]string{"system.model": "m"}))
+	if err != nil {
+		b.Fatal(err)
+	}
+	id, err := be.CreateConversation(loadout)
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := 0; i < 10_000; i++ {
+		if err := be.ApplyChalkboard(id, patchSet(map[string]string{
+			fmt.Sprintf("key%d", i%100): fmt.Sprintf("value%d", i),
+		})); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := be.ChalkboardState(id); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkChalkboardPatches10000(b *testing.B) {
+	be, err := NewXwalBackend(b.TempDir())
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer be.Close()
+	loadout, err := be.CreateLoadout("perf", patchSet(map[string]string{"system.model": "m"}))
+	if err != nil {
+		b.Fatal(err)
+	}
+	id, err := be.CreateConversation(loadout)
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := 0; i < 10_000; i++ {
+		if err := be.ApplyChalkboard(id, patchSet(map[string]string{
+			fmt.Sprintf("key%d", i%100): fmt.Sprintf("value%d", i),
+		})); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := be.ChalkboardPatches(id); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkVectors10000Branches(b *testing.B) {
+	infos := make([]xwal.TrunkInfo, 10_000)
+	for i := range infos {
+		infos[i].ID = fmt.Sprintf("trunk-%05d", i)
+		if i > 0 {
+			infos[i].Parent = infos[(i-1)/4].ID
+		}
+	}
+	s := &XwalStore{}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if got := len(s.vectorsLocked(infos)); got != len(infos) {
+			b.Fatalf("vectors = %d, want %d", got, len(infos))
+		}
+	}
 }

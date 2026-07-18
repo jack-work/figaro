@@ -163,7 +163,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// Ephemeral first message: fold the boot patch inline so the loadout
 	// reminders render (no channel to hold the transition). State is
 	// already seeded by the caller, so this is render-only.
-	if a.backend == nil && a.inlineBoot != nil && len(a.figLog.Read()) == 0 {
+	if a.backend == nil && a.inlineBoot != nil && a.figLog.Len() == 0 {
 		if !a.inlineBoot.IsEmpty() {
 			msg.Patches = append(msg.Patches, *a.inlineBoot)
 		}
@@ -192,7 +192,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.emitCommit()
 	}
 	a.liveMu.Lock()
-	a.turnStart = len(a.figLog.Read())
+	a.turnStart = a.figLog.Len()
 	a.liveActive = true
 	a.liveMu.Unlock()
 	a.gov = toolout.New(liveOutputTail)
@@ -663,11 +663,11 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 // since the user prompt, plus the in-flight assistant message (nil once
 // it has sealed into the log).
 func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
-	entries := a.figLog.Read()
+	entries := a.figLog.ReadFrom(uint64(a.turnStart+1), 0)
 	var msgs []message.Message
-	for i := a.turnStart; i < len(entries); i++ {
-		m := entries[i].Payload
-		m.LogicalTime = entries[i].LT
+	for _, e := range entries {
+		m := e.Payload
+		m.LogicalTime = e.LT
 		msgs = append(msgs, m)
 	}
 	if inflight != nil {

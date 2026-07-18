@@ -119,6 +119,8 @@ type Agent struct {
 	cacheRead     int
 	cacheWrite    int
 	messageCount  int
+	turnCount     int
+	metricsLT     uint64
 	contextTokens int
 	contextLimit  int
 	contextExact  bool
@@ -159,13 +161,14 @@ func NewAgent(cfg Config) *Agent {
 	}
 	a.inbox = NewInbox(ctx)
 
-	a.refreshMetrics()
+	messages := unwrapMessages(a.figLog.Read())
+	a.refreshMetricsFrom(messages)
 
 	// Build the rendered conversation from the log (each prior unit a closed
 	// aria message), then register the broadcast: every aria-server change is
 	// pushed to subscribers as one aria read.
 	a.ariaSrv = aria.NewServer()
-	for i, u := range compose.Units(unwrapMessages(a.figLog.Read()), a.summarize, a.previewArg) {
+	for i, u := range compose.Units(messages, a.summarize, a.previewArg) {
 		a.unitLT = i + 1
 		a.ariaSrv.Commit(aria.Message{LT: a.unitLT, Role: u.Role, Nodes: u.Nodes})
 	}
@@ -262,9 +265,80 @@ func snapshotContextLimit(snapshot chalkboard.Snapshot) int {
 // deltas. That keeps the status path current without making live rendering
 // repeatedly rescan the full conversation.
 func (a *Agent) refreshMetrics() {
-	msgs := a.Context()
+	a.mu.RLock()
+	metricsLT := a.metricsLT
+	in, out := a.tokensIn, a.tokensOut
+	cacheRead, cacheWrite := a.cacheRead, a.cacheWrite
+	messageCount, turnCount := a.messageCount, a.turnCount
+	contextTokens, contextExact := a.contextTokens, a.contextExact
+	a.mu.RUnlock()
+
+	tail, hasTail := a.figLog.PeekTail()
+	if metricsLT > 0 && (!hasTail || tail.LT < metricsLT) {
+		a.refreshMetricsFrom(a.Context())
+		return
+	}
+	for _, e := range a.figLog.ReadFrom(metricsLT+1, 0) {
+		m := e.Payload
+		if m.Usage != nil {
+			in += m.Usage.InputTokens
+			out += m.Usage.OutputTokens
+			cacheRead += m.Usage.CacheReadTokens
+			cacheWrite += m.Usage.CacheWriteTokens
+			contextTokens = m.Usage.InputTokens + m.Usage.OutputTokens
+			contextExact = true
+		} else {
+			contextTokens += tokens.EstimateMessage(m)
+			contextExact = false
+		}
+		if !message.IsCeremonial(m) {
+			messageCount++
+		}
+		if m.Role == message.RoleAssistant {
+			turnCount++
+		}
+		metricsLT = e.LT
+	}
+
+	snapshot := a.Snapshot()
+	model := snapshotString(snapshot, "system.model")
+	contextLimit := 0
+	if resolver, ok := a.prov.(provider.ContextLimitProvider); ok {
+		contextLimit = resolver.ContextLimit(model, snapshot)
+	}
+	if contextLimit == 0 {
+		contextLimit = snapshotContextLimit(snapshot)
+	}
+
+	a.mu.Lock()
+	a.tokensIn = in
+	a.tokensOut = out
+	a.cacheRead = cacheRead
+	a.cacheWrite = cacheWrite
+	a.messageCount = messageCount
+	a.turnCount = turnCount
+	a.metricsLT = metricsLT
+	a.contextTokens = contextTokens
+	a.contextExact = contextExact
+	a.contextLimit = contextLimit
+	a.model = model
+	a.mantra = snapshotString(snapshot, "mantra")
+	a.mu.Unlock()
+}
+
+func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	in, out, cacheRead, cacheWrite := sumUsage(msgs)
 	contextTokens, contextExact := tokens.ContextSize(msgs)
+	turnCount := 0
+	var metricsLT uint64
+	for _, m := range msgs {
+		if m.Role == message.RoleAssistant {
+			turnCount++
+		}
+		if m.LogicalTime > metricsLT {
+			metricsLT = m.LogicalTime
+		}
+	}
 	snapshot := a.Snapshot()
 	model := snapshotString(snapshot, "system.model")
 	contextLimit := 0
@@ -281,6 +355,8 @@ func (a *Agent) refreshMetrics() {
 	a.cacheRead = cacheRead
 	a.cacheWrite = cacheWrite
 	a.messageCount = message.CountMessages(msgs)
+	a.turnCount = turnCount
+	a.metricsLT = metricsLT
 	a.contextTokens = contextTokens
 	a.contextExact = contextExact
 	a.contextLimit = contextLimit
@@ -582,6 +658,8 @@ func (a *Agent) writeMeta() {
 	}
 	a.mu.RLock()
 	meta := &store.AriaMeta{
+		MessageCount:     a.messageCount,
+		TurnCount:        a.turnCount,
 		TokensIn:         a.tokensIn,
 		TokensOut:        a.tokensOut,
 		CacheReadTokens:  a.cacheRead,
@@ -589,13 +667,9 @@ func (a *Agent) writeMeta() {
 		LastActiveMS:     a.lastActive.UnixMilli(),
 	}
 	a.mu.RUnlock()
-	for _, e := range a.figLog.Read() {
-		if e.Payload.Role == message.RoleAssistant {
-			meta.TurnCount++
-		}
-		meta.LastFigaroLT = e.LT
+	if tail, ok := a.figLog.PeekTail(); ok {
+		meta.LastFigaroLT = tail.LT
 	}
-	meta.MessageCount = message.CountMessages(unwrapMessages(a.figLog.Read()))
 	if err := a.backend.SetMeta(a.id, meta); err != nil {
 		slog.Warn("write aria meta", "aria", a.id, "err", err)
 	}

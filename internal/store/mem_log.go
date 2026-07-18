@@ -1,6 +1,9 @@
 package store
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
 
 // MemLog[T] is an in-memory Log[T] with no persistence.
 type MemLog[T any] struct {
@@ -23,6 +26,33 @@ func (s *MemLog[T]) Read() []Entry[T] {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.entries
+}
+
+func (s *MemLog[T]) Len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.entries)
+}
+
+func (s *MemLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	start := sort.Search(len(s.entries), func(i int) bool {
+		return s.entries[i].FigaroLT >= figaroLT
+	})
+	end := len(s.entries)
+	if n > 0 && start+n < end {
+		end = start + n
+	}
+	out := make([]Entry[T], end-start)
+	copy(out, s.entries[start:end])
+	return out
+}
+
+func (s *MemLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return readPage(s.entries, from, before, n)
 }
 
 func (s *MemLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {

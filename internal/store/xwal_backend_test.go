@@ -172,6 +172,74 @@ func str(raw json.RawMessage) string {
 	return s
 }
 
+func TestXwalBackendForkKeepsLiveLogUsable(t *testing.T) {
+	b, err := NewXwalBackend(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	loadout, err := b.CreateLoadout("default", patchSet(map[string]string{"system.model": "m"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conv, err := b.CreateConversation(loadout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := b.Open(conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := live.Append(Entry[message.Message]{Payload: userText("before")}); err != nil {
+		t.Fatal(err)
+	}
+
+	cont, alt, err := b.Fork(conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cont != conv {
+		t.Fatalf("continuation = %q, want stable trunk %q", cont, conv)
+	}
+	if _, err := live.Append(Entry[message.Message]{Payload: userText("after")}); err != nil {
+		t.Fatalf("append through pre-fork live handle: %v", err)
+	}
+	if got := message.CountMessages(messages(live.Read())); got != 2 {
+		t.Fatalf("live continuation count = %d, want 2", got)
+	}
+	alternative, err := b.Open(alt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := message.CountMessages(messages(alternative.Read())); got != 1 {
+		t.Fatalf("alternative count = %d, want fork snapshot count 1", got)
+	}
+}
+
+func TestXwalBackendOpenUnknownDoesNotCreateTrunk(t *testing.T) {
+	b, err := NewXwalBackend(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	before := b.ConversationIDs()
+	if _, err := b.Open("missing"); err == nil {
+		t.Fatal("Open(missing) succeeded")
+	}
+	after := b.ConversationIDs()
+	if len(after) != len(before) {
+		t.Fatalf("unknown Open changed trunk count from %d to %d", len(before), len(after))
+	}
+}
+
+func messages(entries []Entry[message.Message]) []message.Message {
+	out := make([]message.Message, len(entries))
+	for i, entry := range entries {
+		out[i] = entry.Payload
+	}
+	return out
+}
+
 func TestXwalBackend_ForkAtInterior(t *testing.T) {
 	b, err := NewXwalBackend(t.TempDir())
 	if err != nil {

@@ -1,6 +1,9 @@
 package store
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
 
 // cachedLog is a memoized read-through view over a Log[T]: it materializes
 // the channel's entries in memory on open and serves reads from there,
@@ -32,6 +35,33 @@ func (c *cachedLog[T]) Read() []Entry[T] {
 	out := make([]Entry[T], len(c.rows))
 	copy(out, c.rows)
 	return out
+}
+
+func (c *cachedLog[T]) Len() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.rows)
+}
+
+func (c *cachedLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	start := sort.Search(len(c.rows), func(i int) bool {
+		return c.rows[i].FigaroLT >= figaroLT
+	})
+	end := len(c.rows)
+	if n > 0 && start+n < end {
+		end = start + n
+	}
+	out := make([]Entry[T], end-start)
+	copy(out, c.rows[start:end])
+	return out
+}
+
+func (c *cachedLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return readPage(c.rows, from, before, n)
 }
 
 func (c *cachedLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {

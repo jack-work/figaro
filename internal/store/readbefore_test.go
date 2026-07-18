@@ -86,3 +86,15 @@ func TestReadBefore_CachedLog(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []uint64{40, 50}, fks(c.ReadBefore(60, 2)))
 }
+
+func TestReadPage(t *testing.T) {
+	c := newCachedLog[uint64](buildLog(t, []uint64{10, 20, 30, 40, 50}))
+
+	page, total := c.ReadPage(20, 0, 2)
+	assert.Equal(t, 5, total)
+	assert.Equal(t, []uint64{20, 30}, fks(page))
+
+	page, total = c.ReadPage(0, 50, 2)
+	assert.Equal(t, 5, total)
+	assert.Equal(t, []uint64{30, 40}, fks(page))
+}

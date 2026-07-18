@@ -18,7 +18,6 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
@@ -408,10 +407,8 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	}, nil
 }
 
-// fork branches a conversation at its head. The live agent (if any) is
-// killed first — the node freezes and keeps its id as a read-only index
-// node — and both fresh children become dormant conversations the
-// caller can attach to.
+// fork branches a conversation at its head. The addressed trunk keeps its id
+// and remains live; the alternative is a new dormant conversation.
 func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ForkRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -419,19 +416,6 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	if h.angelus.Backend == nil {
 		return nil, errors.New("fork: no backend (ephemeral angelus)")
-	}
-	node, ok := h.angelus.Backend.Node(req.FigaroID)
-	if !ok {
-		return nil, fmt.Errorf("fork: no aria %q", req.FigaroID)
-	}
-	if node.Kind != "conversation" {
-		return nil, fmt.Errorf("fork: %q is a %s node, not a conversation", req.FigaroID, node.Kind)
-	}
-	// Stop the live agent so it releases the node before it freezes.
-	if h.angelus.Registry.Get(req.FigaroID) != nil {
-		if err := h.angelus.Registry.Kill(req.FigaroID); err != nil {
-			return nil, fmt.Errorf("fork: kill live agent: %w", err)
-		}
 	}
 	// Announce when an interior <id>:<LT> resolves to an owning ancestor —
 	// the LT lives in a parent trunk / loadout / the genesis root, so the
@@ -474,13 +458,6 @@ func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interfa
 	}
 	if h.angelus.Backend == nil {
 		return nil, errors.New("promote: no backend (ephemeral angelus)")
-	}
-	node, ok := h.angelus.Backend.Node(req.FigaroID)
-	if !ok {
-		return nil, fmt.Errorf("promote: no aria %q", req.FigaroID)
-	}
-	if node.Kind != conversationKind {
-		return nil, fmt.Errorf("promote: %q is a %s node, not a conversation", req.FigaroID, node.Kind)
 	}
 	climbed, err := h.angelus.Backend.Promote(req.FigaroID, req.Levels)
 	if errors.Is(err, store.ErrAtStump) {
@@ -634,6 +611,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 	_ = json.Unmarshal(params, &req)
 
 	live := h.angelus.Registry.List()
+	boundPIDs := h.angelus.Registry.BoundPIDsByFigaro()
 	result := make([]rpc.FigaroInfoResponse, 0, len(live))
 	enrichments := make([]listEnrichment, 0, len(live))
 	seen := make(map[string]struct{}, len(live))
@@ -654,7 +632,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			ContextExact:     info.ContextExact,
 			CreatedAt:        info.CreatedAt.UnixMilli(),
 			LastActive:       info.LastActive.UnixMilli(),
-			BoundPIDs:        h.angelus.Registry.BoundPIDs(info.ID),
+			BoundPIDs:        boundPIDs[info.ID],
 		}
 		result = append(result, entry)
 		if !req.IDsOnly {
@@ -773,6 +751,11 @@ func (h *handlers) enrichList(result []rpc.FigaroInfoResponse, tasks []listEnric
 					}
 					if count, ok := h.angelus.Backend.CanonicalCount(task.ariaID); ok {
 						entry.MessageCount = count
+						if meta != nil && meta.MessageCount != count {
+							updated := *meta
+							updated.MessageCount = count
+							_ = h.angelus.Backend.SetMeta(task.ariaID, &updated)
+						}
 					}
 				}
 				h.fillFromChalkboard(task.ariaID, entry)
@@ -928,21 +911,12 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 		return nil, errors.New("aria.read: no backend (ephemeral angelus)")
 	}
 
-	// The node must exist in the tree; otherwise Open would materialize
-	// an empty branch for a typo'd id.
-	if _, ok := h.angelus.Backend.Node(req.FigaroID); !ok {
-		return nil, fmt.Errorf("aria.read: no aria %q in tree", req.FigaroID)
-	}
-
 	// The backend returns the same shared, memoized IR instance the live
 	// agent holds, so reads run lock-free against its writes.
 	log, err := h.angelus.Backend.Open(req.FigaroID)
 	if err != nil {
 		return nil, fmt.Errorf("aria.read: open: %w", err)
 	}
-
-	all := log.Read()
-	total := len(all)
 
 	limit := req.Limit
 	if limit <= 0 || limit > ariaReadHardCap {
@@ -951,16 +925,7 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 
 	// Keyset pagination: Before takes precedence over From.
 	if req.Before > 0 {
-		var selected []store.Entry[message.Message]
-		for i := len(all) - 1; i >= 0 && len(selected) < limit; i-- {
-			if all[i].LT < req.Before {
-				selected = append(selected, all[i])
-			}
-		}
-		// Reverse to chronological order.
-		for i, j := 0, len(selected)-1; i < j; i, j = i+1, j-1 {
-			selected[i], selected[j] = selected[j], selected[i]
-		}
+		selected, total := log.ReadPage(0, req.Before, limit)
 		entries := make([]rpc.AriaReadEntry, len(selected))
 		for i, e := range selected {
 			raw, _ := json.Marshal(e.Payload)
@@ -973,27 +938,13 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 		return &rpc.AriaReadResponse{Entries: entries, Total: total, NextFrom: nextBefore}, nil
 	}
 
-	from := req.From
-	startIdx := 0
-	if from > 0 {
-		for i, e := range all {
-			if e.LT >= from {
-				startIdx = i
-				break
-			}
-			if i == len(all)-1 {
-				startIdx = len(all)
-			}
-		}
+	selected, total := log.ReadPage(req.From, 0, limit+1)
+	page := selected
+	if len(page) > limit {
+		page = page[:limit]
 	}
-
-	endIdx := startIdx + limit
-	if endIdx > len(all) {
-		endIdx = len(all)
-	}
-
-	out := make([]rpc.AriaReadEntry, 0, endIdx-startIdx)
-	for _, e := range all[startIdx:endIdx] {
+	out := make([]rpc.AriaReadEntry, 0, len(page))
+	for _, e := range page {
 		raw, mErr := json.Marshal(e.Payload)
 		if mErr != nil {
 			return nil, fmt.Errorf("aria.read: marshal LT=%d: %w", e.LT, mErr)
@@ -1001,8 +952,8 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 		out = append(out, rpc.AriaReadEntry{LT: e.LT, Payload: raw})
 	}
 	var nextFrom uint64
-	if endIdx < len(all) {
-		nextFrom = all[endIdx].LT
+	if len(selected) > limit {
+		nextFrom = selected[limit].LT
 	}
 	return rpc.AriaReadResponse{
 		Entries:  out,
@@ -1018,16 +969,6 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figar
 	}
 	if h.angelus.Backend == nil {
 		return nil, fmt.Errorf("no backend configured")
-	}
-	node, ok := h.angelus.Backend.Node(ariaID)
-	if !ok {
-		return nil, fmt.Errorf("aria %q not found in tree", ariaID)
-	}
-	if node.Kind != "conversation" {
-		return nil, fmt.Errorf("aria %q is a %s node, not a conversation", ariaID, node.Kind)
-	}
-	if node.Frozen {
-		return nil, fmt.Errorf("aria %q is frozen (a fork point); attach a child", ariaID)
 	}
 	return h.restoreOne(ctx, ariaID)
 }

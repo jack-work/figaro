@@ -17,6 +17,32 @@ type memLog struct {
 }
 
 func (m *memLog) Read() []store.Entry[message.Message] { return m.entries }
+func (m *memLog) Len() int                             { return len(m.entries) }
+func (m *memLog) ReadFrom(lt uint64, n int) []store.Entry[message.Message] {
+	var out []store.Entry[message.Message]
+	for _, e := range m.entries {
+		if e.FigaroLT >= lt && (n <= 0 || len(out) < n) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+func (m *memLog) ReadPage(from, before uint64, n int) ([]store.Entry[message.Message], int) {
+	rows := m.entries
+	if before > 0 {
+		var out []store.Entry[message.Message]
+		for i := len(rows) - 1; i >= 0 && len(out) < n; i-- {
+			if rows[i].FigaroLT < before {
+				out = append(out, rows[i])
+			}
+		}
+		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+			out[i], out[j] = out[j], out[i]
+		}
+		return out, len(rows)
+	}
+	return m.ReadFrom(from, n), len(rows)
+}
 func (m *memLog) Lookup(uint64) (store.Entry[message.Message], bool) {
 	return store.Entry[message.Message]{}, false
 }
