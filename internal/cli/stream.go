@@ -296,20 +296,29 @@ func (in *interactiveInput) enterTranscript() {
 	in.mu.Unlock()
 }
 
-func (in *interactiveInput) pageOlder() {
-	in.mu.Lock()
-	cur, need := in.lt.transcriptOlderCursor()
-	in.mu.Unlock()
-	if !need {
-		return
-	}
-	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-	r, rerr := in.fcli.ReadBefore(rctx, cur, transcriptPageSize)
-	rcancel()
-	if rerr == nil {
+func (in *interactiveInput) pageTranscript() {
+	for {
 		in.mu.Lock()
-		in.lt.transcriptApplyOlder(r)
+		req, need := in.lt.transcriptPageCursor()
 		in.mu.Unlock()
+		if !need {
+			return
+		}
+		rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+		r, rerr := in.fcli.ReadBefore(rctx, req.before, transcriptPageSize)
+		rcancel()
+		in.mu.Lock()
+		if rerr != nil {
+			in.lt.transcriptPageFailed()
+			in.mu.Unlock()
+			return
+		}
+		in.lt.transcriptApplyPage(req, r)
+		searching := in.lt.transcriptSearchingHistory()
+		in.mu.Unlock()
+		if !searching {
+			return
+		}
 	}
 }
 
@@ -348,7 +357,7 @@ func (in *interactiveInput) run() {
 						in.mu.Lock()
 						in.lt.transcriptScroll(delta)
 						in.mu.Unlock()
-						in.pageOlder()
+						in.pageTranscript()
 					}
 					continue
 				}
@@ -368,7 +377,7 @@ func (in *interactiveInput) run() {
 					}
 					in.lt.transcriptSelect(delta, key.shift || key.alt)
 					in.mu.Unlock()
-					in.pageOlder()
+					in.pageTranscript()
 					continue
 				}
 				var representable bool
@@ -437,7 +446,7 @@ func (in *interactiveInput) run() {
 				in.mu.Lock()
 				in.lt.transcriptKey(b)
 				in.mu.Unlock()
-				in.pageOlder()
+				in.pageTranscript()
 			}
 		}
 	}

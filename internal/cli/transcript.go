@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"html"
 	"io"
 	"strings"
 	"time"
@@ -17,12 +18,11 @@ const (
 	altScreenOff = "\x1b[?1049l"
 )
 
-// transcript is a full-screen, live-updating pager over the whole conversation,
+// transcript is a full-screen, live-updating pager over a paged conversation,
 // drawn on the alternate screen and toggled with Ctrl-T. Because it owns a fixed
-// canvas with its own scroll buffer (over the in-memory aria model), it is both
-// resize-clean and scrollable — the two things inline can't do at once. It reads
-// the shared aria.Client, so it streams live: at the bottom it follows new
-// output, otherwise it holds your scroll position.
+// canvas with a bounded message window, it is both resize-clean and scrollable
+// without retaining or re-rendering the whole aria. At the bottom it follows
+// the shared client's live tail; otherwise it holds the current page window.
 //
 // Keys: j/k line, u/d half-page, gg/G top/bottom, / literal search, ? help
 // panel. Exit is Ctrl-D/Ctrl-C at the input loop. Not safe for concurrent use;
@@ -54,7 +54,12 @@ type transcript struct {
 	// Twitter"). checkOlder is armed by an upward scroll; noMoreOlder latches
 	// once a fetch comes back empty.
 	checkOlder  bool
+	checkNewer  bool
 	noMoreOlder bool
+	pages       []transcriptPage
+	newer       []int
+	search      *transcriptSearch
+	heldOpen    *aria.Message
 
 	// rowCache memoizes unstyled rows of committed messages. Selection is
 	// applied after retrieval, so moving through nodes never re-renders prose.
@@ -63,6 +68,33 @@ type transcript struct {
 	nodeRows  map[nodeRef]nodeSpan
 	selection nodeSelection
 	expanded  map[nodeRef]bool
+}
+
+type transcriptPage struct {
+	before   int
+	messages []aria.Message
+}
+
+type transcriptSearch struct {
+	query       string
+	pages       []transcriptPage
+	newer       []int
+	offset      int
+	follow      bool
+	noMoreOlder bool
+	direction   transcriptPageDirection
+}
+
+type transcriptPageDirection uint8
+
+const (
+	pageOlder transcriptPageDirection = iota + 1
+	pageNewer
+)
+
+type transcriptPageRequest struct {
+	before    int
+	direction transcriptPageDirection
 }
 
 func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string, startedAt time.Time) *transcript {
@@ -81,6 +113,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query = false, false, ""
+	t.resetToTail()
 	io.WriteString(t.out, altScreenOn+autowrapOff+ldmouse.Enable+cursorHide+"\x1b[2J")
 	t.render()
 }
@@ -100,58 +133,228 @@ func (t *transcript) scrollBy(delta int) {
 		return
 	}
 	t.offset += delta
-	t.follow = false
+	t.stopFollowing()
 	if delta < 0 {
 		t.checkOlder = true // scrolled up: maybe page older history
+	} else if delta > 0 {
+		t.checkNewer = true
 	}
 	t.render()
 }
 
 // transcriptPageSize is how many older messages a single scroll-up fetch pulls.
-const transcriptPageSize = 30
+const (
+	transcriptPageSize  = 30
+	transcriptPageLimit = 3
+	transcriptTailLimit = 2 * transcriptPageSize
+)
 
-// olderCursor returns (beforeLT, true) when a recent upward scroll has brought
-// the viewport near the top and older history may still exist — the caller
-// should fetch ReadBefore(beforeLT, transcriptPageSize) off-lock and hand the
-// result to applyOlder. It consumes the armed flag.
-func (t *transcript) olderCursor() (int, bool) {
-	if !t.checkOlder || t.noMoreOlder {
-		return 0, false
+func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
+	if t.checkOlder && t.noMoreOlder {
+		t.checkOlder = false
 	}
-	t.checkOlder = false
-	if t.offset >= t.h { // not near the top yet
-		return 0, false
+	if t.checkOlder && !t.noMoreOlder {
+		t.checkOlder = false
+		if t.search == nil && t.offset >= t.h {
+			return transcriptPageRequest{}, false
+		}
+		oldest, ok := t.oldestLT()
+		if !ok {
+			return transcriptPageRequest{}, false
+		}
+		if oldest <= 1 {
+			t.noMoreOlder = true
+			t.finishSearch(false)
+			t.render()
+			return transcriptPageRequest{}, false
+		}
+		return transcriptPageRequest{before: oldest, direction: pageOlder}, true
 	}
-	v := t.client.View()
-	if len(v.Closed) == 0 {
-		return 0, false
+	if t.checkNewer && len(t.newer) > 0 {
+		t.checkNewer = false
+		if t.search == nil && t.offset+t.h < len(t.lineLT) {
+			return transcriptPageRequest{}, false
+		}
+		return transcriptPageRequest{before: t.newer[len(t.newer)-1], direction: pageNewer}, true
 	}
-	oldest := v.Closed[0].LT
-	if oldest <= 1 { // LTs start at 1 — nothing older
-		t.noMoreOlder = true
-		return 0, false
-	}
-	return oldest, true
+	return transcriptPageRequest{}, false
 }
 
-// applyOlder folds paged-in older history into the model and keeps the viewport
-// anchored: older messages sort to the front, so the offset shifts down by the
-// number of rows added above. An empty result latches noMoreOlder.
-func (t *transcript) applyOlder(r aria.AriaRead) {
+func (t *transcript) applyPage(req transcriptPageRequest, r aria.AriaRead) {
 	if !t.active {
 		return
 	}
-	if len(r.Committed) == 0 {
+	messages := committedMessages(r.Committed)
+	if len(messages) == 0 {
+		if req.direction == pageOlder {
+			t.noMoreOlder = true
+			t.finishSearch(false)
+			t.render()
+		} else if t.search != nil {
+			t.wrapSearchOlder()
+		}
+		return
+	}
+	searching := t.search != nil
+	anchorLT, within := 0, 0
+	if !searching {
+		anchorLT, within = t.viewportAnchor()
+	}
+	page := transcriptPage{before: req.before, messages: messages}
+	switch req.direction {
+	case pageOlder:
+		t.pages = append([]transcriptPage{page}, t.pages...)
+	case pageNewer:
+		t.pages = append(t.pages, page)
+		if len(t.newer) > 0 {
+			t.newer = t.newer[:len(t.newer)-1]
+		}
+	}
+	t.trimPages(req.direction)
+	if searching {
+		if t.findPage(t.search.query, messages) {
+			t.search = nil
+		} else if t.search.direction == pageNewer {
+			if len(t.newer) > 0 {
+				t.checkNewer = true
+			} else {
+				t.wrapSearchOlder()
+			}
+		} else {
+			t.checkOlder = true
+		}
+		if t.search != nil {
+			return
+		}
+	} else {
+		t.lines()
+		t.restoreViewportAnchor(anchorLT, within)
+	}
+	t.render()
+}
+
+func committedMessages(in []aria.Committed) []aria.Message {
+	messages := make([]aria.Message, 0, len(in))
+	for _, m := range in {
+		if m.Full() {
+			messages = append(messages, aria.Message{LT: m.LT, Role: m.Role, Nodes: m.Nodes})
+		}
+	}
+	return messages
+}
+
+func (t *transcript) trimPages(direction transcriptPageDirection) {
+	for len(t.pages) > transcriptPageLimit {
+		drop := 0
+		if direction == pageOlder {
+			drop = len(t.pages) - 1
+		}
+		if t.selection.active && t.pageContainsSelection(t.pages[drop]) {
+			return
+		}
+		page := t.pages[drop]
+		if direction == pageOlder {
+			t.newer = append(t.newer, page.before)
+		}
+		t.dropPage(page)
+		t.pages = append(t.pages[:drop], t.pages[drop+1:]...)
+		if direction == pageNewer {
+			t.noMoreOlder = false
+		}
+	}
+}
+
+func (t *transcript) pageContainsSelection(page transcriptPage) bool {
+	if len(page.messages) == 0 {
+		return false
+	}
+	first, last := t.selection.anchor.lt, t.selection.focus.lt
+	if first > last {
+		first, last = last, first
+	}
+	pageFirst := page.messages[0].LT
+	pageLast := page.messages[len(page.messages)-1].LT
+	return pageFirst <= last && pageLast >= first
+}
+
+func (t *transcript) dropPage(page transcriptPage) {
+	for _, m := range page.messages {
+		delete(t.rowCache, m.LT)
+		for ref := range t.expanded {
+			if ref.lt == m.LT {
+				delete(t.expanded, ref)
+			}
+		}
+	}
+}
+
+func (t *transcript) resetToTail() {
+	v := t.client.View()
+	closed := v.Closed
+	if len(closed) > transcriptPageSize {
+		closed = closed[len(closed)-transcriptPageSize:]
+	}
+	t.pages = nil
+	if len(closed) > 0 {
+		t.pages = []transcriptPage{{before: closed[len(closed)-1].LT + 1, messages: closed}}
+	}
+	t.newer = nil
+	t.checkNewer = false
+	t.heldOpen = nil
+	t.noMoreOlder = len(closed) > 0 && closed[0].LT <= 1
+	t.pruneCaches()
+}
+
+func (t *transcript) pruneCaches() {
+	keep := make(map[int]bool)
+	for _, m := range t.messages() {
+		keep[m.LT] = true
+	}
+	for lt := range t.rowCache {
+		if !keep[lt] {
+			delete(t.rowCache, lt)
+		}
+	}
+	for ref := range t.expanded {
+		if !keep[ref.lt] {
+			delete(t.expanded, ref)
+		}
+	}
+}
+
+func (t *transcript) messages() []aria.Message {
+	n := 0
+	for _, page := range t.pages {
+		n += len(page.messages)
+	}
+	out := make([]aria.Message, 0, n)
+	for _, page := range t.pages {
+		out = append(out, page.messages...)
+	}
+	return out
+}
+
+func (t *transcript) oldestLT() (int, bool) {
+	for _, page := range t.pages {
+		if len(page.messages) > 0 {
+			return page.messages[0].LT, true
+		}
+	}
+	return 0, false
+}
+
+func (t *transcript) olderCursor() (int, bool) {
+	req, ok := t.pageCursor()
+	return req.before, ok && req.direction == pageOlder
+}
+
+func (t *transcript) applyOlder(r aria.AriaRead) {
+	messages := t.messages()
+	if len(messages) == 0 {
 		t.noMoreOlder = true
 		return
 	}
-	before := len(t.lines())
-	t.client.Apply(r)
-	after := len(t.lines())
-	if d := after - before; d > 0 {
-		t.offset += d
-	}
-	t.render()
+	t.applyPage(transcriptPageRequest{before: messages[0].LT, direction: pageOlder}, r)
 }
 
 func (t *transcript) resize(w, h int) {
@@ -159,42 +362,53 @@ func (t *transcript) resize(w, h int) {
 	// changes line counts, so keeping the raw line offset would jump the view.
 	// Record the top message's LT + how many lines into it we are, then restore
 	// after re-rendering at the new width. (Skipped when following the tail.)
-	anchorLT, within := 0, 0
-	if !t.follow && t.offset < len(t.lineLT) {
-		anchorLT = t.lineLT[t.offset]
-		s := t.offset
-		for s > 0 && t.lineLT[s-1] == anchorLT {
-			s--
-		}
-		within = t.offset - s
-	}
+	anchorLT, within := t.viewportAnchor()
 	t.w, t.h = w, h
 	t.prev = nil // full repaint (diff vs nil); no \x1b[2J, which flickers
 	t.lines()    // re-render at the new width, repopulating lineLT
-	if anchorLT != 0 {
-		for i, lt := range t.lineLT {
-			if lt == anchorLT {
-				t.offset = i + within
-				break
-			}
+	t.restoreViewportAnchor(anchorLT, within)
+	t.render()
+}
+
+func (t *transcript) viewportAnchor() (int, int) {
+	if t.follow || t.offset >= len(t.lineLT) {
+		return 0, 0
+	}
+	lt := t.lineLT[t.offset]
+	start := t.offset
+	for start > 0 && t.lineLT[start-1] == lt {
+		start--
+	}
+	return lt, t.offset - start
+}
+
+func (t *transcript) restoreViewportAnchor(lt, within int) {
+	if lt == 0 {
+		return
+	}
+	for i, lineLT := range t.lineLT {
+		if lineLT == lt {
+			t.offset = i + within
+			return
 		}
 	}
-	t.render()
 }
 
 func (t *transcript) invalidateRows() {
 	t.rowCache = map[int]cachedMessage{}
 }
 
-// lines renders the whole conversation (committed messages + the open one) to
-// physical rows, separated by a rule. Committed messages are immutable, so their
-// rendered rows are cached by LT — only the open message renders every frame.
+// lines renders the retained message window and live tail to physical rows.
+// Committed messages are immutable, so their rendered rows are cached by LT;
+// only the open message renders every frame.
 func (t *transcript) lines() []string {
+	if t.follow {
+		t.resetToTail()
+	}
 	if t.cacheW != t.w { // width changed: cached rows are stale
 		t.rowCache = map[int]cachedMessage{}
 		t.cacheW = t.w
 	}
-	v := t.client.View()
 	marks := t.selectionMarks()
 	var out []string
 	var lts []int // LT owning each line (0 for separator rules), parallel to out
@@ -219,7 +433,7 @@ func (t *transcript) lines() []string {
 			lts = append(lts, lt)
 		}
 	}
-	for _, m := range v.Closed {
+	for _, m := range t.messages() {
 		rows, ok := t.rowCache[m.LT]
 		if !ok {
 			rows = t.renderMsgBase(m)
@@ -227,11 +441,25 @@ func (t *transcript) lines() []string {
 		}
 		appendMsg(rows.rows, m.LT)
 	}
-	if v.Open != nil {
-		appendMsg(t.renderMsgBase(*v.Open).rows, v.Open.LT)
+	if open := t.openMessage(); open != nil {
+		appendMsg(t.renderMsgBase(*open).rows, open.LT)
 	}
 	t.lineLT = lts
 	return out
+}
+
+func (t *transcript) openMessage() *aria.Message {
+	if !t.follow {
+		return t.heldOpen
+	}
+	return t.client.View().Open
+}
+
+func (t *transcript) stopFollowing() {
+	if t.follow {
+		t.heldOpen = t.client.View().Open
+	}
+	t.follow = false
 }
 
 // renderMsgBase renders one message without selection decoration. Committed
@@ -401,23 +629,27 @@ func (t *transcript) key(b byte) {
 	switch b {
 	case 'j':
 		t.offset++
-		t.follow = false
+		t.stopFollowing()
+		t.checkNewer = true
 	case 'k':
 		t.offset--
-		t.follow = false
+		t.stopFollowing()
 		t.checkOlder = true
 	case 'd':
 		t.offset += t.h / 2
-		t.follow = false
+		t.stopFollowing()
+		t.checkNewer = true
 	case 'u':
 		t.offset -= t.h / 2
-		t.follow = false
+		t.stopFollowing()
 		t.checkOlder = true
 	case 'G':
 		t.follow = true
+		t.resetToTail()
 	case 'g':
 		if t.pendG {
-			t.offset, t.follow = 0, false
+			t.offset = 0
+			t.stopFollowing()
 			t.checkOlder = true
 		}
 	case '/':
@@ -464,11 +696,217 @@ func (t *transcript) find(q string) {
 	}
 	for i := 0; i < len(all); i++ {
 		idx := (t.offset + 1 + i) % len(all)
-		if strings.Contains(all[idx], q) {
-			t.offset, t.follow = idx, false
+		if searchContains(all[idx], q) {
+			t.offset = idx
+			t.stopFollowing()
 			return
 		}
 	}
+	t.search = &transcriptSearch{
+		query: q, pages: append([]transcriptPage(nil), t.pages...),
+		newer: append([]int(nil), t.newer...), offset: t.offset,
+		follow: t.follow, noMoreOlder: t.noMoreOlder,
+		direction: pageOlder,
+	}
+	t.stopFollowing()
+	if len(t.newer) > 0 {
+		t.search.direction = pageNewer
+		t.checkNewer = true
+	} else {
+		t.checkOlder = true
+	}
+}
+
+func (t *transcript) findPage(q string, messages []aria.Message) bool {
+	for _, m := range messages {
+		if !t.messageMayRenderQuery(m, q) {
+			continue
+		}
+		rows, ok := t.rowCache[m.LT]
+		if !ok {
+			rows = t.renderMsgBase(m)
+			t.rowCache[m.LT] = rows
+		}
+		for _, row := range rows.rows {
+			if searchContains(row.text, q) {
+				all := t.lines()
+				for i, line := range all {
+					if t.lineLT[i] == m.LT && searchContains(line, q) {
+						t.offset, t.follow = i, false
+						return true
+					}
+				}
+				return false
+			}
+		}
+	}
+	return false
+}
+
+func searchContains(row, q string) bool {
+	if !strings.ContainsRune(row, '\x1b') {
+		return strings.Contains(row, q)
+	}
+	var visible strings.Builder
+	visible.Grow(len(row))
+	for i := 0; i < len(row); {
+		if row[i] != '\x1b' {
+			visible.WriteByte(row[i])
+			i++
+			continue
+		}
+		if i+1 >= len(row) {
+			break
+		}
+		if row[i+1] == '[' {
+			i += 2
+			for i < len(row) {
+				final := row[i]
+				i++
+				if final >= 0x40 && final <= 0x7e {
+					break
+				}
+			}
+			continue
+		}
+		i += 2
+	}
+	return strings.Contains(visible.String(), q)
+}
+
+func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
+	if strings.Contains(messageHeader(m.Role), q) {
+		return true
+	}
+	verbose := false
+	if view, ok := t.view.(*ariaView); ok && view.settings != nil {
+		verbose = view.settings.verbose
+	}
+	for i, n := range m.Nodes {
+		if markdownMayRenderQuery(n.Markdown, q) || strings.Contains(n.Name, q) ||
+			strings.Contains(n.Summary, q) || strings.Contains(n.Output, q) {
+			return true
+		}
+		if n.Type == livedoc.NodeSteering && strings.Contains("↳ you", q) {
+			return true
+		}
+		if n.Type != livedoc.NodeTool {
+			continue
+		}
+		if n.Name == "" && strings.Contains("tool", q) {
+			return true
+		}
+		glyph := "✓✗" + string(livedoc.SpinnerFrames)
+		if strings.Contains(glyph, q) {
+			return true
+		}
+		if n.StartedAt != 0 {
+			if strings.Contains(toolDuration(n, time.Now()), q) {
+				return true
+			}
+			if verbose && (strings.Contains("started "+formatToolTime(n.StartedAt), q) ||
+				strings.Contains("finished "+formatToolTime(n.FinishedAt), q)) {
+				return true
+			}
+		}
+		if verbose {
+			for k, v := range n.Args {
+				if strings.Contains(fmt.Sprintf("%s=%v", k, v), q) {
+					return true
+				}
+			}
+		}
+		if !t.expanded[nodeRef{lt: m.LT, index: i}] && n.Output != "" {
+			total := 1 + strings.Count(strings.TrimRight(n.Output, "\n"), "\n")
+			if total > nodeBashCapDefault &&
+				strings.Contains(fmt.Sprintf("last %d of %d lines", nodeBashCapDefault, total), q) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func markdownMayRenderQuery(markdown, q string) bool {
+	if strings.Contains(markdown, q) || containsIgnoringMarkdown(markdown, q) {
+		return true
+	}
+	at := 0
+	ordered := true
+	for _, word := range strings.Fields(q) {
+		i := strings.Index(markdown[at:], word)
+		if i < 0 {
+			ordered = false
+			break
+		}
+		at += i + len(word)
+	}
+	if ordered {
+		return true
+	}
+	return strings.Contains(markdown, "&") && strings.Contains(html.UnescapeString(markdown), q)
+}
+
+func containsIgnoringMarkdown(markdown, q string) bool {
+	if q == "" {
+		return true
+	}
+	for start := 0; start < len(markdown); start++ {
+		qi := 0
+		for i := start; i < len(markdown) && qi < len(q); i++ {
+			switch markdown[i] {
+			case '*', '_', '~', '`', '[', ']', '(', ')':
+				continue
+			}
+			if markdown[i] != q[qi] {
+				break
+			}
+			qi++
+		}
+		if qi == len(q) {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *transcript) finishSearch(found bool) {
+	if found || t.search == nil {
+		return
+	}
+	origin := t.search
+	t.pages = origin.pages
+	t.newer = origin.newer
+	t.offset = origin.offset
+	t.follow = origin.follow
+	t.noMoreOlder = origin.noMoreOlder
+	t.search = nil
+	t.checkOlder, t.checkNewer = false, false
+	t.pruneCaches()
+}
+
+func (t *transcript) wrapSearchOlder() {
+	if t.search == nil {
+		return
+	}
+	origin := t.search
+	t.pages = append([]transcriptPage(nil), origin.pages...)
+	t.newer = append([]int(nil), origin.newer...)
+	t.offset = origin.offset
+	t.follow = false
+	t.noMoreOlder = origin.noMoreOlder
+	t.checkNewer = false
+	if t.noMoreOlder {
+		t.finishSearch(false)
+		return
+	}
+	t.checkOlder = true
+	origin.direction = pageOlder
+	t.pruneCaches()
+}
+
+func (t *transcript) searchingHistory() bool {
+	return t.search != nil
 }
 
 func dimTransRule(w int) string {

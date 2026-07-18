@@ -238,10 +238,11 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 		// visibility, line wrap, mouse modes, OSC). Sanitize before
 		// rendering so a wayward bubbletea / huh / less / etc. can
 		// never bleed its escapes into the host terminal.
-		safe := render.SanitizeForTerminal(strings.TrimRight(n.Output, "\n"))
-		lines := strings.Split(safe, "\n")
-		if total := len(lines); bashCap >= 0 && total > bashCap {
-			lines = lines[total-bashCap:]
+		output := strings.TrimRight(n.Output, "\n")
+		safe := render.SanitizeForTerminal(output)
+		shown, total := tailOutput(safe, bashCap)
+		lines := strings.Split(shown, "\n")
+		if bashCap >= 0 && total > bashCap {
 			rows = append(rows, term.Dim(fmt.Sprintf("  │ … last %d of %d lines", bashCap, total)))
 		}
 		const gutter = "  │ "
@@ -250,6 +251,24 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 		}
 	}
 	return rows
+}
+
+func tailOutput(output string, limit int) (string, int) {
+	total := 1 + strings.Count(output, "\n")
+	if limit < 0 || total <= limit {
+		return output, total
+	}
+	if limit == 0 {
+		return "", total
+	}
+	at := len(output)
+	for range limit {
+		at = strings.LastIndexByte(output[:at], '\n')
+		if at < 0 {
+			return output, total
+		}
+	}
+	return output[at+1:], total
 }
 
 func toolDuration(n livedoc.Node, now time.Time) string {

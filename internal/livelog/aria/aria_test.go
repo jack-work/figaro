@@ -1,6 +1,7 @@
 package aria
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/livedoc"
@@ -226,6 +227,7 @@ func TestServer_ReadBefore(t *testing.T) {
 	for lt := 1; lt <= 10; lt++ {
 		s.Commit(Message{LT: lt, Role: "user", Nodes: []livedoc.Node{prose("m")}})
 	}
+
 	lts := func(r AriaRead) []int {
 		var out []int
 		for _, c := range r.Committed {
@@ -257,4 +259,37 @@ func TestServer_ReadBefore(t *testing.T) {
 	if got := lts(s.ReadBefore(6, 0)); got != nil {
 		t.Fatalf("limit=0 want empty got %v", got)
 	}
+}
+
+func TestClient_ClosedLimitKeepsTailAndCursor(t *testing.T) {
+	c := NewClient()
+	c.SetClosedLimit(2)
+	closed := 0
+	c.OnClosed = func(Message) { closed++ }
+	c.Apply(AriaRead{Committed: []Committed{
+		{LT: 1, Role: "assistant", Nodes: []livedoc.Node{}},
+		{LT: 2, Role: "assistant", Nodes: []livedoc.Node{}},
+		{LT: 3, Role: "assistant", Nodes: []livedoc.Node{}},
+	}})
+	v := c.View()
+	if got := ltsFromMessages(v.Closed); !reflect.DeepEqual(got, []int{2, 3}) {
+		t.Fatalf("closed LTs = %v", got)
+	}
+	if got := c.Cursor(); got != 3 {
+		t.Fatalf("cursor = %d", got)
+	}
+	c.Apply(AriaRead{Committed: []Committed{{
+		LT: 1, Role: "assistant", Nodes: []livedoc.Node{},
+	}}})
+	if closed != 3 {
+		t.Fatalf("evicted duplicate fired OnClosed; calls = %d", closed)
+	}
+}
+
+func ltsFromMessages(messages []Message) []int {
+	out := make([]int, len(messages))
+	for i, m := range messages {
+		out[i] = m.LT
+	}
+	return out
 }

@@ -19,6 +19,8 @@ type Client struct {
 
 	closed          []Message
 	closedSeen      map[int]bool
+	closedFloor     int
+	closedLimit     int
 	lastCommittedLT int
 
 	openLT    int
@@ -36,6 +38,15 @@ type Client struct {
 // NewClient returns a fresh client.
 func NewClient() *Client {
 	return &Client{closedSeen: map[int]bool{}, openBlock: map[string]livedoc.Node{}}
+}
+
+// SetClosedLimit bounds retained closed messages. Zero keeps the default,
+// unbounded behavior.
+func (c *Client) SetClosedLimit(limit int) {
+	c.mu.Lock()
+	c.closedLimit = limit
+	c.trimClosed()
+	c.mu.Unlock()
 }
 
 // Cursor is the highest fully-committed LT — the resume point for a re-read.
@@ -71,7 +82,7 @@ func (c *Client) Apply(r AriaRead) {
 	for _, cm := range r.Committed {
 		switch {
 		case cm.Full():
-			if !c.closedSeen[cm.LT] {
+			if !c.seenClosed(cm.LT) {
 				c.closedSeen[cm.LT] = true
 				finalized = append(finalized, Message{LT: cm.LT, Role: cm.Role, Nodes: cm.Nodes})
 			}
@@ -94,6 +105,7 @@ func (c *Client) Apply(r AriaRead) {
 	}
 
 	c.closed = append(c.closed, finalized...)
+	c.trimClosed()
 
 	var (
 		haveLive  bool
@@ -109,6 +121,7 @@ func (c *Client) Apply(r AriaRead) {
 			c.openOrder = nil
 			c.openBlock = map[string]livedoc.Node{}
 		}
+
 		if f.Role != "" {
 			c.openRole = f.Role
 		}
@@ -138,6 +151,25 @@ func (c *Client) Apply(r AriaRead) {
 	if desync >= 0 && c.OnDesync != nil {
 		c.OnDesync(desync)
 	}
+}
+
+func (c *Client) trimClosed() {
+	if c.closedLimit <= 0 || len(c.closed) <= c.closedLimit {
+		return
+	}
+	sort.SliceStable(c.closed, func(i, j int) bool { return c.closed[i].LT < c.closed[j].LT })
+	c.closed = append([]Message(nil), c.closed[len(c.closed)-c.closedLimit:]...)
+	c.closedSeen = make(map[int]bool, len(c.closed))
+	for _, m := range c.closed {
+		c.closedSeen[m.LT] = true
+	}
+	if len(c.closed) > 0 && c.closed[0].LT > c.closedFloor {
+		c.closedFloor = c.closed[0].LT
+	}
+}
+
+func (c *Client) seenClosed(lt int) bool {
+	return lt < c.closedFloor || c.closedSeen[lt]
 }
 
 // View is the client's local reconstruction.

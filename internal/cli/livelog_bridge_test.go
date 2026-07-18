@@ -2,10 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
@@ -77,5 +79,28 @@ func TestIncipitRepaintsDiscardedAssistantWithErrorStatus(t *testing.T) {
 
 	if !strings.Contains(out.String(), "error ✗") {
 		t.Fatalf("discarded assistant retained thinking status:\n%s", out.String())
+	}
+}
+
+func TestTranscriptExitFlushesClosuresBeyondClientTail(t *testing.T) {
+	var out bytes.Buffer
+	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "", time.Now(), newSessionStatus("", time.Now()), nil, nil)
+	lt.lastSealedLT = 1
+	lt.enterTranscript()
+	for i := 2; i <= transcriptTailLimit+10; i++ {
+		lt.apply(aria.AriaRead{Committed: []aria.Committed{{
+			LT: i, Role: "assistant",
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("message-%03d", i)}},
+		}}})
+	}
+	lt.leaveTranscript()
+	rendered := out.String()
+	for _, want := range []string{"message-002", fmt.Sprintf("message-%03d", transcriptTailLimit+10)} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("flushed transcript missing %q", want)
+		}
+	}
+	if lt.lastSealedLT != transcriptTailLimit+10 || len(lt.pagerClosed) != 0 {
+		t.Fatalf("flush state = LT %d, queued %d", lt.lastSealedLT, len(lt.pagerClosed))
 	}
 }

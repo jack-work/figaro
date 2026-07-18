@@ -92,6 +92,7 @@ func TestRenderToolNode_TimingAndVerboseDetails(t *testing.T) {
 		StartedAt:  1_700_000_000_000,
 		FinishedAt: 1_700_000_001_250,
 	}
+
 	rows := renderToolNode(n, 120, 5, 0, true)
 	joined := stripANSI(strings.Join(rows, "\n"))
 	if !strings.Contains(joined, "[1.2s]") {
@@ -99,5 +100,32 @@ func TestRenderToolNode_TimingAndVerboseDetails(t *testing.T) {
 	}
 	if !strings.Contains(joined, "started ") || !strings.Contains(joined, "finished ") {
 		t.Fatalf("verbose timestamps missing: %s", joined)
+	}
+}
+
+func TestTailOutput(t *testing.T) {
+	output := "one\ntwo\nthree\nfour"
+	if got, total := tailOutput(output, 2); got != "three\nfour" || total != 4 {
+		t.Fatalf("tailOutput = %q, %d", got, total)
+	}
+	if got, total := tailOutput(output, 0); got != "" || total != 4 {
+		t.Fatalf("zero tailOutput = %q, %d", got, total)
+	}
+	if got, total := tailOutput(output, nodeOutputUnlimited); got != output || total != 4 {
+		t.Fatalf("unlimited tailOutput = %q, %d", got, total)
+	}
+}
+
+func TestRenderToolNodeSanitizesBeforeTailClamp(t *testing.T) {
+	n := livedoc.Node{
+		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Output: "\x1b]2;hidden\nOSC payload\nmore payload\x07\nvisible",
+	}
+	rendered := strings.Join(renderToolNode(n, 80, 2, 0, false), "\n")
+	if strings.Contains(rendered, "OSC payload") || strings.ContainsRune(rendered, '\a') {
+		t.Fatalf("control-string payload leaked after tail clamp: %q", rendered)
+	}
+	if !strings.Contains(rendered, "visible") {
+		t.Fatalf("visible tail missing: %q", rendered)
 	}
 }

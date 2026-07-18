@@ -2,6 +2,7 @@ package cli
 
 import (
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -36,6 +37,7 @@ type livelogTurn struct {
 	// the pager is left behind like a normal command. 0 means nothing was sealed
 	// inline (we entered the pager cold, e.g. `figaro listen`).
 	lastSealedLT int
+	pagerClosed  []aria.Message
 }
 
 func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID string, startedAt time.Time, status *sessionStatus, bookend, rule func() string) *livelogTurn {
@@ -46,6 +48,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	in.Rule = rule
 	in.Header = messageHeader
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view, status: status}
+	t.client.SetClosedLimit(transcriptTailLimit)
 	t.tr = newTranscript(out, w, h, view, t.client, figaroID, startedAt)
 	if status != nil {
 		t.tr.status = status
@@ -53,6 +56,9 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	}
 	t.client.OnClosed = func(m aria.Message) {
 		if t.tr.active {
+			if t.lastSealedLT != 0 {
+				t.pagerClosed = append(t.pagerClosed, m)
+			}
 			t.tr.render() // transcript renders from the shared client model
 		} else if m.Role == "assistant" {
 			t.pending = &m
@@ -249,11 +255,19 @@ func (t *livelogTurn) flushTail() {
 		from = lastTurnStartLT(v)
 	}
 	var closed []aria.Message
-	for _, m := range v.Closed {
+	seen := make(map[int]bool)
+	for _, m := range t.pagerClosed {
 		if m.LT >= from {
+			closed = append(closed, m)
+			seen[m.LT] = true
+		}
+	}
+	for _, m := range v.Closed {
+		if m.LT >= from && !seen[m.LT] {
 			closed = append(closed, m)
 		}
 	}
+	t.pagerClosed = nil
 	openLT, openRole := 0, ""
 	var open []livedoc.Node
 	if v.Open != nil && v.Open.LT >= from {
@@ -262,7 +276,11 @@ func (t *livelogTurn) flushTail() {
 	if len(closed) == 0 && openLT == 0 {
 		return
 	}
+	sort.SliceStable(closed, func(i, j int) bool { return closed[i].LT < closed[j].LT })
 	t.in.Resume(closed, openLT, openRole, open)
+	if len(closed) > 0 {
+		t.lastSealedLT = closed[len(closed)-1].LT
+	}
 }
 
 // lastTurnStartLT returns the LT of the most recent user message (the start of
@@ -290,11 +308,20 @@ func (t *livelogTurn) transcriptScroll(delta int) { t.tr.scrollBy(delta) }
 // input loop routes typeable keys (like 'y') to the query instead of acting.
 func (t *livelogTurn) transcriptSearching() bool { return t.tr.active && t.tr.inSearch }
 
-// transcriptOlderCursor reports whether a scroll-up should lazily page older
-// history, and the LT to page before. transcriptApplyOlder folds the fetched
-// window in (anchored). The fetch itself is done off-lock by the caller.
-func (t *livelogTurn) transcriptOlderCursor() (int, bool)   { return t.tr.olderCursor() }
-func (t *livelogTurn) transcriptApplyOlder(r aria.AriaRead) { t.tr.applyOlder(r) }
+// Transcript page fetches run off-lock; applying a page restores the viewport
+// anchor and evicts the far edge of the bounded window.
+func (t *livelogTurn) transcriptPageCursor() (transcriptPageRequest, bool) {
+	return t.tr.pageCursor()
+}
+func (t *livelogTurn) transcriptApplyPage(req transcriptPageRequest, r aria.AriaRead) {
+	t.tr.applyPage(req, r)
+}
+func (t *livelogTurn) transcriptSearchingHistory() bool { return t.tr.searchingHistory() }
+func (t *livelogTurn) transcriptPageFailed() {
+	t.tr.finishSearch(false)
+	t.tr.checkOlder, t.tr.checkNewer = false, false
+	t.tr.render()
+}
 
 // ariaView renders a block by reusing figaro's existing node renderers, so
 // inline and transcript draw identically. One representation: livedoc.Node.

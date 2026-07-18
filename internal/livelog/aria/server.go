@@ -3,6 +3,7 @@ package aria
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"sync"
 
 	"github.com/jack-work/figaro/internal/livedoc"
@@ -155,14 +156,7 @@ func (s *Server) ReadBefore(beforeLT, limit int) AriaRead {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	hi := 0
-	for _, m := range s.closed {
-		if m.LT < beforeLT {
-			hi++
-		} else {
-			break
-		}
-	}
+	hi := sort.Search(len(s.closed), func(i int) bool { return s.closed[i].LT >= beforeLT })
 	lo := hi - limit
 	if lo < 0 {
 		lo = 0

@@ -46,18 +46,17 @@ type selectionMark struct {
 }
 
 func (t *transcript) nodeRefs() []nodeRef {
-	v := t.client.View()
 	refs := make([]nodeRef, 0)
 	appendMessage := func(m aria.Message) {
 		for i := range m.Nodes {
 			refs = append(refs, nodeRef{lt: m.LT, index: i})
 		}
 	}
-	for _, m := range v.Closed {
+	for _, m := range t.messages() {
 		appendMessage(m)
 	}
-	if v.Open != nil {
-		appendMessage(*v.Open)
+	if open := t.openMessage(); open != nil {
+		appendMessage(*open)
 	}
 	return refs
 }
@@ -112,12 +111,18 @@ func (t *transcript) selectNode(delta int, extend bool) {
 		}
 	} else {
 		next := index + delta
+		if len(t.newer) > 0 && t.heldOpen != nil && next >= 0 && next < len(refs) &&
+			(refs[index].lt == t.heldOpen.LT || refs[next].lt == t.heldOpen.LT) {
+			t.checkNewer = true
+			return
+		}
 		switch {
 		case next < 0:
 			next = 0
 			t.checkOlder = true
 		case next >= len(refs):
 			next = len(refs) - 1
+			t.checkNewer = true
 		}
 		index = next
 	}
@@ -126,7 +131,7 @@ func (t *transcript) selectNode(delta int, extend bool) {
 	}
 	t.selection.focus = refs[index]
 	t.selection.active = true
-	t.follow = false
+	t.stopFollowing()
 	t.ensureSelectionVisible()
 }
 
@@ -135,7 +140,17 @@ func (t *transcript) hasSelection() bool {
 }
 
 func (t *transcript) clearSelection() {
+	direction := pageOlder
+	messages := t.messages()
+	if len(messages) > 0 && t.selection.focus.lt >= messages[len(messages)/2].LT {
+		direction = pageNewer
+	}
+	anchorLT, within := t.viewportAnchor()
 	t.selection = nodeSelection{}
+	t.trimPages(direction)
+	t.pruneCaches()
+	t.lines()
+	t.restoreViewportAnchor(anchorLT, within)
 }
 
 func (t *transcript) selectedText() (string, bool) {
@@ -143,7 +158,6 @@ func (t *transcript) selectedText() (string, bool) {
 	if len(marks) == 0 {
 		return "", false
 	}
-	v := t.client.View()
 	var out []string
 	appendMessage := func(m aria.Message) {
 		for i, n := range m.Nodes {
@@ -155,11 +169,11 @@ func (t *transcript) selectedText() (string, bool) {
 			}
 		}
 	}
-	for _, m := range v.Closed {
+	for _, m := range t.messages() {
 		appendMessage(m)
 	}
-	if v.Open != nil {
-		appendMessage(*v.Open)
+	if open := t.openMessage(); open != nil {
+		appendMessage(*open)
 	}
 	return strings.Join(out, "\n\n"), true
 }
@@ -189,7 +203,6 @@ func (t *transcript) toggleSelectedTools() bool {
 	if len(marks) == 0 {
 		return false
 	}
-	v := t.client.View()
 	var tools []nodeRef
 	appendMessage := func(m aria.Message) {
 		for i, n := range m.Nodes {
@@ -199,11 +212,11 @@ func (t *transcript) toggleSelectedTools() bool {
 			}
 		}
 	}
-	for _, m := range v.Closed {
+	for _, m := range t.messages() {
 		appendMessage(m)
 	}
-	if v.Open != nil {
-		appendMessage(*v.Open)
+	if open := t.openMessage(); open != nil {
+		appendMessage(*open)
 	}
 	if len(tools) == 0 {
 		return false
