@@ -36,3 +36,32 @@ type Log[T any] interface {
 
 	Clear() error
 }
+
+type snapshotLog[T any] interface {
+	Snapshot() []Entry[T]
+}
+
+type tailSnapshotLog[T any] interface {
+	TailSnapshot(n int) []Entry[T]
+}
+
+// Snapshot returns a read-only, point-in-time view when the log is already
+// materialized in memory, falling back to Read for other implementations.
+func Snapshot[T any](log Log[T]) []Entry[T] {
+	if s, ok := log.(snapshotLog[T]); ok {
+		return s.Snapshot()
+	}
+	return log.Read()
+}
+
+// TailSnapshot returns a read-only ascending view of the last n entries.
+func TailSnapshot[T any](log Log[T], n int) []Entry[T] {
+	if s, ok := log.(tailSnapshotLog[T]); ok {
+		return s.TailSnapshot(n)
+	}
+	entries := log.ScanFromEnd(n)
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+	return entries
+}

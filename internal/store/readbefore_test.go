@@ -86,3 +86,20 @@ func TestReadBefore_CachedLog(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []uint64{40, 50}, fks(c.ReadBefore(60, 2)))
 }
+
+func TestSnapshot_CachedLogRemainsStableAfterAppend(t *testing.T) {
+	inner := buildLog(t, []uint64{10, 20})
+	c := newCachedLog[uint64](inner)
+	snapshot := Snapshot[uint64](c)
+
+	_, err := c.Append(Entry[uint64]{FigaroLT: 30, Payload: 30})
+	assert.NoError(t, err)
+	assert.Equal(t, []uint64{10, 20}, fks(snapshot))
+	assert.Equal(t, []uint64{10, 20, 30}, fks(Snapshot[uint64](c)))
+}
+
+func TestTailSnapshot_CachedLogIsAscending(t *testing.T) {
+	inner := buildLog(t, []uint64{10, 20, 30})
+	c := newCachedLog[uint64](inner)
+	assert.Equal(t, []uint64{20, 30}, fks(TailSnapshot[uint64](c, 2)))
+}

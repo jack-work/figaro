@@ -50,6 +50,15 @@ type Anthropic struct {
 	// CacheOpen opens the per-aria translation cache. nil = no caching.
 	CacheOpen func(aria string) (store.Log[[]json.RawMessage], error)
 	caches    map[string]store.Log[[]json.RawMessage] // guarded by mu
+	snapCache map[string]*translationSnapshot
+}
+
+type translationSnapshot struct {
+	snap       chalkboard.Snapshot
+	perMessage [][]json.RawMessage
+	lts        []uint64
+	nEntries   int
+	lastLT     uint64
 }
 
 // New constructs an Anthropic provider.
@@ -69,6 +78,7 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 		ReminderRenderer: rr,
 		CacheOpen:        cacheOpen,
 		caches:           map[string]store.Log[[]json.RawMessage]{},
+		snapCache:        map[string]*translationSnapshot{},
 	}, nil
 }
 
@@ -740,7 +750,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
 	cache := a.cacheFor(in.AriaID)
-	perMessage, lts := a.catchUp(in.FigLog, cache, in.Chalkboard)
+	perMessage, lts := a.catchUp(in.AriaID, in.FigLog, cache, in.Chalkboard)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -827,7 +837,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
 	cache := a.cacheFor(in.AriaID)
-	perMessage, lts := a.catchUp(in.FigLog, cache, in.Chalkboard)
+	perMessage, lts := a.catchUp(in.AriaID, in.FigLog, cache, in.Chalkboard)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}
@@ -897,12 +907,25 @@ func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
 
 // catchUp encodes uncached figLog entries and returns per-message
 // wire bytes.
-func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
+func (a *Anthropic) catchUp(aria string, figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
 	fp := a.Fingerprint()
+	entries := store.Snapshot(figLog)
+	a.mu.Lock()
+	sc := a.snapCache[aria]
+	a.mu.Unlock()
+
 	snap := chalkboard.Snapshot{}
 	var perMessage [][]json.RawMessage
 	var lts []uint64
-	for _, e := range figLog.Read() {
+	startIdx := 0
+	if sc != nil && sc.nEntries <= len(entries) &&
+		(sc.nEntries == 0 || entries[sc.nEntries-1].LT == sc.lastLT) {
+		snap = sc.snap
+		perMessage = sc.perMessage
+		lts = sc.lts
+		startIdx = sc.nEntries
+	}
+	for _, e := range entries[startIdx:] {
 		msg := e.Payload
 		msg.LogicalTime = e.LT
 		if msg.Role == message.RoleGenesis {
@@ -937,6 +960,24 @@ func (a *Anthropic) catchUp(figLog store.Log[message.Message], cache store.Log[[
 		for _, p := range msg.Patches {
 			snap = snap.Apply(p)
 		}
+	}
+	if aria != "" {
+		var lastLT uint64
+		if len(entries) > 0 {
+			lastLT = entries[len(entries)-1].LT
+		}
+		a.mu.Lock()
+		if a.snapCache == nil {
+			a.snapCache = map[string]*translationSnapshot{}
+		}
+		a.snapCache[aria] = &translationSnapshot{
+			snap:       snap,
+			perMessage: perMessage,
+			lts:        lts,
+			nEntries:   len(entries),
+			lastLT:     lastLT,
+		}
+		a.mu.Unlock()
 	}
 	return perMessage, lts
 }

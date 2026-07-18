@@ -67,6 +67,7 @@ type snapCacheEntry struct {
 	perMessage [][]json.RawMessage
 	lts        []uint64
 	nEntries   int // how many figLog entries were processed
+	lastLT     uint64
 }
 
 // New constructs the SDK-backed provider.
@@ -141,7 +142,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 
 	cache := p.cacheFor(in.AriaID)
-	perMessage, lts := p.catchUp(in.FigLog, cache, in.Chalkboard, in.Snapshot)
+	perMessage, lts := p.catchUp(in.AriaID, in.FigLog, cache, in.Chalkboard)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
 	}

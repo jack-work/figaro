@@ -34,6 +34,24 @@ func (c *cachedLog[T]) Read() []Entry[T] {
 	return out
 }
 
+func (c *cachedLog[T]) Snapshot() []Entry[T] {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.rows
+}
+
+func (c *cachedLog[T]) TailSnapshot(n int) []Entry[T] {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if n <= 0 || len(c.rows) == 0 {
+		return nil
+	}
+	if n > len(c.rows) {
+		n = len(c.rows)
+	}
+	return c.rows[len(c.rows)-n:]
+}
+
 func (c *cachedLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

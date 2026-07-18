@@ -49,23 +49,13 @@ func (p *Provider) invalidateIfStale(s store.Log[[]json.RawMessage]) {
 // returns per-message wire bytes plus their logical times. Uses an
 // in-memory snapshot cache to avoid re-walking the entire conversation
 // on every turn: only new entries (since the last call) are processed.
-func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard, headSnap chalkboard.Snapshot) ([][]json.RawMessage, []uint64) {
+func (p *Provider) catchUp(aria string, figLog store.Log[message.Message], cache store.Log[[]json.RawMessage], chalk provider.Chalkboard) ([][]json.RawMessage, []uint64) {
 	t0 := time.Now()
 	fp := p.Fingerprint()
-	entries := figLog.Read()
+	entries := store.Snapshot(figLog)
 
 	// Resume from the snap cache if the log only grew (append-only invariant).
 	p.mu.Lock()
-	aria := "" // keyed by cache identity
-	if cache != nil {
-		// Use the cache pointer address as a stable key.
-		for k, v := range p.caches {
-			if v == cache {
-				aria = k
-				break
-			}
-		}
-	}
 	sc := p.snapCache[aria]
 	p.mu.Unlock()
 
@@ -74,7 +64,8 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 	var lts []uint64
 	startIdx := 0
 
-	if sc != nil && sc.nEntries <= len(entries) {
+	if sc != nil && sc.nEntries <= len(entries) &&
+		(sc.nEntries == 0 || entries[sc.nEntries-1].LT == sc.lastLT) {
 		// The log only grew: resume from where we left off.
 		snap = sc.snap
 		perMessage = sc.perMessage
@@ -83,7 +74,6 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 	}
 
 	var nCached, nEncoded int
-	seenUncached := false
 	for i := startIdx; i < len(entries); i++ {
 		e := entries[i]
 		msg := e.Payload
@@ -102,10 +92,6 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 			}
 		}
 		if bytes == nil {
-			if !seenUncached && headSnap != nil {
-				snap = headSnap
-				seenUncached = true
-			}
 			encoded, err := p.encode(msg, snap)
 			if err != nil {
 				slog.Error("anthropicsdk encode", "flt", msg.LogicalTime, "err", err)
@@ -123,23 +109,27 @@ func (p *Provider) catchUp(figLog store.Log[message.Message], cache store.Log[[]
 			perMessage = append(perMessage, bytes)
 			lts = append(lts, msg.LogicalTime)
 		}
-		// Only apply patches when we're past the cached prefix
-		// (snap is meaningful) or building up for a snapCache.
-		if seenUncached || sc != nil {
-			for _, patch := range msg.Patches {
-				snap = snap.Apply(patch)
-			}
+		for _, patch := range msg.Patches {
+			snap = snap.Apply(patch)
 		}
 	}
 
 	// Store the snapshot for next turn.
 	if aria != "" {
+		var lastLT uint64
+		if len(entries) > 0 {
+			lastLT = entries[len(entries)-1].LT
+		}
 		p.mu.Lock()
+		if p.snapCache == nil {
+			p.snapCache = map[string]*snapCacheEntry{}
+		}
 		p.snapCache[aria] = &snapCacheEntry{
 			snap:       snap,
 			perMessage: perMessage,
 			lts:        lts,
 			nEntries:   len(entries),
+			lastLT:     lastLT,
 		}
 		p.mu.Unlock()
 	}

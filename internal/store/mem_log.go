@@ -25,6 +25,24 @@ func (s *MemLog[T]) Read() []Entry[T] {
 	return s.entries
 }
 
+func (s *MemLog[T]) Snapshot() []Entry[T] {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.entries
+}
+
+func (s *MemLog[T]) TailSnapshot(n int) []Entry[T] {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if n <= 0 || len(s.entries) == 0 {
+		return nil
+	}
+	if n > len(s.entries) {
+		n = len(s.entries)
+	}
+	return s.entries[len(s.entries)-n:]
+}
+
 func (s *MemLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

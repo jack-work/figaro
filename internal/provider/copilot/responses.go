@@ -41,11 +41,21 @@ type responsesProvider struct {
 	templates *template.Template
 	machineID string
 	caches    map[string]store.Log[[]json.RawMessage]
+	cacheFP   map[string]string
+	inputs    map[string]*responseInputSnapshot
 	sessions  map[string]string
 	limits    map[string]responseContextLimits
 
 	baseURL func(string) string
 	dial    responseDialer
+}
+
+type responseInputSnapshot struct {
+	fingerprint string
+	snap        chalkboard.Snapshot
+	input       []json.RawMessage
+	nEntries    int
+	lastLT      uint64
 }
 
 func newResponsesProvider(
@@ -61,6 +71,8 @@ func newResponsesProvider(
 		maxTokens: knobs.MaxTokens,
 		machineID: uuid.NewString(),
 		caches:    map[string]store.Log[[]json.RawMessage]{},
+		cacheFP:   map[string]string{},
+		inputs:    map[string]*responseInputSnapshot{},
 		sessions:  map[string]string{},
 		limits:    map[string]responseContextLimits{},
 		baseURL:   func(token string) string { return baseURLFromToken(token, enterpriseDomain) },
@@ -263,12 +275,7 @@ func (p *responsesProvider) validateContext(
 		return nil
 	}
 
-	entries := in.FigLog.Read()
-	messages := make([]message.Message, 0, len(entries))
-	for _, entry := range entries {
-		messages = append(messages, entry.Payload)
-	}
-	used, _ := tokens.ContextSize(messages)
+	used, _ := contextSizeForLog(in.FigLog)
 	if used > tierLimit {
 		return fmt.Errorf(
 			"copilot responses: estimated prompt context %d tokens exceeds the %s limit of %d for %q; compact the aria or set system.context_tier to \"long_context\"",
@@ -279,6 +286,52 @@ func (p *responsesProvider) validateContext(
 		)
 	}
 	return nil
+}
+
+func contextSizeForLog(log store.Log[message.Message]) (int, bool) {
+	const tailSize = 64
+	tail := store.TailSnapshot(log, tailSize)
+	for i := len(tail) - 1; i >= 0; i-- {
+		entry := tail[i]
+		if entry.Payload.Usage == nil {
+			continue
+		}
+		usage := entry.Payload.Usage
+		total := usage.InputTokens + usage.OutputTokens
+		for j := i + 1; j < len(tail); j++ {
+			total += tokens.EstimateMessage(tail[j].Payload)
+		}
+		return total, i == len(tail)-1
+	}
+	if len(tail) < tailSize {
+		total := 0
+		for _, entry := range tail {
+			total += tokens.EstimateMessage(entry.Payload)
+		}
+		return total, len(tail) == 0
+	}
+
+	entries := store.Snapshot(log)
+	watermark := -1
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].Payload.Usage != nil {
+			watermark = i
+			break
+		}
+	}
+	if watermark < 0 {
+		total := 0
+		for _, entry := range entries {
+			total += tokens.EstimateMessage(entry.Payload)
+		}
+		return total, false
+	}
+	usage := entries[watermark].Payload.Usage
+	total := usage.InputTokens + usage.OutputTokens
+	for _, entry := range entries[watermark+1:] {
+		total += tokens.EstimateMessage(entry.Payload)
+	}
+	return total, watermark == len(entries)-1
 }
 
 func contextTierName(tier string) string {
@@ -308,21 +361,27 @@ func (p *responsesProvider) cacheFor(aria string) store.Log[[]json.RawMessage] {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	fingerprint := responseFingerprint(p.model)
 	if cache, ok := p.caches[aria]; ok {
-		p.invalidateCache(cache, responseFingerprint(p.model))
+		if p.cacheFP[aria] != fingerprint {
+			p.invalidateCache(cache, fingerprint)
+			p.cacheFP[aria] = fingerprint
+			delete(p.inputs, aria)
+		}
 		return cache
 	}
 	cache, err := p.cacheOpen(aria)
 	if err != nil {
 		return nil
 	}
-	p.invalidateCache(cache, responseFingerprint(p.model))
+	p.invalidateCache(cache, fingerprint)
 	p.caches[aria] = cache
+	p.cacheFP[aria] = fingerprint
 	return cache
 }
 
 func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage], fingerprint string) {
-	for _, entry := range cache.Read() {
+	for _, entry := range store.Snapshot(cache) {
 		if entry.Fingerprint != "" && entry.Fingerprint != fingerprint {
 			_ = cache.Clear()
 			break
@@ -332,10 +391,26 @@ func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage], 
 
 func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
 	cache := p.cacheFor(in.AriaID)
+	fingerprint := p.Fingerprint()
+	entries := store.Snapshot(in.FigLog)
+	templates := p.templatesForEncoding()
+
 	var input []json.RawMessage
 	snap := chalkboard.Snapshot{}
+	startIdx := 0
+	if in.AriaID != "" {
+		p.mu.Lock()
+		sc := p.inputs[in.AriaID]
+		p.mu.Unlock()
+		if sc != nil && sc.fingerprint == fingerprint && sc.nEntries <= len(entries) &&
+			(sc.nEntries == 0 || entries[sc.nEntries-1].LT == sc.lastLT) {
+			input = sc.input
+			snap = sc.snap
+			startIdx = sc.nEntries
+		}
+	}
 
-	for _, entry := range in.FigLog.Read() {
+	for _, entry := range entries[startIdx:] {
 		msg := entry.Payload
 		if msg.Role == message.RoleGenesis {
 			continue
@@ -353,7 +428,7 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 		}
 		if encoded == nil {
 			var err error
-			encoded, err = encodeResponseMessage(msg, patches, snap, p.templatesForEncoding())
+			encoded, err = encodeResponseMessage(msg, patches, snap, templates)
 			if err != nil {
 				return nil, fmt.Errorf("copilot responses: encode message %d: %w", entry.LT, err)
 			}
@@ -371,6 +446,21 @@ func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, 
 		for _, patch := range patches {
 			snap = snap.Apply(patch)
 		}
+	}
+	if in.AriaID != "" {
+		var lastLT uint64
+		if len(entries) > 0 {
+			lastLT = entries[len(entries)-1].LT
+		}
+		p.mu.Lock()
+		p.inputs[in.AriaID] = &responseInputSnapshot{
+			fingerprint: fingerprint,
+			snap:        snap,
+			input:       input,
+			nEntries:    len(entries),
+			lastLT:      lastLT,
+		}
+		p.mu.Unlock()
 	}
 	return input, nil
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/tokens"
 	"github.com/jack-work/figaro/internal/tool"
 )
 
@@ -770,6 +772,51 @@ func TestResponsesProviderClearsIncompatibleCache(t *testing.T) {
 	p := newResponsesTestProvider(server, cache)
 	require.NotNil(t, p.cacheFor("aria-1"))
 	assert.Empty(t, cache.Read())
+}
+
+func TestResponsesInputWarmPreservesPrefixBytes(t *testing.T) {
+	cache := store.NewMemLog[[]json.RawMessage]()
+	server := newResponseServer(t, func(conn *websocket.Conn) { conn.Close() })
+	p := newResponsesTestProvider(server, cache)
+	log := newResponsesInputLog(t)
+	in := provider.SendInput{AriaID: "aria-1", FigLog: log}
+
+	first, err := p.inputFor(in)
+	require.NoError(t, err)
+	prefix := append([]byte(nil), first[0]...)
+	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
+		Role: message.RoleUser, Content: []message.Content{message.TextContent("next")},
+	}})
+	require.NoError(t, err)
+	second, err := p.inputFor(in)
+	require.NoError(t, err)
+
+	assert.Greater(t, len(second), len(first))
+	assert.Equal(t, prefix, []byte(second[0]))
+}
+
+func TestContextSizeForLogMatchesCanonicalEstimator(t *testing.T) {
+	for _, withUsage := range []bool{false, true} {
+		log := store.NewMemLog[message.Message]()
+		var messages []message.Message
+		for i := 0; i < 100; i++ {
+			msg := message.Message{
+				Role:    message.RoleUser,
+				Content: []message.Content{message.TextContent(fmt.Sprintf("message-%d", i))},
+			}
+			if withUsage && i == 75 {
+				msg.Usage = &message.Usage{InputTokens: 700, OutputTokens: 30}
+			}
+			messages = append(messages, msg)
+			_, err := log.Append(store.Entry[message.Message]{Payload: msg})
+			require.NoError(t, err)
+		}
+
+		wantTokens, wantExact := tokens.ContextSize(messages)
+		gotTokens, gotExact := contextSizeForLog(log)
+		assert.Equal(t, wantTokens, gotTokens)
+		assert.Equal(t, wantExact, gotExact)
+	}
 }
 
 func TestDecodeResponseAssistantPreservesReasoningSummary(t *testing.T) {
