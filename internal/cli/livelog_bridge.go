@@ -221,9 +221,6 @@ func (t *livelogTurn) transcriptSelect(delta int, extend bool) {
 	t.tr.render()
 }
 
-func (t *livelogTurn) transcriptHasSelection() bool { return t.tr.hasSelection() }
-
-func (t *livelogTurn) transcriptSelectedText() (string, bool) { return t.tr.selectedText() }
 func (t *livelogTurn) transcriptSelectionPlan() (selectionCopyPlan, bool) {
 	return t.tr.selectionPlan()
 }
@@ -317,8 +314,8 @@ func (t *livelogTurn) transcriptSearching() bool { return t.tr.active && t.tr.in
 func (t *livelogTurn) transcriptPageCursor() (transcriptPageRequest, bool) {
 	return t.tr.pageCursor()
 }
-func (t *livelogTurn) transcriptApplyPage(req transcriptPageRequest, r aria.AriaRead) {
-	t.tr.applyPage(req, r)
+func (t *livelogTurn) transcriptApplyPage(req transcriptPageRequest, messages []aria.Message) {
+	t.tr.applyPage(req, messages)
 }
 func (t *livelogTurn) transcriptSearchingHistory() bool { return t.tr.searchingHistory() }
 func (t *livelogTurn) transcriptPageFailed() {

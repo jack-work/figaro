@@ -154,10 +154,6 @@ func (t *transcript) selectNode(delta int, extend bool) {
 	t.ensureSelectionVisible()
 }
 
-func (t *transcript) hasSelection() bool {
-	return t.selection.active
-}
-
 func (t *transcript) clearSelection() {
 	direction := pageOlder
 	messages := t.messages()
@@ -170,19 +166,6 @@ func (t *transcript) clearSelection() {
 	t.pruneCaches()
 	t.lines()
 	t.restoreViewportAnchor(anchorLT, within)
-}
-
-func (t *transcript) selectedText() (string, bool) {
-	plan, ok := t.selectionPlan()
-	if !ok {
-		return "", false
-	}
-	messages := t.messages()
-	if plan.open != nil {
-		messages = append(messages, *plan.open)
-	}
-	text, err := selectionTextFromMessages(plan, messages)
-	return text, err == nil
 }
 
 func (t *transcript) selectionPlan() (selectionCopyPlan, bool) {
@@ -274,24 +257,6 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (ar
 		out = append(out, pages[i]...)
 	}
 	out = append(out, newest...)
-	return strings.Join(out, "\n\n"), nil
-}
-
-func selectionTextFromMessages(plan selectionCopyPlan, messages []aria.Message) (string, error) {
-	var out []string
-	foundLo, foundHi := false, false
-	for _, m := range messages {
-		text, lo, hi, err := selectedMessageText(m, plan)
-		if err != nil {
-			return "", err
-		}
-		out = append(out, text...)
-		foundLo = foundLo || lo
-		foundHi = foundHi || hi
-	}
-	if !foundLo || !foundHi {
-		return "", fmt.Errorf("selection endpoints unavailable")
-	}
 	return strings.Join(out, "\n\n"), nil
 }
 

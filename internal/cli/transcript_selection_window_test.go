@@ -27,7 +27,7 @@ func TestTranscript_OpenSelectionLoadsGapBeforeExtending(t *testing.T) {
 		tr.offset = 0
 		tr.checkOlder = true
 		req, _ := tr.pageCursor()
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 	tr.selectNode(-1, false)
 	focus := tr.selection.focus
@@ -77,7 +77,7 @@ func TestTranscript_PagedSearchMatchesRenderedMarkdown(t *testing.T) {
 		if !ok {
 			break
 		}
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 	lines := tr.lines()
 	if tr.offset >= len(lines) || !strings.Contains(lines[tr.offset], "foo") {

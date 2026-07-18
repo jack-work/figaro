@@ -68,7 +68,7 @@ func TestTranscript_BoundedDescriptorsFallBackForward(t *testing.T) {
 			t.Fatal("expected older page")
 		}
 
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 	if len(tr.pages) != transcriptPageLimit || len(tr.newer) != transcriptDescLimit ||
 		len(tr.payloadLRU) != transcriptPayloadLRULimit {
@@ -86,11 +86,11 @@ func TestTranscript_BoundedDescriptorsFallBackForward(t *testing.T) {
 			t.Fatal("nearest evicted payload missed the LRU")
 		}
 		firstReplay = false
-		r := readBefore(history, req.before, req.expected.Count)
+		messages := committedMessages(readBefore(history, req.before, req.expected.Count).Committed)
 		if len(req.cached) > 0 {
-			r = ariaReadForMessages(req.cached)
+			messages = req.cached
 		}
-		tr.applyPage(req, r)
+		tr.applyPage(req, messages)
 	}
 	tr.offset = len(tr.lineLT)
 	tr.checkNewer = true
@@ -105,7 +105,7 @@ func TestTranscript_BoundedDescriptorsFallBackForward(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := tr.messages()[len(tr.messages())-1].LT
-	tr.applyPage(req, r)
+	tr.applyPage(req, committedMessages(r.Committed))
 	after := tr.messages()[len(tr.messages())-1].LT
 	if after <= before || after-before != transcriptPageSize {
 		t.Fatalf("fallback advanced %d -> %d", before, after)
@@ -123,7 +123,7 @@ func TestTranscript_DescriptorMismatchInvalidatesReplayChain(t *testing.T) {
 		tr.offset = 0
 		tr.checkOlder = true
 		req, _ := tr.pageCursor()
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 	tr.offset = len(tr.lineLT)
 	tr.checkNewer = true
@@ -133,7 +133,7 @@ func TestTranscript_DescriptorMismatchInvalidatesReplayChain(t *testing.T) {
 	}
 	changed := readBefore(history, req.before, req.expected.Count)
 	changed.Committed[0].LT++
-	tr.applyPage(req, changed)
+	tr.applyPage(req, committedMessages(changed.Committed))
 	if len(tr.newer) != 0 || !tr.checkNewer {
 		t.Fatalf("mismatch left %d descriptors, checkNewer=%v", len(tr.newer), tr.checkNewer)
 	}

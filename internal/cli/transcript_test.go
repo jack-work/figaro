@@ -105,13 +105,13 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	tr.key('g')
 	tr.key('g')
 	off0 := tr.offset
-	cur, ok := tr.olderCursor()
-	if !ok || cur != 5 {
-		t.Fatalf("olderCursor = (%d,%v), want (5,true)", cur, ok)
+	req, ok := tr.pageCursor()
+	if !ok || req.before != 5 {
+		t.Fatalf("pageCursor = (%d,%v), want (5,true)", req.before, ok)
 	}
 	// Page in the older window; the viewport anchors (offset shifts down so the
 	// content the user was reading stays put).
-	tr.applyOlder(aria.AriaRead{Committed: []aria.Committed{msg(1), msg(2), msg(3), msg(4)}})
+	tr.applyPage(req, committedMessages([]aria.Committed{msg(1), msg(2), msg(3), msg(4)}))
 	if tr.offset <= off0 {
 		t.Fatalf("offset should shift down to anchor after prepend (was %d, now %d)", off0, tr.offset)
 	}
@@ -121,9 +121,9 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 		t.Fatalf("after paging, the top should show msg01")
 	}
 	// Oldest is now LT 1 — nothing older; paging stops.
-	cur, ok = tr.olderCursor()
+	req, ok = tr.pageCursor()
 	if ok {
-		t.Fatalf("no history should remain below LT 1 (got cursor %d)", cur)
+		t.Fatalf("no history should remain below LT 1 (got cursor %d)", req.before)
 	}
 }
 

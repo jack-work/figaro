@@ -315,9 +315,10 @@ func (in *interactiveInput) pageTranscript() {
 			return in.fcli.ReadBefore(rctx, before, limit)
 		}
 		var r aria.AriaRead
+		var messages []aria.Message
 		var rerr error
 		if len(req.cached) > 0 {
-			r = ariaReadForMessages(req.cached)
+			messages = req.cached
 		} else if req.after != 0 {
 			r, rerr = readNextPage(req.after, req.watermark, transcriptPageSize, read)
 		} else {
@@ -327,6 +328,9 @@ func (in *interactiveInput) pageTranscript() {
 			}
 			r, rerr = read(req.before, limit)
 		}
+		if rerr == nil && messages == nil {
+			messages = committedMessages(r.Committed)
+		}
 		rcancel()
 		in.mu.Lock()
 		if rerr != nil {
@@ -334,7 +338,7 @@ func (in *interactiveInput) pageTranscript() {
 			in.mu.Unlock()
 			return
 		}
-		in.lt.transcriptApplyPage(req, r)
+		in.lt.transcriptApplyPage(req, messages)
 		searching := in.lt.transcriptSearchingHistory()
 		in.mu.Unlock()
 		if !searching {
@@ -342,16 +346,6 @@ func (in *interactiveInput) pageTranscript() {
 		}
 	}
 
-}
-
-func ariaReadForMessages(messages []aria.Message) aria.AriaRead {
-	r := aria.AriaRead{Committed: make([]aria.Committed, 0, len(messages))}
-	for _, m := range messages {
-		r.Committed = append(r.Committed, aria.Committed{
-			LT: m.LT, Role: m.Role, Nodes: m.Nodes,
-		})
-	}
-	return r
 }
 
 func readNextPage(after, watermark, limit int, read func(int, int) (aria.AriaRead, error)) (aria.AriaRead, error) {

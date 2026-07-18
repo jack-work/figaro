@@ -88,7 +88,7 @@ func BenchmarkTranscriptPagedSearchMiss(b *testing.B) {
 					if !ok {
 						break
 					}
-					tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+					tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 				}
 			}
 		})

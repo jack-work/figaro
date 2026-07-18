@@ -29,12 +29,10 @@ const (
 // panel. Exit is Ctrl-D/Ctrl-C at the input loop. Not safe for concurrent use;
 // the caller serializes all entry points.
 type transcript struct {
-	out       io.Writer
-	view      ldrender.NodeView
-	client    *aria.Client
-	figaroID  string    // shown in the footer (blank → omitted)
-	startedAt time.Time // session start; the footer time, mirroring the incipit bookend
-	status    *sessionStatus
+	out    io.Writer
+	view   ldrender.NodeView
+	client *aria.Client
+	status *sessionStatus
 
 	active   bool
 	showHelp bool // '?': the footer grows into a key-reference panel
@@ -115,7 +113,7 @@ type transcriptPageRequest struct {
 
 func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string, startedAt time.Time) *transcript {
 	return &transcript{
-		out: out, view: view, client: client, figaroID: figaroID, startedAt: startedAt,
+		out: out, view: view, client: client,
 		status: newSessionStatus(figaroID, startedAt), w: w, h: h,
 		rowCache: map[int]cachedMessage{}, nodeRows: map[nodeRef]nodeSpan{}, expanded: map[nodeRef]bool{},
 	}
@@ -211,11 +209,10 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	return transcriptPageRequest{}, false
 }
 
-func (t *transcript) applyPage(req transcriptPageRequest, r aria.AriaRead) {
+func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Message) {
 	if !t.active {
 		return
 	}
-	messages := committedMessages(r.Committed)
 	if len(messages) == 0 {
 		if req.direction == pageOlder {
 			t.noMoreOlder = true
@@ -438,20 +435,6 @@ func (t *transcript) observeCommitted(m aria.Message) {
 		copy.Nodes = append([]livedoc.Node(nil), m.Nodes...)
 		t.heldOpen = &copy
 	}
-}
-
-func (t *transcript) olderCursor() (int, bool) {
-	req, ok := t.pageCursor()
-	return req.before, ok && req.direction == pageOlder
-}
-
-func (t *transcript) applyOlder(r aria.AriaRead) {
-	messages := t.messages()
-	if len(messages) == 0 {
-		t.noMoreOlder = true
-		return
-	}
-	t.applyPage(transcriptPageRequest{before: messages[0].LT, direction: pageOlder}, r)
 }
 
 func describePage(messages []aria.Message) pageDesc {

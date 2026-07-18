@@ -53,7 +53,7 @@ func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
 		if !ok || req.direction != pageOlder {
 			t.Fatalf("older request = %+v, %v", req, ok)
 		}
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 	if len(tr.pages) != transcriptPageLimit {
 		t.Fatalf("retained pages = %d, want %d", len(tr.pages), transcriptPageLimit)
@@ -77,7 +77,7 @@ func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
 		if !ok || req.direction != pageNewer {
 			t.Fatalf("newer request = %+v, %v", req, ok)
 		}
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 	after := tr.messages()
 	if after[len(after)-1].LT <= before[len(before)-1].LT {
@@ -114,7 +114,7 @@ func TestTranscript_SearchPagesOlderWithBoundedRetention(t *testing.T) {
 		if !ok {
 			break
 		}
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 	if tr.searchingHistory() {
 		t.Fatal("search did not settle")
@@ -147,7 +147,7 @@ func TestTranscript_SelectionSurvivesPayloadEviction(t *testing.T) {
 		if !ok {
 			t.Fatal("expected older page")
 		}
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 	if len(tr.pages) != transcriptPageLimit {
 		t.Fatalf("selection retained %d payload pages", len(tr.pages))
@@ -200,7 +200,7 @@ func TestTranscript_SearchTraversesEvictedNewerPages(t *testing.T) {
 		tr.offset = 0
 		tr.checkOlder = true
 		req, _ := tr.pageCursor()
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 	tr.find("message-190")
 	for tr.searchingHistory() {
@@ -208,7 +208,7 @@ func TestTranscript_SearchTraversesEvictedNewerPages(t *testing.T) {
 		if !ok {
 			break
 		}
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 	lines := tr.lines()
 	if tr.offset >= len(lines) || !strings.Contains(lines[tr.offset], "message-190") {
@@ -228,11 +228,11 @@ func TestTranscript_SelectsOpenNodeAfterLeavingFollow(t *testing.T) {
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.selectNode(-1, false)
-	if tr.heldOpen == nil || tr.selection.focus.lt != 2 || !tr.hasSelection() {
+	if tr.heldOpen == nil || tr.selection.focus.lt != 2 || !tr.selection.active {
 		t.Fatalf("open selection lost: held=%v selection=%+v", tr.heldOpen != nil, tr.selection)
 	}
-	if text, ok := tr.selectedText(); !ok || text != "streaming prose" {
-		t.Fatalf("open selected text = %q, %v", text, ok)
+	if text, err := selectedTextForTest(tr, transcriptHistory(1)); err != nil || text != "streaming prose" {
+		t.Fatalf("open selected text = %q, %v", text, err)
 	}
 }
 
@@ -250,7 +250,7 @@ func TestTranscript_ReloadsOldestAfterNewerEviction(t *testing.T) {
 		if !ok {
 			break
 		}
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 	tr.offset = len(tr.lineLT)
 	tr.checkNewer = true
@@ -258,7 +258,7 @@ func TestTranscript_ReloadsOldestAfterNewerEviction(t *testing.T) {
 	if !ok {
 		t.Fatal("expected newer refetch")
 	}
-	tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+	tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	if tr.noMoreOlder {
 		t.Fatal("evicting the oldest page must re-enable older paging")
 	}

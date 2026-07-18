@@ -21,7 +21,7 @@ func TestTranscript_ForwardSelectionRequestsEvictedPage(t *testing.T) {
 		tr.offset = 0
 		tr.checkOlder = true
 		req, _ := tr.pageCursor()
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 
 	messages := tr.messages()
@@ -78,7 +78,7 @@ func TestTranscript_OpenRangeRehydratesEvictedPages(t *testing.T) {
 		if !ok {
 			t.Fatal("expected older page")
 		}
-		tr.applyPage(req, readBefore(history, req.before, transcriptPageSize))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
 	first := tr.messages()[0]
 	tr.selection.focus = testSelectionPoint(first.LT, 0, first.Nodes[0])
