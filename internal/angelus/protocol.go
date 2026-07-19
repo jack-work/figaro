@@ -205,19 +205,6 @@ func loadoutVerLabel(stamped, current string) string {
 	return stamped
 }
 
-// openAriaTranslation opens the per-aria translation cache. nil on failure.
-func (h *handlers) openAriaTranslation(ariaID, providerName string) store.Log[[]json.RawMessage] {
-	if h.angelus.Backend == nil {
-		return nil
-	}
-	stream, err := h.angelus.Backend.OpenTranslation(ariaID, providerName)
-	if err != nil {
-		slog.Warn("translator stream open (cache disabled for aria)", "aria", ariaID, "provider", providerName, "err", err)
-		return nil
-	}
-	return stream
-}
-
 func (h *handlers) create(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	_, span := figOtel.Start(ctx, "angelus.create")
 	defer span.End()

@@ -213,6 +213,10 @@ func subscribeChan(a *figaro.Agent) (<-chan rpc.Notification, func()) {
 	}
 }
 
+func submitPrompt(a *figaro.Agent, text string) {
+	a.SubmitPrompt(rpc.QuaRequest{Text: text})
+}
+
 // --- Tests ---
 
 func newTestAgent(response string) *figaro.Agent {
@@ -341,7 +345,7 @@ func TestAgent_PromptAndSubscribe(t *testing.T) {
 	// Subscribe before prompting.
 	ch, _ := subscribeChan(a)
 
-	a.Prompt("What is 2+2?")
+	submitPrompt(a, "What is 2+2?")
 
 	// Collect notifications until done.
 	var notifications []rpc.Notification
@@ -384,7 +388,7 @@ func TestAgentContextMetricsTrackCurrentSession(t *testing.T) {
 	defer a.Kill()
 
 	ch, _ := subscribeChan(a)
-	a.Prompt("hello")
+	submitPrompt(a, "hello")
 	for {
 		select {
 		case n := <-ch:
@@ -430,7 +434,7 @@ func TestAgentFirstLiveFrameUsesResolvedContextLimit(t *testing.T) {
 	defer a.Kill()
 
 	ch, _ := subscribeChan(a)
-	a.Prompt("hello")
+	submitPrompt(a, "hello")
 	var firstLive *aria.AriaRead
 	for {
 		select {
@@ -465,7 +469,7 @@ func TestAgent_ReadCatchUp(t *testing.T) {
 	}
 
 	ch, _ := subscribeChan(a)
-	a.Prompt("the question")
+	submitPrompt(a, "the question")
 
 	timeout := time.After(5 * time.Second)
 	for {
@@ -516,7 +520,7 @@ func TestAgent_Context(t *testing.T) {
 	// Initially empty.
 	assert.Empty(t, a.Context())
 
-	a.Prompt("say hi")
+	submitPrompt(a, "say hi")
 
 	// Wait for done.
 	timeout := time.After(5 * time.Second)
@@ -555,8 +559,8 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 	ch, _ := subscribeChan(a)
 
 	// Enqueue two prompts rapidly.
-	a.Prompt("first")
-	a.Prompt("second")
+	submitPrompt(a, "first")
+	submitPrompt(a, "second")
 
 	// Collect two done notifications.
 	doneCount := 0
@@ -586,7 +590,7 @@ func TestAgent_MultipleSubscribers(t *testing.T) {
 	ch1, _ := subscribeChan(a)
 	ch2, _ := subscribeChan(a)
 
-	a.Prompt("hello")
+	submitPrompt(a, "hello")
 
 	// Both should receive done.
 	timeout := time.After(5 * time.Second)
@@ -678,7 +682,7 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	// First prompt — will panic inside the agent. The new contract is
 	// that every turn (success or failure) terminates with turn.done so
 	// the CLI never hangs; an error surfaces as the done reason.
-	a.Prompt("trigger panic")
+	submitPrompt(a, "trigger panic")
 
 	timeout := time.After(5 * time.Second)
 	var doneReason string
@@ -699,7 +703,7 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	assert.Contains(t, doneReason, "error", "panic should surface as an error turn.done")
 
 	// Second prompt — should work because the agent restarted.
-	a.Prompt("after recovery")
+	submitPrompt(a, "after recovery")
 
 	gotDone = false
 	timeout = time.After(5 * time.Second)
@@ -737,7 +741,7 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 	ch, _ := subscribeChan(a)
 
 	// Trigger panic.
-	a.Prompt("boom")
+	submitPrompt(a, "boom")
 
 	// Wait for the error to surface as the turn.done reason.
 	timeout := time.After(5 * time.Second)
@@ -792,7 +796,7 @@ func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 	defer a.Kill()
 
 	ch, _ := subscribeChan(a)
-	a.Prompt("save me")
+	submitPrompt(a, "save me")
 
 	timeout := time.After(5 * time.Second)
 	for {
@@ -816,10 +820,6 @@ firstDone:
 	assert.Equal(t, message.RoleUser, turns[0].Role)
 	assert.Equal(t, message.RoleAssistant, turns[1].Role)
 
-	// The open-message blob is cleared once the turn commits to the IR.
-	blob, err := backend.LiveBlob(conv)
-	require.NoError(t, err)
-	assert.Nil(t, blob, "live blob should be cleared after the turn commits")
 }
 
 func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
@@ -834,7 +834,7 @@ func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 	})
 
 	ch, _ := subscribeChan(a1)
-	a1.Prompt("hello")
+	submitPrompt(a1, "hello")
 
 	timeout := time.After(5 * time.Second)
 	for {
@@ -877,7 +877,7 @@ func TestAgent_PersistenceKillFlushes(t *testing.T) {
 	})
 
 	ch, _ := subscribeChan(a)
-	a.Prompt("save on kill")
+	submitPrompt(a, "save on kill")
 
 	timeout := time.After(5 * time.Second)
 	for {
@@ -957,7 +957,7 @@ func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
 	})
 
 	ch, _ := subscribeChan(a)
-	a.Prompt("vanish")
+	submitPrompt(a, "vanish")
 
 	timeout := time.After(5 * time.Second)
 	for {
@@ -1014,7 +1014,7 @@ func TestAgent_Interrupt(t *testing.T) {
 	defer a.Kill()
 
 	ch, _ := subscribeChan(a)
-	a.Prompt("take forever please")
+	submitPrompt(a, "take forever please")
 
 	// Wait for the provider to actually be streaming before interrupting,
 	// so we're testing the mid-turn path and not a pre-start race.
@@ -1064,7 +1064,7 @@ func TestAgentInfoReportsRunningTurnActive(t *testing.T) {
 	})
 	defer a.Kill()
 
-	a.Prompt("take forever please")
+	submitPrompt(a, "take forever please")
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):

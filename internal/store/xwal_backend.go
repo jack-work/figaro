@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
@@ -34,7 +33,6 @@ type XwalBackend struct {
 }
 
 type ariaHandle struct {
-	id    string
 	ir    *cachedLog[message.Message]
 	trans map[string]*cachedLog[[]json.RawMessage]
 }
@@ -66,9 +64,6 @@ func NewXwalBackend(root string) (*XwalBackend, error) {
 	}, nil
 }
 
-// Store exposes the underlying tree (create/fork/list) to the daemon.
-func (b *XwalBackend) Store() *XwalStore { return b.store }
-
 // handleLocked returns the shared handle for an aria, opening it once.
 // Caller holds b.mu. The handle carries the row caches for the aria's
 // channels; nothing else. Fresh *xwal.XWAL instances are opened on
@@ -85,7 +80,6 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	}
 	_ = xw.Close()
 	h := &ariaHandle{
-		id:    id,
 		ir:    newCachedLog[message.Message](newXwalLog[message.Message](b.store, id, chanIR, true)),
 		trans: map[string]*cachedLog[[]json.RawMessage]{},
 	}
@@ -373,9 +367,6 @@ func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) {
 	return &value, nil
 }
 func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
-	if meta != nil && meta.LastActiveMS != 0 {
-		b.store.Touch(ariaID, meta.LastActiveMS) // recency for `figaro list`
-	}
 	c := b.metaCache(ariaID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -403,69 +394,6 @@ func (b *XwalBackend) metaCache(ariaID string) *metaCache {
 	return c
 }
 
-// ---- live message (the single open/in-progress UI message per trunk) ----
-//
-// Committed messages live in the append-only xwal (the fig IR, which forks
-// with the trunk); the one OPEN message is mutated as deltas stream, so it
-// can't live in the segments. It's a plain r/w JSON blob, one per trunk, in
-// the figaro data dir (root/_live/<id>.json). The store is dumb storage — the
-// blob is opaque (the aria layer owns the livedoc encoding) and overwritten
-// in place (last write wins) for optimistic updates. On restart a leftover
-// blob is the caller's to discard or close.
-
-func (b *XwalBackend) livePath(id string) string {
-	return filepath.Join(b.root, "_live", id+".json")
-}
-
-// LiveBlob returns the persisted open-message blob for a trunk, or nil if
-// there is none open.
-func (b *XwalBackend) LiveBlob(ariaID string) ([]byte, error) {
-	data, err := os.ReadFile(b.livePath(ariaID))
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	return data, err
-}
-
-// SetLiveBlob overwrites the open-message blob for a trunk (atomic
-// tmp+rename), for optimistic in-place updates as deltas apply.
-func (b *XwalBackend) SetLiveBlob(ariaID string, blob []byte) error {
-	path := b.livePath(ariaID)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, blob, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
-// ClearLive removes the open-message blob (on commit/close). A no-op if absent.
-func (b *XwalBackend) ClearLive(ariaID string) error {
-	err := os.Remove(b.livePath(ariaID))
-	if os.IsNotExist(err) {
-		return nil
-	}
-	return err
-}
-
-func (b *XwalBackend) List() ([]AriaInfo, error) {
-	out := []AriaInfo{}
-	for _, n := range b.store.Nodes() {
-		if n.Kind != string(kindConversation) {
-			continue
-		}
-		info := AriaInfo{ID: n.ID, LastModified: time.UnixMilli(n.LastMS)}
-		if m, _ := b.Meta(n.ID); m != nil {
-			info.Meta = m
-			info.MessageCount = m.MessageCount
-		}
-		out = append(out, info)
-	}
-	return out, nil
-}
-
 func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
 	b.dropHandle(ariaID)
 	b.mu.Lock()
@@ -473,7 +401,6 @@ func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
 	delete(b.metas, ariaID)
 	b.mu.Unlock()
 	_ = os.Remove(b.metaPath(ariaID))
-	_ = b.ClearLive(ariaID)
 	return b.store.RemoveLeaf(ariaID, recursive)
 }
 

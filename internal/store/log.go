@@ -32,13 +32,6 @@ type Log[T any] interface {
 	ReadPage(from, before uint64, n int) ([]Entry[T], int)
 	Lookup(figaroLT uint64) (Entry[T], bool)
 	PeekTail() (Entry[T], bool)
-	ScanFromEnd(n int) []Entry[T]
-
-	// ReadBefore returns up to n entries whose FigaroLT is strictly less than
-	// figaroLT, in ASCENDING FigaroLT order (the n entries immediately preceding
-	// the cursor). Fewer than n (or none) if the log doesn't have them. A cursor
-	// of 0 is treated as "before the beginning" => empty.
-	ReadBefore(figaroLT uint64, n int) []Entry[T]
 
 	// Append stamps e with a fresh LT and writes it to the log.
 	Append(e Entry[T]) (Entry[T], error)

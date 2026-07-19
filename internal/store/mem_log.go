@@ -76,40 +76,6 @@ func (s *MemLog[T]) PeekTail() (Entry[T], bool) {
 	return s.entries[len(s.entries)-1], true
 }
 
-func (s *MemLog[T]) ScanFromEnd(n int) []Entry[T] {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if n <= 0 || len(s.entries) == 0 {
-		return nil
-	}
-	if n > len(s.entries) {
-		n = len(s.entries)
-	}
-	out := make([]Entry[T], n)
-	for i := 0; i < n; i++ {
-		out[i] = s.entries[len(s.entries)-1-i]
-	}
-	return out
-}
-
-func (s *MemLog[T]) ReadBefore(figaroLT uint64, n int) []Entry[T] {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if n <= 0 || figaroLT == 0 || len(s.entries) == 0 {
-		return nil
-	}
-	out := make([]Entry[T], 0, n)
-	for i := len(s.entries) - 1; i >= 0 && len(out) < n; i-- {
-		if s.entries[i].FigaroLT < figaroLT {
-			out = append(out, s.entries[i])
-		}
-	}
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
-	return out
-}
-
 func (s *MemLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -196,7 +196,7 @@ func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 	defer a.Kill()
 
 	ch, _ := subscribeChan(a)
-	a.Prompt("go")
+	submitPrompt(a, "go")
 
 	// Drain until Done.
 	timeout := time.After(5 * time.Second)
@@ -272,7 +272,7 @@ func TestSpeculativeDispatch_ResultOrdering(t *testing.T) {
 	defer a.Kill()
 
 	ch, _ := subscribeChan(a)
-	a.Prompt("go")
+	submitPrompt(a, "go")
 	waitTurnDone(t, ch)
 
 	// The tool_result message carries one block per call, in canonical
@@ -357,7 +357,7 @@ func TestToolTurn_IRStructure(t *testing.T) {
 	defer a.Kill()
 
 	ch, _ := subscribeChan(a)
-	a.Prompt("go")
+	submitPrompt(a, "go")
 	waitTurnDone(t, ch)
 
 	// The turn lands the right message sequence in the IR: user prompt,

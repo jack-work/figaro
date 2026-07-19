@@ -18,7 +18,6 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
@@ -776,12 +775,10 @@ func logComposeFrame(dir, ariaID string, hasInflight bool, nodes []livedoc.Node)
 // nodes. The aria server diffs subsequent Updates against this internally.
 func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
 	a.unitLT++
-	a.liveRole = role
 	a.ariaSrv.Open(a.unitLT, role)
 	if len(nodes) > 0 {
 		a.ariaSrv.Update(nodes)
 	}
-	a.persistLive(nodes)
 }
 
 // liveEmitInterval coalesces high-frequency streaming emits (~11fps). Structural
@@ -811,38 +808,16 @@ func (a *Agent) emitLive(inflight *message.Message, force bool) {
 // the field-level delta vs the prior frame and broadcasts it (versioned).
 func (a *Agent) emitDelta(nodes []livedoc.Node) {
 	a.ariaSrv.Update(nodes)
-	a.persistLive(nodes)
 }
 
-// emitCommit closes the open unit; it becomes a committed aria message (now in
-// the append-only IR), so the durable live blob is cleared.
+// emitCommit closes the open unit after it becomes a committed IR message.
 func (a *Agent) emitCommit() {
 	a.ariaSrv.Close()
-	a.clearLive()
 }
 
-// abandonLive drops the open unit WITHOUT committing it (a turn that errored
-// before the assistant message reached figLog). The durable blob is cleared so
-// a reconnect/restart doesn't resurrect the partial.
+// abandonLive drops an open unit that never reached the IR.
 func (a *Agent) abandonLive() {
 	a.ariaSrv.Abandon()
-	a.clearLive()
-}
-
-// persistLive mirrors the open (in-progress) UI message to its durable
-// per-trunk blob, so a read can serve it and a restart can recover/discard it.
-// Committed messages are the fig IR; only the single open one needs this.
-func (a *Agent) persistLive(nodes []livedoc.Node) {
-	if a.backend == nil {
-		return
-	}
-	blob, err := json.Marshal(aria.Message{LT: a.unitLT, Role: a.liveRole, Nodes: nodes})
-	if err != nil {
-		return
-	}
-	if err := a.backend.SetLiveBlob(a.id, blob); err != nil {
-		slog.Error("persist live message", "aria", a.id, "err", err)
-	}
 }
 
 // firstChars returns the first n runes of s's opening line (newlines folded
@@ -854,16 +829,6 @@ func firstChars(s string, n int) string {
 		return s
 	}
 	return strings.TrimSpace(string(r[:n])) + "…"
-}
-
-// clearLive drops the durable open-message blob.
-func (a *Agent) clearLive() {
-	if a.backend == nil {
-		return
-	}
-	if err := a.backend.ClearLive(a.id); err != nil {
-		slog.Error("clear live message", "aria", a.id, "err", err)
-	}
 }
 
 // asm assembles the in-flight assistant message from provider Bus events

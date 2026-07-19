@@ -575,7 +575,7 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 	notifier := &responseDoneNotifier{done: make(chan struct{})}
 	unsubscribe := agent.Subscribe(notifier)
 	defer unsubscribe()
-	agent.Prompt("use the echo tool")
+	agent.SubmitPrompt(rpc.QuaRequest{Text: "use the echo tool"})
 
 	select {
 	case <-notifier.done:

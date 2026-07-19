@@ -8,17 +8,13 @@ package figaro
 
 import (
 	"time"
-
-	"github.com/jack-work/figaro/internal/message"
 )
 
 // Figaro is a single agent instance.
 type Figaro interface {
 	ID() string
 	SocketPath() string
-	Prompt(text string)
 	Interrupt()
-	Context() []message.Message
 	Info() FigaroInfo
 	Kill()
 }

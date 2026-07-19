@@ -169,5 +169,4 @@ Rule of thumb: don't background with bare `&` and assume completion. Use
 
 State root `~/.local/state/figaro/arias/`: parallel XWAL trees in `ir/`,
 `chalkboard/`, and `translations/<provider>/`, plus `_meta/<id>.json`
-for list/status metadata and `_live/<id>.json` for the open UI message.
-See arias.md for reading these safely.
+for list/status metadata. See arias.md for reading these safely.

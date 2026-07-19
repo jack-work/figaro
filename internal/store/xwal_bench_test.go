@@ -269,27 +269,6 @@ func convIDs(be *XwalBackend) []string {
 	return ids
 }
 
-// BenchmarkBackendList measures the full Backend.List() path (Nodes + the
-// per-aria meta read) — the call the daemon makes for `fig ls` dormant arias.
-func BenchmarkBackendList(b *testing.B) {
-	be, err := NewXwalBackend(b.TempDir())
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer be.Close()
-	seedTree(b, be, 4, 3, 2)
-
-	trunkScanCount.Store(0)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if _, err := be.List(); err != nil {
-			b.Fatal(err)
-		}
-	}
-	b.StopTimer()
-	b.ReportMetric(float64(trunkScanCount.Load())/float64(b.N), "scans/op")
-}
-
 func BenchmarkChalkboardState10000(b *testing.B) {
 	be, err := NewXwalBackend(b.TempDir())
 	if err != nil {

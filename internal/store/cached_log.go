@@ -82,37 +82,6 @@ func (c *cachedLog[T]) PeekTail() (Entry[T], bool) {
 	return c.rows[len(c.rows)-1], true
 }
 
-func (c *cachedLog[T]) ScanFromEnd(n int) []Entry[T] {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if n <= 0 || len(c.rows) == 0 {
-		return nil
-	}
-	out := make([]Entry[T], 0, n)
-	for i := len(c.rows) - 1; i >= 0 && len(out) < n; i-- {
-		out = append(out, c.rows[i])
-	}
-	return out
-}
-
-func (c *cachedLog[T]) ReadBefore(figaroLT uint64, n int) []Entry[T] {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if n <= 0 || figaroLT == 0 || len(c.rows) == 0 {
-		return nil
-	}
-	out := make([]Entry[T], 0, n)
-	for i := len(c.rows) - 1; i >= 0 && len(out) < n; i-- {
-		if c.rows[i].FigaroLT < figaroLT {
-			out = append(out, c.rows[i])
-		}
-	}
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
-	return out
-}
-
 func (c *cachedLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

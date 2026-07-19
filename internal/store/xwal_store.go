@@ -146,8 +146,7 @@ type topologySnapshot struct {
 	byID            map[string]NodeView
 }
 
-// OpenXwalStore opens (creating if absent) the aria tree at root, migrating a
-// pre-root/stumps store in place if needed.
+// OpenXwalStore opens the aria tree at root, creating it when absent.
 func OpenXwalStore(root string) (*XwalStore, error) {
 	if root == "" {
 		return nil, fmt.Errorf("xwal store: empty root")
@@ -156,11 +155,6 @@ func OpenXwalStore(root string) (*XwalStore, error) {
 		return nil, err
 	}
 	s := &XwalStore{root: root, cfg: storeConfig(), now: func() int64 { return time.Now().UnixMilli() }}
-	// Heal a pre-root/stumps store (root .trunk marker + loadout trunks) into
-	// the markerless-root + named-stumps layout before opening.
-	if err := migrateToStumps(root); err != nil {
-		return nil, fmt.Errorf("xwal store: migrate: %w", err)
-	}
 	tr, err := xwal.OpenTrunks(root, s.cfg)
 	if err != nil {
 		// Not initialized yet: create the genesis root.
@@ -336,25 +330,6 @@ func stampLoadout(p message.Patch, name, ver string) message.Patch {
 	return message.Patch{Set: set, Remove: p.Remove}
 }
 
-// kindOf derives an id's kind: the root sentinel, a loadout stump (by name),
-// else a live conversation trunk.
-func (s *XwalStore) kindOf(id string) nodeKind {
-	if id == rootID {
-		return kindNull
-	}
-	for _, st := range s.listStumps() {
-		if st.Name == id {
-			return kindLoadout
-		}
-	}
-	for _, t := range s.listTrunks() {
-		if t.ID == id {
-			return kindConversation
-		}
-	}
-	return ""
-}
-
 // NodeView is a read-only snapshot of an aria (trunk) for listing/lineage.
 type NodeView struct {
 	ID         string
@@ -368,8 +343,6 @@ type NodeView struct {
 	Trunk      string
 	Vector     []int
 	BranchedLT uint64 // main-LT this trunk diverged from its parent
-	CreatedMS  int64
-	LastMS     int64
 }
 
 // view renders a live (conversation) trunk. Its parent for the global
@@ -506,20 +479,10 @@ func splitLoadoutKey(key string) (name, ver string) {
 	return key, ""
 }
 
-// Touch is a no-op now: list recency comes from the per-aria meta sidecar.
-func (s *XwalStore) Touch(id string, ms int64) {}
-
 // RemoveLeaf deletes a trunk (its subtree) via xwal.Trunks. Trunk-addressed;
 // refuses a trunk with live branches unless recursive.
 func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.trunks.Remove(id, recursive)
-}
-
-// policy is the legacy side-state (null trunk id + loadout dedup map) of a
-// pre-root/stumps store; read only by the migration.
-type policy struct {
-	Null     string            `json:"null"`
-	Loadouts map[string]string `json:"loadouts"` // "name@version" -> trunk id
 }

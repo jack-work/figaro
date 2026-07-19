@@ -87,18 +87,6 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		t.Fatalf("meta = %+v", m)
 	}
 
-	// list shows the conversation
-	list, _ := b.List()
-	found := false
-	for _, a := range list {
-		if a.ID == conv {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("conversation %s not in List %+v", conv, list)
-	}
-
 	// fork: conversation branches into two; the parent is evicted/frozen
 	cont, alt, err := b.Fork(conv)
 	if err != nil {
@@ -115,51 +103,6 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 	}
 }
 
-func TestXwalBackendListUsesMetadataWithoutOpeningIR(t *testing.T) {
-	b, err := NewXwalBackend(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer b.Close()
-
-	loadout, err := b.CreateLoadout("default", patchSet(map[string]string{"system.credo": "be terse"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	conv, err := b.CreateConversation(loadout)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ir, err := b.Open(conv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	entry, err := ir.Append(Entry[message.Message]{Payload: userText("one")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := b.SetMeta(conv, &AriaMeta{MessageCount: 99, LastFigaroLT: entry.LT}); err != nil {
-		t.Fatal(err)
-	}
-
-	b.dropHandle(conv)
-	list, err := b.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, info := range list {
-		if info.ID == conv && info.MessageCount != 99 {
-			t.Fatalf("metadata count = %d, want 99", info.MessageCount)
-		}
-	}
-	b.mu.Lock()
-	_, opened := b.open[conv]
-	b.mu.Unlock()
-	if opened {
-		t.Fatal("List opened the conversation IR")
-	}
-}
-
 func TestAriaMetaReadsLegacySidecar(t *testing.T) {
 	var meta AriaMeta
 	if err := json.Unmarshal([]byte(`{"message_count":7,"tokens_in":11,"last_figaro_lt":9}`), &meta); err != nil {
@@ -168,6 +111,10 @@ func TestAriaMetaReadsLegacySidecar(t *testing.T) {
 	if meta.MessageCount != 7 || meta.TokensIn != 11 || meta.LastFigaroLT != 9 {
 		t.Fatalf("legacy metadata changed on decode: %#v", meta)
 	}
+}
+
+func userText(s string) message.Message {
+	return message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent(s)}}
 }
 
 func patchSet(kv map[string]string) message.Patch {
@@ -337,45 +284,6 @@ func TestXwalBackend_CauterizedLoadoutFork(t *testing.T) {
 	// And the loadout still has NO live head of its own (stays ceremonial).
 	if _, ok := b.Node(l); !ok {
 		t.Fatalf("loadout %s should still resolve", l)
-	}
-}
-
-func TestXwalBackend_LiveBlob(t *testing.T) {
-	b, err := NewXwalBackend(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer b.Close()
-	l, _ := b.CreateLoadout("d", patchSet(nil))
-	conv, _ := b.CreateConversation(l)
-
-	if blob, err := b.LiveBlob(conv); err != nil || blob != nil {
-		t.Fatalf("fresh trunk has no live blob: %v %q", err, blob)
-	}
-	// Optimistic in-place updates (last write wins).
-	if err := b.SetLiveBlob(conv, []byte(`{"v":0,"nodes":[]}`)); err != nil {
-		t.Fatal(err)
-	}
-	if err := b.SetLiveBlob(conv, []byte(`{"v":1,"nodes":[{"type":"prose"}]}`)); err != nil {
-		t.Fatal(err)
-	}
-	got, err := b.LiveBlob(conv)
-	if err != nil || string(got) != `{"v":1,"nodes":[{"type":"prose"}]}` {
-		t.Fatalf("live blob = %q err=%v", got, err)
-	}
-	// Survives reopen (durable across a daemon restart).
-	b.Close()
-	b2, _ := NewXwalBackend(b.root)
-	defer b2.Close()
-	if got, _ := b2.LiveBlob(conv); string(got) != `{"v":1,"nodes":[{"type":"prose"}]}` {
-		t.Fatalf("live blob not durable across reopen: %q", got)
-	}
-	// Clear on commit/close.
-	if err := b2.ClearLive(conv); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := b2.LiveBlob(conv); got != nil {
-		t.Fatalf("live blob not cleared: %q", got)
 	}
 }
 

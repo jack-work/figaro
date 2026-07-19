@@ -111,9 +111,8 @@ type Agent struct {
 	// the single source of the aria-read wire: it serves both the live push
 	// (MethodAriaFrame) and the catch-up pull (figaro.read). unitLT is the
 	// monotonic figaro LT assigned to each unit as it opens.
-	ariaSrv  *aria.Server
-	unitLT   int
-	liveRole string // role of the currently-open (live) message, for its durable blob
+	ariaSrv *aria.Server
+	unitLT  int
 
 	createdAt     time.Time
 	lastActive    time.Time
@@ -187,10 +186,6 @@ func NewAgent(cfg Config) *Agent {
 		a.unitLT = i + 1
 		a.ariaSrv.Commit(aria.Message{LT: a.unitLT, Role: u.Role, Nodes: u.Nodes})
 	}
-	// Discard any leftover open-message blob from a prior crash: the partial
-	// turn never reached the IR (the committed messages above are rebuilt from
-	// it), so we resume from the last committed message. (Policy: discard.)
-	a.clearLive()
 	a.ariaSrv.Subscribe(func(r aria.AriaRead) {
 		r.Metrics = a.sessionMetrics()
 		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: r})
@@ -384,14 +379,9 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	a.mu.Unlock()
 }
 
-// Prompt is a tests-only helper.
-func (a *Agent) Prompt(text string) {
-	a.inbox.SendPatient(event{typ: eventUserPrompt, text: text})
-}
-
 // SubmitPrompt enqueues a prompt; the reply streams as log.* frames.
 func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
-	a.inbox.SendPatient(event{
+	a.inbox.Send(event{
 		typ:        eventUserPrompt,
 		text:       req.Text,
 		chalkboard: req.Chalkboard,

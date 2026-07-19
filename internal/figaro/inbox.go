@@ -40,13 +40,6 @@ func (b *Inbox) Send(evt event) bool {
 	return true
 }
 
-// SendSelfish/SendPatient are aliases for Send (legacy test compat).
-func (b *Inbox) SendSelfish(evt event) bool { return b.Send(evt) }
-func (b *Inbox) SendPatient(evt event)      { b.Send(evt) }
-
-// Yield is a no-op (legacy compat).
-func (b *Inbox) Yield() {}
-
 func (b *Inbox) Wake() <-chan struct{} { return b.wake }
 
 func (b *Inbox) Recv() (event, bool) {
