@@ -190,7 +190,10 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.emitSnapshot("user", []livedoc.Node{{Type: livedoc.NodeProse, Markdown: prompt.text}})
 		a.emitCommit()
 	}
-	a.turnStart = a.figLog.Len()
+	a.turnStartLT = 0
+	if tail, ok := a.figLog.PeekTail(); ok {
+		a.turnStartLT = tail.FigaroLT
+	}
 	a.gov = toolout.New(liveOutputTail)
 	a.lastEmit = time.Time{}
 	a.argPartials = map[string]string{}
@@ -689,7 +692,7 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 // since the user prompt, plus the in-flight assistant message (nil once
 // it has sealed into the log).
 func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
-	entries := a.figLog.ReadFrom(uint64(a.turnStart+1), 0)
+	entries := a.figLog.ReadFrom(a.turnStartLT+1, 0)
 	var msgs []message.Message
 	for _, e := range entries {
 		m := e.Payload
@@ -697,12 +700,28 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		msgs = append(msgs, m)
 	}
 	if inflight != nil {
+		// The provider seals the assistant message into the log concurrently
+		// with the drain loop's tail of buffered stream events. Once the sealed
+		// copy is durable — the tail entry of this turn's window is an
+		// assistant message — composing the in-flight assembly TOO would render
+		// the message twice (under a bumped provisional LT, so the aria server
+		// folds it as a brand-new node set: the classic duplicated-thinking
+		// frame). The durable copy wins.
+		if n := len(entries); n > 0 && entries[n-1].Payload.Role == message.RoleAssistant {
+			inflight = nil
+		}
+	}
+	if inflight != nil {
 		// The in-flight message has no LT until it seals. Stamp its provisional
 		// LT — the next main-LT it will seal at — so compose's stable node ids
 		// (LT.blockIdx) match what they'll be post-seal and don't jump at the
-		// boundary. Single writer: no other append lands before this seal.
+		// boundary. While the round is still streaming the window is EMPTY
+		// (nothing sealed after turnStartLT yet), so the base must be the
+		// pre-turn tail LT, not a constant: falling back to 1 re-ids every
+		// streamed node at the seal (1.0 → realLT.0), and the aria server folds
+		// the re-id as a second copy of the whole message.
 		m := *inflight
-		m.LogicalTime = 1
+		m.LogicalTime = a.turnStartLT + 1
 		if n := len(entries); n > 0 {
 			m.LogicalTime = entries[n-1].LT + 1
 		}

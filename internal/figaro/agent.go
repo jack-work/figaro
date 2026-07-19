@@ -99,9 +99,13 @@ type Agent struct {
 	mu   sync.RWMutex
 	subs map[Notifier]struct{} // socket clients + in-process listeners
 
-	// Live-render state, owned by the drain loop. turnStart is the figLog
-	// index where the current turn's agent messages begin.
-	turnStart   int
+	// Live-render state, owned by the drain loop. turnStartLT is the FigaroLT
+	// (main LT) of the last figLog entry before this turn's agent messages —
+	// composeTurn reads strictly after it. It must be an LT, not an entry
+	// count: main LTs are trunk-global (patches/transitions consume them too),
+	// so they run far ahead of the message channel's entry count, and passing
+	// a count to ReadFrom re-includes prior turns in every live frame.
+	turnStartLT uint64
 	gov         *toolout.Governor // bounded live tool-output tails (coalesced emits)
 	lastEmit    time.Time         // throttle for live streaming emits
 	argPartials map[string]string

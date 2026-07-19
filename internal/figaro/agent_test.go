@@ -44,6 +44,34 @@ func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus prov
 	return nil
 }
 
+// streamingMockProvider emits its delta, then gives the drain loop time to
+// compose a PRE-SEAL live frame before appending + sealing — the window where
+// the in-flight assembly has no log entry behind it. The instant-seal
+// mockProvider never exposes that window.
+type streamingMockProvider struct{ response string }
+
+func (m *streamingMockProvider) Name() string        { return "mock" }
+func (m *streamingMockProvider) Fingerprint() string { return "mock/v0" }
+func (m *streamingMockProvider) SetModel(string)     {}
+func (m *streamingMockProvider) Models(context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
+func (m *streamingMockProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
+	bus.PushDelta(message.Content{Type: message.ContentProse, Text: m.response})
+	time.Sleep(60 * time.Millisecond) // drain loop composes the streaming frame
+	msg := message.Message{
+		Role:       message.RoleAssistant,
+		Content:    []message.Content{message.TextContent(m.response)},
+		StopReason: message.StopEnd,
+	}
+	if entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err == nil {
+		msg.LogicalTime = entry.LT
+	}
+	time.Sleep(30 * time.Millisecond) // sealed-but-evFigaro-unprocessed window
+	bus.PushFigaro(msg)
+	return nil
+}
+
 type metricsProvider struct{}
 
 func (metricsProvider) Name() string                                         { return "metrics" }
@@ -1093,3 +1121,100 @@ func TestAgent_InterruptWhenIdle(t *testing.T) {
 
 // Ensure unused import elision doesn't remove json (kept for future tests).
 var _ = json.RawMessage(nil)
+
+// Regression: composeTurn's window is a figaro-LT (MainLT) cursor, not an
+// entry count, and the in-flight assembly must yield to its sealed copy.
+// On a BACKED aria, main LTs are trunk-global (boot patches consume them),
+// so an entry count passed to ReadFrom re-includes prior turns in every
+// live frame; and the provider seals the assistant message into the log
+// concurrently with the drain loop's buffered events, so a frame composed
+// after the append but before the seal event would render the message
+// twice under two node ids. Both bugs manifest as duplicated content in
+// the live frames.
+func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
+	backend, id := backedConv(t, t.TempDir())
+	cb, _ := chalkboard.Open("")
+	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"system.model":      json.RawMessage(`"mock-model-v1"`),
+		"system.provider":   json.RawMessage(`"mock"`),
+		"system.max_tokens": json.RawMessage(`1024`),
+	}})
+	a := figaro.NewAgent(figaro.Config{
+		ID:         id,
+		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
+		Provider:   &streamingMockProvider{response: "ALPHA"},
+		Backend:    backend,
+		Chalkboard: cb,
+	})
+	defer a.Kill()
+
+	ch, closeCh := subscribeChan(a)
+	defer closeCh()
+
+	runTurn := func(prompt string) []rpc.Notification {
+		submitPrompt(a, prompt)
+		var out []rpc.Notification
+		timeout := time.After(5 * time.Second)
+		for {
+			select {
+			case n := <-ch:
+				out = append(out, n)
+				if n.Method == rpc.MethodTurnDone {
+					return out
+				}
+			case <-timeout:
+				t.Fatalf("turn timed out")
+			}
+		}
+	}
+	turn1 := runTurn("first prompt")
+	turn2 := runTurn("second prompt")
+
+	// No single live frame may carry the reply text more than once: a dup
+	// means the frame composed both the sealed entry and the in-flight
+	// assembly (or a prior turn's copy) as distinct nodes.
+	checkFrames := func(label string, frames []rpc.Notification) {
+		for _, fr := range frames {
+			b, _ := json.Marshal(fr.Params)
+			if got := strings.Count(string(b), `"ALPHA"`); got > 1 {
+				t.Fatalf("%s frame carries the reply %d times (dup): %s", label, got, string(b))
+			}
+		}
+	}
+	checkFrames("turn1", turn1)
+	checkFrames("turn2", turn2)
+
+	// Fold every frame through a real aria client: id churn between the
+	// in-flight and sealed composition of the SAME message lands as two
+	// node ids across different frames — invisible per-frame, but the
+	// folded view shows a committed assistant message with two nodes.
+	cl := aria.NewClient()
+	for _, fr := range append(append([]rpc.Notification{}, turn1...), turn2...) {
+		if fr.Method != rpc.MethodAriaFrame {
+			continue
+		}
+		b, _ := json.Marshal(fr.Params)
+		var r aria.AriaRead
+		require.NoError(t, json.Unmarshal(b, &r))
+		cl.Apply(r)
+	}
+	assistants := 0
+	for _, m := range cl.View().Closed {
+		if m.Role != "assistant" {
+			continue
+		}
+		assistants++
+		if len(m.Nodes) != 1 {
+			t.Fatalf("assistant LT %d folded to %d nodes, want 1: %+v", m.LT, len(m.Nodes), m.Nodes)
+		}
+	}
+	require.Equal(t, 2, assistants)
+	// And turn 2's frames must not re-compose turn 1's prompt as a NODE.
+	// (The mantra metric legitimately echoes the first prompt.)
+	for _, fr := range turn2 {
+		b, _ := json.Marshal(fr.Params)
+		if strings.Contains(string(b), `"markdown":"first prompt"`) {
+			t.Fatalf("turn 2 frame re-composed turn 1's prompt node: %s", string(b))
+		}
+	}
+}

@@ -108,7 +108,7 @@ func BenchmarkComposeLiveTailLongAria(b *testing.B) {
 		b.Run(fmt.Sprintf("messages=%d", n), func(b *testing.B) {
 			a := &Agent{
 				figLog:      syntheticBenchmarkLog(n),
-				turnStart:   n - 2,
+				turnStartLT: uint64(n - 2),
 				gov:         toolout.New(200),
 				argPartials: map[string]string{},
 			}

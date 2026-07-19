@@ -104,6 +104,7 @@ func (a *Angelus) Run(ctx context.Context) error {
 	slog.Info("angelus started", "pid", os.Getpid(), "socket", a.SocketPath)
 
 	go a.pidMonitor(ctx)
+	go a.metaBackfill(ctx)
 
 	go func() {
 		<-ctx.Done()
