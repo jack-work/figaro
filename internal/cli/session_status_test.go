@@ -20,21 +20,30 @@ func TestSessionStatusRuleIncludesMantraContextAndTokenCost(t *testing.T) {
 		TokensOut:     5000,
 	})
 
-	line := sessionStatusRule(status, 160, "")
+	rule := status.ruleLine(160, "12-40/97 live")
+	for _, want := range []string{"aria dac6cb6d", "12-40/97 live"} {
+		if !strings.Contains(rule, want) {
+			t.Fatalf("rule line missing %q: %q", want, rule)
+		}
+	}
+	if got := runewidth.StringWidth(rule); got != 160 {
+		t.Fatalf("rule line width = %d, want 160: %q", got, rule)
+	}
+	line := status.statusLine(160, true)
 	for _, want := range []string{
-		"dac6cb6d",
 		"ship a polished app studio",
 		"ctx 12.0k/128.0k 9.4%",
 		"cost 15.0k tok",
 		"12:34:56",
 		"? help",
+		"! status",
 	} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("status line missing %q: %q", want, line)
 		}
 	}
-	if got := runewidth.StringWidth(line); got != 160 {
-		t.Fatalf("status line width = %d, want 160: %q", got, line)
+	if got := runewidth.StringWidth(line); got > 160 {
+		t.Fatalf("status line width = %d, want <= 160: %q", got, line)
 	}
 }
 
@@ -49,8 +58,15 @@ func TestSessionStatusRulePrefersMantraOverSecondaryDetails(t *testing.T) {
 		TokensOut:     5000,
 	})
 
-	line := sessionStatusRule(status, 64, "")
-	if !strings.Contains(line, "dac6cb6d") || !strings.Contains(line, "ship a polished") {
-		t.Fatalf("narrow status must retain id and mantra: %q", line)
+	rule := status.ruleLine(40, "")
+	if !strings.Contains(rule, "aria dac6cb6d") {
+		t.Fatalf("narrow rule must retain the id: %q", rule)
+	}
+	line := status.statusLine(40, true)
+	if !strings.Contains(line, "? help") || !strings.Contains(line, "! status") {
+		t.Fatalf("narrow status line must keep the key hints: %q", line)
+	}
+	if runewidth.StringWidth(line) > 40 {
+		t.Fatalf("narrow status line overflows: %q", line)
 	}
 }

@@ -52,7 +52,7 @@ func diffRange(old, next []string) (first, last int) {
 type Incipit struct {
 	term    Terminal
 	view    NodeView
-	Bookend func() string            // sealed after an assistant message (the id·time watermark)
+	Bookend func() []string          // sealed after an assistant message (the two-row status footer)
 	Rule    func() string            // sealed after any other message (a plain full-width rule)
 	Header  func(role string) string // printed above each message; "" suppresses
 
@@ -128,9 +128,12 @@ func (i *Incipit) printMessage(m aria.Message) {
 		rows = append(rows, h, "")
 	}
 	rows = append(rows, body...)
-	if seal := i.seal(m.Role); seal != "" {
+	if seal := i.seal(m.Role); len(seal) > 0 {
 		w, _ := i.term.Size()
-		rows = append(rows, "", clip(seal, w))
+		rows = append(rows, "")
+		for _, s := range seal {
+			rows = append(rows, clip(s, w))
+		}
 	}
 	io.WriteString(i.term, strings.Join(rows, "\r\n")+"\r\n")
 }
@@ -180,9 +183,12 @@ func (i *Incipit) compose(nodes []livedoc.Node) []string {
 		rows = append(rows, h, "")
 	}
 	rows = append(rows, body...)
-	if seal := i.seal(i.role); seal != "" {
+	if seal := i.seal(i.role); len(seal) > 0 {
 		w, _ := i.term.Size()
-		rows = append(rows, "", clip(seal, w))
+		rows = append(rows, "")
+		for _, s := range seal {
+			rows = append(rows, clip(s, w))
+		}
 	}
 	return rows
 }
@@ -196,17 +202,18 @@ func (i *Incipit) header(role string) string {
 	return i.Header(role)
 }
 
-// seal returns the line that closes a message of the given role: the id·time
-// bookend after an assistant message, otherwise a plain full-width rule (so the
-// user's prompt is still separated from the reply). "" if neither is configured.
-func (i *Incipit) seal(role string) string {
+// seal returns the rows that close a message of the given role: the two-row
+// status bookend after an assistant message, otherwise a plain full-width rule
+// (so the user's prompt is still separated from the reply). Empty if neither
+// is configured.
+func (i *Incipit) seal(role string) []string {
 	if role == "assistant" && i.Bookend != nil {
 		return i.Bookend()
 	}
 	if i.Rule != nil {
-		return i.Rule()
+		return []string{i.Rule()}
 	}
-	return ""
+	return nil
 }
 
 func (i *Incipit) renderNodes(nodes []livedoc.Node) []string {

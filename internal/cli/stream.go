@@ -59,9 +59,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 
 	// Bookend: a status rule (aria id + start time) pinned just below the
 	// agent's reply. Gated on the status-line config.
-	var bookendFn func() string
+	var bookendFn func() []string
 	if loaded.StatusLine() {
-		bookendFn = func() string { return statusBanner(status) }
+		bookendFn = func() []string { return bookendLines(status) }
 	}
 
 	lt := newLivelogTurn(os.Stdout, width, height, &set, figaroID, startedAt, status, bookendFn, dimRule)
@@ -722,13 +722,6 @@ func dimRule() string { return term.Dim(strings.Repeat("─", termWidth())) }
 // a normal seal (crash, disconnect, interrupt-timeout). Shape: "─── [reason] ───..."
 func abandonRule(reason string) string {
 	return labeledRule("[" + reason + "]")
-}
-
-// statusBanner returns a full-width dimmed bookend: "─── id · time ───…"
-// extended with box-drawing dashes to the viewport width. Same rule grammar as
-// the transcript footer, so incipit and transcript speak one visual language.
-func statusBanner(status *sessionStatus) string {
-	return term.Dim(sessionStatusRule(status, termWidth(), ""))
 }
 
 // labeledRule builds "─── <label> ───…" filled with box-drawing dashes to the

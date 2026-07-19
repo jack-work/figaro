@@ -79,7 +79,7 @@ func TestIncipit_ResizeKeepsSealed_RedrawsOpen(t *testing.T) {
 func TestIncipit_NoTrailingBlanksAfterScrolledSeal(t *testing.T) {
 	ft := NewFakeTerminal(40, 6) // short viewport so the message scrolls
 	in := NewIncipit(ft, NodeText{})
-	in.Bookend = func() string { return "=== bookend ===" }
+	in.Bookend = func() []string { return []string{"=== bookend ==="} }
 	var nodes []livedoc.Node
 	for i := 0; i < 10; i++ {
 		nodes = append(nodes, livedoc.Node{ID: "p" + string(rune('0'+i)), Type: livedoc.NodeProse, Markdown: "line"})

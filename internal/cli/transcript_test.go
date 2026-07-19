@@ -146,31 +146,22 @@ func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 	if last := all[len(all)-1]; strings.TrimSpace(stripANSI(last)) == "" {
 		t.Fatalf("lines() must not end with a blank/separator (footer seals the last message); got %q", last)
 	}
-	foot := stripANSI(tr.footer(len(all), tr.h-1))
-	if w := runewidth.StringWidth(foot); w != 50 {
-		t.Fatalf("footer display width = %d, want exactly 50: %q", w, foot)
+	rule, statusRow := tr.footerRows(len(all), tr.h-2)
+	rule, statusRow = stripANSI(rule), stripANSI(statusRow)
+	if w := runewidth.StringWidth(rule); w != 50 {
+		t.Fatalf("rule row display width = %d, want exactly 50: %q", w, rule)
 	}
-	if !strings.Contains(foot, "aria1234") {
-		t.Fatalf("footer missing id: %q", foot)
+	if !strings.Contains(rule, "aria aria1234") {
+		t.Fatalf("rule row missing id: %q", rule)
 	}
-	tr.w = 80 // wide enough for the full token set alongside the position
-	foot = stripANSI(tr.footer(len(all), tr.h-1))
-	if w := runewidth.StringWidth(foot); w != 80 {
-		t.Fatalf("wide footer display width = %d, want exactly 80: %q", w, foot)
+	if !strings.Contains(rule, "live") {
+		t.Fatalf("rule row missing scroll position: %q", rule)
 	}
-	for _, tok := range []string{"aria1234", "? help", "live"} {
-		if !strings.Contains(foot, tok) {
-			t.Fatalf("wide footer missing %q: %q", tok, foot)
-		}
+	if !strings.Contains(statusRow, "? help") || !strings.Contains(statusRow, "! status") {
+		t.Fatalf("status row missing key hints: %q", statusRow)
 	}
-	// Narrow pane: "? help" (then the time) sheds; the id survives; width exact.
-	tr.w = 24
-	foot = stripANSI(tr.footer(len(all), tr.h-1))
-	if w := runewidth.StringWidth(foot); w != 24 {
-		t.Fatalf("narrow footer width = %d, want 24: %q", w, foot)
-	}
-	if !strings.Contains(foot, "aria1234") {
-		t.Fatalf("narrow footer must keep the id: %q", foot)
+	if w := runewidth.StringWidth(statusRow); w > 50 {
+		t.Fatalf("status row overflows: %d > 50: %q", w, statusRow)
 	}
 }
 

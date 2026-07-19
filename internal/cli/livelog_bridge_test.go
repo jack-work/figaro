@@ -14,7 +14,7 @@ import (
 func TestIncipitSealsAssistantAfterTerminalStatusArrives(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
-	bookend := func() string { return sessionStatusRule(status, 80, "") }
+	bookend := func() []string { return []string{status.ruleLine(80, ""), status.statusLine(80, false)} }
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, bookend, func() string { return "rule" })
 
 	lt.apply(aria.AriaRead{Live: &aria.Live{
@@ -41,7 +41,7 @@ func TestIncipitSealsAssistantAfterTerminalStatusArrives(t *testing.T) {
 func TestIncipitSealsAssistantCloseAfterTurnDone(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
-	bookend := func() string { return sessionStatusRule(status, 80, "") }
+	bookend := func() []string { return []string{status.ruleLine(80, ""), status.statusLine(80, false)} }
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, bookend, func() string { return "rule" })
 
 	lt.apply(aria.AriaRead{Live: &aria.Live{
@@ -65,7 +65,7 @@ func TestIncipitSealsAssistantCloseAfterTurnDone(t *testing.T) {
 func TestIncipitRepaintsDiscardedAssistantWithErrorStatus(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
-	bookend := func() string { return sessionStatusRule(status, 80, "") }
+	bookend := func() []string { return []string{status.ruleLine(80, ""), status.statusLine(80, false)} }
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, bookend, func() string { return "rule" })
 
 	lt.apply(aria.AriaRead{Live: &aria.Live{

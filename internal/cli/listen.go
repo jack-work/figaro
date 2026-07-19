@@ -67,9 +67,9 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	height := term.Height()
 
 	// Bookend banner: id + start time. Same gating as send.
-	var bookendFn func() string
+	var bookendFn func() []string
 	if loaded.StatusLine() {
-		bookendFn = func() string { return statusBanner(status) }
+		bookendFn = func() []string { return bookendLines(status) }
 	}
 
 	set := renderSettings{listen: true} // listen stays open past turn-done

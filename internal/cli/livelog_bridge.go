@@ -40,7 +40,7 @@ type livelogTurn struct {
 	pagerClosed  []aria.Message
 }
 
-func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID string, startedAt time.Time, status *sessionStatus, bookend, rule func() string) *livelogTurn {
+func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID string, startedAt time.Time, status *sessionStatus, bookend func() []string, rule func() string) *livelogTurn {
 	view := &ariaView{settings: settings}
 	term := ldrender.NewANSITerminal(out, w, h)
 	in := ldrender.NewIncipit(term, view)

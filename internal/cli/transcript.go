@@ -34,10 +34,11 @@ type transcript struct {
 	client *aria.Client
 	status *sessionStatus
 
-	active   bool
-	showHelp bool // '?': the footer grows into a key-reference panel
-	w, h     int
-	tick     int
+	active     bool
+	showHelp   bool // '?': the footer grows into a key-reference panel
+	showStatus bool // '!': the footer grows into the figaro-status panel
+	w, h       int
+	tick       int
 
 	prev   []string // last painted screen (full-frame diff)
 	lineLT []int    // LT owning each line of lines(), for resize anchoring
@@ -606,8 +607,10 @@ func (t *transcript) render() {
 	foot := []string{}
 	if t.showHelp {
 		foot = t.helpLines()
+	} else if t.showStatus {
+		foot = t.statusPanelLines()
 	}
-	body := t.h - 1 - len(foot) // bottom rows: help panel (if open) + footer
+	body := t.h - 2 - len(foot) // bottom rows: panel (if open) + rule + status
 	if body < 1 {
 		body = 1
 	}
@@ -631,24 +634,26 @@ func (t *transcript) render() {
 		}
 	}
 	for k, l := range foot {
-		if r := body + k; r < t.h-1 {
+		if r := body + k; r < t.h-2 {
 			screen[r] = l
 		}
 	}
-	screen[t.h-1] = t.footer(len(all), body)
+	rule, status := t.footerRows(len(all), body)
+	screen[t.h-2] = rule
+	screen[t.h-1] = status
 	t.paint(screen)
 }
 
-// footer is the transcript's single status line, in the same rule grammar as
-// the incipit bookend ("─── id · time ───…") so both modes speak one visual
-// language: left tokens are the aria id, mantra, context consumption, token
-// cost, session start time, and the "? help" hook; the scroll position sits
-// right-aligned inside the trailing rule. Narrow panes retain the id and mantra
-// before shedding secondary status details.
-func (t *transcript) footer(total, body int) string {
-	if t.inSearch {
-		return "\x1b[2m" + clipToWidth("/"+t.query, t.w) + "\x1b[0m"
-	}
+// footerRows is the transcript's two-row footer, shared with the incipit
+// bookend so both modes speak one visual language:
+//
+//	─────────…──────────────── aria <id> · 48–97/97 live ───
+//	<mantra> · thinking ⠧ · ctx … · cost … · <time> · ? help · ! status
+//
+// The rule row carries the identity + scroll position right-aligned; the
+// status row is plain left-aligned text (fig status at a glance). In search,
+// the status row becomes the query prompt.
+func (t *transcript) footerRows(total, body int) (rule, status string) {
 	pos := ""
 	if total > body {
 		end := t.offset + body
@@ -660,11 +665,23 @@ func (t *transcript) footer(total, body int) string {
 			pos += " live"
 		}
 	}
-	right := ""
-	if pos != "" {
-		right = " " + pos + " ───"
+	rule = "\x1b[2m" + t.status.ruleLine(t.w, pos) + "\x1b[0m"
+	if t.inSearch {
+		return rule, "\x1b[2m" + clipToWidth("/"+t.query, t.w) + "\x1b[0m"
 	}
-	return "\x1b[2m" + sessionStatusRule(t.status, t.w, right) + "\x1b[0m"
+	return rule, "\x1b[2m" + t.status.statusLine(t.w, true) + "\x1b[0m"
+}
+
+// statusPanelLines is the '!' panel: the figaro-status detail above the footer.
+func (t *transcript) statusPanelLines() []string {
+	rows := t.status.panelLines()
+	if max := t.h - 4; len(rows) > max && max > 0 {
+		rows = rows[:max]
+	}
+	for i, r := range rows {
+		rows[i] = "\x1b[2m" + clipToWidth(r, t.w) + "\x1b[0m"
+	}
+	return rows
 }
 
 // helpLines is the '?' panel: the footer grown upward into a key reference,
@@ -685,6 +702,7 @@ func (t *transcript) helpLines() []string {
 		"  ^L                  listen — stay open after the turn ends",
 		"  ^D                  detach; the turn keeps running",
 		"  ^C                  interrupt the turn / close",
+		"  !                   figaro status panel",
 		"  ?                   close help",
 	}
 	if v := helpVersionLine(); v != "" {
@@ -725,9 +743,25 @@ func (t *transcript) key(b byte) {
 		t.render()
 		return
 	}
-	if t.showHelp { // any key wipes the panel; nav keys also still act below
-		t.showHelp = false
-		if b == '?' || b == 0x1b || b == 'q' {
+	if t.showHelp || t.showStatus { // any key wipes the panel; nav keys also still act below
+		reopen := byte(0)
+		if t.showHelp && b == '!' {
+			reopen = '!' // switch panels directly
+		}
+		if t.showStatus && b == '?' {
+			reopen = '?'
+		}
+		t.showHelp, t.showStatus = false, false
+		switch {
+		case reopen == '!':
+			t.showStatus = true
+		case reopen == '?':
+			t.showHelp = true
+		case b == '?' || b == '!' || b == 0x1b || b == 'q':
+			t.render()
+			return
+		}
+		if reopen != 0 {
 			t.render()
 			return
 		}
@@ -762,6 +796,8 @@ func (t *transcript) key(b byte) {
 		t.inSearch, t.query = true, ""
 	case '?':
 		t.showHelp = true
+	case '!':
+		t.showStatus = true
 	case 0x0e: // Ctrl-N
 		t.selectNode(1, false)
 	case 0x10: // Ctrl-P
