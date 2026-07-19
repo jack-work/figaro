@@ -64,10 +64,9 @@ func (r *Registry) Get(id string) figaro.Figaro {
 // Kill removes a figaro, unbinds its PIDs, and kills it.
 func (r *Registry) Kill(id string) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	f, exists := r.figaros[id]
 	if !exists {
+		r.mu.Unlock()
 		return fmt.Errorf("figaro %q not found", id)
 	}
 
@@ -76,6 +75,7 @@ func (r *Registry) Kill(id string) error {
 	}
 	delete(r.figaroPIDs, id)
 	delete(r.figaros, id)
+	r.mu.Unlock()
 
 	f.Kill()
 	return nil
@@ -157,13 +157,31 @@ func (r *Registry) BoundPIDs(figaroID string) []int {
 // List returns info for all registered figaros.
 func (r *Registry) List() []figaro.FigaroInfo {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	result := make([]figaro.FigaroInfo, 0, len(r.figaros))
+	figaros := make([]figaro.Figaro, 0, len(r.figaros))
 	for _, f := range r.figaros {
+		figaros = append(figaros, f)
+	}
+	r.mu.RUnlock()
+
+	result := make([]figaro.FigaroInfo, 0, len(figaros))
+	for _, f := range figaros {
 		result = append(result, f.Info())
 	}
 	return result
+}
+
+func (r *Registry) BoundPIDsByFigaro() map[string][]int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string][]int, len(r.figaroPIDs))
+	for id, pids := range r.figaroPIDs {
+		bound := make([]int, 0, len(pids))
+		for pid := range pids {
+			bound = append(bound, pid)
+		}
+		out[id] = bound
+	}
+	return out
 }
 
 // AllPIDs returns all bound PIDs (for the monitor to poll).

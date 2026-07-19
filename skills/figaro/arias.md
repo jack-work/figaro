@@ -27,11 +27,9 @@ spread across the node dirs along its path.
 ```
 ~/.local/state/figaro/arias/
 ├── xwal.json                  channel manifest (main=ir, codec=jsonl, reducers)
-├── policy.json                figaro side-state: the null/root trunk id + a
-│                              loadout dedup map ("name@version" -> trunk id)
 ├── ir/                        the MAIN channel = the fork-node tree (the IR log)
 │   ├── <NNN>.jsonl            root node's IR segments (figwal NDJSON)
-│   ├── .trunk                 the trunk id owning this node (only in the ir tree)
+│   ├── <loadout>@<hash>/      markerless loadout stump
 │   ├── n0/                    a fork child: .fork (base index) + its own segments
 │   │   ├── .fork
 │   │   ├── .trunk
@@ -41,10 +39,7 @@ spread across the node dirs along its path.
 │   └── n0/ …                  patches on a per-segment watermark base
 ├── translations/<provider>/   wire cache per provider: same node tree, FK'd
 │   └── n0/ …                  to the IR by mainLT (preserves thinking sigs)
-├── _live/<id>.json            the single OPEN/uncommitted UI message per trunk
-│                              (opaque blob, last-write-wins; discarded on restart)
-├── _meta/<id>.json            derived stats (msg count, tokens, last-active)
-├── _meta/<id>.<provider>.tmeta.json   per-provider translation meta
+├── _meta/<id>.json            list/status metadata (msg count, tokens, last-active)
 └── .daemon.lock               the exclusive store flock (one angelus per store)
 ```
 
@@ -144,7 +139,6 @@ sidecars, keyed by aria/trunk id — these are the reliable per-aria stat):
 
 ```bash
 for m in "$ARIAS"/_meta/*.json; do
-  case "$m" in *.tmeta.json) continue;; esac
   id=$(basename "$m" .json)
   n=$(jq -r '.message_count // 0' "$m" 2>/dev/null)
   printf '%s\t%s\n' "$n" "$id"

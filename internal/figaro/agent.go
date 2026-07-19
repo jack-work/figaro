@@ -3,6 +3,7 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"runtime"
 	"sync"
@@ -30,6 +31,7 @@ type eventType int
 const (
 	eventUserPrompt eventType = iota
 	eventSet
+	eventFork
 )
 
 type event struct {
@@ -41,6 +43,10 @@ type event struct {
 
 	// eventSet
 	setPatch message.Patch
+
+	// eventFork
+	fork     func() error
+	forkDone chan error
 }
 
 // Config is the constructor input for NewAgent. Configured values
@@ -52,6 +58,8 @@ type Config struct {
 	Outfitter  *outfit.Outfitter
 	Tools      *tool.Registry
 	Backend    store.Backend // nil = ephemeral
+	CreatedAt  time.Time
+	LastActive time.Time
 
 	// Chalkboard carries the aria's state, pre-seeded from the
 	// reducible chalkboard channel (backed) or empty (ephemeral). The
@@ -91,13 +99,9 @@ type Agent struct {
 	mu   sync.RWMutex
 	subs map[Notifier]struct{} // socket clients + in-process listeners
 
-	// Live-render state (drain-loop owned; liveMu guards liveActive). turnStart
-	// is the figLog index where the current turn's agent messages begin;
-	// liveActive is true while an assistant unit is live; partials holds streamed
-	// output for in-flight tools (keyed by tool_call_id).
-	liveMu      sync.Mutex
+	// Live-render state, owned by the drain loop. turnStart is the figLog
+	// index where the current turn's agent messages begin.
 	turnStart   int
-	liveActive  bool
 	gov         *toolout.Governor // bounded live tool-output tails (coalesced emits)
 	lastEmit    time.Time         // throttle for live streaming emits
 	argPartials map[string]string
@@ -107,9 +111,8 @@ type Agent struct {
 	// the single source of the aria-read wire: it serves both the live push
 	// (MethodAriaFrame) and the catch-up pull (figaro.read). unitLT is the
 	// monotonic figaro LT assigned to each unit as it opens.
-	ariaSrv  *aria.Server
-	unitLT   int
-	liveRole string // role of the currently-open (live) message, for its durable blob
+	ariaSrv *aria.Server
+	unitLT  int
 
 	createdAt     time.Time
 	lastActive    time.Time
@@ -118,11 +121,16 @@ type Agent struct {
 	cacheRead     int
 	cacheWrite    int
 	messageCount  int
+	turnCount     int
+	metricsLT     uint64
 	contextTokens int
 	contextLimit  int
 	contextExact  bool
 	model         string
 	mantra        string
+	cwd           string
+	loadoutName   string
+	loadoutVer    string
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -131,6 +139,15 @@ type Agent struct {
 // NewAgent creates and starts a figaro agent.
 func NewAgent(cfg Config) *Agent {
 	ctx, cancel := context.WithCancel(context.Background())
+	now := time.Now()
+	createdAt := cfg.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = now
+	}
+	lastActive := cfg.LastActive
+	if lastActive.IsZero() {
+		lastActive = now
+	}
 
 	a := &Agent{
 		id:         cfg.ID,
@@ -143,8 +160,8 @@ func NewAgent(cfg Config) *Agent {
 		inlineBoot: cfg.InlineBoot,
 		backend:    cfg.Backend,
 		chalkboard: cfg.Chalkboard,
-		createdAt:  time.Now(),
-		lastActive: time.Now(),
+		createdAt:  createdAt,
+		lastActive: lastActive,
 		cancel:     cancel,
 		done:       make(chan struct{}),
 	}
@@ -158,25 +175,23 @@ func NewAgent(cfg Config) *Agent {
 	}
 	a.inbox = NewInbox(ctx)
 
-	a.refreshMetrics()
+	messages := unwrapMessages(a.figLog.Read())
+	a.refreshMetricsFrom(messages)
 
 	// Build the rendered conversation from the log (each prior unit a closed
 	// aria message), then register the broadcast: every aria-server change is
 	// pushed to subscribers as one aria read.
 	a.ariaSrv = aria.NewServer()
-	for i, u := range compose.Units(unwrapMessages(a.figLog.Read()), a.summarize, a.previewArg) {
+	for i, u := range compose.Units(messages, a.summarize, a.previewArg) {
 		a.unitLT = i + 1
 		a.ariaSrv.Commit(aria.Message{LT: a.unitLT, Role: u.Role, Nodes: u.Nodes})
 	}
-	// Discard any leftover open-message blob from a prior crash: the partial
-	// turn never reached the IR (the committed messages above are rebuilt from
-	// it), so we resume from the last committed message. (Policy: discard.)
-	a.clearLive()
 	a.ariaSrv.Subscribe(func(r aria.AriaRead) {
 		r.Metrics = a.sessionMetrics()
 		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: r})
 	})
 
+	a.publishMetadata()
 	go a.runWithRecovery(ctx)
 	return a
 }
@@ -257,9 +272,83 @@ func snapshotContextLimit(snapshot chalkboard.Snapshot) int {
 // deltas. That keeps the status path current without making live rendering
 // repeatedly rescan the full conversation.
 func (a *Agent) refreshMetrics() {
-	msgs := a.Context()
+	a.mu.RLock()
+	metricsLT := a.metricsLT
+	in, out := a.tokensIn, a.tokensOut
+	cacheRead, cacheWrite := a.cacheRead, a.cacheWrite
+	messageCount, turnCount := a.messageCount, a.turnCount
+	contextTokens, contextExact := a.contextTokens, a.contextExact
+	a.mu.RUnlock()
+
+	tail, hasTail := a.figLog.PeekTail()
+	if metricsLT > 0 && (!hasTail || tail.LT < metricsLT) {
+		a.refreshMetricsFrom(a.Context())
+		return
+	}
+	for _, e := range a.figLog.ReadFrom(metricsLT+1, 0) {
+		m := e.Payload
+		if m.Usage != nil {
+			in += m.Usage.InputTokens
+			out += m.Usage.OutputTokens
+			cacheRead += m.Usage.CacheReadTokens
+			cacheWrite += m.Usage.CacheWriteTokens
+			contextTokens = m.Usage.InputTokens + m.Usage.OutputTokens
+			contextExact = true
+		} else {
+			contextTokens += tokens.EstimateMessage(m)
+			contextExact = false
+		}
+		if !message.IsCeremonial(m) {
+			messageCount++
+		}
+		if m.Role == message.RoleAssistant {
+			turnCount++
+		}
+		metricsLT = e.LT
+	}
+
+	snapshot := a.Snapshot()
+	model := snapshotString(snapshot, "system.model")
+	contextLimit := 0
+	if resolver, ok := a.prov.(provider.ContextLimitProvider); ok {
+		contextLimit = resolver.ContextLimit(model, snapshot)
+	}
+	if contextLimit == 0 {
+		contextLimit = snapshotContextLimit(snapshot)
+	}
+
+	a.mu.Lock()
+	a.tokensIn = in
+	a.tokensOut = out
+	a.cacheRead = cacheRead
+	a.cacheWrite = cacheWrite
+	a.messageCount = messageCount
+	a.turnCount = turnCount
+	a.metricsLT = metricsLT
+	a.contextTokens = contextTokens
+	a.contextExact = contextExact
+	a.contextLimit = contextLimit
+	a.model = model
+	a.mantra = snapshotString(snapshot, "mantra")
+	a.cwd = snapshotString(snapshot, "system.cwd")
+	a.loadoutName = snapshotString(snapshot, "system.loadout_name")
+	a.loadoutVer = snapshotString(snapshot, "system.loadout_version")
+	a.mu.Unlock()
+}
+
+func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	in, out, cacheRead, cacheWrite := sumUsage(msgs)
 	contextTokens, contextExact := tokens.ContextSize(msgs)
+	turnCount := 0
+	var metricsLT uint64
+	for _, m := range msgs {
+		if m.Role == message.RoleAssistant {
+			turnCount++
+		}
+		if m.LogicalTime > metricsLT {
+			metricsLT = m.LogicalTime
+		}
+	}
 	snapshot := a.Snapshot()
 	model := snapshotString(snapshot, "system.model")
 	contextLimit := 0
@@ -276,22 +365,22 @@ func (a *Agent) refreshMetrics() {
 	a.cacheRead = cacheRead
 	a.cacheWrite = cacheWrite
 	a.messageCount = message.CountMessages(msgs)
+	a.turnCount = turnCount
+	a.metricsLT = metricsLT
 	a.contextTokens = contextTokens
 	a.contextExact = contextExact
 	a.contextLimit = contextLimit
 	a.model = model
 	a.mantra = snapshotString(snapshot, "mantra")
+	a.cwd = snapshotString(snapshot, "system.cwd")
+	a.loadoutName = snapshotString(snapshot, "system.loadout_name")
+	a.loadoutVer = snapshotString(snapshot, "system.loadout_version")
 	a.mu.Unlock()
-}
-
-// Prompt is a tests-only helper.
-func (a *Agent) Prompt(text string) {
-	a.inbox.SendPatient(event{typ: eventUserPrompt, text: text})
 }
 
 // SubmitPrompt enqueues a prompt; the reply streams as log.* frames.
 func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
-	a.inbox.SendPatient(event{
+	a.inbox.Send(event{
 		typ:        eventUserPrompt,
 		text:       req.Text,
 		chalkboard: req.Chalkboard,
@@ -309,6 +398,26 @@ func (a *Agent) Interrupt() {
 	cancel := a.turnCancel
 	a.mu.Unlock()
 	cancel()
+}
+
+// CoordinateFork runs storage fork coordination on the actor goroutine.
+// Active turns service it between stream/tool events without cancellation.
+func (a *Agent) CoordinateFork(run func() error) error {
+	done := make(chan error, 1)
+	if !a.inbox.Send(event{typ: eventFork, fork: run, forkDone: done}) {
+		return fmt.Errorf("figaro %s is stopped", a.id)
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-a.done:
+		select {
+		case err := <-done:
+			return err
+		default:
+			return fmt.Errorf("figaro %s stopped before fork", a.id)
+		}
+	}
 }
 
 func (a *Agent) Context() []message.Message {
@@ -370,6 +479,11 @@ func (a *Agent) Info() FigaroInfo {
 		ContextExact:     a.contextExact,
 		CreatedAt:        a.createdAt,
 		LastActive:       a.lastActive,
+		Mantra:           a.mantra,
+		Cwd:              a.cwd,
+		LoadoutName:      a.loadoutName,
+		LoadoutVersion:   a.loadoutVer,
+		LastFigaroLT:     a.metricsLT,
 	}
 	a.mu.RUnlock()
 	return info
@@ -394,7 +508,7 @@ func (a *Agent) sessionMetrics() *aria.Metrics {
 
 func (a *Agent) Kill() {
 	a.cancel()
-	<-a.done
+	<-a.done // wait for drain loop to exit
 
 	a.mu.Lock()
 	a.subs = nil
@@ -479,7 +593,28 @@ func (a *Agent) act(ctx context.Context) {
 			a.runTurn(ctx, evt)
 		case eventSet:
 			a.applyControlPatch(evt.setPatch, "set")
+		case eventFork:
+			a.executeFork(evt)
 		}
+	}
+}
+
+func (a *Agent) executeFork(evt event) {
+	var err error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("fork coordination panic: %v", r)
+			}
+		}()
+		err = evt.fork()
+	}()
+	evt.forkDone <- err
+}
+
+func (a *Agent) serviceForks() {
+	for _, evt := range a.inbox.TakeReadyForks() {
+		a.executeFork(evt)
 	}
 }
 
@@ -507,6 +642,7 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	}
 	a.chalkboard.Apply(patch)
 	a.refreshMetrics()
+	a.publishMetadata()
 }
 
 // chalkAccessor returns the per-LT transition source for the provider:
@@ -550,9 +686,6 @@ func (a *Agent) endTurnDiscarding(reason string) {
 }
 
 func (a *Agent) finishTurn(reason string) {
-	a.liveMu.Lock()
-	a.liveActive = false
-	a.liveMu.Unlock()
 	idle := a.inbox.IsIdle()
 	a.mu.Lock()
 	a.lastActive = time.Now()
@@ -563,31 +696,36 @@ func (a *Agent) finishTurn(reason string) {
 		Params:  rpc.DoneEntry{Reason: reason, Idle: &idle},
 	})
 
-	a.writeMeta()
+	a.publishMetadata()
 }
 
-// writeMeta persists the per-aria summary sidecar so `figaro list` shows
-// counts/tokens/recency for dormant arias. Backed arias only.
-func (a *Agent) writeMeta() {
+// publishMetadata persists and fans out one actor-owned metrics snapshot.
+func (a *Agent) publishMetadata() {
 	if a.backend == nil {
 		return
 	}
 	a.mu.RLock()
 	meta := &store.AriaMeta{
+		MessageCount:     a.messageCount,
+		TurnCount:        a.turnCount,
 		TokensIn:         a.tokensIn,
 		TokensOut:        a.tokensOut,
 		CacheReadTokens:  a.cacheRead,
 		CacheWriteTokens: a.cacheWrite,
 		LastActiveMS:     a.lastActive.UnixMilli(),
+		Provider:         a.prov.Name(),
+		Model:            a.model,
+		Mantra:           a.mantra,
+		Cwd:              a.cwd,
+		LoadoutName:      a.loadoutName,
+		LoadoutVersion:   a.loadoutVer,
+		ContextTokens:    a.contextTokens,
+		ContextLimit:     a.contextLimit,
+		ContextExact:     a.contextExact,
+		CreatedAtMS:      a.createdAt.UnixMilli(),
+		LastFigaroLT:     a.metricsLT,
 	}
 	a.mu.RUnlock()
-	for _, e := range a.figLog.Read() {
-		if e.Payload.Role == message.RoleAssistant {
-			meta.TurnCount++
-		}
-		meta.LastFigaroLT = e.LT
-	}
-	meta.MessageCount = message.CountMessages(unwrapMessages(a.figLog.Read()))
 	if err := a.backend.SetMeta(a.id, meta); err != nil {
 		slog.Warn("write aria meta", "aria", a.id, "err", err)
 	}

@@ -18,7 +18,6 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
@@ -163,7 +162,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// Ephemeral first message: fold the boot patch inline so the loadout
 	// reminders render (no channel to hold the transition). State is
 	// already seeded by the caller, so this is render-only.
-	if a.backend == nil && a.inlineBoot != nil && len(a.figLog.Read()) == 0 {
+	if a.backend == nil && a.inlineBoot != nil && a.figLog.Len() == 0 {
 		if !a.inlineBoot.IsEmpty() {
 			msg.Patches = append(msg.Patches, *a.inlineBoot)
 		}
@@ -191,10 +190,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.emitSnapshot("user", []livedoc.Node{{Type: livedoc.NodeProse, Markdown: prompt.text}})
 		a.emitCommit()
 	}
-	a.liveMu.Lock()
-	a.turnStart = len(a.figLog.Read())
-	a.liveActive = true
-	a.liveMu.Unlock()
+	a.turnStart = a.figLog.Len()
 	a.gov = toolout.New(liveOutputTail)
 	a.lastEmit = time.Time{}
 	a.argPartials = map[string]string{}
@@ -216,6 +212,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 // tool_result message that seals in turn. Returns true when the turn
 // is complete, false when another round is needed.
 func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
+	a.serviceForks()
 	bus := newTurnBus()
 	in := provider.SendInput{
 		AriaID:     a.id,
@@ -276,6 +273,8 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	events := bus.events
 	for events != nil {
 		select {
+		case <-a.inbox.Wake():
+			a.serviceForks()
 		case ev, ok := <-events:
 			if !ok {
 				events = nil
@@ -370,14 +369,14 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 	}
 	if !sealed {
 		// Empty response: the provider returned without appending.
-		<-specDone
+		a.waitWithForks(specDone)
 		a.endTurn(string(message.StopEnd))
 		return true
 	}
 
 	calls := assistantToolInvokes(lastFig)
 	if len(calls) == 0 {
-		<-specDone
+		a.waitWithForks(specDone)
 		stopReason := lastFig.StopReason
 		if stopReason == "" {
 			stopReason = message.StopEnd
@@ -386,7 +385,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		return true
 	}
 
-	<-specDone
+	a.waitWithForks(specDone)
 
 	// Phase 2: run the tools (IR assembly), append the tool_result turn,
 	// and recompose so completed tools show their clamped output. The
@@ -438,10 +437,18 @@ func (a *Agent) collectToolResults(
 	}
 	// Live phase-2 events: stream output under the running tool, collect
 	// outcomes.
+toolLoop:
 	for len(outcomes) < len(expect) {
-		te, ok := <-toolEvents
-		if !ok {
-			break
+		var te toolEvent
+		var ok bool
+		select {
+		case <-a.inbox.Wake():
+			a.serviceForks()
+			continue
+		case te, ok = <-toolEvents:
+			if !ok {
+				break toolLoop
+			}
 		}
 		switch te.kind {
 		case toolBegin:
@@ -458,6 +465,25 @@ func (a *Agent) collectToolResults(
 	}
 	a.emitLive(nil, true) // flush any throttled tail before the results render
 
+	return a.assembleToolResults(calls, expect, outcomes)
+}
+
+func (a *Agent) waitWithForks(done <-chan struct{}) {
+	for {
+		select {
+		case <-done:
+			return
+		case <-a.inbox.Wake():
+			a.serviceForks()
+		}
+	}
+}
+
+func (a *Agent) assembleToolResults(
+	calls []message.Content,
+	expect map[string]bool,
+	outcomes map[string]toolOutcome,
+) message.Message {
 	results := make([]message.Content, len(calls))
 	for i, tc := range calls {
 		if !expect[tc.ToolCallID] {
@@ -663,11 +689,11 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 // since the user prompt, plus the in-flight assistant message (nil once
 // it has sealed into the log).
 func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
-	entries := a.figLog.Read()
+	entries := a.figLog.ReadFrom(uint64(a.turnStart+1), 0)
 	var msgs []message.Message
-	for i := a.turnStart; i < len(entries); i++ {
-		m := entries[i].Payload
-		m.LogicalTime = entries[i].LT
+	for _, e := range entries {
+		m := e.Payload
+		m.LogicalTime = e.LT
 		msgs = append(msgs, m)
 	}
 	if inflight != nil {
@@ -749,12 +775,10 @@ func logComposeFrame(dir, ariaID string, hasInflight bool, nodes []livedoc.Node)
 // nodes. The aria server diffs subsequent Updates against this internally.
 func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
 	a.unitLT++
-	a.liveRole = role
 	a.ariaSrv.Open(a.unitLT, role)
 	if len(nodes) > 0 {
 		a.ariaSrv.Update(nodes)
 	}
-	a.persistLive(nodes)
 }
 
 // liveEmitInterval coalesces high-frequency streaming emits (~11fps). Structural
@@ -784,38 +808,16 @@ func (a *Agent) emitLive(inflight *message.Message, force bool) {
 // the field-level delta vs the prior frame and broadcasts it (versioned).
 func (a *Agent) emitDelta(nodes []livedoc.Node) {
 	a.ariaSrv.Update(nodes)
-	a.persistLive(nodes)
 }
 
-// emitCommit closes the open unit; it becomes a committed aria message (now in
-// the append-only IR), so the durable live blob is cleared.
+// emitCommit closes the open unit after it becomes a committed IR message.
 func (a *Agent) emitCommit() {
 	a.ariaSrv.Close()
-	a.clearLive()
 }
 
-// abandonLive drops the open unit WITHOUT committing it (a turn that errored
-// before the assistant message reached figLog). The durable blob is cleared so
-// a reconnect/restart doesn't resurrect the partial.
+// abandonLive drops an open unit that never reached the IR.
 func (a *Agent) abandonLive() {
 	a.ariaSrv.Abandon()
-	a.clearLive()
-}
-
-// persistLive mirrors the open (in-progress) UI message to its durable
-// per-trunk blob, so a read can serve it and a restart can recover/discard it.
-// Committed messages are the fig IR; only the single open one needs this.
-func (a *Agent) persistLive(nodes []livedoc.Node) {
-	if a.backend == nil {
-		return
-	}
-	blob, err := json.Marshal(aria.Message{LT: a.unitLT, Role: a.liveRole, Nodes: nodes})
-	if err != nil {
-		return
-	}
-	if err := a.backend.SetLiveBlob(a.id, blob); err != nil {
-		slog.Error("persist live message", "aria", a.id, "err", err)
-	}
 }
 
 // firstChars returns the first n runes of s's opening line (newlines folded
@@ -827,16 +829,6 @@ func firstChars(s string, n int) string {
 		return s
 	}
 	return strings.TrimSpace(string(r[:n])) + "…"
-}
-
-// clearLive drops the durable open-message blob.
-func (a *Agent) clearLive() {
-	if a.backend == nil {
-		return
-	}
-	if err := a.backend.ClearLive(a.id); err != nil {
-		slog.Error("clear live message", "aria", a.id, "err", err)
-	}
 }
 
 // asm assembles the in-flight assistant message from provider Bus events

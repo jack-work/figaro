@@ -29,7 +29,7 @@ func (a *Agent) Set(patch chalkboard.Patch) (set, removed []string, err error) {
 		set = append(set, k)
 	}
 	removed = append(removed, patch.Remove...)
-	a.inbox.SendPatient(event{typ: eventSet, setPatch: patch})
+	a.inbox.Send(event{typ: eventSet, setPatch: patch})
 	return set, removed, nil
 }
 

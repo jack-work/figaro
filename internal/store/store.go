@@ -15,7 +15,7 @@ import (
 // domain message ("cannot promote into a loadout; make/edit a loadout").
 var ErrAtStump = errors.New("trunk is rooted at a loadout; cannot promote further")
 
-// AriaMeta is the per-aria summary at arias/{id}/meta.json.
+// AriaMeta is the per-aria summary stored by the backend.
 type AriaMeta struct {
 	MessageCount     int    `json:"message_count,omitempty"`
 	TurnCount        int    `json:"turn_count,omitempty"` // assistant messages
@@ -25,6 +25,16 @@ type AriaMeta struct {
 	CacheWriteTokens int    `json:"cache_write_tokens,omitempty"`
 	LastActiveMS     int64  `json:"last_active_ms,omitempty"`
 	LastFigaroLT     uint64 `json:"last_figaro_lt,omitempty"`
+	Provider         string `json:"provider,omitempty"`
+	Model            string `json:"model,omitempty"`
+	Mantra           string `json:"mantra,omitempty"`
+	Cwd              string `json:"cwd,omitempty"`
+	LoadoutName      string `json:"loadout_name,omitempty"`
+	LoadoutVersion   string `json:"loadout_version,omitempty"`
+	ContextTokens    int    `json:"context_tokens,omitempty"`
+	ContextLimit     int    `json:"context_limit,omitempty"`
+	ContextExact     bool   `json:"context_exact,omitempty"`
+	CreatedAtMS      int64  `json:"created_at_ms,omitempty"`
 }
 
 // OwnerInfo describes which node owns a main-LT along a trunk's lineage:
@@ -38,8 +48,8 @@ type OwnerInfo struct {
 
 // Backend is the aria storage provider. One per angelus. The only
 // implementation is *XwalBackend (the fork-tree on figwal/xwal); it
-// owns each aria's shared log instance and closes it on Fork / Remove
-// / Close — callers never close what Open returns.
+// owns each aria's shared log instance until Remove / Close — callers
+// never close what Open returns.
 type Backend interface {
 	// Open returns the figaro IR Stream for an aria. The same shared,
 	// memoized instance is returned for every call (so a live agent
@@ -95,34 +105,11 @@ type Backend interface {
 	Conversations() []NodeView
 	ConversationIDs() []string
 
-	// CanonicalCount returns the authoritative conversational message count
-	// for an aria, recomputed from its (single, deterministic) live head IR —
-	// the single source of truth, independent of any stale _meta sidecar. It
-	// self-heals a disagreeing sidecar. ok is false if the head can't open.
-	CanonicalCount(ariaID string) (count int, ok bool)
-
 	// Meta returns the aria metadata, or nil if unset.
 	Meta(ariaID string) (*AriaMeta, error)
 
 	// SetMeta sets the aria metadata.
 	SetMeta(ariaID string, meta *AriaMeta) error
-
-	// LiveBlob returns the persisted open (in-progress) UI message for a
-	// trunk, or nil if none is open. Committed messages live in the
-	// append-only IR; the single open message mutates, so it is kept as a
-	// plain r/w blob (opaque to the store) off the WAL.
-	LiveBlob(ariaID string) ([]byte, error)
-
-	// SetLiveBlob overwrites the open-message blob (optimistic in-place
-	// update as deltas stream).
-	SetLiveBlob(ariaID string, blob []byte) error
-
-	// ClearLive removes the open-message blob (on commit/close, or to
-	// discard a leftover partial on restart).
-	ClearLive(ariaID string) error
-
-	// List returns metadata for every persisted aria.
-	List() ([]AriaInfo, error)
 
 	// Remove deletes a trunk (its subtree). Close the agent first. recursive
 	// also removes any live branches; without it, a trunk with branches is

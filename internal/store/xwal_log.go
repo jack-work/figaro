@@ -110,6 +110,63 @@ func (l *xwalLog[T]) Read() []Entry[T] {
 	return out
 }
 
+func (l *xwalLog[T]) Len() int {
+	n := 0
+	_ = l.openOnce(func(xw *xwal.XWAL) error {
+		for _, c := range xw.Channels() {
+			if c.Name == l.channel && c.Last > 0 {
+				first := c.First
+				if first == 0 {
+					first = 1
+				}
+				if c.Last >= first {
+					n = int(c.Last-first) + 1
+				}
+				break
+			}
+		}
+		return nil
+	})
+	return n
+}
+
+func (l *xwalLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
+	var out []Entry[T]
+	_ = l.openOnce(func(xw *xwal.XWAL) error {
+		var first, last uint64
+		for _, c := range xw.Channels() {
+			if c.Name == l.channel {
+				first, last = c.First, c.Last
+				break
+			}
+		}
+		if first == 0 && last > 0 {
+			first = 1
+		}
+		if first == 0 || last < first {
+			return nil
+		}
+		if n > 0 {
+			out = make([]Entry[T], 0, n)
+		}
+		for lt := first; lt <= last && (n <= 0 || len(out) < n); lt++ {
+			r, err := xw.ReadAt(l.channel, lt)
+			if err != nil || r.MainLT < figaroLT {
+				continue
+			}
+			if e, ok := decodeRecord[T](r); ok {
+				out = append(out, e)
+			}
+		}
+		return nil
+	})
+	return out
+}
+
+func (l *xwalLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
+	return readPage(l.Read(), from, before, n)
+}
+
 func (l *xwalLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	var (
 		rec xwal.Record
@@ -186,79 +243,6 @@ func (l *xwalLog[T]) PeekTail() (Entry[T], bool) {
 		return Entry[T]{}, false
 	}
 	return decodeRecord[T](rec)
-}
-
-func (l *xwalLog[T]) ScanFromEnd(n int) []Entry[T] {
-	if n <= 0 {
-		return nil
-	}
-	var out []Entry[T]
-	_ = l.openOnce(func(xw *xwal.XWAL) error {
-		var first, last uint64
-		for _, c := range xw.Channels() {
-			if c.Name == l.channel {
-				first, last = c.First, c.Last
-				break
-			}
-		}
-		if first == 0 && last > 0 {
-			first = 1
-		}
-		if first == 0 || last < first {
-			return nil
-		}
-		out = make([]Entry[T], 0, n)
-		for lt := last; lt >= first && len(out) < n; lt-- {
-			if r, err := xw.ReadAt(l.channel, lt); err == nil {
-				if e, ok := decodeRecord[T](r); ok {
-					out = append(out, e)
-				}
-			}
-			if lt == 0 {
-				break
-			}
-		}
-		return nil
-	})
-	return out
-}
-
-func (l *xwalLog[T]) ReadBefore(figaroLT uint64, n int) []Entry[T] {
-	if n <= 0 || figaroLT == 0 {
-		return nil
-	}
-	var out []Entry[T]
-	_ = l.openOnce(func(xw *xwal.XWAL) error {
-		var first, last uint64
-		for _, c := range xw.Channels() {
-			if c.Name == l.channel {
-				first, last = c.First, c.Last
-				break
-			}
-		}
-		if first == 0 && last > 0 {
-			first = 1
-		}
-		if first == 0 || last < first {
-			return nil
-		}
-		out = make([]Entry[T], 0, n)
-		for lt := last; lt >= first && len(out) < n; lt-- {
-			if r, err := xw.ReadAt(l.channel, lt); err == nil {
-				if e, ok := decodeRecord[T](r); ok && e.FigaroLT < figaroLT {
-					out = append(out, e)
-				}
-			}
-			if lt == 0 {
-				break
-			}
-		}
-		return nil
-	})
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
-	return out
 }
 
 // Append routes through Trunks.Append / Trunks.AppendChannel, which

@@ -23,19 +23,19 @@ Node ids are pure plumbing; nothing in the CLI ever addresses them.
 
 ## The loadout tree (the policy layer)
 
-figaro layers **four kinds** over figwal's generic trunks
-(`kindNull`/`kindLoadout`/`kindConversation`; `kindOf` derives the kind from
-lineage, nothing is stored). The full tree, top to bottom:
+figaro derives three node kinds from XWAL topology: the markerless root is
+`null`, markerless depth-one stumps are loadouts, and live trunks are
+conversations. The full tree, top to bottom:
 
 - **null** — the genesis root, **one per store** (`xwal.CreateTrunks`).
   Ceremonial, **closed**. Pure structure.
-- **loadout** (`name@content-hash`) — `SpawnChild(null)`; **one per distinct
-  loadout name + content-version** (deduped in `policy.Loadouts`, keyed
-  `"name@version"`). Each carries that loadout's chalkboard stamp baked once
+- **loadout** (`name@content-hash`) — a named `CreateStump` child of null;
+  **one per distinct loadout name + content-version**, deduped by its stump
+  name. Each carries that loadout's chalkboard stamp baked once
   into a **shared prefix**: `system.loadout_name`/`system.loadout_version`,
   plus the whole loadout chalkboard — `skills.*`, `system.credo`,
   `system.model`, …. **Closed.**
-- **conversation** — `SpawnChild` of a *loadout*; inherits the loadout's
+- **conversation** — `SpawnUnderStump` from a *loadout*; inherits the loadout's
   rendered prefix via the fork watermark (cached once, shared by every
   conversation under it). The only **live** kind.
 - **branch** — a fork of a conversation. Also a conversation, just one whose
@@ -46,12 +46,12 @@ parent is a loadout — a root of the conversation forest. A **branch** is a
 conversation whose parent is another conversation. (Both are `kindConversation`
 on disk; the distinction is lineage.)
 
-**Cauterization:** the null and loadout trunks are **closed** — you can't
+**Cauterization:** the null root and loadout stumps are **closed** — you can't
 append to or continue them; they're structure, not conversation. Forking or
 sending "at" a cauterized trunk does *not* re-split it — it spawns a **fresh
-child conversation** beneath it instead (`Fork`/`ForkAt` redirect to
-`SpawnChild(owner)`). This is why "create" and "fork a loadout" are the same
-mechanism.
+child conversation** beneath it instead (`ForkAt` redirects through
+`SpawnUnderRoot`/`SpawnUnderStump`). This is why "create" and "fork a
+loadout" are the same mechanism.
 
 ## LT numbering
 

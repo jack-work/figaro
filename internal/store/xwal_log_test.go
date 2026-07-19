@@ -68,11 +68,6 @@ func TestXwalLog_RoundTrip(t *testing.T) {
 	if tail, ok := ir.PeekTail(); !ok || tail.Payload.S != "msg" {
 		t.Fatalf("ir.PeekTail = (%+v,%v)", tail, ok)
 	}
-	// ScanFromEnd returns descending.
-	if s := tr.ScanFromEnd(2); len(s) != 2 {
-		t.Fatalf("tr.ScanFromEnd(2) len = %d, want 2", len(s))
-	}
-
 	// Clear wipes translations; reusable after.
 	if err := tr.Clear(); err != nil {
 		t.Fatalf("clear: %v", err)

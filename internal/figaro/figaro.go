@@ -8,17 +8,13 @@ package figaro
 
 import (
 	"time"
-
-	"github.com/jack-work/figaro/internal/message"
 )
 
 // Figaro is a single agent instance.
 type Figaro interface {
 	ID() string
 	SocketPath() string
-	Prompt(text string)
 	Interrupt()
-	Context() []message.Message
 	Info() FigaroInfo
 	Kill()
 }
@@ -39,4 +35,9 @@ type FigaroInfo struct {
 	ContextExact     bool      `json:"context_exact"`      // true if from Usage watermark
 	CreatedAt        time.Time `json:"created_at"`
 	LastActive       time.Time `json:"last_active"`
+	Mantra           string    `json:"mantra"`
+	Cwd              string    `json:"cwd"`
+	LoadoutName      string    `json:"loadout_name"`
+	LoadoutVersion   string    `json:"loadout_version"`
+	LastFigaroLT     uint64    `json:"last_figaro_lt"`
 }

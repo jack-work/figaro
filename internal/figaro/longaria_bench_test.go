@@ -22,6 +22,41 @@ func (l *benchmarkLog) Read() []store.Entry[message.Message] {
 	return out
 }
 
+func (l *benchmarkLog) Len() int { return len(l.rows) }
+
+func (l *benchmarkLog) ReadFrom(figaroLT uint64, n int) []store.Entry[message.Message] {
+	start := 0
+	if figaroLT > 1 {
+		start = int(figaroLT - 1)
+		if start > len(l.rows) {
+			start = len(l.rows)
+		}
+	}
+	end := len(l.rows)
+	if n > 0 && start+n < end {
+		end = start + n
+	}
+	return append([]store.Entry[message.Message](nil), l.rows[start:end]...)
+}
+
+func (l *benchmarkLog) ReadPage(from, before uint64, n int) ([]store.Entry[message.Message], int) {
+	if before > 0 {
+		if n <= 0 {
+			return nil, len(l.rows)
+		}
+		end := int(before - 1)
+		if end > len(l.rows) {
+			end = len(l.rows)
+		}
+		start := end - n
+		if start < 0 {
+			start = 0
+		}
+		return append([]store.Entry[message.Message](nil), l.rows[start:end]...), len(l.rows)
+	}
+	return l.ReadFrom(from, n), len(l.rows)
+}
+
 func (l *benchmarkLog) Lookup(figaroLT uint64) (store.Entry[message.Message], bool) {
 	if figaroLT == 0 || figaroLT > uint64(len(l.rows)) {
 		return store.Entry[message.Message]{}, false
@@ -34,32 +69,6 @@ func (l *benchmarkLog) PeekTail() (store.Entry[message.Message], bool) {
 		return store.Entry[message.Message]{}, false
 	}
 	return l.rows[len(l.rows)-1], true
-}
-
-func (l *benchmarkLog) ScanFromEnd(n int) []store.Entry[message.Message] {
-	if n > len(l.rows) {
-		n = len(l.rows)
-	}
-	out := make([]store.Entry[message.Message], n)
-	for i := range n {
-		out[i] = l.rows[len(l.rows)-1-i]
-	}
-	return out
-}
-
-func (l *benchmarkLog) ReadBefore(figaroLT uint64, n int) []store.Entry[message.Message] {
-	if figaroLT <= 1 || n <= 0 {
-		return nil
-	}
-	end := int(figaroLT - 1)
-	if end > len(l.rows) {
-		end = len(l.rows)
-	}
-	start := end - n
-	if start < 0 {
-		start = 0
-	}
-	return append([]store.Entry[message.Message](nil), l.rows[start:end]...)
 }
 
 func (l *benchmarkLog) Append(e store.Entry[message.Message]) (store.Entry[message.Message], error) {

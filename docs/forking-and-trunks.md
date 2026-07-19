@@ -25,7 +25,7 @@ can diverge into two branches that share an immutable prefix. The storage substr
 wrapper **xwal** (which forks several parallel logs — the IR, the chalkboard, the
 translation caches — together as one unit), and figwal's **`xwal.Trunks`** forest layer
 (nodes + trunks + heads on disk). figaro stacks only *policy* on top: a null root →
-loadout trunks → conversation trunks. The **trunk** is the thing humans and the API
+loadout stumps → conversation trunks. The **trunk** is the thing humans and the API
 address — its id is the aria id, **stable across forks** (the continuation keeps it) —
 while the per-fork **node id** (`n0/n1/…`) is pure plumbing, never addressed.
 
@@ -114,8 +114,8 @@ is the trunk id per node, kept in a **`.trunk` marker** in each node's `ir/` dir
 - `SpawnChild(trunk)` mints an N-ary child trunk under a (typically cauterized) trunk —
   the create path for both loadouts and conversations.
 - `ForkTail(trunk)` / `ForkAt(trunk, atMainLT)` branch; the **continuation keeps the
-  trunk id**, the alternative is the returned new id. `OwnerTrunk(id, atMainLT)` resolves
-  which (possibly closed) trunk owns an interior LT.
+  trunk id**, the alternative is the returned new id. `Owner(id, atMainLT)` resolves
+  which root, stump, or trunk owns an interior LT.
 - `Head(trunk) → *XWAL` opens the trunk's live writable leaf. `Remove(trunk, recursive)`
   deletes a trunk and (with `recursive`) its subtree. `List()` returns live trunks;
   closed ones aren't listed.
@@ -126,27 +126,26 @@ With the forest in figwal, figaro keeps **only policy**. `XwalStore`
 (`xwal_backend.go`) adds the memoized per-aria handle cache + the `store.Backend`
 interface.
 
-- **`nodeKind`**: `null` | `loadout` | `conversation`. It is **derived from lineage**,
-  not stored: `id == policy.Null` → null; child of null → loadout; else conversation
-  (`kindOf`).
-- **`policy`** (persisted to `{root}/policy.json`) is the *only* figaro side-state — the
-  two things not derivable from the figwal trunk tree: `Null` (the root trunk id) and
-  `Loadouts map["name@version"]trunkID` (the loadout dedup map).
+- **`nodeKind`**: `null` | `loadout` | `conversation`. It is derived from XWAL
+  topology: the markerless root is null, markerless depth-one stumps are
+  loadouts, and live trunks are conversations.
+- There is no policy side-file. Loadout stump names (`name@version`) provide
+  durable identity and deduplication.
 - **The full tree (four layers):**
   - **`null`** — the genesis root, **one per store** (`xwal.CreateTrunks`). Ceremonial,
     **closed**. Pure structure.
-  - **`loadout(name@content-hash)` trunks** — `SpawnChild(null)`, **one per distinct
+  - **`loadout(name@content-hash)` stumps** — `CreateStump`, **one per distinct
     loadout name + content-version** (content-versioned via `segment.ValueHash` over the
-    stable loadout patch, dedup'd by `name@version` in `policy.Loadouts`). Each carries a
+    stable loadout patch, dedup'd by its `name@version` stump name). Each carries a
     renderable `RoleUser` birth message stamping that loadout's chalkboard — `skills.*`,
     `system.credo`, `system.model`, the `keyLoadoutName`/`keyLoadoutVer` stamp — baked
     **once** into a shared prefix. **Closed.**
-  - **`conversation` trunks** — `CreateConversation` = `SpawnChild(loadout)`; inherit the
+  - **`conversation` trunks** — `CreateConversation` = `SpawnUnderStump(loadout)`; inherit the
     loadout's rendered prefix via the fork watermark. **Live.** A conversation whose parent
     is a loadout is a **top-level aria** (a root of the conversation forest).
   - **branches** — forks of conversations; a conversation whose parent is *another
     conversation*. (Still `kindConversation`; the distinction is lineage.)
-- **Cauterization** (`cauterized` = kind is null or loadout): null + loadout trunks are
+- **Cauterization** (`cauterized` = kind is null or loadout): the root and loadout stumps are
   **closed** — you can't append to or continue them; they are structure, not conversation.
   A fork/send "at" a cauterized trunk does **not** re-split it: `Fork`/`ForkAt` redirect to
   `SpawnChild(owner)` — a fresh child conversation — instead of `ForkTail`/`ForkAt`. This
@@ -159,10 +158,9 @@ interface.
   first own LT — the displayed fork point is `BranchedLT-1`.
 - **`Backend` interface** (`store.go`): `Open`/`OpenTranslation`/`ChalkboardState`/
   `ApplyChalkboard`/`ChalkboardPatches`/`CreateLoadout`/`CreateConversation`/`Fork`/`ForkAt`/
-  `Node`/`Nodes`/`Meta`/`List`/`Remove`/`Close` + the live-blob ops (`LiveBlob`/`SetLiveBlob`/
-  `ClearLive` — the single open/uncommitted UI message per trunk at `_live/<id>.json`,
-  discarded on restart). `XwalBackend` memoizes one shared handle per aria and evicts it on
-  Fork/Remove/Close (callers never close what `Open` returns).
+  `Node`/`Nodes`/`Conversations`/`ConversationIDs`/`Meta`/`SetMeta`/`Remove`/`Close`.
+  `XwalBackend` memoizes one shared row cache per aria; callers never close what `Open`
+  returns.
 
 ### The daemon & client (`internal/angelus/`, `internal/cli/`, `internal/rpc/`)
 - **Create**: resolve loadout name (or `config.DefaultLoadout`) → `outfitter.Load` → stable
@@ -264,8 +262,8 @@ toward `attend null` / `ls -h` / `ls -g`.
 - **`send <trunk>:<LT> -- …`** — fork the trunk at `<LT>`, then send to the new branch and
   **rebind** there (`--stay`/`--attend=false` to send without moving). Without `:<LT>` it is
   a plain **append** to the tail. The interior-fork case is cauterization-aware: if `<LT>` is
-  owned by a closed (null/loadout) trunk, a fresh child conversation is spawned instead of a
-  re-split (`store.ForkAt` via `OwnerTrunk`).
+  owned by the root or a loadout stump, a fresh child conversation is spawned instead of a
+  re-split (`store.ForkAt` via `Owner`).
 - **`fork [<trunk>[:<LT>]] [--stay]`** — the **imperative, no-prompt** branch. No `:<LT>` =
   tail fork (freeze the head; continuation keeps the trunk, a fresh empty alternative is the
   new branch). `:<LT>` = interior fork (shares `[1..LT]`). Forking your **own** bound aria
@@ -284,22 +282,22 @@ toward `attend null` / `ls -h` / `ls -g`.
 | `attend <id>` / `:<LT>` | pid → trunk | bind shell (+ one-shot pending fork-point) |
 | `attend null` | — | unbind (go home); next conversation defaults to the live loadout |
 | `kill <trunk>` | — | remove trunk + subtree (`-r` for live branches) |
-| `send` *unattended* / `new` | resolve default/named loadout trunk | spawn a conversation under it, send |
+| `send` *unattended* / `new` | resolve default/named loadout stump | spawn a conversation under it, send |
 
-### 4.4 Loadouts are cauterized trunks; create = spawn under a loadout
-- A loadout **version** is its own ceremonial trunk (one per `name@content-version`), and is
+### 4.4 Loadouts are cauterized stumps; create = spawn under a loadout
+- A loadout **version** is its own ceremonial stump (one per `name@content-version`), and is
   **closed**: forking/sending "at" it never re-splits it — it **spawns a new child
   conversation** (cauterization). A conversation inherits the loadout's full chalkboard
   (`skills.*`, `system.credo`, `system.model`, the loadout name/version stamp).
 - `fig new`, `fig new --loadout <id>`, and `fig send --` *with nothing attended* all resolve a
-  loadout trunk → spawn a conversation under it → bind → send (`CreateLoadout` dedups by
-  content version; `CreateConversation` = `SpawnChild(loadout)`).
+  loadout stump → spawn a conversation under it → bind → send (`CreateLoadout` dedups by
+  content version; `CreateConversation` = `SpawnUnderStump(loadout)`).
 - Chalkboard-key completion falls back to the **default loadout** when no aria is bound.
 
 ### 4.5 Loadout materialization
 - Loadouts materialize **lazily** on first create (`CreateLoadout`): the stable loadout patch
-  is content-hashed (`segment.ValueHash`); a matching `name@version` trunk is reused, a new
-  hash mints a new loadout trunk. Old versions stick around unchanged. (An eager
+  is content-hashed (`segment.ValueHash`); a matching `name@version` stump is reused, a new
+  hash mints a new loadout stump. Old versions stick around unchanged. (An eager
   bootstrap/`loadout reload` action remains a possible future refinement, not a current
   command.)
 
@@ -313,7 +311,7 @@ toward `attend null` / `ls -h` / `ls -g`.
   shown, never addressed.
 - **An LT is a trunk-relative position** (figwal main-LT), continuous across the trunk's node
   chain: `1`=genesis, `2`=loadout birth, `3+`=conversation turns. `send`/`fork`/`attend`
-  `:<LT>` resolves which (possibly closed) trunk owns LT (`OwnerTrunk`); `show` labels each
+  `:<LT>` resolves which root, stump, or trunk owns LT (`Owner`); `show` labels each
   unit by the same LT, **realigned** so the shown number is the `:N` fork coordinate.
 - **`list`/`ls` is the conversation forest, with `attend` as `cd`.** The shipped navigation
   surface:
@@ -338,17 +336,17 @@ toward `attend null` / `ls -h` / `ls -g`.
 
 **Shipped** (the whole trunk pass):
 - **The forest lives in figwal** (`xwal.Trunks`): nodes/trunks/heads/forks/LTs on disk, disk
-  as the sole source of truth. figaro keeps only policy (`policy.json`: the null trunk id +
-  the loadout dedup map). The old per-aria-dir / `nodeRec` / `index.json` model is gone.
+  as the sole source of truth. The markerless root and named loadout stumps make separate
+  policy state unnecessary. The old per-aria-dir / `nodeRec` / `index.json` model is gone.
 - **Aria id = trunk id, stable across forks** (continuation keeps it; `cont == id`).
   Bind-to-trunk: forking your own trunk doesn't move you.
 - **One `send` path**: `send <id>:<LT>` forks-then-sends (rebinds; `--stay`); bare `send`
   appends. `fork [<id>[:<LT>]] [--stay]` is the imperative no-prompt branch. `attend`/`at`
   (with `attend null` to go home — `detach` **removed**, `~` kept as a legacy alias),
   `kill <id>` (+ subtree, `-r`).
-- **Cauterization**: null/loadout trunks are closed — forking/sending "at" them spawns a
-  child conversation (`OwnerTrunk` + `SpawnChild`). Create = spawn under a loadout.
-- **The four-layer loadout tree**: `null` → content-versioned **loadout** trunks (dedup'd by
+- **Cauterization**: the null root and loadout stumps are closed — forking/sending "at"
+  them spawns a child conversation (`Owner` + `SpawnUnderRoot`/`SpawnUnderStump`).
+- **The four-layer loadout tree**: `null` → content-versioned **loadout** stumps (dedup'd by
   `name@version`) → **top-level arias** (conversations under a loadout) → **branches** (forks
   of conversations); conversations inherit the loadout chalkboard.
 - **Trunk forest `list`/`ls`** (attend = `cd`): current-scope `ls`, `ls <id>` subtree,
@@ -357,17 +355,13 @@ toward `attend null` / `ls -h` / `ls -g`.
   flags); `status -m/-j`, `state -j`, positional `show <id>` with `-n/--last`; LT realigned
   so shown N == `:N`.
 - **Single-daemon flock** on `<store>/arias/.daemon.lock` (`cli/angelus.go`).
-- **`derive` verb removed** (its values surface in `status --more`; workers still run).
+- **`derive` verb removed** (its values surface in `status --more`).
 
 **Left / future:**
-- **promote** (planned, not built): re-elect which root-to-leaf path is the *canonical*
-  trunk (swap a branch with its parent). Treated as a **view/representation** concern — likely
-  not core-store state (a UI-layer or separately-serialized overlay), with no figwal/xwal
-  hierarchy mutation.
 - **Re-split-below into closed history through figaro**: figwal supports interior forks below
-  indices owned by closed trunks at the disk layer (and cauterization routes loadout/null LTs
-  to `SpawnChild`); arbitrary deep historical re-splits inside *conversation* ancestors are
-  exercised via `OwnerTrunk` + `ForkAt`.
+  indices owned by closed anchors at the disk layer (and cauterization routes loadout/null LTs
+  through `SpawnUnderStump`/`SpawnUnderRoot`); arbitrary deep historical re-splits inside
+  *conversation* ancestors are exercised via `Owner` + `ForkAt`.
 
 ---
 
@@ -377,7 +371,5 @@ toward `attend null` / `ls -h` / `ls -g`.
   patch at the boundary (it keys to next-LT, which is the fork point) — commit a turn first.
 - A freshly-spawned **dormant** child shows `MSGS 0` in `list` until it takes a turn (count
   comes from the per-aria `_meta` sidecar).
-- **The single open message** (`_live/<id>.json`) is discarded on restart — only committed IR
-  forks with the trunk.
 - **Default loadout source:** the configured `default_loadout` (`config.go`), latest hash;
   chalkboard-key completion falls back to it when no aria is bound.

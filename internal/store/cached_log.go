@@ -1,6 +1,9 @@
 package store
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
 
 // cachedLog is a memoized read-through view over a Log[T]: it materializes
 // the channel's entries in memory on open and serves reads from there,
@@ -52,6 +55,33 @@ func (c *cachedLog[T]) TailSnapshot(n int) []Entry[T] {
 	return c.rows[len(c.rows)-n:]
 }
 
+func (c *cachedLog[T]) Len() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.rows)
+}
+
+func (c *cachedLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	start := sort.Search(len(c.rows), func(i int) bool {
+		return c.rows[i].FigaroLT >= figaroLT
+	})
+	end := len(c.rows)
+	if n > 0 && start+n < end {
+		end = start + n
+	}
+	out := make([]Entry[T], end-start)
+	copy(out, c.rows[start:end])
+	return out
+}
+
+func (c *cachedLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return readPage(c.rows, from, before, n)
+}
+
 func (c *cachedLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -68,37 +98,6 @@ func (c *cachedLog[T]) PeekTail() (Entry[T], bool) {
 		return Entry[T]{}, false
 	}
 	return c.rows[len(c.rows)-1], true
-}
-
-func (c *cachedLog[T]) ScanFromEnd(n int) []Entry[T] {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if n <= 0 || len(c.rows) == 0 {
-		return nil
-	}
-	out := make([]Entry[T], 0, n)
-	for i := len(c.rows) - 1; i >= 0 && len(out) < n; i-- {
-		out = append(out, c.rows[i])
-	}
-	return out
-}
-
-func (c *cachedLog[T]) ReadBefore(figaroLT uint64, n int) []Entry[T] {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if n <= 0 || figaroLT == 0 || len(c.rows) == 0 {
-		return nil
-	}
-	out := make([]Entry[T], 0, n)
-	for i := len(c.rows) - 1; i >= 0 && len(out) < n; i-- {
-		if c.rows[i].FigaroLT < figaroLT {
-			out = append(out, c.rows[i])
-		}
-	}
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
-	return out
 }
 
 func (c *cachedLog[T]) Append(e Entry[T]) (Entry[T], error) {

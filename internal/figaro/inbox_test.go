@@ -29,6 +29,39 @@ func TestInbox_FIFO(t *testing.T) {
 	assert.Equal(t, "second", evt.text)
 }
 
+func TestInbox_ReadyForksPreserveFIFO(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := NewInbox(ctx)
+	b.Send(event{typ: eventSet})
+	b.Send(event{typ: eventFork})
+
+	assert.Empty(t, b.TakeReadyForks())
+	evt, ok := b.Recv()
+	require.True(t, ok)
+	assert.Equal(t, eventSet, evt.typ)
+	require.Len(t, b.TakeReadyForks(), 1)
+	assert.True(t, b.IsIdle())
+}
+
+func TestInbox_RemovingPromptRearmsReadyFork(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := NewInbox(ctx)
+	b.Send(event{typ: eventUserPrompt})
+	b.Send(event{typ: eventFork})
+
+	<-b.Wake()
+	assert.Empty(t, b.TakeReadyForks())
+	require.Len(t, b.TakeUserPrompts(), 1)
+	select {
+	case <-b.Wake():
+	case <-time.After(time.Second):
+		t.Fatal("ready fork was not re-armed")
+	}
+	require.Len(t, b.TakeReadyForks(), 1)
+}
+
 func TestInbox_RecvBlocksWhenEmpty(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -12,11 +12,9 @@ package store
 
 import (
 	"encoding/json"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
@@ -30,16 +28,26 @@ type XwalBackend struct {
 	store *XwalStore
 	mu    sync.Mutex
 	open  map[string]*ariaHandle
+	chalk map[string]*chalkCache
+	metas map[string]*metaCache
 }
 
 type ariaHandle struct {
-	id          string
-	ir          *cachedLog[message.Message]
-	trans       map[string]*cachedLog[[]json.RawMessage]
-	countMu     sync.Mutex
-	count       int
-	countTail   uint64
-	countCached bool
+	ir    *cachedLog[message.Message]
+	trans map[string]*cachedLog[[]json.RawMessage]
+}
+
+type chalkCache struct {
+	mu      sync.Mutex
+	ready   bool
+	state   chalkboard.Snapshot
+	patches map[uint64][]message.Patch
+}
+
+type metaCache struct {
+	mu     sync.Mutex
+	loaded bool
+	value  *AriaMeta
 }
 
 func NewXwalBackend(root string) (*XwalBackend, error) {
@@ -47,11 +55,14 @@ func NewXwalBackend(root string) (*XwalBackend, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &XwalBackend{root: root, store: st, open: map[string]*ariaHandle{}}, nil
+	return &XwalBackend{
+		root:  root,
+		store: st,
+		open:  map[string]*ariaHandle{},
+		chalk: map[string]*chalkCache{},
+		metas: map[string]*metaCache{},
+	}, nil
 }
-
-// Store exposes the underlying tree (create/fork/list) to the daemon.
-func (b *XwalBackend) Store() *XwalStore { return b.store }
 
 // handleLocked returns the shared handle for an aria, opening it once.
 // Caller holds b.mu. The handle carries the row caches for the aria's
@@ -69,7 +80,6 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	}
 	_ = xw.Close()
 	h := &ariaHandle{
-		id:    id,
 		ir:    newCachedLog[message.Message](newXwalLog[message.Message](b.store, id, chanIR, true)),
 		trans: map[string]*cachedLog[[]json.RawMessage]{},
 	}
@@ -142,63 +152,83 @@ func channelExists(x *xwal.XWAL, name string) bool {
 
 // ---- chalkboard (re-derived via StateAt; mutation appends a patch) ----
 
-// ChalkboardState folds the aria's chalkboard channel to current state.
-// No memoization here (previously cached on the handle against the
-// channel tail; the win is small compared to a fresh Open-fold-Close,
-// and correctness under Fork/Promote is easier without it).
 func (b *XwalBackend) ChalkboardState(ariaID string) (chalkboard.Snapshot, error) {
-	xw, err := b.store.OpenNode(ariaID)
-	if err != nil {
+	c := b.chalkCache(ariaID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := b.loadChalkboardLocked(ariaID, c); err != nil {
 		return nil, err
 	}
-	defer xw.Close()
-	last := channelLast(xw, chanChalkboard)
-	if last == 0 {
-		return chalkboard.Snapshot{}, nil
-	}
-	st, err := xw.StateAt(chanChalkboard, last)
-	if err != nil {
-		return nil, err
-	}
-	snap := chalkboard.Snapshot{}
-	if err := json.Unmarshal(st, &snap); err != nil {
-		return nil, err
-	}
-	return snap, nil
+	return c.state.Clone(), nil
 }
 
-// ChalkboardPatches reads the whole chalkboard channel once and groups
-// the (non-empty) patches by the IR LT they are keyed to.
-func (b *XwalBackend) ChalkboardPatches(ariaID string) (map[uint64][]message.Patch, error) {
-	t0 := time.Now()
+func (b *XwalBackend) chalkCache(ariaID string) *chalkCache {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	c := b.chalk[ariaID]
+	if c == nil {
+		c = &chalkCache{}
+		b.chalk[ariaID] = c
+	}
+	return c
+}
+
+func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
+	if c.ready {
+		return nil
+	}
 	xw, err := b.store.OpenNode(ariaID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer xw.Close()
 	var first, last uint64
-	for _, c := range xw.Channels() {
-		if c.Name == chanChalkboard {
-			first, last = c.First, c.Last
+	for _, ch := range xw.Channels() {
+		if ch.Name == chanChalkboard {
+			first, last = ch.First, ch.Last
+			break
 		}
 	}
-	out := map[uint64][]message.Patch{}
+	if first == 0 && last > 0 {
+		first = 1
+	}
+	state := chalkboard.Snapshot{}
+	patches := map[uint64][]message.Patch{}
 	for lt := first; lt >= 1 && lt <= last; lt++ {
 		rec, err := xw.ReadAt(chanChalkboard, lt)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		var p message.Patch
 		if err := json.Unmarshal(rec.Payload, &p); err != nil {
-			return nil, err
+			return err
 		}
-		if p.IsEmpty() {
-			continue
+		for k, v := range p.Set {
+			state[k] = v
 		}
-		out[rec.MainLT] = append(out[rec.MainLT], p)
+		for _, k := range p.Remove {
+			delete(state, k)
+		}
+		if !p.IsEmpty() {
+			patches[rec.MainLT] = append(patches[rec.MainLT], p)
+		}
 	}
-	if elapsed := time.Since(t0); elapsed > 100*time.Millisecond {
-		slog.Warn("ChalkboardPatches slow", "aria", ariaID, "entries", last-first+1, "elapsed", elapsed)
+	c.state = state
+	c.patches = patches
+	c.ready = true
+	return nil
+}
+
+func (b *XwalBackend) ChalkboardPatches(ariaID string) (map[uint64][]message.Patch, error) {
+	c := b.chalkCache(ariaID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := b.loadChalkboardLocked(ariaID, c); err != nil {
+		return nil, err
+	}
+	out := make(map[uint64][]message.Patch, len(c.patches))
+	for lt, ps := range c.patches {
+		out[lt] = append([]message.Patch(nil), ps...)
 	}
 	return out, nil
 }
@@ -208,20 +238,38 @@ func (b *XwalBackend) ChalkboardPatches(ariaID string) (map[uint64][]message.Pat
 // through Trunks.AppendChannel so it serializes with Fork/Promote.
 func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) error {
 	pb, _ := json.Marshal(patch)
+	c := b.chalkCache(ariaID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var mainLT uint64
+	if c.ready {
+		b.mu.Lock()
+		h := b.open[ariaID]
+		b.mu.Unlock()
+		if h != nil {
+			if tail, ok := h.ir.PeekTail(); ok {
+				mainLT = tail.LT + 1
+			} else {
+				mainLT = 1
+			}
+		}
+	}
 	// Pass mainLT=0 to let Trunks compute (mainTail+1) internally; the
 	// chalkboard channel is reducible/keyed-forward and the default
 	// "one ahead" semantics match the previous channelLast+1 behavior.
 	_, err := b.store.trunks.AppendChannel(ariaID, chanChalkboard, 0, pb, nil)
-	return err
-}
-
-func channelLast(x *xwal.XWAL, name string) uint64 {
-	for _, c := range x.Channels() {
-		if c.Name == name {
-			return c.Last
-		}
+	if err != nil {
+		return err
 	}
-	return 0
+	if c.ready && mainLT > 0 {
+		c.state = c.state.Apply(patch)
+		if !patch.IsEmpty() {
+			c.patches[mainLT] = append(c.patches[mainLT], patch)
+		}
+	} else {
+		c.ready = false
+	}
+	return nil
 }
 
 // ---- tree operations (delegated) ----
@@ -257,23 +305,6 @@ func (b *XwalBackend) Node(id string) (NodeView, bool) { return b.store.Node(id)
 func (b *XwalBackend) Nodes() []NodeView               { return b.store.Nodes() }
 func (b *XwalBackend) Conversations() []NodeView       { return b.store.Conversations() }
 func (b *XwalBackend) ConversationIDs() []string       { return b.store.ConversationIDs() }
-
-// CanonicalCount recomputes the conversational message count from the aria's
-// live head IR (message.CountMessages — the shared derivation) and self-heals
-// a stale _meta sidecar that disagrees. The head is a single deterministic
-// leaf (figwal multi-head fix + heal), so this is order-independent.
-func (b *XwalBackend) CanonicalCount(id string) (int, bool) {
-	c, ok := b.canonicalCount(id)
-	if !ok {
-		return 0, false
-	}
-	if m, _ := b.Meta(id); m != nil && m.MessageCount != c {
-		mm := *m
-		mm.MessageCount = c
-		_ = b.SetMeta(id, &mm)
-	}
-	return c, true
-}
 
 // dropHandle removes the aria's handle shell from the open map. Used by
 // Remove after the trunk is gone. No xwal to close — handles don't own
@@ -318,126 +349,58 @@ func writeJSON(path string, v any) error {
 }
 
 func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) {
-	return readJSON[AriaMeta](b.metaPath(ariaID))
-}
-func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
-	if meta != nil && meta.LastActiveMS != 0 {
-		b.store.Touch(ariaID, meta.LastActiveMS) // recency for `figaro list`
+	c := b.metaCache(ariaID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.loaded {
+		value, err := readJSON[AriaMeta](b.metaPath(ariaID))
+		if err != nil {
+			return nil, err
+		}
+		c.value = value
+		c.loaded = true
 	}
-	return writeJSON(b.metaPath(ariaID), meta)
-}
-
-// ---- live message (the single open/in-progress UI message per trunk) ----
-//
-// Committed messages live in the append-only xwal (the fig IR, which forks
-// with the trunk); the one OPEN message is mutated as deltas stream, so it
-// can't live in the segments. It's a plain r/w JSON blob, one per trunk, in
-// the figaro data dir (root/_live/<id>.json). The store is dumb storage — the
-// blob is opaque (the aria layer owns the livedoc encoding) and overwritten
-// in place (last write wins) for optimistic updates. On restart a leftover
-// blob is the caller's to discard or close.
-
-func (b *XwalBackend) livePath(id string) string {
-	return filepath.Join(b.root, "_live", id+".json")
-}
-
-// LiveBlob returns the persisted open-message blob for a trunk, or nil if
-// there is none open.
-func (b *XwalBackend) LiveBlob(ariaID string) ([]byte, error) {
-	data, err := os.ReadFile(b.livePath(ariaID))
-	if os.IsNotExist(err) {
+	if c.value == nil {
 		return nil, nil
 	}
-	return data, err
+	value := *c.value
+	return &value, nil
 }
-
-// SetLiveBlob overwrites the open-message blob for a trunk (atomic
-// tmp+rename), for optimistic in-place updates as deltas apply.
-func (b *XwalBackend) SetLiveBlob(ariaID string, blob []byte) error {
-	path := b.livePath(ariaID)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
+	c := b.metaCache(ariaID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := writeJSON(b.metaPath(ariaID), meta); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, blob, 0o644); err != nil {
-		return err
+	c.loaded = true
+	if meta == nil {
+		c.value = nil
+	} else {
+		value := *meta
+		c.value = &value
 	}
-	return os.Rename(tmp, path)
+	return nil
 }
 
-// ClearLive removes the open-message blob (on commit/close). A no-op if absent.
-func (b *XwalBackend) ClearLive(ariaID string) error {
-	err := os.Remove(b.livePath(ariaID))
-	if os.IsNotExist(err) {
-		return nil
-	}
-	return err
-}
-
-func (b *XwalBackend) List() ([]AriaInfo, error) {
-	out := []AriaInfo{}
-	for _, n := range b.store.Nodes() {
-		if n.Kind != string(kindConversation) {
-			continue
-		}
-		info := AriaInfo{ID: n.ID, LastModified: time.UnixMilli(n.LastMS)}
-		if m, _ := b.Meta(n.ID); m != nil {
-			info.Meta = m
-			info.MessageCount = m.MessageCount
-		}
-		// The sidecar can predate the canonical counting convention, so the
-		// live head remains authoritative. canonicalCount memoizes by tail
-		// while this backend is alive, avoiding repeated IR walks.
-		if c, ok := b.canonicalCount(n.ID); ok {
-			info.MessageCount = c
-			if info.Meta != nil && info.Meta.MessageCount != c {
-				m := *info.Meta
-				m.MessageCount = c
-				_ = b.SetMeta(n.ID, &m)
-				info.Meta = &m
-			}
-		}
-		out = append(out, info)
-	}
-	return out, nil
-}
-
-// canonicalCount recomputes a trunk's conversational message count from its
-// live head IR via message.CountMessages — the single derivation every count
-// path shares. Returns false if the head can't be opened (the sidecar value,
-// if any, then stands).
-func (b *XwalBackend) canonicalCount(id string) (int, bool) {
+func (b *XwalBackend) metaCache(ariaID string) *metaCache {
 	b.mu.Lock()
-	h, err := b.handleLocked(id)
-	b.mu.Unlock()
-	if err != nil {
-		return 0, false
+	defer b.mu.Unlock()
+	c := b.metas[ariaID]
+	if c == nil {
+		c = &metaCache{}
+		b.metas[ariaID] = c
 	}
-	h.countMu.Lock()
-	defer h.countMu.Unlock()
-	tail, hasTail := h.ir.PeekTail()
-	tailLT := uint64(0)
-	if hasTail {
-		tailLT = tail.LT
-	}
-	if h.countCached && h.countTail == tailLT {
-		return h.count, true
-	}
-	entries := h.ir.Read()
-	msgs := make([]message.Message, 0, len(entries))
-	for _, e := range entries {
-		msgs = append(msgs, e.Payload)
-	}
-	h.count = message.CountMessages(msgs)
-	h.countTail = tailLT
-	h.countCached = true
-	return h.count, true
+	return c
 }
 
 func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
 	b.dropHandle(ariaID)
+	b.mu.Lock()
+	delete(b.chalk, ariaID)
+	delete(b.metas, ariaID)
+	b.mu.Unlock()
 	_ = os.Remove(b.metaPath(ariaID))
-	_ = b.ClearLive(ariaID)
 	return b.store.RemoveLeaf(ariaID, recursive)
 }
 
@@ -445,5 +408,7 @@ func (b *XwalBackend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.open = map[string]*ariaHandle{}
+	b.chalk = map[string]*chalkCache{}
+	b.metas = map[string]*metaCache{}
 	return nil
 }

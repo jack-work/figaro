@@ -1,6 +1,9 @@
 package store
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
 
 // MemLog[T] is an in-memory Log[T] with no persistence.
 type MemLog[T any] struct {
@@ -43,6 +46,33 @@ func (s *MemLog[T]) TailSnapshot(n int) []Entry[T] {
 	return s.entries[len(s.entries)-n:]
 }
 
+func (s *MemLog[T]) Len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.entries)
+}
+
+func (s *MemLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	start := sort.Search(len(s.entries), func(i int) bool {
+		return s.entries[i].FigaroLT >= figaroLT
+	})
+	end := len(s.entries)
+	if n > 0 && start+n < end {
+		end = start + n
+	}
+	out := make([]Entry[T], end-start)
+	copy(out, s.entries[start:end])
+	return out
+}
+
+func (s *MemLog[T]) ReadPage(from, before uint64, n int) ([]Entry[T], int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return readPage(s.entries, from, before, n)
+}
+
 func (s *MemLog[T]) Lookup(figaroLT uint64) (Entry[T], bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -62,40 +92,6 @@ func (s *MemLog[T]) PeekTail() (Entry[T], bool) {
 		return zero, false
 	}
 	return s.entries[len(s.entries)-1], true
-}
-
-func (s *MemLog[T]) ScanFromEnd(n int) []Entry[T] {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if n <= 0 || len(s.entries) == 0 {
-		return nil
-	}
-	if n > len(s.entries) {
-		n = len(s.entries)
-	}
-	out := make([]Entry[T], n)
-	for i := 0; i < n; i++ {
-		out[i] = s.entries[len(s.entries)-1-i]
-	}
-	return out
-}
-
-func (s *MemLog[T]) ReadBefore(figaroLT uint64, n int) []Entry[T] {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if n <= 0 || figaroLT == 0 || len(s.entries) == 0 {
-		return nil
-	}
-	out := make([]Entry[T], 0, n)
-	for i := len(s.entries) - 1; i >= 0 && len(out) < n; i-- {
-		if s.entries[i].FigaroLT < figaroLT {
-			out = append(out, s.entries[i])
-		}
-	}
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
-	return out
 }
 
 func (s *MemLog[T]) Append(e Entry[T]) (Entry[T], error) {
