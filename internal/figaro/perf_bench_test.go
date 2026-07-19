@@ -2,11 +2,16 @@ package figaro
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/compose"
+	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -142,4 +147,62 @@ func BenchmarkMetadataPublication10000(b *testing.B) {
 			a.publishMetadata()
 		}
 	})
+}
+
+func BenchmarkLiveFramePersistence(b *testing.B) {
+	dir := filepath.Join(b.TempDir(), "_live")
+	path := filepath.Join(dir, "perf.json")
+	markdown := strings.Repeat("prose ", 700)
+	output := strings.Repeat("tool output\n", 700)
+
+	run := func(b *testing.B, persist bool) {
+		srv := aria.NewServer()
+		srv.Open(1, string(message.RoleAssistant))
+		a := &Agent{ariaSrv: srv}
+		nodes := []livedoc.Node{
+			{Type: livedoc.NodeProse, Markdown: markdown + "a"},
+			{
+				Type:   livedoc.NodeTool,
+				ID:     "tool-1",
+				Name:   "shell",
+				Args:   map[string]interface{}{"command": "go test ./..."},
+				Status: livedoc.StatusRunning,
+				Output: output,
+			},
+		}
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if i&1 == 0 {
+				nodes[0].Markdown = markdown + "a"
+			} else {
+				nodes[0].Markdown = markdown + "b"
+			}
+			a.emitDelta(nodes)
+			if persist {
+				blob, err := json.Marshal(aria.Message{
+					LT:    1,
+					Role:  string(message.RoleAssistant),
+					Nodes: nodes,
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+				if err := os.MkdirAll(dir, 0o700); err != nil {
+					b.Fatal(err)
+				}
+				tmp := path + ".tmp"
+				if err := os.WriteFile(tmp, blob, 0o644); err != nil {
+					b.Fatal(err)
+				}
+				if err := os.Rename(tmp, path); err != nil {
+					b.Fatal(err)
+				}
+			}
+		}
+	}
+
+	b.Run("legacy-unread-blob", func(b *testing.B) { run(b, true) })
+	b.Run("in-memory-only", func(b *testing.B) { run(b, false) })
 }
