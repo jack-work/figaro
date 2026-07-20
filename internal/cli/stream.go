@@ -585,6 +585,20 @@ func (in *interactiveInput) run() {
 				active = in.lt.transcriptActive()
 				in.mu.Unlock()
 			}
+			// Visual-mode yank first: y / Enter copy the selection (OSC 52)
+			// and leave visual mode — they must pre-empt the aria-id copy
+			// and the Enter tool-toggle.
+			if b == 'y' || b == 0x0d || b == 0x0a {
+				in.mu.Lock()
+				if in.lt.transcriptVisualActive() {
+					if text, ok := in.lt.transcriptVisualYank(); ok && text != "" {
+						in.tc.SetClipboard(text)
+					}
+					in.mu.Unlock()
+					continue
+				}
+				in.mu.Unlock()
+			}
 			// Universal control keys — identical in incipit and transcript.
 			switch b {
 			case 0x03: // Ctrl-C: interrupt (if running) + close

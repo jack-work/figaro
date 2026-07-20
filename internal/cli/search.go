@@ -99,7 +99,7 @@ func (p *searchPattern) highlight(row string) string {
 		lo, hi := mp[sp[0]], mp[sp[1]]
 		b.WriteString(row[prev:lo])
 		b.WriteString("\x1b[7m")
-		writeReasserting(&b, row[lo:hi])
+		writeReassertingSeq(&b, row[lo:hi], "\x1b[7m")
 		b.WriteString("\x1b[27m")
 		prev = hi
 	}
@@ -107,10 +107,11 @@ func (p *searchPattern) highlight(row string) string {
 	return b.String()
 }
 
-// writeReasserting copies a match span, re-opening reverse video after every
-// SGR sequence — a row's own \x1b[0m mid-span would otherwise cancel the
-// highlight for the rest of the match.
-func writeReasserting(b *strings.Builder, span string) {
+// writeReassertingSeq copies a span, re-opening the given attribute after
+// every SGR sequence — a row's own \x1b[0m mid-span would otherwise cancel
+// the overlay (search reverse video, visual-selection background) for the
+// rest of the span.
+func writeReassertingSeq(b *strings.Builder, span string, reopen string) {
 	for i := 0; i < len(span); {
 		if span[i] != '\x1b' {
 			b.WriteByte(span[i])
@@ -134,10 +135,49 @@ func writeReasserting(b *strings.Builder, span string) {
 		}
 		b.WriteString(span[i:j])
 		if sgr {
-			b.WriteString("\x1b[7m")
+			b.WriteString(reopen)
 		}
 		i = j
 	}
+}
+
+// matchIndex returns the visible-byte offset of the first match in the row.
+func (p *searchPattern) matchIndex(row string) (int, bool) {
+	v := row
+	if strings.ContainsRune(row, '\x1b') {
+		v, _ = visibleWithMap(row)
+	}
+	if loc := p.re.FindStringIndex(v); loc != nil {
+		return loc[0], true
+	}
+	return -1, false
+}
+
+// matchIndexAfter returns the first match starting at or after byte offset
+// from in the (visible) text v.
+func (p *searchPattern) matchIndexAfter(v string, from int) (int, bool) {
+	if from < 0 {
+		from = 0
+	}
+	if from > len(v) {
+		return -1, false
+	}
+	if loc := p.re.FindStringIndex(v[from:]); loc != nil {
+		return from + loc[0], true
+	}
+	return -1, false
+}
+
+// lastMatchIndexBefore returns the last match starting strictly before byte
+// offset before in v.
+func (p *searchPattern) lastMatchIndexBefore(v string, before int) (int, bool) {
+	best, ok := -1, false
+	for _, loc := range p.re.FindAllStringIndex(v, -1) {
+		if loc[0] < before {
+			best, ok = loc[0], true
+		}
+	}
+	return best, ok
 }
 
 // visibleWithMap strips ANSI escape sequences, returning the visible text and

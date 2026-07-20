@@ -53,6 +53,16 @@ type transcript struct {
 	pattern      *searchPattern // active search: highlight-all + n/N until Esc
 	filter       *searchPattern // active '&' filter: only matching rows render
 
+	// Visual selection (vim v/V/^V) over the rendered rows. The cursor is
+	// also where n/N land, so search drives selection endpoints. Endpoints
+	// are LT-anchored (message LT + line-within + column) because raw row
+	// indices shift whenever history folds in (live frames, listen catch-up,
+	// paging); they resolve against the current lines() at every use.
+	vmode     visualMode
+	vAnchor   visualPoint
+	vCursor   visualPoint
+	hasCursor bool
+
 	// Lazy history paging: the pager opens on the recent window and pulls older
 	// messages via keyset ReadBefore only when you scroll near the top ("like
 	// Twitter"). checkOlder is armed by an upward scroll; noMoreOlder latches
@@ -135,6 +145,7 @@ func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query = false, false, ""
 	t.pattern, t.filter, t.promptFilter, t.searchErr = nil, nil, false, ""
+	t.vmode, t.hasCursor = visualOff, false
 	t.resetToTail()
 	io.WriteString(t.out, altScreenOn+autowrapOff+ldmouse.Enable+cursorHide+"\x1b[2J")
 	t.render()
@@ -662,6 +673,22 @@ func (t *transcript) render() {
 			screen[r] = all[i]
 		}
 	}
+	if t.vmode != visualOff {
+		va := visualPos{row: t.pointToRow(t.vAnchor), col: t.vAnchor.col}
+		vc := visualPos{row: t.pointToRow(t.vCursor), col: t.vCursor.col}
+		spans := visualSpans(t.vmode, va, vc, func(r int) string { return visibleRowText(all, r) })
+		for _, sp := range spans {
+			r := sp.row - t.offset
+			if r < 0 || r >= body {
+				continue
+			}
+			if sp.wholeRow && sp.to == sp.from { // an empty selected line still reads as selected
+				screen[r] = screen[r] + visualBgOn + " " + visualBgOff
+				continue
+			}
+			screen[r] = overlayVisual(screen[r], sp.from, sp.to)
+		}
+	}
 	for k, l := range foot {
 		if r := body + k; r < t.h-2 {
 			screen[r] = l
@@ -739,6 +766,8 @@ func (t *transcript) helpLines() []string {
 		"  n / N               next / previous match",
 		"  &                   filter: only matching lines ('&' + Enter clears)",
 		"  Esc                 clear search highlight + filter",
+		"  v / V / ^V          visual select: char / line / column",
+		"  y or Enter          (visual) copy selection, exit visual",
 		"  y                   copy aria id",
 		"  ^O                  toggle verbose tool output",
 		"  ^N/^P               select next/previous node",
@@ -788,6 +817,11 @@ func (t *transcript) key(b byte) {
 		t.searchKey(b)
 		t.render()
 		return
+	}
+	if t.vmode != visualOff {
+		if t.visualKey(b) {
+			return
+		}
 	}
 	if t.showHelp || t.showStatus { // any key wipes the panel; nav keys also still act below
 		reopen := byte(0)
@@ -852,6 +886,12 @@ func (t *transcript) key(b byte) {
 		t.showHelp = true
 	case '!':
 		t.showStatus = true
+	case 'v':
+		t.startVisual(visualChar)
+	case 'V':
+		t.startVisual(visualLine)
+	case 0x16: // Ctrl-V
+		t.startVisual(visualColumn)
 	case 0x0e: // Ctrl-N
 		t.selectNode(1, false)
 	case 0x10: // Ctrl-P
@@ -911,11 +951,18 @@ func (t *transcript) find(p *searchPattern) {
 	if len(all) == 0 {
 		return
 	}
+	from := t.offset
+	if t.hasCursor {
+		from = t.pointToRow(t.vCursor)
+		if c, ok := p.matchIndexAfter(visibleRowText(all, from), t.vCursor.col+1); ok {
+			t.landAt(from, c)
+			return
+		}
+	}
 	for i := 0; i < len(all); i++ {
-		idx := (t.offset + 1 + i) % len(all)
+		idx := (from + 1 + i) % len(all)
 		if p.match(all[idx]) {
-			t.offset = idx
-			t.stopFollowing()
+			t.landRow(idx, all[idx], 1)
 			return
 		}
 	}
@@ -938,10 +985,26 @@ func (t *transcript) findNext(dir int) {
 	if n == 0 {
 		return
 	}
-	for i := t.offset + dir; i >= 0 && i < n; i += dir {
+	// vim semantics: the search starts at the CURSOR, not the viewport — and
+	// within the cursor's row it is column-aware, so several matches on one
+	// line are visited in order.
+	startRow := t.offset
+	if t.hasCursor {
+		startRow = t.pointToRow(t.vCursor)
+		v := visibleRowText(all, startRow)
+		if dir > 0 {
+			if c, ok := t.pattern.matchIndexAfter(v, t.vCursor.col+1); ok {
+				t.landAt(startRow, c)
+				return
+			}
+		} else if c, ok := t.pattern.lastMatchIndexBefore(v, t.vCursor.col); ok {
+			t.landAt(startRow, c)
+			return
+		}
+	}
+	for i := startRow + dir; i >= 0 && i < n; i += dir {
 		if t.pattern.match(all[i]) {
-			t.offset = i
-			t.stopFollowing()
+			t.landRow(i, all[i], dir)
 			return
 		}
 	}
@@ -954,6 +1017,229 @@ func (t *transcript) findNext(dir int) {
 	default:
 		t.windowWrapScan(dir < 0)
 	}
+}
+
+// landRow lands on a row-level match: forward searches take the row's first
+// match, backward its last (vim). landAt then positions cursor + viewport.
+func (t *transcript) landRow(row int, line string, dir int) {
+	v := line
+	if strings.ContainsRune(v, '\x1b') {
+		v, _ = visibleWithMap(v)
+	}
+	col := 0
+	if t.pattern != nil {
+		if dir < 0 {
+			if c, ok := t.pattern.lastMatchIndexBefore(v, len(v)+1); ok {
+				col = c
+			}
+		} else if c, ok := t.pattern.matchIndex(line); ok {
+			col = c
+		}
+	}
+	t.landAt(row, col)
+}
+
+// landAt parks the cursor (LT-anchored) on a search landing. Outside visual
+// mode the match row jumps to the viewport top (classic pager). In visual
+// mode the viewport scrolls only as far as needed — jumping would push the
+// selection's other end off screen.
+func (t *transcript) landAt(row, col int) {
+	t.vCursor = t.rowToPoint(row, col)
+	t.hasCursor = true
+	if t.vmode == visualOff {
+		t.offset = row
+	} else {
+		t.ensureCursorVisible(0)
+	}
+	t.stopFollowing()
+}
+
+// rowToPoint anchors a row index to (LT, within, col) against lineLT.
+func (t *transcript) rowToPoint(row, col int) visualPoint {
+	if row < 0 || row >= len(t.lineLT) {
+		return visualPoint{col: col}
+	}
+	lt := t.lineLT[row]
+	s := row
+	for s > 0 && t.lineLT[s-1] == lt {
+		s--
+	}
+	return visualPoint{lt: lt, within: row - s, col: col}
+}
+
+// pointToRow resolves an anchored endpoint to the current lines() index,
+// clamped into the message's present extent (or the window when the message
+// paged out).
+func (t *transcript) pointToRow(pt visualPoint) int {
+	first, last := -1, -1
+	for i, lt := range t.lineLT {
+		if lt == pt.lt {
+			if first < 0 {
+				first = i
+			}
+			last = i
+		} else if first >= 0 {
+			break
+		}
+	}
+	if first < 0 {
+		if n := len(t.lineLT); n > 0 {
+			if t.offset < n {
+				return t.offset
+			}
+			return n - 1
+		}
+		return 0
+	}
+	r := first + pt.within
+	if r > last {
+		r = last
+	}
+	return r
+}
+
+// visibleRowText returns the visible (ANSI-stripped) text of a rendered row.
+func visibleRowText(all []string, r int) string {
+	if r < 0 || r >= len(all) {
+		return ""
+	}
+	v := all[r]
+	if strings.ContainsRune(v, '\x1b') {
+		v, _ = visibleWithMap(v)
+	}
+	return v
+}
+
+// visualKey handles one byte while a visual mode is active. Returns true when
+// the byte was consumed. y/Enter are handled by the input loop (clipboard).
+func (t *transcript) visualKey(b byte) bool {
+	all := t.lines()
+	n := len(all)
+	if n == 0 {
+		return false
+	}
+	cur := t.pointToRow(t.vCursor)
+	col := t.vCursor.col
+	clampRow := func(r int) int {
+		if r < 0 {
+			return 0
+		}
+		if r >= n {
+			return n - 1
+		}
+		return r
+	}
+	set := func(row, c int) {
+		t.vCursor = t.rowToPoint(clampRow(row), c)
+	}
+	switch b {
+	case 0x1b: // Esc → leave visual mode, selection dropped
+		t.vmode = visualOff
+	case 'v':
+		if t.vmode == visualChar {
+			t.vmode = visualOff
+		} else {
+			t.vmode = visualChar
+		}
+	case 'V':
+		if t.vmode == visualLine {
+			t.vmode = visualOff
+		} else {
+			t.vmode = visualLine
+		}
+	case 0x16: // Ctrl-V
+		if t.vmode == visualColumn {
+			t.vmode = visualOff
+		} else {
+			t.vmode = visualColumn
+		}
+	case 'j', 'k':
+		dir := 1
+		if b == 'k' {
+			dir = -1
+		}
+		next := clampRow(cur + dir)
+		set(next, clampCol(visibleRowText(all, next), col))
+		if dir < 0 {
+			t.checkOlder = true
+		} else {
+			t.checkNewer = true
+		}
+	case 'h':
+		set(cur, moveCol(visibleRowText(all, cur), col, -1))
+	case 'l':
+		set(cur, moveCol(visibleRowText(all, cur), col, +1))
+	case '0':
+		set(cur, 0)
+	case '$':
+		set(cur, lastRuneStart(visibleRowText(all, cur)))
+	case 'G':
+		set(n-1, 0)
+	case 'g':
+		if t.pendG {
+			set(0, 0)
+			t.checkOlder = true
+		}
+		t.pendG = !t.pendG
+		t.ensureCursorVisible(n)
+		t.render()
+		return true
+	case 'n':
+		t.findNext(1)
+	case 'N':
+		t.findNext(-1)
+	default:
+		return false // scroll/search/panel keys keep their normal meaning
+	}
+	t.pendG = false
+	t.ensureCursorVisible(n)
+	t.render()
+	return true
+}
+
+// ensureCursorVisible scrolls the viewport just enough to keep the visual
+// cursor's row on screen.
+func (t *transcript) ensureCursorVisible(total int) {
+	body := t.h - 2
+	if body < 1 {
+		body = 1
+	}
+	row := t.pointToRow(t.vCursor)
+	if row < t.offset {
+		t.offset = row
+		t.stopFollowing()
+	} else if row >= t.offset+body {
+		t.offset = row - body + 1
+		t.stopFollowing()
+	}
+	_ = total
+}
+
+// startVisual enters a visual mode, anchoring at the current cursor (or the
+// viewport top when search never placed one).
+func (t *transcript) startVisual(mode visualMode) {
+	t.lines() // lineLT must reflect the current rows before anchoring
+	if !t.hasCursor {
+		t.vCursor = t.rowToPoint(t.offset, 0)
+		t.hasCursor = true
+	}
+	t.vAnchor = t.vCursor
+	t.vmode = mode
+}
+
+// visualYankText extracts the current selection's visible text and leaves
+// visual mode (vim: y exits). ok is false when nothing is selected.
+func (t *transcript) visualYankText() (string, bool) {
+	if t.vmode == visualOff {
+		return "", false
+	}
+	all := t.lines()
+	a := visualPos{row: t.pointToRow(t.vAnchor), col: t.vAnchor.col}
+	c := visualPos{row: t.pointToRow(t.vCursor), col: t.vCursor.col}
+	spans := visualSpans(t.vmode, a, c, func(r int) string { return visibleRowText(all, r) })
+	t.vmode = visualOff
+	t.render()
+	return visualYank(spans, func(r int) string { return visibleRowText(all, r) }), true
 }
 
 // windowWrapScan is the n/N wrap: with the paged direction exhausted (or no
@@ -973,10 +1259,13 @@ func (t *transcript) windowWrapScan(backward bool) {
 	if backward {
 		dir, start = -1, n-1
 	}
+	skip := t.offset
+	if t.hasCursor {
+		skip = t.pointToRow(t.vCursor)
+	}
 	for i := start; i >= 0 && i < n; i += dir {
-		if i != t.offset && t.pattern.match(all[i]) {
-			t.offset = i
-			t.stopFollowing()
+		if i != skip && t.pattern.match(all[i]) {
+			t.landRow(i, all[i], dir)
 			return
 		}
 	}
@@ -1048,8 +1337,10 @@ func (t *transcript) findPage(p *searchPattern, messages []aria.Message, backwar
 		}
 		if backward {
 			t.offset, t.follow = last, false
+			t.landRow(last, all[last], -1)
 		} else {
 			t.offset, t.follow = first, false
+			t.landRow(first, all[first], 1)
 		}
 		return true
 	}
