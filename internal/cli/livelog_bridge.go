@@ -325,6 +325,9 @@ func (t *livelogTurn) transcriptHistorySearch() (string, bool) {
 	return t.tr.search.query, true
 }
 func (t *livelogTurn) transcriptPageFailed() {
+	if t.tr.search != nil {
+		t.tr.search.wrapWindow = false // user-cancel: restore only, no n/N wrap
+	}
 	t.tr.finishSearch(false)
 	t.tr.checkOlder, t.tr.checkNewer = false, false
 	t.tr.render()

@@ -92,6 +92,8 @@ type pageDesc struct {
 
 type transcriptSearch struct {
 	query       string
+	wrapWindow  bool // n/N: on directional exhaust, wrap within the window
+	backward    bool // findNext(-1): older pages land on their LAST match
 	pages       []transcriptPage
 	newer       []pageDesc
 	offset      int
@@ -132,6 +134,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query = false, false, ""
+	t.pattern, t.filter, t.promptFilter, t.searchErr = nil, nil, false, ""
 	t.resetToTail()
 	io.WriteString(t.out, altScreenOn+autowrapOff+ldmouse.Enable+cursorHide+"\x1b[2J")
 	t.render()
@@ -255,11 +258,13 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 	}
 	t.trimPages(req.direction)
 	if searching {
-		if t.findPage(t.pattern, messages, t.search.direction) {
+		if t.findPage(t.pattern, messages, t.search.backward) {
 			t.search = nil
 		} else if t.search.direction == pageNewer {
 			if t.hasNewerHistory() {
 				t.checkNewer = true
+			} else if t.search.wrapWindow {
+				t.finishSearch(false) // n: newer exhausted → wrap in-window
 			} else {
 				t.wrapSearchOlder()
 			}
@@ -776,7 +781,8 @@ func (t *transcript) paint(screen []string) {
 
 // key handles one navigation/search input byte. Transcript is a locked mode:
 // keys only scroll or search — it NEVER self-exits. Exit is Ctrl-D / Ctrl-C,
-// handled at the input loop. q, Esc, and Ctrl-T are deliberately inert here.
+// handled at the input loop. q and Ctrl-T are deliberately inert here; Esc
+// wipes an open panel, else clears search highlight + filter (:noh).
 func (t *transcript) key(b byte) {
 	if t.inSearch {
 		t.searchKey(b)
@@ -917,7 +923,7 @@ func (t *transcript) find(p *searchPattern) {
 	if t.hasNewerHistory() {
 		dir = pageNewer
 	}
-	t.startPagedSearch(p, dir)
+	t.startPagedSearch(p, dir, false, false)
 }
 
 // findNext is n/N: jump to the next (dir=1) or previous (dir=-1) match. Past
@@ -939,20 +945,36 @@ func (t *transcript) findNext(dir int) {
 			return
 		}
 	}
-	if dir > 0 && t.hasNewerHistory() {
-		t.startPagedSearch(t.pattern, pageNewer)
+	oldest, haveOldest := t.oldestLT()
+	switch {
+	case dir > 0 && t.hasNewerHistory():
+		t.startPagedSearch(t.pattern, pageNewer, true, false)
+	case dir < 0 && !t.noMoreOlder && haveOldest && oldest > 1:
+		t.startPagedSearch(t.pattern, pageOlder, true, true)
+	default:
+		t.windowWrapScan(dir < 0)
+	}
+}
+
+// windowWrapScan is the n/N wrap: with the paged direction exhausted (or no
+// history there), rescan the whole window from the far end — vim's "search
+// hit BOTTOM, continuing at TOP", scoped to the retained window rather than
+// re-walking the entire aria on every keypress.
+func (t *transcript) windowWrapScan(backward bool) {
+	if t.pattern == nil {
 		return
 	}
-	if dir < 0 && !t.noMoreOlder {
-		t.startPagedSearch(t.pattern, pageOlder)
+	all := t.lines()
+	n := len(all)
+	if n == 0 {
 		return
 	}
-	start, stop := 0, t.offset // wrap: n resumes from the top …
-	if dir < 0 {
-		start, stop = n-1, t.offset // … N from the bottom
+	dir, start := 1, 0
+	if backward {
+		dir, start = -1, n-1
 	}
-	for i := start; i != stop; i += dir {
-		if t.pattern.match(all[i]) {
+	for i := start; i >= 0 && i < n; i += dir {
+		if i != t.offset && t.pattern.match(all[i]) {
 			t.offset = i
 			t.stopFollowing()
 			return
@@ -962,12 +984,12 @@ func (t *transcript) findNext(dir int) {
 
 // startPagedSearch arms the exhaustive historical search in one direction,
 // snapshotting the window so an unmatched search restores it (finishSearch).
-func (t *transcript) startPagedSearch(p *searchPattern, dir transcriptPageDirection) {
+func (t *transcript) startPagedSearch(p *searchPattern, dir transcriptPageDirection, wrapWindow, backward bool) {
 	t.search = &transcriptSearch{
 		query: p.src, pages: append([]transcriptPage(nil), t.pages...),
 		newer: append([]pageDesc(nil), t.newer...), offset: t.offset,
 		follow: t.follow, noMoreOlder: t.noMoreOlder,
-		direction: dir,
+		direction: dir, wrapWindow: wrapWindow, backward: backward,
 	}
 	t.stopFollowing()
 	if dir == pageNewer {
@@ -977,16 +999,17 @@ func (t *transcript) startPagedSearch(p *searchPattern, dir transcriptPageDirect
 	}
 }
 
-func (t *transcript) findPage(p *searchPattern, messages []aria.Message, dir transcriptPageDirection) bool {
+func (t *transcript) findPage(p *searchPattern, messages []aria.Message, backward bool) bool {
 	if p == nil {
 		return false
 	}
-	// Searching backwards (N into older history) must land on the LAST match
-	// of the page, so walk the page's messages — and their rendered lines —
-	// in reverse.
-	order := make([]aria.Message, len(messages))
-	copy(order, messages)
-	if dir == pageOlder {
+	// Only an explicit backward search (N) lands on the LAST match of the
+	// page; a '/' falling through into older history keeps its historical
+	// first-match landing.
+	order := messages
+	if backward {
+		order = make([]aria.Message, len(messages))
+		copy(order, messages)
 		for i, j := 0, len(order)-1; i < j; i, j = i+1, j-1 {
 			order[i], order[j] = order[j], order[i]
 		}
@@ -1021,9 +1044,9 @@ func (t *transcript) findPage(p *searchPattern, messages []aria.Message, dir tra
 			}
 		}
 		if first < 0 {
-			return false
+			continue // an active '&' filter can hide this message's match — keep scanning the page
 		}
-		if dir == pageOlder {
+		if backward {
 			t.offset, t.follow = last, false
 		} else {
 			t.offset, t.follow = first, false
@@ -1065,7 +1088,7 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, p *searchPattern) boo
 			return true
 		}
 		if n.StartedAt != 0 {
-			if strings.Contains(toolDuration(n, time.Now()), q) {
+			if contains(toolDuration(n, time.Now())) {
 				return true
 			}
 			if verbose && (contains("started "+formatToolTime(n.StartedAt)) ||
@@ -1075,7 +1098,7 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, p *searchPattern) boo
 		}
 		if verbose {
 			for k, v := range n.Args {
-				if strings.Contains(fmt.Sprintf("%s=%v", k, v), q) {
+				if contains(fmt.Sprintf("%s=%v", k, v)) {
 					return true
 				}
 			}
@@ -1083,7 +1106,7 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, p *searchPattern) boo
 		if !t.expanded[nodeRef{lt: m.LT, index: i}] && n.Output != "" {
 			total := 1 + strings.Count(strings.TrimRight(n.Output, "\n"), "\n")
 			if total > nodeBashCapDefault &&
-				strings.Contains(fmt.Sprintf("last %d of %d lines", nodeBashCapDefault, total), q) {
+				contains(fmt.Sprintf("last %d of %d lines", nodeBashCapDefault, total)) {
 				return true
 			}
 		}
@@ -1147,6 +1170,9 @@ func (t *transcript) finishSearch(found bool) {
 	t.search = nil
 	t.checkOlder, t.checkNewer = false, false
 	t.pruneCaches()
+	if origin.wrapWindow {
+		t.windowWrapScan(origin.backward) // n/N: exhausted direction → wrap
+	}
 }
 
 func (t *transcript) wrapSearchOlder() {

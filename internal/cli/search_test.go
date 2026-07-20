@@ -160,3 +160,76 @@ func TestSearch_BadRegexStaysInPromptAndEscClears(t *testing.T) {
 		t.Fatalf("none of this may exit the locked pager")
 	}
 }
+
+// Review findings: highlight must survive a row's own SGR reset mid-span,
+// literal pruning must be ASCII-only, and the pager must re-enter clean.
+func TestSearch_ReviewRegressions(t *testing.T) {
+	// F7: \x1b[0m inside the match span must not cancel the highlight.
+	p, _ := compileSearch("ab")
+	out := p.highlight("xx a\x1b[0mb yy")
+	if !strings.Contains(out, "\x1b[0m\x1b[7m") {
+		t.Fatalf("reverse video not re-asserted after embedded reset: %q", out)
+	}
+	// F9: non-ASCII literals must not claim pruning (ToLower vs RE2 folding).
+	if np, _ := compileSearch("straße"); np.lit != "" {
+		t.Fatalf("non-ASCII literal must not prune")
+	}
+	// F6: re-entering the pager clears filter + highlight.
+	tr := searchFixture(t, 5)
+	tr.key('&')
+	for _, c := range []byte("msg01") {
+		tr.key(c)
+	}
+	tr.key(0x0d)
+	tr.key('/')
+	for _, c := range []byte("msg01") {
+		tr.key(c)
+	}
+	tr.key(0x0d)
+	tr.leave()
+	tr.enter()
+	if tr.filter != nil || tr.pattern != nil {
+		t.Fatalf("re-entering the pager must start search-clean")
+	}
+}
+
+// F3: an active '&' filter that hides one message's match must not abort the
+// page scan — later matches in the same page still land.
+func TestSearch_FindPageContinuesPastFilteredMessage(t *testing.T) {
+	tr := searchFixture(t, 6)
+	// filter keeps only Msg05/Msg06 rows; message 2 matches "body" in raw rows
+	// but is invisible in the filtered view — the scan must reach Msg05.
+	fp, _ := compileSearch("msg0[56]")
+	tr.filter = fp
+	sp, _ := compileSearch("body")
+	tr.pattern = sp
+	msgs := tr.client.View().Closed
+	if !tr.findPage(sp, msgs, false) {
+		t.Fatalf("findPage must skip filtered-out messages and land on a visible one")
+	}
+	if lt := tr.lineLT[tr.offset]; lt != 5 {
+		t.Fatalf("expected landing on Msg05 (LT 5), got LT %d", lt)
+	}
+}
+
+// F4/F5: N with no older history wraps within the window instead of arming a
+// futile paged scan; n at the last match wraps to the window's first match.
+func TestSearch_WindowWrapBothDirections(t *testing.T) {
+	tr := searchFixture(t, 9)
+	tr.findQuery("msg0[27]")
+	if lt := tr.lineLT[tr.offset]; lt != 7 {
+		// search starts near the tail; first forward wrap-around hit is LT 7 or 2
+		// depending on start offset — normalize to the earlier match first
+		tr.key('N')
+	}
+	tr.key('N') // from the earlier match, N wraps backward to the later one
+	ltA := tr.lineLT[tr.offset]
+	tr.key('n') // and n wraps forward again
+	ltB := tr.lineLT[tr.offset]
+	if ltA == ltB {
+		t.Fatalf("n/N wrap did not alternate between the two matches (stuck at LT %d)", ltA)
+	}
+	if tr.search != nil {
+		t.Fatalf("window wrap must not arm a paged search when no history exists")
+	}
+}

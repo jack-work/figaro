@@ -29,10 +29,22 @@ func compileSearch(q string) (*searchPattern, error) {
 		return nil, err
 	}
 	p := &searchPattern{re: re, src: q, folded: folded}
-	if regexp.QuoteMeta(q) == q {
+	// Literal pruning is only sound for ASCII: outside it, strings.ToLower and
+	// RE2's (?i) simple folding disagree (ς/σ, İ), so a probe could skip a
+	// message the pattern matches.
+	if regexp.QuoteMeta(q) == q && isASCII(q) {
 		p.lit = q
 	}
 	return p, nil
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
 }
 
 // probe is the pre-render pruning predicate (messageMayRenderQuery): sound
@@ -87,12 +99,45 @@ func (p *searchPattern) highlight(row string) string {
 		lo, hi := mp[sp[0]], mp[sp[1]]
 		b.WriteString(row[prev:lo])
 		b.WriteString("\x1b[7m")
-		b.WriteString(row[lo:hi])
+		writeReasserting(&b, row[lo:hi])
 		b.WriteString("\x1b[27m")
 		prev = hi
 	}
 	b.WriteString(row[prev:])
 	return b.String()
+}
+
+// writeReasserting copies a match span, re-opening reverse video after every
+// SGR sequence — a row's own \x1b[0m mid-span would otherwise cancel the
+// highlight for the rest of the match.
+func writeReasserting(b *strings.Builder, span string) {
+	for i := 0; i < len(span); {
+		if span[i] != '\x1b' {
+			b.WriteByte(span[i])
+			i++
+			continue
+		}
+		j := i + 1
+		sgr := false
+		if j < len(span) && span[j] == '[' {
+			j++
+			for j < len(span) {
+				final := span[j]
+				j++
+				if final >= 0x40 && final <= 0x7e {
+					sgr = final == 'm'
+					break
+				}
+			}
+		} else if j < len(span) {
+			j++
+		}
+		b.WriteString(span[i:j])
+		if sgr {
+			b.WriteString("\x1b[7m")
+		}
+		i = j
+	}
 }
 
 // visibleWithMap strips ANSI escape sequences, returning the visible text and

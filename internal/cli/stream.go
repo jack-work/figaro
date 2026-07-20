@@ -517,16 +517,17 @@ func (in *interactiveInput) run() {
 		}
 		data := append(pending, buf[:n]...)
 		pending = nil
+		// A read cycle that delivers EXACTLY one ESC byte is the Esc key: the
+		// terminal writes escape sequences atomically, so a split sequence
+		// arrives as a longer chunk (a full buffer, or the tail next read) —
+		// only the key comes truly alone. Chunk-boundary heuristics ("ends in
+		// ESC") misfire under mouse-report bursts that fill the 64-byte buffer.
+		bareEsc := len(data) == 1 && data[0] == 0x1b
 		i := 0
 		for i < len(data) {
 			in.mu.Lock()
 			active := in.lt.transcriptActive()
 			in.mu.Unlock()
-			// A read chunk that ends on a bare ESC is the Esc KEY, not the start
-			// of a split escape sequence: terminals write sequences atomically,
-			// only the key arrives alone. Without this, Esc stalls in pending
-			// until the NEXT keypress flushes it.
-			bareEsc := len(data)-i == 1 && data[i] == 0x1b
 			if active && !bareEsc {
 				if ev, consumed, ok, need := ldmouse.Parse(data[i:]); need {
 					pending = append(pending, data[i:]...)
