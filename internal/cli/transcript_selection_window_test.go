@@ -71,7 +71,7 @@ func TestTranscript_PagedSearchMatchesRenderedMarkdown(t *testing.T) {
 	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, &ariaView{settings: &renderSettings{}}, client, "", time.Time{})
 	tr.enter()
-	tr.find("foo bar")
+	tr.findQuery("foo bar")
 	for tr.searchingHistory() {
 		req, ok := tr.pageCursor()
 		if !ok {

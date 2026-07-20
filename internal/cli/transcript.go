@@ -46,8 +46,12 @@ type transcript struct {
 	follow bool     // stick to the bottom on new content
 	pendG  bool     // saw one 'g' (for gg)
 
-	inSearch bool
-	query    string
+	inSearch     bool
+	query        string
+	promptFilter bool           // the open prompt is '&' (filter), not '/' (search)
+	searchErr    string         // last bad-pattern error, shown in the prompt row
+	pattern      *searchPattern // active search: highlight-all + n/N until Esc
+	filter       *searchPattern // active '&' filter: only matching rows render
 
 	// Lazy history paging: the pager opens on the recent window and pulls older
 	// messages via keyset ReadBefore only when you scroll near the top ("like
@@ -251,7 +255,7 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 	}
 	t.trimPages(req.direction)
 	if searching {
-		if t.findPage(t.search.query, messages) {
+		if t.findPage(t.pattern, messages, t.search.direction) {
 			t.search = nil
 		} else if t.search.direction == pageNewer {
 			if t.hasNewerHistory() {
@@ -521,6 +525,23 @@ func (t *transcript) lines() []string {
 	var lts []int // LT owning each line (0 for separator rules), parallel to out
 	t.nodeRows = map[nodeRef]nodeSpan{}
 	appendMsg := func(rows []transcriptRow, lt int) {
+		if t.filter != nil {
+			// '&' filter: a readonly g/re/p view — matching rows only, no
+			// separators or blanks, no node spans (selection is meaningless
+			// over a discontiguous slice of the conversation).
+			for _, r := range rows {
+				if !t.filter.match(r.text) {
+					continue
+				}
+				line := r.text
+				if t.pattern != nil {
+					line = t.pattern.highlight(line)
+				}
+				out = append(out, line)
+				lts = append(lts, lt)
+			}
+			return
+		}
 		if len(out) > 0 { // rule separator BETWEEN messages only — the footer
 			out = append(out, "", dimTransRule(t.w), "") // seals the last one, so a
 			lts = append(lts, lt, lt, lt)                // trailing rule+blank would
@@ -535,6 +556,9 @@ func (t *transcript) lines() []string {
 				}
 				span.last = len(out)
 				t.nodeRows[r.ref] = span
+			}
+			if t.pattern != nil {
+				line = t.pattern.highlight(line)
 			}
 			out = append(out, line)
 			lts = append(lts, lt)
@@ -667,9 +691,22 @@ func (t *transcript) footerRows(total, body int) (rule, status string) {
 	}
 	rule = "\x1b[2m" + t.status.ruleLine(t.w, pos) + "\x1b[0m"
 	if t.inSearch {
-		return rule, "\x1b[2m" + clipToWidth("/"+t.query, t.w) + "\x1b[0m"
+		prompt := "/"
+		if t.promptFilter {
+			prompt = "&"
+		}
+		line := prompt + t.query
+		if t.searchErr != "" {
+			line += "  ⟨" + t.searchErr + "⟩"
+		}
+		return rule, "\x1b[2m" + clipToWidth(line, t.w) + "\x1b[0m"
 	}
-	return rule, "\x1b[2m" + t.status.statusLine(t.w, true) + "\x1b[0m"
+	line := t.status.statusLine(t.w, true)
+	if t.filter != nil {
+		// The filter hides content — say so persistently, ahead of the status.
+		line = clipToWidth("& "+t.filter.src+" · "+line, t.w)
+	}
+	return rule, "\x1b[2m" + line + "\x1b[0m"
 }
 
 // statusPanelLines is the '!' panel: the figaro-status detail above the footer.
@@ -693,7 +730,10 @@ func (t *transcript) helpLines() []string {
 	rows := []string{
 		"",
 		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",
-		"  /                   search (Enter jump · Esc cancel)",
+		"  /                   regex search — smartcase (Enter jump · Esc cancel)",
+		"  n / N               next / previous match",
+		"  &                   filter: only matching lines ('&' + Enter clears)",
+		"  Esc                 clear search highlight + filter",
 		"  y                   copy aria id",
 		"  ^O                  toggle verbose tool output",
 		"  ^N/^P               select next/previous node",
@@ -793,7 +833,15 @@ func (t *transcript) key(b byte) {
 			t.checkOlder = true
 		}
 	case '/':
-		t.inSearch, t.query = true, ""
+		t.inSearch, t.promptFilter, t.query, t.searchErr = true, false, "", ""
+	case '&':
+		t.inSearch, t.promptFilter, t.query, t.searchErr = true, true, "", ""
+	case 'n':
+		t.findNext(1)
+	case 'N':
+		t.findNext(-1)
+	case 0x1b: // Esc — :noh: drop the highlight and the filter
+		t.pattern, t.filter = nil, nil
 	case '?':
 		t.showHelp = true
 	case '!':
@@ -811,57 +859,140 @@ func (t *transcript) key(b byte) {
 
 func (t *transcript) searchKey(b byte) {
 	switch b {
-	case 0x0d, 0x0a: // Enter → jump to first match
-		t.inSearch = false
-		t.find(t.query)
-	case 0x1b: // Esc → cancel
-		t.inSearch, t.query = false, ""
+	case 0x0d, 0x0a: // Enter → commit: '/' jumps to the first match, '&' filters
+		q := t.query
+		if q == "" {
+			t.inSearch = false
+			if t.promptFilter {
+				t.filter = nil // '&' with an empty pattern clears the filter
+			}
+			return
+		}
+		p, err := compileSearch(q)
+		if err != nil {
+			t.searchErr = err.Error() // stay in the prompt; fix or Esc out
+			return
+		}
+		t.inSearch, t.searchErr = false, ""
+		if t.promptFilter {
+			t.filter = p
+			t.resetToTail()
+			t.follow = true
+			return
+		}
+		t.pattern = p
+		t.find(p)
+	case 0x1b: // Esc → cancel the prompt (keeps any active highlight/filter)
+		t.inSearch, t.query, t.searchErr = false, "", ""
 	case 0x7f, 0x08: // backspace
+		t.searchErr = ""
 		if len(t.query) > 0 {
 			t.query = t.query[:len(t.query)-1]
 		}
 	default:
 		if b >= 0x20 && b < 0x7f {
+			t.searchErr = ""
 			t.query += string(b)
 		}
 	}
 }
 
-// find scrolls to the first line at/after the cursor containing q (wrapping).
-func (t *transcript) find(q string) {
-	if q == "" {
-		return
-	}
+// find scrolls to the first line at/after the cursor matching p (wrapping),
+// falling through to the paged historical search when the window has no match.
+func (t *transcript) find(p *searchPattern) {
+	t.pattern = p // the active pattern: highlight-all, n/N, paged continuation
 	all := t.lines()
 	if len(all) == 0 {
 		return
 	}
 	for i := 0; i < len(all); i++ {
 		idx := (t.offset + 1 + i) % len(all)
-		if searchContains(all[idx], q) {
+		if p.match(all[idx]) {
 			t.offset = idx
 			t.stopFollowing()
 			return
 		}
 	}
+	dir := pageOlder
+	if t.hasNewerHistory() {
+		dir = pageNewer
+	}
+	t.startPagedSearch(p, dir)
+}
+
+// findNext is n/N: jump to the next (dir=1) or previous (dir=-1) match. Past
+// the window edge it continues into paged history in that direction; with no
+// more history it wraps within the window, vim-style.
+func (t *transcript) findNext(dir int) {
+	if t.pattern == nil {
+		return
+	}
+	all := t.lines()
+	n := len(all)
+	if n == 0 {
+		return
+	}
+	for i := t.offset + dir; i >= 0 && i < n; i += dir {
+		if t.pattern.match(all[i]) {
+			t.offset = i
+			t.stopFollowing()
+			return
+		}
+	}
+	if dir > 0 && t.hasNewerHistory() {
+		t.startPagedSearch(t.pattern, pageNewer)
+		return
+	}
+	if dir < 0 && !t.noMoreOlder {
+		t.startPagedSearch(t.pattern, pageOlder)
+		return
+	}
+	start, stop := 0, t.offset // wrap: n resumes from the top …
+	if dir < 0 {
+		start, stop = n-1, t.offset // … N from the bottom
+	}
+	for i := start; i != stop; i += dir {
+		if t.pattern.match(all[i]) {
+			t.offset = i
+			t.stopFollowing()
+			return
+		}
+	}
+}
+
+// startPagedSearch arms the exhaustive historical search in one direction,
+// snapshotting the window so an unmatched search restores it (finishSearch).
+func (t *transcript) startPagedSearch(p *searchPattern, dir transcriptPageDirection) {
 	t.search = &transcriptSearch{
-		query: q, pages: append([]transcriptPage(nil), t.pages...),
+		query: p.src, pages: append([]transcriptPage(nil), t.pages...),
 		newer: append([]pageDesc(nil), t.newer...), offset: t.offset,
 		follow: t.follow, noMoreOlder: t.noMoreOlder,
-		direction: pageOlder,
+		direction: dir,
 	}
 	t.stopFollowing()
-	if t.hasNewerHistory() {
-		t.search.direction = pageNewer
+	if dir == pageNewer {
 		t.checkNewer = true
 	} else {
 		t.checkOlder = true
 	}
 }
 
-func (t *transcript) findPage(q string, messages []aria.Message) bool {
-	for _, m := range messages {
-		if !t.messageMayRenderQuery(m, q) {
+func (t *transcript) findPage(p *searchPattern, messages []aria.Message, dir transcriptPageDirection) bool {
+	if p == nil {
+		return false
+	}
+	// Searching backwards (N into older history) must land on the LAST match
+	// of the page, so walk the page's messages — and their rendered lines —
+	// in reverse.
+	order := make([]aria.Message, len(messages))
+	copy(order, messages)
+	if dir == pageOlder {
+		for i, j := 0, len(order)-1; i < j; i, j = i+1, j-1 {
+			order[i], order[j] = order[j], order[i]
+		}
+	}
+	for _, m := range order {
+		if !t.messageMayRenderQuery(m, p) {
 			continue
 		}
 		rows, ok := t.rowCache[m.LT]
@@ -869,55 +1000,46 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 			rows = t.renderMsgBase(m)
 			t.rowCache[m.LT] = rows
 		}
+		hit := false
 		for _, row := range rows.rows {
-			if searchContains(row.text, q) {
-				all := t.lines()
-				for i, line := range all {
-					if t.lineLT[i] == m.LT && searchContains(line, q) {
-						t.offset, t.follow = i, false
-						return true
-					}
-				}
-				return false
+			if p.match(row.text) {
+				hit = true
+				break
 			}
 		}
+		if !hit {
+			continue
+		}
+		all := t.lines()
+		first, last := -1, -1
+		for i, line := range all {
+			if t.lineLT[i] == m.LT && p.match(line) {
+				if first < 0 {
+					first = i
+				}
+				last = i
+			}
+		}
+		if first < 0 {
+			return false
+		}
+		if dir == pageOlder {
+			t.offset, t.follow = last, false
+		} else {
+			t.offset, t.follow = first, false
+		}
+		return true
 	}
 	return false
 }
 
-func searchContains(row, q string) bool {
-	if !strings.ContainsRune(row, '\x1b') {
-		return strings.Contains(row, q)
+func (t *transcript) messageMayRenderQuery(m aria.Message, p *searchPattern) bool {
+	if p.lit == "" {
+		return true // regex: literal-containment pruning is unsound — render and scan
 	}
-	var visible strings.Builder
-	visible.Grow(len(row))
-	for i := 0; i < len(row); {
-		if row[i] != '\x1b' {
-			visible.WriteByte(row[i])
-			i++
-			continue
-		}
-		if i+1 >= len(row) {
-			break
-		}
-		if row[i+1] == '[' {
-			i += 2
-			for i < len(row) {
-				final := row[i]
-				i++
-				if final >= 0x40 && final <= 0x7e {
-					break
-				}
-			}
-			continue
-		}
-		i += 2
-	}
-	return strings.Contains(visible.String(), q)
-}
-
-func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
-	if strings.Contains(messageHeader(m.Role), q) {
+	q := p.lit
+	contains := func(hay string) bool { return p.probe(hay) }
+	if contains(messageHeader(m.Role)) {
 		return true
 	}
 	verbose := false
@@ -925,29 +1047,29 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 		verbose = view.settings.verbose
 	}
 	for i, n := range m.Nodes {
-		if markdownMayRenderQuery(n.Markdown, q) || strings.Contains(n.Name, q) ||
-			strings.Contains(n.Summary, q) || strings.Contains(n.Output, q) {
+		if markdownMayRenderQuery(p.foldForProbe(n.Markdown), q) || contains(n.Name) ||
+			contains(n.Summary) || contains(n.Output) {
 			return true
 		}
-		if n.Type == livedoc.NodeSteering && strings.Contains("↳ you", q) {
+		if n.Type == livedoc.NodeSteering && contains("↳ you") {
 			return true
 		}
 		if n.Type != livedoc.NodeTool {
 			continue
 		}
-		if n.Name == "" && strings.Contains("tool", q) {
+		if n.Name == "" && contains("tool") {
 			return true
 		}
 		glyph := "✓✗" + string(livedoc.SpinnerFrames)
-		if strings.Contains(glyph, q) {
+		if contains(glyph) {
 			return true
 		}
 		if n.StartedAt != 0 {
 			if strings.Contains(toolDuration(n, time.Now()), q) {
 				return true
 			}
-			if verbose && (strings.Contains("started "+formatToolTime(n.StartedAt), q) ||
-				strings.Contains("finished "+formatToolTime(n.FinishedAt), q)) {
+			if verbose && (contains("started "+formatToolTime(n.StartedAt)) ||
+				contains("finished "+formatToolTime(n.FinishedAt))) {
 				return true
 			}
 		}

@@ -108,7 +108,7 @@ func TestTranscript_SearchPagesOlderWithBoundedRetention(t *testing.T) {
 	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
-	tr.find("message-025")
+	tr.findQuery("message-025")
 	for tr.searchingHistory() {
 		req, ok := tr.pageCursor()
 		if !ok {
@@ -202,7 +202,7 @@ func TestTranscript_SearchTraversesEvictedNewerPages(t *testing.T) {
 		req, _ := tr.pageCursor()
 		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
 	}
-	tr.find("message-190")
+	tr.findQuery("message-190")
 	for tr.searchingHistory() {
 		req, ok := tr.pageCursor()
 		if !ok {

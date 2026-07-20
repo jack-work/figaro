@@ -99,7 +99,7 @@ func TestHistoricalSearchWorkerFindsOlderResult(t *testing.T) {
 	}
 	in := newSearchInteractiveInput(reader, newSearchInputTerminal())
 	in.mu.Lock()
-	in.lt.tr.find("message-010")
+	in.lt.tr.findQuery("message-010")
 	in.mu.Unlock()
 	in.pageTranscript()
 	waitSignal(t, reader.started, "historical search read")

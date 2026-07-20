@@ -65,7 +65,7 @@ func BenchmarkTranscriptSearchMiss(b *testing.B) {
 			tr.enter()
 			b.ResetTimer()
 			for range b.N {
-				tr.find("not present anywhere")
+				tr.findQuery("not present anywhere")
 			}
 		})
 	}
@@ -83,7 +83,7 @@ func BenchmarkTranscriptPagedSearchMiss(b *testing.B) {
 				tr := newTranscript(io.Discard, 100, 40, &ariaView{settings: &renderSettings{}}, client, "benchmark", time.Unix(0, 0))
 				tr.enter()
 				b.StartTimer()
-				tr.find("not present anywhere")
+				tr.findQuery("not present anywhere")
 				for tr.searchingHistory() {
 					req, ok := tr.pageCursor()
 					if !ok {
@@ -230,7 +230,7 @@ func BenchmarkTranscriptHistoricalSearchCancel(b *testing.B) {
 	for b.Loop() {
 		b.StopTimer()
 		in.mu.Lock()
-		in.lt.tr.find("absent")
+		in.lt.tr.findQuery("absent")
 		in.mu.Unlock()
 		in.pageTranscript()
 		<-reader.started

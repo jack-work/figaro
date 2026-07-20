@@ -522,7 +522,12 @@ func (in *interactiveInput) run() {
 			in.mu.Lock()
 			active := in.lt.transcriptActive()
 			in.mu.Unlock()
-			if active {
+			// A read chunk that ends on a bare ESC is the Esc KEY, not the start
+			// of a split escape sequence: terminals write sequences atomically,
+			// only the key arrives alone. Without this, Esc stalls in pending
+			// until the NEXT keypress flushes it.
+			bareEsc := len(data)-i == 1 && data[i] == 0x1b
+			if active && !bareEsc {
 				if ev, consumed, ok, need := ldmouse.Parse(data[i:]); need {
 					pending = append(pending, data[i:]...)
 					break
@@ -546,7 +551,7 @@ func (in *interactiveInput) run() {
 				}
 			}
 			var b byte
-			if key, consumed, ok, need := parseModifiedKey(data[i:]); need {
+			if key, consumed, ok, need := parseModifiedKey(data[i:]); need && !bareEsc {
 				pending = append(pending, data[i:]...)
 				break
 			} else if ok {
