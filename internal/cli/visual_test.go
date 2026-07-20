@@ -97,7 +97,7 @@ func TestVisual_SearchPlacesCursorAndNExtends(t *testing.T) {
 	if !tr.hasCursor {
 		t.Fatalf("search landing must place the cursor")
 	}
-	row0 := tr.pointToRow(tr.vCursor)
+	row0, _ := tr.pointToRow(tr.vCursor)
 	if lt := tr.lineLT[row0]; lt != 4 {
 		t.Fatalf("cursor row should be on Msg04 (LT 4), got LT %d", lt)
 	}
@@ -109,8 +109,10 @@ func TestVisual_SearchPlacesCursorAndNExtends(t *testing.T) {
 	if tr.vmode != visualChar {
 		t.Fatalf("n in visual mode must stay in visual mode")
 	}
-	if tr.pointToRow(tr.vAnchor) != row0 || tr.pointToRow(tr.vCursor) == row0 {
-		t.Fatalf("n must move the cursor endpoint only (anchor %d cursor %d)", tr.pointToRow(tr.vAnchor), tr.pointToRow(tr.vCursor))
+	ar, _ := tr.pointToRow(tr.vAnchor)
+	cr, _ := tr.pointToRow(tr.vCursor)
+	if ar != row0 || cr == row0 {
+		t.Fatalf("n must move the cursor endpoint only (anchor %d cursor %d)", ar, cr)
 	}
 	if lt := tr.vCursor.lt; lt != 6 {
 		t.Fatalf("n should extend the cursor to Msg06 (LT 6), got LT %d", lt)
@@ -131,5 +133,54 @@ func TestVisual_OverlayComposesWithStyledRows(t *testing.T) {
 	}
 	if !strings.Contains(out, "\x1b[0m"+visualBgOn) {
 		t.Fatalf("bg must re-assert across the row's own reset: %q", out)
+	}
+}
+
+// Review-round regressions: caret anchoring, same-row wrap, vanished-endpoint
+// yank safety, and viewport-relative n outside visual mode.
+func TestVisual_ReviewRegressions(t *testing.T) {
+	// F5: a ^-anchored pattern must not re-anchor at the cursor offset.
+	p, _ := compileSearch("^Msg")
+	if idx, ok := p.matchIndexAfter("xxMsgyy", 2); ok {
+		t.Fatalf("^ pattern re-anchored mid-row at %d", idx)
+	}
+	if idx, ok := p.matchIndexAfter("Msgyy", 0); !ok || idx != 0 {
+		t.Fatalf("^ pattern should match at the real line start")
+	}
+
+	// F7: wrap must reach other matches on the cursor's own row.
+	tr := searchFixture(t, 3)
+	tr.rowCache = map[int]cachedMessage{}
+	// craft a single row with three matches by searching the prompt-like row
+	tr.findQuery("body")
+	_, c0, _ := tr.resolveCursor()
+	tr.key('n') // advances (across rows or wrapping) without getting stuck
+	_, c1, _ := tr.resolveCursor()
+	r0, _ := tr.pointToRow(tr.vCursor)
+	if r0 < 0 || (c0 == c1 && r0 == 0) {
+		t.Fatalf("n made no progress (col %d -> %d)", c0, c1)
+	}
+
+	// F2: a yank whose endpoint message vanished must refuse, not mis-copy.
+	tr2 := searchFixture(t, 5)
+	tr2.key('v')
+	tr2.vAnchor = visualPoint{lt: 999, within: 0, col: 3} // not in window
+	if text, ok := tr2.visualYankText(); ok || text != "" {
+		t.Fatalf("yank with a vanished endpoint must be refused, got %q", text)
+	}
+	if tr2.vmode != visualOff {
+		t.Fatalf("refused yank still exits visual mode")
+	}
+
+	// F4: outside visual mode, an off-screen cursor must not be the origin.
+	tr3 := searchFixture(t, 40)
+	tr3.key('g')
+	tr3.key('g')
+	tr3.findQuery("msg02") // cursor near the top
+	tr3.key('G')           // scroll far away (normal mode, cursor stays)
+	all := tr3.lines()
+	row, _, useCol := tr3.searchOrigin(all)
+	if useCol || row != tr3.offset {
+		t.Fatalf("off-screen cursor must yield viewport origin (row %d offset %d useCol %v)", row, tr3.offset, useCol)
 	}
 }

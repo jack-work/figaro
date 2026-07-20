@@ -154,16 +154,17 @@ func (p *searchPattern) matchIndex(row string) (int, bool) {
 }
 
 // matchIndexAfter returns the first match starting at or after byte offset
-// from in the (visible) text v.
+// from. Matches come from the FULL string — slicing v[from:] would let a
+// ^-anchored pattern re-anchor at the cursor and match where the real line
+// start doesn't.
 func (p *searchPattern) matchIndexAfter(v string, from int) (int, bool) {
 	if from < 0 {
 		from = 0
 	}
-	if from > len(v) {
-		return -1, false
-	}
-	if loc := p.re.FindStringIndex(v[from:]); loc != nil {
-		return from + loc[0], true
+	for _, loc := range p.re.FindAllStringIndex(v, -1) {
+		if loc[0] >= from {
+			return loc[0], true
+		}
 	}
 	return -1, false
 }

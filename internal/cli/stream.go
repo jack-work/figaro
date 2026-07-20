@@ -587,10 +587,13 @@ func (in *interactiveInput) run() {
 			}
 			// Visual-mode yank first: y / Enter copy the selection (OSC 52)
 			// and leave visual mode — they must pre-empt the aria-id copy
-			// and the Enter tool-toggle.
+			// and the Enter tool-toggle. NOT while the search prompt is open
+			// (the byte belongs to the query), and never against a mid-flight
+			// paged-search window (cancel restores the real one first).
 			if b == 'y' || b == 0x0d || b == 0x0a {
 				in.mu.Lock()
-				if in.lt.transcriptVisualActive() {
+				if in.lt.transcriptVisualActive() && !in.lt.transcriptSearching() {
+					in.cancelTranscriptSearchLocked()
 					if text, ok := in.lt.transcriptVisualYank(); ok && text != "" {
 						in.tc.SetClipboard(text)
 					}
