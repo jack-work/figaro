@@ -57,21 +57,32 @@ func TestSearch_RegexJumpAndNextPrev(t *testing.T) {
 		tr.key(c)
 	}
 	tr.key(0x0d)
-	if lt := tr.lineLT[tr.offset]; lt != 4 {
+	if tr.vmode != visualCursor {
+		t.Fatalf("a landed search should enter cursor mode")
+	}
+	if lt := tr.vCursor.lt; lt != 4 {
 		t.Fatalf("regex search should land on Msg04 (LT 4), got LT %d", lt)
 	}
 	tr.key('n')
-	if lt := tr.lineLT[tr.offset]; lt != 5 {
+	if lt := tr.vCursor.lt; lt != 5 {
 		t.Fatalf("n should advance to Msg05 (LT 5), got LT %d", lt)
 	}
 	tr.key('N')
-	if lt := tr.lineLT[tr.offset]; lt != 4 {
+	if lt := tr.vCursor.lt; lt != 4 {
 		t.Fatalf("N should return to Msg04 (LT 4), got LT %d", lt)
 	}
 	// wrap: N at the first match with no older history wraps to the last
 	tr.key('N')
-	if lt := tr.lineLT[tr.offset]; lt != 5 {
+	if lt := tr.vCursor.lt; lt != 5 {
 		t.Fatalf("N should wrap to Msg05 (LT 5), got LT %d", lt)
+	}
+	// footer shows the match ordinal
+	if cur, total, ok := tr.matchStats(); !ok || total != 2 || cur == 0 {
+		t.Fatalf("match stats = %d/%d ok=%v, want n/2", cur, total, ok)
+	}
+	tr.key('q') // q leaves cursor mode; the base pager keeps q inert
+	if tr.vmode != visualOff || !tr.active {
+		t.Fatalf("q must exit cursor mode only")
 	}
 }
 
@@ -152,7 +163,8 @@ func TestSearch_BadRegexStaysInPromptAndEscClears(t *testing.T) {
 	if tr.pattern == nil {
 		t.Fatalf("committed search must set the pattern")
 	}
-	tr.key(0x1b)
+	tr.key(0x1b) // first Esc leaves the auto-entered cursor mode
+	tr.key(0x1b) // second Esc is :noh
 	if tr.pattern != nil || tr.filter != nil {
 		t.Fatalf("Esc must clear highlight and filter (:noh)")
 	}

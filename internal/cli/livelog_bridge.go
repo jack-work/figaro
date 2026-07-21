@@ -318,7 +318,9 @@ func (t *livelogTurn) transcriptApplyPage(req transcriptPageRequest, messages []
 	t.tr.applyPage(req, messages)
 }
 func (t *livelogTurn) transcriptSearchingHistory() bool { return t.tr.searchingHistory() }
-func (t *livelogTurn) transcriptVisualActive() bool     { return t.tr.active && t.tr.vmode != visualOff }
+func (t *livelogTurn) transcriptVisualActive() bool {
+	return t.tr.active && t.tr.vmode.selecting()
+}
 func (t *livelogTurn) transcriptVisualYank() (string, bool) {
 	if !t.tr.active {
 		return "", false

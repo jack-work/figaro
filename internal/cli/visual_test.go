@@ -81,8 +81,12 @@ func TestVisual_KeyFlowAndYank(t *testing.T) {
 		t.Fatalf("Ctrl-V must enter column mode")
 	}
 	tr.key(0x1b)
+	if tr.vmode != visualCursor {
+		t.Fatalf("Esc from a selection drops to cursor mode (vim), got %d", tr.vmode)
+	}
+	tr.key('q')
 	if tr.vmode != visualOff {
-		t.Fatalf("Esc must exit visual mode")
+		t.Fatalf("q must leave cursor mode")
 	}
 	if !tr.active {
 		t.Fatalf("visual interactions must never exit the locked pager")

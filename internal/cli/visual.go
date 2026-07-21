@@ -16,11 +16,18 @@ import (
 type visualMode uint8
 
 const (
-	visualOff visualMode = iota
+	visualOff    visualMode = iota
+	visualCursor            // 'i': visible cursor, no selection — the pager's command mode
 	visualChar
 	visualLine
 	visualColumn
 )
+
+// selecting reports whether the mode carries an actual selection (cursor
+// mode does not — y/Enter keep their base-pager meanings there).
+func (m visualMode) selecting() bool {
+	return m == visualChar || m == visualLine || m == visualColumn
+}
 
 type visualPos struct {
 	row int
@@ -180,7 +187,38 @@ func lastRuneStart(v string) int {
 const (
 	visualBgOn  = "\x1b[48;5;240m" // gray background — composes with fg colors
 	visualBgOff = "\x1b[49m"
+
+	cursorCellOn  = "\x1b[48;5;255;38;5;16m" // near-white block, black glyph
+	cursorCellOff = "\x1b[49;39m"
 )
+
+// overlayCursorCell paints the single cell at the cursor column so the cursor
+// reads on screen in every interactive mode (selection bg alone can't show
+// WHERE the moving endpoint is). restore is re-asserted after the cell when
+// the cursor sits inside a background span (selection / current match) — the
+// cell's own closer would otherwise reset that background for the rest of
+// the span.
+func overlayCursorCell(row string, col int, restore string) string {
+	off := cursorCellOff + restore
+	v, mp := visibleWithMap(row)
+	col = clampCol(v, col)
+	end := inclusiveEnd(v, col)
+	if col >= len(mp) || end >= len(mp) {
+		return row + cursorCellOn + " " + cursorCellOff // cursor past EOL: phantom cell
+	}
+	lo, hi := mp[col], mp[end]
+	if lo == hi { // empty row
+		return row + cursorCellOn + " " + cursorCellOff
+	}
+	var b strings.Builder
+	b.Grow(len(row) + 24)
+	b.WriteString(row[:lo])
+	b.WriteString(cursorCellOn)
+	writeReassertingSeq(&b, row[lo:hi], cursorCellOn)
+	b.WriteString(off)
+	b.WriteString(row[hi:])
+	return b.String()
+}
 
 // overlayVisual paints one selection span onto a styled row, mapping the
 // visible-byte span into the styled string and re-asserting the background

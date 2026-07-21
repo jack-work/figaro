@@ -58,10 +58,11 @@ type transcript struct {
 	// are LT-anchored (message LT + line-within + column) because raw row
 	// indices shift whenever history folds in (live frames, listen catch-up,
 	// paging); they resolve against the current lines() at every use.
-	vmode     visualMode
-	vAnchor   visualPoint
-	vCursor   visualPoint
-	hasCursor bool
+	vmode      visualMode
+	vAnchor    visualPoint
+	vCursor    visualPoint
+	hasCursor  bool
+	statsCache matchStatsCache
 
 	// Lazy history paging: the pager opens on the recent window and pulls older
 	// messages via keyset ReadBefore only when you scroll near the top ("like
@@ -84,6 +85,16 @@ type transcript struct {
 	nodeRows  map[nodeRef]nodeSpan
 	selection nodeSelection
 	expanded  map[nodeRef]bool
+}
+
+type matchStatsKey struct {
+	src            string
+	rows, row, col int
+}
+
+type matchStatsCache struct {
+	key        matchStatsKey
+	cur, total int
 }
 
 type transcriptPage struct {
@@ -673,7 +684,7 @@ func (t *transcript) render() {
 			screen[r] = all[i]
 		}
 	}
-	if t.vmode != visualOff {
+	if t.vmode == visualChar || t.vmode == visualLine || t.vmode == visualColumn {
 		aRow, aOK := t.pointToRow(t.vAnchor)
 		cRow, cCol, _ := t.resolveCursor()
 		aCol := t.vAnchor.col
@@ -703,6 +714,31 @@ func (t *transcript) render() {
 				continue
 			}
 			screen[r] = overlayVisual(screen[r], sp.from, sp.to)
+		}
+	}
+	if t.vmode != visualOff {
+		cRow, cCol, ok := t.resolveCursor()
+		if r := cRow - t.offset; ok && r >= 0 && r < body {
+			// Current search match wears the selection background (distinct
+			// from other matches' reverse video), then the cursor cell on
+			// top — restoring the bg after the cell so the rest of the span
+			// keeps it.
+			inBg := t.vmode.selecting() // selections already painted this row's bg
+			if t.pattern != nil {
+				v := visibleRowText(all, cRow)
+				for _, loc := range t.pattern.re.FindAllStringIndex(v, -1) {
+					if cCol >= loc[0] && cCol < loc[1] {
+						screen[r] = overlayVisual(screen[r], loc[0], loc[1])
+						inBg = true
+						break
+					}
+				}
+			}
+			restore := ""
+			if inBg {
+				restore = visualBgOn
+			}
+			screen[r] = overlayCursorCell(screen[r], cCol, restore)
 		}
 	}
 	for k, l := range foot {
@@ -735,6 +771,14 @@ func (t *transcript) footerRows(total, body int) (rule, status string) {
 		pos = fmt.Sprintf("%d–%d/%d", t.offset+1, end, total)
 		if t.follow {
 			pos += " live"
+		}
+	}
+	if cur, n, ok := t.matchStats(); ok {
+		ind := fmt.Sprintf("%d/%d", cur, n)
+		if pos != "" {
+			pos = ind + " · " + pos
+		} else {
+			pos = ind
 		}
 	}
 	rule = "\x1b[2m" + t.status.ruleLine(t.w, pos) + "\x1b[0m"
@@ -782,8 +826,10 @@ func (t *transcript) helpLines() []string {
 		"  n / N               next / previous match",
 		"  &                   filter: only matching lines ('&' + Enter clears)",
 		"  Esc                 clear search highlight + filter",
+		"  i                   cursor mode — visible cursor + match count",
 		"  v / V / ^V          visual select: char / line / column",
 		"  y or Enter          (visual) copy selection, exit visual",
+		"  q / Esc             leave cursor/visual mode",
 		"  y                   copy aria id",
 		"  ^O                  toggle verbose tool output",
 		"  ^N/^P               select next/previous node",
@@ -902,6 +948,8 @@ func (t *transcript) key(b byte) {
 		t.showHelp = true
 	case '!':
 		t.showStatus = true
+	case 'i':
+		t.startVisual(visualCursor)
 	case 'v':
 		t.startVisual(visualChar)
 	case 'V':
@@ -944,6 +992,9 @@ func (t *transcript) searchKey(b byte) {
 		}
 		t.pattern = p
 		t.find(p)
+		if t.vmode == visualOff && t.hasCursor {
+			t.vmode = visualCursor // a landed search leaves you AT the match
+		}
 	case 0x1b: // Esc → cancel the prompt (keeps any active highlight/filter)
 		t.inSearch, t.query, t.searchErr = false, "", ""
 	case 0x7f, 0x08: // backspace
@@ -1069,6 +1120,36 @@ func (t *transcript) landAt(row, col int) {
 		t.ensureCursorVisible(0)
 	}
 	t.stopFollowing()
+}
+
+// matchStats reports the cursor's match ordinal and the total matches across
+// the rendered window ("3/17"), for the footer. Counted over the retained
+// window — the honest scope, since older history isn't loaded. Memoized on
+// (pattern, window size, cursor) so streaming repaints don't re-scan.
+func (t *transcript) matchStats() (cur, total int, ok bool) {
+	if t.pattern == nil || !t.hasCursor || t.vmode == visualOff {
+		return 0, 0, false
+	}
+	all := t.lines()
+	cRow, cCol, _ := t.resolveCursor()
+	key := matchStatsKey{src: t.pattern.src, rows: len(all), row: cRow, col: cCol}
+	if t.statsCache.key == key {
+		return t.statsCache.cur, t.statsCache.total, t.statsCache.total > 0
+	}
+	for i := 0; i < len(all); i++ {
+		v := visibleRowText(all, i)
+		for _, loc := range t.pattern.re.FindAllStringIndex(v, -1) {
+			total++
+			if i < cRow || (i == cRow && loc[0] <= cCol) {
+				cur++
+			}
+		}
+	}
+	if cur == 0 && total > 0 {
+		cur = 1
+	}
+	t.statsCache = matchStatsCache{key: key, cur: cur, total: total}
+	return cur, total, total > 0
 }
 
 // searchOrigin picks where a search continues from: the resolved cursor with
@@ -1201,24 +1282,35 @@ func (t *transcript) visualKey(b byte) bool {
 		t.vCursor = t.rowToPoint(clampRow(row), c)
 	}
 	switch b {
-	case 0x1b: // Esc → leave visual mode, selection dropped
-		t.vmode = visualOff
-	case 'v':
-		if t.vmode == visualChar {
+	case 0x1b: // Esc: selection → cursor mode (vim); cursor mode → out
+		if t.vmode == visualCursor {
 			t.vmode = visualOff
 		} else {
+			t.vmode = visualCursor
+		}
+	case 'q': // q: all the way out (the base pager keeps q inert)
+		t.vmode = visualOff
+	case 'i':
+		t.vmode = visualCursor
+	case 'v':
+		if t.vmode == visualChar {
+			t.vmode = visualCursor
+		} else {
+			t.vAnchor = t.vCursor // selection starts at the cursor
 			t.vmode = visualChar
 		}
 	case 'V':
 		if t.vmode == visualLine {
-			t.vmode = visualOff
+			t.vmode = visualCursor
 		} else {
+			t.vAnchor = t.vCursor
 			t.vmode = visualLine
 		}
 	case 0x16: // Ctrl-V
 		if t.vmode == visualColumn {
-			t.vmode = visualOff
+			t.vmode = visualCursor
 		} else {
+			t.vAnchor = t.vCursor
 			t.vmode = visualColumn
 		}
 	case 'j', 'k':
@@ -1295,7 +1387,7 @@ func (t *transcript) startVisual(mode visualMode) {
 // visualYankText extracts the current selection's visible text and leaves
 // visual mode (vim: y exits). ok is false when nothing is selected.
 func (t *transcript) visualYankText() (string, bool) {
-	if t.vmode == visualOff {
+	if !t.vmode.selecting() {
 		return "", false
 	}
 	all := t.lines()

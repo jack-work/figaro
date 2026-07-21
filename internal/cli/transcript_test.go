@@ -167,13 +167,13 @@ func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 
 // '?' opens the help panel; any key wipes it; the pager never exits.
 func TestTranscript_HelpPanel(t *testing.T) {
-	ft := ldrender.NewFakeTerminal(60, 14)
+	ft := ldrender.NewFakeTerminal(60, 28)
 	client := aria.NewClient()
 	client.Apply(aria.AriaRead{Committed: []aria.Committed{{
 		LT: 1, Role: "assistant",
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "hello"}},
 	}}})
-	tr := newTranscript(ft, 60, 14, ldrender.NodeText{}, client, "aria1234", time.Now())
+	tr := newTranscript(ft, 60, 28, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.key('?')
 	if !tr.showHelp {
