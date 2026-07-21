@@ -260,3 +260,21 @@ func TestVisual_MotionsAndModalLadder(t *testing.T) {
 		t.Fatalf("q exits modes without touching the pager lock")
 	}
 }
+
+// Ghost regression: a row overlay that strands an open background must not
+// bleed into other rows' erases (BCE) — every painted row write is SGR-reset
+// bracketed.
+func TestPaint_ResetBracketsEveryRow(t *testing.T) {
+	var sink strings.Builder
+	tr := &transcript{out: &sink, w: 20, h: 3, active: true}
+	tr.paint([]string{"plain", "\x1b[48;5;240mdangling-bg-open", "after"})
+	got := sink.String()
+	for _, frag := range []string{"\x1b[1;1H\x1b[0m\x1b[2K", "\x1b[2;1H\x1b[0m\x1b[2K", "\x1b[3;1H\x1b[0m\x1b[2K"} {
+		if !strings.Contains(got, frag) {
+			t.Fatalf("row write not reset-bracketed (%q missing): %q", frag, got)
+		}
+	}
+	if !strings.Contains(got, "dangling-bg-open\x1b[0m") {
+		t.Fatalf("row content must be closed with a reset: %q", got)
+	}
+}

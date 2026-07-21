@@ -883,7 +883,12 @@ func (t *transcript) paint(screen []string) {
 			old = t.prev[r]
 		}
 		if screen[r] != old {
-			fmt.Fprintf(&b, "\x1b[%d;1H\x1b[2K%s", r+1, screen[r])
+			// Reset SGR BEFORE the erase and AFTER the row: \x1b[2K erases in
+			// the CURRENT background (BCE), so a row whose overlays left a
+			// background open would gray-fill every later erased line — the
+			// "random opaque ghost blocks". Self-contained row writes make
+			// overlay balance a cosmetic concern instead of a correctness one.
+			fmt.Fprintf(&b, "\x1b[%d;1H\x1b[0m\x1b[2K%s\x1b[0m", r+1, screen[r])
 		}
 	}
 	b.WriteString("\x1b[?2026l")
