@@ -188,3 +188,75 @@ func TestVisual_ReviewRegressions(t *testing.T) {
 		t.Fatalf("off-screen cursor must yield viewport origin (row %d offset %d useCol %v)", row, tr3.offset, useCol)
 	}
 }
+
+// Backward search ('?'): n follows the search direction, N reverses (vim).
+func TestVisual_BackwardSearchDirection(t *testing.T) {
+	tr := searchFixture(t, 9)
+	tr.key('G')
+	tr.key('?')
+	for _, c := range []byte("msg0[357]") {
+		tr.key(c)
+	}
+	tr.key(0x0d)
+	if !tr.searchBack {
+		t.Fatalf("? commit must set backward direction")
+	}
+	first := tr.vCursor.lt
+	tr.key('n') // n continues BACKWARD
+	second := tr.vCursor.lt
+	if second >= first {
+		t.Fatalf("n after ? must move backward (lt %d -> %d)", first, second)
+	}
+	tr.key('N') // N reverses: forward
+	if tr.vCursor.lt != first {
+		t.Fatalf("N after ? must move forward (lt %d, want %d)", tr.vCursor.lt, first)
+	}
+}
+
+// Word motions in cursor mode; 'i' clears node selection; q/Esc ladder.
+func TestVisual_MotionsAndModalLadder(t *testing.T) {
+	tr := searchFixture(t, 4)
+	tr.selectNode(1, false) // node selection active
+	if !tr.selection.active {
+		t.Fatalf("fixture: node selection should be active")
+	}
+	tr.key('i')
+	if tr.selection.active {
+		t.Fatalf("'i' must clear node selection")
+	}
+	if tr.vmode != visualCursor {
+		t.Fatalf("'i' enters cursor mode")
+	}
+	// put the cursor on a wordy row and walk it
+	tr.key('G')
+	tr.key('^')
+	c0 := tr.vCursor.col
+	tr.key('w')
+	c1 := tr.vCursor.col
+	tr.key('e')
+	c2 := tr.vCursor.col
+	tr.key('b')
+	c3 := tr.vCursor.col
+	if !(c1 > c0 && c2 >= c1 && c3 <= c2) {
+		t.Fatalf("w/e/b sequence incoherent: %d %d %d %d", c0, c1, c2, c3)
+	}
+	tr.key('$')
+	if tr.vCursor.col < c2 {
+		t.Fatalf("$ should reach at least the last word end")
+	}
+	// ladder: v -> Esc -> cursor -> Esc -> off -> Esc -> :noh
+	tr.key('v')
+	tr.key(0x1b)
+	if tr.vmode != visualCursor {
+		t.Fatalf("Esc from selection drops to cursor mode")
+	}
+	tr.key(0x1b)
+	if tr.vmode != visualOff {
+		t.Fatalf("Esc from cursor mode exits")
+	}
+	tr.findQuery("msg01")
+	tr.key('q') // q from cursor mode: straight out
+	if tr.vmode != visualOff || !tr.active {
+		t.Fatalf("q exits modes without touching the pager lock")
+	}
+}

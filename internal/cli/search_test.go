@@ -215,6 +215,7 @@ func TestSearch_FindPageContinuesPastFilteredMessage(t *testing.T) {
 	tr.filter = fp
 	sp, _ := compileSearch("body")
 	tr.pattern = sp
+	tr.markDirty() // direct field pokes bypass the key() invalidation
 	msgs := tr.client.View().Closed
 	if !tr.findPage(sp, msgs, false) {
 		t.Fatalf("findPage must skip filtered-out messages and land on a visible one")

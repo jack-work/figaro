@@ -157,8 +157,8 @@ func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 	if !strings.Contains(rule, "live") {
 		t.Fatalf("rule row missing scroll position: %q", rule)
 	}
-	if !strings.Contains(statusRow, "? help") || !strings.Contains(statusRow, "! status") {
-		t.Fatalf("status row missing key hints: %q", statusRow)
+	if !strings.Contains(statusRow, "^/ help") {
+		t.Fatalf("status row missing help hint: %q", statusRow)
 	}
 	if w := runewidth.StringWidth(statusRow); w > 50 {
 		t.Fatalf("status row overflows: %d > 50: %q", w, statusRow)
@@ -175,22 +175,27 @@ func TestTranscript_HelpPanel(t *testing.T) {
 	}}})
 	tr := newTranscript(ft, 60, 28, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
-	tr.key('?')
+	tr.key(0x1f) // Ctrl-/
 	if !tr.showHelp {
-		t.Fatalf("? should open the help panel")
+		t.Fatalf("^/ should open the help panel")
 	}
-	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "copy aria id") {
+	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "this help") {
 		t.Fatalf("help panel content missing:\n%s", scr)
 	}
-	tr.key('?')
+	tr.key(0x1f)
 	if tr.showHelp {
-		t.Fatalf("? should close the help panel")
+		t.Fatalf("^/ should close the help panel")
 	}
-	tr.key('?')
+	tr.key(0x1f)
 	tr.key('j') // any key wipes the panel and still acts
 	if tr.showHelp {
 		t.Fatalf("a nav key should wipe the help panel")
 	}
+	tr.key('?') // '?' is backward search now
+	if !tr.inSearch || !tr.promptBack {
+		t.Fatalf("? must open the backward-search prompt")
+	}
+	tr.key(0x1b)
 	if !tr.active {
 		t.Fatalf("help panel interactions must never exit the pager")
 	}

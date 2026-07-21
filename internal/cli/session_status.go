@@ -145,7 +145,7 @@ func (s *sessionStatus) statusLine(width int, hints bool) string {
 	}
 	tokens = append(tokens, tok{s.startedAt.Format("15:04:05"), 3})
 	if hints {
-		tokens = append(tokens, tok{"? help", 5}, tok{"! status", 5})
+		tokens = append(tokens, tok{"^/ help", 5})
 	}
 	s.mu.RUnlock()
 

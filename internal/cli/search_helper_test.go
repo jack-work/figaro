@@ -4,6 +4,6 @@ package cli
 // literal-query tests that predate compiled patterns.
 func (t *transcript) findQuery(q string) {
 	if p, err := compileSearch(q); err == nil {
-		t.find(p)
+		t.find(p, 1)
 	}
 }

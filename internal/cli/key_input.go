@@ -14,6 +14,8 @@ func (k modifiedKey) asByte() (byte, bool) {
 			return k.code & 0x1f, true
 		case k.code >= 'A' && k.code <= 'Z':
 			return k.code & 0x1f, true
+		case k.code == '/' || k.code == '_': // Ctrl-/ (help) — CSI-u terminals
+			return 0x1f, true
 		}
 	}
 	if !k.alt && !k.ctrl {

@@ -38,8 +38,12 @@ func TestTranscriptNodeSelectionRangeAndCopy(t *testing.T) {
 	if err != nil || text != "first node\n\nsecond node" {
 		t.Fatalf("selected text = %q, %v", text, err)
 	}
-	if screen := strings.Join(ft.Screen(), "\n"); !strings.Contains(screen, "▸") || !strings.Contains(screen, "│") {
-		t.Fatalf("selection gutters missing:\n%s", screen)
+	// Selection wears the visual-selection background, not gutter glyphs;
+	// FakeTerminal strips SGR, so assert on the decorator output directly.
+	sel := decorateNodeRow("row", selectionMark{selected: true}, 40)
+	act := decorateNodeRow("row", selectionMark{active: true}, 40)
+	if !strings.Contains(sel, visualBgOn) || !strings.Contains(act, cursorCellOn) {
+		t.Fatalf("selection decoration missing bg language: sel=%q act=%q", sel, act)
 	}
 	tr.clearSelection()
 	if tr.selection.active {

@@ -17,6 +17,7 @@ import (
 type Client struct {
 	mu sync.Mutex
 
+	gen             uint64 // bumped on every Apply — cheap change detection for renderers
 	closed          []Message
 	closedSeen      map[int]bool
 	closedFloor     int
@@ -73,9 +74,18 @@ func (c *Client) OpenAnimating() bool {
 	return false
 }
 
+// Gen returns a counter that increases on every Apply, so a renderer can
+// detect "the model changed since I last built my rows" without hooks.
+func (c *Client) Gen() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.gen
+}
+
 // Apply folds one page.
 func (c *Client) Apply(r AriaRead) {
 	c.mu.Lock()
+	c.gen++
 	var finalized []Message
 	desync := -1
 	metrics := r.Metrics

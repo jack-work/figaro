@@ -10,7 +10,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/internal/term"
 )
 
 type nodeRef struct {
@@ -109,6 +108,7 @@ func (t *transcript) selectionMarks() map[nodeRef]selectionMark {
 }
 
 func (t *transcript) selectNode(delta int, extend bool) {
+	t.markDirty()
 	refs := t.nodeRefs()
 	if len(refs) == 0 {
 		return
@@ -155,6 +155,7 @@ func (t *transcript) selectNode(delta int, extend bool) {
 }
 
 func (t *transcript) clearSelection() {
+	t.markDirty()
 	direction := pageOlder
 	messages := t.messages()
 	if len(messages) > 0 && t.selection.focus.lt >= messages[len(messages)/2].LT {
@@ -383,13 +384,28 @@ func (t *transcript) ensureSelectionVisible() {
 	}
 }
 
+// decorateNodeRow styles a node-selected row with the SAME background the
+// visual selection uses (one selection language, no gutter glyphs). The
+// active node gets the cursor-cell tone on its gutter edge so focus still
+// reads within a multi-node selection.
 func decorateNodeRow(row string, mark selectionMark, width int) string {
-	gutter := "  "
+	// Node rows are rendered at width-2 (renderNode), so the common unmarked
+	// path is a plain gutter prepend — no re-clip: clipToWidth's rune walk on
+	// every row of every lines() call dominated big-window CPU profiles.
 	switch {
 	case mark.active:
-		gutter = term.Cyan("▸ ")
+		return cursorCellOn + " " + cursorCellOff + visualBgOn + " " + writeRowReasserting(clipToWidth(row, width-2), visualBgOn) + visualBgOff
 	case mark.selected:
-		gutter = term.Cyan("│ ")
+		return visualBgOn + "  " + writeRowReasserting(clipToWidth(row, width-2), visualBgOn) + visualBgOff
 	}
-	return gutter + clipToWidth(row, width-2)
+	return "  " + row
+}
+
+// writeRowReasserting is decorateNodeRow's row-wide variant of the span
+// reassert: the row's own SGR resets must not drop the selection background.
+func writeRowReasserting(row, reopen string) string {
+	var b strings.Builder
+	b.Grow(len(row) + 16)
+	writeReassertingSeq(&b, row, reopen)
+	return b.String()
 }

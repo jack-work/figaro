@@ -55,6 +55,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 		t.client.OnMetrics = status.update
 	}
 	t.client.OnClosed = func(m aria.Message) {
+		t.tr.markDirty()
 		t.tr.observeCommitted(m)
 		if t.tr.active {
 			if t.lastSealedLT != 0 {
@@ -74,6 +75,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 		}
 	}
 	t.client.OnLive = func(lt int, role string, nodes []livedoc.Node) {
+		t.tr.markDirty()
 		newOpen := lt != t.openLT
 		t.openLT, t.openRole, t.open = lt, role, nodes
 		if role == "assistant" {
@@ -154,6 +156,7 @@ func (t *livelogTurn) tick() {
 	}
 	if t.tr.active {
 		t.tr.tick++
+		t.tr.markDirty()
 		t.tr.render()
 	} else {
 		t.in.Tick(t.open)

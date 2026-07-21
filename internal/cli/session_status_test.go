@@ -35,8 +35,7 @@ func TestSessionStatusRuleIncludesMantraContextAndTokenCost(t *testing.T) {
 		"ctx 12.0k/128.0k 9.4%",
 		"cost 15.0k tok",
 		"12:34:56",
-		"? help",
-		"! status",
+		"^/ help",
 	} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("status line missing %q: %q", want, line)
@@ -63,8 +62,8 @@ func TestSessionStatusRulePrefersMantraOverSecondaryDetails(t *testing.T) {
 		t.Fatalf("narrow rule must retain the id: %q", rule)
 	}
 	line := status.statusLine(40, true)
-	if !strings.Contains(line, "? help") || !strings.Contains(line, "! status") {
-		t.Fatalf("narrow status line must keep the key hints: %q", line)
+	if !strings.Contains(line, "^/ help") {
+		t.Fatalf("narrow status line must keep the help hint: %q", line)
 	}
 	if runewidth.StringWidth(line) > 40 {
 		t.Fatalf("narrow status line overflows: %q", line)

@@ -48,7 +48,9 @@ type transcript struct {
 
 	inSearch     bool
 	query        string
-	promptFilter bool           // the open prompt is '&' (filter), not '/' (search)
+	promptFilter bool           // the open prompt is '&' (filter), not '/' or '?'
+	promptBack   bool           // the open prompt is '?' (backward search)
+	searchBack   bool           // committed search direction: n follows it, N reverses
 	searchErr    string         // last bad-pattern error, shown in the prompt row
 	pattern      *searchPattern // active search: highlight-all + n/N until Esc
 	filter       *searchPattern // active '&' filter: only matching rows render
@@ -63,6 +65,14 @@ type transcript struct {
 	vCursor    visualPoint
 	hasCursor  bool
 	statsCache matchStatsCache
+
+	// lines() memo: rebuilt only when something that feeds it changed (a
+	// keypress, a model frame, a tick, a resize). The open message renders
+	// through the full markdown pipeline, so uncached repeat calls within
+	// one event dominated large-window profiles.
+	linesDirty bool
+	linesMemo  []string
+	linesGen   uint64 // client.Gen() the memo was built against
 
 	// Lazy history paging: the pager opens on the recent window and pulls older
 	// messages via keyset ReadBefore only when you scroll near the top ("like
@@ -88,13 +98,15 @@ type transcript struct {
 }
 
 type matchStatsKey struct {
-	src            string
-	rows, row, col int
+	src  string
+	rows int
 }
 
+type matchPos struct{ row, col int }
+
 type matchStatsCache struct {
-	key        matchStatsKey
-	cur, total int
+	key       matchStatsKey
+	positions []matchPos
 }
 
 type transcriptPage struct {
@@ -153,6 +165,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 // cell past the last column with autowrap ON scrolls the whole screen up by a
 // row — which reads as the status line "eating" the line above it.
 func (t *transcript) enter() {
+	t.markDirty()
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query = false, false, ""
 	t.pattern, t.filter, t.promptFilter, t.searchErr = nil, nil, false, ""
@@ -176,6 +189,7 @@ func (t *transcript) scrollBy(delta int) {
 	if !t.active {
 		return
 	}
+	t.markDirty()
 	t.offset += delta
 	t.stopFollowing()
 	if delta < 0 {
@@ -243,6 +257,7 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 	if !t.active {
 		return
 	}
+	t.markDirty()
 	if len(messages) == 0 {
 		if req.direction == pageOlder {
 			t.noMoreOlder = true
@@ -502,6 +517,7 @@ func (t *transcript) resize(w, h int) {
 	// after re-rendering at the new width. (Skipped when following the tail.)
 	anchorLT, within := t.viewportAnchor()
 	t.w, t.h = w, h
+	t.markDirty()
 	t.prev = nil // full repaint (diff vs nil); no \x1b[2J, which flickers
 	t.lines()    // re-render at the new width, repopulating lineLT
 	t.restoreViewportAnchor(anchorLT, within)
@@ -532,7 +548,11 @@ func (t *transcript) restoreViewportAnchor(lt, within int) {
 	}
 }
 
+// markDirty invalidates the lines() memo; every mutation source calls it.
+func (t *transcript) markDirty() { t.linesDirty = true }
+
 func (t *transcript) invalidateRows() {
+	t.markDirty()
 	t.rowCache = map[int]cachedMessage{}
 }
 
@@ -540,6 +560,9 @@ func (t *transcript) invalidateRows() {
 // Committed messages are immutable, so their rendered rows are cached by LT;
 // only the open message renders every frame.
 func (t *transcript) lines() []string {
+	if !t.linesDirty && t.linesMemo != nil && t.client.Gen() == t.linesGen {
+		return t.linesMemo
+	}
 	if t.follow {
 		t.resetToTail()
 	}
@@ -560,11 +583,7 @@ func (t *transcript) lines() []string {
 				if !t.filter.match(r.text) {
 					continue
 				}
-				line := r.text
-				if t.pattern != nil {
-					line = t.pattern.highlight(line)
-				}
-				out = append(out, line)
+				out = append(out, r.text)
 				lts = append(lts, lt)
 			}
 			return
@@ -584,9 +603,6 @@ func (t *transcript) lines() []string {
 				span.last = len(out)
 				t.nodeRows[r.ref] = span
 			}
-			if t.pattern != nil {
-				line = t.pattern.highlight(line)
-			}
 			out = append(out, line)
 			lts = append(lts, lt)
 		}
@@ -603,6 +619,9 @@ func (t *transcript) lines() []string {
 		appendMsg(t.renderMsgBase(*open).rows, open.LT)
 	}
 	t.lineLT = lts
+	t.linesDirty = false
+	t.linesMemo = out
+	t.linesGen = t.client.Gen()
 	return out
 }
 
@@ -682,6 +701,11 @@ func (t *transcript) render() {
 	for r := 0; r < body; r++ {
 		if i := t.offset + r; i < len(all) {
 			screen[r] = all[i]
+			if t.pattern != nil {
+				// Highlight only what's on screen: painting the whole window
+				// per repaint is where big transcripts burned CPU.
+				screen[r] = t.pattern.highlight(screen[r])
+			}
 		}
 	}
 	if t.vmode == visualChar || t.vmode == visualLine || t.vmode == visualColumn {
@@ -822,24 +846,21 @@ func (t *transcript) helpLines() []string {
 	rows := []string{
 		"",
 		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",
-		"  /                   regex search — smartcase (Enter jump · Esc cancel)",
-		"  n / N               next / previous match",
+		"  /  ?                regex search forward / backward (smartcase)",
+		"  n / N               next / previous match (follows search direction)",
 		"  &                   filter: only matching lines ('&' + Enter clears)",
-		"  Esc                 clear search highlight + filter",
 		"  i                   cursor mode — visible cursor + match count",
 		"  v / V / ^V          visual select: char / line / column",
+		"  h l w e b 0 ^ $     motions (cursor + visual modes)",
 		"  y or Enter          (visual) copy selection, exit visual",
-		"  q / Esc             leave cursor/visual mode",
-		"  y                   copy aria id",
+		"  ^N/^P + Enter       select whole nodes / expand tools",
 		"  ^O                  toggle verbose tool output",
-		"  ^N/^P               select next/previous node",
-		"  ^N/^P + Shift       extend node selection (Alt+^N/^P fallback)",
-		"  Enter / ^C          expand tools / copy selected node(s)",
 		"  ^L                  listen — stay open after the turn ends",
+		"  q                   leave cursor/visual mode (inert otherwise)",
+		"  Esc                 step out: selection → cursor → off; then :noh",
 		"  ^D                  detach; the turn keeps running",
 		"  ^C                  interrupt the turn / close",
-		"  !                   figaro status panel",
-		"  ?                   close help",
+		"  ^/                  this help",
 	}
 	if v := helpVersionLine(); v != "" {
 		rows = append(rows, "", "  "+v)
@@ -875,6 +896,7 @@ func (t *transcript) paint(screen []string) {
 // handled at the input loop. q and Ctrl-T are deliberately inert here; Esc
 // wipes an open panel, else clears search highlight + filter (:noh).
 func (t *transcript) key(b byte) {
+	t.markDirty()
 	if t.inSearch {
 		t.searchKey(b)
 		t.render()
@@ -890,7 +912,7 @@ func (t *transcript) key(b byte) {
 		if t.showHelp && b == '!' {
 			reopen = '!' // switch panels directly
 		}
-		if t.showStatus && b == '?' {
+		if t.showStatus && b == 0x1f {
 			reopen = '?'
 		}
 		t.showHelp, t.showStatus = false, false
@@ -899,7 +921,7 @@ func (t *transcript) key(b byte) {
 			t.showStatus = true
 		case reopen == '?':
 			t.showHelp = true
-		case b == '?' || b == '!' || b == 0x1b || b == 'q':
+		case b == 0x1f || b == '!' || b == 0x1b || b == 'q':
 			t.render()
 			return
 		}
@@ -935,20 +957,23 @@ func (t *transcript) key(b byte) {
 			t.checkOlder = true
 		}
 	case '/':
-		t.inSearch, t.promptFilter, t.query, t.searchErr = true, false, "", ""
+		t.inSearch, t.promptFilter, t.promptBack, t.query, t.searchErr = true, false, false, "", ""
+	case '?': // vim: backward search
+		t.inSearch, t.promptFilter, t.promptBack, t.query, t.searchErr = true, false, true, "", ""
 	case '&':
-		t.inSearch, t.promptFilter, t.query, t.searchErr = true, true, "", ""
+		t.inSearch, t.promptFilter, t.promptBack, t.query, t.searchErr = true, true, false, "", ""
 	case 'n':
-		t.findNext(1)
+		t.findNext(t.searchDir())
 	case 'N':
-		t.findNext(-1)
+		t.findNext(-t.searchDir())
 	case 0x1b: // Esc — :noh: drop the highlight and the filter
 		t.pattern, t.filter = nil, nil
-	case '?':
+	case 0x1f: // Ctrl-/ (Ctrl-_): help panel
 		t.showHelp = true
 	case '!':
 		t.showStatus = true
 	case 'i':
+		t.clearSelection() // node selection yields to the modal cursor
 		t.startVisual(visualCursor)
 	case 'v':
 		t.startVisual(visualChar)
@@ -991,7 +1016,8 @@ func (t *transcript) searchKey(b byte) {
 			return
 		}
 		t.pattern = p
-		t.find(p)
+		t.searchBack = t.promptBack
+		t.find(p, t.searchDir())
 		if t.vmode == visualOff && t.hasCursor {
 			t.vmode = visualCursor // a landed search leaves you AT the match
 		}
@@ -1012,32 +1038,38 @@ func (t *transcript) searchKey(b byte) {
 
 // find scrolls to the first line at/after the cursor matching p (wrapping),
 // falling through to the paged historical search when the window has no match.
-func (t *transcript) find(p *searchPattern) {
+func (t *transcript) find(p *searchPattern, dir int) {
 	t.pattern = p // the active pattern: highlight-all, n/N, paged continuation
 	all := t.lines()
-	if len(all) == 0 {
+	n := len(all)
+	if n == 0 {
 		return
 	}
 	from, fromCol, useCol := t.searchOrigin(all)
 	if useCol {
 		v := visibleRowText(all, from)
-		if c, ok := p.matchIndexAfter(v, inclusiveEnd(v, fromCol)); ok {
+		if dir > 0 {
+			if c, ok := p.matchIndexAfter(v, inclusiveEnd(v, fromCol)); ok {
+				t.landAt(from, c)
+				return
+			}
+		} else if c, ok := p.lastMatchIndexBefore(v, fromCol); ok {
 			t.landAt(from, c)
 			return
 		}
 	}
-	for i := 0; i < len(all); i++ {
-		idx := (from + 1 + i) % len(all)
+	for i := 0; i < n; i++ {
+		idx := ((from+dir*(1+i))%n + n) % n
 		if p.match(all[idx]) {
-			t.landRow(idx, all[idx], 1)
+			t.landRow(idx, all[idx], dir)
 			return
 		}
 	}
-	dir := pageOlder
-	if t.hasNewerHistory() {
-		dir = pageNewer
+	pdir := pageOlder
+	if dir > 0 && t.hasNewerHistory() {
+		pdir = pageNewer
 	}
-	t.startPagedSearch(p, dir, false, false)
+	t.startPagedSearch(p, pdir, false, dir < 0)
 }
 
 // findNext is n/N: jump to the next (dir=1) or previous (dir=-1) match. Past
@@ -1132,24 +1164,39 @@ func (t *transcript) matchStats() (cur, total int, ok bool) {
 	}
 	all := t.lines()
 	cRow, cCol, _ := t.resolveCursor()
-	key := matchStatsKey{src: t.pattern.src, rows: len(all), row: cRow, col: cCol}
-	if t.statsCache.key == key {
-		return t.statsCache.cur, t.statsCache.total, t.statsCache.total > 0
-	}
-	for i := 0; i < len(all); i++ {
-		v := visibleRowText(all, i)
-		for _, loc := range t.pattern.re.FindAllStringIndex(v, -1) {
-			total++
-			if i < cRow || (i == cRow && loc[0] <= cCol) {
-				cur++
+	key := matchStatsKey{src: t.pattern.src, rows: len(all)}
+	if t.statsCache.key != key {
+		// The expensive full-window scan runs only when the pattern or the
+		// window itself changes — cursor motion just re-ranks the cached
+		// positions.
+		var positions []matchPos
+		for i := 0; i < len(all); i++ {
+			v := visibleRowText(all, i)
+			for _, loc := range t.pattern.re.FindAllStringIndex(v, -1) {
+				positions = append(positions, matchPos{row: i, col: loc[0]})
 			}
+		}
+		t.statsCache = matchStatsCache{key: key, positions: positions}
+	}
+	total = len(t.statsCache.positions)
+	for _, mp := range t.statsCache.positions {
+		if mp.row < cRow || (mp.row == cRow && mp.col <= cCol) {
+			cur++
 		}
 	}
 	if cur == 0 && total > 0 {
 		cur = 1
 	}
-	t.statsCache = matchStatsCache{key: key, cur: cur, total: total}
 	return cur, total, total > 0
+}
+
+// searchDir is the committed search's direction: 'n' continues it, 'N'
+// reverses — vim's rule, so a '?' search makes n walk backward.
+func (t *transcript) searchDir() int {
+	if t.searchBack {
+		return -1
+	}
+	return 1
 }
 
 // searchOrigin picks where a search continues from: the resolved cursor with
@@ -1329,8 +1376,35 @@ func (t *transcript) visualKey(b byte) bool {
 		set(cur, moveCol(visibleRowText(all, cur), col, -1))
 	case 'l':
 		set(cur, moveCol(visibleRowText(all, cur), col, +1))
+	case 'w': // next word start; at end of line, hop to the next row
+		v := visibleRowText(all, cur)
+		if nc := wordForward(v, col); nc != col {
+			set(cur, nc)
+		} else if cur+1 < n {
+			set(cur+1, firstNonBlank(visibleRowText(all, cur+1)))
+			t.checkNewer = true
+		}
+	case 'e':
+		v := visibleRowText(all, cur)
+		if nc := wordEnd(v, col); nc != col {
+			set(cur, nc)
+		} else if cur+1 < n {
+			nv := visibleRowText(all, cur+1)
+			set(cur+1, wordEnd(nv, firstNonBlank(nv)))
+			t.checkNewer = true
+		}
+	case 'b': // previous word start; at line start, hop to the previous row end
+		v := visibleRowText(all, cur)
+		if nc := wordBack(v, col); nc != col {
+			set(cur, nc)
+		} else if cur > 0 {
+			set(cur-1, lastRuneStart(visibleRowText(all, cur-1)))
+			t.checkOlder = true
+		}
 	case '0':
 		set(cur, 0)
+	case '^':
+		set(cur, firstNonBlank(visibleRowText(all, cur)))
 	case '$':
 		set(cur, lastRuneStart(visibleRowText(all, cur)))
 	case 'G':
@@ -1345,9 +1419,9 @@ func (t *transcript) visualKey(b byte) bool {
 		t.render()
 		return true
 	case 'n':
-		t.findNext(1)
+		t.findNext(t.searchDir())
 	case 'N':
-		t.findNext(-1)
+		t.findNext(-t.searchDir())
 	default:
 		return false // scroll/search/panel keys keep their normal meaning
 	}
