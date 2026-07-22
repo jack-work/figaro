@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
+	"github.com/jack-work/figaro/internal/config"
 )
 
 // completePromptContext is the candidate pool for the cursor when it
@@ -102,4 +103,22 @@ func completePromptOrIDFlag(c *cmdkit.CompleteContext) []string {
 		return completePromptContext(c)
 	}
 	return nil
+}
+
+// completeNewPrompt is completePromptOrIDFlag plus loadout-name
+// suggestions after --loadout / -L. Used only by `figaro new`.
+func completeNewPrompt(c *cmdkit.CompleteContext) []string {
+	if c == nil {
+		return nil
+	}
+	if len(c.Args) > 0 {
+		switch c.Args[len(c.Args)-1] {
+		case "--loadout", "-L":
+			if loaded, ok := c.Extra.(*config.Loaded); ok && loaded != nil {
+				return loaded.ListLoadouts()
+			}
+			return nil
+		}
+	}
+	return completePromptOrIDFlag(c)
 }
