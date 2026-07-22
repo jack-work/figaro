@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -185,4 +186,33 @@ func TestLoad_DirSkill_AndBundledMerge(t *testing.T) {
 	assert.Equal(t, "user mine", mine.Content)
 	require.NoError(t, json.Unmarshal(patch.Set["skills.shared"], &shared))
 	assert.Equal(t, "user shared", shared.Content, "user skill overrides bundled by name")
+}
+
+func TestLoad_DirSkill_UserSymlinkAndLowercaseManifest(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "target-skill")
+	require.NoError(t, os.MkdirAll(target, 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(target, "skill.md"),
+		[]byte("---\nname: linked\ndescription: linked folder skill\n---\nbody"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(target, "reference.md"),
+		[]byte("supplemental"), 0600))
+
+	dir := t.TempDir()
+	skillsDir := filepath.Join(dir, "skills")
+	require.NoError(t, os.MkdirAll(skillsDir, 0700))
+	link := filepath.Join(skillsDir, "linked")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"),
+		[]byte("skills = { dirName = \"skills\" }\n"), 0600))
+
+	patch, err := outfit.New(dir).Load("config")
+	require.NoError(t, err)
+	var linked outfit.ContentEnvelope
+	require.NoError(t, json.Unmarshal(patch.Set["skills.linked"], &linked))
+	assert.Equal(t, "name: linked\ndescription: linked folder skill", linked.Frontmatter)
+	assert.Equal(t, strings.ToLower(filepath.Join(link, "skill.md")), strings.ToLower(linked.FilePath))
+	_, supplementalSurfaced := patch.Set["skills.reference"]
+	assert.False(t, supplementalSurfaced)
 }

@@ -209,8 +209,8 @@ func extractFrontmatter(body string) (string, bool) {
 	return rest[:end], true
 }
 
-// loadDir reads files from dir into a basename->ContentEnvelope map.
-// Basenames drop their extension. Subdirectories are skipped.
+// loadDir reads file skills and directory skills from dir. A directory skill
+// is keyed by its directory name and rooted at SKILL.md (or skill.md).
 func loadDir(dir string) (map[string]ContentEnvelope, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -230,11 +230,10 @@ func loadDir(dir string) (map[string]ContentEnvelope, error) {
 			}
 		}
 		if isDir {
-			// A subdirectory holding a SKILL.md is ONE skill keyed by the
-			// directory name; its other files are sections the agent reads on
-			// demand via paths referenced from SKILL.md. Subdirs without a
-			// SKILL.md are ignored.
-			skillPath := filepath.Join(dir, e.Name(), "SKILL.md")
+			skillPath := directorySkillPath(filepath.Join(dir, e.Name()))
+			if skillPath == "" {
+				continue
+			}
 			body, err := os.ReadFile(skillPath)
 			if err != nil {
 				continue
@@ -254,6 +253,16 @@ func loadDir(dir string) (map[string]ContentEnvelope, error) {
 		out[name] = contentEnvelope(string(body), path)
 	}
 	return out, nil
+}
+
+func directorySkillPath(dir string) string {
+	for _, name := range []string{"SKILL.md", "skill.md"} {
+		path := filepath.Join(dir, name)
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path
+		}
+	}
+	return ""
 }
 
 // bundledSkillsRoot returns the directory holding first-party skills shipped

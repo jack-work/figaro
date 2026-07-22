@@ -420,7 +420,7 @@ func createDefaultLoadout(loaded *config.Loaded, providerName, model string) (st
 }
 
 // writeStarterLoadout writes a minimal loadout file plus a starter
-// skills directory containing the bundled `howto` onboarding skill.
+// folder skill containing the bundled `howto` onboarding skill.
 // Parent directories are created with 0700. The loadout references
 // the skills directory via `skills = { dirName = "skills" }` so the
 // agent sees the howto on every new aria — a brand-new user can run
@@ -434,8 +434,8 @@ func writeStarterLoadout(path, providerName, model string) error {
 	body := fmt.Sprintf(`# Scaffolded by figaro first-run setup.
 # Edit to taste; see docs/loadouts for the schema.
 
-# Skills are markdown files referenced from the chalkboard. The
-# dirName form fans every *.md in skills/ out as skills.<name>.
+# Skills may be markdown files or folders containing SKILL.md plus
+# supplemental files. dirName fans them out as skills.<name>.
 skills = { dirName = "skills" }
 
 [system]
@@ -456,7 +456,29 @@ provider = %q
 	if err := os.MkdirAll(skillsDir, 0700); err != nil {
 		return err
 	}
-	howtoPath := filepath.Join(skillsDir, "howto.md")
+	legacyHowto := filepath.Join(skillsDir, "howto.md")
+	if _, err := os.Stat(legacyHowto); err == nil {
+		return nil
+	}
+	howtoDir := filepath.Join(skillsDir, "howto")
+	if info, err := os.Lstat(howtoDir); err == nil {
+		if starterSkillManifest(howtoDir) != "" {
+			return nil
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("starter howto symlink has no SKILL.md: %s", howtoDir)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("starter howto path is not a directory: %s", howtoDir)
+		}
+	} else if os.IsNotExist(err) {
+		if err := os.MkdirAll(howtoDir, 0700); err != nil {
+			return err
+		}
+	} else {
+		return err
+	}
+	howtoPath := filepath.Join(howtoDir, "SKILL.md")
 	// Don't clobber an existing howto — the user may have edited it.
 	if _, err := os.Stat(howtoPath); os.IsNotExist(err) {
 		if err := os.WriteFile(howtoPath, []byte(starterHowToSkill), 0600); err != nil {
@@ -464,6 +486,16 @@ provider = %q
 		}
 	}
 	return nil
+}
+
+func starterSkillManifest(dir string) string {
+	for _, name := range []string{"SKILL.md", "skill.md"} {
+		path := filepath.Join(dir, name)
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path
+		}
+	}
+	return ""
 }
 
 // patchDefaultLoadout rewrites config.toml in place to set
