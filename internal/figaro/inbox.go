@@ -58,22 +58,42 @@ func (b *Inbox) Recv() (event, bool) {
 	return evt, true
 }
 
-// TakeUserPrompts removes and returns all queued user-prompt events (steering
-// messages), leaving other events (e.g. control patches) in place. Non-blocking.
-func (b *Inbox) TakeUserPrompts() []event {
+// TakeReadyUserPrompts removes the contiguous user-prompt prefix. It never
+// jumps prompts over an earlier control or fork event.
+func (b *Inbox) TakeReadyUserPrompts() []event {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	var taken, keep []event
-	for _, e := range b.queue {
-		if e.typ == eventUserPrompt {
-			taken = append(taken, e)
-		} else {
-			keep = append(keep, e)
-		}
+	n := 0
+	for n < len(b.queue) && b.queue[n].typ == eventUserPrompt {
+		n++
 	}
-	b.queue = keep
+	taken := append([]event(nil), b.queue[:n]...)
+	copy(b.queue, b.queue[n:])
+	b.queue = b.queue[:len(b.queue)-n]
 	b.signalReadyForkLocked()
 	return taken
+}
+
+// Prepend restores events that could not be durably processed.
+func (b *Inbox) Prepend(events []event) bool {
+	if len(events) == 0 {
+		return true
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return false
+	}
+	queue := make([]event, 0, len(events)+len(b.queue))
+	queue = append(queue, events...)
+	queue = append(queue, b.queue...)
+	b.queue = queue
+	b.cond.Signal()
+	select {
+	case b.wake <- struct{}{}:
+	default:
+	}
+	return true
 }
 
 func (b *Inbox) TakeReadyForks() []event {

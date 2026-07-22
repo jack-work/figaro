@@ -53,13 +53,36 @@ func TestInbox_RemovingPromptRearmsReadyFork(t *testing.T) {
 
 	<-b.Wake()
 	assert.Empty(t, b.TakeReadyForks())
-	require.Len(t, b.TakeUserPrompts(), 1)
+	require.Len(t, b.TakeReadyUserPrompts(), 1)
 	select {
 	case <-b.Wake():
 	case <-time.After(time.Second):
 		t.Fatal("ready fork was not re-armed")
 	}
 	require.Len(t, b.TakeReadyForks(), 1)
+}
+
+func TestInbox_PromptForkPromptBoundaries(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := NewInbox(ctx)
+	b.Send(event{typ: eventUserPrompt, text: "first"})
+	b.Send(event{typ: eventFork})
+	b.Send(event{typ: eventUserPrompt, text: "second"})
+
+	first := b.TakeReadyUserPrompts()
+	require.Len(t, first, 1)
+	assert.Equal(t, "first", first[0].text)
+	require.Len(t, b.TakeReadyForks(), 1)
+	second := b.TakeReadyUserPrompts()
+	require.Len(t, second, 1)
+	assert.Equal(t, "second", second[0].text)
+	assert.True(t, b.IsIdle())
+}
+
+func TestRenderablePromptDetection(t *testing.T) {
+	assert.False(t, hasRenderablePrompt([]event{{typ: eventUserPrompt}}))
+	assert.True(t, hasRenderablePrompt([]event{{typ: eventUserPrompt, text: "visible"}}))
 }
 
 func TestInbox_RecvBlocksWhenEmpty(t *testing.T) {

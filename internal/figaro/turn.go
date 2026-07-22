@@ -124,13 +124,32 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		cancel()
 	}()
 
-	// Build the user message. Chalkboard state lives in the reducible
-	// channel (loadout values inherited via the fork watermark; runtime
-	// fill-ins written at conversation creation). The only per-turn state
-	// change is the client's chalkboard input, which we record on the
-	// channel keyed to this message's LT so it renders as a transition on
-	// this message. Ephemeral arias (no backend, no channel) keep folding
-	// patches inline onto the message.
+	// Belt-and-suspenders: if a prior turn died after the assistant
+	// tool_use was logged but before tool_results were appended, the
+	// IR still has a dangling tool_use at the tail. Boot-time repair
+	// usually catches this, but cover the case where the boot check
+	// missed (e.g. dangling state appeared after boot).
+	appendInterruptSentinelIfDangling(a.figLog, a.id)
+	if _, err := a.appendUserPrompt(prompt, true); err != nil {
+		a.endTurn(fmt.Sprintf("error: append message: %s", err))
+		return
+	}
+	a.startAssistantUnit()
+
+	// Drive: provider -> tools -> repeat.
+	allowSteering := false
+	for {
+		stop := a.driveOneRound(turnCtx, allowSteering)
+		if stop {
+			return
+		}
+		allowSteering = true
+	}
+}
+
+// appendUserPrompt persists one external prompt as its own canonical user
+// message and matching committed UI unit.
+func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entry[message.Message], error) {
 	msg := message.Message{
 		Role:      message.RoleUser,
 		Timestamp: time.Now().UnixMilli(),
@@ -162,7 +181,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// Ephemeral first message: fold the boot patch inline so the loadout
 	// reminders render (no channel to hold the transition). State is
 	// already seeded by the caller, so this is render-only.
-	if a.backend == nil && a.inlineBoot != nil && a.figLog.Len() == 0 {
+	if allowInlineBoot && a.backend == nil && a.inlineBoot != nil && a.figLog.Len() == 0 {
 		if !a.inlineBoot.IsEmpty() {
 			msg.Patches = append(msg.Patches, *a.inlineBoot)
 		}
@@ -171,25 +190,20 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	if prompt.text != "" {
 		msg.Content = append(msg.Content, message.TextContent(prompt.text))
 	}
-	// Belt-and-suspenders: if a prior turn died after the assistant
-	// tool_use was logged but before tool_results were appended, the
-	// IR still has a dangling tool_use at the tail. Boot-time repair
-	// usually catches this, but cover the case where the boot check
-	// missed (e.g. dangling state appeared after boot).
-	appendInterruptSentinelIfDangling(a.figLog, a.id)
-	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
-		a.endTurn(fmt.Sprintf("error: append message: %s", err))
-		return
+	entry, err := a.figLog.Append(store.Entry[message.Message]{Payload: msg})
+	if err != nil {
+		return store.Entry[message.Message]{}, err
 	}
 	a.refreshMetrics()
 
-	// The user prompt is its own committed unit; the agent's reply is the
-	// live unit that follows, composed from every message appended after
-	// this point.
 	if prompt.text != "" {
 		a.emitSnapshot("user", []livedoc.Node{{Type: livedoc.NodeProse, Markdown: prompt.text}})
 		a.emitCommit()
 	}
+	return entry, nil
+}
+
+func (a *Agent) startAssistantUnit() {
 	a.turnStartLT = 0
 	if tail, ok := a.figLog.PeekTail(); ok {
 		a.turnStartLT = tail.FigaroLT
@@ -199,14 +213,6 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.argPartials = map[string]string{}
 	a.toolTimings = map[string]compose.ToolTiming{}
 	a.emitSnapshot("assistant", nil)
-
-	// Drive: provider -> tools -> repeat.
-	for {
-		stop := a.driveOneRound(turnCtx)
-		if stop {
-			return
-		}
-	}
 }
 
 // driveOneRound runs one provider.Send + tool dispatch cycle. The
@@ -214,8 +220,15 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 // entry; if it called tools, their execution streams as an open
 // tool_result message that seals in turn. Returns true when the turn
 // is complete, false when another round is needed.
-func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
-	a.serviceForks()
+func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done bool) {
+	if allowSteering {
+		if err := a.prepareProviderRound(); err != nil {
+			a.endTurn("error: append steering prompt: " + err.Error())
+			return true
+		}
+	} else {
+		a.serviceForks()
+	}
 	bus := newTurnBus()
 	in := provider.SendInput{
 		AriaID:     a.id,
@@ -408,7 +421,80 @@ func (a *Agent) driveOneRound(turnCtx context.Context) (done bool) {
 		a.endTurn("interrupted")
 		return true
 	}
+	if err := a.appendSteeringPrompts(); err != nil {
+		a.endTurn("error: append steering prompt: " + err.Error())
+		return true
+	}
 	return false
+}
+
+// appendSteeringPrompts seals the completed tool round, persists each queued
+// prompt as its own user message, and opens a fresh assistant unit for the
+// next provider round.
+func (a *Agent) appendSteeringPrompts() error {
+	prompts := a.inbox.TakeReadyUserPrompts()
+	if len(prompts) == 0 {
+		return nil
+	}
+	split := hasRenderablePrompt(prompts)
+	if split {
+		a.emitCommit()
+	}
+	if err := a.appendPromptEvents(prompts); err != nil {
+		return err
+	}
+	if split {
+		a.startAssistantUnit()
+	}
+	return nil
+}
+
+func (a *Agent) prepareProviderRound() error {
+	for {
+		a.serviceForks()
+		prompts := a.inbox.TakeReadyUserPrompts()
+		if len(prompts) == 0 {
+			return nil
+		}
+		split := hasRenderablePrompt(prompts)
+		if split {
+			if len(a.composeTurn(nil)) == 0 {
+				a.abandonLive()
+			} else {
+				a.emitCommit()
+			}
+		}
+		if err := a.appendPromptEvents(prompts); err != nil {
+			return err
+		}
+		if split {
+			a.startAssistantUnit()
+		}
+	}
+}
+
+func hasRenderablePrompt(prompts []event) bool {
+	for _, prompt := range prompts {
+		if prompt.text != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Agent) appendPromptEvents(prompts []event) error {
+	for i, prompt := range prompts {
+		if _, err := a.appendUserPrompt(prompt, false); err != nil {
+			// The chalkboard write precedes the IR append. Do not replay it
+			// when restoring the still-unpersisted prompt.
+			prompts[i].chalkboard = nil
+			if !a.inbox.Prepend(prompts[i:]) {
+				return fmt.Errorf("%w; inbox closed while restoring prompts", err)
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 // collectToolResults dispatches every call (idempotent), waits for each
@@ -517,15 +603,6 @@ func (a *Agent) assembleToolResults(
 		Role:      message.RoleUser,
 		Content:   results,
 		Timestamp: time.Now().UnixMilli(),
-	}
-	// Steering: fold any user prompts that arrived during this round into the
-	// tool_result tic as text blocks, so the model sees them on the next call.
-	// (compose renders them as steering nodes; the provider accepts text
-	// alongside tool_result on a user message.)
-	for _, e := range a.inbox.TakeUserPrompts() {
-		if e.text != "" {
-			tic.Content = append(tic.Content, message.TextContent(e.text))
-		}
 	}
 	return tic
 }
