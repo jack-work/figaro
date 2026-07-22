@@ -114,9 +114,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay,
 		trunkID = r.FigaroID
 	}
 
-	fctx, fcancel := context.WithTimeout(ctx, 10*time.Second)
-	fr, err := acli.Fork(fctx, trunkID, atMainLT)
-	fcancel()
+	fr, err := waitForFork(ctx, acli, trunkID, atMainLT)
 	if err != nil {
 		die("send: fork %s at LT %d: %s", trunkID, atMainLT, err)
 	}

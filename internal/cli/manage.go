@@ -631,8 +631,7 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay, asJSON b
 	}
 
 	WithAngelus(loaded, func(acli *angelus.Client) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
+		ctx := context.Background()
 		ppid := os.Getppid()
 
 		bound := ""
@@ -646,7 +645,7 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay, asJSON b
 			target = bound
 		}
 
-		resp, err := acli.Fork(ctx, target, atMainLT)
+		resp, err := waitForFork(ctx, acli, target, atMainLT)
 		if err != nil {
 			die("fork: %s", err)
 		}
