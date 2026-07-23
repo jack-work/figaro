@@ -84,12 +84,10 @@ type Agent struct {
 	tools       *tool.Registry
 	summarize   compose.ToolSummary
 	previewArg  compose.ToolPreviewArg
-	inlineBoot  *chalkboard.Patch // ephemeral first-turn boot fold
-	figLog      store.Log[message.Message]
-	backend     store.Backend // nil = ephemeral
-	turnJournal store.TurnJournal
-	journalErr  error
-	chalkboard  *chalkboard.State
+	inlineBoot *chalkboard.Patch // ephemeral first-turn boot fold
+	figLog     store.Log[message.Message]
+	backend    store.Backend // nil = ephemeral
+	chalkboard *chalkboard.State
 
 	inbox *Inbox
 
@@ -107,13 +105,12 @@ type Agent struct {
 	// count: main LTs are trunk-global (patches/transitions consume them too),
 	// so they run far ahead of the message channel's entry count, and passing
 	// a count to ReadFrom re-includes prior turns in every live frame.
-	turnStartLT    uint64
-	gov            *toolout.Governor // bounded live tool-output tails (coalesced emits)
-	lastEmit       time.Time         // throttle for live streaming emits
-	argPartials    map[string]string
-	toolTimings    map[string]compose.ToolTiming
-	activeTurn     *activeTurn
-	turnGeneration uint64
+	turnStartLT uint64
+	gov         *toolout.Governor // bounded live tool-output tails (coalesced emits)
+	lastEmit    time.Time         // throttle for live streaming emits
+	argPartials map[string]string
+	toolTimings map[string]compose.ToolTiming
+	turn        *turnState
 
 	// ariaSrv is the rendered conversation (committed units + the open one),
 	// the single source of the aria-read wire: it serves both the live push
@@ -175,13 +172,7 @@ func NewAgent(cfg Config) *Agent {
 	}
 
 	a.figLog = a.newLog()
-	a.openTurnJournal()
-	if _, err := a.recoverPendingTurn(); err != nil {
-		a.journalErr = fmt.Errorf("recover turn journal: %w", err)
-		slog.Error("recover turn journal", "aria", a.id, "err", err)
-	} else {
-		appendInterruptSentinelIfDangling(a.figLog, a.id)
-	}
+	appendInterruptSentinelIfDangling(a.figLog, a.id)
 	if a.chalkboard == nil {
 		// Ephemeral arias get an in-memory chalkboard. Backed arias are
 		// pre-seeded from the reducible chalkboard channel by the caller.
@@ -559,11 +550,10 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		a.turnCtx = nil
 		a.interrupted = false
 		a.mu.Unlock()
-		a.openTurnJournal()
-		_, recoverErr := a.recoverPendingTurn()
-		if recoverErr != nil {
-			slog.Error("recover turn journal after panic", "aria", a.id, "err", recoverErr)
+		if _, err := a.sealTurn(); err != nil {
+			slog.Error("seal turn after panic", "aria", a.id, "err", err)
 		}
+		appendInterruptSentinelIfDangling(a.figLog, a.id)
 		a.refreshMetrics()
 
 		crashMsg := "agent crashed and was restarted"

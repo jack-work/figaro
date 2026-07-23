@@ -60,9 +60,6 @@ type Backend interface {
 	OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error)
 	SyncTranslation(ariaID, providerName string) error
 
-	// OpenTurnJournal returns the payload-agnostic in-progress turn journal.
-	OpenTurnJournal(ariaID string) (TurnJournal, error)
-
 	// ChalkboardState folds the aria's reducible chalkboard channel to
 	// its current snapshot. The channel is the durable truth; there is
 	// no separate chalkboard file.

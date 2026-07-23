@@ -73,7 +73,6 @@ func hexTrunkID() string {
 const (
 	chanIR           = "ir"
 	chanChalkboard   = "chalkboard"
-	chanTurnWAL      = "turn-wal"
 	reducerJSONMerge = "jsonmerge"
 
 	keyLoadoutName = "system.loadout_name"
@@ -125,7 +124,6 @@ func storeConfig() xwal.Config {
 		Channels: []xwal.ChannelSpec{
 			{Name: chanIR, Kind: xwal.ChannelLog},
 			{Name: chanChalkboard, Kind: xwal.ChannelReducible, Reducer: reducerJSONMerge},
-			{Name: chanTurnWAL, Kind: xwal.ChannelLog, SyncMode: xwal.SyncManual, Opaque: true},
 		},
 	}
 }
@@ -169,24 +167,10 @@ func OpenXwalStore(root string) (*XwalStore, error) {
 			return nil, cerr
 		}
 		s.trunks = tr
-		if err := s.ensureRuntimeChannels(); err != nil {
-			_ = tr.Close()
-			return nil, err
-		}
 		return s, nil
 	}
 	s.trunks = tr
-	if err := s.ensureRuntimeChannels(); err != nil {
-		_ = tr.Close()
-		return nil, err
-	}
 	return s, nil
-}
-
-func (s *XwalStore) ensureRuntimeChannels() error {
-	return s.trunks.EnsureChannel(xwal.ChannelSpec{
-		Name: chanTurnWAL, Kind: xwal.ChannelLog, SyncMode: xwal.SyncManual, Opaque: true,
-	})
 }
 
 func (s *XwalStore) ensureChannel(spec xwal.ChannelSpec) error {

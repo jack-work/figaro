@@ -38,9 +38,9 @@ func appendInterruptSentinelIfDangling(stream store.Log[message.Message], ariaID
 		if len(calls) == 0 {
 			return store.Entry[message.Message]{}, false
 		}
-		tools := make([]turnCheckpointTool, 0, len(calls))
+		tools := make([]turnTool, 0, len(calls))
 		for _, call := range calls {
-			tools = append(tools, turnCheckpointTool{
+			tools = append(tools, turnTool{
 				ToolCallID: call.ToolCallID,
 				ToolName:   call.ToolName,
 				Status:     "interrupted",
