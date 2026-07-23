@@ -930,11 +930,11 @@ done:
 	assert.GreaterOrEqual(t, len(nonGenesis(unwrapForTest(log.Read()))), 2)
 }
 
-// TestAgent_BootInsertsSentinelForDanglingToolUse seeds a conversation
-// whose tail is an assistant turn ending in stop_reason=tool_use with no
-// matching tool_results, opens an Agent on it, and verifies the boot
-// path appends a RoleSystemInterrupt sentinel.
-func TestAgent_BootInsertsSentinelForDanglingToolUse(t *testing.T) {
+// TestAgent_BootRepairsDanglingToolUse seeds a conversation whose tail
+// is an assistant turn ending in stop_reason=tool_use with no matching
+// tool_results, opens an Agent on it, and verifies the boot path
+// appends interrupted tool-result tics.
+func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 	storeDir := t.TempDir()
 	backend, conv := backedConv(t, storeDir)
 
@@ -969,8 +969,12 @@ func TestAgent_BootInsertsSentinelForDanglingToolUse(t *testing.T) {
 
 	msgs := a.Context()
 	tail := msgs[len(msgs)-1]
-	assert.True(t, message.IsInterruptSentinel(tail), "tail should be the sentinel")
-	assert.Equal(t, []string{"tc_boot"}, message.DanglingToolCallIDs(tail))
+	require.Equal(t, message.RoleUser, tail.Role)
+	require.Len(t, tail.Content, 1)
+	assert.Equal(t, message.ContentToolResult, tail.Content[0].Type)
+	assert.Equal(t, "tc_boot", tail.Content[0].ToolCallID)
+	assert.True(t, tail.Content[0].IsError)
+	assert.Contains(t, tail.Content[0].Text, "process died mid-turn")
 }
 
 func TestAgent_EphemeralWhenNoBackend(t *testing.T) {

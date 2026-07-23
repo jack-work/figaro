@@ -56,7 +56,7 @@ func BenchmarkAgentRestoreHistory10000(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		appendInterruptSentinelIfDangling(a.figLog, "perf")
+		repairInterruptedTail(a.figLog, "perf")
 		messages := unwrapMessages(a.figLog.Read())
 		a.refreshMetricsFrom(messages)
 		units := compose.Units(messages, nil, nil)
@@ -72,7 +72,7 @@ func BenchmarkInterruptRepair10000(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		appendInterruptSentinelIfDangling(log, "perf")
+		repairInterruptedTail(log, "perf")
 	}
 }
 

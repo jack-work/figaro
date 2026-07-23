@@ -109,6 +109,9 @@ type handlers struct {
 	// short-timeout List call.
 	loadoutHashMu    sync.Mutex
 	loadoutHashCache map[string]loadoutHashEntry
+
+	restoreMu    sync.Mutex
+	restoreLocks map[string]*sync.Mutex
 }
 
 type loadoutHashEntry struct {
@@ -1043,7 +1046,8 @@ func (h *handlers) ariaRead(ctx context.Context, params json.RawMessage) (interf
 	}, nil
 }
 
-// restoreByID re-creates a figaro from the backend tree.
+// restoreByID re-creates a figaro from the backend tree. Serialized per
+// aria so concurrent restores cannot double-replay tail repair.
 func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figaro, error) {
 	if f := h.angelus.Registry.Get(ariaID); f != nil {
 		return f, nil
@@ -1051,7 +1055,27 @@ func (h *handlers) restoreByID(ctx context.Context, ariaID string) (figaro.Figar
 	if h.angelus.Backend == nil {
 		return nil, fmt.Errorf("no backend configured")
 	}
+	mu := h.restoreLock(ariaID)
+	mu.Lock()
+	defer mu.Unlock()
+	if f := h.angelus.Registry.Get(ariaID); f != nil {
+		return f, nil
+	}
 	return h.restoreOne(ctx, ariaID)
+}
+
+func (h *handlers) restoreLock(ariaID string) *sync.Mutex {
+	h.restoreMu.Lock()
+	defer h.restoreMu.Unlock()
+	if h.restoreLocks == nil {
+		h.restoreLocks = map[string]*sync.Mutex{}
+	}
+	mu, ok := h.restoreLocks[ariaID]
+	if !ok {
+		mu = &sync.Mutex{}
+		h.restoreLocks[ariaID] = mu
+	}
+	return mu
 }
 
 // restoreOne builds and registers a figaro for an existing conversation

@@ -156,7 +156,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// IR still has a dangling tool_use at the tail. Boot-time repair
 	// usually catches this, but cover the case where the boot check
 	// missed (e.g. dangling state appeared after boot).
-	appendInterruptSentinelIfDangling(a.figLog, a.id)
+	repairInterruptedTail(a.figLog, a.id)
 	if _, err := a.appendUserPrompt(prompt, true); err != nil {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return

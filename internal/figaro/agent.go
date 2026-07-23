@@ -172,7 +172,7 @@ func NewAgent(cfg Config) *Agent {
 	}
 
 	a.figLog = a.newLog()
-	appendInterruptSentinelIfDangling(a.figLog, a.id)
+	repairInterruptedTail(a.figLog, a.id)
 	if a.chalkboard == nil {
 		// Ephemeral arias get an in-memory chalkboard. Backed arias are
 		// pre-seeded from the reducible chalkboard channel by the caller.
@@ -553,7 +553,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		if _, err := a.sealTurn(); err != nil {
 			slog.Error("seal turn after panic", "aria", a.id, "err", err)
 		}
-		appendInterruptSentinelIfDangling(a.figLog, a.id)
+		repairInterruptedTail(a.figLog, a.id)
 		a.refreshMetrics()
 
 		crashMsg := "agent crashed and was restarted"

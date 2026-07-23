@@ -30,24 +30,36 @@ func toolResult(id string) message.Content {
 	return message.ToolResultContent(id, "", "ok", false)
 }
 
-func TestAppendSentinel_EmptyStreamNoOp(t *testing.T) {
+func requireRepairTic(t *testing.T, m message.Message, ids ...string) {
+	t.Helper()
+	require.Equal(t, message.RoleUser, m.Role)
+	require.Len(t, m.Content, len(ids))
+	for i, id := range ids {
+		assert.Equal(t, message.ContentToolResult, m.Content[i].Type)
+		assert.Equal(t, id, m.Content[i].ToolCallID)
+		assert.True(t, m.Content[i].IsError)
+		assert.Contains(t, m.Content[i].Text, tailRepairNotice)
+	}
+}
+
+func TestTailRepair_EmptyStreamNoOp(t *testing.T) {
 	s := buildStream(t)
-	appendInterruptSentinelIfDangling(s, "aria")
+	repairInterruptedTail(s, "aria")
 	assert.Empty(t, s.Read())
 }
 
-func TestAppendSentinel_NonDanglingNoOp(t *testing.T) {
+func TestTailRepair_NonDanglingNoOp(t *testing.T) {
 	// Plain user/assistant text turn — no tool_use.
 	s := buildStream(t,
 		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hi")}},
 		message.Message{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("salve")}, StopReason: message.StopEnd},
 	)
 	before := len(s.Read())
-	appendInterruptSentinelIfDangling(s, "aria")
+	repairInterruptedTail(s, "aria")
 	assert.Len(t, s.Read(), before)
 }
 
-func TestAppendSentinel_DanglingToolUseAtTail(t *testing.T) {
+func TestTailRepair_DanglingToolUseAtTail(t *testing.T) {
 	// Assistant ended with tool_use; tool_result tic never landed.
 	s := buildStream(t,
 		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")}},
@@ -57,15 +69,29 @@ func TestAppendSentinel_DanglingToolUseAtTail(t *testing.T) {
 			StopReason: message.StopToolInvoke,
 		},
 	)
-	appendInterruptSentinelIfDangling(s, "aria")
+	repairInterruptedTail(s, "aria")
 	entries := s.Read()
 	require.Len(t, entries, 3)
-	sentinel := entries[2].Payload
-	assert.True(t, message.IsInterruptSentinel(sentinel))
-	assert.Equal(t, []string{"tc_a", "tc_b"}, message.DanglingToolCallIDs(sentinel))
+	requireRepairTic(t, entries[2].Payload, "tc_a", "tc_b")
 }
 
-func TestAppendSentinel_Idempotent(t *testing.T) {
+func TestTailRepair_AbortedPartialAtTail(t *testing.T) {
+	// A sealed partial (drain crashed between assistant and tics).
+	s := buildStream(t,
+		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")}},
+		message.Message{
+			Role:       message.RoleAssistant,
+			Content:    []message.Content{toolCall("tc_a", "bash")},
+			StopReason: message.StopAborted,
+		},
+	)
+	repairInterruptedTail(s, "aria")
+	entries := s.Read()
+	require.Len(t, entries, 3)
+	requireRepairTic(t, entries[2].Payload, "tc_a")
+}
+
+func TestTailRepair_Idempotent(t *testing.T) {
 	s := buildStream(t,
 		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")}},
 		message.Message{
@@ -74,15 +100,15 @@ func TestAppendSentinel_Idempotent(t *testing.T) {
 			StopReason: message.StopToolInvoke,
 		},
 	)
-	appendInterruptSentinelIfDangling(s, "aria")
-	appendInterruptSentinelIfDangling(s, "aria")
-	// Exactly one sentinel appended; the second call is a no-op.
+	repairInterruptedTail(s, "aria")
+	repairInterruptedTail(s, "aria")
+	// Exactly one tic appended; the second call is a no-op.
 	entries := s.Read()
 	require.Len(t, entries, 3)
-	assert.True(t, message.IsInterruptSentinel(entries[2].Payload))
+	requireRepairTic(t, entries[2].Payload, "tc_a")
 }
 
-func TestAppendSentinel_WellFormedToolResultNoOp(t *testing.T) {
+func TestTailRepair_WellFormedToolResultNoOp(t *testing.T) {
 	// Assistant tool_use followed by complete tool_result tic; nothing to do.
 	s := buildStream(t,
 		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")}},
@@ -97,15 +123,15 @@ func TestAppendSentinel_WellFormedToolResultNoOp(t *testing.T) {
 		},
 	)
 	before := len(s.Read())
-	appendInterruptSentinelIfDangling(s, "aria")
+	repairInterruptedTail(s, "aria")
 	assert.Len(t, s.Read(), before)
 }
 
-func TestAppendSentinel_PartialToolResultsLeavesUnrecoverable(t *testing.T) {
+func TestTailRepair_PartialToolResultsLeavesUnrecoverable(t *testing.T) {
 	// Assistant emitted two tool_use blocks; the follow-up tic covers
 	// only one of them. Under append-only this is unrecoverable: we
-	// cannot splice a sentinel between the assistant and the partial
-	// tic. The function logs and leaves the stream alone.
+	// cannot splice a tic between the assistant and the partial tic.
+	// The function leaves the stream alone.
 	s := buildStream(t,
 		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run both")}},
 		message.Message{
@@ -116,11 +142,11 @@ func TestAppendSentinel_PartialToolResultsLeavesUnrecoverable(t *testing.T) {
 		message.Message{Role: message.RoleUser, Content: []message.Content{toolResult("tc_a")}},
 	)
 	before := len(s.Read())
-	appendInterruptSentinelIfDangling(s, "aria")
-	assert.Len(t, s.Read(), before, "no sentinel appended for unrecoverable trailing entries")
+	repairInterruptedTail(s, "aria")
+	assert.Len(t, s.Read(), before, "no tic appended for unrecoverable trailing entries")
 }
 
-func TestAppendSentinel_NoToolCallsNoOp(t *testing.T) {
+func TestTailRepair_NoToolCallsNoOp(t *testing.T) {
 	// stop_reason=tool_use but the assistant has no tool_call content
 	// blocks. Treat as well-formed; nothing to repair.
 	s := buildStream(t,
@@ -131,15 +157,15 @@ func TestAppendSentinel_NoToolCallsNoOp(t *testing.T) {
 		},
 	)
 	before := len(s.Read())
-	appendInterruptSentinelIfDangling(s, "aria")
+	repairInterruptedTail(s, "aria")
 	assert.Len(t, s.Read(), before)
 }
 
-// TestAppendSentinel_FileBackedPersists drives the same flow against a
+// TestTailRepair_FileBackedPersists drives the same flow against a
 // real figwal-backed conversation. The dangling state is written to
-// disk; the function inserts a sentinel; reopening the backend sees it
-// on reload (the cachedLog re-materializes from the segments).
-func TestAppendSentinel_FileBackedPersists(t *testing.T) {
+// disk; the function appends the repair tic; reopening the backend
+// sees it on reload (the cachedLog re-materializes from the segments).
+func TestTailRepair_FileBackedPersists(t *testing.T) {
 	dir := t.TempDir()
 
 	b1, err := store.NewXwalBackend(dir)
@@ -169,10 +195,10 @@ func TestAppendSentinel_FileBackedPersists(t *testing.T) {
 	require.NoError(t, err)
 	log2, err := b2.Open(conv)
 	require.NoError(t, err)
-	appendInterruptSentinelIfDangling(log2, conv)
+	repairInterruptedTail(log2, conv)
 	require.NoError(t, b2.Close())
 
-	// Final reopen sees the sentinel as the tail.
+	// Final reopen sees the repair tic as the tail.
 	b3, err := store.NewXwalBackend(dir)
 	require.NoError(t, err)
 	defer b3.Close()
@@ -180,7 +206,5 @@ func TestAppendSentinel_FileBackedPersists(t *testing.T) {
 	require.NoError(t, err)
 	entries := log3.Read()
 	require.NotEmpty(t, entries)
-	tail := entries[len(entries)-1].Payload
-	assert.True(t, message.IsInterruptSentinel(tail))
-	assert.Equal(t, []string{"tc_disk"}, message.DanglingToolCallIDs(tail))
+	requireRepairTic(t, entries[len(entries)-1].Payload, "tc_disk")
 }
