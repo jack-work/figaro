@@ -207,8 +207,17 @@ func (a *Angelus) Shutdown(perAgentGrace time.Duration) {
 		go func(f figaro.Figaro) {
 			defer wg.Done()
 			waitForIdle(f, perAgentGrace)
-			if err := a.Registry.Kill(f.ID()); err != nil {
-				slog.Error("angelus kill", "id", f.ID(), "err", err)
+			killed := make(chan struct{})
+			go func() {
+				if err := a.Registry.Kill(f.ID()); err != nil {
+					slog.Error("angelus kill", "id", f.ID(), "err", err)
+				}
+				close(killed)
+			}()
+			select {
+			case <-killed:
+			case <-time.After(perAgentGrace + time.Second):
+				slog.Error("angelus kill timed out, abandoning figaro", "id", f.ID())
 			}
 		}(f)
 	}
