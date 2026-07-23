@@ -84,8 +84,15 @@ func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
 }
 
 func mustCreateAndBind(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int) (string, transport.Endpoint) {
+	return mustCreateAndBindLoadout(ctx, acli, loaded, ppid, "")
+}
+
+// mustCreateAndBindLoadout is mustCreateAndBind with an explicit loadout
+// name. Empty string means "use the configured default_loadout" (angelus
+// resolves it server-side).
+func mustCreateAndBindLoadout(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int, loadout string) (string, transport.Endpoint) {
 	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) {
-		return acli.Create(ctx, "", nil)
+		return acli.Create(ctx, loadout, nil)
 	})
 	if err != nil {
 		die("create figaro: %s", err)

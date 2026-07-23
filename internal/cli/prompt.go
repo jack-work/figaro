@@ -52,7 +52,7 @@ func runPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 // runNewPrompt creates a fresh figaro and prompts it. Under jsonMode
 // the streaming render is skipped: the aria is created, prompted via a
 // fire-and-forget Qua, and a single JSON line is emitted on stdout.
-func runNewPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
+func runNewPrompt(loaded *config.Loaded, prompt, loadout string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -62,7 +62,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 	ppid := os.Getppid()
 	unbindBinding(ctx, acli, ppid)
 
-	figaroID, figaroEP := mustCreateAndBind(ctx, acli, loaded, ppid)
+	figaroID, figaroEP := mustCreateAndBindLoadout(ctx, acli, loaded, ppid, loadout)
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 
 	if set.jsonMode {

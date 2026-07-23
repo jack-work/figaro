@@ -236,20 +236,24 @@ Keys while streaming:
 		Name:    "new",
 		Group:   "Prompt",
 		Short:   "Start a fresh aria and prompt it",
-		Usage:   "new [-j|--json] -- <prompt>",
-		Long:    "Creates a new aria (with server-generated id), binds it to this shell, and sends the prompt.\n-j/--json emits {aria_id, mode:'new'} on stdout instead of the streaming render.",
+		Usage:   "new [-j|--json] [--loadout <name>] -- <prompt>",
+		Long:    "Creates a new aria (with server-generated id), binds it to this shell, and sends the prompt.\n-j/--json emits {aria_id, mode:'new'} on stdout instead of the streaming render.\n--loadout/-L <name> starts the aria under the named loadout (default:\nconfig.toml's default_loadout).",
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			prompt := extractPrompt(ctx.RawArgs)
 			if prompt == "" {
-				return fmt.Errorf("usage: figaro new -- <prompt>")
+				return fmt.Errorf("usage: figaro new [--loadout <name>] -- <prompt>")
 			}
 			asJSON := hasPreDashFlag(ctx.RawArgs, "--json", "-j")
-			runNewPrompt(ld, prompt, renderSettings{jsonMode: asJSON})
+			loadout, _, lerr := preDashFlagValue(ctx.RawArgs, "--loadout", "-L")
+			if lerr != nil {
+				return fmt.Errorf("new: %s", lerr)
+			}
+			runNewPrompt(ld, prompt, loadout, renderSettings{jsonMode: asJSON})
 			return nil
 		},
-		CompleteArgs: completePromptOrIDFlag,
+		CompleteArgs: completeNewPrompt,
 	})
 
 	r.Register(&cmdkit.Command{
