@@ -19,6 +19,7 @@ type turnTool struct {
 	ToolName   string
 	Status     string
 	OutputTail string
+	Result     string
 	IsError    bool
 }
 
@@ -63,16 +64,19 @@ func (a *Agent) noteTool(id, name, status string, isErr bool, terminalText ...st
 		if a.gov != nil {
 			streamed = strings.TrimSpace(a.gov.Tails()[id])
 		}
+		var combined string
 		switch {
 		case terminal == "":
-			t.OutputTail = boundedToolTail(streamed)
+			combined = streamed
 		case streamed == "", strings.Contains(terminal, streamed):
-			t.OutputTail = boundedToolTail(terminal)
+			combined = terminal
 		case strings.Contains(streamed, terminal):
-			t.OutputTail = boundedToolTail(streamed)
+			combined = streamed
 		default:
-			t.OutputTail = boundedToolTail(streamed + "\n" + terminal)
+			combined = streamed + "\n" + terminal
 		}
+		t.Result = combined
+		t.OutputTail = boundedToolTail(combined)
 	} else if a.gov != nil {
 		t.OutputTail = a.gov.Tails()[id]
 	}
@@ -176,7 +180,7 @@ func partialAssistant(m *message.Message) message.Message {
 func toolsFromAssistant(m message.Message) []turnTool {
 	var out []turnTool
 	for _, c := range m.Content {
-		if c.Type != message.ContentToolInvoke || c.ToolCallID == "" || c.Arguments == nil {
+		if c.Type != message.ContentToolInvoke || c.ToolCallID == "" {
 			continue
 		}
 		out = append(out, turnTool{
@@ -212,6 +216,11 @@ func interruptedToolResults(tools []turnTool) []message.Content {
 		}
 		text := strings.TrimSpace(tool.OutputTail)
 		if tool.Status == "ok" || tool.Status == "error" {
+			if full := strings.TrimSpace(tool.Result); full != "" {
+				text = full
+			} else if text != "" {
+				text += "\n\n[output truncated: process interrupted before the full result was recorded]"
+			}
 			out = append(out, message.ToolResultContent(
 				tool.ToolCallID, tool.ToolName, text, tool.Status == "error" || tool.IsError,
 			))

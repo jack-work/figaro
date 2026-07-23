@@ -46,7 +46,6 @@ Every aria is one XWAL trunk with related channels:
 arias/
 ├── ir/                               canonical message.Message timeline
 ├── chalkboard/                       reducible state patches
-├── turn-wal/                         opaque manual-sync partial-turn journal
 ├── translations-v2/
 │   ├── anthropic/                    opaque provider request objects
 │   ├── copilot-messages/
@@ -79,9 +78,10 @@ Recv → synchronize → dispatch
 
 ## In-progress turn durability
 
-Backed arias have an opaque `turn-wal` channel with manual fsync. Every
-provider round starts a fresh checkpoint generation. The actor writes a
-versioned full checkpoint before structural live frames and no more than once
+In-progress turn state is memory-only (`turnState` in turn_seal.go): the IR
+already gets per-message appends, interrupt/SIGTERM/panic seal the in-memory
+partial as an interrupted turn, and open-time tail repair appends interrupted
+tool results for unresolved tool calls. Checkpoint cadence no longer exists
 per second for streamed prose/tool output; periodic checkpoints sync, and
 interrupt/error paths force a final sync. The payload records turn
 identity/generation, target next IR LT, assistant/tools phase, the partial
@@ -112,9 +112,9 @@ explicit error; it never emits a success-shaped fallback.
 
 `PushFigaro` carries the canonical assistant candidate plus its exact
 input-ready provider cache payload, namespace, and fingerprint. The actor
-force-syncs that pair in `turn-wal`, appends canonical IR at the predicted LT,
-appends and syncs the opaque translation entry on the same continuation, then
-acknowledges. Providers never append the assistant cache entry themselves.
+appends canonical IR at the predicted LT, appends and syncs the opaque
+translation entry on the same continuation best-effort, then acknowledges.
+Providers never append the assistant cache entry themselves.
 Direct Anthropic supplies the sanitized accumulated native response with signed
 and redacted thinking intact, the SDK supplies `Message.ToParam()`, and
 Responses supplies the original encrypted output items. Process death between

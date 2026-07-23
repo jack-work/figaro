@@ -51,7 +51,8 @@ func assertAPILegalSDKPayload(t *testing.T, payload []json.RawMessage) {
 				assert.NotEmpty(t, strings.TrimSpace(s))
 			}
 			if s, ok := block["thinking"].(string); ok {
-				assert.NotEmpty(t, strings.TrimSpace(s))
+				sig, _ := block["signature"].(string)
+				assert.True(t, strings.TrimSpace(s) != "" || sig != "", "thinking block needs summary or signature: %v", block)
 			}
 		}
 	}
@@ -97,17 +98,48 @@ func TestAssistantCacheDropsEmptyStreamedBlocks(t *testing.T) {
 
 	raw := string(native.Payload[0])
 	assert.Contains(t, raw, `"text":"salve"`)
-	assert.NotContains(t, raw, `"text":""`)
-	assert.NotContains(t, raw, `"sig-only"`)
+	assert.Contains(t, raw, `"sig-only"`)
+	assert.Contains(t, raw, `"thinking":""`)
 }
 
 func TestAssistantCacheEmptiesToNoPayload(t *testing.T) {
 	var acc anthropic.Message
 	require.NoError(t, json.Unmarshal([]byte(`{
 		"id":"msg_1","type":"message","role":"assistant","model":"claude-test",
-		"content":[{"type":"text","text":""},{"type":"thinking","thinking":"","signature":"sig"}],
+		"content":[{"type":"text","text":""},{"type":"thinking","thinking":"","signature":""}],
 		"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}
 	}`), &acc))
+	p := &Provider{reminder: "tag", CacheNamespace: "anthropic"}
+	native, err := p.assistantCache(acc)
+	require.NoError(t, err)
+	assert.Empty(t, native.Payload)
+}
+
+func TestAssistantCacheKeepsSignedEmptyThinking(t *testing.T) {
+	var acc anthropic.Message
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"id":"msg_1","type":"message","role":"assistant","model":"claude-test",
+		"content":[{"type":"thinking","thinking":"","signature":"sig"},{"type":"tool_use","id":"t1","name":"bash","input":{"command":"ls"}}],
+		"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}
+	}`), &acc))
+	p := &Provider{reminder: "tag", CacheNamespace: "anthropic"}
+	native, err := p.assistantCache(acc)
+	require.NoError(t, err)
+	require.Len(t, native.Payload, 1)
+	raw := string(native.Payload[0])
+	assert.Contains(t, raw, `"signature":"sig"`)
+	assert.Contains(t, raw, `"thinking":""`)
+	assert.Contains(t, raw, `"id":"t1"`)
+}
+
+func TestAssistantCacheInvalidToolInputUncacheable(t *testing.T) {
+	var acc anthropic.Message
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"id":"msg_1","type":"message","role":"assistant","model":"claude-test",
+		"content":[{"type":"text","text":"salve"},{"type":"tool_use","id":"t1","name":"bash","input":{}}],
+		"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}
+	}`), &acc))
+	acc.Content[1].Input = []byte(`"truncated JSON string`)
 	p := &Provider{reminder: "tag", CacheNamespace: "anthropic"}
 	native, err := p.assistantCache(acc)
 	require.NoError(t, err)

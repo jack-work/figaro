@@ -129,13 +129,29 @@ func runAngelus() {
 		return err
 	})
 
+	drained := make(chan struct{})
 	go func() {
+		defer close(drained)
 		<-ctx.Done()
 		slog.Info("angelus signal received, draining figaros")
 		a.Shutdown(5 * time.Second)
 	}()
 
-	if err := a.Run(ctx); err != nil {
+	err = a.Run(ctx)
+	if ctx.Err() != nil {
+		// Run returns the instant the listener closes; the drain (seal
+		// in-flight turns, close backend) runs behind it. Exiting before it
+		// finishes would lose every active turn — wait, bounded. The socket
+		// is removed only after the drain so `figaro rest` reports success
+		// when turns are actually sealed.
+		select {
+		case <-drained:
+		case <-time.After(60 * time.Second):
+			slog.Error("angelus drain deadline exceeded, exiting with turns unsealed")
+		}
+	}
+	os.Remove(a.SocketPath)
+	if err != nil {
 		slog.Error("angelus run", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: %v\n", err)
 		os.Exit(1)

@@ -198,7 +198,12 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 func (p *Provider) assistantCache(acc anthropic.Message) (provider.AssistantCache, error) {
 	var content []anthropic.ContentBlockUnion
 	for _, b := range acc.Content {
-		if validAccumulatedBlock(b) {
+		keep, fatal := cacheableAccumulatedBlock(b)
+		if fatal {
+			content = nil
+			break
+		}
+		if keep {
 			content = append(content, b)
 		}
 	}

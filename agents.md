@@ -57,13 +57,13 @@ Load-bearing. Breaking them produces races, lost messages, or silent corruption.
 15. **Dormant listing is metadata-only.** Agents persist complete `AriaMeta` at initialization, turn boundaries, and state-only patches. `figaro.list` reads that sidecar and a topology snapshot keyed by `Trunks.Version()`; it never opens IR or folds chalkboard history. Repair stale metadata explicitly rather than hiding a history scan in list.
 16. **Live forks stay live.** Fork coordination enters through the figaro's existing inbox and is serviced between provider/tool stream events. Never kill, interrupt, or restart the addressed actor: its stable trunk ID is the continuation and it resumes appending after the fork.
 17. **Completion metadata is incremental and singular.** The actor folds new IR entries once and writes one complete `AriaMeta` snapshot through `Backend.SetMeta`. Do not add parallel derivation files or history scans at turn completion.
-18. **Live output is write-ahead.** Backed arias checkpoint actor-owned partial turns to opaque `turn-wal` before structural frames and periodically before streamed frames. Recovery reads only `IR tail + 1`, seals as interrupted, and never re-calls the provider.
-19. **Assistant IR and native cache commit together.** Providers hand `PushFigaro` the canonical assistant plus exact input-ready cache bytes/fingerprint. The actor journals, appends IR, appends+syncs the opaque cache, then acknowledges; recovery completes either missing side without provider recall.
+18. **In-progress turn state is memory-only.** The IR gets per-message appends (assistant at seal, tool-result tics at completion); interrupt/SIGTERM seals in-memory partial state as an interrupted turn (`sealTurn`), and open-time `repairInterruptedTail` appends honest interrupted tool results when the IR tail has unresolved tool calls. There is no turn journal.
+19. **Assistant IR commits before its native cache.** Providers hand `PushFigaro` the canonical assistant plus exact input-ready cache bytes/fingerprint. The actor appends IR, then appends+syncs the opaque cache best-effort (a cache failure degrades to re-encoding, never blocks the turn), then acknowledges.
 
 ## Hot spots
 
 - `internal/figaro/agent.go` — drain loop, turn lifecycle, interrupt handling, panic recovery, in-progress-tic accumulation, set/loadout patch dispatch.
-- `internal/figaro/turn_journal.go` — versioned partial-turn checkpoint schema, cadence, sealing, and restart recovery.
+- `internal/figaro/turn_seal.go` — in-memory turn state, interrupt/drain sealing, interrupted tool results.
 - `internal/figaro/translator.go` — `synchronize` and its three sub-passes. The bidirectional sync between figStream and the translator stream.
 - `internal/figaro/inbox.go` — selfish vs. patient semantics, routing subscriber.
 - `internal/angelus/protocol.go` — supervisor JSON-RPC handlers, dormant-aria handling, lazy restore.

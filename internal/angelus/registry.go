@@ -24,6 +24,8 @@ type Registry struct {
 
 	figaroPIDs map[string]map[int]struct{}
 
+	killing map[string]bool
+
 	draining atomic.Bool
 }
 
@@ -34,6 +36,7 @@ func NewRegistry() *Registry {
 		pidToFigaro: make(map[int]string),
 		pidToLT:     make(map[int]uint64),
 		figaroPIDs:  make(map[string]map[int]struct{}),
+		killing:     make(map[string]bool),
 	}
 }
 
@@ -61,23 +64,30 @@ func (r *Registry) Get(id string) figaro.Figaro {
 	return r.figaros[id]
 }
 
-// Kill removes a figaro, unbinds its PIDs, and kills it.
+// Kill removes a figaro, unbinds its PIDs, and kills it. The id stays
+// registered until the kill (which waits out the drain loop's final seal
+// appends) completes — unpublishing first would let a concurrent restore
+// run tail repair against the still-sealing agent.
 func (r *Registry) Kill(id string) error {
 	r.mu.Lock()
 	f, exists := r.figaros[id]
-	if !exists {
+	if !exists || r.killing[id] {
 		r.mu.Unlock()
 		return fmt.Errorf("figaro %q not found", id)
 	}
+	r.killing[id] = true
+	r.mu.Unlock()
 
+	f.Kill()
+
+	r.mu.Lock()
 	for pid := range r.figaroPIDs[id] {
 		delete(r.pidToFigaro, pid)
 	}
 	delete(r.figaroPIDs, id)
 	delete(r.figaros, id)
+	delete(r.killing, id)
 	r.mu.Unlock()
-
-	f.Kill()
 	return nil
 }
 

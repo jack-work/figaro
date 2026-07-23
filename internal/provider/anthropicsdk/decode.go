@@ -33,6 +33,36 @@ func validAccumulatedBlock(b anthropic.ContentBlockUnion) bool {
 	return true
 }
 
+// cacheableAccumulatedBlock is the wire-replay predicate — wider than
+// validAccumulatedBlock for thinking: a signed empty-summary block must
+// replay (the API requires the thinking block leading a tool-use
+// assistant) even though the renderer skips it. fatal marks the whole
+// message uncacheable: a tool_use whose input is not a JSON object
+// cannot replay, and dropping just that block would orphan its
+// tool_result on the wire.
+func cacheableAccumulatedBlock(b anthropic.ContentBlockUnion) (keep, fatal bool) {
+	switch b.Type {
+	case "text":
+		return strings.TrimSpace(b.Text) != "", false
+	case "thinking":
+		return b.Signature != "" || strings.TrimSpace(b.Thinking) != "", false
+	case "redacted_thinking":
+		return b.Data != "", false
+	case "tool_use":
+		if b.ID == "" {
+			return false, false
+		}
+		var obj map[string]json.RawMessage
+		if json.Unmarshal(b.Input, &obj) != nil {
+			return false, true
+		}
+		return true, false
+	case "":
+		return false, false
+	}
+	return true, false
+}
+
 // decodeAssistantMessage projects an SDK Message (the final
 // accumulated assistant turn) to the figaro IR.
 func decodeAssistantMessage(m anthropic.Message) message.Message {

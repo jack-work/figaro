@@ -94,7 +94,8 @@ func assertAPILegalNativePayload(t *testing.T, payload []json.RawMessage) {
 				assert.NotEmpty(t, s)
 			}
 			if s, ok := block["thinking"].(string); ok {
-				assert.NotEmpty(t, s)
+				sig, _ := block["signature"].(string)
+				assert.True(t, s != "" || sig != "", "thinking block needs summary or signature: %v", block)
 			}
 		}
 	}
@@ -136,18 +137,48 @@ func TestAssistantCacheNativeDropsEmptyStreamedBlocks(t *testing.T) {
 
 	var got nativeMessage
 	require.NoError(t, json.Unmarshal(cache.Payload[0], &got))
-	require.Len(t, got.Content, 1)
-	assert.Equal(t, "text", got.Content[0].Type)
-	assert.Equal(t, "salve", got.Content[0].Text)
+	require.Len(t, got.Content, 2)
+	assert.Equal(t, "thinking", got.Content[0].Type)
+	assert.Equal(t, "sig-only", got.Content[0].Signature)
+	assert.Contains(t, string(cache.Payload[0]), `"thinking":""`)
+	assert.Equal(t, "text", got.Content[1].Type)
+	assert.Equal(t, "salve", got.Content[1].Text)
 	assert.NotContains(t, string(cache.Payload[0]), `{"type":"text"}`)
-	assert.NotContains(t, string(cache.Payload[0]), `"signature":"sig-only"`)
 }
 
 func TestAssistantCacheNativeEmptiesToNoPayload(t *testing.T) {
 	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
 	cache, err := a.assistantCacheNative(nativeMessage{
 		Role:    "assistant",
-		Content: []nativeBlock{{Type: "text"}, {Type: "thinking", Signature: "sig"}},
+		Content: []nativeBlock{{Type: "text"}, {Type: "thinking"}},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, cache.Payload)
+}
+
+func TestAssistantCacheNativeKeepsSignedEmptyThinking(t *testing.T) {
+	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
+	cache, err := a.assistantCacheNative(nativeMessage{
+		Role: "assistant",
+		Content: []nativeBlock{
+			{Type: "thinking", Signature: "sig"},
+			{Type: "tool_use", ID: "t1", Name: "bash", Input: map[string]interface{}{"command": "ls"}},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, cache.Payload, 1)
+	assert.Contains(t, string(cache.Payload[0]), `"thinking":""`)
+	assert.Contains(t, string(cache.Payload[0]), `"signature":"sig"`)
+}
+
+func TestAssistantCacheNativeUnparsedToolInputUncacheable(t *testing.T) {
+	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
+	cache, err := a.assistantCacheNative(nativeMessage{
+		Role: "assistant",
+		Content: []nativeBlock{
+			{Type: "text", Text: "salve"},
+			{Type: "tool_use", ID: "t1", Name: "bash", Input: `{"command":"trunc`},
+		},
 	})
 	require.NoError(t, err)
 	assert.Empty(t, cache.Payload)

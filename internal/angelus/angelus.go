@@ -98,8 +98,9 @@ func (a *Angelus) Run(ctx context.Context) error {
 	os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
 	defer os.Remove(pidPath)
 
-	// Remove socket on exit so `figaro rest` can detect shutdown.
-	defer os.Remove(a.SocketPath)
+	// The socket is NOT removed here: `figaro rest` treats its removal as
+	// "shutdown complete", and Run returns before the drain does. The
+	// daemon main (runAngelus) removes it after Shutdown finishes.
 
 	slog.Info("angelus started", "pid", os.Getpid(), "socket", a.SocketPath)
 

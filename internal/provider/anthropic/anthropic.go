@@ -337,6 +337,34 @@ func validNativeBlock(b nativeBlock) bool {
 	return true
 }
 
+// cacheableNativeBlock is the wire-replay predicate — deliberately wider
+// than validNativeBlock for thinking: a signed empty-summary block must
+// replay (the API requires the thinking block leading a tool-use
+// assistant), even though the renderer skips it. fatal marks the whole
+// message uncacheable: a tool_use whose input never parsed cannot replay,
+// but dropping just that block would orphan its tool_result on the wire.
+func cacheableNativeBlock(b nativeBlock) (keep, fatal bool) {
+	switch b.Type {
+	case "text":
+		return strings.TrimSpace(b.Text) != "", false
+	case "thinking":
+		return b.Signature != "" || strings.TrimSpace(b.Thinking) != "", false
+	case "redacted_thinking":
+		return b.Data != "", false
+	case "tool_use":
+		if b.ID == "" {
+			return false, false
+		}
+		if _, ok := b.Input.(map[string]interface{}); !ok {
+			return false, true
+		}
+		return true, false
+	case "":
+		return false, false
+	}
+	return true, false
+}
+
 func decodeNativeMessage(nm nativeMessage) message.Message {
 	// model/provider are not on the IR message — they live in the
 	// chalkboard (system.model / system.provider), derived on read.
@@ -450,6 +478,22 @@ type nativeBlock struct {
 	Content      interface{}   `json:"content,omitempty"`
 	Source       interface{}   `json:"source,omitempty"`
 	CacheControl *cacheControl `json:"cache_control,omitempty"`
+}
+
+// MarshalJSON emits thinking blocks with their required fields even when
+// empty: a signed empty-summary block must replay as
+// {"type":"thinking","thinking":"","signature":…} — omitempty on the
+// union struct would drop the thinking key and 400 the replay.
+func (b nativeBlock) MarshalJSON() ([]byte, error) {
+	if b.Type == "thinking" {
+		return json.Marshal(struct {
+			Type      string `json:"type"`
+			Thinking  string `json:"thinking"`
+			Signature string `json:"signature,omitempty"`
+		}{b.Type, b.Thinking, b.Signature})
+	}
+	type alias nativeBlock
+	return json.Marshal(alias(b))
 }
 
 type nativeTool struct {
@@ -905,7 +949,12 @@ func (a *Anthropic) assistantCacheNative(msg nativeMessage) (provider.AssistantC
 	msg.Usage = nil
 	var content []nativeBlock
 	for _, b := range msg.Content {
-		if validNativeBlock(b) {
+		keep, fatal := cacheableNativeBlock(b)
+		if fatal {
+			content = nil
+			break
+		}
+		if keep {
 			content = append(content, b)
 		}
 	}
