@@ -270,6 +270,9 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	return e, nil
 }
 
+// Clear goes through Store.Clear, which drops the channel's pending
+// flush buffer atomically with the on-disk wipe — a raw XWAL.Clear
+// would race the flusher into resurrecting wiped records.
 func (l *xwalLog[T]) Clear() error {
-	return l.openOnce(func(xw *xwal.XWAL) error { return xw.Clear(l.channel) })
+	return l.store.trunks.Clear(l.ariaID, l.channel)
 }

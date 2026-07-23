@@ -301,8 +301,13 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 		patch = *cbPatch
 	}
 	pb, _ := json.Marshal(patch)
-	_, err = x.Append(chanChalkboard, glt, pb, nil)
-	return err
+	if _, err = x.Append(chanChalkboard, glt, pb, nil); err != nil {
+		return err
+	}
+	// Birth records must be durable before conversations spawn under the
+	// stump — a crash between spawn and the next flush would orphan the
+	// children's fork base.
+	return x.FlushCoherent()
 }
 
 // contentVersion is the value-stable content hash of a loadout patch.
