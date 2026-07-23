@@ -920,6 +920,9 @@ func TestAgent_PersistenceKillFlushes(t *testing.T) {
 	}
 done:
 	a.Kill()
+	// Single-writer flock: the first backend must close (draining its
+	// flusher) before a second may open the same store.
+	require.NoError(t, backend.Close())
 
 	// Re-open a fresh backend on the same dir: the turn is on disk.
 	b2, err := store.NewXwalBackend(storeDir)
