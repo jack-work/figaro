@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http/httptest"
 	"strings"
@@ -32,14 +31,6 @@ type staticResponseTokenSource struct {
 	invalidated int
 }
 
-type failingResponseCache struct {
-	*store.MemLog[[]json.RawMessage]
-}
-
-func (f *failingResponseCache) Append(store.Entry[[]json.RawMessage]) (store.Entry[[]json.RawMessage], error) {
-	return store.Entry[[]json.RawMessage]{}, errors.New("cache unavailable")
-}
-
 func (s *staticResponseTokenSource) Resolve() (string, error) { return s.token, nil }
 
 func (s *staticResponseTokenSource) Invalidate(string) error {
@@ -53,6 +44,7 @@ type responseTestBus struct {
 	toolDeltas  []string
 	toolReady   []message.Content
 	messages    []message.Message
+	cache       []provider.AssistantCache
 	messageEnds []string
 }
 
@@ -103,7 +95,10 @@ func (n *responseDoneNotifier) Notify(method string, _ any) error {
 
 func (b *responseTestBus) PushDelta(content message.Content) { b.deltas = append(b.deltas, content) }
 
-func (b *responseTestBus) PushFigaro(msg message.Message) { b.messages = append(b.messages, msg) }
+func (b *responseTestBus) PushFigaro(msg message.Message, cache ...provider.AssistantCache) {
+	b.messages = append(b.messages, msg)
+	b.cache = append(b.cache, cache...)
+}
 
 func (b *responseTestBus) PushToolInvokeStart(id, name string) {
 	b.toolStarts = append(b.toolStarts, message.Content{
@@ -222,10 +217,12 @@ func TestResponsesProviderStreamsAndCachesAssistant(t *testing.T) {
 	assert.Equal(t, 2, bus.messages[0].Usage.CacheWriteTokens)
 
 	entries := cache.Read()
-	require.Len(t, entries, 2)
+	require.Len(t, entries, 1)
 	assert.Equal(t, p.Fingerprint(), entries[0].Fingerprint)
-	assert.Equal(t, p.Fingerprint(), entries[1].Fingerprint)
-	assert.Contains(t, string(entries[1].Payload[0]), `"output_text"`)
+	require.Len(t, bus.cache, 1)
+	assert.Equal(t, "copilot-responses", bus.cache[0].Namespace)
+	assert.Equal(t, p.Fingerprint(), bus.cache[0].Fingerprint)
+	assert.Contains(t, string(bus.cache[0].Payload[0]), `"output_text"`)
 }
 
 func TestResponsesProviderMapsFunctionCalls(t *testing.T) {
@@ -469,7 +466,9 @@ func TestResponsesProviderInvalidatesCacheOnModelSwitch(t *testing.T) {
 
 	p.SetModel("gpt-5.6-luna")
 	assert.NotEqual(t, initialFingerprint, p.Fingerprint())
-	require.NotNil(t, p.cacheFor("aria-1"))
+	opened, err := p.cacheFor("aria-1")
+	require.NoError(t, err)
+	require.NotNil(t, opened)
 	assert.Empty(t, cache.Read())
 }
 
@@ -641,7 +640,7 @@ func TestResponsesProviderCancellationDoesNotAppend(t *testing.T) {
 	assert.Empty(t, bus.messages)
 }
 
-func TestResponsesProviderDoesNotFailAfterDerivedCacheWriteFailure(t *testing.T) {
+func TestResponsesProviderSuppliesCacheWithoutAppendingIt(t *testing.T) {
 	server := newResponseServer(t, func(conn *websocket.Conn) {
 		defer conn.Close()
 		var request responseCreateRequest
@@ -662,16 +661,18 @@ func TestResponsesProviderDoesNotFailAfterDerivedCacheWriteFailure(t *testing.T)
 			},
 		}))
 	})
-	cache := &failingResponseCache{MemLog: store.NewMemLog[[]json.RawMessage]()}
+	cache := store.NewMemLog[[]json.RawMessage]()
 	p := newResponsesTestProvider(server, cache)
 	log := newResponsesInputLog(t)
 	bus := &responseTestBus{}
 
-	require.NoError(t, p.Send(context.Background(), provider.SendInput{
+	err := p.Send(context.Background(), provider.SendInput{
 		AriaID: "aria-1",
 		FigLog: log,
-	}, bus))
+	}, bus)
+	require.NoError(t, err)
 	require.Len(t, bus.messages, 1)
+	require.Len(t, bus.cache, 1)
 	assert.Equal(t, "salve", bus.messages[0].Content[0].Text)
 	assert.Len(t, log.Read(), 2)
 }
@@ -770,7 +771,9 @@ func TestResponsesProviderClearsIncompatibleCache(t *testing.T) {
 
 	server := newResponseServer(t, func(conn *websocket.Conn) { conn.Close() })
 	p := newResponsesTestProvider(server, cache)
-	require.NotNil(t, p.cacheFor("aria-1"))
+	opened, err := p.cacheFor("aria-1")
+	require.NoError(t, err)
+	require.NotNil(t, opened)
 	assert.Empty(t, cache.Read())
 }
 

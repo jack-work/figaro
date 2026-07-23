@@ -33,6 +33,30 @@ func appendInterruptSentinelIfDangling(stream store.Log[message.Message], ariaID
 	}
 
 	assistant := tail.Payload
+	if assistant.StopReason == message.StopAborted {
+		calls := assistantToolInvokes(assistant)
+		if len(calls) == 0 {
+			return store.Entry[message.Message]{}, false
+		}
+		tools := make([]turnCheckpointTool, 0, len(calls))
+		for _, call := range calls {
+			tools = append(tools, turnCheckpointTool{
+				ToolCallID: call.ToolCallID,
+				ToolName:   call.ToolName,
+				Status:     "interrupted",
+			})
+		}
+		stamped, err := stream.Append(store.Entry[message.Message]{Payload: message.Message{
+			Role:      message.RoleUser,
+			Content:   interruptedToolResults(tools),
+			Timestamp: time.Now().UnixMilli(),
+		}})
+		if err != nil {
+			slog.Error("append interrupted tool results", "aria", ariaID, "err", err)
+			return store.Entry[message.Message]{}, false
+		}
+		return stamped, true
+	}
 	if assistant.StopReason != message.StopToolInvoke {
 		return store.Entry[message.Message]{}, false
 	}

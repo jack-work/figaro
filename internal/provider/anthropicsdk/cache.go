@@ -38,27 +38,25 @@ func appendProjectedMessages(state projectedMessages, encoded []json.RawMessage,
 	return state
 }
 
-// cacheFor returns this provider's lineage cache, opening lazily. Returns
-// nil if caching is unconfigured or the open failed.
-func (p *Provider) cacheFor(aria string) store.Log[[]json.RawMessage] {
+// cacheFor returns this provider's lineage cache, opening lazily.
+func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
 	if aria == "" || p.CacheOpen == nil {
-		return nil
+		return nil, nil
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.cache != nil {
-		return p.cache
+		return p.cache, nil
 	}
 	s, err := p.CacheOpen(aria)
 	if err != nil {
-		slog.Warn("anthropicsdk cache open", "aria", aria, "err", err)
-		return nil
+		return nil, fmt.Errorf("anthropicsdk cache open %s: %w", aria, err)
 	}
 	if !p.invalidateIfStale(s) {
-		return nil
+		return nil, fmt.Errorf("anthropicsdk cache invalidation failed for %s", aria)
 	}
 	p.cache = s
-	return s
+	return s, nil
 }
 
 // invalidateIfStale clears the cache on fingerprint mismatch.

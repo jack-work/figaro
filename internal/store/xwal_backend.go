@@ -97,7 +97,7 @@ func (b *XwalBackend) Open(ariaID string) (Log[message.Message], error) {
 	return h.ir, nil
 }
 
-func transChannel(provider string) string { return "translations/" + provider }
+func transChannel(provider string) string { return "translations-v2/" + provider }
 
 func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error) {
 	b.mu.Lock()
@@ -106,6 +106,7 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	if err != nil {
 		return nil, err
 	}
+
 	b.mu.Lock()
 	if c := h.trans[providerName]; c != nil {
 		b.mu.Unlock()
@@ -113,9 +114,7 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	}
 	b.mu.Unlock()
 	ch := transChannel(providerName)
-	// Materialize the channel on disk if it doesn't exist yet. Open a
-	// fresh xwal, add, close.
-	if err := b.ensureChannel(ariaID, ch); err != nil {
+	if err := b.store.ensureOpaqueTranslationChannel("translations/"+providerName, ch); err != nil {
 		return nil, err
 	}
 	c := newCachedLog[[]json.RawMessage](newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false))
@@ -129,25 +128,12 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	return c, nil
 }
 
-func (b *XwalBackend) ensureChannel(ariaID, ch string) error {
-	xw, err := b.store.OpenNode(ariaID)
-	if err != nil {
-		return err
-	}
-	defer xw.Close()
-	if channelExists(xw, ch) {
-		return nil
-	}
-	return xw.AddChannel(xwal.ChannelSpec{Name: ch, Kind: xwal.ChannelLog})
+func (b *XwalBackend) SyncTranslation(ariaID, providerName string) error {
+	return b.store.trunks.SyncChannel(ariaID, transChannel(providerName))
 }
 
-func channelExists(x *xwal.XWAL, name string) bool {
-	for _, c := range x.Channels() {
-		if c.Name == name {
-			return true
-		}
-	}
-	return false
+func (b *XwalBackend) ensureChannel(spec xwal.ChannelSpec) error {
+	return b.store.ensureChannel(spec)
 }
 
 // ---- chalkboard (re-derived via StateAt; mutation appends a patch) ----
@@ -410,5 +396,5 @@ func (b *XwalBackend) Close() error {
 	b.open = map[string]*ariaHandle{}
 	b.chalk = map[string]*chalkCache{}
 	b.metas = map[string]*metaCache{}
-	return nil
+	return b.store.trunks.Close()
 }

@@ -77,17 +77,19 @@ type Config struct {
 
 // Agent is the Figaro implementation.
 type Agent struct {
-	id         string
-	socketPath string
-	prov       provider.Provider
-	outfitter  *outfit.Outfitter
-	tools      *tool.Registry
-	summarize  compose.ToolSummary
-	previewArg compose.ToolPreviewArg
-	inlineBoot *chalkboard.Patch // ephemeral first-turn boot fold
-	figLog     store.Log[message.Message]
-	backend    store.Backend // nil = ephemeral
-	chalkboard *chalkboard.State
+	id          string
+	socketPath  string
+	prov        provider.Provider
+	outfitter   *outfit.Outfitter
+	tools       *tool.Registry
+	summarize   compose.ToolSummary
+	previewArg  compose.ToolPreviewArg
+	inlineBoot  *chalkboard.Patch // ephemeral first-turn boot fold
+	figLog      store.Log[message.Message]
+	backend     store.Backend // nil = ephemeral
+	turnJournal store.TurnJournal
+	journalErr  error
+	chalkboard  *chalkboard.State
 
 	inbox *Inbox
 
@@ -105,11 +107,13 @@ type Agent struct {
 	// count: main LTs are trunk-global (patches/transitions consume them too),
 	// so they run far ahead of the message channel's entry count, and passing
 	// a count to ReadFrom re-includes prior turns in every live frame.
-	turnStartLT uint64
-	gov         *toolout.Governor // bounded live tool-output tails (coalesced emits)
-	lastEmit    time.Time         // throttle for live streaming emits
-	argPartials map[string]string
-	toolTimings map[string]compose.ToolTiming
+	turnStartLT    uint64
+	gov            *toolout.Governor // bounded live tool-output tails (coalesced emits)
+	lastEmit       time.Time         // throttle for live streaming emits
+	argPartials    map[string]string
+	toolTimings    map[string]compose.ToolTiming
+	activeTurn     *activeTurn
+	turnGeneration uint64
 
 	// ariaSrv is the rendered conversation (committed units + the open one),
 	// the single source of the aria-read wire: it serves both the live push
@@ -171,7 +175,13 @@ func NewAgent(cfg Config) *Agent {
 	}
 
 	a.figLog = a.newLog()
-	appendInterruptSentinelIfDangling(a.figLog, a.id)
+	a.openTurnJournal()
+	if _, err := a.recoverPendingTurn(); err != nil {
+		a.journalErr = fmt.Errorf("recover turn journal: %w", err)
+		slog.Error("recover turn journal", "aria", a.id, "err", err)
+	} else {
+		appendInterruptSentinelIfDangling(a.figLog, a.id)
+	}
 	if a.chalkboard == nil {
 		// Ephemeral arias get an in-memory chalkboard. Backed arias are
 		// pre-seeded from the reducible chalkboard channel by the caller.
@@ -549,10 +559,12 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		a.turnCtx = nil
 		a.interrupted = false
 		a.mu.Unlock()
+		a.openTurnJournal()
+		_, recoverErr := a.recoverPendingTurn()
+		if recoverErr != nil {
+			slog.Error("recover turn journal after panic", "aria", a.id, "err", recoverErr)
+		}
 		a.refreshMetrics()
-
-		a.inbox.Close()
-		a.inbox = NewInbox(ctx)
 
 		crashMsg := "agent crashed and was restarted"
 		if a.backend != nil {
@@ -560,11 +572,46 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		} else {
 			crashMsg += "; context lost"
 		}
-		// Freeze whatever partial unit the panic left behind, then end
-		// the turn (endTurn commits the live unit + emits turn.done).
-		a.endTurn("error: " + crashMsg)
+		a.reconcileAriaServer()
+		a.finishTurn("error: " + crashMsg)
 
 		slog.Error("restarted after panic", "aria", a.id)
+	}
+}
+
+func (a *Agent) reconcileAriaServer() {
+	oldCommitted := a.ariaSrv.LastCommittedLT()
+	hadOpen := a.ariaSrv.HasOpen()
+	units := compose.Units(a.Context(), a.summarize, a.previewArg)
+	history := make([]aria.Message, len(units))
+	for i, unit := range units {
+		history[i] = aria.Message{LT: i + 1, Role: unit.Role, Nodes: unit.Nodes}
+	}
+	a.ariaSrv.Restore(history)
+	a.unitLT = len(history)
+	for _, message := range history {
+		if message.LT <= oldCommitted {
+			continue
+		}
+		a.fanOut(rpc.Notification{
+			JSONRPC: "2.0",
+			Method:  rpc.MethodAriaFrame,
+			Params: aria.AriaRead{
+				Committed: []aria.Committed{{LT: message.LT, Role: message.Role, Nodes: message.Nodes}},
+				Metrics:   a.sessionMetrics(),
+			},
+		})
+	}
+	if hadOpen && len(history) <= oldCommitted {
+		a.unitLT++
+		a.fanOut(rpc.Notification{
+			JSONRPC: "2.0",
+			Method:  rpc.MethodAriaFrame,
+			Params: aria.AriaRead{
+				Live:    &aria.Live{LT: a.unitLT, V: 0, Role: "assistant"},
+				Metrics: a.sessionMetrics(),
+			},
+		})
 	}
 }
 

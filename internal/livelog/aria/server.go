@@ -44,6 +44,20 @@ func (s *Server) LastCommittedLT() int {
 	return s.closed[len(s.closed)-1].LT
 }
 
+func (s *Server) HasOpen() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.open != nil
+}
+
+// Restore replaces materialized state without broadcasting.
+func (s *Server) Restore(messages []Message) {
+	s.mu.Lock()
+	s.closed = append([]Message(nil), messages...)
+	s.open = nil
+	s.mu.Unlock()
+}
+
 // Open starts a new open message at lt (close any prior one first). It emits no
 // frame; the first Update carries the role at v 0.
 func (s *Server) Open(lt int, role string) {

@@ -48,9 +48,10 @@ type Anthropic struct {
 	Templates *template.Template
 
 	// CacheOpen opens the per-aria translation cache. nil = no caching.
-	CacheOpen  func(aria string) (store.Log[[]json.RawMessage], error)
-	cache      store.Log[[]json.RawMessage]
-	projection *provider.IncrementalProjection[provider.EncodedMessages]
+	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
+	CacheNamespace string
+	cache          store.Log[[]json.RawMessage]
+	projection     *provider.IncrementalProjection[provider.EncodedMessages]
 }
 
 // New constructs an Anthropic provider.
@@ -69,30 +70,29 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 		HTTPClient:       &http.Client{Timeout: 10 * time.Minute},
 		ReminderRenderer: rr,
 		CacheOpen:        cacheOpen,
+		CacheNamespace:   providerName,
 	}, nil
 }
 
-// cacheFor returns this provider's lineage cache, opening lazily. nil if
-// unconfigured or open failed.
-func (a *Anthropic) cacheFor(aria string) store.Log[[]json.RawMessage] {
+// cacheFor returns this provider's lineage cache, opening lazily.
+func (a *Anthropic) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
 	if aria == "" || a.CacheOpen == nil {
-		return nil
+		return nil, nil
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.cache != nil {
-		return a.cache
+		return a.cache, nil
 	}
 	s, err := a.CacheOpen(aria)
 	if err != nil {
-		slog.Warn("anthropic cache open", "aria", aria, "err", err)
-		return nil
+		return nil, fmt.Errorf("anthropic cache open %s: %w", aria, err)
 	}
 	if !a.invalidateIfStale(s) {
-		return nil
+		return nil, fmt.Errorf("anthropic cache invalidation failed for %s", aria)
 	}
 	a.cache = s
-	return s
+	return s, nil
 }
 
 // invalidateIfStale clears the cache on fingerprint mismatch.
@@ -304,7 +304,7 @@ func (a *Anthropic) Fingerprint() string {
 	if rr == "" {
 		rr = "tag"
 	}
-	return "anthropic/" + rr + "/v4"
+	return "anthropic/" + rr + "/v5"
 }
 
 func (a *Anthropic) SetModel(model string) {
@@ -423,6 +423,7 @@ type nativeBlock struct {
 	Text         string        `json:"text,omitempty"`
 	Thinking     string        `json:"thinking,omitempty"`
 	Signature    string        `json:"signature,omitempty"`
+	Data         string        `json:"data,omitempty"`
 	ID           string        `json:"id,omitempty"`
 	Name         string        `json:"name,omitempty"`
 	Input        interface{}   `json:"input,omitempty"`
@@ -742,7 +743,10 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
-	cache := a.cacheFor(in.AriaID)
+	cache, err := a.cacheFor(in.AriaID)
+	if err != nil {
+		return err
+	}
 	perMessage, lts := a.catchUp(in.FigLog, cache, in.Chalkboard)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
@@ -801,20 +805,12 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	}
 	msg.LogicalTime = entry.LT
 	bus.PushMessageEnd(string(msg.StopReason))
-	bus.PushFigaro(msg)
-
-	if cache != nil {
-		// Re-encode for cache (strips inbound-only fields).
-		if encoded, err := a.encode(msg, chalkboard.Snapshot{}); err == nil {
-			_, _ = cache.Append(store.Entry[[]json.RawMessage]{
-				FigaroLT:    entry.LT,
-				Payload:     encoded,
-				Fingerprint: a.Fingerprint(),
-			})
-		} else {
-			slog.Error("anthropic re-encode assistant", "err", err)
-		}
+	native, err := a.assistantCacheNative(nm)
+	if err != nil {
+		return fmt.Errorf("anthropic cache assistant: %w", err)
 	}
+	bus.PushFigaro(msg, native)
+	a.acceptAssistantProjection(entry.LT, native.Payload)
 	return nil
 }
 
@@ -829,7 +825,10 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	if dir := in.Snapshot.Lookup("system.environment.figaro_wire_dir"); dir != nil && *dir != "" {
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
-	cache := a.cacheFor(in.AriaID)
+	cache, err := a.cacheFor(in.AriaID)
+	if err != nil {
+		return err
+	}
 	perMessage, lts := a.catchUp(in.FigLog, cache, in.Chalkboard)
 	if len(perMessage) == 0 {
 		return fmt.Errorf("empty context")
@@ -873,20 +872,52 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	}
 	msg.LogicalTime = entry.LT
 	bus.PushMessageEnd(string(msg.StopReason))
-	bus.PushFigaro(msg)
-
-	if cache != nil {
-		if encoded, err := a.encode(msg, chalkboard.Snapshot{}); err == nil {
-			_, _ = cache.Append(store.Entry[[]json.RawMessage]{
-				FigaroLT:    entry.LT,
-				Payload:     encoded,
-				Fingerprint: a.Fingerprint(),
-			})
-		} else {
-			slog.Error("anthropic re-encode assistant", "err", err)
-		}
+	native, err := a.assistantCacheNative(nm)
+	if err != nil {
+		return fmt.Errorf("anthropic cache assistant: %w", err)
 	}
+	bus.PushFigaro(msg, native)
+	a.acceptAssistantProjection(entry.LT, native.Payload)
 	return nil
+}
+
+func (a *Anthropic) assistantCacheNative(msg nativeMessage) (provider.AssistantCache, error) {
+	msg.StopReason = ""
+	msg.Model = ""
+	msg.Usage = nil
+	raw, err := json.Marshal(msg)
+	if err != nil {
+		return provider.AssistantCache{}, fmt.Errorf("marshal native assistant cache: %w", err)
+	}
+	return provider.AssistantCache{
+		Namespace: a.CacheNamespace, Payload: []json.RawMessage{raw}, Fingerprint: a.Fingerprint(),
+	}, nil
+}
+
+func (a *Anthropic) assistantCache(msg message.Message) (provider.AssistantCache, error) {
+	encoded, err := a.encode(msg, chalkboard.Snapshot{})
+	if err != nil {
+		return provider.AssistantCache{}, err
+	}
+	return provider.AssistantCache{
+		Namespace: a.CacheNamespace, Payload: encoded, Fingerprint: a.Fingerprint(),
+	}, nil
+}
+
+func (a *Anthropic) acceptAssistantProjection(lt uint64, encoded []json.RawMessage) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.projection == nil {
+		return
+	}
+	state := provider.AppendEncodedMessage(a.projection.State, encoded, lt)
+	a.projection = &provider.IncrementalProjection[provider.EncodedMessages]{
+		State:       state,
+		Chalkboard:  a.projection.Chalkboard,
+		Fingerprint: a.projection.Fingerprint,
+		Entries:     a.projection.Entries + 1,
+		LastLT:      lt,
+	}
 }
 
 func (a *Anthropic) resolveModel(snap chalkboard.Snapshot) string {
@@ -1032,9 +1063,11 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 		var block struct {
 			Index        int `json:"index"`
 			ContentBlock struct {
-				Type string `json:"type"`
-				ID   string `json:"id,omitempty"`
-				Name string `json:"name,omitempty"`
+				Type      string `json:"type"`
+				ID        string `json:"id,omitempty"`
+				Name      string `json:"name,omitempty"`
+				Signature string `json:"signature,omitempty"`
+				Data      string `json:"data,omitempty"`
 			} `json:"content_block"`
 		}
 		if json.Unmarshal(data, &block) != nil {
@@ -1047,7 +1080,9 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 		case "text":
 			nm.Content[block.Index] = nativeBlock{Type: "text"}
 		case "thinking":
-			nm.Content[block.Index] = nativeBlock{Type: "thinking"}
+			nm.Content[block.Index] = nativeBlock{Type: "thinking", Signature: block.ContentBlock.Signature}
+		case "redacted_thinking":
+			nm.Content[block.Index] = nativeBlock{Type: "redacted_thinking", Data: block.ContentBlock.Data}
 		case "tool_use":
 			nm.Content[block.Index] = nativeBlock{
 				Type: "tool_use", ID: block.ContentBlock.ID, Name: block.ContentBlock.Name,
@@ -1067,6 +1102,7 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 				Text        string `json:"text,omitempty"`
 				Thinking    string `json:"thinking,omitempty"`
 				PartialJSON string `json:"partial_json,omitempty"`
+				Signature   string `json:"signature,omitempty"`
 			} `json:"delta"`
 		}
 		if json.Unmarshal(data, &d) != nil || d.Index >= len(nm.Content) {
@@ -1084,6 +1120,8 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 			if d.Delta.Thinking != "" {
 				bus.PushDelta(message.Content{Type: message.ContentThinking, Text: d.Delta.Thinking})
 			}
+		case "signature_delta":
+			b.Signature += d.Delta.Signature
 		case "input_json_delta":
 			if s, ok := b.Input.(string); ok {
 				b.Input = s + d.Delta.PartialJSON

@@ -246,8 +246,7 @@ func (l *xwalLog[T]) PeekTail() (Entry[T], bool) {
 }
 
 // Append routes through Trunks.Append / Trunks.AppendChannel, which
-// take Trunks.mu for the whole open→write→close so a concurrent Fork
-// on the same trunk cannot race. No local retry needed.
+// serialize against topology changes inside figwal.
 func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	payload, err := json.Marshal(e.Payload)
 	if err != nil {

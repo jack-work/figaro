@@ -10,7 +10,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"sync"
 	"text/template"
@@ -52,9 +51,10 @@ type Provider struct {
 	NoOAuthIdentity bool
 
 	// CacheOpen opens the per-aria translation cache. nil disables caching.
-	CacheOpen  func(aria string) (store.Log[[]json.RawMessage], error)
-	cache      store.Log[[]json.RawMessage]
-	projection *provider.IncrementalProjection[projectedMessages]
+	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
+	CacheNamespace string
+	cache          store.Log[[]json.RawMessage]
+	projection     *provider.IncrementalProjection[projectedMessages]
 }
 
 // New constructs the SDK-backed provider.
@@ -67,12 +67,13 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 		rr = "tag"
 	}
 	return &Provider{
-		resolver:   resolver,
-		model:      knobs.Model,
-		maxTokens:  knobs.MaxTokens,
-		reminder:   rr,
-		httpClient: &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
-		CacheOpen:  cacheOpen,
+		resolver:       resolver,
+		model:          knobs.Model,
+		maxTokens:      knobs.MaxTokens,
+		reminder:       rr,
+		httpClient:     &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
+		CacheOpen:      cacheOpen,
+		CacheNamespace: providerName,
 	}, nil
 }
 
@@ -126,7 +127,10 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		ctx = wirelog.WithLogging(ctx, in.AriaID, *dir)
 	}
 
-	cache := p.cacheFor(in.AriaID)
+	cache, err := p.cacheFor(in.AriaID)
+	if err != nil {
+		return err
+	}
 	projected, err := p.catchUp(in.FigLog, cache, in.Chalkboard)
 	if err != nil {
 		return err
@@ -181,26 +185,40 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	}
 	msg.LogicalTime = entry.LT
 	bus.PushMessageEnd(string(msg.StopReason))
-	bus.PushFigaro(msg)
-
-	if cache != nil {
-		// Cache the exact accumulated wire form via the SDK's
-		// response→request projection. ToParam preserves thinking-block
-		// signatures and redacted_thinking verbatim — re-encoding from the
-		// figaro IR would drop them (the IR is provider-agnostic and holds
-		// no signature), and an unsigned thinking block is a 400 once
-		// extended thinking is enabled with tool use.
-		if raw, err := json.Marshal(acc.ToParam()); err == nil {
-			_, _ = cache.Append(store.Entry[[]json.RawMessage]{
-				FigaroLT:    entry.LT,
-				Payload:     []json.RawMessage{raw},
-				Fingerprint: p.Fingerprint(),
-			})
-		} else {
-			slog.Error("anthropicsdk cache assistant ToParam", "err", err)
-		}
+	// ToParam preserves thinking signatures and redacted thinking verbatim.
+	native, err := p.assistantCache(acc)
+	if err != nil {
+		return fmt.Errorf("anthropicsdk cache assistant ToParam: %w", err)
 	}
+	bus.PushFigaro(msg, native)
+	p.acceptAssistantProjection(entry.LT, native.Payload)
 	return nil
+}
+
+func (p *Provider) assistantCache(acc anthropic.Message) (provider.AssistantCache, error) {
+	raw, err := json.Marshal(acc.ToParam())
+	if err != nil {
+		return provider.AssistantCache{}, err
+	}
+	return provider.AssistantCache{
+		Namespace: p.CacheNamespace, Payload: []json.RawMessage{raw}, Fingerprint: p.Fingerprint(),
+	}, nil
+}
+
+func (p *Provider) acceptAssistantProjection(lt uint64, encoded []json.RawMessage) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.projection == nil {
+		return
+	}
+	state := appendProjectedMessages(p.projection.State, encoded, lt)
+	p.projection = &provider.IncrementalProjection[projectedMessages]{
+		State:       state,
+		Chalkboard:  p.projection.Chalkboard,
+		Fingerprint: p.projection.Fingerprint,
+		Entries:     p.projection.Entries + 1,
+		LastLT:      lt,
+	}
 }
 
 func (p *Provider) resolveModel(snap chalkboard.Snapshot) string {

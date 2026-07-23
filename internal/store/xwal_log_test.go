@@ -2,6 +2,8 @@ package store
 
 import (
 	"testing"
+
+	"github.com/jack-work/figwal/xwal"
 )
 
 type tp struct {
@@ -37,10 +39,12 @@ func TestXwalLog_RoundTrip(t *testing.T) {
 	// Trunks.Append path (isMain=true) is exercised.
 	ir := newXwalLog[tp](b.store, conv, chanIR, true)
 	// Translation channel needs to be materialized before use.
-	if err := b.ensureChannel(conv, "translations/anthropic"); err != nil {
+	if err := b.ensureChannel(xwal.ChannelSpec{
+		Name: "translations-v2/anthropic", Kind: xwal.ChannelLog, SyncMode: xwal.SyncManual, Opaque: true,
+	}); err != nil {
 		t.Fatal(err)
 	}
-	tr := newXwalLog[tp](b.store, conv, "translations/anthropic", false)
+	tr := newXwalLog[tp](b.store, conv, "translations-v2/anthropic", false)
 
 	baseIR := len(ir.Read())
 	for i := 1; i <= 3; i++ {

@@ -47,6 +47,8 @@ type busEvent struct {
 	partial string
 	args    map[string]interface{}
 	msg     message.Message
+	cache   *provider.AssistantCache
+	ack     chan error
 }
 
 // turnBus is the per-turn provider.Bus. events carries the ordered
@@ -57,18 +59,43 @@ type busEvent struct {
 type turnBus struct {
 	events     chan busEvent
 	toolsReady chan message.Content
+	ctx        context.Context
 }
 
-func newTurnBus() *turnBus {
+func newTurnBus(ctx context.Context) *turnBus {
 	return &turnBus{
 		events:     make(chan busEvent, 256),
 		toolsReady: make(chan message.Content, 64),
+		ctx:        ctx,
 	}
 }
 
 func (b *turnBus) PushDelta(c message.Content) { b.events <- busEvent{kind: evDelta, content: c} }
 
-func (b *turnBus) PushFigaro(m message.Message) { b.events <- busEvent{kind: evFigaro, msg: m} }
+func (b *turnBus) PushFigaro(m message.Message, caches ...provider.AssistantCache) {
+	if len(caches) > 1 {
+		panic("provider supplied multiple assistant cache payloads")
+	}
+	var cache *provider.AssistantCache
+	if len(caches) == 1 {
+		copy := caches[0]
+		cache = &copy
+	}
+	ack := make(chan error, 1)
+	select {
+	case b.events <- busEvent{kind: evFigaro, msg: m, cache: cache, ack: ack}:
+	case <-b.ctx.Done():
+		panic(b.ctx.Err())
+	}
+	select {
+	case err := <-ack:
+		if err != nil {
+			panic(err)
+		}
+	case <-b.ctx.Done():
+		panic(b.ctx.Err())
+	}
+}
 
 func (b *turnBus) PushToolInvokeStart(toolCallID, toolName string) {
 	b.events <- busEvent{kind: evToolStart, id: toolCallID, name: toolName}
@@ -124,6 +151,14 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		cancel()
 	}()
 
+	if recovered, err := a.recoverPendingTurn(); err != nil {
+		a.reconcileAriaServer()
+		a.endTurn("error: recover pending turn: " + err.Error())
+		return
+	} else if len(recovered) > 0 {
+		a.reconcileAriaServer()
+	}
+
 	// Belt-and-suspenders: if a prior turn died after the assistant
 	// tool_use was logged but before tool_results were appended, the
 	// IR still has a dangling tool_use at the tail. Boot-time repair
@@ -134,7 +169,10 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
-	a.startAssistantUnit()
+	if err := a.startAssistantUnit(); err != nil {
+		a.endTurn("error: " + err.Error())
+		return
+	}
 
 	// Drive: provider -> tools -> repeat.
 	allowSteering := false
@@ -203,7 +241,7 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entr
 	return entry, nil
 }
 
-func (a *Agent) startAssistantUnit() {
+func (a *Agent) startAssistantUnit() error {
 	a.turnStartLT = 0
 	if tail, ok := a.figLog.PeekTail(); ok {
 		a.turnStartLT = tail.FigaroLT
@@ -212,7 +250,11 @@ func (a *Agent) startAssistantUnit() {
 	a.lastEmit = time.Time{}
 	a.argPartials = map[string]string{}
 	a.toolTimings = map[string]compose.ToolTiming{}
+	if err := a.beginTurnCheckpoint(a.turnStartLT + 1); err != nil {
+		return err
+	}
 	a.emitSnapshot("assistant", nil)
+	return nil
 }
 
 // driveOneRound runs one provider.Send + tool dispatch cycle. The
@@ -229,10 +271,17 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	} else {
 		a.serviceForks()
 	}
-	bus := newTurnBus()
+	if a.activeTurn == nil {
+		if err := a.beginTurnCheckpoint(a.nextIndex()); err != nil {
+			a.endTurn("error: " + err.Error())
+			return true
+		}
+	}
+	bus := newTurnBus(turnCtx)
+	deferredLog := newDeferredAppendLog(a.figLog)
 	in := provider.SendInput{
 		AriaID:     a.id,
-		FigLog:     a.figLog,
+		FigLog:     deferredLog,
 		Snapshot:   a.chalkboard.Snapshot(),
 		Chalkboard: a.chalkAccessor(),
 		Tools:      a.toolDefs(),
@@ -256,8 +305,8 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		sendDone <- err
 	}()
 
-	// Provisional index for the assistant message. Gapless single-writer:
-	// the provider appends at exactly tail+1.
+	// Provisional index for the assistant message. The provider's log facade
+	// reserves this LT; the drain loop performs the canonical append.
 	assistantIdx := a.nextIndex()
 
 	// Speculative tool dispatcher: PushToolReady kicks each tool off
@@ -279,17 +328,20 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 
 	// Phase 1: fold the assistant stream into an in-flight message,
 	// recompose the turn blob on each change, and emit a splice. Once the
-	// provider seals (evFigaro = it has appended the assistant to the
-	// log), drop the in-flight copy so compose reads it from the log
+	// provider seals (evFigaro), checkpoint and append the assistant on the
+	// drain loop, then drop the in-flight copy so compose reads it from the log
 	// instead — otherwise it would be counted twice.
 	asmMsg := newAsm(message.RoleAssistant)
 	sealedInline := false
 	metricsReady := false
+	var roundErr error
 	var toolBuf []toolEvent
 	events := bus.events
+	forkWake := a.inbox.Wake()
+	sealedAwaitingProvider := false
 	for events != nil {
 		select {
-		case <-a.inbox.Wake():
+		case <-forkWake:
 			a.serviceForks()
 		case ev, ok := <-events:
 			if !ok {
@@ -317,15 +369,93 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				asmMsg.toolReady(ev.id, ev.name, ev.args)
 				force = true
 			case evFigaro:
-				sealedInline = true
-				a.refreshMetrics()
 				force = true
+			}
+			a.updateAssistantCheckpoint(asmMsg.message())
+			var ackErr error
+			if ev.kind == evFigaro && roundErr == nil && !a.isInterrupted() {
+				staged := deferredLog.take(ev.msg)
+				a.updateAssistantCheckpoint(&staged.Payload)
+				calls := assistantToolInvokes(staged.Payload)
+				if len(calls) > 0 {
+					a.beginToolsCheckpoint(staged.Payload, assistantIdx+1)
+				}
+				if a.activeTurn == nil {
+					sealEntry, err := a.figLog.Append(store.Entry[message.Message]{Payload: staged.Payload})
+					if err != nil {
+						roundErr = fmt.Errorf("append assistant: %w", err)
+					} else if sealEntry.LT != assistantIdx || sealEntry.FigaroLT != assistantIdx {
+						roundErr = fmt.Errorf(
+							"assistant seal LT mismatch: predicted %d, got lt=%d main_lt=%d",
+							assistantIdx, sealEntry.LT, sealEntry.FigaroLT,
+						)
+					} else {
+						sealedInline = true
+						ev.msg = sealEntry.Payload
+						ev.msg.LogicalTime = sealEntry.LT
+					}
+				} else {
+					if err := a.stageAssistantCommit(staged.Payload, assistantIdx, ev.cache); err != nil {
+						roundErr = err
+					} else if err := a.writeTurnCheckpoint(true, true); err != nil {
+						roundErr = err
+						a.activeTurn.checkpoint.Commit = nil
+						a.activeTurn.checkpoint.Phase = turnPhaseAssistant
+						a.activeTurn.checkpoint.TargetLT = assistantIdx
+					} else if _, err := a.completeCheckpointCommit(a.activeTurn.checkpoint); err != nil {
+						roundErr = err
+						if _, ok := a.figLog.Lookup(assistantIdx); ok {
+							a.activeTurn.assistantCommitted = true
+						}
+					} else {
+						sealEntry, ok := a.figLog.Lookup(assistantIdx)
+						if !ok {
+							roundErr = fmt.Errorf("assistant commit missing at LT %d", assistantIdx)
+						} else {
+							sealedInline = true
+							a.activeTurn.assistantCommitted = true
+							ev.msg = sealEntry.Payload
+							ev.msg.LogicalTime = sealEntry.LT
+							if len(calls) == 0 {
+								a.activeTurn = nil
+							}
+						}
+					}
+				}
+				if roundErr != nil {
+					if a.activeTurn == nil {
+						a.cancelCurrentTurn()
+					}
+					a.cancelCurrentTurn()
+				} else {
+					a.refreshMetrics()
+				}
+				ackErr = roundErr
+			} else if ev.kind == evFigaro {
+				if roundErr != nil {
+					ackErr = roundErr
+				} else {
+					ackErr = context.Canceled
+				}
 			}
 			inflight := asmMsg.message()
 			if sealedInline {
 				inflight = nil
 			}
-			a.emitLive(inflight, force)
+			if roundErr == nil {
+				if err := a.emitLive(inflight, force); err != nil {
+					roundErr = err
+					a.cancelCurrentTurn()
+				}
+			}
+			if ev.ack != nil {
+				if ackErr == nil {
+					ackErr = roundErr
+				}
+				ev.ack <- ackErr
+				sealedAwaitingProvider = true
+				forkWake = nil
+			}
 		case te := <-toolEvents:
 			toolBuf = append(toolBuf, te)
 			// Stream speculative tool output live (bounded tail via the
@@ -333,32 +463,72 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			switch te.kind {
 			case toolBegin:
 				a.startToolTiming(te.id, te.at)
+				a.updateToolCheckpoint(te.id, te.name, "running", false)
 				inflight := asmMsg.message()
 				if sealedInline {
 					inflight = nil
 				}
-				a.emitLive(inflight, true)
+				if roundErr == nil {
+					if err := a.emitLive(inflight, true); err != nil {
+						roundErr = err
+						a.cancelCurrentTurn()
+					}
+				}
 			case toolChunk:
 				a.gov.Feed(te.id, te.chunk)
+				a.updateToolCheckpoint(te.id, te.name, "running", false)
 				inflight := asmMsg.message()
 				if sealedInline {
 					inflight = nil
 				}
-				a.emitLive(inflight, false)
+				if roundErr == nil {
+					if err := a.emitLive(inflight, false); err != nil {
+						roundErr = err
+						a.cancelCurrentTurn()
+					}
+				}
 			case toolEnd:
 				a.finishToolTiming(te.id, te.at)
+				status := "ok"
+				if te.outcome.isErr {
+					status = "error"
+				}
+				a.updateToolCheckpoint(te.id, te.name, status, te.outcome.isErr, toolOutcomeText(te.outcome))
 				inflight := asmMsg.message()
 				if sealedInline {
 					inflight = nil
 				}
-				a.emitLive(inflight, true)
+				if roundErr == nil {
+					if err := a.emitLive(inflight, true); err != nil {
+						roundErr = err
+						a.cancelCurrentTurn()
+					}
+				}
 			}
 		}
 	}
 	sendErr := <-sendDone
 
-	// Seal: the provider appended the assistant message. Recompose from
-	// the durable tail (the in-flight assembly is now canonical).
+	if roundErr != nil {
+		a.waitWithForks(specDone)
+		sealedMessages, sealErr := a.sealActiveTurn()
+		if sealErr != nil {
+			roundErr = fmt.Errorf("%v; seal interrupted turn: %w", roundErr, sealErr)
+		}
+		if len(sealedMessages) > 0 {
+			a.emitDelta(a.composeTurn(nil))
+			a.serviceForks()
+			a.endTurn("error: " + roundErr.Error())
+			return true
+		}
+		a.reconcileAriaServer()
+		a.serviceForks()
+		a.finishTurn("error: " + roundErr.Error())
+		return true
+	}
+
+	// Seal: the drain loop appended the provider's assistant message.
+	// Recompose from the durable tail.
 	var lastFig message.Message
 	sealEntry, sealed := a.sealedTail(assistantIdx, message.RoleAssistant)
 	if sealed {
@@ -369,30 +539,80 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	}
 
 	if a.isInterrupted() {
+		sealedMessages, err := a.sealActiveTurn()
+		if err != nil {
+			a.reconcileAriaServer()
+			a.finishTurn("error: interrupt recovery: " + err.Error())
+			return true
+		}
+		if len(sealedMessages) > 0 {
+			a.emitDelta(a.composeTurn(nil))
+		}
+		a.serviceForks()
 		a.endTurn("interrupted")
 		return true
 	}
 	if sendErr != nil {
-		// If the assistant message never sealed into figLog, discard the partial
-		// live unit instead of committing it — committing a UI message the model
-		// log lacks makes the next turn regenerate it, duplicating the output.
-		if sealed {
-			a.endTurn("error: " + sendErr.Error())
+		if a.activeTurn == nil {
+			if sealed {
+				a.serviceForks()
+				a.endTurn("error: " + sendErr.Error())
+			} else {
+				a.serviceForks()
+				a.endTurnDiscarding("error: " + sendErr.Error())
+			}
+			return true
+		}
+		sealedMessages, err := a.sealActiveTurn()
+		if err != nil {
+			sendErr = fmt.Errorf("%v; seal interrupted turn: %w", sendErr, err)
+		}
+		if len(sealedMessages) > 0 {
+			a.emitDelta(a.composeTurn(nil))
+		} else if err != nil {
+			a.reconcileAriaServer()
+		}
+		a.serviceForks()
+		if err != nil {
+			a.finishTurn("error: " + sendErr.Error())
 		} else {
-			a.endTurnDiscarding("error: " + sendErr.Error())
+			a.endTurn("error: " + sendErr.Error())
 		}
 		return true
 	}
 	if !sealed {
-		// Empty response: the provider returned without appending.
 		a.waitWithForks(specDone)
+		if a.activeTurn != nil {
+			if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+				Role: message.RoleAssistant, StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
+			}}); err != nil {
+				if _, sealErr := a.sealActiveTurn(); sealErr != nil {
+					err = fmt.Errorf("%v; seal interrupted turn: %w", err, sealErr)
+				}
+				a.reconcileAriaServer()
+				a.finishTurn("error: append empty assistant: " + err.Error())
+				return true
+			}
+			a.activeTurn = nil
+			if err := a.retireTurnJournal(); err != nil {
+				a.endTurn("error: retire turn journal: " + err.Error())
+				return true
+			}
+		}
+		a.serviceForks()
 		a.endTurn(string(message.StopEnd))
 		return true
 	}
 
 	calls := assistantToolInvokes(lastFig)
 	if len(calls) == 0 {
+		a.activeTurn = nil
 		a.waitWithForks(specDone)
+		if err := a.retireTurnJournal(); err != nil {
+			a.endTurn("error: retire turn journal: " + err.Error())
+			return true
+		}
+		a.serviceForks()
 		stopReason := lastFig.StopReason
 		if stopReason == "" {
 			stopReason = message.StopEnd
@@ -401,15 +621,74 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		return true
 	}
 
+	if sealedAwaitingProvider {
+		a.serviceForks()
+	}
 	a.waitWithForks(specDone)
 
 	// Phase 2: run the tools (IR assembly), append the tool_result turn,
 	// and recompose so completed tools show their clamped output. The
 	// spinner animates locally between here and the seal — no wire
 	// traffic until the result lands.
-	resultTic := a.collectToolResults(turnCtx, calls, spec, toolEvents, toolBuf)
+	resultTic, collectErr := a.collectToolResults(turnCtx, calls, spec, toolEvents, toolBuf)
+	if collectErr != nil {
+		sealedMessages, sealErr := a.sealActiveTurn()
+		if sealErr != nil {
+			collectErr = fmt.Errorf("%v; seal interrupted turn: %w", collectErr, sealErr)
+		}
+		if len(sealedMessages) > 0 {
+			a.emitDelta(a.composeTurn(nil))
+			a.endTurn("error: " + collectErr.Error())
+		} else {
+			a.reconcileAriaServer()
+			a.finishTurn("error: " + collectErr.Error())
+		}
+		return true
+	}
+	if a.isInterrupted() {
+		sealedMessages, err := a.sealActiveTurn()
+		if err != nil {
+			a.reconcileAriaServer()
+			a.finishTurn("error: interrupt recovery: " + err.Error())
+			return true
+		}
+		if len(sealedMessages) > 0 {
+			a.emitDelta(a.composeTurn(nil))
+		}
+		a.endTurn("interrupted")
+		return true
+	}
+	if err := a.writeTurnCheckpoint(true, true); err != nil {
+		sealedMessages, sealErr := a.sealActiveTurn()
+		if sealErr != nil {
+			err = fmt.Errorf("%v; seal interrupted turn: %w", err, sealErr)
+		}
+		if len(sealedMessages) > 0 {
+			a.emitDelta(a.composeTurn(nil))
+			a.endTurn("error: " + err.Error())
+		} else {
+			a.reconcileAriaServer()
+			a.finishTurn("error: " + err.Error())
+		}
+		return true
+	}
 	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: resultTic}); err != nil {
-		a.endTurn(fmt.Sprintf("error: append tool_result: %s", err))
+		sealedMessages, sealErr := a.sealActiveTurn()
+		if sealErr != nil {
+			err = fmt.Errorf("%v; seal interrupted turn: %w", err, sealErr)
+		}
+		if len(sealedMessages) > 0 {
+			a.emitDelta(a.composeTurn(nil))
+			a.endTurn(fmt.Sprintf("error: append tool_result: %s", err))
+		} else {
+			a.reconcileAriaServer()
+			a.finishTurn(fmt.Sprintf("error: append tool_result: %s", err))
+		}
+		return true
+	}
+	a.activeTurn = nil
+	if err := a.retireTurnJournal(); err != nil {
+		a.endTurn("error: retire turn journal: " + err.Error())
 		return true
 	}
 	a.refreshMetrics()
@@ -444,7 +723,9 @@ func (a *Agent) appendSteeringPrompts() error {
 		return err
 	}
 	if split {
-		a.startAssistantUnit()
+		if err := a.startAssistantUnit(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -468,7 +749,9 @@ func (a *Agent) prepareProviderRound() error {
 			return err
 		}
 		if split {
-			a.startAssistantUnit()
+			if err := a.startAssistantUnit(); err != nil {
+				return err
+			}
 		}
 	}
 }
@@ -508,7 +791,7 @@ func (a *Agent) collectToolResults(
 	spec *specDispatcher,
 	toolEvents chan toolEvent,
 	toolBuf []toolEvent,
-) message.Message {
+) (message.Message, error) {
 	expect := make(map[string]bool, len(calls))
 	for _, tc := range calls {
 		if p := spec.dispatch(turnCtx, a, tc); p != nil {
@@ -517,8 +800,8 @@ func (a *Agent) collectToolResults(
 	}
 
 	outcomes := make(map[string]toolOutcome, len(calls))
-	// Phase-1 events were already partial-accumulated as they arrived;
-	// here we only need their outcomes.
+	// Phase-1 events were already checkpointed as they arrived; only their
+	// terminal outcomes are needed for canonical result assembly here.
 	for _, te := range toolBuf {
 		if te.kind == toolEnd {
 			outcomes[te.id] = te.outcome
@@ -534,6 +817,8 @@ toolLoop:
 		case <-a.inbox.Wake():
 			a.serviceForks()
 			continue
+		case <-turnCtx.Done():
+			break toolLoop
 		case te, ok = <-toolEvents:
 			if !ok {
 				break toolLoop
@@ -542,19 +827,38 @@ toolLoop:
 		switch te.kind {
 		case toolBegin:
 			a.startToolTiming(te.id, te.at)
-			a.emitLive(nil, true)
+			a.updateToolCheckpoint(te.id, te.name, "running", false)
+			if err := a.emitLive(nil, true); err != nil {
+				a.cancelCurrentTurn()
+				return message.Message{}, err
+			}
 		case toolChunk:
 			a.gov.Feed(te.id, te.chunk)
-			a.emitLive(nil, false)
+			a.updateToolCheckpoint(te.id, te.name, "running", false)
+			if err := a.emitLive(nil, false); err != nil {
+				a.cancelCurrentTurn()
+				return message.Message{}, err
+			}
 		case toolEnd:
 			a.finishToolTiming(te.id, te.at)
 			outcomes[te.id] = te.outcome
-			a.emitLive(nil, true)
+			status := "ok"
+			if te.outcome.isErr {
+				status = "error"
+			}
+			a.updateToolCheckpoint(te.id, te.name, status, te.outcome.isErr, toolOutcomeText(te.outcome))
+			if err := a.emitLive(nil, true); err != nil {
+				a.cancelCurrentTurn()
+				return message.Message{}, err
+			}
 		}
 	}
-	a.emitLive(nil, true) // flush any throttled tail before the results render
+	if err := a.emitLive(nil, true); err != nil {
+		a.cancelCurrentTurn()
+		return message.Message{}, err
+	}
 
-	return a.assembleToolResults(calls, expect, outcomes)
+	return a.assembleToolResults(calls, expect, outcomes), nil
 }
 
 func (a *Agent) waitWithForks(done <-chan struct{}) {
@@ -652,6 +956,16 @@ type toolOutcome struct {
 	isErr   bool
 }
 
+func toolOutcomeText(outcome toolOutcome) string {
+	var text strings.Builder
+	for _, content := range outcome.content {
+		if content.Type == message.ContentProse {
+			text.WriteString(content.Text)
+		}
+	}
+	return text.String()
+}
+
 // toolPending tracks one in-flight (or completed) speculative tool.
 type toolPending struct {
 	call    message.Content
@@ -708,6 +1022,9 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 				}
 			}
 			p.outcome = oc
+			if a.isInterrupted() {
+				return
+			}
 			s.events <- toolEvent{
 				kind:    toolEnd,
 				id:      tc.ToolCallID,
@@ -889,15 +1206,19 @@ const (
 
 // emitLive recomposes+broadcasts, throttled to liveEmitInterval unless force is
 // set (a structural change or a final flush). Interrupted turns emit nothing.
-func (a *Agent) emitLive(inflight *message.Message, force bool) {
+func (a *Agent) emitLive(inflight *message.Message, force bool) error {
 	if a.isInterrupted() {
-		return
+		return nil
 	}
 	if !force && time.Since(a.lastEmit) < liveEmitInterval {
-		return
+		return nil
+	}
+	if err := a.writeTurnCheckpoint(force, false); err != nil {
+		return err
 	}
 	a.lastEmit = time.Now()
 	a.emitDelta(a.composeTurn(inflight))
+	return nil
 }
 
 // emitDelta hands the current full node list to the aria server, which computes
@@ -963,6 +1284,9 @@ func (s *asm) toolReady(id, name string, args map[string]interface{}) {
 		s.toolOpen(id, name)
 		i = s.toolIdx[id]
 	}
+	if args == nil {
+		args = map[string]interface{}{}
+	}
 	s.msg.Content[i].Arguments = args
 	if name != "" {
 		s.msg.Content[i].ToolName = name
@@ -982,6 +1306,15 @@ func (a *Agent) isInterrupted() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.interrupted
+}
+
+func (a *Agent) cancelCurrentTurn() {
+	a.mu.RLock()
+	cancel := a.turnCancel
+	a.mu.RUnlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func assistantToolInvokes(m message.Message) []message.Content {

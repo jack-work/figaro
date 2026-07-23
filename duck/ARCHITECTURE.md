@@ -32,7 +32,7 @@ internal/message/          provider-agnostic IR (Message, Content, Patch)
 internal/otel/             OpenTelemetry init + span helpers
 internal/provider/         Provider interface + anthropic implementation
 internal/rpc/              shared notification types + method constants
-internal/store/            generic Stream[T]; FileBackend for arias
+internal/store/            generic Log[T]; XWAL backend, turn journal, fork tree
 internal/tokens/           context-window accounting
 internal/tool/             tool interface + bash/read/write/edit
 internal/transport/        unix/tcp endpoint abstraction
@@ -40,20 +40,28 @@ internal/transport/        unix/tcp endpoint abstraction
 
 ## Streams
 
-Every aria is a multi-column log. Two columns today:
+Every aria is one XWAL trunk with related channels:
 
 ```
-arias/{id}/
-├── aria.jsonl                        figaro IR — Stream[message.Message], canonical
-├── chalkboard.json                   per-aria snapshot, atomic rewrite at turn end
-├── meta.json                         AriaMeta — what `figaro list` reads
-└── translations/
-    ├── anthropic.jsonl               translator cache — Stream[[]json.RawMessage]
-    ├── copilot-messages.jsonl        Copilot Anthropic-Messages cache
-    └── copilot-responses.jsonl       Copilot Responses cache
+arias/
+├── ir/                               canonical message.Message timeline
+├── chalkboard/                       reducible state patches
+├── turn-wal/                         opaque manual-sync partial-turn journal
+├── translations-v2/
+│   ├── anthropic/                    opaque provider request objects
+│   ├── copilot-messages/
+│   └── copilot-responses/
+└── _meta/{id}.json                   AriaMeta for metadata-only listing
 ```
 
-**Figaro IR** is the source of truth. **Translator stream** caches per-provider wire bytes, FK'd back via `Entry.FigaroLT`. Translations are derivable from the IR; on `Provider.Fingerprint()` mismatch the agent clears the stream and lets `synchronize` repopulate.
+**Figaro IR** is the source of truth. Translator channels cache per-provider
+wire bytes, FK'd by main LT. `translations-v2` channels are opaque so forking
+and reopen preserve payload bytes. The first open for a provider snapshots
+that provider's legacy bytes across each trunk before installing the new
+channel, then migrates each lineage independently with its original metadata
+and fingerprint. An incomplete or unscoped migration is an explicit error;
+Figaro never silently regenerates potentially signed or encrypted legacy
+items. Translations remain fingerprint-invalidated.
 
 ## Actor loop
 
@@ -68,6 +76,51 @@ Recv → synchronize → dispatch
 ```
 
 `synchronize` is the sole owner of bidirectional translator orchestration. `startLLMStream` just projects `translator.Durable()` to `[][]json.RawMessage` and hands it to `Provider.Send`; the provider assembles the request body internally.
+
+## In-progress turn durability
+
+Backed arias have an opaque `turn-wal` channel with manual fsync. Every
+provider round starts a fresh checkpoint generation. The actor writes a
+versioned full checkpoint before structural live frames and no more than once
+per second for streamed prose/tool output; periodic checkpoints sync, and
+interrupt/error paths force a final sync. The payload records turn
+identity/generation, target next IR LT, assistant/tools phase, the partial
+assistant with only args-ready tool calls, ordered call identities, bounded
+tool-output tails/status, and timestamp.
+
+Recovery reads only the newest journal record at `IR tail + 1`. A canonical IR
+append retires its checkpoint by advancing the tail; stale records need no
+rewrite or scan. Assistant-phase recovery appends the partial assistant with
+`stop_reason=aborted`, then interrupted user-role tool results for any ready
+calls. Tools-phase recovery appends one ordered interrupted tool-result
+message. Terminal `ok` and `error` tool results retain their persisted output;
+only pending/running calls receive synthetic interruption errors. A tools
+checkpoint is reserved at the following LT immediately before the assistant
+append; if recovery still sees the preceding tail, it seals that same payload
+as assistant-phase work instead. Recovery runs before rendered history
+construction and after actor panic, never resumes a remote stream, never calls
+the provider, and is idempotent because the recovery append advances the IR
+tail. Successful turn completion or recovery clears the branch-local journal
+head, bounding retained checkpoint history without clearing forked lineages.
+After panic or seal failure, the live aria server is rebuilt from canonical IR
+so it neither commits a speculative-only unit nor hides a durable assistant.
+
+Manual sync intentionally permits live frames after the last periodic
+checkpoint to rewind by less than one second after process death. Journal
+append/sync failure suppresses the corresponding frame and ends the turn as an
+explicit error; it never emits a success-shaped fallback.
+
+`PushFigaro` carries the canonical assistant candidate plus its exact
+input-ready provider cache payload, namespace, and fingerprint. The actor
+force-syncs that pair in `turn-wal`, appends canonical IR at the predicted LT,
+appends and syncs the opaque translation entry on the same continuation, then
+acknowledges. Providers never append the assistant cache entry themselves.
+Direct Anthropic supplies the sanitized accumulated native response with signed
+and redacted thinking intact, the SDK supplies `Message.ToParam()`, and
+Responses supplies the original encrypted output items. Process death between
+any of these writes is reconciled idempotently from the journal without
+recalling the provider. Forks cannot enter the commit window, and the journal
+is retired only after both IR and cache are durable.
 
 ## Provider interface
 
@@ -102,7 +155,11 @@ type Provider interface {
 
 ## Cache prefix
 
-The translator stream stores **input-ready** bytes. Assistant entries get re-encoded via `Encode` before they're stored, so `stop_reason` / `model` / `usage` (which the API rejects on input) live only on the figaro IR Message. Splice is verbatim — no per-request stripping.
+The translator stream stores **input-ready** bytes. Production assistant
+entries are captured from each provider's exact native response and sanitized
+only for response-only fields (`stop_reason`, `model`, `usage`). The
+provider-agnostic IR encoder remains a cache-miss fallback and cannot recreate
+signed/redacted thinking. Splice is verbatim — no per-request stripping.
 
 The per-message bytes are written exactly once and reused on every subsequent turn. The prefix is **byte-identical** across requests within an aria's lifetime — Anthropic's `cache_control` markers actually hit.
 

@@ -3,6 +3,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
@@ -38,7 +39,7 @@ type Knobs struct {
 // provider vocabulary is unchanged by the wire respec.
 type Bus interface {
 	PushDelta(content message.Content)
-	PushFigaro(msg message.Message)
+	PushFigaro(msg message.Message, cache ...AssistantCache)
 	// PushToolInvokeStart fires when the assistant begins a tool_use
 	// block — the model starts *authoring* an invocation. The figaro
 	// side opens a tool_invoke block on the open assistant message.
@@ -58,6 +59,15 @@ type Bus interface {
 	// log.* model the figaro side ignores it (the stop reason rides the
 	// sealed message), but providers still call it.
 	PushMessageEnd(stopReason string)
+}
+
+// AssistantCache is the exact input-ready provider-native payload paired with
+// a canonical assistant candidate. The actor commits both before acknowledging
+// PushFigaro.
+type AssistantCache struct {
+	Namespace   string
+	Payload     []json.RawMessage
+	Fingerprint string
 }
 
 // Chalkboard is the per-LT transition accessor. Chalkboard patches no

@@ -22,7 +22,7 @@ type copilotLiveBus struct {
 
 func (b *copilotLiveBus) PushDelta(message.Content) {}
 
-func (b *copilotLiveBus) PushFigaro(msg message.Message) {
+func (b *copilotLiveBus) PushFigaro(msg message.Message, _ ...provider.AssistantCache) {
 	b.messages = append(b.messages, msg)
 }
 

@@ -201,18 +201,36 @@ func (p *responsesProvider) sendWithToken(
 	}
 	assistant.LogicalTime = entry.LT
 	bus.PushMessageEnd(string(assistant.StopReason))
-	bus.PushFigaro(assistant)
-
-	if cache := p.cacheFor(in.AriaID); cache != nil && len(response.Output) > 0 {
-		if _, err := cache.Append(store.Entry[[]json.RawMessage]{
-			FigaroLT:    entry.LT,
+	var commit []provider.AssistantCache
+	if len(response.Output) > 0 {
+		commit = append(commit, provider.AssistantCache{
+			Namespace:   "copilot-responses",
 			Payload:     response.Output,
 			Fingerprint: p.Fingerprint(),
-		}); err != nil {
-			slog.Error("copilot responses cache assistant", "aria", in.AriaID, "err", err)
-		}
+		})
+	}
+	bus.PushFigaro(assistant, commit...)
+	if len(response.Output) > 0 {
+		p.acceptAssistantProjection(entry.LT, response.Output)
 	}
 	return nil
+}
+
+func (p *responsesProvider) acceptAssistantProjection(lt uint64, payload []json.RawMessage) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.projection == nil {
+		return
+	}
+	state := append([]json.RawMessage(nil), p.projection.State...)
+	state = append(state, payload...)
+	p.projection = &provider.IncrementalProjection[[]json.RawMessage]{
+		State:       state,
+		Chalkboard:  p.projection.Chalkboard,
+		Fingerprint: p.projection.Fingerprint,
+		Entries:     p.projection.Entries + 1,
+		LastLT:      lt,
+	}
 }
 
 func (p *responsesProvider) settings() (string, int, string) {
@@ -338,28 +356,28 @@ func (p *responsesProvider) sessionIDFor() string {
 	return p.sessionID
 }
 
-func (p *responsesProvider) cacheFor(aria string) store.Log[[]json.RawMessage] {
+func (p *responsesProvider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
 	if aria == "" || p.cacheOpen == nil {
-		return nil
+		return nil, nil
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	fingerprint := responseFingerprint(p.model)
 	if p.cache != nil {
 		if !p.invalidateCache(p.cache, fingerprint) {
-			return nil
+			return nil, fmt.Errorf("copilot responses cache invalidation failed for %s", aria)
 		}
-		return p.cache
+		return p.cache, nil
 	}
 	cache, err := p.cacheOpen(aria)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("copilot responses cache open %s: %w", aria, err)
 	}
 	if !p.invalidateCache(cache, fingerprint) {
-		return nil
+		return nil, fmt.Errorf("copilot responses cache invalidation failed for %s", aria)
 	}
 	p.cache = cache
-	return cache
+	return cache, nil
 }
 
 func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage], fingerprint string) bool {
@@ -368,7 +386,10 @@ func (p *responsesProvider) invalidateCache(cache store.Log[[]json.RawMessage], 
 }
 
 func (p *responsesProvider) inputFor(in provider.SendInput) ([]json.RawMessage, error) {
-	cache := p.cacheFor(in.AriaID)
+	cache, err := p.cacheFor(in.AriaID)
+	if err != nil {
+		return nil, err
+	}
 	fingerprint := p.Fingerprint()
 	templates := p.templatesForEncoding()
 

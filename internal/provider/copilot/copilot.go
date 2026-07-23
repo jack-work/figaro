@@ -69,6 +69,7 @@ func New(
 		return nil, err
 	}
 	inner.NoOAuthIdentity = true
+	inner.CacheNamespace = "copilot-messages"
 	inner.ExtraOptions = copilotRequestOptions(tokenSrc)
 
 	return &Copilot{
