@@ -152,9 +152,7 @@ func (a *Agent) commitAssistantCache(lt uint64, cache *provider.AssistantCache) 
 	}); err != nil {
 		return fmt.Errorf("append assistant cache %s at LT %d: %w", cache.Namespace, lt, err)
 	}
-	if err := a.backend.SyncTranslation(a.id, cache.Namespace); err != nil {
-		return fmt.Errorf("sync assistant cache %s at LT %d: %w", cache.Namespace, lt, err)
-	}
+	a.backend.Kick()
 	return nil
 }
 

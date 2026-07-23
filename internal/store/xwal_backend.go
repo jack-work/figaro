@@ -124,13 +124,6 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	return c, nil
 }
 
-// SyncTranslation expedites the flusher; durability is the store's
-// bounded lag, not a per-channel fsync.
-func (b *XwalBackend) SyncTranslation(ariaID, providerName string) error {
-	b.store.trunks.Kick()
-	return nil
-}
-
 func (b *XwalBackend) Kick() { b.store.trunks.Kick() }
 
 // ---- chalkboard (re-derived via StateAt; mutation appends a patch) ----

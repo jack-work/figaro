@@ -58,7 +58,6 @@ type Backend interface {
 
 	// OpenTranslation returns the per-provider translator Stream.
 	OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error)
-	SyncTranslation(ariaID, providerName string) error
 
 	// Kick expedites the store's background flush — called after appends
 	// worth making durable sooner than the flush interval (user tics).
