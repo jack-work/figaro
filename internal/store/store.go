@@ -60,6 +60,10 @@ type Backend interface {
 	OpenTranslation(ariaID, providerName string) (Log[[]json.RawMessage], error)
 	SyncTranslation(ariaID, providerName string) error
 
+	// Kick expedites the store's background flush — called after appends
+	// worth making durable sooner than the flush interval (user tics).
+	Kick()
+
 	// ChalkboardState folds the aria's reducible chalkboard channel to
 	// its current snapshot. The channel is the durable truth; there is
 	// no separate chalkboard file.

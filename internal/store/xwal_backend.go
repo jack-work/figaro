@@ -18,7 +18,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figwal/xwal"
 )
 
 var _ Backend = (*XwalBackend)(nil)
@@ -114,9 +113,6 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	}
 	b.mu.Unlock()
 	ch := transChannel(providerName)
-	if err := b.store.ensureOpaqueTranslationChannel(ch); err != nil {
-		return nil, err
-	}
 	c := newCachedLog[[]json.RawMessage](newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false))
 	b.mu.Lock()
 	if existing := h.trans[providerName]; existing != nil {
@@ -128,13 +124,14 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	return c, nil
 }
 
+// SyncTranslation expedites the flusher; durability is the store's
+// bounded lag, not a per-channel fsync.
 func (b *XwalBackend) SyncTranslation(ariaID, providerName string) error {
-	return b.store.trunks.SyncChannel(ariaID, transChannel(providerName))
+	b.store.trunks.Kick()
+	return nil
 }
 
-func (b *XwalBackend) ensureChannel(spec xwal.ChannelSpec) error {
-	return b.store.ensureChannel(spec)
-}
+func (b *XwalBackend) Kick() { b.store.trunks.Kick() }
 
 // ---- chalkboard (re-derived via StateAt; mutation appends a patch) ----
 

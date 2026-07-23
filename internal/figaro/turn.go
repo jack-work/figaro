@@ -221,6 +221,7 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entr
 	if err != nil {
 		return store.Entry[message.Message]{}, err
 	}
+	a.backend.Kick()
 	a.refreshMetrics()
 
 	if prompt.text != "" {

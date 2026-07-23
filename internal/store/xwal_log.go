@@ -254,7 +254,7 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	}
 	meta := encodeMeta(e.Fingerprint)
 	if l.isMain {
-		_, lt, aerr := l.store.trunks.Append(l.ariaID, 0, payload, meta)
+		lt, aerr := l.store.trunks.Append(l.ariaID, l.channel, 0, payload, meta)
 		if aerr != nil {
 			return Entry[T]{}, aerr
 		}
@@ -262,7 +262,7 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 		e.FigaroLT = lt
 		return e, nil
 	}
-	lt, aerr := l.store.trunks.AppendChannel(l.ariaID, l.channel, e.FigaroLT, payload, meta)
+	lt, aerr := l.store.trunks.Append(l.ariaID, l.channel, e.FigaroLT, payload, meta)
 	if aerr != nil {
 		return Entry[T]{}, aerr
 	}
