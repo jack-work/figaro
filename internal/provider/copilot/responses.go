@@ -371,10 +371,12 @@ func (p *responsesProvider) cacheFor(aria string) (store.Log[[]json.RawMessage],
 	}
 	cache, err := p.cacheOpen(aria)
 	if err != nil {
-		return nil, fmt.Errorf("copilot responses cache open %s: %w", aria, err)
+		slog.Warn("copilot responses cache open failed; running uncached", "aria", aria, "err", err)
+		return nil, nil
 	}
 	if !p.invalidateCache(cache, fingerprint) {
-		return nil, fmt.Errorf("copilot responses cache invalidation failed for %s", aria)
+		slog.Warn("copilot responses cache invalidation failed; running uncached", "aria", aria)
+		return nil, nil
 	}
 	p.cache = cache
 	return cache, nil

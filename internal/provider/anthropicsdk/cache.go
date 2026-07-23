@@ -50,10 +50,12 @@ func (p *Provider) cacheFor(aria string) (store.Log[[]json.RawMessage], error) {
 	}
 	s, err := p.CacheOpen(aria)
 	if err != nil {
-		return nil, fmt.Errorf("anthropicsdk cache open %s: %w", aria, err)
+		slog.Warn("anthropicsdk cache open failed; running uncached", "aria", aria, "err", err)
+		return nil, nil
 	}
 	if !p.invalidateIfStale(s) {
-		return nil, fmt.Errorf("anthropicsdk cache invalidation failed for %s", aria)
+		slog.Warn("anthropicsdk cache invalidation failed; running uncached", "aria", aria)
+		return nil, nil
 	}
 	p.cache = s
 	return s, nil

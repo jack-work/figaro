@@ -22,7 +22,6 @@ package store
 // figwal; figaro derives loadouts/null from the stump/root structure.
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -194,180 +193,18 @@ func (s *XwalStore) ensureChannel(spec xwal.ChannelSpec) error {
 	return s.trunks.EnsureChannel(spec)
 }
 
-func (s *XwalStore) ensureOpaqueTranslationChannel(legacy, current string) error {
+func (s *XwalStore) ensureOpaqueTranslationChannel(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.translationReady[current] {
+	if s.translationReady[name] {
 		return nil
 	}
-
-	spec := xwal.ChannelSpec{
-		Name: current, Kind: xwal.ChannelLog, SyncMode: xwal.SyncManual, Opaque: true,
-	}
-	trunks := s.listTrunks()
-	present := 0
-	for _, trunk := range trunks {
-		xw, err := s.trunks.Head(trunk.ID)
-		if err != nil {
-			return err
-		}
-		for _, channel := range xw.Channels() {
-			if channel.Name == current {
-				present++
-				if !channel.Opaque {
-					_ = xw.Close()
-					return fmt.Errorf("translation migration: current channel %q is not opaque", current)
-				}
-				break
-			}
-		}
-		_ = xw.Close()
-	}
-	if present != 0 && present != len(trunks) {
-		return fmt.Errorf("translation migration: channel %q is installed on only %d of %d trunks", current, present, len(trunks))
-	}
-	if present == len(trunks) && len(trunks) > 0 {
-		for _, trunk := range trunks {
-			if err := s.verifyTranslationMigration(trunk.ID, legacy, current); err != nil {
-				return err
-			}
-		}
-		s.translationReady[current] = true
-		return nil
-	}
-
-	snapshots := make(map[string][]xwal.Record, len(trunks))
-	for _, trunk := range trunks {
-		xw, err := s.trunks.Head(trunk.ID)
-		if err != nil {
-			return err
-		}
-		records, err := exactChannelRecords(xw, legacy)
-		if err == nil {
-			err = validateLegacyTranslation(xw, trunk.ID, legacy, records)
-		}
-		_ = xw.Close()
-		if err != nil {
-			return err
-		}
-		snapshots[trunk.ID] = records
-	}
-	if err := s.trunks.EnsureChannel(spec); err != nil {
+	if err := s.trunks.EnsureChannel(xwal.ChannelSpec{
+		Name: name, Kind: xwal.ChannelLog, SyncMode: xwal.SyncManual, Opaque: true,
+	}); err != nil {
 		return err
 	}
-	for _, trunk := range trunks {
-		records := snapshots[trunk.ID]
-		if len(records) == 0 {
-			continue
-		}
-		xw, err := s.trunks.Head(trunk.ID)
-		if err != nil {
-			return err
-		}
-		for _, record := range records {
-			if _, err := xw.Append(current, record.MainLT, record.Payload, record.Meta); err != nil {
-				_ = xw.Close()
-				return fmt.Errorf("translation migration: append trunk %s main LT %d: %w", trunk.ID, record.MainLT, err)
-			}
-		}
-		if err := xw.SyncChannel(current); err != nil {
-			_ = xw.Close()
-			return fmt.Errorf("translation migration: sync trunk %s: %w", trunk.ID, err)
-		}
-		_ = xw.Close()
-	}
-	s.translationReady[current] = true
-	return nil
-}
-
-func (s *XwalStore) verifyTranslationMigration(id, legacy, current string) error {
-	xw, err := s.trunks.Head(id)
-	if err != nil {
-		return err
-	}
-	defer xw.Close()
-	oldRecords, err := exactChannelRecords(xw, legacy)
-	if err != nil {
-		return fmt.Errorf("translation migration: read %s: %w", legacy, err)
-	}
-	newRecords, err := exactChannelRecords(xw, current)
-	if err != nil {
-		return fmt.Errorf("translation migration: read %s: %w", current, err)
-	}
-	if len(newRecords) < len(oldRecords) {
-		return fmt.Errorf("translation migration: unsafe incomplete migration for trunk %s: %s has %d records, %s has %d", id, legacy, len(oldRecords), current, len(newRecords))
-	}
-	for i := range oldRecords {
-		if oldRecords[i].MainLT != newRecords[i].MainLT {
-			return fmt.Errorf("translation migration: %s and %s differ at record %d main LT", legacy, current, i+1)
-		}
-		if !bytes.Equal(oldRecords[i].Payload, newRecords[i].Payload) {
-			return fmt.Errorf("translation migration: %s and %s differ at record %d payload", legacy, current, i+1)
-		}
-		if !bytes.Equal(oldRecords[i].Meta, newRecords[i].Meta) {
-			return fmt.Errorf("translation migration: %s and %s differ at record %d metadata", legacy, current, i+1)
-		}
-	}
-	return nil
-}
-
-func exactChannelRecords(xw *xwal.XWAL, name string) ([]xwal.Record, error) {
-	var info *xwal.ChannelInfo
-	for _, channel := range xw.Channels() {
-		if channel.Name == name {
-			channel := channel
-			info = &channel
-			break
-		}
-	}
-	if info == nil {
-		return nil, nil
-	}
-	first := info.First
-	if first == 0 && info.Last > 0 {
-		first = 1
-	}
-	if first == 0 || info.Last < first {
-		return nil, nil
-	}
-	records := make([]xwal.Record, 0, info.Last-first+1)
-	seenMain := make(map[uint64]struct{}, info.Last-first+1)
-	for lt := first; lt <= info.Last; lt++ {
-		indexed, err := xw.ReadAt(name, lt)
-		if err != nil {
-			return nil, err
-		}
-		if _, duplicate := seenMain[indexed.MainLT]; duplicate {
-			return nil, fmt.Errorf("%s has duplicate main LT %d", name, indexed.MainLT)
-		}
-		seenMain[indexed.MainLT] = struct{}{}
-		record, ok, err := xw.Lookup(name, indexed.MainLT)
-		if err != nil {
-			return nil, fmt.Errorf("%s exact lookup main LT %d: %w", name, indexed.MainLT, err)
-		}
-		if !ok {
-			return nil, fmt.Errorf("%s exact lookup main LT %d: not found", name, indexed.MainLT)
-		}
-		record.Payload = append([]byte(nil), record.Payload...)
-		record.Meta = append([]byte(nil), record.Meta...)
-		records = append(records, record)
-	}
-	return records, nil
-}
-
-func validateLegacyTranslation(xw *xwal.XWAL, id, legacy string, records []xwal.Record) error {
-	for _, record := range records {
-		if record.MainLT == 0 {
-			return fmt.Errorf("translation migration: %s has unscoped root fallback record", legacy)
-		}
-		if _, ok, err := xw.Lookup(chanIR, record.MainLT); err != nil || !ok {
-			return fmt.Errorf("translation migration: %s record at main LT %d is outside trunk %s", legacy, record.MainLT, id)
-		}
-		var items []json.RawMessage
-		if err := json.Unmarshal(record.Payload, &items); err != nil {
-			return fmt.Errorf("translation migration: invalid opaque payload at main LT %d: %w", record.MainLT, err)
-		}
-	}
+	s.translationReady[name] = true
 	return nil
 }
 

@@ -114,7 +114,7 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	}
 	b.mu.Unlock()
 	ch := transChannel(providerName)
-	if err := b.store.ensureOpaqueTranslationChannel("translations/"+providerName, ch); err != nil {
+	if err := b.store.ensureOpaqueTranslationChannel(ch); err != nil {
 		return nil, err
 	}
 	c := newCachedLog[[]json.RawMessage](newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false))

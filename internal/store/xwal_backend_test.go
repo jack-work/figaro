@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -9,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figwal/xwal"
 )
 
 func TestXwalBackend_EndToEnd(t *testing.T) {
@@ -200,188 +198,6 @@ func TestTurnJournalPendingCheckpointFollowsContinuation(t *testing.T) {
 	}
 }
 
-func TestTranslationV2MigratesOpaqueLegacyPayloads(t *testing.T) {
-	tests := []struct {
-		provider    string
-		fingerprint string
-		payload     []byte
-	}{
-		{
-			provider:    "anthropic",
-			fingerprint: "anthropic-sdk/tag/v1",
-			payload:     []byte(`[{"role":"assistant","content":[{"type":"thinking","thinking":"secret","signature":"sig-abc"}]}]`),
-		},
-		{
-			provider:    "copilot-responses",
-			fingerprint: "copilot-responses/v2/gpt-5.6-sol",
-			payload:     []byte(`[{"type":"reasoning","encrypted_content":"enc-opaque","id":"rs_1"}]`),
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.provider, func(t *testing.T) {
-			b, conv := mustBackendWithConv(t)
-			defer b.Close()
-			ir, err := b.Open(conv)
-			if err != nil {
-				t.Fatal(err)
-			}
-			main, err := ir.Append(Entry[message.Message]{Payload: userText("cache me")})
-			if err != nil {
-				t.Fatal(err)
-			}
-			legacy := "translations/" + tt.provider
-			if err := b.ensureChannel(xwal.ChannelSpec{Name: legacy, Kind: xwal.ChannelLog}); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := b.store.trunks.AppendChannel(conv, legacy, main.LT, tt.payload, encodeMeta(tt.fingerprint)); err != nil {
-				t.Fatal(err)
-			}
-			before := rawChannelRecord(t, b, conv, legacy, main.LT)
-
-			tr, err := b.OpenTranslation(conv, tt.provider)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, ok := tr.Lookup(main.LT)
-			if !ok || got.Fingerprint != tt.fingerprint {
-				t.Fatalf("migrated lookup = (%+v, %v)", got, ok)
-			}
-			after := rawChannelRecord(t, b, conv, transChannel(tt.provider), main.LT)
-			if !bytes.Equal(before.Payload, after.Payload) || !bytes.Equal(before.Meta, after.Meta) {
-				t.Fatalf("migration changed opaque bytes:\nbefore %s\nafter  %s", before.Payload, after.Payload)
-			}
-
-			_, alt, err := b.Fork(conv)
-			if err != nil {
-				t.Fatal(err)
-			}
-			forked := rawChannelRecord(t, b, alt, transChannel(tt.provider), main.LT)
-			if !bytes.Equal(after.Payload, forked.Payload) || !bytes.Equal(after.Meta, forked.Meta) {
-				t.Fatalf("fork changed migrated bytes:\nbefore %s\nafter  %s", after.Payload, forked.Payload)
-			}
-		})
-	}
-}
-
-func TestTranslationV2MigrationIsBranchAware(t *testing.T) {
-	b, conv := mustBackendWithConv(t)
-	defer b.Close()
-	ir, err := b.Open(conv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	shared, err := ir.Append(Entry[message.Message]{Payload: userText("shared")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy := "translations/anthropic"
-	if err := b.ensureChannel(xwal.ChannelSpec{Name: legacy, Kind: xwal.ChannelLog}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := b.store.trunks.AppendChannel(conv, legacy, shared.LT, []byte(`[{"signature":"shared"}]`), encodeMeta("fp")); err != nil {
-		t.Fatal(err)
-	}
-	_, alt, err := b.Fork(conv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	own, err := ir.Append(Entry[message.Message]{Payload: userText("continuation")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := b.store.trunks.AppendChannel(conv, legacy, own.LT, []byte(`[{"signature":"continuation"}]`), encodeMeta("fp")); err != nil {
-		t.Fatal(err)
-	}
-
-	altCache, err := b.OpenTranslation(alt, "anthropic")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if altCache.Len() != 1 {
-		t.Fatalf("alternative migrated %d records, want shared prefix only", altCache.Len())
-	}
-	contCache, err := b.OpenTranslation(conv, "anthropic")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if contCache.Len() != 2 {
-		t.Fatalf("continuation migrated %d records, want shared + own", contCache.Len())
-	}
-	if _, ok := altCache.Lookup(own.LT); ok {
-		t.Fatal("alternative copied continuation-only opaque state")
-	}
-}
-
-func TestTranslationV2MigrationRejectsUnscopedRecord(t *testing.T) {
-	b, conv := mustBackendWithConv(t)
-	defer b.Close()
-	legacy := "translations/anthropic"
-	if err := b.ensureChannel(xwal.ChannelSpec{Name: legacy, Kind: xwal.ChannelLog}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := b.store.trunks.AppendChannel(conv, legacy, 9999, []byte(`[{"signature":"unscoped"}]`), encodeMeta("fp")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := b.OpenTranslation(conv, "anthropic"); err == nil {
-		t.Fatal("unsafe legacy migration succeeded")
-	}
-}
-
-func TestTranslationV2MigrationRejectsByteDivergence(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		currentBody []byte
-		currentMeta []byte
-	}{
-		{name: "payload", currentBody: []byte(`[{"signature":"changed"}]`), currentMeta: encodeMeta("fp")},
-		{name: "metadata", currentBody: []byte(`[{"signature":"original"}]`), currentMeta: encodeMeta("different")},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			b, conv := mustBackendWithConv(t)
-			defer b.Close()
-			ir, err := b.Open(conv)
-			if err != nil {
-				t.Fatal(err)
-			}
-			main, err := ir.Append(Entry[message.Message]{Payload: userText("cache")})
-			if err != nil {
-				t.Fatal(err)
-			}
-			legacy := "translations/anthropic"
-			current := transChannel("anthropic")
-			if err := b.ensureChannel(xwal.ChannelSpec{Name: legacy, Kind: xwal.ChannelLog}); err != nil {
-				t.Fatal(err)
-			}
-			if err := b.ensureChannel(xwal.ChannelSpec{Name: current, Kind: xwal.ChannelLog, SyncMode: xwal.SyncManual, Opaque: true}); err != nil {
-				t.Fatal(err)
-			}
-			original := []byte(`[{"signature":"original"}]`)
-			if _, err := b.store.trunks.AppendChannel(conv, legacy, main.LT, original, encodeMeta("fp")); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := b.store.trunks.AppendChannel(conv, current, main.LT, tc.currentBody, tc.currentMeta); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := b.OpenTranslation(conv, "anthropic"); err == nil {
-				t.Fatal("byte-divergent migration was accepted")
-			}
-		})
-	}
-}
-
-func rawChannelRecord(t *testing.T, b *XwalBackend, id, channel string, mainLT uint64) xwal.Record {
-	t.Helper()
-	xw, err := b.store.OpenNode(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer xw.Close()
-	record, ok, err := xw.Lookup(channel, mainLT)
-	if err != nil || !ok {
-		t.Fatalf("lookup %s at %d = %v, %v", channel, mainLT, ok, err)
-	}
-	return record
-}
 
 func TestXwalBackendForkKeepsLiveLogUsable(t *testing.T) {
 	b, err := NewXwalBackend(t.TempDir())
