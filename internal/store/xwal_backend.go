@@ -233,7 +233,9 @@ func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) error 
 	// Pass mainLT=0 to let Trunks compute (mainTail+1) internally; the
 	// chalkboard channel is reducible/keyed-forward and the default
 	// "one ahead" semantics match the previous channelLast+1 behavior.
-	_, err := b.store.trunks.AppendChannel(ariaID, chanChalkboard, 0, pb, nil)
+	// Store.Append (not Trunks.AppendChannel): the poison gate and
+	// dirty/touch tracking must see chalkboard writes.
+	_, err := b.store.trunks.Append(ariaID, chanChalkboard, 0, pb, nil)
 	if err != nil {
 		return err
 	}
