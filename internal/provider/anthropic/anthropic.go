@@ -315,6 +315,28 @@ func (a *Anthropic) SetModel(model string) {
 	a.mu.Unlock()
 }
 
+// validNativeBlock reports whether a streamed block is API-legal to
+// replay. Both the IR decoder and the native cache path use it: the
+// decoder so the sealed message matches the in-flight asm (which never
+// creates a node for empty text/thinking — keeping them shifts later
+// block indices and duplicates the live render), the cache so omitempty
+// never persists a block missing its required field.
+func validNativeBlock(b nativeBlock) bool {
+	switch b.Type {
+	case "text":
+		return strings.TrimSpace(b.Text) != ""
+	case "thinking":
+		return strings.TrimSpace(b.Thinking) != ""
+	case "redacted_thinking":
+		return b.Data != ""
+	case "tool_use":
+		return b.ID != "" && b.Input != nil
+	case "":
+		return false
+	}
+	return true
+}
+
 func decodeNativeMessage(nm nativeMessage) message.Message {
 	// model/provider are not on the IR message — they live in the
 	// chalkboard (system.model / system.provider), derived on read.
@@ -322,19 +344,13 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 		Role: message.Role(nm.Role),
 	}
 	for _, b := range nm.Content {
+		if !validNativeBlock(b) {
+			continue
+		}
 		switch b.Type {
 		case "text":
-			// Skip empty blocks so the sealed message matches the in-flight
-			// asm (which never creates a node for empty text/thinking); keeping
-			// them shifts later block indices and duplicates the live render.
-			if strings.TrimSpace(b.Text) == "" {
-				continue
-			}
 			m.Content = append(m.Content, message.Content{Type: message.ContentProse, Text: b.Text})
 		case "thinking":
-			if strings.TrimSpace(b.Thinking) == "" {
-				continue
-			}
 			m.Content = append(m.Content, message.Content{Type: message.ContentThinking, Text: b.Thinking})
 		case "tool_use":
 			args, _ := b.Input.(map[string]interface{})
@@ -887,6 +903,18 @@ func (a *Anthropic) assistantCacheNative(msg nativeMessage) (provider.AssistantC
 	msg.StopReason = ""
 	msg.Model = ""
 	msg.Usage = nil
+	var content []nativeBlock
+	for _, b := range msg.Content {
+		if validNativeBlock(b) {
+			content = append(content, b)
+		}
+	}
+	if len(content) == 0 {
+		return provider.AssistantCache{
+			Namespace: a.CacheNamespace, Fingerprint: a.Fingerprint(),
+		}, nil
+	}
+	msg.Content = content
 	raw, err := json.Marshal(msg)
 	if err != nil {
 		return provider.AssistantCache{}, fmt.Errorf("marshal native assistant cache: %w", err)
