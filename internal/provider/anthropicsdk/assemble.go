@@ -80,18 +80,6 @@ func coalesceMessages(msgs []anthropic.MessageParam, lts []uint64) ([]anthropic.
 	return outMsgs, outLTs
 }
 
-// adaptiveThinkingModels reason adaptively: they decide when and how much to
-// think from an effort level (output_config), ignoring a token budget. Older
-// models take an explicit budget instead. See pi-mono's supportsAdaptiveThinking.
-func isAdaptiveThinkingModel(model string) bool {
-	for _, frag := range []string{"opus-4-6", "opus-4.6", "opus-4-7", "opus-4.7", "opus-4-8", "opus-4.8", "sonnet-4-6", "sonnet-4.6"} {
-		if strings.Contains(model, frag) {
-			return true
-		}
-	}
-	return false
-}
-
 // applyThinking enables extended thinking when system.thinking_budget is a
 // positive integer (the budget in tokens; the API floor is 1024). It also
 // guarantees MaxTokens exceeds the budget, which the API requires
@@ -105,7 +93,7 @@ func applyThinking(params *anthropic.MessageNewParams, snap chalkboard.Snapshot,
 	// display=summarized makes the API return the (summarized) thinking text;
 	// the default over the Claude-Code/OAuth path is omitted (signature only,
 	// empty thinking field), so it must be set explicitly to surface thinking.
-	if isAdaptiveThinkingModel(model) {
+	if provider.IsAdaptiveThinkingModel(model) {
 		params.Thinking = anthropic.ThinkingConfigParamUnion{
 			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
 				Display: anthropic.ThinkingConfigAdaptiveDisplaySummarized,

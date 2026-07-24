@@ -424,13 +424,18 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 }
 
 type nativeRequest struct {
-	Model     string          `json:"model"`
-	MaxTokens int             `json:"max_tokens"`
-	System    []systemBlock   `json:"system,omitempty"`
-	Messages  []nativeMessage `json:"messages"`
-	Tools     []nativeTool    `json:"tools,omitempty"`
-	Stream    bool            `json:"stream"`
-	Thinking  *thinkingParam  `json:"thinking,omitempty"`
+	Model        string          `json:"model"`
+	MaxTokens    int             `json:"max_tokens"`
+	System       []systemBlock   `json:"system,omitempty"`
+	Messages     []nativeMessage `json:"messages"`
+	Tools        []nativeTool    `json:"tools,omitempty"`
+	Stream       bool            `json:"stream"`
+	Thinking     *thinkingParam  `json:"thinking,omitempty"`
+	OutputConfig *outputConfig   `json:"output_config,omitempty"`
+}
+
+type outputConfig struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 type thinkingParam struct {
@@ -1312,11 +1317,15 @@ func applyThinking(req *nativeRequest, snap chalkboard.Snapshot, model string) {
 		return
 	}
 
-	if isAdaptiveModel(model) {
+	if provider.IsAdaptiveThinkingModel(model) {
+		// Adaptive models take an effort level, not a token budget —
+		// budget_tokens (and thinking type "enabled") returns a 400 on
+		// Opus 4.6+ and the whole Claude 5 generation.
 		if effort == "" {
 			effort = "high"
 		}
-		req.Thinking = &thinkingParam{Type: "enabled", BudgetTokens: 10000, Display: "summarized"}
+		req.Thinking = &thinkingParam{Type: "adaptive", Display: "summarized"}
+		req.OutputConfig = &outputConfig{Effort: effort}
 		return
 	}
 
@@ -1330,13 +1339,4 @@ func applyThinking(req *nativeRequest, snap chalkboard.Snapshot, model string) {
 	if req.MaxTokens <= budget {
 		req.MaxTokens = budget + 4096
 	}
-}
-
-func isAdaptiveModel(model string) bool {
-	for _, frag := range []string{"opus-4.6", "opus-4.7", "opus-4.8", "sonnet-4.6", "sonnet-4.7", "sonnet-5"} {
-		if strings.Contains(model, frag) {
-			return true
-		}
-	}
-	return false
 }
