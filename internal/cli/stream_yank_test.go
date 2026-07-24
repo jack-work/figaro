@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/rpc"
 )
 
 // recordingTerminal is a searchInputTerminal that also records clipboard writes.
@@ -34,6 +35,10 @@ func (r *stubHistoryReader) Read(context.Context, int) (aria.AriaRead, error) {
 
 func (r *stubHistoryReader) ReadBefore(_ context.Context, before, limit int) (aria.AriaRead, error) {
 	return readBefore(r.history, before, limit), nil
+}
+
+func (r *stubHistoryReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
+	return &rpc.QueuedResponse{}, nil
 }
 
 // With a selection active, 'y' should fire the selection copy (populating
