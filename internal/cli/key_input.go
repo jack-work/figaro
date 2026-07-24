@@ -103,3 +103,54 @@ func parseKeyNumber(buf []byte) (value, consumed int, complete bool) {
 	}
 	return value, consumed, consumed < len(buf)
 }
+
+// consumeEscapeSequence eats an unhandled ANSI escape sequence starting at
+// data[0]==0x1b, so the caller can distinguish an actual Escape keypress
+// (bare 0x1b) from a prefix byte of e.g. an arrow key (\x1b[A), an SS3
+// F-key (\x1bOP), or an OSC (\x1b]…ST). CSI-u sequences we DO recognize
+// are already handled by parseModifiedKey — this is the catch-all so bare
+// Esc can drive its own binding without a spurious CSI prefix triggering it.
+//
+// Returns consumed=0, need=false for a bare Esc (either the buffer holds
+// just 0x1b, or 0x1b is followed by a byte that does not begin a known
+// sequence). Returns need=true when a sequence is split across reads.
+func consumeEscapeSequence(data []byte) (consumed int, need bool) {
+	if len(data) == 0 || data[0] != 0x1b {
+		return 0, false
+	}
+	if len(data) == 1 {
+		return 0, false // bare Esc (or the trailing byte of a split read)
+	}
+	switch data[1] {
+	case '[': // CSI: params (0x30-0x3f)* intermediates (0x20-0x2f)* final (0x40-0x7e)
+		for i := 2; i < len(data); i++ {
+			if c := data[i]; c >= 0x40 && c <= 0x7e {
+				return i + 1, false
+			}
+		}
+		return 0, true
+	case 'O': // SS3: exactly one following byte
+		if len(data) < 3 {
+			return 0, true
+		}
+		return 3, false
+	case ']': // OSC: terminated by BEL (0x07) or ST (0x1b\)
+		for i := 2; i < len(data); i++ {
+			if data[i] == 0x07 {
+				return i + 1, false
+			}
+			if data[i] == 0x1b {
+				if i+1 >= len(data) {
+					return 0, true
+				}
+				if data[i+1] == '\\' {
+					return i + 2, false
+				}
+				return 0, false // malformed; let caller re-enter
+			}
+		}
+		return 0, true
+	default:
+		return 0, false // unknown; treat leading 0x1b as bare Esc
+	}
+}
