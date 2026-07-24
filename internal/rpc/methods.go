@@ -21,6 +21,7 @@ const (
 	MethodSet        = "figaro.set"
 	MethodLoadout    = "figaro.loadout"
 	MethodChalkboard = "figaro.chalkboard"
+	MethodQueued     = "figaro.queued"
 
 	// MethodRead pulls one aria read caught up from a figaro LT (the
 	// catch-up half of the same paginated read the MethodAriaFrame stream
@@ -142,6 +143,25 @@ type LoadoutResponse struct {
 // ChalkboardResponse returns the agent's current snapshot.
 type ChalkboardResponse struct {
 	Snapshot map[string]json.RawMessage `json:"snapshot"`
+}
+
+// QueuedRequest asks for the currently-queued user prompts on this aria —
+// accepted by the inbox but not yet drained into a turn. It is a read-only
+// snapshot; there is deliberately no cancellation surface here.
+type QueuedRequest struct{}
+
+// QueuedResponse carries the queued user prompts in FIFO order (oldest first).
+// Non-prompt inbox events (chalkboard sets, fork coordination) are omitted —
+// this is the "what am I about to be asked next?" view.
+type QueuedResponse struct {
+	Prompts []QueuedPrompt `json:"prompts"`
+}
+
+// QueuedPrompt is one queued user prompt. Text is the exact string the user
+// submitted; a prompt with empty text is a pure chalkboard-carrier and is
+// omitted from the snapshot.
+type QueuedPrompt struct {
+	Text string `json:"text"`
 }
 
 // ReadRequest is the catch-up request. SinceLT streams forward from a cursor

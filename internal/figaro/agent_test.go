@@ -1249,3 +1249,130 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		}
 	}
 }
+
+// TestAgent_UserPromptCommitsWithoutLiveFrame verifies the send-flow fix:
+// the user's message must materialize as a single already-committed frame
+// (Committed[].Full()), never as a live-then-close flicker. If a Live frame
+// with Role=="user" (or an empty-Role live frame at the user's LT) ever
+// appears, the CLI paints an intermediate state before the durable transcript
+// contains the message — the behavior we're deliberately eliminating.
+func TestAgent_UserPromptCommitsWithoutLiveFrame(t *testing.T) {
+	a := newTestAgent("the reply")
+	defer a.Kill()
+
+	ch, unsub := subscribeChan(a)
+	defer unsub()
+
+	submitPrompt(a, "the question")
+
+	deadline := time.After(5 * time.Second)
+	var frames []aria.AriaRead
+loop:
+	for {
+		select {
+		case n := <-ch:
+			switch n.Method {
+			case rpc.MethodAriaFrame:
+				frames = append(frames, n.Params.(aria.AriaRead))
+			case rpc.MethodTurnDone:
+				break loop
+			}
+		case <-deadline:
+			t.Fatal("timeout waiting for turn.done")
+		}
+	}
+
+	// Find the user message's LT from a Full committed frame (Role=="user"
+	// with Nodes present); assert no Live frame ever carried that LT and no
+	// Live frame ever had Role=="user".
+	userLT := 0
+	for _, f := range frames {
+		for _, c := range f.Committed {
+			if c.Role == "user" && c.Full() {
+				userLT = c.LT
+			}
+		}
+	}
+	require.NotZero(t, userLT, "expected a user Committed(Full) frame")
+
+	for _, f := range frames {
+		if f.Live == nil {
+			continue
+		}
+		if f.Live.Role == "user" {
+			t.Fatalf("user role must never appear as a Live frame; got %+v", f.Live)
+		}
+		if f.Live.LT == userLT {
+			t.Fatalf("user LT %d must never appear as a Live frame; got %+v", userLT, f.Live)
+		}
+	}
+}
+
+// TestAgent_QueuedPromptsRPC verifies the read-only queued-prompts snapshot.
+// Prompts submitted after a turn starts but before it drains sit in the inbox;
+// QueuedPrompts must observe them in FIFO order without consuming them.
+func TestAgent_QueuedPromptsRPC(t *testing.T) {
+	// A blocked provider: never returns until we let it. This freezes the
+	// drain loop so subsequent prompts pile up in the inbox verifiably.
+	release := make(chan struct{})
+	prov := &blockedProvider{release: release}
+	cb, _ := chalkboard.Open("")
+	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"system.model":      json.RawMessage(`"mock-model-v1"`),
+		"system.provider":   json.RawMessage(`"mock"`),
+		"system.max_tokens": json.RawMessage(`1024`),
+	}})
+	a := figaro.NewAgent(figaro.Config{
+		ID:         "q-001",
+		SocketPath: "/tmp/test-figaro-q.sock",
+		Provider:   prov,
+		Chalkboard: cb,
+	})
+	defer func() { close(release); a.Kill() }()
+
+	a.SubmitPrompt(rpc.QuaRequest{Text: "kickoff"}) // drains into the running turn
+	// Give the actor a moment to pick up "kickoff" so the follow-ons queue.
+	require.Eventually(t, func() bool { return prov.blocked() }, 2*time.Second, 10*time.Millisecond)
+
+	a.SubmitPrompt(rpc.QuaRequest{Text: "one"})
+	a.SubmitPrompt(rpc.QuaRequest{Text: "two"})
+	a.SubmitPrompt(rpc.QuaRequest{Text: ""}) // carrier — must be omitted
+
+	snap := a.QueuedPrompts()
+	require.Equal(t, []rpc.QueuedPrompt{{Text: "one"}, {Text: "two"}}, snap)
+
+	// Read-only: a second snapshot returns the same list.
+	require.Equal(t, snap, a.QueuedPrompts())
+}
+
+// blockedProvider is a Send that parks until release is closed, so tests can
+// pile prompts up in the inbox behind a "running" turn.
+type blockedProvider struct {
+	release chan struct{}
+	inSend  atomicBool
+}
+
+type atomicBool struct {
+	mu sync.Mutex
+	b  bool
+}
+
+func (a *atomicBool) set(v bool) { a.mu.Lock(); a.b = v; a.mu.Unlock() }
+func (a *atomicBool) get() bool  { a.mu.Lock(); defer a.mu.Unlock(); return a.b }
+
+func (p *blockedProvider) Name() string        { return "blocked" }
+func (p *blockedProvider) Fingerprint() string { return "blocked/v0" }
+func (p *blockedProvider) SetModel(string)     {}
+func (p *blockedProvider) Models(context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
+func (p *blockedProvider) blocked() bool { return p.inSend.get() }
+func (p *blockedProvider) Send(ctx context.Context, _ provider.SendInput, _ provider.Bus) error {
+	p.inSend.set(true)
+	defer p.inSend.set(false)
+	select {
+	case <-p.release:
+	case <-ctx.Done():
+	}
+	return ctx.Err()
+}

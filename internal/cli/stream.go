@@ -275,6 +275,7 @@ type interactiveInput struct {
 type transcriptReadClient interface {
 	Read(context.Context, int) (aria.AriaRead, error)
 	ReadBefore(context.Context, int, int) (aria.AriaRead, error)
+	Queued(context.Context) (*rpc.QueuedResponse, error)
 }
 
 // enterTranscript opens the pager on the recent window (older history pages in
@@ -302,6 +303,7 @@ func (in *interactiveInput) enterTranscript() {
 	rcancel()
 	in.mu.Lock()
 	in.lt.enterTranscript()
+	in.lt.setQueuedFetch(in.refreshQueued)
 	if rerr == nil {
 		in.lt.apply(r)
 	}
@@ -448,6 +450,35 @@ func (in *interactiveInput) cancelTranscriptSearch() {
 	in.mu.Lock()
 	in.cancelTranscriptSearchLocked()
 	in.mu.Unlock()
+}
+
+// refreshQueued kicks a background fetch of the aria's queued user prompts and
+// writes the result into the transcript panel. Called from the transcript when
+// the queued panel opens; safe to invoke concurrently with any prior fetch —
+// the last completion wins (there is no ordering constraint on a purely
+// observational panel).
+func (in *interactiveInput) refreshQueued() {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		resp, err := in.fcli.Queued(ctx)
+		in.mu.Lock()
+		defer in.mu.Unlock()
+		if !in.lt.transcriptActive() {
+			return
+		}
+		if err != nil {
+			in.lt.setTranscriptQueued(nil, err.Error())
+			in.lt.render()
+			return
+		}
+		texts := make([]string, 0, len(resp.Prompts))
+		for _, p := range resp.Prompts {
+			texts = append(texts, p.Text)
+		}
+		in.lt.setTranscriptQueued(texts, "")
+		in.lt.render()
+	}()
 }
 
 func readNextPage(after, watermark, limit int, read func(int, int) (aria.AriaRead, error)) (aria.AriaRead, error) {
@@ -707,7 +738,7 @@ func (in *interactiveInput) cancelSelectionCopy() {
 
 func opensTranscriptFor(b byte) bool {
 	switch b {
-	case 'j', 'k', 'u', 'd', 'g', 'G', '/', '?', 0x0f, 0x0e, 0x10, 0x0d, 0x0a:
+	case 'j', 'k', 'u', 'd', 'g', 'G', '/', '?', 'Q', 0x0f, 0x0e, 0x10, 0x0d, 0x0a:
 		return true
 	default:
 		return false

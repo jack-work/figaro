@@ -23,6 +23,7 @@ var agentMethods = []string{
 	rpc.MethodSet,
 	rpc.MethodLoadout,
 	rpc.MethodChalkboard,
+	rpc.MethodQueued,
 	rpc.MethodRead,
 }
 
@@ -87,6 +88,9 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 
 	case rpc.MethodChalkboard:
 		return rpc.ChalkboardResponse{Snapshot: a.Snapshot()}, nil
+
+	case rpc.MethodQueued:
+		return rpc.QueuedResponse{Prompts: a.QueuedPrompts()}, nil
 
 	case rpc.MethodRead:
 		var req rpc.ReadRequest

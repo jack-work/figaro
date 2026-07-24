@@ -392,6 +392,18 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 	})
 }
 
+// QueuedPrompts returns a read-only snapshot of user prompts sitting in the
+// inbox — accepted but not yet drained into a turn. FIFO order, oldest first.
+// The inbox is untouched; there is no cancellation surface at this layer.
+func (a *Agent) QueuedPrompts() []rpc.QueuedPrompt {
+	texts := a.inbox.SnapshotUserPrompts()
+	out := make([]rpc.QueuedPrompt, 0, len(texts))
+	for _, t := range texts {
+		out = append(out, rpc.QueuedPrompt{Text: t})
+	}
+	return out
+}
+
 // Interrupt aborts the current turn. Idempotent when idle.
 func (a *Agent) Interrupt() {
 	a.mu.Lock()

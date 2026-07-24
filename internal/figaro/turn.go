@@ -18,6 +18,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
@@ -227,8 +228,19 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entr
 	a.refreshMetrics()
 
 	if prompt.text != "" {
-		a.emitSnapshot("user", []livedoc.Node{{Type: livedoc.NodeProse, Markdown: prompt.text}})
-		a.emitCommit()
+		// Commit the user message directly — no Open+Update+Close ping-pong.
+		// The old path briefly opened a live region for the user, which the
+		// client rendered as an in-flight message and then immediately sealed,
+		// producing a visible flicker between send and durable commit. A direct
+		// Commit makes the message appear only when the transcript truly holds
+		// it — the aria frame carries {Role, Nodes} on the first hop and the
+		// client short-circuits to OnClosed with no OnLive event.
+		a.unitLT++
+		a.ariaSrv.Commit(aria.Message{
+			LT:    a.unitLT,
+			Role:  "user",
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: prompt.text}},
+		})
 	}
 	return entry, nil
 }

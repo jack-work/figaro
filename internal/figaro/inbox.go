@@ -129,6 +129,23 @@ func (b *Inbox) IsIdle() bool {
 	return len(b.queue) == 0
 }
 
+// SnapshotUserPrompts returns the text of every queued user prompt (empty-text
+// prompts — pure chalkboard carriers — are omitted) in FIFO order, WITHOUT
+// removing them from the queue. Used by the read-only figaro.queued RPC so a
+// UI can show what the agent will pick up next; the inbox contract is not
+// affected. Non-prompt events (sets, forks) are skipped by design.
+func (b *Inbox) SnapshotUserPrompts() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]string, 0, len(b.queue))
+	for _, e := range b.queue {
+		if e.typ == eventUserPrompt && e.text != "" {
+			out = append(out, e.text)
+		}
+	}
+	return out
+}
+
 func (b *Inbox) Close() {
 	b.mu.Lock()
 	if b.closed {
