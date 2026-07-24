@@ -649,9 +649,24 @@ func (in *interactiveInput) run() {
 				in.lt.render()
 				in.mu.Unlock()
 				continue
-			case 'y': // copy the aria id to the clipboard (OSC 52)
+			case 'y': // copy selection if any, else copy the aria id (OSC 52)
 				if active && in.lt.transcriptSearching() {
 					break // typing into the search box — let it fall to the pager
+				}
+				if active {
+					in.mu.Lock()
+					plan, selected := in.lt.transcriptSelectionPlan()
+					if selected && in.copyCancel == nil && !in.copyFailed {
+						copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)
+						in.copyGen++
+						gen := in.copyGen
+						in.copyCancel = copyCancel
+						in.copyPlan = plan
+						in.mu.Unlock()
+						go in.copySelection(copyCtx, copyCancel, gen, plan)
+						continue
+					}
+					in.mu.Unlock()
 				}
 				in.tc.SetClipboard(in.figaroID)
 				continue

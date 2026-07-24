@@ -179,7 +179,7 @@ func TestTranscript_HelpPanel(t *testing.T) {
 	if !tr.showHelp {
 		t.Fatalf("? should open the help panel")
 	}
-	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "copy aria id") {
+	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "copy selection") {
 		t.Fatalf("help panel content missing:\n%s", scr)
 	}
 	tr.key('?')
