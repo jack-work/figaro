@@ -698,10 +698,11 @@ func (t *transcript) helpLines() []string {
 		"  ^O                  toggle verbose tool output",
 		"  ^N/^P               select next/previous node",
 		"  ^N/^P + Shift       extend node selection (Alt+^N/^P fallback)",
-		"  Enter / ^C          expand tools / copy selected node(s)",
+		"  Enter               expand tools within the selection",
+		"  ^C                  copy selected node(s) / interrupt turn",
+		"  Esc                 clear selection / close panel",
 		"  ^L                  listen — stay open after the turn ends",
-		"  ^D                  detach; the turn keeps running",
-		"  ^C                  interrupt the turn / close",
+		"  q / ^D              detach; the turn keeps running",
 		"  !                   figaro status panel",
 		"  ?                   close help",
 	}
@@ -757,7 +758,7 @@ func (t *transcript) key(b byte) {
 			t.showStatus = true
 		case reopen == '?':
 			t.showHelp = true
-		case b == '?' || b == '!' || b == 0x1b || b == 'q':
+		case b == '?' || b == '!' || b == 0x1b:
 			t.render()
 			return
 		}
@@ -804,6 +805,10 @@ func (t *transcript) key(b byte) {
 		t.selectNode(-1, false)
 	case 0x0d, 0x0a:
 		t.toggleSelectedTools()
+	case 0x1b: // Esc: clear the active selection (no-op otherwise)
+		if t.selection.active {
+			t.clearSelection()
+		}
 	}
 	t.pendG = b == 'g' && !t.pendG
 	t.render()
