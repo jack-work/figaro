@@ -213,6 +213,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	mu.Lock()
 	sendCursor = cursor
 	lt.status.beginTurn()
+	lt.armThinking()
 	mu.Unlock()
 
 	select {

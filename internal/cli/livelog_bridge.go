@@ -25,11 +25,12 @@ type livelogTurn struct {
 	tr     *transcript
 	status *sessionStatus
 
-	openLT   int
-	openRole string
-	open     []livedoc.Node
-	pending  *aria.Message
-	finished bool
+	openLT       int
+	openRole     string
+	open         []livedoc.Node
+	pending      *aria.Message
+	finished     bool
+	wantThinking bool // submit accepted: show the thinking footer once the user msg seals
 
 	// lastSealedLT is the highest LT incipit has committed to native scrollback
 	// inline (via Seal). It marks the flush boundary: on leaving the pager,
@@ -70,6 +71,14 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 			t.in.Seal(m) // incipit: seal to native scrollback
 			if m.LT > t.lastSealedLT {
 				t.lastSealedLT = m.LT
+			}
+			// Submit accepted and the prompt is now on screen: pin the thinking
+			// footer immediately, before the model's first token. The assistant
+			// frame that follows adopts this region in place.
+			if t.wantThinking {
+				t.wantThinking = false
+				t.status.beginTurn()
+				t.in.OpenThinking("assistant")
 			}
 		}
 	}
@@ -122,6 +131,14 @@ func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
 		}
 	}
 	return false
+}
+
+// armThinking marks that a submit was accepted: the next user-message seal
+// pins the thinking footer. No-op in the pager (it renders the footer itself).
+func (t *livelogTurn) armThinking() {
+	if !t.tr.active {
+		t.wantThinking = true
+	}
 }
 
 func (t *livelogTurn) apply(r aria.AriaRead)  { t.client.Apply(r) }

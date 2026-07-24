@@ -94,3 +94,39 @@ func TestIncipit_NoTrailingBlanksAfterScrolledSeal(t *testing.T) {
 		t.Fatalf("seal advanced %d rows (> viewport 6) → trailing blank lines", adv)
 	}
 }
+
+// OpenThinking pins the footer before any content; the assistant frame that
+// follows adopts the same region in place — the header/footer must not orphan
+// to scrollback (no duplicate "figaro" header, no duplicate footer rule).
+func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
+	ft := NewFakeTerminal(60, 20)
+	in := NewIncipit(ft, NodeText{})
+	in.Header = func(role string) string {
+		if role == "assistant" {
+			return "‹ figaro"
+		}
+		return "❯ you"
+	}
+	in.Bookend = func() []string { return []string{"────rule────", "", "status"} }
+
+	in.Seal(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hi"}}})
+	in.OpenThinking("assistant") // footer appears now, before any token
+	scr := strings.Join(ft.Screen(), "\n")
+	if !strings.Contains(scr, "status") || !strings.Contains(scr, "‹ figaro") {
+		t.Fatalf("thinking footer + header should show immediately:\n%s", scr)
+	}
+
+	// content streams in; the real assistant frame adopts the region
+	in.Open(2, "assistant", []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}})
+	in.Seal(aria.Message{LT: 2, Role: "assistant", Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
+	scr = strings.Join(ft.Screen(), "\n")
+	if strings.Count(scr, "‹ figaro") != 1 {
+		t.Fatalf("figaro header must appear once (no orphan):\n%s", scr)
+	}
+	if strings.Count(scr, "────rule────") != 1 {
+		t.Fatalf("footer rule must appear once (no orphan):\n%s", scr)
+	}
+	if !strings.Contains(scr, "answer") {
+		t.Fatalf("streamed answer should show:\n%s", scr)
+	}
+}

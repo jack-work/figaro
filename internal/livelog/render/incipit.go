@@ -56,7 +56,8 @@ type Incipit struct {
 	Rule    func() string            // sealed after any other message (a plain full-width rule)
 	Header  func(role string) string // printed above each message; "" suppresses
 
-	tick int
+	tick     int
+	thinking bool // open region is an OpenThinking placeholder (adopted by the next Open)
 
 	// Open-message live region:
 	liveLT int
@@ -140,6 +141,16 @@ func (i *Incipit) printMessage(m aria.Message) {
 
 // Open paints (or repaints) the open message's blocks as the live region.
 func (i *Incipit) Open(lt int, role string, nodes []livedoc.Node) {
+	// A thinking placeholder (OpenThinking) is the same on-screen region as the
+	// assistant message that follows: adopt its LT in place — no dropBelow, no
+	// reset — so the footer painted on submit stays put and the streamed
+	// content fills in above it, never orphaning a header/footer to scrollback.
+	if i.thinking && role == i.role {
+		i.thinking = false
+		i.liveLT = lt
+		i.paint(i.compose(nodes))
+		return
+	}
 	if lt != i.liveLT {
 		// A new open message without a prior Seal: release whatever was live.
 		if i.liveLT != 0 {
@@ -152,10 +163,32 @@ func (i *Incipit) Open(lt int, role string, nodes []livedoc.Node) {
 	i.paint(i.compose(nodes))
 }
 
+// OpenThinking paints an empty live region for a role that has only started —
+// its header and status footer — before any content has streamed. The next
+// Open(realLT, sameRole, …) adopts this region in place. Used on submit so the
+// footer appears immediately rather than waiting for the model's first token.
+func (i *Incipit) OpenThinking(role string) {
+	if i.liveLT != 0 {
+		i.dropBelow()
+	}
+	i.reset()
+	i.thinking = true
+	i.liveLT = thinkingLT
+	i.role = role
+	i.paint(i.compose(nil))
+}
+
+// thinkingLT is the sentinel liveLT for an OpenThinking placeholder — any
+// value a real message LT never takes.
+const thinkingLT = -1
+
 // Tick advances spinner animation and repaints the open message.
 func (i *Incipit) Tick(nodes []livedoc.Node) {
 	if i.liveLT == 0 {
 		return
+	}
+	if i.thinking {
+		nodes = nil // placeholder region has no content of its own yet
 	}
 	i.tick++
 	i.paint(i.compose(nodes))
@@ -326,4 +359,5 @@ func (i *Incipit) dropBelow() {
 
 func (i *Incipit) reset() {
 	i.liveLT, i.role, i.live, i.vt, i.cur = 0, "", nil, 0, 0
+	i.thinking = false
 }
