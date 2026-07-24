@@ -60,3 +60,39 @@ func TestConsumeEscapeSequence(t *testing.T) {
 		})
 	}
 }
+
+func TestCoalesceNewlineCRLF(t *testing.T) {
+	in := &interactiveInput{}
+	// Single Enter as raw CR then raw LF (Windows conhost style): the LF
+	// following a CR must be swallowed so a toggle binding fires ONCE.
+	if in.coalesceNewline(0x0d) {
+		t.Fatal("first CR must not be skipped")
+	}
+	if !in.coalesceNewline(0x0a) {
+		t.Fatal("LF paired with prior CR must be skipped")
+	}
+	// Two Enters in a row: CR CR (Linux) should NOT dedup — both are real.
+	in2 := &interactiveInput{}
+	if in2.coalesceNewline(0x0d) || in2.coalesceNewline(0x0d) {
+		t.Fatal("consecutive CRs are two real presses; neither may be skipped")
+	}
+	// The mirrored ordering: LF then CR. Second byte skipped.
+	in3 := &interactiveInput{}
+	if in3.coalesceNewline(0x0a) {
+		t.Fatal("first LF must not be skipped")
+	}
+	if !in3.coalesceNewline(0x0d) {
+		t.Fatal("CR paired with prior LF must be skipped")
+	}
+	// A non-newline byte between two CRs resets state so the second CR still fires.
+	in4 := &interactiveInput{}
+	if in4.coalesceNewline(0x0d) {
+		t.Fatal("first CR must not be skipped")
+	}
+	if in4.coalesceNewline('x') {
+		t.Fatal("normal bytes are never skipped")
+	}
+	if in4.coalesceNewline(0x0a) {
+		t.Fatal("LF after an intervening byte is a fresh press, not the pair")
+	}
+}

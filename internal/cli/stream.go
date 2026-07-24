@@ -600,14 +600,8 @@ func (in *interactiveInput) run() {
 			// key_input.go: parseModifiedKey handles the CSI-u path (Enter as
 			// code 13); the raw-byte fallback here is the one that sees
 			// non-CSI-u terminals and needs the coalescing.
-			if (b == 0x0d || b == 0x0a) && in.lastNL != 0 && in.lastNL != b {
-				in.lastNL = 0
+			if in.coalesceNewline(b) {
 				continue
-			}
-			if b == 0x0d || b == 0x0a {
-				in.lastNL = b
-			} else {
-				in.lastNL = 0
 			}
 			if !active && opensTranscriptFor(b) {
 				in.enterTranscript()
@@ -753,6 +747,24 @@ func (in *interactiveInput) cancelSelectionCopy() {
 		in.copyGen++
 	}
 	in.mu.Unlock()
+}
+
+// coalesceNewline swallows the paired byte of a CR+LF (or LF+CR) sequence so
+// a single Enter keypress fires the pager binding exactly once. Windows
+// conhost is the canonical offender; some serial-console setups too. Returns
+// true when the current byte is the second half of a pair (and thus should
+// be skipped by the input loop).
+func (in *interactiveInput) coalesceNewline(b byte) bool {
+	if (b == 0x0d || b == 0x0a) && in.lastNL != 0 && in.lastNL != b {
+		in.lastNL = 0
+		return true
+	}
+	if b == 0x0d || b == 0x0a {
+		in.lastNL = b
+	} else {
+		in.lastNL = 0
+	}
+	return false
 }
 
 func opensTranscriptFor(b byte) bool {
