@@ -38,6 +38,15 @@ type liveForkBackend struct {
 	childMeta  *store.AriaMeta
 	owner      store.OwnerInfo
 	nodes      map[string]store.NodeView
+	chalk      map[string]message.Patch
+}
+
+func (f *liveForkBackend) ApplyChalkboard(ariaID string, patch message.Patch) error {
+	if f.chalk == nil {
+		f.chalk = map[string]message.Patch{}
+	}
+	f.chalk[ariaID] = patch
+	return nil
 }
 
 type coordinatingForkFigaro struct {

@@ -280,6 +280,19 @@ model = "mock-model"
 	require.Equal(t, created.FigaroID, fr.Continuation)
 	require.NotEqual(t, created.FigaroID, fr.Alternative)
 
+	// Each child's chalkboard names its OWN id: the continuation keeps the
+	// inherited stamp, the alternative is re-stamped at fork time — an aria
+	// that forks itself must be able to learn its new id.
+	chalkAriaID := func(id string) string {
+		snap, serr := backend.ChalkboardState(id)
+		require.NoError(t, serr)
+		var got string
+		require.NoError(t, json.Unmarshal(snap["aria_id"], &got))
+		return got
+	}
+	assert.Equal(t, fr.Continuation, chalkAriaID(fr.Continuation))
+	assert.Equal(t, fr.Alternative, chalkAriaID(fr.Alternative))
+
 	// Both children see the pre-fork prompt (shared prefix).
 	countUser := func(id, want string) int {
 		resp, rerr := acli.AriaRead(ctx, id, 0, 0)

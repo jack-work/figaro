@@ -18,6 +18,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/outfit"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
@@ -394,6 +395,19 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			return err
 		}
 		h.seedForkMeta(parentMeta, req.FigaroID, alt, req.AtMainLT, forkOwner)
+		// The alternative inherits the parent's chalkboard — including the
+		// parent's aria_id. Re-stamp so the forked agent knows its own id
+		// (a normal state transition it sees on its next turn); without
+		// this an aria cannot reliably fork itself.
+		if alt != "" && alt != req.FigaroID {
+			if b, merr := json.Marshal(alt); merr == nil {
+				if perr := h.angelus.Backend.ApplyChalkboard(alt, message.Patch{
+					Set: map[string]json.RawMessage{"aria_id": b},
+				}); perr != nil {
+					slog.Warn("fork: restamp aria_id", "alt", alt, "err", perr)
+				}
+			}
+		}
 		return nil
 	}
 
