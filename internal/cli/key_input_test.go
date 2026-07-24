@@ -32,3 +32,67 @@ func TestOpensTranscriptForOutputHotkeys(t *testing.T) {
 		t.Fatal("copying the aria id must stay available in incipit")
 	}
 }
+
+func TestConsumeEscapeSequence(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       []byte
+		consumed int
+		need     bool
+	}{
+		{"bare esc alone", []byte{0x1b}, 0, false},
+		{"csi up arrow", []byte("\x1b[A"), 3, false},
+		{"csi params final", []byte("\x1b[1;2H"), 6, false},
+		{"ss3 f-key", []byte("\x1bOP"), 3, false},
+		{"ss3 needs more", []byte("\x1bO"), 0, true},
+		{"csi incomplete", []byte("\x1b[1;5"), 0, true},
+		{"osc bel-terminated", []byte("\x1b]0;title\x07"), 10, false},
+		{"osc st-terminated", []byte("\x1b]0;t\x1b\\"), 7, false},
+		{"alt-only prefix stays bare", []byte{0x1b, 'a'}, 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			consumed, need := consumeEscapeSequence(tc.in)
+			if consumed != tc.consumed || need != tc.need {
+				t.Fatalf("consumeEscapeSequence(%q) = %d,%v; want %d,%v",
+					tc.in, consumed, need, tc.consumed, tc.need)
+			}
+		})
+	}
+}
+
+func TestCoalesceNewlineCRLF(t *testing.T) {
+	in := &interactiveInput{}
+	// Single Enter as raw CR then raw LF (Windows conhost style): the LF
+	// following a CR must be swallowed so a toggle binding fires ONCE.
+	if in.coalesceNewline(0x0d) {
+		t.Fatal("first CR must not be skipped")
+	}
+	if !in.coalesceNewline(0x0a) {
+		t.Fatal("LF paired with prior CR must be skipped")
+	}
+	// Two Enters in a row: CR CR (Linux) should NOT dedup — both are real.
+	in2 := &interactiveInput{}
+	if in2.coalesceNewline(0x0d) || in2.coalesceNewline(0x0d) {
+		t.Fatal("consecutive CRs are two real presses; neither may be skipped")
+	}
+	// The mirrored ordering: LF then CR. Second byte skipped.
+	in3 := &interactiveInput{}
+	if in3.coalesceNewline(0x0a) {
+		t.Fatal("first LF must not be skipped")
+	}
+	if !in3.coalesceNewline(0x0d) {
+		t.Fatal("CR paired with prior LF must be skipped")
+	}
+	// A non-newline byte between two CRs resets state so the second CR still fires.
+	in4 := &interactiveInput{}
+	if in4.coalesceNewline(0x0d) {
+		t.Fatal("first CR must not be skipped")
+	}
+	if in4.coalesceNewline('x') {
+		t.Fatal("normal bytes are never skipped")
+	}
+	if in4.coalesceNewline(0x0a) {
+		t.Fatal("LF after an intervening byte is a fresh press, not the pair")
+	}
+}

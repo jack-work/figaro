@@ -38,8 +38,8 @@ func TestTranscriptNodeSelectionRangeAndCopy(t *testing.T) {
 	if err != nil || text != "first node\n\nsecond node" {
 		t.Fatalf("selected text = %q, %v", text, err)
 	}
-	if screen := strings.Join(ft.Screen(), "\n"); !strings.Contains(screen, "▸") || !strings.Contains(screen, "│") {
-		t.Fatalf("selection gutters missing:\n%s", screen)
+	if screen := strings.Join(ft.Screen(), "\n"); !strings.Contains(screen, "▎") {
+		t.Fatalf("selection gutter missing:\n%s", screen)
 	}
 	tr.clearSelection()
 	if tr.selection.active {
@@ -74,6 +74,26 @@ func TestTranscriptEnterExpandsSelectedToolOutput(t *testing.T) {
 	text, err := selectedTextForTest(tr, history)
 	if err != nil || !strings.Contains(text, "line-00") || !strings.Contains(text, "line-11") {
 		t.Fatalf("copied tool output = %q, %v", text, err)
+	}
+}
+
+func TestTranscriptEscClearsSelection(t *testing.T) {
+	ft := ldrender.NewFakeTerminal(80, 20)
+	client := aria.NewClient()
+	client.Apply(aria.AriaRead{Committed: []aria.Committed{{
+		LT: 1, Role: "assistant", Nodes: []livedoc.Node{
+			{Type: livedoc.NodeProse, Markdown: "only node"},
+		},
+	}}})
+	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
+	tr.enter()
+	tr.key(0x0e) // Ctrl-N
+	if !tr.selection.active {
+		t.Fatal("Ctrl-N did not activate selection")
+	}
+	tr.key(0x1b) // Esc
+	if tr.selection.active {
+		t.Fatal("Esc did not clear the selection")
 	}
 }
 

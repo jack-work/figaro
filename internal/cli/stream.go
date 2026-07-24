@@ -270,6 +270,11 @@ type interactiveInput struct {
 	searchGen    uint64
 	searchQuery  string
 	searchDone   chan struct{}
+	// lastNL is the last CR/LF byte we delivered (0 otherwise). Windows
+	// conhost and some other terminals emit CR+LF for a single Enter press;
+	// without dedup, a toggle-style binding (Enter -> expand tools) fires
+	// twice and cancels itself out. Also covers the rare LF+CR order.
+	lastNL byte
 }
 
 type transcriptReadClient interface {
@@ -569,9 +574,34 @@ func (in *interactiveInput) run() {
 				if !representable {
 					continue
 				}
+			} else if data[i] == 0x1b {
+				// A leading ESC we didn't recognize as CSI-u. Try to swallow the
+				// rest of the sequence (arrow keys, SS3 F-keys, OSC replies,
+				// generic CSI) so bare Esc can trigger its own binding without a
+				// sequence prefix spuriously firing it.
+				if ec, en := consumeEscapeSequence(data[i:]); en {
+					pending = append(pending, data[i:]...)
+					break
+				} else if ec > 0 {
+					i += ec
+					in.lastNL = 0
+					continue
+				}
+				b = data[i]
+				i++
 			} else {
 				b = data[i]
 				i++
+			}
+			// Coalesce CR+LF (and the mirrored LF+CR) into ONE newline event.
+			// Windows conhost — and some other terminals — emit both bytes for
+			// a single Enter keypress; without this dedup a toggle binding on
+			// Enter fires twice per press and appears stuck. Reasoning from
+			// key_input.go: parseModifiedKey handles the CSI-u path (Enter as
+			// code 13); the raw-byte fallback here is the one that sees
+			// non-CSI-u terminals and needs the coalescing.
+			if in.coalesceNewline(b) {
+				continue
 			}
 			if !active && opensTranscriptFor(b) {
 				in.enterTranscript()
@@ -623,6 +653,20 @@ func (in *interactiveInput) run() {
 				in.cancel()
 				return
 			case 0x04: // Ctrl-D: disconnect; the turn keeps running
+				in.cancelTranscriptSearch()
+				in.cancelSelectionCopy()
+				select {
+				case in.disconnectCh <- struct{}{}:
+				default:
+				}
+				return
+			case 'q': // detach parity with Ctrl-D when the pager is up
+				if !active {
+					break
+				}
+				if in.lt.transcriptSearching() {
+					break // typing into the search box
+				}
 				in.cancelTranscriptSearch()
 				in.cancelSelectionCopy()
 				select {
@@ -718,6 +762,24 @@ func (in *interactiveInput) cancelSelectionCopy() {
 		in.copyGen++
 	}
 	in.mu.Unlock()
+}
+
+// coalesceNewline swallows the paired byte of a CR+LF (or LF+CR) sequence so
+// a single Enter keypress fires the pager binding exactly once. Windows
+// conhost is the canonical offender; some serial-console setups too. Returns
+// true when the current byte is the second half of a pair (and thus should
+// be skipped by the input loop).
+func (in *interactiveInput) coalesceNewline(b byte) bool {
+	if (b == 0x0d || b == 0x0a) && in.lastNL != 0 && in.lastNL != b {
+		in.lastNL = 0
+		return true
+	}
+	if b == 0x0d || b == 0x0a {
+		in.lastNL = b
+	} else {
+		in.lastNL = 0
+	}
+	return false
 }
 
 func opensTranscriptFor(b byte) bool {
