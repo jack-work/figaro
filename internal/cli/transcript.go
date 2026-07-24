@@ -651,8 +651,8 @@ func (t *transcript) render() {
 		}
 	}
 	rule, status := t.footerRows(len(all), body)
-	screen[t.h-3] = rule
-	screen[t.h-2] = ""
+	screen[t.h-3] = "" // padding ABOVE the footer, not between rule and status
+	screen[t.h-2] = rule
 	screen[t.h-1] = status
 	t.paint(screen)
 }

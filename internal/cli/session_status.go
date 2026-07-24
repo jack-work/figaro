@@ -238,9 +238,11 @@ func formatTokenCount(tokens int) string {
 // the rule and the status text so the status line breathes.
 func bookendLines(status *sessionStatus) []string {
 	w := termWidth()
+	// Two rows only: rule + status. The blank that gives the footer breathing
+	// room is painted ABOVE it by compose()'s pre-seal blank, not between the
+	// rule and the status text.
 	return []string{
 		term.Dim(status.ruleLine(w, "")),
-		"",
 		term.Dim(status.statusLine(w, false)),
 	}
 }

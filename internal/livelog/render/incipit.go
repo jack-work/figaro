@@ -95,6 +95,17 @@ func (i *Incipit) Seal(m aria.Message) {
 		b.WriteString(r)
 		b.WriteString("\r\n")
 	}
+	// Trailing separator: the same rule/bookend compose() paints, so a message
+	// printed fresh (a committed frame that never had a live region — e.g. a
+	// user prompt) is still closed off from what follows.
+	if seal := i.seal(m.Role); len(seal) > 0 {
+		w, _ := i.term.Size()
+		b.WriteString("\r\n")
+		for _, s := range seal {
+			b.WriteString(clip(s, w))
+			b.WriteString("\r\n")
+		}
+	}
 	io.WriteString(i.term, b.String())
 }
 
