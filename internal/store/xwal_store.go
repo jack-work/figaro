@@ -71,9 +71,8 @@ func hexTrunkID() string {
 }
 
 const (
-	chanIR           = "ir"
-	chanChalkboard   = "chalkboard"
-	reducerJSONMerge = "jsonmerge"
+	chanIR         = "ir"
+	chanChalkboard = "chalkboard"
 
 	keyLoadoutName = "system.loadout_name"
 	keyLoadoutVer  = "system.loadout_version"
@@ -108,35 +107,36 @@ func chalkboardReduce(state, patch []byte) ([]byte, error) {
 	return json.Marshal(snap.Apply(p))
 }
 
-func storeConfig() xwal.Config {
+func storeOptions() xwal.StoreOptions {
 	// The root genesis is a figaro RoleGenesis message (filtered from
 	// rendering/context) — not figwal's generic marker, which would read back
 	// as an empty-role message in the IR.
 	genesis, _ := json.Marshal(message.Message{Role: message.RoleGenesis})
-	return xwal.Config{
+	return xwal.StoreOptions{
 		Main:        chanIR,
 		Codec:       "jsonl",
 		Genesis:     genesis,
 		MintTrunkID: hexTrunkID,
-		Registry: map[string]xwal.Reducer{
-			reducerJSONMerge: {Reduce: chalkboardReduce, Initial: []byte("{}")},
+		Reducers: map[string]xwal.Reducer{
+			chanChalkboard: {Reduce: chalkboardReduce, Initial: []byte("{}")},
 		},
-		Channels: []xwal.ChannelSpec{
-			{Name: chanIR, Kind: xwal.ChannelLog},
-			{Name: chanChalkboard, Kind: xwal.ChannelReducible, Reducer: reducerJSONMerge},
+		Opaque: []string{
+			transChannel("anthropic"),
+			transChannel("copilot-messages"),
+			transChannel("copilot-responses"),
 		},
 	}
 }
 
-// XwalStore owns the aria tree (policy over xwal.Trunks).
+// XwalStore owns the aria tree (policy over xwal.Store, whose flusher
+// owns all durability: appends are memory-first, disk follows with
+// bounded lag, Kick expedites).
 type XwalStore struct {
-	root             string
-	cfg              xwal.Config
-	mu               sync.Mutex
-	trunks           *xwal.Trunks
-	topology         atomic.Pointer[topologySnapshot]
-	translationReady map[string]bool
-	now              func() int64
+	root     string
+	mu       sync.Mutex
+	trunks   *xwal.Store
+	topology atomic.Pointer[topologySnapshot]
+	now      func() int64
 }
 
 type topologySnapshot struct {
@@ -155,41 +155,14 @@ func OpenXwalStore(root string) (*XwalStore, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
-	s := &XwalStore{
-		root: root, cfg: storeConfig(), translationReady: map[string]bool{},
-		now: func() int64 { return time.Now().UnixMilli() },
-	}
-	tr, err := xwal.OpenTrunks(root, s.cfg)
+	st, err := xwal.OpenStore(root, storeOptions())
 	if err != nil {
-		// Not initialized yet: create the genesis root.
-		tr, cerr := xwal.CreateTrunks(root, s.cfg)
-		if cerr != nil {
-			return nil, cerr
-		}
-		s.trunks = tr
-		return s, nil
+		return nil, err
 	}
-	s.trunks = tr
-	return s, nil
-}
-
-func (s *XwalStore) ensureChannel(spec xwal.ChannelSpec) error {
-	return s.trunks.EnsureChannel(spec)
-}
-
-func (s *XwalStore) ensureOpaqueTranslationChannel(name string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.translationReady[name] {
-		return nil
-	}
-	if err := s.trunks.EnsureChannel(xwal.ChannelSpec{
-		Name: name, Kind: xwal.ChannelLog, SyncMode: xwal.SyncManual, Opaque: true,
-	}); err != nil {
-		return err
-	}
-	s.translationReady[name] = true
-	return nil
+	return &XwalStore{
+		root: root, trunks: st,
+		now: func() int64 { return time.Now().UnixMilli() },
+	}, nil
 }
 
 // OpenNode opens the xwal for an aria id (the trunk's live head). Caller
@@ -328,8 +301,13 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 		patch = *cbPatch
 	}
 	pb, _ := json.Marshal(patch)
-	_, err = x.Append(chanChalkboard, glt, pb, nil)
-	return err
+	if _, err = x.Append(chanChalkboard, glt, pb, nil); err != nil {
+		return err
+	}
+	// Birth records must be durable before conversations spawn under the
+	// stump — a crash between spawn and the next flush would orphan the
+	// children's fork base.
+	return x.FlushCoherent()
 }
 
 // contentVersion is the value-stable content hash of a loadout patch.

@@ -76,6 +76,16 @@ Recv → synchronize → dispatch
 
 `synchronize` is the sole owner of bidirectional translator orchestration. `startLLMStream` just projects `translator.Durable()` to `[][]json.RawMessage` and hands it to `Provider.Send`; the provider assembles the request body internally.
 
+## Durability and the ack contract
+
+The store is memory-first: appends land in RAM and return; a background
+flusher persists lineage-coherent cuts every FlushInterval (1s), bounded
+in bytes by MaxUnflushedBytes. A client ack (including the rendered echo
+of a user prompt) therefore precedes durability by up to the flush lag;
+user tics call Kick to expedite the next flush but do not wait for it.
+Cooperative shutdown (drain + Close) loses nothing; a hard crash loses at
+most the flush lag plus the in-flight partial stream.
+
 ## In-progress turn durability
 
 In-progress turn state is memory-only (`turnState` in turn_seal.go): the IR

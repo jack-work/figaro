@@ -18,7 +18,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figwal/xwal"
 )
 
 var _ Backend = (*XwalBackend)(nil)
@@ -114,9 +113,6 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	}
 	b.mu.Unlock()
 	ch := transChannel(providerName)
-	if err := b.store.ensureOpaqueTranslationChannel(ch); err != nil {
-		return nil, err
-	}
 	c := newCachedLog[[]json.RawMessage](newXwalLog[[]json.RawMessage](b.store, ariaID, ch, false))
 	b.mu.Lock()
 	if existing := h.trans[providerName]; existing != nil {
@@ -128,13 +124,7 @@ func (b *XwalBackend) OpenTranslation(ariaID, providerName string) (Log[[]json.R
 	return c, nil
 }
 
-func (b *XwalBackend) SyncTranslation(ariaID, providerName string) error {
-	return b.store.trunks.SyncChannel(ariaID, transChannel(providerName))
-}
-
-func (b *XwalBackend) ensureChannel(spec xwal.ChannelSpec) error {
-	return b.store.ensureChannel(spec)
-}
+func (b *XwalBackend) Kick() { b.store.trunks.Kick() }
 
 // ---- chalkboard (re-derived via StateAt; mutation appends a patch) ----
 
@@ -243,7 +233,9 @@ func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) error 
 	// Pass mainLT=0 to let Trunks compute (mainTail+1) internally; the
 	// chalkboard channel is reducible/keyed-forward and the default
 	// "one ahead" semantics match the previous channelLast+1 behavior.
-	_, err := b.store.trunks.AppendChannel(ariaID, chanChalkboard, 0, pb, nil)
+	// Store.Append (not Trunks.AppendChannel): the poison gate and
+	// dirty/touch tracking must see chalkboard writes.
+	_, err := b.store.trunks.Append(ariaID, chanChalkboard, 0, pb, nil)
 	if err != nil {
 		return err
 	}

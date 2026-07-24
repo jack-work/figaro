@@ -3,6 +3,7 @@ package figaro_test
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -920,6 +921,32 @@ func TestAgent_PersistenceKillFlushes(t *testing.T) {
 	}
 done:
 	a.Kill()
+	// Flusher persistence, not Close-drain, is what this test pins:
+	// kick and poll the IR segment bytes on disk before any Close.
+	backend.Kick()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		found := false
+		filepath.WalkDir(filepath.Join(storeDir, "ir"), func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
+				return nil
+			}
+			if raw, rerr := os.ReadFile(path); rerr == nil && strings.Contains(string(raw), "will be saved") {
+				found = true
+			}
+			return nil
+		})
+		if found {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("assistant turn never flushed to disk")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	// Single-writer flock: the first backend must close (draining its
+	// flusher) before a second may open the same store.
+	require.NoError(t, backend.Close())
 
 	// Re-open a fresh backend on the same dir: the turn is on disk.
 	b2, err := store.NewXwalBackend(storeDir)
