@@ -526,7 +526,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 	defer fcli.Close()
 
-	if _, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard()); qerr != nil {
+	if _, _, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard()); qerr != nil {
 		die("prompt: %s", qerr)
 	}
 	if opts.json {

@@ -190,6 +190,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// Live keybindings. MakeRaw disables signal generation, so Ctrl-C (0x03) and
 	// Ctrl-D (0x04) arrive as input BYTES (portable, and identical in incipit and
 	// transcript) — the input loop owns them, not a SIGINT handler.
+	var in *interactiveInput
 	if tc.IsTTY() {
 		if restore, err := tc.MakeRaw(); err == nil {
 			defer restore()
@@ -198,7 +199,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			// Belt-and-braces: always disable mouse reporting on exit so a crash
 			// mid-pager can't leave the shell spewing raw \x1b[<…M.
 			defer os.Stdout.WriteString(ldmouse.Disable)
-			in := &interactiveInput{
+			in = &interactiveInput{
 				tc: tc, lt: lt, fcli: fcli, mu: &mu, set: &set,
 				figaroID: figaroID, listen: &listen, cancel: cancel, disconnectCh: disconnectCh,
 			}
@@ -209,15 +210,25 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		}
 	}
 
-	cursor, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard())
+	cursor, active, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard())
 	if qerr != nil {
 		die("prompt: %s", qerr)
 	}
 	mu.Lock()
 	sendCursor = cursor
 	lt.status.beginTurn()
-	lt.armThinking()
 	mu.Unlock()
+	// Joining an already-running turn: the inline renderer can't cleanly paint a
+	// turn already in progress (partial state, mid-stream). Drop into the
+	// transcript pager on the last page — consistent scrollback, no glitch. A
+	// fresh turn (idle aria) stays inline with the thinking footer.
+	if active && in != nil {
+		in.enterTranscript()
+	} else {
+		mu.Lock()
+		lt.armThinking()
+		mu.Unlock()
+	}
 
 	select {
 	case <-doneCh:

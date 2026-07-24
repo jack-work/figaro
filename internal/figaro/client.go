@@ -30,10 +30,10 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 
 // Qua sends a prompt and returns the cursor (highest committed figaro LT at
 // accept time) to stream from. The reply streams as figaro.aria notifications.
-func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) (int, error) {
+func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) (int, bool, error) {
 	var resp rpc.QuaResponse
 	err := c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, &resp)
-	return resp.Cursor, err
+	return resp.Cursor, resp.Active, err
 }
 
 // Read pulls one aria read caught up from sinceLT (the catch-up half of the

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -77,13 +78,13 @@ type Config struct {
 
 // Agent is the Figaro implementation.
 type Agent struct {
-	id          string
-	socketPath  string
-	prov        provider.Provider
-	outfitter   *outfit.Outfitter
-	tools       *tool.Registry
-	summarize   compose.ToolSummary
-	previewArg  compose.ToolPreviewArg
+	id         string
+	socketPath string
+	prov       provider.Provider
+	outfitter  *outfit.Outfitter
+	tools      *tool.Registry
+	summarize  compose.ToolSummary
+	previewArg compose.ToolPreviewArg
 	inlineBoot *chalkboard.Patch // ephemeral first-turn boot fold
 	figLog     store.Log[message.Message]
 	backend    store.Backend // nil = ephemeral
@@ -94,6 +95,7 @@ type Agent struct {
 	// Turn state. Guarded by mu for Interrupt().
 	turnCtx     context.Context
 	turnCancel  context.CancelFunc
+	turnRunning atomic.Bool // mirrors turnCancel != nil; lock-free point-in-time read
 	interrupted bool
 
 	mu   sync.RWMutex
@@ -411,6 +413,13 @@ func (a *Agent) QueuedPrompts() []rpc.QueuedPrompt {
 		out = append(out, rpc.QueuedPrompt{Text: t})
 	}
 	return out
+}
+
+// turnActive reports whether a turn is in flight (a prompt submitted now would
+// queue/steer rather than start fresh). Lock-free: it's a point-in-time read
+// needing no consistency with other a.mu-guarded state.
+func (a *Agent) turnActive() bool {
+	return a.turnRunning.Load()
 }
 
 // Interrupt aborts the current turn. Idempotent when idle.

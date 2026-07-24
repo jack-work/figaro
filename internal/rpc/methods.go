@@ -101,6 +101,11 @@ type QuaResponse struct {
 	// own turn, or the live turn it steers) arrives as updates, and the stream
 	// ends on the turn.done that reports the agent idle.
 	Cursor int `json:"cursor"`
+	// Active reports whether a turn was already in flight when the prompt was
+	// accepted (it queued/steers rather than starting fresh). The client uses
+	// this to open the transcript pager immediately on the last page rather
+	// than trying to render an already-in-progress turn inline.
+	Active bool `json:"active,omitempty"`
 }
 
 type InterruptRequest struct{}

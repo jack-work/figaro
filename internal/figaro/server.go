@@ -48,8 +48,9 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 			return nil, err
 		}
 		cursor := a.ariaSrv.LastCommittedLT()
+		active := a.turnActive()
 		a.SubmitPrompt(req)
-		return rpc.QuaResponse{OK: true, Cursor: cursor}, nil
+		return rpc.QuaResponse{OK: true, Cursor: cursor, Active: active}, nil
 
 	case rpc.MethodContext:
 		msgs := a.Context()

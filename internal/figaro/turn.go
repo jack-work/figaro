@@ -144,11 +144,13 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	a.turnCancel = cancel
 	a.interrupted = false
 	a.mu.Unlock()
+	a.turnRunning.Store(true)
 	defer func() {
 		a.mu.Lock()
 		a.turnCtx = nil
 		a.turnCancel = nil
 		a.mu.Unlock()
+		a.turnRunning.Store(false)
 		cancel()
 	}()
 
