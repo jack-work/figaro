@@ -383,13 +383,46 @@ func (t *transcript) ensureSelectionVisible() {
 	}
 }
 
+// decorateNodeRow paints a single transcript row with its selection cue. The
+// left indicator is one column (down from two): a slim vertical bar for
+// selected rows (bright cyan on the focused row, plain cyan on the rest of
+// the range) and a single space otherwise. Selected rows also get a subtle
+// background wash so the extent of a multi-block selection is visible without
+// relying on a wide gutter.
+//
+// Background painting has two subtleties. First, any `\x1b[0m` inside the
+// row resets ALL SGR — including our background — so every reset in the
+// content is re-emitted with the background restored. Second, the paint loop
+// erases the line with the terminal's default background BEFORE writing the
+// row, so we trail with `\x1b[K` (erase-to-end at the current, i.e. selected,
+// background) to extend the wash to the right edge. A final `\x1b[0m` clears
+// everything before the next row begins.
 func decorateNodeRow(row string, mark selectionMark, width int) string {
-	gutter := "  "
-	switch {
-	case mark.active:
-		gutter = term.Cyan("▸ ")
-	case mark.selected:
-		gutter = term.Cyan("│ ")
+	if width < 2 {
+		width = 2
 	}
-	return gutter + clipToWidth(row, width-2)
+	body := clipToWidth(row, width-1)
+	if !mark.selected && !mark.active {
+		return " " + body
+	}
+	const (
+		reset      = "\x1b[0m"
+		bgSelect   = "\x1b[48;5;238m" // subtle dark gray wash (xterm 256-color)
+		gutterSel  = "\x1b[36m▎"      // cyan slim bar for range members
+		gutterFocs = "\x1b[1;96m▎"    // bright bold cyan bar for focused node
+	)
+	if !term.Enabled() {
+		if mark.active {
+			return "▎" + body
+		}
+		return "▎" + body
+	}
+	gutter := gutterSel
+	if mark.active {
+		gutter = gutterFocs
+	}
+	// Re-emit the background after every reset in the body so highlighting
+	// survives inline styling (dim, cyan, etc. inside a rendered node).
+	body = strings.ReplaceAll(body, reset, reset+bgSelect)
+	return bgSelect + gutter + reset + bgSelect + body + "\x1b[K" + reset
 }
