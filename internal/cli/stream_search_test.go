@@ -9,6 +9,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/rpc"
 )
 
 func TestHistoricalSearchExitCancelsSlowRead(t *testing.T) {
@@ -149,6 +150,10 @@ func (r *blockingTranscriptReader) ReadBefore(ctx context.Context, _, _ int) (ar
 	return aria.AriaRead{}, ctx.Err()
 }
 
+func (r *blockingTranscriptReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
+	return &rpc.QueuedResponse{}, nil
+}
+
 type gatedHistoryReader struct {
 	history []aria.Committed
 	started chan struct{}
@@ -158,6 +163,10 @@ type gatedHistoryReader struct {
 
 func (r *gatedHistoryReader) Read(context.Context, int) (aria.AriaRead, error) {
 	return aria.AriaRead{}, nil
+}
+
+func (r *gatedHistoryReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
+	return &rpc.QueuedResponse{}, nil
 }
 
 func (r *gatedHistoryReader) ReadBefore(ctx context.Context, before, limit int) (aria.AriaRead, error) {
@@ -193,6 +202,10 @@ func newDelayedTranscriptReader() *delayedTranscriptReader {
 
 func (r *delayedTranscriptReader) Read(context.Context, int) (aria.AriaRead, error) {
 	return aria.AriaRead{}, nil
+}
+
+func (r *delayedTranscriptReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
+	return &rpc.QueuedResponse{}, nil
 }
 
 func (r *delayedTranscriptReader) ReadBefore(ctx context.Context, before, limit int) (aria.AriaRead, error) {

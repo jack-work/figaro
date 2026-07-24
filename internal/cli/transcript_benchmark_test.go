@@ -10,6 +10,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/rpc"
 )
 
 func benchmarkTranscript(b *testing.B, messages int, nodes []livedoc.Node) (*transcript, *aria.Client) {
@@ -259,4 +260,8 @@ func (r *benchmarkSearchReader) ReadBefore(ctx context.Context, _, _ int) (aria.
 	<-ctx.Done()
 	r.canceled <- struct{}{}
 	return aria.AriaRead{}, ctx.Err()
+}
+
+func (r *benchmarkSearchReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
+	return &rpc.QueuedResponse{}, nil
 }

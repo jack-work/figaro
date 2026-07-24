@@ -172,3 +172,25 @@ func TestInbox_ContextCancelCloses(t *testing.T) {
 		t.Fatal("Recv should have unblocked after context cancel")
 	}
 }
+
+func TestInbox_SnapshotUserPromptsFIFOAndReadOnly(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := NewInbox(ctx)
+
+	// A pure-chalkboard prompt (empty text) is a carrier, not a message —
+	// the snapshot omits it. Non-prompt events (Set, Fork) are also skipped.
+	b.Send(event{typ: eventUserPrompt, text: "first"})
+	b.Send(event{typ: eventSet})
+	b.Send(event{typ: eventUserPrompt, text: ""}) // carrier
+	b.Send(event{typ: eventUserPrompt, text: "second"})
+	b.Send(event{typ: eventFork})
+
+	snap := b.SnapshotUserPrompts()
+	require.Equal(t, []string{"first", "second"}, snap)
+
+	// Read-only: the inbox is unchanged after a snapshot.
+	assert.False(t, b.IsIdle())
+	snap2 := b.SnapshotUserPrompts()
+	require.Equal(t, snap, snap2)
+}

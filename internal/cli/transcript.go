@@ -35,11 +35,15 @@ type transcript struct {
 	client *aria.Client
 	status *sessionStatus
 
-	active     bool
-	showHelp   bool // '?': the footer grows into a key-reference panel
-	showStatus bool // '!': the footer grows into the figaro-status panel
-	w, h       int
-	tick       int
+	active      bool
+	showHelp    bool // '?': the footer grows into a key-reference panel
+	showStatus  bool // '!': the footer grows into the figaro-status panel
+	showQueued  bool // 'Q': the footer grows into the queued-prompts panel
+	queuedList  []string
+	queuedErr   string
+	queuedFetch func() // async refresh of the queued snapshot; set by the input loop
+	w, h        int
+	tick        int
 
 	prev   []string // last painted screen (full-frame diff)
 	lineLT []int    // LT owning each line of lines(), for resize anchoring
@@ -615,8 +619,10 @@ func (t *transcript) render() {
 		foot = t.helpLines()
 	} else if t.showStatus {
 		foot = t.statusPanelLines()
+	} else if t.showQueued {
+		foot = t.queuedPanelLines()
 	}
-	body := t.h - 2 - len(foot) // bottom rows: panel (if open) + rule + status
+	body := t.h - 3 - len(foot) // bottom rows: panel (if open) + rule + blank + status
 	if body < 1 {
 		body = 1
 	}
@@ -640,12 +646,13 @@ func (t *transcript) render() {
 		}
 	}
 	for k, l := range foot {
-		if r := body + k; r < t.h-2 {
+		if r := body + k; r < t.h-3 {
 			screen[r] = l
 		}
 	}
 	rule, status := t.footerRows(len(all), body)
-	screen[t.h-2] = rule
+	screen[t.h-3] = rule
+	screen[t.h-2] = ""
 	screen[t.h-1] = status
 	t.paint(screen)
 }
@@ -690,6 +697,63 @@ func (t *transcript) statusPanelLines() []string {
 	return rows
 }
 
+// queuedPanelLines is the 'Q' panel: the currently-queued (accepted but not
+// yet started) user prompts, oldest first. The list is a snapshot the input
+// loop refreshes asynchronously via figaro.queued (setting queuedList /
+// queuedErr under the shared render mutex). Purely observational — there is
+// no cancellation surface here.
+func (t *transcript) queuedPanelLines() []string {
+	rows := []string{"", "  queued prompts"}
+	switch {
+	case t.queuedErr != "":
+		rows = append(rows, "  "+t.queuedErr)
+	case len(t.queuedList) == 0:
+		rows = append(rows, "  (none)")
+	default:
+		for i, p := range t.queuedList {
+			head := firstLineTrim(p)
+			rows = append(rows, fmt.Sprintf("  %2d. %s", i+1, head))
+		}
+	}
+	if max := t.h - 4; len(rows) > max && max > 0 {
+		rows = rows[:max]
+	}
+	for i, r := range rows {
+		rows[i] = "\x1b[2m" + clipToWidth(r, t.w) + "\x1b[0m"
+	}
+	return rows
+}
+
+// firstLineTrim returns the first non-empty line of s with surrounding
+// whitespace trimmed — the panel needs one line per queued prompt so the
+// list stays scannable.
+func firstLineTrim(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+// openQueuedPanel marks the queued-prompts panel visible and (if wired) kicks
+// an async refresh. The stale snapshot renders immediately so the user sees
+// something even if the RPC lags; the refresh replaces it in place.
+func (t *transcript) openQueuedPanel() {
+	t.showQueued = true
+	if t.queuedFetch != nil {
+		t.queuedFetch()
+	}
+}
+
+// setQueued updates the panel's cached snapshot. Called by the input loop
+// under the shared render mutex from the fetch goroutine's completion.
+func (t *transcript) setQueued(prompts []string, errMsg string) {
+	t.queuedList = prompts
+	t.queuedErr = errMsg
+}
+
 // helpLines is the '?' panel: the footer grown upward into a key reference,
 // drawn above the footer while output keeps streaming past above it. Any key
 // wipes it. (Deliberately a bottom panel, not a floating overlay: the terminal
@@ -711,6 +775,7 @@ func (t *transcript) helpLines() []string {
 		"  ^L                  listen — stay open after the turn ends",
 		"  q / ^D              detach; the turn keeps running",
 		"  !                   figaro status panel",
+		"  Q                   queued prompts panel",
 		"  ?                   close help",
 	}
 	if v := helpVersionLine(); v != "" {
@@ -751,21 +816,33 @@ func (t *transcript) key(b byte) {
 		t.render()
 		return
 	}
-	if t.showHelp || t.showStatus { // any key wipes the panel; nav keys also still act below
+	if t.showHelp || t.showStatus || t.showQueued { // any key wipes the panel; nav keys also still act below
 		reopen := byte(0)
-		if t.showHelp && b == '!' {
+		switch {
+		case t.showHelp && b == '!':
 			reopen = '!' // switch panels directly
-		}
-		if t.showStatus && b == '?' {
+		case t.showHelp && b == 'Q':
+			reopen = 'Q'
+		case t.showStatus && b == '?':
 			reopen = '?'
+		case t.showStatus && b == 'Q':
+			reopen = 'Q'
+		case t.showQueued && b == '?':
+			reopen = '?'
+		case t.showQueued && b == '!':
+			reopen = '!'
 		}
-		t.showHelp, t.showStatus = false, false
+		t.showHelp, t.showStatus, t.showQueued = false, false, false
 		switch {
 		case reopen == '!':
 			t.showStatus = true
 		case reopen == '?':
 			t.showHelp = true
-		case b == '?' || b == '!' || b == 0x1b:
+		case reopen == 'Q':
+			t.openQueuedPanel()
+			t.render()
+			return
+		case b == '?' || b == '!' || b == 'Q' || b == 0x1b:
 			t.render()
 			return
 		}
@@ -810,6 +887,8 @@ func (t *transcript) key(b byte) {
 		t.showHelp = true
 	case '!':
 		t.showStatus = true
+	case 'Q':
+		t.openQueuedPanel()
 	case 0x0e: // Ctrl-N
 		t.selectNode(1, false)
 	case 0x10: // Ctrl-P

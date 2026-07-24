@@ -95,6 +95,17 @@ func (c *Client) Chalkboard(ctx context.Context) (*rpc.ChalkboardResponse, error
 	return &resp, nil
 }
 
+// Queued returns the aria's currently-queued user prompts (accepted by the
+// inbox, not yet drained). Read-only — there is no cancellation surface at
+// this layer.
+func (c *Client) Queued(ctx context.Context) (*rpc.QueuedResponse, error) {
+	var resp rpc.QueuedResponse
+	if err := c.cli.Call(ctx, rpc.MethodQueued, rpc.QueuedRequest{}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // Close closes the connection.
 func (c *Client) Close() error {
 	return c.cli.Close()

@@ -330,6 +330,17 @@ func (t *livelogTurn) transcriptPageFailed() {
 	t.tr.render()
 }
 
+// setQueuedFetch wires the transcript's async refresh callback (used when the
+// queued-prompts panel opens). Wiring happens the first time the pager enters,
+// not at construction, so the input loop — which owns the RPC client — can
+// hand it in without a cyclic dependency at newLivelogTurn time.
+func (t *livelogTurn) setQueuedFetch(fn func()) { t.tr.queuedFetch = fn }
+
+// setTranscriptQueued updates the queued-prompts panel snapshot.
+func (t *livelogTurn) setTranscriptQueued(prompts []string, errMsg string) {
+	t.tr.setQueued(prompts, errMsg)
+}
+
 // ariaView renders a block by reusing figaro's existing node renderers, so
 // inline and transcript draw identically. One representation: livedoc.Node.
 type ariaView struct{ settings *renderSettings }

@@ -234,11 +234,13 @@ func formatTokenCount(tokens int) string {
 
 // bookendLines is the incipit seal / live-region bookend: the same two-row
 // footer the transcript pins (rule + status text), minus the key hints —
-// they'd be dead text once sealed into scrollback.
+// they'd be dead text once sealed into scrollback. A blank row sits between
+// the rule and the status text so the status line breathes.
 func bookendLines(status *sessionStatus) []string {
 	w := termWidth()
 	return []string{
 		term.Dim(status.ruleLine(w, "")),
+		"",
 		term.Dim(status.statusLine(w, false)),
 	}
 }

@@ -7,9 +7,11 @@ import "github.com/jack-work/figaro/internal/term"
 // every view (inline, transcript, show). An empty string disables the
 // header for a given role.
 //
-// Convention:
+// Convention (all dim so the block visually coheres with the rest of
+// the app — the transcript rule, the assistant bookend, and the
+// steering gutter all live in the same tonal register):
 //
-//	"user"      → "❯ you"     (bright cyan — your voice)
+//	"user"      → "❯ you"     (dim — your voice)
 //	"assistant" → "‹ figaro"  (dim — the agent's voice)
 //	anything else (e.g. "system", "tool") → no header
 //
@@ -19,7 +21,7 @@ import "github.com/jack-work/figaro/internal/term"
 func messageHeader(role string) string {
 	switch role {
 	case "user":
-		return term.Cyan("❯ you")
+		return term.Dim("❯ you")
 	case "assistant":
 		return term.Dim("‹ figaro")
 	default:
