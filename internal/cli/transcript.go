@@ -25,9 +25,10 @@ const (
 // without retaining or re-rendering the whole aria. At the bottom it follows
 // the shared client's live tail; otherwise it holds the current page window.
 //
-// Keys: j/k line, u/d half-page, gg/G top/bottom, / literal search, ? help
-// panel. Exit is Ctrl-D/Ctrl-C at the input loop. Not safe for concurrent use;
-// the caller serializes all entry points.
+// Keys: j/k line, u/d half-page, gg/G top/bottom, / literal search, n/N
+// next/prev match, y copy selection (or aria id when nothing is selected),
+// ? help panel. Exit is Ctrl-D/Ctrl-C at the input loop. Not safe for
+// concurrent use; the caller serializes all entry points.
 type transcript struct {
 	out    io.Writer
 	view   ldrender.NodeView
@@ -46,8 +47,9 @@ type transcript struct {
 	follow bool     // stick to the bottom on new content
 	pendG  bool     // saw one 'g' (for gg)
 
-	inSearch bool
-	query    string
+	inSearch   bool
+	query      string
+	matchQuery string // persistent query: highlights + n/N target
 
 	// Lazy history paging: the pager opens on the recent window and pulls older
 	// messages via keyset ReadBefore only when you scroll near the top ("like
@@ -127,7 +129,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 // row — which reads as the status line "eating" the line above it.
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
-	t.pendG, t.inSearch, t.query = false, false, ""
+	t.pendG, t.inSearch, t.query, t.matchQuery = false, false, "", ""
 	t.resetToTail()
 	io.WriteString(t.out, altScreenOn+autowrapOff+ldmouse.Enable+cursorHide+"\x1b[2J")
 	t.render()
@@ -517,6 +519,7 @@ func (t *transcript) lines() []string {
 		t.cacheW = t.w
 	}
 	marks := t.selectionMarks()
+	hl := t.activeHighlight()
 	var out []string
 	var lts []int // LT owning each line (0 for separator rules), parallel to out
 	t.nodeRows = map[nodeRef]nodeSpan{}
@@ -535,6 +538,9 @@ func (t *transcript) lines() []string {
 				}
 				span.last = len(out)
 				t.nodeRows[r.ref] = span
+			}
+			if hl != "" {
+				line = highlightMatches(line, hl)
 			}
 			out = append(out, line)
 			lts = append(lts, lt)
@@ -693,8 +699,9 @@ func (t *transcript) helpLines() []string {
 	rows := []string{
 		"",
 		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",
-		"  /                   search (Enter jump · Esc cancel)",
-		"  y                   copy aria id",
+		"  /                   search (Enter jump · Esc cancel typing)",
+		"  n / N               next / previous match",
+		"  y                   copy selection (or aria id if none)",
 		"  ^O                  toggle verbose tool output",
 		"  ^N/^P               select next/previous node",
 		"  ^N/^P + Shift       extend node selection (Alt+^N/^P fallback)",
@@ -794,6 +801,10 @@ func (t *transcript) key(b byte) {
 		}
 	case '/':
 		t.inSearch, t.query = true, ""
+	case 'n':
+		t.findRepeat(1)
+	case 'N':
+		t.findRepeat(-1)
 	case '?':
 		t.showHelp = true
 	case '!':
@@ -813,8 +824,9 @@ func (t *transcript) searchKey(b byte) {
 	switch b {
 	case 0x0d, 0x0a: // Enter → jump to first match
 		t.inSearch = false
+		t.matchQuery = t.query
 		t.find(t.query)
-	case 0x1b: // Esc → cancel
+	case 0x1b: // Esc → cancel typing (keeps existing highlights)
 		t.inSearch, t.query = false, ""
 	case 0x7f, 0x08: // backspace
 		if len(t.query) > 0 {
@@ -832,6 +844,7 @@ func (t *transcript) find(q string) {
 	if q == "" {
 		return
 	}
+	t.matchQuery = q
 	all := t.lines()
 	if len(all) == 0 {
 		return
@@ -857,6 +870,137 @@ func (t *transcript) find(q string) {
 	} else {
 		t.checkOlder = true
 	}
+}
+
+// findRepeat jumps to the next (delta > 0) or previous (delta < 0) match of
+// the persistent matchQuery. Wraps within loaded lines. If nothing matches
+// in-window, falls back to the paged-search worker in the current direction.
+func (t *transcript) findRepeat(delta int) {
+	if t.matchQuery == "" || delta == 0 {
+		return
+	}
+	q := t.matchQuery
+	all := t.lines()
+	if len(all) == 0 {
+		return
+	}
+	start := t.offset + delta
+	for i := 0; i < len(all); i++ {
+		idx := ((start+delta*i)%len(all) + len(all)) % len(all)
+		if searchContains(all[idx], q) {
+			t.offset = idx
+			t.stopFollowing()
+			return
+		}
+	}
+	// Nothing in the loaded window; page in the correct direction.
+	t.search = &transcriptSearch{
+		query: q, pages: append([]transcriptPage(nil), t.pages...),
+		newer: append([]pageDesc(nil), t.newer...), offset: t.offset,
+		follow: t.follow, noMoreOlder: t.noMoreOlder,
+		direction: pageOlder,
+	}
+	t.stopFollowing()
+	if delta > 0 && t.hasNewerHistory() {
+		t.search.direction = pageNewer
+		t.checkNewer = true
+	} else {
+		t.checkOlder = true
+	}
+}
+
+// activeHighlight is what lines() paints as reverse-video match spans:
+// the live query while typing, otherwise the last-executed matchQuery.
+func (t *transcript) activeHighlight() string {
+	if t.inSearch && t.query != "" {
+		return t.query
+	}
+	return t.matchQuery
+}
+
+// highlightMatches wraps every visible occurrence of q in reverse-video (SGR
+// 7/27). ANSI escapes in row are preserved and step over them for matching,
+// so colored/dimmed rows keep their color and pick up the match band on top.
+func highlightMatches(row, q string) string {
+	if q == "" || row == "" {
+		return row
+	}
+	const hlOn, hlOff = "\x1b[7m", "\x1b[27m"
+	if !strings.ContainsRune(row, '\x1b') {
+		if !strings.Contains(row, q) {
+			return row
+		}
+		return strings.ReplaceAll(row, q, hlOn+q+hlOff)
+	}
+	// Slow path: strip ANSI to visible, then re-emit with highlights
+	// spliced at the visible byte positions of matches.
+	var visBuf strings.Builder
+	visBuf.Grow(len(row))
+	for i := 0; i < len(row); {
+		if row[i] == '\x1b' {
+			i = skipANSI(row, i)
+			continue
+		}
+		visBuf.WriteByte(row[i])
+		i++
+	}
+	visible := visBuf.String()
+	if !strings.Contains(visible, q) {
+		return row
+	}
+	next := strings.Index(visible, q)
+	matchEnd := -1
+	vi := 0
+	var b strings.Builder
+	b.Grow(len(row) + 16)
+	for i := 0; i < len(row); {
+		if row[i] == '\x1b' {
+			j := skipANSI(row, i)
+			b.WriteString(row[i:j])
+			i = j
+			continue
+		}
+		if next >= 0 && vi == next {
+			b.WriteString(hlOn)
+			matchEnd = vi + len(q)
+			after := matchEnd
+			if rel := strings.Index(visible[after:], q); rel >= 0 {
+				next = after + rel
+			} else {
+				next = -1
+			}
+		}
+		b.WriteByte(row[i])
+		i++
+		vi++
+		if vi == matchEnd {
+			b.WriteString(hlOff)
+			matchEnd = -1
+		}
+	}
+	return b.String()
+}
+
+// skipANSI advances past a single ANSI escape sequence starting at row[i].
+func skipANSI(row string, i int) int {
+	if i >= len(row) || row[i] != '\x1b' {
+		return i
+	}
+	if i+1 >= len(row) {
+		return len(row)
+	}
+	if row[i+1] == '[' {
+		j := i + 2
+		for j < len(row) {
+			final := row[j]
+			j++
+			if final >= 0x40 && final <= 0x7e {
+				break
+			}
+		}
+		return j
+	}
+	return i + 2
 }
 
 func (t *transcript) findPage(q string, messages []aria.Message) bool {
