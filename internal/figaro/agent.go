@@ -211,7 +211,16 @@ func (a *Agent) newLog() store.Log[message.Message] {
 	}
 	log, err := a.backend.Open(a.id)
 	if err != nil {
-		slog.Warn("backend open (falling back to ephemeral)", "aria", a.id, "err", err)
+		// Falling back to memory here would silently orphan the on-disk
+		// content: subsequent Reads return 0 units and any live-subscribe
+		// stream goes silent (nothing to fan out) until the process is
+		// restarted. That is the exact head/fork-ancestry-resolution
+		// symptom of the interrupted-mid-turn bug. Surface it loudly and
+		// keep the previous log (if any) so we do not wipe state.
+		slog.Error("backend open failed — keeping previous log", "aria", a.id, "err", err)
+		if a.figLog != nil {
+			return a.figLog
+		}
 		return store.NewMemLog[message.Message]()
 	}
 	return log
@@ -576,6 +585,28 @@ func (a *Agent) reconcileAriaServer() {
 	history := make([]aria.Message, len(units))
 	for i, unit := range units {
 		history[i] = aria.Message{LT: i + 1, Role: unit.Role, Nodes: unit.Nodes}
+	}
+	// Defensive: never wipe already-committed state with a shorter/empty
+	// history. reconcileAriaServer is called on mid-turn error paths whose
+	// only source of truth is a.Context() (i.e. the durable figLog). If that
+	// read returns fewer units than what ariaSrv had — e.g. because the
+	// backend transiently failed to open and figLog silently fell back to a
+	// memory log, or a cachedLog was constructed with a stale head/fork
+	// ancestry — replacing closed with the shorter list makes Read return
+	// 0 (or fewer) units and the live-subscribe stream go silent for the
+	// wiped LTs. Keep the known-good state and log loudly instead.
+	if len(history) < int(oldCommitted) {
+		slog.Warn("reconcileAriaServer: refusing to shrink closed history",
+			"aria", a.id,
+			"old_committed", oldCommitted,
+			"new_history", len(history))
+		// Preserve the existing closed history; the caller is unwinding a
+		// failed turn, so drop any open unit (matches Restore's semantics)
+		// but leave clients' committed view intact.
+		if hadOpen {
+			a.ariaSrv.Abandon()
+		}
+		return
 	}
 	a.ariaSrv.Restore(history)
 	a.unitLT = len(history)
