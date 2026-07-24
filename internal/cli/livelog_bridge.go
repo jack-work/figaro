@@ -31,6 +31,7 @@ type livelogTurn struct {
 	pending      *aria.Message
 	finished     bool
 	wantThinking bool // submit accepted: show the thinking footer once the user msg seals
+	thinkingOpen bool // an OpenThinking placeholder is live and not yet adopted
 
 	// lastSealedLT is the highest LT incipit has committed to native scrollback
 	// inline (via Seal). It marks the flush boundary: on leaving the pager,
@@ -77,6 +78,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 			// frame that follows adopts this region in place.
 			if t.wantThinking {
 				t.wantThinking = false
+				t.thinkingOpen = true
 				t.status.beginTurn()
 				t.in.OpenThinking("assistant")
 			}
@@ -89,6 +91,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 			if newOpen {
 				t.finished = false
 			}
+			t.thinkingOpen = false // adopted by real content
 			t.status.beginTurn()
 		}
 		// A turn taller than the viewport can't render inline without scrolling
@@ -204,7 +207,13 @@ func (t *livelogTurn) finishTurn(reason string) {
 	}
 	hadPending := t.pending != nil
 	t.sealPending()
-	if !hadPending && t.openLT != 0 && t.openRole == "assistant" {
+	if t.thinkingOpen {
+		// The turn ended before any assistant content adopted the thinking
+		// placeholder (e.g. an immediate error). Drop it so nothing prints
+		// over the live footer region.
+		t.thinkingOpen = false
+		t.in.AbandonOpen("")
+	} else if !hadPending && t.openLT != 0 && t.openRole == "assistant" {
 		t.in.Open(t.openLT, t.openRole, t.open)
 		if strings.HasPrefix(strings.ToLower(reason), "error:") {
 			t.in.AbandonOpen("")

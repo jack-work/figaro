@@ -1,6 +1,7 @@
 package render
 
 import (
+	"io"
 	"strings"
 	"testing"
 
@@ -128,5 +129,33 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 	}
 	if !strings.Contains(scr, "answer") {
 		t.Fatalf("streamed answer should show:\n%s", scr)
+	}
+}
+
+// A turn that errors before any content adopts the thinking placeholder must
+// tear the footer region down (AbandonOpen) so an error hint printed straight
+// to the terminal afterward lands on clean scrollback — not glued into the
+// live footer rule. Regression for the no-provider scrollback artifact.
+func TestIncipit_ThinkingAbandonedOnEarlyError(t *testing.T) {
+	ft := NewFakeTerminal(60, 20)
+	in := NewIncipit(ft, NodeText{})
+	in.Header = func(role string) string { return "‹ figaro" }
+	in.Bookend = func() []string { return []string{"──── aria xyz ────", "", "status"} }
+
+	in.Seal(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "quick test"}}})
+	in.OpenThinking("assistant") // footer live, no content yet
+	in.AbandonOpen("")           // turn errors immediately -> teardown
+
+	// After teardown the region is released: a direct write (the error hint)
+	// must not overlap the footer rule on any line.
+	io.WriteString(ft, "\r\nNo provider connected\r\n")
+	for _, line := range ft.Screen() {
+		if strings.Contains(line, "aria xyz") && strings.Contains(line, "provider") {
+			t.Fatalf("footer rule glued into the hint line: %q", line)
+		}
+	}
+	scr := strings.Join(ft.Screen(), "\n")
+	if !strings.Contains(scr, "No provider connected") {
+		t.Fatalf("hint should print cleanly:\n%s", scr)
 	}
 }

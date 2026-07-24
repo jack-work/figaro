@@ -100,13 +100,6 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			var d rpc.DoneEntry
 			_ = json.Unmarshal(params, &d)
 			isErr := strings.HasPrefix(d.Reason, "error:")
-			if isErr {
-				if strings.Contains(d.Reason, "no credential") || strings.Contains(d.Reason, "resolve token") {
-					fmt.Fprint(os.Stderr, "\n"+providerSetupHint())
-				} else {
-					fmt.Fprintln(os.Stderr, "\n"+d.Reason)
-				}
-			}
 			// Settle when the agent reports idle (inbox empty, no turn running):
 			// a turn that ended with our steer still queued reports idle=false,
 			// so we correctly wait for our own turn. A daemon predating the idle
@@ -118,7 +111,17 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			// via async desync recovery AFTER this one-shot turn.done, which
 			// would strand us and hang the command.
 			idle := d.Idle == nil || *d.Idle
+			// Tear the live region (incl. an un-adopted thinking footer) down
+			// FIRST, so an error hint printed straight to the terminal lands on
+			// clean scrollback below it, not over the footer.
 			lt.finishTurn(d.Reason)
+			if isErr {
+				if strings.Contains(d.Reason, "no credential") || strings.Contains(d.Reason, "resolve token") {
+					fmt.Fprint(os.Stderr, "\n"+providerSetupHint())
+				} else {
+					fmt.Fprintln(os.Stderr, "\n"+d.Reason)
+				}
+			}
 			settled := sendCursor >= 0 && idle
 			if !settled {
 				break
