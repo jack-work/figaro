@@ -22,6 +22,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 // --- Mock provider ---
@@ -256,6 +257,7 @@ func newTestAgent(response string) *figaro.Agent {
 		"system.max_tokens": json.RawMessage(`1024`),
 	}})
 	return figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "test-001",
 		SocketPath: "/tmp/test-figaro.sock",
 		Provider:   &mockProvider{response: response},
@@ -277,6 +279,7 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	lastActive := time.UnixMilli(2_000)
 
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         id,
 		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
 		Provider:   &mockProvider{},
@@ -409,6 +412,7 @@ func TestAgentContextMetricsTrackCurrentSession(t *testing.T) {
 		"mantra":       json.RawMessage(`"keep session accounting visible"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "metrics-001",
 		SocketPath: "/tmp/metrics-test.sock",
 		Provider:   metricsProvider{},
@@ -455,6 +459,7 @@ func TestAgentFirstLiveFrameUsesResolvedContextLimit(t *testing.T) {
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "late-limit-001",
 		SocketPath: "/tmp/late-limit-test.sock",
 		Provider:   &lateLimitProvider{},
@@ -581,6 +586,7 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 
 	// Use a provider that echoes the prompt (via the messages).
 	a = figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "fifo-test",
 		SocketPath: "/tmp/test-fifo.sock",
 		Provider:   &mockProvider{response: "ok"},
@@ -702,6 +708,7 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	prov := &panicProvider{panicCount: 1, response: "recovered"}
 
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "panic-test",
 		SocketPath: "/tmp/panic-test.sock",
 		Provider:   prov,
@@ -763,6 +770,7 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 	prov := &panicProvider{panicCount: 1, response: "ok"}
 
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "panic-ctx-test",
 		SocketPath: "/tmp/panic-ctx-test.sock",
 		Provider:   prov,
@@ -819,6 +827,7 @@ func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 	backend, conv := backedConv(t, storeDir)
 
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         conv,
 		SocketPath: "/tmp/persist-test.sock",
 		Provider:   &mockProvider{response: "persisted reply"},
@@ -858,6 +867,7 @@ func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 	backend, conv := backedConv(t, storeDir)
 
 	a1 := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         conv,
 		SocketPath: "/tmp/restore-test.sock",
 		Provider:   &mockProvider{response: "first reply"},
@@ -883,6 +893,7 @@ firstDone:
 
 	// Second agent with the same conversation id + backend — restores.
 	a2 := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         conv,
 		SocketPath: "/tmp/restore-test2.sock",
 		Provider:   &mockProvider{response: "second reply"},
@@ -901,6 +912,7 @@ func TestAgent_PersistenceKillFlushes(t *testing.T) {
 	backend, conv := backedConv(t, storeDir)
 
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         conv,
 		SocketPath: "/tmp/killflush-test.sock",
 		Provider:   &mockProvider{response: "will be saved"},
@@ -989,6 +1001,7 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 
 	// Boot an agent on the same conversation; NewAgent runs boot repair.
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         conv,
 		SocketPath: "/tmp/danglingboot-test.sock",
 		Provider:   &mockProvider{response: "ignored"},
@@ -1011,6 +1024,7 @@ func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "ephemeral-001",
 		SocketPath: "/tmp/ephemeral-test.sock",
 		Provider:   &mockProvider{response: "gone"},
@@ -1068,6 +1082,7 @@ func (s *slowProvider) Send(ctx context.Context, _ provider.SendInput, bus provi
 func TestAgent_Interrupt(t *testing.T) {
 	started := make(chan struct{})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "interrupt-001",
 		SocketPath: "/tmp/interrupt-test.sock",
 		Provider:   &slowProvider{started: started},
@@ -1119,6 +1134,7 @@ loop:
 func TestAgentInfoReportsRunningTurnActive(t *testing.T) {
 	started := make(chan struct{})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "active-001",
 		SocketPath: "/tmp/active-test.sock",
 		Provider:   &slowProvider{started: started},
@@ -1173,6 +1189,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		"system.max_tokens": json.RawMessage(`1024`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         id,
 		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
 		Provider:   &streamingMockProvider{response: "ALPHA"},
@@ -1348,6 +1365,7 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 		"system.max_tokens": json.RawMessage(`1024`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "q-001",
 		SocketPath: "/tmp/test-figaro-q.sock",
 		Provider:   prov,

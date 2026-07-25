@@ -1,7 +1,6 @@
 package figaro
 
 import (
-	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
@@ -25,7 +24,7 @@ func (a *Agent) hydrate() {
 	if a.ariaSrv.LastTurn() > 0 || a.ariaSrv.HasOpen() {
 		return
 	}
-	a.ariaSrv.AdoptIfEmpty(compose.Turns(a.Context(), a.summarize, a.previewArg))
+	a.ariaSrv.AdoptIfEmpty(a.projTurns(a.Context()))
 }
 
 // Read pages forward from at — the catch-up half of the same paginated read

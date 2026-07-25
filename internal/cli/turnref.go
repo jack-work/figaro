@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/turns"
 )
 
 // ariaMessages reads an aria's whole log and returns it as messages with their
@@ -43,16 +43,16 @@ func ariaMessages(ctx context.Context, acli *angelus.Client, ariaID string) ([]m
 // completed exchange, so no tool_invoke is ever left without its result and
 // interrupted-tool synthesis is unreachable for a user-initiated fork.
 //
-// compose.TurnSpan reports the honest span; the -1 is fork policy and lives
+// turns.Span reports the honest span; the -1 is fork policy and lives
 // here, in one place, shared by send, fork and attend.
 func resolveTurn(ctx context.Context, acli *angelus.Client, ariaID string, turn uint64) (uint64, error) {
 	msgs, err := ariaMessages(ctx, acli, ariaID)
 	if err != nil {
 		return 0, err
 	}
-	first, _, ok := compose.TurnSpan(msgs, turn)
+	first, _, ok := turns.Span(msgs, turn)
 	if !ok {
-		last := compose.StampTurnIDs(msgs)
+		last := turns.StampIDs(msgs)
 		if last == 0 {
 			return 0, fmt.Errorf("aria %s has no turns yet", ariaID)
 		}

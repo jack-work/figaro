@@ -13,7 +13,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
@@ -25,6 +24,7 @@ import (
 	"github.com/jack-work/figaro/internal/tokens"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/toolout"
+	"github.com/jack-work/figaro/internal/turns"
 )
 
 type eventType int
@@ -59,6 +59,8 @@ type Config struct {
 	Provider   provider.Provider
 	Outfitter  *outfit.Outfitter
 	Tools      *tool.Registry
+	// Projector renders fig IR as UI IR. nil ships an engine with no display.
+	Projector  Projector
 	Backend    store.Backend // nil = ephemeral
 	CreatedAt  time.Time
 	LastActive time.Time
@@ -91,8 +93,8 @@ type Agent struct {
 	prov       provider.Provider
 	outfitter  *outfit.Outfitter
 	tools      *tool.Registry
-	summarize  compose.ToolSummary
-	previewArg compose.ToolPreviewArg
+	// proj converts fig IR to UI IR. nil in a core-only build.
+	proj       Projector
 	inlineBoot *chalkboard.Patch // ephemeral first-turn boot fold
 	figLog     store.Log[message.Message]
 	backend    store.Backend // nil = ephemeral
@@ -121,7 +123,6 @@ type Agent struct {
 	gov         *toolout.Governor // bounded live tool-output tails (coalesced emits)
 	lastEmit    time.Time         // throttle for live streaming emits
 	argPartials map[string]string
-	toolTimings map[string]compose.ToolTiming
 	turn        *turnState
 
 	// ariaSrv is the rendered conversation (committed units + the open one),
@@ -171,8 +172,7 @@ func NewAgent(cfg Config) *Agent {
 		prov:       cfg.Provider,
 		outfitter:  cfg.Outfitter,
 		tools:      cfg.Tools,
-		summarize:  compose.ToolSummary(tool.Summarizer(cfg.Tools)),
-		previewArg: compose.ToolPreviewArg(tool.PreviewArger(cfg.Tools)),
+		proj:       cfg.Projector,
 		inlineBoot: cfg.InlineBoot,
 		backend:    cfg.Backend,
 		chalkboard: cfg.Chalkboard,
@@ -199,7 +199,7 @@ func NewAgent(cfg Config) *Agent {
 	// aria message), then register the broadcast: every aria-server change is
 	// pushed to subscribers as one aria read.
 	a.ariaSrv = aria.NewServer()
-	for _, t := range compose.Turns(messages, a.summarize, a.previewArg) {
+	for _, t := range a.projTurns(messages) {
 		a.ariaSrv.Commit(t)
 	}
 	a.ariaSrv.Subscribe(func(p aria.Page) {
@@ -474,7 +474,7 @@ func (a *Agent) appendMsg(m message.Message) (store.Entry[message.Message], erro
 // without any explicit hand-off.
 func (a *Agent) openTurn() {
 	if a.turnID == 0 {
-		a.turnID = compose.StampTurnIDs(unwrapMessages(a.figLog.Read()))
+		a.turnID = turns.StampIDs(unwrapMessages(a.figLog.Read()))
 	}
 	a.turnID++
 }
@@ -491,7 +491,7 @@ func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 		out[i] = e.Payload
 		out[i].LogicalTime = e.LT
 	}
-	compose.StampTurnIDs(out)
+	turns.StampIDs(out)
 	return out
 }
 
@@ -625,7 +625,7 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 func (a *Agent) reconcileAriaServer() {
 	oldLast := a.ariaSrv.LastTurn()
 	hadOpen := a.ariaSrv.HasOpen()
-	history := compose.Turns(a.Context(), a.summarize, a.previewArg)
+	history := a.projTurns(a.Context())
 	// Defensive: never wipe already-materialized state with a shorter history.
 	// reconcileAriaServer runs on mid-turn error paths whose only source of
 	// truth is a.Context() (the durable figLog). If that read returns fewer

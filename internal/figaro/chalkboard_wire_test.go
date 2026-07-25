@@ -18,6 +18,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 // chalkSpyProvider captures the IR messages EncodeMessage is called
@@ -104,6 +105,7 @@ func newAgentWithChalkboard(t *testing.T) (*figaro.Agent, *chalkSpyProvider, *ch
 
 	prov := &chalkSpyProvider{}
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "test-aria",
 		SocketPath: dir + "/sock",
 		Provider:   prov,

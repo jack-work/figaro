@@ -15,7 +15,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -236,10 +235,16 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entr
 		// Commit makes the message appear only when the transcript truly holds
 		// it — the aria frame carries {Role, Nodes} on the first hop and the
 		// client short-circuits to OnClosed with no OnLive event.
-		a.ariaSrv.OpenInquiry(a.turnID, prompt.text)
-		a.ariaSrv.Append(a.turnID, []livedoc.Node{
-			{Type: livedoc.NodeProse, Role: livedoc.RoleInput, Markdown: prompt.text},
-		})
+		//
+		// Gated on the projector: the prompt node and the inquiry are UI IR, and
+		// a build without the projection must render nothing at all rather than a
+		// stream of bare prompts with no replies.
+		if a.proj != nil {
+			a.ariaSrv.OpenInquiry(a.turnID, prompt.text)
+			a.ariaSrv.Append(a.turnID, []livedoc.Node{
+				{Type: livedoc.NodeProse, Role: livedoc.RoleInput, Markdown: prompt.text},
+			})
+		}
 	}
 	return entry, nil
 }
@@ -252,7 +257,9 @@ func (a *Agent) startAssistantUnit() {
 	a.gov = toolout.New(liveOutputTail)
 	a.lastEmit = time.Time{}
 	a.argPartials = map[string]string{}
-	a.toolTimings = map[string]compose.ToolTiming{}
+	if a.proj != nil {
+		a.proj.ResetTools()
+	}
 	a.turn = newTurnState()
 	a.emitSnapshot(livedoc.RoleOutput, nil)
 }
@@ -1071,7 +1078,7 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		}
 		msgs = append(msgs, m)
 	}
-	nodes := compose.Nodes(msgs, a.gov.Tails(), a.argPartials, a.summarize, a.previewArg, a.toolTimings)
+	nodes := a.projNodes(msgs, a.gov.Tails(), a.argPartials)
 	if dir := os.Getenv("FIGARO_NODE_DEBUG"); dir != "" {
 		logComposeFrame(dir, a.id, inflight != nil, nodes)
 	}
@@ -1079,35 +1086,24 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 }
 
 func (a *Agent) startToolTiming(id string, at int64) {
-	if id == "" {
+	if a.proj == nil {
 		return
 	}
 	if at == 0 {
 		at = time.Now().UnixMilli()
 	}
-	if a.toolTimings == nil {
-		a.toolTimings = map[string]compose.ToolTiming{}
-	}
-	timing := a.toolTimings[id]
-	if timing.StartedAt == 0 {
-		timing.StartedAt = at
-		a.toolTimings[id] = timing
-	}
+	a.proj.ToolStarted(id, at)
 }
 
 func (a *Agent) finishToolTiming(id string, at int64) {
-	if id == "" {
+	if a.proj == nil {
 		return
 	}
 	if at == 0 {
 		at = time.Now().UnixMilli()
 	}
-	a.startToolTiming(id, at)
-	timing := a.toolTimings[id]
-	if timing.FinishedAt == 0 {
-		timing.FinishedAt = at
-		a.toolTimings[id] = timing
-	}
+	a.proj.ToolStarted(id, at)
+	a.proj.ToolFinished(id, at)
 }
 
 // logComposeFrame (debug, env-gated) appends one line per composed frame so we

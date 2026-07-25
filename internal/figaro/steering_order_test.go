@@ -14,6 +14,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 type blockingSteeringTool struct {
@@ -60,6 +61,7 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "steering-order",
 		SocketPath: "/tmp/steering-order.sock",
 		Provider:   prov,
@@ -147,6 +149,7 @@ func TestChalkboardSetDuringToolRoundAppliesNextRound(t *testing.T) {
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "midturn-set",
 		SocketPath: "/tmp/midturn-set.sock",
 		Provider:   prov,

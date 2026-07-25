@@ -14,6 +14,7 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 type reconcileNoopProvider struct{}
@@ -38,6 +39,11 @@ func newBareAgent(t *testing.T, log store.Log[message.Message]) *Agent {
 		figLog:     log,
 		ariaSrv:    aria.NewServer(),
 		inbox:      NewInbox(context.Background()),
+		// These tests assert PROJECTION behaviour, so they must supply a
+		// projector. The engine itself may not import internal/compose — see
+		// projector_boundary_test.go — but a test binary may, which is exactly
+		// the separation the Projector interface buys.
+		proj: uiir.New(nil),
 	}
 }
 
