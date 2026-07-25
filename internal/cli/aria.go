@@ -163,11 +163,19 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	lo, hi := selectTurnRange(turns, opts)
 
 	if opts.jsonOut {
-		// The wire IR verbatim: no shadow struct, no dropped coordinate. The
-		// turn id is the coordinate `fig send <aria>:<turn>` takes.
+		// The UI IR wire shape VERBATIM — an aria.Page, exactly what figaro.read
+		// returns and figaro.aria pushes. Not a bare []Turn, not a shadow struct:
+		// the same bytes a client folds, so `show --json` and the live stream can
+		// never describe a conversation differently.
+		page := aria.Page{Parts: make([]aria.TurnPart, 0, hi-lo)}
+		for _, t := range turns[lo:hi] {
+			// Whole turns: `show` selects by turn, so no part is ever clipped.
+			page.Parts = append(page.Parts, aria.TurnPart{Turn: t, From: 0})
+		}
+		page.More = aria.More{Before: lo > 0, After: hi < len(turns)}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(turns[lo:hi]); err != nil {
+		if err := enc.Encode(page); err != nil {
 			die("json: %s", err)
 		}
 		return
@@ -186,7 +194,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		u := turns[i]
 		fmt.Println(term.Dim(fmt.Sprintf("[%d]", u.ID)))
 		fmt.Println()
-		rows := renderNodeList(u.Nodes, width, 0, 0, renderSettings{verbose: true})
+		rows := renderTurnRows(u.Nodes, width, 0, 0, renderSettings{verbose: true})
 		fmt.Println(strings.Join(rows, "\n"))
 		fmt.Println()
 	}

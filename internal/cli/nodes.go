@@ -10,6 +10,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
 )
@@ -43,13 +44,42 @@ func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) [
 		return renderToolNode(n, width, bashCap, tick, verbose)
 	case n.Type == livedoc.NodeThinking:
 		return renderThinkingNode(n, width)
-	// The prompt and a steering interjection are the same kind of thing in
-	// different positions, so they draw the same way (docs/turn-addressing.md).
-	case n.Type == livedoc.NodeSteering, n.Role == livedoc.RoleInput:
+	// Steering ONLY. The inquiry is also input-voice, but it opens the turn
+	// and carries the "❯ you" run header; marking it "↳ you" as well printed
+	// the voice twice in incipit and mislabelled the prompt as steering in
+	// `show`. The two are distinct primitives, not one thing in two positions.
+	case n.Type == livedoc.NodeSteering:
 		return renderSteeringNode(n, width)
 	default:
 		return renderProseNode(n, width)
 	}
+}
+
+// renderTurnRows renders a whole turn — BOTH voices — by walking it in
+// contiguous voice runs and printing the run header above each. This is the
+// same mechanism the inline renderer gets from Incipit.Header; `show` used to
+// have no header at all, which is why the prompt had to be marked "↳ you" to
+// carry a voice it could not otherwise show. One mechanism now serves both.
+func renderTurnRows(nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) []string {
+	if width <= 0 {
+		width = 80
+	}
+	var rows []string
+	for rs := 0; rs < len(nodes); {
+		re, voice := aria.VoiceRunEnd(nodes, rs)
+		run := renderNodeList(nodes[rs:re], width, bashCap, tick, set)
+		if len(run) > 0 {
+			if len(rows) > 0 {
+				rows = append(rows, "")
+			}
+			if h := messageHeader(voice); h != "" {
+				rows = append(rows, h, "")
+			}
+			rows = append(rows, run...)
+		}
+		rs = re
+	}
+	return rows
 }
 
 // renderNodeList renders a unit's whole node list to terminal rows. The list
@@ -73,6 +103,12 @@ func renderNodeList(nodes []livedoc.Node, width, bashCap int, tick uint64, set r
 		}
 		var nr []string
 		nr = renderNode(n, width, bashCap, tick, set.verbose)
+		// Under the verbose toggle every node reports when it was written, the
+		// same way a tool reports started/finished. Tools already print their own
+		// richer timing, so they are left alone.
+		if set.verbose && n.At != 0 && n.Type != livedoc.NodeTool {
+			nr = append(nr, term.Dim("  "+formatToolTime(n.At)))
+		}
 		if i > 0 {
 			nr = append([]string{""}, nr...)
 		}
@@ -219,7 +255,11 @@ func renderThinkingNode(n livedoc.Node, width int) []string {
 // interjection — under a marked gutter so it reads as the user's voice inside
 // the assistant's turn, distinct from prose and thinking.
 func renderSteeringNode(n livedoc.Node, width int) []string {
-	rows := render.Prose(n.Markdown, width)
+	// Subdued relative to the inquiry, deliberately: steering nudges a train of
+	// thought already in motion, it does not open a turn. The inquiry gets a run
+	// header and full-strength prose; steering gets an inline marker and a dim
+	// blockquote gutter, so it reads as an aside within the agent's stream.
+	rows := render.Prose(blockquote(n.Markdown), width)
 	return append([]string{term.Dim("↳ you")}, rows...)
 }
 
