@@ -41,6 +41,10 @@ type lineIndex struct {
 	entries []lineEntry
 	scratch []lineEntry
 	total   int
+	// rev is the transcript's windowRev this index was built from — the single
+	// authority on "the retained page set changed", shared with the page layer.
+	// See transcript.invalidateWindow.
+	rev uint64
 }
 
 // entryAt returns the index of the entry owning absolute line i, or -1.
@@ -94,7 +98,14 @@ func (t *transcript) buildIndex() {
 	if open := t.openMessage(); open != nil {
 		add(open.LT, t.renderMsgBase(*open).rows)
 	}
-	changed := len(entries) != len(t.index.entries) || total != t.index.total
+	// The page set moved => the index describes a different window, full stop.
+	// That is the one authority (windowRev); the shape diff below only has to
+	// catch the things the page set cannot see — a width change, an expanded
+	// tool, the open message growing a token.
+	changed := t.index.rev != t.windowRev
+	if !changed {
+		changed = len(entries) != len(t.index.entries) || total != t.index.total
+	}
 	if !changed {
 		for i := range entries {
 			if entries[i].lt != t.index.entries[i].lt ||
@@ -106,6 +117,7 @@ func (t *transcript) buildIndex() {
 		}
 	}
 	t.index.scratch, t.index.entries, t.index.total = t.index.entries, entries, total
+	t.index.rev = t.windowRev
 	if changed {
 		t.rebuildLineLT()
 	}

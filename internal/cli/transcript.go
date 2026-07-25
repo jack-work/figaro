@@ -80,6 +80,14 @@ type transcript struct {
 	tailTuned bool
 	// tailWant is the tuned tail-window size in messages (0 = not yet tuned).
 	tailWant int
+	// windowRev is THE authority on "the retained page set changed". Every
+	// mutation of t.pages goes through invalidateWindow, which drops the tail
+	// snapshot (so resetToTail rebuilds) and bumps this counter (so the line
+	// index refills lineLT instead of inferring it from a shape diff). Keeping
+	// both facts on one signal is deliberate: with two independent staleness
+	// checks the pages and the index can disagree about which window they are
+	// describing.
+	windowRev uint64
 
 	// rowCache memoizes rows of committed messages in their unselected resting
 	// form — clipped and gutter-prefixed (plainNodeRow), but carrying no
@@ -168,7 +176,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query, t.matchQuery = false, false, "", ""
-	t.leaveTail() // a fresh session always rebuilds the window from the tail
+	t.invalidateWindow() // a fresh session always rebuilds the window from the tail
 	t.resetToTail()
 	io.WriteString(t.out, altScreenOn+autowrapOff+ldmouse.Enable+cursorHide+"\x1b[2J")
 	t.render()
@@ -322,7 +330,10 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	}
 	if t.checkNewer && len(t.newer) > 0 {
 		t.checkNewer = false
-		if t.search == nil && t.offset+transcriptPrefetchScreens*t.h < len(t.lineLT) {
+		// t.index.total, not len(t.lineLT): lineLT is only refilled when the
+		// index shape moves, so reading its length here would be a second,
+		// weaker way of asking how big line space is.
+		if t.search == nil && t.offset+transcriptPrefetchScreens*t.h < t.index.total {
 			return transcriptPageRequest{}, false
 		}
 		desc := t.newer[len(t.newer)-1]
@@ -374,7 +385,7 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 		anchorLT, within = t.viewportAnchor()
 	}
 	page := transcriptPage{desc: desc, messages: messages}
-	t.leaveTail()
+	t.invalidateWindow()
 	switch req.direction {
 	case pageOlder:
 		t.pages = append([]transcriptPage{page}, t.pages...)
@@ -418,6 +429,9 @@ func committedMessages(in []aria.Committed) []aria.Message {
 }
 
 func (t *transcript) trimPages(direction transcriptPageDirection) {
+	if len(t.pages) > transcriptPageLimit {
+		t.invalidateWindow() // dropping a page is a window change
+	}
 	for len(t.pages) > transcriptPageLimit {
 		drop := 0
 		if direction == pageOlder {
@@ -547,6 +561,9 @@ func (t *transcript) resetToTail() {
 	t.checkNewer = false
 	t.heldOpen = nil
 	t.noMoreOlder = len(closed) > 0 && closed[0].LT <= 1
+	// A rebuilt window is a changed window: bump windowRev through the same
+	// signal everything else uses, then claim the client revision it mirrors.
+	t.invalidateWindow()
 	t.tailRev = rev
 	t.tailTuned = false
 	t.pruneCaches()
@@ -581,7 +598,7 @@ func (t *transcript) tuneTail(rows int) bool {
 		return false
 	}
 	t.tailWant = want
-	t.leaveTail()
+	t.invalidateWindow()
 	t.resetToTail() // clears tailTuned; sets a fresh tailRev
 	if len(t.pages) != 1 || len(t.pages[0].messages) == have {
 		t.tailTuned = true // no messages available to move: stop trying
@@ -590,10 +607,19 @@ func (t *transcript) tuneTail(rows int) bool {
 	return true
 }
 
-// leaveTail marks the retained window as no longer a pristine tail snapshot, so
-// the next resetToTail rebuilds. Every mutation of t.pages outside resetToTail
-// must call it.
-func (t *transcript) leaveTail() { t.tailRev = 0 }
+// invalidateWindow is the ONE authority on "the retained window changed". Every
+// mutation of t.pages goes through it (resetToTail included, at its tail), and
+// it publishes the fact to both layers that care:
+//
+//   - the page layer: tailRev = 0, so the next resetToTail rebuilds from the
+//     client instead of taking axis D's revision fast path;
+//   - the line index: windowRev++, which buildIndex records, so a moved page set
+//     always refills lineLT instead of relying on the shape diff to notice.
+//
+// Before the merge these were two independent staleness notions — D's tailRev
+// over the pages and A's shape diff over the index — and nothing tied them
+// together. They are one signal now: if the pages move, the index knows.
+func (t *transcript) invalidateWindow() { t.tailRev, t.windowRev = 0, t.windowRev+1 }
 
 func (t *transcript) pruneCaches() {
 	// Called from resetToTail, i.e. once per frame while following the live
@@ -1531,7 +1557,7 @@ func (t *transcript) finishSearch(found bool) {
 	}
 	origin := t.search
 	t.pages = origin.pages
-	t.leaveTail()
+	t.invalidateWindow()
 	t.newer = origin.newer
 	t.offset = origin.offset
 	t.follow = origin.follow
@@ -1547,7 +1573,7 @@ func (t *transcript) wrapSearchOlder() {
 	}
 	origin := t.search
 	t.pages = append([]transcriptPage(nil), origin.pages...)
-	t.leaveTail()
+	t.invalidateWindow()
 	t.newer = append([]pageDesc(nil), origin.newer...)
 	t.offset = origin.offset
 	t.follow = false

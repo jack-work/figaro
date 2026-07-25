@@ -73,11 +73,11 @@ func TestTranscriptFollowFrameMatchesRebuild(t *testing.T) {
 	slow := build()
 	for range 5 {
 		fast.render()
-		slow.leaveTail() // force the pre-optimization behaviour
+		slow.invalidateWindow() // force the pre-optimization behaviour
 		slow.render()
 	}
 	want := slow.lines()
-	slow.leaveTail()
+	slow.invalidateWindow()
 	got := fast.lines()
 	if len(got) != len(want) {
 		t.Fatalf("frame lines %d != rebuilt %d", len(got), len(want))
