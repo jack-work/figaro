@@ -21,14 +21,18 @@ func pageOnce(t *testing.T, tr *transcript, history []aria.Committed, dir transc
 	if !ok {
 		return false
 	}
+	pageLimit := req.limit
+	if pageLimit <= 0 {
+		pageLimit = transcriptPageSize
+	}
 	messages := req.cached
 	if len(messages) == 0 {
 		if req.after != 0 {
-			r, _ := readNextPage(req.after, req.watermark, transcriptPageSize,
+			r, _ := readNextPage(req.after, req.watermark, pageLimit,
 				func(before, limit int) (aria.AriaRead, error) { return readBefore(history, before, limit), nil })
 			messages = committedMessages(r.Committed)
 		} else {
-			limit := transcriptPageSize
+			limit := pageLimit
 			if req.expected.Count != 0 {
 				limit = req.expected.Count
 			}

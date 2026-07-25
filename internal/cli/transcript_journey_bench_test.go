@@ -112,11 +112,15 @@ func (h *pagingHarness) read(req transcriptPageRequest) []aria.Message {
 	read := func(before, limit int) (aria.AriaRead, error) {
 		return readBefore(h.history, before, limit), nil
 	}
+	pageLimit := req.limit
+	if pageLimit <= 0 {
+		pageLimit = transcriptPageSize
+	}
 	var r aria.AriaRead
 	if req.after != 0 {
-		r, _ = readNextPage(req.after, req.watermark, transcriptPageSize, read)
+		r, _ = readNextPage(req.after, req.watermark, pageLimit, read)
 	} else {
-		limit := transcriptPageSize
+		limit := pageLimit
 		if req.expected.Count != 0 {
 			limit = req.expected.Count
 		}
@@ -158,13 +162,19 @@ func (h *pagingHarness) scroll(delta int) {
 	h.sync()
 }
 
-// journey scrolls back (half-page at a time, like 'u') until `pages` older
-// pages have been pulled in, then scrolls all the way back down to the tail.
-// This is "go find that thing 500 messages ago, then come back".
-func (h *pagingHarness) journey(pages int) {
-	target := h.fetches + pages
+// journey scrolls back (half-page at a time, like 'u') until `back` older
+// messages have been pulled into view, then scrolls all the way down to the
+// tail again. This is "go find that thing 120 messages ago, then come back".
+// Measured in MESSAGES, not pages, so the trip is the same trip at every page
+// geometry.
+func (h *pagingHarness) journey(back int) {
+	oldest, _ := h.tr.oldestLT()
+	target := oldest - back
 	for range 20000 {
-		if h.fetches >= target || h.tr.noMoreOlder && h.tr.offset == 0 {
+		if cur, ok := h.tr.oldestLT(); ok && cur <= target {
+			break
+		}
+		if h.tr.noMoreOlder && h.tr.offset == 0 {
 			break
 		}
 		h.key('u')
@@ -191,7 +201,7 @@ func BenchmarkTranscriptJourney(b *testing.B) {
 				b.StopTimer()
 				h := newPagingHarness(600, out, 100, 40)
 				b.StartTimer()
-				h.journey(4)
+				h.journey(120)
 				b.StopTimer()
 				fetches += h.fetches
 				refetches += h.refetches
@@ -261,7 +271,7 @@ func TestTranscriptJourneyCost(t *testing.T) {
 	}
 	h := newPagingHarness(600, 20, 100, 40)
 	start := time.Now()
-	h.journey(10)
+	h.journey(300)
 	t.Logf("geometry pageSize=%d pageLimit=%d rows/window=%d",
 		transcriptPageSize, transcriptPageLimit, len(h.tr.lineLT))
 	t.Logf("journey: keys=%d fetches=%d fetchedMsgs=%d refetchedMsgs=%d evictions=%d nodeRenders=%d wall=%s",

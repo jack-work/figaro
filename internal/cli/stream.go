@@ -418,14 +418,18 @@ func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcri
 	read := func(before, limit int) (aria.AriaRead, error) {
 		return in.fcli.ReadBefore(ctx, before, limit)
 	}
+	pageLimit := req.limit
+	if pageLimit <= 0 {
+		pageLimit = transcriptPageSize
+	}
 	var (
 		r   aria.AriaRead
 		err error
 	)
 	if req.after != 0 {
-		r, err = readNextPage(req.after, req.watermark, transcriptPageSize, read)
+		r, err = readNextPage(req.after, req.watermark, pageLimit, read)
 	} else {
-		limit := transcriptPageSize
+		limit := pageLimit
 		if req.expected.Count != 0 {
 			limit = req.expected.Count
 		}

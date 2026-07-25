@@ -75,6 +75,10 @@ type transcript struct {
 	// so resetToTail can no-op instead of rebuilding pages, re-hashing page
 	// descriptors and re-scanning the caches on every single frame.
 	tailRev uint64
+	// tailTuned latches the one row-budget retune allowed per tail window.
+	tailTuned bool
+	// tailWant is the tuned tail-window size in messages (0 = not yet tuned).
+	tailWant int
 
 	// rowCache memoizes unstyled rows of committed messages. Selection is
 	// applied after retrieval, so moving through nodes never re-renders prose.
@@ -122,6 +126,7 @@ type transcriptPageRequest struct {
 	expected  pageDesc
 	after     int
 	watermark int
+	limit     int // messages to fetch; 0 means transcriptPageSize
 	cached    []aria.Message
 }
 
@@ -171,14 +176,98 @@ func (t *transcript) scrollBy(delta int) {
 	t.render()
 }
 
-// transcriptPageSize is how many older messages a single scroll-up fetch pulls.
+// transcriptPageSize is the ceiling on how many older messages a single
+// scroll-up fetch pulls; transcriptWindowRows is the real budget.
+//
+// Message COUNT is a bad unit for a render window: a message is anywhere from
+// 4 rows (a one-line answer) to 400 (a tool dump), so a fixed 30-message page
+// is a window of 180 rows in one aria and 1400 in the next — and the frame
+// costs what the window holds. The geometry is therefore expressed in ROWS:
+// transcriptWindowRows is how many rendered rows the pager keeps hot across
+// all retained pages, and the per-fetch message count is derived from the
+// measured rows-per-message of the aria you are actually reading
+// (pageMessages), clamped to [transcriptMinPageSize, transcriptPageSize].
+//
+// Light arias never reach the row budget, so they keep exactly the old
+// 3x30-message geometry. Heavy arias converge to ~8-message pages.
 const (
-	transcriptPageSize        = 30
-	transcriptPageLimit       = 3
-	transcriptTailLimit       = 2 * transcriptPageSize
-	transcriptDescLimit       = 64
-	transcriptPayloadLRULimit = 3
+	transcriptPageSize    = 30
+	transcriptMinPageSize = 6
+	transcriptPageLimit   = 3
+	transcriptTailLimit   = 2 * transcriptPageSize
+	transcriptDescLimit   = 64
 )
+
+// transcriptPayloadLRULimit is how many evicted pages keep their payload (and,
+// since rows follow payloads, their rendered rows) for the return trip. Four
+// windows' worth: rows-based pages are small, so retaining the same amount of
+// history as the old 30-message geometry takes proportionally more of them.
+// Measured on the 120-message round trip (see docs/transcript-paging.md):
+// 3 pages costs 25 fetches / 72 refetched messages / 920 re-renders, 12 pages
+// costs 16 / 0 / 632, and 24 pages buys almost nothing more.
+var transcriptPayloadLRULimit = 4 * transcriptPageLimit
+
+// transcriptWindowRows is the retained-window budget in rendered rows. A var,
+// not a const, so the geometry sweep in transcript_geometry_bench_test.go can
+// measure the tradeoff it encodes. See docs/transcript-paging.md for the
+// numbers behind the chosen value.
+var transcriptWindowRows = 1200
+
+// avgRowsPerMessage is the measured height of the messages this pager has
+// actually rendered, or 0 when nothing has been rendered yet. Cheap: the row
+// cache is bounded by the retained window.
+func (t *transcript) avgRowsPerMessage() int {
+	rows, n := 0, 0
+	for _, c := range t.rowCache {
+		rows += len(c.rows) + 3 // + the inter-message rule
+		n++
+	}
+	if n == 0 {
+		return 0
+	}
+	if avg := rows / n; avg > 0 {
+		return avg
+	}
+	return 1
+}
+
+// pageRowBudget is the row budget of ONE page: the retained window is
+// transcriptPageLimit pages, and the tail window is exactly one.
+func pageRowBudget() int { return transcriptWindowRows / transcriptPageLimit }
+
+// pageMessages is how many messages one page should hold so that a full window
+// (transcriptPageLimit pages) lands near the row budget. Falls back to the
+// message-count ceiling until we have measured anything.
+func (t *transcript) pageMessages() int {
+	avg := t.avgRowsPerMessage()
+	if avg <= 0 {
+		return transcriptPageSize
+	}
+	n := pageRowBudget() / avg
+	if n > transcriptPageSize {
+		n = transcriptPageSize
+	}
+	if n < transcriptMinPageSize {
+		n = transcriptMinPageSize
+	}
+	return n
+}
+
+// tailKeep is how many messages the tail window holds. Cold (nothing rendered
+// yet, so no idea how tall this aria's messages are) it deliberately starts at
+// the floor rather than the ceiling: opening the pager on an aria of 400-row
+// tool dumps used to render thirty of them to paint one screen. tuneTail then
+// grows the window into the row budget, which is invisible because the added
+// rows are ABOVE a viewport pinned to the tail.
+func (t *transcript) tailKeep() int {
+	if t.tailWant > 0 {
+		return t.tailWant
+	}
+	if t.avgRowsPerMessage() == 0 {
+		return transcriptMinPageSize
+	}
+	return t.pageMessages()
+}
 
 func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	if t.checkOlder && t.noMoreOlder {
@@ -199,7 +288,7 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 			t.render()
 			return transcriptPageRequest{}, false
 		}
-		return transcriptPageRequest{before: oldest, direction: pageOlder}, true
+		return transcriptPageRequest{before: oldest, direction: pageOlder, limit: t.pageMessages()}, true
 	}
 	if t.checkNewer && len(t.newer) > 0 {
 		t.checkNewer = false
@@ -218,6 +307,7 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 		if ok && newest < t.committedW {
 			return transcriptPageRequest{
 				direction: pageNewer, after: newest, watermark: t.committedW,
+				limit: t.pageMessages(),
 			}, true
 		}
 	}
@@ -412,8 +502,8 @@ func (t *transcript) resetToTail() {
 	}
 	v := t.client.View()
 	closed := v.Closed
-	if len(closed) > transcriptPageSize {
-		closed = closed[len(closed)-transcriptPageSize:]
+	if keep := t.tailKeep(); len(closed) > keep {
+		closed = closed[len(closed)-keep:]
 	}
 	t.pages = nil
 	if len(closed) > 0 {
@@ -428,7 +518,46 @@ func (t *transcript) resetToTail() {
 	t.heldOpen = nil
 	t.noMoreOlder = len(closed) > 0 && closed[0].LT <= 1
 	t.tailRev = rev
+	t.tailTuned = false
 	t.pruneCaches()
+}
+
+// tuneTail re-cuts the tail window towards the row budget, using what the last
+// frame taught us about how tall this aria's messages are. It grows a window
+// that does not fill its budget (or the viewport) and shrinks one that overshot
+// it, and reports whether the window changed so the caller can re-materialize.
+//
+// Invisible by construction: the tail window is anchored at the newest message
+// and the viewport is pinned to the bottom while following, so adding or
+// dropping messages at the TOP of the window changes only what is retained.
+// Latches once converged, per client revision (a newly committed message
+// re-tunes), so a steady stream of frames does no paging work at all.
+func (t *transcript) tuneTail(rows int) bool {
+	if t.tailTuned || !t.follow || t.tailRev == 0 || len(t.pages) != 1 {
+		return false
+	}
+	have := len(t.pages[0].messages)
+	want, budget := t.pageMessages(), pageRowBudget()
+	if have > 0 && rows > 0 && rows < t.h { // never leave the viewport half-empty
+		perMsg := max(rows/have, 1)
+		if need := (t.h + perMsg - 1) / perMsg; need > want {
+			want = need
+		}
+	}
+	grow := want > have && (rows < budget*3/4 || rows < t.h)
+	shrink := want < have && rows > budget*5/4
+	if !grow && !shrink {
+		t.tailTuned = true // converged for this revision
+		return false
+	}
+	t.tailWant = want
+	t.leaveTail()
+	t.resetToTail() // clears tailTuned; sets a fresh tailRev
+	if len(t.pages) != 1 || len(t.pages[0].messages) == have {
+		t.tailTuned = true // no messages available to move: stop trying
+		return false
+	}
+	return true
 }
 
 // leaveTail marks the retained window as no longer a pristine tail snapshot, so
@@ -677,6 +806,12 @@ func (t *transcript) render() {
 		return
 	}
 	all := t.lines()
+	for range 3 { // converge the tail window on the row budget (usually 0-1 passes)
+		if !t.tuneTail(len(all)) {
+			break
+		}
+		all = t.lines()
+	}
 	foot := []string{}
 	if t.showHelp {
 		foot = t.helpLines()
