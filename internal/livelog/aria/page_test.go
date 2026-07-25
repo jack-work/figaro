@@ -227,16 +227,60 @@ func TestPaginate_BidirectionalRoundTrip(t *testing.T) {
 
 // An anchor naming a turn that no longer exists clamps rather than failing —
 // a client scrolling a conversation that forked under it should land
-// somewhere sane.
+// somewhere sane. But "sane" is direction-aware: beyond the last turn there is
+// nothing FORWARD to give, and answering with the last turn anyway is how a
+// pager joining at the tail ended up rendering it twice.
 func TestPaginate_UnknownAnchorClamps(t *testing.T) {
 	turns := mkTurns(2, 2)
-	if p := Paginate(turns, Anchor{Turn: 99, Node: 99}, Forward, 1000); len(p.Parts) == 0 {
-		t.Fatal("an out-of-range anchor must clamp, not return nothing")
+	beyond := Anchor{Turn: 99, Node: 99}
+	if p := Paginate(turns, beyond, Forward, 1000); len(p.Parts) != 0 {
+		t.Fatalf("forward from beyond the end must be empty, got %d parts", len(p.Parts))
+	}
+	if p := Paginate(turns, beyond, Backward, 1000); len(p.Parts) == 0 {
+		t.Fatal("backward from beyond the end is the tail")
+	}
+	before := Anchor{Turn: 0, Node: 1} // non-zero anchor below the first turn
+	if p := Paginate(turns, before, Backward, 1000); len(p.Parts) != 0 {
+		t.Fatalf("backward from before the start must be empty, got %d parts", len(p.Parts))
+	}
+	if p := Paginate(turns, before, Forward, 1000); len(p.Parts) == 0 {
+		t.Fatal("forward from before the start is the head")
+	}
+	// An anchor INSIDE the range naming a gap still clamps to a neighbour.
+	// Non-contiguous ids are real: a forked trunk inherits its parent's
+	// numbering, so turn 3 can be absent between 1 and 5.
+	gapped := mkTurns(2, 2)
+	gapped[1].ID = 5
+	if p := Paginate(gapped, Anchor{Turn: 3}, Forward, 1000); len(p.Parts) == 0 {
+		t.Fatal("an interior anchor must clamp, not return nothing")
 	}
 	if p := Paginate(nil, Anchor{}, Forward, 1000); !p.Empty() {
 		t.Error("no turns means an empty page")
 	}
 	if p := Paginate(mkTurns(2), Anchor{}, Forward, 0); !p.Empty() {
 		t.Error("a non-positive budget means an empty page")
+	}
+}
+
+// The pager joins at the tail with a backward read, then asks forward from the
+// same beyond-the-end cursor for anything still streaming. Those two reads must
+// not both return the last turn, or it renders twice — the dormant-aria
+// duplication.
+func TestPaginate_TailJoinDoesNotDuplicate(t *testing.T) {
+	turns := mkTurns(1, 2, 3)
+	beyond := Anchor{Turn: 1 << 60}
+	tail := Paginate(turns, beyond, Backward, 1000)
+	if len(tail.Parts) == 0 {
+		t.Fatal("tail read must return the newest window")
+	}
+	forward := Paginate(turns, beyond, Forward, 1000)
+	if len(forward.Parts) != 0 {
+		t.Fatalf("forward from the same cursor must add nothing, got %d parts", len(forward.Parts))
+	}
+	// The tail window reaches the end of the last turn, so it carries the open
+	// suffix itself — the second read has nothing left to contribute.
+	lastPart := tail.Parts[len(tail.Parts)-1]
+	if lastPart.ClippedTail {
+		t.Error("the tail window must reach the last node of the last turn")
 	}
 }

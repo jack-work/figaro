@@ -319,14 +319,14 @@ type transcriptReadClient interface {
 // on scroll-up); shared by Ctrl-T, Ctrl-L, and listen's auto-enter. No-op when
 // already in the pager.
 //
-// Two reads are needed for a viewer joining mid-turn. ReadBefore pulls the
-// recent COMMITTED window (lazy pagination), but it omits the open, in-flight
-// message — so Read(recentCursor) fetches just that (it skips all committed and
-// returns only the open Live frame as a full-create). Without it, a listener
-// that connects while a message is streaming never gets the message's base
-// version, so the field-delta frames that follow can't be applied and the live
-// message doesn't render until the next turn opens a fresh message. That is the
-// "fanout looked broken until I sent again" bug.
+// One read suffices. A backward read from a beyond-the-end cursor is the tail,
+// and because that window reaches the last node of the last turn it carries the
+// open suffix with it — so a viewer joining mid-turn gets the live message's
+// base version in the same page. (This used to need a second, forward read:
+// locate clamped a beyond-the-end anchor to the last turn's FIRST node, so the
+// backward window stopped short of the live suffix and the forward one returned
+// the whole turn again — which is how a dormant aria rendered its last turn
+// twice.)
 func (in *interactiveInput) enterTranscript() {
 	in.mu.Lock()
 	already := in.lt.transcriptActive()
@@ -335,17 +335,13 @@ func (in *interactiveInput) enterTranscript() {
 		return
 	}
 	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-	r, rerr := in.fcli.ReadBefore(rctx, recentCursor, transcriptPageSize)
-	live, lerr := in.fcli.Read(rctx, recentCursor) // just the open in-flight message
+	r, rerr := in.fcli.ReadBefore(rctx, recentCursor, wireBudget(transcriptPageSize))
 	rcancel()
 	in.mu.Lock()
 	in.lt.enterTranscript()
 	in.lt.setQueuedFetch(in.refreshQueued)
 	if rerr == nil {
 		in.lt.apply(r)
-	}
-	if lerr == nil {
-		in.lt.apply(live)
 	}
 	in.mu.Unlock()
 }
@@ -461,12 +457,30 @@ func (in *interactiveInput) pageTranscriptSearch(ctx context.Context, cancel con
 	}
 }
 
+// wireBudget converts the pager's message-count geometry into the wire's byte
+// budget. They are different units and conflating them is a bug: the client
+// counts messages to size its retained window, while the wire spends bytes so
+// that one enormous tool dump cannot blow a page. Passing a raw count (30)
+// asked the server for 30 BYTES, and the paginator's "always emit at least one
+// node" floor turned every page into a single node.
+//
+// Over-estimating is safe — the client keeps only what it asked for and the
+// server clamps to page_budget_max. Under-estimating truncates.
+const wireBytesPerMessage = 4096
+
+func wireBudget(messages int) int {
+	if messages <= 0 {
+		return 0 // let the server apply its configured default
+	}
+	return messages * wireBytesPerMessage
+}
+
 func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcriptPageRequest) ([]aria.Message, error) {
 	if len(req.cached) > 0 {
 		return req.cached, nil
 	}
 	read := func(before, limit int) (aria.Page, error) {
-		return in.fcli.ReadBefore(ctx, before, limit)
+		return in.fcli.ReadBefore(ctx, before, wireBudget(limit))
 	}
 	pageLimit := req.limit
 	if pageLimit <= 0 {
@@ -913,7 +927,7 @@ func (in *interactiveInput) selectNodeKey(delta int, ev keyEvent) keyVerdict {
 
 func (in *interactiveInput) copySelection(ctx context.Context, cancel context.CancelFunc, gen uint64, plan selectionCopyPlan) {
 	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
-		return in.fcli.ReadBefore(ctx, before, limit)
+		return in.fcli.ReadBefore(ctx, before, wireBudget(limit))
 	})
 	cancel()
 	in.mu.Lock()
