@@ -46,6 +46,27 @@ version matches the close marker's `V`; a mismatch triggers a re-read from the
 last committed LT. `turn.done` is the one control signal — it reports the turn
 ended and whether the agent is now idle.
 
+> ### Going turn-shaped
+>
+> The read is being reshaped from *message* granularity to **turn** granularity:
+> one entry per turn, the user prompt and the assistant's nodes together, with
+> `Committed`/`Live` moving inside the turn to separate its frozen nodes from its
+> **open suffix**. `Live.From` — a single `uint64` node id — becomes the whole
+> boundary: `id < From` is committed and will never receive a delta.
+>
+> The read also becomes genuinely **paginated and bidirectional** (budget in
+> bytes, granularity in nodes), because turns are far taller than messages:
+> measured over 127 turns in 40 real arias at width 100, median **221 rows**,
+> p90 **3043**, max **7988**. A turn-atomic read would regress the common case.
+>
+> Full types, invariants and worked examples:
+> [turn-addressing.md](turn-addressing.md).
+>
+> **Vocabulary note.** The renderer's ink-to-scrollback step is now
+> **freeze** (`Incipit.Freeze`). The word **seal** is reserved for exactly one
+> meaning: *a turn became immutable* — the moment its nodes stop moving and it
+> is written to the `ui` channel.
+
 Node types: `prose` (assistant/user markdown), `thinking` (extended-thinking),
 `tool` (an invocation folded with its streamed result), `steering` (a user
 message injected mid-turn — see below).

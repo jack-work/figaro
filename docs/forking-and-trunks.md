@@ -15,6 +15,33 @@ It is written so someone with zero prior context can follow the whole stack from
 physical log up to the CLI. (A user-facing condensed version lives in the first-party
 skill at `skills/figaro/trunks.md`; this doc is the deep substrate reference.)
 
+> **Fork coordinates are moving to turn ids.** `fig send <id>:<LT>` is being
+> replaced by `fig send <id>:<turn_id>`. **LT remains the join key** — it is
+> positional, it is xwal's cross-channel foreign key, and every fork codepath
+> below still takes an `atMainLT`. Turn id is the *user-facing* coordinate and
+> projects down to `atMainLT = min(LTs of the turn)`. See
+> [turn-addressing.md](turn-addressing.md).
+
+### `atMainLT` is exclusive of the frozen prefix
+
+From figwal `disk/fork.go:194`:
+
+> *"atIdx must be in (FirstIndex, LastIndex+1]; the prefix retains at least one
+> entry."*
+
+So **prefix = `[First, atMainLT)`**, **branch = `[atMainLT, Last]`**. The shared
+history is everything *strictly before* the named coordinate; the branch owns the
+coordinate itself and everything after.
+
+This is why turn addressing needs **no off-by-one adjustment**: fork at turn T
+with `atMainLT = min(LTs of T)` — the prompt's LT — and the frozen prefix is
+everything before the question, while the branch replaces the question and all
+its consequences. It also means a turn-addressed fork **always lands on a user
+prompt**, so the shared prefix always terminates on a complete assistant
+message and can never strand a `tool_invoke` without its `tool_result` —
+making the `repairTurnTail` / tail-repair-at-open synthesis unreachable for
+user-initiated forks.
+
 ---
 
 ## 0. One-paragraph orientation
@@ -91,7 +118,7 @@ Terminology & mechanics (`xwal/xwal.go`, `xwal/fork.go`):
   translation fingerprint here.
 - **Joint fork** (`xwal/fork.go:51`): `Fork(atMainLT, childName, oldFutureName) → *XWAL`.
   The **main channel forks at `atMainLT`**; each related channel forks at its own boundary —
-  the first channel LT whose `mainLT >= atMainLT` (`boundaryFor`, `fork.go:228`). The
+  the first channel LT whose `mainLT >= atMainLT` (`boundaryFor`, figwal `xwal/fork.go:638`). The
   **old-future is the original continuation; the child is the new alternative** — both names
   are used identically across every channel, so a branch is addressable as a unit. The fork
   is **crash-atomic** across channels (a `.xwal-fork-pending` plan sentinel; `Open` rolls a
