@@ -1305,93 +1305,170 @@ func (t *transcript) key(b byte) {
 		t.render()
 		return
 	}
-	if t.showHelp || t.showStatus || t.showQueued { // any key wipes the panel; nav keys also still act below
-		reopen := byte(0)
-		switch {
-		case t.showHelp && b == '!':
-			reopen = '!' // switch panels directly
-		case t.showHelp && b == 'Q':
-			reopen = 'Q'
-		case t.showStatus && b == '?':
-			reopen = '?'
-		case t.showStatus && b == 'Q':
-			reopen = 'Q'
-		case t.showQueued && b == '?':
-			reopen = '?'
-		case t.showQueued && b == '!':
-			reopen = '!'
-		}
-		t.showHelp, t.showStatus, t.showQueued = false, false, false
-		switch {
-		case reopen == '!':
-			t.showStatus = true
-		case reopen == '?':
-			t.showHelp = true
-		case reopen == 'Q':
-			t.openQueuedPanel()
+	// A panel swallows its own keys (they toggle it, or switch panels); any
+	// OTHER key wipes it and then acts normally — nav keys included.
+	if t.showHelp || t.showStatus || t.showQueued {
+		switch b {
+		case '?':
+			panelToggleHelp(t)
 			t.render()
 			return
-		case b == '?' || b == '!' || b == 'Q' || b == 0x1b:
+		case '!':
+			panelToggleStatus(t)
+			t.render()
+			return
+		case 'Q':
+			panelToggleQueued(t)
+			t.render()
+			return
+		case 0x1b:
+			panelDismiss(t)
 			t.render()
 			return
 		}
-		if reopen != 0 {
-			t.render()
-			return
-		}
+		t.closePanels()
 	}
 	switch b {
 	case 'j':
-		t.offset++
-		t.stopFollowing()
-		t.checkNewer = true
+		pagerLineDown(t)
 	case 'k':
-		t.offset--
-		t.stopFollowing()
-		t.checkOlder = true
+		pagerLineUp(t)
 	case 'd':
-		t.offset += t.h / 2
-		t.stopFollowing()
-		t.checkNewer = true
+		pagerHalfDown(t)
 	case 'u':
-		t.offset -= t.h / 2
-		t.stopFollowing()
-		t.checkOlder = true
+		pagerHalfUp(t)
 	case 'G':
-		t.follow = true
-		t.resetToTail()
+		pagerTail(t)
 	case 'g':
-		if t.pendG {
-			t.offset = 0
-			t.stopFollowing()
-			t.checkOlder = true
-		}
+		pagerPendingTop(t)
 	case '/':
-		t.inSearch, t.query = true, ""
+		pagerSearchPrompt(t)
 	case 'n':
-		t.findRepeat(1)
+		pagerFindNext(t)
 	case 'N':
-		t.findRepeat(-1)
+		pagerFindPrev(t)
 	case '?':
-		t.showHelp = true
+		pagerHelpPanel(t)
 	case '!':
-		t.showStatus = true
+		pagerStatusPanel(t)
 	case 'Q':
-		t.openQueuedPanel()
+		pagerQueuedPanel(t)
 	case 0x0e: // Ctrl-N
-		t.selectNode(1, false)
+		pagerSelectNext(t)
 	case 0x10: // Ctrl-P
-		t.selectNode(-1, false)
+		pagerSelectPrev(t)
 	case 0x0d, 0x0a:
-		t.toggleSelectedTools()
+		pagerToggleTools(t)
 	case 0x1b: // Esc: clear the active selection (no-op otherwise)
-		if t.selection.active {
-			t.clearSelection()
-		}
+		pagerClearSelection(t)
 	}
 	t.pendG = b == 'g' && !t.pendG
 	t.render()
 }
+
+// ---------------------------------------------------------------------------
+// The pager's key actions. Each is one row of the keymap (see keymap.go);
+// naming them is what lets the table point at behaviour instead of repeating
+// it. They mutate state; painting belongs to the dispatcher.
+// ---------------------------------------------------------------------------
+
+func pagerLineDown(t *transcript) {
+	t.offset++
+	t.stopFollowing()
+	t.checkNewer = true
+}
+
+func pagerLineUp(t *transcript) {
+	t.offset--
+	t.stopFollowing()
+	t.checkOlder = true
+}
+
+func pagerHalfDown(t *transcript) {
+	t.offset += t.h / 2
+	t.stopFollowing()
+	t.checkNewer = true
+}
+
+func pagerHalfUp(t *transcript) {
+	t.offset -= t.h / 2
+	t.stopFollowing()
+	t.checkOlder = true
+}
+
+// pagerTail follows the live tail (G, End).
+func pagerTail(t *transcript) {
+	t.follow = true
+	t.resetToTail()
+}
+
+// pagerTop jumps to the top of the retained window (Home, and the second g).
+func pagerTop(t *transcript) {
+	t.offset = 0
+	t.stopFollowing()
+	t.checkOlder = true
+}
+
+// pagerPendingTop is the second half of the two-key gg gesture; the first 'g'
+// only arms pendG, which the dispatcher's epilogue owns.
+func pagerPendingTop(t *transcript) {
+	if t.pendG {
+		pagerTop(t)
+	}
+}
+
+func pagerSearchPrompt(t *transcript) { t.inSearch, t.query = true, "" }
+func pagerFindNext(t *transcript)     { t.findRepeat(1) }
+func pagerFindPrev(t *transcript)     { t.findRepeat(-1) }
+func pagerHelpPanel(t *transcript)    { t.showHelp = true }
+func pagerStatusPanel(t *transcript)  { t.showStatus = true }
+func pagerQueuedPanel(t *transcript)  { t.openQueuedPanel() }
+func pagerSelectNext(t *transcript)   { t.selectNode(1, false) }
+func pagerSelectPrev(t *transcript)   { t.selectNode(-1, false) }
+func pagerToggleTools(t *transcript)  { t.toggleSelectedTools() }
+
+// pagerClearSelection is Esc in the pager: drop the active selection, and do
+// nothing at all when there is none.
+func pagerClearSelection(t *transcript) {
+	if t.selection.active {
+		t.clearSelection()
+	}
+}
+
+// closePanels hides all three bottom panels.
+func (t *transcript) closePanels() {
+	t.showHelp, t.showStatus, t.showQueued = false, false, false
+}
+
+// panelToggleHelp/Status/Queued are the panel-mode rows: a panel's own key
+// closes it, another panel's key switches straight over.
+func panelToggleHelp(t *transcript) {
+	was := t.showHelp
+	t.closePanels()
+	if !was {
+		t.showHelp = true
+	}
+}
+
+func panelToggleStatus(t *transcript) {
+	was := t.showStatus
+	t.closePanels()
+	if !was {
+		t.showStatus = true
+	}
+}
+
+func panelToggleQueued(t *transcript) {
+	was := t.showQueued
+	t.closePanels()
+	if !was {
+		t.openQueuedPanel()
+	}
+}
+
+// panelDismiss is Esc with a panel up: close it, and leave the selection
+// alone — Esc's other meaning is not reached from here.
+func panelDismiss(t *transcript) { t.closePanels() }
 
 // navMotion drives a logical navigation key through the very same motions the
 // letter keys use, so each motion keeps exactly one implementation:
@@ -1445,19 +1522,38 @@ func navMotionByte(n navKey) (byte, bool) {
 func (t *transcript) searchKey(b byte) {
 	switch b {
 	case 0x0d, 0x0a: // Enter → jump to first match
-		t.inSearch = false
-		t.matchQuery = t.query
-		t.find(t.query)
+		searchAccept(t)
 	case 0x1b: // Esc → cancel typing (keeps existing highlights)
-		t.inSearch, t.query = false, ""
+		searchCancel(t)
 	case 0x7f, 0x08: // backspace
-		if len(t.query) > 0 {
-			t.query = t.query[:len(t.query)-1]
-		}
+		searchBackspace(t)
 	default:
-		if b >= 0x20 && b < 0x7f {
-			t.query += string(b)
-		}
+		t.searchLiteral(b)
+	}
+}
+
+// The search sub-mode's actions.
+
+func searchAccept(t *transcript) {
+	t.inSearch = false
+	t.matchQuery = t.query
+	t.find(t.query)
+}
+
+func searchCancel(t *transcript) { t.inSearch, t.query = false, "" }
+
+func searchBackspace(t *transcript) {
+	if len(t.query) > 0 {
+		t.query = t.query[:len(t.query)-1]
+	}
+}
+
+// searchLiteral is the search box's fallback: a printable key is text, not a
+// binding. The one thing the keymap does not decide — "every printable byte"
+// is not a set worth enumerating as rows.
+func (t *transcript) searchLiteral(b byte) {
+	if b >= 0x20 && b < 0x7f {
+		t.query += string(b)
 	}
 }
 
