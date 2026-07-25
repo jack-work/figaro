@@ -80,17 +80,22 @@ const (
 	defaultPageBudgetMax = 524288
 )
 
-// PageBudget returns the server-side default page budget in bytes.
+// PageBudget returns the server-side default page budget in bytes. Nil-safe:
+// an agent constructed without config still gets policy from here, so no
+// second default can grow somewhere else.
 func (l *Loaded) PageBudget() int {
-	if l.Config.Wire.PageBudget == nil {
+	if l == nil || l.Config.Wire.PageBudget == nil {
 		return defaultPageBudget
 	}
 	return *l.Config.Wire.PageBudget
 }
 
-// PageBudgetMax returns the ceiling on a client-requested budget.
+// PageBudgetMax returns the ceiling on a client-requested budget. Nil-safe for
+// the same reason, and it matters more here: the ceiling must hold even when
+// no config reached us, or a client could make the server materialize an
+// unbounded page.
 func (l *Loaded) PageBudgetMax() int {
-	if l.Config.Wire.PageBudgetMax == nil {
+	if l == nil || l.Config.Wire.PageBudgetMax == nil {
 		return defaultPageBudgetMax
 	}
 	return *l.Config.Wire.PageBudgetMax

@@ -14,6 +14,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/compose"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -74,6 +75,13 @@ type Config struct {
 	// have no channel, so this patch is folded onto the first IR turn so
 	// the loadout reminders still render. Ignored when Backend != nil.
 	InlineBoot *chalkboard.Patch
+
+	// Settings is the loaded user configuration. Today the agent reads only
+	// the wire page budget from it, via ClampPageBudget — which is the SINGLE
+	// policy point deciding how many bytes a paginated read may cost. Nil is
+	// safe (the accessors are nil-safe and return the built-in defaults,
+	// ceiling included), so tests and ephemeral agents need not supply one.
+	Settings *config.Loaded
 }
 
 // Agent is the Figaro implementation.
@@ -89,6 +97,7 @@ type Agent struct {
 	figLog     store.Log[message.Message]
 	backend    store.Backend // nil = ephemeral
 	chalkboard *chalkboard.State
+	settings   *config.Loaded // wire budget policy; nil-safe
 
 	inbox *Inbox
 
@@ -167,6 +176,7 @@ func NewAgent(cfg Config) *Agent {
 		inlineBoot: cfg.InlineBoot,
 		backend:    cfg.Backend,
 		chalkboard: cfg.Chalkboard,
+		settings:   cfg.Settings,
 		createdAt:  createdAt,
 		lastActive: lastActive,
 		cancel:     cancel,
