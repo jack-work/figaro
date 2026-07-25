@@ -118,3 +118,30 @@ func BenchmarkProseUncached(b *testing.B) {
 		_ = proseUncached(md, 80)
 	}
 }
+
+// TestProseCacheDoesNotHoardStreamingPartials pins the streaming eviction: a
+// node that grows by append must occupy one entry, not one per tick, so it
+// cannot bury the entries worth keeping.
+func TestProseCacheStreamingLeavesOneEntry(t *testing.T) {
+	resetProseCache()
+	keep := "a stable block that must survive the stream"
+	Prose(keep, 80)
+	md := ""
+	for i := range 50 {
+		md += fmt.Sprintf("streaming word %d ", i)
+		Prose(md, 80)
+	}
+	hot, cold, _ := proseCacheStats()
+	if hot+cold > 3 { // the stable block, the current partial, +1 slack
+		t.Errorf("cache holds %d entries after a 50-tick stream, want <= 3", hot+cold)
+	}
+	// and the stable entry is still a hit
+	before := Prose(keep, 80)
+	hitAllocs := testing.AllocsPerRun(20, func() { _ = Prose(keep, 80) })
+	if hitAllocs > 1 {
+		t.Errorf("stable block was evicted: %v allocs per call, want <= 1", hitAllocs)
+	}
+	if len(before) == 0 {
+		t.Fatal("no rows")
+	}
+}

@@ -27,6 +27,9 @@ var (
 	proseHot   = map[proseKey][]string{}
 	proseCold  = map[proseKey][]string{}
 	proseBytes int
+	// proseLastMD is the markdown most recently stored at each width, used to
+	// evict the stale partials a streaming node leaves behind (see storeProse).
+	proseLastMD = map[int]string{}
 )
 
 func proseEntryBytes(key proseKey, rows []string) int {
@@ -60,6 +63,22 @@ func storeProse(md string, width int, rows []string) {
 	key := proseKey{width: width, md: md}
 	proseMu.Lock()
 	defer proseMu.Unlock()
+	// A node that is still streaming renders a slightly longer markdown on
+	// every tick, and each of those is a distinct key. Left alone they would
+	// bury the entries that are actually worth keeping (the retained window)
+	// under hundreds of partials nobody will ask for again. Since the growth
+	// is by append, the previous version is recognizable as a prefix of this
+	// one — drop it.
+	if prev, ok := proseLastMD[width]; ok && prev != md && len(prev) < len(md) &&
+		md[:len(prev)] == prev {
+		stale := proseKey{width: width, md: prev}
+		if old, ok := proseHot[stale]; ok {
+			proseBytes -= proseEntryBytes(stale, old)
+			delete(proseHot, stale)
+		}
+		delete(proseCold, stale)
+	}
+	proseLastMD[width] = md
 	if proseBytes > proseCacheBudget {
 		proseCold, proseHot, proseBytes = proseHot, map[proseKey][]string{}, 0
 	}
@@ -72,6 +91,7 @@ func resetProseCache() {
 	proseMu.Lock()
 	defer proseMu.Unlock()
 	proseHot, proseCold, proseBytes = map[proseKey][]string{}, map[proseKey][]string{}, 0
+	proseLastMD = map[int]string{}
 }
 
 // proseCacheStats is for tests: entries in each generation and hot bytes.
