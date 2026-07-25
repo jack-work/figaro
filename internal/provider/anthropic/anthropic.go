@@ -147,6 +147,28 @@ func isTransientStatus(code int) bool {
 	return code == 429 || code == 529 || (code >= 500 && code <= 599)
 }
 
+// apiErrorMessage renders an Anthropic-style error body as a short, readable
+// line. The wire shape is {"error":{"type","message"}}; when it doesn't parse
+// (empty or non-JSON body) it falls back to the raw text so nothing is lost.
+func apiErrorMessage(status int, body []byte) string {
+	var parsed struct {
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &parsed); err == nil && parsed.Error.Message != "" {
+		if parsed.Error.Type != "" {
+			return fmt.Sprintf("%s: %s (%d)", parsed.Error.Type, parsed.Error.Message, status)
+		}
+		return fmt.Sprintf("%s (%d)", parsed.Error.Message, status)
+	}
+	if len(body) == 0 {
+		return fmt.Sprintf("HTTP %d", status)
+	}
+	return fmt.Sprintf("HTTP %d: %s", status, string(body))
+}
+
 // backoffDelay is exponential backoff (1s, 2s, 4s, …) capped at retryMaxDelay.
 func backoffDelay(attempt int) time.Duration {
 	d := retryBaseDelay << attempt
@@ -849,7 +871,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("anthropic API error %d: %s", resp.StatusCode, string(errBody))
+		return fmt.Errorf("anthropic: %s", apiErrorMessage(resp.StatusCode, errBody))
 	}
 
 	nm, err := a.drainSSE(ctx, resp.Body, model, bus)
@@ -918,7 +940,7 @@ func (a *Anthropic) SendWithTransport(ctx context.Context, in provider.SendInput
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		errBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("copilot API error %d: %s", resp.StatusCode, string(errBody))
+		return fmt.Errorf("copilot: %s", apiErrorMessage(resp.StatusCode, errBody))
 	}
 
 	nm, err := a.drainSSE(ctx, resp.Body, model, bus)

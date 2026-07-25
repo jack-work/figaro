@@ -224,3 +224,45 @@ func waitForSocket(path string, timeout time.Duration) error {
 	}
 	return fmt.Errorf("figaro socket %s did not accept connections within %s: %w", path, timeout, lastErr)
 }
+
+// runUnattend drops this shell's aria binding (bare `figaro new`). New
+// conversations then default to the live loadout. Idempotent when unbound.
+func runUnattend(loaded *config.Loaded) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+	ppid := os.Getppid()
+	bound := ""
+	if r, err := resolveBinding(ctx, acli, ppid); err == nil && r.Found {
+		bound = r.FigaroID
+	}
+	_ = unbindBinding(ctx, acli, ppid)
+	if bound != "" {
+		fmt.Fprintf(os.Stderr, "unattended %s\n", bound)
+	} else {
+		fmt.Fprintln(os.Stderr, "no aria bound to this shell")
+	}
+}
+
+// runNewFromLoadout mints a fresh aria under the named loadout, binds it,
+// and returns without prompting (`figaro new --loadout X`). A prompt needs
+// the `--` boundary (`figaro new --loadout X -- <prompt>`).
+func runNewFromLoadout(loaded *config.Loaded, loadout string, set renderSettings) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+	ppid := os.Getppid()
+	unbindBinding(ctx, acli, ppid)
+	figaroID, _ := mustCreateAndBindLoadout(ctx, acli, loaded, ppid, loadout)
+	if set.jsonMode {
+		enc := json.NewEncoder(os.Stdout)
+		_ = enc.Encode(struct {
+			AriaID string `json:"aria_id"`
+			Mode   string `json:"mode"`
+		}{AriaID: figaroID, Mode: "new"})
+		return
+	}
+	fmt.Fprintf(os.Stderr, "created %s under loadout %q (attended; no prompt sent)\n", figaroID, loadout)
+}

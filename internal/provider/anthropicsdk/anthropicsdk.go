@@ -9,6 +9,7 @@ package anthropicsdk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -27,6 +28,29 @@ import (
 )
 
 const providerName = "anthropic"
+
+// cleanAPIError rewrites the SDK's verbose transport error (method, URL, status
+// line, raw JSON dump) into the API's own error message, e.g. "anthropic:
+// invalid_request_error: model not found (400)". Non-API errors pass through.
+func cleanAPIError(err error) error {
+	var apierr *anthropic.Error
+	if !errors.As(err, &apierr) {
+		return err
+	}
+	var parsed struct {
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal([]byte(apierr.RawJSON()), &parsed) == nil && parsed.Error.Message != "" {
+		if parsed.Error.Type != "" {
+			return fmt.Errorf("anthropic: %s: %s (%d)", parsed.Error.Type, parsed.Error.Message, apierr.StatusCode)
+		}
+		return fmt.Errorf("anthropic: %s (%d)", parsed.Error.Message, apierr.StatusCode)
+	}
+	return err
+}
 
 // Provider is the SDK-backed Anthropic provider.
 type Provider struct {
@@ -170,7 +194,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		return nil
 	})
 	if err != nil {
-		return err
+		return cleanAPIError(err)
 	}
 	if len(msg.Content) == 0 {
 		return nil

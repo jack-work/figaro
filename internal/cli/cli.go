@@ -236,19 +236,29 @@ Keys while streaming:
 		Name:    "new",
 		Group:   "Prompt",
 		Short:   "Start a fresh aria and prompt it",
-		Usage:   "new [-j|--json] [--loadout <name>] -- <prompt>",
-		Long:    "Creates a new aria (with server-generated id), binds it to this shell, and sends the prompt.\n-j/--json emits {aria_id, mode:'new'} on stdout instead of the streaming render.\n--loadout/-L <name> starts the aria under the named loadout (default:\nconfig.toml's default_loadout).",
+		Usage:   "new [-j|--json] [--loadout <name>] [-- <prompt>]",
+		Long:    "Creates a new aria (server-generated id), binds it to this shell, and — when a prompt follows `--` — sends it.\n\n  figaro new -- <prompt>               fresh aria on the default loadout, prompted\n  figaro new --loadout <name> -- <p>   fresh aria on a named loadout, prompted\n  figaro new --loadout <name>          fresh aria on a named loadout, attended, no turn\n  figaro new                           unattend this shell (go home)\n\n-j/--json emits {aria_id, mode:'new'} on stdout. --loadout/-L defaults to\nconfig.toml's default_loadout.",
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			prompt := extractPrompt(ctx.RawArgs)
-			if prompt == "" {
-				return fmt.Errorf("usage: figaro new [--loadout <name>] -- <prompt>")
-			}
 			asJSON := hasPreDashFlag(ctx.RawArgs, "--json", "-j")
 			loadout, _, lerr := preDashFlagValue(ctx.RawArgs, "--loadout", "-L")
 			if lerr != nil {
 				return fmt.Errorf("new: %s", lerr)
+			}
+			if prompt == "" {
+				if loadout == "" {
+					// Bare `figaro new`: drop the shell's binding (go home).
+					// New conversations then default to the live loadout.
+					runUnattend(ld)
+					return nil
+				}
+				// `figaro new --loadout X` with no prompt: mint a fresh aria
+				// under the loadout and attend it, no turn. A prompt requires
+				// the `--` boundary.
+				runNewFromLoadout(ld, loadout, renderSettings{jsonMode: asJSON})
+				return nil
 			}
 			runNewPrompt(ld, prompt, loadout, renderSettings{jsonMode: asJSON})
 			return nil
