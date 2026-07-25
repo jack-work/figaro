@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/rpc"
 )
@@ -205,21 +206,18 @@ func (stubReadClient) Queued(context.Context) (*rpc.QueuedResponse, error) {
 
 func coalesceInput(tb testing.TB, out *countingWriter) (*interactiveInput, *livelogTurn) {
 	tb.Helper()
-	client := aria.NewClient()
-	client.SetClosedLimit(transcriptTailLimit)
 	committed := make([]aria.Committed, 40)
 	for i := range committed {
 		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, 20)}
 	}
-	client.Apply(aria.AriaRead{Committed: committed})
 
 	settings := &renderSettings{}
 	status := newSessionStatus("aria0001", time.Unix(0, 0))
 	lt := newLivelogTurn(out, 100, 40, settings, "aria0001", time.Unix(0, 0), status, nil, nil)
-	lt.client = client
-	lt.tr = newTranscript(out, 100, 40, &ariaView{settings: settings}, client, "aria0001", time.Unix(0, 0))
-	lt.tr.status = status
+	// Enter the pager BEFORE feeding history, as the real flow does: the aria
+	// callbacks route to the transcript only while it is up.
 	lt.enterTranscript()
+	lt.apply(aria.AriaRead{Committed: committed})
 	listen := false
 	return &interactiveInput{
 		tc: nil, lt: lt, fcli: stubReadClient{}, mu: &sync.Mutex{}, set: settings,
@@ -378,4 +376,65 @@ func BenchmarkTranscriptBurstFrames(b *testing.B) {
 	b.StopTimer()
 	b.ReportMetric(float64(w.writes.Load())/float64(b.N), "frames/op")
 	b.ReportMetric(float64(w.bytes.Load())/float64(b.N), "B/op")
+}
+
+// TestLivelogTurn_StreamDeltasArePaced is the wiring test: live aria frames go
+// through the same dirty-flag path as input, so a burst of stream deltas paints
+// once per frame interval and the settled state is always painted by the
+// trailing render.
+func TestLivelogTurn_StreamDeltasArePaced(t *testing.T) {
+	var w countingWriter
+	var mu sync.Mutex
+	settings := &renderSettings{}
+	status := newSessionStatus("aria0001", time.Unix(0, 0))
+	lt := newLivelogTurn(&w, 100, 30, settings, "aria0001", time.Unix(0, 0), status, nil, nil)
+
+	now := time.Unix(2000, 0)
+	var timers []func()
+	lt.pace.now = func() time.Time { return now }
+	lt.pace.after = func(_ time.Duration, fn func()) { timers = append(timers, fn) }
+	lt.setRenderLock(&mu)
+	lt.enterTranscript()
+	lt.apply(aria.AriaRead{Committed: []aria.Committed{
+		{LT: 1, Role: "assistant", Nodes: heavyNodes(1, 10)},
+	}})
+
+	// Settle: entering the pager already armed a trailing render, and the pacer
+	// keeps only one in flight at a time.
+	now = now.Add(transcriptFrameInterval)
+	for _, fn := range timers {
+		fn()
+	}
+	timers = nil
+	w.reset()
+	for i := range 40 { // a streaming tool pushing deltas far faster than 120 fps
+		now = now.Add(200 * time.Microsecond)
+		mu.Lock()
+		lt.apply(aria.AriaRead{Live: &aria.Live{
+			LT: 100, V: i + 1, Role: "assistant",
+			Nodes: []aria.NodeDelta{{ID: "n1", Set: map[string]any{
+				"type":     string(livedoc.NodeProse),
+				"markdown": strings.Repeat("token ", i+1),
+			}}},
+		}})
+		mu.Unlock()
+	}
+	painted := w.writes.Load()
+	if painted > 2 {
+		t.Fatalf("40 stream deltas inside one frame interval painted %d frames, want <= 2", painted)
+	}
+	if len(timers) != 1 {
+		t.Fatalf("armed %d trailing renders, want 1", len(timers))
+	}
+	now = now.Add(transcriptFrameInterval)
+	timers[0]()
+	if w.writes.Load() != painted+1 {
+		t.Fatal("the trailing render did not paint the settled state")
+	}
+	if !strings.Contains(strings.Join(lt.tr.prev, "\n"), strings.Repeat("token ", 5)) {
+		t.Fatal("the painted frame is not the latest stream state")
+	}
+	if lt.tr.dirty {
+		t.Fatal("the trailing render left the screen dirty")
+	}
 }
