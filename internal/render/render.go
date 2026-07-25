@@ -25,6 +25,9 @@ var SpinnerFrames = livedoc.SpinnerFrames
 // unclosed fence (mid-stream) is synth-closed so a code block renders with
 // a stable structure as it streams in.
 //
+// Results are memoized (see prose_cache.go): the output is a pure function of
+// (markdown, width), and the callers ask for the same block over and over.
+//
 // Every returned row is run through SanitizeForTerminal so embedded
 // terminal-state escapes (alt-screen, cursor visibility, line wrap,
 // mouse modes, OSC) from tool output or model-emitted text can never
@@ -33,7 +36,12 @@ func Prose(md string, width int) []string {
 	if strings.Count(md, "```")%2 == 1 {
 		md += "\n```"
 	}
-	return SanitizeRows(renderMarkdown(md, width))
+	if rows, ok := lookupProse(md, width); ok {
+		return rows
+	}
+	rows := SanitizeRows(renderMarkdown(md, width))
+	storeProse(md, width, rows)
+	return append([]string(nil), rows...)
 }
 
 // renderMarkdown renders markdown via glamour. Output rows are glamour's
