@@ -21,6 +21,10 @@ func TestContextWindow(t *testing.T) {
 		{"claude-opus-4-6", 1_000_000},
 		{"claude-sonnet-5", 1_000_000},
 		{"claude-sonnet-4-6", 1_000_000},
+		// The endpoint reports 1M for Sonnet 4.5 now that the 1M beta is
+		// retired and folded into the default.
+		{"claude-sonnet-4-5-20250929", 1_000_000},
+		{"claude-fable-5", 1_000_000},
 		// Copilot spells the same models with dots; vendor prefixes appear
 		// in some configs.
 		{"claude-opus-4.6", 1_000_000},
@@ -31,13 +35,13 @@ func TestContextWindow(t *testing.T) {
 		{"claude-opus-4-5-20251101", 200_000},
 		{"claude-opus-4-1-20250805", 200_000},
 		{"claude-opus-4-20250514", 200_000},
-		{"claude-sonnet-4-5-20250929", 200_000},
 		{"claude-haiku-4-5-20251001", 200_000},
 		{"claude-haiku-4.5", 200_000},
 		{"claude-3-5-sonnet-20241022", 200_000},
 
 		// Unknown: honest zero rather than a guess.
-		{"claude-fable-5", 0},
+		{"claude-sonnet-4-20250514", 0}, // delisted; we will not guess
+		{"claude-opus-6", 0},
 		{"gpt-5.6-terra", 0},
 		{"", 0},
 		{"claude", 0},
@@ -53,9 +57,9 @@ func TestContextWindow(t *testing.T) {
 func TestCatalogPrefersLearnedWindow(t *testing.T) {
 	var c Catalog
 	// Unknown model: table says nothing, catalog can teach it.
-	assert.Equal(t, 0, c.Window("claude-fable-5"))
-	c.Learn("claude-fable-5", 750_000)
-	assert.Equal(t, 750_000, c.Window("claude-fable-5"))
+	assert.Equal(t, 0, c.Window("claude-opus-6"))
+	c.Learn("claude-opus-6", 750_000)
+	assert.Equal(t, 750_000, c.Window("claude-opus-6"))
 
 	// A learned window beats the table for known models too.
 	c.Learn("claude-opus-4-5-20251101", 400_000)
@@ -82,7 +86,7 @@ func TestCatalogContextLimitOverridePrecedence(t *testing.T) {
 		"system.max_context_tokens": json.RawMessage(`2000000`),
 	}))
 	// ...or the model is unknown.
-	assert.Equal(t, 500_000, c.ContextLimit("claude-fable-5", chalkboard.Snapshot{
+	assert.Equal(t, 500_000, c.ContextLimit("claude-opus-6", chalkboard.Snapshot{
 		"system.max_context_tokens": json.RawMessage(`500000`),
 	}))
 

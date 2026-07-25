@@ -25,13 +25,21 @@ import (
 // window in tokens. Longest matching prefix wins, so "claude-opus-4-6" beats
 // "claude-opus-4".
 //
-// Verified facts only:
-//   - Opus 5, Opus 4.6/4.7/4.8, Sonnet 5 and Sonnet 4.6 are 1M-token windows.
-//     For Opus 5, 1M is both the default and the maximum: there is no smaller
-//     variant and no beta header is involved (the context-1m-2025-08-07 beta
-//     was retired in April 2026 and is ignored).
-//   - Opus 4.5 and earlier, Sonnet 4.5 and earlier, Haiku 4.5 and earlier,
-//     and the whole Claude 3 family are 200k.
+// Verified against the provider's own /v1/models response (max_input_tokens),
+// captured 2026-07-25:
+//
+//	claude-opus-5               1000000   claude-opus-4-5-20251101    200000
+//	claude-sonnet-5             1000000   claude-haiku-4-5-20251001   200000
+//	claude-fable-5              1000000   claude-opus-4-1-20250805    200000
+//	claude-opus-4-8/4-7/4-6     1000000
+//	claude-sonnet-4-6           1000000
+//	claude-sonnet-4-5-20250929  1000000
+//
+// For Opus 5, 1M is both the default and the maximum: there is no smaller
+// variant and no beta header is involved (context-1m-2025-08-07 was retired in
+// April 2026 and is ignored — which is also why Sonnet 4.5 now reports 1M by
+// default). Claude 3 and the undated Opus 4 / Haiku 4 ids predate the listing
+// above and are the long-standing 200k.
 //
 // Anything not listed here is deliberately absent rather than guessed.
 var windowTable = map[string]int{
@@ -41,11 +49,12 @@ var windowTable = map[string]int{
 	"claude-opus-4-6":   1_000_000,
 	"claude-sonnet-5":   1_000_000,
 	"claude-sonnet-4-6": 1_000_000,
+	"claude-sonnet-4-5": 1_000_000,
+	"claude-fable-5":    1_000_000,
 
 	"claude-opus-4":   200_000,
 	"claude-opus-4-1": 200_000,
 	"claude-opus-4-5": 200_000,
-	"claude-sonnet-4": 200_000,
 	"claude-haiku-4":  200_000,
 	"claude-3":        200_000,
 }

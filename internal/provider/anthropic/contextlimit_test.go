@@ -16,7 +16,7 @@ func TestAnthropicContextLimit(t *testing.T) {
 
 	// From the verified table.
 	assert.Equal(t, 1_000_000, a.ContextLimit("claude-opus-5", chalkboard.Snapshot{}))
-	assert.Equal(t, 200_000, a.ContextLimit("claude-sonnet-4-5-20250929", chalkboard.Snapshot{}))
+	assert.Equal(t, 200_000, a.ContextLimit("claude-opus-4-5-20251101", chalkboard.Snapshot{}))
 	assert.Equal(t, 0, a.ContextLimit("some-unreleased-model", chalkboard.Snapshot{}))
 
 	// Empty model falls back to the configured one.

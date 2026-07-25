@@ -17,6 +17,7 @@ func TestProviderContextLimit(t *testing.T) {
 	assert.Equal(t, 1_000_000, p.ContextLimit("claude-opus-5", chalkboard.Snapshot{}))
 	assert.Equal(t, 1_000_000, p.ContextLimit("claude-sonnet-4-6", chalkboard.Snapshot{}))
 	assert.Equal(t, 200_000, p.ContextLimit("claude-haiku-4-5-20251001", chalkboard.Snapshot{}))
+	assert.Equal(t, 1_000_000, p.ContextLimit("claude-sonnet-4-5-20250929", chalkboard.Snapshot{}))
 	assert.Equal(t, 0, p.ContextLimit("some-unreleased-model", chalkboard.Snapshot{}))
 	assert.Equal(t, 1_000_000, p.ContextLimit("", chalkboard.Snapshot{}))
 
