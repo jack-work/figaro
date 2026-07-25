@@ -200,3 +200,58 @@ func TestValueDecodeAndEncode(t *testing.T) {
 		t.Fatal("Decode accepted invalid JSON")
 	}
 }
+
+// TestValueMarshalsIdenticallyToRawMessage is the ruling-1 pin: swapping
+// json.RawMessage for Value must not move a single byte of output. Whatever
+// encoding/json does to an embedded RawMessage today -- it compacts it and
+// escapes <, > and & -- it must do to a Value, and nothing more: nested object
+// key order preserved, \u00e9 not re-escaped, literal é left alone, number
+// spelling untouched.
+func TestValueMarshalsIdenticallyToRawMessage(t *testing.T) {
+	inputs := []string{
+		`{"z":1,"a":2}`,
+		"{\"z\": 1,\n  \"a\": [2, {\"d\":4, \"c\":3}] }",
+		`{"html":"<b>&</b>"}`,
+		`{"esc":"\u00e9","lit":"é"}`,
+		`{"nums":[1.0,1,1e2,-0,123456789012345678901234567890]}`,
+		`"\ud83d\ude00"`,
+		`{"deep":{"b":{"y":1,"x":2},"a":null}}`,
+		`[]`,
+		`null`,
+	}
+	for _, in := range inputs {
+		raw := json.RawMessage(in)
+		want, err := json.Marshal(map[string]json.RawMessage{"k": raw})
+		if err != nil {
+			t.Fatalf("%s: %v", in, err)
+		}
+		got, err := json.Marshal(map[string]Value{"k": NewValue(raw)})
+		if err != nil {
+			t.Fatalf("%s: %v", in, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("Value diverged from json.RawMessage:\n in   %s\n got  %s\n want %s", in, got, want)
+		}
+		// And the canonical form is emphatically NOT what came out.
+		v := NewValue(raw)
+		if bytes.Contains(got, v.canon) != bytes.Contains(want, v.canon) {
+			t.Errorf("%s: canonical form leaked into output", in)
+		}
+	}
+}
+
+// Reordering an object's keys must not change what is emitted -- only whether
+// Equal fires. This is the whole raw/canon split in four lines.
+func TestValueReorderedKeysEmitTheirOwnBytes(t *testing.T) {
+	a := NewValue(json.RawMessage(`{"a":1,"b":2}`))
+	b := NewValue(json.RawMessage(`{"b":2,"a":1}`))
+	if !a.Equal(b) {
+		t.Fatal("reordered keys should compare equal")
+	}
+	if a.String() == b.String() {
+		t.Fatal("test is vacuous")
+	}
+	if a.String() != `{"a":1,"b":2}` || b.String() != `{"b":2,"a":1}` {
+		t.Fatalf("bytes were rewritten: %s / %s", a, b)
+	}
+}
