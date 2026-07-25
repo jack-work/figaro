@@ -164,8 +164,7 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 	}
 	st, _ := chalkboard.Open("")
 	if snap.Len() > 0 {
-		// Diff against the empty snapshot: a Set-only patch of every entry.
-		st.Apply(snap.Diff(chalkboard.Snapshot{}))
+		st.Apply(snap.AsPatch())
 	}
 	return st
 }
@@ -323,8 +322,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		if serr != nil {
 			return nil, fmt.Errorf("read conversation chalkboard: %w", serr)
 		}
-		// Diff against the empty snapshot: a Set-only patch of every entry.
-		cbState.Apply(snap.Diff(chalkboard.Snapshot{}))
+		cbState.Apply(snap.AsPatch())
 	}
 
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")

@@ -18,6 +18,19 @@ func val(s chalkboard.Snapshot, key string) json.RawMessage {
 	return v
 }
 
+// content renders a snapshot's entries for comparison. A Snapshot is a
+// handle on an immutable tree, so two snapshots holding the same entries
+// need not be == (AVL shape depends on insertion order, and the version
+// counter counts derivations). Content is the thing worth asserting.
+func content(t *testing.T, s chalkboard.Snapshot) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for k, v := range s.All() {
+		out[k] = string(v)
+	}
+	return out
+}
+
 // raw is a tiny helper that marshals a Go value to json.RawMessage.
 func raw(t *testing.T, v interface{}) json.RawMessage {
 	t.Helper()
@@ -69,7 +82,7 @@ func TestApply_RoundTrip(t *testing.T) {
 	})
 	p := next.Diff(prev)
 	got := prev.Apply(p)
-	assert.Equal(t, next, got, "Apply(Diff) must reconstruct the next snapshot")
+	assert.Equal(t, content(t, next), content(t, got), "Apply(Diff) must reconstruct the next snapshot")
 }
 
 func TestApply_DoesNotMutateReceiver(t *testing.T) {

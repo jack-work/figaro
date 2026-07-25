@@ -191,7 +191,7 @@ func seedChalkboardAria(tb testing.TB, m, n int) (string, string) {
 }
 
 // replaySnapLen is the seam for reading a Snapshot's size from this
-// file; on main a Snapshot is a map. AFTER the swap: return s.Len().
-func replaySnapLen(s chalkboard.Snapshot) int { return len(s) }
+// file; on main a Snapshot was a map, now it is a tree handle.
+func replaySnapLen(s chalkboard.Snapshot) int { return s.Len() }
 
 var storeSink int

@@ -91,7 +91,7 @@ func TestChalkboardRPCRaceRepro(t *testing.T) {
 				}
 				snap := a.Snapshot()
 				// Touch the values, as ChalkboardResponse marshalling would.
-				for k, v := range snap {
+				for k, v := range snap.All() {
 					_ = k
 					_ = len(v)
 				}
@@ -152,7 +152,9 @@ func TestChalkboardStateRaceRepro(t *testing.T) {
 					return
 				default:
 				}
-				for range st.Snapshot() {
+				for k, v := range st.Snapshot().All() {
+					_ = k
+					_ = len(v)
 				}
 			}
 		}()

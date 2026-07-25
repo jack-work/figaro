@@ -213,7 +213,7 @@ func TestForkDuringActiveStreamKeepsContinuationRunning(t *testing.T) {
 	snapshot, err := backend.ChalkboardState(id)
 	require.NoError(t, err)
 	cb, _ := chalkboard.Open("")
-	cb.Apply(snapshot.Diff(chalkboard.Snapshot{}))
+	cb.Apply(snapshot.AsPatch())
 
 	prov := &activeForkProvider{
 		started:  make(chan struct{}),
@@ -378,7 +378,7 @@ func TestForkDuringActiveToolKeepsToolAndContinuationRunning(t *testing.T) {
 	snapshot, err := backend.ChalkboardState(id)
 	require.NoError(t, err)
 	cb, _ := chalkboard.Open("")
-	cb.Apply(snapshot.Diff(chalkboard.Snapshot{}))
+	cb.Apply(snapshot.AsPatch())
 
 	blocking := &blockingForkTool{
 		started:  make(chan struct{}),

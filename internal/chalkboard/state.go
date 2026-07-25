@@ -36,25 +36,31 @@ func Open(path string) (*State, error) {
 	if err := json.Unmarshal(data, &s.snapshot); err != nil {
 		return nil, fmt.Errorf("chalkboard.Open: parse %s: %w", path, err)
 	}
-	if s.snapshot == nil {
-		s.snapshot = Snapshot{}
-	}
 	return s, nil
 }
 
-// Snapshot returns a deep clone of the state.
+// Snapshot returns the current board. Snapshots are immutable values,
+// so the caller holds a stable view no matter what happens next.
 func (s *State) Snapshot() Snapshot {
-	return s.snapshot.Clone()
+	return s.snapshot
 }
 
-// Apply mutates the snapshot and marks dirty.
+// Apply advances the state by the patch and returns the new board.
+//
+// A patch that changes nothing leaves the state (and the dirty flag)
+// alone: the tree returns a pointer-identical root for a semantically
+// equal write, so there is nothing to persist.
 func (s *State) Apply(p Patch) Snapshot {
 	if p.IsEmpty() {
-		return s.Snapshot()
+		return s.snapshot
 	}
-	s.snapshot = s.snapshot.Apply(p)
+	next := s.snapshot.Apply(p)
+	if next.root == s.snapshot.root {
+		return s.snapshot
+	}
+	s.snapshot = next
 	s.dirty = true
-	return s.Snapshot()
+	return s.snapshot
 }
 
 // Save flushes to disk if dirty. Atomic via tmp+rename.

@@ -25,18 +25,17 @@ import (
 
 // buildBoard constructs a Snapshot from a plain map.
 func buildBoard(m map[string]json.RawMessage) chalkboard.Snapshot {
-	return chalkboard.Snapshot(m) // AFTER: chalkboard.FromMap(m)
+	return chalkboard.FromMap(m)
 }
 
 // boardGet reads one key.
 func boardGet(s chalkboard.Snapshot, key string) (json.RawMessage, bool) {
-	v, ok := s[key] // AFTER: return s.Get(key)
-	return v, ok
+	return s.Get(key)
 }
 
 // boardLen reports the number of keys.
 func boardLen(s chalkboard.Snapshot) int {
-	return len(s) // AFTER: return s.Len()
+	return s.Len()
 }
 
 // unmarshalBoard decodes a flat `{"key": value, ...}` object into a
