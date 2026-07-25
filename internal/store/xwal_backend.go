@@ -133,7 +133,7 @@ func (b *XwalBackend) ChalkboardState(ariaID string) (chalkboard.Snapshot, error
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := b.loadChalkboardLocked(ariaID, c); err != nil {
-		return nil, err
+		return chalkboard.Snapshot{}, err
 	}
 	return c.state.Clone(), nil
 }
@@ -179,12 +179,7 @@ func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
 		if err := json.Unmarshal(rec.Payload, &p); err != nil {
 			return err
 		}
-		for k, v := range p.Set {
-			state[k] = v
-		}
-		for _, k := range p.Remove {
-			delete(state, k)
-		}
+		state = state.Apply(p)
 		if !p.IsEmpty() {
 			patches[rec.MainLT] = append(patches[rec.MainLT], p)
 		}

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -60,16 +61,16 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if str(snap["system.credo"]) != "be terse" {
-		t.Fatalf("credo = %q, want 'be terse'", str(snap["system.credo"]))
+	if str(cbGet(snap, "system.credo")) != "be terse" {
+		t.Fatalf("credo = %q, want 'be terse'", str(cbGet(snap, "system.credo")))
 	}
 	// mutate via patch; re-derive sees it
 	if err := b.ApplyChalkboard(conv, patchSet(map[string]string{"system.cwd": "/tmp"})); err != nil {
 		t.Fatal(err)
 	}
 	snap, _ = b.ChalkboardState(conv)
-	if str(snap["system.cwd"]) != "/tmp" {
-		t.Fatalf("cwd after apply = %q", str(snap["system.cwd"]))
+	if str(cbGet(snap, "system.cwd")) != "/tmp" {
+		t.Fatalf("cwd after apply = %q", str(cbGet(snap, "system.cwd")))
 	}
 	// Commit a turn so the set is below the fork point (the realistic
 	// flow: set rides with its turn). A set with NO intervening turn sits
@@ -97,8 +98,8 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatalf("child %s chalkboard: %v", id, err)
 		}
-		if str(snap["system.cwd"]) != "/tmp" {
-			t.Fatalf("child %s lost inherited cwd: %q", id, str(snap["system.cwd"]))
+		if str(cbGet(snap, "system.cwd")) != "/tmp" {
+			t.Fatalf("child %s lost inherited cwd: %q", id, str(cbGet(snap, "system.cwd")))
 		}
 	}
 }
@@ -124,6 +125,11 @@ func patchSet(kv map[string]string) message.Patch {
 		set[k] = b
 	}
 	return message.Patch{Set: set}
+}
+
+func cbGet(s chalkboard.Snapshot, key string) json.RawMessage {
+	v, _ := s.Get(key)
+	return v
 }
 
 func str(raw json.RawMessage) string {
@@ -231,8 +237,8 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 	if err != nil {
 		t.Fatalf("alt chalkboard: %v", err)
 	}
-	if str(snap["system.model"]) != "m" {
-		t.Fatalf("alt lost inherited model: %q", str(snap["system.model"]))
+	if str(cbGet(snap, "system.model")) != "m" {
+		t.Fatalf("alt lost inherited model: %q", str(cbGet(snap, "system.model")))
 	}
 	altIR, err := b.Open(alt)
 	if err != nil {
@@ -274,8 +280,8 @@ func TestXwalBackend_CauterizedLoadoutFork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sib chalkboard: %v", err)
 	}
-	if str(snap["system.model"]) != "m" {
-		t.Fatalf("sib lost the shared loadout model: %q", str(snap["system.model"]))
+	if str(cbGet(snap, "system.model")) != "m" {
+		t.Fatalf("sib lost the shared loadout model: %q", str(cbGet(snap, "system.model")))
 	}
 	sibIR, _ := b.Open(sib)
 	if _, err := sibIR.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}); err != nil {

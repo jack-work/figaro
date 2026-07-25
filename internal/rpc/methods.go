@@ -3,6 +3,7 @@ package rpc
 import (
 	"encoding/json"
 
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
@@ -147,7 +148,7 @@ type LoadoutResponse struct {
 
 // ChalkboardResponse returns the agent's current snapshot.
 type ChalkboardResponse struct {
-	Snapshot map[string]json.RawMessage `json:"snapshot"`
+	Snapshot chalkboard.Snapshot `json:"snapshot"`
 }
 
 // QueuedRequest asks for the currently-queued user prompts on this aria —
