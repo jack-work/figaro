@@ -100,17 +100,6 @@ func TestRepro_C_BlockUnfills(t *testing.T) {
 	assertNoDup(t, "C un-fill", drive(frames))
 }
 
-func hasDup(nodes []string) bool {
-	seen := map[string]int{}
-	for _, n := range nodes {
-		seen[n]++
-		if seen[n] > 1 {
-			return true
-		}
-	}
-	return false
-}
-
 // D: the seal-transition churn (SDK + summarized thinking). During streaming
 // the assembler omitted an empty summarized-thinking block while the provider
 // decode KEPT it, shifting a later thinking's block index and churning the
