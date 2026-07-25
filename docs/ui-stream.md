@@ -116,6 +116,12 @@ The arrow cluster is an alias for the letter motions, and — like them — pres
 one while a turn streams inline opens the pager first, so the gesture acts on
 arrival instead of looking like a dead keyboard.
 
+These tables are a summary. The canonical list is the **keymap** in
+`internal/cli/keymap.go`: one declarative row per binding — the chord, the modes
+it is live in, whether it opens the pager from incipit, its action, and its help
+text. The `?` panel is generated from it, so what the pager tells you about
+itself cannot drift from what it does.
+
 At the bottom the view **follows** new output live (the status bar shows
 `(live)`); scroll up and it holds position while the conversation grows beneath
 you. Messages that close while you're paging flush to the inline scrollback when
