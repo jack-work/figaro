@@ -45,11 +45,12 @@ type transcript struct {
 	w, h        int
 	tick        int
 
-	prev   []string // last painted screen (full-frame diff)
-	lineLT []int    // LT owning each line of lines(), for resize anchoring
-	offset int      // top line of the viewport into lines()
-	follow bool     // stick to the bottom on new content
-	pendG  bool     // saw one 'g' (for gg)
+	prev     []string // last painted screen (full-frame diff)
+	paintBuf []byte   // reused escape-stream scratch for paint
+	lineLT   []int    // LT owning each line of lines(), for resize anchoring
+	offset   int      // top line of the viewport into lines()
+	follow   bool     // stick to the bottom on new content
+	pendG    bool     // saw one 'g' (for gg)
 
 	inSearch   bool
 	query      string
@@ -790,21 +791,50 @@ func (t *transcript) helpLines() []string {
 	return rows
 }
 
+// paint writes the frame diff. Only changed rows are touched, and each is
+// emitted through compactRow, which strips the SGR churn and trailing blanks
+// the renderers leave behind (see transcript_paint.go) — same cells, a
+// fraction of the bytes. The scratch buffer is retained across frames so a
+// steady scroll allocates nothing here.
+//
+// The erase-line stays: compactRow trims trailing blanks, so the row no longer
+// overwrites what it does not cover.
 func (t *transcript) paint(screen []string) {
-	var b strings.Builder
-	b.WriteString("\x1b[?2026h")
+	buf := append(t.paintBuf[:0], "\x1b[?2026h"...)
 	for r := 0; r < len(screen); r++ {
 		var old string
 		if r < len(t.prev) {
 			old = t.prev[r]
 		}
-		if screen[r] != old {
-			fmt.Fprintf(&b, "\x1b[%d;1H\x1b[2K%s", r+1, screen[r])
+		if screen[r] == old {
+			continue
 		}
+		buf = appendCUP(buf, r+1)
+		buf = append(buf, "\x1b[2K"...)
+		buf = compactRow(buf, screen[r])
 	}
-	b.WriteString("\x1b[?2026l")
-	io.WriteString(t.out, b.String())
+	buf = append(buf, "\x1b[?2026l"...)
+	_, _ = t.out.Write(buf)
+	t.paintBuf = buf
 	t.prev = screen
+}
+
+// appendCUP appends "\x1b[<row>;1H" without going through fmt: the profile put
+// 9% of paint in fmt.(*pp).doPrintf for a two-digit number.
+func appendCUP(dst []byte, row int) []byte {
+	dst = append(dst, '\x1b', '[')
+	dst = appendUint(dst, row)
+	return append(dst, ';', '1', 'H')
+}
+
+func appendUint(dst []byte, n int) []byte {
+	if n < 0 {
+		n = 0
+	}
+	if n >= 10 {
+		dst = appendUint(dst, n/10)
+	}
+	return append(dst, byte('0'+n%10))
 }
 
 // key handles one navigation/search input byte. Transcript is a locked mode:

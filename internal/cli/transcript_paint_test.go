@@ -1,0 +1,473 @@
+package cli
+
+import (
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jack-work/figaro/internal/livelog/aria"
+)
+
+// ---------------------------------------------------------------------------
+// A cell-accurate VT for proving paint-layer rewrites are invisible.
+//
+// ldrender.FakeTerminal models the grid but drops SGR entirely, so it cannot
+// tell a coloured cell from a plain one — useless for checking a transform
+// whose whole job is rewriting colour. vtScreen is the smaller, sharper tool:
+// it keeps (rune, style) per cell for the subset of ANSI paint emits, plus the
+// scroll-region operations the shifted-frame path uses.
+//
+// The contract every test here asserts: replaying the optimized escape stream
+// must leave the same *appearance* grid as replaying the naive full-repaint
+// stream. Appearance, not bytes: a blank cell is defined by its background and
+// the attributes that draw on emptiness, which is exactly the licence
+// compactRow takes.
+// ---------------------------------------------------------------------------
+
+type vtStyle struct {
+	fg, bg                            string
+	bold, dim, italic                 bool
+	underline, reverse, strike, blink bool
+	conceal                           bool
+}
+
+type vtCell struct {
+	r rune
+	s vtStyle
+}
+
+// appearance normalizes a cell to what a viewer can actually distinguish.
+func (c vtCell) appearance() vtCell {
+	if c.r == 0 {
+		c.r = ' '
+	}
+	if c.r == ' ' && !c.s.reverse && !c.s.underline && !c.s.strike {
+		return vtCell{r: ' ', s: vtStyle{bg: c.s.bg}}
+	}
+	return c
+}
+
+type vtScreen struct {
+	w, h     int
+	cells    [][]vtCell
+	row, col int
+	cur      vtStyle
+	top, bot int // scroll region, 0-based inclusive
+	pend     []byte
+}
+
+func newVT(w, h int) *vtScreen {
+	v := &vtScreen{w: w, h: h, top: 0, bot: h - 1}
+	v.cells = make([][]vtCell, h)
+	for r := range v.cells {
+		v.cells[r] = make([]vtCell, w)
+	}
+	return v
+}
+
+func (v *vtScreen) Write(p []byte) (int, error) {
+	data := append(v.pend, p...)
+	v.pend = nil
+	i := 0
+	for i < len(data) {
+		c := data[i]
+		if c != 0x1b {
+			v.put(rune(c))
+			i++
+			continue
+		}
+		end := skipANSI(string(data), i)
+		if end == i+1 || (end <= len(data) && end > i && data[end-1] < 0x40) {
+			v.pend = append(v.pend, data[i:]...) // truncated escape
+			return len(p), nil
+		}
+		v.csi(string(data[i:end]))
+		i = end
+	}
+	return len(p), nil
+}
+
+func (v *vtScreen) put(r rune) {
+	if v.row < 0 || v.row >= v.h || v.col < 0 || v.col >= v.w {
+		return
+	}
+	v.cells[v.row][v.col] = vtCell{r: r, s: v.cur}
+	v.col++
+}
+
+func (v *vtScreen) csi(seq string) {
+	if len(seq) < 3 || seq[1] != '[' {
+		return
+	}
+	body := seq[2 : len(seq)-1]
+	final := seq[len(seq)-1]
+	if strings.HasPrefix(body, "?") {
+		return // DECSET/DECRST (synchronized update, autowrap…) — no cell effect
+	}
+	nums := func() []int {
+		var out []int
+		for _, f := range strings.Split(body, ";") {
+			n, _ := strconv.Atoi(f)
+			out = append(out, n)
+		}
+		return out
+	}
+	switch final {
+	case 'H':
+		row, col := 1, 1
+		parts := strings.Split(body, ";")
+		if parts[0] != "" {
+			row, _ = strconv.Atoi(parts[0])
+		}
+		if len(parts) > 1 && parts[1] != "" {
+			col, _ = strconv.Atoi(parts[1])
+		}
+		v.row, v.col = row-1, col-1
+	case 'K':
+		n := 0
+		if body != "" {
+			n = nums()[0]
+		}
+		if v.row < 0 || v.row >= v.h {
+			return
+		}
+		from, to := v.col, v.w
+		switch n {
+		case 1:
+			from, to = 0, v.col+1
+		case 2:
+			from, to = 0, v.w
+		}
+		for c := from; c < to && c < v.w; c++ {
+			// EL paints with the current background, not the full style.
+			v.cells[v.row][c] = vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}}
+		}
+	case 'J':
+		for r := range v.cells {
+			for c := range v.cells[r] {
+				v.cells[r][c] = vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}}
+			}
+		}
+		v.row, v.col = 0, 0
+	case 'r': // DECSTBM
+		if body == "" {
+			v.top, v.bot = 0, v.h-1
+		} else {
+			p := nums()
+			v.top = p[0] - 1
+			v.bot = v.h - 1
+			if len(p) > 1 && p[1] > 0 {
+				v.bot = p[1] - 1
+			}
+		}
+		v.row, v.col = v.top, 0
+	case 'S':
+		n := 1
+		if body != "" {
+			n = nums()[0]
+		}
+		v.scroll(n)
+	case 'T':
+		n := 1
+		if body != "" {
+			n = nums()[0]
+		}
+		v.scroll(-n)
+	case 'm':
+		v.sgr(body)
+	}
+}
+
+// scroll moves the scroll-region content by n rows (n>0 up, n<0 down),
+// blanking what rolls in, exactly as SU/SD do.
+func (v *vtScreen) scroll(n int) {
+	if n == 0 || v.top < 0 || v.bot >= v.h || v.top > v.bot {
+		return
+	}
+	blank := func(r int) {
+		for c := range v.cells[r] {
+			v.cells[r][c] = vtCell{r: ' ', s: vtStyle{bg: v.cur.bg}}
+		}
+	}
+	if n > 0 {
+		for r := v.top; r <= v.bot; r++ {
+			if r+n <= v.bot {
+				copy(v.cells[r], v.cells[r+n])
+			} else {
+				blank(r)
+			}
+		}
+		return
+	}
+	for r := v.bot; r >= v.top; r-- {
+		if r+n >= v.top {
+			copy(v.cells[r], v.cells[r+n])
+		} else {
+			blank(r)
+		}
+	}
+}
+
+func (v *vtScreen) sgr(body string) {
+	if body == "" {
+		v.cur = vtStyle{}
+		return
+	}
+	fields := strings.Split(body, ";")
+	for i := 0; i < len(fields); i++ {
+		f := fields[i]
+		if j := strings.IndexByte(f, ':'); j >= 0 {
+			f = f[:j]
+		}
+		n, err := strconv.Atoi(f)
+		if err != nil {
+			continue
+		}
+		switch {
+		case n == 0:
+			v.cur = vtStyle{}
+		case n == 1:
+			v.cur.bold = true
+		case n == 2:
+			v.cur.dim = true
+		case n == 3:
+			v.cur.italic = true
+		case n == 4:
+			v.cur.underline = true
+		case n == 5, n == 6:
+			v.cur.blink = true
+		case n == 7:
+			v.cur.reverse = true
+		case n == 8:
+			v.cur.conceal = true
+		case n == 9:
+			v.cur.strike = true
+		case n == 21:
+			v.cur.underline = true
+		case n == 22:
+			v.cur.bold, v.cur.dim = false, false
+		case n == 23:
+			v.cur.italic = false
+		case n == 24:
+			v.cur.underline = false
+		case n == 25, n == 26:
+			v.cur.blink = false
+		case n == 27:
+			v.cur.reverse = false
+		case n == 28:
+			v.cur.conceal = false
+		case n == 29:
+			v.cur.strike = false
+		case n >= 30 && n <= 37, n >= 90 && n <= 97:
+			v.cur.fg = f
+		case n == 39:
+			v.cur.fg = ""
+		case n >= 40 && n <= 47, n >= 100 && n <= 107:
+			v.cur.bg = f
+		case n == 49:
+			v.cur.bg = ""
+		case n == 38, n == 48:
+			args, consumed := vtExtendedColor(fields[i+1:])
+			i += consumed
+			if n == 38 {
+				v.cur.fg = args
+			} else {
+				v.cur.bg = args
+			}
+		}
+	}
+}
+
+func vtExtendedColor(rest []string) (string, int) {
+	if len(rest) == 0 {
+		return "", 0
+	}
+	switch rest[0] {
+	case "5":
+		if len(rest) >= 2 {
+			return "i" + rest[1], 2
+		}
+	case "2":
+		if len(rest) >= 4 {
+			return "rgb" + strings.Join(rest[1:4], ","), 4
+		}
+	}
+	return "", 1
+}
+
+// grid renders the appearance of every cell, for diffing two replays.
+func (v *vtScreen) grid() []string {
+	out := make([]string, v.h)
+	for r := 0; r < v.h; r++ {
+		var b strings.Builder
+		for c := 0; c < v.w; c++ {
+			a := v.cells[r][c].appearance()
+			fmt.Fprintf(&b, "%c|%s|%s|%v%v%v%v%v%v%v;", a.r, a.s.fg, a.s.bg,
+				a.s.bold, a.s.dim, a.s.italic, a.s.underline, a.s.reverse, a.s.strike, a.s.blink)
+		}
+		out[r] = b.String()
+	}
+	return out
+}
+
+// text is the human-readable form, for failure messages.
+func (v *vtScreen) text() []string {
+	out := make([]string, v.h)
+	for r := 0; r < v.h; r++ {
+		var b strings.Builder
+		for c := 0; c < v.w; c++ {
+			ch := v.cells[r][c].r
+			if ch == 0 {
+				ch = ' '
+			}
+			b.WriteRune(ch)
+		}
+		out[r] = strings.TrimRight(b.String(), " ")
+	}
+	return out
+}
+
+// naivePaint is the pre-optimization painter, kept as the reference oracle.
+func naivePaint(w io.Writer, screen, prev []string) {
+	var b strings.Builder
+	b.WriteString("\x1b[?2026h")
+	for r := 0; r < len(screen); r++ {
+		var old string
+		if r < len(prev) {
+			old = prev[r]
+		}
+		if screen[r] != old {
+			fmt.Fprintf(&b, "\x1b[%d;1H\x1b[2K%s", r+1, screen[r])
+		}
+	}
+	b.WriteString("\x1b[?2026l")
+	io.WriteString(w, b.String())
+}
+
+func assertSameGrid(t *testing.T, want, got *vtScreen, what string) {
+	t.Helper()
+	wg, gg := want.grid(), got.grid()
+	for r := range wg {
+		if wg[r] != gg[r] {
+			t.Fatalf("%s: row %d differs\n reference: %q\n optimized: %q\n cells ref: %s\n cells got: %s",
+				what, r, want.text()[r], got.text()[r], wg[r], gg[r])
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+
+func TestCompactRow_PreservesAppearance(t *testing.T) {
+	dim := "\x1b[38;5;252m"
+	rows := []string{
+		"",
+		"plain text with trailing spaces          ",
+		dim + " " + "\x1b[0m" + dim + " " + "\x1b[0m" + dim + " " + "\x1b[0m",
+		dim + "hello" + "\x1b[0m" + dim + " world  " + "\x1b[0m",
+		"\x1b[7mreverse video\x1b[27m tail",
+		"bg run: \x1b[41m      \x1b[0m end",
+		"bg trailing: \x1b[48;5;22m      \x1b[0m",
+		"bg trailing unclosed: \x1b[48;5;22m      ",
+		"underline blanks: \x1b[4m    \x1b[24m|",
+		"strike blanks: \x1b[9m    \x1b[29m|",
+		"truecolor \x1b[38;2;10;20;30mfg\x1b[0m and \x1b[48;2;1;2;3mbg\x1b[0m   ",
+		"\x1b[2m" + strings.Repeat("─", 40) + "\x1b[0m",
+		"\x1b[2mnever reset, dim to the end          ",
+		"many styles: \x1b[31ma\x1b[32mb\x1b[33mc\x1b[34md\x1b[35me\x1b[36mf\x1b[37mg\x1b[91mh\x1b[92mi\x1b[93mj",
+		"unknown escape \x1b[3Gmoved\x1b[0m   ",
+		"osc-ish \x1b]0;title\x07 tail",
+		"\x1b[1;38;5;99mmulti param\x1b[0m  ",
+		"\x1b[38;5;252m \x1b[0m\x1b[7m \x1b[27m\x1b[38;5;252m \x1b[0m",
+		"reset-prefixed \x1b[0;31mred\x1b[0m ",
+	}
+	for i, row := range rows {
+		want, got := newVT(80, 1), newVT(80, 1)
+		naivePaint(want, []string{row}, nil)
+		var buf []byte
+		buf = append(buf, "\x1b[1;1H\x1b[2K"...)
+		buf = compactRow(buf, row)
+		got.Write(buf)
+		assertSameGrid(t, want, got, fmt.Sprintf("row %d %q", i, row))
+	}
+}
+
+// TestCompactRow_ShrinksRendererChurn pins the actual win: the renderers emit
+// a styled escape pair per padding cell, and a full-width blank row must not
+// cost 1.5 KB.
+func TestCompactRow_ShrinksRendererChurn(t *testing.T) {
+	row := strings.Repeat("\x1b[38;5;252m \x1b[0m", 96)
+	got := string(compactRow(nil, row))
+	if len(got) != 0 {
+		t.Fatalf("blank padded row compacted to %d bytes (%q), want 0", len(got), got)
+	}
+	styled := "\x1b[38;5;252mhi\x1b[0m" + strings.Repeat("\x1b[38;5;252m \x1b[0m", 90)
+	got = string(compactRow(nil, styled))
+	if len(got) > 24 {
+		t.Fatalf("styled row + padding compacted to %d bytes (%q), want <= 24", len(got), got)
+	}
+}
+
+// TestTranscriptPaint_MatchesNaiveRepaint is the end-to-end guarantee: over a
+// long scroll of a real transcript, the optimized escape stream and the naive
+// one leave identical screens.
+func TestTranscriptPaint_MatchesNaiveRepaint(t *testing.T) {
+	const w, h = 100, 24
+	client := aria.NewClient()
+	client.SetClosedLimit(transcriptTailLimit)
+	committed := make([]aria.Committed, 12)
+	for i := range committed {
+		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, 12)}
+	}
+	client.Apply(aria.AriaRead{Committed: committed})
+
+	got := newVT(w, h)
+	tr := newTranscript(got, w, h, &ariaView{settings: &renderSettings{}}, client, "aria0001", time.Unix(0, 0))
+	tr.enter()
+
+	want := newVT(w, h)
+	var wantPrev []string
+
+	step := func(what string) {
+		t.Helper()
+		naivePaint(want, tr.prev, wantPrev)
+		wantPrev = tr.prev
+		assertSameGrid(t, want, got, what)
+	}
+	step("enter")
+
+	for i := range 60 {
+		tr.scrollBy(-1)
+		step(fmt.Sprintf("scroll up %d", i))
+	}
+	for i := range 40 {
+		tr.scrollBy(3)
+		step(fmt.Sprintf("scroll down %d", i))
+	}
+	tr.matchQuery = "transcript" // reverse-video highlights on every match
+	tr.render()
+	step("search highlight")
+	for i := range 20 {
+		tr.scrollBy(-2)
+		step(fmt.Sprintf("highlighted scroll %d", i))
+	}
+	tr.showHelp = true
+	tr.render()
+	step("help panel")
+	tr.key('G')
+	step("follow tail")
+}
+
+func BenchmarkCompactRow(b *testing.B) {
+	row := "\x1b[38;5;252mParagraph 0 of message 19. The quick brown fox jumps over the lazy dog\x1b[0m" +
+		strings.Repeat("\x1b[38;5;252m \x1b[0m", 20)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(row)))
+	buf := make([]byte, 0, 512)
+	b.ResetTimer()
+	for range b.N {
+		buf = compactRow(buf[:0], row)
+	}
+}
