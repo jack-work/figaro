@@ -9,15 +9,65 @@ package chalkboard
 import (
 	"bytes"
 	"encoding/json"
+	"iter"
 	"slices"
 	"sort"
 
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// Snapshot is an untyped key-value map. Values are raw JSON;
+// Snapshot is an untyped key-value view. Values are raw JSON;
 // callers json.Unmarshal what they need.
+//
+// Treat it as an opaque immutable value: read through Get/Has/Len/All,
+// construct through FromMap, and derive new snapshots with Apply. The
+// underlying representation is not part of the contract.
 type Snapshot map[string]json.RawMessage
+
+// FromMap builds a Snapshot from a plain map. The map is copied (to the
+// same depth as Clone), so later mutation of m does not affect the
+// returned Snapshot and vice versa.
+//
+// This is the seam: every construction of a Snapshot from a map goes
+// through here.
+func FromMap(m map[string]json.RawMessage) Snapshot {
+	out := make(Snapshot, len(m))
+	for k, v := range m {
+		out[k] = append(json.RawMessage(nil), v...)
+	}
+	return out
+}
+
+// Get returns the raw value for key and whether it was present.
+func (s Snapshot) Get(key string) (json.RawMessage, bool) {
+	v, ok := s[key]
+	return v, ok
+}
+
+// Has reports whether key is present.
+func (s Snapshot) Has(key string) bool {
+	_, ok := s[key]
+	return ok
+}
+
+// Len returns the number of keys.
+func (s Snapshot) Len() int { return len(s) }
+
+// All iterates the snapshot's entries in lexical key order.
+func (s Snapshot) All() iter.Seq2[string, json.RawMessage] {
+	return func(yield func(string, json.RawMessage) bool) {
+		keys := make([]string, 0, len(s))
+		for k := range s {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		for _, k := range keys {
+			if !yield(k, s[k]) {
+				return
+			}
+		}
+	}
+}
 
 // Clone returns a deep copy.
 func (s Snapshot) Clone() Snapshot {
