@@ -21,6 +21,7 @@ type Client struct {
 	closedSeen      map[int]bool
 	closedFloor     int
 	closedLimit     int
+	closedRev       uint64
 	lastCommittedLT int
 
 	openLT    int
@@ -104,7 +105,10 @@ func (c *Client) Apply(r AriaRead) {
 		}
 	}
 
-	c.closed = append(c.closed, finalized...)
+	if len(finalized) > 0 {
+		c.closed = append(c.closed, finalized...)
+		c.closedRev++
+	}
 	c.trimClosed()
 
 	var (
@@ -157,6 +161,7 @@ func (c *Client) trimClosed() {
 	if c.closedLimit <= 0 || len(c.closed) <= c.closedLimit {
 		return
 	}
+	c.closedRev++
 	sort.SliceStable(c.closed, func(i, j int) bool { return c.closed[i].LT < c.closed[j].LT })
 	c.closed = append([]Message(nil), c.closed[len(c.closed)-c.closedLimit:]...)
 	c.closedSeen = make(map[int]bool, len(c.closed))
@@ -176,6 +181,29 @@ func (c *Client) seenClosed(lt int) bool {
 type View struct {
 	Closed []Message
 	Open   *Message
+}
+
+// ClosedRevision is a counter bumped whenever the retained closed set changes
+// (a message finalized, or the retention limit trimmed one away). A viewer that
+// derives state from the closed tail — the transcript's page window does — can
+// hold it and skip the rebuild while it is unchanged, instead of re-deriving
+// per frame. Never zero after the first change, so zero is usable as "unset".
+func (c *Client) ClosedRevision() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closedRev + 1
+}
+
+// Open returns just the open, in-flight message (nil when none). View copies
+// and sorts the whole retained closed set; callers that only want the live
+// message — every transcript frame asks for it — should not pay for that.
+func (c *Client) Open() *Message {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.openLT == 0 {
+		return nil
+	}
+	return &Message{LT: c.openLT, Role: c.openRole, Nodes: c.openNodes()}
 }
 
 // View returns a snapshot of the current local state.

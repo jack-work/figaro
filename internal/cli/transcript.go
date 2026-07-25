@@ -69,6 +69,13 @@ type transcript struct {
 	heldOpen    *aria.Message
 	committedW  int
 
+	// tailRev is the client's closed-set revision that t.pages currently is a
+	// pristine snapshot of; 0 means the window has been paged/searched away from
+	// the tail. While following, the window is a pure function of that revision,
+	// so resetToTail can no-op instead of rebuilding pages, re-hashing page
+	// descriptors and re-scanning the caches on every single frame.
+	tailRev uint64
+
 	// rowCache memoizes unstyled rows of committed messages. Selection is
 	// applied after retrieval, so moving through nodes never re-renders prose.
 	rowCache  map[int]cachedMessage
@@ -134,6 +141,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query, t.matchQuery = false, false, "", ""
+	t.leaveTail() // a fresh session always rebuilds the window from the tail
 	t.resetToTail()
 	io.WriteString(t.out, altScreenOn+autowrapOff+ldmouse.Enable+cursorHide+"\x1b[2J")
 	t.render()
@@ -246,6 +254,7 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 		anchorLT, within = t.viewportAnchor()
 	}
 	page := transcriptPage{desc: desc, messages: messages}
+	t.leaveTail()
 	switch req.direction {
 	case pageOlder:
 		t.pages = append([]transcriptPage{page}, t.pages...)
@@ -358,6 +367,14 @@ func (t *transcript) takePayload(desc pageDesc) []aria.Message {
 }
 
 func (t *transcript) resetToTail() {
+	rev := t.client.ClosedRevision()
+	if t.tailRev == rev {
+		// The window already IS the tail at this revision. Only the cheap
+		// follow-state resets remain (both are no-ops in the steady state; they
+		// keep this path bit-identical to a full rebuild).
+		t.heldOpen, t.checkNewer = nil, false
+		return
+	}
 	v := t.client.View()
 	closed := v.Closed
 	if len(closed) > transcriptPageSize {
@@ -375,8 +392,14 @@ func (t *transcript) resetToTail() {
 	t.checkNewer = false
 	t.heldOpen = nil
 	t.noMoreOlder = len(closed) > 0 && closed[0].LT <= 1
+	t.tailRev = rev
 	t.pruneCaches()
 }
+
+// leaveTail marks the retained window as no longer a pristine tail snapshot, so
+// the next resetToTail rebuilds. Every mutation of t.pages outside resetToTail
+// must call it.
+func (t *transcript) leaveTail() { t.tailRev = 0 }
 
 func (t *transcript) pruneCaches() {
 	keep := make(map[int]bool)
@@ -569,12 +592,12 @@ func (t *transcript) openMessage() *aria.Message {
 	if !t.follow {
 		return t.heldOpen
 	}
-	return t.client.View().Open
+	return t.client.Open()
 }
 
 func (t *transcript) stopFollowing() {
 	if t.follow {
-		t.heldOpen = t.client.View().Open
+		t.heldOpen = t.client.Open()
 	}
 	t.follow = false
 }
@@ -1246,6 +1269,7 @@ func (t *transcript) finishSearch(found bool) {
 	}
 	origin := t.search
 	t.pages = origin.pages
+	t.leaveTail()
 	t.newer = origin.newer
 	t.offset = origin.offset
 	t.follow = origin.follow
@@ -1261,6 +1285,7 @@ func (t *transcript) wrapSearchOlder() {
 	}
 	origin := t.search
 	t.pages = append([]transcriptPage(nil), origin.pages...)
+	t.leaveTail()
 	t.newer = append([]pageDesc(nil), origin.newer...)
 	t.offset = origin.offset
 	t.follow = false
