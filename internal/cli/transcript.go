@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"html"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,15 +72,17 @@ type transcript struct {
 
 	// rowCache memoizes unstyled rows of committed messages. Selection is
 	// applied after retrieval, so moving through nodes never re-renders prose.
-	rowCache  map[int]cachedMessage
-	cacheW    int
-	nodeRows  map[nodeRef]nodeSpan
-	lineBuf   []string // reused row buffer, valid until the next lines()
-	lineLTBuf []int    // reused LT buffer, aliased by lineLT
-	ruleStr   string   // memoized separator rule for ruleW columns
-	ruleW     int
-	selection nodeSelection
-	expanded  map[nodeRef]bool
+	rowCache    map[int]cachedMessage
+	cacheW      int
+	nodeRows    map[nodeRef]nodeSpan
+	lineBuf     []string // reused row buffer, valid until the next lines()
+	lineLTBuf   []int    // reused LT buffer, aliased by lineLT
+	ruleStr     string   // memoized separator rule for ruleW columns
+	ruleW       int
+	paintBuf    []byte   // reused escape-sequence output buffer
+	screenSpare []string // the frame buffer displaced by the last paint
+	selection   nodeSelection
+	expanded    map[nodeRef]bool
 }
 
 type transcriptPage struct {
@@ -683,7 +686,7 @@ func (t *transcript) render() {
 	if t.offset < 0 {
 		t.offset = 0
 	}
-	screen := make([]string, t.h)
+	screen := t.nextScreen()
 	for r := 0; r < body; r++ {
 		if i := t.offset + r; i < len(all) {
 			screen[r] = all[i]
@@ -834,21 +837,46 @@ func (t *transcript) helpLines() []string {
 	return rows
 }
 
+// nextScreen hands out the frame buffer to compose into. Two are kept and
+// swapped: paint retains the composed frame as t.prev for the next diff, so
+// the buffer it displaces can be recycled instead of allocating a fresh
+// []string of screen height every frame.
+func (t *transcript) nextScreen() []string {
+	screen := t.screenSpare
+	if cap(screen) < t.h {
+		screen = make([]string, t.h)
+	} else {
+		screen = screen[:t.h]
+		clear(screen)
+	}
+	t.screenSpare = nil
+	return screen
+}
+
+// paint writes the diff between the composed frame and the last one. The
+// output buffer is reused across frames: a scroll dirties every row, and on
+// a wide terminal full of styled rows that is tens of kilobytes of escape
+// bytes per keypress — previously grown from nothing (and formatted through
+// fmt) on every single frame.
 func (t *transcript) paint(screen []string) {
-	var b strings.Builder
-	b.WriteString("\x1b[?2026h")
+	b := t.paintBuf[:0]
+	b = append(b, "\x1b[?2026h"...)
 	for r := 0; r < len(screen); r++ {
 		var old string
 		if r < len(t.prev) {
 			old = t.prev[r]
 		}
 		if screen[r] != old {
-			fmt.Fprintf(&b, "\x1b[%d;1H\x1b[2K%s", r+1, screen[r])
+			b = append(b, "\x1b["...)
+			b = strconv.AppendInt(b, int64(r+1), 10)
+			b = append(b, ";1H\x1b[2K"...)
+			b = append(b, screen[r]...)
 		}
 	}
-	b.WriteString("\x1b[?2026l")
-	io.WriteString(t.out, b.String())
-	t.prev = screen
+	b = append(b, "\x1b[?2026l"...)
+	t.paintBuf = b
+	t.out.Write(b)
+	t.screenSpare, t.prev = t.prev, screen
 }
 
 // key handles one navigation/search input byte. Transcript is a locked mode:
