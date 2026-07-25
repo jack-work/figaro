@@ -133,6 +133,17 @@ func toolNode(inv message.Content, results map[string]message.Content, partials,
 			n.Status = livedoc.StatusError
 		}
 		n.Output = tailBound(res.Text)
+		// Body-preview tools (e.g. write) keep the written body on screen
+		// rather than collapsing to the terse result summary, so the content
+		// is retained and tail-previewed like bash output. Display only: the
+		// canonical Content IR (res.Text) is still what the model receives.
+		if !res.IsError && previewArg != nil {
+			if pa := previewArg(name); pa != "" {
+				if body, ok := inv.Arguments[pa].(string); ok && body != "" {
+					n.Output = tailBound(body)
+				}
+			}
+		}
 	} else {
 		n.Status = livedoc.StatusRunning
 		n.Output = tailBound(partials[inv.ToolCallID])

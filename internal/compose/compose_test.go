@@ -93,6 +93,52 @@ func TestNodes_CompletedAndFailedTool(t *testing.T) {
 	}
 }
 
+func TestNodes_CompletedBodyPreviewToolRetainsBody(t *testing.T) {
+	// A write-like tool returns a terse summary to the model but declares
+	// "content" as its preview arg. The completed node shows the written body
+	// (tail-previewed like bash), not the summary — while res.Text (what the
+	// model sees) is untouched.
+	inv := message.Content{
+		Type: message.ContentToolInvoke, ToolCallID: "w1", ToolName: "write",
+		Arguments: map[string]interface{}{"path": "f.txt", "content": "alpha\nbeta\ngamma"},
+	}
+	preview := func(name string) string {
+		if name == "write" {
+			return "content"
+		}
+		return ""
+	}
+	nodes := Nodes([]message.Message{
+		assistant(inv),
+		toolResultTic(result("w1", "write", "Wrote 16 bytes to f.txt", false)),
+	}, nil, nil, nil, preview)
+	if len(nodes) != 1 || nodes[0].Status != livedoc.StatusOK {
+		t.Fatalf("want 1 completed node, got %+v", nodes)
+	}
+	if nodes[0].Output != "alpha\nbeta\ngamma" {
+		t.Errorf("completed write should retain the written body, got %q", nodes[0].Output)
+	}
+}
+
+func TestNodes_CompletedBodyPreviewToolErrorShowsResult(t *testing.T) {
+	// On error the model-facing result is shown, not the body.
+	inv := message.Content{
+		Type: message.ContentToolInvoke, ToolCallID: "w1", ToolName: "write",
+		Arguments: map[string]interface{}{"content": "alpha"},
+	}
+	preview := func(string) string { return "content" }
+	nodes := Nodes([]message.Message{
+		assistant(inv),
+		toolResultTic(result("w1", "write", "Error: permission denied", true)),
+	}, nil, nil, nil, preview)
+	if nodes[0].Status != livedoc.StatusError {
+		t.Fatalf("status = %v", nodes[0].Status)
+	}
+	if nodes[0].Output != "Error: permission denied" {
+		t.Errorf("errored write should show the result, got %q", nodes[0].Output)
+	}
+}
+
 func TestNodes_SkipsUserPromptAndDeterministic(t *testing.T) {
 	msgs := []message.Message{
 		{Role: message.RoleUser, Content: []message.Content{{Type: message.ContentProse, Text: "do the thing"}}},

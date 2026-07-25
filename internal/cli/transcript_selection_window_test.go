@@ -64,6 +64,22 @@ func TestTranscript_ClearSelectionKeepsFocusedEdge(t *testing.T) {
 	}
 }
 
+func TestTranscript_LeaveClearsSelection(t *testing.T) {
+	history := transcriptHistory(20)
+	client := aria.NewClient()
+	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
+	tr.enter()
+	tr.selectNode(-1, false)
+	if !tr.selection.active {
+		t.Fatal("precondition: a node should be selected after ^N/^P")
+	}
+	tr.leave()
+	if tr.selection.active {
+		t.Error("leaving the pager must drop the selection so none is stranded in incipit where Esc cannot reach it")
+	}
+}
+
 func TestTranscript_PagedSearchMatchesRenderedMarkdown(t *testing.T) {
 	history := transcriptHistory(80)
 	history[0].Nodes[0].Markdown = "foo **bar**"

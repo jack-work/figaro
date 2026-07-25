@@ -200,6 +200,7 @@ func (t *transcript) enter() {
 // alt-screen swap so no stray \x1b[<…M leaks into the shell.
 func (t *transcript) leave() {
 	t.active = false
+	t.selection = nodeSelection{} // no selection survives outside the pager
 	io.WriteString(t.out, "\x1b[2J"+ldmouse.Disable+altScreenOff)
 	t.prev = nil
 }
