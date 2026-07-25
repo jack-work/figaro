@@ -92,50 +92,60 @@ func clipToWidth(s string, width int) string {
 func clipFits(s string, width int) bool {
 	col := 0
 	for i := 0; i < len(s); {
-		c := s[i]
-		if c == 0x1b { // escape sequence: copied verbatim, uncounted
-			j := escapeEnd(s, i)
-			if !utf8.ValidString(s[i:j]) {
+		if c := s[i]; c >= 0x20 && c < 0x7f {
+			// Run of printable ASCII: one column per byte, no need to
+			// consult runewidth (asserted by TestClipFits...Assumption).
+			start := i
+			for i++; i < len(s) && s[i] >= 0x20 && s[i] < 0x7f; i++ {
+			}
+			col += i - start
+			if col > width {
+				return false
+			}
+			continue
+		} else if c == 0x1b { // escape sequence: copied verbatim, uncounted
+			j, ascii := escapeEnd(s, i)
+			if !ascii && !utf8.ValidString(s[i:j]) {
 				return false // would round-trip through U+FFFD
 			}
 			i = j
 			continue
-		}
-		if c < 0x20 || c == 0x7f { // control char: rewritten to a space
+		} else if c < utf8.RuneSelf { // control char: rewritten to a space
 			return false
 		}
-		if c < utf8.RuneSelf { // printable ASCII is always one column
-			col++
-			i++
-		} else {
-			r, size := utf8.DecodeRuneInString(s[i:])
-			if r == utf8.RuneError && size == 1 {
-				return false // invalid UTF-8: the rewrite substitutes U+FFFD
-			}
-			col += runewidth.RuneWidth(r)
-			i += size
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			return false // invalid UTF-8: the rewrite substitutes U+FFFD
 		}
+		col += runewidth.RuneWidth(r)
 		if col > width {
 			return false
 		}
+		i += size
 	}
 	return true
 }
 
 // escapeEnd returns the index just past the ANSI escape sequence starting at
-// s[i] (assumed to be ESC): everything up to and including the first ASCII
-// letter, or the end of the string. Byte-wise scanning is equivalent to the
-// rune-wise scan it replaces — a multi-byte rune's bytes are all >= 0x80 and
-// so can never be mistaken for the terminating letter.
-func escapeEnd(s string, i int) int {
-	j := i + 1
-	for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
-		j++
+// s[i] (assumed to be ESC) — everything up to and including the first ASCII
+// letter, or the end of the string — and whether that span was pure ASCII
+// (in which case the caller can skip the UTF-8 validity check, which is
+// otherwise a quarter of the scan's cost on glamour-styled rows). Byte-wise
+// scanning is equivalent to the rune-wise scan it replaces: a multi-byte
+// rune's bytes are all >= 0x80 and so can never be mistaken for the
+// terminating letter.
+func escapeEnd(s string, i int) (int, bool) {
+	ascii := true
+	for j := i + 1; j < len(s); j++ {
+		c := s[j]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+			return j + 1, ascii
+		}
+		if c >= utf8.RuneSelf {
+			ascii = false
+		}
 	}
-	if j < len(s) {
-		j++
-	}
-	return j
+	return len(s), ascii
 }
 
 // clipToWidthRewrite is the general path: it materializes the clipped row.
