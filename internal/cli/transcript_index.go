@@ -170,6 +170,18 @@ func (t *transcript) window(a, b int, dst []string) []string {
 	return dst
 }
 
+// lineAt materializes a single absolute line. Search walks line space one
+// candidate at a time through this, so a jump costs O(distance to the match)
+// rather than materializing the whole retained window up front.
+func (t *transcript) lineAt(i int) string {
+	k := t.index.entryAt(i)
+	if k < 0 {
+		return ""
+	}
+	e := &t.index.entries[k]
+	return t.entryLine(e, i-e.start, t.activeHighlight(), t.selectionSpan())
+}
+
 // entryLine renders line rel of an entry exactly as the old materialization
 // pass did: separator rows raw, node rows decorated then highlighted.
 func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSpan) string {

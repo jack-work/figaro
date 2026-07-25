@@ -142,6 +142,11 @@ func assertWindowMatchesLegacy(t *testing.T, tr *transcript, body int) {
 			t.Fatalf("nodeSpanOf(%v) = %v,%v; want %v", ref, got, ok, span)
 		}
 	}
+	for i := range want {
+		if got := tr.lineAt(i); got != want[i] {
+			t.Fatalf("lineAt(%d) = %q, want %q", i, got, want[i])
+		}
+	}
 	var buf []string
 	for off := 0; off+body <= len(want); off++ {
 		buf = tr.window(off, off+body, buf)
@@ -352,5 +357,99 @@ func TestTranscriptVirtualSelectionVisible(t *testing.T) {
 	body := tr.h - 1
 	if span.first < tr.offset || span.last >= tr.offset+body {
 		t.Fatalf("focused node span %v outside viewport [%d,%d)", span, tr.offset, tr.offset+body)
+	}
+}
+
+// legacyFind is the pre-virtualization '/' scan: materialize everything, walk
+// it from the cursor, wrap. The virtualized find must land on the same line.
+func legacyFind(tr *transcript, q string) (int, bool) {
+	all, _, _ := legacyLines(tr)
+	if len(all) == 0 {
+		return 0, false
+	}
+	for i := 0; i < len(all); i++ {
+		idx := (tr.offset + 1 + i) % len(all)
+		if searchContains(all[idx], q) {
+			return idx, true
+		}
+	}
+	return 0, false
+}
+
+func legacyFindRepeat(tr *transcript, q string, delta int) (int, bool) {
+	all, _, _ := legacyLines(tr)
+	if len(all) == 0 {
+		return 0, false
+	}
+	start := tr.offset + delta
+	for i := 0; i < len(all); i++ {
+		idx := ((start+delta*i)%len(all) + len(all)) % len(all)
+		if searchContains(all[idx], q) {
+			return idx, true
+		}
+	}
+	return 0, false
+}
+
+func TestTranscriptVirtualSearch_LandsWhereLegacyDid(t *testing.T) {
+	for _, q := range []string{"needle", "Tail prose 4", "captured", "rg needle", "nothing-here"} {
+		tr, _ := mixedTranscript(t, io.Discard, 80, 24, 6)
+		tr.scrollBy(-1)
+		for step := range 6 {
+			want, ok := legacyFind(tr, q)
+			before := tr.offset
+			tr.find(q)
+			if ok {
+				if tr.offset != want {
+					t.Fatalf("find(%q) step %d landed on %d, legacy said %d", q, step, tr.offset, want)
+				}
+			} else if tr.offset != before {
+				t.Fatalf("find(%q) with no match moved the offset %d -> %d", q, before, tr.offset)
+			}
+			if !ok {
+				break
+			}
+		}
+	}
+}
+
+func TestTranscriptVirtualSearch_RepeatMatchesLegacy(t *testing.T) {
+	tr, _ := mixedTranscript(t, io.Discard, 80, 24, 6)
+	tr.scrollBy(-1)
+	tr.matchQuery = "needle"
+	for _, delta := range []int{1, 1, 1, -1, -1, 1} {
+		want, ok := legacyFindRepeat(tr, tr.matchQuery, delta)
+		tr.findRepeat(delta)
+		if !ok {
+			t.Fatal("expected an in-window match")
+		}
+		if tr.offset != want {
+			t.Fatalf("findRepeat(%d) landed on %d, legacy said %d", delta, tr.offset, want)
+		}
+	}
+}
+
+// A selection clips rows to width-1, so a match hiding past the right edge is
+// invisible to search. That quirk is load-bearing for equivalence: lineAt must
+// decorate exactly as the materialization pass did before matching.
+func TestTranscriptVirtualSearch_RespectsSelectionClipping(t *testing.T) {
+	tr, _ := mixedTranscript(t, io.Discard, 80, 24, 6)
+	tr.scrollBy(-1)
+	messages := tr.messages()
+	tr.selection = nodeSelection{
+		active: true,
+		anchor: testSelectionPoint(messages[0].LT, 1, messages[0].Nodes[1]),
+		focus:  testSelectionPoint(messages[4].LT, 3, messages[4].Nodes[3]),
+	}
+	for _, q := range []string{"needle", "margin", "Tail prose 3"} {
+		want, ok := legacyFind(tr, q)
+		before := tr.offset
+		tr.find(q)
+		if ok && tr.offset != want {
+			t.Fatalf("find(%q) under selection landed on %d, legacy said %d", q, tr.offset, want)
+		}
+		if !ok && tr.offset != before {
+			t.Fatalf("find(%q) under selection moved with no legacy match", q)
+		}
 	}
 }

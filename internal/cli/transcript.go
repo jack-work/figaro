@@ -909,13 +909,14 @@ func (t *transcript) find(q string) {
 		return
 	}
 	t.matchQuery = q
-	all := t.lines()
-	if len(all) == 0 {
+	t.buildIndex()
+	total := t.index.total
+	if total == 0 {
 		return
 	}
-	for i := 0; i < len(all); i++ {
-		idx := (t.offset + 1 + i) % len(all)
-		if searchContains(all[idx], q) {
+	for i := 0; i < total; i++ {
+		idx := (t.offset + 1 + i) % total
+		if searchContains(t.lineAt(idx), q) {
 			t.offset = idx
 			t.stopFollowing()
 			return
@@ -944,14 +945,15 @@ func (t *transcript) findRepeat(delta int) {
 		return
 	}
 	q := t.matchQuery
-	all := t.lines()
-	if len(all) == 0 {
+	t.buildIndex()
+	total := t.index.total
+	if total == 0 {
 		return
 	}
 	start := t.offset + delta
-	for i := 0; i < len(all); i++ {
-		idx := ((start+delta*i)%len(all) + len(all)) % len(all)
-		if searchContains(all[idx], q) {
+	for i := 0; i < total; i++ {
+		idx := ((start+delta*i)%total + total) % total
+		if searchContains(t.lineAt(idx), q) {
 			t.offset = idx
 			t.stopFollowing()
 			return
@@ -1079,9 +1081,12 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 		}
 		for _, row := range rows.rows {
 			if searchContains(row.text, q) {
-				all := t.lines()
-				for i, line := range all {
-					if t.lineLT[i] == m.LT && searchContains(line, q) {
+				t.buildIndex()
+				for i := range t.index.total {
+					if t.lineLT[i] != m.LT {
+						continue // only this message's lines can carry the hit
+					}
+					if searchContains(t.lineAt(i), q) {
 						t.offset, t.follow = i, false
 						return true
 					}

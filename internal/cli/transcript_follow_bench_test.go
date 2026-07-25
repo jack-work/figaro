@@ -61,3 +61,30 @@ func BenchmarkTranscriptLiveHeavy(b *testing.B) {
 		tr.render()
 	}
 }
+
+// BenchmarkTranscriptFindHeavy is a '/' jump to a match a few lines below the
+// cursor in a heavy aria. The match is near, so the cost should be the cost of
+// the lines actually inspected — not of the whole retained window.
+func BenchmarkTranscriptFindHeavy(b *testing.B) {
+	tr, _ := heavyFollowTranscript(b, 200, 200)
+	tr.scrollBy(-1)
+	start := tr.offset
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		tr.offset = start
+		tr.find("Paragraph 1")
+	}
+}
+
+// BenchmarkTranscriptFindRepeatHeavy is n/N through the same window.
+func BenchmarkTranscriptFindRepeatHeavy(b *testing.B) {
+	tr, _ := heavyFollowTranscript(b, 200, 200)
+	tr.scrollBy(-1)
+	tr.matchQuery = "Paragraph 1"
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		tr.findRepeat(1)
+	}
+}
