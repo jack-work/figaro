@@ -67,12 +67,16 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 			return enc.Encode(f)
 		}
 		// The forest records a fork point as an LT, but the user's coordinate is
-		// a turn — resolve it here, where we have the aria, so the panel can name
-		// what `fork <id>:N` actually takes. Best effort: an unreadable log just
-		// omits the turn rather than failing status.
+		// a turn — resolve it so the panel can name what `fork <id>:N` takes.
+		//
+		// Resolve against the PARENT, not this aria: BranchedLT is the first LT
+		// this branch owns, and a fresh branch has not written it yet, so its own
+		// log cannot name the turn. The turn that was replaced lives in the
+		// parent, which is exactly what "forked-from parent:turn" means. Best
+		// effort — an unreadable parent just omits the turn rather than failing.
 		var forkTurn uint64
 		if len(f.Vector) > 1 && f.Parent != "" && f.BranchedLT > 1 {
-			if msgs, merr := ariaMessages(ctx, acli, ariaID); merr == nil {
+			if msgs, merr := ariaMessages(ctx, acli, f.Parent); merr == nil {
 				if t, ok := compose.TurnAt(msgs, f.BranchedLT); ok {
 					forkTurn = t
 				}
