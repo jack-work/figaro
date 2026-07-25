@@ -61,26 +61,29 @@ Every turn has a figwal **main-LT**, continuous along the trunk's node chain:
 - `2` = loadout birth (the chalkboard stamp message)
 - `3+` = conversation turns
 
-`figaro show` labels each unit by this LT, and `send`/`fork`/`attend`'s
-`:<LT>` address it — the shown number **is** the fork coordinate (they were
-realigned so `show`'s N == the `:N` you pass).
+`figaro show` labels each **turn** by its **turn id**, and `send`/`fork`/
+`attend`'s `:<turn>` address that — the shown number **is** the fork
+coordinate. LT is the *model's* coordinate (it counts the steps the model
+experienced, and most LTs sit mid-tool); it stays visible under `show -v/-l`
+for debugging the fig IR, but it is not an address.
 
 ## Commands
 
-- **`send <id>:<LT> -- …`** — fork the trunk at `<LT>`, then send to the new
-  branch (and **rebind** this shell there; `--stay`/`--attend=false` to send
-  but not move). Without `:<LT>`, plain append to the tail.
-- **`fork [<id>[:<LT>]] [--stay]`** — imperative branch, **no prompt**. Bare
-  `:<LT>` is an interior fork (history below `<LT>` is shared; the original
-  suffix becomes the continuation, a fresh empty alternative diverges). No
-  `:<LT>` = tail fork. Forking your **own** bound aria rebinds you to the
+- **`send <id>:<turn> -- …`** — fork the trunk so `<turn>` is **replaced**,
+  then send to the new branch (and **rebind** this shell there;
+  `--stay`/`--attend=false` to send but not move). Without `:<turn>`, plain
+  append to the tail.
+- **`fork [<id>[:<turn>]] [--stay]`** — imperative branch, **no prompt**. A
+  `:<turn>` is an interior fork: everything through the end of turn
+  `<turn>-1` is shared, the original suffix becomes the continuation, a fresh
+  empty alternative diverges. No `:<turn>` = tail fork. Forking your **own** bound aria rebinds you to the
   continuation (same trunk/mantra, the alternative is the new branch);
   forking any other aria, or `--stay`, leaves your session untouched.
-- **`attend <id>` / `<id>:<LT>` / `:<LT>`** (alias **`at`**) — bind this shell,
+- **`attend <id>` / `<id>:<turn>` / `:<turn>`** (alias **`at`**) — bind this shell,
   like `cd`. CLI-native attendance: the pid↔trunk map (the angelus binding
   registry) is the binding authority; the figwal layer knows nothing of it. An
-  `:<LT>` sets a **one-shot pending fork-point** consumed by the next bare
-  prompt (`fig -- …` forks there and moves to the new branch); `:<LT>` alone
+  `:<turn>` sets a **one-shot pending fork-point** consumed by the next bare
+  prompt (`fig -- …` forks there and moves to the new branch); `:<turn>` alone
   re-pins the already-bound aria.
 - **`attend null`** (the literal `null`) — **go home**: unbind the shell. New
   conversations then default to the live loadout. The word echoes the

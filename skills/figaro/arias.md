@@ -95,20 +95,20 @@ chalkboard mutations riding on user-role tics.
 
 ```
 figaro list                       the conversation forest (id, loadout, ver, fork, mantra…). alias: ls
-figaro show                       render the bound aria's history (last 10 units)
+figaro show                       render the bound aria's history (last 10 turns)
 figaro show <id>                  render a specific aria (the id is positional now)
-figaro show <id> -n 20            last 20 units (bare-N is gone; use -n/--last)
-figaro show <id> -a               every unit, no truncation
+figaro show <id> -n 20            last 20 turns (paginates backwards from the end)
+figaro show <id> -a               every turn, no truncation
 figaro show <id> -v               verbose: include patches, thinking, usage, transitions
 figaro show <id> -l               literal: raw text, no markdown (best for piping)
-figaro show <id> -j               units as raw JSON (materialized, no deltas)
+figaro show <id> -j               turns as raw JSON (the wire IR verbatim)
 figaro status <id> -m             provider/model/ctx + derived detail (mantra, cwd, fork origin)
 figaro state <id>                 the folded chalkboard snapshot (-j for JSON)
 ```
 
 `show` takes the aria id as a **positional** (or `--id`, or the pid binding);
-units are labeled by their figaro LT (the coordinate `send`/`fork <id>:<LT>`
-address — see [trunks.md](trunks.md)). Thinking blocks render muted by
+turns are labeled by their **turn id** (the coordinate `send`/`fork
+<id>:<turn>` address — see [trunks.md](trunks.md)). Thinking blocks render muted by
 default. `figaro show` is the **only safe way** to read a live aria — the
 angelus serves through a lock-free cache, sidestepping the truncation race on
 the active segment, and it stitches the trunk's node chain into one history.
