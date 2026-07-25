@@ -322,8 +322,21 @@ func (t *transcript) trimPages(direction transcriptPageDirection) {
 	}
 }
 
+// dropPage releases the caches of a page leaving the retained window. Rows of
+// messages whose payload is still held in the LRU are KEPT: that page is one
+// scroll-turn away from coming back (the LRU exists precisely so the return
+// trip costs no I/O), and re-rendering its prose is far more expensive than
+// the rows are to hold. Expansion state rides along with the rows, so the two
+// never disagree. Rows are released for real when the payload leaves the LRU.
 func (t *transcript) dropPage(page transcriptPage) {
+	if page.desc.Count == 0 {
+		return
+	}
+	kept := t.payloadLTs()
 	for _, m := range page.messages {
+		if kept[m.LT] {
+			continue
+		}
 		delete(t.rowCache, m.LT)
 		for ref := range t.expanded {
 			if ref.lt == m.LT {
@@ -331,6 +344,24 @@ func (t *transcript) dropPage(page transcriptPage) {
 			}
 		}
 	}
+}
+
+// payloadLTs is the set of message LTs whose payload the LRU still holds.
+func (t *transcript) payloadLTs() map[int]bool {
+	n := 0
+	for _, page := range t.payloadLRU {
+		n += len(page.messages)
+	}
+	if n == 0 {
+		return nil
+	}
+	out := make(map[int]bool, n)
+	for _, page := range t.payloadLRU {
+		for _, m := range page.messages {
+			out[m.LT] = true
+		}
+	}
+	return out
 }
 
 func (t *transcript) rememberPayload(page transcriptPage) {
@@ -347,9 +378,13 @@ func (t *transcript) rememberPayload(page transcriptPage) {
 	}
 	t.payloadLRU = append(t.payloadLRU, page)
 	if len(t.payloadLRU) > transcriptPayloadLRULimit {
+		evicted := append([]transcriptPage(nil), t.payloadLRU[:len(t.payloadLRU)-transcriptPayloadLRULimit]...)
 		copy(t.payloadLRU, t.payloadLRU[len(t.payloadLRU)-transcriptPayloadLRULimit:])
 		clear(t.payloadLRU[transcriptPayloadLRULimit:])
 		t.payloadLRU = t.payloadLRU[:transcriptPayloadLRULimit]
+		for _, page := range evicted { // rows outlive the window, not the LRU
+			t.dropPage(page)
+		}
 	}
 }
 
@@ -405,6 +440,11 @@ func (t *transcript) pruneCaches() {
 	keep := make(map[int]bool)
 	for _, m := range t.messages() {
 		keep[m.LT] = true
+	}
+	for _, page := range t.payloadLRU { // payload retained => rows retained
+		for _, m := range page.messages {
+			keep[m.LT] = true
+		}
 	}
 	for lt := range t.rowCache {
 		if !keep[lt] {
