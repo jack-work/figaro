@@ -1296,6 +1296,22 @@ func appendUint(dst []byte, n int) []byte {
 	return append(dst, byte('0'+n%10))
 }
 
+// mode reports which input mode the pager is in — the keymap's view of it.
+// The order is the dispatch order: the search box owns the keyboard before a
+// panel does, and a panel before the plain pager.
+func (t *transcript) mode() keyMode {
+	switch {
+	case !t.active:
+		return modeIncipit
+	case t.inSearch:
+		return modeSearch
+	case t.showHelp || t.showStatus || t.showQueued:
+		return modePanel
+	default:
+		return modeTranscript
+	}
+}
+
 // key handles one navigation/search input byte. Transcript is a locked mode:
 // keys only scroll or search — it NEVER self-exits. Exit is Ctrl-D / Ctrl-C,
 // handled at the input loop. q, Esc, and Ctrl-T are deliberately inert here.

@@ -658,8 +658,9 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 	i := 0
 	for i < len(data) {
 		in.mu.Lock()
-		active := in.lt.transcriptActive()
+		mode := in.lt.transcriptMode()
 		in.mu.Unlock()
+		active := mode != modeIncipit
 		if active {
 			if ev, consumed, ok, need := ldmouse.Parse(data[i:]); need {
 				pending = append(pending, data[i:]...)
@@ -691,15 +692,13 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			i += consumed
 			if key.ctrl && (key.code == 'n' || key.code == 'N' || key.code == 'p' || key.code == 'P') {
 				in.enterTranscript()
-				in.mu.Lock()
-				in.cancelTranscriptSearchLocked()
-				delta := 1
+				ev := keyEvent{ctrl: 'n', shift: key.shift, alt: key.alt, mode: mode}
 				if key.code == 'p' || key.code == 'P' {
-					delta = -1
+					ev.ctrl = 'p'
+					inputSelectPrev(in, ev)
+				} else {
+					inputSelectNext(in, ev)
 				}
-				in.lt.transcriptSelect(delta, key.shift || key.alt)
-				in.mu.Unlock()
-				in.pageWanted = true
 				continue
 			}
 			var representable bool
@@ -751,114 +750,46 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 		if !active && opensTranscriptFor(b) {
 			in.enterTranscript()
 			in.mu.Lock()
-			active = in.lt.transcriptActive()
+			mode = in.lt.transcriptMode()
 			in.mu.Unlock()
+			active = mode != modeIncipit
 		}
+		ev := keyEvent{b: b, mode: mode}
 		// Universal control keys — identical in incipit and transcript.
 		switch b {
-		case 0x03: // Ctrl-C: interrupt (if running) + close
-			if active {
-				in.mu.Lock()
-				in.cancelTranscriptSearchLocked()
-				plan, selected := in.lt.transcriptSelectionPlan()
-				if selected && in.copyFailed &&
-					in.copyFailedLo == plan.lo && in.copyFailedHi == plan.hi {
-					in.copyFailed = false
-					in.lt.clearTranscriptSelection()
-					in.mu.Unlock()
-					in.cancelSelectionCopy()
-					in.cancel()
+		case 0x03: // Ctrl-C: interrupt / cancel a copy / clear a selection
+			if inputInterrupt(in, ev) == keyStop {
+				return pending, true
+			}
+			continue
+		case 0x04: // Ctrl-D: disconnect; the turn keeps running
+			if inputDisconnect(in, ev) == keyStop {
+				return pending, true
+			}
+			continue
+		case 'q': // detach parity with Ctrl-D when the pager is up
+			// Not in incipit (nothing to detach from), and literal text
+			// while the search box is up.
+			if mode == modeTranscript || mode == modePanel {
+				if inputDisconnect(in, ev) == keyStop {
 					return pending, true
 				}
-				if selected && in.copyCancel != nil {
-					in.copyCancel()
-					in.copyCancel = nil
-					in.copyGen++
-					in.copyFailed = true
-					in.copyFailedLo, in.copyFailedHi = in.copyPlan.lo, in.copyPlan.hi
-					in.copyPlan = selectionCopyPlan{}
-					in.mu.Unlock()
-					continue
-				}
-				if selected {
-					copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)
-					in.copyGen++
-					gen := in.copyGen
-					in.copyCancel = copyCancel
-					in.copyPlan = plan
-					in.copyFailed = false
-					in.mu.Unlock()
-					go in.copySelection(copyCtx, copyCancel, gen, plan)
-					continue
-				}
-				in.mu.Unlock()
+				continue
 			}
-			in.cancelTranscriptSearch()
-			in.cancelSelectionCopy()
-			in.cancel()
-			return pending, true
-		case 0x04: // Ctrl-D: disconnect; the turn keeps running
-			in.cancelTranscriptSearch()
-			in.cancelSelectionCopy()
-			select {
-			case in.disconnectCh <- struct{}{}:
-			default:
-			}
-			return pending, true
-		case 'q': // detach parity with Ctrl-D when the pager is up
-			if !active {
-				break
-			}
-			if in.lt.transcriptSearching() {
-				break // typing into the search box
-			}
-			in.cancelTranscriptSearch()
-			in.cancelSelectionCopy()
-			select {
-			case in.disconnectCh <- struct{}{}:
-			default:
-			}
-			return pending, true
 		case 0x0c: // Ctrl-L: listen (stay open past turn-done) + transcript
-			in.mu.Lock()
-			in.cancelTranscriptSearchLocked()
-			*in.listen = true
-			in.mu.Unlock()
-			in.enterTranscript()
+			inputListen(in, ev)
 			continue
 		case 0x14: // Ctrl-T: enter transcript (no-op if already there)
-			in.cancelTranscriptSearch()
-			in.enterTranscript()
+			inputEnterTranscript(in, ev)
 			continue
 		case 0x0f: // Ctrl-O: toggle verbosity
-			in.mu.Lock()
-			in.cancelTranscriptSearchLocked()
-			in.set.verbose = !in.set.verbose
-			in.lt.invalidateTranscriptRows()
-			in.lt.render()
-			in.mu.Unlock()
+			inputToggleVerbose(in, ev)
 			continue
 		case 'y': // copy selection if any, else copy the aria id (OSC 52)
-			if active && in.lt.transcriptSearching() {
-				break // typing into the search box — let it fall to the pager
+			if mode != modeSearch { // in the search box it is literal text
+				inputYank(in, ev)
+				continue
 			}
-			if active {
-				in.mu.Lock()
-				plan, selected := in.lt.transcriptSelectionPlan()
-				if selected && in.copyCancel == nil && !in.copyFailed {
-					copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)
-					in.copyGen++
-					gen := in.copyGen
-					in.copyCancel = copyCancel
-					in.copyPlan = plan
-					in.mu.Unlock()
-					go in.copySelection(copyCtx, copyCancel, gen, plan)
-					continue
-				}
-				in.mu.Unlock()
-			}
-			in.tc.SetClipboard(in.figaroID)
-			continue
 		}
 		// Remaining keys drive the pager (scroll/search) when active.
 		if active {
@@ -870,6 +801,144 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 		}
 	}
 	return pending, false
+}
+
+// ---------------------------------------------------------------------------
+// The input loop's key actions — the rows of the keymap that own the process
+// rather than the viewport (see keymap.go). They run on the read goroutine,
+// take the render lock themselves, and may end the loop.
+// ---------------------------------------------------------------------------
+
+// inputInterrupt is Ctrl-C. It is a state machine over the selection and the
+// clipboard, not a single gesture, and the order matters:
+//
+//	a copy already failed on this exact selection → clear it and quit
+//	a copy is in flight                          → cancel it, remember the failure
+//	a selection is up                            → start an async copy
+//	nothing selected                             → interrupt the turn and close
+func inputInterrupt(in *interactiveInput, ev keyEvent) keyVerdict {
+	if ev.mode != modeIncipit {
+		in.mu.Lock()
+		in.cancelTranscriptSearchLocked()
+		plan, selected := in.lt.transcriptSelectionPlan()
+		if selected && in.copyFailed &&
+			in.copyFailedLo == plan.lo && in.copyFailedHi == plan.hi {
+			in.copyFailed = false
+			in.lt.clearTranscriptSelection()
+			in.mu.Unlock()
+			in.cancelSelectionCopy()
+			in.cancel()
+			return keyStop
+		}
+		if selected && in.copyCancel != nil {
+			in.copyCancel()
+			in.copyCancel = nil
+			in.copyGen++
+			in.copyFailed = true
+			in.copyFailedLo, in.copyFailedHi = in.copyPlan.lo, in.copyPlan.hi
+			in.copyPlan = selectionCopyPlan{}
+			in.mu.Unlock()
+			return keyHandled
+		}
+		if selected {
+			copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			in.copyGen++
+			gen := in.copyGen
+			in.copyCancel = copyCancel
+			in.copyPlan = plan
+			in.copyFailed = false
+			in.mu.Unlock()
+			go in.copySelection(copyCtx, copyCancel, gen, plan)
+			return keyHandled
+		}
+		in.mu.Unlock()
+	}
+	in.cancelTranscriptSearch()
+	in.cancelSelectionCopy()
+	in.cancel()
+	return keyStop
+}
+
+// inputDisconnect is Ctrl-D, and 'q' with the pager up: leave, and let the
+// turn keep running.
+func inputDisconnect(in *interactiveInput, _ keyEvent) keyVerdict {
+	in.cancelTranscriptSearch()
+	in.cancelSelectionCopy()
+	select {
+	case in.disconnectCh <- struct{}{}:
+	default:
+	}
+	return keyStop
+}
+
+// inputListen is Ctrl-L: stay open past turn-done, in the pager.
+func inputListen(in *interactiveInput, _ keyEvent) keyVerdict {
+	in.mu.Lock()
+	in.cancelTranscriptSearchLocked()
+	*in.listen = true
+	in.mu.Unlock()
+	in.enterTranscript()
+	return keyHandled
+}
+
+// inputEnterTranscript is Ctrl-T.
+func inputEnterTranscript(in *interactiveInput, _ keyEvent) keyVerdict {
+	in.cancelTranscriptSearch()
+	in.enterTranscript()
+	return keyHandled
+}
+
+// inputToggleVerbose is Ctrl-O.
+func inputToggleVerbose(in *interactiveInput, _ keyEvent) keyVerdict {
+	in.mu.Lock()
+	in.cancelTranscriptSearchLocked()
+	in.set.verbose = !in.set.verbose
+	in.lt.invalidateTranscriptRows()
+	in.lt.render()
+	in.mu.Unlock()
+	return keyHandled
+}
+
+// inputYank is 'y': copy the selection if there is one, else the aria id.
+func inputYank(in *interactiveInput, ev keyEvent) keyVerdict {
+	if ev.mode != modeIncipit {
+		in.mu.Lock()
+		plan, selected := in.lt.transcriptSelectionPlan()
+		if selected && in.copyCancel == nil && !in.copyFailed {
+			copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			in.copyGen++
+			gen := in.copyGen
+			in.copyCancel = copyCancel
+			in.copyPlan = plan
+			in.mu.Unlock()
+			go in.copySelection(copyCtx, copyCancel, gen, plan)
+			return keyHandled
+		}
+		in.mu.Unlock()
+	}
+	in.tc.SetClipboard(in.figaroID)
+	return keyHandled
+}
+
+// inputSelectNext/Prev are CSI-u Ctrl-N / Ctrl-P: move the node selection, or
+// extend it when a modifier rides along. They are input-level (not pager
+// rows) because only the CSI-u report carries the modifier at all; the raw
+// 0x0e/0x10 bytes go through the pager, which cannot see one.
+func inputSelectNext(in *interactiveInput, ev keyEvent) keyVerdict {
+	return in.selectNodeKey(1, ev)
+}
+
+func inputSelectPrev(in *interactiveInput, ev keyEvent) keyVerdict {
+	return in.selectNodeKey(-1, ev)
+}
+
+func (in *interactiveInput) selectNodeKey(delta int, ev keyEvent) keyVerdict {
+	in.mu.Lock()
+	in.cancelTranscriptSearchLocked()
+	in.lt.transcriptSelect(delta, ev.shift || ev.alt)
+	in.mu.Unlock()
+	in.pageWanted = true
+	return keyHandled
 }
 
 func (in *interactiveInput) copySelection(ctx context.Context, cancel context.CancelFunc, gen uint64, plan selectionCopyPlan) {
@@ -925,32 +994,6 @@ func (in *interactiveInput) coalesceNewline(b byte) bool {
 		in.lastNL = 0
 	}
 	return false
-}
-
-// opensTranscriptFor reports whether a key pressed during inline (incipit)
-// streaming should yank the pager up first, so it acts on arrival instead of
-// looking like a dead keyboard. The rule: a key qualifies when its pager
-// meaning is a sensible OPENING gesture. Deliberately excluded —
-//
-//	n / N  repeat search with no query yet: opens onto a no-op
-//	y      copy: in incipit it already copies the aria id, a feature of its own
-//	q      detach: would open the pager and immediately tear it down
-//	Esc    clear selection with nothing selected, and a sequence prefix besides
-//	^C/^D  interrupt/detach; both are handled before this gate
-//
-// ^L and ^T enter the pager through their own explicit paths.
-func opensTranscriptFor(b byte) bool {
-	switch b {
-	case 'j', 'k', 'u', 'd', 'g', 'G', // scroll
-		'/',           // search prompt
-		'?', '!', 'Q', // help / figaro status / queued-prompt panels
-		0x0f,       // ^O verbosity
-		0x0e, 0x10, // ^N/^P node selection
-		0x0d, 0x0a: // Enter: expand tools
-		return true
-	default:
-		return false
-	}
 }
 
 // dimRule returns a plain dim full-width horizontal rule — the opening rule and
