@@ -453,3 +453,41 @@ func TestTranscriptVirtualSearch_RespectsSelectionClipping(t *testing.T) {
 		}
 	}
 }
+
+func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
+	// Empty aria: the index must be well-formed, not just non-crashing.
+	client := aria.NewClient()
+	ft := ldrender.NewFakeTerminal(40, 6)
+	tr := newTranscript(ft, 40, 6, ldrender.NodeText{}, client, "empty123", time.Unix(0, 0))
+	tr.enter()
+	if tr.index.total != 0 || len(tr.lineLT) != 0 {
+		t.Fatalf("empty transcript: total=%d lineLT=%d", tr.index.total, len(tr.lineLT))
+	}
+	if got := tr.window(0, 10, nil); len(got) != 0 {
+		t.Fatalf("empty window returned %d rows", len(got))
+	}
+	if got := tr.lineAt(0); got != "" {
+		t.Fatalf("lineAt on an empty index = %q", got)
+	}
+	if _, ok := tr.nodeSpanOf(nodeRef{lt: 1, index: 0}); ok {
+		t.Fatal("empty index reported a node span")
+	}
+	tr.key('j')
+	tr.key('k')
+	tr.key('G')
+
+	// A single message: no separator triple, so entry 0 starts at line 0.
+	client.Apply(aria.AriaRead{Committed: []aria.Committed{{
+		LT: 1, Role: "assistant",
+		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "solo"}},
+	}}})
+	tr.render()
+	if len(tr.index.entries) != 1 || tr.index.entries[0].sep {
+		t.Fatalf("single message must not carry a separator: %+v", tr.index.entries)
+	}
+	assertWindowMatchesLegacy(t, tr, 3)
+
+	// A terminal too small to hold a body row still paints without panicking.
+	tr.resize(4, 4)
+	assertWindowMatchesLegacy(t, tr, 1)
+}
