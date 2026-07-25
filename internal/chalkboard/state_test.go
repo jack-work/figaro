@@ -17,7 +17,7 @@ func TestState_OpenMissing_EmptySnapshot(t *testing.T) {
 	s, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
 	defer s.Close()
-	assert.Empty(t, s.Snapshot())
+	assert.Equal(t, 0, s.Snapshot().Len())
 }
 
 func TestState_ApplyAndSave_RoundTrip(t *testing.T) {
