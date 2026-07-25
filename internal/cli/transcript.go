@@ -876,9 +876,7 @@ func (t *transcript) paint(screen []string) {
 		if screen[r] == old {
 			continue
 		}
-		buf = appendCUP(buf, r+1)
-		buf = append(buf, "\x1b[2K"...)
-		buf = compactRow(buf, screen[r])
+		buf = appendRowUpdate(buf, r, old, screen[r])
 	}
 	buf = append(buf, "\x1b[?2026l"...)
 	_, _ = t.out.Write(buf)

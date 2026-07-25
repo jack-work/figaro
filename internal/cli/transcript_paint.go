@@ -3,6 +3,9 @@ package cli
 import (
 	"os"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/mattn/go-runewidth"
 )
 
 // ---------------------------------------------------------------------------
@@ -254,22 +257,31 @@ func sgrParams(seq string) (string, bool) {
 // compactRow appends the compacted form of row to dst. See the file comment
 // for the contract: default SGR in, default SGR out, same visible cells.
 func compactRow(dst []byte, row string) []byte {
-	if !strings.ContainsRune(row, '\x1b') {
+	return compactRowFrom(dst, row, sgrStyle{})
+}
+
+// compactRowFrom is compactRow starting from a row whose leading columns are
+// already on screen: `pending` is the style in effect at that point, which has
+// to be re-established because SGR is terminal state, not cell state, and the
+// escapes that set it were emitted in an earlier frame.
+func compactRowFrom(dst []byte, row string, pending sgrStyle) []byte {
+	if pending.n == 0 && !strings.ContainsRune(row, '\x1b') {
 		return append(dst, trimTrailingSpaces(row)...)
 	}
 	start := len(dst)
 	visible := len(dst) // truncation point: everything after is blank-on-blank
-	var pending, emitted sgrStyle
+	entry := pending    // style in effect at column 0 of this fragment
+	var emitted sgrStyle
 	for i := 0; i < len(row); {
 		if row[i] == '\x1b' {
 			j := skipANSI(row, i)
 			params, ok := sgrParams(row[i:j])
 			if !ok {
-				return verbatimRow(dst[:start], row)
+				return verbatimRow(dst[:start], row, &entry)
 			}
 			pending.apply(params)
 			if pending.over {
-				return verbatimRow(dst[:start], row)
+				return verbatimRow(dst[:start], row, &entry)
 			}
 			i = j
 			continue
@@ -303,11 +315,14 @@ func compactRow(dst []byte, row string) []byte {
 	return dst
 }
 
-// verbatimRow is the bail-out: emit the row untouched, then force the default
-// state so the next row starts clean.
-func verbatimRow(dst []byte, row string) []byte {
+// verbatimRow is the bail-out: re-establish the entry style, emit the row
+// untouched, then force the default state so the next row starts clean.
+func verbatimRow(dst []byte, row string, entry *sgrStyle) []byte {
+	if entry.n > 0 {
+		dst = entry.writeTransition(dst, &sgrStyle{})
+	}
 	dst = append(dst, row...)
-	if !strings.HasSuffix(row, "\x1b[0m") && !strings.HasSuffix(row, "\x1b[m") {
+	if entry.n > 0 || (!strings.HasSuffix(row, "\x1b[0m") && !strings.HasSuffix(row, "\x1b[m")) {
 		dst = append(dst, "\x1b[0m"...)
 	}
 	return dst
@@ -511,4 +526,104 @@ func growStrings(s []string, n int) []string {
 		return make([]string, n)
 	}
 	return s[:n]
+}
+
+// ---------------------------------------------------------------------------
+// Shared-prefix row updates.
+//
+// The rows that survive the scroll-region path are dominated by the footer
+// rule: a hundred columns of box-drawing dashes (three bytes each) with a
+// position counter on the end. It changes every frame, and every frame it is
+// retransmitted whole to alter fourteen characters at the right margin.
+//
+// commonRowPrefix walks the old and new row in lockstep over escape/rune
+// tokens and returns where they diverge, which COLUMN that is, and the SGR
+// state in effect there. paint can then address the cursor to that column and
+// emit only the tail. The state has to be re-established explicitly: SGR is
+// terminal state, not cell state, so the escapes that styled the prefix in an
+// earlier frame are long gone.
+//
+// Guards, because a column miscount is visible corruption rather than mere
+// waste:
+//
+//   - every rune in the prefix must be exactly one column wide (runewidth
+//     agreement with the terminal is guaranteed for ASCII and box drawing;
+//     wide glyphs, combining marks and emoji fall back to a full row)
+//   - the prefix must contain only SGR escapes, whose effect we model
+//   - the saving must clear a threshold, so a short prefix never pays for a
+//     cursor address
+// ---------------------------------------------------------------------------
+
+// minPrefixColumns is the shortest shared prefix worth a cursor address. Below
+// this the escape costs about as much as the text it skips.
+const minPrefixColumns = 32
+
+// commonRowPrefix reports the byte index at which old and new diverge, the
+// display column there, and the style in effect. ok is false when the prefix
+// cannot be trusted (see the guards above) or is too short to pay.
+func commonRowPrefix(old, new string) (idx, col int, st sgrStyle, ok bool) {
+	i := 0
+	for i < len(old) && i < len(new) {
+		if new[i] == '\x1b' {
+			j := skipANSI(new, i)
+			if j > len(old) || old[i:j] != new[i:j] {
+				break
+			}
+			params, isSGR := sgrParams(new[i:j])
+			if !isSGR {
+				return 0, 0, st, false
+			}
+			st.apply(params)
+			if st.over {
+				return 0, 0, st, false
+			}
+			i = j
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(new[i:])
+		if size == 0 || (r == utf8.RuneError && size == 1) {
+			return 0, 0, st, false
+		}
+		if i+size > len(old) || old[i:i+size] != new[i:i+size] {
+			break
+		}
+		if runewidth.RuneWidth(r) != 1 {
+			return 0, 0, st, false // not confidently one column
+		}
+		col++
+		i += size
+	}
+	if col < minPrefixColumns || (i == len(new) && i == len(old)) {
+		return 0, 0, st, false // too short to pay for a cursor address, or identical
+	}
+	return i, col, st, true
+}
+
+// appendRowUpdate emits the update for one row: a cursor address plus the tail
+// when the row shares a long prefix with what is on screen, else the whole row
+// after an erase.
+func appendRowUpdate(dst []byte, screenRow int, old, row string) []byte {
+	if idx, col, st, ok := commonRowPrefix(old, row); ok {
+		dst = appendCUPCol(dst, screenRow+1, col+1)
+		dst = compactRowFrom(dst, row[idx:], st)
+		// The tail is trimmed of trailing blanks, and the old row may have run
+		// further right, so clear to end of line. Safe unstyled: compactRowFrom
+		// leaves the default background.
+		return append(dst, "\x1b[K"...)
+	}
+	dst = appendCUP(dst, screenRow+1)
+	dst = append(dst, "\x1b[2K"...)
+	return compactRow(dst, row)
+}
+
+// appendCUPCol appends "\x1b[<row>;<col>H".
+func appendCUPCol(dst []byte, row, col int) []byte {
+	if col == 1 {
+		return appendCUP(dst, row)
+	}
+	dst = append(dst, '\x1b', '[')
+	dst = appendUint(dst, row)
+	dst = append(dst, ';')
+	dst = appendUint(dst, col)
+	return append(dst, 'H')
 }

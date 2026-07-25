@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -75,10 +79,17 @@ func (v *vtScreen) Write(p []byte) (int, error) {
 	v.pend = nil
 	i := 0
 	for i < len(data) {
-		c := data[i]
-		if c != 0x1b {
-			v.put(rune(c))
-			i++
+		if data[i] != 0x1b {
+			// Columns are display cells, not bytes: a box-drawing rule is three
+			// bytes and one column, and the painter's cursor arithmetic has to
+			// agree with that or a suffix update lands in the wrong place.
+			r, size := utf8.DecodeRune(data[i:])
+			if r == utf8.RuneError && size == 1 && !utf8.FullRune(data[i:]) {
+				v.pend = append(v.pend, data[i:]...) // truncated rune
+				return len(p), nil
+			}
+			v.put(r)
+			i += size
 			continue
 		}
 		end := skipANSI(string(data), i)
@@ -98,7 +109,14 @@ func (v *vtScreen) put(r rune) {
 	}
 	v.cells[v.row][v.col] = vtCell{r: r, s: v.cur}
 	v.col++
+	for w := runewidth.RuneWidth(r); w > 1 && v.col < v.w; w-- {
+		v.cells[v.row][v.col] = vtCell{r: vtWideTail, s: v.cur} // wide-glyph tail cell
+		v.col++
+	}
 }
+
+// vtWideTail marks the second column of a double-width glyph.
+const vtWideTail = '\u0000' + 1
 
 func (v *vtScreen) csi(seq string) {
 	if len(seq) < 3 || seq[1] != '[' {
@@ -658,7 +676,7 @@ func TestTranscriptPaint_ShiftedFrameProperty(t *testing.T) {
 	}
 	for step := range 400 {
 		next := make([]string, h)
-		switch rnd.Intn(5) {
+		switch rnd.Intn(6) {
 		case 0: // unrelated screen
 			for r := range next {
 				next[r] = makeRow()
@@ -667,6 +685,12 @@ func TestTranscriptPaint_ShiftedFrameProperty(t *testing.T) {
 			copy(next, screen)
 			for range rnd.Intn(4) + 1 {
 				next[rnd.Intn(h)] = makeRow()
+			}
+		case 4: // tail edits: rows sharing a long prefix (the suffix-update path)
+			copy(next, screen)
+			for range rnd.Intn(3) + 1 {
+				r := rnd.Intn(h)
+				next[r] = tailEdit(rnd, screen[r])
 			}
 		default: // shift, sometimes with edits on top
 			n := rnd.Intn(9) - 4
@@ -689,5 +713,116 @@ func TestTranscriptPaint_ShiftedFrameProperty(t *testing.T) {
 		wantPrev = next
 		assertSameGrid(t, want, got, fmt.Sprintf("step %d", step))
 		screen = next
+	}
+}
+
+// tailEdit produces a row sharing a long, well-formed prefix with a template —
+// the shape of the footer rule (a hundred dashes plus a changing counter) and of
+// a streaming line of prose. Rows always close their style: the property oracle
+// is the literal old painter, whose erase-line inherits a leaked background
+// (see TestTranscriptPaint_NoBackgroundBleed), so comparing against it is only
+// meaningful for rows the renderers could actually emit.
+func tailEdit(rnd *rand.Rand, row string) string {
+	if len(row)%2 == 0 {
+		return "\x1b[2m" + strings.Repeat("\u2500", 30) + " " + fmt.Sprint(rnd.Intn(100000)) + "\x1b[0m"
+	}
+	return strings.Repeat("prefix ", 6) + fmt.Sprint(rnd.Intn(100000))
+}
+
+// TestTranscriptPaint_UsesSuffixUpdate pins the mechanism on the row that
+// motivated it: the footer rule, a hundred columns of box drawing whose only
+// changing part is the position counter at the right margin.
+func TestTranscriptPaint_UsesSuffixUpdate(t *testing.T) {
+	out := newTeeVT(100, 40)
+	tr := scrollTranscript(t, out, 100, 40, 12)
+	tr.scrollBy(-40)
+	out.reset()
+	tr.scrollBy(-1)
+
+	frame := out.lastFrame()
+	if !strings.Contains(frame, ";1H") && !regexpColumnAddress.MatchString(frame) {
+		t.Fatalf("expected a column-addressed update in %q", frame)
+	}
+	if !regexpColumnAddress.MatchString(frame) {
+		t.Fatalf("footer rule was retransmitted whole instead of updated at its tail: %q", frame)
+	}
+	if len(frame) > 400 {
+		t.Fatalf("one-line scroll emitted %d bytes, want well under 400", len(frame))
+	}
+}
+
+var regexpColumnAddress = regexp.MustCompile(`\x1b\[[0-9]+;[2-9][0-9]*H`)
+
+// TestCommonRowPrefix_Guards: the suffix path must decline anything whose
+// column count it cannot be sure of, because a miscount is corruption rather
+// than waste.
+func TestCommonRowPrefix_Guards(t *testing.T) {
+	long := strings.Repeat("\u2500", 40)
+	cases := []struct {
+		name     string
+		old, new string
+		want     bool
+	}{
+		{"long ascii prefix", strings.Repeat("a", 40) + "xx", strings.Repeat("a", 40) + "yy", true},
+		{"long box prefix", long + " 1/9", long + " 2/9", true},
+		{"styled prefix", "\x1b[2m" + long + " 1/9\x1b[0m", "\x1b[2m" + long + " 2/9\x1b[0m", true},
+		{"short prefix", "abc1", "abc2", false},
+		{"wide glyph", strings.Repeat("\u4e16", 40) + "a", strings.Repeat("\u4e16", 40) + "b", false},
+		{"combining mark", strings.Repeat("e\u0301", 40) + "a", strings.Repeat("e\u0301", 40) + "b", false},
+		{"non-sgr escape", strings.Repeat("a", 20) + "\x1b[3G" + strings.Repeat("a", 20) + "x",
+			strings.Repeat("a", 20) + "\x1b[3G" + strings.Repeat("a", 20) + "y", false},
+		{"identical", long, long, false},
+	}
+	for _, c := range cases {
+		_, col, _, ok := commonRowPrefix(c.old, c.new)
+		if ok != c.want {
+			t.Errorf("%s: commonRowPrefix ok = %v (col %d), want %v", c.name, ok, col, c.want)
+		}
+	}
+	if _, col, _, _ := commonRowPrefix(long+" 1/9", long+" 2/9"); col != 41 {
+		t.Errorf("box-drawing prefix measured %d columns, want 41", col)
+	}
+}
+
+// TestTranscriptPaint_WideGlyphsFallBack replays rows full of double-width and
+// combining characters: the guards must keep the screen correct.
+func TestTranscriptPaint_WideGlyphsFallBack(t *testing.T) {
+	const w, h = 40, 8
+	got := newVT(w, h)
+	tr := &transcript{out: got, w: w, h: h, active: true}
+	want := newVT(w, h)
+	var prev []string
+	rows := [][]string{
+		{"\u4e16\u754c\u4e16\u754c\u4e16\u754c\u4e16\u754c 1", "e\u0301e\u0301e\u0301 a", "plain", "", "", "", "", ""},
+		{"\u4e16\u754c\u4e16\u754c\u4e16\u754c\u4e16\u754c 2", "e\u0301e\u0301e\u0301 b", "plain", "", "", "", "", ""},
+		{"\u4e16\u754c 3", "e\u0301 c", "plainer", "", "", "", "", ""},
+	}
+	for i, screen := range rows {
+		tr.paint(screen)
+		naivePaint(want, screen, prev)
+		prev = screen
+		assertSameGrid(t, want, got, fmt.Sprintf("wide row set %d", i))
+	}
+}
+
+// TestTranscriptPaint_NoBackgroundBleed pins a behaviour change that is a fix.
+// The old painter emitted CSI 2K with whatever SGR the previous row left
+// active, so a row that set a background and never reset it painted the NEXT
+// row's erase in that colour. compactRow's "every row ends in default SGR"
+// invariant removes the hazard.
+func TestTranscriptPaint_NoBackgroundBleed(t *testing.T) {
+	const w, h = 20, 3
+	got := newVT(w, h)
+	tr := &transcript{out: got, w: w, h: h, active: true}
+	tr.paint([]string{"\x1b[41mred, never reset", "second row", ""})
+	for c := range w {
+		cell := got.cells[1][c].appearance()
+		if cell.s.bg != "" {
+			t.Fatalf("row 1 column %d inherited background %q from the row above", c, cell.s.bg)
+		}
+	}
+	// And the row that did set it still shows it where it painted.
+	if got.cells[0][0].s.bg != "41" {
+		t.Fatalf("row 0 lost its own background: %+v", got.cells[0][0])
 	}
 }
