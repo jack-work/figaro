@@ -106,8 +106,8 @@ func (b *turnBus) PushToolInvokeDelta(toolCallID, partialJSON string) {
 }
 
 // PushMessageEnd is a no-op under the log.* model: the stop reason rides
-// the sealed message.Message (log.entry), so there is no separate
-// pre-seal metadata frame.
+// the appended message.Message (log.entry), so there is no separate
+// pre-append metadata frame.
 func (b *turnBus) PushMessageEnd(string) {}
 
 // PushToolReady records the decoded invocation in the open message and
@@ -118,7 +118,7 @@ func (b *turnBus) PushToolReady(call message.Content) {
 	case b.toolsReady <- call:
 	default:
 		// Buffer full — drop. driveOneRound re-dispatches any call in
-		// the sealed assistant message that wasn't dispatched here.
+		// the appended assistant message that wasn't dispatched here.
 	}
 }
 
@@ -231,7 +231,7 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entr
 	if prompt.text != "" {
 		// Commit the user message directly — no Open+Update+Close ping-pong.
 		// The old path briefly opened a live region for the user, which the
-		// client rendered as an in-flight message and then immediately sealed,
+		// client rendered as an in-flight message and then immediately appended,
 		// producing a visible flicker between send and durable commit. A direct
 		// Commit makes the message appear only when the transcript truly holds
 		// it — the aria frame carries {Role, Nodes} on the first hop and the
@@ -260,9 +260,9 @@ func (a *Agent) startAssistantUnit() {
 }
 
 // driveOneRound runs one provider.Send + tool dispatch cycle. The
-// assistant reply streams as an open message that seals into a log
+// assistant reply streams as an open message that appends into a log
 // entry; if it called tools, their execution streams as an open
-// tool_result message that seals in turn. Returns true when the turn
+// tool_result message that appends in turn. Returns true when the turn
 // is complete, false when another round is needed.
 func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done bool) {
 	if allowSteering {
@@ -328,17 +328,17 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 
 	// Phase 1: fold the assistant stream into an in-flight message,
 	// recompose the turn blob on each change, and emit a splice. Once the
-	// provider seals (evFigaro), checkpoint and append the assistant on the
+	// provider completes (evFigaro), checkpoint and append the assistant on the
 	// drain loop, then drop the in-flight copy so compose reads it from the log
 	// instead — otherwise it would be counted twice.
 	asmMsg := newAsm(message.RoleAssistant)
-	sealedInline := false
+	appendedInline := false
 	metricsReady := false
 	var roundErr error
 	var toolBuf []toolEvent
 	events := bus.events
 	forkWake := a.inbox.Wake()
-	sealedAwaitingProvider := false
+	appendedAwaitingProvider := false
 	for events != nil {
 		select {
 		case <-forkWake:
@@ -353,7 +353,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				metricsReady = true
 			}
 			// Structural changes (a tool opens, its args decode, the turn
-			// seals) emit immediately; high-frequency text/arg streaming is
+			// completes) emit immediately; high-frequency text/arg streaming is
 			// coalesced to ~11fps by emitLive so 1000 token deltas don't
 			// trigger 1000 full recompose+socket frames.
 			force := false
@@ -377,24 +377,24 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				staged := deferredLog.take(ev.msg)
 				a.noteAssistant(&staged.Payload)
 				calls := assistantToolInvokes(staged.Payload)
-				sealEntry, err := a.figLog.Append(store.Entry[message.Message]{Payload: staged.Payload})
+				appendedEntry, err := a.figLog.Append(store.Entry[message.Message]{Payload: staged.Payload})
 				if err != nil {
 					roundErr = fmt.Errorf("append assistant: %w", err)
 				} else {
 					if a.turn != nil {
 						a.turn.committed = true
 					}
-					if sealEntry.LT != assistantIdx || sealEntry.FigaroLT != assistantIdx {
+					if appendedEntry.LT != assistantIdx || appendedEntry.FigaroLT != assistantIdx {
 						roundErr = fmt.Errorf(
-							"assistant seal LT mismatch: predicted %d, got lt=%d main_lt=%d",
-							assistantIdx, sealEntry.LT, sealEntry.FigaroLT,
+							"assistant append LT mismatch: predicted %d, got lt=%d main_lt=%d",
+							assistantIdx, appendedEntry.LT, appendedEntry.FigaroLT,
 						)
 					} else if err := a.commitAssistantCache(assistantIdx, ev.cache); err != nil {
 						roundErr = err
 					} else {
-						sealedInline = true
-						ev.msg = sealEntry.Payload
-						ev.msg.LogicalTime = sealEntry.LT
+						appendedInline = true
+						ev.msg = appendedEntry.Payload
+						ev.msg.LogicalTime = appendedEntry.LT
 						if len(calls) == 0 {
 							a.turn = nil
 						}
@@ -414,7 +414,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				}
 			}
 			inflight := asmMsg.message()
-			if sealedInline {
+			if appendedInline {
 				inflight = nil
 			}
 			if roundErr == nil {
@@ -428,7 +428,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 					ackErr = roundErr
 				}
 				ev.ack <- ackErr
-				sealedAwaitingProvider = true
+				appendedAwaitingProvider = true
 				forkWake = nil
 			}
 		case te := <-toolEvents:
@@ -440,7 +440,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				a.startToolTiming(te.id, te.at)
 				a.noteTool(te.id, te.name, "running", false)
 				inflight := asmMsg.message()
-				if sealedInline {
+				if appendedInline {
 					inflight = nil
 				}
 				if roundErr == nil {
@@ -453,7 +453,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				a.gov.Feed(te.id, te.chunk)
 				a.noteTool(te.id, te.name, "running", false)
 				inflight := asmMsg.message()
-				if sealedInline {
+				if appendedInline {
 					inflight = nil
 				}
 				if roundErr == nil {
@@ -470,7 +470,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				}
 				a.noteTool(te.id, te.name, status, te.outcome.isErr, toolOutcomeText(te.outcome))
 				inflight := asmMsg.message()
-				if sealedInline {
+				if appendedInline {
 					inflight = nil
 				}
 				if roundErr == nil {
@@ -486,11 +486,11 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 
 	if roundErr != nil {
 		a.waitWithForks(specDone)
-		sealedMessages, sealErr := a.sealTurn()
-		if sealErr != nil {
-			roundErr = fmt.Errorf("%v; seal interrupted turn: %w", roundErr, sealErr)
+		repairedMessages, repairErr := a.repairTurnTail()
+		if repairErr != nil {
+			roundErr = fmt.Errorf("%v; repair interrupted turn: %w", roundErr, repairErr)
 		}
-		if len(sealedMessages) > 0 {
+		if len(repairedMessages) > 0 {
 			a.emitDelta(a.composeTurn(nil))
 			a.serviceForks()
 			a.endTurn("error: " + roundErr.Error())
@@ -502,25 +502,25 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		return true
 	}
 
-	// Seal: the drain loop appended the provider's assistant message.
+	// Durable tail: the drain loop appended the provider's assistant message.
 	// Recompose from the durable tail.
 	var lastFig message.Message
-	sealEntry, sealed := a.sealedTail(assistantIdx, message.RoleAssistant)
-	if sealed {
-		lastFig = sealEntry.Payload
+	appendedEntry, appended := a.appendedTail(assistantIdx, message.RoleAssistant)
+	if appended {
+		lastFig = appendedEntry.Payload
 		if !a.isInterrupted() {
 			a.emitDelta(a.composeTurn(nil))
 		}
 	}
 
 	if a.isInterrupted() {
-		sealedMessages, err := a.sealTurn()
+		repairedMessages, err := a.repairTurnTail()
 		if err != nil {
 			a.reconcileAriaServer()
 			a.finishTurn("error: interrupt recovery: " + err.Error())
 			return true
 		}
-		if len(sealedMessages) > 0 {
+		if len(repairedMessages) > 0 {
 			a.emitDelta(a.composeTurn(nil))
 		}
 		a.serviceForks()
@@ -529,7 +529,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	}
 	if sendErr != nil {
 		if a.turn == nil {
-			if sealed {
+			if appended {
 				a.serviceForks()
 				a.endTurn("error: " + sendErr.Error())
 			} else {
@@ -538,11 +538,11 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			}
 			return true
 		}
-		sealedMessages, err := a.sealTurn()
+		repairedMessages, err := a.repairTurnTail()
 		if err != nil {
-			sendErr = fmt.Errorf("%v; seal interrupted turn: %w", sendErr, err)
+			sendErr = fmt.Errorf("%v; repair interrupted turn: %w", sendErr, err)
 		}
-		if len(sealedMessages) > 0 {
+		if len(repairedMessages) > 0 {
 			a.emitDelta(a.composeTurn(nil))
 		} else if err != nil {
 			a.reconcileAriaServer()
@@ -555,7 +555,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		}
 		return true
 	}
-	if !sealed {
+	if !appended {
 		a.waitWithForks(specDone)
 		if a.turn != nil {
 			if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
@@ -586,22 +586,22 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		return true
 	}
 
-	if sealedAwaitingProvider {
+	if appendedAwaitingProvider {
 		a.serviceForks()
 	}
 	a.waitWithForks(specDone)
 
 	// Phase 2: run the tools (IR assembly), append the tool_result turn,
 	// and recompose so completed tools show their clamped output. The
-	// spinner animates locally between here and the seal — no wire
+	// spinner animates locally between here and the append — no wire
 	// traffic until the result lands.
 	resultTic, collectErr := a.collectToolResults(turnCtx, calls, spec, toolEvents, toolBuf)
 	if collectErr != nil {
-		sealedMessages, sealErr := a.sealTurn()
-		if sealErr != nil {
-			collectErr = fmt.Errorf("%v; seal interrupted turn: %w", collectErr, sealErr)
+		repairedMessages, repairErr := a.repairTurnTail()
+		if repairErr != nil {
+			collectErr = fmt.Errorf("%v; repair interrupted turn: %w", collectErr, repairErr)
 		}
-		if len(sealedMessages) > 0 {
+		if len(repairedMessages) > 0 {
 			a.emitDelta(a.composeTurn(nil))
 			a.endTurn("error: " + collectErr.Error())
 		} else {
@@ -611,24 +611,24 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		return true
 	}
 	if a.isInterrupted() {
-		sealedMessages, err := a.sealTurn()
+		repairedMessages, err := a.repairTurnTail()
 		if err != nil {
 			a.reconcileAriaServer()
 			a.finishTurn("error: interrupt recovery: " + err.Error())
 			return true
 		}
-		if len(sealedMessages) > 0 {
+		if len(repairedMessages) > 0 {
 			a.emitDelta(a.composeTurn(nil))
 		}
 		a.endTurn("interrupted")
 		return true
 	}
 	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: resultTic}); err != nil {
-		sealedMessages, sealErr := a.sealTurn()
-		if sealErr != nil {
-			err = fmt.Errorf("%v; seal interrupted turn: %w", err, sealErr)
+		repairedMessages, repairErr := a.repairTurnTail()
+		if repairErr != nil {
+			err = fmt.Errorf("%v; repair interrupted turn: %w", err, repairErr)
 		}
-		if len(sealedMessages) > 0 {
+		if len(repairedMessages) > 0 {
 			a.emitDelta(a.composeTurn(nil))
 			a.endTurn(fmt.Sprintf("error: append tool_result: %s", err))
 		} else {
@@ -654,7 +654,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	return false
 }
 
-// appendSteeringPrompts seals the completed tool round, persists each queued
+// appendSteeringPrompts closes the completed tool round, persists each queued
 // prompt as its own user message, and opens a fresh assistant unit for the
 // next provider round.
 func (a *Agent) appendSteeringPrompts() error {
@@ -871,9 +871,9 @@ func (a *Agent) nextIndex() uint64 {
 	return 1
 }
 
-// sealedTail returns the durable tail entry iff it sits at expectIdx
+// appendedTail returns the durable tail entry iff it sits at expectIdx
 // with the expected role — i.e. the provider actually appended it.
-func (a *Agent) sealedTail(expectIdx uint64, role message.Role) (store.Entry[message.Message], bool) {
+func (a *Agent) appendedTail(expectIdx uint64, role message.Role) (store.Entry[message.Message], bool) {
 	e, ok := a.figLog.PeekTail()
 	if !ok || e.LT != expectIdx || e.Payload.Role != role {
 		return store.Entry[message.Message]{}, false
@@ -898,7 +898,7 @@ type toolEvent struct {
 	name    string
 	at      int64
 	chunk   string
-	final   message.Content // toolEnd: the sealed tool_result block
+	final   message.Content // toolEnd: the appended tool_result block
 	outcome toolOutcome     // toolEnd: raw content for IR assembly
 }
 
@@ -1036,7 +1036,7 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 
 // composeTurn builds the current turn's node list: the messages appended
 // since the user prompt, plus the in-flight assistant message (nil once
-// it has sealed into the log).
+// it has appended into the log).
 func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 	entries := a.figLog.ReadFrom(a.turnStartLT+1, 0)
 	var msgs []message.Message
@@ -1046,8 +1046,8 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		msgs = append(msgs, m)
 	}
 	if inflight != nil {
-		// The provider seals the assistant message into the log concurrently
-		// with the drain loop's tail of buffered stream events. Once the sealed
+		// The provider appends the assistant message into the log concurrently
+		// with the drain loop's tail of buffered stream events. Once the appended
 		// copy is durable — the tail entry of this turn's window is an
 		// assistant message — composing the in-flight assembly TOO would render
 		// the message twice (under a bumped provisional LT, so the aria server
@@ -1058,13 +1058,13 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		}
 	}
 	if inflight != nil {
-		// The in-flight message has no LT until it seals. Stamp its provisional
-		// LT — the next main-LT it will seal at — so compose's stable node ids
-		// (LT.blockIdx) match what they'll be post-seal and don't jump at the
+		// The in-flight message has no LT until it appends. Stamp its provisional
+		// LT — the next main-LT it will append at — so compose's stable node ids
+		// (LT.blockIdx) match what they@ be post-append and don't jump at the
 		// boundary. While the round is still streaming the window is EMPTY
-		// (nothing sealed after turnStartLT yet), so the base must be the
+		// (nothing appended after turnStartLT yet), so the base must be the
 		// pre-turn tail LT, not a constant: falling back to 1 re-ids every
-		// streamed node at the seal (1.0 → realLT.0), and the aria server folds
+		// streamed node at the append (1.0 → realLT.0), and the aria server folds
 		// the re-id as a second copy of the whole message.
 		m := *inflight
 		m.LogicalTime = a.turnStartLT + 1
@@ -1113,11 +1113,11 @@ func (a *Agent) finishToolTiming(id string, at int64) {
 }
 
 // logComposeFrame (debug, env-gated) appends one line per composed frame so we
-// can see whether a node's id churns across frames / seal — the fingerprint of
+// can see whether a node's id churns across frames / append — the fingerprint of
 // the duplication bug.
 func logComposeFrame(dir, ariaID string, hasInflight bool, nodes []livedoc.Node) {
 	var b strings.Builder
-	fmt.Fprintf(&b, "seal=%v n=%d:", !hasInflight, len(nodes))
+	fmt.Fprintf(&b, "appended=%v n=%d:", !hasInflight, len(nodes))
 	for _, n := range nodes {
 		content := n.Markdown
 		if n.Type == livedoc.NodeTool {
@@ -1199,7 +1199,7 @@ func firstChars(s string, n int) string {
 
 // asm assembles the in-flight assistant message from provider Bus events
 // so the turn blob can be recomposed mid-stream (before the provider
-// seals it into the log).
+// appends it into the log).
 type asm struct {
 	msg     message.Message
 	toolIdx map[string]int

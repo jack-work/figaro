@@ -573,8 +573,8 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		a.turnCtx = nil
 		a.interrupted = false
 		a.mu.Unlock()
-		if _, err := a.sealTurn(); err != nil {
-			slog.Error("seal turn after panic", "aria", a.id, "err", err)
+		if _, err := a.repairTurnTail(); err != nil {
+			slog.Error("repair turn tail after panic", "aria", a.id, "err", err)
 		}
 		repairInterruptedTail(a.figLog, a.id)
 		a.refreshMetrics()

@@ -89,7 +89,7 @@ func (a *Agent) noteTool(id, name, status string, isErr bool, terminalText ...st
 	}
 }
 
-func (a *Agent) sealTurn() ([]message.Message, error) {
+func (a *Agent) repairTurnTail() ([]message.Message, error) {
 	t := a.turn
 	a.turn = nil
 	if t == nil {
@@ -104,7 +104,7 @@ func (a *Agent) sealTurn() ([]message.Message, error) {
 			Role: message.RoleUser, Content: tools, Timestamp: time.Now().UnixMilli(),
 		}})
 		if err != nil {
-			return nil, fmt.Errorf("seal interrupted tool results: %w", err)
+			return nil, fmt.Errorf("repair interrupted tool results: %w", err)
 		}
 		return []message.Message{e.Payload}, nil
 	}
@@ -119,7 +119,7 @@ func (a *Agent) sealTurn() ([]message.Message, error) {
 	}
 	e, err := a.figLog.Append(store.Entry[message.Message]{Payload: assistant})
 	if err != nil {
-		return nil, fmt.Errorf("seal interrupted assistant: %w", err)
+		return nil, fmt.Errorf("repair interrupted assistant: %w", err)
 	}
 	appended := []message.Message{e.Payload}
 	if tools := interruptedToolResults(t.tools); len(tools) > 0 {
@@ -127,7 +127,7 @@ func (a *Agent) sealTurn() ([]message.Message, error) {
 			Role: message.RoleUser, Content: tools, Timestamp: time.Now().UnixMilli(),
 		}})
 		if err != nil {
-			return appended, fmt.Errorf("seal interrupted tool results: %w", err)
+			return appended, fmt.Errorf("repair interrupted tool results: %w", err)
 		}
 		appended = append(appended, e.Payload)
 	}

@@ -74,7 +74,7 @@ func (p *idleProvider) callCount() int {
 	return p.calls
 }
 
-func TestOpenAfterCrashBeforeAssistantSeal(t *testing.T) {
+func TestOpenAfterCrashBeforeAssistantAppend(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
 	ir, err := b.Open(id)
@@ -182,7 +182,7 @@ func (t *waitTool) Execute(ctx context.Context, _ map[string]any, out tool.OnOut
 	return nil, ctx.Err()
 }
 
-func TestInterruptSealsPartialTurn(t *testing.T) {
+func TestInterruptRepairsPartialTurn(t *testing.T) {
 	for _, mode := range []string{"empty", "prose", "ready", "tool"} {
 		t.Run(mode, func(t *testing.T) {
 			b, id := newBackedConversation(t)
@@ -374,7 +374,7 @@ func (n *panicOnceNotifier) Notify(method string, params any) error {
 	return nil
 }
 
-func TestPanicRecoverySealsInMemoryPartial(t *testing.T) {
+func TestPanicRecoveryRepairsInMemoryPartial(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
 	prov := &delayedDeltaProvider{}
@@ -567,7 +567,7 @@ func (b mismatchBackend) Open(string) (store.Log[message.Message], error) {
 	return b.log, nil
 }
 
-func TestAssistantSealRejectsPredictedLTMismatch(t *testing.T) {
+func TestAssistantAppendRejectsPredictedLTMismatch(t *testing.T) {
 	real, id := newBackedConversation(t)
 	defer real.Close()
 	base, err := real.Open(id)
@@ -580,7 +580,7 @@ func TestAssistantSealRejectsPredictedLTMismatch(t *testing.T) {
 	ch, _ := subscribeChan(a)
 	a.SubmitPrompt(rpc.QuaRequest{Text: "go"})
 	reason := waitDoneReason(t, ch)
-	assert.Contains(t, reason, "assistant seal LT mismatch")
+	assert.Contains(t, reason, "assistant append LT mismatch")
 	history := a.Context()
 	require.NotEmpty(t, history)
 	assert.Equal(t, message.RoleAssistant, history[len(history)-1].Role)
@@ -598,7 +598,7 @@ func (p *nativeCommitProvider) SetModel(string)                                 
 func (p *nativeCommitProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 func (p *nativeCommitProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
-		Role: message.RoleAssistant, Content: []message.Content{message.TextContent("sealed")},
+		Role: message.RoleAssistant, Content: []message.Content{message.TextContent("appended")},
 		StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
 	}
 	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
@@ -662,26 +662,26 @@ func TestCacheAppendFailureEndsTurnKeepsAssistant(t *testing.T) {
 	assert.Zero(t, prov2.callCount())
 }
 
-type sealBarrierProvider struct {
+type appendBarrierProvider struct {
 	afterAck chan struct{}
 	release  chan struct{}
 }
 
-func (p *sealBarrierProvider) Name() string                                         { return "seal-barrier" }
-func (p *sealBarrierProvider) Fingerprint() string                                  { return "seal-barrier/v1" }
-func (p *sealBarrierProvider) SetModel(string)                                      {}
-func (p *sealBarrierProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (p *sealBarrierProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
+func (p *appendBarrierProvider) Name() string                                         { return "append-barrier" }
+func (p *appendBarrierProvider) Fingerprint() string                                  { return "append-barrier/v1" }
+func (p *appendBarrierProvider) SetModel(string)                                      {}
+func (p *appendBarrierProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (p *appendBarrierProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
-		Role: message.RoleAssistant, Content: []message.Content{message.TextContent("sealed")},
+		Role: message.RoleAssistant, Content: []message.Content{message.TextContent("appended")},
 		StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
 	}
 	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
 		return err
 	}
 	bus.PushFigaro(msg, provider.AssistantCache{
-		Namespace:   "seal-barrier",
-		Payload:     []json.RawMessage{json.RawMessage(`{"native":"sealed"}`)},
+		Namespace:   "append-barrier",
+		Payload:     []json.RawMessage{json.RawMessage(`{"native":"appended"}`)},
 		Fingerprint: p.Fingerprint(),
 	})
 	close(p.afterAck)
@@ -689,10 +689,10 @@ func (p *sealBarrierProvider) Send(_ context.Context, in provider.SendInput, bus
 	return nil
 }
 
-func TestQueuedForkWaitsForProviderCacheSeal(t *testing.T) {
+func TestQueuedForkWaitsForProviderCacheAppend(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
-	prov := &sealBarrierProvider{afterAck: make(chan struct{}), release: make(chan struct{})}
+	prov := &appendBarrierProvider{afterAck: make(chan struct{}), release: make(chan struct{})}
 	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	defer a.Kill()
 	ch, _ := subscribeChan(a)
@@ -727,10 +727,10 @@ func TestQueuedForkWaitsForProviderCacheSeal(t *testing.T) {
 		tail, ok := ir.PeekTail()
 		require.True(t, ok)
 		assert.Equal(t, message.RoleAssistant, tail.Payload.Role)
-		cache, err := b.OpenTranslation(branch, "seal-barrier")
+		cache, err := b.OpenTranslation(branch, "append-barrier")
 		require.NoError(t, err)
 		cached, ok := cache.Lookup(tail.LT)
 		require.True(t, ok, "cache missing on branch %s", branch)
-		assert.JSONEq(t, `{"native":"sealed"}`, string(cached.Payload[0]))
+		assert.JSONEq(t, `{"native":"appended"}`, string(cached.Payload[0]))
 	}
 }
