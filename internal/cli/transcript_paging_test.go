@@ -37,7 +37,31 @@ func testSelectionPoint(lt, index int, node livedoc.Node) selectionPoint {
 // than push that translation into 37 call sites, do it here from the fixture's
 // own node size — so the count stays the test's vocabulary while the paginator
 // still runs for real.
-func readBefore(history []aria.TurnPart, before, parts int) aria.Page {
+// fixtureMemo caches the per-fixture work readBefore would otherwise redo on
+// EVERY page: projecting []TurnPart to []Turn, and measuring the widest
+// marshalled node. Both depend only on `history`, but a search walks the whole
+// aria one page at a time, so recomputing them was O(N^2) json.Marshal calls
+// plus an O(N) copy per page. That is harness cost, not production cost — the
+// server holds its turns and never re-measures the log to serve a page — but it
+// made BenchmarkTranscriptPagedSearchMiss/10000 158x slower than the same
+// benchmark on the pre-turn-addressing tree and put /50000 out of reach, which
+// hid the very numbers the acceptance matrix asks for. A one-entry cache keyed
+// by the slice's own backing array is enough: every call site loops over one
+// fixture at a time.
+var fixtureMemo struct {
+	data   *aria.TurnPart
+	n      int
+	turns  []aria.Turn
+	widest int
+}
+
+func fixtureView(history []aria.TurnPart) ([]aria.Turn, int) {
+	if len(history) == 0 {
+		return nil, 1
+	}
+	if fixtureMemo.data == &history[0] && fixtureMemo.n == len(history) {
+		return fixtureMemo.turns, fixtureMemo.widest
+	}
 	turns := make([]aria.Turn, len(history))
 	widest := 1
 	for i, p := range history {
@@ -48,9 +72,16 @@ func readBefore(history []aria.TurnPart, before, parts int) aria.Page {
 			}
 		}
 	}
+	fixtureMemo.data, fixtureMemo.n = &history[0], len(history)
+	fixtureMemo.turns, fixtureMemo.widest = turns, widest
+	return turns, widest
+}
+
+func readBefore(history []aria.TurnPart, before, parts int) aria.Page {
 	if parts <= 0 {
 		return aria.Page{}
 	}
+	turns, widest := fixtureView(history)
 	return aria.PaginateBefore(turns, aria.Anchor{Turn: uint64(before)}, parts*widest)
 }
 

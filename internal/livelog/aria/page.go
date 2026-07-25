@@ -2,6 +2,7 @@ package aria
 
 import (
 	"encoding/json"
+	"sort"
 
 	"github.com/jack-work/figaro/internal/livedoc"
 )
@@ -119,15 +120,14 @@ func locate(turns []Turn, a Anchor, dir Direction) (cursor, bool) {
 		}
 		return cursor{0, 0}, true
 	}
-	ti := 0
-	for i, t := range turns {
-		if t.ID == a.Turn {
-			ti = i
-			break
-		}
-		if t.ID < a.Turn {
-			ti = i
-		}
+	// Turn ids ascend, so find the anchor by bisection rather than by walking.
+	// ti is the largest index whose id is <= a.Turn (an exact hit when the turn
+	// is present, its predecessor otherwise) — the same answer the linear scan
+	// gave. It matters because Paginate is called once PER PAGE, so an O(#turns)
+	// probe made walking a whole aria quadratic in the turn count.
+	ti := sort.Search(len(turns), func(i int) bool { return turns[i].ID > a.Turn }) - 1
+	if ti < 0 {
+		ti = 0
 	}
 	ni := int(a.Node)
 	if n := len(turns[ti].Nodes); ni >= n {
