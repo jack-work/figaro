@@ -1033,6 +1033,13 @@ func (t *transcript) flush() {
 // renderFrame is the frame itself: compose the visible window and paint it.
 // render() is only the gate in front of it.
 func (t *transcript) renderFrame() {
+	// The frame ends in a fixed three-row footer (padding, rule, status), so a
+	// viewport shorter than that has nowhere to draw and would index screen[-2].
+	// A pane this small cannot show a paged transcript usefully; skip the frame
+	// rather than crash, and pick up again on the next resize.
+	if t.h < 4 {
+		return
+	}
 	t.buildIndex()
 	// Converge the tail window on the row budget (usually 0-1 passes). D drove
 	// this off len(t.lines()) — a full materialization of the retained window,

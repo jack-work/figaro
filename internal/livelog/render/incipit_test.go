@@ -159,3 +159,38 @@ func TestIncipit_ThinkingAbandonedOnEarlyError(t *testing.T) {
 		t.Fatalf("hint should print cleanly:\n%s", scr)
 	}
 }
+
+// The projection mints prose/thinking nodes even when empty, so a block that
+// fills later cannot shift the ids after it (docs/turn-addressing.md,
+// invariant 6). Hiding them is the renderer's job: an empty node must occupy
+// no rows, while a tool node with no output yet still draws its header.
+func TestIncipit_MintedEmptyNodesDrawNothing(t *testing.T) {
+	ft := NewFakeTerminal(60, 20)
+	in := NewIncipit(ft, NodeText{})
+
+	nodes := []livedoc.Node{
+		{ID: "n0", Type: "thinking", Markdown: ""},   // minted, still empty
+		{ID: "n1", Type: "prose", Markdown: "first"}, // real content
+		{ID: "n2", Type: "prose", Markdown: "   \n"}, // whitespace only
+		{ID: "n3", Type: "tool", Name: "bash", Status: "running"},
+	}
+	in.Open(1, "assistant", nodes)
+	before := in.LiveHeight()
+	scr := strings.Join(ft.Screen(), "\n")
+	if !strings.Contains(scr, "first") {
+		t.Fatalf("real prose must draw:\n%s", scr)
+	}
+	if !strings.Contains(scr, "bash") {
+		t.Fatalf("a running tool draws its header even with no output:\n%s", scr)
+	}
+
+	// Filling the empty head node adds rows; it must not have consumed any before.
+	nodes[0] = livedoc.Node{ID: "n0", Type: "thinking", Markdown: "now thinking"}
+	in.Open(1, "assistant", nodes)
+	if in.LiveHeight() <= before {
+		t.Fatalf("filling a minted-empty node must add rows: %d -> %d", before, in.LiveHeight())
+	}
+	if !strings.Contains(strings.Join(ft.Screen(), "\n"), "now thinking") {
+		t.Fatal("filled node must draw")
+	}
+}
