@@ -1,13 +1,33 @@
 package cli
 
+// navKey names the logical cursor-motion keys. They are the one part of the
+// keyboard a terminal cannot deliver as a byte — every one of them arrives as
+// an escape sequence — which is why they need a vocabulary of their own
+// alongside modifiedKey's byte codes.
+type navKey uint8
+
+const (
+	navNone navKey = iota
+	navUp
+	navDown
+	navPageUp
+	navPageDown
+	navHome
+	navEnd
+)
+
 type modifiedKey struct {
 	code  byte
 	ctrl  bool
 	shift bool
 	alt   bool
+	nav   navKey // non-zero for the arrow cluster; code is then meaningless
 }
 
 func (k modifiedKey) asByte() (byte, bool) {
+	if k.nav != navNone {
+		return 0, false // a motion, not a character
+	}
 	if k.ctrl {
 		switch {
 		case k.code >= 'a' && k.code <= 'z':
@@ -152,5 +172,141 @@ func consumeEscapeSequence(data []byte) (consumed int, need bool) {
 		return 0, true
 	default:
 		return 0, false // unknown; treat leading 0x1b as bare Esc
+	}
+}
+
+// navKeyFor classifies a COMPLETE escape sequence — one already delimited by
+// consumeEscapeSequence — as a logical navigation key. Splitting the job in
+// two keeps the delimiter (which owns the "bare Esc vs. sequence prefix"
+// guarantee and the split-read `need`) untouched, and makes classification a
+// total function over a finished sequence.
+//
+// Anything not in the navigation vocabulary — F-keys, OSC replies, cursor
+// position reports, Left/Right — returns ok=false and stays swallowed exactly
+// as before.
+//
+// Both encodings are accepted: CSI (\x1b[A, the normal cursor mode) and SS3
+// (\x1bOA, which terminals emit for the arrows once an application turns on
+// DECCKM — vim, less and the pager's own alt-screen entry all can). Home and
+// End are the worst-behaved keys in the terminal world: xterm sends \x1b[H /
+// \x1b[F, the VT220 lineage sends \x1b[1~ / \x1b[4~, and rxvt sends
+// \x1b[7~ / \x1b[8~. All six are honored.
+func navKeyFor(seq []byte) (modifiedKey, bool) {
+	if len(seq) < 3 || seq[0] != 0x1b {
+		return modifiedKey{}, false
+	}
+	switch seq[1] {
+	case 'O': // SS3: exactly one final byte, never parameterized
+		if len(seq) != 3 {
+			return modifiedKey{}, false
+		}
+		if nav, ok := navForFinal(seq[2]); ok {
+			return modifiedKey{nav: nav}, true
+		}
+		return modifiedKey{}, false
+	case '[':
+	default:
+		return modifiedKey{}, false
+	}
+	first, second, ok := navParams(seq[2 : len(seq)-1])
+	if !ok {
+		return modifiedKey{}, false
+	}
+	key := navModifiers(second)
+	final := seq[len(seq)-1]
+	if final == '~' {
+		nav, ok := navForTilde(first)
+		if !ok {
+			return modifiedKey{}, false
+		}
+		key.nav = nav
+		return key, true
+	}
+	// The letter finals take no parameter, or xterm's "1;<mods>" form.
+	if first > 1 {
+		return modifiedKey{}, false
+	}
+	nav, ok := navForFinal(final)
+	if !ok {
+		return modifiedKey{}, false
+	}
+	key.nav = nav
+	return key, true
+}
+
+func navForFinal(final byte) (navKey, bool) {
+	switch final {
+	case 'A':
+		return navUp, true
+	case 'B':
+		return navDown, true
+	case 'H':
+		return navHome, true
+	case 'F':
+		return navEnd, true
+	}
+	return navNone, false // C/D are Left/Right: the pager has no horizontal axis
+}
+
+func navForTilde(code int) (navKey, bool) {
+	switch code {
+	case 1, 7: // VT220 Find / rxvt Home
+		return navHome, true
+	case 4, 8: // VT220 Select / rxvt End
+		return navEnd, true
+	case 5:
+		return navPageUp, true
+	case 6:
+		return navPageDown, true
+	}
+	return navNone, false
+}
+
+// navParams reads the "<code>;<modifiers>" parameter string of a CSI
+// sequence. Absent parameters read as 0. A private-parameter introducer
+// (\x1b[<…, \x1b[?…), a non-numeric body, or more than two parameters is not
+// a navigation key.
+func navParams(params []byte) (first, second int, ok bool) {
+	if len(params) == 0 {
+		return 0, 0, true
+	}
+	fields := 0
+	values := [2]int{}
+	for i := 0; i < len(params); {
+		if fields == len(values) {
+			return 0, 0, false
+		}
+		v, n, _ := parseKeyNumber(params[i:])
+		if n == 0 {
+			return 0, 0, false
+		}
+		values[fields] = v
+		fields++
+		i += n
+		if i < len(params) {
+			if params[i] != ';' {
+				return 0, 0, false
+			}
+			i++
+			if i == len(params) { // trailing ';' with no value
+				return 0, 0, false
+			}
+		}
+	}
+	return values[0], values[1], true
+}
+
+// navModifiers decodes the xterm 1-based modifier parameter. Modifiers do not
+// change what these keys do today; they are carried so the arrow cluster can
+// grow a Shift-extends-selection binding without a second parser.
+func navModifiers(param int) modifiedKey {
+	if param <= 1 {
+		return modifiedKey{}
+	}
+	mask := param - 1
+	return modifiedKey{
+		shift: mask&1 != 0,
+		alt:   mask&2 != 0,
+		ctrl:  mask&4 != 0,
 	}
 }

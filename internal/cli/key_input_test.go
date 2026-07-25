@@ -96,3 +96,75 @@ func TestCoalesceNewlineCRLF(t *testing.T) {
 		t.Fatal("LF after an intervening byte is a fresh press, not the pair")
 	}
 }
+
+func TestNavKeyFor(t *testing.T) {
+	cases := []struct {
+		name string
+		seq  string
+		want navKey
+	}{
+		// CSI — the normal cursor mode.
+		{"csi up", "\x1b[A", navUp},
+		{"csi down", "\x1b[B", navDown},
+		{"csi home", "\x1b[H", navHome},
+		{"csi end", "\x1b[F", navEnd},
+		// SS3 — application cursor mode (DECCKM), which many terminals switch
+		// to the moment a full-screen app takes the alt screen.
+		{"ss3 up", "\x1bOA", navUp},
+		{"ss3 down", "\x1bOB", navDown},
+		{"ss3 home", "\x1bOH", navHome},
+		{"ss3 end", "\x1bOF", navEnd},
+		// VT220 / rxvt tilde forms.
+		{"tilde pageup", "\x1b[5~", navPageUp},
+		{"tilde pagedown", "\x1b[6~", navPageDown},
+		{"tilde home vt220", "\x1b[1~", navHome},
+		{"tilde end vt220", "\x1b[4~", navEnd},
+		{"tilde home rxvt", "\x1b[7~", navHome},
+		{"tilde end rxvt", "\x1b[8~", navEnd},
+		// Modified arrows still name the same key.
+		{"ctrl up", "\x1b[1;5A", navUp},
+		{"shift pagedown", "\x1b[6;2~", navPageDown},
+		// Not navigation: stays swallowed exactly as before.
+		{"left", "\x1b[D", navNone},
+		{"right", "\x1b[C", navNone},
+		{"delete", "\x1b[3~", navNone},
+		{"f1 ss3", "\x1bOP", navNone},
+		{"f5", "\x1b[15~", navNone},
+		{"osc reply", "\x1b]0;title\x07", navNone},
+		{"sgr mouse", "\x1b[<64;10;20M", navNone},
+		{"dec private", "\x1b[?1u", navNone},
+		{"cursor report", "\x1b[24;80R", navNone},
+		{"bare esc", "\x1b", navNone},
+		{"alt-a", "\x1ba", navNone},
+		{"ss3 overlong", "\x1bOAA", navNone},
+		{"garbage params", "\x1b[1;2;3A", navNone},
+		{"trailing semi", "\x1b[1;A", navNone},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			key, ok := navKeyFor([]byte(tc.seq))
+			if tc.want == navNone {
+				if ok {
+					t.Fatalf("navKeyFor(%q) = %+v, want not a navigation key", tc.seq, key)
+				}
+				return
+			}
+			if !ok || key.nav != tc.want {
+				t.Fatalf("navKeyFor(%q) = %+v, %v; want nav %d", tc.seq, key, ok, tc.want)
+			}
+			if _, representable := key.asByte(); representable {
+				t.Fatal("a navigation key must not masquerade as a character byte")
+			}
+		})
+	}
+}
+
+func TestNavKeyModifiers(t *testing.T) {
+	key, ok := navKeyFor([]byte("\x1b[1;6A")) // Ctrl+Shift+Up
+	if !ok || key.nav != navUp {
+		t.Fatalf("navKeyFor = %+v, %v", key, ok)
+	}
+	if !key.ctrl || !key.shift || key.alt {
+		t.Fatalf("modifiers = %+v, want ctrl+shift", key)
+	}
+}
