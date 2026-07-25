@@ -605,11 +605,15 @@ func commonRowPrefix(old, new string) (idx, col int, st sgrStyle, ok bool) {
 func appendRowUpdate(dst []byte, screenRow int, old, row string) []byte {
 	if idx, col, st, ok := commonRowPrefix(old, row); ok {
 		dst = appendCUPCol(dst, screenRow+1, col+1)
-		dst = compactRowFrom(dst, row[idx:], st)
-		// The tail is trimmed of trailing blanks, and the old row may have run
-		// further right, so clear to end of line. Safe unstyled: compactRowFrom
-		// leaves the default background.
-		return append(dst, "\x1b[K"...)
+		// Erase BEFORE writing the tail, not after. The pager runs with autowrap
+		// off, so writing the last column leaves the cursor ON it — a trailing
+		// erase-to-end-of-line would wipe the character just written. (Found by
+		// replaying a frame into tmux, which a screen model that let the cursor
+		// run past the margin had happily accepted.) Safe unstyled: every row
+		// leaves the default background, and the whole frame is inside a
+		// synchronized update, so erase-then-write cannot flicker.
+		dst = append(dst, "\x1b[K"...)
+		return compactRowFrom(dst, row[idx:], st)
 	}
 	dst = appendCUP(dst, screenRow+1)
 	dst = append(dst, "\x1b[2K"...)

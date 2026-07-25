@@ -113,6 +113,13 @@ func (v *vtScreen) put(r rune) {
 		v.cells[v.row][v.col] = vtCell{r: vtWideTail, s: v.cur} // wide-glyph tail cell
 		v.col++
 	}
+	if v.col >= v.w {
+		// The pager runs with autowrap off (see transcript.enter), so the cursor
+		// sticks on the last column instead of moving past it. Modelling this
+		// matters: an erase-to-end-of-line issued afterwards would wipe the
+		// column just written.
+		v.col = v.w - 1
+	}
 }
 
 // vtWideTail marks the second column of a double-width glyph.
