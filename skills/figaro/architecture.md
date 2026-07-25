@@ -76,17 +76,32 @@ type Snapshot struct {
   the Set-only patch of every entry.
 - `Value` (`value.go`) holds the caller's **exact bytes** (`raw`) plus a
   canonical form (compacted, object keys sorted recursively) used **only** for
-  `Equal`. Nothing ever rewrites stored bytes. That is what keeps
-  `chalkboard.json` byte-identical while making equality semantic: a value
-  that changes only in key order, whitespace or escape spelling compares equal
-  and fires **no** `<system-reminder>`. Numbers compare by literal token, so
-  `1` and `1.0` are different edits.
+  `Equal`, computed lazily on first comparison and memoised. Nothing ever
+  rewrites stored bytes. That is what keeps `chalkboard.json` byte-identical
+  while making equality semantic: a value that changes only in key order,
+  whitespace or escape spelling compares equal and fires **no**
+  `<system-reminder>`. Numbers compare by literal token, so `1` and `1.0` are
+  different edits.
+- **A semantically-equal `Set` is a no-op that keeps the OLD bytes** and returns
+  the same root pointer. So never ask "did this key change?" with
+  `bytes.Equal` against the stored value — it will answer yes forever. Ask the
+  board: `cur.Apply(candidate).Diff(cur)`.
 - `MarshalJSON`/`UnmarshalJSON` emit and read the **flat object** form
-  (`{"key": value, …}`, keys lexical) — the on-disk `chalkboard.json`, the
-  `figaro.chalkboard` RPC response and `store.chalkboardReduce` all depend on
-  it. Values are handed to `encoding/json`, never concatenated raw: `encoding/
-  json` compacts a raw message and rewrites `<`, `>`, `&` as `\u003c`,
-  `\u003e`, `\u0026`, and that post-processing is part of the bytes on disk.
+  (`{"key": value, …}`, keys lexical). Three things consume it: the reducible
+  chalkboard channel's watermark/state records in the aria store (see
+  [arias.md](arias.md) — those are content-hashed), the `figaro.chalkboard` RPC
+  response, and `State.Save`'s `chalkboard.json` when a State is opened with a
+  path (the agent opens with `""`, i.e. in-memory only). `MarshalJSON`
+  delegates to `encoding/json` over a `map[string]json.RawMessage` and never
+  hand-rolls the object: `encoding/json`
+  compacts a raw message and rewrites `<`, `>`, `&` as `\u003c`, `\u003e`,
+  `\u0026`, and that post-processing is part of the bytes already on disk.
+- **The custom codec is charged twice.** `encoding/json` re-scans a marshaler's
+  output and pre-scans an unmarshaler's input: ~2x on a 15KB board, for
+  identical bytes. Hot paths (`chalkboardReduce`, `State.Open`/`Save`) call
+  `MarshalJSON`/`UnmarshalJSON` **directly** to skip it;
+  `TestSnapshotDirectCodecMatchesEncodingJSON` pins that the two spellings
+  agree. See `RESULTS.md` §4.
 
 `State` (`state.go`) is **one writer, many readers**. The writer is the agent's
 drain loop (`act` → `applyControlPatch` → `State.Apply`); readers are the
