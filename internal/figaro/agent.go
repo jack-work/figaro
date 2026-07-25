@@ -308,7 +308,7 @@ func (a *Agent) refreshMetrics() {
 			out += m.Usage.OutputTokens
 			cacheRead += m.Usage.CacheReadTokens
 			cacheWrite += m.Usage.CacheWriteTokens
-			contextTokens = m.Usage.InputTokens + m.Usage.OutputTokens
+			contextTokens = tokens.ContextFromUsage(m.Usage)
 			contextExact = true
 		} else {
 			contextTokens += tokens.EstimateMessage(m)

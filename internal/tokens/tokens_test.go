@@ -130,3 +130,54 @@ func TestEstimateMessage_CeilRounding(t *testing.T) {
 	}}
 	assert.Equal(t, 2, EstimateMessage(m))
 }
+
+func TestContextFromUsage(t *testing.T) {
+	cases := []struct {
+		name  string
+		usage *message.Usage
+		want  int
+	}{
+		{"nil", nil, 0},
+		{"zero", &message.Usage{}, 0},
+		{"uncached first turn", &message.Usage{InputTokens: 500, OutputTokens: 50}, 550},
+		{
+			// The shape figaro actually sees from turn two on: the prompt is
+			// almost entirely a cache read, InputTokens is the uncached tail.
+			name:  "cache heavy",
+			usage: &message.Usage{InputTokens: 2025, OutputTokens: 50, CacheReadTokens: 130_000, CacheWriteTokens: 3_000},
+			want:  135_075,
+		},
+		{"cache write only", &message.Usage{InputTokens: 12, CacheWriteTokens: 20_000, OutputTokens: 8}, 20_020},
+		{"cache read only", &message.Usage{CacheReadTokens: 99_000}, 99_000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, ContextFromUsage(tc.usage))
+		})
+	}
+}
+
+func TestContextSize_CountsCachedInput(t *testing.T) {
+	msgs := []message.Message{
+		{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
+		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("hi")}, Usage: &message.Usage{
+			InputTokens:      2075,
+			OutputTokens:     100,
+			CacheReadTokens:  120_000,
+			CacheWriteTokens: 12_500,
+		}},
+	}
+
+	got, exact := ContextSize(msgs)
+	assert.Equal(t, 134_675, got)
+	assert.True(t, exact)
+
+	// A trailing un-metered message estimates only the tail on top of the
+	// same watermark base.
+	msgs = append(msgs, message.Message{Role: message.RoleUser, Content: []message.Content{
+		message.TextContent("now do something else for me please ok?!"), // 40 chars → 10
+	}})
+	got, exact = ContextSize(msgs)
+	assert.Equal(t, 134_685, got)
+	assert.False(t, exact)
+}
