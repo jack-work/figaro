@@ -12,6 +12,12 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 )
 
+// val returns the raw value at key, or nil when the key is absent.
+func val(s chalkboard.Snapshot, key string) json.RawMessage {
+	v, _ := s.Get(key)
+	return v
+}
+
 // raw is a tiny helper that marshals a Go value to json.RawMessage.
 func raw(t *testing.T, v interface{}) json.RawMessage {
 	t.Helper()
@@ -23,28 +29,28 @@ func raw(t *testing.T, v interface{}) json.RawMessage {
 // --- Snapshot.Diff / .Apply round-trip ---
 
 func TestDiff_NoChange(t *testing.T) {
-	prev := chalkboard.Snapshot{
+	prev := chalkboard.FromMap(map[string]json.RawMessage{
 		"cwd":   raw(t, "/foo"),
 		"model": raw(t, "claude-opus-4-6"),
-	}
-	next := chalkboard.Snapshot{
+	})
+	next := chalkboard.FromMap(map[string]json.RawMessage{
 		"cwd":   raw(t, "/foo"),
 		"model": raw(t, "claude-opus-4-6"),
-	}
+	})
 	p := next.Diff(prev)
 	assert.True(t, p.IsEmpty(), "identical snapshots produce empty patch")
 }
 
 func TestDiff_AddSetRemove(t *testing.T) {
-	prev := chalkboard.Snapshot{
+	prev := chalkboard.FromMap(map[string]json.RawMessage{
 		"cwd":   raw(t, "/foo"),
 		"label": raw(t, "alpha"),
-	}
-	next := chalkboard.Snapshot{
+	})
+	next := chalkboard.FromMap(map[string]json.RawMessage{
 		"cwd":   raw(t, "/bar"),            // changed
 		"model": raw(t, "claude-opus-4-6"), // added
 		// label removed
-	}
+	})
 	p := next.Diff(prev)
 	assert.Equal(t, raw(t, "/bar"), p.Set["cwd"])
 	assert.Equal(t, raw(t, "claude-opus-4-6"), p.Set["model"])
@@ -52,25 +58,25 @@ func TestDiff_AddSetRemove(t *testing.T) {
 }
 
 func TestApply_RoundTrip(t *testing.T) {
-	prev := chalkboard.Snapshot{
+	prev := chalkboard.FromMap(map[string]json.RawMessage{
 		"cwd":  raw(t, "/foo"),
 		"keep": raw(t, "x"),
-	}
-	next := chalkboard.Snapshot{
+	})
+	next := chalkboard.FromMap(map[string]json.RawMessage{
 		"cwd":   raw(t, "/bar"),
 		"keep":  raw(t, "x"),
 		"added": raw(t, "y"),
-	}
+	})
 	p := next.Diff(prev)
 	got := prev.Apply(p)
 	assert.Equal(t, next, got, "Apply(Diff) must reconstruct the next snapshot")
 }
 
 func TestApply_DoesNotMutateReceiver(t *testing.T) {
-	prev := chalkboard.Snapshot{"k": raw(t, "v1")}
+	prev := chalkboard.FromMap(map[string]json.RawMessage{"k": raw(t, "v1")})
 	p := chalkboard.Patch{Set: map[string]json.RawMessage{"k": raw(t, "v2")}}
 	_ = prev.Apply(p)
-	assert.Equal(t, raw(t, "v1"), prev["k"], "Apply must not mutate the receiver")
+	assert.Equal(t, raw(t, "v1"), val(prev, "k"), "Apply must not mutate the receiver")
 }
 
 func TestMerge_QWinsOnConflict(t *testing.T) {
@@ -97,7 +103,7 @@ func TestMerge_QWinsOnConflict(t *testing.T) {
 // --- Patch.Entries: deterministic order ---
 
 func TestEntries_DeterministicOrder(t *testing.T) {
-	prev := chalkboard.Snapshot{"a": raw(t, "old-a")}
+	prev := chalkboard.FromMap(map[string]json.RawMessage{"a": raw(t, "old-a")})
 	p := chalkboard.Patch{
 		Set: map[string]json.RawMessage{
 			"zeta":  raw(t, "1"),
@@ -134,7 +140,7 @@ func TestRender_DefaultTemplates_Cwd(t *testing.T) {
 	require.NoError(t, err)
 
 	prev := chalkboard.Snapshot{}
-	next := chalkboard.Snapshot{"cwd": raw(t, "/home/figaro")}
+	next := chalkboard.FromMap(map[string]json.RawMessage{"cwd": raw(t, "/home/figaro")})
 	p := next.Diff(prev)
 
 	rendered, err := chalkboard.Render(p, prev, tmpls)
@@ -148,8 +154,8 @@ func TestRender_DefaultTemplates_Model_Old_New(t *testing.T) {
 	tmpls, err := chalkboard.LoadDefaultTemplates()
 	require.NoError(t, err)
 
-	prev := chalkboard.Snapshot{"model": raw(t, "claude-sonnet")}
-	next := chalkboard.Snapshot{"model": raw(t, "claude-opus")}
+	prev := chalkboard.FromMap(map[string]json.RawMessage{"model": raw(t, "claude-sonnet")})
+	next := chalkboard.FromMap(map[string]json.RawMessage{"model": raw(t, "claude-opus")})
 	p := next.Diff(prev)
 
 	rendered, err := chalkboard.Render(p, prev, tmpls)
@@ -163,7 +169,7 @@ func TestRender_UnknownKey_FallsBackToGeneric(t *testing.T) {
 	require.NoError(t, err)
 
 	prev := chalkboard.Snapshot{}
-	next := chalkboard.Snapshot{"unknown_key": raw(t, "v")}
+	next := chalkboard.FromMap(map[string]json.RawMessage{"unknown_key": raw(t, "v")})
 	p := next.Diff(prev)
 
 	rendered, err := chalkboard.Render(p, prev, tmpls)
@@ -178,10 +184,10 @@ func TestRender_SystemKey_SilentlySkipped(t *testing.T) {
 	require.NoError(t, err)
 
 	prev := chalkboard.Snapshot{}
-	next := chalkboard.Snapshot{
+	next := chalkboard.FromMap(map[string]json.RawMessage{
 		"system.credo":       raw(t, "you are figaro"),
 		"system.environment": raw(t, "env"),
-	}
+	})
 	p := next.Diff(prev)
 
 	rendered, err := chalkboard.Render(p, prev, tmpls)
@@ -193,7 +199,7 @@ func TestRender_EmptyPatch(t *testing.T) {
 	tmpls, err := chalkboard.LoadDefaultTemplates()
 	require.NoError(t, err)
 
-	rendered, err := chalkboard.Render(chalkboard.Patch{}, nil, tmpls)
+	rendered, err := chalkboard.Render(chalkboard.Patch{}, chalkboard.Snapshot{}, tmpls)
 	require.NoError(t, err)
 	assert.Empty(t, rendered)
 }
@@ -209,7 +215,7 @@ func TestRender_OverrideTemplate(t *testing.T) {
 	require.NoError(t, err)
 
 	prev := chalkboard.Snapshot{}
-	next := chalkboard.Snapshot{"cwd": raw(t, "/over")}
+	next := chalkboard.FromMap(map[string]json.RawMessage{"cwd": raw(t, "/over")})
 	p := next.Diff(prev)
 
 	rendered, err := chalkboard.Render(p, prev, overridden)

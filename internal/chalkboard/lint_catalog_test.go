@@ -27,9 +27,9 @@ func TestDefaultTemplates_LintClean(t *testing.T) {
 	// Build a single patch that exercises every default template key.
 	// Old values are populated where the template uses {{.OldString}}
 	// (currently only model.tmpl).
-	prev := chalkboard.Snapshot{
+	prev := chalkboard.FromMap(map[string]json.RawMessage{
 		"model": rawString("claude-sonnet-4-6"),
-	}
+	})
 	patch := chalkboard.Patch{
 		Set: map[string]json.RawMessage{
 			"cwd":          rawString("/home/figaro/dev"),

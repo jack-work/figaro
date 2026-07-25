@@ -15,17 +15,19 @@ func BenchmarkSnapshot_Diff_50keys_1diff(b *testing.B) { benchSnapshotDiff(b, 50
 func BenchmarkSnapshot_Diff_50keys_5diff(b *testing.B) { benchSnapshotDiff(b, 50, 5) }
 
 func benchSnapshotDiff(b *testing.B, n, diffs int) {
-	prev := make(chalkboard.Snapshot, n)
-	next := make(chalkboard.Snapshot, n)
+	prevM := make(map[string]json.RawMessage, n)
+	nextM := make(map[string]json.RawMessage, n)
 	for i := 0; i < n; i++ {
 		key := keyFor(i)
-		prev[key] = json.RawMessage(`"value-` + key + `"`)
+		prevM[key] = json.RawMessage(`"value-` + key + `"`)
 		if i < diffs {
-			next[key] = json.RawMessage(`"changed-` + key + `"`)
+			nextM[key] = json.RawMessage(`"changed-` + key + `"`)
 		} else {
-			next[key] = prev[key]
+			nextM[key] = prevM[key]
 		}
 	}
+	prev := chalkboard.FromMap(prevM)
+	next := chalkboard.FromMap(nextM)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = next.Diff(prev)
@@ -33,11 +35,11 @@ func benchSnapshotDiff(b *testing.B, n, diffs int) {
 }
 
 func BenchmarkSnapshot_Apply(b *testing.B) {
-	prev := chalkboard.Snapshot{
+	prev := chalkboard.FromMap(map[string]json.RawMessage{
 		"cwd":   json.RawMessage(`"/foo"`),
 		"model": json.RawMessage(`"claude-opus"`),
 		"label": json.RawMessage(`"morning"`),
-	}
+	})
 	patch := chalkboard.Patch{
 		Set: map[string]json.RawMessage{
 			"cwd":      json.RawMessage(`"/bar"`),
