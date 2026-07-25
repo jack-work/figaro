@@ -74,6 +74,10 @@ type transcript struct {
 	rowCache  map[int]cachedMessage
 	cacheW    int
 	nodeRows  map[nodeRef]nodeSpan
+	lineBuf   []string // reused row buffer, valid until the next lines()
+	lineLTBuf []int    // reused LT buffer, aliased by lineLT
+	ruleStr   string   // memoized separator rule for ruleW columns
+	ruleW     int
 	selection nodeSelection
 	expanded  map[nodeRef]bool
 }
@@ -395,6 +399,18 @@ func (t *transcript) pruneCaches() {
 	}
 }
 
+// forEachMessage walks the retained window without materializing the merged
+// slice messages() returns — it is called from the frame path, where one
+// allocation and a copy of every retained message header per frame is pure
+// waste.
+func (t *transcript) forEachMessage(fn func(aria.Message)) {
+	for _, page := range t.pages {
+		for _, m := range page.messages {
+			fn(m)
+		}
+	}
+}
+
 func (t *transcript) messages() []aria.Message {
 	n := 0
 	for _, page := range t.pages {
@@ -524,24 +540,39 @@ func (t *transcript) lines() []string {
 	}
 	marks := t.selectionMarks()
 	hl := t.activeHighlight()
-	var out []string
-	var lts []int // LT owning each line (0 for separator rules), parallel to out
-	t.nodeRows = map[nodeRef]nodeSpan{}
+	// The row and LT buffers are reused across frames: a heavy transcript
+	// materializes thousands of rows per keypress, and re-growing two slices
+	// from nil every time was the largest remaining allocator in the frame
+	// path (112 KB/frame of pure append churn). The returned slice is only
+	// valid until the next lines() call — every caller consumes it before it
+	// can call lines() again, and t.lineLT has always aliased this buffer.
+	out := t.lineBuf[:0]
+	lts := t.lineLTBuf[:0] // LT owning each line (0 for separator rules), parallel to out
+	rule := t.transRule()
+	clear(t.nodeRows) // reused: a fresh map per frame is pure garbage
 	appendMsg := func(rows []transcriptRow, lt int) {
 		if len(out) > 0 { // rule separator BETWEEN messages only — the footer
-			out = append(out, "", dimTransRule(t.w), "") // seals the last one, so a
-			lts = append(lts, lt, lt, lt)                // trailing rule+blank would
+			out = append(out, "", rule, "") // seals the last one, so a
+			lts = append(lts, lt, lt, lt)   // trailing rule+blank would
 		} // double up against it
+		last := nodeRef{}
 		for _, r := range rows {
 			line := r.text
 			if r.ref.valid() {
-				line = decorateNodeRow(line, marks[r.ref])
-				span, ok := t.nodeRows[r.ref]
-				if !ok {
-					span.first = len(out)
+				if marks != nil {
+					line = decorateNodeRow(line, marks[r.ref])
 				}
-				span.last = len(out)
-				t.nodeRows[r.ref] = span
+				// A node's rows are contiguous, so the span only needs
+				// rewriting when the ref changes: one map write per node
+				// instead of one per row (map hashing was 13% of frame CPU).
+				if r.ref != last {
+					t.nodeRows[r.ref] = nodeSpan{first: len(out), last: len(out)}
+					last = r.ref
+				} else {
+					span := t.nodeRows[r.ref]
+					span.last = len(out)
+					t.nodeRows[r.ref] = span
+				}
 			}
 			if hl != "" {
 				line = highlightMatches(line, hl)
@@ -550,19 +581,29 @@ func (t *transcript) lines() []string {
 			lts = append(lts, lt)
 		}
 	}
-	for _, m := range t.messages() {
+	t.forEachMessage(func(m aria.Message) {
 		rows, ok := t.rowCache[m.LT]
 		if !ok {
 			rows = t.renderMsgBase(m)
 			t.rowCache[m.LT] = rows
 		}
 		appendMsg(rows.rows, m.LT)
-	}
+	})
 	if open := t.openMessage(); open != nil {
 		appendMsg(t.renderMsgBase(*open).rows, open.LT)
 	}
+	t.lineBuf, t.lineLTBuf = out, lts
 	t.lineLT = lts
 	return out
+}
+
+// transRule is the memoized message separator: strings.Repeat per message per
+// frame is 16 KB/frame of identical strings.
+func (t *transcript) transRule() string {
+	if t.ruleStr == "" || t.ruleW != t.w {
+		t.ruleStr, t.ruleW = dimTransRule(t.w), t.w
+	}
+	return t.ruleStr
 }
 
 func (t *transcript) openMessage() *aria.Message {
