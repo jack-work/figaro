@@ -645,8 +645,12 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 		for _, l := range t.renderNode(n, ref) {
 			// Rows are stored already clipped and gutter-prefixed (their
 			// unselected resting form) so a frame that touches nothing
-			// allocates nothing; see plainNodeRow.
-			rows = append(rows, transcriptRow{text: plainNodeRow(l, t.w), ref: ref})
+			// allocates nothing; see plainNodeRow. collapseSGR then strips the
+			// rendition churn glamour emits per cell — 3/4 of the retained row
+			// text, and of the bytes each painted frame puts on the wire. It is
+			// applied here, on the way into the cache, so the saving is paid
+			// once and collected on every frame; see sgr.go.
+			rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(l, t.w)), ref: ref})
 		}
 	}
 	// Committed rows are retained for as long as the page is, so hand back an

@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\x1b[m\xc4\x1b[m\x8f")
