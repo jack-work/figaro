@@ -267,6 +267,11 @@ func (i *Incipit) renderNodes(nodes []livedoc.Node) []string {
 	}
 	var rows []string
 	for k, n := range nodes {
+		// Minted-but-empty prose/thinking (docs/turn-addressing.md, invariant 6)
+		// holds a node id so later ids cannot shift; it draws nothing.
+		if n.Type != livedoc.NodeTool && strings.TrimSpace(n.Markdown) == "" {
+			continue
+		}
 		if k > 0 {
 			rows = append(rows, "")
 		}

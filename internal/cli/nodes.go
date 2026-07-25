@@ -43,6 +43,12 @@ func renderNodeList(nodes []livedoc.Node, width, bashCap int, tick uint64, set r
 	}
 	var rows []string
 	for i, n := range nodes {
+		// Empty prose/thinking nodes are minted by the projection so ids cannot
+		// shift when a block fills (docs/turn-addressing.md, invariant 6).
+		// Hiding them is the renderer's job, not the projection's.
+		if n.Type != livedoc.NodeTool && strings.TrimSpace(n.Markdown) == "" {
+			continue
+		}
 		var nr []string
 		switch n.Type {
 		case livedoc.NodeTool:

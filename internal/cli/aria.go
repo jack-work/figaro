@@ -15,7 +15,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
@@ -166,36 +165,26 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 	compose.StampTurnIDs(msgs)
 	reg := tool.DefaultRegistry("")
-	units := compose.Units(msgs, compose.ToolSummary(tool.Summarizer(reg)), compose.ToolPreviewArg(tool.PreviewArger(reg)))
-	lo, hi := selectUnitRange(len(units), opts)
+	turns := compose.Turns(msgs, compose.ToolSummary(tool.Summarizer(reg)), compose.ToolPreviewArg(tool.PreviewArger(reg)))
+	lo, hi := selectUnitRange(len(turns), opts)
 
 	if opts.jsonOut {
-		type jUnit struct {
-			Index int            `json:"index"`
-			Role  string         `json:"role"`
-			Nodes []livedoc.Node `json:"nodes"`
-		}
-		out := make([]jUnit, 0, hi-lo)
-		for i := lo; i < hi; i++ {
-			out = append(out, jUnit{Index: i, Role: units[i].Role, Nodes: units[i].Nodes})
-		}
+		// The wire IR verbatim: no shadow struct, no dropped coordinate. The
+		// turn id is the coordinate `fig send <aria>:<turn>` takes.
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(out); err != nil {
+		if err := enc.Encode(turns[lo:hi]); err != nil {
 			die("json: %s", err)
 		}
 		return
 	}
 
 	width := termWidth()
-	fmt.Printf("# aria %s — %d units (showing %d–%d) · [N] is the LT to fork/send at\n\n", figaroID, len(units), lo+1, hi)
+	fmt.Printf("# aria %s — %d turns (showing %d–%d) · [N] is the turn to fork/send at\n\n", figaroID, len(turns), lo+1, hi)
 	for i := lo; i < hi; i++ {
-		u := units[i]
-		hdr := messageHeader(u.Role)
-		if hdr == "" {
-			hdr = u.Role // fallback for unknown roles
-		}
-		label := fmt.Sprintf("%s   %s", term.Dim(fmt.Sprintf("[%d]", u.LT)), hdr)
+		u := turns[i]
+		hdr := messageHeader("assistant")
+		label := fmt.Sprintf("%s   %s", term.Dim(fmt.Sprintf("[%d]", u.ID)), hdr)
 		fmt.Println(label)
 		fmt.Println()
 		rows := renderNodeList(u.Nodes, width, 0, 0, renderSettings{verbose: true})

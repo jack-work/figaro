@@ -82,7 +82,7 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 			if hasToolResult(m) {
 				for ci, c := range m.Content {
 					if c.Type == message.ContentProse && strings.TrimSpace(c.Text) != "" {
-						nodes = append(nodes, livedoc.Node{ID: nodeID(m.LogicalTime, ci), Type: livedoc.NodeSteering, Markdown: strings.TrimRight(c.Text, "\n")})
+						nodes = append(nodes, textNode(livedoc.NodeSteering, roleUser, m.LogicalTime, ci, c.Text))
 					}
 				}
 			}
@@ -92,42 +92,67 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 			continue // tool_result messages fold under their invoke; user prompts aren't in the turn
 		}
 		for ci, c := range m.Content {
+			// Empty prose/thinking blocks are minted, not skipped: a block that
+			// arrives empty and fills later must already own its position, or the
+			// nodes after it would shift under it. The renderer hides empties.
 			switch c.Type {
 			case message.ContentProse:
-				if strings.TrimSpace(c.Text) == "" {
-					continue
-				}
-				nodes = append(nodes, livedoc.Node{ID: nodeID(m.LogicalTime, ci), Type: livedoc.NodeProse, Markdown: strings.TrimRight(c.Text, "\n")})
+				nodes = append(nodes, textNode(livedoc.NodeProse, roleAssistant, m.LogicalTime, ci, c.Text))
 			case message.ContentThinking:
-				if strings.TrimSpace(c.Text) == "" {
-					continue
-				}
-				nodes = append(nodes, livedoc.Node{ID: nodeID(m.LogicalTime, ci), Type: livedoc.NodeThinking, Markdown: strings.TrimRight(c.Text, "\n")})
+				nodes = append(nodes, textNode(livedoc.NodeThinking, roleAssistant, m.LogicalTime, ci, c.Text))
 			case message.ContentToolInvoke:
-				nodes = append(nodes, toolNode(c, results, partials, argPartials, summarize, previewArg, toolTimings))
+				nodes = append(nodes, toolNode(c, m.LogicalTime, ci, results, partials, argPartials, summarize, previewArg, toolTimings))
 			}
 		}
 	}
 	return nodes
 }
 
-func toolNode(inv message.Content, results map[string]message.Content, partials, argPartials map[string]string, summarize ToolSummary, previewArg ToolPreviewArg, timings map[string]ToolTiming) livedoc.Node {
+const (
+	roleUser      = "user"
+	roleAssistant = "assistant"
+)
+
+// textNode builds a prose/thinking/steering node at one fig-IR coordinate.
+func textNode(t livedoc.NodeType, role string, lt uint64, block int, text string) livedoc.Node {
+	return livedoc.Node{
+		ID:       nodeID(lt, block),
+		Type:     t,
+		Role:     role,
+		LTs:      []uint64{lt},
+		Src:      []livedoc.Src{{LT: lt, Block: block}},
+		Markdown: strings.TrimRight(text, "\n"),
+	}
+}
+
+func toolNode(inv message.Content, lt uint64, block int, results map[string]resultAt, partials, argPartials map[string]string, summarize ToolSummary, previewArg ToolPreviewArg, timings map[string]ToolTiming) livedoc.Node {
 	name := inv.ToolName
 	if name == "" {
 		name = "tool"
 	}
 	n := livedoc.Node{
-		Type:    livedoc.NodeTool,
-		ID:      inv.ToolCallID,
-		Name:    name,
-		Args:    inv.Arguments,
-		Summary: summaryFor(name, inv.Arguments, summarize),
+		Type:       livedoc.NodeTool,
+		ID:         inv.ToolCallID,
+		ToolCallID: inv.ToolCallID,
+		Role:       roleAssistant,
+		LTs:        []uint64{lt},
+		Src:        []livedoc.Src{{LT: lt, Block: block}},
+		Name:       name,
+		Args:       inv.Arguments,
+		Summary:    summaryFor(name, inv.Arguments, summarize),
 	}
 	if timing, ok := timings[inv.ToolCallID]; ok {
 		n.StartedAt = timing.StartedAt
 		n.FinishedAt = timing.FinishedAt
 	}
-	if res, done := results[inv.ToolCallID]; done {
+	if got, done := results[inv.ToolCallID]; done {
+		res := got.Content
+		// A tool node spans two coordinates: the invoke and its result, in
+		// different messages at different block indices.
+		n.Src = append(n.Src, got.Src)
+		if got.Src.LT != lt {
+			n.LTs = append(n.LTs, got.Src.LT)
+		}
 		n.Status = livedoc.StatusOK
 		if res.IsError {
 			n.Status = livedoc.StatusError
@@ -199,49 +224,9 @@ func tailBound(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-// Unit is one committed conversational unit: a user prompt or an
-// assistant turn, as a typed node list. LT is the figwal main-LT of the
-// unit's last message — the coordinate `send`/`fork <trunk>:<LT>` address —
-// so a renderer can label units with the LT a fork would target.
-type Unit struct {
-	Role  string         `json:"role"`
-	Nodes []livedoc.Node `json:"nodes"`
-	LT    uint64         `json:"lt,omitempty"`
-}
-
-// Units folds a message log into committed conversational units in
-// order, mirroring the live wire's segmentation: each text-bearing user
-// message is its own prompt unit (one prose node), and the assistant
-// messages following it (with their tool results) compose into one turn
-// unit. A catch-up read replays these to reproduce the same scrollback
-// the live stream would have produced.
-func Units(msgs []message.Message, summarize ToolSummary, previewArg ToolPreviewArg) []Unit {
-	var units []Unit
-	var group []message.Message
-	flush := func() {
-		if len(group) == 0 {
-			return
-		}
-		if nodes := Nodes(group, nil, nil, summarize, previewArg); len(nodes) > 0 {
-			units = append(units, Unit{Role: "assistant", Nodes: nodes, LT: group[len(group)-1].LogicalTime})
-		}
-		group = nil
-	}
-	for _, m := range msgs {
-		// A pure-text user message starts a new prompt unit. A user message
-		// carrying a tool_result stays in the turn group even if it also has
-		// text (a steering interjection) — that text becomes a steering node.
-		if m.Role == message.RoleUser && !hasToolResult(m) {
-			if txt := messageText(m); txt != "" {
-				flush()
-				units = append(units, Unit{Role: "user", Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: txt}}, LT: m.LogicalTime})
-			}
-		}
-		group = append(group, m)
-	}
-	flush()
-	return units
-}
+// Units is gone. compose.Turns is the single projection now — the prompt is
+// node 0 of its turn rather than a separate unit. See internal/compose/turns.go
+// and docs/turn-addressing.md.
 
 // messageText joins a message's text blocks; "" when it carries none
 // (e.g. a tool-result message or a control-only patch).
@@ -266,12 +251,19 @@ func hasToolResult(m message.Message) bool {
 	return false
 }
 
-func indexResults(msgs []message.Message) map[string]message.Content {
-	out := map[string]message.Content{}
+// resultAt is a tool_result block together with the coordinate it was found
+// at, so a tool node can record both of its sources.
+type resultAt struct {
+	Content message.Content
+	Src     livedoc.Src
+}
+
+func indexResults(msgs []message.Message) map[string]resultAt {
+	out := map[string]resultAt{}
 	for _, m := range msgs {
-		for _, c := range m.Content {
+		for ci, c := range m.Content {
 			if c.Type == message.ContentToolResult && c.ToolCallID != "" {
-				out[c.ToolCallID] = c
+				out[c.ToolCallID] = resultAt{Content: c, Src: livedoc.Src{LT: m.LogicalTime, Block: ci}}
 			}
 		}
 	}
