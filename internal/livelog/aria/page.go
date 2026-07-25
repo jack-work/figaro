@@ -85,20 +85,39 @@ func nodeSize(n livedoc.Node) int {
 // cursor is a position in the flattened (turn, node) space.
 type cursor struct{ turn, node int }
 
-// locate resolves an anchor to an index pair. A missing turn or an
-// out-of-range node clamps to the nearest valid position rather than failing:
-// a client scrolling against a conversation that forked or was trimmed under
-// it should land somewhere sane, not error.
-func locate(turns []Turn, a Anchor, dir Direction) cursor {
+// locate resolves an anchor to a cursor, and reports whether anything lies in
+// the direction of travel. An anchor outside the materialized range is not an
+// error — it is how a caller says "the end": a backward read from beyond the
+// last turn is the tail, and a forward read from there has nothing left to
+// give. Clamping both directions to the same cursor (as this once did) made a
+// forward read from beyond the end return the whole last turn, which a pager
+// joining at the tail then rendered a second time.
+func locate(turns []Turn, a Anchor, dir Direction) (cursor, bool) {
 	if len(turns) == 0 {
-		return cursor{}
+		return cursor{}, false
+	}
+	last := len(turns) - 1
+	tail := cursor{last, len(turns[last].Nodes) - 1}
+	if tail.node < 0 {
+		tail.node = 0
 	}
 	if a.Zero() {
 		if dir == Backward {
-			last := len(turns) - 1
-			return cursor{last, len(turns[last].Nodes) - 1}
+			return tail, true
 		}
-		return cursor{0, 0}
+		return cursor{0, 0}, true
+	}
+	if a.Turn > turns[last].ID {
+		if dir == Forward {
+			return cursor{}, false
+		}
+		return tail, true
+	}
+	if a.Turn < turns[0].ID {
+		if dir == Backward {
+			return cursor{}, false
+		}
+		return cursor{0, 0}, true
 	}
 	ti := 0
 	for i, t := range turns {
@@ -117,7 +136,7 @@ func locate(turns []Turn, a Anchor, dir Direction) cursor {
 	if ni < 0 {
 		ni = 0
 	}
-	return cursor{ti, ni}
+	return cursor{ti, ni}, true
 }
 
 // step advances a cursor one node in dir. ok is false at the ends.
@@ -160,7 +179,10 @@ func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page {
 	if len(turns) == 0 || budget <= 0 {
 		return Page{}
 	}
-	start := locate(turns, at, dir)
+	start, ok := locate(turns, at, dir)
+	if !ok {
+		return Page{}
+	}
 	if len(turns[start.turn].Nodes) == 0 {
 		if next, ok := step(turns, start, dir); ok {
 			start = next
