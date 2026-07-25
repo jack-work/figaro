@@ -73,9 +73,18 @@ type transcript struct {
 	// applied after retrieval, so moving through nodes never re-renders prose.
 	rowCache  map[int]cachedMessage
 	cacheW    int
-	nodeRows  map[nodeRef]nodeSpan
 	selection nodeSelection
 	expanded  map[nodeRef]bool
+
+	// index is the viewport virtualization: a per-frame map from line space to
+	// message rows, rebuilt in O(#messages) so scrolling never re-materializes
+	// (or re-decorates) rows it will not paint. See transcript_index.go.
+	index     lineIndex
+	rowBuf    []string    // scratch for the visible window
+	screenBuf [2][]string // ping-pong frame buffers (paint retains one as prev)
+	screenPar int
+	ruleRow   string // memoized dimTransRule(w)
+	ruleW     int
 }
 
 type transcriptPage struct {
@@ -122,7 +131,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 	return &transcript{
 		out: out, view: view, client: client,
 		status: newSessionStatus(figaroID, startedAt), w: w, h: h,
-		rowCache: map[int]cachedMessage{}, nodeRows: map[nodeRef]nodeSpan{}, expanded: map[nodeRef]bool{},
+		rowCache: map[int]cachedMessage{}, expanded: map[nodeRef]bool{},
 	}
 }
 
@@ -272,7 +281,7 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 			return
 		}
 	} else {
-		t.lines()
+		t.buildIndex()
 		t.restoreViewportAnchor(anchorLT, within)
 	}
 	t.render()
@@ -477,8 +486,8 @@ func (t *transcript) resize(w, h int) {
 	// after re-rendering at the new width. (Skipped when following the tail.)
 	anchorLT, within := t.viewportAnchor()
 	t.w, t.h = w, h
-	t.prev = nil // full repaint (diff vs nil); no \x1b[2J, which flickers
-	t.lines()    // re-render at the new width, repopulating lineLT
+	t.prev = nil   // full repaint (diff vs nil); no \x1b[2J, which flickers
+	t.buildIndex() // re-render at the new width, repopulating lineLT
 	t.restoreViewportAnchor(anchorLT, within)
 	t.render()
 }
@@ -514,55 +523,13 @@ func (t *transcript) invalidateRows() {
 // lines renders the retained message window and live tail to physical rows.
 // Committed messages are immutable, so their rendered rows are cached by LT;
 // only the open message renders every frame.
+//
+// This is the whole-transcript materialization — O(retained rows). It is kept
+// for search (which must scan every loaded line) and for tests; the render
+// path goes through buildIndex + window instead, which is O(viewport).
 func (t *transcript) lines() []string {
-	if t.follow {
-		t.resetToTail()
-	}
-	if t.cacheW != t.w { // width changed: cached rows are stale
-		t.rowCache = map[int]cachedMessage{}
-		t.cacheW = t.w
-	}
-	marks := t.selectionMarks()
-	hl := t.activeHighlight()
-	var out []string
-	var lts []int // LT owning each line (0 for separator rules), parallel to out
-	t.nodeRows = map[nodeRef]nodeSpan{}
-	appendMsg := func(rows []transcriptRow, lt int) {
-		if len(out) > 0 { // rule separator BETWEEN messages only — the footer
-			out = append(out, "", dimTransRule(t.w), "") // seals the last one, so a
-			lts = append(lts, lt, lt, lt)                // trailing rule+blank would
-		} // double up against it
-		for _, r := range rows {
-			line := r.text
-			if r.ref.valid() {
-				line = decorateNodeRow(line, marks[r.ref], t.w)
-				span, ok := t.nodeRows[r.ref]
-				if !ok {
-					span.first = len(out)
-				}
-				span.last = len(out)
-				t.nodeRows[r.ref] = span
-			}
-			if hl != "" {
-				line = highlightMatches(line, hl)
-			}
-			out = append(out, line)
-			lts = append(lts, lt)
-		}
-	}
-	for _, m := range t.messages() {
-		rows, ok := t.rowCache[m.LT]
-		if !ok {
-			rows = t.renderMsgBase(m)
-			t.rowCache[m.LT] = rows
-		}
-		appendMsg(rows.rows, m.LT)
-	}
-	if open := t.openMessage(); open != nil {
-		appendMsg(t.renderMsgBase(*open).rows, open.LT)
-	}
-	t.lineLT = lts
-	return out
+	t.buildIndex()
+	return t.window(0, t.index.total, make([]string, 0, t.index.total))
 }
 
 func (t *transcript) openMessage() *aria.Message {
@@ -613,7 +580,8 @@ func (t *transcript) render() {
 	if !t.active {
 		return
 	}
-	all := t.lines()
+	t.buildIndex()
+	total := t.index.total
 	foot := []string{}
 	if t.showHelp {
 		foot = t.helpLines()
@@ -626,7 +594,7 @@ func (t *transcript) render() {
 	if body < 1 {
 		body = 1
 	}
-	maxOff := len(all) - body
+	maxOff := total - body
 	if maxOff < 0 {
 		maxOff = 0
 	}
@@ -639,22 +607,34 @@ func (t *transcript) render() {
 	if t.offset < 0 {
 		t.offset = 0
 	}
-	screen := make([]string, t.h)
-	for r := 0; r < body; r++ {
-		if i := t.offset + r; i < len(all) {
-			screen[r] = all[i]
-		}
-	}
+	screen := t.nextScreen()
+	t.rowBuf = t.window(t.offset, t.offset+body, t.rowBuf)
+	copy(screen[:body], t.rowBuf)
 	for k, l := range foot {
 		if r := body + k; r < t.h-3 {
 			screen[r] = l
 		}
 	}
-	rule, status := t.footerRows(len(all), body)
+	rule, status := t.footerRows(total, body)
 	screen[t.h-3] = "" // padding ABOVE the footer, not between rule and status
 	screen[t.h-2] = rule
 	screen[t.h-1] = status
 	t.paint(screen)
+}
+
+// nextScreen hands out a cleared frame buffer. Two buffers ping-pong because
+// paint retains the painted frame as prev for the next diff — reusing a single
+// buffer would make every frame compare equal to itself.
+func (t *transcript) nextScreen() []string {
+	t.screenPar ^= 1
+	buf := t.screenBuf[t.screenPar]
+	if cap(buf) < t.h {
+		buf = make([]string, t.h)
+	}
+	buf = buf[:t.h]
+	clear(buf)
+	t.screenBuf[t.screenPar] = buf
+	return buf
 }
 
 // footerRows is the transcript's two-row footer, shared with the incipit
