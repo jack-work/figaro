@@ -189,12 +189,20 @@ func runList(loaded *config.Loaded, o lsOpts) {
 					ctxStr = "~" + ctxStr
 				}
 			}
-			// Branches show the LT they were forked AT (the last shared LT,
-			// = what `send/fork :N` reproduces). BranchedLT is the first own
-			// LT, so the fork point is BranchedLT-1. Roots are top-level.
+			// Branches are MARKED, not numbered. The forest records a fork point
+			// as an LT (BranchedLT), but the coordinate `send/fork <id>:N` takes
+			// is a TURN — printing the LT here and letting it read as a fork
+			// argument is the exact class of trap this project exists to remove
+			// (the old comment claimed the two were the same; they never were
+			// after turn addressing, and are off by a whole exchange).
+			//
+			// Resolving LT -> turn needs the trunk's message log, which `list`
+			// deliberately does not read: it would be one full log read per
+			// branch on every listing. `figaro status <id>` does read it and
+			// prints the exact `parent:turn` you can fork with.
 			fork := "-"
 			if len(f.Vector) > 1 && f.BranchedLT > 1 {
-				fork = fmt.Sprintf("@%d", f.BranchedLT-1)
+				fork = "yes"
 			}
 			rows = append(rows, listRow{
 				aria: glyph + marker(f) + " " + truncRunes(label, 44),
