@@ -1300,73 +1300,61 @@ func (t *transcript) mode() keyMode {
 	}
 }
 
-// key handles one navigation/search input byte. Transcript is a locked mode:
-// keys only scroll or search — it NEVER self-exits. Exit is Ctrl-D / Ctrl-C,
-// handled at the input loop. q, Esc, and Ctrl-T are deliberately inert here.
-func (t *transcript) key(b byte) {
-	if t.inSearch {
-		t.searchKey(b)
+// key handles one input byte. Transcript is a locked mode: keys only scroll
+// or search — it NEVER self-exits. Exit is Ctrl-D / Ctrl-C, handled at the
+// input loop. q and Ctrl-T are deliberately inert here.
+func (t *transcript) key(b byte) { t.dispatch(keyEvent{b: b}) }
+
+// navMotion drives a logical navigation key. The arrow cluster shares the
+// letter keys' motions as a peer — Up and k are one action bound twice —
+// rather than by translating itself back into a byte:
+//
+//	Up/Down         k/j    one line
+//	PageUp/PageDown u/d    half a screen
+//	Home/End        gg/G   top / bottom
+//
+// Half a screen (rather than a full one) because the pager's page unit already
+// IS the half-page: u/d, the rows-based paging cursor and the prefetch window
+// are all sized against it, and there is no full-page motion to route through.
+func (t *transcript) navMotion(n navKey) { t.dispatch(keyEvent{nav: n}) }
+
+// dispatch runs one keystroke through the keymap (see keymap.go). Three rules
+// live here rather than in the table, because each is a property of a MODE
+// rather than of any one binding:
+//
+//   - the search box swallows the arrow cluster whole (an arrow is not text,
+//     and it must not scroll behind the prompt either);
+//   - anything the search box has no row for is literal text;
+//   - a panel swallows its own keys, and any OTHER key wipes it and then acts
+//     normally — which is why panel mode falls through to the transcript rows.
+//
+// The trailing pendG update is the gg gesture's whole state machine: only 'g'
+// arms it, and every other key — bound or not — clears it.
+func (t *transcript) dispatch(ev keyEvent) {
+	switch t.mode() {
+	case modeSearch:
+		if ev.nav != navNone {
+			return
+		}
+		if bd := pagerIndex.lookup(modeSearch, ev); bd != nil {
+			bd.pager(t)
+		} else {
+			t.searchLiteral(ev.b)
+		}
 		t.render()
 		return
-	}
-	// A panel swallows its own keys (they toggle it, or switch panels); any
-	// OTHER key wipes it and then acts normally — nav keys included.
-	if t.showHelp || t.showStatus || t.showQueued {
-		switch b {
-		case '?':
-			panelToggleHelp(t)
-			t.render()
-			return
-		case '!':
-			panelToggleStatus(t)
-			t.render()
-			return
-		case 'Q':
-			panelToggleQueued(t)
-			t.render()
-			return
-		case 0x1b:
-			panelDismiss(t)
+	case modePanel:
+		if bd := pagerIndex.lookup(modePanel, ev); bd != nil {
+			bd.pager(t)
 			t.render()
 			return
 		}
 		t.closePanels()
 	}
-	switch b {
-	case 'j':
-		pagerLineDown(t)
-	case 'k':
-		pagerLineUp(t)
-	case 'd':
-		pagerHalfDown(t)
-	case 'u':
-		pagerHalfUp(t)
-	case 'G':
-		pagerTail(t)
-	case 'g':
-		pagerPendingTop(t)
-	case '/':
-		pagerSearchPrompt(t)
-	case 'n':
-		pagerFindNext(t)
-	case 'N':
-		pagerFindPrev(t)
-	case '?':
-		pagerHelpPanel(t)
-	case '!':
-		pagerStatusPanel(t)
-	case 'Q':
-		pagerQueuedPanel(t)
-	case 0x0e: // Ctrl-N
-		pagerSelectNext(t)
-	case 0x10: // Ctrl-P
-		pagerSelectPrev(t)
-	case 0x0d, 0x0a:
-		pagerToggleTools(t)
-	case 0x1b: // Esc: clear the active selection (no-op otherwise)
-		pagerClearSelection(t)
+	if bd := pagerIndex.lookup(modeTranscript, ev); bd != nil {
+		bd.pager(t)
 	}
-	t.pendG = b == 'g' && !t.pendG
+	t.pendG = ev.b == 'g' && !t.pendG
 	t.render()
 }
 
@@ -1473,68 +1461,6 @@ func panelToggleQueued(t *transcript) {
 // panelDismiss is Esc with a panel up: close it, and leave the selection
 // alone — Esc's other meaning is not reached from here.
 func panelDismiss(t *transcript) { t.closePanels() }
-
-// navMotion drives a logical navigation key through the very same motions the
-// letter keys use, so each motion keeps exactly one implementation:
-//
-//	Up/Down        k/j    one line
-//	PageUp/PageDown u/d   half a screen
-//	Home/End       gg/G   top / bottom
-//
-// Half a screen (rather than a full one) because the pager's page unit already
-// IS the half-page: u/d, the rows-based paging cursor and the prefetch window
-// are all sized against it, and there is no full-page motion to route through.
-// Inventing one for the arrow cluster alone would fork the motion logic and
-// leave PageDown scrolling differently from d.
-func (t *transcript) navMotion(n navKey) {
-	if t.inSearch {
-		// The query line owns the keyboard while it is up; an arrow is not
-		// text, and feeding it through key() would type a literal 'k'.
-		return
-	}
-	b, ok := navMotionByte(n)
-	if !ok {
-		return
-	}
-	if n == navHome {
-		// gg is a two-key gesture; Home is the whole of it in one press.
-		// Priming pendG makes key('g') take the jump branch and clear the
-		// flag on its way out, so a half-typed g never survives a Home.
-		t.pendG = true
-	}
-	t.key(b)
-}
-
-func navMotionByte(n navKey) (byte, bool) {
-	switch n {
-	case navUp:
-		return 'k', true
-	case navDown:
-		return 'j', true
-	case navPageUp:
-		return 'u', true
-	case navPageDown:
-		return 'd', true
-	case navHome:
-		return 'g', true
-	case navEnd:
-		return 'G', true
-	}
-	return 0, false
-}
-
-func (t *transcript) searchKey(b byte) {
-	switch b {
-	case 0x0d, 0x0a: // Enter → jump to first match
-		searchAccept(t)
-	case 0x1b: // Esc → cancel typing (keeps existing highlights)
-		searchCancel(t)
-	case 0x7f, 0x08: // backspace
-		searchBackspace(t)
-	default:
-		t.searchLiteral(b)
-	}
-}
 
 // The search sub-mode's actions.
 
