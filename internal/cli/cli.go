@@ -104,34 +104,39 @@ func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 		Aliases: []string{"history"},
 		Group:   "Prompt",
 		Short:   "Render an aria's message history",
-		Usage:   "show [<id>] [-n N | --from A [--to B] | --before LT | -a] [-j] [-v] [-l]",
-		Long: `Render an aria's history as conversational units (the prompt and
-each agent turn). The optional positional is the target aria id;
-default is the pid-bound aria. Everything else is a flag. Units are
-labeled by their figaro LT (the coordinate send/fork <id>:<LT> target).
+		Usage:   "show [<id>] [-n N | --from A [--to B] | --before T | -a] [-j] [-v] [-l]",
+		Long: `Render an aria's history as turns. A turn is one exchange: your
+question and every node the agent produced about it. The optional
+positional is the target aria id; default is the pid-bound aria.
+Turns are labeled by their turn id — the coordinate send/fork
+<id>:<turn> takes.
 
-  figaro show                      last 10 units of the bound aria
-  figaro show eac16fef             last 10 units of aria eac16fef
-  figaro show -n 20                last 20 units
-  figaro show eac16fef -n 20       last 20 units of eac16fef
-  figaro show --from 4             units 4..end ("after index 4")
-  figaro show --from 1 --to 3      units 1..3 inclusive
-  figaro show --before 500 -n 20   20 units before LT 500 (paginate backwards)
-  figaro show -a                   every unit
-  figaro show -j                   units as raw JSON (materialized, no deltas)
-  figaro show eac16fef -v          verbose IR
-  figaro show -l                   raw IR, no rendering`,
+  figaro show                      last 10 turns of the bound aria
+  figaro show eac16fef             last 10 turns of aria eac16fef
+  figaro show -n 20                last 20 turns (paginates backwards from the end)
+  figaro show eac16fef -n 20       last 20 turns of eac16fef
+  figaro show --from 4             turns 4..end
+  figaro show --from 1 --to 3      turns 1..3 inclusive
+  figaro show --before 12 -n 5     5 turns before turn 12 (paginate backwards)
+  figaro show -a                   every turn
+  figaro show -j                   turns as raw JSON (the wire IR verbatim)
+  figaro show eac16fef -v          verbose IR, labeled by LT
+  figaro show -l                   raw IR, no rendering
+
+LT is the model's coordinate — it counts the steps the model experienced,
+and most LTs sit mid-tool. It stays visible under -v/-l for debugging the
+fig IR, but it is not an address: turns are.`,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (alias for the positional)"},
 			{Long: "verbose", Short: "v", IsBool: true, Description: "Raw IR with patches, thinking, usage, transitions"},
 			{Long: "literal", Short: "l", IsBool: true, Description: "No ANSI / markdown rendering"},
-			{Long: "all", Short: "a", IsBool: true, Description: "Show every unit, not just last N"},
-			{Long: "json", Short: "j", IsBool: true, Description: "Emit units as raw JSON (no delta compression)"},
-			{Long: "from", Description: "Start unit index (inclusive)"},
-			{Long: "to", Description: "End unit index (inclusive)"},
-			{Long: "before", Description: "Show N entries before this LT (paginate backwards)"},
-			{Long: "last", Short: "n", Description: "Show the last N units"},
+			{Long: "all", Short: "a", IsBool: true, Description: "Show every turn, not just last N"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Emit turns as raw JSON (the wire IR verbatim)"},
+			{Long: "from", Description: "Start turn id (inclusive)"},
+			{Long: "to", Description: "End turn id (inclusive)"},
+			{Long: "before", Description: "Show N turns before this turn id (paginate backwards)"},
+			{Long: "last", Short: "n", Description: "Show the last N turns (paginate backwards from the end)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
@@ -208,7 +213,7 @@ Flags:
                  to the stream; do not send figaro.interrupt on Ctrl-C.
                  Use ` + "`figaro listen <id>`" + ` later to follow.
   -j, --json     Emit a single {"aria_id":..., "mode":...} JSON line on
-                 stdout. With --forget: fire, then print. With <id>:<LT>:
+                 stdout. With --forget: fire, then print. With <id>:<turn>:
                  fork, then print (mode="fork-send").
 
 Keys while streaming:
@@ -421,9 +426,9 @@ With no id, the pid-bound aria is used.`,
 		Name:    "attend",
 		Aliases: []string{"at"},
 		Group:   "Session",
-		Short:   "Bind this shell to an existing aria (optionally at an LT)",
-		Usage:   "attend <id> | <id>:<LT> | :<LT> | null",
-		Long:    "Binds this shell to an aria. With :<LT> the binding carries a pending\nfork-point — the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<LT>` alone re-pins the already-bound aria.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live loadout.",
+		Short:   "Bind this shell to an existing aria (optionally at a turn)",
+		Usage:   "attend <id> | <id>:<turn> | :<turn> | null",
+		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point — the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live loadout.",
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {
@@ -438,14 +443,14 @@ With no id, the pid-bound aria is used.`,
 		Name:  "fork",
 		Group: "Session",
 		Short: "Branch a conversation: freeze it, mint two children",
-		Usage: "fork [--id <id> | <id>[:<LT>]] [--stay]",
+		Usage: "fork [--id <id> | <id>[:<turn>]] [--stay]",
 		Long: `Branch a conversation. The target freezes (its id becomes a
 read-only index node) and two fresh children are minted: the
 continuation (the original line) and an empty alternative.
 
   figaro fork                 branch the bound aria at its head
   figaro fork <id>            branch another aria at its head (maintenance)
-  figaro fork <id>:42         interior fork — history below LT 42 is shared,
+  figaro fork <id>:12         interior fork — history before turn 12 is shared,
                               the original suffix becomes the continuation
   figaro fork --stay          branch but do not rebind this shell
 
@@ -455,7 +460,7 @@ any other aria, or passing --stay, leaves your session untouched.`,
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (defaults to this shell's); :<LT> for an interior fork"},
+			{Long: "id", Description: "Target aria id (defaults to this shell's); :<turn> for an interior fork"},
 			{Long: "stay", IsBool: true, Description: "Do not rebind this shell to the continuation"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit machine-readable result on stdout (parent, continuation, alternative, ...)"},
 		},

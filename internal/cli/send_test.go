@@ -179,12 +179,14 @@ func TestExtractSendFlags(t *testing.T) {
 	}
 }
 
-func TestParseSendTarget(t *testing.T) {
+// TestParseTarget pins the coordinate grammar. The suffix is a TURN id, not an
+// LT: turns start at 1, so :0 is rejected rather than silently meaning "head".
+func TestParseTarget(t *testing.T) {
 	cases := []struct {
 		spec    string
 		trunk   string
-		lt      uint64
-		hasLT   bool
+		turn    uint64
+		hasTurn bool
 		wantErr bool
 	}{
 		{"", "", 0, false, false},
@@ -193,9 +195,10 @@ func TestParseSendTarget(t *testing.T) {
 		{"t1", "t1", 0, false, false},
 		{":", "", 0, false, true},
 		{"t1:x", "", 0, false, true},
+		{"t1:0", "", 0, false, true}, // turns are 1-based
 	}
 	for _, c := range cases {
-		trunk, lt, hasLT, err := parseSendTarget(c.spec)
+		trunk, turn, hasTurn, err := parseTarget(c.spec)
 		if (err != nil) != c.wantErr {
 			t.Errorf("%q: err=%v wantErr=%v", c.spec, err, c.wantErr)
 			continue
@@ -203,8 +206,8 @@ func TestParseSendTarget(t *testing.T) {
 		if c.wantErr {
 			continue
 		}
-		if trunk != c.trunk || lt != c.lt || hasLT != c.hasLT {
-			t.Errorf("%q: got (%q,%d,%v) want (%q,%d,%v)", c.spec, trunk, lt, hasLT, c.trunk, c.lt, c.hasLT)
+		if trunk != c.trunk || turn != c.turn || hasTurn != c.hasTurn {
+			t.Errorf("%q: got (%q,%d,%v) want (%q,%d,%v)", c.spec, trunk, turn, hasTurn, c.trunk, c.turn, c.hasTurn)
 		}
 	}
 }

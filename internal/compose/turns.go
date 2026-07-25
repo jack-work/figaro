@@ -45,6 +45,36 @@ func StampTurnIDs(msgs []message.Message) uint64 {
 	return cur
 }
 
+// TurnSpan reports the LT range a turn occupies: first is the prompt's LT —
+// the coordinate a fork takes — and last is the turn's final message.
+//
+// This is THE resolver. `fig send <aria>:<turn>` and `fig fork <aria>:<turn>`
+// both route through it, and neither re-derives the walk: turn ids are
+// ordinals, so resolving one to an LT means counting turn openings, which is
+// exactly what StampTurnIDs already does. Deriving it twice is the class of
+// bug this whole change exists to kill.
+//
+// Fork semantics rest on first: atMainLT is exclusive of the frozen prefix
+// (prefix [First,atMainLT), branch [atMainLT,Last]), so forking at a turn
+// shares everything strictly before the question and replaces the question and
+// everything downstream. Because that boundary is always a user prompt, the
+// history it freezes always terminates on a complete assistant message — no
+// tool_invoke is ever left dangling, so interrupted-tool synthesis is
+// unreachable for a user-initiated fork.
+func TurnSpan(msgs []message.Message, turn uint64) (first, last uint64, ok bool) {
+	StampTurnIDs(msgs)
+	for i := range msgs {
+		if msgs[i].TurnID != turn {
+			continue
+		}
+		if !ok {
+			first, ok = msgs[i].LogicalTime, true
+		}
+		last = msgs[i].LogicalTime
+	}
+	return first, last, ok
+}
+
 // Turns projects a message log into turns — the single projection. There is no
 // longer a separate "prompt unit": a turn is one exchange, and the user's
 // question is node 0 of it.

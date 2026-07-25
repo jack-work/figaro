@@ -15,8 +15,8 @@ import (
 
 	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/tool"
@@ -120,21 +120,14 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 
 	// Read the IR through the angelus's shared LogCache.
-	var (
-		resp *rpc.AriaReadResponse
-		err  error
-	)
-	if opts.before >= 0 {
-		resp, err = acli.AriaReadBefore(ctx, figaroID, 0, uint64(opts.before), opts.last)
-	} else if opts.from >= 0 {
-		resp, err = acli.AriaRead(ctx, figaroID, uint64(opts.from), 0)
-	} else if !opts.all {
-		// Default tail read: fetch the last N entries from the true tail,
-		// not capped at the first 1000.
-		resp, err = acli.AriaReadBefore(ctx, figaroID, 0, ^uint64(0), opts.last)
-	} else {
-		resp, err = acli.AriaRead(ctx, figaroID, 0, 0)
-	}
+	//
+	// SEAM (Phase 3): this reads the whole log and pages in memory, because
+	// every selector now speaks turn ids and turns are not derivable from an LT
+	// window — you cannot know which LT a turn starts at without walking. The
+	// paginated turn-aware read (Page/TurnPart, byte budget, bidirectional)
+	// replaces this wholesale; when it lands, `show` becomes a thin client of it
+	// and this block collapses to one call.
+	resp, err := acli.AriaRead(ctx, figaroID, 0, 0)
 	if err != nil {
 		die("aria.read: %s", err)
 	}
@@ -166,7 +159,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	compose.StampTurnIDs(msgs)
 	reg := tool.DefaultRegistry("")
 	turns := compose.Turns(msgs, compose.ToolSummary(tool.Summarizer(reg)), compose.ToolPreviewArg(tool.PreviewArger(reg)))
-	lo, hi := selectUnitRange(len(turns), opts)
+	lo, hi := selectTurnRange(turns, opts)
 
 	if opts.jsonOut {
 		// The wire IR verbatim: no shadow struct, no dropped coordinate. The
@@ -200,23 +193,51 @@ func mustAtoi(s string) int {
 }
 
 // selectUnitRange resolves the [lo,hi) unit window from the flags:
-// --all = everything; --from/--to = an inclusive index range; otherwise
-// the last N (default 10).
-func selectUnitRange(total int, o showOpts) (int, int) {
+// selectTurnRange picks the slice of turns to show. Every selector speaks TURN
+// IDs — the same coordinate `fig send <aria>:<turn>` takes and the same one the
+// header prints. Before this there were three coordinate systems in one
+// command: --from/--to were slice indices, --before was an LT, and the printed
+// label was a third thing. Now there is one.
+//
+//	--all           everything
+//	--from A --to B turns A..B inclusive
+//	--before T -n N the N turns ending just before turn T (paginate backwards)
+//	default  -n N   the last N turns — paginate backwards from the end
+//
+// Pagination is bidirectional by construction: --from walks forward from an
+// anchor, --before walks backward from one, so a scrolling client can pull an
+// earlier or a later page from wherever it is.
+func selectTurnRange(turns []aria.Turn, o showOpts) (int, int) {
+	total := len(turns)
 	if o.all {
 		return 0, total
+	}
+	// Turn id -> slice index. Turns are in order, so a scan is enough and it
+	// tolerates gaps (a forked trunk need not start at turn 1).
+	indexOf := func(id uint64) int {
+		for i := range turns {
+			if turns[i].ID >= id {
+				return i
+			}
+		}
+		return total
+	}
+	if o.before >= 0 {
+		hi := indexOf(uint64(o.before))
+		lo := 0
+		if o.last > 0 && hi > o.last {
+			lo = hi - o.last
+		}
+		return lo, hi
 	}
 	if o.from >= 0 || o.to >= 0 {
 		lo := 0
 		if o.from > 0 {
-			lo = o.from
+			lo = indexOf(uint64(o.from))
 		}
 		hi := total
-		if o.to >= 0 && o.to+1 < total {
-			hi = o.to + 1
-		}
-		if lo > total {
-			lo = total
+		if o.to >= 0 {
+			hi = indexOf(uint64(o.to) + 1)
 		}
 		if hi < lo {
 			hi = lo
