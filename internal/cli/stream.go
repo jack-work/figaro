@@ -708,16 +708,28 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				continue
 			}
 		} else if data[i] == 0x1b {
-			// A leading ESC we didn't recognize as CSI-u. Try to swallow the
-			// rest of the sequence (arrow keys, SS3 F-keys, OSC replies,
-			// generic CSI) so bare Esc can trigger its own binding without a
-			// sequence prefix spuriously firing it.
+			// A leading ESC we didn't recognize as CSI-u. Delimit the rest of
+			// the sequence (arrow keys, SS3 F-keys, OSC replies, generic CSI)
+			// so bare Esc can trigger its own binding without a sequence
+			// prefix spuriously firing it.
 			if ec, en := consumeEscapeSequence(data[i:]); en {
 				pending = append(pending, data[i:]...)
 				break
 			} else if ec > 0 {
+				seq := data[i : i+ec]
 				i += ec
 				in.lastNL = 0
+				// Delimited, now classified: the arrow cluster drives the
+				// pager instead of being dropped on the floor. Everything
+				// else stays swallowed whole, exactly as before.
+				if key, ok := navKeyFor(seq); ok {
+					in.enterTranscript()
+					in.mu.Lock()
+					in.cancelTranscriptSearchLocked()
+					in.lt.transcriptNav(key.nav)
+					in.mu.Unlock()
+					in.pageWanted = true
+				}
 				continue
 			}
 			b = data[i]

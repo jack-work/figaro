@@ -318,6 +318,10 @@ func (t *livelogTurn) enterTranscript() { t.tr.enter() }
 // Transcript never self-exits; leaving is Ctrl-D/Ctrl-C at the input loop.
 func (t *livelogTurn) transcriptKey(b byte) { t.tr.key(b) }
 
+// transcriptNav routes an arrow-cluster key to the same motions as the letter
+// keys; see (*transcript).navMotion.
+func (t *livelogTurn) transcriptNav(n navKey) { t.tr.navMotion(n) }
+
 func (t *livelogTurn) invalidateTranscriptRows() { t.tr.invalidateRows() }
 
 func (t *livelogTurn) transcriptSelect(delta int, extend bool) {

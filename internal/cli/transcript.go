@@ -1391,6 +1391,55 @@ func (t *transcript) key(b byte) {
 	t.render()
 }
 
+// navMotion drives a logical navigation key through the very same motions the
+// letter keys use, so each motion keeps exactly one implementation:
+//
+//	Up/Down        k/j    one line
+//	PageUp/PageDown u/d   half a screen
+//	Home/End       gg/G   top / bottom
+//
+// Half a screen (rather than a full one) because the pager's page unit already
+// IS the half-page: u/d, the rows-based paging cursor and the prefetch window
+// are all sized against it, and there is no full-page motion to route through.
+// Inventing one for the arrow cluster alone would fork the motion logic and
+// leave PageDown scrolling differently from d.
+func (t *transcript) navMotion(n navKey) {
+	if t.inSearch {
+		// The query line owns the keyboard while it is up; an arrow is not
+		// text, and feeding it through key() would type a literal 'k'.
+		return
+	}
+	b, ok := navMotionByte(n)
+	if !ok {
+		return
+	}
+	if n == navHome {
+		// gg is a two-key gesture; Home is the whole of it in one press.
+		// Priming pendG makes key('g') take the jump branch and clear the
+		// flag on its way out, so a half-typed g never survives a Home.
+		t.pendG = true
+	}
+	t.key(b)
+}
+
+func navMotionByte(n navKey) (byte, bool) {
+	switch n {
+	case navUp:
+		return 'k', true
+	case navDown:
+		return 'j', true
+	case navPageUp:
+		return 'u', true
+	case navPageDown:
+		return 'd', true
+	case navHome:
+		return 'g', true
+	case navEnd:
+		return 'G', true
+	}
+	return 0, false
+}
+
 func (t *transcript) searchKey(b byte) {
 	switch b {
 	case 0x0d, 0x0a: // Enter → jump to first match
