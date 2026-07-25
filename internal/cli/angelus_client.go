@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -183,8 +184,19 @@ func checkDaemonBuild(cli *angelus.Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	st, err := cli.Status(ctx)
-	if err != nil || st == nil || st.Build == "" {
-		return // old daemon or transient: not worth blocking on
+	if err != nil || st == nil {
+		return // transient: not worth blocking on
+	}
+	if st.Build == "" {
+		// The daemon predates this check, so it is necessarily older than this
+		// binary. We cannot prove incompatibility, but silence is the failure
+		// mode we are here to kill: warn loudly rather than let the user stare
+		// at an empty screen.
+		fmt.Fprintf(os.Stderr,
+			"figaro: the running angelus predates the build check, so it is older\n"+
+				"        than this CLI (%s). If output is missing or garbled,\n"+
+				"        run `figaro stop` and retry.\n", short12(mine))
+		return
 	}
 	if st.Build == mine {
 		return
