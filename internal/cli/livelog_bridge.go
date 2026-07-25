@@ -4,6 +4,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jack-work/figaro/internal/livedoc"
@@ -32,6 +33,7 @@ type livelogTurn struct {
 	finished     bool
 	wantThinking bool // submit accepted: show the thinking footer once the user msg seals
 	thinkingOpen bool // an OpenThinking placeholder is live and not yet adopted
+	pace         framePacer
 
 	// lastSealedLT is the highest LT incipit has committed to native scrollback
 	// inline (via Seal). It marks the flush boundary: on leaving the pager,
@@ -109,6 +111,82 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	}
 	return t
 }
+
+// transcriptFrameInterval is the pager's frame-rate ceiling. Live aria frames
+// arrive far faster than a terminal can usefully show them — a streaming tool
+// can push dozens of deltas per second, each of which used to trigger a full
+// repaint of the pager. 120 fps is above anything a human resolves and well
+// above any terminal's own refresh, so nothing is lost by refusing to draw
+// more often than this.
+const transcriptFrameInterval = time.Second / 120
+
+// framePacer is the transcript's frame-rate gate. It answers "may I paint
+// now?" and, when the answer is no, owes a trailing flush so the settled state
+// always reaches the screen — dropping the LAST frame of a burst is the one
+// failure mode a rate limiter must not have.
+//
+// Every field is guarded by the caller's render mutex: allow() and painted()
+// run under it (all render paths hold it), and the trailing timer takes it
+// before flushing. No second lock, and therefore no lock ordering to get
+// wrong.
+type framePacer struct {
+	min     time.Duration
+	lock    sync.Locker
+	flush   func()
+	now     func() time.Time
+	after   func(time.Duration, func())
+	last    time.Time
+	pending bool
+}
+
+// allow implements the transcript's gate.
+func (p *framePacer) allow() bool {
+	if p.min <= 0 {
+		return true
+	}
+	since := p.now().Sub(p.last)
+	if p.last.IsZero() || since >= p.min {
+		return true
+	}
+	if !p.pending {
+		p.pending = true
+		p.after(p.min-since, p.trailing)
+	}
+	return false
+}
+
+func (p *framePacer) trailing() {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.pending = false
+	p.flush()
+}
+
+// painted records that a frame reached the terminal, starting the budget.
+func (p *framePacer) painted() { p.last = p.now() }
+
+// setRenderLock arms the frame-rate ceiling. It is deliberately opt-in: the
+// pacer's trailing render runs on a timer goroutine, so it may only exist once
+// the caller has told us which mutex serializes the renderer. Without it the
+// pager behaves exactly as before (paint on every event).
+func (t *livelogTurn) setRenderLock(mu sync.Locker) {
+	t.pace.lock = mu
+	t.pace.min = transcriptFrameInterval
+	if t.pace.now == nil {
+		t.pace.now = time.Now
+	}
+	if t.pace.after == nil {
+		t.pace.after = func(d time.Duration, fn func()) { time.AfterFunc(d, fn) }
+	}
+	t.pace.flush = t.tr.flush
+	t.tr.gate = t.pace.allow
+	t.tr.painted = t.pace.painted
+}
+
+// beginTranscriptBatch/endTranscriptBatch coalesce a burst of input into one
+// frame; see (*transcript).beginBatch.
+func (t *livelogTurn) beginTranscriptBatch() { t.tr.beginBatch() }
+func (t *livelogTurn) endTranscriptBatch()   { t.tr.endBatch() }
 
 // minPagerHeight floors the auto-pager: below this viewport height an
 // overflowing turn stays inline and scrolls natively rather than yanking a tiny

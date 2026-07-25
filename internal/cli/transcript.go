@@ -5,7 +5,6 @@ import (
 	"hash/fnv"
 	"html"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 
@@ -46,11 +45,19 @@ type transcript struct {
 	w, h        int
 	tick        int
 
-	prev   []string // last painted screen (full-frame diff)
+	prev   []string // last painted screen (the frame the terminal is holding)
 	lineLT []int    // LT owning each line of lines(), for resize anchoring
 	offset int      // top line of the viewport into lines()
 	follow bool     // stick to the bottom on new content
 	pendG  bool     // saw one 'g' (for gg)
+
+	// Frame scheduling. render() marks the screen stale and defers when a
+	// batch is open (an input burst being drained) or when the frame-rate gate
+	// declines; flush() draws the deferred frame. See beginBatch/endBatch.
+	batch   int
+	dirty   bool
+	gate    func() bool // "may I paint now?" — a false answer owes a later flush()
+	painted func()      // notified after each painted frame
 
 	inSearch   bool
 	query      string
@@ -112,10 +119,17 @@ type transcript struct {
 	// (the whole-window materialization, off the frame path), paintBuf to the
 	// painter, and screenSpare is the composed frame paint displaced when it
 	// retained the previous one as t.prev.
+	//
+	// predBuf/keysNew/keysOld belong to the painter too: they are the
+	// scroll-region machinery (the predicted post-shift grid and the row
+	// fingerprints that propose the shift), touched only inside planScroll.
 	rowBuf      []string     // the visible window, valid until the next render()
 	lineBuf     []string     // whole-window rows, valid until the next lines()
 	keepBuf     map[int]bool // reused live-LT set for pruneCaches
 	paintBuf    []byte       // reused escape-sequence output buffer
+	predBuf     []string     // predicted grid after a scroll-region shift
+	keysNew     []uint32     // row fingerprints, screen side (shift detection)
+	keysOld     []uint32     // row fingerprints, prev side
 	screenSpare []string     // the frame buffer displaced by the last paint
 }
 
@@ -191,7 +205,8 @@ func (t *transcript) leave() {
 }
 
 // scrollBy moves the viewport by delta lines (native wheel), leaving follow
-// mode; render clamps the offset.
+// mode; render clamps the offset (see render, which clamps the low side even
+// when the frame itself is deferred).
 func (t *transcript) scrollBy(delta int) {
 	if !t.active {
 		return
@@ -925,6 +940,69 @@ func (t *transcript) render() {
 	if !t.active {
 		return
 	}
+	// Clamp the low side BEFORE the gate. "render clamps the offset" was the
+	// contract every mutation site relied on (scrollBy, key, the selection
+	// scroll-into-view all leave it unclamped on purpose); B's gate made the
+	// frame skippable, and with it the clamp. That matters because the offset
+	// is read off the frame path too — viewportAnchor indexes lineLT with it
+	// when a prefetched page lands, and the search wrap-around takes it modulo
+	// the row total — and a negative index is a panic, not a wrong pixel.
+	//
+	// Only the low side: it is free, whereas the high clamp needs the row total
+	// (and so the index), which is exactly the work the gate exists to skip.
+	// Overshooting the bottom is benign — every off-frame reader range-checks
+	// the high side — and renderFrame still clamps it when the frame is drawn.
+	if t.offset < 0 {
+		t.offset = 0
+	}
+	if t.batch > 0 || (t.gate != nil && !t.gate()) {
+		t.dirty = true
+		return
+	}
+	t.dirty = false
+	t.renderFrame()
+	if t.painted != nil {
+		t.painted()
+	}
+}
+
+// beginBatch/endBatch bracket a run of state changes that must produce ONE
+// frame. Every mutation inside still calls render(); render just records that
+// the screen is stale and returns. endBatch draws the settled state once.
+//
+// This is what a mouse-wheel flick needs: the terminal hands us a burst of
+// scroll reports in a single read, and nobody wants to see the twenty-three
+// intermediate viewports — they only cost latency, because the frame the user
+// is waiting for is the last one.
+func (t *transcript) beginBatch() { t.batch++ }
+
+func (t *transcript) endBatch() {
+	if t.batch > 0 {
+		t.batch--
+	}
+	if t.batch == 0 && t.dirty {
+		t.dirty = false
+		t.render() // re-checks the frame-rate gate, which may defer once more
+	}
+}
+
+// flush paints a deferred frame unconditionally, ignoring the frame-rate gate.
+// It is the trailing render: whoever refuses a frame owes a later flush, so
+// the final state is always on screen.
+func (t *transcript) flush() {
+	if !t.active || !t.dirty || t.batch > 0 {
+		return
+	}
+	t.dirty = false
+	t.renderFrame()
+	if t.painted != nil {
+		t.painted()
+	}
+}
+
+// renderFrame is the frame itself: compose the visible window and paint it.
+// render() is only the gate in front of it.
+func (t *transcript) renderFrame() {
 	t.buildIndex()
 	// Converge the tail window on the row budget (usually 0-1 passes). D drove
 	// this off len(t.lines()) — a full materialization of the retained window,
@@ -1129,30 +1207,62 @@ func (t *transcript) nextScreen() []string {
 	return screen
 }
 
-// paint writes the diff between the composed frame and the last one. The
-// output buffer is reused across frames: a scroll dirties every row, and on
-// a wide terminal full of styled rows that is tens of kilobytes of escape
-// bytes per keypress — previously grown from nothing (and formatted through
-// fmt) on every single frame.
+// paint writes the frame diff. Only changed rows are touched, and each is
+// emitted through compactRow, which strips the SGR churn and trailing blanks
+// the renderers leave behind (see transcript_paint.go) — same cells, a
+// fraction of the bytes. The scratch buffer is retained across frames so a
+// steady scroll allocates nothing here.
+//
+// When the frame is mostly the previous frame shifted (any scroll), the rows
+// are moved with a scroll region instead of being retransmitted; the diff then
+// runs against the predicted post-scroll grid, so a mis-detected shift costs
+// bytes and never correctness.
+//
+// The erase-line stays: compactRow trims trailing blanks, so the row no longer
+// overwrites what it does not cover.
+//
+// Buffer ownership (A/C's discipline, unchanged): paintBuf/predBuf/keysNew/
+// keysOld are the painter's; the composed frame is retained as t.prev and the
+// frame it displaces goes back to screenSpare for the next compose.
 func (t *transcript) paint(screen []string) {
-	b := t.paintBuf[:0]
-	b = append(b, "\x1b[?2026h"...)
+	buf := append(t.paintBuf[:0], "\x1b[?2026h"...)
+	base := t.prev
+	if plan, ok := t.planScroll(screen); ok {
+		buf = appendScroll(buf, plan)
+		base = t.predBuf
+	}
 	for r := 0; r < len(screen); r++ {
 		var old string
-		if r < len(t.prev) {
-			old = t.prev[r]
+		if r < len(base) {
+			old = base[r]
 		}
-		if screen[r] != old {
-			b = append(b, "\x1b["...)
-			b = strconv.AppendInt(b, int64(r+1), 10)
-			b = append(b, ";1H\x1b[2K"...)
-			b = append(b, screen[r]...)
+		if screen[r] == old {
+			continue
 		}
+		buf = appendRowUpdate(buf, r, old, screen[r])
 	}
-	b = append(b, "\x1b[?2026l"...)
-	t.paintBuf = b
-	t.out.Write(b)
+	buf = append(buf, "\x1b[?2026l"...)
+	_, _ = t.out.Write(buf)
+	t.paintBuf = buf
 	t.screenSpare, t.prev = t.prev, screen
+}
+
+// appendCUP appends "\x1b[<row>;1H" without going through fmt: the profile put
+// 9% of paint in fmt.(*pp).doPrintf for a two-digit number.
+func appendCUP(dst []byte, row int) []byte {
+	dst = append(dst, '\x1b', '[')
+	dst = appendUint(dst, row)
+	return append(dst, ';', '1', 'H')
+}
+
+func appendUint(dst []byte, n int) []byte {
+	if n < 0 {
+		n = 0
+	}
+	if n >= 10 {
+		dst = appendUint(dst, n/10)
+	}
+	return append(dst, byte('0'+n%10))
 }
 
 // key handles one navigation/search input byte. Transcript is a locked mode:

@@ -85,6 +85,11 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	var mu sync.Mutex
 	doneCh := make(chan struct{}, 1)
 	disconnectCh := make(chan struct{}, 1)
+
+	// mu serializes every renderer entry point; handing it to the pager arms
+	// the frame-rate ceiling, whose trailing repaint runs on a timer goroutine
+	// and so needs the same lock.
+	lt.setRenderLock(&mu)
 	listen := true
 
 	onNotify := func(method string, params json.RawMessage) {
