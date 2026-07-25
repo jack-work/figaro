@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/turns"
 )
 
 // runStatus prints a focused single-aria view of the target figaro.
@@ -77,7 +77,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 		var forkTurn uint64
 		if len(f.Vector) > 1 && f.Parent != "" && f.BranchedLT > 1 {
 			if msgs, merr := ariaMessages(ctx, acli, f.Parent); merr == nil {
-				if t, ok := compose.TurnAt(msgs, f.BranchedLT); ok {
+				if t, ok := turns.At(msgs, f.BranchedLT); ok {
 					forkTurn = t
 				}
 			}

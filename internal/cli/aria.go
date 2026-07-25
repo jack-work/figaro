@@ -20,6 +20,7 @@ import (
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/turns"
 )
 
 // runShow handles `figaro show [--id <id>] [N] [-v|-l|-a]`.
@@ -156,7 +157,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		msgs[i] = e.Payload
 		msgs[i].LogicalTime = e.LT
 	}
-	compose.StampTurnIDs(msgs)
+	turns.StampIDs(msgs)
 	reg := tool.DefaultRegistry("")
 	turns := compose.Turns(msgs, compose.ToolSummary(tool.Summarizer(reg)), compose.ToolPreviewArg(tool.PreviewArger(reg)))
 	lo, hi := selectTurnRange(turns, opts)

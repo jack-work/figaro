@@ -25,6 +25,7 @@ import (
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/partialjson"
+	"github.com/jack-work/figaro/internal/turns"
 )
 
 // nodeID mints a stable id for an id-less node (thinking/prose/steering) from
@@ -79,7 +80,7 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 			// tool_result blocks fold under their invoke (indexResults). If it
 			// ALSO carries text, that's a steering interjection — emit it as a
 			// node, positioned where it arrived (after the tool nodes).
-			if hasToolResult(m) {
+			if turns.HasToolResult(m) {
 				for ci, c := range m.Content {
 					if c.Type == message.ContentProse && strings.TrimSpace(c.Text) != "" {
 						nodes = append(nodes, textNode(livedoc.NodeSteering, roleUser, m.LogicalTime, ci, c.Text))
@@ -228,28 +229,7 @@ func tailBound(text string) string {
 // node 0 of its turn rather than a separate unit. See internal/compose/turns.go
 // and docs/turn-addressing.md.
 
-// messageText joins a message's text blocks; "" when it carries none
-// (e.g. a tool-result message or a control-only patch).
-func messageText(m message.Message) string {
-	var parts []string
-	for _, c := range m.Content {
-		if c.Type == message.ContentProse && strings.TrimSpace(c.Text) != "" {
-			parts = append(parts, c.Text)
-		}
-	}
-	return strings.Join(parts, "\n")
-}
 
-// hasToolResult reports whether a message carries any tool_result block — i.e.
-// it's a tool-result tic (part of the turn) rather than a fresh user prompt.
-func hasToolResult(m message.Message) bool {
-	for _, c := range m.Content {
-		if c.Type == message.ContentToolResult {
-			return true
-		}
-	}
-	return false
-}
 
 // resultAt is a tool_result block together with the coordinate it was found
 // at, so a tool node can record both of its sources.

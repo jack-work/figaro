@@ -25,6 +25,7 @@ import (
 	"github.com/jack-work/figaro/internal/tokens"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/toolout"
+	"github.com/jack-work/figaro/internal/turns"
 )
 
 type eventType int
@@ -474,7 +475,7 @@ func (a *Agent) appendMsg(m message.Message) (store.Entry[message.Message], erro
 // without any explicit hand-off.
 func (a *Agent) openTurn() {
 	if a.turnID == 0 {
-		a.turnID = compose.StampTurnIDs(unwrapMessages(a.figLog.Read()))
+		a.turnID = turns.StampIDs(unwrapMessages(a.figLog.Read()))
 	}
 	a.turnID++
 }
@@ -491,7 +492,7 @@ func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 		out[i] = e.Payload
 		out[i].LogicalTime = e.LT
 	}
-	compose.StampTurnIDs(out)
+	turns.StampIDs(out)
 	return out
 }
 
