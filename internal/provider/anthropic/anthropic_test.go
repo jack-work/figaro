@@ -91,9 +91,9 @@ func TestProjectTools_RoundTrip(t *testing.T) {
 func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("first turn")}},
-		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("first reply")}},
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("second turn — current prompt")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first turn")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("first reply")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("second turn — current prompt")}},
 	}
 	tools := []provider.Tool{
 		{Name: "alpha", Description: "first", Parameters: fakeSchema()},
@@ -132,7 +132,7 @@ func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 func TestProjectMessages_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("first prompt — nothing on disk yet")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first prompt — nothing on disk yet")}},
 	}
 
 	req, _ := a.projectMessagesWithModel(a.encodeAll(msgs), systemSnapshot(t, "you are a test agent"), nil, 1024, false, "claude-test")
@@ -148,9 +148,9 @@ func TestProjectMessages_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
 func TestProjectMessages_StableAcrossCalls(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("ciao")}},
-		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("salve")}},
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("again")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("ciao")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("salve")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("again")}},
 	}
 	tools := []provider.Tool{
 		{Name: "alpha", Description: "first", Parameters: fakeSchema()},
@@ -177,7 +177,7 @@ func TestProjectMessages_StableAcrossCalls(t *testing.T) {
 func TestProjectMessages_OAuthSystemArray(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")}},
 	}
 
 	snap := systemSnapshot(t, "you are figaro")
@@ -197,9 +197,9 @@ func TestProjectMessages_OAuthSystemArray(t *testing.T) {
 func TestProjectMessages_PerLTTag(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("turn one")}},
-		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("reply one")}},
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("turn two")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("turn one")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("reply one")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("turn two")}},
 	}
 	pre := a.encodeAll(msgs)
 	lts := []uint64{10, 11, 12}

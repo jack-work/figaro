@@ -230,11 +230,11 @@ func turnRole(nodes []livedoc.Node) string {
 		return ""
 	}
 	for _, n := range nodes {
-		if n.Role != "user" {
-			return "assistant"
+		if n.Role != livedoc.RoleInput {
+			return livedoc.RoleOutput
 		}
 	}
-	return "user"
+	return livedoc.RoleInput
 }
 
 // nodeVoice is the voice a single node speaks in. The prompt and any steering
@@ -242,10 +242,10 @@ func turnRole(nodes []livedoc.Node) string {
 // node carrying no explicit role is agent output, because a streamed delta need
 // not repeat the role on every frame.
 func nodeVoice(n livedoc.Node) string {
-	if n.Role == "user" {
-		return "user"
+	if n.Role == livedoc.RoleInput {
+		return livedoc.RoleInput
 	}
-	return "assistant"
+	return livedoc.RoleOutput
 }
 
 // VoiceRunEnd returns the end of the contiguous same-voice run beginning at

@@ -16,16 +16,16 @@ func TestIncipit_FreezeOnce_OpenLive(t *testing.T) {
 	in := NewIncipit(ft, NodeText{})
 
 	// a closed user message → scrollback once
-	in.Freeze(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hello?"}}})
+	in.Freeze(aria.Message{LT: 1, Role: livedoc.RoleInput, Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hello?"}}})
 	// open assistant message, streaming a tool
 	nodes := []livedoc.Node{{ID: "n0", Type: "thinking", Markdown: "thinking"}}
-	in.Open(2, "assistant", nodes)
+	in.Open(2, livedoc.RoleOutput, nodes)
 	nodes = append(nodes, livedoc.Node{ID: "n1", Type: "tool", Name: "bash", Status: "running", Output: ""})
-	in.Open(2, "assistant", nodes)
+	in.Open(2, livedoc.RoleOutput, nodes)
 	nodes[1] = livedoc.Node{ID: "n1", Type: "tool", Name: "bash", Status: "running", Output: "x\ny"}
-	in.Open(2, "assistant", nodes)
+	in.Open(2, livedoc.RoleOutput, nodes)
 	nodes[1] = livedoc.Node{ID: "n1", Type: "tool", Name: "bash", Status: "ok", Output: "x\ny"}
-	in.Open(2, "assistant", nodes)
+	in.Open(2, livedoc.RoleOutput, nodes)
 	in.Freeze(aria.Message{LT: 2, Nodes: nodes})
 
 	scr := strings.Join(ft.Screen(), "\n")
@@ -47,14 +47,14 @@ func TestIncipit_ResizeKeepsFrozen_RedrawsOpen(t *testing.T) {
 	ft := NewFakeTerminal(70, 16)
 	in := NewIncipit(ft, NodeText{})
 
-	in.Freeze(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "list the dir"}}})
+	in.Freeze(aria.Message{LT: 1, Role: livedoc.RoleInput, Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "list the dir"}}})
 
 	nodes := []livedoc.Node{
 		{ID: "t", Type: "thinking", Markdown: "I'll run ls."},
 		{ID: "b", Type: "tool", Name: "bash", Status: "running",
 			Output: "l1\nl2\nl3\nl4\nl5\nl6"},
 	}
-	in.Open(2, "assistant", nodes)
+	in.Open(2, livedoc.RoleOutput, nodes)
 
 	// SIGWINCH mid-open: shrink, repaint just the open message.
 	ft.Resize(70, 8)
@@ -62,7 +62,7 @@ func TestIncipit_ResizeKeepsFrozen_RedrawsOpen(t *testing.T) {
 
 	// finish + freeze
 	nodes[1].Status = "ok"
-	in.Open(2, "assistant", nodes)
+	in.Open(2, livedoc.RoleOutput, nodes)
 	in.Freeze(aria.Message{LT: 2, Nodes: nodes})
 
 	scr := strings.Join(ft.Screen(), "\n")
@@ -85,7 +85,7 @@ func TestIncipit_NoTrailingBlanksAfterScrolledFreeze(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		nodes = append(nodes, livedoc.Node{ID: "p" + string(rune('0'+i)), Type: livedoc.NodeProse, Markdown: "line"})
 	}
-	in.Open(2, "assistant", nodes)
+	in.Open(2, livedoc.RoleOutput, nodes)
 	top := ft.Row() // cursor parked at the region's visible top
 	in.Freeze(aria.Message{LT: 2, Nodes: nodes})
 	// Freezing a scrolled region must move the cursor past only the VISIBLE rows
@@ -103,23 +103,23 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)
 	in := NewIncipit(ft, NodeText{})
 	in.Header = func(role string) string {
-		if role == "assistant" {
+		if role == livedoc.RoleOutput {
 			return "‹ figaro"
 		}
 		return "❯ you"
 	}
 	in.Bookend = func() []string { return []string{"────rule────", "", "status"} }
 
-	in.Freeze(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hi"}}})
-	in.OpenThinking("assistant") // footer appears now, before any token
+	in.Freeze(aria.Message{LT: 1, Role: livedoc.RoleInput, Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hi"}}})
+	in.OpenThinking(livedoc.RoleOutput) // footer appears now, before any token
 	scr := strings.Join(ft.Screen(), "\n")
 	if !strings.Contains(scr, "status") || !strings.Contains(scr, "‹ figaro") {
 		t.Fatalf("thinking footer + header should show immediately:\n%s", scr)
 	}
 
 	// content streams in; the real assistant frame adopts the region
-	in.Open(2, "assistant", []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}})
-	in.Freeze(aria.Message{LT: 2, Role: "assistant", Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
+	in.Open(2, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}})
+	in.Freeze(aria.Message{LT: 2, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
 	scr = strings.Join(ft.Screen(), "\n")
 	if strings.Count(scr, "‹ figaro") != 1 {
 		t.Fatalf("figaro header must appear once (no orphan):\n%s", scr)
@@ -142,9 +142,9 @@ func TestIncipit_ThinkingAbandonedOnEarlyError(t *testing.T) {
 	in.Header = func(role string) string { return "‹ figaro" }
 	in.Bookend = func() []string { return []string{"──── aria xyz ────", "", "status"} }
 
-	in.Freeze(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "quick test"}}})
-	in.OpenThinking("assistant") // footer live, no content yet
-	in.AbandonOpen("")           // turn errors immediately -> teardown
+	in.Freeze(aria.Message{LT: 1, Role: livedoc.RoleInput, Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "quick test"}}})
+	in.OpenThinking(livedoc.RoleOutput) // footer live, no content yet
+	in.AbandonOpen("")                  // turn errors immediately -> teardown
 
 	// After teardown the region is released: a direct write (the error hint)
 	// must not overlap the footer rule on any line.
@@ -174,7 +174,7 @@ func TestIncipit_MintedEmptyNodesDrawNothing(t *testing.T) {
 		{ID: "n2", Type: "prose", Markdown: "   \n"}, // whitespace only
 		{ID: "n3", Type: "tool", Name: "bash", Status: "running"},
 	}
-	in.Open(1, "assistant", nodes)
+	in.Open(1, livedoc.RoleOutput, nodes)
 	before := in.LiveHeight()
 	scr := strings.Join(ft.Screen(), "\n")
 	if !strings.Contains(scr, "first") {
@@ -186,7 +186,7 @@ func TestIncipit_MintedEmptyNodesDrawNothing(t *testing.T) {
 
 	// Filling the empty head node adds rows; it must not have consumed any before.
 	nodes[0] = livedoc.Node{ID: "n0", Type: "thinking", Markdown: "now thinking"}
-	in.Open(1, "assistant", nodes)
+	in.Open(1, livedoc.RoleOutput, nodes)
 	if in.LiveHeight() <= before {
 		t.Fatalf("filling a minted-empty node must add rows: %d -> %d", before, in.LiveHeight())
 	}

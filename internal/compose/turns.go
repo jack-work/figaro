@@ -12,7 +12,7 @@ import (
 // when it also carries text — that text is a steering interjection, not a new
 // question.
 func OpensTurn(m message.Message) bool {
-	return m.Role == message.RoleUser && !hasToolResult(m) && messageText(m) != ""
+	return m.Role == message.RoleInput && !hasToolResult(m) && messageText(m) != ""
 }
 
 // StampTurnIDs fills TurnID on every message that lacks one and returns the
@@ -114,6 +114,7 @@ func Turns(msgs []message.Message, summarize ToolSummary, previewArg ToolPreview
 	var turns []aria.Turn
 	var group []message.Message
 	var prompt []livedoc.Node
+	var inquiry string
 	var id, first, last uint64
 
 	flush := func() {
@@ -121,17 +122,25 @@ func Turns(msgs []message.Message, summarize ToolSummary, previewArg ToolPreview
 			return
 		}
 		nodes := append(prompt, Nodes(group, nil, nil, summarize, previewArg)...)
-		turns = append(turns, aria.Turn{ID: id, LTs: []uint64{first, last}, Sealed: true, Nodes: nodes})
-		group, prompt, id = nil, nil, 0
+		turns = append(turns, aria.Turn{
+			ID: id, Inquiry: inquiry, LTs: []uint64{first, last}, Sealed: true, Nodes: nodes,
+		})
+		group, prompt, id, inquiry = nil, nil, 0, ""
 	}
 
 	for _, m := range msgs {
 		if OpensTurn(m) {
 			flush()
 			id, first = m.TurnID, m.LogicalTime
+			// The inquiry is the whole opening question as text. OpensTurn
+			// already required messageText(m) to be non-empty, so an inquiry is
+			// 1:1 with a turn boundary by construction: a turn cannot open
+			// without one, and a second one cannot arrive without closing the
+			// first. TestTurns_EveryTurnHasExactlyOneInquiry pins it.
+			inquiry = messageText(m)
 			for ci, c := range m.Content {
 				if c.Type == message.ContentProse {
-					prompt = append(prompt, textNode(livedoc.NodeProse, roleUser, m.LogicalTime, ci, c.Text))
+					prompt = append(prompt, textNode(livedoc.NodeProse, roleInput, m.LogicalTime, ci, c.Text))
 				}
 			}
 		}

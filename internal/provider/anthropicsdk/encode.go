@@ -30,7 +30,7 @@ func (p *Provider) encode(msg message.Message, prevSnap chalkboard.Snapshot) ([]
 // renderMessage produces an SDK MessageParam.
 func (p *Provider) renderMessage(msg message.Message, prevSnap *chalkboard.Snapshot) (anthropic.MessageParam, bool) {
 	switch msg.Role {
-	case message.RoleUser:
+	case message.RoleInput:
 		var blocks []anthropic.ContentBlockParamUnion
 		for _, c := range msg.Content {
 			switch c.Type {
@@ -52,7 +52,7 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *chalkboard.Snaps
 		}
 		return anthropic.NewUserMessage(blocks...), true
 
-	case message.RoleAssistant:
+	case message.RoleOutput:
 		var blocks []anthropic.ContentBlockParamUnion
 		for _, c := range msg.Content {
 			switch c.Type {

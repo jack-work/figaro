@@ -41,7 +41,7 @@ func (p *chalkSpyProvider) encode(msg message.Message, _ chalkboard.Snapshot) ([
 	p.mu.Lock()
 	p.encoded = append(p.encoded, msg)
 	p.mu.Unlock()
-	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
+	return []json.RawMessage{json.RawMessage(`{"role": livedoc.RoleInput,"content":[]}`)}, nil
 }
 
 func (p *chalkSpyProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
@@ -65,7 +65,7 @@ func (p *chalkSpyProvider) lastTurnPatches() []message.Patch {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for i := len(p.encoded) - 1; i >= 0; i-- {
-		if p.encoded[i].Role == message.RoleUser {
+		if p.encoded[i].Role == message.RoleInput {
 			return p.encoded[i].Patches
 		}
 	}

@@ -226,7 +226,7 @@ func TestClient_ClosesOneMessagePerVoiceRun(t *testing.T) {
 
 	user := func(md string) livedoc.Node {
 		n := prose(md)
-		n.Role = "user"
+		n.Role = livedoc.RoleInput
 		return n
 	}
 	// prompt, agent reply, steering interjection, agent reply.
@@ -237,7 +237,7 @@ func TestClient_ClosesOneMessagePerVoiceRun(t *testing.T) {
 	if len(closed) != 4 {
 		t.Fatalf("want four voice runs, got %d", len(closed))
 	}
-	wantRole := []string{"user", "assistant", "user", "assistant"}
+	wantRole := []string{livedoc.RoleInput, livedoc.RoleOutput, livedoc.RoleInput, livedoc.RoleOutput}
 	for i, want := range wantRole {
 		if closed[i].Role != want {
 			t.Errorf("run %d: role %q, want %q", i, closed[i].Role, want)
@@ -256,7 +256,7 @@ func TestClient_VoiceRunsAreContiguous(t *testing.T) {
 	c.OnClosed = func(m Message) { closed = append(closed, m) }
 
 	u := prose("ask")
-	u.Role = "user"
+	u.Role = livedoc.RoleInput
 	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 3, Sealed: true, Nodes: []livedoc.Node{
 		u, prose("a"), prose("b"), prose("c"),
 	}}}}})

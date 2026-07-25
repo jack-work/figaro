@@ -10,7 +10,7 @@ package store
 //   - root: the channel dir itself (xwal.CreateTrunks genesis). Markerless,
 //     ceremonial — the "null" anchor. Addressed by the rootID sentinel.
 //   - loadout: a markerless, named stump (CreateStump) holding a renderable
-//     RoleUser birth message that carries the loadout's chalkboard stamp
+//     RoleInput birth message that carries the loadout's chalkboard stamp
 //     (system.loadout_name/version). One per (name, content-version); the
 //     stump NAME is "<name>@<content-version>", so the dedup map lives on
 //     disk (Stumps()) — no policy side-file. Ceremonial.
@@ -212,7 +212,7 @@ func (s *XwalStore) CreateLoadout(name string, patch message.Patch) (string, err
 	if err := s.trunks.CreateStump(stump); err != nil {
 		return "", fmt.Errorf("xwal store: create loadout stump: %w", err)
 	}
-	// The loadout's birth message is renderable (RoleUser, empty content): its
+	// The loadout's birth message is renderable (RoleInput, empty content): its
 	// chalkboard patch renders as the loadout's <system-reminder> blocks ONCE
 	// in this shared prefix, inherited (cached) by every conversation.
 	stamped := stampLoadout(patch, name, ver)
@@ -308,7 +308,7 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 		return err
 	}
 	defer x.Close()
-	gen, _ := json.Marshal(message.Message{Role: message.RoleUser, Timestamp: s.now()})
+	gen, _ := json.Marshal(message.Message{Role: message.RoleInput, Timestamp: s.now()})
 	glt, err := x.AppendMain(gen, nil)
 	if err != nil {
 		return err

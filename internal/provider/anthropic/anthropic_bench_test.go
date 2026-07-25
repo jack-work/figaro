@@ -15,13 +15,13 @@ func benchMessages(nMessages int) []message.Message {
 	msgs := make([]message.Message, nMessages)
 	for i := range msgs {
 		// Leaf must be user-role for the realistic projection.
-		role := message.RoleAssistant
+		role := message.RoleOutput
 		if i%2 == 0 {
-			role = message.RoleUser
+			role = message.RoleInput
 		}
 		// If nMessages is even, the leaf would be assistant. Force user.
 		if i == nMessages-1 {
-			role = message.RoleUser
+			role = message.RoleInput
 		}
 		msgs[i] = message.Message{
 			Role:    role,

@@ -137,8 +137,8 @@ func TestRenderToolNodeSanitizesBeforeTailClamp(t *testing.T) {
 // "‹ figaro" header — the user's own question attributed to the agent. `show`,
 // on a second copy of the switch, got it right. One dispatch, one answer.
 func TestPromptDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
-	prompt := livedoc.Node{Type: livedoc.NodeProse, Role: "user", Markdown: "what is the codeword?"}
-	reply := livedoc.Node{Type: livedoc.NodeProse, Role: "assistant", Markdown: "RED"}
+	prompt := livedoc.Node{Type: livedoc.NodeProse, Role: livedoc.RoleInput, Markdown: "what is the codeword?"}
+	reply := livedoc.Node{Type: livedoc.NodeProse, Role: livedoc.RoleOutput, Markdown: "RED"}
 
 	view := &ariaView{settings: &renderSettings{}}
 	got := strings.Join(view.Render(prompt, 60, 0), "\n")

@@ -179,7 +179,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 // message and matching committed UI unit.
 func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entry[message.Message], error) {
 	msg := message.Message{
-		Role:      message.RoleUser,
+		Role:      message.RoleInput,
 		Timestamp: time.Now().UnixMilli(),
 	}
 	var combined chalkboard.Patch
@@ -236,8 +236,9 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entr
 		// Commit makes the message appear only when the transcript truly holds
 		// it — the aria frame carries {Role, Nodes} on the first hop and the
 		// client short-circuits to OnClosed with no OnLive event.
+		a.ariaSrv.OpenInquiry(a.turnID, prompt.text)
 		a.ariaSrv.Append(a.turnID, []livedoc.Node{
-			{Type: livedoc.NodeProse, Role: "user", Markdown: prompt.text},
+			{Type: livedoc.NodeProse, Role: livedoc.RoleInput, Markdown: prompt.text},
 		})
 	}
 	return entry, nil
@@ -253,7 +254,7 @@ func (a *Agent) startAssistantUnit() {
 	a.argPartials = map[string]string{}
 	a.toolTimings = map[string]compose.ToolTiming{}
 	a.turn = newTurnState()
-	a.emitSnapshot("assistant", nil)
+	a.emitSnapshot(livedoc.RoleOutput, nil)
 }
 
 // driveOneRound runs one provider.Send + tool dispatch cycle. The
@@ -328,7 +329,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	// provider completes (evFigaro), checkpoint and append the assistant on the
 	// drain loop, then drop the in-flight copy so compose reads it from the log
 	// instead — otherwise it would be counted twice.
-	asmMsg := newAsm(message.RoleAssistant)
+	asmMsg := newAsm(message.RoleOutput)
 	appendedInline := false
 	metricsReady := false
 	var roundErr error
@@ -502,7 +503,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	// Durable tail: the drain loop appended the provider's assistant message.
 	// Recompose from the durable tail.
 	var lastFig message.Message
-	appendedEntry, appended := a.appendedTail(assistantIdx, message.RoleAssistant)
+	appendedEntry, appended := a.appendedTail(assistantIdx, message.RoleOutput)
 	if appended {
 		lastFig = appendedEntry.Payload
 		if !a.isInterrupted() {
@@ -556,7 +557,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		a.waitWithForks(specDone)
 		if a.turn != nil {
 			if _, err := a.appendMsg(message.Message{
-				Role: message.RoleAssistant, StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
+				Role: message.RoleOutput, StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
 			}); err != nil {
 				a.turn = nil
 				a.reconcileAriaServer()
@@ -853,7 +854,7 @@ func (a *Agent) assembleToolResults(
 		}
 	}
 	tic := message.Message{
-		Role:      message.RoleUser,
+		Role:      message.RoleInput,
 		Content:   results,
 		Timestamp: time.Now().UnixMilli(),
 	}
@@ -1050,7 +1051,7 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		// the message twice (under a bumped provisional LT, so the aria server
 		// folds it as a brand-new node set: the classic duplicated-thinking
 		// frame). The durable copy wins.
-		if n := len(entries); n > 0 && entries[n-1].Payload.Role == message.RoleAssistant {
+		if n := len(entries); n > 0 && entries[n-1].Payload.Role == message.RoleOutput {
 			inflight = nil
 		}
 	}
@@ -1265,7 +1266,7 @@ func (a *Agent) cancelCurrentTurn() {
 }
 
 func assistantToolInvokes(m message.Message) []message.Content {
-	if m.Role != message.RoleAssistant {
+	if m.Role != message.RoleOutput {
 		return nil
 	}
 	var out []message.Content

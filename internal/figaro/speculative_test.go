@@ -62,7 +62,7 @@ func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus
 		// Second round (after tool results) — terminate with no
 		// further tool calls so the agent's outer loop returns.
 		msg := message.Message{
-			Role:       message.RoleAssistant,
+			Role:       message.RoleOutput,
 			Content:    []message.Content{message.TextContent("done")},
 			StopReason: message.StopEnd,
 		}
@@ -125,7 +125,7 @@ func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus
 		}
 	}
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    calls,
 		StopReason: message.StopToolInvoke,
 	}
@@ -378,10 +378,10 @@ func TestToolTurn_IRStructure(t *testing.T) {
 		roles[i] = m.Role
 	}
 	require.Equal(t, []message.Role{
-		message.RoleUser,
-		message.RoleAssistant,
-		message.RoleUser,
-		message.RoleAssistant,
+		message.RoleInput,
+		message.RoleOutput,
+		message.RoleInput,
+		message.RoleOutput,
 	}, roles, "tool turn must produce this message sequence")
 
 	assistant := msgs[1]

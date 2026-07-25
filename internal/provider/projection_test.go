@@ -199,7 +199,7 @@ func TestClearStaleTranslationCacheChecksTail(t *testing.T) {
 func appendProjectionMessage(t *testing.T, log *store.MemLog[message.Message], text string) store.Entry[message.Message] {
 	t.Helper()
 	entry, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role:    message.RoleUser,
+		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent(text)},
 	}})
 	if err != nil {

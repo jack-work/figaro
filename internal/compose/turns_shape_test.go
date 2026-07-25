@@ -10,7 +10,7 @@ import (
 )
 
 func userPrompt(text string) message.Message {
-	return message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent(text)}}
+	return message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent(text)}}
 }
 
 // turnText flattens a turn's nodes to one string for assertions.
@@ -49,7 +49,7 @@ func TestTurns_PromptIsNodeZero(t *testing.T) {
 		t.Fatalf("got %d turns, want 2: %+v", len(turns), turns)
 	}
 	for i, want := range []string{"first question", "second question"} {
-		if turns[i].Nodes[0].Role != roleUser {
+		if turns[i].Nodes[0].Role != roleInput {
 			t.Errorf("turn %d node 0 role = %q, want user", i, turns[i].Nodes[0].Role)
 		}
 		if turns[i].Nodes[0].Markdown != want {
@@ -66,7 +66,7 @@ func TestTurns_PromptIsNodeZero(t *testing.T) {
 }
 
 func TestTurns_SkipsControlOnlyTics(t *testing.T) {
-	control := message.Message{Role: message.RoleUser}
+	control := message.Message{Role: message.RoleInput}
 	turns := Turns([]message.Message{
 		control,
 		userPrompt("hello"),
@@ -82,16 +82,16 @@ func TestTurns_SkipsControlOnlyTics(t *testing.T) {
 func TestTurns_ToolBeforeSteeringSharingItsLT(t *testing.T) {
 	msgs := []message.Message{
 		userPrompt("hello"),
-		{Role: message.RoleAssistant, Content: []message.Content{
+		{Role: message.RoleOutput, Content: []message.Content{
 			{Type: message.ContentProse, Text: "hey"},
 			{Type: message.ContentToolInvoke, ToolCallID: "t1", ToolName: "test",
 				Arguments: map[string]interface{}{"x": 1}},
 		}},
-		{Role: message.RoleUser, Content: []message.Content{
+		{Role: message.RoleInput, Content: []message.Content{
 			message.ToolResultContent("t1", "test", "result-out", false),
 			{Type: message.ContentProse, Text: "oh and by the way"}, // the steer
 		}},
-		{Role: message.RoleAssistant, Content: []message.Content{
+		{Role: message.RoleOutput, Content: []message.Content{
 			{Type: message.ContentProse, Text: "oh cool sure"},
 		}},
 	}
@@ -130,7 +130,7 @@ func TestTurns_ToolBeforeSteeringSharingItsLT(t *testing.T) {
 	if src := tn.Nodes[2].Src; len(src) != 2 || src[0].Block != 1 || src[1].Block != 0 {
 		t.Errorf("tool node src = %+v, want invoke 61.1 then result 62.0", src)
 	}
-	if tn.Nodes[3].Role != roleUser {
+	if tn.Nodes[3].Role != roleInput {
 		t.Errorf("steering role = %q, want user (renders like the prompt)", tn.Nodes[3].Role)
 	}
 	if tn.Nodes[2].ToolCallID != "t1" || tn.Nodes[2].ID != "t1" {
@@ -180,7 +180,7 @@ func TestTurns_PureUnderOpenTail(t *testing.T) {
 // Invariant 6: an empty block is minted, not skipped, so nodes after it cannot
 // shift when it fills. The renderer is what hides empties.
 func TestTurns_EmptyBlocksAreMintedNotSkipped(t *testing.T) {
-	empty := message.Message{Role: message.RoleAssistant, LogicalTime: 2, Content: []message.Content{
+	empty := message.Message{Role: message.RoleOutput, LogicalTime: 2, Content: []message.Content{
 		{Type: message.ContentThinking, Text: ""},
 		{Type: message.ContentProse, Text: "answer"},
 	}}

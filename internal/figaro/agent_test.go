@@ -36,7 +36,7 @@ func (m *mockProvider) Fingerprint() string                                     
 func (m *mockProvider) SetModel(model string)                                    {}
 func (m *mockProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 func (m *mockProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
-	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
+	return []json.RawMessage{json.RawMessage(`{"role": livedoc.RoleInput,"content":[]}`)}, nil
 }
 
 func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
@@ -61,7 +61,7 @@ func (m *streamingMockProvider) Send(_ context.Context, in provider.SendInput, b
 	bus.PushDelta(message.Content{Type: message.ContentProse, Text: m.response})
 	time.Sleep(60 * time.Millisecond) // drain loop composes the streaming frame
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent(m.response)},
 		StopReason: message.StopEnd,
 	}
@@ -82,7 +82,7 @@ func (metricsProvider) Models(context.Context) ([]provider.ModelInfo, error) { r
 func (metricsProvider) ContextLimit(string, chalkboard.Snapshot) int         { return 128000 }
 func (metricsProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent("done")},
 		StopReason: message.StopEnd,
 		Usage: &message.Usage{
@@ -120,7 +120,7 @@ func (p *lateLimitProvider) Send(_ context.Context, in provider.SendInput, bus p
 	p.mu.Unlock()
 	bus.PushDelta(message.TextContent("done"))
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent("done")},
 		StopReason: message.StopEnd,
 	}
@@ -175,7 +175,7 @@ func mockPushAssistant(figLog store.Log[message.Message], cache store.Log[[]json
 	}
 	bus.PushDelta(message.Content{Type: message.ContentProse, Text: text})
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent(text)},
 		StopReason: message.StopEnd,
 	}
@@ -347,7 +347,7 @@ func nonGenesis(msgs []message.Message) []message.Message {
 		if m.Role == message.RoleGenesis {
 			continue
 		}
-		if m.Role == message.RoleUser && len(m.Content) == 0 && len(m.Patches) == 0 {
+		if m.Role == message.RoleInput && len(m.Content) == 0 && len(m.Patches) == 0 {
 			continue // loadout birth tic
 		}
 		out = append(out, m)
@@ -570,8 +570,8 @@ done:
 	// Should have user + assistant messages.
 	msgs := a.Context()
 	require.GreaterOrEqual(t, len(msgs), 2)
-	assert.Equal(t, message.RoleUser, msgs[0].Role)
-	assert.Equal(t, message.RoleAssistant, msgs[1].Role)
+	assert.Equal(t, message.RoleInput, msgs[0].Role)
+	assert.Equal(t, message.RoleOutput, msgs[1].Role)
 }
 
 func TestAgent_FIFOOrdering(t *testing.T) {
@@ -610,8 +610,8 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 	// Both prompts should be in context, in order.
 	msgs := a.Context()
 	require.GreaterOrEqual(t, len(msgs), 4) // user, assistant, user, assistant
-	assert.Equal(t, message.RoleUser, msgs[0].Role)
-	assert.Equal(t, message.RoleUser, msgs[2].Role)
+	assert.Equal(t, message.RoleInput, msgs[0].Role)
+	assert.Equal(t, message.RoleInput, msgs[2].Role)
 }
 
 func TestAgent_MultipleSubscribers(t *testing.T) {
@@ -684,7 +684,7 @@ func (p *panicProvider) Fingerprint() string                                    
 func (p *panicProvider) SetModel(model string)                                    {}
 func (p *panicProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 func (p *panicProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
-	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
+	return []json.RawMessage{json.RawMessage(`{"role": livedoc.RoleInput,"content":[]}`)}, nil
 }
 
 func (p *panicProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
@@ -755,7 +755,7 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	// assistant turn should be the most recent entry.
 	msgs := a.Context()
 	require.NotEmpty(t, msgs)
-	assert.Equal(t, message.RoleAssistant, msgs[len(msgs)-1].Role)
+	assert.Equal(t, message.RoleOutput, msgs[len(msgs)-1].Role)
 }
 
 func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
@@ -794,7 +794,7 @@ errorReceived:
 	// zero because no assistant response landed.
 	msgs := a.Context()
 	require.NotEmpty(t, msgs, "user prompt is preserved across Send panics")
-	assert.Equal(t, message.RoleUser, msgs[len(msgs)-1].Role)
+	assert.Equal(t, message.RoleInput, msgs[len(msgs)-1].Role)
 
 	info := a.Info()
 	assert.Equal(t, 0, info.TokensIn)
@@ -848,8 +848,8 @@ firstDone:
 	require.NoError(t, err)
 	turns := nonGenesis(unwrapForTest(log.Read()))
 	require.GreaterOrEqual(t, len(turns), 2, "user + assistant should be durable")
-	assert.Equal(t, message.RoleUser, turns[0].Role)
-	assert.Equal(t, message.RoleAssistant, turns[1].Role)
+	assert.Equal(t, message.RoleInput, turns[0].Role)
+	assert.Equal(t, message.RoleOutput, turns[1].Role)
 
 }
 
@@ -892,8 +892,8 @@ firstDone:
 
 	turns := nonGenesis(a2.Context())
 	require.GreaterOrEqual(t, len(turns), 2, "should restore messages from disk")
-	assert.Equal(t, message.RoleUser, turns[0].Role)
-	assert.Equal(t, message.RoleAssistant, turns[1].Role)
+	assert.Equal(t, message.RoleInput, turns[0].Role)
+	assert.Equal(t, message.RoleOutput, turns[1].Role)
 }
 
 func TestAgent_PersistenceKillFlushes(t *testing.T) {
@@ -971,14 +971,14 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 	require.NoError(t, err)
 	_, err = pre.Append(store.Entry[message.Message]{
 		Payload: message.Message{
-			Role:    message.RoleUser,
+			Role:    message.RoleInput,
 			Content: []message.Content{message.TextContent("run a tool")},
 		},
 	})
 	require.NoError(t, err)
 	_, err = pre.Append(store.Entry[message.Message]{
 		Payload: message.Message{
-			Role: message.RoleAssistant,
+			Role: message.RoleOutput,
 			Content: []message.Content{
 				{Type: message.ContentToolInvoke, ToolCallID: "tc_boot", ToolName: "bash"},
 			},
@@ -998,7 +998,7 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 
 	msgs := a.Context()
 	tail := msgs[len(msgs)-1]
-	require.Equal(t, message.RoleUser, tail.Role)
+	require.Equal(t, message.RoleInput, tail.Role)
 	require.Len(t, tail.Content, 1)
 	assert.Equal(t, message.ContentToolResult, tail.Content[0].Type)
 	assert.Equal(t, "tc_boot", tail.Content[0].ToolCallID)
@@ -1248,12 +1248,12 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	}
 	for _, lt := range order {
 		nodes := byTurn[lt]
-		if nodes[0].Role != "user" {
+		if nodes[0].Role != livedoc.RoleInput {
 			t.Fatalf("turn %d node 0 must be the prompt, got role %q", lt, nodes[0].Role)
 		}
 		replies := 0
 		for _, n := range nodes {
-			if n.Role == "assistant" {
+			if n.Role == livedoc.RoleOutput {
 				replies++
 			}
 		}
@@ -1312,7 +1312,7 @@ loop:
 	for _, f := range frames {
 		for _, part := range f.Parts {
 			for _, n := range part.Nodes {
-				if n.Role == "user" {
+				if n.Role == livedoc.RoleInput {
 					sawPromptCommitted = true
 				}
 			}
@@ -1326,7 +1326,7 @@ loop:
 			continue
 		}
 		for _, d := range live.Nodes {
-			if d.Set["role"] == "user" {
+			if d.Set["role"] == livedoc.RoleInput {
 				t.Fatalf("the prompt must never stream as a Live delta; got %+v", d)
 			}
 		}

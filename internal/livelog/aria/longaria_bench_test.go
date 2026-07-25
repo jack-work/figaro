@@ -16,7 +16,7 @@ func benchmarkServer(n int) *Server {
 			Sealed: true,
 			Nodes: []livedoc.Node{{
 				Type:     livedoc.NodeProse,
-				Role:     "assistant",
+				Role:     livedoc.RoleOutput,
 				Markdown: "synthetic history",
 			}},
 		})

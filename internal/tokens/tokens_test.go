@@ -21,10 +21,10 @@ func TestContextSize_EmptySlice(t *testing.T) {
 
 func TestContextSize_WatermarkIsLeaf(t *testing.T) {
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{
+		{Role: message.RoleInput, Content: []message.Content{
 			message.TextContent("hello"),
 		}},
-		{Role: message.RoleAssistant, Content: []message.Content{
+		{Role: message.RoleOutput, Content: []message.Content{
 			message.TextContent("hi there"),
 		}, Usage: &message.Usage{
 			InputTokens:  500,
@@ -39,16 +39,16 @@ func TestContextSize_WatermarkIsLeaf(t *testing.T) {
 
 func TestContextSize_MessagesAfterWatermark(t *testing.T) {
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{
+		{Role: message.RoleInput, Content: []message.Content{
 			message.TextContent("hello"),
 		}},
-		{Role: message.RoleAssistant, Content: []message.Content{
+		{Role: message.RoleOutput, Content: []message.Content{
 			message.TextContent("hi there"),
 		}, Usage: &message.Usage{
 			InputTokens:  500,
 			OutputTokens: 50,
 		}},
-		{Role: message.RoleUser, Content: []message.Content{
+		{Role: message.RoleInput, Content: []message.Content{
 			// 40 chars → ceil(40/4) = 10 tokens
 			message.TextContent("now do something else for me please ok?!"),
 		}},
@@ -61,11 +61,11 @@ func TestContextSize_MessagesAfterWatermark(t *testing.T) {
 
 func TestContextSize_NoUsage(t *testing.T) {
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{
+		{Role: message.RoleInput, Content: []message.Content{
 			// 12 chars → ceil(12/4) = 3
 			message.TextContent("hello world!"),
 		}},
-		{Role: message.RoleAssistant, Content: []message.Content{
+		{Role: message.RoleOutput, Content: []message.Content{
 			// 8 chars → ceil(8/4) = 2
 			message.TextContent("hi there"),
 		}},
@@ -159,8 +159,8 @@ func TestContextFromUsage(t *testing.T) {
 
 func TestContextSize_CountsCachedInput(t *testing.T) {
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
-		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("hi")}, Usage: &message.Usage{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("hi")}, Usage: &message.Usage{
 			InputTokens:      2075,
 			OutputTokens:     100,
 			CacheReadTokens:  120_000,
@@ -174,7 +174,7 @@ func TestContextSize_CountsCachedInput(t *testing.T) {
 
 	// A trailing un-metered message estimates only the tail on top of the
 	// same watermark base.
-	msgs = append(msgs, message.Message{Role: message.RoleUser, Content: []message.Content{
+	msgs = append(msgs, message.Message{Role: message.RoleInput, Content: []message.Content{
 		message.TextContent("now do something else for me please ok?!"), // 40 chars → 10
 	}})
 	got, exact = ContextSize(msgs)

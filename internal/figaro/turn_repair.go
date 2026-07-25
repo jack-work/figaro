@@ -32,7 +32,7 @@ type turnState struct {
 
 func newTurnState() *turnState {
 	return &turnState{
-		assistant: message.Message{Role: message.RoleAssistant},
+		assistant: message.Message{Role: message.RoleOutput},
 		states:    map[string]turnTool{},
 	}
 }
@@ -101,7 +101,7 @@ func (a *Agent) repairTurnTail() ([]message.Message, error) {
 			return nil, nil
 		}
 		e, err := a.appendMsg(message.Message{
-			Role: message.RoleUser, Content: tools, Timestamp: time.Now().UnixMilli(),
+			Role: message.RoleInput, Content: tools, Timestamp: time.Now().UnixMilli(),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("repair interrupted tool results: %w", err)
@@ -109,7 +109,7 @@ func (a *Agent) repairTurnTail() ([]message.Message, error) {
 		return []message.Message{e.Payload}, nil
 	}
 	assistant := t.assistant
-	assistant.Role = message.RoleAssistant
+	assistant.Role = message.RoleOutput
 	assistant.StopReason = message.StopAborted
 	if len(assistant.Content) == 0 {
 		return nil, nil
@@ -124,7 +124,7 @@ func (a *Agent) repairTurnTail() ([]message.Message, error) {
 	appended := []message.Message{e.Payload}
 	if tools := interruptedToolResults(t.tools); len(tools) > 0 {
 		e, err := a.appendMsg(message.Message{
-			Role: message.RoleUser, Content: tools, Timestamp: time.Now().UnixMilli(),
+			Role: message.RoleInput, Content: tools, Timestamp: time.Now().UnixMilli(),
 		})
 		if err != nil {
 			return appended, fmt.Errorf("repair interrupted tool results: %w", err)
@@ -157,7 +157,7 @@ func (a *Agent) commitAssistantCache(lt uint64, cache *provider.AssistantCache) 
 }
 
 func partialAssistant(m *message.Message) message.Message {
-	out := message.Message{Role: message.RoleAssistant}
+	out := message.Message{Role: message.RoleOutput}
 	if m == nil {
 		return out
 	}

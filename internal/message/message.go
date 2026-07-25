@@ -2,12 +2,23 @@
 // Per-provider wire-format projections are cached alongside each message.
 package message
 
+import "encoding/json"
+
 // Role identifies the participant in a conversation turn.
 type Role string
 
 const (
-	RoleUser       Role = "user"
-	RoleAssistant  Role = "assistant"
+	// RoleInput and RoleOutput name the two voices. They are deliberately
+	// under-specified: "user" was a lie the moment a subagent sent a message,
+	// and figaro does not yet need to know WHO supplied input — only that it is
+	// input. A finer distinction can be added later without another rename.
+	//
+	// These are figaro's INTERNAL vocabulary. Providers require literal
+	// user/assistant on their own wire; every translator emits those literals
+	// itself (e.g. nativeMessage{Role: "user"}), so the boundary is correct by
+	// construction and this rename cannot reach a provider payload.
+	RoleInput      Role = "input"
+	RoleOutput     Role = "output"
 	RoleToolResult Role = "tool_result"
 	RoleSystem     Role = "system" // compacted summary header
 
@@ -25,9 +36,42 @@ const (
 	RoleGenesis Role = "genesis"
 )
 
+// RoleFromWire maps a provider's wire vocabulary onto figaro's. Providers
+// speak user/assistant; figaro speaks input/output. This is the ONLY place the
+// mapping lives — both the decode boundary and UnmarshalJSON route through it,
+// so the two directions cannot drift apart. Anything unrecognised passes
+// through unchanged (tool_result, system, genesis are not voices).
+func RoleFromWire(s string) Role {
+	switch s {
+	case "user":
+		return RoleInput
+	case "assistant":
+		return RoleOutput
+	}
+	return Role(s)
+}
+
+// UnmarshalJSON accepts the pre-rename vocabulary so every aria written before
+// this change keeps reading. It lives on the type rather than in the two
+// projection sites because a decode path that forgets to normalise is a bug
+// nobody would see until a turn rendered under the wrong voice — the same
+// class of silent drift this refactor exists to delete.
+//
+// Writing is unconditional: MarshalJSON is the default, so new entries record
+// input/output. The `ir` channel schema is bumped alongside, so an older binary
+// refuses the store outright instead of misreading it.
+func (r *Role) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	*r = RoleFromWire(s)
+	return nil
+}
+
 // IsCeremonial reports whether m is a structural/inherited marker rather than
 // a conversational message: the root genesis sentinel, or the loadout-birth
-// (a RoleUser message with no renderable content — it carries only the
+// (a RoleInput message with no renderable content — it carries only the
 // loadout's chalkboard stamp, inherited by every conversation in the shared
 // prefix). These anchor the IR but are not turns, so the conversation's
 // message count must not include them.
@@ -35,7 +79,7 @@ func IsCeremonial(m Message) bool {
 	if m.Role == RoleGenesis {
 		return true
 	}
-	if m.Role == RoleUser {
+	if m.Role == RoleInput {
 		for _, c := range m.Content {
 			if c.Type == ContentProse && c.Text != "" {
 				return false

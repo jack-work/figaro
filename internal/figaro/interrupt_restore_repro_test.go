@@ -3,6 +3,7 @@ package figaro_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"path/filepath"
 	"testing"
@@ -154,7 +155,7 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	sawUser := false
 	for _, c := range got.Parts {
 		for _, n := range c.Nodes {
-			if n.Role == "user" {
+			if n.Role == livedoc.RoleInput {
 				sawUser = true
 			}
 		}
@@ -183,7 +184,7 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	prompts := 0
 	for _, part := range final.Parts {
 		for _, n := range part.Nodes {
-			if n.Role == "user" {
+			if n.Role == livedoc.RoleInput {
 				prompts++
 			}
 		}
@@ -230,7 +231,7 @@ func (p *staticReplyProvider) Models(context.Context) ([]provider.ModelInfo, err
 func (p *staticReplyProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	bus.PushDelta(message.Content{Type: message.ContentProse, Text: p.reply})
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent(p.reply)},
 		StopReason: message.StopEnd,
 	}

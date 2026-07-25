@@ -55,7 +55,7 @@ func (p *switchProvider) Send(ctx context.Context, in provider.SendInput, bus pr
 	}
 	bus.PushDelta(message.TextContent(p.fastText))
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent(p.fastText)},
 		StopReason: message.StopEnd,
 	}

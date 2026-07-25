@@ -69,7 +69,7 @@ func TestShutdownDrainSealsPartialTurn(t *testing.T) {
 	require.NoError(t, err)
 	tail, ok := ir.PeekTail()
 	require.True(t, ok)
-	assert.Equal(t, message.RoleAssistant, tail.Payload.Role)
+	assert.Equal(t, message.RoleOutput, tail.Payload.Role)
 	assert.Equal(t, message.StopAborted, tail.Payload.StopReason)
 	require.NotEmpty(t, tail.Payload.Content)
 	assert.Equal(t, "partial prose", tail.Payload.Content[0].Text)
@@ -94,11 +94,11 @@ model = "mock-model"
 	ir, err := backend.Open(conv)
 	require.NoError(t, err)
 	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")},
+		Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")},
 	}})
 	require.NoError(t, err)
 	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		StopReason: message.StopToolInvoke,
 		Content: []message.Content{{
 			Type: message.ContentToolInvoke, ToolCallID: "tc_race", ToolName: "bash",
@@ -147,7 +147,7 @@ model = "mock-model"
 	assert.Equal(t, before+1, ir.Len(), "exactly one repair tic appended")
 	tail, ok := ir.PeekTail()
 	require.True(t, ok)
-	require.Equal(t, message.RoleUser, tail.Payload.Role)
+	require.Equal(t, message.RoleInput, tail.Payload.Role)
 	require.Len(t, tail.Payload.Content, 1)
 	assert.Equal(t, message.ContentToolResult, tail.Payload.Content[0].Type)
 	assert.Equal(t, "tc_race", tail.Payload.Content[0].ToolCallID)

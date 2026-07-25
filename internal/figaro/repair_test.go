@@ -32,7 +32,7 @@ func toolResult(id string) message.Content {
 
 func requireRepairTic(t *testing.T, m message.Message, ids ...string) {
 	t.Helper()
-	require.Equal(t, message.RoleUser, m.Role)
+	require.Equal(t, message.RoleInput, m.Role)
 	require.Len(t, m.Content, len(ids))
 	for i, id := range ids {
 		assert.Equal(t, message.ContentToolResult, m.Content[i].Type)
@@ -51,8 +51,8 @@ func TestTailRepair_EmptyStreamNoOp(t *testing.T) {
 func TestTailRepair_NonDanglingNoOp(t *testing.T) {
 	// Plain user/assistant text turn — no tool_use.
 	s := buildStream(t,
-		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hi")}},
-		message.Message{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("salve")}, StopReason: message.StopEnd},
+		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hi")}},
+		message.Message{Role: message.RoleOutput, Content: []message.Content{message.TextContent("salve")}, StopReason: message.StopEnd},
 	)
 	before := len(s.Read())
 	repairInterruptedTail(s, "aria")
@@ -62,9 +62,9 @@ func TestTailRepair_NonDanglingNoOp(t *testing.T) {
 func TestTailRepair_DanglingToolUseAtTail(t *testing.T) {
 	// Assistant ended with tool_use; tool_result tic never landed.
 	s := buildStream(t,
-		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")}},
+		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")}},
 		message.Message{
-			Role:       message.RoleAssistant,
+			Role:       message.RoleOutput,
 			Content:    []message.Content{toolCall("tc_a", "bash"), toolCall("tc_b", "read")},
 			StopReason: message.StopToolInvoke,
 		},
@@ -78,9 +78,9 @@ func TestTailRepair_DanglingToolUseAtTail(t *testing.T) {
 func TestTailRepair_AbortedPartialAtTail(t *testing.T) {
 	// An appended partial (drain crashed between assistant and tics).
 	s := buildStream(t,
-		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")}},
+		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")}},
 		message.Message{
-			Role:       message.RoleAssistant,
+			Role:       message.RoleOutput,
 			Content:    []message.Content{toolCall("tc_a", "bash")},
 			StopReason: message.StopAborted,
 		},
@@ -93,9 +93,9 @@ func TestTailRepair_AbortedPartialAtTail(t *testing.T) {
 
 func TestTailRepair_Idempotent(t *testing.T) {
 	s := buildStream(t,
-		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")}},
+		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")}},
 		message.Message{
-			Role:       message.RoleAssistant,
+			Role:       message.RoleOutput,
 			Content:    []message.Content{toolCall("tc_a", "bash")},
 			StopReason: message.StopToolInvoke,
 		},
@@ -111,14 +111,14 @@ func TestTailRepair_Idempotent(t *testing.T) {
 func TestTailRepair_WellFormedToolResultNoOp(t *testing.T) {
 	// Assistant tool_use followed by complete tool_result tic; nothing to do.
 	s := buildStream(t,
-		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")}},
+		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")}},
 		message.Message{
-			Role:       message.RoleAssistant,
+			Role:       message.RoleOutput,
 			Content:    []message.Content{toolCall("tc_a", "bash")},
 			StopReason: message.StopToolInvoke,
 		},
 		message.Message{
-			Role:    message.RoleUser,
+			Role:    message.RoleInput,
 			Content: []message.Content{toolResult("tc_a")},
 		},
 	)
@@ -133,13 +133,13 @@ func TestTailRepair_PartialToolResultsLeavesUnrecoverable(t *testing.T) {
 	// cannot splice a tic between the assistant and the partial tic.
 	// The function leaves the stream alone.
 	s := buildStream(t,
-		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run both")}},
+		message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run both")}},
 		message.Message{
-			Role:       message.RoleAssistant,
+			Role:       message.RoleOutput,
 			Content:    []message.Content{toolCall("tc_a", "bash"), toolCall("tc_b", "read")},
 			StopReason: message.StopToolInvoke,
 		},
-		message.Message{Role: message.RoleUser, Content: []message.Content{toolResult("tc_a")}},
+		message.Message{Role: message.RoleInput, Content: []message.Content{toolResult("tc_a")}},
 	)
 	before := len(s.Read())
 	repairInterruptedTail(s, "aria")
@@ -151,7 +151,7 @@ func TestTailRepair_NoToolCallsNoOp(t *testing.T) {
 	// blocks. Treat as well-formed; nothing to repair.
 	s := buildStream(t,
 		message.Message{
-			Role:       message.RoleAssistant,
+			Role:       message.RoleOutput,
 			Content:    []message.Content{message.TextContent("thinking…")},
 			StopReason: message.StopToolInvoke,
 		},
@@ -177,12 +177,12 @@ func TestTailRepair_FileBackedPersists(t *testing.T) {
 	log1, err := b1.Open(conv)
 	require.NoError(t, err)
 	_, err = log1.Append(store.Entry[message.Message]{
-		Payload: message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")}},
+		Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("run it")}},
 	})
 	require.NoError(t, err)
 	_, err = log1.Append(store.Entry[message.Message]{
 		Payload: message.Message{
-			Role:       message.RoleAssistant,
+			Role:       message.RoleOutput,
 			Content:    []message.Content{toolCall("tc_disk", "bash")},
 			StopReason: message.StopToolInvoke,
 		},

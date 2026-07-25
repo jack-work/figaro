@@ -34,9 +34,9 @@ func seedLargeAria(tb testing.TB, nMsgs, msgBytes int) (string, string) {
 		blob[i] = 'x'
 	}
 	for i := 0; i < nMsgs; i++ {
-		role := message.RoleUser
+		role := message.RoleInput
 		if i%2 == 1 {
-			role = message.RoleAssistant
+			role = message.RoleOutput
 		}
 		m := message.Message{Role: role, Content: []message.Content{
 			{Type: message.ContentProse, Text: fmt.Sprintf("m%d %s", i, blob)},

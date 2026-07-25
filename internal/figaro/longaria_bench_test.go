@@ -87,9 +87,9 @@ func syntheticBenchmarkLog(n int) *benchmarkLog {
 	rows := make([]store.Entry[message.Message], n)
 	for i := range rows {
 		lt := uint64(i + 1)
-		role := message.RoleUser
+		role := message.RoleInput
 		if i%2 == 1 {
-			role = message.RoleAssistant
+			role = message.RoleOutput
 		}
 		rows[i] = store.Entry[message.Message]{
 			LT:       lt,

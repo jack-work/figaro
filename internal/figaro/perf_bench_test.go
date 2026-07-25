@@ -33,9 +33,9 @@ func longMemLog(tb testing.TB, n int) store.Log[message.Message] {
 	log := store.NewMemLog[message.Message]()
 	text := strings.Repeat("x", 256)
 	for i := 0; i < n; i++ {
-		role := message.RoleUser
+		role := message.RoleInput
 		if i%2 == 1 {
-			role = message.RoleAssistant
+			role = message.RoleOutput
 		}
 		_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
@@ -130,7 +130,7 @@ func BenchmarkMetadataPublication10000(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			meta := &store.AriaMeta{}
 			for _, e := range a.figLog.Read() {
-				if e.Payload.Role == message.RoleAssistant {
+				if e.Payload.Role == message.RoleOutput {
 					meta.TurnCount++
 				}
 				meta.LastFigaroLT = e.LT
@@ -183,7 +183,7 @@ func BenchmarkLiveFramePersistence(b *testing.B) {
 			if persist {
 				blob, err := json.Marshal(aria.Message{
 					LT:    1,
-					Role:  string(message.RoleAssistant),
+					Role:  string(message.RoleOutput),
 					Nodes: nodes,
 				})
 				if err != nil {

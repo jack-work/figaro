@@ -62,7 +62,7 @@ func TestLiveCopilotResponses(t *testing.T) {
 
 	log := store.NewMemLog[message.Message]()
 	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role:    message.RoleUser,
+		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("Reply with exactly: FIGARO_COPILOT_SMOKE")},
 	}})
 	require.NoError(t, err)
@@ -91,7 +91,7 @@ func TestLiveCopilotResponsesToolRoundTrip(t *testing.T) {
 	defer cancel()
 	log := store.NewMemLog[message.Message]()
 	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role: message.RoleUser,
+		Role: message.RoleInput,
 		Content: []message.Content{message.TextContent(
 			`Call figaro_echo exactly once with value "FIGARO_TOOL_SMOKE". Do not answer before calling it. After receiving the tool result, reply with exactly: FIGARO_TOOL_DONE.`,
 		)},
@@ -123,7 +123,7 @@ func TestLiveCopilotResponsesToolRoundTrip(t *testing.T) {
 	require.Equal(t, message.StopToolInvoke, first.messages[0].StopReason)
 
 	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role: message.RoleUser,
+		Role: message.RoleInput,
 		Content: []message.Content{
 			message.ToolResultContent(call.ToolCallID, call.ToolName, "FIGARO_TOOL_RESULT", false),
 		},
@@ -156,7 +156,7 @@ func TestLiveCopilotResponsesLongContext(t *testing.T) {
 	defer cancel()
 	log := store.NewMemLog[message.Message]()
 	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role:    message.RoleUser,
+		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("Reply with exactly: FIGARO_LONG_CONTEXT_SMOKE")},
 	}})
 	require.NoError(t, err)

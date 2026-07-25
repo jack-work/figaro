@@ -65,7 +65,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 				t.pagerClosed = append(t.pagerClosed, m)
 			}
 			t.tr.render() // transcript renders from the shared client model
-		} else if m.Role == "assistant" {
+		} else if m.Role == livedoc.RoleOutput {
 			t.pending = &m
 			if t.finished {
 				t.freezePending()
@@ -82,14 +82,14 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 				t.wantThinking = false
 				t.thinkingOpen = true
 				t.status.beginTurn()
-				t.in.OpenThinking("assistant")
+				t.in.OpenThinking(livedoc.RoleOutput)
 			}
 		}
 	}
 	t.client.OnLive = func(lt int, role string, nodes []livedoc.Node) {
 		newOpen := lt != t.openLT
 		t.openLT, t.openRole, t.open = lt, role, nodes
-		if role == "assistant" {
+		if role == livedoc.RoleOutput {
 			if newOpen {
 				t.finished = false
 			}
@@ -308,7 +308,7 @@ func (t *livelogTurn) finishTurn(reason string) {
 		// over the live footer region.
 		t.thinkingOpen = false
 		t.in.AbandonOpen("")
-	} else if !hadPending && t.openLT != 0 && t.openRole == "assistant" {
+	} else if !hadPending && t.openLT != 0 && t.openRole == livedoc.RoleOutput {
 		t.in.Open(t.openLT, t.openRole, t.open)
 		if strings.HasPrefix(strings.ToLower(reason), "error:") {
 			t.in.AbandonOpen("")
@@ -413,7 +413,7 @@ func (t *livelogTurn) flushTail() {
 // the final turn rather than the entire conversation.
 func lastTurnStartLT(v aria.View) int {
 	for k := len(v.Closed) - 1; k >= 0; k-- {
-		if v.Closed[k].Role == "user" {
+		if v.Closed[k].Role == livedoc.RoleInput {
 			return v.Closed[k].LT
 		}
 	}

@@ -146,7 +146,7 @@ func newResponsesInputLog(t *testing.T) store.Log[message.Message] {
 	t.Helper()
 	log := store.NewMemLog[message.Message]()
 	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role:    message.RoleUser,
+		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("ciao")},
 	}})
 	require.NoError(t, err)
@@ -406,7 +406,7 @@ func TestResponsesProviderContextTierBudget(t *testing.T) {
 	p.SetContextLimits("gpt-5.6-terra", responseContextLimits{Default: 20, Long: 200})
 	log := store.NewMemLog[message.Message]()
 	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role:    message.RoleUser,
+		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent(strings.Repeat("x", 100))},
 	}})
 	require.NoError(t, err)
@@ -602,13 +602,13 @@ func TestResponsesProviderDrivesFigaroToolRoundTrip(t *testing.T) {
 
 	context := agent.Context()
 	require.Len(t, context, 4)
-	assert.Equal(t, message.RoleUser, context[0].Role)
+	assert.Equal(t, message.RoleInput, context[0].Role)
 	assert.Equal(t, message.StopToolInvoke, context[1].StopReason)
 	assert.Equal(t, message.ContentThinking, context[1].Content[0].Type)
 	assert.Equal(t, "checking tool", context[1].Content[0].Text)
 	assert.Equal(t, message.ContentToolInvoke, context[1].Content[1].Type)
 	assert.Equal(t, "call-1", context[1].Content[1].ToolCallID)
-	assert.Equal(t, message.RoleUser, context[2].Role)
+	assert.Equal(t, message.RoleInput, context[2].Role)
 	assert.Equal(t, message.ContentToolResult, context[2].Content[0].Type)
 	assert.Equal(t, "tool:ciao", context[2].Content[0].Text)
 	assert.Equal(t, message.StopEnd, context[3].StopReason)
@@ -713,12 +713,12 @@ func TestResponsesProviderRejectsMalformedFunctionArguments(t *testing.T) {
 func TestResponsesInputPreservesCachedAssistantOutput(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	first, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role:    message.RoleUser,
+		Role:    message.RoleInput,
 		Content: []message.Content{message.TextContent("question")},
 	}})
 	require.NoError(t, err)
 	second, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role:    message.RoleAssistant,
+		Role:    message.RoleOutput,
 		Content: []message.Content{message.TextContent("answer")},
 	}})
 	require.NoError(t, err)
@@ -748,7 +748,7 @@ func TestResponsesInputPreservesCachedAssistantOutput(t *testing.T) {
 
 func TestResponsesInputPlacesToolOutputBeforeSteeringText(t *testing.T) {
 	msg := message.Message{
-		Role: message.RoleUser,
+		Role: message.RoleInput,
 		Content: []message.Content{
 			message.ToolResultContent("call-1", "bash", "done", false),
 			message.TextContent("continue with the result"),
@@ -790,7 +790,7 @@ func TestResponsesInputWarmPreservesPrefixBytes(t *testing.T) {
 	require.NoError(t, err)
 	prefix := append([]byte(nil), first[0]...)
 	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role: message.RoleUser, Content: []message.Content{message.TextContent("next")},
+		Role: message.RoleInput, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
 	second, err := p.inputFor(in)
@@ -806,7 +806,7 @@ func TestContextSizeForLogMatchesCanonicalEstimator(t *testing.T) {
 		var messages []message.Message
 		for i := 0; i < 100; i++ {
 			msg := message.Message{
-				Role:    message.RoleUser,
+				Role:    message.RoleInput,
 				Content: []message.Content{message.TextContent(fmt.Sprintf("message-%d", i))},
 			}
 			if withUsage && i == 75 {
@@ -879,7 +879,7 @@ func TestCopilotSeparatesMessagesAndResponsesCaches(t *testing.T) {
 
 func TestEncodeResponseMessageIsDeterministic(t *testing.T) {
 	msg := message.Message{
-		Role: message.RoleAssistant,
+		Role: message.RoleOutput,
 		Content: []message.Content{
 			message.TextContent("answer"),
 			{

@@ -50,7 +50,7 @@ func assertNoDup(t *testing.T, tag string, nodes []string) {
 // helpers: messages carry a stable LogicalTime (as composeTurn assigns from the
 // fig IR), constant across the frames that evolve the same message.
 func asstLT(lt uint64, cs ...message.Content) message.Message {
-	return message.Message{Role: message.RoleAssistant, Content: cs, LogicalTime: lt}
+	return message.Message{Role: message.RoleOutput, Content: cs, LogicalTime: lt}
 }
 func think(s string) message.Content { return message.Content{Type: message.ContentThinking, Text: s} }
 func prose(s string) message.Content { return message.Content{Type: message.ContentProse, Text: s} }
@@ -58,7 +58,7 @@ func tool(id, name string) message.Content {
 	return message.Content{Type: message.ContentToolInvoke, ToolCallID: id, ToolName: name}
 }
 func resLT(lt uint64, id, out string) message.Message {
-	return message.Message{Role: message.RoleUser, LogicalTime: lt,
+	return message.Message{Role: message.RoleInput, LogicalTime: lt,
 		Content: []message.Content{{Type: message.ContentToolResult, ToolCallID: id, Text: out}}}
 }
 

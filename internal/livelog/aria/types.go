@@ -36,7 +36,20 @@ import "github.com/jack-work/figaro/internal/livedoc"
 //
 // Live is the open suffix. Nil once the turn seals.
 type Turn struct {
-	ID     uint64         `json:"turn"`
+	ID uint64 `json:"turn"`
+
+	// Inquiry is the question that opened the turn — plain text, not a node.
+	// A turn is one exchange and an exchange begins with exactly one inquiry,
+	// so it is a property of the turn rather than an element of it. Steering
+	// interjections stay nodes: they ride inside a turn, they do not start one.
+	//
+	// TRANSITIONAL: the prompt is ALSO still Nodes[0] with Role RoleInput.
+	// Removing it from Nodes shifts every positional id by one (Nodes[i].ID ==
+	// From+i), which reaches Paginate, sliceKey, the row cache, selection, and
+	// the client's voice-run fold. See the S32 note in the phase-9 report for
+	// the removal plan; do not delete the node without doing all of it.
+	Inquiry string `json:"inquiry,omitempty"`
+
 	LTs    []uint64       `json:"lts,omitempty"`
 	Sealed bool           `json:"sealed"`
 	Nodes  []livedoc.Node `json:"nodes,omitempty"`
