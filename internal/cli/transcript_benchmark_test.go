@@ -38,7 +38,7 @@ func BenchmarkTranscriptStartup(b *testing.B) {
 			tr, _ := benchmarkTranscript(b, messages, nil)
 			b.ResetTimer()
 			for range b.N {
-				tr.rowCache = map[int]cachedMessage{}
+				tr.rowCache = map[sliceKey]cachedMessage{}
 				tr.prev = nil
 				tr.enter()
 			}
@@ -153,7 +153,7 @@ func BenchmarkTranscriptLargeToolOutput(b *testing.B) {
 			tr, _ := benchmarkTranscript(b, 1, nodes)
 			b.ResetTimer()
 			for range b.N {
-				tr.rowCache = map[int]cachedMessage{}
+				tr.rowCache = map[sliceKey]cachedMessage{}
 				tr.prev = nil
 				tr.enter()
 			}

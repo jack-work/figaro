@@ -241,7 +241,7 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (ar
 		}
 		messages := committedMessages(r)
 		if len(messages) == 0 {
-			return "", fmt.Errorf("selection history unavailable before LT %d", before)
+			return "", fmt.Errorf("selection history unavailable before turn %d", before)
 		}
 		var page []string
 		for _, m := range messages {
@@ -361,14 +361,16 @@ func (t *transcript) toggleSelectedTools() bool {
 			break
 		}
 	}
+	dirty := make(map[int]struct{}, len(tools))
 	for _, ref := range tools {
 		if expand {
 			t.expanded[ref] = true
 		} else {
 			delete(t.expanded, ref)
 		}
-		delete(t.rowCache, ref.lt)
+		dirty[ref.lt] = struct{}{}
 	}
+	t.dropTurnsRows(dirty)
 	t.ensureSelectionVisible()
 	return true
 }

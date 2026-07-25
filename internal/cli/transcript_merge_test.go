@@ -108,7 +108,7 @@ func TestMergedSelectionDoesNotInvalidateRowCache(t *testing.T) {
 		ptr  uintptr
 		rows []string
 	}
-	before := map[int]snap{}
+	before := map[sliceKey]snap{}
 	for lt, cached := range tr.rowCache {
 		s := snap{}
 		if len(cached.rows) > 0 {

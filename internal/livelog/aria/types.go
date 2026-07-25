@@ -93,6 +93,7 @@ func (d NodeDelta) Empty() bool {
 // on the wire uses this type, so the seam is local and cheap to close.
 type Message struct {
 	LT    int
+	From  uint64 // node offset within the turn; >0 means this is a later slice of it
 	Role  string
 	Nodes []livedoc.Node
 }

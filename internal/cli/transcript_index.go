@@ -74,7 +74,7 @@ func (t *transcript) buildIndex() {
 		t.resetToTail()
 	}
 	if t.cacheW != t.w { // width changed: cached rows are stale
-		t.rowCache = map[int]cachedMessage{}
+		t.rowCache = map[sliceKey]cachedMessage{}
 		t.cacheW = t.w
 	}
 	entries, total := t.index.scratch[:0], 0
@@ -89,10 +89,10 @@ func (t *transcript) buildIndex() {
 	// forEachMessage walks the pages in place: materializing the merged
 	// message slice was 2 KB of garbage per frame.
 	t.forEachMessage(func(m aria.Message) {
-		rows, ok := t.rowCache[m.LT]
+		rows, ok := t.rowCache[keyOf(m)]
 		if !ok {
 			rows = t.renderMsgBase(m)
-			t.rowCache[m.LT] = rows
+			t.rowCache[keyOf(m)] = rows
 		}
 		add(m.LT, rows.rows, false)
 	})

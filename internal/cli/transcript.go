@@ -102,7 +102,7 @@ type transcript struct {
 	// function of (message, width), so selection and search state can change
 	// without invalidating a single cached row; the cue and the highlight are
 	// applied per painted row by window()/entryLine().
-	rowCache  map[int]cachedMessage
+	rowCache  map[sliceKey]cachedMessage
 	cacheW    int
 	selection nodeSelection
 	expanded  map[nodeRef]bool
@@ -178,7 +178,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 	return &transcript{
 		out: out, view: view, client: client,
 		status: newSessionStatus(figaroID, startedAt), w: w, h: h,
-		rowCache: map[int]cachedMessage{}, expanded: map[nodeRef]bool{},
+		rowCache: map[sliceKey]cachedMessage{}, expanded: map[nodeRef]bool{},
 	}
 }
 
@@ -490,20 +490,87 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 
 // committedMessages flattens a page's parts into the pager's materialized
 // units. A part carrying nodes is content; a bare marker carries none and is
-// skipped. Message.LT holds the turn id (see aria.Message) — renaming that
-// field through this pager is S25's job, not this phase's.
+// skipped. Message.LT holds the turn id; Message.From holds the node offset
+// within it, so the slices of one tall turn stay distinct units.
+//
+// A turn is NOT a bounded thing, which is why the slicing exists. Measured on
+// the largest real aria (1624 messages, 38 turns): median 119 rendered rows,
+// p99 3063, max 4598 — and THREE turns each exceed the entire 2400-row
+// retained-window budget on their own. A whole-turn unit would blow the window
+// on a single entry and leave no way to scroll into it. Slicing at node
+// boundaries restores the 4..400-row unit the row geometry was tuned against.
 func committedMessages(p aria.Page) []aria.Message {
 	messages := make([]aria.Message, 0, len(p.Parts))
 	for _, part := range p.Parts {
 		if len(part.Nodes) == 0 {
 			continue
 		}
-		messages = append(messages, aria.Message{
-			LT: int(part.ID), Role: turnVoice(part.Nodes), Nodes: part.Nodes,
-		})
+		messages = appendTurnSlices(messages, part.ID, part.From, part.Nodes)
 	}
 	return messages
 }
+
+// transcriptUnitChars bounds one pager unit's payload. Characters, not rows,
+// so the split is a pure function of the page — no width, no renderer, no
+// per-frame cost. It only has to bound the unit, not measure it exactly.
+const transcriptUnitChars = 40000
+
+func nodeChars(n livedoc.Node) int {
+	return len(n.Markdown) + len(n.Output) + len(n.Summary)
+}
+
+// appendTurnSlices cuts a turn into bounded units at node boundaries, appending
+// into dst. A node is never split: the smallest unit is one node, however large,
+// because tool output is already clamped by composeBashCap.
+//
+// The whole-turn case is the overwhelming majority (38 turns -> 59 units on the
+// largest real aria) and is allocation-free: this is on the page-refetch path,
+// where an intermediate slice per part cost 25-37% of selection rehydrate.
+func appendTurnSlices(dst []aria.Message, id uint64, from uint64, nodes []livedoc.Node) []aria.Message {
+	total := 0
+	for _, n := range nodes {
+		total += nodeChars(n)
+	}
+	if total < transcriptUnitChars {
+		return append(dst, aria.Message{
+			LT: int(id), From: from, Role: turnVoice(nodes), Nodes: nodes,
+		})
+	}
+	start, budget := 0, 0
+	for i, n := range nodes {
+		budget += nodeChars(n)
+		if budget < transcriptUnitChars && i < len(nodes)-1 {
+			continue
+		}
+		seg := nodes[start : i+1]
+		dst = append(dst, aria.Message{
+			LT: int(id), From: from + uint64(start), Role: turnVoice(seg), Nodes: seg,
+		})
+		start, budget = i+1, 0
+	}
+	return dst
+}
+
+// sliceTurn is the standalone form, for tests and callers without a dst.
+func sliceTurn(id uint64, from uint64, nodes []livedoc.Node) []aria.Message {
+	return appendTurnSlices(nil, id, from, nodes)
+}
+
+// sliceKey identifies one pager unit: the turn id in the high bits, the node
+// offset within that turn in the low 20. Packed into one integer rather than a
+// struct because the row cache is a per-frame hot path and a two-word key
+// measurably slowed selection rehydrate (+40% at 10k messages). 2^20 nodes in a
+// single turn is not reachable; composeBashCap bounds a node long before that.
+type sliceKey int64
+
+const sliceKeyFromBits = 20
+
+func keyOf(m aria.Message) sliceKey {
+	return sliceKey(int64(m.LT)<<sliceKeyFromBits | int64(m.From))
+}
+
+// turn is the turn id a unit belongs to.
+func (k sliceKey) turn() int { return int(k >> sliceKeyFromBits) }
 
 // turnVoice is the coarse role a turn renders under. A turn holds both voices,
 // so per-node Role is the real answer; this only feeds surfaces that still ask
@@ -563,7 +630,7 @@ func (t *transcript) dropPage(page transcriptPage) {
 		if kept[m.LT] {
 			continue
 		}
-		delete(t.rowCache, m.LT)
+		delete(t.rowCache, keyOf(m))
 		for ref := range t.expanded {
 			if ref.lt == m.LT {
 				delete(t.expanded, ref)
@@ -738,9 +805,9 @@ func (t *transcript) pruneCaches() {
 			keep[m.LT] = true
 		}
 	}
-	for lt := range t.rowCache {
-		if !keep[lt] {
-			delete(t.rowCache, lt)
+	for k := range t.rowCache {
+		if !keep[k.turn()] {
+			delete(t.rowCache, k)
 		}
 	}
 	for ref := range t.expanded {
@@ -875,7 +942,7 @@ func (t *transcript) restoreViewportAnchor(lt, within int) {
 }
 
 func (t *transcript) invalidateRows() {
-	t.rowCache = map[int]cachedMessage{}
+	t.rowCache = map[sliceKey]cachedMessage{}
 }
 
 // lines renders the retained message window and live tail to physical rows.
@@ -1694,10 +1761,10 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 		if !t.messageMayRenderQuery(m, q) {
 			continue
 		}
-		rows, ok := t.rowCache[m.LT]
+		rows, ok := t.rowCache[keyOf(m)]
 		if !ok {
 			rows = t.renderMsgBase(m)
-			t.rowCache[m.LT] = rows
+			t.rowCache[keyOf(m)] = rows
 		}
 		for _, row := range rows.rows {
 			// searchText strips the gutter column plainNodeRow baked in.
@@ -1906,4 +1973,24 @@ func dimTransRule(w int) string {
 		w = 3
 	}
 	return "\x1b[2m" + strings.Repeat("─", w) + "\x1b[0m"
+}
+
+// dropTurnRows invalidates every slice of one turn. Expansion is addressed by
+// turn, but a tall turn is several units, so one toggle can touch more than one.
+func (t *transcript) dropTurnRows(lt int) {
+	t.dropTurnsRows(map[int]struct{}{lt: {}})
+}
+
+// dropTurnsRows is the batched form. Callers invalidating a set of turns must
+// use it: the cache is keyed by slice, so a per-turn call costs a full scan,
+// and scanning once per ref made selection rehydrate quadratic.
+func (t *transcript) dropTurnsRows(lts map[int]struct{}) {
+	if len(lts) == 0 {
+		return
+	}
+	for k := range t.rowCache {
+		if _, ok := lts[k.turn()]; ok {
+			delete(t.rowCache, k)
+		}
+	}
 }
