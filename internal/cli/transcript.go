@@ -1189,27 +1189,15 @@ func (t *transcript) setQueued(prompts []string, errMsg string) {
 // wipes it. (Deliberately a bottom panel, not a floating overlay: the terminal
 // has exactly one alternate buffer, and compositing a float into every live
 // repaint buys nothing over this.)
+//
+// The rows are GENERATED from the keymap (see keymap.go), so help that says a
+// key exists and a key that exists cannot drift apart. This function owns only
+// what the table cannot know: the pane's geometry and its dimming.
 func (t *transcript) helpLines() []string {
-	rows := []string{
-		"",
-		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",
-		"  ↑/↓ · PgUp/PgDn     the same, on the arrow cluster",
-		"  Home / End          top / bottom",
-		"  /                   search (Enter jump · Esc cancel typing)",
-		"  n / N               next / previous match",
-		"  y                   copy selection (or aria id if none)",
-		"  ^O                  toggle verbose tool output",
-		"  ^N/^P               select next/previous node",
-		"  ^N/^P + Shift       extend node selection (Alt+^N/^P fallback)",
-		"  Enter               expand tools within the selection",
-		"  ^C                  copy selected node(s) / interrupt turn",
-		"  Esc                 clear selection / close panel",
-		"  ^L                  listen — stay open after the turn ends",
-		"  q / ^D              detach; the turn keeps running",
-		"  !                   figaro status panel",
-		"  Q                   queued prompts panel",
-		"  ?                   close help",
-	}
+	body := helpBody()
+	rows := make([]string, 0, len(body)+3)
+	rows = append(rows, "")
+	rows = append(rows, body...)
 	if v := helpVersionLine(); v != "" {
 		rows = append(rows, "", "  "+v)
 	}

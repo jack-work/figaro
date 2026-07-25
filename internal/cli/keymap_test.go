@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -270,5 +271,113 @@ func TestKeymap_InlineKeysStayInline(t *testing.T) {
 		if lt.transcriptActive() {
 			t.Errorf("%s says it stays inline (%s) but opened the pager", bd.chord, bd.why)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The help panel, generated.
+// ---------------------------------------------------------------------------
+
+// TestHelpBody_MatchesTheOldHandWrittenPanel: the generated rows are, glyph
+// for glyph, the panel that used to be a hand-kept []string in helpLines. The
+// user must not see a difference — only correctness by construction.
+func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
+	want := []string{
+		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",
+		"  ↑/↓ · PgUp/PgDn     the same, on the arrow cluster",
+		"  Home / End          top / bottom",
+		"  /                   search (Enter jump · Esc cancel typing)",
+		"  n / N               next / previous match",
+		"  y                   copy selection (or aria id if none)",
+		"  ^O                  toggle verbose tool output",
+		"  ^N/^P               select next/previous node",
+		"  ^N/^P + Shift       extend node selection (Alt+^N/^P fallback)",
+		"  Enter               expand tools within the selection",
+		"  ^C                  copy selected node(s) / interrupt turn",
+		"  Esc                 clear selection / close panel",
+		"  ^L                  listen — stay open after the turn ends",
+		"  q / ^D              detach; the turn keeps running",
+		"  !                   figaro status panel",
+		"  Q                   queued prompts panel",
+		"  ?                   close help",
+	}
+	got := helpBody()
+	if len(got) != len(want) {
+		t.Fatalf("help panel has %d rows, want %d:\n%s", len(got), len(want), strings.Join(got, "\n"))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("row %d:\n got %q\nwant %q", i, got[i], want[i])
+		}
+	}
+}
+
+// TestHelp_EveryVisibleBindingIsDocumented is the anti-drift test: a binding
+// the user can press either points at a help row or is explicitly hidden, and
+// every help row documents at least one binding that is actually live.
+func TestHelp_EveryVisibleBindingIsDocumented(t *testing.T) {
+	rows := map[helpID]helpRow{}
+	for _, r := range helpRows {
+		if _, dup := rows[r.id]; dup {
+			t.Fatalf("help row %v declared twice", r.id)
+		}
+		rows[r.id] = r
+	}
+	documented := map[helpID]int{}
+	for i := range keymap {
+		bd := &keymap[i]
+		if bd.hidden() {
+			continue
+		}
+		if _, ok := rows[bd.help]; !ok {
+			t.Errorf("%s points at help row %d, which does not exist", bd.chord, bd.help)
+			continue
+		}
+		documented[bd.help]++
+	}
+	for _, r := range helpRows {
+		if documented[r.id] == 0 {
+			t.Errorf("help row %q documents no live binding — it should be deleted", r.text)
+		}
+	}
+}
+
+// TestHelp_PanelRendersTheTable: what reaches the screen is the table, in
+// table order, once the pager has dimmed and clipped it.
+func TestHelp_PanelRendersTheTable(t *testing.T) {
+	tr := &transcript{w: 200, h: 100}
+	got := tr.helpLines()
+	if len(got) < len(helpRows)+1 {
+		t.Fatalf("help panel rendered %d rows, want at least %d", len(got), len(helpRows)+1)
+	}
+	if stripANSI(got[0]) != "" {
+		t.Errorf("the panel must open with a blank spacer row, got %q", got[0])
+	}
+	for i, want := range helpBody() {
+		if line := stripANSI(got[i+1]); line != want {
+			t.Errorf("panel row %d = %q, want %q", i, line, want)
+		}
+		if !strings.HasPrefix(got[i+1], "\x1b[2m") {
+			t.Errorf("panel row %d is not dim: %q", i, got[i+1])
+		}
+	}
+}
+
+// TestHelp_HiddenBindingsStayOffTheList: ^T is deliberately undocumented (^L
+// covers entering the pager in the panel's telling). A hidden binding must
+// not sneak into the rendered help.
+func TestHelp_HiddenBindingsStayOffTheList(t *testing.T) {
+	hidden := 0
+	for i := range keymap {
+		if keymap[i].hidden() {
+			hidden++
+		}
+	}
+	if hidden == 0 {
+		t.Skip("no hidden bindings to check")
+	}
+	panel := strings.Join(helpBody(), "\n")
+	if strings.Contains(panel, "^T") {
+		t.Errorf("^T is a hidden binding but appears in the help panel:\n%s", panel)
 	}
 }
