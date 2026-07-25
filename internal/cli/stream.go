@@ -36,7 +36,7 @@ const (
 )
 
 // mustPromptFigaro is the interactive (TTY) prompt path. It renders the
-// aria-read wire through the incipit-seal renderer: closed messages seal to
+// aria-read wire through the incipit-freeze renderer: closed messages freeze to
 // native scrollback once and are never redrawn; only the open message is a live
 // region, so a terminal resize repaints just that bounded part. The renderer
 // folds each aria frame and animates spinners locally (no extra wire traffic).
@@ -68,7 +68,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 
 	// The renderer owns the cursor and assumes one row per line: disable the
 	// terminal's auto-margin so a full-width row never wraps, and hide the
-	// cursor. It draws in incipit (no alternate screen) — sealed output lands in
+	// cursor. It draws in incipit (no alternate screen) — frozen output lands in
 	// the normal scrollback.
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
 	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
@@ -966,11 +966,11 @@ func (in *interactiveInput) coalesceNewline(b byte) bool {
 }
 
 // dimRule returns a plain dim full-width horizontal rule — the opening rule and
-// the seal after a non-assistant (user/steering) message.
+// the closer after a non-assistant (user/steering) message.
 func dimRule() string { return term.Dim(strings.Repeat("─", termWidth())) }
 
 // abandonRule returns a labeled dim rule used when a live region ends without
-// a normal seal (crash, disconnect, interrupt-timeout). Shape: "─── [reason] ───..."
+// a normal freeze (crash, disconnect, interrupt-timeout). Shape: "─── [reason] ───..."
 func abandonRule(reason string) string {
 	return labeledRule("[" + reason + "]")
 }

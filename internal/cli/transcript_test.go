@@ -144,7 +144,7 @@ func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 
 	all := tr.lines()
 	if last := all[len(all)-1]; strings.TrimSpace(stripANSI(last)) == "" {
-		t.Fatalf("lines() must not end with a blank/separator (footer seals the last message); got %q", last)
+		t.Fatalf("lines() must not end with a blank/separator (footer closes the last message); got %q", last)
 	}
 	rule, statusRow := tr.footerRows(len(all), tr.h-2)
 	rule, statusRow = stripANSI(rule), stripANSI(statusRow)

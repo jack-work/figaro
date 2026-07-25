@@ -12,8 +12,8 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-// livelogTurn renders the aria-read wire. By default it uses the incipit-seal
-// renderer (closed messages seal to scrollback once; the open message is the one
+// livelogTurn renders the aria-read wire. By default it uses the incipit-freeze
+// renderer (closed messages freeze to scrollback once; the open message is the one
 // live region). Ctrl-T toggles a full-screen transcript pager (see transcript.go)
 // that shares the same aria.Client model, so both render the same conversation;
 // only the active view paints. Messages that close while the pager is up are
@@ -31,16 +31,16 @@ type livelogTurn struct {
 	open         []livedoc.Node
 	pending      *aria.Message
 	finished     bool
-	wantThinking bool // submit accepted: show the thinking footer once the user msg seals
+	wantThinking bool // submit accepted: show the thinking footer once the user msg freezes
 	thinkingOpen bool // an OpenThinking placeholder is live and not yet adopted
 	pace         framePacer
 
-	// lastSealedLT is the highest LT incipit has committed to native scrollback
-	// inline (via Seal). It marks the flush boundary: on leaving the pager,
+	// lastFrozenLT is the highest LT incipit has committed to native scrollback
+	// inline (via Freeze). It marks the flush boundary: on leaving the pager,
 	// everything past it is (re)printed to scrollback, so the turn you watched in
-	// the pager is left behind like a normal command. 0 means nothing was sealed
+	// the pager is left behind like a normal command. 0 means nothing was frozen
 	// inline (we entered the pager cold, e.g. `figaro listen`).
-	lastSealedLT int
+	lastFrozenLT int
 	pagerClosed  []aria.Message
 }
 
@@ -61,19 +61,19 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	t.client.OnClosed = func(m aria.Message) {
 		t.tr.observeCommitted(m)
 		if t.tr.active {
-			if t.lastSealedLT != 0 {
+			if t.lastFrozenLT != 0 {
 				t.pagerClosed = append(t.pagerClosed, m)
 			}
 			t.tr.render() // transcript renders from the shared client model
 		} else if m.Role == "assistant" {
 			t.pending = &m
 			if t.finished {
-				t.sealPending()
+				t.freezePending()
 			}
 		} else {
-			t.in.Seal(m) // incipit: seal to native scrollback
-			if m.LT > t.lastSealedLT {
-				t.lastSealedLT = m.LT
+			t.in.Freeze(m) // incipit: freeze to native scrollback
+			if m.LT > t.lastFrozenLT {
+				t.lastFrozenLT = m.LT
 			}
 			// Submit accepted and the prompt is now on screen: pin the thinking
 			// footer immediately, before the model's first token. The assistant
@@ -214,7 +214,7 @@ func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
 	return false
 }
 
-// armThinking marks that a submit was accepted: the next user-message seal
+// armThinking marks that a submit was accepted: the next user-message freeze
 // pins the thinking footer. No-op in the pager (it renders the footer itself).
 func (t *livelogTurn) armThinking() {
 	if !t.tr.active {
@@ -226,7 +226,7 @@ func (t *livelogTurn) apply(r aria.AriaRead)  { t.client.Apply(r) }
 func (t *livelogTurn) setDesync(fn func(int)) { t.client.OnDesync = fn }
 func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 
-// abandon closes a live region without a normal Seal: paint a labeled
+// abandon closes a live region without a normal Freeze: paint a labeled
 // dim rule across the boundary so what follows isn't glued to the orphaned
 // output. reason is the short label (e.g. "disconnected — turn continues").
 //
@@ -284,7 +284,7 @@ func (t *livelogTurn) finishTurn(reason string) {
 		return
 	}
 	hadPending := t.pending != nil
-	t.sealPending()
+	t.freezePending()
 	if t.thinkingOpen {
 		// The turn ended before any assistant content adopted the thinking
 		// placeholder (e.g. an immediate error). Drop it so nothing prints
@@ -299,12 +299,12 @@ func (t *livelogTurn) finishTurn(reason string) {
 	}
 }
 
-func (t *livelogTurn) sealPending() {
+func (t *livelogTurn) freezePending() {
 	if t.pending != nil {
 		t.in.Open(t.pending.LT, t.pending.Role, t.pending.Nodes)
-		t.in.Seal(*t.pending)
-		if t.pending.LT > t.lastSealedLT {
-			t.lastSealedLT = t.pending.LT
+		t.in.Freeze(*t.pending)
+		if t.pending.LT > t.lastFrozenLT {
+			t.lastFrozenLT = t.pending.LT
 		}
 		t.pending = nil
 	}
@@ -349,17 +349,17 @@ func (t *livelogTurn) leaveTranscript() {
 	t.flushTail()
 }
 
-// flushTail (re)prints the un-sealed tail of the conversation to scrollback.
-// Boundary: whatever incipit already sealed inline stays put; only what
+// flushTail (re)prints the un-frozen tail of the conversation to scrollback.
+// Boundary: whatever incipit already froze inline stays put; only what
 // streamed while the pager was up is emitted. If we entered the pager cold
-// (nothing sealed inline, e.g. `figaro listen`), bound the dump to the last
+// (nothing frozen inline, e.g. `figaro listen`), bound the dump to the last
 // turn rather than replaying the whole history. Resume clears the partial live
 // region the alt-screen restore left behind, prints the closed messages in
 // full, and — if a message is still streaming — reopens a live region.
 func (t *livelogTurn) flushTail() {
 	v := t.client.View()
-	from := t.lastSealedLT + 1
-	if t.lastSealedLT == 0 {
+	from := t.lastFrozenLT + 1
+	if t.lastFrozenLT == 0 {
 		from = lastTurnStartLT(v)
 	}
 	var closed []aria.Message
@@ -387,7 +387,7 @@ func (t *livelogTurn) flushTail() {
 	sort.SliceStable(closed, func(i, j int) bool { return closed[i].LT < closed[j].LT })
 	t.in.Resume(closed, openLT, openRole, open)
 	if len(closed) > 0 {
-		t.lastSealedLT = closed[len(closed)-1].LT
+		t.lastFrozenLT = closed[len(closed)-1].LT
 	}
 }
 

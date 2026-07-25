@@ -42,18 +42,18 @@ func diffRange(old, next []string) (first, last int) {
 }
 
 // Incipit renders an aria stream inline — no alternate screen. Closed messages
-// are printed to native scrollback exactly once (Seal) and never touched again;
+// are printed to native scrollback exactly once (Freeze) and never touched again;
 // only the open message is a live, redrawable region (Open). A resize repaints
 // just the open message — the bounded, mutable part — so committed history is
 // never reflowed. That is the structural fix for the resize/duplication class:
-// the immutability boundary (a sealed message) is also the resize boundary.
+// the immutability boundary (a frozen message) is also the resize boundary.
 //
-// Not safe for concurrent use; the caller serializes Open/Seal/Tick/Resize.
+// Not safe for concurrent use; the caller serializes Open/Freeze/Tick/Resize.
 type Incipit struct {
 	term    Terminal
 	view    NodeView
-	Bookend func() []string          // sealed after an assistant message (the two-row status footer)
-	Rule    func() string            // sealed after any other message (a plain full-width rule)
+	Bookend func() []string          // closes an assistant message (the two-row status footer)
+	Rule    func() string            // closes any other message (a plain full-width rule)
 	Header  func(role string) string // printed above each message; "" suppresses
 
 	tick     int
@@ -72,12 +72,12 @@ func NewIncipit(term Terminal, view NodeView) *Incipit {
 	return &Incipit{term: term, view: view}
 }
 
-// Seal finalizes a closed message. If it's the message currently live, its rows
+// Freeze finalizes a closed message. If it's the message currently live, its rows
 // are already on screen — drop the cursor below them and release the region.
 // Otherwise (a message we never streamed — catch-up) print its rows fresh,
 // prefaced with a blank line (same leading-space rule the live region applies
 // via compose).
-func (i *Incipit) Seal(m aria.Message) {
+func (i *Incipit) Freeze(m aria.Message) {
 	if m.LT == i.liveLT && i.liveLT != 0 {
 		i.dropBelow()
 		i.reset()
@@ -98,10 +98,10 @@ func (i *Incipit) Seal(m aria.Message) {
 	// Trailing separator: the same rule/bookend compose() paints, so a message
 	// printed fresh (a committed frame that never had a live region — e.g. a
 	// user prompt) is still closed off from what follows.
-	if seal := i.seal(m.Role); len(seal) > 0 {
+	if closer := i.closer(m.Role); len(closer) > 0 {
 		w, _ := i.term.Size()
 		b.WriteString("\r\n")
-		for _, s := range seal {
+		for _, s := range closer {
 			b.WriteString(clip(s, w))
 			b.WriteString("\r\n")
 		}
@@ -129,7 +129,7 @@ func (i *Incipit) Resume(closed []aria.Message, openLT int, openRole string, ope
 // printMessage writes a closed message's rows to scrollback (bookend after an
 // assistant message), leaving the cursor on a fresh line below. Each message is
 // prefaced with a blank line plus the role header (when configured) — the same
-// leading rule Seal/compose apply.
+// leading rule Freeze/compose apply.
 func (i *Incipit) printMessage(m aria.Message) {
 	body := i.renderNodes(m.Nodes)
 	if len(body) == 0 {
@@ -140,10 +140,10 @@ func (i *Incipit) printMessage(m aria.Message) {
 		rows = append(rows, h, "")
 	}
 	rows = append(rows, body...)
-	if seal := i.seal(m.Role); len(seal) > 0 {
+	if closer := i.closer(m.Role); len(closer) > 0 {
 		w, _ := i.term.Size()
 		rows = append(rows, "")
-		for _, s := range seal {
+		for _, s := range closer {
 			rows = append(rows, clip(s, w))
 		}
 	}
@@ -163,7 +163,7 @@ func (i *Incipit) Open(lt int, role string, nodes []livedoc.Node) {
 		return
 	}
 	if lt != i.liveLT {
-		// A new open message without a prior Seal: release whatever was live.
+		// A new open message without a prior Freeze: release whatever was live.
 		if i.liveLT != 0 {
 			i.dropBelow()
 		}
@@ -220,17 +220,17 @@ func (i *Incipit) Resize(nodes []livedoc.Node) {
 func (i *Incipit) compose(nodes []livedoc.Node) []string {
 	body := i.renderNodes(nodes)
 	// Every message is prefaced with a blank row and (when configured) a role
-	// header — sealed into scrollback alongside the rest of the live region.
+	// header — frozen into scrollback alongside the rest of the live region.
 	rows := make([]string, 0, len(body)+5)
 	rows = append(rows, "")
 	if h := i.header(i.role); h != "" {
 		rows = append(rows, h, "")
 	}
 	rows = append(rows, body...)
-	if seal := i.seal(i.role); len(seal) > 0 {
+	if closer := i.closer(i.role); len(closer) > 0 {
 		w, _ := i.term.Size()
 		rows = append(rows, "")
-		for _, s := range seal {
+		for _, s := range closer {
 			rows = append(rows, clip(s, w))
 		}
 	}
@@ -246,11 +246,11 @@ func (i *Incipit) header(role string) string {
 	return i.Header(role)
 }
 
-// seal returns the rows that close a message of the given role: the two-row
+// closer returns the rows that close a message of the given role: the two-row
 // status bookend after an assistant message, otherwise a plain full-width rule
 // (so the user's prompt is still separated from the reply). Empty if neither
 // is configured.
-func (i *Incipit) seal(role string) []string {
+func (i *Incipit) closer(role string) []string {
 	if role == "assistant" && i.Bookend != nil {
 		return i.Bookend()
 	}
@@ -332,7 +332,7 @@ func (i *Incipit) vmove(b *strings.Builder, target int) {
 	i.cur = target
 }
 
-// AbandonOpen ends the live region without a normal Seal (no figaro.aria
+// AbandonOpen ends the live region without a normal Freeze (no figaro.aria
 // close frame arrived). It moves the cursor past the live content and prints
 // line on a fresh row as a visual boundary, so the next stream lands on clean
 // ground. Use this when the agent dies mid-turn, the user disconnects with

@@ -1,7 +1,7 @@
 # The UI stream
 
 How a figaro conversation reaches your terminal: the **aria read** wire, the
-default **inline-seal** renderer (native scrollback), and the opt-in
+default **inline-freeze** renderer (native scrollback), and the opt-in
 **transcript** pager (a live, scrollable full-screen view).
 
 The data model behind all of this is the UI IR (`livedoc.Node`); see
@@ -50,7 +50,7 @@ Node types: `prose` (assistant/user markdown), `thinking` (extended-thinking),
 `tool` (an invocation folded with its streamed result), `steering` (a user
 message injected mid-turn — see below).
 
-## Default view: inline-seal, in native scrollback
+## Default view: inline-freeze, in native scrollback
 
 The default renderer (`internal/livelog/render`, `Inline`) draws **inline** — no
 alternate screen. The consequence is the headline feature:
@@ -61,13 +61,13 @@ alternate screen. The consequence is the headline feature:
 > doesn't capture the screen or hold it hostage in a pager.
 
 The mechanism that makes this safe: the **immutability boundary is the resize
-boundary.** A message that has closed is sealed to scrollback exactly once; only
+boundary.** A message that has closed is frozen to scrollback exactly once; only
 the *open* message is a live, redrawable region. So a terminal resize repaints
 just that bounded open part — committed history is never reflowed or duplicated.
 
 Each turn opens with one dim full-width rule (a boundary between your shell
 prompt and the response), every message is prefaced with a blank line, and a
-message seals with a trailing rule: the id·time **bookend** after the assistant
+message closes with a trailing rule: the id·time **bookend** after the assistant
 reply (gated on the `status_line` config), a plain wide rule after your prompt.
 
 Inline keybindings while a turn streams:
