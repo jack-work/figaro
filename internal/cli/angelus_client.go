@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
@@ -36,6 +37,37 @@ func angelusSocketPath() string {
 	return filepath.Join(angelusRuntimeDir(), "angelus.sock")
 }
 
+// angelusStartupLog is where a detaching angelus writes its early stderr.
+// The daemon inherits the descriptor for its lifetime, so it doubles as a
+// daemon log; ensureAngelus only truncates it when no daemon answered.
+func angelusStartupLog() string {
+	return filepath.Join(angelusRuntimeDir(), "angelus.startup")
+}
+
+// startupDiagnosisLines bounds how much of the daemon's early output is
+// quoted back — enough for a stack-free error, not a wall of slog.
+const startupDiagnosisLines = 8
+
+// startupDiagnosis quotes whatever the daemon managed to say before it
+// failed. Without it a deliberate refusal (the schema gate, a corrupt
+// store) is indistinguishable from a hang: the daemon detaches, so its
+// stderr is the only channel it has to explain itself.
+func startupDiagnosis() string {
+	b, err := os.ReadFile(angelusStartupLog())
+	if err != nil {
+		return ""
+	}
+	text := strings.TrimRight(string(b), "\n")
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) > startupDiagnosisLines {
+		lines = lines[len(lines)-startupDiagnosisLines:]
+	}
+	return ":\n  " + strings.Join(lines, "\n  ")
+}
+
 // ensureAngelus starts the angelus if needed.
 func ensureAngelus() {
 	sockPath := angelusSocketPath()
@@ -54,21 +86,41 @@ func ensureAngelus() {
 	cmd.Env = append(os.Environ(), "_FIGARO_DAEMON=1")
 	cmd.Stdin = nil
 	cmd.Stdout = nil
-	cmd.Stderr = nil
 	cmd.SysProcAttr = detachAttr()
+	// Best-effort: if we cannot open the log, fall back to the old
+	// discard rather than refusing to start a daemon over it.
+	if err := os.MkdirAll(angelusRuntimeDir(), 0o700); err == nil {
+		if f, err := os.Create(angelusStartupLog()); err == nil {
+			cmd.Stderr = f
+			defer f.Close() // the child holds its own dup
+		}
+	}
 	if err := cmd.Start(); err != nil {
 		die("start angelus: %s", err)
 	}
 
+	// The daemon is still our child until we exit, so a fast failure is
+	// observable — report it immediately instead of idling out the
+	// deadline on a process that is already gone.
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+
 	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	for {
 		if cli, err := angelus.DialClient(ep); err == nil {
 			cli.Close()
 			return
 		}
+		select {
+		case werr := <-exited:
+			die("angelus exited during startup (%v)%s", werr, startupDiagnosis())
+		default:
+		}
+		if !time.Now().Before(deadline) {
+			die("angelus did not start within 5 seconds%s", startupDiagnosis())
+		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	die("angelus did not start within 5 seconds")
 }
 
 func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
