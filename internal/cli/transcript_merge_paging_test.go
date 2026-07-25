@@ -206,7 +206,7 @@ func TestMergedGeometryMeasuresTheWindowNotTheRowCache(t *testing.T) {
 	// separator between messages.
 	wantRows, wantMsgs := 0, 0
 	tr.forEachMessage(func(m aria.Message) {
-		rows, ok := tr.rowCache[m.LT]
+		rows, ok := tr.rowCache[keyOf(m)]
 		if !ok {
 			t.Fatalf("retained message %d has no cached rows", m.LT)
 		}

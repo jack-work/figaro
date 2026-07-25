@@ -39,7 +39,7 @@ func legacyLines(t *transcript) ([]string, []int, map[nodeRef]nodeSpan) {
 		t.resetToTail()
 	}
 	if t.cacheW != t.w {
-		t.rowCache = map[int]cachedMessage{}
+		t.rowCache = map[sliceKey]cachedMessage{}
 		t.cacheW = t.w
 	}
 	marks := t.selectionMarks()
@@ -71,10 +71,10 @@ func legacyLines(t *transcript) ([]string, []int, map[nodeRef]nodeSpan) {
 		}
 	}
 	for _, m := range t.messages() {
-		rows, ok := t.rowCache[m.LT]
+		rows, ok := t.rowCache[keyOf(m)]
 		if !ok {
 			rows = t.renderMsgBase(m)
-			t.rowCache[m.LT] = rows
+			t.rowCache[keyOf(m)] = rows
 		}
 		appendMsg(rows.rows, m.LT)
 	}
@@ -259,7 +259,7 @@ func TestTranscriptVirtualWindow_ExpandedTools(t *testing.T) {
 	messages := tr.messages()
 	ref := nodeRef{lt: messages[2].LT, index: 2}
 	tr.expanded[ref] = true
-	delete(tr.rowCache, ref.lt)
+	tr.dropTurnRows(ref.lt)
 	assertWindowMatchesLegacy(t, tr, 21)
 }
 

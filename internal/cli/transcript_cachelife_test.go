@@ -74,7 +74,7 @@ func TestTranscriptEvictionKeepsRowsForRetainedPayloads(t *testing.T) {
 	kept := 0
 	for _, page := range tr.payloadLRU {
 		for _, m := range page.messages {
-			if _, ok := tr.rowCache[m.LT]; ok {
+			if _, ok := tr.rowCache[keyOf(m)]; ok {
 				kept++
 			}
 		}
@@ -91,7 +91,7 @@ func TestTranscriptEvictionKeepsRowsForRetainedPayloads(t *testing.T) {
 	}
 	misses := 0
 	for _, m := range tr.messages() {
-		if _, ok := tr.rowCache[m.LT]; !ok {
+		if _, ok := tr.rowCache[keyOf(m)]; !ok {
 			misses++
 		}
 	}
@@ -133,9 +133,9 @@ func TestTranscriptCachesStayBounded(t *testing.T) {
 		}
 	}
 	for lt := range tr.rowCache {
-		if !retained[lt] {
+		if !retained[lt.turn()] {
 			t.Fatalf("rowCache holds rows for unretained LT %d (cache=%d, retained=%d)",
-				lt, len(tr.rowCache), len(retained))
+				lt.turn(), len(tr.rowCache), len(retained))
 		}
 	}
 	if max := transcriptPageSize * (transcriptPageLimit + transcriptPayloadLRULimit); len(tr.rowCache) > max {
