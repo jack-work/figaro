@@ -79,8 +79,9 @@ type transcript struct {
 	lineLTBuf   []int    // reused LT buffer, aliased by lineLT
 	ruleStr     string   // memoized separator rule for ruleW columns
 	ruleW       int
-	paintBuf    []byte   // reused escape-sequence output buffer
-	screenSpare []string // the frame buffer displaced by the last paint
+	keepBuf     map[int]bool // reused live-LT set for pruneCaches
+	paintBuf    []byte       // reused escape-sequence output buffer
+	screenSpare []string     // the frame buffer displaced by the last paint
 	selection   nodeSelection
 	expanded    map[nodeRef]bool
 }
@@ -386,10 +387,16 @@ func (t *transcript) resetToTail() {
 }
 
 func (t *transcript) pruneCaches() {
-	keep := make(map[int]bool)
-	for _, m := range t.messages() {
-		keep[m.LT] = true
+	// Called from resetToTail, i.e. once per frame while following the live
+	// tail, so the LT set is reused rather than rebuilt.
+	keep := t.keepBuf
+	if keep == nil {
+		keep = make(map[int]bool, transcriptPageSize*transcriptPageLimit)
+		t.keepBuf = keep
+	} else {
+		clear(keep)
 	}
+	t.forEachMessage(func(m aria.Message) { keep[m.LT] = true })
 	for lt := range t.rowCache {
 		if !keep[lt] {
 			delete(t.rowCache, lt)

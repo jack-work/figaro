@@ -288,7 +288,9 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 	if n.StartedAt != 0 {
 		header += " " + term.Dim("["+toolDuration(n, time.Now())+"]")
 	}
-	rows := []string{header}
+	// Header, optional arg/timestamp lines, then the tail-clamped output.
+	rows := make([]string, 1, 6+max(bashCap, 0))
+	rows[0] = header
 
 	if expand && len(n.Args) > 0 {
 		const g = "  "
@@ -325,8 +327,9 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 			rows = append(rows, term.Dim(fmt.Sprintf("  │ … last %d of %d lines", bashCap, total)))
 		}
 		const gutter = "  │ "
+		dimGutter := term.Dim(gutter) // hoisted: one styled gutter, not one per line
 		for _, l := range lines {
-			rows = append(rows, term.Dim(gutter)+truncCols(l, width-len(gutter)))
+			rows = append(rows, dimGutter+truncCols(l, width-len(gutter)))
 		}
 	}
 	return rows
