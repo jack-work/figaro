@@ -197,7 +197,7 @@ func TestResponsesProviderStreamsAndCachesAssistant(t *testing.T) {
 	require.NoError(t, p.Send(context.Background(), provider.SendInput{
 		AriaID:    "aria-1",
 		FigLog:    log,
-		Snapshot:  chalkboard.Snapshot{"system.credo": json.RawMessage(`"be concise"`)},
+		Snapshot:  chalkboard.FromMap(map[string]json.RawMessage{"system.credo": json.RawMessage(`"be concise"`)}),
 		MaxTokens: 77,
 	}, bus))
 
@@ -320,7 +320,7 @@ func TestResponsesProviderAppliesChalkboardParameters(t *testing.T) {
 	require.NoError(t, p.Send(context.Background(), provider.SendInput{
 		AriaID: "aria-1",
 		FigLog: log,
-		Snapshot: chalkboard.Snapshot{
+		Snapshot: chalkboard.FromMap(map[string]json.RawMessage{
 			"system.context_tier":        json.RawMessage(`"long_context"`),
 			"system.thinking_effort":     json.RawMessage(`"high"`),
 			"system.reasoning_context":   json.RawMessage(`"all_turns"`),
@@ -328,7 +328,7 @@ func TestResponsesProviderAppliesChalkboardParameters(t *testing.T) {
 			"system.verbosity":           json.RawMessage(`"low"`),
 			"system.parallel_tool_calls": json.RawMessage(`false`),
 			"system.temperature":         json.RawMessage(`0.4`),
-		},
+		}),
 	}, &responseTestBus{}))
 
 	request := <-requests
@@ -351,46 +351,46 @@ func TestResponseOptionsRejectInvalidChalkboardParameters(t *testing.T) {
 	}{
 		{
 			name: "unknown context tier",
-			snap: chalkboard.Snapshot{
+			snap: chalkboard.FromMap(map[string]json.RawMessage{
 				"system.context_tier": json.RawMessage(`"wide"`),
-			},
+			}),
 		},
 		{
 			name: "unknown reasoning context",
-			snap: chalkboard.Snapshot{
+			snap: chalkboard.FromMap(map[string]json.RawMessage{
 				"system.reasoning_context": json.RawMessage(`"forever"`),
-			},
+			}),
 		},
 		{
 			name: "unknown reasoning summary",
-			snap: chalkboard.Snapshot{
+			snap: chalkboard.FromMap(map[string]json.RawMessage{
 				"system.reasoning_summary": json.RawMessage(`"full"`),
-			},
+			}),
 		},
 		{
 			name: "temperature out of range",
-			snap: chalkboard.Snapshot{
+			snap: chalkboard.FromMap(map[string]json.RawMessage{
 				"system.temperature": json.RawMessage(`2.1`),
-			},
+			}),
 		},
 		{
 			name: "top p out of range",
-			snap: chalkboard.Snapshot{
+			snap: chalkboard.FromMap(map[string]json.RawMessage{
 				"system.top_p": json.RawMessage(`0`),
-			},
+			}),
 		},
 		{
 			name: "temperature and top p",
-			snap: chalkboard.Snapshot{
+			snap: chalkboard.FromMap(map[string]json.RawMessage{
 				"system.temperature": json.RawMessage(`0.2`),
 				"system.top_p":       json.RawMessage(`0.8`),
-			},
+			}),
 		},
 		{
 			name: "parallel tools wrong type",
-			snap: chalkboard.Snapshot{
+			snap: chalkboard.FromMap(map[string]json.RawMessage{
 				"system.parallel_tool_calls": json.RawMessage(`"yes"`),
-			},
+			}),
 		},
 	}
 	for _, test := range tests {
@@ -418,9 +418,9 @@ func TestResponsesProviderContextTierBudget(t *testing.T) {
 
 	require.NoError(t, p.validateContext(in, "gpt-5.6-terra", responseRequestOptions{contextTier: "long_context"}))
 
-	in.Snapshot = chalkboard.Snapshot{
+	in.Snapshot = chalkboard.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`21`),
-	}
+	})
 	err = p.validateContext(in, "gpt-5.6-terra", responseRequestOptions{contextTier: "default"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exceeds the default-context limit")
@@ -441,15 +441,17 @@ func TestCopilotContextLimitUsesCachedCatalog(t *testing.T) {
 	c := &Copilot{catalog: map[string]catalogModel{"gpt-5.6-terra": model}}
 
 	assert.Equal(t, 128000, c.ContextLimit("gpt-5.6-terra", chalkboard.Snapshot{}))
-	assert.Equal(t, 1000000, c.ContextLimit("gpt-5.6-terra", chalkboard.Snapshot{
+	assert.Equal(t, 1000000, c.ContextLimit("gpt-5.6-terra", chalkboard.FromMap(map[string]json.RawMessage{
 		"system.context_tier": json.RawMessage(`"long_context"`),
-	}))
-	assert.Equal(t, 120000, c.ContextLimit("gpt-5.6-terra", chalkboard.Snapshot{
+	})))
+	assert.Equal(t, 120000, c.ContextLimit("gpt-5.6-terra", chalkboard.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`120000`),
-	}))
-	assert.Equal(t, 128000, c.ContextLimit("gpt-5.6-terra", chalkboard.Snapshot{
+	})))
+	// The pin is an override, not a clamp: it wins even when it is larger
+	// than the catalog's number.
+	assert.Equal(t, 2000000, c.ContextLimit("gpt-5.6-terra", chalkboard.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`2000000`),
-	}))
+	})))
 }
 
 func TestResponsesProviderInvalidatesCacheOnModelSwitch(t *testing.T) {

@@ -1,7 +1,6 @@
 package figaro
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1296,7 +1295,7 @@ func (a *Agent) combineChalkboardInput(input *rpc.ChalkboardInput) chalkboard.Pa
 	}
 	var ctxPatch chalkboard.Patch
 	if input.Context != nil {
-		ctx := withoutSystemNS(chalkboard.Snapshot(input.Context))
+		ctx := withoutSystemNS(chalkboard.FromMap(input.Context))
 		snap := a.chalkboard.Snapshot()
 		ctxPatch = additivePatch(ctx, snap)
 	}
@@ -1311,21 +1310,16 @@ func (a *Agent) combineChalkboardInput(input *rpc.ChalkboardInput) chalkboard.Pa
 	return chalkboard.Patch{}
 }
 
-// additivePatch returns a Set-only patch with ctx entries whose
-// values differ from snap. Keys present in snap but absent from ctx
-// are NOT removed — Context is purely additive by contract.
+// additivePatch returns a Set-only patch with ctx entries whose values
+// differ from snap. Keys present in snap but absent from ctx are NOT
+// removed — Context is purely additive by contract.
+//
+// Equality is the chalkboard's own (semantic JSON equality via the tree),
+// not bytes.Equal: a semantically equal Set keeps the board's existing
+// bytes, so a byte comparison would re-report the same key every turn and
+// fire a redundant <system-reminder> each time.
 func additivePatch(ctx, snap chalkboard.Snapshot) chalkboard.Patch {
-	var p chalkboard.Patch
-	for k, v := range ctx {
-		if old, ok := snap[k]; ok && bytes.Equal(old, v) {
-			continue
-		}
-		if p.Set == nil {
-			p.Set = map[string]json.RawMessage{}
-		}
-		p.Set[k] = v
-	}
-	return p
+	return snap.Apply(ctx.AsPatch()).Diff(snap)
 }
 
 func statusOf(err error) string {

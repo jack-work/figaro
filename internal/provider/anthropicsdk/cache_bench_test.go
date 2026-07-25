@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 )
@@ -138,7 +139,7 @@ func BenchmarkBuildParams(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_ = buildParams(projected.Messages, projected.LogicalTimes, nil, nil, 1024, false, "claude-test")
+				_ = buildParams(projected.Messages, projected.LogicalTimes, chalkboard.Snapshot{}, nil, 1024, false, "claude-test")
 			}
 		})
 	}
@@ -179,7 +180,7 @@ func BenchmarkMarshalParams(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			params := buildParams(projected.Messages, projected.LogicalTimes, nil, nil, 1024, false, "claude-test")
+			params := buildParams(projected.Messages, projected.LogicalTimes, chalkboard.Snapshot{}, nil, 1024, false, "claude-test")
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {

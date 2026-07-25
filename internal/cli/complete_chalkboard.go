@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"sort"
 	"strings"
@@ -116,9 +115,9 @@ func softFetchLiveKeys() []string {
 	return snapshotKeys(resp.Snapshot)
 }
 
-func snapshotKeys(snap map[string]json.RawMessage) []string {
-	out := make([]string, 0, len(snap))
-	for k := range snap {
+func snapshotKeys(snap chalkboard.Snapshot) []string {
+	out := make([]string, 0, snap.Len())
+	for k := range snap.All() {
 		out = append(out, k)
 	}
 	return out

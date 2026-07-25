@@ -85,8 +85,10 @@ func coalesceMessages(msgs []anthropic.MessageParam, lts []uint64) ([]anthropic.
 // guarantees MaxTokens exceeds the budget, which the API requires
 // (max_tokens must leave room for the response after the thinking budget).
 func applyThinking(params *anthropic.MessageNewParams, snap chalkboard.Snapshot, model string) {
-	budget := thinkingInt(snap["system.thinking_budget"])
-	effort := thinkingStr(snap["system.thinking_effort"])
+	budgetRaw, _ := snap.Get("system.thinking_budget")
+	effortRaw, _ := snap.Get("system.thinking_effort")
+	budget := thinkingInt(budgetRaw)
+	effort := thinkingStr(effortRaw)
 	if budget <= 0 && effort == "" {
 		return
 	}
@@ -172,7 +174,7 @@ func systemBlocks(snap chalkboard.Snapshot, oauth bool) []anthropic.TextBlockPar
 // ({content, frontmatter, filePath}). Prefers content, falls back
 // to frontmatter, then to a bare string.
 func readCredo(snap chalkboard.Snapshot) string {
-	raw, ok := snap["system.credo"]
+	raw, ok := snap.Get("system.credo")
 	if !ok {
 		return ""
 	}
@@ -295,7 +297,7 @@ func markCacheBreakpoints(params *anthropic.MessageNewParams, setting string) {
 // applyMessageTags reads system.tags and attaches per-message
 // cache_control overrides keyed by the figLog logical time.
 func applyMessageTags(params *anthropic.MessageNewParams, msgLTs []uint64, snap chalkboard.Snapshot) {
-	raw, ok := snap["system.tags"]
+	raw, ok := snap.Get("system.tags")
 	if !ok || len(raw) == 0 {
 		return
 	}

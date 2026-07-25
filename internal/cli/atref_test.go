@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/jack-work/figaro/internal/chalkboard"
 )
 
-func mkSnap(t *testing.T, kv map[string]any) map[string]json.RawMessage {
+func mkSnap(t *testing.T, kv map[string]any) chalkboard.Snapshot {
 	t.Helper()
 	out := make(map[string]json.RawMessage, len(kv))
 	for k, v := range kv {
@@ -16,7 +18,7 @@ func mkSnap(t *testing.T, kv map[string]any) map[string]json.RawMessage {
 		}
 		out[k] = b
 	}
-	return out
+	return chalkboard.FromMap(out)
 }
 
 func TestExpandAtRefs_BasicSubstitution(t *testing.T) {
@@ -161,11 +163,11 @@ func TestExpandAtRefs_NonStringValues(t *testing.T) {
 }
 
 func TestExpandAtRefs_EmptySnapshotNoop(t *testing.T) {
-	got := expandAtRefs("hi @cwd! there", nil)
+	got := expandAtRefs("hi @cwd! there", chalkboard.Snapshot{})
 	if got != "hi @cwd! there" {
-		t.Errorf("nil snapshot must passthrough, got %q", got)
+		t.Errorf("zero snapshot must passthrough, got %q", got)
 	}
-	got = expandAtRefs("hi @cwd! there", map[string]json.RawMessage{})
+	got = expandAtRefs("hi @cwd! there", chalkboard.FromMap(map[string]json.RawMessage{}))
 	if got != "hi @cwd! there" {
 		t.Errorf("empty snapshot must passthrough, got %q", got)
 	}

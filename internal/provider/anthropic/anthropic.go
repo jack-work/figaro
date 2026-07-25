@@ -24,6 +24,7 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/provider/anthropicmodels"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
@@ -52,6 +53,10 @@ type Anthropic struct {
 	CacheNamespace string
 	cache          store.Log[[]json.RawMessage]
 	projection     *provider.IncrementalProjection[provider.EncodedMessages]
+
+	// windows caches context windows learned from the models endpoint and
+	// falls back to the verified static table.
+	windows anthropicmodels.Catalog
 }
 
 // New constructs an Anthropic provider.
@@ -299,6 +304,9 @@ func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 		Data []struct {
 			ID          string `json:"id"`
 			DisplayName string `json:"display_name"`
+			// max_input_tokens is the model's context window.
+			MaxInputTokens int `json:"max_input_tokens"`
+			MaxTokens      int `json:"max_tokens"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -307,13 +315,31 @@ func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 
 	var models []provider.ModelInfo
 	for _, m := range result.Data {
+		// Remember the window so ContextLimit can report the provider's own
+		// number instead of the static table.
+		a.windows.Learn(m.ID, m.MaxInputTokens)
 		models = append(models, provider.ModelInfo{
-			ID:       m.ID,
-			Name:     m.DisplayName,
-			Provider: providerName,
+			ID:            m.ID,
+			Name:          m.DisplayName,
+			Provider:      providerName,
+			ContextWindow: m.MaxInputTokens,
+			MaxTokens:     m.MaxTokens,
 		})
 	}
 	return models, nil
+}
+
+// ContextLimit reports the model's context window: the user's pinned
+// system.max_context_tokens if set, else the window learned from the models
+// endpoint, else the verified static table (0 when unknown). No network I/O —
+// status surfaces call this.
+func (a *Anthropic) ContextLimit(model string, snapshot chalkboard.Snapshot) int {
+	if model == "" {
+		a.mu.Lock()
+		model = a.Model
+		a.mu.Unlock()
+	}
+	return a.windows.ContextLimit(model, snapshot)
 }
 
 func isOAuthToken(key string) bool {
@@ -698,7 +724,7 @@ func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 // readCredo extracts the credo text from a chalkboard snapshot,
 // handling both the bare-string and ContentEnvelope shapes.
 func readCredo(snapshot chalkboard.Snapshot) string {
-	raw, ok := snapshot["system.credo"]
+	raw, ok := snapshot.Get("system.credo")
 	if !ok {
 		return ""
 	}
@@ -769,7 +795,7 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 // applyMessageTags reads system.tags and applies per-message
 // cache_control overrides keyed by logical time.
 func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.Snapshot) {
-	raw, ok := snapshot["system.tags"]
+	raw, ok := snapshot.Get("system.tags")
 	if !ok || len(raw) == 0 {
 		return
 	}
@@ -1317,8 +1343,8 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 // applyThinking enables extended thinking on the request when the
 // chalkboard has system.thinking_budget or system.thinking_effort set.
 func applyThinking(req *nativeRequest, snap chalkboard.Snapshot, model string) {
-	budgetRaw, _ := snap["system.thinking_budget"]
-	effortRaw, _ := snap["system.thinking_effort"]
+	budgetRaw, _ := snap.Get("system.thinking_budget")
+	effortRaw, _ := snap.Get("system.thinking_effort")
 
 	var budget int
 	if len(budgetRaw) > 0 {

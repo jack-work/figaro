@@ -237,7 +237,7 @@ func (a *Agent) chalkboardString(key string) string {
 	if a.chalkboard == nil {
 		return ""
 	}
-	raw, ok := a.chalkboard.Snapshot()[key]
+	raw, ok := a.chalkboard.Snapshot().Get(key)
 	if !ok {
 		return ""
 	}
@@ -251,7 +251,7 @@ func (a *Agent) chalkboardInt(key string) int {
 	if a.chalkboard == nil {
 		return 0
 	}
-	raw, ok := a.chalkboard.Snapshot()[key]
+	raw, ok := a.chalkboard.Snapshot().Get(key)
 	if !ok {
 		return 0
 	}
@@ -263,7 +263,7 @@ func (a *Agent) chalkboardInt(key string) int {
 func (a *Agent) currentModel() string { return a.chalkboardString("system.model") }
 
 func snapshotString(snapshot chalkboard.Snapshot, key string) string {
-	raw, ok := snapshot[key]
+	raw, ok := snapshot.Get(key)
 	if !ok {
 		return ""
 	}
@@ -272,16 +272,21 @@ func snapshotString(snapshot chalkboard.Snapshot, key string) string {
 	return value
 }
 
-func snapshotContextLimit(snapshot chalkboard.Snapshot) int {
-	raw, ok := snapshot["system.max_context_tokens"]
-	if !ok {
-		return 0
+// resolveContextLimit reports the effective prompt cap for the current model.
+//
+// Precedence: an explicit system.max_context_tokens on the chalkboard wins
+// outright — it is an override, so a user pinning a smaller (or larger) window
+// must not be second-guessed by provider metadata. Only when it is unset does
+// the provider get asked. (This used to be the other way round, which made the
+// key unreachable for any provider that reported a limit.)
+func resolveContextLimit(prov provider.Provider, model string, snapshot chalkboard.Snapshot) int {
+	if limit, ok := provider.ContextLimitOverride(snapshot); ok {
+		return limit
 	}
-	var limit int
-	if json.Unmarshal(raw, &limit) != nil || limit <= 0 {
-		return 0
+	if resolver, ok := prov.(provider.ContextLimitProvider); ok {
+		return resolver.ContextLimit(model, snapshot)
 	}
-	return limit
+	return 0
 }
 
 // refreshMetrics runs at durable message boundaries, never on streaming
@@ -308,7 +313,7 @@ func (a *Agent) refreshMetrics() {
 			out += m.Usage.OutputTokens
 			cacheRead += m.Usage.CacheReadTokens
 			cacheWrite += m.Usage.CacheWriteTokens
-			contextTokens = m.Usage.InputTokens + m.Usage.OutputTokens
+			contextTokens = tokens.ContextFromUsage(m.Usage)
 			contextExact = true
 		} else {
 			contextTokens += tokens.EstimateMessage(m)
@@ -325,13 +330,7 @@ func (a *Agent) refreshMetrics() {
 
 	snapshot := a.Snapshot()
 	model := snapshotString(snapshot, "system.model")
-	contextLimit := 0
-	if resolver, ok := a.prov.(provider.ContextLimitProvider); ok {
-		contextLimit = resolver.ContextLimit(model, snapshot)
-	}
-	if contextLimit == 0 {
-		contextLimit = snapshotContextLimit(snapshot)
-	}
+	contextLimit := resolveContextLimit(a.prov, model, snapshot)
 
 	a.mu.Lock()
 	a.tokensIn = in
@@ -367,13 +366,7 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	}
 	snapshot := a.Snapshot()
 	model := snapshotString(snapshot, "system.model")
-	contextLimit := 0
-	if resolver, ok := a.prov.(provider.ContextLimitProvider); ok {
-		contextLimit = resolver.ContextLimit(model, snapshot)
-	}
-	if contextLimit == 0 {
-		contextLimit = snapshotContextLimit(snapshot)
-	}
+	contextLimit := resolveContextLimit(a.prov, model, snapshot)
 
 	a.mu.Lock()
 	a.tokensIn = in

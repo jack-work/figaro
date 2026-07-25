@@ -76,6 +76,14 @@ func runRestWithFlags(force, keepPIDs bool) {
 		"angelus (pid %d) did not rest within 15s; try `figaro rest --force`\n", pid)
 }
 
+// dashCount renders a token count for the models table, "-" when unknown.
+func dashCount(n int) string {
+	if n <= 0 {
+		return "-"
+	}
+	return formatCtxCell(n)
+}
+
 // runModels lists provider models.
 func runModels(loaded *config.Loaded) {
 	ensureHush()
@@ -89,7 +97,7 @@ func runModels(loaded *config.Loaded) {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(w, "PROVIDER\tMODEL ID\tNAME\n")
+	fmt.Fprintf(w, "PROVIDER\tMODEL ID\tNAME\tCONTEXT\tMAX OUT\n")
 
 	for _, name := range providerNames {
 		prov, _ := buildProvider(loaded, name)
@@ -102,7 +110,8 @@ func runModels(loaded *config.Loaded) {
 			continue
 		}
 		for _, m := range models {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", m.Provider, m.ID, m.Name)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+				m.Provider, m.ID, m.Name, dashCount(m.ContextWindow), dashCount(m.MaxTokens))
 		}
 	}
 	w.Flush()

@@ -163,8 +163,8 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 		return nil
 	}
 	st, _ := chalkboard.Open("")
-	if len(snap) > 0 {
-		st.Apply(chalkboard.Patch{Set: snap})
+	if snap.Len() > 0 {
+		st.Apply(snap.AsPatch())
 	}
 	return st
 }
@@ -322,7 +322,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		if serr != nil {
 			return nil, fmt.Errorf("read conversation chalkboard: %w", serr)
 		}
-		cbState.Apply(chalkboard.Patch{Set: snap})
+		cbState.Apply(snap.AsPatch())
 	}
 
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
@@ -1101,7 +1101,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 	}
 	cbSnap := cb.Snapshot()
 	cbStr := func(key string) string {
-		raw, ok := cbSnap[key]
+		raw, ok := cbSnap.Get(key)
 		if !ok {
 			return ""
 		}
@@ -1110,7 +1110,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		return s
 	}
 	cbInt := func(key string) int {
-		raw, ok := cbSnap[key]
+		raw, ok := cbSnap.Get(key)
 		if !ok {
 			return 0
 		}
@@ -1119,7 +1119,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		return n
 	}
 	cbBool := func(key string) bool {
-		raw, ok := cbSnap[key]
+		raw, ok := cbSnap.Get(key)
 		if !ok {
 			return false
 		}

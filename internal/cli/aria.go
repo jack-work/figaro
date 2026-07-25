@@ -279,7 +279,7 @@ func renderAriaIR(loaded *config.Loaded, figaroID string, entries []store.Entry[
 	// fetch the live snapshot through the angelus. Best-effort: the credo and
 	// chalkboard sections degrade to empty rather than aborting the dump.
 	snap := fetchChalkboardSnapshot(loaded, figaroID)
-	if raw, ok := snap["system.credo"]; ok {
+	if raw, ok := snap.Get("system.credo"); ok {
 		// system.credo may be a bare string or a ContentEnvelope object
 		// ({content, frontmatter, filePath}). Prefer content, fall back to
 		// frontmatter, then to the raw string.

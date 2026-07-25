@@ -1,8 +1,6 @@
 package figaro
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -54,17 +52,18 @@ func (a *Agent) ApplyLoadout(name string) ([]string, error) {
 	if loaded.IsEmpty() {
 		return nil, nil
 	}
-	// Additive diff: keep only keys missing or with a different value.
+	// Additive diff: keep only keys missing or holding a different value.
+	//
+	// The comparison must be the chalkboard's own (semantic JSON equality,
+	// via Apply+Diff over the persistent tree), NOT bytes.Equal. Setting a
+	// semantically equal value keeps the board's original bytes, so a byte
+	// comparison would keep reporting the same keys as changed on every
+	// re-apply — and every one of those would be persisted as a patch record
+	// and rendered as a <system-reminder> at the agent. Diffing the applied
+	// board against the current one answers exactly "what actually changed".
 	current := a.chalkboard.Snapshot()
-	additive := chalkboard.Patch{Set: map[string]json.RawMessage{}}
-	for k, v := range loaded.Set {
-		old, ok := current[k]
-		if ok && bytes.Equal(old, v) {
-			continue
-		}
-		additive.Set[k] = v
-	}
-	if len(additive.Set) == 0 {
+	additive := current.Apply(chalkboard.Patch{Set: loaded.Set}).Diff(current)
+	if additive.IsEmpty() {
 		return nil, nil
 	}
 	set, _, err := a.Set(additive)
@@ -72,11 +71,14 @@ func (a *Agent) ApplyLoadout(name string) ([]string, error) {
 }
 
 func withoutSystemNS(s chalkboard.Snapshot) chalkboard.Snapshot {
-	out := make(chalkboard.Snapshot, len(s))
-	for k, v := range s {
-		if !strings.HasPrefix(k, "system.") {
-			out[k] = v
+	var drop []string
+	for k := range s.All() {
+		if strings.HasPrefix(k, "system.") {
+			drop = append(drop, k)
 		}
 	}
-	return out
+	if len(drop) == 0 {
+		return s
+	}
+	return s.Apply(chalkboard.Patch{Remove: drop})
 }

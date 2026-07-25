@@ -53,3 +53,20 @@ a conversation fork graph) to long retention. The decision is funnelled
 through `resolveCacheControl` so a provider-implemented, memoized scorer can
 slot in once the IR carries a fork graph. The fourth breakpoint is reserved
 for it.
+
+## Caching and the context figure
+
+Because the whole prompt is normally a cache *read*, the context size shown by
+`figaro status` / `figaro list` must sum all three input buckets plus the
+turn's output:
+
+```
+InputTokens + CacheReadTokens + CacheWriteTokens + OutputTokens
+```
+
+`tokens.ContextFromUsage` is the one definition; both the full fold
+(`tokens.ContextSize`) and the agent's incremental fast path
+(`Agent.refreshMetrics`) go through it, and `TestRefreshMetricsIncrementalMatchesFullFold`
+keeps them honest. Summing only Input+Output — as figaro did before — reports
+a cached aria as a few thousand tokens when it is really a few hundred
+thousand.

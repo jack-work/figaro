@@ -266,6 +266,6 @@ func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
 	}
 	// Snapshot key survives.
 	snap := cb.Snapshot()
-	_, ok := snap["skills.go"]
+	ok := snap.Has("skills.go")
 	assert.True(t, ok, "skills.go must remain on the chalkboard")
 }

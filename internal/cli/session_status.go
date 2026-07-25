@@ -246,3 +246,17 @@ func bookendLines(status *sessionStatus) []string {
 		term.Dim(status.statusLine(w, false)),
 	}
 }
+
+// formatCtxCell renders a context size for the narrow CTX column in `list`:
+// "820", "135k", "1.0m". Whole thousands below a million keep the cell short;
+// million-scale windows would otherwise read as "1000k".
+func formatCtxCell(tokens int) string {
+	switch {
+	case tokens >= 1_000_000:
+		return fmt.Sprintf("%.1fm", float64(tokens)/1_000_000)
+	case tokens >= 1_000:
+		return fmt.Sprintf("%dk", tokens/1_000)
+	default:
+		return fmt.Sprintf("%d", tokens)
+	}
+}

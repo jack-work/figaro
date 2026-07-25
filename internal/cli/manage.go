@@ -184,7 +184,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			}
 			ctxStr := "-"
 			if f.ContextTokens > 0 {
-				ctxStr = fmt.Sprintf("%dk", f.ContextTokens/1000)
+				ctxStr = formatCtxCell(f.ContextTokens)
 				if !f.ContextExact {
 					ctxStr = "~" + ctxStr
 				}

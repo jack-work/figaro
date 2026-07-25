@@ -728,7 +728,7 @@ func escapeResponseAttr(value string) string {
 }
 
 func responseInstructions(snap chalkboard.Snapshot) string {
-	raw, ok := snap["system.credo"]
+	raw, ok := snap.Get("system.credo")
 	if !ok {
 		return ""
 	}
@@ -750,7 +750,7 @@ func responseInstructions(snap chalkboard.Snapshot) string {
 }
 
 func responseString(snap chalkboard.Snapshot, key string) string {
-	raw, ok := snap[key]
+	raw, ok := snap.Get(key)
 	if !ok {
 		return ""
 	}
@@ -845,7 +845,7 @@ func responseOptionsFor(snap chalkboard.Snapshot) (responseRequestOptions, error
 }
 
 func responseOptionalString(snap chalkboard.Snapshot, key string) (string, bool, error) {
-	raw, ok := snap[key]
+	raw, ok := snap.Get(key)
 	if !ok || string(raw) == "null" {
 		return "", false, nil
 	}
@@ -857,7 +857,7 @@ func responseOptionalString(snap chalkboard.Snapshot, key string) (string, bool,
 }
 
 func responseOptionalBool(snap chalkboard.Snapshot, key string) (bool, bool, error) {
-	raw, ok := snap[key]
+	raw, ok := snap.Get(key)
 	if !ok || string(raw) == "null" {
 		return false, false, nil
 	}
@@ -869,7 +869,7 @@ func responseOptionalBool(snap chalkboard.Snapshot, key string) (bool, bool, err
 }
 
 func responseOptionalFloat(snap chalkboard.Snapshot, key string) (float64, bool, error) {
-	raw, ok := snap[key]
+	raw, ok := snap.Get(key)
 	if !ok || string(raw) == "null" {
 		return 0, false, nil
 	}
@@ -881,7 +881,7 @@ func responseOptionalFloat(snap chalkboard.Snapshot, key string) (float64, bool,
 }
 
 func responseOptionalInt(snap chalkboard.Snapshot, key string) (int, bool, error) {
-	raw, ok := snap[key]
+	raw, ok := snap.Get(key)
 	if !ok || string(raw) == "null" {
 		return 0, false, nil
 	}

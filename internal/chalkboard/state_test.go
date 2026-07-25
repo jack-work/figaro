@@ -17,7 +17,7 @@ func TestState_OpenMissing_EmptySnapshot(t *testing.T) {
 	s, err := chalkboard.Open(filepath.Join(dir, "chalkboard.json"))
 	require.NoError(t, err)
 	defer s.Close()
-	assert.Empty(t, s.Snapshot())
+	assert.Equal(t, 0, s.Snapshot().Len())
 }
 
 func TestState_ApplyAndSave_RoundTrip(t *testing.T) {
@@ -32,7 +32,7 @@ func TestState_ApplyAndSave_RoundTrip(t *testing.T) {
 		"cwd":          json.RawMessage(`"/home/figaro"`),
 	}}
 	post := s.Apply(patch)
-	assert.Equal(t, json.RawMessage(`"/home/figaro"`), post["cwd"])
+	assert.Equal(t, json.RawMessage(`"/home/figaro"`), val(post, "cwd"))
 
 	require.NoError(t, s.Save())
 
@@ -41,8 +41,8 @@ func TestState_ApplyAndSave_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	defer s2.Close()
 	snap := s2.Snapshot()
-	assert.Equal(t, json.RawMessage(`"you are figaro"`), snap["system.credo"])
-	assert.Equal(t, json.RawMessage(`"/home/figaro"`), snap["cwd"])
+	assert.Equal(t, json.RawMessage(`"you are figaro"`), val(snap, "system.credo"))
+	assert.Equal(t, json.RawMessage(`"/home/figaro"`), val(snap, "cwd"))
 }
 
 func TestState_Snapshot_ReturnsClone(t *testing.T) {
@@ -52,10 +52,12 @@ func TestState_Snapshot_ReturnsClone(t *testing.T) {
 
 	s.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"v"`)}})
 	snap1 := s.Snapshot()
-	snap1["k"] = json.RawMessage(`"mutated"`) // mutate the clone
+	// Derive a mutated snapshot from the clone.
+	snap1 = snap1.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{"k": json.RawMessage(`"mutated"`)}})
+	_ = snap1
 
 	snap2 := s.Snapshot()
-	assert.Equal(t, json.RawMessage(`"v"`), snap2["k"], "State's internal snapshot must not be affected by clone mutations")
+	assert.Equal(t, json.RawMessage(`"v"`), val(snap2, "k"), "State's internal snapshot must not be affected by clone mutations")
 }
 
 func TestState_Save_NotDirty_NoOp(t *testing.T) {
@@ -98,8 +100,7 @@ func TestState_RemovePatch(t *testing.T) {
 	defer s2.Close()
 	s2.Apply(chalkboard.Patch{Remove: []string{"k"}})
 	snap := s2.Snapshot()
-	_, has := snap["k"]
-	assert.False(t, has)
+	assert.False(t, snap.Has("k"))
 	require.NoError(t, s2.Save())
 }
 

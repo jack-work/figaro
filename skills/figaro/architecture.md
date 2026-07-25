@@ -13,9 +13,10 @@ source named here and trust it over this file.
   shells. `figaro rest` stops it; the next command respawns it.
 - **Agent** (`internal/figaro`) — one per aria (= one conversation). Owns the
   figLog (IR), the chalkboard, the tool registry, and the turn loop. Mutations
-  funnel through its **inbox** (an event queue) so the single-owner chalkboard
-  and log are never touched concurrently — e.g. a `figaro set` arriving
-  mid-turn is serialized, not raced.
+  funnel through its **inbox** (an event queue), so there is exactly one
+  writer to the chalkboard and the log — e.g. a `figaro set` arriving mid-turn
+  is serialized, not raced. Chalkboard *reads* need no inbox: snapshots are
+  immutable and published atomically (see the chalkboard section).
 
 ## The IR — `internal/message`
 
@@ -34,8 +35,7 @@ provider's wire cache; see Provider layer).
 
 ## The chalkboard — `internal/chalkboard`
 
-Per-aria key→JSON state. `State` is **single-owner, not concurrency-safe**
-(mutated only via the agent's inbox). Two namespaces:
+Per-aria key→JSON state. Two namespaces:
 
 - `system.*` — harness-reserved. Providers read these directly
   (`system.credo`, `system.model`, `system.cwd`, `system.cache_control`,
@@ -47,6 +47,72 @@ Per-aria key→JSON state. `State` is **single-owner, not concurrency-safe**
   how the agent learns its `aria_id`, `mantra`, skills, etc. A boot patch
   stamps runtime fill-ins each first turn (`system.cwd`, `system.root`, and a
   non-system `aria_id` so the agent can address itself on the CLI).
+
+### Representation — immutable tree, atomic publication
+
+`Snapshot` is a **two-word handle on an immutable AVL tree** with structural
+sharing (`tree.go`, lifted from `github.com/jack-work/pstate`), not a map:
+
+```go
+type Snapshot struct {
+	root    *node   // immutable, shared between snapshots
+	version uint64
+}
+```
+
+- `Clone()` is the **identity function**. It used to deep-copy every value on
+  every read (per RPC, per turn, inside `chalkboardString`).
+- `Apply` **path-copies**: only the O(k·log n) nodes on the touched paths are
+  new; every other subtree is shared with the receiver. A patch that changes
+  nothing returns the receiver *pointer-identically*, and `State.Apply` then
+  does not even mark the board dirty.
+- `Diff` (`treediff.go`) is a merge-join by key with a **pointer-identity
+  short-circuit**: `prev == next` proves a whole subtree is unchanged, so a
+  one-key delta costs ~10 node comparisons on a 1024-key board. The
+  short-circuit is a pure optimisation — the algorithm is correct without it,
+  which matters because AVL rotations move nodes.
+- Read through `Get`/`Has`/`Len`/`All` (lexical key order); construct from a
+  map through `FromMap` (**the seam** — the only constructor); `AsPatch()` is
+  the Set-only patch of every entry.
+- `Value` (`value.go`) holds the caller's **exact bytes** (`raw`) plus a
+  canonical form (compacted, object keys sorted recursively) used **only** for
+  `Equal`, computed lazily on first comparison and memoised. Nothing ever
+  rewrites stored bytes. That is what keeps `chalkboard.json` byte-identical
+  while making equality semantic: a value that changes only in key order,
+  whitespace or escape spelling compares equal and fires **no**
+  `<system-reminder>`. Numbers compare by literal token, so `1` and `1.0` are
+  different edits.
+- **A semantically-equal `Set` is a no-op that keeps the OLD bytes** and returns
+  the same root pointer. So never ask "did this key change?" with
+  `bytes.Equal` against the stored value — it will answer yes forever. Ask the
+  board: `cur.Apply(candidate).Diff(cur)`.
+- `MarshalJSON`/`UnmarshalJSON` emit and read the **flat object** form
+  (`{"key": value, …}`, keys lexical). Three things consume it: the reducible
+  chalkboard channel's watermark/state records in the aria store (see
+  [arias.md](arias.md) — those are content-hashed), the `figaro.chalkboard` RPC
+  response, and `State.Save`'s `chalkboard.json` when a State is opened with a
+  path (the agent opens with `""`, i.e. in-memory only). `MarshalJSON`
+  delegates to `encoding/json` over a `map[string]json.RawMessage` and never
+  hand-rolls the object: `encoding/json`
+  compacts a raw message and rewrites `<`, `>`, `&` as `\u003c`, `\u003e`,
+  `\u0026`, and that post-processing is part of the bytes already on disk.
+- **The custom codec is charged twice.** `encoding/json` re-scans a marshaler's
+  output and pre-scans an unmarshaler's input: ~2x on a 15KB board, for
+  identical bytes. Hot paths (`chalkboardReduce`, `State.Open`/`Save`) call
+  `MarshalJSON`/`UnmarshalJSON` **directly** to skip it;
+  `TestSnapshotDirectCodecMatchesEncodingJSON` pins that the two spellings
+  agree. See `RESULTS.md` §4.
+
+`State` (`state.go`) is **one writer, many readers**. The writer is the agent's
+drain loop (`act` → `applyControlPatch` → `State.Apply`); readers are the
+`figaro.chalkboard` handler, `Agent.ApplyLoadout` and
+`Agent.chalkboardString`/`chalkboardInt`, all on RPC goroutines. `State`
+publishes `{snapshot, dirty}` as one immutable value through an
+`atomic.Pointer`, so readers are **lock-free** and always see a complete
+board. (Before that, `State.snapshot` was a plain field read with no
+happens-before edge — a genuine data race, 11 reports per `-race` run.) One
+writer means the update path stores unconditionally; no CAS loop. `Save`
+clears the dirty flag with a single non-looping CAS.
 
 Loadouts (`internal/outfit`) assemble the boot chalkboard from `config.toml`'s
 `default_loadout` chain. `fileName`/`dirName` tables load file bodies as

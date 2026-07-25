@@ -272,7 +272,7 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	snapshot, err := backend.ChalkboardState(id)
 	require.NoError(t, err)
 	cb, _ := chalkboard.Open("")
-	cb.Apply(chalkboard.Patch{Set: snapshot})
+	cb.Apply(snapshot.AsPatch())
 	createdAt := time.UnixMilli(1_000)
 	lastActive := time.UnixMilli(2_000)
 
