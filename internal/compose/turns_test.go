@@ -149,3 +149,58 @@ func TestSteeringDoesNotOpenTurn(t *testing.T) {
 		t.Fatal("an assistant message must not open a turn")
 	}
 }
+
+// withLTs assigns sequential logical times the way the store does on read:
+// LT is the frame index, not a payload field.
+func withLTs(msgs []message.Message) []message.Message {
+	for i := range msgs {
+		msgs[i].LogicalTime = uint64(i + 1)
+	}
+	return msgs
+}
+
+// TurnSpan is THE resolver: it is what turns the number a human types in
+// `fig send <aria>:<turn>` into the atMainLT a fork takes. first must be the
+// PROMPT's LT — atMainLT is exclusive of the frozen prefix, so forking there
+// shares everything strictly before the question and replaces the question
+// onward.
+func TestTurnSpan(t *testing.T) {
+	msgs := withLTs(conversation())
+	// conversation(): [boot, prompt1, asst, toolresult+steering, asst, prompt2, asst]
+	//        LT:         1      2       3         4               5      6       7
+	for _, c := range []struct{ turn, first, last uint64 }{
+		{1, 2, 5},
+		{2, 6, 7},
+	} {
+		first, last, ok := TurnSpan(msgs, c.turn)
+		if !ok || first != c.first || last != c.last {
+			t.Fatalf("turn %d: got (%d,%d,%v), want (%d,%d,true)", c.turn, first, last, ok, c.first, c.last)
+		}
+	}
+}
+
+// The span's first LT must be a user prompt for every turn. That is the whole
+// safety argument for turn addressing: a fork boundary that is always a user
+// message can never strand a tool_invoke without its result, so interrupted-
+// tool synthesis is unreachable for a user-initiated fork.
+func TestTurnSpanAlwaysStartsOnAPrompt(t *testing.T) {
+	msgs := withLTs(conversation())
+	last := StampTurnIDs(msgs)
+	for turn := uint64(1); turn <= last; turn++ {
+		first, _, ok := TurnSpan(msgs, turn)
+		if !ok {
+			t.Fatalf("turn %d missing", turn)
+		}
+		for _, m := range msgs {
+			if m.LogicalTime == first && !OpensTurn(m) {
+				t.Fatalf("turn %d starts at LT %d which does not open a turn", turn, first)
+			}
+		}
+	}
+}
+
+func TestTurnSpanUnknown(t *testing.T) {
+	if _, _, ok := TurnSpan(withLTs(conversation()), 99); ok {
+		t.Fatal("turn 99 should not resolve")
+	}
+}

@@ -186,24 +186,28 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 	return opts, rest, nil
 }
 
-// parseSendTarget splits a send target spec into a trunk id and an optional
-// :<LT>. "" -> bound trunk, no LT. ":6" -> bound trunk at LT 6. "t1:6" ->
-// trunk t1 at LT 6. "t1" -> trunk t1, no LT.
-func parseSendTarget(spec string) (trunk string, atMainLT uint64, hasLT bool, err error) {
+// parseTarget splits a target spec into a trunk id and an optional :<turn>.
+// "" -> bound trunk, no turn. ":6" -> bound trunk at turn 6. "t1:6" -> trunk
+// t1 at turn 6. "t1" -> trunk t1, no turn.
+//
+// The suffix is a TURN ID, not an LT. LT is the model's coordinate — it counts
+// the steps the model experienced — and it is the wrong thing to hand a human,
+// because most LTs sit mid-tool where a fork would strand a tool_invoke without
+// its result. A turn is the exchange: your question and everything the agent
+// did about it. `figaro show` prints the turn id; that is the number you type.
+//
+// Shared by `send` and `fork` so the two cannot drift apart.
+func parseTarget(spec string) (trunk string, turn uint64, hasTurn bool, err error) {
 	if spec == "" {
 		return "", 0, false, nil
 	}
 	if i := strings.LastIndex(spec, ":"); i >= 0 {
 		trunk = spec[:i]
-		ltStr := spec[i+1:]
-		if ltStr == "" {
-			return "", 0, false, fmt.Errorf("bad target %q (want [<trunk>]:<LT>)", spec)
+		n, perr := strconv.ParseUint(spec[i+1:], 10, 64)
+		if perr != nil || n == 0 {
+			return "", 0, false, fmt.Errorf("bad :<turn> in %q (want [<trunk>]:<n>, turns start at 1)", spec)
 		}
-		lt, perr := strconv.ParseUint(ltStr, 10, 64)
-		if perr != nil {
-			return "", 0, false, fmt.Errorf("bad :<LT> in %q (want [<trunk>]:<n>)", spec)
-		}
-		hasLT, atMainLT = true, lt
+		turn, hasTurn = n, true
 	} else {
 		trunk = spec
 	}
@@ -212,7 +216,7 @@ func parseSendTarget(spec string) (trunk string, atMainLT uint64, hasLT bool, er
 			return "", 0, false, verr
 		}
 	}
-	return trunk, atMainLT, hasLT, nil
+	return trunk, turn, hasTurn, nil
 }
 
 // validateSendID wraps rpc.ValidateAriaID with a friendlier error
@@ -248,7 +252,7 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 	if spec == "" {
 		spec = opts.target
 	}
-	trunkID, atMainLT, hasLT, perr := parseSendTarget(spec)
+	trunkID, turn, hasTurn, perr := parseTarget(spec)
 	if perr != nil {
 		die("send: %s", perr)
 	}
@@ -268,17 +272,17 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 
 	set := renderSettings{verbose: opts.verbose, listen: opts.listen}
 
-	// `send <trunk>:<LT>` — fork at LT, then send. The message lands on
-	// whichever trunk we end up attended to: the new alternative by default
+	// `send <trunk>:<turn>` — fork at that turn, then send. The message lands
+	// on whichever trunk we end up attended to: the new alternative by default
 	// (rebind), or the original with --attend=false/--stay.
-	if hasLT {
+	if hasTurn {
 		if opts.ephemeral || opts.exec || opts.verbatim {
-			die("send: <trunk>:<LT> is not compatible with --ephemeral/--exec/--verbatim")
+			die("send: <trunk>:<turn> is not compatible with --ephemeral/--exec/--verbatim")
 		}
-		runSendForkAt(loaded, trunkID, atMainLT, opts.stay, opts.json, prompt, set)
+		runSendForkAt(loaded, trunkID, turn, opts.stay, opts.json, prompt, set)
 		return
 	}
-	// No LT: a positional target is just the aria to send to.
+	// No turn: a positional target is just the aria to send to.
 	if opts.id == "" {
 		opts.id = trunkID
 	}
