@@ -217,6 +217,11 @@ func (i *Incipit) Resize(nodes []livedoc.Node) {
 	i.paint(i.compose(nodes))
 }
 
+// LiveHeight is the row count of the open, redrawable region. Zero when nothing
+// is live. A viewport shorter than this cannot be repainted in place: the
+// terminal scrolls the overflow into native scrollback before our code runs.
+func (i *Incipit) LiveHeight() int { return len(i.live) }
+
 func (i *Incipit) compose(nodes []livedoc.Node) []string {
 	body := i.renderNodes(nodes)
 	// Every message is prefaced with a blank row and (when configured) a role

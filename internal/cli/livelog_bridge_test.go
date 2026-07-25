@@ -104,3 +104,51 @@ func TestTranscriptExitFlushesClosuresBeyondClientTail(t *testing.T) {
 		t.Fatalf("flush state = LT %d, queued %d", lt.lastFrozenLT, len(lt.pagerClosed))
 	}
 }
+
+// A shrink shorter than the live region is the one case inline drawing cannot
+// fix, so resize reports that the caller should escape to the pager. Any other
+// resize repaints in place — an unconditional jump would be jarring.
+func TestResizePromotesOnlyOnDestructiveShrink(t *testing.T) {
+	newTurn := func() *livelogTurn {
+		var out bytes.Buffer
+		lt := newLivelogTurn(&out, 80, 40, &renderSettings{}, "aria1234", time.Now(),
+			newSessionStatus("aria1234", time.Now()), nil, nil)
+		// Tall enough to exceed minPagerHeight, short enough that openOverflows
+		// does NOT already promote at the starting geometry. This test covers the
+		// complementary trigger: the viewport shrinking onto stable content.
+		md := strings.Repeat("live row\n\n", 7)
+		lt.apply(aria.AriaRead{Live: &aria.Live{LT: 2, V: 0, Role: "assistant",
+			Nodes: []aria.NodeDelta{{ID: "n0", Set: map[string]any{"type": "prose", "markdown": md}}}}})
+		return lt
+	}
+
+	lt := newTurn()
+	if lt.tr.active {
+		t.Fatal("openOverflows already promoted; pick a shorter fixture")
+	}
+	tall := lt.in.LiveHeight()
+	if tall <= minPagerHeight {
+		t.Fatalf("live region must exceed minPagerHeight to exercise the gate: %d", tall)
+	}
+	lt.resize(80, tall-1)
+	if !lt.tr.active {
+		t.Fatalf("shrink below live height (%d) must promote to the pager", tall)
+	}
+
+	lt = newTurn()
+	lt.resize(80, tall+5)
+	if lt.tr.active {
+		t.Fatal("a grow must not promote")
+	}
+	lt.resize(80, tall)
+	if lt.tr.active {
+		t.Fatal("an exact fit must not promote")
+	}
+
+	// A pane too small for the pager's own chrome must neither promote nor crash.
+	lt = newTurn()
+	lt.resize(80, 3)
+	if lt.tr.active {
+		t.Fatal("below minPagerHeight must not thrash into the pager")
+	}
+}

@@ -258,13 +258,30 @@ func (t *livelogTurn) tick() {
 	}
 }
 
+// resize repaints for the new geometry, escaping to the pager when the shrink
+// is destructive. A viewport shorter than the live region is the one case
+// inline drawing cannot fix — the terminal scrolls those rows into native
+// scrollback before our code runs, so they are unreachable for in-place
+// repaint. The pager has no live region to lose.
+//
+// This is the complement of openOverflows, which catches the same hazard from
+// the other direction (content growing past a fixed viewport), and it promotes
+// the same cheap way: tr.enter() renders from the client model already in
+// hand. Doing a catch-up read here instead would stall the resize handler for
+// seconds while incipit kept painting into a viewport that no longer fits it.
+//
+// Gated on minPagerHeight so a pane too small for the pager's own chrome does
+// not thrash into it.
 func (t *livelogTurn) resize(w, h int) {
 	t.term.SetSize(w, h)
+	if !t.tr.active && h >= minPagerHeight && t.in.LiveHeight() > h {
+		t.tr.enter()
+	}
 	if t.tr.active {
 		t.tr.resize(w, h)
-	} else {
-		t.in.Resize(t.open)
+		return
 	}
+	t.in.Resize(t.open)
 }
 
 // render repaints the active view (e.g. after a verbosity toggle).
