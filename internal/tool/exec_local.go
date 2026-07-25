@@ -138,17 +138,6 @@ func (e *LocalExecutor) Start(req ExecRequest, onChunk func([]byte)) (Process, e
 	return p, nil
 }
 
-// exitCode extracts a process exit code from cmd.Wait's error.
-func exitCode(waitErr error) int {
-	if waitErr == nil {
-		return 0
-	}
-	if exitErr, ok := waitErr.(*exec.ExitError); ok {
-		return exitErr.ExitCode()
-	}
-	return -1
-}
-
 // localProcess is a LocalExecutor-started command. cmd.Wait runs once
 // in a goroutine started by Start; Wait here just blocks on done.
 type localProcess struct {

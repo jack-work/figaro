@@ -81,28 +81,6 @@ func hardWrap(s string, width int) []string {
 	return out
 }
 
-// displayWidth counts visible columns in s, skipping ANSI escape sequences.
-func displayWidth(s string) int {
-	col := 0
-	rs := []rune(s)
-	for i := 0; i < len(rs); {
-		if rs[i] == '\x1b' {
-			j := i + 1
-			for j < len(rs) && !isLetter(rs[j]) {
-				j++
-			}
-			if j < len(rs) {
-				j++
-			}
-			i = j
-			continue
-		}
-		col++
-		i++
-	}
-	return col
-}
-
 func isLetter(r rune) bool { return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') }
 
 var _ = utf8.RuneCountInString // reserved for a future width strategy

@@ -25,9 +25,6 @@ const (
 	RoleGenesis Role = "genesis"
 )
 
-// IsGenesis reports whether m is a structural birth message.
-func IsGenesis(m Message) bool { return m.Role == RoleGenesis }
-
 // IsCeremonial reports whether m is a structural/inherited marker rather than
 // a conversational message: the root genesis sentinel, or the loadout-birth
 // (a RoleUser message with no renderable content — it carries only the
@@ -153,10 +150,6 @@ type Message struct {
 	// chalkboard values: system.model / system.provider, derived on read.)
 	Usage      *Usage     `json:"usage,omitempty"`
 	StopReason StopReason `json:"stop_reason,omitempty"`
-
-	// Deprecated: tool result metadata moving to Content blocks.
-	ToolCallID string `json:"tool_call_id,omitempty"`
-	ToolName   string `json:"tool_name,omitempty"`
 
 	// Logical time: monotonic counter, unique per session. Populated on
 	// read from the WAL frame index (the authoritative LT); omitempty so

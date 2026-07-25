@@ -95,7 +95,6 @@ func (w *rotatingWriter) Close() error {
 
 var (
 	requestDuration otelmetric.Float64Histogram
-	toolCallCounter otelmetric.Int64Counter
 	instrumentsOnce sync.Once
 )
 
@@ -240,13 +239,6 @@ func initInstruments(m otelmetric.Meter) {
 		if err != nil {
 			slog.Warn("metric init", "name", "request.duration", "err", err)
 		}
-		toolCallCounter, err = m.Int64Counter(
-			"figaro.tool.calls",
-			otelmetric.WithDescription("Tool dispatches by status"),
-		)
-		if err != nil {
-			slog.Warn("metric init", "name", "tool.calls", "err", err)
-		}
 	})
 }
 
@@ -295,13 +287,4 @@ func RecordRequestDuration(ctx context.Context, d time.Duration, attrs ...attrib
 		return
 	}
 	requestDuration.Record(ctx, float64(d.Milliseconds()), otelmetric.WithAttributes(attrs...))
-}
-
-// RecordToolCall counts a tool dispatch outcome.
-func RecordToolCall(ctx context.Context, status string, attrs ...attribute.KeyValue) {
-	if toolCallCounter == nil {
-		return
-	}
-	all := append([]attribute.KeyValue{attribute.String("status", status)}, attrs...)
-	toolCallCounter.Add(ctx, 1, otelmetric.WithAttributes(all...))
 }

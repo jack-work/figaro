@@ -510,18 +510,6 @@ func truncRunes(s string, n int) string {
 	return string(r[:n-2]) + ".."
 }
 
-// vectorString renders a fork vector as a dotted path ("0.1.0"); "-" if empty.
-func vectorString(v []int) string {
-	if len(v) == 0 {
-		return "-"
-	}
-	parts := make([]string, len(v))
-	for i, c := range v {
-		parts[i] = strconv.Itoa(c)
-	}
-	return strings.Join(parts, ".")
-}
-
 // vectorLess orders fork vectors as a depth-first preorder; an empty
 // vector sorts after any non-empty one.
 func vectorLess(a, b []int) bool {
