@@ -390,6 +390,9 @@ var (
 	openerByte [256]bool
 	openerNav  [navCount]bool
 	openerCtrl [26]bool
+
+	// ctrlChordLetters marks the letters the table binds as CSI-u Ctrl chords.
+	ctrlChordLetters [26]bool
 )
 
 // navCount bounds the nav index; navEnd is the last logical motion.
@@ -428,6 +431,9 @@ func buildKeyIndex() {
 				idx.byCtrl[m][bd.chord.b-'a'] = int16(i)
 			}
 		}
+		if bd.chord.kind == chordCtrlLetter {
+			ctrlChordLetters[bd.chord.b-'a'] = true
+		}
 		if bd.open == opensPager {
 			switch bd.chord.kind {
 			case chordByte:
@@ -461,6 +467,22 @@ func (idx *keyIndex) lookup(mode keyMode, ev keyEvent) *keyBinding {
 		return nil
 	}
 	return &keymap[i]
+}
+
+// ctrlChordLetter reports whether a CSI-u report should be treated as a
+// Ctrl+letter CHORD — modifiers and all — rather than reduced to the control
+// byte it would otherwise arrive as. The table decides: only letters some row
+// binds as a chordCtrlLetter qualify, so CSI-u Ctrl-D still detaches through
+// the 0x04 row exactly as a raw byte does.
+func ctrlChordLetter(key modifiedKey) (byte, bool) {
+	if !key.ctrl || key.nav != navNone {
+		return 0, false
+	}
+	letter := key.code | 0x20 // fold Ctrl-Shift-N's 'N' onto 'n'
+	if letter < 'a' || letter > 'z' {
+		return 0, false
+	}
+	return letter, ctrlChordLetters[letter-'a']
 }
 
 // opensTranscript reports whether a key pressed during inline (incipit)

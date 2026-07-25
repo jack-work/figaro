@@ -314,13 +314,9 @@ func (t *livelogTurn) sealPending() {
 // caught the model up via figaro.read so it shows full history).
 func (t *livelogTurn) enterTranscript() { t.tr.enter() }
 
-// transcriptKey routes a navigation/search key to the locked transcript.
-// Transcript never self-exits; leaving is Ctrl-D/Ctrl-C at the input loop.
-func (t *livelogTurn) transcriptKey(b byte) { t.tr.key(b) }
-
-// transcriptNav routes an arrow-cluster key to the same motions as the letter
-// keys; see (*transcript).navMotion.
-func (t *livelogTurn) transcriptNav(n navKey) { t.tr.navMotion(n) }
+// transcriptDispatch routes one decoded keystroke to the locked transcript.
+// One path in, whatever the key's encoding was: see (*transcript).dispatch.
+func (t *livelogTurn) transcriptDispatch(ev keyEvent) { t.tr.dispatch(ev) }
 
 func (t *livelogTurn) invalidateTranscriptRows() { t.tr.invalidateRows() }
 

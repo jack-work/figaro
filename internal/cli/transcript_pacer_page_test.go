@@ -100,8 +100,8 @@ func TestPacedPageLanding_IsNeverSwallowed(t *testing.T) {
 	// Scroll to the top, which arms an older fetch; settle so the pacer owes
 	// nothing and the next refusal is unambiguously the page's.
 	mu.Lock()
-	lt.transcriptKey('g')
-	lt.transcriptKey('g')
+	lt.transcriptDispatch(keyEvent{b: 'g'})
+	lt.transcriptDispatch(keyEvent{b: 'g'})
 	req, need := lt.transcriptPageCursor()
 	mu.Unlock()
 	settle()

@@ -684,27 +684,29 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				continue
 			}
 		}
-		var b byte
+		// Decode: bytes and escape encodings become one logical chord. This
+		// is the only part of the loop that knows about terminals; from the
+		// keyEvent on, the keymap decides everything (see keymap.go).
+		var ev keyEvent
 		if key, consumed, ok, need := parseModifiedKey(data[i:]); need {
 			pending = append(pending, data[i:]...)
 			break
 		} else if ok {
 			i += consumed
-			if key.ctrl && (key.code == 'n' || key.code == 'N' || key.code == 'p' || key.code == 'P') {
-				in.enterTranscript()
-				ev := keyEvent{ctrl: 'n', shift: key.shift, alt: key.alt, mode: mode}
-				if key.code == 'p' || key.code == 'P' {
-					ev.ctrl = 'p'
-					inputSelectPrev(in, ev)
-				} else {
-					inputSelectNext(in, ev)
+			if letter, isCtrl := ctrlChordLetter(key); isCtrl {
+				// A Ctrl+letter the table binds as a CSI-u chord, modifiers
+				// intact (Shift/Alt extend the node selection). Every other
+				// CSI-u key reduces to the byte it would have arrived as.
+				ev = keyEvent{ctrl: letter, shift: key.shift, alt: key.alt, mode: mode}
+			} else {
+				b, representable := key.asByte()
+				if !representable {
+					continue
 				}
-				continue
-			}
-			var representable bool
-			b, representable = key.asByte()
-			if !representable {
-				continue
+				if in.coalesceNewline(b) {
+					continue
+				}
+				ev = keyEvent{b: b, mode: mode}
 			}
 		} else if data[i] == 0x1b {
 			// A leading ESC we didn't recognize as CSI-u. Delimit the rest of
@@ -719,83 +721,59 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 				i += ec
 				in.lastNL = 0
 				// Delimited, now classified: the arrow cluster drives the
-				// pager instead of being dropped on the floor. Everything
-				// else stays swallowed whole, exactly as before.
-				if key, ok := navKeyFor(seq); ok {
-					in.enterTranscript()
-					in.mu.Lock()
-					in.cancelTranscriptSearchLocked()
-					in.lt.transcriptNav(key.nav)
-					in.mu.Unlock()
-					in.pageWanted = true
+				// pager. Everything else stays swallowed whole.
+				key, ok := navKeyFor(seq)
+				if !ok {
+					continue
 				}
+				ev = keyEvent{nav: key.nav, shift: key.shift, alt: key.alt, mode: mode}
+			} else {
+				// Bare Esc: a key in its own right.
+				b := data[i]
+				i++
+				if in.coalesceNewline(b) {
+					continue
+				}
+				ev = keyEvent{b: b, mode: mode}
+			}
+		} else {
+			// Coalesce CR+LF (and the mirrored LF+CR) into ONE newline event.
+			// Windows conhost — and some other terminals — emit both bytes for
+			// a single Enter keypress; without this dedup a toggle binding on
+			// Enter fires twice per press and appears stuck. parseModifiedKey
+			// handles the CSI-u path (Enter as code 13); this raw-byte
+			// fallback is the one that sees non-CSI-u terminals.
+			b := data[i]
+			i++
+			if in.coalesceNewline(b) {
 				continue
 			}
-			b = data[i]
-			i++
-		} else {
-			b = data[i]
-			i++
+			ev = keyEvent{b: b, mode: mode}
 		}
-		// Coalesce CR+LF (and the mirrored LF+CR) into ONE newline event.
-		// Windows conhost — and some other terminals — emit both bytes for
-		// a single Enter keypress; without this dedup a toggle binding on
-		// Enter fires twice per press and appears stuck. Reasoning from
-		// key_input.go: parseModifiedKey handles the CSI-u path (Enter as
-		// code 13); the raw-byte fallback here is the one that sees
-		// non-CSI-u terminals and needs the coalescing.
-		if in.coalesceNewline(b) {
-			continue
-		}
-		if !active && opensTranscriptFor(b) {
+		// A key whose pager meaning is a sensible OPENING gesture yanks the
+		// pager up first, so it acts on arrival instead of looking like a dead
+		// keyboard. Which keys those are is one field on one table row.
+		if ev.mode == modeIncipit && opensTranscript(ev) {
 			in.enterTranscript()
 			in.mu.Lock()
-			mode = in.lt.transcriptMode()
+			ev.mode = in.lt.transcriptMode()
 			in.mu.Unlock()
-			active = mode != modeIncipit
 		}
-		ev := keyEvent{b: b, mode: mode}
-		// Universal control keys — identical in incipit and transcript.
-		switch b {
-		case 0x03: // Ctrl-C: interrupt / cancel a copy / clear a selection
-			if inputInterrupt(in, ev) == keyStop {
+		// Input-level rows first: the keys that own the process (interrupt,
+		// detach, listen, clipboard) rather than the viewport.
+		if bd := inputIndex.lookup(ev.mode, ev); bd != nil {
+			if bd.input(in, ev) == keyStop {
 				return pending, true
 			}
 			continue
-		case 0x04: // Ctrl-D: disconnect; the turn keeps running
-			if inputDisconnect(in, ev) == keyStop {
-				return pending, true
-			}
-			continue
-		case 'q': // detach parity with Ctrl-D when the pager is up
-			// Not in incipit (nothing to detach from), and literal text
-			// while the search box is up.
-			if mode == modeTranscript || mode == modePanel {
-				if inputDisconnect(in, ev) == keyStop {
-					return pending, true
-				}
-				continue
-			}
-		case 0x0c: // Ctrl-L: listen (stay open past turn-done) + transcript
-			inputListen(in, ev)
-			continue
-		case 0x14: // Ctrl-T: enter transcript (no-op if already there)
-			inputEnterTranscript(in, ev)
-			continue
-		case 0x0f: // Ctrl-O: toggle verbosity
-			inputToggleVerbose(in, ev)
-			continue
-		case 'y': // copy selection if any, else copy the aria id (OSC 52)
-			if mode != modeSearch { // in the search box it is literal text
-				inputYank(in, ev)
-				continue
-			}
 		}
-		// Remaining keys drive the pager (scroll/search) when active.
-		if active {
+		// Nothing owns it up here: the pager gets it — a motion, a panel, or
+		// literal text in the search box. In incipit there is nothing to give
+		// it to.
+		if ev.mode != modeIncipit {
 			in.mu.Lock()
 			in.cancelTranscriptSearchLocked()
-			in.lt.transcriptKey(b)
+			in.lt.transcriptDispatch(ev)
 			in.mu.Unlock()
 			in.pageWanted = true
 		}
