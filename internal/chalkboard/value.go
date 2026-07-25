@@ -50,10 +50,18 @@ type Value struct {
 // bytes that are not valid JSON are kept verbatim with no canonical form, and
 // such values fall back to byte-exact comparison in Equal.
 //
+// Empty input becomes the null literal. Empty bytes are not a JSON value and
+// encoding/json already emits a nil json.RawMessage as null, so normalising
+// here loses nothing and buys an important guarantee: what a Value stores is
+// exactly what Raw emits, with no substitution at read time.
+//
 // The caller must not modify raw afterwards. Values are shared freely between
 // snapshots (that is the whole point of the persistent tree), so a mutation
 // through a retained slice header corrupts every snapshot at once.
 func NewValue(raw json.RawMessage) Value {
+	if len(raw) == 0 {
+		raw = json.RawMessage("null")
+	}
 	canon, err := canonicalJSON(raw)
 	if err != nil {
 		return Value{raw: raw}

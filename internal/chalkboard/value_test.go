@@ -98,7 +98,7 @@ func TestValueRawPreservedAndEmitted(t *testing.T) {
 }
 
 func TestValueInvalidJSONFallsBackToBytes(t *testing.T) {
-	bad := []string{``, `{`, `not json`, `1 2`, `{"a":1} trailing`, "\x00\xff"}
+	bad := []string{`{`, `not json`, `1 2`, `{"a":1} trailing`, "\x00\xff"}
 	for _, s := range bad {
 		v := NewValue(json.RawMessage(s))
 		if v.IsJSON() {
@@ -114,9 +114,19 @@ func TestValueInvalidJSONFallsBackToBytes(t *testing.T) {
 		if v.Equal(mustValue(t, `{"a":1}`)) {
 			t.Errorf("NewValue(%q) equal to a valid value", s)
 		}
-		if got := v.String(); s != "" && got != s {
+		if got := v.String(); got != s {
 			t.Errorf("String() = %q, want %q", got, s)
 		}
+	}
+}
+
+func TestValueEmptyIsNull(t *testing.T) {
+	v := NewValue(nil)
+	if !v.IsJSON() || v.String() != "null" {
+		t.Fatalf("NewValue(nil) = %q valid=%v, want the null literal", v, v.IsJSON())
+	}
+	if !v.Equal(mustValue(t, `null`)) || !v.Equal(NewValue(json.RawMessage(""))) {
+		t.Fatal("empty input did not normalise to null")
 	}
 }
 
