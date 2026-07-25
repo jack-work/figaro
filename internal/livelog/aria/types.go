@@ -65,9 +65,13 @@ type Metrics struct {
 	Mantra           string `json:"mantra,omitempty"`
 }
 
-// Live is one frame of the open message: its record version and the per-node
-// field deltas. Role appears on the first frame (v 0) and on catch-up snapshots.
+// Live is the open suffix of a turn: its record version and the per-node field
+// deltas. From is the suffix boundary — a node whose id is below it is
+// committed and can never receive a delta, which is what lets a page that
+// stops short of From be as immutable as a sealed one. Role appears on the
+// first frame (v 0) and on catch-up snapshots.
 type Live struct {
+	From  uint64      `json:"from"`
 	LT    int         `json:"lt"`
 	V     int         `json:"v"`
 	Role  string      `json:"role,omitempty"`
