@@ -10,7 +10,7 @@ import (
 
 // pageOnce drives one older-page fetch through the same path the input loop
 // uses, serving from an in-memory history.
-func pageOnce(t *testing.T, tr *transcript, history []aria.Committed, dir transcriptPageDirection) bool {
+func pageOnce(t *testing.T, tr *transcript, history []aria.TurnPart, dir transcriptPageDirection) bool {
 	t.Helper()
 	if dir == pageOlder {
 		tr.offset, tr.checkOlder = 0, true
@@ -29,14 +29,14 @@ func pageOnce(t *testing.T, tr *transcript, history []aria.Committed, dir transc
 	if len(messages) == 0 {
 		if req.after != 0 {
 			r, _ := readNextPage(req.after, req.watermark, pageLimit,
-				func(before, limit int) (aria.AriaRead, error) { return readBefore(history, before, limit), nil })
-			messages = committedMessages(r.Committed)
+				func(before, limit int) (aria.Page, error) { return readBefore(history, before, limit), nil })
+			messages = committedMessages(r)
 		} else {
 			limit := pageLimit
 			if req.expected.Count != 0 {
 				limit = req.expected.Count
 			}
-			messages = committedMessages(readBefore(history, req.before, limit).Committed)
+			messages = committedMessages(readBefore(history, req.before, limit))
 		}
 	}
 	tr.applyPage(req, messages)

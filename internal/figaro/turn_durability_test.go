@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	ariaLog "github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
@@ -361,8 +363,8 @@ func (n *panicOnceNotifier) Notify(method string, params any) error {
 	if method != rpc.MethodAriaFrame {
 		return nil
 	}
-	read, ok := params.(ariaLog.AriaRead)
-	if !ok || read.Live == nil || read.Live.Role != "assistant" {
+	read, ok := params.(ariaLog.Page)
+	if !ok || read.LiveTail() == nil {
 		return nil
 	}
 	n.mu.Lock()
@@ -427,13 +429,20 @@ func TestPanicAfterIRBeforeLiveCommitReconcilesCanonicalAssistant(t *testing.T) 
 	reason := waitDoneReason(t, ch)
 	assert.Contains(t, reason, "crashed and was restarted")
 
-	read := a.Read(0)
-	require.Nil(t, read.Live)
-	require.NotEmpty(t, read.Committed)
-	last := read.Committed[len(read.Committed)-1]
-	assert.Equal(t, "assistant", last.Role)
+	read := a.Read(aria.Anchor{Turn: 0}, 1<<20)
+	require.Nil(t, read.LiveTail())
+	require.NotEmpty(t, read.Parts)
+	last := read.Parts[len(read.Parts)-1]
 	require.NotEmpty(t, last.Nodes)
-	assert.Contains(t, last.Nodes[0].Markdown, "canonical assistant")
+	// The turn holds the prompt at node 0, so look for the reply among the
+	// nodes rather than assuming it is first.
+	found := false
+	for _, n := range last.Nodes {
+		if strings.Contains(n.Markdown, "canonical assistant") {
+			found = true
+		}
+	}
+	assert.True(t, found, "the turn must hold the canonical assistant reply: %+v", last.Nodes)
 }
 
 type panicQueueProvider struct {
@@ -474,8 +483,8 @@ func (n *queuePanicNotifier) Notify(method string, params any) error {
 	if method != rpc.MethodAriaFrame {
 		return nil
 	}
-	read, ok := params.(ariaLog.AriaRead)
-	if !ok || read.Live == nil || read.Live.Role != "assistant" {
+	read, ok := params.(ariaLog.Page)
+	if !ok || read.LiveTail() == nil {
 		return nil
 	}
 	n.once.Do(func() {
@@ -667,10 +676,12 @@ type appendBarrierProvider struct {
 	release  chan struct{}
 }
 
-func (p *appendBarrierProvider) Name() string                                         { return "append-barrier" }
-func (p *appendBarrierProvider) Fingerprint() string                                  { return "append-barrier/v1" }
-func (p *appendBarrierProvider) SetModel(string)                                      {}
-func (p *appendBarrierProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
+func (p *appendBarrierProvider) Name() string        { return "append-barrier" }
+func (p *appendBarrierProvider) Fingerprint() string { return "append-barrier/v1" }
+func (p *appendBarrierProvider) SetModel(string)     {}
+func (p *appendBarrierProvider) Models(context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
 func (p *appendBarrierProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
 		Role: message.RoleAssistant, Content: []message.Content{message.TextContent("appended")},

@@ -3,6 +3,7 @@ package figaro_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"testing"
 	"time"
 
@@ -97,15 +98,25 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	require.Equal(t, message.ContentProse, msgs[4].Content[0].Type)
 	require.Equal(t, "steer two", msgs[4].Content[0].Text)
 
-	read := a.Read(0)
-	require.Len(t, read.Committed, 5)
-	require.Equal(t, []string{"user", "assistant", "user", "user", "assistant"}, []string{
-		read.Committed[0].Role,
-		read.Committed[1].Role,
-		read.Committed[2].Role,
-		read.Committed[3].Role,
-		read.Committed[4].Role,
-	})
+	// The canonical order survives, but as THREE turns rather than five
+	// message-granular units: each prompt is node 0 of the exchange it began,
+	// and the tool round folds into the turn that issued it.
+	read := a.Read(aria.Anchor{Turn: 0}, 1<<20)
+	require.Len(t, read.Parts, 3)
+
+	var voices [][]string
+	for _, part := range read.Parts {
+		var v []string
+		for _, n := range part.Nodes {
+			v = append(v, n.Role)
+		}
+		voices = append(voices, v)
+	}
+	require.Equal(t, [][]string{
+		{"user", "assistant"}, // "initial" + its tool round
+		{"user"},              // "steer one"
+		{"user", "assistant"}, // "steer two" + "done"
+	}, voices)
 	require.Equal(t, int32(2), prov.calls.Load())
 }
 

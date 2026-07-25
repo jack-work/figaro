@@ -37,9 +37,9 @@ func frameFixture(t *testing.T) *transcript {
 	}
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(aria.AriaRead{Committed: []aria.Committed{
-		{LT: 1, Role: "user", Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "please look"}}},
-		{LT: 2, Role: "assistant", Nodes: nodes},
+	client.Apply(aria.Page{Parts: []aria.TurnPart{
+		{Turn: aria.Turn{ID: 1, Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Role: "user", Markdown: "please look"}}}},
+		{Turn: aria.Turn{ID: uint64(2), Sealed: true, Nodes: nodes}},
 	}})
 	ft := ldrender.NewFakeTerminal(48, 14)
 	tr := newTranscript(ft, 48, 14, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))

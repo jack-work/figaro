@@ -96,7 +96,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		defer mu.Unlock()
 		switch method {
 		case rpc.MethodAriaFrame:
-			var r aria.AriaRead
+			var r aria.Page
 			if json.Unmarshal(params, &r) == nil {
 				lt.apply(r)
 			}

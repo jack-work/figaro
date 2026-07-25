@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/termenv"
-
 )
 
 // Prose renders a full markdown string through glamour — prose, lists,

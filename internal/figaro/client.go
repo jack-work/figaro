@@ -36,20 +36,20 @@ func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) 
 	return resp.Cursor, resp.Active, err
 }
 
-// Read pulls one aria read caught up from sinceLT (the catch-up half of the
+// Read pulls one aria read caught up from a turn cursor (the catch-up half of the
 // figaro.aria stream) — used to recover after a version desync, or to seed a
 // (re)connecting listener.
-func (c *Client) Read(ctx context.Context, sinceLT int) (aria.AriaRead, error) {
-	var r aria.AriaRead
-	err := c.cli.Call(ctx, rpc.MethodRead, rpc.ReadRequest{SinceLT: sinceLT}, &r)
+func (c *Client) Read(ctx context.Context, sinceTurn int) (aria.Page, error) {
+	var r aria.Page
+	err := c.cli.Call(ctx, rpc.MethodRead, rpc.ReadRequest{SinceLT: sinceTurn}, &r)
 	return r, err
 }
 
-// ReadBefore pulls up to limit closed messages with LT < beforeLT, ascending —
-// the backward keyset half of figaro.read, for a pager to walk history.
-func (c *Client) ReadBefore(ctx context.Context, beforeLT, limit int) (aria.AriaRead, error) {
-	var r aria.AriaRead
-	err := c.cli.Call(ctx, rpc.MethodRead, rpc.ReadRequest{Before: beforeLT, Limit: limit}, &r)
+// ReadBefore pages backward from a turn cursor — the other direction of the
+// same cut, for a pager to walk history. A zero cursor means the tail.
+func (c *Client) ReadBefore(ctx context.Context, beforeTurn, budget int) (aria.Page, error) {
+	var r aria.Page
+	err := c.cli.Call(ctx, rpc.MethodRead, rpc.ReadRequest{Before: beforeTurn, Limit: budget}, &r)
 	return r, err
 }
 

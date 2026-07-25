@@ -11,15 +11,14 @@ import (
 
 // tallHistory builds committed messages whose rendered height is large, so the
 // retained window is bounded by rows rather than by message count.
-func tallHistory(n, lines int) []aria.Committed {
-	out := make([]aria.Committed, n)
+func tallHistory(n, lines int) []aria.TurnPart {
+	out := make([]aria.TurnPart, n)
 	for i := range out {
 		md := ""
 		for l := range lines {
 			md += "message-" + itoa(i+1) + " line-" + itoa(l) + "\n\n"
 		}
-		out[i] = aria.Committed{LT: i + 1, Role: "assistant",
-			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: md}}}
+		out[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: md}}}}
 	}
 	return out
 }

@@ -58,11 +58,11 @@ func BenchmarkTranscriptFrameBytes(b *testing.B) {
 func BenchmarkTranscriptEnterBytes(b *testing.B) {
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	committed := make([]aria.Committed, 60)
+	committed := make([]aria.TurnPart, 60)
 	for i := range committed {
-		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, 20)}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 20)}}
 	}
-	client.Apply(aria.AriaRead{Committed: committed})
+	client.Apply(aria.Page{Parts: committed})
 	cw := &countingWriter{}
 	b.ResetTimer()
 	for range b.N {

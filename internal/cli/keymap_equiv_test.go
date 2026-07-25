@@ -32,13 +32,13 @@ func oracleTranscript() *transcript {
 	ft := ldrender.NewFakeTerminal(50, 8)
 	client := aria.NewClient()
 	for i := 1; i <= 8; i++ {
-		client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-			LT: i, Role: "assistant",
+		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{
 				{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d body", i)},
 				{Type: livedoc.NodeTool, Name: "bash", Output: fmt.Sprintf("out%02d", i)},
 			},
-		}}})
+		}}}})
 	}
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Unix(0, 0))
 	tr.enter()

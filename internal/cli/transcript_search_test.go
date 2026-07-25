@@ -23,10 +23,10 @@ func TestTranscript_SearchHighlightsAllMatchesPersist(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(50, 12)
 	client := aria.NewClient()
 	for i := 1; i <= 6; i++ {
-		client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-			LT: i, Role: "assistant",
+		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("apple %02d apple", i)}},
-		}}})
+		}}}})
 	}
 	tr := newTranscript(ft, 50, 12, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
@@ -72,10 +72,10 @@ func TestTranscript_FindRepeatNextAndPrev(t *testing.T) {
 		if i == 3 || i == 6 || i == 9 {
 			body = fmt.Sprintf("needle %02d", i)
 		}
-		client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-			LT: i, Role: "assistant",
+		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: body}},
-		}}})
+		}}}})
 	}
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()

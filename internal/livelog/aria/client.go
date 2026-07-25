@@ -24,21 +24,23 @@ type Client struct {
 	closedRev       uint64
 	lastCommittedLT int
 
-	openLT    int
-	openRole  string
-	openV     int
-	openOrder []string
-	openBlock map[string]livedoc.Node
+	// The open turn, materialized. openLT holds the TURN ID (see Message);
+	// openFrom is the suffix boundary reported by Live.From — nodes below it
+	// are closed and will never be touched again.
+	openLT         int
+	openFrom       uint64
+	openV          int
+	openNodesSlice []livedoc.Node
 
 	OnClosed  func(Message)
-	OnLive    func(lt int, role string, nodes []livedoc.Node)
+	OnLive    func(turn int, role string, nodes []livedoc.Node)
 	OnDesync  func(sinceLT int)
 	OnMetrics func(Metrics)
 }
 
 // NewClient returns a fresh client.
 func NewClient() *Client {
-	return &Client{closedSeen: map[int]bool{}, openBlock: map[string]livedoc.Node{}}
+	return &Client{closedSeen: map[int]bool{}}
 }
 
 // SetClosedLimit bounds retained closed messages. Zero keeps the default,
@@ -66,7 +68,7 @@ func (c *Client) OpenAnimating() bool {
 	if c.openLT == 0 {
 		return false
 	}
-	for _, n := range c.openBlock {
+	for _, n := range c.openNodesSlice {
 		if n.Type == livedoc.NodeTool && n.Status == livedoc.StatusRunning {
 			return true
 		}
@@ -75,33 +77,67 @@ func (c *Client) OpenAnimating() bool {
 }
 
 // Apply folds one page.
-func (c *Client) Apply(r AriaRead) {
+// Apply folds a Page into the local view.
+//
+// A part is one of three things. Sealed: the turn stopped moving — finalize it
+// from the part's snapshot, or from what we streamed if the part is just the
+// marker. Live with deltas: fold them at their positional ids. Live without
+// deltas: the streaming suffix closed but the turn continues, so keep holding
+// it open. A part whose window sits entirely below Live.From carries no Live
+// at all, which is exactly why such a page never needs re-fetching.
+func (c *Client) Apply(p Page) {
 	c.mu.Lock()
 	var finalized []Message
 	desync := -1
-	metrics := r.Metrics
-	for _, cm := range r.Committed {
-		switch {
-		case cm.Full():
-			if !c.seenClosed(cm.LT) {
-				c.closedSeen[cm.LT] = true
-				finalized = append(finalized, Message{LT: cm.LT, Role: cm.Role, Nodes: cm.Nodes})
-			}
-			if cm.LT == c.openLT {
+	metrics := p.Metrics
+
+	for _, part := range p.Parts {
+		id := int(part.ID)
+
+		// Adopt any nodes the part carries. From is the positional id of
+		// Nodes[0], so a clipped part slots into place rather than replacing.
+		if len(part.Nodes) > 0 {
+			if c.openLT != id {
 				c.resetOpen()
+				c.openLT = id
 			}
-			c.advanceCommitted(cm.LT)
-		case c.openLT == cm.LT && c.openV == cm.V:
-			// close marker for what we streamed, versions agree: promote.
-			if !c.closedSeen[cm.LT] {
-				c.closedSeen[cm.LT] = true
-				finalized = append(finalized, Message{LT: cm.LT, Role: c.openRole, Nodes: c.openNodes()})
+			c.absorb(part.From, part.Nodes)
+		}
+
+		if part.Live != nil {
+			if c.openLT != id {
+				c.resetOpen()
+				c.openLT = id
 			}
-			c.advanceCommitted(cm.LT)
+			c.openFrom = part.Live.From
+			for _, nd := range part.Live.Nodes {
+				c.foldAt(nd)
+			}
+			if len(part.Live.Nodes) > 0 {
+				c.openV = part.Live.V
+			} else if c.openV != part.Live.V && len(part.Nodes) == 0 {
+				// A close marker whose version we never reached: we missed
+				// frames, so ask for a catch-up rather than show a gap.
+				desync = c.lastCommittedLT
+			}
+		}
+
+		if !part.Sealed {
+			continue
+		}
+		if c.seenClosed(id) {
+			c.advanceCommitted(id)
+			continue
+		}
+		nodes := part.Nodes
+		if c.openLT == id && len(c.openNodesSlice) >= len(nodes) {
+			nodes = c.openNodes()
+		}
+		c.closedSeen[id] = true
+		finalized = append(finalized, Message{LT: id, Role: turnRole(nodes), Nodes: nodes})
+		c.advanceCommitted(id)
+		if c.openLT == id {
 			c.resetOpen()
-		default:
-			// version mismatch / message we don't hold open: catch up.
-			desync = c.lastCommittedLT
 		}
 	}
 
@@ -111,34 +147,8 @@ func (c *Client) Apply(r AriaRead) {
 	}
 	c.trimClosed()
 
-	var (
-		haveLive  bool
-		liveLT    int
-		liveRole  string
-		liveNodes []livedoc.Node
-	)
-	if r.Live != nil {
-		f := r.Live
-		if c.openLT != f.LT {
-			c.openLT = f.LT
-			c.openRole = f.Role
-			c.openOrder = nil
-			c.openBlock = map[string]livedoc.Node{}
-		}
-
-		if f.Role != "" {
-			c.openRole = f.Role
-		}
-		for _, nd := range f.Nodes {
-			cur, ok := c.openBlock[nd.ID]
-			if !ok {
-				c.openOrder = append(c.openOrder, nd.ID)
-			}
-			c.openBlock[nd.ID] = foldDelta(cur, nd)
-		}
-		c.openV = f.V
-		haveLive, liveLT, liveRole, liveNodes = true, c.openLT, c.openRole, c.openNodes()
-	}
+	haveLive := c.openLT != 0
+	liveLT, liveNodes := c.openLT, c.openNodes()
 	c.mu.Unlock()
 
 	if metrics != nil && c.OnMetrics != nil {
@@ -150,11 +160,48 @@ func (c *Client) Apply(r AriaRead) {
 		}
 	}
 	if haveLive && c.OnLive != nil {
-		c.OnLive(liveLT, liveRole, liveNodes)
+		c.OnLive(liveLT, turnRole(liveNodes), liveNodes)
 	}
 	if desync >= 0 && c.OnDesync != nil {
 		c.OnDesync(desync)
 	}
+}
+
+// absorb slots a contiguous run of nodes in at their positional ids.
+func (c *Client) absorb(from uint64, nodes []livedoc.Node) {
+	need := int(from) + len(nodes)
+	for len(c.openNodesSlice) < need {
+		c.openNodesSlice = append(c.openNodesSlice, livedoc.Node{})
+	}
+	copy(c.openNodesSlice[from:], nodes)
+}
+
+// foldAt applies a delta at its positional id, growing the slice as the open
+// suffix appends.
+func (c *Client) foldAt(nd NodeDelta) {
+	for uint64(len(c.openNodesSlice)) <= nd.ID {
+		c.openNodesSlice = append(c.openNodesSlice, livedoc.Node{})
+	}
+	c.openNodesSlice[nd.ID] = foldDelta(c.openNodesSlice[nd.ID], nd)
+}
+
+// turnRole reports the voice a turn is rendered under. A turn holds both, so
+// this is only the coarse hint the older surfaces still ask for; per-node Role
+// is the real answer.
+//
+// A turn is an exchange, so it closes under the assistant's bookend unless it
+// holds nothing but the prompt. Nodes carrying no explicit role are agent
+// output — a streamed delta need not repeat it on every frame.
+func turnRole(nodes []livedoc.Node) string {
+	if len(nodes) == 0 {
+		return ""
+	}
+	for _, n := range nodes {
+		if n.Role != "user" {
+			return "assistant"
+		}
+	}
+	return "user"
 }
 
 func (c *Client) trimClosed() {
@@ -203,7 +250,7 @@ func (c *Client) Open() *Message {
 	if c.openLT == 0 {
 		return nil
 	}
-	return &Message{LT: c.openLT, Role: c.openRole, Nodes: c.openNodes()}
+	return &Message{LT: c.openLT, Role: turnRole(c.openNodesSlice), Nodes: c.openNodes()}
 }
 
 // View returns a snapshot of the current local state.
@@ -217,7 +264,7 @@ func (c *Client) View() View {
 	sort.SliceStable(closed, func(i, j int) bool { return closed[i].LT < closed[j].LT })
 	v := View{Closed: closed}
 	if c.openLT != 0 {
-		v.Open = &Message{LT: c.openLT, Role: c.openRole, Nodes: c.openNodes()}
+		v.Open = &Message{LT: c.openLT, Role: turnRole(c.openNodesSlice), Nodes: c.openNodes()}
 	}
 	return v
 }
@@ -229,17 +276,12 @@ func (c *Client) advanceCommitted(lt int) {
 }
 
 func (c *Client) openNodes() []livedoc.Node {
-	out := make([]livedoc.Node, 0, len(c.openOrder))
-	for _, id := range c.openOrder {
-		out = append(out, c.openBlock[id])
-	}
-	return out
+	return append([]livedoc.Node(nil), c.openNodesSlice...)
 }
 
 func (c *Client) resetOpen() {
-	c.openLT, c.openRole, c.openV = 0, "", 0
-	c.openOrder = nil
-	c.openBlock = map[string]livedoc.Node{}
+	c.openLT, c.openV, c.openFrom = 0, 0, 0
+	c.openNodesSlice = nil
 }
 
 // foldDelta applies a NodeDelta to a node: set merges fields, unset clears them,

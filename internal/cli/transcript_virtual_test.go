@@ -116,15 +116,11 @@ func mixedTranscript(tb testing.TB, out io.Writer, w, h, n int) (*transcript, *a
 	tb.Helper()
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	committed := make([]aria.Committed, n)
+	committed := make([]aria.TurnPart, n)
 	for i := range committed {
-		role := "assistant"
-		if i%3 == 0 {
-			role = "user"
-		}
-		committed[i] = aria.Committed{LT: i + 1, Role: role, Nodes: mixedNodes(i + 1)}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: mixedNodes(i + 1)}}
 	}
-	client.Apply(aria.AriaRead{Committed: committed})
+	client.Apply(aria.Page{Parts: committed})
 	tr := newTranscript(out, w, h, &ariaView{settings: &renderSettings{}}, client, "virt1234", time.Unix(0, 0))
 	tr.enter()
 	return tr, client
@@ -269,12 +265,9 @@ func TestTranscriptVirtualWindow_ExpandedTools(t *testing.T) {
 
 func TestTranscriptVirtualWindow_LiveTailFollow(t *testing.T) {
 	tr, client := mixedTranscript(t, io.Discard, 80, 24, 4)
-	client.Apply(aria.AriaRead{Live: &aria.Live{
-		LT: 5, V: 0, Role: "assistant",
-		Nodes: []aria.NodeDelta{{ID: "live", Set: map[string]any{
-			"type": string(livedoc.NodeProse), "markdown": "streaming needle prose",
-		}}},
-	}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(5), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
+		"type": string(livedoc.NodeProse), "markdown": "streaming needle prose",
+	}}}}}}}})
 	tr.render()
 	if !tr.follow {
 		t.Fatal("expected the pager to be following the live tail")
@@ -282,15 +275,12 @@ func TestTranscriptVirtualWindow_LiveTailFollow(t *testing.T) {
 	assertWindowMatchesLegacy(t, tr, 21)
 
 	// Growing the open message must move the index, not stale it.
-	client.Apply(aria.AriaRead{Live: &aria.Live{
-		LT: 5, V: 1,
-		Nodes: []aria.NodeDelta{
-			{ID: "live", Set: map[string]any{"markdown": "streaming needle prose, now rather longer"}},
-			{ID: "live2", Set: map[string]any{
-				"type": string(livedoc.NodeThinking), "markdown": "a second live node\nwith two lines",
-			}},
-		},
-	}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(5), Live: &aria.Live{From: 0, V: 1, Nodes: []aria.NodeDelta{
+		{ID: 0, Set: map[string]any{"markdown": "streaming needle prose, now rather longer"}},
+		{ID: 1, Set: map[string]any{
+			"type": string(livedoc.NodeThinking), "markdown": "a second live node\nwith two lines",
+		}},
+	}}}}}})
 	tr.render()
 	assertWindowMatchesLegacy(t, tr, 21)
 }
@@ -488,10 +478,10 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 	tr.key('G')
 
 	// A single message: no separator triple, so entry 0 starts at line 0.
-	client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-		LT: 1, Role: "assistant",
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: uint64(1), Sealed: true,
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "solo"}},
-	}}})
+	}}}})
 	tr.render()
 	if len(tr.index.entries) != 1 || tr.index.entries[0].sep {
 		t.Fatalf("single message must not carry a separator: %+v", tr.index.entries)

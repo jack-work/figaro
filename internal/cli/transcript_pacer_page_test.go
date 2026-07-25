@@ -115,7 +115,7 @@ func TestPacedPageLanding_IsNeverSwallowed(t *testing.T) {
 	w.reset()
 	mu.Lock()
 	before, _ := lt.tr.oldestLT()
-	lt.transcriptApplyPage(req, committedMessages(readBefore(transcriptHistory(120), req.before, req.limit).Committed))
+	lt.transcriptApplyPage(req, committedMessages(readBefore(transcriptHistory(120), req.before, req.limit)))
 	after, _ := lt.tr.oldestLT()
 	dirty := lt.tr.dirty
 	mu.Unlock()
@@ -196,20 +196,20 @@ func TestPacedPageLanding_NoFurtherInputRequired(t *testing.T) {
 // jittered spell so the prefetch worker and the pacer's timer goroutine are
 // genuinely interleaved rather than politely taking turns.
 type blockingHistoryReader struct {
-	history []aria.Committed
+	history []aria.TurnPart
 	mu      sync.Mutex
 	calls   int
 }
 
-func (r *blockingHistoryReader) Read(context.Context, int) (aria.AriaRead, error) {
-	return aria.AriaRead{}, nil
+func (r *blockingHistoryReader) Read(context.Context, int) (aria.Page, error) {
+	return aria.Page{}, nil
 }
 
 func (r *blockingHistoryReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
 	return &rpc.QueuedResponse{}, nil
 }
 
-func (r *blockingHistoryReader) ReadBefore(ctx context.Context, before, limit int) (aria.AriaRead, error) {
+func (r *blockingHistoryReader) ReadBefore(ctx context.Context, before, limit int) (aria.Page, error) {
 	r.mu.Lock()
 	r.calls++
 	n := r.calls
@@ -217,7 +217,7 @@ func (r *blockingHistoryReader) ReadBefore(ctx context.Context, before, limit in
 	select {
 	case <-time.After(time.Duration(n%3) * time.Millisecond):
 	case <-ctx.Done():
-		return aria.AriaRead{}, ctx.Err()
+		return aria.Page{}, ctx.Err()
 	}
 	return readBefore(r.history, before, limit), nil
 }

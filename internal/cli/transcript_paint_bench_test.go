@@ -51,11 +51,11 @@ func heavyTranscriptOn(tb testing.TB, out io.Writer, messages, outputLines int) 
 	tb.Helper()
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	committed := make([]aria.Committed, messages)
+	committed := make([]aria.TurnPart, messages)
 	for i := range committed {
-		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, outputLines)}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, outputLines)}}
 	}
-	client.Apply(aria.AriaRead{Committed: committed})
+	client.Apply(aria.Page{Parts: committed})
 	tr := newTranscript(out, 100, 40, &ariaView{settings: &renderSettings{}}, client, "benchmark", time.Unix(0, 0))
 	tr.enter()
 	return tr

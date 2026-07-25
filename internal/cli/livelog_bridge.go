@@ -222,7 +222,7 @@ func (t *livelogTurn) armThinking() {
 	}
 }
 
-func (t *livelogTurn) apply(r aria.AriaRead)  { t.client.Apply(r) }
+func (t *livelogTurn) apply(r aria.Page)      { t.client.Apply(r) }
 func (t *livelogTurn) setDesync(fn func(int)) { t.client.OnDesync = fn }
 func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 

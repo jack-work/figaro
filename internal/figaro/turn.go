@@ -17,7 +17,6 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
@@ -237,11 +236,8 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entr
 		// Commit makes the message appear only when the transcript truly holds
 		// it — the aria frame carries {Role, Nodes} on the first hop and the
 		// client short-circuits to OnClosed with no OnLive event.
-		a.unitLT++
-		a.ariaSrv.Commit(aria.Message{
-			LT:    a.unitLT,
-			Role:  "user",
-			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: prompt.text}},
+		a.ariaSrv.Append(a.turnID, []livedoc.Node{
+			{Type: livedoc.NodeProse, Role: "user", Markdown: prompt.text},
 		})
 	}
 	return entry, nil
@@ -1137,11 +1133,12 @@ func logComposeFrame(dir, ariaID string, hasInflight bool, nodes []livedoc.Node)
 	fmt.Fprintln(f, b.String())
 }
 
-// emitSnapshot opens a new unit at the next figaro LT and sets its initial
-// nodes. The aria server diffs subsequent Updates against this internally.
+// emitSnapshot opens a streaming suffix on the current turn and sets its
+// initial nodes. The suffix begins wherever the turn's committed nodes end, so
+// a multi-round turn extends rather than restarting. The aria server diffs
+// subsequent Updates against this internally.
 func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
-	a.unitLT++
-	a.ariaSrv.Open(a.unitLT, role)
+	a.ariaSrv.OpenTurn(a.turnID)
 	if len(nodes) > 0 {
 		a.ariaSrv.Update(nodes)
 	}

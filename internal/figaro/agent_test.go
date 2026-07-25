@@ -437,7 +437,7 @@ done:
 	assert.Equal(t, 128000, info.ContextLimit)
 	assert.True(t, info.ContextExact)
 
-	read := a.Read(0)
+	read := a.Read(aria.Anchor{Turn: 0}, 1<<20)
 	require.NotNil(t, read.Metrics)
 	assert.Equal(t, "keep session accounting visible", read.Metrics.Mantra)
 	assert.Equal(t, 15000, read.Metrics.ContextTokens)
@@ -464,13 +464,13 @@ func TestAgentFirstLiveFrameUsesResolvedContextLimit(t *testing.T) {
 
 	ch, _ := subscribeChan(a)
 	submitPrompt(a, "hello")
-	var firstLive *aria.AriaRead
+	var firstLive *aria.Page
 	for {
 		select {
 		case n := <-ch:
 			if n.Method == rpc.MethodAriaFrame {
-				frame := n.Params.(aria.AriaRead)
-				if frame.Live != nil && frame.Live.Role == "assistant" && firstLive == nil {
+				frame := n.Params.(aria.Page)
+				if frame.LiveTail() != nil && firstLive == nil {
 					firstLive = &frame
 				}
 			}
@@ -493,7 +493,7 @@ func TestAgent_ReadCatchUp(t *testing.T) {
 	defer a.Kill()
 
 	// Idle, empty: nothing to catch up.
-	if r := a.Read(0); len(r.Committed) != 0 || r.Live != nil {
+	if r := a.Read(aria.Anchor{Turn: 0}, 1<<20); len(r.Parts) != 0 || r.LiveTail() != nil {
 		t.Fatalf("fresh agent: want empty read, got %+v", r)
 	}
 
@@ -515,18 +515,20 @@ done:
 
 	// After the turn settles, the prompt and reply are committed units and
 	// no unit is live.
-	r := a.Read(0)
-	if r.Live != nil {
-		t.Fatalf("idle agent should have no live unit: %+v", r.Live)
+	r := a.Read(aria.Anchor{Turn: 0}, 1<<20)
+	if r.LiveTail() != nil {
+		t.Fatalf("idle agent should have no live unit: %+v", r.LiveTail())
 	}
-	if len(r.Committed) != 2 {
-		t.Fatalf("want user + assistant units, got %d: %+v", len(r.Committed), r.Committed)
+	// The prompt and the reply are ONE exchange now, not two units: the
+	// question is node 0 of the turn that answered it.
+	if len(r.Parts) != 1 {
+		t.Fatalf("want a single turn, got %d: %+v", len(r.Parts), r.Parts)
 	}
-	if r.Committed[0].Role != "user" || !nodesContain(r.Committed[0].Nodes, "the question") {
-		t.Errorf("committed[0] = %+v", r.Committed[0])
+	if !nodesContain(r.Parts[0].Nodes, "the question") {
+		t.Errorf("the turn must hold the prompt: %+v", r.Parts[0])
 	}
-	if r.Committed[1].Role != "assistant" || !nodesContain(r.Committed[1].Nodes, "the reply") {
-		t.Errorf("committed[1] = %+v", r.Committed[1])
+	if !nodesContain(r.Parts[0].Nodes, "the reply") {
+		t.Errorf("the turn must hold the reply: %+v", r.Parts[0])
 	}
 }
 
@@ -1225,21 +1227,29 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 			continue
 		}
 		b, _ := json.Marshal(fr.Params)
-		var r aria.AriaRead
+		var r aria.Page
 		require.NoError(t, json.Unmarshal(b, &r))
 		cl.Apply(r)
 	}
-	assistants := 0
+	// Each turn holds its prompt as node 0 and exactly one assistant reply —
+	// a second turn must not re-compose the first turn's nodes into itself.
+	turns := 0
 	for _, m := range cl.View().Closed {
-		if m.Role != "assistant" {
+		if len(m.Nodes) == 0 {
 			continue
 		}
-		assistants++
-		if len(m.Nodes) != 1 {
-			t.Fatalf("assistant LT %d folded to %d nodes, want 1: %+v", m.LT, len(m.Nodes), m.Nodes)
+		turns++
+		replies := 0
+		for _, n := range m.Nodes {
+			if n.Role == "assistant" {
+				replies++
+			}
+		}
+		if replies != 1 {
+			t.Fatalf("turn %d holds %d assistant nodes, want 1: %+v", m.LT, replies, m.Nodes)
 		}
 	}
-	require.Equal(t, 2, assistants)
+	require.Equal(t, 2, turns)
 	// And turn 2's frames must not re-compose turn 1's prompt as a NODE.
 	// (The mantra metric legitimately echoes the first prompt.)
 	for _, fr := range turn2 {
@@ -1266,14 +1276,14 @@ func TestAgent_UserPromptCommitsWithoutLiveFrame(t *testing.T) {
 	submitPrompt(a, "the question")
 
 	deadline := time.After(5 * time.Second)
-	var frames []aria.AriaRead
+	var frames []aria.Page
 loop:
 	for {
 		select {
 		case n := <-ch:
 			switch n.Method {
 			case rpc.MethodAriaFrame:
-				frames = append(frames, n.Params.(aria.AriaRead))
+				frames = append(frames, n.Params.(aria.Page))
 			case rpc.MethodTurnDone:
 				break loop
 			}
@@ -1282,28 +1292,31 @@ loop:
 		}
 	}
 
-	// Find the user message's LT from a Full committed frame (Role=="user"
-	// with Nodes present); assert no Live frame ever carried that LT and no
-	// Live frame ever had Role=="user".
-	userLT := 0
+	// The prompt is complete the instant it exists, so it must arrive as
+	// already-closed content and never stream. If it ever appeared inside a
+	// Live delta the client would render it in flight and then re-render it
+	// on commit — the flicker between send and durable commit.
+	sawPromptCommitted := false
 	for _, f := range frames {
-		for _, c := range f.Committed {
-			if c.Role == "user" && c.Full() {
-				userLT = c.LT
+		for _, part := range f.Parts {
+			for _, n := range part.Nodes {
+				if n.Role == "user" {
+					sawPromptCommitted = true
+				}
 			}
 		}
 	}
-	require.NotZero(t, userLT, "expected a user Committed(Full) frame")
+	require.True(t, sawPromptCommitted, "expected the prompt as committed content")
 
 	for _, f := range frames {
-		if f.Live == nil {
+		live := f.LiveTail()
+		if live == nil {
 			continue
 		}
-		if f.Live.Role == "user" {
-			t.Fatalf("user role must never appear as a Live frame; got %+v", f.Live)
-		}
-		if f.Live.LT == userLT {
-			t.Fatalf("user LT %d must never appear as a Live frame; got %+v", userLT, f.Live)
+		for _, d := range live.Nodes {
+			if d.Set["role"] == "user" {
+				t.Fatalf("the prompt must never stream as a Live delta; got %+v", d)
+			}
 		}
 	}
 }
