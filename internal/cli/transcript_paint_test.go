@@ -3,11 +3,13 @@ package cli
 import (
 	"fmt"
 	"io"
+	"math/rand"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
@@ -469,5 +471,223 @@ func BenchmarkCompactRow(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		buf = compactRow(buf[:0], row)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Shifted-frame (scroll region) painting.
+// ---------------------------------------------------------------------------
+
+// teeVT records the raw escape stream while replaying it, so a test can assert
+// both what was emitted and what it drew.
+type teeVT struct {
+	*vtScreen
+	raw []byte
+}
+
+func newTeeVT(w, h int) *teeVT { return &teeVT{vtScreen: newVT(w, h)} }
+
+func (t *teeVT) Write(p []byte) (int, error) {
+	t.raw = append(t.raw, p...)
+	return t.vtScreen.Write(p)
+}
+
+func (t *teeVT) lastFrame() string {
+	s := string(t.raw)
+	if i := strings.LastIndex(s, "\x1b[?2026h"); i >= 0 {
+		return s[i:]
+	}
+	return s
+}
+
+func (t *teeVT) reset() { t.raw = nil }
+
+func scrollTranscript(tb testing.TB, out io.Writer, w, h, messages int) *transcript {
+	tb.Helper()
+	client := aria.NewClient()
+	client.SetClosedLimit(transcriptTailLimit)
+	committed := make([]aria.Committed, messages)
+	for i := range committed {
+		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, 30)}
+	}
+	client.Apply(aria.AriaRead{Committed: committed})
+	tr := newTranscript(out, w, h, &ariaView{settings: &renderSettings{}}, client, "aria0001", time.Unix(0, 0))
+	tr.enter()
+	return tr
+}
+
+// TestTranscriptPaint_UsesScrollRegion pins the mechanism: a one-line scroll
+// must move the rows rather than retransmit them.
+func TestTranscriptPaint_UsesScrollRegion(t *testing.T) {
+	out := newTeeVT(100, 40)
+	tr := scrollTranscript(t, out, 100, 40, 12)
+	tr.scrollBy(-40)
+	out.reset()
+	tr.scrollBy(-1)
+
+	frame := out.lastFrame()
+	if !strings.Contains(frame, "\x1b[1;37r") {
+		t.Fatalf("no scroll region in frame: %q", frame)
+	}
+	if !strings.Contains(frame, "\x1b[1T") {
+		t.Fatalf("no scroll-down in frame: %q", frame)
+	}
+	if len(frame) > 1200 {
+		t.Fatalf("one-line scroll emitted %d bytes; the point is that it should not", len(frame))
+	}
+
+	out.reset()
+	tr.scrollBy(1)
+	if frame = out.lastFrame(); !strings.Contains(frame, "\x1b[1S") {
+		t.Fatalf("scrolling the other way must scroll up: %q", frame)
+	}
+}
+
+// TestTranscriptPaint_ScrollRegionOptOut proves the escape hatch really falls
+// back to the full-frame diff, and that the fallback still draws correctly.
+func TestTranscriptPaint_ScrollRegionOptOut(t *testing.T) {
+	defer func(v bool) { transcriptScrollRegions = v }(transcriptScrollRegions)
+	transcriptScrollRegions = false
+
+	out := newTeeVT(100, 40)
+	tr := scrollTranscript(t, out, 100, 40, 12)
+	tr.scrollBy(-40)
+
+	want := newVT(100, 40)
+	var wantPrev []string
+	naivePaint(want, tr.prev, wantPrev)
+	wantPrev = tr.prev
+	out.reset()
+	tr.scrollBy(-1)
+	if strings.Contains(out.lastFrame(), "r\x1b[") {
+		t.Fatalf("opt-out still emitted a scroll region: %q", out.lastFrame())
+	}
+	naivePaint(want, tr.prev, wantPrev)
+	assertSameGrid(t, want, out.vtScreen, "opt-out fallback")
+}
+
+// TestTranscriptPaint_ScrollWithLiveContent is the case a naive "shift by the
+// offset delta" implementation gets wrong: the viewport moves AND the content
+// under it changes in the same frame. That is the ordinary streaming frame —
+// following the tail while a message grows scrolls the body up by however many
+// rows the new text wrapped to, and the last row is new. Detection is from the
+// frames themselves and the diff runs against the predicted post-scroll grid,
+// so the changed rows are still repainted.
+func TestTranscriptPaint_ScrollWithLiveContent(t *testing.T) {
+	client := aria.NewClient()
+	client.SetClosedLimit(transcriptTailLimit)
+	committed := make([]aria.Committed, 8)
+	for i := range committed {
+		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, 10)}
+	}
+	client.Apply(aria.AriaRead{Committed: committed})
+
+	got := newVT(100, 30)
+	tr := newTranscript(got, 100, 30, &ariaView{settings: &renderSettings{}}, client, "aria0001", time.Unix(0, 0))
+	tr.enter()
+	want := newVT(100, 30)
+	var wantPrev []string
+	check := func(what string) {
+		t.Helper()
+		naivePaint(want, tr.prev, wantPrev)
+		wantPrev = tr.prev
+		assertSameGrid(t, want, got, what)
+	}
+	check("enter")
+
+	grow := func(i int) {
+		client.Apply(aria.AriaRead{Live: &aria.Live{
+			LT: 100, V: i + 1, Role: "assistant",
+			Nodes: []aria.NodeDelta{{ID: "n1", Set: map[string]any{
+				"type":     string(livedoc.NodeProse),
+				"markdown": strings.Repeat(fmt.Sprintf("streaming chunk %d. ", i), i+1),
+			}}},
+		}})
+	}
+	for i := range 30 {
+		grow(i)
+		tr.render()
+		check(fmt.Sprintf("streaming tail %d", i))
+	}
+	if !strings.Contains(strings.Join(tr.prev, "\n"), "streaming chunk") {
+		t.Fatal("fixture never rendered the live message; the test would prove nothing")
+	}
+	// Now leave follow mode mid-stream and scroll against a frozen open
+	// message: viewport motion and content motion decoupled.
+	for i := range 20 {
+		grow(30 + i)
+		tr.scrollBy(-1)
+		check(fmt.Sprintf("held-open scroll %d", i))
+	}
+	for i := range 20 {
+		grow(50 + i)
+		tr.scrollBy(2)
+		check(fmt.Sprintf("held-open scroll down %d", i))
+	}
+}
+
+// TestTranscriptPaint_ShiftedFrameProperty drives paint directly with
+// synthetic frames — pure shifts, shifts with edits, unrelated screens — and
+// asserts the optimized stream and the naive full-repaint stream always agree.
+// This is the safety net for the shift detector's heuristics.
+func TestTranscriptPaint_ShiftedFrameProperty(t *testing.T) {
+	const w, h = 60, 20
+	rnd := rand.New(rand.NewSource(20260724))
+	styles := []string{"", "\x1b[2m", "\x1b[38;5;252m", "\x1b[1;31m", "\x1b[7m", "\x1b[48;5;22m", "\x1b[4m"}
+	makeRow := func() string {
+		if rnd.Intn(8) == 0 {
+			return ""
+		}
+		st := styles[rnd.Intn(len(styles))]
+		body := fmt.Sprintf("row-%06d %s", rnd.Intn(1000000), strings.Repeat("x", rnd.Intn(30)))
+		pad := strings.Repeat(" ", rnd.Intn(12))
+		if st == "" {
+			return body + pad
+		}
+		return st + body + pad + "\x1b[0m"
+	}
+
+	got := newVT(w, h)
+	tr := &transcript{out: got, w: w, h: h, active: true}
+	want := newVT(w, h)
+	var wantPrev []string
+
+	screen := make([]string, h)
+	for r := range screen {
+		screen[r] = makeRow()
+	}
+	for step := range 400 {
+		next := make([]string, h)
+		switch rnd.Intn(5) {
+		case 0: // unrelated screen
+			for r := range next {
+				next[r] = makeRow()
+			}
+		case 1: // a few local edits
+			copy(next, screen)
+			for range rnd.Intn(4) + 1 {
+				next[rnd.Intn(h)] = makeRow()
+			}
+		default: // shift, sometimes with edits on top
+			n := rnd.Intn(9) - 4
+			if n == 0 {
+				n = 1
+			}
+			for r := range next {
+				if src := r + n; src >= 0 && src < h {
+					next[r] = screen[src]
+				} else {
+					next[r] = makeRow()
+				}
+			}
+			for range rnd.Intn(3) {
+				next[rnd.Intn(h)] = makeRow()
+			}
+		}
+		tr.paint(next)
+		naivePaint(want, next, wantPrev)
+		wantPrev = next
+		assertSameGrid(t, want, got, fmt.Sprintf("step %d", step))
+		screen = next
 	}
 }

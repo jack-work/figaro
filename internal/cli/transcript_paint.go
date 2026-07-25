@@ -1,6 +1,9 @@
 package cli
 
-import "strings"
+import (
+	"os"
+	"strings"
+)
 
 // ---------------------------------------------------------------------------
 // Paint-layer byte compaction.
@@ -314,6 +317,198 @@ func trimTrailingSpaces(s string) string {
 	n := len(s)
 	for n > 0 && s[n-1] == ' ' {
 		n--
+	}
+	return s[:n]
+}
+
+// ---------------------------------------------------------------------------
+// Shifted-frame painting (scroll regions).
+//
+// A one-line scroll changes EVERY body row: row r now shows what row r+1
+// showed. The full-frame diff therefore finds nothing in common and
+// retransmits the whole viewport — which is what makes holding j/k feel like
+// dragging. Terminals have had the answer since the VT100: set a scroll region
+// (DECSTBM) and shift it (SU/SD), then paint only the newly exposed rows.
+//
+// The shift is *detected*, not assumed. planScroll compares the new screen
+// against the last painted one, finds the largest run of rows that merely
+// moved, and predicts the exact grid the terminal will hold after the scroll.
+// paint then diffs against that prediction, so any row the scroll got wrong —
+// live content that changed in the same frame, the footer, the newly exposed
+// rows — is repainted normally. Correctness does not depend on the guess being
+// good, only on the terminal implementing DECSTBM/SU/SD; a bad guess merely
+// costs bytes, and the plan is rejected unless it saves more than it costs.
+//
+// SGR safety: SU/SD blank the rolled-in rows with the *current* background.
+// The scroll is emitted at the top of a frame, and compactRow guarantees every
+// painted row leaves the terminal in default SGR, so the background is default
+// there by construction.
+// ---------------------------------------------------------------------------
+
+const (
+	// maxScrollShift bounds the search. Beyond a half page or so, a repaint of
+	// the exposed rows costs as much as the whole frame.
+	maxScrollShift = 32
+	// minScrollRun is the shortest moved run worth a region switch.
+	minScrollRun = 4
+	// scrollCost is the byte overhead of DECSTBM + SU/SD + margin reset.
+	scrollCost = 24
+)
+
+type scrollPlan struct {
+	n        int // rows the content moved: >0 up (SU), <0 down (SD)
+	top, bot int // scroll region, 0-based inclusive
+}
+
+// transcriptScrollRegions is the escape hatch. DECSTBM + SU/SD is VT100/VT420
+// bedrock and every terminal this pager runs on implements it, but a paint
+// path that moves rows the emulator does not move would be visually wrong
+// rather than merely slow, so there is a way to switch it off in the field
+// without a rebuild: FIGARO_NO_SCROLL_REGION=1.
+var transcriptScrollRegions = os.Getenv("FIGARO_NO_SCROLL_REGION") == ""
+
+// rowKey is an O(1) fingerprint of a row: length plus four sampled bytes. It
+// only has to be good enough to *propose* a shift — the winning candidate is
+// re-verified with real string equality, so a collision costs a wasted compare
+// and never a wrong frame.
+func rowKey(s string) uint32 {
+	n := len(s)
+	if n == 0 {
+		return 0
+	}
+	h := uint32(n) * 2654435761
+	h ^= uint32(s[0]) * 40503
+	h ^= uint32(s[n-1]) * 2246822519
+	h ^= uint32(s[n/2]) * 3266489917
+	h ^= uint32(s[n/4]) * 668265263
+	return h
+}
+
+// planScroll looks for a shift between t.prev and screen. On success it fills
+// t.predBuf with the grid the terminal will hold after the scroll and reports
+// the plan; the caller diffs against t.predBuf instead of t.prev.
+func (t *transcript) planScroll(screen []string) (scrollPlan, bool) {
+	prev := t.prev
+	h := len(screen)
+	if !transcriptScrollRegions || h < minScrollRun*2 || len(prev) != h {
+		return scrollPlan{}, false
+	}
+	t.keysNew = growUint32(t.keysNew, h)
+	t.keysOld = growUint32(t.keysOld, h)
+	changed := 0
+	for r := 0; r < h; r++ {
+		t.keysNew[r] = rowKey(screen[r])
+		t.keysOld[r] = rowKey(prev[r])
+		if screen[r] != prev[r] {
+			changed++
+		}
+	}
+	if changed < minScrollRun {
+		return scrollPlan{}, false // a small local edit; the plain diff wins
+	}
+
+	// Propose: for each candidate shift, the longest run of rows whose
+	// fingerprints line up.
+	bestN, bestLen, bestAt := 0, 0, 0
+	limit := min(maxScrollShift, h-1)
+	for s := -limit; s <= limit; s++ {
+		if s == 0 {
+			continue
+		}
+		run := 0
+		lo, hi := max(0, -s), min(h, h-s)
+		for r := lo; r < hi; r++ {
+			if t.keysNew[r] == t.keysOld[r+s] {
+				run++
+				if run > bestLen && run > abs(s) {
+					bestLen, bestN, bestAt = run, s, r-run+1
+				}
+			} else {
+				run = 0
+			}
+		}
+	}
+	if bestLen < minScrollRun {
+		return scrollPlan{}, false
+	}
+
+	// Verify with real equality, shrinking the run to what actually matches.
+	a, b := bestAt, bestAt+bestLen-1
+	for a <= b && screen[a] != prev[a+bestN] {
+		a++
+	}
+	for b >= a && screen[b] != prev[b+bestN] {
+		b--
+	}
+	if b-a+1 < minScrollRun {
+		return scrollPlan{}, false
+	}
+	plan := scrollPlan{n: bestN, top: min(a, a+bestN), bot: max(b, b+bestN)}
+	if plan.top < 0 || plan.bot >= h || plan.top >= plan.bot {
+		return scrollPlan{}, false
+	}
+
+	// Predict the post-scroll grid and price the plan against the plain diff.
+	t.predBuf = growStrings(t.predBuf, h)
+	copy(t.predBuf, prev)
+	for r := plan.top; r <= plan.bot; r++ {
+		src := r + plan.n
+		if src < plan.top || src > plan.bot {
+			t.predBuf[r] = "" // rolled in blank
+		} else {
+			t.predBuf[r] = prev[src]
+		}
+	}
+	saved, extra := 0, 0
+	for r := 0; r < h; r++ {
+		wasDirty, nowDirty := screen[r] != prev[r], screen[r] != t.predBuf[r]
+		switch {
+		case wasDirty && !nowDirty:
+			saved += len(screen[r]) + 8
+		case !wasDirty && nowDirty:
+			extra += len(screen[r]) + 8
+		}
+	}
+	if saved <= extra+scrollCost {
+		return scrollPlan{}, false
+	}
+	return plan, true
+}
+
+// appendScroll emits DECSTBM + SU/SD + margin reset for the plan.
+func appendScroll(dst []byte, p scrollPlan) []byte {
+	dst = append(dst, '\x1b', '[')
+	dst = appendUint(dst, p.top+1)
+	dst = append(dst, ';')
+	dst = appendUint(dst, p.bot+1)
+	dst = append(dst, 'r', '\x1b', '[')
+	if p.n > 0 {
+		dst = appendUint(dst, p.n)
+		dst = append(dst, 'S')
+	} else {
+		dst = appendUint(dst, -p.n)
+		dst = append(dst, 'T')
+	}
+	return append(dst, '\x1b', '[', 'r')
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+func growUint32(s []uint32, n int) []uint32 {
+	if cap(s) < n {
+		return make([]uint32, n)
+	}
+	return s[:n]
+}
+
+func growStrings(s []string, n int) []string {
+	if cap(s) < n {
+		return make([]string, n)
 	}
 	return s[:n]
 }

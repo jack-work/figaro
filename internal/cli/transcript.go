@@ -47,6 +47,9 @@ type transcript struct {
 
 	prev     []string // last painted screen (full-frame diff)
 	paintBuf []byte   // reused escape-stream scratch for paint
+	predBuf  []string // predicted grid after a scroll-region shift
+	keysNew  []uint32 // row fingerprints, screen side (shift detection)
+	keysOld  []uint32 // row fingerprints, prev side
 	lineLT   []int    // LT owning each line of lines(), for resize anchoring
 	offset   int      // top line of the viewport into lines()
 	follow   bool     // stick to the bottom on new content
@@ -797,14 +800,24 @@ func (t *transcript) helpLines() []string {
 // fraction of the bytes. The scratch buffer is retained across frames so a
 // steady scroll allocates nothing here.
 //
+// When the frame is mostly the previous frame shifted (any scroll), the rows
+// are moved with a scroll region instead of being retransmitted; the diff then
+// runs against the predicted post-scroll grid, so a mis-detected shift costs
+// bytes and never correctness.
+//
 // The erase-line stays: compactRow trims trailing blanks, so the row no longer
 // overwrites what it does not cover.
 func (t *transcript) paint(screen []string) {
 	buf := append(t.paintBuf[:0], "\x1b[?2026h"...)
+	base := t.prev
+	if plan, ok := t.planScroll(screen); ok {
+		buf = appendScroll(buf, plan)
+		base = t.predBuf
+	}
 	for r := 0; r < len(screen); r++ {
 		var old string
-		if r < len(t.prev) {
-			old = t.prev[r]
+		if r < len(base) {
+			old = base[r]
 		}
 		if screen[r] == old {
 			continue
