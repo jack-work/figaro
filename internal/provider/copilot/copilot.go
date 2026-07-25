@@ -204,7 +204,7 @@ func (c *Copilot) ContextLimit(model string, snapshot chalkboard.Snapshot) int {
 }
 
 func contextLimitOverride(snapshot chalkboard.Snapshot) (int, bool) {
-	raw, ok := snapshot["system.max_context_tokens"]
+	raw, ok := snapshot.Get("system.max_context_tokens")
 	if !ok {
 		return 0, false
 	}

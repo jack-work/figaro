@@ -27,11 +27,17 @@ func fakeSchema() interface{} {
 	}
 }
 
+// withKey returns snap plus one key. Snapshots are immutable values,
+// so derived boards are built with Apply rather than assigned into.
+func withKey(s chalkboard.Snapshot, key string, v json.RawMessage) chalkboard.Snapshot {
+	return s.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{key: v}})
+}
+
 func systemSnapshot(t *testing.T, text string) chalkboard.Snapshot {
 	t.Helper()
 	raw, err := json.Marshal(text)
 	require.NoError(t, err)
-	return chalkboard.Snapshot{"system.credo": raw}
+	return chalkboard.FromMap(map[string]json.RawMessage{"system.credo": raw})
 }
 
 // encodeAll mirrors the agent's catchUp: encode each IR message into
@@ -240,7 +246,7 @@ func TestBuildParams_CacheBreakpoints(t *testing.T) {
 		{Name: "beta", Description: "second", Parameters: fakeSchema()},
 	}
 	snap := systemSnapshot(t, "you are a test agent")
-	snap["system.cache_control"] = json.RawMessage(`"ephemeral"`)
+	snap = withKey(snap, "system.cache_control", json.RawMessage(`"ephemeral"`))
 
 	projected := projectAll(t, encodeAll(p, msgs), []uint64{1, 2, 3})
 	params := buildParams(projected.Messages, projected.LogicalTimes, snap, tools, 1024, false, "claude-test")
@@ -277,7 +283,7 @@ func TestBuildParams_SingleMessageBreakpoint(t *testing.T) {
 		{Role: message.RoleUser, Content: []message.Content{message.TextContent("only message")}},
 	}
 	snap := systemSnapshot(t, "you are a test agent")
-	snap["system.cache_control"] = json.RawMessage(`"ephemeral"`)
+	snap = withKey(snap, "system.cache_control", json.RawMessage(`"ephemeral"`))
 
 	projected := projectAll(t, encodeAll(p, msgs), []uint64{1})
 	params := buildParams(projected.Messages, projected.LogicalTimes, snap, nil, 1024, false, "claude-test")
@@ -306,7 +312,7 @@ func TestBuildParams_CacheDefaultsOnAndNoneDisables(t *testing.T) {
 
 	// "none" → no stamps anywhere.
 	off := systemSnapshot(t, "agent")
-	off["system.cache_control"] = json.RawMessage(`"none"`)
+	off = withKey(off, "system.cache_control", json.RawMessage(`"none"`))
 	params = buildParams(projected.Messages, projected.LogicalTimes, off, nil, 1024, false, "claude-test")
 	require.NotEmpty(t, params.System)
 	assert.True(t, isUnstamped(params.System[len(params.System)-1].CacheControl), "none must not stamp system")
@@ -345,7 +351,7 @@ func TestBuildParams_OAuthSystemArray(t *testing.T) {
 		{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
 	}
 	snap := systemSnapshot(t, "you are figaro")
-	snap["system.cache_control"] = json.RawMessage(`"ephemeral"`)
+	snap = withKey(snap, "system.cache_control", json.RawMessage(`"ephemeral"`))
 
 	projected := projectAll(t, encodeAll(p, msgs), []uint64{1})
 	params := buildParams(projected.Messages, projected.LogicalTimes, snap, nil, 1024, true, "claude-test")
@@ -369,8 +375,8 @@ func TestBuildParams_PerLTTag(t *testing.T) {
 	projected := projectAll(t, pre, lts)
 
 	snap := systemSnapshot(t, "you are a test agent")
-	snap["system.cache_control"] = json.RawMessage(`"none"`) // isolate per-LT tagging from auto-breakpoints
-	snap["system.tags"] = json.RawMessage(`{"11":{"cache_control":"ephemeral"}}`)
+	snap = withKey(snap, "system.cache_control", json.RawMessage(`"none"`)) // isolate per-LT tagging from auto-breakpoints
+	snap = withKey(snap, "system.tags", json.RawMessage(`{"11":{"cache_control":"ephemeral"}}`))
 
 	params := buildParams(projected.Messages, projected.LogicalTimes, snap, nil, 1024, false, "claude-test")
 	require.Len(t, params.Messages, 3)
@@ -430,27 +436,27 @@ func TestBuildParams_ByteIdenticalToCachedReconstruction(t *testing.T) {
 		},
 		{
 			name: "per_lt_tags_after_coalescing",
-			snap: chalkboard.Snapshot{
+			snap: chalkboard.FromMap(map[string]json.RawMessage{
 				"system.cache_control": json.RawMessage(`"none"`),
 				"system.tags":          json.RawMessage(`{"11":{"cache_control":"1h"},"13":{"cache_control":"5m"},"14":{"cache_control":"ephemeral"}}`),
-			},
+			}),
 			model: "claude-sonnet-4-5",
 		},
 		{
 			name: "budget_thinking_and_signed_block",
-			snap: chalkboard.Snapshot{
+			snap: chalkboard.FromMap(map[string]json.RawMessage{
 				"system.cache_control":   json.RawMessage(`"ephemeral"`),
 				"system.thinking_budget": json.RawMessage(`2048`),
-			},
+			}),
 			model:  "claude-sonnet-4-5",
 			maxOut: 1024,
 		},
 		{
 			name: "adaptive_thinking_model_switch",
-			snap: chalkboard.Snapshot{
+			snap: chalkboard.FromMap(map[string]json.RawMessage{
 				"system.cache_control":   json.RawMessage(`"5m"`),
 				"system.thinking_effort": json.RawMessage(`"medium"`),
-			},
+			}),
 			model:  "claude-sonnet-4-6",
 			maxOut: 8192,
 		},

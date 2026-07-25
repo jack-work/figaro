@@ -26,11 +26,17 @@ func fakeSchema() interface{} {
 // systemSnapshot returns a chalkboard snapshot that injects the given
 // text as system.credo — the canonical source for the projection's
 // system block.
+// withKey returns snap plus one key. Snapshots are immutable values,
+// so derived boards are built with Apply rather than assigned into.
+func withKey(s chalkboard.Snapshot, key string, v json.RawMessage) chalkboard.Snapshot {
+	return s.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{key: v}})
+}
+
 func systemSnapshot(t *testing.T, text string) chalkboard.Snapshot {
 	t.Helper()
 	raw, err := json.Marshal(text)
 	require.NoError(t, err)
-	return chalkboard.Snapshot{"system.credo": raw}
+	return chalkboard.FromMap(map[string]json.RawMessage{"system.credo": raw})
 }
 
 // TestProjectTools_Deterministic verifies that two consecutive
@@ -95,7 +101,7 @@ func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 	}
 
 	snap := systemSnapshot(t, "you are a test agent")
-	snap["system.cache_control"] = json.RawMessage(`"ephemeral"`)
+	snap = withKey(snap, "system.cache_control", json.RawMessage(`"ephemeral"`))
 	req, _ := a.projectMessagesWithModel(a.encodeAll(msgs), snap, tools, 1024, false, "claude-test")
 
 	require.NotEmpty(t, req.System, "system must be present")
@@ -175,7 +181,7 @@ func TestProjectMessages_OAuthSystemArray(t *testing.T) {
 	}
 
 	snap := systemSnapshot(t, "you are figaro")
-	snap["system.cache_control"] = json.RawMessage(`"ephemeral"`)
+	snap = withKey(snap, "system.cache_control", json.RawMessage(`"ephemeral"`))
 	req, _ := a.projectMessagesWithModel(a.encodeAll(msgs), snap, nil, 1024, true, "claude-test")
 
 	require.Len(t, req.System, 2, "OAuth system must have two blocks: Claude Code identity + credo")
@@ -199,7 +205,7 @@ func TestProjectMessages_PerLTTag(t *testing.T) {
 	lts := []uint64{10, 11, 12}
 
 	snap := systemSnapshot(t, "you are a test agent")
-	snap["system.tags"] = json.RawMessage(`{"11":{"cache_control":"ephemeral"}}`)
+	snap = withKey(snap, "system.tags", json.RawMessage(`{"11":{"cache_control":"ephemeral"}}`))
 
 	req, err := a.projectMessagesWithLTs(pre, lts, snap, nil, 1024, false, "claude-test")
 	require.NoError(t, err)

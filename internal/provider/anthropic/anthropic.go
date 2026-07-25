@@ -698,7 +698,7 @@ func systemBlocks(snapshot chalkboard.Snapshot, oauth bool) []systemBlock {
 // readCredo extracts the credo text from a chalkboard snapshot,
 // handling both the bare-string and ContentEnvelope shapes.
 func readCredo(snapshot chalkboard.Snapshot) string {
-	raw, ok := snapshot["system.credo"]
+	raw, ok := snapshot.Get("system.credo")
 	if !ok {
 		return ""
 	}
@@ -769,7 +769,7 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 // applyMessageTags reads system.tags and applies per-message
 // cache_control overrides keyed by logical time.
 func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.Snapshot) {
-	raw, ok := snapshot["system.tags"]
+	raw, ok := snapshot.Get("system.tags")
 	if !ok || len(raw) == 0 {
 		return
 	}
@@ -1317,8 +1317,8 @@ func (a *Anthropic) foldSSEEvent(ctx context.Context, eventType string, data []b
 // applyThinking enables extended thinking on the request when the
 // chalkboard has system.thinking_budget or system.thinking_effort set.
 func applyThinking(req *nativeRequest, snap chalkboard.Snapshot, model string) {
-	budgetRaw, _ := snap["system.thinking_budget"]
-	effortRaw, _ := snap["system.thinking_effort"]
+	budgetRaw, _ := snap.Get("system.thinking_budget")
+	effortRaw, _ := snap.Get("system.thinking_effort")
 
 	var budget int
 	if len(budgetRaw) > 0 {
