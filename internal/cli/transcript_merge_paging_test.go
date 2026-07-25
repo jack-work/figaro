@@ -17,13 +17,35 @@ import (
 // per-frame path. Neither branch could pin the property that only exists once
 // both are in: there is exactly ONE authority on "the retained window changed"
 // (transcript.windowRev, published by invalidateWindow), so the page layer and
-// the line index can never disagree about which window they describe.
+// the line index can never disagree about which window they describe — and the
+// row budget is computed from the index's EXACT per-message row counts, not
+// from an average over the row cache, which since D let rows outlive the window
+// in the payload LRU is no longer the same set of messages.
 //
 // D's tailRev answered "are t.pages still the client's tail?"; A's index had a
 // separate per-frame shape diff deciding whether to refill lineLT. Two checks
 // over one fact is how a moved page set ends up with lineLT — resize anchoring,
 // viewportAnchor — describing a window that no longer exists.
 // ---------------------------------------------------------------------------
+
+// mixedHeightHistory alternates short and tall messages so the retained window
+// and the payload LRU end up holding messages of very different heights. That
+// is what makes "which set did you average over" observable.
+func mixedHeightHistory(n int) []aria.Committed {
+	out := make([]aria.Committed, n)
+	for i := range out {
+		md := "short-" + itoa(i+1)
+		if i+1 <= 2*n/3 { // the older two thirds are tall
+			md = ""
+			for l := range 14 {
+				md += "tall-" + itoa(i+1) + " line-" + itoa(l) + "\n\n"
+			}
+		}
+		out[i] = aria.Committed{LT: i + 1, Role: "assistant",
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: md}}}
+	}
+	return out
+}
 
 // lineLTFromIndex recomputes the LT-per-line map straight from the line index,
 // independently of rebuildLineLT's "only when the shape moved" discipline. Any
@@ -155,4 +177,135 @@ func TestMergedFollowFrameLeavesTheWindowAlone(t *testing.T) {
 		t.Fatal("a committed message did not announce a window change")
 	}
 	assertIndexAgrees(t, tr, "after a commit")
+}
+
+// TestMergedGeometryMeasuresTheWindowNotTheRowCache pins the second invariant.
+// D derived the page geometry from an average over t.rowCache; on the merged
+// stack that set is wrong twice over, because D's own change lets rows outlive
+// the window inside the payload LRU. The budget now reads A's line index, which
+// counts the retained window exactly.
+//
+// The fixture makes the two answers differ on purpose: scroll back until the
+// window holds tall messages while the LRU still holds short ones.
+func TestMergedGeometryMeasuresTheWindowNotTheRowCache(t *testing.T) {
+	history := mixedHeightHistory(300)
+	client := aria.NewClient()
+	client.SetClosedLimit(transcriptTailLimit)
+	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	tr := newTranscript(ldrender.NewFakeTerminal(60, 16), 60, 16, ldrender.NodeText{}, client, "", time.Time{})
+	tr.enter()
+	tr.follow = false
+	for range transcriptPageLimit + 2 {
+		if !pageOnce(t, tr, history, pageOlder) {
+			break
+		}
+		tr.render()
+	}
+	if len(tr.payloadLRU) == 0 {
+		t.Fatal("fixture never evicted a page into the payload LRU")
+	}
+
+	// The truth, computed independently of heldWindow(): walk the retained
+	// pages and add up the rows the row cache holds for them, plus the rule
+	// separator between messages.
+	wantRows, wantMsgs := 0, 0
+	tr.forEachMessage(func(m aria.Message) {
+		rows, ok := tr.rowCache[m.LT]
+		if !ok {
+			t.Fatalf("retained message %d has no cached rows", m.LT)
+		}
+		if wantMsgs > 0 {
+			wantRows += 3
+		}
+		wantRows += len(rows.rows)
+		wantMsgs++
+	})
+	gotRows, gotMsgs := tr.heldWindow()
+	if gotRows != wantRows || gotMsgs != wantMsgs {
+		t.Fatalf("heldWindow() = %d rows over %d messages, retained window is %d over %d",
+			gotRows, gotMsgs, wantRows, wantMsgs)
+	}
+
+	// And the old estimate really would have said something else, so this test
+	// is not comparing a number against itself.
+	cacheRows, cacheMsgs := 0, 0
+	for _, c := range tr.rowCache {
+		cacheRows += len(c.rows) + 3
+		cacheMsgs++
+	}
+	if cacheMsgs <= wantMsgs {
+		t.Fatalf("fixture failed: row cache (%d messages) is no bigger than the window (%d)",
+			cacheMsgs, wantMsgs)
+	}
+	if cacheRows/cacheMsgs == gotRows/gotMsgs {
+		t.Fatalf("fixture failed: row-cache average and window average agree (%d rows/msg)",
+			gotRows/gotMsgs)
+	}
+	if got, want := tr.avgRowsPerMessage(), gotRows/gotMsgs; got != want {
+		t.Fatalf("avgRowsPerMessage() = %d, index says %d", got, want)
+	}
+}
+
+// TestMergedOpenMessageIsExcludedFromTheBudget pins the one deliberate
+// difference from a naive "average the index" implementation, and the reason
+// tuneTail needs TWO numbers where axis D had one.
+//
+// D drove the retune off len(t.lines()), which counts the live message. That
+// conflates "how much committed history am I retaining" (what the row budget
+// governs) with "does the viewport look empty" (what the screen shows). A long
+// streaming reply then masks a window that is under budget and should grow: the
+// pager opens on the floor of transcriptMinPageSize messages and stays there for
+// the whole turn, because the open message alone is already over budget*3/4.
+//
+// A's index knows which entry is the open one, so the merged tuneTail asks the
+// right question of each.
+func TestMergedOpenMessageIsExcludedFromTheBudget(t *testing.T) {
+	client := aria.NewClient()
+	client.SetClosedLimit(transcriptTailLimit)
+	client.Apply(readBefore(tallHistory(120, 12), recentCursor, transcriptPageSize))
+
+	// A reply long enough on its own to blow the whole row budget, streaming
+	// before the pager even opens.
+	huge := ""
+	for l := range 500 {
+		huge += "a very long line of streaming output number " + itoa(l) + "\n\n"
+	}
+	client.Apply(aria.AriaRead{Live: &aria.Live{
+		LT: 121, V: 0, Role: "assistant",
+		Nodes: []aria.NodeDelta{{ID: "n", Set: map[string]any{"type": "prose", "markdown": huge}}},
+	}})
+
+	tr := newTranscript(ldrender.NewFakeTerminal(60, 16), 60, 16, ldrender.NodeText{}, client, "", time.Time{})
+	tr.enter()
+	for range 4 {
+		tr.render()
+	}
+
+	held, msgs := tr.heldWindow()
+	// The fixture is only meaningful if the open message ALONE would trip the
+	// grow test's budget*3/4 threshold.
+	if open := tr.index.total - held; open <= pageRowBudget()*3/4 {
+		t.Fatalf("fixture failed: open message is only %d rows, need > %d",
+			open, pageRowBudget()*3/4)
+	}
+	if msgs <= transcriptMinPageSize {
+		t.Fatalf("the streaming reply masked the retune: window stuck at %d messages (the cold floor is %d)",
+			msgs, transcriptMinPageSize)
+	}
+	if held < pageRowBudget()*3/4 {
+		t.Fatalf("committed window is %d rows, budget is %d: the retune never grew it",
+			held, pageRowBudget())
+	}
+
+	// And growing the live message further must not move the budget's inputs.
+	before, beforeMsgs := held, msgs
+	client.Apply(aria.AriaRead{Live: &aria.Live{
+		LT: 121, V: 0, Role: "assistant",
+		Nodes: []aria.NodeDelta{{ID: "n", Set: map[string]any{"type": "prose", "markdown": huge + huge}}},
+	}})
+	tr.render()
+	if gotRows, gotMsgs := tr.heldWindow(); gotRows != before || gotMsgs != beforeMsgs {
+		t.Fatalf("a growing open message moved the budget: %d rows/%d msgs -> %d/%d",
+			before, beforeMsgs, gotRows, gotMsgs)
+	}
 }

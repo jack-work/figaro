@@ -243,15 +243,42 @@ var transcriptPayloadLRULimit = 4 * transcriptPageLimit
 // numbers behind the chosen value.
 var transcriptWindowRows = 1200
 
-// avgRowsPerMessage is the measured height of the messages this pager has
-// actually rendered, or 0 when nothing has been rendered yet. Cheap: the row
-// cache is bounded by the retained window.
-func (t *transcript) avgRowsPerMessage() int {
-	rows, n := 0, 0
-	for _, c := range t.rowCache {
-		rows += len(c.rows) + 3 // + the inter-message rule
-		n++
+// heldWindow is the EXACT size of the retained window in line space: rendered
+// rows (inter-message rules included) and the number of committed messages
+// they belong to. It reads axis A's line index, which already computes both as
+// a side effect of every frame.
+//
+// Axis D had to estimate this by averaging len(rows) over the row cache, and
+// listed "a per-page row count would make the geometry exact" as future work.
+// Two reasons that estimate was worse than it looks, both of which the index
+// fixes for free:
+//
+//   - the row cache is no longer the retained window. D's own change (rows
+//     follow payloads into the LRU) means the cache holds up to
+//     transcriptPayloadLRULimit extra pages of *history*, so the average was
+//     taken over messages the window does not hold and never counted the
+//     open message the viewport is actually looking at.
+//   - it approximated the separator as a flat +3 per message, including for
+//     the first one, which has none.
+//
+// The open entry is excluded: it is the live message, it changes height every
+// token, and the geometry is about how much committed history to keep.
+func (t *transcript) heldWindow() (rows, messages int) {
+	for k := range t.index.entries {
+		e := &t.index.entries[k]
+		if e.open {
+			continue
+		}
+		rows += e.height()
+		messages++
 	}
+	return rows, messages
+}
+
+// avgRowsPerMessage is the measured height of the messages the retained window
+// holds, or 0 when the index has not been built yet (a cold pager).
+func (t *transcript) avgRowsPerMessage() int {
+	rows, n := t.heldWindow()
 	if n == 0 {
 		return 0
 	}
@@ -579,20 +606,29 @@ func (t *transcript) resetToTail() {
 // dropping messages at the TOP of the window changes only what is retained.
 // Latches once converged, per client revision (a newly committed message
 // re-tunes), so a steady stream of frames does no paging work at all.
-func (t *transcript) tuneTail(rows int) bool {
+//
+// It reads the line index directly rather than being handed len(t.lines()):
+// axis D had only that one number, but the budget and the "is the viewport
+// full" check want two different ones. The budget is about retained COMMITTED
+// rows; the viewport is about everything on screen, live message included.
+// Conflating them let a 400-row streaming reply push the window past
+// budget*5/4 and shrink the retained history out from under it.
+func (t *transcript) tuneTail() bool {
 	if t.tailTuned || !t.follow || t.tailRev == 0 || len(t.pages) != 1 {
 		return false
 	}
 	have := len(t.pages[0].messages)
+	held, _ := t.heldWindow() // committed rows: what the budget governs
+	total := t.index.total    // + the open message: what the viewport shows
 	want, budget := t.pageMessages(), pageRowBudget()
-	if have > 0 && rows > 0 && rows < t.h { // never leave the viewport half-empty
-		perMsg := max(rows/have, 1)
+	if have > 0 && held > 0 && total < t.h { // never leave the viewport half-empty
+		perMsg := max(held/have, 1)
 		if need := (t.h + perMsg - 1) / perMsg; need > want {
 			want = need
 		}
 	}
-	grow := want > have && (rows < budget*3/4 || rows < t.h)
-	shrink := want < have && rows > budget*5/4
+	grow := want > have && (held < budget*3/4 || total < t.h)
+	shrink := want < have && held > budget*5/4
 	if !grow && !shrink {
 		t.tailTuned = true // converged for this revision
 		return false
@@ -865,10 +901,10 @@ func (t *transcript) render() {
 	t.buildIndex()
 	// Converge the tail window on the row budget (usually 0-1 passes). D drove
 	// this off len(t.lines()) — a full materialization of the retained window,
-	// which is exactly what A deleted from the frame path. The index already
-	// carries the same number, so the retune reads it instead.
+	// which is exactly what A deleted from the frame path. tuneTail reads the
+	// index instead, which carries the same counts exactly and for free.
 	for range 3 {
-		if !t.tuneTail(t.index.total) {
+		if !t.tuneTail() {
 			break
 		}
 		t.buildIndex()

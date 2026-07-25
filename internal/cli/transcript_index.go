@@ -24,6 +24,7 @@ type lineEntry struct {
 	lt    int
 	start int
 	sep   bool // preceded by the ""/rule/"" separator triple
+	open  bool // the live/held-open message, re-rendered every frame
 	rows  []transcriptRow
 }
 
@@ -77,9 +78,9 @@ func (t *transcript) buildIndex() {
 		t.cacheW = t.w
 	}
 	entries, total := t.index.scratch[:0], 0
-	add := func(lt int, rows []transcriptRow) {
+	add := func(lt int, rows []transcriptRow, open bool) {
 		sep := total > 0 // rule separator BETWEEN messages only
-		entries = append(entries, lineEntry{lt: lt, start: total, sep: sep, rows: rows})
+		entries = append(entries, lineEntry{lt: lt, start: total, sep: sep, open: open, rows: rows})
 		if sep {
 			total += 3
 		}
@@ -93,10 +94,10 @@ func (t *transcript) buildIndex() {
 			rows = t.renderMsgBase(m)
 			t.rowCache[m.LT] = rows
 		}
-		add(m.LT, rows.rows)
+		add(m.LT, rows.rows, false)
 	})
 	if open := t.openMessage(); open != nil {
-		add(open.LT, t.renderMsgBase(*open).rows)
+		add(open.LT, t.renderMsgBase(*open).rows, true)
 	}
 	// The page set moved => the index describes a different window, full stop.
 	// That is the one authority (windowRev); the shape diff below only has to
