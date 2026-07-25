@@ -75,6 +75,23 @@ func (s *Server) Restore(turns []Turn) {
 	s.mu.Unlock()
 }
 
+// AdoptIfEmpty seeds a server that has never materialized anything, and
+// reports whether it did. s.turns fills as turns seal, so an aria this process
+// has not run a turn for — a dormant one, just attached — holds nothing and
+// would serve an empty page. The caller composes from the durable log outside
+// this lock (it is not cheap) and offers the result here; if a turn opened in
+// the meantime the live state is already authoritative and the offer is
+// declined.
+func (s *Server) AdoptIfEmpty(turns []Turn) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.turns) > 0 || s.open != nil || len(turns) == 0 {
+		return false
+	}
+	s.turns = append([]Turn(nil), turns...)
+	return true
+}
+
 // OpenTurn begins a streaming suffix on turn id, creating the turn if this is
 // its first message. The boundary is wherever the turn's committed nodes
 // currently end, so a multi-round turn reopens further along each time rather
