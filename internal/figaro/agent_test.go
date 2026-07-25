@@ -46,8 +46,8 @@ func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus prov
 }
 
 // streamingMockProvider emits its delta, then gives the drain loop time to
-// compose a PRE-SEAL live frame before appending + sealing — the window where
-// the in-flight assembly has no log entry behind it. The instant-seal
+// compose a PRE-APPEND live frame before appending — the window where
+// the in-flight assembly has no log entry behind it. The instant-append
 // mockProvider never exposes that window.
 type streamingMockProvider struct{ response string }
 
@@ -68,7 +68,7 @@ func (m *streamingMockProvider) Send(_ context.Context, in provider.SendInput, b
 	if entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err == nil {
 		msg.LogicalTime = entry.LT
 	}
-	time.Sleep(30 * time.Millisecond) // sealed-but-evFigaro-unprocessed window
+	time.Sleep(30 * time.Millisecond) // appended-but-evFigaro-unprocessed window
 	bus.PushFigaro(msg)
 	return nil
 }
@@ -1154,12 +1154,12 @@ func TestAgent_InterruptWhenIdle(t *testing.T) {
 var _ = json.RawMessage(nil)
 
 // Regression: composeTurn's window is a figaro-LT (MainLT) cursor, not an
-// entry count, and the in-flight assembly must yield to its sealed copy.
+// entry count, and the in-flight assembly must yield to its appended copy.
 // On a BACKED aria, main LTs are trunk-global (boot patches consume them),
 // so an entry count passed to ReadFrom re-includes prior turns in every
-// live frame; and the provider seals the assistant message into the log
+// live frame; and the provider appends the assistant message into the log
 // concurrently with the drain loop's buffered events, so a frame composed
-// after the append but before the seal event would render the message
+// after the append but before the completion event would render the message
 // twice under two node ids. Both bugs manifest as duplicated content in
 // the live frames.
 func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
@@ -1202,7 +1202,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	turn2 := runTurn("second prompt")
 
 	// No single live frame may carry the reply text more than once: a dup
-	// means the frame composed both the sealed entry and the in-flight
+	// means the frame composed both the appended entry and the in-flight
 	// assembly (or a prior turn's copy) as distinct nodes.
 	checkFrames := func(label string, frames []rpc.Notification) {
 		for _, fr := range frames {
@@ -1216,7 +1216,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	checkFrames("turn2", turn2)
 
 	// Fold every frame through a real aria client: id churn between the
-	// in-flight and sealed composition of the SAME message lands as two
+	// in-flight and appended composition of the SAME message lands as two
 	// node ids across different frames — invisible per-frame, but the
 	// folded view shows a committed assistant message with two nodes.
 	cl := aria.NewClient()

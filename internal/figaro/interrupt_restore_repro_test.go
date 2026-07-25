@@ -17,7 +17,7 @@ import (
 )
 
 // slowStreamingProvider streams a delta, then blocks. Used to force a
-// mid-turn interrupt (assistant never seals) so the store's on-disk
+// mid-turn interrupt (assistant never appends) so the store's on-disk
 // tail is a bare user prompt with no assistant reply — the state
 // prior investigation flagged as breaking read+subscribe coherence.
 type slowStreamingProvider struct {
@@ -41,7 +41,7 @@ func (p *slowStreamingProvider) Send(ctx context.Context, _ provider.SendInput, 
 }
 
 // TestReadSubscribeAfterInterruptedTurn asserts that after an aria is
-// interrupted mid-turn — content on disk, no assistant seal — a fresh
+// interrupted mid-turn — content on disk, no assistant append — a fresh
 // agent restored on the same backend sees the aria's content via
 // Read(0), and a live subscriber receives frames on the next prompt.
 //
@@ -204,7 +204,7 @@ func waitFor(t *testing.T, ch <-chan rpc.Notification, method string, d time.Dur
 	}
 }
 
-// staticReplyProvider replies with a fixed string, then seals.
+// staticReplyProvider replies with a fixed string, then appends.
 type staticReplyProvider struct{ reply string }
 
 func (p *staticReplyProvider) Name() string        { return "static" }

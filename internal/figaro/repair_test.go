@@ -76,7 +76,7 @@ func TestTailRepair_DanglingToolUseAtTail(t *testing.T) {
 }
 
 func TestTailRepair_AbortedPartialAtTail(t *testing.T) {
-	// A sealed partial (drain crashed between assistant and tics).
+	// An appended partial (drain crashed between assistant and tics).
 	s := buildStream(t,
 		message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("run it")}},
 		message.Message{
