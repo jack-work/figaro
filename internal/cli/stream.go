@@ -285,6 +285,11 @@ type interactiveInput struct {
 	searchGen    uint64
 	searchQuery  string
 	searchDone   chan struct{}
+	// pageInFlight guards the single background history fetch. Page fetches are
+	// asynchronous so that scrolling never waits on an RPC; pageDone is closed
+	// when the worker finishes (tests synchronize on it).
+	pageInFlight bool
+	pageDone     chan struct{}
 	// lastNL is the last CR/LF byte we delivered (0 otherwise). Windows
 	// conhost and some other terminals emit CR+LF for a single Enter press;
 	// without dedup, a toggle-style binding (Enter -> expand tools) fires
@@ -333,6 +338,13 @@ func (in *interactiveInput) enterTranscript() {
 	in.mu.Unlock()
 }
 
+// pageTranscript keeps the retained window fed. It never blocks the caller: the
+// input loop calls it after every key and wheel event, and a scroll-up that
+// needs older history must not stop the pager from drawing the frames the user
+// is already scrolling through. One fetch runs at a time (pageInFlight); when
+// it lands, the worker re-asks the pager whether the viewport has since moved
+// close enough to another edge and chains straight into the next page, so a
+// fast scroll pulls history continuously instead of one keypress at a time.
 func (in *interactiveInput) pageTranscript() {
 	in.mu.Lock()
 	if query, searching := in.lt.transcriptHistorySearch(); searching {
@@ -349,22 +361,48 @@ func (in *interactiveInput) pageTranscript() {
 		in.mu.Unlock()
 		return
 	}
+	if in.pageInFlight { // the running fetch re-checks the cursor when it lands
+		in.mu.Unlock()
+		return
+	}
 	req, need := in.lt.transcriptPageCursor()
-	in.mu.Unlock()
 	if !need {
+		in.mu.Unlock()
 		return
 	}
+	in.pageInFlight = true
+	done := make(chan struct{})
+	in.pageDone = done
+	in.mu.Unlock()
+	go in.prefetchTranscriptPages(req, done)
+}
 
-	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-	messages, err := in.readTranscriptPage(rctx, req)
-	rcancel()
-	in.mu.Lock()
-	defer in.mu.Unlock()
-	if err != nil {
-		in.lt.transcriptPageFailed()
-		return
+// prefetchTranscriptPages fetches req and then keeps going while the pager still
+// wants a page in the direction it is being scrolled.
+func (in *interactiveInput) prefetchTranscriptPages(req transcriptPageRequest, done chan struct{}) {
+	defer close(done)
+	for {
+		rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+		messages, err := in.readTranscriptPage(rctx, req)
+		rcancel()
+
+		in.mu.Lock()
+		if err != nil {
+			in.lt.transcriptPageFailed()
+			in.pageInFlight, in.pageDone = false, nil
+			in.mu.Unlock()
+			return
+		}
+		in.lt.transcriptApplyPage(req, messages)
+		next, need := in.lt.transcriptPageCursor()
+		if !need || in.lt.transcriptSearchingHistory() {
+			in.pageInFlight, in.pageDone = false, nil
+			in.mu.Unlock()
+			return
+		}
+		req = next
+		in.mu.Unlock()
 	}
-	in.lt.transcriptApplyPage(req, messages)
 }
 
 func (in *interactiveInput) pageTranscriptSearch(ctx context.Context, cancel context.CancelFunc, done chan struct{}, gen uint64, query string) {

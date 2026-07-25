@@ -269,13 +269,21 @@ func (t *transcript) tailKeep() int {
 	return t.pageMessages()
 }
 
+// transcriptPrefetchScreens is how close (in viewports) the scroll position has
+// to get to an edge of the retained window before we start pulling the next
+// page. One screen means the fetch is armed only once the user is already
+// looking at the last rows we have, so the RPC lands *after* they hit the wall;
+// two gives a screenful of runway, which at wheel speed is a few hundred
+// milliseconds — enough to cover a local daemon round trip.
+const transcriptPrefetchScreens = 2
+
 func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	if t.checkOlder && t.noMoreOlder {
 		t.checkOlder = false
 	}
 	if t.checkOlder && !t.noMoreOlder {
 		t.checkOlder = false
-		if t.search == nil && t.offset >= t.h {
+		if t.search == nil && t.offset >= transcriptPrefetchScreens*t.h {
 			return transcriptPageRequest{}, false
 		}
 		oldest, ok := t.oldestLT()
@@ -292,7 +300,7 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	}
 	if t.checkNewer && len(t.newer) > 0 {
 		t.checkNewer = false
-		if t.search == nil && t.offset+t.h < len(t.lineLT) {
+		if t.search == nil && t.offset+transcriptPrefetchScreens*t.h < len(t.lineLT) {
 			return transcriptPageRequest{}, false
 		}
 		desc := t.newer[len(t.newer)-1]
