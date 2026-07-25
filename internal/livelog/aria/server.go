@@ -389,6 +389,20 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 // broadcasts them as a snapshot part. This is the user prompt's path: it is
 // complete the instant it exists, so it never needs an open region — which is
 // what keeps it from flickering between send and durable commit.
+// OpenInquiry records the question that opened a turn. The inquiry is turn
+// metadata, not a node: an exchange begins with exactly one of them, so it is a
+// property of the turn rather than an element of its list. Called once, before
+// the prompt's own Append, so a live turn carries its inquiry from the first
+// frame rather than acquiring it when the turn seals.
+func (s *Server) OpenInquiry(id uint64, inquiry string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if n := len(s.turns); n == 0 || s.turns[n-1].ID != id {
+		s.turns = append(s.turns, Turn{ID: id})
+	}
+	s.turns[len(s.turns)-1].Inquiry = inquiry
+}
+
 func (s *Server) Append(id uint64, nodes []livedoc.Node) {
 	s.mu.Lock()
 	if n := len(s.turns); n == 0 || s.turns[n-1].ID != id {

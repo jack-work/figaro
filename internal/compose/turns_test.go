@@ -3,6 +3,8 @@ package compose
 import (
 	"testing"
 
+	"github.com/jack-work/figaro/internal/livedoc"
+
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -202,5 +204,46 @@ func TestTurnSpanAlwaysStartsOnAPrompt(t *testing.T) {
 func TestTurnSpanUnknown(t *testing.T) {
 	if _, _, ok := TurnSpan(withLTs(conversation()), 99); ok {
 		t.Fatal("turn 99 should not resolve")
+	}
+}
+
+// An inquiry is 1:1 with a turn boundary. The user believed this was already
+// true; it is, and this pins it so it stays true. OpensTurn already demands
+// non-empty prose, so a turn cannot open without an inquiry, and a second
+// inquiry cannot arrive without closing the first.
+//
+// The fixture is the canonical shape, which is the case that would fool a
+// naive rule: its steering interjection is a RoleInput message riding on a
+// tool_result, and it must neither open a turn nor become an inquiry.
+func TestTurns_EveryTurnHasExactlyOneInquiry(t *testing.T) {
+	turns := Turns(conversation(), nil, nil)
+	if len(turns) == 0 {
+		t.Fatal("no turns")
+	}
+	for _, tn := range turns {
+		if tn.Inquiry == "" {
+			t.Errorf("turn %d has no inquiry — a turn cannot open without one", tn.ID)
+		}
+	}
+	if got := turns[0].Inquiry; got != "quick test" {
+		t.Errorf("turn 1 inquiry = %q, want the opening question only (not the steering text)", got)
+	}
+}
+
+// The inquiry is the opening question as TEXT, and it agrees with the prompt
+// node the projection still emits. When that node is removed (see the S32 note
+// on aria.Turn.Inquiry) this test becomes the proof that nothing was lost.
+func TestTurns_InquiryAgreesWithThePromptNode(t *testing.T) {
+	for _, tn := range Turns(conversation(), nil, nil) {
+		if len(tn.Nodes) == 0 {
+			t.Fatalf("turn %d has no nodes", tn.ID)
+		}
+		n := tn.Nodes[0]
+		if n.Role != livedoc.RoleInput {
+			t.Fatalf("turn %d node 0 is not the prompt (role %q)", tn.ID, n.Role)
+		}
+		if n.Markdown != tn.Inquiry {
+			t.Errorf("turn %d: inquiry %q != prompt node %q", tn.ID, tn.Inquiry, n.Markdown)
+		}
 	}
 }

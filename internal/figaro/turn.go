@@ -236,6 +236,7 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entr
 		// Commit makes the message appear only when the transcript truly holds
 		// it — the aria frame carries {Role, Nodes} on the first hop and the
 		// client short-circuits to OnClosed with no OnLive event.
+		a.ariaSrv.OpenInquiry(a.turnID, prompt.text)
 		a.ariaSrv.Append(a.turnID, []livedoc.Node{
 			{Type: livedoc.NodeProse, Role: livedoc.RoleInput, Markdown: prompt.text},
 		})
