@@ -50,12 +50,14 @@ func renderNodeList(nodes []livedoc.Node, width, bashCap int, tick uint64, set r
 			continue
 		}
 		var nr []string
-		switch n.Type {
-		case livedoc.NodeTool:
+		switch {
+		case n.Type == livedoc.NodeTool:
 			nr = renderToolNode(n, width, bashCap, tick, set.verbose)
-		case livedoc.NodeThinking:
+		case n.Type == livedoc.NodeThinking:
 			nr = renderThinkingNode(n, width)
-		case livedoc.NodeSteering:
+		// The prompt and a steering interjection are the same kind of thing in
+		// different positions, so they draw the same way (docs/turn-addressing.md).
+		case n.Type == livedoc.NodeSteering, n.Role == "user":
 			nr = renderSteeringNode(n, width)
 		default:
 			nr = renderProseNode(n, width)

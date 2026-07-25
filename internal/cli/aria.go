@@ -183,9 +183,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	fmt.Printf("# aria %s — %d turns (showing %d–%d) · [N] is the turn to fork/send at\n\n", figaroID, len(turns), lo+1, hi)
 	for i := lo; i < hi; i++ {
 		u := turns[i]
-		hdr := messageHeader("assistant")
-		label := fmt.Sprintf("%s   %s", term.Dim(fmt.Sprintf("[%d]", u.ID)), hdr)
-		fmt.Println(label)
+		fmt.Println(term.Dim(fmt.Sprintf("[%d]", u.ID)))
 		fmt.Println()
 		rows := renderNodeList(u.Nodes, width, 0, 0, renderSettings{verbose: true})
 		fmt.Println(strings.Join(rows, "\n"))
