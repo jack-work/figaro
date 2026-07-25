@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 // slowStreamingProvider streams a delta, then blocks. Used to force a
@@ -81,6 +82,7 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 
 	started := make(chan struct{})
 	a1 := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         conv,
 		SocketPath: filepath.Join(t.TempDir(), "a1.sock"),
 		Provider:   &slowStreamingProvider{started: started},
@@ -129,6 +131,7 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 		require.NoError(t, err)
 		t.Cleanup(func() { backend2.Close() })
 		a2 = figaro.NewAgent(figaro.Config{
+			Projector:  uiir.New(nil),
 			ID:         conv,
 			SocketPath: filepath.Join(t.TempDir(), "a2.sock"),
 			Provider:   &staticReplyProvider{reply: "second reply after restore"},

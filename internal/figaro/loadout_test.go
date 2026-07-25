@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 // writeLoadout drops a loadout TOML at configDir/loadouts/<name>.toml.
@@ -32,6 +33,7 @@ func agentForLoadout(t *testing.T, configDir string, initial chalkboard.Patch) *
 		cb.Apply(initial)
 	}
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "loadout-test",
 		SocketPath: filepath.Join(t.TempDir(), "sock"),
 		Provider:   &chalkSpyProvider{},

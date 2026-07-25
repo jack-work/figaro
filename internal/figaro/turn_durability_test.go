@@ -21,6 +21,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 func newBackedConversation(t *testing.T) (*store.XwalBackend, string) {
@@ -88,7 +89,7 @@ func TestOpenAfterCrashBeforeAssistantAppend(t *testing.T) {
 	before := ir.Len()
 
 	prov := &idleProvider{}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	got := a.Context()
 	a.Kill()
 
@@ -113,7 +114,7 @@ func TestOpenAfterCrashWithUnresolvedTools(t *testing.T) {
 	require.NoError(t, err)
 
 	prov := &idleProvider{}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	first := a.Context()
 	a.Kill()
 	last := first[len(first)-1]
@@ -124,7 +125,7 @@ func TestOpenAfterCrashWithUnresolvedTools(t *testing.T) {
 	assert.True(t, last.Content[0].IsError)
 	assert.Contains(t, last.Content[0].Text, "process died mid-turn")
 
-	a = figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
+	a = figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	second := a.Context()
 	a.Kill()
 	assert.Len(t, second, len(first), "repeated open must not double-repair")
@@ -196,7 +197,7 @@ func TestInterruptRepairsPartialTurn(t *testing.T) {
 				toolStarted = make(chan struct{})
 				registry.MustRegister(&waitTool{started: toolStarted})
 			}
-			a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: registry})
+			a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: registry})
 			defer a.Kill()
 			ch, _ := subscribeChan(a)
 			a.SubmitPrompt(rpc.QuaRequest{Text: "go"})
@@ -303,7 +304,7 @@ func TestInterruptPreservesCompletedAndRunningToolStates(t *testing.T) {
 	registry := tool.NewRegistry()
 	registry.MustRegister(impl)
 	prov := &mixedToolProvider{done: impl.done, running: impl.running, release: make(chan struct{})}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: registry})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: registry})
 	defer a.Kill()
 	ch, _ := subscribeChan(a)
 	a.SubmitPrompt(rpc.QuaRequest{Text: "go"})
@@ -380,7 +381,7 @@ func TestPanicRecoveryRepairsInMemoryPartial(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
 	prov := &delayedDeltaProvider{}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	defer a.Kill()
 	a.Subscribe(&panicOnceNotifier{})
 	ch, _ := subscribeChan(a)
@@ -420,7 +421,8 @@ func TestPanicAfterIRBeforeLiveCommitReconcilesCanonicalAssistant(t *testing.T) 
 	b, id := newBackedConversation(t)
 	defer b.Close()
 	a := figaro.NewAgent(figaro.Config{
-		ID: id, Provider: canonicalThenFrameProvider{}, Backend: b, Tools: tool.NewRegistry(),
+		Projector: uiir.New(nil),
+		ID:        id, Provider: canonicalThenFrameProvider{}, Backend: b, Tools: tool.NewRegistry(),
 	})
 	defer a.Kill()
 	a.Subscribe(&panicOnceNotifier{})
@@ -498,7 +500,7 @@ func TestPanicRecoveryPreservesQueuedPromptAndFork(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
 	prov := &panicQueueProvider{started: make(chan struct{}), release: make(chan struct{})}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	defer a.Kill()
 	notifier := &queuePanicNotifier{panicked: make(chan struct{})}
 	a.Subscribe(notifier)
@@ -583,7 +585,8 @@ func TestAssistantAppendRejectsPredictedLTMismatch(t *testing.T) {
 	require.NoError(t, err)
 	backend := mismatchBackend{Backend: real, log: mismatchLog{Log: base}}
 	a := figaro.NewAgent(figaro.Config{
-		ID: id, Provider: canonicalThenFrameProvider{}, Backend: backend, Tools: tool.NewRegistry(),
+		Projector: uiir.New(nil),
+		ID:        id, Provider: canonicalThenFrameProvider{}, Backend: backend, Tools: tool.NewRegistry(),
 	})
 	defer a.Kill()
 	ch, _ := subscribeChan(a)
@@ -646,7 +649,7 @@ func TestCacheAppendFailureEndsTurnKeepsAssistant(t *testing.T) {
 	payload := []json.RawMessage{json.RawMessage(`{"encrypted_content":"enc-opaque","type":"reasoning"}`)}
 	prov := &nativeCommitProvider{namespace: "atomic-cache", payload: payload, fingerprint: "atomic-cache/v1"}
 	failing := failingAssistantCacheBackend{Backend: real, namespace: "atomic-cache"}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: failing, Tools: tool.NewRegistry()})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: failing, Tools: tool.NewRegistry()})
 	ch, _ := subscribeChan(a)
 	a.SubmitPrompt(rpc.QuaRequest{Text: "go"})
 	reason := waitDoneReason(t, ch)
@@ -664,7 +667,7 @@ func TestCacheAppendFailureEndsTurnKeepsAssistant(t *testing.T) {
 	assert.False(t, ok)
 
 	prov2 := &idleProvider{}
-	a = figaro.NewAgent(figaro.Config{ID: id, Provider: prov2, Backend: real, Tools: tool.NewRegistry()})
+	a = figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov2, Backend: real, Tools: tool.NewRegistry()})
 	got := a.Context()
 	a.Kill()
 	assert.Equal(t, message.RoleAssistant, got[len(got)-1].Role, "next open sees the canonical assistant, unblocked")
@@ -704,7 +707,7 @@ func TestQueuedForkWaitsForProviderCacheAppend(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
 	prov := &appendBarrierProvider{afterAck: make(chan struct{}), release: make(chan struct{})}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	defer a.Kill()
 	ch, _ := subscribeChan(a)
 	a.SubmitPrompt(rpc.QuaRequest{Text: "go"})

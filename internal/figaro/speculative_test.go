@@ -18,6 +18,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 // --- Speculative-dispatch test infrastructure ---
@@ -197,6 +198,7 @@ func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "spec-001",
 		SocketPath: "/tmp/spec-test.sock",
 		Provider:   prov,
@@ -273,6 +275,7 @@ func TestSpeculativeDispatch_ResultOrdering(t *testing.T) {
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "spec-002",
 		SocketPath: "/tmp/spec-test-2.sock",
 		Provider:   prov,
@@ -358,6 +361,7 @@ func TestToolTurn_IRStructure(t *testing.T) {
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "invoke-001",
 		SocketPath: "/tmp/invoke-test.sock",
 		Provider:   prov,

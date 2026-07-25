@@ -15,7 +15,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -251,7 +250,9 @@ func (a *Agent) startAssistantUnit() {
 	a.gov = toolout.New(liveOutputTail)
 	a.lastEmit = time.Time{}
 	a.argPartials = map[string]string{}
-	a.toolTimings = map[string]compose.ToolTiming{}
+	if a.proj != nil {
+		a.proj.ResetTools()
+	}
 	a.turn = newTurnState()
 	a.emitSnapshot("assistant", nil)
 }
@@ -1070,7 +1071,7 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		}
 		msgs = append(msgs, m)
 	}
-	nodes := compose.Nodes(msgs, a.gov.Tails(), a.argPartials, a.summarize, a.previewArg, a.toolTimings)
+	nodes := a.projNodes(msgs, a.gov.Tails(), a.argPartials)
 	if dir := os.Getenv("FIGARO_NODE_DEBUG"); dir != "" {
 		logComposeFrame(dir, a.id, inflight != nil, nodes)
 	}
@@ -1078,35 +1079,24 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 }
 
 func (a *Agent) startToolTiming(id string, at int64) {
-	if id == "" {
+	if a.proj == nil {
 		return
 	}
 	if at == 0 {
 		at = time.Now().UnixMilli()
 	}
-	if a.toolTimings == nil {
-		a.toolTimings = map[string]compose.ToolTiming{}
-	}
-	timing := a.toolTimings[id]
-	if timing.StartedAt == 0 {
-		timing.StartedAt = at
-		a.toolTimings[id] = timing
-	}
+	a.proj.ToolStarted(id, at)
 }
 
 func (a *Agent) finishToolTiming(id string, at int64) {
-	if id == "" {
+	if a.proj == nil {
 		return
 	}
 	if at == 0 {
 		at = time.Now().UnixMilli()
 	}
-	a.startToolTiming(id, at)
-	timing := a.toolTimings[id]
-	if timing.FinishedAt == 0 {
-		timing.FinishedAt = at
-		a.toolTimings[id] = timing
-	}
+	a.proj.ToolStarted(id, at)
+	a.proj.ToolFinished(id, at)
 }
 
 // logComposeFrame (debug, env-gated) appends one line per composed frame so we

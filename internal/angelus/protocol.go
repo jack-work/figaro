@@ -25,6 +25,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/uiir"
 	"github.com/jack-work/figwal/segment"
 	"github.com/jack-work/jkrpc"
 )
@@ -327,12 +328,14 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
 
+	reg := tool.DefaultRegistryFn(cwdFromChalkboard(cbState, cwd))
 	agent := figaro.NewAgent(figaro.Config{
 		ID:         id,
 		SocketPath: sockPath,
 		Provider:   prov,
 		Outfitter:  h.outfitter,
-		Tools:      tool.DefaultRegistryFn(cwdFromChalkboard(cbState, cwd)),
+		Tools:      reg,
+		Projector:  uiir.New(reg),
 		Backend:    backend,
 		Chalkboard: cbState,
 		InlineBoot: inlineBoot,
@@ -1160,12 +1163,14 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 			lastActive = time.UnixMilli(meta.LastActiveMS)
 		}
 	}
+	reg := tool.DefaultRegistryFn(cwdFromChalkboard(cb, toolRoot))
 	agent := figaro.NewAgent(figaro.Config{
 		ID:         ariaID,
 		SocketPath: sockPath,
 		Provider:   prov,
 		Outfitter:  h.outfitter,
-		Tools:      tool.DefaultRegistryFn(cwdFromChalkboard(cb, toolRoot)),
+		Tools:      reg,
+		Projector:  uiir.New(reg),
 		Backend:    h.angelus.Backend,
 		Chalkboard: cb,
 		CreatedAt:  createdAt,
