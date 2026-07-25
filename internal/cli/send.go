@@ -105,7 +105,7 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 				return opts, nil, fmt.Errorf("--id given more than once")
 			}
 			opts.id = expanded[i+1]
-			if err := validateSendID(opts.id); err != nil {
+			if _, _, _, err := parseTarget(opts.id); err != nil {
 				return opts, nil, err
 			}
 			i += 2
@@ -118,7 +118,7 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			if opts.id == "" {
 				return opts, nil, fmt.Errorf("--id requires a value")
 			}
-			if err := validateSendID(opts.id); err != nil {
+			if _, _, _, err := parseTarget(opts.id); err != nil {
 				return opts, nil, err
 			}
 			i++
@@ -285,6 +285,8 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 	// No turn: a positional target is just the aria to send to.
 	if opts.id == "" {
 		opts.id = trunkID
+	} else {
+		opts.id = trunkID // strip any :<turn> that parseTarget already consumed
 	}
 
 	switch {
