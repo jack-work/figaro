@@ -241,7 +241,34 @@ var transcriptPayloadLRULimit = 4 * transcriptPageLimit
 // not a const, so the geometry sweep in transcript_geometry_bench_test.go can
 // measure the tradeoff it encodes. See docs/transcript-paging.md for the
 // numbers behind the chosen value.
-var transcriptWindowRows = 1200
+//
+// RE-DERIVED FOR THE MERGED STACK. Axis D measured the knee at 1200 rows
+// because back then every retained row cost CPU on every frame (a 1377-row
+// window was a 4.22 ms frame, a 300-row window 0.89 ms). Axis A's line index
+// removed that: on the merged code a scroll frame is 11-13 µs and a live-follow
+// frame 13.6-14.7 µs, FLAT from 600 to 4800 retained rows. The curve that
+// picked 1200 no longer exists.
+//
+// What is left is churn vs retained memory, and the sweep says the crossover is
+// set by how deep the user scrolls, not by the budget (journey depth x budget,
+// heavy aria — see TestTranscriptGeometryDepthReport):
+//
+//	depth 120: budget 1200 -> 16 fetches, 0 refetched, 544 renders, 1.9 MB peak
+//	           budget 2400 ->  8 fetches, 0 refetched, 612 renders, 2.4 MB peak
+//	depth 240: budget 1200 -> 46 fetches, 120 refetched, 1504 renders, 1.9 MB
+//	           budget 2400 -> 16 fetches,   0 refetched, 1156 renders, 4.1 MB
+//
+// 1200 only bought churn-freedom for a journey of ~120 messages, because the
+// history the pager retains is the window plus transcriptPayloadLRULimit pages
+// of it, i.e. ~5x the budget in rows. 2400 doubles the depth that is free, and
+// for deep trips it is cheaper in CPU too. It costs ~2 MB more retained rows and
+// ~1 ms more on Ctrl-T (cold enter renders one page: 3.8 ms -> 4.8 ms) — both
+// less than ONE pre-merge frame's 4 MB of allocation.
+//
+// The upper bound is principled rather than arbitrary: at 4800 the derived page
+// size saturates the transcriptPageSize ceiling (1600/46 > 30), so the rows-based
+// geometry degenerates into exactly the message-count geometry it replaced.
+var transcriptWindowRows = 2400
 
 // heldWindow is the EXACT size of the retained window in line space: rendered
 // rows (inter-message rules included) and the number of committed messages

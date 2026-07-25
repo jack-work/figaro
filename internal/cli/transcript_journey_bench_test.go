@@ -28,10 +28,10 @@ import (
 // ---------------------------------------------------------------------------
 
 // pagingView wraps a NodeView and counts Render calls, so a test can measure
-// how much prose the paging POLICY forces us to re-render. (Axis A's merge
-// oracle in transcript_merge_test.go already owns the name countingView for the
-// frame path; the two count the same thing but stay separate so neither axis's
-// assertions move when the other's rig changes.)
+// how much prose the paging POLICY forces us to re-render. (The merge oracle in
+// transcript_merge_test.go has its own countingView for the frame path; the two
+// count the same thing but are kept separate so neither axis's assertions move
+// when the other's rig changes.)
 type pagingView struct {
 	inner  *ariaView
 	render int
@@ -66,6 +66,14 @@ type pagingHarness struct {
 	evictions int
 	refetches int
 	seen      map[int]bool // LT -> has been fetched at least once
+
+	// peakBytes is the high-water mark of RETAINED row memory over the trip
+	// (row cache struct + text bytes, i.e. rowCacheFootprint). Once the frame is
+	// O(viewport) this, not frame CPU, is what a bigger window costs — so the
+	// geometry sweep has to be able to see it. Sampled after every applyPage,
+	// which is when the window and the payload LRU change.
+	peakBytes int
+	peakRows  int
 }
 
 func newPagingHarness(messages, outputLines, w, h int) *pagingHarness {
@@ -139,7 +147,8 @@ func (h *pagingHarness) read(req transcriptPageRequest) []aria.Message {
 	return msgs
 }
 
-// account diffs the retained window against the previous one to count evictions.
+// account diffs the retained window against the previous one to count evictions,
+// and samples retained row memory.
 func (h *pagingHarness) account() {
 	now := map[int]bool{}
 	for _, m := range h.tr.messages() {
@@ -151,6 +160,13 @@ func (h *pagingHarness) account() {
 		}
 	}
 	h.held = now
+	rows, structBytes, textBytes, _ := h.tr.rowCacheFootprint()
+	if b := structBytes + textBytes; b > h.peakBytes {
+		h.peakBytes = b
+	}
+	if rows > h.peakRows {
+		h.peakRows = rows
+	}
 }
 
 func (h *pagingHarness) key(b byte) {
