@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
 
@@ -70,7 +71,85 @@ func renderNodeList(nodes []livedoc.Node, width, bashCap int, tick uint64, set r
 // tabs, CR) are flattened to spaces: a row must be exactly one physical
 // line or it desyncs the painter's one-row-per-line cursor math (a
 // multi-line bash command in a tool's arg summary is the common culprit).
+//
+// The overwhelmingly common case is a row that already fits and carries
+// nothing to rewrite — every row of every frame is clipped, twice (once by
+// the node renderer, once by the transcript's selection gutter), and almost
+// none of them actually need clipping. clipFits proves the rewrite is a
+// no-op with a single allocation-free byte scan; only rows that genuinely
+// change go through clipToWidthRewrite.
 func clipToWidth(s string, width int) string {
+	if clipFits(s, width) {
+		return s
+	}
+	return clipToWidthRewrite(s, width)
+}
+
+// clipFits reports whether clipToWidthRewrite(s, width) == s, i.e. whether
+// the row is already within width, free of control characters, and valid
+// UTF-8 (the rewrite decodes to runes, so an invalid byte would come back
+// as U+FFFD and change the row). Pure scan: no allocation.
+func clipFits(s string, width int) bool {
+	col := 0
+	for i := 0; i < len(s); {
+		if c := s[i]; c >= 0x20 && c < 0x7f {
+			// Run of printable ASCII: one column per byte, no need to
+			// consult runewidth (asserted by TestClipFits...Assumption).
+			start := i
+			for i++; i < len(s) && s[i] >= 0x20 && s[i] < 0x7f; i++ {
+			}
+			col += i - start
+			if col > width {
+				return false
+			}
+			continue
+		} else if c == 0x1b { // escape sequence: copied verbatim, uncounted
+			j, ascii := escapeEnd(s, i)
+			if !ascii && !utf8.ValidString(s[i:j]) {
+				return false // would round-trip through U+FFFD
+			}
+			i = j
+			continue
+		} else if c < utf8.RuneSelf { // control char: rewritten to a space
+			return false
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			return false // invalid UTF-8: the rewrite substitutes U+FFFD
+		}
+		col += runewidth.RuneWidth(r)
+		if col > width {
+			return false
+		}
+		i += size
+	}
+	return true
+}
+
+// escapeEnd returns the index just past the ANSI escape sequence starting at
+// s[i] (assumed to be ESC) — everything up to and including the first ASCII
+// letter, or the end of the string — and whether that span was pure ASCII
+// (in which case the caller can skip the UTF-8 validity check, which is
+// otherwise a quarter of the scan's cost on glamour-styled rows). Byte-wise
+// scanning is equivalent to the rune-wise scan it replaces: a multi-byte
+// rune's bytes are all >= 0x80 and so can never be mistaken for the
+// terminating letter.
+func escapeEnd(s string, i int) (int, bool) {
+	ascii := true
+	for j := i + 1; j < len(s); j++ {
+		c := s[j]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+			return j + 1, ascii
+		}
+		if c >= utf8.RuneSelf {
+			ascii = false
+		}
+	}
+	return len(s), ascii
+}
+
+// clipToWidthRewrite is the general path: it materializes the clipped row.
+func clipToWidthRewrite(s string, width int) string {
 	col := 0
 	var b strings.Builder
 	rs := []rune(s)
@@ -209,7 +288,9 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 	if n.StartedAt != 0 {
 		header += " " + term.Dim("["+toolDuration(n, time.Now())+"]")
 	}
-	rows := []string{header}
+	// Header, optional arg/timestamp lines, then the tail-clamped output.
+	rows := make([]string, 1, 6+max(bashCap, 0))
+	rows[0] = header
 
 	if expand && len(n.Args) > 0 {
 		const g = "  "
@@ -246,8 +327,9 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 			rows = append(rows, term.Dim(fmt.Sprintf("  │ … last %d of %d lines", bashCap, total)))
 		}
 		const gutter = "  │ "
+		dimGutter := term.Dim(gutter) // hoisted: one styled gutter, not one per line
 		for _, l := range lines {
-			rows = append(rows, term.Dim(gutter)+truncCols(l, width-len(gutter)))
+			rows = append(rows, dimGutter+truncCols(l, width-len(gutter)))
 		}
 	}
 	return rows

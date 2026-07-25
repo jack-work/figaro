@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"html"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,11 +72,18 @@ type transcript struct {
 
 	// rowCache memoizes unstyled rows of committed messages. Selection is
 	// applied after retrieval, so moving through nodes never re-renders prose.
-	rowCache  map[int]cachedMessage
-	cacheW    int
-	nodeRows  map[nodeRef]nodeSpan
-	selection nodeSelection
-	expanded  map[nodeRef]bool
+	rowCache    map[int]cachedMessage
+	cacheW      int
+	nodeRows    map[nodeRef]nodeSpan
+	lineBuf     []string // reused row buffer, valid until the next lines()
+	lineLTBuf   []int    // reused LT buffer, aliased by lineLT
+	ruleStr     string   // memoized separator rule for ruleW columns
+	ruleW       int
+	keepBuf     map[int]bool // reused live-LT set for pruneCaches
+	paintBuf    []byte       // reused escape-sequence output buffer
+	screenSpare []string     // the frame buffer displaced by the last paint
+	selection   nodeSelection
+	expanded    map[nodeRef]bool
 }
 
 type transcriptPage struct {
@@ -379,10 +387,16 @@ func (t *transcript) resetToTail() {
 }
 
 func (t *transcript) pruneCaches() {
-	keep := make(map[int]bool)
-	for _, m := range t.messages() {
-		keep[m.LT] = true
+	// Called from resetToTail, i.e. once per frame while following the live
+	// tail, so the LT set is reused rather than rebuilt.
+	keep := t.keepBuf
+	if keep == nil {
+		keep = make(map[int]bool, transcriptPageSize*transcriptPageLimit)
+		t.keepBuf = keep
+	} else {
+		clear(keep)
 	}
+	t.forEachMessage(func(m aria.Message) { keep[m.LT] = true })
 	for lt := range t.rowCache {
 		if !keep[lt] {
 			delete(t.rowCache, lt)
@@ -391,6 +405,18 @@ func (t *transcript) pruneCaches() {
 	for ref := range t.expanded {
 		if !keep[ref.lt] {
 			delete(t.expanded, ref)
+		}
+	}
+}
+
+// forEachMessage walks the retained window without materializing the merged
+// slice messages() returns — it is called from the frame path, where one
+// allocation and a copy of every retained message header per frame is pure
+// waste.
+func (t *transcript) forEachMessage(fn func(aria.Message)) {
+	for _, page := range t.pages {
+		for _, m := range page.messages {
+			fn(m)
 		}
 	}
 }
@@ -524,24 +550,39 @@ func (t *transcript) lines() []string {
 	}
 	marks := t.selectionMarks()
 	hl := t.activeHighlight()
-	var out []string
-	var lts []int // LT owning each line (0 for separator rules), parallel to out
-	t.nodeRows = map[nodeRef]nodeSpan{}
+	// The row and LT buffers are reused across frames: a heavy transcript
+	// materializes thousands of rows per keypress, and re-growing two slices
+	// from nil every time was the largest remaining allocator in the frame
+	// path (112 KB/frame of pure append churn). The returned slice is only
+	// valid until the next lines() call — every caller consumes it before it
+	// can call lines() again, and t.lineLT has always aliased this buffer.
+	out := t.lineBuf[:0]
+	lts := t.lineLTBuf[:0] // LT owning each line (0 for separator rules), parallel to out
+	rule := t.transRule()
+	clear(t.nodeRows) // reused: a fresh map per frame is pure garbage
 	appendMsg := func(rows []transcriptRow, lt int) {
 		if len(out) > 0 { // rule separator BETWEEN messages only — the footer
-			out = append(out, "", dimTransRule(t.w), "") // seals the last one, so a
-			lts = append(lts, lt, lt, lt)                // trailing rule+blank would
+			out = append(out, "", rule, "") // seals the last one, so a
+			lts = append(lts, lt, lt, lt)   // trailing rule+blank would
 		} // double up against it
+		last := nodeRef{}
 		for _, r := range rows {
 			line := r.text
 			if r.ref.valid() {
-				line = decorateNodeRow(line, marks[r.ref], t.w)
-				span, ok := t.nodeRows[r.ref]
-				if !ok {
-					span.first = len(out)
+				if marks != nil {
+					line = decorateNodeRow(line, marks[r.ref])
 				}
-				span.last = len(out)
-				t.nodeRows[r.ref] = span
+				// A node's rows are contiguous, so the span only needs
+				// rewriting when the ref changes: one map write per node
+				// instead of one per row (map hashing was 13% of frame CPU).
+				if r.ref != last {
+					t.nodeRows[r.ref] = nodeSpan{first: len(out), last: len(out)}
+					last = r.ref
+				} else {
+					span := t.nodeRows[r.ref]
+					span.last = len(out)
+					t.nodeRows[r.ref] = span
+				}
 			}
 			if hl != "" {
 				line = highlightMatches(line, hl)
@@ -550,19 +591,29 @@ func (t *transcript) lines() []string {
 			lts = append(lts, lt)
 		}
 	}
-	for _, m := range t.messages() {
+	t.forEachMessage(func(m aria.Message) {
 		rows, ok := t.rowCache[m.LT]
 		if !ok {
 			rows = t.renderMsgBase(m)
 			t.rowCache[m.LT] = rows
 		}
 		appendMsg(rows.rows, m.LT)
-	}
+	})
 	if open := t.openMessage(); open != nil {
 		appendMsg(t.renderMsgBase(*open).rows, open.LT)
 	}
+	t.lineBuf, t.lineLTBuf = out, lts
 	t.lineLT = lts
 	return out
+}
+
+// transRule is the memoized message separator: strings.Repeat per message per
+// frame is 16 KB/frame of identical strings.
+func (t *transcript) transRule() string {
+	if t.ruleStr == "" || t.ruleW != t.w {
+		t.ruleStr, t.ruleW = dimTransRule(t.w), t.w
+	}
+	return t.ruleStr
 }
 
 func (t *transcript) openMessage() *aria.Message {
@@ -592,8 +643,17 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 		}
 		ref := nodeRef{lt: m.LT, index: k}
 		for _, l := range t.renderNode(n, ref) {
-			rows = append(rows, transcriptRow{text: l, ref: ref})
+			// Rows are stored already clipped and gutter-prefixed (their
+			// unselected resting form) so a frame that touches nothing
+			// allocates nothing; see plainNodeRow.
+			rows = append(rows, transcriptRow{text: plainNodeRow(l, t.w), ref: ref})
 		}
+	}
+	// Committed rows are retained for as long as the page is, so hand back an
+	// exactly-sized array: append growth leaves up to 65% slack, and at 32
+	// bytes a row that is real memory held for the whole session.
+	if cap(rows) > len(rows) {
+		rows = append(make([]transcriptRow, 0, len(rows)), rows...)
 	}
 	return cachedMessage{rows: rows}
 }
@@ -639,7 +699,7 @@ func (t *transcript) render() {
 	if t.offset < 0 {
 		t.offset = 0
 	}
-	screen := make([]string, t.h)
+	screen := t.nextScreen()
 	for r := 0; r < body; r++ {
 		if i := t.offset + r; i < len(all) {
 			screen[r] = all[i]
@@ -790,21 +850,46 @@ func (t *transcript) helpLines() []string {
 	return rows
 }
 
+// nextScreen hands out the frame buffer to compose into. Two are kept and
+// swapped: paint retains the composed frame as t.prev for the next diff, so
+// the buffer it displaces can be recycled instead of allocating a fresh
+// []string of screen height every frame.
+func (t *transcript) nextScreen() []string {
+	screen := t.screenSpare
+	if cap(screen) < t.h {
+		screen = make([]string, t.h)
+	} else {
+		screen = screen[:t.h]
+		clear(screen)
+	}
+	t.screenSpare = nil
+	return screen
+}
+
+// paint writes the diff between the composed frame and the last one. The
+// output buffer is reused across frames: a scroll dirties every row, and on
+// a wide terminal full of styled rows that is tens of kilobytes of escape
+// bytes per keypress — previously grown from nothing (and formatted through
+// fmt) on every single frame.
 func (t *transcript) paint(screen []string) {
-	var b strings.Builder
-	b.WriteString("\x1b[?2026h")
+	b := t.paintBuf[:0]
+	b = append(b, "\x1b[?2026h"...)
 	for r := 0; r < len(screen); r++ {
 		var old string
 		if r < len(t.prev) {
 			old = t.prev[r]
 		}
 		if screen[r] != old {
-			fmt.Fprintf(&b, "\x1b[%d;1H\x1b[2K%s", r+1, screen[r])
+			b = append(b, "\x1b["...)
+			b = strconv.AppendInt(b, int64(r+1), 10)
+			b = append(b, ";1H\x1b[2K"...)
+			b = append(b, screen[r]...)
 		}
 	}
-	b.WriteString("\x1b[?2026l")
-	io.WriteString(t.out, b.String())
-	t.prev = screen
+	b = append(b, "\x1b[?2026l"...)
+	t.paintBuf = b
+	t.out.Write(b)
+	t.screenSpare, t.prev = t.prev, screen
 }
 
 // key handles one navigation/search input byte. Transcript is a locked mode:
@@ -1016,6 +1101,12 @@ func highlightMatches(row, q string) string {
 		}
 		return strings.ReplaceAll(row, q, hlOn+q+hlOff)
 	}
+	// While a search is active EVERY retained row is run through here on
+	// every frame, and almost none of them match. Reject those with an
+	// allocation-free scan instead of materializing the stripped row.
+	if visibleIndex(row, q) < 0 {
+		return row
+	}
 	// Slow path: strip ANSI to visible, then re-emit with highlights
 	// spliced at the visible byte positions of matches.
 	var visBuf strings.Builder
@@ -1098,7 +1189,7 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 			t.rowCache[m.LT] = rows
 		}
 		for _, row := range rows.rows {
-			if searchContains(row.text, q) {
+			if searchContains(row.searchText(), q) {
 				all := t.lines()
 				for i, line := range all {
 					if t.lineLT[i] == m.LT && searchContains(line, q) {
@@ -1113,35 +1204,49 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 	return false
 }
 
+// visibleIndex returns the byte offset in row at which q occurs in row's
+// visible text (ANSI escape sequences skipped, and allowed to interrupt the
+// match), or -1. It never allocates: the alternative — building the stripped
+// row and calling strings.Contains — cost one allocation per row per frame
+// for every row on screen while a search was active.
+//
+// Candidate starts are always visible bytes: the scan only ever steps one
+// byte past a visible byte, and an escape's interior can only follow the ESC
+// byte itself, which is always skipped whole.
+func visibleIndex(row, q string) int {
+	if q == "" {
+		return 0
+	}
+	for start := 0; start < len(row); {
+		if row[start] == '\x1b' {
+			start = skipANSI(row, start)
+			continue
+		}
+		i, j := start, 0
+		for j < len(q) && i < len(row) {
+			if row[i] == '\x1b' {
+				i = skipANSI(row, i)
+				continue
+			}
+			if row[i] != q[j] {
+				break
+			}
+			i++
+			j++
+		}
+		if j == len(q) {
+			return start
+		}
+		start++
+	}
+	return -1
+}
+
 func searchContains(row, q string) bool {
 	if !strings.ContainsRune(row, '\x1b') {
 		return strings.Contains(row, q)
 	}
-	var visible strings.Builder
-	visible.Grow(len(row))
-	for i := 0; i < len(row); {
-		if row[i] != '\x1b' {
-			visible.WriteByte(row[i])
-			i++
-			continue
-		}
-		if i+1 >= len(row) {
-			break
-		}
-		if row[i+1] == '[' {
-			i += 2
-			for i < len(row) {
-				final := row[i]
-				i++
-				if final >= 0x40 && final <= 0x7e {
-					break
-				}
-			}
-			continue
-		}
-		i += 2
-	}
-	return strings.Contains(visible.String(), q)
+	return visibleIndex(row, q) >= 0
 }
 
 func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
