@@ -1,0 +1,23 @@
+chalkbench: building /home/gluck/dev/figaro-qua/chalk-integrate/cmd/figaro -> /tmp/chalkbench.5pmeM6Sh/figaro
+
+chalkbench — isolated daemon, no LLM round-trips
+  repo:     /home/gluck/dev/figaro-qua/chalk-integrate (000b023)
+  loadout:  opus5
+  board:    37 keys / 15948 bytes  ->  1037 keys / 2082838 bytes after inflate
+  store:    /tmp/chalkbench.5pmeM6Sh/state (removed on exit)
+
+operation                                                 n   total ms      ms/op
+---------------------------------------------------- ------ ---------- ----------
+new --loadout opus5 (daemon cold start incl.)             1         73      73.00
+list -j (RPC + process overhead baseline)                50        611      12.22
+set (small board)                                        50        596      11.92
+state -j (small board)                                   50        648      12.96
+loadout opus5 re-apply (small board)                      1         13      13.00
+unset (small board)                                      50        595      11.90
+inflate: 1000 sets of 2048B                            1000      12176      12.18
+set (large board)                                        50        628      12.56
+state -j (large board)                                   50       4987      99.74
+loadout opus5 re-apply (large board)                      1         14      14.00
+unset (large board)                                      50        597      11.94
+state -j after daemon restart (cold replay)               1        174     174.00
+

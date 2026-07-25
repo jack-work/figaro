@@ -372,7 +372,10 @@ fi
 
 # 5d. Race-instrumented daemon: any DATA RACE report is a hard failure.
 if [ -n "${STRESS_RACE:-}" ]; then
-	nraces=$(grep -c "WARNING: DATA RACE" "$DAEMON_LOG" 2>/dev/null || echo 0)
+	# grep -c exits 1 when it finds nothing, and `$(grep -c … || echo 0)`
+	# would then yield the two-line string "0\n0" and break the -eq test
+	# below. Only reachable once the race is actually fixed.
+	nraces=$(grep -c "WARNING: DATA RACE" "$DAEMON_LOG" 2>/dev/null) || nraces=0
 	if [ "$nraces" -eq 0 ]; then
 		note_ok "race-instrumented daemon reported no data races"
 	else
