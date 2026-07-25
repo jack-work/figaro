@@ -409,8 +409,9 @@ func lastTurnStartLT(v aria.View) int {
 // transcriptScroll moves the pager viewport by delta lines (native wheel).
 func (t *livelogTurn) transcriptScroll(delta int) { t.tr.scrollBy(delta) }
 
-// transcriptSearching reports whether the pager is in its search prompt, so the
-// input loop routes typeable keys (like 'y') to the query instead of acting.
+// transcriptSearching reports whether the pager is in its search prompt. The
+// input loop no longer asks — the search box is a keymap mode now (modeSearch,
+// see transcriptMode) — but it remains the plain question to ask about state.
 func (t *livelogTurn) transcriptSearching() bool { return t.tr.active && t.tr.inSearch }
 
 // transcriptMode is the keymap's view of the pager: which of the four input
