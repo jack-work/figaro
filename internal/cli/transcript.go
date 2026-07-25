@@ -642,6 +642,12 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 			rows = append(rows, transcriptRow{text: plainNodeRow(l, t.w), ref: ref})
 		}
 	}
+	// Committed rows are retained for as long as the page is, so hand back an
+	// exactly-sized array: append growth leaves up to 65% slack, and at 32
+	// bytes a row that is real memory held for the whole session.
+	if cap(rows) > len(rows) {
+		rows = append(make([]transcriptRow, 0, len(rows)), rows...)
+	}
 	return cachedMessage{rows: rows}
 }
 
