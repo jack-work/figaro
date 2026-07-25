@@ -286,8 +286,9 @@ model = "mock-model"
 	chalkAriaID := func(id string) string {
 		snap, serr := backend.ChalkboardState(id)
 		require.NoError(t, serr)
+		rawID, _ := snap.Get("aria_id")
 		var got string
-		require.NoError(t, json.Unmarshal(snap["aria_id"], &got))
+		require.NoError(t, json.Unmarshal(rawID, &got))
 		return got
 	}
 	assert.Equal(t, fr.Continuation, chalkAriaID(fr.Continuation))

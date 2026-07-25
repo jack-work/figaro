@@ -237,7 +237,7 @@ func (a *Agent) chalkboardString(key string) string {
 	if a.chalkboard == nil {
 		return ""
 	}
-	raw, ok := a.chalkboard.Snapshot()[key]
+	raw, ok := a.chalkboard.Snapshot().Get(key)
 	if !ok {
 		return ""
 	}
@@ -251,7 +251,7 @@ func (a *Agent) chalkboardInt(key string) int {
 	if a.chalkboard == nil {
 		return 0
 	}
-	raw, ok := a.chalkboard.Snapshot()[key]
+	raw, ok := a.chalkboard.Snapshot().Get(key)
 	if !ok {
 		return 0
 	}
@@ -263,7 +263,7 @@ func (a *Agent) chalkboardInt(key string) int {
 func (a *Agent) currentModel() string { return a.chalkboardString("system.model") }
 
 func snapshotString(snapshot chalkboard.Snapshot, key string) string {
-	raw, ok := snapshot[key]
+	raw, ok := snapshot.Get(key)
 	if !ok {
 		return ""
 	}
@@ -273,7 +273,7 @@ func snapshotString(snapshot chalkboard.Snapshot, key string) string {
 }
 
 func snapshotContextLimit(snapshot chalkboard.Snapshot) int {
-	raw, ok := snapshot["system.max_context_tokens"]
+	raw, ok := snapshot.Get("system.max_context_tokens")
 	if !ok {
 		return 0
 	}

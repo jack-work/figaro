@@ -1296,7 +1296,7 @@ func (a *Agent) combineChalkboardInput(input *rpc.ChalkboardInput) chalkboard.Pa
 	}
 	var ctxPatch chalkboard.Patch
 	if input.Context != nil {
-		ctx := withoutSystemNS(chalkboard.Snapshot(input.Context))
+		ctx := withoutSystemNS(chalkboard.FromMap(input.Context))
 		snap := a.chalkboard.Snapshot()
 		ctxPatch = additivePatch(ctx, snap)
 	}
@@ -1316,8 +1316,8 @@ func (a *Agent) combineChalkboardInput(input *rpc.ChalkboardInput) chalkboard.Pa
 // are NOT removed — Context is purely additive by contract.
 func additivePatch(ctx, snap chalkboard.Snapshot) chalkboard.Patch {
 	var p chalkboard.Patch
-	for k, v := range ctx {
-		if old, ok := snap[k]; ok && bytes.Equal(old, v) {
+	for k, v := range ctx.All() {
+		if old, ok := snap.Get(k); ok && bytes.Equal(old, v) {
 			continue
 		}
 		if p.Set == nil {

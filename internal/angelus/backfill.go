@@ -43,7 +43,7 @@ func (a *Angelus) metaBackfill(ctx context.Context) {
 			continue
 		}
 		get := func(key string) string {
-			raw, ok := snap[key]
+			raw, ok := snap.Get(key)
 			if !ok {
 				return ""
 			}

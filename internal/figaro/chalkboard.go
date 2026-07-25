@@ -58,7 +58,7 @@ func (a *Agent) ApplyLoadout(name string) ([]string, error) {
 	current := a.chalkboard.Snapshot()
 	additive := chalkboard.Patch{Set: map[string]json.RawMessage{}}
 	for k, v := range loaded.Set {
-		old, ok := current[k]
+		old, ok := current.Get(k)
 		if ok && bytes.Equal(old, v) {
 			continue
 		}
@@ -72,11 +72,14 @@ func (a *Agent) ApplyLoadout(name string) ([]string, error) {
 }
 
 func withoutSystemNS(s chalkboard.Snapshot) chalkboard.Snapshot {
-	out := make(chalkboard.Snapshot, len(s))
-	for k, v := range s {
-		if !strings.HasPrefix(k, "system.") {
-			out[k] = v
+	var drop []string
+	for k := range s.All() {
+		if strings.HasPrefix(k, "system.") {
+			drop = append(drop, k)
 		}
 	}
-	return out
+	if len(drop) == 0 {
+		return s
+	}
+	return s.Apply(chalkboard.Patch{Remove: drop})
 }
