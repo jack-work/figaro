@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/transport"
 )
@@ -120,4 +121,30 @@ func dirSize(dir string) int64 {
 		return nil
 	})
 	return n
+}
+
+// runDoctorSchema reports each channel's on-disk schema against what this
+// binary understands. It reads the sidecar directly, so it still answers when
+// the schema gate is exactly what refused to open the store.
+func runDoctorSchema() error {
+	root := filepath.Join(stateDir(), "arias")
+	reports, err := store.SchemaStatus(root)
+	if err != nil {
+		return err
+	}
+	for _, r := range reports {
+		disk := fmt.Sprint(r.OnDisk)
+		if r.OnDisk == 0 {
+			disk = "-"
+		}
+		note := ""
+		switch r.Status {
+		case "ahead":
+			note = "  ← written by a newer figaro; this build refuses to open it"
+		case "behind":
+			note = "  ← migrates on next open"
+		}
+		fmt.Printf("%-20s disk=%-4s binary=%-4d %s%s\n", r.Channel, disk, r.Known, r.Status, note)
+	}
+	return nil
 }

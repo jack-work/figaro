@@ -678,16 +678,22 @@ nothing to promote into ("cannot promote into a loadout").`,
 	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
-		Short: "Store maintenance: gc removes dead channels (legacy translations, turn-wal, _live)",
-		Usage: "doctor gc [--dry-run]",
+		Short: "Store maintenance: gc removes dead channels; schema reports channel versions",
+		Usage: "doctor <gc [--dry-run] | schema>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
-			if len(ctx.Args) != 1 || ctx.Args[0] != "gc" {
-				return fmt.Errorf("usage: doctor gc [--dry-run]")
+			if len(ctx.Args) != 1 {
+				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema>")
 			}
-			return runDoctorGC(ctx.BoolFlag("dry-run"))
+			switch ctx.Args[0] {
+			case "gc":
+				return runDoctorGC(ctx.BoolFlag("dry-run"))
+			case "schema":
+				return runDoctorSchema()
+			}
+			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema>")
 		},
 	})
 

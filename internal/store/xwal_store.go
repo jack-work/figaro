@@ -73,6 +73,9 @@ func hexTrunkID() string {
 const (
 	chanIR         = "ir"
 	chanChalkboard = "chalkboard"
+	// chanUI is the derived turn-shaped UI IR cache (Phase 4). Declared here
+	// so the schema registry can version it before it carries data.
+	chanUI = "ui"
 
 	keyLoadoutName = "system.loadout_name"
 	keyLoadoutVer  = "system.loadout_version"
@@ -167,6 +170,10 @@ func OpenXwalStore(root string) (*XwalStore, error) {
 	}
 	st, err := xwal.OpenStore(root, storeOptions())
 	if err != nil {
+		return nil, err
+	}
+	// Single writer (the daemon) owns migration; the CLI never sees it.
+	if err := ensureSchema(root, st); err != nil {
 		return nil, err
 	}
 	return &XwalStore{
