@@ -23,6 +23,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
+	"github.com/jack-work/figaro/internal/provider/anthropicmodels"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/wirelog"
 )
@@ -79,6 +80,10 @@ type Provider struct {
 	CacheNamespace string
 	cache          store.Log[[]json.RawMessage]
 	projection     *provider.IncrementalProjection[projectedMessages]
+
+	// windows caches context windows learned from the models endpoint and
+	// falls back to the verified static table.
+	windows anthropicmodels.Catalog
 }
 
 // New constructs the SDK-backed provider.
@@ -131,10 +136,16 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 		iter := client.Models.ListAutoPaging(ctx, anthropic.ModelListParams{Limit: anthropic.Int(100)})
 		for iter.Next() {
 			m := iter.Current()
+			// max_input_tokens is the model's context window; remember it so
+			// ContextLimit can report the provider's own number instead of the
+			// static table.
+			p.windows.Learn(m.ID, int(m.MaxInputTokens))
 			out = append(out, provider.ModelInfo{
-				ID:       m.ID,
-				Name:     m.DisplayName,
-				Provider: providerName,
+				ID:            m.ID,
+				Name:          m.DisplayName,
+				Provider:      providerName,
+				ContextWindow: int(m.MaxInputTokens),
+				MaxTokens:     int(m.MaxTokens),
 			})
 		}
 		return iter.Err()
@@ -143,6 +154,19 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 		client := anthropic.NewClient(opts...)
 		return apply(client)
 	})
+}
+
+// ContextLimit reports the model's context window: the user's pinned
+// system.max_context_tokens if set, else the window learned from the models
+// endpoint, else the verified static table (0 when unknown). No network I/O —
+// status surfaces call this.
+func (p *Provider) ContextLimit(model string, snapshot chalkboard.Snapshot) int {
+	if model == "" {
+		p.mu.Lock()
+		model = p.model
+		p.mu.Unlock()
+	}
+	return p.windows.ContextLimit(model, snapshot)
 }
 
 // Send drives one turn end-to-end.

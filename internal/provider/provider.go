@@ -112,3 +112,22 @@ type Provider interface {
 type ContextLimitProvider interface {
 	ContextLimit(model string, snapshot chalkboard.Snapshot) int
 }
+
+// ContextLimitOverrideKey is the chalkboard key a user pins a context window
+// with. It overrides whatever the provider would otherwise report.
+const ContextLimitOverrideKey = "system.max_context_tokens"
+
+// ContextLimitOverride reads the user's pinned context window off the
+// chalkboard. One implementation so every provider spells the override the
+// same way.
+func ContextLimitOverride(snapshot chalkboard.Snapshot) (int, bool) {
+	raw, ok := snapshot[ContextLimitOverrideKey]
+	if !ok {
+		return 0, false
+	}
+	var limit int
+	if json.Unmarshal(raw, &limit) != nil || limit <= 0 {
+		return 0, false
+	}
+	return limit, true
+}
