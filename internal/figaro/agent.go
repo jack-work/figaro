@@ -14,7 +14,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/compose"
-	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -121,7 +120,6 @@ type Agent struct {
 	// (MethodAriaFrame) and the catch-up pull (figaro.read). unitLT is the
 	// monotonic figaro LT assigned to each unit as it opens.
 	ariaSrv *aria.Server
-	unitLT  int
 
 	createdAt     time.Time
 	lastActive    time.Time
@@ -191,13 +189,12 @@ func NewAgent(cfg Config) *Agent {
 	// aria message), then register the broadcast: every aria-server change is
 	// pushed to subscribers as one aria read.
 	a.ariaSrv = aria.NewServer()
-	for _, m := range legacyAriaMessages(compose.Turns(messages, a.summarize, a.previewArg)) {
-		a.unitLT = m.LT
-		a.ariaSrv.Commit(m)
+	for _, t := range compose.Turns(messages, a.summarize, a.previewArg) {
+		a.ariaSrv.Commit(t)
 	}
-	a.ariaSrv.Subscribe(func(r aria.AriaRead) {
-		r.Metrics = a.sessionMetrics()
-		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: r})
+	a.ariaSrv.Subscribe(func(p aria.Page) {
+		p.Metrics = a.sessionMetrics()
+		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: p})
 	})
 
 	a.publishMetadata()
@@ -615,78 +612,40 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 	}
 }
 
-// legacyAriaMessages splits turns back into the message-granular committed
-// entries the current wire still speaks: the prompt as one entry, the agent's
-// reply as the next. Phase 3 replaces AriaRead.Committed with turn-shaped
-// parts and DELETES this — it exists only so Units could die now without
-// dragging the wire and the renderers into this phase.
-func legacyAriaMessages(turns []aria.Turn) []aria.Message {
-	var out []aria.Message
-	for _, t := range turns {
-		cut := 0
-		for cut < len(t.Nodes) && t.Nodes[cut].Role == "user" {
-			cut++
-		}
-		for _, part := range []struct {
-			role  string
-			nodes []livedoc.Node
-		}{{"user", t.Nodes[:cut]}, {"assistant", t.Nodes[cut:]}} {
-			if len(part.nodes) > 0 {
-				out = append(out, aria.Message{LT: len(out) + 1, Role: part.role, Nodes: part.nodes})
-			}
-		}
-	}
-	return out
-}
-
 func (a *Agent) reconcileAriaServer() {
-	oldCommitted := a.ariaSrv.LastCommittedLT()
+	oldLast := a.ariaSrv.LastTurn()
 	hadOpen := a.ariaSrv.HasOpen()
-	history := legacyAriaMessages(compose.Turns(a.Context(), a.summarize, a.previewArg))
-	// Defensive: never wipe already-committed state with a shorter/empty
-	// history. reconcileAriaServer is called on mid-turn error paths whose
-	// only source of truth is a.Context() (i.e. the durable figLog). If that
-	// read returns fewer units than what ariaSrv had — e.g. because the
-	// backend transiently failed to open and figLog silently fell back to a
-	// memory log, or a cachedLog was constructed with a stale head/fork
-	// ancestry — replacing closed with the shorter list makes Read return
-	// 0 (or fewer) units and the live-subscribe stream go silent for the
-	// wiped LTs. Keep the known-good state and log loudly instead.
-	if len(history) < int(oldCommitted) {
-		slog.Warn("reconcileAriaServer: refusing to shrink closed history",
-			"aria", a.id,
-			"old_committed", oldCommitted,
-			"new_history", len(history))
-		// Preserve the existing closed history; the caller is unwinding a
-		// failed turn, so drop any open unit (matches Restore's semantics)
-		// but leave clients' committed view intact.
+	history := compose.Turns(a.Context(), a.summarize, a.previewArg)
+	// Defensive: never wipe already-materialized state with a shorter history.
+	// reconcileAriaServer runs on mid-turn error paths whose only source of
+	// truth is a.Context() (the durable figLog). If that read returns fewer
+	// turns than the server already holds — a backend that transiently failed
+	// to open and fell back to a memory log, a cachedLog built on stale fork
+	// ancestry — replacing the good state with the short one makes Read return
+	// nothing and the live stream go silent. Keep what we have and log loudly.
+	shorter := len(history) == 0 || history[len(history)-1].ID < oldLast
+	if oldLast > 0 && shorter {
+		newLast := uint64(0)
+		if len(history) > 0 {
+			newLast = history[len(history)-1].ID
+		}
+		slog.Warn("reconcileAriaServer: refusing to shrink history",
+			"aria", a.id, "old_last_turn", oldLast, "new_last_turn", newLast)
 		if hadOpen {
 			a.ariaSrv.Abandon()
 		}
 		return
 	}
 	a.ariaSrv.Restore(history)
-	a.unitLT = len(history)
-	for _, message := range history {
-		if message.LT <= oldCommitted {
+	for _, t := range history {
+		if t.ID <= oldLast {
 			continue
 		}
 		a.fanOut(rpc.Notification{
 			JSONRPC: "2.0",
 			Method:  rpc.MethodAriaFrame,
-			Params: aria.AriaRead{
-				Committed: []aria.Committed{{LT: message.LT, Role: message.Role, Nodes: message.Nodes}},
-				Metrics:   a.sessionMetrics(),
-			},
-		})
-	}
-	if hadOpen && len(history) <= oldCommitted {
-		a.unitLT++
-		a.fanOut(rpc.Notification{
-			JSONRPC: "2.0",
-			Method:  rpc.MethodAriaFrame,
-			Params: aria.AriaRead{
-				Live:    &aria.Live{LT: a.unitLT, V: 0, Role: "assistant"},
+			Params: aria.Page{
+				Parts:   []aria.TurnPart{{Turn: t}},
 				Metrics: a.sessionMetrics(),
 			},
 		})
@@ -832,6 +791,10 @@ func (a *Agent) endTurnDiscarding(reason string) {
 }
 
 func (a *Agent) finishTurn(reason string) {
+	// The turn stopped moving. This is the one place the word "seal" means
+	// anything now: every node in the turn is immutable from here, and it is
+	// the moment a persisted UI-IR channel would write it (Phase 4).
+	a.ariaSrv.Seal(nil)
 	idle := a.inbox.IsIdle()
 	a.mu.Lock()
 	a.lastActive = time.Now()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -47,7 +48,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		cursor := a.ariaSrv.LastCommittedLT()
+		cursor := int(a.ariaSrv.LastTurn())
 		active := a.turnActive()
 		a.SubmitPrompt(req)
 		return rpc.QuaResponse{OK: true, Cursor: cursor, Active: active}, nil
@@ -100,10 +101,12 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 				return nil, err
 			}
 		}
+		// Before names a turn cursor; Limit is a byte budget hint. A zero
+		// Before with a backward read means the tail.
 		if req.Before > 0 {
-			return a.ReadBefore(req.Before, req.Limit), nil
+			return a.ReadBefore(aria.Anchor{Turn: uint64(req.Before)}, req.Limit), nil
 		}
-		return a.Read(req.SinceLT), nil
+		return a.Read(aria.Anchor{Turn: uint64(req.SinceLT)}, req.Limit), nil
 	}
 	return nil, fmt.Errorf("unknown method: %s", method)
 }

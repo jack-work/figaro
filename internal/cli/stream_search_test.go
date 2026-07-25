@@ -139,15 +139,15 @@ func newBlockingTranscriptReader() *blockingTranscriptReader {
 	}
 }
 
-func (r *blockingTranscriptReader) Read(context.Context, int) (aria.AriaRead, error) {
-	return aria.AriaRead{}, nil
+func (r *blockingTranscriptReader) Read(context.Context, int) (aria.Page, error) {
+	return aria.Page{}, nil
 }
 
-func (r *blockingTranscriptReader) ReadBefore(ctx context.Context, _, _ int) (aria.AriaRead, error) {
+func (r *blockingTranscriptReader) ReadBefore(ctx context.Context, _, _ int) (aria.Page, error) {
 	r.start.Do(func() { close(r.started) })
 	<-ctx.Done()
 	r.cancel.Do(func() { close(r.canceled) })
-	return aria.AriaRead{}, ctx.Err()
+	return aria.Page{}, ctx.Err()
 }
 
 func (r *blockingTranscriptReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
@@ -155,21 +155,21 @@ func (r *blockingTranscriptReader) Queued(context.Context) (*rpc.QueuedResponse,
 }
 
 type gatedHistoryReader struct {
-	history []aria.Committed
+	history []aria.TurnPart
 	started chan struct{}
 	release chan struct{}
 	once    sync.Once
 }
 
-func (r *gatedHistoryReader) Read(context.Context, int) (aria.AriaRead, error) {
-	return aria.AriaRead{}, nil
+func (r *gatedHistoryReader) Read(context.Context, int) (aria.Page, error) {
+	return aria.Page{}, nil
 }
 
 func (r *gatedHistoryReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
 	return &rpc.QueuedResponse{}, nil
 }
 
-func (r *gatedHistoryReader) ReadBefore(ctx context.Context, before, limit int) (aria.AriaRead, error) {
+func (r *gatedHistoryReader) ReadBefore(ctx context.Context, before, limit int) (aria.Page, error) {
 	block := false
 	r.once.Do(func() {
 		close(r.started)
@@ -179,7 +179,7 @@ func (r *gatedHistoryReader) ReadBefore(ctx context.Context, before, limit int) 
 		select {
 		case <-r.release:
 		case <-ctx.Done():
-			return aria.AriaRead{}, ctx.Err()
+			return aria.Page{}, ctx.Err()
 		}
 	}
 	return readBefore(r.history, before, limit), nil
@@ -200,15 +200,15 @@ func newDelayedTranscriptReader() *delayedTranscriptReader {
 	return &delayedTranscriptReader{calls: make(chan delayedReadCall, 2)}
 }
 
-func (r *delayedTranscriptReader) Read(context.Context, int) (aria.AriaRead, error) {
-	return aria.AriaRead{}, nil
+func (r *delayedTranscriptReader) Read(context.Context, int) (aria.Page, error) {
+	return aria.Page{}, nil
 }
 
 func (r *delayedTranscriptReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
 	return &rpc.QueuedResponse{}, nil
 }
 
-func (r *delayedTranscriptReader) ReadBefore(ctx context.Context, before, limit int) (aria.AriaRead, error) {
+func (r *delayedTranscriptReader) ReadBefore(ctx context.Context, before, limit int) (aria.Page, error) {
 	call := delayedReadCall{release: make(chan struct{}), returned: make(chan struct{})}
 	r.mu.Lock()
 	r.count++
@@ -222,7 +222,7 @@ func (r *delayedTranscriptReader) ReadBefore(ctx context.Context, before, limit 
 		case <-call.release:
 		case <-ctx.Done():
 			close(call.returned)
-			return aria.AriaRead{}, ctx.Err()
+			return aria.Page{}, ctx.Err()
 		}
 	}
 	close(call.returned)

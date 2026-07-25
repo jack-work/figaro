@@ -488,14 +488,36 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 	t.render()
 }
 
-func committedMessages(in []aria.Committed) []aria.Message {
-	messages := make([]aria.Message, 0, len(in))
-	for _, m := range in {
-		if m.Full() {
-			messages = append(messages, aria.Message{LT: m.LT, Role: m.Role, Nodes: m.Nodes})
+// committedMessages flattens a page's parts into the pager's materialized
+// units. A part carrying nodes is content; a bare marker carries none and is
+// skipped. Message.LT holds the turn id (see aria.Message) — renaming that
+// field through this pager is S25's job, not this phase's.
+func committedMessages(p aria.Page) []aria.Message {
+	messages := make([]aria.Message, 0, len(p.Parts))
+	for _, part := range p.Parts {
+		if len(part.Nodes) == 0 {
+			continue
 		}
+		messages = append(messages, aria.Message{
+			LT: int(part.ID), Role: turnVoice(part.Nodes), Nodes: part.Nodes,
+		})
 	}
 	return messages
+}
+
+// turnVoice is the coarse role a turn renders under. A turn holds both voices,
+// so per-node Role is the real answer; this only feeds surfaces that still ask
+// for one label per unit.
+func turnVoice(nodes []livedoc.Node) string {
+	if len(nodes) == 0 {
+		return ""
+	}
+	for _, n := range nodes {
+		if n.Role != "user" {
+			return "assistant"
+		}
+	}
+	return "user"
 }
 
 func (t *transcript) trimPages(direction transcriptPageDirection) {

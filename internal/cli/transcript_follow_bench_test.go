@@ -19,11 +19,11 @@ func heavyFollowTranscript(b *testing.B, messages, outputLines int) (*transcript
 	b.Helper()
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	committed := make([]aria.Committed, messages)
+	committed := make([]aria.TurnPart, messages)
 	for i := range committed {
-		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, outputLines)}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, outputLines)}}
 	}
-	client.Apply(aria.AriaRead{Committed: committed})
+	client.Apply(aria.Page{Parts: committed})
 	tr := newTranscript(io.Discard, 100, 40, &ariaView{settings: &renderSettings{}}, client, "benchmark", time.Unix(0, 0))
 	tr.enter()
 	return tr, client
@@ -51,13 +51,10 @@ func BenchmarkTranscriptLiveHeavy(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := range b.N {
-		client.Apply(aria.AriaRead{Live: &aria.Live{
-			LT: 201, V: i,
-			Nodes: []aria.NodeDelta{{ID: "live", Set: map[string]any{
-				"type":     string(livedoc.NodeProse),
-				"markdown": fmt.Sprintf("live token stream, chunk %d, still going", i),
-			}}},
-		}})
+		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: i, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
+			"type":     string(livedoc.NodeProse),
+			"markdown": fmt.Sprintf("live token stream, chunk %d, still going", i),
+		}}}}}}}})
 		tr.render()
 	}
 }

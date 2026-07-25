@@ -215,7 +215,7 @@ func nodeClipboardText(n livedoc.Node) string {
 	}
 }
 
-func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (aria.AriaRead, error)) (string, error) {
+func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (aria.Page, error)) (string, error) {
 	var newest []string
 	foundLo, foundHi := false, false
 	if plan.open != nil {
@@ -239,7 +239,7 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (ar
 		if err != nil {
 			return "", err
 		}
-		messages := committedMessages(r.Committed)
+		messages := committedMessages(r)
 		if len(messages) == 0 {
 			return "", fmt.Errorf("selection history unavailable before LT %d", before)
 		}

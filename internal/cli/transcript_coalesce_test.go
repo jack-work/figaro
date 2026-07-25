@@ -194,11 +194,11 @@ func TestFramePacer_ZeroIntervalIsTransparent(t *testing.T) {
 
 type stubReadClient struct{}
 
-func (stubReadClient) Read(context.Context, int) (aria.AriaRead, error) {
-	return aria.AriaRead{}, nil
+func (stubReadClient) Read(context.Context, int) (aria.Page, error) {
+	return aria.Page{}, nil
 }
-func (stubReadClient) ReadBefore(context.Context, int, int) (aria.AriaRead, error) {
-	return aria.AriaRead{}, nil
+func (stubReadClient) ReadBefore(context.Context, int, int) (aria.Page, error) {
+	return aria.Page{}, nil
 }
 func (stubReadClient) Queued(context.Context) (*rpc.QueuedResponse, error) {
 	return &rpc.QueuedResponse{}, nil
@@ -206,9 +206,9 @@ func (stubReadClient) Queued(context.Context) (*rpc.QueuedResponse, error) {
 
 func coalesceInput(tb testing.TB, out *countingWriter) (*interactiveInput, *livelogTurn) {
 	tb.Helper()
-	committed := make([]aria.Committed, 40)
+	committed := make([]aria.TurnPart, 40)
 	for i := range committed {
-		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, 20)}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 20)}}
 	}
 
 	settings := &renderSettings{}
@@ -217,7 +217,7 @@ func coalesceInput(tb testing.TB, out *countingWriter) (*interactiveInput, *live
 	// Enter the pager BEFORE feeding history, as the real flow does: the aria
 	// callbacks route to the transcript only while it is up.
 	lt.enterTranscript()
-	lt.apply(aria.AriaRead{Committed: committed})
+	lt.apply(aria.Page{Parts: committed})
 	return &interactiveInput{
 		tc: nil, lt: lt, fcli: stubReadClient{}, mu: &sync.Mutex{}, set: settings,
 		figaroID: "aria0001", cancel: func() {},
@@ -394,8 +394,8 @@ func TestLivelogTurn_StreamDeltasArePaced(t *testing.T) {
 	lt.pace.after = func(_ time.Duration, fn func()) { timers = append(timers, fn) }
 	lt.setRenderLock(&mu)
 	lt.enterTranscript()
-	lt.apply(aria.AriaRead{Committed: []aria.Committed{
-		{LT: 1, Role: "assistant", Nodes: heavyNodes(1, 10)},
+	lt.apply(aria.Page{Parts: []aria.TurnPart{
+		{Turn: aria.Turn{ID: uint64(1), Sealed: true, Nodes: heavyNodes(1, 10)}},
 	}})
 
 	// Settle: entering the pager already armed a trailing render, and the pacer
@@ -409,13 +409,10 @@ func TestLivelogTurn_StreamDeltasArePaced(t *testing.T) {
 	for i := range 40 { // a streaming tool pushing deltas far faster than 120 fps
 		now = now.Add(200 * time.Microsecond)
 		mu.Lock()
-		lt.apply(aria.AriaRead{Live: &aria.Live{
-			LT: 100, V: i + 1, Role: "assistant",
-			Nodes: []aria.NodeDelta{{ID: "n1", Set: map[string]any{
-				"type":     string(livedoc.NodeProse),
-				"markdown": strings.Repeat("token ", i+1),
-			}}},
-		}})
+		lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(100), Live: &aria.Live{From: 0, V: i + 1, Nodes: []aria.NodeDelta{{ID: 1, Set: map[string]any{
+			"type":     string(livedoc.NodeProse),
+			"markdown": strings.Repeat("token ", i+1),
+		}}}}}}}})
 		mu.Unlock()
 	}
 	painted := w.writes.Load()

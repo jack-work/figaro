@@ -54,30 +54,28 @@ func newBareAgent(t *testing.T, log store.Log[message.Message]) *Agent {
 func TestReconcileAriaServer_PreservesStateOnShorterHistory(t *testing.T) {
 	a := newBareAgent(t, store.NewMemLog[message.Message]()) // empty log
 	a.id = "recon-001"
-	// Seed ariaSrv with three committed units — imagine a healthy aria.
-	for lt, role := range []string{"user", "assistant", "user"} {
-		a.ariaSrv.Commit(aria.Message{
-			LT:    lt + 1,
-			Role:  role,
-			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "hi"}},
+	// Seed ariaSrv with three sealed turns — imagine a healthy aria.
+	for i := uint64(1); i <= 3; i++ {
+		a.ariaSrv.Commit(aria.Turn{
+			ID:     i,
+			Sealed: true,
+			Nodes:  []livedoc.Node{{Type: livedoc.NodeProse, Role: "user", Markdown: "hi"}},
 		})
 	}
-	a.unitLT = 3
 
-	// Sanity: three committed, none open.
-	require.Equal(t, 3, a.ariaSrv.LastCommittedLT())
+	require.Equal(t, uint64(3), a.ariaSrv.LastTurn())
 	require.False(t, a.ariaSrv.HasOpen())
 
-	// figLog is empty -> compose.Units returns nothing. Prior behavior:
-	// Restore([]) would wipe closed to zero units. Fix: state preserved.
+	// figLog is empty -> compose.Turns returns nothing. Prior behavior:
+	// Restore(nil) would wipe history. Fix: state preserved.
 	a.reconcileAriaServer()
 
-	assert.Equal(t, 3, a.ariaSrv.LastCommittedLT(),
-		"reconcileAriaServer must not shrink closed history on empty figLog read")
+	assert.Equal(t, uint64(3), a.ariaSrv.LastTurn(),
+		"reconcileAriaServer must not shrink history on an empty figLog read")
 
-	got := a.ariaSrv.Read(0)
-	assert.Len(t, got.Committed, 3,
-		"Read(0) after reconcile must still return the three original units")
+	got := a.ariaSrv.Read(aria.Anchor{}, 1<<20)
+	assert.Len(t, got.Parts, 3,
+		"a read after reconcile must still return the three original turns")
 }
 
 // TestReconcileAriaServer_AllowsGrow verifies the guard doesn't block
@@ -95,16 +93,16 @@ func TestReconcileAriaServer_AllowsGrow(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Ensure the log actually yields two units under compose.
-	units := legacyAriaMessages(compose.Turns(unwrapMessages(logMem.Read()), nil, nil))
-	require.Len(t, units, 2)
+	// Ensure the log actually yields one turn under compose (a prompt and its
+	// reply are ONE exchange now, not two units).
+	turns := compose.Turns(unwrapMessages(logMem.Read()), nil, nil)
+	require.Len(t, turns, 1)
 
 	a := newBareAgent(t, logMem)
 	a.id = "recon-002"
-	// Seed one committed — history (2) > current (1), Restore should run.
-	a.ariaSrv.Commit(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "hello"}}})
-	a.unitLT = 1
-
 	a.reconcileAriaServer()
-	assert.Equal(t, 2, a.ariaSrv.LastCommittedLT(), "reconcile with growing history should refresh")
+	assert.Equal(t, uint64(1), a.ariaSrv.LastTurn(),
+		"reconcile against a readable log should adopt its turns")
+	assert.Len(t, a.ariaSrv.Turns()[0].Nodes, 2,
+		"the turn holds the prompt and the reply as one exchange")
 }

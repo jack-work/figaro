@@ -1,47 +1,64 @@
 package aria
 
 import (
-	"fmt"
 	"reflect"
-	"sort"
 	"sync"
 
 	"github.com/jack-work/figaro/internal/livedoc"
 )
 
-// Server is the authoritative aria state: closed messages plus at most one open
-// message. Live subscribers get incremental frames (the field deltas of each
-// update, versioned); Read returns a catch-up snapshot (closed messages in full
-// + the open message as a full-create frame). Push callbacks run outside the lock
-// and must not re-enter the Server.
+// Server materializes one aria's turns and broadcasts changes as Pages.
+//
+// State is a turn list whose last entry may still be growing. Within a growing
+// turn, `open` holds the suffix currently being streamed: its nodes are
+// mutable and versioned, everything below `open.from` is closed and can never
+// receive another delta. That boundary is what a client needs to know which
+// half of a page it may cache forever.
 type Server struct {
 	mu     sync.Mutex
-	closed []Message
-	open   *openMsg
-	subs   map[int]func(AriaRead)
+	turns  []Turn
+	open   *openTurn
+	subs   map[int]func(Page)
 	nextID int
+
+	// baseTurn/base remember where a turn's streaming region begins. The
+	// producer recomposes the WHOLE region on every frame (it reads the turn's
+	// messages back from the log), so a second round inside one turn must
+	// reopen at the same boundary rather than after the first round — else the
+	// recomposed nodes would be appended again instead of replacing.
+	baseTurn uint64
+	base     uint64
 }
 
-type openMsg struct {
-	lt    int
-	role  string
-	order []string
-	block map[string]livedoc.Node
+// openTurn is the streaming suffix of turns[len-1]: the nodes at ids
+// >= from, materialized so Update can diff against the previous frame.
+type openTurn struct {
+	id    uint64
+	from  uint64
+	nodes []livedoc.Node
 	ver   int // next frame version (0-indexed); last emitted is ver-1
 }
 
 // NewServer returns an empty aria server.
-func NewServer() *Server { return &Server{subs: map[int]func(AriaRead){}} }
+func NewServer() *Server { return &Server{subs: map[int]func(Page){}} }
 
-// LastCommittedLT returns the LT of the most recently committed message (0 if
-// none) — the cursor a client streams from.
-func (s *Server) LastCommittedLT() int {
+// LastTurn returns the id of the newest known turn (0 if none) — the cursor a
+// client streams from.
+func (s *Server) LastTurn() uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.closed) == 0 {
+	if len(s.turns) == 0 {
 		return 0
 	}
-	return s.closed[len(s.closed)-1].LT
+	return s.turns[len(s.turns)-1].ID
+}
+
+// Turns returns a snapshot of materialized turns, the last carrying its open
+// suffix and Live boundary when one is streaming.
+func (s *Server) Turns() []Turn {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.snapshotLocked()
 }
 
 func (s *Server) HasOpen() bool {
@@ -51,23 +68,34 @@ func (s *Server) HasOpen() bool {
 }
 
 // Restore replaces materialized state without broadcasting.
-func (s *Server) Restore(messages []Message) {
+func (s *Server) Restore(turns []Turn) {
 	s.mu.Lock()
-	s.closed = append([]Message(nil), messages...)
+	s.turns = append([]Turn(nil), turns...)
 	s.open = nil
 	s.mu.Unlock()
 }
 
-// Open starts a new open message at lt (close any prior one first). It emits no
-// frame; the first Update carries the role at v 0.
-func (s *Server) Open(lt int, role string) {
+// OpenTurn begins a streaming suffix on turn id, creating the turn if this is
+// its first message. The boundary is wherever the turn's committed nodes
+// currently end, so a multi-round turn reopens further along each time rather
+// than restarting. It emits no frame; the first Update carries v 0.
+func (s *Server) OpenTurn(id uint64) {
 	s.mu.Lock()
-	s.open = &openMsg{lt: lt, role: role, block: map[string]livedoc.Node{}}
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+	if n := len(s.turns); n == 0 || s.turns[n-1].ID != id {
+		s.turns = append(s.turns, Turn{ID: id})
+	}
+	if s.baseTurn != id {
+		s.baseTurn = id
+		s.base = uint64(len(s.turns[len(s.turns)-1].Nodes))
+	}
+	s.open = &openTurn{id: id, from: s.base}
 }
 
-// Update applies the new full node list to the open message and broadcasts a
-// frame of the field deltas vs the prior state (v++ if anything changed).
+// Update applies the suffix's new full node list and broadcasts the field
+// deltas against the prior frame (v++ if anything changed). Node ids are
+// positional — the i'th suffix node is id from+i — so identity needs no
+// separate key.
 func (s *Server) Update(nodes []livedoc.Node) {
 	s.mu.Lock()
 	if s.open == nil {
@@ -76,80 +104,103 @@ func (s *Server) Update(nodes []livedoc.Node) {
 	}
 	var deltas []NodeDelta
 	for i, n := range nodes {
-		id := blockID(i, n)
-		old, existed := s.open.block[id]
-		if d := delta(id, old, existed, n); !d.Empty() {
-			deltas = append(deltas, d)
+		id := s.open.from + uint64(i)
+		if i < len(s.open.nodes) {
+			if d := delta(id, s.open.nodes[i], n); !d.Empty() {
+				deltas = append(deltas, d)
+			}
+			continue
 		}
-		if !existed {
-			s.open.order = append(s.open.order, id)
-		}
-		s.open.block[id] = n
+		deltas = append(deltas, fullSet(id, n))
 	}
+	s.open.nodes = append([]livedoc.Node(nil), nodes...)
 	if len(deltas) == 0 {
 		s.mu.Unlock()
 		return
 	}
 	v := s.open.ver
-	role := ""
-	if v == 0 {
-		role = s.open.role
-	}
 	s.open.ver++
-	frame := AriaRead{Live: &Live{LT: s.open.lt, V: v, Role: role, Nodes: deltas}}
+	frame := Page{Parts: []TurnPart{{
+		Turn: Turn{ID: s.open.id, Live: &Live{From: s.open.from, V: v, Nodes: deltas}},
+		From: s.open.from,
+	}}}
 	subs := s.subsLocked()
 	s.mu.Unlock()
 	deliver(subs, frame)
 }
 
-// Close finalizes the open message and broadcasts a close marker {lt, v} where v
-// is the last emitted frame version.
+// Close folds the streaming suffix into its turn. The turn itself stays open —
+// a turn spans many messages — so nothing is sealed here; Seal does that.
 func (s *Server) Close() {
 	s.mu.Lock()
 	if s.open == nil {
 		s.mu.Unlock()
 		return
 	}
-	m := Message{LT: s.open.lt, Role: s.open.role}
-	for _, id := range s.open.order {
-		m.Nodes = append(m.Nodes, s.open.block[id])
-	}
+	i := len(s.turns) - 1
+	t := s.turns[i]
+	t.Nodes = append(t.Nodes[:s.open.from:s.open.from], s.open.nodes...)
+	s.turns[i] = t
 	lastV := s.open.ver - 1
 	if lastV < 0 {
 		lastV = 0
 	}
-	s.closed = append(s.closed, m)
+	id, from := s.open.id, s.open.from
 	s.open = nil
-	frame := AriaRead{Committed: []Committed{{LT: m.LT, V: lastV}}}
+	frame := Page{Parts: []TurnPart{{
+		Turn: Turn{ID: id, Live: &Live{From: from, V: lastV}},
+		From: from,
+	}}}
 	subs := s.subsLocked()
 	s.mu.Unlock()
 	deliver(subs, frame)
 }
 
-// Abandon drops the open message without committing it (a turn that failed
-// before the message was sealed into the IR). It broadcasts nothing: connected
-// clients keep showing the partial as their single open unit until the next
-// turn opens at a new LT, which resets it (client.go). Dropping it here keeps a
-// re-read (Read) from resurrecting it as live.
+// Seal marks the newest turn finished: it stops moving, and every node in it
+// is immutable from here. This is the one moment the word means — and, later,
+// the moment the turn is written to its xwal channel.
+func (s *Server) Seal(lts []uint64) {
+	s.mu.Lock()
+	if len(s.turns) == 0 {
+		s.mu.Unlock()
+		return
+	}
+	i := len(s.turns) - 1
+	if s.turns[i].Sealed {
+		s.mu.Unlock() // already sealed: sealing is idempotent and silent
+		return
+	}
+	s.turns[i].Sealed = true
+	if len(lts) > 0 {
+		s.turns[i].LTs = lts
+	}
+	sealed := s.turns[i]
+	subs := s.subsLocked()
+	s.mu.Unlock()
+	deliver(subs, Page{Parts: []TurnPart{{Turn: sealed}}})
+}
+
+// Abandon drops the streaming suffix without folding it in (a round that
+// failed before its message reached the IR). It broadcasts nothing: connected
+// clients keep showing the partial until the next turn opens and resets it.
 func (s *Server) Abandon() {
 	s.mu.Lock()
 	s.open = nil
 	s.mu.Unlock()
 }
 
-// Commit appends an already-closed message (history rebuild, or a non-streamed
-// message) and broadcasts it as a full snapshot.
-func (s *Server) Commit(m Message) {
+// Commit appends an already-complete turn and broadcasts it as a snapshot.
+func (s *Server) Commit(t Turn) {
 	s.mu.Lock()
-	s.closed = append(s.closed, m)
+	s.turns = append(s.turns, t)
 	subs := s.subsLocked()
 	s.mu.Unlock()
-	deliver(subs, AriaRead{Committed: []Committed{{LT: m.LT, Role: m.Role, Nodes: m.Nodes}}})
+	deliver(subs, Page{Parts: []TurnPart{{Turn: t}}})
 }
 
-// Subscribe registers a live pusher for subsequent frames (no initial snapshot;
-// use Read to catch up). Returns unsubscribe.
-func (s *Server) Subscribe(push func(AriaRead)) (cancel func()) {
+// Subscribe registers a live pusher for subsequent frames (no initial
+// snapshot; use Read to catch up). Returns unsubscribe.
+func (s *Server) Subscribe(push func(Page)) (cancel func()) {
 	s.mu.Lock()
 	id := s.nextID
 	s.nextID++
@@ -162,71 +213,58 @@ func (s *Server) Subscribe(push func(AriaRead)) (cancel func()) {
 	}
 }
 
-// ReadBefore returns up to limit closed messages with LT < beforeLT, ascending —
-// the (limit) closest below the cursor. beforeLT<=0 or limit<=0 => empty.
-func (s *Server) ReadBefore(beforeLT, limit int) AriaRead {
-	if beforeLT <= 0 || limit <= 0 {
-		return AriaRead{}
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	hi := sort.Search(len(s.closed), func(i int) bool { return s.closed[i].LT >= beforeLT })
-	lo := hi - limit
-	if lo < 0 {
-		lo = 0
-	}
-	var r AriaRead
-	for _, m := range s.closed[lo:hi] {
-		r.Committed = append(r.Committed, Committed{LT: m.LT, Role: m.Role, Nodes: m.Nodes})
-	}
-	return r
+// Read pages forward from at; ReadBefore pages backward. Both are the same
+// cut, differing only in which side of the anchor the budget is spent on —
+// that is what lets a scrolling client pull an earlier or a later page from
+// wherever it happens to be.
+func (s *Server) Read(at Anchor, budget int) Page {
+	return Paginate(s.Turns(), at, Forward, budget)
 }
 
-// Read returns a catch-up snapshot from sinceLT: closed messages after it in
-// full, plus the open message (if any) as a full-create frame at its version.
-func (s *Server) Read(sinceLT int) AriaRead {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var r AriaRead
-	for _, m := range s.closed {
-		if m.LT <= sinceLT {
-			continue
-		}
-		r.Committed = append(r.Committed, Committed{LT: m.LT, Role: m.Role, Nodes: m.Nodes})
-	}
-	if s.open != nil && len(s.open.order) > 0 {
-		deltas := make([]NodeDelta, 0, len(s.open.order))
-		for _, id := range s.open.order {
-			deltas = append(deltas, fullSet(id, s.open.block[id]))
-		}
-		v := s.open.ver - 1
-		if v < 0 {
-			v = 0
-		}
-		r.Live = &Live{LT: s.open.lt, V: v, Role: s.open.role, Nodes: deltas}
-	}
-	return r
+func (s *Server) ReadBefore(at Anchor, budget int) Page {
+	return Paginate(s.Turns(), at, Backward, budget)
 }
 
-func (s *Server) subsLocked() []func(AriaRead) {
-	out := make([]func(AriaRead), 0, len(s.subs))
+// snapshotLocked copies the turn list, attaching the streaming suffix and its
+// Live boundary to the turn that owns it.
+func (s *Server) snapshotLocked() []Turn {
+	out := append([]Turn(nil), s.turns...)
+	if s.open == nil {
+		return out
+	}
+	i := len(out) - 1
+	if i < 0 || out[i].ID != s.open.id {
+		out = append(out, Turn{ID: s.open.id})
+		i = len(out) - 1
+	}
+	t := out[i]
+	t.Nodes = append(append([]livedoc.Node(nil), t.Nodes[:s.open.from]...), s.open.nodes...)
+	v := s.open.ver - 1
+	if v < 0 {
+		v = 0
+	}
+	t.Sealed = false
+	t.Live = &Live{From: s.open.from, V: v}
+	out[i] = t
+	return out
+}
+
+func (s *Server) subsLocked() []func(Page) {
+	out := make([]func(Page), 0, len(s.subs))
 	for _, f := range s.subs {
 		out = append(out, f)
 	}
 	return out
 }
 
-func deliver(subs []func(AriaRead), r AriaRead) {
-	for _, f := range subs {
-		f(r)
+func deliver(subs []func(Page), p Page) {
+	for _, push := range subs {
+		push(p)
 	}
 }
 
-// delta computes the field-level change from old (when existed) to n for block id.
-func delta(id string, old livedoc.Node, existed bool, n livedoc.Node) NodeDelta {
-	if !existed {
-		return fullSet(id, n)
-	}
+// delta computes the field-level change from old to n for node id.
+func delta(id uint64, old, n livedoc.Node) NodeDelta {
 	d := NodeDelta{ID: id}
 	set := map[string]any{}
 	var unset []string
@@ -271,9 +309,11 @@ func delta(id string, old livedoc.Node, existed bool, n livedoc.Node) NodeDelta 
 	if n.Type != old.Type {
 		set["type"] = string(n.Type)
 	}
+	scalar("role", old.Role, n.Role)
 	scalar("name", old.Name, n.Name)
 	scalar("summary", old.Summary, n.Summary)
 	scalar("status", old.Status, n.Status)
+	scalar("tool_call_id", old.ToolCallID, n.ToolCallID)
 	scalarInt("started_at", old.StartedAt, n.StartedAt)
 	scalarInt("finished_at", old.FinishedAt, n.FinishedAt)
 	streamed("markdown", old.Markdown, n.Markdown)
@@ -285,6 +325,9 @@ func delta(id string, old livedoc.Node, existed bool, n livedoc.Node) NodeDelta 
 			set["args"] = n.Args
 		}
 	}
+	if !reflect.DeepEqual(old.LTs, n.LTs) && n.LTs != nil {
+		set["lts"] = n.LTs
+	}
 	if len(set) > 0 {
 		d.Set = set
 	}
@@ -295,20 +338,23 @@ func delta(id string, old livedoc.Node, existed bool, n livedoc.Node) NodeDelta 
 	return d
 }
 
-// fullSet is the creation/snapshot delta: every non-zero field in set.
-func fullSet(id string, n livedoc.Node) NodeDelta {
+// fullSet is the creation delta: every non-zero field in set.
+func fullSet(id uint64, n livedoc.Node) NodeDelta {
 	set := map[string]any{"type": string(n.Type)}
-	if n.Name != "" {
-		set["name"] = n.Name
+	str := func(k, v string) {
+		if v != "" {
+			set[k] = v
+		}
 	}
-	if n.Summary != "" {
-		set["summary"] = n.Summary
-	}
+	str("role", n.Role)
+	str("name", n.Name)
+	str("summary", n.Summary)
+	str("status", n.Status)
+	str("tool_call_id", n.ToolCallID)
+	str("markdown", n.Markdown)
+	str("output", n.Output)
 	if n.Args != nil {
 		set["args"] = n.Args
-	}
-	if n.Status != "" {
-		set["status"] = n.Status
 	}
 	if n.StartedAt != 0 {
 		set["started_at"] = n.StartedAt
@@ -316,19 +362,30 @@ func fullSet(id string, n livedoc.Node) NodeDelta {
 	if n.FinishedAt != 0 {
 		set["finished_at"] = n.FinishedAt
 	}
-	if n.Markdown != "" {
-		set["markdown"] = n.Markdown
-	}
-	if n.Output != "" {
-		set["output"] = n.Output
+	if n.LTs != nil {
+		set["lts"] = n.LTs
 	}
 	return NodeDelta{ID: id, Set: set}
 }
 
-// blockID is a node's stable handle: its tool_call_id, or its positional id.
-func blockID(i int, n livedoc.Node) string {
-	if n.ID != "" {
-		return n.ID
+// Append adds already-closed nodes to a turn, creating it if new, and
+// broadcasts them as a snapshot part. This is the user prompt's path: it is
+// complete the instant it exists, so it never needs an open region — which is
+// what keeps it from flickering between send and durable commit.
+func (s *Server) Append(id uint64, nodes []livedoc.Node) {
+	s.mu.Lock()
+	if n := len(s.turns); n == 0 || s.turns[n-1].ID != id {
+		s.turns = append(s.turns, Turn{ID: id})
 	}
-	return fmt.Sprintf("n%d", i)
+	i := len(s.turns) - 1
+	from := uint64(len(s.turns[i].Nodes))
+	s.turns[i].Nodes = append(s.turns[i].Nodes, nodes...)
+	part := TurnPart{
+		Turn:        Turn{ID: id, Nodes: nodes},
+		From:        from,
+		ClippedHead: from > 0,
+	}
+	subs := s.subsLocked()
+	s.mu.Unlock()
+	deliver(subs, Page{Parts: []TurnPart{part}})
 }

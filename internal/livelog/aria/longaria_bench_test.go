@@ -11,11 +11,12 @@ import (
 func benchmarkServer(n int) *Server {
 	s := NewServer()
 	for i := 1; i <= n; i++ {
-		s.Commit(Message{
-			LT:   i,
-			Role: "assistant",
+		s.Commit(Turn{
+			ID:     uint64(i),
+			Sealed: true,
 			Nodes: []livedoc.Node{{
 				Type:     livedoc.NodeProse,
+				Role:     "assistant",
 				Markdown: "synthetic history",
 			}},
 		})
@@ -25,12 +26,12 @@ func benchmarkServer(n int) *Server {
 
 func BenchmarkReadRecentLongAria(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 50_000} {
-		b.Run(fmt.Sprintf("messages=%d", n), func(b *testing.B) {
+		b.Run(fmt.Sprintf("turns=%d", n), func(b *testing.B) {
 			s := benchmarkServer(n)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				page := s.Read(n - 30)
+				page := s.Read(Anchor{Turn: uint64(n - 30)}, 1<<16)
 				runtime.KeepAlive(page)
 			}
 		})
@@ -39,12 +40,12 @@ func BenchmarkReadRecentLongAria(b *testing.B) {
 
 func BenchmarkReadBeforeLongAria(b *testing.B) {
 	for _, n := range []int{1_000, 10_000, 50_000} {
-		b.Run(fmt.Sprintf("messages=%d", n), func(b *testing.B) {
+		b.Run(fmt.Sprintf("turns=%d", n), func(b *testing.B) {
 			s := benchmarkServer(n)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				page := s.ReadBefore(n+1, 30)
+				page := s.ReadBefore(Anchor{Turn: uint64(n + 1)}, 1<<16)
 				runtime.KeepAlive(page)
 			}
 		})

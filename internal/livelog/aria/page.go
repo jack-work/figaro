@@ -225,3 +225,28 @@ func assemble(turns []Turn, lo, hi cursor) []TurnPart {
 	}
 	return parts
 }
+
+// LiveTail returns the page's open suffix, or nil if every node on it is
+// closed. At most one part can carry Live and it is always the last, so this
+// is the whole answer to "is any of this still moving".
+func (p Page) LiveTail() *Live {
+	if n := len(p.Parts); n > 0 {
+		return p.Parts[n-1].Live
+	}
+	return nil
+}
+
+// Voice is the coarse role a part renders under. A turn holds both voices, so
+// per-node Role is the real answer; this exists for surfaces that still want
+// one label per unit.
+func (p TurnPart) Voice() string {
+	if len(p.Nodes) == 0 {
+		return ""
+	}
+	for _, n := range p.Nodes {
+		if n.Role != "user" {
+			return "assistant"
+		}
+	}
+	return "user"
+}

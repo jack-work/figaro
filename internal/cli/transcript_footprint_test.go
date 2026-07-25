@@ -72,11 +72,11 @@ func BenchmarkTranscriptRowCacheFootprint(b *testing.B) {
 func TestTranscriptRowCacheFootprintIsBounded(t *testing.T) {
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	committed := make([]aria.Committed, 200)
+	committed := make([]aria.TurnPart, 200)
 	for i := range committed {
-		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, 200)}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 200)}}
 	}
-	client.Apply(aria.AriaRead{Committed: committed})
+	client.Apply(aria.Page{Parts: committed})
 	tr := newTranscript(io.Discard, 100, 40, &ariaView{settings: &renderSettings{}}, client, "bench", time.Unix(0, 0))
 	tr.enter()
 	tr.scrollBy(-1)

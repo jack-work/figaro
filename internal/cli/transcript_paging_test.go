@@ -12,13 +12,10 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-func transcriptHistory(n int) []aria.Committed {
-	out := make([]aria.Committed, n)
+func transcriptHistory(n int) []aria.TurnPart {
+	out := make([]aria.TurnPart, n)
 	for i := range out {
-		out[i] = aria.Committed{
-			LT: i + 1, Role: "assistant",
-			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("message-%03d", i+1)}},
-		}
+		out[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("message-%03d", i+1)}}}}
 	}
 	return out
 }
@@ -27,13 +24,13 @@ func testSelectionPoint(lt, index int, node livedoc.Node) selectionPoint {
 	return selectionPoint{nodeRef: nodeRef{lt: lt, index: index}, hash: nodeHash(node)}
 }
 
-func readBefore(history []aria.Committed, before, limit int) aria.AriaRead {
-	hi := sort.Search(len(history), func(i int) bool { return history[i].LT >= before })
+func readBefore(history []aria.TurnPart, before, limit int) aria.Page {
+	hi := sort.Search(len(history), func(i int) bool { return int(history[i].ID) >= before })
 	lo := hi - limit
 	if lo < 0 {
 		lo = 0
 	}
-	return aria.AriaRead{Committed: append([]aria.Committed(nil), history[lo:hi]...)}
+	return aria.Page{Parts: append([]aria.TurnPart(nil), history[lo:hi]...)}
 }
 
 func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
@@ -53,7 +50,7 @@ func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
 		if !ok || req.direction != pageOlder {
 			t.Fatalf("older request = %+v, %v", req, ok)
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	if len(tr.pages) != transcriptPageLimit {
 		t.Fatalf("retained pages = %d, want %d", len(tr.pages), transcriptPageLimit)
@@ -65,11 +62,8 @@ func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
 		t.Fatal("evicted newer pages must retain a refetch cursor")
 	}
 	before := tr.messages()
-	history = append(history, aria.Committed{
-		LT: 201, Role: "assistant",
-		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "message-201"}},
-	})
-	client.Apply(aria.AriaRead{Committed: []aria.Committed{history[200]}})
+	history = append(history, aria.TurnPart{Turn: aria.Turn{ID: uint64(201), Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "message-201"}}}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{history[200]}})
 	for range 2 {
 		tr.offset = len(tr.lineLT)
 		tr.checkNewer = true
@@ -77,7 +71,7 @@ func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
 		if !ok || req.direction != pageNewer {
 			t.Fatalf("newer request = %+v, %v", req, ok)
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	after := tr.messages()
 	if after[len(after)-1].LT <= before[len(before)-1].LT {
@@ -114,7 +108,7 @@ func TestTranscript_SearchPagesOlderWithBoundedRetention(t *testing.T) {
 		if !ok {
 			break
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	if tr.searchingHistory() {
 		t.Fatal("search did not settle")
@@ -147,7 +141,7 @@ func TestTranscript_SelectionSurvivesPayloadEviction(t *testing.T) {
 		if !ok {
 			t.Fatal("expected older page")
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	if len(tr.pages) != transcriptPageLimit {
 		t.Fatalf("selection retained %d payload pages", len(tr.pages))
@@ -157,7 +151,7 @@ func TestTranscript_SelectionSurvivesPayloadEviction(t *testing.T) {
 	if !ok {
 		t.Fatal("selection endpoints were lost after eviction")
 	}
-	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.AriaRead, error) {
+	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
 		return readBefore(history, before, limit), nil
 	})
 	if err != nil || !strings.Contains(text, "message-111") || !strings.Contains(text, "message-200") {
@@ -200,7 +194,7 @@ func TestTranscript_SearchTraversesEvictedNewerPages(t *testing.T) {
 		tr.offset = 0
 		tr.checkOlder = true
 		req, _ := tr.pageCursor()
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	tr.find("message-190")
 	for tr.searchingHistory() {
@@ -208,7 +202,7 @@ func TestTranscript_SearchTraversesEvictedNewerPages(t *testing.T) {
 		if !ok {
 			break
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	lines := tr.lines()
 	if tr.offset >= len(lines) || !strings.Contains(lines[tr.offset], "message-190") {
@@ -218,13 +212,10 @@ func TestTranscript_SearchTraversesEvictedNewerPages(t *testing.T) {
 
 func TestTranscript_SelectsOpenNodeAfterLeavingFollow(t *testing.T) {
 	client := aria.NewClient()
-	client.Apply(aria.AriaRead{Committed: []aria.Committed{transcriptHistory(1)[0]}})
-	client.Apply(aria.AriaRead{Live: &aria.Live{
-		LT: 2, V: 0, Role: "assistant",
-		Nodes: []aria.NodeDelta{{
-			ID: "open", Set: map[string]any{"type": "prose", "markdown": "streaming prose"},
-		}},
-	}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{transcriptHistory(1)[0]}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
+		ID: 0, Set: map[string]any{"type": "prose", "markdown": "streaming prose"},
+	}}}}}}})
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.selectNode(-1, false)
@@ -250,7 +241,7 @@ func TestTranscript_ReloadsOldestAfterNewerEviction(t *testing.T) {
 		if !ok {
 			break
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	tr.offset = len(tr.lineLT)
 	tr.checkNewer = true
@@ -258,7 +249,7 @@ func TestTranscript_ReloadsOldestAfterNewerEviction(t *testing.T) {
 	if !ok {
 		t.Fatal("expected newer refetch")
 	}
-	tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+	tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	if tr.noMoreOlder {
 		t.Fatal("evicting the oldest page must re-enable older paging")
 	}

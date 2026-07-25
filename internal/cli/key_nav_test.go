@@ -27,17 +27,17 @@ import (
 // scroll through. Only the entry read is served: subsequent page fetches come
 // back empty, which is how the pager learns it has reached the end of history
 // and stops prefetching.
-type stubHistoryClient struct{ committed []aria.Committed }
+type stubHistoryClient struct{ committed []aria.TurnPart }
 
-func (c stubHistoryClient) Read(context.Context, int) (aria.AriaRead, error) {
-	return aria.AriaRead{}, nil
+func (c stubHistoryClient) Read(context.Context, int) (aria.Page, error) {
+	return aria.Page{}, nil
 }
 
-func (c stubHistoryClient) ReadBefore(_ context.Context, before, _ int) (aria.AriaRead, error) {
+func (c stubHistoryClient) ReadBefore(_ context.Context, before, _ int) (aria.Page, error) {
 	if before != recentCursor {
-		return aria.AriaRead{}, nil
+		return aria.Page{}, nil
 	}
-	return aria.AriaRead{Committed: c.committed}, nil
+	return aria.Page{Parts: c.committed}, nil
 }
 
 func (c stubHistoryClient) Queued(context.Context) (*rpc.QueuedResponse, error) {
@@ -75,10 +75,10 @@ func feed(tb testing.TB, in *interactiveInput, data string) []byte {
 	return rest
 }
 
-func navHistory() []aria.Committed {
-	committed := make([]aria.Committed, 40)
+func navHistory() []aria.TurnPart {
+	committed := make([]aria.TurnPart, 40)
 	for i := range committed {
-		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, 20)}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 20)}}
 	}
 	return committed
 }
@@ -93,7 +93,7 @@ func navInput(tb testing.TB, out *countingWriter, open bool) (*interactiveInput,
 	lt := newLivelogTurn(out, 100, 40, settings, "aria0001", time.Unix(0, 0), status, nil, nil)
 	if open {
 		lt.enterTranscript()
-		lt.apply(aria.AriaRead{Committed: committed})
+		lt.apply(aria.Page{Parts: committed})
 	}
 	return &interactiveInput{
 		tc: nil, lt: lt, fcli: stubHistoryClient{committed}, mu: &sync.Mutex{}, set: settings,

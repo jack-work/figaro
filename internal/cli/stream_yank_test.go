@@ -27,13 +27,13 @@ func (t *recordingTerminal) SetClipboard(s string) { t.clipboard.Store(s) }
 
 // stubHistoryReader satisfies transcriptReadClient with a fixed 120-message
 // history so copySelection has something to walk.
-type stubHistoryReader struct{ history []aria.Committed }
+type stubHistoryReader struct{ history []aria.TurnPart }
 
-func (r *stubHistoryReader) Read(context.Context, int) (aria.AriaRead, error) {
-	return aria.AriaRead{}, nil
+func (r *stubHistoryReader) Read(context.Context, int) (aria.Page, error) {
+	return aria.Page{}, nil
 }
 
-func (r *stubHistoryReader) ReadBefore(_ context.Context, before, limit int) (aria.AriaRead, error) {
+func (r *stubHistoryReader) ReadBefore(_ context.Context, before, limit int) (aria.Page, error) {
 	return readBefore(r.history, before, limit), nil
 }
 

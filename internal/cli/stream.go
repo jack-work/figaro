@@ -96,7 +96,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		defer mu.Unlock()
 		switch method {
 		case rpc.MethodAriaFrame:
-			var r aria.AriaRead
+			var r aria.Page
 			if json.Unmarshal(params, &r) == nil {
 				lt.apply(r)
 			}
@@ -310,8 +310,8 @@ type interactiveInput struct {
 }
 
 type transcriptReadClient interface {
-	Read(context.Context, int) (aria.AriaRead, error)
-	ReadBefore(context.Context, int, int) (aria.AriaRead, error)
+	Read(context.Context, int) (aria.Page, error)
+	ReadBefore(context.Context, int, int) (aria.Page, error)
 	Queued(context.Context) (*rpc.QueuedResponse, error)
 }
 
@@ -465,7 +465,7 @@ func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcri
 	if len(req.cached) > 0 {
 		return req.cached, nil
 	}
-	read := func(before, limit int) (aria.AriaRead, error) {
+	read := func(before, limit int) (aria.Page, error) {
 		return in.fcli.ReadBefore(ctx, before, limit)
 	}
 	pageLimit := req.limit
@@ -473,7 +473,7 @@ func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcri
 		pageLimit = transcriptPageSize
 	}
 	var (
-		r   aria.AriaRead
+		r   aria.Page
 		err error
 	)
 	if req.after != 0 {
@@ -488,7 +488,7 @@ func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcri
 	if err != nil {
 		return nil, err
 	}
-	return committedMessages(r.Committed), nil
+	return committedMessages(r), nil
 }
 
 func (in *interactiveInput) searchMatchesLocked(gen uint64, query string) bool {
@@ -555,16 +555,16 @@ func (in *interactiveInput) refreshQueued() {
 	}()
 }
 
-func readNextPage(after, watermark, limit int, read func(int, int) (aria.AriaRead, error)) (aria.AriaRead, error) {
+func readNextPage(after, watermark, limit int, read func(int, int) (aria.Page, error)) (aria.Page, error) {
 	if after >= watermark || limit <= 0 {
-		return aria.AriaRead{}, nil
+		return aria.Page{}, nil
 	}
 	high := watermark + 1
 	best, err := read(high, limit)
 	if err != nil {
-		return aria.AriaRead{}, err
+		return aria.Page{}, err
 	}
-	if committedAfter(best.Committed, after) < limit {
+	if committedAfter(best, after) < limit {
 		return filterCommittedAfter(best, after), nil
 	}
 	low := after + 1
@@ -575,9 +575,9 @@ func readNextPage(after, watermark, limit int, read func(int, int) (aria.AriaRea
 		mid := low + (high-low)/2
 		r, err := read(mid, limit)
 		if err != nil {
-			return aria.AriaRead{}, err
+			return aria.Page{}, err
 		}
-		if committedAfter(r.Committed, after) >= limit {
+		if committedAfter(r, after) >= limit {
 			high, best = mid, r
 		} else {
 			low = mid + 1
@@ -586,22 +586,23 @@ func readNextPage(after, watermark, limit int, read func(int, int) (aria.AriaRea
 	return filterCommittedAfter(best, after), nil
 }
 
-func committedAfter(committed []aria.Committed, after int) int {
+// committedAfter counts content parts beyond a turn cursor.
+func committedAfter(p aria.Page, after int) int {
 	n := 0
-	for _, m := range committed {
-		if m.LT > after {
+	for _, part := range p.Parts {
+		if len(part.Nodes) > 0 && int(part.ID) > after {
 			n++
 		}
 	}
 	return n
 }
 
-func filterCommittedAfter(r aria.AriaRead, after int) aria.AriaRead {
-	out := r
-	out.Committed = nil
-	for _, m := range r.Committed {
-		if m.LT > after {
-			out.Committed = append(out.Committed, m)
+func filterCommittedAfter(p aria.Page, after int) aria.Page {
+	out := p
+	out.Parts = nil
+	for _, part := range p.Parts {
+		if int(part.ID) > after {
+			out.Parts = append(out.Parts, part)
 		}
 	}
 	return out
@@ -911,7 +912,7 @@ func (in *interactiveInput) selectNodeKey(delta int, ev keyEvent) keyVerdict {
 }
 
 func (in *interactiveInput) copySelection(ctx context.Context, cancel context.CancelFunc, gen uint64, plan selectionCopyPlan) {
-	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.AriaRead, error) {
+	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
 		return in.fcli.ReadBefore(ctx, before, limit)
 	})
 	cancel()

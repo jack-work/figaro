@@ -21,15 +21,15 @@ import (
 // inside a batch so no frame is painted.
 func BenchmarkKeyDispatchPager(b *testing.B) {
 	var w countingWriter
-	committed := make([]aria.Committed, 40)
+	committed := make([]aria.TurnPart, 40)
 	for i := range committed {
-		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, 20)}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 20)}}
 	}
 	settings := &renderSettings{}
 	status := newSessionStatus("aria0001", time.Unix(0, 0))
 	lt := newLivelogTurn(&w, 100, 40, settings, "aria0001", time.Unix(0, 0), status, nil, nil)
 	lt.enterTranscript()
-	lt.apply(aria.AriaRead{Committed: committed})
+	lt.apply(aria.Page{Parts: committed})
 	tr := lt.tr
 	tr.beginBatch()
 	defer tr.endBatch()

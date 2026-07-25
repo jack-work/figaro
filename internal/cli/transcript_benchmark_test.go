@@ -17,7 +17,7 @@ func benchmarkTranscript(b *testing.B, messages int, nodes []livedoc.Node) (*tra
 	b.Helper()
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	committed := make([]aria.Committed, messages)
+	committed := make([]aria.TurnPart, messages)
 	for i := range committed {
 		messageNodes := nodes
 		if messageNodes == nil {
@@ -26,9 +26,9 @@ func benchmarkTranscript(b *testing.B, messages int, nodes []livedoc.Node) (*tra
 				Markdown: fmt.Sprintf("message %05d carries enough prose to wrap across a typical terminal row", i+1),
 			}}
 		}
-		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: messageNodes}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: messageNodes}}
 	}
-	client.Apply(aria.AriaRead{Committed: committed})
+	client.Apply(aria.Page{Parts: committed})
 	return newTranscript(io.Discard, 100, 40, &ariaView{settings: &renderSettings{}}, client, "benchmark", time.Unix(0, 0)), client
 }
 
@@ -90,7 +90,7 @@ func BenchmarkTranscriptPagedSearchMiss(b *testing.B) {
 					if !ok {
 						break
 					}
-					tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+					tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 				}
 			}
 		})
@@ -130,17 +130,13 @@ func BenchmarkTranscriptLiveUpdate(b *testing.B) {
 			tr.enter()
 			b.ResetTimer()
 			for i := range b.N {
-				client.Apply(aria.AriaRead{Live: &aria.Live{
-					LT: messages + 1,
-					V:  i,
-					Nodes: []aria.NodeDelta{{
-						ID: "live",
-						Set: map[string]any{
-							"type":     string(livedoc.NodeProse),
-							"markdown": fmt.Sprintf("live update %d", i),
-						},
-					}},
-				}})
+				client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(messages + 1), Live: &aria.Live{From: 0, V: i, Nodes: []aria.NodeDelta{{
+					ID: 0,
+					Set: map[string]any{
+						"type":     string(livedoc.NodeProse),
+						"markdown": fmt.Sprintf("live update %d", i),
+					},
+				}}}}}}})
 				tr.render()
 			}
 		})
@@ -175,7 +171,7 @@ func BenchmarkTranscriptSelectionRehydrate(b *testing.B) {
 			}
 			b.ResetTimer()
 			for range b.N {
-				_, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.AriaRead, error) {
+				_, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
 					return readBefore(history, before, limit), nil
 				})
 				if err != nil {
@@ -194,7 +190,7 @@ func BenchmarkTranscriptDescriptorFallback(b *testing.B) {
 			probes := 0
 			b.ResetTimer()
 			for range b.N {
-				_, err := readNextPage(after, messages, transcriptPageSize, func(before, limit int) (aria.AriaRead, error) {
+				_, err := readNextPage(after, messages, transcriptPageSize, func(before, limit int) (aria.Page, error) {
 					probes++
 					return readBefore(history, before, limit), nil
 				})
@@ -251,15 +247,15 @@ type benchmarkSearchReader struct {
 	canceled chan struct{}
 }
 
-func (r *benchmarkSearchReader) Read(context.Context, int) (aria.AriaRead, error) {
-	return aria.AriaRead{}, nil
+func (r *benchmarkSearchReader) Read(context.Context, int) (aria.Page, error) {
+	return aria.Page{}, nil
 }
 
-func (r *benchmarkSearchReader) ReadBefore(ctx context.Context, _, _ int) (aria.AriaRead, error) {
+func (r *benchmarkSearchReader) ReadBefore(ctx context.Context, _, _ int) (aria.Page, error) {
 	r.started <- struct{}{}
 	<-ctx.Done()
 	r.canceled <- struct{}{}
-	return aria.AriaRead{}, ctx.Err()
+	return aria.Page{}, ctx.Err()
 }
 
 func (r *benchmarkSearchReader) Queued(context.Context) (*rpc.QueuedResponse, error) {

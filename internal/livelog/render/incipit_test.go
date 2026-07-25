@@ -26,7 +26,7 @@ func TestIncipit_FreezeOnce_OpenLive(t *testing.T) {
 	in.Open(2, "assistant", nodes)
 	nodes[1] = livedoc.Node{ID: "n1", Type: "tool", Name: "bash", Status: "ok", Output: "x\ny"}
 	in.Open(2, "assistant", nodes)
-	in.Freeze(aria.Message{LT: 2, Role: "assistant", Nodes: nodes})
+	in.Freeze(aria.Message{LT: 2, Nodes: nodes})
 
 	scr := strings.Join(ft.Screen(), "\n")
 	if strings.Count(scr, "hello?") != 1 {
@@ -63,7 +63,7 @@ func TestIncipit_ResizeKeepsFrozen_RedrawsOpen(t *testing.T) {
 	// finish + freeze
 	nodes[1].Status = "ok"
 	in.Open(2, "assistant", nodes)
-	in.Freeze(aria.Message{LT: 2, Role: "assistant", Nodes: nodes})
+	in.Freeze(aria.Message{LT: 2, Nodes: nodes})
 
 	scr := strings.Join(ft.Screen(), "\n")
 	if strings.Count(scr, "list the dir") != 1 {
@@ -87,7 +87,7 @@ func TestIncipit_NoTrailingBlanksAfterScrolledFreeze(t *testing.T) {
 	}
 	in.Open(2, "assistant", nodes)
 	top := ft.Row() // cursor parked at the region's visible top
-	in.Freeze(aria.Message{LT: 2, Role: "assistant", Nodes: nodes})
+	in.Freeze(aria.Message{LT: 2, Nodes: nodes})
 	// Freezing a scrolled region must move the cursor past only the VISIBLE rows
 	// (<= viewport height); using the full region height leaves the scrolled-off
 	// count as blank lines after the bookend.

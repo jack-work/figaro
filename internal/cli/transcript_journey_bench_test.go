@@ -53,7 +53,7 @@ type pagingHarness struct {
 	tr      *transcript
 	client  *aria.Client
 	view    *pagingView
-	history []aria.Committed
+	history []aria.TurnPart
 
 	fetches     int
 	fetchedMsgs int
@@ -77,9 +77,9 @@ type pagingHarness struct {
 }
 
 func newPagingHarness(messages, outputLines, w, h int) *pagingHarness {
-	history := make([]aria.Committed, messages)
+	history := make([]aria.TurnPart, messages)
 	for i := range history {
-		history[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, outputLines)}
+		history[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, outputLines)}}
 	}
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
@@ -119,14 +119,14 @@ func (h *pagingHarness) read(req transcriptPageRequest) []aria.Message {
 	}
 	h.blocked += time.Since(start)
 	h.fetches++
-	read := func(before, limit int) (aria.AriaRead, error) {
+	read := func(before, limit int) (aria.Page, error) {
 		return readBefore(h.history, before, limit), nil
 	}
 	pageLimit := req.limit
 	if pageLimit <= 0 {
 		pageLimit = transcriptPageSize
 	}
-	var r aria.AriaRead
+	var r aria.Page
 	if req.after != 0 {
 		r, _ = readNextPage(req.after, req.watermark, pageLimit, read)
 	} else {
@@ -136,7 +136,7 @@ func (h *pagingHarness) read(req transcriptPageRequest) []aria.Message {
 		}
 		r, _ = read(req.before, limit)
 	}
-	msgs := committedMessages(r.Committed)
+	msgs := committedMessages(r)
 	h.fetchedMsgs += len(msgs)
 	for _, m := range msgs {
 		if h.seen[m.LT] {
@@ -254,20 +254,14 @@ func BenchmarkTranscriptFollowFrame(b *testing.B) {
 func BenchmarkTranscriptLiveStream(b *testing.B) {
 	tr, client := heavyTranscript(b, 200, 200)
 	tr.follow = true
-	client.Apply(aria.AriaRead{Live: &aria.Live{
-		LT: 201, V: 0, Role: "assistant",
-		Nodes: []aria.NodeDelta{{ID: "n0", Set: map[string]any{"type": "prose", "markdown": "streaming"}}},
-	}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"type": "prose", "markdown": "streaming"}}}}}}}})
 	tr.render()
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := range b.N {
 		if i%4 == 0 {
-			client.Apply(aria.AriaRead{Live: &aria.Live{
-				LT: 201, V: 0, Role: "assistant",
-				Nodes: []aria.NodeDelta{{ID: "n0", Set: map[string]any{
-					"type": "prose", "markdown": fmt.Sprintf("streaming token %d", i)}}},
-			}})
+			client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
+				"type": "prose", "markdown": fmt.Sprintf("streaming token %d", i)}}}}}}}})
 		}
 		tr.tick++
 		tr.render()

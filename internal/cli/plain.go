@@ -347,7 +347,7 @@ func newPlainSink(out io.Writer) *plainSink {
 func (s *plainSink) handle(method string, params json.RawMessage) {
 	switch method {
 	case rpc.MethodAriaFrame:
-		var r aria.AriaRead
+		var r aria.Page
 		if json.Unmarshal(params, &r) == nil {
 			s.client.Apply(r)
 		}

@@ -17,14 +17,11 @@ func TestIncipitFreezesAssistantAfterTerminalStatusArrives(t *testing.T) {
 	bookend := func() []string { return []string{status.ruleLine(80, ""), status.statusLine(80, false)} }
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, bookend, func() string { return "rule" })
 
-	lt.apply(aria.AriaRead{Live: &aria.Live{
-		LT: 2, V: 0, Role: "assistant",
-		Nodes: []aria.NodeDelta{{
-			ID:  "n0",
-			Set: map[string]any{"type": "prose", "markdown": "answer"},
-		}},
-	}})
-	lt.apply(aria.AriaRead{Committed: []aria.Committed{{LT: 2, V: 0}}})
+	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
+		ID:  0,
+		Set: map[string]any{"type": "prose", "markdown": "answer"},
+	}}}}}}})
+	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Sealed: true}}}})
 	if lt.pending == nil {
 		t.Fatal("assistant close must wait for turn status")
 	}
@@ -44,15 +41,12 @@ func TestIncipitFreezesAssistantCloseAfterTurnDone(t *testing.T) {
 	bookend := func() []string { return []string{status.ruleLine(80, ""), status.statusLine(80, false)} }
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, bookend, func() string { return "rule" })
 
-	lt.apply(aria.AriaRead{Live: &aria.Live{
-		LT: 2, V: 0, Role: "assistant",
-		Nodes: []aria.NodeDelta{{
-			ID:  "n0",
-			Set: map[string]any{"type": "prose", "markdown": "answer"},
-		}},
-	}})
+	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
+		ID:  0,
+		Set: map[string]any{"type": "prose", "markdown": "answer"},
+	}}}}}}})
 	lt.finishTurn("end_turn")
-	lt.apply(aria.AriaRead{Committed: []aria.Committed{{LT: 2, V: 0}}})
+	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Sealed: true}}}})
 
 	if lt.pending != nil {
 		t.Fatal("late assistant close must freeze after turn completion")
@@ -68,13 +62,10 @@ func TestIncipitRepaintsDiscardedAssistantWithErrorStatus(t *testing.T) {
 	bookend := func() []string { return []string{status.ruleLine(80, ""), status.statusLine(80, false)} }
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, bookend, func() string { return "rule" })
 
-	lt.apply(aria.AriaRead{Live: &aria.Live{
-		LT: 2, V: 0, Role: "assistant",
-		Nodes: []aria.NodeDelta{{
-			ID:  "n0",
-			Set: map[string]any{"type": "prose", "markdown": "partial"},
-		}},
-	}})
+	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
+		ID:  0,
+		Set: map[string]any{"type": "prose", "markdown": "partial"},
+	}}}}}}})
 	lt.finishTurn("error: provider failed")
 
 	if !strings.Contains(out.String(), "error ✗") {
@@ -88,10 +79,10 @@ func TestTranscriptExitFlushesClosuresBeyondClientTail(t *testing.T) {
 	lt.lastFrozenLT = 1
 	lt.enterTranscript()
 	for i := 2; i <= transcriptTailLimit+10; i++ {
-		lt.apply(aria.AriaRead{Committed: []aria.Committed{{
-			LT: i, Role: "assistant",
+		lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("message-%03d", i)}},
-		}}})
+		}}}})
 	}
 	lt.leaveTranscript()
 	rendered := out.String()

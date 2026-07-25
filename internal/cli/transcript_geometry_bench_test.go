@@ -134,21 +134,15 @@ func BenchmarkTranscriptGeometryFollow(b *testing.B) {
 		b.Run(fmt.Sprintf("rows%d", rows), func(b *testing.B) {
 			withWindowRows(rows, func() {
 				tr, client := heavyTranscript(b, 200, 60)
-				client.Apply(aria.AriaRead{Live: &aria.Live{
-					LT: 201, V: 0, Role: "assistant",
-					Nodes: []aria.NodeDelta{{ID: "n0", Set: map[string]any{
-						"type": "prose", "markdown": "streaming"}}},
-				}})
+				client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
+					"type": "prose", "markdown": "streaming"}}}}}}}})
 				tr.render()
 				b.ReportMetric(float64(tr.index.total), "windowrows")
 				b.ReportAllocs()
 				b.ResetTimer()
 				for i := range b.N {
-					client.Apply(aria.AriaRead{Live: &aria.Live{
-						LT: 201, V: 0, Role: "assistant",
-						Nodes: []aria.NodeDelta{{ID: "n0", Set: map[string]any{
-							"type": "prose", "markdown": fmt.Sprintf("streaming token %d", i)}}},
-					}})
+					client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
+						"type": "prose", "markdown": fmt.Sprintf("streaming token %d", i)}}}}}}}})
 					tr.render()
 				}
 			})

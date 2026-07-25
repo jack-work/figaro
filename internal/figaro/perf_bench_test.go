@@ -157,7 +157,7 @@ func BenchmarkLiveFramePersistence(b *testing.B) {
 
 	run := func(b *testing.B, persist bool) {
 		srv := aria.NewServer()
-		srv.Open(1, string(message.RoleAssistant))
+		srv.OpenTurn(uint64(1))
 		a := &Agent{ariaSrv: srv}
 		nodes := []livedoc.Node{
 			{Type: livedoc.NodeProse, Markdown: markdown + "a"},

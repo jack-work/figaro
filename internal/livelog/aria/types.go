@@ -1,33 +1,29 @@
 // Package aria implements figaro's single paginated read API.
 //
-// An AriaRead is one "aria read": a page of the conversation. The live stream
-// pushes AriaReads as state changes — server-pushed pagination — so subscribing
-// is equivalent to repeatedly calling read(sinceLT). The cursor is a figaro LT.
+// There is one wire shape, Page, served two ways: pulled by read and pushed by
+// the live stream. A page is a contiguous window over (turn, node) space, so
+// subscribing is equivalent to repeatedly reading forward from your cursor.
 //
-// The open message streams as field-level deltas. Each live frame carries a
-// record version V (server-controlled, 0-indexed, incremented per frame) and the
-// nodes that changed, each as a NodeDelta: `set` merges fields (creating the node
-// on first set, where `type` must appear), `unset` removes them, `patch` splices
-// a streamed string field on the previous version's value. A frame's nodes are
-// ordered; a new id appends at that position.
+// The coordinate is (turn, node). LT — the model's logical time — appears only
+// as `lts` metadata hanging off nodes, because it cannot address a UI element:
+// a tool node spans two LTs, and the same LT can carry both a tool result and
+// a steering interjection. Turn ids address; LTs join back to the fig IR.
 //
-// A message in `committed` is closed. Two forms: a close marker {lt, v} — you
-// streamed it live, so promote your materialized copy iff your highest seen
-// version equals v — or a full snapshot {lt, role, nodes} (catch-up: adopt
-// wholesale). On any version mismatch the client reconnects and re-reads from its
-// last fully-committed LT.
+// A turn's open suffix streams as field-level deltas. Each live frame carries a
+// record version V (server-controlled, 0-indexed, incremented per frame) and
+// the nodes that changed, each as a NodeDelta: `set` merges fields (creating
+// the node on first set, where `type` must appear), `unset` removes them,
+// `patch` splices a streamed string field on the previous version's value.
+//
+// Live.From is the suffix boundary. A node below it is closed, and a closed
+// node never reopens — so a page that stops short of From can be cached
+// forever, and scrolling back through a streaming turn costs what scrolling
+// back through a finished one costs.
 //
 // Empty sections are omitted.
 package aria
 
 import "github.com/jack-work/figaro/internal/livedoc"
-
-// AriaRead is one page — pushed live or returned by Read; the two are equivalent.
-type AriaRead struct {
-	Committed []Committed `json:"committed,omitempty"`
-	Live      *Live       `json:"live,omitempty"`
-	Metrics   *Metrics    `json:"metrics,omitempty"`
-}
 
 // Turn is one exchange: a user prompt plus everything the agent thought, ran
 // and said in response, as a single ordered node list. The prompt is node 0 —
@@ -38,8 +34,7 @@ type AriaRead struct {
 // addressing is (turn, node), never LT. Sealed says the turn stopped moving;
 // it is orthogonal to whether a page showed you all of it.
 //
-// Live is the open suffix. Its From is the suffix boundary: nodes with a lower
-// id are committed and can never receive a delta. Nil once the turn seals.
+// Live is the open suffix. Nil once the turn seals.
 type Turn struct {
 	ID     uint64         `json:"turn"`
 	LTs    []uint64       `json:"lts,omitempty"`
@@ -47,9 +42,6 @@ type Turn struct {
 	Nodes  []livedoc.Node `json:"nodes,omitempty"`
 	Live   *Live          `json:"live,omitempty"`
 }
-
-// Empty reports whether the page carries nothing (so it isn't sent).
-func (r AriaRead) Empty() bool { return len(r.Committed) == 0 && r.Live == nil && r.Metrics == nil }
 
 // Metrics summarizes the current session for the status surfaces. ContextLimit
 // is the effective prompt cap when the provider can determine one; zero means
@@ -65,22 +57,22 @@ type Metrics struct {
 	Mantra           string `json:"mantra,omitempty"`
 }
 
-// Live is the open suffix of a turn: its record version and the per-node field
-// deltas. From is the suffix boundary — a node whose id is below it is
-// committed and can never receive a delta, which is what lets a page that
-// stops short of From be as immutable as a sealed one. Role appears on the
-// first frame (v 0) and on catch-up snapshots.
+// Live is a turn's open suffix: the boundary, the record version, and the
+// per-node field deltas in this frame. From is the boundary — nodes below it
+// are closed and can never receive a delta. A frame with no Nodes is a close
+// marker: promote your materialized copy iff your highest seen version is V.
 type Live struct {
 	From  uint64      `json:"from"`
-	LT    int         `json:"lt"`
 	V     int         `json:"v"`
-	Role  string      `json:"role,omitempty"`
-	Nodes []NodeDelta `json:"nodes"`
+	Nodes []NodeDelta `json:"nodes,omitempty"`
 }
 
-// NodeDelta is a field-level change to one block, addressed by stable id.
+// NodeDelta is a field-level change to one node, addressed by its positional
+// id within the turn. Ids are positional everywhere — in a committed part the
+// i'th node has id From+i and is omitted from the wire entirely; here it is
+// explicit because a delta references a node out of order.
 type NodeDelta struct {
-	ID    string                   `json:"id"`
+	ID    uint64                   `json:"id"`
 	Set   map[string]any           `json:"set,omitempty"`   // merge fields (create on first set; type required)
 	Unset []string                 `json:"unset,omitempty"` // remove fields
 	Patch map[string]livedoc.Delta `json:"patch,omitempty"` // splice a streamed string field on its prev value
@@ -91,19 +83,14 @@ func (d NodeDelta) Empty() bool {
 	return len(d.Set) == 0 && len(d.Unset) == 0 && len(d.Patch) == 0
 }
 
-// Committed is a closed message: a close marker {lt, v} (promote iff seen==v) or
-// a full snapshot {lt, role, nodes} (adopt wholesale). Presence implies closed.
-type Committed struct {
-	LT    int            `json:"lt"`
-	V     int            `json:"v,omitempty"`
-	Role  string         `json:"role,omitempty"`
-	Nodes []livedoc.Node `json:"nodes,omitempty"`
-}
-
-// Full reports whether this is a content snapshot (vs a close marker).
-func (c Committed) Full() bool { return c.Nodes != nil }
-
-// Message is a closed (immutable) message, identified by its figaro LT.
+// Message is the CLIENT-SIDE materialization of one turn, not a wire type.
+// The wire speaks Page/TurnPart; this is what a folded client hands its
+// renderer.
+//
+// LT carries the TURN ID, not a logical time. The name is a labelled seam:
+// renaming it reaches into the transcript pager and both renderers, which
+// belong to S24/S25, and doing it here would collide with that work. Nothing
+// on the wire uses this type, so the seam is local and cheap to close.
 type Message struct {
 	LT    int
 	Role  string

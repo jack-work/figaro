@@ -14,29 +14,29 @@ import (
 // slowHistoryReader serves history after a fixed delay, modelling a daemon RPC
 // on a busy machine.
 type slowHistoryReader struct {
-	history []aria.Committed
+	history []aria.TurnPart
 	delay   time.Duration
 
 	mu    sync.Mutex
 	calls int
 }
 
-func (r *slowHistoryReader) Read(context.Context, int) (aria.AriaRead, error) {
-	return aria.AriaRead{}, nil
+func (r *slowHistoryReader) Read(context.Context, int) (aria.Page, error) {
+	return aria.Page{}, nil
 }
 
 func (r *slowHistoryReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
 	return &rpc.QueuedResponse{}, nil
 }
 
-func (r *slowHistoryReader) ReadBefore(ctx context.Context, before, limit int) (aria.AriaRead, error) {
+func (r *slowHistoryReader) ReadBefore(ctx context.Context, before, limit int) (aria.Page, error) {
 	r.mu.Lock()
 	r.calls++
 	r.mu.Unlock()
 	select {
 	case <-time.After(r.delay):
 	case <-ctx.Done():
-		return aria.AriaRead{}, ctx.Err()
+		return aria.Page{}, ctx.Err()
 	}
 	return readBefore(r.history, before, limit), nil
 }

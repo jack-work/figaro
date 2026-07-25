@@ -14,12 +14,9 @@ func TestTranscript_OpenSelectionLoadsGapBeforeExtending(t *testing.T) {
 	history := transcriptHistory(200)
 	client := aria.NewClient()
 	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
-	client.Apply(aria.AriaRead{Live: &aria.Live{
-		LT: 201, V: 0, Role: "assistant",
-		Nodes: []aria.NodeDelta{{
-			ID: "open", Set: map[string]any{"type": string(livedoc.NodeProse), "markdown": "open-201"},
-		}},
-	}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
+		ID: 0, Set: map[string]any{"type": string(livedoc.NodeProse), "markdown": "open-201"},
+	}}}}}}})
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.key('k')
@@ -27,7 +24,7 @@ func TestTranscript_OpenSelectionLoadsGapBeforeExtending(t *testing.T) {
 		tr.offset = 0
 		tr.checkOlder = true
 		req, _ := tr.pageCursor()
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	tr.selectNode(-1, false)
 	focus := tr.selection.focus
@@ -46,7 +43,7 @@ func TestTranscript_ClearSelectionKeepsFocusedEdge(t *testing.T) {
 	client := aria.NewClient()
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	for i := 0; i < 4; i++ {
-		messages := committedMessages(history[i*30 : (i+1)*30])
+		messages := committedMessages(aria.Page{Parts: history[i*30 : (i+1)*30]})
 		tr.pages = append(tr.pages, transcriptPage{
 			desc:     describePage(messages),
 			messages: messages,
@@ -93,7 +90,7 @@ func TestTranscript_PagedSearchMatchesRenderedMarkdown(t *testing.T) {
 		if !ok {
 			break
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	lines := tr.lines()
 	if tr.offset >= len(lines) || !strings.Contains(lines[tr.offset], "foo") {

@@ -16,8 +16,8 @@ func driveWrite(t *testing.T, argFrames []string, resultText string) []livedoc.N
 	t.Helper()
 	srv := aria.NewServer()
 	cli := aria.NewClient()
-	srv.Subscribe(func(r aria.AriaRead) { cli.Apply(r) })
-	srv.Open(1, "assistant")
+	srv.Subscribe(func(r aria.Page) { cli.Apply(r) })
+	srv.OpenTurn(uint64(1))
 
 	preview := func(name string) string {
 		if name == "write" {
