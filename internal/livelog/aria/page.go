@@ -216,6 +216,33 @@ func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page {
 	return p
 }
 
+// PaginateBefore pages backward from an anchor, EXCLUDING the anchor node when
+// that node actually exists. "Before" means before: the caller already holds
+// the anchor — it is the oldest thing in its window and it asked for what
+// precedes it. Returning it again duplicates a message at every page boundary.
+//
+// An anchor past the last turn is a TAIL request (recentCursor). It names no
+// existing node, so there is nothing to exclude and it yields the tail
+// inclusively. That asymmetry is why this is a named function and not a flag:
+// the two callers mean genuinely different things by the same anchor.
+func PaginateBefore(turns []Turn, at Anchor, budget int) Page {
+	if len(turns) == 0 {
+		return Page{}
+	}
+	if !at.Zero() && at.Turn <= turns[len(turns)-1].ID {
+		start, ok := locate(turns, at, Backward)
+		if !ok {
+			return Page{}
+		}
+		prev, ok := step(turns, start, Backward)
+		if !ok {
+			return Page{} // the anchor is the oldest node; nothing precedes it
+		}
+		at = Anchor{Turn: turns[prev.turn].ID, Node: uint64(prev.node)}
+	}
+	return Paginate(turns, at, Backward, budget)
+}
+
 // assemble builds the parts spanning lo..hi inclusive, in reading order.
 func assemble(turns []Turn, lo, hi cursor) []TurnPart {
 	parts := make([]TurnPart, 0, hi.turn-lo.turn+1)

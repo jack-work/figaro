@@ -239,7 +239,7 @@ func (s *Server) Read(at Anchor, budget int) Page {
 }
 
 func (s *Server) ReadBefore(at Anchor, budget int) Page {
-	return Paginate(s.Turns(), at, Backward, budget)
+	return PaginateBefore(s.Turns(), at, budget)
 }
 
 // snapshotLocked copies the turn list, attaching the streaming suffix and its

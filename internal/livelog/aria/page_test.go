@@ -2,6 +2,7 @@ package aria
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -282,5 +283,53 @@ func TestPaginate_TailJoinDoesNotDuplicate(t *testing.T) {
 	lastPart := tail.Parts[len(tail.Parts)-1]
 	if lastPart.ClippedTail {
 		t.Error("the tail window must reach the last node of the last turn")
+	}
+}
+
+// Walking backward page by page must never deliver the same node twice. The
+// pager anchors each request on the oldest node it already holds, so an
+// inclusive read hands that node back and the transcript shows a duplicate at
+// EVERY page boundary. This shipped undetected because the CLI's test double
+// sliced history itself and never ran the paginator.
+func TestPaginateBefore_PagesDoNotOverlap(t *testing.T) {
+	turns := make([]Turn, 40)
+	for i := range turns {
+		turns[i] = Turn{ID: uint64(i + 1), Sealed: true, Nodes: []livedoc.Node{
+			{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("m%03d", i+1)},
+		}}
+	}
+	budget := 5 * nodeSize(turns[0].Nodes[0])
+
+	seen := map[uint64]int{}
+	at := Anchor{Turn: 1 << 60} // recentCursor: the tail
+	for range 12 {
+		p := PaginateBefore(turns, at, budget)
+		if len(p.Parts) == 0 {
+			break
+		}
+		for _, part := range p.Parts {
+			seen[part.ID]++
+		}
+		at = Anchor{Turn: p.Parts[0].ID, Node: p.Parts[0].From}
+	}
+	for id, n := range seen {
+		if n != 1 {
+			t.Fatalf("turn %d delivered %d times; pages must not overlap", id, n)
+		}
+	}
+	if len(seen) != len(turns) {
+		t.Fatalf("walked %d turns, want all %d", len(seen), len(turns))
+	}
+}
+
+// The tail request names no existing node, so it has nothing to exclude.
+func TestPaginateBefore_TailIsInclusive(t *testing.T) {
+	turns := []Turn{
+		{ID: 1, Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "a"}}},
+		{ID: 2, Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "b"}}},
+	}
+	p := PaginateBefore(turns, Anchor{Turn: 1 << 60}, 1<<20)
+	if len(p.Parts) != 2 || p.Parts[len(p.Parts)-1].ID != 2 {
+		t.Fatalf("tail read must include the last turn: %+v", p.Parts)
 	}
 }
