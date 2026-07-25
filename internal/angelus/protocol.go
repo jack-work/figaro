@@ -972,6 +972,7 @@ func (h *handlers) status(ctx context.Context, params json.RawMessage) (interfac
 		Uptime:      h.angelus.StartedAt.UnixMilli(),
 		FigaroCount: h.angelus.Registry.FigaroCount(),
 		BoundPIDs:   h.angelus.Registry.BoundPIDCount(),
+		Build:       h.angelus.Build,
 	}, nil
 }
 

@@ -73,6 +73,7 @@ func ensureAngelus() {
 	sockPath := angelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
 	if cli, err := angelus.DialClient(ep); err == nil {
+		checkDaemonBuild(cli)
 		cli.Close()
 		return
 	}
@@ -164,4 +165,39 @@ func mustCreateAndBindLoadout(ctx context.Context, acli *angelus.Client, loaded 
 	}
 
 	return createResp.FigaroID, ep
+}
+
+// checkDaemonBuild refuses to speak to a daemon built from a different
+// revision. The wire shape changes between builds, so a mismatched pair does
+// not fail loudly — it renders NOTHING, which reads as a broken terminal
+// rather than a stale process. Naming both revisions turns an hour of
+// confusion into one command.
+//
+// Skipped when either side's revision is unknown (a bare `go build` outside a
+// repo): unknown must not be treated as mismatched.
+func checkDaemonBuild(cli *angelus.Client) {
+	mine := buildRevision()
+	if mine == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	st, err := cli.Status(ctx)
+	if err != nil || st == nil || st.Build == "" {
+		return // old daemon or transient: not worth blocking on
+	}
+	if st.Build == mine {
+		return
+	}
+	die("running angelus is a different build than this CLI:\n"+
+		"  daemon %s\n  cli    %s\n"+
+		"the wire changes between builds, so this pair would render nothing.\n"+
+		"run `figaro stop` and retry.", short12(st.Build), short12(mine))
+}
+
+func short12(s string) string {
+	if len(s) > 12 {
+		return s[:12]
+	}
+	return s
 }

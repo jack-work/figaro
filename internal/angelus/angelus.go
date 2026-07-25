@@ -26,6 +26,9 @@ type Angelus struct {
 	SocketPath string
 	RuntimeDir string
 	StartedAt  time.Time
+	// Build is this daemon's VCS revision, reported over angelus.status so a
+	// CLI can refuse to speak to a daemon from a different build.
+	Build string
 
 	listener net.Listener
 	cancel   context.CancelFunc
