@@ -35,16 +35,25 @@ type Src struct {
 	Block int    `json:"block"`
 }
 
+// RoleInput and RoleOutput are the two voices of the UI IR, mirroring
+// message.RoleInput / message.RoleOutput. They live here because Node.Role
+// lives here, and they are constants rather than literals because the same two
+// strings were previously spelled out at twenty call sites across four
+// packages — the shape that lets a vocabulary drift.
+const (
+	RoleInput  = "input"
+	RoleOutput = "output"
+)
+
 // Node is one element of a live unit. Only the fields for its Type are
 // meaningful; the rest are zero. The two long, streamed string fields —
 // prose Markdown and tool Output — are the splice-patchable ones.
 type Node struct {
 	Type NodeType `json:"type"`
 
-	// Role is "user" for the turn's prompt and for steering interjections,
-	// "assistant" otherwise. Prompt and steering are the same kind of thing in
-	// different positions, so they share a rendering path; position, not type,
-	// says which is which.
+	// Role is RoleInput for steering interjections, RoleOutput otherwise. The
+	// turn's opening question is NOT a node — it is Turn.Inquiry, plain text —
+	// so a node carrying RoleInput is always a steering interjection.
 	Role string `json:"role,omitempty"`
 
 	// LTs is fig-IR provenance — metadata, never an address. UI code addresses

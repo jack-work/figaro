@@ -59,7 +59,7 @@ func TestReconcileAriaServer_PreservesStateOnShorterHistory(t *testing.T) {
 		a.ariaSrv.Commit(aria.Turn{
 			ID:     i,
 			Sealed: true,
-			Nodes:  []livedoc.Node{{Type: livedoc.NodeProse, Role: "user", Markdown: "hi"}},
+			Nodes:  []livedoc.Node{{Type: livedoc.NodeProse, Role: livedoc.RoleInput, Markdown: "hi"}},
 		})
 	}
 
@@ -85,11 +85,11 @@ func TestReconcileAriaServer_AllowsGrow(t *testing.T) {
 	logMem := store.NewMemLog[message.Message]()
 	// Two durable messages that produce two compose.Units.
 	_, err := logMem.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")},
+		Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")},
 	}})
 	require.NoError(t, err)
 	_, err = logMem.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role: message.RoleAssistant, Content: []message.Content{message.TextContent("world")},
+		Role: message.RoleOutput, Content: []message.Content{message.TextContent("world")},
 	}})
 	require.NoError(t, err)
 

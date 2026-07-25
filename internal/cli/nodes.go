@@ -45,7 +45,7 @@ func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) [
 		return renderThinkingNode(n, width)
 	// The prompt and a steering interjection are the same kind of thing in
 	// different positions, so they draw the same way (docs/turn-addressing.md).
-	case n.Type == livedoc.NodeSteering, n.Role == "user":
+	case n.Type == livedoc.NodeSteering, n.Role == livedoc.RoleInput:
 		return renderSteeringNode(n, width)
 	default:
 		return renderProseNode(n, width)

@@ -33,7 +33,7 @@ func (m *mockProviderForIntegration) Models(ctx context.Context) ([]provider.Mod
 func (m *mockProviderForIntegration) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	bus.PushDelta(message.TextContent("42"))
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent("42")},
 		StopReason: message.StopEnd,
 	}

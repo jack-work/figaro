@@ -39,7 +39,7 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	um := message.Message{Role: message.RoleUser}
+	um := message.Message{Role: message.RoleInput}
 	e, err := ir.Append(Entry[message.Message]{Payload: um})
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +49,7 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 	}
 	// re-Open returns the SAME memoized instance -> sees the append
 	ir2, _ := b.Open(conv)
-	if got := ir2.Read(); len(got) == 0 || got[len(got)-1].Payload.Role != message.RoleUser {
+	if got := ir2.Read(); len(got) == 0 || got[len(got)-1].Payload.Role != message.RoleInput {
 		t.Fatalf("memoized IR did not reflect append: %+v", got)
 	}
 	if g, ok := tr.Lookup(e.LT); !ok || g.Fingerprint != "fp" {
@@ -76,7 +76,7 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 	// flow: set rides with its turn). A set with NO intervening turn sits
 	// at the fork boundary and would ride only with the continuation —
 	// a known edge to revisit.
-	if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleAssistant}}); err != nil {
+	if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleOutput}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -115,7 +115,7 @@ func TestAriaMetaReadsLegacySidecar(t *testing.T) {
 }
 
 func userText(s string) message.Message {
-	return message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent(s)}}
+	return message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent(s)}}
 }
 
 func patchSet(kv map[string]string) message.Patch {
@@ -216,7 +216,7 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 	conv, _ := b.CreateConversation(l)
 
 	ir, _ := b.Open(conv)
-	for _, r := range []message.Role{message.RoleUser, message.RoleAssistant, message.RoleUser} {
+	for _, r := range []message.Role{message.RoleInput, message.RoleOutput, message.RoleInput} {
 		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: r}}); err != nil {
 			t.Fatal(err)
 		}
@@ -244,7 +244,7 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := altIR.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}); err != nil {
+	if _, err := altIR.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 		t.Fatalf("send to forked alt: %v", err)
 	}
 }
@@ -261,7 +261,7 @@ func TestXwalBackend_CauterizedLoadoutFork(t *testing.T) {
 	// inherited, ceremonial LT.
 	ir, _ := b.Open(conv)
 	for i := 0; i < 2; i++ {
-		ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}})
+		ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 	}
 	// Fork conv at LT 2 — owned by the LOADOUT. Cauterized => a NEW conversation
 	// sharing the loadout, NOT a re-split of the loadout into a continuation.
@@ -284,7 +284,7 @@ func TestXwalBackend_CauterizedLoadoutFork(t *testing.T) {
 		t.Fatalf("sib lost the shared loadout model: %q", str(cbGet(snap, "system.model")))
 	}
 	sibIR, _ := b.Open(sib)
-	if _, err := sibIR.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}); err != nil {
+	if _, err := sibIR.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 		t.Fatalf("send to cauterized sibling: %v", err)
 	}
 	// And the loadout still has NO live head of its own (stays ceremonial).
@@ -304,7 +304,7 @@ func TestXwalBackend_ForestVectors(t *testing.T) {
 	c2, _ := b.CreateConversation(l) // root [1]
 	// give c1 a turn so it's interior-forkable, then fork it -> a branch [0,0]
 	ir, _ := b.Open(c1)
-	ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}})
+	ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 	_, alt, err := b.Fork(c1)
 	if err != nil {
 		t.Fatal(err)
@@ -354,7 +354,7 @@ func TestNoStranding_SiblingPromoteDoesNotInvalidate(t *testing.T) {
 	}
 	// Warm up.
 	for i := 0; i < 3; i++ {
-		if _, err := logA.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}); err != nil {
+		if _, err := logA.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 			t.Fatalf("warm append: %v", err)
 		}
 	}
@@ -365,7 +365,7 @@ func TestNoStranding_SiblingPromoteDoesNotInvalidate(t *testing.T) {
 
 	// A can still append. Under the old evictAll this returned
 	// "append message: write .../n50/...jsonl: file already closed".
-	if _, err := logA.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}); err != nil {
+	if _, err := logA.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 		t.Fatalf("post-promote-on-sibling append: %v", err)
 	}
 }
@@ -402,7 +402,7 @@ func TestNoStranding_ConcurrentAppendsAcrossArias(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < perWriter; j++ {
-				if _, err := logs[i].Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}); err != nil {
+				if _, err := logs[i].Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 					errCh <- fmt.Errorf("aria %d append %d: %w", i, j, err)
 					return
 				}

@@ -17,7 +17,7 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	cache := store.NewMemLog[[]json.RawMessage]()
 	p := &Provider{reminder: "tag"}
-	for _, role := range []message.Role{message.RoleUser, message.RoleAssistant} {
+	for _, role := range []message.Role{message.RoleInput, message.RoleOutput} {
 		_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 			Role: role, Content: []message.Content{message.TextContent(string(role))},
 		}})
@@ -32,7 +32,7 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 	require.True(t, ok)
 	prefix := append([]byte(nil), prefixEntry.Payload[0]...)
 	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role: message.RoleUser, Content: []message.Content{message.TextContent("next")},
+		Role: message.RoleInput, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
 	second, err := p.catchUp(log, cache, nil)
@@ -54,11 +54,11 @@ func TestCatchUpReplaysCachedPrefixSnapshot(t *testing.T) {
 	newPatch := message.Patch{Set: map[string]json.RawMessage{"mode": json.RawMessage(`"new"`)}}
 
 	first, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role: message.RoleUser, Content: []message.Content{message.TextContent("first")}, Patches: []message.Patch{oldPatch},
+		Role: message.RoleInput, Content: []message.Content{message.TextContent("first")}, Patches: []message.Patch{oldPatch},
 	}})
 	require.NoError(t, err)
 	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role: message.RoleUser, Content: []message.Content{message.TextContent("second")}, Patches: []message.Patch{newPatch},
+		Role: message.RoleInput, Content: []message.Content{message.TextContent("second")}, Patches: []message.Patch{newPatch},
 	}})
 	require.NoError(t, err)
 	encodedFirst, err := p.encode(first.Payload, chalkboard.Snapshot{})

@@ -65,7 +65,7 @@ func turn(tb testing.TB, b *XwalBackend, id string, n int) {
 		tb.Fatal(err)
 	}
 	for i := 0; i < n; i++ {
-		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleUser}}); err != nil {
+		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 			tb.Fatal(err)
 		}
 	}

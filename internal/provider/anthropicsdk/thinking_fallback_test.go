@@ -17,7 +17,7 @@ func TestEncodeDropsUnsignedThinking(t *testing.T) {
 	p := &Provider{}
 	snap := chalkboard.Snapshot{}
 	mp, ok := p.renderMessage(message.Message{
-		Role: message.RoleAssistant,
+		Role: message.RoleOutput,
 		Content: []message.Content{
 			{Type: message.ContentThinking, Text: "internal reasoning"},
 			{Type: message.ContentProse, Text: "the answer"},

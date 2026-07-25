@@ -362,7 +362,7 @@ func printTransitions(w io.Writer, entries []store.Entry[message.Message]) {
 // renderMessage writes one IR message as markdown.
 func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 	switch m.Role {
-	case message.RoleUser:
+	case message.RoleInput:
 		var text string
 		var toolResults []message.Content
 		for _, c := range m.Content {
@@ -404,7 +404,7 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 			fmt.Fprint(w, "\n")
 		}
 
-	case message.RoleAssistant:
+	case message.RoleOutput:
 		header := fmt.Sprintf("**figaro** [#%d]", lt)
 		if m.StopReason != "" {
 			header += fmt.Sprintf(" *(%s)*", m.StopReason)

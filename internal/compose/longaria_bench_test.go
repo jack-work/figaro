@@ -13,9 +13,9 @@ func BenchmarkUnitsLongAria(b *testing.B) {
 		b.Run(fmt.Sprintf("messages=%d", n), func(b *testing.B) {
 			msgs := make([]message.Message, n)
 			for i := range msgs {
-				role := message.RoleUser
+				role := message.RoleInput
 				if i%2 == 1 {
-					role = message.RoleAssistant
+					role = message.RoleOutput
 				}
 				msgs[i] = message.Message{
 					LogicalTime: uint64(i + 1),

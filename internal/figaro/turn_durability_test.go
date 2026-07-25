@@ -82,7 +82,7 @@ func TestOpenAfterCrashBeforeAssistantAppend(t *testing.T) {
 	ir, err := b.Open(id)
 	require.NoError(t, err)
 	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role: message.RoleUser, Content: []message.Content{message.TextContent("crashed mid-stream")},
+		Role: message.RoleInput, Content: []message.Content{message.TextContent("crashed mid-stream")},
 	}})
 	require.NoError(t, err)
 	before := ir.Len()
@@ -93,7 +93,7 @@ func TestOpenAfterCrashBeforeAssistantAppend(t *testing.T) {
 	a.Kill()
 
 	assert.Equal(t, before, ir.Len())
-	assert.Equal(t, message.RoleUser, got[len(got)-1].Role)
+	assert.Equal(t, message.RoleInput, got[len(got)-1].Role)
 	assert.Zero(t, prov.callCount())
 }
 
@@ -103,7 +103,7 @@ func TestOpenAfterCrashWithUnresolvedTools(t *testing.T) {
 	ir, err := b.Open(id)
 	require.NoError(t, err)
 	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		StopReason: message.StopToolInvoke,
 		Content: []message.Content{{
 			Type: message.ContentToolInvoke, ToolCallID: "call-1", ToolName: "wait",
@@ -117,7 +117,7 @@ func TestOpenAfterCrashWithUnresolvedTools(t *testing.T) {
 	first := a.Context()
 	a.Kill()
 	last := first[len(first)-1]
-	require.Equal(t, message.RoleUser, last.Role)
+	require.Equal(t, message.RoleInput, last.Role)
 	require.Len(t, last.Content, 1)
 	assert.Equal(t, message.ContentToolResult, last.Content[0].Type)
 	assert.Equal(t, "call-1", last.Content[0].ToolCallID)
@@ -156,7 +156,7 @@ func (p *interruptProvider) Send(ctx context.Context, in provider.SendInput, bus
 		bus.PushToolInvokeStart(call.ToolCallID, call.ToolName)
 		bus.PushToolReady(call)
 		msg := message.Message{
-			Role: message.RoleAssistant, StopReason: message.StopToolInvoke,
+			Role: message.RoleOutput, StopReason: message.StopToolInvoke,
 			Content: []message.Content{call}, Timestamp: time.Now().UnixMilli(),
 		}
 		if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
@@ -222,7 +222,7 @@ func TestInterruptRepairsPartialTurn(t *testing.T) {
 			switch mode {
 			case "empty":
 				last := got[len(got)-1]
-				assert.Equal(t, message.RoleUser, last.Role, "empty partial leaves the turn absent")
+				assert.Equal(t, message.RoleInput, last.Role, "empty partial leaves the turn absent")
 				assert.Equal(t, "go", last.Content[0].Text)
 			case "prose":
 				last := got[len(got)-1]
@@ -264,7 +264,7 @@ func (p *mixedToolProvider) Send(_ context.Context, in provider.SendInput, bus p
 	<-p.running
 	<-p.release
 	msg := message.Message{
-		Role: message.RoleAssistant, StopReason: message.StopToolInvoke,
+		Role: message.RoleOutput, StopReason: message.StopToolInvoke,
 		Content: calls, Timestamp: time.Now().UnixMilli(),
 	}
 	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
@@ -391,7 +391,7 @@ func TestPanicRecoveryRepairsInMemoryPartial(t *testing.T) {
 	got := a.Context()
 	require.NotEmpty(t, got)
 	last := got[len(got)-1]
-	assert.Equal(t, message.RoleAssistant, last.Role)
+	assert.Equal(t, message.RoleOutput, last.Role)
 	assert.Equal(t, message.StopAborted, last.StopReason)
 	assert.Equal(t, "streamed before panic", last.Content[0].Text)
 }
@@ -406,7 +406,7 @@ func (canonicalThenFrameProvider) Models(context.Context) ([]provider.ModelInfo,
 }
 func (canonicalThenFrameProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
-		Role: message.RoleAssistant, Content: []message.Content{message.TextContent("canonical assistant")},
+		Role: message.RoleOutput, Content: []message.Content{message.TextContent("canonical assistant")},
 		StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
 	}
 	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
@@ -464,7 +464,7 @@ func (p *panicQueueProvider) Send(ctx context.Context, in provider.SendInput, bu
 		return ctx.Err()
 	}
 	msg := message.Message{
-		Role: message.RoleAssistant, StopReason: message.StopEnd,
+		Role: message.RoleOutput, StopReason: message.StopEnd,
 		Content: []message.Content{message.TextContent("queued prompt completed")}, Timestamp: time.Now().UnixMilli(),
 	}
 	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
@@ -592,7 +592,7 @@ func TestAssistantAppendRejectsPredictedLTMismatch(t *testing.T) {
 	assert.Contains(t, reason, "assistant append LT mismatch")
 	history := a.Context()
 	require.NotEmpty(t, history)
-	assert.Equal(t, message.RoleAssistant, history[len(history)-1].Role)
+	assert.Equal(t, message.RoleOutput, history[len(history)-1].Role)
 }
 
 type nativeCommitProvider struct {
@@ -607,7 +607,7 @@ func (p *nativeCommitProvider) SetModel(string)                                 
 func (p *nativeCommitProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 func (p *nativeCommitProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
-		Role: message.RoleAssistant, Content: []message.Content{message.TextContent("appended")},
+		Role: message.RoleOutput, Content: []message.Content{message.TextContent("appended")},
 		StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
 	}
 	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
@@ -657,7 +657,7 @@ func TestCacheAppendFailureEndsTurnKeepsAssistant(t *testing.T) {
 	require.NoError(t, err)
 	tail, ok := ir.PeekTail()
 	require.True(t, ok)
-	assert.Equal(t, message.RoleAssistant, tail.Payload.Role)
+	assert.Equal(t, message.RoleOutput, tail.Payload.Role)
 	cache, err := real.OpenTranslation(id, "atomic-cache")
 	require.NoError(t, err)
 	_, ok = cache.Lookup(tail.LT)
@@ -667,7 +667,7 @@ func TestCacheAppendFailureEndsTurnKeepsAssistant(t *testing.T) {
 	a = figaro.NewAgent(figaro.Config{ID: id, Provider: prov2, Backend: real, Tools: tool.NewRegistry()})
 	got := a.Context()
 	a.Kill()
-	assert.Equal(t, message.RoleAssistant, got[len(got)-1].Role, "next open sees the canonical assistant, unblocked")
+	assert.Equal(t, message.RoleOutput, got[len(got)-1].Role, "next open sees the canonical assistant, unblocked")
 	assert.Zero(t, prov2.callCount())
 }
 
@@ -684,7 +684,7 @@ func (p *appendBarrierProvider) Models(context.Context) ([]provider.ModelInfo, e
 }
 func (p *appendBarrierProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
-		Role: message.RoleAssistant, Content: []message.Content{message.TextContent("appended")},
+		Role: message.RoleOutput, Content: []message.Content{message.TextContent("appended")},
 		StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
 	}
 	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
@@ -737,7 +737,7 @@ func TestQueuedForkWaitsForProviderCacheAppend(t *testing.T) {
 		require.NoError(t, err)
 		tail, ok := ir.PeekTail()
 		require.True(t, ok)
-		assert.Equal(t, message.RoleAssistant, tail.Payload.Role)
+		assert.Equal(t, message.RoleOutput, tail.Payload.Role)
 		cache, err := b.OpenTranslation(branch, "append-barrier")
 		require.NoError(t, err)
 		cached, ok := cache.Lookup(tail.LT)

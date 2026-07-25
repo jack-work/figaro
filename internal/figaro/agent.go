@@ -331,7 +331,7 @@ func (a *Agent) refreshMetrics() {
 		if !message.IsCeremonial(m) {
 			messageCount++
 		}
-		if m.Role == message.RoleAssistant {
+		if m.Role == message.RoleOutput {
 			turnCount++
 		}
 		metricsLT = e.LT
@@ -366,7 +366,7 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	turnCount := 0
 	var metricsLT uint64
 	for _, m := range msgs {
-		if m.Role == message.RoleAssistant {
+		if m.Role == message.RoleOutput {
 			turnCount++
 		}
 		if m.LogicalTime > metricsLT {
@@ -746,7 +746,7 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 		}
 	} else {
 		msg := message.Message{
-			Role:      message.RoleUser,
+			Role:      message.RoleInput,
 			Patches:   []message.Patch{patch},
 			Timestamp: time.Now().UnixMilli(),
 		}

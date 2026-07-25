@@ -12,7 +12,7 @@ import (
 // when it also carries text — that text is a steering interjection, not a new
 // question.
 func OpensTurn(m message.Message) bool {
-	return m.Role == message.RoleUser && !hasToolResult(m) && messageText(m) != ""
+	return m.Role == message.RoleInput && !hasToolResult(m) && messageText(m) != ""
 }
 
 // StampTurnIDs fills TurnID on every message that lacks one and returns the
@@ -131,7 +131,7 @@ func Turns(msgs []message.Message, summarize ToolSummary, previewArg ToolPreview
 			id, first = m.TurnID, m.LogicalTime
 			for ci, c := range m.Content {
 				if c.Type == message.ContentProse {
-					prompt = append(prompt, textNode(livedoc.NodeProse, roleUser, m.LogicalTime, ci, c.Text))
+					prompt = append(prompt, textNode(livedoc.NodeProse, roleInput, m.LogicalTime, ci, c.Text))
 				}
 			}
 		}

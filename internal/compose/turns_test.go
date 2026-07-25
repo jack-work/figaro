@@ -7,7 +7,7 @@ import (
 )
 
 func userMsg(cs ...message.Content) message.Message {
-	return message.Message{Role: message.RoleUser, Content: cs}
+	return message.Message{Role: message.RoleInput, Content: cs}
 }
 
 func toolResult(id string) message.Content {
@@ -39,7 +39,7 @@ func eq(t *testing.T, what string, got, want []uint64) {
 // interjection riding on the tool_result message.
 func conversation() []message.Message {
 	return []message.Message{
-		{Role: message.RoleUser},                              // boot / state-only: no turn
+		{Role: message.RoleInput},                             // boot / state-only: no turn
 		userMsg(prose("quick test")),                          // opens turn 1
 		asstLT(0, think("hm"), tool("t1", "bash")),            // turn 1
 		userMsg(toolResult("t1"), prose("actually, check X")), // turn 1 — steering, not a new turn

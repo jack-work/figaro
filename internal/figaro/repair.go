@@ -12,7 +12,7 @@ const tailRepairNotice = "process died mid-turn; output not captured"
 
 func repairInterruptedTail(stream store.Log[message.Message], ariaID string) (store.Entry[message.Message], bool) {
 	tail, ok := stream.PeekTail()
-	if !ok || tail.Payload.Role != message.RoleAssistant {
+	if !ok || tail.Payload.Role != message.RoleOutput {
 		return store.Entry[message.Message]{}, false
 	}
 	calls := assistantToolInvokes(tail.Payload)
@@ -24,7 +24,7 @@ func repairInterruptedTail(stream store.Log[message.Message], ariaID string) (st
 		results = append(results, message.ToolResultContent(call.ToolCallID, call.ToolName, tailRepairNotice, true))
 	}
 	stamped, err := stream.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role:      message.RoleUser,
+		Role:      message.RoleInput,
 		Content:   results,
 		Timestamp: time.Now().UnixMilli(),
 	}})

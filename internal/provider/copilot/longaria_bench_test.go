@@ -23,9 +23,9 @@ func benchmarkWarmResponsesInput(b *testing.B, n int) (*responsesProvider, provi
 	)
 	fp := p.Fingerprint()
 	for i := 0; i < n; i++ {
-		role := message.RoleUser
+		role := message.RoleInput
 		if i%2 == 1 {
-			role = message.RoleAssistant
+			role = message.RoleOutput
 		}
 		entry, err := figLog.Append(store.Entry[message.Message]{Payload: message.Message{
 			Role:    role,

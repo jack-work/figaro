@@ -74,7 +74,7 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 	}
 	var nodes []livedoc.Node
 	for _, m := range msgs {
-		if m.Role == message.RoleUser {
+		if m.Role == message.RoleInput {
 			// A user message inside a turn group is a tool_result tic; its
 			// tool_result blocks fold under their invoke (indexResults). If it
 			// ALSO carries text, that's a steering interjection — emit it as a
@@ -82,13 +82,13 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 			if hasToolResult(m) {
 				for ci, c := range m.Content {
 					if c.Type == message.ContentProse && strings.TrimSpace(c.Text) != "" {
-						nodes = append(nodes, textNode(livedoc.NodeSteering, roleUser, m.LogicalTime, ci, c.Text))
+						nodes = append(nodes, textNode(livedoc.NodeSteering, roleInput, m.LogicalTime, ci, c.Text))
 					}
 				}
 			}
 			continue
 		}
-		if m.Role != message.RoleAssistant {
+		if m.Role != message.RoleOutput {
 			continue // tool_result messages fold under their invoke; user prompts aren't in the turn
 		}
 		for ci, c := range m.Content {
@@ -97,9 +97,9 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 			// nodes after it would shift under it. The renderer hides empties.
 			switch c.Type {
 			case message.ContentProse:
-				nodes = append(nodes, textNode(livedoc.NodeProse, roleAssistant, m.LogicalTime, ci, c.Text))
+				nodes = append(nodes, textNode(livedoc.NodeProse, roleOutput, m.LogicalTime, ci, c.Text))
 			case message.ContentThinking:
-				nodes = append(nodes, textNode(livedoc.NodeThinking, roleAssistant, m.LogicalTime, ci, c.Text))
+				nodes = append(nodes, textNode(livedoc.NodeThinking, roleOutput, m.LogicalTime, ci, c.Text))
 			case message.ContentToolInvoke:
 				nodes = append(nodes, toolNode(c, m.LogicalTime, ci, results, partials, argPartials, summarize, previewArg, toolTimings))
 			}
@@ -109,8 +109,8 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 }
 
 const (
-	roleUser      = "user"
-	roleAssistant = "assistant"
+	roleInput  = livedoc.RoleInput
+	roleOutput = livedoc.RoleOutput
 )
 
 // textNode builds a prose/thinking/steering node at one fig-IR coordinate.
@@ -134,7 +134,7 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 		Type:       livedoc.NodeTool,
 		ID:         inv.ToolCallID,
 		ToolCallID: inv.ToolCallID,
-		Role:       roleAssistant,
+		Role:       roleOutput,
 		LTs:        []uint64{lt},
 		Src:        []livedoc.Src{{LT: lt, Block: block}},
 		Name:       name,

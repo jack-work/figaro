@@ -256,7 +256,7 @@ func (i *Incipit) header(role string) string {
 // (so the user's prompt is still separated from the reply). Empty if neither
 // is configured.
 func (i *Incipit) closer(role string) []string {
-	if role == "assistant" && i.Bookend != nil {
+	if role == livedoc.RoleOutput && i.Bookend != nil {
 		return i.Bookend()
 	}
 	if i.Rule != nil {

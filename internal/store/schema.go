@@ -36,7 +36,13 @@ type channelSchema struct {
 // by prefix, so one entry covers translations-v2/anthropic and its siblings.
 // Bump a version when a channel's on-disk payload shape changes.
 var channelSchemas = map[string]channelSchema{
-	chanIR:             {version: 1, class: classCanonical},
+	// v2: the role vocabulary became input/output (was user/assistant). Reading
+	// old entries is transparent — message.Role.UnmarshalJSON normalises via
+	// RoleFromWire — so canonical data needs no migration. The bump exists for
+	// the OTHER direction: an older binary has no such mapping and would read
+	// "input" as an unknown voice, rendering turns under the wrong speaker. The
+	// forward-incompatibility gate turns that silent corruption into a refusal.
+	chanIR:             {version: 2, class: classCanonical},
 	chanChalkboard:     {version: 1, class: classReducible},
 	"translations-v2/": {version: 1, class: classDerived},
 	chanUI:             {version: 1, class: classDerived},

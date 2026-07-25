@@ -293,9 +293,9 @@ func (p TurnPart) Voice() string {
 		return ""
 	}
 	for _, n := range p.Nodes {
-		if n.Role != "user" {
-			return "assistant"
+		if n.Role != livedoc.RoleInput {
+			return livedoc.RoleOutput
 		}
 	}
-	return "user"
+	return livedoc.RoleInput
 }

@@ -29,7 +29,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			name:    "text_assistant",
 			fixture: "text_assistant.json",
 			ir: message.Message{
-				Role:    message.RoleAssistant,
+				Role:    message.RoleOutput,
 				Content: []message.Content{message.TextContent("Hello, world!")},
 			},
 		},
@@ -37,7 +37,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			name:    "mixed_assistant",
 			fixture: "mixed_assistant.json",
 			ir: message.Message{
-				Role: message.RoleAssistant,
+				Role: message.RoleOutput,
 				Content: []message.Content{
 					{Type: message.ContentThinking, Text: "Let me check the files."},
 					message.TextContent("Listing now."),
@@ -53,7 +53,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			name:    "tool_result_user",
 			fixture: "tool_result_user.json",
 			ir: message.Message{
-				Role: message.RoleUser,
+				Role: message.RoleInput,
 				Content: []message.Content{{
 					Type:       message.ContentToolResult,
 					ToolCallID: "toolu_abc",
@@ -70,7 +70,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			name:    "empty_args_tool_call",
 			fixture: "empty_args_tool_call.json",
 			ir: message.Message{
-				Role: message.RoleAssistant,
+				Role: message.RoleOutput,
 				Content: []message.Content{{
 					Type: message.ContentToolInvoke, ToolCallID: "toolu_empty",
 					ToolName: "edit",
@@ -81,7 +81,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			name:    "multi_text_user",
 			fixture: "multi_text_user.json",
 			ir: message.Message{
-				Role: message.RoleUser,
+				Role: message.RoleInput,
 				Content: []message.Content{
 					message.TextContent("first"),
 					message.TextContent("second"),

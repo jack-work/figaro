@@ -33,7 +33,7 @@ func seedSchemaStore(tb testing.TB) (string, string) {
 		tb.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {
-		m := message.Message{Role: message.RoleUser, Content: []message.Content{
+		m := message.Message{Role: message.RoleInput, Content: []message.Content{
 			{Type: message.ContentProse, Text: "canonical"},
 		}}
 		if _, err := lg.Append(Entry[message.Message]{Payload: m}); err != nil {

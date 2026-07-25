@@ -3,6 +3,7 @@ package figaro_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"testing"
 	"time"
@@ -82,12 +83,12 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	msgs := a.Context()
 	require.Len(t, msgs, 6)
 	require.Equal(t, []message.Role{
-		message.RoleUser,
-		message.RoleAssistant,
-		message.RoleUser,
-		message.RoleUser,
-		message.RoleUser,
-		message.RoleAssistant,
+		message.RoleInput,
+		message.RoleOutput,
+		message.RoleInput,
+		message.RoleInput,
+		message.RoleInput,
+		message.RoleOutput,
 	}, []message.Role{msgs[0].Role, msgs[1].Role, msgs[2].Role, msgs[3].Role, msgs[4].Role, msgs[5].Role})
 	require.Len(t, msgs[2].Content, 1)
 	require.Equal(t, message.ContentToolResult, msgs[2].Content[0].Type)
@@ -113,9 +114,9 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 		voices = append(voices, v)
 	}
 	require.Equal(t, [][]string{
-		{"user", "assistant"}, // "initial" + its tool round
-		{"user"},              // "steer one"
-		{"user", "assistant"}, // "steer two" + "done"
+		{livedoc.RoleInput, livedoc.RoleOutput}, // "initial" + its tool round
+		{livedoc.RoleInput},                     // "steer one"
+		{livedoc.RoleInput, livedoc.RoleOutput}, // "steer two" + "done"
 	}, voices)
 	require.Equal(t, int32(2), prov.calls.Load())
 }

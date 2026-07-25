@@ -65,7 +65,7 @@ func TestGenerateNumberedFixture(t *testing.T) {
 		for _, m := range []struct {
 			role message.Role
 			tag  string
-		}{{message.RoleUser, "ASK"}, {message.RoleAssistant, "REPLY"}} {
+		}{{message.RoleInput, "ASK"}, {message.RoleOutput, "REPLY"}} {
 			if _, err := log.Append(Entry[message.Message]{Payload: message.Message{
 				Role:    m.role,
 				Content: []message.Content{message.TextContent(body(m.tag, n))},

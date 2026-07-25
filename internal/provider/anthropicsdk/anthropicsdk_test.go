@@ -116,14 +116,14 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		{
 			"text_assistant",
 			message.Message{
-				Role:    message.RoleAssistant,
+				Role:    message.RoleOutput,
 				Content: []message.Content{message.TextContent("Hello, world!")},
 			},
 		},
 		{
 			"mixed_assistant",
 			message.Message{
-				Role: message.RoleAssistant,
+				Role: message.RoleOutput,
 				Content: []message.Content{
 					{Type: message.ContentThinking, Text: "Let me check the files."},
 					message.TextContent("Listing now."),
@@ -138,7 +138,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		{
 			"tool_result_user",
 			message.Message{
-				Role: message.RoleUser,
+				Role: message.RoleInput,
 				Content: []message.Content{{
 					Type:       message.ContentToolResult,
 					ToolCallID: "toolu_abc",
@@ -151,7 +151,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			// the API rejects missing/null and the WAL drops empty maps.
 			"empty_args_tool_call",
 			message.Message{
-				Role: message.RoleAssistant,
+				Role: message.RoleOutput,
 				Content: []message.Content{{
 					Type: message.ContentToolInvoke, ToolCallID: "toolu_empty",
 					ToolName: "edit",
@@ -161,7 +161,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		{
 			"multi_text_user",
 			message.Message{
-				Role: message.RoleUser,
+				Role: message.RoleInput,
 				Content: []message.Content{
 					message.TextContent("first"),
 					message.TextContent("second"),
@@ -217,7 +217,7 @@ func TestDecodeAssistantMessage_ToolUse(t *testing.T) {
 	require.NoError(t, msg.UnmarshalJSON([]byte(wire)))
 
 	ir := decodeAssistantMessage(msg)
-	assert.Equal(t, message.RoleAssistant, ir.Role)
+	assert.Equal(t, message.RoleOutput, ir.Role)
 	require.Len(t, ir.Content, 2)
 	assert.Equal(t, message.ContentProse, ir.Content[0].Type)
 	assert.Equal(t, message.ContentToolInvoke, ir.Content[1].Type)
@@ -237,9 +237,9 @@ func TestDecodeAssistantMessage_ToolUse(t *testing.T) {
 func TestBuildParams_CacheBreakpoints(t *testing.T) {
 	p := &Provider{}
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("first turn")}},
-		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("first reply")}},
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("second turn")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first turn")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("first reply")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("second turn")}},
 	}
 	tools := []provider.Tool{
 		{Name: "alpha", Description: "first", Parameters: fakeSchema()},
@@ -280,7 +280,7 @@ func TestBuildParams_CacheBreakpoints(t *testing.T) {
 func TestBuildParams_SingleMessageBreakpoint(t *testing.T) {
 	p := &Provider{}
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("only message")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("only message")}},
 	}
 	snap := systemSnapshot(t, "you are a test agent")
 	snap = withKey(snap, "system.cache_control", json.RawMessage(`"ephemeral"`))
@@ -300,7 +300,7 @@ func TestBuildParams_SingleMessageBreakpoint(t *testing.T) {
 func TestBuildParams_CacheDefaultsOnAndNoneDisables(t *testing.T) {
 	p := &Provider{}
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("hi")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("hi")}},
 	}
 
 	// Default: unset → caching applied.
@@ -323,9 +323,9 @@ func TestBuildParams_CacheDefaultsOnAndNoneDisables(t *testing.T) {
 func TestBuildParams_StableAcrossCalls(t *testing.T) {
 	p := &Provider{}
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("ciao")}},
-		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("salve")}},
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("again")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("ciao")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("salve")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("again")}},
 	}
 	tools := []provider.Tool{
 		{Name: "alpha", Description: "first", Parameters: fakeSchema()},
@@ -348,7 +348,7 @@ func TestBuildParams_StableAcrossCalls(t *testing.T) {
 func TestBuildParams_OAuthSystemArray(t *testing.T) {
 	p := &Provider{}
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")}},
 	}
 	snap := systemSnapshot(t, "you are figaro")
 	snap = withKey(snap, "system.cache_control", json.RawMessage(`"ephemeral"`))
@@ -366,9 +366,9 @@ func TestBuildParams_OAuthSystemArray(t *testing.T) {
 func TestBuildParams_PerLTTag(t *testing.T) {
 	p := &Provider{}
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("turn one")}},
-		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("reply one")}},
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("turn two")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("turn one")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("reply one")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("turn two")}},
 	}
 	pre := encodeAll(p, msgs)
 	lts := []uint64{10, 11, 12}
@@ -399,11 +399,11 @@ func TestBuildParams_PerLTTag(t *testing.T) {
 func TestBuildParams_ByteIdenticalToCachedReconstruction(t *testing.T) {
 	p := &Provider{}
 	perMessage := encodeAll(p, []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("first user")}},
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("adjacent user")}},
-		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("placeholder")}},
-		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("adjacent assistant")}},
-		{Role: message.RoleUser, Content: []message.Content{{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first user")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("adjacent user")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("placeholder")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("adjacent assistant")}},
+		{Role: message.RoleInput, Content: []message.Content{{
 			Type: message.ContentToolResult, ToolCallID: "toolu_signed", Text: "tool output",
 		}}},
 	})
