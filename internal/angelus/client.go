@@ -25,6 +25,14 @@ func DialClient(ep transport.Endpoint) (*Client, error) {
 	return &Client{cli: jkrpc.NewClient(conn, nil)}, nil
 }
 
+// Status reports the running daemon's uptime, population and BUILD. The build
+// is what lets a CLI refuse to speak to a daemon from another revision.
+func (c *Client) Status(ctx context.Context) (*rpc.StatusResponse, error) {
+	var resp rpc.StatusResponse
+	err := c.cli.Call(ctx, rpc.MethodStatus, struct{}{}, &resp)
+	return &resp, err
+}
+
 // Create starts a new figaro with the named loadout.
 func (c *Client) Create(ctx context.Context, loadout string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse

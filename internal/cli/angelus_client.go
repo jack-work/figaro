@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,6 +74,7 @@ func ensureAngelus() {
 	sockPath := angelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
 	if cli, err := angelus.DialClient(ep); err == nil {
+		checkDaemonBuild(cli)
 		cli.Close()
 		return
 	}
@@ -164,4 +166,50 @@ func mustCreateAndBindLoadout(ctx context.Context, acli *angelus.Client, loaded 
 	}
 
 	return createResp.FigaroID, ep
+}
+
+// checkDaemonBuild refuses to speak to a daemon built from a different
+// revision. The wire shape changes between builds, so a mismatched pair does
+// not fail loudly — it renders NOTHING, which reads as a broken terminal
+// rather than a stale process. Naming both revisions turns an hour of
+// confusion into one command.
+//
+// Skipped when either side's revision is unknown (a bare `go build` outside a
+// repo): unknown must not be treated as mismatched.
+func checkDaemonBuild(cli *angelus.Client) {
+	mine := buildRevision()
+	if mine == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	st, err := cli.Status(ctx)
+	if err != nil || st == nil {
+		return // transient: not worth blocking on
+	}
+	if st.Build == "" {
+		// The daemon predates this check, so it is necessarily older than this
+		// binary. We cannot prove incompatibility, but silence is the failure
+		// mode we are here to kill: warn loudly rather than let the user stare
+		// at an empty screen.
+		fmt.Fprintf(os.Stderr,
+			"figaro: the running angelus predates the build check, so it is older\n"+
+				"        than this CLI (%s). If output is missing or garbled,\n"+
+				"        run `figaro stop` and retry.\n", short12(mine))
+		return
+	}
+	if st.Build == mine {
+		return
+	}
+	die("running angelus is a different build than this CLI:\n"+
+		"  daemon %s\n  cli    %s\n"+
+		"the wire changes between builds, so this pair would render nothing.\n"+
+		"run `figaro stop` and retry.", short12(st.Build), short12(mine))
+}
+
+func short12(s string) string {
+	if len(s) > 12 {
+		return s[:12]
+	}
+	return s
 }

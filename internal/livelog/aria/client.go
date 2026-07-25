@@ -32,6 +32,12 @@ type Client struct {
 	openV          int
 	openNodesSlice []livedoc.Node
 
+	// emitted[turn] is how many of a turn's nodes have already gone out as
+	// closed messages. The prompt is committed (below Live.From) long before
+	// its turn seals, so it must freeze to scrollback immediately rather than
+	// sit in the redrawable live region wearing the agent's header.
+	emitted map[int]int
+
 	OnClosed  func(Message)
 	OnLive    func(turn int, role string, nodes []livedoc.Node)
 	OnDesync  func(sinceLT int)
@@ -40,7 +46,7 @@ type Client struct {
 
 // NewClient returns a fresh client.
 func NewClient() *Client {
-	return &Client{closedSeen: map[int]bool{}}
+	return &Client{closedSeen: map[int]bool{}, emitted: map[int]int{}}
 }
 
 // SetClosedLimit bounds retained closed messages. Zero keeps the default,
@@ -113,6 +119,20 @@ func (c *Client) Apply(p Page) {
 			for _, nd := range part.Live.Nodes {
 				c.foldAt(nd)
 			}
+			// Everything below Live.From is closed for good. Release it now so
+			// the prompt reaches scrollback under its own voice instead of
+			// riding the live region until the turn seals.
+			if n := int(c.openFrom); n > c.emitted[id] && n <= len(c.openNodesSlice) {
+				for s := c.emitted[id]; s < n; {
+					e, role := VoiceRunEnd(c.openNodesSlice[:n], s)
+					finalized = append(finalized, Message{
+						LT: id, From: uint64(s), Role: role,
+						Nodes: append([]livedoc.Node(nil), c.openNodesSlice[s:e]...),
+					})
+					s = e
+				}
+				c.emitted[id] = n
+			}
 			if len(part.Live.Nodes) > 0 {
 				c.openV = part.Live.V
 			} else if c.openV != part.Live.V && len(part.Nodes) == 0 {
@@ -134,7 +154,17 @@ func (c *Client) Apply(p Page) {
 			nodes = c.openNodes()
 		}
 		c.closedSeen[id] = true
-		finalized = append(finalized, Message{LT: id, Role: turnRole(nodes), Nodes: nodes})
+		// One Message per voice run: the prompt closes under "you", the agent's
+		// reply under "figaro". Emitting one Message per TURN printed the user's
+		// own words beneath the agent's name.
+		for s := c.emitted[id]; s < len(nodes); {
+			e, role := VoiceRunEnd(nodes, s)
+			finalized = append(finalized, Message{
+				LT: id, From: uint64(s), Role: role, Nodes: nodes[s:e],
+			})
+			s = e
+		}
+		delete(c.emitted, id)
 		c.advanceCommitted(id)
 		if c.openLT == id {
 			c.resetOpen()
@@ -148,7 +178,10 @@ func (c *Client) Apply(p Page) {
 	c.trimClosed()
 
 	haveLive := c.openLT != 0
-	liveLT, liveNodes := c.openLT, c.openNodes()
+	// The live region is the OPEN SUFFIX only. Nodes below openFrom were
+	// already released as closed messages above; redrawing them here would
+	// print them twice and wrap the prompt in the agent's header.
+	liveLT, liveNodes := c.openLT, c.openSuffix()
 	c.mu.Unlock()
 
 	if metrics != nil && c.OnMetrics != nil {
@@ -202,6 +235,39 @@ func turnRole(nodes []livedoc.Node) string {
 		}
 	}
 	return "user"
+}
+
+// nodeVoice is the voice a single node speaks in. The prompt and any steering
+// interjection are the user's; prose, thinking and tools are the agent's. A
+// node carrying no explicit role is agent output, because a streamed delta need
+// not repeat the role on every frame.
+func nodeVoice(n livedoc.Node) string {
+	if n.Role == "user" {
+		return "user"
+	}
+	return "assistant"
+}
+
+// VoiceRunEnd returns the end of the contiguous same-voice run beginning at
+// start, plus the voice that run speaks in.
+//
+// A turn holds BOTH voices, so a header must be printed per RUN, not once per
+// turn — otherwise the user's own question renders under the agent's name.
+// Every surface that labels a unit derives its runs here, so the client (inline)
+// and the pager cannot drift apart on where a voice changes.
+//
+// Index-based rather than callback- or slice-based so the hot render paths stay
+// allocation-free; the common shape is one or two runs.
+func VoiceRunEnd(nodes []livedoc.Node, start int) (int, string) {
+	if start >= len(nodes) {
+		return start, ""
+	}
+	cur := nodeVoice(nodes[start])
+	i := start + 1
+	for i < len(nodes) && nodeVoice(nodes[i]) == cur {
+		i++
+	}
+	return i, cur
 }
 
 func (c *Client) trimClosed() {
@@ -277,6 +343,16 @@ func (c *Client) advanceCommitted(lt int) {
 
 func (c *Client) openNodes() []livedoc.Node {
 	return append([]livedoc.Node(nil), c.openNodesSlice...)
+}
+
+// openSuffix is the still-mutable tail of the open turn: everything at or above
+// Live.From. The committed head has already been released to scrollback.
+func (c *Client) openSuffix() []livedoc.Node {
+	n := int(c.openFrom)
+	if n < 0 || n > len(c.openNodesSlice) {
+		n = 0
+	}
+	return append([]livedoc.Node(nil), c.openNodesSlice[n:]...)
 }
 
 func (c *Client) resetOpen() {
