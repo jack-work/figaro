@@ -218,3 +218,56 @@ func TestAsPatch(t *testing.T) {
 	assert.Equal(t, p, s.Diff(chalkboard.Snapshot{}))
 	assert.True(t, chalkboard.Snapshot{}.AsPatch().IsEmpty())
 }
+
+// TestSnapshotDirectCodecMatchesEncodingJSON pins the equivalence that
+// lets the hot paths (store.chalkboardReduce, State.Open/Save) call
+// MarshalJSON/UnmarshalJSON directly instead of going through
+// json.Marshal/json.Unmarshal. encoding/json re-scans a Marshaler's
+// output and pre-scans an Unmarshaler's input — a ~2x cost on a 15KB
+// board for bytes that are identical. If this test ever fails, the
+// direct calls must go back through encoding/json.
+func TestSnapshotDirectCodecMatchesEncodingJSON(t *testing.T) {
+	boards := []map[string]json.RawMessage{
+		realBoard(t),
+		{
+			"html":     json.RawMessage(`"<a>&</a>"`),
+			"spaced":   json.RawMessage("{ \"x\" : 1 }"),
+			"unsorted": json.RawMessage(`{"z":1,"a":2}`),
+			"escapes":  json.RawMessage(`"\u00e9 é \u003c <"`),
+			"numbers":  json.RawMessage(`[1,1.0,1e2,0.000]`),
+			"nul":      json.RawMessage(`null`),
+		},
+		{},
+	}
+	for i, m := range boards {
+		s := chalkboard.FromMap(m)
+
+		viaJSON, err := json.Marshal(s)
+		require.NoError(t, err)
+		direct, err := s.MarshalJSON()
+		require.NoError(t, err)
+		assert.Equal(t, string(viaJSON), string(direct), "board %d: marshal", i)
+
+		var a, b chalkboard.Snapshot
+		require.NoError(t, json.Unmarshal(viaJSON, &a))
+		require.NoError(t, b.UnmarshalJSON(viaJSON))
+		assert.Equal(t, content2(t, a), content2(t, b), "board %d: unmarshal", i)
+	}
+
+	// null is the one input where the two spellings could plausibly
+	// diverge (encoding/json special-cases it for some types).
+	var a, b chalkboard.Snapshot
+	require.NoError(t, json.Unmarshal([]byte(`null`), &a))
+	require.NoError(t, b.UnmarshalJSON([]byte(`null`)))
+	assert.Equal(t, 0, a.Len())
+	assert.Equal(t, 0, b.Len())
+}
+
+func content2(t *testing.T, s chalkboard.Snapshot) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for k, v := range s.All() {
+		out[k] = string(v)
+	}
+	return out
+}

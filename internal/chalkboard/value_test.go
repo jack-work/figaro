@@ -34,8 +34,8 @@ func TestCanonicalFormPinned(t *testing.T) {
 		if !got.IsJSON() {
 			t.Fatalf("NewValue(%q) not valid JSON", tc.in)
 		}
-		if string(got.canon) != tc.canon {
-			t.Errorf("canon(%q) = %q, want %q", tc.in, got.canon, tc.canon)
+		if string(got.canonical()) != tc.canon {
+			t.Errorf("canon(%q) = %q, want %q", tc.in, got.canonical(), tc.canon)
 		}
 		if string(got.raw) != tc.in {
 			t.Errorf("raw(%q) mutated to %q", tc.in, got.raw)
@@ -92,7 +92,7 @@ func TestValueRawPreservedAndEmitted(t *testing.T) {
 		t.Fatalf("MarshalJSON emitted canonical form: %s", out)
 	}
 	// The canonical form is emphatically not what comes out.
-	if string(v.canon) == v.String() {
+	if string(v.canonical()) == v.String() {
 		t.Fatal("test is vacuous: raw and canon coincide")
 	}
 }
@@ -234,7 +234,7 @@ func TestValueMarshalsIdenticallyToRawMessage(t *testing.T) {
 		}
 		// And the canonical form is emphatically NOT what came out.
 		v := NewValue(raw)
-		if bytes.Contains(got, v.canon) != bytes.Contains(want, v.canon) {
+		if bytes.Contains(got, v.canonical()) != bytes.Contains(want, v.canonical()) {
 			t.Errorf("%s: canonical form leaked into output", in)
 		}
 	}

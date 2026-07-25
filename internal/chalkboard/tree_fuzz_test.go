@@ -63,12 +63,12 @@ func FuzzValueCanonical(f *testing.F) {
 		}
 
 		// The canonical form is itself valid JSON and canonicalises to itself.
-		if !json.Valid(v.canon) {
-			t.Fatalf("canonical form of %q is not valid JSON: %q", data, v.canon)
+		if !json.Valid(v.canonical()) {
+			t.Fatalf("canonical form of %q is not valid JSON: %q", data, v.canonical())
 		}
-		c := NewValue(json.RawMessage(v.canon))
-		if !c.IsJSON() || !bytes.Equal(c.canon, v.canon) {
-			t.Fatalf("canonicalisation is not idempotent: %q -> %q -> %q", data, v.canon, c.canon)
+		c := NewValue(json.RawMessage(v.canonical()))
+		if !c.IsJSON() || !bytes.Equal(c.canonical(), v.canonical()) {
+			t.Fatalf("canonicalisation is not idempotent: %q -> %q -> %q", data, v.canonical(), c.canonical())
 		}
 		if !c.Equal(v) {
 			t.Fatalf("value is not equal to its own canonical form: %q", data)

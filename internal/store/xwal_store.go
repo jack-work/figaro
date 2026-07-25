@@ -93,10 +93,19 @@ const (
 
 // chalkboardReduce folds a message.Patch (JSON) onto a chalkboard
 // snapshot (JSON state) — figaro's reducer for the chalkboard channel.
+//
+// The Snapshot's MarshalJSON/UnmarshalJSON are called DIRECTLY rather than
+// through json.Marshal/json.Unmarshal, and that is not a style tic: for a
+// type with custom JSON hooks, encoding/json pre-scans the input before
+// handing it to an Unmarshaler and re-scans a Marshaler's output before
+// emitting it. On a 15KB board each of those doubles the cost (measured:
+// 97µs -> 188µs decode, 76µs -> 152µs encode), and this reducer runs once
+// per WAL record on segment rollover and fork. The bytes are identical
+// either way — TestSnapshotDirectCodecMatchesEncodingJSON pins that.
 func chalkboardReduce(state, patch []byte) ([]byte, error) {
 	snap := chalkboard.Snapshot{}
 	if len(state) > 0 {
-		if err := json.Unmarshal(state, &snap); err != nil {
+		if err := snap.UnmarshalJSON(state); err != nil {
 			return nil, err
 		}
 	}
@@ -104,7 +113,8 @@ func chalkboardReduce(state, patch []byte) ([]byte, error) {
 	if err := json.Unmarshal(patch, &p); err != nil {
 		return nil, err
 	}
-	return json.Marshal(snap.Apply(p))
+	next := snap.Apply(p)
+	return next.MarshalJSON()
 }
 
 func storeOptions() xwal.StoreOptions {

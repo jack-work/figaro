@@ -1,7 +1,6 @@
 package chalkboard
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -59,7 +58,10 @@ func Open(path string) (*State, error) {
 		return s, nil
 	}
 	var snap Snapshot
-	if err := json.Unmarshal(data, &snap); err != nil {
+	// Direct, not through json.Unmarshal: see chalkboardReduce's comment —
+	// encoding/json pre-scans the whole document before handing it to an
+	// Unmarshaler, which doubles the cost for identical bytes.
+	if err := snap.UnmarshalJSON(data); err != nil {
 		return nil, fmt.Errorf("chalkboard.Open: parse %s: %w", path, err)
 	}
 	s.publish(board{snapshot: snap})
@@ -111,7 +113,7 @@ func (s *State) Save() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return fmt.Errorf("chalkboard.Save: mkdir: %w", err)
 	}
-	data, err := json.Marshal(old.snapshot)
+	data, err := old.snapshot.MarshalJSON() // direct; see Open
 	if err != nil {
 		return fmt.Errorf("chalkboard.Save: marshal: %w", err)
 	}

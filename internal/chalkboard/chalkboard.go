@@ -7,9 +7,7 @@
 package chalkboard
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
 	"iter"
 	"slices"
 	"sort"
@@ -46,11 +44,11 @@ type Snapshot struct {
 // This is the seam: every construction of a Snapshot from a map goes
 // through here.
 func FromMap(m map[string]json.RawMessage) Snapshot {
-	var t ptree
+	entries := make([]treeEntry, 0, len(m))
 	for k, v := range m {
-		t = t.Set(k, NewValue(append(json.RawMessage(nil), v...)))
+		entries = append(entries, treeEntry{key: k, value: NewValue(append(json.RawMessage(nil), v...))})
 	}
-	return Snapshot{root: t.root}
+	return Snapshot{root: treeFromEntries(entries).root}
 }
 
 // tree returns the snapshot's underlying persistent tree.
@@ -149,40 +147,21 @@ func (s Snapshot) Apply(p Patch) Snapshot {
 // in lexical order — which is what chalkboard.json on disk, the RPC
 // ChalkboardResponse and store.chalkboardReduce all consume.
 //
-// Values are handed to encoding/json rather than concatenated raw, so
-// the output is byte-identical to marshalling the equivalent
-// map[string]json.RawMessage: encoding/json compacts a raw message and
-// escapes <, > and & inside it, and that post-processing is part of the
-// on-disk format we must not perturb.
+// It delegates to encoding/json over the map representation this type
+// replaced, which makes byte-identity with the old format true by
+// construction rather than by argument. That matters more than it looks:
+// encoding/json compacts a raw message and rewrites <, > and & as
+// \u003c, \u003e, \u0026, so hand-rolling the object would silently
+// change bytes that are already on disk — and the WAL's reducer state
+// records are content-hashed, so "silently" would mean "loudly, later".
+// Measured faster than marshalling each value separately, too.
 func (s Snapshot) MarshalJSON() ([]byte, error) {
-	var buf bytes.Buffer
-	buf.WriteByte('{')
-	first := true
-	var err error
+	m := make(map[string]json.RawMessage, s.Len())
 	s.tree().Range(func(k string, v Value) bool {
-		if !first {
-			buf.WriteByte(',')
-		}
-		first = false
-		var kb []byte
-		if kb, err = json.Marshal(k); err != nil {
-			return false
-		}
-		buf.Write(kb)
-		buf.WriteByte(':')
-		var vb []byte
-		if vb, err = json.Marshal(v); err != nil {
-			err = fmt.Errorf("chalkboard: marshal %q: %w", k, err)
-			return false
-		}
-		buf.Write(vb)
+		m[k] = v.Raw()
 		return true
 	})
-	if err != nil {
-		return nil, err
-	}
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
+	return json.Marshal(m)
 }
 
 // UnmarshalJSON reads the flat object form. A JSON null decodes to the
@@ -192,12 +171,12 @@ func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return err
 	}
-	var t ptree
+	entries := make([]treeEntry, 0, len(m))
 	for k, v := range m {
 		// json.Unmarshal already handed us freshly allocated bytes.
-		t = t.Set(k, NewValue(v))
+		entries = append(entries, treeEntry{key: k, value: NewValue(v)})
 	}
-	*s = Snapshot{root: t.root}
+	*s = Snapshot{root: treeFromEntries(entries).root}
 	return nil
 }
 

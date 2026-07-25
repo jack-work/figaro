@@ -16,7 +16,11 @@
 //
 //	canon is raw compacted with every object's keys sorted recursively.
 //	      It exists for ONE purpose: Equal. It is never emitted, never
-//	      stored, never rendered.
+//	      stored, never rendered. It is computed LAZILY, on the first
+//	      comparison that actually needs it, and memoised in a box shared
+//	      by every copy of the Value — canonicalising a whole board eagerly
+//	      at load time cost more than the equality checks ever save (see
+//	      RESULTS.md; the reducer fold regressed 5x before this was lazy).
 //
 // So {"a":1,"b":2} and {"b":2,"a":1} are Equal (no spurious reminder fires at
 // the agent) while each still serialises back as the author wrote it.
@@ -34,6 +38,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 )
 
 // Value is an immutable JSON value: the caller's exact bytes plus a canonical
@@ -42,13 +47,23 @@ import (
 // Values are compared with Equal, never with ==: a Value holds slices, so ==
 // does not compile, and byte equality is the wrong question anyway.
 type Value struct {
-	raw   json.RawMessage // exactly as supplied — the only bytes ever emitted
-	canon []byte          // compacted, object keys sorted; nil if raw is not valid JSON
+	raw json.RawMessage // exactly as supplied — the only bytes ever emitted
+	c   *canonBox       // memoised canonical form; nil only for the zero Value
 }
 
-// NewValue wraps raw bytes, computing the canonical form once. It never fails:
-// bytes that are not valid JSON are kept verbatim with no canonical form, and
-// such values fall back to byte-exact comparison in Equal.
+// canonBox memoises one Value's canonical form. It is heap-allocated once per
+// NewValue and shared by every copy of that Value, so the parse happens at most
+// once no matter how many snapshots hold the value or how many goroutines
+// compare it. sync.Once supplies the happens-before edge that makes concurrent
+// readers safe — snapshots are published across goroutines by design.
+type canonBox struct {
+	once  sync.Once
+	bytes []byte // nil if raw is not valid JSON
+}
+
+// NewValue wraps raw bytes. It never fails and never parses: bytes that are
+// not valid JSON are kept verbatim and, when a comparison eventually needs a
+// canonical form and cannot get one, Equal falls back to byte-exact equality.
 //
 // Empty input becomes the null literal. Empty bytes are not a JSON value and
 // encoding/json already emits a nil json.RawMessage as null, so normalising
@@ -62,11 +77,7 @@ func NewValue(raw json.RawMessage) Value {
 	if len(raw) == 0 {
 		raw = json.RawMessage("null")
 	}
-	canon, err := canonicalJSON(raw)
-	if err != nil {
-		return Value{raw: raw}
-	}
-	return Value{raw: raw, canon: canon}
+	return Value{raw: raw, c: &canonBox{}}
 }
 
 // EncodeValue marshals v and wraps the result.
@@ -91,12 +102,30 @@ func (v Value) Raw() json.RawMessage {
 // String returns Raw as a string.
 func (v Value) String() string { return string(v.Raw()) }
 
-// IsJSON reports whether the value's bytes parsed as a single JSON value. When
-// false, Equal degrades to a byte-exact comparison.
-func (v Value) IsJSON() bool { return v.canon != nil }
+// canonical returns the memoised canonical form, computing it on first use.
+// It returns nil when raw is not exactly one JSON value.
+func (v Value) canonical() []byte {
+	if v.c == nil {
+		return nil
+	}
+	v.c.once.Do(func() {
+		if canon, err := canonicalJSON(v.raw); err == nil {
+			v.c.bytes = canon
+		}
+	})
+	return v.c.bytes
+}
+
+// IsJSON reports whether the value's bytes parse as a single JSON value. When
+// false, Equal degrades to a byte-exact comparison. First call parses.
+func (v Value) IsJSON() bool { return v.canonical() != nil }
 
 // Equal reports semantic JSON equality: whitespace and object key order are
 // insignificant, so {"a":1,"b":2} equals {"b":2,"a":1}.
+//
+// Identical bytes short-circuit, so the overwhelmingly common cases — a value
+// re-set to what it already held, a diff walking two boards that agree on most
+// keys — cost one memcmp and never parse anything.
 //
 // Two values that are not valid JSON are equal only if their bytes match
 // exactly. A valid and an invalid value are never equal (their raw bytes
@@ -112,10 +141,16 @@ func (v Value) IsJSON() bool { return v.canon != nil }
 // Duplicate keys within one object follow encoding/json: last occurrence wins,
 // so {"a":1,"a":2} equals {"a":2}.
 func (v Value) Equal(other Value) bool {
-	if v.canon == nil || other.canon == nil {
-		return bytes.Equal(v.raw, other.raw)
+	if bytes.Equal(v.raw, other.raw) {
+		return true
 	}
-	return bytes.Equal(v.canon, other.canon)
+	a, b := v.canonical(), other.canonical()
+	if a == nil || b == nil {
+		// At least one has no canonical form, and the raw bytes already
+		// differ, so byte-exact comparison has said its piece.
+		return false
+	}
+	return bytes.Equal(a, b)
 }
 
 // Decode unmarshals the value into dst.

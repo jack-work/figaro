@@ -87,6 +87,37 @@ func BenchmarkDiff(b *testing.B) {
 	}
 }
 
+// BenchmarkDiffDerived measures what the agent actually does: diff a
+// snapshot against the snapshot it was derived FROM by Apply.
+//
+// BenchmarkDiff above builds `next` from a fresh map, so before the tree
+// swap it measured the only thing there was to measure, and after the
+// swap it measures the pathological case of two structurally unrelated
+// trees holding near-identical content — no sharing, so no
+// pointer-identity pruning. Every real Diff in figaro (turn.go's context
+// combine, ApplyLoadout, Render's prev) compares a board with its own
+// descendant, which is the case below. Keep both: one is the worst case,
+// one is the real case.
+func BenchmarkDiffDerived(b *testing.B) {
+	for _, f := range fixtures() {
+		for _, n := range []int{1, 5} {
+			b.Run(fmt.Sprintf("%s/%d-key", f.name, n), func(b *testing.B) {
+				prev := f.board()
+				patch := chalkboard.Patch{Set: map[string]json.RawMessage{}}
+				for _, k := range f.sampleKeys(n) {
+					patch.Set[k] = json.RawMessage(`"derived-change"`)
+				}
+				next := prev.Apply(patch)
+				b.ResetTimer()
+				for b.Loop() {
+					p := next.Diff(prev)
+					sink(len(p.Set) + len(p.Remove))
+				}
+			})
+		}
+	}
+}
+
 // --- Reads ---------------------------------------------------------
 
 func BenchmarkGet(b *testing.B) {
