@@ -912,8 +912,37 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 		for _, l := range t.renderNode(n, ref) {
 			// Rows are stored already clipped and gutter-prefixed (their
 			// unselected resting form) so a frame that touches nothing
-			// allocates nothing; see plainNodeRow.
-			rows = append(rows, transcriptRow{text: plainNodeRow(l, t.w), ref: ref})
+			// allocates nothing; see plainNodeRow. collapseSGR then strips the
+			// rendition churn glamour emits per cell — 3/4 of the retained row
+			// text, and of the bytes each painted frame puts on the wire. It is
+			// applied here, on the way into the cache, so the saving is paid
+			// once and collected on every frame; see sgr.go.
+			//
+			// FUTURE WORK, evaluated and deferred at the B+E merge: E proposed
+			// doing the collapse inside the memoized render.Prose instead, so
+			// the cost is paid once per (markdown, width) rather than once per
+			// row-cache fill, and the live inline path benefits too. Measured on
+			// this stack the prize is real — with the Prose memo warm, the
+			// collapse is 1.2 ms and ~316 KB of the 3.1 ms it takes to fill the
+			// cache for a heavy aria (BenchmarkTranscriptHeavyEnter: 1.86 ms
+			// without it, 3.08 ms with), which is what a width change, a Ctrl-O
+			// and every landing page pay. Sampling says the transform commutes
+			// with clipToWidth, including on truncating clips, so the row cache
+			// would still come out collapsed.
+			//
+			// It is deferred because the move is not local. collapseSGR would
+			// have to live in internal/render (cli imports render, not the other
+			// way), while its proof apparatus — sgr_vt_test.go's VT model — is
+			// needed by tests on BOTH sides (the golden cell-level proof and the
+			// painter composition tests are cli's), so the model wants a third
+			// package (internal/render/sgrtest) before the transform can move at
+			// all. And the same change silently rewrites the bytes the live
+			// inline renderer (ldrender.Incipit) puts on the terminal, a path
+			// this campaign has no cell-level coverage for. The follow-up is
+			// therefore: extract the model, then move the transform, then add a
+			// commutation fuzz target for clipToWidth and incipit coverage —
+			// four changes, none of which belong in a merge commit.
+			rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(l, t.w)), ref: ref})
 		}
 	}
 	// Committed rows are retained for as long as the page is, so hand back an

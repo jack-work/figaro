@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\x1b[38;5;;48;5m\x1b[48;5m")
