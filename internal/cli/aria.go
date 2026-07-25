@@ -185,7 +185,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		u := turns[i]
 		fmt.Println(term.Dim(fmt.Sprintf("[%d]", u.ID)))
 		fmt.Println()
-		rows := renderNodeList(u.Nodes, width, 0, 0, renderSettings{verbose: true})
+		rows := renderTurnRows(u.Nodes, width, 0, 0, renderSettings{verbose: true})
 		fmt.Println(strings.Join(rows, "\n"))
 		fmt.Println()
 	}
