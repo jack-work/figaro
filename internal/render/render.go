@@ -13,11 +13,7 @@ import (
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/termenv"
 
-	"github.com/jack-work/figaro/internal/livedoc"
 )
-
-// SpinnerFrames is the braille animation set, shared with the renderers.
-var SpinnerFrames = livedoc.SpinnerFrames
 
 // Prose renders a full markdown string through glamour — prose, lists,
 // tables, and fenced code blocks all get glamour's styling (indent,

@@ -175,11 +175,6 @@ func (h *pagingHarness) key(b byte) {
 	h.sync()
 }
 
-func (h *pagingHarness) scroll(delta int) {
-	h.tr.scrollBy(delta)
-	h.sync()
-}
-
 // journey scrolls back (half-page at a time, like 'u') until `back` older
 // messages have been pulled into view, then scrolls all the way down to the
 // tail again. This is "go find that thing 120 messages ago, then come back".
