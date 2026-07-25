@@ -1019,6 +1019,12 @@ func highlightMatches(row, q string) string {
 		}
 		return strings.ReplaceAll(row, q, hlOn+q+hlOff)
 	}
+	// While a search is active EVERY retained row is run through here on
+	// every frame, and almost none of them match. Reject those with an
+	// allocation-free scan instead of materializing the stripped row.
+	if visibleIndex(row, q) < 0 {
+		return row
+	}
 	// Slow path: strip ANSI to visible, then re-emit with highlights
 	// spliced at the visible byte positions of matches.
 	var visBuf strings.Builder
@@ -1116,35 +1122,49 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 	return false
 }
 
+// visibleIndex returns the byte offset in row at which q occurs in row's
+// visible text (ANSI escape sequences skipped, and allowed to interrupt the
+// match), or -1. It never allocates: the alternative — building the stripped
+// row and calling strings.Contains — cost one allocation per row per frame
+// for every row on screen while a search was active.
+//
+// Candidate starts are always visible bytes: the scan only ever steps one
+// byte past a visible byte, and an escape's interior can only follow the ESC
+// byte itself, which is always skipped whole.
+func visibleIndex(row, q string) int {
+	if q == "" {
+		return 0
+	}
+	for start := 0; start < len(row); {
+		if row[start] == '\x1b' {
+			start = skipANSI(row, start)
+			continue
+		}
+		i, j := start, 0
+		for j < len(q) && i < len(row) {
+			if row[i] == '\x1b' {
+				i = skipANSI(row, i)
+				continue
+			}
+			if row[i] != q[j] {
+				break
+			}
+			i++
+			j++
+		}
+		if j == len(q) {
+			return start
+		}
+		start++
+	}
+	return -1
+}
+
 func searchContains(row, q string) bool {
 	if !strings.ContainsRune(row, '\x1b') {
 		return strings.Contains(row, q)
 	}
-	var visible strings.Builder
-	visible.Grow(len(row))
-	for i := 0; i < len(row); {
-		if row[i] != '\x1b' {
-			visible.WriteByte(row[i])
-			i++
-			continue
-		}
-		if i+1 >= len(row) {
-			break
-		}
-		if row[i+1] == '[' {
-			i += 2
-			for i < len(row) {
-				final := row[i]
-				i++
-				if final >= 0x40 && final <= 0x7e {
-					break
-				}
-			}
-			continue
-		}
-		i += 2
-	}
-	return strings.Contains(visible.String(), q)
+	return visibleIndex(row, q) >= 0
 }
 
 func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
