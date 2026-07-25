@@ -927,9 +927,26 @@ func (in *interactiveInput) coalesceNewline(b byte) bool {
 	return false
 }
 
+// opensTranscriptFor reports whether a key pressed during inline (incipit)
+// streaming should yank the pager up first, so it acts on arrival instead of
+// looking like a dead keyboard. The rule: a key qualifies when its pager
+// meaning is a sensible OPENING gesture. Deliberately excluded —
+//
+//	n / N  repeat search with no query yet: opens onto a no-op
+//	y      copy: in incipit it already copies the aria id, a feature of its own
+//	q      detach: would open the pager and immediately tear it down
+//	Esc    clear selection with nothing selected, and a sequence prefix besides
+//	^C/^D  interrupt/detach; both are handled before this gate
+//
+// ^L and ^T enter the pager through their own explicit paths.
 func opensTranscriptFor(b byte) bool {
 	switch b {
-	case 'j', 'k', 'u', 'd', 'g', 'G', '/', '?', 'Q', 0x0f, 0x0e, 0x10, 0x0d, 0x0a:
+	case 'j', 'k', 'u', 'd', 'g', 'G', // scroll
+		'/',           // search prompt
+		'?', '!', 'Q', // help / figaro status / queued-prompt panels
+		0x0f,       // ^O verbosity
+		0x0e, 0x10, // ^N/^P node selection
+		0x0d, 0x0a: // Enter: expand tools
 		return true
 	default:
 		return false
