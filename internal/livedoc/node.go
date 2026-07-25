@@ -73,6 +73,11 @@ type Node struct {
 	// can detect a missed update. Meaningful only in the live section.
 	Version int `json:"v,omitempty"`
 
+	// At is the wall-clock time (unix millis) of the fig IR message this node
+	// came from. Carried so the UI can show when a node was written, the way it
+	// already shows tool timings; surfaced under the verbose toggle.
+	At int64 `json:"at,omitempty"`
+
 	// prose
 	Markdown string `json:"markdown,omitempty"`
 

@@ -115,6 +115,7 @@ func Turns(msgs []message.Message, summarize ToolSummary, previewArg ToolPreview
 	var group []message.Message
 	var prompt []livedoc.Node
 	var inquiry string
+	var at int64
 	var id, first, last uint64
 
 	flush := func() {
@@ -123,9 +124,9 @@ func Turns(msgs []message.Message, summarize ToolSummary, previewArg ToolPreview
 		}
 		nodes := append(prompt, Nodes(group, nil, nil, summarize, previewArg)...)
 		turns = append(turns, aria.Turn{
-			ID: id, Inquiry: inquiry, LTs: []uint64{first, last}, Sealed: true, Nodes: nodes,
+			ID: id, Inquiry: inquiry, At: at, LTs: []uint64{first, last}, Sealed: true, Nodes: nodes,
 		})
-		group, prompt, id, inquiry = nil, nil, 0, ""
+		group, prompt, id, inquiry, at = nil, nil, 0, "", 0
 	}
 
 	for _, m := range msgs {
@@ -138,9 +139,12 @@ func Turns(msgs []message.Message, summarize ToolSummary, previewArg ToolPreview
 			// without one, and a second one cannot arrive without closing the
 			// first. TestTurns_EveryTurnHasExactlyOneInquiry pins it.
 			inquiry = messageText(m)
+			// The inquiry is bare text and cannot carry its own timestamp, so the
+			// TURN carries it: At is when the question arrived.
+			at = m.Timestamp
 			for ci, c := range m.Content {
 				if c.Type == message.ContentProse {
-					prompt = append(prompt, textNode(livedoc.NodeProse, roleInput, m.LogicalTime, ci, c.Text))
+					prompt = append(prompt, textNode(livedoc.NodeProse, roleInput, m.LogicalTime, ci, m.Timestamp, c.Text))
 				}
 			}
 		}

@@ -50,6 +50,10 @@ type Turn struct {
 	// the removal plan; do not delete the node without doing all of it.
 	Inquiry string `json:"inquiry,omitempty"`
 
+	// At is when the inquiry arrived (unix millis). It lives on the turn
+	// because Inquiry is bare text and cannot carry a timestamp of its own.
+	At int64 `json:"at,omitempty"`
+
 	LTs    []uint64       `json:"lts,omitempty"`
 	Sealed bool           `json:"sealed"`
 	Nodes  []livedoc.Node `json:"nodes,omitempty"`

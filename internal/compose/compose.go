@@ -82,7 +82,7 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 			if hasToolResult(m) {
 				for ci, c := range m.Content {
 					if c.Type == message.ContentProse && strings.TrimSpace(c.Text) != "" {
-						nodes = append(nodes, textNode(livedoc.NodeSteering, roleInput, m.LogicalTime, ci, c.Text))
+						nodes = append(nodes, textNode(livedoc.NodeSteering, roleInput, m.LogicalTime, ci, m.Timestamp, c.Text))
 					}
 				}
 			}
@@ -97,9 +97,9 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 			// nodes after it would shift under it. The renderer hides empties.
 			switch c.Type {
 			case message.ContentProse:
-				nodes = append(nodes, textNode(livedoc.NodeProse, roleOutput, m.LogicalTime, ci, c.Text))
+				nodes = append(nodes, textNode(livedoc.NodeProse, roleOutput, m.LogicalTime, ci, m.Timestamp, c.Text))
 			case message.ContentThinking:
-				nodes = append(nodes, textNode(livedoc.NodeThinking, roleOutput, m.LogicalTime, ci, c.Text))
+				nodes = append(nodes, textNode(livedoc.NodeThinking, roleOutput, m.LogicalTime, ci, m.Timestamp, c.Text))
 			case message.ContentToolInvoke:
 				nodes = append(nodes, toolNode(c, m.LogicalTime, ci, results, partials, argPartials, summarize, previewArg, toolTimings))
 			}
@@ -114,13 +114,16 @@ const (
 )
 
 // textNode builds a prose/thinking/steering node at one fig-IR coordinate.
-func textNode(t livedoc.NodeType, role string, lt uint64, block int, text string) livedoc.Node {
+// at is the source message's wall-clock timestamp, carried through so the UI
+// can show WHEN a node was written the way it already shows tool timings.
+func textNode(t livedoc.NodeType, role string, lt uint64, block int, at int64, text string) livedoc.Node {
 	return livedoc.Node{
 		ID:       nodeID(lt, block),
 		Type:     t,
 		Role:     role,
 		LTs:      []uint64{lt},
 		Src:      []livedoc.Src{{LT: lt, Block: block}},
+		At:       at,
 		Markdown: strings.TrimRight(text, "\n"),
 	}
 }

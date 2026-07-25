@@ -103,6 +103,12 @@ func renderNodeList(nodes []livedoc.Node, width, bashCap int, tick uint64, set r
 		}
 		var nr []string
 		nr = renderNode(n, width, bashCap, tick, set.verbose)
+		// Under the verbose toggle every node reports when it was written, the
+		// same way a tool reports started/finished. Tools already print their own
+		// richer timing, so they are left alone.
+		if set.verbose && n.At != 0 && n.Type != livedoc.NodeTool {
+			nr = append(nr, term.Dim("  "+formatToolTime(n.At)))
+		}
 		if i > 0 {
 			nr = append([]string{""}, nr...)
 		}
