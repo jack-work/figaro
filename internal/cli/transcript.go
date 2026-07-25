@@ -535,7 +535,7 @@ func (t *transcript) lines() []string {
 		for _, r := range rows {
 			line := r.text
 			if r.ref.valid() {
-				line = decorateNodeRow(line, marks[r.ref], t.w)
+				line = decorateNodeRow(line, marks[r.ref])
 				span, ok := t.nodeRows[r.ref]
 				if !ok {
 					span.first = len(out)
@@ -592,7 +592,10 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 		}
 		ref := nodeRef{lt: m.LT, index: k}
 		for _, l := range t.renderNode(n, ref) {
-			rows = append(rows, transcriptRow{text: l, ref: ref})
+			// Rows are stored already clipped and gutter-prefixed (their
+			// unselected resting form) so a frame that touches nothing
+			// allocates nothing; see plainNodeRow.
+			rows = append(rows, transcriptRow{text: plainNodeRow(l, t.w), ref: ref})
 		}
 	}
 	return cachedMessage{rows: rows}
@@ -1098,7 +1101,7 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 			t.rowCache[m.LT] = rows
 		}
 		for _, row := range rows.rows {
-			if searchContains(row.text, q) {
+			if searchContains(row.searchText(), q) {
 				all := t.lines()
 				for i, line := range all {
 					if t.lineLT[i] == m.LT && searchContains(line, q) {

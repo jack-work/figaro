@@ -42,6 +42,16 @@ type transcriptRow struct {
 	ref  nodeRef
 }
 
+// searchText is the row's content as history search sees it: node rows are
+// stored in their plainNodeRow form, so the blank gutter column has to come
+// back off before matching.
+func (r transcriptRow) searchText() string {
+	if r.ref.valid() {
+		return strings.TrimPrefix(r.text, " ")
+	}
+	return r.text
+}
+
 type cachedMessage struct {
 	rows []transcriptRow
 }
@@ -383,12 +393,32 @@ func (t *transcript) ensureSelectionVisible() {
 	}
 }
 
+// plainNodeRow is a node row in its undecorated resting state: clipped to
+// the gutter width and prefixed with the one blank column that an unselected
+// row shows where a selected row shows its bar.
+//
+// This is computed once, when the message's rows are rendered into the row
+// cache, rather than per frame: the transcript re-materializes every retained
+// row on every keypress, and " " + clip(row) was the single largest allocator
+// left in the frame path. decorateNodeRow then only has to do work for the
+// handful of rows that are actually selected.
+func plainNodeRow(row string, width int) string {
+	if width < 2 {
+		width = 2
+	}
+	return " " + clipToWidth(row, width-1)
+}
+
 // decorateNodeRow paints a single transcript row with its selection cue. The
 // left indicator is one column (down from two): a slim vertical bar for
 // selected rows (bright cyan on the focused row, plain cyan on the rest of
 // the range) and a single space otherwise. Selected rows also get a subtle
 // background wash so the extent of a multi-block selection is visible without
 // relying on a wide gutter.
+//
+// It takes the row in its plainNodeRow form (already clipped, already carrying
+// the blank gutter column), so the unselected case — the overwhelming majority
+// of rows in any frame — returns it untouched with zero allocation.
 //
 // Background painting has two subtleties. First, any `\x1b[0m` inside the
 // row resets ALL SGR — including our background — so every reset in the
@@ -397,14 +427,11 @@ func (t *transcript) ensureSelectionVisible() {
 // row, so we trail with `\x1b[K` (erase-to-end at the current, i.e. selected,
 // background) to extend the wash to the right edge. A final `\x1b[0m` clears
 // everything before the next row begins.
-func decorateNodeRow(row string, mark selectionMark, width int) string {
-	if width < 2 {
-		width = 2
-	}
-	body := clipToWidth(row, width-1)
+func decorateNodeRow(plain string, mark selectionMark) string {
 	if !mark.selected && !mark.active {
-		return " " + body
+		return plain
 	}
+	body := strings.TrimPrefix(plain, " ") // drop the blank gutter column
 	const (
 		reset      = "\x1b[0m"
 		bgSelect   = "\x1b[48;5;238m" // subtle dark gray wash (xterm 256-color)
