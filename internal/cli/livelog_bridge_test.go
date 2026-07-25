@@ -108,8 +108,10 @@ func TestResizePromotesOnlyOnDestructiveShrink(t *testing.T) {
 		// does NOT already promote at the starting geometry. This test covers the
 		// complementary trigger: the viewport shrinking onto stable content.
 		md := strings.Repeat("live row\n\n", 7)
-		lt.apply(aria.AriaRead{Live: &aria.Live{LT: 2, V: 0, Role: "assistant",
-			Nodes: []aria.NodeDelta{{ID: "n0", Set: map[string]any{"type": "prose", "markdown": md}}}}})
+		lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
+			ID:  0,
+			Set: map[string]any{"type": "prose", "markdown": md},
+		}}}}}}})
 		return lt
 	}
 
