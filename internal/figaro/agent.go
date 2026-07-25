@@ -698,10 +698,27 @@ func (a *Agent) executeFork(evt event) {
 	evt.forkDone <- err
 }
 
-func (a *Agent) serviceForks() {
-	for _, evt := range a.inbox.TakeReadyForks() {
+// serviceForks executes any queued forks at a round boundary. Returns true
+// when it serviced at least one, so a drain loop can re-check for events the
+// fork uncovered. Statement callers may ignore the result.
+func (a *Agent) serviceForks() bool {
+	evts := a.inbox.TakeReadyForks()
+	for _, evt := range evts {
 		a.executeFork(evt)
 	}
+	return len(evts) > 0
+}
+
+// serviceSets applies any queued chalkboard patches at a round boundary, the
+// same points steering prompts drain. Each patch lands on the in-memory
+// chalkboard (so the next provider round reads it via the snapshot) and rides
+// the next IR LT as a transition. Returns true when it serviced at least one.
+func (a *Agent) serviceSets() bool {
+	evts := a.inbox.TakeReadySet()
+	for _, evt := range evts {
+		a.applyControlPatch(evt.setPatch, "set")
+	}
+	return len(evts) > 0
 }
 
 // applyControlPatch persists a state-only patch. No LLM round-trip.

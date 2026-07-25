@@ -31,6 +31,9 @@ type staggeredProvider struct {
 	tools     []specTool    // ordered by emission
 	streamEnd time.Duration // when to PushFigaro after Send starts
 	calls     atomic.Int32  // counts Send invocations
+
+	modelMu sync.Mutex
+	models  []string // system.model seen at each Send, in call order
 }
 
 type specTool struct {
@@ -48,6 +51,13 @@ func (p *staggeredProvider) Models(ctx context.Context) ([]provider.ModelInfo, e
 }
 
 func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
+	p.modelMu.Lock()
+	if v := in.Snapshot.Lookup("system.model"); v != nil {
+		p.models = append(p.models, *v)
+	} else {
+		p.models = append(p.models, "")
+	}
+	p.modelMu.Unlock()
 	if p.calls.Add(1) > 1 {
 		// Second round (after tool results) — terminate with no
 		// further tool calls so the agent's outer loop returns.

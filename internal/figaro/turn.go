@@ -272,6 +272,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		}
 	} else {
 		a.serviceForks()
+		a.serviceSets()
 	}
 	if a.turn == nil {
 		a.turn = newTurnState()
@@ -657,6 +658,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 // prompt as its own user message, and opens a fresh assistant unit for the
 // next provider round.
 func (a *Agent) appendSteeringPrompts() error {
+	a.serviceSets()
 	prompts := a.inbox.TakeReadyUserPrompts()
 	if len(prompts) == 0 {
 		return nil
@@ -676,9 +678,17 @@ func (a *Agent) appendSteeringPrompts() error {
 
 func (a *Agent) prepareProviderRound() error {
 	for {
-		a.serviceForks()
+		progressed := a.serviceForks()
+		if a.serviceSets() {
+			progressed = true
+		}
 		prompts := a.inbox.TakeReadyUserPrompts()
 		if len(prompts) == 0 {
+			// A serviced control event may have uncovered a fork or set
+			// behind it; loop again before concluding the queue is drained.
+			if progressed {
+				continue
+			}
 			return nil
 		}
 		split := hasRenderablePrompt(prompts)

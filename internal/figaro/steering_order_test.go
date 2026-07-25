@@ -108,3 +108,64 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	})
 	require.Equal(t, int32(2), prov.calls.Load())
 }
+
+// TestChalkboardSetDuringToolRoundAppliesNextRound proves a chalkboard patch
+// enqueued mid-turn (a model switch) is serviced at the same tool-window
+// boundary steering prompts are — so the next provider round already sees the
+// new model, rather than the patch waiting out the whole turn.
+func TestChalkboardSetDuringToolRoundAppliesNextRound(t *testing.T) {
+	bt := &blockingSteeringTool{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	reg := tool.NewRegistry()
+	require.NoError(t, reg.Register(bt))
+	prov := &staggeredProvider{
+		tools: []specTool{{
+			id:      "tc_steer",
+			name:    "steer",
+			args:    map[string]interface{}{},
+			readyAt: 0,
+		}},
+		streamEnd: 10 * time.Millisecond,
+	}
+	cb, _ := chalkboard.Open("")
+	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"system.model":    json.RawMessage(`"before"`),
+		"system.provider": json.RawMessage(`"staggered"`),
+	}})
+	a := figaro.NewAgent(figaro.Config{
+		ID:         "midturn-set",
+		SocketPath: "/tmp/midturn-set.sock",
+		Provider:   prov,
+		Tools:      reg,
+		Chalkboard: cb,
+	})
+	defer a.Kill()
+
+	frames, _ := subscribeChan(a)
+	submitPrompt(a, "initial")
+	select {
+	case <-bt.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("tool did not start")
+	}
+	// Switch the model while the tool round is in flight.
+	_, _, err := a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"system.model": json.RawMessage(`"after"`),
+	}})
+	require.NoError(t, err)
+	close(bt.release)
+	waitTurnDone(t, frames)
+
+	prov.modelMu.Lock()
+	models := append([]string(nil), prov.models...)
+	prov.modelMu.Unlock()
+	require.Equal(t, []string{"before", "after"}, models,
+		"round 1 runs on the original model; the mid-turn set must land before round 2")
+
+	snap := a.Snapshot()
+	v := snap.Lookup("system.model")
+	require.NotNil(t, v)
+	require.Equal(t, "after", *v)
+}

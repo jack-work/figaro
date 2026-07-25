@@ -62,6 +62,38 @@ func TestInbox_RemovingPromptRearmsReadyFork(t *testing.T) {
 	require.Len(t, b.TakeReadyForks(), 1)
 }
 
+func TestInbox_TakeReadySetContiguousPrefix(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := NewInbox(ctx)
+	b.Send(event{typ: eventUserPrompt, text: "p"})
+	b.Send(event{typ: eventSet})
+
+	// A set behind a prompt is not taken until the prompt clears — the
+	// drain loop preserves FIFO across kinds.
+	assert.Empty(t, b.TakeReadySet())
+	require.Len(t, b.TakeReadyUserPrompts(), 1)
+	require.Len(t, b.TakeReadySet(), 1)
+	assert.True(t, b.IsIdle())
+}
+
+func TestInbox_SetPromptSetBoundaries(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b := NewInbox(ctx)
+	b.Send(event{typ: eventSet})
+	b.Send(event{typ: eventUserPrompt, text: "mid"})
+	b.Send(event{typ: eventSet})
+
+	require.Len(t, b.TakeReadySet(), 1) // leading set
+	assert.Empty(t, b.TakeReadySet())   // now blocked by the prompt
+	p := b.TakeReadyUserPrompts()
+	require.Len(t, p, 1)
+	assert.Equal(t, "mid", p[0].text)
+	require.Len(t, b.TakeReadySet(), 1) // trailing set
+	assert.True(t, b.IsIdle())
+}
+
 func TestInbox_PromptForkPromptBoundaries(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

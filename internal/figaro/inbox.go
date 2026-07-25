@@ -112,6 +112,23 @@ func (b *Inbox) TakeReadyForks() []event {
 	return taken
 }
 
+// TakeReadySet removes the contiguous eventSet prefix — the chalkboard-patch
+// analog of TakeReadyForks. It never jumps a set over an earlier prompt or
+// fork, so FIFO order across event kinds is preserved by the caller's drain
+// loop.
+func (b *Inbox) TakeReadySet() []event {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for n < len(b.queue) && b.queue[n].typ == eventSet {
+		n++
+	}
+	taken := append([]event(nil), b.queue[:n]...)
+	copy(b.queue, b.queue[n:])
+	b.queue = b.queue[:len(b.queue)-n]
+	return taken
+}
+
 func (b *Inbox) signalReadyForkLocked() {
 	if len(b.queue) == 0 || b.queue[0].typ != eventFork {
 		return
