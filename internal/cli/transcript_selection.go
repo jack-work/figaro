@@ -174,7 +174,7 @@ func (t *transcript) clearSelection() {
 	t.selection = nodeSelection{}
 	t.trimPages(direction)
 	t.pruneCaches()
-	t.lines()
+	t.buildIndex()
 	t.restoreViewportAnchor(anchorLT, within)
 }
 
@@ -377,8 +377,8 @@ func (t *transcript) ensureSelectionVisible() {
 	if !t.selection.active {
 		return
 	}
-	t.lines()
-	span, ok := t.nodeRows[t.selection.focus.nodeRef]
+	t.buildIndex()
+	span, ok := t.nodeSpanOf(t.selection.focus.nodeRef)
 	if !ok {
 		return
 	}

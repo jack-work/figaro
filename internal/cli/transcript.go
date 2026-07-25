@@ -70,20 +70,34 @@ type transcript struct {
 	heldOpen    *aria.Message
 	committedW  int
 
-	// rowCache memoizes unstyled rows of committed messages. Selection is
-	// applied after retrieval, so moving through nodes never re-renders prose.
-	rowCache    map[int]cachedMessage
-	cacheW      int
-	nodeRows    map[nodeRef]nodeSpan
-	lineBuf     []string // reused row buffer, valid until the next lines()
-	lineLTBuf   []int    // reused LT buffer, aliased by lineLT
-	ruleStr     string   // memoized separator rule for ruleW columns
-	ruleW       int
+	// rowCache memoizes rows of committed messages in their unselected resting
+	// form — clipped and gutter-prefixed (plainNodeRow), but carrying no
+	// selection cue and no search highlight. That keeps the cache a pure
+	// function of (message, width), so selection and search state can change
+	// without invalidating a single cached row; the cue and the highlight are
+	// applied per painted row by window()/entryLine().
+	rowCache  map[int]cachedMessage
+	cacheW    int
+	selection nodeSelection
+	expanded  map[nodeRef]bool
+
+	// index is the viewport virtualization: a per-frame map from line space to
+	// message rows, rebuilt in O(#messages) so scrolling never re-materializes
+	// (or re-decorates) rows it will not paint. See transcript_index.go.
+	index   lineIndex
+	ruleStr string // memoized separator rule for ruleW columns
+	ruleW   int
+
+	// Reused buffers. Each has a distinct owner so no two of them can ever
+	// alias: rowBuf belongs to render (the visible window), lineBuf to lines()
+	// (the whole-window materialization, off the frame path), paintBuf to the
+	// painter, and screenSpare is the composed frame paint displaced when it
+	// retained the previous one as t.prev.
+	rowBuf      []string     // the visible window, valid until the next render()
+	lineBuf     []string     // whole-window rows, valid until the next lines()
 	keepBuf     map[int]bool // reused live-LT set for pruneCaches
 	paintBuf    []byte       // reused escape-sequence output buffer
 	screenSpare []string     // the frame buffer displaced by the last paint
-	selection   nodeSelection
-	expanded    map[nodeRef]bool
 }
 
 type transcriptPage struct {
@@ -130,7 +144,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 	return &transcript{
 		out: out, view: view, client: client,
 		status: newSessionStatus(figaroID, startedAt), w: w, h: h,
-		rowCache: map[int]cachedMessage{}, nodeRows: map[nodeRef]nodeSpan{}, expanded: map[nodeRef]bool{},
+		rowCache: map[int]cachedMessage{}, expanded: map[nodeRef]bool{},
 	}
 }
 
@@ -280,7 +294,7 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 			return
 		}
 	} else {
-		t.lines()
+		t.buildIndex()
 		t.restoreViewportAnchor(anchorLT, within)
 	}
 	t.render()
@@ -503,8 +517,8 @@ func (t *transcript) resize(w, h int) {
 	// after re-rendering at the new width. (Skipped when following the tail.)
 	anchorLT, within := t.viewportAnchor()
 	t.w, t.h = w, h
-	t.prev = nil // full repaint (diff vs nil); no \x1b[2J, which flickers
-	t.lines()    // re-render at the new width, repopulating lineLT
+	t.prev = nil   // full repaint (diff vs nil); no \x1b[2J, which flickers
+	t.buildIndex() // re-render at the new width, repopulating lineLT
 	t.restoreViewportAnchor(anchorLT, within)
 	t.render()
 }
@@ -540,71 +554,20 @@ func (t *transcript) invalidateRows() {
 // lines renders the retained message window and live tail to physical rows.
 // Committed messages are immutable, so their rendered rows are cached by LT;
 // only the open message renders every frame.
+//
+// This is the whole-transcript materialization — O(retained rows). It is NOT on
+// the render path any more (that goes through buildIndex + window, which is
+// O(viewport)); it survives for the tests and goldens that want to see the
+// whole line space at once, and it is the shape the legacyLines oracle mirrors.
+//
+// The row buffer is reused across calls: the result is only valid until the
+// next lines(), which every caller already honours. Nothing else aliases it —
+// render() composes through t.rowBuf and paint()'s frame buffers — so keeping
+// C's zero-alloc contract here costs A's virtualization nothing.
 func (t *transcript) lines() []string {
-	if t.follow {
-		t.resetToTail()
-	}
-	if t.cacheW != t.w { // width changed: cached rows are stale
-		t.rowCache = map[int]cachedMessage{}
-		t.cacheW = t.w
-	}
-	marks := t.selectionMarks()
-	hl := t.activeHighlight()
-	// The row and LT buffers are reused across frames: a heavy transcript
-	// materializes thousands of rows per keypress, and re-growing two slices
-	// from nil every time was the largest remaining allocator in the frame
-	// path (112 KB/frame of pure append churn). The returned slice is only
-	// valid until the next lines() call — every caller consumes it before it
-	// can call lines() again, and t.lineLT has always aliased this buffer.
-	out := t.lineBuf[:0]
-	lts := t.lineLTBuf[:0] // LT owning each line (0 for separator rules), parallel to out
-	rule := t.transRule()
-	clear(t.nodeRows) // reused: a fresh map per frame is pure garbage
-	appendMsg := func(rows []transcriptRow, lt int) {
-		if len(out) > 0 { // rule separator BETWEEN messages only — the footer
-			out = append(out, "", rule, "") // seals the last one, so a
-			lts = append(lts, lt, lt, lt)   // trailing rule+blank would
-		} // double up against it
-		last := nodeRef{}
-		for _, r := range rows {
-			line := r.text
-			if r.ref.valid() {
-				if marks != nil {
-					line = decorateNodeRow(line, marks[r.ref])
-				}
-				// A node's rows are contiguous, so the span only needs
-				// rewriting when the ref changes: one map write per node
-				// instead of one per row (map hashing was 13% of frame CPU).
-				if r.ref != last {
-					t.nodeRows[r.ref] = nodeSpan{first: len(out), last: len(out)}
-					last = r.ref
-				} else {
-					span := t.nodeRows[r.ref]
-					span.last = len(out)
-					t.nodeRows[r.ref] = span
-				}
-			}
-			if hl != "" {
-				line = highlightMatches(line, hl)
-			}
-			out = append(out, line)
-			lts = append(lts, lt)
-		}
-	}
-	t.forEachMessage(func(m aria.Message) {
-		rows, ok := t.rowCache[m.LT]
-		if !ok {
-			rows = t.renderMsgBase(m)
-			t.rowCache[m.LT] = rows
-		}
-		appendMsg(rows.rows, m.LT)
-	})
-	if open := t.openMessage(); open != nil {
-		appendMsg(t.renderMsgBase(*open).rows, open.LT)
-	}
-	t.lineBuf, t.lineLTBuf = out, lts
-	t.lineLT = lts
-	return out
+	t.buildIndex()
+	t.lineBuf = t.window(0, t.index.total, t.lineBuf)
+	return t.lineBuf
 }
 
 // transRule is the memoized message separator: strings.Repeat per message per
@@ -673,7 +636,8 @@ func (t *transcript) render() {
 	if !t.active {
 		return
 	}
-	all := t.lines()
+	t.buildIndex()
+	total := t.index.total
 	foot := []string{}
 	if t.showHelp {
 		foot = t.helpLines()
@@ -686,7 +650,7 @@ func (t *transcript) render() {
 	if body < 1 {
 		body = 1
 	}
-	maxOff := len(all) - body
+	maxOff := total - body
 	if maxOff < 0 {
 		maxOff = 0
 	}
@@ -700,17 +664,17 @@ func (t *transcript) render() {
 		t.offset = 0
 	}
 	screen := t.nextScreen()
-	for r := 0; r < body; r++ {
-		if i := t.offset + r; i < len(all) {
-			screen[r] = all[i]
-		}
-	}
+	// A's windowed accessor: only the ~40 rows about to be painted are
+	// materialized, decorated and highlighted. C's primitives make each of
+	// those rows cost a slice read.
+	t.rowBuf = t.window(t.offset, t.offset+body, t.rowBuf)
+	copy(screen[:body], t.rowBuf)
 	for k, l := range foot {
 		if r := body + k; r < t.h-3 {
 			screen[r] = l
 		}
 	}
-	rule, status := t.footerRows(len(all), body)
+	rule, status := t.footerRows(total, body)
 	screen[t.h-3] = "" // padding ABOVE the footer, not between rule and status
 	screen[t.h-2] = rule
 	screen[t.h-1] = status
@@ -1014,13 +978,14 @@ func (t *transcript) find(q string) {
 		return
 	}
 	t.matchQuery = q
-	all := t.lines()
-	if len(all) == 0 {
+	t.buildIndex()
+	total := t.index.total
+	if total == 0 {
 		return
 	}
-	for i := 0; i < len(all); i++ {
-		idx := (t.offset + 1 + i) % len(all)
-		if searchContains(all[idx], q) {
+	for i := 0; i < total; i++ {
+		idx := (t.offset + 1 + i) % total
+		if searchContains(t.lineAt(idx), q) {
 			t.offset = idx
 			t.stopFollowing()
 			return
@@ -1049,14 +1014,15 @@ func (t *transcript) findRepeat(delta int) {
 		return
 	}
 	q := t.matchQuery
-	all := t.lines()
-	if len(all) == 0 {
+	t.buildIndex()
+	total := t.index.total
+	if total == 0 {
 		return
 	}
 	start := t.offset + delta
-	for i := 0; i < len(all); i++ {
-		idx := ((start+delta*i)%len(all) + len(all)) % len(all)
-		if searchContains(all[idx], q) {
+	for i := 0; i < total; i++ {
+		idx := ((start+delta*i)%total + total) % total
+		if searchContains(t.lineAt(idx), q) {
 			t.offset = idx
 			t.stopFollowing()
 			return
@@ -1189,10 +1155,14 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 			t.rowCache[m.LT] = rows
 		}
 		for _, row := range rows.rows {
+			// searchText strips the gutter column plainNodeRow baked in.
 			if searchContains(row.searchText(), q) {
-				all := t.lines()
-				for i, line := range all {
-					if t.lineLT[i] == m.LT && searchContains(line, q) {
+				t.buildIndex()
+				for i := range t.index.total {
+					if t.lineLT[i] != m.LT {
+						continue // only this message's lines can carry the hit
+					}
+					if searchContains(t.lineAt(i), q) {
 						t.offset, t.follow = i, false
 						return true
 					}
