@@ -195,24 +195,11 @@ func (c *Copilot) ContextLimit(model string, snapshot chalkboard.Snapshot) int {
 			limit = limits.Long
 		}
 	}
-	if override, ok := contextLimitOverride(snapshot); ok {
-		if limit == 0 || override < limit {
-			return override
-		}
+	// An explicit user pin wins outright, in either direction.
+	if override, ok := provider.ContextLimitOverride(snapshot); ok {
+		return override
 	}
 	return limit
-}
-
-func contextLimitOverride(snapshot chalkboard.Snapshot) (int, bool) {
-	raw, ok := snapshot.Get("system.max_context_tokens")
-	if !ok {
-		return 0, false
-	}
-	var limit int
-	if json.Unmarshal(raw, &limit) != nil || limit <= 0 {
-		return 0, false
-	}
-	return limit, true
 }
 
 type catalogModel struct {

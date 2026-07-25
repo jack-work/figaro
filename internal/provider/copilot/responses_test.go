@@ -447,7 +447,9 @@ func TestCopilotContextLimitUsesCachedCatalog(t *testing.T) {
 	assert.Equal(t, 120000, c.ContextLimit("gpt-5.6-terra", chalkboard.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`120000`),
 	})))
-	assert.Equal(t, 128000, c.ContextLimit("gpt-5.6-terra", chalkboard.FromMap(map[string]json.RawMessage{
+	// The pin is an override, not a clamp: it wins even when it is larger
+	// than the catalog's number.
+	assert.Equal(t, 2000000, c.ContextLimit("gpt-5.6-terra", chalkboard.FromMap(map[string]json.RawMessage{
 		"system.max_context_tokens": json.RawMessage(`2000000`),
 	})))
 }

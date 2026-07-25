@@ -82,6 +82,32 @@ replayed under a different model.
 For headless or container use, Copilot accepts credentials in this order:
 `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, then `GITHUB_TOKEN`.
 
+### Context accounting
+
+`figaro status` and the `CTX` column in `figaro list` report **context used**:
+the last turn's prompt plus that turn's output, i.e.
+
+```
+input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_tokens
+```
+
+All three input buckets count — with prompt caching on (the default) most of
+the prompt comes back as a cache read, so summing only `input_tokens` would
+under-report a long aria by orders of magnitude. Messages appended after the
+last metered turn are estimated at chars/4 and the figure is prefixed `~`.
+
+The window it is measured against comes from the provider (Anthropic reports
+`max_input_tokens` on `/v1/models`; `figaro models` shows the same numbers).
+`system.max_context_tokens` overrides it in either direction:
+
+```bash
+figaro set system.max_context_tokens 200000   # pin the window
+figaro unset system.max_context_tokens        # back to the provider's number
+```
+
+Unknown models report no window rather than a guessed one, and status then
+prints a bare token count.
+
 ## Core concepts
 
 - **Arias**: persistent conversations, append-only IR log, fork-tree storage via [figwal](https://github.com/jack-work/figwal).
