@@ -84,8 +84,13 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	var mu sync.Mutex
 	doneCh := make(chan struct{}, 1)
 	disconnectCh := make(chan struct{}, 1) // Ctrl-D: leave the turn running
-	running := true                        // a turn is in flight until turn.done; gates Ctrl-C
-	sendCursor := -1                       // cursor from Qua; stop only once committed past it and idle
+
+	// mu serializes every renderer entry point; handing it to the pager arms
+	// the frame-rate ceiling, whose trailing repaint runs on a timer goroutine
+	// and so needs the same lock.
+	lt.setRenderLock(&mu)
+	running := true  // a turn is in flight until turn.done; gates Ctrl-C
+	sendCursor := -1 // cursor from Qua; stop only once committed past it and idle
 
 	onNotify := func(method string, params json.RawMessage) {
 		mu.Lock()
@@ -285,6 +290,11 @@ type interactiveInput struct {
 	searchGen    uint64
 	searchQuery  string
 	searchDone   chan struct{}
+	// pageWanted defers the history-paging check to the end of the input chunk.
+	// It can block on an RPC, and it reads a viewport offset that render()
+	// clamps — so it belongs after the frame, once per chunk, not once per
+	// event.
+	pageWanted bool
 	// lastNL is the last CR/LF byte we delivered (0 otherwise). Windows
 	// conhost and some other terminals emit CR+LF for a single Enter press;
 	// without dedup, a toggle-style binding (Enter -> expand tools) fires
@@ -555,10 +565,18 @@ func filterCommittedAfter(r aria.AriaRead, after int) aria.AriaRead {
 
 // run reads input until stdin errors, Ctrl-C (cancel), or Ctrl-D (disconnect).
 // Call under a MakeRaw session so Ctrl-C/Ctrl-D arrive as bytes.
+//
+// One read is one frame. In raw mode a read returns everything the tty has
+// buffered, so a mouse-wheel flick — and everything that piled up while the
+// previous frame was being drawn — arrives as a single chunk. Bracketing the
+// whole chunk in a transcript batch collapses it into one paint at the settled
+// offset, instead of one paint per event with only the last one wanted. The
+// buffer is sized to hold a whole flick (a wheel report is ~6 bytes) rather
+// than chopping it into frames.
 func (in *interactiveInput) run() {
 	defer in.cancelSelectionCopy()
 	defer in.cancelTranscriptSearch()
-	buf := make([]byte, 64)
+	buf := make([]byte, 4096)
 	var pending []byte // a mouse/escape sequence split across reads
 	for {
 		n, err := in.tc.Read(buf)
@@ -568,209 +586,233 @@ func (in *interactiveInput) run() {
 		}
 		data := append(pending, buf[:n]...)
 		pending = nil
-		i := 0
-		for i < len(data) {
-			in.mu.Lock()
-			active := in.lt.transcriptActive()
-			in.mu.Unlock()
-			if active {
-				if ev, consumed, ok, need := ldmouse.Parse(data[i:]); need {
-					pending = append(pending, data[i:]...)
-					break
-				} else if ok {
-					i += consumed
-					delta := 0
-					switch ev.Button {
-					case ldmouse.WheelUp:
-						delta = -3
-					case ldmouse.WheelDown:
-						delta = 3
-					}
-					if delta != 0 {
-						in.mu.Lock()
-						in.cancelTranscriptSearchLocked()
-						in.lt.transcriptScroll(delta)
-						in.mu.Unlock()
-						in.pageTranscript()
-					}
-					continue
-				}
-			}
-			var b byte
-			if key, consumed, ok, need := parseModifiedKey(data[i:]); need {
+		rest, stop := in.consume(data)
+		pending = rest
+		if stop {
+			return
+		}
+	}
+}
+
+// consume dispatches one chunk of input as a single frame. It returns any
+// trailing bytes of an escape sequence split across reads, and whether the
+// input loop should stop.
+func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
+	in.mu.Lock()
+	in.lt.beginTranscriptBatch()
+	in.mu.Unlock()
+	defer func() {
+		in.mu.Lock()
+		in.lt.endTranscriptBatch() // the settled state, painted once
+		in.mu.Unlock()
+		if in.pageWanted {
+			in.pageWanted = false
+			in.pageTranscript() // after the frame: it may block on an RPC
+		}
+	}()
+	i := 0
+	for i < len(data) {
+		in.mu.Lock()
+		active := in.lt.transcriptActive()
+		in.mu.Unlock()
+		if active {
+			if ev, consumed, ok, need := ldmouse.Parse(data[i:]); need {
 				pending = append(pending, data[i:]...)
 				break
 			} else if ok {
 				i += consumed
-				if key.ctrl && (key.code == 'n' || key.code == 'N' || key.code == 'p' || key.code == 'P') {
-					in.enterTranscript()
+				delta := 0
+				switch ev.Button {
+				case ldmouse.WheelUp:
+					delta = -3
+				case ldmouse.WheelDown:
+					delta = 3
+				}
+				if delta != 0 {
 					in.mu.Lock()
 					in.cancelTranscriptSearchLocked()
-					delta := 1
-					if key.code == 'p' || key.code == 'P' {
-						delta = -1
-					}
-					in.lt.transcriptSelect(delta, key.shift || key.alt)
+					in.lt.transcriptScroll(delta)
 					in.mu.Unlock()
-					in.pageTranscript()
-					continue
+					in.pageWanted = true
 				}
-				var representable bool
-				b, representable = key.asByte()
-				if !representable {
-					continue
-				}
-			} else if data[i] == 0x1b {
-				// A leading ESC we didn't recognize as CSI-u. Try to swallow the
-				// rest of the sequence (arrow keys, SS3 F-keys, OSC replies,
-				// generic CSI) so bare Esc can trigger its own binding without a
-				// sequence prefix spuriously firing it.
-				if ec, en := consumeEscapeSequence(data[i:]); en {
-					pending = append(pending, data[i:]...)
-					break
-				} else if ec > 0 {
-					i += ec
-					in.lastNL = 0
-					continue
-				}
-				b = data[i]
-				i++
-			} else {
-				b = data[i]
-				i++
-			}
-			// Coalesce CR+LF (and the mirrored LF+CR) into ONE newline event.
-			// Windows conhost — and some other terminals — emit both bytes for
-			// a single Enter keypress; without this dedup a toggle binding on
-			// Enter fires twice per press and appears stuck. Reasoning from
-			// key_input.go: parseModifiedKey handles the CSI-u path (Enter as
-			// code 13); the raw-byte fallback here is the one that sees
-			// non-CSI-u terminals and needs the coalescing.
-			if in.coalesceNewline(b) {
 				continue
 			}
-			if !active && opensTranscriptFor(b) {
+		}
+		var b byte
+		if key, consumed, ok, need := parseModifiedKey(data[i:]); need {
+			pending = append(pending, data[i:]...)
+			break
+		} else if ok {
+			i += consumed
+			if key.ctrl && (key.code == 'n' || key.code == 'N' || key.code == 'p' || key.code == 'P') {
 				in.enterTranscript()
-				in.mu.Lock()
-				active = in.lt.transcriptActive()
-				in.mu.Unlock()
-			}
-			// Universal control keys — identical in incipit and transcript.
-			switch b {
-			case 0x03: // Ctrl-C: interrupt (if running) + close
-				if active {
-					in.mu.Lock()
-					in.cancelTranscriptSearchLocked()
-					plan, selected := in.lt.transcriptSelectionPlan()
-					if selected && in.copyFailed &&
-						in.copyFailedLo == plan.lo && in.copyFailedHi == plan.hi {
-						in.copyFailed = false
-						in.lt.clearTranscriptSelection()
-						in.mu.Unlock()
-						in.cancelSelectionCopy()
-						in.cancel()
-						return
-					}
-					if selected && in.copyCancel != nil {
-						in.copyCancel()
-						in.copyCancel = nil
-						in.copyGen++
-						in.copyFailed = true
-						in.copyFailedLo, in.copyFailedHi = in.copyPlan.lo, in.copyPlan.hi
-						in.copyPlan = selectionCopyPlan{}
-						in.mu.Unlock()
-						continue
-					}
-					if selected {
-						copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)
-						in.copyGen++
-						gen := in.copyGen
-						in.copyCancel = copyCancel
-						in.copyPlan = plan
-						in.copyFailed = false
-						in.mu.Unlock()
-						go in.copySelection(copyCtx, copyCancel, gen, plan)
-						continue
-					}
-					in.mu.Unlock()
-				}
-				in.cancelTranscriptSearch()
-				in.cancelSelectionCopy()
-				in.cancel()
-				return
-			case 0x04: // Ctrl-D: disconnect; the turn keeps running
-				in.cancelTranscriptSearch()
-				in.cancelSelectionCopy()
-				select {
-				case in.disconnectCh <- struct{}{}:
-				default:
-				}
-				return
-			case 'q': // detach parity with Ctrl-D when the pager is up
-				if !active {
-					break
-				}
-				if in.lt.transcriptSearching() {
-					break // typing into the search box
-				}
-				in.cancelTranscriptSearch()
-				in.cancelSelectionCopy()
-				select {
-				case in.disconnectCh <- struct{}{}:
-				default:
-				}
-				return
-			case 0x0c: // Ctrl-L: listen (stay open past turn-done) + transcript
 				in.mu.Lock()
 				in.cancelTranscriptSearchLocked()
-				*in.listen = true
-				in.mu.Unlock()
-				in.enterTranscript()
-				continue
-			case 0x14: // Ctrl-T: enter transcript (no-op if already there)
-				in.cancelTranscriptSearch()
-				in.enterTranscript()
-				continue
-			case 0x0f: // Ctrl-O: toggle verbosity
-				in.mu.Lock()
-				in.cancelTranscriptSearchLocked()
-				in.set.verbose = !in.set.verbose
-				in.lt.invalidateTranscriptRows()
-				in.lt.render()
-				in.mu.Unlock()
-				continue
-			case 'y': // copy selection if any, else copy the aria id (OSC 52)
-				if active && in.lt.transcriptSearching() {
-					break // typing into the search box — let it fall to the pager
+				delta := 1
+				if key.code == 'p' || key.code == 'P' {
+					delta = -1
 				}
-				if active {
-					in.mu.Lock()
-					plan, selected := in.lt.transcriptSelectionPlan()
-					if selected && in.copyCancel == nil && !in.copyFailed {
-						copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)
-						in.copyGen++
-						gen := in.copyGen
-						in.copyCancel = copyCancel
-						in.copyPlan = plan
-						in.mu.Unlock()
-						go in.copySelection(copyCtx, copyCancel, gen, plan)
-						continue
-					}
-					in.mu.Unlock()
-				}
-				in.tc.SetClipboard(in.figaroID)
+				in.lt.transcriptSelect(delta, key.shift || key.alt)
+				in.mu.Unlock()
+				in.pageWanted = true
 				continue
 			}
-			// Remaining keys drive the pager (scroll/search) when active.
+			var representable bool
+			b, representable = key.asByte()
+			if !representable {
+				continue
+			}
+		} else if data[i] == 0x1b {
+			// A leading ESC we didn't recognize as CSI-u. Try to swallow the
+			// rest of the sequence (arrow keys, SS3 F-keys, OSC replies,
+			// generic CSI) so bare Esc can trigger its own binding without a
+			// sequence prefix spuriously firing it.
+			if ec, en := consumeEscapeSequence(data[i:]); en {
+				pending = append(pending, data[i:]...)
+				break
+			} else if ec > 0 {
+				i += ec
+				in.lastNL = 0
+				continue
+			}
+			b = data[i]
+			i++
+		} else {
+			b = data[i]
+			i++
+		}
+		// Coalesce CR+LF (and the mirrored LF+CR) into ONE newline event.
+		// Windows conhost — and some other terminals — emit both bytes for
+		// a single Enter keypress; without this dedup a toggle binding on
+		// Enter fires twice per press and appears stuck. Reasoning from
+		// key_input.go: parseModifiedKey handles the CSI-u path (Enter as
+		// code 13); the raw-byte fallback here is the one that sees
+		// non-CSI-u terminals and needs the coalescing.
+		if in.coalesceNewline(b) {
+			continue
+		}
+		if !active && opensTranscriptFor(b) {
+			in.enterTranscript()
+			in.mu.Lock()
+			active = in.lt.transcriptActive()
+			in.mu.Unlock()
+		}
+		// Universal control keys — identical in incipit and transcript.
+		switch b {
+		case 0x03: // Ctrl-C: interrupt (if running) + close
 			if active {
 				in.mu.Lock()
 				in.cancelTranscriptSearchLocked()
-				in.lt.transcriptKey(b)
+				plan, selected := in.lt.transcriptSelectionPlan()
+				if selected && in.copyFailed &&
+					in.copyFailedLo == plan.lo && in.copyFailedHi == plan.hi {
+					in.copyFailed = false
+					in.lt.clearTranscriptSelection()
+					in.mu.Unlock()
+					in.cancelSelectionCopy()
+					in.cancel()
+					return pending, true
+				}
+				if selected && in.copyCancel != nil {
+					in.copyCancel()
+					in.copyCancel = nil
+					in.copyGen++
+					in.copyFailed = true
+					in.copyFailedLo, in.copyFailedHi = in.copyPlan.lo, in.copyPlan.hi
+					in.copyPlan = selectionCopyPlan{}
+					in.mu.Unlock()
+					continue
+				}
+				if selected {
+					copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)
+					in.copyGen++
+					gen := in.copyGen
+					in.copyCancel = copyCancel
+					in.copyPlan = plan
+					in.copyFailed = false
+					in.mu.Unlock()
+					go in.copySelection(copyCtx, copyCancel, gen, plan)
+					continue
+				}
 				in.mu.Unlock()
-				in.pageTranscript()
 			}
+			in.cancelTranscriptSearch()
+			in.cancelSelectionCopy()
+			in.cancel()
+			return pending, true
+		case 0x04: // Ctrl-D: disconnect; the turn keeps running
+			in.cancelTranscriptSearch()
+			in.cancelSelectionCopy()
+			select {
+			case in.disconnectCh <- struct{}{}:
+			default:
+			}
+			return pending, true
+		case 'q': // detach parity with Ctrl-D when the pager is up
+			if !active {
+				break
+			}
+			if in.lt.transcriptSearching() {
+				break // typing into the search box
+			}
+			in.cancelTranscriptSearch()
+			in.cancelSelectionCopy()
+			select {
+			case in.disconnectCh <- struct{}{}:
+			default:
+			}
+			return pending, true
+		case 0x0c: // Ctrl-L: listen (stay open past turn-done) + transcript
+			in.mu.Lock()
+			in.cancelTranscriptSearchLocked()
+			*in.listen = true
+			in.mu.Unlock()
+			in.enterTranscript()
+			continue
+		case 0x14: // Ctrl-T: enter transcript (no-op if already there)
+			in.cancelTranscriptSearch()
+			in.enterTranscript()
+			continue
+		case 0x0f: // Ctrl-O: toggle verbosity
+			in.mu.Lock()
+			in.cancelTranscriptSearchLocked()
+			in.set.verbose = !in.set.verbose
+			in.lt.invalidateTranscriptRows()
+			in.lt.render()
+			in.mu.Unlock()
+			continue
+		case 'y': // copy selection if any, else copy the aria id (OSC 52)
+			if active && in.lt.transcriptSearching() {
+				break // typing into the search box — let it fall to the pager
+			}
+			if active {
+				in.mu.Lock()
+				plan, selected := in.lt.transcriptSelectionPlan()
+				if selected && in.copyCancel == nil && !in.copyFailed {
+					copyCtx, copyCancel := context.WithTimeout(context.Background(), 30*time.Second)
+					in.copyGen++
+					gen := in.copyGen
+					in.copyCancel = copyCancel
+					in.copyPlan = plan
+					in.mu.Unlock()
+					go in.copySelection(copyCtx, copyCancel, gen, plan)
+					continue
+				}
+				in.mu.Unlock()
+			}
+			in.tc.SetClipboard(in.figaroID)
+			continue
+		}
+		// Remaining keys drive the pager (scroll/search) when active.
+		if active {
+			in.mu.Lock()
+			in.cancelTranscriptSearchLocked()
+			in.lt.transcriptKey(b)
+			in.mu.Unlock()
+			in.pageWanted = true
 		}
 	}
+	return pending, false
 }
 
 func (in *interactiveInput) copySelection(ctx context.Context, cancel context.CancelFunc, gen uint64, plan selectionCopyPlan) {

@@ -55,6 +55,14 @@ type transcript struct {
 	follow   bool     // stick to the bottom on new content
 	pendG    bool     // saw one 'g' (for gg)
 
+	// Frame scheduling. render() marks the screen stale and defers when a
+	// batch is open (an input burst being drained) or when the frame-rate gate
+	// declines; flush() draws the deferred frame. See beginBatch/endBatch.
+	batch   int
+	dirty   bool
+	gate    func() bool // "may I paint now?" — a false answer owes a later flush()
+	painted func()      // notified after each painted frame
+
 	inSearch   bool
 	query      string
 	matchQuery string // persistent query: highlights + n/N target
@@ -617,6 +625,52 @@ func (t *transcript) render() {
 	if !t.active {
 		return
 	}
+	if t.batch > 0 || (t.gate != nil && !t.gate()) {
+		t.dirty = true
+		return
+	}
+	t.dirty = false
+	t.renderFrame()
+	if t.painted != nil {
+		t.painted()
+	}
+}
+
+// beginBatch/endBatch bracket a run of state changes that must produce ONE
+// frame. Every mutation inside still calls render(); render just records that
+// the screen is stale and returns. endBatch draws the settled state once.
+//
+// This is what a mouse-wheel flick needs: the terminal hands us a burst of
+// scroll reports in a single read, and nobody wants to see the twenty-three
+// intermediate viewports — they only cost latency, because the frame the user
+// is waiting for is the last one.
+func (t *transcript) beginBatch() { t.batch++ }
+
+func (t *transcript) endBatch() {
+	if t.batch > 0 {
+		t.batch--
+	}
+	if t.batch == 0 && t.dirty {
+		t.dirty = false
+		t.render() // re-checks the frame-rate gate, which may defer once more
+	}
+}
+
+// flush paints a deferred frame unconditionally, ignoring the frame-rate gate.
+// It is the trailing render: whoever refuses a frame owes a later flush, so
+// the final state is always on screen.
+func (t *transcript) flush() {
+	if !t.active || !t.dirty || t.batch > 0 {
+		return
+	}
+	t.dirty = false
+	t.renderFrame()
+	if t.painted != nil {
+		t.painted()
+	}
+}
+
+func (t *transcript) renderFrame() {
 	all := t.lines()
 	foot := []string{}
 	if t.showHelp {
