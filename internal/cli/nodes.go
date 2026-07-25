@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
 
@@ -70,7 +71,75 @@ func renderNodeList(nodes []livedoc.Node, width, bashCap int, tick uint64, set r
 // tabs, CR) are flattened to spaces: a row must be exactly one physical
 // line or it desyncs the painter's one-row-per-line cursor math (a
 // multi-line bash command in a tool's arg summary is the common culprit).
+//
+// The overwhelmingly common case is a row that already fits and carries
+// nothing to rewrite — every row of every frame is clipped, twice (once by
+// the node renderer, once by the transcript's selection gutter), and almost
+// none of them actually need clipping. clipFits proves the rewrite is a
+// no-op with a single allocation-free byte scan; only rows that genuinely
+// change go through clipToWidthRewrite.
 func clipToWidth(s string, width int) string {
+	if clipFits(s, width) {
+		return s
+	}
+	return clipToWidthRewrite(s, width)
+}
+
+// clipFits reports whether clipToWidthRewrite(s, width) == s, i.e. whether
+// the row is already within width, free of control characters, and valid
+// UTF-8 (the rewrite decodes to runes, so an invalid byte would come back
+// as U+FFFD and change the row). Pure scan: no allocation.
+func clipFits(s string, width int) bool {
+	col := 0
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c == 0x1b { // escape sequence: copied verbatim, uncounted
+			j := escapeEnd(s, i)
+			if !utf8.ValidString(s[i:j]) {
+				return false // would round-trip through U+FFFD
+			}
+			i = j
+			continue
+		}
+		if c < 0x20 || c == 0x7f { // control char: rewritten to a space
+			return false
+		}
+		if c < utf8.RuneSelf { // printable ASCII is always one column
+			col++
+			i++
+		} else {
+			r, size := utf8.DecodeRuneInString(s[i:])
+			if r == utf8.RuneError && size == 1 {
+				return false // invalid UTF-8: the rewrite substitutes U+FFFD
+			}
+			col += runewidth.RuneWidth(r)
+			i += size
+		}
+		if col > width {
+			return false
+		}
+	}
+	return true
+}
+
+// escapeEnd returns the index just past the ANSI escape sequence starting at
+// s[i] (assumed to be ESC): everything up to and including the first ASCII
+// letter, or the end of the string. Byte-wise scanning is equivalent to the
+// rune-wise scan it replaces — a multi-byte rune's bytes are all >= 0x80 and
+// so can never be mistaken for the terminating letter.
+func escapeEnd(s string, i int) int {
+	j := i + 1
+	for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
+		j++
+	}
+	if j < len(s) {
+		j++
+	}
+	return j
+}
+
+// clipToWidthRewrite is the general path: it materializes the clipped row.
+func clipToWidthRewrite(s string, width int) string {
 	col := 0
 	var b strings.Builder
 	rs := []rune(s)
