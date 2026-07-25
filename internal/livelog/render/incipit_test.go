@@ -11,12 +11,12 @@ import (
 
 const spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
-func TestIncipit_SealOnce_OpenLive(t *testing.T) {
+func TestIncipit_FreezeOnce_OpenLive(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)
 	in := NewIncipit(ft, NodeText{})
 
 	// a closed user message → scrollback once
-	in.Seal(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hello?"}}})
+	in.Freeze(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hello?"}}})
 	// open assistant message, streaming a tool
 	nodes := []livedoc.Node{{ID: "n0", Type: "thinking", Markdown: "thinking"}}
 	in.Open(2, "assistant", nodes)
@@ -26,7 +26,7 @@ func TestIncipit_SealOnce_OpenLive(t *testing.T) {
 	in.Open(2, "assistant", nodes)
 	nodes[1] = livedoc.Node{ID: "n1", Type: "tool", Name: "bash", Status: "ok", Output: "x\ny"}
 	in.Open(2, "assistant", nodes)
-	in.Seal(aria.Message{LT: 2, Role: "assistant", Nodes: nodes})
+	in.Freeze(aria.Message{LT: 2, Role: "assistant", Nodes: nodes})
 
 	scr := strings.Join(ft.Screen(), "\n")
 	if strings.Count(scr, "hello?") != 1 {
@@ -41,13 +41,13 @@ func TestIncipit_SealOnce_OpenLive(t *testing.T) {
 }
 
 // The point of the whole exercise: a resize mid-open-message repaints only the
-// open message; the already-sealed message in scrollback is never touched, so it
+// open message; the already-frozen message in scrollback is never touched, so it
 // can't duplicate.
-func TestIncipit_ResizeKeepsSealed_RedrawsOpen(t *testing.T) {
+func TestIncipit_ResizeKeepsFrozen_RedrawsOpen(t *testing.T) {
 	ft := NewFakeTerminal(70, 16)
 	in := NewIncipit(ft, NodeText{})
 
-	in.Seal(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "list the dir"}}})
+	in.Freeze(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "list the dir"}}})
 
 	nodes := []livedoc.Node{
 		{ID: "t", Type: "thinking", Markdown: "I'll run ls."},
@@ -60,14 +60,14 @@ func TestIncipit_ResizeKeepsSealed_RedrawsOpen(t *testing.T) {
 	ft.Resize(70, 8)
 	in.Resize(nodes)
 
-	// finish + seal
+	// finish + freeze
 	nodes[1].Status = "ok"
 	in.Open(2, "assistant", nodes)
-	in.Seal(aria.Message{LT: 2, Role: "assistant", Nodes: nodes})
+	in.Freeze(aria.Message{LT: 2, Role: "assistant", Nodes: nodes})
 
 	scr := strings.Join(ft.Screen(), "\n")
 	if strings.Count(scr, "list the dir") != 1 {
-		t.Fatalf("sealed user msg duplicated across resize:\n%s", scr)
+		t.Fatalf("frozen user msg duplicated across resize:\n%s", scr)
 	}
 	if strings.Count(scr, "tool bash") != 1 {
 		t.Fatalf("open tool duplicated across resize:\n%s", scr)
@@ -77,7 +77,7 @@ func TestIncipit_ResizeKeepsSealed_RedrawsOpen(t *testing.T) {
 	}
 }
 
-func TestIncipit_NoTrailingBlanksAfterScrolledSeal(t *testing.T) {
+func TestIncipit_NoTrailingBlanksAfterScrolledFreeze(t *testing.T) {
 	ft := NewFakeTerminal(40, 6) // short viewport so the message scrolls
 	in := NewIncipit(ft, NodeText{})
 	in.Bookend = func() []string { return []string{"=== bookend ==="} }
@@ -87,12 +87,12 @@ func TestIncipit_NoTrailingBlanksAfterScrolledSeal(t *testing.T) {
 	}
 	in.Open(2, "assistant", nodes)
 	top := ft.Row() // cursor parked at the region's visible top
-	in.Seal(aria.Message{LT: 2, Role: "assistant", Nodes: nodes})
-	// Sealing a scrolled region must move the cursor past only the VISIBLE rows
+	in.Freeze(aria.Message{LT: 2, Role: "assistant", Nodes: nodes})
+	// Freezing a scrolled region must move the cursor past only the VISIBLE rows
 	// (<= viewport height); using the full region height leaves the scrolled-off
 	// count as blank lines after the bookend.
 	if adv := ft.Row() - top; adv > 6 {
-		t.Fatalf("seal advanced %d rows (> viewport 6) → trailing blank lines", adv)
+		t.Fatalf("freeze advanced %d rows (> viewport 6) → trailing blank lines", adv)
 	}
 }
 
@@ -110,7 +110,7 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 	}
 	in.Bookend = func() []string { return []string{"────rule────", "", "status"} }
 
-	in.Seal(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hi"}}})
+	in.Freeze(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hi"}}})
 	in.OpenThinking("assistant") // footer appears now, before any token
 	scr := strings.Join(ft.Screen(), "\n")
 	if !strings.Contains(scr, "status") || !strings.Contains(scr, "‹ figaro") {
@@ -119,7 +119,7 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 
 	// content streams in; the real assistant frame adopts the region
 	in.Open(2, "assistant", []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}})
-	in.Seal(aria.Message{LT: 2, Role: "assistant", Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
+	in.Freeze(aria.Message{LT: 2, Role: "assistant", Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
 	scr = strings.Join(ft.Screen(), "\n")
 	if strings.Count(scr, "‹ figaro") != 1 {
 		t.Fatalf("figaro header must appear once (no orphan):\n%s", scr)
@@ -142,7 +142,7 @@ func TestIncipit_ThinkingAbandonedOnEarlyError(t *testing.T) {
 	in.Header = func(role string) string { return "‹ figaro" }
 	in.Bookend = func() []string { return []string{"──── aria xyz ────", "", "status"} }
 
-	in.Seal(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "quick test"}}})
+	in.Freeze(aria.Message{LT: 1, Role: "user", Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "quick test"}}})
 	in.OpenThinking("assistant") // footer live, no content yet
 	in.AbandonOpen("")           // turn errors immediately -> teardown
 

@@ -43,7 +43,7 @@ func runListen(loaded *config.Loaded, ariaID string) {
 }
 
 // tailFigaro is the read-only twin of mustPromptFigaro. It opens the
-// same incipit-seal renderer, catches up from LT 0, then follows live
+// same incipit-freeze renderer, catches up from LT 0, then follows live
 // frames forever. Ctrl-C -> figaro.interrupt; Ctrl-D -> clean
 // disconnect (turn keeps running); Ctrl-T -> transcript pager.
 // Returns when the user disconnects, the agent socket dies, or ctx

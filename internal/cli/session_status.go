@@ -118,7 +118,7 @@ func (s *sessionStatus) ruleLine(width int, pos string) string {
 
 // statusLine is the lower footer row: plain left-aligned text —
 // "<mantra> · <turn state> · ctx … · cost … · <time>[ · ? help · ! status]".
-// hints adds the key hooks (live pager only; sealed scrollback omits them).
+// hints adds the key hooks (live pager only; frozen scrollback omits them).
 // Narrow panes shed the mantra first, then cost, then ctx, then the time —
 // the turn state and the hints survive last.
 func (s *sessionStatus) statusLine(width int, hints bool) string {
@@ -232,14 +232,14 @@ func formatTokenCount(tokens int) string {
 	}
 }
 
-// bookendLines is the incipit seal / live-region bookend: the same two-row
+// bookendLines is the incipit closer / live-region bookend: the same two-row
 // footer the transcript pins (rule + status text), minus the key hints —
-// they'd be dead text once sealed into scrollback. A blank row sits between
+// they'd be dead text once frozen into scrollback. A blank row sits between
 // the rule and the status text so the status line breathes.
 func bookendLines(status *sessionStatus) []string {
 	w := termWidth()
 	// Two rows only: rule + status. The blank that gives the footer breathing
-	// room is painted ABOVE it by compose()'s pre-seal blank, not between the
+	// room is painted ABOVE it by compose()'s pre-closer blank, not between the
 	// rule and the status text.
 	return []string{
 		term.Dim(status.ruleLine(w, "")),
