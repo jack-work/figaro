@@ -14,6 +14,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/compose"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -190,9 +191,9 @@ func NewAgent(cfg Config) *Agent {
 	// aria message), then register the broadcast: every aria-server change is
 	// pushed to subscribers as one aria read.
 	a.ariaSrv = aria.NewServer()
-	for i, u := range compose.Units(messages, a.summarize, a.previewArg) {
-		a.unitLT = i + 1
-		a.ariaSrv.Commit(aria.Message{LT: a.unitLT, Role: u.Role, Nodes: u.Nodes})
+	for _, m := range legacyAriaMessages(compose.Turns(messages, a.summarize, a.previewArg)) {
+		a.unitLT = m.LT
+		a.ariaSrv.Commit(m)
 	}
 	a.ariaSrv.Subscribe(func(r aria.AriaRead) {
 		r.Metrics = a.sessionMetrics()
@@ -614,14 +615,34 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 	}
 }
 
+// legacyAriaMessages splits turns back into the message-granular committed
+// entries the current wire still speaks: the prompt as one entry, the agent's
+// reply as the next. Phase 3 replaces AriaRead.Committed with turn-shaped
+// parts and DELETES this — it exists only so Units could die now without
+// dragging the wire and the renderers into this phase.
+func legacyAriaMessages(turns []aria.Turn) []aria.Message {
+	var out []aria.Message
+	for _, t := range turns {
+		cut := 0
+		for cut < len(t.Nodes) && t.Nodes[cut].Role == "user" {
+			cut++
+		}
+		for _, part := range []struct {
+			role  string
+			nodes []livedoc.Node
+		}{{"user", t.Nodes[:cut]}, {"assistant", t.Nodes[cut:]}} {
+			if len(part.nodes) > 0 {
+				out = append(out, aria.Message{LT: len(out) + 1, Role: part.role, Nodes: part.nodes})
+			}
+		}
+	}
+	return out
+}
+
 func (a *Agent) reconcileAriaServer() {
 	oldCommitted := a.ariaSrv.LastCommittedLT()
 	hadOpen := a.ariaSrv.HasOpen()
-	units := compose.Units(a.Context(), a.summarize, a.previewArg)
-	history := make([]aria.Message, len(units))
-	for i, unit := range units {
-		history[i] = aria.Message{LT: i + 1, Role: unit.Role, Nodes: unit.Nodes}
-	}
+	history := legacyAriaMessages(compose.Turns(a.Context(), a.summarize, a.previewArg))
 	// Defensive: never wipe already-committed state with a shorter/empty
 	// history. reconcileAriaServer is called on mid-turn error paths whose
 	// only source of truth is a.Context() (i.e. the durable figLog). If that

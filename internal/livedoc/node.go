@@ -26,11 +26,38 @@ const (
 	StatusError   = "error"
 )
 
+// Src is one fig-IR coordinate a node was projected from: the owning
+// message's logical time and the content block's index within it. A node
+// usually has one; a tool node has two — the invoke and its result — at
+// different block indices in different messages.
+type Src struct {
+	LT    uint64 `json:"lt"`
+	Block int    `json:"block"`
+}
+
 // Node is one element of a live unit. Only the fields for its Type are
 // meaningful; the rest are zero. The two long, streamed string fields —
 // prose Markdown and tool Output — are the splice-patchable ones.
 type Node struct {
 	Type NodeType `json:"type"`
+
+	// Role is "user" for the turn's prompt and for steering interjections,
+	// "assistant" otherwise. Prompt and steering are the same kind of thing in
+	// different positions, so they share a rendering path; position, not type,
+	// says which is which.
+	Role string `json:"role,omitempty"`
+
+	// LTs is fig-IR provenance — metadata, never an address. UI code addresses
+	// by (turn, node); LT is the model's coordinate. Derived from Src.
+	LTs []uint64 `json:"lts,omitempty"`
+
+	// Src is the precise per-source coordinate behind LTs.
+	Src []Src `json:"src,omitempty"`
+
+	// ToolCallID is the provider's handle for a tool node. It is a receipt,
+	// not an identity: ID answers "which node", ToolCallID answers "which
+	// provider call". Keeping them apart is the point of this split.
+	ToolCallID string `json:"tool_call_id,omitempty"`
 
 	// Version bumps on every mutation of this node while its message is open,
 	// so a UI element bound to (ID, Version) knows when to repaint and a client
@@ -40,8 +67,11 @@ type Node struct {
 	// prose
 	Markdown string `json:"markdown,omitempty"`
 
-	// tool
-	ID         string                 `json:"id,omitempty"`      // tool_call_id (stable handle)
+	// ID is the delta key — identity only. Phase 3 replaces it with the
+	// positional per-turn ordinal (Nodes[i].ID == From+i) and a uint64
+	// NodeDelta.ID; until then it stays the opaque string the live protocol
+	// already folds on.
+	ID         string                 `json:"id,omitempty"`
 	Name       string                 `json:"name,omitempty"`    // tool name
 	Args       map[string]interface{} `json:"args,omitempty"`    // invocation arguments
 	Status     string                 `json:"status,omitempty"`  // running | ok | error

@@ -26,8 +26,8 @@ func BenchmarkUnitsLongAria(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				units := Units(msgs, nil, nil)
-				runtime.KeepAlive(units)
+				turns := Turns(msgs, nil, nil)
+				runtime.KeepAlive(turns)
 			}
 		})
 	}

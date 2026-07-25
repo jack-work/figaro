@@ -29,6 +29,25 @@ type AriaRead struct {
 	Metrics   *Metrics    `json:"metrics,omitempty"`
 }
 
+// Turn is one exchange: a user prompt plus everything the agent thought, ran
+// and said in response, as a single ordered node list. The prompt is node 0 —
+// it is not a separate entry.
+//
+// ID is the coordinate a human names: `fig send <aria>:<turn>`. LTs is the
+// fig-IR span [first, last] the turn covers, carried as metadata only —
+// addressing is (turn, node), never LT. Sealed says the turn stopped moving;
+// it is orthogonal to whether a page showed you all of it.
+//
+// Live is the open suffix. Its From is the suffix boundary: nodes with a lower
+// id are committed and can never receive a delta. Nil once the turn seals.
+type Turn struct {
+	ID     uint64         `json:"turn"`
+	LTs    []uint64       `json:"lts,omitempty"`
+	Sealed bool           `json:"sealed"`
+	Nodes  []livedoc.Node `json:"nodes,omitempty"`
+	Live   *Live          `json:"live,omitempty"`
+}
+
 // Empty reports whether the page carries nothing (so it isn't sent).
 func (r AriaRead) Empty() bool { return len(r.Committed) == 0 && r.Live == nil && r.Metrics == nil }
 

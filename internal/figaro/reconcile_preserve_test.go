@@ -96,7 +96,7 @@ func TestReconcileAriaServer_AllowsGrow(t *testing.T) {
 	require.NoError(t, err)
 
 	// Ensure the log actually yields two units under compose.
-	units := compose.Units(unwrapMessages(logMem.Read()), nil, nil)
+	units := legacyAriaMessages(compose.Turns(unwrapMessages(logMem.Read()), nil, nil))
 	require.Len(t, units, 2)
 
 	a := newBareAgent(t, logMem)
