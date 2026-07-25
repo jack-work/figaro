@@ -104,3 +104,5 @@ func currentExe() string {
 	}
 	return exe
 }
+
+// build-B marker for the mismatch acceptance test.
