@@ -106,8 +106,15 @@ run `figaro show` (full content above, cursor below).
 | `j` / `k` | line down / up |
 | `u` / `d` | half-page up / down |
 | `gg` / `G` | top / bottom |
+| `↓` / `↑` | line down / up |
+| `PgDn` / `PgUp` | half-page down / up |
+| `Home` / `End` | top / bottom |
 | `/` | literal string search |
 | `q` / `Esc` / `Ctrl-T` | exit the pager |
+
+The arrow cluster is an alias for the letter motions, and — like them — pressing
+one while a turn streams inline opens the pager first, so the gesture acts on
+arrival instead of looking like a dead keyboard.
 
 At the bottom the view **follows** new output live (the status bar shows
 `(live)`); scroll up and it holds position while the conversation grows beneath

@@ -1193,6 +1193,8 @@ func (t *transcript) helpLines() []string {
 	rows := []string{
 		"",
 		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",
+		"  ↑/↓ · PgUp/PgDn     the same, on the arrow cluster",
+		"  Home / End          top / bottom",
 		"  /                   search (Enter jump · Esc cancel typing)",
 		"  n / N               next / previous match",
 		"  y                   copy selection (or aria id if none)",
