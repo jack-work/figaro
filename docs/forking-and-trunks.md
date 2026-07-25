@@ -22,21 +22,27 @@ skill at `skills/figaro/trunks.md`; this doc is the deep substrate reference.)
 > projects down to `atMainLT = min(LTs of the turn)`. See
 > [turn-addressing.md](turn-addressing.md).
 
-### `atMainLT` is exclusive of the frozen prefix
+### `atMainLT` is inclusive of the frozen prefix
 
-From figwal `disk/fork.go:194`:
+figwal `disk/fork.go:194` says:
 
 > *"atIdx must be in (FirstIndex, LastIndex+1]; the prefix retains at least one
 > entry."*
 
-So **prefix = `[First, atMainLT)`**, **branch = `[atMainLT, Last]`**. The shared
-history is everything *strictly before* the named coordinate; the branch owns the
-coordinate itself and everything after.
+That phrasing reads as though the prefix were `[First, atMainLT)`. **It is
+not.** Measured against a real store: forking at `atMainLT = 5` produced a
+branch whose history still contained LT 5.
 
-This is why turn addressing needs **no off-by-one adjustment**: fork at turn T
-with `atMainLT = min(LTs of T)` — the prompt's LT — and the frozen prefix is
-everything before the question, while the branch replaces the question and all
-its consequences. It also means a turn-addressed fork **always lands on a user
+So **prefix = `[First, atMainLT]`**, **branch = `(atMainLT, Last]`**. The shared
+history includes the named coordinate; the branch owns everything after it.
+
+Turn addressing therefore applies **one deliberate adjustment**: fork at turn T
+with `atMainLT = min(LTs of T) - 1` — the LT immediately before the prompt — so
+the frozen prefix ends at the tail of turn T−1 and the branch replaces the
+question and everything downstream. The −1 is fork policy and lives in exactly
+one place, `cli.resolveTurn`; `compose.TurnSpan` reports the honest span.
+
+It also means a turn-addressed fork **always lands on a user
 prompt**, so the shared prefix always terminates on a complete assistant
 message and can never strand a `tool_invoke` without its `tool_result` —
 making the `repairTurnTail` / tail-repair-at-open synthesis unreachable for

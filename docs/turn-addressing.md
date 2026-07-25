@@ -38,12 +38,16 @@ spec change.
    primitive that does not fit a coordinate means the coordinate is wrong for
    that layer.
 
-3. **`atMainLT` is exclusive of the frozen prefix.** `disk.Log.Fork`:
-   *"atIdx must be in (FirstIndex, LastIndex+1]; the prefix retains at least one
-   entry."* So prefix = `[First, atMainLT)`, branch = `[atMainLT, Last]`.
-   Fork at turn T uses **`atMainLT = min(LTs of T)`** — the prompt's LT — with
-   **no off-by-one adjustment**. The shared prefix is everything strictly before
-   the question; the branch replaces the question and all downstream.
+3. **`atMainLT` is INCLUSIVE of the frozen prefix.** figwal `disk/fork.go:194`
+   reads *"atIdx must be in (FirstIndex, LastIndex+1]; the prefix retains at
+   least one entry"*, which sounds exclusive. **It is not** — measured, not
+   inferred: forking a real aria at `atMainLT = 5` produced a branch that still
+   contained LT 5. So prefix = `[First, atMainLT]`, branch = `(atMainLT, Last]`.
+   Fork at turn T therefore uses **`atMainLT = min(LTs of T) - 1`** — the LT just
+   before the prompt. The branch retains everything through the end of turn T−1
+   and your new prompt becomes the new turn T.
+   The −1 is fork *policy* and lives in exactly one place, `cli.resolveTurn`;
+   `compose.TurnSpan` reports the honest span and applies no adjustment.
    Related channels do not cut at the same index: each cuts at `boundaryFor` —
    the first own entry whose referenced `mainLT >= atMainLT`
    (figwal `xwal/fork.go:638`).
