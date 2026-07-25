@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/rpc"
 )
@@ -104,18 +104,13 @@ func runChalkboard(loaded *config.Loaded, ariaID string, jsonOut bool) {
 	})
 }
 
-func printSnapshot(w io.Writer, snap map[string]json.RawMessage) {
-	keys := make([]string, 0, len(snap))
-	for k := range snap {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+func printSnapshot(w io.Writer, snap chalkboard.Snapshot) {
 	enc := json.NewEncoder(w)
-	for _, k := range keys {
+	for k, v := range snap.All() {
 		if err := enc.Encode(struct {
 			Key   string          `json:"key"`
 			Value json.RawMessage `json:"value"`
-		}{Key: k, Value: snap[k]}); err != nil {
+		}{Key: k, Value: v}); err != nil {
 			fmt.Fprintf(w, "{\"key\":%q,\"error\":%q}\n", k, err.Error())
 		}
 	}
@@ -261,9 +256,10 @@ func deepDeleteWalk(obj map[string]any, path []string) bool {
 }
 
 // fetchChalkboardSnapshot returns the aria's live chalkboard snapshot via the
-// angelus, or nil on failure (best-effort — callers degrade gracefully).
-func fetchChalkboardSnapshot(loaded *config.Loaded, ariaID string) map[string]json.RawMessage {
-	var snap map[string]json.RawMessage
+// angelus, or an empty snapshot on failure (best-effort — callers degrade
+// gracefully).
+func fetchChalkboardSnapshot(loaded *config.Loaded, ariaID string) chalkboard.Snapshot {
+	var snap chalkboard.Snapshot
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -284,7 +280,7 @@ func mustFetchChalkboardKey(loaded *config.Loaded, ariaID, key string) json.RawM
 		if err != nil {
 			die("chalkboard: %s", err)
 		}
-		result = resp.Snapshot[key]
+		result, _ = resp.Snapshot.Get(key)
 		return nil
 	})
 	return result

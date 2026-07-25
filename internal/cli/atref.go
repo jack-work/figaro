@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/transport"
 )
@@ -52,8 +53,8 @@ func SetRefSigil(s string) {
 // Non-string snapshot values are rendered via JSON unmarshal:
 // strings unwrap to their text, everything else is re-marshaled
 // to a compact JSON form. Empty snapshot is a valid no-op.
-func expandAtRefs(prompt string, snap map[string]json.RawMessage) string {
-	if len(snap) == 0 || !strings.ContainsRune(prompt, rune(refSigil)) {
+func expandAtRefs(prompt string, snap chalkboard.Snapshot) string {
+	if snap.Len() == 0 || !strings.ContainsRune(prompt, rune(refSigil)) {
 		return prompt
 	}
 	var out strings.Builder
@@ -74,7 +75,7 @@ func expandAtRefs(prompt string, snap map[string]json.RawMessage) string {
 			i++
 			continue
 		}
-		raw, ok := snap[key]
+		raw, ok := snap.Get(key)
 		if !ok {
 			// Permissive: unknown key (with terminator!) left fully
 			// literal — including the "!" — so typos surface clearly
@@ -156,19 +157,20 @@ func formatAny(v any) string {
 }
 
 // fetchSnapshotForEndpoint best-effort dials a figaro at ep and
-// fetches its chalkboard snapshot. Returns nil on any failure; the
-// caller treats nil as "no expansion possible" (permissive mode).
-func fetchSnapshotForEndpoint(parent context.Context, ep transport.Endpoint) map[string]json.RawMessage {
+// fetches its chalkboard snapshot. Returns an empty snapshot on any
+// failure; the caller treats that as "no expansion possible"
+// (permissive mode).
+func fetchSnapshotForEndpoint(parent context.Context, ep transport.Endpoint) chalkboard.Snapshot {
 	ctx, cancel := context.WithTimeout(parent, atExpandTimeout)
 	defer cancel()
 	fcli, err := figaro.DialClient(ep, nil)
 	if err != nil {
-		return nil
+		return chalkboard.Snapshot{}
 	}
 	defer fcli.Close()
 	resp, err := fcli.Chalkboard(ctx)
 	if err != nil {
-		return nil
+		return chalkboard.Snapshot{}
 	}
 	return resp.Snapshot
 }
@@ -182,7 +184,7 @@ func expandAtRefsForEndpoint(ctx context.Context, ep transport.Endpoint, prompt 
 		return prompt
 	}
 	snap := fetchSnapshotForEndpoint(ctx, ep)
-	if snap == nil {
+	if snap.Len() == 0 {
 		return prompt
 	}
 	return expandAtRefs(prompt, snap)

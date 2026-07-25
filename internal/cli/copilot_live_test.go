@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -164,13 +165,13 @@ func TestLiveCopilotResponsesLongContext(t *testing.T) {
 	require.NoError(t, p.Send(ctx, provider.SendInput{
 		AriaID: "live-copilot-long-context",
 		FigLog: log,
-		Snapshot: map[string]json.RawMessage{
+		Snapshot: chalkboard.FromMap(map[string]json.RawMessage{
 			"system.context_tier":      json.RawMessage(`"long_context"`),
 			"system.reasoning_context": json.RawMessage(`"all_turns"`),
 			"system.reasoning_summary": json.RawMessage(`"detailed"`),
 			"system.thinking_effort":   json.RawMessage(`"low"`),
 			"system.verbosity":         json.RawMessage(`"low"`),
-		},
+		}),
 	}, bus))
 	require.Len(t, bus.messages, 1)
 	require.NotEmpty(t, bus.messages[0].Content)
