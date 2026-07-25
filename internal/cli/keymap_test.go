@@ -296,7 +296,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  Enter               expand tools within the selection",
 		"  ^C                  copy selected node(s) / interrupt turn",
 		"  Esc                 clear selection / close panel",
-		"  ^L                  listen — stay open after the turn ends",
+		"  ^L                  open the transcript (stays open until you close it)",
 		"  q / ^D              detach; the turn keeps running",
 		"  !                   figaro status panel",
 		"  Q                   queued prompts panel",

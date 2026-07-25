@@ -262,10 +262,9 @@ func newSearchInteractiveInput(reader transcriptReadClient, tc *searchInputTermi
 	lt := newLivelogTurn(out, 80, 12, settings, "", time.Time{}, nil, nil, nil)
 	lt.enterTranscript()
 	lt.apply(readBefore(transcriptHistory(120), recentCursor, transcriptPageSize))
-	listen := false
 	return &interactiveInput{
 		tc: tc, lt: lt, fcli: reader, mu: &sync.Mutex{}, set: settings,
-		listen: &listen, cancel: func() {}, disconnectCh: make(chan struct{}, 1),
+		cancel: func() {}, disconnectCh: make(chan struct{}, 1),
 	}
 }
 

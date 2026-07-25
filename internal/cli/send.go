@@ -34,7 +34,7 @@ type sendOpts struct {
 	skipYes   bool // --exec only
 	forget    bool // --forget / -f: submit and exit; do not stream
 	json      bool // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
-	listen    bool // --listen / -l: auto-enter transcript and stay open past turn-done
+	listen    bool // --listen / -l: auto-enter the transcript at startup
 }
 
 // extractSendFlags scans a PassRaw arg list for the send command's

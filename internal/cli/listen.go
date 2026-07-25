@@ -90,7 +90,6 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	// the frame-rate ceiling, whose trailing repaint runs on a timer goroutine
 	// and so needs the same lock.
 	lt.setRenderLock(&mu)
-	listen := true
 
 	onNotify := func(method string, params json.RawMessage) {
 		mu.Lock()
@@ -138,7 +137,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	// window; older history pages in on scroll-up and live frames follow.
 	in := &interactiveInput{
 		tc: tc, lt: lt, fcli: fcli, mu: &mu, set: &set,
-		figaroID: figaroID, listen: &listen, cancel: cancel, disconnectCh: disconnectCh,
+		figaroID: figaroID, cancel: cancel, disconnectCh: disconnectCh,
 	}
 	in.enterTranscript()
 

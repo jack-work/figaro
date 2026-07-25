@@ -45,7 +45,6 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	defer span.End()
 
 	startedAt := time.Now()
-	listen := set.listen // Ctrl-L / --listen: stay open past turn-done
 	status := newSessionStatus(figaroID, startedAt)
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -132,9 +131,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				break
 			}
 			running = false
-			// Close on turn-done — in incipit OR transcript — UNLESS listening
-			// (Ctrl-L / --listen), which keeps the session open until Ctrl-D/C.
-			if !listen {
+			// Close on turn-done only in incipit. Once the transcript pager is
+			// up — however it was entered — it has listen semantics: the session
+			// stays open until an explicit q / Ctrl-D / Ctrl-C.
+			if !lt.inTranscript() {
 				select {
 				case doneCh <- struct{}{}:
 				default:
@@ -206,9 +206,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			defer os.Stdout.WriteString(ldmouse.Disable)
 			in = &interactiveInput{
 				tc: tc, lt: lt, fcli: fcli, mu: &mu, set: &set,
-				figaroID: figaroID, listen: &listen, cancel: cancel, disconnectCh: disconnectCh,
+				figaroID: figaroID, cancel: cancel, disconnectCh: disconnectCh,
 			}
-			if listen {
+			if set.listen {
 				in.enterTranscript() // --listen: open the pager immediately
 			}
 			go in.run()
@@ -277,7 +277,6 @@ type interactiveInput struct {
 	mu           *sync.Mutex
 	set          *renderSettings
 	figaroID     string
-	listen       *bool // Ctrl-L flips it on (stay open past turn-done)
 	cancel       context.CancelFunc
 	disconnectCh chan struct{}
 	copyCancel   context.CancelFunc
@@ -849,17 +848,9 @@ func inputDisconnect(in *interactiveInput, _ keyEvent) keyVerdict {
 	return keyStop
 }
 
-// inputListen is Ctrl-L: stay open past turn-done, in the pager.
-func inputListen(in *interactiveInput, _ keyEvent) keyVerdict {
-	in.mu.Lock()
-	in.cancelTranscriptSearchLocked()
-	*in.listen = true
-	in.mu.Unlock()
-	in.enterTranscript()
-	return keyHandled
-}
-
-// inputEnterTranscript is Ctrl-T.
+// inputEnterTranscript is Ctrl-T / Ctrl-L: open the transcript pager. Entering
+// it — by any route — carries listen semantics: the session stays open until an
+// explicit q / Ctrl-D / Ctrl-C.
 func inputEnterTranscript(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.cancelTranscriptSearch()
 	in.enterTranscript()

@@ -218,10 +218,9 @@ func coalesceInput(tb testing.TB, out *countingWriter) (*interactiveInput, *live
 	// callbacks route to the transcript only while it is up.
 	lt.enterTranscript()
 	lt.apply(aria.AriaRead{Committed: committed})
-	listen := false
 	return &interactiveInput{
 		tc: nil, lt: lt, fcli: stubReadClient{}, mu: &sync.Mutex{}, set: settings,
-		figaroID: "aria0001", listen: &listen, cancel: func() {},
+		figaroID: "aria0001", cancel: func() {},
 		disconnectCh: make(chan struct{}, 1),
 	}, lt
 }

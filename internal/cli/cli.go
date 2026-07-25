@@ -196,8 +196,9 @@ Flags:
                  no delta application.
   -o, --verbose  Verbose: expand full tool inputs (else truncated). Thinking
                  blocks are always shown (muted). Ctrl-O toggles live.
-  -l, --listen   Enter the transcript pager and stay open past turn-done
-                 (until Ctrl-D/Ctrl-C). Ctrl-L does the same mid-stream.
+  -l, --listen   Open the transcript pager at startup. The transcript always
+                 stays open until Ctrl-D/Ctrl-C/q; Ctrl-L or Ctrl-T open it
+                 mid-stream.
   -x, --exec     Treat the prompt as a bash instruction. The reply is
                  piped to bash -c. --raw is silently ignored here
                  because the script governs its own output.

@@ -314,6 +314,9 @@ func (t *livelogTurn) sealPending() {
 // caught the model up via figaro.read so it shows full history).
 func (t *livelogTurn) enterTranscript() { t.tr.enter() }
 
+// inTranscript reports whether the pager is up. Read under the render lock.
+func (t *livelogTurn) inTranscript() bool { return t.tr.active }
+
 // transcriptDispatch routes one decoded keystroke to the locked transcript.
 // One path in, whatever the key's encoding was: see (*transcript).dispatch.
 func (t *livelogTurn) transcriptDispatch(ev keyEvent) { t.tr.dispatch(ev) }

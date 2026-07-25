@@ -172,8 +172,8 @@ var keymap = []keyBinding{
 	},
 	{
 		chord: byteChord(0x0c), modes: inAnyBox,
-		open: staysInline, why: "listen enters the pager through its own action",
-		help: helpListen, input: inputListen,
+		open: staysInline, why: "enters the pager through its own action",
+		help: helpListen, input: inputEnterTranscript,
 	},
 	{
 		chord: byteChord(0x14), modes: inAnyBox,
@@ -347,7 +347,7 @@ var helpRows = []helpRow{
 	{helpExpand, "Enter", "expand tools within the selection"},
 	{helpInterrupt, "^C", "copy selected node(s) / interrupt turn"},
 	{helpEscape, "Esc", "clear selection / close panel"},
-	{helpListen, "^L", "listen — stay open after the turn ends"},
+	{helpListen, "^L", "open the transcript (stays open until you close it)"},
 	{helpDetach, "q / ^D", "detach; the turn keeps running"},
 	{helpStatusPanel, "!", "figaro status panel"},
 	{helpQueuedPanel, "Q", "queued prompts panel"},
