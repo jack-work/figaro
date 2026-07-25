@@ -75,6 +75,25 @@ func TurnSpan(msgs []message.Message, turn uint64) (first, last uint64, ok bool)
 	return first, last, ok
 }
 
+// TurnAt is the inverse of TurnSpan: it reports which turn owns an LT. Display
+// surfaces need this because the forest records a fork point as an LT
+// (NodeView.BranchedLT) while the user's coordinate is a turn — printing the
+// raw LT and calling it a fork argument is a lie, since `fork <id>:N` takes N
+// as a turn.
+//
+// BranchedLT is the branch's first own LT, which by the fork rule is exactly
+// the prompt LT of the turn that was replaced, so TurnAt(msgs, BranchedLT) is
+// the turn to name.
+func TurnAt(msgs []message.Message, lt uint64) (uint64, bool) {
+	StampTurnIDs(msgs)
+	for i := range msgs {
+		if msgs[i].LogicalTime == lt {
+			return msgs[i].TurnID, msgs[i].TurnID != 0
+		}
+	}
+	return 0, false
+}
+
 // Turns projects a message log into turns — the single projection. There is no
 // longer a separate "prompt unit": a turn is one exchange, and the user's
 // question is node 0 of it.

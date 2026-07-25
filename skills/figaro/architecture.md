@@ -129,20 +129,26 @@ Angelus: `figaro.create`/`kill`/`list`/`attach`, `pid.bind`/`resolve`/`unbind`.
 
 The reply is a **server-authoritative live-render stream** of notifications:
 
-- `log.snapshot {role, nodes}` — the live unit's full node list (unit start /
-  resync).
-- `node.open` — append a node.
-- `node.patch {index, field, at, del, ins}` — splice a node's streamed string
-  field (prose markdown, tool output).
-- `node.set {index, status, name, args}` — update a tool node's scalars.
-- `log.commit` — freeze the live unit; the next is new.
+- `figaro.aria` (`MethodAriaFrame`) — push one **`Page`**: the single wire
+  shape, pulled by `figaro.read` and pushed here. A `Page` is
+  `{parts []TurnPart, more}`; a `TurnPart` embeds a `Turn`
+  (`{turn, lts, sealed, nodes, live}`) plus `from` / `clipped_head` /
+  `clipped_tail`.
 - `turn.done` — the turn went idle.
 
-There is no client-side unit index; the server drives positions.
+Node ids are **positional**: inside a part the i'th node has id `from+i`, so
+committed nodes carry no id on the wire at all. `Live` is the **open suffix**
+of a turn — `live.from` is the boundary, and any node with `id < live.from` is
+committed and can never change again. That is what makes a page which does not
+contain the suffix as immutable as a sealed one. `NodeDelta` keeps an explicit
+`uint64` id only because a delta references out of order.
+
+A pure delta push is just a `Page` whose single part carries `live` and no
+`nodes` — push and pull are one type.
 
 ## Live-render node model — `internal/livedoc` + `internal/cli`
 
-A live unit (one turn) is an **append-only, index-stable** `[]Node`. A `Node`
+A live turn is an **append-only, index-stable** `[]Node`. A `Node`
 is `prose` | `thinking` | `tool` (tool carries `Name`/`Args`/`Status`
 ∈ `running|ok|error`/`Output`). `DiffNodes(prev,next)` emits `OpOpen` /
 `OpPatch` (field splice) / `OpSet` (tool scalars); `ApplyOp` folds an op in.

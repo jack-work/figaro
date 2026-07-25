@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/rpc"
 )
@@ -65,7 +66,23 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 			enc.SetIndent("", "  ")
 			return enc.Encode(f)
 		}
-		printStatusPanel(os.Stdout, f, more)
+		// The forest records a fork point as an LT, but the user's coordinate is
+		// a turn — resolve it so the panel can name what `fork <id>:N` takes.
+		//
+		// Resolve against the PARENT, not this aria: BranchedLT is the first LT
+		// this branch owns, and a fresh branch has not written it yet, so its own
+		// log cannot name the turn. The turn that was replaced lives in the
+		// parent, which is exactly what "forked-from parent:turn" means. Best
+		// effort — an unreadable parent just omits the turn rather than failing.
+		var forkTurn uint64
+		if len(f.Vector) > 1 && f.Parent != "" && f.BranchedLT > 1 {
+			if msgs, merr := ariaMessages(ctx, acli, f.Parent); merr == nil {
+				if t, ok := compose.TurnAt(msgs, f.BranchedLT); ok {
+					forkTurn = t
+				}
+			}
+		}
+		printStatusPanel(os.Stdout, f, more, forkTurn)
 		return nil
 	})
 }
@@ -73,7 +90,7 @@ func runStatus(loaded *config.Loaded, idFlag string, args []string, more, jsonOu
 // printStatusPanel renders a key/value view of a single figaro. Empty
 // or zero fields collapse to "-" so the user can tell what's known
 // vs. unknown rather than guessing whether "0" is real or stale.
-func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool) {
+func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool, forkTurn uint64) {
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	row := func(k, v string) { fmt.Fprintf(w, "  %s:\t%s\n", k, v) }
 	rowf := func(k, format string, args ...any) { row(k, fmt.Sprintf(format, args...)) }
@@ -137,7 +154,11 @@ func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool) {
 			row("created", time.UnixMilli(f.CreatedAt).Format("2006-01-02 15:04:05"))
 		}
 		if len(f.Vector) > 1 && f.Parent != "" && f.BranchedLT > 1 {
-			rowf("forked-from", "%s @ LT %d", f.Parent, f.BranchedLT-1)
+			if forkTurn > 0 {
+				rowf("forked-from", "%s:%d", f.Parent, forkTurn)
+			} else {
+				rowf("forked-from", "%s", f.Parent)
+			}
 		}
 		if f.Frozen {
 			row("frozen", "yes")
