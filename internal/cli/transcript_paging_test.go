@@ -1,8 +1,8 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -24,13 +24,44 @@ func testSelectionPoint(lt, index int, node livedoc.Node) selectionPoint {
 	return selectionPoint{nodeRef: nodeRef{lt: lt, index: index}, hash: nodeHash(node)}
 }
 
-func readBefore(history []aria.TurnPart, before, limit int) aria.Page {
-	hi := sort.Search(len(history), func(i int) bool { return int(history[i].ID) >= before })
-	lo := hi - limit
-	if lo < 0 {
-		lo = 0
+// readBefore is the test double for the read RPC. It routes through the REAL
+// aria.Paginate, with the real Anchor/Backward semantics the server uses
+// (figaro/server.go: Anchor{Turn: req.Before}, Backward, budget).
+//
+// It used to slice the history itself, treating `parts` as a count. That is why
+// ~30 tests stayed green while the live pager rendered a SINGLE node for an
+// 800-node aria: the double never executed the paginator, so a direction bug,
+// an off-by-one at the anchor, or a clipping bug could not fail a test.
+//
+// Tests want to say "a page of 30", but the wire only understands BYTES. Rather
+// than push that translation into 37 call sites, do it here from the fixture's
+// own node size — so the count stays the test's vocabulary while the paginator
+// still runs for real.
+func readBefore(history []aria.TurnPart, before, parts int) aria.Page {
+	turns := make([]aria.Turn, len(history))
+	widest := 1
+	for i, p := range history {
+		turns[i] = p.Turn
+		for _, n := range p.Nodes {
+			if s := nodeBytes(n); s > widest {
+				widest = s
+			}
+		}
 	}
-	return aria.Page{Parts: append([]aria.TurnPart(nil), history[lo:hi]...)}
+	if parts <= 0 {
+		return aria.Page{}
+	}
+	return aria.PaginateBefore(turns, aria.Anchor{Turn: uint64(before)}, parts*widest)
+}
+
+// nodeBytes mirrors aria's unexported nodeSize: the paginator spends its budget
+// in bytes of marshalled node.
+func nodeBytes(n livedoc.Node) int {
+	b, err := json.Marshal(n)
+	if err != nil {
+		return 1
+	}
+	return len(b)
 }
 
 func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
