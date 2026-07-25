@@ -30,6 +30,28 @@ type renderSettings struct {
 	listen   bool // -l / --listen: auto-enter the transcript at startup
 }
 
+// renderNode draws ONE node. This is the single dispatch on node kind, shared
+// by every view: `show` (via renderNodeList), the inline incipit and the
+// transcript pager (via ariaView). It used to exist twice — ariaView switched
+// on n.Type alone and so drew a turn's prompt as agent prose, putting the
+// user's own question under the "‹ figaro" header while `show` correctly
+// marked it "↳ you". Two renderers for one representation is the exact defect
+// class turn addressing exists to remove; there is now one.
+func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) []string {
+	switch {
+	case n.Type == livedoc.NodeTool:
+		return renderToolNode(n, width, bashCap, tick, verbose)
+	case n.Type == livedoc.NodeThinking:
+		return renderThinkingNode(n, width)
+	// The prompt and a steering interjection are the same kind of thing in
+	// different positions, so they draw the same way (docs/turn-addressing.md).
+	case n.Type == livedoc.NodeSteering, n.Role == "user":
+		return renderSteeringNode(n, width)
+	default:
+		return renderProseNode(n, width)
+	}
+}
+
 // renderNodeList renders a unit's whole node list to terminal rows. The list
 // is walked uniformly — every tool renders through renderToolNode with no
 // per-tool branching. One blank row separates adjacent blocks; a final
@@ -50,18 +72,7 @@ func renderNodeList(nodes []livedoc.Node, width, bashCap int, tick uint64, set r
 			continue
 		}
 		var nr []string
-		switch {
-		case n.Type == livedoc.NodeTool:
-			nr = renderToolNode(n, width, bashCap, tick, set.verbose)
-		case n.Type == livedoc.NodeThinking:
-			nr = renderThinkingNode(n, width)
-		// The prompt and a steering interjection are the same kind of thing in
-		// different positions, so they draw the same way (docs/turn-addressing.md).
-		case n.Type == livedoc.NodeSteering, n.Role == "user":
-			nr = renderSteeringNode(n, width)
-		default:
-			nr = renderProseNode(n, width)
-		}
+		nr = renderNode(n, width, bashCap, tick, set.verbose)
 		if i > 0 {
 			nr = append([]string{""}, nr...)
 		}

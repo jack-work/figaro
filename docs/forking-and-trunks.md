@@ -189,7 +189,10 @@ interface.
 - **Forest vectors** (`vectorsLocked`): each conversation trunk gets a child-index path
   among conversation trunks (roots `[0],[1],…`; a branch is `parentVec+[k]`). Used by
   `list` for tree indentation and `topLevelAncestor`. `NodeView.BranchedLT` is the trunk's
-  first own LT — the displayed fork point is `BranchedLT-1`.
+  first own LT. It is **not** displayed as a fork coordinate: `list` prints only `yes`/`-`
+  in its FORK column, and `status -m` resolves it against the parent to print the exact
+  `parent:turn` a fork takes (`BranchedLT-1` was the pre-turn-addressing display and was
+  off by a whole exchange).
 - **`Backend` interface** (`store.go`): `Open`/`OpenTranslation`/`ChalkboardState`/
   `ApplyChalkboard`/`ChalkboardPatches`/`CreateLoadout`/`CreateConversation`/`Fork`/`ForkAt`/
   `Node`/`Nodes`/`Conversations`/`ConversationIDs`/`Meta`/`SetMeta`/`Remove`/`Close`.

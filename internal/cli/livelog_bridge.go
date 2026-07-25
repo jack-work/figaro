@@ -471,7 +471,8 @@ func (t *livelogTurn) setTranscriptQueued(prompts []string, errMsg string) {
 }
 
 // ariaView renders a block by reusing figaro's existing node renderers, so
-// inline and transcript draw identically. One representation: livedoc.Node.
+// inline and transcript draw identically. One representation: livedoc.Node,
+// and one dispatch: renderNode.
 type ariaView struct{ settings *renderSettings }
 
 func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
@@ -479,18 +480,9 @@ func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
 }
 
 func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bool) []string {
-	switch n.Type {
-	case livedoc.NodeTool:
-		bashCap := nodeBashCapDefault
-		if fullOutput {
-			bashCap = nodeOutputUnlimited
-		}
-		return renderToolNode(n, width, bashCap, uint64(tick), v.settings != nil && v.settings.verbose)
-	case livedoc.NodeThinking:
-		return renderThinkingNode(n, width)
-	case livedoc.NodeSteering:
-		return renderSteeringNode(n, width)
-	default:
-		return renderProseNode(n, width)
+	bashCap := nodeBashCapDefault
+	if fullOutput {
+		bashCap = nodeOutputUnlimited
 	}
+	return renderNode(n, width, bashCap, uint64(tick), v.settings != nil && v.settings.verbose)
 }

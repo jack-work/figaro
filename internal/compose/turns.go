@@ -54,13 +54,17 @@ func StampTurnIDs(msgs []message.Message) uint64 {
 // exactly what StampTurnIDs already does. Deriving it twice is the class of
 // bug this whole change exists to kill.
 //
-// Fork semantics rest on first: atMainLT is exclusive of the frozen prefix
-// (prefix [First,atMainLT), branch [atMainLT,Last]), so forking at a turn
-// shares everything strictly before the question and replaces the question and
-// everything downstream. Because that boundary is always a user prompt, the
-// history it freezes always terminates on a complete assistant message — no
-// tool_invoke is ever left dangling, so interrupted-tool synthesis is
-// unreachable for a user-initiated fork.
+// Fork semantics rest on first, but this function applies NO adjustment — it
+// reports the honest span. atMainLT is INCLUSIVE of the frozen prefix (prefix
+// [First,atMainLT], branch (atMainLT,Last]) — measured, not inferred: forking a
+// real aria at atMainLT=5 yields a branch that still contains LT 5. So
+// replacing turn T takes atMainLT = first - 1, and that -1 is fork POLICY that
+// lives in exactly one place, cli.resolveTurn. Do not re-derive it here.
+//
+// Because that boundary is always a user prompt, the history a fork freezes
+// always terminates on a complete assistant message — no tool_invoke is ever
+// left dangling, so interrupted-tool synthesis is unreachable for a
+// user-initiated fork.
 func TurnSpan(msgs []message.Message, turn uint64) (first, last uint64, ok bool) {
 	StampTurnIDs(msgs)
 	for i := range msgs {

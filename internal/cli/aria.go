@@ -173,7 +173,14 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 
 	width := termWidth()
-	fmt.Printf("# aria %s — %d turns (showing %d–%d) · [N] is the turn to fork/send at\n\n", figaroID, len(turns), lo+1, hi)
+	// Label the window by TURN ID, not by slice position. They coincide only
+	// while ids are gapless and 1-based; printing lo+1 here would be a fourth
+	// coordinate system in the one command that just collapsed three.
+	if lo >= hi {
+		fmt.Printf("# aria %s — %d turns (no turn in range)\n\n", figaroID, len(turns))
+		return
+	}
+	fmt.Printf("# aria %s — %d turns (showing %d–%d) · [N] is the turn to fork/send at\n\n", figaroID, len(turns), turns[lo].ID, turns[hi-1].ID)
 	for i := lo; i < hi; i++ {
 		u := turns[i]
 		fmt.Println(term.Dim(fmt.Sprintf("[%d]", u.ID)))

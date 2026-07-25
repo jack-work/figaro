@@ -491,4 +491,21 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 	// A terminal too small to hold a body row still paints without panicking.
 	tr.resize(4, 4)
 	assertWindowMatchesLegacy(t, tr, 1)
+
+	// ...and so does one too small to hold the FOOTER. renderFrame writes a
+	// fixed three-row footer at screen[h-3:], so h<4 indexed screen[-2] and
+	// panicked — dragging a pane to 1-3 rows crashed the pager. The guard
+	// skips the frame instead; every height must survive, in both orders, and
+	// the pager must still paint once the pane is restored.
+	for _, h := range []int{3, 2, 1, 2, 3, 1} {
+		tr.resize(40, h)
+		tr.render()
+		tr.key('j')
+		tr.key('G')
+	}
+	tr.resize(40, 20)
+	tr.render()
+	if len(tr.window(0, 5, nil)) == 0 {
+		t.Fatal("pager did not recover after a sub-footer-height viewport")
+	}
 }

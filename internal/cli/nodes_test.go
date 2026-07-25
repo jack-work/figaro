@@ -129,3 +129,29 @@ func TestRenderToolNodeSanitizesBeforeTailClamp(t *testing.T) {
 		t.Fatalf("visible tail missing: %q", rendered)
 	}
 }
+
+// TestPromptDrawsAsTheUsersVoiceInEveryView pins the fix for a regression found
+// in final validation: a turn's prompt is node 0 with Role "user", but ariaView
+// (the incipit AND the transcript pager) dispatched on n.Type alone, so the
+// prompt fell through to renderProseNode and was drawn under the assistant's
+// "‹ figaro" header — the user's own question attributed to the agent. `show`,
+// on a second copy of the switch, got it right. One dispatch, one answer.
+func TestPromptDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
+	prompt := livedoc.Node{Type: livedoc.NodeProse, Role: "user", Markdown: "what is the codeword?"}
+	reply := livedoc.Node{Type: livedoc.NodeProse, Role: "assistant", Markdown: "RED"}
+
+	view := &ariaView{settings: &renderSettings{}}
+	got := strings.Join(view.Render(prompt, 60, 0), "\n")
+	if !strings.Contains(got, "you") {
+		t.Fatalf("ariaView drew the prompt without the user's marker:\n%s", got)
+	}
+	// The same node through `show`'s entry point must agree.
+	viaList := strings.Join(renderNodeList([]livedoc.Node{prompt}, 60, 0, 0, renderSettings{}), "\n")
+	if strings.TrimSpace(stripANSI(got)) != strings.TrimSpace(stripANSI(viaList)) {
+		t.Fatalf("views disagree on one node:\n ariaView: %q\n show:     %q", stripANSI(got), stripANSI(viaList))
+	}
+	// An assistant node must NOT pick up the user's marker.
+	if a := stripANSI(strings.Join(view.Render(reply, 60, 0), "\n")); strings.Contains(a, "↳ you") {
+		t.Fatalf("assistant prose drew the user's marker: %q", a)
+	}
+}
