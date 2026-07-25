@@ -59,11 +59,14 @@ var inputStates = map[string]func(testing.TB) *inputProbe{
 	},
 }
 
+// inputSignature snapshots everything a keystroke can move. It reads under the
+// render lock: a key can leave background work behind (the queued-panel fetch,
+// the history-search worker), and those write the same fields.
 func inputSignature(p *inputProbe, stop bool, rest []byte) string {
-	tr := p.lt.tr
 	p.in.mu.Lock()
+	defer p.in.mu.Unlock()
+	tr := p.lt.tr
 	copyFailed, copying := p.in.copyFailed, p.in.copyCancel != nil
-	p.in.mu.Unlock()
 	clip, _ := p.tc.clipboard.Load().(string)
 	if len(clip) > 12 {
 		clip = fmt.Sprintf("%d bytes", len(clip))
@@ -93,13 +96,13 @@ func settleProbe(tb testing.TB, p *inputProbe) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		p.in.mu.Lock()
-		busy := p.in.copyCancel != nil
+		busy := p.in.copyCancel != nil || p.in.searchCancel != nil
 		p.in.mu.Unlock()
 		if !busy {
 			return
 		}
 		if time.Now().After(deadline) {
-			tb.Fatal("selection copy never finished")
+			tb.Fatal("a background worker (copy or search) never finished")
 		}
 		time.Sleep(time.Millisecond)
 	}
@@ -257,9 +260,9 @@ var inputOracle = []struct {
 		"0x03":            "stop=true rest=\"\" act=true off=742 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=false lis=false disc=0 canc=true clip=\"\" cpfail=false cping=false",
 		"0x04":            "stop=true rest=\"\" act=true off=742 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=false lis=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
 		"0x08":            "stop=false rest=\"\" act=true off=742 fol=true srch=true q=\"m\" h=false s=false Q=false g=false sel=false verb=false lis=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x0a":            "stop=false rest=\"\" act=true off=742 fol=false srch=false q=\"ms\" h=false s=false Q=false g=false sel=false verb=false lis=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x0a":            "stop=false rest=\"\" act=true off=742 fol=true srch=false q=\"ms\" h=false s=false Q=false g=false sel=false verb=false lis=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0c":            "stop=false rest=\"\" act=true off=742 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=false lis=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x0d":            "stop=false rest=\"\" act=true off=742 fol=false srch=false q=\"ms\" h=false s=false Q=false g=false sel=false verb=false lis=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x0d":            "stop=false rest=\"\" act=true off=742 fol=true srch=false q=\"ms\" h=false s=false Q=false g=false sel=false verb=false lis=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0f":            "stop=false rest=\"\" act=true off=759 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=true lis=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x1b":            "stop=false rest=\"\\x1b\" act=true off=742 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=false lis=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x20":            "stop=false rest=\"\" act=true off=742 fol=true srch=true q=\"ms \" h=false s=false Q=false g=false sel=false verb=false lis=false disc=0 canc=false clip=\"\" cpfail=false cping=false",

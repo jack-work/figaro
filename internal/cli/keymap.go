@@ -31,8 +31,10 @@ import (
 // literal text while the search prompt is up — they have no search-mode row).
 //
 // Performance: the table is compiled once, at init, into fixed-size arrays of
-// int16 indices. A keystroke costs an array index and a call through a
-// package-level func value — no map, no closure, no allocation.
+// the actions themselves, keyed [mode][chord]. A keystroke costs one array
+// load and one indirect call — no map, no closure built per key, nothing
+// allocated. (A parallel index of row numbers serves everything that is NOT
+// on the keystroke path: the openers, the help panel, the tests.)
 
 // keyMode is the input mode a keystroke lands in. The pager's sub-modes are
 // modes proper, not flags checked ad hoc inside the handler.
@@ -90,7 +92,7 @@ func ctrlChord(letter byte) chord { return chord{kind: chordCtrlLetter, b: lette
 type openPolicy uint8
 
 const (
-	openUnset   openPolicy = iota // invalid; TestKeymap_EveryBindingDeclaresAnOpenPolicy rejects it
+	openUnset   openPolicy = iota // invalid; TestKeymap_EveryRowIsWellFormed rejects it
 	opensPager                    // pressing it in incipit yanks the pager up first
 	staysInline                   // it does not open the pager; `why` says so
 )
@@ -138,8 +140,8 @@ type keyBinding struct {
 
 	// Exactly one of pager/input is set. pager rows run inside the transcript
 	// under the render lock; input rows run on the read loop and may stop it.
-	pager func(*transcript)
-	input func(*interactiveInput, keyEvent) keyVerdict
+	pager pagerFunc
+	input inputFunc
 }
 
 func (b *keyBinding) hidden() bool { return b.help == helpNone }
