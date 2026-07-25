@@ -178,8 +178,10 @@ func TestServer_CloseFoldsSealDoesNot(t *testing.T) {
 	}
 }
 
-// The client folds a page into materialized turns and reports them closed once
-// sealed.
+// The client folds a page into materialized turns. The committed head is
+// released as soon as the live suffix opens — the prompt must reach scrollback
+// immediately rather than ride the redrawable region until the turn seals — and
+// the agent's reply follows at seal.
 func TestClient_FoldAndPromote(t *testing.T) {
 	c := NewClient()
 	var closed []Message
@@ -194,14 +196,76 @@ func TestClient_FoldAndPromote(t *testing.T) {
 	}}})
 	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 1, Sealed: true}}}})
 
-	if len(closed) != 1 {
-		t.Fatalf("want one finalized turn, got %d", len(closed))
+	if len(closed) != 2 {
+		t.Fatalf("want head released then tail sealed, got %d messages", len(closed))
 	}
-	if len(closed[0].Nodes) != 2 {
-		t.Fatalf("finalized turn must hold prompt + reply, got %d nodes", len(closed[0].Nodes))
+	if closed[0].From != 0 || len(closed[0].Nodes) != 1 || closed[0].Nodes[0].Markdown != "q" {
+		t.Fatalf("first message must be the committed head: %+v", closed[0])
 	}
-	if closed[0].Nodes[1].Markdown != "hi" {
-		t.Errorf("streamed node did not fold: %+v", closed[0].Nodes[1])
+	if closed[1].From != 1 || len(closed[1].Nodes) != 1 {
+		t.Fatalf("second message must be the sealed tail at From=1: %+v", closed[1])
+	}
+	if closed[1].Nodes[0].Markdown != "hi" {
+		t.Errorf("streamed node did not fold: %+v", closed[1].Nodes[0])
+	}
+	// Nothing is emitted twice: the head is not repeated at seal.
+	for _, m := range closed[1:] {
+		if m.From == 0 {
+			t.Errorf("head re-emitted at seal: %+v", m)
+		}
+	}
+}
+
+// A turn holds both voices. Each contiguous voice run closes as its own
+// message, so the renderer prints "you" over the prompt and "figaro" over the
+// reply. One message per TURN put the user's own words under the agent's name.
+func TestClient_ClosesOneMessagePerVoiceRun(t *testing.T) {
+	c := NewClient()
+	var closed []Message
+	c.OnClosed = func(m Message) { closed = append(closed, m) }
+
+	user := func(md string) livedoc.Node {
+		n := prose(md)
+		n.Role = "user"
+		return n
+	}
+	// prompt, agent reply, steering interjection, agent reply.
+	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 7, Sealed: true, Nodes: []livedoc.Node{
+		user("ask"), prose("answer"), user("actually"), prose("revised"),
+	}}}}})
+
+	if len(closed) != 4 {
+		t.Fatalf("want four voice runs, got %d", len(closed))
+	}
+	wantRole := []string{"user", "assistant", "user", "assistant"}
+	for i, want := range wantRole {
+		if closed[i].Role != want {
+			t.Errorf("run %d: role %q, want %q", i, closed[i].Role, want)
+		}
+		if closed[i].From != uint64(i) {
+			t.Errorf("run %d: From %d, want %d — node ids are positional", i, closed[i].From, i)
+		}
+	}
+}
+
+// Consecutive nodes in one voice stay in ONE message: a run is contiguous, not
+// one message per node.
+func TestClient_VoiceRunsAreContiguous(t *testing.T) {
+	c := NewClient()
+	var closed []Message
+	c.OnClosed = func(m Message) { closed = append(closed, m) }
+
+	u := prose("ask")
+	u.Role = "user"
+	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 3, Sealed: true, Nodes: []livedoc.Node{
+		u, prose("a"), prose("b"), prose("c"),
+	}}}}})
+
+	if len(closed) != 2 {
+		t.Fatalf("want prompt run + one agent run, got %d", len(closed))
+	}
+	if len(closed[1].Nodes) != 3 || closed[1].From != 1 {
+		t.Fatalf("agent run must hold all three nodes at From=1: %+v", closed[1])
 	}
 }
 

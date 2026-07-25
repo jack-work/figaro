@@ -1233,23 +1233,35 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	}
 	// Each turn holds its prompt as node 0 and exactly one assistant reply —
 	// a second turn must not re-compose the first turn's nodes into itself.
-	turns := 0
+	// Closed messages arrive one per VOICE RUN (the prompt closes under "you",
+	// the reply under "figaro"), so aggregate by turn before judging it.
+	byTurn := map[int][]livedoc.Node{}
+	order := []int{}
 	for _, m := range cl.View().Closed {
 		if len(m.Nodes) == 0 {
 			continue
 		}
-		turns++
+		if _, seen := byTurn[m.LT]; !seen {
+			order = append(order, m.LT)
+		}
+		byTurn[m.LT] = append(byTurn[m.LT], m.Nodes...)
+	}
+	for _, lt := range order {
+		nodes := byTurn[lt]
+		if nodes[0].Role != "user" {
+			t.Fatalf("turn %d node 0 must be the prompt, got role %q", lt, nodes[0].Role)
+		}
 		replies := 0
-		for _, n := range m.Nodes {
+		for _, n := range nodes {
 			if n.Role == "assistant" {
 				replies++
 			}
 		}
 		if replies != 1 {
-			t.Fatalf("turn %d holds %d assistant nodes, want 1: %+v", m.LT, replies, m.Nodes)
+			t.Fatalf("turn %d holds %d assistant nodes, want 1: %+v", lt, replies, nodes)
 		}
 	}
-	require.Equal(t, 2, turns)
+	require.Equal(t, 2, len(order))
 	// And turn 2's frames must not re-compose turn 1's prompt as a NODE.
 	// (The mantra metric legitimately echoes the first prompt.)
 	for _, fr := range turn2 {
