@@ -163,6 +163,16 @@ type Message struct {
 	// it isn't persisted as a meaningless 0 in the payload.
 	LogicalTime uint64 `json:"logical_time,omitempty"`
 
+	// TurnID names the exchange this message belongs to: one user prompt
+	// plus every assistant reply, tool round and steering interjection it
+	// provoked. Monotonic per trunk and shared by every message of the
+	// turn, so it is the coordinate `send`/`fork <trunk>:<turn>` address.
+	// LT remains the storage substrate (positional, the cross-channel
+	// foreign key); TurnID is what a human names. Messages preceding the
+	// first prompt belong to no turn and carry 0. Absent on legacy entries,
+	// where compose.StampTurnIDs derives it on read.
+	TurnID uint64 `json:"turn_id,omitempty"`
+
 	Timestamp int64 `json:"timestamp"`
 }
 

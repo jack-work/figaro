@@ -100,9 +100,9 @@ func (a *Agent) repairTurnTail() ([]message.Message, error) {
 		if len(tools) == 0 {
 			return nil, nil
 		}
-		e, err := a.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+		e, err := a.appendMsg(message.Message{
 			Role: message.RoleUser, Content: tools, Timestamp: time.Now().UnixMilli(),
-		}})
+		})
 		if err != nil {
 			return nil, fmt.Errorf("repair interrupted tool results: %w", err)
 		}
@@ -117,15 +117,15 @@ func (a *Agent) repairTurnTail() ([]message.Message, error) {
 	if assistant.Timestamp == 0 {
 		assistant.Timestamp = time.Now().UnixMilli()
 	}
-	e, err := a.figLog.Append(store.Entry[message.Message]{Payload: assistant})
+	e, err := a.appendMsg(assistant)
 	if err != nil {
 		return nil, fmt.Errorf("repair interrupted assistant: %w", err)
 	}
 	appended := []message.Message{e.Payload}
 	if tools := interruptedToolResults(t.tools); len(tools) > 0 {
-		e, err := a.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+		e, err := a.appendMsg(message.Message{
 			Role: message.RoleUser, Content: tools, Timestamp: time.Now().UnixMilli(),
-		}})
+		})
 		if err != nil {
 			return appended, fmt.Errorf("repair interrupted tool results: %w", err)
 		}

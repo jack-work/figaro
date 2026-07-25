@@ -108,6 +108,7 @@ type Agent struct {
 	// so they run far ahead of the message channel's entry count, and passing
 	// a count to ReadFrom re-includes prior turns in every live frame.
 	turnStartLT uint64
+	turnID      uint64            // in-flight turn id, stamped onto every append
 	gov         *toolout.Governor // bounded live tool-output tails (coalesced emits)
 	lastEmit    time.Time         // throttle for live streaming emits
 	argPartials map[string]string
@@ -452,7 +453,27 @@ func (a *Agent) Context() []message.Message {
 	return unwrapMessages(a.figLog.Read())
 }
 
-// unwrapMessages projects entries to a flat []Message.
+// appendMsg stamps the in-flight turn id onto m and appends it. Every durable
+// write of a conversation message goes through here, so the turn id can never
+// drift from the log.
+func (a *Agent) appendMsg(m message.Message) (store.Entry[message.Message], error) {
+	m.TurnID = a.turnID
+	return a.figLog.Append(store.Entry[message.Message]{Payload: m})
+}
+
+// openTurn mints the next turn id. The seed is derived from the log on first
+// use, which is what makes a forked child continue its parent's numbering
+// without any explicit hand-off.
+func (a *Agent) openTurn() {
+	if a.turnID == 0 {
+		a.turnID = compose.StampTurnIDs(unwrapMessages(a.figLog.Read()))
+	}
+	a.turnID++
+}
+
+// unwrapMessages projects entries to a flat []Message, stamping the two
+// coordinates that live outside the payload: LT (the WAL frame index) and,
+// for legacy entries written before turn ids existed, TurnID (derived).
 func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 	if len(entries) == 0 {
 		return nil
@@ -462,6 +483,7 @@ func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 		out[i] = e.Payload
 		out[i].LogicalTime = e.LT
 	}
+	compose.StampTurnIDs(out)
 	return out
 }
 
@@ -738,7 +760,7 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 			Patches:   []message.Patch{patch},
 			Timestamp: time.Now().UnixMilli(),
 		}
-		if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
+		if _, err := a.appendMsg(msg); err != nil {
 			slog.Error(kind+" append", "aria", a.id, "err", err)
 			return
 		}

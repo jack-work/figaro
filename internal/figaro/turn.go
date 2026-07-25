@@ -218,8 +218,9 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entr
 	}
 	if prompt.text != "" {
 		msg.Content = append(msg.Content, message.TextContent(prompt.text))
+		a.openTurn()
 	}
-	entry, err := a.figLog.Append(store.Entry[message.Message]{Payload: msg})
+	entry, err := a.appendMsg(msg)
 	if err != nil {
 		return store.Entry[message.Message]{}, err
 	}
@@ -377,7 +378,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				staged := deferredLog.take(ev.msg)
 				a.noteAssistant(&staged.Payload)
 				calls := assistantToolInvokes(staged.Payload)
-				appendedEntry, err := a.figLog.Append(store.Entry[message.Message]{Payload: staged.Payload})
+				appendedEntry, err := a.appendMsg(staged.Payload)
 				if err != nil {
 					roundErr = fmt.Errorf("append assistant: %w", err)
 				} else {
@@ -558,9 +559,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	if !appended {
 		a.waitWithForks(specDone)
 		if a.turn != nil {
-			if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
+			if _, err := a.appendMsg(message.Message{
 				Role: message.RoleAssistant, StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
-			}}); err != nil {
+			}); err != nil {
 				a.turn = nil
 				a.reconcileAriaServer()
 				a.finishTurn("error: append empty assistant: " + err.Error())
@@ -623,7 +624,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		a.endTurn("interrupted")
 		return true
 	}
-	if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: resultTic}); err != nil {
+	if _, err := a.appendMsg(resultTic); err != nil {
 		repairedMessages, repairErr := a.repairTurnTail()
 		if repairErr != nil {
 			err = fmt.Errorf("%v; repair interrupted turn: %w", err, repairErr)
