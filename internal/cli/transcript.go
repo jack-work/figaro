@@ -1336,23 +1336,23 @@ func (t *transcript) dispatch(ev keyEvent) {
 		if ev.nav != navNone {
 			return
 		}
-		if bd := pagerIndex.lookup(modeSearch, ev); bd != nil {
-			bd.pager(t)
+		if act := pagerAct.pager(modeSearch, ev); act != nil {
+			act(t)
 		} else {
 			t.searchLiteral(ev.b)
 		}
 		t.render()
 		return
 	case modePanel:
-		if bd := pagerIndex.lookup(modePanel, ev); bd != nil {
-			bd.pager(t)
+		if act := pagerAct.pager(modePanel, ev); act != nil {
+			act(t)
 			t.render()
 			return
 		}
 		t.closePanels()
 	}
-	if bd := pagerIndex.lookup(modeTranscript, ev); bd != nil {
-		bd.pager(t)
+	if act := pagerAct.pager(modeTranscript, ev); act != nil {
+		act(t)
 	}
 	t.pendG = ev.b == 'g' && !t.pendG
 	t.render()

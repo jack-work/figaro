@@ -761,8 +761,8 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 		}
 		// Input-level rows first: the keys that own the process (interrupt,
 		// detach, listen, clipboard) rather than the viewport.
-		if bd := inputIndex.lookup(ev.mode, ev); bd != nil {
-			if bd.input(in, ev) == keyStop {
+		if act := inputAct.input(ev.mode, ev); act != nil {
+			if act(in, ev) == keyStop {
 				return pending, true
 			}
 			continue

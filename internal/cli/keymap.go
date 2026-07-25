@@ -372,18 +372,48 @@ func helpBody() []string {
 }
 
 // ---------------------------------------------------------------------------
-// The compiled index. Built once; a keystroke is an array index.
+// The compiled dispatch tables. Built once, at init, from the rows above.
+//
+// Two shapes, from one table, so neither can drift from the other:
+//
+//	pagerAct / inputAct  — the ACTION, keyed [mode][chord]. This is the hot
+//	                       path: one array load and an indirect call, no
+//	                       intermediate row lookup, nothing allocated.
+//	pagerIndex/inputIndex — the row INDEX, for everything off the keystroke
+//	                       path (openers, help, the tests that walk the map).
 // ---------------------------------------------------------------------------
 
-const noBinding = int16(-1)
+const noBinding = int8(-1)
 
+// pagerFunc/inputFunc name the two action shapes; see keyBinding.
+type pagerFunc = func(*transcript)
+type inputFunc = func(*interactiveInput, keyEvent) keyVerdict
+
+type pagerActions struct {
+	byByte [int(numKeyModes) * 256]pagerFunc
+	byNav  [numKeyModes][navCount]pagerFunc
+	byCtrl [numKeyModes][26]pagerFunc
+}
+
+type inputActions struct {
+	byByte [int(numKeyModes) * 256]inputFunc
+	byNav  [numKeyModes][navCount]inputFunc
+	byCtrl [numKeyModes][26]inputFunc
+}
+
+// keyIndex maps a chord to its row in keymap, per mode. int8 keeps the whole
+// index in a few cache lines; the table would have to grow past 127 rows
+// before that mattered, and buildKeyIndex panics if it ever does.
 type keyIndex struct {
-	byByte [numKeyModes][256]int16
-	byNav  [numKeyModes][navCount]int16
-	byCtrl [numKeyModes][26]int16
+	byByte [numKeyModes][256]int8
+	byNav  [numKeyModes][navCount]int8
+	byCtrl [numKeyModes][26]int8
 }
 
 var (
+	pagerAct pagerActions
+	inputAct inputActions
+
 	inputIndex keyIndex // rows with an input-level action
 	pagerIndex keyIndex // rows with a pager-level action
 
@@ -401,6 +431,9 @@ const navCount = int(navEnd) + 1
 func init() { buildKeyIndex() }
 
 func buildKeyIndex() {
+	if len(keymap) > 127 {
+		panic("keymap: more rows than an int8 index can name")
+	}
 	for m := range numKeyModes {
 		for b := range inputIndex.byByte[m] {
 			inputIndex.byByte[m][b], pagerIndex.byByte[m][b] = noBinding, noBinding
@@ -424,11 +457,17 @@ func buildKeyIndex() {
 			}
 			switch bd.chord.kind {
 			case chordByte:
-				idx.byByte[m][bd.chord.b] = int16(i)
+				idx.byByte[m][bd.chord.b] = int8(i)
+				pagerAct.byByte[byteSlot(m, bd.chord.b)] = bd.pager
+				inputAct.byByte[byteSlot(m, bd.chord.b)] = bd.input
 			case chordNav:
-				idx.byNav[m][bd.chord.nav] = int16(i)
+				idx.byNav[m][bd.chord.nav] = int8(i)
+				pagerAct.byNav[m][bd.chord.nav] = bd.pager
+				inputAct.byNav[m][bd.chord.nav] = bd.input
 			case chordCtrlLetter:
-				idx.byCtrl[m][bd.chord.b-'a'] = int16(i)
+				idx.byCtrl[m][bd.chord.b-'a'] = int8(i)
+				pagerAct.byCtrl[m][bd.chord.b-'a'] = bd.pager
+				inputAct.byCtrl[m][bd.chord.b-'a'] = bd.input
 			}
 		}
 		if bd.chord.kind == chordCtrlLetter {
@@ -447,8 +486,48 @@ func buildKeyIndex() {
 	}
 }
 
+// pager resolves the pager action bound to a chord in one mode, or nil. The
+// byte case — every keystroke that is not an arrow — is a single array load.
+func (a *pagerActions) pager(mode keyMode, ev keyEvent) pagerFunc {
+	if ev.nav != navNone {
+		if int(ev.nav) >= navCount {
+			return nil
+		}
+		return a.byNav[mode][ev.nav]
+	}
+	if ev.ctrl != 0 {
+		if ev.ctrl < 'a' || ev.ctrl > 'z' {
+			return nil
+		}
+		return a.byCtrl[mode][ev.ctrl-'a']
+	}
+	return a.byByte[byteSlot(mode, ev.b)]
+}
+
+// input is the same resolution at the input-loop level.
+func (a *inputActions) input(mode keyMode, ev keyEvent) inputFunc {
+	if ev.nav != navNone {
+		if int(ev.nav) >= navCount {
+			return nil
+		}
+		return a.byNav[mode][ev.nav]
+	}
+	if ev.ctrl != 0 {
+		if ev.ctrl < 'a' || ev.ctrl > 'z' {
+			return nil
+		}
+		return a.byCtrl[mode][ev.ctrl-'a']
+	}
+	return a.byByte[byteSlot(mode, ev.b)]
+}
+
+// byteSlot flattens (mode, byte) into one index, so the hot path is a single
+// bounds-checked load rather than two.
+func byteSlot(mode keyMode, b byte) int { return int(mode)<<8 | int(b) }
+
+// lookup resolves the ROW behind a chord: metadata, not dispatch.
 func (idx *keyIndex) lookup(mode keyMode, ev keyEvent) *keyBinding {
-	var i int16
+	var i int8
 	switch {
 	case ev.nav != navNone:
 		if int(ev.nav) >= navCount {

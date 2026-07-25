@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -379,5 +380,46 @@ func TestHelp_HiddenBindingsStayOffTheList(t *testing.T) {
 	panel := strings.Join(helpBody(), "\n")
 	if strings.Contains(panel, "^T") {
 		t.Errorf("^T is a hidden binding but appears in the help panel:\n%s", panel)
+	}
+}
+
+// TestKeymap_ActionArraysAgreeWithTheIndex: dispatch reads the compiled action
+// arrays, everything else reads the row index. Both are built from the same
+// table in the same pass — this asserts they cannot have drifted anyway.
+func TestKeymap_ActionArraysAgreeWithTheIndex(t *testing.T) {
+	same := func(a, b any) bool {
+		return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
+	}
+	for m := keyMode(0); m < numKeyModes; m++ {
+		for b := 0; b < 256; b++ {
+			ev := keyEvent{b: byte(b)}
+			checkSlot(t, m, ev, pagerAct.pager(m, ev), inputAct.input(m, ev), same)
+		}
+		for n := navUp; n <= navEnd; n++ {
+			ev := keyEvent{nav: n}
+			checkSlot(t, m, ev, pagerAct.pager(m, ev), inputAct.input(m, ev), same)
+		}
+		for c := byte('a'); c <= 'z'; c++ {
+			ev := keyEvent{ctrl: c}
+			checkSlot(t, m, ev, pagerAct.pager(m, ev), inputAct.input(m, ev), same)
+		}
+	}
+}
+
+func checkSlot(t *testing.T, m keyMode, ev keyEvent, pact pagerFunc, iact inputFunc, same func(a, b any) bool) {
+	t.Helper()
+	if bd := pagerIndex.lookup(m, ev); bd != nil {
+		if pact == nil || !same(pact, bd.pager) {
+			t.Errorf("%s in %s mode: the pager action array disagrees with the row", ev.chord(), modeName(m))
+		}
+	} else if pact != nil {
+		t.Errorf("%s in %s mode: a pager action with no row behind it", ev.chord(), modeName(m))
+	}
+	if bd := inputIndex.lookup(m, ev); bd != nil {
+		if iact == nil || !same(iact, bd.input) {
+			t.Errorf("%s in %s mode: the input action array disagrees with the row", ev.chord(), modeName(m))
+		}
+	} else if iact != nil {
+		t.Errorf("%s in %s mode: an input action with no row behind it", ev.chord(), modeName(m))
 	}
 }
