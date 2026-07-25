@@ -519,34 +519,51 @@ func nodeChars(n livedoc.Node) int {
 	return len(n.Markdown) + len(n.Output) + len(n.Summary)
 }
 
-// appendTurnSlices cuts a turn into bounded units at node boundaries, appending
-// into dst. A node is never split: the smallest unit is one node, however large,
-// because tool output is already clamped by composeBashCap.
+// appendTurnSlices cuts a turn into bounded, VOICE-HOMOGENEOUS units at node
+// boundaries, appending into dst. A node is never split: the smallest unit is
+// one node, however large, because tool output is already clamped by
+// composeBashCap.
+//
+// Two cuts, in order. First at every voice change — a turn holds both voices,
+// and a unit carries ONE header, so a unit spanning the prompt and the reply
+// printed the user's own question under the agent's name. Then at
+// transcriptUnitChars within each run, so one enormous agent run still pages.
 //
 // The whole-turn case is the overwhelming majority (38 turns -> 59 units on the
 // largest real aria) and is allocation-free: this is on the page-refetch path,
 // where an intermediate slice per part cost 25-37% of selection rehydrate.
 func appendTurnSlices(dst []aria.Message, id uint64, from uint64, nodes []livedoc.Node) []aria.Message {
-	total := 0
-	for _, n := range nodes {
-		total += nodeChars(n)
-	}
-	if total < transcriptUnitChars {
-		return append(dst, aria.Message{
-			LT: int(id), From: from, Role: turnVoice(nodes), Nodes: nodes,
-		})
-	}
-	start, budget := 0, 0
-	for i, n := range nodes {
-		budget += nodeChars(n)
-		if budget < transcriptUnitChars && i < len(nodes)-1 {
+	for rs := 0; rs < len(nodes); {
+		re, role := aria.VoiceRunEnd(nodes, rs)
+		run := nodes[rs:re]
+		total := 0
+		for _, n := range run {
+			total += nodeChars(n)
+		}
+		if total < transcriptUnitChars {
+			dst = append(dst, aria.Message{
+				LT: int(id), From: from + uint64(rs), Role: role, Nodes: run,
+			})
+			rs = re
 			continue
 		}
-		seg := nodes[start : i+1]
-		dst = append(dst, aria.Message{
-			LT: int(id), From: from + uint64(start), Role: turnVoice(seg), Nodes: seg,
-		})
-		start, budget = i+1, 0
+		start, budget := 0, 0
+		for i, n := range run {
+			budget += nodeChars(n)
+			if budget < transcriptUnitChars && i < len(run)-1 {
+				continue
+			}
+			seg := run[start : i+1]
+			// From is absolute within the turn: the run's offset plus the
+			// segment's offset inside it. Node ids are positional
+			// (Nodes[i].ID == From+i) and sliceKey packs From, so an
+			// off-by-one here corrupts the row cache silently.
+			dst = append(dst, aria.Message{
+				LT: int(id), From: from + uint64(rs+start), Role: role, Nodes: seg,
+			})
+			start, budget = i+1, 0
+		}
+		rs = re
 	}
 	return dst
 }
@@ -572,19 +589,15 @@ func keyOf(m aria.Message) sliceKey {
 // turn is the turn id a unit belongs to.
 func (k sliceKey) turn() int { return int(k >> sliceKeyFromBits) }
 
-// turnVoice is the coarse role a turn renders under. A turn holds both voices,
-// so per-node Role is the real answer; this only feeds surfaces that still ask
-// for one label per unit.
+// turnVoice is the voice a unit renders under. Units are voice-homogeneous by
+// construction (appendTurnSlices cuts at every voice change), so this is exact,
+// not a coarse hint.
 func turnVoice(nodes []livedoc.Node) string {
 	if len(nodes) == 0 {
 		return ""
 	}
-	for _, n := range nodes {
-		if n.Role != "user" {
-			return "assistant"
-		}
-	}
-	return "user"
+	_, role := aria.VoiceRunEnd(nodes, 0)
+	return role
 }
 
 func (t *transcript) trimPages(direction transcriptPageDirection) {

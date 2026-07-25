@@ -134,7 +134,16 @@ func (c *Client) Apply(p Page) {
 			nodes = c.openNodes()
 		}
 		c.closedSeen[id] = true
-		finalized = append(finalized, Message{LT: id, Role: turnRole(nodes), Nodes: nodes})
+		// One Message per voice run: the prompt closes under "you", the agent's
+		// reply under "figaro". Emitting one Message per TURN printed the user's
+		// own words beneath the agent's name.
+		for s := 0; s < len(nodes); {
+			e, role := VoiceRunEnd(nodes, s)
+			finalized = append(finalized, Message{
+				LT: id, From: uint64(s), Role: role, Nodes: nodes[s:e],
+			})
+			s = e
+		}
 		c.advanceCommitted(id)
 		if c.openLT == id {
 			c.resetOpen()
@@ -202,6 +211,39 @@ func turnRole(nodes []livedoc.Node) string {
 		}
 	}
 	return "user"
+}
+
+// nodeVoice is the voice a single node speaks in. The prompt and any steering
+// interjection are the user's; prose, thinking and tools are the agent's. A
+// node carrying no explicit role is agent output, because a streamed delta need
+// not repeat the role on every frame.
+func nodeVoice(n livedoc.Node) string {
+	if n.Role == "user" {
+		return "user"
+	}
+	return "assistant"
+}
+
+// VoiceRunEnd returns the end of the contiguous same-voice run beginning at
+// start, plus the voice that run speaks in.
+//
+// A turn holds BOTH voices, so a header must be printed per RUN, not once per
+// turn — otherwise the user's own question renders under the agent's name.
+// Every surface that labels a unit derives its runs here, so the client (inline)
+// and the pager cannot drift apart on where a voice changes.
+//
+// Index-based rather than callback- or slice-based so the hot render paths stay
+// allocation-free; the common shape is one or two runs.
+func VoiceRunEnd(nodes []livedoc.Node, start int) (int, string) {
+	if start >= len(nodes) {
+		return start, ""
+	}
+	cur := nodeVoice(nodes[start])
+	i := start + 1
+	for i < len(nodes) && nodeVoice(nodes[i]) == cur {
+		i++
+	}
+	return i, cur
 }
 
 func (c *Client) trimClosed() {
