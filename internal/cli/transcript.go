@@ -70,6 +70,17 @@ type transcript struct {
 	heldOpen    *aria.Message
 	committedW  int
 
+	// tailRev is the client's closed-set revision that t.pages currently is a
+	// pristine snapshot of; 0 means the window has been paged/searched away from
+	// the tail. While following, the window is a pure function of that revision,
+	// so resetToTail can no-op instead of rebuilding pages, re-hashing page
+	// descriptors and re-scanning the caches on every single frame.
+	tailRev uint64
+	// tailTuned latches the one row-budget retune allowed per tail window.
+	tailTuned bool
+	// tailWant is the tuned tail-window size in messages (0 = not yet tuned).
+	tailWant int
+
 	// rowCache memoizes rows of committed messages in their unselected resting
 	// form — clipped and gutter-prefixed (plainNodeRow), but carrying no
 	// selection cue and no search highlight. That keeps the cache a pure
@@ -137,6 +148,7 @@ type transcriptPageRequest struct {
 	expected  pageDesc
 	after     int
 	watermark int
+	limit     int // messages to fetch; 0 means transcriptPageSize
 	cached    []aria.Message
 }
 
@@ -156,6 +168,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query, t.matchQuery = false, false, "", ""
+	t.leaveTail() // a fresh session always rebuilds the window from the tail
 	t.resetToTail()
 	io.WriteString(t.out, altScreenOn+autowrapOff+ldmouse.Enable+cursorHide+"\x1b[2J")
 	t.render()
@@ -185,14 +198,106 @@ func (t *transcript) scrollBy(delta int) {
 	t.render()
 }
 
-// transcriptPageSize is how many older messages a single scroll-up fetch pulls.
+// transcriptPageSize is the ceiling on how many older messages a single
+// scroll-up fetch pulls; transcriptWindowRows is the real budget.
+//
+// Message COUNT is a bad unit for a render window: a message is anywhere from
+// 4 rows (a one-line answer) to 400 (a tool dump), so a fixed 30-message page
+// is a window of 180 rows in one aria and 1400 in the next — and the frame
+// costs what the window holds. The geometry is therefore expressed in ROWS:
+// transcriptWindowRows is how many rendered rows the pager keeps hot across
+// all retained pages, and the per-fetch message count is derived from the
+// measured rows-per-message of the aria you are actually reading
+// (pageMessages), clamped to [transcriptMinPageSize, transcriptPageSize].
+//
+// Light arias never reach the row budget, so they keep exactly the old
+// 3x30-message geometry. Heavy arias converge to ~8-message pages.
 const (
-	transcriptPageSize        = 30
-	transcriptPageLimit       = 3
-	transcriptTailLimit       = 2 * transcriptPageSize
-	transcriptDescLimit       = 64
-	transcriptPayloadLRULimit = 3
+	transcriptPageSize    = 30
+	transcriptMinPageSize = 6
+	transcriptPageLimit   = 3
+	transcriptTailLimit   = 2 * transcriptPageSize
+	transcriptDescLimit   = 64
 )
+
+// transcriptPayloadLRULimit is how many evicted pages keep their payload (and,
+// since rows follow payloads, their rendered rows) for the return trip. Four
+// windows' worth: rows-based pages are small, so retaining the same amount of
+// history as the old 30-message geometry takes proportionally more of them.
+// Measured on the 120-message round trip (see docs/transcript-paging.md):
+// 3 pages costs 25 fetches / 72 refetched messages / 920 re-renders, 12 pages
+// costs 16 / 0 / 632, and 24 pages buys almost nothing more.
+var transcriptPayloadLRULimit = 4 * transcriptPageLimit
+
+// transcriptWindowRows is the retained-window budget in rendered rows. A var,
+// not a const, so the geometry sweep in transcript_geometry_bench_test.go can
+// measure the tradeoff it encodes. See docs/transcript-paging.md for the
+// numbers behind the chosen value.
+var transcriptWindowRows = 1200
+
+// avgRowsPerMessage is the measured height of the messages this pager has
+// actually rendered, or 0 when nothing has been rendered yet. Cheap: the row
+// cache is bounded by the retained window.
+func (t *transcript) avgRowsPerMessage() int {
+	rows, n := 0, 0
+	for _, c := range t.rowCache {
+		rows += len(c.rows) + 3 // + the inter-message rule
+		n++
+	}
+	if n == 0 {
+		return 0
+	}
+	if avg := rows / n; avg > 0 {
+		return avg
+	}
+	return 1
+}
+
+// pageRowBudget is the row budget of ONE page: the retained window is
+// transcriptPageLimit pages, and the tail window is exactly one.
+func pageRowBudget() int { return transcriptWindowRows / transcriptPageLimit }
+
+// pageMessages is how many messages one page should hold so that a full window
+// (transcriptPageLimit pages) lands near the row budget. Falls back to the
+// message-count ceiling until we have measured anything.
+func (t *transcript) pageMessages() int {
+	avg := t.avgRowsPerMessage()
+	if avg <= 0 {
+		return transcriptPageSize
+	}
+	n := pageRowBudget() / avg
+	if n > transcriptPageSize {
+		n = transcriptPageSize
+	}
+	if n < transcriptMinPageSize {
+		n = transcriptMinPageSize
+	}
+	return n
+}
+
+// tailKeep is how many messages the tail window holds. Cold (nothing rendered
+// yet, so no idea how tall this aria's messages are) it deliberately starts at
+// the floor rather than the ceiling: opening the pager on an aria of 400-row
+// tool dumps used to render thirty of them to paint one screen. tuneTail then
+// grows the window into the row budget, which is invisible because the added
+// rows are ABOVE a viewport pinned to the tail.
+func (t *transcript) tailKeep() int {
+	if t.tailWant > 0 {
+		return t.tailWant
+	}
+	if t.avgRowsPerMessage() == 0 {
+		return transcriptMinPageSize
+	}
+	return t.pageMessages()
+}
+
+// transcriptPrefetchScreens is how close (in viewports) the scroll position has
+// to get to an edge of the retained window before we start pulling the next
+// page. One screen means the fetch is armed only once the user is already
+// looking at the last rows we have, so the RPC lands *after* they hit the wall;
+// two gives a screenful of runway, which at wheel speed is a few hundred
+// milliseconds — enough to cover a local daemon round trip.
+const transcriptPrefetchScreens = 2
 
 func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	if t.checkOlder && t.noMoreOlder {
@@ -200,7 +305,7 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	}
 	if t.checkOlder && !t.noMoreOlder {
 		t.checkOlder = false
-		if t.search == nil && t.offset >= t.h {
+		if t.search == nil && t.offset >= transcriptPrefetchScreens*t.h {
 			return transcriptPageRequest{}, false
 		}
 		oldest, ok := t.oldestLT()
@@ -213,11 +318,11 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 			t.render()
 			return transcriptPageRequest{}, false
 		}
-		return transcriptPageRequest{before: oldest, direction: pageOlder}, true
+		return transcriptPageRequest{before: oldest, direction: pageOlder, limit: t.pageMessages()}, true
 	}
 	if t.checkNewer && len(t.newer) > 0 {
 		t.checkNewer = false
-		if t.search == nil && t.offset+t.h < len(t.lineLT) {
+		if t.search == nil && t.offset+transcriptPrefetchScreens*t.h < len(t.lineLT) {
 			return transcriptPageRequest{}, false
 		}
 		desc := t.newer[len(t.newer)-1]
@@ -232,6 +337,7 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 		if ok && newest < t.committedW {
 			return transcriptPageRequest{
 				direction: pageNewer, after: newest, watermark: t.committedW,
+				limit: t.pageMessages(),
 			}, true
 		}
 	}
@@ -268,6 +374,7 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 		anchorLT, within = t.viewportAnchor()
 	}
 	page := transcriptPage{desc: desc, messages: messages}
+	t.leaveTail()
 	switch req.direction {
 	case pageOlder:
 		t.pages = append([]transcriptPage{page}, t.pages...)
@@ -335,8 +442,21 @@ func (t *transcript) trimPages(direction transcriptPageDirection) {
 	}
 }
 
+// dropPage releases the caches of a page leaving the retained window. Rows of
+// messages whose payload is still held in the LRU are KEPT: that page is one
+// scroll-turn away from coming back (the LRU exists precisely so the return
+// trip costs no I/O), and re-rendering its prose is far more expensive than
+// the rows are to hold. Expansion state rides along with the rows, so the two
+// never disagree. Rows are released for real when the payload leaves the LRU.
 func (t *transcript) dropPage(page transcriptPage) {
+	if page.desc.Count == 0 {
+		return
+	}
+	kept := t.payloadLTs()
 	for _, m := range page.messages {
+		if kept[m.LT] {
+			continue
+		}
 		delete(t.rowCache, m.LT)
 		for ref := range t.expanded {
 			if ref.lt == m.LT {
@@ -344,6 +464,24 @@ func (t *transcript) dropPage(page transcriptPage) {
 			}
 		}
 	}
+}
+
+// payloadLTs is the set of message LTs whose payload the LRU still holds.
+func (t *transcript) payloadLTs() map[int]bool {
+	n := 0
+	for _, page := range t.payloadLRU {
+		n += len(page.messages)
+	}
+	if n == 0 {
+		return nil
+	}
+	out := make(map[int]bool, n)
+	for _, page := range t.payloadLRU {
+		for _, m := range page.messages {
+			out[m.LT] = true
+		}
+	}
+	return out
 }
 
 func (t *transcript) rememberPayload(page transcriptPage) {
@@ -360,9 +498,13 @@ func (t *transcript) rememberPayload(page transcriptPage) {
 	}
 	t.payloadLRU = append(t.payloadLRU, page)
 	if len(t.payloadLRU) > transcriptPayloadLRULimit {
+		evicted := append([]transcriptPage(nil), t.payloadLRU[:len(t.payloadLRU)-transcriptPayloadLRULimit]...)
 		copy(t.payloadLRU, t.payloadLRU[len(t.payloadLRU)-transcriptPayloadLRULimit:])
 		clear(t.payloadLRU[transcriptPayloadLRULimit:])
 		t.payloadLRU = t.payloadLRU[:transcriptPayloadLRULimit]
+		for _, page := range evicted { // rows outlive the window, not the LRU
+			t.dropPage(page)
+		}
 	}
 }
 
@@ -380,10 +522,18 @@ func (t *transcript) takePayload(desc pageDesc) []aria.Message {
 }
 
 func (t *transcript) resetToTail() {
+	rev := t.client.ClosedRevision()
+	if t.tailRev == rev {
+		// The window already IS the tail at this revision. Only the cheap
+		// follow-state resets remain (both are no-ops in the steady state; they
+		// keep this path bit-identical to a full rebuild).
+		t.heldOpen, t.checkNewer = nil, false
+		return
+	}
 	v := t.client.View()
 	closed := v.Closed
-	if len(closed) > transcriptPageSize {
-		closed = closed[len(closed)-transcriptPageSize:]
+	if keep := t.tailKeep(); len(closed) > keep {
+		closed = closed[len(closed)-keep:]
 	}
 	t.pages = nil
 	if len(closed) > 0 {
@@ -397,8 +547,53 @@ func (t *transcript) resetToTail() {
 	t.checkNewer = false
 	t.heldOpen = nil
 	t.noMoreOlder = len(closed) > 0 && closed[0].LT <= 1
+	t.tailRev = rev
+	t.tailTuned = false
 	t.pruneCaches()
 }
+
+// tuneTail re-cuts the tail window towards the row budget, using what the last
+// frame taught us about how tall this aria's messages are. It grows a window
+// that does not fill its budget (or the viewport) and shrinks one that overshot
+// it, and reports whether the window changed so the caller can re-materialize.
+//
+// Invisible by construction: the tail window is anchored at the newest message
+// and the viewport is pinned to the bottom while following, so adding or
+// dropping messages at the TOP of the window changes only what is retained.
+// Latches once converged, per client revision (a newly committed message
+// re-tunes), so a steady stream of frames does no paging work at all.
+func (t *transcript) tuneTail(rows int) bool {
+	if t.tailTuned || !t.follow || t.tailRev == 0 || len(t.pages) != 1 {
+		return false
+	}
+	have := len(t.pages[0].messages)
+	want, budget := t.pageMessages(), pageRowBudget()
+	if have > 0 && rows > 0 && rows < t.h { // never leave the viewport half-empty
+		perMsg := max(rows/have, 1)
+		if need := (t.h + perMsg - 1) / perMsg; need > want {
+			want = need
+		}
+	}
+	grow := want > have && (rows < budget*3/4 || rows < t.h)
+	shrink := want < have && rows > budget*5/4
+	if !grow && !shrink {
+		t.tailTuned = true // converged for this revision
+		return false
+	}
+	t.tailWant = want
+	t.leaveTail()
+	t.resetToTail() // clears tailTuned; sets a fresh tailRev
+	if len(t.pages) != 1 || len(t.pages[0].messages) == have {
+		t.tailTuned = true // no messages available to move: stop trying
+		return false
+	}
+	return true
+}
+
+// leaveTail marks the retained window as no longer a pristine tail snapshot, so
+// the next resetToTail rebuilds. Every mutation of t.pages outside resetToTail
+// must call it.
+func (t *transcript) leaveTail() { t.tailRev = 0 }
 
 func (t *transcript) pruneCaches() {
 	// Called from resetToTail, i.e. once per frame while following the live
@@ -411,6 +606,11 @@ func (t *transcript) pruneCaches() {
 		clear(keep)
 	}
 	t.forEachMessage(func(m aria.Message) { keep[m.LT] = true })
+	for _, page := range t.payloadLRU { // payload retained => rows retained
+		for _, m := range page.messages {
+			keep[m.LT] = true
+		}
+	}
 	for lt := range t.rowCache {
 		if !keep[lt] {
 			delete(t.rowCache, lt)
@@ -583,12 +783,12 @@ func (t *transcript) openMessage() *aria.Message {
 	if !t.follow {
 		return t.heldOpen
 	}
-	return t.client.View().Open
+	return t.client.Open()
 }
 
 func (t *transcript) stopFollowing() {
 	if t.follow {
-		t.heldOpen = t.client.View().Open
+		t.heldOpen = t.client.Open()
 	}
 	t.follow = false
 }
@@ -637,6 +837,16 @@ func (t *transcript) render() {
 		return
 	}
 	t.buildIndex()
+	// Converge the tail window on the row budget (usually 0-1 passes). D drove
+	// this off len(t.lines()) — a full materialization of the retained window,
+	// which is exactly what A deleted from the frame path. The index already
+	// carries the same number, so the retune reads it instead.
+	for range 3 {
+		if !t.tuneTail(t.index.total) {
+			break
+		}
+		t.buildIndex()
+	}
 	total := t.index.total
 	foot := []string{}
 	if t.showHelp {
@@ -1321,6 +1531,7 @@ func (t *transcript) finishSearch(found bool) {
 	}
 	origin := t.search
 	t.pages = origin.pages
+	t.leaveTail()
 	t.newer = origin.newer
 	t.offset = origin.offset
 	t.follow = origin.follow
@@ -1336,6 +1547,7 @@ func (t *transcript) wrapSearchOlder() {
 	}
 	origin := t.search
 	t.pages = append([]transcriptPage(nil), origin.pages...)
+	t.leaveTail()
 	t.newer = append([]pageDesc(nil), origin.newer...)
 	t.offset = origin.offset
 	t.follow = false
