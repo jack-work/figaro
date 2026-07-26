@@ -83,9 +83,18 @@ func NewIncipit(term Terminal, view NodeView) *Incipit {
 // belongs under.
 func (i *Incipit) Freeze(m aria.Message) {
 	if m.LT == i.liveLT && i.liveLT != 0 {
-		i.dropBelow()
+		if !i.bodyHidden() {
+			i.dropBelow()
+			i.reset()
+			return
+		}
+		// The live region showed only the footer, so the body was never painted
+		// and there is nothing on screen worth keeping. Erase the footer and fall
+		// through to print the message in full — otherwise the reply is lost from
+		// scrollback entirely, which is what happened at every height below the
+		// pager floor.
+		io.WriteString(i.term, "\x1b[J")
 		i.reset()
-		return
 	}
 	restore, role := i.thinking, i.role
 	if restore {
@@ -239,13 +248,28 @@ func (i *Incipit) Resize(nodes []livedoc.Node) {
 // terminal scrolls the overflow into native scrollback before our code runs.
 func (i *Incipit) LiveHeight() int { return len(i.live) }
 
+// minInlineHeight is the viewport below which the live region draws the footer
+// ALONE. It mirrors cli.minPagerHeight deliberately: that constant is the floor
+// under which the transcript pager refuses to open, so below it there is no
+// escape hatch from the inherent inline limit (docs/ui-stream.md) — a live
+// region taller than the viewport scrolls rows into native history, where they
+// can never be repainted, stranding half-drawn frames forever.
+//
+// Drawing only the footer there costs a live preview that was already broken
+// and buys back the guarantee that matters: the completed message reaches
+// scrollback exactly once, via Freeze.
+const minInlineHeight = 10
+
+// bodyHidden reports whether the live region is footer-only at this size.
+func (i *Incipit) bodyHidden() bool {
+	_, h := i.term.Size()
+	return h > 0 && h < minInlineHeight
+}
+
 func (i *Incipit) compose(nodes []livedoc.Node) []string {
-	w, h := i.term.Size()
+	w, _ := i.term.Size()
 	foot := i.footer()
-	// A viewport under three rows has no room for a header, a body AND a
-	// footer. The footer is the permanent fixture of the view, so below that
-	// height it is the only thing drawn.
-	if h > 0 && h < 3 {
+	if i.bodyHidden() {
 		rows := make([]string, 0, len(foot))
 		for _, s := range foot {
 			rows = append(rows, clip(s, w))
