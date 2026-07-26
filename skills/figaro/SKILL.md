@@ -88,6 +88,44 @@ command). The shell here is zsh — globs abort on no-match.
 4. Update the docs that the change touched — this skill and its sections are
    the canonical record. A skill that lies is worse than no skill.
 
+## Knowing yourself: `FIGARO_ARIA`
+
+Every bash tool call an aria makes carries two vars:
+
+```
+FIGARO_ARIA=<the aria's own id>    identity
+FIGARO_NO_BIND=1                  may not mutate the pid-binding
+```
+
+So a shell-out is **statically attended to the aria that spawned it**.
+These need no `--id` from inside an aria — they mean *you*:
+
+```sh
+figaro state                    your own chalkboard
+figaro set mantra "..."          patch your own chalkboard
+figaro status                   your own provider/model/ctx
+figaro show -n 5                your own last 5 turns
+figaro send -f -- <text>        a note to yourself (steers the running turn)
+```
+
+Precedence is **`--id` > `FIGARO_ARIA` > the pid binding**.
+
+It is an **identity, not a binding**: nothing is written to the angelus,
+nothing is inherited from the terminal that started the daemon, and it
+cannot be moved. `figaro attend` **refuses** from inside an aria — an
+aria is always attended to itself, permanently. Addressing anyone else
+takes an explicit id, on every verb:
+
+```sh
+figaro send --id <other> -- <prompt>
+figaro show --id <other>
+figaro state --id <other>
+figaro kill <other>
+```
+
+A dangling id (your aria was killed mid-shell-out) reports "nothing
+bound" rather than erroring, so scripts keep their normal branch.
+
 ## Self-invocation
 
 Figaro can call itself as a subagent — useful for isolated sub-tasks whose

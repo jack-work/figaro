@@ -106,7 +106,8 @@ figaro status <id> -m             provider/model/ctx + derived detail (mantra, c
 figaro state <id>                 the folded chalkboard snapshot (-j for JSON)
 ```
 
-`show` takes the aria id as a **positional** (or `--id`, or the pid binding);
+`show` takes the aria id as a **positional** (or `--id`, or — inside an aria's
+own bash tool — `$FIGARO_ARIA`, or the terminal's pid binding);
 turns are labeled by their **turn id** (the coordinate `send`/`fork
 <id>:<turn>` address — see [trunks.md](trunks.md)). Thinking blocks render muted by
 default. `figaro show` is the **only safe way** to read a live aria — the

@@ -9,21 +9,23 @@ story turns.
 ## Your identity
 
 Your aria id is supplied in your chalkboard as a
-`<system-reminder name="aria_id">` block. That id is how you address yourself
-on the command line.
+`<system-reminder name="aria_id">` block, and your bash tool carries it as
+`$FIGARO_ARIA`. You are statically attended to yourself, so **no `--id` is
+needed to address yourself** — pass one only to touch a *different* aria.
 
 ## Setting it
 
 From `bash`:
 
 ```bash
-figaro set --id <your-aria-id> mantra "the phrase here"
+figaro set mantra "the phrase here"
 ```
 
 Stored as a plain string — quote it, 5–10 words, no trailing punctuation.
 
 ```bash
-figaro set --id 7a5f8e3f mantra "wrestling a root-access AWS billing puzzle"
+figaro set mantra "wrestling a root-access AWS billing puzzle"
+figaro set --id 7a5f8e3f mantra "..."     # another aria, explicitly
 ```
 
 ## When to (re)write it

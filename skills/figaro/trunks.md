@@ -84,7 +84,10 @@ for debugging the fig IR, but it is not an address.
   registry) is the binding authority; the figwal layer knows nothing of it. An
   `:<turn>` sets a **one-shot pending fork-point** consumed by the next bare
   prompt (`fig -- …` forks there and moves to the new branch); `:<turn>` alone
-  re-pins the already-bound aria.
+  re-pins the already-bound aria. **Terminal-only**: inside an aria's own bash
+  tool `attend` refuses, because `FIGARO_ARIA` pins that shell to the aria
+  that spawned it, permanently (see the figaro SKILL). An aria reaches another
+  aria with an explicit `--id`, never by attending it.
 - **`attend null`** (the literal `null`) — **go home**: unbind the shell. New
   conversations then default to the live loadout. The word echoes the
   **kindNull** genesis root that sits above every loadout. There is **no

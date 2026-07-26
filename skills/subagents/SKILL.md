@@ -96,4 +96,8 @@ figaro list -g
 - The angelus daemon manages all concurrent arias. It starts automatically on the first `figaro send`.
 - Practical concurrency: depends on your provider's rate limits. 4-8 simultaneous arias is typical before throttling.
 - Subagents inherit the default loadout (provider, model, skills). Override per-aria with `figaro set --id <id> system.model <model>` after creation.
+- **Always pass `--id` when steering a subagent.** Your own shell-outs carry
+  `FIGARO_ARIA=<your id>` — you are statically attended to *yourself*, so a
+  bare `figaro send`/`set`/`status` addresses you, not the subagent. The id is
+  the only way to reach someone else.
 - Raw mode (`-r`) streams output as it arrives (not buffered until completion like pi's `-p`). Log files grow in real time.
