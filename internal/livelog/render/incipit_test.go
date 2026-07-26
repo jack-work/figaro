@@ -1,5 +1,17 @@
 package render
 
+// WHAT THIS FILE ONCE FAILED TO CATCH
+//
+// These tests assert over compose() OUTPUT — what the renderer DECIDES to
+// paint. They cannot observe the terminal scrolling a row into history before
+// the next repaint. So they were green while a completed reply never reached
+// scrollback at all, and green again while a submit-time footer was frozen and
+// then printed a second time at completion. Both shipped. Both were found by a
+// user in his own shell.
+//
+// Anything about what SURVIVES on screen belongs in the tmux smoke suite:
+// internal/cli/tmuxsmoke_cases_test.go. See skills/tmux-testing.md.
+
 import (
 	"io"
 	"strings"

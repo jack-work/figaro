@@ -1,5 +1,17 @@
 package cli
 
+// WHAT THIS FILE ONCE FAILED TO CATCH
+//
+// Its cases fed WHOLE STRINGS through consume(). A real user types ONE BYTE PER
+// READ — a different input path entirely. That hid `composeText += string(b)`
+// on a byte, which re-encodes it as a code point and mojibaked every non-ASCII
+// character. It also could not see that typing without the trigger key
+// discarded input silently, because every case here pressed the trigger first.
+//
+// Rule: if the thing under test is INPUT, type one character at a time, and
+// test the path of someone who does not know the affordance exists.
+// See skills/tmux-testing.md.
+
 import (
 	"context"
 	"strings"
