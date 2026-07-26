@@ -139,7 +139,7 @@ func TestRenderToolNodeSanitizesBeforeTailClamp(t *testing.T) {
 // to STEERING, so the prompt wearing it printed the voice twice in incipit and
 // mislabelled the prompt as steering in `show`. Then it was a voice-run header
 // over node 0. Now the question is not a node at all: it is Turn.Inquiry, drawn
-// by inquiryRows under the same "❯ input" header every view uses.
+// by inquiryRows under the same "> input" header every view uses.
 func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	reply := livedoc.Node{Type: livedoc.NodeProse, Role: livedoc.RoleOutput, Markdown: "RED"}
 	steer := livedoc.Node{Type: livedoc.NodeSteering, Role: livedoc.RoleInput, Markdown: "actually, whisper it"}
@@ -148,7 +148,7 @@ func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	// the question first, though it is text rather than a node.
 	turn := stripANSI(strings.Join(
 		renderTurnRows("what is the codeword?", []livedoc.Node{reply}, 60, 0, 0, renderSettings{}), "\n"))
-	ui, fi := strings.Index(turn, "❯ input"), strings.Index(turn, "‹ figaro")
+	ui, fi := strings.Index(turn, "> input"), strings.Index(turn, "< figaro")
 	if ui < 0 || fi < 0 || ui > fi {
 		t.Fatalf("turn must head the inquiry then the output run:\n%s", turn)
 	}

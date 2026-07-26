@@ -11,7 +11,7 @@ import (
 // The user reported: "steering turns seems to wind up double printed, and they
 // all get entire rows." A steering node carries Role input, so the fold used to
 // see a voice change there, close the agent's run and open an input run around
-// the steer — giving it its own "❯ input" header AND its own pair of full-width
+// the steer — giving it its own "> input" header AND its own pair of full-width
 // rules, and cutting the agent's output into two blocks.
 //
 // There is no voice split left to get wrong: the inquiry is text on the turn,

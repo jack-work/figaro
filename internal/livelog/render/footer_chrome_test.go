@@ -16,11 +16,11 @@ import (
 // verbatim stranded one copy in scrollback per message, so a single exchange
 // showed TWO status bars:
 //
-//	❯ input
+//	> input
 //	  test
 //	──── aria abc ───        <- stranded: the prompt's own live region carried it
 //	test · thinking ⠙ …
-//	‹ figaro
+//	< figaro
 //	  …reply…
 //	──── aria abc ───        <- the real one
 //	test · completed ✓ …

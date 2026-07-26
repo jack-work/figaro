@@ -34,7 +34,7 @@ type renderSettings struct {
 // by every view: `show` (via renderNodeList), the inline incipit and the
 // transcript pager (via ariaView). It used to exist twice — ariaView switched
 // on n.Type alone and so drew a turn's prompt as agent prose, putting the
-// user's own question under the "‹ figaro" header while `show` correctly
+// user's own question under the "< figaro" header while `show` correctly
 // marked it "↳ input". Two renderers for one representation is the exact defect
 // class turn addressing exists to remove; there is now one.
 func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) []string {
@@ -87,7 +87,7 @@ func renderTurnRows(inquiry string, nodes []livedoc.Node, width, bashCap int, ti
 
 // inquiryProse wraps a turn's opening question to the same prose renderer its
 // nodes use, so the question looks exactly as it did when it was still a node.
-// The caller supplies the "❯ input" header, because each view decorates rows
+// The caller supplies the "> input" header, because each view decorates rows
 // its own way. Empty inquiry, no rows.
 func inquiryProse(inquiry string, width int) []string {
 	if strings.TrimSpace(inquiry) == "" {

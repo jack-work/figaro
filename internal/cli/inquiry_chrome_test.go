@@ -19,13 +19,13 @@ import (
 // and nothing else: the reply ran straight into the question with no rule
 // between the voices.
 //
-// The block is: "❯ input" / blank / indented text / blank / RULE / "‹ figaro".
+// The block is: "> input" / blank / indented text / blank / RULE / "< figaro".
 // All three surfaces must agree on it, because a live-vs-committed difference
 // here is not cosmetics — it is the same exchange telling two stories.
 func TestInquiryChromeAgreesAcrossViews(t *testing.T) {
 	const question = "THEQUESTION"
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "THEANSWER"}}
-	want := []string{"❯ input", "", question, "", "─", "‹ figaro", "", "THEANSWER"}
+	want := []string{"> input", "", question, "", "─", "< figaro", "", "THEANSWER"}
 
 	t.Run("show", func(t *testing.T) {
 		got := renderTurnRows(question, nodes, 48, 0, 0, renderSettings{})
@@ -67,7 +67,7 @@ func assertChrome(t *testing.T, rows []string, want []string) {
 	}
 	start := -1
 	for i := range shape {
-		if shape[i] == "❯ input" {
+		if shape[i] == "> input" {
 			start = i
 			break
 		}
@@ -94,10 +94,10 @@ func classifyChromeRow(row string) string {
 		return ""
 	case strings.Trim(s, "─") == "":
 		return "─"
-	case strings.HasPrefix(s, "❯"):
-		return "❯ input"
-	case strings.HasPrefix(s, "‹"):
-		return "‹ figaro"
+	case strings.HasPrefix(s, ">"):
+		return "> input"
+	case strings.HasPrefix(s, "<"):
+		return "< figaro"
 	}
 	return s
 }

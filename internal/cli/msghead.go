@@ -14,8 +14,8 @@ import (
 // the app — the transcript rule, the assistant bookend, and the
 // steering gutter all live in the same tonal register):
 //
-//	RoleInput  → "❯ input"   (dim — the incoming voice)
-//	RoleOutput → "‹ figaro"  (dim — the agent's voice)
+//	RoleInput  → "> input"   (dim — the incoming voice)
+//	RoleOutput → "< figaro"  (dim — the agent's voice)
 //	anything else (e.g. "system", "tool") → no header
 //
 // The asymmetry is deliberate. "you" was a LIE the moment a message arrived
@@ -30,9 +30,9 @@ import (
 func messageHeader(role string) string {
 	switch role {
 	case livedoc.RoleInput:
-		return term.Dim("❯ input")
+		return term.Dim("> input")
 	case livedoc.RoleOutput:
-		return term.Dim("‹ figaro")
+		return term.Dim("< figaro")
 	default:
 		return ""
 	}

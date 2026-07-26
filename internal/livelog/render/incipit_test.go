@@ -121,9 +121,9 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 	in := NewIncipit(ft, NodeText{})
 	in.Header = func(role string) string {
 		if role == livedoc.RoleOutput {
-			return "‹ figaro"
+			return "< figaro"
 		}
-		return "❯ input"
+		return "> input"
 	}
 	in.Bookend = func() []string { return []string{"────rule────", "", "status"} }
 
@@ -133,7 +133,7 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 	if !strings.Contains(scr, "status") {
 		t.Fatalf("thinking footer must show immediately:\n%s", scr)
 	}
-	if strings.Contains(scr, "‹ figaro") {
+	if strings.Contains(scr, "< figaro") {
 		t.Fatalf("output header must NOT appear before the inquiry returns:\n%s", scr)
 	}
 
@@ -141,7 +141,7 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 	in.Open(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
 	in.Freeze(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
 	scr = strings.Join(ft.Screen(), "\n")
-	if strings.Count(scr, "‹ figaro") != 1 {
+	if strings.Count(scr, "< figaro") != 1 {
 		t.Fatalf("figaro header must appear once (no orphan):\n%s", scr)
 	}
 	if strings.Count(scr, "────rule────") != 1 {
@@ -159,7 +159,7 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 func TestIncipit_ThinkingAbandonedOnEarlyError(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)
 	in := NewIncipit(ft, NodeText{})
-	in.Header = func(role string) string { return "‹ figaro" }
+	in.Header = func(role string) string { return "< figaro" }
 	in.Bookend = func() []string { return []string{"──── aria xyz ────", "", "status"} }
 
 	in.Freeze(aria.Message{Turn: 1, Role: livedoc.RoleInput, Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "quick test"}}})

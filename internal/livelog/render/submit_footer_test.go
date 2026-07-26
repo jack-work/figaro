@@ -119,7 +119,7 @@ func TestIncipit_TinyViewportKeepsTheReplyInScrollback(t *testing.T) {
 
 // A slice of a turn is routinely invisible — thinking is hidden by default, a
 // tool may already be drawn, prose is minted empty so ids cannot shift. A header
-// over such a run showed as a bare "‹ figaro" labelling nothing, directly above
+// over such a run showed as a bare "< figaro" labelling nothing, directly above
 // the next block's own header.
 func TestIncipit_NoHeaderOverAnEmptyRun(t *testing.T) {
 	ft := NewFakeTerminal(60, 24)

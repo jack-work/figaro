@@ -70,7 +70,7 @@ func sgrPaintFrames(t testing.TB, w, h, frames int) [][]string {
 			screen[r] = rows[(f+r)%len(rows)]
 		}
 		screen[h-2] = "\x1b[2m" + strings.Repeat("─", w-16) + fmt.Sprintf(" %d/%d ───", f+1, frames) + "\x1b[0m"
-		screen[h-1] = fmt.Sprintf("‹ figaro · frame %d", f+1)
+		screen[h-1] = fmt.Sprintf("< figaro · frame %d", f+1)
 		out[f] = screen
 	}
 	return out

@@ -164,7 +164,7 @@ func TestSmoke_SteerOrderMatchesShow(t *testing.T) {
 	// adjacency was the visible signature of the hoist.
 	lines := strings.Split(sb, "\n")
 	for i := 1; i < len(lines); i++ {
-		if strings.Contains(lines[i], "↳ input") && strings.Contains(lines[i-1], "❯ input") {
+		if strings.Contains(lines[i], "↳ input") && strings.Contains(lines[i-1], "> input") {
 			t.Errorf("steer is hoisted directly under the inquiry header — live order disagrees with fig show\n%s", sb)
 			break
 		}

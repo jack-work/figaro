@@ -199,7 +199,7 @@ func TestE2E_SimpleTurnExitsWithOneFooter(t *testing.T) {
 	if got := strings.Count(scr, "aria "); got != 1 {
 		t.Errorf("status footer appears %d times, want exactly 1\n---\n%s", got, scr)
 	}
-	if !strings.Contains(scr, "❯ input") {
+	if !strings.Contains(scr, "> input") {
 		t.Errorf("prompt block missing its input header\n---\n%s", scr)
 	}
 }

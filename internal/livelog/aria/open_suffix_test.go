@@ -42,7 +42,7 @@ func TestOpenAndViewCarryOnlyTheSuffix(t *testing.T) {
 			t.Errorf("%s: suffix node = %q, want the answer", name, got.Nodes[0].Markdown)
 		}
 		// turnRole over the whole slice reports the agent, which is how the
-		// user's own question ended up under "‹ figaro".
+		// user's own question ended up under "< figaro".
 		if got.Role != livedoc.RoleOutput {
 			t.Errorf("%s: role = %q, want output", name, got.Role)
 		}

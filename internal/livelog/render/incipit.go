@@ -419,7 +419,7 @@ func (i *Incipit) inquiryRows(inquiry string) []string {
 	return rows
 }
 
-// header returns the role-header line for role (e.g. "❯ input") or "" if no
+// header returns the role-header line for role (e.g. "> input") or "" if no
 // Header function is configured or the role has no glyph.
 func (i *Incipit) header(role string) string {
 	if i.Header == nil {

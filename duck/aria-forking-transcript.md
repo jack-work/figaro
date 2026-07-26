@@ -3976,7 +3976,7 @@ Now the `XwalBackend` — `store.Backend` over the tree, with shared per-aria ha
 ### 🧑 USER · 2026-06-27 03:45
 
 gym/apps/session-manager via 🐹 v1.26.4-X:nodwarf5 on 󱇶 took 34s
-❯ q where is our manifest exactly?
+> q where is our manifest exactly?
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
   where is our manifest exactly?
@@ -5231,7 +5231,7 @@ Now fix the test build failures. Let me look at both:
 
 ### 🧑 USER · 2026-06-27 05:04
 
-❯ like there ought to i would imagine given the severity of the glitching detect under
+> like there ought to i would imagine given the severity of the glitching detect under
   certain circumstances either in the logs when certain invariants break and log them and
   also possibly trigger an entire page rerender under those circumstances.  Perhaps we
   should observe how pi agent handles it in ~/dev/pi
@@ -5816,7 +5816,7 @@ Committed (`7fd3e9c`). Let me update the project memory, then hand off.
 ### 🧑 USER · 2026-06-27 05:43
 
 gym/apps/session-manager via 🐹 v1.26.4-X:nodwarf5 on 󱇶
-❯ q can you write a quick script that runs through that and illstrates each step and then have me run it?
+> q can you write a quick script that runs through that and illstrates each step and then have me run it?
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
   can you write a quick script that runs through that and illstrates each step and then have me run it?
