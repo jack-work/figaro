@@ -1,5 +1,5 @@
 ## plain
-"❯ you"
+"❯ input"
 ""
 " \x1b[0m  \x1b[38;5;252mplease look                                 \x1b[0m"
 ""
@@ -24,7 +24,7 @@
 ""
 " \x1b[0m  \x1b[38;5;252mdone.                                       \x1b[0m"
 ## selected
-"❯ you"
+"❯ input"
 ""
 "▎\x1b[0m  \x1b[38;5;252mplease look                                 \x1b[0m"
 ""
@@ -49,7 +49,7 @@
 ""
 " \x1b[0m  \x1b[38;5;252mdone.                                       \x1b[0m"
 ## highlighted
-"❯ you"
+"❯ input"
 ""
 " \x1b[0m  \x1b[38;5;252mplease look                                 \x1b[0m"
 ""
@@ -74,7 +74,7 @@
 ""
 " \x1b[0m  \x1b[38;5;252mdone.                                       \x1b[0m"
 ## plain-again
-"❯ you"
+"❯ input"
 ""
 " \x1b[0m  \x1b[38;5;252mplease look                                 \x1b[0m"
 ""

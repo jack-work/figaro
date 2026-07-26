@@ -21,7 +21,7 @@ import "github.com/jack-work/figaro/internal/livelog/aria"
 // start is the absolute line of the entry's first line — the separator's
 // first blank when sep is set, otherwise the first row.
 type lineEntry struct {
-	lt    int
+	turn  int
 	start int
 	sep   bool // preceded by the ""/rule/"" separator triple
 	open  bool // the live/held-open message, re-rendered every frame
@@ -67,7 +67,7 @@ func (x *lineIndex) entryAt(i int) int {
 
 // buildIndex refreshes the line index for the current retained window. It
 // subsumes the bookkeeping lines() used to do — tail reset while following,
-// width invalidation of rowCache, and keeping lineLT current — but stops short
+// width invalidation of rowCache, and keeping lineTurn current — but stops short
 // of materializing any row text.
 func (t *transcript) buildIndex() {
 	if t.follow {
@@ -80,7 +80,7 @@ func (t *transcript) buildIndex() {
 	entries, total := t.index.scratch[:0], 0
 	add := func(lt int, rows []transcriptRow, open bool) {
 		sep := total > 0 // rule separator BETWEEN messages only
-		entries = append(entries, lineEntry{lt: lt, start: total, sep: sep, open: open, rows: rows})
+		entries = append(entries, lineEntry{turn: lt, start: total, sep: sep, open: open, rows: rows})
 		if sep {
 			total += 3
 		}
@@ -94,10 +94,10 @@ func (t *transcript) buildIndex() {
 			rows = t.renderMsgBase(m)
 			t.rowCache[keyOf(m)] = rows
 		}
-		add(m.LT, rows.rows, false)
+		add(m.Turn, rows.rows, false)
 	})
 	if open := t.openMessage(); open != nil {
-		add(open.LT, t.renderMsgBase(*open).rows, true)
+		add(open.Turn, t.renderMsgBase(*open).rows, true)
 	}
 	// The page set moved => the index describes a different window, full stop.
 	// That is the one authority (windowRev); the shape diff below only has to
@@ -109,7 +109,7 @@ func (t *transcript) buildIndex() {
 	}
 	if !changed {
 		for i := range entries {
-			if entries[i].lt != t.index.entries[i].lt ||
+			if entries[i].turn != t.index.entries[i].turn ||
 				entries[i].start != t.index.entries[i].start ||
 				len(entries[i].rows) != len(t.index.entries[i].rows) {
 				changed = true
@@ -128,19 +128,19 @@ func (t *transcript) buildIndex() {
 // called when the index shape actually changed — a scroll leaves it alone.
 // Separator rows carry the FOLLOWING message's LT, as they always have.
 func (t *transcript) rebuildLineLT() {
-	if cap(t.lineLT) < t.index.total {
-		t.lineLT = make([]int, t.index.total)
+	if cap(t.lineTurn) < t.index.total {
+		t.lineTurn = make([]int, t.index.total)
 	}
-	t.lineLT = t.lineLT[:t.index.total]
+	t.lineTurn = t.lineTurn[:t.index.total]
 	for k := range t.index.entries {
 		e := &t.index.entries[k]
 		i := e.start
 		if e.sep {
-			t.lineLT[i], t.lineLT[i+1], t.lineLT[i+2] = e.lt, e.lt, e.lt
+			t.lineTurn[i], t.lineTurn[i+1], t.lineTurn[i+2] = e.turn, e.turn, e.turn
 			i += 3
 		}
 		for range e.rows {
-			t.lineLT[i] = e.lt
+			t.lineTurn[i] = e.turn
 			i++
 		}
 	}
@@ -260,7 +260,7 @@ func (t *transcript) nodeSpanOf(ref nodeRef) (nodeSpan, bool) {
 	span, found := nodeSpan{}, false
 	for k := range t.index.entries {
 		e := &t.index.entries[k]
-		if e.lt != ref.lt {
+		if e.turn != ref.turn {
 			continue
 		}
 		base := e.start

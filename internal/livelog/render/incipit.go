@@ -60,8 +60,8 @@ type Incipit struct {
 	thinking bool // open region is an OpenThinking placeholder (adopted by the next Open)
 
 	// Open-message live region:
-	liveLT   int
-	liveFrom uint64   // start of the open suffix; with liveLT it identifies the region
+	liveTurn   int
+	liveFrom uint64   // start of the open suffix; with liveTurn it identifies the region
 	role     string   // open message's role; selects Bookend (assistant) vs Rule
 	live     []string // rows on screen for the open message
 	vt       int      // rows of the live region scrolled above the viewport
@@ -89,7 +89,7 @@ func NewIncipit(term Terminal, view NodeView) *Incipit {
 // it — into scrollback, after which the rest of the turn was frozen again and
 // the entire post-steer block printed twice.
 func (i *Incipit) isLiveRegion(m aria.Message) bool {
-	return i.liveLT != 0 && m.LT == i.liveLT && m.From == i.liveFrom
+	return i.liveTurn != 0 && m.Turn == i.liveTurn && m.From == i.liveFrom
 }
 
 func (i *Incipit) Freeze(m aria.Message) {
@@ -118,7 +118,7 @@ func (i *Incipit) Freeze(m aria.Message) {
 	// A voice run whose nodes all render to nothing (thinking hidden, minted-but-
 	// empty prose, a tool already drawn) must not print a header over empty space.
 	// A steer splits the agent's run in two, and the leading half is routinely
-	// invisible — which showed as a bare "‹ figaro" sitting above "↳ you".
+	// invisible — which showed as a bare "‹ figaro" sitting above "↳ input".
 	if h := i.header(m.Role); h != "" && len(rows) > 0 {
 		b.WriteString(h)
 		b.WriteString("\r\n")
@@ -187,29 +187,29 @@ func (i *Incipit) printMessage(m aria.Message) {
 }
 
 // Open paints (or repaints) the open message's blocks as the live region.
-func (i *Incipit) Open(lt int, from uint64, role string, nodes []livedoc.Node) {
+func (i *Incipit) Open(turn int, from uint64, role string, nodes []livedoc.Node) {
 	// A thinking placeholder (OpenThinking) is the same on-screen region as the
-	// assistant message that follows: adopt its LT in place — no dropBelow, no
+	// assistant message that follows: adopt its turn in place — no dropBelow, no
 	// reset — so the footer painted on submit stays put and the streamed
 	// content fills in above it, never orphaning a header/footer to scrollback.
 	if i.thinking && role == i.role {
 		i.thinking = false
-		i.liveLT, i.liveFrom = lt, from
+		i.liveTurn, i.liveFrom = turn, from
 		i.paint(i.compose(nodes))
 		return
 	}
-	if lt != i.liveLT || from != i.liveFrom {
+	if turn != i.liveTurn || from != i.liveFrom {
 		// A new open message without a prior Freeze: release whatever was live.
 		// A thinking placeholder is ERASED rather than released — it is a pinned
 		// footer, not content, and dropping it into scrollback would strand the
 		// status bar above the very message it describes.
 		if i.thinking {
 			io.WriteString(i.term, "\x1b[J")
-		} else if i.liveLT != 0 {
+		} else if i.liveTurn != 0 {
 			i.dropBelow()
 		}
 		i.reset()
-		i.liveLT, i.liveFrom = lt, from
+		i.liveTurn, i.liveFrom = turn, from
 	}
 	i.role = role
 	i.paint(i.compose(nodes))
@@ -220,23 +220,23 @@ func (i *Incipit) Open(lt int, from uint64, role string, nodes []livedoc.Node) {
 // Open(realLT, sameRole, …) adopts this region in place. Used on submit so the
 // footer appears immediately rather than waiting for the model's first token.
 func (i *Incipit) OpenThinking(role string) {
-	if i.liveLT != 0 {
+	if i.liveTurn != 0 {
 		i.dropBelow()
 	}
 	i.reset()
 	i.thinking = true
-	i.liveLT = thinkingLT
+	i.liveTurn = thinkingTurn
 	i.role = role
 	i.paint(i.compose(nil))
 }
 
-// thinkingLT is the sentinel liveLT for an OpenThinking placeholder — any
+// thinkingTurn is the sentinel liveTurn for an OpenThinking placeholder — any
 // value a real message LT never takes.
-const thinkingLT = -1
+const thinkingTurn = -1
 
 // Tick advances spinner animation and repaints the open message.
 func (i *Incipit) Tick(nodes []livedoc.Node) {
-	if i.liveLT == 0 {
+	if i.liveTurn == 0 {
 		return
 	}
 	if i.thinking {
@@ -249,7 +249,7 @@ func (i *Incipit) Tick(nodes []livedoc.Node) {
 // Resize repaints the open message at the new width — clearing from the live
 // region's top downward only, so scrollback above is untouched.
 func (i *Incipit) Resize(nodes []livedoc.Node) {
-	if i.liveLT == 0 {
+	if i.liveTurn == 0 {
 		return
 	}
 	io.WriteString(i.term, "\x1b[J") // erase from the live-region top to end of screen
@@ -318,7 +318,12 @@ func (i *Incipit) compose(nodes []livedoc.Node) []string {
 	// header — frozen into scrollback alongside the rest of the live region.
 	rows := make([]string, 0, len(body)+5)
 	rows = append(rows, "")
-	if hd := i.header(i.role); hd != "" {
+	// No header over an empty run. At submit the live region is deliberately
+	// bodyless — the socket is up but the inquiry has not come back over the
+	// wire yet — so this yields rule + footer and nothing else. The header
+	// appears with the first content, which is the moment there is something
+	// for it to label.
+	if hd := i.header(i.role); hd != "" && len(body) > 0 {
 		rows = append(rows, hd, "")
 	}
 	rows = append(rows, body...)
@@ -331,7 +336,7 @@ func (i *Incipit) compose(nodes []livedoc.Node) []string {
 	return rows
 }
 
-// header returns the role-header line for role (e.g. "❯ you") or "" if no
+// header returns the role-header line for role (e.g. "❯ input") or "" if no
 // Header function is configured or the role has no glyph.
 func (i *Incipit) header(role string) string {
 	if i.Header == nil {
@@ -456,7 +461,7 @@ func (i *Incipit) vmove(b *strings.Builder, target int) {
 // formatting (CLI policy). Without a live region, line is still printed.
 func (i *Incipit) AbandonOpen(line string) {
 	var b strings.Builder
-	if i.liveLT != 0 {
+	if i.liveTurn != 0 {
 		// dropBelow logic: park below the visible live span.
 		if n := len(i.live) - i.vt; n > 0 {
 			b.WriteString(strings.Repeat("\r\n", n))
@@ -483,6 +488,6 @@ func (i *Incipit) dropBelow() {
 }
 
 func (i *Incipit) reset() {
-	i.liveLT, i.liveFrom, i.role, i.live, i.vt, i.cur = 0, 0, "", nil, 0, 0
+	i.liveTurn, i.liveFrom, i.role, i.live, i.vt, i.cur = 0, 0, "", nil, 0, 0
 	i.thinking = false
 }

@@ -24,10 +24,10 @@ type Client struct {
 	closedRev       uint64
 	lastCommittedLT int
 
-	// The open turn, materialized. openLT holds the TURN ID (see Message);
+	// The open turn, materialized. openTurn holds the TURN ID (see Message);
 	// openFrom is the suffix boundary reported by Live.From — nodes below it
 	// are closed and will never be touched again.
-	openLT         int
+	openTurn         int
 	openFrom       uint64
 	openV          int
 	openNodesSlice []livedoc.Node
@@ -71,7 +71,7 @@ func (c *Client) Cursor() int {
 func (c *Client) OpenAnimating() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.openLT == 0 {
+	if c.openTurn == 0 {
 		return false
 	}
 	for _, n := range c.openNodesSlice {
@@ -103,17 +103,17 @@ func (c *Client) Apply(p Page) {
 		// Adopt any nodes the part carries. From is the positional id of
 		// Nodes[0], so a clipped part slots into place rather than replacing.
 		if len(part.Nodes) > 0 {
-			if c.openLT != id {
+			if c.openTurn != id {
 				c.resetOpen()
-				c.openLT = id
+				c.openTurn = id
 			}
 			c.absorb(part.From, part.Nodes)
 		}
 
 		if part.Live != nil {
-			if c.openLT != id {
+			if c.openTurn != id {
 				c.resetOpen()
-				c.openLT = id
+				c.openTurn = id
 			}
 			c.openFrom = part.Live.From
 			for _, nd := range part.Live.Nodes {
@@ -126,7 +126,7 @@ func (c *Client) Apply(p Page) {
 				for s := c.emitted[id]; s < n; {
 					e, role := VoiceRunEnd(c.openNodesSlice[:n], s)
 					finalized = append(finalized, Message{
-						LT: id, From: uint64(s), Role: role,
+						Turn: id, From: uint64(s), Role: role,
 						Nodes: append([]livedoc.Node(nil), c.openNodesSlice[s:e]...),
 					})
 					s = e
@@ -150,7 +150,7 @@ func (c *Client) Apply(p Page) {
 			continue
 		}
 		nodes := part.Nodes
-		if c.openLT == id && len(c.openNodesSlice) >= len(nodes) {
+		if c.openTurn == id && len(c.openNodesSlice) >= len(nodes) {
 			nodes = c.openNodes()
 		}
 		c.closedSeen[id] = true
@@ -160,13 +160,13 @@ func (c *Client) Apply(p Page) {
 		for s := c.emitted[id]; s < len(nodes); {
 			e, role := VoiceRunEnd(nodes, s)
 			finalized = append(finalized, Message{
-				LT: id, From: uint64(s), Role: role, Nodes: nodes[s:e],
+				Turn: id, From: uint64(s), Role: role, Nodes: nodes[s:e],
 			})
 			s = e
 		}
 		delete(c.emitted, id)
 		c.advanceCommitted(id)
-		if c.openLT == id {
+		if c.openTurn == id {
 			c.resetOpen()
 		}
 	}
@@ -177,11 +177,11 @@ func (c *Client) Apply(p Page) {
 	}
 	c.trimClosed()
 
-	haveLive := c.openLT != 0
+	haveLive := c.openTurn != 0
 	// The live region is the OPEN SUFFIX only. Nodes below openFrom were
 	// already released as closed messages above; redrawing them here would
 	// print them twice and wrap the prompt in the agent's header.
-	liveLT, liveFrom, liveNodes := c.openLT, c.openFrom, c.openSuffix()
+	liveLT, liveFrom, liveNodes := c.openTurn, c.openFrom, c.openSuffix()
 	c.mu.Unlock()
 
 	if metrics != nil && c.OnMetrics != nil {
@@ -275,14 +275,19 @@ func (c *Client) trimClosed() {
 		return
 	}
 	c.closedRev++
-	sort.SliceStable(c.closed, func(i, j int) bool { return c.closed[i].LT < c.closed[j].LT })
+	sort.SliceStable(c.closed, func(i, j int) bool {
+		if c.closed[i].Turn != c.closed[j].Turn {
+			return c.closed[i].Turn < c.closed[j].Turn
+		}
+		return c.closed[i].From < c.closed[j].From
+	})
 	c.closed = append([]Message(nil), c.closed[len(c.closed)-c.closedLimit:]...)
 	c.closedSeen = make(map[int]bool, len(c.closed))
 	for _, m := range c.closed {
-		c.closedSeen[m.LT] = true
+		c.closedSeen[m.Turn] = true
 	}
-	if len(c.closed) > 0 && c.closed[0].LT > c.closedFloor {
-		c.closedFloor = c.closed[0].LT
+	if len(c.closed) > 0 && c.closed[0].Turn > c.closedFloor {
+		c.closedFloor = c.closed[0].Turn
 	}
 }
 
@@ -313,10 +318,10 @@ func (c *Client) ClosedRevision() uint64 {
 func (c *Client) Open() *Message {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.openLT == 0 {
+	if c.openTurn == 0 {
 		return nil
 	}
-	return &Message{LT: c.openLT, Role: turnRole(c.openNodesSlice), Nodes: c.openNodes()}
+	return &Message{Turn: c.openTurn, Role: turnRole(c.openNodesSlice), Nodes: c.openNodes()}
 }
 
 // View returns a snapshot of the current local state.
@@ -325,12 +330,18 @@ func (c *Client) View() View {
 	defer c.mu.Unlock()
 	closed := append([]Message(nil), c.closed...)
 	// c.closed is in arrival order, which interleaves when a live-sealed message
-	// (this session) precedes a catch-up Read of older history. Sort by LT so the
-	// transcript renders the conversation in order.
-	sort.SliceStable(closed, func(i, j int) bool { return closed[i].LT < closed[j].LT })
+	// (this session) precedes a catch-up Read of older history. Order by the FULL
+	// identity (Turn, From): a turn arrives as several slices, so sorting on Turn
+	// alone leaves their relative order to however they happened to arrive.
+	sort.SliceStable(closed, func(i, j int) bool {
+		if closed[i].Turn != closed[j].Turn {
+			return closed[i].Turn < closed[j].Turn
+		}
+		return closed[i].From < closed[j].From
+	})
 	v := View{Closed: closed}
-	if c.openLT != 0 {
-		v.Open = &Message{LT: c.openLT, Role: turnRole(c.openNodesSlice), Nodes: c.openNodes()}
+	if c.openTurn != 0 {
+		v.Open = &Message{Turn: c.openTurn, Role: turnRole(c.openNodesSlice), Nodes: c.openNodes()}
 	}
 	return v
 }
@@ -356,7 +367,7 @@ func (c *Client) openSuffix() []livedoc.Node {
 }
 
 func (c *Client) resetOpen() {
-	c.openLT, c.openV, c.openFrom = 0, 0, 0
+	c.openTurn, c.openV, c.openFrom = 0, 0, 0
 	c.openNodesSlice = nil
 }
 
@@ -400,6 +411,12 @@ func setField(n *livedoc.Node, field string, v any) {
 		n.Role = asStr(v)
 	case "tool_call_id":
 		n.ToolCallID = asStr(v)
+	case "at":
+		n.At = asInt64(v)
+	case "lts":
+		n.LTs = asUint64s(v)
+	case "src":
+		n.Src = asSrcs(v)
 	case "output":
 		n.Output = asStr(v)
 	case "id":
@@ -433,4 +450,39 @@ func asInt64(v any) int64 {
 	default:
 		return 0
 	}
+}
+
+// asUint64s and asSrcs accept both the in-process value and its JSON echo
+// ([]any of float64 / map[string]any), because a delta reaches the fold either
+// way — constructed locally in a test, or decoded off the wire.
+func asUint64s(v any) []uint64 {
+	switch t := v.(type) {
+	case []uint64:
+		return t
+	case []any:
+		out := make([]uint64, 0, len(t))
+		for _, e := range t {
+			out = append(out, uint64(asInt64(e)))
+		}
+		return out
+	}
+	return nil
+}
+
+func asSrcs(v any) []livedoc.Src {
+	switch t := v.(type) {
+	case []livedoc.Src:
+		return t
+	case []any:
+		out := make([]livedoc.Src, 0, len(t))
+		for _, e := range t {
+			m, ok := e.(map[string]any)
+			if !ok {
+				continue
+			}
+			out = append(out, livedoc.Src{LT: uint64(asInt64(m["lt"])), Block: int(asInt64(m["block"]))})
+		}
+		return out
+	}
+	return nil
 }

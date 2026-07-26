@@ -134,7 +134,7 @@ func TestRenderToolNodeSanitizesBeforeTailClamp(t *testing.T) {
 // in final validation: a turn's prompt is node 0 with Role "input", and it must
 // read as the user's voice in the inline renderer, the pager and `show` alike.
 //
-// The MECHANISM changed in S33. It used to be an inline "↳ you" marker on the
+// The MECHANISM changed in S33. It used to be an inline "↳ input" marker on the
 // node, because `show` had no header to carry a voice. That marker belongs to
 // STEERING, so the prompt wearing it printed the voice twice in incipit (once as
 // the run header, once as the marker) and mislabelled the prompt as steering in
@@ -149,11 +149,11 @@ func TestPromptDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	// under its own header, in order.
 	turn := stripANSI(strings.Join(
 		renderTurnRows([]livedoc.Node{prompt, reply}, 60, 0, 0, renderSettings{}), "\n"))
-	ui, fi := strings.Index(turn, "❯ you"), strings.Index(turn, "‹ figaro")
+	ui, fi := strings.Index(turn, "❯ input"), strings.Index(turn, "‹ figaro")
 	if ui < 0 || fi < 0 || ui > fi {
 		t.Fatalf("turn must head the input run then the output run:\n%s", turn)
 	}
-	if strings.Contains(turn, "↳ you") {
+	if strings.Contains(turn, "↳ input") {
 		t.Fatalf("the inquiry wore steering's marker — the duplicate-voice bug:\n%s", turn)
 	}
 
@@ -165,14 +165,14 @@ func TestPromptDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 		t.Fatalf("views disagree on one node:\n ariaView: %q\n show:     %q", got, viaList)
 	}
 
-	// "↳ you" is reserved for genuine steering — not the inquiry, not output.
-	if !strings.Contains(stripANSI(strings.Join(view.Render(steer, 60, 0), "\n")), "↳ you") {
+	// "↳ input" is reserved for genuine steering — not the inquiry, not output.
+	if !strings.Contains(stripANSI(strings.Join(view.Render(steer, 60, 0), "\n")), "↳ input") {
 		t.Fatal("steering lost its marker")
 	}
-	if strings.Contains(got, "↳ you") {
+	if strings.Contains(got, "↳ input") {
 		t.Fatalf("the inquiry drew steering's marker: %q", got)
 	}
-	if a := stripANSI(strings.Join(view.Render(reply, 60, 0), "\n")); strings.Contains(a, "↳ you") {
+	if a := stripANSI(strings.Join(view.Render(reply, 60, 0), "\n")); strings.Contains(a, "↳ input") {
 		t.Fatalf("output prose drew the user's marker: %q", a)
 	}
 }
