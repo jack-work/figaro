@@ -45,6 +45,7 @@ const (
 	modeTranscript                // the pager, no panel, not searching
 	modeSearch                    // typing into the '/' box: almost all keys are text
 	modePanel                     // a '?'/'!'/'Q' panel is showing
+	modeCompose                   // typing a steer into the footer: almost all keys are text
 	numKeyModes
 )
 
@@ -56,12 +57,13 @@ const (
 	inTranscript keyModeSet = 1 << modeTranscript
 	inSearchBox  keyModeSet = 1 << modeSearch
 	inPanel      keyModeSet = 1 << modePanel
+	inComposeBox keyModeSet = 1 << modeCompose
 
 	// inPager is every mode with the pager up. Note that a transcript-mode
 	// row is ALSO reachable while a panel is showing: the panel swallows only
 	// its own keys and every other key wipes it and acts (see dispatch).
 	inPager  = inTranscript | inSearchBox | inPanel
-	inAnyBox = inIncipit | inPager
+	inAnyBox = inIncipit | inPager | inComposeBox
 )
 
 // chordKind distinguishes the three shapes a physical key arrives in.
@@ -291,6 +293,43 @@ var keymap = []keyBinding{
 		open: staysInline, why: "only reachable with the search prompt already up",
 		help: helpNone, pager: searchBackspace,
 	},
+
+	// -- the steer composer ------------------------------------------------
+	// 'i' opens it, in incipit AND in the pager, because a long turn
+	// auto-promotes and that is exactly when a user wants to steer. It is an
+	// INPUT-level row, not a pager row: incipit has no transcript to hand a key
+	// to, and the composer must work there. Everything with no compose-mode row
+	// is literal text (see consume).
+	{
+		chord: byteChord('i'), modes: inIncipit | inTranscript,
+		open: staysInline, why: "steering is an inline gesture; it must not yank the pager up",
+		help: helpCompose, input: inputComposeOpen,
+	},
+	{
+		chord: byteChord(0x0d), modes: inComposeBox,
+		open: staysInline, why: "only reachable with the composer already up",
+		help: helpCompose, input: inputComposeSubmit,
+	},
+	{
+		chord: byteChord(0x0a), modes: inComposeBox,
+		open: staysInline, why: "only reachable with the composer already up",
+		help: helpCompose, input: inputComposeSubmit,
+	},
+	{
+		chord: byteChord(0x1b), modes: inComposeBox,
+		open: staysInline, why: "only reachable with the composer already up",
+		help: helpCompose, input: inputComposeCancel,
+	},
+	{
+		chord: byteChord(0x7f), modes: inComposeBox,
+		open: staysInline, why: "only reachable with the composer already up",
+		help: helpNone, input: inputComposeBackspace,
+	},
+	{
+		chord: byteChord(0x08), modes: inComposeBox,
+		open: staysInline, why: "only reachable with the composer already up",
+		help: helpNone, input: inputComposeBackspace,
+	},
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +360,7 @@ const (
 	helpStatusPanel
 	helpQueuedPanel
 	helpHelpPanel
+	helpCompose
 )
 
 // helpRow is one line of the panel: the key column and what it does. The key
@@ -351,6 +391,7 @@ var helpRows = []helpRow{
 	{helpDetach, "q / ^D", "detach; the turn keeps running"},
 	{helpStatusPanel, "!", "figaro status panel"},
 	{helpQueuedPanel, "Q", "queued prompts panel"},
+	{helpCompose, "i", "steer the running turn (Enter send · Esc cancel)"},
 	{helpHelpPanel, "?", "close help"},
 }
 
