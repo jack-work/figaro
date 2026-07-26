@@ -46,7 +46,7 @@ func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) [
 	case n.Type == livedoc.NodeThinking:
 		return renderThinkingNode(n, width)
 	// Steering ONLY. The inquiry is also input-voice, but it opens the turn
-	// and carries the "❯ you" run header; marking it "↳ you" as well printed
+	// and carries the "❯ input" run header; marking it "↳ you" as well printed
 	// the voice twice in incipit and mislabelled the prompt as steering in
 	// `show`. The two are distinct primitives, not one thing in two positions.
 	case n.Type == livedoc.NodeSteering:
