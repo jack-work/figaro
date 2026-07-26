@@ -160,7 +160,9 @@ guard_isolation
 # ---------------------------------------------------------------------------
 # 1. Build + 3. mint an aria with NO prompt (no turn, no tokens).
 # ---------------------------------------------------------------------------
-BUILD_FLAGS=()
+# -ldflags stamps the revision: a plain `go build` in a git worktree records no
+# vcs.revision, which silently disables the CLI/daemon build handshake.
+BUILD_FLAGS=(-ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse --short=12 HEAD)")
 if [ -n "${STRESS_RACE:-}" ]; then
 	BUILD_FLAGS+=(-race)
 	log "STRESS_RACE=1: building the daemon WITH the race detector"

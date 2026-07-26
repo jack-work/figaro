@@ -37,6 +37,23 @@ names the shipped bug it exists to catch — read those before adding one.
 **It uses a real provider on purpose.** A fake provider would be one more double
 free to drift. Costs tokens; a pass means something.
 
+## Build a stamped binary — always
+
+```sh
+go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" \
+  -o /tmp/figaro ./cmd/figaro
+```
+
+A plain `go build` **in a git worktree records no revision at all** — Go's VCS
+autodetection only fires when `.git` is a *directory*, and a worktree's is a
+file. `-buildvcs=true` does not help and does not complain; it just stays
+silent. So `figaro --version` says `unknown`, and the CLI/daemon build
+handshake (`checkDaemonBuild`) has nothing to compare — it can only warn. That
+is how an old daemon spoke a new client's wire and rendered a user's own
+question in figaro's voice, four times, with no error. The harness
+(`smokeBinary`) and `scripts/*.sh` stamp for you; if you build by hand, stamp
+by hand.
+
 ## Ten traps, each of which produced a confident wrong answer
 
 **1. `tmux new-session -y N` gives pane height N−1.** The status bar takes a row,

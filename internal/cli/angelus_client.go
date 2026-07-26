@@ -174,31 +174,40 @@ func mustCreateAndBindLoadout(ctx context.Context, acli *angelus.Client, loaded 
 // rather than a stale process. Naming both revisions turns an hour of
 // confusion into one command.
 //
-// Skipped when either side's revision is unknown (a bare `go build` outside a
-// repo): unknown must not be treated as mismatched.
+// An unknown revision must not be treated as mismatched — but it must not be
+// treated as fine either. A plain `go build` in a git worktree stamps nothing
+// (Go auto-detects VCS only when .git is a directory), which is exactly how
+// this project is developed, so unknown is the COMMON case: when one side is
+// unknown and the other is not we warn. Only unknown-vs-unknown is silent,
+// because then there is nothing provable to say.
 func checkDaemonBuild(cli *angelus.Client) {
 	mine := buildRevision()
-	if mine == "" {
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	st, err := cli.Status(ctx)
 	if err != nil || st == nil {
 		return // transient: not worth blocking on
 	}
-	if st.Build == "" {
+	switch {
+	case st.Build == mine:
+		return // matched, or both unknown
+	case mine == "":
+		// We cannot prove incompatibility, but silence is the failure mode we
+		// are here to kill: warn loudly rather than let the user stare at an
+		// empty screen.
+		fmt.Fprintf(os.Stderr,
+			"figaro: this CLI's build is unknown, so it cannot be checked against\n"+
+				"        the running angelus (%s). If output is missing or garbled,\n"+
+				"        run `figaro stop` and retry; see skills/tmux-testing.md to\n"+
+				"        build a stamped binary.\n", short12(st.Build))
+		return
+	case st.Build == "":
 		// The daemon predates this check, so it is necessarily older than this
-		// binary. We cannot prove incompatibility, but silence is the failure
-		// mode we are here to kill: warn loudly rather than let the user stare
-		// at an empty screen.
+		// binary.
 		fmt.Fprintf(os.Stderr,
 			"figaro: the running angelus predates the build check, so it is older\n"+
 				"        than this CLI (%s). If output is missing or garbled,\n"+
 				"        run `figaro stop` and retry.\n", short12(mine))
-		return
-	}
-	if st.Build == mine {
 		return
 	}
 	die("running angelus is a different build than this CLI:\n"+
