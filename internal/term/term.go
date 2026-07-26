@@ -71,8 +71,8 @@ func Width() int {
 	if !isTTY {
 		return 80
 	}
-	if c, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && c > 20 {
-		return c
+	if c, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
+		return sizeOr(c, 80)
 	}
 	return 80
 }
@@ -83,10 +83,28 @@ func Height() int {
 	if !isTTY {
 		return 24
 	}
-	if _, r, err := term.GetSize(int(os.Stdout.Fd())); err == nil && r > 2 {
-		return r
+	if _, r, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
+		return sizeOr(r, 24)
 	}
 	return 24
+}
+
+// sizeOr accepts any POSITIVE measurement and falls back only when the
+// terminal reported nothing usable.
+//
+// This guard used to read `c > 20` for columns and `r > 2` for rows, which
+// discarded legitimate small terminals and substituted a fabricated 80x24.
+// The renderer then painted 24 rows into a 2-row pane; every repaint scrolled
+// the previous frame into history, so a streaming reply appeared several times
+// over, each copy longer than the last, and the pager floor and bodyHidden()
+// were both reasoning about a height the terminal never had. A measurement we
+// dislike is still a measurement — the only honest fallback is when there is
+// no measurement at all.
+func sizeOr(measured, fallback int) int {
+	if measured > 0 {
+		return measured
+	}
+	return fallback
 }
 
 const (
