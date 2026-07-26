@@ -99,9 +99,11 @@ func TestIncipit_NoTrailingBlanksAfterScrolledFreeze(t *testing.T) {
 	}
 }
 
-// OpenThinking pins the footer before any content; the assistant frame that
-// follows adopts the same region in place — the header/footer must not orphan
-// to scrollback (no duplicate "figaro" header, no duplicate footer rule).
+// OpenThinking pins the FOOTER before any content — and only the footer. The
+// output header is suppressed until the inquiry comes back over the wire, so
+// submit shows rule + status and nothing else; the assistant frame that follows
+// adopts the same region in place, bringing the header with its first content
+// and orphaning neither to scrollback.
 func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)
 	in := NewIncipit(ft, NodeText{})
@@ -109,15 +111,18 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 		if role == livedoc.RoleOutput {
 			return "‹ figaro"
 		}
-		return "❯ you"
+		return "❯ input"
 	}
 	in.Bookend = func() []string { return []string{"────rule────", "", "status"} }
 
 	in.Freeze(aria.Message{LT: 1, Role: livedoc.RoleInput, Nodes: []livedoc.Node{{ID: "u0", Type: "prose", Markdown: "hi"}}})
 	in.OpenThinking(livedoc.RoleOutput) // footer appears now, before any token
 	scr := strings.Join(ft.Screen(), "\n")
-	if !strings.Contains(scr, "status") || !strings.Contains(scr, "‹ figaro") {
-		t.Fatalf("thinking footer + header should show immediately:\n%s", scr)
+	if !strings.Contains(scr, "status") {
+		t.Fatalf("thinking footer must show immediately:\n%s", scr)
+	}
+	if strings.Contains(scr, "‹ figaro") {
+		t.Fatalf("output header must NOT appear before the inquiry returns:\n%s", scr)
 	}
 
 	// content streams in; the real assistant frame adopts the region

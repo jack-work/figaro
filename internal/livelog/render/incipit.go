@@ -318,7 +318,12 @@ func (i *Incipit) compose(nodes []livedoc.Node) []string {
 	// header — frozen into scrollback alongside the rest of the live region.
 	rows := make([]string, 0, len(body)+5)
 	rows = append(rows, "")
-	if hd := i.header(i.role); hd != "" {
+	// No header over an empty run. At submit the live region is deliberately
+	// bodyless — the socket is up but the inquiry has not come back over the
+	// wire yet — so this yields rule + footer and nothing else. The header
+	// appears with the first content, which is the moment there is something
+	// for it to label.
+	if hd := i.header(i.role); hd != "" && len(body) > 0 {
 		rows = append(rows, hd, "")
 	}
 	rows = append(rows, body...)
@@ -331,7 +336,7 @@ func (i *Incipit) compose(nodes []livedoc.Node) []string {
 	return rows
 }
 
-// header returns the role-header line for role (e.g. "❯ you") or "" if no
+// header returns the role-header line for role (e.g. "❯ input") or "" if no
 // Header function is configured or the role has no glyph.
 func (i *Incipit) header(role string) string {
 	if i.Header == nil {

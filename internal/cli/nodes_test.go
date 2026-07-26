@@ -149,7 +149,7 @@ func TestPromptDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	// under its own header, in order.
 	turn := stripANSI(strings.Join(
 		renderTurnRows([]livedoc.Node{prompt, reply}, 60, 0, 0, renderSettings{}), "\n"))
-	ui, fi := strings.Index(turn, "❯ you"), strings.Index(turn, "‹ figaro")
+	ui, fi := strings.Index(turn, "❯ input"), strings.Index(turn, "‹ figaro")
 	if ui < 0 || fi < 0 || ui > fi {
 		t.Fatalf("turn must head the input run then the output run:\n%s", turn)
 	}
