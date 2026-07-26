@@ -237,11 +237,22 @@ func turnRole(nodes []livedoc.Node) string {
 	return livedoc.RoleInput
 }
 
-// nodeVoice is the voice a single node speaks in. The prompt and any steering
-// interjection are the user's; prose, thinking and tools are the agent's. A
-// node carrying no explicit role is agent output, because a streamed delta need
-// not repeat the role on every frame.
+// nodeVoice is the voice a single node speaks in, for the purpose of deciding
+// where a RUN breaks. The inquiry is the user's; prose, thinking and tools are
+// the agent's. A node carrying no explicit role is agent output, because a
+// streamed delta need not repeat the role on every frame.
+//
+// A STEERING node is deliberately NOT a voice change. It carries Role input —
+// it is the user speaking — but it is an INLINE ANNOTATION inside whatever run
+// it lands in, not a block of its own. Treating it as a voice change closed the
+// agent's run and opened an input run around it, so a single steer rendered
+// with its own "❯ input" header AND its own pair of full-width rules, cutting
+// the agent's output in two. The marker ("↳ input" + gutter, keyed on node
+// TYPE in cli/nodes.go) already carries the voice; the run must not also.
 func nodeVoice(n livedoc.Node) string {
+	if n.Type == livedoc.NodeSteering {
+		return livedoc.RoleOutput
+	}
 	if n.Role == livedoc.RoleInput {
 		return livedoc.RoleInput
 	}
