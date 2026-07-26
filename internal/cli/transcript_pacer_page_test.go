@@ -287,7 +287,7 @@ func TestPacerAndPrefetchDoNotDeadlock(t *testing.T) {
 // A/D let scrollBy overshoot and relied on render() clamping. B's gate made
 // render() skippable, so a scroll burst past the top left offset negative, and
 // the next off-frame reader — viewportAnchor, when a prefetched page lands —
-// indexed t.lineLT with it and panicked. The clamp now happens in front of the
+// indexed t.lineTurn with it and panicked. The clamp now happens in front of the
 // gate, so it survives batching and rate limiting alike.
 func TestDeferredFrameStillClampsTheViewport(t *testing.T) {
 	check := func(t *testing.T, tr *transcript, what string) {

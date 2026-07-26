@@ -30,8 +30,8 @@ func TestSliceTurn_BoundsUnitsWithoutLosingNodes(t *testing.T) {
 
 	var seen int
 	for i, m := range got {
-		if m.LT != 7 {
-			t.Errorf("unit %d: turn id = %d, want 7 — slices keep their turn", i, m.LT)
+		if m.Turn != 7 {
+			t.Errorf("unit %d: turn id = %d, want 7 — slices keep their turn", i, m.Turn)
 		}
 		if m.From != uint64(seen) {
 			t.Errorf("unit %d: From = %d, want %d — offsets must be contiguous", i, m.From, seen)

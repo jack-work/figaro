@@ -182,7 +182,7 @@ fig IR, but it is not an address: turns are.`,
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
+		Usage:   "send [--id <id>] [--steer] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding). With --id, targets
 the named aria, which must already exist (aria ids are system-minted).
@@ -191,6 +191,15 @@ Persistence (--ephemeral) and formatting (--raw) are orthogonal.
 
 Flags:
   --id <id>      Target a specific existing aria
+  --steer        Join the turn already running instead of starting a new one.
+                 The prompt lands inside that exchange as a steering aside — a
+                 nudge to a train of thought in motion.
+                 WITHOUT it, a prompt sent to a busy aria opens its OWN turn
+                 and is answered after the current one. That default is
+                 deliberate: intent cannot be inferred from timing, and guessing
+                 "steer" merges two exchanges — which silently swallowed real
+                 questions. A new turn is visible and recoverable; a swallowed
+                 one is not. So steering is something you ASK for.
   -e, --ephemeral
                  Spin a one-shot in-memory aria; kill it on completion.
                  Contradicts --id. Says nothing about formatting.
@@ -228,7 +237,10 @@ Keys while streaming:
   figaro send -e -- <prompt>           ephemeral, rich
   figaro send -er -- <prompt>          ephemeral + raw (was: ` + "`figaro plain`" + `)
   figaro send -ex -y -- <instruction>  ephemeral exec, no confirmation
-  figaro send -f --id myid -- <prompt> fire-and-forget; do not stream`,
+  figaro send -f --id myid -- <prompt> fire-and-forget; do not stream
+  figaro send --steer -- <nudge>       steer the RUNNING turn (no --steer: new turn)
+  figaro send -f --steer --id myid -- <nudge>
+                                       steer another aria's running turn`,
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)

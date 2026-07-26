@@ -21,7 +21,7 @@ func transcriptHistory(n int) []aria.TurnPart {
 }
 
 func testSelectionPoint(lt, index int, node livedoc.Node) selectionPoint {
-	return selectionPoint{nodeRef: nodeRef{lt: lt, index: index}, hash: nodeHash(node)}
+	return selectionPoint{nodeRef: nodeRef{turn: lt, index: index}, hash: nodeHash(node)}
 }
 
 // readBefore is the test double for the read RPC. It routes through the REAL
@@ -127,7 +127,7 @@ func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
 	history = append(history, aria.TurnPart{Turn: aria.Turn{ID: uint64(201), Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "message-201"}}}})
 	client.Apply(aria.Page{Parts: []aria.TurnPart{history[200]}})
 	for range 2 {
-		tr.offset = len(tr.lineLT)
+		tr.offset = len(tr.lineTurn)
 		tr.checkNewer = true
 		req, ok := tr.pageCursor()
 		if !ok || req.direction != pageNewer {
@@ -136,24 +136,24 @@ func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
 		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	after := tr.messages()
-	if after[len(after)-1].LT <= before[len(before)-1].LT {
-		t.Fatalf("newer page did not advance window: %d -> %d", before[len(before)-1].LT, after[len(after)-1].LT)
+	if after[len(after)-1].Turn <= before[len(before)-1].Turn {
+		t.Fatalf("newer page did not advance window: %d -> %d", before[len(before)-1].Turn, after[len(after)-1].Turn)
 	}
-	if got := after[len(after)-1].LT; got != 200 {
+	if got := after[len(after)-1].Turn; got != 200 {
 		t.Fatalf("stable refetch included live LT or skipped old tail; newest = %d", got)
 	}
 	if len(tr.pages) != transcriptPageLimit {
 		t.Fatalf("newer refetch retained %d pages", len(tr.pages))
 	}
 
-	heldOldest := after[0].LT
+	heldOldest := after[0].Turn
 	tr.render()
-	if got := tr.messages()[0].LT; got != heldOldest {
+	if got := tr.messages()[0].Turn; got != heldOldest {
 		t.Fatalf("live update moved held history: %d -> %d", heldOldest, got)
 	}
 	tr.key('G')
 	messages := tr.messages()
-	if got := messages[len(messages)-1].LT; got != 201 {
+	if got := messages[len(messages)-1].Turn; got != 201 {
 		t.Fatalf("G did not restore live tail, newest LT = %d", got)
 	}
 }
@@ -233,15 +233,15 @@ func TestTranscript_ResizeAnchorsPagedMessage(t *testing.T) {
 	tr.enter()
 	tr.follow = false
 	tr.lines()
-	for i, lt := range tr.lineLT {
+	for i, lt := range tr.lineTurn {
 		if lt == 190 {
 			tr.offset = i
 			break
 		}
 	}
 	tr.resize(32, 8)
-	if tr.offset >= len(tr.lineLT) || tr.lineLT[tr.offset] != 190 {
-		t.Fatalf("resize moved anchor to LT %d", tr.lineLT[tr.offset])
+	if tr.offset >= len(tr.lineTurn) || tr.lineTurn[tr.offset] != 190 {
+		t.Fatalf("resize moved anchor to LT %d", tr.lineTurn[tr.offset])
 	}
 }
 
@@ -281,7 +281,7 @@ func TestTranscript_SelectsOpenNodeAfterLeavingFollow(t *testing.T) {
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.selectNode(-1, false)
-	if tr.heldOpen == nil || tr.selection.focus.lt != 2 || !tr.selection.active {
+	if tr.heldOpen == nil || tr.selection.focus.turn != 2 || !tr.selection.active {
 		t.Fatalf("open selection lost: held=%v selection=%+v", tr.heldOpen != nil, tr.selection)
 	}
 	if text, err := selectedTextForTest(tr, transcriptHistory(1)); err != nil || text != "streaming prose" {
@@ -305,7 +305,7 @@ func TestTranscript_ReloadsOldestAfterNewerEviction(t *testing.T) {
 		}
 		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
-	tr.offset = len(tr.lineLT)
+	tr.offset = len(tr.lineTurn)
 	tr.checkNewer = true
 	req, ok := tr.pageCursor()
 	if !ok {

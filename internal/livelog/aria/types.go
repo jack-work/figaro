@@ -100,16 +100,21 @@ func (d NodeDelta) Empty() bool {
 	return len(d.Set) == 0 && len(d.Unset) == 0 && len(d.Patch) == 0
 }
 
-// Message is the CLIENT-SIDE materialization of one turn, not a wire type.
-// The wire speaks Page/TurnPart; this is what a folded client hands its
-// renderer.
+// Message is the CLIENT-SIDE materialization of one SLICE of a turn, not a
+// wire type. The wire speaks Page/TurnPart; this is what a folded client hands
+// its renderer.
 //
-// LT carries the TURN ID, not a logical time. The name is a labelled seam:
-// renaming it reaches into the transcript pager and both renderers, which
-// belong to S24/S25, and doing it here would collide with that work. Nothing
-// on the wire uses this type, so the seam is local and cheap to close.
+// IDENTITY IS THE PAIR (Turn, From), NEVER Turn ALONE. A turn reaches the
+// renderer as SEVERAL messages — the inquiry is {Turn:1, From:0}, the reply
+// {Turn:1, From:1} — because the client cuts a turn at voice-run boundaries.
+// Any consumer that compares, orders, increments or de-duplicates on Turn by
+// itself is wrong, and this field was called LT until it had caused three
+// separate bugs that way: a user-visible label that printed a turn id and
+// called it an LT; a flush boundary computed as lastFrozen+1 that excluded the
+// entire rest of a turn; and a live-region identity test that committed
+// seventeen rows of in-flight output to scrollback on a one-node steer.
 type Message struct {
-	LT    int
+	Turn  int    // turn id — NOT a logical time, and NOT unique per message
 	From  uint64 // node offset within the turn; >0 means this is a later slice of it
 	Role  string
 	Nodes []livedoc.Node

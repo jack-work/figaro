@@ -14,14 +14,14 @@ func TestPageDescExactReplay(t *testing.T) {
 	history := transcriptHistory(90)
 	messages := committedMessages(aria.Page{Parts: history[30:60]})
 	desc := describePage(messages)
-	if desc.FirstLT != 31 || desc.LastLT != 60 || desc.Count != 30 || desc.ReplayBefore != 61 {
+	if desc.FirstTurn != 31 || desc.LastTurn != 60 || desc.Count != 30 || desc.ReplayBefore != 61 {
 		t.Fatalf("descriptor = %+v", desc)
 	}
 	replayed := committedMessages(readBefore(history, desc.ReplayBefore, desc.Count))
 	if got := describePage(replayed); !desc.equal(got) {
 		t.Fatalf("replay descriptor = %+v, want %+v", got, desc)
 	}
-	replayed[0].LT++
+	replayed[0].Turn++
 	if desc.equal(describePage(replayed)) {
 		t.Fatal("LT hash accepted a changed page")
 	}
@@ -42,7 +42,7 @@ func TestReadNextPageFindsImmediateSparseSuccessors(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := committedMessages(r)
-	if len(got) != 3 || got[0].LT != 110 || got[2].LT != 130 {
+	if len(got) != 3 || got[0].Turn != 110 || got[2].Turn != 130 {
 		t.Fatalf("next sparse page = %+v", describePage(got))
 	}
 	if probes > 64 {
@@ -73,7 +73,7 @@ func TestTranscript_BoundedDescriptorsFallBackForward(t *testing.T) {
 	}
 	firstReplay := true
 	for len(tr.newer) > 0 {
-		tr.offset = len(tr.lineLT)
+		tr.offset = len(tr.lineTurn)
 		tr.checkNewer = true
 		req, ok := tr.pageCursor()
 		if !ok || req.expected.Count == 0 {
@@ -89,7 +89,7 @@ func TestTranscript_BoundedDescriptorsFallBackForward(t *testing.T) {
 		}
 		tr.applyPage(req, messages)
 	}
-	tr.offset = len(tr.lineLT)
+	tr.offset = len(tr.lineTurn)
 	tr.checkNewer = true
 	req, ok := tr.pageCursor()
 	if !ok || req.after == 0 {
@@ -101,9 +101,9 @@ func TestTranscript_BoundedDescriptorsFallBackForward(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := tr.messages()[len(tr.messages())-1].LT
+	before := tr.messages()[len(tr.messages())-1].Turn
 	tr.applyPage(req, committedMessages(r))
-	after := tr.messages()[len(tr.messages())-1].LT
+	after := tr.messages()[len(tr.messages())-1].Turn
 	if after <= before || after-before != transcriptPageSize {
 		t.Fatalf("fallback advanced %d -> %d", before, after)
 	}
@@ -122,7 +122,7 @@ func TestTranscript_DescriptorMismatchInvalidatesReplayChain(t *testing.T) {
 		req, _ := tr.pageCursor()
 		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
-	tr.offset = len(tr.lineLT)
+	tr.offset = len(tr.lineTurn)
 	tr.checkNewer = true
 	req, ok := tr.pageCursor()
 	if !ok || len(tr.newer) < 2 {
@@ -148,7 +148,7 @@ func TestTranscript_CommittedWatermarkReconcilesHeldOpen(t *testing.T) {
 		t.Fatal("open message was not held")
 	}
 	committed := aria.Message{
-		LT: 10, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "complete"}},
+		Turn: 10, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "complete"}},
 	}
 	tr.observeCommitted(committed)
 	if tr.heldOpen == nil || tr.heldOpen.Nodes[0].Markdown != "complete" || tr.committedW != 10 {

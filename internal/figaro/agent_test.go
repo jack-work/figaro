@@ -1265,10 +1265,10 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		if len(m.Nodes) == 0 {
 			continue
 		}
-		if _, seen := byTurn[m.LT]; !seen {
-			order = append(order, m.LT)
+		if _, seen := byTurn[m.Turn]; !seen {
+			order = append(order, m.Turn)
 		}
-		byTurn[m.LT] = append(byTurn[m.LT], m.Nodes...)
+		byTurn[m.Turn] = append(byTurn[m.Turn], m.Nodes...)
 	}
 	for _, lt := range order {
 		nodes := byTurn[lt]

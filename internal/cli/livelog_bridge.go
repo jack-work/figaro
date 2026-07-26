@@ -51,16 +51,16 @@ type livelogTurn struct {
 
 // sliceCursor addresses one pager unit: the turn and the node offset within it.
 type sliceCursor struct {
-	lt   int
+	turn int
 	from uint64
 }
 
-func cursorOf(m aria.Message) sliceCursor { return sliceCursor{lt: m.LT, from: m.From} }
+func cursorOf(m aria.Message) sliceCursor { return sliceCursor{turn: m.Turn, from: m.From} }
 
 // after reports whether c comes strictly after o in reading order.
 func (c sliceCursor) after(o sliceCursor) bool {
-	if c.lt != o.lt {
-		return c.lt > o.lt
+	if c.turn != o.turn {
+		return c.turn > o.turn
 	}
 	return c.from > o.from
 }
@@ -82,7 +82,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	t.client.OnClosed = func(m aria.Message) {
 		t.tr.observeCommitted(m)
 		if t.tr.active {
-			if t.lastFrozen.lt != 0 {
+			if t.lastFrozen.turn != 0 {
 				t.pagerClosed = append(t.pagerClosed, m)
 			}
 			t.tr.render() // transcript renders from the shared client model
@@ -360,7 +360,7 @@ func (t *livelogTurn) finishTurn(reason string) {
 
 func (t *livelogTurn) freezePending() {
 	if t.pending != nil {
-		t.in.Open(t.pending.LT, t.pending.From, t.pending.Role, t.pending.Nodes)
+		t.in.Open(t.pending.Turn, t.pending.From, t.pending.Role, t.pending.Nodes)
 		t.in.Freeze(*t.pending)
 		if c := cursorOf(*t.pending); c.after(t.lastFrozen) {
 			t.lastFrozen = c
@@ -423,14 +423,14 @@ func (t *livelogTurn) flushTail() {
 	// both the boundary and the de-dup key on (LT, From). Keying on LT alone
 	// collapsed a turn to its first slice, which is how a completed reply watched
 	// in the pager never reached scrollback at all.
-	cold := t.lastFrozen.lt == 0
+	cold := t.lastFrozen.turn == 0
 	coldFrom := 0
 	if cold {
-		coldFrom = lastTurnStartLT(v)
+		coldFrom = lastTurnStart(v)
 	}
 	want := func(m aria.Message) bool {
 		if cold {
-			return m.LT >= coldFrom
+			return m.Turn >= coldFrom
 		}
 		return cursorOf(m).after(t.lastFrozen)
 	}
@@ -446,8 +446,8 @@ func (t *livelogTurn) flushTail() {
 	t.pagerClosed = nil
 	openLT, openRole := 0, ""
 	var open []livedoc.Node
-	if v.Open != nil && (cold && v.Open.LT >= coldFrom || !cold && v.Open.LT >= t.lastFrozen.lt) {
-		openLT, openRole, open = v.Open.LT, v.Open.Role, v.Open.Nodes
+	if v.Open != nil && (cold && v.Open.Turn >= coldFrom || !cold && v.Open.Turn >= t.lastFrozen.turn) {
+		openLT, openRole, open = v.Open.Turn, v.Open.Role, v.Open.Nodes
 	}
 	if len(closed) == 0 && openLT == 0 {
 		return
@@ -459,20 +459,20 @@ func (t *livelogTurn) flushTail() {
 	}
 }
 
-// lastTurnStartLT returns the LT of the most recent user message (the start of
+// lastTurnStart returns the LT of the most recent user message (the start of
 // the last turn), or a best-effort fallback, so a cold pager exit records just
 // the final turn rather than the entire conversation.
-func lastTurnStartLT(v aria.View) int {
+func lastTurnStart(v aria.View) int {
 	for k := len(v.Closed) - 1; k >= 0; k-- {
 		if v.Closed[k].Role == livedoc.RoleInput {
-			return v.Closed[k].LT
+			return v.Closed[k].Turn
 		}
 	}
 	if v.Open != nil {
-		return v.Open.LT
+		return v.Open.Turn
 	}
 	if n := len(v.Closed); n > 0 {
-		return v.Closed[n-1].LT
+		return v.Closed[n-1].Turn
 	}
 	return 0
 }
@@ -486,8 +486,15 @@ func (t *livelogTurn) transcriptScroll(delta int) { t.tr.scrollBy(delta) }
 func (t *livelogTurn) transcriptSearching() bool { return t.tr.active && t.tr.inSearch }
 
 // transcriptMode is the keymap's view of the pager: which of the four input
-// modes a keystroke arriving right now would land in.
-func (t *livelogTurn) transcriptMode() keyMode { return t.tr.mode() }
+// modes a keystroke lands in. The composer is asked FIRST and sits above the
+// pager, because it is the one text box that must work inline as well — a
+// short turn never promotes, and the user still wants to steer it.
+func (t *livelogTurn) transcriptMode() keyMode {
+	if t.status.composingNow() {
+		return modeCompose
+	}
+	return t.tr.mode()
+}
 
 // Transcript page fetches run off-lock; applying a page restores the viewport
 // anchor and evicts the far edge of the bounded window.

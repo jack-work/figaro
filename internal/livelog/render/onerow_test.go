@@ -25,7 +25,7 @@ func TestIncipit_SingleRowViewportKeepsTheReply(t *testing.T) {
 		in.OpenThinking(livedoc.RoleOutput)
 		in.Open(9, 0, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "ONE"}})
 		in.Open(9, 0, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: full}})
-		in.Freeze(aria.Message{LT: 9, From: 0, Role: livedoc.RoleOutput,
+		in.Freeze(aria.Message{Turn: 9, From: 0, Role: livedoc.RoleOutput,
 			Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: full}}})
 
 		all := strings.Join(ft.Screen(), "\n")

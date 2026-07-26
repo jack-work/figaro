@@ -27,10 +27,10 @@ func TestTranscript_ForwardSelectionRequestsEvictedPage(t *testing.T) {
 	messages := tr.messages()
 	tr.selection = nodeSelection{
 		active: true,
-		anchor: testSelectionPoint(messages[len(messages)-1].LT, 0, messages[len(messages)-1].Nodes[0]),
-		focus:  testSelectionPoint(messages[len(messages)-1].LT, 0, messages[len(messages)-1].Nodes[0]),
+		anchor: testSelectionPoint(messages[len(messages)-1].Turn, 0, messages[len(messages)-1].Nodes[0]),
+		focus:  testSelectionPoint(messages[len(messages)-1].Turn, 0, messages[len(messages)-1].Nodes[0]),
 	}
-	tr.offset = len(tr.lineLT)
+	tr.offset = len(tr.lineTurn)
 	tr.selectNode(1, true)
 	req, ok := tr.pageCursor()
 	if !ok || req.direction != pageNewer {
@@ -65,7 +65,7 @@ func TestTranscript_OpenRangeRehydratesEvictedPages(t *testing.T) {
 	tr.selectNode(-1, false)
 	for range 3 {
 		first := tr.messages()[0]
-		tr.selection.focus = testSelectionPoint(first.LT, 0, first.Nodes[0])
+		tr.selection.focus = testSelectionPoint(first.Turn, 0, first.Nodes[0])
 		tr.offset = 0
 		tr.checkOlder = true
 		req, ok := tr.pageCursor()
@@ -75,7 +75,7 @@ func TestTranscript_OpenRangeRehydratesEvictedPages(t *testing.T) {
 		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	first := tr.messages()[0]
-	tr.selection.focus = testSelectionPoint(first.LT, 0, first.Nodes[0])
+	tr.selection.focus = testSelectionPoint(first.Turn, 0, first.Nodes[0])
 	if len(tr.pages) != transcriptPageLimit {
 		t.Fatalf("open range retained %d payload pages", len(tr.pages))
 	}
