@@ -168,9 +168,25 @@ func TestInputConsume_NavKeysMatchLetterMotions(t *testing.T) {
 // TestInputConsume_NavKeySplitAcrossReads: a sequence chopped by the tty must
 // be stitched, must not fire a bare-Esc binding on the prefix, and must act
 // exactly once when it completes.
+//
+// The cut starts at 2 — AFTER the introducer — because a buffer holding only
+// `\x1b` is genuinely ambiguous: nothing in the bytes distinguishes an Escape
+// keypress from the head of a sequence whose tail has not been read yet. Only
+// a timer can, and the input loop has none. The codebase resolves that
+// ambiguity in favour of the keypress, in every decoder
+// (parseModifiedKey, consumeEscapeSequence, and now mouse.Parse).
+//
+// This loop used to start at 1 and pass, but not by design: it runs with the
+// pager UP, where mouse reporting is on, and the mouse parser alone held the
+// lone `\x1b` as a possible `\x1b[<…M`. With the pager DOWN the same cut
+// already resolved to bare Esc on 45bee38 — so cut=1 was never a guarantee,
+// it was an inconsistency between the two modes, and the one that held the
+// byte is the one that made Escape dead in the pager. Everything from the
+// introducer onward is still stitched, which is what a split read actually
+// looks like.
 func TestInputConsume_NavKeySplitAcrossReads(t *testing.T) {
 	for _, seq := range []string{"\x1b[A", "\x1bOB", "\x1b[5~", "\x1b[6~", "\x1b[1~", "\x1b[F"} {
-		for cut := 1; cut < len(seq); cut++ {
+		for cut := 2; cut < len(seq); cut++ {
 			t.Run(strings.ReplaceAll(seq, "\x1b", "ESC"), func(t *testing.T) {
 				var out countingWriter
 				in, lt := navInput(t, &out, true)

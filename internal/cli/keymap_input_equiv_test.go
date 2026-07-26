@@ -24,6 +24,16 @@ import (
 // so the ROW-budgeted pager window holds 18 of the fixture's messages instead
 // of 17 and the bottom of the content moved. Nothing else in the signature
 // moved — every other column is byte-identical to 45bee38.
+//
+// The 0x1b row was rebased a second time, and this one is a deliberate
+// BEHAVIOUR change rather than a re-measurement. 45bee38 held a bare Esc back
+// (rest="\x1b") in every pager mode, because mouse reporting is enabled there
+// and ldmouse.Parse claimed the byte as a possible split `\x1b[<…M`. So the
+// oracle was certifying a DEAD ESCAPE KEY: it did not clear a selection, did
+// not close a panel (h stayed true), and did not cancel a search (q stayed
+// "ms") — none of which is what keymap.go's table says Esc does. Esc now
+// dispatches on its own read, so all four rows lose rest="\x1b" and gain the
+// effect the table promised. See mouse.Parse for the rule and its cost.
 // ---------------------------------------------------------------------------
 
 type inputProbe struct {
@@ -235,7 +245,7 @@ var inputOracle = []struct {
 		"0x0f":            "stop=false rest=\"\" act=true off=808 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x10":            "stop=false rest=\"\" act=true off=769 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x14":            "stop=false rest=\"\" act=true off=790 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x1b":            "stop=false rest=\"\\x1b\" act=true off=790 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x1b":            "stop=false rest=\"\" act=true off=770 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x21":            "stop=false rest=\"\" act=true off=776 fol=true srch=false q=\"\" h=false s=true Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x2f":            "stop=false rest=\"\" act=true off=770 fol=true srch=true q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x51":            "stop=false rest=\"\" act=true off=773 fol=true srch=false q=\"\" h=false s=false Q=true g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
@@ -270,7 +280,7 @@ var inputOracle = []struct {
 		"0x0c":            "stop=false rest=\"\" act=true off=770 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0d":            "stop=false rest=\"\" act=true off=770 fol=true srch=false q=\"ms\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0f":            "stop=false rest=\"\" act=true off=788 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x1b":            "stop=false rest=\"\\x1b\" act=true off=770 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x1b":            "stop=false rest=\"\" act=true off=770 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x20":            "stop=false rest=\"\" act=true off=770 fol=true srch=true q=\"ms \" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x21":            "stop=false rest=\"\" act=true off=770 fol=true srch=true q=\"ms!\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x22":            "stop=false rest=\"\" act=true off=770 fol=true srch=true q=\"ms\\\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
@@ -384,7 +394,7 @@ var inputOracle = []struct {
 		"0x0e":            "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0f":            "stop=false rest=\"\" act=true off=788 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x10":            "stop=false rest=\"\" act=true off=769 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x1b":            "stop=false rest=\"\\x1b\" act=true off=770 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x1b":            "stop=false rest=\"\" act=true off=770 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x21":            "stop=false rest=\"\" act=true off=776 fol=true srch=false q=\"\" h=false s=true Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x2f":            "stop=false rest=\"\" act=true off=770 fol=true srch=true q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x3f":            "stop=false rest=\"\" act=true off=790 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
@@ -416,7 +426,7 @@ var inputOracle = []struct {
 		"0x04":     "stop=true rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0c":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0f":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x1b":     "stop=false rest=\"\\x1b\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x1b":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x21":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=true Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x2f":     "stop=false rest=\"\" act=true off=2 fol=false srch=true q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x3f":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",

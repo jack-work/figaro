@@ -46,7 +46,13 @@ func TestParse(t *testing.T) {
 		{name: "split partial", in: "\x1b[<64;10", w: want{need: true}},
 		{name: "split at prefix only", in: "\x1b[<", w: want{need: true}},
 		{name: "split mid-prefix", in: "\x1b[", w: want{need: true}},
-		{name: "split just esc", in: "\x1b", w: want{need: true}},
+		// A LONE ESC IS A KEYPRESS, NOT A SPLIT MOUSE REPORT. This case used to
+		// assert need=true — it pinned the bug rather than the intent. With the
+		// pager up, mouse reporting is on and this parser runs first, so claiming
+		// the byte parked every bare Escape in the input loop's `pending` buffer
+		// until the next keystroke arrived. Esc-to-clear-selection then left its
+		// cue painted until the user scrolled.
+		{name: "bare esc is not ours", in: "\x1b", w: want{}},
 		{name: "non-mouse arrow", in: "\x1b[A", w: want{}},
 		{name: "plain char", in: "q", w: want{}},
 		{
