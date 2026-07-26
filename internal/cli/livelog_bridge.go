@@ -560,3 +560,8 @@ func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bo
 // asks so it knows whether a draft is a steer (aimed at a running turn) or an
 // ordinary prompt (which will open its own).
 func (t *livelogTurn) turnFinished() bool { return t.finished }
+
+// openRule prints the session's opening rule through the inline renderer, which
+// then knows the first message sits directly under it and needs no top margin
+// of its own. See ldrender.Incipit.OpenRule.
+func (t *livelogTurn) openRule() { t.in.OpenRule() }

@@ -80,7 +80,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
 	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
 	defer lt.leaveTranscript()
-	fmt.Fprintln(os.Stdout, dimRule())
+	lt.openRule() // the renderer owns the rule AND the margin under it
 
 	var mu sync.Mutex
 	doneCh := make(chan struct{}, 1)

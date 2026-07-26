@@ -60,6 +60,22 @@ type Incipit struct {
 	tick     int
 	thinking bool // open region is an OpenThinking placeholder (adopted by the next Open)
 
+	// atRule records that the last row already in scrollback is a BARE RULE, and
+	// therefore that the next message must draw no top margin of its own.
+	//
+	// THE RULE IS THE OVERLINE OF THE HEADER BENEATH IT. messageRows already
+	// draws the seam that way inside a message — the question, a blank, the rule,
+	// then "< figaro" hard against it. A message boundary is the same seam, but
+	// the rule arrives from the PREVIOUS message's closer (or, for the first
+	// message, from OpenRule), so without this the next message added its own
+	// leading blank and "> input" sat one row lower than "< figaro" for no reason
+	// a reader could see.
+	//
+	// It is false after an ASSISTANT message on purpose: that closer is the two
+	// row bookend, so the last row in scrollback is the status TEXT, not a rule,
+	// and a header hard against a status line would read as part of it.
+	atRule bool
+
 	// Open-message live region:
 	liveTurn    int
 	liveFrom    uint64   // start of the open suffix
@@ -74,6 +90,31 @@ type Incipit struct {
 // NewIncipit returns an inline renderer drawing to term via view.
 func NewIncipit(term Terminal, view NodeView) *Incipit {
 	return &Incipit{term: term, view: view}
+}
+
+// OpenRule prints the rule that separates the caller's shell prompt from the
+// stream, and records that the next message sits directly under it.
+//
+// The caller used to print this line itself, which left the seam with no owner:
+// the rule came from one place and the blank row under it from another, so the
+// first message in a session was the one place "> input" could not hug its own
+// overline. Printing it here keeps the rule and the margin decision together.
+func (i *Incipit) OpenRule() {
+	if i.Rule == nil {
+		return
+	}
+	w, _ := i.term.Size()
+	io.WriteString(i.term, clip(i.Rule(), w)+"\r\n")
+	i.atRule = true
+}
+
+// topMargin is the blank row a message is prefaced with, or nothing when the
+// row above is already this message's overline. See Incipit.atRule.
+func (i *Incipit) topMargin() []string {
+	if i.atRule {
+		return nil
+	}
+	return []string{""}
 }
 
 // Freeze finalizes a closed message. If it's the message currently live, its
@@ -122,9 +163,11 @@ func (i *Incipit) Freeze(m aria.Message) {
 			// region is currently live, and freezing it verbatim left one copy
 			// stranded in scrollback per message — two footers for a single
 			// exchange, which is not what the sketch asks for.
-			i.paint(i.composeWith(m.Inquiry, m.Nodes, i.closer(m.Role)))
+			closer, endsInRule := i.closer(m.Role)
+			i.paint(i.composeWith(m.Inquiry, m.Nodes, closer))
 			i.dropBelow()
 			i.reset()
+			i.atRule = endsInRule
 			return
 		}
 		// The live region showed only the footer, so the body was never painted
@@ -147,7 +190,10 @@ func (i *Incipit) Freeze(m aria.Message) {
 	}
 	rows := i.messageRows(m.Inquiry, m.Role, m.Nodes)
 	var b strings.Builder
-	b.WriteString("\r\n") // leading blank — every message is prefaced with a newline
+	for _, r := range i.topMargin() {
+		b.WriteString(r)
+		b.WriteString("\r\n")
+	}
 	for _, r := range rows {
 		b.WriteString(r)
 		b.WriteString("\r\n")
@@ -155,7 +201,8 @@ func (i *Incipit) Freeze(m aria.Message) {
 	// Trailing separator: the same rule/bookend compose() paints, so a message
 	// printed fresh (a committed frame that never had a live region — e.g. a
 	// user prompt) is still closed off from what follows.
-	if closer := i.closer(m.Role); len(closer) > 0 {
+	closer, endsInRule := i.closer(m.Role)
+	if len(closer) > 0 {
 		w, _ := i.term.Size()
 		b.WriteString("\r\n")
 		for _, s := range closer {
@@ -164,6 +211,7 @@ func (i *Incipit) Freeze(m aria.Message) {
 		}
 	}
 	io.WriteString(i.term, b.String())
+	i.atRule = endsInRule
 	if restore {
 		i.OpenThinking(role)
 	}
@@ -195,8 +243,9 @@ func (i *Incipit) printMessage(m aria.Message) {
 	if len(body) == 0 {
 		return
 	}
-	rows := append([]string{""}, body...)
-	if closer := i.closer(m.Role); len(closer) > 0 {
+	rows := append(i.topMargin(), body...)
+	closer, endsInRule := i.closer(m.Role)
+	if len(closer) > 0 {
 		w, _ := i.term.Size()
 		rows = append(rows, "")
 		for _, s := range closer {
@@ -204,6 +253,7 @@ func (i *Incipit) printMessage(m aria.Message) {
 		}
 	}
 	io.WriteString(i.term, strings.Join(rows, "\r\n")+"\r\n")
+	i.atRule = endsInRule
 }
 
 // Open paints (or repaints) the open message's blocks as the live region.
@@ -344,9 +394,11 @@ func (i *Incipit) composeWith(inquiry string, nodes []livedoc.Node, foot []strin
 	}
 	body := i.messageRows(inquiry, i.role, nodes)
 	// Every message is prefaced with a blank row — frozen into scrollback
-	// alongside the rest of the live region.
-	rows := make([]string, 0, len(body)+3)
-	rows = append(rows, "")
+	// alongside the rest of the live region — unless the row above it is
+	// already this message's overline (see atRule).
+	margin := i.topMargin()
+	rows := make([]string, 0, len(body)+len(margin)+2)
+	rows = append(rows, margin...)
 	rows = append(rows, body...)
 	if len(foot) > 0 {
 		rows = append(rows, "")
@@ -447,14 +499,19 @@ func (i *Incipit) footer() []string {
 // status bookend after an assistant message, otherwise a plain full-width rule
 // (so the user's prompt is still separated from the reply). Empty if neither
 // is configured.
-func (i *Incipit) closer(role string) []string {
+//
+// endsInRule says whether the LAST row is a bare rule, which is what the next
+// message reads to decide whether it needs a top margin. It is returned rather
+// than re-derived by the caller so the two cannot drift: the bookend's last row
+// is status TEXT, and only the branches below know which shape was taken.
+func (i *Incipit) closer(role string) (rows []string, endsInRule bool) {
 	if role == livedoc.RoleOutput && i.Bookend != nil {
-		return i.Bookend()
+		return i.Bookend(), false
 	}
 	if i.Rule != nil {
-		return []string{i.Rule()}
+		return []string{i.Rule()}, true
 	}
-	return nil
+	return nil, false
 }
 
 func (i *Incipit) renderNodes(nodes []livedoc.Node) []string {
@@ -558,6 +615,9 @@ func (i *Incipit) AbandonOpen(line string) {
 	}
 	io.WriteString(i.term, b.String())
 	i.reset()
+	// A labelled boundary rule is a terminal marker, not an overline: whatever
+	// follows an abandoned turn gets its margin back.
+	i.atRule = false
 }
 
 func (i *Incipit) dropBelow() {
