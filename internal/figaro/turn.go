@@ -22,6 +22,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/toolout"
+	"github.com/jack-work/figaro/internal/turns"
 )
 
 // busEventKind tags one ordered event from the provider Bus.
@@ -157,7 +158,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 	// usually catches this, but cover the case where the boot check
 	// missed (e.g. dangling state appeared after boot).
 	repairInterruptedTail(a.figLog, a.id)
-	if _, err := a.appendUserPrompt(prompt, true); err != nil {
+	if _, err := a.appendUserPrompt(prompt, true, false); err != nil {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
@@ -176,9 +177,15 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 
 // appendUserPrompt persists one external prompt as its own canonical user
 // message and matching committed UI unit.
-func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entry[message.Message], error) {
+//
+// steering distinguishes the two kinds of input, and it is the ONLY place that
+// can: the drain knows whether a turn was already in flight when this prompt
+// came off the queue, and nothing downstream can recover that. An inquiry
+// opens a turn; a steer joins the one already running.
+func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (store.Entry[message.Message], error) {
 	msg := message.Message{
 		Role:      message.RoleInput,
+		Steering:  steering && prompt.text != "",
 		Timestamp: time.Now().UnixMilli(),
 	}
 	var combined chalkboard.Patch
@@ -216,7 +223,14 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entr
 	}
 	if prompt.text != "" {
 		msg.Content = append(msg.Content, message.TextContent(prompt.text))
-		a.openTurn()
+		// Only an inquiry opens a turn. A steer joins the exchange already in
+		// flight, so the counter must not move — otherwise the live turn id
+		// runs ahead of the one the projection derives, the client sees a new
+		// turn, and the turn being steered is abandoned mid-stream with its
+		// closing prose never rendered.
+		if !steering {
+			a.openTurn()
+		}
 	}
 	entry, err := a.appendMsg(msg)
 	if err != nil {
@@ -240,6 +254,15 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot bool) (store.Entr
 		// a build without the projection must render nothing at all rather than a
 		// stream of bare prompts with no replies.
 		if a.proj != nil {
+			if steering {
+				// A steer joins the turn already in flight: no inquiry to record
+				// (that would overwrite the question being steered), and no node
+				// built here — startAssistantUnit keeps the steer inside the
+				// recomposed window so the PROJECTION emits its steering node.
+				// One producer of UI IR, not two: hand-building it here is what
+				// silently lost the steer when the region was recomposed.
+				return entry, nil
+			}
 			a.ariaSrv.OpenInquiry(a.turnID, prompt.text)
 			a.ariaSrv.Append(a.turnID, []livedoc.Node{
 				{Type: livedoc.NodeProse, Role: livedoc.RoleInput, Markdown: prompt.text},
@@ -253,6 +276,19 @@ func (a *Agent) startAssistantUnit() {
 	a.turnStartLT = 0
 	if tail, ok := a.figLog.PeekTail(); ok {
 		a.turnStartLT = tail.FigaroLT
+		// Steers are the tail when this unit opens right after a drain, and a
+		// single drain can yield several. Back up past the whole trailing run
+		// so every one of them sits INSIDE the recomposed window (which is
+		// turnStartLT+1..) and the PROJECTION emits their steering nodes. The
+		// drain used to hand-build one node instead, which both lost steers
+		// beyond the first and vanished entirely on the next recompose.
+		for a.turnStartLT > 0 {
+			prev := a.figLog.ReadFrom(a.turnStartLT, 1)
+			if len(prev) == 0 || !turns.IsSteering(prev[0].Payload) {
+				break
+			}
+			a.turnStartLT--
+		}
 	}
 	a.gov = toolout.New(liveOutputTail)
 	a.lastEmit = time.Time{}
@@ -724,7 +760,7 @@ func hasRenderablePrompt(prompts []event) bool {
 
 func (a *Agent) appendPromptEvents(prompts []event) error {
 	for i, prompt := range prompts {
-		if _, err := a.appendUserPrompt(prompt, false); err != nil {
+		if _, err := a.appendUserPrompt(prompt, false, true); err != nil {
 			// The chalkboard write precedes the IR append. Do not replay it
 			// when restoring the still-unpersisted prompt.
 			prompts[i].chalkboard = nil

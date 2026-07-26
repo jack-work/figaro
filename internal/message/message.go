@@ -200,6 +200,24 @@ type Message struct {
 	// it isn't persisted as a meaningless 0 in the payload.
 	LogicalTime uint64 `json:"logical_time,omitempty"`
 
+	// Steering marks an input message that arrived MID-TURN — a direction
+	// meant to influence the train of thought already in flight, not a new
+	// question. It is provenance, not content: the blocks are ordinary prose
+	// and every provider encodes them exactly as before, so the model reads a
+	// steer the same way it always did.
+	//
+	// It exists because the alternative — inferring steering from a prose
+	// block co-occurring with a tool_result — cannot work when a steer
+	// arrives while no tool is running, and that inference is precisely what
+	// let a steer open its own turn and truncate the turn it meant to steer.
+	// The drain that classifies is the only place that knows, so the drain
+	// records it here.
+	//
+	// Legacy logs carry no flag; prose riding on a tool_result message is
+	// still recognised as steering, so history written before this field
+	// renders unchanged.
+	Steering bool `json:"steering,omitempty"`
+
 	// TurnID names the exchange this message belongs to: one user prompt
 	// plus every assistant reply, tool round and steering interjection it
 	// provoked. Monotonic per trunk and shared by every message of the
