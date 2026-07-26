@@ -31,7 +31,6 @@ type livelogTurn struct {
 	open         []livedoc.Node
 	pending      *aria.Message
 	finished     bool
-	wantThinking bool // submit accepted: show the thinking footer once the user msg freezes
 	thinkingOpen bool // an OpenThinking placeholder is live and not yet adopted
 	pace         framePacer
 
@@ -74,15 +73,6 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 			t.in.Freeze(m) // incipit: freeze to native scrollback
 			if m.LT > t.lastFrozenLT {
 				t.lastFrozenLT = m.LT
-			}
-			// Submit accepted and the prompt is now on screen: pin the thinking
-			// footer immediately, before the model's first token. The assistant
-			// frame that follows adopts this region in place.
-			if t.wantThinking {
-				t.wantThinking = false
-				t.thinkingOpen = true
-				t.status.beginTurn()
-				t.in.OpenThinking(livedoc.RoleOutput)
 			}
 		}
 	}
@@ -214,12 +204,23 @@ func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
 	return false
 }
 
-// armThinking marks that a submit was accepted: the next user-message freeze
-// pins the thinking footer. No-op in the pager (it renders the footer itself).
+// armThinking pins the footer the instant a submit is accepted — before the
+// prompt has round-tripped, before the model's first token. The footer is a
+// permanent fixture of the view, so it must not wait on the stream.
+//
+// It used to arm a flag consumed when the prompt froze, which required the
+// prompt to arrive as its own CLOSED message. Once the prompt merged into the
+// turn it no longer reliably does, and the footer went missing until the first
+// token — so paint it here instead of waiting to be told.
+//
+// No-op in the pager (it renders the footer itself).
 func (t *livelogTurn) armThinking() {
-	if !t.tr.active {
-		t.wantThinking = true
+	if t.tr.active {
+		return
 	}
+	t.thinkingOpen = true
+	t.status.beginTurn()
+	t.in.OpenThinking(livedoc.RoleOutput)
 }
 
 func (t *livelogTurn) apply(r aria.Page)      { t.client.Apply(r) }
