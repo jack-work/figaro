@@ -200,6 +200,10 @@ Flags:
                  "steer" merges two exchanges — which silently swallowed real
                  questions. A new turn is visible and recoverable; a swallowed
                  one is not. So steering is something you ASK for.
+                 In the live view you never have to: press 'i' and type — that
+                 path sets --steer by construction. This flag is for scripts
+                 and second shells, where intent must be declared because it
+                 cannot be observed.
   -e, --ephemeral
                  Spin a one-shot in-memory aria; kill it on completion.
                  Contradicts --id. Says nothing about formatting.
