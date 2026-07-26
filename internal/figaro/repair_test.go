@@ -168,7 +168,7 @@ func TestTailRepair_NoToolCallsNoOp(t *testing.T) {
 func TestTailRepair_FileBackedPersists(t *testing.T) {
 	dir := t.TempDir()
 
-	b1, err := store.NewXwalBackend(dir)
+	b1, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
 	l, err := b1.CreateLoadout("d", message.Patch{})
 	require.NoError(t, err)
@@ -191,7 +191,7 @@ func TestTailRepair_FileBackedPersists(t *testing.T) {
 	require.NoError(t, b1.Close())
 
 	// Reopen, run repair, close.
-	b2, err := store.NewXwalBackend(dir)
+	b2, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
 	log2, err := b2.Open(conv)
 	require.NoError(t, err)
@@ -199,7 +199,7 @@ func TestTailRepair_FileBackedPersists(t *testing.T) {
 	require.NoError(t, b2.Close())
 
 	// Final reopen sees the repair tic as the tail.
-	b3, err := store.NewXwalBackend(dir)
+	b3, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
 	defer b3.Close()
 	log3, err := b3.Open(conv)

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/tokens"
 )
@@ -14,8 +15,14 @@ import (
 // input and an output carrying usage, and returns the backend, the aria id and
 // the LTs of the appended entries.
 func healFixture(t *testing.T, dir string, n int) (*XwalBackend, string, []uint64) {
+	return healFixtureSized(t, dir, n, 0)
+}
+
+// healFixtureSized is healFixture over a store of a given segment size (0 =
+// the configured default), so a test can pin what `[store] segment_size` does.
+func healFixtureSized(t *testing.T, dir string, n, segmentSize int) (*XwalBackend, string, []uint64) {
 	t.Helper()
-	b, err := NewXwalBackend(dir)
+	b, err := NewXwalBackend(dir, segmentSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,41 +156,55 @@ func TestMetaHealNoopWhenCurrent(t *testing.T) {
 }
 
 // TestSegmentRollsAtSegmentSize pins the figaro-chosen segment size: writing
-// past it must produce a second segment file (with 64MB it never did).
+// past it must produce a second segment file (with 64MB it never did). It runs
+// once on the default and once on a configured size, so the `[store]
+// segment_size` knob is proven to reach the disk and not merely parse.
 func TestSegmentRollsAtSegmentSize(t *testing.T) {
-	dir := t.TempDir()
-	b, conv, _ := healFixture(t, dir, 0)
-	ir, err := b.Open(conv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	blob := strings.Repeat("x", 64*1024)
-	for written := 0; written < 3*segmentSize/2; written += len(blob) {
-		if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{
-			Role: message.RoleInput, Content: []message.Content{message.TextContent(blob)},
-		}}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := b.store.trunks.Close(); err != nil { // flush to disk
-		t.Fatal(err)
-	}
-	// The aria's segments live in the leaf dir carrying the .trunk marker.
-	var leaf string
-	filepath.WalkDir(filepath.Join(dir, chanIR), func(p string, d os.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && d.Name() == ".trunk" {
-			leaf = filepath.Dir(p)
-		}
-		return nil
-	})
-	segs, _ := filepath.Glob(filepath.Join(leaf, "*.jsonl"))
-	if len(segs) < 2 {
-		t.Fatalf("wrote 1.5x segmentSize (%d bytes) into %d segment(s): %v", segmentSize, len(segs), segs)
-	}
-	for _, p := range segs[:len(segs)-1] {
-		st, _ := os.Stat(p)
-		if st.Size() > segmentSize {
-			t.Fatalf("segment %s is %d bytes, over segmentSize %d", p, st.Size(), segmentSize)
-		}
+	var noConfig *config.Loaded
+	for _, tc := range []struct {
+		name string
+		opt  int
+		want int64
+	}{
+		{"default", 0, int64(noConfig.SegmentSize())},
+		{"configured", 1 << 20, 1 << 20},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			b, conv, _ := healFixtureSized(t, dir, 0, tc.opt)
+			ir, err := b.Open(conv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			blob := strings.Repeat("x", 64*1024)
+			for written := int64(0); written < 3*tc.want/2; written += int64(len(blob)) {
+				if _, err := ir.Append(Entry[message.Message]{Payload: message.Message{
+					Role: message.RoleInput, Content: []message.Content{message.TextContent(blob)},
+				}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := b.store.trunks.Close(); err != nil { // flush to disk
+				t.Fatal(err)
+			}
+			// The aria's segments live in the leaf dir carrying the .trunk marker.
+			var leaf string
+			filepath.WalkDir(filepath.Join(dir, chanIR), func(p string, d os.DirEntry, err error) error {
+				if err == nil && !d.IsDir() && d.Name() == ".trunk" {
+					leaf = filepath.Dir(p)
+				}
+				return nil
+			})
+			segs, _ := filepath.Glob(filepath.Join(leaf, "*.jsonl"))
+			if len(segs) < 2 {
+				t.Fatalf("wrote 1.5x segment size (%d bytes) into %d segment(s): %v", tc.want, len(segs), segs)
+			}
+			for _, p := range segs[:len(segs)-1] {
+				st, _ := os.Stat(p)
+				if st.Size() > tc.want {
+					t.Fatalf("segment %s is %d bytes, over segment size %d", p, st.Size(), tc.want)
+				}
+			}
+		})
 	}
 }

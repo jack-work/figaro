@@ -1277,23 +1277,27 @@ func (a *Agent) emitSnapshot(role string, nodes []livedoc.Node) {
 	}
 }
 
-// liveEmitInterval coalesces high-frequency streaming emits (~11fps). Structural
-// changes force an immediate emit; token/output streaming is throttled so a busy
-// turn doesn't recompose+broadcast on every chunk. liveOutputTail bounds the
-// governor's per-tool live tail to the same source-line cap compose renders, so
-// the accumulator can't grow unbounded on a huge tool dump.
-const (
-	liveEmitInterval = 90 * time.Millisecond
-	liveOutputTail   = 200 // matches compose's tailBound source-line cap
-)
+// The live-emit interval coalesces high-frequency streaming emits (~11fps by
+// default, `stream_emit_interval_ms`). Structural changes force an immediate
+// emit; token/output streaming is throttled so a busy turn doesn't
+// recompose+broadcast on every chunk — smoothness against CPU, which is the
+// user's call, not ours. liveOutputTail bounds the governor's per-tool live
+// tail to the same source-line cap compose renders, so the accumulator can't
+// grow unbounded on a huge tool dump; that one is NOT a knob (see the survey:
+// three paging invariants cite it).
+const liveOutputTail = 200 // matches compose's tailBound source-line cap
 
-// emitLive recomposes+broadcasts, throttled to liveEmitInterval unless force is
+func (a *Agent) liveEmitInterval() time.Duration {
+	return time.Duration(a.settings.StreamEmitIntervalMs()) * time.Millisecond
+}
+
+// emitLive recomposes+broadcasts, throttled to the emit interval unless force is
 // set (a structural change or a final flush). Interrupted turns emit nothing.
 func (a *Agent) emitLive(inflight *message.Message, force bool) error {
 	if a.isInterrupted() {
 		return nil
 	}
-	if !force && time.Since(a.lastEmit) < liveEmitInterval {
+	if !force && time.Since(a.lastEmit) < a.liveEmitInterval() {
 		return nil
 	}
 	a.lastEmit = time.Now()

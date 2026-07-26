@@ -29,7 +29,7 @@ func TestGenerateNumberedFixture(t *testing.T) {
 	turns := performanceFixtureInt(t, "FIGARO_VAL_TURNS", 200)
 	lines := performanceFixtureInt(t, "FIGARO_VAL_LINES", 6)
 
-	backend, err := NewXwalBackend(root)
+	backend, err := NewXwalBackend(root, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

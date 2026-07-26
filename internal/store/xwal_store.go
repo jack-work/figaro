@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figwal/segment"
 	"github.com/jack-work/figwal/xwal"
@@ -134,11 +135,18 @@ func chalkboardReduce(state, patch []byte) ([]byte, error) {
 // 128KB, so 2MiB is 16x headroom; the only unbounded producer is an inlined
 // base64 image from the read tool, which is why this is not 1MiB.
 //
+// It is a default, not a law: `[store] segment_size` overrides it, and
+// config.SegmentSize is the single place the number and its floor live. The
+// zero passed here means "whatever config says", which for a test or a tool
+// that opens a store without config is exactly the default above.
+//
 // Affects new segments only — existing arias keep their oversized files and
 // simply stop growing them.
-const segmentSize = 2 * 1024 * 1024
-
-func storeOptions() xwal.StoreOptions {
+func storeOptions(segmentSize int) xwal.StoreOptions {
+	if segmentSize <= 0 {
+		var noConfig *config.Loaded // the accessor is nil-safe on purpose
+		segmentSize = noConfig.SegmentSize()
+	}
 	// The root genesis is a figaro RoleGenesis message (filtered from
 	// rendering/context) — not figwal's generic marker, which would read back
 	// as an empty-role message in the IR.
@@ -146,7 +154,7 @@ func storeOptions() xwal.StoreOptions {
 	return xwal.StoreOptions{
 		Main:        chanIR,
 		Codec:       "jsonl",
-		SegmentSize: segmentSize,
+		SegmentSize: int64(segmentSize),
 		Genesis:     genesis,
 		MintTrunkID: hexTrunkID,
 		Reducers: map[string]xwal.Reducer{
@@ -180,14 +188,15 @@ type topologySnapshot struct {
 }
 
 // OpenXwalStore opens the aria tree at root, creating it when absent.
-func OpenXwalStore(root string) (*XwalStore, error) {
+// segmentSize <= 0 takes the configured default (see storeOptions).
+func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	if root == "" {
 		return nil, fmt.Errorf("xwal store: empty root")
 	}
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
-	st, err := xwal.OpenStore(root, storeOptions())
+	st, err := xwal.OpenStore(root, storeOptions(segmentSize))
 	if err != nil {
 		return nil, err
 	}

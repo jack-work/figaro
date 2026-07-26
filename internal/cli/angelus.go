@@ -90,7 +90,7 @@ func runAngelus() {
 		defer otelShutdown(context.Background())
 	}
 
-	backend, err := ariaBackend()
+	backend, err := ariaBackend(loaded)
 	if err != nil {
 		slog.Error("angelus aria backend", "err", err)
 		fmt.Fprintf(os.Stderr, "angelus: aria backend: %v\n", err)

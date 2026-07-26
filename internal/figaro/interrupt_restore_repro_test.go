@@ -70,7 +70,7 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	dir := t.TempDir()
 
 	// -- Phase 1: create + prompt + interrupt mid-turn -------------------
-	backend1, err := store.NewXwalBackend(dir)
+	backend1, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
 	loadout, err := backend1.CreateLoadout("d", message.Patch{Set: map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"m"`),
@@ -127,7 +127,7 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 		backend1.Kick()
 		require.NoError(t, backend1.Close())
 		var err error
-		backend2, err = store.NewXwalBackend(dir)
+		backend2, err = store.NewXwalBackend(dir, 0)
 		require.NoError(t, err)
 		t.Cleanup(func() { backend2.Close() })
 		a2 = figaro.NewAgent(figaro.Config{

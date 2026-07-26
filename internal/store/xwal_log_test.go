@@ -14,7 +14,7 @@ type tp struct {
 // (OpenNode → Trunks.Head / Trunks.Append).
 func mustBackendWithConv(t *testing.T) (*XwalBackend, string) {
 	t.Helper()
-	b, err := NewXwalBackend(t.TempDir())
+	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -39,6 +39,13 @@ type Config struct {
 	// Default 80.
 	StreamFirstByteBypassMs *int `toml:"stream_first_byte_bypass_ms"`
 
+	// StreamEmitIntervalMs coalesces live streaming emits (recompose +
+	// broadcast). Default 90 (~11fps). A structural change always emits
+	// immediately, so this only trades frame smoothness against CPU and
+	// bytes-on-the-wire: raise it on a slow link, drop it to 0 to emit on
+	// every chunk. Correctness does not depend on it.
+	StreamEmitIntervalMs *int `toml:"stream_emit_interval_ms"`
+
 	// CheckUpdates controls the passive one-liner nudge on startup
 	// when a newer figaro release is available on the module proxy.
 	// Pointer to distinguish unset (default true) from explicit false.
@@ -57,6 +64,57 @@ type Config struct {
 
 	// Wire bounds paginated reads. See WireConfig.
 	Wire WireConfig `toml:"wire"`
+
+	// Store bounds the on-disk WAL geometry. See StoreConfig.
+	Store StoreConfig `toml:"store"`
+}
+
+// StoreConfig sizes the aria log on disk.
+type StoreConfig struct {
+	// SegmentSize bounds ONE WAL segment file in bytes; a segment rolls when
+	// the next record would not fit. Default 2 MiB (~1300 IR entries at the
+	// measured 1.6KB/entry). Raise it to roll less often on a big store;
+	// lower it to keep individual files small. New segments only — existing
+	// ones keep their size and simply stop growing.
+	SegmentSize *int `toml:"segment_size"`
+}
+
+const (
+	defaultSegmentSize = 2 * 1024 * 1024
+	// minSegmentSize is a HARD floor, not taste: figwal fails an append with
+	// "payload too large for segment size" when a single record cannot fit
+	// inside one empty segment.
+	minSegmentSize = 1024 * 1024
+)
+
+// SegmentSize returns the WAL segment size in bytes. Nil-safe, so a store
+// opened without config still gets the same geometry as one opened with it.
+func (l *Loaded) SegmentSize() int {
+	if l == nil || l.Config.Store.SegmentSize == nil {
+		return defaultSegmentSize
+	}
+	return *l.Config.Store.SegmentSize
+}
+
+// validateStream rejects a negative coalescing window (a negative interval
+// would read as "never throttle", which is what 0 already means).
+func (c Config) validateStream() error {
+	if v := c.StreamEmitIntervalMs; v != nil && *v < 0 {
+		return fmt.Errorf("config: stream_emit_interval_ms must be >= 0 (0 emits every chunk), got %d", *v)
+	}
+	return nil
+}
+
+// validateStore rejects a segment too small to hold one record. The largest
+// record seen in a real store is 128KB, but the read tool inlines images as
+// base64 with no cap, so the true ceiling is "whatever screenshot the agent
+// was asked to look at" — an undersized segment does not degrade, it turns
+// that append into a hard failure and loses the turn.
+func (c Config) validateStore() error {
+	if s := c.Store.SegmentSize; s != nil && *s < minSegmentSize {
+		return fmt.Errorf("config: store.segment_size (%d) must be >= %d: a WAL segment must fit ONE whole record, and figaro inlines images as base64 with no cap — a smaller segment makes figwal reject the append (\"payload too large for segment size\") the first time a screenshot is read", *s, minSegmentSize)
+	}
+	return nil
 }
 
 // WireConfig bounds a paginated read. The budget is spent in BYTES and
@@ -182,6 +240,15 @@ func (l *Loaded) StreamFirstByteBypassMs() int {
 		return 80
 	}
 	return *l.Config.StreamFirstByteBypassMs
+}
+
+// StreamEmitIntervalMs returns the live-emit coalescing window in ms.
+// Default 90. Nil-safe: an agent built without config paces the same.
+func (l *Loaded) StreamEmitIntervalMs() int {
+	if l == nil || l.Config.StreamEmitIntervalMs == nil {
+		return 90
+	}
+	return *l.Config.StreamEmitIntervalMs
 }
 
 // CheckUpdates returns whether to run the passive startup update check.
@@ -332,6 +399,12 @@ func Load(configDir string) (*Loaded, error) {
 	}
 
 	if err := cfg.validateWire(); err != nil {
+		return nil, err
+	}
+	if err := cfg.validateStore(); err != nil {
+		return nil, err
+	}
+	if err := cfg.validateStream(); err != nil {
 		return nil, err
 	}
 

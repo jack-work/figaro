@@ -143,7 +143,7 @@ func BenchmarkChalkboardOpenReplay(b *testing.B) {
 			root, aria := seedChalkboardAria(b, g.m, g.n)
 			b.ResetTimer()
 			for b.Loop() {
-				be, err := NewXwalBackend(root)
+				be, err := NewXwalBackend(root, 0)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -167,7 +167,7 @@ func BenchmarkChalkboardOpenReplay(b *testing.B) {
 func seedChalkboardAria(tb testing.TB, m, n int) (string, string) {
 	tb.Helper()
 	root := tb.TempDir()
-	be, err := NewXwalBackend(root)
+	be, err := NewXwalBackend(root, 0)
 	if err != nil {
 		tb.Fatal(err)
 	}

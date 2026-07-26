@@ -166,7 +166,7 @@ provider = "mock"
 model = "mock-model"
 `), 0600))
 
-	backend, err := store.NewXwalBackend(dir + "/arias")
+	backend, err := store.NewXwalBackend(dir+"/arias", 0)
 	require.NoError(t, err)
 
 	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})
@@ -227,7 +227,7 @@ provider = "mock"
 model = "mock-model"
 `), 0600))
 
-	backend, err := store.NewXwalBackend(dir + "/arias")
+	backend, err := store.NewXwalBackend(dir+"/arias", 0)
 	require.NoError(t, err)
 	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})
 	factory := func(string, provider.Knobs) (provider.Provider, error) {

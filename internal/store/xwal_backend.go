@@ -49,8 +49,10 @@ type metaCache struct {
 	value  *AriaMeta
 }
 
-func NewXwalBackend(root string) (*XwalBackend, error) {
-	st, err := OpenXwalStore(root)
+// NewXwalBackend opens the aria tree at root. segmentSize <= 0 takes the
+// configured default; the daemon passes config's, tests pass nothing.
+func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
+	st, err := OpenXwalStore(root, segmentSize)
 	if err != nil {
 		return nil, err
 	}

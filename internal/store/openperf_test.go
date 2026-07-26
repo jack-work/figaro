@@ -13,7 +13,7 @@ import (
 func seedLargeAria(tb testing.TB, nMsgs, msgBytes int) (string, string) {
 	tb.Helper()
 	root := tb.TempDir()
-	be, err := NewXwalBackend(root)
+	be, err := NewXwalBackend(root, 0)
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func seedLargeAria(tb testing.TB, nMsgs, msgBytes int) (string, string) {
 // per op" (the write path) makes large arias crawl again.
 func BenchmarkOpenLargeAria(b *testing.B) {
 	root, conv := seedLargeAria(b, 600, 2048) // ~1.2MB IR
-	s, err := OpenXwalStore(root)
+	s, err := OpenXwalStore(root, 0)
 	if err != nil {
 		b.Fatal(err)
 	}
