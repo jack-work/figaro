@@ -69,7 +69,7 @@ func TestIncipit_TinyViewportShowsOnlyTheFooter(t *testing.T) {
 	in := NewIncipit(ft, NodeText{})
 	withChrome(in)
 
-	in.Open(1, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "body text here"}})
+	in.Open(1, 0, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "body text here"}})
 
 	joined := strings.Join(ft.Screen(), "\n")
 	if !strings.Contains(joined, "FOOTER") {
@@ -98,8 +98,8 @@ func TestIncipit_TinyViewportKeepsTheReplyInScrollback(t *testing.T) {
 
 		in.OpenThinking(livedoc.RoleOutput)
 		// stream a partial, then the full text — the exact shape that stranded "T"
-		in.Open(7, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "T"}})
-		in.Open(7, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "TINYREPLY"}})
+		in.Open(7, 0, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "T"}})
+		in.Open(7, 0, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "TINYREPLY"}})
 		in.Freeze(aria.Message{LT: 7, Role: livedoc.RoleOutput,
 			Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "TINYREPLY"}}})
 

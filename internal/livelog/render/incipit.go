@@ -60,11 +60,12 @@ type Incipit struct {
 	thinking bool // open region is an OpenThinking placeholder (adopted by the next Open)
 
 	// Open-message live region:
-	liveLT int
-	role   string   // open message's role; selects Bookend (assistant) vs Rule
-	live   []string // rows on screen for the open message
-	vt     int      // rows of the live region scrolled above the viewport
-	cur    int      // cursor row within the live region (0 = top)
+	liveLT   int
+	liveFrom uint64   // start of the open suffix; with liveLT it identifies the region
+	role     string   // open message's role; selects Bookend (assistant) vs Rule
+	live     []string // rows on screen for the open message
+	vt       int      // rows of the live region scrolled above the viewport
+	cur      int      // cursor row within the live region (0 = top)
 }
 
 // NewIncipit returns an inline renderer drawing to term via view.
@@ -81,8 +82,18 @@ func NewIncipit(term Terminal, view NodeView) *Incipit {
 // ABOVE it in scrollback, so erase the placeholder, print, and repaint it in
 // place — otherwise the footer would be stranded above the very message it
 // belongs under.
+// A message IS the live region only when it starts where the region starts.
+// LT alone is not identity: aria.Message.LT carries the TURN id, so every
+// message in a turn shares it. Testing LT alone made freezing a one-node
+// steering interjection drop the whole streaming region — seventeen rows of
+// it — into scrollback, after which the rest of the turn was frozen again and
+// the entire post-steer block printed twice.
+func (i *Incipit) isLiveRegion(m aria.Message) bool {
+	return i.liveLT != 0 && m.LT == i.liveLT && m.From == i.liveFrom
+}
+
 func (i *Incipit) Freeze(m aria.Message) {
-	if m.LT == i.liveLT && i.liveLT != 0 {
+	if i.isLiveRegion(m) {
 		if !i.bodyHidden() {
 			i.dropBelow()
 			i.reset()
@@ -140,14 +151,14 @@ func (i *Incipit) Freeze(m aria.Message) {
 // (the bookend follows the assistant only), and — if a message is still
 // streaming — starts a fresh live region. The cursor lands on a new line below
 // everything, so input resumes after the content like `figaro show`.
-func (i *Incipit) Resume(closed []aria.Message, openLT int, openRole string, open []livedoc.Node) {
+func (i *Incipit) Resume(closed []aria.Message, openLT int, openFrom uint64, openRole string, open []livedoc.Node) {
 	io.WriteString(i.term, "\x1b[J") // clear the restored partial region
 	i.reset()
 	for _, m := range closed {
 		i.printMessage(m)
 	}
 	if openLT != 0 {
-		i.Open(openLT, openRole, open)
+		i.Open(openLT, openFrom, openRole, open)
 	}
 }
 
@@ -176,18 +187,18 @@ func (i *Incipit) printMessage(m aria.Message) {
 }
 
 // Open paints (or repaints) the open message's blocks as the live region.
-func (i *Incipit) Open(lt int, role string, nodes []livedoc.Node) {
+func (i *Incipit) Open(lt int, from uint64, role string, nodes []livedoc.Node) {
 	// A thinking placeholder (OpenThinking) is the same on-screen region as the
 	// assistant message that follows: adopt its LT in place — no dropBelow, no
 	// reset — so the footer painted on submit stays put and the streamed
 	// content fills in above it, never orphaning a header/footer to scrollback.
 	if i.thinking && role == i.role {
 		i.thinking = false
-		i.liveLT = lt
+		i.liveLT, i.liveFrom = lt, from
 		i.paint(i.compose(nodes))
 		return
 	}
-	if lt != i.liveLT {
+	if lt != i.liveLT || from != i.liveFrom {
 		// A new open message without a prior Freeze: release whatever was live.
 		// A thinking placeholder is ERASED rather than released — it is a pinned
 		// footer, not content, and dropping it into scrollback would strand the
@@ -198,7 +209,7 @@ func (i *Incipit) Open(lt int, role string, nodes []livedoc.Node) {
 			i.dropBelow()
 		}
 		i.reset()
-		i.liveLT = lt
+		i.liveLT, i.liveFrom = lt, from
 	}
 	i.role = role
 	i.paint(i.compose(nodes))
@@ -450,6 +461,6 @@ func (i *Incipit) dropBelow() {
 }
 
 func (i *Incipit) reset() {
-	i.liveLT, i.role, i.live, i.vt, i.cur = 0, "", nil, 0, 0
+	i.liveLT, i.liveFrom, i.role, i.live, i.vt, i.cur = 0, 0, "", nil, 0, 0
 	i.thinking = false
 }
