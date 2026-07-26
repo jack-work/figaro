@@ -178,10 +178,11 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 // appendUserPrompt persists one external prompt as its own canonical user
 // message and matching committed UI unit.
 //
-// steering distinguishes the two kinds of input, and it is the ONLY place that
-// can: the drain knows whether a turn was already in flight when this prompt
-// came off the queue, and nothing downstream can recover that. An inquiry
-// opens a turn; a steer joins the one already running.
+// steering distinguishes the two kinds of input, and the DRAIN is the only place
+// that can decide it: it alone knows whether a turn was already in flight when
+// this prompt came off the queue. An inquiry opens a turn; a steer joins the one
+// already running. The field is persisted so a replayed log classifies the same
+// way it did live — but nothing outside this package ever supplies it.
 func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (store.Entry[message.Message], error) {
 	msg := message.Message{
 		Role:      message.RoleInput,
@@ -775,19 +776,103 @@ func hasRenderablePrompt(prompts []event) bool {
 	return false
 }
 
+// appendPromptEvents drains queued prompts INTO A RUNNING TURN, as ONE message.
+//
+// The batch is the contiguous run of user prompts Inbox.TakeReadyUserPrompts
+// lifted in a single locked pass — it stops at the first fork or chalkboard set,
+// because those need ordering. So the batch boundary is already exactly the set
+// that belongs together, and we join it rather than splitting it: three nudges
+// typed during one tool round are ONE message of three lines at ONE LT, not
+// three messages the model must reconcile.
+//
+// Both callers run inside the turn loop, so by construction everything reaching
+// here was drawn from the queue while a turn was in flight. That is the whole
+// classification rule and this is the only place it is made: a prompt drained
+// mid-turn IS a steer; a prompt that opens a turn goes through appendUserPrompt
+// directly with steering=false. Nothing upstream declares it — a prompt
+// pipelined by a script and one typed by someone watching are identical on the
+// wire — and the drain is the only point that knows the turn boundary as the
+// agent itself sees it rather than as a client call returning. One message means
+// one steering decision, taken once.
+//
+// Backcompat is read-only: logs written before this carry N separate user
+// messages and keep reading exactly as they did. Nothing on disk is migrated.
 func (a *Agent) appendPromptEvents(prompts []event) error {
-	for i, prompt := range prompts {
-		if _, err := a.appendUserPrompt(prompt, false, prompt.steering); err != nil {
-			// The chalkboard write precedes the IR append. Do not replay it
-			// when restoring the still-unpersisted prompt.
+	merged, ok := mergePromptEvents(prompts)
+	if !ok {
+		return nil
+	}
+	if _, err := a.appendUserPrompt(merged, false, true); err != nil {
+		// All-or-nothing: the chalkboard write precedes the IR append, so do not
+		// replay it when restoring. One message means one failure unit — there is
+		// no partial tail to prepend.
+		for i := range prompts {
 			prompts[i].chalkboard = nil
-			if !a.inbox.Prepend(prompts[i:]) {
-				return fmt.Errorf("%w; inbox closed while restoring prompts", err)
-			}
-			return err
 		}
+		if !a.inbox.Prepend(prompts) {
+			return fmt.Errorf("%w; inbox closed while restoring prompts", err)
+		}
+		return err
 	}
 	return nil
+}
+
+// mergePromptEvents folds a drained batch into one prompt: texts joined by a
+// newline in queue order, chalkboard input merged in the same order so a later
+// prompt's value wins. Reports false when the batch is empty.
+func mergePromptEvents(prompts []event) (event, bool) {
+	if len(prompts) == 0 {
+		return event{}, false
+	}
+	if len(prompts) == 1 {
+		return prompts[0], true
+	}
+	texts := make([]string, 0, len(prompts))
+	out := event{typ: eventUserPrompt}
+	for _, p := range prompts {
+		if p.text != "" {
+			texts = append(texts, p.text)
+		}
+		out.chalkboard = mergeChalkboardInput(out.chalkboard, p.chalkboard)
+	}
+	out.text = strings.Join(texts, "\n")
+	return out, true
+}
+
+// mergeChalkboardInput merges b over a, in queue order, without mutating either.
+func mergeChalkboardInput(a, b *rpc.ChalkboardInput) *rpc.ChalkboardInput {
+	if b == nil {
+		return a
+	}
+	if a == nil {
+		return b
+	}
+	out := &rpc.ChalkboardInput{}
+	if len(a.Context) > 0 || len(b.Context) > 0 {
+		out.Context = map[string]json.RawMessage{}
+		for k, v := range a.Context {
+			out.Context[k] = v
+		}
+		for k, v := range b.Context {
+			out.Context[k] = v
+		}
+	}
+	if a.Patch != nil || b.Patch != nil {
+		out.Patch = &rpc.ChalkboardPatch{}
+		for _, src := range []*rpc.ChalkboardPatch{a.Patch, b.Patch} {
+			if src == nil {
+				continue
+			}
+			if len(src.Set) > 0 && out.Patch.Set == nil {
+				out.Patch.Set = map[string]json.RawMessage{}
+			}
+			for k, v := range src.Set {
+				out.Patch.Set[k] = v
+			}
+			out.Patch.Remove = append(out.Patch.Remove, src.Remove...)
+		}
+	}
+	return out
 }
 
 // collectToolResults dispatches every call (idempotent), waits for each

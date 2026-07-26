@@ -72,7 +72,7 @@ func runNewPrompt(loaded *config.Loaded, prompt, loadout string, set renderSetti
 		}
 		defer fcli.Close()
 		qctx, qcancel := context.WithTimeout(ctx, 10*time.Second)
-		if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptChalkboard(), false); qerr != nil {
+		if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptChalkboard()); qerr != nil {
 			qcancel()
 			die("prompt: %s", qerr)
 		}

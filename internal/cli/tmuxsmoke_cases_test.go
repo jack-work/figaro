@@ -95,38 +95,37 @@ func TestSmoke_OneTurnOneFooter(t *testing.T) {
 	}
 }
 
-// A user who does not know about any trigger key must be able to type.
+// Letters in the inline view are KEYBINDINGS, not text.
 //
-// CAUGHT: typing into the live view silently discarded every character until an
-// `i` appeared in the text — `i` was the composer trigger. Because English
-// contains the letter i, a sentence lost everything before the first one and
-// kept the rest: SILENT, PARTIAL, MEANING-CHANGING input loss.
+// CAUGHT, and then REVERTED: an in-view steer composer was built that made every
+// printable character start typing a draft. Nobody asked for it, and it cost ten
+// keybindings — `k` opened a text box instead of scrolling. The user's rule is
+// that there is nothing in the UI to steer: a message is a steer purely because
+// of WHEN it is sent, so the transcript stays lean and the keyboard stays a
+// keyboard.
 //
-// Three separate investigators tested this feature by pressing `i` first and
-// all three pronounced it sound. THE EXPERT PATH AGREED WITH ITSELF AND WAS
-// INCOMPLETE. The sentence below is chosen to contain j, d, i, q, u, k and g —
-// every letter that once opened the pager from the inline view.
-func TestSmoke_NaiveTypingComposes(t *testing.T) {
+// `j` is the probe because it was the loudest casualty: it is both a motion and
+// the ninth letter of "just", which is how the composer's trigger was found.
+func TestSmoke_LettersAreKeybindingsNotText(t *testing.T) {
 	smokeEnabled(t)
 	env, bin := smokeStore(t), smokeBinary(t)
 	p := newPane(t, env, bin, 100, 40)
 
-	p.startTurn("use bash to sleep 45, then say TYPEOK")
+	p.startTurn("use bash to sleep 45, then say KEYOK")
 	time.Sleep(14 * time.Second)
 	if !p.alive() {
-		t.Skip("turn ended before typing could begin")
+		t.Skip("turn ended before the key could be sent")
 	}
 
-	const typed = "just dig quickly"
-	p.typeSlowly(typed) // NO trigger key, and one character per read
+	p.typeSlowly("j") // a motion, not the first letter of a draft
 	time.Sleep(time.Second)
 
 	vis := p.visible()
-	if c := pagerChrome(vis); c != 0 {
-		t.Fatalf("typing opened the PAGER instead of composing (chrome=%d) — a letter was still a motion\n%s", c, vis)
+	if strings.Contains(vis, "steer ↳") || strings.Contains(vis, "send ↳") {
+		t.Fatalf("a letter opened a text box — the composer is back\n%s", vis)
 	}
-	if !strings.Contains(vis, typed) {
-		t.Fatalf("draft does not hold the full text %q — characters were discarded\n%s", typed, vis)
+	if c := pagerChrome(vis); c == 0 {
+		t.Fatalf("'j' did not reach the pager: it must scroll, not be swallowed\n%s", vis)
 	}
 }
 

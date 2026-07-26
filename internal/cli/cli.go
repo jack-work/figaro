@@ -182,7 +182,7 @@ fig IR, but it is not an address: turns are.`,
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [--steer] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
+		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding). With --id, targets
 the named aria, which must already exist (aria ids are system-minted).
@@ -191,19 +191,6 @@ Persistence (--ephemeral) and formatting (--raw) are orthogonal.
 
 Flags:
   --id <id>      Target a specific existing aria
-  --steer        Join the turn already running instead of starting a new one.
-                 The prompt lands inside that exchange as a steering aside — a
-                 nudge to a train of thought in motion.
-                 WITHOUT it, a prompt sent to a busy aria opens its OWN turn
-                 and is answered after the current one. That default is
-                 deliberate: intent cannot be inferred from timing, and guessing
-                 "steer" merges two exchanges — which silently swallowed real
-                 questions. A new turn is visible and recoverable; a swallowed
-                 one is not. So steering is something you ASK for.
-                 In the live view you never have to: press 'i' and type — that
-                 path sets --steer by construction. This flag is for scripts
-                 and second shells, where intent must be declared because it
-                 cannot be observed.
   -e, --ephemeral
                  Spin a one-shot in-memory aria; kill it on completion.
                  Contradicts --id. Says nothing about formatting.
@@ -229,10 +216,12 @@ Flags:
                  stdout. With --forget: fire, then print. With <id>:<turn>:
                  fork, then print (mode="fork-send").
 
+Timing is the whole rule: one command, whether or not the aria is busy.
+A prompt that arrives while a turn is running joins it as a steering aside;
+a prompt that arrives when nothing is running opens a turn of its own. The
+classification is made where the queue is drained, and nowhere else.
+
 Keys while streaming:
-  (just type)    Steer the running turn: start typing, Enter sends, Esc
-                 cancels. Sets --steer for you. In the transcript pager,
-                 where the letters are motions, press 'i' first.
   Ctrl-C         Interrupt the turn (sends figaro.interrupt).
   Ctrl-D         Disconnect this CLI; leave the turn running.
   Ctrl-T         Open the full-screen transcript pager.
@@ -245,9 +234,7 @@ Keys while streaming:
   figaro send -er -- <prompt>          ephemeral + raw (was: ` + "`figaro plain`" + `)
   figaro send -ex -y -- <instruction>  ephemeral exec, no confirmation
   figaro send -f --id myid -- <prompt> fire-and-forget; do not stream
-  figaro send --steer -- <nudge>       steer the RUNNING turn (no --steer: new turn)
-  figaro send -f --steer --id myid -- <nudge>
-                                       steer another aria's running turn`,
+  figaro send -- <nudge>               sent mid-turn, this steers that turn`,
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)

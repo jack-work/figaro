@@ -11,6 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/uiir"
@@ -81,24 +82,25 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	close(bt.release)
 	waitTurnDone(t, frames)
 
+	// A DRAINED BATCH IS ONE MESSAGE. Both steers were queued during the same
+	// tool round, so TakeReadyUserPrompts lifts them together and the drain
+	// joins them with a newline: one message, one LT, one steering decision —
+	// not two messages for the model to reconcile.
 	msgs := a.Context()
-	require.Len(t, msgs, 6)
+	require.Len(t, msgs, 5)
 	require.Equal(t, []message.Role{
 		message.RoleInput,
 		message.RoleOutput,
 		message.RoleInput,
 		message.RoleInput,
-		message.RoleInput,
 		message.RoleOutput,
-	}, []message.Role{msgs[0].Role, msgs[1].Role, msgs[2].Role, msgs[3].Role, msgs[4].Role, msgs[5].Role})
+	}, []message.Role{msgs[0].Role, msgs[1].Role, msgs[2].Role, msgs[3].Role, msgs[4].Role})
 	require.Len(t, msgs[2].Content, 1)
 	require.Equal(t, message.ContentToolResult, msgs[2].Content[0].Type)
 	require.Len(t, msgs[3].Content, 1)
 	require.Equal(t, message.ContentProse, msgs[3].Content[0].Type)
-	require.Equal(t, "steer one", msgs[3].Content[0].Text)
-	require.Len(t, msgs[4].Content, 1)
-	require.Equal(t, message.ContentProse, msgs[4].Content[0].Type)
-	require.Equal(t, "steer two", msgs[4].Content[0].Text)
+	require.Equal(t, "steer one\nsteer two", msgs[3].Content[0].Text)
+	require.True(t, msgs[3].Steering, "a prompt drained mid-turn is classified at the drain")
 
 	// The canonical order survives as ONE turn. A steer is a direction aimed at
 	// the exchange already in flight, so it joins that turn rather than opening
@@ -124,25 +126,25 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	for _, n := range read.Parts[0].Nodes {
 		kinds = append(kinds, string(n.Type))
 	}
-	require.Equal(t, []string{"prose", "tool", "steering", "steering", "prose"}, kinds,
-		"both steers must render as steering nodes inside the turn they steer, "+
-			"and the tool call they interrupted must survive")
+	require.Equal(t, []string{"prose", "tool", "steering", "prose"}, kinds,
+		"the drained batch is ONE steering node inside the turn it steers, "+
+			"and the tool call it interrupted must survive")
+	require.Equal(t, "steer one\nsteer two", read.Parts[0].Nodes[2].Markdown,
+		"both queued texts survive, joined by a newline — nothing is dropped")
 	require.Equal(t, int32(2), prov.calls.Load())
 }
 
-// A prompt that arrives mid-turn WITHOUT declaring itself a steer is a new
-// question and must keep its own turn.
+// TIMING IS THE WHOLE RULE: a prompt that arrives while a turn is running joins
+// that turn as a steering aside. There is no flag and no declaration — one
+// command, identical whether or not the aria is busy.
 //
-// This is the inverse defect, and it is the worse one. Inferring "steering"
-// from "a turn was in flight" demoted a genuine question: the two exchanges
-// MERGED and the second stopped existing as an addressable turn, so
-// `send`/`fork <trunk>:<turn>` could never name it again. It reproduced on
-// one of six sequential rounds — a race, and therefore intermittent. The old
-// split bug was ugly but visible and lossless; this one was silent.
-//
-// Intent is carried now, so the same arrival that used to be guessed is
-// simply believed.
-func TestUnmarkedPromptMidTurnKeepsItsOwnTurn(t *testing.T) {
+// This test previously asserted the opposite, from an era when intent was
+// CARRIED. That design existed to avoid demoting a genuine question, but it
+// required the caller to know something the caller cannot reliably know, and it
+// put a second classification point outside the drain. The rule now: a message
+// sent while figaro is working IS a direction to the work in progress. A steer
+// is not a turn, so it does not get one.
+func TestMidTurnPromptJoinsTheRunningTurn(t *testing.T) {
 	bt := &blockingSteeringTool{
 		started: make(chan struct{}),
 		release: make(chan struct{}),
@@ -175,18 +177,24 @@ func TestUnmarkedPromptMidTurnKeepsItsOwnTurn(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("tool did not start")
 	}
-	submitPrompt(a, "a separate question") // NOT a steer
+	submitPrompt(a, "a mid-turn nudge")
 	close(bt.release)
 	waitTurnDone(t, frames)
 
 	read := a.Read(aria.Anchor{Turn: 0}, 1<<20)
 	for _, part := range read.Parts {
-		t.Logf("turn=%d inquiry=%q", part.ID, part.Inquiry)
+		t.Logf("turn=%d inquiry=%q nodes=%d", part.ID, part.Inquiry, len(part.Nodes))
 	}
-	require.Len(t, read.Parts, 2, "an undeclared prompt must not be absorbed into the running turn")
+	require.Len(t, read.Parts, 1, "a prompt drained mid-turn joins the running turn")
 	require.Equal(t, "initial", read.Parts[0].Inquiry)
-	require.Equal(t, "a separate question", read.Parts[1].Inquiry,
-		"the second question must remain addressable as its own turn")
+	var sawSteering bool
+	for _, n := range read.Parts[0].Nodes {
+		if n.Type == livedoc.NodeSteering {
+			sawSteering = true
+		}
+	}
+	require.True(t, sawSteering,
+		"the mid-turn prompt must render as a steering node inside that turn")
 	require.Equal(t, int32(2), prov.calls.Load())
 }
 

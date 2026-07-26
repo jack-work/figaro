@@ -35,9 +35,9 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 // a new question. The caller is the only one who knows: on the wire the two
 // are identical, and inferring it merges exchanges that were meant to be
 // separate — silently, and only sometimes.
-func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput, steer bool) (int, bool, error) {
+func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) (int, bool, error) {
 	var resp rpc.QuaResponse
-	err := c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb, Steering: steer}, &resp)
+	err := c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, &resp)
 	return resp.Cursor, resp.Active, err
 }
 
