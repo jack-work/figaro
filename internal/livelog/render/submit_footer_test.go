@@ -116,3 +116,31 @@ func TestIncipit_TinyViewportKeepsTheReplyInScrollback(t *testing.T) {
 		}
 	}
 }
+
+// A steer splits the agent's run in two, and the leading half is routinely
+// invisible — thinking is hidden by default, a tool may already be drawn. A
+// header over an empty run showed as a bare "‹ figaro" sitting directly above
+// "↳ you": two headers for one steer, the first labelling nothing.
+func TestIncipit_NoHeaderOverAnEmptyVoiceRun(t *testing.T) {
+	ft := NewFakeTerminal(60, 24)
+	in := NewIncipit(ft, NodeText{})
+	withChrome(in)
+
+	// an output run whose only node renders to nothing
+	in.Freeze(aria.Message{LT: 3, Role: livedoc.RoleOutput,
+		Nodes: []livedoc.Node{{ID: "n0", Type: livedoc.NodeProse, Markdown: "   "}}})
+	// then the steer, which must carry its own header and be the only one
+	in.Freeze(aria.Message{LT: 3, From: 1, Role: livedoc.RoleInput,
+		Nodes: []livedoc.Node{{ID: "n1", Type: livedoc.NodeSteering, Markdown: "steer me"}}})
+
+	joined := strings.Join(ft.Screen(), "\n")
+	if !strings.Contains(joined, "steer me") {
+		t.Fatalf("steer text missing:\n%s", joined)
+	}
+	if n := strings.Count(joined, "< figaro"); n != 0 {
+		t.Errorf("empty output run printed %d header(s) over no content:\n%s", n, joined)
+	}
+	if n := strings.Count(joined, "> input"); n != 1 {
+		t.Errorf("steer run should carry exactly one header, got %d:\n%s", n, joined)
+	}
+}
