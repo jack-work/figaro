@@ -119,12 +119,13 @@ type Agent struct {
 	// count: main LTs are trunk-global (patches/transitions consume them too),
 	// so they run far ahead of the message channel's entry count, and passing
 	// a count to ReadFrom re-includes prior turns in every live frame.
-	turnStartLT uint64
-	turnID      uint64            // in-flight turn id, stamped onto every append
-	gov         *toolout.Governor // bounded live tool-output tails (coalesced emits)
-	lastEmit    time.Time         // throttle for live streaming emits
-	argPartials map[string]string
-	turn        *turnState
+	turnStartLT   uint64
+	turnStartTurn uint64            // turn the window was pinned for; the region base moves only with the turn
+	turnID        uint64            // in-flight turn id, stamped onto every append
+	gov           *toolout.Governor // bounded live tool-output tails (coalesced emits)
+	lastEmit      time.Time         // throttle for live streaming emits
+	argPartials   map[string]string
+	turn          *turnState
 
 	// ariaSrv is the rendered conversation (committed units + the open one),
 	// the single source of the aria-read wire: it serves both the live push

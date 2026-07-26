@@ -275,21 +275,36 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 }
 
 func (a *Agent) startAssistantUnit() {
-	a.turnStartLT = 0
-	if tail, ok := a.figLog.PeekTail(); ok {
-		a.turnStartLT = tail.FigaroLT
-		// Steers are the tail when this unit opens right after a drain, and a
-		// single drain can yield several. Back up past the whole trailing run
-		// so every one of them sits INSIDE the recomposed window (which is
-		// turnStartLT+1..) and the PROJECTION emits their steering nodes. The
-		// drain used to hand-build one node instead, which both lost steers
-		// beyond the first and vanished entirely on the next recompose.
-		for a.turnStartLT > 0 {
-			prev := a.figLog.ReadFrom(a.turnStartLT, 1)
-			if len(prev) == 0 || !turns.IsSteering(prev[0].Payload) {
-				break
+	// The streaming region's boundary is fixed for the LIFETIME OF THE TURN —
+	// aria.Server.OpenTurn recomputes its base only when the turn id changes,
+	// because the producer is contracted to recompose the WHOLE region every
+	// frame so that a reopen replaces rather than appends.
+	//
+	// So the compose window must be pinned the same way. Recomputing it from the
+	// tail on every round silently narrowed it: after a steer drained, the
+	// backup stopped at the preceding tool_result, so the window became
+	// [steer, reply] while the server's region still began at the TOOL's index.
+	// The shorter region then overwrote the tool in place — it was never frozen,
+	// appeared nowhere on screen despite being in the IR, and left its voice-run
+	// header stranded with nothing under it.
+	if a.turnStartTurn != a.turnID || a.turnStartLT == 0 {
+		a.turnStartTurn = a.turnID
+		a.turnStartLT = 0
+		if tail, ok := a.figLog.PeekTail(); ok {
+			a.turnStartLT = tail.FigaroLT
+			// Steers are the tail when this unit opens right after a drain, and a
+			// single drain can yield several. Back up past the whole trailing run
+			// so every one of them sits INSIDE the recomposed window (which is
+			// turnStartLT+1..) and the PROJECTION emits their steering nodes. The
+			// drain used to hand-build one node instead, which both lost steers
+			// beyond the first and vanished entirely on the next recompose.
+			for a.turnStartLT > 0 {
+				prev := a.figLog.ReadFrom(a.turnStartLT, 1)
+				if len(prev) == 0 || !turns.IsSteering(prev[0].Payload) {
+					break
+				}
+				a.turnStartLT--
 			}
-			a.turnStartLT--
 		}
 	}
 	a.gov = toolout.New(liveOutputTail)
