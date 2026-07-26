@@ -118,7 +118,7 @@ func (i *Incipit) Freeze(m aria.Message) {
 	// A voice run whose nodes all render to nothing (thinking hidden, minted-but-
 	// empty prose, a tool already drawn) must not print a header over empty space.
 	// A steer splits the agent's run in two, and the leading half is routinely
-	// invisible — which showed as a bare "‹ figaro" sitting above "↳ you".
+	// invisible — which showed as a bare "‹ figaro" sitting above "↳ input".
 	if h := i.header(m.Role); h != "" && len(rows) > 0 {
 		b.WriteString(h)
 		b.WriteString("\r\n")

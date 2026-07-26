@@ -120,7 +120,7 @@ func TestIncipit_TinyViewportKeepsTheReplyInScrollback(t *testing.T) {
 // A steer splits the agent's run in two, and the leading half is routinely
 // invisible — thinking is hidden by default, a tool may already be drawn. A
 // header over an empty run showed as a bare "‹ figaro" sitting directly above
-// "↳ you": two headers for one steer, the first labelling nothing.
+// "↳ input": two headers for one steer, the first labelling nothing.
 func TestIncipit_NoHeaderOverAnEmptyVoiceRun(t *testing.T) {
 	ft := NewFakeTerminal(60, 24)
 	in := NewIncipit(ft, NodeText{})

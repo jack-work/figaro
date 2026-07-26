@@ -386,7 +386,7 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 			}
 		}
 		if text != "" {
-			fmt.Fprintf(w, "**you** [#%d]\n\n> %s\n\n", lt, indentBlockquote(text))
+			fmt.Fprintf(w, "**input** [#%d]\n\n> %s\n\n", lt, indentBlockquote(text))
 		}
 		for _, c := range toolResults {
 			marker := "↩"
