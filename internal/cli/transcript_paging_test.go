@@ -11,7 +11,7 @@ package cli
 // fail to model production; it encoded the OPPOSITE semantics.
 //
 // Rule: a double must call the real function. If it cannot, it is a fixture,
-// not a test. See skills/tmux-testing.md.
+// not a test. See the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md).
 
 import (
 	"encoding/json"

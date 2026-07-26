@@ -10,7 +10,7 @@ package render
 // user in his own shell.
 //
 // Anything about what SURVIVES on screen belongs in the tmux smoke suite:
-// internal/cli/tmuxsmoke_cases_test.go. See skills/tmux-testing.md.
+// internal/cli/tmuxsmoke_cases_test.go. See the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md).
 
 import (
 	"io"

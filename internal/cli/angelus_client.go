@@ -199,7 +199,7 @@ func checkDaemonBuild(cli *angelus.Client) {
 		fmt.Fprintf(os.Stderr,
 			"figaro: this CLI's build is unknown, so it cannot be checked against\n"+
 				"        the running angelus (%s). If output is missing or garbled,\n"+
-				"        run `figaro stop` and retry; see skills/tmux-testing.md to\n"+
+				"        run `figaro stop` and retry; see the tmux-testing skill to\n"+
 				"        build a stamped binary.\n", short12(st.Build))
 		return
 	case st.Build == "":

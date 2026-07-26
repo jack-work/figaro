@@ -10,7 +10,7 @@ import (
 // The pager is either FOLLOWING the live tail or PINNED where you left it, and
 // the screen has to say which. Every rule below was a bug a human found in his
 // own terminal while the suite was green, so each one names the screen it
-// stands in for. See skills/tmux-testing.md: this file is the cheap half of
+// stands in for. See the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md): this file is the cheap half of
 // that proof, not the whole of it.
 func TestTranscriptScrollLiveContract(t *testing.T) {
 	tr := scrollTranscript(t, io.Discard, 100, 40, 12)

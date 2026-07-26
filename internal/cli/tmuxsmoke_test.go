@@ -37,7 +37,7 @@ package cli
 //	FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -run TestSmoke -v
 //
 // Skipped by default, so `go test ./...` stays fast and hermetic.
-// Full method and traps: skills/tmux-testing.md — read it before adding a case.
+// Full method and traps: the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md) — read it before adding a case.
 // ---------------------------------------------------------------------------
 
 import (

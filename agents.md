@@ -21,7 +21,7 @@ nix build         # flake.nix is a first-class build path
 ```
 
 - Module: `github.com/jack-work/figaro`. Go 1.25.
-- **Stamp the revision** when you build a binary to run: `go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" -o /tmp/figaro ./cmd/figaro`. A plain `go build` in a worktree records no VCS revision, so the CLI/daemon build handshake can only warn instead of refusing. See `skills/tmux-testing.md`.
+- **Stamp the revision** when you build a binary to run: `go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)" -o /tmp/figaro ./cmd/figaro`. A plain `go build` in a worktree records no VCS revision, so the CLI/daemon build handshake can only warn instead of refusing. See the **tmux-testing** skill.
 - `hush` and `largo` are local replace directives in active development. Don't pin or vendor without asking.
 - CGO disabled in nix builds. Keep it that way.
 

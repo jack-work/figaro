@@ -38,7 +38,7 @@
 //	FIGARO_E2E_BIN=$P/bin/figaro go test -tags tmux ./internal/cli/ -run TestE2E -v
 //
 // The tag keeps it out of the default suite: it costs real provider calls and
-// wall-clock. It is not optional for UI changes — see skills/tmux-testing.md.
+// wall-clock. It is not optional for UI changes — see the tmux-testing skill (~/.config/figaro/skills/tmux-testing.md).
 package cli
 
 import (
