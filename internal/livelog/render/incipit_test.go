@@ -78,7 +78,10 @@ func TestIncipit_ResizeKeepsFrozen_RedrawsOpen(t *testing.T) {
 }
 
 func TestIncipit_NoTrailingBlanksAfterScrolledFreeze(t *testing.T) {
-	ft := NewFakeTerminal(40, 6) // short viewport so the message scrolls
+	// Viewport must sit ABOVE minInlineHeight: below that floor the live region
+	// is footer-only and the body is never painted, so nothing scrolls and this
+	// path is not exercised at all. 12 rows with 10 blocks still overflows.
+	ft := NewFakeTerminal(40, 12)
 	in := NewIncipit(ft, NodeText{})
 	in.Bookend = func() []string { return []string{"=== bookend ==="} }
 	var nodes []livedoc.Node
@@ -91,8 +94,8 @@ func TestIncipit_NoTrailingBlanksAfterScrolledFreeze(t *testing.T) {
 	// Freezing a scrolled region must move the cursor past only the VISIBLE rows
 	// (<= viewport height); using the full region height leaves the scrolled-off
 	// count as blank lines after the bookend.
-	if adv := ft.Row() - top; adv > 6 {
-		t.Fatalf("freeze advanced %d rows (> viewport 6) → trailing blank lines", adv)
+	if adv := ft.Row() - top; adv > 12 {
+		t.Fatalf("freeze advanced %d rows (> viewport 12) → trailing blank lines", adv)
 	}
 }
 

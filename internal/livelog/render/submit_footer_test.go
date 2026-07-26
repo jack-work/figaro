@@ -82,3 +82,37 @@ func TestIncipit_TinyViewportShowsOnlyTheFooter(t *testing.T) {
 		t.Fatalf("header must not draw below 3 rows:\n%s", joined)
 	}
 }
+
+// CONTENT LOSS GUARD. Below the pager floor the live region draws the footer
+// alone, so the body is never painted — which means Freeze must print the
+// message in full instead of assuming its rows are already on screen. Without
+// that, the reply vanishes from scrollback entirely: measured at h=2 and h=3,
+// where only the first streamed character survived, and at h=4, where a stale
+// "T" sat above the real text forever because a row that has scrolled into
+// history can never be repainted.
+func TestIncipit_TinyViewportKeepsTheReplyInScrollback(t *testing.T) {
+	for _, h := range []int{2, 3, 4, 6, 9} {
+		ft := NewFakeTerminal(60, h)
+		in := NewIncipit(ft, NodeText{})
+		withChrome(in)
+
+		in.OpenThinking(livedoc.RoleOutput)
+		// stream a partial, then the full text — the exact shape that stranded "T"
+		in.Open(7, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "T"}})
+		in.Open(7, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "TINYREPLY"}})
+		in.Freeze(aria.Message{LT: 7, Role: livedoc.RoleOutput,
+			Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "TINYREPLY"}}})
+
+		all := strings.Join(ft.Screen(), "\n")
+		if n := strings.Count(all, "TINYREPLY"); n != 1 {
+			t.Errorf("h=%d: reply appears %d times, want exactly 1:\n%s", h, n, all)
+		}
+		// the stale partial must not survive as its own row
+		for _, l := range ft.Screen() {
+			if strings.TrimSpace(l) == "T" {
+				t.Errorf("h=%d: orphaned partial frame %q left in scrollback:\n%s", h, "T", all)
+				break
+			}
+		}
+	}
+}
