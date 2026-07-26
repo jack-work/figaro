@@ -259,17 +259,23 @@ func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 //
 // A turn that ALREADY FINISHED is not being abandoned — the pager was merely
 // closed after the fact. Flushing the completed tail and keeping the real
-// outcome is the whole job there; overwriting the status with "turn continues"
-// and dropping t.pending is how a reply the user watched arrive was lost.
+// outcome is the whole job there; overwriting the status and dropping
+// t.pending is how a reply the user watched arrive was lost.
+//
+// st is what the FOOTER should say; reason is what the RULE across the
+// boundary should read. They answer different questions — the status describes
+// the turn, the rule describes the seam — so the caller states both rather than
+// one being parsed out of the other's English.
+//
 // Reports whether it actually abandoned anything, so the caller can skip the
 // "follow: figaro listen" hint for a turn that is already over.
-func (t *livelogTurn) abandon(reason string) bool {
+func (t *livelogTurn) abandon(reason string, st turnStatus) bool {
 	if t.finished {
 		t.leaveTranscript()
 		t.freezePending()
 		return false
 	}
-	t.status.finishTurn(reason)
+	t.status.setTurn(st)
 	t.pending = nil
 	t.leaveTranscript()
 	t.in.AbandonOpen(abandonRule(reason))

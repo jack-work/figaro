@@ -37,7 +37,7 @@ func TestPagerExitFlushesLaterSlicesOfAnAlreadyFrozenTurn(t *testing.T) {
 	lt.finishTurn("completed")
 	out.Reset()
 
-	if lt.abandon("disconnected — turn continues") {
+	if lt.abandon("disconnected — turn continues", turnStatusDisconnected) {
 		t.Fatal("a finished turn is not abandoned: q after completion is a clean exit")
 	}
 	got := out.String()
@@ -47,24 +47,50 @@ func TestPagerExitFlushesLaterSlicesOfAnAlreadyFrozenTurn(t *testing.T) {
 	if strings.Contains(got, "turn continues") {
 		t.Fatalf("scrollback claims the turn continues, but it sealed:\n%s", got)
 	}
+	// The footer describes the TURN, and a finished turn is finished whether or
+	// not this CLI is still watching. Reporting "disconnected" over a sealed
+	// turn would hide the outcome the user just watched arrive.
+	if l := status.turnLabel(); l != "completed ✓" {
+		t.Fatalf("sealed turn left the pager as %q, want completed ✓", l)
+	}
 }
 
 // A turn genuinely still running must still say so — the fix must not silence
-// the honest case.
+// the honest case — and detaching from it is NOT a failure. A user choosing to
+// stop watching is a decision, not an error; calling it one erodes trust in
+// every other status we show.
 func TestPagerExitStillWarnsWhileTheTurnRuns(t *testing.T) {
 	var out bytes.Buffer
-	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(),
-		newSessionStatus("aria1234", time.Now()), nil, nil)
+	status := newSessionStatus("aria1234", time.Now())
+	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, nil, nil)
 	lt.apply(page(1, 0, delta(0, livedoc.RoleInput, "the question")))
 	lt.apply(page(1, 1, delta(1, livedoc.RoleOutput, "still typing")))
 	lt.enterTranscript()
 	out.Reset()
 
-	if !lt.abandon("disconnected — turn continues") {
+	if !lt.abandon("disconnected — turn continues", turnStatusDisconnected) {
 		t.Fatal("an unfinished turn IS abandoned and must keep its warning")
 	}
 	if !strings.Contains(out.String(), "turn continues") {
 		t.Fatalf("missing the abandon rule for a live turn:\n%s", out.String())
+	}
+	if l := status.turnLabel(); l != "disconnected ⠸" {
+		t.Fatalf("detaching from a live turn reported %q, want disconnected ⠸", l)
+	}
+}
+
+// The server's turn.done vocabulary is fixed, so finishTurn may classify it —
+// but it must not read a client-side outcome out of an English sentence. Before
+// this, any reason containing "disconnect" was reported as a failure.
+func TestDetachIsNotAnError(t *testing.T) {
+	s := newSessionStatus("aria1234", time.Now())
+	s.finishTurn("disconnected — turn continues")
+	if l := s.turnLabel(); l == "error ✗" {
+		t.Fatal("a deliberate detach is not a failure")
+	}
+	s.finishTurn("error: provider exploded")
+	if l := s.turnLabel(); l != "error ✗" {
+		t.Fatalf("a real error reported %q", l)
 	}
 }
 

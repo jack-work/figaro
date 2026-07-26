@@ -400,6 +400,12 @@ func setField(n *livedoc.Node, field string, v any) {
 		n.Role = asStr(v)
 	case "tool_call_id":
 		n.ToolCallID = asStr(v)
+	case "at":
+		n.At = asInt64(v)
+	case "lts":
+		n.LTs = asUint64s(v)
+	case "src":
+		n.Src = asSrcs(v)
 	case "output":
 		n.Output = asStr(v)
 	case "id":
@@ -433,4 +439,39 @@ func asInt64(v any) int64 {
 	default:
 		return 0
 	}
+}
+
+// asUint64s and asSrcs accept both the in-process value and its JSON echo
+// ([]any of float64 / map[string]any), because a delta reaches the fold either
+// way — constructed locally in a test, or decoded off the wire.
+func asUint64s(v any) []uint64 {
+	switch t := v.(type) {
+	case []uint64:
+		return t
+	case []any:
+		out := make([]uint64, 0, len(t))
+		for _, e := range t {
+			out = append(out, uint64(asInt64(e)))
+		}
+		return out
+	}
+	return nil
+}
+
+func asSrcs(v any) []livedoc.Src {
+	switch t := v.(type) {
+	case []livedoc.Src:
+		return t
+	case []any:
+		out := make([]livedoc.Src, 0, len(t))
+		for _, e := range t {
+			m, ok := e.(map[string]any)
+			if !ok {
+				continue
+			}
+			out = append(out, livedoc.Src{LT: uint64(asInt64(m["lt"])), Block: int(asInt64(m["block"]))})
+		}
+		return out
+	}
+	return nil
 }
