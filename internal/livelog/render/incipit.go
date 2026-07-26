@@ -60,7 +60,7 @@ type Incipit struct {
 	thinking bool // open region is an OpenThinking placeholder (adopted by the next Open)
 
 	// Open-message live region:
-	liveTurn   int
+	liveTurn int
 	liveFrom uint64   // start of the open suffix; with liveTurn it identifies the region
 	role     string   // open message's role; selects Bookend (assistant) vs Rule
 	live     []string // rows on screen for the open message

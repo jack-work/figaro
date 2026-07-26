@@ -27,7 +27,7 @@ type Client struct {
 	// The open turn, materialized. openTurn holds the TURN ID (see Message);
 	// openFrom is the suffix boundary reported by Live.From — nodes below it
 	// are closed and will never be touched again.
-	openTurn         int
+	openTurn       int
 	openFrom       uint64
 	openV          int
 	openNodesSlice []livedoc.Node

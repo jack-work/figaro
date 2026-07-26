@@ -45,11 +45,11 @@ type transcript struct {
 	w, h        int
 	tick        int
 
-	prev   []string // last painted screen (the frame the terminal is holding)
-	lineTurn []int    // LT owning each line of lines(), for resize anchoring
-	offset int      // top line of the viewport into lines()
-	follow bool     // stick to the bottom on new content
-	pendG  bool     // saw one 'g' (for gg)
+	prev     []string // last painted screen (the frame the terminal is holding)
+	lineTurn []int    // turn owning each line of lines(), for resize anchoring
+	offset   int      // top line of the viewport into lines()
+	follow   bool     // stick to the bottom on new content
+	pendG    bool     // saw one 'g' (for gg)
 
 	// Frame scheduling. render() marks the screen stale and defers when a
 	// batch is open (an input burst being drained) or when the frame-rate gate
@@ -125,7 +125,7 @@ type transcript struct {
 	// fingerprints that propose the shift), touched only inside planScroll.
 	rowBuf      []string     // the visible window, valid until the next render()
 	lineBuf     []string     // whole-window rows, valid until the next lines()
-	keepBuf     map[int]bool // reused live-LT set for pruneCaches
+	keepBuf     map[int]bool // reused live-turn set for pruneCaches
 	paintBuf    []byte       // reused escape-sequence output buffer
 	predBuf     []string     // predicted grid after a scroll-region shift
 	keysNew     []uint32     // row fingerprints, screen side (shift detection)
@@ -140,8 +140,8 @@ type transcriptPage struct {
 
 // pageDesc is sufficient to replay and verify an evicted immutable page.
 type pageDesc struct {
-	FirstTurn      int
-	LastTurn       int
+	FirstTurn    int
+	LastTurn     int
 	Count        int
 	ReplayBefore int
 	LTHash       uint64
@@ -490,7 +490,7 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 
 // committedMessages flattens a page's parts into the pager's materialized
 // units. A part carrying nodes is content; a bare marker carries none and is
-// skipped. Message.LT holds the turn id; Message.From holds the node offset
+// skipped. Message.Turn holds the turn id; Message.From holds the node offset
 // within it, so the slices of one tall turn stay distinct units.
 //
 // A turn is NOT a bounded thing, which is why the slicing exists. Measured on
@@ -804,7 +804,7 @@ func (t *transcript) invalidateWindow() { t.tailRev, t.windowRev = 0, t.windowRe
 
 func (t *transcript) pruneCaches() {
 	// Called from resetToTail, i.e. once per frame while following the live
-	// tail, so the LT set is reused rather than rebuilt.
+	// tail, so the turn set is reused rather than rebuilt.
 	keep := t.keepBuf
 	if keep == nil {
 		keep = make(map[int]bool, transcriptPageSize*transcriptPageLimit)
@@ -920,7 +920,7 @@ func (d pageDesc) equal(other pageDesc) bool {
 func (t *transcript) resize(w, h int) {
 	// Anchor on the message at the viewport top: a width change re-wraps rows and
 	// changes line counts, so keeping the raw line offset would jump the view.
-	// Record the top message's LT + how many lines into it we are, then restore
+	// Record the top message's turn + how many lines into it we are, then restore
 	// after re-rendering at the new width. (Skipped when following the tail.)
 	anchorLT, within := t.viewportAnchor()
 	t.w, t.h = w, h
@@ -959,7 +959,7 @@ func (t *transcript) invalidateRows() {
 }
 
 // lines renders the retained message window and live tail to physical rows.
-// Committed messages are immutable, so their rendered rows are cached by LT;
+// Committed messages are immutable, so their rendered rows are cached by turn;
 // only the open message renders every frame.
 //
 // This is the whole-transcript materialization — O(retained rows). It is NOT on
