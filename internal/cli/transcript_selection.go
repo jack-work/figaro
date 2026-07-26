@@ -31,6 +31,36 @@ func nodeRefAt(m aria.Message, i int) nodeRef {
 	return nodeRef{turn: m.Turn, index: int(m.From) + i}
 }
 
+// inquiryNode is the index a turn's opening question takes. The question is
+// TEXT ON THE TURN and occupies no node slot, but selection, copy and the
+// Ctrl-O expansion state all key on nodeRef — so it needs one, and it must not
+// collide with any node's. Node indices are positional and therefore never
+// negative (Nodes[i].ID == From+i), which makes a negative sentinel free of
+// collisions by construction rather than by convention; and pointLess then
+// orders the question ahead of every node of its own turn, which is exactly
+// where every renderer draws it.
+const inquiryNode = -1
+
+// inquiryPoint is the selection point of a slice's opening question, or false
+// when the slice carries none (only the slice with From == 0 does). The hash is
+// taken over a node bearing the question as prose, so the copy path can verify
+// the endpoint the same way it verifies a node.
+func inquiryPoint(m aria.Message) (selectionPoint, bool) {
+	if m.Inquiry == "" {
+		return selectionPoint{}, false
+	}
+	return selectionPoint{
+		nodeRef: nodeRef{turn: m.Turn, index: inquiryNode},
+		hash:    nodeHash(inquiryNodeOf(m.Inquiry)),
+	}, true
+}
+
+// inquiryNodeOf is the question as the one livedoc.Node shape everything else
+// speaks: what it hashes as, and what it copies as.
+func inquiryNodeOf(inquiry string) livedoc.Node {
+	return livedoc.Node{Type: livedoc.NodeProse, Markdown: inquiry}
+}
+
 func (r nodeRef) valid() bool { return r.turn != 0 }
 
 type nodeSelection struct {
@@ -86,6 +116,9 @@ type selectionMark struct {
 func (t *transcript) nodeRefs() []selectionPoint {
 	refs := make([]selectionPoint, 0)
 	appendMessage := func(m aria.Message) {
+		if p, ok := inquiryPoint(m); ok {
+			refs = append(refs, p)
+		}
 		for i, n := range m.Nodes {
 			refs = append(refs, selectionPoint{
 				nodeRef: nodeRefAt(m, i),
@@ -111,15 +144,21 @@ func (t *transcript) selectionMarks() map[nodeRef]selectionMark {
 		lo, hi = hi, lo
 	}
 	marks := make(map[nodeRef]selectionMark)
-	appendMessage := func(m aria.Message) {
-		for i := range m.Nodes {
-			point := selectionPoint{nodeRef: nodeRefAt(m, i)}
-			if !pointLess(point, lo) && !pointLess(hi, point) {
-				marks[point.nodeRef] = selectionMark{
-					selected: true,
-					active:   point.nodeRef == t.selection.focus.nodeRef,
-				}
+	mark := func(ref nodeRef) {
+		point := selectionPoint{nodeRef: ref}
+		if !pointLess(point, lo) && !pointLess(hi, point) {
+			marks[ref] = selectionMark{
+				selected: true,
+				active:   ref == t.selection.focus.nodeRef,
 			}
+		}
+	}
+	appendMessage := func(m aria.Message) {
+		if p, ok := inquiryPoint(m); ok {
+			mark(p.nodeRef)
+		}
+		for i := range m.Nodes {
+			mark(nodeRefAt(m, i))
 		}
 	}
 	for _, m := range t.messages() {
@@ -183,12 +222,12 @@ func (t *transcript) clearSelection() {
 	if len(messages) > 0 && t.selection.focus.turn >= messages[len(messages)/2].Turn {
 		direction = pageNewer
 	}
-	anchorLT, within := t.viewportAnchor()
+	anchor, within := t.viewportAnchor()
 	t.selection = nodeSelection{}
 	t.trimPages(direction)
 	t.pruneCaches()
 	t.buildIndex()
-	t.restoreViewportAnchor(anchorLT, within)
+	t.restoreViewportAnchor(anchor, within)
 }
 
 func (t *transcript) selectionPlan() (selectionCopyPlan, bool) {
@@ -228,7 +267,14 @@ func nodeClipboardText(n livedoc.Node) string {
 	}
 }
 
-func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (aria.Page, error)) (string, error) {
+// anchorAbove reports whether a addresses a position strictly later than b in
+// (turn, node) reading order — i.e. whether a backward walk sitting at a still
+// has ground to cover before it reaches b.
+func anchorAbove(a, b aria.Anchor) bool {
+	return a.Turn > b.Turn || a.Turn == b.Turn && a.Node > b.Node
+}
+
+func selectionText(plan selectionCopyPlan, pageSize int, read func(aria.Anchor, int) (aria.Page, error)) (string, error) {
 	var newest []string
 	foundLo, foundHi := false, false
 	if plan.open != nil {
@@ -242,19 +288,27 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (ar
 	if foundLo && foundHi {
 		return strings.Join(newest, "\n\n"), nil
 	}
-	before := plan.hi.turn + 1
+	// The walk is anchored on (turn, NODE), not on the turn alone. A turn too
+	// big for one page comes back in slices, and a turn-granular step lands on
+	// the turn BEFORE it — skipping every slice below the first, the head slice
+	// among them, which is the only one that carries the inquiry.
+	at := aria.Anchor{Turn: uint64(plan.hi.turn + 1)}
 	if plan.open != nil && plan.open.Turn == plan.hi.turn {
-		before = plan.open.Turn
+		at = aria.Anchor{Turn: uint64(plan.open.Turn), Node: plan.open.From}
+	}
+	stop := aria.Anchor{Turn: uint64(plan.lo.turn)}
+	if plan.lo.index > 0 {
+		stop.Node = uint64(plan.lo.index)
 	}
 	var pages [][]string
-	for before > plan.lo.turn {
-		r, err := read(before, pageSize)
+	for anchorAbove(at, stop) {
+		r, err := read(at, pageSize)
 		if err != nil {
 			return "", err
 		}
 		messages := committedMessages(r)
 		if len(messages) == 0 {
-			return "", fmt.Errorf("selection history unavailable before turn %d", before)
+			return "", fmt.Errorf("selection history unavailable before turn %d", at.Turn)
 		}
 		var page []string
 		for _, m := range messages {
@@ -267,10 +321,11 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (ar
 			foundHi = foundHi || hi
 		}
 		pages = append(pages, page)
-		before = messages[0].Turn
-		if before <= plan.lo.turn {
-			break
+		next := aria.Anchor{Turn: uint64(messages[0].Turn), Node: messages[0].From}
+		if !anchorAbove(at, next) {
+			break // the read made no progress; nothing older is coming
 		}
+		at = next
 	}
 	if !foundLo || !foundHi {
 		return "", fmt.Errorf("selection endpoints unavailable")
@@ -286,29 +341,39 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (ar
 func selectedMessageText(m aria.Message, plan selectionCopyPlan) ([]string, bool, bool, error) {
 	var out []string
 	foundLo, foundHi := false, false
-	for i, n := range m.Nodes {
-		ref := nodeRefAt(m, i)
-		var hash uint64
+	// One rule for the question and for every node: the hash is taken only at an
+	// endpoint (it is the guard against the selection having moved under us),
+	// and the text is taken whenever the point falls inside the range.
+	take := func(ref nodeRef, n livedoc.Node, text string) error {
 		if ref == plan.lo.nodeRef || ref == plan.hi.nodeRef {
-			hash = nodeHash(n)
-		}
-		if ref == plan.lo.nodeRef {
-			if hash != plan.lo.hash {
-				return nil, false, false, fmt.Errorf("selection start changed")
+			hash := nodeHash(n)
+			if ref == plan.lo.nodeRef {
+				if hash != plan.lo.hash {
+					return fmt.Errorf("selection start changed")
+				}
+				foundLo = true
 			}
-			foundLo = true
-		}
-		if ref == plan.hi.nodeRef {
-			if hash != plan.hi.hash {
-				return nil, false, false, fmt.Errorf("selection end changed")
+			if ref == plan.hi.nodeRef {
+				if hash != plan.hi.hash {
+					return fmt.Errorf("selection end changed")
+				}
+				foundHi = true
 			}
-			foundHi = true
 		}
 		point := selectionPoint{nodeRef: ref}
-		if !pointLess(point, plan.lo) && !pointLess(plan.hi, point) {
-			if text := nodeClipboardText(n); text != "" {
-				out = append(out, text)
-			}
+		if !pointLess(point, plan.lo) && !pointLess(plan.hi, point) && text != "" {
+			out = append(out, text)
+		}
+		return nil
+	}
+	if p, ok := inquiryPoint(m); ok {
+		if err := take(p.nodeRef, inquiryNodeOf(m.Inquiry), m.Inquiry); err != nil {
+			return nil, false, false, err
+		}
+	}
+	for i, n := range m.Nodes {
+		if err := take(nodeRefAt(m, i), n, nodeClipboardText(n)); err != nil {
+			return nil, false, false, err
 		}
 	}
 	return out, foundLo, foundHi, nil

@@ -173,11 +173,15 @@ type QueuedPrompt struct {
 // ReadRequest is the catch-up request. SinceLT streams forward from a cursor
 // (0 = from the beginning). Before>0 switches to a backward keyset read:
 // return up to Limit closed messages with LT < Before, ascending — for pager
-// history without loading it all. The result is an aria.AriaRead.
+// history without loading it all. BeforeNode is the node offset inside Before:
+// a pager whose oldest retained slice starts MID-TURN must exclude only what it
+// holds, or that turn's head — and the inquiry drawn above it — sits behind a
+// cursor no read can reach. The result is an aria.AriaRead.
 type ReadRequest struct {
-	SinceLT int `json:"sinceLT,omitempty"`
-	Before  int `json:"before,omitempty"`
-	Limit   int `json:"limit,omitempty"`
+	SinceLT    int `json:"sinceLT,omitempty"`
+	Before     int `json:"before,omitempty"`
+	BeforeNode int `json:"before_node,omitempty"`
+	Limit      int `json:"limit,omitempty"`
 }
 
 type FigaroInfoResponse struct {

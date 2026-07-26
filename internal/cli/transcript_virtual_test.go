@@ -34,7 +34,7 @@ import (
 // applied to every row, nodeRows accumulated one row at a time (deliberately
 // not C's one-write-per-node shortcut, so a non-contiguous node's rows would
 // show up as a divergence rather than being assumed away).
-func legacyLines(t *transcript) ([]string, []int, map[nodeRef]nodeSpan) {
+func legacyLines(t *transcript) ([]string, []sliceKey, map[nodeRef]nodeSpan) {
 	if t.follow {
 		t.resetToTail()
 	}
@@ -45,9 +45,9 @@ func legacyLines(t *transcript) ([]string, []int, map[nodeRef]nodeSpan) {
 	marks := t.selectionMarks()
 	hl := t.activeHighlight()
 	var out []string
-	var lts []int
+	var lts []sliceKey
 	nodeRows := map[nodeRef]nodeSpan{}
-	appendMsg := func(rows []transcriptRow, lt int) {
+	appendMsg := func(rows []transcriptRow, lt sliceKey) {
 		if len(out) > 0 {
 			out = append(out, "", dimTransRule(t.w), "")
 			lts = append(lts, lt, lt, lt)
@@ -76,10 +76,10 @@ func legacyLines(t *transcript) ([]string, []int, map[nodeRef]nodeSpan) {
 			rows = t.renderMsgBase(m)
 			t.rowCache[keyOf(m)] = rows
 		}
-		appendMsg(rows.rows, m.Turn)
+		appendMsg(rows.rows, keyOf(m))
 	}
 	if open := t.openMessage(); open != nil {
-		appendMsg(t.renderMsgBase(*open).rows, open.Turn)
+		appendMsg(t.renderMsgBase(*open).rows, keyOf(*open))
 	}
 	return out, lts, nodeRows
 }
@@ -128,7 +128,7 @@ func mixedTranscript(tb testing.TB, out io.Writer, w, h, n int) (*transcript, *a
 
 // assertWindowMatchesLegacy sweeps every viewport position and asserts the
 // virtualized window is byte-identical to the oracle's slice, that lines() and
-// lineTurn still agree with it, and that node spans survived the move off the
+// lineKey still agree with it, and that node spans survived the move off the
 // materialization pass.
 func assertWindowMatchesLegacy(t *testing.T, tr *transcript, body int) {
 	t.Helper()
@@ -140,8 +140,8 @@ func assertWindowMatchesLegacy(t *testing.T, tr *transcript, body int) {
 	if got := tr.lines(); !equalStrings(got, want) {
 		t.Fatalf("lines() diverged from the legacy materialization at %s", firstDiff(got, want))
 	}
-	if !equalInts(tr.lineTurn, wantLT) {
-		t.Fatalf("lineTurn diverged (len %d vs %d)", len(tr.lineTurn), len(wantLT))
+	if !equalKeys(tr.lineKey, wantLT) {
+		t.Fatalf("lineKey diverged (len %d vs %d)", len(tr.lineKey), len(wantLT))
 	}
 	for ref, span := range wantSpans {
 		got, ok := tr.nodeSpanOf(ref)
@@ -187,7 +187,7 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-func equalInts(a, b []int) bool {
+func equalKeys(a, b []sliceKey) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -329,15 +329,15 @@ func TestTranscriptVirtualFrames_ScrollIsPure(t *testing.T) {
 }
 
 // TestTranscriptVirtualFrames_ResizeAnchor pins that the anchoring path still
-// sees a current lineTurn after the index took over its maintenance.
+// sees a current lineKey after the index took over its maintenance.
 func TestTranscriptVirtualFrames_ResizeAnchor(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(80, 24)
 	tr, _ := mixedTranscript(t, ft, 80, 24, 6)
 	tr.scrollBy(-40)
-	before := tr.lineTurn[tr.offset]
+	before := tr.lineKey[tr.offset]
 	ft.Resize(60, 24)
 	tr.resize(60, 24)
-	if got := tr.lineTurn[tr.offset]; got != before {
+	if got := tr.lineKey[tr.offset]; got != before {
 		t.Fatalf("resize moved the anchor from LT %d to %d", before, got)
 	}
 	assertWindowMatchesLegacy(t, tr, 21)
@@ -461,8 +461,8 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(40, 6)
 	tr := newTranscript(ft, 40, 6, ldrender.NodeText{}, client, "empty123", time.Unix(0, 0))
 	tr.enter()
-	if tr.index.total != 0 || len(tr.lineTurn) != 0 {
-		t.Fatalf("empty transcript: total=%d lineTurn=%d", tr.index.total, len(tr.lineTurn))
+	if tr.index.total != 0 || len(tr.lineKey) != 0 {
+		t.Fatalf("empty transcript: total=%d lineKey=%d", tr.index.total, len(tr.lineKey))
 	}
 	if got := tr.window(0, 10, nil); len(got) != 0 {
 		t.Fatalf("empty window returned %d rows", len(got))

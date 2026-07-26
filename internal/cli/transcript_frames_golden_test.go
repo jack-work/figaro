@@ -64,7 +64,13 @@ func TestTranscriptFramesGolden(t *testing.T) {
 	tr := frameFixture(t)
 	section("plain", tr.lines())
 
-	tr.selectNode(1, false) // first selectable node (the inquiry is not one)
+	// The first two selectable points are the two turns' INQUIRIES (a question
+	// selects and copies exactly like a node — see inquiryNode); step past them
+	// so this fixture keeps pinning the same three NODE rows it always did, and
+	// the pre-sgr cell-level proof beside it stays a proof.
+	tr.selectNode(1, false)
+	tr.selectNode(1, false)
+	tr.selectNode(1, false) // turn 2's first node
 	tr.selectNode(1, true)  // extend across the message boundary
 	tr.selectNode(1, true)  //
 	section("selected", tr.lines())

@@ -193,7 +193,7 @@ func (h *pagingHarness) journey(back int) {
 		h.key('u')
 	}
 	for range 20000 {
-		if h.tr.offset >= len(h.tr.lineTurn)-h.tr.h && !h.tr.hasNewerHistory() {
+		if h.tr.offset >= len(h.tr.lineKey)-h.tr.h && !h.tr.hasNewerHistory() {
 			break
 		}
 		h.key('d')
@@ -280,7 +280,7 @@ func TestTranscriptJourneyCost(t *testing.T) {
 	start := time.Now()
 	h.journey(300)
 	t.Logf("geometry pageSize=%d pageLimit=%d rows/window=%d",
-		transcriptPageSize, transcriptPageLimit, len(h.tr.lineTurn))
+		transcriptPageSize, transcriptPageLimit, len(h.tr.lineKey))
 	t.Logf("journey: keys=%d fetches=%d fetchedMsgs=%d refetchedMsgs=%d evictions=%d nodeRenders=%d wall=%s",
 		h.keys, h.fetches, h.fetchedMsgs, h.refetches, h.evictions, h.view.render, time.Since(start).Round(time.Millisecond))
 }

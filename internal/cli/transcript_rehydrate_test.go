@@ -14,9 +14,9 @@ func TestSelectionTextRehydratesBackwardWithoutPayloadCache(t *testing.T) {
 		hi: testSelectionPoint(200, 0, history[199].Nodes[0]),
 	}
 	reads := 0
-	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
+	text, err := selectionText(plan, transcriptPageSize, func(at aria.Anchor, limit int) (aria.Page, error) {
 		reads++
-		return readBefore(history, before, limit), nil
+		return readBeforeAt(history, at, limit), nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -36,8 +36,8 @@ func TestSelectionTextRejectsChangedEndpoint(t *testing.T) {
 		hi: testSelectionPoint(3, 0, history[2].Nodes[0]),
 	}
 	history[2].Nodes[0].Markdown = "changed"
-	_, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
-		return readBefore(history, before, limit), nil
+	_, err := selectionText(plan, transcriptPageSize, func(at aria.Anchor, limit int) (aria.Page, error) {
+		return readBeforeAt(history, at, limit), nil
 	})
 	if err == nil {
 		t.Fatal("changed selection endpoint was accepted")

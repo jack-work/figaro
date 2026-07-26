@@ -113,8 +113,8 @@ func TestHistoricalSearchWorkerFindsOlderResult(t *testing.T) {
 	in.mu.Lock()
 	query, searching := in.lt.transcriptHistorySearch()
 	found := false
-	for _, lt := range in.lt.tr.lineTurn {
-		found = found || lt == 10
+	for _, k := range in.lt.tr.lineKey {
+		found = found || k.turn() == 10
 	}
 	in.mu.Unlock()
 	if searching {
@@ -143,7 +143,7 @@ func (r *blockingTranscriptReader) Read(context.Context, int) (aria.Page, error)
 	return aria.Page{}, nil
 }
 
-func (r *blockingTranscriptReader) ReadBefore(ctx context.Context, _, _ int) (aria.Page, error) {
+func (r *blockingTranscriptReader) ReadBefore(ctx context.Context, _ aria.Anchor, _ int) (aria.Page, error) {
 	r.start.Do(func() { close(r.started) })
 	<-ctx.Done()
 	r.cancel.Do(func() { close(r.canceled) })
@@ -169,7 +169,8 @@ func (r *gatedHistoryReader) Queued(context.Context) (*rpc.QueuedResponse, error
 	return &rpc.QueuedResponse{}, nil
 }
 
-func (r *gatedHistoryReader) ReadBefore(ctx context.Context, before, limit int) (aria.Page, error) {
+func (r *gatedHistoryReader) ReadBefore(ctx context.Context, at aria.Anchor, limit int) (aria.Page, error) {
+	before := int(at.Turn)
 	block := false
 	r.once.Do(func() {
 		close(r.started)
@@ -208,7 +209,8 @@ func (r *delayedTranscriptReader) Queued(context.Context) (*rpc.QueuedResponse, 
 	return &rpc.QueuedResponse{}, nil
 }
 
-func (r *delayedTranscriptReader) ReadBefore(ctx context.Context, before, limit int) (aria.Page, error) {
+func (r *delayedTranscriptReader) ReadBefore(ctx context.Context, at aria.Anchor, limit int) (aria.Page, error) {
+	before := int(at.Turn)
 	call := delayedReadCall{release: make(chan struct{}), returned: make(chan struct{})}
 	r.mu.Lock()
 	r.count++

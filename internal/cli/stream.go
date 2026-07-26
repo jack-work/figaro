@@ -321,7 +321,7 @@ type interactiveInput struct {
 
 type transcriptReadClient interface {
 	Read(context.Context, int) (aria.Page, error)
-	ReadBefore(context.Context, int, int) (aria.Page, error)
+	ReadBefore(context.Context, aria.Anchor, int) (aria.Page, error)
 	Queued(context.Context) (*rpc.QueuedResponse, error)
 }
 
@@ -345,7 +345,7 @@ func (in *interactiveInput) enterTranscript() {
 		return
 	}
 	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-	r, rerr := in.fcli.ReadBefore(rctx, recentCursor, wireBudget(transcriptPageSize))
+	r, rerr := in.fcli.ReadBefore(rctx, aria.Anchor{Turn: recentCursor}, wireBudget(transcriptPageSize))
 	rcancel()
 	in.mu.Lock()
 	in.lt.enterTranscript()
@@ -489,8 +489,9 @@ func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcri
 	if len(req.cached) > 0 {
 		return req.cached, nil
 	}
-	read := func(before, limit int) (aria.Page, error) {
-		return in.fcli.ReadBefore(ctx, before, wireBudget(limit))
+	read := func(before, node, limit int) (aria.Page, error) {
+		at := aria.Anchor{Turn: uint64(before), Node: uint64(node)}
+		return in.fcli.ReadBefore(ctx, at, wireBudget(limit))
 	}
 	pageLimit := req.limit
 	if pageLimit <= 0 {
@@ -501,13 +502,14 @@ func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcri
 		err error
 	)
 	if req.after != 0 {
-		r, err = readNextPage(req.after, req.watermark, pageLimit, read)
+		r, err = readNextPage(req.after, req.watermark, pageLimit,
+			func(before, limit int) (aria.Page, error) { return read(before, 0, limit) })
 	} else {
 		limit := pageLimit
 		if req.expected.Count != 0 {
 			limit = req.expected.Count
 		}
-		r, err = read(req.before, limit)
+		r, err = read(req.before, req.beforeNode, limit)
 	}
 	if err != nil {
 		return nil, err
@@ -939,8 +941,8 @@ func (in *interactiveInput) selectNodeKey(delta int, ev keyEvent) keyVerdict {
 }
 
 func (in *interactiveInput) copySelection(ctx context.Context, cancel context.CancelFunc, gen uint64, plan selectionCopyPlan) {
-	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
-		return in.fcli.ReadBefore(ctx, before, wireBudget(limit))
+	text, err := selectionText(plan, transcriptPageSize, func(at aria.Anchor, limit int) (aria.Page, error) {
+		return in.fcli.ReadBefore(ctx, at, wireBudget(limit))
 	})
 	cancel()
 	in.mu.Lock()

@@ -45,11 +45,12 @@ type transcript struct {
 	w, h        int
 	tick        int
 
-	prev     []string // last painted screen (the frame the terminal is holding)
-	lineTurn []int    // turn owning each line of lines(), for resize anchoring
-	offset   int      // top line of the viewport into lines()
-	follow   bool     // stick to the bottom on new content
-	pendG    bool     // saw one 'g' (for gg)
+	prev    []string   // last painted screen (the frame the terminal is holding)
+	prefix  string     // one-shot escapes emitted with the next frame (see enter)
+	lineKey []sliceKey // slice owning each line of lines(), for resize anchoring
+	offset  int        // top line of the viewport into lines()
+	follow  bool       // stick to the bottom on new content
+	pendG   bool       // saw one 'g' (for gg)
 
 	// Frame scheduling. render() marks the screen stale and defers when a
 	// batch is open (an input burst being drained) or when the frame-rate gate
@@ -90,7 +91,7 @@ type transcript struct {
 	// windowRev is THE authority on "the retained page set changed". Every
 	// mutation of t.pages goes through invalidateWindow, which drops the tail
 	// snapshot (so resetToTail rebuilds) and bumps this counter (so the line
-	// index refills lineTurn instead of inferring it from a shape diff). Keeping
+	// index refills lineKey instead of inferring it from a shape diff). Keeping
 	// both facts on one signal is deliberate: with two independent staleness
 	// checks the pages and the index can disagree about which window they are
 	// describing.
@@ -165,13 +166,18 @@ const (
 )
 
 type transcriptPageRequest struct {
-	before    int
-	direction transcriptPageDirection
-	expected  pageDesc
-	after     int
-	watermark int
-	limit     int // messages to fetch; 0 means transcriptPageSize
-	cached    []aria.Message
+	before int
+	// beforeNode is the node offset of `before`: the oldest retained slice can
+	// start MID-TURN (a page clipped at its head), and asking for what precedes
+	// the TURN would skip the rest of it forever — its head nodes and the
+	// inquiry drawn above them.
+	beforeNode int
+	direction  transcriptPageDirection
+	expected   pageDesc
+	after      int
+	watermark  int
+	limit      int // messages to fetch; 0 means transcriptPageSize
+	cached     []aria.Message
 }
 
 func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string, startedAt time.Time) *transcript {
@@ -187,12 +193,18 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 // this is a fixed-canvas pager, and a single wide glyph tipping the bottom-right
 // cell past the last column with autowrap ON scrolls the whole screen up by a
 // row — which reads as the status line "eating" the line above it.
+//
+// The switch RIDES THE FIRST FRAME rather than being written ahead of it. Sent
+// on its own it leaves an EMPTY alt screen on the terminal for as long as the
+// first frame takes to compose — milliseconds of row rendering, which a 20 ms
+// sampler catches blank, and which reads as the conversation blinking out on
+// the way into the pager.
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query, t.matchQuery = false, false, "", ""
 	t.invalidateWindow() // a fresh session always rebuilds the window from the tail
 	t.resetToTail()
-	io.WriteString(t.out, altScreenOn+autowrapOff+ldmouse.Enable+cursorHide+"\x1b[2J")
+	t.prefix = altScreenOn + autowrapOff + ldmouse.Enable + cursorHide + "\x1b[2J"
 	t.render()
 }
 
@@ -201,6 +213,7 @@ func (t *transcript) enter() {
 func (t *transcript) leave() {
 	t.active = false
 	t.selection = nodeSelection{} // no selection survives outside the pager
+	t.prefix = ""                 // a frame that never painted must not switch us back
 	io.WriteString(t.out, "\x1b[2J"+ldmouse.Disable+altScreenOff)
 	t.prev = nil
 }
@@ -426,17 +439,21 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 		if !ok {
 			return transcriptPageRequest{}, false
 		}
-		if oldest <= 1 {
+		node := t.oldestFrom()
+		if oldest <= 1 && node == 0 {
 			t.noMoreOlder = true
 			t.finishSearch(false)
 			t.render()
 			return transcriptPageRequest{}, false
 		}
-		return transcriptPageRequest{before: oldest, direction: pageOlder, limit: t.pageMessages()}, true
+		return transcriptPageRequest{
+			before: oldest, beforeNode: int(node),
+			direction: pageOlder, limit: t.pageMessages(),
+		}, true
 	}
 	if t.checkNewer && len(t.newer) > 0 {
 		t.checkNewer = false
-		// t.index.total, not len(t.lineTurn): lineTurn is only refilled when the
+		// t.index.total, not len(t.lineKey): lineKey is only refilled when the
 		// index shape moves, so reading its length here would be a second,
 		// weaker way of asking how big line space is.
 		if t.search == nil && t.offset+transcriptPrefetchScreens*t.h < t.index.total {
@@ -486,9 +503,9 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 		t.heldOpen = nil
 	}
 	searching := t.search != nil
-	anchorLT, within := 0, 0
+	anchor, within := sliceKey(0), 0
 	if !searching {
-		anchorLT, within = t.viewportAnchor()
+		anchor, within = t.viewportAnchor()
 	}
 	page := transcriptPage{desc: desc, messages: messages}
 	t.invalidateWindow()
@@ -519,7 +536,7 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 		}
 	} else {
 		t.buildIndex()
-		t.restoreViewportAnchor(anchorLT, within)
+		t.restoreViewportAnchor(anchor, within)
 	}
 	t.render()
 }
@@ -775,7 +792,10 @@ func (t *transcript) resetToTail() {
 	t.payloadLRU = nil
 	t.checkNewer = false
 	t.heldOpen = nil
-	t.noMoreOlder = len(closed) > 0 && closed[0].Turn <= 1
+	// Turn 1 is the oldest turn there is — but only its HEAD slice is the oldest
+	// thing there is. A window holding just the tail of it still has that turn's
+	// own head to fetch, and the question with it.
+	t.noMoreOlder = len(closed) > 0 && closed[0].Turn <= 1 && closed[0].From == 0
 	// A rebuilt window is a changed window: bump windowRev through the same
 	// signal everything else uses, then claim the client revision it mirrors.
 	t.invalidateWindow()
@@ -838,7 +858,7 @@ func (t *transcript) tuneTail() bool {
 //   - the page layer: tailRev = 0, so the next resetToTail rebuilds from the
 //     client instead of taking axis D's revision fast path;
 //   - the line index: windowRev++, which buildIndex records, so a moved page set
-//     always refills lineTurn instead of relying on the shape diff to notice.
+//     always refills lineKey instead of relying on the shape diff to notice.
 //
 // Before the merge these were two independent staleness notions — D's tailRev
 // over the pages and A's shape diff over the index — and nothing tied them
@@ -906,6 +926,18 @@ func (t *transcript) oldestLT() (int, bool) {
 	return 0, false
 }
 
+// oldestFrom is the node offset the retained window starts at inside its oldest
+// turn. Non-zero means the window holds only the TAIL of that turn, so the
+// backward fetch must be anchored on the node — see transcriptPageRequest.
+func (t *transcript) oldestFrom() uint64 {
+	for _, page := range t.pages {
+		if len(page.messages) > 0 {
+			return page.messages[0].From
+		}
+	}
+	return 0
+}
+
 func (t *transcript) newestLT() (int, bool) {
 	for i := len(t.pages) - 1; i >= 0; i-- {
 		if n := len(t.pages[i].messages); n > 0 {
@@ -965,32 +997,37 @@ func (t *transcript) resize(w, h int) {
 	// changes line counts, so keeping the raw line offset would jump the view.
 	// Record the top message's turn + how many lines into it we are, then restore
 	// after re-rendering at the new width. (Skipped when following the tail.)
-	anchorLT, within := t.viewportAnchor()
+	anchor, within := t.viewportAnchor()
 	t.w, t.h = w, h
 	t.prev = nil   // full repaint (diff vs nil); no \x1b[2J, which flickers
-	t.buildIndex() // re-render at the new width, repopulating lineTurn
-	t.restoreViewportAnchor(anchorLT, within)
+	t.buildIndex() // re-render at the new width, repopulating lineKey
+	t.restoreViewportAnchor(anchor, within)
 	t.render()
 }
 
-func (t *transcript) viewportAnchor() (int, int) {
-	if t.follow || t.offset >= len(t.lineTurn) {
+// viewportAnchor names the line at the top of the viewport by the SLICE that
+// owns it plus how far into that slice it is. Slice, not turn: a page landing
+// can prepend an earlier slice of the turn already at the top (the head of one
+// clipped by the page budget), and a turn-granular anchor would then restore to
+// the head's first line — a jump to the top of a turn the reader was inside.
+func (t *transcript) viewportAnchor() (sliceKey, int) {
+	if t.follow || t.offset >= len(t.lineKey) {
 		return 0, 0
 	}
-	lt := t.lineTurn[t.offset]
+	key := t.lineKey[t.offset]
 	start := t.offset
-	for start > 0 && t.lineTurn[start-1] == lt {
+	for start > 0 && t.lineKey[start-1] == key {
 		start--
 	}
-	return lt, t.offset - start
+	return key, t.offset - start
 }
 
-func (t *transcript) restoreViewportAnchor(lt, within int) {
-	if lt == 0 {
+func (t *transcript) restoreViewportAnchor(key sliceKey, within int) {
+	if key == 0 {
 		return
 	}
-	for i, lineTurn := range t.lineTurn {
-		if lineTurn == lt {
+	for i, k := range t.lineKey {
+		if k == key {
 			t.offset = i + within
 			return
 		}
@@ -1110,12 +1147,14 @@ func (t *transcript) layout(foot int) (body, maxOff int) {
 func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 	var rows []transcriptRow
 	// The turn's opening question is TEXT ON THE TURN, carried by its first
-	// slice only. Its rows hold no nodeRef — there is no node to select or
-	// expand — so it decorates like chrome, which is what it is.
+	// slice only. It occupies no node index, so its rows carry the sentinel ref
+	// (see inquiryNode) — that is what makes it select, copy and highlight
+	// exactly as a node does, which is how it behaved when it WAS one.
 	if iq := inquiryProse(m.Inquiry, t.w-2); len(iq) > 0 {
+		ref := nodeRef{turn: m.Turn, index: inquiryNode}
 		rows = append(rows, transcriptRow{text: messageHeader(livedoc.RoleInput)}, transcriptRow{})
 		for _, l := range iq {
-			rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(l, t.w))})
+			rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(l, t.w)), ref: ref})
 		}
 		// A blank and the RULE close the question before the agent speaks. The
 		// question used to be its own message and got that rule as the message
@@ -1196,7 +1235,7 @@ func (t *transcript) render() {
 	// contract every mutation site relied on (scrollBy, key, the selection
 	// scroll-into-view all leave it unclamped on purpose); B's gate made the
 	// frame skippable, and with it the clamp. That matters because the offset
-	// is read off the frame path too — viewportAnchor indexes lineTurn with it
+	// is read off the frame path too — viewportAnchor indexes lineKey with it
 	// when a prefetched page lands, and the search wrap-around takes it modulo
 	// the row total — and a negative index is a panic, not a wrong pixel.
 	//
@@ -1458,7 +1497,9 @@ func (t *transcript) nextScreen() []string {
 // keysOld are the painter's; the composed frame is retained as t.prev and the
 // frame it displaces goes back to screenSpare for the next compose.
 func (t *transcript) paint(screen []string) {
-	buf := append(t.paintBuf[:0], "\x1b[?2026h"...)
+	buf := append(t.paintBuf[:0], t.prefix...)
+	t.prefix = ""
+	buf = append(buf, "\x1b[?2026h"...)
 	base := t.prev
 	if plan, ok := t.planScroll(screen); ok {
 		buf = appendScroll(buf, plan)
@@ -1869,7 +1910,7 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 			if searchContains(row.searchText(), q) {
 				t.buildIndex()
 				for i := range t.index.total {
-					if t.lineTurn[i] != m.Turn {
+					if t.lineKey[i] != keyOf(m) {
 						continue // only this message's lines can carry the hit
 					}
 					if searchContains(t.lineAt(i), q) {

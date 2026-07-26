@@ -21,7 +21,12 @@ import "github.com/jack-work/figaro/internal/livelog/aria"
 // start is the absolute line of the entry's first line — the separator's
 // first blank when sep is set, otherwise the first row.
 type lineEntry struct {
-	turn  int
+	turn int
+	// key is the SLICE the lines belong to, not just its turn: a tall turn is
+	// several entries, and the viewport anchor has to tell them apart or a page
+	// landing that prepends an earlier slice of the SAME turn snaps the viewport
+	// to that slice's top.
+	key   sliceKey
 	start int
 	sep   bool // preceded by the ""/rule/"" separator triple
 	open  bool // the live/held-open message, re-rendered every frame
@@ -78,9 +83,11 @@ func (t *transcript) buildIndex() {
 		t.cacheW = t.w
 	}
 	entries, total := t.index.scratch[:0], 0
-	add := func(lt int, rows []transcriptRow, open bool) {
+	add := func(m aria.Message, rows []transcriptRow, open bool) {
 		sep := total > 0 // rule separator BETWEEN messages only
-		entries = append(entries, lineEntry{turn: lt, start: total, sep: sep, open: open, rows: rows})
+		entries = append(entries, lineEntry{
+			turn: m.Turn, key: keyOf(m), start: total, sep: sep, open: open, rows: rows,
+		})
 		if sep {
 			total += 3
 		}
@@ -94,10 +101,10 @@ func (t *transcript) buildIndex() {
 			rows = t.renderMsgBase(m)
 			t.rowCache[keyOf(m)] = rows
 		}
-		add(m.Turn, rows.rows, false)
+		add(m, rows.rows, false)
 	})
 	if open := t.openMessage(); open != nil {
-		add(open.Turn, t.renderMsgBase(*open).rows, true)
+		add(*open, t.renderMsgBase(*open).rows, true)
 	}
 	// The page set moved => the index describes a different window, full stop.
 	// That is the one authority (windowRev); the shape diff below only has to
@@ -109,7 +116,7 @@ func (t *transcript) buildIndex() {
 	}
 	if !changed {
 		for i := range entries {
-			if entries[i].turn != t.index.entries[i].turn ||
+			if entries[i].key != t.index.entries[i].key ||
 				entries[i].start != t.index.entries[i].start ||
 				len(entries[i].rows) != len(t.index.entries[i].rows) {
 				changed = true
@@ -124,23 +131,23 @@ func (t *transcript) buildIndex() {
 	}
 }
 
-// rebuildLineLT refills the LT-per-line map used for resize anchoring. Only
+// rebuildLineLT refills the slice-per-line map used for resize anchoring. Only
 // called when the index shape actually changed — a scroll leaves it alone.
-// Separator rows carry the FOLLOWING message's LT, as they always have.
+// Separator rows carry the FOLLOWING message's slice, as they always have.
 func (t *transcript) rebuildLineLT() {
-	if cap(t.lineTurn) < t.index.total {
-		t.lineTurn = make([]int, t.index.total)
+	if cap(t.lineKey) < t.index.total {
+		t.lineKey = make([]sliceKey, t.index.total)
 	}
-	t.lineTurn = t.lineTurn[:t.index.total]
+	t.lineKey = t.lineKey[:t.index.total]
 	for k := range t.index.entries {
 		e := &t.index.entries[k]
 		i := e.start
 		if e.sep {
-			t.lineTurn[i], t.lineTurn[i+1], t.lineTurn[i+2] = e.turn, e.turn, e.turn
+			t.lineKey[i], t.lineKey[i+1], t.lineKey[i+2] = e.key, e.key, e.key
 			i += 3
 		}
 		for range e.rows {
-			t.lineTurn[i] = e.turn
+			t.lineKey[i] = e.key
 			i++
 		}
 	}

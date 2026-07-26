@@ -209,7 +209,8 @@ func (r *blockingHistoryReader) Queued(context.Context) (*rpc.QueuedResponse, er
 	return &rpc.QueuedResponse{}, nil
 }
 
-func (r *blockingHistoryReader) ReadBefore(ctx context.Context, before, limit int) (aria.Page, error) {
+func (r *blockingHistoryReader) ReadBefore(ctx context.Context, at aria.Anchor, limit int) (aria.Page, error) {
+	before := int(at.Turn)
 	r.mu.Lock()
 	r.calls++
 	n := r.calls

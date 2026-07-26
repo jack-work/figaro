@@ -91,11 +91,17 @@ func fixtureView(history []aria.TurnPart) ([]aria.Turn, int) {
 }
 
 func readBefore(history []aria.TurnPart, before, parts int) aria.Page {
+	return readBeforeAt(history, aria.Anchor{Turn: uint64(before)}, parts)
+}
+
+// readBeforeAt is readBefore anchored on a NODE as well as a turn — the shape
+// the pager and the selection walk actually ask for.
+func readBeforeAt(history []aria.TurnPart, at aria.Anchor, parts int) aria.Page {
 	if parts <= 0 {
 		return aria.Page{}
 	}
 	turns, widest := fixtureView(history)
-	return aria.PaginateBefore(turns, aria.Anchor{Turn: uint64(before)}, parts*widest)
+	return aria.PaginateBefore(turns, at, parts*widest)
 }
 
 // nodeBytes mirrors aria's unexported nodeSize: the paginator spends its budget
@@ -140,7 +146,7 @@ func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
 	history = append(history, aria.TurnPart{Turn: aria.Turn{ID: uint64(201), Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "message-201"}}}})
 	client.Apply(aria.Page{Parts: []aria.TurnPart{history[200]}})
 	for range 2 {
-		tr.offset = len(tr.lineTurn)
+		tr.offset = len(tr.lineKey)
 		tr.checkNewer = true
 		req, ok := tr.pageCursor()
 		if !ok || req.direction != pageNewer {
@@ -226,8 +232,8 @@ func TestTranscript_SelectionSurvivesPayloadEviction(t *testing.T) {
 	if !ok {
 		t.Fatal("selection endpoints were lost after eviction")
 	}
-	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
-		return readBefore(history, before, limit), nil
+	text, err := selectionText(plan, transcriptPageSize, func(at aria.Anchor, limit int) (aria.Page, error) {
+		return readBeforeAt(history, at, limit), nil
 	})
 	if err != nil || !strings.Contains(text, "message-111") || !strings.Contains(text, "message-200") {
 		t.Fatalf("rehydrated selected text = %q, %v", text, err)
@@ -246,15 +252,15 @@ func TestTranscript_ResizeAnchorsPagedMessage(t *testing.T) {
 	tr.enter()
 	tr.follow = false
 	tr.lines()
-	for i, lt := range tr.lineTurn {
-		if lt == 190 {
+	for i, k := range tr.lineKey {
+		if k.turn() == 190 {
 			tr.offset = i
 			break
 		}
 	}
 	tr.resize(32, 8)
-	if tr.offset >= len(tr.lineTurn) || tr.lineTurn[tr.offset] != 190 {
-		t.Fatalf("resize moved anchor to LT %d", tr.lineTurn[tr.offset])
+	if tr.offset >= len(tr.lineKey) || tr.lineKey[tr.offset].turn() != 190 {
+		t.Fatalf("resize moved anchor to turn %d", tr.lineKey[tr.offset].turn())
 	}
 }
 
@@ -318,7 +324,7 @@ func TestTranscript_ReloadsOldestAfterNewerEviction(t *testing.T) {
 		}
 		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
-	tr.offset = len(tr.lineTurn)
+	tr.offset = len(tr.lineKey)
 	tr.checkNewer = true
 	req, ok := tr.pageCursor()
 	if !ok {

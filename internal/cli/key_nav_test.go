@@ -33,7 +33,8 @@ func (c stubHistoryClient) Read(context.Context, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 
-func (c stubHistoryClient) ReadBefore(_ context.Context, before, _ int) (aria.Page, error) {
+func (c stubHistoryClient) ReadBefore(_ context.Context, at aria.Anchor, _ int) (aria.Page, error) {
+	before := int(at.Turn)
 	if before != recentCursor {
 		return aria.Page{}, nil
 	}
