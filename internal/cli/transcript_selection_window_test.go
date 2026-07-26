@@ -56,8 +56,8 @@ func TestTranscript_ClearSelectionKeepsFocusedEdge(t *testing.T) {
 	}
 	tr.clearSelection()
 	messages := tr.messages()
-	if len(tr.pages) != transcriptPageLimit || messages[len(messages)-1].LT != 120 {
-		t.Fatalf("clear retained %d pages ending at LT %d", len(tr.pages), messages[len(messages)-1].LT)
+	if len(tr.pages) != transcriptPageLimit || messages[len(messages)-1].Turn != 120 {
+		t.Fatalf("clear retained %d pages ending at LT %d", len(tr.pages), messages[len(messages)-1].Turn)
 	}
 }
 

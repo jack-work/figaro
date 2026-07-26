@@ -15,7 +15,7 @@ func pageOnce(t *testing.T, tr *transcript, history []aria.TurnPart, dir transcr
 	if dir == pageOlder {
 		tr.offset, tr.checkOlder = 0, true
 	} else {
-		tr.offset, tr.checkNewer = len(tr.lineLT), true
+		tr.offset, tr.checkNewer = len(tr.lineTurn), true
 	}
 	req, ok := tr.pageCursor()
 	if !ok {
@@ -125,11 +125,11 @@ func TestTranscriptCachesStayBounded(t *testing.T) {
 	}
 	retained := map[int]bool{}
 	for _, m := range tr.messages() {
-		retained[m.LT] = true
+		retained[m.Turn] = true
 	}
 	for _, page := range tr.payloadLRU {
 		for _, m := range page.messages {
-			retained[m.LT] = true
+			retained[m.Turn] = true
 		}
 	}
 	for lt := range tr.rowCache {

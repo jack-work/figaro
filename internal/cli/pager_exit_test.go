@@ -24,7 +24,7 @@ func TestPagerExitFlushesLaterSlicesOfAnAlreadyFrozenTurn(t *testing.T) {
 	// The prompt opens, then closes when the live suffix advances past it.
 	lt.apply(page(1, 0, delta(0, livedoc.RoleInput, "the question")))
 	lt.apply(page(1, 1, delta(1, livedoc.RoleOutput, "FINALANSWER")))
-	if lt.lastFrozen.lt != 1 || lt.lastFrozen.from != 0 {
+	if lt.lastFrozen.turn != 1 || lt.lastFrozen.from != 0 {
 		t.Fatalf("prompt should have frozen at {1,0}, got %+v", lt.lastFrozen)
 	}
 

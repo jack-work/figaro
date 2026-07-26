@@ -341,8 +341,8 @@ func TestClient_ClosedLimitKeepsTail(t *testing.T) {
 	if len(v.Closed) != 3 {
 		t.Fatalf("want 3 retained, got %d", len(v.Closed))
 	}
-	if v.Closed[0].LT != 4 || v.Closed[2].LT != 6 {
-		t.Fatalf("want the tail 4..6, got %d..%d", v.Closed[0].LT, v.Closed[2].LT)
+	if v.Closed[0].Turn != 4 || v.Closed[2].Turn != 6 {
+		t.Fatalf("want the tail 4..6, got %d..%d", v.Closed[0].Turn, v.Closed[2].Turn)
 	}
 	if c.Cursor() != 6 {
 		t.Errorf("cursor must track the newest turn, got %d", c.Cursor())

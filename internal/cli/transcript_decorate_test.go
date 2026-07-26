@@ -76,7 +76,7 @@ func TestDecorateNodeRowNoAllocUnmarked(t *testing.T) {
 // TestTranscriptRowSearchText pins that history search still sees the row
 // without the gutter column that plainNodeRow prepends.
 func TestTranscriptRowSearchText(t *testing.T) {
-	node := transcriptRow{text: plainNodeRow("hello world", 40), ref: nodeRef{lt: 3, index: 0}}
+	node := transcriptRow{text: plainNodeRow("hello world", 40), ref: nodeRef{turn: 3, index: 0}}
 	if got := node.searchText(); got != "hello world" {
 		t.Errorf("searchText() = %q, want %q", got, "hello world")
 	}
