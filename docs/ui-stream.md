@@ -151,13 +151,18 @@ command stays open until you close the pager.
 
 ## Steering: messages mid-turn
 
-A message sent while a turn is running (e.g. `fig send` to a busy aria) doesn't
-wait for a new turn — it folds into the *current* turn as a **steering** node,
-which the model reads on its next round. In the stream it appears as a
-`steering` node (rendered under a `↳ input` gutter) positioned where it arrived,
-inside the assistant's turn. The client tells "my turn is done" from "a turn
-ended with my steer still queued" via `turn.done`'s idle flag, so a steering
-send waits for *its own* completion.
+A message sent to a busy aria with **`fig send --steer`** does not wait for a new
+turn — it folds into the *current* turn as a **steering** node, which the model
+reads on its next round. In the stream it appears as a `steering` node (rendered
+under a `↳ input` gutter) positioned where it arrived, inside the agent's turn.
+The client tells "my turn is done" from "a turn ended with my steer still queued"
+via `turn.done`'s idle flag, so a steering send waits for *its own* completion.
+
+**Without `--steer`, a message sent to a busy aria opens its OWN turn** and is
+answered after the current one finishes. Steering is **carried, not inferred**:
+intent cannot be read off timing, and guessing "steer" merges two exchanges —
+which silently swallowed real questions. A new turn is visible and recoverable;
+a swallowed one is not.
 
 > Steering is a server-side feature (the mid-turn drain). It requires a daemon
 > built with it; an older long-lived daemon will queue the message as a separate
