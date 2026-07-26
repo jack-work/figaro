@@ -85,6 +85,75 @@ func (t *transcript) anchorBelow(ref nodeRef, mutate func()) bool {
 	return true
 }
 
+// entryRowsStart is the absolute line of an entry's first CONTENT row: its
+// start, plus whatever separator rows precede it. The entry answers for its own
+// separator (sepHeight), so this cannot go stale if the separator changes size.
+func entryRowsStart(e *lineEntry) int { return e.start + e.sepHeight() }
+
+// viewportSeedRef picks the node a COLD selection should start on: the one the
+// reader is looking at, not the one the retained window happens to end with.
+//
+// VISIBLE MEANS "STARTS ON SCREEN". A ref qualifies when its FIRST line falls
+// inside the viewport, even if the rest of it runs off the bottom — a tall tool
+// whose head is on screen is the thing you are looking at, and requiring the
+// whole span to fit would skip it in favour of something you cannot see.
+//
+// dir < 0 (Ctrl-P, walking backwards) seeds at the BOTTOMMOST such ref;
+// dir > 0 (Ctrl-N, walking forwards) seeds at the TOPMOST. Symmetric, because
+// the two keys are.
+//
+// The fallback is for a single block taller than the whole viewport: scrolled
+// into its middle, nothing STARTS on screen, and the honest answer is that
+// block. Overlap picks it up. Only if that finds nothing — an empty or unbuilt
+// index — does the caller fall back to the ends of the window.
+func (t *transcript) viewportSeedRef(dir int) (nodeRef, bool) {
+	top, bottom := t.viewportLines()
+	var (
+		startsIn, overlaps        nodeRef
+		haveStartsIn, haveOverlap bool
+	)
+	take := func(ref nodeRef, first, last int) {
+		if first >= top && first < bottom {
+			// dir<0 keeps overwriting and ends on the last match; dir>0 takes
+			// the first and holds it.
+			if dir < 0 || !haveStartsIn {
+				startsIn, haveStartsIn = ref, true
+			}
+		}
+		if first < bottom && last >= top {
+			if dir < 0 || !haveOverlap {
+				overlaps, haveOverlap = ref, true
+			}
+		}
+	}
+	for k := range t.index.entries {
+		e := &t.index.entries[k]
+		base := entryRowsStart(e)
+		if base >= bottom && haveStartsIn {
+			break // past the viewport, and we already have an answer
+		}
+		// A ref's rows are contiguous within an entry (renderMsgBase emits one
+		// run per node), so a run ends where the ref changes.
+		runRef, runFirst := nodeRef{}, -1
+		flush := func(end int) {
+			if runFirst >= 0 && runRef.valid() {
+				take(runRef, runFirst, end)
+			}
+		}
+		for i := range e.rows {
+			if ref := e.rows[i].ref; ref != runRef {
+				flush(base + i - 1)
+				runRef, runFirst = ref, base+i
+			}
+		}
+		flush(base + len(e.rows) - 1)
+	}
+	if haveStartsIn {
+		return startsIn, true
+	}
+	return overlaps, haveOverlap
+}
+
 // viewportLines is the half-open line range the body is currently showing,
 // [top, bottom). It reads the CURRENT geometry — an open panel and the
 // follow-mode padding row both change the body height — so the caller must have

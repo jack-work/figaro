@@ -68,6 +68,13 @@ func TestTranscriptFramesGolden(t *testing.T) {
 	// selects and copies exactly like a node — see inquiryNode); step past them
 	// so this fixture keeps pinning the same three NODE rows it always did, and
 	// the pre-sgr cell-level proof beside it stays a proof.
+	//
+	// The viewport is parked at the top first. ^N seeds from the VIEWPORT now —
+	// the topmost block on screen — and frameFixture leaves the offset at the
+	// bottom, so without this the walk starts further down and this golden would
+	// pin different rows. Stating the precondition keeps the golden about row
+	// BYTES, which is what it is for.
+	tr.offset = 0
 	tr.selectNode(1, false)
 	tr.selectNode(1, false)
 	tr.selectNode(1, false) // turn 2's first node

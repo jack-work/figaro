@@ -210,6 +210,33 @@ func inputNavSeq(n navKey) string {
 	return ""
 }
 
+// REBASED A SECOND TIME, for the cold-selection seed (Ctrl-N/Ctrl-P). Two
+// causes have moved this oracle in quick succession and they must not be
+// confused:
+//
+//   - sepRows (c1ef47f) shrank the separator by one row, so every off= fell by
+//     a CONSTANT one-per-message-boundary. fol= did not move; which block was
+//     selected did not move. That regeneration is already in this file.
+//   - THIS one is behavioural. A cold selection used to seed from the ends of
+//     the RETAINED WINDOW (len(refs)-1 for ^P, 0 for ^N) and then let
+//     ensureSelectionVisible drag the page to it. It now seeds from the
+//     VIEWPORT and does not scroll. Every fixture whose state is built by a
+//     cold selectNode therefore STARTS somewhere else, and every key measured
+//     from it reports a different off=.
+//
+// Three columns other than off= moved, all in the +sel states, and both
+// patterns are consequences of that new starting position rather than of the
+// keys themselves:
+//
+//   - old= true->false on the upward scroll. The old fixture started at the top
+//     of the window (off=2), so scrolling up hit the edge and armed the
+//     older-history prefetch. From where the reader actually is, it does not.
+//   - fol= false->true with new= true->false on the four downward scrolls.
+//     From off=59 a half-page down runs past the last row, which re-attaches to
+//     the tail (pagerTail), and following does not arm the newer prefetch. That
+//     is the documented live-padding behaviour, reached now and not before.
+//
+// Regenerated mechanically, not hand-edited.
 var inputOracle = []struct {
 	state string
 	inert string
@@ -257,34 +284,29 @@ var inputOracle = []struct {
 		"0x03":            "stop=true rest=\"\" act=true off=773 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=true clip=\"\" cpfail=false cping=false",
 		"0x04":            "stop=true rest=\"\" act=true off=773 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0c":            "stop=false rest=\"\" act=true off=773 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x0e":            "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x0e":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0f":            "stop=false rest=\"\" act=true off=791 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x10":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x14":            "stop=false rest=\"\" act=true off=773 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x1b":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x21":            "stop=false rest=\"\" act=true off=759 fol=true srch=false q=\"\" h=false s=true Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x2f":            "stop=false rest=\"\" act=true off=753 fol=true srch=true q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x51":            "stop=false rest=\"\" act=true off=756 fol=true srch=false q=\"\" h=false s=false Q=true g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x64":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x67":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=true sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x6a":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x6b":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x71":            "stop=true rest=\"\" act=true off=773 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
 		"0x75":            "stop=false rest=\"\" act=true off=732 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x79":            "stop=false rest=\"\" act=true off=773 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"aria0001\" cpfail=false cping=false",
-		"alt ^n fallback": "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"alt ^n fallback": "stop=false rest=\"\" act=true off=772 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"alt ^p fallback": "stop=false rest=\"\" act=true off=772 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"csiu ^N+shift":   "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"csiu ^N+shift":   "stop=false rest=\"\" act=true off=772 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^d":         "stop=true rest=\"\" act=true off=773 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^l":         "stop=false rest=\"\" act=true off=773 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"csiu ^n":         "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"csiu ^n":         "stop=false rest=\"\" act=true off=772 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^o":         "stop=false rest=\"\" act=true off=791 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^p":         "stop=false rest=\"\" act=true off=772 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^p+alt":     "stop=false rest=\"\" act=true off=772 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^t":         "stop=false rest=\"\" act=true off=773 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"nav:Down":        "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"nav:Home":        "stop=false rest=\"\" act=true off=0 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"nav:PgDn":        "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"nav:PgUp":        "stop=false rest=\"\" act=true off=732 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"nav:Up":          "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 	}},
@@ -293,7 +315,6 @@ var inputOracle = []struct {
 		"0x04":            "stop=true rest=\"\" act=true off=753 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
 		"0x08":            "stop=false rest=\"\" act=true off=753 fol=true srch=true q=\"m\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0a":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"ms\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x0c":            "stop=false rest=\"\" act=true off=753 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0d":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"ms\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0f":            "stop=false rest=\"\" act=true off=771 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x1b":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
@@ -393,12 +414,11 @@ var inputOracle = []struct {
 		"0x7d":            "stop=false rest=\"\" act=true off=753 fol=true srch=true q=\"ms}\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x7e":            "stop=false rest=\"\" act=true off=753 fol=true srch=true q=\"ms~\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x7f":            "stop=false rest=\"\" act=true off=753 fol=true srch=true q=\"m\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"alt ^n fallback": "stop=false rest=\"\" act=true off=2 fol=false srch=true q=\"ms\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"alt ^n fallback": "stop=false rest=\"\" act=true off=752 fol=false srch=true q=\"ms\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"alt ^p fallback": "stop=false rest=\"\" act=true off=752 fol=false srch=true q=\"ms\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"csiu ^N+shift":   "stop=false rest=\"\" act=true off=2 fol=false srch=true q=\"ms\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"csiu ^N+shift":   "stop=false rest=\"\" act=true off=752 fol=false srch=true q=\"ms\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^d":         "stop=true rest=\"\" act=true off=753 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
-		"csiu ^l":         "stop=false rest=\"\" act=true off=753 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"csiu ^n":         "stop=false rest=\"\" act=true off=2 fol=false srch=true q=\"ms\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"csiu ^n":         "stop=false rest=\"\" act=true off=752 fol=false srch=true q=\"ms\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^o":         "stop=false rest=\"\" act=true off=771 fol=true srch=true q=\"ms\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^p":         "stop=false rest=\"\" act=true off=752 fol=false srch=true q=\"ms\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^p+alt":     "stop=false rest=\"\" act=true off=752 fol=false srch=true q=\"ms\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
@@ -406,64 +426,59 @@ var inputOracle = []struct {
 	{"transcript", "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false", map[string]string{
 		"0x03":            "stop=true rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=true clip=\"\" cpfail=false cping=false",
 		"0x04":            "stop=true rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
-		"0x0c":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x0e":            "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x0e":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x0f":            "stop=false rest=\"\" act=true off=771 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x10":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x1b":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x21":            "stop=false rest=\"\" act=true off=759 fol=true srch=false q=\"\" h=false s=true Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x2f":            "stop=false rest=\"\" act=true off=753 fol=true srch=true q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x3f":            "stop=false rest=\"\" act=true off=773 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x51":            "stop=false rest=\"\" act=true off=756 fol=true srch=false q=\"\" h=false s=false Q=true g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x64":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x67":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=true sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x6a":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x6b":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x71":            "stop=true rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
 		"0x75":            "stop=false rest=\"\" act=true off=732 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"0x79":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"aria0001\" cpfail=false cping=false",
-		"alt ^n fallback": "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"alt ^n fallback": "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"alt ^p fallback": "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"csiu ^N+shift":   "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"csiu ^N+shift":   "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^d":         "stop=true rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
-		"csiu ^l":         "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"csiu ^n":         "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"csiu ^n":         "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^o":         "stop=false rest=\"\" act=true off=771 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^p":         "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"csiu ^p+alt":     "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"nav:Down":        "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"nav:Home":        "stop=false rest=\"\" act=true off=0 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"nav:PgDn":        "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"nav:PgUp":        "stop=false rest=\"\" act=true off=732 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 		"nav:Up":          "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 	}},
-	{"transcript+sel", "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false", map[string]string{
-		"0x03":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=true cping=false",
-		"0x04":     "stop=true rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
-		"0x0c":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x0f":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x1b":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x21":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=true Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x2f":     "stop=false rest=\"\" act=true off=2 fol=false srch=true q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x3f":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x47":     "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x51":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=true g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x64":     "stop=false rest=\"\" act=true off=22 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x67":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=true sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x6a":     "stop=false rest=\"\" act=true off=3 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x6b":     "stop=false rest=\"\" act=true off=1 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x71":     "stop=true rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
-		"0x75":     "stop=false rest=\"\" act=true off=0 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"0x79":     "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=true cping=false",
-		"csiu ^d":  "stop=true rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
-		"csiu ^l":  "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"csiu ^o":  "stop=false rest=\"\" act=true off=2 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"nav:Down": "stop=false rest=\"\" act=true off=3 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"nav:End":  "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"nav:Home": "stop=false rest=\"\" act=true off=0 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"nav:PgDn": "stop=false rest=\"\" act=true off=22 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"nav:PgUp": "stop=false rest=\"\" act=true off=0 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
-		"nav:Up":   "stop=false rest=\"\" act=true off=1 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+	{"transcript+sel", "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false", map[string]string{
+		"0x03":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=true cping=false",
+		"0x04":            "stop=true rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
+		"0x0f":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x10":            "stop=false rest=\"\" act=true off=750 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x1b":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x21":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=true Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x2f":            "stop=false rest=\"\" act=true off=752 fol=false srch=true q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x3f":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x47":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x51":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=true g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x64":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x67":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=true sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x6a":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x6b":            "stop=false rest=\"\" act=true off=751 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x71":            "stop=true rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
+		"0x75":            "stop=false rest=\"\" act=true off=732 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"0x79":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=true cping=false",
+		"alt ^p fallback": "stop=false rest=\"\" act=true off=750 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"csiu ^d":         "stop=true rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false",
+		"csiu ^o":         "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"csiu ^p":         "stop=false rest=\"\" act=true off=750 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"csiu ^p+alt":     "stop=false rest=\"\" act=true off=750 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"nav:Down":        "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"nav:End":         "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"nav:Home":        "stop=false rest=\"\" act=true off=0 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"nav:PgDn":        "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"nav:PgUp":        "stop=false rest=\"\" act=true off=732 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
+		"nav:Up":          "stop=false rest=\"\" act=true off=751 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false",
 	}},
 }
 

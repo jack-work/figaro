@@ -184,13 +184,42 @@ func (t *transcript) selectNode(delta int, extend bool) {
 			}
 		}
 	}
+	cold := index < 0
+	if cold {
+		// COLD ENTRY SEEDS FROM THE VIEWPORT, NOT FROM THE WINDOW. The retained
+		// window holds far more than the screen shows, so len(refs)-1 was the
+		// last node of everything HELD, not the last one VISIBLE — and
+		// ensureSelectionVisible then yanked the page to it. Entering a
+		// selection must not move the page at all.
+		//
+		// DETACH FIRST, THEN PICK. stopFollowing settles the tail window (which
+		// can re-tune it, moving line space) and re-derives t.offset for the
+		// detached geometry, where the live padding row becomes content. A ref
+		// chosen against the FOLLOWING geometry can therefore stop being the
+		// bottommost visible one a frame later — the same staleness
+		// stopFollowing's own comment records for the promoted-by-'k' pager.
+		// Picking after the detach means picking against the geometry that will
+		// actually be painted.
+		t.stopFollowing()
+		t.buildIndex()
+		if ref, ok := t.viewportSeedRef(delta); ok {
+			for i := range refs {
+				if refs[i].nodeRef == ref {
+					index = i
+					break
+				}
+			}
+		}
+	}
 	if index < 0 {
+		// Nothing on screen to seed from (an empty or unbuilt index). Fall back
+		// to the ends of the retained window, where this always began.
 		if delta < 0 {
 			index = len(refs) - 1
 		} else {
 			index = 0
 		}
-	} else {
+	} else if !cold {
 		next := index + delta
 		if t.hasNewerHistory() && t.heldOpen != nil && next >= 0 && next < len(refs) &&
 			(refs[index].turn == t.heldOpen.Turn || refs[next].turn == t.heldOpen.Turn) {
@@ -212,6 +241,13 @@ func (t *transcript) selectNode(delta int, extend bool) {
 	}
 	t.selection.focus = refs[index]
 	t.selection.active = true
+	if cold {
+		// Seeded from what is on screen, so it is visible by construction and
+		// already detached. Calling ensureSelectionVisible here is precisely the
+		// scroll this exists to remove: a tall block whose head is on screen but
+		// whose tail runs off the bottom would drag the page down to it.
+		return
+	}
 	t.stopFollowing()
 	t.ensureSelectionVisible()
 }
