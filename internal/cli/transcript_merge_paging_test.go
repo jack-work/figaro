@@ -55,7 +55,12 @@ func lineLTFromIndex(tr *transcript) []sliceKey {
 	for k := range tr.index.entries {
 		e := &tr.index.entries[k]
 		if e.sep {
-			out = append(out, e.key, e.key, e.key)
+			// Separator rows carry the FOLLOWING message's key. Driven off
+			// sepRows rather than a literal so a change to the separator's
+			// height cannot leave this oracle describing the old shape.
+			for range sepRows {
+				out = append(out, e.key)
+			}
 		}
 		for range e.rows {
 			out = append(out, e.key)
@@ -212,7 +217,7 @@ func TestMergedGeometryMeasuresTheWindowNotTheRowCache(t *testing.T) {
 			t.Fatalf("retained message %d has no cached rows", m.Turn)
 		}
 		if wantMsgs > 0 {
-			wantRows += 3
+			wantRows += sepRows
 		}
 		wantRows += len(rows.rows)
 		wantMsgs++
@@ -227,7 +232,7 @@ func TestMergedGeometryMeasuresTheWindowNotTheRowCache(t *testing.T) {
 	// is not comparing a number against itself.
 	cacheRows, cacheMsgs := 0, 0
 	for _, c := range tr.rowCache {
-		cacheRows += len(c.rows) + 3
+		cacheRows += len(c.rows) + sepRows
 		cacheMsgs++
 	}
 	if cacheMsgs <= wantMsgs {

@@ -49,8 +49,17 @@ func legacyLines(t *transcript) ([]string, []sliceKey, map[nodeRef]nodeSpan) {
 	nodeRows := map[nodeRef]nodeSpan{}
 	appendMsg := func(rows []transcriptRow, lt sliceKey) {
 		if len(out) > 0 {
-			out = append(out, "", dimTransRule(t.w), "")
-			lts = append(lts, lt, lt, lt)
+			// The separator is a PAIR — a blank and the rule — because the rule
+			// is the OVERLINE of the voice header on the next line (see sepRows).
+			// It was a triple, with a trailing blank, until that trailing blank
+			// was found to be the reason "> input" sat one row lower than
+			// "< figaro". This oracle is an INDEPENDENT reimplementation of the
+			// line space, so it has to restate the shape rather than import it;
+			// what it still proves is that buildIndex + window agree with a
+			// straight-line materialization, which is the divergence it exists
+			// to catch.
+			out = append(out, "", dimTransRule(t.w))
+			lts = append(lts, lt, lt)
 		}
 		for _, r := range rows {
 			line := r.text

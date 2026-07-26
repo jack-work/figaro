@@ -28,18 +28,51 @@ type lineEntry struct {
 	// to that slice's top.
 	key   sliceKey
 	start int
-	sep   bool // preceded by the ""/rule/"" separator triple
+	sep   bool // preceded by the ""/rule separator pair
 	open  bool // the live/held-open message, re-rendered every frame
 	rows  []transcriptRow
 }
 
-// height is the number of lines the entry occupies, separator included.
-func (e *lineEntry) height() int {
+// sepRows is the height of the separator between two messages: a blank, then
+// the RULE — and the next message's voice header directly beneath it, with no
+// gap.
+//
+// THE RULE IS THE HEADER'S OVERLINE, not the previous message's underline.
+// That is already the shape renderMsgBase draws inside a message, between a
+// turn's question and the reply to it ("> input" / blank / text / blank / RULE
+// / "< figaro"), and TestInquiryChromeAgreesAcrossViews pins it. The separator
+// BETWEEN messages used to be a three-row triple — blank, rule, blank — so the
+// same rule grew a trailing blank whenever it happened to fall on a message
+// boundary, and "> input" sat one row lower than "< figaro" for no reason a
+// reader could see.
+//
+// The asymmetry was a residue: the question used to be its own message, so both
+// of its seams were message boundaries and both were loose. Once the inquiry
+// became text on the turn (e7fb039) the seam below it moved inside a message
+// and tightened, while the seam above it stayed behind.
+const sepRows = 2
+
+// sepHeight is how many lines THIS entry spends on its leading separator: the
+// separator's height when it has one, zero otherwise.
+//
+// Every conversion between entry-relative and absolute line space goes through
+// here rather than testing e.sep and naming the constant again. That is not
+// tidiness. Of the places that encode the separator's height, only entryLine
+// paints a row; the other two — rebuildLineLT's anchor fill and nodeSpanOf's
+// span arithmetic — live in INDEX space, so when they disagree with the real
+// height nothing on screen looks wrong. A stale value there instead puts the
+// resize anchor and selection scroll-into-view one line further out of phase
+// per preceding separator, degrading with distance down the transcript, and no
+// frame golden can see it. Asking the entry beats naming the number.
+func (e *lineEntry) sepHeight() int {
 	if e.sep {
-		return len(e.rows) + 3
+		return sepRows
 	}
-	return len(e.rows)
+	return 0
 }
+
+// height is the number of lines the entry occupies, separator included.
+func (e *lineEntry) height() int { return e.sepHeight() + len(e.rows) }
 
 // lineIndex is the per-frame index. entries and scratch ping-pong so a rebuild
 // can compare the new shape against the old one without allocating.
@@ -89,7 +122,7 @@ func (t *transcript) buildIndex() {
 			turn: m.Turn, key: keyOf(m), start: total, sep: sep, open: open, rows: rows,
 		})
 		if sep {
-			total += 3
+			total += sepRows
 		}
 		total += len(rows)
 	}
@@ -142,9 +175,9 @@ func (t *transcript) rebuildLineLT() {
 	for k := range t.index.entries {
 		e := &t.index.entries[k]
 		i := e.start
-		if e.sep {
-			t.lineKey[i], t.lineKey[i+1], t.lineKey[i+2] = e.key, e.key, e.key
-			i += 3
+		for range e.sepHeight() {
+			t.lineKey[i] = e.key
+			i++
 		}
 		for range e.rows {
 			t.lineKey[i] = e.key
@@ -207,14 +240,16 @@ func (t *transcript) lineAt(i int) string {
 // re-rendering prose for) every message the selection touches on every ^N.
 func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSpan) string {
 	if e.sep {
+		// The one place the separator's rows are NAMED rather than counted:
+		// a blank, then the rule. Everything else asks sepHeight().
 		switch rel {
-		case 0, 2:
+		case 0:
 			return ""
 		case 1:
 			return t.transRule()
 		}
-		rel -= 3
 	}
+	rel -= e.sepHeight()
 	r := e.rows[rel]
 	line := r.text
 	if r.ref.valid() {
@@ -270,10 +305,7 @@ func (t *transcript) nodeSpanOf(ref nodeRef) (nodeSpan, bool) {
 		if e.turn != ref.turn {
 			continue
 		}
-		base := e.start
-		if e.sep {
-			base += 3
-		}
+		base := e.start + e.sepHeight()
 		for i := range e.rows {
 			if e.rows[i].ref != ref {
 				continue
