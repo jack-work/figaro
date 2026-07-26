@@ -60,12 +60,13 @@ type Incipit struct {
 	thinking bool // open region is an OpenThinking placeholder (adopted by the next Open)
 
 	// Open-message live region:
-	liveTurn   int
-	liveFrom uint64   // start of the open suffix; with liveTurn it identifies the region
-	role     string   // open message's role; selects Bookend (assistant) vs Rule
-	live     []string // rows on screen for the open message
-	vt       int      // rows of the live region scrolled above the viewport
-	cur      int      // cursor row within the live region (0 = top)
+	liveTurn  int
+	liveFrom  uint64   // start of the open suffix
+	liveCount int      // node count of the open suffix; (turn,from,count) is the region's identity
+	role      string   // open message's role; selects Bookend (assistant) vs Rule
+	live      []string // rows on screen for the open message
+	vt        int      // rows of the live region scrolled above the viewport
+	cur       int      // cursor row within the live region (0 = top)
 }
 
 // NewIncipit returns an inline renderer drawing to term via view.
@@ -88,8 +89,27 @@ func NewIncipit(term Terminal, view NodeView) *Incipit {
 // steering interjection drop the whole streaming region — seventeen rows of
 // it — into scrollback, after which the rest of the turn was frozen again and
 // the entire post-steer block printed twice.
+// A message IS the live region only when it covers the SAME EXTENT. Start
+// alone is not identity either: while the agent streams, the open suffix begins
+// at the steer's own index, so a one-node steering interjection and a
+// four-node streaming region both report From=1. Matching on start made Freeze
+// treat the steer as the whole region and dropBelow() nineteen rows of
+// in-flight output into scrollback, after which the server reopened past the
+// steer and the same body was frozen again.
 func (i *Incipit) isLiveRegion(m aria.Message) bool {
-	return i.liveTurn != 0 && m.Turn == i.liveTurn && m.From == i.liveFrom
+	return i.liveTurn != 0 && m.Turn == i.liveTurn &&
+		m.From == i.liveFrom && len(m.Nodes) == i.liveCount
+}
+
+// overlapsLiveRegion reports whether a closed message covers nodes the live
+// region is ALSO showing. The region is then stale: those nodes are being
+// delivered as closed messages instead, and the producer will reopen past them.
+// Erasing is the only correct response — dropping them to scrollback prints
+// them twice, once from the abandoned region and once from the frozen message.
+func (i *Incipit) overlapsLiveRegion(m aria.Message) bool {
+	return i.liveTurn != 0 && m.Turn == i.liveTurn &&
+		m.From+uint64(len(m.Nodes)) > i.liveFrom &&
+		m.From < i.liveFrom+uint64(i.liveCount)
 }
 
 func (i *Incipit) Freeze(m aria.Message) {
@@ -104,6 +124,11 @@ func (i *Incipit) Freeze(m aria.Message) {
 		// through to print the message in full — otherwise the reply is lost from
 		// scrollback entirely, which is what happened at every height below the
 		// pager floor.
+		io.WriteString(i.term, "\x1b[J")
+		i.reset()
+	} else if i.overlapsLiveRegion(m) {
+		// Stale region: erase it and print the message fresh. The producer
+		// reopens past these nodes, so anything kept here would be duplicated.
 		io.WriteString(i.term, "\x1b[J")
 		i.reset()
 	}
@@ -194,7 +219,7 @@ func (i *Incipit) Open(turn int, from uint64, role string, nodes []livedoc.Node)
 	// content fills in above it, never orphaning a header/footer to scrollback.
 	if i.thinking && role == i.role {
 		i.thinking = false
-		i.liveTurn, i.liveFrom = turn, from
+		i.liveTurn, i.liveFrom, i.liveCount = turn, from, len(nodes)
 		i.paint(i.compose(nodes))
 		return
 	}
@@ -211,6 +236,7 @@ func (i *Incipit) Open(turn int, from uint64, role string, nodes []livedoc.Node)
 		i.reset()
 		i.liveTurn, i.liveFrom = turn, from
 	}
+	i.liveCount = len(nodes)
 	i.role = role
 	i.paint(i.compose(nodes))
 }
@@ -488,6 +514,6 @@ func (i *Incipit) dropBelow() {
 }
 
 func (i *Incipit) reset() {
-	i.liveTurn, i.liveFrom, i.role, i.live, i.vt, i.cur = 0, 0, "", nil, 0, 0
+	i.liveTurn, i.liveFrom, i.liveCount, i.role, i.live, i.vt, i.cur = 0, 0, 0, "", nil, 0, 0
 	i.thinking = false
 }
