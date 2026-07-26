@@ -73,7 +73,10 @@ trap cleanup EXIT
 
 # --- build ------------------------------------------------------------
 echo "chalkbench: building $REPO/cmd/figaro -> $FIG" >&2
-go build -o "$FIG" ./cmd/figaro || die "build failed"
+# -ldflags stamps the revision: a plain `go build` in a git worktree records no
+# vcs.revision, which silently disables the CLI/daemon build handshake.
+go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse --short=12 HEAD)" \
+  -o "$FIG" ./cmd/figaro || die "build failed"
 
 if [ -z "$LOADOUT" ]; then
   cfg="${FIGARO_CONFIG_DIR:-$HOME/.config/figaro}/config.toml"
