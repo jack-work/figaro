@@ -34,24 +34,6 @@ type sessionStatus struct {
 	metrics   aria.Metrics
 	turn      turnStatus
 	tick      uint64
-
-	// The steer composer. It lives here, rather than on the pager beside the
-	// search box, because the composer must work in BOTH views and this struct
-	// is the one surface both already share: bookendLines() paints the incipit
-	// footer from it and transcript.footerRows() paints the pager footer from
-	// it. Putting the state anywhere else would mean plumbing it to two
-	// renderers that already hold a pointer to this one.
-	composing   bool
-	composeText string
-	// composeSteer is whether the draft would be a STEER. True while a turn is
-	// running. It goes false when that turn ends underneath a draft: the turn it
-	// would have steered is over, so sending it must open a NEW exchange rather
-	// than be absorbed into a finished one.
-	composeSteer bool
-	// composeHeld records that a draft outlived its turn and is the only reason
-	// the process is still up. Esc then means "discard and exit", not merely
-	// "close the box".
-	composeHeld bool
 }
 
 func newSessionStatus(figaroID string, startedAt time.Time) *sessionStatus {
@@ -283,16 +265,6 @@ func bookendLines(status *sessionStatus) []string {
 	// Two rows only: rule + status. The blank that gives the footer breathing
 	// room is painted ABOVE it by compose()'s pre-closer blank, not between the
 	// rule and the status text.
-	//
-	// While composing, the status row becomes the draft — exactly as the pager's
-	// footer becomes the query line under '/'. One footer, one row, whichever
-	// mode owns the keyboard.
-	if status.composingNow() {
-		return []string{
-			term.Dim(status.ruleLine(w, "")),
-			term.Dim(status.composeLine(w)),
-		}
-	}
 	return []string{
 		term.Dim(status.ruleLine(w, "")),
 		term.Dim(status.statusLine(w, false)),
@@ -311,143 +283,4 @@ func formatCtxCell(tokens int) string {
 	default:
 		return fmt.Sprintf("%d", tokens)
 	}
-}
-
-// ---------------------------------------------------------------------------
-// The steer composer.
-//
-// Steering intent cannot be inferred: a prompt pipelined by a script and a
-// steer typed by someone watching the stream are byte-identical on the wire,
-// and guessing wrong in the merging direction silently swallows a real
-// question. So intent is CARRIED (rpc.QuaRequest.Steering). This composer is
-// the one place the intent is knowable by construction — you cannot type into
-// a live view without watching it — so everything it submits is a steer.
-// ---------------------------------------------------------------------------
-
-// composeOpen starts (or refocuses) the composer. steer says whether a turn is
-// running, and therefore whether the draft is aimed at it.
-func (s *sessionStatus) composeOpen(steer bool) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	s.composing = true
-	s.composeSteer = steer
-	s.mu.Unlock()
-}
-
-// composeTurnEnded is called when a turn finishes. If a draft is in flight the
-// composer is KEPT OPEN and the process held up: the user typed something and we
-// never silently destroy that. What changes is what it means — the turn it would
-// have steered is over, so it becomes an ordinary prompt. Reports whether it is
-// now holding the process open.
-func (s *sessionStatus) composeTurnEnded() bool {
-	if s == nil {
-		return false
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.composing || strings.TrimSpace(s.composeText) == "" {
-		return false
-	}
-	s.composeSteer = false
-	s.composeHeld = true
-	return true
-}
-
-// composeHeldOpen reports whether a draft is the only reason we are still up.
-func (s *sessionStatus) composeHeldOpen() bool {
-	if s == nil {
-		return false
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.composeHeld
-}
-
-// composeCancel abandons the draft. Reports whether it had been holding the
-// process open, in which case the caller should exit.
-func (s *sessionStatus) composeCancel() bool {
-	if s == nil {
-		return false
-	}
-	s.mu.Lock()
-	held := s.composeHeld
-	s.composing, s.composeText, s.composeHeld = false, "", false
-	s.mu.Unlock()
-	return held
-}
-
-// composeTake closes the composer and returns the draft, trimmed, along with
-// whether it should be sent as a steer and whether it had been holding the
-// process open. An empty draft submits nothing.
-func (s *sessionStatus) composeTake() (text string, steer, held bool) {
-	if s == nil {
-		return "", false, false
-	}
-	s.mu.Lock()
-	text, steer, held = strings.TrimSpace(s.composeText), s.composeSteer, s.composeHeld
-	s.composing, s.composeText, s.composeHeld = false, "", false
-	s.mu.Unlock()
-	return text, steer, held
-}
-
-// composeType appends one input BYTE to the draft.
-//
-// It must append the raw byte, not string(b): converting a byte to a string
-// treats it as a CODE POINT and re-encodes it, so the two bytes of 'é'
-// (0xC3 0xA9) would each become their own rune and render as mojibake
-// ("Ã©"). A multi-byte rune arrives one byte per read when typed, so the
-// draft accumulates bytes and is only valid UTF-8 once the last continuation
-// byte lands — which is exactly what composeBackspace's []rune conversion and
-// the width-clipped render both expect.
-func (s *sessionStatus) composeType(b byte) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	if s.composing {
-		s.composeText += string([]byte{b})
-	}
-	s.mu.Unlock()
-}
-
-// composeBackspace deletes the last rune (not the last byte — a multi-byte
-// rune must not be split into an invalid tail).
-func (s *sessionStatus) composeBackspace() {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	if r := []rune(s.composeText); len(r) > 0 {
-		s.composeText = string(r[:len(r)-1])
-	}
-	s.mu.Unlock()
-}
-
-// composingNow reports whether the composer owns the keyboard.
-func (s *sessionStatus) composingNow() bool {
-	if s == nil {
-		return false
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.composing
-}
-
-// composeLine is the status row while composing: the draft behind a marker that
-// says what Enter will DO. "steer" while a turn is running; "send" once it has
-// ended, because the exchange it would have steered is over and Enter now opens
-// a new one. The label is the only warning the user gets, so it must not lie.
-func (s *sessionStatus) composeLine(width int) string {
-	if s == nil {
-		return ""
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	label := "steer"
-	if !s.composeSteer {
-		label = "send"
-	}
-	return clipToWidth(label+" ↳ "+s.composeText+"▏", width)
 }

@@ -1219,9 +1219,6 @@ func (t *transcript) footerRows(total, body int) (rule, status string) {
 		}
 	}
 	rule = "\x1b[2m" + t.status.ruleLine(t.w, pos) + "\x1b[0m"
-	if t.status.composingNow() {
-		return rule, "\x1b[2m" + t.status.composeLine(t.w) + "\x1b[0m"
-	}
 	if t.inSearch {
 		return rule, "\x1b[2m" + clipToWidth("/"+t.query, t.w) + "\x1b[0m"
 	}

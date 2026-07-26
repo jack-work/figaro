@@ -151,18 +151,24 @@ command stays open until you close the pager.
 
 ## Steering: messages mid-turn
 
-A message sent to a busy aria with **`fig send --steer`** does not wait for a new
-turn — it folds into the *current* turn as a **steering** node, which the model
-reads on its next round. In the stream it appears as a `steering` node (rendered
-under a `↳ input` gutter) positioned where it arrived, inside the agent's turn.
-The client tells "my turn is done" from "a turn ended with my steer still queued"
+A message sent to a **busy** aria does not wait for a new turn — it folds into
+the *current* turn as a **steering** node, which the model reads on its next
+round. In the stream it appears as a `steering` node (rendered under a
+`↳ input` gutter) positioned where it arrived, inside the agent's turn. The
+client tells "my turn is done" from "a turn ended with my steer still queued"
 via `turn.done`'s idle flag, so a steering send waits for *its own* completion.
 
-**Without `--steer`, a message sent to a busy aria opens its OWN turn** and is
-answered after the current one finishes. Steering is **carried, not inferred**:
-intent cannot be read off timing, and guessing "steer" merges two exchanges —
-which silently swallowed real questions. A new turn is visible and recoverable;
-a swallowed one is not.
+**Timing is the whole rule, and there is no flag.** One command, identical
+whether or not the aria is busy: arrive while a turn is running and you steer
+it; arrive when nothing is running and you open a turn. A steer is not a turn,
+so it does not get one.
+
+The classification is made in exactly one place — **the code that drains the
+queue into a turn** — because that is the only point that knows the turn
+boundary as the agent itself sees it, rather than as a client call returning.
+Nothing upstream declares it and nothing downstream may override it. The
+`steering` bit is persisted so a replayed log classifies the same way it did
+live.
 
 > Steering is a server-side feature (the mid-turn drain). It requires a daemon
 > built with it; an older long-lived daemon will queue the message as a separate

@@ -504,16 +504,9 @@ func (t *livelogTurn) transcriptScroll(delta int) { t.tr.scrollBy(delta) }
 // see transcriptMode) — but it remains the plain question to ask about state.
 func (t *livelogTurn) transcriptSearching() bool { return t.tr.active && t.tr.inSearch }
 
-// transcriptMode is the keymap's view of the pager: which of the four input
-// modes a keystroke lands in. The composer is asked FIRST and sits above the
-// pager, because it is the one text box that must work inline as well — a
-// short turn never promotes, and the user still wants to steer it.
-func (t *livelogTurn) transcriptMode() keyMode {
-	if t.status.composingNow() {
-		return modeCompose
-	}
-	return t.tr.mode()
-}
+// transcriptMode is the keymap's view of the pager: which input mode a
+// keystroke lands in.
+func (t *livelogTurn) transcriptMode() keyMode { return t.tr.mode() }
 
 // Transcript page fetches run off-lock; applying a page restores the viewport
 // anchor and evicts the far edge of the bounded window.
@@ -564,7 +557,7 @@ func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bo
 	return renderNode(n, width, bashCap, uint64(tick), v.settings != nil && v.settings.verbose)
 }
 
-// turnFinished reports whether the turn being watched has ended. The composer
+// turnFinished reports whether the turn being watched has ended. The drain
 // asks so it knows whether a draft is a steer (aimed at a running turn) or an
 // ordinary prompt (which will open its own).
 func (t *livelogTurn) turnFinished() bool { return t.finished }

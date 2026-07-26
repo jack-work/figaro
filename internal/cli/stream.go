@@ -131,26 +131,16 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				break
 			}
 			running = false
-			// A draft typed into the live view outlives its turn: never silently
-			// destroy something the user typed. Keep the composer open with the
-			// text intact and hold the process up, so Enter can send it as a NEW
-			// turn (the one it would have steered is over) or Esc can discard and
-			// exit. The footer's label flips from "steer" to "send" so the change
-			// in meaning is visible rather than implied.
-			// NOTE: onNotify already holds mu (taken at the top with a deferred
-			// unlock). mu is a plain sync.Mutex and is NOT reentrant — locking
-			// it again here deadlocked the notify pump on turn.done, which then
-			// wedged the input loop too (it needs the same lock to render), so
-			// Ctrl-C / Ctrl-D / q / Esc all became dead keys and the process
-			// could never exit.
-			held := lt.status.composeTurnEnded()
-			if held {
-				lt.render()
-			}
 			// Close on turn-done only in incipit. Once the transcript pager is
 			// up — however it was entered — it has listen semantics: the session
 			// stays open until an explicit q / Ctrl-D / Ctrl-C.
-			if !lt.inTranscript() && !held {
+			//
+			// NOTE for anyone adding work here: onNotify already holds mu with a
+			// deferred unlock, and mu is a plain sync.Mutex — NOT reentrant.
+			// Re-locking it on this path once deadlocked the notify pump, and the
+			// input loop with it (rendering needs the same lock), so every exit
+			// key went dead and the process could never be closed.
+			if !lt.inTranscript() {
 				select {
 				case doneCh <- struct{}{}:
 				default:
@@ -223,7 +213,6 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			in = &interactiveInput{
 				tc: tc, lt: lt, fcli: fcli, mu: &mu, set: &set,
 				figaroID: figaroID, cancel: cancel, disconnectCh: disconnectCh,
-				steer: fcli.Qua,
 			}
 			if set.listen {
 				in.enterTranscript() // --listen: open the pager immediately
@@ -232,7 +221,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		}
 	}
 
-	cursor, active, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard(), set.steer)
+	cursor, active, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard())
 	if qerr != nil {
 		die("prompt: %s", qerr)
 	}
@@ -310,11 +299,6 @@ type interactiveInput struct {
 	searchGen    uint64
 	searchQuery  string
 	searchDone   chan struct{}
-	// steer submits a composed prompt as a steer. A narrow function rather than
-	// a method on transcriptReadClient: the composer needs exactly one verb, and
-	// widening that interface would force every test stub to grow a method it
-	// never calls. Nil in tests — the composer then edits but does not send.
-	steer func(context.Context, string, *rpc.ChalkboardInput, bool) (int, bool, error)
 	// pageInFlight guards the single background history fetch. Page fetches are
 	// asynchronous so that scrolling never waits on an RPC; pageDone is closed
 	// when the worker finishes (tests synchronize on it).
@@ -700,10 +684,9 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 		in.mu.Lock()
 		mode := in.lt.transcriptMode()
 		// Mouse sequences are only expected when the PAGER is up — that is where
-		// mouse reporting is enabled. Ask the pager, not the mode: the composer is
-		// a non-incipit mode that can be open INLINE, and letting ldmouse.Parse
-		// see input there swallows a bare Esc as a possible mouse prefix and the
-		// composer can never be cancelled.
+		// mouse reporting is enabled. Ask the pager, not the mode: a non-incipit
+		// mode can be live without the pager being up, and letting ldmouse.Parse
+		// see input then swallows a bare Esc as a possible mouse prefix.
 		active := in.lt.transcriptActive()
 		in.mu.Unlock()
 		if active {
@@ -795,28 +778,6 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			}
 			ev = keyEvent{b: b, mode: mode}
 		}
-		// In incipit, ANY printable character starts composing and becomes the
-		// first character of the draft. This is checked BEFORE the opener
-		// promotion below, and deliberately preempts it.
-		//
-		// The alternative — requiring a trigger key — loses the user's first
-		// word, silently. Worse, if the trigger appears mid-sentence, everything
-		// before it is discarded and everything after becomes the message, which
-		// is meaning-changing loss rather than merely missing input. English
-		// sentences contain 'i'.
-		//
-		// The cost, stated plainly: 'y' no longer copies the aria id from
-		// incipit, and '! / ? d g G j k Q u' no longer open the pager from
-		// incipit. They keep working in the pager, which is reached by Ctrl-T or
-		// Ctrl-L — control keys, which are never text. That asymmetry is honest:
-		// the pager is a navigation surface and the inline view is not.
-		if ev.mode == modeIncipit && composeStarts(ev) {
-			in.mu.Lock()
-			in.lt.status.composeOpen(!in.lt.turnFinished())
-			in.mu.Unlock()
-			in.composeLiteral(ev)
-			continue
-		}
 		// A key whose pager meaning is a sensible OPENING gesture yanks the
 		// pager up first, so it acts on arrival instead of looking like a dead
 		// keyboard. Which keys those are is one field on one table row.
@@ -834,13 +795,8 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			}
 			continue
 		}
-		// Nothing owns it up here. The composer takes literal text next, because
-		// it must work in incipit too — where there is no pager to fall through
-		// to. Then the pager: a motion, a panel, or literal text in the search box.
-		if ev.mode == modeCompose {
-			in.composeLiteral(ev)
-			continue
-		}
+		// Nothing owns it up here: hand it to the pager — a motion, a panel, or
+		// literal text in the search box.
 		if ev.mode != modeIncipit {
 			in.mu.Lock()
 			in.cancelTranscriptSearchLocked()
@@ -1066,105 +1022,4 @@ func termWidth() int {
 		return w
 	}
 	return 80
-}
-
-// ---------------------------------------------------------------------------
-// The steer composer's input actions.
-//
-// These are INPUT-level rows, not pager rows, for one reason: incipit has no
-// transcript to hand a key to, and the composer must work inline — a long turn
-// auto-promotes to the pager, but a short one does not, and the user wants to
-// steer in both. The draft lives on sessionStatus because that is the single
-// object both footers already read (see the comment there).
-// ---------------------------------------------------------------------------
-
-func inputComposeOpen(in *interactiveInput, _ keyEvent) keyVerdict {
-	in.mu.Lock()
-	// A draft is a steer only while a turn is actually running; opening the
-	// composer after one has ended composes an ordinary prompt.
-	in.lt.status.composeOpen(!in.lt.turnFinished())
-	in.lt.render()
-	in.mu.Unlock()
-	return keyHandled
-}
-
-// inputComposeCancel discards the draft. If that draft was the only thing
-// keeping the process alive (its turn ended underneath it), Esc means exit.
-func inputComposeCancel(in *interactiveInput, _ keyEvent) keyVerdict {
-	in.mu.Lock()
-	held := in.lt.status.composeCancel()
-	in.lt.render()
-	in.mu.Unlock()
-	if held {
-		return inputDisconnect(in, keyEvent{})
-	}
-	return keyHandled
-}
-
-func inputComposeBackspace(in *interactiveInput, _ keyEvent) keyVerdict {
-	in.mu.Lock()
-	in.lt.status.composeBackspace()
-	in.lt.render()
-	in.mu.Unlock()
-	return keyHandled
-}
-
-// inputComposeSubmit sends the draft. Steering intent is not a guess here: a
-// prompt typed into a LIVE view is by construction aimed at the turn being
-// watched. But if that turn ENDED while the draft sat there, it is no longer a
-// steer — sending it as one would absorb a real question into a finished
-// exchange, which is exactly the silent merge we spent the night removing. It
-// becomes an ordinary prompt and opens its own turn.
-func inputComposeSubmit(in *interactiveInput, _ keyEvent) keyVerdict {
-	in.mu.Lock()
-	text, steer, held := in.lt.status.composeTake()
-	in.lt.render()
-	in.mu.Unlock()
-	if text == "" {
-		if held {
-			return inputDisconnect(in, keyEvent{})
-		}
-		return keyHandled // Enter on a blank draft just closes the box
-	}
-	go in.submitSteer(text, steer)
-	return keyHandled
-}
-
-// submitSteer performs the RPC off the read loop — the loop must never block on
-// the network, or the terminal stops responding mid-turn. On success the queued
-// panel ('Q') is refreshed so the user can see the prompt was accepted.
-func (in *interactiveInput) submitSteer(text string, steer bool) {
-	if in.steer == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if _, _, err := in.steer(ctx, text, buildPromptChalkboard(), steer); err != nil {
-		in.mu.Lock()
-		in.lt.setTranscriptQueued(nil, "send failed: "+err.Error())
-		in.lt.render()
-		in.mu.Unlock()
-		return
-	}
-	in.refreshQueued()
-}
-
-// composeStarts reports whether a key should begin composing in the inline
-// view: any printable byte, including the UTF-8 continuation bytes of a
-// multi-byte rune (>= 0x80). Nav keys and control chords are excluded — those
-// are gestures, not text, and Ctrl-C/Ctrl-D/Ctrl-T/Ctrl-O must keep working.
-func composeStarts(ev keyEvent) bool {
-	return ev.nav == navNone && ev.ctrl == 0 && ev.b >= 0x20 && ev.b != 0x7f
-}
-
-// composeLiteral appends a printable byte to the draft. Control bytes that have
-// no compose-mode row are dropped rather than injected as garbage.
-func (in *interactiveInput) composeLiteral(ev keyEvent) {
-	if ev.nav != navNone || ev.ctrl != 0 || ev.b < 0x20 {
-		return
-	}
-	in.mu.Lock()
-	in.lt.status.composeType(ev.b)
-	in.lt.render()
-	in.mu.Unlock()
 }

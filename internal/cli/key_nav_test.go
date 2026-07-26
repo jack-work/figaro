@@ -277,10 +277,8 @@ func TestTranscriptNav_SearchPromptOwnsTheKeyboard(t *testing.T) {
 	}
 }
 
-// In incipit the arrow cluster still opens the pager, because an arrow is a
-// gesture and never text. Its letter aliases no longer do: they compose. That
-// asymmetry is the whole point — the inline view is where you type, the pager is
-// where you navigate.
+// In incipit both the arrow cluster and its letter aliases open the pager, so a
+// motion acts on arrival instead of looking like a dead keyboard.
 func TestNavArrowsStillOpenThePagerFromIncipit(t *testing.T) {
 	for _, seq := range []string{"\x1b[A", "\x1b[B", "\x1b[5~", "\x1b[6~", "\x1b[H", "\x1b[F"} {
 		var out countingWriter
@@ -290,14 +288,12 @@ func TestNavArrowsStillOpenThePagerFromIncipit(t *testing.T) {
 			t.Errorf("%q no longer opens the pager from incipit", seq)
 		}
 	}
-	// ...and a letter composes instead.
+	// ...and so does the letter alias. Nothing in incipit swallows a keystroke
+	// as text: there is no composer, and typing is not an input surface here.
 	var out countingWriter
 	in, lt := navInput(t, &out, false)
 	feed(t, in, "j")
-	if lt.transcriptActive() {
-		t.Error("'j' opened the pager from incipit; it must start composing")
-	}
-	if lt.transcriptMode() != modeCompose {
-		t.Errorf("'j' did not start composing: mode=%v", lt.transcriptMode())
+	if !lt.transcriptActive() {
+		t.Error("'j' no longer opens the pager from incipit")
 	}
 }

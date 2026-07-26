@@ -32,16 +32,14 @@ func TestInputConsume_BangOpensStatusPanel(t *testing.T) {
 	}
 }
 
-// ...and from incipit it is text, not a gesture.
-func TestInputConsume_BangComposesInIncipit(t *testing.T) {
+// ...and from incipit it is an opening gesture: the pager comes up and the
+// panel acts on arrival, rather than the key looking like a dead keyboard.
+func TestInputConsume_BangOpensThePagerFromIncipit(t *testing.T) {
 	var out countingWriter
 	in, lt := navInput(t, &out, false)
 	feed(t, in, "!")
-	if lt.transcriptActive() {
-		t.Fatal("! opened the pager from incipit; it must start composing")
-	}
-	if lt.transcriptMode() != modeCompose {
-		t.Fatalf("! did not start composing: mode=%v", lt.transcriptMode())
+	if !lt.transcriptActive() {
+		t.Fatal("! no longer opens the pager from incipit")
 	}
 }
 
@@ -53,11 +51,10 @@ func TestOpensTranscriptFor_RejectedKeys(t *testing.T) {
 			t.Fatalf("key %q must not be an opening gesture", b)
 		}
 	}
-	// The panel keys are printable, so from incipit they compose too. They keep
-	// their panel meaning inside the pager, which ^T/^L reach.
+	// The panel keys ARE opening gestures — they raise the pager and act.
 	for _, b := range []byte{'!', '?', 'Q'} {
-		if opensTranscriptFor(b) {
-			t.Fatalf("printable panel key %q must compose from incipit", b)
+		if !opensTranscriptFor(b) {
+			t.Fatalf("panel key %q must open the pager from incipit", b)
 		}
 	}
 }
