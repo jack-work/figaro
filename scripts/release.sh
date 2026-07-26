@@ -6,6 +6,7 @@
 #   scripts/release.sh minor
 #   scripts/release.sh patch --dry-run
 #   scripts/release.sh major -m "the great renaming" --notes-file NOTES.md
+#   scripts/release.sh patch --tag-message .git/RELEASE_EDITMSG   # resume
 #
 # What it does, in order:
 #
@@ -15,7 +16,9 @@
 #      only if it differs. Cutting the same version twice is refused.
 #   3. Gate on `go build && go vet && go test` (skip with --no-check).
 #   4. Write an annotated tag whose message IS the release notes: subject
-#      "vX.Y.Z — title", body prose. Opens $EDITOR unless -m/--notes-file.
+#      "vX.Y.Z — title", body prose (optional — a patch may be one line).
+#      Opens $EDITOR unless -m/--notes-file/--tag-message. Your message is
+#      never thrown away: on any abort it is saved to .git/RELEASE_EDITMSG.
 #   5. Move the `release` branch to the tag — that is what a `nix profile`
 #      entry tracking ?ref=release will pick up.
 #   6. Push branch + release + tag, then create the GitHub release, reading
@@ -37,6 +40,7 @@ CHECK=1
 DO_GH=1
 SUBJECT=""
 NOTES_FILE=""
+TAG_MESSAGE_FILE=""
 REMOTE="origin"
 BRANCH="main"
 RELEASE_BRANCH="release"
@@ -60,6 +64,9 @@ usage: scripts/release.sh <major|minor|patch> [options]
                            Skips the editor when --notes-file is also given.
       --notes-file <path>  File holding the release-notes body (prose).
                            "-" reads stdin.
+      --tag-message <path> File holding the WHOLE tag message, subject line
+                           included. Verbatim, no editor. This is what an
+                           aborted run tells you to resume with.
   -n, --dry-run            Print every mutation without performing it.
       --no-check           Skip go build/vet/test.
       --no-github          Tag and push, but create no GitHub release.
@@ -77,6 +84,7 @@ while [ $# -gt 0 ]; do
 		major|minor|patch) BUMP="$1" ;;
 		-m|--message)      SUBJECT="${2:-}"; shift ;;
 		--notes-file)      NOTES_FILE="${2:-}"; shift ;;
+		--tag-message)     TAG_MESSAGE_FILE="${2:-}"; shift ;;
 		-n|--dry-run)      DRY=1 ;;
 		--no-check)        CHECK=0 ;;
 		--no-github)       DO_GH=0 ;;
@@ -134,6 +142,7 @@ IFS=. read -r MAJ MIN PAT <<<"${last_tag#v}"
 case "$MAJ$MIN$PAT" in
 	*[!0-9]*) die "cannot parse version from tag '$last_tag'" ;;
 esac
+MAJ_ORIG=$MAJ; MIN_ORIG=$MIN; PAT_ORIG=$PAT
 
 case "$BUMP" in
 	major) MAJ=$((MAJ + 1)); MIN=0; PAT=0 ;;
@@ -157,6 +166,26 @@ printf '%s\n' "$unreleased" | sed 's/^/    /' >&2
 hits=$(grep -c '^ *version = "[0-9]\+\.[0-9]\+\.[0-9]\+";' flake.nix || true)
 [ "$hits" = 1 ] || die "expected exactly one version line in flake.nix, found $hits"
 flake_version=$(sed -n 's/^ *version = "\([0-9.]*\)";.*/\1/p' flake.nix)
+
+# Refuse to move the version backwards. flake.nix ahead of the computed
+# version means a bump already landed without a tag (that is this repo's
+# normal state between a feature merge and its release) — silently
+# rewriting it down would understate the release and lie in the nix store.
+if [ "$flake_version" != "$VERSION" ] \
+	&& [ "$(printf '%s\n%s\n' "$VERSION" "$flake_version" | sort -V | tail -1)" = "$flake_version" ]; then
+	suggest=""
+	for b in patch minor major; do
+		case "$b" in
+			patch) c="$MAJ_ORIG.$MIN_ORIG.$((PAT_ORIG + 1))" ;;
+			minor) c="$MAJ_ORIG.$((MIN_ORIG + 1)).0" ;;
+			major) c="$((MAJ_ORIG + 1)).0.0" ;;
+		esac
+		[ "$c" = "$flake_version" ] && suggest="$b"
+	done
+	msg="flake.nix is at $flake_version, but $BUMP off $last_tag gives $VERSION"
+	[ -n "$suggest" ] && msg="$msg — you probably want '$suggest'"
+	die "$msg (refusing to move the version backwards)"
+fi
 
 if [ "$flake_version" = "$VERSION" ]; then
 	say "flake.nix already at $VERSION"
@@ -189,8 +218,13 @@ fi
 # ---------------------------------------------------------------------- tag
 
 tmpl=$(mktemp); trap 'rm -f "$tmpl"' EXIT
+SAVED="$(git rev-parse --git-dir)/RELEASE_EDITMSG"
 
-if [ -n "$NOTES_FILE" ]; then
+if [ -n "$TAG_MESSAGE_FILE" ]; then
+	[ -r "$TAG_MESSAGE_FILE" ] || die "cannot read --tag-message file: $TAG_MESSAGE_FILE"
+	cat "$TAG_MESSAGE_FILE" >"$tmpl"
+	tag_args=(-F "$tmpl")
+elif [ -n "$NOTES_FILE" ]; then
 	[ -n "$SUBJECT" ] || die "--notes-file requires -m/--message"
 	printf '%s — %s\n\n' "$TAG" "$SUBJECT" >"$tmpl"
 	if [ "$NOTES_FILE" = "-" ]; then cat >>"$tmpl"; else cat "$NOTES_FILE" >>"$tmpl"; fi
@@ -198,9 +232,13 @@ if [ -n "$NOTES_FILE" ]; then
 else
 	# Editor template. Comment lines are stripped by --cleanup=strip.
 	{
-		printf '%s — %s\n\n\n' "$TAG" "$SUBJECT"
-		printf '# Subject above: "%s — <title>". Body below: prose, not a\n' "$TAG"
-		printf '# changelog list. This message becomes the GitHub release notes.\n#\n'
+		printf '%s — %s\n\n' "$TAG" "$SUBJECT"
+		printf '# Line 1 is the subject: "%s — <title>". It becomes the\n' "$TAG"
+		printf '# GitHub release title, so give it a title.\n#\n'
+		printf '# Everything after the blank line is the body — prose, not a\n'
+		printf '# changelog list — and becomes the release notes. The body is\n'
+		printf '# OPTIONAL: a one-line patch release is perfectly good, and the\n'
+		printf '# notes then fall back to the commit list below.\n#\n'
 		printf '# Commits since %s:\n' "$last_tag"
 		printf '%s\n' "$unreleased" | sed 's/^/#   /'
 	} >"$tmpl"
@@ -212,15 +250,36 @@ if [ "$DRY" = 1 ]; then
 	printf '   \033[2m[dry-run]\033[0m git tag -a --cleanup=strip %s %s\n' "${tag_args[*]}" "$TAG" >&2
 	printf '   \033[2m[dry-run]\033[0m tag message template:\n' >&2
 	sed 's/^/       /' "$tmpl" >&2
+	SUBJECT_OUT="$TAG — (from your editor)"
+	NOTES_OUT="(from your editor)"
 else
 	git tag -a --cleanup=strip "${tag_args[@]}" "$TAG"
 
-	subject=$(git for-each-ref "refs/tags/$TAG" --format='%(contents:subject)')
-	body=$(git for-each-ref "refs/tags/$TAG" --format='%(contents:body)')
-	case "$subject" in
-		*"— "|*"—") git tag -d "$TAG" >/dev/null; die "tag subject has no title — aborted, tag removed" ;;
+	# Split the raw message ourselves: line 1 is the subject, the rest is the
+	# body. git's own %(contents:subject) means "first PARAGRAPH", which would
+	# silently swallow a body written without a blank line after the title.
+	msg=$(git for-each-ref "refs/tags/$TAG" --format='%(contents)')
+	SUBJECT_OUT=${msg%%$'\n'*}
+	NOTES_OUT=${msg#"$SUBJECT_OUT"}
+	while [ "${NOTES_OUT#$'\n'}" != "$NOTES_OUT" ]; do NOTES_OUT=${NOTES_OUT#$'\n'}; done
+
+	# Whatever happens next, the words you wrote are not lost.
+	printf '%s\n' "$msg" >"$SAVED"
+
+	case "$SUBJECT_OUT" in
+		""|*"— "|*"—")
+			git tag -d "$TAG" >/dev/null
+			die "tag subject has no title — aborted, tag removed.
+    Your message was saved. Resume with:
+        $0 $BUMP --tag-message $SAVED" ;;
 	esac
-	[ -n "${body//[[:space:]]/}" ] || { git tag -d "$TAG" >/dev/null; die "tag body is empty — aborted, tag removed"; }
+
+	# An empty body is allowed — a patch release may be one honest line.
+	# The release notes then fall back to the commit list.
+	if [ -z "${NOTES_OUT//[[:space:]]/}" ]; then
+		say "no body — release notes will be the commit list since $last_tag"
+		NOTES_OUT=$(git log --no-merges --format='- %s' "$last_tag..$TAG")
+	fi
 fi
 
 # ------------------------------------------------------- release branch + push
@@ -248,8 +307,8 @@ if [ "$DO_GH" = 1 ]; then
 		printf '   \033[2m[dry-run]\033[0m gh release create %s --verify-tag --title ... --notes ...\n' "$TAG" >&2
 	else
 		gh release create "$TAG" --verify-tag \
-			--title "$(git for-each-ref "refs/tags/$TAG" --format='%(contents:subject)')" \
-			--notes  "$(git for-each-ref "refs/tags/$TAG" --format='%(contents:body)')"
+			--title "$SUBJECT_OUT" \
+			--notes  "$NOTES_OUT"
 	fi
 else
 	say "skipping GitHub release (--no-github)"
