@@ -480,8 +480,15 @@ func (t *livelogTurn) transcriptScroll(delta int) { t.tr.scrollBy(delta) }
 func (t *livelogTurn) transcriptSearching() bool { return t.tr.active && t.tr.inSearch }
 
 // transcriptMode is the keymap's view of the pager: which of the four input
-// modes a keystroke arriving right now would land in.
-func (t *livelogTurn) transcriptMode() keyMode { return t.tr.mode() }
+// modes a keystroke lands in. The composer is asked FIRST and sits above the
+// pager, because it is the one text box that must work inline as well — a
+// short turn never promotes, and the user still wants to steer it.
+func (t *livelogTurn) transcriptMode() keyMode {
+	if t.status.composingNow() {
+		return modeCompose
+	}
+	return t.tr.mode()
+}
 
 // Transcript page fetches run off-lock; applying a page restores the viewport
 // anchor and evicts the far edge of the bounded window.

@@ -29,6 +29,15 @@ type sessionStatus struct {
 	metrics   aria.Metrics
 	turn      turnStatus
 	tick      uint64
+
+	// The steer composer. It lives here, rather than on the pager beside the
+	// search box, because the composer must work in BOTH views and this struct
+	// is the one surface both already share: bookendLines() paints the incipit
+	// footer from it and transcript.footerRows() paints the pager footer from
+	// it. Putting the state anywhere else would mean plumbing it to two
+	// renderers that already hold a pointer to this one.
+	composing   bool
+	composeText string
 }
 
 func newSessionStatus(figaroID string, startedAt time.Time) *sessionStatus {
@@ -241,6 +250,16 @@ func bookendLines(status *sessionStatus) []string {
 	// Two rows only: rule + status. The blank that gives the footer breathing
 	// room is painted ABOVE it by compose()'s pre-closer blank, not between the
 	// rule and the status text.
+	//
+	// While composing, the status row becomes the draft — exactly as the pager's
+	// footer becomes the query line under '/'. One footer, one row, whichever
+	// mode owns the keyboard.
+	if status.composingNow() {
+		return []string{
+			term.Dim(status.ruleLine(w, "")),
+			term.Dim(status.composeLine(w)),
+		}
+	}
 	return []string{
 		term.Dim(status.ruleLine(w, "")),
 		term.Dim(status.statusLine(w, false)),
@@ -259,4 +278,96 @@ func formatCtxCell(tokens int) string {
 	default:
 		return fmt.Sprintf("%d", tokens)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// The steer composer.
+//
+// Steering intent cannot be inferred: a prompt pipelined by a script and a
+// steer typed by someone watching the stream are byte-identical on the wire,
+// and guessing wrong in the merging direction silently swallows a real
+// question. So intent is CARRIED (rpc.QuaRequest.Steering). This composer is
+// the one place the intent is knowable by construction — you cannot type into
+// a live view without watching it — so everything it submits is a steer.
+// ---------------------------------------------------------------------------
+
+// composeOpen starts (or refocuses) the composer.
+func (s *sessionStatus) composeOpen() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.composing = true
+	s.mu.Unlock()
+}
+
+// composeCancel abandons the draft.
+func (s *sessionStatus) composeCancel() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.composing, s.composeText = false, ""
+	s.mu.Unlock()
+}
+
+// composeTake closes the composer and returns the draft, trimmed. An empty
+// draft submits nothing — Enter on a blank line just closes the box.
+func (s *sessionStatus) composeTake() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.Lock()
+	text := strings.TrimSpace(s.composeText)
+	s.composing, s.composeText = false, ""
+	s.mu.Unlock()
+	return text
+}
+
+// composeType appends one rune's worth of literal text.
+func (s *sessionStatus) composeType(b byte) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.composing {
+		s.composeText += string(b)
+	}
+	s.mu.Unlock()
+}
+
+// composeBackspace deletes the last rune (not the last byte — a multi-byte
+// rune must not be split into an invalid tail).
+func (s *sessionStatus) composeBackspace() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	if r := []rune(s.composeText); len(r) > 0 {
+		s.composeText = string(r[:len(r)-1])
+	}
+	s.mu.Unlock()
+}
+
+// composingNow reports whether the composer owns the keyboard.
+func (s *sessionStatus) composingNow() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.composing
+}
+
+// composeLine is the status row while composing: the draft behind a steer
+// marker, so the footer says what the keyboard is doing. It replaces the
+// status text exactly as the search box's query line does — one footer, one
+// row, whichever mode owns it.
+func (s *sessionStatus) composeLine(width int) string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return clipToWidth("steer ↳ "+s.composeText+"▏", width)
 }

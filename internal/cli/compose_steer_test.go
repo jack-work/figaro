@@ -1,0 +1,186 @@
+package cli
+
+import (
+	"context"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/rpc"
+)
+
+// The steer composer.
+//
+// Steering intent cannot be inferred — a prompt pipelined by a script and a
+// steer typed by someone watching the stream are byte-identical on the wire, and
+// guessing wrong in the merging direction silently swallows a real question. The
+// composer is the one place the intent is knowable by construction, so
+// everything it submits carries Steering: true.
+
+type steerCapture struct {
+	mu    sync.Mutex
+	texts []string
+	steer []bool
+}
+
+func (c *steerCapture) fn(_ context.Context, text string, _ *rpc.ChalkboardInput, steer bool) (int, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.texts = append(c.texts, text)
+	c.steer = append(c.steer, steer)
+	return 0, true, nil
+}
+
+func (c *steerCapture) settle(t testing.TB) {
+	t.Helper()
+	for i := 0; i < 200; i++ {
+		c.mu.Lock()
+		n := len(c.texts)
+		c.mu.Unlock()
+		if n > 0 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// composeInput builds an input loop in incipit (open=false) or in the pager
+// (open=true), with a capturing steer client.
+func composeInput(tb testing.TB, open bool) (*interactiveInput, *livelogTurn, *steerCapture) {
+	tb.Helper()
+	out := &countingWriter{}
+	committed := navHistory()
+	settings := &renderSettings{}
+	status := newSessionStatus("aria0001", time.Unix(0, 0))
+	lt := newLivelogTurn(out, 100, 40, settings, "aria0001", time.Unix(0, 0), status, nil, nil)
+	if open {
+		lt.enterTranscript()
+		lt.apply(aria.Page{Parts: committed})
+	}
+	cap := &steerCapture{}
+	return &interactiveInput{
+		tc: nil, lt: lt, fcli: stubHistoryClient{committed}, mu: &sync.Mutex{}, set: settings,
+		figaroID: "aria0001", cancel: func() {},
+		disconnectCh: make(chan struct{}, 1),
+		steer:        cap.fn,
+	}, lt, cap
+}
+
+// The headline: typing into a live view submits a STEER, in both views. Before
+// the composer existed the keys went nowhere at all — there was no keymap row
+// that composed text, so `figaro send`'s streaming keys were only ^C/^D/^T/^O.
+func TestCompose_TypingSubmitsASteer(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		open bool
+	}{{"incipit", false}, {"pager", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			in, lt, cap := composeInput(t, tc.open)
+			in.consume([]byte("i"))
+			if got := lt.transcriptMode(); got != modeCompose {
+				t.Fatalf("'i' did not open the composer: mode = %v", got)
+			}
+			in.consume([]byte("say zucchero\r"))
+			cap.settle(t)
+
+			cap.mu.Lock()
+			defer cap.mu.Unlock()
+			if len(cap.texts) != 1 {
+				t.Fatalf("submitted %d prompt(s), want exactly 1", len(cap.texts))
+			}
+			if cap.texts[0] != "say zucchero" {
+				t.Errorf("submitted %q, want %q", cap.texts[0], "say zucchero")
+			}
+			if !cap.steer[0] {
+				t.Error("submitted with Steering=false; a prompt typed into a live view is a steer by construction")
+			}
+			if lt.transcriptMode() == modeCompose {
+				t.Error("composer still open after Enter")
+			}
+		})
+	}
+}
+
+// The draft is visible while typing: the footer's status row becomes the draft,
+// exactly as it becomes the query line under '/'. One footer, one row, whichever
+// mode owns the keyboard.
+func TestCompose_DraftShowsInTheFooter(t *testing.T) {
+	in, lt, _ := composeInput(t, false)
+	in.consume([]byte("iabc"))
+	line := lt.status.composeLine(80)
+	if !strings.Contains(line, "abc") {
+		t.Fatalf("footer %q does not show the draft", line)
+	}
+	if !strings.Contains(line, "steer") {
+		t.Errorf("footer %q does not say what the keyboard is doing", line)
+	}
+	// And the incipit bookend uses the same row.
+	rows := bookendLines(lt.status)
+	if len(rows) != 2 || !strings.Contains(rows[1], "abc") {
+		t.Errorf("incipit bookend does not carry the draft: %q", rows)
+	}
+}
+
+func TestCompose_BackspaceAndCancel(t *testing.T) {
+	in, lt, cap := composeInput(t, false)
+	in.consume([]byte("iabc\x7f"))
+	if got := lt.status.composeLine(80); !strings.Contains(got, "ab") || strings.Contains(got, "abc") {
+		t.Fatalf("backspace did not delete one character: %q", got)
+	}
+	in.consume([]byte("\x1b"))
+	if lt.transcriptMode() == modeCompose {
+		t.Fatal("Esc did not close the composer")
+	}
+	cap.mu.Lock()
+	defer cap.mu.Unlock()
+	if len(cap.texts) != 0 {
+		t.Errorf("Esc submitted %q; cancel must send nothing", cap.texts)
+	}
+}
+
+// Ctrl-C must still interrupt while composing — the composer may not swallow
+// the key that owns the process. Its keymap row is inAnyBox, which now includes
+// the compose box.
+func TestCompose_CtrlCStillInterrupts(t *testing.T) {
+	in, _, _ := composeInput(t, false)
+	in.consume([]byte("ihalf typed"))
+	_, stop := in.consume([]byte{0x03})
+	if !stop {
+		t.Fatal("Ctrl-C did not stop the input loop while composing")
+	}
+}
+
+// A blank draft sends nothing: Enter on an empty box just closes it, rather
+// than queueing an empty prompt at the model.
+func TestCompose_BlankDraftSendsNothing(t *testing.T) {
+	in, lt, cap := composeInput(t, false)
+	in.consume([]byte("i   \r"))
+	if lt.transcriptMode() == modeCompose {
+		t.Error("Enter did not close the composer")
+	}
+	time.Sleep(30 * time.Millisecond)
+	cap.mu.Lock()
+	defer cap.mu.Unlock()
+	if len(cap.texts) != 0 {
+		t.Errorf("blank draft submitted %q", cap.texts)
+	}
+}
+
+// Pager motions are untouched when the composer is closed: 'i' must not have
+// stolen a key, and the motions must still move.
+//
+// The fixture opens pinned to the tail, so 'j' correctly clamps — asserting on
+// it would test the clamp, not the binding. 'k' is the unambiguous probe.
+func TestCompose_PagerKeysUnaffectedWhenClosed(t *testing.T) {
+	in, lt, _ := composeInput(t, true)
+	before := lt.tr.offset
+	in.consume([]byte("k"))
+	if lt.tr.offset >= before {
+		t.Fatalf("k no longer scrolls with the composer closed: %d -> %d", before, lt.tr.offset)
+	}
+	if lt.transcriptMode() == modeCompose {
+		t.Fatal("k opened the composer")
+	}
+}
