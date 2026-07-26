@@ -104,6 +104,12 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	// the exchange already in flight, so it joins that turn rather than opening
 	// its own — which is what previously truncated the turn being steered and
 	// left its closing prose unrendered.
+	//
+	// The TOOL node belongs here too. This expectation used to omit it, which
+	// pinned a real defect: the assertions above prove a tool ran (msgs[1] is the
+	// assistant, msgs[2] carries its ContentToolResult), so a projection without a
+	// tool node was claiming that a tool present in the IR renders nowhere. It
+	// was overwritten in place when the recomposed window narrowed after a drain.
 	read := a.Read(aria.Anchor{Turn: 0}, 1<<20)
 	for _, part := range read.Parts {
 		t.Logf("turn=%d inquiry=%q nodes=%d", part.ID, part.Inquiry, len(part.Nodes))
@@ -118,8 +124,9 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	for _, n := range read.Parts[0].Nodes {
 		kinds = append(kinds, string(n.Type))
 	}
-	require.Equal(t, []string{"prose", "steering", "steering", "prose"}, kinds,
-		"both steers must render as steering nodes inside the turn they steer")
+	require.Equal(t, []string{"prose", "tool", "steering", "steering", "prose"}, kinds,
+		"both steers must render as steering nodes inside the turn they steer, "+
+			"and the tool call they interrupted must survive")
 	require.Equal(t, int32(2), prov.calls.Load())
 }
 

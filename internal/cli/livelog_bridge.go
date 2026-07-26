@@ -87,6 +87,14 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 			}
 			t.tr.render() // transcript renders from the shared client model
 		} else if m.Role == livedoc.RoleOutput {
+			// A steer SPLITS the agent's run, so a turn can close several output
+			// regions. pending holds one; overwriting it silently discarded every
+			// region but the last, which is how three of four tool calls vanished
+			// from a steered turn while sitting correctly in the IR. Freeze the
+			// outgoing region before taking the new one.
+			if t.pending != nil && cursorOf(*t.pending) != cursorOf(m) {
+				t.freezePending()
+			}
 			t.pending = &m
 			if t.finished {
 				t.freezePending()
