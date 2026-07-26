@@ -12,8 +12,9 @@ import (
 // seen record version matches; any mismatch fires OnDesync with the last
 // fully-committed LT so the caller can reconnect and re-read.
 //
-// OnClosed fires when a message finalizes; OnLive fires with the open message's
-// current ordered nodes; OnDesync requests a catch-up from the given LT.
+// OnClosed fires when a message finalizes; OnLive fires with the open message
+// (its suffix nodes, and the turn's inquiry while the suffix starts the turn);
+// OnDesync requests a catch-up from the given LT.
 type Client struct {
 	mu sync.Mutex
 
@@ -33,20 +34,22 @@ type Client struct {
 	openNodesSlice []livedoc.Node
 
 	// emitted[turn] is how many of a turn's nodes have already gone out as
-	// closed messages. The prompt is committed (below Live.From) long before
-	// its turn seals, so it must freeze to scrollback immediately rather than
-	// sit in the redrawable live region wearing the agent's header.
+	// closed messages, and inquiry[turn] is that turn's opening question until
+	// its first slice carries it away. The inquiry commits before the agent has
+	// said anything, so it must be held here to be attached to whichever slice
+	// turns out to start the turn.
 	emitted map[int]int
+	inquiry map[int]string
 
 	OnClosed  func(Message)
-	OnLive    func(turn int, from uint64, role string, nodes []livedoc.Node)
+	OnLive    func(Message)
 	OnDesync  func(sinceLT int)
 	OnMetrics func(Metrics)
 }
 
 // NewClient returns a fresh client.
 func NewClient() *Client {
-	return &Client{closedSeen: map[int]bool{}, emitted: map[int]int{}}
+	return &Client{closedSeen: map[int]bool{}, emitted: map[int]int{}, inquiry: map[int]string{}}
 }
 
 // SetClosedLimit bounds retained closed messages. Zero keeps the default,
@@ -100,6 +103,18 @@ func (c *Client) Apply(p Page) {
 	for _, part := range p.Parts {
 		id := int(part.ID)
 
+		// The inquiry is TEXT ON THE TURN, not a node, and it commits before the
+		// agent has said anything — so it arrives on a part of its own, with no
+		// nodes and no Live. Hold it until a slice starts the turn, and open the
+		// turn now so the question paints the instant it is asked.
+		if part.Inquiry != "" && !part.ClippedHead {
+			c.inquiry[id] = part.Inquiry
+			if c.openTurn != id && !c.seenClosed(id) {
+				c.resetOpen()
+				c.openTurn = id
+			}
+		}
+
 		// Adopt any nodes the part carries. From is the positional id of
 		// Nodes[0], so a clipped part slots into place rather than replacing.
 		if len(part.Nodes) > 0 {
@@ -120,17 +135,11 @@ func (c *Client) Apply(p Page) {
 				c.foldAt(nd)
 			}
 			// Everything below Live.From is closed for good. Release it now so
-			// the prompt reaches scrollback under its own voice instead of
-			// riding the live region until the turn seals.
+			// the head of a long turn reaches scrollback instead of riding the
+			// live region until the turn seals.
 			if n := int(c.openFrom); n > c.emitted[id] && n <= len(c.openNodesSlice) {
-				for s := c.emitted[id]; s < n; {
-					e, role := VoiceRunEnd(c.openNodesSlice[:n], s)
-					finalized = append(finalized, Message{
-						Turn: id, From: uint64(s), Role: role,
-						Nodes: append([]livedoc.Node(nil), c.openNodesSlice[s:e]...),
-					})
-					s = e
-				}
+				finalized = append(finalized, c.message(id, c.emitted[id],
+					append([]livedoc.Node(nil), c.openNodesSlice[c.emitted[id]:n]...)))
 				c.emitted[id] = n
 			}
 			if len(part.Live.Nodes) > 0 {
@@ -154,17 +163,17 @@ func (c *Client) Apply(p Page) {
 			nodes = c.openNodes()
 		}
 		c.closedSeen[id] = true
-		// One Message per voice run: the prompt closes under "you", the agent's
-		// reply under "figaro". Emitting one Message per TURN printed the user's
-		// own words beneath the agent's name.
-		for s := c.emitted[id]; s < len(nodes); {
-			e, role := VoiceRunEnd(nodes, s)
-			finalized = append(finalized, Message{
-				Turn: id, From: uint64(s), Role: role, Nodes: nodes[s:e],
-			})
-			s = e
+		// Everything not already released closes as one message. A turn that
+		// produced nothing at all (interrupted before its first block) still
+		// closes one, carrying the inquiry — otherwise the question the user
+		// asked would never reach scrollback.
+		if s := c.emitted[id]; s < len(nodes) {
+			finalized = append(finalized, c.message(id, s, nodes[s:]))
+		} else if s == 0 && c.inquiry[id] != "" {
+			finalized = append(finalized, c.message(id, 0, nil))
 		}
 		delete(c.emitted, id)
+		delete(c.inquiry, id)
 		c.advanceCommitted(id)
 		if c.openTurn == id {
 			c.resetOpen()
@@ -180,8 +189,8 @@ func (c *Client) Apply(p Page) {
 	haveLive := c.openTurn != 0
 	// The live region is the OPEN SUFFIX only. Nodes below openFrom were
 	// already released as closed messages above; redrawing them here would
-	// print them twice and wrap the prompt in the agent's header.
-	liveLT, liveFrom, liveNodes := c.openTurn, c.openFrom, c.openSuffix()
+	// print them twice.
+	live := c.openMessage()
 	c.mu.Unlock()
 
 	if metrics != nil && c.OnMetrics != nil {
@@ -193,7 +202,7 @@ func (c *Client) Apply(p Page) {
 		}
 	}
 	if haveLive && c.OnLive != nil {
-		c.OnLive(liveLT, liveFrom, turnRole(liveNodes), liveNodes)
+		c.OnLive(live)
 	}
 	if desync >= 0 && c.OnDesync != nil {
 		c.OnDesync(desync)
@@ -218,67 +227,32 @@ func (c *Client) foldAt(nd NodeDelta) {
 	c.openNodesSlice[nd.ID] = foldDelta(c.openNodesSlice[nd.ID], nd)
 }
 
-// turnRole reports the voice a turn is rendered under. A turn holds both, so
-// this is only the coarse hint the older surfaces still ask for; per-node Role
-// is the real answer.
-//
-// A turn is an exchange, so it closes under the assistant's bookend unless it
-// holds nothing but the prompt. Nodes carrying no explicit role are agent
-// output — a streamed delta need not repeat it on every frame.
+// turnRole is the voice a message renders under. Every node is agent output:
+// the inquiry is text on the turn, and a steer is an inline annotation inside
+// the agent's run, not a voice of its own. So a message with nodes speaks in
+// the agent's voice, and one without — an inquiry whose turn produced nothing —
+// in the user's.
 func turnRole(nodes []livedoc.Node) string {
 	if len(nodes) == 0 {
-		return ""
-	}
-	for _, n := range nodes {
-		if n.Role != livedoc.RoleInput {
-			return livedoc.RoleOutput
-		}
-	}
-	return livedoc.RoleInput
-}
-
-// nodeVoice is the voice a single node speaks in, for the purpose of deciding
-// where a RUN breaks. The inquiry is the user's; prose, thinking and tools are
-// the agent's. A node carrying no explicit role is agent output, because a
-// streamed delta need not repeat the role on every frame.
-//
-// A STEERING node is deliberately NOT a voice change. It carries Role input —
-// it is the user speaking — but it is an INLINE ANNOTATION inside whatever run
-// it lands in, not a block of its own. Treating it as a voice change closed the
-// agent's run and opened an input run around it, so a single steer rendered
-// with its own "❯ input" header AND its own pair of full-width rules, cutting
-// the agent's output in two. The marker ("↳ input" + gutter, keyed on node
-// TYPE in cli/nodes.go) already carries the voice; the run must not also.
-func nodeVoice(n livedoc.Node) string {
-	if n.Type == livedoc.NodeSteering {
-		return livedoc.RoleOutput
-	}
-	if n.Role == livedoc.RoleInput {
 		return livedoc.RoleInput
 	}
 	return livedoc.RoleOutput
 }
 
-// VoiceRunEnd returns the end of the contiguous same-voice run beginning at
-// start, plus the voice that run speaks in.
-//
-// A turn holds BOTH voices, so a header must be printed per RUN, not once per
-// turn — otherwise the user's own question renders under the agent's name.
-// Every surface that labels a unit derives its runs here, so the client (inline)
-// and the pager cannot drift apart on where a voice changes.
-//
-// Index-based rather than callback- or slice-based so the hot render paths stay
-// allocation-free; the common shape is one or two runs.
-func VoiceRunEnd(nodes []livedoc.Node, start int) (int, string) {
-	if start >= len(nodes) {
-		return start, ""
+// message builds one closed slice of a turn. Only the slice that STARTS the
+// turn carries the inquiry; a later one leaving it set would print the question
+// again at every page boundary.
+func (c *Client) message(turn, from int, nodes []livedoc.Node) Message {
+	m := Message{Turn: turn, From: uint64(from), Role: turnRole(nodes), Nodes: nodes}
+	if from == 0 {
+		m.Inquiry = c.inquiry[turn]
 	}
-	cur := nodeVoice(nodes[start])
-	i := start + 1
-	for i < len(nodes) && nodeVoice(nodes[i]) == cur {
-		i++
-	}
-	return i, cur
+	return m
+}
+
+// openMessage is the open turn's suffix as a message. Caller holds the lock.
+func (c *Client) openMessage() Message {
+	return c.message(c.openTurn, int(c.openFrom), c.openSuffix())
 }
 
 func (c *Client) trimClosed() {
@@ -337,8 +311,8 @@ func (c *Client) Open() *Message {
 	if c.openTurn == 0 {
 		return nil
 	}
-	suffix := c.openSuffix()
-	return &Message{Turn: c.openTurn, From: c.openFrom, Role: turnRole(suffix), Nodes: suffix}
+	m := c.openMessage()
+	return &m
 }
 
 // View returns a snapshot of the current local state.
@@ -358,8 +332,8 @@ func (c *Client) View() View {
 	})
 	v := View{Closed: closed}
 	if c.openTurn != 0 {
-		suffix := c.openSuffix()
-		v.Open = &Message{Turn: c.openTurn, From: c.openFrom, Role: turnRole(suffix), Nodes: suffix}
+		m := c.openMessage()
+		v.Open = &m
 	}
 	return v
 }
@@ -423,9 +397,8 @@ func setField(n *livedoc.Node, field string, v any) {
 		n.Markdown = asStr(v)
 	case "role":
 		// The server sends this (fullSet/diff both emit "role"), and dropping it
-		// silently made every STREAMED node look like agent output — so the
-		// voice-run split could only ever work on committed snapshots, and a
-		// live prompt rendered under the agent's header.
+		// silently made every STREAMED node look like agent output — which is
+		// how a steer arrived unmarked when watched and marked when re-read.
 		n.Role = asStr(v)
 	case "tool_call_id":
 		n.ToolCallID = asStr(v)

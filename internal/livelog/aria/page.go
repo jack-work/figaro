@@ -284,18 +284,3 @@ func (p Page) LiveTail() *Live {
 	}
 	return nil
 }
-
-// Voice is the coarse role a part renders under. A turn holds both voices, so
-// per-node Role is the real answer; this exists for surfaces that still want
-// one label per unit.
-func (p TurnPart) Voice() string {
-	if len(p.Nodes) == 0 {
-		return ""
-	}
-	for _, n := range p.Nodes {
-		if n.Role != livedoc.RoleInput {
-			return livedoc.RoleOutput
-		}
-	}
-	return livedoc.RoleInput
-}

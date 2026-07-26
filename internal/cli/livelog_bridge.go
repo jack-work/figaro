@@ -26,10 +26,10 @@ type livelogTurn struct {
 	tr     *transcript
 	status *sessionStatus
 
-	openLT       int
-	openFrom     uint64
-	openRole     string
-	open         []livedoc.Node
+	// open is the live region as the client last reported it: the open turn's
+	// suffix, its offset, its voice, and the turn's inquiry. Turn == 0 means
+	// nothing is live.
+	open         aria.Message
 	pending      *aria.Message
 	finished     bool
 	thinkingOpen bool // an OpenThinking placeholder is live and not yet adopted
@@ -117,10 +117,10 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 			}
 		}
 	}
-	t.client.OnLive = func(lt int, from uint64, role string, nodes []livedoc.Node) {
-		newOpen := lt != t.openLT
-		t.openLT, t.openFrom, t.openRole, t.open = lt, from, role, nodes
-		if role == livedoc.RoleOutput {
+	t.client.OnLive = func(m aria.Message) {
+		newOpen := m.Turn != t.open.Turn
+		t.open = m
+		if m.Role == livedoc.RoleOutput {
 			if newOpen {
 				t.finished = false
 			}
@@ -131,13 +131,13 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 		// its own live region off-screen; move it to the scrollable pager
 		// instead (the user can read/scroll/select there). Auto-entered once,
 		// it stays until closed, flushing just the last turn to scrollback.
-		if !t.tr.active && t.openOverflows(nodes) {
+		if !t.tr.active && t.openOverflows(m.Nodes) {
 			t.tr.enter()
 		}
 		if t.tr.active {
 			t.tr.render()
 		} else {
-			t.in.Open(lt, from, role, nodes)
+			t.in.Open(m)
 		}
 	}
 	return t
@@ -315,7 +315,7 @@ func (t *livelogTurn) tick() {
 		t.tr.tick++
 		t.tr.render()
 	} else {
-		t.in.Tick(t.open)
+		t.in.Tick(t.open.Nodes)
 	}
 }
 
@@ -342,15 +342,15 @@ func (t *livelogTurn) resize(w, h int) {
 		t.tr.resize(w, h)
 		return
 	}
-	t.in.Resize(t.open)
+	t.in.Resize(t.open.Nodes)
 }
 
 // render repaints the active view (e.g. after a verbosity toggle).
 func (t *livelogTurn) render() {
 	if t.tr.active {
 		t.tr.render()
-	} else if t.openLT != 0 {
-		t.in.Open(t.openLT, t.openFrom, t.openRole, t.open)
+	} else if t.open.Turn != 0 {
+		t.in.Open(t.open)
 	}
 }
 
@@ -369,8 +369,8 @@ func (t *livelogTurn) finishTurn(reason string) {
 		// over the live footer region.
 		t.thinkingOpen = false
 		t.in.AbandonOpen("")
-	} else if !hadPending && t.openLT != 0 && t.openRole == livedoc.RoleOutput {
-		t.in.Open(t.openLT, t.openFrom, t.openRole, t.open)
+	} else if !hadPending && t.open.Turn != 0 && t.open.Role == livedoc.RoleOutput {
+		t.in.Open(t.open)
 		if strings.HasPrefix(strings.ToLower(reason), "error:") {
 			t.in.AbandonOpen("")
 		}
@@ -379,7 +379,7 @@ func (t *livelogTurn) finishTurn(reason string) {
 
 func (t *livelogTurn) freezePending() {
 	if t.pending != nil {
-		t.in.Open(t.pending.Turn, t.pending.From, t.pending.Role, t.pending.Nodes)
+		t.in.Open(*t.pending)
 		t.in.Freeze(*t.pending)
 		if c := cursorOf(*t.pending); c.after(t.lastFrozen) {
 			t.lastFrozen = c
@@ -463,16 +463,15 @@ func (t *livelogTurn) flushTail() {
 		}
 	}
 	t.pagerClosed = nil
-	openLT, openRole := 0, ""
-	var open []livedoc.Node
+	var open *aria.Message
 	if v.Open != nil && (cold && v.Open.Turn >= coldFrom || !cold && v.Open.Turn >= t.lastFrozen.turn) {
-		openLT, openRole, open = v.Open.Turn, v.Open.Role, v.Open.Nodes
+		open = v.Open
 	}
-	if len(closed) == 0 && openLT == 0 {
+	if len(closed) == 0 && open == nil {
 		return
 	}
 	sort.SliceStable(closed, func(i, j int) bool { return cursorOf(closed[j]).after(cursorOf(closed[i])) })
-	t.in.Resume(closed, openLT, t.openFrom, openRole, open)
+	t.in.Resume(closed, open)
 	if len(closed) > 0 {
 		t.lastFrozen = cursorOf(closed[len(closed)-1])
 	}

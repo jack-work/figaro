@@ -113,7 +113,8 @@ type TurnPart struct {
 }
 
 type Turn struct {
-    ID     uint64   `json:"turn"`
+    ID      uint64  `json:"turn"`
+    Inquiry string  `json:"inquiry,omitempty"` // the opening question — TEXT, not a node
     LTs    []uint64 `json:"lts"`             // metadata only — never an address
     Sealed bool     `json:"sealed"`          // turn lifecycle
     Nodes  []Node   `json:"nodes,omitempty"` // contiguous from From
@@ -236,18 +237,19 @@ LT 51  assistant  turn=7  [0] prose        "**RESULT: SUCCESS.**…"
 LT 52  user       turn=8  [0] prose        "cool, is all this available…"
 ```
 
-**UI IR** — one turn, prompt and reply together:
+**UI IR** — one turn, question and reply together. The question is the turn's
+`inquiry`: TEXT on the turn, not a node, so a renderer tells it from the reply
+without inspecting a role, and node ids number the reply from 0:
 
 ```
-turn 7   lts=[48…51]  sealed=true
-  id 0  prose     lts=[48]                                     "quick test"
-  id 1  thinking  lts=[49]
-  id 2  tool      lts=[49,50]  tool_call_id=toolu_01LaNfPv…  status=ok
-  id 3  tool      lts=[49,50]  tool_call_id=toolu_01DZofCa…  status=ok
-  id 4  prose     lts=[51]                                     "**RESULT: SUCCESS.**…"
+turn 7   lts=[48…51]  sealed=true  inquiry="quick test"
+  id 0  thinking  lts=[49]
+  id 1  tool      lts=[49,50]  tool_call_id=toolu_01LaNfPv…  status=ok
+  id 2  tool      lts=[49,50]  tool_call_id=toolu_01DZofCa…  status=ok
+  id 3  prose     lts=[51]                                     "**RESULT: SUCCESS.**…"
 ```
 
-4 messages and 7 blocks become **1 turn and 5 nodes**. LT 50 has no node of its
+4 messages and 7 blocks become **1 turn and 4 nodes**. LT 50 has no node of its
 own: its two `tool_result` blocks fold into the two tool nodes as
 `status`/`output`. It remains addressable in the fig IR and forkable, but it is
 not a UI coordinate.
@@ -266,17 +268,16 @@ LT 63  assistant  turn=9  [0] prose        "…"
 ```
 
 ```
-turn 9   lts=[60…63]
-  id 0  prose     lts=[60]        role=user
-  id 1  thinking  lts=[61]
-  id 2  tool      lts=[61,62]     tool_call_id=toolu_AAA…
-  id 3  steering  lts=[62]                        ← shares LT 62 with the tool_result
-  id 4  prose     lts=[63]
+turn 9   lts=[60…63]  inquiry="look at the flake too"
+  id 0  thinking  lts=[61]
+  id 1  tool      lts=[61,62]     tool_call_id=toolu_AAA…
+  id 2  steering  lts=[62]                        ← shares LT 62 with the tool_result
+  id 3  prose     lts=[63]
 ```
 
-**Tool before steering**, both touching LT 62. Steering renders like the user
-part of the turn; it is the same primitive as the prompt, differing only in
-position.
+**Tool before steering**, both touching LT 62. Steering is the ONE node that
+speaks in the user's voice: it rides inside a turn, so it stays a node, while
+the question that OPENS a turn is the turn's own text.
 
 ## Consequences
 

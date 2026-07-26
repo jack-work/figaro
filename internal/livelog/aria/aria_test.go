@@ -53,23 +53,23 @@ func TestServer_DeltasVersionAndFold(t *testing.T) {
 	rc := &rec{}
 	defer s.Subscribe(rc.push)()
 
-	s.Append(1, []livedoc.Node{prose("q")}) // the prompt: node 0, already closed
-	s.OpenTurn(1)                           // suffix opens at node 1
+	s.OpenInquiry(1, "q") // the question: text on the turn, not a node
+	s.OpenTurn(1)         // suffix opens at node 0
 	s.Update([]livedoc.Node{tool("running", "")})
 	s.Update([]livedoc.Node{tool("running", "a\n")})
 	s.Update([]livedoc.Node{tool("ok", "a\n")})
 	s.Close()
 
 	if len(rc.pages) != 5 {
-		t.Fatalf("want 5 frames (append + 3 updates + close), got %d", len(rc.pages))
+		t.Fatalf("want 5 frames (inquiry + 3 updates + close), got %d", len(rc.pages))
 	}
 
 	create := rc.pages[1].LiveTail()
-	if create == nil || create.V != 0 || create.From != 1 || len(create.Nodes) != 1 {
+	if create == nil || create.V != 0 || create.From != 0 || len(create.Nodes) != 1 {
 		t.Fatalf("v0 create frame wrong: %+v", create)
 	}
-	if create.Nodes[0].ID != 1 {
-		t.Errorf("suffix starts at node 1, so the delta id must be 1, got %d", create.Nodes[0].ID)
+	if create.Nodes[0].ID != 0 {
+		t.Errorf("the inquiry is not a node, so the agent's first block is id 0, got %d", create.Nodes[0].ID)
 	}
 	if create.Nodes[0].Set["type"] != "tool" || create.Nodes[0].Set["status"] != "running" {
 		t.Errorf("create must carry the whole node: %+v", create.Nodes[0].Set)
@@ -142,13 +142,13 @@ func TestServer_PatchOnGrowth(t *testing.T) {
 // many messages, and only finishTurn ends it.
 func TestServer_CloseFoldsSealDoesNot(t *testing.T) {
 	s := NewServer()
-	s.Append(1, []livedoc.Node{prose("q")})
+	s.OpenInquiry(1, "q")
 	s.OpenTurn(1)
 	s.Update([]livedoc.Node{tool("ok", "out")})
 	s.Close()
 
 	turns := s.Turns()
-	if len(turns) != 1 || len(turns[0].Nodes) != 2 {
+	if len(turns) != 1 || len(turns[0].Nodes) != 1 {
 		t.Fatalf("close must fold the suffix in: %+v", turns)
 	}
 	if turns[0].Sealed {
@@ -162,10 +162,10 @@ func TestServer_CloseFoldsSealDoesNot(t *testing.T) {
 	s.Update([]livedoc.Node{tool("ok", "out"), prose("answer")})
 	s.Close()
 	turns = s.Turns()
-	if len(turns[0].Nodes) != 3 {
-		t.Fatalf("want prompt + tool + answer, got %d nodes: %+v", len(turns[0].Nodes), turns[0].Nodes)
+	if len(turns[0].Nodes) != 2 {
+		t.Fatalf("want tool + answer, got %d nodes: %+v", len(turns[0].Nodes), turns[0].Nodes)
 	}
-	if turns[0].Nodes[1].Type != livedoc.NodeTool || turns[0].Nodes[2].Markdown != "answer" {
+	if turns[0].Nodes[0].Type != livedoc.NodeTool || turns[0].Nodes[1].Markdown != "answer" {
 		t.Fatalf("second round must replace the region, not append: %+v", turns[0].Nodes)
 	}
 
@@ -216,56 +216,35 @@ func TestClient_FoldAndPromote(t *testing.T) {
 	}
 }
 
-// A turn holds both voices. Each contiguous voice run closes as its own
-// message, so the renderer prints "you" over the prompt and "figaro" over the
-// reply. One message per TURN put the user's own words under the agent's name.
-func TestClient_ClosesOneMessagePerVoiceRun(t *testing.T) {
+// A turn closes as ONE message. It used to close as one per voice run, because
+// the prompt was node 0 and spoke in the user's voice; with the inquiry off the
+// node list every node is the agent's, so there is no run to cut. (Two tests
+// stood here — one for the run split, one for run contiguity; they assert the
+// same single fact now.)
+func TestClient_ClosesOneMessagePerTurn(t *testing.T) {
 	c := NewClient()
 	var closed []Message
 	c.OnClosed = func(m Message) { closed = append(closed, m) }
 
-	user := func(md string) livedoc.Node {
-		n := prose(md)
-		n.Role = livedoc.RoleInput
-		return n
-	}
-	// prompt, agent reply, steering interjection, agent reply.
-	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 7, Sealed: true, Nodes: []livedoc.Node{
-		user("ask"), prose("answer"), user("actually"), prose("revised"),
+	steer := prose("actually")
+	steer.Type = livedoc.NodeSteering
+	steer.Role = livedoc.RoleInput
+	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 7, Inquiry: "ask", Sealed: true, Nodes: []livedoc.Node{
+		prose("answer"), steer, prose("revised"),
 	}}}}})
 
-	if len(closed) != 4 {
-		t.Fatalf("want four voice runs, got %d", len(closed))
+	if len(closed) != 1 {
+		t.Fatalf("want one message for the turn, got %d", len(closed))
 	}
-	wantRole := []string{livedoc.RoleInput, livedoc.RoleOutput, livedoc.RoleInput, livedoc.RoleOutput}
-	for i, want := range wantRole {
-		if closed[i].Role != want {
-			t.Errorf("run %d: role %q, want %q", i, closed[i].Role, want)
-		}
-		if closed[i].From != uint64(i) {
-			t.Errorf("run %d: From %d, want %d — node ids are positional", i, closed[i].From, i)
-		}
+	m := closed[0]
+	if m.From != 0 || len(m.Nodes) != 3 {
+		t.Fatalf("message = {From:%d, %d nodes}, want {From:0, 3 nodes}", m.From, len(m.Nodes))
 	}
-}
-
-// Consecutive nodes in one voice stay in ONE message: a run is contiguous, not
-// one message per node.
-func TestClient_VoiceRunsAreContiguous(t *testing.T) {
-	c := NewClient()
-	var closed []Message
-	c.OnClosed = func(m Message) { closed = append(closed, m) }
-
-	u := prose("ask")
-	u.Role = livedoc.RoleInput
-	c.Apply(Page{Parts: []TurnPart{{Turn: Turn{ID: 3, Sealed: true, Nodes: []livedoc.Node{
-		u, prose("a"), prose("b"), prose("c"),
-	}}}}})
-
-	if len(closed) != 2 {
-		t.Fatalf("want prompt run + one agent run, got %d", len(closed))
+	if m.Role != livedoc.RoleOutput {
+		t.Errorf("role = %q, want %q", m.Role, livedoc.RoleOutput)
 	}
-	if len(closed[1].Nodes) != 3 || closed[1].From != 1 {
-		t.Fatalf("agent run must hold all three nodes at From=1: %+v", closed[1])
+	if m.Inquiry != "ask" {
+		t.Errorf("inquiry = %q, want %q — the first slice carries the question", m.Inquiry, "ask")
 	}
 }
 
@@ -313,13 +292,13 @@ func TestServer_ReadBothDirections(t *testing.T) {
 func TestServer_ReadSnapshotCarriesLiveOnlyAtTheTail(t *testing.T) {
 	s := NewServer()
 	s.Commit(sealedTurn(1, prose("old")))
-	s.Append(2, []livedoc.Node{prose("q")})
+	s.OpenInquiry(2, "q")
 	s.OpenTurn(2)
 	s.Update([]livedoc.Node{tool("running", "a\n")})
 
 	full := s.Read(Anchor{}, 1<<20)
 	live := full.LiveTail()
-	if live == nil || live.From != 1 {
+	if live == nil || live.From != 0 {
 		t.Fatalf("a full read must expose the suffix boundary: %+v", live)
 	}
 

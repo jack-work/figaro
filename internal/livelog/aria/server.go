@@ -395,38 +395,24 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 	return NodeDelta{ID: id, Set: set}
 }
 
-// Append adds already-closed nodes to a turn, creating it if new, and
-// broadcasts them as a snapshot part. This is the user prompt's path: it is
-// complete the instant it exists, so it never needs an open region — which is
-// what keeps it from flickering between send and durable commit.
-// OpenInquiry records the question that opened a turn. The inquiry is turn
-// metadata, not a node: an exchange begins with exactly one of them, so it is a
-// property of the turn rather than an element of its list. Called once, before
-// the prompt's own Append, so a live turn carries its inquiry from the first
-// frame rather than acquiring it when the turn seals.
+// OpenInquiry records the question that opened a turn and broadcasts it. The
+// inquiry is turn metadata, not a node: an exchange begins with exactly one of
+// them, so it is a property of the turn rather than an element of its list.
+//
+// It is the whole of the prompt's UI IR, which is why it broadcasts: a watching
+// client must show the question the instant it commits, not when the agent's
+// first token arrives.
 func (s *Server) OpenInquiry(id uint64, inquiry string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if n := len(s.turns); n == 0 || s.turns[n-1].ID != id {
-		s.turns = append(s.turns, Turn{ID: id})
-	}
-	s.turns[len(s.turns)-1].Inquiry = inquiry
-}
-
-func (s *Server) Append(id uint64, nodes []livedoc.Node) {
 	s.mu.Lock()
 	if n := len(s.turns); n == 0 || s.turns[n-1].ID != id {
 		s.turns = append(s.turns, Turn{ID: id})
 	}
 	i := len(s.turns) - 1
+	s.turns[i].Inquiry = inquiry
 	from := uint64(len(s.turns[i].Nodes))
-	s.turns[i].Nodes = append(s.turns[i].Nodes, nodes...)
-	part := TurnPart{
-		Turn:        Turn{ID: id, Nodes: nodes},
-		From:        from,
-		ClippedHead: from > 0,
-	}
 	subs := s.subsLocked()
 	s.mu.Unlock()
-	deliver(subs, Page{Parts: []TurnPart{part}})
+	deliver(subs, Page{Parts: []TurnPart{{
+		Turn: Turn{ID: id, Inquiry: inquiry}, From: from, ClippedHead: from > 0,
+	}}})
 }

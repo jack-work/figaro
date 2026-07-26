@@ -27,32 +27,29 @@ import (
 //
 // The user hit this on the FIRST COMMAND he ran, and no unit test caught it,
 // because every existing one called Freeze WITHOUT a preceding Open. Production
-// never does that: the prompt arrives as its own LIVE region (Open) and is then
+// never does that: the exchange arrives as a LIVE region (Open) and is then
 // sealed (Freeze), which is the only path on which the footer can be committed.
 // The real render-call sequence, traced from a live binary:
 //
 //	OPENTHINKING role=output
-//	OPEN   turn=1 from=0 role=input   <- prompt becomes the live region
-//	FREEZE turn=1 from=0 role=input   <- dropBelow commits [prompt + FOOTER]
-//	OPEN   turn=1 from=1 role=output
-//	FREEZE turn=1 from=1 role=output  <- commits [reply + FOOTER]
+//	OPEN   turn=1 from=0 inquiry="test"  <- the question paints at submit
+//	OPEN   turn=1 from=0 role=output     <- the reply streams in under it
+//	FREEZE turn=1 from=0 role=output     <- dropBelow commits [exchange + FOOTER]
 //
 // Drive Open before Freeze or this test proves nothing.
-func TestIncipit_FrozenPromptDoesNotStrandTheFooter(t *testing.T) {
+func TestIncipit_FrozenExchangeDoesNotStrandTheFooter(t *testing.T) {
 	ft := NewFakeTerminal(60, 20)
 	in := NewIncipit(ft, NodeText{})
 	withChrome(in)
 
-	prompt := []livedoc.Node{{ID: "u0", Type: "prose", Role: livedoc.RoleInput, Markdown: "test"}}
 	reply := []livedoc.Node{{ID: "a0", Type: "prose", Role: livedoc.RoleOutput, Markdown: "pronto"}}
+	exchange := aria.Message{Turn: 1, From: 0, Inquiry: "test",
+		Role: livedoc.RoleOutput, Nodes: reply}
 
-	in.OpenThinking(livedoc.RoleOutput)      // submit: footer only
-	in.Open(1, 0, livedoc.RoleInput, prompt) // the prompt round-trips
-	in.Freeze(aria.Message{Turn: 1, From: 0, //
-		Role: livedoc.RoleInput, Nodes: prompt}) // …and seals
-	in.Open(1, 1, livedoc.RoleOutput, reply) // the reply streams
-	in.Freeze(aria.Message{Turn: 1, From: 1, //
-		Role: livedoc.RoleOutput, Nodes: reply}) // …and seals
+	in.OpenThinking(livedoc.RoleOutput) // submit: footer only
+	in.Open(aria.Message{Turn: 1, From: 0, Inquiry: "test", Role: livedoc.RoleInput})
+	in.Open(exchange) // the reply streams in under the question
+	in.Freeze(exchange)
 
 	scr := strings.Join(ft.Screen(), "\n")
 	if got := strings.Count(scr, "---- aria abcd1234 ---"); got != 1 {

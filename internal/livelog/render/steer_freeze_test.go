@@ -26,10 +26,10 @@ func TestIncipit_FreezingASteerLeavesTheLiveRegionAlone(t *testing.T) {
 	withChrome(in)
 
 	// The agent is streaming the open suffix, which starts at node 2.
-	in.Open(2, 2, livedoc.RoleOutput, []livedoc.Node{
+	in.Open(aria.Message{Turn: 2, From: 2, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{
 		{ID: "n2", Type: "thinking", Markdown: "considering"},
 		{ID: "n3", Type: "prose", Markdown: body},
-	})
+	}})
 
 	// A steer finalizes mid-stream. Same turn (LT 2), different region (node 1).
 	in.Freeze(aria.Message{Turn: 2, From: 1, Role: livedoc.RoleInput,
@@ -37,10 +37,10 @@ func TestIncipit_FreezingASteerLeavesTheLiveRegionAlone(t *testing.T) {
 			Markdown: "MYSTEER: also set your mantra"}}})
 
 	// Streaming continues, then the output region finalizes normally.
-	in.Open(2, 2, livedoc.RoleOutput, []livedoc.Node{
+	in.Open(aria.Message{Turn: 2, From: 2, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{
 		{ID: "n2", Type: "thinking", Markdown: "considering"},
 		{ID: "n3", Type: "prose", Markdown: body},
-	})
+	}})
 	in.Freeze(aria.Message{Turn: 2, From: 2, Role: livedoc.RoleOutput,
 		Nodes: []livedoc.Node{
 			{ID: "n2", Type: "thinking", Markdown: "considering"},

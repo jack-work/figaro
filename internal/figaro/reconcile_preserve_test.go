@@ -109,6 +109,8 @@ func TestReconcileAriaServer_AllowsGrow(t *testing.T) {
 	a.reconcileAriaServer()
 	assert.Equal(t, uint64(1), a.ariaSrv.LastTurn(),
 		"reconcile against a readable log should adopt its turns")
-	assert.Len(t, a.ariaSrv.Turns()[0].Nodes, 2,
-		"the turn holds the prompt and the reply as one exchange")
+	assert.Len(t, a.ariaSrv.Turns()[0].Nodes, 1,
+		"the turn holds the reply; the question is Turn.Inquiry, not a node")
+	assert.Equal(t, "hello", a.ariaSrv.Turns()[0].Inquiry,
+		"the adopted turn carries its question as text")
 }

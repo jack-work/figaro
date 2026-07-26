@@ -7,6 +7,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/render"
 )
 
 // NodeView renders one block to terminal rows. Each row must be a single
@@ -60,13 +61,14 @@ type Incipit struct {
 	thinking bool // open region is an OpenThinking placeholder (adopted by the next Open)
 
 	// Open-message live region:
-	liveTurn  int
-	liveFrom  uint64   // start of the open suffix
-	liveCount int      // node count of the open suffix; (turn,from,count) is the region's identity
-	role      string   // open message's role; selects Bookend (assistant) vs Rule
-	live      []string // rows on screen for the open message
-	vt        int      // rows of the live region scrolled above the viewport
-	cur       int      // cursor row within the live region (0 = top)
+	liveTurn    int
+	liveFrom    uint64   // start of the open suffix
+	liveCount   int      // node count of the open suffix; (turn,from,count) is the region's identity
+	liveInquiry string   // the turn's opening question, drawn above the nodes
+	role        string   // open message's role; selects Bookend (assistant) vs Rule
+	live        []string // rows on screen for the open message
+	vt          int      // rows of the live region scrolled above the viewport
+	cur         int      // cursor row within the live region (0 = top)
 }
 
 // NewIncipit returns an inline renderer drawing to term via view.
@@ -120,7 +122,7 @@ func (i *Incipit) Freeze(m aria.Message) {
 			// region is currently live, and freezing it verbatim left one copy
 			// stranded in scrollback per message — two footers for a single
 			// exchange, which is not what the sketch asks for.
-			i.paint(i.composeWith(m.Nodes, i.closer(m.Role)))
+			i.paint(i.composeWith(m.Inquiry, m.Nodes, i.closer(m.Role)))
 			i.dropBelow()
 			i.reset()
 			return
@@ -143,18 +145,9 @@ func (i *Incipit) Freeze(m aria.Message) {
 		io.WriteString(i.term, "\x1b[J") // cursor is parked at the live top
 		i.reset()
 	}
-	rows := i.renderNodes(m.Nodes)
+	rows := i.messageRows(m.Inquiry, m.Role, m.Nodes)
 	var b strings.Builder
 	b.WriteString("\r\n") // leading blank — every message is prefaced with a newline
-	// A voice run whose nodes all render to nothing (thinking hidden, minted-but-
-	// empty prose, a tool already drawn) must not print a header over empty space.
-	// A steer splits the agent's run in two, and the leading half is routinely
-	// invisible — which showed as a bare "‹ figaro" sitting above "↳ input".
-	if h := i.header(m.Role); h != "" && len(rows) > 0 {
-		b.WriteString(h)
-		b.WriteString("\r\n")
-		b.WriteString("\r\n")
-	}
 	for _, r := range rows {
 		b.WriteString(r)
 		b.WriteString("\r\n")
@@ -182,14 +175,14 @@ func (i *Incipit) Freeze(m aria.Message) {
 // (the bookend follows the assistant only), and — if a message is still
 // streaming — starts a fresh live region. The cursor lands on a new line below
 // everything, so input resumes after the content like `figaro show`.
-func (i *Incipit) Resume(closed []aria.Message, openLT int, openFrom uint64, openRole string, open []livedoc.Node) {
+func (i *Incipit) Resume(closed []aria.Message, open *aria.Message) {
 	io.WriteString(i.term, "\x1b[J") // clear the restored partial region
 	i.reset()
 	for _, m := range closed {
 		i.printMessage(m)
 	}
-	if openLT != 0 {
-		i.Open(openLT, openFrom, openRole, open)
+	if open != nil && open.Turn != 0 {
+		i.Open(*open)
 	}
 }
 
@@ -198,15 +191,11 @@ func (i *Incipit) Resume(closed []aria.Message, openLT int, openFrom uint64, ope
 // prefaced with a blank line plus the role header (when configured) — the same
 // leading rule Freeze/compose apply.
 func (i *Incipit) printMessage(m aria.Message) {
-	body := i.renderNodes(m.Nodes)
+	body := i.messageRows(m.Inquiry, m.Role, m.Nodes)
 	if len(body) == 0 {
 		return
 	}
-	rows := []string{""}
-	if h := i.header(m.Role); h != "" && len(rows) > 0 {
-		rows = append(rows, h, "")
-	}
-	rows = append(rows, body...)
+	rows := append([]string{""}, body...)
 	if closer := i.closer(m.Role); len(closer) > 0 {
 		w, _ := i.term.Size()
 		rows = append(rows, "")
@@ -218,18 +207,18 @@ func (i *Incipit) printMessage(m aria.Message) {
 }
 
 // Open paints (or repaints) the open message's blocks as the live region.
-func (i *Incipit) Open(turn int, from uint64, role string, nodes []livedoc.Node) {
+func (i *Incipit) Open(m aria.Message) {
 	// A thinking placeholder (OpenThinking) is the same on-screen region as the
 	// assistant message that follows: adopt its turn in place — no dropBelow, no
 	// reset — so the footer painted on submit stays put and the streamed
 	// content fills in above it, never orphaning a header/footer to scrollback.
-	if i.thinking && role == i.role {
+	if i.thinking && m.Role == i.role {
 		i.thinking = false
-		i.liveTurn, i.liveFrom, i.liveCount = turn, from, len(nodes)
-		i.paint(i.compose(nodes))
+		i.liveTurn, i.liveFrom, i.liveCount, i.liveInquiry = m.Turn, m.From, len(m.Nodes), m.Inquiry
+		i.paint(i.compose(m.Nodes))
 		return
 	}
-	if turn != i.liveTurn || from != i.liveFrom {
+	if m.Turn != i.liveTurn || m.From != i.liveFrom {
 		// A new open message without a prior Freeze: release whatever was live.
 		// A thinking placeholder is ERASED rather than released — it is a pinned
 		// footer, not content, and dropping it into scrollback would strand the
@@ -240,11 +229,12 @@ func (i *Incipit) Open(turn int, from uint64, role string, nodes []livedoc.Node)
 			i.dropBelow()
 		}
 		i.reset()
-		i.liveTurn, i.liveFrom = turn, from
+		i.liveTurn, i.liveFrom = m.Turn, m.From
 	}
-	i.liveCount = len(nodes)
-	i.role = role
-	i.paint(i.compose(nodes))
+	i.liveCount = len(m.Nodes)
+	i.liveInquiry = m.Inquiry
+	i.role = m.Role
+	i.paint(i.compose(m.Nodes))
 }
 
 // OpenThinking paints an empty live region for a role that has only started —
@@ -336,14 +326,14 @@ func clipRows(rows []string, h int) []string {
 }
 
 func (i *Incipit) compose(nodes []livedoc.Node) []string {
-	return i.composeWith(nodes, i.footer())
+	return i.composeWith(i.liveInquiry, nodes, i.footer())
 }
 
 // composeWith builds the region's rows with an explicit trailer. The LIVE
 // region trails the pinned footer; a region being FROZEN trails its role's
 // closer instead, because the footer is chrome — committing it would strand a
 // status bar in scrollback above the very message that follows it.
-func (i *Incipit) composeWith(nodes []livedoc.Node, foot []string) []string {
+func (i *Incipit) composeWith(inquiry string, nodes []livedoc.Node, foot []string) []string {
 	w, _ := i.term.Size()
 	if i.bodyHidden() {
 		rows := make([]string, 0, len(foot))
@@ -352,25 +342,62 @@ func (i *Incipit) composeWith(nodes []livedoc.Node, foot []string) []string {
 		}
 		return clipRows(rows, i.viewportHeight())
 	}
-	body := i.renderNodes(nodes)
-	// Every message is prefaced with a blank row and (when configured) a role
-	// header — frozen into scrollback alongside the rest of the live region.
-	rows := make([]string, 0, len(body)+5)
+	body := i.messageRows(inquiry, i.role, nodes)
+	// Every message is prefaced with a blank row — frozen into scrollback
+	// alongside the rest of the live region.
+	rows := make([]string, 0, len(body)+3)
 	rows = append(rows, "")
-	// No header over an empty run. At submit the live region is deliberately
-	// bodyless — the socket is up but the inquiry has not come back over the
-	// wire yet — so this yields rule + footer and nothing else. The header
-	// appears with the first content, which is the moment there is something
-	// for it to label.
-	if hd := i.header(i.role); hd != "" && len(body) > 0 {
-		rows = append(rows, hd, "")
-	}
 	rows = append(rows, body...)
 	if len(foot) > 0 {
 		rows = append(rows, "")
 		for _, s := range foot {
 			rows = append(rows, clip(s, w))
 		}
+	}
+	return rows
+}
+
+// messageRows is one message's body: the turn's opening question under the
+// input header, then the nodes under the speaker's. It is the ONE place the
+// inquiry is drawn — it is text on the turn, not a node, so no node walk can
+// produce it.
+//
+// No header over an empty run: a run whose nodes all render to nothing
+// (thinking hidden, minted-but-empty prose, a tool already drawn) must not
+// print a header over empty space, and at submit the live region is
+// deliberately bodyless — the inquiry has arrived, the reply has not.
+func (i *Incipit) messageRows(inquiry, role string, nodes []livedoc.Node) []string {
+	rows := i.inquiryRows(inquiry)
+	body := i.renderNodes(nodes)
+	if len(body) == 0 {
+		return rows
+	}
+	if len(rows) > 0 {
+		rows = append(rows, "")
+	}
+	if h := i.header(role); h != "" {
+		rows = append(rows, h, "")
+	}
+	return append(rows, body...)
+}
+
+// inquiryRows draws the question that opened the turn: the input header, a
+// blank, then the text as prose. Same prose renderer the nodes use, so the
+// question looks the same whether you watch it arrive or read it back.
+func (i *Incipit) inquiryRows(inquiry string) []string {
+	if strings.TrimSpace(inquiry) == "" {
+		return nil
+	}
+	w, _ := i.term.Size()
+	if w <= 0 {
+		w = 80
+	}
+	var rows []string
+	if h := i.header(livedoc.RoleInput); h != "" {
+		rows = append(rows, h, "")
+	}
+	for _, l := range render.Prose(inquiry, w) {
+		rows = append(rows, clip(l, w))
 	}
 	return rows
 }
@@ -527,6 +554,7 @@ func (i *Incipit) dropBelow() {
 }
 
 func (i *Incipit) reset() {
-	i.liveTurn, i.liveFrom, i.liveCount, i.role, i.live, i.vt, i.cur = 0, 0, 0, "", nil, 0, 0
+	i.liveTurn, i.liveFrom, i.liveCount, i.liveInquiry = 0, 0, 0, ""
+	i.role, i.live, i.vt, i.cur = "", nil, 0, 0
 	i.thinking = false
 }

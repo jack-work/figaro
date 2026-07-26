@@ -25,9 +25,10 @@ package aria
 
 import "github.com/jack-work/figaro/internal/livedoc"
 
-// Turn is one exchange: a user prompt plus everything the agent thought, ran
-// and said in response, as a single ordered node list. The prompt is node 0 —
-// it is not a separate entry.
+// Turn is one exchange: the question that opened it plus everything the agent
+// thought, ran and said in response. The question is Inquiry — TEXT on the
+// turn, never a node — so every entry in Nodes is agent output or a steering
+// interjection that rode along.
 //
 // ID is the coordinate a human names: `fig send <aria>:<turn>`. LTs is the
 // fig-IR span [first, last] the turn covers, carried as metadata only —
@@ -43,11 +44,7 @@ type Turn struct {
 	// so it is a property of the turn rather than an element of it. Steering
 	// interjections stay nodes: they ride inside a turn, they do not start one.
 	//
-	// TRANSITIONAL: the prompt is ALSO still Nodes[0] with Role RoleInput.
-	// Removing it from Nodes shifts every positional id by one (Nodes[i].ID ==
-	// From+i), which reaches Paginate, sliceKey, the row cache, selection, and
-	// the client's voice-run fold. See the S32 note in the phase-9 report for
-	// the removal plan; do not delete the node without doing all of it.
+	// Renderers draw it from here, above Nodes[0]. Nothing in Nodes echoes it.
 	Inquiry string `json:"inquiry,omitempty"`
 
 	// At is when the inquiry arrived (unix millis). It lives on the turn
@@ -104,9 +101,9 @@ func (d NodeDelta) Empty() bool {
 // wire type. The wire speaks Page/TurnPart; this is what a folded client hands
 // its renderer.
 //
-// IDENTITY IS THE PAIR (Turn, From), NEVER Turn ALONE. A turn reaches the
-// renderer as SEVERAL messages — the inquiry is {Turn:1, From:0}, the reply
-// {Turn:1, From:1} — because the client cuts a turn at voice-run boundaries.
+// IDENTITY IS THE PAIR (Turn, From), NEVER Turn ALONE. A tall turn reaches the
+// renderer as SEVERAL messages — {Turn:1, From:0} then {Turn:1, From:12} —
+// because the client and the pager cut a turn into bounded units.
 // Any consumer that compares, orders, increments or de-duplicates on Turn by
 // itself is wrong, and this field was called LT until it had caused three
 // separate bugs that way: a user-visible label that printed a turn id and
@@ -114,8 +111,12 @@ func (d NodeDelta) Empty() bool {
 // entire rest of a turn; and a live-region identity test that committed
 // seventeen rows of in-flight output to scrollback on a one-node steer.
 type Message struct {
-	Turn  int    // turn id — NOT a logical time, and NOT unique per message
-	From  uint64 // node offset within the turn; >0 means this is a later slice of it
-	Role  string
-	Nodes []livedoc.Node
+	Turn int    // turn id — NOT a logical time, and NOT unique per message
+	From uint64 // node offset within the turn; >0 means this is a later slice of it
+	// Inquiry is the turn's opening question, carried ONLY by its first slice
+	// (From == 0). A later slice must leave it empty, or a page that starts
+	// mid-turn would print the question a second time.
+	Inquiry string
+	Role    string
+	Nodes   []livedoc.Node
 }

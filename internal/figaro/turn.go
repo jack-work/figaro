@@ -251,9 +251,9 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 		// it — the aria frame carries {Role, Nodes} on the first hop and the
 		// client short-circuits to OnClosed with no OnLive event.
 		//
-		// Gated on the projector: the prompt node and the inquiry are UI IR, and
-		// a build without the projection must render nothing at all rather than a
-		// stream of bare prompts with no replies.
+		// Gated on the projector: the inquiry is UI IR, and a build without the
+		// projection must render nothing at all rather than a stream of bare
+		// prompts with no replies.
 		if a.proj != nil {
 			if steering {
 				// A steer joins the turn already in flight: no inquiry to record
@@ -264,12 +264,10 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 				// silently lost the steer when the region was recomposed.
 				return entry, nil
 			}
+			// The inquiry is TEXT ON THE TURN, not a node: recording it is
+			// the whole of the prompt's UI IR. It broadcasts, so a watching
+			// client shows the question the instant it commits.
 			a.ariaSrv.OpenInquiry(a.turnID, prompt.text)
-			// Through the projector, for the same reason the steer above is:
-			// one producer of UI IR, not two. Hand-building it here produced a
-			// node with no ID, LTs, Src or At, so the same question rendered
-			// with full provenance when re-read and with none when watched.
-			a.ariaSrv.Append(a.turnID, a.proj.Prompt(entry.Payload))
 		}
 	}
 	return entry, nil
