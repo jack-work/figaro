@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"os"
+	"strings"
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -46,9 +47,40 @@ func initBindingPolicy() {
 		term.IsTerminal(int(os.Stderr.Fd()))
 }
 
+// envAriaID returns the aria id pinned by FIGARO_ARIA, or "" if unset
+// or malformed.
+//
+// An agent injects FIGARO_ARIA=<its own id> into every bash tool
+// invocation, so a shell-out is *statically attended* to the aria that
+// spawned it: `figaro state`, `figaro set`, `figaro status`, `figaro
+// show` and a bare `figaro send` all target that aria with no --id and
+// no pid binding involved.
+//
+// It is an identity, not a binding. Nothing is written to the angelus,
+// and it cannot be changed from inside — `figaro attend` refuses, and
+// bind/unbind are no-ops. Addressing another aria takes an explicit
+// --id.
+//
+// Precedence: --id  >  FIGARO_ARIA  >  pid binding.
+func envAriaID() string {
+	id := strings.TrimSpace(os.Getenv("FIGARO_ARIA"))
+	if id == "" {
+		return ""
+	}
+	if err := rpc.ValidateAriaID(id); err != nil {
+		return ""
+	}
+	return id
+}
+
 // bindingDisabled is the single query every CLI helper consults before
 // touching the pid-binding.
 func bindingDisabled() bool {
+	// A statically-attended shell has no binding to mutate: its identity
+	// came in over the environment and outranks even --bind.
+	if envAriaID() != "" {
+		return true
+	}
 	if forceBind {
 		return false
 	}
@@ -94,11 +126,35 @@ func envTruthy(v string) bool {
 // resolveBinding wraps acli.Resolve with the binding policy: returns
 // a not-found response (no error) when binding is disabled, so callers
 // can uniformly treat the absent case as "nothing bound."
+//
+// FIGARO_ARIA short-circuits the pid map entirely (see envAriaID).
 func resolveBinding(ctx context.Context, acli *angelus.Client, ppid int) (*rpc.ResolveResponse, error) {
+	if id := envAriaID(); id != "" {
+		return resolveEnvAria(ctx, acli, id)
+	}
 	if bindingDisabled() {
 		return &rpc.ResolveResponse{Found: false}, nil
 	}
 	return acli.Resolve(ctx, ppid)
+}
+
+// resolveEnvAria answers the FIGARO_ARIA path. Attach — not Bind —
+// hands back the endpoint and revives a dormant aria without touching
+// the pid map; in the common case (an aria's own shell-out, so the
+// aria is live) it is a registry lookup on the daemon side.
+//
+// A dangling id (the aria was killed) reports not-found rather than
+// erroring, so callers keep their uniform "nothing bound" branch.
+func resolveEnvAria(ctx context.Context, acli *angelus.Client, id string) (*rpc.ResolveResponse, error) {
+	resp, err := acli.Attach(ctx, id)
+	if err != nil {
+		return &rpc.ResolveResponse{Found: false}, nil
+	}
+	return &rpc.ResolveResponse{
+		FigaroID: id,
+		Endpoint: resp.Endpoint,
+		Found:    true,
+	}, nil
 }
 
 // bindBinding wraps acli.Bind — no-op under bindingDisabled.

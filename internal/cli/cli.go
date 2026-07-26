@@ -184,7 +184,8 @@ fig IR, but it is not an address: turns are.`,
 		Short:   "Send a prompt to an aria",
 		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
-aria (creating one if this shell has no binding). With --id, targets
+aria (creating one if this shell has no binding) — or, inside an aria's
+own bash tool, the aria itself (FIGARO_ARIA). With --id, targets
 the named aria, which must already exist (aria ids are system-minted).
 
 Persistence (--ephemeral) and formatting (--raw) are orthogonal.
@@ -434,7 +435,7 @@ With no id, the pid-bound aria is used.`,
 		Group:   "Session",
 		Short:   "Bind this shell to an existing aria (optionally at a turn)",
 		Usage:   "attend <id> | <id>:<turn> | :<turn> | null",
-		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point — the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live loadout.",
+		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point — the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live loadout.\n\nTerminal-only. Inside an aria's own bash tool, FIGARO_ARIA statically\nattends that shell to the aria that spawned it, and attend refuses — reach\nanother aria with an explicit --id instead.",
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {

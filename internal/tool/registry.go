@@ -96,6 +96,14 @@ func DefaultRegistry(cwd string) *Registry {
 // via cwdFn. Agent wiring should pass a closure that pulls system.cwd
 // from the chalkboard.
 func DefaultRegistryFn(cwdFn func() string) *Registry {
+	return DefaultRegistryForAria("", cwdFn)
+}
+
+// DefaultRegistryForAria is DefaultRegistryFn for a named aria: the
+// bash tool exports FIGARO_ARIA=<ariaID> to its children, so nested
+// `figaro` calls are statically attended to the aria that spawned
+// them. Pass "" when there is no aria (tests, one-off registries).
+func DefaultRegistryForAria(ariaID string, cwdFn func() string) *Registry {
 	r := NewRegistry()
 	executor := NewLocalExecutor(
 		NewDefaultEnvSanitizer(),
@@ -109,7 +117,7 @@ func DefaultRegistryFn(cwdFn func() string) *Registry {
 	// commands are reachable across both tools.
 	sessions := NewSessionRegistry(DefaultSessionTTL)
 	r.MustRegister(
-		NewBashToolWith(cwdFn, executor, sessions),
+		NewBashToolForAria(ariaID, cwdFn, executor, sessions),
 		NewProcessTool(sessions, nil),
 		NewReadTool(staticCwd),
 		NewWriteTool(staticCwd),

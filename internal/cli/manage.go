@@ -758,6 +758,13 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 // prompt forks there and moves to the new branch). The :<LT> form re-pins the
 // already-bound aria.
 func runAttend(loaded *config.Loaded, spec string) {
+	// A statically-attended shell (FIGARO_ARIA — an aria's own bash
+	// tool) has an identity, not a binding: there is nothing to move.
+	if id := envAriaID(); id != "" {
+		die("attend: this shell is statically attended to %s (FIGARO_ARIA) and cannot be re-attended.\n"+
+			"  figaro send --id <id> -- <prompt>   talk to another aria\n"+
+			"  figaro show --id <id>               read another aria", id)
+	}
 	if bindingDisabled() {
 		die("attend: binding disabled (--no-bind, FIGARO_NO_BIND, or non-interactive shell); this command has no effect here")
 	}

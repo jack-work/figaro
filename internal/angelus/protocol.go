@@ -328,7 +328,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
 
-	reg := tool.DefaultRegistryFn(cwdFromChalkboard(cbState, cwd))
+	reg := tool.DefaultRegistryForAria(id, cwdFromChalkboard(cbState, cwd))
 	agent := figaro.NewAgent(figaro.Config{
 		ID:         id,
 		SocketPath: sockPath,
@@ -1163,7 +1163,7 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 			lastActive = time.UnixMilli(meta.LastActiveMS)
 		}
 	}
-	reg := tool.DefaultRegistryFn(cwdFromChalkboard(cb, toolRoot))
+	reg := tool.DefaultRegistryForAria(ariaID, cwdFromChalkboard(cb, toolRoot))
 	agent := figaro.NewAgent(figaro.Config{
 		ID:         ariaID,
 		SocketPath: sockPath,

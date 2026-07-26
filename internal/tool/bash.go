@@ -80,6 +80,11 @@ type BashTool struct {
 	// ScopeFn returns the session scope for each invocation. nil =>
 	// defaultScope.
 	ScopeFn func() string
+
+	// AriaID is the id of the aria owning this tool. Exported to every
+	// child as FIGARO_ARIA so shell-outs are statically attended to
+	// their own aria. Empty (tests, trivial callers) omits the var.
+	AriaID string
 }
 
 // NewBashTool constructs a BashTool with a static cwd and the default
@@ -96,6 +101,14 @@ func NewBashTool(cwd string) *BashTool {
 // NewBashToolWith constructs a BashTool with an explicit cwd function
 // and executor. Pass sessions to back yield-to-background exec (and to
 // share a registry with the process tool); nil gets a private one.
+// NewBashToolForAria is NewBashToolWith plus the owning aria's id,
+// which rides into every child process as FIGARO_ARIA.
+func NewBashToolForAria(ariaID string, cwdFn func() string, executor Executor, sessions *SessionRegistry) *BashTool {
+	b := NewBashToolWith(cwdFn, executor, sessions)
+	b.AriaID = ariaID
+	return b
+}
+
 func NewBashToolWith(cwdFn func() string, executor Executor, sessions *SessionRegistry) *BashTool {
 	if executor == nil {
 		executor = NewLocalExecutor()
@@ -205,7 +218,7 @@ func (b *BashTool) run(ctx context.Context, req BashRequest, onOutput OnOutput) 
 // run to completion, honoring timeout and ctx cancellation.
 func (b *BashTool) runBlocking(ctx context.Context, req BashRequest, cwd string, onOutput OnOutput) (BashResult, error) {
 	sw := &streamWriter{onOutput: onOutput}
-	execReq := ExecRequest{Command: req.Command, Cwd: cwd, Timeout: req.Timeout, PTY: req.PTY, Env: bashToolEnv()}
+	execReq := ExecRequest{Command: req.Command, Cwd: cwd, Timeout: req.Timeout, PTY: req.PTY, Env: bashToolEnv(b.AriaID)}
 	res, err := b.Executor.Execute(ctx, execReq, func(chunk []byte) { sw.Write(chunk) })
 	if err != nil {
 		return BashResult{}, err
@@ -236,7 +249,7 @@ func (b *BashTool) runSession(ctx context.Context, be BackgroundExecutor, req Ba
 			onOutput(chunk)
 		}
 	}
-	proc, err := be.Start(ExecRequest{Command: req.Command, Cwd: cwd, Env: bashToolEnv()}, sink)
+	proc, err := be.Start(ExecRequest{Command: req.Command, Cwd: cwd, Env: bashToolEnv(b.AriaID)}, sink)
 	if err != nil {
 		b.Sessions.Remove(scope, sess.ID)
 		return BashResult{}, err

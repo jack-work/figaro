@@ -14,6 +14,10 @@ func TestBindingDisabled_FlagsAndEnv(t *testing.T) {
 	t.Cleanup(func() {
 		noBindFlag, forceBind, noBindEnv, interactive = saveFlag, saveForce, saveEnv, saveInt
 	})
+	// These cases are about the pid-binding policy only. Neutralize
+	// FIGARO_ARIA, which outranks all of it — and which is set for real
+	// when the suite is run from inside an aria's own bash tool.
+	t.Setenv("FIGARO_ARIA", "")
 
 	cases := []struct {
 		name        string
@@ -91,6 +95,59 @@ func TestExtractNoBindFlag(t *testing.T) {
 				t.Errorf("forceBind = %v, want %v", forceBind, tc.wantForce)
 			}
 		})
+	}
+}
+
+// TestEnvAriaID covers the FIGARO_ARIA identity: valid ids pass
+// through, junk is ignored rather than trusted, and surrounding
+// whitespace (a shell-export hazard) is trimmed.
+func TestEnvAriaID(t *testing.T) {
+	cases := []struct {
+		name string
+		set  string
+		want string
+	}{
+		{"unset", "", ""},
+		{"valid", "eac16fef", "eac16fef"},
+		{"trimmed", "  eac16fef\n", "eac16fef"},
+		{"whitespace only", "   ", ""},
+		{"malformed ignored", "not a valid id!", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("FIGARO_ARIA", tc.set)
+			if got := envAriaID(); got != tc.want {
+				t.Errorf("envAriaID() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestBindingDisabled_EnvAriaWins: a statically-attended shell has an
+// identity, not a binding — so bind/unbind stay off even under an
+// explicit --bind, and even on an interactive terminal.
+func TestBindingDisabled_EnvAriaWins(t *testing.T) {
+	saveFlag, saveForce, saveEnv, saveInt := noBindFlag, forceBind, noBindEnv, interactive
+	t.Cleanup(func() {
+		noBindFlag, forceBind, noBindEnv, interactive = saveFlag, saveForce, saveEnv, saveInt
+	})
+	noBindFlag, noBindEnv, interactive = false, false, true
+
+	t.Setenv("FIGARO_ARIA", "eac16fef")
+	forceBind = false
+	if !bindingDisabled() {
+		t.Error("bindingDisabled() = false with FIGARO_ARIA set, want true")
+	}
+	forceBind = true
+	if !bindingDisabled() {
+		t.Error("bindingDisabled() = false with FIGARO_ARIA set and --bind, want true")
+	}
+
+	// A malformed id is not an identity: policy falls back to the flags.
+	t.Setenv("FIGARO_ARIA", "bogus id!")
+	forceBind = false
+	if bindingDisabled() {
+		t.Error("bindingDisabled() = true for malformed FIGARO_ARIA on an interactive shell, want false")
 	}
 }
 
