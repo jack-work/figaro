@@ -72,16 +72,25 @@ func NewIncipit(term Terminal, view NodeView) *Incipit {
 	return &Incipit{term: term, view: view}
 }
 
-// Freeze finalizes a closed message. If it's the message currently live, its rows
-// are already on screen — drop the cursor below them and release the region.
-// Otherwise (a message we never streamed — catch-up) print its rows fresh,
-// prefaced with a blank line (same leading-space rule the live region applies
-// via compose).
+// Freeze finalizes a closed message. If it's the message currently live, its
+// rows are already on screen — drop the cursor below them and release the
+// region. Otherwise print its rows fresh, prefaced with a blank line.
+//
+// A thinking placeholder is a footer-only region pinned at submit, before the
+// prompt has even round-tripped. A message printed while it is up must land
+// ABOVE it in scrollback, so erase the placeholder, print, and repaint it in
+// place — otherwise the footer would be stranded above the very message it
+// belongs under.
 func (i *Incipit) Freeze(m aria.Message) {
 	if m.LT == i.liveLT && i.liveLT != 0 {
 		i.dropBelow()
 		i.reset()
 		return
+	}
+	restore, role := i.thinking, i.role
+	if restore {
+		io.WriteString(i.term, "\x1b[J") // cursor is parked at the live top
+		i.reset()
 	}
 	rows := i.renderNodes(m.Nodes)
 	var b strings.Builder
@@ -107,6 +116,9 @@ func (i *Incipit) Freeze(m aria.Message) {
 		}
 	}
 	io.WriteString(i.term, b.String())
+	if restore {
+		i.OpenThinking(role)
+	}
 }
 
 // Resume rebuilds the inline view after the transcript pager closes. The
@@ -164,7 +176,12 @@ func (i *Incipit) Open(lt int, role string, nodes []livedoc.Node) {
 	}
 	if lt != i.liveLT {
 		// A new open message without a prior Freeze: release whatever was live.
-		if i.liveLT != 0 {
+		// A thinking placeholder is ERASED rather than released — it is a pinned
+		// footer, not content, and dropping it into scrollback would strand the
+		// status bar above the very message it describes.
+		if i.thinking {
+			io.WriteString(i.term, "\x1b[J")
+		} else if i.liveLT != 0 {
 			i.dropBelow()
 		}
 		i.reset()
@@ -223,19 +240,30 @@ func (i *Incipit) Resize(nodes []livedoc.Node) {
 func (i *Incipit) LiveHeight() int { return len(i.live) }
 
 func (i *Incipit) compose(nodes []livedoc.Node) []string {
+	w, h := i.term.Size()
+	foot := i.footer()
+	// A viewport under three rows has no room for a header, a body AND a
+	// footer. The footer is the permanent fixture of the view, so below that
+	// height it is the only thing drawn.
+	if h > 0 && h < 3 {
+		rows := make([]string, 0, len(foot))
+		for _, s := range foot {
+			rows = append(rows, clip(s, w))
+		}
+		return rows
+	}
 	body := i.renderNodes(nodes)
 	// Every message is prefaced with a blank row and (when configured) a role
 	// header — frozen into scrollback alongside the rest of the live region.
 	rows := make([]string, 0, len(body)+5)
 	rows = append(rows, "")
-	if h := i.header(i.role); h != "" {
-		rows = append(rows, h, "")
+	if hd := i.header(i.role); hd != "" {
+		rows = append(rows, hd, "")
 	}
 	rows = append(rows, body...)
-	if closer := i.closer(i.role); len(closer) > 0 {
-		w, _ := i.term.Size()
+	if len(foot) > 0 {
 		rows = append(rows, "")
-		for _, s := range closer {
+		for _, s := range foot {
 			rows = append(rows, clip(s, w))
 		}
 	}
@@ -249,6 +277,21 @@ func (i *Incipit) header(role string) string {
 		return ""
 	}
 	return i.Header(role)
+}
+
+// footer returns the rows pinned at the bottom of the LIVE region. Unlike
+// closer(), it does not depend on the role: the status bar is a fixture of the
+// view — present at submit, during streaming, at completion, and after a pager
+// round-trip. Making it a consequence of which message happened to close is
+// exactly what let it vanish when the prompt merged into the turn.
+func (i *Incipit) footer() []string {
+	if i.Bookend != nil {
+		return i.Bookend()
+	}
+	if i.Rule != nil {
+		return []string{i.Rule()}
+	}
+	return nil
 }
 
 // closer returns the rows that close a message of the given role: the two-row
