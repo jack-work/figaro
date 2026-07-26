@@ -16,13 +16,24 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// Opens reports whether m begins a new turn. The rule is the one the
-// projection has always applied implicitly: a user message carrying prose
-// opens a turn, but a user message bearing tool_result stays inside the
-// current turn even when it also carries text — that text is a steering
-// interjection, not a new question.
+// Opens reports whether m begins a new turn.
+//
+// Three things disqualify an input message. A steering interjection never
+// opens a turn — it is a direction aimed at the exchange already in flight.
+// A message bearing tool_result is the reply half of a tool round, so it
+// stays inside its turn even when it also carries text (that text is a
+// legacy-shaped steer). And a message with no text at all is a state-only
+// tic, which belongs to no turn.
 func Opens(m message.Message) bool {
-	return m.Role == message.RoleInput && !HasToolResult(m) && Text(m) != ""
+	return m.Role == message.RoleInput && !IsSteering(m) && Text(m) != ""
+}
+
+// IsSteering reports whether m is a mid-turn direction rather than a new
+// question. Two accepted shapes for one concept: the explicit flag the drain
+// sets, and the legacy shape — prose riding on a tool_result message — which
+// real logs still contain and which must keep rendering as it always did.
+func IsSteering(m message.Message) bool {
+	return m.Steering || HasToolResult(m)
 }
 
 // StampIDs fills TurnID on every message that lacks one and returns the last

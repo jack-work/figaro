@@ -42,7 +42,15 @@ var channelSchemas = map[string]channelSchema{
 	// the OTHER direction: an older binary has no such mapping and would read
 	// "input" as an unknown voice, rendering turns under the wrong speaker. The
 	// forward-incompatibility gate turns that silent corruption into a refusal.
-	chanIR:             {version: 2, class: classCanonical},
+	// v3: input messages carry a `steering` flag distinguishing a mid-turn
+	// direction from a new question. Reading old entries is transparent (the
+	// flag is absent, and the legacy prose-on-a-tool_result shape is still
+	// recognised as steering), so canonical data needs no migration. The bump
+	// is again for the OTHER direction: an older binary ignores the flag, so a
+	// steer would open a spurious turn and truncate the exchange it belongs
+	// to — shifting every turn id after it, which is the coordinate
+	// `send`/`fork <trunk>:<turn>` addresses. The gate makes that a refusal.
+	chanIR:             {version: 3, class: classCanonical},
 	chanChalkboard:     {version: 1, class: classReducible},
 	"translations-v2/": {version: 1, class: classDerived},
 	chanUI:             {version: 1, class: classDerived},

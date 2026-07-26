@@ -76,11 +76,13 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 	var nodes []livedoc.Node
 	for _, m := range msgs {
 		if m.Role == message.RoleInput {
-			// A user message inside a turn group is a tool_result tic; its
-			// tool_result blocks fold under their invoke (indexResults). If it
-			// ALSO carries text, that's a steering interjection — emit it as a
-			// node, positioned where it arrived (after the tool nodes).
-			if turns.HasToolResult(m) {
+			// A steering interjection is a direction aimed at the turn already in
+			// flight. Two accepted shapes for the one concept: the drain's
+			// explicit flag, and the legacy shape where prose rides on the
+			// tool_result message. Either way it becomes one steering node,
+			// positioned where it arrived (after the tool nodes). tool_result
+			// blocks themselves fold under their invoke (indexResults).
+			if turns.IsSteering(m) {
 				for ci, c := range m.Content {
 					if c.Type == message.ContentProse && strings.TrimSpace(c.Text) != "" {
 						nodes = append(nodes, textNode(livedoc.NodeSteering, roleInput, m.LogicalTime, ci, m.Timestamp, c.Text))

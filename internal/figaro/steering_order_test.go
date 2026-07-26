@@ -3,7 +3,6 @@ package figaro_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"testing"
 	"time"
@@ -101,25 +100,26 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	require.Equal(t, message.ContentProse, msgs[4].Content[0].Type)
 	require.Equal(t, "steer two", msgs[4].Content[0].Text)
 
-	// The canonical order survives, but as THREE turns rather than five
-	// message-granular units: each prompt is node 0 of the exchange it began,
-	// and the tool round folds into the turn that issued it.
+	// The canonical order survives as ONE turn. A steer is a direction aimed at
+	// the exchange already in flight, so it joins that turn rather than opening
+	// its own — which is what previously truncated the turn being steered and
+	// left its closing prose unrendered.
 	read := a.Read(aria.Anchor{Turn: 0}, 1<<20)
-	require.Len(t, read.Parts, 3)
-
-	var voices [][]string
 	for _, part := range read.Parts {
-		var v []string
+		t.Logf("turn=%d inquiry=%q nodes=%d", part.ID, part.Inquiry, len(part.Nodes))
 		for _, n := range part.Nodes {
-			v = append(v, n.Role)
+			t.Logf("    %s/%s %q", n.Type, n.Role, n.Markdown)
 		}
-		voices = append(voices, v)
 	}
-	require.Equal(t, [][]string{
-		{livedoc.RoleInput, livedoc.RoleOutput}, // "initial" + its tool round
-		{livedoc.RoleInput},                     // "steer one"
-		{livedoc.RoleInput, livedoc.RoleOutput}, // "steer two" + "done"
-	}, voices)
+	require.Len(t, read.Parts, 1)
+	require.Equal(t, "initial", read.Parts[0].Inquiry)
+
+	var kinds []string
+	for _, n := range read.Parts[0].Nodes {
+		kinds = append(kinds, string(n.Type))
+	}
+	require.Equal(t, []string{"prose", "steering", "steering", "prose"}, kinds,
+		"both steers must render as steering nodes inside the turn they steer")
 	require.Equal(t, int32(2), prov.calls.Load())
 }
 
