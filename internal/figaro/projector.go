@@ -31,6 +31,12 @@ type Projector interface {
 	// JSON keyed by tool_call_id.
 	Nodes(msgs []message.Message, tails, argPartials map[string]string) []livedoc.Node
 
+	// Prompt projects the message that OPENS a turn. It is the one node the
+	// streaming projection never emits — Nodes walks agent messages — so without
+	// it the engine would have to hand-build the inquiry, and a hand-built node
+	// arrives without the ID, LTs, Src and At the composed path sets.
+	Prompt(m message.Message) []livedoc.Node
+
 	// ResetTools clears per-turn tool timing state.
 	ResetTools()
 	// ToolStarted/ToolFinished record when a tool ran, for display only.
