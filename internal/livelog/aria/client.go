@@ -39,7 +39,7 @@ type Client struct {
 	emitted map[int]int
 
 	OnClosed  func(Message)
-	OnLive    func(turn int, role string, nodes []livedoc.Node)
+	OnLive    func(turn int, from uint64, role string, nodes []livedoc.Node)
 	OnDesync  func(sinceLT int)
 	OnMetrics func(Metrics)
 }
@@ -181,7 +181,7 @@ func (c *Client) Apply(p Page) {
 	// The live region is the OPEN SUFFIX only. Nodes below openFrom were
 	// already released as closed messages above; redrawing them here would
 	// print them twice and wrap the prompt in the agent's header.
-	liveLT, liveNodes := c.openLT, c.openSuffix()
+	liveLT, liveFrom, liveNodes := c.openLT, c.openFrom, c.openSuffix()
 	c.mu.Unlock()
 
 	if metrics != nil && c.OnMetrics != nil {
@@ -193,7 +193,7 @@ func (c *Client) Apply(p Page) {
 		}
 	}
 	if haveLive && c.OnLive != nil {
-		c.OnLive(liveLT, turnRole(liveNodes), liveNodes)
+		c.OnLive(liveLT, liveFrom, turnRole(liveNodes), liveNodes)
 	}
 	if desync >= 0 && c.OnDesync != nil {
 		c.OnDesync(desync)
