@@ -184,3 +184,61 @@ func TestCompose_PagerKeysUnaffectedWhenClosed(t *testing.T) {
 		t.Fatal("k opened the composer")
 	}
 }
+
+// A human types one character per read, and a non-ASCII character arrives as
+// SEVERAL reads — one per UTF-8 byte. Feeding whole strings through consume()
+// (which is what tmux send-keys with a full string does) exercises the one
+// input pattern a real user never produces, so both must be tested.
+func TestCompose_TypedOneByteAtATime(t *testing.T) {
+	const want = "steer me toward zucchero"
+	in, lt, cap := composeInput(t, false)
+	in.consume([]byte("i"))
+	for _, b := range []byte(want) {
+		in.consume([]byte{b}) // one read per keystroke, as a terminal delivers it
+	}
+	if got := lt.status.composeLine(120); !strings.Contains(got, want) {
+		t.Fatalf("draft = %q, want it to contain %q", got, want)
+	}
+	in.consume([]byte("\r"))
+	cap.settle(t)
+	cap.mu.Lock()
+	defer cap.mu.Unlock()
+	if len(cap.texts) != 1 || cap.texts[0] != want {
+		t.Fatalf("delivered %q, want [%q]", cap.texts, want)
+	}
+}
+
+// A multi-byte rune must survive byte-at-a-time entry. string(b) on a byte
+// converts it to a CODE POINT and re-encodes, turning 'é' (0xC3 0xA9) into
+// "Ã©" — every non-ASCII character became mojibake.
+func TestCompose_MultiByteRunesSurviveByteAtATimeEntry(t *testing.T) {
+	const want = "café 日本"
+	in, lt, _ := composeInput(t, false)
+	in.consume([]byte("i"))
+	for _, b := range []byte(want) {
+		in.consume([]byte{b})
+	}
+	if got := lt.status.composeLine(120); !strings.Contains(got, want) {
+		t.Fatalf("draft = %q, want it to contain %q", got, want)
+	}
+	// And backspace is rune-wise: one press removes 本, not a stray byte.
+	in.consume([]byte{0x7f})
+	if got := lt.status.composeLine(120); !strings.Contains(got, "café 日") || strings.Contains(got, "本") {
+		t.Fatalf("after backspace draft = %q, want it to end at %q", got, "café 日")
+	}
+}
+
+// Backspace typed as its own keystroke, repeatedly, across separate reads.
+func TestCompose_BackspaceAcrossReads(t *testing.T) {
+	in, lt, _ := composeInput(t, false)
+	in.consume([]byte("i"))
+	for _, b := range []byte("abcdef") {
+		in.consume([]byte{b})
+	}
+	for i := 0; i < 3; i++ {
+		in.consume([]byte{0x7f})
+	}
+	if got := lt.status.composeLine(60); !strings.Contains(got, "abc") || strings.Contains(got, "abcd") {
+		t.Fatalf("draft = %q, want exactly three characters removed", got)
+	}
+}

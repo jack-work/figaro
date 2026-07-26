@@ -7,6 +7,27 @@ import (
 	"github.com/jack-work/figaro/internal/turns"
 )
 
+// PromptNodes projects a turn-OPENING message into its node(s).
+//
+// It exists because the inquiry is the one node the streaming projection never
+// produces: Nodes() walks agent messages, so nothing on the live path would
+// emit it. Before this, the agent hand-built that node inline as
+// {Type, Role, Markdown} — while the composed path built the same node with
+// ID, LTs, Src and At as well. The same question therefore rendered with full
+// provenance if you re-read it and with none if you watched it arrive, which is
+// the live-vs-committed divergence the purity invariant forbids.
+//
+// One producer, both paths.
+func PromptNodes(m message.Message) []livedoc.Node {
+	var out []livedoc.Node
+	for ci, c := range m.Content {
+		if c.Type == message.ContentProse {
+			out = append(out, textNode(livedoc.NodeProse, roleInput, m.LogicalTime, ci, m.Timestamp, c.Text))
+		}
+	}
+	return out
+}
+
 // Turns projects a message log into turns — the single projection. There is no
 // longer a separate "prompt unit": a turn is one exchange, and the user's
 // question is node 0 of it.
@@ -54,11 +75,7 @@ func Turns(msgs []message.Message, summarize ToolSummary, previewArg ToolPreview
 			// The inquiry is bare text and cannot carry its own timestamp, so the
 			// TURN carries it: At is when the question arrived.
 			at = m.Timestamp
-			for ci, c := range m.Content {
-				if c.Type == message.ContentProse {
-					prompt = append(prompt, textNode(livedoc.NodeProse, roleInput, m.LogicalTime, ci, m.Timestamp, c.Text))
-				}
-			}
+			prompt = append(prompt, PromptNodes(m)...)
 		}
 		if id == 0 {
 			continue // boot / state-only tics precede the first prompt

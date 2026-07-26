@@ -77,3 +77,8 @@ func (p *Projector) at(id string) *compose.ToolTiming {
 	t := p.timings[id]
 	return &t
 }
+
+// Prompt projects the turn-opening message. compose.PromptNodes is the same
+// constructor Turns uses, so the live path and the composed path cannot
+// disagree about the inquiry's provenance.
+func (p *Projector) Prompt(m message.Message) []livedoc.Node { return compose.PromptNodes(m) }

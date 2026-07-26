@@ -264,9 +264,11 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 				return entry, nil
 			}
 			a.ariaSrv.OpenInquiry(a.turnID, prompt.text)
-			a.ariaSrv.Append(a.turnID, []livedoc.Node{
-				{Type: livedoc.NodeProse, Role: livedoc.RoleInput, Markdown: prompt.text},
-			})
+			// Through the projector, for the same reason the steer above is:
+			// one producer of UI IR, not two. Hand-building it here produced a
+			// node with no ID, LTs, Src or At, so the same question rendered
+			// with full provenance when re-read and with none when watched.
+			a.ariaSrv.Append(a.turnID, a.proj.Prompt(entry.Payload))
 		}
 	}
 	return entry, nil
