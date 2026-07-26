@@ -440,16 +440,45 @@ func (t *transcript) toggleSelectedTools() bool {
 		}
 	}
 	dirty := make(map[int]struct{}, len(tools))
-	for _, ref := range tools {
-		if expand {
-			t.expanded[ref] = true
-		} else {
-			delete(t.expanded, ref)
+	toggle := func() {
+		for _, ref := range tools {
+			if expand {
+				t.expanded[ref] = true
+			} else {
+				delete(t.expanded, ref)
+			}
+			dirty[ref.turn] = struct{}{}
 		}
-		dirty[ref.turn] = struct{}{}
+		t.dropTurnsRows(dirty)
 	}
-	t.dropTurnsRows(dirty)
-	t.ensureSelectionVisible()
+	// EXPANDING GROWS UPWARD. Leaving t.offset alone pins the viewport TOP, and
+	// because the offset is an ABSOLUTE line index the new rows shove everything
+	// after the expansion down and off the bottom — the half of the screen the
+	// reader is actually anchored on. anchorBelow pins the tail of the change
+	// instead, so every node at or after it keeps its screen row and the earlier
+	// content is what scrolls away. See anchorBelow for why that is the right way
+	// round.
+	//
+	// The anchor is the LAST toggled tool: a selection can cover several, and only
+	// the content after all of them is guaranteed to hold still.
+	//
+	// Following is left alone — the viewport is pinned to the bottom there and
+	// renderFrame re-derives the offset every frame, so a shift would be
+	// overwritten and the bottom is already the correct anchor.
+	if t.follow {
+		toggle()
+		t.ensureSelectionVisible()
+		return true
+	}
+	if !t.anchorBelow(tools[len(tools)-1], toggle) {
+		// No span on one side of the change, so there is no honest delta to
+		// apply. Keep the old behaviour rather than guess.
+		t.ensureSelectionVisible()
+	}
+	// Deliberately NOT ensureSelectionVisible on the anchored path. The focus is
+	// the block that just grew; scrolling to reveal its far end is exactly the
+	// downward growth this replaced, and on a 200-line expansion it throws the
+	// reader into the middle of the output with the anchor pushed off-screen.
 	return true
 }
 
