@@ -34,8 +34,9 @@ func types(t aria.Turn) []livedoc.NodeType {
 	return out
 }
 
-// A turn is one exchange: the prompt is node 0, not a separate unit.
-func TestTurns_PromptIsNodeZero(t *testing.T) {
+// A turn is one exchange: the question that opened it is Turn.Inquiry — text,
+// not a unit and not a node — and Nodes holds only what came back.
+func TestTurns_InquiryIsTextAndNodesAreTheReply(t *testing.T) {
 	msgs := []message.Message{
 		userPrompt("first question"),
 		assistant(message.TextContent("first answer")),
@@ -49,12 +50,15 @@ func TestTurns_PromptIsNodeZero(t *testing.T) {
 		t.Fatalf("got %d turns, want 2: %+v", len(turns), turns)
 	}
 	for i, want := range []string{"first question", "second question"} {
-		if turns[i].Nodes[0].Role != roleInput {
-			t.Errorf("turn %d node 0 role = %q, want user", i, turns[i].Nodes[0].Role)
+		if turns[i].Inquiry != want {
+			t.Errorf("turn %d inquiry = %q, want %q", i, turns[i].Inquiry, want)
 		}
-		if turns[i].Nodes[0].Markdown != want {
-			t.Errorf("turn %d prompt = %q, want %q", i, turns[i].Nodes[0].Markdown, want)
+		if turns[i].Nodes[0].Role == roleInput {
+			t.Errorf("turn %d node 0 speaks in the user's voice; the question is not a node", i)
 		}
+	}
+	if got := turns[0].Nodes[0].Markdown; got != "first answer" {
+		t.Errorf("turn 0 node 0 = %q, want the reply", got)
 	}
 	if turns[0].ID != 1 || turns[1].ID != 2 {
 		t.Errorf("turn ids = %d,%d want 1,2", turns[0].ID, turns[1].ID)
@@ -104,8 +108,7 @@ func TestTurns_ToolBeforeSteeringSharingItsLT(t *testing.T) {
 	}
 	tn := turns[0]
 	want := []livedoc.NodeType{
-		livedoc.NodeProse,    // the prompt, node 0
-		livedoc.NodeProse,    // "hey"
+		livedoc.NodeProse,    // "hey" — node 0 is the agent's first block
 		livedoc.NodeTool,     // t1
 		livedoc.NodeSteering, // the steer
 		livedoc.NodeProse,    // "oh cool sure"
@@ -120,21 +123,21 @@ func TestTurns_ToolBeforeSteeringSharingItsLT(t *testing.T) {
 		}
 	}
 	// The tool spans invoke and result; the steer carries only the result LT.
-	if gotLTs := tn.Nodes[2].LTs; len(gotLTs) != 2 || gotLTs[0] != 61 || gotLTs[1] != 62 {
+	if gotLTs := tn.Nodes[1].LTs; len(gotLTs) != 2 || gotLTs[0] != 61 || gotLTs[1] != 62 {
 		t.Errorf("tool node lts = %v, want [61 62]", gotLTs)
 	}
-	if gotLTs := tn.Nodes[3].LTs; len(gotLTs) != 1 || gotLTs[0] != 62 {
+	if gotLTs := tn.Nodes[2].LTs; len(gotLTs) != 1 || gotLTs[0] != 62 {
 		t.Errorf("steering node lts = %v, want [62]", gotLTs)
 	}
 	// Two coordinates, at different block indices in different messages.
-	if src := tn.Nodes[2].Src; len(src) != 2 || src[0].Block != 1 || src[1].Block != 0 {
+	if src := tn.Nodes[1].Src; len(src) != 2 || src[0].Block != 1 || src[1].Block != 0 {
 		t.Errorf("tool node src = %+v, want invoke 61.1 then result 62.0", src)
 	}
-	if tn.Nodes[3].Role != roleInput {
-		t.Errorf("steering role = %q, want user (renders like the prompt)", tn.Nodes[3].Role)
+	if tn.Nodes[2].Role != roleInput {
+		t.Errorf("steering role = %q, want user (the one input-voice node left)", tn.Nodes[2].Role)
 	}
-	if tn.Nodes[2].ToolCallID != "t1" || tn.Nodes[2].ID != "t1" {
-		t.Errorf("tool identity/receipt = %q/%q", tn.Nodes[2].ID, tn.Nodes[2].ToolCallID)
+	if tn.Nodes[1].ToolCallID != "t1" || tn.Nodes[1].ID != "t1" {
+		t.Errorf("tool identity/receipt = %q/%q", tn.Nodes[1].ID, tn.Nodes[1].ToolCallID)
 	}
 }
 

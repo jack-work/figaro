@@ -42,8 +42,8 @@ shared: `prose, thinking`.
 `"<lt>.<blockIdx>"` address for prose/thinking, an opaque provider receipt for
 tools, and nothing at all for the user's prompt. Under turn addressing the node
 id is a plain per-turn ordinal, `lts` carries provenance for every node type
-including tools, and the user prompt is node 0 rather than an identity-less
-special case. The cardinality mismatch above stays — folding a tool's invoke and
+including tools, and the user's question is `Turn.Inquiry` — text on the turn —
+rather than an identity-less node. The cardinality mismatch above stays — folding a tool's invoke and
 result into one node is correct — but it is now *stated* by `lts` instead of
 being invisible.
 

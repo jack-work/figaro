@@ -51,20 +51,30 @@ func TestTurns_EveryTurnHasExactlyOneInquiry(t *testing.T) {
 	}
 }
 
-// The inquiry is the opening question as TEXT, and it agrees with the prompt
-// node the projection still emits. When that node is removed (the S32 seam)
-// this test becomes the proof that nothing was lost.
-func TestTurns_InquiryAgreesWithThePromptNode(t *testing.T) {
+// The inquiry is TEXT ON THE TURN and nothing else. It is not node 0, it is not
+// any node: a turn's list holds what the AGENT produced plus the steering that
+// rode along, so a renderer can tell the question from the answer without
+// inspecting a role. The predecessor of this test proved the inquiry text and
+// the prompt node agreed — its whole purpose was to license removing the node,
+// which this now pins.
+func TestTurns_InquiryIsNotANode(t *testing.T) {
 	for _, tn := range Turns(inqConversation(), nil, nil) {
-		if len(tn.Nodes) == 0 {
-			t.Fatalf("turn %d has no nodes", tn.ID)
+		for i, n := range tn.Nodes {
+			if n.Markdown == tn.Inquiry {
+				t.Errorf("turn %d node %d echoes the inquiry %q — the question is not a node",
+					tn.ID, i, tn.Inquiry)
+			}
+			// Steering is the only input-voice node left.
+			if n.Role == livedoc.RoleInput && n.Type != livedoc.NodeSteering {
+				t.Errorf("turn %d node %d is %s/input; only steering speaks in the user's voice now",
+					tn.ID, i, n.Type)
+			}
 		}
-		n := tn.Nodes[0]
-		if n.Type != livedoc.NodeProse || n.Role != livedoc.RoleInput {
-			t.Fatalf("turn %d node 0 = %s/%s, want prose/input", tn.ID, n.Type, n.Role)
-		}
-		if n.Markdown != tn.Inquiry {
-			t.Errorf("turn %d: inquiry %q != prompt node %q", tn.ID, tn.Inquiry, n.Markdown)
-		}
+	}
+	// Turn 1 opens with a question and answers it: its first node is the
+	// agent's, not the user's.
+	tns := Turns(inqConversation(), nil, nil)
+	if n := tns[0].Nodes[0]; n.Type != livedoc.NodeThinking {
+		t.Errorf("turn 1 node 0 = %s, want the agent's first block (thinking)", n.Type)
 	}
 }

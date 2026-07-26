@@ -23,8 +23,8 @@ func TestIncipit_SingleRowViewportKeepsTheReply(t *testing.T) {
 		withChrome(in)
 
 		in.OpenThinking(livedoc.RoleOutput)
-		in.Open(9, 0, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "ONE"}})
-		in.Open(9, 0, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: full}})
+		in.Open(aria.Message{Turn: 9, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "ONE"}}})
+		in.Open(aria.Message{Turn: 9, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: full}}})
 		in.Freeze(aria.Message{Turn: 9, From: 0, Role: livedoc.RoleOutput,
 			Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: full}}})
 
@@ -50,7 +50,7 @@ func TestIncipit_SuppressedRegionFitsTheViewport(t *testing.T) {
 		in := NewIncipit(ft, NodeText{})
 		in.Bookend = func() []string { return []string{"RULEROW", "STATUSROW"} }
 
-		in.Open(4, 0, livedoc.RoleOutput, []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "body"}})
+		in.Open(aria.Message{Turn: 4, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "body"}}})
 
 		rows := in.compose([]livedoc.Node{{ID: "n0", Type: "prose", Markdown: "body"}})
 		if len(rows) > h {

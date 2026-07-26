@@ -130,47 +130,39 @@ func TestRenderToolNodeSanitizesBeforeTailClamp(t *testing.T) {
 	}
 }
 
-// TestPromptDrawsAsTheUsersVoiceInEveryView pins the fix for a regression found
-// in final validation: a turn's prompt is node 0 with Role "input", and it must
-// read as the user's voice in the inline renderer, the pager and `show` alike.
+// TestInquiryDrawsAsTheUsersVoiceInEveryView pins the fix for a regression found
+// in final validation: the question that opened a turn must read as the user's
+// voice in the inline renderer, the pager and `show` alike.
 //
-// The MECHANISM changed in S33. It used to be an inline "↳ input" marker on the
-// node, because `show` had no header to carry a voice. That marker belongs to
-// STEERING, so the prompt wearing it printed the voice twice in incipit (once as
-// the run header, once as the marker) and mislabelled the prompt as steering in
-// `show`. Now every view derives the voice from the same contiguous-run header
-// (aria.VoiceRunEnd + messageHeader), and the node itself draws as plain prose.
-func TestPromptDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
-	prompt := livedoc.Node{Type: livedoc.NodeProse, Role: livedoc.RoleInput, Markdown: "what is the codeword?"}
+// The MECHANISM changed twice. It was an inline "↳ input" marker on a prompt
+// NODE, because `show` had no header to carry a voice — but that marker belongs
+// to STEERING, so the prompt wearing it printed the voice twice in incipit and
+// mislabelled the prompt as steering in `show`. Then it was a voice-run header
+// over node 0. Now the question is not a node at all: it is Turn.Inquiry, drawn
+// by inquiryRows under the same "❯ input" header every view uses.
+func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	reply := livedoc.Node{Type: livedoc.NodeProse, Role: livedoc.RoleOutput, Markdown: "RED"}
 	steer := livedoc.Node{Type: livedoc.NodeSteering, Role: livedoc.RoleInput, Markdown: "actually, whisper it"}
 
-	// A whole turn, rendered by the shared walker, shows BOTH voices, each
-	// under its own header, in order.
+	// A whole turn shows BOTH voices, each under its own header, in order —
+	// the question first, though it is text rather than a node.
 	turn := stripANSI(strings.Join(
-		renderTurnRows([]livedoc.Node{prompt, reply}, 60, 0, 0, renderSettings{}), "\n"))
+		renderTurnRows("what is the codeword?", []livedoc.Node{reply}, 60, 0, 0, renderSettings{}), "\n"))
 	ui, fi := strings.Index(turn, "❯ input"), strings.Index(turn, "‹ figaro")
 	if ui < 0 || fi < 0 || ui > fi {
-		t.Fatalf("turn must head the input run then the output run:\n%s", turn)
+		t.Fatalf("turn must head the inquiry then the output run:\n%s", turn)
+	}
+	if !strings.Contains(turn, "what is the codeword?") {
+		t.Fatalf("the inquiry text is missing:\n%s", turn)
 	}
 	if strings.Contains(turn, "↳ input") {
 		t.Fatalf("the inquiry wore steering's marker — the duplicate-voice bug:\n%s", turn)
 	}
 
-	// One dispatch: the node itself renders identically wherever it is drawn.
+	// "↳ input" is reserved for genuine steering — the one input-voice NODE.
 	view := &ariaView{settings: &renderSettings{}}
-	got := stripANSI(strings.Join(view.Render(prompt, 60, 0), "\n"))
-	viaList := stripANSI(strings.Join(renderNodeList([]livedoc.Node{prompt}, 60, 0, 0, renderSettings{}), "\n"))
-	if strings.TrimSpace(got) != strings.TrimSpace(viaList) {
-		t.Fatalf("views disagree on one node:\n ariaView: %q\n show:     %q", got, viaList)
-	}
-
-	// "↳ input" is reserved for genuine steering — not the inquiry, not output.
 	if !strings.Contains(stripANSI(strings.Join(view.Render(steer, 60, 0), "\n")), "↳ input") {
 		t.Fatal("steering lost its marker")
-	}
-	if strings.Contains(got, "↳ input") {
-		t.Fatalf("the inquiry drew steering's marker: %q", got)
 	}
 	if a := stripANSI(strings.Join(view.Render(reply, 60, 0), "\n")); strings.Contains(a, "↳ input") {
 		t.Fatalf("output prose drew the user's marker: %q", a)

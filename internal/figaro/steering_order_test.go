@@ -126,10 +126,10 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	for _, n := range read.Parts[0].Nodes {
 		kinds = append(kinds, string(n.Type))
 	}
-	require.Equal(t, []string{"prose", "tool", "steering", "prose"}, kinds,
+	require.Equal(t, []string{"tool", "steering", "prose"}, kinds,
 		"the drained batch is ONE steering node inside the turn it steers, "+
 			"and the tool call it interrupted must survive")
-	require.Equal(t, "steer one\nsteer two", read.Parts[0].Nodes[2].Markdown,
+	require.Equal(t, "steer one\nsteer two", read.Parts[0].Nodes[1].Markdown,
 		"both queued texts survive, joined by a newline — nothing is dropped")
 	require.Equal(t, int32(2), prov.calls.Load())
 }

@@ -3,7 +3,6 @@ package figaro_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"path/filepath"
 	"testing"
@@ -154,13 +153,11 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	if len(got.Parts) == 0 {
 		t.Fatalf("Read(0) after interrupt+restore returned 0 units; want >=1 (user prompt on disk)")
 	}
-	// The prompt is node 0 of its turn now, not a unit of its own.
+	// The question is TEXT ON THE TURN now, not a unit of its own and not a node.
 	sawUser := false
 	for _, c := range got.Parts {
-		for _, n := range c.Nodes {
-			if n.Role == livedoc.RoleInput {
-				sawUser = true
-			}
+		if c.Inquiry == "please stream forever" {
+			sawUser = true
 		}
 	}
 	require.True(t, sawUser, "Read(0) should include the on-disk user prompt")
@@ -179,17 +176,15 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	waitFor(t, sink2, rpc.MethodTurnDone, 5*time.Second)
 
 	// After the second turn, both the older exchange and the new one must be
-	// visible to a fresh reader. Two TURNS, not three units — the prompt is
-	// node 0 of its own turn now.
+	// visible to a fresh reader. Two TURNS, not three units — the question
+	// belongs to the turn that answered it.
 	final := a2.Read(aria.Anchor{Turn: 0}, 1<<20)
 	require.GreaterOrEqual(t, len(final.Parts), 2,
 		"final Read(0) should contain both the original turn and the new one")
 	prompts := 0
 	for _, part := range final.Parts {
-		for _, n := range part.Nodes {
-			if n.Role == livedoc.RoleInput {
-				prompts++
-			}
+		if part.Inquiry != "" {
+			prompts++
 		}
 	}
 	require.GreaterOrEqual(t, prompts, 2, "both prompts must survive")

@@ -326,9 +326,9 @@ type plainSink struct {
 
 func newPlainSink(out io.Writer) *plainSink {
 	s := &plainSink{out: out, doneCh: make(chan struct{}, 1), client: aria.NewClient()}
-	s.client.OnLive = func(_ int, _ uint64, role string, nodes []livedoc.Node) {
-		if role == livedoc.RoleOutput {
-			s.emit(plainText(nodes))
+	s.client.OnLive = func(m aria.Message) {
+		if m.Role == livedoc.RoleOutput {
+			s.emit(plainText(m.Nodes))
 		}
 	}
 	s.client.OnClosed = func(m aria.Message) {

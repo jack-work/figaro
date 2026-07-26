@@ -230,9 +230,9 @@ func tailBound(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-// Units is gone. compose.Turns is the single projection now — the prompt is
-// node 0 of its turn rather than a separate unit. See internal/compose/turns.go
-// and docs/turn-addressing.md.
+// Units is gone. compose.Turns is the single projection now — a turn is one
+// exchange, opened by Turn.Inquiry (text) rather than by a unit or a node. See
+// internal/compose/turns.go and docs/turn-addressing.md.
 
 // resultAt is a tool_result block together with the coordinate it was found
 // at, so a tool node can record both of its sources.

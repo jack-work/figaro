@@ -533,12 +533,15 @@ done:
 		t.Fatalf("idle agent should have no live unit: %+v", r.LiveTail())
 	}
 	// The prompt and the reply are ONE exchange now, not two units: the
-	// question is node 0 of the turn that answered it.
+	// question is the turn's Inquiry, the reply its nodes.
 	if len(r.Parts) != 1 {
 		t.Fatalf("want a single turn, got %d: %+v", len(r.Parts), r.Parts)
 	}
-	if !nodesContain(r.Parts[0].Nodes, "the question") {
-		t.Errorf("the turn must hold the prompt: %+v", r.Parts[0])
+	if r.Parts[0].Inquiry != "the question" {
+		t.Errorf("the turn must carry its question as text: %+v", r.Parts[0])
+	}
+	if nodesContain(r.Parts[0].Nodes, "the question") {
+		t.Errorf("the question is not a node: %+v", r.Parts[0])
 	}
 	if !nodesContain(r.Parts[0].Nodes, "the reply") {
 		t.Errorf("the turn must hold the reply: %+v", r.Parts[0])
@@ -1256,11 +1259,11 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		require.NoError(t, json.Unmarshal(b, &r))
 		cl.Apply(r)
 	}
-	// Each turn holds its prompt as node 0 and exactly one assistant reply —
-	// a second turn must not re-compose the first turn's nodes into itself.
-	// Closed messages arrive one per VOICE RUN (the prompt closes under "you",
-	// the reply under "figaro"), so aggregate by turn before judging it.
+	// Each turn carries its question as TEXT and exactly one assistant reply —
+	// a second turn must not re-compose the first turn's nodes into itself. A
+	// turn can close as several messages, so aggregate by turn before judging.
 	byTurn := map[int][]livedoc.Node{}
+	inquiry := map[int]string{}
 	order := []int{}
 	for _, m := range cl.View().Closed {
 		if len(m.Nodes) == 0 {
@@ -1269,12 +1272,18 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		if _, seen := byTurn[m.Turn]; !seen {
 			order = append(order, m.Turn)
 		}
+		if m.Inquiry != "" {
+			inquiry[m.Turn] = m.Inquiry
+		}
 		byTurn[m.Turn] = append(byTurn[m.Turn], m.Nodes...)
 	}
 	for _, lt := range order {
 		nodes := byTurn[lt]
-		if nodes[0].Role != livedoc.RoleInput {
-			t.Fatalf("turn %d node 0 must be the prompt, got role %q", lt, nodes[0].Role)
+		if inquiry[lt] == "" {
+			t.Fatalf("turn %d lost its inquiry", lt)
+		}
+		if nodes[0].Role == livedoc.RoleInput {
+			t.Fatalf("turn %d node 0 speaks in the user's voice; the question is not a node", lt)
 		}
 		replies := 0
 		for _, n := range nodes {
@@ -1287,7 +1296,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		}
 	}
 	require.Equal(t, 2, len(order))
-	// And turn 2's frames must not re-compose turn 1's prompt as a NODE.
+	// And turn 2's frames must not re-compose turn 1's prompt as a node.
 	// (The mantra metric legitimately echoes the first prompt.)
 	for _, fr := range turn2 {
 		b, _ := json.Marshal(fr.Params)
@@ -1330,20 +1339,24 @@ loop:
 	}
 
 	// The prompt is complete the instant it exists, so it must arrive as
-	// already-closed content and never stream. If it ever appeared inside a
-	// Live delta the client would render it in flight and then re-render it
-	// on commit — the flicker between send and durable commit.
-	sawPromptCommitted := false
+	// already-closed content and never stream. It is TEXT ON THE TURN, so what
+	// arrives is a part carrying Inquiry and no nodes at all — if it ever
+	// appeared inside a Live delta the client would render it in flight and
+	// then re-render it on commit, the flicker between send and durable commit.
+	sawInquiryCommitted := false
 	for _, f := range frames {
 		for _, part := range f.Parts {
+			if part.Inquiry == "the question" && part.Live == nil {
+				sawInquiryCommitted = true
+			}
 			for _, n := range part.Nodes {
 				if n.Role == livedoc.RoleInput {
-					sawPromptCommitted = true
+					t.Fatalf("the question is not a node; got %+v", n)
 				}
 			}
 		}
 	}
-	require.True(t, sawPromptCommitted, "expected the prompt as committed content")
+	require.True(t, sawInquiryCommitted, "expected the inquiry as committed turn text")
 
 	for _, f := range frames {
 		live := f.LiveTail()

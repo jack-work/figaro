@@ -502,10 +502,22 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 func committedMessages(p aria.Page) []aria.Message {
 	messages := make([]aria.Message, 0, len(p.Parts))
 	for _, part := range p.Parts {
+		// The inquiry belongs to the slice that STARTS the turn; a part clipped
+		// off the head of one must not repeat it. A part with no nodes still
+		// carries its question — that is a turn that produced nothing.
+		inquiry := ""
+		if !part.ClippedHead && part.From == 0 {
+			inquiry = part.Inquiry
+		}
 		if len(part.Nodes) == 0 {
+			if inquiry != "" {
+				messages = append(messages, aria.Message{
+					Turn: int(part.ID), Inquiry: inquiry, Role: livedoc.RoleInput,
+				})
+			}
 			continue
 		}
-		messages = appendTurnSlices(messages, part.ID, part.From, part.Nodes)
+		messages = appendTurnSlices(messages, part.ID, part.From, inquiry, part.Nodes)
 	}
 	return messages
 }
@@ -519,58 +531,54 @@ func nodeChars(n livedoc.Node) int {
 	return len(n.Markdown) + len(n.Output) + len(n.Summary)
 }
 
-// appendTurnSlices cuts a turn into bounded, VOICE-HOMOGENEOUS units at node
-// boundaries, appending into dst. A node is never split: the smallest unit is
-// one node, however large, because tool output is already clamped by
-// composeBashCap.
+// appendTurnSlices cuts a turn into bounded units at node boundaries,
+// appending into dst. A node is never split: the smallest unit is one node,
+// however large, because tool output is already clamped by composeBashCap.
 //
-// Two cuts, in order. First at every voice change — a turn holds both voices,
-// and a unit carries ONE header, so a unit spanning the prompt and the reply
-// printed the user's own question under the agent's name. Then at
-// transcriptUnitChars within each run, so one enormous agent run still pages.
+// One cut, at transcriptUnitChars, so one enormous turn still pages. There is
+// no voice cut any more: every node is agent output (the inquiry is text on the
+// turn, a steer is an inline annotation), so a turn is one voice throughout and
+// the unit's single header is always the right one.
 //
-// The whole-turn case is the overwhelming majority (38 turns -> 59 units on the
+// The whole-turn case is the overwhelming majority (38 turns -> 41 units on the
 // largest real aria) and is allocation-free: this is on the page-refetch path,
 // where an intermediate slice per part cost 25-37% of selection rehydrate.
-func appendTurnSlices(dst []aria.Message, id uint64, from uint64, nodes []livedoc.Node) []aria.Message {
-	for rs := 0; rs < len(nodes); {
-		re, role := aria.VoiceRunEnd(nodes, rs)
-		run := nodes[rs:re]
-		total := 0
-		for _, n := range run {
-			total += nodeChars(n)
+func appendTurnSlices(dst []aria.Message, id uint64, from uint64, inquiry string, nodes []livedoc.Node) []aria.Message {
+	unit := func(off int, seg []livedoc.Node) aria.Message {
+		m := aria.Message{
+			Turn: int(id), From: from + uint64(off), Role: livedoc.RoleOutput, Nodes: seg,
 		}
-		if total < transcriptUnitChars {
-			dst = append(dst, aria.Message{
-				Turn: int(id), From: from + uint64(rs), Role: role, Nodes: run,
-			})
-			rs = re
+		if m.From == 0 {
+			m.Inquiry = inquiry
+		}
+		return m
+	}
+	total := 0
+	for _, n := range nodes {
+		total += nodeChars(n)
+	}
+	if total < transcriptUnitChars {
+		return append(dst, unit(0, nodes))
+	}
+	start, budget := 0, 0
+	for i, n := range nodes {
+		budget += nodeChars(n)
+		if budget < transcriptUnitChars && i < len(nodes)-1 {
 			continue
 		}
-		start, budget := 0, 0
-		for i, n := range run {
-			budget += nodeChars(n)
-			if budget < transcriptUnitChars && i < len(run)-1 {
-				continue
-			}
-			seg := run[start : i+1]
-			// From is absolute within the turn: the run's offset plus the
-			// segment's offset inside it. Node ids are positional
-			// (Nodes[i].ID == From+i) and sliceKey packs From, so an
-			// off-by-one here corrupts the row cache silently.
-			dst = append(dst, aria.Message{
-				Turn: int(id), From: from + uint64(rs+start), Role: role, Nodes: seg,
-			})
-			start, budget = i+1, 0
-		}
-		rs = re
+		// From is absolute within the turn: the segment's offset inside it plus
+		// the part's own. Node ids are positional (Nodes[i].ID == From+i) and
+		// sliceKey packs From, so an off-by-one here corrupts the row cache
+		// silently.
+		dst = append(dst, unit(start, nodes[start:i+1]))
+		start, budget = i+1, 0
 	}
 	return dst
 }
 
 // sliceTurn is the standalone form, for tests and callers without a dst.
 func sliceTurn(id uint64, from uint64, nodes []livedoc.Node) []aria.Message {
-	return appendTurnSlices(nil, id, from, nodes)
+	return appendTurnSlices(nil, id, from, "", nodes)
 }
 
 // sliceKey identifies one pager unit: the turn id in the high bits, the node
@@ -589,15 +597,14 @@ func keyOf(m aria.Message) sliceKey {
 // turn is the turn id a unit belongs to.
 func (k sliceKey) turn() int { return int(k >> sliceKeyFromBits) }
 
-// turnVoice is the voice a unit renders under. Units are voice-homogeneous by
-// construction (appendTurnSlices cuts at every voice change), so this is exact,
-// not a coarse hint.
+// turnVoice is the voice a unit renders under. Every node is agent output, so
+// a unit with nodes is the agent's; one without is an inquiry whose turn
+// produced nothing.
 func turnVoice(nodes []livedoc.Node) string {
 	if len(nodes) == 0 {
-		return ""
+		return livedoc.RoleInput
 	}
-	_, role := aria.VoiceRunEnd(nodes, 0)
-	return role
+	return livedoc.RoleOutput
 }
 
 func (t *transcript) trimPages(direction transcriptPageDirection) {
@@ -1004,7 +1011,22 @@ func (t *transcript) stopFollowing() {
 // instances are cached; open messages are rebuilt on every live frame.
 func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 	var rows []transcriptRow
-	if h := messageHeader(m.Role); h != "" {
+	// The turn's opening question is TEXT ON THE TURN, carried by its first
+	// slice only. Its rows hold no nodeRef — there is no node to select or
+	// expand — so it decorates like chrome, which is what it is.
+	if iq := inquiryProse(m.Inquiry, t.w-2); len(iq) > 0 {
+		rows = append(rows, transcriptRow{text: messageHeader(livedoc.RoleInput)}, transcriptRow{})
+		for _, l := range iq {
+			rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(l, t.w))})
+		}
+		// A blank and the RULE close the question before the agent speaks. The
+		// question used to be its own message and got that rule as the message
+		// separator; the two voices now share one message, so it is drawn here.
+		if len(m.Nodes) > 0 {
+			rows = append(rows, transcriptRow{}, transcriptRow{text: t.transRule()})
+		}
+	}
+	if h := messageHeader(m.Role); h != "" && len(m.Nodes) > 0 {
 		rows = append(rows, transcriptRow{text: h}, transcriptRow{})
 	}
 	for k, n := range m.Nodes {

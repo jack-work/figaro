@@ -30,14 +30,14 @@ func TestIncipit_SteerInsideTheLiveRegionDoesNotDuplicateIt(t *testing.T) {
 	withChrome(in)
 
 	// The region streams from node 1 and GROWS to include the steer plus body.
-	in.Open(2, 1, livedoc.RoleOutput, append([]livedoc.Node{steer}, body...))
+	in.Open(aria.Message{Turn: 2, From: 1, Role: livedoc.RoleOutput, Nodes: append([]livedoc.Node{steer}, body...)})
 
 	// The steer finalizes as its own closed message — same start, smaller extent.
 	in.Freeze(aria.Message{Turn: 2, From: 1, Role: livedoc.RoleInput,
 		Nodes: []livedoc.Node{steer}})
 
 	// The producer reopens PAST the steer, then the body finalizes normally.
-	in.Open(2, 2, livedoc.RoleOutput, body)
+	in.Open(aria.Message{Turn: 2, From: 2, Role: livedoc.RoleOutput, Nodes: body})
 	in.Freeze(aria.Message{Turn: 2, From: 2, Role: livedoc.RoleOutput, Nodes: body})
 
 	all := strings.Join(ft.Screen(), "\n")

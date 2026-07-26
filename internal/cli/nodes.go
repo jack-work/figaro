@@ -10,7 +10,6 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/internal/livedoc"
-	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
 )
@@ -44,10 +43,9 @@ func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) [
 		return renderToolNode(n, width, bashCap, tick, verbose)
 	case n.Type == livedoc.NodeThinking:
 		return renderThinkingNode(n, width)
-	// Steering ONLY. The inquiry is also input-voice, but it opens the turn
-	// and carries the "❯ input" run header; marking it "↳ input" as well printed
-	// the voice twice in incipit and mislabelled the prompt as steering in
-	// `show`. The two are distinct primitives, not one thing in two positions.
+	// Steering is the only input-voice NODE there is — the inquiry is text on
+	// the turn and never reaches here — so this marker cannot be mistaken for
+	// the question that opened the turn.
 	case n.Type == livedoc.NodeSteering:
 		return renderSteeringNode(n, width)
 	default:
@@ -55,31 +53,50 @@ func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) [
 	}
 }
 
-// renderTurnRows renders a whole turn — BOTH voices — by walking it in
-// contiguous voice runs and printing the run header above each. This is the
-// same mechanism the inline renderer gets from Incipit.Header; `show` used to
-// have no header at all, which is why the prompt had to be marked "↳ input" to
-// carry a voice it could not otherwise show. One mechanism now serves both.
-func renderTurnRows(nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) []string {
+// renderTurnRows renders a whole exchange — the inquiry that opened the turn,
+// then what the agent made of it — each under its own run header, with the rule
+// between them. The inquiry is TEXT ON THE TURN, so it is drawn from
+// Turn.Inquiry; no renderer looks for it in the node list, because it is not
+// there.
+func renderTurnRows(inquiry string, nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) []string {
 	if width <= 0 {
 		width = 80
 	}
 	var rows []string
-	for rs := 0; rs < len(nodes); {
-		re, voice := aria.VoiceRunEnd(nodes, rs)
-		run := renderNodeList(nodes[rs:re], width, bashCap, tick, set)
-		if len(run) > 0 {
-			if len(rows) > 0 {
-				rows = append(rows, "")
-			}
-			if h := messageHeader(voice); h != "" {
-				rows = append(rows, h, "")
-			}
-			rows = append(rows, run...)
+	if iq := inquiryProse(inquiry, width); len(iq) > 0 {
+		rows = append(rows, messageHeader(livedoc.RoleInput), "")
+		for _, l := range iq {
+			rows = append(rows, clipToWidth(l, width))
 		}
-		rs = re
 	}
-	return rows
+	body := renderNodeList(nodes, width, bashCap, tick, set)
+	if len(body) == 0 {
+		return rows
+	}
+	if len(rows) > 0 {
+		// The question closes with a blank and the RULE before the agent speaks.
+		// It used to get that rule for free, as the closer of its own message;
+		// now the two voices share one message and the rule is drawn here.
+		rows = append(rows, "", dimTransRule(width))
+	}
+	if h := messageHeader(livedoc.RoleOutput); h != "" {
+		rows = append(rows, h, "")
+	}
+	return append(rows, body...)
+}
+
+// inquiryProse wraps a turn's opening question to the same prose renderer its
+// nodes use, so the question looks exactly as it did when it was still a node.
+// The caller supplies the "❯ input" header, because each view decorates rows
+// its own way. Empty inquiry, no rows.
+func inquiryProse(inquiry string, width int) []string {
+	if strings.TrimSpace(inquiry) == "" {
+		return nil
+	}
+	if width <= 0 {
+		width = 80
+	}
+	return render.Prose(inquiry, width)
 }
 
 // renderNodeList renders a unit's whole node list to terminal rows. The list
