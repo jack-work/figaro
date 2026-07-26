@@ -1,5 +1,18 @@
 package cli
 
+// WHAT THIS FILE ONCE FAILED TO CATCH
+//
+// Its readBefore double sliced history itself and treated `limit` as a COUNT
+// OF PARTS. Production's limit is a BYTE BUDGET, and the double never called
+// aria.Paginate at all. Result: ~30 tests in this file stayed GREEN while the
+// live pager rendered ONE NODE for an 800-node aria — and, separately, a
+// duplicated message at EVERY page boundary went unseen because the double
+// excluded the anchor while production included it. The double did not merely
+// fail to model production; it encoded the OPPOSITE semantics.
+//
+// Rule: a double must call the real function. If it cannot, it is a fixture,
+// not a test. See skills/tmux-testing.md.
+
 import (
 	"encoding/json"
 	"fmt"
