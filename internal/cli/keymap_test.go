@@ -208,12 +208,16 @@ func TestKeymap_IndexAgreesWithTheTable(t *testing.T) {
 // TestOpensTranscript_MatchesTheHandKeptList is the migration oracle: the
 // table's opener set is byte-for-byte the list opensTranscriptFor used to
 // carry by hand (including the '!' fix that landed just before it).
+// NOTE: the printable openers were REMOVED deliberately. In incipit every
+// printable character now starts composing a steer, because requiring a trigger
+// key silently ate the user's first word — and because English sentences contain
+// the trigger, a mid-sentence occurrence discarded everything before it and
+// turned the rest into the message. The pager is reached with ^T/^L, and the
+// arrow cluster still opens it, because a control key or an arrow is never text.
+// Inside the pager j/k/u/d/g/G, /, ? ! Q all behave exactly as before.
 func TestOpensTranscript_MatchesTheHandKeptList(t *testing.T) {
 	old := map[byte]bool{}
 	for _, b := range []byte{
-		'j', 'k', 'u', 'd', 'g', 'G', // scroll
-		'/',           // search prompt
-		'?', '!', 'Q', // help / figaro status / queued-prompt panels
 		0x0f,       // ^O verbosity
 		0x0e, 0x10, // ^N/^P node selection
 		0x0d, 0x0a, // Enter: expand tools
@@ -303,7 +307,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  q / ^D              detach; the turn keeps running",
 		"  !                   figaro status panel",
 		"  Q                   queued prompts panel",
-		"  i                   steer the running turn (Enter send · Esc cancel)",
+		"  i                   steer the running turn — inline, just type (Enter send · Esc cancel)",
 		"  ?                   close help",
 	}
 	got := helpBody()

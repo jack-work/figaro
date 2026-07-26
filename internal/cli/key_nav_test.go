@@ -119,11 +119,15 @@ func TestInputConsume_NavKeysMatchLetterMotions(t *testing.T) {
 		{"home", []string{"\x1b[H", "\x1bOH", "\x1b[1~", "\x1b[7~"}, "gg"},
 		{"end", []string{"\x1b[F", "\x1bOF", "\x1b[4~", "\x1b[8~"}, "G"},
 	}
-	for _, open := range []bool{false, true} {
-		mode := "from incipit"
-		if open {
-			mode = "in the pager"
-		}
+	// The letter aliases are equivalent to the arrow cluster only INSIDE the
+	// pager. In incipit a printable character starts composing a steer — the
+	// arrows still open the pager (they are gestures, not text), but 'j' is a
+	// letter someone is trying to type. Comparing them from incipit would assert
+	// the behaviour we deliberately removed, so the equivalence is pager-only and
+	// the incipit half of the contract is covered by
+	// TestNavArrowsStillOpenThePagerFromIncipit below.
+	for _, open := range []bool{true} {
+		mode := "in the pager"
 		for _, tc := range cases {
 			t.Run(tc.name+" "+strings.ReplaceAll(mode, " ", "-"), func(t *testing.T) {
 				var refOut countingWriter
@@ -270,5 +274,30 @@ func TestTranscriptNav_SearchPromptOwnsTheKeyboard(t *testing.T) {
 	}
 	if lt.tr.offset != before {
 		t.Fatalf("arrows scrolled behind the search prompt: %d, want %d", lt.tr.offset, before)
+	}
+}
+
+// In incipit the arrow cluster still opens the pager, because an arrow is a
+// gesture and never text. Its letter aliases no longer do: they compose. That
+// asymmetry is the whole point — the inline view is where you type, the pager is
+// where you navigate.
+func TestNavArrowsStillOpenThePagerFromIncipit(t *testing.T) {
+	for _, seq := range []string{"\x1b[A", "\x1b[B", "\x1b[5~", "\x1b[6~", "\x1b[H", "\x1b[F"} {
+		var out countingWriter
+		in, lt := navInput(t, &out, false)
+		feed(t, in, seq)
+		if !lt.transcriptActive() {
+			t.Errorf("%q no longer opens the pager from incipit", seq)
+		}
+	}
+	// ...and a letter composes instead.
+	var out countingWriter
+	in, lt := navInput(t, &out, false)
+	feed(t, in, "j")
+	if lt.transcriptActive() {
+		t.Error("'j' opened the pager from incipit; it must start composing")
+	}
+	if lt.transcriptMode() != modeCompose {
+		t.Errorf("'j' did not start composing: mode=%v", lt.transcriptMode())
 	}
 }

@@ -78,11 +78,14 @@ func TestCompose_TypingSubmitsASteer(t *testing.T) {
 	}{{"incipit", false}, {"pager", true}} {
 		t.Run(tc.name, func(t *testing.T) {
 			in, lt, cap := composeInput(t, tc.open)
-			in.consume([]byte("i"))
-			if got := lt.transcriptMode(); got != modeCompose {
-				t.Fatalf("'i' did not open the composer: mode = %v", got)
+			if tc.open {
+				in.consume([]byte("i")) // the pager needs a trigger; letters are motions there
 			}
-			in.consume([]byte("say zucchero\r"))
+			in.consume([]byte("s"))
+			if got := lt.transcriptMode(); got != modeCompose {
+				t.Fatalf("composing did not start: mode = %v", got)
+			}
+			in.consume([]byte("ay zucchero\r"))
 			cap.settle(t)
 
 			cap.mu.Lock()
@@ -108,7 +111,7 @@ func TestCompose_TypingSubmitsASteer(t *testing.T) {
 // mode owns the keyboard.
 func TestCompose_DraftShowsInTheFooter(t *testing.T) {
 	in, lt, _ := composeInput(t, false)
-	in.consume([]byte("iabc"))
+	in.consume([]byte("abc"))
 	line := lt.status.composeLine(80)
 	if !strings.Contains(line, "abc") {
 		t.Fatalf("footer %q does not show the draft", line)
@@ -125,7 +128,7 @@ func TestCompose_DraftShowsInTheFooter(t *testing.T) {
 
 func TestCompose_BackspaceAndCancel(t *testing.T) {
 	in, lt, cap := composeInput(t, false)
-	in.consume([]byte("iabc\x7f"))
+	in.consume([]byte("abc\x7f"))
 	if got := lt.status.composeLine(80); !strings.Contains(got, "ab") || strings.Contains(got, "abc") {
 		t.Fatalf("backspace did not delete one character: %q", got)
 	}
@@ -145,7 +148,7 @@ func TestCompose_BackspaceAndCancel(t *testing.T) {
 // the compose box.
 func TestCompose_CtrlCStillInterrupts(t *testing.T) {
 	in, _, _ := composeInput(t, false)
-	in.consume([]byte("ihalf typed"))
+	in.consume([]byte("half typed"))
 	_, stop := in.consume([]byte{0x03})
 	if !stop {
 		t.Fatal("Ctrl-C did not stop the input loop while composing")
@@ -156,7 +159,7 @@ func TestCompose_CtrlCStillInterrupts(t *testing.T) {
 // than queueing an empty prompt at the model.
 func TestCompose_BlankDraftSendsNothing(t *testing.T) {
 	in, lt, cap := composeInput(t, false)
-	in.consume([]byte("i   \r"))
+	in.consume([]byte("   \r"))
 	if lt.transcriptMode() == modeCompose {
 		t.Error("Enter did not close the composer")
 	}
@@ -192,7 +195,6 @@ func TestCompose_PagerKeysUnaffectedWhenClosed(t *testing.T) {
 func TestCompose_TypedOneByteAtATime(t *testing.T) {
 	const want = "steer me toward zucchero"
 	in, lt, cap := composeInput(t, false)
-	in.consume([]byte("i"))
 	for _, b := range []byte(want) {
 		in.consume([]byte{b}) // one read per keystroke, as a terminal delivers it
 	}
@@ -214,7 +216,6 @@ func TestCompose_TypedOneByteAtATime(t *testing.T) {
 func TestCompose_MultiByteRunesSurviveByteAtATimeEntry(t *testing.T) {
 	const want = "café 日本"
 	in, lt, _ := composeInput(t, false)
-	in.consume([]byte("i"))
 	for _, b := range []byte(want) {
 		in.consume([]byte{b})
 	}
@@ -231,7 +232,6 @@ func TestCompose_MultiByteRunesSurviveByteAtATimeEntry(t *testing.T) {
 // Backspace typed as its own keystroke, repeatedly, across separate reads.
 func TestCompose_BackspaceAcrossReads(t *testing.T) {
 	in, lt, _ := composeInput(t, false)
-	in.consume([]byte("i"))
 	for _, b := range []byte("abcdef") {
 		in.consume([]byte{b})
 	}
@@ -240,5 +240,143 @@ func TestCompose_BackspaceAcrossReads(t *testing.T) {
 	}
 	if got := lt.status.composeLine(60); !strings.Contains(got, "abc") || strings.Contains(got, "abcd") {
 		t.Fatalf("draft = %q, want exactly three characters removed", got)
+	}
+}
+
+// A draft must never be silently destroyed. When the turn it was aimed at ends
+// underneath it, the composer stays open, the process stays up, and the label
+// stops claiming "steer" — because the exchange it would have steered is over.
+func TestCompose_DraftSurvivesTheEndOfItsTurn(t *testing.T) {
+	in, lt, _ := composeInput(t, false)
+	for _, b := range []byte("half typed") {
+		in.consume([]byte{b})
+	}
+	if got := lt.status.composeLine(60); !strings.Contains(got, "steer ↳") {
+		t.Fatalf("while the turn runs the label must say steer: %q", got)
+	}
+
+	if !lt.status.composeTurnEnded() {
+		t.Fatal("a non-empty draft must hold the process open when its turn ends")
+	}
+	if !lt.status.composingNow() {
+		t.Error("composer closed when the turn ended; the draft was destroyed")
+	}
+	got := lt.status.composeLine(60)
+	if !strings.Contains(got, "half typed") {
+		t.Errorf("draft lost: %q", got)
+	}
+	if !strings.Contains(got, "send ↳") || strings.Contains(got, "steer ↳") {
+		t.Errorf("label still claims steer after the turn ended: %q", got)
+	}
+}
+
+// ...and sending it then opens a NEW turn rather than being absorbed into the
+// finished one. Absorbing it would be I2's inverse bug wearing a new hat: a real
+// question merged into an exchange it does not belong to.
+func TestCompose_AfterTurnEndSendsAsANewTurnNotASteer(t *testing.T) {
+	in, lt, cap := composeInput(t, false)
+	for _, b := range []byte("a real question") {
+		in.consume([]byte{b})
+	}
+	lt.status.composeTurnEnded()
+	in.consume([]byte("\r"))
+	cap.settle(t)
+
+	cap.mu.Lock()
+	defer cap.mu.Unlock()
+	if len(cap.texts) != 1 || cap.texts[0] != "a real question" {
+		t.Fatalf("delivered %q", cap.texts)
+	}
+	if cap.steer[0] {
+		t.Error("sent with Steering=true after its turn ended; that absorbs a question into a finished exchange")
+	}
+}
+
+// An EMPTY composer must not hold the process open — that would hang a command
+// merely because the box was showing.
+func TestCompose_EmptyDraftDoesNotHoldTheProcess(t *testing.T) {
+	_, lt, _ := composeInput(t, false)
+	lt.status.composeOpen(true)
+	if lt.status.composeTurnEnded() {
+		t.Fatal("an empty composer must not hold the process open")
+	}
+	if lt.status.composeHeldOpen() {
+		t.Error("held flag set for an empty draft")
+	}
+}
+
+// THE HEADLINE. In the inline view a user just types — no trigger. Requiring one
+// silently ate the first word, and because English sentences contain 'i', any
+// trigger mid-sentence discarded everything before it and turned the rest into
+// the message. "zebra" contains no 'i' and used to vanish entirely.
+func TestCompose_AnyPrintableStartsComposingInIncipit(t *testing.T) {
+	for _, word := range []string{"zebra", "just do it", "yes please", "/slash", "?ask"} {
+		t.Run(word, func(t *testing.T) {
+			in, lt, _ := composeInput(t, false)
+			for _, b := range []byte(word) {
+				in.consume([]byte{b}) // one read per keystroke, as a terminal delivers it
+			}
+			if lt.transcriptActive() {
+				t.Fatalf("typing %q opened the pager instead of composing", word)
+			}
+			if got := lt.status.composeLine(80); !strings.Contains(got, word) {
+				t.Fatalf("draft = %q, want it to contain %q", got, word)
+			}
+		})
+	}
+}
+
+// ...and the whole thing is delivered as a steer, first character included.
+func TestCompose_InlineTypingDeliversTheWholeText(t *testing.T) {
+	const want = "zebra: also say rasoio"
+	in, _, cap := composeInput(t, false)
+	for _, b := range []byte(want) {
+		in.consume([]byte{b})
+	}
+	in.consume([]byte("\r"))
+	cap.settle(t)
+	cap.mu.Lock()
+	defer cap.mu.Unlock()
+	if len(cap.texts) != 1 || cap.texts[0] != want {
+		t.Fatalf("delivered %q, want [%q]", cap.texts, want)
+	}
+	if !cap.steer[0] {
+		t.Error("inline typing must submit as a steer")
+	}
+}
+
+// In the PAGER the letters are motions, so a trigger is the only way in and
+// navigation must be untouched.
+func TestCompose_PagerKeepsMotionsAndTheTrigger(t *testing.T) {
+	in, lt, _ := composeInput(t, true)
+	before := lt.tr.offset
+	in.consume([]byte("k"))
+	if lt.tr.offset >= before {
+		t.Fatalf("k stopped navigating in the pager: %d -> %d", before, lt.tr.offset)
+	}
+	if lt.transcriptMode() == modeCompose {
+		t.Fatal("k started composing in the pager; motions must win there")
+	}
+	in.consume([]byte("i"))
+	if lt.transcriptMode() != modeCompose {
+		t.Fatal("i no longer opens the composer in the pager")
+	}
+	// The trigger itself inserts nothing there.
+	if got := lt.status.composeLine(40); strings.Contains(got, "i▏") {
+		t.Errorf("the pager trigger inserted itself: %q", got)
+	}
+}
+
+// Control chords are gestures, not text: they must survive in the inline view.
+func TestCompose_ControlChordsStillWorkInline(t *testing.T) {
+	in, _, _ := composeInput(t, false)
+	_, stop := in.consume([]byte{0x03}) // Ctrl-C with nothing composed
+	if !stop {
+		t.Fatal("Ctrl-C stopped working in incipit")
+	}
+	in2, lt2, _ := composeInput(t, false)
+	in2.consume([]byte{0x14}) // Ctrl-T opens the pager
+	if !lt2.transcriptActive() {
+		t.Fatal("Ctrl-T stopped opening the pager from incipit")
 	}
 }

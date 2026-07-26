@@ -43,6 +43,15 @@ type sessionStatus struct {
 	// renderers that already hold a pointer to this one.
 	composing   bool
 	composeText string
+	// composeSteer is whether the draft would be a STEER. True while a turn is
+	// running. It goes false when that turn ends underneath a draft: the turn it
+	// would have steered is over, so sending it must open a NEW exchange rather
+	// than be absorbed into a finished one.
+	composeSteer bool
+	// composeHeld records that a draft outlived its turn and is the only reason
+	// the process is still up. Esc then means "discard and exit", not merely
+	// "close the box".
+	composeHeld bool
 }
 
 func newSessionStatus(figaroID string, startedAt time.Time) *sessionStatus {
@@ -315,37 +324,72 @@ func formatCtxCell(tokens int) string {
 // a live view without watching it — so everything it submits is a steer.
 // ---------------------------------------------------------------------------
 
-// composeOpen starts (or refocuses) the composer.
-func (s *sessionStatus) composeOpen() {
+// composeOpen starts (or refocuses) the composer. steer says whether a turn is
+// running, and therefore whether the draft is aimed at it.
+func (s *sessionStatus) composeOpen(steer bool) {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	s.composing = true
+	s.composeSteer = steer
 	s.mu.Unlock()
 }
 
-// composeCancel abandons the draft.
-func (s *sessionStatus) composeCancel() {
+// composeTurnEnded is called when a turn finishes. If a draft is in flight the
+// composer is KEPT OPEN and the process held up: the user typed something and we
+// never silently destroy that. What changes is what it means — the turn it would
+// have steered is over, so it becomes an ordinary prompt. Reports whether it is
+// now holding the process open.
+func (s *sessionStatus) composeTurnEnded() bool {
 	if s == nil {
-		return
+		return false
 	}
 	s.mu.Lock()
-	s.composing, s.composeText = false, ""
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+	if !s.composing || strings.TrimSpace(s.composeText) == "" {
+		return false
+	}
+	s.composeSteer = false
+	s.composeHeld = true
+	return true
 }
 
-// composeTake closes the composer and returns the draft, trimmed. An empty
-// draft submits nothing — Enter on a blank line just closes the box.
-func (s *sessionStatus) composeTake() string {
+// composeHeldOpen reports whether a draft is the only reason we are still up.
+func (s *sessionStatus) composeHeldOpen() bool {
 	if s == nil {
-		return ""
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.composeHeld
+}
+
+// composeCancel abandons the draft. Reports whether it had been holding the
+// process open, in which case the caller should exit.
+func (s *sessionStatus) composeCancel() bool {
+	if s == nil {
+		return false
 	}
 	s.mu.Lock()
-	text := strings.TrimSpace(s.composeText)
-	s.composing, s.composeText = false, ""
+	held := s.composeHeld
+	s.composing, s.composeText, s.composeHeld = false, "", false
 	s.mu.Unlock()
-	return text
+	return held
+}
+
+// composeTake closes the composer and returns the draft, trimmed, along with
+// whether it should be sent as a steer and whether it had been holding the
+// process open. An empty draft submits nothing.
+func (s *sessionStatus) composeTake() (text string, steer, held bool) {
+	if s == nil {
+		return "", false, false
+	}
+	s.mu.Lock()
+	text, steer, held = strings.TrimSpace(s.composeText), s.composeSteer, s.composeHeld
+	s.composing, s.composeText, s.composeHeld = false, "", false
+	s.mu.Unlock()
+	return text, steer, held
 }
 
 // composeType appends one input BYTE to the draft.
@@ -391,15 +435,19 @@ func (s *sessionStatus) composingNow() bool {
 	return s.composing
 }
 
-// composeLine is the status row while composing: the draft behind a steer
-// marker, so the footer says what the keyboard is doing. It replaces the
-// status text exactly as the search box's query line does — one footer, one
-// row, whichever mode owns it.
+// composeLine is the status row while composing: the draft behind a marker that
+// says what Enter will DO. "steer" while a turn is running; "send" once it has
+// ended, because the exchange it would have steered is over and Enter now opens
+// a new one. The label is the only warning the user gets, so it must not lie.
 func (s *sessionStatus) composeLine(width int) string {
 	if s == nil {
 		return ""
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return clipToWidth("steer ↳ "+s.composeText+"▏", width)
+	label := "steer"
+	if !s.composeSteer {
+		label = "send"
+	}
+	return clipToWidth(label+" ↳ "+s.composeText+"▏", width)
 }

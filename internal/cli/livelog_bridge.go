@@ -563,3 +563,8 @@ func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bo
 	}
 	return renderNode(n, width, bashCap, uint64(tick), v.settings != nil && v.settings.verbose)
 }
+
+// turnFinished reports whether the turn being watched has ended. The composer
+// asks so it knows whether a draft is a steer (aimed at a running turn) or an
+// ordinary prompt (which will open its own).
+func (t *livelogTurn) turnFinished() bool { return t.finished }
