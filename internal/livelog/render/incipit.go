@@ -104,7 +104,11 @@ func (i *Incipit) Freeze(m aria.Message) {
 	rows := i.renderNodes(m.Nodes)
 	var b strings.Builder
 	b.WriteString("\r\n") // leading blank — every message is prefaced with a newline
-	if h := i.header(m.Role); h != "" {
+	// A voice run whose nodes all render to nothing (thinking hidden, minted-but-
+	// empty prose, a tool already drawn) must not print a header over empty space.
+	// A steer splits the agent's run in two, and the leading half is routinely
+	// invisible — which showed as a bare "‹ figaro" sitting above "↳ you".
+	if h := i.header(m.Role); h != "" && len(rows) > 0 {
 		b.WriteString(h)
 		b.WriteString("\r\n")
 		b.WriteString("\r\n")
@@ -157,7 +161,7 @@ func (i *Incipit) printMessage(m aria.Message) {
 		return
 	}
 	rows := []string{""}
-	if h := i.header(m.Role); h != "" {
+	if h := i.header(m.Role); h != "" && len(rows) > 0 {
 		rows = append(rows, h, "")
 	}
 	rows = append(rows, body...)

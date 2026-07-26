@@ -239,8 +239,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	case <-doneCh:
 		// The committed bookend is the final line; nothing more to print.
 	case <-disconnectCh:
-		lt.abandon("disconnected — turn continues")
-		fmt.Fprintln(os.Stderr, "follow: figaro listen "+figaroID)
+		// q / Ctrl-D. If the turn already finished while the pager was up this
+		// is a clean exit, not an abandonment: no rule, no follow hint, and the
+		// completed tail reaches scrollback intact.
+		if lt.abandon("disconnected — turn continues") {
+			fmt.Fprintln(os.Stderr, "follow: figaro listen "+figaroID)
+		}
 	case <-fcli.Done():
 		lt.abandon("agent disconnected before turn completed")
 		os.Exit(1)
