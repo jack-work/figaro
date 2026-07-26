@@ -120,6 +120,24 @@ func chalkboardReduce(state, patch []byte) ([]byte, error) {
 	return next.MarshalJSON()
 }
 
+// segmentSize bounds one WAL segment file. figwal's 64MB default is a
+// server-log figure: MEASURED on the author's store (300 segments, 18262 IR
+// entries, 29MB — 1.6KB/entry; biggest single segment 1.78MB/1624 entries),
+// nothing has ever rolled and nothing ever would, which makes
+// SegmentBaseIndexes — the coarse "which file holds LT N" index a lazy read
+// wants — a constant function.
+//
+// 2MiB gives ~1300 entries per segment at the measured density: the largest
+// real aria rolls, an ordinary one still fits in one file. The floor on the
+// choice is that a single record must fit inside a segment (disk.Log returns
+// ErrPayloadTooLarge otherwise). The largest record anywhere in the store is
+// 128KB, so 2MiB is 16x headroom; the only unbounded producer is an inlined
+// base64 image from the read tool, which is why this is not 1MiB.
+//
+// Affects new segments only — existing arias keep their oversized files and
+// simply stop growing them.
+const segmentSize = 2 * 1024 * 1024
+
 func storeOptions() xwal.StoreOptions {
 	// The root genesis is a figaro RoleGenesis message (filtered from
 	// rendering/context) — not figwal's generic marker, which would read back
@@ -128,6 +146,7 @@ func storeOptions() xwal.StoreOptions {
 	return xwal.StoreOptions{
 		Main:        chanIR,
 		Codec:       "jsonl",
+		SegmentSize: segmentSize,
 		Genesis:     genesis,
 		MintTrunkID: hexTrunkID,
 		Reducers: map[string]xwal.Reducer{
