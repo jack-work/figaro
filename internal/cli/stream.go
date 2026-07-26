@@ -137,12 +137,16 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			// turn (the one it would have steered is over) or Esc can discard and
 			// exit. The footer's label flips from "steer" to "send" so the change
 			// in meaning is visible rather than implied.
-			mu.Lock()
+			// NOTE: onNotify already holds mu (taken at the top with a deferred
+			// unlock). mu is a plain sync.Mutex and is NOT reentrant — locking
+			// it again here deadlocked the notify pump on turn.done, which then
+			// wedged the input loop too (it needs the same lock to render), so
+			// Ctrl-C / Ctrl-D / q / Esc all became dead keys and the process
+			// could never exit.
 			held := lt.status.composeTurnEnded()
 			if held {
 				lt.render()
 			}
-			mu.Unlock()
 			// Close on turn-done only in incipit. Once the transcript pager is
 			// up — however it was entered — it has listen semantics: the session
 			// stays open until an explicit q / Ctrl-D / Ctrl-C.

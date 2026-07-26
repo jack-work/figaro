@@ -115,6 +115,12 @@ func (i *Incipit) overlapsLiveRegion(m aria.Message) bool {
 func (i *Incipit) Freeze(m aria.Message) {
 	if i.isLiveRegion(m) {
 		if !i.bodyHidden() {
+			// Repaint with the role's closer in place of the pinned footer
+			// before committing. The footer is CHROME: it belongs to whatever
+			// region is currently live, and freezing it verbatim left one copy
+			// stranded in scrollback per message — two footers for a single
+			// exchange, which is not what the sketch asks for.
+			i.paint(i.composeWith(m.Nodes, i.closer(m.Role)))
 			i.dropBelow()
 			i.reset()
 			return
@@ -330,8 +336,15 @@ func clipRows(rows []string, h int) []string {
 }
 
 func (i *Incipit) compose(nodes []livedoc.Node) []string {
+	return i.composeWith(nodes, i.footer())
+}
+
+// composeWith builds the region's rows with an explicit trailer. The LIVE
+// region trails the pinned footer; a region being FROZEN trails its role's
+// closer instead, because the footer is chrome — committing it would strand a
+// status bar in scrollback above the very message that follows it.
+func (i *Incipit) composeWith(nodes []livedoc.Node, foot []string) []string {
 	w, _ := i.term.Size()
-	foot := i.footer()
 	if i.bodyHidden() {
 		rows := make([]string, 0, len(foot))
 		for _, s := range foot {
