@@ -27,6 +27,7 @@ type livelogTurn struct {
 	status *sessionStatus
 
 	openLT       int
+	openFrom     uint64
 	openRole     string
 	open         []livedoc.Node
 	pending      *aria.Message
@@ -97,9 +98,9 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 			}
 		}
 	}
-	t.client.OnLive = func(lt int, role string, nodes []livedoc.Node) {
+	t.client.OnLive = func(lt int, from uint64, role string, nodes []livedoc.Node) {
 		newOpen := lt != t.openLT
-		t.openLT, t.openRole, t.open = lt, role, nodes
+		t.openLT, t.openFrom, t.openRole, t.open = lt, from, role, nodes
 		if role == livedoc.RoleOutput {
 			if newOpen {
 				t.finished = false
@@ -117,7 +118,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 		if t.tr.active {
 			t.tr.render()
 		} else {
-			t.in.Open(lt, role, nodes)
+			t.in.Open(lt, from, role, nodes)
 		}
 	}
 	return t
@@ -324,7 +325,7 @@ func (t *livelogTurn) render() {
 	if t.tr.active {
 		t.tr.render()
 	} else if t.openLT != 0 {
-		t.in.Open(t.openLT, t.openRole, t.open)
+		t.in.Open(t.openLT, t.openFrom, t.openRole, t.open)
 	}
 }
 
@@ -344,7 +345,7 @@ func (t *livelogTurn) finishTurn(reason string) {
 		t.thinkingOpen = false
 		t.in.AbandonOpen("")
 	} else if !hadPending && t.openLT != 0 && t.openRole == livedoc.RoleOutput {
-		t.in.Open(t.openLT, t.openRole, t.open)
+		t.in.Open(t.openLT, t.openFrom, t.openRole, t.open)
 		if strings.HasPrefix(strings.ToLower(reason), "error:") {
 			t.in.AbandonOpen("")
 		}
@@ -353,7 +354,7 @@ func (t *livelogTurn) finishTurn(reason string) {
 
 func (t *livelogTurn) freezePending() {
 	if t.pending != nil {
-		t.in.Open(t.pending.LT, t.pending.Role, t.pending.Nodes)
+		t.in.Open(t.pending.LT, t.pending.From, t.pending.Role, t.pending.Nodes)
 		t.in.Freeze(*t.pending)
 		if c := cursorOf(*t.pending); c.after(t.lastFrozen) {
 			t.lastFrozen = c
@@ -446,7 +447,7 @@ func (t *livelogTurn) flushTail() {
 		return
 	}
 	sort.SliceStable(closed, func(i, j int) bool { return cursorOf(closed[j]).after(cursorOf(closed[i])) })
-	t.in.Resume(closed, openLT, openRole, open)
+	t.in.Resume(closed, openLT, t.openFrom, openRole, open)
 	if len(closed) > 0 {
 		t.lastFrozen = cursorOf(closed[len(closed)-1])
 	}

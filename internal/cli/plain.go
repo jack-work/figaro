@@ -210,7 +210,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 	}
 	defer fcli.Close()
 
-	if _, _, err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
+	if _, _, err := fcli.Qua(ctx, prompt, buildPromptChalkboard(), false); err != nil {
 		fmt.Fprintln(os.Stderr, "error: prompt:", err)
 		return 1
 	}
@@ -254,7 +254,7 @@ func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, o
 	}
 	defer fcli.Close()
 
-	if _, _, err := fcli.Qua(ctx, prompt, buildPromptChalkboard()); err != nil {
+	if _, _, err := fcli.Qua(ctx, prompt, buildPromptChalkboard(), false); err != nil {
 		fmt.Fprintln(os.Stderr, "error: prompt:", err)
 		return 1
 	}
@@ -326,7 +326,7 @@ type plainSink struct {
 
 func newPlainSink(out io.Writer) *plainSink {
 	s := &plainSink{out: out, doneCh: make(chan struct{}, 1), client: aria.NewClient()}
-	s.client.OnLive = func(_ int, role string, nodes []livedoc.Node) {
+	s.client.OnLive = func(_ int, _ uint64, role string, nodes []livedoc.Node) {
 		if role == livedoc.RoleOutput {
 			s.emit(plainText(nodes))
 		}

@@ -247,6 +247,13 @@ func submitPrompt(a *figaro.Agent, text string) {
 	a.SubmitPrompt(rpc.QuaRequest{Text: text})
 }
 
+// submitSteer is a prompt the caller declares to be a direction for the turn
+// already running, the way `figaro send --steer` does. Intent is carried, not
+// inferred — see rpc.QuaRequest.Steering.
+func submitSteer(a *figaro.Agent, text string) {
+	a.SubmitPrompt(rpc.QuaRequest{Text: text, Steering: true})
+}
+
 // --- Tests ---
 
 func newTestAgent(response string) *figaro.Agent {
