@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,12 +14,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	ariaLog "github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 func newBackedConversation(t *testing.T) (*store.XwalBackend, string) {
@@ -74,24 +77,24 @@ func (p *idleProvider) callCount() int {
 	return p.calls
 }
 
-func TestOpenAfterCrashBeforeAssistantSeal(t *testing.T) {
+func TestOpenAfterCrashBeforeAssistantAppend(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
 	ir, err := b.Open(id)
 	require.NoError(t, err)
 	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role: message.RoleUser, Content: []message.Content{message.TextContent("crashed mid-stream")},
+		Role: message.RoleInput, Content: []message.Content{message.TextContent("crashed mid-stream")},
 	}})
 	require.NoError(t, err)
 	before := ir.Len()
 
 	prov := &idleProvider{}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	got := a.Context()
 	a.Kill()
 
 	assert.Equal(t, before, ir.Len())
-	assert.Equal(t, message.RoleUser, got[len(got)-1].Role)
+	assert.Equal(t, message.RoleInput, got[len(got)-1].Role)
 	assert.Zero(t, prov.callCount())
 }
 
@@ -101,7 +104,7 @@ func TestOpenAfterCrashWithUnresolvedTools(t *testing.T) {
 	ir, err := b.Open(id)
 	require.NoError(t, err)
 	_, err = ir.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		StopReason: message.StopToolInvoke,
 		Content: []message.Content{{
 			Type: message.ContentToolInvoke, ToolCallID: "call-1", ToolName: "wait",
@@ -111,18 +114,18 @@ func TestOpenAfterCrashWithUnresolvedTools(t *testing.T) {
 	require.NoError(t, err)
 
 	prov := &idleProvider{}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	first := a.Context()
 	a.Kill()
 	last := first[len(first)-1]
-	require.Equal(t, message.RoleUser, last.Role)
+	require.Equal(t, message.RoleInput, last.Role)
 	require.Len(t, last.Content, 1)
 	assert.Equal(t, message.ContentToolResult, last.Content[0].Type)
 	assert.Equal(t, "call-1", last.Content[0].ToolCallID)
 	assert.True(t, last.Content[0].IsError)
 	assert.Contains(t, last.Content[0].Text, "process died mid-turn")
 
-	a = figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
+	a = figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	second := a.Context()
 	a.Kill()
 	assert.Len(t, second, len(first), "repeated open must not double-repair")
@@ -154,7 +157,7 @@ func (p *interruptProvider) Send(ctx context.Context, in provider.SendInput, bus
 		bus.PushToolInvokeStart(call.ToolCallID, call.ToolName)
 		bus.PushToolReady(call)
 		msg := message.Message{
-			Role: message.RoleAssistant, StopReason: message.StopToolInvoke,
+			Role: message.RoleOutput, StopReason: message.StopToolInvoke,
 			Content: []message.Content{call}, Timestamp: time.Now().UnixMilli(),
 		}
 		if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
@@ -182,7 +185,7 @@ func (t *waitTool) Execute(ctx context.Context, _ map[string]any, out tool.OnOut
 	return nil, ctx.Err()
 }
 
-func TestInterruptSealsPartialTurn(t *testing.T) {
+func TestInterruptRepairsPartialTurn(t *testing.T) {
 	for _, mode := range []string{"empty", "prose", "ready", "tool"} {
 		t.Run(mode, func(t *testing.T) {
 			b, id := newBackedConversation(t)
@@ -194,7 +197,7 @@ func TestInterruptSealsPartialTurn(t *testing.T) {
 				toolStarted = make(chan struct{})
 				registry.MustRegister(&waitTool{started: toolStarted})
 			}
-			a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: registry})
+			a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: registry})
 			defer a.Kill()
 			ch, _ := subscribeChan(a)
 			a.SubmitPrompt(rpc.QuaRequest{Text: "go"})
@@ -220,7 +223,7 @@ func TestInterruptSealsPartialTurn(t *testing.T) {
 			switch mode {
 			case "empty":
 				last := got[len(got)-1]
-				assert.Equal(t, message.RoleUser, last.Role, "empty partial leaves the turn absent")
+				assert.Equal(t, message.RoleInput, last.Role, "empty partial leaves the turn absent")
 				assert.Equal(t, "go", last.Content[0].Text)
 			case "prose":
 				last := got[len(got)-1]
@@ -262,7 +265,7 @@ func (p *mixedToolProvider) Send(_ context.Context, in provider.SendInput, bus p
 	<-p.running
 	<-p.release
 	msg := message.Message{
-		Role: message.RoleAssistant, StopReason: message.StopToolInvoke,
+		Role: message.RoleOutput, StopReason: message.StopToolInvoke,
 		Content: calls, Timestamp: time.Now().UnixMilli(),
 	}
 	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
@@ -301,7 +304,7 @@ func TestInterruptPreservesCompletedAndRunningToolStates(t *testing.T) {
 	registry := tool.NewRegistry()
 	registry.MustRegister(impl)
 	prov := &mixedToolProvider{done: impl.done, running: impl.running, release: make(chan struct{})}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: registry})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: registry})
 	defer a.Kill()
 	ch, _ := subscribeChan(a)
 	a.SubmitPrompt(rpc.QuaRequest{Text: "go"})
@@ -361,8 +364,8 @@ func (n *panicOnceNotifier) Notify(method string, params any) error {
 	if method != rpc.MethodAriaFrame {
 		return nil
 	}
-	read, ok := params.(ariaLog.AriaRead)
-	if !ok || read.Live == nil || read.Live.Role != "assistant" {
+	read, ok := params.(ariaLog.Page)
+	if !ok || read.LiveTail() == nil {
 		return nil
 	}
 	n.mu.Lock()
@@ -374,11 +377,11 @@ func (n *panicOnceNotifier) Notify(method string, params any) error {
 	return nil
 }
 
-func TestPanicRecoverySealsInMemoryPartial(t *testing.T) {
+func TestPanicRecoveryRepairsInMemoryPartial(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
 	prov := &delayedDeltaProvider{}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	defer a.Kill()
 	a.Subscribe(&panicOnceNotifier{})
 	ch, _ := subscribeChan(a)
@@ -389,7 +392,7 @@ func TestPanicRecoverySealsInMemoryPartial(t *testing.T) {
 	got := a.Context()
 	require.NotEmpty(t, got)
 	last := got[len(got)-1]
-	assert.Equal(t, message.RoleAssistant, last.Role)
+	assert.Equal(t, message.RoleOutput, last.Role)
 	assert.Equal(t, message.StopAborted, last.StopReason)
 	assert.Equal(t, "streamed before panic", last.Content[0].Text)
 }
@@ -404,7 +407,7 @@ func (canonicalThenFrameProvider) Models(context.Context) ([]provider.ModelInfo,
 }
 func (canonicalThenFrameProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
-		Role: message.RoleAssistant, Content: []message.Content{message.TextContent("canonical assistant")},
+		Role: message.RoleOutput, Content: []message.Content{message.TextContent("canonical assistant")},
 		StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
 	}
 	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
@@ -418,7 +421,8 @@ func TestPanicAfterIRBeforeLiveCommitReconcilesCanonicalAssistant(t *testing.T) 
 	b, id := newBackedConversation(t)
 	defer b.Close()
 	a := figaro.NewAgent(figaro.Config{
-		ID: id, Provider: canonicalThenFrameProvider{}, Backend: b, Tools: tool.NewRegistry(),
+		Projector: uiir.New(nil),
+		ID:        id, Provider: canonicalThenFrameProvider{}, Backend: b, Tools: tool.NewRegistry(),
 	})
 	defer a.Kill()
 	a.Subscribe(&panicOnceNotifier{})
@@ -427,13 +431,20 @@ func TestPanicAfterIRBeforeLiveCommitReconcilesCanonicalAssistant(t *testing.T) 
 	reason := waitDoneReason(t, ch)
 	assert.Contains(t, reason, "crashed and was restarted")
 
-	read := a.Read(0)
-	require.Nil(t, read.Live)
-	require.NotEmpty(t, read.Committed)
-	last := read.Committed[len(read.Committed)-1]
-	assert.Equal(t, "assistant", last.Role)
+	read := a.Read(aria.Anchor{Turn: 0}, 1<<20)
+	require.Nil(t, read.LiveTail())
+	require.NotEmpty(t, read.Parts)
+	last := read.Parts[len(read.Parts)-1]
 	require.NotEmpty(t, last.Nodes)
-	assert.Contains(t, last.Nodes[0].Markdown, "canonical assistant")
+	// The turn holds the prompt at node 0, so look for the reply among the
+	// nodes rather than assuming it is first.
+	found := false
+	for _, n := range last.Nodes {
+		if strings.Contains(n.Markdown, "canonical assistant") {
+			found = true
+		}
+	}
+	assert.True(t, found, "the turn must hold the canonical assistant reply: %+v", last.Nodes)
 }
 
 type panicQueueProvider struct {
@@ -455,7 +466,7 @@ func (p *panicQueueProvider) Send(ctx context.Context, in provider.SendInput, bu
 		return ctx.Err()
 	}
 	msg := message.Message{
-		Role: message.RoleAssistant, StopReason: message.StopEnd,
+		Role: message.RoleOutput, StopReason: message.StopEnd,
 		Content: []message.Content{message.TextContent("queued prompt completed")}, Timestamp: time.Now().UnixMilli(),
 	}
 	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
@@ -474,8 +485,8 @@ func (n *queuePanicNotifier) Notify(method string, params any) error {
 	if method != rpc.MethodAriaFrame {
 		return nil
 	}
-	read, ok := params.(ariaLog.AriaRead)
-	if !ok || read.Live == nil || read.Live.Role != "assistant" {
+	read, ok := params.(ariaLog.Page)
+	if !ok || read.LiveTail() == nil {
 		return nil
 	}
 	n.once.Do(func() {
@@ -489,7 +500,7 @@ func TestPanicRecoveryPreservesQueuedPromptAndFork(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
 	prov := &panicQueueProvider{started: make(chan struct{}), release: make(chan struct{})}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	defer a.Kill()
 	notifier := &queuePanicNotifier{panicked: make(chan struct{})}
 	a.Subscribe(notifier)
@@ -567,23 +578,24 @@ func (b mismatchBackend) Open(string) (store.Log[message.Message], error) {
 	return b.log, nil
 }
 
-func TestAssistantSealRejectsPredictedLTMismatch(t *testing.T) {
+func TestAssistantAppendRejectsPredictedLTMismatch(t *testing.T) {
 	real, id := newBackedConversation(t)
 	defer real.Close()
 	base, err := real.Open(id)
 	require.NoError(t, err)
 	backend := mismatchBackend{Backend: real, log: mismatchLog{Log: base}}
 	a := figaro.NewAgent(figaro.Config{
-		ID: id, Provider: canonicalThenFrameProvider{}, Backend: backend, Tools: tool.NewRegistry(),
+		Projector: uiir.New(nil),
+		ID:        id, Provider: canonicalThenFrameProvider{}, Backend: backend, Tools: tool.NewRegistry(),
 	})
 	defer a.Kill()
 	ch, _ := subscribeChan(a)
 	a.SubmitPrompt(rpc.QuaRequest{Text: "go"})
 	reason := waitDoneReason(t, ch)
-	assert.Contains(t, reason, "assistant seal LT mismatch")
+	assert.Contains(t, reason, "assistant append LT mismatch")
 	history := a.Context()
 	require.NotEmpty(t, history)
-	assert.Equal(t, message.RoleAssistant, history[len(history)-1].Role)
+	assert.Equal(t, message.RoleOutput, history[len(history)-1].Role)
 }
 
 type nativeCommitProvider struct {
@@ -598,7 +610,7 @@ func (p *nativeCommitProvider) SetModel(string)                                 
 func (p *nativeCommitProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 func (p *nativeCommitProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
-		Role: message.RoleAssistant, Content: []message.Content{message.TextContent("sealed")},
+		Role: message.RoleOutput, Content: []message.Content{message.TextContent("appended")},
 		StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
 	}
 	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
@@ -637,7 +649,7 @@ func TestCacheAppendFailureEndsTurnKeepsAssistant(t *testing.T) {
 	payload := []json.RawMessage{json.RawMessage(`{"encrypted_content":"enc-opaque","type":"reasoning"}`)}
 	prov := &nativeCommitProvider{namespace: "atomic-cache", payload: payload, fingerprint: "atomic-cache/v1"}
 	failing := failingAssistantCacheBackend{Backend: real, namespace: "atomic-cache"}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: failing, Tools: tool.NewRegistry()})
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: failing, Tools: tool.NewRegistry()})
 	ch, _ := subscribeChan(a)
 	a.SubmitPrompt(rpc.QuaRequest{Text: "go"})
 	reason := waitDoneReason(t, ch)
@@ -648,40 +660,42 @@ func TestCacheAppendFailureEndsTurnKeepsAssistant(t *testing.T) {
 	require.NoError(t, err)
 	tail, ok := ir.PeekTail()
 	require.True(t, ok)
-	assert.Equal(t, message.RoleAssistant, tail.Payload.Role)
+	assert.Equal(t, message.RoleOutput, tail.Payload.Role)
 	cache, err := real.OpenTranslation(id, "atomic-cache")
 	require.NoError(t, err)
 	_, ok = cache.Lookup(tail.LT)
 	assert.False(t, ok)
 
 	prov2 := &idleProvider{}
-	a = figaro.NewAgent(figaro.Config{ID: id, Provider: prov2, Backend: real, Tools: tool.NewRegistry()})
+	a = figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov2, Backend: real, Tools: tool.NewRegistry()})
 	got := a.Context()
 	a.Kill()
-	assert.Equal(t, message.RoleAssistant, got[len(got)-1].Role, "next open sees the canonical assistant, unblocked")
+	assert.Equal(t, message.RoleOutput, got[len(got)-1].Role, "next open sees the canonical assistant, unblocked")
 	assert.Zero(t, prov2.callCount())
 }
 
-type sealBarrierProvider struct {
+type appendBarrierProvider struct {
 	afterAck chan struct{}
 	release  chan struct{}
 }
 
-func (p *sealBarrierProvider) Name() string                                         { return "seal-barrier" }
-func (p *sealBarrierProvider) Fingerprint() string                                  { return "seal-barrier/v1" }
-func (p *sealBarrierProvider) SetModel(string)                                      {}
-func (p *sealBarrierProvider) Models(context.Context) ([]provider.ModelInfo, error) { return nil, nil }
-func (p *sealBarrierProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
+func (p *appendBarrierProvider) Name() string        { return "append-barrier" }
+func (p *appendBarrierProvider) Fingerprint() string { return "append-barrier/v1" }
+func (p *appendBarrierProvider) SetModel(string)     {}
+func (p *appendBarrierProvider) Models(context.Context) ([]provider.ModelInfo, error) {
+	return nil, nil
+}
+func (p *appendBarrierProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
-		Role: message.RoleAssistant, Content: []message.Content{message.TextContent("sealed")},
+		Role: message.RoleOutput, Content: []message.Content{message.TextContent("appended")},
 		StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
 	}
 	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
 		return err
 	}
 	bus.PushFigaro(msg, provider.AssistantCache{
-		Namespace:   "seal-barrier",
-		Payload:     []json.RawMessage{json.RawMessage(`{"native":"sealed"}`)},
+		Namespace:   "append-barrier",
+		Payload:     []json.RawMessage{json.RawMessage(`{"native":"appended"}`)},
 		Fingerprint: p.Fingerprint(),
 	})
 	close(p.afterAck)
@@ -689,11 +703,11 @@ func (p *sealBarrierProvider) Send(_ context.Context, in provider.SendInput, bus
 	return nil
 }
 
-func TestQueuedForkWaitsForProviderCacheSeal(t *testing.T) {
+func TestQueuedForkWaitsForProviderCacheAppend(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
-	prov := &sealBarrierProvider{afterAck: make(chan struct{}), release: make(chan struct{})}
-	a := figaro.NewAgent(figaro.Config{ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
+	prov := &appendBarrierProvider{afterAck: make(chan struct{}), release: make(chan struct{})}
+	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
 	defer a.Kill()
 	ch, _ := subscribeChan(a)
 	a.SubmitPrompt(rpc.QuaRequest{Text: "go"})
@@ -726,11 +740,11 @@ func TestQueuedForkWaitsForProviderCacheSeal(t *testing.T) {
 		require.NoError(t, err)
 		tail, ok := ir.PeekTail()
 		require.True(t, ok)
-		assert.Equal(t, message.RoleAssistant, tail.Payload.Role)
-		cache, err := b.OpenTranslation(branch, "seal-barrier")
+		assert.Equal(t, message.RoleOutput, tail.Payload.Role)
+		cache, err := b.OpenTranslation(branch, "append-barrier")
 		require.NoError(t, err)
 		cached, ok := cache.Lookup(tail.LT)
 		require.True(t, ok, "cache missing on branch %s", branch)
-		assert.JSONEq(t, `{"native":"sealed"}`, string(cached.Payload[0]))
+		assert.JSONEq(t, `{"native":"appended"}`, string(cached.Payload[0]))
 	}
 }

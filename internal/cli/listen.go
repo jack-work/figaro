@@ -43,7 +43,7 @@ func runListen(loaded *config.Loaded, ariaID string) {
 }
 
 // tailFigaro is the read-only twin of mustPromptFigaro. It opens the
-// same incipit-seal renderer, catches up from LT 0, then follows live
+// same incipit-freeze renderer, catches up from LT 0, then follows live
 // frames forever. Ctrl-C -> figaro.interrupt; Ctrl-D -> clean
 // disconnect (turn keeps running); Ctrl-T -> transcript pager.
 // Returns when the user disconnects, the agent socket dies, or ctx
@@ -96,7 +96,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		defer mu.Unlock()
 		switch method {
 		case rpc.MethodAriaFrame:
-			var r aria.AriaRead
+			var r aria.Page
 			if json.Unmarshal(params, &r) == nil {
 				lt.apply(r)
 			}
@@ -181,15 +181,15 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	select {
 	case <-doneCh:
 	case <-disconnectCh:
-		lt.abandon("disconnected — turn (if any) continues")
+		lt.abandon("disconnected — turn (if any) continues", turnStatusDisconnected)
 	case <-fcli.Done():
-		lt.abandon("aria disconnected")
+		lt.abandon("aria disconnected", turnStatusError)
 	case <-ctx.Done():
 		// Ctrl-C from signal.NotifyContext: interrupt the turn, then leave.
 		fmt.Fprintln(os.Stderr, "\ninterrupting...")
 		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		_ = fcli.Interrupt(intCtx)
 		intCancel()
-		lt.abandon("interrupted")
+		lt.abandon("interrupted", turnStatusInterrupted)
 	}
 }

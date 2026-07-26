@@ -101,6 +101,7 @@ func runAngelus() {
 		RuntimeDir: runtimeDir,
 		Backend:    backend,
 	})
+	a.Build = buildRevision()
 
 	cbTmpls := buildChalkboard()
 

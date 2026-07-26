@@ -12,8 +12,8 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-// livelogTurn renders the aria-read wire. By default it uses the incipit-seal
-// renderer (closed messages seal to scrollback once; the open message is the one
+// livelogTurn renders the aria-read wire. By default it uses the incipit-freeze
+// renderer (closed messages freeze to scrollback once; the open message is the one
 // live region). Ctrl-T toggles a full-screen transcript pager (see transcript.go)
 // that shares the same aria.Client model, so both render the same conversation;
 // only the active view paints. Messages that close while the pager is up are
@@ -27,21 +27,42 @@ type livelogTurn struct {
 	status *sessionStatus
 
 	openLT       int
+	openFrom     uint64
 	openRole     string
 	open         []livedoc.Node
 	pending      *aria.Message
 	finished     bool
-	wantThinking bool // submit accepted: show the thinking footer once the user msg seals
 	thinkingOpen bool // an OpenThinking placeholder is live and not yet adopted
 	pace         framePacer
 
-	// lastSealedLT is the highest LT incipit has committed to native scrollback
-	// inline (via Seal). It marks the flush boundary: on leaving the pager,
+	// lastFrozen is the highest SLICE incipit has committed to native scrollback
+	// inline (via Freeze). It marks the flush boundary: on leaving the pager,
 	// everything past it is (re)printed to scrollback, so the turn you watched in
-	// the pager is left behind like a normal command. 0 means nothing was sealed
-	// inline (we entered the pager cold, e.g. `figaro listen`).
-	lastSealedLT int
-	pagerClosed  []aria.Message
+	// the pager is left behind like a normal command. A zero lt means nothing was
+	// frozen inline (we entered the pager cold, e.g. `figaro listen`).
+	//
+	// It is a (turn, node-offset) PAIR, not a bare turn id. appendTurnSlices cuts
+	// one turn into several messages that all carry the same LT with a rising
+	// From, so a turn-granular boundary either replays a slice already on screen
+	// or — the bug this replaced — skips every slice after the first.
+	lastFrozen  sliceCursor
+	pagerClosed []aria.Message
+}
+
+// sliceCursor addresses one pager unit: the turn and the node offset within it.
+type sliceCursor struct {
+	turn int
+	from uint64
+}
+
+func cursorOf(m aria.Message) sliceCursor { return sliceCursor{turn: m.Turn, from: m.From} }
+
+// after reports whether c comes strictly after o in reading order.
+func (c sliceCursor) after(o sliceCursor) bool {
+	if c.turn != o.turn {
+		return c.turn > o.turn
+	}
+	return c.from > o.from
 }
 
 func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID string, startedAt time.Time, status *sessionStatus, bookend func() []string, rule func() string) *livelogTurn {
@@ -61,35 +82,45 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	t.client.OnClosed = func(m aria.Message) {
 		t.tr.observeCommitted(m)
 		if t.tr.active {
-			if t.lastSealedLT != 0 {
+			if t.lastFrozen.turn != 0 {
 				t.pagerClosed = append(t.pagerClosed, m)
 			}
 			t.tr.render() // transcript renders from the shared client model
-		} else if m.Role == "assistant" {
+		} else if m.Role == livedoc.RoleOutput {
+			// A steer SPLITS the agent's run, so a turn can close several output
+			// regions. pending holds one; overwriting it silently discarded every
+			// region but the last, which is how three of four tool calls vanished
+			// from a steered turn while sitting correctly in the IR. Freeze the
+			// outgoing region before taking the new one.
+			if t.pending != nil && cursorOf(*t.pending) != cursorOf(m) {
+				t.freezePending()
+			}
 			t.pending = &m
 			if t.finished {
-				t.sealPending()
+				t.freezePending()
 			}
 		} else {
-			t.in.Seal(m) // incipit: seal to native scrollback
-			if m.LT > t.lastSealedLT {
-				t.lastSealedLT = m.LT
+			// Output is DEFERRED in pending; input freezes immediately. So an
+			// input message arriving while an output region is still pending would
+			// overtake it, and the same turn told two different stories: incipit
+			// hoisted a steer above the four tool calls that preceded it, while
+			// `fig show` and the pager placed it correctly after the first two.
+			// Turns() is a pure function of the message list, so the live path may
+			// not reorder what the projection fixed — the projection is
+			// authoritative. Flush anything that comes BEFORE this message first.
+			if t.pending != nil && cursorOf(m).after(cursorOf(*t.pending)) {
+				t.freezePending()
 			}
-			// Submit accepted and the prompt is now on screen: pin the thinking
-			// footer immediately, before the model's first token. The assistant
-			// frame that follows adopts this region in place.
-			if t.wantThinking {
-				t.wantThinking = false
-				t.thinkingOpen = true
-				t.status.beginTurn()
-				t.in.OpenThinking("assistant")
+			t.in.Freeze(m) // incipit: freeze to native scrollback
+			if c := cursorOf(m); c.after(t.lastFrozen) {
+				t.lastFrozen = c
 			}
 		}
 	}
-	t.client.OnLive = func(lt int, role string, nodes []livedoc.Node) {
+	t.client.OnLive = func(lt int, from uint64, role string, nodes []livedoc.Node) {
 		newOpen := lt != t.openLT
-		t.openLT, t.openRole, t.open = lt, role, nodes
-		if role == "assistant" {
+		t.openLT, t.openFrom, t.openRole, t.open = lt, from, role, nodes
+		if role == livedoc.RoleOutput {
 			if newOpen {
 				t.finished = false
 			}
@@ -106,7 +137,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 		if t.tr.active {
 			t.tr.render()
 		} else {
-			t.in.Open(lt, role, nodes)
+			t.in.Open(lt, from, role, nodes)
 		}
 	}
 	return t
@@ -214,30 +245,60 @@ func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
 	return false
 }
 
-// armThinking marks that a submit was accepted: the next user-message seal
-// pins the thinking footer. No-op in the pager (it renders the footer itself).
+// armThinking pins the footer the instant a submit is accepted — before the
+// prompt has round-tripped, before the model's first token. The footer is a
+// permanent fixture of the view, so it must not wait on the stream.
+//
+// It used to arm a flag consumed when the prompt froze, which required the
+// prompt to arrive as its own CLOSED message. Once the prompt merged into the
+// turn it no longer reliably does, and the footer went missing until the first
+// token — so paint it here instead of waiting to be told.
+//
+// No-op in the pager (it renders the footer itself).
 func (t *livelogTurn) armThinking() {
-	if !t.tr.active {
-		t.wantThinking = true
+	if t.tr.active {
+		return
 	}
+	t.thinkingOpen = true
+	t.status.beginTurn()
+	t.in.OpenThinking(livedoc.RoleOutput)
 }
 
-func (t *livelogTurn) apply(r aria.AriaRead)  { t.client.Apply(r) }
+func (t *livelogTurn) apply(r aria.Page)      { t.client.Apply(r) }
 func (t *livelogTurn) setDesync(fn func(int)) { t.client.OnDesync = fn }
 func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 
-// abandon closes a live region without a normal Seal: paint a labeled
+// abandon closes a live region without a normal Freeze: paint a labeled
 // dim rule across the boundary so what follows isn't glued to the orphaned
 // output. reason is the short label (e.g. "disconnected — turn continues").
 //
 // If the pager is up, restore the screen and flush the tail to scrollback
 // FIRST (so the labeled rule lands below the recovered turn, not on the
 // about-to-be-torn-down alt screen), then draw the rule.
-func (t *livelogTurn) abandon(reason string) {
-	t.status.finishTurn(reason)
+//
+// A turn that ALREADY FINISHED is not being abandoned — the pager was merely
+// closed after the fact. Flushing the completed tail and keeping the real
+// outcome is the whole job there; overwriting the status and dropping
+// t.pending is how a reply the user watched arrive was lost.
+//
+// st is what the FOOTER should say; reason is what the RULE across the
+// boundary should read. They answer different questions — the status describes
+// the turn, the rule describes the seam — so the caller states both rather than
+// one being parsed out of the other's English.
+//
+// Reports whether it actually abandoned anything, so the caller can skip the
+// "follow: figaro listen" hint for a turn that is already over.
+func (t *livelogTurn) abandon(reason string, st turnStatus) bool {
+	if t.finished {
+		t.leaveTranscript()
+		t.freezePending()
+		return false
+	}
+	t.status.setTurn(st)
 	t.pending = nil
 	t.leaveTranscript()
 	t.in.AbandonOpen(abandonRule(reason))
+	return true
 }
 
 func (t *livelogTurn) tick() {
@@ -258,13 +319,30 @@ func (t *livelogTurn) tick() {
 	}
 }
 
+// resize repaints for the new geometry, escaping to the pager when the shrink
+// is destructive. A viewport shorter than the live region is the one case
+// inline drawing cannot fix — the terminal scrolls those rows into native
+// scrollback before our code runs, so they are unreachable for in-place
+// repaint. The pager has no live region to lose.
+//
+// This is the complement of openOverflows, which catches the same hazard from
+// the other direction (content growing past a fixed viewport), and it promotes
+// the same cheap way: tr.enter() renders from the client model already in
+// hand. Doing a catch-up read here instead would stall the resize handler for
+// seconds while incipit kept painting into a viewport that no longer fits it.
+//
+// Gated on minPagerHeight so a pane too small for the pager's own chrome does
+// not thrash into it.
 func (t *livelogTurn) resize(w, h int) {
 	t.term.SetSize(w, h)
+	if !t.tr.active && h >= minPagerHeight && t.in.LiveHeight() > h {
+		t.tr.enter()
+	}
 	if t.tr.active {
 		t.tr.resize(w, h)
-	} else {
-		t.in.Resize(t.open)
+		return
 	}
+	t.in.Resize(t.open)
 }
 
 // render repaints the active view (e.g. after a verbosity toggle).
@@ -272,7 +350,7 @@ func (t *livelogTurn) render() {
 	if t.tr.active {
 		t.tr.render()
 	} else if t.openLT != 0 {
-		t.in.Open(t.openLT, t.openRole, t.open)
+		t.in.Open(t.openLT, t.openFrom, t.openRole, t.open)
 	}
 }
 
@@ -284,27 +362,27 @@ func (t *livelogTurn) finishTurn(reason string) {
 		return
 	}
 	hadPending := t.pending != nil
-	t.sealPending()
+	t.freezePending()
 	if t.thinkingOpen {
 		// The turn ended before any assistant content adopted the thinking
 		// placeholder (e.g. an immediate error). Drop it so nothing prints
 		// over the live footer region.
 		t.thinkingOpen = false
 		t.in.AbandonOpen("")
-	} else if !hadPending && t.openLT != 0 && t.openRole == "assistant" {
-		t.in.Open(t.openLT, t.openRole, t.open)
+	} else if !hadPending && t.openLT != 0 && t.openRole == livedoc.RoleOutput {
+		t.in.Open(t.openLT, t.openFrom, t.openRole, t.open)
 		if strings.HasPrefix(strings.ToLower(reason), "error:") {
 			t.in.AbandonOpen("")
 		}
 	}
 }
 
-func (t *livelogTurn) sealPending() {
+func (t *livelogTurn) freezePending() {
 	if t.pending != nil {
-		t.in.Open(t.pending.LT, t.pending.Role, t.pending.Nodes)
-		t.in.Seal(*t.pending)
-		if t.pending.LT > t.lastSealedLT {
-			t.lastSealedLT = t.pending.LT
+		t.in.Open(t.pending.Turn, t.pending.From, t.pending.Role, t.pending.Nodes)
+		t.in.Freeze(*t.pending)
+		if c := cursorOf(*t.pending); c.after(t.lastFrozen) {
+			t.lastFrozen = c
 		}
 		t.pending = nil
 	}
@@ -349,62 +427,71 @@ func (t *livelogTurn) leaveTranscript() {
 	t.flushTail()
 }
 
-// flushTail (re)prints the un-sealed tail of the conversation to scrollback.
-// Boundary: whatever incipit already sealed inline stays put; only what
+// flushTail (re)prints the un-frozen tail of the conversation to scrollback.
+// Boundary: whatever incipit already froze inline stays put; only what
 // streamed while the pager was up is emitted. If we entered the pager cold
-// (nothing sealed inline, e.g. `figaro listen`), bound the dump to the last
+// (nothing frozen inline, e.g. `figaro listen`), bound the dump to the last
 // turn rather than replaying the whole history. Resume clears the partial live
 // region the alt-screen restore left behind, prints the closed messages in
 // full, and — if a message is still streaming — reopens a live region.
 func (t *livelogTurn) flushTail() {
 	v := t.client.View()
-	from := t.lastSealedLT + 1
-	if t.lastSealedLT == 0 {
-		from = lastTurnStartLT(v)
+
+	// A turn reaches scrollback as SEVERAL messages — appendTurnSlices cuts it at
+	// node boundaries and every slice carries the same LT with a rising From — so
+	// both the boundary and the de-dup key on (LT, From). Keying on LT alone
+	// collapsed a turn to its first slice, which is how a completed reply watched
+	// in the pager never reached scrollback at all.
+	cold := t.lastFrozen.turn == 0
+	coldFrom := 0
+	if cold {
+		coldFrom = lastTurnStart(v)
 	}
-	var closed []aria.Message
-	seen := make(map[int]bool)
-	for _, m := range t.pagerClosed {
-		if m.LT >= from {
-			closed = append(closed, m)
-			seen[m.LT] = true
+	want := func(m aria.Message) bool {
+		if cold {
+			return m.Turn >= coldFrom
 		}
+		return cursorOf(m).after(t.lastFrozen)
 	}
-	for _, m := range v.Closed {
-		if m.LT >= from && !seen[m.LT] {
+
+	var closed []aria.Message
+	seen := make(map[sliceCursor]bool)
+	for _, m := range append(append([]aria.Message(nil), t.pagerClosed...), v.Closed...) {
+		if c := cursorOf(m); want(m) && !seen[c] {
 			closed = append(closed, m)
+			seen[c] = true
 		}
 	}
 	t.pagerClosed = nil
 	openLT, openRole := 0, ""
 	var open []livedoc.Node
-	if v.Open != nil && v.Open.LT >= from {
-		openLT, openRole, open = v.Open.LT, v.Open.Role, v.Open.Nodes
+	if v.Open != nil && (cold && v.Open.Turn >= coldFrom || !cold && v.Open.Turn >= t.lastFrozen.turn) {
+		openLT, openRole, open = v.Open.Turn, v.Open.Role, v.Open.Nodes
 	}
 	if len(closed) == 0 && openLT == 0 {
 		return
 	}
-	sort.SliceStable(closed, func(i, j int) bool { return closed[i].LT < closed[j].LT })
-	t.in.Resume(closed, openLT, openRole, open)
+	sort.SliceStable(closed, func(i, j int) bool { return cursorOf(closed[j]).after(cursorOf(closed[i])) })
+	t.in.Resume(closed, openLT, t.openFrom, openRole, open)
 	if len(closed) > 0 {
-		t.lastSealedLT = closed[len(closed)-1].LT
+		t.lastFrozen = cursorOf(closed[len(closed)-1])
 	}
 }
 
-// lastTurnStartLT returns the LT of the most recent user message (the start of
+// lastTurnStart returns the LT of the most recent user message (the start of
 // the last turn), or a best-effort fallback, so a cold pager exit records just
 // the final turn rather than the entire conversation.
-func lastTurnStartLT(v aria.View) int {
+func lastTurnStart(v aria.View) int {
 	for k := len(v.Closed) - 1; k >= 0; k-- {
-		if v.Closed[k].Role == "user" {
-			return v.Closed[k].LT
+		if v.Closed[k].Role == livedoc.RoleInput {
+			return v.Closed[k].Turn
 		}
 	}
 	if v.Open != nil {
-		return v.Open.LT
+		return v.Open.Turn
 	}
 	if n := len(v.Closed); n > 0 {
-		return v.Closed[n-1].LT
+		return v.Closed[n-1].Turn
 	}
 	return 0
 }
@@ -417,8 +504,8 @@ func (t *livelogTurn) transcriptScroll(delta int) { t.tr.scrollBy(delta) }
 // see transcriptMode) — but it remains the plain question to ask about state.
 func (t *livelogTurn) transcriptSearching() bool { return t.tr.active && t.tr.inSearch }
 
-// transcriptMode is the keymap's view of the pager: which of the four input
-// modes a keystroke arriving right now would land in.
+// transcriptMode is the keymap's view of the pager: which input mode a
+// keystroke lands in.
 func (t *livelogTurn) transcriptMode() keyMode { return t.tr.mode() }
 
 // Transcript page fetches run off-lock; applying a page restores the viewport
@@ -454,7 +541,8 @@ func (t *livelogTurn) setTranscriptQueued(prompts []string, errMsg string) {
 }
 
 // ariaView renders a block by reusing figaro's existing node renderers, so
-// inline and transcript draw identically. One representation: livedoc.Node.
+// inline and transcript draw identically. One representation: livedoc.Node,
+// and one dispatch: renderNode.
 type ariaView struct{ settings *renderSettings }
 
 func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
@@ -462,18 +550,14 @@ func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
 }
 
 func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bool) []string {
-	switch n.Type {
-	case livedoc.NodeTool:
-		bashCap := nodeBashCapDefault
-		if fullOutput {
-			bashCap = nodeOutputUnlimited
-		}
-		return renderToolNode(n, width, bashCap, uint64(tick), v.settings != nil && v.settings.verbose)
-	case livedoc.NodeThinking:
-		return renderThinkingNode(n, width)
-	case livedoc.NodeSteering:
-		return renderSteeringNode(n, width)
-	default:
-		return renderProseNode(n, width)
+	bashCap := nodeBashCapDefault
+	if fullOutput {
+		bashCap = nodeOutputUnlimited
 	}
+	return renderNode(n, width, bashCap, uint64(tick), v.settings != nil && v.settings.verbose)
 }
+
+// turnFinished reports whether the turn being watched has ended. The drain
+// asks so it knows whether a draft is a steer (aimed at a running turn) or an
+// ordinary prompt (which will open its own).
+func (t *livelogTurn) turnFinished() bool { return t.finished }

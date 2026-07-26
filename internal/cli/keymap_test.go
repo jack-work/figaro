@@ -282,6 +282,9 @@ func TestKeymap_InlineKeysStayInline(t *testing.T) {
 // TestHelpBody_MatchesTheOldHandWrittenPanel: the generated rows are, glyph
 // for glyph, the panel that used to be a hand-kept []string in helpLines. The
 // user must not see a difference — only correctness by construction.
+//
+// The 'i' row is the one deliberate addition since: the steer composer is a
+// genuinely new binding, not drift. Everything else is unchanged.
 func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 	want := []string{
 		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",

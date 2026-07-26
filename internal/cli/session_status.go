@@ -20,6 +20,11 @@ const (
 	turnStatusCompleted
 	turnStatusInterrupted
 	turnStatusError
+	// turnStatusDisconnected: this CLI stopped watching while the turn was
+	// still running. It is NOT a failure — the user chose to detach and the
+	// turn continues on the daemon, which is exactly when the
+	// "follow: figaro listen" hint applies.
+	turnStatusDisconnected
 )
 
 type sessionStatus struct {
@@ -53,6 +58,10 @@ func (s *sessionStatus) beginTurn() {
 	s.mu.Unlock()
 }
 
+// finishTurn classifies a reason reported BY THE SERVER on turn.done, whose
+// vocabulary is fixed. Client-side outcomes (detach, agent loss) are set
+// explicitly with setTurn instead of being inferred from English — a status is
+// a fact about the turn, not a substring of a sentence.
 func (s *sessionStatus) finishTurn(reason string) {
 	if s == nil {
 		return
@@ -62,11 +71,21 @@ func (s *sessionStatus) finishTurn(reason string) {
 	switch {
 	case strings.Contains(reason, "interrupt"):
 		s.turn = turnStatusInterrupted
-	case strings.HasPrefix(reason, "error:"), strings.Contains(reason, "disconnect"):
+	case strings.HasPrefix(reason, "error:"):
 		s.turn = turnStatusError
 	default:
 		s.turn = turnStatusCompleted
 	}
+	s.mu.Unlock()
+}
+
+// setTurn records an outcome the caller already knows.
+func (s *sessionStatus) setTurn(st turnStatus) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.turn = st
 	s.mu.Unlock()
 }
 
@@ -96,6 +115,11 @@ func (s *sessionStatus) turnLabel() string {
 		return "interrupted !"
 	case turnStatusError:
 		return "error ✗"
+	case turnStatusDisconnected:
+		// Static, not animated: nothing repaints after we detach, so a
+		// spinner frame here is a still picture of a turn that is still
+		// moving elsewhere.
+		return "disconnected ⠸"
 	}
 	return ""
 }
@@ -118,7 +142,7 @@ func (s *sessionStatus) ruleLine(width int, pos string) string {
 
 // statusLine is the lower footer row: plain left-aligned text —
 // "<mantra> · <turn state> · ctx … · cost … · <time>[ · ? help · ! status]".
-// hints adds the key hooks (live pager only; sealed scrollback omits them).
+// hints adds the key hooks (live pager only; frozen scrollback omits them).
 // Narrow panes shed the mantra first, then cost, then ctx, then the time —
 // the turn state and the hints survive last.
 func (s *sessionStatus) statusLine(width int, hints bool) string {
@@ -232,14 +256,14 @@ func formatTokenCount(tokens int) string {
 	}
 }
 
-// bookendLines is the incipit seal / live-region bookend: the same two-row
+// bookendLines is the incipit closer / live-region bookend: the same two-row
 // footer the transcript pins (rule + status text), minus the key hints —
-// they'd be dead text once sealed into scrollback. A blank row sits between
+// they'd be dead text once frozen into scrollback. A blank row sits between
 // the rule and the status text so the status line breathes.
 func bookendLines(status *sessionStatus) []string {
 	w := termWidth()
 	// Two rows only: rule + status. The blank that gives the footer breathing
-	// room is painted ABOVE it by compose()'s pre-seal blank, not between the
+	// room is painted ABOVE it by compose()'s pre-closer blank, not between the
 	// rule and the status text.
 	return []string{
 		term.Dim(status.ruleLine(w, "")),

@@ -1,8 +1,21 @@
 package cli
 
+// WHAT THIS FILE ONCE FAILED TO CATCH
+//
+// Its readBefore double sliced history itself and treated `limit` as a COUNT
+// OF PARTS. Production's limit is a BYTE BUDGET, and the double never called
+// aria.Paginate at all. Result: ~30 tests in this file stayed GREEN while the
+// live pager rendered ONE NODE for an 800-node aria — and, separately, a
+// duplicated message at EVERY page boundary went unseen because the double
+// excluded the anchor while production included it. The double did not merely
+// fail to model production; it encoded the OPPOSITE semantics.
+//
+// Rule: a double must call the real function. If it cannot, it is a fixture,
+// not a test. See skills/tmux-testing.md.
+
 import (
+	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -12,28 +25,87 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-func transcriptHistory(n int) []aria.Committed {
-	out := make([]aria.Committed, n)
+func transcriptHistory(n int) []aria.TurnPart {
+	out := make([]aria.TurnPart, n)
 	for i := range out {
-		out[i] = aria.Committed{
-			LT: i + 1, Role: "assistant",
-			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("message-%03d", i+1)}},
-		}
+		out[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("message-%03d", i+1)}}}}
 	}
 	return out
 }
 
 func testSelectionPoint(lt, index int, node livedoc.Node) selectionPoint {
-	return selectionPoint{nodeRef: nodeRef{lt: lt, index: index}, hash: nodeHash(node)}
+	return selectionPoint{nodeRef: nodeRef{turn: lt, index: index}, hash: nodeHash(node)}
 }
 
-func readBefore(history []aria.Committed, before, limit int) aria.AriaRead {
-	hi := sort.Search(len(history), func(i int) bool { return history[i].LT >= before })
-	lo := hi - limit
-	if lo < 0 {
-		lo = 0
+// readBefore is the test double for the read RPC. It routes through the REAL
+// aria.Paginate, with the real Anchor/Backward semantics the server uses
+// (figaro/server.go: Anchor{Turn: req.Before}, Backward, budget).
+//
+// It used to slice the history itself, treating `parts` as a count. That is why
+// ~30 tests stayed green while the live pager rendered a SINGLE node for an
+// 800-node aria: the double never executed the paginator, so a direction bug,
+// an off-by-one at the anchor, or a clipping bug could not fail a test.
+//
+// Tests want to say "a page of 30", but the wire only understands BYTES. Rather
+// than push that translation into 37 call sites, do it here from the fixture's
+// own node size — so the count stays the test's vocabulary while the paginator
+// still runs for real.
+// fixtureMemo caches the per-fixture work readBefore would otherwise redo on
+// EVERY page: projecting []TurnPart to []Turn, and measuring the widest
+// marshalled node. Both depend only on `history`, but a search walks the whole
+// aria one page at a time, so recomputing them was O(N^2) json.Marshal calls
+// plus an O(N) copy per page. That is harness cost, not production cost — the
+// server holds its turns and never re-measures the log to serve a page — but it
+// made BenchmarkTranscriptPagedSearchMiss/10000 158x slower than the same
+// benchmark on the pre-turn-addressing tree and put /50000 out of reach, which
+// hid the very numbers the acceptance matrix asks for. A one-entry cache keyed
+// by the slice's own backing array is enough: every call site loops over one
+// fixture at a time.
+var fixtureMemo struct {
+	data   *aria.TurnPart
+	n      int
+	turns  []aria.Turn
+	widest int
+}
+
+func fixtureView(history []aria.TurnPart) ([]aria.Turn, int) {
+	if len(history) == 0 {
+		return nil, 1
 	}
-	return aria.AriaRead{Committed: append([]aria.Committed(nil), history[lo:hi]...)}
+	if fixtureMemo.data == &history[0] && fixtureMemo.n == len(history) {
+		return fixtureMemo.turns, fixtureMemo.widest
+	}
+	turns := make([]aria.Turn, len(history))
+	widest := 1
+	for i, p := range history {
+		turns[i] = p.Turn
+		for _, n := range p.Nodes {
+			if s := nodeBytes(n); s > widest {
+				widest = s
+			}
+		}
+	}
+	fixtureMemo.data, fixtureMemo.n = &history[0], len(history)
+	fixtureMemo.turns, fixtureMemo.widest = turns, widest
+	return turns, widest
+}
+
+func readBefore(history []aria.TurnPart, before, parts int) aria.Page {
+	if parts <= 0 {
+		return aria.Page{}
+	}
+	turns, widest := fixtureView(history)
+	return aria.PaginateBefore(turns, aria.Anchor{Turn: uint64(before)}, parts*widest)
+}
+
+// nodeBytes mirrors aria's unexported nodeSize: the paginator spends its budget
+// in bytes of marshalled node.
+func nodeBytes(n livedoc.Node) int {
+	b, err := json.Marshal(n)
+	if err != nil {
+		return 1
+	}
+	return len(b)
 }
 
 func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
@@ -53,7 +125,7 @@ func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
 		if !ok || req.direction != pageOlder {
 			t.Fatalf("older request = %+v, %v", req, ok)
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	if len(tr.pages) != transcriptPageLimit {
 		t.Fatalf("retained pages = %d, want %d", len(tr.pages), transcriptPageLimit)
@@ -65,39 +137,36 @@ func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
 		t.Fatal("evicted newer pages must retain a refetch cursor")
 	}
 	before := tr.messages()
-	history = append(history, aria.Committed{
-		LT: 201, Role: "assistant",
-		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "message-201"}},
-	})
-	client.Apply(aria.AriaRead{Committed: []aria.Committed{history[200]}})
+	history = append(history, aria.TurnPart{Turn: aria.Turn{ID: uint64(201), Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "message-201"}}}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{history[200]}})
 	for range 2 {
-		tr.offset = len(tr.lineLT)
+		tr.offset = len(tr.lineTurn)
 		tr.checkNewer = true
 		req, ok := tr.pageCursor()
 		if !ok || req.direction != pageNewer {
 			t.Fatalf("newer request = %+v, %v", req, ok)
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	after := tr.messages()
-	if after[len(after)-1].LT <= before[len(before)-1].LT {
-		t.Fatalf("newer page did not advance window: %d -> %d", before[len(before)-1].LT, after[len(after)-1].LT)
+	if after[len(after)-1].Turn <= before[len(before)-1].Turn {
+		t.Fatalf("newer page did not advance window: %d -> %d", before[len(before)-1].Turn, after[len(after)-1].Turn)
 	}
-	if got := after[len(after)-1].LT; got != 200 {
+	if got := after[len(after)-1].Turn; got != 200 {
 		t.Fatalf("stable refetch included live LT or skipped old tail; newest = %d", got)
 	}
 	if len(tr.pages) != transcriptPageLimit {
 		t.Fatalf("newer refetch retained %d pages", len(tr.pages))
 	}
 
-	heldOldest := after[0].LT
+	heldOldest := after[0].Turn
 	tr.render()
-	if got := tr.messages()[0].LT; got != heldOldest {
+	if got := tr.messages()[0].Turn; got != heldOldest {
 		t.Fatalf("live update moved held history: %d -> %d", heldOldest, got)
 	}
 	tr.key('G')
 	messages := tr.messages()
-	if got := messages[len(messages)-1].LT; got != 201 {
+	if got := messages[len(messages)-1].Turn; got != 201 {
 		t.Fatalf("G did not restore live tail, newest LT = %d", got)
 	}
 }
@@ -114,7 +183,7 @@ func TestTranscript_SearchPagesOlderWithBoundedRetention(t *testing.T) {
 		if !ok {
 			break
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	if tr.searchingHistory() {
 		t.Fatal("search did not settle")
@@ -147,7 +216,7 @@ func TestTranscript_SelectionSurvivesPayloadEviction(t *testing.T) {
 		if !ok {
 			t.Fatal("expected older page")
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	if len(tr.pages) != transcriptPageLimit {
 		t.Fatalf("selection retained %d payload pages", len(tr.pages))
@@ -157,7 +226,7 @@ func TestTranscript_SelectionSurvivesPayloadEviction(t *testing.T) {
 	if !ok {
 		t.Fatal("selection endpoints were lost after eviction")
 	}
-	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.AriaRead, error) {
+	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
 		return readBefore(history, before, limit), nil
 	})
 	if err != nil || !strings.Contains(text, "message-111") || !strings.Contains(text, "message-200") {
@@ -177,15 +246,15 @@ func TestTranscript_ResizeAnchorsPagedMessage(t *testing.T) {
 	tr.enter()
 	tr.follow = false
 	tr.lines()
-	for i, lt := range tr.lineLT {
+	for i, lt := range tr.lineTurn {
 		if lt == 190 {
 			tr.offset = i
 			break
 		}
 	}
 	tr.resize(32, 8)
-	if tr.offset >= len(tr.lineLT) || tr.lineLT[tr.offset] != 190 {
-		t.Fatalf("resize moved anchor to LT %d", tr.lineLT[tr.offset])
+	if tr.offset >= len(tr.lineTurn) || tr.lineTurn[tr.offset] != 190 {
+		t.Fatalf("resize moved anchor to LT %d", tr.lineTurn[tr.offset])
 	}
 }
 
@@ -200,7 +269,7 @@ func TestTranscript_SearchTraversesEvictedNewerPages(t *testing.T) {
 		tr.offset = 0
 		tr.checkOlder = true
 		req, _ := tr.pageCursor()
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	tr.find("message-190")
 	for tr.searchingHistory() {
@@ -208,7 +277,7 @@ func TestTranscript_SearchTraversesEvictedNewerPages(t *testing.T) {
 		if !ok {
 			break
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	lines := tr.lines()
 	if tr.offset >= len(lines) || !strings.Contains(lines[tr.offset], "message-190") {
@@ -218,17 +287,14 @@ func TestTranscript_SearchTraversesEvictedNewerPages(t *testing.T) {
 
 func TestTranscript_SelectsOpenNodeAfterLeavingFollow(t *testing.T) {
 	client := aria.NewClient()
-	client.Apply(aria.AriaRead{Committed: []aria.Committed{transcriptHistory(1)[0]}})
-	client.Apply(aria.AriaRead{Live: &aria.Live{
-		LT: 2, V: 0, Role: "assistant",
-		Nodes: []aria.NodeDelta{{
-			ID: "open", Set: map[string]any{"type": "prose", "markdown": "streaming prose"},
-		}},
-	}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{transcriptHistory(1)[0]}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(2), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
+		ID: 0, Set: map[string]any{"type": "prose", "markdown": "streaming prose"},
+	}}}}}}})
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.selectNode(-1, false)
-	if tr.heldOpen == nil || tr.selection.focus.lt != 2 || !tr.selection.active {
+	if tr.heldOpen == nil || tr.selection.focus.turn != 2 || !tr.selection.active {
 		t.Fatalf("open selection lost: held=%v selection=%+v", tr.heldOpen != nil, tr.selection)
 	}
 	if text, err := selectedTextForTest(tr, transcriptHistory(1)); err != nil || text != "streaming prose" {
@@ -250,15 +316,15 @@ func TestTranscript_ReloadsOldestAfterNewerEviction(t *testing.T) {
 		if !ok {
 			break
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
-	tr.offset = len(tr.lineLT)
+	tr.offset = len(tr.lineTurn)
 	tr.checkNewer = true
 	req, ok := tr.pageCursor()
 	if !ok {
 		t.Fatal("expected newer refetch")
 	}
-	tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize).Committed))
+	tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	if tr.noMoreOlder {
 		t.Fatal("evicting the oldest page must re-enable older paging")
 	}

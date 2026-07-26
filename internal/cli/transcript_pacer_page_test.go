@@ -115,7 +115,7 @@ func TestPacedPageLanding_IsNeverSwallowed(t *testing.T) {
 	w.reset()
 	mu.Lock()
 	before, _ := lt.tr.oldestLT()
-	lt.transcriptApplyPage(req, committedMessages(readBefore(transcriptHistory(120), req.before, req.limit).Committed))
+	lt.transcriptApplyPage(req, committedMessages(readBefore(transcriptHistory(120), req.before, req.limit)))
 	after, _ := lt.tr.oldestLT()
 	dirty := lt.tr.dirty
 	mu.Unlock()
@@ -196,20 +196,20 @@ func TestPacedPageLanding_NoFurtherInputRequired(t *testing.T) {
 // jittered spell so the prefetch worker and the pacer's timer goroutine are
 // genuinely interleaved rather than politely taking turns.
 type blockingHistoryReader struct {
-	history []aria.Committed
+	history []aria.TurnPart
 	mu      sync.Mutex
 	calls   int
 }
 
-func (r *blockingHistoryReader) Read(context.Context, int) (aria.AriaRead, error) {
-	return aria.AriaRead{}, nil
+func (r *blockingHistoryReader) Read(context.Context, int) (aria.Page, error) {
+	return aria.Page{}, nil
 }
 
 func (r *blockingHistoryReader) Queued(context.Context) (*rpc.QueuedResponse, error) {
 	return &rpc.QueuedResponse{}, nil
 }
 
-func (r *blockingHistoryReader) ReadBefore(ctx context.Context, before, limit int) (aria.AriaRead, error) {
+func (r *blockingHistoryReader) ReadBefore(ctx context.Context, before, limit int) (aria.Page, error) {
 	r.mu.Lock()
 	r.calls++
 	n := r.calls
@@ -217,7 +217,7 @@ func (r *blockingHistoryReader) ReadBefore(ctx context.Context, before, limit in
 	select {
 	case <-time.After(time.Duration(n%3) * time.Millisecond):
 	case <-ctx.Done():
-		return aria.AriaRead{}, ctx.Err()
+		return aria.Page{}, ctx.Err()
 	}
 	return readBefore(r.history, before, limit), nil
 }
@@ -287,7 +287,7 @@ func TestPacerAndPrefetchDoNotDeadlock(t *testing.T) {
 // A/D let scrollBy overshoot and relied on render() clamping. B's gate made
 // render() skippable, so a scroll burst past the top left offset negative, and
 // the next off-frame reader — viewportAnchor, when a prefetched page lands —
-// indexed t.lineLT with it and panicked. The clamp now happens in front of the
+// indexed t.lineTurn with it and panicked. The clamp now happens in front of the
 // gate, so it survives batching and rate limiting alike.
 func TestDeferredFrameStillClampsTheViewport(t *testing.T) {
 	check := func(t *testing.T, tr *transcript, what string) {

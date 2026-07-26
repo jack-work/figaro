@@ -15,6 +15,40 @@ It is written so someone with zero prior context can follow the whole stack from
 physical log up to the CLI. (A user-facing condensed version lives in the first-party
 skill at `skills/figaro/trunks.md`; this doc is the deep substrate reference.)
 
+> **Fork coordinates ARE turn ids.** `fig send <id>:<turn>` is the addressing
+> form; `:<LT>` is gone from every CLI surface. **LT remains the join key** — it is
+> positional, it is xwal's cross-channel foreign key, and every fork codepath
+> below still takes an `atMainLT`. Turn id is the *user-facing* coordinate and
+> projects down to `atMainLT = min(LTs of the turn) - 1` (see the next section
+> for why the −1). See
+> [turn-addressing.md](turn-addressing.md).
+
+### `atMainLT` is inclusive of the frozen prefix
+
+figwal `disk/fork.go:194` says:
+
+> *"atIdx must be in (FirstIndex, LastIndex+1]; the prefix retains at least one
+> entry."*
+
+That phrasing reads as though the prefix were `[First, atMainLT)`. **It is
+not.** Measured against a real store: forking at `atMainLT = 5` produced a
+branch whose history still contained LT 5.
+
+So **prefix = `[First, atMainLT]`**, **branch = `(atMainLT, Last]`**. The shared
+history includes the named coordinate; the branch owns everything after it.
+
+Turn addressing therefore applies **one deliberate adjustment**: fork at turn T
+with `atMainLT = min(LTs of T) - 1` — the LT immediately before the prompt — so
+the frozen prefix ends at the tail of turn T−1 and the branch replaces the
+question and everything downstream. The −1 is fork policy and lives in exactly
+one place, `cli.resolveTurn`; `compose.TurnSpan` reports the honest span.
+
+It also means a turn-addressed fork **always lands on a user
+prompt**, so the shared prefix always terminates on a complete assistant
+message and can never strand a `tool_invoke` without its `tool_result` —
+making the `repairTurnTail` / tail-repair-at-open synthesis unreachable for
+user-initiated forks.
+
 ---
 
 ## 0. One-paragraph orientation
@@ -91,7 +125,7 @@ Terminology & mechanics (`xwal/xwal.go`, `xwal/fork.go`):
   translation fingerprint here.
 - **Joint fork** (`xwal/fork.go:51`): `Fork(atMainLT, childName, oldFutureName) → *XWAL`.
   The **main channel forks at `atMainLT`**; each related channel forks at its own boundary —
-  the first channel LT whose `mainLT >= atMainLT` (`boundaryFor`, `fork.go:228`). The
+  the first channel LT whose `mainLT >= atMainLT` (`boundaryFor`, figwal `xwal/fork.go:638`). The
   **old-future is the original continuation; the child is the new alternative** — both names
   are used identically across every channel, so a branch is addressable as a unit. The fork
   is **crash-atomic** across channels (a `.xwal-fork-pending` plan sentinel; `Open` rolls a
@@ -155,7 +189,10 @@ interface.
 - **Forest vectors** (`vectorsLocked`): each conversation trunk gets a child-index path
   among conversation trunks (roots `[0],[1],…`; a branch is `parentVec+[k]`). Used by
   `list` for tree indentation and `topLevelAncestor`. `NodeView.BranchedLT` is the trunk's
-  first own LT — the displayed fork point is `BranchedLT-1`.
+  first own LT. It is **not** displayed as a fork coordinate: `list` prints only `yes`/`-`
+  in its FORK column, and `status -m` resolves it against the parent to print the exact
+  `parent:turn` a fork takes (`BranchedLT-1` was the pre-turn-addressing display and was
+  off by a whole exchange).
 - **`Backend` interface** (`store.go`): `Open`/`OpenTranslation`/`ChalkboardState`/
   `ApplyChalkboard`/`ChalkboardPatches`/`CreateLoadout`/`CreateConversation`/`Fork`/`ForkAt`/
   `Node`/`Nodes`/`Conversations`/`ConversationIDs`/`Meta`/`SetMeta`/`Remove`/`Close`.
@@ -187,12 +224,12 @@ interface.
 - **CLI verbs** (`cli.go`): `send`/`fork`/`attend`(`at`)/`kill`/`list`(`ls`)/
   `show`/`status`/`state`. (`detach` was **removed** — `attend null` is the unbind; `~` is
   kept as a legacy alias.)
-  `send <id>:<LT> -- …` forks at LT then sends to the new branch
-  (rebinds; `--stay` to park). `fork [<id>[:<LT>]] [--stay]` is the imperative no-prompt
+  `send <id>:<turn> -- …` forks at that turn then sends to the new branch
+  (rebinds; `--stay` to park). `fork [<id>[:<turn>]] [--stay]` is the imperative no-prompt
   branch (`runFork`, `manage.go`). `kill <id>` removes a trunk + subtree (`--recursive` for
   live branches). `show [<id>]` takes the aria id **positionally** (bare-N replaced by
-  `-n/--last`); units are labeled by figaro LT, realigned so the shown N **is** the `:N`
-  fork coordinate. `status -m/--more` surfaces derived detail (mantra, cwd, loadout version,
+  `-n/--last`); turns are labeled by **turn id**, which is exactly the `:N` a fork takes.
+  `--from`/`--to`/`--before` are turn ids too; `-n` paginates backwards from the end. `status -m/--more` surfaces derived detail (mantra, cwd, loadout version,
   fork origin, created); `-j/--json` (`-mj` clusters). `list`/`status`/`state` all take
   `-j/--json`. The old `derive` verb was **removed** — its values surface in `status --more`
   (the derivation *workers* still run, feeding `list`/`status`).
@@ -208,7 +245,8 @@ The **trunk** is the primary identity; the rename below shipped.
 | The continuation-chain identity | **trunk id** | **aria id** | Stable thread identity; flows down the continuation side of every fork; never moves, only grows. **The only thing the API/CLI addresses.** |
 | One fork node | **node id** (`n0/n1/…`) | node id | A single forkable point in the main-channel dir tree. Plumbing; never addressed. |
 | The whole tree | — | "the arias" | The forest under the null root. |
-| Logical time | **LT** (channel/main index) | **LT** | Per-branch, gapless, continuous across a trunk's node chain; `show` labels by it, `:<LT>` addresses it. |
+| Logical time | **LT** (channel/main index) | **LT** | Per-branch, gapless, continuous across a trunk's node chain. The **model's** coordinate and xwal's join key. Visible under `show -v/-l`; it is **not** an address. |
+| Turn | **turn id** (`message.TurnID`) | **turn** | 1-based ordinal per trunk, seeded from the parent at a fork. The **human's** coordinate: `show` labels by it and `send`/`fork`/`attend` `:N` take it. |
 
 `attend`/`send`/`fork`/`kill` accept only aria(trunk) ids; node ids are never addressed.
 
@@ -252,21 +290,22 @@ ids are plumbing; you address `T0`.
 angelus binding registry) is treated by the client as a **separate system** — a binding
 authority it consults to resolve "current," not a thing the conversation API is aware of.
 The client owns: `pid → attended trunk` (plus an optional one-shot pending fork-point LT).
-`attend <id>`/`<id>:<LT>`/`:<LT>` set it; **`attend null`** (the required literal; `~` is a
+`attend <id>`/`<id>:<turn>`/`:<turn>` set it; **`attend null`** (the required literal; `~` is a
 legacy alias that needs quoting in the shell) clears it —
 "go home," after which new conversations default to the live loadout. There is **no
 `detach`** (removed). Attending a cauterized (null/loadout) aria is rejected with a nudge
 toward `attend null` / `ls -h` / `ls -g`.
 
 ### 4.2 `send` vs `fork`
-- **`send <trunk>:<LT> -- …`** — fork the trunk at `<LT>`, then send to the new branch and
-  **rebind** there (`--stay`/`--attend=false` to send without moving). Without `:<LT>` it is
-  a plain **append** to the tail. The interior-fork case is cauterization-aware: if `<LT>` is
-  owned by the root or a loadout stump, a fresh child conversation is spawned instead of a
-  re-split (`store.ForkAt` via `Owner`).
-- **`fork [<trunk>[:<LT>]] [--stay]`** — the **imperative, no-prompt** branch. No `:<LT>` =
+- **`send <trunk>:<turn> -- …`** — fork the trunk so that `<turn>` is *replaced*, then send
+  to the new branch and **rebind** there (`--stay`/`--attend=false` to send without moving).
+  Without `:<turn>` it is a plain **append** to the tail. The interior-fork case is
+  cauterization-aware: if the resolved LT is owned by the root or a loadout stump, a fresh
+  child conversation is spawned instead of a re-split (`store.ForkAt` via `Owner`).
+- **`fork [<trunk>[:<turn>]] [--stay]`** — the **imperative, no-prompt** branch. No `:<turn>` =
   tail fork (freeze the head; continuation keeps the trunk, a fresh empty alternative is the
-  new branch). `:<LT>` = interior fork (shares `[1..LT]`). Forking your **own** bound aria
+  new branch). `:<turn>` = interior fork; the branch shares everything through the end of
+  turn `<turn>-1`. Forking your **own** bound aria
   rebinds you to the continuation (same trunk/mantra); forking any other aria, or `--stay`,
   leaves your session untouched. `fork` (no arg) = `fork <current trunk>`.
 
@@ -276,10 +315,10 @@ toward `attend null` / `ls -h` / `ls -g`.
 |---|---|---|
 | `send -- msg` | pid → trunk (fail if none) | infer tail, append |
 | `send <trunk> -- msg` | — | infer tail, append |
-| `send :<LT> -- msg` | pid → trunk (fail if none) | fork at LT, send to new branch, rebind |
-| `send <trunk>:<LT> -- msg` | — | same |
-| `fork [<trunk>[:<LT>]]` | pid → trunk if bare | imperative tail/interior fork, no message |
-| `attend <id>` / `:<LT>` | pid → trunk | bind shell (+ one-shot pending fork-point) |
+| `send :<turn> -- msg` | pid → trunk (fail if none); turn → `atMainLT` via `resolveTurn` | fork there, send to new branch, rebind |
+| `send <trunk>:<turn> -- msg` | turn → `atMainLT` | same |
+| `fork [<trunk>[:<turn>]]` | pid → trunk if bare; turn → `atMainLT` | imperative tail/interior fork, no message |
+| `attend <id>` / `:<turn>` | pid → trunk | bind shell (+ one-shot pending fork-point) |
 | `attend null` | — | unbind (go home); next conversation defaults to the live loadout |
 | `kill <trunk>` | — | remove trunk + subtree (`-r` for live branches) |
 | `send` *unattended* / `new` | resolve default/named loadout stump | spawn a conversation under it, send |
@@ -311,8 +350,8 @@ toward `attend null` / `ls -h` / `ls -g`.
   shown, never addressed.
 - **An LT is a trunk-relative position** (figwal main-LT), continuous across the trunk's node
   chain: `1`=genesis, `2`=loadout birth, `3+`=conversation turns. `send`/`fork`/`attend`
-  `:<LT>` resolves which root, stump, or trunk owns LT (`Owner`); `show` labels each
-  unit by the same LT, **realigned** so the shown number is the `:N` fork coordinate.
+  the resolved LT tells which root, stump, or trunk owns it (`Owner`); `show` labels each
+  **turn** by its turn id, which is the `:N` a fork takes — no realignment needed.
 - **`list`/`ls` is the conversation forest, with `attend` as `cd`.** The shipped navigation
   surface:
   - **`figaro ls`** — *current scope*: **attended** → your aria's fork tree (top-level
@@ -340,8 +379,8 @@ toward `attend null` / `ls -h` / `ls -g`.
   policy state unnecessary. The old per-aria-dir / `nodeRec` / `index.json` model is gone.
 - **Aria id = trunk id, stable across forks** (continuation keeps it; `cont == id`).
   Bind-to-trunk: forking your own trunk doesn't move you.
-- **One `send` path**: `send <id>:<LT>` forks-then-sends (rebinds; `--stay`); bare `send`
-  appends. `fork [<id>[:<LT>]] [--stay]` is the imperative no-prompt branch. `attend`/`at`
+- **One `send` path**: `send <id>:<turn>` forks-then-sends (rebinds; `--stay`); bare `send`
+  appends. `fork [<id>[:<turn>]] [--stay]` is the imperative no-prompt branch. `attend`/`at`
   (with `attend null` to go home — `detach` **removed**, `~` kept as a legacy alias),
   `kill <id>` (+ subtree, `-r`).
 - **Cauterization**: the null root and loadout stumps are closed — forking/sending "at"

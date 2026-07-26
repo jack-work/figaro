@@ -22,7 +22,7 @@ func TestPrintStatusPanelShowsContextCapacityAndTokenCost(t *testing.T) {
 		ContextExact:  true,
 		TokensIn:      10000,
 		TokensOut:     5000,
-	}, false)
+	}, false, 0)
 	if err := out.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestPrintStatusPanelOmitsLoadoutParentAsForkOrigin(t *testing.T) {
 		Parent:     "default-loadout",
 		BranchedLT: 0,
 		Vector:     []int{0},
-	}, true)
+	}, true, 0)
 	if err := out.Close(); err != nil {
 		t.Fatal(err)
 	}

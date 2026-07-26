@@ -19,10 +19,10 @@ type mockFigaro struct {
 	killed     bool
 }
 
-func (m *mockFigaro) ID() string                 { return m.id }
-func (m *mockFigaro) SocketPath() string         { return m.socketPath }
-func (m *mockFigaro) Interrupt()                 {}
-func (m *mockFigaro) Kill()                      { m.killed = true }
+func (m *mockFigaro) ID() string         { return m.id }
+func (m *mockFigaro) SocketPath() string { return m.socketPath }
+func (m *mockFigaro) Interrupt()         {}
+func (m *mockFigaro) Kill()              { m.killed = true }
 func (m *mockFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{
 		ID:        m.id,

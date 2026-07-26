@@ -18,6 +18,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 // --- Speculative-dispatch test infrastructure ---
@@ -62,7 +63,7 @@ func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus
 		// Second round (after tool results) — terminate with no
 		// further tool calls so the agent's outer loop returns.
 		msg := message.Message{
-			Role:       message.RoleAssistant,
+			Role:       message.RoleOutput,
 			Content:    []message.Content{message.TextContent("done")},
 			StopReason: message.StopEnd,
 		}
@@ -125,7 +126,7 @@ func (p *staggeredProvider) Send(ctx context.Context, in provider.SendInput, bus
 		}
 	}
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    calls,
 		StopReason: message.StopToolInvoke,
 	}
@@ -197,6 +198,7 @@ func TestSpeculativeDispatch_StartsBeforeStreamEnd(t *testing.T) {
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "spec-001",
 		SocketPath: "/tmp/spec-test.sock",
 		Provider:   prov,
@@ -273,6 +275,7 @@ func TestSpeculativeDispatch_ResultOrdering(t *testing.T) {
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "spec-002",
 		SocketPath: "/tmp/spec-test-2.sock",
 		Provider:   prov,
@@ -358,6 +361,7 @@ func TestToolTurn_IRStructure(t *testing.T) {
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "invoke-001",
 		SocketPath: "/tmp/invoke-test.sock",
 		Provider:   prov,
@@ -378,10 +382,10 @@ func TestToolTurn_IRStructure(t *testing.T) {
 		roles[i] = m.Role
 	}
 	require.Equal(t, []message.Role{
-		message.RoleUser,
-		message.RoleAssistant,
-		message.RoleUser,
-		message.RoleAssistant,
+		message.RoleInput,
+		message.RoleOutput,
+		message.RoleInput,
+		message.RoleOutput,
 	}, roles, "tool turn must produce this message sequence")
 
 	assistant := msgs[1]

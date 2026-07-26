@@ -14,7 +14,7 @@ func BenchmarkCachedLogReadLongAria(b *testing.B) {
 			inner := NewMemLog[message.Message]()
 			for i := 0; i < n; i++ {
 				_, _ = inner.Append(Entry[message.Message]{Payload: message.Message{
-					Role:    message.RoleAssistant,
+					Role:    message.RoleOutput,
 					Content: []message.Content{message.TextContent("synthetic history")},
 				}})
 			}

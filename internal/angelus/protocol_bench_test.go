@@ -41,7 +41,7 @@ func newReadBench(b *testing.B, req rpc.AriaReadRequest) (*handlers, []byte) {
 	log := &readBenchLog{MemLog: store.NewMemLog[message.Message]()}
 	for i := 0; i < 10_000; i++ {
 		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
-			Role:    message.RoleUser,
+			Role:    message.RoleInput,
 			Content: []message.Content{message.TextContent(fmt.Sprintf("message %d", i))},
 		}}); err != nil {
 			b.Fatal(err)
@@ -115,7 +115,7 @@ func BenchmarkDormantList(b *testing.B) {
 					}
 					for j := 0; j < 2; j++ {
 						if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
-							Role:    message.RoleUser,
+							Role:    message.RoleInput,
 							Content: []message.Content{message.TextContent("message")},
 						}}); err != nil {
 							b.Fatal(err)

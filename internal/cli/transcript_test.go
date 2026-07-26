@@ -17,10 +17,10 @@ func TestTranscript_ScrollAndSearch(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(50, 8)
 	client := aria.NewClient()
 	for i := 1; i <= 8; i++ {
-		client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-			LT: i, Role: "assistant",
+		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d body", i)}},
-		}}})
+		}}}})
 	}
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter() // follows → bottom
@@ -57,10 +57,10 @@ func TestTranscript_FollowVsHold(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(50, 8)
 	client := aria.NewClient()
 	add := func(i int) {
-		client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-			LT: i, Role: "assistant",
+		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d", i)}},
-		}}})
+		}}}})
 	}
 	for i := 1; i <= 6; i++ {
 		add(i)
@@ -88,12 +88,11 @@ func TestTranscript_FollowVsHold(t *testing.T) {
 func TestTranscript_LazyOlderPaging(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(50, 8)
 	client := aria.NewClient()
-	msg := func(i int) aria.Committed {
-		return aria.Committed{LT: i, Role: "assistant",
-			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d", i)}}}
+	msg := func(i int) aria.TurnPart {
+		return aria.TurnPart{Turn: aria.Turn{ID: uint64(i), Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d", i)}}}}
 	}
 	for i := 5; i <= 8; i++ { // recent window only (as the lazy initial load gives)
-		client.Apply(aria.AriaRead{Committed: []aria.Committed{msg(i)}})
+		client.Apply(aria.Page{Parts: []aria.TurnPart{msg(i)}})
 	}
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
@@ -111,7 +110,7 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	}
 	// Page in the older window; the viewport anchors (offset shifts down so the
 	// content the user was reading stays put).
-	tr.applyPage(req, committedMessages([]aria.Committed{msg(1), msg(2), msg(3), msg(4)}))
+	tr.applyPage(req, committedMessages(aria.Page{Parts: []aria.TurnPart{msg(1), msg(2), msg(3), msg(4)}}))
 	if tr.offset <= off0 {
 		t.Fatalf("offset should shift down to anchor after prepend (was %d, now %d)", off0, tr.offset)
 	}
@@ -134,17 +133,17 @@ func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(50, 8)
 	client := aria.NewClient()
 	for i := 1; i <= 8; i++ {
-		client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-			LT: i, Role: "assistant",
+		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("msg%02d", i)}},
-		}}})
+		}}}})
 	}
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 
 	all := tr.lines()
 	if last := all[len(all)-1]; strings.TrimSpace(stripANSI(last)) == "" {
-		t.Fatalf("lines() must not end with a blank/separator (footer seals the last message); got %q", last)
+		t.Fatalf("lines() must not end with a blank/separator (footer closes the last message); got %q", last)
 	}
 	rule, statusRow := tr.footerRows(len(all), tr.h-2)
 	rule, statusRow = stripANSI(rule), stripANSI(statusRow)
@@ -169,10 +168,10 @@ func TestTranscript_FooterWidthAndNoTrailingBlank(t *testing.T) {
 func TestTranscript_HelpPanel(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(60, 14)
 	client := aria.NewClient()
-	client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-		LT: 1, Role: "assistant",
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: uint64(1), Sealed: true,
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "hello"}},
-	}}})
+	}}}})
 	tr := newTranscript(ft, 60, 14, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.key('?')

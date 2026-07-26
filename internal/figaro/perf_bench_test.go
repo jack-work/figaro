@@ -33,9 +33,9 @@ func longMemLog(tb testing.TB, n int) store.Log[message.Message] {
 	log := store.NewMemLog[message.Message]()
 	text := strings.Repeat("x", 256)
 	for i := 0; i < n; i++ {
-		role := message.RoleUser
+		role := message.RoleInput
 		if i%2 == 1 {
-			role = message.RoleAssistant
+			role = message.RoleOutput
 		}
 		_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
@@ -59,9 +59,9 @@ func BenchmarkAgentRestoreHistory10000(b *testing.B) {
 		repairInterruptedTail(a.figLog, "perf")
 		messages := unwrapMessages(a.figLog.Read())
 		a.refreshMetricsFrom(messages)
-		units := compose.Units(messages, nil, nil)
-		if len(units) == 0 {
-			b.Fatal("no restored units")
+		turns := compose.Turns(messages, nil, nil)
+		if len(turns) == 0 {
+			b.Fatal("no restored turns")
 		}
 	}
 }
@@ -130,7 +130,7 @@ func BenchmarkMetadataPublication10000(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			meta := &store.AriaMeta{}
 			for _, e := range a.figLog.Read() {
-				if e.Payload.Role == message.RoleAssistant {
+				if e.Payload.Role == message.RoleOutput {
 					meta.TurnCount++
 				}
 				meta.LastFigaroLT = e.LT
@@ -157,7 +157,7 @@ func BenchmarkLiveFramePersistence(b *testing.B) {
 
 	run := func(b *testing.B, persist bool) {
 		srv := aria.NewServer()
-		srv.Open(1, string(message.RoleAssistant))
+		srv.OpenTurn(uint64(1))
 		a := &Agent{ariaSrv: srv}
 		nodes := []livedoc.Node{
 			{Type: livedoc.NodeProse, Markdown: markdown + "a"},
@@ -182,8 +182,8 @@ func BenchmarkLiveFramePersistence(b *testing.B) {
 			a.emitDelta(nodes)
 			if persist {
 				blob, err := json.Marshal(aria.Message{
-					LT:    1,
-					Role:  string(message.RoleAssistant),
+					Turn: 1,
+					Role:  string(message.RoleOutput),
 					Nodes: nodes,
 				})
 				if err != nil {

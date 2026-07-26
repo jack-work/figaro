@@ -15,7 +15,7 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	cache := store.NewMemLog[[]json.RawMessage]()
 	a := &Anthropic{ReminderRenderer: "tag"}
-	for _, role := range []message.Role{message.RoleUser, message.RoleAssistant} {
+	for _, role := range []message.Role{message.RoleInput, message.RoleOutput} {
 		_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 			Role: role, Content: []message.Content{message.TextContent(string(role))},
 		}})
@@ -25,7 +25,7 @@ func TestCatchUpPreservesPrefixBytes(t *testing.T) {
 	first, _ := a.catchUp(log, cache, nil)
 	prefix := append([]byte(nil), first[0][0]...)
 	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
-		Role: message.RoleUser, Content: []message.Content{message.TextContent("next")},
+		Role: message.RoleInput, Content: []message.Content{message.TextContent("next")},
 	}})
 	require.NoError(t, err)
 	second, _ := a.catchUp(log, cache, nil)

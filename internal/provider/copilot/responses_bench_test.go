@@ -29,12 +29,12 @@ func responsesBenchLog(b *testing.B, n int) *copyingBenchLog[message.Message] {
 	b.Helper()
 	log := newCopyingBenchLog[message.Message]()
 	for i := 0; i < n; i++ {
-		role := message.RoleUser
+		role := message.RoleInput
 		if i%2 == 1 {
-			role = message.RoleAssistant
+			role = message.RoleOutput
 		}
 		var usage *message.Usage
-		if role == message.RoleAssistant {
+		if role == message.RoleOutput {
 			usage = &message.Usage{InputTokens: i + 100, OutputTokens: 20}
 		}
 		_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
@@ -51,7 +51,7 @@ func responsesBenchLog(b *testing.B, n int) *copyingBenchLog[message.Message] {
 
 func appendResponsesBenchSuffix(b *testing.B, log store.Log[message.Message]) {
 	b.Helper()
-	for _, role := range []message.Role{message.RoleUser, message.RoleAssistant} {
+	for _, role := range []message.Role{message.RoleInput, message.RoleOutput} {
 		if _, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
 			Role:    role,
 			Content: []message.Content{message.TextContent("warm " + string(role))},

@@ -54,6 +54,80 @@ type Config struct {
 	// RefSigil is the prefix character for chalkboard references in
 	// prompts and tab completion. Must be "@" or ":". Default "@".
 	RefSigil string `toml:"ref_sigil"`
+
+	// Wire bounds paginated reads. See WireConfig.
+	Wire WireConfig `toml:"wire"`
+}
+
+// WireConfig bounds a paginated read. The budget is spent in BYTES and
+// paid out in whole NODES — a page never splits a node, and always
+// carries at least one even when that node alone exceeds the budget.
+// Node granularity is only safe because tool output is already clamped
+// (compose.composeBashCap); the full text stays in the canonical IR.
+type WireConfig struct {
+	// PageBudget is the server's default page size in bytes, used when a
+	// client names no budget of its own. Default 65536.
+	PageBudget *int `toml:"page_budget"`
+
+	// PageBudgetMax is the ceiling clamped onto a client's request, so a
+	// client can never make the server materialize an unbounded page.
+	// Default 524288.
+	PageBudgetMax *int `toml:"page_budget_max"`
+}
+
+const (
+	defaultPageBudget    = 65536
+	defaultPageBudgetMax = 524288
+)
+
+// PageBudget returns the server-side default page budget in bytes. Nil-safe:
+// an agent constructed without config still gets policy from here, so no
+// second default can grow somewhere else.
+func (l *Loaded) PageBudget() int {
+	if l == nil || l.Config.Wire.PageBudget == nil {
+		return defaultPageBudget
+	}
+	return *l.Config.Wire.PageBudget
+}
+
+// PageBudgetMax returns the ceiling on a client-requested budget. Nil-safe for
+// the same reason, and it matters more here: the ceiling must hold even when
+// no config reached us, or a client could make the server materialize an
+// unbounded page.
+func (l *Loaded) PageBudgetMax() int {
+	if l == nil || l.Config.Wire.PageBudgetMax == nil {
+		return defaultPageBudgetMax
+	}
+	return *l.Config.Wire.PageBudgetMax
+}
+
+// ClampPageBudget resolves a client's requested budget against policy:
+// a non-positive request means "use the server default", and any request
+// is capped at the maximum. Never trust the client to bound server work.
+func (l *Loaded) ClampPageBudget(requested int) int {
+	if requested <= 0 {
+		requested = l.PageBudget()
+	}
+	if max := l.PageBudgetMax(); requested > max {
+		return max
+	}
+	return requested
+}
+
+// validateWire rejects budgets that cannot describe a page.
+func (c Config) validateWire() error {
+	if b := c.Wire.PageBudget; b != nil && *b <= 0 {
+		return fmt.Errorf("config: wire.page_budget must be > 0, got %d", *b)
+	}
+	if m := c.Wire.PageBudgetMax; m != nil {
+		if *m <= 0 {
+			return fmt.Errorf("config: wire.page_budget_max must be > 0, got %d", *m)
+		}
+		if b := c.Wire.PageBudget; b != nil && *m < *b {
+			return fmt.Errorf("config: wire.page_budget_max (%d) must be >= wire.page_budget (%d)", *m, *b)
+		}
+	}
+	return nil
 }
 
 // EchoPrompt returns whether to echo the prompt. Default true.
@@ -255,6 +329,10 @@ func Load(configDir string) (*Loaded, error) {
 
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", configPath, err)
+	}
+
+	if err := cfg.validateWire(); err != nil {
+		return nil, err
 	}
 
 	return &Loaded{Config: cfg, ConfigDir: configDir, ConfigPath: configPath}, nil

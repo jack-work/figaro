@@ -179,13 +179,13 @@ you *fork* (next). The indentation in `ls` is the family tree.
 
 ```bash
 figaro fork                 # branch the aria you're attending, at its head
-figaro send <id>:<LT> -- …  # speak into a fork point of another aria
+figaro send <id>:<turn> -- … # replace a turn of another aria and speak there
 ```
 
 > *"Forking freezes a conversation and mints children — the continuation
 > (your original line) and a fresh alternative. It's how you try a bold
-> stroke without ruining the shave you already have. The `<id>:<LT>` form
-> addresses a specific line-of-thought inside an aria."* Keep this light on
+> stroke without ruining the shave you already have. The `<id>:<turn>` form
+> replaces one exchange and everything after it."* Keep this light on
 > a first pass — show it exists; a deep fork lesson is its own opera.
 
 **Tidying — `figaro kill <id>`** removes a trunk you're done with. *Snip.*

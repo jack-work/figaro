@@ -15,12 +15,12 @@ import (
 
 	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/turns"
 )
 
 // runShow handles `figaro show [--id <id>] [N] [-v|-l|-a]`.
@@ -121,21 +121,14 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 
 	// Read the IR through the angelus's shared LogCache.
-	var (
-		resp *rpc.AriaReadResponse
-		err  error
-	)
-	if opts.before >= 0 {
-		resp, err = acli.AriaReadBefore(ctx, figaroID, 0, uint64(opts.before), opts.last)
-	} else if opts.from >= 0 {
-		resp, err = acli.AriaRead(ctx, figaroID, uint64(opts.from), 0)
-	} else if !opts.all {
-		// Default tail read: fetch the last N entries from the true tail,
-		// not capped at the first 1000.
-		resp, err = acli.AriaReadBefore(ctx, figaroID, 0, ^uint64(0), opts.last)
-	} else {
-		resp, err = acli.AriaRead(ctx, figaroID, 0, 0)
-	}
+	//
+	// SEAM (Phase 3): this reads the whole log and pages in memory, because
+	// every selector now speaks turn ids and turns are not derivable from an LT
+	// window — you cannot know which LT a turn starts at without walking. The
+	// paginated turn-aware read (Page/TurnPart, byte budget, bidirectional)
+	// replaces this wholesale; when it lands, `show` becomes a thin client of it
+	// and this block collapses to one call.
+	resp, err := acli.AriaRead(ctx, figaroID, 0, 0)
 	if err != nil {
 		die("aria.read: %s", err)
 	}
@@ -164,40 +157,44 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		msgs[i] = e.Payload
 		msgs[i].LogicalTime = e.LT
 	}
+	turns.StampIDs(msgs)
 	reg := tool.DefaultRegistry("")
-	units := compose.Units(msgs, compose.ToolSummary(tool.Summarizer(reg)), compose.ToolPreviewArg(tool.PreviewArger(reg)))
-	lo, hi := selectUnitRange(len(units), opts)
+	turns := compose.Turns(msgs, compose.ToolSummary(tool.Summarizer(reg)), compose.ToolPreviewArg(tool.PreviewArger(reg)))
+	lo, hi := selectTurnRange(turns, opts)
 
 	if opts.jsonOut {
-		type jUnit struct {
-			Index int            `json:"index"`
-			Role  string         `json:"role"`
-			Nodes []livedoc.Node `json:"nodes"`
+		// The UI IR wire shape VERBATIM — an aria.Page, exactly what figaro.read
+		// returns and figaro.aria pushes. Not a bare []Turn, not a shadow struct:
+		// the same bytes a client folds, so `show --json` and the live stream can
+		// never describe a conversation differently.
+		page := aria.Page{Parts: make([]aria.TurnPart, 0, hi-lo)}
+		for _, t := range turns[lo:hi] {
+			// Whole turns: `show` selects by turn, so no part is ever clipped.
+			page.Parts = append(page.Parts, aria.TurnPart{Turn: t, From: 0})
 		}
-		out := make([]jUnit, 0, hi-lo)
-		for i := lo; i < hi; i++ {
-			out = append(out, jUnit{Index: i, Role: units[i].Role, Nodes: units[i].Nodes})
-		}
+		page.More = aria.More{Before: lo > 0, After: hi < len(turns)}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(out); err != nil {
+		if err := enc.Encode(page); err != nil {
 			die("json: %s", err)
 		}
 		return
 	}
 
 	width := termWidth()
-	fmt.Printf("# aria %s — %d units (showing %d–%d) · [N] is the LT to fork/send at\n\n", figaroID, len(units), lo+1, hi)
+	// Label the window by TURN ID, not by slice position. They coincide only
+	// while ids are gapless and 1-based; printing lo+1 here would be a fourth
+	// coordinate system in the one command that just collapsed three.
+	if lo >= hi {
+		fmt.Printf("# aria %s — %d turns (no turn in range)\n\n", figaroID, len(turns))
+		return
+	}
+	fmt.Printf("# aria %s — %d turns (showing %d–%d) · [N] is the turn to fork/send at\n\n", figaroID, len(turns), turns[lo].ID, turns[hi-1].ID)
 	for i := lo; i < hi; i++ {
-		u := units[i]
-		hdr := messageHeader(u.Role)
-		if hdr == "" {
-			hdr = u.Role // fallback for unknown roles
-		}
-		label := fmt.Sprintf("%s   %s", term.Dim(fmt.Sprintf("[%d]", u.LT)), hdr)
-		fmt.Println(label)
+		u := turns[i]
+		fmt.Println(term.Dim(fmt.Sprintf("[%d]", u.ID)))
 		fmt.Println()
-		rows := renderNodeList(u.Nodes, width, 0, 0, renderSettings{verbose: true})
+		rows := renderTurnRows(u.Nodes, width, 0, 0, renderSettings{verbose: true})
 		fmt.Println(strings.Join(rows, "\n"))
 		fmt.Println()
 	}
@@ -212,23 +209,51 @@ func mustAtoi(s string) int {
 }
 
 // selectUnitRange resolves the [lo,hi) unit window from the flags:
-// --all = everything; --from/--to = an inclusive index range; otherwise
-// the last N (default 10).
-func selectUnitRange(total int, o showOpts) (int, int) {
+// selectTurnRange picks the slice of turns to show. Every selector speaks TURN
+// IDs — the same coordinate `fig send <aria>:<turn>` takes and the same one the
+// header prints. Before this there were three coordinate systems in one
+// command: --from/--to were slice indices, --before was an LT, and the printed
+// label was a third thing. Now there is one.
+//
+//	--all           everything
+//	--from A --to B turns A..B inclusive
+//	--before T -n N the N turns ending just before turn T (paginate backwards)
+//	default  -n N   the last N turns — paginate backwards from the end
+//
+// Pagination is bidirectional by construction: --from walks forward from an
+// anchor, --before walks backward from one, so a scrolling client can pull an
+// earlier or a later page from wherever it is.
+func selectTurnRange(turns []aria.Turn, o showOpts) (int, int) {
+	total := len(turns)
 	if o.all {
 		return 0, total
+	}
+	// Turn id -> slice index. Turns are in order, so a scan is enough and it
+	// tolerates gaps (a forked trunk need not start at turn 1).
+	indexOf := func(id uint64) int {
+		for i := range turns {
+			if turns[i].ID >= id {
+				return i
+			}
+		}
+		return total
+	}
+	if o.before >= 0 {
+		hi := indexOf(uint64(o.before))
+		lo := 0
+		if o.last > 0 && hi > o.last {
+			lo = hi - o.last
+		}
+		return lo, hi
 	}
 	if o.from >= 0 || o.to >= 0 {
 		lo := 0
 		if o.from > 0 {
-			lo = o.from
+			lo = indexOf(uint64(o.from))
 		}
 		hi := total
-		if o.to >= 0 && o.to+1 < total {
-			hi = o.to + 1
-		}
-		if lo > total {
-			lo = total
+		if o.to >= 0 {
+			hi = indexOf(uint64(o.to) + 1)
 		}
 		if hi < lo {
 			hi = lo
@@ -346,7 +371,7 @@ func printTransitions(w io.Writer, entries []store.Entry[message.Message]) {
 // renderMessage writes one IR message as markdown.
 func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 	switch m.Role {
-	case message.RoleUser:
+	case message.RoleInput:
 		var text string
 		var toolResults []message.Content
 		for _, c := range m.Content {
@@ -361,7 +386,7 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 			}
 		}
 		if text != "" {
-			fmt.Fprintf(w, "**you** [#%d]\n\n> %s\n\n", lt, indentBlockquote(text))
+			fmt.Fprintf(w, "**input** [#%d]\n\n> %s\n\n", lt, indentBlockquote(text))
 		}
 		for _, c := range toolResults {
 			marker := "↩"
@@ -388,7 +413,7 @@ func renderMessage(w io.Writer, m message.Message, lt uint64, verbose bool) {
 			fmt.Fprint(w, "\n")
 		}
 
-	case message.RoleAssistant:
+	case message.RoleOutput:
 		header := fmt.Sprintf("**figaro** [#%d]", lt)
 		if m.StopReason != "" {
 			header += fmt.Sprintf(" *(%s)*", m.StopReason)

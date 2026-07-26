@@ -69,7 +69,7 @@ func decodeAssistantMessage(m anthropic.Message) message.Message {
 	// model/provider are not on the IR message — they live in the
 	// chalkboard (system.model / system.provider), derived on read.
 	out := message.Message{
-		Role: message.RoleAssistant,
+		Role: message.RoleOutput,
 	}
 	for _, b := range m.Content {
 		if !validAccumulatedBlock(b) {

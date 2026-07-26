@@ -1,7 +1,7 @@
 # The UI stream
 
 How a figaro conversation reaches your terminal: the **aria read** wire, the
-default **inline-seal** renderer (native scrollback), and the opt-in
+default **inline-freeze** renderer (native scrollback), and the opt-in
 **transcript** pager (a live, scrollable full-screen view).
 
 The data model behind all of this is the UI IR (`livedoc.Node`); see
@@ -46,11 +46,32 @@ version matches the close marker's `V`; a mismatch triggers a re-read from the
 last committed LT. `turn.done` is the one control signal — it reports the turn
 ended and whether the agent is now idle.
 
+> ### Going turn-shaped
+>
+> The read is being reshaped from *message* granularity to **turn** granularity:
+> one entry per turn, the user prompt and the assistant's nodes together, with
+> `Committed`/`Live` moving inside the turn to separate its frozen nodes from its
+> **open suffix**. `Live.From` — a single `uint64` node id — becomes the whole
+> boundary: `id < From` is committed and will never receive a delta.
+>
+> The read also becomes genuinely **paginated and bidirectional** (budget in
+> bytes, granularity in nodes), because turns are far taller than messages:
+> measured over 127 turns in 40 real arias at width 100, median **221 rows**,
+> p90 **3043**, max **7988**. A turn-atomic read would regress the common case.
+>
+> Full types, invariants and worked examples:
+> [turn-addressing.md](turn-addressing.md).
+>
+> **Vocabulary note.** The renderer's ink-to-scrollback step is now
+> **freeze** (`Incipit.Freeze`). The word **seal** is reserved for exactly one
+> meaning: *a turn became immutable* — the moment its nodes stop moving and it
+> is written to the `ui` channel.
+
 Node types: `prose` (assistant/user markdown), `thinking` (extended-thinking),
 `tool` (an invocation folded with its streamed result), `steering` (a user
 message injected mid-turn — see below).
 
-## Default view: inline-seal, in native scrollback
+## Default view: inline-freeze, in native scrollback
 
 The default renderer (`internal/livelog/render`, `Inline`) draws **inline** — no
 alternate screen. The consequence is the headline feature:
@@ -61,13 +82,13 @@ alternate screen. The consequence is the headline feature:
 > doesn't capture the screen or hold it hostage in a pager.
 
 The mechanism that makes this safe: the **immutability boundary is the resize
-boundary.** A message that has closed is sealed to scrollback exactly once; only
+boundary.** A message that has closed is frozen to scrollback exactly once; only
 the *open* message is a live, redrawable region. So a terminal resize repaints
 just that bounded open part — committed history is never reflowed or duplicated.
 
 Each turn opens with one dim full-width rule (a boundary between your shell
 prompt and the response), every message is prefaced with a blank line, and a
-message seals with a trailing rule: the id·time **bookend** after the assistant
+message closes with a trailing rule: the id·time **bookend** after the assistant
 reply (gated on the `status_line` config), a plain wide rule after your prompt.
 
 Inline keybindings while a turn streams:
@@ -130,13 +151,24 @@ command stays open until you close the pager.
 
 ## Steering: messages mid-turn
 
-A message sent while a turn is running (e.g. `fig send` to a busy aria) doesn't
-wait for a new turn — it folds into the *current* turn as a **steering** node,
-which the model reads on its next round. In the stream it appears as a
-`steering` node (rendered under a `↳ you` gutter) positioned where it arrived,
-inside the assistant's turn. The client tells "my turn is done" from "a turn
-ended with my steer still queued" via `turn.done`'s idle flag, so a steering
-send waits for *its own* completion.
+A message sent to a **busy** aria does not wait for a new turn — it folds into
+the *current* turn as a **steering** node, which the model reads on its next
+round. In the stream it appears as a `steering` node (rendered under a
+`↳ input` gutter) positioned where it arrived, inside the agent's turn. The
+client tells "my turn is done" from "a turn ended with my steer still queued"
+via `turn.done`'s idle flag, so a steering send waits for *its own* completion.
+
+**Timing is the whole rule, and there is no flag.** One command, identical
+whether or not the aria is busy: arrive while a turn is running and you steer
+it; arrive when nothing is running and you open a turn. A steer is not a turn,
+so it does not get one.
+
+The classification is made in exactly one place — **the code that drains the
+queue into a turn** — because that is the only point that knows the turn
+boundary as the agent itself sees it, rather than as a client call returning.
+Nothing upstream declares it and nothing downstream may override it. The
+`steering` bit is persisted so a replayed log classifies the same way it did
+live.
 
 > Steering is a server-side feature (the mid-turn drain). It requires a daemon
 > built with it; an older long-lived daemon will queue the message as a separate

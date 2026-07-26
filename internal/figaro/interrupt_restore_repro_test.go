@@ -3,6 +3,8 @@ package figaro_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"path/filepath"
 	"testing"
 	"time"
@@ -14,10 +16,11 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 // slowStreamingProvider streams a delta, then blocks. Used to force a
-// mid-turn interrupt (assistant never seals) so the store's on-disk
+// mid-turn interrupt (assistant never appends) so the store's on-disk
 // tail is a bare user prompt with no assistant reply — the state
 // prior investigation flagged as breaking read+subscribe coherence.
 type slowStreamingProvider struct {
@@ -41,7 +44,7 @@ func (p *slowStreamingProvider) Send(ctx context.Context, _ provider.SendInput, 
 }
 
 // TestReadSubscribeAfterInterruptedTurn asserts that after an aria is
-// interrupted mid-turn — content on disk, no assistant seal — a fresh
+// interrupted mid-turn — content on disk, no assistant append — a fresh
 // agent restored on the same backend sees the aria's content via
 // Read(0), and a live subscriber receives frames on the next prompt.
 //
@@ -80,6 +83,7 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 
 	started := make(chan struct{})
 	a1 := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         conv,
 		SocketPath: filepath.Join(t.TempDir(), "a1.sock"),
 		Provider:   &slowStreamingProvider{started: started},
@@ -111,8 +115,8 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	defer lateUnsub()
 
 	// Catch-up Read from the freshly-attached listener.
-	lateInit := a1.Read(0)
-	if len(lateInit.Committed) == 0 {
+	lateInit := a1.Read(aria.Anchor{Turn: 0}, 1<<20)
+	if len(lateInit.Parts) == 0 {
 		t.Fatalf("late Read(0) after interrupt returned 0 committed units")
 	}
 
@@ -128,6 +132,7 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 		require.NoError(t, err)
 		t.Cleanup(func() { backend2.Close() })
 		a2 = figaro.NewAgent(figaro.Config{
+			Projector:  uiir.New(nil),
 			ID:         conv,
 			SocketPath: filepath.Join(t.TempDir(), "a2.sock"),
 			Provider:   &staticReplyProvider{reply: "second reply after restore"},
@@ -145,14 +150,17 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 
 	// The user's prompt "please stream forever" is on disk; a catch-up
 	// Read(0) MUST return at least one user unit.
-	got := a2.Read(0)
-	if len(got.Committed) == 0 {
+	got := a2.Read(aria.Anchor{Turn: 0}, 1<<20)
+	if len(got.Parts) == 0 {
 		t.Fatalf("Read(0) after interrupt+restore returned 0 units; want >=1 (user prompt on disk)")
 	}
+	// The prompt is node 0 of its turn now, not a unit of its own.
 	sawUser := false
-	for _, c := range got.Committed {
-		if c.Role == "user" {
-			sawUser = true
+	for _, c := range got.Parts {
+		for _, n := range c.Nodes {
+			if n.Role == livedoc.RoleInput {
+				sawUser = true
+			}
 		}
 	}
 	require.True(t, sawUser, "Read(0) should include the on-disk user prompt")
@@ -170,11 +178,21 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	a2.SubmitPrompt(rpc.QuaRequest{Text: "hello again"})
 	waitFor(t, sink2, rpc.MethodTurnDone, 5*time.Second)
 
-	// After the second turn, both the older user unit and the two new
-	// units must be visible to a fresh reader.
-	final := a2.Read(0)
-	require.GreaterOrEqual(t, len(final.Committed), 3,
-		"final Read(0) should contain both the original prompt and the new turn")
+	// After the second turn, both the older exchange and the new one must be
+	// visible to a fresh reader. Two TURNS, not three units — the prompt is
+	// node 0 of its own turn now.
+	final := a2.Read(aria.Anchor{Turn: 0}, 1<<20)
+	require.GreaterOrEqual(t, len(final.Parts), 2,
+		"final Read(0) should contain both the original turn and the new one")
+	prompts := 0
+	for _, part := range final.Parts {
+		for _, n := range part.Nodes {
+			if n.Role == livedoc.RoleInput {
+				prompts++
+			}
+		}
+	}
+	require.GreaterOrEqual(t, prompts, 2, "both prompts must survive")
 }
 
 // reproNotifier is a tiny sink adopted as figaro.Notifier.
@@ -204,7 +222,7 @@ func waitFor(t *testing.T, ch <-chan rpc.Notification, method string, d time.Dur
 	}
 }
 
-// staticReplyProvider replies with a fixed string, then seals.
+// staticReplyProvider replies with a fixed string, then appends.
 type staticReplyProvider struct{ reply string }
 
 func (p *staticReplyProvider) Name() string        { return "static" }
@@ -216,7 +234,7 @@ func (p *staticReplyProvider) Models(context.Context) ([]provider.ModelInfo, err
 func (p *staticReplyProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	bus.PushDelta(message.Content{Type: message.ContentProse, Text: p.reply})
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent(p.reply)},
 		StopReason: message.StopEnd,
 	}

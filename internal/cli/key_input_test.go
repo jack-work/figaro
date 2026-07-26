@@ -22,8 +22,15 @@ func TestParseModifiedKeyAltCtrlFallback(t *testing.T) {
 	}
 }
 
+// The keys that open the pager from incipit, so a motion acts on arrival
+// instead of looking like a dead keyboard.
 func TestOpensTranscriptForOutputHotkeys(t *testing.T) {
-	for _, key := range []byte{'j', 'k', '/', '?', 0x0e, 0x10, 0x0d} {
+	for _, key := range []byte{0x0e, 0x10, 0x0d} {
+		if !opensTranscriptFor(key) {
+			t.Fatalf("key %q must enter transcript", key)
+		}
+	}
+	for _, key := range []byte{'j', 'k', '/', '?'} {
 		if !opensTranscriptFor(key) {
 			t.Fatalf("key %q must enter transcript", key)
 		}

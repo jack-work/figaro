@@ -15,7 +15,7 @@ func TestRotatingWriter_RollsOverAtCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	line := []byte(strings.Repeat("x", 40) + "\n") // 41 bytes
-	for i := 0; i < 5; i++ {                        // 205 bytes total > cap, must roll
+	for i := 0; i < 5; i++ {                       // 205 bytes total > cap, must roll
 		if _, err := w.Write(line); err != nil {
 			t.Fatal(err)
 		}

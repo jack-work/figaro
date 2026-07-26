@@ -17,7 +17,7 @@ func TestMemLog_Standalone(t *testing.T) {
 	assert.Empty(t, s.Read())
 
 	entry, err := s.Append(Entry[message.Message]{
-		Payload: message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hello")}},
+		Payload: message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hello")}},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, uint64(1), entry.LT)

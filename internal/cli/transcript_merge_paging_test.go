@@ -23,16 +23,16 @@ import (
 // in the payload LRU is no longer the same set of messages.
 //
 // D's tailRev answered "are t.pages still the client's tail?"; A's index had a
-// separate per-frame shape diff deciding whether to refill lineLT. Two checks
-// over one fact is how a moved page set ends up with lineLT — resize anchoring,
+// separate per-frame shape diff deciding whether to refill lineTurn. Two checks
+// over one fact is how a moved page set ends up with lineTurn — resize anchoring,
 // viewportAnchor — describing a window that no longer exists.
 // ---------------------------------------------------------------------------
 
 // mixedHeightHistory alternates short and tall messages so the retained window
 // and the payload LRU end up holding messages of very different heights. That
 // is what makes "which set did you average over" observable.
-func mixedHeightHistory(n int) []aria.Committed {
-	out := make([]aria.Committed, n)
+func mixedHeightHistory(n int) []aria.TurnPart {
+	out := make([]aria.TurnPart, n)
 	for i := range out {
 		md := "short-" + itoa(i+1)
 		if i+1 <= 2*n/3 { // the older two thirds are tall
@@ -41,8 +41,7 @@ func mixedHeightHistory(n int) []aria.Committed {
 				md += "tall-" + itoa(i+1) + " line-" + itoa(l) + "\n\n"
 			}
 		}
-		out[i] = aria.Committed{LT: i + 1, Role: "assistant",
-			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: md}}}
+		out[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: md}}}}
 	}
 	return out
 }
@@ -55,10 +54,10 @@ func lineLTFromIndex(tr *transcript) []int {
 	for k := range tr.index.entries {
 		e := &tr.index.entries[k]
 		if e.sep {
-			out = append(out, e.lt, e.lt, e.lt)
+			out = append(out, e.turn, e.turn, e.turn)
 		}
 		for range e.rows {
-			out = append(out, e.lt)
+			out = append(out, e.turn)
 		}
 	}
 	return out
@@ -71,13 +70,13 @@ func assertIndexAgrees(t *testing.T, tr *transcript, when string) {
 			when, tr.index.rev, tr.windowRev)
 	}
 	want := lineLTFromIndex(tr)
-	if len(tr.lineLT) != len(want) {
-		t.Fatalf("%s: lineLT has %d entries, index has %d lines",
-			when, len(tr.lineLT), len(want))
+	if len(tr.lineTurn) != len(want) {
+		t.Fatalf("%s: lineTurn has %d entries, index has %d lines",
+			when, len(tr.lineTurn), len(want))
 	}
 	for i := range want {
-		if tr.lineLT[i] != want[i] {
-			t.Fatalf("%s: lineLT[%d] = %d, index says %d", when, i, tr.lineLT[i], want[i])
+		if tr.lineTurn[i] != want[i] {
+			t.Fatalf("%s: lineTurn[%d] = %d, index says %d", when, i, tr.lineTurn[i], want[i])
 		}
 	}
 }
@@ -154,11 +153,8 @@ func TestMergedFollowFrameLeavesTheWindowAlone(t *testing.T) {
 
 	rev := tr.windowRev
 	for i := range 20 {
-		client.Apply(aria.AriaRead{Live: &aria.Live{
-			LT: 41, V: 0, Role: "assistant",
-			Nodes: []aria.NodeDelta{{ID: "n", Set: map[string]any{
-				"type": "prose", "markdown": "streaming token " + itoa(i)}}},
-		}})
+		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(41), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
+			"type": "prose", "markdown": "streaming token " + itoa(i)}}}}}}}})
 		tr.tick++
 		tr.render()
 	}
@@ -168,10 +164,10 @@ func TestMergedFollowFrameLeavesTheWindowAlone(t *testing.T) {
 	assertIndexAgrees(t, tr, "while following")
 
 	// ... but a newly committed message must announce one.
-	client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-		LT: 41, Role: "assistant",
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: 41, Sealed: true,
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "committed"}},
-	}}})
+	}}}})
 	tr.render()
 	if tr.windowRev == rev {
 		t.Fatal("a committed message did not announce a window change")
@@ -210,9 +206,9 @@ func TestMergedGeometryMeasuresTheWindowNotTheRowCache(t *testing.T) {
 	// separator between messages.
 	wantRows, wantMsgs := 0, 0
 	tr.forEachMessage(func(m aria.Message) {
-		rows, ok := tr.rowCache[m.LT]
+		rows, ok := tr.rowCache[keyOf(m)]
 		if !ok {
-			t.Fatalf("retained message %d has no cached rows", m.LT)
+			t.Fatalf("retained message %d has no cached rows", m.Turn)
 		}
 		if wantMsgs > 0 {
 			wantRows += 3
@@ -270,10 +266,7 @@ func TestMergedOpenMessageIsExcludedFromTheBudget(t *testing.T) {
 	for l := range 500 {
 		huge += "a very long line of streaming output number " + itoa(l) + "\n\n"
 	}
-	client.Apply(aria.AriaRead{Live: &aria.Live{
-		LT: 121, V: 0, Role: "assistant",
-		Nodes: []aria.NodeDelta{{ID: "n", Set: map[string]any{"type": "prose", "markdown": huge}}},
-	}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(121), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"type": "prose", "markdown": huge}}}}}}}})
 
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 16), 60, 16, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
@@ -299,10 +292,7 @@ func TestMergedOpenMessageIsExcludedFromTheBudget(t *testing.T) {
 
 	// And growing the live message further must not move the budget's inputs.
 	before, beforeMsgs := held, msgs
-	client.Apply(aria.AriaRead{Live: &aria.Live{
-		LT: 121, V: 0, Role: "assistant",
-		Nodes: []aria.NodeDelta{{ID: "n", Set: map[string]any{"type": "prose", "markdown": huge + huge}}},
-	}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(121), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{"type": "prose", "markdown": huge + huge}}}}}}}})
 	tr.render()
 	if gotRows, gotMsgs := tr.heldWindow(); gotRows != before || gotMsgs != beforeMsgs {
 		t.Fatalf("a growing open message moved the budget: %d rows/%d msgs -> %d/%d",

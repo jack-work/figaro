@@ -16,8 +16,8 @@ func driveWrite(t *testing.T, argFrames []string, resultText string) []livedoc.N
 	t.Helper()
 	srv := aria.NewServer()
 	cli := aria.NewClient()
-	srv.Subscribe(func(r aria.AriaRead) { cli.Apply(r) })
-	srv.Open(1, "assistant")
+	srv.Subscribe(func(r aria.Page) { cli.Apply(r) })
+	srv.OpenTurn(uint64(1))
 
 	preview := func(name string) string {
 		if name == "write" {
@@ -28,7 +28,7 @@ func driveWrite(t *testing.T, argFrames []string, resultText string) []livedoc.N
 
 	// The in-flight message: one tool_invoke, no result yet.
 	inv := message.Content{Type: message.ContentToolInvoke, ToolCallID: "w1", ToolName: "write"}
-	msg := message.Message{Role: message.RoleAssistant, LogicalTime: 1, Content: []message.Content{inv}}
+	msg := message.Message{Role: message.RoleOutput, LogicalTime: 1, Content: []message.Content{inv}}
 
 	argPartials := map[string]string{}
 	for _, frame := range argFrames {
@@ -36,7 +36,7 @@ func driveWrite(t *testing.T, argFrames []string, resultText string) []livedoc.N
 		srv.Update(Nodes([]message.Message{msg}, nil, argPartials, nil, preview))
 	}
 	if resultText != "" {
-		res := message.Message{Role: message.RoleUser, LogicalTime: 2, Content: []message.Content{
+		res := message.Message{Role: message.RoleInput, LogicalTime: 2, Content: []message.Content{
 			{Type: message.ContentToolResult, ToolCallID: "w1", ToolName: "write", Text: resultText},
 		}}
 		srv.Update(Nodes([]message.Message{msg, res}, nil, argPartials, nil, preview))
@@ -99,7 +99,7 @@ func TestNodes_WriteContentPreview_ResultReplacesPreview(t *testing.T) {
 // nothing (previous behavior — arg stream is silently dropped).
 func TestNodes_NoPreviewArg_NoLeak(t *testing.T) {
 	inv := message.Content{Type: message.ContentToolInvoke, ToolCallID: "b1", ToolName: "bash"}
-	msg := message.Message{Role: message.RoleAssistant, LogicalTime: 1, Content: []message.Content{inv}}
+	msg := message.Message{Role: message.RoleOutput, LogicalTime: 1, Content: []message.Content{inv}}
 	nodes := Nodes([]message.Message{msg}, nil, map[string]string{"b1": `{"command":"ls`}, nil, nil)
 	n := findTool(nodes)
 	if n == nil || n.Output != "" {

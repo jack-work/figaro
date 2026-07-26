@@ -13,7 +13,7 @@ import (
 
 func TestMessage_Roundtrip_PlainUserMessage(t *testing.T) {
 	original := message.Message{
-		Role:        message.RoleUser,
+		Role:        message.RoleInput,
 		Content:     []message.Content{message.TextContent("ciao")},
 		LogicalTime: 7,
 		Timestamp:   1700000000000,
@@ -25,7 +25,7 @@ func TestMessage_Roundtrip_PlainUserMessage(t *testing.T) {
 	var decoded message.Message
 	require.NoError(t, json.Unmarshal(b, &decoded))
 
-	assert.Equal(t, message.RoleUser, decoded.Role)
+	assert.Equal(t, message.RoleInput, decoded.Role)
 	require.Len(t, decoded.Content, 1)
 	assert.Equal(t, "ciao", decoded.Content[0].Text)
 	assert.Equal(t, uint64(7), decoded.LogicalTime)
@@ -34,7 +34,7 @@ func TestMessage_Roundtrip_PlainUserMessage(t *testing.T) {
 
 func TestMessage_Roundtrip_WithPatches(t *testing.T) {
 	original := message.Message{
-		Role:        message.RoleUser,
+		Role:        message.RoleInput,
 		Content:     []message.Content{message.TextContent("explain this")},
 		LogicalTime: 3,
 		Timestamp:   1700000000000,
@@ -63,7 +63,7 @@ func TestMessage_Roundtrip_WithPatches(t *testing.T) {
 // `figaro set` — round-trips correctly.
 func TestMessage_StateOnlyTic(t *testing.T) {
 	tic := message.Message{
-		Role:        message.RoleUser,
+		Role:        message.RoleInput,
 		LogicalTime: 1,
 		Timestamp:   1700000000000,
 		// No Content.
@@ -84,7 +84,7 @@ func TestMessage_StateOnlyTic(t *testing.T) {
 	var decoded message.Message
 	require.NoError(t, json.Unmarshal(b, &decoded))
 
-	assert.Equal(t, message.RoleUser, decoded.Role)
+	assert.Equal(t, message.RoleInput, decoded.Role)
 	assert.Empty(t, decoded.Content, "state-only tic has no Content")
 	require.Len(t, decoded.Patches, 1)
 	assert.Equal(t, json.RawMessage(`"you are figaro"`), decoded.Patches[0].Set["system.credo"])
@@ -124,7 +124,7 @@ func TestNewInterruptSentinel_NamesAllToolCalls(t *testing.T) {
 }
 
 func TestInterruptSentinel_NonSentinel_NoIDs(t *testing.T) {
-	user := message.Message{Role: message.RoleUser, Content: []message.Content{message.TextContent("hi")}}
+	user := message.Message{Role: message.RoleInput, Content: []message.Content{message.TextContent("hi")}}
 	assert.False(t, message.IsInterruptSentinel(user))
 	assert.Nil(t, message.DanglingToolCallIDs(user))
 }
@@ -155,16 +155,53 @@ func TestInterruptSentinel_Roundtrip(t *testing.T) {
 
 func TestCountMessages_ExcludesCeremonial(t *testing.T) {
 	msgs := []message.Message{
-		{Role: message.RoleGenesis},                                                   // ceremonial (genesis)
-		{Role: message.RoleUser},                                                       // ceremonial (empty loadout birth)
-		{Role: message.RoleUser, Content: []message.Content{message.TextContent("u1")}}, // counts
-		{Role: message.RoleAssistant, Content: []message.Content{message.TextContent("a1")}}, // counts
-		{Role: message.RoleUser, Content: []message.Content{message.ToolResultContent("c", "t", "ok", false)}}, // counts (tool result tic)
-		{Role: message.RoleUser, Content: []message.Content{{Type: message.ContentProse, Text: ""}}}, // empty prose -> ceremonial
+		{Role: message.RoleGenesis}, // ceremonial (genesis)
+		{Role: message.RoleInput},   // ceremonial (empty loadout birth)
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("u1")}},                        // counts
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("a1")}},                       // counts
+		{Role: message.RoleInput, Content: []message.Content{message.ToolResultContent("c", "t", "ok", false)}}, // counts (tool result tic)
+		{Role: message.RoleInput, Content: []message.Content{{Type: message.ContentProse, Text: ""}}},           // empty prose -> ceremonial
 	}
 	assert.Equal(t, 3, message.CountMessages(msgs))
 	assert.True(t, message.IsCeremonial(msgs[0]))
 	assert.True(t, message.IsCeremonial(msgs[1]))
 	assert.False(t, message.IsCeremonial(msgs[2]))
 	assert.True(t, message.IsCeremonial(msgs[5]))
+}
+
+// A store written before the input/output rename must keep reading. The
+// mapping lives on the type, so no decode path can forget it — the failure it
+// prevents is silent: a turn rendering under the wrong speaker.
+func TestRole_LegacyVocabularyStillDecodes(t *testing.T) {
+	for _, c := range []struct{ on, want string }{
+		{`"user"`, "input"},
+		{`"assistant"`, "output"},
+		{`"input"`, "input"},   // already migrated
+		{`"output"`, "output"}, // already migrated
+		{`"tool_result"`, "tool_result"},
+		{`"system.interrupt"`, "system.interrupt"},
+		{`"genesis"`, "genesis"},
+	} {
+		var r message.Role
+		if err := json.Unmarshal([]byte(c.on), &r); err != nil {
+			t.Fatalf("%s: %v", c.on, err)
+		}
+		if string(r) != c.want {
+			t.Errorf("%s decoded to %q, want %q", c.on, r, c.want)
+		}
+	}
+}
+
+// Providers speak user/assistant on their own wire; figaro speaks input/output.
+// A rename of figaro's vocabulary must never reach a provider payload.
+func TestRoleFromWire_IsTheOnlyBoundary(t *testing.T) {
+	if got := message.RoleFromWire("user"); got != message.RoleInput {
+		t.Errorf("wire user -> %q, want %q", got, message.RoleInput)
+	}
+	if got := message.RoleFromWire("assistant"); got != message.RoleOutput {
+		t.Errorf("wire assistant -> %q, want %q", got, message.RoleOutput)
+	}
+	if got := message.RoleFromWire("something_else"); got != message.Role("something_else") {
+		t.Errorf("unknown role must pass through, got %q", got)
+	}
 }

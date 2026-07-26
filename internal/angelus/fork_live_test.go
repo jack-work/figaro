@@ -23,9 +23,9 @@ type liveForkFigaro struct {
 	killed bool
 }
 
-func (f *liveForkFigaro) ID() string                 { return f.id }
-func (f *liveForkFigaro) SocketPath() string         { return "" }
-func (f *liveForkFigaro) Interrupt()                 {}
+func (f *liveForkFigaro) ID() string         { return f.id }
+func (f *liveForkFigaro) SocketPath() string { return "" }
+func (f *liveForkFigaro) Interrupt()         {}
 func (f *liveForkFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{ID: f.id, State: "active", MessageCount: 12, Provider: "provider"}
 }
@@ -185,7 +185,7 @@ func (p *activeForkProvider) Send(ctx context.Context, in provider.SendInput, bu
 		}
 	}
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent("complete")},
 		StopReason: message.StopEnd,
 	}
@@ -319,14 +319,14 @@ func (p *activeToolProvider) Send(_ context.Context, in provider.SendInput, bus 
 		bus.PushToolInvokeStart(call.ToolCallID, call.ToolName)
 		bus.PushToolReady(call)
 		msg = message.Message{
-			Role:       message.RoleAssistant,
+			Role:       message.RoleOutput,
 			Content:    []message.Content{call},
 			StopReason: message.StopToolInvoke,
 		}
 	} else {
 		bus.PushDelta(message.TextContent("finished"))
 		msg = message.Message{
-			Role:       message.RoleAssistant,
+			Role:       message.RoleOutput,
 			Content:    []message.Content{message.TextContent("finished")},
 			StopReason: message.StopEnd,
 		}

@@ -203,7 +203,7 @@ func Merge(p, q Patch) Patch {
 	for _, k := range q.Remove {
 		// q removes it: drop any prior set.
 		delete(out.Set, k)
-		if !containsString(out.Remove, k) {
+		if !slices.Contains(out.Remove, k) {
 			out.Remove = append(out.Remove, k)
 		}
 	}
@@ -273,15 +273,9 @@ func decodeStringOrRaw(raw json.RawMessage) string {
 	return string(raw)
 }
 
-func containsString(xs []string, s string) bool {
-	return slices.Contains(xs, s)
-}
-
 func removeString(xs []string, s string) []string {
-	for i, x := range xs {
-		if x == s {
-			return append(xs[:i], xs[i+1:]...)
-		}
+	if i := slices.Index(xs, s); i >= 0 {
+		return slices.Delete(xs, i, i+1)
 	}
 	return xs
 }

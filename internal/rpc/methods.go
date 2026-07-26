@@ -332,6 +332,10 @@ type StatusResponse struct {
 	Uptime      int64 `json:"uptime_ms"` // millis since angelus start
 	FigaroCount int   `json:"figaro_count"`
 	BoundPIDs   int   `json:"bound_pids"`
+	// Build is the daemon's VCS revision. A CLI speaking a different build
+	// than the running daemon renders nothing at all — the wire changes
+	// between builds — so the mismatch must be named, not suffered.
+	Build string `json:"build,omitempty"`
 }
 
 type SaveBindingsResponse struct {

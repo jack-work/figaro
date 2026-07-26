@@ -3,6 +3,7 @@ package figaro_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"testing"
 	"time"
 
@@ -10,8 +11,10 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 type blockingSteeringTool struct {
@@ -58,6 +61,7 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "steering-order",
 		SocketPath: "/tmp/steering-order.sock",
 		Provider:   prov,
@@ -73,39 +77,124 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("tool did not start")
 	}
-	submitPrompt(a, "steer one")
-	submitPrompt(a, "steer two")
+	submitSteer(a, "steer one")
+	submitSteer(a, "steer two")
 	close(bt.release)
 	waitTurnDone(t, frames)
 
+	// A DRAINED BATCH IS ONE MESSAGE. Both steers were queued during the same
+	// tool round, so TakeReadyUserPrompts lifts them together and the drain
+	// joins them with a newline: one message, one LT, one steering decision —
+	// not two messages for the model to reconcile.
 	msgs := a.Context()
-	require.Len(t, msgs, 6)
+	require.Len(t, msgs, 5)
 	require.Equal(t, []message.Role{
-		message.RoleUser,
-		message.RoleAssistant,
-		message.RoleUser,
-		message.RoleUser,
-		message.RoleUser,
-		message.RoleAssistant,
-	}, []message.Role{msgs[0].Role, msgs[1].Role, msgs[2].Role, msgs[3].Role, msgs[4].Role, msgs[5].Role})
+		message.RoleInput,
+		message.RoleOutput,
+		message.RoleInput,
+		message.RoleInput,
+		message.RoleOutput,
+	}, []message.Role{msgs[0].Role, msgs[1].Role, msgs[2].Role, msgs[3].Role, msgs[4].Role})
 	require.Len(t, msgs[2].Content, 1)
 	require.Equal(t, message.ContentToolResult, msgs[2].Content[0].Type)
 	require.Len(t, msgs[3].Content, 1)
 	require.Equal(t, message.ContentProse, msgs[3].Content[0].Type)
-	require.Equal(t, "steer one", msgs[3].Content[0].Text)
-	require.Len(t, msgs[4].Content, 1)
-	require.Equal(t, message.ContentProse, msgs[4].Content[0].Type)
-	require.Equal(t, "steer two", msgs[4].Content[0].Text)
+	require.Equal(t, "steer one\nsteer two", msgs[3].Content[0].Text)
+	require.True(t, msgs[3].Steering, "a prompt drained mid-turn is classified at the drain")
 
-	read := a.Read(0)
-	require.Len(t, read.Committed, 5)
-	require.Equal(t, []string{"user", "assistant", "user", "user", "assistant"}, []string{
-		read.Committed[0].Role,
-		read.Committed[1].Role,
-		read.Committed[2].Role,
-		read.Committed[3].Role,
-		read.Committed[4].Role,
+	// The canonical order survives as ONE turn. A steer is a direction aimed at
+	// the exchange already in flight, so it joins that turn rather than opening
+	// its own — which is what previously truncated the turn being steered and
+	// left its closing prose unrendered.
+	//
+	// The TOOL node belongs here too. This expectation used to omit it, which
+	// pinned a real defect: the assertions above prove a tool ran (msgs[1] is the
+	// assistant, msgs[2] carries its ContentToolResult), so a projection without a
+	// tool node was claiming that a tool present in the IR renders nowhere. It
+	// was overwritten in place when the recomposed window narrowed after a drain.
+	read := a.Read(aria.Anchor{Turn: 0}, 1<<20)
+	for _, part := range read.Parts {
+		t.Logf("turn=%d inquiry=%q nodes=%d", part.ID, part.Inquiry, len(part.Nodes))
+		for _, n := range part.Nodes {
+			t.Logf("    %s/%s %q", n.Type, n.Role, n.Markdown)
+		}
+	}
+	require.Len(t, read.Parts, 1)
+	require.Equal(t, "initial", read.Parts[0].Inquiry)
+
+	var kinds []string
+	for _, n := range read.Parts[0].Nodes {
+		kinds = append(kinds, string(n.Type))
+	}
+	require.Equal(t, []string{"prose", "tool", "steering", "prose"}, kinds,
+		"the drained batch is ONE steering node inside the turn it steers, "+
+			"and the tool call it interrupted must survive")
+	require.Equal(t, "steer one\nsteer two", read.Parts[0].Nodes[2].Markdown,
+		"both queued texts survive, joined by a newline — nothing is dropped")
+	require.Equal(t, int32(2), prov.calls.Load())
+}
+
+// TIMING IS THE WHOLE RULE: a prompt that arrives while a turn is running joins
+// that turn as a steering aside. There is no flag and no declaration — one
+// command, identical whether or not the aria is busy.
+//
+// This test previously asserted the opposite, from an era when intent was
+// CARRIED. That design existed to avoid demoting a genuine question, but it
+// required the caller to know something the caller cannot reliably know, and it
+// put a second classification point outside the drain. The rule now: a message
+// sent while figaro is working IS a direction to the work in progress. A steer
+// is not a turn, so it does not get one.
+func TestMidTurnPromptJoinsTheRunningTurn(t *testing.T) {
+	bt := &blockingSteeringTool{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	reg := tool.NewRegistry()
+	require.NoError(t, reg.Register(bt))
+	prov := &staggeredProvider{
+		tools:     []specTool{{id: "tc_steer", name: "steer", args: map[string]interface{}{}, readyAt: 0}},
+		streamEnd: 10 * time.Millisecond,
+	}
+	cb, _ := chalkboard.Open("")
+	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"system.model":    json.RawMessage(`"mock"`),
+		"system.provider": json.RawMessage(`"staggered"`),
+	}})
+	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
+		ID:         "unmarked-midturn",
+		SocketPath: "/tmp/unmarked-midturn.sock",
+		Provider:   prov,
+		Tools:      reg,
+		Chalkboard: cb,
 	})
+	defer a.Kill()
+
+	frames, _ := subscribeChan(a)
+	submitPrompt(a, "initial")
+	select {
+	case <-bt.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("tool did not start")
+	}
+	submitPrompt(a, "a mid-turn nudge")
+	close(bt.release)
+	waitTurnDone(t, frames)
+
+	read := a.Read(aria.Anchor{Turn: 0}, 1<<20)
+	for _, part := range read.Parts {
+		t.Logf("turn=%d inquiry=%q nodes=%d", part.ID, part.Inquiry, len(part.Nodes))
+	}
+	require.Len(t, read.Parts, 1, "a prompt drained mid-turn joins the running turn")
+	require.Equal(t, "initial", read.Parts[0].Inquiry)
+	var sawSteering bool
+	for _, n := range read.Parts[0].Nodes {
+		if n.Type == livedoc.NodeSteering {
+			sawSteering = true
+		}
+	}
+	require.True(t, sawSteering,
+		"the mid-turn prompt must render as a steering node inside that turn")
 	require.Equal(t, int32(2), prov.calls.Load())
 }
 
@@ -135,6 +224,7 @@ func TestChalkboardSetDuringToolRoundAppliesNextRound(t *testing.T) {
 		"system.provider": json.RawMessage(`"staggered"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "midturn-set",
 		SocketPath: "/tmp/midturn-set.sock",
 		Provider:   prov,

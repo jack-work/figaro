@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/compose"
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -24,6 +24,7 @@ import (
 	"github.com/jack-work/figaro/internal/tokens"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/toolout"
+	"github.com/jack-work/figaro/internal/turns"
 )
 
 type eventType int
@@ -58,6 +59,8 @@ type Config struct {
 	Provider   provider.Provider
 	Outfitter  *outfit.Outfitter
 	Tools      *tool.Registry
+	// Projector renders fig IR as UI IR. nil ships an engine with no display.
+	Projector  Projector
 	Backend    store.Backend // nil = ephemeral
 	CreatedAt  time.Time
 	LastActive time.Time
@@ -74,6 +77,13 @@ type Config struct {
 	// have no channel, so this patch is folded onto the first IR turn so
 	// the loadout reminders still render. Ignored when Backend != nil.
 	InlineBoot *chalkboard.Patch
+
+	// Settings is the loaded user configuration. Today the agent reads only
+	// the wire page budget from it, via ClampPageBudget — which is the SINGLE
+	// policy point deciding how many bytes a paginated read may cost. Nil is
+	// safe (the accessors are nil-safe and return the built-in defaults,
+	// ceiling included), so tests and ephemeral agents need not supply one.
+	Settings *config.Loaded
 }
 
 // Agent is the Figaro implementation.
@@ -83,12 +93,13 @@ type Agent struct {
 	prov       provider.Provider
 	outfitter  *outfit.Outfitter
 	tools      *tool.Registry
-	summarize  compose.ToolSummary
-	previewArg compose.ToolPreviewArg
+	// proj converts fig IR to UI IR. nil in a core-only build.
+	proj       Projector
 	inlineBoot *chalkboard.Patch // ephemeral first-turn boot fold
 	figLog     store.Log[message.Message]
 	backend    store.Backend // nil = ephemeral
 	chalkboard *chalkboard.State
+	settings   *config.Loaded // wire budget policy; nil-safe
 
 	inbox *Inbox
 
@@ -107,19 +118,19 @@ type Agent struct {
 	// count: main LTs are trunk-global (patches/transitions consume them too),
 	// so they run far ahead of the message channel's entry count, and passing
 	// a count to ReadFrom re-includes prior turns in every live frame.
-	turnStartLT uint64
-	gov         *toolout.Governor // bounded live tool-output tails (coalesced emits)
-	lastEmit    time.Time         // throttle for live streaming emits
-	argPartials map[string]string
-	toolTimings map[string]compose.ToolTiming
-	turn        *turnState
+	turnStartLT   uint64
+	turnStartTurn uint64            // turn the window was pinned for; the region base moves only with the turn
+	turnID        uint64            // in-flight turn id, stamped onto every append
+	gov           *toolout.Governor // bounded live tool-output tails (coalesced emits)
+	lastEmit      time.Time         // throttle for live streaming emits
+	argPartials   map[string]string
+	turn          *turnState
 
 	// ariaSrv is the rendered conversation (committed units + the open one),
 	// the single source of the aria-read wire: it serves both the live push
 	// (MethodAriaFrame) and the catch-up pull (figaro.read). unitLT is the
 	// monotonic figaro LT assigned to each unit as it opens.
 	ariaSrv *aria.Server
-	unitLT  int
 
 	createdAt     time.Time
 	lastActive    time.Time
@@ -162,11 +173,11 @@ func NewAgent(cfg Config) *Agent {
 		prov:       cfg.Provider,
 		outfitter:  cfg.Outfitter,
 		tools:      cfg.Tools,
-		summarize:  compose.ToolSummary(tool.Summarizer(cfg.Tools)),
-		previewArg: compose.ToolPreviewArg(tool.PreviewArger(cfg.Tools)),
+		proj:       cfg.Projector,
 		inlineBoot: cfg.InlineBoot,
 		backend:    cfg.Backend,
 		chalkboard: cfg.Chalkboard,
+		settings:   cfg.Settings,
 		createdAt:  createdAt,
 		lastActive: lastActive,
 		cancel:     cancel,
@@ -189,13 +200,12 @@ func NewAgent(cfg Config) *Agent {
 	// aria message), then register the broadcast: every aria-server change is
 	// pushed to subscribers as one aria read.
 	a.ariaSrv = aria.NewServer()
-	for i, u := range compose.Units(messages, a.summarize, a.previewArg) {
-		a.unitLT = i + 1
-		a.ariaSrv.Commit(aria.Message{LT: a.unitLT, Role: u.Role, Nodes: u.Nodes})
+	for _, t := range a.projTurns(messages) {
+		a.ariaSrv.Commit(t)
 	}
-	a.ariaSrv.Subscribe(func(r aria.AriaRead) {
-		r.Metrics = a.sessionMetrics()
-		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: r})
+	a.ariaSrv.Subscribe(func(p aria.Page) {
+		p.Metrics = a.sessionMetrics()
+		a.fanOut(rpc.Notification{JSONRPC: "2.0", Method: rpc.MethodAriaFrame, Params: p})
 	})
 
 	a.publishMetadata()
@@ -322,7 +332,7 @@ func (a *Agent) refreshMetrics() {
 		if !message.IsCeremonial(m) {
 			messageCount++
 		}
-		if m.Role == message.RoleAssistant {
+		if m.Role == message.RoleOutput {
 			turnCount++
 		}
 		metricsLT = e.LT
@@ -357,7 +367,7 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	turnCount := 0
 	var metricsLT uint64
 	for _, m := range msgs {
-		if m.Role == message.RoleAssistant {
+		if m.Role == message.RoleOutput {
 			turnCount++
 		}
 		if m.LogicalTime > metricsLT {
@@ -452,7 +462,27 @@ func (a *Agent) Context() []message.Message {
 	return unwrapMessages(a.figLog.Read())
 }
 
-// unwrapMessages projects entries to a flat []Message.
+// appendMsg stamps the in-flight turn id onto m and appends it. Every durable
+// write of a conversation message goes through here, so the turn id can never
+// drift from the log.
+func (a *Agent) appendMsg(m message.Message) (store.Entry[message.Message], error) {
+	m.TurnID = a.turnID
+	return a.figLog.Append(store.Entry[message.Message]{Payload: m})
+}
+
+// openTurn mints the next turn id. The seed is derived from the log on first
+// use, which is what makes a forked child continue its parent's numbering
+// without any explicit hand-off.
+func (a *Agent) openTurn() {
+	if a.turnID == 0 {
+		a.turnID = turns.StampIDs(unwrapMessages(a.figLog.Read()))
+	}
+	a.turnID++
+}
+
+// unwrapMessages projects entries to a flat []Message, stamping the two
+// coordinates that live outside the payload: LT (the WAL frame index) and,
+// for legacy entries written before turn ids existed, TurnID (derived).
 func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 	if len(entries) == 0 {
 		return nil
@@ -462,6 +492,7 @@ func unwrapMessages(entries []store.Entry[message.Message]) []message.Message {
 		out[i] = e.Payload
 		out[i].LogicalTime = e.LT
 	}
+	turns.StampIDs(out)
 	return out
 }
 
@@ -573,8 +604,8 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 		a.turnCtx = nil
 		a.interrupted = false
 		a.mu.Unlock()
-		if _, err := a.sealTurn(); err != nil {
-			slog.Error("seal turn after panic", "aria", a.id, "err", err)
+		if _, err := a.repairTurnTail(); err != nil {
+			slog.Error("repair turn tail after panic", "aria", a.id, "err", err)
 		}
 		repairInterruptedTail(a.figLog, a.id)
 		a.refreshMetrics()
@@ -593,57 +624,39 @@ func (a *Agent) runWithRecovery(ctx context.Context) {
 }
 
 func (a *Agent) reconcileAriaServer() {
-	oldCommitted := a.ariaSrv.LastCommittedLT()
+	oldLast := a.ariaSrv.LastTurn()
 	hadOpen := a.ariaSrv.HasOpen()
-	units := compose.Units(a.Context(), a.summarize, a.previewArg)
-	history := make([]aria.Message, len(units))
-	for i, unit := range units {
-		history[i] = aria.Message{LT: i + 1, Role: unit.Role, Nodes: unit.Nodes}
-	}
-	// Defensive: never wipe already-committed state with a shorter/empty
-	// history. reconcileAriaServer is called on mid-turn error paths whose
-	// only source of truth is a.Context() (i.e. the durable figLog). If that
-	// read returns fewer units than what ariaSrv had — e.g. because the
-	// backend transiently failed to open and figLog silently fell back to a
-	// memory log, or a cachedLog was constructed with a stale head/fork
-	// ancestry — replacing closed with the shorter list makes Read return
-	// 0 (or fewer) units and the live-subscribe stream go silent for the
-	// wiped LTs. Keep the known-good state and log loudly instead.
-	if len(history) < int(oldCommitted) {
-		slog.Warn("reconcileAriaServer: refusing to shrink closed history",
-			"aria", a.id,
-			"old_committed", oldCommitted,
-			"new_history", len(history))
-		// Preserve the existing closed history; the caller is unwinding a
-		// failed turn, so drop any open unit (matches Restore's semantics)
-		// but leave clients' committed view intact.
+	history := a.projTurns(a.Context())
+	// Defensive: never wipe already-materialized state with a shorter history.
+	// reconcileAriaServer runs on mid-turn error paths whose only source of
+	// truth is a.Context() (the durable figLog). If that read returns fewer
+	// turns than the server already holds — a backend that transiently failed
+	// to open and fell back to a memory log, a cachedLog built on stale fork
+	// ancestry — replacing the good state with the short one makes Read return
+	// nothing and the live stream go silent. Keep what we have and log loudly.
+	shorter := len(history) == 0 || history[len(history)-1].ID < oldLast
+	if oldLast > 0 && shorter {
+		newLast := uint64(0)
+		if len(history) > 0 {
+			newLast = history[len(history)-1].ID
+		}
+		slog.Warn("reconcileAriaServer: refusing to shrink history",
+			"aria", a.id, "old_last_turn", oldLast, "new_last_turn", newLast)
 		if hadOpen {
 			a.ariaSrv.Abandon()
 		}
 		return
 	}
 	a.ariaSrv.Restore(history)
-	a.unitLT = len(history)
-	for _, message := range history {
-		if message.LT <= oldCommitted {
+	for _, t := range history {
+		if t.ID <= oldLast {
 			continue
 		}
 		a.fanOut(rpc.Notification{
 			JSONRPC: "2.0",
 			Method:  rpc.MethodAriaFrame,
-			Params: aria.AriaRead{
-				Committed: []aria.Committed{{LT: message.LT, Role: message.Role, Nodes: message.Nodes}},
-				Metrics:   a.sessionMetrics(),
-			},
-		})
-	}
-	if hadOpen && len(history) <= oldCommitted {
-		a.unitLT++
-		a.fanOut(rpc.Notification{
-			JSONRPC: "2.0",
-			Method:  rpc.MethodAriaFrame,
-			Params: aria.AriaRead{
-				Live:    &aria.Live{LT: a.unitLT, V: 0, Role: "assistant"},
+			Params: aria.Page{
+				Parts:   []aria.TurnPart{{Turn: t}},
 				Metrics: a.sessionMetrics(),
 			},
 		})
@@ -734,11 +747,11 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 		}
 	} else {
 		msg := message.Message{
-			Role:      message.RoleUser,
+			Role:      message.RoleInput,
 			Patches:   []message.Patch{patch},
 			Timestamp: time.Now().UnixMilli(),
 		}
-		if _, err := a.figLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
+		if _, err := a.appendMsg(msg); err != nil {
 			slog.Error(kind+" append", "aria", a.id, "err", err)
 			return
 		}
@@ -789,6 +802,10 @@ func (a *Agent) endTurnDiscarding(reason string) {
 }
 
 func (a *Agent) finishTurn(reason string) {
+	// The turn stopped moving. This is the one place the word "seal" means
+	// anything now: every node in the turn is immutable from here, and it is
+	// the moment a persisted UI-IR channel would write it (Phase 4).
+	a.ariaSrv.Seal(nil)
 	idle := a.inbox.IsIdle()
 	a.mu.Lock()
 	a.lastActive = time.Now()

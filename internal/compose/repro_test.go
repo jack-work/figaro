@@ -14,8 +14,8 @@ import (
 func drive(frames [][]message.Message) []string {
 	srv := aria.NewServer()
 	cli := aria.NewClient()
-	srv.Subscribe(func(r aria.AriaRead) { cli.Apply(r) })
-	srv.Open(1, "assistant")
+	srv.Subscribe(func(r aria.Page) { cli.Apply(r) })
+	srv.OpenTurn(uint64(1))
 	for _, msgs := range frames {
 		srv.Update(Nodes(msgs, nil, nil, nil, nil))
 	}
@@ -50,7 +50,7 @@ func assertNoDup(t *testing.T, tag string, nodes []string) {
 // helpers: messages carry a stable LogicalTime (as composeTurn assigns from the
 // fig IR), constant across the frames that evolve the same message.
 func asstLT(lt uint64, cs ...message.Content) message.Message {
-	return message.Message{Role: message.RoleAssistant, Content: cs, LogicalTime: lt}
+	return message.Message{Role: message.RoleOutput, Content: cs, LogicalTime: lt}
 }
 func think(s string) message.Content { return message.Content{Type: message.ContentThinking, Text: s} }
 func prose(s string) message.Content { return message.Content{Type: message.ContentProse, Text: s} }
@@ -58,7 +58,7 @@ func tool(id, name string) message.Content {
 	return message.Content{Type: message.ContentToolInvoke, ToolCallID: id, ToolName: name}
 }
 func resLT(lt uint64, id, out string) message.Message {
-	return message.Message{Role: message.RoleUser, LogicalTime: lt,
+	return message.Message{Role: message.RoleInput, LogicalTime: lt,
 		Content: []message.Content{{Type: message.ContentToolResult, ToolCallID: id, Text: out}}}
 }
 
@@ -100,31 +100,26 @@ func TestRepro_C_BlockUnfills(t *testing.T) {
 	assertNoDup(t, "C un-fill", drive(frames))
 }
 
-func hasDup(nodes []string) bool {
-	seen := map[string]int{}
-	for _, n := range nodes {
-		seen[n]++
-		if seen[n] > 1 {
-			return true
-		}
-	}
-	return false
-}
-
-// D: the REAL seal-transition churn (SDK + summarized thinking). During
-// streaming the asm omits an empty summarized-thinking block; at seal the
-// provider decode KEEPS it, shifting a later thinking's raw block index. With
-// (LT,blockIdx) ids that churns -> duplicate. The fix makes decode skip empty
-// thinking/prose so the sealed structure matches the asm's.
+// D: the seal-transition churn (SDK + summarized thinking). During streaming
+// the assembler omitted an empty summarized-thinking block while the provider
+// decode KEPT it, shifting a later thinking's block index and churning the
+// node id — which rendered as a duplicate.
+//
+// Two independent defences now close this, so BOTH decodes must be clean:
+//   - decode skips empty thinking/prose, so the sealed structure matches the
+//     assembler's (the original fix);
+//   - the projection mints a node for every block it sees, empty included, so
+//     a block that fills later cannot shift the nodes after it.
+//
+// The second is why this test no longer proves the mechanism by exhibiting it:
+// with empties minted, the old decode is no longer capable of churning. That
+// is the outcome we wanted, so the assertion is now the invariant rather than
+// the bug.
 func TestRepro_D_SealEmptyThinkingChurn(t *testing.T) {
 	inflight := asstLT(1, tool("A", "bash"), think("real reasoning")) // asm: empty think omitted
 	sealedOldDecode := asstLT(1, think(""), tool("A", "bash"), think("real reasoning"))
 	sealedFixedDecode := asstLT(1, tool("A", "bash"), think("real reasoning"))
 
-	// Mechanism proof: old decode (keeps the empty thinking) DUPLICATES.
-	if !hasDup(drive([][]message.Message{{inflight}, {sealedOldDecode}})) {
-		t.Errorf("expected old decode (empty thinking kept) to duplicate at seal")
-	}
-	// Fixed decode (empty thinking skipped) is clean.
+	assertNoDup(t, "D old-decode", drive([][]message.Message{{inflight}, {sealedOldDecode}}))
 	assertNoDup(t, "D fixed-decode", drive([][]message.Message{{inflight}, {sealedFixedDecode}}))
 }

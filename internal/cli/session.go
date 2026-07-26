@@ -35,13 +35,8 @@ func WithAngelus(loaded *config.Loaded, fn func(acli *angelus.Client) error) {
 	}
 }
 
-// WithSession resolves the pid-bound figaro and calls fn.
-func WithSession(loaded *config.Loaded, fn func(s *Session) error) {
-	WithSessionFor(loaded, "", fn)
-}
-
 // WithSessionFor resolves the target aria (explicit id > pid binding)
-// and calls fn. When explicitID is empty, behaves like WithSession.
+// and calls fn. When explicitID is empty, falls back to the pid binding.
 func WithSessionFor(loaded *config.Loaded, explicitID string, fn func(s *Session) error) {
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -2,12 +2,23 @@
 // Per-provider wire-format projections are cached alongside each message.
 package message
 
+import "encoding/json"
+
 // Role identifies the participant in a conversation turn.
 type Role string
 
 const (
-	RoleUser       Role = "user"
-	RoleAssistant  Role = "assistant"
+	// RoleInput and RoleOutput name the two voices. They are deliberately
+	// under-specified: "user" was a lie the moment a subagent sent a message,
+	// and figaro does not yet need to know WHO supplied input — only that it is
+	// input. A finer distinction can be added later without another rename.
+	//
+	// These are figaro's INTERNAL vocabulary. Providers require literal
+	// user/assistant on their own wire; every translator emits those literals
+	// itself (e.g. nativeMessage{Role: "user"}), so the boundary is correct by
+	// construction and this rename cannot reach a provider payload.
+	RoleInput      Role = "input"
+	RoleOutput     Role = "output"
 	RoleToolResult Role = "tool_result"
 	RoleSystem     Role = "system" // compacted summary header
 
@@ -25,12 +36,42 @@ const (
 	RoleGenesis Role = "genesis"
 )
 
-// IsGenesis reports whether m is a structural birth message.
-func IsGenesis(m Message) bool { return m.Role == RoleGenesis }
+// RoleFromWire maps a provider's wire vocabulary onto figaro's. Providers
+// speak user/assistant; figaro speaks input/output. This is the ONLY place the
+// mapping lives — both the decode boundary and UnmarshalJSON route through it,
+// so the two directions cannot drift apart. Anything unrecognised passes
+// through unchanged (tool_result, system, genesis are not voices).
+func RoleFromWire(s string) Role {
+	switch s {
+	case "user":
+		return RoleInput
+	case "assistant":
+		return RoleOutput
+	}
+	return Role(s)
+}
+
+// UnmarshalJSON accepts the pre-rename vocabulary so every aria written before
+// this change keeps reading. It lives on the type rather than in the two
+// projection sites because a decode path that forgets to normalise is a bug
+// nobody would see until a turn rendered under the wrong voice — the same
+// class of silent drift this refactor exists to delete.
+//
+// Writing is unconditional: MarshalJSON is the default, so new entries record
+// input/output. The `ir` channel schema is bumped alongside, so an older binary
+// refuses the store outright instead of misreading it.
+func (r *Role) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	*r = RoleFromWire(s)
+	return nil
+}
 
 // IsCeremonial reports whether m is a structural/inherited marker rather than
 // a conversational message: the root genesis sentinel, or the loadout-birth
-// (a RoleUser message with no renderable content — it carries only the
+// (a RoleInput message with no renderable content — it carries only the
 // loadout's chalkboard stamp, inherited by every conversation in the shared
 // prefix). These anchor the IR but are not turns, so the conversation's
 // message count must not include them.
@@ -38,7 +79,7 @@ func IsCeremonial(m Message) bool {
 	if m.Role == RoleGenesis {
 		return true
 	}
-	if m.Role == RoleUser {
+	if m.Role == RoleInput {
 		for _, c := range m.Content {
 			if c.Type == ContentProse && c.Text != "" {
 				return false
@@ -154,14 +195,38 @@ type Message struct {
 	Usage      *Usage     `json:"usage,omitempty"`
 	StopReason StopReason `json:"stop_reason,omitempty"`
 
-	// Deprecated: tool result metadata moving to Content blocks.
-	ToolCallID string `json:"tool_call_id,omitempty"`
-	ToolName   string `json:"tool_name,omitempty"`
-
 	// Logical time: monotonic counter, unique per session. Populated on
 	// read from the WAL frame index (the authoritative LT); omitempty so
 	// it isn't persisted as a meaningless 0 in the payload.
 	LogicalTime uint64 `json:"logical_time,omitempty"`
+
+	// Steering marks an input message that arrived MID-TURN — a direction
+	// meant to influence the train of thought already in flight, not a new
+	// question. It is provenance, not content: the blocks are ordinary prose
+	// and every provider encodes them exactly as before, so the model reads a
+	// steer the same way it always did.
+	//
+	// It exists because the alternative — inferring steering from a prose
+	// block co-occurring with a tool_result — cannot work when a steer
+	// arrives while no tool is running, and that inference is precisely what
+	// let a steer open its own turn and truncate the turn it meant to steer.
+	// The drain that classifies is the only place that knows, so the drain
+	// records it here.
+	//
+	// Legacy logs carry no flag; prose riding on a tool_result message is
+	// still recognised as steering, so history written before this field
+	// renders unchanged.
+	Steering bool `json:"steering,omitempty"`
+
+	// TurnID names the exchange this message belongs to: one user prompt
+	// plus every assistant reply, tool round and steering interjection it
+	// provoked. Monotonic per trunk and shared by every message of the
+	// turn, so it is the coordinate `send`/`fork <trunk>:<turn>` address.
+	// LT remains the storage substrate (positional, the cross-channel
+	// foreign key); TurnID is what a human names. Messages preceding the
+	// first prompt belong to no turn and carry 0. Absent on legacy entries,
+	// where compose.StampTurnIDs derives it on read.
+	TurnID uint64 `json:"turn_id,omitempty"`
 
 	Timestamp int64 `json:"timestamp"`
 }

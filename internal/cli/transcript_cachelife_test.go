@@ -10,12 +10,12 @@ import (
 
 // pageOnce drives one older-page fetch through the same path the input loop
 // uses, serving from an in-memory history.
-func pageOnce(t *testing.T, tr *transcript, history []aria.Committed, dir transcriptPageDirection) bool {
+func pageOnce(t *testing.T, tr *transcript, history []aria.TurnPart, dir transcriptPageDirection) bool {
 	t.Helper()
 	if dir == pageOlder {
 		tr.offset, tr.checkOlder = 0, true
 	} else {
-		tr.offset, tr.checkNewer = len(tr.lineLT), true
+		tr.offset, tr.checkNewer = len(tr.lineTurn), true
 	}
 	req, ok := tr.pageCursor()
 	if !ok {
@@ -29,14 +29,14 @@ func pageOnce(t *testing.T, tr *transcript, history []aria.Committed, dir transc
 	if len(messages) == 0 {
 		if req.after != 0 {
 			r, _ := readNextPage(req.after, req.watermark, pageLimit,
-				func(before, limit int) (aria.AriaRead, error) { return readBefore(history, before, limit), nil })
-			messages = committedMessages(r.Committed)
+				func(before, limit int) (aria.Page, error) { return readBefore(history, before, limit), nil })
+			messages = committedMessages(r)
 		} else {
 			limit := pageLimit
 			if req.expected.Count != 0 {
 				limit = req.expected.Count
 			}
-			messages = committedMessages(readBefore(history, req.before, limit).Committed)
+			messages = committedMessages(readBefore(history, req.before, limit))
 		}
 	}
 	tr.applyPage(req, messages)
@@ -74,7 +74,7 @@ func TestTranscriptEvictionKeepsRowsForRetainedPayloads(t *testing.T) {
 	kept := 0
 	for _, page := range tr.payloadLRU {
 		for _, m := range page.messages {
-			if _, ok := tr.rowCache[m.LT]; ok {
+			if _, ok := tr.rowCache[keyOf(m)]; ok {
 				kept++
 			}
 		}
@@ -91,7 +91,7 @@ func TestTranscriptEvictionKeepsRowsForRetainedPayloads(t *testing.T) {
 	}
 	misses := 0
 	for _, m := range tr.messages() {
-		if _, ok := tr.rowCache[m.LT]; !ok {
+		if _, ok := tr.rowCache[keyOf(m)]; !ok {
 			misses++
 		}
 	}
@@ -125,17 +125,17 @@ func TestTranscriptCachesStayBounded(t *testing.T) {
 	}
 	retained := map[int]bool{}
 	for _, m := range tr.messages() {
-		retained[m.LT] = true
+		retained[m.Turn] = true
 	}
 	for _, page := range tr.payloadLRU {
 		for _, m := range page.messages {
-			retained[m.LT] = true
+			retained[m.Turn] = true
 		}
 	}
 	for lt := range tr.rowCache {
-		if !retained[lt] {
+		if !retained[lt.turn()] {
 			t.Fatalf("rowCache holds rows for unretained LT %d (cache=%d, retained=%d)",
-				lt, len(tr.rowCache), len(retained))
+				lt.turn(), len(tr.rowCache), len(retained))
 		}
 	}
 	if max := transcriptPageSize * (transcriptPageLimit + transcriptPayloadLRULimit); len(tr.rowCache) > max {

@@ -93,12 +93,18 @@ func runNewPrompt(loaded *config.Loaded, prompt, loadout string, set renderSetti
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
 
-// runSendForkAt implements `send <trunk>:<LT>`: fork the trunk at atMainLT
-// (imperative interior fork, empty alternative), then send the prompt to the
-// trunk we end up attended to. By default we rebind this shell to the new
-// alternative and send there; with stay (--attend=false) we leave the shell
-// on the original trunk and send there (the alternative is parked at LT).
-func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay, asJSON bool, prompt string, set renderSettings) {
+// runSendForkAt implements `send <trunk>:<turn>`: fork the trunk at the turn's
+// first LT (imperative interior fork, empty alternative), then send the prompt
+// to the trunk we end up attended to. By default we rebind this shell to the
+// new alternative and send there; with stay (--attend=false) we leave the shell
+// on the original trunk and send there (the alternative is parked at the turn).
+//
+// The turn's first LT is its prompt, and atMainLT is exclusive of the frozen
+// prefix, so the branch shares everything strictly before the question and
+// replaces the question onward. That boundary is always a user message, so the
+// frozen history always ends on a complete assistant message — no tool_invoke
+// is left dangling and no interrupted-tool synthesis can occur.
+func runSendForkAt(loaded *config.Loaded, trunkID string, turn uint64, stay, asJSON bool, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -109,14 +115,19 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay,
 	if trunkID == "" {
 		r, err := resolveBinding(ctx, acli, ppid)
 		if err != nil || !r.Found {
-			die("send: no trunk bound to this shell (try: <id>:<LT> or attend <id>)")
+			die("send: no trunk bound to this shell (try: <id>:<turn> or attend <id>)")
 		}
 		trunkID = r.FigaroID
 	}
 
+	atMainLT, err := resolveTurn(ctx, acli, trunkID, turn)
+	if err != nil {
+		die("send: %s", err)
+	}
+
 	fr, err := waitForFork(ctx, acli, trunkID, atMainLT)
 	if err != nil {
-		die("send: fork %s at LT %d: %s", trunkID, atMainLT, err)
+		die("send: fork %s at turn %d: %s", trunkID, turn, err)
 	}
 	if fr.OwnerNote != "" {
 		fmt.Fprintf(os.Stderr, "%s\n", fr.OwnerNote)
@@ -126,7 +137,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay,
 	if stay {
 		target = trunkID // parked alternative; shell stays on the original
 		if !asJSON {
-			fmt.Fprintf(os.Stderr, "forked %s at LT %d -> %s (parked; staying on %s)\n", trunkID, atMainLT, fr.Alternative, trunkID)
+			fmt.Fprintf(os.Stderr, "forked %s at turn %d -> %s (parked; staying on %s)\n", trunkID, turn, fr.Alternative, trunkID)
 		}
 	} else {
 		unbindBinding(ctx, acli, ppid)
@@ -134,7 +145,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay,
 			fmt.Fprintf(os.Stderr, "warning: could not attend %s: %s\n", fr.Alternative, err)
 		}
 		if !asJSON {
-			fmt.Fprintf(os.Stderr, "forked %s at LT %d -> attending %s\n", trunkID, atMainLT, fr.Alternative)
+			fmt.Fprintf(os.Stderr, "forked %s at turn %d -> attending %s\n", trunkID, turn, fr.Alternative)
 		}
 	}
 
@@ -145,14 +156,14 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, atMainLT uint64, stay,
 			Parent       string `json:"parent"`
 			Alternative  string `json:"alternative"`
 			Continuation string `json:"continuation"`
-			AtLT         uint64 `json:"at_lt"`
+			Turn         uint64 `json:"turn"`
 			Mode         string `json:"mode"`
 		}{
 			AriaID:       target,
 			Parent:       fr.Parent,
 			Alternative:  fr.Alternative,
 			Continuation: fr.Continuation,
-			AtLT:         atMainLT,
+			Turn:         turn,
 			Mode:         "fork-send",
 		})
 	}

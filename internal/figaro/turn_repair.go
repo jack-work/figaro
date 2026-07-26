@@ -32,7 +32,7 @@ type turnState struct {
 
 func newTurnState() *turnState {
 	return &turnState{
-		assistant: message.Message{Role: message.RoleAssistant},
+		assistant: message.Message{Role: message.RoleOutput},
 		states:    map[string]turnTool{},
 	}
 }
@@ -89,7 +89,7 @@ func (a *Agent) noteTool(id, name, status string, isErr bool, terminalText ...st
 	}
 }
 
-func (a *Agent) sealTurn() ([]message.Message, error) {
+func (a *Agent) repairTurnTail() ([]message.Message, error) {
 	t := a.turn
 	a.turn = nil
 	if t == nil {
@@ -100,16 +100,16 @@ func (a *Agent) sealTurn() ([]message.Message, error) {
 		if len(tools) == 0 {
 			return nil, nil
 		}
-		e, err := a.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
-			Role: message.RoleUser, Content: tools, Timestamp: time.Now().UnixMilli(),
-		}})
+		e, err := a.appendMsg(message.Message{
+			Role: message.RoleInput, Content: tools, Timestamp: time.Now().UnixMilli(),
+		})
 		if err != nil {
-			return nil, fmt.Errorf("seal interrupted tool results: %w", err)
+			return nil, fmt.Errorf("repair interrupted tool results: %w", err)
 		}
 		return []message.Message{e.Payload}, nil
 	}
 	assistant := t.assistant
-	assistant.Role = message.RoleAssistant
+	assistant.Role = message.RoleOutput
 	assistant.StopReason = message.StopAborted
 	if len(assistant.Content) == 0 {
 		return nil, nil
@@ -117,17 +117,17 @@ func (a *Agent) sealTurn() ([]message.Message, error) {
 	if assistant.Timestamp == 0 {
 		assistant.Timestamp = time.Now().UnixMilli()
 	}
-	e, err := a.figLog.Append(store.Entry[message.Message]{Payload: assistant})
+	e, err := a.appendMsg(assistant)
 	if err != nil {
-		return nil, fmt.Errorf("seal interrupted assistant: %w", err)
+		return nil, fmt.Errorf("repair interrupted assistant: %w", err)
 	}
 	appended := []message.Message{e.Payload}
 	if tools := interruptedToolResults(t.tools); len(tools) > 0 {
-		e, err := a.figLog.Append(store.Entry[message.Message]{Payload: message.Message{
-			Role: message.RoleUser, Content: tools, Timestamp: time.Now().UnixMilli(),
-		}})
+		e, err := a.appendMsg(message.Message{
+			Role: message.RoleInput, Content: tools, Timestamp: time.Now().UnixMilli(),
+		})
 		if err != nil {
-			return appended, fmt.Errorf("seal interrupted tool results: %w", err)
+			return appended, fmt.Errorf("repair interrupted tool results: %w", err)
 		}
 		appended = append(appended, e.Payload)
 	}
@@ -157,7 +157,7 @@ func (a *Agent) commitAssistantCache(lt uint64, cache *provider.AssistantCache) 
 }
 
 func partialAssistant(m *message.Message) message.Message {
-	out := message.Message{Role: message.RoleAssistant}
+	out := message.Message{Role: message.RoleOutput}
 	if m == nil {
 		return out
 	}

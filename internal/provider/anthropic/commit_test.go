@@ -17,7 +17,7 @@ import (
 func TestAssistantCacheReencodesInputReadyMessage(t *testing.T) {
 	a := &Anthropic{ReminderRenderer: "tag", CacheNamespace: "anthropic"}
 	native, err := a.assistantCache(message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent("salve")},
 		StopReason: message.StopEnd,
 		Usage:      &message.Usage{InputTokens: 10, OutputTokens: 2},

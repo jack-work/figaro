@@ -14,24 +14,24 @@ import (
 func TestTranscriptNodeSelectionRangeAndCopy(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(80, 20)
 	client := aria.NewClient()
-	history := []aria.Committed{{
-		LT: 1, Role: "assistant", Nodes: []livedoc.Node{
+	history := []aria.TurnPart{{Turn: aria.Turn{
+		ID: uint64(1), Sealed: true, Nodes: []livedoc.Node{
 			{Type: livedoc.NodeProse, Markdown: "first node"},
 			{Type: livedoc.NodeProse, Markdown: "second node"},
 			{Type: livedoc.NodeTool, Name: "bash", Output: "tool output"},
 		},
-	}}
-	client.Apply(aria.AriaRead{Committed: history})
+	}}}
+	client.Apply(aria.Page{Parts: history})
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 
 	tr.key(0x0e) // Ctrl-N
-	if !tr.selection.active || tr.selection.focus.nodeRef != (nodeRef{lt: 1, index: 0}) {
+	if !tr.selection.active || tr.selection.focus.nodeRef != (nodeRef{turn: 1, index: 0}) {
 		t.Fatalf("first selection = %+v", tr.selection)
 	}
 	tr.selectNode(1, true)
 	tr.render()
-	if tr.selection.focus.nodeRef != (nodeRef{lt: 1, index: 1}) {
+	if tr.selection.focus.nodeRef != (nodeRef{turn: 1, index: 1}) {
 		t.Fatalf("range focus = %+v", tr.selection)
 	}
 	text, err := selectedTextForTest(tr, history)
@@ -54,12 +54,12 @@ func TestTranscriptEnterExpandsSelectedToolOutput(t *testing.T) {
 	for i := range lines {
 		lines[i] = fmt.Sprintf("line-%02d", i)
 	}
-	history := []aria.Committed{{
-		LT: 1, Role: "assistant", Nodes: []livedoc.Node{{
+	history := []aria.TurnPart{{Turn: aria.Turn{
+		ID: uint64(1), Sealed: true, Nodes: []livedoc.Node{{
 			Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK, Output: strings.Join(lines, "\n"),
 		}},
-	}}
-	client.Apply(aria.AriaRead{Committed: history})
+	}}}
+	client.Apply(aria.Page{Parts: history})
 	tr := newTranscript(ft, 80, 30, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.key(0x0e) // Ctrl-N
@@ -80,11 +80,11 @@ func TestTranscriptEnterExpandsSelectedToolOutput(t *testing.T) {
 func TestTranscriptEscClearsSelection(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(80, 20)
 	client := aria.NewClient()
-	client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-		LT: 1, Role: "assistant", Nodes: []livedoc.Node{
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: uint64(1), Sealed: true, Nodes: []livedoc.Node{
 			{Type: livedoc.NodeProse, Markdown: "only node"},
 		},
-	}}})
+	}}}})
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.key(0x0e) // Ctrl-N
@@ -97,12 +97,12 @@ func TestTranscriptEscClearsSelection(t *testing.T) {
 	}
 }
 
-func selectedTextForTest(tr *transcript, history []aria.Committed) (string, error) {
+func selectedTextForTest(tr *transcript, history []aria.TurnPart) (string, error) {
 	plan, ok := tr.selectionPlan()
 	if !ok {
 		return "", fmt.Errorf("selection inactive")
 	}
-	return selectionText(plan, transcriptPageSize, func(before, limit int) (aria.AriaRead, error) {
+	return selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
 		return readBefore(history, before, limit), nil
 	})
 }

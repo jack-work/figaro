@@ -10,6 +10,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
 )
@@ -30,6 +31,57 @@ type renderSettings struct {
 	listen   bool // -l / --listen: auto-enter the transcript at startup
 }
 
+// renderNode draws ONE node. This is the single dispatch on node kind, shared
+// by every view: `show` (via renderNodeList), the inline incipit and the
+// transcript pager (via ariaView). It used to exist twice — ariaView switched
+// on n.Type alone and so drew a turn's prompt as agent prose, putting the
+// user's own question under the "‹ figaro" header while `show` correctly
+// marked it "↳ input". Two renderers for one representation is the exact defect
+// class turn addressing exists to remove; there is now one.
+func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) []string {
+	switch {
+	case n.Type == livedoc.NodeTool:
+		return renderToolNode(n, width, bashCap, tick, verbose)
+	case n.Type == livedoc.NodeThinking:
+		return renderThinkingNode(n, width)
+	// Steering ONLY. The inquiry is also input-voice, but it opens the turn
+	// and carries the "❯ input" run header; marking it "↳ input" as well printed
+	// the voice twice in incipit and mislabelled the prompt as steering in
+	// `show`. The two are distinct primitives, not one thing in two positions.
+	case n.Type == livedoc.NodeSteering:
+		return renderSteeringNode(n, width)
+	default:
+		return renderProseNode(n, width)
+	}
+}
+
+// renderTurnRows renders a whole turn — BOTH voices — by walking it in
+// contiguous voice runs and printing the run header above each. This is the
+// same mechanism the inline renderer gets from Incipit.Header; `show` used to
+// have no header at all, which is why the prompt had to be marked "↳ input" to
+// carry a voice it could not otherwise show. One mechanism now serves both.
+func renderTurnRows(nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) []string {
+	if width <= 0 {
+		width = 80
+	}
+	var rows []string
+	for rs := 0; rs < len(nodes); {
+		re, voice := aria.VoiceRunEnd(nodes, rs)
+		run := renderNodeList(nodes[rs:re], width, bashCap, tick, set)
+		if len(run) > 0 {
+			if len(rows) > 0 {
+				rows = append(rows, "")
+			}
+			if h := messageHeader(voice); h != "" {
+				rows = append(rows, h, "")
+			}
+			rows = append(rows, run...)
+		}
+		rs = re
+	}
+	return rows
+}
+
 // renderNodeList renders a unit's whole node list to terminal rows. The list
 // is walked uniformly — every tool renders through renderToolNode with no
 // per-tool branching. One blank row separates adjacent blocks; a final
@@ -43,16 +95,19 @@ func renderNodeList(nodes []livedoc.Node, width, bashCap int, tick uint64, set r
 	}
 	var rows []string
 	for i, n := range nodes {
+		// Empty prose/thinking nodes are minted by the projection so ids cannot
+		// shift when a block fills (docs/turn-addressing.md, invariant 6).
+		// Hiding them is the renderer's job, not the projection's.
+		if n.Type != livedoc.NodeTool && strings.TrimSpace(n.Markdown) == "" {
+			continue
+		}
 		var nr []string
-		switch n.Type {
-		case livedoc.NodeTool:
-			nr = renderToolNode(n, width, bashCap, tick, set.verbose)
-		case livedoc.NodeThinking:
-			nr = renderThinkingNode(n, width)
-		case livedoc.NodeSteering:
-			nr = renderSteeringNode(n, width)
-		default:
-			nr = renderProseNode(n, width)
+		nr = renderNode(n, width, bashCap, tick, set.verbose)
+		// Under the verbose toggle every node reports when it was written, the
+		// same way a tool reports started/finished. Tools already print their own
+		// richer timing, so they are left alone.
+		if set.verbose && n.At != 0 && n.Type != livedoc.NodeTool {
+			nr = append(nr, term.Dim("  "+formatToolTime(n.At)))
 		}
 		if i > 0 {
 			nr = append([]string{""}, nr...)
@@ -186,62 +241,6 @@ func clipToWidthRewrite(s string, width int) string {
 	return b.String()
 }
 
-// scrolledGlyph marks a tool header that the viewport-overflow flush committed
-// to scrollback while the tool was still running. Scrollback is immutable, so
-// the tool's eventual ✓/✗ can never land there; freezing the live spinner frame
-// would leave a half-drawn animation stuck in history forever.
-const scrolledGlyph = '◦'
-
-// stabilizeForScrollback rewrites a row about to be frozen into immutable
-// scrollback so it carries no animated state. Today that means replacing a
-// leading spinner frame (a running tool's header glyph) with a static marker:
-// when many parallel tools overflow the viewport, the top ones get flushed
-// before they finish, and an animated frame would otherwise stick in history.
-// Rows whose first visible glyph isn't a spinner frame pass through unchanged,
-// so it is safe to apply to every flushed row (final tool headers carry ✓/✗,
-// prose carries text).
-func stabilizeForScrollback(row string) string {
-	rs := []rune(row)
-	for i := 0; i < len(rs); {
-		if rs[i] == '\x1b' { // skip an escape sequence; the glyph sits after the color codes
-			j := i + 1
-			for j < len(rs) && !((rs[j] >= 'A' && rs[j] <= 'Z') || (rs[j] >= 'a' && rs[j] <= 'z')) {
-				j++
-			}
-			if j < len(rs) {
-				j++
-			}
-			i = j
-			continue
-		}
-		if isSpinnerFrame(rs[i]) { // the first visible glyph is an animated spinner
-			rs[i] = scrolledGlyph
-		}
-		break // only the leading glyph matters
-	}
-	return string(rs)
-}
-
-func isSpinnerFrame(r rune) bool {
-	for _, f := range livedoc.SpinnerFrames {
-		if f == r {
-			return true
-		}
-	}
-	return false
-}
-
-// nodesRunning reports whether any tool node is still running (so the
-// caller animates the spinner).
-func nodesRunning(nodes []livedoc.Node) bool {
-	for _, n := range nodes {
-		if n.Type == livedoc.NodeTool && n.Status == livedoc.StatusRunning {
-			return true
-		}
-	}
-	return false
-}
-
 func renderProseNode(n livedoc.Node, width int) []string {
 	return render.Prose(n.Markdown, width)
 }
@@ -256,8 +255,12 @@ func renderThinkingNode(n livedoc.Node, width int) []string {
 // interjection — under a marked gutter so it reads as the user's voice inside
 // the assistant's turn, distinct from prose and thinking.
 func renderSteeringNode(n livedoc.Node, width int) []string {
-	rows := render.Prose(n.Markdown, width)
-	return append([]string{term.Dim("↳ you")}, rows...)
+	// Subdued relative to the inquiry, deliberately: steering nudges a train of
+	// thought already in motion, it does not open a turn. The inquiry gets a run
+	// header and full-strength prose; steering gets an inline marker and a dim
+	// blockquote gutter, so it reads as an aside within the agent's stream.
+	rows := render.Prose(blockquote(n.Markdown), width)
+	return append([]string{term.Dim("↳ input")}, rows...)
 }
 
 // renderToolNode draws a tool as a widget with ZERO per-tool control flow:

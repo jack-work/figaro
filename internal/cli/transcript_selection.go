@@ -14,11 +14,24 @@ import (
 )
 
 type nodeRef struct {
-	lt    int
+	turn  int
 	index int
 }
 
-func (r nodeRef) valid() bool { return r.lt != 0 }
+// nodeRefAt identifies the i'th node OF THE SLICE m by its position within the
+// whole TURN. m.From is the positional id of m.Nodes[0] — the wire guarantees
+// Nodes[i].ID == From+i — so a turn that reaches the renderer as several slices
+// still yields one distinct ref per node.
+//
+// Using the slice-local index instead COLLIDES. A steered turn arrives as
+// {From:0,n=1} {From:1,n=1} {From:2,n=3}, so the inquiry, the steer and the
+// first output node would all take the ref {turn,0} — sharing expansion and
+// selection state between unrelated nodes. Always mint refs through here.
+func nodeRefAt(m aria.Message, i int) nodeRef {
+	return nodeRef{turn: m.Turn, index: int(m.From) + i}
+}
+
+func (r nodeRef) valid() bool { return r.turn != 0 }
 
 type nodeSelection struct {
 	active bool
@@ -75,7 +88,7 @@ func (t *transcript) nodeRefs() []selectionPoint {
 	appendMessage := func(m aria.Message) {
 		for i, n := range m.Nodes {
 			refs = append(refs, selectionPoint{
-				nodeRef: nodeRef{lt: m.LT, index: i},
+				nodeRef: nodeRefAt(m, i),
 				hash:    nodeHash(n),
 			})
 		}
@@ -100,7 +113,7 @@ func (t *transcript) selectionMarks() map[nodeRef]selectionMark {
 	marks := make(map[nodeRef]selectionMark)
 	appendMessage := func(m aria.Message) {
 		for i := range m.Nodes {
-			point := selectionPoint{nodeRef: nodeRef{lt: m.LT, index: i}}
+			point := selectionPoint{nodeRef: nodeRefAt(m, i)}
 			if !pointLess(point, lo) && !pointLess(hi, point) {
 				marks[point.nodeRef] = selectionMark{
 					selected: true,
@@ -141,7 +154,7 @@ func (t *transcript) selectNode(delta int, extend bool) {
 	} else {
 		next := index + delta
 		if t.hasNewerHistory() && t.heldOpen != nil && next >= 0 && next < len(refs) &&
-			(refs[index].lt == t.heldOpen.LT || refs[next].lt == t.heldOpen.LT) {
+			(refs[index].turn == t.heldOpen.Turn || refs[next].turn == t.heldOpen.Turn) {
 			t.checkNewer = true
 			return
 		}
@@ -167,7 +180,7 @@ func (t *transcript) selectNode(delta int, extend bool) {
 func (t *transcript) clearSelection() {
 	direction := pageOlder
 	messages := t.messages()
-	if len(messages) > 0 && t.selection.focus.lt >= messages[len(messages)/2].LT {
+	if len(messages) > 0 && t.selection.focus.turn >= messages[len(messages)/2].Turn {
 		direction = pageNewer
 	}
 	anchorLT, within := t.viewportAnchor()
@@ -187,7 +200,7 @@ func (t *transcript) selectionPlan() (selectionCopyPlan, bool) {
 		lo, hi = hi, lo
 	}
 	var open *aria.Message
-	if m := t.openMessage(); m != nil && m.LT >= lo.lt && m.LT <= hi.lt {
+	if m := t.openMessage(); m != nil && m.Turn >= lo.turn && m.Turn <= hi.turn {
 		copy := *m
 		copy.Nodes = append([]livedoc.Node(nil), m.Nodes...)
 		open = &copy
@@ -215,7 +228,7 @@ func nodeClipboardText(n livedoc.Node) string {
 	}
 }
 
-func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (aria.AriaRead, error)) (string, error) {
+func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (aria.Page, error)) (string, error) {
 	var newest []string
 	foundLo, foundHi := false, false
 	if plan.open != nil {
@@ -229,19 +242,19 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (ar
 	if foundLo && foundHi {
 		return strings.Join(newest, "\n\n"), nil
 	}
-	before := plan.hi.lt + 1
-	if plan.open != nil && plan.open.LT == plan.hi.lt {
-		before = plan.open.LT
+	before := plan.hi.turn + 1
+	if plan.open != nil && plan.open.Turn == plan.hi.turn {
+		before = plan.open.Turn
 	}
 	var pages [][]string
-	for before > plan.lo.lt {
+	for before > plan.lo.turn {
 		r, err := read(before, pageSize)
 		if err != nil {
 			return "", err
 		}
-		messages := committedMessages(r.Committed)
+		messages := committedMessages(r)
 		if len(messages) == 0 {
-			return "", fmt.Errorf("selection history unavailable before LT %d", before)
+			return "", fmt.Errorf("selection history unavailable before turn %d", before)
 		}
 		var page []string
 		for _, m := range messages {
@@ -254,8 +267,8 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(int, int) (ar
 			foundHi = foundHi || hi
 		}
 		pages = append(pages, page)
-		before = messages[0].LT
-		if before <= plan.lo.lt {
+		before = messages[0].Turn
+		if before <= plan.lo.turn {
 			break
 		}
 	}
@@ -274,7 +287,7 @@ func selectedMessageText(m aria.Message, plan selectionCopyPlan) ([]string, bool
 	var out []string
 	foundLo, foundHi := false, false
 	for i, n := range m.Nodes {
-		ref := nodeRef{lt: m.LT, index: i}
+		ref := nodeRefAt(m, i)
 		var hash uint64
 		if ref == plan.lo.nodeRef || ref == plan.hi.nodeRef {
 			hash = nodeHash(n)
@@ -302,7 +315,7 @@ func selectedMessageText(m aria.Message, plan selectionCopyPlan) ([]string, bool
 }
 
 func pointLess(a, b selectionPoint) bool {
-	return a.lt < b.lt || a.lt == b.lt && a.index < b.index
+	return a.turn < b.turn || a.turn == b.turn && a.index < b.index
 }
 
 func nodeHash(n livedoc.Node) uint64 {
@@ -339,7 +352,7 @@ func (t *transcript) toggleSelectedTools() bool {
 	var tools []nodeRef
 	appendMessage := func(m aria.Message) {
 		for i, n := range m.Nodes {
-			ref := nodeRef{lt: m.LT, index: i}
+			ref := nodeRefAt(m, i)
 			if marks[ref].selected && n.Type == livedoc.NodeTool && n.Output != "" {
 				tools = append(tools, ref)
 			}
@@ -361,14 +374,16 @@ func (t *transcript) toggleSelectedTools() bool {
 			break
 		}
 	}
+	dirty := make(map[int]struct{}, len(tools))
 	for _, ref := range tools {
 		if expand {
 			t.expanded[ref] = true
 		} else {
 			delete(t.expanded, ref)
 		}
-		delete(t.rowCache, ref.lt)
+		dirty[ref.turn] = struct{}{}
 	}
+	t.dropTurnsRows(dirty)
 	t.ensureSelectionVisible()
 	return true
 }

@@ -23,10 +23,10 @@ func TestTranscript_SearchHighlightsAllMatchesPersist(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(50, 12)
 	client := aria.NewClient()
 	for i := 1; i <= 6; i++ {
-		client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-			LT: i, Role: "assistant",
+		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("apple %02d apple", i)}},
-		}}})
+		}}}})
 	}
 	tr := newTranscript(ft, 50, 12, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
@@ -72,10 +72,10 @@ func TestTranscript_FindRepeatNextAndPrev(t *testing.T) {
 		if i == 3 || i == 6 || i == 9 {
 			body = fmt.Sprintf("needle %02d", i)
 		}
-		client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-			LT: i, Role: "assistant",
+		client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+			ID: uint64(i), Sealed: true,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: body}},
-		}}})
+		}}}})
 	}
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
@@ -91,27 +91,27 @@ func TestTranscript_FindRepeatNextAndPrev(t *testing.T) {
 	visibleLTs := func() []int {
 		lts := map[int]bool{}
 		for i, line := range tr.lines() {
-			if strings.Contains(stripANSI(line), "needle") && tr.lineLT[i] > 0 {
-				lts[tr.lineLT[i]] = true
+			if strings.Contains(stripANSI(line), "needle") && tr.lineTurn[i] > 0 {
+				lts[tr.lineTurn[i]] = true
 			}
 			_ = i
 		}
 		return sortedKeys(lts)
 	}
 
-	firstMatch := tr.lineLT[tr.offset]
+	firstMatch := tr.lineTurn[tr.offset]
 	if firstMatch == 0 {
-		t.Fatalf("first match offset landed on a rule row: lineLT=%v", tr.lineLT)
+		t.Fatalf("first match offset landed on a rule row: lineTurn=%v", tr.lineTurn)
 	}
 	// n advances to the next match (higher LT).
 	tr.key('n')
-	nextMatch := tr.lineLT[tr.offset]
+	nextMatch := tr.lineTurn[tr.offset]
 	if nextMatch <= firstMatch {
 		t.Fatalf("n did not advance: %d -> %d (visible needles: %v)", firstMatch, nextMatch, visibleLTs())
 	}
 	// N returns to the previous match.
 	tr.key('N')
-	if got := tr.lineLT[tr.offset]; got != firstMatch {
+	if got := tr.lineTurn[tr.offset]; got != firstMatch {
 		t.Fatalf("N did not restore previous match: got %d, want %d", got, firstMatch)
 	}
 }

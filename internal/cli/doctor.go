@@ -6,20 +6,24 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// deadChannels are store channels no current code reads or writes:
-// translations/* was replaced by translations-v2/*, turn-wal by drain +
-// tail repair, _live by the transcript pivot. GC edits the figwal
-// manifest directly as a stopgap until the memory-first figwal exposes
-// channel removal; it therefore requires the daemon to be stopped.
+// deadChannels name store channels nothing reads or writes: turn-wal (drain +
+// tail repair replaced it) and _live (the transcript pivot); both are scanned
+// on disk too, since _live was never a manifest entry. Legacy translations/* is
+// swept by prefix — translations-v2/ does not carry it. GC rewrites the figwal
+// manifest directly, so it requires the daemon stopped.
+var deadChannels = []string{"turn-wal", "_live"}
+
 func deadChannel(name string) bool {
-	return name == "turn-wal" || name == "_live" ||
-		(strings.HasPrefix(name, "translations/") && !strings.HasPrefix(name, "translations-v2/"))
+	return slices.Contains(deadChannels, name) || strings.HasPrefix(name, "translations/")
 }
 
 func runDoctorGC(dryRun bool) error {
@@ -56,8 +60,8 @@ func runDoctorGC(dryRun bool) error {
 			kept = append(kept, ch)
 		}
 	}
-	for _, entry := range []string{"turn-wal", "_live"} {
-		if _, err := os.Stat(filepath.Join(root, entry)); err == nil && !contains(dead, entry) {
+	for _, entry := range deadChannels {
+		if _, err := os.Stat(filepath.Join(root, entry)); err == nil && !slices.Contains(dead, entry) {
 			dead = append(dead, entry)
 		}
 	}
@@ -72,7 +76,7 @@ func runDoctorGC(dryRun bool) error {
 		freed += dirSize(dir)
 	}
 	if dryRun {
-		fmt.Printf("would remove %d dead channel(s) (%s): %s\n", len(dead), fmtBytes(freed), strings.Join(dead, ", "))
+		fmt.Printf("would remove %d dead channel(s) (%s): %s\n", len(dead), tool.FormatSize(int(freed)), strings.Join(dead, ", "))
 		return nil
 	}
 
@@ -93,21 +97,16 @@ func runDoctorGC(dryRun bool) error {
 		return err
 	}
 	for _, name := range dead {
-		if err := os.RemoveAll(filepath.Join(root, filepath.FromSlash(name))); err != nil {
+		dir := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.RemoveAll(dir); err != nil {
 			return fmt.Errorf("remove %s: %w", name, err)
 		}
-	}
-	fmt.Printf("removed %d dead channel(s), freed %s: %s\n", len(dead), fmtBytes(freed), strings.Join(dead, ", "))
-	return nil
-}
-
-func contains(xs []string, s string) bool {
-	for _, x := range xs {
-		if x == s {
-			return true
+		if strings.Contains(name, "/") {
+			_ = os.Remove(filepath.Dir(dir)) // drop the legacy parent once empty
 		}
 	}
-	return false
+	fmt.Printf("removed %d dead channel(s), freed %s: %s\n", len(dead), tool.FormatSize(int(freed)), strings.Join(dead, ", "))
+	return nil
 }
 
 func dirSize(dir string) int64 {
@@ -124,12 +123,28 @@ func dirSize(dir string) int64 {
 	return n
 }
 
-func fmtBytes(n int64) string {
-	switch {
-	case n >= 1<<20:
-		return fmt.Sprintf("%.1fMB", float64(n)/(1<<20))
-	case n >= 1<<10:
-		return fmt.Sprintf("%.1fKB", float64(n)/(1<<10))
+// runDoctorSchema reports each channel's on-disk schema against what this
+// binary understands. It reads the sidecar directly, so it still answers when
+// the schema gate is exactly what refused to open the store.
+func runDoctorSchema() error {
+	root := filepath.Join(stateDir(), "arias")
+	reports, err := store.SchemaStatus(root)
+	if err != nil {
+		return err
 	}
-	return fmt.Sprintf("%dB", n)
+	for _, r := range reports {
+		disk := fmt.Sprint(r.OnDisk)
+		if r.OnDisk == 0 {
+			disk = "-"
+		}
+		note := ""
+		switch r.Status {
+		case "ahead":
+			note = "  ← written by a newer figaro; this build refuses to open it"
+		case "behind":
+			note = "  ← migrates on next open"
+		}
+		fmt.Printf("%-20s disk=%-4s binary=%-4d %s%s\n", r.Channel, disk, r.Known, r.Status, note)
+	}
+	return nil
 }

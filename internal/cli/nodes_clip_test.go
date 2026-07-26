@@ -75,7 +75,7 @@ var clipCorpus = []string{
 	"nul\x00byte",
 	"\x1b[2m  │ \x1b[0m  6  internal/cli/transcript.go:42: some captured tool output line",
 	"✓ bash rg --line-number transcript internal/cli [12ms]",
-	"↳ you",
+	"↳ input",
 	"─────────────────────────",
 	"\xff\xfe invalid utf8",
 	"valid\xc3\x28mixed",

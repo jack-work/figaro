@@ -417,7 +417,7 @@ func decodeNativeMessage(nm nativeMessage) message.Message {
 	// model/provider are not on the IR message — they live in the
 	// chalkboard (system.model / system.provider), derived on read.
 	m := message.Message{
-		Role: message.Role(nm.Role),
+		Role: message.RoleFromWire(nm.Role),
 	}
 	for _, b := range nm.Content {
 		if !validNativeBlock(b) {
@@ -573,7 +573,7 @@ func (a *Anthropic) encode(msg message.Message, prevSnapshot chalkboard.Snapshot
 // renderMessage produces the wire shape.
 func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snapshot) (nativeMessage, bool) {
 	switch msg.Role {
-	case message.RoleUser:
+	case message.RoleInput:
 		var blocks []nativeBlock
 		for _, c := range msg.Content {
 			switch c.Type {
@@ -604,7 +604,7 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snap
 		}
 		return nativeMessage{Role: "user", Content: blocks}, true
 
-	case message.RoleAssistant:
+	case message.RoleOutput:
 		var blocks []nativeBlock
 		for _, c := range msg.Content {
 			switch c.Type {

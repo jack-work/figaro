@@ -8,10 +8,10 @@ import (
 )
 
 func assistant(blocks ...message.Content) message.Message {
-	return message.Message{Role: message.RoleAssistant, Content: blocks}
+	return message.Message{Role: message.RoleOutput, Content: blocks}
 }
 func toolResultTic(c message.Content) message.Message {
-	return message.Message{Role: message.RoleUser, Content: []message.Content{c}}
+	return message.Message{Role: message.RoleInput, Content: []message.Content{c}}
 }
 func invoke(id, name, cmd string) message.Content {
 	return message.Content{Type: message.ContentToolInvoke, ToolCallID: id, ToolName: name,
@@ -141,7 +141,7 @@ func TestNodes_CompletedBodyPreviewToolErrorShowsResult(t *testing.T) {
 
 func TestNodes_SkipsUserPromptAndDeterministic(t *testing.T) {
 	msgs := []message.Message{
-		{Role: message.RoleUser, Content: []message.Content{{Type: message.ContentProse, Text: "do the thing"}}},
+		{Role: message.RoleInput, Content: []message.Content{{Type: message.ContentProse, Text: "do the thing"}}},
 		assistant(message.Content{Type: message.ContentProse, Text: "on it"}),
 	}
 	nodes := Nodes(msgs, nil, nil, nil, nil)

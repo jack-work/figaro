@@ -55,7 +55,7 @@ func (p *switchProvider) Send(ctx context.Context, in provider.SendInput, bus pr
 	}
 	bus.PushDelta(message.TextContent(p.fastText))
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent(p.fastText)},
 		StopReason: message.StopEnd,
 	}
@@ -204,13 +204,13 @@ drain:
 			case rpc.MethodTurnDone:
 				doneCount++
 			case rpc.MethodAriaFrame:
+				// The wire is turn-shaped now: one page, N parts.
 				var r struct {
-					Committed []json.RawMessage `json:"committed,omitempty"`
-					Live      json.RawMessage   `json:"live,omitempty"`
+					Parts []json.RawMessage `json:"parts,omitempty"`
 				}
 				if raw, ok := n.Params.(json.RawMessage); ok {
 					if json.Unmarshal(raw, &r) == nil {
-						committedCount += len(r.Committed)
+						committedCount += len(r.Parts)
 					}
 				}
 			}

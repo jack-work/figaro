@@ -39,7 +39,7 @@ func legacyLines(t *transcript) ([]string, []int, map[nodeRef]nodeSpan) {
 		t.resetToTail()
 	}
 	if t.cacheW != t.w {
-		t.rowCache = map[int]cachedMessage{}
+		t.rowCache = map[sliceKey]cachedMessage{}
 		t.cacheW = t.w
 	}
 	marks := t.selectionMarks()
@@ -71,15 +71,15 @@ func legacyLines(t *transcript) ([]string, []int, map[nodeRef]nodeSpan) {
 		}
 	}
 	for _, m := range t.messages() {
-		rows, ok := t.rowCache[m.LT]
+		rows, ok := t.rowCache[keyOf(m)]
 		if !ok {
 			rows = t.renderMsgBase(m)
-			t.rowCache[m.LT] = rows
+			t.rowCache[keyOf(m)] = rows
 		}
-		appendMsg(rows.rows, m.LT)
+		appendMsg(rows.rows, m.Turn)
 	}
 	if open := t.openMessage(); open != nil {
-		appendMsg(t.renderMsgBase(*open).rows, open.LT)
+		appendMsg(t.renderMsgBase(*open).rows, open.Turn)
 	}
 	return out, lts, nodeRows
 }
@@ -116,15 +116,11 @@ func mixedTranscript(tb testing.TB, out io.Writer, w, h, n int) (*transcript, *a
 	tb.Helper()
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	committed := make([]aria.Committed, n)
+	committed := make([]aria.TurnPart, n)
 	for i := range committed {
-		role := "assistant"
-		if i%3 == 0 {
-			role = "user"
-		}
-		committed[i] = aria.Committed{LT: i + 1, Role: role, Nodes: mixedNodes(i + 1)}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: mixedNodes(i + 1)}}
 	}
-	client.Apply(aria.AriaRead{Committed: committed})
+	client.Apply(aria.Page{Parts: committed})
 	tr := newTranscript(out, w, h, &ariaView{settings: &renderSettings{}}, client, "virt1234", time.Unix(0, 0))
 	tr.enter()
 	return tr, client
@@ -132,7 +128,7 @@ func mixedTranscript(tb testing.TB, out io.Writer, w, h, n int) (*transcript, *a
 
 // assertWindowMatchesLegacy sweeps every viewport position and asserts the
 // virtualized window is byte-identical to the oracle's slice, that lines() and
-// lineLT still agree with it, and that node spans survived the move off the
+// lineTurn still agree with it, and that node spans survived the move off the
 // materialization pass.
 func assertWindowMatchesLegacy(t *testing.T, tr *transcript, body int) {
 	t.Helper()
@@ -144,8 +140,8 @@ func assertWindowMatchesLegacy(t *testing.T, tr *transcript, body int) {
 	if got := tr.lines(); !equalStrings(got, want) {
 		t.Fatalf("lines() diverged from the legacy materialization at %s", firstDiff(got, want))
 	}
-	if !equalInts(tr.lineLT, wantLT) {
-		t.Fatalf("lineLT diverged (len %d vs %d)", len(tr.lineLT), len(wantLT))
+	if !equalInts(tr.lineTurn, wantLT) {
+		t.Fatalf("lineTurn diverged (len %d vs %d)", len(tr.lineTurn), len(wantLT))
 	}
 	for ref, span := range wantSpans {
 		got, ok := tr.nodeSpanOf(ref)
@@ -242,8 +238,8 @@ func TestTranscriptVirtualWindow_NodeSelection(t *testing.T) {
 	messages := tr.messages()
 	tr.selection = nodeSelection{
 		active: true,
-		anchor: testSelectionPoint(messages[1].LT, 1, messages[1].Nodes[1]),
-		focus:  testSelectionPoint(messages[3].LT, 0, messages[3].Nodes[0]),
+		anchor: testSelectionPoint(messages[1].Turn, 1, messages[1].Nodes[1]),
+		focus:  testSelectionPoint(messages[3].Turn, 0, messages[3].Nodes[0]),
 	}
 	assertWindowMatchesLegacy(t, tr, 21)
 
@@ -253,7 +249,7 @@ func TestTranscriptVirtualWindow_NodeSelection(t *testing.T) {
 
 	// Selection plus an active highlight, both applied to the same rows.
 	tr.matchQuery = "needle"
-	tr.selection.anchor = testSelectionPoint(messages[1].LT, 1, messages[1].Nodes[1])
+	tr.selection.anchor = testSelectionPoint(messages[1].Turn, 1, messages[1].Nodes[1])
 	assertWindowMatchesLegacy(t, tr, 21)
 }
 
@@ -261,20 +257,17 @@ func TestTranscriptVirtualWindow_ExpandedTools(t *testing.T) {
 	tr, _ := mixedTranscript(t, io.Discard, 80, 24, 4)
 	tr.scrollBy(-1)
 	messages := tr.messages()
-	ref := nodeRef{lt: messages[2].LT, index: 2}
+	ref := nodeRef{turn: messages[2].Turn, index: 2}
 	tr.expanded[ref] = true
-	delete(tr.rowCache, ref.lt)
+	tr.dropTurnRows(ref.turn)
 	assertWindowMatchesLegacy(t, tr, 21)
 }
 
 func TestTranscriptVirtualWindow_LiveTailFollow(t *testing.T) {
 	tr, client := mixedTranscript(t, io.Discard, 80, 24, 4)
-	client.Apply(aria.AriaRead{Live: &aria.Live{
-		LT: 5, V: 0, Role: "assistant",
-		Nodes: []aria.NodeDelta{{ID: "live", Set: map[string]any{
-			"type": string(livedoc.NodeProse), "markdown": "streaming needle prose",
-		}}},
-	}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(5), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{ID: 0, Set: map[string]any{
+		"type": string(livedoc.NodeProse), "markdown": "streaming needle prose",
+	}}}}}}}})
 	tr.render()
 	if !tr.follow {
 		t.Fatal("expected the pager to be following the live tail")
@@ -282,15 +275,12 @@ func TestTranscriptVirtualWindow_LiveTailFollow(t *testing.T) {
 	assertWindowMatchesLegacy(t, tr, 21)
 
 	// Growing the open message must move the index, not stale it.
-	client.Apply(aria.AriaRead{Live: &aria.Live{
-		LT: 5, V: 1,
-		Nodes: []aria.NodeDelta{
-			{ID: "live", Set: map[string]any{"markdown": "streaming needle prose, now rather longer"}},
-			{ID: "live2", Set: map[string]any{
-				"type": string(livedoc.NodeThinking), "markdown": "a second live node\nwith two lines",
-			}},
-		},
-	}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(5), Live: &aria.Live{From: 0, V: 1, Nodes: []aria.NodeDelta{
+		{ID: 0, Set: map[string]any{"markdown": "streaming needle prose, now rather longer"}},
+		{ID: 1, Set: map[string]any{
+			"type": string(livedoc.NodeThinking), "markdown": "a second live node\nwith two lines",
+		}},
+	}}}}}})
 	tr.render()
 	assertWindowMatchesLegacy(t, tr, 21)
 }
@@ -339,15 +329,15 @@ func TestTranscriptVirtualFrames_ScrollIsPure(t *testing.T) {
 }
 
 // TestTranscriptVirtualFrames_ResizeAnchor pins that the anchoring path still
-// sees a current lineLT after the index took over its maintenance.
+// sees a current lineTurn after the index took over its maintenance.
 func TestTranscriptVirtualFrames_ResizeAnchor(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(80, 24)
 	tr, _ := mixedTranscript(t, ft, 80, 24, 6)
 	tr.scrollBy(-40)
-	before := tr.lineLT[tr.offset]
+	before := tr.lineTurn[tr.offset]
 	ft.Resize(60, 24)
 	tr.resize(60, 24)
-	if got := tr.lineLT[tr.offset]; got != before {
+	if got := tr.lineTurn[tr.offset]; got != before {
 		t.Fatalf("resize moved the anchor from LT %d to %d", before, got)
 	}
 	assertWindowMatchesLegacy(t, tr, 21)
@@ -449,8 +439,8 @@ func TestTranscriptVirtualSearch_RespectsSelectionClipping(t *testing.T) {
 	messages := tr.messages()
 	tr.selection = nodeSelection{
 		active: true,
-		anchor: testSelectionPoint(messages[0].LT, 1, messages[0].Nodes[1]),
-		focus:  testSelectionPoint(messages[4].LT, 3, messages[4].Nodes[3]),
+		anchor: testSelectionPoint(messages[0].Turn, 1, messages[0].Nodes[1]),
+		focus:  testSelectionPoint(messages[4].Turn, 3, messages[4].Nodes[3]),
 	}
 	for _, q := range []string{"needle", "margin", "Tail prose 3"} {
 		want, ok := legacyFind(tr, q)
@@ -471,8 +461,8 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(40, 6)
 	tr := newTranscript(ft, 40, 6, ldrender.NodeText{}, client, "empty123", time.Unix(0, 0))
 	tr.enter()
-	if tr.index.total != 0 || len(tr.lineLT) != 0 {
-		t.Fatalf("empty transcript: total=%d lineLT=%d", tr.index.total, len(tr.lineLT))
+	if tr.index.total != 0 || len(tr.lineTurn) != 0 {
+		t.Fatalf("empty transcript: total=%d lineTurn=%d", tr.index.total, len(tr.lineTurn))
 	}
 	if got := tr.window(0, 10, nil); len(got) != 0 {
 		t.Fatalf("empty window returned %d rows", len(got))
@@ -480,7 +470,7 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 	if got := tr.lineAt(0); got != "" {
 		t.Fatalf("lineAt on an empty index = %q", got)
 	}
-	if _, ok := tr.nodeSpanOf(nodeRef{lt: 1, index: 0}); ok {
+	if _, ok := tr.nodeSpanOf(nodeRef{turn: 1, index: 0}); ok {
 		t.Fatal("empty index reported a node span")
 	}
 	tr.key('j')
@@ -488,10 +478,10 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 	tr.key('G')
 
 	// A single message: no separator triple, so entry 0 starts at line 0.
-	client.Apply(aria.AriaRead{Committed: []aria.Committed{{
-		LT: 1, Role: "assistant",
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: uint64(1), Sealed: true,
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "solo"}},
-	}}})
+	}}}})
 	tr.render()
 	if len(tr.index.entries) != 1 || tr.index.entries[0].sep {
 		t.Fatalf("single message must not carry a separator: %+v", tr.index.entries)
@@ -501,4 +491,21 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 	// A terminal too small to hold a body row still paints without panicking.
 	tr.resize(4, 4)
 	assertWindowMatchesLegacy(t, tr, 1)
+
+	// ...and so does one too small to hold the FOOTER. renderFrame writes a
+	// fixed three-row footer at screen[h-3:], so h<4 indexed screen[-2] and
+	// panicked — dragging a pane to 1-3 rows crashed the pager. The guard
+	// skips the frame instead; every height must survive, in both orders, and
+	// the pager must still paint once the pane is restored.
+	for _, h := range []int{3, 2, 1, 2, 3, 1} {
+		tr.resize(40, h)
+		tr.render()
+		tr.key('j')
+		tr.key('G')
+	}
+	tr.resize(40, 20)
+	tr.render()
+	if len(tr.window(0, 5, nil)) == 0 {
+		t.Fatal("pager did not recover after a sub-footer-height viewport")
+	}
 }

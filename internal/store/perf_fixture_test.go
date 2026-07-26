@@ -43,9 +43,9 @@ func TestGeneratePerformanceFixture(t *testing.T) {
 			t.Fatal(err)
 		}
 		for j := 0; j < messages; j++ {
-			role := message.RoleUser
+			role := message.RoleInput
 			if j%2 == 1 {
-				role = message.RoleAssistant
+				role = message.RoleOutput
 			}
 			if _, err := log.Append(Entry[message.Message]{Payload: message.Message{
 				Role:    role,

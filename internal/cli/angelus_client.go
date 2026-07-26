@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
@@ -36,11 +38,43 @@ func angelusSocketPath() string {
 	return filepath.Join(angelusRuntimeDir(), "angelus.sock")
 }
 
+// angelusStartupLog is where a detaching angelus writes its early stderr.
+// The daemon inherits the descriptor for its lifetime, so it doubles as a
+// daemon log; ensureAngelus only truncates it when no daemon answered.
+func angelusStartupLog() string {
+	return filepath.Join(angelusRuntimeDir(), "angelus.startup")
+}
+
+// startupDiagnosisLines bounds how much of the daemon's early output is
+// quoted back — enough for a stack-free error, not a wall of slog.
+const startupDiagnosisLines = 8
+
+// startupDiagnosis quotes whatever the daemon managed to say before it
+// failed. Without it a deliberate refusal (the schema gate, a corrupt
+// store) is indistinguishable from a hang: the daemon detaches, so its
+// stderr is the only channel it has to explain itself.
+func startupDiagnosis() string {
+	b, err := os.ReadFile(angelusStartupLog())
+	if err != nil {
+		return ""
+	}
+	text := strings.TrimRight(string(b), "\n")
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) > startupDiagnosisLines {
+		lines = lines[len(lines)-startupDiagnosisLines:]
+	}
+	return ":\n  " + strings.Join(lines, "\n  ")
+}
+
 // ensureAngelus starts the angelus if needed.
 func ensureAngelus() {
 	sockPath := angelusSocketPath()
 	ep := transport.UnixEndpoint(sockPath)
 	if cli, err := angelus.DialClient(ep); err == nil {
+		checkDaemonBuild(cli)
 		cli.Close()
 		return
 	}
@@ -54,21 +88,41 @@ func ensureAngelus() {
 	cmd.Env = append(os.Environ(), "_FIGARO_DAEMON=1")
 	cmd.Stdin = nil
 	cmd.Stdout = nil
-	cmd.Stderr = nil
 	cmd.SysProcAttr = detachAttr()
+	// Best-effort: if we cannot open the log, fall back to the old
+	// discard rather than refusing to start a daemon over it.
+	if err := os.MkdirAll(angelusRuntimeDir(), 0o700); err == nil {
+		if f, err := os.Create(angelusStartupLog()); err == nil {
+			cmd.Stderr = f
+			defer f.Close() // the child holds its own dup
+		}
+	}
 	if err := cmd.Start(); err != nil {
 		die("start angelus: %s", err)
 	}
 
+	// The daemon is still our child until we exit, so a fast failure is
+	// observable — report it immediately instead of idling out the
+	// deadline on a process that is already gone.
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+
 	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	for {
 		if cli, err := angelus.DialClient(ep); err == nil {
 			cli.Close()
 			return
 		}
+		select {
+		case werr := <-exited:
+			die("angelus exited during startup (%v)%s", werr, startupDiagnosis())
+		default:
+		}
+		if !time.Now().Before(deadline) {
+			die("angelus did not start within 5 seconds%s", startupDiagnosis())
+		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	die("angelus did not start within 5 seconds")
 }
 
 func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
@@ -112,4 +166,50 @@ func mustCreateAndBindLoadout(ctx context.Context, acli *angelus.Client, loaded 
 	}
 
 	return createResp.FigaroID, ep
+}
+
+// checkDaemonBuild refuses to speak to a daemon built from a different
+// revision. The wire shape changes between builds, so a mismatched pair does
+// not fail loudly — it renders NOTHING, which reads as a broken terminal
+// rather than a stale process. Naming both revisions turns an hour of
+// confusion into one command.
+//
+// Skipped when either side's revision is unknown (a bare `go build` outside a
+// repo): unknown must not be treated as mismatched.
+func checkDaemonBuild(cli *angelus.Client) {
+	mine := buildRevision()
+	if mine == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	st, err := cli.Status(ctx)
+	if err != nil || st == nil {
+		return // transient: not worth blocking on
+	}
+	if st.Build == "" {
+		// The daemon predates this check, so it is necessarily older than this
+		// binary. We cannot prove incompatibility, but silence is the failure
+		// mode we are here to kill: warn loudly rather than let the user stare
+		// at an empty screen.
+		fmt.Fprintf(os.Stderr,
+			"figaro: the running angelus predates the build check, so it is older\n"+
+				"        than this CLI (%s). If output is missing or garbled,\n"+
+				"        run `figaro stop` and retry.\n", short12(mine))
+		return
+	}
+	if st.Build == mine {
+		return
+	}
+	die("running angelus is a different build than this CLI:\n"+
+		"  daemon %s\n  cli    %s\n"+
+		"the wire changes between builds, so this pair would render nothing.\n"+
+		"run `figaro stop` and retry.", short12(st.Build), short12(mine))
+}
+
+func short12(s string) string {
+	if len(s) > 12 {
+		return s[:12]
+	}
+	return s
 }

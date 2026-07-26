@@ -189,12 +189,20 @@ func runList(loaded *config.Loaded, o lsOpts) {
 					ctxStr = "~" + ctxStr
 				}
 			}
-			// Branches show the LT they were forked AT (the last shared LT,
-			// = what `send/fork :N` reproduces). BranchedLT is the first own
-			// LT, so the fork point is BranchedLT-1. Roots are top-level.
+			// Branches are MARKED, not numbered. The forest records a fork point
+			// as an LT (BranchedLT), but the coordinate `send/fork <id>:N` takes
+			// is a TURN — printing the LT here and letting it read as a fork
+			// argument is the exact class of trap this project exists to remove
+			// (the old comment claimed the two were the same; they never were
+			// after turn addressing, and are off by a whole exchange).
+			//
+			// Resolving LT -> turn needs the trunk's message log, which `list`
+			// deliberately does not read: it would be one full log read per
+			// branch on every listing. `figaro status <id>` does read it and
+			// prints the exact `parent:turn` you can fork with.
 			fork := "-"
 			if len(f.Vector) > 1 && f.BranchedLT > 1 {
-				fork = fmt.Sprintf("@%d", f.BranchedLT-1)
+				fork = "yes"
 			}
 			rows = append(rows, listRow{
 				aria: glyph + marker(f) + " " + truncRunes(label, 44),
@@ -510,18 +518,6 @@ func truncRunes(s string, n int) string {
 	return string(r[:n-2]) + ".."
 }
 
-// vectorString renders a fork vector as a dotted path ("0.1.0"); "-" if empty.
-func vectorString(v []int) string {
-	if len(v) == 0 {
-		return "-"
-	}
-	parts := make([]string, len(v))
-	for i, c := range v {
-		parts[i] = strconv.Itoa(c)
-	}
-	return strings.Join(parts, ".")
-}
-
 // vectorLess orders fork vectors as a depth-first preorder; an empty
 // vector sorts after any non-empty one.
 func vectorLess(a, b []int) bool {
@@ -619,16 +615,13 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay, asJSON b
 	if target == "" && len(args) > 0 {
 		target = args[0]
 	}
-	// Split an optional :<LT> suffix off the target.
-	var atMainLT uint64
-	if i := strings.LastIndex(target, ":"); i >= 0 {
-		lt, err := strconv.ParseUint(target[i+1:], 10, 64)
-		if err != nil {
-			die("fork: bad :<LT> in %q (want <id>:<n>)", target)
-		}
-		atMainLT = lt
-		target = target[:i]
+	// Split an optional :<turn> suffix off the target. Shared parser — fork and
+	// send must not drift apart on what a coordinate means.
+	target, turn, hasTurn, perr := parseTarget(target)
+	if perr != nil {
+		die("fork: %s", perr)
 	}
+	var atMainLT uint64
 
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx := context.Background()
@@ -640,9 +633,17 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay, asJSON b
 		}
 		if target == "" {
 			if bound == "" {
-				die("fork: no aria bound to this shell (try: <id> or <id>:<LT>)")
+				die("fork: no aria bound to this shell (try: <id> or <id>:<turn>)")
 			}
 			target = bound
+		}
+
+		if hasTurn {
+			lt, rerr := resolveTurn(ctx, acli, target, turn)
+			if rerr != nil {
+				die("fork: %s", rerr)
+			}
+			atMainLT = lt
 		}
 
 		resp, err := waitForFork(ctx, acli, target, atMainLT)
@@ -677,7 +678,7 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay, asJSON b
 				Parent       string `json:"parent"`
 				Continuation string `json:"continuation"`
 				Alternative  string `json:"alternative"`
-				AtLT         uint64 `json:"at_lt,omitempty"`
+				Turn         uint64 `json:"turn,omitempty"`
 				Rescoped     bool   `json:"rescoped"`
 				OwnerNote    string `json:"owner_note,omitempty"`
 				Mode         string `json:"mode"`
@@ -686,7 +687,7 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay, asJSON b
 				Parent:       resp.Parent,
 				Continuation: resp.Continuation,
 				Alternative:  resp.Alternative,
-				AtLT:         atMainLT,
+				Turn:         turn,
 				Rescoped:     rescoped,
 				OwnerNote:    resp.OwnerNote,
 				Mode:         "fork",
@@ -695,8 +696,8 @@ func runFork(loaded *config.Loaded, idFlag string, args []string, stay, asJSON b
 		}
 
 		at := "head"
-		if atMainLT > 0 {
-			at = fmt.Sprintf("LT %d", atMainLT)
+		if hasTurn {
+			at = fmt.Sprintf("turn %d", turn)
 		}
 		if resp.OwnerNote != "" {
 			fmt.Fprintf(os.Stderr, "%s\n", resp.OwnerNote)
@@ -775,7 +776,7 @@ func runAttend(loaded *config.Loaded, spec string) {
 		})
 		return
 	}
-	trunk, atMainLT, hasLT, err := parseSendTarget(spec)
+	trunk, turn, hasTurn, err := parseTarget(spec)
 	if err != nil {
 		die("attend: %s", err)
 	}
@@ -786,9 +787,17 @@ func runAttend(loaded *config.Loaded, spec string) {
 		if trunk == "" {
 			r, rerr := resolveBinding(ctx, acli, ppid)
 			if rerr != nil || !r.Found {
-				die("attend: :<LT> needs an already-bound aria (use attend <id>:<LT>)")
+				die("attend: :<turn> needs an already-bound aria (use attend <id>:<turn>)")
 			}
 			trunk = r.FigaroID
+		}
+		var atMainLT uint64
+		if hasTurn {
+			lt, rerr := resolveTurn(ctx, acli, trunk, turn)
+			if rerr != nil {
+				die("attend: %s", rerr)
+			}
+			atMainLT = lt
 		}
 		if err := bindBinding(ctx, acli, ppid, trunk, atMainLT); err != nil {
 			// A cauterized anchor (null/loadout) can't be attended — nudge.
@@ -804,8 +813,8 @@ func runAttend(loaded *config.Loaded, spec string) {
 			}
 			die("attend: %s", err)
 		}
-		if hasLT {
-			fmt.Fprintf(os.Stderr, "attending %s at LT %d (next prompt forks there)\n", trunk, atMainLT)
+		if hasTurn {
+			fmt.Fprintf(os.Stderr, "attending %s at turn %d (next prompt forks there)\n", trunk, turn)
 		} else {
 			fmt.Fprintf(os.Stderr, "attending %s\n", trunk)
 		}

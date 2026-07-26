@@ -576,7 +576,7 @@ func encodeResponseMessage(
 
 	for _, content := range msg.Content {
 		switch msg.Role {
-		case message.RoleUser:
+		case message.RoleInput:
 			switch content.Type {
 			case message.ContentProse:
 				if content.Text != "" {
@@ -596,7 +596,7 @@ func encodeResponseMessage(
 				}
 				beforeMessage = append(beforeMessage, raw)
 			}
-		case message.RoleAssistant:
+		case message.RoleOutput:
 			switch content.Type {
 			case message.ContentProse:
 				if content.Text != "" {
@@ -642,7 +642,7 @@ func encodeResponseMessage(
 		}
 		afterMessage = append([]json.RawMessage{raw}, afterMessage...)
 	}
-	if len(assistantContent) > 0 && msg.Role == message.RoleAssistant {
+	if len(assistantContent) > 0 && msg.Role == message.RoleOutput {
 		raw, err := marshalResponseItem(responseMessage("assistant", assistantContent))
 		if err != nil {
 			return nil, err
@@ -1093,7 +1093,7 @@ func responseArgumentBytes(raw json.RawMessage) []byte {
 
 func decodeResponseAssistant(response responseObject) (message.Message, error) {
 	out := message.Message{
-		Role: message.RoleAssistant,
+		Role: message.RoleOutput,
 		Usage: &message.Usage{
 			InputTokens:      response.Usage.InputTokens,
 			OutputTokens:     response.Usage.OutputTokens,

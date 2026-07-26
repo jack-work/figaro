@@ -27,17 +27,17 @@ import (
 // scroll through. Only the entry read is served: subsequent page fetches come
 // back empty, which is how the pager learns it has reached the end of history
 // and stops prefetching.
-type stubHistoryClient struct{ committed []aria.Committed }
+type stubHistoryClient struct{ committed []aria.TurnPart }
 
-func (c stubHistoryClient) Read(context.Context, int) (aria.AriaRead, error) {
-	return aria.AriaRead{}, nil
+func (c stubHistoryClient) Read(context.Context, int) (aria.Page, error) {
+	return aria.Page{}, nil
 }
 
-func (c stubHistoryClient) ReadBefore(_ context.Context, before, _ int) (aria.AriaRead, error) {
+func (c stubHistoryClient) ReadBefore(_ context.Context, before, _ int) (aria.Page, error) {
 	if before != recentCursor {
-		return aria.AriaRead{}, nil
+		return aria.Page{}, nil
 	}
-	return aria.AriaRead{Committed: c.committed}, nil
+	return aria.Page{Parts: c.committed}, nil
 }
 
 func (c stubHistoryClient) Queued(context.Context) (*rpc.QueuedResponse, error) {
@@ -75,10 +75,10 @@ func feed(tb testing.TB, in *interactiveInput, data string) []byte {
 	return rest
 }
 
-func navHistory() []aria.Committed {
-	committed := make([]aria.Committed, 40)
+func navHistory() []aria.TurnPart {
+	committed := make([]aria.TurnPart, 40)
 	for i := range committed {
-		committed[i] = aria.Committed{LT: i + 1, Role: "assistant", Nodes: heavyNodes(i+1, 20)}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 20)}}
 	}
 	return committed
 }
@@ -93,7 +93,7 @@ func navInput(tb testing.TB, out *countingWriter, open bool) (*interactiveInput,
 	lt := newLivelogTurn(out, 100, 40, settings, "aria0001", time.Unix(0, 0), status, nil, nil)
 	if open {
 		lt.enterTranscript()
-		lt.apply(aria.AriaRead{Committed: committed})
+		lt.apply(aria.Page{Parts: committed})
 	}
 	return &interactiveInput{
 		tc: nil, lt: lt, fcli: stubHistoryClient{committed}, mu: &sync.Mutex{}, set: settings,
@@ -119,11 +119,15 @@ func TestInputConsume_NavKeysMatchLetterMotions(t *testing.T) {
 		{"home", []string{"\x1b[H", "\x1bOH", "\x1b[1~", "\x1b[7~"}, "gg"},
 		{"end", []string{"\x1b[F", "\x1bOF", "\x1b[4~", "\x1b[8~"}, "G"},
 	}
-	for _, open := range []bool{false, true} {
-		mode := "from incipit"
-		if open {
-			mode = "in the pager"
-		}
+	// The letter aliases are equivalent to the arrow cluster only INSIDE the
+	// pager. In incipit a printable character starts composing a steer — the
+	// arrows still open the pager (they are gestures, not text), but 'j' is a
+	// letter someone is trying to type. Comparing them from incipit would assert
+	// the behaviour we deliberately removed, so the equivalence is pager-only and
+	// the incipit half of the contract is covered by
+	// TestNavArrowsStillOpenThePagerFromIncipit below.
+	for _, open := range []bool{true} {
+		mode := "in the pager"
 		for _, tc := range cases {
 			t.Run(tc.name+" "+strings.ReplaceAll(mode, " ", "-"), func(t *testing.T) {
 				var refOut countingWriter
@@ -270,5 +274,26 @@ func TestTranscriptNav_SearchPromptOwnsTheKeyboard(t *testing.T) {
 	}
 	if lt.tr.offset != before {
 		t.Fatalf("arrows scrolled behind the search prompt: %d, want %d", lt.tr.offset, before)
+	}
+}
+
+// In incipit both the arrow cluster and its letter aliases open the pager, so a
+// motion acts on arrival instead of looking like a dead keyboard.
+func TestNavArrowsStillOpenThePagerFromIncipit(t *testing.T) {
+	for _, seq := range []string{"\x1b[A", "\x1b[B", "\x1b[5~", "\x1b[6~", "\x1b[H", "\x1b[F"} {
+		var out countingWriter
+		in, lt := navInput(t, &out, false)
+		feed(t, in, seq)
+		if !lt.transcriptActive() {
+			t.Errorf("%q no longer opens the pager from incipit", seq)
+		}
+	}
+	// ...and so does the letter alias. Nothing in incipit swallows a keystroke
+	// as text: there is no composer, and typing is not an input surface here.
+	var out countingWriter
+	in, lt := navInput(t, &out, false)
+	feed(t, in, "j")
+	if !lt.transcriptActive() {
+		t.Error("'j' no longer opens the pager from incipit")
 	}
 }

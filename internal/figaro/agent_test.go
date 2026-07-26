@@ -22,6 +22,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/uiir"
 )
 
 // --- Mock provider ---
@@ -36,7 +37,7 @@ func (m *mockProvider) Fingerprint() string                                     
 func (m *mockProvider) SetModel(model string)                                    {}
 func (m *mockProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 func (m *mockProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
-	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
+	return []json.RawMessage{json.RawMessage(`{"role": livedoc.RoleInput,"content":[]}`)}, nil
 }
 
 func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
@@ -46,8 +47,8 @@ func (m *mockProvider) Send(ctx context.Context, in provider.SendInput, bus prov
 }
 
 // streamingMockProvider emits its delta, then gives the drain loop time to
-// compose a PRE-SEAL live frame before appending + sealing — the window where
-// the in-flight assembly has no log entry behind it. The instant-seal
+// compose a PRE-APPEND live frame before appending — the window where
+// the in-flight assembly has no log entry behind it. The instant-append
 // mockProvider never exposes that window.
 type streamingMockProvider struct{ response string }
 
@@ -61,14 +62,14 @@ func (m *streamingMockProvider) Send(_ context.Context, in provider.SendInput, b
 	bus.PushDelta(message.Content{Type: message.ContentProse, Text: m.response})
 	time.Sleep(60 * time.Millisecond) // drain loop composes the streaming frame
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent(m.response)},
 		StopReason: message.StopEnd,
 	}
 	if entry, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err == nil {
 		msg.LogicalTime = entry.LT
 	}
-	time.Sleep(30 * time.Millisecond) // sealed-but-evFigaro-unprocessed window
+	time.Sleep(30 * time.Millisecond) // appended-but-evFigaro-unprocessed window
 	bus.PushFigaro(msg)
 	return nil
 }
@@ -82,7 +83,7 @@ func (metricsProvider) Models(context.Context) ([]provider.ModelInfo, error) { r
 func (metricsProvider) ContextLimit(string, chalkboard.Snapshot) int         { return 128000 }
 func (metricsProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent("done")},
 		StopReason: message.StopEnd,
 		Usage: &message.Usage{
@@ -120,7 +121,7 @@ func (p *lateLimitProvider) Send(_ context.Context, in provider.SendInput, bus p
 	p.mu.Unlock()
 	bus.PushDelta(message.TextContent("done"))
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent("done")},
 		StopReason: message.StopEnd,
 	}
@@ -175,7 +176,7 @@ func mockPushAssistant(figLog store.Log[message.Message], cache store.Log[[]json
 	}
 	bus.PushDelta(message.Content{Type: message.ContentProse, Text: text})
 	msg := message.Message{
-		Role:       message.RoleAssistant,
+		Role:       message.RoleOutput,
 		Content:    []message.Content{message.TextContent(text)},
 		StopReason: message.StopEnd,
 	}
@@ -246,6 +247,14 @@ func submitPrompt(a *figaro.Agent, text string) {
 	a.SubmitPrompt(rpc.QuaRequest{Text: text})
 }
 
+// submitSteer sends an ordinary prompt. There is no flag and no declaration:
+// what makes it a steer is that it arrives while a turn is running, and the
+// drain classifies it there. The name records the caller's intent, not a wire
+// field.
+func submitSteer(a *figaro.Agent, text string) {
+	a.SubmitPrompt(rpc.QuaRequest{Text: text})
+}
+
 // --- Tests ---
 
 func newTestAgent(response string) *figaro.Agent {
@@ -256,6 +265,7 @@ func newTestAgent(response string) *figaro.Agent {
 		"system.max_tokens": json.RawMessage(`1024`),
 	}})
 	return figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "test-001",
 		SocketPath: "/tmp/test-figaro.sock",
 		Provider:   &mockProvider{response: response},
@@ -277,6 +287,7 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	lastActive := time.UnixMilli(2_000)
 
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         id,
 		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
 		Provider:   &mockProvider{},
@@ -347,7 +358,7 @@ func nonGenesis(msgs []message.Message) []message.Message {
 		if m.Role == message.RoleGenesis {
 			continue
 		}
-		if m.Role == message.RoleUser && len(m.Content) == 0 && len(m.Patches) == 0 {
+		if m.Role == message.RoleInput && len(m.Content) == 0 && len(m.Patches) == 0 {
 			continue // loadout birth tic
 		}
 		out = append(out, m)
@@ -409,6 +420,7 @@ func TestAgentContextMetricsTrackCurrentSession(t *testing.T) {
 		"mantra":       json.RawMessage(`"keep session accounting visible"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "metrics-001",
 		SocketPath: "/tmp/metrics-test.sock",
 		Provider:   metricsProvider{},
@@ -437,7 +449,7 @@ done:
 	assert.Equal(t, 128000, info.ContextLimit)
 	assert.True(t, info.ContextExact)
 
-	read := a.Read(0)
+	read := a.Read(aria.Anchor{Turn: 0}, 1<<20)
 	require.NotNil(t, read.Metrics)
 	assert.Equal(t, "keep session accounting visible", read.Metrics.Mantra)
 	assert.Equal(t, 15000, read.Metrics.ContextTokens)
@@ -455,6 +467,7 @@ func TestAgentFirstLiveFrameUsesResolvedContextLimit(t *testing.T) {
 		"system.model": json.RawMessage(`"gpt-5.6-terra"`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "late-limit-001",
 		SocketPath: "/tmp/late-limit-test.sock",
 		Provider:   &lateLimitProvider{},
@@ -464,13 +477,13 @@ func TestAgentFirstLiveFrameUsesResolvedContextLimit(t *testing.T) {
 
 	ch, _ := subscribeChan(a)
 	submitPrompt(a, "hello")
-	var firstLive *aria.AriaRead
+	var firstLive *aria.Page
 	for {
 		select {
 		case n := <-ch:
 			if n.Method == rpc.MethodAriaFrame {
-				frame := n.Params.(aria.AriaRead)
-				if frame.Live != nil && frame.Live.Role == "assistant" && firstLive == nil {
+				frame := n.Params.(aria.Page)
+				if frame.LiveTail() != nil && firstLive == nil {
 					firstLive = &frame
 				}
 			}
@@ -493,7 +506,7 @@ func TestAgent_ReadCatchUp(t *testing.T) {
 	defer a.Kill()
 
 	// Idle, empty: nothing to catch up.
-	if r := a.Read(0); len(r.Committed) != 0 || r.Live != nil {
+	if r := a.Read(aria.Anchor{Turn: 0}, 1<<20); len(r.Parts) != 0 || r.LiveTail() != nil {
 		t.Fatalf("fresh agent: want empty read, got %+v", r)
 	}
 
@@ -515,18 +528,20 @@ done:
 
 	// After the turn settles, the prompt and reply are committed units and
 	// no unit is live.
-	r := a.Read(0)
-	if r.Live != nil {
-		t.Fatalf("idle agent should have no live unit: %+v", r.Live)
+	r := a.Read(aria.Anchor{Turn: 0}, 1<<20)
+	if r.LiveTail() != nil {
+		t.Fatalf("idle agent should have no live unit: %+v", r.LiveTail())
 	}
-	if len(r.Committed) != 2 {
-		t.Fatalf("want user + assistant units, got %d: %+v", len(r.Committed), r.Committed)
+	// The prompt and the reply are ONE exchange now, not two units: the
+	// question is node 0 of the turn that answered it.
+	if len(r.Parts) != 1 {
+		t.Fatalf("want a single turn, got %d: %+v", len(r.Parts), r.Parts)
 	}
-	if r.Committed[0].Role != "user" || !nodesContain(r.Committed[0].Nodes, "the question") {
-		t.Errorf("committed[0] = %+v", r.Committed[0])
+	if !nodesContain(r.Parts[0].Nodes, "the question") {
+		t.Errorf("the turn must hold the prompt: %+v", r.Parts[0])
 	}
-	if r.Committed[1].Role != "assistant" || !nodesContain(r.Committed[1].Nodes, "the reply") {
-		t.Errorf("committed[1] = %+v", r.Committed[1])
+	if !nodesContain(r.Parts[0].Nodes, "the reply") {
+		t.Errorf("the turn must hold the reply: %+v", r.Parts[0])
 	}
 }
 
@@ -568,8 +583,8 @@ done:
 	// Should have user + assistant messages.
 	msgs := a.Context()
 	require.GreaterOrEqual(t, len(msgs), 2)
-	assert.Equal(t, message.RoleUser, msgs[0].Role)
-	assert.Equal(t, message.RoleAssistant, msgs[1].Role)
+	assert.Equal(t, message.RoleInput, msgs[0].Role)
+	assert.Equal(t, message.RoleOutput, msgs[1].Role)
 }
 
 func TestAgent_FIFOOrdering(t *testing.T) {
@@ -579,6 +594,7 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 
 	// Use a provider that echoes the prompt (via the messages).
 	a = figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "fifo-test",
 		SocketPath: "/tmp/test-fifo.sock",
 		Provider:   &mockProvider{response: "ok"},
@@ -608,8 +624,8 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 	// Both prompts should be in context, in order.
 	msgs := a.Context()
 	require.GreaterOrEqual(t, len(msgs), 4) // user, assistant, user, assistant
-	assert.Equal(t, message.RoleUser, msgs[0].Role)
-	assert.Equal(t, message.RoleUser, msgs[2].Role)
+	assert.Equal(t, message.RoleInput, msgs[0].Role)
+	assert.Equal(t, message.RoleInput, msgs[2].Role)
 }
 
 func TestAgent_MultipleSubscribers(t *testing.T) {
@@ -682,7 +698,7 @@ func (p *panicProvider) Fingerprint() string                                    
 func (p *panicProvider) SetModel(model string)                                    {}
 func (p *panicProvider) Models(ctx context.Context) ([]provider.ModelInfo, error) { return nil, nil }
 func (p *panicProvider) encode(_ message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
-	return []json.RawMessage{json.RawMessage(`{"role":"user","content":[]}`)}, nil
+	return []json.RawMessage{json.RawMessage(`{"role": livedoc.RoleInput,"content":[]}`)}, nil
 }
 
 func (p *panicProvider) Send(ctx context.Context, in provider.SendInput, bus provider.Bus) error {
@@ -700,6 +716,7 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	prov := &panicProvider{panicCount: 1, response: "recovered"}
 
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "panic-test",
 		SocketPath: "/tmp/panic-test.sock",
 		Provider:   prov,
@@ -753,7 +770,7 @@ func TestAgent_PanicRecovery(t *testing.T) {
 	// assistant turn should be the most recent entry.
 	msgs := a.Context()
 	require.NotEmpty(t, msgs)
-	assert.Equal(t, message.RoleAssistant, msgs[len(msgs)-1].Role)
+	assert.Equal(t, message.RoleOutput, msgs[len(msgs)-1].Role)
 }
 
 func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
@@ -761,6 +778,7 @@ func TestAgent_PanicRecovery_ContextReset(t *testing.T) {
 	prov := &panicProvider{panicCount: 1, response: "ok"}
 
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "panic-ctx-test",
 		SocketPath: "/tmp/panic-ctx-test.sock",
 		Provider:   prov,
@@ -792,7 +810,7 @@ errorReceived:
 	// zero because no assistant response landed.
 	msgs := a.Context()
 	require.NotEmpty(t, msgs, "user prompt is preserved across Send panics")
-	assert.Equal(t, message.RoleUser, msgs[len(msgs)-1].Role)
+	assert.Equal(t, message.RoleInput, msgs[len(msgs)-1].Role)
 
 	info := a.Info()
 	assert.Equal(t, 0, info.TokensIn)
@@ -817,6 +835,7 @@ func TestAgent_PersistenceFlushesOnPrompt(t *testing.T) {
 	backend, conv := backedConv(t, storeDir)
 
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         conv,
 		SocketPath: "/tmp/persist-test.sock",
 		Provider:   &mockProvider{response: "persisted reply"},
@@ -846,8 +865,8 @@ firstDone:
 	require.NoError(t, err)
 	turns := nonGenesis(unwrapForTest(log.Read()))
 	require.GreaterOrEqual(t, len(turns), 2, "user + assistant should be durable")
-	assert.Equal(t, message.RoleUser, turns[0].Role)
-	assert.Equal(t, message.RoleAssistant, turns[1].Role)
+	assert.Equal(t, message.RoleInput, turns[0].Role)
+	assert.Equal(t, message.RoleOutput, turns[1].Role)
 
 }
 
@@ -856,6 +875,7 @@ func TestAgent_PersistenceRestoresOnCreate(t *testing.T) {
 	backend, conv := backedConv(t, storeDir)
 
 	a1 := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         conv,
 		SocketPath: "/tmp/restore-test.sock",
 		Provider:   &mockProvider{response: "first reply"},
@@ -881,6 +901,7 @@ firstDone:
 
 	// Second agent with the same conversation id + backend — restores.
 	a2 := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         conv,
 		SocketPath: "/tmp/restore-test2.sock",
 		Provider:   &mockProvider{response: "second reply"},
@@ -890,8 +911,8 @@ firstDone:
 
 	turns := nonGenesis(a2.Context())
 	require.GreaterOrEqual(t, len(turns), 2, "should restore messages from disk")
-	assert.Equal(t, message.RoleUser, turns[0].Role)
-	assert.Equal(t, message.RoleAssistant, turns[1].Role)
+	assert.Equal(t, message.RoleInput, turns[0].Role)
+	assert.Equal(t, message.RoleOutput, turns[1].Role)
 }
 
 func TestAgent_PersistenceKillFlushes(t *testing.T) {
@@ -899,6 +920,7 @@ func TestAgent_PersistenceKillFlushes(t *testing.T) {
 	backend, conv := backedConv(t, storeDir)
 
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         conv,
 		SocketPath: "/tmp/killflush-test.sock",
 		Provider:   &mockProvider{response: "will be saved"},
@@ -969,14 +991,14 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 	require.NoError(t, err)
 	_, err = pre.Append(store.Entry[message.Message]{
 		Payload: message.Message{
-			Role:    message.RoleUser,
+			Role:    message.RoleInput,
 			Content: []message.Content{message.TextContent("run a tool")},
 		},
 	})
 	require.NoError(t, err)
 	_, err = pre.Append(store.Entry[message.Message]{
 		Payload: message.Message{
-			Role: message.RoleAssistant,
+			Role: message.RoleOutput,
 			Content: []message.Content{
 				{Type: message.ContentToolInvoke, ToolCallID: "tc_boot", ToolName: "bash"},
 			},
@@ -987,6 +1009,7 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 
 	// Boot an agent on the same conversation; NewAgent runs boot repair.
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         conv,
 		SocketPath: "/tmp/danglingboot-test.sock",
 		Provider:   &mockProvider{response: "ignored"},
@@ -996,7 +1019,7 @@ func TestAgent_BootRepairsDanglingToolUse(t *testing.T) {
 
 	msgs := a.Context()
 	tail := msgs[len(msgs)-1]
-	require.Equal(t, message.RoleUser, tail.Role)
+	require.Equal(t, message.RoleInput, tail.Role)
 	require.Len(t, tail.Content, 1)
 	assert.Equal(t, message.ContentToolResult, tail.Content[0].Type)
 	assert.Equal(t, "tc_boot", tail.Content[0].ToolCallID)
@@ -1009,6 +1032,7 @@ func TestAgent_EphemeralWhenNoBackend(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "ephemeral-001",
 		SocketPath: "/tmp/ephemeral-test.sock",
 		Provider:   &mockProvider{response: "gone"},
@@ -1066,6 +1090,7 @@ func (s *slowProvider) Send(ctx context.Context, _ provider.SendInput, bus provi
 func TestAgent_Interrupt(t *testing.T) {
 	started := make(chan struct{})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "interrupt-001",
 		SocketPath: "/tmp/interrupt-test.sock",
 		Provider:   &slowProvider{started: started},
@@ -1117,6 +1142,7 @@ loop:
 func TestAgentInfoReportsRunningTurnActive(t *testing.T) {
 	started := make(chan struct{})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "active-001",
 		SocketPath: "/tmp/active-test.sock",
 		Provider:   &slowProvider{started: started},
@@ -1154,12 +1180,12 @@ func TestAgent_InterruptWhenIdle(t *testing.T) {
 var _ = json.RawMessage(nil)
 
 // Regression: composeTurn's window is a figaro-LT (MainLT) cursor, not an
-// entry count, and the in-flight assembly must yield to its sealed copy.
+// entry count, and the in-flight assembly must yield to its appended copy.
 // On a BACKED aria, main LTs are trunk-global (boot patches consume them),
 // so an entry count passed to ReadFrom re-includes prior turns in every
-// live frame; and the provider seals the assistant message into the log
+// live frame; and the provider appends the assistant message into the log
 // concurrently with the drain loop's buffered events, so a frame composed
-// after the append but before the seal event would render the message
+// after the append but before the completion event would render the message
 // twice under two node ids. Both bugs manifest as duplicated content in
 // the live frames.
 func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
@@ -1171,6 +1197,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 		"system.max_tokens": json.RawMessage(`1024`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         id,
 		SocketPath: filepath.Join(t.TempDir(), "figaro.sock"),
 		Provider:   &streamingMockProvider{response: "ALPHA"},
@@ -1202,7 +1229,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	turn2 := runTurn("second prompt")
 
 	// No single live frame may carry the reply text more than once: a dup
-	// means the frame composed both the sealed entry and the in-flight
+	// means the frame composed both the appended entry and the in-flight
 	// assembly (or a prior turn's copy) as distinct nodes.
 	checkFrames := func(label string, frames []rpc.Notification) {
 		for _, fr := range frames {
@@ -1216,7 +1243,7 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 	checkFrames("turn2", turn2)
 
 	// Fold every frame through a real aria client: id churn between the
-	// in-flight and sealed composition of the SAME message lands as two
+	// in-flight and appended composition of the SAME message lands as two
 	// node ids across different frames — invisible per-frame, but the
 	// folded view shows a committed assistant message with two nodes.
 	cl := aria.NewClient()
@@ -1225,21 +1252,41 @@ func TestSecondTurnDoesNotRecomposePriorTurn(t *testing.T) {
 			continue
 		}
 		b, _ := json.Marshal(fr.Params)
-		var r aria.AriaRead
+		var r aria.Page
 		require.NoError(t, json.Unmarshal(b, &r))
 		cl.Apply(r)
 	}
-	assistants := 0
+	// Each turn holds its prompt as node 0 and exactly one assistant reply —
+	// a second turn must not re-compose the first turn's nodes into itself.
+	// Closed messages arrive one per VOICE RUN (the prompt closes under "you",
+	// the reply under "figaro"), so aggregate by turn before judging it.
+	byTurn := map[int][]livedoc.Node{}
+	order := []int{}
 	for _, m := range cl.View().Closed {
-		if m.Role != "assistant" {
+		if len(m.Nodes) == 0 {
 			continue
 		}
-		assistants++
-		if len(m.Nodes) != 1 {
-			t.Fatalf("assistant LT %d folded to %d nodes, want 1: %+v", m.LT, len(m.Nodes), m.Nodes)
+		if _, seen := byTurn[m.Turn]; !seen {
+			order = append(order, m.Turn)
+		}
+		byTurn[m.Turn] = append(byTurn[m.Turn], m.Nodes...)
+	}
+	for _, lt := range order {
+		nodes := byTurn[lt]
+		if nodes[0].Role != livedoc.RoleInput {
+			t.Fatalf("turn %d node 0 must be the prompt, got role %q", lt, nodes[0].Role)
+		}
+		replies := 0
+		for _, n := range nodes {
+			if n.Role == livedoc.RoleOutput {
+				replies++
+			}
+		}
+		if replies != 1 {
+			t.Fatalf("turn %d holds %d assistant nodes, want 1: %+v", lt, replies, nodes)
 		}
 	}
-	require.Equal(t, 2, assistants)
+	require.Equal(t, 2, len(order))
 	// And turn 2's frames must not re-compose turn 1's prompt as a NODE.
 	// (The mantra metric legitimately echoes the first prompt.)
 	for _, fr := range turn2 {
@@ -1266,14 +1313,14 @@ func TestAgent_UserPromptCommitsWithoutLiveFrame(t *testing.T) {
 	submitPrompt(a, "the question")
 
 	deadline := time.After(5 * time.Second)
-	var frames []aria.AriaRead
+	var frames []aria.Page
 loop:
 	for {
 		select {
 		case n := <-ch:
 			switch n.Method {
 			case rpc.MethodAriaFrame:
-				frames = append(frames, n.Params.(aria.AriaRead))
+				frames = append(frames, n.Params.(aria.Page))
 			case rpc.MethodTurnDone:
 				break loop
 			}
@@ -1282,28 +1329,31 @@ loop:
 		}
 	}
 
-	// Find the user message's LT from a Full committed frame (Role=="user"
-	// with Nodes present); assert no Live frame ever carried that LT and no
-	// Live frame ever had Role=="user".
-	userLT := 0
+	// The prompt is complete the instant it exists, so it must arrive as
+	// already-closed content and never stream. If it ever appeared inside a
+	// Live delta the client would render it in flight and then re-render it
+	// on commit — the flicker between send and durable commit.
+	sawPromptCommitted := false
 	for _, f := range frames {
-		for _, c := range f.Committed {
-			if c.Role == "user" && c.Full() {
-				userLT = c.LT
+		for _, part := range f.Parts {
+			for _, n := range part.Nodes {
+				if n.Role == livedoc.RoleInput {
+					sawPromptCommitted = true
+				}
 			}
 		}
 	}
-	require.NotZero(t, userLT, "expected a user Committed(Full) frame")
+	require.True(t, sawPromptCommitted, "expected the prompt as committed content")
 
 	for _, f := range frames {
-		if f.Live == nil {
+		live := f.LiveTail()
+		if live == nil {
 			continue
 		}
-		if f.Live.Role == "user" {
-			t.Fatalf("user role must never appear as a Live frame; got %+v", f.Live)
-		}
-		if f.Live.LT == userLT {
-			t.Fatalf("user LT %d must never appear as a Live frame; got %+v", userLT, f.Live)
+		for _, d := range live.Nodes {
+			if d.Set["role"] == livedoc.RoleInput {
+				t.Fatalf("the prompt must never stream as a Live delta; got %+v", d)
+			}
 		}
 	}
 }
@@ -1323,6 +1373,7 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 		"system.max_tokens": json.RawMessage(`1024`),
 	}})
 	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
 		ID:         "q-001",
 		SocketPath: "/tmp/test-figaro-q.sock",
 		Provider:   prov,

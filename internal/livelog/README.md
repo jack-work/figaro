@@ -1,6 +1,6 @@
 # livelog
 
-The live-render layer for figaro: an **aria read** protocol plus an **inline-seal**
+The live-render layer for figaro: an **aria read** protocol plus an **inline-freeze**
 terminal renderer. Standard-library only (no deps outside the figaro module), in
 isolation-testable packages.
 
@@ -38,9 +38,9 @@ item, compressed. `doc.Delta` (Diff/Apply) is the Phase-2 primitive.
   (catch-up shapes, live deltas, close-patch, the LT-once invariant, and
   reconnect-converges-from-cursor).
 - **`render`** — `Incipit`: renders incipit (no alternate screen). Closed messages
-  seal to native scrollback **once** and are never redrawn; only the open message
+  freeze to native scrollback **once** and are never redrawn; only the open message
   is a live region, so a terminal resize repaints just that bounded part. The
-  immutability boundary (a sealed message) is the resize boundary — which is what
+  immutability boundary (a frozen message) is the resize boundary — which is what
   makes the resize/duplication corruption unrepresentable. `FakeTerminal` is a VT
   mock for deterministic rendering tests.
 - **`doc`** — block/delta model utilities (Phase-2 delta compression).
