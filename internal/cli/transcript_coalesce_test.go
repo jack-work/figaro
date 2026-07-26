@@ -289,6 +289,7 @@ func TestInputConsume_WheelBurstPaintsOneFrame(t *testing.T) {
 func TestInputConsume_KeyBurstPaintsOneFrame(t *testing.T) {
 	var w countingWriter
 	in, lt := coalesceInput(t, &w)
+	lt.tr.stopFollowing() // measure pure motion: leaving live also reclaims the padding row
 	before := lt.tr.offset
 	w.reset()
 	if rest, stop := in.consume([]byte(strings.Repeat("k", 12))); stop || len(rest) != 0 {
@@ -309,6 +310,7 @@ func TestInputConsume_SplitEscapeStillCoalesces(t *testing.T) {
 	in, lt := coalesceInput(t, &w)
 	burst := wheelReports(6, true)
 	cut := len(burst) - 3
+	lt.tr.stopFollowing() // as above: the first motion out of live reclaims the padding row
 	before := lt.tr.offset
 
 	w.reset()

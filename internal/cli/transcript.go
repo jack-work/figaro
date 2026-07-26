@@ -205,20 +205,40 @@ func (t *transcript) leave() {
 	t.prev = nil
 }
 
-// scrollBy moves the viewport by delta lines (native wheel), leaving follow
-// mode; render clamps the offset (see render, which clamps the low side even
-// when the frame itself is deferred).
-func (t *transcript) scrollBy(delta int) {
-	if !t.active {
+// scroll moves the viewport by delta lines and arms the history prefetch in
+// the direction of travel. Detaching comes FIRST: stopFollowing pins the
+// offset at the live view's own position, so the motion is relative to what is
+// on screen. Moving the offset first instead scrolled from a stale value —
+// zero on a pager that had not painted a frame yet, which is how one 'k' from
+// the inline view landed at the top of a window it had never seen.
+//
+// A downward scroll that leaves the viewport past the last row — into the
+// live padding — re-attaches. Reaching the last row is not enough: the padding
+// is the one row of overscroll you have to ask for, so a reader parked at the
+// bottom of a finished turn stays parked. The decision belongs to the GESTURE,
+// not to the frame: an offset put out of range by anything else (a search jump,
+// a page landing, a resize) is clamped, as it always was.
+func (t *transcript) scroll(delta int) {
+	t.stopFollowing()
+	t.offset += delta
+	if _, maxOff := t.layout(len(t.footLines())); t.offset > maxOff {
+		pagerTail(t)
 		return
 	}
-	t.offset += delta
-	t.stopFollowing()
 	if delta < 0 {
 		t.checkOlder = true // scrolled up: maybe page older history
 	} else if delta > 0 {
 		t.checkNewer = true
 	}
+}
+
+// scrollBy is the native wheel's entry point; render clamps the offset (see
+// render, which clamps the low side even when the frame itself is deferred).
+func (t *transcript) scrollBy(delta int) {
+	if !t.active {
+		return
+	}
+	t.scroll(delta)
 	t.render()
 }
 
@@ -1000,11 +1020,73 @@ func (t *transcript) openMessage() *aria.Message {
 	return t.client.Open()
 }
 
+// stopFollowing detaches the viewport from the live tail and PINS it where it
+// was. Two things must happen before follow drops, because both are only true
+// while following:
+//
+//   - the tail window has to converge (settle). Detaching freezes whatever
+//     window is current, and a pager promoted BY a scroll key detaches in the
+//     same input chunk that created it — before any frame, so before the
+//     catch-up read has been folded into the window. That is why 'k' from the
+//     inline view opened on the cold, near-empty window the pager was
+//     constructed with, while Ctrl-T (which paints a following frame first)
+//     showed the whole tail.
+//   - the offset has to be re-derived for the DETACHED geometry, where the
+//     live padding row becomes content: the same lines, plus one.
 func (t *transcript) stopFollowing() {
-	if t.follow {
-		t.heldOpen = t.client.Open()
+	if !t.follow {
+		return
 	}
+	t.settle()
+	t.heldOpen = t.client.Open()
 	t.follow = false
+	_, t.offset = t.layout(len(t.footLines()))
+}
+
+// settle converges the tail window on the row budget (usually 0-1 passes) —
+// the window a following frame would show. Shared by the frame path and by
+// stopFollowing, which must not freeze an unconverged window.
+func (t *transcript) settle() {
+	t.buildIndex()
+	for range 3 {
+		if !t.tuneTail() {
+			break
+		}
+		t.buildIndex()
+	}
+}
+
+// footLines is the open bottom panel, if any: it grows upward from the footer
+// and shrinks the body by exactly its height.
+func (t *transcript) footLines() []string {
+	switch {
+	case t.showHelp:
+		return t.helpLines()
+	case t.showStatus:
+		return t.statusPanelLines()
+	case t.showQueued:
+		return t.queuedPanelLines()
+	}
+	return nil
+}
+
+// layout splits the viewport into the content body and the bottom chrome: the
+// rule and the status row always, the open panel when there is one, and — ONLY
+// while following — one blank padding row above the rule.
+//
+// That row is the live affordance, not decoration. While live it is the gap new
+// output flows into; once you scroll away it is given back to content, so the
+// last row sits flush against the rule and the screen says plainly that it is
+// holding still. Scrolling down INTO it is what re-attaches.
+func (t *transcript) layout(foot int) (body, maxOff int) {
+	body = t.h - 2 - foot
+	if t.follow {
+		body--
+	}
+	if body < 1 {
+		body = 1
+	}
+	return body, max(t.index.total-body, 0)
 }
 
 // renderMsgBase renders one message without selection decoration. Committed
@@ -1157,41 +1239,21 @@ func (t *transcript) flush() {
 // renderFrame is the frame itself: compose the visible window and paint it.
 // render() is only the gate in front of it.
 func (t *transcript) renderFrame() {
-	// The frame ends in a fixed three-row footer (padding, rule, status), so a
-	// viewport shorter than that has nowhere to draw and would index screen[-2].
-	// A pane this small cannot show a paged transcript usefully; skip the frame
-	// rather than crash, and pick up again on the next resize.
+	// The frame ends in a two-row footer (rule, status), plus one padding row
+	// while following, so a viewport shorter than that has nowhere to draw and
+	// would index screen[-2]. A pane this small cannot show a paged transcript
+	// usefully; skip the frame rather than crash, and pick up on the next resize.
 	if t.h < 4 {
 		return
 	}
-	t.buildIndex()
-	// Converge the tail window on the row budget (usually 0-1 passes). D drove
-	// this off len(t.lines()) — a full materialization of the retained window,
-	// which is exactly what A deleted from the frame path. tuneTail reads the
-	// index instead, which carries the same counts exactly and for free.
-	for range 3 {
-		if !t.tuneTail() {
-			break
-		}
-		t.buildIndex()
-	}
+	// Converge the tail window on the row budget. D drove this off
+	// len(t.lines()) — a full materialization of the retained window, which is
+	// exactly what A deleted from the frame path. settle reads the index
+	// instead, which carries the same counts exactly and for free.
+	t.settle()
+	foot := t.footLines()
+	body, maxOff := t.layout(len(foot))
 	total := t.index.total
-	foot := []string{}
-	if t.showHelp {
-		foot = t.helpLines()
-	} else if t.showStatus {
-		foot = t.statusPanelLines()
-	} else if t.showQueued {
-		foot = t.queuedPanelLines()
-	}
-	body := t.h - 3 - len(foot) // bottom rows: panel (if open) + rule + blank + status
-	if body < 1 {
-		body = 1
-	}
-	maxOff := total - body
-	if maxOff < 0 {
-		maxOff = 0
-	}
 	if t.follow {
 		t.offset = maxOff
 	}
@@ -1208,12 +1270,13 @@ func (t *transcript) renderFrame() {
 	t.rowBuf = t.window(t.offset, t.offset+body, t.rowBuf)
 	copy(screen[:body], t.rowBuf)
 	for k, l := range foot {
-		if r := body + k; r < t.h-3 {
+		if r := body + k; r < t.h-2 {
 			screen[r] = l
 		}
 	}
+	// The row above the rule (screen[t.h-3]) is left blank while following —
+	// layout reserved it — and is content otherwise. See layout.
 	rule, status := t.footerRows(total, body)
-	screen[t.h-3] = "" // padding ABOVE the footer, not between rule and status
 	screen[t.h-2] = rule
 	screen[t.h-1] = status
 	t.paint(screen)
@@ -1236,9 +1299,12 @@ func (t *transcript) footerRows(total, body int) (rule, status string) {
 			end = total
 		}
 		pos = fmt.Sprintf("%d–%d/%d", t.offset+1, end, total)
-		if t.follow {
-			pos += " live"
-		}
+	}
+	// The live marker is the ONLY thing on screen that says which mode you are
+	// in, so it does not ride on the range: a transcript that fits the pane is
+	// still either following the tail or pinned where you left it.
+	if t.follow {
+		pos = strings.TrimSpace(pos + " live")
 	}
 	rule = "\x1b[2m" + t.status.ruleLine(t.w, pos) + "\x1b[0m"
 	if t.inSearch {
@@ -1496,29 +1562,10 @@ func (t *transcript) dispatch(ev keyEvent) {
 // it. They mutate state; painting belongs to the dispatcher.
 // ---------------------------------------------------------------------------
 
-func pagerLineDown(t *transcript) {
-	t.offset++
-	t.stopFollowing()
-	t.checkNewer = true
-}
-
-func pagerLineUp(t *transcript) {
-	t.offset--
-	t.stopFollowing()
-	t.checkOlder = true
-}
-
-func pagerHalfDown(t *transcript) {
-	t.offset += t.h / 2
-	t.stopFollowing()
-	t.checkNewer = true
-}
-
-func pagerHalfUp(t *transcript) {
-	t.offset -= t.h / 2
-	t.stopFollowing()
-	t.checkOlder = true
-}
+func pagerLineDown(t *transcript) { t.scroll(1) }
+func pagerLineUp(t *transcript)   { t.scroll(-1) }
+func pagerHalfDown(t *transcript) { t.scroll(t.h / 2) }
+func pagerHalfUp(t *transcript)   { t.scroll(-(t.h / 2)) }
 
 // pagerTail follows the live tail (G, End).
 func pagerTail(t *transcript) {
@@ -1528,8 +1575,8 @@ func pagerTail(t *transcript) {
 
 // pagerTop jumps to the top of the retained window (Home, and the second g).
 func pagerTop(t *transcript) {
-	t.offset = 0
 	t.stopFollowing()
+	t.offset = 0
 	t.checkOlder = true
 }
 
@@ -1625,7 +1672,7 @@ func (t *transcript) find(q string) {
 		return
 	}
 	t.matchQuery = q
-	t.buildIndex()
+	t.settle() // search the converged window: stopFollowing must not move it under us
 	total := t.index.total
 	if total == 0 {
 		return
@@ -1633,8 +1680,8 @@ func (t *transcript) find(q string) {
 	for i := 0; i < total; i++ {
 		idx := (t.offset + 1 + i) % total
 		if searchContains(t.lineAt(idx), q) {
+			t.stopFollowing() // pins the offset, so the jump comes after it
 			t.offset = idx
-			t.stopFollowing()
 			return
 		}
 	}
@@ -1661,7 +1708,7 @@ func (t *transcript) findRepeat(delta int) {
 		return
 	}
 	q := t.matchQuery
-	t.buildIndex()
+	t.settle()
 	total := t.index.total
 	if total == 0 {
 		return
@@ -1670,8 +1717,8 @@ func (t *transcript) findRepeat(delta int) {
 	for i := 0; i < total; i++ {
 		idx := ((start+delta*i)%total + total) % total
 		if searchContains(t.lineAt(idx), q) {
+			t.stopFollowing() // pins the offset, so the jump comes after it
 			t.offset = idx
-			t.stopFollowing()
 			return
 		}
 	}
