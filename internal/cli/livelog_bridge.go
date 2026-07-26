@@ -34,13 +34,34 @@ type livelogTurn struct {
 	thinkingOpen bool // an OpenThinking placeholder is live and not yet adopted
 	pace         framePacer
 
-	// lastFrozenLT is the highest LT incipit has committed to native scrollback
+	// lastFrozen is the highest SLICE incipit has committed to native scrollback
 	// inline (via Freeze). It marks the flush boundary: on leaving the pager,
 	// everything past it is (re)printed to scrollback, so the turn you watched in
-	// the pager is left behind like a normal command. 0 means nothing was frozen
-	// inline (we entered the pager cold, e.g. `figaro listen`).
-	lastFrozenLT int
-	pagerClosed  []aria.Message
+	// the pager is left behind like a normal command. A zero lt means nothing was
+	// frozen inline (we entered the pager cold, e.g. `figaro listen`).
+	//
+	// It is a (turn, node-offset) PAIR, not a bare turn id. appendTurnSlices cuts
+	// one turn into several messages that all carry the same LT with a rising
+	// From, so a turn-granular boundary either replays a slice already on screen
+	// or — the bug this replaced — skips every slice after the first.
+	lastFrozen  sliceCursor
+	pagerClosed []aria.Message
+}
+
+// sliceCursor addresses one pager unit: the turn and the node offset within it.
+type sliceCursor struct {
+	lt   int
+	from uint64
+}
+
+func cursorOf(m aria.Message) sliceCursor { return sliceCursor{lt: m.LT, from: m.From} }
+
+// after reports whether c comes strictly after o in reading order.
+func (c sliceCursor) after(o sliceCursor) bool {
+	if c.lt != o.lt {
+		return c.lt > o.lt
+	}
+	return c.from > o.from
 }
 
 func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID string, startedAt time.Time, status *sessionStatus, bookend func() []string, rule func() string) *livelogTurn {
@@ -60,7 +81,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	t.client.OnClosed = func(m aria.Message) {
 		t.tr.observeCommitted(m)
 		if t.tr.active {
-			if t.lastFrozenLT != 0 {
+			if t.lastFrozen.lt != 0 {
 				t.pagerClosed = append(t.pagerClosed, m)
 			}
 			t.tr.render() // transcript renders from the shared client model
@@ -71,8 +92,8 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 			}
 		} else {
 			t.in.Freeze(m) // incipit: freeze to native scrollback
-			if m.LT > t.lastFrozenLT {
-				t.lastFrozenLT = m.LT
+			if c := cursorOf(m); c.after(t.lastFrozen) {
+				t.lastFrozen = c
 			}
 		}
 	}
@@ -234,11 +255,24 @@ func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 // If the pager is up, restore the screen and flush the tail to scrollback
 // FIRST (so the labeled rule lands below the recovered turn, not on the
 // about-to-be-torn-down alt screen), then draw the rule.
-func (t *livelogTurn) abandon(reason string) {
+//
+// A turn that ALREADY FINISHED is not being abandoned — the pager was merely
+// closed after the fact. Flushing the completed tail and keeping the real
+// outcome is the whole job there; overwriting the status with "turn continues"
+// and dropping t.pending is how a reply the user watched arrive was lost.
+// Reports whether it actually abandoned anything, so the caller can skip the
+// "follow: figaro listen" hint for a turn that is already over.
+func (t *livelogTurn) abandon(reason string) bool {
+	if t.finished {
+		t.leaveTranscript()
+		t.freezePending()
+		return false
+	}
 	t.status.finishTurn(reason)
 	t.pending = nil
 	t.leaveTranscript()
 	t.in.AbandonOpen(abandonRule(reason))
+	return true
 }
 
 func (t *livelogTurn) tick() {
@@ -321,8 +355,8 @@ func (t *livelogTurn) freezePending() {
 	if t.pending != nil {
 		t.in.Open(t.pending.LT, t.pending.Role, t.pending.Nodes)
 		t.in.Freeze(*t.pending)
-		if t.pending.LT > t.lastFrozenLT {
-			t.lastFrozenLT = t.pending.LT
+		if c := cursorOf(*t.pending); c.after(t.lastFrozen) {
+			t.lastFrozen = c
 		}
 		t.pending = nil
 	}
@@ -376,36 +410,45 @@ func (t *livelogTurn) leaveTranscript() {
 // full, and — if a message is still streaming — reopens a live region.
 func (t *livelogTurn) flushTail() {
 	v := t.client.View()
-	from := t.lastFrozenLT + 1
-	if t.lastFrozenLT == 0 {
-		from = lastTurnStartLT(v)
+
+	// A turn reaches scrollback as SEVERAL messages — appendTurnSlices cuts it at
+	// node boundaries and every slice carries the same LT with a rising From — so
+	// both the boundary and the de-dup key on (LT, From). Keying on LT alone
+	// collapsed a turn to its first slice, which is how a completed reply watched
+	// in the pager never reached scrollback at all.
+	cold := t.lastFrozen.lt == 0
+	coldFrom := 0
+	if cold {
+		coldFrom = lastTurnStartLT(v)
 	}
-	var closed []aria.Message
-	seen := make(map[int]bool)
-	for _, m := range t.pagerClosed {
-		if m.LT >= from {
-			closed = append(closed, m)
-			seen[m.LT] = true
+	want := func(m aria.Message) bool {
+		if cold {
+			return m.LT >= coldFrom
 		}
+		return cursorOf(m).after(t.lastFrozen)
 	}
-	for _, m := range v.Closed {
-		if m.LT >= from && !seen[m.LT] {
+
+	var closed []aria.Message
+	seen := make(map[sliceCursor]bool)
+	for _, m := range append(append([]aria.Message(nil), t.pagerClosed...), v.Closed...) {
+		if c := cursorOf(m); want(m) && !seen[c] {
 			closed = append(closed, m)
+			seen[c] = true
 		}
 	}
 	t.pagerClosed = nil
 	openLT, openRole := 0, ""
 	var open []livedoc.Node
-	if v.Open != nil && v.Open.LT >= from {
+	if v.Open != nil && (cold && v.Open.LT >= coldFrom || !cold && v.Open.LT >= t.lastFrozen.lt) {
 		openLT, openRole, open = v.Open.LT, v.Open.Role, v.Open.Nodes
 	}
 	if len(closed) == 0 && openLT == 0 {
 		return
 	}
-	sort.SliceStable(closed, func(i, j int) bool { return closed[i].LT < closed[j].LT })
+	sort.SliceStable(closed, func(i, j int) bool { return cursorOf(closed[j]).after(cursorOf(closed[i])) })
 	t.in.Resume(closed, openLT, openRole, open)
 	if len(closed) > 0 {
-		t.lastFrozenLT = closed[len(closed)-1].LT
+		t.lastFrozen = cursorOf(closed[len(closed)-1])
 	}
 }
 
