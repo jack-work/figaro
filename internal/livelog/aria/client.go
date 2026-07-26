@@ -392,6 +392,14 @@ func setField(n *livedoc.Node, field string, v any) {
 		n.Status = asStr(v)
 	case "markdown":
 		n.Markdown = asStr(v)
+	case "role":
+		// The server sends this (fullSet/diff both emit "role"), and dropping it
+		// silently made every STREAMED node look like agent output — so the
+		// voice-run split could only ever work on committed snapshots, and a
+		// live prompt rendered under the agent's header.
+		n.Role = asStr(v)
+	case "tool_call_id":
+		n.ToolCallID = asStr(v)
 	case "output":
 		n.Output = asStr(v)
 	case "id":
