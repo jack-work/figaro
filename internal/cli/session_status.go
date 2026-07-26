@@ -324,14 +324,22 @@ func (s *sessionStatus) composeTake() string {
 	return text
 }
 
-// composeType appends one rune's worth of literal text.
+// composeType appends one input BYTE to the draft.
+//
+// It must append the raw byte, not string(b): converting a byte to a string
+// treats it as a CODE POINT and re-encodes it, so the two bytes of 'é'
+// (0xC3 0xA9) would each become their own rune and render as mojibake
+// ("Ã©"). A multi-byte rune arrives one byte per read when typed, so the
+// draft accumulates bytes and is only valid UTF-8 once the last continuation
+// byte lands — which is exactly what composeBackspace's []rune conversion and
+// the width-clipped render both expect.
 func (s *sessionStatus) composeType(b byte) {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	if s.composing {
-		s.composeText += string(b)
+		s.composeText += string([]byte{b})
 	}
 	s.mu.Unlock()
 }
