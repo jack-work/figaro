@@ -232,13 +232,29 @@ func (t *transcript) scroll(delta int) {
 	}
 }
 
+// scrollNotch is the single-notch gesture (k/Up, one wheel notch). Upward out
+// of live, DETACHING IS THE MOTION: stopFollowing hands the live padding row
+// back to content, and that row IS the notch of travel spent — the window keeps
+// its last line, so nothing scrolls away and the only change on screen is the
+// blank row above the rule becoming content while the footer drops 'live'. The
+// next notch scrolls normally. Deliberate jumps (u/PgUp, gg) do not route
+// through here: a jump should land where it lands.
+func (t *transcript) scrollNotch(delta int) {
+	if t.follow && delta < 0 {
+		t.stopFollowing()
+		t.checkOlder = true // still travelling up: page older history as before
+		return
+	}
+	t.scroll(delta)
+}
+
 // scrollBy is the native wheel's entry point; render clamps the offset (see
 // render, which clamps the low side even when the frame itself is deferred).
 func (t *transcript) scrollBy(delta int) {
 	if !t.active {
 		return
 	}
-	t.scroll(delta)
+	t.scrollNotch(delta)
 	t.render()
 }
 
@@ -1563,7 +1579,7 @@ func (t *transcript) dispatch(ev keyEvent) {
 // ---------------------------------------------------------------------------
 
 func pagerLineDown(t *transcript) { t.scroll(1) }
-func pagerLineUp(t *transcript)   { t.scroll(-1) }
+func pagerLineUp(t *transcript)   { t.scrollNotch(-1) }
 func pagerHalfDown(t *transcript) { t.scroll(t.h / 2) }
 func pagerHalfUp(t *transcript)   { t.scroll(-(t.h / 2)) }
 
