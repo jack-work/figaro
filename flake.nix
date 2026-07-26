@@ -39,7 +39,10 @@
           dirty = if self ? dirtyRev then "true" else "";
           ldflags = [
             "-s" "-w"
-            "-X github.com/jack-work/figaro/internal/credo.version=${rev}"
+            # The single live version: this string is what `figaro --version`
+            # reports, and the release script mints the matching vX.Y.Z tag
+            # from the same line above. Nothing else declares a version.
+            "-X github.com/jack-work/figaro/internal/cli.semver=${version}"
             "-X github.com/jack-work/figaro/internal/cli.commit=${rev}"
             "-X github.com/jack-work/figaro/internal/cli.commitDirty=${dirty}"
           ];

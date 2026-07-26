@@ -20,6 +20,12 @@ var (
 	commitTime = ""
 	// commitDirty is "true" or "" — string so it survives -ldflags -X.
 	commitDirty = ""
+	// semver is the release version, injected from flake.nix's `version`.
+	// It is the single live version: flake.nix declares it, the release
+	// script mints the matching vX.Y.Z tag from it, and this is where it
+	// becomes visible on a running binary. Empty for a bare `go build`,
+	// where the revision is the only identity there is.
+	semver = ""
 )
 
 // runVersion prints binary identity: VCS revision, build state,
@@ -89,7 +95,11 @@ func printVersion(w io.Writer) {
 	if module == "" {
 		module = "(unknown)"
 	}
-	fmt.Fprintf(w, "figaro %s%s (%s/%s, %s)\n", rev, dirty, runtime.GOOS, runtime.GOARCH, info.GoVersion)
+	if semver != "" {
+		fmt.Fprintf(w, "figaro %s (%s%s, %s/%s, %s)\n", semver, rev, dirty, runtime.GOOS, runtime.GOARCH, info.GoVersion)
+	} else {
+		fmt.Fprintf(w, "figaro %s%s (%s/%s, %s)\n", rev, dirty, runtime.GOOS, runtime.GOARCH, info.GoVersion)
+	}
 	fmt.Fprintf(w, "  module:    %s\n", module)
 	fmt.Fprintf(w, "  exe:       %s\n", currentExe())
 	if buildTime != "" {

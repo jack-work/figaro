@@ -3,17 +3,23 @@
 # release.sh — cut a figaro release: version, tag, release branch, push,
 # GitHub release. It does NOT touch this machine's installed figaro.
 #
-#   scripts/release.sh minor
+#   scripts/release.sh              # cut whatever flake.nix declares, if untagged
+#   scripts/release.sh minor        # bump flake.nix, then cut that
 #   scripts/release.sh patch --dry-run
 #   scripts/release.sh major -m "the great renaming" --notes-file NOTES.md
 #   scripts/release.sh patch --tag-message .git/RELEASE_EDITMSG   # resume
 #
+# THE SINGLE LIVE VERSION is the `version` line in flake.nix. It is what a
+# built binary reports (-X ...cli.semver), and the tag is minted to match it
+# — never the other way round. The bump argument is therefore optional: with
+# one, flake.nix moves and the tag follows; without one, whatever flake.nix
+# already declares gets cut. The two can never disagree at the end of a run.
+#
 # What it does, in order:
 #
 #   1. Preflight — right branch, clean tree, not behind the remote, tools present.
-#   2. Compute the next version from the latest vX.Y.Z tag (the release history
-#      is the truth), and make flake.nix say exactly that — committing a bump
-#      only if it differs. Cutting the same version twice is refused.
+#   2. Resolve the version: flake.nix as-is, or bumped from it. Refuse if that
+#      version is already tagged, or if it would move backwards.
 #   3. Gate on `go build && go vet && go test` (skip with --no-check).
 #   4. Write an annotated tag whose message IS the release notes: subject
 #      "vX.Y.Z — title", body prose (optional — a patch may be one line).
@@ -58,7 +64,11 @@ run() {
 
 usage() {
 	cat >&2 <<'EOF'
-usage: scripts/release.sh <major|minor|patch> [options]
+usage: scripts/release.sh [major|minor|patch] [options]
+
+The version lives in flake.nix and nowhere else; the tag is minted to match.
+With a bump argument flake.nix moves first. Without one, whatever flake.nix
+already declares is what gets cut.
 
   -m, --message <subject>  Tag subject text (the part after "vX.Y.Z — ").
                            Skips the editor when --notes-file is also given.
@@ -72,9 +82,6 @@ usage: scripts/release.sh <major|minor|patch> [options]
       --no-github          Tag and push, but create no GitHub release.
       --remote <name>      Git remote (default: origin).
       --branch <name>      Branch being released (default: main).
-
-Version comes from the latest vX.Y.Z tag, not from flake.nix; flake.nix is
-then made to agree (and committed if it did not).
 EOF
 	exit 2
 }
@@ -95,7 +102,6 @@ while [ $# -gt 0 ]; do
 	esac
 	shift
 done
-[ -n "$BUMP" ] || usage
 
 # ---------------------------------------------------------------- preflight
 
@@ -130,62 +136,54 @@ if git rev-parse --verify --quiet "$REMOTE/$BRANCH" >/dev/null; then
 fi
 
 # ------------------------------------------------------------------ version
+#
+# flake.nix is the source of truth. A bump argument moves it; no argument
+# cuts it as it stands. Either way the tag is minted from it, so the two
+# agree by construction rather than by discipline.
+
+hits=$(grep -c '^ *version = "[0-9]\+\.[0-9]\+\.[0-9]\+";' flake.nix || true)
+[ "$hits" = 1 ] || die "expected exactly one version line in flake.nix, found $hits"
+flake_version=$(sed -n 's/^ *version = "\([0-9.]*\)";.*/\1/p' flake.nix)
 
 last_tag=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
 [ -n "$last_tag" ] || last_tag="v0.0.0"
+case "$last_tag" in v*.*.*) ;; *) die "latest tag '$last_tag' is not vX.Y.Z" ;; esac
 
-case "$last_tag" in
-	v*.*.*) ;;
-	*) die "latest tag '$last_tag' is not vX.Y.Z" ;;
-esac
-IFS=. read -r MAJ MIN PAT <<<"${last_tag#v}"
+IFS=. read -r MAJ MIN PAT <<<"$flake_version"
 case "$MAJ$MIN$PAT" in
-	*[!0-9]*) die "cannot parse version from tag '$last_tag'" ;;
+	*[!0-9]*) die "cannot parse version '$flake_version' from flake.nix" ;;
 esac
-MAJ_ORIG=$MAJ; MIN_ORIG=$MIN; PAT_ORIG=$PAT
 
 case "$BUMP" in
 	major) MAJ=$((MAJ + 1)); MIN=0; PAT=0 ;;
 	minor) MIN=$((MIN + 1)); PAT=0 ;;
 	patch) PAT=$((PAT + 1)) ;;
+	"")    ;;   # cut what flake.nix already declares
 esac
 VERSION="$MAJ.$MIN.$PAT"
 TAG="v$VERSION"
 
 git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null \
-	&& die "$TAG already exists locally — nothing to cut"
+	&& die "$TAG already exists. flake.nix declares $flake_version, which is
+    already released — pass a bump (patch/minor/major) to move past it."
 
-say "$last_tag  ->  $TAG   ($BUMP)"
+# Never go backwards: a version already released must stay released.
+if [ "$TAG" != "$last_tag" ] \
+	&& [ "$(printf '%s\n%s\n' "${TAG#v}" "${last_tag#v}" | sort -V | tail -1)" = "${last_tag#v}" ]; then
+	die "$TAG is behind the latest tag $last_tag — refusing to move the version backwards"
+fi
+
+if [ -n "$BUMP" ]; then
+	say "$flake_version -> $VERSION   ($BUMP; latest tag $last_tag)"
+else
+	say "cutting $TAG as declared by flake.nix   (latest tag $last_tag)"
+fi
 
 unreleased=$(git log --oneline "$last_tag..$BRANCH" 2>/dev/null || true)
 [ -n "$unreleased" ] || die "no commits since $last_tag — nothing to release"
 printf '%s\n' "$unreleased" | sed 's/^/    /' >&2
 
 # ----------------------------------------------------------------- flake.nix
-
-hits=$(grep -c '^ *version = "[0-9]\+\.[0-9]\+\.[0-9]\+";' flake.nix || true)
-[ "$hits" = 1 ] || die "expected exactly one version line in flake.nix, found $hits"
-flake_version=$(sed -n 's/^ *version = "\([0-9.]*\)";.*/\1/p' flake.nix)
-
-# Refuse to move the version backwards. flake.nix ahead of the computed
-# version means a bump already landed without a tag (that is this repo's
-# normal state between a feature merge and its release) — silently
-# rewriting it down would understate the release and lie in the nix store.
-if [ "$flake_version" != "$VERSION" ] \
-	&& [ "$(printf '%s\n%s\n' "$VERSION" "$flake_version" | sort -V | tail -1)" = "$flake_version" ]; then
-	suggest=""
-	for b in patch minor major; do
-		case "$b" in
-			patch) c="$MAJ_ORIG.$MIN_ORIG.$((PAT_ORIG + 1))" ;;
-			minor) c="$MAJ_ORIG.$((MIN_ORIG + 1)).0" ;;
-			major) c="$((MAJ_ORIG + 1)).0.0" ;;
-		esac
-		[ "$c" = "$flake_version" ] && suggest="$b"
-	done
-	msg="flake.nix is at $flake_version, but $BUMP off $last_tag gives $VERSION"
-	[ -n "$suggest" ] && msg="$msg — you probably want '$suggest'"
-	die "$msg (refusing to move the version backwards)"
-fi
 
 if [ "$flake_version" = "$VERSION" ]; then
 	say "flake.nix already at $VERSION"
@@ -283,6 +281,13 @@ else
 fi
 
 # ------------------------------------------------------- release branch + push
+
+# The invariant, asserted before anything leaves this machine: the tag and
+# the version a built binary will report are the same string.
+if [ "$DRY" != 1 ]; then
+	final=$(sed -n 's/^ *version = "\([0-9.]*\)";.*/\1/p' flake.nix)
+	[ "v$final" = "$TAG" ] || die "invariant broken: flake.nix says $final, tag is $TAG"
+fi
 
 old_release=$(git rev-parse --short "$RELEASE_BRANCH" 2>/dev/null || echo "none")
 say "moving $RELEASE_BRANCH ($old_release -> $(git rev-parse --short "$BRANCH"))"
