@@ -215,7 +215,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		}
 	}
 
-	cursor, active, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard())
+	cursor, active, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard(), set.steer)
 	if qerr != nil {
 		die("prompt: %s", qerr)
 	}

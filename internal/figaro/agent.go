@@ -41,6 +41,7 @@ type event struct {
 
 	// eventUserPrompt
 	text       string
+	steering   bool
 	chalkboard *rpc.ChalkboardInput
 
 	// eventSet
@@ -401,6 +402,7 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 	a.inbox.Send(event{
 		typ:        eventUserPrompt,
 		text:       req.Text,
+		steering:   req.Steering,
 		chalkboard: req.Chalkboard,
 	})
 }
