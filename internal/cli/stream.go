@@ -131,10 +131,22 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				break
 			}
 			running = false
+			// A draft typed into the live view outlives its turn: never silently
+			// destroy something the user typed. Keep the composer open with the
+			// text intact and hold the process up, so Enter can send it as a NEW
+			// turn (the one it would have steered is over) or Esc can discard and
+			// exit. The footer's label flips from "steer" to "send" so the change
+			// in meaning is visible rather than implied.
+			mu.Lock()
+			held := lt.status.composeTurnEnded()
+			if held {
+				lt.render()
+			}
+			mu.Unlock()
 			// Close on turn-done only in incipit. Once the transcript pager is
 			// up — however it was entered — it has listen semantics: the session
 			// stays open until an explicit q / Ctrl-D / Ctrl-C.
-			if !lt.inTranscript() {
+			if !lt.inTranscript() && !held {
 				select {
 				case doneCh <- struct{}{}:
 				default:
@@ -1042,17 +1054,24 @@ func termWidth() int {
 
 func inputComposeOpen(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.mu.Lock()
-	in.lt.status.composeOpen()
+	// A draft is a steer only while a turn is actually running; opening the
+	// composer after one has ended composes an ordinary prompt.
+	in.lt.status.composeOpen(!in.lt.turnFinished())
 	in.lt.render()
 	in.mu.Unlock()
 	return keyHandled
 }
 
+// inputComposeCancel discards the draft. If that draft was the only thing
+// keeping the process alive (its turn ended underneath it), Esc means exit.
 func inputComposeCancel(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.mu.Lock()
-	in.lt.status.composeCancel()
+	held := in.lt.status.composeCancel()
 	in.lt.render()
 	in.mu.Unlock()
+	if held {
+		return inputDisconnect(in, keyEvent{})
+	}
 	return keyHandled
 }
 
@@ -1064,34 +1083,39 @@ func inputComposeBackspace(in *interactiveInput, _ keyEvent) keyVerdict {
 	return keyHandled
 }
 
-// inputComposeSubmit sends the draft as a STEER. Steering: true is not a guess
-// here — a prompt typed into a live view is by construction a direction aimed
-// at the turn being watched, which is the only place that intent is knowable.
-// Everywhere else it must be carried explicitly (figaro send --steer).
+// inputComposeSubmit sends the draft. Steering intent is not a guess here: a
+// prompt typed into a LIVE view is by construction aimed at the turn being
+// watched. But if that turn ENDED while the draft sat there, it is no longer a
+// steer — sending it as one would absorb a real question into a finished
+// exchange, which is exactly the silent merge we spent the night removing. It
+// becomes an ordinary prompt and opens its own turn.
 func inputComposeSubmit(in *interactiveInput, _ keyEvent) keyVerdict {
 	in.mu.Lock()
-	text := in.lt.status.composeTake()
+	text, steer, held := in.lt.status.composeTake()
 	in.lt.render()
 	in.mu.Unlock()
 	if text == "" {
+		if held {
+			return inputDisconnect(in, keyEvent{})
+		}
 		return keyHandled // Enter on a blank draft just closes the box
 	}
-	go in.submitSteer(text)
+	go in.submitSteer(text, steer)
 	return keyHandled
 }
 
 // submitSteer performs the RPC off the read loop — the loop must never block on
 // the network, or the terminal stops responding mid-turn. On success the queued
-// panel ('Q') is refreshed so the user can see the steer was accepted.
-func (in *interactiveInput) submitSteer(text string) {
+// panel ('Q') is refreshed so the user can see the prompt was accepted.
+func (in *interactiveInput) submitSteer(text string, steer bool) {
 	if in.steer == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if _, _, err := in.steer(ctx, text, buildPromptChalkboard(), true); err != nil {
+	if _, _, err := in.steer(ctx, text, buildPromptChalkboard(), steer); err != nil {
 		in.mu.Lock()
-		in.lt.setTranscriptQueued(nil, "steer failed: "+err.Error())
+		in.lt.setTranscriptQueued(nil, "send failed: "+err.Error())
 		in.lt.render()
 		in.mu.Unlock()
 		return

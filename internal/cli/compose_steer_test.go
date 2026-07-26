@@ -242,3 +242,67 @@ func TestCompose_BackspaceAcrossReads(t *testing.T) {
 		t.Fatalf("draft = %q, want exactly three characters removed", got)
 	}
 }
+
+// A draft must never be silently destroyed. When the turn it was aimed at ends
+// underneath it, the composer stays open, the process stays up, and the label
+// stops claiming "steer" — because the exchange it would have steered is over.
+func TestCompose_DraftSurvivesTheEndOfItsTurn(t *testing.T) {
+	in, lt, _ := composeInput(t, false)
+	in.consume([]byte("i"))
+	for _, b := range []byte("half typed") {
+		in.consume([]byte{b})
+	}
+	if got := lt.status.composeLine(60); !strings.Contains(got, "steer ↳") {
+		t.Fatalf("while the turn runs the label must say steer: %q", got)
+	}
+
+	if !lt.status.composeTurnEnded() {
+		t.Fatal("a non-empty draft must hold the process open when its turn ends")
+	}
+	if !lt.status.composingNow() {
+		t.Error("composer closed when the turn ended; the draft was destroyed")
+	}
+	got := lt.status.composeLine(60)
+	if !strings.Contains(got, "half typed") {
+		t.Errorf("draft lost: %q", got)
+	}
+	if !strings.Contains(got, "send ↳") || strings.Contains(got, "steer ↳") {
+		t.Errorf("label still claims steer after the turn ended: %q", got)
+	}
+}
+
+// ...and sending it then opens a NEW turn rather than being absorbed into the
+// finished one. Absorbing it would be I2's inverse bug wearing a new hat: a real
+// question merged into an exchange it does not belong to.
+func TestCompose_AfterTurnEndSendsAsANewTurnNotASteer(t *testing.T) {
+	in, lt, cap := composeInput(t, false)
+	in.consume([]byte("i"))
+	for _, b := range []byte("a real question") {
+		in.consume([]byte{b})
+	}
+	lt.status.composeTurnEnded()
+	in.consume([]byte("\r"))
+	cap.settle(t)
+
+	cap.mu.Lock()
+	defer cap.mu.Unlock()
+	if len(cap.texts) != 1 || cap.texts[0] != "a real question" {
+		t.Fatalf("delivered %q", cap.texts)
+	}
+	if cap.steer[0] {
+		t.Error("sent with Steering=true after its turn ended; that absorbs a question into a finished exchange")
+	}
+}
+
+// An EMPTY composer must not hold the process open — that would hang a command
+// merely because the box was showing.
+func TestCompose_EmptyDraftDoesNotHoldTheProcess(t *testing.T) {
+	_, lt, _ := composeInput(t, false)
+	lt.status.composeOpen(true)
+	if lt.status.composeTurnEnded() {
+		t.Fatal("an empty composer must not hold the process open")
+	}
+	if lt.status.composeHeldOpen() {
+		t.Error("held flag set for an empty draft")
+	}
+}
