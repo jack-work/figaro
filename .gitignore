@@ -3,3 +3,10 @@
 /result
 .claude/
 teams.log
+
+# secrets — never commit
+/api-key
+*.key
+*.pem
+.env
+.env.*
