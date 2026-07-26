@@ -240,6 +240,7 @@ func TestInputConsume_ArrowBurstPaintsOneFrame(t *testing.T) {
 	const presses = 12
 	var w countingWriter
 	in, lt := coalesceInput(t, &w)
+	lt.tr.stopFollowing() // measure pure motion: leaving live also reclaims the padding row
 	before := lt.tr.offset
 	w.reset()
 	burst := strings.Repeat("\x1b[A", presses)

@@ -551,7 +551,9 @@ func TestTranscriptPaint_UsesScrollRegion(t *testing.T) {
 	tr.scrollBy(-1)
 
 	frame := out.lastFrame()
-	if !strings.Contains(frame, "\x1b[1;37r") {
+	// 1;38: the body runs to the rule while detached — the padding row above it
+	// belongs to live mode alone (see layout).
+	if !strings.Contains(frame, "\x1b[1;38r") {
 		t.Fatalf("no scroll region in frame: %q", frame)
 	}
 	if !strings.Contains(frame, "\x1b[1T") {

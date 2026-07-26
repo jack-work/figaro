@@ -54,7 +54,7 @@ func TestMergedFrameCostIsViewportBounded(t *testing.T) {
 		tr.lines() // warm the row cache and the index
 		tr.offset = tr.index.total / 2
 		tr.render()
-		body := tr.h - 3
+		body := tr.h - 2 // scrolled away from live, so no padding row (see layout)
 		if len(tr.rowBuf) != body {
 			t.Fatalf("%d messages: frame materialized %d rows, want exactly the %d-row body",
 				messages, len(tr.rowBuf), body)
