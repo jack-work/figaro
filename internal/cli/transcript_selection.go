@@ -482,6 +482,22 @@ func (t *transcript) toggleSelectedTools() bool {
 	return true
 }
 
+// ensureSelectionVisible scrolls the focused node into the body, if it is not
+// already there.
+//
+// THE BODY HEIGHT COMES FROM layout(). It used to be recomputed here as
+// t.h - 1, which is not the same quantity: layout reserves two rows for the
+// footer rule and status, another for an open panel's every line, and one more
+// for the live padding row while following. So this believed the body was one
+// row taller than it is — two while following, more with a panel up — and
+// "scroll until span.last is visible" stopped short by exactly that much.
+//
+// The symptom was a selection that scrolled the page and then wasn't on it.
+// Observed in a pty: cold Ctrl-P selected the last node of the window, moved
+// the viewport from 1-38/70 to 32-69/70, and painted no cue at all, because
+// the node it had just selected sat on line 70. One further keypress revealed
+// it. Two expressions for one quantity is what caused this, so there is now
+// one.
 func (t *transcript) ensureSelectionVisible() {
 	if !t.selection.active {
 		return
@@ -491,10 +507,7 @@ func (t *transcript) ensureSelectionVisible() {
 	if !ok {
 		return
 	}
-	body := t.h - 1
-	if body < 1 {
-		body = 1
-	}
+	body, _ := t.layout(len(t.footLines()))
 	if span.first < t.offset {
 		t.offset = span.first
 	} else if span.last >= t.offset+body {

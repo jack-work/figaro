@@ -197,3 +197,54 @@ func TestExpandInFollowModeStaysPinned(t *testing.T) {
 		t.Fatalf("following: viewport at %d, want the tail %d (was %d)", tr.offset, maxOff, before)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ensureSelectionVisible must agree with layout() about the body height.
+//
+// It recomputed the body as t.h - 1 while layout() reserves two rows for the
+// footer, one per open-panel line, and one more for the live padding row. So it
+// scrolled just short and left the focus off the bottom edge — a selection that
+// moved the page and then wasn't on it.
+// ---------------------------------------------------------------------------
+
+// focusVisible reports whether the focused node is inside the body as layout()
+// defines it. This is the reader's question: is the thing I just selected on
+// the screen.
+func focusVisible(tr *transcript) (bool, nodeSpan, int, int) {
+	tr.buildIndex()
+	span, ok := tr.nodeSpanOf(tr.selection.focus.nodeRef)
+	if !ok {
+		return false, span, 0, 0
+	}
+	body, _ := tr.layout(len(tr.footLines()))
+	return span.last < tr.offset+body && span.first >= tr.offset, span, tr.offset, body
+}
+
+func TestEnsureSelectionVisibleUsesLayoutBody(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		panel func(*transcript)
+	}{
+		{"no panel", func(*transcript) {}},
+		{"status panel open", func(tr *transcript) { tr.showStatus = true }},
+		{"help panel open", func(tr *transcript) { tr.showHelp = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr, _ := expandFixture(t)
+			tc.panel(tr)
+			tr.offset = 0
+
+			// Focus the LAST selectable node, forcing a downward scroll-into-view.
+			refs := tr.nodeRefs()
+			last := refs[len(refs)-1]
+			tr.selection = nodeSelection{active: true, anchor: last, focus: last}
+			tr.ensureSelectionVisible()
+
+			ok, span, off, body := focusVisible(tr)
+			if !ok {
+				t.Fatalf("focus not on screen after scrolling to it: span=%v offset=%d body=%d "+
+					"(bottom edge %d)", span, off, body, off+body-1)
+			}
+		})
+	}
+}
