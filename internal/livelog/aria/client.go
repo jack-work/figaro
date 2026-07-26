@@ -27,7 +27,7 @@ type Client struct {
 	// The open turn, materialized. openTurn holds the TURN ID (see Message);
 	// openFrom is the suffix boundary reported by Live.From — nodes below it
 	// are closed and will never be touched again.
-	openTurn         int
+	openTurn       int
 	openFrom       uint64
 	openV          int
 	openNodesSlice []livedoc.Node
@@ -315,13 +315,19 @@ func (c *Client) ClosedRevision() uint64 {
 // Open returns just the open, in-flight message (nil when none). View copies
 // and sorts the whole retained closed set; callers that only want the live
 // message — every transcript frame asks for it — should not pay for that.
+//
+// It is the open SUFFIX, for the same reason the push path is (see Apply):
+// nodes below openFrom were already released as closed messages, so carrying
+// them here prints them twice and wraps the prompt in the agent's header. From
+// is the suffix's offset within the turn, so a caller can place it.
 func (c *Client) Open() *Message {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.openTurn == 0 {
 		return nil
 	}
-	return &Message{Turn: c.openTurn, Role: turnRole(c.openNodesSlice), Nodes: c.openNodes()}
+	suffix := c.openSuffix()
+	return &Message{Turn: c.openTurn, From: c.openFrom, Role: turnRole(suffix), Nodes: suffix}
 }
 
 // View returns a snapshot of the current local state.
@@ -341,7 +347,8 @@ func (c *Client) View() View {
 	})
 	v := View{Closed: closed}
 	if c.openTurn != 0 {
-		v.Open = &Message{Turn: c.openTurn, Role: turnRole(c.openNodesSlice), Nodes: c.openNodes()}
+		suffix := c.openSuffix()
+		v.Open = &Message{Turn: c.openTurn, From: c.openFrom, Role: turnRole(suffix), Nodes: suffix}
 	}
 	return v
 }
