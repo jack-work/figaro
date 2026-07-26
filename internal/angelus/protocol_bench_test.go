@@ -85,7 +85,7 @@ func BenchmarkDormantList(b *testing.B) {
 			slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 			b.Cleanup(func() { slog.SetDefault(oldLog) })
 
-			backend, err := store.NewXwalBackend(b.TempDir())
+			backend, err := store.NewXwalBackend(b.TempDir(), 0)
 			if err != nil {
 				b.Fatal(err)
 			}

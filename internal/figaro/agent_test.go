@@ -325,7 +325,7 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 // chalkboard, etc.).
 func backedConv(t *testing.T, dir string) (store.Backend, string) {
 	t.Helper()
-	b, err := store.NewXwalBackend(dir)
+	b, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
 	l, err := b.CreateLoadout("d", message.Patch{Set: map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
@@ -974,7 +974,7 @@ done:
 	require.NoError(t, backend.Close())
 
 	// Re-open a fresh backend on the same dir: the turn is on disk.
-	b2, err := store.NewXwalBackend(storeDir)
+	b2, err := store.NewXwalBackend(storeDir, 0)
 	require.NoError(t, err)
 	defer b2.Close()
 	log, err := b2.Open(conv)

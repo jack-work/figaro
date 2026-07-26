@@ -119,11 +119,29 @@ func wrapPlain(line string, width int) []string {
 }
 
 func trimBlankEdges(rows []string) []string {
-	for len(rows) > 0 && strings.TrimSpace(rows[0]) == "" {
+	for len(rows) > 0 && visiblyBlank(rows[0]) {
 		rows = rows[1:]
 	}
-	for len(rows) > 0 && strings.TrimSpace(rows[len(rows)-1]) == "" {
+	for len(rows) > 0 && visiblyBlank(rows[len(rows)-1]) {
 		rows = rows[:len(rows)-1]
 	}
 	return rows
+}
+
+// visiblyBlank reports whether a row paints nothing — whitespace once ANSI
+// escapes are discounted. A TrimSpace test is not enough: glamour pads a
+// block_quote with a leading row of STYLED spaces, and that row survived the
+// edge trim, so a thinking block (a blockquote) carried its own blank on top
+// of the separator the node renderers already put between blocks — two blank
+// rows where prose gets one, in every surface at once.
+func visiblyBlank(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c == 0x1b { // escape sequence: skip through its final letter
+			for i++; i < len(s) && !((s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= 'a' && s[i] <= 'z')); i++ {
+			}
+		} else if c > ' ' {
+			return false
+		}
+	}
+	return true
 }

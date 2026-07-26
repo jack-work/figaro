@@ -26,7 +26,7 @@ import (
 
 func newBackedConversation(t *testing.T) (*store.XwalBackend, string) {
 	t.Helper()
-	b, err := store.NewXwalBackend(t.TempDir())
+	b, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	loadout, err := b.CreateLoadout("test", message.Patch{})
 	require.NoError(t, err)

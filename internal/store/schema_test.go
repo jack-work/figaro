@@ -16,7 +16,7 @@ import (
 func seedSchemaStore(tb testing.TB) (string, string) {
 	tb.Helper()
 	root := tb.TempDir()
-	be, err := NewXwalBackend(root)
+	be, err := NewXwalBackend(root, 0)
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func seedSchemaStore(tb testing.TB) (string, string) {
 // channelLast reports a channel's last index, and whether it exists at all.
 func channelLast(tb testing.TB, root, conv, name string) (uint64, bool) {
 	tb.Helper()
-	s, err := OpenXwalStore(root)
+	s, err := OpenXwalStore(root, 0)
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestSchemaRefusesNewerStore(t *testing.T) {
 	root, _ := seedSchemaStore(t)
 	putSchema(t, root, map[string]int{chanIR: 999})
 
-	_, err := OpenXwalStore(root)
+	_, err := OpenXwalStore(root, 0)
 	if err == nil {
 		t.Fatal("expected refusal opening a store written by a newer build")
 	}
@@ -113,7 +113,7 @@ func TestSchemaBustsDerivedCacheOnly(t *testing.T) {
 
 	// Pretend the store was written before the derived schema bumped.
 	putSchema(t, root, map[string]int{"translations-v2/": 0})
-	s, err := OpenXwalStore(root)
+	s, err := OpenXwalStore(root, 0)
 	if err != nil {
 		t.Fatalf("open after derived bump: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestSchemaNeverClearsCanonical(t *testing.T) {
 	}
 
 	putSchema(t, root, map[string]int{chanIR: 0})
-	s, err := OpenXwalStore(root)
+	s, err := OpenXwalStore(root, 0)
 	if err != nil {
 		t.Fatalf("open with stale canonical schema: %v", err)
 	}

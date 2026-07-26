@@ -13,7 +13,7 @@ import (
 
 func TestXwalBackend_EndToEnd(t *testing.T) {
 	dir := t.TempDir()
-	b, err := NewXwalBackend(dir)
+	b, err := NewXwalBackend(dir, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func str(raw json.RawMessage) string {
 }
 
 func TestXwalBackendForkKeepsLiveLogUsable(t *testing.T) {
-	b, err := NewXwalBackend(t.TempDir())
+	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestXwalBackendForkKeepsLiveLogUsable(t *testing.T) {
 }
 
 func TestXwalBackendOpenUnknownDoesNotCreateTrunk(t *testing.T) {
-	b, err := NewXwalBackend(t.TempDir())
+	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func messages(entries []Entry[message.Message]) []message.Message {
 }
 
 func TestXwalBackend_ForkAtInterior(t *testing.T) {
-	b, err := NewXwalBackend(t.TempDir())
+	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 }
 
 func TestXwalBackend_CauterizedLoadoutFork(t *testing.T) {
-	b, err := NewXwalBackend(t.TempDir())
+	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func TestXwalBackend_CauterizedLoadoutFork(t *testing.T) {
 }
 
 func TestXwalBackend_ForestVectors(t *testing.T) {
-	b, err := NewXwalBackend(t.TempDir())
+	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestXwalBackend_ForestVectors(t *testing.T) {
 // xwal → next A.Append returns "file already closed"). Under the new
 // design A's Log has no cached xwal, so a promote on B is invisible.
 func TestNoStranding_SiblingPromoteDoesNotInvalidate(t *testing.T) {
-	b, err := NewXwalBackend(t.TempDir())
+	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +374,7 @@ func TestNoStranding_SiblingPromoteDoesNotInvalidate(t *testing.T) {
 // parallel while promotes and forks fire on some of them. No append
 // should fail, no reads should observe corruption.
 func TestNoStranding_ConcurrentAppendsAcrossArias(t *testing.T) {
-	b, err := NewXwalBackend(t.TempDir())
+	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}

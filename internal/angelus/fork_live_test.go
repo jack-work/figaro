@@ -200,7 +200,7 @@ func (p *activeForkProvider) Send(ctx context.Context, in provider.SendInput, bu
 }
 
 func TestForkDuringActiveStreamKeepsContinuationRunning(t *testing.T) {
-	backend, err := store.NewXwalBackend(t.TempDir())
+	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, backend.Close()) })
 	loadout, err := backend.CreateLoadout("fork", message.Patch{Set: map[string]json.RawMessage{
@@ -365,7 +365,7 @@ func (t *blockingForkTool) Execute(ctx context.Context, _ map[string]any, output
 }
 
 func TestForkDuringActiveToolKeepsToolAndContinuationRunning(t *testing.T) {
-	backend, err := store.NewXwalBackend(t.TempDir())
+	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, backend.Close()) })
 	loadout, err := backend.CreateLoadout("fork-tool", message.Patch{Set: map[string]json.RawMessage{

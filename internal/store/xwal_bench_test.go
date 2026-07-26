@@ -77,7 +77,7 @@ func turn(tb testing.TB, b *XwalBackend, id string, n int) {
 // TestNodes_TrunkScanCount pins the topology snapshot: one List + one Stumps
 // on first use, then no forest scans while Trunks.Version is unchanged.
 func TestNodes_TrunkScanCount(t *testing.T) {
-	b, err := NewXwalBackend(t.TempDir())
+	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestNodes_TrunkScanCount(t *testing.T) {
 }
 
 func TestConversationList_TrunkScanCount(t *testing.T) {
-	b, err := NewXwalBackend(t.TempDir())
+	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestConversationList_TrunkScanCount(t *testing.T) {
 // BenchmarkNodes measures store.Nodes() (the forest fill) and reports the
 // trunk-scan count as a custom metric so the fan-out is visible numerically.
 func BenchmarkNodes(b *testing.B) {
-	be, err := NewXwalBackend(b.TempDir())
+	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func BenchmarkNodes(b *testing.B) {
 }
 
 func BenchmarkConversations(b *testing.B) {
-	be, err := NewXwalBackend(b.TempDir())
+	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func BenchmarkConversations(b *testing.B) {
 // forest fill regardless of N. These benchmarks reproduce both call patterns
 // over the same seeded tree so the win is provable.
 func BenchmarkListPathBefore(b *testing.B) {
-	be, err := NewXwalBackend(b.TempDir())
+	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func BenchmarkListPathBefore(b *testing.B) {
 }
 
 func BenchmarkListPathAfter(b *testing.B) {
-	be, err := NewXwalBackend(b.TempDir())
+	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func convIDs(be *XwalBackend) []string {
 }
 
 func BenchmarkChalkboardState10000(b *testing.B) {
-	be, err := NewXwalBackend(b.TempDir())
+	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func BenchmarkChalkboardState10000(b *testing.B) {
 }
 
 func BenchmarkChalkboardPatches10000(b *testing.B) {
-	be, err := NewXwalBackend(b.TempDir())
+	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
 		b.Fatal(err)
 	}

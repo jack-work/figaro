@@ -37,7 +37,7 @@ func (p *hangingProvider) Send(ctx context.Context, _ provider.SendInput, bus pr
 }
 
 func TestShutdownDrainSealsPartialTurn(t *testing.T) {
-	backend, err := store.NewXwalBackend(t.TempDir())
+	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	defer backend.Close()
 	loadout, err := backend.CreateLoadout("test", message.Patch{})
@@ -84,7 +84,7 @@ provider = "mock"
 model = "mock-model"
 `), 0600))
 
-	backend, err := store.NewXwalBackend(dir + "/arias")
+	backend, err := store.NewXwalBackend(dir+"/arias", 0)
 	require.NoError(t, err)
 	defer backend.Close()
 	loadout, err := backend.CreateLoadout("mock", message.Patch{})

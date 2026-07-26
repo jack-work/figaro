@@ -16,9 +16,10 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// ariaBackend constructs the XWAL aria tree under the configured state root.
-func ariaBackend() (store.Backend, error) {
-	return store.NewXwalBackend(filepath.Join(stateDir(), "arias"))
+// ariaBackend constructs the XWAL aria tree under the configured state root,
+// sized by `[store] segment_size` (config owns the default and its floor).
+func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
+	return store.NewXwalBackend(filepath.Join(stateDir(), "arias"), loaded.SegmentSize())
 }
 
 func angelusRuntimeDir() string {

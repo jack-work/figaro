@@ -18,7 +18,7 @@ func TestGeneratePerformanceFixture(t *testing.T) {
 	arias := performanceFixtureInt(t, "FIGARO_PERF_ARIAS", 100)
 	messages := performanceFixtureInt(t, "FIGARO_PERF_MESSAGES", 2)
 
-	backend, err := NewXwalBackend(root)
+	backend, err := NewXwalBackend(root, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

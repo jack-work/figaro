@@ -87,7 +87,7 @@ provider = "switch"
 model = "m"
 `), 0600))
 
-	backend, err := store.NewXwalBackend(dir + "/arias")
+	backend, err := store.NewXwalBackend(dir+"/arias", 0)
 	require.NoError(t, err)
 
 	a := angelus.New(angelus.Config{RuntimeDir: testRuntimeDir(t, dir), Backend: backend})
