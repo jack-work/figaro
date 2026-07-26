@@ -358,9 +358,13 @@ func (i *Incipit) composeWith(inquiry string, nodes []livedoc.Node, foot []strin
 }
 
 // messageRows is one message's body: the turn's opening question under the
-// input header, then the nodes under the speaker's. It is the ONE place the
-// inquiry is drawn — it is text on the turn, not a node, so no node walk can
-// produce it.
+// input header, the RULE that closes it, then the nodes under the speaker's
+// header. It is the ONE place the inquiry is drawn — it is text on the turn,
+// not a node, so no node walk can produce it.
+//
+// The rule appears only when the agent actually says something in this message.
+// A question with nothing under it is closed by the message's own closer (see
+// Freeze/printMessage), which is the same rule; drawing both would double it.
 //
 // No header over an empty run: a run whose nodes all render to nothing
 // (thinking hidden, minted-but-empty prose, a tool already drawn) must not
@@ -374,11 +378,24 @@ func (i *Incipit) messageRows(inquiry, role string, nodes []livedoc.Node) []stri
 	}
 	if len(rows) > 0 {
 		rows = append(rows, "")
+		if r := i.rule(); r != "" {
+			rows = append(rows, r)
+		}
 	}
 	if h := i.header(role); h != "" {
 		rows = append(rows, h, "")
 	}
 	return append(rows, body...)
+}
+
+// rule is the plain full-width separator, clipped to the terminal. Empty when
+// the caller configured none.
+func (i *Incipit) rule() string {
+	if i.Rule == nil {
+		return ""
+	}
+	w, _ := i.term.Size()
+	return clip(i.Rule(), w)
 }
 
 // inquiryRows draws the question that opened the turn: the input header, a

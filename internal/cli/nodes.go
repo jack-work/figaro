@@ -54,9 +54,10 @@ func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) [
 }
 
 // renderTurnRows renders a whole exchange — the inquiry that opened the turn,
-// then what the agent made of it — each under its own run header. The inquiry
-// is TEXT ON THE TURN, so it is drawn from Turn.Inquiry; no renderer looks for
-// it in the node list, because it is not there.
+// then what the agent made of it — each under its own run header, with the rule
+// between them. The inquiry is TEXT ON THE TURN, so it is drawn from
+// Turn.Inquiry; no renderer looks for it in the node list, because it is not
+// there.
 func renderTurnRows(inquiry string, nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) []string {
 	if width <= 0 {
 		width = 80
@@ -73,7 +74,10 @@ func renderTurnRows(inquiry string, nodes []livedoc.Node, width, bashCap int, ti
 		return rows
 	}
 	if len(rows) > 0 {
-		rows = append(rows, "")
+		// The question closes with a blank and the RULE before the agent speaks.
+		// It used to get that rule for free, as the closer of its own message;
+		// now the two voices share one message and the rule is drawn here.
+		rows = append(rows, "", dimTransRule(width))
 	}
 	if h := messageHeader(livedoc.RoleOutput); h != "" {
 		rows = append(rows, h, "")

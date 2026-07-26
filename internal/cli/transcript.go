@@ -1019,8 +1019,11 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 		for _, l := range iq {
 			rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(l, t.w))})
 		}
+		// A blank and the RULE close the question before the agent speaks. The
+		// question used to be its own message and got that rule as the message
+		// separator; the two voices now share one message, so it is drawn here.
 		if len(m.Nodes) > 0 {
-			rows = append(rows, transcriptRow{})
+			rows = append(rows, transcriptRow{}, transcriptRow{text: t.transRule()})
 		}
 	}
 	if h := messageHeader(m.Role); h != "" && len(m.Nodes) > 0 {
