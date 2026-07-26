@@ -26,7 +26,7 @@ import (
 //
 // A steering interjection inside a turn is a NODE
 // (livedoc.NodeSteering), not a message role, and carries its own
-// inline "↳ you" marker; this helper does not touch it.
+// inline "↳ input" marker; this helper does not touch it.
 func messageHeader(role string) string {
 	switch role {
 	case livedoc.RoleInput:

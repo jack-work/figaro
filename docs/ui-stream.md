@@ -154,7 +154,7 @@ command stays open until you close the pager.
 A message sent while a turn is running (e.g. `fig send` to a busy aria) doesn't
 wait for a new turn — it folds into the *current* turn as a **steering** node,
 which the model reads on its next round. In the stream it appears as a
-`steering` node (rendered under a `↳ you` gutter) positioned where it arrived,
+`steering` node (rendered under a `↳ input` gutter) positioned where it arrived,
 inside the assistant's turn. The client tells "my turn is done" from "a turn
 ended with my steer still queued" via `turn.done`'s idle flag, so a steering
 send waits for *its own* completion.

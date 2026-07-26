@@ -1857,7 +1857,7 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 			strings.Contains(n.Summary, q) || strings.Contains(n.Output, q) {
 			return true
 		}
-		if n.Type == livedoc.NodeSteering && strings.Contains("↳ you", q) {
+		if n.Type == livedoc.NodeSteering && strings.Contains("↳ input", q) {
 			return true
 		}
 		if n.Type != livedoc.NodeTool {

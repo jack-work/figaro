@@ -37,7 +37,7 @@ type renderSettings struct {
 // transcript pager (via ariaView). It used to exist twice — ariaView switched
 // on n.Type alone and so drew a turn's prompt as agent prose, putting the
 // user's own question under the "‹ figaro" header while `show` correctly
-// marked it "↳ you". Two renderers for one representation is the exact defect
+// marked it "↳ input". Two renderers for one representation is the exact defect
 // class turn addressing exists to remove; there is now one.
 func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) []string {
 	switch {
@@ -46,7 +46,7 @@ func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) [
 	case n.Type == livedoc.NodeThinking:
 		return renderThinkingNode(n, width)
 	// Steering ONLY. The inquiry is also input-voice, but it opens the turn
-	// and carries the "❯ input" run header; marking it "↳ you" as well printed
+	// and carries the "❯ input" run header; marking it "↳ input" as well printed
 	// the voice twice in incipit and mislabelled the prompt as steering in
 	// `show`. The two are distinct primitives, not one thing in two positions.
 	case n.Type == livedoc.NodeSteering:
@@ -59,7 +59,7 @@ func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) [
 // renderTurnRows renders a whole turn — BOTH voices — by walking it in
 // contiguous voice runs and printing the run header above each. This is the
 // same mechanism the inline renderer gets from Incipit.Header; `show` used to
-// have no header at all, which is why the prompt had to be marked "↳ you" to
+// have no header at all, which is why the prompt had to be marked "↳ input" to
 // carry a voice it could not otherwise show. One mechanism now serves both.
 func renderTurnRows(nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) []string {
 	if width <= 0 {
@@ -261,7 +261,7 @@ func renderSteeringNode(n livedoc.Node, width int) []string {
 	// header and full-strength prose; steering gets an inline marker and a dim
 	// blockquote gutter, so it reads as an aside within the agent's stream.
 	rows := render.Prose(blockquote(n.Markdown), width)
-	return append([]string{term.Dim("↳ you")}, rows...)
+	return append([]string{term.Dim("↳ input")}, rows...)
 }
 
 // renderToolNode draws a tool as a widget with ZERO per-tool control flow:
