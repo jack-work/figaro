@@ -277,8 +277,30 @@ const minInlineHeight = 10
 
 // bodyHidden reports whether the live region is footer-only at this size.
 func (i *Incipit) bodyHidden() bool {
-	_, h := i.term.Size()
+	h := i.viewportHeight()
 	return h > 0 && h < minInlineHeight
+}
+
+// viewportHeight is the terminal's row count as measured.
+func (i *Incipit) viewportHeight() int {
+	_, h := i.term.Size()
+	return h
+}
+
+// clipRows keeps a region from being TALLER THAN THE TERMINAL. Painting more
+// rows than exist scrolls the earlier ones into history, where they can never
+// be repainted — so at the extreme the suppressed footer (rule + status, two
+// rows) overflowed a one-row viewport, stranded a partial frame in scrollback
+// and lost the completed reply.
+//
+// The TAIL survives, because the status line is the row the user needs; the
+// rule above it is decoration. h <= 0 means the size is unknown, so clip
+// nothing rather than guess.
+func clipRows(rows []string, h int) []string {
+	if h <= 0 || len(rows) <= h {
+		return rows
+	}
+	return rows[len(rows)-h:]
 }
 
 func (i *Incipit) compose(nodes []livedoc.Node) []string {
@@ -289,7 +311,7 @@ func (i *Incipit) compose(nodes []livedoc.Node) []string {
 		for _, s := range foot {
 			rows = append(rows, clip(s, w))
 		}
-		return rows
+		return clipRows(rows, i.viewportHeight())
 	}
 	body := i.renderNodes(nodes)
 	// Every message is prefaced with a blank row and (when configured) a role
