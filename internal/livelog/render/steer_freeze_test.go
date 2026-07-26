@@ -12,7 +12,7 @@ import (
 // a different region of the same turn, so freezing it must not disturb the live
 // region.
 //
-// aria.Message.LT carries the TURN id, so every message in a turn shares it.
+// aria.Message.Turn carries the TURN id, so every message in a turn shares it.
 // Identifying the live region by LT alone made this one-node steer claim the
 // whole streaming region: Freeze took the "its rows are already on screen" path,
 // dropped seventeen rows of in-flight output into scrollback, and the rest of
@@ -32,7 +32,7 @@ func TestIncipit_FreezingASteerLeavesTheLiveRegionAlone(t *testing.T) {
 	})
 
 	// A steer finalizes mid-stream. Same turn (LT 2), different region (node 1).
-	in.Freeze(aria.Message{LT: 2, From: 1, Role: livedoc.RoleInput,
+	in.Freeze(aria.Message{Turn: 2, From: 1, Role: livedoc.RoleInput,
 		Nodes: []livedoc.Node{{ID: "n1", Type: "steering", Role: livedoc.RoleInput,
 			Markdown: "MYSTEER: also set your mantra"}}})
 
@@ -41,7 +41,7 @@ func TestIncipit_FreezingASteerLeavesTheLiveRegionAlone(t *testing.T) {
 		{ID: "n2", Type: "thinking", Markdown: "considering"},
 		{ID: "n3", Type: "prose", Markdown: body},
 	})
-	in.Freeze(aria.Message{LT: 2, From: 2, Role: livedoc.RoleOutput,
+	in.Freeze(aria.Message{Turn: 2, From: 2, Role: livedoc.RoleOutput,
 		Nodes: []livedoc.Node{
 			{ID: "n2", Type: "thinking", Markdown: "considering"},
 			{ID: "n3", Type: "prose", Markdown: body},

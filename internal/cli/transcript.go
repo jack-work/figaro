@@ -46,7 +46,7 @@ type transcript struct {
 	tick        int
 
 	prev   []string // last painted screen (the frame the terminal is holding)
-	lineLT []int    // LT owning each line of lines(), for resize anchoring
+	lineTurn []int    // LT owning each line of lines(), for resize anchoring
 	offset int      // top line of the viewport into lines()
 	follow bool     // stick to the bottom on new content
 	pendG  bool     // saw one 'g' (for gg)
@@ -90,7 +90,7 @@ type transcript struct {
 	// windowRev is THE authority on "the retained page set changed". Every
 	// mutation of t.pages goes through invalidateWindow, which drops the tail
 	// snapshot (so resetToTail rebuilds) and bumps this counter (so the line
-	// index refills lineLT instead of inferring it from a shape diff). Keeping
+	// index refills lineTurn instead of inferring it from a shape diff). Keeping
 	// both facts on one signal is deliberate: with two independent staleness
 	// checks the pages and the index can disagree about which window they are
 	// describing.
@@ -140,8 +140,8 @@ type transcriptPage struct {
 
 // pageDesc is sufficient to replay and verify an evicted immutable page.
 type pageDesc struct {
-	FirstLT      int
-	LastLT       int
+	FirstTurn      int
+	LastTurn       int
 	Count        int
 	ReplayBefore int
 	LTHash       uint64
@@ -400,7 +400,7 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 	}
 	if t.checkNewer && len(t.newer) > 0 {
 		t.checkNewer = false
-		// t.index.total, not len(t.lineLT): lineLT is only refilled when the
+		// t.index.total, not len(t.lineTurn): lineTurn is only refilled when the
 		// index shape moves, so reading its length here would be a second,
 		// weaker way of asking how big line space is.
 		if t.search == nil && t.offset+transcriptPrefetchScreens*t.h < t.index.total {
@@ -446,7 +446,7 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 		t.render()
 		return
 	}
-	if t.heldOpen != nil && t.heldOpen.LT >= desc.FirstLT && t.heldOpen.LT <= desc.LastLT {
+	if t.heldOpen != nil && t.heldOpen.Turn >= desc.FirstTurn && t.heldOpen.Turn <= desc.LastTurn {
 		t.heldOpen = nil
 	}
 	searching := t.search != nil
@@ -542,7 +542,7 @@ func appendTurnSlices(dst []aria.Message, id uint64, from uint64, nodes []livedo
 		}
 		if total < transcriptUnitChars {
 			dst = append(dst, aria.Message{
-				LT: int(id), From: from + uint64(rs), Role: role, Nodes: run,
+				Turn: int(id), From: from + uint64(rs), Role: role, Nodes: run,
 			})
 			rs = re
 			continue
@@ -559,7 +559,7 @@ func appendTurnSlices(dst []aria.Message, id uint64, from uint64, nodes []livedo
 			// (Nodes[i].ID == From+i) and sliceKey packs From, so an
 			// off-by-one here corrupts the row cache silently.
 			dst = append(dst, aria.Message{
-				LT: int(id), From: from + uint64(rs+start), Role: role, Nodes: seg,
+				Turn: int(id), From: from + uint64(rs+start), Role: role, Nodes: seg,
 			})
 			start, budget = i+1, 0
 		}
@@ -583,7 +583,7 @@ type sliceKey int64
 const sliceKeyFromBits = 20
 
 func keyOf(m aria.Message) sliceKey {
-	return sliceKey(int64(m.LT)<<sliceKeyFromBits | int64(m.From))
+	return sliceKey(int64(m.Turn)<<sliceKeyFromBits | int64(m.From))
 }
 
 // turn is the turn id a unit belongs to.
@@ -640,12 +640,12 @@ func (t *transcript) dropPage(page transcriptPage) {
 	}
 	kept := t.payloadLTs()
 	for _, m := range page.messages {
-		if kept[m.LT] {
+		if kept[m.Turn] {
 			continue
 		}
 		delete(t.rowCache, keyOf(m))
 		for ref := range t.expanded {
-			if ref.lt == m.LT {
+			if ref.turn == m.Turn {
 				delete(t.expanded, ref)
 			}
 		}
@@ -664,7 +664,7 @@ func (t *transcript) payloadLTs() map[int]bool {
 	out := make(map[int]bool, n)
 	for _, page := range t.payloadLRU {
 		for _, m := range page.messages {
-			out[m.LT] = true
+			out[m.Turn] = true
 		}
 	}
 	return out
@@ -724,15 +724,15 @@ func (t *transcript) resetToTail() {
 	t.pages = nil
 	if len(closed) > 0 {
 		t.pages = []transcriptPage{{desc: describePage(closed), messages: closed}}
-		if closed[len(closed)-1].LT > t.committedW {
-			t.committedW = closed[len(closed)-1].LT
+		if closed[len(closed)-1].Turn > t.committedW {
+			t.committedW = closed[len(closed)-1].Turn
 		}
 	}
 	t.newer = nil
 	t.payloadLRU = nil
 	t.checkNewer = false
 	t.heldOpen = nil
-	t.noMoreOlder = len(closed) > 0 && closed[0].LT <= 1
+	t.noMoreOlder = len(closed) > 0 && closed[0].Turn <= 1
 	// A rebuilt window is a changed window: bump windowRev through the same
 	// signal everything else uses, then claim the client revision it mirrors.
 	t.invalidateWindow()
@@ -795,7 +795,7 @@ func (t *transcript) tuneTail() bool {
 //   - the page layer: tailRev = 0, so the next resetToTail rebuilds from the
 //     client instead of taking axis D's revision fast path;
 //   - the line index: windowRev++, which buildIndex records, so a moved page set
-//     always refills lineLT instead of relying on the shape diff to notice.
+//     always refills lineTurn instead of relying on the shape diff to notice.
 //
 // Before the merge these were two independent staleness notions — D's tailRev
 // over the pages and A's shape diff over the index — and nothing tied them
@@ -812,10 +812,10 @@ func (t *transcript) pruneCaches() {
 	} else {
 		clear(keep)
 	}
-	t.forEachMessage(func(m aria.Message) { keep[m.LT] = true })
+	t.forEachMessage(func(m aria.Message) { keep[m.Turn] = true })
 	for _, page := range t.payloadLRU { // payload retained => rows retained
 		for _, m := range page.messages {
-			keep[m.LT] = true
+			keep[m.Turn] = true
 		}
 	}
 	for k := range t.rowCache {
@@ -824,7 +824,7 @@ func (t *transcript) pruneCaches() {
 		}
 	}
 	for ref := range t.expanded {
-		if !keep[ref.lt] {
+		if !keep[ref.turn] {
 			delete(t.expanded, ref)
 		}
 	}
@@ -857,7 +857,7 @@ func (t *transcript) messages() []aria.Message {
 func (t *transcript) oldestLT() (int, bool) {
 	for _, page := range t.pages {
 		if len(page.messages) > 0 {
-			return page.messages[0].LT, true
+			return page.messages[0].Turn, true
 		}
 	}
 	return 0, false
@@ -866,7 +866,7 @@ func (t *transcript) oldestLT() (int, bool) {
 func (t *transcript) newestLT() (int, bool) {
 	for i := len(t.pages) - 1; i >= 0; i-- {
 		if n := len(t.pages[i].messages); n > 0 {
-			return t.pages[i].messages[n-1].LT, true
+			return t.pages[i].messages[n-1].Turn, true
 		}
 	}
 	return 0, false
@@ -881,10 +881,10 @@ func (t *transcript) hasNewerHistory() bool {
 }
 
 func (t *transcript) observeCommitted(m aria.Message) {
-	if m.LT > t.committedW {
-		t.committedW = m.LT
+	if m.Turn > t.committedW {
+		t.committedW = m.Turn
 	}
-	if t.heldOpen != nil && t.heldOpen.LT == m.LT {
+	if t.heldOpen != nil && t.heldOpen.Turn == m.Turn {
 		copy := m
 		copy.Nodes = append([]livedoc.Node(nil), m.Nodes...)
 		t.heldOpen = &copy
@@ -898,21 +898,21 @@ func describePage(messages []aria.Message) pageDesc {
 	h := fnv.New64a()
 	var b [8]byte
 	for _, m := range messages {
-		v := uint64(m.LT)
+		v := uint64(m.Turn)
 		for i := range b {
 			b[i] = byte(v >> (8 * i))
 		}
 		_, _ = h.Write(b[:])
 	}
-	last := messages[len(messages)-1].LT
+	last := messages[len(messages)-1].Turn
 	return pageDesc{
-		FirstLT: messages[0].LT, LastLT: last, Count: len(messages),
+		FirstTurn: messages[0].Turn, LastTurn: last, Count: len(messages),
 		ReplayBefore: last + 1, LTHash: h.Sum64(),
 	}
 }
 
 func (d pageDesc) equal(other pageDesc) bool {
-	return d.FirstLT == other.FirstLT && d.LastLT == other.LastLT &&
+	return d.FirstTurn == other.FirstTurn && d.LastTurn == other.LastTurn &&
 		d.Count == other.Count && d.ReplayBefore == other.ReplayBefore &&
 		d.LTHash == other.LTHash
 }
@@ -925,18 +925,18 @@ func (t *transcript) resize(w, h int) {
 	anchorLT, within := t.viewportAnchor()
 	t.w, t.h = w, h
 	t.prev = nil   // full repaint (diff vs nil); no \x1b[2J, which flickers
-	t.buildIndex() // re-render at the new width, repopulating lineLT
+	t.buildIndex() // re-render at the new width, repopulating lineTurn
 	t.restoreViewportAnchor(anchorLT, within)
 	t.render()
 }
 
 func (t *transcript) viewportAnchor() (int, int) {
-	if t.follow || t.offset >= len(t.lineLT) {
+	if t.follow || t.offset >= len(t.lineTurn) {
 		return 0, 0
 	}
-	lt := t.lineLT[t.offset]
+	lt := t.lineTurn[t.offset]
 	start := t.offset
-	for start > 0 && t.lineLT[start-1] == lt {
+	for start > 0 && t.lineTurn[start-1] == lt {
 		start--
 	}
 	return lt, t.offset - start
@@ -946,8 +946,8 @@ func (t *transcript) restoreViewportAnchor(lt, within int) {
 	if lt == 0 {
 		return
 	}
-	for i, lineLT := range t.lineLT {
-		if lineLT == lt {
+	for i, lineTurn := range t.lineTurn {
+		if lineTurn == lt {
 			t.offset = i + within
 			return
 		}
@@ -1011,7 +1011,7 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 		if k > 0 {
 			rows = append(rows, transcriptRow{})
 		}
-		ref := nodeRef{lt: m.LT, index: k}
+		ref := nodeRefAt(m, k)
 		for _, l := range t.renderNode(n, ref) {
 			// Rows are stored already clipped and gutter-prefixed (their
 			// unselected resting form) so a frame that touches nothing
@@ -1076,7 +1076,7 @@ func (t *transcript) render() {
 	// contract every mutation site relied on (scrollBy, key, the selection
 	// scroll-into-view all leave it unclamped on purpose); B's gate made the
 	// frame skippable, and with it the clamp. That matters because the offset
-	// is read off the frame path too — viewportAnchor indexes lineLT with it
+	// is read off the frame path too — viewportAnchor indexes lineTurn with it
 	// when a prefetched page lands, and the search wrap-around takes it modulo
 	// the row total — and a negative index is a panic, not a wrong pixel.
 	//
@@ -1784,7 +1784,7 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 			if searchContains(row.searchText(), q) {
 				t.buildIndex()
 				for i := range t.index.total {
-					if t.lineLT[i] != m.LT {
+					if t.lineTurn[i] != m.Turn {
 						continue // only this message's lines can carry the hit
 					}
 					if searchContains(t.lineAt(i), q) {
@@ -1886,7 +1886,7 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 				}
 			}
 		}
-		if !t.expanded[nodeRef{lt: m.LT, index: i}] && n.Output != "" {
+		if !t.expanded[nodeRefAt(m, i)] && n.Output != "" {
 			total := 1 + strings.Count(strings.TrimRight(n.Output, "\n"), "\n")
 			if total > nodeBashCapDefault &&
 				strings.Contains(fmt.Sprintf("last %d of %d lines", nodeBashCapDefault, total), q) {

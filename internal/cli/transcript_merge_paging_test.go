@@ -23,8 +23,8 @@ import (
 // in the payload LRU is no longer the same set of messages.
 //
 // D's tailRev answered "are t.pages still the client's tail?"; A's index had a
-// separate per-frame shape diff deciding whether to refill lineLT. Two checks
-// over one fact is how a moved page set ends up with lineLT — resize anchoring,
+// separate per-frame shape diff deciding whether to refill lineTurn. Two checks
+// over one fact is how a moved page set ends up with lineTurn — resize anchoring,
 // viewportAnchor — describing a window that no longer exists.
 // ---------------------------------------------------------------------------
 
@@ -54,10 +54,10 @@ func lineLTFromIndex(tr *transcript) []int {
 	for k := range tr.index.entries {
 		e := &tr.index.entries[k]
 		if e.sep {
-			out = append(out, e.lt, e.lt, e.lt)
+			out = append(out, e.turn, e.turn, e.turn)
 		}
 		for range e.rows {
-			out = append(out, e.lt)
+			out = append(out, e.turn)
 		}
 	}
 	return out
@@ -70,13 +70,13 @@ func assertIndexAgrees(t *testing.T, tr *transcript, when string) {
 			when, tr.index.rev, tr.windowRev)
 	}
 	want := lineLTFromIndex(tr)
-	if len(tr.lineLT) != len(want) {
-		t.Fatalf("%s: lineLT has %d entries, index has %d lines",
-			when, len(tr.lineLT), len(want))
+	if len(tr.lineTurn) != len(want) {
+		t.Fatalf("%s: lineTurn has %d entries, index has %d lines",
+			when, len(tr.lineTurn), len(want))
 	}
 	for i := range want {
-		if tr.lineLT[i] != want[i] {
-			t.Fatalf("%s: lineLT[%d] = %d, index says %d", when, i, tr.lineLT[i], want[i])
+		if tr.lineTurn[i] != want[i] {
+			t.Fatalf("%s: lineTurn[%d] = %d, index says %d", when, i, tr.lineTurn[i], want[i])
 		}
 	}
 }
@@ -208,7 +208,7 @@ func TestMergedGeometryMeasuresTheWindowNotTheRowCache(t *testing.T) {
 	tr.forEachMessage(func(m aria.Message) {
 		rows, ok := tr.rowCache[keyOf(m)]
 		if !ok {
-			t.Fatalf("retained message %d has no cached rows", m.LT)
+			t.Fatalf("retained message %d has no cached rows", m.Turn)
 		}
 		if wantMsgs > 0 {
 			wantRows += 3

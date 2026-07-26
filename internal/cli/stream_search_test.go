@@ -113,7 +113,7 @@ func TestHistoricalSearchWorkerFindsOlderResult(t *testing.T) {
 	in.mu.Lock()
 	query, searching := in.lt.transcriptHistorySearch()
 	found := false
-	for _, lt := range in.lt.tr.lineLT {
+	for _, lt := range in.lt.tr.lineTurn {
 		found = found || lt == 10
 	}
 	in.mu.Unlock()

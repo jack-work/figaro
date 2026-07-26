@@ -76,10 +76,10 @@ func legacyLines(t *transcript) ([]string, []int, map[nodeRef]nodeSpan) {
 			rows = t.renderMsgBase(m)
 			t.rowCache[keyOf(m)] = rows
 		}
-		appendMsg(rows.rows, m.LT)
+		appendMsg(rows.rows, m.Turn)
 	}
 	if open := t.openMessage(); open != nil {
-		appendMsg(t.renderMsgBase(*open).rows, open.LT)
+		appendMsg(t.renderMsgBase(*open).rows, open.Turn)
 	}
 	return out, lts, nodeRows
 }
@@ -128,7 +128,7 @@ func mixedTranscript(tb testing.TB, out io.Writer, w, h, n int) (*transcript, *a
 
 // assertWindowMatchesLegacy sweeps every viewport position and asserts the
 // virtualized window is byte-identical to the oracle's slice, that lines() and
-// lineLT still agree with it, and that node spans survived the move off the
+// lineTurn still agree with it, and that node spans survived the move off the
 // materialization pass.
 func assertWindowMatchesLegacy(t *testing.T, tr *transcript, body int) {
 	t.Helper()
@@ -140,8 +140,8 @@ func assertWindowMatchesLegacy(t *testing.T, tr *transcript, body int) {
 	if got := tr.lines(); !equalStrings(got, want) {
 		t.Fatalf("lines() diverged from the legacy materialization at %s", firstDiff(got, want))
 	}
-	if !equalInts(tr.lineLT, wantLT) {
-		t.Fatalf("lineLT diverged (len %d vs %d)", len(tr.lineLT), len(wantLT))
+	if !equalInts(tr.lineTurn, wantLT) {
+		t.Fatalf("lineTurn diverged (len %d vs %d)", len(tr.lineTurn), len(wantLT))
 	}
 	for ref, span := range wantSpans {
 		got, ok := tr.nodeSpanOf(ref)
@@ -238,8 +238,8 @@ func TestTranscriptVirtualWindow_NodeSelection(t *testing.T) {
 	messages := tr.messages()
 	tr.selection = nodeSelection{
 		active: true,
-		anchor: testSelectionPoint(messages[1].LT, 1, messages[1].Nodes[1]),
-		focus:  testSelectionPoint(messages[3].LT, 0, messages[3].Nodes[0]),
+		anchor: testSelectionPoint(messages[1].Turn, 1, messages[1].Nodes[1]),
+		focus:  testSelectionPoint(messages[3].Turn, 0, messages[3].Nodes[0]),
 	}
 	assertWindowMatchesLegacy(t, tr, 21)
 
@@ -249,7 +249,7 @@ func TestTranscriptVirtualWindow_NodeSelection(t *testing.T) {
 
 	// Selection plus an active highlight, both applied to the same rows.
 	tr.matchQuery = "needle"
-	tr.selection.anchor = testSelectionPoint(messages[1].LT, 1, messages[1].Nodes[1])
+	tr.selection.anchor = testSelectionPoint(messages[1].Turn, 1, messages[1].Nodes[1])
 	assertWindowMatchesLegacy(t, tr, 21)
 }
 
@@ -257,9 +257,9 @@ func TestTranscriptVirtualWindow_ExpandedTools(t *testing.T) {
 	tr, _ := mixedTranscript(t, io.Discard, 80, 24, 4)
 	tr.scrollBy(-1)
 	messages := tr.messages()
-	ref := nodeRef{lt: messages[2].LT, index: 2}
+	ref := nodeRef{turn: messages[2].Turn, index: 2}
 	tr.expanded[ref] = true
-	tr.dropTurnRows(ref.lt)
+	tr.dropTurnRows(ref.turn)
 	assertWindowMatchesLegacy(t, tr, 21)
 }
 
@@ -329,15 +329,15 @@ func TestTranscriptVirtualFrames_ScrollIsPure(t *testing.T) {
 }
 
 // TestTranscriptVirtualFrames_ResizeAnchor pins that the anchoring path still
-// sees a current lineLT after the index took over its maintenance.
+// sees a current lineTurn after the index took over its maintenance.
 func TestTranscriptVirtualFrames_ResizeAnchor(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(80, 24)
 	tr, _ := mixedTranscript(t, ft, 80, 24, 6)
 	tr.scrollBy(-40)
-	before := tr.lineLT[tr.offset]
+	before := tr.lineTurn[tr.offset]
 	ft.Resize(60, 24)
 	tr.resize(60, 24)
-	if got := tr.lineLT[tr.offset]; got != before {
+	if got := tr.lineTurn[tr.offset]; got != before {
 		t.Fatalf("resize moved the anchor from LT %d to %d", before, got)
 	}
 	assertWindowMatchesLegacy(t, tr, 21)
@@ -439,8 +439,8 @@ func TestTranscriptVirtualSearch_RespectsSelectionClipping(t *testing.T) {
 	messages := tr.messages()
 	tr.selection = nodeSelection{
 		active: true,
-		anchor: testSelectionPoint(messages[0].LT, 1, messages[0].Nodes[1]),
-		focus:  testSelectionPoint(messages[4].LT, 3, messages[4].Nodes[3]),
+		anchor: testSelectionPoint(messages[0].Turn, 1, messages[0].Nodes[1]),
+		focus:  testSelectionPoint(messages[4].Turn, 3, messages[4].Nodes[3]),
 	}
 	for _, q := range []string{"needle", "margin", "Tail prose 3"} {
 		want, ok := legacyFind(tr, q)
@@ -461,8 +461,8 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 	ft := ldrender.NewFakeTerminal(40, 6)
 	tr := newTranscript(ft, 40, 6, ldrender.NodeText{}, client, "empty123", time.Unix(0, 0))
 	tr.enter()
-	if tr.index.total != 0 || len(tr.lineLT) != 0 {
-		t.Fatalf("empty transcript: total=%d lineLT=%d", tr.index.total, len(tr.lineLT))
+	if tr.index.total != 0 || len(tr.lineTurn) != 0 {
+		t.Fatalf("empty transcript: total=%d lineTurn=%d", tr.index.total, len(tr.lineTurn))
 	}
 	if got := tr.window(0, 10, nil); len(got) != 0 {
 		t.Fatalf("empty window returned %d rows", len(got))
@@ -470,7 +470,7 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 	if got := tr.lineAt(0); got != "" {
 		t.Fatalf("lineAt on an empty index = %q", got)
 	}
-	if _, ok := tr.nodeSpanOf(nodeRef{lt: 1, index: 0}); ok {
+	if _, ok := tr.nodeSpanOf(nodeRef{turn: 1, index: 0}); ok {
 		t.Fatal("empty index reported a node span")
 	}
 	tr.key('j')

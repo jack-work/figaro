@@ -139,10 +139,10 @@ func (h *pagingHarness) read(req transcriptPageRequest) []aria.Message {
 	msgs := committedMessages(r)
 	h.fetchedMsgs += len(msgs)
 	for _, m := range msgs {
-		if h.seen[m.LT] {
+		if h.seen[m.Turn] {
 			h.refetches++
 		}
-		h.seen[m.LT] = true
+		h.seen[m.Turn] = true
 	}
 	return msgs
 }
@@ -152,7 +152,7 @@ func (h *pagingHarness) read(req transcriptPageRequest) []aria.Message {
 func (h *pagingHarness) account() {
 	now := map[int]bool{}
 	for _, m := range h.tr.messages() {
-		now[m.LT] = true
+		now[m.Turn] = true
 	}
 	for lt := range h.held {
 		if !now[lt] {
@@ -193,7 +193,7 @@ func (h *pagingHarness) journey(back int) {
 		h.key('u')
 	}
 	for range 20000 {
-		if h.tr.offset >= len(h.tr.lineLT)-h.tr.h && !h.tr.hasNewerHistory() {
+		if h.tr.offset >= len(h.tr.lineTurn)-h.tr.h && !h.tr.hasNewerHistory() {
 			break
 		}
 		h.key('d')
@@ -280,7 +280,7 @@ func TestTranscriptJourneyCost(t *testing.T) {
 	start := time.Now()
 	h.journey(300)
 	t.Logf("geometry pageSize=%d pageLimit=%d rows/window=%d",
-		transcriptPageSize, transcriptPageLimit, len(h.tr.lineLT))
+		transcriptPageSize, transcriptPageLimit, len(h.tr.lineTurn))
 	t.Logf("journey: keys=%d fetches=%d fetchedMsgs=%d refetchedMsgs=%d evictions=%d nodeRenders=%d wall=%s",
 		h.keys, h.fetches, h.fetchedMsgs, h.refetches, h.evictions, h.view.render, time.Since(start).Round(time.Millisecond))
 }

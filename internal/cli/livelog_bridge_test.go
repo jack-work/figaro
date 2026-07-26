@@ -76,7 +76,7 @@ func TestIncipitRepaintsDiscardedAssistantWithErrorStatus(t *testing.T) {
 func TestTranscriptExitFlushesClosuresBeyondClientTail(t *testing.T) {
 	var out bytes.Buffer
 	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "", time.Now(), newSessionStatus("", time.Now()), nil, nil)
-	lt.lastFrozen = sliceCursor{lt: 1}
+	lt.lastFrozen = sliceCursor{turn: 1}
 	lt.enterTranscript()
 	for i := 2; i <= transcriptTailLimit+10; i++ {
 		lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
@@ -91,8 +91,8 @@ func TestTranscriptExitFlushesClosuresBeyondClientTail(t *testing.T) {
 			t.Fatalf("flushed transcript missing %q", want)
 		}
 	}
-	if lt.lastFrozen.lt != transcriptTailLimit+10 || len(lt.pagerClosed) != 0 {
-		t.Fatalf("flush state = LT %d, queued %d", lt.lastFrozen.lt, len(lt.pagerClosed))
+	if lt.lastFrozen.turn != transcriptTailLimit+10 || len(lt.pagerClosed) != 0 {
+		t.Fatalf("flush state = LT %d, queued %d", lt.lastFrozen.turn, len(lt.pagerClosed))
 	}
 }
 
