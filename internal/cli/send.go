@@ -33,6 +33,7 @@ type sendOpts struct {
 	dryRun    bool // --exec only
 	skipYes   bool // --exec only
 	forget    bool // --forget / -f: submit and exit; do not stream
+	steer     bool // --steer: a direction for the running turn, not a new question
 	json      bool // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
 	listen    bool // --listen / -l: auto-enter the transcript at startup
 }
@@ -159,6 +160,10 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			opts.forget = true
 			i++
 			continue
+		case a == "--steer":
+			opts.steer = true
+			i++
+			continue
 		case a == "--json", a == "-j":
 			opts.json = true
 			i++
@@ -270,7 +275,7 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 		die("send: --forget contradicts --ephemeral (the aria would be killed before the turn ran)")
 	}
 
-	set := renderSettings{verbose: opts.verbose, listen: opts.listen}
+	set := renderSettings{verbose: opts.verbose, listen: opts.listen, steer: opts.steer}
 
 	// `send <trunk>:<turn>` — fork at that turn, then send. The message lands
 	// on whichever trunk we end up attended to: the new alternative by default
@@ -532,7 +537,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	}
 	defer fcli.Close()
 
-	if _, _, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard()); qerr != nil {
+	if _, _, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard(), opts.steer); qerr != nil {
 		die("prompt: %s", qerr)
 	}
 	if opts.json {

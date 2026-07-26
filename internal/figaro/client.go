@@ -30,9 +30,14 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 
 // Qua sends a prompt and returns the cursor (highest committed figaro LT at
 // accept time) to stream from. The reply streams as figaro.aria notifications.
-func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) (int, bool, error) {
+//
+// steer marks the prompt a direction for the turn already running rather than
+// a new question. The caller is the only one who knows: on the wire the two
+// are identical, and inferring it merges exchanges that were meant to be
+// separate — silently, and only sometimes.
+func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput, steer bool) (int, bool, error) {
 	var resp rpc.QuaResponse
-	err := c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, &resp)
+	err := c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb, Steering: steer}, &resp)
 	return resp.Cursor, resp.Active, err
 }
 

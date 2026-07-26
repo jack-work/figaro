@@ -760,7 +760,7 @@ func hasRenderablePrompt(prompts []event) bool {
 
 func (a *Agent) appendPromptEvents(prompts []event) error {
 	for i, prompt := range prompts {
-		if _, err := a.appendUserPrompt(prompt, false, true); err != nil {
+		if _, err := a.appendUserPrompt(prompt, false, prompt.steering); err != nil {
 			// The chalkboard write precedes the IR append. Do not replay it
 			// when restoring the still-unpersisted prompt.
 			prompts[i].chalkboard = nil

@@ -143,7 +143,7 @@ model = "m"
 	})
 	require.NoError(t, err)
 
-	_, _, err = sender1.Qua(ctx, "please stream forever", nil)
+	_, _, err = sender1.Qua(ctx, "please stream forever", nil, false)
 	require.NoError(t, err)
 
 	// Wait for the provider to hit its blocking wait.
@@ -181,7 +181,7 @@ model = "m"
 	require.NoError(t, err)
 	defer sender2.Close()
 
-	_, _, err = sender2.Qua(ctx, "please answer quickly", nil)
+	_, _, err = sender2.Qua(ctx, "please answer quickly", nil, false)
 	require.NoError(t, err)
 
 	select {

@@ -81,6 +81,16 @@ const (
 type QuaRequest struct {
 	Text       string           `json:"text"`
 	Chalkboard *ChalkboardInput `json:"chalkboard,omitempty"`
+
+	// Steering marks this prompt as a direction aimed at the turn already in
+	// flight rather than a new question. It is carried, never inferred: a
+	// prompt pipelined by a script and a steer typed by someone watching the
+	// stream are identical on the wire, and guessing between them is unsound
+	// in an asymmetric way. Guessing "new question" merely splits an exchange
+	// — visible, recoverable. Guessing "steer" MERGES two exchanges and the
+	// second one stops existing as an addressable turn, which `send`/`fork
+	// <trunk>:<turn>` can then never name. Default false is the safe side.
+	Steering bool `json:"steering,omitempty"`
 }
 
 // ChalkboardInput carries an optional state update.
@@ -329,9 +339,9 @@ type UnbindResponse struct {
 }
 
 type StatusResponse struct {
-	Uptime      int64  `json:"uptime_ms"` // millis since angelus start
-	FigaroCount int    `json:"figaro_count"`
-	BoundPIDs   int    `json:"bound_pids"`
+	Uptime      int64 `json:"uptime_ms"` // millis since angelus start
+	FigaroCount int   `json:"figaro_count"`
+	BoundPIDs   int   `json:"bound_pids"`
 	// Build is the daemon's VCS revision. A CLI speaking a different build
 	// than the running daemon renders nothing at all — the wire changes
 	// between builds — so the mismatch must be named, not suffered.
