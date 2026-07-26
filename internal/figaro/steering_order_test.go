@@ -76,8 +76,8 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("tool did not start")
 	}
-	submitPrompt(a, "steer one")
-	submitPrompt(a, "steer two")
+	submitSteer(a, "steer one")
+	submitSteer(a, "steer two")
 	close(bt.release)
 	waitTurnDone(t, frames)
 
@@ -120,6 +120,66 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	}
 	require.Equal(t, []string{"prose", "steering", "steering", "prose"}, kinds,
 		"both steers must render as steering nodes inside the turn they steer")
+	require.Equal(t, int32(2), prov.calls.Load())
+}
+
+// A prompt that arrives mid-turn WITHOUT declaring itself a steer is a new
+// question and must keep its own turn.
+//
+// This is the inverse defect, and it is the worse one. Inferring "steering"
+// from "a turn was in flight" demoted a genuine question: the two exchanges
+// MERGED and the second stopped existing as an addressable turn, so
+// `send`/`fork <trunk>:<turn>` could never name it again. It reproduced on
+// one of six sequential rounds — a race, and therefore intermittent. The old
+// split bug was ugly but visible and lossless; this one was silent.
+//
+// Intent is carried now, so the same arrival that used to be guessed is
+// simply believed.
+func TestUnmarkedPromptMidTurnKeepsItsOwnTurn(t *testing.T) {
+	bt := &blockingSteeringTool{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	reg := tool.NewRegistry()
+	require.NoError(t, reg.Register(bt))
+	prov := &staggeredProvider{
+		tools:     []specTool{{id: "tc_steer", name: "steer", args: map[string]interface{}{}, readyAt: 0}},
+		streamEnd: 10 * time.Millisecond,
+	}
+	cb, _ := chalkboard.Open("")
+	cb.Apply(chalkboard.Patch{Set: map[string]json.RawMessage{
+		"system.model":    json.RawMessage(`"mock"`),
+		"system.provider": json.RawMessage(`"staggered"`),
+	}})
+	a := figaro.NewAgent(figaro.Config{
+		Projector:  uiir.New(nil),
+		ID:         "unmarked-midturn",
+		SocketPath: "/tmp/unmarked-midturn.sock",
+		Provider:   prov,
+		Tools:      reg,
+		Chalkboard: cb,
+	})
+	defer a.Kill()
+
+	frames, _ := subscribeChan(a)
+	submitPrompt(a, "initial")
+	select {
+	case <-bt.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("tool did not start")
+	}
+	submitPrompt(a, "a separate question") // NOT a steer
+	close(bt.release)
+	waitTurnDone(t, frames)
+
+	read := a.Read(aria.Anchor{Turn: 0}, 1<<20)
+	for _, part := range read.Parts {
+		t.Logf("turn=%d inquiry=%q", part.ID, part.Inquiry)
+	}
+	require.Len(t, read.Parts, 2, "an undeclared prompt must not be absorbed into the running turn")
+	require.Equal(t, "initial", read.Parts[0].Inquiry)
+	require.Equal(t, "a separate question", read.Parts[1].Inquiry,
+		"the second question must remain addressable as its own turn")
 	require.Equal(t, int32(2), prov.calls.Load())
 }
 

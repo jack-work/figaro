@@ -29,6 +29,7 @@ type renderSettings struct {
 	verbose  bool
 	jsonMode bool // -j / --json: emit a single {aria_id, ...} JSON line on stdout instead of a live render
 	listen   bool // -l / --listen: auto-enter the transcript at startup
+	steer    bool // --steer: a direction for the running turn, not a new question
 }
 
 // renderNode draws ONE node. This is the single dispatch on node kind, shared
