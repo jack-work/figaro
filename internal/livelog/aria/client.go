@@ -310,13 +310,19 @@ func (c *Client) ClosedRevision() uint64 {
 // Open returns just the open, in-flight message (nil when none). View copies
 // and sorts the whole retained closed set; callers that only want the live
 // message — every transcript frame asks for it — should not pay for that.
+//
+// It is the open SUFFIX, for the same reason the push path is (see Apply):
+// nodes below openFrom were already released as closed messages, so carrying
+// them here prints them twice and wraps the prompt in the agent's header. From
+// is the suffix's offset within the turn, so a caller can place it.
 func (c *Client) Open() *Message {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.openLT == 0 {
 		return nil
 	}
-	return &Message{LT: c.openLT, Role: turnRole(c.openNodesSlice), Nodes: c.openNodes()}
+	suffix := c.openSuffix()
+	return &Message{LT: c.openLT, From: c.openFrom, Role: turnRole(suffix), Nodes: suffix}
 }
 
 // View returns a snapshot of the current local state.
@@ -330,7 +336,8 @@ func (c *Client) View() View {
 	sort.SliceStable(closed, func(i, j int) bool { return closed[i].LT < closed[j].LT })
 	v := View{Closed: closed}
 	if c.openLT != 0 {
-		v.Open = &Message{LT: c.openLT, Role: turnRole(c.openNodesSlice), Nodes: c.openNodes()}
+		suffix := c.openSuffix()
+		v.Open = &Message{LT: c.openLT, From: c.openFrom, Role: turnRole(suffix), Nodes: suffix}
 	}
 	return v
 }
