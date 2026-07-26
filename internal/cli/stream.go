@@ -791,6 +791,28 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 			}
 			ev = keyEvent{b: b, mode: mode}
 		}
+		// In incipit, ANY printable character starts composing and becomes the
+		// first character of the draft. This is checked BEFORE the opener
+		// promotion below, and deliberately preempts it.
+		//
+		// The alternative — requiring a trigger key — loses the user's first
+		// word, silently. Worse, if the trigger appears mid-sentence, everything
+		// before it is discarded and everything after becomes the message, which
+		// is meaning-changing loss rather than merely missing input. English
+		// sentences contain 'i'.
+		//
+		// The cost, stated plainly: 'y' no longer copies the aria id from
+		// incipit, and '! / ? d g G j k Q u' no longer open the pager from
+		// incipit. They keep working in the pager, which is reached by Ctrl-T or
+		// Ctrl-L — control keys, which are never text. That asymmetry is honest:
+		// the pager is a navigation surface and the inline view is not.
+		if ev.mode == modeIncipit && composeStarts(ev) {
+			in.mu.Lock()
+			in.lt.status.composeOpen(!in.lt.turnFinished())
+			in.mu.Unlock()
+			in.composeLiteral(ev)
+			continue
+		}
 		// A key whose pager meaning is a sensible OPENING gesture yanks the
 		// pager up first, so it acts on arrival instead of looking like a dead
 		// keyboard. Which keys those are is one field on one table row.
@@ -1121,6 +1143,14 @@ func (in *interactiveInput) submitSteer(text string, steer bool) {
 		return
 	}
 	in.refreshQueued()
+}
+
+// composeStarts reports whether a key should begin composing in the inline
+// view: any printable byte, including the UTF-8 continuation bytes of a
+// multi-byte rune (>= 0x80). Nav keys and control chords are excluded — those
+// are gestures, not text, and Ctrl-C/Ctrl-D/Ctrl-T/Ctrl-O must keep working.
+func composeStarts(ev keyEvent) bool {
+	return ev.nav == navNone && ev.ctrl == 0 && ev.b >= 0x20 && ev.b != 0x7f
 }
 
 // composeLiteral appends a printable byte to the draft. Control bytes that have

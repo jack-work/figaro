@@ -207,12 +207,12 @@ var keymap = []keyBinding{
 	},
 
 	// -- pager level: motions ----------------------------------------------
-	{chord: byteChord('j'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerLineDown},
-	{chord: byteChord('k'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerLineUp},
-	{chord: byteChord('d'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerHalfDown},
-	{chord: byteChord('u'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerHalfUp},
-	{chord: byteChord('G'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerTail},
-	{chord: byteChord('g'), modes: inTranscript, open: opensPager, help: helpScroll, pager: pagerPendingTop},
+	{chord: byteChord('j'), modes: inTranscript, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpScroll, pager: pagerLineDown},
+	{chord: byteChord('k'), modes: inTranscript, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpScroll, pager: pagerLineUp},
+	{chord: byteChord('d'), modes: inTranscript, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpScroll, pager: pagerHalfDown},
+	{chord: byteChord('u'), modes: inTranscript, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpScroll, pager: pagerHalfUp},
+	{chord: byteChord('G'), modes: inTranscript, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpScroll, pager: pagerTail},
+	{chord: byteChord('g'), modes: inTranscript, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpScroll, pager: pagerPendingTop},
 
 	// The arrow cluster shares the motions, as peers of the letters rather
 	// than by impersonating them.
@@ -225,7 +225,7 @@ var keymap = []keyBinding{
 	{chord: navChord(navEnd), modes: inTranscript, open: opensPager, help: helpHomeEnd, pager: pagerTail},
 
 	// -- pager level: search -----------------------------------------------
-	{chord: byteChord('/'), modes: inTranscript, open: opensPager, help: helpSearch, pager: pagerSearchPrompt},
+	{chord: byteChord('/'), modes: inTranscript, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpSearch, pager: pagerSearchPrompt},
 	{
 		chord: byteChord('n'), modes: inTranscript,
 		open: staysInline, why: "repeat search with no query yet: opens onto a no-op",
@@ -238,9 +238,9 @@ var keymap = []keyBinding{
 	},
 
 	// -- pager level: panels -----------------------------------------------
-	{chord: byteChord('?'), modes: inTranscript, open: opensPager, help: helpHelpPanel, pager: pagerHelpPanel},
-	{chord: byteChord('!'), modes: inTranscript, open: opensPager, help: helpStatusPanel, pager: pagerStatusPanel},
-	{chord: byteChord('Q'), modes: inTranscript, open: opensPager, help: helpQueuedPanel, pager: pagerQueuedPanel},
+	{chord: byteChord('?'), modes: inTranscript, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpHelpPanel, pager: pagerHelpPanel},
+	{chord: byteChord('!'), modes: inTranscript, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpStatusPanel, pager: pagerStatusPanel},
+	{chord: byteChord('Q'), modes: inTranscript, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpQueuedPanel, pager: pagerQueuedPanel},
 
 	// -- pager level: selection --------------------------------------------
 	{chord: byteChord(0x0e), modes: inTranscript, open: opensPager, help: helpSelect, pager: pagerSelectNext},
@@ -256,9 +256,9 @@ var keymap = []keyBinding{
 	// -- panel mode: the panel keys swallow their own keys -----------------
 	// Every OTHER key wipes the panel and then acts normally; that fallthrough
 	// lives in dispatch, not here, because it is a property of the mode.
-	{chord: byteChord('?'), modes: inPanel, open: opensPager, help: helpHelpPanel, pager: panelToggleHelp},
-	{chord: byteChord('!'), modes: inPanel, open: opensPager, help: helpStatusPanel, pager: panelToggleStatus},
-	{chord: byteChord('Q'), modes: inPanel, open: opensPager, help: helpQueuedPanel, pager: panelToggleQueued},
+	{chord: byteChord('?'), modes: inPanel, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpHelpPanel, pager: panelToggleHelp},
+	{chord: byteChord('!'), modes: inPanel, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpStatusPanel, pager: panelToggleStatus},
+	{chord: byteChord('Q'), modes: inPanel, open: staysInline, why: "in incipit a printable starts composing; reach the pager with ^T/^L", help: helpQueuedPanel, pager: panelToggleQueued},
 	{
 		chord: byteChord(0x1b), modes: inPanel,
 		open: staysInline, why: "closing a panel that is not showing is not an opening gesture",
@@ -295,13 +295,17 @@ var keymap = []keyBinding{
 	},
 
 	// -- the steer composer ------------------------------------------------
-	// 'i' opens it, in incipit AND in the pager, because a long turn
-	// auto-promotes and that is exactly when a user wants to steer. It is an
-	// INPUT-level row, not a pager row: incipit has no transcript to hand a key
-	// to, and the composer must work there. Everything with no compose-mode row
-	// is literal text (see consume).
+	// In the PAGER 'i' opens it, because there the letters are motions and a
+	// trigger is the only way in. In INCIPIT there is no row at all: any
+	// printable character starts composing and becomes the first character of
+	// the draft (see composeStarts in consume). Requiring a trigger inline
+	// silently ate the user's first word, and any 'i' mid-sentence changed the
+	// meaning of the rest.
+	//
+	// It is an INPUT-level row, not a pager row, because the compose-mode keys
+	// below must also work inline, where there is no transcript to hand a key to.
 	{
-		chord: byteChord('i'), modes: inIncipit | inTranscript,
+		chord: byteChord('i'), modes: inTranscript,
 		open: staysInline, why: "steering is an inline gesture; it must not yank the pager up",
 		help: helpCompose, input: inputComposeOpen,
 	},
@@ -391,7 +395,7 @@ var helpRows = []helpRow{
 	{helpDetach, "q / ^D", "detach; the turn keeps running"},
 	{helpStatusPanel, "!", "figaro status panel"},
 	{helpQueuedPanel, "Q", "queued prompts panel"},
-	{helpCompose, "i", "steer the running turn (Enter send · Esc cancel)"},
+	{helpCompose, "i", "steer the running turn — inline, just type (Enter send · Esc cancel)"},
 	{helpHelpPanel, "?", "close help"},
 }
 

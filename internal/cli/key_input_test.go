@@ -22,10 +22,19 @@ func TestParseModifiedKeyAltCtrlFallback(t *testing.T) {
 	}
 }
 
+// Only NON-PRINTABLE gestures open the pager from incipit now. Every printable
+// character starts composing a steer instead — requiring a trigger key silently
+// ate the user's first word, and a trigger appearing mid-sentence changed the
+// meaning of the rest.
 func TestOpensTranscriptForOutputHotkeys(t *testing.T) {
-	for _, key := range []byte{'j', 'k', '/', '?', 0x0e, 0x10, 0x0d} {
+	for _, key := range []byte{0x0e, 0x10, 0x0d} {
 		if !opensTranscriptFor(key) {
 			t.Fatalf("key %q must enter transcript", key)
+		}
+	}
+	for _, key := range []byte{'j', 'k', '/', '?'} {
+		if opensTranscriptFor(key) {
+			t.Fatalf("printable key %q must compose, not open the pager", key)
 		}
 	}
 	if opensTranscriptFor('y') {

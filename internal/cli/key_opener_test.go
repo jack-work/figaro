@@ -10,19 +10,38 @@ import "testing"
 // function's own comment for the ones that were left out and why.
 // ---------------------------------------------------------------------------
 
-// TestInputConsume_BangOpensStatusPanel: '!' worked inside the pager but could
-// not get you there — the one plain inconsistency in opensTranscriptFor.
+// TestInputConsume_BangOpensStatusPanel: '!' raises the status panel from
+// inside the pager.
+//
+// It used to do so from INCIPIT too. It no longer does, deliberately: in the
+// inline view every printable character starts composing a steer, because
+// requiring a trigger silently ate the user's first word. '!' is a printable
+// character someone may be typing. The pager is reached with ^T or ^L — control
+// keys, which are never text.
 func TestInputConsume_BangOpensStatusPanel(t *testing.T) {
 	var out countingWriter
-	in, lt := navInput(t, &out, false)
+	in, lt := navInput(t, &out, true)
 	if rest := feed(t, in, "!"); len(rest) != 0 {
 		t.Fatalf("consume held %q", rest)
 	}
 	if !lt.transcriptActive() {
-		t.Fatal("! must open the transcript pager")
+		t.Fatal("! must keep the transcript pager up")
 	}
 	if !lt.tr.showStatus {
-		t.Fatal("! must arrive with the figaro status panel up")
+		t.Fatal("! must raise the figaro status panel")
+	}
+}
+
+// ...and from incipit it is text, not a gesture.
+func TestInputConsume_BangComposesInIncipit(t *testing.T) {
+	var out countingWriter
+	in, lt := navInput(t, &out, false)
+	feed(t, in, "!")
+	if lt.transcriptActive() {
+		t.Fatal("! opened the pager from incipit; it must start composing")
+	}
+	if lt.transcriptMode() != modeCompose {
+		t.Fatalf("! did not start composing: mode=%v", lt.transcriptMode())
 	}
 }
 
@@ -34,9 +53,11 @@ func TestOpensTranscriptFor_RejectedKeys(t *testing.T) {
 			t.Fatalf("key %q must not be an opening gesture", b)
 		}
 	}
+	// The panel keys are printable, so from incipit they compose too. They keep
+	// their panel meaning inside the pager, which ^T/^L reach.
 	for _, b := range []byte{'!', '?', 'Q'} {
-		if !opensTranscriptFor(b) {
-			t.Fatalf("panel key %q must open the pager", b)
+		if opensTranscriptFor(b) {
+			t.Fatalf("printable panel key %q must compose from incipit", b)
 		}
 	}
 }
