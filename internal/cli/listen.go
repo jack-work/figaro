@@ -181,15 +181,15 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	select {
 	case <-doneCh:
 	case <-disconnectCh:
-		lt.abandon("disconnected — turn (if any) continues")
+		lt.abandon("disconnected — turn (if any) continues", turnStatusDisconnected)
 	case <-fcli.Done():
-		lt.abandon("aria disconnected")
+		lt.abandon("aria disconnected", turnStatusError)
 	case <-ctx.Done():
 		// Ctrl-C from signal.NotifyContext: interrupt the turn, then leave.
 		fmt.Fprintln(os.Stderr, "\ninterrupting...")
 		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		_ = fcli.Interrupt(intCtx)
 		intCancel()
-		lt.abandon("interrupted")
+		lt.abandon("interrupted", turnStatusInterrupted)
 	}
 }

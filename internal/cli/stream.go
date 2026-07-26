@@ -242,11 +242,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		// q / Ctrl-D. If the turn already finished while the pager was up this
 		// is a clean exit, not an abandonment: no rule, no follow hint, and the
 		// completed tail reaches scrollback intact.
-		if lt.abandon("disconnected — turn continues") {
+		if lt.abandon("disconnected — turn continues", turnStatusDisconnected) {
 			fmt.Fprintln(os.Stderr, "follow: figaro listen "+figaroID)
 		}
 	case <-fcli.Done():
-		lt.abandon("agent disconnected before turn completed")
+		lt.abandon("agent disconnected before turn completed", turnStatusError)
 		os.Exit(1)
 	case <-ctx.Done():
 		// Ctrl-C: interrupt the in-flight turn; if nothing's running (e.g.
@@ -263,7 +263,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			case <-doneCh:
 			case <-fcli.Done():
 			case <-time.After(3 * time.Second):
-				lt.abandon("interrupted (agent did not respond)")
+				lt.abandon("interrupted (agent did not respond)", turnStatusInterrupted)
 			}
 			fmt.Fprintln(os.Stderr, "interrupted")
 		}
