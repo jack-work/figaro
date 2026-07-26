@@ -102,7 +102,7 @@ func selectedTextForTest(tr *transcript, history []aria.TurnPart) (string, error
 	if !ok {
 		return "", fmt.Errorf("selection inactive")
 	}
-	return selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
-		return readBefore(history, before, limit), nil
+	return selectionText(plan, transcriptPageSize, func(at aria.Anchor, limit int) (aria.Page, error) {
+		return readBeforeAt(history, at, limit), nil
 	})
 }

@@ -91,27 +91,27 @@ func TestTranscript_FindRepeatNextAndPrev(t *testing.T) {
 	visibleLTs := func() []int {
 		lts := map[int]bool{}
 		for i, line := range tr.lines() {
-			if strings.Contains(stripANSI(line), "needle") && tr.lineTurn[i] > 0 {
-				lts[tr.lineTurn[i]] = true
+			if strings.Contains(stripANSI(line), "needle") && tr.lineKey[i] > 0 {
+				lts[tr.lineKey[i].turn()] = true
 			}
 			_ = i
 		}
 		return sortedKeys(lts)
 	}
 
-	firstMatch := tr.lineTurn[tr.offset]
+	firstMatch := tr.lineKey[tr.offset].turn()
 	if firstMatch == 0 {
-		t.Fatalf("first match offset landed on a rule row: lineTurn=%v", tr.lineTurn)
+		t.Fatalf("first match offset landed on a rule row: lineKey=%v", tr.lineKey)
 	}
 	// n advances to the next match (higher LT).
 	tr.key('n')
-	nextMatch := tr.lineTurn[tr.offset]
+	nextMatch := tr.lineKey[tr.offset].turn()
 	if nextMatch <= firstMatch {
 		t.Fatalf("n did not advance: %d -> %d (visible needles: %v)", firstMatch, nextMatch, visibleLTs())
 	}
 	// N returns to the previous match.
 	tr.key('N')
-	if got := tr.lineTurn[tr.offset]; got != firstMatch {
+	if got := tr.lineKey[tr.offset].turn(); got != firstMatch {
 		t.Fatalf("N did not restore previous match: got %d, want %d", got, firstMatch)
 	}
 }

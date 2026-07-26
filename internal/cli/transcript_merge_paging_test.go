@@ -46,18 +46,19 @@ func mixedHeightHistory(n int) []aria.TurnPart {
 	return out
 }
 
-// lineLTFromIndex recomputes the LT-per-line map straight from the line index,
-// independently of rebuildLineLT's "only when the shape moved" discipline. Any
-// disagreement means an index change slipped past the invalidation signal.
-func lineLTFromIndex(tr *transcript) []int {
-	out := make([]int, 0, tr.index.total)
+// lineLTFromIndex recomputes the slice-per-line map straight from the line
+// index, independently of rebuildLineLT's "only when the shape moved"
+// discipline. Any disagreement means an index change slipped past the
+// invalidation signal.
+func lineLTFromIndex(tr *transcript) []sliceKey {
+	out := make([]sliceKey, 0, tr.index.total)
 	for k := range tr.index.entries {
 		e := &tr.index.entries[k]
 		if e.sep {
-			out = append(out, e.turn, e.turn, e.turn)
+			out = append(out, e.key, e.key, e.key)
 		}
 		for range e.rows {
-			out = append(out, e.turn)
+			out = append(out, e.key)
 		}
 	}
 	return out
@@ -70,13 +71,13 @@ func assertIndexAgrees(t *testing.T, tr *transcript, when string) {
 			when, tr.index.rev, tr.windowRev)
 	}
 	want := lineLTFromIndex(tr)
-	if len(tr.lineTurn) != len(want) {
-		t.Fatalf("%s: lineTurn has %d entries, index has %d lines",
-			when, len(tr.lineTurn), len(want))
+	if len(tr.lineKey) != len(want) {
+		t.Fatalf("%s: lineKey has %d entries, index has %d lines",
+			when, len(tr.lineKey), len(want))
 	}
 	for i := range want {
-		if tr.lineTurn[i] != want[i] {
-			t.Fatalf("%s: lineTurn[%d] = %d, index says %d", when, i, tr.lineTurn[i], want[i])
+		if tr.lineKey[i] != want[i] {
+			t.Fatalf("%s: lineKey[%d] = %d, index says %d", when, i, tr.lineKey[i], want[i])
 		}
 	}
 }

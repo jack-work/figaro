@@ -171,8 +171,8 @@ func BenchmarkTranscriptSelectionRehydrate(b *testing.B) {
 			}
 			b.ResetTimer()
 			for range b.N {
-				_, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
-					return readBefore(history, before, limit), nil
+				_, err := selectionText(plan, transcriptPageSize, func(at aria.Anchor, limit int) (aria.Page, error) {
+					return readBeforeAt(history, at, limit), nil
 				})
 				if err != nil {
 					b.Fatal(err)
@@ -251,7 +251,7 @@ func (r *benchmarkSearchReader) Read(context.Context, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 
-func (r *benchmarkSearchReader) ReadBefore(ctx context.Context, _, _ int) (aria.Page, error) {
+func (r *benchmarkSearchReader) ReadBefore(ctx context.Context, _ aria.Anchor, _ int) (aria.Page, error) {
 	r.started <- struct{}{}
 	<-ctx.Done()
 	r.canceled <- struct{}{}

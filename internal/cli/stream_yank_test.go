@@ -33,7 +33,8 @@ func (r *stubHistoryReader) Read(context.Context, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 
-func (r *stubHistoryReader) ReadBefore(_ context.Context, before, limit int) (aria.Page, error) {
+func (r *stubHistoryReader) ReadBefore(_ context.Context, at aria.Anchor, limit int) (aria.Page, error) {
+	before := int(at.Turn)
 	return readBefore(r.history, before, limit), nil
 }
 

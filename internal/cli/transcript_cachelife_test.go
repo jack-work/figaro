@@ -15,7 +15,7 @@ func pageOnce(t *testing.T, tr *transcript, history []aria.TurnPart, dir transcr
 	if dir == pageOlder {
 		tr.offset, tr.checkOlder = 0, true
 	} else {
-		tr.offset, tr.checkNewer = len(tr.lineTurn), true
+		tr.offset, tr.checkNewer = len(tr.lineKey), true
 	}
 	req, ok := tr.pageCursor()
 	if !ok {

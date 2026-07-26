@@ -73,7 +73,7 @@ func TestTranscript_BoundedDescriptorsFallBackForward(t *testing.T) {
 	}
 	firstReplay := true
 	for len(tr.newer) > 0 {
-		tr.offset = len(tr.lineTurn)
+		tr.offset = len(tr.lineKey)
 		tr.checkNewer = true
 		req, ok := tr.pageCursor()
 		if !ok || req.expected.Count == 0 {
@@ -89,7 +89,7 @@ func TestTranscript_BoundedDescriptorsFallBackForward(t *testing.T) {
 		}
 		tr.applyPage(req, messages)
 	}
-	tr.offset = len(tr.lineTurn)
+	tr.offset = len(tr.lineKey)
 	tr.checkNewer = true
 	req, ok := tr.pageCursor()
 	if !ok || req.after == 0 {
@@ -122,7 +122,7 @@ func TestTranscript_DescriptorMismatchInvalidatesReplayChain(t *testing.T) {
 		req, _ := tr.pageCursor()
 		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
-	tr.offset = len(tr.lineTurn)
+	tr.offset = len(tr.lineKey)
 	tr.checkNewer = true
 	req, ok := tr.pageCursor()
 	if !ok || len(tr.newer) < 2 {

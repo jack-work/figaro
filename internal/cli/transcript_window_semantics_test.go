@@ -30,7 +30,7 @@ func TestTranscript_ForwardSelectionRequestsEvictedPage(t *testing.T) {
 		anchor: testSelectionPoint(messages[len(messages)-1].Turn, 0, messages[len(messages)-1].Nodes[0]),
 		focus:  testSelectionPoint(messages[len(messages)-1].Turn, 0, messages[len(messages)-1].Nodes[0]),
 	}
-	tr.offset = len(tr.lineTurn)
+	tr.offset = len(tr.lineKey)
 	tr.selectNode(1, true)
 	req, ok := tr.pageCursor()
 	if !ok || req.direction != pageNewer {
@@ -83,8 +83,8 @@ func TestTranscript_OpenRangeRehydratesEvictedPages(t *testing.T) {
 	if !ok {
 		t.Fatal("open selection endpoints were lost")
 	}
-	text, err := selectionText(plan, transcriptPageSize, func(before, limit int) (aria.Page, error) {
-		return readBefore(history, before, limit), nil
+	text, err := selectionText(plan, transcriptPageSize, func(at aria.Anchor, limit int) (aria.Page, error) {
+		return readBeforeAt(history, at, limit), nil
 	})
 	if err != nil || !strings.Contains(text, "message-001") || !strings.Contains(text, "open-121") {
 		t.Fatalf("open range copy = %q, %v", text, err)

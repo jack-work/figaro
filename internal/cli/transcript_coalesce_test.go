@@ -197,7 +197,7 @@ type stubReadClient struct{}
 func (stubReadClient) Read(context.Context, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
-func (stubReadClient) ReadBefore(context.Context, int, int) (aria.Page, error) {
+func (stubReadClient) ReadBefore(context.Context, aria.Anchor, int) (aria.Page, error) {
 	return aria.Page{}, nil
 }
 func (stubReadClient) Queued(context.Context) (*rpc.QueuedResponse, error) {

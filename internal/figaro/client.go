@@ -50,11 +50,14 @@ func (c *Client) Read(ctx context.Context, sinceTurn int) (aria.Page, error) {
 	return r, err
 }
 
-// ReadBefore pages backward from a turn cursor — the other direction of the
-// same cut, for a pager to walk history. A zero cursor means the tail.
-func (c *Client) ReadBefore(ctx context.Context, beforeTurn, budget int) (aria.Page, error) {
+// ReadBefore pages backward from an anchor — the other direction of the
+// same cut, for a pager to walk history. A zero anchor means the tail, and the
+// anchor's Node matters: a window whose oldest slice starts mid-turn must ask
+// for what precedes THAT NODE, not that turn.
+func (c *Client) ReadBefore(ctx context.Context, at aria.Anchor, budget int) (aria.Page, error) {
 	var r aria.Page
-	err := c.cli.Call(ctx, rpc.MethodRead, rpc.ReadRequest{Before: beforeTurn, Limit: budget}, &r)
+	req := rpc.ReadRequest{Before: int(at.Turn), BeforeNode: int(at.Node), Limit: budget}
+	err := c.cli.Call(ctx, rpc.MethodRead, req, &r)
 	return r, err
 }
 

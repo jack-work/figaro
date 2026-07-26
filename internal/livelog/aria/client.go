@@ -122,6 +122,16 @@ func (c *Client) Apply(p Page) {
 				c.resetOpen()
 				c.openTurn = id
 			}
+			// A part CLIPPED off the head of a turn is ALL we hold of it: the
+			// nodes below From were never delivered, so they are not ours to
+			// release. Floor the emit cursor at From, or absorb's padding slots
+			// go out as a slice starting at node 0 — a HEAD slice, which the
+			// renderers draw the question above, except that a clipped part
+			// carries no question. That is how a turn too big for one page lost
+			// its inquiry in every surface at once.
+			if n := int(part.From); n > c.emitted[id] && n > len(c.openNodesSlice) {
+				c.emitted[id] = n
+			}
 			c.absorb(part.From, part.Nodes)
 		}
 
@@ -252,7 +262,7 @@ func (c *Client) message(turn, from int, nodes []livedoc.Node) Message {
 
 // openMessage is the open turn's suffix as a message. Caller holds the lock.
 func (c *Client) openMessage() Message {
-	return c.message(c.openTurn, int(c.openFrom), c.openSuffix())
+	return c.message(c.openTurn, c.openBase(), c.openSuffix())
 }
 
 func (c *Client) trimClosed() {
@@ -348,14 +358,25 @@ func (c *Client) openNodes() []livedoc.Node {
 	return append([]livedoc.Node(nil), c.openNodesSlice...)
 }
 
-// openSuffix is the still-mutable tail of the open turn: everything at or above
-// Live.From. The committed head has already been released to scrollback.
-func (c *Client) openSuffix() []livedoc.Node {
+// openBase is the first node of the open turn that is still ours to show:
+// Live.From, floored by the emit cursor. They differ only when a clipped
+// catch-up read raised the cursor above the boundary — the turn's head was
+// never delivered, so the region starts where our knowledge does, not at zero.
+func (c *Client) openBase() int {
 	n := int(c.openFrom)
+	if e := c.emitted[c.openTurn]; e > n {
+		n = e
+	}
 	if n < 0 || n > len(c.openNodesSlice) {
 		n = 0
 	}
-	return append([]livedoc.Node(nil), c.openNodesSlice[n:]...)
+	return n
+}
+
+// openSuffix is the still-mutable tail of the open turn: everything at or above
+// Live.From. The committed head has already been released to scrollback.
+func (c *Client) openSuffix() []livedoc.Node {
+	return append([]livedoc.Node(nil), c.openNodesSlice[c.openBase():]...)
 }
 
 func (c *Client) resetOpen() {
