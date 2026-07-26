@@ -333,6 +333,7 @@ func delta(id uint64, old, n livedoc.Node) NodeDelta {
 	scalar("tool_call_id", old.ToolCallID, n.ToolCallID)
 	scalarInt("started_at", old.StartedAt, n.StartedAt)
 	scalarInt("finished_at", old.FinishedAt, n.FinishedAt)
+	scalarInt("at", old.At, n.At)
 	streamed("markdown", old.Markdown, n.Markdown)
 	streamed("output", old.Output, n.Output)
 	if !reflect.DeepEqual(old.Args, n.Args) {
@@ -344,6 +345,9 @@ func delta(id uint64, old, n livedoc.Node) NodeDelta {
 	}
 	if !reflect.DeepEqual(old.LTs, n.LTs) && n.LTs != nil {
 		set["lts"] = n.LTs
+	}
+	if !reflect.DeepEqual(old.Src, n.Src) && n.Src != nil {
+		set["src"] = n.Src
 	}
 	if len(set) > 0 {
 		d.Set = set
@@ -381,6 +385,12 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 	}
 	if n.LTs != nil {
 		set["lts"] = n.LTs
+	}
+	if n.Src != nil {
+		set["src"] = n.Src
+	}
+	if n.At != 0 {
+		set["at"] = n.At
 	}
 	return NodeDelta{ID: id, Set: set}
 }
