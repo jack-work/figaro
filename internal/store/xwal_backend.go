@@ -88,11 +88,14 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 
 func (b *XwalBackend) Open(ariaID string) (Log[message.Message], error) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	h, err := b.handleLocked(ariaID)
+	b.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
+	// Reading the content is where a trailing sidecar gets caught up; see
+	// meta_heal.go. No-op unless the watermark lags the tail.
+	b.healMeta(ariaID, h.ir)
 	return h.ir, nil
 }
 
@@ -325,13 +328,8 @@ func (b *XwalBackend) Meta(ariaID string) (*AriaMeta, error) {
 	c := b.metaCache(ariaID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.loaded {
-		value, err := readJSON[AriaMeta](b.metaPath(ariaID))
-		if err != nil {
-			return nil, err
-		}
-		c.value = value
-		c.loaded = true
+	if err := b.loadMetaLocked(ariaID, c); err != nil {
+		return nil, err
 	}
 	if c.value == nil {
 		return nil, nil
@@ -353,6 +351,20 @@ func (b *XwalBackend) SetMeta(ariaID string, meta *AriaMeta) error {
 		value := *meta
 		c.value = &value
 	}
+	return nil
+}
+
+// loadMetaLocked fills the cache from the sidecar once. Caller holds c.mu.
+func (b *XwalBackend) loadMetaLocked(ariaID string, c *metaCache) error {
+	if c.loaded {
+		return nil
+	}
+	value, err := readJSON[AriaMeta](b.metaPath(ariaID))
+	if err != nil {
+		return err
+	}
+	c.value = value
+	c.loaded = true
 	return nil
 }
 
