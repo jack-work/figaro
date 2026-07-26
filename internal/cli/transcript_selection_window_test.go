@@ -26,6 +26,15 @@ func TestTranscript_OpenSelectionLoadsGapBeforeExtending(t *testing.T) {
 		req, _ := tr.pageCursor()
 		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
+	// Park the viewport on the OPEN message before seeding. ^P seeds from the
+	// VIEWPORT now — the bottommost block on screen — not from the end of the
+	// retained window, so the paging loop above (which leaves the viewport at
+	// offset 0, a hundred turns above the gap) no longer puts the open message
+	// under the cursor by accident. This test is about EXTENDING across the
+	// gap, so it has to state that precondition instead of inheriting it.
+	tr.buildIndex()
+	_, maxOff := tr.layout(len(tr.footLines()))
+	tr.offset = maxOff
 	tr.selectNode(-1, false)
 	focus := tr.selection.focus
 	tr.selectNode(-1, true)

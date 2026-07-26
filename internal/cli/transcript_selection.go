@@ -184,13 +184,42 @@ func (t *transcript) selectNode(delta int, extend bool) {
 			}
 		}
 	}
+	cold := index < 0
+	if cold {
+		// COLD ENTRY SEEDS FROM THE VIEWPORT, NOT FROM THE WINDOW. The retained
+		// window holds far more than the screen shows, so len(refs)-1 was the
+		// last node of everything HELD, not the last one VISIBLE — and
+		// ensureSelectionVisible then yanked the page to it. Entering a
+		// selection must not move the page at all.
+		//
+		// DETACH FIRST, THEN PICK. stopFollowing settles the tail window (which
+		// can re-tune it, moving line space) and re-derives t.offset for the
+		// detached geometry, where the live padding row becomes content. A ref
+		// chosen against the FOLLOWING geometry can therefore stop being the
+		// bottommost visible one a frame later — the same staleness
+		// stopFollowing's own comment records for the promoted-by-'k' pager.
+		// Picking after the detach means picking against the geometry that will
+		// actually be painted.
+		t.stopFollowing()
+		t.buildIndex()
+		if ref, ok := t.viewportSeedRef(delta); ok {
+			for i := range refs {
+				if refs[i].nodeRef == ref {
+					index = i
+					break
+				}
+			}
+		}
+	}
 	if index < 0 {
+		// Nothing on screen to seed from (an empty or unbuilt index). Fall back
+		// to the ends of the retained window, where this always began.
 		if delta < 0 {
 			index = len(refs) - 1
 		} else {
 			index = 0
 		}
-	} else {
+	} else if !cold {
 		next := index + delta
 		if t.hasNewerHistory() && t.heldOpen != nil && next >= 0 && next < len(refs) &&
 			(refs[index].turn == t.heldOpen.Turn || refs[next].turn == t.heldOpen.Turn) {
@@ -212,6 +241,13 @@ func (t *transcript) selectNode(delta int, extend bool) {
 	}
 	t.selection.focus = refs[index]
 	t.selection.active = true
+	if cold {
+		// Seeded from what is on screen, so it is visible by construction and
+		// already detached. Calling ensureSelectionVisible here is precisely the
+		// scroll this exists to remove: a tall block whose head is on screen but
+		// whose tail runs off the bottom would drag the page down to it.
+		return
+	}
 	t.stopFollowing()
 	t.ensureSelectionVisible()
 }
@@ -440,19 +476,64 @@ func (t *transcript) toggleSelectedTools() bool {
 		}
 	}
 	dirty := make(map[int]struct{}, len(tools))
-	for _, ref := range tools {
-		if expand {
-			t.expanded[ref] = true
-		} else {
-			delete(t.expanded, ref)
+	toggle := func() {
+		for _, ref := range tools {
+			if expand {
+				t.expanded[ref] = true
+			} else {
+				delete(t.expanded, ref)
+			}
+			dirty[ref.turn] = struct{}{}
 		}
-		dirty[ref.turn] = struct{}{}
+		t.dropTurnsRows(dirty)
 	}
-	t.dropTurnsRows(dirty)
-	t.ensureSelectionVisible()
+	// EXPANDING GROWS UPWARD. Leaving t.offset alone pins the viewport TOP, and
+	// because the offset is an ABSOLUTE line index the new rows shove everything
+	// after the expansion down and off the bottom — the half of the screen the
+	// reader is actually anchored on. anchorBelow pins the tail of the change
+	// instead, so every node at or after it keeps its screen row and the earlier
+	// content is what scrolls away. See anchorBelow for why that is the right way
+	// round.
+	//
+	// The anchor is the LAST toggled tool: a selection can cover several, and only
+	// the content after all of them is guaranteed to hold still.
+	//
+	// Following is left alone — the viewport is pinned to the bottom there and
+	// renderFrame re-derives the offset every frame, so a shift would be
+	// overwritten and the bottom is already the correct anchor.
+	if t.follow {
+		toggle()
+		t.ensureSelectionVisible()
+		return true
+	}
+	if !t.anchorBelow(tools[len(tools)-1], toggle) {
+		// No span on one side of the change, so there is no honest delta to
+		// apply. Keep the old behaviour rather than guess.
+		t.ensureSelectionVisible()
+	}
+	// Deliberately NOT ensureSelectionVisible on the anchored path. The focus is
+	// the block that just grew; scrolling to reveal its far end is exactly the
+	// downward growth this replaced, and on a 200-line expansion it throws the
+	// reader into the middle of the output with the anchor pushed off-screen.
 	return true
 }
 
+// ensureSelectionVisible scrolls the focused node into the body, if it is not
+// already there.
+//
+// THE BODY HEIGHT COMES FROM layout(). It used to be recomputed here as
+// t.h - 1, which is not the same quantity: layout reserves two rows for the
+// footer rule and status, another for an open panel's every line, and one more
+// for the live padding row while following. So this believed the body was one
+// row taller than it is — two while following, more with a panel up — and
+// "scroll until span.last is visible" stopped short by exactly that much.
+//
+// The symptom was a selection that scrolled the page and then wasn't on it.
+// Observed in a pty: cold Ctrl-P selected the last node of the window, moved
+// the viewport from 1-38/70 to 32-69/70, and painted no cue at all, because
+// the node it had just selected sat on line 70. One further keypress revealed
+// it. Two expressions for one quantity is what caused this, so there is now
+// one.
 func (t *transcript) ensureSelectionVisible() {
 	if !t.selection.active {
 		return
@@ -462,10 +543,7 @@ func (t *transcript) ensureSelectionVisible() {
 	if !ok {
 		return
 	}
-	body := t.h - 1
-	if body < 1 {
-		body = 1
-	}
+	body, _ := t.layout(len(t.footLines()))
 	if span.first < t.offset {
 		t.offset = span.first
 	} else if span.last >= t.offset+body {
