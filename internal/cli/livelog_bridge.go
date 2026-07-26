@@ -100,6 +100,17 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 				t.freezePending()
 			}
 		} else {
+			// Output is DEFERRED in pending; input freezes immediately. So an
+			// input message arriving while an output region is still pending would
+			// overtake it, and the same turn told two different stories: incipit
+			// hoisted a steer above the four tool calls that preceded it, while
+			// `fig show` and the pager placed it correctly after the first two.
+			// Turns() is a pure function of the message list, so the live path may
+			// not reorder what the projection fixed — the projection is
+			// authoritative. Flush anything that comes BEFORE this message first.
+			if t.pending != nil && cursorOf(m).after(cursorOf(*t.pending)) {
+				t.freezePending()
+			}
 			t.in.Freeze(m) // incipit: freeze to native scrollback
 			if c := cursorOf(m); c.after(t.lastFrozen) {
 				t.lastFrozen = c
