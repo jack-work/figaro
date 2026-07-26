@@ -217,6 +217,8 @@ Flags:
                  fork, then print (mode="fork-send").
 
 Keys while streaming:
+  i              Steer the running turn: type a direction, Enter sends.
+                 Works inline and in the pager; sets --steer for you.
   Ctrl-C         Interrupt the turn (sends figaro.interrupt).
   Ctrl-D         Disconnect this CLI; leave the turn running.
   Ctrl-T         Open the full-screen transcript pager.
