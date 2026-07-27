@@ -263,11 +263,30 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	}
 	prompt := extractPrompt(rest)
 	if prompt == "" {
-		flags := "[--id <id>] [-e|--ephemeral] [-r|--raw] [-v|--verbatim] [-x|--exec] [-n] [-y] -- <prompt>"
-		if verb == "send" {
-			die("usage: figaro send %s", flags)
+		// A boundary with nothing after it is an INVITATION, not a mistake:
+		// open the editor and send what gets written. That is what lets a `q`
+		// alias expanding to `figaro --` be typed with no arguments at all.
+		//
+		// Only when a boundary was actually given. `figaro send` with no `--`
+		// at all is still a usage error, because the boundary is what says "a
+		// prompt belongs here" and dropping that would make every typo'd flag
+		// open an editor.
+		if hasDashBoundary(rest) {
+			text, cerr := composePrompt("Write a prompt. Markdown is fine.")
+			if cerr != nil {
+				if _, cancelled := cerr.(composeCancelled); cancelled {
+					return // nothing written; not an error
+				}
+				die("%s: %s", verb, cerr)
+			}
+			prompt = text
+		} else {
+			flags := "[--id <id>] [-e|--ephemeral] [-r|--raw] [-v|--verbatim] [-x|--exec] [-n] [-y] -- <prompt>"
+			if verb == "send" {
+				die("usage: figaro send %s", flags)
+			}
+			die("usage: %s %s", verb, flags)
 		}
-		die("usage: %s %s", verb, flags)
 	}
 
 	spec := opts.id
