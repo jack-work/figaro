@@ -132,6 +132,19 @@ type transcript struct {
 	keysNew     []uint32     // row fingerprints, screen side (shift detection)
 	keysOld     []uint32     // row fingerprints, prev side
 	screenSpare []string     // the frame buffer displaced by the last paint
+
+	// seed is a catch-up page the INLINE view fetched — the context printed when
+	// a prompt lands on a turn it did not open — handed over so the pager can
+	// open on history without a read of its own. It is deliberately NOT part of
+	// the client's model (a page folded there comes back through OnClosed and
+	// re-freezes history into scrollback), so the tail window merges it in on
+	// every rebuild instead. Immutable and small: what one ReadBefore returned,
+	// deduped against what the client already holds.
+	//
+	// Last in the struct so the frame path's hot fields keep the offsets they
+	// were tuned at. (Measured both ways: it made no difference — see the
+	// commit's performance note — but there is no reason to move them.)
+	seed []aria.Message
 }
 
 type transcriptPage struct {
@@ -777,7 +790,7 @@ func (t *transcript) resetToTail() {
 		return
 	}
 	v := t.client.View()
-	closed := v.Closed
+	closed := t.withSeed(v.Closed)
 	if keep := t.tailKeep(); len(closed) > keep {
 		closed = closed[len(closed)-keep:]
 	}
@@ -821,6 +834,53 @@ func (t *transcript) resetToTail() {
 // rows; the viewport is about everything on screen, live message included.
 // Conflating them let a 400-row streaming reply push the window past
 // budget*5/4 and shrink the retained history out from under it.
+// withSeed merges the handed-over catch-up page into the tail window. Nothing
+// the client already holds is added twice — identity is (Turn, From), the same
+// pair everything else in the pager keys on — and the caller's row budget then
+// governs the union, so a seed can be trimmed away like any other history.
+//
+// SPLIT SO THE DEFAULT PATH INLINES. resetToTail is on the frame path, and a
+// non-inlinable call in it is not free even when the call does nothing: with
+// the merge loop inline the cost was 168 against an inline budget of 80, and
+// the call site cost a measured +2–4% across key dispatch and frame
+// composition on a pinned box — with byte-identical allocations, i.e. paid for
+// nothing. The loop lives in mergeSeed, which the no-seed case never reaches.
+func (t *transcript) withSeed(closed []aria.Message) []aria.Message {
+	if len(t.seed) == 0 {
+		return closed
+	}
+	return t.mergeSeed(closed)
+}
+
+// mergeSeed is the merge itself. Both inputs are already ordered by (Turn,
+// From) — View sorts the closed set, a page arrives in reading order — so this
+// is a two-pointer walk: one allocation, no map, no sort. It runs only when
+// resetToTail actually rebuilds (the client's closed revision moved), not on
+// every frame.
+func (t *transcript) mergeSeed(closed []aria.Message) []aria.Message {
+	merged := make([]aria.Message, 0, len(t.seed)+len(closed))
+	i, j := 0, 0
+	for i < len(t.seed) && j < len(closed) {
+		a, b := cursorOf(t.seed[i]), cursorOf(closed[j])
+		switch {
+		case b.after(a):
+			merged = append(merged, t.seed[i])
+			i++
+		case a.after(b):
+			merged = append(merged, closed[j])
+			j++
+		default:
+			// The same slice from both sides. The CLIENT's copy wins: it is the
+			// one the live stream keeps up to date.
+			merged = append(merged, closed[j])
+			i++
+			j++
+		}
+	}
+	merged = append(merged, t.seed[i:]...)
+	return append(merged, closed[j:]...)
+}
+
 func (t *transcript) tuneTail() bool {
 	if t.tailTuned || !t.follow || t.tailRev == 0 || len(t.pages) != 1 {
 		return false

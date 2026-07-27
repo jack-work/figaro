@@ -10,6 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/render"
 )
 
 // livelogTurn renders the aria-read wire. By default it uses the incipit-freeze
@@ -47,6 +48,24 @@ type livelogTurn struct {
 	// or — the bug this replaced — skips every slice after the first.
 	lastFrozen  sliceCursor
 	pagerClosed []aria.Message
+
+	// held buffers pages while the opening of the session is being decided.
+	// Frames arrive on the notify pump the instant the connection is up, so
+	// without a hold the question can freeze to scrollback BEFORE the history it
+	// follows is printed — the one ordering the preamble exists to establish.
+	// Holding is a few milliseconds at the very start of a session and nothing
+	// is dropped: openInline applies every held page in arrival order.
+	hold bool
+	held []aria.Page
+
+	// seeded is the catch-up page fetched when we joined a turn we did NOT open.
+	// The inline view prints a bounded slice of it (seedContext); the PAGER gets
+	// the whole set, so opening it — by Ctrl-T or by an overflow auto-enter —
+	// renders that history with no round trip of its own. One fetch, two
+	// surfaces. It is deliberately NOT applied to aria.Client: a page folded
+	// there would come back through OnClosed and re-freeze history into
+	// scrollback, which is the whole trap this design is built around.
+	seeded []aria.Message
 }
 
 // sliceCursor addresses one pager unit: the turn and the node offset within it.
@@ -132,7 +151,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 		// instead (the user can read/scroll/select there). Auto-entered once,
 		// it stays until closed, flushing just the last turn to scrollback.
 		if !t.tr.active && t.openOverflows(m.Nodes) {
-			t.tr.enter()
+			t.enterPager() // with the catch-up page, if we joined a turn
 		}
 		if t.tr.active {
 			t.tr.render()
@@ -254,9 +273,11 @@ func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
 // turn it no longer reliably does, and the footer went missing until the first
 // token — so paint it here instead of waiting to be told.
 //
-// No-op in the pager (it renders the footer itself).
+// No-op in the pager (it renders the footer itself), and no-op when a
+// placeholder is already pinned — OpenThinking drops the current region to
+// scrollback on its way out, so arming twice would strand a footer there.
 func (t *livelogTurn) armThinking() {
-	if t.tr.active {
+	if t.tr.active || t.thinkingOpen {
 		return
 	}
 	t.thinkingOpen = true
@@ -264,7 +285,164 @@ func (t *livelogTurn) armThinking() {
 	t.in.OpenThinking(livedoc.RoleOutput)
 }
 
-func (t *livelogTurn) apply(r aria.Page)      { t.client.Apply(r) }
+func (t *livelogTurn) apply(r aria.Page) {
+	if t.hold {
+		t.held = append(t.held, r)
+		return
+	}
+	t.client.Apply(r)
+}
+
+// holdFrames buffers applied pages until openInline. Armed before the
+// connection is dialed, released once the opening of the session is decided.
+func (t *livelogTurn) holdFrames() { t.hold = true }
+
+// openInline places the opening of an inline session in the ONE order that
+// works, and is the only way to release the held frames — the order is not a
+// convention to remember at the call site, it is the method.
+//
+//  1. the preamble, if we are watching a turn we did not open;
+//  2. the submit footer, which the preamble's erase would otherwise take with
+//     it;
+//  3. the frames held since before the socket was dialed.
+//
+// Reversing 2 and 3 is not cosmetic: the footer is pinned at submit and the
+// turn's first frame ADOPTS that region, so releasing first paints the
+// question as one live region and the footer as a SECOND one below it — two
+// status bars, and a stale region the pager's exit erase then misses, after
+// which the question reaches scrollback twice. A pty found that; the suite was
+// green through it, which is why the order now lives here and not in stream.go.
+func (t *livelogTurn) openInline(fetched []aria.Message) {
+	t.seeded = fetched     // the pager's copy: printed or not, the fetch is kept
+	t.seedContext(fetched) // no-op when there is nothing to orient with
+	t.armThinking()        // no-op in the pager, and no-op if already pinned
+	t.hold = false
+	held := t.held
+	t.held = nil
+	for _, r := range held {
+		t.client.Apply(r)
+	}
+	// The pager draws from the shared model rather than from the event, so a
+	// page that finalized nothing would leave it showing the pre-release state.
+	if len(held) > 0 && t.tr.active {
+		t.tr.render()
+	}
+}
+
+// preambleMinRows floors the opening preamble's row budget, so a short pane
+// still gets some context rather than none.
+const preambleMinRows = 6
+
+// seedContext prints a bounded tail of the conversation ABOVE this session's
+// question, and declares ALL of the history it was given already committed.
+//
+// Two things have to be true at once. A prompt sent to an aria with history
+// used to open on a rule and nothing else — you could not see where you were
+// until the model spoke. And a naive fix (apply the catch-up page to the
+// client) is worse than the bug: every historical message would come back
+// through OnClosed, whose inline branch Freezes to NATIVE SCROLLBACK, so every
+// prompt would re-dump the retained history into the user's terminal.
+//
+// So the page never reaches the client. The caller folds it separately
+// (committedMessages) and hands the messages here, where a bounded slice is
+// printed ONCE, deliberately, and lastFrozen is seeded from the NEWEST message
+// — including the ones the budget elided. That is the freeze boundary
+// flushTail already reasons about: everything at or below it is treated as
+// already on screen, so leaving the pager replays only what this session
+// produced. Nothing can reach scrollback twice, because nothing else in this
+// process will ever emit these messages.
+//
+// No-op with no history (a new or ephemeral aria) or when the pager is up (it
+// renders history itself, and printing to scrollback under the alt screen is
+// how content gets lost).
+func (t *livelogTurn) seedContext(msgs []aria.Message) {
+	if len(msgs) == 0 || t.tr.active {
+		return
+	}
+	shown := t.fitPreamble(msgs)
+	// The bookend is THIS session's status line; hanging it under a reply from
+	// last week would date-stamp old content with a live turn's metrics. History
+	// closes with the plain rule instead.
+	save := t.in.Bookend
+	t.in.Bookend = nil
+	t.in.Resume(shown, nil)
+	t.in.Bookend = save
+	// Resume cleared the live region, which is where a footer pinned at submit
+	// was living. Say so, or armThinking would think one is still up and the
+	// session would run on with no footer at all.
+	t.thinkingOpen = false
+	if c := cursorOf(msgs[len(msgs)-1]); c.after(t.lastFrozen) {
+		t.lastFrozen = c
+	}
+}
+
+// fitPreamble takes the newest messages that fit in half the viewport. The
+// preamble is orientation, not a transcript — the pager is a Ctrl-T away — so
+// it must never push the question the user just asked off the top of the
+// screen. When the newest message alone overflows, its HEAD is dropped: the
+// rows nearest the new prompt are the ones worth keeping.
+func (t *livelogTurn) fitPreamble(msgs []aria.Message) []aria.Message {
+	w, h := t.term.Size()
+	if w <= 0 {
+		w = 80
+	}
+	budget := h / 2
+	if budget < preambleMinRows {
+		budget = preambleMinRows
+	}
+	rows, start := 0, len(msgs)
+	for k := len(msgs) - 1; k >= 0; k-- {
+		n := t.preambleHeight(msgs[k], w)
+		if rows+n > budget {
+			if start == len(msgs) {
+				return []aria.Message{t.clipPreamble(msgs[k], w, budget)}
+			}
+			break
+		}
+		rows += n
+		start = k
+	}
+	return msgs[start:]
+}
+
+// clipPreamble drops leading nodes until the message fits the budget. It keeps
+// the inquiry: the question is the single most orienting row on the screen,
+// and a turn whose question is gone reads as someone else's output.
+func (t *livelogTurn) clipPreamble(m aria.Message, w, budget int) aria.Message {
+	for len(m.Nodes) > 0 && t.preambleHeight(m, w) > budget {
+		m.Nodes = m.Nodes[1:]
+		m.From++
+	}
+	return m
+}
+
+// preambleHeight is the row count Incipit.printMessage will emit for m. It
+// counts the same pieces the renderer draws — the top margin, the question
+// block, the rule between the voices, the role header, the blocks and their
+// separators, and the closing rule — and rounds UP where the margin is
+// conditional, because a preamble that overshoots its budget is the failure
+// mode that pushes the new question off the screen.
+func (t *livelogTurn) preambleHeight(m aria.Message, w int) int {
+	rows := 3 // top margin, the blank before the closer, the closer itself
+	inquiry := strings.TrimSpace(m.Inquiry) != ""
+	if inquiry {
+		rows += 2 + len(render.Prose(m.Inquiry, w)) // header, blank, prose
+	}
+	if len(m.Nodes) > 0 {
+		if inquiry {
+			rows += 2 // the blank + rule that separate the question from the reply
+		}
+		rows += 2 // role header, blank
+	}
+	for k, n := range m.Nodes {
+		if k > 0 {
+			rows++ // inter-block blank
+		}
+		rows += len(t.view.Render(n, w, 0))
+	}
+	return rows
+}
+
 func (t *livelogTurn) setDesync(fn func(int)) { t.client.OnDesync = fn }
 func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 
@@ -336,7 +514,7 @@ func (t *livelogTurn) tick() {
 func (t *livelogTurn) resize(w, h int) {
 	t.term.SetSize(w, h)
 	if !t.tr.active && h >= minPagerHeight && t.in.LiveHeight() > h {
-		t.tr.enter()
+		t.enterPager()
 	}
 	if t.tr.active {
 		t.tr.resize(w, h)
@@ -390,7 +568,26 @@ func (t *livelogTurn) freezePending() {
 
 // enterTranscript switches to the full-screen pager (the caller has already
 // caught the model up via figaro.read so it shows full history).
-func (t *livelogTurn) enterTranscript() { t.tr.enter() }
+func (t *livelogTurn) enterTranscript() { t.enterPager() }
+
+// enterPager opens the transcript on whatever catch-up page the inline view
+// already fetched. That is the second half of the fetch's job: a prompt that
+// lands on a turn it did not open buys a little context, the inline view
+// prints a bounded slice of it, and the pager opens on the whole of it — no
+// read, and that much less to page in.
+//
+// The pager's tail window is rebuilt from the client's closed set on every
+// frame that changes it (buildIndex → resetToTail), so the seed has to be part
+// of that rebuild rather than a page pushed in once; transcript.withSeed does
+// the merge and the de-dup.
+func (t *livelogTurn) enterPager() {
+	t.tr.seed = t.seeded
+	t.tr.enter()
+}
+
+// hasSeed reports whether the pager can open on history already in hand — the
+// input loop asks so it can skip its blocking catch-up read.
+func (t *livelogTurn) hasSeed() bool { return len(t.seeded) > 0 }
 
 // inTranscript reports whether the pager is up. Read under the render lock.
 func (t *livelogTurn) inTranscript() bool { return t.tr.active }

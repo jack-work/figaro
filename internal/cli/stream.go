@@ -26,6 +26,21 @@ const spinnerFPS = 11 // spinner frames per second (~90ms/frame)
 // newest N committed messages — the pager's initial (lazy) window.
 const recentCursor = 1 << 60
 
+// The opening preamble: how much history a new prompt is allowed to fetch, and
+// how long it may wait for it.
+//
+// The budget is small on purpose — the preamble is orientation, not a
+// transcript, and the renderer clips it to half the viewport anyway. The
+// timeout is the UI contract: the agent socket serves one request at a time,
+// so this read sits between the prompt's accept and its first painted row.
+// enterTranscript can afford 5s because the user asked for the pager and it
+// has nothing else to draw; a prompt cannot, so a slow read is abandoned and
+// the session opens exactly as it did before.
+const (
+	recentContextMessages = 4
+	recentContextTimeout  = 300 * time.Millisecond
+)
+
 // Terminal control: disable auto-margin (so a full-width row never wraps) and
 // hide the cursor while the renderer owns the screen.
 const (
@@ -93,6 +108,25 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	running := true  // a turn is in flight until turn.done; gates Ctrl-C
 	sendCursor := -1 // cursor from Qua; stop only once committed past it and idle
 
+	// THE DISCRIMINATOR. ownTurn is closed the instant a frame carries the
+	// inquiry we just sent — proof that OUR prompt opened the turn about to
+	// paint. noTurn is closed when the agent reports an error instead, because
+	// then no turn is coming at all. State can race (Qua's `active` flag is
+	// sampled before the prompt is even queued); the EVENT cannot, and it is
+	// the same split the daemon itself makes: appendUserPrompt RETURNS before
+	// OpenInquiry when it is steering, so a turn we merely joined never
+	// broadcasts a question of ours.
+	ownTurn := make(chan struct{})
+	noTurn := make(chan struct{})
+	var ownOnce, noOnce sync.Once
+	// watchInquiry keeps the check OFF the steady-state frame path. Every aria
+	// frame passes through onNotify — dozens a second while a tool streams — and
+	// the question is only ever asked once, at the opening of the session.
+	// Cleared by the answer, and again by the decision itself, so from then on a
+	// frame pays one bool test. (Touched only under mu, like everything else
+	// here.)
+	watchInquiry := true
+
 	onNotify := func(method string, params json.RawMessage) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -100,6 +134,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		case rpc.MethodAriaFrame:
 			var r aria.Page
 			if json.Unmarshal(params, &r) == nil {
+				if watchInquiry && pageCarriesInquiry(r, prompt) {
+					watchInquiry = false
+					ownOnce.Do(func() { close(ownTurn) })
+				}
 				lt.apply(r)
 			}
 		case rpc.MethodTurnDone:
@@ -122,6 +160,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			// clean scrollback below it, not over the footer.
 			lt.finishTurn(d.Reason)
 			if isErr {
+				// No turn will open for this prompt, so stop waiting on an
+				// inquiry that is never coming.
+				noOnce.Do(func() { close(noTurn) })
 				if strings.Contains(d.Reason, "no credential") || strings.Contains(d.Reason, "resolve token") {
 					fmt.Fprint(os.Stderr, "\n"+providerSetupHint())
 				} else {
@@ -150,6 +191,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			}
 		}
 	}
+
+	// Hold frames from before the socket is dialed until the opening preamble
+	// (below) has been placed. A subscription starts pushing the moment it is
+	// made, so this is the only way to guarantee the question is painted UNDER
+	// the history it follows rather than over it. Nothing is dropped.
+	lt.holdFrames()
 
 	fcli, err := figaro.DialClient(ep, onNotify)
 	if err != nil {
@@ -223,6 +270,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		}
 	}
 
+	// The opening preamble is for the INLINE renderer only: --listen already
+	// opened the pager (which reads its own history), and a non-TTY caller gets
+	// a stream, not a screen, so neither may grow a spurious read or a row of
+	// output it did not have before.
+	catchUp := in != nil && !set.listen
+
 	cursor, active, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard())
 	if qerr != nil {
 		die("prompt: %s", qerr)
@@ -235,13 +288,33 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// turn already in progress (partial state, mid-stream). Drop into the
 	// transcript pager on the last page — consistent scrollback, no glitch. A
 	// fresh turn (idle aria) stays inline with the thinking footer.
-	if active && in != nil {
+	joined := active && in != nil
+	if joined {
 		in.enterTranscript()
-	} else {
-		mu.Lock()
-		lt.armThinking()
-		mu.Unlock()
 	}
+
+	// WHERE YOU ARE — but only when you did not just say it yourself.
+	//
+	// An aria with history used to open on a dim rule and nothing else until
+	// the model's first token. Printing the tail fixes that, but printing it on
+	// EVERY prompt restates the previous exchange immediately above itself,
+	// separated only by the shell prompt — and `q` in a continuous terminal is
+	// how this is mostly driven, so that is a daily irritant, not a corner.
+	//
+	// The rule: a prompt to an IDLE aria is call-response — nothing before the
+	// question. A prompt that lands on a turn we did not open buys a little
+	// context, which is both printed (orientation) and KEPT (openInline seeds
+	// the pager with it, so Ctrl-T opens on history without a read). Decided
+	// from the STREAM — did our own question come back? — not from Qua's
+	// `active`, which is sampled before the prompt is even queued.
+	var fetched []aria.Message
+	if catchUp && !joined && !awaitOwnTurn(prompt, ownTurn, noTurn) {
+		fetched = recentContext(ctx, fcli, cursor)
+	}
+	mu.Lock()
+	watchInquiry = false // decided; no frame need ask again
+	lt.openInline(fetched)
+	mu.Unlock()
 
 	select {
 	case <-doneCh:
@@ -342,8 +415,20 @@ type transcriptReadClient interface {
 func (in *interactiveInput) enterTranscript() {
 	in.mu.Lock()
 	already := in.lt.transcriptActive()
+	seeded := in.lt.hasSeed()
 	in.mu.Unlock()
 	if already {
+		return
+	}
+	// Already holding the catch-up page (we joined a turn we did not open, and
+	// the inline view fetched the tail to orient with): open on it rather than
+	// blocking the input loop on a read for content we have. Scrolling up still
+	// pages older history in, asynchronously, as it always did.
+	if seeded {
+		in.mu.Lock()
+		in.lt.enterTranscript()
+		in.lt.setQueuedFetch(in.refreshQueued)
+		in.mu.Unlock()
 		return
 	}
 	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -467,6 +552,105 @@ func (in *interactiveInput) pageTranscriptSearch(ctx context.Context, cancel con
 		}
 		in.mu.Unlock()
 	}
+}
+
+// ownTurnDeadline bounds the wait for our own question to come back on the
+// stream. It is the answer to "how long before I conclude no inquiry is
+// coming", and it is generous by three orders of magnitude on purpose.
+//
+// MEASURED, against a live agent (probe: issue Qua, timestamp the frame whose
+// part carries our own text; 4 dials, warm aria):
+//
+//	Qua returned          +0.13 … +0.15 ms
+//	our inquiry frame     +0.19 … +0.34 ms   (0.04–0.19 ms after Qua returned)
+//
+// which agrees with W1B's BenchmarkPromptBroadcastGap: the append→broadcast
+// window inside the daemon is ~0.7µs on a 5,000-message aria and flat in aria
+// size, so what we are timing is one socket round trip and one inbox drain.
+// The whole cold path, exec to the question painted, is ~38ms.
+//
+// The wait is also only ever entered for an aria Qua reported IDLE (a running
+// turn drops us into the pager instead), so the drain we are waiting on has
+// nothing in front of it. 300ms is ~900× the slowest measurement.
+//
+// It has to exist because the other branch may deliver nothing for tens of
+// seconds — a steer sits invisible behind a long tool call until the round
+// boundary — and waiting on it would hang the prompt. It must not be tight,
+// because being wrong is asymmetric: too short and a slow-but-ordinary prompt
+// gets an unwanted preamble (the irritant this removes), too long and a turn
+// we really did join waits a beat for its orientation. Nothing of OURS is
+// delayed by it: the wait ends on the very frame that paints the question.
+const ownTurnDeadline = 300 * time.Millisecond
+
+// awaitOwnTurn reports whether the turn we are about to watch is the one our
+// prompt opened. True means: our question came back on the wire, so the screen
+// is about to show it and there is nothing to orient — print no preamble.
+//
+// An empty prompt has no inquiry to match and cannot be told apart this way;
+// treat it as ours rather than orienting a session that asked nothing.
+func awaitOwnTurn(prompt string, own, none <-chan struct{}) bool {
+	if strings.TrimSpace(prompt) == "" {
+		return true
+	}
+	t := time.NewTimer(ownTurnDeadline)
+	defer t.Stop()
+	select {
+	case <-own:
+		return true
+	case <-none:
+		return false
+	case <-t.C:
+		return false
+	}
+}
+
+// pageCarriesInquiry reports whether a frame carries the question we sent.
+//
+// The inquiry travels as TEXT on the turn and is recorded verbatim
+// (OpenInquiry(a.turnID, prompt.text)), so equality on the text is the whole
+// test — no turn id arithmetic, which would need the cursor from Qua and the
+// inquiry frame can beat Qua's own response back to us.
+func pageCarriesInquiry(p aria.Page, prompt string) bool {
+	want := strings.TrimSpace(prompt)
+	if want == "" {
+		return false
+	}
+	for _, part := range p.Parts {
+		if strings.TrimSpace(part.Inquiry) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// recentContext reads the tail of the conversation for the opening preamble.
+//
+// Nothing here reaches the aria.Client: applying a history page would fire
+// OnClosed for every historical message, and the inline branch of OnClosed
+// Freezes to native scrollback — i.e. the retained history would be re-dumped
+// into the terminal on every prompt. Folding the page separately
+// (committedMessages, the same fold the pager's page fetch uses) gives the
+// renderer the messages with no side effects at all.
+//
+// Two filters, both about not showing this session's own turn as its own
+// history: SEALED parts only, so a turn another client is mid-way through is
+// never half-printed; and nothing past the cursor Qua reported, which is the
+// last committed turn at accept time. An error, a timeout, or an aria with no
+// history all return nil — the caller then behaves exactly as before.
+func recentContext(ctx context.Context, fcli transcriptReadClient, cursor int) []aria.Message {
+	rctx, rcancel := context.WithTimeout(ctx, recentContextTimeout)
+	defer rcancel()
+	r, err := fcli.ReadBefore(rctx, aria.Anchor{Turn: recentCursor}, wireBudget(recentContextMessages))
+	if err != nil {
+		return nil
+	}
+	var history aria.Page
+	for _, part := range r.Parts {
+		if part.Sealed && int(part.ID) <= cursor {
+			history.Parts = append(history.Parts, part)
+		}
+	}
+	return committedMessages(history)
 }
 
 // wireBudget converts the pager's message-count geometry into the wire's byte
