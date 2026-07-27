@@ -156,13 +156,21 @@ to tell whether a subagent is still working or has parked. Three values:
 | state | meaning |
 |---|---|
 | `dormant` | not loaded in memory; nothing running |
-| `idle` | loaded, inbox empty (no turn in flight) |
-| `active` | inbox non-empty — currently working a turn |
+| `idle` | loaded, no turn in flight and nothing queued |
+| `active` | a turn is in flight, OR work is queued behind one |
 
-Source: `state := "idle"; if !a.inbox.IsIdle() { state = "active" }` in
-`internal/figaro/agent.go` (Agent.Info); `dormant` is stamped on by the
-angelus when it merges disk-backed arias into the list response
+Source: `state := "idle"; if a.turnCtx != nil || !a.inbox.IsIdle() { state =
+"active" }` in `internal/figaro/agent.go` (Agent.Info); `dormant` is stamped on
+by the angelus when it merges disk-backed arias into the list response
 (`internal/angelus/protocol.go`).
+
+The `turnCtx` half matters, and this file used to omit it — which is worse than
+saying nothing, because it read as though `active` meant only "has queued
+work". A running turn normally has an EMPTY inbox: the event was dequeued to
+start it. An inbox-only rule would therefore report a busy agent as `idle`, and
+a supervisor polling "is my worker still going?" would collect it mid-flight.
+Trust the quoted line over the prose, and re-read the source when they
+disagree.
 
 **One-shot poll (scriptable):**
 
