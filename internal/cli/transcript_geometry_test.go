@@ -142,12 +142,12 @@ func (v *countingNodeView) Render(n livedoc.Node, width, tick int) []string {
 func TestTranscriptRetuneIsIdempotent(t *testing.T) {
 	tr := newTallTranscript(t, 600)
 	tr.render()
-	rev, n := tr.tailRev, len(tr.messages())
+	rev, n := tr.from, len(tr.messages())
 	for range 10 {
 		tr.render()
 	}
-	if tr.tailRev != rev || len(tr.messages()) != n {
-		t.Fatalf("retune kept firing: rev %d -> %d, messages %d -> %d",
-			rev, tr.tailRev, n, len(tr.messages()))
+	if tr.from != rev || len(tr.messages()) != n {
+		t.Fatalf("retune kept firing: floor %v -> %v, messages %d -> %d",
+			rev, tr.from, n, len(tr.messages()))
 	}
 }

@@ -83,15 +83,29 @@ type transcript struct {
 	newer       []pageDesc
 	payloadLRU  []transcriptPage
 	search      *transcriptSearch
-	heldOpen    *aria.Message
 	committedW  int
 
-	// tailRev is the client's closed-set revision that t.pages currently is a
-	// pristine snapshot of; 0 means the window has been paged/searched away from
-	// the tail. While following, the window is a pure function of that revision,
-	// so resetToTail can no-op instead of rebuilding pages, re-hashing page
-	// descriptors and re-scanning the caches on every single frame.
-	tailRev uint64
+	// THE TAIL WINDOW IS THE STORE'S OWN TAIL, not a copy of it. from is its
+	// floor — the anchor of its oldest message — and storeWindow says the window
+	// is that half-open interval [from, ∞) rather than the retained pages.
+	//
+	// This is what dissolves the frozen detached tail (docs/range-store.md, bug
+	// B). The pager used to snapshot the closed tail into t.pages and freeze the
+	// open message beside it (heldOpen), because client.Open() is the open
+	// SUFFIX: as Live.From advances, nodes LEAVE the suffix and become closed
+	// messages, which a frozen window does not hold — so rendering live would
+	// make content vanish, and it rendered stale instead. With one owner those
+	// released nodes land in the store's head range, which IS the window, so
+	// there is nothing to freeze and nothing to lose. from stays pinned while
+	// detached, growth appends at the END of line space, the prefix above is
+	// unchanged, and t.offset stays valid — the screen genuinely holds still
+	// while the bottom block advances.
+	//
+	// Fetched older history still lands in t.pages (phase 2a-part-2 moves it),
+	// and the first page that does drops storeWindow: the window then no longer
+	// reaches the tail, so the open message is not ours to draw at all.
+	from        aria.Anchor
+	storeWindow bool
 	// tailTuned latches the one row-budget retune allowed per tail window.
 	tailTuned bool
 	// tailWant is the tuned tail-window size in messages (0 = not yet tuned).
@@ -122,7 +136,6 @@ type transcript struct {
 	index   lineIndex
 	ruleStr string // memoized separator rule for ruleW columns
 	ruleW   int
-
 	// Reused buffers. Each has a distinct owner so no two of them can ever
 	// alias: rowBuf belongs to render (the visible window), lineBuf to lines()
 	// (the whole-window materialization, off the frame path), paintBuf to the
@@ -140,19 +153,6 @@ type transcript struct {
 	keysNew     []uint32     // row fingerprints, screen side (shift detection)
 	keysOld     []uint32     // row fingerprints, prev side
 	screenSpare []string     // the frame buffer displaced by the last paint
-
-	// seed is a catch-up page the INLINE view fetched — the context printed when
-	// a prompt lands on a turn it did not open — handed over so the pager can
-	// open on history without a read of its own. It is deliberately NOT part of
-	// the client's model (a page folded there comes back through OnClosed and
-	// re-freezes history into scrollback), so the tail window merges it in on
-	// every rebuild instead. Immutable and small: what one ReadBefore returned,
-	// deduped against what the client already holds.
-	//
-	// Last in the struct so the frame path's hot fields keep the offsets they
-	// were tuned at. (Measured both ways: it made no difference — see the
-	// commit's performance note — but there is no reason to move them.)
-	seed []aria.Message
 }
 
 type transcriptPage struct {
@@ -224,6 +224,13 @@ func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query, t.matchQuery = false, false, "", ""
 	t.inJump, t.jumpQuery, t.jumpNote, t.jump = false, "", "", nil
+	// THE PAGER OWNS RETENTION while it is up. The client's count-based trim
+	// drops the OLDEST messages, which is precisely wrong once the window is the
+	// store itself: a reader scrolled up, or a catch-up page merged in to open on
+	// history, would be trimmed out from under. evictStale keeps the store bounded
+	// against the window instead; leave() hands the count limit back.
+	t.client.SetClosedLimit(0)
+	t.storeWindow, t.from = false, aria.Anchor{}
 	t.invalidateWindow() // a fresh session always rebuilds the window from the tail
 	t.resetToTail()
 	t.prefix = altScreenOn + autowrapOff + ldmouse.Enable + cursorHide + "\x1b[2J"
@@ -236,6 +243,7 @@ func (t *transcript) leave() {
 	t.active = false
 	t.selection = nodeSelection{} // no selection survives outside the pager
 	t.prefix = ""                 // a frame that never painted must not switch us back
+	t.client.SetClosedLimit(transcriptTailLimit)
 	io.WriteString(t.out, "\x1b[2J"+ldmouse.Disable+altScreenOff)
 	t.prev = nil
 }
@@ -536,8 +544,17 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 		t.render()
 		return
 	}
-	if t.heldOpen != nil && t.heldOpen.Turn >= desc.FirstTurn && t.heldOpen.Turn <= desc.LastTurn {
-		t.heldOpen = nil
+	// THE FIRST PAGE OF OLDER HISTORY takes the window off the store's tail.
+	// Materialize what the interval currently holds as the first retained page,
+	// so everything below here is the paging code exactly as it was; the window
+	// no longer reaches the live turn, which is why openMessage goes quiet.
+	// (Phase 2a-part-2 replaces this with a merge into the store and a lowered
+	// floor — at which point t.pages goes away entirely.)
+	if t.storeWindow {
+		if held := t.messages(); len(held) > 0 {
+			t.pages = []transcriptPage{{desc: describePage(held), messages: held}}
+		}
+		t.storeWindow = false
 	}
 	searching := t.search != nil
 	anchor, within := sliceKey(0), 0
@@ -580,6 +597,41 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 		t.jumpAdvance()
 	}
 	t.render()
+}
+
+// historyPage is a fetched page folded into the pager's units, WITH the turn
+// extents the wire stated. The extents are what let the store decide that the
+// last node of turn t and the first of turn t+1 are neighbours rather than a
+// hole: an anchor cannot answer that on its own (docs/range-store.md,
+// "Adjacency is NOT decidable from an anchor"), and a page clipped at its tail
+// states nothing, so the map is deliberately partial.
+type historyPage struct {
+	msgs    []aria.Message
+	extents map[int]uint64
+}
+
+// committedPage is committedMessages plus those extents — the fold used
+// wherever the result is going into the store rather than straight to a
+// renderer.
+func committedPage(p aria.Page) historyPage {
+	out := historyPage{msgs: committedMessages(p)}
+	for _, part := range p.Parts {
+		if part.ClippedTail || !part.Sealed {
+			continue
+		}
+		n := part.From + uint64(len(part.Nodes))
+		if n == 0 {
+			if part.Inquiry == "" {
+				continue
+			}
+			n = 1 // a turn that produced nothing still occupies its phantom node 0
+		}
+		if out.extents == nil {
+			out.extents = map[int]uint64{}
+		}
+		out.extents[int(part.ID)] = n
+	}
+	return out
 }
 
 // committedMessages flattens a page's parts into the pager's materialized
@@ -808,41 +860,87 @@ func (t *transcript) takePayload(desc pageDesc) []aria.Message {
 	return nil
 }
 
+// resetToTail re-points the window at the STORE's tail. It does not copy: the
+// window is the interval [from, ∞) and the store is its only holder, so
+// "rebuilding" it is recomputing one anchor — the floor, tailKeep messages
+// back from the end, which Store.TailFrom walks BACKWARD and which therefore
+// costs the window's own size, not the aria's.
+//
+// That is why tailRev is gone. It existed because the rebuild was expensive
+// (View() of the whole closed set, a seed merge, a page-descriptor hash and a
+// cache scan, per frame), so the pager cached the result and needed the
+// client's revision to know when the cache had gone stale. Deriving the floor
+// is cheaper than checking whether a copy of it is current — and a copy can
+// disagree with the store, which is the disease this phase treats.
 func (t *transcript) resetToTail() {
-	rev := t.client.ClosedRevision()
-	if t.tailRev == rev {
-		// The window already IS the tail at this revision. Only the cheap
-		// follow-state resets remain (both are no-ops in the steady state; they
-		// keep this path bit-identical to a full rebuild).
-		t.heldOpen, t.checkNewer = nil, false
+	keep := t.tailKeep()
+	n := t.client.Count()
+	if keep > n {
+		keep = n
+	}
+	from, _ := t.client.TailFrom(keep)
+	if t.storeWindow && t.from == from {
+		t.checkNewer = false // the window already IS the tail at this floor
 		return
 	}
-	v := t.client.View()
-	closed := t.withSeed(v.Closed)
-	if keep := t.tailKeep(); len(closed) > keep {
-		closed = closed[len(closed)-keep:]
-	}
-	t.pages = nil
-	if len(closed) > 0 {
-		t.pages = []transcriptPage{{desc: describePage(closed), messages: closed}}
-		if closed[len(closed)-1].Turn > t.committedW {
-			t.committedW = closed[len(closed)-1].Turn
-		}
-	}
-	t.newer = nil
-	t.payloadLRU = nil
+	t.pages, t.newer, t.payloadLRU = nil, nil, nil
+	t.from, t.storeWindow = from, true
 	t.checkNewer = false
-	t.heldOpen = nil
+	// The committed watermark is the newest thing the store holds, which is one
+	// backward step — no walk, and no dependence on OnClosed having been wired.
+	if last, ok := t.client.TailFrom(1); ok && int(last.Turn) > t.committedW {
+		t.committedW = int(last.Turn)
+	}
 	// Turn 1 is the oldest turn there is — but only its HEAD slice is the oldest
 	// thing there is. A window holding just the tail of it still has that turn's
 	// own head to fetch, and the question with it.
-	t.noMoreOlder = len(closed) > 0 && closed[0].Turn <= 1 && closed[0].From == 0
-	// A rebuilt window is a changed window: bump windowRev through the same
-	// signal everything else uses, then claim the client revision it mirrors.
+	t.noMoreOlder = n > 0 && from.Turn <= 1 && from.Node == 0
 	t.invalidateWindow()
-	t.tailRev = rev
 	t.tailTuned = false
+	t.evictStale()
 	t.pruneCaches()
+}
+
+// transcriptRetainRows is how many rendered rows the STORE is allowed to hold
+// behind the pager's window — the return trip's worth. It plays the part
+// transcriptPayloadLRU plays for fetched pages: what the store still holds,
+// the row cache still holds rows for, so scrolling back up costs neither I/O
+// nor a re-render. Four windows, which is what the LRU was sized at.
+var transcriptRetainRows = 4 * transcriptWindowRows
+
+// retainMessages converts that row budget into the unit eviction works in,
+// through the measured height of the messages this aria actually has — the
+// same conversion pageMessages does, and for the same reason: a message is
+// anywhere from 4 rows to 400, so a message count is not a memory bound.
+func (t *transcript) retainMessages() int {
+	avg := t.avgRowsPerMessage()
+	if avg <= 0 {
+		return transcriptTailLimit
+	}
+	n := transcriptRetainRows / avg
+	if n < transcriptTailLimit {
+		n = transcriptTailLimit
+	}
+	if max := transcriptPageSize * transcriptPageLimit * 4; n > max {
+		n = max
+	}
+	return n
+}
+
+// evictStale forgets what has fallen far enough behind the window, and NEVER
+// what the window shows. With one owner this is the whole of retention: the
+// client's count-based trim is suspended while the pager is up (see enter),
+// because trimming the oldest is exactly wrong for a reader who has scrolled
+// up — it would drop the page they are looking at.
+func (t *transcript) evictStale() {
+	floor, ok := t.client.TailFrom(t.retainMessages())
+	if !ok {
+		return
+	}
+	if t.from.Less(floor) {
+		floor = t.from // never evict inside the window
+	}
+	t.client.EvictBefore(floor)
 }
 
 // tuneTail re-cuts the tail window towards the row budget, using what the last
@@ -867,55 +965,21 @@ func (t *transcript) resetToTail() {
 // pair everything else in the pager keys on — and the caller's row budget then
 // governs the union, so a seed can be trimmed away like any other history.
 //
-// SPLIT SO THE DEFAULT PATH INLINES. resetToTail is on the frame path, and a
-// non-inlinable call in it is not free even when the call does nothing: with
-// the merge loop inline the cost was 168 against an inline budget of 80, and
-// the call site cost a measured +2–4% across key dispatch and frame
-// composition on a pinned box — with byte-identical allocations, i.e. paid for
-// nothing. The loop lives in mergeSeed, which the no-seed case never reaches.
-func (t *transcript) withSeed(closed []aria.Message) []aria.Message {
-	if len(t.seed) == 0 {
-		return closed
-	}
-	return t.mergeSeed(closed)
-}
-
-// mergeSeed is the merge itself. Both inputs are already ordered by (Turn,
-// From) — View sorts the closed set, a page arrives in reading order — so this
-// is a two-pointer walk: one allocation, no map, no sort. It runs only when
-// resetToTail actually rebuilds (the client's closed revision moved), not on
-// every frame.
-func (t *transcript) mergeSeed(closed []aria.Message) []aria.Message {
-	merged := make([]aria.Message, 0, len(t.seed)+len(closed))
-	i, j := 0, 0
-	for i < len(t.seed) && j < len(closed) {
-		a, b := cursorOf(t.seed[i]), cursorOf(closed[j])
-		switch {
-		case b.after(a):
-			merged = append(merged, t.seed[i])
-			i++
-		case a.after(b):
-			merged = append(merged, closed[j])
-			j++
-		default:
-			// The same slice from both sides. The CLIENT's copy wins: it is the
-			// one the live stream keeps up to date.
-			merged = append(merged, closed[j])
-			i++
-			j++
-		}
-	}
-	merged = append(merged, t.seed[i:]...)
-	return append(merged, closed[j:]...)
-}
-
+// DELETED at phase 2. The seed existed because a fetched page could not go
+// into the client (Apply fires OnClosed, whose inline branch freezes to native
+// scrollback), so the pager held a second copy and re-merged it into the tail
+// window on every rebuild. aria.Client.Merge folds it into the ONE owner
+// silently instead, which is the same page in the same order with no second
+// copy and no merge on the frame path. See livelogTurn.enterPager.
 func (t *transcript) tuneTail() bool {
-	if t.tailTuned || !t.follow || t.tailRev == 0 || len(t.pages) != 1 {
+	if t.tailTuned || !t.follow || !t.storeWindow {
 		return false
 	}
-	have := len(t.pages[0].messages)
-	held, _ := t.heldWindow() // committed rows: what the budget governs
-	total := t.index.total    // + the open message: what the viewport shows
+	held, have := t.heldWindow() // committed rows + the messages they belong to
+	if have == 0 {
+		return false
+	}
+	total := t.index.total // + the open message: what the viewport shows
 	want, budget := t.pageMessages(), pageRowBudget()
 	if have > 0 && held > 0 && total < t.h { // never leave the viewport half-empty
 		perMsg := max(held/have, 1)
@@ -926,13 +990,19 @@ func (t *transcript) tuneTail() bool {
 	grow := want > have && (held < budget*3/4 || total < t.h)
 	shrink := want < have && held > budget*5/4
 	if !grow && !shrink {
-		t.tailTuned = true // converged for this revision
+		// CONVERGED — and the size we converged at is now the window's, latched.
+		// The window is derived from tailKeep() on every frame rather than held
+		// as a snapshot, so leaving tailWant unset would let the size drift with
+		// pageMessages()'s own input (the measured rows-per-message, which the
+		// window itself determines). Latching makes the fixed point explicit.
+		t.tailWant = have
+		t.tailTuned = true
 		return false
 	}
+	before := t.from
 	t.tailWant = want
-	t.invalidateWindow()
-	t.resetToTail() // clears tailTuned; sets a fresh tailRev
-	if len(t.pages) != 1 || len(t.pages[0].messages) == have {
+	t.resetToTail() // clears tailTuned; re-derives the floor
+	if t.from == before {
 		t.tailTuned = true // no messages available to move: stop trying
 		return false
 	}
@@ -940,18 +1010,15 @@ func (t *transcript) tuneTail() bool {
 }
 
 // invalidateWindow is the ONE authority on "the retained window changed". Every
-// mutation of t.pages goes through it (resetToTail included, at its tail), and
-// it publishes the fact to both layers that care:
+// mutation of the window — the pages, or the store interval's floor — goes
+// through it, and it publishes the fact to the line index: windowRev++, which
+// buildIndex records, so a moved window always refills lineKey instead of
+// relying on the shape diff to notice.
 //
-//   - the page layer: tailRev = 0, so the next resetToTail rebuilds from the
-//     client instead of taking axis D's revision fast path;
-//   - the line index: windowRev++, which buildIndex records, so a moved page set
-//     always refills lineKey instead of relying on the shape diff to notice.
-//
-// Before the merge these were two independent staleness notions — D's tailRev
-// over the pages and A's shape diff over the index — and nothing tied them
-// together. They are one signal now: if the pages move, the index knows.
-func (t *transcript) invalidateWindow() { t.tailRev, t.windowRev = 0, t.windowRev+1 }
+// It used to clear tailRev as well, so the next resetToTail would rebuild the
+// pages from the client. There is no snapshot to invalidate any more: the tail
+// window is derived from the store on the spot.
+func (t *transcript) invalidateWindow() { t.windowRev++ }
 
 func (t *transcript) pruneCaches() {
 	// Called from resetToTail, i.e. once per frame while following the live
@@ -964,6 +1031,16 @@ func (t *transcript) pruneCaches() {
 		clear(keep)
 	}
 	t.forEachMessage(func(m aria.Message) { keep[m.Turn] = true })
+	if t.storeWindow {
+		// Rows follow payloads: the STORE is what holds a message now, so a
+		// message that has merely fallen out of the tail window (the row budget
+		// shrinking it) keeps its rendered rows for the scroll back up. That is
+		// the job transcriptPayloadLRU does for fetched pages.
+		t.client.ForEachIn(aria.Anchor{}, windowEnd, func(m aria.Message) bool {
+			keep[m.Turn] = true
+			return true
+		})
+	}
 	for _, page := range t.payloadLRU { // payload retained => rows retained
 		for _, m := range page.messages {
 			keep[m.Turn] = true
@@ -985,7 +1062,18 @@ func (t *transcript) pruneCaches() {
 // slice messages() returns — it is called from the frame path, where one
 // allocation and a copy of every retained message header per frame is pure
 // waste.
+//
+// GAP-BLIND BY CHOICE, which is the contract's default mode: over the store's
+// tail interval it asks for what is held and is never lied to about
+// adjacency — it simply gets less. See docs/range-store.md, "The two verbs".
 func (t *transcript) forEachMessage(fn func(aria.Message)) {
+	if t.storeWindow {
+		t.client.ForEachIn(t.from, windowEnd, func(m aria.Message) bool {
+			fn(m)
+			return true
+		})
+		return
+	}
 	for _, page := range t.pages {
 		for _, m := range page.messages {
 			fn(m)
@@ -993,19 +1081,32 @@ func (t *transcript) forEachMessage(fn func(aria.Message)) {
 	}
 }
 
+// windowEnd is past every real anchor: the high edge of a window that runs to
+// the live tail.
+var windowEnd = aria.Anchor{Turn: ^uint64(0), Node: ^uint64(0)}
+
 func (t *transcript) messages() []aria.Message {
-	n := 0
-	for _, page := range t.pages {
-		n += len(page.messages)
+	var out []aria.Message
+	if t.storeWindow {
+		out = make([]aria.Message, 0, t.client.Count())
+	} else {
+		n := 0
+		for _, page := range t.pages {
+			n += len(page.messages)
+		}
+		out = make([]aria.Message, 0, n)
 	}
-	out := make([]aria.Message, 0, n)
-	for _, page := range t.pages {
-		out = append(out, page.messages...)
-	}
+	t.forEachMessage(func(m aria.Message) { out = append(out, m) })
 	return out
 }
 
 func (t *transcript) oldestLT() (int, bool) {
+	if t.storeWindow {
+		if t.client.Count() == 0 {
+			return 0, false
+		}
+		return int(t.from.Turn), true
+	}
 	for _, page := range t.pages {
 		if len(page.messages) > 0 {
 			return page.messages[0].Turn, true
@@ -1018,6 +1119,9 @@ func (t *transcript) oldestLT() (int, bool) {
 // turn. Non-zero means the window holds only the TAIL of that turn, so the
 // backward fetch must be anchored on the node — see transcriptPageRequest.
 func (t *transcript) oldestFrom() uint64 {
+	if t.storeWindow {
+		return t.from.Node
+	}
 	for _, page := range t.pages {
 		if len(page.messages) > 0 {
 			return page.messages[0].From
@@ -1027,6 +1131,11 @@ func (t *transcript) oldestFrom() uint64 {
 }
 
 func (t *transcript) newestLT() (int, bool) {
+	if t.storeWindow {
+		last, ok := 0, false
+		t.forEachMessage(func(m aria.Message) { last, ok = m.Turn, true })
+		return last, ok
+	}
 	for i := len(t.pages) - 1; i >= 0; i-- {
 		if n := len(t.pages[i].messages); n > 0 {
 			return t.pages[i].messages[n-1].Turn, true
@@ -1035,7 +1144,13 @@ func (t *transcript) newestLT() (int, bool) {
 	return 0, false
 }
 
+// hasNewerHistory: while the window is the store's tail it runs to the live
+// turn by construction, so there is nothing newer to page in — the question is
+// only meaningful once history has been paged in beneath it.
 func (t *transcript) hasNewerHistory() bool {
+	if t.storeWindow {
+		return false
+	}
 	if len(t.newer) > 0 {
 		return true
 	}
@@ -1046,11 +1161,6 @@ func (t *transcript) hasNewerHistory() bool {
 func (t *transcript) observeCommitted(m aria.Message) {
 	if m.Turn > t.committedW {
 		t.committedW = m.Turn
-	}
-	if t.heldOpen != nil && t.heldOpen.Turn == m.Turn {
-		copy := m
-		copy.Nodes = append([]livedoc.Node(nil), m.Nodes...)
-		t.heldOpen = &copy
 	}
 }
 
@@ -1154,9 +1264,23 @@ func (t *transcript) transRule() string {
 	return t.ruleStr
 }
 
+// openMessage is the live region: the open turn's suffix, straight from the
+// client, EVEN WHEN THE READER HAS SCROLLED AWAY.
+//
+// It used to hand back a snapshot frozen at stopFollowing (heldOpen), which is
+// what made the detached tail stop advancing until you re-attached. The freeze
+// was not laziness: client.Open() is the open SUFFIX, and as Live.From advances
+// nodes leave it and become closed messages, so a window that had frozen its
+// own copy of the closed set would have watched them disappear. Now the window
+// IS the store's tail interval, released nodes land in it, and nothing is lost
+// by rendering live.
+//
+// nil once the window has been paged away from the tail: the open turn is then
+// simply not inside it, and drawing it would fabricate an adjacency between
+// history and the live turn.
 func (t *transcript) openMessage() *aria.Message {
-	if !t.follow {
-		return t.heldOpen
+	if !t.storeWindow {
+		return nil
 	}
 	return t.client.Open()
 }
@@ -1174,12 +1298,14 @@ func (t *transcript) openMessage() *aria.Message {
 //     showed the whole tail.
 //   - the offset has to be re-derived for the DETACHED geometry, where the
 //     live padding row becomes content: the same lines, plus one.
+//
+// What it no longer does is snapshot the open message. Detaching pins the
+// window's FLOOR; its head stays open, so the live turn keeps arriving.
 func (t *transcript) stopFollowing() {
 	if !t.follow {
 		return
 	}
 	t.settle()
-	t.heldOpen = t.client.Open()
 	t.follow = false
 	_, t.offset = t.layout(len(t.footLines()))
 }

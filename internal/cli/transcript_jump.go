@@ -215,8 +215,8 @@ func (t *transcript) startJump(tg jumpTarget) {
 	}
 	t.jump = &transcriptJump{
 		target: tg, fetches: jumpBudget, dir: pageOlder,
-		pages: append([]transcriptPage(nil), t.pages...),
-		newer: append([]pageDesc(nil), t.newer...),
+		pages:  append([]transcriptPage(nil), t.pages...),
+		newer:  append([]pageDesc(nil), t.newer...),
 		offset: t.offset, follow: t.follow, noMoreOlder: t.noMoreOlder,
 	}
 	if reach == jumpNewer {

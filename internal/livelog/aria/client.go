@@ -101,6 +101,22 @@ func (c *Client) Query(from, to Anchor) []Segment {
 	return c.store.Query(from, to)
 }
 
+// ForEachIn walks the retained messages inside [from, to] under the client's
+// lock — the renderer's read path, which must not allocate a segment list per
+// frame (see Store.ForEachIn).
+func (c *Client) ForEachIn(from, to Anchor, fn func(Message) bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.store.ForEachIn(from, to, fn)
+}
+
+// Count is how many closed messages the store retains.
+func (c *Client) Count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.store.Count()
+}
+
 // TailFrom is the anchor of the n-th message from the end (see Store.TailFrom).
 func (c *Client) TailFrom(n int) (Anchor, bool) {
 	c.mu.Lock()

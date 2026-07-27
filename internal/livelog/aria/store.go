@@ -638,6 +638,30 @@ func (s *Store) Ensure(ctx context.Context, from, to Anchor) error {
 	return nil
 }
 
+// ForEachIn walks the retained messages whose span touches [from, to], in
+// order, stopping early if fn returns false. It is GAP-BLIND by design (the
+// contract's default mode: a caller that ignores holes is never lied to, it
+// simply gets less) and yields WHOLE messages — the pager keys its row cache
+// on a message's identity, so half of one is not a thing it can hold.
+func (s *Store) ForEachIn(from, to Anchor, fn func(Message) bool) {
+	if to.Less(from) {
+		return
+	}
+	for _, r := range s.ranges[s.firstRangeAtOrAfter(from):] {
+		if to.Less(r.From) {
+			return
+		}
+		for _, m := range r.Msgs[firstMsgAtOrAfter(r.Msgs, from):] {
+			if f, _ := msgSpan(m); to.Less(f) {
+				return
+			}
+			if !fn(m) {
+				return
+			}
+		}
+	}
+}
+
 // Ranges exposes the interval set. The returned slice is a copy; the Msgs
 // inside are not, and must not be mutated.
 func (s *Store) Ranges() []Range { return append([]Range(nil), s.ranges...) }

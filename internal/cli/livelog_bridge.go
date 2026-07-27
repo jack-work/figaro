@@ -60,12 +60,18 @@ type livelogTurn struct {
 
 	// seeded is the catch-up page fetched when we joined a turn we did NOT open.
 	// The inline view prints a bounded slice of it (seedContext); the PAGER gets
-	// the whole set, so opening it — by Ctrl-T or by an overflow auto-enter —
-	// renders that history with no round trip of its own. One fetch, two
-	// surfaces. It is deliberately NOT applied to aria.Client: a page folded
-	// there would come back through OnClosed and re-freeze history into
-	// scrollback, which is the whole trap this design is built around.
-	seeded []aria.Message
+	// the whole set, merged into the client's store when it opens, so entering it
+	// — by Ctrl-T or by an overflow auto-enter — renders that history with no
+	// round trip of its own. One fetch, two surfaces. It is deliberately NOT
+	// APPLIED to aria.Client: a page folded through Apply comes back through
+	// OnClosed and re-freezes history into scrollback, which is the whole trap
+	// this design is built around. Merge is the silent door.
+	//
+	// seedExtents is turn -> anchors occupied, for the parts the server did not
+	// clip at the tail: what lets the store call two turns neighbours instead of
+	// leaving a phantom hole between them.
+	seeded      []aria.Message
+	seedExtents map[int]uint64
 }
 
 // sliceCursor addresses one pager unit: the turn and the node offset within it.
@@ -312,10 +318,12 @@ func (t *livelogTurn) holdFrames() { t.hold = true }
 // status bars, and a stale region the pager's exit erase then misses, after
 // which the question reaches scrollback twice. A pty found that; the suite was
 // green through it, which is why the order now lives here and not in stream.go.
-func (t *livelogTurn) openInline(fetched []aria.Message) {
-	t.seeded = fetched     // the pager's copy: printed or not, the fetch is kept
-	t.seedContext(fetched) // no-op when there is nothing to orient with
-	t.armThinking()        // no-op in the pager, and no-op if already pinned
+func (t *livelogTurn) openInline(fetched historyPage) {
+	// The pager's copy: printed or not, the fetch is kept (and merged into the
+	// store when the pager opens — see enterPager).
+	t.seeded, t.seedExtents = fetched.msgs, fetched.extents
+	t.seedContext(fetched.msgs) // no-op when there is nothing to orient with
+	t.armThinking()             // no-op in the pager, and no-op if already pinned
 	t.hold = false
 	held := t.held
 	t.held = nil
@@ -576,12 +584,13 @@ func (t *livelogTurn) enterTranscript() { t.enterPager() }
 // prints a bounded slice of it, and the pager opens on the whole of it — no
 // read, and that much less to page in.
 //
-// The pager's tail window is rebuilt from the client's closed set on every
-// frame that changes it (buildIndex → resetToTail), so the seed has to be part
-// of that rebuild rather than a page pushed in once; transcript.withSeed does
-// the merge and the de-dup.
+// The page goes into the ONE owner, silently (aria.Client.Merge fires no
+// OnClosed, so nothing is re-frozen into scrollback — the trap this design is
+// built around). The pager's window is the store's own tail, so a merged page
+// IS history the pager opens on; there is no second copy and no per-frame
+// merge (transcript.seed/withSeed/mergeSeed, deleted).
 func (t *livelogTurn) enterPager() {
-	t.tr.seed = t.seeded
+	t.client.Merge(t.seeded, t.seedExtents)
 	t.tr.enter()
 }
 
