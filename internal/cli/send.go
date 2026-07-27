@@ -44,6 +44,11 @@ type sendOpts struct {
 //
 // Bundled short flags (e.g. -ex, -ey) are expanded. Everything
 // after `--` is untouched.
+//
+// Nothing before `--` is discarded: a token that is neither a known flag
+// nor the single positional target is an error. Silently swallowing argv
+// is how `--id` came to be ignored on the bare `figaro -- <prompt>` form
+// for the life of the tool.
 func extractSendFlags(args []string) (sendOpts, []string, error) {
 	var opts sendOpts
 	rest := make([]string, 0, len(args))
@@ -173,15 +178,21 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			continue
 		}
 		// First bare positional before a `--` boundary is the target
-		// ([<trunk>]:<LT>). Without `--`, bare args are the prompt, so only
-		// capture a target when a `--` is present.
+		// ([<trunk>]:<LT>).
 		if hasDoubleDash && opts.target == "" && opts.id == "" && a != "" && !strings.HasPrefix(a, "-") {
 			opts.target = a
 			i++
 			continue
 		}
-		rest = append(rest, a)
-		i++
+		// Anything else before `--` is unconsumed argv. Never drop it.
+		switch {
+		case strings.HasPrefix(a, "-"):
+			return opts, nil, fmt.Errorf("unknown flag %q (flags go before `--`; everything after `--` is the prompt)", a)
+		case !hasDoubleDash:
+			return opts, nil, fmt.Errorf("the prompt must follow `--` (got bare argument %q)", a)
+		default:
+			return opts, nil, fmt.Errorf("unexpected argument %q (the target is already %q)", a, opts.target+opts.id)
+		}
 	}
 	return opts, rest, nil
 }
@@ -239,13 +250,24 @@ func validateSendID(id string) error {
 //
 // Persistence (--ephemeral) and formatting (--raw) are orthogonal.
 func runSend(loaded *config.Loaded, rawArgs []string) {
+	runSendAs(loaded, "send", rawArgs)
+}
+
+// runSendAs is runSend with the verb that appears in diagnostics. The bare
+// `figaro [flags] -- <prompt>` form dispatches here too — one parser, one
+// set of semantics — and labels its errors with the program name instead.
+func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	opts, rest, err := extractSendFlags(rawArgs)
 	if err != nil {
-		die("send: %s", err)
+		die("%s: %s", verb, err)
 	}
 	prompt := extractPrompt(rest)
 	if prompt == "" {
-		die("usage: figaro send [--id <id>] [-e|--ephemeral] [-r|--raw] [-v|--verbatim] [-x|--exec] [-n] [-y] -- <prompt>")
+		flags := "[--id <id>] [-e|--ephemeral] [-r|--raw] [-v|--verbatim] [-x|--exec] [-n] [-y] -- <prompt>"
+		if verb == "send" {
+			die("usage: figaro send %s", flags)
+		}
+		die("usage: %s %s", verb, flags)
 	}
 
 	spec := opts.id
@@ -254,20 +276,20 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 	}
 	trunkID, turn, hasTurn, perr := parseTarget(spec)
 	if perr != nil {
-		die("send: %s", perr)
+		die("%s: %s", verb, perr)
 	}
 
 	if opts.ephemeral && (opts.id != "" || opts.target != "") {
-		die("send: --ephemeral and a target are contradictory")
+		die("%s: --ephemeral and a target are contradictory", verb)
 	}
 	if (opts.dryRun || opts.skipYes) && !opts.exec {
-		die("send: -n / -y only meaningful with --exec")
+		die("%s: -n / -y only meaningful with --exec", verb)
 	}
 	if opts.forget && (opts.exec || opts.verbatim) {
-		die("send: --forget contradicts --exec/--verbatim")
+		die("%s: --forget contradicts --exec/--verbatim", verb)
 	}
 	if opts.forget && opts.ephemeral {
-		die("send: --forget contradicts --ephemeral (the aria would be killed before the turn ran)")
+		die("%s: --forget contradicts --ephemeral (the aria would be killed before the turn ran)", verb)
 	}
 
 	set := renderSettings{verbose: opts.verbose, listen: opts.listen}
@@ -277,7 +299,7 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 	// (rebind), or the original with --attend=false/--stay.
 	if hasTurn {
 		if opts.ephemeral || opts.exec || opts.verbatim {
-			die("send: <trunk>:<turn> is not compatible with --ephemeral/--exec/--verbatim")
+			die("%s: <trunk>:<turn> is not compatible with --ephemeral/--exec/--verbatim", verb)
 		}
 		runSendForkAt(loaded, trunkID, turn, opts.stay, opts.json, prompt, set)
 		return
