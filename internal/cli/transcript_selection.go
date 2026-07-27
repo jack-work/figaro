@@ -221,11 +221,6 @@ func (t *transcript) selectNode(delta int, extend bool) {
 		}
 	} else if !cold {
 		next := index + delta
-		if t.hasNewerHistory() && t.heldOpen != nil && next >= 0 && next < len(refs) &&
-			(refs[index].turn == t.heldOpen.Turn || refs[next].turn == t.heldOpen.Turn) {
-			t.checkNewer = true
-			return
-		}
 		switch {
 		case next < 0:
 			next = 0

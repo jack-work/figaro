@@ -10,7 +10,20 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-func TestTranscript_OpenSelectionLoadsGapBeforeExtending(t *testing.T) {
+// TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap is what became of
+// TestTranscript_OpenSelectionLoadsGapBeforeExtending.
+//
+// The old test pinned a hazard that no longer exists: the pager held a frozen
+// copy of the closed tail (t.pages) plus a frozen open message (heldOpen), and
+// between them was a GAP — the messages that had closed since the detach, held
+// by the client and by nobody else the pager could see. ^P from the open
+// message therefore had to refuse to move and ask for a forward page first.
+//
+// With one owner there is no gap to load: the open turn is the last thing in
+// the store's tail interval and the message before it is the one immediately
+// before it. So the assertion inverts — ^P from the open message MOVES, at
+// once, and asks for nothing.
+func TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap(t *testing.T) {
 	history := transcriptHistory(200)
 	client := aria.NewClient()
 	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
@@ -19,31 +32,30 @@ func TestTranscript_OpenSelectionLoadsGapBeforeExtending(t *testing.T) {
 	}}}}}}})
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
-	tr.key('k')
-	for range 4 {
-		tr.offset = 0
-		tr.checkOlder = true
-		req, _ := tr.pageCursor()
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
-	}
-	// Park the viewport on the OPEN message before seeding. ^P seeds from the
-	// VIEWPORT now — the bottommost block on screen — not from the end of the
-	// retained window, so the paging loop above (which leaves the viewport at
-	// offset 0, a hundred turns above the gap) no longer puts the open message
-	// under the cursor by accident. This test is about EXTENDING across the
-	// gap, so it has to state that precondition instead of inheriting it.
+	tr.key('k') // detach: the window keeps its floor, and keeps the live turn
+
+	// Park the viewport on the OPEN message and select it.
 	tr.buildIndex()
 	_, maxOff := tr.layout(len(tr.footLines()))
 	tr.offset = maxOff
 	tr.selectNode(-1, false)
 	focus := tr.selection.focus
-	tr.selectNode(-1, true)
-	if tr.selection.focus != focus || !tr.checkNewer {
-		t.Fatalf("selection crossed gap: focus %+v -> %+v, checkNewer=%v", focus, tr.selection.focus, tr.checkNewer)
+	if focus.turn != 201 {
+		t.Fatalf("^P did not seed on the open turn: %+v", focus)
 	}
-	req, ok := tr.pageCursor()
-	if !ok || req.direction != pageNewer {
-		t.Fatalf("gap page request = %+v, %v", req, ok)
+	// While a fresh live message arrives underneath, no less: the released head
+	// lands in the same interval, so nothing the selection can see moves.
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 1, Nodes: []aria.NodeDelta{{
+		ID: 1, Set: map[string]any{"type": string(livedoc.NodeProse), "markdown": "open-201-more"},
+	}}}}}}})
+	tr.render()
+
+	tr.selectNode(-1, true)
+	if tr.selection.focus == focus {
+		t.Fatalf("^P did not extend past the open message: %+v", tr.selection.focus)
+	}
+	if tr.checkNewer {
+		t.Fatal("extending asked for a forward page; there is no gap to fill")
 	}
 }
 

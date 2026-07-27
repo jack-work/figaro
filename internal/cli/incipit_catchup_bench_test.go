@@ -47,7 +47,7 @@ func benchSeedTranscript(b *testing.B, held, seed int) *transcript {
 		for k := range msgs {
 			msgs[k].Turn = -seed + k
 		}
-		tr.seed = msgs
+		client.Merge(msgs, nil)
 	}
 	tr.enter()
 	return tr
@@ -71,7 +71,7 @@ func BenchmarkTranscriptResetToTail(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				tr.tailRev = 0 // force the rebuild a newly committed message causes
+				tr.storeWindow = false // force the rebuild a newly committed message causes
 				tr.resetToTail()
 			}
 		})

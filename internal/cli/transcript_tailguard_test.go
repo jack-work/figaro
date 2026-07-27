@@ -9,10 +9,11 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-// countingClientView counts how many times the transcript re-derives its page
-// window from the client, by counting the full View() snapshots resetToTail
-// takes. A live frame must take none once the window is up to date.
-func transcriptTailRev(tr *transcript) uint64 { return tr.tailRev }
+// The window is an INTERVAL into the store now, so "did the pager re-derive
+// its window" is asked of windowRev — the one authority on "the retained
+// window changed" — and of the interval's own floor. A live frame must move
+// neither once the window is up to date.
+func transcriptTailRev(tr *transcript) uint64 { return tr.windowRev }
 
 func TestTranscriptFollowFrameDoesNotRebuildWindow(t *testing.T) {
 	client := aria.NewClient()
@@ -24,17 +25,20 @@ func TestTranscriptFollowFrameDoesNotRebuildWindow(t *testing.T) {
 
 	rev := transcriptTailRev(tr)
 	if rev == 0 {
-		t.Fatal("entering the pager should snapshot the tail")
+		t.Fatal("entering the pager should establish the tail window")
 	}
-	pages := &tr.pages[0]
+	floor := tr.from
+	if floor == (aria.Anchor{}) {
+		t.Fatal("the window has no floor")
+	}
 	for range 20 {
 		tr.render() // live frames: spinner ticks, open-message tokens
 	}
 	if got := transcriptTailRev(tr); got != rev {
 		t.Fatalf("live frames rebuilt the window: rev %d -> %d", rev, got)
 	}
-	if &tr.pages[0] != pages {
-		t.Fatal("live frames reallocated the page window")
+	if tr.from != floor {
+		t.Fatalf("live frames moved the window floor: %v -> %v", floor, tr.from)
 	}
 
 	// A newly committed message must still refresh the window.

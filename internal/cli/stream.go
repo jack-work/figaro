@@ -307,7 +307,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// the pager with it, so Ctrl-T opens on history without a read). Decided
 	// from the STREAM — did our own question come back? — not from Qua's
 	// `active`, which is sampled before the prompt is even queued.
-	var fetched []aria.Message
+	var fetched historyPage
 	if catchUp && !joined && !awaitOwnTurn(prompt, ownTurn, noTurn) {
 		fetched = recentContext(ctx, fcli, cursor)
 	}
@@ -637,12 +637,12 @@ func pageCarriesInquiry(p aria.Page, prompt string) bool {
 // never half-printed; and nothing past the cursor Qua reported, which is the
 // last committed turn at accept time. An error, a timeout, or an aria with no
 // history all return nil — the caller then behaves exactly as before.
-func recentContext(ctx context.Context, fcli transcriptReadClient, cursor int) []aria.Message {
+func recentContext(ctx context.Context, fcli transcriptReadClient, cursor int) historyPage {
 	rctx, rcancel := context.WithTimeout(ctx, recentContextTimeout)
 	defer rcancel()
 	r, err := fcli.ReadBefore(rctx, aria.Anchor{Turn: recentCursor}, wireBudget(recentContextMessages))
 	if err != nil {
-		return nil
+		return historyPage{}
 	}
 	var history aria.Page
 	for _, part := range r.Parts {
@@ -650,7 +650,7 @@ func recentContext(ctx context.Context, fcli transcriptReadClient, cursor int) [
 			history.Parts = append(history.Parts, part)
 		}
 	}
-	return committedMessages(history)
+	return committedPage(history)
 }
 
 // wireBudget converts the pager's message-count geometry into the wire's byte

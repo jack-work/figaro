@@ -50,6 +50,24 @@ import (
 // 18. So the window gained a whole message and the line space grew. Measured,
 // not assumed — heldWindow() reports 17 messages before and 18 after, for the
 // same fixture and the same budget.
+//
+// The off=/fol=/sel= columns were rebased a FOURTH time, for the eight
+// selection chords in the INCIPIT state (0x0e, 0x10 and their CSI-u and alt
+// encodings), and this one is a behaviour change, deliberately.
+//
+// Those keys open the pager AND move the node selection in one press. The
+// pager used to open on a COPY of the client's closed tail taken at enter()
+// — and in this fixture the catch-up read that fills the client lands after
+// that copy is taken, so ^N found an empty window, did nothing, and left the
+// pager following. It took a frame for the window to catch up, and only the
+// SECOND ^N selected anything. The oracle was certifying that dead first
+// press.
+//
+// The window is now an interval into the store rather than a copy of it
+// (docs/range-store.md phase 2), so there is no stale snapshot to be caught
+// behind: the first ^N selects, which detaches (fol=false) and gives the live
+// padding row back to content (off 753 -> 752). Everything else in those rows
+// is untouched, and no other state's rows moved at all.
 // ---------------------------------------------------------------------------
 
 type inputProbe struct {
@@ -294,9 +312,9 @@ var inputOracle = []struct {
 		"0x0a":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x0c":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x0d":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"0x0e":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x0e":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x0f":            "stop=false rest=\"\" act=true off=745 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"0x10":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x10":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x14":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x21":            "stop=false rest=\"\" act=true off=759 fol=true srch=false q=\"\" h=false s=true Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x2f":            "stop=false rest=\"\" act=true off=753 fol=true srch=true q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -309,15 +327,15 @@ var inputOracle = []struct {
 		"0x6b":            "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x75":            "stop=false rest=\"\" act=true off=732 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x79":            "stop=false rest=\"\" act=false off=0 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"aria0001\" cpfail=false cping=false jmp=false jq=\"\"",
-		"alt ^n fallback": "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"alt ^p fallback": "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"csiu ^N+shift":   "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"alt ^n fallback": "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"alt ^p fallback": "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"csiu ^N+shift":   "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^d":         "stop=true rest=\"\" act=false off=0 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^l":         "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"csiu ^n":         "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"csiu ^n":         "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^o":         "stop=false rest=\"\" act=true off=745 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"csiu ^p":         "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"csiu ^p+alt":     "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"csiu ^p":         "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"csiu ^p+alt":     "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^t":         "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:Down":        "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:End":         "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",

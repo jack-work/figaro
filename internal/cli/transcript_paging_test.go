@@ -300,8 +300,10 @@ func TestTranscript_SelectsOpenNodeAfterLeavingFollow(t *testing.T) {
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.selectNode(-1, false)
-	if tr.heldOpen == nil || tr.selection.focus.turn != 2 || !tr.selection.active {
-		t.Fatalf("open selection lost: held=%v selection=%+v", tr.heldOpen != nil, tr.selection)
+	// The open message is still IN the window after the detach (it is the last
+	// thing in the store's tail interval), which is what makes it selectable.
+	if tr.openMessage() == nil || tr.selection.focus.turn != 2 || !tr.selection.active {
+		t.Fatalf("open selection lost: open=%v selection=%+v", tr.openMessage() != nil, tr.selection)
 	}
 	if text, err := selectedTextForTest(tr, transcriptHistory(1)); err != nil || text != "streaming prose" {
 		t.Fatalf("open selected text = %q, %v", text, err)
