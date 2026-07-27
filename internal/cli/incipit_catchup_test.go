@@ -103,9 +103,8 @@ func TestHeldFramesLandAfterThePreamble(t *testing.T) {
 	if strings.Contains(out.String(), "NEWQUESTION") {
 		t.Fatalf("a held frame painted anyway:\n%s", out.String())
 	}
-	lt.seedContext([]aria.Message{{Turn: 5, Inquiry: "PRIORQUESTION", Role: livedoc.RoleOutput,
+	lt.openInline([]aria.Message{{Turn: 5, Inquiry: "PRIORQUESTION", Role: livedoc.RoleOutput,
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "PRIORANSWER"}}}})
-	lt.releaseFrames()
 
 	got := out.String()
 	prior, question := strings.Index(got, "PRIORANSWER"), strings.Index(got, "NEWQUESTION")
@@ -339,14 +338,149 @@ func TestReleasedFramesAdoptTheArmedFooter(t *testing.T) {
 	lt.openRule()
 
 	lt.holdFrames()
+	lt.armThinking() // pinned at submit, before anything about the turn is known
 	lt.apply(inquiryPage(6, "NEWQUESTION"))
-	lt.seedContext([]aria.Message{{Turn: 5, Inquiry: "PRIORQUESTION", Role: livedoc.RoleOutput,
+	lt.openInline([]aria.Message{{Turn: 5, Inquiry: "PRIORQUESTION", Role: livedoc.RoleOutput,
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "PRIORANSWER"}}}})
-	lt.armThinking()
-	lt.releaseFrames()
 
 	screen := strings.Join(ft.Screen(), "\n")
 	if n := bodyCount(screen, "BOOKENDROW"); n != 1 {
 		t.Fatalf("%d live footers on screen, want 1:\n%s", n, screen)
+	}
+	prior, question := strings.Index(screen, "PRIORANSWER"), strings.Index(screen, "NEWQUESTION")
+	if prior < 0 || question < 0 || prior > question {
+		t.Fatalf("preamble and question out of order (prior=%d question=%d):\n%s", prior, question, screen)
+	}
+}
+
+// THE DISCRIMINATOR IS THE EVENT, NOT THE STATE.
+//
+// Whether to orient the user is the question "am I watching a turn I did not
+// open?", and the honest answer is on the wire: the daemon records the inquiry
+// verbatim (OpenInquiry(a.turnID, prompt.text)) and RETURNS BEFORE IT when the
+// prompt is a steer, so a turn we merely joined never broadcasts a question of
+// ours. Qua's `active` flag is sampled before the prompt is even queued, so it
+// can be stale in both directions.
+func TestPageCarriesInquiry(t *testing.T) {
+	const mine = "Reply with exactly one word: DATE"
+	cases := []struct {
+		name   string
+		page   aria.Page
+		prompt string
+		want   bool
+	}{
+		{"our own question opens the turn", inquiryPage(7, mine), mine, true},
+		{"whitespace is not a difference", inquiryPage(7, "  "+mine+"\n"), mine, true},
+		{"someone else's question is not ours", inquiryPage(7, "an unrelated prompt"), mine, false},
+		{"a steer broadcasts no inquiry at all", page(7, 0, delta(0, livedoc.RoleOutput, mine)), mine, false},
+		{"an empty prompt matches nothing", inquiryPage(7, ""), "", false},
+		{"the inquiry may ride with other parts", aria.Page{Parts: []aria.TurnPart{
+			{Turn: aria.Turn{ID: 6, Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "old"}}}},
+			{Turn: aria.Turn{ID: 7, Inquiry: mine}},
+		}}, mine, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := pageCarriesInquiry(c.page, c.prompt); got != c.want {
+				t.Fatalf("pageCarriesInquiry = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// The wait has three exits and each one has to mean something different: our
+// question came back (ours — say nothing), the agent errored (no turn is
+// coming — orient), or nobody said anything in time (we are watching someone
+// else's turn — orient). The deadline exists because the steer branch may
+// deliver NOTHING for tens of seconds, so waiting on it would hang the prompt.
+func TestAwaitOwnTurn(t *testing.T) {
+	closed := func() chan struct{} { c := make(chan struct{}); close(c); return c }
+
+	if !awaitOwnTurn("a question", closed(), make(chan struct{})) {
+		t.Fatal("our own inquiry arriving must count as ours")
+	}
+	if awaitOwnTurn("a question", make(chan struct{}), closed()) {
+		t.Fatal("an error means no turn of ours will open")
+	}
+	if !awaitOwnTurn("   ", make(chan struct{}), make(chan struct{})) {
+		t.Fatal("an empty prompt has no inquiry to match; it must not stall on the deadline")
+	}
+
+	start := time.Now()
+	if awaitOwnTurn("a question", make(chan struct{}), make(chan struct{})) {
+		t.Fatal("silence must resolve to 'not ours'")
+	}
+	if waited := time.Since(start); waited < ownTurnDeadline || waited > ownTurnDeadline*4 {
+		t.Fatalf("waited %s, want ~%s", waited, ownTurnDeadline)
+	}
+}
+
+// ONE FETCH, TWO SURFACES.
+//
+// A prompt that lands on a turn it did not open buys a little context. The
+// inline view prints a bounded slice of it, and the PAGER gets the whole page:
+// opening it renders that history immediately instead of waiting on a read of
+// its own. The page still never reaches aria.Client — that is what keeps
+// OnClosed from re-freezing history into scrollback — so the pager is fed
+// through its own window, and what it already holds must not arrive twice.
+func TestJoinedFetchSeedsThePager(t *testing.T) {
+	var out bytes.Buffer
+	status := newSessionStatus("aria1234", time.Now())
+	lt := newLivelogTurn(&out, 80, 40, &renderSettings{}, "aria1234", time.Now(), status, nil, dimRule)
+	lt.openRule()
+
+	// Someone else's turn is already streaming when we arrive.
+	lt.holdFrames()
+	lt.apply(inquiryPage(6, "SOMEONE ELSES QUESTION"))
+	lt.apply(page(6, 0, delta(0, livedoc.RoleOutput, "JOINEDANSWER")))
+
+	// The catch-up page: two prior turns, plus a restatement of the turn the
+	// client is already holding — the tail read reaches it, so the overlap is
+	// the normal case, not a contrived one.
+	fetched := []aria.Message{
+		{Turn: 4, Inquiry: "OLDQUESTION", Role: livedoc.RoleOutput,
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "OLDANSWER"}}},
+		{Turn: 5, Inquiry: "PRIORQUESTION", Role: livedoc.RoleOutput,
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "PRIORANSWER"}}},
+		{Turn: 6, Inquiry: "SOMEONE ELSES QUESTION", Role: livedoc.RoleOutput,
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "JOINEDANSWER"}}},
+	}
+	lt.openInline(fetched)
+
+	if !lt.hasSeed() {
+		t.Fatal("the fetch must be kept for the pager, not just printed")
+	}
+	lt.apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 6, Sealed: true}}}})
+	lt.enterTranscript() // Ctrl-T, with no read of its own
+
+	pager := strings.Join(lt.tr.lines(), "\n")
+	for _, token := range []string{"OLDANSWER", "PRIORANSWER"} {
+		if n := bodyCount(pager, token); n != 1 {
+			t.Fatalf("pager shows %s %d times, want 1 (seeded from the catch-up page):\n%s", token, n, pager)
+		}
+	}
+	if n := bodyCount(pager, "JOINEDANSWER"); n != 1 {
+		t.Fatalf("pager shows the joined turn %d times, want 1 — the seed overlapped the window:\n%s", n, pager)
+	}
+}
+
+// The other half of the same contract: a prompt that opened its own turn
+// fetches nothing, so there is nothing to seed and the pager must still take
+// its own read. (The input loop asks hasSeed() to decide.)
+func TestOwnTurnLeavesNothingToSeed(t *testing.T) {
+	var out bytes.Buffer
+	status := newSessionStatus("aria1234", time.Now())
+	lt := newLivelogTurn(&out, 80, 40, &renderSettings{}, "aria1234", time.Now(), status, nil, dimRule)
+	lt.openRule()
+	lt.holdFrames()
+	lt.apply(inquiryPage(6, "OUR OWN QUESTION"))
+	lt.openInline(nil)
+
+	if lt.hasSeed() {
+		t.Fatal("call-response fetched nothing; there is nothing to seed")
+	}
+	lt.enterTranscript()
+	if lt.tr.seed != nil {
+		t.Fatalf("the pager was handed a seed it should not have: %+v", lt.tr.seed)
 	}
 }
