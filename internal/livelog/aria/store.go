@@ -34,11 +34,19 @@ func (a Anchor) Less(b Anchor) bool {
 	return a.Node < b.Node
 }
 
-// Next is the immediately following anchor. It does NOT cross a turn boundary,
-// because an anchor does not encode its turn's length: whether (t, n) is the
-// last node of turn t is knowledge the STORE holds (see Store.SetTurnLen and
-// Store.adjacent), not something the coordinate can answer alone.
-func (a Anchor) Next() Anchor { return Anchor{Turn: a.Turn, Node: a.Node + 1} }
+// Next is the immediately following anchor. Within a turn it is the next node.
+// It does NOT otherwise cross a turn boundary, because an anchor does not
+// encode its turn's length: whether (t, n) is the last node of turn t is
+// knowledge the STORE holds (see Store.SetTurnLen and Store.adjacent), not
+// something the coordinate can answer alone. The one exception is the node
+// ceiling, where the lexicographic successor is unambiguous and wrapping to
+// (t, 0) would silently invert the ordering.
+func (a Anchor) Next() Anchor {
+	if a.Node == maxNode {
+		return Anchor{Turn: a.Turn + 1}
+	}
+	return Anchor{Turn: a.Turn, Node: a.Node + 1}
+}
 
 // Prev is the immediately preceding anchor — the mirror of Next. In (turn,
 // node) space ordered lexicographically the predecessor of (t, 0) is the last
@@ -231,13 +239,30 @@ func (s *Store) mergeAt(i int) bool {
 	if i < 0 || i+1 >= len(s.ranges) {
 		return false
 	}
-	if !s.adjacent(s.ranges[i].To, s.ranges[i+1].From) {
+	boundary := s.ranges[i].To
+	if !s.adjacent(boundary, s.ranges[i+1].From) {
 		return false
 	}
 	s.ranges[i].Msgs = append(s.ranges[i].Msgs, s.ranges[i+1].Msgs...)
 	s.ranges[i].To = s.ranges[i+1].To
 	s.ranges = append(s.ranges[:i+1], s.ranges[i+2:]...)
+	s.consume(boundary, s.ranges[i].To)
 	return true
+}
+
+// consume drops the turn extent that a merge has just made unnecessary. An
+// extent answers one question — "does this turn end here?" — and once the
+// boundary it described is INTERIOR to a contiguous range, nobody will ask
+// again. Keeping it would grow `ends` with the number of turns the aria has
+// ever had; dropping it keeps the map proportional to the number of range
+// boundaries, which for an ordinary conversation is one.
+//
+// A merge INSIDE a turn consumes nothing: that turn's extent is still what the
+// next turn boundary will be judged by.
+func (s *Store) consume(boundary, to Anchor) {
+	if boundary.Turn < to.Turn {
+		delete(s.ends, boundary.Turn)
+	}
 }
 
 // coalesce merges every pair of neighbouring ranges that adjacency now permits.
@@ -273,6 +298,21 @@ func (s *Store) coalesceAround(turn uint64) {
 // novel part, so no information is lost either way.
 func (s *Store) Insert(msgs ...Message) {
 	for _, m := range msgs {
+		// THE APPEND CASE — a turn sealing, or the open turn releasing its
+		// head — is what every ordinary fold does, and it must cost what
+		// appending to a slice costs. Going through subtractHeld and building
+		// a one-message Range for it added two allocations PER MESSAGE, which
+		// is 30% on folding a conversation.
+		if n := len(s.ranges); n > 0 {
+			last := &s.ranges[n-1]
+			if f, t := msgSpan(m); last.To.Less(f) && s.adjacent(last.To, f) {
+				boundary := last.To
+				last.Msgs = append(last.Msgs, m)
+				last.To = t
+				s.consume(boundary, t)
+				continue
+			}
+		}
 		for _, piece := range s.subtractHeld(m) {
 			from, to := msgSpan(piece)
 			s.insertRange(Range{From: from, To: to, Msgs: []Message{piece}})
@@ -335,36 +375,18 @@ func firstMsgAtOrAfter(msgs []Message, a Anchor) int {
 	})
 }
 
-// insertRange splices in a range that is known to overlap nothing, merging it
-// with either neighbour it turns out to be adjacent to. Invariants 1 and 2 are
-// re-established here and nowhere else.
+// insertRange splices in a range that is known to overlap nothing, then lets
+// mergeAt — the ONE merge — absorb whichever neighbours it turns out to touch.
+// Invariants 1 and 2 are re-established here and nowhere else.
 func (s *Store) insertRange(nr Range) {
-	// The streaming case — one message extending the newest range — is the hot
-	// path of every long aria, and doing it by rebuilding the message slice
-	// would make folding a conversation quadratic in its length.
-	if n := len(s.ranges); n > 0 {
-		last := &s.ranges[n-1]
-		if s.adjacent(last.To, nr.From) {
-			last.Msgs = append(last.Msgs, nr.Msgs...)
-			last.To = nr.To
-			return
-		}
-	}
 	i := sort.Search(len(s.ranges), func(k int) bool { return nr.From.Less(s.ranges[k].From) })
-	if i > 0 && s.adjacent(s.ranges[i-1].To, nr.From) {
-		prev := s.ranges[i-1]
-		nr = Range{From: prev.From, To: nr.To, Msgs: append(append([]Message(nil), prev.Msgs...), nr.Msgs...)}
-		i--
-		s.ranges = append(s.ranges[:i], s.ranges[i+1:]...)
-	}
-	if i < len(s.ranges) && s.adjacent(nr.To, s.ranges[i].From) {
-		next := s.ranges[i]
-		nr = Range{From: nr.From, To: next.To, Msgs: append(append([]Message(nil), nr.Msgs...), next.Msgs...)}
-		s.ranges = append(s.ranges[:i], s.ranges[i+1:]...)
-	}
 	s.ranges = append(s.ranges, Range{})
 	copy(s.ranges[i+1:], s.ranges[i:])
 	s.ranges[i] = nr
+	for s.mergeAt(i) {
+	}
+	for s.mergeAt(i - 1) {
+	}
 }
 
 // ----------------------------------------------------------------- evict ----
@@ -435,6 +457,11 @@ func (s *Store) keep(r Range, lo, hi Anchor) *Range {
 // TrimOldestTo forgets the oldest messages until at most limit remain. This is
 // today's bottom-only retention expressed as eviction; it cannot make a hole,
 // because it only ever removes a prefix.
+//
+// It does not copy. Reslicing off the front and zeroing what it drops keeps
+// the retained window allocation-free per trim — this runs on EVERY Apply once
+// an aria is longer than the limit — while still releasing the dropped
+// messages' nodes to the collector, which a bare reslice would not.
 func (s *Store) TrimOldestTo(limit int) {
 	if limit < 0 {
 		limit = 0
@@ -447,10 +474,26 @@ func (s *Store) TrimOldestTo(limit int) {
 			s.ranges = append(s.ranges[:0], s.ranges[1:]...)
 			continue
 		}
-		r.Msgs = append([]Message(nil), r.Msgs[drop:]...)
+		for i := 0; i < drop; i++ {
+			r.Msgs[i] = Message{}
+		}
+		r.Msgs = r.Msgs[drop:]
 		r.From, _ = msgSpan(r.Msgs[0])
 		s.ranges[0] = r
 		return
+	}
+}
+
+// ForEach walks every retained message in order, stopping early if fn returns
+// false. It exists so a caller that only wants to LOOK at the retained set
+// does not have to materialize a copy of it the way All does.
+func (s *Store) ForEach(fn func(Message) bool) {
+	for _, r := range s.ranges {
+		for _, m := range r.Msgs {
+			if !fn(m) {
+				return
+			}
+		}
 	}
 }
 

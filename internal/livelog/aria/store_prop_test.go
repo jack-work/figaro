@@ -87,7 +87,13 @@ func anchorsOf(s *Store) []Anchor {
 }
 
 // checkInvariants asserts 1, 2 and 3 of docs/range-store.md over a whole store.
-func checkInvariants(t *testing.T, s *Store) {
+//
+// truth is the GENERATOR's model of how many anchors each turn really has —
+// deliberately not the store's own `ends`, which is bookkeeping the store
+// prunes once a merge has consumed it. Checking a structure against its own
+// bookkeeping proves only that it is self-consistent; checking it against the
+// data that was actually inserted is what catches a fabricated merge.
+func checkInvariants(t *testing.T, s *Store, truth map[uint64]uint64) {
 	t.Helper()
 	for i, r := range s.ranges {
 		if len(r.Msgs) == 0 {
@@ -109,11 +115,16 @@ func checkInvariants(t *testing.T, s *Store) {
 			if j+1 < len(r.Msgs) {
 				nf, _ := msgSpan(r.Msgs[j+1])
 				if nf.Turn != to.Turn {
-					// crossing a turn boundary inside a range is legal only
-					// when the store knows the turn's extent
-					if n, ok := s.ends[to.Turn]; !ok || to.Node+1 != n {
-						t.Fatalf("range %d: messages %d/%d cross turns %d->%d with no known extent",
-							i, j, j+1, to.Turn, nf.Turn)
+					// Crossing a turn boundary inside a range asserts that
+					// nothing lies between: the left side must really end its
+					// turn, and no turn may sit in the middle.
+					if n, ok := truth[to.Turn]; !ok || to.Node+1 != n {
+						t.Fatalf("range %d: messages %d/%d cross turns %d->%d but turn %d has %v anchors — FABRICATED ADJACENCY",
+							i, j, j+1, to.Turn, nf.Turn, to.Turn, truth[to.Turn])
+					}
+					if nf.Turn != to.Turn+1 || nf.Node != 0 {
+						t.Fatalf("range %d: messages %d/%d jump %v -> %v, skipping a turn",
+							i, j, j+1, to, nf)
 					}
 					cur = nf
 				}
@@ -217,12 +228,12 @@ func TestPropertyNoOverlappingOrAdjacentRanges(t *testing.T) {
 				tn := uint64(1 + rng.Intn(len(ends)))
 				s.SetTurnLen(tn, ends[tn])
 			}
-			checkInvariants(t, s)
+			checkInvariants(t, s, ends)
 		}
 		for tn, n := range ends {
 			s.SetTurnLen(tn, n)
 		}
-		checkInvariants(t, s)
+		checkInvariants(t, s, ends)
 
 		if rng.Intn(2) == 0 {
 			lo := Anchor{Turn: uint64(1 + rng.Intn(6)), Node: uint64(rng.Intn(5))}
@@ -231,10 +242,10 @@ func TestPropertyNoOverlappingOrAdjacentRanges(t *testing.T) {
 				lo, hi = hi, lo
 			}
 			s.Evict(lo, hi)
-			checkInvariants(t, s)
+			checkInvariants(t, s, ends)
 		}
 		s.TrimOldestTo(rng.Intn(10))
-		checkInvariants(t, s)
+		checkInvariants(t, s, ends)
 	}
 }
 
@@ -328,9 +339,11 @@ func TestPropertyQuerySegmentsNeverSpanAHole(t *testing.T) {
 				prev = to.Next()
 				if mi+1 < len(seg.Msgs) {
 					if nf, _ := msgSpan(seg.Msgs[mi+1]); nf.Turn != to.Turn {
-						if n, ok := s.ends[to.Turn]; !ok || to.Node+1 != n {
-							t.Fatalf("iter %d: segment %d crosses turn %d->%d with no known extent",
-								iter, si, to.Turn, nf.Turn)
+						// Checked against the GENERATOR's extents, not the
+						// store's — see checkInvariants.
+						if n, ok := ends[to.Turn]; !ok || to.Node+1 != n || nf.Turn != to.Turn+1 || nf.Node != 0 {
+							t.Fatalf("iter %d: segment %d crosses %v -> %v but turn %d has %v anchors — FABRICATED ADJACENCY",
+								iter, si, to, nf, to.Turn, ends[to.Turn])
 						}
 						prev = nf
 					}
@@ -384,7 +397,7 @@ func TestPropertyInsertIsIdempotent(t *testing.T) {
 		if got := s.All(); !reflect.DeepEqual(before, got) {
 			t.Fatalf("iter %d: re-insert changed the store: %d msgs -> %d", iter, len(before), len(got))
 		}
-		checkInvariants(t, s)
+		checkInvariants(t, s, ends)
 
 		// A FATTER message overlapping what we hold must contribute only its
 		// novel part — never a second copy of a node we already have.
@@ -405,7 +418,7 @@ func TestPropertyInsertIsIdempotent(t *testing.T) {
 				t.Fatalf("iter %d: anchor %v lost to an overlapping insert", iter, a)
 			}
 		}
-		checkInvariants(t, s)
+		checkInvariants(t, s, ends)
 	}
 }
 
@@ -520,5 +533,27 @@ func TestPhantomMessageOccupiesOneAnchor(t *testing.T) {
 	}
 	if all := s.All(); all[0].Inquiry != "why?" {
 		t.Fatalf("the question must survive: %#v", all[0])
+	}
+}
+
+// TestIntraTurnMergeKeepsTheExtent guards the pruning in mergeAt. An extent is
+// consumed only by a merge that CROSSES the turn it describes; a merge inside
+// that turn still needs it afterwards, and dropping it there would open a
+// false gap at the next turn boundary.
+func TestIntraTurnMergeKeepsTheExtent(t *testing.T) {
+	s := NewStore()
+	s.Insert(pmsg(5, 0, 3)) // 0..2
+	s.Insert(pmsg(5, 4, 3)) // 4..6, with a hole at node 3
+	s.SetTurnLen(5, 7)
+	if len(s.ranges) != 2 {
+		t.Fatalf("the hole at node 3 keeps these apart; got %d ranges", len(s.ranges))
+	}
+	s.Insert(pmsg(5, 3, 1)) // fills the hole: an INTRA-TURN merge
+	if len(s.ranges) != 1 {
+		t.Fatalf("filling the hole merges; got %d ranges", len(s.ranges))
+	}
+	s.Insert(pmsg(6, 0, 2))
+	if len(s.ranges) != 1 {
+		t.Fatalf("turn 5's extent was still known, so turn 6 must coalesce; got %d ranges", len(s.ranges))
 	}
 }

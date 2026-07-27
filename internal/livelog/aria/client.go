@@ -53,8 +53,10 @@ func NewClient() *Client {
 	return &Client{store: NewStore(), closedSeen: map[int]bool{}, emitted: map[int]int{}, inquiry: map[int]string{}}
 }
 
-// Store exposes the range store beneath the client. Phase 1 has no consumer;
-// it is here so tests can assert the invariants the shim is built on.
+// Store exposes the range store beneath the client. Phase 1 has no consumer:
+// it is here so tests can assert the invariants the shim is built on. It is
+// NOT safe to use concurrently with Apply — the client's mutex guards the
+// store, and this hands out the guarded object.
 func (c *Client) Store() *Store {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -343,13 +345,21 @@ func (c *Client) trimClosed() {
 	}
 	c.closedRev++
 	c.store.TrimOldestTo(c.closedLimit)
-	kept := c.store.All()
-	c.closedSeen = make(map[int]bool, len(kept))
-	for _, m := range kept {
+	// Rebuild by WALKING the retained set, not by materializing a copy of it:
+	// this runs on every Apply once an aria is longer than the limit, and the
+	// copy doubled the retention path's allocation.
+	first, n := 0, 0
+	c.closedSeen = make(map[int]bool, c.closedLimit)
+	c.store.ForEach(func(m Message) bool {
+		if n == 0 {
+			first = m.Turn
+		}
+		n++
 		c.closedSeen[m.Turn] = true
-	}
-	if len(kept) > 0 && kept[0].Turn > c.closedFloor {
-		c.closedFloor = kept[0].Turn
+		return true
+	})
+	if n > 0 && first > c.closedFloor {
+		c.closedFloor = first
 	}
 }
 
