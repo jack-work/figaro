@@ -169,3 +169,31 @@ func TestMoreBeforeIsTheWiresAnswer(t *testing.T) {
 		t.Fatal("an empty backward read proves the floor")
 	}
 }
+
+// TestBeforeIsTheReturnTrip pins the primitive that replaced the pager's
+// payload LRU: the anchor n messages BELOW a, plus how far it actually got.
+// A windowed reader lowers its floor with it, so the scroll back up over
+// history the store still holds costs a backward walk and no round trip.
+func TestBeforeIsTheReturnTrip(t *testing.T) {
+	s := NewStore()
+	for turn := 1; turn <= 10; turn++ {
+		s.SetTurnLen(uint64(turn), 2)
+		s.Insert(histMsg(turn, 0, 2))
+	}
+	if got, n := s.Before(Anchor{Turn: 8}, 3); n != 3 || got != (Anchor{Turn: 5}) {
+		t.Fatalf("Before(8, 3) = %v, %d; want turn 5 over 3 messages", got, n)
+	}
+	// Fewer than asked for is not an error: take what there is, and say so.
+	if got, n := s.Before(Anchor{Turn: 3}, 10); n != 2 || got != (Anchor{Turn: 1}) {
+		t.Fatalf("Before(3, 10) = %v, %d; want the oldest held over 2", got, n)
+	}
+	if got, n := s.Before(Anchor{Turn: 1}, 4); n != 0 || got != (Anchor{Turn: 1}) {
+		t.Fatalf("Before at the floor = %v, %d; want the anchor itself over 0", got, n)
+	}
+	// It counts MESSAGES across a hole, exactly as TailFrom does — the window's
+	// floor may straddle one.
+	s.Evict(Anchor{Turn: 4}, Anchor{Turn: 6, Node: 1})
+	if got, n := s.Before(Anchor{Turn: 8}, 3); n != 3 || got != (Anchor{Turn: 2}) {
+		t.Fatalf("Before across a hole = %v, %d; want turn 2 over 3", got, n)
+	}
+}

@@ -83,7 +83,7 @@ func newPagingHarness(messages, outputLines, w, h int) *pagingHarness {
 	}
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	view := &pagingView{inner: &ariaView{settings: &renderSettings{}}}
 	tr := newTranscript(io.Discard, w, h, view, client, "journey", time.Unix(0, 0))
 	h0 := &pagingHarness{
@@ -103,48 +103,32 @@ func (h *pagingHarness) sync() {
 		if !need {
 			return
 		}
-		messages := h.read(req)
-		h.tr.applyPage(req, messages)
+		h.tr.applyPage(req, h.read(req))
 		h.account()
 	}
 }
 
-func (h *pagingHarness) read(req transcriptPageRequest) []aria.Message {
-	if len(req.cached) > 0 {
-		return req.cached // served from the payload LRU: no I/O
-	}
+func (h *pagingHarness) read(req transcriptPageRequest) historyPage {
 	start := time.Now()
 	if h.latency > 0 {
 		time.Sleep(h.latency)
 	}
 	h.blocked += time.Since(start)
 	h.fetches++
-	read := func(before, limit int) (aria.Page, error) {
-		return readBefore(h.history, before, limit), nil
+	limit := req.limit
+	if limit <= 0 {
+		limit = transcriptPageSize
 	}
-	pageLimit := req.limit
-	if pageLimit <= 0 {
-		pageLimit = transcriptPageSize
-	}
-	var r aria.Page
-	if req.after != 0 {
-		r, _ = readNextPage(req.after, req.watermark, pageLimit, read)
-	} else {
-		limit := pageLimit
-		if req.expected.Count != 0 {
-			limit = req.expected.Count
-		}
-		r, _ = read(req.before, limit)
-	}
-	msgs := committedMessages(r)
-	h.fetchedMsgs += len(msgs)
-	for _, m := range msgs {
+	at := aria.Anchor{Turn: uint64(req.before), Node: uint64(req.beforeNode)}
+	page := committedPage(readBeforeAt(h.history, at, limit))
+	h.fetchedMsgs += len(page.msgs)
+	for _, m := range page.msgs {
 		if h.seen[m.Turn] {
 			h.refetches++
 		}
 		h.seen[m.Turn] = true
 	}
-	return msgs
+	return page
 }
 
 // account diffs the retained window against the previous one to count evictions,
@@ -181,19 +165,18 @@ func (h *pagingHarness) key(b byte) {
 // Measured in MESSAGES, not pages, so the trip is the same trip at every page
 // geometry.
 func (h *pagingHarness) journey(back int) {
-	oldest, _ := h.tr.oldestLT()
-	target := oldest - back
+	target := int(h.tr.from.Turn) - back
 	for range 20000 {
-		if cur, ok := h.tr.oldestLT(); ok && cur <= target {
+		if int(h.tr.from.Turn) <= target {
 			break
 		}
-		if h.tr.noMoreOlder && h.tr.offset == 0 {
+		if h.tr.atAriaFloor() && h.tr.offset == 0 {
 			break
 		}
 		h.key('u')
 	}
 	for range 20000 {
-		if h.tr.offset >= len(h.tr.lineKey)-h.tr.h && !h.tr.hasNewerHistory() {
+		if h.tr.offset >= len(h.tr.lineKey)-h.tr.h {
 			break
 		}
 		h.key('d')

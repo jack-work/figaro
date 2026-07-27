@@ -131,6 +131,15 @@ func (c *Client) Skip(a Anchor, n int) (Anchor, bool) {
 	return c.store.Skip(a, n)
 }
 
+// Before is the anchor n messages before a, and how far it got (see
+// Store.Before) — a windowed reader lowering its floor over history the store
+// already holds.
+func (c *Client) Before(a Anchor, n int) (Anchor, int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.store.Before(a, n)
+}
+
 // EvictBefore forgets everything below a. Eviction and never-fetched are the
 // same state, so what this costs is a possible re-read if the reader turns
 // around — exactly what it costs to have never held it.

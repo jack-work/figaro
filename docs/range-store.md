@@ -282,6 +282,29 @@ Order, and why:
    costs one thing that used to work: a selection anchored on the LIVE turn no
    longer survives paging history in. It comes back when `pages` does not
    exist.
+
+   **Landed as 2a-part-2: history goes into the STORE, and the window never
+   leaves the tail.** `pages`, `newer`, `payloadLRU`, `committedW`,
+   `checkOlder/checkNewer/noMoreOlder`, `pageDesc`/`describePage` and
+   `readNextPage` are all gone. A fetched page goes through `Client.Merge` (no
+   `OnClosed`, so nothing is re-frozen into scrollback) and the window's FLOOR
+   drops onto it; the window's head stays at the live tail, so `openMessage` is
+   unconditional again and the narrowing above is repaid. Three consequences
+   worth naming:
+
+   - **The armed flags are derived, not remembered.** "Do I want older
+     history" is `wantOlder()` — a search or a jump is walking, or the viewport
+     is within `transcriptPrefetchScreens` of the floor. "Is there any" is
+     `atAriaFloor()`, which asks the STORE what it holds below the floor and
+     the WIRE (`Client.MoreBefore`, set from `Page.More.Before`) what lies
+     beyond it. Nothing has to reset a bit.
+   - **The payload LRU is the store.** Scrolling back up over history the store
+     already holds is `Store.Before` plus a new floor: no round trip, no second
+     copy, and the rendered rows are still cached because rows now follow the
+     store rather than a page cache.
+   - **There is no forward direction.** The window runs to the live tail by
+     construction, so `pageNewer`, the descriptor replay chain and the sparse
+     forward probe had nothing left to do.
 3. **Gap rendering + Ensure-on-bind**, prefetch distance.
 4. **Pending**, and the submitted→committed→acked lifecycle.
 

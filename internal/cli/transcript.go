@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"hash/fnv"
 	"html"
 	"io"
 	"strings"
@@ -72,22 +71,21 @@ type transcript struct {
 	jumpNote  string
 	jump      *transcriptJump
 
-	// Lazy history paging: the pager opens on the recent window and pulls older
-	// messages via keyset ReadBefore only when you scroll near the top ("like
-	// Twitter"). checkOlder is armed by an upward scroll; noMoreOlder latches
-	// once a fetch comes back empty.
-	checkOlder  bool
-	checkNewer  bool
-	noMoreOlder bool
-	pages       []transcriptPage
-	newer       []pageDesc
-	payloadLRU  []transcriptPage
-	search      *transcriptSearch
-	committedW  int
+	// Lazy history paging: the pager opens on the store's tail and pulls older
+	// history via keyset ReadBefore only when the viewport comes near the window
+	// floor ("like Twitter").
+	//
+	// THERE IS NO ARMED FLAG. checkOlder/checkNewer/noMoreOlder were one bit per
+	// edge standing in for "is there more, and where" — the pile of booleans the
+	// range store exists to replace. Whether we want a page is now a pure
+	// function of three facts nobody has to remember to set: where the viewport
+	// sits, what the store holds below the floor, and what the WIRE has said
+	// about the beginning (Client.MoreBefore).
+	search *transcriptSearch
 
-	// THE TAIL WINDOW IS THE STORE'S OWN TAIL, not a copy of it. from is its
-	// floor — the anchor of its oldest message — and storeWindow says the window
-	// is that half-open interval [from, ∞) rather than the retained pages.
+	// THE WINDOW IS THE STORE'S OWN TAIL, not a copy of it: the half-open
+	// interval [from, ∞), whose floor is the anchor of its oldest message. There
+	// is no second copy of anything, in either direction.
 	//
 	// This is what dissolves the frozen detached tail (docs/range-store.md, bug
 	// B). The pager used to snapshot the closed tail into t.pages and freeze the
@@ -101,22 +99,21 @@ type transcript struct {
 	// unchanged, and t.offset stays valid — the screen genuinely holds still
 	// while the bottom block advances.
 	//
-	// Fetched older history still lands in t.pages (phase 2a-part-2 moves it),
-	// and the first page that does drops storeWindow: the window then no longer
-	// reaches the tail, so the open message is not ours to draw at all.
-	from        aria.Anchor
-	storeWindow bool
+	// Scrolling up LOWERS the floor: over history the store already holds it is
+	// free (Client.Before), and below that a ReadBefore is merged into the store
+	// silently (Client.Merge) and the floor drops onto it. Phase 2a still put
+	// fetched history in t.pages, which took the window off the tail and left
+	// openMessage nothing to draw; both are gone.
+	from aria.Anchor
+
 	// tailTuned latches the one row-budget retune allowed per tail window.
 	tailTuned bool
 	// tailWant is the tuned tail-window size in messages (0 = not yet tuned).
 	tailWant int
-	// windowRev is THE authority on "the retained page set changed". Every
-	// mutation of t.pages goes through invalidateWindow, which drops the tail
-	// snapshot (so resetToTail rebuilds) and bumps this counter (so the line
-	// index refills lineKey instead of inferring it from a shape diff). Keeping
-	// both facts on one signal is deliberate: with two independent staleness
-	// checks the pages and the index can disagree about which window they are
-	// describing.
+	// windowRev is THE authority on "the retained window changed". Every
+	// mutation of the window's floor goes through invalidateWindow, which bumps
+	// this counter so the line index refills lineKey instead of inferring the
+	// move from a shape diff.
 	windowRev uint64
 
 	// rowCache memoizes rows of committed messages in their unselected resting
@@ -155,37 +152,19 @@ type transcript struct {
 	screenSpare []string     // the frame buffer displaced by the last paint
 }
 
-type transcriptPage struct {
-	desc     pageDesc
-	messages []aria.Message
-}
-
-// pageDesc is sufficient to replay and verify an evicted immutable page.
-type pageDesc struct {
-	FirstTurn    int
-	LastTurn     int
-	Count        int
-	ReplayBefore int
-	LTHash       uint64
-}
-
+// transcriptSearch is a paged search in progress: the query, and enough of the
+// origin to put the reader back where they were if the walk finds nothing.
+// Only the VIEWPORT is restored — history the walk paged in stays in the store.
 type transcriptSearch struct {
-	query       string
-	pages       []transcriptPage
-	newer       []pageDesc
-	offset      int
-	follow      bool
-	noMoreOlder bool
-	direction   transcriptPageDirection
+	query  string
+	offset int
+	follow bool
 }
 
-type transcriptPageDirection uint8
-
-const (
-	pageOlder transcriptPageDirection = iota + 1
-	pageNewer
-)
-
+// transcriptPageRequest is one backward read: the keyset cursor to read before,
+// and how many messages to ask for. There is no direction any more — the window
+// runs to the live tail by construction, so the only history that can be
+// missing is OLDER.
 type transcriptPageRequest struct {
 	before int
 	// beforeNode is the node offset of `before`: the oldest retained slice can
@@ -193,12 +172,7 @@ type transcriptPageRequest struct {
 	// the TURN would skip the rest of it forever — its head nodes and the
 	// inquiry drawn above them.
 	beforeNode int
-	direction  transcriptPageDirection
-	expected   pageDesc
-	after      int
-	watermark  int
 	limit      int // messages to fetch; 0 means transcriptPageSize
-	cached     []aria.Message
 }
 
 func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string, startedAt time.Time) *transcript {
@@ -230,7 +204,7 @@ func (t *transcript) enter() {
 	// history, would be trimmed out from under. evictStale keeps the store bounded
 	// against the window instead; leave() hands the count limit back.
 	t.client.SetClosedLimit(0)
-	t.storeWindow, t.from = false, aria.Anchor{}
+	t.from = aria.Anchor{}
 	t.invalidateWindow() // a fresh session always rebuilds the window from the tail
 	t.resetToTail()
 	t.prefix = altScreenOn + autowrapOff + ldmouse.Enable + cursorHide + "\x1b[2J"
@@ -248,12 +222,16 @@ func (t *transcript) leave() {
 	t.prev = nil
 }
 
-// scroll moves the viewport by delta lines and arms the history prefetch in
-// the direction of travel. Detaching comes FIRST: stopFollowing pins the
-// offset at the live view's own position, so the motion is relative to what is
-// on screen. Moving the offset first instead scrolled from a stale value —
-// zero on a pager that had not painted a frame yet, which is how one 'k' from
-// the inline view landed at the top of a window it had never seen.
+// scroll moves the viewport by delta lines. Detaching comes FIRST:
+// stopFollowing pins the offset at the live view's own position, so the motion
+// is relative to what is on screen. Moving the offset first instead scrolled
+// from a stale value — zero on a pager that had not painted a frame yet, which
+// is how one 'k' from the inline view landed at the top of a window it had
+// never seen.
+//
+// It no longer ARMS anything. The history prefetch is asked for by geometry
+// (pageCursor), so travelling up is not a fact that has to be remembered
+// across the frame — it is visible in the offset the gesture leaves behind.
 //
 // A downward scroll that leaves the viewport past the last row — into the
 // live padding — re-attaches. Reaching the last row is not enough: the padding
@@ -266,12 +244,6 @@ func (t *transcript) scroll(delta int) {
 	t.offset += delta
 	if _, maxOff := t.layout(len(t.footLines())); t.offset > maxOff {
 		pagerTail(t)
-		return
-	}
-	if delta < 0 {
-		t.checkOlder = true // scrolled up: maybe page older history
-	} else if delta > 0 {
-		t.checkNewer = true
 	}
 }
 
@@ -285,7 +257,6 @@ func (t *transcript) scroll(delta int) {
 func (t *transcript) scrollNotch(delta int) {
 	if t.follow && delta < 0 {
 		t.stopFollowing()
-		t.checkOlder = true // still travelling up: page older history as before
 		return
 	}
 	t.scroll(delta)
@@ -320,17 +291,7 @@ const (
 	transcriptMinPageSize = 6
 	transcriptPageLimit   = 3
 	transcriptTailLimit   = 2 * transcriptPageSize
-	transcriptDescLimit   = 64
 )
-
-// transcriptPayloadLRULimit is how many evicted pages keep their payload (and,
-// since rows follow payloads, their rendered rows) for the return trip. Four
-// windows' worth: rows-based pages are small, so retaining the same amount of
-// history as the old 30-message geometry takes proportionally more of them.
-// Measured on the 120-message round trip (see docs/transcript-paging.md):
-// 3 pages costs 25 fetches / 72 refetched messages / 920 re-renders, 12 pages
-// costs 16 / 0 / 632, and 24 pages buys almost nothing more.
-var transcriptPayloadLRULimit = 4 * transcriptPageLimit
 
 // transcriptWindowRows is the retained-window budget in rendered rows. A var,
 // not a const, so the geometry sweep in transcript_geometry_bench_test.go can
@@ -456,147 +417,179 @@ func (t *transcript) tailKeep() int {
 // milliseconds — enough to cover a local daemon round trip.
 const transcriptPrefetchScreens = 2
 
+// wantOlder reports whether anything is asking for history below the window
+// floor. Three askers, and no flags: a search or a jump walking backward, or a
+// viewport that has come within the prefetch distance of the floor.
+func (t *transcript) wantOlder() bool {
+	if t.search != nil || t.jump != nil {
+		return true
+	}
+	return t.offset < transcriptPrefetchScreens*t.h
+}
+
+// atAriaFloor reports whether the window already stands on the beginning of
+// the aria: the store holds nothing below the floor and the wire says there is
+// nothing before it.
+//
+// This is the old noMoreOlder bit, un-latched. "Is there older history" is a
+// fact only the WIRE knows — a backward read reports it and an empty backward
+// read proves it — so it is kept where the wire's answer is (Client.MoreBefore)
+// rather than mirrored into a pager boolean that every path moving the window
+// has to remember to reset.
+//
+// Turn 1 node 0 short-circuits it: the head slice of the first turn is the
+// oldest thing that can exist, so standing on it needs no round trip to
+// confirm. (Only that slice. A window holding the TAIL of turn 1 still has
+// that turn's own head to fetch, and the question with it — and a FORKED
+// aria's first turn is not 1 at all, which is why the wire's answer is still
+// the general case.)
+func (t *transcript) atAriaFloor() bool {
+	if t.client.Count() == 0 {
+		return !t.client.MoreBefore()
+	}
+	if t.from.Turn <= 1 && t.from.Node == 0 {
+		return true
+	}
+	if _, held := t.client.Before(t.from, 1); held > 0 {
+		return false
+	}
+	return !t.client.MoreBefore()
+}
+
+// growWindow lowers the floor over history THE STORE ALREADY HOLDS, and reports
+// the messages it gained. This is the job the payload LRU used to do for the
+// return trip, except that with one owner there is nothing to hold a second
+// copy in: the messages are in the store, their rows are still in the cache,
+// and the whole move is one backward walk and a new floor.
+func (t *transcript) growWindow(n int) []aria.Message {
+	if n <= 0 {
+		return nil
+	}
+	floor, held := t.client.Before(t.from, n)
+	if held == 0 {
+		return nil
+	}
+	gained := make([]aria.Message, 0, held)
+	t.client.ForEachIn(floor, t.from.Prev(), func(m aria.Message) bool {
+		gained = append(gained, m)
+		return true
+	})
+	t.lowerFloor(floor)
+	return gained
+}
+
+// lowerFloor moves the window's floor down onto a. It never raises it — that is
+// resetToTail's job, and only while following.
+func (t *transcript) lowerFloor(a aria.Anchor) {
+	if !a.Less(t.from) {
+		return
+	}
+	t.from = a
+	t.invalidateWindow()
+}
+
+// reachedFloor is what to do when the walk can go no further: a search that
+// found nothing goes home, and a jump resolves against the beginning it was
+// waiting for (`:0` lands on the lowest turn that actually exists).
+func (t *transcript) reachedFloor() {
+	t.finishSearch(false)
+	t.jumpAdvance()
+	t.render()
+}
+
+// pageCursor asks whether the pager wants a page of older history, and from
+// where. It is called after every input chunk and again after every landing;
+// the answer is derived, not remembered.
+//
+// FREE HISTORY FIRST. What the store still holds below the floor costs no round
+// trip, so the window is extended over it until either the asker is satisfied
+// or the store runs out; only then does the wire get asked.
 func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
-	// A jump left waiting on a fetch that never landed (an RPC error clears both
-	// edge flags) resumes here, on the next key that asks for a page. The budget
-	// is spent by jumpAdvance, so a store that never gets there still stops.
-	if t.jump != nil && !t.checkOlder && !t.checkNewer {
-		t.jumpAdvance()
-	}
-	if t.checkOlder && t.noMoreOlder {
-		t.checkOlder = false
-	}
-	if t.checkOlder && !t.noMoreOlder {
-		t.checkOlder = false
-		if t.search == nil && t.jump == nil && t.offset >= transcriptPrefetchScreens*t.h {
-			return transcriptPageRequest{}, false
+	for t.active && t.wantOlder() {
+		anchor, within := t.viewportAnchor()
+		if gained := t.growWindow(t.pageMessages()); len(gained) > 0 {
+			t.absorbOlder(gained, anchor, within)
+			continue
 		}
-		oldest, ok := t.oldestLT()
-		if !ok {
-			return transcriptPageRequest{}, false
-		}
-		node := t.oldestFrom()
-		if oldest <= 1 && node == 0 {
-			t.noMoreOlder = true
-			t.finishSearch(false)
-			// The floor is now known, which is exactly what `:0` was waiting for.
-			t.jumpAdvance()
+		break
+	}
+	if !t.wantOlder() {
+		return transcriptPageRequest{}, false
+	}
+	if t.atAriaFloor() {
+		t.reachedFloor()
+		return transcriptPageRequest{}, false
+	}
+	if t.jump != nil {
+		if t.jump.fetches <= 0 {
+			t.abandonJump(fmt.Sprintf("%s is more than %d pages away — scroll or search for it",
+				t.jump.target, jumpBudget))
 			t.render()
 			return transcriptPageRequest{}, false
 		}
-		return transcriptPageRequest{
-			before: oldest, beforeNode: int(node),
-			direction: pageOlder, limit: t.pageMessages(),
-		}, true
+		t.jump.fetches--
 	}
-	if t.checkNewer && len(t.newer) > 0 {
-		t.checkNewer = false
-		// t.index.total, not len(t.lineKey): lineKey is only refilled when the
-		// index shape moves, so reading its length here would be a second,
-		// weaker way of asking how big line space is.
-		if t.search == nil && t.jump == nil && t.offset+transcriptPrefetchScreens*t.h < t.index.total {
-			return transcriptPageRequest{}, false
-		}
-		desc := t.newer[len(t.newer)-1]
-		return transcriptPageRequest{
-			before: desc.ReplayBefore, direction: pageNewer, expected: desc,
-			cached: t.takePayload(desc),
-		}, true
-	}
-	if t.checkNewer {
-		t.checkNewer = false
-		newest, ok := t.newestLT()
-		if ok && newest < t.committedW {
-			return transcriptPageRequest{
-				direction: pageNewer, after: newest, watermark: t.committedW,
-				limit: t.pageMessages(),
-			}, true
-		}
-	}
-	return transcriptPageRequest{}, false
+	return transcriptPageRequest{
+		before: int(t.from.Turn), beforeNode: int(t.from.Node), limit: t.pageMessages(),
+	}, true
 }
 
-func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Message) {
+// absorbOlder is what every arrival of older history does once it is IN the
+// window, whether it came from the store or from the wire: re-anchor the
+// viewport on the line it was showing, let a search look at what arrived, and
+// let a jump resolve against it.
+//
+// The order is load-bearing. The anchor is restored BEFORE the jump advances,
+// so a landing overwrites the anchor rather than the other way round.
+func (t *transcript) absorbOlder(gained []aria.Message, anchor sliceKey, within int) {
+	if t.search != nil {
+		if t.findPage(t.search.query, gained) {
+			t.search = nil
+		}
+		return
+	}
+	t.buildIndex()
+	t.restoreViewportAnchor(anchor, within)
+	t.jumpAdvance()
+}
+
+// applyPage folds a fetched page of older history into the ONE owner and drops
+// the window's floor onto it.
+//
+// The page goes through Client.Merge, which is SILENT — it fires no OnClosed,
+// whose inline branch would freeze every historical message into the user's
+// native scrollback. That silence is why history no longer needs a second home
+// (t.pages, deleted): there is nowhere else to put it and no reason to want
+// one.
+func (t *transcript) applyPage(req transcriptPageRequest, page historyPage) {
 	if !t.active {
 		return
 	}
-	if len(messages) == 0 {
-		if req.direction == pageOlder {
-			t.noMoreOlder = true
-			t.finishSearch(false)
-			// An empty ReadBefore IS the floor, and it is the only way to find
-			// it on a FORKED aria, whose first turn id is not 1. `:0` resolves
-			// here for those.
-			t.jumpAdvance()
-			t.render()
-		} else if t.search != nil {
-			t.wrapSearchOlder()
-		} else if t.jump != nil {
-			t.abandonJump(t.jump.target.missing())
-			t.render()
-		}
+	if len(page.msgs) == 0 {
+		// An empty ReadBefore IS the floor, and it is the only way to find it on
+		// a FORKED aria, whose first turn id is not 1.
+		t.client.SetMoreBefore(false)
+		t.reachedFloor()
 		return
 	}
-	desc := describePage(messages)
-	if req.expected.Count != 0 && !req.expected.equal(desc) {
-		t.newer = nil
-		t.checkNewer = true
-		t.render()
-		return
-	}
-	// THE FIRST PAGE OF OLDER HISTORY takes the window off the store's tail.
-	// Materialize what the interval currently holds as the first retained page,
-	// so everything below here is the paging code exactly as it was; the window
-	// no longer reaches the live turn, which is why openMessage goes quiet.
-	// (Phase 2a-part-2 replaces this with a merge into the store and a lowered
-	// floor — at which point t.pages goes away entirely.)
-	if t.storeWindow {
-		if held := t.messages(); len(held) > 0 {
-			t.pages = []transcriptPage{{desc: describePage(held), messages: held}}
-		}
-		t.storeWindow = false
-	}
-	searching := t.search != nil
 	anchor, within := sliceKey(0), 0
-	if !searching {
+	if t.search == nil {
 		anchor, within = t.viewportAnchor()
 	}
-	page := transcriptPage{desc: desc, messages: messages}
-	t.invalidateWindow()
-	switch req.direction {
-	case pageOlder:
-		t.pages = append([]transcriptPage{page}, t.pages...)
-	case pageNewer:
-		t.pages = append(t.pages, page)
-		if req.expected.Count != 0 && len(t.newer) > 0 {
-			t.newer = t.newer[:len(t.newer)-1]
-		}
-	}
-	t.trimPages(req.direction)
-	if searching {
-		if t.findPage(t.search.query, messages) {
-			t.search = nil
-		} else if t.search.direction == pageNewer {
-			if t.hasNewerHistory() {
-				t.checkNewer = true
-			} else {
-				t.wrapSearchOlder()
-			}
-		} else {
-			t.checkOlder = true
-		}
-		if t.search != nil {
-			return
-		}
-	} else {
-		t.buildIndex()
-		t.restoreViewportAnchor(anchor, within)
-		// A jump in flight resolves against the window it just grew, or asks
-		// for one more page. It runs AFTER the anchor is restored so that a
-		// landing overwrites the anchor rather than the other way round.
-		t.jumpAdvance()
+	t.client.SetMoreBefore(page.more)
+	t.client.Merge(page.msgs, page.extents)
+	t.lowerFloor(anchorOf(page.msgs[0]))
+	t.absorbOlder(page.msgs, anchor, within)
+	if t.search != nil {
+		return // still walking; the worker asks for the next page
 	}
 	t.render()
+}
+
+// anchorOf is a message's address — the pair (Turn, From) that identifies it
+// everywhere in this codebase.
+func anchorOf(m aria.Message) aria.Anchor {
+	return aria.Anchor{Turn: uint64(m.Turn), Node: m.From}
 }
 
 // historyPage is a fetched page folded into the pager's units, WITH the turn
@@ -608,13 +601,18 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 type historyPage struct {
 	msgs    []aria.Message
 	extents map[int]uint64
+	// more is the wire's own answer to "is there anything before this page"
+	// (Page.More.Before). It is the only honest source for it — an anchor cannot
+	// know, and the pager's old noMoreOlder mirrored it into a latch that every
+	// window move had to remember to reset.
+	more bool
 }
 
 // committedPage is committedMessages plus those extents — the fold used
 // wherever the result is going into the store rather than straight to a
 // renderer.
 func committedPage(p aria.Page) historyPage {
-	out := historyPage{msgs: committedMessages(p)}
+	out := historyPage{msgs: committedMessages(p), more: p.More.Before}
 	for _, part := range p.Parts {
 		if part.ClippedTail || !part.Sealed {
 			continue
@@ -753,113 +751,6 @@ func turnVoice(nodes []livedoc.Node) string {
 	return livedoc.RoleOutput
 }
 
-func (t *transcript) trimPages(direction transcriptPageDirection) {
-	if len(t.pages) > transcriptPageLimit {
-		t.invalidateWindow() // dropping a page is a window change
-	}
-	for len(t.pages) > transcriptPageLimit {
-		drop := 0
-		if direction == pageOlder {
-			drop = len(t.pages) - 1
-		}
-		page := t.pages[drop]
-		if direction == pageOlder {
-			t.newer = append(t.newer, page.desc)
-			if len(t.newer) > transcriptDescLimit {
-				copy(t.newer, t.newer[len(t.newer)-transcriptDescLimit:])
-				t.newer = t.newer[:transcriptDescLimit]
-			}
-		}
-		t.rememberPayload(page)
-		t.dropPage(page)
-		copy(t.pages[drop:], t.pages[drop+1:])
-		t.pages[len(t.pages)-1] = transcriptPage{}
-		t.pages = t.pages[:len(t.pages)-1]
-		if direction == pageNewer {
-			t.noMoreOlder = false
-		}
-	}
-}
-
-// dropPage releases the caches of a page leaving the retained window. Rows of
-// messages whose payload is still held in the LRU are KEPT: that page is one
-// scroll-turn away from coming back (the LRU exists precisely so the return
-// trip costs no I/O), and re-rendering its prose is far more expensive than
-// the rows are to hold. Expansion state rides along with the rows, so the two
-// never disagree. Rows are released for real when the payload leaves the LRU.
-func (t *transcript) dropPage(page transcriptPage) {
-	if page.desc.Count == 0 {
-		return
-	}
-	kept := t.payloadLTs()
-	for _, m := range page.messages {
-		if kept[m.Turn] {
-			continue
-		}
-		delete(t.rowCache, keyOf(m))
-		for ref := range t.expanded {
-			if ref.turn == m.Turn {
-				delete(t.expanded, ref)
-			}
-		}
-	}
-}
-
-// payloadLTs is the set of message LTs whose payload the LRU still holds.
-func (t *transcript) payloadLTs() map[int]bool {
-	n := 0
-	for _, page := range t.payloadLRU {
-		n += len(page.messages)
-	}
-	if n == 0 {
-		return nil
-	}
-	out := make(map[int]bool, n)
-	for _, page := range t.payloadLRU {
-		for _, m := range page.messages {
-			out[m.Turn] = true
-		}
-	}
-	return out
-}
-
-func (t *transcript) rememberPayload(page transcriptPage) {
-	if page.desc.Count == 0 || transcriptPayloadLRULimit == 0 {
-		return
-	}
-	for i := range t.payloadLRU {
-		if t.payloadLRU[i].desc.equal(page.desc) {
-			copy(t.payloadLRU[i:], t.payloadLRU[i+1:])
-			t.payloadLRU[len(t.payloadLRU)-1] = transcriptPage{}
-			t.payloadLRU = t.payloadLRU[:len(t.payloadLRU)-1]
-			break
-		}
-	}
-	t.payloadLRU = append(t.payloadLRU, page)
-	if len(t.payloadLRU) > transcriptPayloadLRULimit {
-		evicted := append([]transcriptPage(nil), t.payloadLRU[:len(t.payloadLRU)-transcriptPayloadLRULimit]...)
-		copy(t.payloadLRU, t.payloadLRU[len(t.payloadLRU)-transcriptPayloadLRULimit:])
-		clear(t.payloadLRU[transcriptPayloadLRULimit:])
-		t.payloadLRU = t.payloadLRU[:transcriptPayloadLRULimit]
-		for _, page := range evicted { // rows outlive the window, not the LRU
-			t.dropPage(page)
-		}
-	}
-}
-
-func (t *transcript) takePayload(desc pageDesc) []aria.Message {
-	for i := len(t.payloadLRU) - 1; i >= 0; i-- {
-		if t.payloadLRU[i].desc.equal(desc) {
-			messages := t.payloadLRU[i].messages
-			copy(t.payloadLRU[i:], t.payloadLRU[i+1:])
-			t.payloadLRU[len(t.payloadLRU)-1] = transcriptPage{}
-			t.payloadLRU = t.payloadLRU[:len(t.payloadLRU)-1]
-			return messages
-		}
-	}
-	return nil
-}
-
 // resetToTail re-points the window at the STORE's tail. It does not copy: the
 // window is the interval [from, ∞) and the store is its only holder, so
 // "rebuilding" it is recomputing one anchor — the floor, tailKeep messages
@@ -879,22 +770,10 @@ func (t *transcript) resetToTail() {
 		keep = n
 	}
 	from, _ := t.client.TailFrom(keep)
-	if t.storeWindow && t.from == from {
-		t.checkNewer = false // the window already IS the tail at this floor
-		return
+	if t.from == from {
+		return // the window already IS the tail at this floor
 	}
-	t.pages, t.newer, t.payloadLRU = nil, nil, nil
-	t.from, t.storeWindow = from, true
-	t.checkNewer = false
-	// The committed watermark is the newest thing the store holds, which is one
-	// backward step — no walk, and no dependence on OnClosed having been wired.
-	if last, ok := t.client.TailFrom(1); ok && int(last.Turn) > t.committedW {
-		t.committedW = int(last.Turn)
-	}
-	// Turn 1 is the oldest turn there is — but only its HEAD slice is the oldest
-	// thing there is. A window holding just the tail of it still has that turn's
-	// own head to fetch, and the question with it.
-	t.noMoreOlder = n > 0 && from.Turn <= 1 && from.Node == 0
+	t.from = from
 	t.invalidateWindow()
 	t.tailTuned = false
 	t.evictStale()
@@ -972,7 +851,7 @@ func (t *transcript) evictStale() {
 // silently instead, which is the same page in the same order with no second
 // copy and no merge on the frame path. See livelogTurn.enterPager.
 func (t *transcript) tuneTail() bool {
-	if t.tailTuned || !t.follow || !t.storeWindow {
+	if t.tailTuned || !t.follow {
 		return false
 	}
 	held, have := t.heldWindow() // committed rows + the messages they belong to
@@ -1030,22 +909,14 @@ func (t *transcript) pruneCaches() {
 	} else {
 		clear(keep)
 	}
-	t.forEachMessage(func(m aria.Message) { keep[m.Turn] = true })
-	if t.storeWindow {
-		// Rows follow payloads: the STORE is what holds a message now, so a
-		// message that has merely fallen out of the tail window (the row budget
-		// shrinking it) keeps its rendered rows for the scroll back up. That is
-		// the job transcriptPayloadLRU does for fetched pages.
-		t.client.ForEachIn(aria.Anchor{}, windowEnd, func(m aria.Message) bool {
-			keep[m.Turn] = true
-			return true
-		})
-	}
-	for _, page := range t.payloadLRU { // payload retained => rows retained
-		for _, m := range page.messages {
-			keep[m.Turn] = true
-		}
-	}
+	// ROWS FOLLOW THE STORE. A message that has merely fallen out of the WINDOW
+	// (the row budget shrinking it back to the tail) is still held by the one
+	// owner, and the scroll back up over it must cost neither I/O nor a
+	// re-render — which is the whole job the payload LRU used to do.
+	t.client.ForEachIn(aria.Anchor{}, windowEnd, func(m aria.Message) bool {
+		keep[m.Turn] = true
+		return true
+	})
 	for k := range t.rowCache {
 		if !keep[k.turn()] {
 			delete(t.rowCache, k)
@@ -1058,27 +929,18 @@ func (t *transcript) pruneCaches() {
 	}
 }
 
-// forEachMessage walks the retained window without materializing the merged
-// slice messages() returns — it is called from the frame path, where one
-// allocation and a copy of every retained message header per frame is pure
-// waste.
+// forEachMessage walks the retained window without materializing a slice of
+// it — it is called from the frame path, where one allocation and a copy of
+// every retained message header per frame is pure waste.
 //
 // GAP-BLIND BY CHOICE, which is the contract's default mode: over the store's
-// tail interval it asks for what is held and is never lied to about
+// window interval it asks for what is held and is never lied to about
 // adjacency — it simply gets less. See docs/range-store.md, "The two verbs".
 func (t *transcript) forEachMessage(fn func(aria.Message)) {
-	if t.storeWindow {
-		t.client.ForEachIn(t.from, windowEnd, func(m aria.Message) bool {
-			fn(m)
-			return true
-		})
-		return
-	}
-	for _, page := range t.pages {
-		for _, m := range page.messages {
-			fn(m)
-		}
-	}
+	t.client.ForEachIn(t.from, windowEnd, func(m aria.Message) bool {
+		fn(m)
+		return true
+	})
 }
 
 // windowEnd is past every real anchor: the high edge of a window that runs to
@@ -1086,109 +948,15 @@ func (t *transcript) forEachMessage(fn func(aria.Message)) {
 var windowEnd = aria.Anchor{Turn: ^uint64(0), Node: ^uint64(0)}
 
 func (t *transcript) messages() []aria.Message {
-	var out []aria.Message
-	if t.storeWindow {
-		out = make([]aria.Message, 0, t.client.Count())
-	} else {
-		n := 0
-		for _, page := range t.pages {
-			n += len(page.messages)
-		}
-		out = make([]aria.Message, 0, n)
-	}
+	out := make([]aria.Message, 0, t.client.Count())
 	t.forEachMessage(func(m aria.Message) { out = append(out, m) })
 	return out
 }
 
-func (t *transcript) oldestLT() (int, bool) {
-	if t.storeWindow {
-		if t.client.Count() == 0 {
-			return 0, false
-		}
-		return int(t.from.Turn), true
-	}
-	for _, page := range t.pages {
-		if len(page.messages) > 0 {
-			return page.messages[0].Turn, true
-		}
-	}
-	return 0, false
-}
-
-// oldestFrom is the node offset the retained window starts at inside its oldest
-// turn. Non-zero means the window holds only the TAIL of that turn, so the
-// backward fetch must be anchored on the node — see transcriptPageRequest.
-func (t *transcript) oldestFrom() uint64 {
-	if t.storeWindow {
-		return t.from.Node
-	}
-	for _, page := range t.pages {
-		if len(page.messages) > 0 {
-			return page.messages[0].From
-		}
-	}
-	return 0
-}
-
-func (t *transcript) newestLT() (int, bool) {
-	if t.storeWindow {
-		last, ok := 0, false
-		t.forEachMessage(func(m aria.Message) { last, ok = m.Turn, true })
-		return last, ok
-	}
-	for i := len(t.pages) - 1; i >= 0; i-- {
-		if n := len(t.pages[i].messages); n > 0 {
-			return t.pages[i].messages[n-1].Turn, true
-		}
-	}
-	return 0, false
-}
-
-// hasNewerHistory: while the window is the store's tail it runs to the live
-// turn by construction, so there is nothing newer to page in — the question is
-// only meaningful once history has been paged in beneath it.
-func (t *transcript) hasNewerHistory() bool {
-	if t.storeWindow {
-		return false
-	}
-	if len(t.newer) > 0 {
-		return true
-	}
-	newest, ok := t.newestLT()
-	return ok && newest < t.committedW
-}
-
-func (t *transcript) observeCommitted(m aria.Message) {
-	if m.Turn > t.committedW {
-		t.committedW = m.Turn
-	}
-}
-
-func describePage(messages []aria.Message) pageDesc {
-	if len(messages) == 0 {
-		return pageDesc{}
-	}
-	h := fnv.New64a()
-	var b [8]byte
-	for _, m := range messages {
-		v := uint64(m.Turn)
-		for i := range b {
-			b[i] = byte(v >> (8 * i))
-		}
-		_, _ = h.Write(b[:])
-	}
-	last := messages[len(messages)-1].Turn
-	return pageDesc{
-		FirstTurn: messages[0].Turn, LastTurn: last, Count: len(messages),
-		ReplayBefore: last + 1, LTHash: h.Sum64(),
-	}
-}
-
-func (d pageDesc) equal(other pageDesc) bool {
-	return d.FirstTurn == other.FirstTurn && d.LastTurn == other.LastTurn &&
-		d.Count == other.Count && d.ReplayBefore == other.ReplayBefore &&
-		d.LTHash == other.LTHash
-}
+// oldestFrom is the node offset the retained window starts at inside its
+// oldest turn. Non-zero means the window holds only the TAIL of that turn, so
+// the backward fetch must be anchored on the node — see transcriptPageRequest.
+func (t *transcript) oldestFrom() uint64 { return t.from.Node }
 
 func (t *transcript) resize(w, h int) {
 	// Anchor on the message at the viewport top: a width change re-wraps rows and
@@ -1275,15 +1043,14 @@ func (t *transcript) transRule() string {
 // IS the store's tail interval, released nodes land in it, and nothing is lost
 // by rendering live.
 //
-// nil once the window has been paged away from the tail: the open turn is then
-// simply not inside it, and drawing it would fabricate an adjacency between
-// history and the live turn.
-func (t *transcript) openMessage() *aria.Message {
-	if !t.storeWindow {
-		return nil
-	}
-	return t.client.Open()
-}
+// UNCONDITIONAL since phase 2a-part-2. It used to go quiet once history had
+// been paged in, because the fetched page took the window off the tail and
+// drawing the live turn beneath a window that no longer reached it would have
+// fabricated an adjacency. History lands in the store now and the window keeps
+// its head at the tail whatever its floor does, so there is nothing to go
+// quiet about — and a selection anchored on the LIVE turn survives paging
+// history in, which is what that compromise cost.
+func (t *transcript) openMessage() *aria.Message { return t.client.Open() }
 
 // stopFollowing detaches the viewport from the live tail and PINS it where it
 // was. Two things must happen before follow drops, because both are only true
@@ -1890,7 +1657,6 @@ func pagerTail(t *transcript) {
 func pagerTop(t *transcript) {
 	t.stopFollowing()
 	t.offset = 0
-	t.checkOlder = true
 }
 
 // pagerPendingTop is the second half of the two-key gg gesture; the first 'g'
@@ -1998,24 +1764,15 @@ func (t *transcript) find(q string) {
 			return
 		}
 	}
-	t.search = &transcriptSearch{
-		query: q, pages: append([]transcriptPage(nil), t.pages...),
-		newer: append([]pageDesc(nil), t.newer...), offset: t.offset,
-		follow: t.follow, noMoreOlder: t.noMoreOlder,
-		direction: pageOlder,
-	}
+	t.search = &transcriptSearch{query: q, offset: t.offset, follow: t.follow}
 	t.stopFollowing()
-	if t.hasNewerHistory() {
-		t.search.direction = pageNewer
-		t.checkNewer = true
-	} else {
-		t.checkOlder = true
-	}
 }
 
 // findRepeat jumps to the next (delta > 0) or previous (delta < 0) match of
 // the persistent matchQuery. Wraps within loaded lines. If nothing matches
-// in-window, falls back to the paged-search worker in the current direction.
+// in-window, falls back to the paged-search worker, which walks BACKWARD: the
+// window reaches the live tail by construction, so the only history a search
+// can page in is older.
 func (t *transcript) findRepeat(delta int) {
 	if t.matchQuery == "" || delta == 0 {
 		return
@@ -2035,20 +1792,9 @@ func (t *transcript) findRepeat(delta int) {
 			return
 		}
 	}
-	// Nothing in the loaded window; page in the correct direction.
-	t.search = &transcriptSearch{
-		query: q, pages: append([]transcriptPage(nil), t.pages...),
-		newer: append([]pageDesc(nil), t.newer...), offset: t.offset,
-		follow: t.follow, noMoreOlder: t.noMoreOlder,
-		direction: pageOlder,
-	}
+	// Nothing in the loaded window; page older history in and keep looking.
+	t.search = &transcriptSearch{query: q, offset: t.offset, follow: t.follow}
 	t.stopFollowing()
-	if delta > 0 && t.hasNewerHistory() {
-		t.search.direction = pageNewer
-		t.checkNewer = true
-	} else {
-		t.checkOlder = true
-	}
 }
 
 // activeHighlight is what lines() paints as reverse-video match spans:
@@ -2326,40 +2072,19 @@ func containsIgnoringMarkdown(markdown, q string) bool {
 	return false
 }
 
+// finishSearch ends a paged search that found nothing, putting the reader back
+// where they were. The WINDOW is not put back: history the walk paged in is in
+// the store now, and the floor it reached is honest — restoring a higher floor
+// would throw away work and re-fetch it on the next scroll. Only the viewport
+// goes home.
 func (t *transcript) finishSearch(found bool) {
 	if found || t.search == nil {
 		return
 	}
 	origin := t.search
-	t.pages = origin.pages
-	t.invalidateWindow()
-	t.newer = origin.newer
+	t.search = nil
 	t.offset = origin.offset
 	t.follow = origin.follow
-	t.noMoreOlder = origin.noMoreOlder
-	t.search = nil
-	t.checkOlder, t.checkNewer = false, false
-	t.pruneCaches()
-}
-
-func (t *transcript) wrapSearchOlder() {
-	if t.search == nil {
-		return
-	}
-	origin := t.search
-	t.pages = append([]transcriptPage(nil), origin.pages...)
-	t.invalidateWindow()
-	t.newer = append([]pageDesc(nil), origin.newer...)
-	t.offset = origin.offset
-	t.follow = false
-	t.noMoreOlder = origin.noMoreOlder
-	t.checkNewer = false
-	if t.noMoreOlder {
-		t.finishSearch(false)
-		return
-	}
-	t.checkOlder = true
-	origin.direction = pageOlder
 	t.pruneCaches()
 }
 

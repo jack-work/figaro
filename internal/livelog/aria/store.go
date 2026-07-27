@@ -707,6 +707,37 @@ func (s *Store) Skip(a Anchor, n int) (Anchor, bool) {
 	return Anchor{}, false
 }
 
+// Before is the BACKWARD mirror of Skip, and it is what a windowed reader
+// lowers its floor with: the anchor n messages before a, plus how many
+// messages the interval [got, a) actually gained. Fewer than n held below a is
+// not an error — the store hands back its own oldest and says how far it got,
+// because "take another page of what you already have" wants whatever is
+// there.
+//
+// This is the job the pager's payload LRU used to do. With one owner the
+// messages are already here: extending the window over them costs a backward
+// walk of its own length, no round trip, and no second copy.
+func (s *Store) Before(a Anchor, n int) (Anchor, int) {
+	if n <= 0 {
+		return a, 0
+	}
+	got, moved := a, 0
+	for i := len(s.ranges) - 1; i >= 0 && moved < n; i-- {
+		msgs := s.ranges[i].Msgs
+		if !s.ranges[i].From.Less(a) {
+			continue // the whole range is at or after a
+		}
+		for k := firstMsgAtOrAfter(msgs, a) - 1; k >= 0 && moved < n; k-- {
+			from, _ := msgSpan(msgs[k])
+			if !from.Less(a) {
+				continue
+			}
+			got, moved = from, moved+1
+		}
+	}
+	return got, moved
+}
+
 // Count is how many messages the store retains.
 func (s *Store) Count() int {
 	n := 0

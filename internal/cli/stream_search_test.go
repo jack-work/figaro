@@ -77,7 +77,7 @@ func TestHistoricalSearchRejectsStalePage(t *testing.T) {
 	waitSignal(t, first.returned, "stale ReadBefore return")
 	waitSignal(t, firstDone, "stale search worker exit")
 	in.mu.Lock()
-	oldest, _ := in.lt.tr.oldestLT()
+	oldest := int(in.lt.tr.from.Turn)
 	query, searching := in.lt.transcriptHistorySearch()
 	in.mu.Unlock()
 	if oldest != 91 {
@@ -263,7 +263,9 @@ func newSearchInteractiveInput(reader transcriptReadClient, tc *searchInputTermi
 	settings := &renderSettings{}
 	lt := newLivelogTurn(out, 80, 12, settings, "", time.Time{}, nil, nil, nil)
 	lt.enterTranscript()
-	lt.apply(readBefore(transcriptHistory(120), recentCursor, transcriptPageSize))
+	tail := readBefore(transcriptHistory(120), recentCursor, transcriptPageSize)
+	lt.apply(tail)
+	lt.setMoreBefore(tail.More.Before) // the wire's answer: there IS older history
 	return &interactiveInput{
 		tc: tc, lt: lt, fcli: reader, mu: &sync.Mutex{}, set: settings,
 		cancel: func() {}, disconnectCh: make(chan struct{}, 1),

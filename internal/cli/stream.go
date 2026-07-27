@@ -439,6 +439,10 @@ func (in *interactiveInput) enterTranscript() {
 	in.lt.setQueuedFetch(in.refreshQueued)
 	if rerr == nil {
 		in.lt.apply(r)
+		// The wire's own answer to "is there anything before this page", which
+		// is the only honest source for it: the pager reads it back as "can I
+		// still page older history" instead of latching a bit of its own.
+		in.lt.setMoreBefore(r.More.Before)
 	}
 	in.mu.Unlock()
 }
@@ -671,36 +675,17 @@ func wireBudget(messages int) int {
 	return messages * wireBytesPerMessage
 }
 
-func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcriptPageRequest) ([]aria.Message, error) {
-	if len(req.cached) > 0 {
-		return req.cached, nil
+func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcriptPageRequest) (historyPage, error) {
+	limit := req.limit
+	if limit <= 0 {
+		limit = transcriptPageSize
 	}
-	read := func(before, node, limit int) (aria.Page, error) {
-		at := aria.Anchor{Turn: uint64(before), Node: uint64(node)}
-		return in.fcli.ReadBefore(ctx, at, wireBudget(limit))
-	}
-	pageLimit := req.limit
-	if pageLimit <= 0 {
-		pageLimit = transcriptPageSize
-	}
-	var (
-		r   aria.Page
-		err error
-	)
-	if req.after != 0 {
-		r, err = readNextPage(req.after, req.watermark, pageLimit,
-			func(before, limit int) (aria.Page, error) { return read(before, 0, limit) })
-	} else {
-		limit := pageLimit
-		if req.expected.Count != 0 {
-			limit = req.expected.Count
-		}
-		r, err = read(req.before, req.beforeNode, limit)
-	}
+	at := aria.Anchor{Turn: uint64(req.before), Node: uint64(req.beforeNode)}
+	r, err := in.fcli.ReadBefore(ctx, at, wireBudget(limit))
 	if err != nil {
-		return nil, err
+		return historyPage{}, err
 	}
-	return committedMessages(r), nil
+	return committedPage(r), nil
 }
 
 func (in *interactiveInput) searchMatchesLocked(gen uint64, query string) bool {
@@ -767,38 +752,6 @@ func (in *interactiveInput) refreshQueued() {
 	}()
 }
 
-func readNextPage(after, watermark, limit int, read func(int, int) (aria.Page, error)) (aria.Page, error) {
-	if after >= watermark || limit <= 0 {
-		return aria.Page{}, nil
-	}
-	high := watermark + 1
-	best, err := read(high, limit)
-	if err != nil {
-		return aria.Page{}, err
-	}
-	if committedAfter(best, after) < limit {
-		return filterCommittedAfter(best, after), nil
-	}
-	low := after + 1
-	for range 64 {
-		if low >= high {
-			return filterCommittedAfter(best, after), nil
-		}
-		mid := low + (high-low)/2
-		r, err := read(mid, limit)
-		if err != nil {
-			return aria.Page{}, err
-		}
-		if committedAfter(r, after) >= limit {
-			high, best = mid, r
-		} else {
-			low = mid + 1
-		}
-	}
-	return filterCommittedAfter(best, after), nil
-}
-
-// committedAfter counts content parts beyond a turn cursor.
 func committedAfter(p aria.Page, after int) int {
 	n := 0
 	for _, part := range p.Parts {

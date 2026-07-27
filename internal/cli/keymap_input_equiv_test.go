@@ -298,6 +298,24 @@ func inputNavSeq(n navKey) string {
 //     No other column moved in any of them; verb=, sel=, clip= and rest= are
 //     byte-identical.
 //
+// REGENERATED A SIXTH TIME, for phase 2a-part-2 (the pager's window became an
+// interval into the range store, and fetched history stopped living in a second
+// copy). SIX cells moved, all of them for one reason: the window can now grow
+// DOWNWARD over history THE STORE ALREADY HOLDS, for free, and this fixture
+// applies the whole aria to the client.
+//
+//   - nav:Home, in the four states that have it: off= 0 -> 790. Home still goes
+//     to the top of what is held; the prefetch then pulls the rest of the
+//     retained history into the window and the viewport ANCHOR is restored, so
+//     the reader keeps looking at the same rows and their line number moves.
+//     That is exactly what a landed page always did (applyPage ->
+//     restoreViewportAnchor); it is new only in that no round trip is needed.
+//   - 0x0a / 0x0d in the "jump" state: `:12` now LANDS (off=306, sel=true)
+//     where it used to give up and restore the reader (off=753, fol=true). The
+//     probe's client holds all 120 turns, so turn 12 was never missing — the
+//     old pager just could not see it, because its window was three fetched
+//     pages wide and the store was not the window.
+//
 // And one new state, "jump".
 //
 // Regenerated mechanically, not hand-edited.
@@ -339,7 +357,7 @@ var inputOracle = []struct {
 		"csiu ^t":         "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:Down":        "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:End":         "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"nav:Home":        "stop=false rest=\"\" act=true off=0 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"nav:Home":        "stop=false rest=\"\" act=true off=790 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:PgDn":        "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:PgUp":        "stop=false rest=\"\" act=true off=732 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:Up":          "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
@@ -348,8 +366,8 @@ var inputOracle = []struct {
 		"0x03":            "stop=true rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=true clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 		"0x04":            "stop=true rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=1 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 		"0x08":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"1\"",
-		"0x0a":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"0x0d":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x0a":            "stop=false rest=\"\" act=true off=306 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"0x0d":            "stop=false rest=\"\" act=true off=306 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x0f":            "stop=false rest=\"\" act=true off=843 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12\"",
 		"0x1b":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"0x20":            "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=true jq=\"12 \"",
@@ -484,7 +502,7 @@ var inputOracle = []struct {
 		"csiu ^p":         "stop=false rest=\"\" act=true off=773 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^p+alt":     "stop=false rest=\"\" act=true off=773 fol=false srch=false q=\"\" h=true s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^t":         "stop=false rest=\"\" act=true off=774 fol=true srch=false q=\"\" h=true s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"nav:Home":        "stop=false rest=\"\" act=true off=0 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"nav:Home":        "stop=false rest=\"\" act=true off=790 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:PgUp":        "stop=false rest=\"\" act=true off=732 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:Up":          "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 	}},
@@ -625,7 +643,7 @@ var inputOracle = []struct {
 		"csiu ^o":         "stop=false rest=\"\" act=true off=843 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=true disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^p":         "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"csiu ^p+alt":     "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"nav:Home":        "stop=false rest=\"\" act=true off=0 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"nav:Home":        "stop=false rest=\"\" act=true off=790 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:PgUp":        "stop=false rest=\"\" act=true off=732 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:Up":          "stop=false rest=\"\" act=true off=752 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=false verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 	}},
@@ -655,7 +673,7 @@ var inputOracle = []struct {
 		"csiu ^p+alt":     "stop=false rest=\"\" act=true off=750 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:Down":        "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:End":         "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
-		"nav:Home":        "stop=false rest=\"\" act=true off=0 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
+		"nav:Home":        "stop=false rest=\"\" act=true off=790 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:PgDn":        "stop=false rest=\"\" act=true off=753 fol=true srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:PgUp":        "stop=false rest=\"\" act=true off=732 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",
 		"nav:Up":          "stop=false rest=\"\" act=true off=751 fol=false srch=false q=\"\" h=false s=false Q=false g=false sel=true verb=false disc=0 canc=false clip=\"\" cpfail=false cping=false jmp=false jq=\"\"",

@@ -94,6 +94,7 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	for i := 5; i <= 8; i++ { // recent window only (as the lazy initial load gives)
 		client.Apply(aria.Page{Parts: []aria.TurnPart{msg(i)}})
 	}
+	client.SetMoreBefore(true) // the wire's answer: history exists below LT 5
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	if strings.Contains(strings.Join(ft.Screen(), "\n"), "msg01") {
@@ -110,7 +111,7 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	}
 	// Page in the older window; the viewport anchors (offset shifts down so the
 	// content the user was reading stays put).
-	tr.applyPage(req, committedMessages(aria.Page{Parts: []aria.TurnPart{msg(1), msg(2), msg(3), msg(4)}}))
+	tr.applyPage(req, committedPage(aria.Page{Parts: []aria.TurnPart{msg(1), msg(2), msg(3), msg(4)}}))
 	if tr.offset <= off0 {
 		t.Fatalf("offset should shift down to anchor after prepend (was %d, now %d)", off0, tr.offset)
 	}

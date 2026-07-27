@@ -69,9 +69,12 @@ type livelogTurn struct {
 	//
 	// seedExtents is turn -> anchors occupied, for the parts the server did not
 	// clip at the tail: what lets the store call two turns neighbours instead of
-	// leaving a phantom hole between them.
+	// leaving a phantom hole between them. seedMore is the wire's answer to "is
+	// there anything before this page", which the pager reads back as "can I
+	// still page older history".
 	seeded      []aria.Message
 	seedExtents map[int]uint64
+	seedMore    bool
 }
 
 // sliceCursor addresses one pager unit: the turn and the node offset within it.
@@ -105,7 +108,6 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 		t.client.OnMetrics = status.update
 	}
 	t.client.OnClosed = func(m aria.Message) {
-		t.tr.observeCommitted(m)
 		if t.tr.active {
 			if t.lastFrozen.turn != 0 {
 				t.pagerClosed = append(t.pagerClosed, m)
@@ -291,6 +293,13 @@ func (t *livelogTurn) armThinking() {
 	t.in.OpenThinking(livedoc.RoleOutput)
 }
 
+// setMoreBefore records the wire's answer to "is there anything before this
+// page" (Page.More.Before) on the ONE owner. The pager reads it back as "can I
+// still page older history"; nothing else may set it, because nothing else
+// knows — a PUSHED frame's More describes the delta window, not the
+// conversation.
+func (t *livelogTurn) setMoreBefore(more bool) { t.client.SetMoreBefore(more) }
+
 func (t *livelogTurn) apply(r aria.Page) {
 	if t.hold {
 		t.held = append(t.held, r)
@@ -321,7 +330,7 @@ func (t *livelogTurn) holdFrames() { t.hold = true }
 func (t *livelogTurn) openInline(fetched historyPage) {
 	// The pager's copy: printed or not, the fetch is kept (and merged into the
 	// store when the pager opens — see enterPager).
-	t.seeded, t.seedExtents = fetched.msgs, fetched.extents
+	t.seeded, t.seedExtents, t.seedMore = fetched.msgs, fetched.extents, fetched.more
 	t.seedContext(fetched.msgs) // no-op when there is nothing to orient with
 	t.armThinking()             // no-op in the pager, and no-op if already pinned
 	t.hold = false
@@ -591,6 +600,12 @@ func (t *livelogTurn) enterTranscript() { t.enterPager() }
 // merge (transcript.seed/withSeed/mergeSeed, deleted).
 func (t *livelogTurn) enterPager() {
 	t.client.Merge(t.seeded, t.seedExtents)
+	if len(t.seeded) > 0 {
+		// What the wire said about the beginning, kept where the wire's answer
+		// is. The pager reads it back as "can I still page older history" rather
+		// than latching a bit of its own.
+		t.client.SetMoreBefore(t.seedMore)
+	}
 	t.tr.enter()
 }
 
@@ -718,8 +733,8 @@ func (t *livelogTurn) transcriptMode() keyMode { return t.tr.mode() }
 func (t *livelogTurn) transcriptPageCursor() (transcriptPageRequest, bool) {
 	return t.tr.pageCursor()
 }
-func (t *livelogTurn) transcriptApplyPage(req transcriptPageRequest, messages []aria.Message) {
-	t.tr.applyPage(req, messages)
+func (t *livelogTurn) transcriptApplyPage(req transcriptPageRequest, page historyPage) {
+	t.tr.applyPage(req, page)
 }
 func (t *livelogTurn) transcriptSearchingHistory() bool { return t.tr.searchingHistory() }
 func (t *livelogTurn) transcriptHistorySearch() (string, bool) {
@@ -730,7 +745,7 @@ func (t *livelogTurn) transcriptHistorySearch() (string, bool) {
 }
 func (t *livelogTurn) transcriptPageFailed() {
 	t.tr.finishSearch(false)
-	t.tr.checkOlder, t.tr.checkNewer = false, false
+	t.tr.abandonJump("")
 	t.tr.render()
 }
 

@@ -10,33 +10,11 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-func TestTranscript_ForwardSelectionRequestsEvictedPage(t *testing.T) {
-	history := transcriptHistory(200)
-	client := aria.NewClient()
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
-	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
-	tr.enter()
-	tr.follow = false
-	for range 4 {
-		tr.offset = 0
-		tr.checkOlder = true
-		req, _ := tr.pageCursor()
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
-	}
-
-	messages := tr.messages()
-	tr.selection = nodeSelection{
-		active: true,
-		anchor: testSelectionPoint(messages[len(messages)-1].Turn, 0, messages[len(messages)-1].Nodes[0]),
-		focus:  testSelectionPoint(messages[len(messages)-1].Turn, 0, messages[len(messages)-1].Nodes[0]),
-	}
-	tr.offset = len(tr.lineKey)
-	tr.selectNode(1, true)
-	req, ok := tr.pageCursor()
-	if !ok || req.direction != pageNewer {
-		t.Fatalf("forward selection page request = %+v, %v", req, ok)
-	}
-}
+// TestTranscript_ForwardSelectionRequestsEvictedPage is GONE. It pinned that
+// dragging a selection past the bottom of the retained window asked for a
+// FORWARD page — a direction that only existed because history lived in a
+// second copy the window could slide off the tail. The window reaches the live
+// tail by construction now, so there is nothing newer to request.
 
 func TestTranscript_ScrollingPinsOpenMessage(t *testing.T) {
 	client := aria.NewClient()
@@ -64,16 +42,14 @@ func TestTranscript_ScrollingPinsOpenMessage(t *testing.T) {
 // are pages apart still copies, by re-reading the range from the server.
 //
 // It used to anchor the far end on the OPEN message, which the pager kept
-// beside its frozen window as heldOpen. Paging history in now takes the window
-// off the store's tail (openMessage goes quiet rather than drawing a snapshot
-// that history has run past), so the live turn is not an endpoint you can hold
-// while browsing a hundred turns above it. That is a real narrowing, and it
-// lasts exactly until t.pages is gone: with the whole window an interval into
-// the store, both ends are in the same structure again.
+// beside its frozen window as heldOpen; phase 2a then narrowed it further,
+// because the first page of older history took the window off the tail. With
+// the whole window an interval into the store both ends are in the same
+// structure again, and the far end can be anything the store still holds.
 func TestTranscript_LongRangeRehydratesEvictedPages(t *testing.T) {
 	history := transcriptHistory(120)
 	client := aria.NewClient()
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.selectNode(-1, false)
@@ -84,18 +60,12 @@ func TestTranscript_LongRangeRehydratesEvictedPages(t *testing.T) {
 		first := tr.messages()[0]
 		tr.selection.focus = testSelectionPoint(first.Turn, 0, first.Nodes[0])
 		tr.offset = 0
-		tr.checkOlder = true
-		req, ok := tr.pageCursor()
-		if !ok {
+		if !pageOnce(tr, history) {
 			t.Fatal("expected older page")
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	first := tr.messages()[0]
 	tr.selection.focus = testSelectionPoint(first.Turn, 0, first.Nodes[0])
-	if len(tr.pages) != transcriptPageLimit {
-		t.Fatalf("retained %d payload pages", len(tr.pages))
-	}
 	plan, ok := tr.selectionPlan()
 	if !ok {
 		t.Fatal("selection endpoints were lost")
