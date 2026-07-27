@@ -10,6 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/render"
 )
 
 // livelogTurn renders the aria-read wire. By default it uses the incipit-freeze
@@ -47,6 +48,15 @@ type livelogTurn struct {
 	// or — the bug this replaced — skips every slice after the first.
 	lastFrozen  sliceCursor
 	pagerClosed []aria.Message
+
+	// held buffers pages while the opening preamble is being fetched. Frames
+	// arrive on the notify pump the instant the connection is up, so without a
+	// hold the question can freeze to scrollback BEFORE the history it follows
+	// is printed — the one ordering the preamble exists to establish. Holding is
+	// a few milliseconds at the very start of a session and nothing is dropped:
+	// releaseFrames applies every held page in arrival order.
+	hold bool
+	held []aria.Page
 }
 
 // sliceCursor addresses one pager unit: the turn and the node offset within it.
@@ -264,7 +274,144 @@ func (t *livelogTurn) armThinking() {
 	t.in.OpenThinking(livedoc.RoleOutput)
 }
 
-func (t *livelogTurn) apply(r aria.Page)      { t.client.Apply(r) }
+func (t *livelogTurn) apply(r aria.Page) {
+	if t.hold {
+		t.held = append(t.held, r)
+		return
+	}
+	t.client.Apply(r)
+}
+
+// holdFrames buffers applied pages until releaseFrames. Armed before the
+// connection is dialed, released once the opening preamble has been placed.
+func (t *livelogTurn) holdFrames() { t.hold = true }
+
+// releaseFrames drains the buffer in arrival order and resumes normal
+// application. Idempotent.
+func (t *livelogTurn) releaseFrames() {
+	t.hold = false
+	held := t.held
+	t.held = nil
+	for _, r := range held {
+		t.client.Apply(r)
+	}
+	// The pager draws from the shared model rather than from the event, so a
+	// page that finalized nothing would leave it showing the pre-release state.
+	if len(held) > 0 && t.tr.active {
+		t.tr.render()
+	}
+}
+
+// preambleMinRows floors the opening preamble's row budget, so a short pane
+// still gets some context rather than none.
+const preambleMinRows = 6
+
+// seedContext prints a bounded tail of the conversation ABOVE this session's
+// question, and declares ALL of the history it was given already committed.
+//
+// Two things have to be true at once. A prompt sent to an aria with history
+// used to open on a rule and nothing else — you could not see where you were
+// until the model spoke. And a naive fix (apply the catch-up page to the
+// client) is worse than the bug: every historical message would come back
+// through OnClosed, whose inline branch Freezes to NATIVE SCROLLBACK, so every
+// prompt would re-dump the retained history into the user's terminal.
+//
+// So the page never reaches the client. The caller folds it separately
+// (committedMessages) and hands the messages here, where a bounded slice is
+// printed ONCE, deliberately, and lastFrozen is seeded from the NEWEST message
+// — including the ones the budget elided. That is the freeze boundary
+// flushTail already reasons about: everything at or below it is treated as
+// already on screen, so leaving the pager replays only what this session
+// produced. Nothing can reach scrollback twice, because nothing else in this
+// process will ever emit these messages.
+//
+// No-op with no history (a new or ephemeral aria) or when the pager is up (it
+// renders history itself, and printing to scrollback under the alt screen is
+// how content gets lost).
+func (t *livelogTurn) seedContext(msgs []aria.Message) {
+	if len(msgs) == 0 || t.tr.active {
+		return
+	}
+	shown := t.fitPreamble(msgs)
+	// The bookend is THIS session's status line; hanging it under a reply from
+	// last week would date-stamp old content with a live turn's metrics. History
+	// closes with the plain rule instead.
+	save := t.in.Bookend
+	t.in.Bookend = nil
+	t.in.Resume(shown, nil)
+	t.in.Bookend = save
+	if c := cursorOf(msgs[len(msgs)-1]); c.after(t.lastFrozen) {
+		t.lastFrozen = c
+	}
+}
+
+// fitPreamble takes the newest messages that fit in half the viewport. The
+// preamble is orientation, not a transcript — the pager is a Ctrl-T away — so
+// it must never push the question the user just asked off the top of the
+// screen. When the newest message alone overflows, its HEAD is dropped: the
+// rows nearest the new prompt are the ones worth keeping.
+func (t *livelogTurn) fitPreamble(msgs []aria.Message) []aria.Message {
+	w, h := t.term.Size()
+	if w <= 0 {
+		w = 80
+	}
+	budget := h / 2
+	if budget < preambleMinRows {
+		budget = preambleMinRows
+	}
+	rows, start := 0, len(msgs)
+	for k := len(msgs) - 1; k >= 0; k-- {
+		n := t.preambleHeight(msgs[k], w)
+		if rows+n > budget {
+			if start == len(msgs) {
+				return []aria.Message{t.clipPreamble(msgs[k], w, budget)}
+			}
+			break
+		}
+		rows += n
+		start = k
+	}
+	return msgs[start:]
+}
+
+// clipPreamble drops leading nodes until the message fits the budget. It keeps
+// the inquiry: the question is the single most orienting row on the screen,
+// and a turn whose question is gone reads as someone else's output.
+func (t *livelogTurn) clipPreamble(m aria.Message, w, budget int) aria.Message {
+	for len(m.Nodes) > 0 && t.preambleHeight(m, w) > budget {
+		m.Nodes = m.Nodes[1:]
+		m.From++
+	}
+	return m
+}
+
+// preambleHeight is the row count Incipit.printMessage will emit for m. It
+// counts the same pieces the renderer draws — the top margin, the question
+// block, the rule between the voices, the role header, the blocks and their
+// separators, and the closing rule — and rounds UP where the margin is
+// conditional, because a preamble that overshoots its budget is the failure
+// mode that pushes the new question off the screen.
+func (t *livelogTurn) preambleHeight(m aria.Message, w int) int {
+	rows := 3 // top margin, the blank before the closer, the closer itself
+	inquiry := strings.TrimSpace(m.Inquiry) != ""
+	if inquiry {
+		rows += 2 + len(render.Prose(m.Inquiry, w)) // header, blank, prose
+	}
+	if len(m.Nodes) > 0 {
+		if inquiry {
+			rows += 2 // the blank + rule that separate the question from the reply
+		}
+		rows += 2 // role header, blank
+	}
+	for k, n := range m.Nodes {
+		if k > 0 {
+			rows++ // inter-block blank
+		}
+		rows += len(t.view.Render(n, w, 0))
+	}
+	return rows
+}
+
 func (t *livelogTurn) setDesync(fn func(int)) { t.client.OnDesync = fn }
 func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 

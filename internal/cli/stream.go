@@ -26,6 +26,21 @@ const spinnerFPS = 11 // spinner frames per second (~90ms/frame)
 // newest N committed messages — the pager's initial (lazy) window.
 const recentCursor = 1 << 60
 
+// The opening preamble: how much history a new prompt is allowed to fetch, and
+// how long it may wait for it.
+//
+// The budget is small on purpose — the preamble is orientation, not a
+// transcript, and the renderer clips it to half the viewport anyway. The
+// timeout is the UI contract: the agent socket serves one request at a time,
+// so this read sits between the prompt's accept and its first painted row.
+// enterTranscript can afford 5s because the user asked for the pager and it
+// has nothing else to draw; a prompt cannot, so a slow read is abandoned and
+// the session opens exactly as it did before.
+const (
+	recentContextMessages = 4
+	recentContextTimeout  = 300 * time.Millisecond
+)
+
 // Terminal control: disable auto-margin (so a full-width row never wraps) and
 // hide the cursor while the renderer owns the screen.
 const (
@@ -151,6 +166,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		}
 	}
 
+	// Hold frames from before the socket is dialed until the opening preamble
+	// (below) has been placed. A subscription starts pushing the moment it is
+	// made, so this is the only way to guarantee the question is painted UNDER
+	// the history it follows rather than over it. Nothing is dropped.
+	lt.holdFrames()
+
 	fcli, err := figaro.DialClient(ep, onNotify)
 	if err != nil {
 		die("connect figaro: %s", err)
@@ -223,6 +244,17 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		}
 	}
 
+	// The opening preamble is for the INLINE renderer only: --listen already
+	// opened the pager (which reads its own history), and a non-TTY caller gets
+	// a stream, not a screen, so neither may grow a spurious read or a row of
+	// output it did not have before.
+	catchUp := in != nil && !set.listen
+	if !catchUp {
+		mu.Lock()
+		lt.releaseFrames()
+		mu.Unlock()
+	}
+
 	cursor, active, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard())
 	if qerr != nil {
 		die("prompt: %s", qerr)
@@ -231,6 +263,18 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	sendCursor = cursor
 	lt.status.beginTurn()
 	mu.Unlock()
+	// Where you are, before what you asked. An aria with history used to open on
+	// a dim rule and nothing else until the model's first token; read the tail
+	// and print a bounded slice of it above the new question. Deliberately AFTER
+	// Qua: the agent serves one request per connection, so reading first would
+	// delay the turn's accept — and the cursor Qua returns is exactly the
+	// boundary that keeps this session's own turn out of its own preamble.
+	if catchUp {
+		msgs := recentContext(ctx, fcli, cursor)
+		mu.Lock()
+		lt.seedContext(msgs)
+		mu.Unlock()
+	}
 	// Joining an already-running turn: the inline renderer can't cleanly paint a
 	// turn already in progress (partial state, mid-stream). Drop into the
 	// transcript pager on the last page — consistent scrollback, no glitch. A
@@ -242,6 +286,15 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		lt.armThinking()
 		mu.Unlock()
 	}
+	// Only now do the held frames land. The footer is pinned at submit and the
+	// turn's first frame ADOPTS that region; releasing before it is armed paints
+	// the question as one live region and the footer as a second one BELOW it —
+	// two status bars on screen, and a stale region the pager's exit erase then
+	// misses, so the question reaches scrollback twice. (Seen in a pty; the
+	// order is the fix.)
+	mu.Lock()
+	lt.releaseFrames()
+	mu.Unlock()
 
 	select {
 	case <-doneCh:
@@ -467,6 +520,36 @@ func (in *interactiveInput) pageTranscriptSearch(ctx context.Context, cancel con
 		}
 		in.mu.Unlock()
 	}
+}
+
+// recentContext reads the tail of the conversation for the opening preamble.
+//
+// Nothing here reaches the aria.Client: applying a history page would fire
+// OnClosed for every historical message, and the inline branch of OnClosed
+// Freezes to native scrollback — i.e. the retained history would be re-dumped
+// into the terminal on every prompt. Folding the page separately
+// (committedMessages, the same fold the pager's page fetch uses) gives the
+// renderer the messages with no side effects at all.
+//
+// Two filters, both about not showing this session's own turn as its own
+// history: SEALED parts only, so a turn another client is mid-way through is
+// never half-printed; and nothing past the cursor Qua reported, which is the
+// last committed turn at accept time. An error, a timeout, or an aria with no
+// history all return nil — the caller then behaves exactly as before.
+func recentContext(ctx context.Context, fcli transcriptReadClient, cursor int) []aria.Message {
+	rctx, rcancel := context.WithTimeout(ctx, recentContextTimeout)
+	defer rcancel()
+	r, err := fcli.ReadBefore(rctx, aria.Anchor{Turn: recentCursor}, wireBudget(recentContextMessages))
+	if err != nil {
+		return nil
+	}
+	var history aria.Page
+	for _, part := range r.Parts {
+		if part.Sealed && int(part.ID) <= cursor {
+			history.Parts = append(history.Parts, part)
+		}
+	}
+	return committedMessages(history)
 }
 
 // wireBudget converts the pager's message-count geometry into the wire's byte
