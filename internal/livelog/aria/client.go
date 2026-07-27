@@ -63,6 +63,94 @@ func (c *Client) Store() *Store {
 	return c.store
 }
 
+// Merge folds messages a caller fetched ITSELF — the pager's backward read,
+// incipit's catch-up page — into the store, WITHOUT firing OnClosed or OnLive.
+//
+// That silence is the point. A page applied through Apply comes back out
+// through OnClosed, whose inline branch freezes to native scrollback, so
+// history fetched merely to orient a reader would be dumped into their
+// terminal. The old answer was to keep such a page out of the client entirely
+// and have the pager hold a SECOND copy of it (transcript.seed, merged into
+// the tail window on every rebuild); with one owner there is nowhere else to
+// put it, and no reason to want one.
+//
+// extents is turn -> how many anchors that turn occupies, for the parts the
+// server did not clip at the tail. It is what lets the store decide that
+// (t, last) and (t+1, 0) are neighbours rather than a hole, and it is applied
+// BEFORE the insert so the run coalesces on the way in.
+func (c *Client) Merge(msgs []Message, extents map[int]uint64) {
+	if len(msgs) == 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for turn, n := range extents {
+		c.store.SetTurnLen(uint64(turn), n)
+	}
+	c.store.Insert(msgs...)
+	c.closedRev++
+}
+
+// Query reports what the store HOLDS over [from, to]; it never fetches. The
+// returned Segment.Msgs ALIAS the store and are valid only until the next
+// Apply/Merge/Evict — the caller is a renderer, which runs under the same lock
+// discipline as the fold and never keeps a segment across one.
+func (c *Client) Query(from, to Anchor) []Segment {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.store.Query(from, to)
+}
+
+// TailFrom is the anchor of the n-th message from the end (see Store.TailFrom).
+func (c *Client) TailFrom(n int) (Anchor, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.store.TailFrom(n)
+}
+
+// Skip is the anchor of the n-th message at or after a (see Store.Skip).
+func (c *Client) Skip(a Anchor, n int) (Anchor, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.store.Skip(a, n)
+}
+
+// EvictBefore forgets everything below a. Eviction and never-fetched are the
+// same state, so what this costs is a possible re-read if the reader turns
+// around — exactly what it costs to have never held it.
+func (c *Client) EvictBefore(a Anchor) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if a == (Anchor{}) || c.store.Count() == 0 {
+		return
+	}
+	before := c.store.Count()
+	c.store.Evict(Anchor{}, a.Prev())
+	if c.store.Count() != before {
+		c.closedRev++
+	}
+}
+
+// SetMoreBefore records whether anything precedes the oldest retained message.
+// Only the wire knows: a backward read reports it (Page.More.Before), and an
+// empty backward read proves the floor. A PUSHED frame does not — its More
+// describes the delta window, not the conversation — which is why this is set
+// by whoever performed the read rather than folded in Apply.
+func (c *Client) SetMoreBefore(more bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	m := c.store.More()
+	m.Before = more
+	c.store.SetMore(m)
+}
+
+// MoreBefore reports whether older history is believed to exist.
+func (c *Client) MoreBefore() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.store.More().Before
+}
+
 // SetClosedLimit bounds retained closed messages. Zero keeps the default,
 // unbounded behavior.
 func (c *Client) SetClosedLimit(limit int) {

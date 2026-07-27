@@ -642,6 +642,47 @@ func (s *Store) Ensure(ctx context.Context, from, to Anchor) error {
 // inside are not, and must not be mutated.
 func (s *Store) Ranges() []Range { return append([]Range(nil), s.ranges...) }
 
+// TailFrom is the anchor of the n-th message from the END of the store, and
+// whether the store holds that many. It walks the ranges BACKWARD, so a window
+// of forty messages costs forty steps whatever the length of the aria — which
+// is why the pager can re-derive its tail window on every frame instead of
+// caching one and needing a revision counter to know when the cache went
+// stale.
+func (s *Store) TailFrom(n int) (Anchor, bool) {
+	if n <= 0 {
+		return Anchor{}, false
+	}
+	for i := len(s.ranges) - 1; i >= 0; i-- {
+		msgs := s.ranges[i].Msgs
+		if n <= len(msgs) {
+			from, _ := msgSpan(msgs[len(msgs)-n])
+			return from, true
+		}
+		n -= len(msgs)
+	}
+	return Anchor{}, false
+}
+
+// Skip is the forward mirror: the anchor of the n-th message at or after a,
+// and whether the store holds one. Zero means the first message at or after a
+// itself. It is how a caller extends a bounded window by a page without
+// materializing everything between.
+func (s *Store) Skip(a Anchor, n int) (Anchor, bool) {
+	if n < 0 {
+		return Anchor{}, false
+	}
+	for _, r := range s.ranges[s.firstRangeAtOrAfter(a):] {
+		i := firstMsgAtOrAfter(r.Msgs, a)
+		if rest := len(r.Msgs) - i; n >= rest {
+			n -= rest
+			continue
+		}
+		from, _ := msgSpan(r.Msgs[i+n])
+		return from, true
+	}
+	return Anchor{}, false
+}
+
 // Count is how many messages the store retains.
 func (s *Store) Count() int {
 	n := 0
