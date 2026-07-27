@@ -222,10 +222,25 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 
 	// Local spinner animation: ticks the open message's running tool; zero extra
 	// wire traffic (output streams via aria frames).
+	// Declared before the ticker so the queue poll can reach it; both accesses
+	// are under mu, which every renderer path already holds.
+	var in *interactiveInput
+
 	stopTick := make(chan struct{})
 	go func() {
 		t := time.NewTicker(time.Second / spinnerFPS)
 		defer t.Stop()
+		// The queue is polled on a slow multiple of the spinner rather than
+		// pushed. figaro.queued is a per-aria RPC over a unix socket and the
+		// answer is a snapshot of the agent's inbox, so there is nothing to
+		// subscribe to; a prompt enters the queue without any frame being
+		// emitted, which is precisely why it used to be invisible. Twice a
+		// second is faster than a human notices and cheap enough not to matter.
+		queueEvery := spinnerFPS / queuedPollHz
+		if queueEvery < 1 {
+			queueEvery = 1
+		}
+		n := 0
 		for {
 			select {
 			case <-stopTick:
@@ -233,7 +248,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			case <-t.C:
 				mu.Lock()
 				lt.tick()
+				poll := in
 				mu.Unlock()
+				if n++; n%queueEvery == 0 && poll != nil {
+					poll.refreshQueued()
+				}
 			}
 		}
 	}()
@@ -250,7 +269,6 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// Live keybindings. MakeRaw disables signal generation, so Ctrl-C (0x03) and
 	// Ctrl-D (0x04) arrive as input BYTES (portable, and identical in incipit and
 	// transcript) — the input loop owns them, not a SIGINT handler.
-	var in *interactiveInput
 	if tc.IsTTY() {
 		if restore, err := tc.MakeRaw(); err == nil {
 			defer restore()
@@ -263,6 +281,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				tc: tc, lt: lt, fcli: fcli, mu: &mu, set: &set,
 				figaroID: figaroID, cancel: cancel, disconnectCh: disconnectCh,
 			}
+			in.lt.setQueuedFetch(in.refreshQueued) // 'Q' works before the pager is ever opened
 			if set.listen {
 				in.enterTranscript() // --listen: open the pager immediately
 			}
@@ -780,9 +799,9 @@ func (in *interactiveInput) refreshQueued() {
 		resp, err := in.fcli.Queued(ctx)
 		in.mu.Lock()
 		defer in.mu.Unlock()
-		if !in.lt.transcriptActive() {
-			return
-		}
+		// No transcriptActive() gate: the queue is shown in BOTH views now, so
+		// bailing unless the pager was up is exactly the bug that made a
+		// waiting prompt invisible inline.
 		if err != nil {
 			in.lt.setTranscriptQueued(nil, err.Error())
 			in.lt.render()
@@ -1209,3 +1228,7 @@ func termWidth() int {
 	}
 	return 80
 }
+
+// queuedPollHz is how often the accepted-but-unplaced queue is re-read. See
+// the ticker in the stream loop for why it is a poll and not a subscription.
+const queuedPollHz = 2

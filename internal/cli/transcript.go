@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 const (
@@ -39,10 +40,12 @@ type transcript struct {
 	active      bool
 	showHelp    bool // '?': the footer grows into a key-reference panel
 	showStatus  bool // '!': the footer grows into the figaro-status panel
-	showQueued  bool // 'Q': the footer grows into the queued-prompts panel
+	showQueued  bool // the footer grows into the queued-prompts panel
+	queuedByKey bool // ...because the user pressed 'Q', not because it filled
 	queuedList  []string
 	queuedErr   string
-	queuedFetch func() // async refresh of the queued snapshot; set by the input loop
+	queuedRows  []string // pre-rendered by livelogTurn; see queuedPanelLines
+	queuedFetch func()   // async refresh of the queued snapshot; set by the input loop
 	w, h        int
 	tick        int
 
@@ -1411,24 +1414,30 @@ func (t *transcript) statusPanelLines() []string {
 // loop refreshes asynchronously via figaro.queued (setting queuedList /
 // queuedErr under the shared render mutex). Purely observational — there is
 // no cancellation surface here.
+// showQueuedAuto opens or closes the panel because the QUEUE changed rather
+// than because a key was pressed. A panel the user opened by hand is never
+// auto-closed: draining the queue must not yank away a view they asked for.
+func (t *transcript) showQueuedAuto(on bool) {
+	if on {
+		t.showQueued = true
+		return
+	}
+	if !t.queuedByKey {
+		t.showQueued = false
+	}
+}
+
 func (t *transcript) queuedPanelLines() []string {
-	rows := []string{"", "  queued prompts"}
-	switch {
-	case t.queuedErr != "":
-		rows = append(rows, "  "+t.queuedErr)
-	case len(t.queuedList) == 0:
-		rows = append(rows, "  (none)")
-	default:
-		for i, p := range t.queuedList {
-			head := firstLineTrim(p)
-			rows = append(rows, fmt.Sprintf("  %2d. %s", i+1, head))
-		}
+	// The SAME rows the inline trailer draws (livelogTurn.queuedRows), handed
+	// down at set time. One list, one rendering: the pager and incipit
+	// disagreeing about how a waiting prompt looks is exactly the live-vs-
+	// committed divergence this codebase keeps paying for.
+	rows := t.queuedRows
+	if len(rows) == 0 {
+		rows = []string{"", term.Dim("↳ queued messages"), term.Dim("   (none)")}
 	}
 	if max := t.h - 4; len(rows) > max && max > 0 {
 		rows = rows[:max]
-	}
-	for i, r := range rows {
-		rows[i] = "\x1b[2m" + clipToWidth(r, t.w) + "\x1b[0m"
 	}
 	return rows
 }
@@ -1450,7 +1459,7 @@ func firstLineTrim(s string) string {
 // an async refresh. The stale snapshot renders immediately so the user sees
 // something even if the RPC lags; the refresh replaces it in place.
 func (t *transcript) openQueuedPanel() {
-	t.showQueued = true
+	t.showQueued, t.queuedByKey = true, true
 	if t.queuedFetch != nil {
 		t.queuedFetch()
 	}

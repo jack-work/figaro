@@ -56,6 +56,12 @@ type Incipit struct {
 	Bookend func() []string          // closes an assistant message (the two-row status footer)
 	Rule    func() string            // closes any other message (a plain full-width rule)
 	Header  func(role string) string // printed above each message; "" suppresses
+	// Queued renders prompts the agent has accepted but not yet placed in the
+	// transcript. They are LIVE CHROME, drawn just above the bookend and never
+	// frozen: a queued prompt has not happened yet, so committing it to
+	// scrollback would assert something the log does not contain. closer() is
+	// deliberately not routed through here for that reason.
+	Queued func() []string
 
 	tick     int
 	thinking bool // open region is an OpenThinking placeholder (adopted by the next Open)
@@ -486,13 +492,17 @@ func (i *Incipit) header(role string) string {
 // round-trip. Making it a consequence of which message happened to close is
 // exactly what let it vanish when the prompt merged into the turn.
 func (i *Incipit) footer() []string {
+	var rows []string
+	if i.Queued != nil {
+		rows = append(rows, i.Queued()...)
+	}
 	if i.Bookend != nil {
-		return i.Bookend()
+		return append(rows, i.Bookend()...)
 	}
 	if i.Rule != nil {
-		return []string{i.Rule()}
+		return append(rows, i.Rule())
 	}
-	return nil
+	return rows
 }
 
 // closer returns the rows that close a message of the given role: the two-row

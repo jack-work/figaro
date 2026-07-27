@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/render"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // livelogTurn renders the aria-read wire. By default it uses the incipit-freeze
@@ -49,6 +51,11 @@ type livelogTurn struct {
 	// or — the bug this replaced — skips every slice after the first.
 	lastFrozen  sliceCursor
 	pagerClosed []aria.Message
+
+	// queued is the agent's accepted-but-unplaced prompts, as figaro.queued
+	// last reported them. Shown, never echoed; see setQueued.
+	queued    []string
+	queuedErr string
 
 	// held buffers pages while the opening of the session is being decided.
 	// Frames arrive on the notify pump the instant the connection is up, so
@@ -102,6 +109,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	in.Rule = rule
 	in.Header = messageHeader
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view, status: status}
+	in.Queued = t.queuedRows // the queue is live chrome in the inline view too
 	t.client.SetClosedLimit(transcriptTailLimit)
 	t.tr = newTranscript(out, w, h, view, t.client, figaroID, startedAt)
 	if status != nil {
@@ -779,7 +787,7 @@ func (t *livelogTurn) setQueuedFetch(fn func()) { t.tr.queuedFetch = fn }
 
 // setTranscriptQueued updates the queued-prompts panel snapshot.
 func (t *livelogTurn) setTranscriptQueued(prompts []string, errMsg string) {
-	t.tr.setQueued(prompts, errMsg)
+	t.setQueued(prompts, errMsg)
 }
 
 // ariaView renders a block by reusing figaro's existing node renderers, so
@@ -808,3 +816,62 @@ func (t *livelogTurn) turnFinished() bool { return t.finished }
 // then knows the first message sits directly under it and needs no top margin
 // of its own. See ldrender.Incipit.OpenRule.
 func (t *livelogTurn) openRule() { t.in.OpenRule() }
+
+// The queue, shown rather than echoed.
+//
+// A prompt sent to a busy aria is classified by the DRAIN, not by us: it
+// becomes a steering aside inside the running turn, or opens a turn of its
+// own, and only the agent knows which. Until it is placed, the honest thing to
+// say is not "here is your message" but "your message is WAITING" — so figaro
+// shows the queue itself, the same list `Q` has always shown, and shows it
+// without being asked.
+//
+// One list, both views: incipit draws it in the live trailer above the bookend
+// (see Incipit.Queued), the pager opens its footer panel. Neither renders it as
+// content, because it is not content yet.
+func (t *livelogTurn) setQueued(prompts []string, errMsg string) {
+	t.queued, t.queuedErr = prompts, errMsg
+	// The panel opens itself when there is something to show and closes when
+	// there is not. Auto-close is skipped once the user has opened it by hand,
+	// so a deliberate `Q` is not yanked away the moment the queue drains.
+	if len(prompts) > 0 || errMsg != "" {
+		t.tr.showQueuedAuto(true)
+	} else {
+		t.tr.showQueuedAuto(false)
+	}
+	t.tr.queuedRows = t.queuedRows()
+	t.tr.setQueued(prompts, errMsg)
+}
+
+// queuedRows is the ONE rendering of the queue, so the inline trailer and the
+// pager's panel cannot drift. Dim, clipped, bounded: a queue deep enough to
+// fill the screen is still just a hint that work is stacked up.
+func (t *livelogTurn) queuedRows() []string {
+	if len(t.queued) == 0 && t.queuedErr == "" {
+		return nil
+	}
+	w, h := t.term.Size()
+	rows := []string{"", term.Dim(clipToWidth("↳ queued messages", w))}
+	if t.queuedErr != "" {
+		return append(rows, term.Dim(clipToWidth("   "+t.queuedErr, w)))
+	}
+	max := queuedRowsMax
+	if h > 0 && h/3 < max {
+		max = h / 3
+	}
+	for i, p := range t.queued {
+		if i >= max {
+			rows = append(rows, term.Dim(clipToWidth(
+				fmt.Sprintf("   … and %d more", len(t.queued)-i), w)))
+			break
+		}
+		rows = append(rows, term.Dim(clipToWidth(
+			fmt.Sprintf("   %d. %s", i+1, firstLineTrim(p)), w)))
+	}
+	return rows
+}
+
+// queuedRowsMax bounds the inline trailer. The live region may not exceed the
+// viewport (see Incipit), and a long queue must not be the thing that pushes
+// the reply off the top.
+const queuedRowsMax = 5
