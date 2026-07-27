@@ -1206,6 +1206,9 @@ func (t *transcript) layout(foot int) (body, maxOff int) {
 // instances are cached; open messages are rebuilt on every live frame.
 func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 	var rows []transcriptRow
+	// Ctrl-O draws each node's (turn, node, timestamp) above it; see
+	// transcript_coords.go. Asked once per message render, not once per row.
+	coords := t.verbose()
 	// The turn's opening question is TEXT ON THE TURN, carried by its first
 	// slice only. It occupies no node index, so its rows carry the sentinel ref
 	// (see inquiryNode) — that is what makes it select, copy and highlight
@@ -1213,6 +1216,12 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 	if iq := inquiryProse(m.Inquiry, t.w-2); len(iq) > 0 {
 		ref := nodeRef{turn: m.Turn, index: inquiryNode}
 		rows = append(rows, transcriptRow{text: messageHeader(livedoc.RoleInput)}, transcriptRow{})
+		if coords {
+			// No timestamp: the question's arrival time lives on aria.Turn.At,
+			// and aria.Message — the pager's unit — does not carry it. The
+			// ADDRESS is what the jump needs, and the address is what we have.
+			rows = append(rows, t.coordRow(ref, 0))
+		}
 		for _, l := range iq {
 			rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(l, t.w)), ref: ref})
 		}
@@ -1231,6 +1240,9 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 			rows = append(rows, transcriptRow{})
 		}
 		ref := nodeRefAt(m, k)
+		if coords {
+			rows = append(rows, t.coordRow(ref, nodeCoordAt(n)))
+		}
 		for _, l := range t.renderNode(n, ref) {
 			// Rows are stored already clipped and gutter-prefixed (their
 			// unselected resting form) so a frame that touches nothing
@@ -2034,14 +2046,18 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 	if strings.Contains(messageHeader(m.Role), q) {
 		return true
 	}
-	verbose := false
-	if view, ok := t.view.(*ariaView); ok && view.settings != nil {
-		verbose = view.settings.verbose
+	verbose := t.verbose()
+	if verbose && m.Inquiry != "" &&
+		strings.Contains(coordLabel(m.Turn, inquiryNode, 0), q) {
+		return true // the question's coordinate row (see transcript_coords.go)
 	}
 	for i, n := range m.Nodes {
 		if markdownMayRenderQuery(n.Markdown, q) || strings.Contains(n.Name, q) ||
 			strings.Contains(n.Summary, q) || strings.Contains(n.Output, q) {
 			return true
+		}
+		if verbose && strings.Contains(coordLabel(m.Turn, int(m.From)+i, nodeCoordAt(n)), q) {
+			return true // the node's coordinate row
 		}
 		if n.Type == livedoc.NodeSteering && strings.Contains("↳ input", q) {
 			return true
