@@ -1731,6 +1731,15 @@ func (t *transcript) dispatch(ev keyEvent) {
 		act(t)
 	}
 	t.pendG = ev.b == 'g' && !t.pendG
+	// A jump's report is TRANSIENT, on the same discipline as pendG: it owns the
+	// status row until the next key, then the ordinary status line takes the row
+	// back. Without this a failed `:999` would eat the mantra/ctx/cost line for
+	// the rest of the session. The key that SET the note never reaches here —
+	// jumpAccept returns from the modeJump arm above — so the note always gets
+	// its frame.
+	if !t.inJump {
+		t.jumpNote = ""
+	}
 	t.render()
 }
 

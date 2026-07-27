@@ -175,6 +175,15 @@ func TestJumpToAnUnreachableTargetReports(t *testing.T) {
 	if line, own := tr.jumpFooter(); !own || line != tr.jumpNote {
 		t.Fatalf("the footer does not carry the note: %q %v", line, own)
 	}
+	// And the report is TRANSIENT: the next key gives the status row back.
+	// A sticky note would eat the mantra/ctx/cost line for the whole session.
+	tr.key('j')
+	if tr.jumpNote != "" {
+		t.Fatalf("the note survived a keystroke: %q", tr.jumpNote)
+	}
+	if _, own := tr.jumpFooter(); own {
+		t.Fatal("the jump still owns the status row after a keystroke")
+	}
 }
 
 // TestJumpBudgetTerminates: a store that keeps handing back pages which never
