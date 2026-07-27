@@ -256,3 +256,49 @@ func TestCompletionScriptsMentionDispatcher(t *testing.T) {
 		})
 	}
 }
+
+// TestBarePromptDetectorSurvivesAMovedBoundary pins the shell-side rule against
+// cli.isBareForm: a "--" boundary ANYWHERE after the program name, with a
+// non-command in the verb slot.
+//
+// Both generated scripts used to test position alone — fish `$tokens[2] = "--"`
+// and bash `COMP_WORDS[1] = "--"`. That was correct while the bare prompt form
+// took no flags. Once `figaro --id A -- <prompt>` became legal the boundary
+// moved to word 3, the detector stopped firing, and completion offered the VERB
+// list in the middle of a prompt.
+func TestBarePromptDetectorSurvivesAMovedBoundary(t *testing.T) {
+	r := NewRouter("figaro")
+	r.Register(&Command{Name: "send", Short: "s", Run:  func(*RunContext) error { return nil }})
+
+	for _, tc := range []struct {
+		shell string
+		gen   func(io.Writer) error
+		// stale is the position-only test that must NOT survive.
+		stale string
+		// want are fragments proving the boundary is SCANNED for, and that a
+		// real command in the verb slot still wins.
+		want []string
+	}{
+		{"fish", r.writeFishCompletion, `test $tokens[2] = "--"`,
+			[]string{`contains -- "--" $tokens[2..-1]`, `contains -- $tokens[2] send`}},
+		{"bash", r.writeBashCompletion, `if [ "$verb" = "--" ]; then`,
+			[]string{`for w in "${COMP_WORDS[@]:1}"`, `case " $commands " in *" $verb "*)`}},
+	} {
+		t.Run(tc.shell, func(t *testing.T) {
+			var b strings.Builder
+			if err := tc.gen(&b); err != nil {
+				t.Fatal(err)
+			}
+			got := b.String()
+			if strings.Contains(got, tc.stale) {
+				t.Errorf("%s still tests the boundary by POSITION (%q); a bare form with flags "+
+					"puts `--` past word 2 and the detector silently stops firing", tc.shell, tc.stale)
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(got, w) {
+					t.Errorf("%s completion missing %q\n--- generated ---\n%s", tc.shell, w, got)
+				}
+			}
+		})
+	}
+}

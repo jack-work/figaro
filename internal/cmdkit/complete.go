@@ -144,11 +144,14 @@ func (r *Router) WriteCompletion(w io.Writer, shell CompletionShell) error {
 func (r *Router) writeBashCompletion(w io.Writer) error {
 	cmds := r.visibleCommandNames()
 	// Bash logic:
-	//   - At word 1: emit the verb list (or, if word 1 is "--", route
-	//     to the bare-prompt completer instead).
-	//   - Beyond:    resolve the verb. If verb == "--", route to the
-	//     bare-prompt completer (cursor lives past --). Otherwise
-	//     dispatch by verb name.
+	//   - Bare form:  a "--" boundary ANYWHERE after the program name with a
+	//     non-command in the verb slot. That mirrors cli.isBareForm exactly
+	//     (hasDashBoundary && !isCommand(args[0])). It used to test only
+	//     COMP_WORDS[1] == "--", which was right while the bare form took no
+	//     flags; `figaro --id A -- <TAB>` then offered the VERB list, because
+	//     the boundary had moved to word 3.
+	//   - At word 1:  emit the verb list (unless we are already in the bare form).
+	//   - Beyond:     dispatch by verb name.
 	//
 	// The cursor's current partial token (${COMP_WORDS[COMP_CWORD]})
 	// is passed via --current so callbacks can switch pools based on
@@ -159,12 +162,19 @@ _%s_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local verb="${COMP_WORDS[1]}"
     local sentinel="%s"
-    if [ "$COMP_CWORD" -eq 1 ]; then
-        local commands="%s"
+    local commands="%s"
+    local bare=0 w
+    for w in "${COMP_WORDS[@]:1}"; do
+        if [ "$w" = "--" ]; then bare=1; break; fi
+    done
+    if [ "$bare" -eq 1 ]; then
+        case " $commands " in *" $verb "*) bare=0 ;; esac
+    fi
+    if [ "$bare" -eq 0 ] && [ "$COMP_CWORD" -eq 1 ]; then
         COMPREPLY=($(compgen -W "$commands" -- "$cur"))
         return
     fi
-    if [ "$verb" = "--" ]; then
+    if [ "$bare" -eq 1 ]; then
         verb="$sentinel"
     fi
     local count=$((COMP_CWORD - 2))
@@ -255,7 +265,7 @@ function __%s_dynamic
     end
     set -l verb $tokens[2]
     set -l sentinel %s
-    if test "$verb" = "--"
+    if __%s_is_bare_prompt
         set verb $sentinel
     end
     set -l cur (commandline -ct)
@@ -266,14 +276,26 @@ function __%s_dynamic
     %s %s $verb --current "$cur" -- $args 2>/dev/null
 end
 
-# Bare-prompt detector: when the first token after the program name
-# is "--" (or an alias has placed us in that form), suggest from the
-# dynamic pool — not the subcommand list.
+# Bare-prompt detector: a "--" boundary ANYWHERE after the program name with a
+# non-command in the verb slot. Mirrors cli.isBareForm (hasDashBoundary &&
+# !isCommand(args[0])). It used to compare only the SECOND token against the
+# boundary, which was right while the bare form took no flags; once
+# 'figaro --id A -- <prompt>' became legal the boundary moved past word 2 and
+# the detector silently stopped firing.
 function __%s_is_bare_prompt
     set -l tokens (commandline -opc)
-    test (count $tokens) -ge 2; and test $tokens[2] = "--"
+    if test (count $tokens) -lt 2
+        return 1
+    end
+    if not contains -- "--" $tokens[2..-1]
+        return 1
+    end
+    if contains -- $tokens[2] %s
+        return 1
+    end
+    return 0
 end
-`, r.Name, r.Name, barePromptSentinel, r.Name, completeVerb, r.Name)
+`, r.Name, r.Name, barePromptSentinel, r.Name, r.Name, completeVerb, r.Name, strings.Join(r.visibleCommandNames(), " "))
 	for _, cmd := range r.commands {
 		if cmd.Hidden {
 			continue
