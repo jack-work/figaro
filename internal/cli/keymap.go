@@ -379,6 +379,8 @@ type helpRow struct {
 }
 
 var helpRows = []helpRow{
+	{helpDetach, "q", "exit; keeps the turn running"},
+	{helpInterrupt, "^C", "exit by interrupt; stops the turn"},
 	{helpScroll, "j/k · u/d · gg/G", "scroll · half-page · top/bottom"},
 	{helpArrows, "↑/↓ · PgUp/PgDn", "the same, on the arrow cluster"},
 	{helpHomeEnd, "Home / End", "top / bottom"},
@@ -390,10 +392,8 @@ var helpRows = []helpRow{
 	{helpSelect, "^N/^P", "select next/previous node"},
 	{helpSelectExtend, "^N/^P + Shift", "extend node selection (Alt+^N/^P fallback)"},
 	{helpExpand, "Enter", "expand tools within the selection"},
-	{helpInterrupt, "^C", "copy selected node(s) / interrupt turn"},
 	{helpEscape, "Esc", "clear selection / close panel"},
 	{helpListen, "^L", "open the transcript (stays open until you close it)"},
-	{helpDetach, "q / ^D", "detach; the turn keeps running"},
 	{helpStatusPanel, "!", "figaro status panel"},
 	{helpQueuedPanel, "Q", "queued prompts panel"},
 	{helpHelpPanel, "?", "close help"},

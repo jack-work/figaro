@@ -295,6 +295,8 @@ func TestKeymap_InlineKeysStayInline(t *testing.T) {
 // find one".
 func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 	want := []string{
+		"  q                   exit; keeps the turn running",
+		"  ^C                  exit by interrupt; stops the turn",
 		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",
 		"  ↑/↓ · PgUp/PgDn     the same, on the arrow cluster",
 		"  Home / End          top / bottom",
@@ -306,10 +308,8 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  ^N/^P               select next/previous node",
 		"  ^N/^P + Shift       extend node selection (Alt+^N/^P fallback)",
 		"  Enter               expand tools within the selection",
-		"  ^C                  copy selected node(s) / interrupt turn",
 		"  Esc                 clear selection / close panel",
 		"  ^L                  open the transcript (stays open until you close it)",
-		"  q / ^D              detach; the turn keeps running",
 		"  !                   figaro status panel",
 		"  Q                   queued prompts panel",
 		"  ?                   close help",
