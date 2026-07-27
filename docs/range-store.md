@@ -51,6 +51,37 @@ two LTs and one LT can carry both a tool result and a steer.
 Ordering is lexicographic on `(Turn, Node)`. Implement `Anchor.Less`,
 `Anchor.Next`, `Anchor.Prev` once; nothing else may open-code the comparison.
 
+### Adjacency is NOT decidable from an anchor
+
+This document originally said to coalesce when `a.To.Next() == b.From`. **That
+was wrong**, and phase 1 corrected it.
+
+`Next()` cannot cross a turn boundary. An `Anchor` does not encode its turn's
+length, so `(1,11)` and `(2,0)` are neighbours **only if turn 1 has exactly
+twelve nodes** — a fact the anchor does not carry. Held strictly, no two turns
+ever coalesce, every turn becomes its own range, and the degenerate case this
+design promises ("one range forever, no gap ever rendered") never happens.
+
+So the store records a turn's **extent** when something authoritative states it
+— a sealed part with `!ClippedTail`, or the streamed buffer — and **answers
+false when it does not know**.
+
+> A false gap is honest. A false adjacency is the bug this whole design exists
+> to prevent.
+
+Pinned by `TestOrdinaryAriaIsOneRange` (the degenerate case really does collapse
+to one range) and `TestGapNeedsATurnExtent` (the refusal to guess).
+
+Two consequences worth stating:
+
+- A message with **no nodes** — an inquiry whose turn produced nothing — still
+  occupies one anchor, treated as a phantom node 0. It is a real element the
+  client materializes, so a range must be able to say it holds it.
+- `Store.more` is deliberately NOT populated from a pushed page. A push's `More`
+  describes the delta window, not the conversation; wiring it would be a lie.
+  Zero means "nothing outside", which is what keeps `Query` quiet in the
+  degenerate case.
+
 ## Types
 
 ```go
