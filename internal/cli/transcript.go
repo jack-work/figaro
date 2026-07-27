@@ -64,6 +64,14 @@ type transcript struct {
 	query      string
 	matchQuery string // persistent query: highlights + n/N target
 
+	// The ':' coordinate jump (transcript_jump.go). inJump/jumpQuery are the
+	// command line, exactly as inSearch/query are the search box; jump is a
+	// walk in progress; jumpNote is what the footer says about the last one.
+	inJump    bool
+	jumpQuery string
+	jumpNote  string
+	jump      *transcriptJump
+
 	// Lazy history paging: the pager opens on the recent window and pulls older
 	// messages via keyset ReadBefore only when you scroll near the top ("like
 	// Twitter"). checkOlder is armed by an upward scroll; noMoreOlder latches
@@ -215,6 +223,7 @@ func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria
 func (t *transcript) enter() {
 	t.active, t.follow, t.prev = true, true, nil
 	t.pendG, t.inSearch, t.query, t.matchQuery = false, false, "", ""
+	t.inJump, t.jumpQuery, t.jumpNote, t.jump = false, "", "", nil
 	t.invalidateWindow() // a fresh session always rebuilds the window from the tail
 	t.resetToTail()
 	t.prefix = altScreenOn + autowrapOff + ldmouse.Enable + cursorHide + "\x1b[2J"
@@ -440,12 +449,18 @@ func (t *transcript) tailKeep() int {
 const transcriptPrefetchScreens = 2
 
 func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
+	// A jump left waiting on a fetch that never landed (an RPC error clears both
+	// edge flags) resumes here, on the next key that asks for a page. The budget
+	// is spent by jumpAdvance, so a store that never gets there still stops.
+	if t.jump != nil && !t.checkOlder && !t.checkNewer {
+		t.jumpAdvance()
+	}
 	if t.checkOlder && t.noMoreOlder {
 		t.checkOlder = false
 	}
 	if t.checkOlder && !t.noMoreOlder {
 		t.checkOlder = false
-		if t.search == nil && t.offset >= transcriptPrefetchScreens*t.h {
+		if t.search == nil && t.jump == nil && t.offset >= transcriptPrefetchScreens*t.h {
 			return transcriptPageRequest{}, false
 		}
 		oldest, ok := t.oldestLT()
@@ -456,6 +471,8 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 		if oldest <= 1 && node == 0 {
 			t.noMoreOlder = true
 			t.finishSearch(false)
+			// The floor is now known, which is exactly what `:0` was waiting for.
+			t.jumpAdvance()
 			t.render()
 			return transcriptPageRequest{}, false
 		}
@@ -469,7 +486,7 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 		// t.index.total, not len(t.lineKey): lineKey is only refilled when the
 		// index shape moves, so reading its length here would be a second,
 		// weaker way of asking how big line space is.
-		if t.search == nil && t.offset+transcriptPrefetchScreens*t.h < t.index.total {
+		if t.search == nil && t.jump == nil && t.offset+transcriptPrefetchScreens*t.h < t.index.total {
 			return transcriptPageRequest{}, false
 		}
 		desc := t.newer[len(t.newer)-1]
@@ -499,9 +516,16 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 		if req.direction == pageOlder {
 			t.noMoreOlder = true
 			t.finishSearch(false)
+			// An empty ReadBefore IS the floor, and it is the only way to find
+			// it on a FORKED aria, whose first turn id is not 1. `:0` resolves
+			// here for those.
+			t.jumpAdvance()
 			t.render()
 		} else if t.search != nil {
 			t.wrapSearchOlder()
+		} else if t.jump != nil {
+			t.abandonJump(t.jump.target.missing())
+			t.render()
 		}
 		return
 	}
@@ -550,6 +574,10 @@ func (t *transcript) applyPage(req transcriptPageRequest, messages []aria.Messag
 	} else {
 		t.buildIndex()
 		t.restoreViewportAnchor(anchor, within)
+		// A jump in flight resolves against the window it just grew, or asks
+		// for one more page. It runs AFTER the anchor is restored so that a
+		// landing overwrites the anchor rather than the other way round.
+		t.jumpAdvance()
 	}
 	t.render()
 }
@@ -1437,6 +1465,11 @@ func (t *transcript) footerRows(total, body int) (rule, status string) {
 	if t.inSearch {
 		return rule, "\x1b[2m" + clipToWidth("/"+t.query, t.w) + "\x1b[0m"
 	}
+	// The jump owns the status row while it is being typed, while it walks,
+	// and to report a target it could not reach — see jumpFooter.
+	if line, own := t.jumpFooter(); own {
+		return rule, "\x1b[2m" + clipToWidth(line, t.w) + "\x1b[0m"
+	}
 	return rule, "\x1b[2m" + t.status.statusLine(t.w, true) + "\x1b[0m"
 }
 
@@ -1620,6 +1653,8 @@ func (t *transcript) mode() keyMode {
 		return modeIncipit
 	case t.inSearch:
 		return modeSearch
+	case t.inJump:
+		return modeJump
 	case t.showHelp || t.showStatus || t.showQueued:
 		return modePanel
 	default:
@@ -1667,6 +1702,20 @@ func (t *transcript) dispatch(ev keyEvent) {
 			act(t)
 		} else {
 			t.searchLiteral(ev.b)
+		}
+		t.render()
+		return
+	case modeJump:
+		// Identical to the search box, deliberately: an arrow is not text and
+		// must not scroll behind the prompt either, and every unbound printable
+		// byte is a character of the coordinate.
+		if ev.nav != navNone {
+			return
+		}
+		if act := pagerAct.pager(modeJump, ev); act != nil {
+			act(t)
+		} else {
+			t.jumpLiteral(ev.b)
 		}
 		t.render()
 		return

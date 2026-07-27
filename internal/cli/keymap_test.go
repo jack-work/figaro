@@ -55,6 +55,8 @@ func modeName(m keyMode) string {
 		return "transcript"
 	case modeSearch:
 		return "search"
+	case modeJump:
+		return "jump"
 	case modePanel:
 		return "panel"
 	}
@@ -285,6 +287,12 @@ func TestKeymap_InlineKeysStayInline(t *testing.T) {
 //
 // The 'i' row is the one deliberate addition since: the steer composer is a
 // genuinely new binding, not drift. Everything else is unchanged.
+//
+// The ':' row is the second: the coordinate jump (transcript_jump.go). It is
+// listed directly under the search rows because it is the same gesture family
+// — type something into the footer, land somewhere — and because that keeps
+// "how do I get to a place I can see the address of" adjacent to "how do I
+// find one".
 func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 	want := []string{
 		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",
@@ -292,6 +300,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  Home / End          top / bottom",
 		"  /                   search (Enter jump · Esc cancel typing)",
 		"  n / N               next / previous match",
+		"  :                   jump to turn[.node] · :0 = the beginning",
 		"  y                   copy selection (or aria id if none)",
 		"  ^O                  toggle verbose tool output",
 		"  ^N/^P               select next/previous node",
