@@ -102,7 +102,6 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	in.Rule = rule
 	in.Header = messageHeader
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view, status: status}
-	in.Pending = pendingChrome(t.client) // the local echo: submitted, not yet placed
 	t.client.SetClosedLimit(transcriptTailLimit)
 	t.tr = newTranscript(out, w, h, view, t.client, figaroID, startedAt)
 	if status != nil {
@@ -261,10 +260,7 @@ func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
 	if h < minPagerHeight {
 		return false
 	}
-	// The echoes are part of the live region's height, so they are part of the
-	// promotion decision: two authorities on how tall the region is would let it
-	// overflow the viewport by exactly the rows this check forgot about.
-	rows := 2 + t.in.PendingHeight() // leading blank + role header
+	rows := 2 // leading blank + role header
 	for k, n := range nodes {
 		if k > 0 {
 			rows++ // inter-block blank
@@ -296,49 +292,6 @@ func (t *livelogTurn) armThinking() {
 	t.thinkingOpen = true
 	t.status.beginTurn()
 	t.in.OpenThinking(livedoc.RoleOutput)
-}
-
-// notePending records a prompt the daemon has just ACCEPTED and paints it
-// immediately, on whichever surface is up.
-//
-// This is the whole of the fix for the invisible steer. `figaro send` to a
-// busy aria is classified by the DRAIN, not by us — appendUserPrompt returns
-// before OpenInquiry when it is steering — so nothing at all is broadcast at
-// submit and the text first appears when the projection emits a steering node
-// at the next ROUND BOUNDARY, which is however long the running tool takes.
-// Until then the prompt is real, accepted and on no screen.
-//
-// We do not guess which it will be. The echo says "queued" and resolves when
-// the ack arrives (aria.Client.ackPending), whichever coordinate it acquires.
-func (t *livelogTurn) notePending(text string) uint64 {
-	if strings.TrimSpace(text) == "" {
-		return 0
-	}
-	id := t.client.Submit(text)
-	t.repaintPending()
-	return id
-}
-
-// dropPending forgets an echo whose prompt will never arrive — the agent
-// answered with an error instead of opening a turn. Leaving it up would be the
-// same lie in the other direction.
-func (t *livelogTurn) dropPending(id uint64) {
-	if id == 0 || !t.client.DropPending(id) {
-		return
-	}
-	t.repaintPending()
-}
-
-// repaintPending pushes a change in the echo list to the active surface. The
-// pager renders from the shared model, so it just needs a frame; incipit
-// recomposes its live region, and has nothing to do when no region is up (the
-// next one to open composes the echo in).
-func (t *livelogTurn) repaintPending() {
-	if t.tr.active {
-		t.tr.render()
-		return
-	}
-	t.in.RepaintPending(t.open.Nodes)
 }
 
 // setMoreBefore records the wire's answer to "is there anything before this

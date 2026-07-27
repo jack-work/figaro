@@ -126,12 +126,6 @@ type transcript struct {
 	// applied per painted row by window()/entryLine().
 	rowCache  map[sliceKey]cachedMessage
 	cacheW    int
-	// echoCache memoizes a PENDING prompt's rows per (id, width). It is not the
-	// row cache: an echo has no sliceKey the store can name, its lifetime is
-	// "until the drain classifies it", and pruneCaches — which drops anything
-	// whose turn the store no longer holds — would evict it on the first frame.
-	echoCache map[uint64][]transcriptRow
-	echoW     int
 	selection nodeSelection
 	expanded  map[nodeRef]bool
 
