@@ -261,7 +261,10 @@ func (t *livelogTurn) openOverflows(nodes []livedoc.Node) bool {
 	if h < minPagerHeight {
 		return false
 	}
-	rows := 2 // leading blank + role header
+	// The echoes are part of the live region's height, so they are part of the
+	// promotion decision: two authorities on how tall the region is would let it
+	// overflow the viewport by exactly the rows this check forgot about.
+	rows := 2 + t.in.PendingHeight() // leading blank + role header
 	for k, n := range nodes {
 		if k > 0 {
 			rows++ // inter-block blank

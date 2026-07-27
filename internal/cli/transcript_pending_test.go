@@ -154,6 +154,32 @@ func TestTranscript_EchoHeightHasOneAuthority(t *testing.T) {
 	}
 }
 
+// AN ECHO ONLY APPENDS. Everything above it in line space must be
+// byte-identical across the submit: the echo is pinned after the head range,
+// so a reader's screen may grow at the bottom and may not otherwise move.
+//
+// Measured as a DIFF of the rows strictly above, not as a hash of the whole —
+// and gated on those rows being non-empty first, because two empty captures
+// compare clean and pass.
+func TestTranscript_SubmitOnlyAppends(t *testing.T) {
+	tr, client := echoTranscript(t)
+	before := bodyRows(tr)
+	if len(before) == 0 {
+		t.Fatal("the pager rendered nothing before the submit — the fixture, not the code")
+	}
+	client.Submit("SECONDMESSAGE please acknowledge")
+	after := bodyRows(tr)
+
+	if len(after) <= len(before) {
+		t.Fatalf("line space did not grow (%d -> %d); the echo drew nothing", len(before), len(after))
+	}
+	for i := range before {
+		if before[i] != after[i] {
+			t.Fatalf("row %d changed across the submit:\n  before %q\n  after  %q", i, before[i], after[i])
+		}
+	}
+}
+
 // An echo holds no node, so it is not a selection endpoint and the copy path
 // never sees one: its rows carry no ref, exactly as a gap sentinel does.
 func TestTranscript_EchoRowsCarryNoNodeRef(t *testing.T) {
@@ -190,5 +216,33 @@ func TestTranscript_NoEchoNoChange(t *testing.T) {
 	}
 	if n == 0 {
 		t.Fatal("fixture is wrong: the pager has no entries at all")
+	}
+}
+
+// AN ECHO IS NOT A TURN, AND THE JUMP MUST KNOW IT.
+//
+// Found by reading, then pinned: jumpReachOf took the newest turn to be
+// `entries[len-1].turn`, and an echo is the LAST entry whenever one is on
+// screen — carrying turn 0, because it has no coordinate. So the moment a
+// prompt was submitted, every `:12` answered "absent" while turn 12 was
+// plainly on the screen. (A trailing GAP had the same shape and the same
+// latent bug; turnBounds fixes both.)
+func TestTranscript_JumpStillWorksWhileAPromptIsQueued(t *testing.T) {
+	tr := jumpFixture(t, 1, 6)
+	tr.settle()
+	want, _, reach := tr.jumpReachOf(jumpTarget{turn: 4, hasNode: true, node: 1})
+	if reach != jumpHere {
+		t.Fatalf("fixture: :4.1 is not reachable to begin with (reach=%v)", reach)
+	}
+
+	tr.client.Submit("SECONDMESSAGE please acknowledge")
+	tr.settle()
+	got, ref, reach := tr.jumpReachOf(jumpTarget{turn: 4, hasNode: true, node: 1})
+	if reach != jumpHere {
+		t.Fatalf(":4.1 became unreachable (reach=%v) while a prompt was queued — an echo "+
+			"carries no turn and may not shorten the addressable range", reach)
+	}
+	if got != want || ref.turn != 4 {
+		t.Errorf(":4.1 landed on line %d/%+v, want %d and turn 4", got, ref, want)
 	}
 }

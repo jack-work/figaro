@@ -260,7 +260,13 @@ func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 		e := &entries[0]
 		return e.start, t.firstRefOfTurn(e.turn), jumpHere
 	}
-	oldest, newest := entries[0].turn, entries[len(entries)-1].turn
+	oldest, newest, haveTurns := t.turnBounds()
+	if !haveTurns {
+		if t.atAriaFloor() {
+			return 0, nodeRef{}, jumpAbsent
+		}
+		return 0, nodeRef{}, jumpOlder
+	}
 	switch {
 	case tg.turn < oldest:
 		if t.atAriaFloor() {
@@ -290,6 +296,32 @@ func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 		}
 	}
 	return 0, nodeRef{}, jumpAbsent
+}
+
+// turnBounds is the lowest and highest TURN in the index, and whether there is
+// one at all.
+//
+// NOT entries[0] and entries[len-1]. An entry does not necessarily carry a
+// turn: a GAP stands for turns we do not hold, and an ECHO is a prompt with no
+// coordinate at all — both record turn 0, and an echo is the LAST entry
+// whenever one is on screen. Reading the ends directly made `newest` zero the
+// moment a prompt was submitted, so every `:12` answered "absent" while turn 12
+// was plainly on the screen.
+func (t *transcript) turnBounds() (oldest, newest int, ok bool) {
+	for k := range t.index.entries {
+		e := &t.index.entries[k]
+		if e.turn == 0 {
+			continue
+		}
+		if !ok || e.turn < oldest {
+			oldest = e.turn
+		}
+		if !ok || e.turn > newest {
+			newest = e.turn
+		}
+		ok = true
+	}
+	return oldest, newest, ok
 }
 
 // firstRefOfTurn is the turn's first selectable point in reading order — its
