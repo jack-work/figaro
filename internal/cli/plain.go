@@ -74,12 +74,16 @@ func runPlainPrompt(loaded *config.Loaded, rawArgs []string) {
 	}
 }
 
+// execOwnFlags are the flags `x` parses out of rest itself; the id
+// extractor passes them through instead of rejecting them.
+var execOwnFlags = []string{"-n", "--dry-run", "-y", "--yes"}
+
 // runExecPrompt asks a figaro for bash, then executes it. With --id
 // the prompt is scoped to that aria (auto-created if missing) and the
 // aria is left alive afterward; without --id, an ephemeral aria is
 // spun up and killed.
 func runExecPrompt(loaded *config.Loaded, rawArgs []string) {
-	id, rest, err := extractIDFlag(rawArgs)
+	id, rest, err := extractIDFlagAllowing(rawArgs, execOwnFlags)
 	if err != nil {
 		die("x: %s", err)
 	}

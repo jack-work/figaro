@@ -15,9 +15,10 @@ func TestCompleteAriaIDsAfterFlag_FiresOnlyAfterIDFlag(t *testing.T) {
 	}
 	fn := completeAriaIDsAfterFlag(inner)
 
-	// Cursor right after --id: must NOT fall through to inner. The
-	// daemon is down in tests so softFetchAriaIDs returns nil — what
-	// we're asserting is that inner wasn't reached.
+	// Cursor right after --id: must NOT fall through to inner. With the
+	// daemon isolated away, softFetchAriaIDs returns nil — what we're
+	// asserting is that inner wasn't reached.
+	isolateDaemonEnv(t)
 	_ = fn(&cmdkit.CompleteContext{Args: []string{"--id"}})
 	if called != 0 {
 		t.Errorf("inner invoked when cursor after --id (calls=%d)", called)
@@ -44,9 +45,10 @@ func TestCompleteAriaIDsAfterFlag_NilInnerSafe(t *testing.T) {
 }
 
 func TestCompleteAriaIDsPositionalOrFlag_HandlesNil(t *testing.T) {
-	// Daemon is down in tests; both branches reduce to softFetchAriaIDs
+	// Daemon isolated away; both branches reduce to softFetchAriaIDs
 	// which returns nil. We're asserting no panic on nil ctx and the
 	// expected nil fall-through for in-the-middle positions.
+	isolateDaemonEnv(t)
 	if got := completeAriaIDsPositionalOrFlag(nil); got != nil {
 		t.Errorf("expected nil for nil ctx, got %v", got)
 	}
