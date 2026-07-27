@@ -56,6 +56,17 @@ type Incipit struct {
 	Bookend func() []string          // closes an assistant message (the two-row status footer)
 	Rule    func() string            // closes any other message (a plain full-width rule)
 	Header  func(role string) string // printed above each message; "" suppresses
+	// Pending draws the prompts that have been SUBMITTED but not yet placed:
+	// accepted by the daemon, sitting in its inbox, carrying no coordinate. It
+	// is a provider rather than a pushed value for the same reason Bookend is —
+	// the region recomposes on every paint, so an echo appears and disappears
+	// by the list changing, with no event to route and nothing to keep in sync.
+	//
+	// It is CHROME, drawn in the live trailer above the footer, and therefore
+	// never frozen: a Freeze composes with the role's closer instead (see
+	// composeWith), so an unplaced prompt cannot reach scrollback pretending to
+	// be part of the message above it.
+	Pending func(width int) []string
 
 	tick     int
 	thinking bool // open region is an OpenThinking placeholder (adopted by the next Open)
@@ -376,7 +387,56 @@ func clipRows(rows []string, h int) []string {
 }
 
 func (i *Incipit) compose(nodes []livedoc.Node) []string {
-	return i.composeWith(i.liveInquiry, nodes, i.footer())
+	return i.composeWith(i.liveInquiry, nodes, i.trailer())
+}
+
+// trailer is what the LIVE region ends in: the pending echoes, then the pinned
+// footer. The echoes sit directly above the footer because that is where the
+// bottom of the conversation is, and a prompt with no coordinate belongs after
+// everything that has one (docs/range-store.md, "Pending": pinned after the
+// head range).
+func (i *Incipit) trailer() []string {
+	foot := i.footer()
+	if i.Pending == nil {
+		return foot
+	}
+	w, _ := i.term.Size()
+	p := i.Pending(w)
+	if len(p) == 0 {
+		return foot
+	}
+	out := make([]string, 0, len(p)+1+len(foot))
+	out = append(out, p...)
+	if len(foot) > 0 {
+		out = append(out, "")
+		out = append(out, foot...)
+	}
+	return out
+}
+
+// PendingHeight is how many rows the echoes currently occupy. A caller that
+// needs to know whether the live region is showing anything of its own (the
+// pager-overflow check) asks here rather than re-deriving it.
+func (i *Incipit) PendingHeight() int {
+	if i.Pending == nil {
+		return 0
+	}
+	w, _ := i.term.Size()
+	return len(i.Pending(w))
+}
+
+// RepaintPending redraws the live region so a change to the pending list
+// reaches the screen. nodes is the open turn's suffix, exactly as Tick takes
+// it. It is a no-op with nothing live: an echo with no region to live in is
+// drawn by whatever opens one next (armThinking, or the turn's first frame).
+func (i *Incipit) RepaintPending(nodes []livedoc.Node) {
+	if i.liveTurn == 0 {
+		return
+	}
+	if i.thinking {
+		nodes = nil
+	}
+	i.paint(i.compose(nodes))
 }
 
 // composeWith builds the region's rows with an explicit trailer. The LIVE
