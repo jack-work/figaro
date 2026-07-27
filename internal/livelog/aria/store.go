@@ -1019,36 +1019,3 @@ func (s *Store) OpenAnimating() bool {
 	}
 	return false
 }
-
-// SetInquiry stamps a turn's opening question onto the slice that starts it,
-// after the fact.
-//
-// The question is TEXT ON THE TURN and arrives on a part of its own, which is
-// not ordered against the nodes. When the agent speaks first, the head slice is
-// RELEASED before the question lands — and message() stamps the inquiry at
-// release time, from a map that was still empty. The question was then lost for
-// good: no later part can carry it, because only the slice at From == 0 is
-// entitled to draw it and that slice has already gone out.
-//
-// A re-read repaired it, which is why paging away and back appeared to fix the
-// missing question rather than merely re-fetching it.
-//
-// Reports whether it found the slice to stamp. Idempotent, and it never
-// overwrites a question already present: the wire is allowed to repeat itself.
-func (s *Store) SetInquiry(turn int, text string) bool {
-	if text == "" {
-		return false
-	}
-	for ri := range s.ranges {
-		for mi := range s.ranges[ri].Msgs {
-			m := &s.ranges[ri].Msgs[mi]
-			if m.Turn == turn && m.From == 0 {
-				if m.Inquiry == "" {
-					m.Inquiry = text
-				}
-				return true
-			}
-		}
-	}
-	return false
-}

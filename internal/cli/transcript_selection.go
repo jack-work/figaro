@@ -97,15 +97,6 @@ func (r transcriptRow) searchText() string {
 
 type cachedMessage struct {
 	rows []transcriptRow
-	// inquiry is what the rows were rendered WITH. The cache is keyed on
-	// (turn, from), but the render also depends on the turn's opening
-	// question — and that question can arrive AFTER the first render: it is
-	// text on the turn, delivered on a part of its own, and a slice can be
-	// materialized and cached before it lands. Without this the first render
-	// wins forever, so a turn shows its reply and no question until something
-	// unrelated drops the cache. Paging away and back appeared to "fix" it,
-	// which is the tell.
-	inquiry string
 }
 
 type nodeSpan struct {

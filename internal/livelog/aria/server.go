@@ -138,7 +138,8 @@ func (s *Server) Update(nodes []livedoc.Node) {
 	v := s.open.ver
 	s.open.ver++
 	frame := Page{Parts: []TurnPart{{
-		Turn: Turn{ID: s.open.id, Live: &Live{From: s.open.from, V: v, Nodes: deltas}},
+		Turn: Turn{ID: s.open.id, Inquiry: s.inquiryOfLocked(s.open.id),
+			Live: &Live{From: s.open.from, V: v, Nodes: deltas}},
 		From: s.open.from,
 	}}}
 	subs := s.subsLocked()
@@ -165,7 +166,8 @@ func (s *Server) Close() {
 	id, from := s.open.id, s.open.from
 	s.open = nil
 	frame := Page{Parts: []TurnPart{{
-		Turn: Turn{ID: id, Live: &Live{From: from, V: lastV}},
+		Turn: Turn{ID: id, Inquiry: s.inquiryOfLocked(id),
+			Live: &Live{From: from, V: lastV}},
 		From: from,
 	}}}
 	subs := s.subsLocked()
@@ -415,4 +417,29 @@ func (s *Server) OpenInquiry(id uint64, inquiry string) {
 	deliver(subs, Page{Parts: []TurnPart{{
 		Turn: Turn{ID: id, Inquiry: inquiry}, From: from, ClippedHead: from > 0,
 	}}})
+}
+
+// inquiryOfLocked is the recorded question for a turn, or "" if none. Caller
+// holds s.mu.
+//
+// EVERY PART CARRIES ITS TURN'S QUESTION. It used to ride exactly one frame —
+// the OpenInquiry broadcast — and every streaming frame afterwards described
+// the same turn without it. A client that had not folded that single frame
+// before nodes arrived had a turn with content and no question, and nothing
+// later re-supplied it: only the seal carries the whole Turn, which is why the
+// question appeared when the turn ENDED and not before.
+//
+// A part is a description of a turn, so it states what the turn IS. The
+// question is not a delta and cannot be reconstructed from one; leaving it off
+// made a part that says "here are nodes for turn 7" without saying what turn 7
+// asked, which is a hole the client cannot fill. Repeating it costs the
+// prompt's bytes per frame over a unix socket, and buys the invariant that a
+// part is never partial about identity.
+func (s *Server) inquiryOfLocked(id uint64) string {
+	for i := range s.turns {
+		if s.turns[i].ID == id {
+			return s.turns[i].Inquiry
+		}
+	}
+	return ""
 }
