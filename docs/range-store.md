@@ -263,6 +263,25 @@ Order, and why:
    detached tail) should DISSOLVE here, not be fixed: with one owner, released
    nodes land in the head range, which IS the window, so there is nothing to
    freeze. If it does not dissolve, the store is wrong — stop and say so.
+
+   **Landed as 2a (66cf353, 343927e): the TAIL window is the store's tail.**
+   The pager's window at the live tail is the interval `[from, ∞)` into the
+   store, and the open turn is the last thing in it. Bug B did dissolve — it
+   was not fixed. `heldOpen`, `tailRev` and the pager's second copy of the
+   catch-up page (`seed`/`withSeed`/`mergeSeed`) are gone; `aria.Client.Merge`
+   is the silent door a fetched page goes through, `Store.TailFrom` derives the
+   floor backward so the window can be re-derived per frame instead of cached.
+   Proven in a pty, both arms: control frozen at tick-6 with `G` leaping
+   thirteen ticks, head advancing tick-7→tick-17 with the rows above the live
+   block byte-identical.
+
+   **Remaining as 2a-part-2:** fetched older history still lands in `t.pages`,
+   and with it `newer`, `payloadLRU`, `committedW` and the three edge bits.
+   The first older page takes the window off the tail, and `openMessage` then
+   goes quiet rather than drawing a snapshot history has run past — which
+   costs one thing that used to work: a selection anchored on the LIVE turn no
+   longer survives paging history in. It comes back when `pages` does not
+   exist.
 3. **Gap rendering + Ensure-on-bind**, prefetch distance.
 4. **Pending**, and the submitted→committed→acked lifecycle.
 
