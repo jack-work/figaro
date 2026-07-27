@@ -102,14 +102,22 @@ func (c *Client) Apply(p Page) {
 
 	for _, part := range p.Parts {
 		id := int(part.ID)
+		// THE OPEN-TURN SLOTS ARE ONE BUFFER, AND ONLY ONE TURN MAY HOLD THEM.
+		// Decided once, here, rather than re-derived by each branch: three branches
+		// disagreeing about who owns the buffer is what let a page of history claim
+		// the slots and then destroy the live turn on its way out. See claimsOpen.
+		staged := c.claimsOpen(part)
 
 		// The inquiry is TEXT ON THE TURN, not a node, and it commits before the
 		// agent has said anything — so it arrives on a part of its own, with no
 		// nodes and no Live. Hold it until a slice starts the turn, and open the
 		// turn now so the question paints the instant it is asked.
+		//
+		// Recording it is bookkeeping and always safe. OPENING on it is not, and is
+		// what history is refused.
 		if part.Inquiry != "" && !part.ClippedHead {
 			c.inquiry[id] = part.Inquiry
-			if c.openTurn != id && !c.seenClosed(id) {
+			if staged && c.openTurn != id {
 				c.resetOpen()
 				c.openTurn = id
 			}
@@ -117,7 +125,10 @@ func (c *Client) Apply(p Page) {
 
 		// Adopt any nodes the part carries. From is the positional id of
 		// Nodes[0], so a clipped part slots into place rather than replacing.
-		if len(part.Nodes) > 0 {
+		//
+		// STAGED parts only. A sealed part carries its own run at its own offset
+		// and is released directly below — it never needs the buffer.
+		if len(part.Nodes) > 0 && staged {
 			if c.openTurn != id {
 				c.resetOpen()
 				c.openTurn = id
@@ -135,7 +146,7 @@ func (c *Client) Apply(p Page) {
 			c.absorb(part.From, part.Nodes)
 		}
 
-		if part.Live != nil {
+		if part.Live != nil && staged {
 			if c.openTurn != id {
 				c.resetOpen()
 				c.openTurn = id
@@ -168,19 +179,38 @@ func (c *Client) Apply(p Page) {
 			c.advanceCommitted(id)
 			continue
 		}
-		nodes := part.Nodes
-		if c.openTurn == id && len(c.openNodesSlice) >= len(nodes) {
-			nodes = c.openNodes()
-		}
 		c.closedSeen[id] = true
-		// Everything not already released closes as one message. A turn that
-		// produced nothing at all (interrupted before its first block) still
-		// closes one, carrying the inquiry — otherwise the question the user
-		// asked would never reach scrollback.
-		if s := c.emitted[id]; s < len(nodes) {
-			finalized = append(finalized, c.message(id, s, nodes[s:]))
-		} else if s == 0 && c.inquiry[id] != "" {
-			finalized = append(finalized, c.message(id, 0, nil))
+		if staged {
+			// The turn we were holding open has sealed. Release what we STREAMED,
+			// not what the part restates: a seal often arrives as a bare marker,
+			// and the buffer is then the fuller record.
+			nodes := part.Nodes
+			if len(c.openNodesSlice) >= len(nodes) {
+				nodes = c.openNodes()
+			}
+			// Everything not already released closes as one message. A turn that
+			// produced nothing at all (interrupted before its first block) still
+			// closes one, carrying the inquiry — otherwise the question the user
+			// asked would never reach scrollback.
+			if s := c.emitted[id]; s < len(nodes) {
+				finalized = append(finalized, c.message(id, s, nodes[s:]))
+			} else if s == 0 && c.inquiry[id] != "" {
+				finalized = append(finalized, c.message(id, 0, nil))
+			}
+		} else {
+			// HISTORY. THE PART IS THE RECORD, and part.From is where it belongs.
+			// This is the answer for a clipped sealed slice too: the buffer only
+			// ever existed to give absorb() somewhere to pad to, and padding is
+			// how a clipped slice used to be reconstructed. Reading the offset off
+			// the part instead makes the padding unnecessary — message() attaches
+			// the inquiry only at offset 0, which is exactly the slice entitled to
+			// draw the question.
+			if len(part.Nodes) > 0 {
+				finalized = append(finalized, c.message(id, int(part.From),
+					append([]livedoc.Node(nil), part.Nodes...)))
+			} else if c.inquiry[id] != "" {
+				finalized = append(finalized, c.message(id, 0, nil))
+			}
 		}
 		delete(c.emitted, id)
 		delete(c.inquiry, id)
@@ -217,6 +247,54 @@ func (c *Client) Apply(p Page) {
 	if desync >= 0 && c.OnDesync != nil {
 		c.OnDesync(desync)
 	}
+}
+
+// claimsOpen reports whether a part is entitled to the OPEN-TURN SLOTS —
+// openTurn, openFrom, openV and openNodesSlice.
+//
+// Those four are a single staging buffer, and exactly one turn may hold them at
+// a time. Apply used to let every branch decide for itself, which meant a page
+// of sealed HISTORY could claim them (the inquiry branch and the nodes branch
+// both did `if c.openTurn != id { resetOpen(); openTurn = id }`) and then the
+// sealed branch, seeing openTurn == id, called resetOpen() and threw the LIVE
+// turn away.
+//
+// That is the ^T bug: submitting to an existing, not-running aria paints the
+// question in incipit, and entering the pager does a catch-up ReadBefore whose
+// page is all sealed history — which silently closed the turn the question
+// belonged to. It needed prior history to show, because seenClosed() is false
+// for turns this process has never seen, and it healed itself the moment the
+// model's first node re-opened the turn.
+//
+// The rule, in order:
+//
+//   - the turn we ALREADY hold is still ours, sealed or not: that is how a
+//     streaming turn folds its deltas and then closes from what we buffered.
+//   - a turn OLDER than the open one never displaces it. Newer output cannot be
+//     invalidated by older, and a backward read is full of older.
+//   - a part carrying Live is live BY THE SERVER'S OWN STATEMENT. This is what
+//     lets a catch-up read join a turn already in flight.
+//   - a SEALED part is history. It carries its whole run at a known offset and
+//     is released directly; it has nothing to stage.
+//   - a turn already finalized is never re-opened.
+//
+// Anything left is an unsealed, unseen, not-older turn — the inquiry push that
+// opens a turn before the model has said a word.
+func (c *Client) claimsOpen(part TurnPart) bool {
+	id := int(part.ID)
+	switch {
+	case c.openTurn == id:
+		return true
+	case c.openTurn != 0 && id < c.openTurn:
+		return false
+	case part.Live != nil:
+		return true
+	case part.Sealed:
+		return false
+	case c.seenClosed(id):
+		return false
+	}
+	return true
 }
 
 // absorb slots a contiguous run of nodes in at their positional ids.
