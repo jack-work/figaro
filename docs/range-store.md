@@ -213,8 +213,10 @@ the migration story: correct before it is useful.
 // it alone knows whether a turn was in flight when the prompt came off the
 // queue.
 type Pending struct {
-    Text string
-    At   time.Time
+    ID      uint64    // client-local; the identity a renderer keys its rows on
+    Text    string
+    At      time.Time
+    minTurn int       // the last sealed turn at submit; history cannot ack below it
 }
 ```
 
@@ -228,6 +230,63 @@ Both are "acquire a coordinate and move". Neither is a special case of the
 other, and the client MUST NOT guess which will happen: a prompt sent while a
 turn runs becomes a steer, and that classification happens server-side, at the
 drain, after our submit returns.
+
+**Landed as phase 3: the echo, and the ack it resolves on.**
+
+- **The echo is a LOCAL ECHO and it is VOLATILE.** `Client.Submit` records it
+  when `figaro.qua` returns — accepted, in the daemon's inbox, no coordinate.
+  The inbox is never persisted, so the row says `↳ queued`, not "sent" or
+  "saved": if the agent dies the prompt dies with it and nothing may imply
+  otherwise.
+- **It is drawn in the shape of the thing it will most likely become.** A
+  submitted prompt usually becomes a `NodeSteering` — that is precisely the
+  case that was invisible — so it is drawn as one, the inline `↳` marker and
+  the dim blockquote gutter, with `queued` where a placed steer says `input`.
+  When the ack lands the only thing that moves is the label. One builder
+  (`cli/pending.go`) feeds BOTH surfaces: incipit draws it in the live trailer
+  above the pinned footer, the pager as an entry after the open turn.
+- **The ack is INFERRED FROM THE STREAM**, and the alternatives were weighed.
+  The server has nothing to add: the classification IS the coordinate, and the
+  coordinate arrives on the wire anyway. A "your prompt became a steer"
+  broadcast could not be sent earlier than the drain, which is the same instant
+  the steering node is composed — a new wire field for zero latency. And
+  `figaro.queued` (which the pager's Q panel already polls) is strictly worse
+  as an authority: the snapshot goes EMPTY the moment the drain lifts the
+  prompt, i.e. BEFORE the node it becomes is broadcast, so a poll-driven echo
+  would blink out and back in — the flicker this phase exists to avoid.
+- **Resolution runs INSIDE `Apply`**, before `OnClosed`/`OnLive` fire, so the
+  frame that first draws the prompt at its coordinate is the same frame that
+  stops drawing the echo: one repaint, and no window in which the text is on
+  screen twice. Pinned by `TestClient_EchoIsGoneByTheTimeTheFrameIsDrawn`.
+- **Matching is containment over whole lines, and it CONSUMES.** The drain
+  joins a batch of queued prompts into ONE message whose prose is the texts
+  newline-joined, so an echo comes back as a contiguous run of lines inside a
+  bigger node; equality would leave every batched steer echoing forever.
+  Consuming the matched run is what keeps two identical prompts needing two
+  occurrences.
+- **History cannot ack an echo.** A backward read is full of old steers and one
+  of them saying the same words is a coincidence, not a classification: the
+  `minTurn` floor refuses anything at or below the last sealed turn at submit,
+  and `Merge` — the silent door history comes through — never acks at all.
+- **An echo is chrome and is never frozen.** Incipit's `Freeze` composes with
+  the role's closer, not the trailer, so a prompt with no coordinate cannot
+  reach scrollback claiming to be part of the message above it.
+- **In the pager it is an entry with rows but no `ref`**: not a selection
+  endpoint (the copy path would have to learn what an unplaced prompt is),
+  `^N`/`^P` step over it exactly as they step over a hole, and its height comes
+  from `lineEntry.height()` — the one authority — like everything else.
+
+Still missing, and named rather than implied:
+
+- **Other clients see nothing.** The echo is local to the process that
+  submitted. A second `figaro listen` on the same aria still learns of a queued
+  prompt only at the round boundary. Closing that needs the daemon to broadcast
+  its VOLATILE inbox, which is a different feature with a different honesty
+  problem (a queue that is broadcast looks durable).
+- **A freeze while an echo is up costs one frame.** `Freeze` repaints the
+  region without the trailer and the next `Open` repaints it with one, so an
+  echo can blink if the terminal paints between the two writes. It is bounded
+  by the gap between `OnClosed` and `OnLive` inside a single `Apply`.
 
 ## What incipit requires of this
 
@@ -336,6 +395,10 @@ Order, and why:
      floor). Marked rather than dropped: the position within what we hold is
      the number a reader navigates by.
 4. **Pending**, and the submitted→committed→acked lifecycle.
+
+   **Landed as phase 3** — see the "Pending" section above for what the echo
+   is, why the ack is inferred rather than broadcast, and what is still
+   missing.
 
 ## Open questions — decide before coding the affected phase
 
