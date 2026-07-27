@@ -179,7 +179,13 @@ func (s *Store) SetTurnLen(turn uint64, n uint64) {
 		return
 	}
 	s.ends[turn] = n
-	s.coalesce()
+	if n == 0 {
+		// A turn known to occupy NOTHING can bridge two ranges arbitrarily far
+		// apart, so this is the one case that needs a full pass.
+		s.coalesce()
+		return
+	}
+	s.coalesceAround(turn)
 }
 
 // TurnLen reports a recorded turn length.
@@ -218,16 +224,43 @@ func (s *Store) adjacent(a, b Anchor) bool {
 	return true
 }
 
+// mergeAt fuses ranges i and i+1 if they are adjacent, reporting whether it
+// did. The right side's messages append onto the left's backing array, so
+// fusing a whole fragmented store costs one copy per message, not one per pair.
+func (s *Store) mergeAt(i int) bool {
+	if i < 0 || i+1 >= len(s.ranges) {
+		return false
+	}
+	if !s.adjacent(s.ranges[i].To, s.ranges[i+1].From) {
+		return false
+	}
+	s.ranges[i].Msgs = append(s.ranges[i].Msgs, s.ranges[i+1].Msgs...)
+	s.ranges[i].To = s.ranges[i+1].To
+	s.ranges = append(s.ranges[:i+1], s.ranges[i+2:]...)
+	return true
+}
+
 // coalesce merges every pair of neighbouring ranges that adjacency now permits.
 func (s *Store) coalesce() {
 	for i := 0; i+1 < len(s.ranges); {
-		if s.adjacent(s.ranges[i].To, s.ranges[i+1].From) {
-			s.ranges[i].Msgs = append(s.ranges[i].Msgs, s.ranges[i+1].Msgs...)
-			s.ranges[i].To = s.ranges[i+1].To
-			s.ranges = append(s.ranges[:i+1], s.ranges[i+2:]...)
-			continue
+		if !s.mergeAt(i) {
+			i++
 		}
-		i++
+	}
+}
+
+// coalesceAround merges only the neighbourhood of one turn. Learning turn T's
+// extent can only make a range that ENDS in T adjacent to its successor, so
+// scanning the whole interval set per seal — which made folding a fragmented
+// aria quadratic in its turn count — is wasted work.
+func (s *Store) coalesceAround(turn uint64) {
+	i := sort.Search(len(s.ranges), func(k int) bool { return turn < s.ranges[k].From.Turn }) - 1
+	if i < 0 {
+		i = 0
+	}
+	for s.mergeAt(i) {
+	}
+	for s.mergeAt(i - 1) {
 	}
 }
 
@@ -252,7 +285,7 @@ func (s *Store) subtractHeld(m Message) []Message {
 	t := uint64(m.Turn)
 	cur, hi := m.From, spanEnd(m)
 	var out []Message
-	for _, r := range s.ranges {
+	for _, r := range s.ranges[s.firstRangeAtOrAfter(Anchor{Turn: t, Node: cur}):] {
 		if r.To.Turn < t {
 			continue
 		}
@@ -285,6 +318,21 @@ func (s *Store) subtractHeld(m Message) []Message {
 		out = append(out, sliceNodes(m, cur, hi))
 	}
 	return out
+}
+
+// firstRangeAtOrAfter is the index of the first range that can hold or follow
+// anchor a — the bisection that keeps insert and query off an O(#ranges) walk.
+func (s *Store) firstRangeAtOrAfter(a Anchor) int {
+	return sort.Search(len(s.ranges), func(k int) bool { return !s.ranges[k].To.Less(a) })
+}
+
+// firstMsgAtOrAfter is the same bisection one level down, over a range's
+// messages. A range may hold ten thousand of them and a pager asks for forty.
+func firstMsgAtOrAfter(msgs []Message, a Anchor) int {
+	return sort.Search(len(msgs), func(k int) bool {
+		_, to := msgSpan(msgs[k])
+		return !to.Less(a)
+	})
 }
 
 // insertRange splices in a range that is known to overlap nothing, merging it
@@ -354,9 +402,12 @@ func (s *Store) keep(r Range, lo, hi Anchor) *Range {
 		return nil
 	}
 	var msgs []Message
-	for _, m := range r.Msgs {
+	for _, m := range r.Msgs[firstMsgAtOrAfter(r.Msgs, lo):] {
 		mf, mt := msgSpan(m)
-		if mt.Less(lo) || hi.Less(mf) {
+		if hi.Less(mf) {
+			break
+		}
+		if mt.Less(lo) {
 			continue
 		}
 		a, b := m.From, spanEnd(m)
@@ -411,6 +462,10 @@ func (s *Store) TrimOldestTo(limit int) {
 //	for _, seg := range store.Query(a, b) { use(seg.Msgs) }
 //
 // ignores .Gap, and is NEVER LIED TO — it simply gets less.
+//
+// Segment.Msgs ALIASES the store's own slices and MUST NOT BE MUTATED. This is
+// what makes a repaint free: the common query — the whole of what we hold —
+// allocates nothing but the segment header.
 func (s *Store) Query(from, to Anchor) []Segment {
 	if to.Less(from) {
 		return nil
@@ -435,7 +490,7 @@ func (s *Store) Query(from, to Anchor) []Segment {
 
 	var segs []Segment
 	cur := from
-	for _, r := range s.ranges {
+	for _, r := range s.ranges[s.firstRangeAtOrAfter(from):] {
 		if r.To.Less(from) {
 			continue
 		}
@@ -452,11 +507,7 @@ func (s *Store) Query(from, to Anchor) []Segment {
 		if cur.Less(lo) {
 			segs = append(segs, Segment{Gap: &Gap{From: cur, To: lo.Prev()}})
 		}
-		kept := s.keep(r, lo, hi)
-		seg := Segment{}
-		if kept != nil {
-			seg.Msgs = kept.Msgs
-		}
+		seg := Segment{Msgs: s.window(r, lo, hi)}
 		segs = append(segs, seg)
 		cur = hi.Next()
 		if to.Less(cur) {
@@ -475,6 +526,39 @@ func (s *Store) Query(from, to Anchor) []Segment {
 	// Fuse the gap that precedes a segment onto its predecessor, so a Segment
 	// means "run, then hole" rather than "hole, then run".
 	return fuseGaps(segs)
+}
+
+// window is the part of r inside [lo, hi], WITHOUT COPYING when it can be
+// avoided — which is almost always. Copying is only forced when a boundary
+// message straddles the window and has to be cut; a pager's interior messages
+// never do, and the whole-range case (every repaint of an aria nobody has
+// scrolled) then costs nothing at all.
+//
+// The result ALIASES the store. Segment.Msgs is read-only; see Query.
+func (s *Store) window(r Range, lo, hi Anchor) []Message {
+	if lo == r.From && hi == r.To {
+		return r.Msgs
+	}
+	i := firstMsgAtOrAfter(r.Msgs, lo)
+	if i >= len(r.Msgs) {
+		return nil
+	}
+	j := sort.Search(len(r.Msgs), func(k int) bool {
+		f, _ := msgSpan(r.Msgs[k])
+		return hi.Less(f)
+	}) - 1
+	if j < i {
+		return nil
+	}
+	if f, _ := msgSpan(r.Msgs[i]); !f.Less(lo) {
+		if _, t := msgSpan(r.Msgs[j]); !hi.Less(t) {
+			return r.Msgs[i : j+1]
+		}
+	}
+	if kept := s.keep(r, lo, hi); kept != nil {
+		return kept.Msgs
+	}
+	return nil
 }
 
 // fuseGaps rewrites [ {gap} {msgs} ] into [ {msgs-so-far, gap} ... ], the shape
