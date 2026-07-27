@@ -3,7 +3,9 @@ package aria
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jack-work/figaro/internal/livedoc"
@@ -115,11 +117,37 @@ type Segment struct {
 // it alone knows whether a turn was in flight when the prompt came off the
 // queue.
 //
-// PHASE 1: type only. Nothing constructs or renders one yet; the lifecycle
-// (submitted -> committed -> acked) lands in phase 4.
+// It is a LOCAL ECHO and it is VOLATILE, on both sides. Ours is a client-side
+// row with no anchor; the daemon's copy is an inbox entry that is never
+// persisted, so if the agent dies the prompt is lost. Nothing here may imply
+// otherwise — the row says "queued", not "saved".
+//
+// The lifecycle is drafted -> submitted -> committed -> acked. This type is
+// the SUBMITTED state, and it resolves exactly one of two ways when the ack
+// arrives (see Store.ResolvePending):
+//
+//   - inquiry — the prompt opened a turn; it acquires a turn id and merges
+//     into the head range as that turn's question.
+//   - steer — the prompt joined a turn already in flight; it becomes a
+//     NodeSteering inside the open turn.
+//
+// Both are "acquire a coordinate and move", and the client MUST NOT GUESS
+// which will happen: only the drain knows whether a turn was running when the
+// prompt came off the queue, and it decides after our submit has returned.
 type Pending struct {
+	// ID is a client-local ordinal — the identity a renderer keys its row cache
+	// on. It is not a coordinate and never leaves this process.
+	ID   uint64
 	Text string
 	At   time.Time
+
+	// minTurn is the last turn the client had seen sealed when the prompt was
+	// submitted. Resolution is refused below it, so a page of HISTORY carrying
+	// an old steer with the same text cannot un-echo a prompt that has not been
+	// classified yet. The turn our prompt lands in is always strictly newer:
+	// either it opens one, or it joins the running one, and the running turn is
+	// past the last sealed one by construction.
+	minTurn int
 }
 
 // openTail is the ONE streaming suffix. It is today's client machinery moved
@@ -144,6 +172,8 @@ type Store struct {
 	pending []Pending         // submitted, not yet classified by the drain
 	ends    map[uint64]uint64 // turn -> anchors it occupies, once known
 	fetch   Fetcher           // fills holes; see Ensure
+
+	pendingSeq uint64 // ids for pending prompts; client-local, never on the wire
 }
 
 // NewStore returns an empty store.
@@ -926,8 +956,123 @@ func (s *Store) SetMore(m More) { s.more = m }
 // More reports what lies beyond the outermost edges.
 func (s *Store) More() More { return s.more }
 
-// Pending returns the prompts awaiting classification (phase 4; always empty).
+// ---------------------------------------------------------------- pending --
+
+// AddPending records a prompt the caller has just submitted: accepted by the
+// daemon, sitting in its inbox, carrying no coordinate yet. minTurn is the
+// last turn the client has seen sealed (see Pending.minTurn). The returned id
+// is client-local.
+func (s *Store) AddPending(text string, at time.Time, minTurn int) uint64 {
+	s.pendingSeq++
+	s.pending = append(s.pending, Pending{ID: s.pendingSeq, Text: text, At: at, minTurn: minTurn})
+	return s.pendingSeq
+}
+
+// Pending returns the prompts awaiting classification, oldest first. They are
+// pinned AFTER the head range — after everything, including the open turn —
+// because that is the only honest place for a thing with no coordinate: at the
+// end, where the next thing to happen goes.
 func (s *Store) Pending() []Pending { return append([]Pending(nil), s.pending...) }
+
+// PendingLen is how many prompts are awaiting classification. Renderers ask
+// this first so the common case — none — costs a length check and no copy.
+func (s *Store) PendingLen() int { return len(s.pending) }
+
+// ForEachPending walks the pending prompts oldest first without copying them.
+func (s *Store) ForEachPending(fn func(Pending) bool) {
+	for _, p := range s.pending {
+		if !fn(p) {
+			return
+		}
+	}
+}
+
+// DropPending forgets one pending prompt by id.
+func (s *Store) DropPending(id uint64) bool {
+	for i, p := range s.pending {
+		if p.ID == id {
+			s.pending = append(s.pending[:i], s.pending[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// ResolvePending acks every pending prompt that `delivered` — an inquiry
+// recorded on a turn, or the text of a NodeSteering — carries, and reports how
+// many resolved. turn is the coordinate the text arrived at; anything at or
+// below a pending's minTurn is history and cannot ack it.
+//
+// It is a containment test, not equality, because THE DRAIN JOINS A BATCH:
+// several prompts queued during one tool round are folded into ONE message
+// whose prose is the texts joined by newlines (Agent.appendPromptEvents), so
+// our prompts come back as contiguous RUNS OF LINES inside a single larger
+// node. Equality would leave every batched steer echoing forever.
+//
+// Each match CONSUMES the lines it matched, so two identical prompts need two
+// occurrences to clear: one node saying "ok" acks one echo of "ok", and the
+// joined "ok\nok" acks both. Matching without consuming would clear an echo
+// the drain has not taken yet.
+func (s *Store) ResolvePending(delivered string, turn int) int {
+	if len(s.pending) == 0 {
+		return 0
+	}
+	lines, n := trimmedLines(delivered), 0
+	for i := 0; i < len(s.pending); {
+		p := s.pending[i]
+		if turn <= p.minTurn {
+			i++
+			continue
+		}
+		at, ok := runIndex(lines, trimmedLines(p.Text))
+		if !ok {
+			i++
+			continue
+		}
+		lines = append(lines[:at], lines[at+len(trimmedLines(p.Text)):]...)
+		s.pending = append(s.pending[:i], s.pending[i+1:]...)
+		n++
+	}
+	return n
+}
+
+// runIndex is where want appears in got as a contiguous run, if it does.
+func runIndex(got, want []string) (int, bool) {
+	if len(want) == 0 || len(want) > len(got) {
+		return 0, false
+	}
+	for i := 0; i+len(want) <= len(got); i++ {
+		if slices.Equal(got[i:i+len(want)], want) {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// carriesLines reports whether want appears in got as a contiguous run of
+// whole lines, each trimmed. Whole lines, because the join that produced got
+// is by newline; trimmed, because the wire round-trips through a prose
+// renderer that is entitled to strip trailing space.
+func carriesLines(got, want string) bool {
+	_, ok := runIndex(trimmedLines(got), trimmedLines(want))
+	return ok
+}
+
+// trimmedLines splits s into trimmed lines, dropping the empty ones at either
+// end so a prompt that ends in a newline still matches the node it became.
+func trimmedLines(s string) []string {
+	out := strings.Split(s, "\n")
+	for i := range out {
+		out[i] = strings.TrimSpace(out[i])
+	}
+	for len(out) > 0 && out[0] == "" {
+		out = out[1:]
+	}
+	for len(out) > 0 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
+	}
+	return out
+}
 
 // ------------------------------------------------------------ open turn -----
 

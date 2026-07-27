@@ -1,6 +1,9 @@
 package cli
 
-import "github.com/jack-work/figaro/internal/livelog/aria"
+import (
+	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/term"
+)
 
 // A line index over the retained message window.
 //
@@ -35,6 +38,11 @@ type lineEntry struct {
 	// entry has NO rows: it renders as EXACTLY ONE row, synthesized per frame
 	// because its text depends on the width. See transcript.gapRow.
 	gap *aria.Gap
+	// echo marks a PENDING prompt: submitted, no coordinate yet. It carries
+	// rows like a message (it is prose, and its height is knowable), but it
+	// belongs to no turn and holds no node, so it is not a selection or copy
+	// target and ^N steps over it exactly as it steps over a hole.
+	echo bool
 }
 
 // isGap reports whether the entry is a hole rather than a message.
@@ -173,6 +181,18 @@ func (t *transcript) buildIndex() {
 	if open := t.openMessage(); open != nil {
 		add(open.Turn, keyOf(*open), t.renderMsgBase(*open).rows, true, nil)
 	}
+	// THE ECHOES COME LAST, after the open turn, because a prompt with no
+	// coordinate belongs after everything that has one: it is the next thing to
+	// happen, not part of what already did (docs/range-store.md, "Pending" —
+	// pinned after the head range).
+	t.client.ForEachPending(func(p aria.Pending) bool {
+		e := lineEntry{turn: 0, key: pendingKey(p.ID), start: total, sep: total > 0,
+			rows: t.echoRows(p), echo: true}
+		entries = append(entries, e)
+		total += e.height()
+		return true
+	})
+	t.dropStaleEchoRows()
 	// The page set moved => the index describes a different window, full stop.
 	// That is the one authority (windowRev); the shape diff below only has to
 	// catch the things the page set cannot see — a width change, an expanded
@@ -223,6 +243,52 @@ func (t *transcript) rebuildLineLT() {
 // shrinks, which is what makes the viewport anchor follow a fill.
 func gapKey(g aria.Gap) sliceKey {
 	return sliceKey(int64(g.From.Turn)<<sliceKeyFromBits | int64(g.From.Node&(1<<sliceKeyFromBits-1)))
+}
+
+// pendingKey is the sliceKey an ECHO is addressed by. Turn ids are positive,
+// so every real slice key and every gap key is non-negative; an echo takes the
+// negative half of the space and can collide with neither. It is stable for
+// the life of the echo, which is what keeps the viewport anchor and the resize
+// restore working while one is on screen.
+func pendingKey(id uint64) sliceKey { return sliceKey(-int64(id) - 1) }
+
+// echoRows renders one pending prompt into the pager's row shape, memoized per
+// (id, width) — buildIndex runs on every frame and an echo can sit on screen
+// for the length of a tool call, so re-wrapping its prose 120 times a second
+// would be pure waste.
+//
+// The rows carry NO ref: an echo holds no node, so it cannot be a selection
+// endpoint (the copy path would have to learn what an unplaced prompt is) and
+// ^N steps over it, exactly as it steps over a gap.
+func (t *transcript) echoRows(p aria.Pending) []transcriptRow {
+	if t.echoCache == nil || t.echoW != t.w {
+		t.echoCache, t.echoW = map[uint64][]transcriptRow{}, t.w
+	}
+	if rows, ok := t.echoCache[p.ID]; ok {
+		return rows
+	}
+	rows := []transcriptRow{{text: term.Dim(pendingMarker)}}
+	for _, l := range pendingBody(p, t.w-2) {
+		rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(l, t.w))})
+	}
+	t.echoCache[p.ID] = rows
+	return rows
+}
+
+// dropStaleEchoRows releases the rows of echoes that have resolved. The map
+// holds at most a handful of entries and is usually empty, so this is a length
+// check on the steady path.
+func (t *transcript) dropStaleEchoRows() {
+	if len(t.echoCache) == 0 {
+		return
+	}
+	live := make(map[uint64]bool, len(t.echoCache))
+	t.client.ForEachPending(func(p aria.Pending) bool { live[p.ID] = true; return true })
+	for id := range t.echoCache {
+		if !live[id] {
+			delete(t.echoCache, id)
+		}
+	}
 }
 
 // transRule lives in transcript.go, memoized per width there.

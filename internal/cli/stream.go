@@ -107,6 +107,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	lt.setRenderLock(&mu)
 	running := true  // a turn is in flight until turn.done; gates Ctrl-C
 	sendCursor := -1 // cursor from Qua; stop only once committed past it and idle
+	// pendingID is this session's own local echo — the submitted prompt, drawn
+	// with no coordinate until the stream gives it one. Held so the error path
+	// can take it down: an echo for a prompt that will never be classified is
+	// the same lie as no echo for one that will.
+	var pendingID uint64
 
 	// THE DISCRIMINATOR. ownTurn is closed the instant a frame carries the
 	// inquiry we just sent — proof that OUR prompt opened the turn about to
@@ -161,8 +166,10 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			lt.finishTurn(d.Reason)
 			if isErr {
 				// No turn will open for this prompt, so stop waiting on an
-				// inquiry that is never coming.
+				// inquiry that is never coming — and take down the echo, which
+				// is waiting on the same thing.
 				noOnce.Do(func() { close(noTurn) })
+				lt.dropPending(pendingID)
 				if strings.Contains(d.Reason, "no credential") || strings.Contains(d.Reason, "resolve token") {
 					fmt.Fprint(os.Stderr, "\n"+providerSetupHint())
 				} else {
@@ -283,6 +290,14 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	mu.Lock()
 	sendCursor = cursor
 	lt.status.beginTurn()
+	// SUBMITTED. Qua has returned, so the daemon has the prompt in its inbox —
+	// and that is the whole of what anyone knows about it: whether it opens a
+	// turn or joins one is the DRAIN's decision, taken later. Echo it now, at
+	// the bottom, marked "queued", and let the ack resolve it (aria.Client
+	// .ackPending). Without this a steer is accepted, durable in the inbox, and
+	// on NO SCREEN until the round boundary — which is as long as the running
+	// tool takes.
+	pendingID = lt.notePending(prompt)
 	mu.Unlock()
 	// Joining an already-running turn: the inline renderer can't cleanly paint a
 	// turn already in progress (partial state, mid-stream). Drop into the

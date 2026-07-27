@@ -3,6 +3,7 @@ package aria
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/internal/livedoc"
 )
@@ -262,6 +263,99 @@ func (c *Client) OpenAnimating() bool {
 	return c.store.OpenAnimating()
 }
 
+// ------------------------------------------------------------- pending -----
+
+// Submit records a prompt this client has just handed to the daemon: accepted,
+// in the inbox, with NO coordinate yet. It is the SUBMITTED state of drafted ->
+// submitted -> committed -> acked, and it is a local echo — nothing is sent,
+// nothing is durable (see Pending).
+//
+// The client deliberately does not guess what the prompt will become. It
+// resolves when the ack arrives, in Apply, whichever way the drain classified
+// it.
+func (c *Client) Submit(text string) uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.store.AddPending(text, time.Now(), c.lastCommittedLT)
+}
+
+// Pending returns the submitted-but-unacked prompts, oldest first.
+func (c *Client) Pending() []Pending {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.store.Pending()
+}
+
+// PendingLen is how many prompts are awaiting classification.
+func (c *Client) PendingLen() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.store.PendingLen()
+}
+
+// ForEachPending walks them under the lock without copying — the renderer's
+// read path, which runs per frame and must not allocate when there are none.
+func (c *Client) ForEachPending(fn func(Pending) bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.store.ForEachPending(fn)
+}
+
+// DropPending forgets one echo by id — for a caller that learns the prompt is
+// never coming (the agent reported an error instead of opening a turn).
+func (c *Client) DropPending(id uint64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.store.DropPending(id)
+}
+
+// ackPending resolves the echoes this fold delivered. Caller holds the lock,
+// and it runs INSIDE Apply, before OnClosed/OnLive fire — so the frame that
+// first draws the prompt at its coordinate is the same frame that stops
+// drawing the echo. One repaint, no flicker, and no window in which the text
+// is on screen twice.
+//
+// THE ACK IS INFERRED FROM THE STREAM, and that is a decision, not an
+// oversight (docs/range-store.md, "Pending"). The server has nothing to add:
+// the classification IS the coordinate, and the coordinate arrives here. A
+// dedicated "your prompt became a steer" broadcast could not be sent any
+// earlier than the drain, which is the same instant this sees the steering
+// node; and figaro.queued — which the pager's Q panel polls — goes empty the
+// moment the drain lifts the prompt, i.e. BEFORE the node it becomes is
+// composed, so a poll-driven echo would blink out and back in.
+//
+// Costs nothing when nothing is pending, which is the steady state.
+func (c *Client) ackPending(finalized []Message) {
+	if c.store.PendingLen() == 0 {
+		return
+	}
+	for _, m := range finalized {
+		if m.Inquiry != "" {
+			c.store.ResolvePending(m.Inquiry, m.Turn)
+		}
+		for _, n := range m.Nodes {
+			if n.Type == livedoc.NodeSteering {
+				c.store.ResolvePending(n.Markdown, m.Turn)
+			}
+		}
+	}
+	// The OPEN turn: its question is held in c.inquiry until a slice carries it
+	// away, and its steers are in the staging buffer until Live.From releases
+	// them. Both are the ack for a prompt whose coordinate exists but whose
+	// message has not closed — which is the whole point of an echo that has to
+	// resolve mid-turn.
+	if t := c.store.OpenTurn(); t != 0 {
+		if q := c.inquiry[t]; q != "" {
+			c.store.ResolvePending(q, t)
+		}
+		for _, n := range c.store.open.nodes {
+			if n.Type == livedoc.NodeSteering {
+				c.store.ResolvePending(n.Markdown, t)
+			}
+		}
+	}
+}
+
 // Apply folds one page.
 // Apply folds a Page into the local view.
 //
@@ -406,6 +500,7 @@ func (c *Client) Apply(p Page) {
 		c.store.Insert(finalized...)
 		c.closedRev++
 	}
+	c.ackPending(finalized)
 	c.trimClosed()
 
 	haveLive := c.store.OpenTurn() != 0
