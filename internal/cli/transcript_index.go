@@ -31,7 +31,14 @@ type lineEntry struct {
 	sep   bool // preceded by the ""/rule separator pair
 	open  bool // the live/held-open message, re-rendered every frame
 	rows  []transcriptRow
+	// gap is the hole this entry stands for, when it stands for one. A gap
+	// entry has NO rows: it renders as EXACTLY ONE row, synthesized per frame
+	// because its text depends on the width. See transcript.gapRow.
+	gap *aria.Gap
 }
+
+// isGap reports whether the entry is a hole rather than a message.
+func (e *lineEntry) isGap() bool { return e.gap != nil }
 
 // sepRows is the height of the separator between two messages: a blank, then
 // the RULE — and the next message's voice header directly beneath it, with no
@@ -72,7 +79,18 @@ func (e *lineEntry) sepHeight() int {
 }
 
 // height is the number of lines the entry occupies, separator included.
-func (e *lineEntry) height() int { return e.sepHeight() + len(e.rows) }
+//
+// A GAP IS EXACTLY ONE ROW, whatever it hides. Not a proportional placeholder:
+// row height is only knowable by rendering, so a hole of twelve turns might be
+// forty rows or four thousand, and a placeholder sized from the turn count
+// would be a number we invented. One sentinel row is the honest
+// representation (docs/range-store.md, "Gaps and rendering").
+func (e *lineEntry) height() int {
+	if e.isGap() {
+		return e.sepHeight() + 1
+	}
+	return e.sepHeight() + len(e.rows)
+}
 
 // lineIndex is the per-frame index. entries and scratch ping-pong so a rebuild
 // can compare the new shape against the old one without allocating.
@@ -116,28 +134,44 @@ func (t *transcript) buildIndex() {
 		t.cacheW = t.w
 	}
 	entries, total := t.index.scratch[:0], 0
-	add := func(m aria.Message, rows []transcriptRow, open bool) {
-		sep := total > 0 // rule separator BETWEEN messages only
-		entries = append(entries, lineEntry{
-			turn: m.Turn, key: keyOf(m), start: total, sep: sep, open: open, rows: rows,
-		})
-		if sep {
-			total += sepRows
+	// ONE AUTHORITY ON HOW TALL AN ENTRY IS: lineEntry.height. Line space is
+	// advanced by asking the entry, not by re-deriving it here — the two
+	// disagreeing is how a gap could be one row in the index and several on
+	// screen, which no frame golden would catch.
+	add := func(turn int, key sliceKey, rows []transcriptRow, open bool, gap *aria.Gap) {
+		e := lineEntry{
+			turn: turn, key: key, start: total, sep: total > 0,
+			open: open, rows: rows, gap: gap,
 		}
-		total += len(rows)
+		entries = append(entries, e)
+		total += e.height()
 	}
-	// forEachMessage walks the pages in place: materializing the merged
-	// message slice was 2 KB of garbage per frame.
-	t.forEachMessage(func(m aria.Message) {
+	// GAP-AWARE, and the only consumer that is. The pager draws a hole rather
+	// than closing over it, so it walks the window as SEGMENTS: runs, and the
+	// holes between them. Everything else in the pager stays gap-blind (see
+	// forEachMessage) and is simply told less.
+	//
+	// Neither callback allocates: rows come out of the row cache, and the gap
+	// entry carries the hole itself rather than a rendered row.
+	t.client.ForEachSegment(t.from, windowEnd, func(m aria.Message) bool {
 		rows, ok := t.rowCache[keyOf(m)]
 		if !ok {
 			rows = t.renderMsgBase(m)
 			t.rowCache[keyOf(m)] = rows
 		}
-		add(m, rows.rows, false)
+		add(m.Turn, keyOf(m), rows.rows, false, nil)
+		return true
+	}, func(g aria.Gap) bool {
+		// The gap's key is its own first missing anchor, packed the way a slice
+		// key is. It cannot collide with a held message's key (that anchor is
+		// precisely what we do NOT hold), so the viewport anchor and the resize
+		// restore keep working across a hole.
+		hole := g
+		add(0, gapKey(g), nil, false, &hole)
+		return true
 	})
 	if open := t.openMessage(); open != nil {
-		add(*open, t.renderMsgBase(*open).rows, true)
+		add(open.Turn, keyOf(*open), t.renderMsgBase(*open).rows, true, nil)
 	}
 	// The page set moved => the index describes a different window, full stop.
 	// That is the one authority (windowRev); the shape diff below only has to
@@ -174,16 +208,21 @@ func (t *transcript) rebuildLineLT() {
 	t.lineKey = t.lineKey[:t.index.total]
 	for k := range t.index.entries {
 		e := &t.index.entries[k]
-		i := e.start
-		for range e.sepHeight() {
+		// Driven by height(), the one authority — separator, rows and the gap
+		// sentinel alike. Counting e.rows here instead is how a gap entry ends
+		// up with a lineKey hole that only resize anchoring can see.
+		for i := e.start; i < e.start+e.height(); i++ {
 			t.lineKey[i] = e.key
-			i++
-		}
-		for range e.rows {
-			t.lineKey[i] = e.key
-			i++
 		}
 	}
+}
+
+// gapKey is the sliceKey a hole is addressed by: its first MISSING anchor,
+// packed exactly as a message's (Turn, From) is. It cannot collide with a held
+// message — that anchor is the one we do not hold — and it moves when the hole
+// shrinks, which is what makes the viewport anchor follow a fill.
+func gapKey(g aria.Gap) sliceKey {
+	return sliceKey(int64(g.From.Turn)<<sliceKeyFromBits | int64(g.From.Node&(1<<sliceKeyFromBits-1)))
 }
 
 // transRule lives in transcript.go, memoized per width there.
@@ -250,6 +289,15 @@ func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSp
 		}
 	}
 	rel -= e.sepHeight()
+	if e.isGap() {
+		// THE SEPARATOR PAIR ABOVE A GAP IS DELIBERATE, and it is the same pair
+		// as anywhere else: the rule is the OVERLINE of what sits beneath it
+		// (see sepRows). The sentinel row plays the part of the voice header for
+		// the block that is missing, so the seam above a hole looks exactly like
+		// the seam above a message — which is the point, because a hole IS where
+		// messages would be.
+		return t.gapRow(e.gap)
+	}
 	r := e.rows[rel]
 	line := r.text
 	if r.ref.valid() {

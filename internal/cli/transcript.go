@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mattn/go-runewidth"
+
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
@@ -173,6 +175,11 @@ type transcriptPageRequest struct {
 	// inquiry drawn above them.
 	beforeNode int
 	limit      int // messages to fetch; 0 means transcriptPageSize
+	// fill is a HOLE INSIDE the window rather than history below its floor.
+	// They are different verbs: a floor read EXTENDS the window, a fill CLOSES
+	// a hole and is served by Client.Ensure, which keeps reading until the hole
+	// is gone or the store says it cannot shrink it.
+	fill *aria.Gap
 }
 
 func newTranscript(out io.Writer, w, h int, view ldrender.NodeView, client *aria.Client, figaroID string, startedAt time.Time) *transcript {
@@ -512,6 +519,13 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 			continue
 		}
 		break
+	}
+	// A HOLE INSIDE THE WINDOW comes first: the reader is looking at it, or is
+	// about to. Closing it is Ensure's job, not a floor read, so the request
+	// carries the hole itself.
+	if gap := t.gapNear(); gap != nil {
+		hole := *gap
+		return transcriptPageRequest{fill: &hole}, true
 	}
 	if !t.wantOlder() {
 		return transcriptPageRequest{}, false
@@ -1333,12 +1347,22 @@ func (t *transcript) renderFrame() {
 // footerRows is the transcript's two-row footer, shared with the incipit
 // bookend so both modes speak one visual language:
 //
-//	─────────…──────────────── aria <id> · 48–97/97 live ───
+//	─────────…──────────────── aria <id> · 48–97/97+ live ───
 //	<mantra> · thinking ⠧ · ctx … · cost … · <time> · ? help · ! status
 //
 // The rule row carries the identity + scroll position right-aligned; the
 // status row is plain left-aligned text (fig status at a glance). In search,
 // the status row becomes the query prompt.
+//
+// THE TOTAL IS ROWS WE HOLD, NOT ROWS THAT EXIST, and it never was anything
+// else — the pager cannot know how tall an unrendered turn is. Once a hole can
+// render, a bare "97" would read as the size of the conversation, so an
+// incomplete buffer marks the total with a trailing `+`: "at least this many,
+// and there is more we do not hold". MARKED RATHER THAN DROPPED, deliberately:
+// the position within what we hold is the number a reader actually navigates
+// by, and "48–97" with no total is less useful without being more honest. The
+// mark is on whenever the window contains a gap OR history exists below its
+// floor.
 func (t *transcript) footerRows(total, body int) (rule, status string) {
 	pos := ""
 	if total > body {
@@ -1346,7 +1370,11 @@ func (t *transcript) footerRows(total, body int) (rule, status string) {
 		if end > total {
 			end = total
 		}
-		pos = fmt.Sprintf("%d–%d/%d", t.offset+1, end, total)
+		mark := ""
+		if !t.whole() {
+			mark = "+"
+		}
+		pos = fmt.Sprintf("%d–%d/%d%s", t.offset+1, end, total, mark)
 	}
 	// The live marker is the ONLY thing on screen that says which mode you are
 	// in, so it does not ride on the range: a transcript that fits the pane is
@@ -2097,6 +2125,73 @@ func dimTransRule(w int) string {
 		w = 3
 	}
 	return "\x1b[2m" + strings.Repeat("─", w) + "\x1b[0m"
+}
+
+// gapRow is a hole, drawn as EXACTLY ONE ROW:
+//
+//	──────── 13 turns not loaded ────────
+//
+// Not a proportional placeholder. Paging libraries can size a placeholder
+// because item height is known; here a row count is only knowable by
+// RENDERING, and a hole of twelve turns might be forty rows or four thousand.
+// A sized placeholder would be a number we invented, which is exactly the lie
+// this design exists to prevent — so the row says what it knows (how many
+// TURNS the hole touches, which the anchors do state) and nothing else.
+func (t *transcript) gapRow(g *aria.Gap) string {
+	label := " the rest of this turn is not loaded "
+	switch n := g.Turns(); {
+	case n == 1:
+		label = " 1 turn not loaded "
+	case n > 1:
+		label = fmt.Sprintf(" %d turns not loaded ", n)
+	}
+	w := t.w
+	if w < 3 {
+		w = 3
+	}
+	if lw := runewidth.StringWidth(label); lw+4 > w {
+		return "\x1b[2m" + clipToWidth(label, w) + "\x1b[0m"
+	}
+	lead := (w - runewidth.StringWidth(label)) / 2
+	return "\x1b[2m" + strings.Repeat("─", lead) + label +
+		strings.Repeat("─", w-lead-runewidth.StringWidth(label)) + "\x1b[0m"
+}
+
+// gapNear is the hole the viewport is close enough to that we should fill it
+// before it has to paint — THE PREFETCH DISTANCE, the same
+// transcriptPrefetchScreens the window floor uses. A sentinel that is about to
+// come on screen is a fetch we are already late for.
+//
+// Binding a gap row IS the fetch trigger; this is what "binding" means for a
+// row that carries no node: the viewport binds it by coming within a couple of
+// screens of it. That is why the sentinel usually never paints.
+func (t *transcript) gapNear() *aria.Gap {
+	t.buildIndex() // the window may have moved since the last frame
+	body, _ := t.layout(len(t.footLines()))
+	lo := t.offset - transcriptPrefetchScreens*t.h
+	hi := t.offset + body + transcriptPrefetchScreens*t.h
+	for k := range t.index.entries {
+		e := &t.index.entries[k]
+		if !e.isGap() {
+			continue
+		}
+		if e.start >= lo && e.start <= hi {
+			return e.gap
+		}
+	}
+	return nil
+}
+
+// holds reports whether the window is missing anything: a hole inside it, or
+// history below its floor. It is what stops the footer's total from claiming
+// to be the size of the conversation — see footerRows.
+func (t *transcript) whole() bool {
+	for k := range t.index.entries {
+		if t.index.entries[k].isGap() {
+			return false
+		}
+	}
+	return t.atAriaFloor()
 }
 
 // dropTurnRows invalidates every slice of one turn. Expansion is addressed by

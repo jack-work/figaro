@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"io"
 	"sort"
 	"strings"
@@ -735,6 +736,27 @@ func (t *livelogTurn) transcriptPageCursor() (transcriptPageRequest, bool) {
 }
 func (t *livelogTurn) transcriptApplyPage(req transcriptPageRequest, page historyPage) {
 	t.tr.applyPage(req, page)
+}
+
+// setHistoryFetcher installs the reader Store.Ensure closes holes with. It is
+// wired when the pager opens rather than at construction, for the same reason
+// setQueuedFetch is: the input loop owns the RPC client.
+func (t *livelogTurn) setHistoryFetcher(f aria.Fetcher) { t.client.SetFetcher(f) }
+
+// fillGap closes a hole INSIDE the window. It runs on the prefetch worker, off
+// the render lock: Client.Ensure takes the client's mutex only to ask what is
+// missing and to fold what came back, so the pager keeps painting (the gap row
+// included) while the read is outstanding.
+func (t *livelogTurn) fillGap(ctx context.Context, g aria.Gap) error {
+	return t.client.Ensure(ctx, g.From, g.To)
+}
+
+// transcriptFilled re-derives the window after a fill and repaints. The hole
+// is gone from the store, so the line index simply stops emitting a sentinel
+// for it.
+func (t *livelogTurn) transcriptFilled() {
+	t.tr.invalidateWindow()
+	t.tr.render()
 }
 func (t *livelogTurn) transcriptSearchingHistory() bool { return t.tr.searchingHistory() }
 func (t *livelogTurn) transcriptHistorySearch() (string, bool) {

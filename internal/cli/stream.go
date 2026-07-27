@@ -428,6 +428,7 @@ func (in *interactiveInput) enterTranscript() {
 		in.mu.Lock()
 		in.lt.enterTranscript()
 		in.lt.setQueuedFetch(in.refreshQueued)
+		in.lt.setHistoryFetcher(in.historyFetcher())
 		in.mu.Unlock()
 		return
 	}
@@ -437,6 +438,7 @@ func (in *interactiveInput) enterTranscript() {
 	in.mu.Lock()
 	in.lt.enterTranscript()
 	in.lt.setQueuedFetch(in.refreshQueued)
+	in.lt.setHistoryFetcher(in.historyFetcher())
 	if rerr == nil {
 		in.lt.apply(r)
 		// The wire's own answer to "is there anything before this page", which
@@ -492,7 +494,16 @@ func (in *interactiveInput) prefetchTranscriptPages(req transcriptPageRequest, d
 	defer close(done)
 	for {
 		rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-		messages, err := in.readTranscriptPage(rctx, req)
+		var err error
+		if req.fill != nil {
+			// A HOLE, not history below the floor: Ensure keeps reading until
+			// the hole is closed, and merges into the store itself.
+			err = in.lt.fillGap(rctx, *req.fill)
+		}
+		var messages historyPage
+		if req.fill == nil {
+			messages, err = in.readTranscriptPage(rctx, req)
+		}
 		rcancel()
 
 		in.mu.Lock()
@@ -502,7 +513,11 @@ func (in *interactiveInput) prefetchTranscriptPages(req transcriptPageRequest, d
 			in.mu.Unlock()
 			return
 		}
-		in.lt.transcriptApplyPage(req, messages)
+		if req.fill != nil {
+			in.lt.transcriptFilled()
+		} else {
+			in.lt.transcriptApplyPage(req, messages)
+		}
 		next, need := in.lt.transcriptPageCursor()
 		if !need || in.lt.transcriptSearchingHistory() {
 			in.pageInFlight, in.pageDone = false, nil
@@ -531,8 +546,19 @@ func (in *interactiveInput) pageTranscriptSearch(ctx context.Context, cancel con
 		}
 		in.mu.Unlock()
 
+		// A hole inside the window is closed by Ensure; a page below the floor
+		// is a plain backward read. The search walks both, because the reader
+		// is going to be shown whatever it lands on.
 		rctx, rcancel := context.WithTimeout(ctx, 5*time.Second)
-		messages, err := in.readTranscriptPage(rctx, req)
+		var (
+			messages historyPage
+			err      error
+		)
+		if req.fill != nil {
+			err = in.lt.fillGap(rctx, *req.fill)
+		} else {
+			messages, err = in.readTranscriptPage(rctx, req)
+		}
 		rcancel()
 
 		in.mu.Lock()
@@ -548,7 +574,11 @@ func (in *interactiveInput) pageTranscriptSearch(ctx context.Context, cancel con
 			in.mu.Unlock()
 			return
 		}
-		in.lt.transcriptApplyPage(req, messages)
+		if req.fill != nil {
+			in.lt.transcriptFilled()
+		} else {
+			in.lt.transcriptApplyPage(req, messages)
+		}
 		if _, searching := in.lt.transcriptHistorySearch(); !searching {
 			in.finishSearchWorkerLocked(gen)
 			in.mu.Unlock()
@@ -673,6 +703,21 @@ func wireBudget(messages int) int {
 		return 0 // let the server apply its configured default
 	}
 	return messages * wireBytesPerMessage
+}
+
+// historyFetcher is the reader Store.Ensure closes holes with: the client's
+// own ReadBefore, folded through the same committedPage the scroll-up path
+// uses. One wire call, one fold, both directions of the design agreeing about
+// what a page IS.
+func (in *interactiveInput) historyFetcher() aria.Fetcher {
+	return func(ctx context.Context, before aria.Anchor, limit int) (aria.Fetched, error) {
+		r, err := in.fcli.ReadBefore(ctx, before, wireBudget(limit))
+		if err != nil {
+			return aria.Fetched{}, err
+		}
+		p := committedPage(r)
+		return aria.Fetched{Msgs: p.msgs, Extents: p.extents, More: p.more}, nil
+	}
 }
 
 func (in *interactiveInput) readTranscriptPage(ctx context.Context, req transcriptPageRequest) (historyPage, error) {

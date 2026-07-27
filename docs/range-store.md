@@ -306,6 +306,35 @@ Order, and why:
      construction, so `pageNewer`, the descriptor replay chain and the sparse
      forward probe had nothing left to do.
 3. **Gap rendering + Ensure-on-bind**, prefetch distance.
+
+   **Landed as 2b.** The pager's line index is the ONE gap-aware consumer
+   (`Client.ForEachSegment`, the allocation-free mirror of `Query`); everything
+   else in the pager stays gap-blind and is simply told less.
+
+   - **A gap is exactly one row**, whatever it hides — `lineEntry.height` is
+     the single authority on how tall an entry is, and line space is advanced
+     by asking it. (Two authorities is how a hole could be one row in the index
+     and twenty-one on screen; the canary for the one-row rule only bit after
+     they were merged.)
+   - **The sentinel names turns, not rows.** `Gap.Turns` counts the turns the
+     hole swallows WHOLE — an endpoint whose head or tail we still hold is not
+     "not loaded" — and zero is a real answer ("the rest of this turn is not
+     loaded").
+   - **Binding it is the fetch trigger**, at the same `transcriptPrefetchScreens`
+     distance the window floor uses, so the sentinel usually never paints. The
+     trigger is the VIEWPORT binding the row rather than the node selection,
+     because a hole carries no node: `^N`/`^P` step over it, and making it a
+     selection endpoint would have to teach the copy path what a hole is.
+   - **`Ensure` is real**: `Store.Ensure` for a single-threaded owner,
+     `Client.Ensure` for the concurrent one — the same loop with the fetch
+     OUTSIDE the lock, so a five-second read never freezes a frame. Both share
+     `firstGap` and `fillAt`. It reads at the anchor just PAST the hole so the
+     fill lands against what the reader already holds, and it reports
+     `ErrStalled` rather than spinning against a server that will not shrink it.
+   - **The footer's total is rows WE HOLD**, marked with a trailing `+` when
+     anything is missing (a hole inside the window, or history below its
+     floor). Marked rather than dropped: the position within what we hold is
+     the number a reader navigates by.
 4. **Pending**, and the submitted→committed→acked lifecycle.
 
 ## Open questions — decide before coding the affected phase
