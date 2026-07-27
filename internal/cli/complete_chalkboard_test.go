@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -47,9 +48,28 @@ func TestCompleteChalkboardKeys_IncludesAllKnownAndExpandsEnv(t *testing.T) {
 	}
 }
 
+// isolateDaemonEnv points every daemon-facing lookup at empty temp dirs,
+// so a test that says "no daemon" actually has none.
+//
+// The environment is not a given: a developer running `go test ./...` from
+// a normal shell inherits FIGARO_RUNTIME_DIR (or its default), which is
+// where their own angelus is listening — and FIGARO_ARIA, which names a
+// live aria. A test whose premise is "the daemon is down" must establish
+// that premise itself rather than hope for it.
+func isolateDaemonEnv(t *testing.T) {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("FIGARO_RUNTIME_DIR", filepath.Join(root, "run")) // no socket lives here
+	t.Setenv("FIGARO_STATE_DIR", filepath.Join(root, "state"))
+	t.Setenv("FIGARO_ARIA", "") // no ambient identity to resolve
+}
+
 func TestSoftFetchLiveKeysReturnsNilWhenDaemonDown(t *testing.T) {
-	// No daemon is started in the test environment; the call must
-	// fail soft and return nil within the timeout.
+	// The premise, established rather than assumed: no daemon is
+	// reachable, so the call must fail soft and return nil within the
+	// timeout. Without this the test found the developer's own angelus
+	// and returned their live chalkboard keys.
+	isolateDaemonEnv(t)
 	if got := softFetchLiveKeys(); got != nil {
 		t.Errorf("expected nil when daemon unavailable, got %v", got)
 	}
