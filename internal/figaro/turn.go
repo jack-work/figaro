@@ -237,9 +237,33 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 	if err != nil {
 		return store.Entry[message.Message]{}, err
 	}
+	// Kick expedites the store's background flush. It is a hint, not a
+	// barrier — a non-blocking channel send, and disk follows with bounded
+	// lag whether or not it is called — so its position buys a watching
+	// client no durability it would not otherwise have. It stays ahead of the
+	// broadcast because it costs ~50ns to have the flush already in flight
+	// when someone is told, and because the steering branch below RETURNS:
+	// anything moved past it is silently skipped for every steer.
 	if a.backend != nil {
 		a.backend.Kick()
 	}
+	// refreshMetrics stays here, AHEAD of OpenInquiry, deliberately. Every
+	// aria-server broadcast is stamped with sessionMetrics() by the
+	// subscription in NewAgent, so the frame that first carries the user's
+	// question is also the frame that carries the footer's context count and
+	// the mantra this very prompt just seeded. Refreshing first is what makes
+	// that frame describe a world which already contains the question.
+	//
+	// It is not a latency cost worth reclaiming. Measured
+	// (BenchmarkPromptBroadcastGap, Ryzen 7 5800X): the steady-state
+	// incremental refresh is 0.6-0.8µs and FLAT from 100 to 5,000 messages,
+	// because it folds exactly the row just appended. The O(n) fallback
+	// (refreshMetricsFrom — 282µs at 5k messages) is unreachable from here:
+	// it is guarded on tail.LT < metricsLT, i.e. the log rewound under the
+	// agent, and a successful appendMsg has just put the tail strictly ahead.
+	// Broadcasting first would save ~0.6µs and cost a footer with no mantra
+	// and no ctx for as long as the model takes to send its first frame —
+	// ~1.4s in a pty A/B. Pinned by TestInquiryFrameCarriesFreshMetrics.
 	a.refreshMetrics()
 
 	if prompt.text != "" {
