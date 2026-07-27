@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,7 +22,18 @@ import (
 //
 // On `--id` with no value, or an invalid id, returns an error. An
 // absent flag is not an error: id is "" and rest == args.
+//
+// Nothing before `--` is discarded: a token that is neither `--id` nor
+// one of the caller's own flags is an error. Swallowing argv is how
+// `figaro plain --nope -- hi` came to run with the flag on the floor.
 func extractIDFlag(args []string) (id string, rest []string, err error) {
+	return extractIDFlagAllowing(args, nil)
+}
+
+// extractIDFlagAllowing is extractIDFlag for verbs that parse a few
+// flags of their own out of rest (x's -n/-y): those are passed through
+// untouched, everything else before `--` is still an error.
+func extractIDFlagAllowing(args []string, passthrough []string) (id string, rest []string, err error) {
 	rest = make([]string, 0, len(args))
 	i := 0
 	for i < len(args) {
@@ -57,9 +69,16 @@ func extractIDFlag(args []string) (id string, rest []string, err error) {
 			}
 			i++
 			continue
+		case slices.Contains(passthrough, a):
+			rest = append(rest, a)
+			i++
+			continue
 		}
-		rest = append(rest, a)
-		i++
+		// Anything else before `--` is unconsumed argv. Never drop it.
+		if strings.HasPrefix(a, "-") {
+			return "", nil, fmt.Errorf("unknown flag %q (flags go before `--`; everything after `--` is the prompt)", a)
+		}
+		return "", nil, fmt.Errorf("the prompt must follow `--` (got bare argument %q)", a)
 	}
 	return id, rest, nil
 }
