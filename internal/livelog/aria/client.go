@@ -1,6 +1,7 @@
 package aria
 
 import (
+	"context"
 	"sync"
 
 	"github.com/jack-work/figaro/internal/livedoc"
@@ -110,6 +111,66 @@ func (c *Client) ForEachIn(from, to Anchor, fn func(Message) bool) {
 	c.store.ForEachIn(from, to, fn)
 }
 
+// SetFetcher installs the reader Ensure fills holes with (see Store.Ensure).
+// Wired by whoever owns the RPC client, once, before the pager can ask.
+func (c *Client) SetFetcher(f Fetcher) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.store.SetFetcher(f)
+}
+
+// Ensure fills every hole in [from, to] so that Query over the same interval
+// then returns exactly one Segment with a nil Gap.
+//
+// IT IS THE SAME LOOP AS Store.Ensure WITH THE FETCH OUTSIDE THE LOCK. That is
+// the whole reason it exists here: a fill is a five-second-timeout read, and
+// holding the client's mutex across it would freeze every frame the renderer
+// wanted to draw while it ran. The lock is taken to ask what is missing and
+// taken again to fold what came back; in between, the pager keeps painting the
+// gap row.
+func (c *Client) Ensure(ctx context.Context, from, to Anchor) error {
+	for range ensureRounds {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		c.mu.Lock()
+		gap, ok := c.store.firstGap(from, to)
+		fetch, before := c.store.Fetcher(), c.store.Count()
+		c.mu.Unlock()
+		if !ok {
+			return nil
+		}
+		if fetch == nil {
+			return ErrNoFetcher
+		}
+		got, err := fetch(ctx, fillAt(gap), fillLimit)
+		if err != nil {
+			return err
+		}
+		c.mu.Lock()
+		c.store.Absorbed(got)
+		grew := c.store.Count() != before
+		if grew {
+			c.closedRev++
+		}
+		c.mu.Unlock()
+		if !grew {
+			return ErrStalled
+		}
+	}
+	return ErrStalled
+}
+
+// ForEachSegment walks [from, to] as runs and holes, under the client's lock
+// (see Store.ForEachSegment). This is the renderer's GAP-AWARE read path: the
+// pager draws one sentinel row per hole, so it is the one consumer that must
+// see them.
+func (c *Client) ForEachSegment(from, to Anchor, msg func(Message) bool, gap func(Gap) bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.store.ForEachSegment(from, to, msg, gap)
+}
+
 // Count is how many closed messages the store retains.
 func (c *Client) Count() int {
 	c.mu.Lock()
@@ -129,6 +190,15 @@ func (c *Client) Skip(a Anchor, n int) (Anchor, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.store.Skip(a, n)
+}
+
+// Before is the anchor n messages before a, and how far it got (see
+// Store.Before) — a windowed reader lowering its floor over history the store
+// already holds.
+func (c *Client) Before(a Anchor, n int) (Anchor, int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.store.Before(a, n)
 }
 
 // EvictBefore forgets everything below a. Eviction and never-fetched are the

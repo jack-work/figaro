@@ -42,7 +42,7 @@ func newTallTranscript(t *testing.T, budget int) *transcript {
 	t.Cleanup(func() { transcriptWindowRows = prev })
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(readBefore(tallHistory(120, 12), recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(tallHistory(120, 12), recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 20), 60, 20, ldrender.NodeText{}, client, "aria", time.Time{})
 	tr.enter()
 	return tr
@@ -92,7 +92,7 @@ func TestTranscriptRowBudgetBoundsTheWindow(t *testing.T) {
 
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(readBefore(transcriptHistory(120), recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(transcriptHistory(120), recentCursor, transcriptPageSize))
 	light := newTranscript(ldrender.NewFakeTerminal(60, 20), 60, 20, ldrender.NodeText{}, client, "aria", time.Time{})
 	transcriptWindowRows = 1200 // the shipped budget; restored by the Cleanup above
 	light.enter()
@@ -114,7 +114,7 @@ func TestTranscriptColdStartRendersOnePage(t *testing.T) {
 	t.Cleanup(func() { transcriptWindowRows = prev })
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(readBefore(tallHistory(120, 40), recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(tallHistory(120, 40), recentCursor, transcriptPageSize))
 	view := &countingNodeView{}
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 20), 60, 20, view, client, "aria", time.Time{})
 	tr.enter()

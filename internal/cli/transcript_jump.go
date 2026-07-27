@@ -37,14 +37,13 @@ import (
 //
 // WHAT HAPPENS WHEN THE TARGET IS NOT LOADED
 //
-// There is no Store.Ensure yet (docs/range-store.md; it is being built in
-// parallel). Today the pager pages through ReadBefore via checkOlder /
-// checkNewer, driven by prefetchTranscriptPages, which already CHAINS: it
-// re-asks pageCursor after every landing and keeps fetching while the pager
-// says it wants more. A jump therefore does not need a mechanism of its own —
-// it only has to keep saying "still want one", which is what jumpAdvance does.
-// When Ensure lands, jumpAdvance is the single function that changes: resolve,
-// or ask for one more page. Nothing else in this file knows how pages arrive.
+// The pager grows its window backward — over history the store already holds
+// for free, and below that through ReadBefore — driven by
+// prefetchTranscriptPages, which CHAINS: it re-asks pageCursor after every
+// landing and keeps fetching while the pager says it wants more. A jump
+// therefore does not need a mechanism of its own — it only has to keep saying
+// "still want one", which is what jumpAdvance does by leaving t.jump set.
+// Nothing else in this file knows how pages arrive.
 //
 // The walk is BOUNDED, and reports rather than hanging or landing somewhere
 // else and pretending. See jumpBudget.
@@ -132,7 +131,6 @@ type jumpReach uint8
 const (
 	jumpHere   jumpReach = iota // it is loaded: land on it
 	jumpOlder                   // page backwards toward it
-	jumpNewer                   // page forwards toward it
 	jumpAbsent                  // it cannot exist; say so
 )
 
@@ -140,17 +138,18 @@ const (
 // budget, and enough of the origin to put the reader back where they were if
 // the walk fails. It mirrors transcriptSearch, which is the same shape for the
 // same reason — a paged search and a paged jump are one traversal with two
-// stopping conditions.
+// stopping conditions. As there, only the VIEWPORT is restored: history the
+// walk paged in is in the store, and throwing the floor back up would only
+// re-fetch it.
+//
+// There is no jumpNewer. The window runs to the live tail by construction, so
+// a target newer than the newest thing in it cannot exist.
 type transcriptJump struct {
 	target  jumpTarget
 	fetches int
-	dir     transcriptPageDirection
 
-	pages       []transcriptPage
-	newer       []pageDesc
-	offset      int
-	follow      bool
-	noMoreOlder bool
+	offset int
+	follow bool
 }
 
 // ---------------------------------------------------------------------------
@@ -214,34 +213,17 @@ func (t *transcript) startJump(tg jumpTarget) {
 		return
 	}
 	t.jump = &transcriptJump{
-		target: tg, fetches: jumpBudget, dir: pageOlder,
-		pages:  append([]transcriptPage(nil), t.pages...),
-		newer:  append([]pageDesc(nil), t.newer...),
-		offset: t.offset, follow: t.follow, noMoreOlder: t.noMoreOlder,
-	}
-	if reach == jumpNewer {
-		t.jump.dir = pageNewer
+		target: tg, fetches: jumpBudget,
+		offset: t.offset, follow: t.follow,
 	}
 	t.stopFollowing()
-	t.armJump(reach)
-}
-
-// armJump asks the page cursor for one more fetch in the given direction.
-func (t *transcript) armJump(reach jumpReach) {
-	if reach == jumpNewer {
-		t.checkNewer = true
-		return
-	}
-	t.checkOlder = true
 }
 
 // jumpAdvance is the whole state machine, called after anything that can
-// change what the window holds: a page landing, an empty page, the floor
-// latching. It resolves the target, or spends one more of the budget.
-//
-// It is also the seam for the range store: when Store.Ensure exists, this is
-// the function that calls it, and nothing else in the pager has to learn how
-// pages arrive.
+// change what the window holds: a page landing, the window growing over
+// history the store already had, the floor being proven. It resolves the
+// target, or leaves the walk standing so pageCursor spends one more of the
+// budget on it.
 func (t *transcript) jumpAdvance() {
 	if t.jump == nil {
 		return
@@ -251,18 +233,9 @@ func (t *transcript) jumpAdvance() {
 	case jumpHere:
 		t.jump = nil
 		t.landJump(line, ref)
-		return
 	case jumpAbsent:
 		t.abandonJump(t.jump.target.missing())
-		return
 	}
-	if t.jump.fetches <= 0 {
-		t.abandonJump(fmt.Sprintf("%s is more than %d pages away — scroll or search for it",
-			t.jump.target, jumpBudget))
-		return
-	}
-	t.jump.fetches--
-	t.armJump(reach)
 }
 
 // jumpReachOf resolves a target against the loaded window: the absolute line
@@ -271,17 +244,17 @@ func (t *transcript) jumpAdvance() {
 func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 	entries := t.index.entries
 	if len(entries) == 0 {
-		if t.noMoreOlder {
+		if t.atAriaFloor() {
 			return 0, nodeRef{}, jumpAbsent
 		}
 		return 0, nodeRef{}, jumpOlder
 	}
 	if tg.start {
 		// The floor is only known once the store has said so. Note that it is
-		// NOT "turn 1": a forked aria continues its parent's numbering, and
-		// noMoreOlder is latched by an empty ReadBefore exactly so the lowest
-		// EXISTING turn is what we land on, whatever it is called.
-		if !t.noMoreOlder {
+		// NOT "turn 1": a forked aria continues its parent's numbering, and an
+		// empty ReadBefore proves the floor exactly so the lowest EXISTING turn
+		// is what we land on, whatever it is called.
+		if !t.atAriaFloor() {
 			return 0, nodeRef{}, jumpOlder
 		}
 		e := &entries[0]
@@ -290,14 +263,12 @@ func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 	oldest, newest := entries[0].turn, entries[len(entries)-1].turn
 	switch {
 	case tg.turn < oldest:
-		if t.noMoreOlder {
+		if t.atAriaFloor() {
 			return 0, nodeRef{}, jumpAbsent
 		}
 		return 0, nodeRef{}, jumpOlder
 	case tg.turn > newest:
-		if t.hasNewerHistory() {
-			return 0, nodeRef{}, jumpNewer
-		}
+		// The window reaches the live tail, so there is nothing newer to load.
 		return 0, nodeRef{}, jumpAbsent
 	}
 	if tg.hasNode {
@@ -308,7 +279,7 @@ func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 		// The turn is here but that node is not. It can only be below the
 		// oldest retained SLICE of it — a turn too tall for one page arrives in
 		// slices, and the head slice is the one that got trimmed.
-		if tg.turn == oldest && tg.node < int(t.oldestFrom()) && !t.noMoreOlder {
+		if tg.turn == oldest && tg.node < int(t.oldestFrom()) && !t.atAriaFloor() {
 			return 0, nodeRef{}, jumpOlder
 		}
 		return 0, nodeRef{}, jumpAbsent
@@ -376,13 +347,8 @@ func (t *transcript) abandonJump(note string) {
 	}
 	origin := t.jump
 	t.jump = nil
-	t.pages = origin.pages
-	t.invalidateWindow()
-	t.newer = origin.newer
 	t.offset = origin.offset
 	t.follow = origin.follow
-	t.noMoreOlder = origin.noMoreOlder
-	t.checkOlder, t.checkNewer = false, false
 	t.jumpNote = note
 	t.pruneCaches()
 }

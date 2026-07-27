@@ -80,17 +80,15 @@ func BenchmarkTranscriptPagedSearchMiss(b *testing.B) {
 				b.StopTimer()
 				client := aria.NewClient()
 				client.SetClosedLimit(transcriptTailLimit)
-				client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+				applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 				tr := newTranscript(io.Discard, 100, 40, &ariaView{settings: &renderSettings{}}, client, "benchmark", time.Unix(0, 0))
 				tr.enter()
 				b.StartTimer()
 				tr.find("not present anywhere")
 				for tr.searchingHistory() {
-					req, ok := tr.pageCursor()
-					if !ok {
+					if !pageOnce(tr, history) {
 						break
 					}
-					tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 				}
 			}
 		})
@@ -178,28 +176,6 @@ func BenchmarkTranscriptSelectionRehydrate(b *testing.B) {
 					b.Fatal(err)
 				}
 			}
-		})
-	}
-}
-
-func BenchmarkTranscriptDescriptorFallback(b *testing.B) {
-	for _, messages := range []int{1_000, 10_000, 50_000} {
-		b.Run(fmt.Sprintf("%d", messages), func(b *testing.B) {
-			history := transcriptHistory(messages)
-			after := messages / 2
-			probes := 0
-			b.ResetTimer()
-			for range b.N {
-				_, err := readNextPage(after, messages, transcriptPageSize, func(before, limit int) (aria.Page, error) {
-					probes++
-					return readBefore(history, before, limit), nil
-				})
-				if err != nil {
-					b.Fatal(err)
-				}
-			}
-
-			b.ReportMetric(float64(probes)/float64(b.N), "probes/op")
 		})
 	}
 }

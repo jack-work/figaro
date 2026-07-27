@@ -31,6 +31,10 @@ func jumpFixture(tb testing.TB, firstTurn, turns int) *transcript {
 		}})
 	}
 	client.Apply(aria.Page{Parts: parts})
+	// The wire has not said the aria begins here, so the pager may still walk
+	// backward — which is the interesting case for a FORK, whose first turn id
+	// is not 1 and whose floor can only be found by an empty read.
+	client.SetMoreBefore(true)
 	ft := ldrender.NewFakeTerminal(60, 20)
 	tr := newTranscript(ft, 60, 20, &ariaView{settings: &renderSettings{}},
 		client, "aria1234", time.Unix(0, 0))
@@ -147,7 +151,7 @@ func drainJump(t *testing.T, tr *transcript) {
 		if !need {
 			return
 		}
-		tr.applyPage(req, nil)
+		tr.applyPage(req, historyPage{})
 	}
 	t.Fatal("the page cursor never stopped asking")
 }
@@ -200,8 +204,8 @@ func TestJumpBudgetTerminates(t *testing.T) {
 		fetches++
 		// A store that answers with the same content forever: no progress, no
 		// floor. The budget is the only thing that can end this.
-		tr.applyPage(req, []aria.Message{{Turn: 100, Role: livedoc.RoleOutput,
-			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "again"}}}})
+		tr.applyPage(req, historyPage{more: true, msgs: []aria.Message{{Turn: 100, Role: livedoc.RoleOutput,
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "again"}}}}})
 	}
 	if tr.jump != nil {
 		t.Fatalf("the walk never gave up after %d fetches", fetches)
@@ -273,8 +277,8 @@ func TestGGStillMeansTopOfTheBuffer(t *testing.T) {
 	if tr.jump != nil || tr.jumpNote != "" {
 		t.Fatalf("gg started a jump: %v %q", tr.jump, tr.jumpNote)
 	}
-	if !tr.checkOlder {
-		t.Fatal("gg no longer arms the older-history prefetch")
+	if _, ok := tr.pageCursor(); !ok && !tr.atAriaFloor() {
+		t.Fatal("gg no longer brings the viewport inside the prefetch distance")
 	}
 }
 

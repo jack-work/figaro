@@ -43,7 +43,9 @@ func pagedPacerTurn(t *testing.T, w *countingWriter) (lt *livelogTurn, mu *sync.
 	lt.pace.after = func(_ time.Duration, fn func()) { armed = append(armed, fn) }
 	lt.setRenderLock(&lock)
 	lt.enterTranscript()
-	lt.apply(readBefore(transcriptHistory(120), recentCursor, transcriptPageSize))
+	tail := readBefore(transcriptHistory(120), recentCursor, transcriptPageSize)
+	lt.apply(tail)
+	lt.setMoreBefore(tail.More.Before) // the wire's answer: there IS older history
 
 	// settle drains any owed trailing render. Call it WITHOUT the render lock
 	// held: the trailing render takes it, exactly as the real timer goroutine
@@ -114,9 +116,10 @@ func TestPacedPageLanding_IsNeverSwallowed(t *testing.T) {
 	*now = now.Add(200 * time.Microsecond)
 	w.reset()
 	mu.Lock()
-	before, _ := lt.tr.oldestLT()
-	lt.transcriptApplyPage(req, committedMessages(readBefore(transcriptHistory(120), req.before, req.limit)))
-	after, _ := lt.tr.oldestLT()
+	before := lt.tr.from.Turn
+	lt.transcriptApplyPage(req, committedPage(readBeforeAt(transcriptHistory(120),
+		aria.Anchor{Turn: uint64(req.before), Node: uint64(req.beforeNode)}, req.limit)))
+	after := lt.tr.from.Turn
 	dirty := lt.tr.dirty
 	mu.Unlock()
 
@@ -166,7 +169,7 @@ func TestPacedPageLanding_NoFurtherInputRequired(t *testing.T) {
 	}()
 
 	mu.Lock()
-	before, _ := in.lt.tr.oldestLT()
+	before := in.lt.tr.from.Turn
 	mu.Unlock()
 
 	tc.send([]byte("gg")) // one burst, then silence
@@ -174,7 +177,7 @@ func TestPacedPageLanding_NoFurtherInputRequired(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		mu.Lock()
-		oldest, _ := in.lt.tr.oldestLT()
+		oldest := in.lt.tr.from.Turn
 		landed, dirty := oldest < before, in.lt.tr.dirty
 		mu.Unlock()
 		if landed && !dirty {

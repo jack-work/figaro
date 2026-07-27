@@ -78,10 +78,11 @@ func TestTranscriptOlderFetchAnchorsOnTheNode(t *testing.T) {
 		From:        2,
 		ClippedHead: true,
 	}}})
+	client.SetMoreBefore(true) // the wire: the clipped head is still out there
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.follow = false
-	tr.checkOlder = true
+	tr.offset = 0
 
 	req, ok := tr.pageCursor()
 	if !ok {
@@ -106,17 +107,18 @@ func TestTranscriptFirstTurnClippedStillPagesOlder(t *testing.T) {
 		From:        3,
 		ClippedHead: true,
 	}}})
+	client.SetMoreBefore(true) // the wire: turn 1's own head is still out there
 	tr := newTranscript(ft, 80, 20, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.follow = false
-	tr.checkOlder = true
+	tr.offset = 0
 
 	req, ok := tr.pageCursor()
 	if !ok || req.beforeNode != 3 {
 		t.Fatalf("request = %+v, ok = %v; turn 1's own head is still unread", req, ok)
 	}
-	if tr.noMoreOlder {
-		t.Fatal("latched 'no more older' while the first turn's head was unfetched")
+	if tr.atAriaFloor() {
+		t.Fatal("called it the beginning while the first turn's head was unfetched")
 	}
 }
 
@@ -133,6 +135,13 @@ func TestTranscriptViewportAnchorSurvivesAHeadSliceLanding(t *testing.T) {
 	var tail, headNodes []livedoc.Node
 	for i := range 4 {
 		tail = append(tail, livedoc.Node{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("tail node %d", i)})
+	}
+	// The head slice is the turn's nodes 0 and 1 — exactly what the tail slice
+	// (From: 2) does not hold. It used to be four nodes, overlapping the tail;
+	// the pager simply prepended a page, so nobody noticed. The store does: it
+	// clips a merged run to its novel part, which is the coverage invariant
+	// doing its job, and the fixture was the thing that was wrong.
+	for i := range 2 {
 		headNodes = append(headNodes, livedoc.Node{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("head node %d", i)})
 	}
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{
@@ -153,7 +162,7 @@ func TestTranscriptViewportAnchorSurvivesAHeadSliceLanding(t *testing.T) {
 	if len(head) != 1 || head[0].From != 0 || head[0].Inquiry == "" {
 		t.Fatalf("fixture: head slice = %+v", head)
 	}
-	tr.applyPage(transcriptPageRequest{before: 5, beforeNode: 2, direction: pageOlder}, head)
+	tr.applyPage(transcriptPageRequest{before: 5, beforeNode: 2}, historyPage{msgs: head})
 
 	// The landing shifts the tail slice down by the separator it now needs;
 	// what must NOT happen is the viewport ending up ABOVE the newly prepended
@@ -162,7 +171,7 @@ func TestTranscriptViewportAnchorSurvivesAHeadSliceLanding(t *testing.T) {
 	lines := tr.lines()
 	lastHead := -1
 	for i, l := range lines {
-		if strings.Contains(stripANSI(l), "head node 3") {
+		if strings.Contains(stripANSI(l), "head node 1") {
 			lastHead = i
 		}
 	}

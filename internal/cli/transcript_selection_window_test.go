@@ -26,7 +26,7 @@ import (
 func TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap(t *testing.T) {
 	history := transcriptHistory(200)
 	client := aria.NewClient()
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: uint64(201), Live: &aria.Live{From: 0, V: 0, Nodes: []aria.NodeDelta{{
 		ID: 0, Set: map[string]any{"type": string(livedoc.NodeProse), "markdown": "open-201"},
 	}}}}}}})
@@ -54,38 +54,42 @@ func TestTranscript_OpenSelectionExtendsIntoHistoryWithoutAGap(t *testing.T) {
 	if tr.selection.focus == focus {
 		t.Fatalf("^P did not extend past the open message: %+v", tr.selection.focus)
 	}
-	if tr.checkNewer {
-		t.Fatal("extending asked for a forward page; there is no gap to fill")
-	}
 }
 
-func TestTranscript_ClearSelectionKeepsFocusedEdge(t *testing.T) {
+// TestTranscript_ClearSelectionKeepsTheWindow: clearing a selection that
+// spanned the whole window must not move the window. It used to TRIM the
+// retained page set in the direction the selection had been dragged; there are
+// no pages to trim, and the window is the store's own interval.
+func TestTranscript_ClearSelectionKeepsTheWindow(t *testing.T) {
 	history := transcriptHistory(120)
 	client := aria.NewClient()
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
-	for i := 0; i < 4; i++ {
-		messages := committedMessages(aria.Page{Parts: history[i*30 : (i+1)*30]})
-		tr.pages = append(tr.pages, transcriptPage{
-			desc:     describePage(messages),
-			messages: messages,
-		})
+	tr.enter()
+	tr.follow = false
+	for range 3 {
+		tr.offset = 0
+		pageOnce(tr, history)
 	}
+	before := tr.messages()
 	tr.selection = nodeSelection{
 		active: true,
-		anchor: testSelectionPoint(1, 0, history[0].Nodes[0]),
-		focus:  testSelectionPoint(120, 0, history[119].Nodes[0]),
+		anchor: testSelectionPoint(before[0].Turn, 0, before[0].Nodes[0]),
+		focus:  testSelectionPoint(before[len(before)-1].Turn, 0, before[len(before)-1].Nodes[0]),
 	}
 	tr.clearSelection()
-	messages := tr.messages()
-	if len(tr.pages) != transcriptPageLimit || messages[len(messages)-1].Turn != 120 {
-		t.Fatalf("clear retained %d pages ending at LT %d", len(tr.pages), messages[len(messages)-1].Turn)
+	after := tr.messages()
+	if len(after) != len(before) || after[0].Turn != before[0].Turn ||
+		after[len(after)-1].Turn != before[len(before)-1].Turn {
+		t.Fatalf("clearing the selection moved the window: [%d..%d] -> [%d..%d]",
+			before[0].Turn, before[len(before)-1].Turn, after[0].Turn, after[len(after)-1].Turn)
 	}
 }
 
 func TestTranscript_LeaveClearsSelection(t *testing.T) {
 	history := transcriptHistory(20)
 	client := aria.NewClient()
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.selectNode(-1, false)
@@ -102,16 +106,14 @@ func TestTranscript_PagedSearchMatchesRenderedMarkdown(t *testing.T) {
 	history := transcriptHistory(80)
 	history[0].Nodes[0].Markdown = "foo **bar**"
 	client := aria.NewClient()
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, &ariaView{settings: &renderSettings{}}, client, "", time.Time{})
 	tr.enter()
 	tr.find("foo bar")
 	for tr.searchingHistory() {
-		req, ok := tr.pageCursor()
-		if !ok {
+		if !pageOnce(tr, history) {
 			break
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	lines := tr.lines()
 	if tr.offset >= len(lines) || !strings.Contains(lines[tr.offset], "foo") {

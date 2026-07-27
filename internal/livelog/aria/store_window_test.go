@@ -1,6 +1,8 @@
 package aria
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/livedoc"
@@ -167,5 +169,142 @@ func TestMoreBeforeIsTheWiresAnswer(t *testing.T) {
 	c.SetMoreBefore(false)
 	if c.MoreBefore() {
 		t.Fatal("an empty backward read proves the floor")
+	}
+}
+
+// TestBeforeIsTheReturnTrip pins the primitive that replaced the pager's
+// payload LRU: the anchor n messages BELOW a, plus how far it actually got.
+// A windowed reader lowers its floor with it, so the scroll back up over
+// history the store still holds costs a backward walk and no round trip.
+func TestBeforeIsTheReturnTrip(t *testing.T) {
+	s := NewStore()
+	for turn := 1; turn <= 10; turn++ {
+		s.SetTurnLen(uint64(turn), 2)
+		s.Insert(histMsg(turn, 0, 2))
+	}
+	if got, n := s.Before(Anchor{Turn: 8}, 3); n != 3 || got != (Anchor{Turn: 5}) {
+		t.Fatalf("Before(8, 3) = %v, %d; want turn 5 over 3 messages", got, n)
+	}
+	// Fewer than asked for is not an error: take what there is, and say so.
+	if got, n := s.Before(Anchor{Turn: 3}, 10); n != 2 || got != (Anchor{Turn: 1}) {
+		t.Fatalf("Before(3, 10) = %v, %d; want the oldest held over 2", got, n)
+	}
+	if got, n := s.Before(Anchor{Turn: 1}, 4); n != 0 || got != (Anchor{Turn: 1}) {
+		t.Fatalf("Before at the floor = %v, %d; want the anchor itself over 0", got, n)
+	}
+	// It counts MESSAGES across a hole, exactly as TailFrom does — the window's
+	// floor may straddle one.
+	s.Evict(Anchor{Turn: 4}, Anchor{Turn: 6, Node: 1})
+	if got, n := s.Before(Anchor{Turn: 8}, 3); n != 3 || got != (Anchor{Turn: 2}) {
+		t.Fatalf("Before across a hole = %v, %d; want turn 2 over 3", got, n)
+	}
+}
+
+// TestEnsureFillsAHoleThroughItsFetcher: phase 1 left Ensure a stub returning
+// ErrNoFetcher. It is real now — it asks the store what is missing, reads
+// BEFORE the hole's far end (so the fill arrives nearest what we already
+// hold), folds the extents so the run coalesces, and stops when Query says the
+// interval is whole.
+func TestEnsureFillsAHoleThroughItsFetcher(t *testing.T) {
+	whole := NewStore()
+	for turn := 1; turn <= 20; turn++ {
+		whole.SetTurnLen(uint64(turn), 2)
+		whole.Insert(histMsg(turn, 0, 2))
+	}
+	s := NewStore()
+	for _, turn := range []int{1, 2, 3, 18, 19, 20} {
+		s.SetTurnLen(uint64(turn), 2)
+		s.Insert(histMsg(turn, 0, 2))
+	}
+	if got := len(s.Ranges()); got != 2 {
+		t.Fatalf("fixture: %d ranges, want a hole between two", got)
+	}
+	if err := s.Ensure(context.Background(), Anchor{Turn: 1}, Anchor{Turn: 20, Node: 1}); !errors.Is(err, ErrNoFetcher) {
+		t.Fatalf("with no fetcher installed, Ensure = %v; want ErrNoFetcher", err)
+	}
+	reads := []Anchor{}
+	s.SetFetcher(func(_ context.Context, before Anchor, limit int) (Fetched, error) {
+		reads = append(reads, before)
+		got := Fetched{Extents: map[int]uint64{}, More: true}
+		// The wire's answer: the `limit` messages immediately before `before`.
+		for turn := int(before.Turn) - 1; turn >= 1 && len(got.Msgs) < limit; turn-- {
+			got.Msgs = append([]Message{histMsg(turn, 0, 2)}, got.Msgs...)
+			got.Extents[turn] = 2
+		}
+		return got, nil
+	})
+	if err := s.Ensure(context.Background(), Anchor{Turn: 1}, Anchor{Turn: 20, Node: 1}); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if len(reads) == 0 {
+		t.Fatal("Ensure closed the hole without reading")
+	}
+	// It reads at the anchor AFTER the hole — the first thing we DO hold above
+	// it — so the fill lands against the reader's own position first.
+	if reads[0] != (Anchor{Turn: 18}) {
+		t.Fatalf("first fill read at %v; want the anchor just past the hole", reads[0])
+	}
+	if got := len(s.Ranges()); got != 1 {
+		t.Fatalf("a closed hole must coalesce: %d ranges", got)
+	}
+	if got, want := s.Count(), whole.Count(); got != want {
+		t.Fatalf("filled store holds %d messages, the whole aria has %d", got, want)
+	}
+	for _, seg := range s.Query(Anchor{Turn: 1}, Anchor{Turn: 20, Node: 1}) {
+		if seg.Gap != nil {
+			t.Fatalf("Query still reports a hole after Ensure: %+v", seg.Gap)
+		}
+	}
+}
+
+// TestEnsureRefusesToSpin: a fetcher that answers but never closes the hole
+// must be reported, not looped on. A server that disagrees with us about what
+// exists is a real possibility; a pager that hangs on it is not acceptable.
+func TestEnsureRefusesToSpin(t *testing.T) {
+	s := NewStore()
+	s.SetTurnLen(1, 2)
+	s.SetTurnLen(9, 2)
+	s.Insert(histMsg(1, 0, 2), histMsg(9, 0, 2))
+	calls := 0
+	s.SetFetcher(func(_ context.Context, _ Anchor, _ int) (Fetched, error) {
+		calls++
+		return Fetched{More: true}, nil // "nothing here", forever
+	})
+	if err := s.Ensure(context.Background(), Anchor{}, Anchor{Turn: 9, Node: 1}); !errors.Is(err, ErrStalled) {
+		t.Fatalf("Ensure = %v; want ErrStalled", err)
+	}
+	if calls != 1 {
+		t.Fatalf("a hole that did not shrink was retried %d times", calls)
+	}
+}
+
+// TestForEachSegmentIsTheGapAwareWalk: the renderer's read path sees runs AND
+// holes, in order, and reports no hole at all when there is none (the
+// degenerate case, which is what keeps the pager quiet).
+func TestForEachSegmentIsTheGapAwareWalk(t *testing.T) {
+	s := NewStore()
+	for turn := 1; turn <= 6; turn++ {
+		s.SetTurnLen(uint64(turn), 1)
+		s.Insert(histMsg(turn, 0, 1))
+	}
+	var turns []int
+	var gaps []Gap
+	walk := func() {
+		turns, gaps = nil, nil
+		s.ForEachSegment(Anchor{}, Anchor{Turn: ^uint64(0)},
+			func(m Message) bool { turns = append(turns, m.Turn); return true },
+			func(g Gap) bool { gaps = append(gaps, g); return true })
+	}
+	walk()
+	if len(gaps) != 0 || len(turns) != 6 {
+		t.Fatalf("contiguous history reported %d gaps over %d messages", len(gaps), len(turns))
+	}
+	s.Evict(Anchor{Turn: 3}, Anchor{Turn: 4})
+	walk()
+	if len(gaps) != 1 || len(turns) != 4 {
+		t.Fatalf("one hole: %d gaps over %d messages", len(gaps), len(turns))
+	}
+	if got := gaps[0].Turns(); got != 2 {
+		t.Fatalf("the hole swallows turns 3 and 4; it says %d", got)
 	}
 }

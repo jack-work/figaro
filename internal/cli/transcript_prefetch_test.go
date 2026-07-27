@@ -64,10 +64,11 @@ func TestTranscriptScrollDoesNotBlockOnHistoryFetch(t *testing.T) {
 	}()
 
 	in.mu.Lock()
-	oldestBefore, _ := in.lt.tr.oldestLT()
+	oldestBefore := in.lt.tr.from.Turn
 	in.mu.Unlock()
 
-	// gg: jump to the top of the retained window, which arms an older fetch.
+	// gg: jump to the top of the retained window, which brings the viewport
+	// inside the prefetch distance of the floor.
 	tc.send([]byte("gg"))
 	deadline := time.Now().Add(delay / 2)
 	for time.Now().After(deadline) == false {
@@ -107,7 +108,7 @@ func TestTranscriptScrollDoesNotBlockOnHistoryFetch(t *testing.T) {
 	landed := false
 	for range 200 {
 		in.mu.Lock()
-		oldest, _ := in.lt.tr.oldestLT()
+		oldest := in.lt.tr.from.Turn
 		in.mu.Unlock()
 		if oldest < oldestBefore {
 			landed = true
@@ -129,22 +130,20 @@ func TestTranscriptScrollDoesNotBlockOnHistoryFetch(t *testing.T) {
 func TestTranscriptPrefetchArmsBeforeTheEdge(t *testing.T) {
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(readBefore(transcriptHistory(300), recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(transcriptHistory(300), recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 20), 60, 20, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.follow = false
 	tr.lines()
 
-	// One full screen away from the top: nothing armed yet at the old distance.
+	// One full screen away from the top: the fetch is asked for anyway.
 	tr.offset = tr.h + tr.h/2
-	tr.checkOlder = true
 	if _, ok := tr.pageCursor(); !ok {
 		t.Fatalf("no prefetch armed %d rows from the top (viewport %d)", tr.offset, tr.h)
 	}
 
 	// Far from the top: no fetch.
 	tr.offset = transcriptPrefetchScreens*tr.h + 1
-	tr.checkOlder = true
 	if req, ok := tr.pageCursor(); ok {
 		t.Fatalf("prefetched %d rows from the top: %+v", tr.offset, req)
 	}

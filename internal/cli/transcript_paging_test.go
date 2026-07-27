@@ -25,6 +25,47 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
+// applyTail folds the opening tail page into the client the way the input
+// loop's cold enter does — including the WIRE'S ANSWER about the beginning
+// (Page.More.Before), which is what the pager reads back as "can I still page
+// older history". Applying the page without it leaves the store believing it
+// holds the whole aria, and no test would ever page.
+func applyTail(client *aria.Client, p aria.Page) {
+	client.Apply(p)
+	client.SetMoreBefore(p.More.Before)
+}
+
+// pageOnce drives ONE older-history fetch exactly as the input loop does: ask
+// the pager for a cursor, read at it, apply. It reports whether a fetch
+// happened — false means the pager wanted nothing (or grew its window over
+// history the store already held, which costs no read).
+func pageOnce(tr *transcript, history []aria.TurnPart) bool {
+	req, ok := tr.pageCursor()
+	if !ok {
+		return false
+	}
+	at := aria.Anchor{Turn: uint64(req.before), Node: uint64(req.beforeNode)}
+	tr.applyPage(req, committedPage(readBeforeAt(history, at, req.limit)))
+	return true
+}
+
+// pageToFloor drives the fetch loop until the pager stops asking, with the
+// reader parked at the top of the window throughout (the anchor restore pushes
+// the offset down as the window grows, which is the prefetch distance doing its
+// job — a reader who keeps scrolling keeps asking). Bounded so a bug reports
+// instead of hanging.
+func pageToFloor(tr *transcript, history []aria.TurnPart) int {
+	n := 0
+	for range 200 {
+		tr.offset = 0
+		if !pageOnce(tr, history) {
+			return n
+		}
+		n++
+	}
+	return n
+}
+
 func transcriptHistory(n int) []aria.TurnPart {
 	out := make([]aria.TurnPart, n)
 	for i := range out {
@@ -114,88 +155,73 @@ func nodeBytes(n livedoc.Node) int {
 	return len(b)
 }
 
-func TestTranscript_BoundedPagesRefetchNewerAndFollowLive(t *testing.T) {
+// TestTranscript_PagingOlderKeepsTheLiveTail: scrolling up grows the window
+// DOWNWARD into the one owner, and the head of the window stays where it was —
+// at the live tail.
+//
+// This is the phase-2a-part-2 falsifier. Before it, the first page of older
+// history moved the window off the tail into a second copy (t.pages), and
+// openMessage went quiet: the live turn was not in the window at all. The
+// assertion that it is still there is the whole claim.
+func TestTranscript_PagingOlderKeepsTheLiveTail(t *testing.T) {
 	history := transcriptHistory(200)
 	client := aria.NewClient()
-	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{ID: 201, Live: &aria.Live{Nodes: []aria.NodeDelta{{
+		ID: 0, Set: map[string]any{"type": "prose", "markdown": "still streaming"},
+	}}}}}}})
 	ft := ldrender.NewFakeTerminal(50, 8)
 	tr := newTranscript(ft, 50, 8, ldrender.NodeText{}, client, "aria1234", time.Now())
 	tr.enter()
 	tr.follow = false
 
+	newest := tr.messages()
+	tailTurn := newest[len(newest)-1].Turn
 	for range 4 {
 		tr.offset = 0
-		tr.checkOlder = true
-		req, ok := tr.pageCursor()
-		if !ok || req.direction != pageOlder {
-			t.Fatalf("older request = %+v, %v", req, ok)
+		if !pageOnce(tr, history) {
+			t.Fatal("expected an older page")
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
-	if len(tr.pages) != transcriptPageLimit {
-		t.Fatalf("retained pages = %d, want %d", len(tr.pages), transcriptPageLimit)
+	held := tr.messages()
+	if held[0].Turn >= newest[0].Turn {
+		t.Fatalf("window did not grow downward: oldest %d -> %d", newest[0].Turn, held[0].Turn)
 	}
-	if got := len(tr.messages()); got != transcriptPageSize*transcriptPageLimit {
-		t.Fatalf("retained messages = %d", got)
+	if got := held[len(held)-1].Turn; got != tailTurn {
+		t.Fatalf("window left the tail: newest %d, want %d", got, tailTurn)
 	}
-	if len(tr.newer) == 0 {
-		t.Fatal("evicted newer pages must retain a refetch cursor")
+	if open := tr.openMessage(); open == nil || open.Turn != 201 {
+		t.Fatalf("the live turn left the window: %+v", open)
 	}
-	before := tr.messages()
-	history = append(history, aria.TurnPart{Turn: aria.Turn{ID: uint64(201), Sealed: true, Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "message-201"}}}})
-	client.Apply(aria.Page{Parts: []aria.TurnPart{history[200]}})
-	for range 2 {
-		tr.offset = len(tr.lineKey)
-		tr.checkNewer = true
-		req, ok := tr.pageCursor()
-		if !ok || req.direction != pageNewer {
-			t.Fatalf("newer request = %+v, %v", req, ok)
-		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
-	}
-	after := tr.messages()
-	if after[len(after)-1].Turn <= before[len(before)-1].Turn {
-		t.Fatalf("newer page did not advance window: %d -> %d", before[len(before)-1].Turn, after[len(after)-1].Turn)
-	}
-	if got := after[len(after)-1].Turn; got != 200 {
-		t.Fatalf("stable refetch included live LT or skipped old tail; newest = %d", got)
-	}
-	if len(tr.pages) != transcriptPageLimit {
-		t.Fatalf("newer refetch retained %d pages", len(tr.pages))
-	}
-
-	heldOldest := after[0].Turn
-	tr.render()
-	if got := tr.messages()[0].Turn; got != heldOldest {
-		t.Fatalf("live update moved held history: %d -> %d", heldOldest, got)
+	// THE DEGENERATE CASE. Nothing was jumped to and nothing was evicted, so
+	// everything the store holds is ONE contiguous range and no gap can render.
+	if got := len(client.Store().Ranges()); got != 1 {
+		t.Fatalf("ordinary scroll-up left %d ranges; a gap would render", got)
 	}
 	tr.key('G')
-	messages := tr.messages()
-	if got := messages[len(messages)-1].Turn; got != 201 {
-		t.Fatalf("G did not restore live tail, newest LT = %d", got)
+	if !tr.follow {
+		t.Fatal("G did not re-attach")
+	}
+	m := tr.messages()
+	if got := m[len(m)-1].Turn; got != tailTurn {
+		t.Fatalf("G did not restore the tail, newest = %d", got)
 	}
 }
 
 func TestTranscript_SearchPagesOlderWithBoundedRetention(t *testing.T) {
 	history := transcriptHistory(200)
 	client := aria.NewClient()
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.find("message-025")
 	for tr.searchingHistory() {
-		req, ok := tr.pageCursor()
-		if !ok {
+		if !pageOnce(tr, history) {
 			break
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	if tr.searchingHistory() {
 		t.Fatal("search did not settle")
-	}
-	if len(tr.pages) > transcriptPageLimit {
-		t.Fatalf("search retained %d pages", len(tr.pages))
 	}
 	lines := tr.lines()
 	if tr.offset >= len(lines) || !strings.Contains(lines[tr.offset], "message-025") {
@@ -206,7 +232,7 @@ func TestTranscript_SearchPagesOlderWithBoundedRetention(t *testing.T) {
 func TestTranscript_SelectionSurvivesPayloadEviction(t *testing.T) {
 	history := transcriptHistory(200)
 	client := aria.NewClient()
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.follow = false
@@ -217,15 +243,9 @@ func TestTranscript_SelectionSurvivesPayloadEviction(t *testing.T) {
 	}
 	for range transcriptPageLimit {
 		tr.offset = 0
-		tr.checkOlder = true
-		req, ok := tr.pageCursor()
-		if !ok {
+		if !pageOnce(tr, history) {
 			t.Fatal("expected older page")
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
-	}
-	if len(tr.pages) != transcriptPageLimit {
-		t.Fatalf("selection retained %d payload pages", len(tr.pages))
 	}
 	tr.selection.focus = testSelectionPoint(111, 0, history[110].Nodes[0])
 	plan, ok := tr.selectionPlan()
@@ -238,16 +258,17 @@ func TestTranscript_SelectionSurvivesPayloadEviction(t *testing.T) {
 	if err != nil || !strings.Contains(text, "message-111") || !strings.Contains(text, "message-200") {
 		t.Fatalf("rehydrated selected text = %q, %v", text, err)
 	}
+	held := len(tr.messages())
 	tr.clearSelection()
-	if len(tr.pages) != transcriptPageLimit {
-		t.Fatalf("clearing selection retained %d pages, want %d", len(tr.pages), transcriptPageLimit)
+	if got := len(tr.messages()); got != held {
+		t.Fatalf("clearing the selection moved the window: %d -> %d messages", held, got)
 	}
 }
 
 func TestTranscript_ResizeAnchorsPagedMessage(t *testing.T) {
 	history := transcriptHistory(200)
 	client := aria.NewClient()
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.follow = false
@@ -264,26 +285,25 @@ func TestTranscript_ResizeAnchorsPagedMessage(t *testing.T) {
 	}
 }
 
-func TestTranscript_SearchTraversesEvictedNewerPages(t *testing.T) {
+// TestTranscript_SearchFindsAMatchInTheGrownWindow: after paging history in,
+// a search for something in the NEWER part of the window still lands on it —
+// the window never left the tail, so there is no "newer" to traverse back to.
+func TestTranscript_SearchFindsAMatchInTheGrownWindow(t *testing.T) {
 	history := transcriptHistory(200)
 	client := aria.NewClient()
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.follow = false
 	for range 4 {
 		tr.offset = 0
-		tr.checkOlder = true
-		req, _ := tr.pageCursor()
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
+		pageOnce(tr, history)
 	}
 	tr.find("message-190")
 	for tr.searchingHistory() {
-		req, ok := tr.pageCursor()
-		if !ok {
+		if !pageOnce(tr, history) {
 			break
 		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
 	}
 	lines := tr.lines()
 	if tr.offset >= len(lines) || !strings.Contains(lines[tr.offset], "message-190") {
@@ -310,36 +330,31 @@ func TestTranscript_SelectsOpenNodeAfterLeavingFollow(t *testing.T) {
 	}
 }
 
-func TestTranscript_ReloadsOldestAfterNewerEviction(t *testing.T) {
+// TestTranscript_ScrollUpReachesTheFloorAndStops: paging back to the beginning
+// proves the floor (an empty ReadBefore) and the pager then asks for nothing
+// more — the un-latched replacement for noMoreOlder.
+func TestTranscript_ScrollUpReachesTheFloorAndStops(t *testing.T) {
 	history := transcriptHistory(120)
 	client := aria.NewClient()
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 8), 50, 8, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.follow = false
-	for !tr.noMoreOlder {
-		tr.offset = 0
-		tr.checkOlder = true
-		req, ok := tr.pageCursor()
-		if !ok {
-			break
-		}
-		tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
+	tr.offset = 0
+	if n := pageToFloor(tr, history); n == 0 {
+		t.Fatal("expected the walk to fetch at least one page")
 	}
-	tr.offset = len(tr.lineKey)
-	tr.checkNewer = true
-	req, ok := tr.pageCursor()
-	if !ok {
-		t.Fatal("expected newer refetch")
+	if !tr.atAriaFloor() {
+		t.Fatal("the walk stopped without proving the floor")
 	}
-	tr.applyPage(req, committedMessages(readBefore(history, req.before, transcriptPageSize)))
-	if tr.noMoreOlder {
-		t.Fatal("evicting the oldest page must re-enable older paging")
+	if got := tr.messages()[0].Turn; got != 1 {
+		t.Fatalf("the window's floor is turn %d, want the beginning", got)
+	}
+	if got := len(client.Store().Ranges()); got != 1 {
+		t.Fatalf("paging the whole aria in left %d ranges; want one", got)
 	}
 	tr.offset = 0
-	tr.checkOlder = true
-	req, ok = tr.pageCursor()
-	if !ok || req.direction != pageOlder {
-		t.Fatalf("oldest page was not reloadable: %+v, %v", req, ok)
+	if _, ok := tr.pageCursor(); ok {
+		t.Fatal("the pager kept asking for history below the beginning")
 	}
 }

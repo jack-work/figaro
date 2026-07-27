@@ -71,7 +71,7 @@ func BenchmarkTranscriptResetToTail(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				tr.storeWindow = false // force the rebuild a newly committed message causes
+				tr.from = aria.Anchor{} // force the rebuild a newly committed message causes
 				tr.resetToTail()
 			}
 		})

@@ -150,40 +150,6 @@ func BenchmarkTranscriptGeometryFollow(b *testing.B) {
 	}
 }
 
-// BenchmarkTranscriptGeometryLRU sweeps how many evicted pages keep their
-// payload+rows. With rows-based (i.e. smaller) pages, a 3-page LRU no longer
-// spans the turn-around, so the return trip refetches and re-renders.
-func BenchmarkTranscriptGeometryLRU(b *testing.B) {
-	for _, lru := range []int{3, 6, 12, 24} {
-		b.Run(fmt.Sprintf("lru%d", lru), func(b *testing.B) {
-			prev := transcriptPayloadLRULimit
-			transcriptPayloadLRULimit = lru
-			defer func() { transcriptPayloadLRULimit = prev }()
-			var fetches, refetches, renders, peak int
-			b.ReportAllocs()
-			b.ResetTimer()
-			for range b.N {
-				b.StopTimer()
-				h := newPagingHarness(600, 60, 100, 40)
-				b.StartTimer()
-				h.journey(120)
-				b.StopTimer()
-				fetches += h.fetches
-				refetches += h.refetches
-				renders += h.view.render
-				peak += h.peakBytes
-				b.StartTimer()
-			}
-			b.StopTimer()
-			n := float64(max(b.N, 1))
-			b.ReportMetric(float64(fetches)/n, "fetches/op")
-			b.ReportMetric(float64(refetches)/n, "refetched-msgs/op")
-			b.ReportMetric(float64(renders)/n, "noderenders/op")
-			b.ReportMetric(float64(peak)/n/1024, "peak-retained-KB")
-		})
-	}
-}
-
 // TestTranscriptGeometryDepthReport asks the question the merged stack forces
 // and D's solo sweep could not: now that frame cost is flat in the window size,
 // the only remaining benefit of a bigger window is less paging churn — so is the

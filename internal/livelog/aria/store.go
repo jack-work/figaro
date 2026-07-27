@@ -77,9 +77,31 @@ type Gap struct {
 	From, To Anchor
 }
 
-// Turns is the number of turns the hole touches — the count a one-row gap
+// Turns is how many turns the hole swallows WHOLE — the count a one-row gap
 // sentinel prints ("13 turns not loaded").
-func (g Gap) Turns() int { return int(g.To.Turn-g.From.Turn) + 1 }
+//
+// The endpoints are excluded when they are only partly missing, and that is
+// the honest count rather than the convenient one: a hole runs from the anchor
+// after the last thing we hold to the anchor before the next, so if we hold
+// the HEAD of a turn its id is g.From.Turn even though most of that turn is
+// here. Counting it would tell a reader a turn is gone when they are looking
+// at it. Zero is a real answer — the tail of one turn, and nothing else.
+func (g Gap) Turns() int {
+	lo, hi := g.From.Turn, g.To.Turn
+	if g.From.Node > 0 {
+		lo++ // that turn's head is held
+	}
+	if g.To.Node != maxNode {
+		if hi == 0 {
+			return 0
+		}
+		hi-- // that turn's tail is held
+	}
+	if hi < lo {
+		return 0
+	}
+	return int(hi-lo) + 1
+}
 
 // Segment is a contiguous run, optionally followed by a hole. Msgs may be
 // empty (a query whose interval opens on a hole).
@@ -121,15 +143,42 @@ type Store struct {
 	open    openTail          // the ONE streaming suffix — unchanged from today
 	pending []Pending         // submitted, not yet classified by the drain
 	ends    map[uint64]uint64 // turn -> anchors it occupies, once known
+	fetch   Fetcher           // fills holes; see Ensure
 }
 
 // NewStore returns an empty store.
 func NewStore() *Store { return &Store{ends: map[uint64]uint64{}} }
 
-// ErrNoFetcher is returned by Ensure when a hole would have to be filled.
-// Phase 1 ships no fetcher: the store is a substrate swap behind the existing
-// API, and nothing yet reads a page on its behalf.
-var ErrNoFetcher = errors.New("aria: range store cannot fill holes yet (phase 1)")
+// Fetched is one backward read, folded into the units the store holds. It is
+// what a Fetcher hands back: the messages, the turn extents the wire stated
+// (see Store.SetTurnLen — without them two turns can never be called
+// neighbours), and whether anything precedes the page.
+type Fetched struct {
+	Msgs    []Message
+	Extents map[int]uint64
+	More    bool
+}
+
+// Fetcher reads the history immediately BEFORE an anchor — the same keyset
+// read the wire offers (figaro.read backward). The store never speaks the wire
+// itself: whoever owns the RPC client installs one of these, and Ensure calls
+// it.
+type Fetcher func(ctx context.Context, before Anchor, limit int) (Fetched, error)
+
+// ErrNoFetcher is returned by Ensure when a hole would have to be filled and
+// nobody has installed a Fetcher.
+var ErrNoFetcher = errors.New("aria: range store has no fetcher")
+
+// ErrStalled is returned when the fetcher keeps answering but the hole stops
+// shrinking. A store that cannot close a hole must SAY SO: the alternative is
+// a loop that spins forever against a server which disagrees with us about
+// what exists.
+var ErrStalled = errors.New("aria: the hole stopped shrinking")
+
+// ensureRounds bounds one Ensure. Each round closes at least one message's
+// worth of hole or the call gives up, so this is a safety net rather than a
+// budget: a hole wider than this is a jump's problem, not a fill's.
+const ensureRounds = 64
 
 // ---------------------------------------------------------------- coverage --
 
@@ -621,21 +670,76 @@ func fuseGaps(in []Segment) []Segment {
 // Ensure fills every hole in [from, to], fetching as needed, so that Query
 // over the same interval then returns exactly one Segment with a nil Gap.
 //
-// PHASE 1 IS A STUB. There is no fetcher yet: the store landed behind the
-// existing API with no renderer changes, so nothing calls Ensure and nothing
-// can serve it. It reports success when the interval is already whole and
-// ErrNoFetcher when it is not, so a caller written against the final contract
-// fails loudly rather than silently rendering a hole.
+// THE STORE IS NOT THREAD-SAFE, and this one blocks on I/O — so a concurrent
+// owner must NOT call it: Client.Ensure runs the same loop with the fetch
+// OUTSIDE its lock, which is what keeps a five-second read off the render
+// path. Both share firstGap and fillAt so there is one definition of "which
+// hole, and what read closes it".
 func (s *Store) Ensure(ctx context.Context, from, to Anchor) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	for _, seg := range s.Query(from, to) {
-		if seg.Gap != nil {
+	for range ensureRounds {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		gap, ok := s.firstGap(from, to)
+		if !ok {
+			return nil
+		}
+		if s.fetch == nil {
 			return ErrNoFetcher
 		}
+		got, err := s.fetch(ctx, fillAt(gap), fillLimit)
+		if err != nil {
+			return err
+		}
+		before := s.Count()
+		s.Absorbed(got)
+		if s.Count() == before {
+			return ErrStalled
+		}
 	}
-	return nil
+	return ErrStalled
+}
+
+// SetFetcher installs the reader Ensure fills holes with.
+func (s *Store) SetFetcher(f Fetcher) { s.fetch = f }
+
+// Fetcher reports the installed reader (nil when there is none).
+func (s *Store) Fetcher() Fetcher { return s.fetch }
+
+// fillLimit is how many messages one hole-filling read asks for. The same
+// page size the pager's scroll-up uses: a hole is filled by the same read that
+// would have loaded the region had the reader scrolled into it.
+const fillLimit = 30
+
+// firstGap is the lowest hole inside [from, to], if any. It is the ONE
+// definition of "what is missing", shared by both Ensure loops.
+func (s *Store) firstGap(from, to Anchor) (Gap, bool) {
+	for _, seg := range s.Query(from, to) {
+		if seg.Gap != nil {
+			return *seg.Gap, true
+		}
+	}
+	return Gap{}, false
+}
+
+// fillAt is the anchor a backward read must be taken at to close a hole from
+// its TOP: the first thing after the hole. A read before the hole's own end
+// would return the hole's end and everything below it — correct, but it walks
+// the hole from the bottom, and a caller filling a hole it is about to render
+// wants the part nearest what it already holds first.
+func fillAt(g Gap) Anchor { return g.To.Next() }
+
+// Absorbed folds a fetched page: the extents first (so the run coalesces on
+// the way in rather than leaving a phantom hole between two turns), then the
+// messages, then what the wire said about the beginning.
+func (s *Store) Absorbed(got Fetched) {
+	for turn, n := range got.Extents {
+		s.SetTurnLen(uint64(turn), n)
+	}
+	s.Insert(got.Msgs...)
+	m := s.More()
+	m.Before = got.More
+	s.SetMore(m)
 }
 
 // ForEachIn walks the retained messages whose span touches [from, to], in
@@ -659,6 +763,52 @@ func (s *Store) ForEachIn(from, to Anchor, fn func(Message) bool) {
 				return
 			}
 		}
+	}
+}
+
+// ForEachSegment walks [from, to] the way a RENDERER must see it: contiguous
+// runs, and the holes between them. It is the GAP-AWARE mirror of ForEachIn
+// (the gap-blind default), and it allocates nothing — a pager rebuilding its
+// line index every frame cannot pay for a Segment slice per frame.
+//
+// gap is called for each hole; returning false from either callback stops the
+// walk. The bounds are clamped exactly as Query clamps them, so "the whole
+// window" over a store with no holes reports no gaps.
+func (s *Store) ForEachSegment(from, to Anchor, msg func(Message) bool, gap func(Gap) bool) {
+	if to.Less(from) || len(s.ranges) == 0 {
+		return
+	}
+	if lo := s.ranges[0].From; from.Less(lo) && !s.more.Before {
+		from = lo
+	}
+	if hi := s.ranges[len(s.ranges)-1].To; hi.Less(to) && !s.more.After {
+		to = hi
+	}
+	if to.Less(from) {
+		return
+	}
+	cur := from
+	for _, r := range s.ranges[s.firstRangeAtOrAfter(from):] {
+		if to.Less(r.From) {
+			break
+		}
+		if cur.Less(r.From) && gap != nil && !gap(Gap{From: cur, To: r.From.Prev()}) {
+			return
+		}
+		for _, m := range r.Msgs[firstMsgAtOrAfter(r.Msgs, cur):] {
+			if f, _ := msgSpan(m); to.Less(f) {
+				return
+			}
+			if !msg(m) {
+				return
+			}
+		}
+		if cur = r.To.Next(); to.Less(cur) {
+			return
+		}
+	}
+	if !to.Less(cur) && gap != nil {
+		gap(Gap{From: cur, To: to})
 	}
 }
 
@@ -705,6 +855,37 @@ func (s *Store) Skip(a Anchor, n int) (Anchor, bool) {
 		return from, true
 	}
 	return Anchor{}, false
+}
+
+// Before is the BACKWARD mirror of Skip, and it is what a windowed reader
+// lowers its floor with: the anchor n messages before a, plus how many
+// messages the interval [got, a) actually gained. Fewer than n held below a is
+// not an error — the store hands back its own oldest and says how far it got,
+// because "take another page of what you already have" wants whatever is
+// there.
+//
+// This is the job the pager's payload LRU used to do. With one owner the
+// messages are already here: extending the window over them costs a backward
+// walk of its own length, no round trip, and no second copy.
+func (s *Store) Before(a Anchor, n int) (Anchor, int) {
+	if n <= 0 {
+		return a, 0
+	}
+	got, moved := a, 0
+	for i := len(s.ranges) - 1; i >= 0 && moved < n; i-- {
+		msgs := s.ranges[i].Msgs
+		if !s.ranges[i].From.Less(a) {
+			continue // the whole range is at or after a
+		}
+		for k := firstMsgAtOrAfter(msgs, a) - 1; k >= 0 && moved < n; k-- {
+			from, _ := msgSpan(msgs[k])
+			if !from.Less(a) {
+				continue
+			}
+			got, moved = from, moved+1
+		}
+	}
+	return got, moved
 }
 
 // Count is how many messages the store retains.

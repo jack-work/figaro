@@ -8,137 +8,104 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-// pageOnce drives one older-page fetch through the same path the input loop
-// uses, serving from an in-memory history.
-func pageOnce(t *testing.T, tr *transcript, history []aria.TurnPart, dir transcriptPageDirection) bool {
-	t.Helper()
-	if dir == pageOlder {
-		tr.offset, tr.checkOlder = 0, true
-	} else {
-		tr.offset, tr.checkNewer = len(tr.lineKey), true
-	}
-	req, ok := tr.pageCursor()
-	if !ok {
-		return false
-	}
-	pageLimit := req.limit
-	if pageLimit <= 0 {
-		pageLimit = transcriptPageSize
-	}
-	messages := req.cached
-	if len(messages) == 0 {
-		if req.after != 0 {
-			r, _ := readNextPage(req.after, req.watermark, pageLimit,
-				func(before, limit int) (aria.Page, error) { return readBefore(history, before, limit), nil })
-			messages = committedMessages(r)
-		} else {
-			limit := pageLimit
-			if req.expected.Count != 0 {
-				limit = req.expected.Count
-			}
-			messages = committedMessages(readBefore(history, req.before, limit))
-		}
-	}
-	tr.applyPage(req, messages)
-	return true
-}
+// THE CACHE LIFECYCLE, AFTER THE SECOND COPY WENT AWAY.
+//
+// This file used to pin the payload LRU: a page evicted from the render window
+// kept its payload (and so its rendered rows) so the return trip cost neither
+// I/O nor a re-render. There is no page cache any more — the STORE holds the
+// messages and the window is an interval into it — so the same two claims are
+// made against the store instead:
+//
+//  1. turning around costs NO READ and NO RE-RENDER, because the window grows
+//     back over messages the one owner still holds;
+//  2. the row cache never outlives the store's own retention.
 
-// TestTranscriptEvictionKeepsRowsForRetainedPayloads pins the cache lifecycle
-// contract: a page evicted from the render window but still held in the payload
-// LRU keeps its rendered rows, so oscillating across a page boundary costs
-// neither I/O nor a re-render.
-func TestTranscriptEvictionKeepsRowsForRetainedPayloads(t *testing.T) {
+// TestTurningAroundCostsNoReadAndNoRerender: page history in, go back to the
+// tail (G, which raises the floor), then scroll up again. The second trip up
+// must be served entirely out of the store — pageCursor returns no request at
+// all — and every message it brings back must still have its rows.
+func TestTurningAroundCostsNoReadAndNoRerender(t *testing.T) {
 	history := transcriptHistory(300)
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 10), 50, 10, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.follow = false
 	tr.lines()
 
-	// Fill the window, then evict by paging one more time.
 	for range transcriptPageLimit {
-		if !pageOnce(t, tr, history, pageOlder) {
+		tr.offset = 0
+		if !pageOnce(tr, history) {
 			t.Fatal("expected an older page")
 		}
 		tr.lines()
 	}
-	evicted, ok := tr.newestLT() // the newest retained message before eviction
-	if !ok {
-		t.Fatal("no retained messages")
-	}
-	if len(tr.payloadLRU) == 0 {
-		t.Fatal("eviction did not retain a payload for the return trip")
-	}
-	kept := 0
-	for _, page := range tr.payloadLRU {
-		for _, m := range page.messages {
-			if _, ok := tr.rowCache[keyOf(m)]; ok {
-				kept++
-			}
-		}
-	}
-	if kept == 0 {
-		t.Fatalf("evicted-but-retained payloads lost every cached row (newest was %d)", evicted)
+	deep := tr.messages()
+	oldest := deep[0].Turn
+
+	tr.key('G') // back to the tail: the floor rises, the store keeps the history
+	tr.lines()
+	if got := tr.messages()[0].Turn; got <= oldest {
+		t.Fatalf("G did not shrink the window back to the tail (oldest %d)", got)
 	}
 
-	// Turning around must not re-render anything: the payload comes from the
-	// LRU and the rows are still cached.
-	before := len(tr.rowCache)
-	if !pageOnce(t, tr, history, pageNewer) {
-		t.Fatal("expected a newer page")
+	// Now turn around. Every page of this trip is already in the store, so the
+	// pager must ask the WIRE for nothing.
+	tr.follow = false
+	for range transcriptPageLimit {
+		tr.offset = 0
+		if req, ok := tr.pageCursor(); ok {
+			t.Fatalf("the return trip hit the wire: %+v", req)
+		}
+	}
+	back := tr.messages()
+	if back[0].Turn > oldest {
+		t.Fatalf("the return trip did not reach turn %d (stopped at %d)", oldest, back[0].Turn)
 	}
 	misses := 0
-	for _, m := range tr.messages() {
+	for _, m := range back {
 		if _, ok := tr.rowCache[keyOf(m)]; !ok {
 			misses++
 		}
 	}
 	if misses != 0 {
-		t.Fatalf("returning across the boundary re-rendered %d messages (rowCache was %d)", misses, before)
+		t.Fatalf("the return trip re-rendered %d of %d messages", misses, len(back))
 	}
 }
 
-// TestTranscriptCachesStayBounded pins that keeping rows for LRU payloads does
-// not leak: the rowCache never exceeds the messages actually retained (window +
-// payload LRU).
-func TestTranscriptCachesStayBounded(t *testing.T) {
+// TestRowCacheNeverOutlivesTheStore: rows follow the one owner, so the cache
+// cannot hold a message the store has forgotten.
+func TestRowCacheNeverOutlivesTheStore(t *testing.T) {
 	history := transcriptHistory(600)
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 10), 50, 10, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.follow = false
 	for range 12 {
-		if !pageOnce(t, tr, history, pageOlder) {
+		tr.offset = 0
+		if !pageOnce(tr, history) {
 			break
 		}
 		tr.lines()
 	}
-	for range 6 {
-		if !pageOnce(t, tr, history, pageNewer) {
-			break
-		}
-		tr.lines()
-	}
+	tr.key('G') // re-attach: evictStale prunes what fell far behind the window
+	tr.lines()
+
 	retained := map[int]bool{}
-	for _, m := range tr.messages() {
+	client.ForEachIn(aria.Anchor{}, windowEnd, func(m aria.Message) bool {
 		retained[m.Turn] = true
+		return true
+	})
+	if open := tr.openMessage(); open != nil {
+		retained[open.Turn] = true
 	}
-	for _, page := range tr.payloadLRU {
-		for _, m := range page.messages {
-			retained[m.Turn] = true
+	for k := range tr.rowCache {
+		if !retained[k.turn()] {
+			t.Fatalf("rowCache holds rows for turn %d, which the store has forgotten (cache=%d, retained=%d)",
+				k.turn(), len(tr.rowCache), len(retained))
 		}
-	}
-	for lt := range tr.rowCache {
-		if !retained[lt.turn()] {
-			t.Fatalf("rowCache holds rows for unretained LT %d (cache=%d, retained=%d)",
-				lt.turn(), len(tr.rowCache), len(retained))
-		}
-	}
-	if max := transcriptPageSize * (transcriptPageLimit + transcriptPayloadLRULimit); len(tr.rowCache) > max {
-		t.Fatalf("rowCache grew to %d entries, bound is %d", len(tr.rowCache), max)
 	}
 }

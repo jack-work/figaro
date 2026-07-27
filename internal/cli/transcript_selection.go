@@ -221,13 +221,14 @@ func (t *transcript) selectNode(delta int, extend bool) {
 		}
 	} else if !cold {
 		next := index + delta
-		switch {
-		case next < 0:
+		// Clamped at the ends of the retained window. Moving past the top used to
+		// ARM the older-history fetch; the fetch is asked for by geometry now
+		// (see wantOlder), and the scroll-into-view below is what brings the
+		// viewport close enough to the floor to trigger one.
+		if next < 0 {
 			next = 0
-			t.checkOlder = true
-		case next >= len(refs):
+		} else if next >= len(refs) {
 			next = len(refs) - 1
-			t.checkNewer = true
 		}
 		index = next
 	}
@@ -247,15 +248,13 @@ func (t *transcript) selectNode(delta int, extend bool) {
 	t.ensureSelectionVisible()
 }
 
+// clearSelection drops the selection and re-anchors the viewport on the line
+// it was showing. It used to trim the retained page set in the direction the
+// selection had been dragged — the pages are gone, and the store's own
+// retention (evictStale) is what bounds memory now.
 func (t *transcript) clearSelection() {
-	direction := pageOlder
-	messages := t.messages()
-	if len(messages) > 0 && t.selection.focus.turn >= messages[len(messages)/2].Turn {
-		direction = pageNewer
-	}
 	anchor, within := t.viewportAnchor()
 	t.selection = nodeSelection{}
-	t.trimPages(direction)
 	t.pruneCaches()
 	t.buildIndex()
 	t.restoreViewportAnchor(anchor, within)

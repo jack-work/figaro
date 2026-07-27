@@ -19,18 +19,18 @@ import (
 // (transcript.windowRev, published by invalidateWindow), so the page layer and
 // the line index can never disagree about which window they describe — and the
 // row budget is computed from the index's EXACT per-message row counts, not
-// from an average over the row cache, which since D let rows outlive the window
-// in the payload LRU is no longer the same set of messages.
+// from an average over the row cache, which holds rows for everything the STORE
+// retains — a strictly larger set than the window.
 //
 // D's tailRev answered "are t.pages still the client's tail?"; A's index had a
 // separate per-frame shape diff deciding whether to refill lineTurn. Two checks
-// over one fact is how a moved page set ends up with lineTurn — resize anchoring,
+// over one fact is how a moved window ends up with lineTurn — resize anchoring,
 // viewportAnchor — describing a window that no longer exists.
 // ---------------------------------------------------------------------------
 
-// mixedHeightHistory alternates short and tall messages so the retained window
-// and the payload LRU end up holding messages of very different heights. That
-// is what makes "which set did you average over" observable.
+// mixedHeightHistory alternates short and tall messages so the window and the
+// wider set the store retains end up holding messages of very different
+// heights. That is what makes "which set did you average over" observable.
 func mixedHeightHistory(n int) []aria.TurnPart {
 	out := make([]aria.TurnPart, n)
 	for i := range out {
@@ -88,27 +88,27 @@ func assertIndexAgrees(t *testing.T, tr *transcript, when string) {
 }
 
 // TestMergedPageMutationAlwaysReachesTheIndex is the "one authority" invariant.
-// Every route that moves t.pages must publish through invalidateWindow, and the
-// line index must come out the far side describing the window that actually
-// exists. Before the merge these were two unrelated notions of staleness: D's
-// tailRev over the pages, A's shape diff over the index.
+// Every route that moves the window — the floor dropping onto a fetched page,
+// the floor rising back to the tail — must publish through invalidateWindow,
+// and the line index must come out the far side describing the window that
+// actually exists.
 func TestMergedPageMutationAlwaysReachesTheIndex(t *testing.T) {
 	history := transcriptHistory(300)
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 12), 50, 12, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	assertIndexAgrees(t, tr, "after enter")
 	tr.follow = false // hold the window; following would reset it to the tail
 
 	revs := map[uint64]bool{tr.windowRev: true}
-	// Page older until the window starts evicting, then turn around. Each of
-	// these mutates t.pages through a different route (applyPage prepend,
-	// trimPages eviction, applyPage append + payload LRU replay).
+	// Page older repeatedly: every landing drops the window's floor, which is
+	// a window change and must reach the index.
 	for i := range transcriptPageLimit + 2 {
 		before := tr.windowRev
-		if !pageOnce(t, tr, history, pageOlder) {
+		tr.offset = 0
+		if !pageOnce(tr, history) {
 			t.Fatalf("older page %d: nothing fetched", i)
 		}
 		if tr.windowRev == before {
@@ -117,17 +117,6 @@ func TestMergedPageMutationAlwaysReachesTheIndex(t *testing.T) {
 		revs[tr.windowRev] = true
 		tr.render()
 		assertIndexAgrees(t, tr, "after paging older")
-	}
-	for i := range 2 {
-		before := tr.windowRev
-		if !pageOnce(t, tr, history, pageNewer) {
-			t.Fatalf("newer page %d: nothing fetched", i)
-		}
-		if tr.windowRev == before {
-			t.Fatalf("newer page %d landed without announcing a window change", i)
-		}
-		tr.render()
-		assertIndexAgrees(t, tr, "after paging newer")
 	}
 	if len(revs) < transcriptPageLimit {
 		t.Fatalf("only %d distinct window revisions over %d pages", len(revs), transcriptPageLimit+2)
@@ -153,7 +142,7 @@ func TestMergedPageMutationAlwaysReachesTheIndex(t *testing.T) {
 func TestMergedFollowFrameLeavesTheWindowAlone(t *testing.T) {
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(readBefore(transcriptHistory(40), recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(transcriptHistory(40), recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(50, 12), 50, 12, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 
@@ -193,23 +182,24 @@ func TestMergedGeometryMeasuresTheWindowNotTheRowCache(t *testing.T) {
 	history := mixedHeightHistory(300)
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(readBefore(history, recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(history, recentCursor, transcriptPageSize))
 	tr := newTranscript(ldrender.NewFakeTerminal(60, 16), 60, 16, ldrender.NodeText{}, client, "", time.Time{})
 	tr.enter()
 	tr.follow = false
 	for range transcriptPageLimit + 2 {
-		if !pageOnce(t, tr, history, pageOlder) {
+		tr.offset = 0
+		if !pageOnce(tr, history) {
 			break
 		}
 		tr.render()
 	}
-	if len(tr.payloadLRU) == 0 {
-		t.Fatal("fixture never evicted a page into the payload LRU")
-	}
+	tr.key('G') // back to the tail: the window shrinks, the store keeps the rows
+	tr.render()
+	tr.follow = false
 
-	// The truth, computed independently of heldWindow(): walk the retained
-	// pages and add up the rows the row cache holds for them, plus the rule
-	// separator between messages.
+	// The truth, computed independently of heldWindow(): walk the window and
+	// add up the rows the row cache holds for it, plus the rule separator
+	// between messages.
 	wantRows, wantMsgs := 0, 0
 	tr.forEachMessage(func(m aria.Message) {
 		rows, ok := tr.rowCache[keyOf(m)]
@@ -264,7 +254,7 @@ func TestMergedGeometryMeasuresTheWindowNotTheRowCache(t *testing.T) {
 func TestMergedOpenMessageIsExcludedFromTheBudget(t *testing.T) {
 	client := aria.NewClient()
 	client.SetClosedLimit(transcriptTailLimit)
-	client.Apply(readBefore(tallHistory(120, 12), recentCursor, transcriptPageSize))
+	applyTail(client, readBefore(tallHistory(120, 12), recentCursor, transcriptPageSize))
 
 	// A reply long enough on its own to blow the whole row budget, streaming
 	// before the pager even opens.
