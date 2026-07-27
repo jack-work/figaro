@@ -126,12 +126,49 @@ run `figaro show` (full content above, cursor below).
 | --- | --- |
 | `j` / `k` | line down / up |
 | `u` / `d` | half-page up / down |
-| `gg` / `G` | top / bottom |
+| `gg` / `G` | top of the retained buffer / bottom |
 | `↓` / `↑` | line down / up |
 | `PgDn` / `PgUp` | half-page down / up |
 | `Home` / `End` | top / bottom |
 | `/` | literal string search |
+| `:` | jump to a coordinate — `:12`, `:12.3`, `:0` |
 | `q` / `Esc` / `Ctrl-T` | exit the pager |
+
+### Coordinates and the `:` jump
+
+**`Ctrl-O` in the pager also draws every node's address**, one dim row above
+it — `12.3 · 01:23:45`: turn id, node id, and when the node was written. The
+turn's opening question gets the same row at its virtual node id, `-1`, because
+the question selects, copies and highlights exactly as a node does and is
+addressable the same way.
+
+**`:` opens a command line that accepts one of those addresses.**
+
+| Typed | Goes to |
+| --- | --- |
+| `:12` | the head of turn 12 |
+| `:12.3` | node 3 of turn 12 |
+| `:12.-1` | turn 12's question |
+| `:0` | the beginning of the aria |
+
+The landing snaps: the target's first row goes to the top and the selection is
+placed on it, so you can see what you were sent to.
+
+`:0` is a **sentinel, not an address**. Turn ids are dense and 1-based within an
+aria, but a forked aria continues its parent's numbering, so a fork's first turn
+is not turn 1 — and `Anchor{Turn: 0}` means *unset* on the wire, so asking for
+it on a backward read returns the tail. `:0` therefore means "the lowest turn
+that actually exists", found by walking back until the store says there is
+nothing older.
+
+`gg` is unchanged and still means **the top of what is loaded** — the cheap
+gesture, no paging. Once a conversation is long enough to page these are
+different questions, so they are different keys.
+
+A target that is not loaded is walked toward through the ordinary backward
+paging path, **bounded**; if it cannot be reached, the footer says so rather
+than hanging or landing somewhere else. `:` and `/` are each literal text inside
+the other's box.
 
 The arrow cluster is an alias for the letter motions, and — like them — pressing
 one while a turn streams inline opens the pager first, so the gesture acts on
