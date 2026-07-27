@@ -155,7 +155,7 @@ func (t *transcript) buildIndex() {
 	// entry carries the hole itself rather than a rendered row.
 	t.client.ForEachSegment(t.from, windowEnd, func(m aria.Message) bool {
 		rows, ok := t.rowCache[keyOf(m)]
-		if !ok {
+		if !ok || rows.inquiry != m.Inquiry {
 			rows = t.renderMsgBase(m)
 			t.rowCache[keyOf(m)] = rows
 		}

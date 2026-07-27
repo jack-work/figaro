@@ -294,6 +294,11 @@ func (c *Client) Apply(p Page) {
 		// what history is refused.
 		if part.Inquiry != "" && !part.ClippedHead {
 			c.inquiry[id] = part.Inquiry
+			// The head slice may ALREADY have been released — the agent can
+			// speak before the question's own part lands — and it was stamped
+			// from an inquiry map that was empty then. Repair it in place; the
+			// slice at From == 0 is the only one entitled to the question.
+			c.store.SetInquiry(id, part.Inquiry)
 			if staged {
 				c.store.ClaimOpen(id)
 			}

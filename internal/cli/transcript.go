@@ -1223,7 +1223,7 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 	if cap(rows) > len(rows) {
 		rows = append(make([]transcriptRow, 0, len(rows)), rows...)
 	}
-	return cachedMessage{rows: rows}
+	return cachedMessage{rows: rows, inquiry: m.Inquiry}
 }
 
 func (t *transcript) renderNode(n livedoc.Node, ref nodeRef) []string {
@@ -1940,7 +1940,7 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 			continue
 		}
 		rows, ok := t.rowCache[keyOf(m)]
-		if !ok {
+		if !ok || rows.inquiry != m.Inquiry {
 			rows = t.renderMsgBase(m)
 			t.rowCache[keyOf(m)] = rows
 		}
