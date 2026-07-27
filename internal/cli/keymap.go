@@ -44,6 +44,7 @@ const (
 	modeIncipit    keyMode = iota // inline streaming; the pager is not up
 	modeTranscript                // the pager, no panel, not searching
 	modeSearch                    // typing into the '/' box: almost all keys are text
+	modeJump                      // typing into the ':' box: the same, for a coordinate
 	modePanel                     // a '?'/'!'/'Q' panel is showing
 	numKeyModes
 )
@@ -55,12 +56,13 @@ const (
 	inIncipit    keyModeSet = 1 << modeIncipit
 	inTranscript keyModeSet = 1 << modeTranscript
 	inSearchBox  keyModeSet = 1 << modeSearch
+	inJumpBox    keyModeSet = 1 << modeJump
 	inPanel      keyModeSet = 1 << modePanel
 
 	// inPager is every mode with the pager up. Note that a transcript-mode
 	// row is ALSO reachable while a panel is showing: the panel swallows only
 	// its own keys and every other key wipes it and acts (see dispatch).
-	inPager  = inTranscript | inSearchBox | inPanel
+	inPager  = inTranscript | inSearchBox | inJumpBox | inPanel
 	inAnyBox = inIncipit | inPager
 )
 
@@ -235,6 +237,17 @@ var keymap = []keyBinding{
 		help: helpSearchRepeat, pager: pagerFindPrev,
 	},
 
+	// -- pager level: the coordinate jump ----------------------------------
+	{
+		// ':' is a printable byte, and in incipit a printable byte composes a
+		// steer. It is also a gesture that addresses a VIEWPORT, and there is
+		// none until the pager is up — jumping to turn 12 in a view that shows
+		// only the live tail has nothing to snap.
+		chord: byteChord(':'), modes: inTranscript,
+		open: staysInline, why: "in incipit a printable byte composes a steer, and a coordinate needs a viewport to land in",
+		help: helpJump, pager: pagerJumpPrompt,
+	},
+
 	// -- pager level: panels -----------------------------------------------
 	{chord: byteChord('?'), modes: inTranscript, open: opensPager, help: helpHelpPanel, pager: pagerHelpPanel},
 	{chord: byteChord('!'), modes: inTranscript, open: opensPager, help: helpStatusPanel, pager: pagerStatusPanel},
@@ -291,6 +304,36 @@ var keymap = []keyBinding{
 		open: staysInline, why: "only reachable with the search prompt already up",
 		help: helpNone, pager: searchBackspace,
 	},
+
+	// -- jump mode: the coordinate line owns the keyboard ------------------
+	// Exactly the search box's shape, and for the same reason: anything with
+	// no row here is literal text, which is what makes '/' an ordinary
+	// character in here as ':' is one in there.
+	{
+		chord: byteChord(0x0d), modes: inJumpBox,
+		open: staysInline, why: "only reachable with the jump prompt already up",
+		help: helpJump, pager: jumpAccept,
+	},
+	{
+		chord: byteChord(0x0a), modes: inJumpBox,
+		open: staysInline, why: "only reachable with the jump prompt already up",
+		help: helpJump, pager: jumpAccept,
+	},
+	{
+		chord: byteChord(0x1b), modes: inJumpBox,
+		open: staysInline, why: "only reachable with the jump prompt already up",
+		help: helpJump, pager: jumpCancel,
+	},
+	{
+		chord: byteChord(0x7f), modes: inJumpBox,
+		open: staysInline, why: "only reachable with the jump prompt already up",
+		help: helpNone, pager: jumpBackspace,
+	},
+	{
+		chord: byteChord(0x08), modes: inJumpBox,
+		open: staysInline, why: "only reachable with the jump prompt already up",
+		help: helpNone, pager: jumpBackspace,
+	},
 }
 
 // ---------------------------------------------------------------------------
@@ -309,6 +352,7 @@ const (
 	helpHomeEnd
 	helpSearch
 	helpSearchRepeat
+	helpJump
 	helpYank
 	helpVerbose
 	helpSelect
@@ -340,6 +384,7 @@ var helpRows = []helpRow{
 	{helpHomeEnd, "Home / End", "top / bottom"},
 	{helpSearch, "/", "search (Enter jump · Esc cancel typing)"},
 	{helpSearchRepeat, "n / N", "next / previous match"},
+	{helpJump, ":", "jump to turn[.node] · :0 = the beginning"},
 	{helpYank, "y", "copy selection (or aria id if none)"},
 	{helpVerbose, "^O", "toggle verbose tool output"},
 	{helpSelect, "^N/^P", "select next/previous node"},
