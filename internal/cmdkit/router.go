@@ -30,6 +30,11 @@ type Router struct {
 	// Stderr is the output for help and errors. Defaults to os.Stderr.
 	Stderr io.Writer
 
+	// Synopsis is extra usage lines printed under the Usage header —
+	// for forms the router itself does not dispatch (e.g. figaro's bare
+	// `figaro [flags] -- <prompt>`).
+	Synopsis []string
+
 	// barePromptComplete is the CompleteArgs callback invoked when
 	// the user is in the bare-prompt form (`<prog> -- <body>`, or an
 	// alias thereof). See SetBarePromptComplete.
@@ -260,6 +265,12 @@ func findFlag(flags []FlagDef, long, short string) *FlagDef {
 	return nil
 }
 
+// Suggest returns the registered command name closest to input by
+// Levenshtein distance, or "" when nothing is close enough. Exported so
+// callers that dispatch outside Run (the bare `figaro -- <prompt>` form)
+// can offer the same did-you-mean hint.
+func (r *Router) Suggest(input string) string { return r.suggest(input) }
+
 // suggest finds the closest command name by Levenshtein distance.
 func (r *Router) suggest(input string) string {
 	best := ""
@@ -317,7 +328,11 @@ func levenshtein(a, b string) int {
 func (r *Router) printUsage() {
 	w := r.Stderr
 
-	fmt.Fprintf(w, "Usage: %s <command> [flags] [args]\n\n", r.Name)
+	fmt.Fprintf(w, "Usage: %s <command> [flags] [args]\n", r.Name)
+	for _, line := range r.Synopsis {
+		fmt.Fprintf(w, "       %s\n", line)
+	}
+	fmt.Fprintln(w)
 
 	// Group commands.
 	groups := r.groupedCommands()

@@ -80,12 +80,12 @@ func Run(progName string, args []string) {
 
 	router := buildRouter(progName, loaded)
 
-	// Bare `figaro -- <prompt>` defaults to prompt verb.
-	if prompt := extractPrompt(args); prompt != "" {
-		if len(args) == 0 || !router.HasCommand(args[0]) {
-			runPrompt(loaded, prompt, renderSettings{})
-			return
-		}
+	// Bare `figaro [send-flags] -- <prompt>` is the prompt verb: same parser,
+	// same semantics as `figaro send` (see bare.go). The `--` boundary is
+	// mandatory, and args[0] must not name a command.
+	if isBareForm(args, router.HasCommand) {
+		runBarePrompt(progName, router, loaded, args)
+		return
 	}
 
 	code := router.Run(args)
@@ -235,7 +235,12 @@ Keys while streaming:
   figaro send -er -- <prompt>          ephemeral + raw (was: ` + "`figaro plain`" + `)
   figaro send -ex -y -- <instruction>  ephemeral exec, no confirmation
   figaro send -f --id myid -- <prompt> fire-and-forget; do not stream
-  figaro send -- <nudge>               sent mid-turn, this steers that turn`,
+  figaro send -- <nudge>               sent mid-turn, this steers that turn
+
+The bare form drops the verb: ` + "`figaro [flags] -- <prompt>`" + ` parses exactly
+like ` + "`figaro send [flags] -- <prompt>`" + ` — same flags, same semantics. The
+` + "`--`" + ` is mandatory there (so a mistyped subcommand stays an error), and a
+positional target needs the explicit verb or --id.`,
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
@@ -771,6 +776,10 @@ auto-load it on the next tab.
 	// (or an alias such as `q ` expanding to it), the cursor in <body>
 	// should pull from the prompt-context pool, not the verb list.
 	r.SetBarePromptComplete(completePromptContext)
+
+	// The bare form is not a registered command — Run dispatches it before
+	// the router sees argv — so it needs its own usage line.
+	r.Synopsis = []string{progName + " [send flags] -- <prompt>   (same flags as `" + progName + " send`)"}
 
 	return r
 }

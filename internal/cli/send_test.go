@@ -144,10 +144,46 @@ func TestExtractSendFlags(t *testing.T) {
 			wantErr: "--id",
 		},
 		{
-			name:     "no -- boundary",
-			in:       []string{"-e", "hello"},
-			wantOpts: sendOpts{ephemeral: true},
-			wantRest: []string{"hello"},
+			name:    "no -- boundary",
+			in:      []string{"-e", "hello"},
+			wantErr: "the prompt must follow `--`",
+		},
+		{
+			// The whole point of the fix: an unconsumed flag is an error,
+			// never a silent drop. `figaro --id X -- hi` ignoring --id was
+			// the same class of bug one layer up.
+			name:    "unknown long flag",
+			in:      []string{"--verbos", "--", "hi"},
+			wantErr: `unknown flag "--verbos"`,
+		},
+		{
+			name:    "unknown short flag",
+			in:      []string{"-Z", "--", "hi"},
+			wantErr: `unknown flag "-Z"`,
+		},
+		{
+			name:    "unknown flag inside a bundle",
+			in:      []string{"-eZ", "--", "hi"},
+			wantErr: `unknown flag "-eZ"`,
+		},
+		{
+			name:    "second positional",
+			in:      []string{"aria1", "aria2", "--", "hi"},
+			wantErr: `unexpected argument "aria2"`,
+		},
+		{
+			name:     "positional target",
+			in:       []string{"aria1", "--", "hi"},
+			wantOpts: sendOpts{target: "aria1"},
+			wantRest: []string{"--", "hi"},
+		},
+		{
+			// Guard: a `--` inside the prompt body is prompt text, not a
+			// second boundary. extractPrompt splits on the FIRST one.
+			name:     "double dash inside the prompt",
+			in:       []string{"-o", "--", "text", "--", "more"},
+			wantOpts: sendOpts{verbose: true},
+			wantRest: []string{"--", "text", "--", "more"},
 		},
 		{
 			name:     "flags ignored after --",
