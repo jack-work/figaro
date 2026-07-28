@@ -169,20 +169,40 @@ Violate this and a sweeper cannot tell your processes from the user's.
 > deliberately garbage `ANTHROPIC_API_KEY` in the environment — which needs no
 > config at all (CHERUBINO's find; §8.3).
 
-**`pp_fixture` — synthetic content, and BETTER than real history for this job.**
-One tool call emitting `seq 1 N`, so the pager holds N strictly increasing
-numbered rows. Contamination becomes self-evident with no oracle at all: a row
-reading `247` where `312` belongs is visibly wrong, and **a gap row containing
-anything whatsoever is a bug, because every legitimate body row is a bare
-number.** Cost is one cheap turn — the N rows are *tool output*, not model output,
-so the model emits only a call and a word.
+**`pp_fixture` — synthetic content. ⚠ MEASURED INADEQUATE; prefer an explicit aria
+id.** The design claim below was mine and BASILIO **falsified it**:
+
+> I wrote that `seq 1 N` gives the pager N increasing numbered rows, so a gap row
+> containing anything is self-evidently a bug. **Both halves are wrong.** `seq 1 N`
+> is **one tool node**, and the pager *collapses* a tool node to `… last 10 of 200
+> lines`. Measured at N=250 in a 40-row pane: **14 rows used, 20 blank, and the
+> footer shows NO RANGE.** And body rows are not bare integers — they are
+> gutter-prefixed (`   │ 241`), while `> input` is legitimate chrome, so a naive
+> filter flags both.
+
+**Why that mattered far more than a cosmetic miss.** A transcript with no range
+has `maxOff == 0`, so `gg`/`d`/`u` are **no-ops** — and a jog-diff sweep would then
+compare two *identical* frames and print **CLEAN for any binary**, including a
+provably broken one. I would have shipped a **false-clean instrument**: trap 12
+committed by the very tool built to hunt it.
+
+**Fixed by a gate, not a warning.** `pp_require_range` refuses to measure a
+transcript whose footer carries no `N–M/T`, and `paint-jogdiff.sh` exits 3 rather
+than reporting a verdict it cannot earn. **The acceptance test for a fixture is not
+"the script exits 0" — it is "the footer shows a RANGE", because a fixture with no
+range cannot fail.**
 
 ```sh
 pp_init basilio
-ARIA=$(pp_fixture 400)     # deterministic, no privacy exposure
 pp_up 100 40 rz
-pp_pager "$ARIA"
+pp_pager <aria-id>          # an aria with real depth; the mint is not yet adequate
+pp_require_range || exit 3  # refuse to measure something that cannot fail
 ```
+
+Also measured: **a fixture does not survive `pp_down`**, which deletes
+`state/` by privacy default. Set `PP_KEEP_STORE=1` to keep it, or every sweep costs
+a turn and an A/B costs two — with a *different* fixture aria per arm, which is its
+own confound.
 
 ```
 tmux socket   /tmp/paint-<hunter>/tmux.sock     PRIVATE server, never the default socket

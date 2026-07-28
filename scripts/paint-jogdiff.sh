@@ -52,15 +52,22 @@ if [ "$ARIA" = "-" ]; then
   #
   # CHERUBINO caught the footgun, which was mine: pp_env resolves
   # FIGARO_CONFIG_DIR to ${PP_CONFIG:-$HOME/.config/figaro} — the REAL config, by
-  # reference — and pp_fixture calls `pp_run new -j`. So on any machine with
-  # PP_CONFIG unset, `paint-jogdiff.sh <hunter> -` would resolve the master's REAL
-  # credentials and spend a REAL provider turn, SILENTLY, as a side effect of a
-  # script whose name says "jogdiff". A stand-down would then be one unset
-  # variable away from being violated by whoever ran the obvious command.
+  # reference — and pp_fixture calls `pp_run new -j`. So `paint-jogdiff.sh
+  # <hunter> -` resolves the master's REAL credentials and spends a REAL provider
+  # turn, SILENTLY, as a side effect of a script whose name says "jogdiff". A
+  # stand-down would then be one unset variable away from being violated by
+  # whoever ran the obvious command.
   #
-  # He proposed a line in the docs. A GUARD BEATS A DOC LINE: a document stating
-  # an intent the code does not enforce is the exact family we spent the night
-  # auditing. So the mint is opt-in, and the refusal says how to proceed.
+  # HONEST CORRECTION TO MY OWN EARLIER CLAIM: when I first wrote this guard the
+  # rationale above was FALSE. pp_run hardcoded FIGARO_CONFIG_DIR to the empty
+  # scratch config, so the mint could not have reached a real credential — it
+  # would have died with "figaro needs initial setup". BASILIO measured that.
+  # Fixing pp_run to consume pp_env (one authority for the environment) is what
+  # MAKES the hazard real, so the guard is right and was, briefly, right for a
+  # reason that did not hold. Recorded rather than quietly corrected.
+  #
+  # A GUARD BEATS A DOC LINE: a document stating an intent the code does not
+  # enforce is the exact family we spent the night auditing.
   if [ -z "$PP_ALLOW_TURN" ]; then
     cat >&2 <<EOF
 paint-jogdiff: REFUSING to mint a fixture, because that SPENDS A REAL PROVIDER TURN.
@@ -83,6 +90,13 @@ echo "paint-jogdiff: driving aria $ARIA"
 
 pp_up 100 40 jog || exit 1
 pp_pager "$ARIA" || exit 1
+
+# REFUSE A FIXTURE THAT CANNOT FAIL. Without an `N–M/T` range in the footer the
+# transcript fits the pane, maxOff is 0, every motion is a no-op, and this whole
+# sweep would compare identical frames and print CLEAN for ANY binary — a
+# false-clean instrument, which is trap 12 committed by the tool that hunts it.
+# BASILIO measured the no-range footer on a 250-row synthetic fixture.
+pp_require_range || exit 3
 
 OUT="$PP_DIR/jogdiff"; mkdir -p "$OUT"; rm -f "$OUT"/*
 fails=0; skips=0; cleans=0

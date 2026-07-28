@@ -201,20 +201,30 @@ pp_config_copy() {
   echo "paintpane: isolated config at $dst (no providers/, no hush/, no symlinks)"
 }
 
-# pp_fixture [rows] [aria-out] — build a SYNTHETIC pager fixture.
+# pp_fixture [rows] — build a SYNTHETIC pager fixture.
 #
 # REPLACES the old pp_seed, which copied 119 MB of the master's real aria store —
 # his actual conversation history — into /var/tmp, four times. The painters need
 # ENOUGH CONTENT TO FILL A PAGER, not his history.
 #
-# This makes its own content instead, and the content is BETTER than real history
-# for the job: one tool call emitting `seq 1 N`, so the pager holds N strictly
-# increasing numbered rows. Contamination is then self-evident — a row reading
-# 247 where 312 belongs is a bug you can see without an oracle, and a gap row
-# holding text at all is a bug, because every legitimate body row is a number.
+# ⚠ KNOWN INADEQUATE, MEASURED BY BASILIO. `seq 1 N` is ONE tool node, and the
+# pager COLLAPSES a tool node to "… last 10 of 200 lines". Measured at N=250 in a
+# 40-row pane: 14 rows used, 20 blank, and THE FOOTER SHOWS NO RANGE. A transcript
+# with no range has maxOff 0, so gg/d/u are no-ops — which would make a jog-diff
+# sweep compare two identical frames and report CLEAN FOR ANY BINARY, including a
+# provably broken one. That is trap 12 with my name on it: an instrument that
+# cannot fail.
 #
-# Cost: ONE cheap turn. The N rows are TOOL OUTPUT, not model output, so the
-# model emits only a call and a word. No privacy exposure, and deterministic.
+# So pp_pager now GATES on the footer carrying a range (see pp_require_range), and
+# paint-jogdiff refuses a fixture that cannot fail. Until this mints something that
+# actually fills a pane, PREFER AN EXPLICIT ARIA ID.
+#
+# Two further corrections from his capture, for anyone writing an oracle-free
+# filter: body rows are NOT bare integers, they are gutter-prefixed (`   │ 241`),
+# and the composer row `> input` is legitimate chrome.
+#
+# Cost: ONE cheap turn. The N rows are TOOL OUTPUT, not model output, so the model
+# emits only a call and a word. No privacy exposure, and deterministic.
 pp_fixture() {
   local rows="${1:-400}" out
   out="$(pp_run new -j -- "Call the bash tool exactly once with the command: seq 1 $rows
@@ -228,17 +238,43 @@ Then reply with the single word DONE and nothing else." 2>&1)" || {
   printf '%s\n' "$PP_ARIA"
 }
 
+# pp_require_range — refuse to measure a transcript that CANNOT FAIL.
+#
+# The footer only carries an `N–M/T` range when total > body. Without one, maxOff
+# is 0, every motion is a no-op, and any before/after comparison is two identical
+# frames — so the verdict is CLEAN regardless of the binary under test. BASILIO
+# measured the no-range footer on a 250-row fixture and inferred the vacuity from
+# layout/footerRows; this gate makes the inference unnecessary by turning a silent
+# false-clean into a loud refusal.
+#
+# CANARY YOUR INSTRUMENTS: an oracle that cannot report dirty has not been tested.
+pp_require_range() {
+  local cap; cap="$(pp_cap)"
+  if ! printf '%s' "$cap" | grep -qE '[0-9]+[–-][0-9]+/[0-9]+'; then
+    pp_die "transcript shows NO RANGE in the footer — it fits the pane, so every motion is a no-op and any comparison would report CLEAN for ANY binary. Refusing to measure a fixture that cannot fail. Use a taller transcript or a shorter pane."
+    return 1
+  fi
+  return 0
+}
+
 
 pp_envargs() { local v; while read -r v; do printf ' %q' "$v"; done < <(pp_env); }
 
 # pp_run <args...> — run the scratch binary against the scratch store from HERE
 # (not inside the pane): absolute path, explicit env, no PATH involved.
+#
+# ONE AUTHORITY FOR THE ENVIRONMENT. This used to re-encode the env inline and
+# HARDCODED FIGARO_CONFIG_DIR=$PP_STORE/config, while pp_env said
+# ${PP_CONFIG:-$HOME/.config/figaro}. Two authorities for one fact, and the
+# credential fix updated only one of them — so pp_fixture pointed at the empty
+# config pp_init creates and died with "figaro needs initial setup but stdin is
+# not a TTY". BASILIO measured it, verbatim, and the fix is not to correct the
+# copy but to DELETE it: pp_run now consumes pp_env, so there is one place the
+# environment is decided and it cannot drift again.
 pp_run() {
-  env -u FIGARO_ARIA -u FIGARO_NO_BIND \
-    "FIGARO_STATE_DIR=$PP_STORE/state" \
-    "FIGARO_RUNTIME_DIR=$PP_STORE/run" \
-    "FIGARO_CONFIG_DIR=$PP_STORE/config" \
-    "$PP_BIN" "$@"
+  local -a e=(); local v
+  while IFS= read -r v; do e+=("$v"); done < <(pp_env)
+  env -u FIGARO_ARIA -u FIGARO_NO_BIND "${e[@]}" "$PP_BIN" "$@"
 }
 
 # pp_tmux — talk to OUR private server only.
