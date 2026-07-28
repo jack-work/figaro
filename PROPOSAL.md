@@ -179,3 +179,37 @@ Real-pty verification: see `/tmp/rosina-click/` and §"pty" below.
    compensate. Flagging it because it is the most likely "bug report" this
    feature attracts.
 4. **Land with `feat/table-wrap`.** See the seam section.
+
+## pty: the gesture, in a real terminal
+
+Verified against a real pty via ALMAVIVA's `scripts/paintpane.sh` (private tmux
+socket, stamped binary invoked by absolute path, `figaro listen` so it costs
+**zero tokens**, pager chrome gated, daemon and server both reaped, scratch tree
+removed). Binary `d418a9c1077f` = `figaro bbebd8d35d91`, pane 100x40.
+
+The first attempt **verified the wrong thing** and is worth recording: it aimed at
+the first row carrying a `│` gutter, which is *also* the thinking-block
+blockquote gutter. It clicked a thinking node, which is correctly *not*
+expandable — so the run "passed" while proving only the inert rule. Re-aimed at a
+row carrying the `… last N of M lines` marker, which is proof the node has
+something to reveal:
+
+```
+clicking screen row Y=6:   │ … last 10 of 13 lines
+
+                  gutter │ rows   cue ▎ rows   cap marker   ? help
+  base                16            0            1            1
+  click 1             16           12            1            1     select
+  click 2             18           14            0            1     expand
+  click 3             16           12            1            1     collapse
+
+click 1 -> click 2:  "│ … last 10 of 13 lines"  becomes
+                     "│ origin https://github.com/…(fetch)" + (push) + "---"
+                     footer range 861–898/898+  ->  863–900/900+
+click 3 == click 1:  IDENTICAL — the collapse restores the frame exactly
+click on chrome:     ▎ rows still 12 — the selection survives a stray click
+```
+
+The cue lands on **12 rows** — the whole tool node including its `✓ bash …`
+header, not just the row under the pointer — which is the correct reading of
+"selection of the content block".
