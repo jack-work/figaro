@@ -42,6 +42,7 @@ package cli
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -125,9 +126,37 @@ func smokeStore(t *testing.T) []string {
 	}
 	// Provider credentials and loadouts come from the real config, copied. We
 	// read it; we never write it.
+	//
+	// THE COPY CARRIES CREDENTIALS, SO IT IS HARDENED EXPLICITLY. `cp` without
+	// -p gives the destination the source mode masked by the umask, and the real
+	// providers/anthropic.toml is mode 644 inside a 755 providers/ — safe at rest
+	// ONLY because ~/.config/figaro is 700. Copying it moves it out from under the
+	// one thing defending it. The config dir above is created 0700, which contains
+	// it today, but relying on a single parent directory is precisely the pattern
+	// that leaked a sibling harness's copy into world-traversable /var/tmp. So
+	// re-assert the boundary AND tighten the secrets themselves, belt and braces:
+	// a later refactor that recreates this directory differently must not silently
+	// re-open the hole.
 	if home, err := os.UserHomeDir(); err == nil {
 		src := filepath.Join(home, ".config", "figaro")
-		_ = exec.Command("cp", "-r", src+"/.", filepath.Join(dir, "config")).Run()
+		cfg := filepath.Join(dir, "config")
+		_ = exec.Command("cp", "-r", src+"/.", cfg).Run()
+		if err := os.Chmod(cfg, 0o700); err != nil {
+			t.Fatalf("hardening the config copy: %v", err)
+		}
+		for _, secret := range []string{"providers", "hush"} {
+			_ = filepath.WalkDir(filepath.Join(cfg, secret), func(path string, d fs.DirEntry, err error) error {
+				if err != nil {
+					return nil // absent is fine: not every config has both
+				}
+				mode := fs.FileMode(0o600)
+				if d.IsDir() {
+					mode = 0o700
+				}
+				_ = os.Chmod(path, mode)
+				return nil
+			})
+		}
 	}
 	return append(os.Environ(),
 		"FIGARO_STATE_DIR="+filepath.Join(dir, "state"),
@@ -293,6 +322,34 @@ func footers(capture string) int {
 	}
 	return n
 }
+
+// statusRows counts RENDERED PAGER STATUS ROWS — rows, not substring hits.
+//
+// pagerChrome above answers "are we in the pager"; this answers "how many
+// status rows are on the grid", which is a different and sharper question. A
+// healthy pager paints exactly ONE, at screen[t.h-1]. Two means the terminal's
+// grid scrolled under the painter (something wrote outside the frame buffer)
+// and the painter then repainted the footer at h-1 while the old copy was
+// still on screen — i.e. t.prev no longer describes the terminal.
+//
+// This is deliberately fix-shape-agnostic: whether the eventual fix leaves the
+// pager before printing (0 status rows), routes the text through the frame
+// buffer, or suppresses it (1 status row), the count is never 2.
+func statusRows(capture string) int {
+	n := 0
+	for _, ln := range strings.Split(capture, "\n") {
+		if strings.Contains(ln, "? help") {
+			n++
+		}
+	}
+	return n
+}
+
+// rawVisible is the pane WITH escape sequences retained (-e). Needed to prove a
+// row did NOT come from the renderer: every footer row that goes through
+// footerRows is wrapped in "\x1b[2m" ... "\x1b[0m", so an unstyled row sitting
+// among them was written straight to the terminal, bypassing the frame buffer.
+func (p *pane) rawVisible() string { return p.tmuxOut("capture-pane", "-p", "-e") }
 
 // close kills the tmux server AND stops the scratch daemon.
 //
