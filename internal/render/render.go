@@ -72,20 +72,43 @@ func rendererFor(width int) *glamour.TermRenderer {
 	if r, ok := rendererCache[width]; ok {
 		return r
 	}
-	// The dark style adds a 2-column document margin on top of the wrap
-	// width, so glamour emits rows up to width+2 wide. Wrap to width-2 so
-	// rendered rows fit within width — a row that overflows the viewport
-	// auto-wraps in the terminal and desyncs the live painter's
-	// one-row-per-line cursor math.
-	wrap := width - 2
+	// glamour counts the dark style's 2-column document margin INSIDE the
+	// word-wrap budget: WithWordWrap(n) yields rows n-2 columns wide.
+	// (Through glamour v0.8.0 the margin was added ON TOP, so the same call
+	// yielded rows n+2 wide and this compensation was width-2.) Asking for
+	// width+2 therefore lands rows at exactly width, which is the ceiling —
+	// a row that overflows the viewport auto-wraps in the terminal and
+	// desyncs the live painter's one-row-per-line cursor math.
+	//
+	// Measured across widths 8..140 on tables with CJK, code spans and
+	// three columns: no table row exceeds width at this bias (the probe is
+	// TestProse_TableRowsHoldPainterInvariant). Prose with an UNBREAKABLE
+	// token still overruns at any bias — glamour will not hyphenate — which
+	// is why every caller clips (clipToWidth) and why that is not this
+	// function's job.
+	wrap := width + 2
 	if wrap < 1 {
 		wrap = 1
 	}
-	r, err := glamour.NewTermRenderer(
+	opts := []glamour.TermRendererOption{
 		glamour.WithStandardStyle("dark"),
 		glamour.WithColorProfile(termenv.TrueColor), // pinned: determinism, not env-detected
 		glamour.WithWordWrap(wrap),
-	)
+		// THE TABLE FIX, stated explicitly rather than left to the default.
+		// glamour's table renderer used to give every cell a lipgloss style
+		// with Inline(true), which disables word wrap in the cell render,
+		// while lipgloss/table sized each row to the WRAPPED height of its
+		// content: a cell needing two lines got two lines of space, its
+		// first line of text, and a blank — the remainder discarded by the
+		// cell's MaxWidth. Table text was destroyed here, upstream of
+		// anything a view could do about it.
+		//
+		// This is also the one lever for the wrap-vs-truncate taste call:
+		// WithTableWrap(false) restores single-line cells, but truncated
+		// with an explicit "…" rather than silently blanked.
+		glamour.WithTableWrap(true),
+	}
+	r, err := glamour.NewTermRenderer(opts...)
 	if err != nil {
 		// Width-only fallback; should not happen with a standard style.
 		r, _ = glamour.NewTermRenderer(glamour.WithWordWrap(wrap))
