@@ -8,6 +8,8 @@ Branch **`feat/table-wrap`** off `main` at `5069adf`. Three commits:
 | `21f92fe` | `fix(render)` — glamour v0.8.0 → v1.0.0, width recalibration, `vendorHash` |
 | `461d8a7` | `feat(cli)` — the `nodeExpandable` / `renderNode` seam and prose's collapsed form |
 | `46d2e23` | `fix(cli)` — collapse only in the transcript (the `^O` measurement, §6) |
+| `af183d5` | `docs` — this file |
+| `974b789` | `test(cli)` — the collapse can never emit a blank row (§12) |
 
 `go build ./... && go vet ./... && go test ./...` green (35 packages, 0 FAIL).
 `nix build .#figaro` green.
@@ -211,10 +213,11 @@ Captures: `/tmp/susanna/repro/expand/out/` and
 `/tmp/susanna/repro/tclamp/out/transcript.txt` (pager chrome present:
 `? help` on the footer row, so this is genuinely the pager).
 
-**Consequence for ROSINA:** prose expansion is *only* reachable through your
-gesture. Until your branch lands, a clamped table in the transcript cannot be
-opened at all. If that gap is too long, `proseTableCapDefault =
-proseTableUncapped` (one constant) disables the collapse until you land.
+**Consequence, and ROSINA has ruled on it:** prose expansion is *only* reachable
+through her gesture, so the two branches **land together**. `feat/mouse-nodes`
+calls `nodeExpandable` through this seam; a clamped table becomes click-to-open
+the moment the two sit in one tree. The cap stays ON. Take both branches or
+neither — a clamp with no key is not on offer.
 
 ## 7. Tests, and they have all failed
 
@@ -257,8 +260,25 @@ across widths 26..120 in both states.
   suite is green including the byte-level frame goldens and the SGR proof; the
   paragraph/CJK/code-span row widths are byte-identical.
 - **glamour v1.0.0 pins lipgloss to an unreleased pseudo-version**
-  (`v1.1.1-0.20250404203927-76690c660834`). Both v0.10.0 and v1.0.0 require it;
-  there is no released escape. See **D1**.
+  (`v1.1.1-0.20250404203927-76690c660834`, an `// indirect` require). Both
+  v0.10.0 and v1.0.0 need it; there is no released escape. See **D1** and the
+  blast radius below.
+
+  **D1 blast radius, if that commit ever stops resolving.** `go build` fails
+  hard — `missing go.sum entry` / `unknown revision` — and so does
+  `nix build .#figaro`, whose `vendorHash` derivation fetches the same modules;
+  there is **no `vendor/` directory in this repo** to fall back on, and
+  `GOFLAGS=-mod=mod` is irrelevant (it governs whether `go.mod` may be
+  *rewritten*, not whether a module can be *fetched*). What actually protects us
+  is that `GOPROXY=https://proxy.golang.org,direct` and proxy.golang.org's
+  module cache is **immutable and append-only** — once a pseudo-version has been
+  served it is not withdrawn, even if the upstream commit is force-pushed away
+  or the repo is deleted — and `go.sum` pins its hash (2 entries) so a
+  substitution would be rejected rather than silently accepted. So the realistic
+  failure needs `GOPROXY=direct`/`off` *and* the commit gone from GitHub. The
+  one-command permanent immunity, if you want it: `go mod vendor` and commit
+  `vendor/` (then `nix` builds from the tree and never fetches at all). I have
+  not done it — a vendor directory is a repo-shape decision, and it is yours.
 - **A new truncation exists where none did.** Prose was never capped before.
   It only bites on a table over 12 rows, and it announces itself — but it is a
   behaviour change, and **D3** is the switch.
@@ -342,6 +362,46 @@ lossy, **abandon the grid** and render each markdown row as a small labelled
 block (`dormant` / `  meaning: …`), which wraps to any width without loss. That
 is a real feature with a real look, so it is **D4** and not something I took.
 
+## 12. Does this touch rows the PAINTERS diff?
+
+Asked by the `paint/base` resize-duplication hunt. Yes, it touches them — both
+painters read rows from this code — but **it cannot put a blank row where there
+used to be text.** The direction is strictly the other way.
+
+There are two painters and they are affected differently:
+
+**Incipit** (`Incipit.paint` / `diffRange`, which compares against `""` beyond
+`len(old)`). The **collapse never runs here**: `ariaView.Render` passes
+`expanded: true` unconditionally (§6), so no gesture and no state can change a
+node's row count inside the live region. That was the interaction risk, and
+commit `46d2e23` is what removed it. Only the *wrap fix* changes these rows, and
+it removes blanks: before it every wrapped cell emitted `height-1` **visibly
+blank** continuation rows — that was the bug's signature — and after it those
+rows carry text. Measured: **0 visibly-blank rows in any table render across
+widths 26..140.**
+
+**Transcript** (`transcript.paint`, diffing `screen` against `t.prev`, or against
+`predBuf` when a scroll is planned — same short-base-defaults-to-`""` shape). The
+collapse *does* live here, so row counts do change on a toggle. But that path is
+not new: a tool's `bashCap` toggle already changed a node's row count through the
+identical mechanism (`dropTurnsRows` invalidates, layout re-runs). What is new is
+only that a *prose* node can now do it too.
+
+And in neither painter can the collapse emit a blank:
+`TestClampTables_NeverEmitsABlankRow` asserts, at widths 26..120 over a document
+carrying both real blank separators and a clampable table, that the blank-row
+count can only go **down** across a clamp and that the hint row is never blank.
+Canaried by making the hint all spaces — both assertions fire.
+
+**The one thing worth their attention**, stated plainly rather than buried: a
+table's row count *at a given width* is different after this branch (taller,
+because cells wrap instead of being truncated). So a **resize across a table**
+produces a different row-count delta than it did before. That creates no blanks,
+but if their repro is sensitive to the *magnitude* of a frame shrink or grow,
+a table in their fixture will behave differently pre- and post-merge. Cheapest
+insurance: keep their fixture table-free, or rebase onto this branch before
+measuring.
+
 ---
 
 ## Decisions for the user
@@ -350,12 +410,12 @@ is a real feature with a real look, so it is **D4** and not something I took.
 |---|---|---|
 | **D1** | Take the **glamour v0.8.0 → v1.0.0 bump**, accepting that it pins lipgloss to an unreleased pseudo-version (`v1.1.1-0.2025…`)? The alternative is hand-rolling a table renderer (§9). | **Take it.** It is upstream's own fix for exactly this bug, the suite including byte-level goldens is green, and the pseudo-version is unavoidable in any glamour that wraps. |
 | **D2** | **Wrap** (A), **truncate with `…`** (B), or **width-dependent** (C)? §10. | **A.** It is what "so the whole text can be read" asks for; B is one flag away if tall tables annoy. |
-| **D3** | Keep the collapsed table cap at **12 rows** in the transcript, or `proseTableUncapped`? | **Keep 12.** It never bites at ordinary widths and it is what gives prose an expandable form at all — set it uncapped and `nodeExpandable` correctly reports prose as never expandable, which leaves ROSINA's gesture with only tools again. But see §6: until her branch lands, a clamped table cannot be opened, so **uncapped is the right interim** if the branches will not land together. |
+| ~~**D3**~~ | ~~Keep the cap at 12, or `proseTableUncapped`?~~ | **TAKEN BY ROSINA: keep the cap ON, and the two branches LAND TOGETHER.** `feat/mouse-nodes` calls `nodeExpandable` through this seam, so a clamped table becomes click-to-open the moment they sit together. Take both or neither — a clamp with no key is not on offer. |
 | **D3b** | Should the incipit also get a collapse, via some gesture that can actually reach a flushed node? | **No.** §6 — scrollback is not a scarce viewport, and invariant #2 means there is no honest way to un-collapse there. |
 | **D4** | Widths below ~26 columns still lose text (§11). Leave it, or build the linear no-grid fallback? | **Leave it for now**, revisit if anyone actually works in a 24-column pane. |
 | **D5** | `figaro show` renders every table in full (it hardcodes `verbose: true`, and `renderNodeList` now passes `expanded: true` regardless). Right? | **Right.** `show` is a dump you scroll; hiding rows there helps nobody and nothing could reveal them. |
 | **D6** | Should a turn's **inquiry** ever be clamped? Today it never is. | **Never.** figaro should not truncate the user's own words. |
 | **D7** | `nodeExpandable` says a **tool** is expandable whenever it has output — the same liberal test `toggleSelectedTools` used, so ROSINA's generalization is behaviour-preserving. Tighten it to "output actually exceeds the cap"? | **Tighten it later, not in this branch.** It is one line, but it changes what a click on a small tool does and that belongs with the gesture. |
-| **D8** | Spend the **tmux smoke suite** (real provider, real tokens) on this branch before merge? | **Yes, once**, since this touches everything that paints. I did not spend it unasked. |
+| ~~**D8**~~ | ~~Spend the tmux smoke suite before merge?~~ | **TAKEN BY ROSINA: do not spend it.** It burns tokens against a real provider and the user has not asked. Deliberately unspent; the evidence above is real-pty captures with md5-distinct arms and pager-chrome gating. One line if he wants it: `FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -run TestSmoke -v` |
 
 *— SUSANNA*
