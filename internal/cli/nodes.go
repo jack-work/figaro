@@ -30,6 +30,30 @@ type renderSettings struct {
 	listen   bool // -l / --listen: auto-enter the transcript at startup
 }
 
+// nodeExpandable reports whether a node has a collapsed form — i.e. whether
+// toggling expansion would reveal anything the collapsed render does not show.
+//
+// THIS PREDICATE IS THE SEAM between the gesture and the renderer. Enter over a
+// selection and a second click on one node both ask it, so neither has to know
+// what "expandable" currently means; and the answer can widen (prose whose
+// collapsed render clips a table is the next case, on feat/table-wrap) without
+// either gesture changing a line.
+//
+// The width is what a prose node's expandability will depend on — a table that
+// fits loses nothing — while a tool ignores it, because a tool's cap is a line
+// count and not a column budget.
+func nodeExpandable(n livedoc.Node, width int) bool {
+	switch n.Type {
+	case livedoc.NodeTool:
+		// A tool's collapsed render tail-clamps its output to nodeBashCapDefault
+		// lines, so there is something to reveal exactly when it has output at all.
+		return n.Output != ""
+	default:
+		_ = width
+		return false
+	}
+}
+
 // renderNode draws ONE node. This is the single dispatch on node kind, shared
 // by every view: `show` (via renderNodeList), the inline incipit and the
 // transcript pager (via ariaView). It used to exist twice — ariaView switched

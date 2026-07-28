@@ -92,6 +92,22 @@ func (e *lineEntry) height() int {
 	return e.sepHeight() + len(e.rows)
 }
 
+// refAt is the node a line of this entry belongs to, or the zero nodeRef for a
+// line that belongs to no node: a separator row, a gap sentinel, or an
+// out-of-range index.
+//
+// It is the mirror of entryLine and shares its arithmetic deliberately — a
+// click resolves a screen row to a node through here while the painter resolves
+// the same row to text through there, and the two disagreeing would put the
+// selection cue on a different node than the one under the pointer.
+func (e *lineEntry) refAt(rel int) nodeRef {
+	rel -= e.sepHeight() // separator rows go negative: they belong to no node
+	if rel < 0 || e.isGap() || rel >= len(e.rows) {
+		return nodeRef{}
+	}
+	return e.rows[rel].ref
+}
+
 // lineIndex is the per-frame index. entries and scratch ping-pong so a rebuild
 // can compare the new shape against the old one without allocating.
 type lineIndex struct {
@@ -227,13 +243,15 @@ func gapKey(g aria.Gap) sliceKey {
 
 // transRule lives in transcript.go, memoized per width there.
 
-// window materializes absolute lines [a, b) into dst (reusing its storage),
-// applying selection decoration and search highlighting to those rows only.
-// The rows themselves come out of rowCache already clipped and gutter-prefixed
-// (C's plainNodeRow), so an undecorated, unhighlighted row costs a slice read
-// and no allocation at all.
-func (t *transcript) window(a, b int, dst []string) []string {
-	dst = dst[:0]
+// forEachWindowRow walks absolute lines [a, b) and hands each to fn as the
+// (entry, entry-relative row) it comes from.
+//
+// It is the ONE walker over the window's line space. window materializes row
+// TEXT through it and rowRefs collects row REFS through it, so the two cannot
+// drift about which entry a given absolute line fell in — the failure mode
+// being a click that highlights the node above or below the one it landed on,
+// which no golden frame test can see because the frame is correct either way.
+func (t *transcript) forEachWindowRow(a, b int, fn func(e *lineEntry, rel int)) {
 	if a < 0 {
 		a = 0
 	}
@@ -241,21 +259,49 @@ func (t *transcript) window(a, b int, dst []string) []string {
 		b = t.index.total
 	}
 	if a >= b {
-		return dst
+		return
 	}
-	hl := t.activeHighlight()
-	sel := t.selectionSpan()
 	for k := t.index.entryAt(a); k >= 0 && k < len(t.index.entries); k++ {
 		e := &t.index.entries[k]
 		n := e.height()
 		for rel := a - e.start; rel < n; rel++ {
-			dst = append(dst, t.entryLine(e, rel, hl, sel))
+			fn(e, rel)
 			a++
 			if a >= b {
-				return dst
+				return
 			}
 		}
 	}
+}
+
+// window materializes absolute lines [a, b) into dst (reusing its storage),
+// applying selection decoration and search highlighting to those rows only.
+// The rows themselves come out of rowCache already clipped and gutter-prefixed
+// (C's plainNodeRow), so an undecorated, unhighlighted row costs a slice read
+// and no allocation at all.
+func (t *transcript) window(a, b int, dst []string) []string {
+	dst = dst[:0]
+	hl := t.activeHighlight()
+	sel := t.selectionSpan()
+	t.forEachWindowRow(a, b, func(e *lineEntry, rel int) {
+		dst = append(dst, t.entryLine(e, rel, hl, sel))
+	})
+	return dst
+}
+
+// rowRefs collects the node each of absolute lines [a, b) belongs to, in the
+// same order window materializes them — so index i of the two results describes
+// one row: its text and the node it addresses.
+//
+// This is what makes a POINTER usable in the pager. Every other gesture
+// addresses a node symbolically (^N walks the ref list, `:12.3` names a
+// coordinate), but a click names a SCREEN ROW, and only the painted frame knows
+// what was on it.
+func (t *transcript) rowRefs(a, b int, dst []nodeRef) []nodeRef {
+	dst = dst[:0]
+	t.forEachWindowRow(a, b, func(e *lineEntry, rel int) {
+		dst = append(dst, e.refAt(rel))
+	})
 	return dst
 }
 

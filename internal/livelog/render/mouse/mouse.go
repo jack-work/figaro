@@ -14,6 +14,20 @@ const (
 	WheelLeft
 	WheelRight
 	Other
+	// The physical buttons. They are classified rather than left as Other so a
+	// caller can say `ev.Button == mouse.Left` instead of remembering that a
+	// left press is base 0 — the same reason the wheel is classified.
+	Left
+	Middle
+	Right
+)
+
+// The modifier bits xterm folds into the button byte. Named here because a
+// caller reading `ev.Mod&4` is one typo away from meta-vs-shift.
+const (
+	modShift = 4
+	modAlt   = 8
+	modCtrl  = 16
 )
 
 type Event struct {
@@ -23,6 +37,18 @@ type Event struct {
 	X, Y    int
 	Pressed bool
 }
+
+// Shift/Alt/Ctrl report the modifiers held during the report.
+//
+// SHIFT IS THE ONE A PAGER WANTS, and it is worth knowing that it is not free:
+// many terminals reserve Shift+click for their OWN text selection while mouse
+// reporting is on (that is how a user copies out of a TUI), so a shift-click
+// may never reach us. A binding that needs it must degrade to something
+// reachable — for the pager, ^N/^P + Shift already extends a selection, so a
+// swallowed shift-click costs an affordance, not a capability.
+func (e Event) Shift() bool { return e.Mod&modShift != 0 }
+func (e Event) Alt() bool   { return e.Mod&modAlt != 0 }
+func (e Event) Ctrl() bool  { return e.Mod&modCtrl != 0 }
 
 var prefix = []byte{0x1b, '[', '<'}
 
@@ -114,6 +140,12 @@ func Parse(buf []byte) (ev Event, consumed int, ok bool, need bool) {
 
 func classify(base int) Button {
 	switch base {
+	case 0:
+		return Left
+	case 1:
+		return Middle
+	case 2:
+		return Right
 	case 64:
 		return WheelUp
 	case 65:

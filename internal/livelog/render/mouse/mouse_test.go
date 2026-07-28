@@ -62,10 +62,31 @@ func TestParse(t *testing.T) {
 				ev: Event{Button: WheelDown, Base: 65, Mod: 12, X: 7, Y: 9, Pressed: true}},
 		},
 		{
-			name: "other button",
+			name: "left press",
 			in:   "\x1b[<0;3;4M",
 			w: want{ok: true, consumed: len("\x1b[<0;3;4M"),
-				ev: Event{Button: Other, Base: 0, Mod: 0, X: 3, Y: 4, Pressed: true}},
+				ev: Event{Button: Left, Base: 0, Mod: 0, X: 3, Y: 4, Pressed: true}},
+		},
+		{
+			// The RELEASE of the same click. It has to be distinguishable from the
+			// press or a click-to-toggle gesture fires twice per click — on the way
+			// down and on the way up — and so never appears to do anything.
+			name: "left release",
+			in:   "\x1b[<0;3;4m",
+			w: want{ok: true, consumed: len("\x1b[<0;3;4m"),
+				ev: Event{Button: Left, Base: 0, Mod: 0, X: 3, Y: 4, Pressed: false}},
+		},
+		{
+			name: "shift+left press",
+			in:   "\x1b[<4;3;4M", // 0 + 4
+			w: want{ok: true, consumed: len("\x1b[<4;3;4M"),
+				ev: Event{Button: Left, Base: 0, Mod: 4, X: 3, Y: 4, Pressed: true}},
+		},
+		{
+			name: "middle and right are not left",
+			in:   "\x1b[<2;9;9M",
+			w: want{ok: true, consumed: len("\x1b[<2;9;9M"),
+				ev: Event{Button: Right, Base: 2, Mod: 0, X: 9, Y: 9, Pressed: true}},
 		},
 	}
 
@@ -105,5 +126,29 @@ func TestControlStrings(t *testing.T) {
 	}
 	if Disable != "\x1b[?1006l\x1b[?1000l" {
 		t.Fatalf("bad Disable")
+	}
+}
+
+// TestModifierAccessors pins the bit meanings against the xterm encoding. They
+// are asserted rather than trusted because 4/8/16 is exactly the kind of
+// triple a reader "remembers" as 1/2/4 (the CSI-u modifier mask, which IS
+// 1/2/4 and is decoded elsewhere in this binary — see navModifiers).
+func TestModifierAccessors(t *testing.T) {
+	cases := []struct {
+		mod                    int
+		shift, alt, ctrlWanted bool
+	}{
+		{0, false, false, false},
+		{4, true, false, false},
+		{8, false, true, false},
+		{16, false, false, true},
+		{28, true, true, true},
+	}
+	for _, c := range cases {
+		ev := Event{Mod: c.mod}
+		if ev.Shift() != c.shift || ev.Alt() != c.alt || ev.Ctrl() != c.ctrlWanted {
+			t.Errorf("Mod=%d: shift=%v alt=%v ctrl=%v, want %v/%v/%v",
+				c.mod, ev.Shift(), ev.Alt(), ev.Ctrl(), c.shift, c.alt, c.ctrlWanted)
+		}
 	}
 }

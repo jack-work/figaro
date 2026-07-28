@@ -94,7 +94,7 @@ func TestExpandGrowsUpward_AnchorKeepsItsScreenRow(t *testing.T) {
 	}
 	beforeOffset := tr.offset
 
-	if !tr.toggleSelectedTools() {
+	if !tr.toggleSelectedNodes() {
 		t.Fatal("fixture: the tool did not expand")
 	}
 	if tr.offset == beforeOffset {
@@ -107,7 +107,7 @@ func TestExpandGrowsUpward_AnchorKeepsItsScreenRow(t *testing.T) {
 
 	// COLLAPSING IS THE INVERSE, verified rather than assumed: the gap closes
 	// upward and the same anchor keeps the same row.
-	if !tr.toggleSelectedTools() {
+	if !tr.toggleSelectedNodes() {
 		t.Fatal("the tool did not collapse")
 	}
 	if got := screenRowOf(tr, sentinel); got != before {
@@ -132,7 +132,7 @@ func TestExpandGrowsUpward_Clamps(t *testing.T) {
 	tr.buildIndex()
 	_, maxOff := tr.layout(len(tr.footLines()))
 	tr.offset = maxOff
-	if !tr.toggleSelectedTools() { // expand
+	if !tr.toggleSelectedNodes() { // expand
 		t.Fatal("fixture: the tool did not expand")
 	}
 	// Park INSIDE the expanded block, so it straddles the viewport top: the
@@ -147,7 +147,7 @@ func TestExpandGrowsUpward_Clamps(t *testing.T) {
 		t.Fatal("fixture: the expanded tool must be taller than the parking offset")
 	}
 
-	if !tr.toggleSelectedTools() { // collapse
+	if !tr.toggleSelectedNodes() { // collapse
 		t.Fatal("the tool did not collapse")
 	}
 	if tr.offset < 0 {
@@ -173,7 +173,7 @@ func TestExpandBelowViewportLeavesItAlone(t *testing.T) {
 		t.Fatalf("fixture: the tool must start below the viewport (first=%d bottom=%d)", span.first, bottom)
 	}
 
-	if !tr.toggleSelectedTools() {
+	if !tr.toggleSelectedNodes() {
 		t.Fatal("fixture: the tool did not expand")
 	}
 	if tr.offset != 0 {
@@ -187,7 +187,7 @@ func TestExpandInFollowModeStaysPinned(t *testing.T) {
 	tr, _ := expandFixture(t)
 	tr.follow = true
 	before := tr.offset
-	if !tr.toggleSelectedTools() {
+	if !tr.toggleSelectedNodes() {
 		t.Fatal("fixture: the tool did not expand")
 	}
 	tr.render()

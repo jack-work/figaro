@@ -439,17 +439,22 @@ func nodeHash(n livedoc.Node) uint64 {
 	return h.Sum64()
 }
 
-func (t *transcript) toggleSelectedTools() bool {
+// toggleSelectedNodes is Enter in the pager: expand (or re-collapse) every
+// expandable node inside the selection. It was toggleSelectedTools, and the
+// rename is the point — expandability is a property a node reports through
+// nodeExpandable, not a synonym for "is a tool", so the gesture widens for free
+// as more node kinds grow a collapsed form.
+func (t *transcript) toggleSelectedNodes() bool {
 	marks := t.selectionMarks()
 	if len(marks) == 0 {
 		return false
 	}
-	var tools []nodeRef
+	var refs []nodeRef
 	appendMessage := func(m aria.Message) {
 		for i, n := range m.Nodes {
 			ref := nodeRefAt(m, i)
-			if marks[ref].selected && n.Type == livedoc.NodeTool && n.Output != "" {
-				tools = append(tools, ref)
+			if marks[ref].selected && nodeExpandable(n, t.w-2) {
+				refs = append(refs, ref)
 			}
 		}
 	}
@@ -459,19 +464,30 @@ func (t *transcript) toggleSelectedTools() bool {
 	if open := t.openMessage(); open != nil {
 		appendMessage(*open)
 	}
-	if len(tools) == 0 {
+	return t.toggleExpansion(refs)
+}
+
+// toggleExpansion flips a set of nodes between their collapsed and expanded
+// renders. Shared by Enter (a whole selection) and by a second click (one
+// node), so the viewport discipline below is written once.
+//
+// The set flips as a UNIT: if any member is collapsed, all of them expand;
+// otherwise all of them collapse. A per-node flip would make Enter over a mixed
+// selection swap which half is open, which reads as noise.
+func (t *transcript) toggleExpansion(refs []nodeRef) bool {
+	if len(refs) == 0 {
 		return false
 	}
 	expand := false
-	for _, ref := range tools {
+	for _, ref := range refs {
 		if !t.expanded[ref] {
 			expand = true
 			break
 		}
 	}
-	dirty := make(map[int]struct{}, len(tools))
+	dirty := make(map[int]struct{}, len(refs))
 	toggle := func() {
-		for _, ref := range tools {
+		for _, ref := range refs {
 			if expand {
 				t.expanded[ref] = true
 			} else {
@@ -489,7 +505,7 @@ func (t *transcript) toggleSelectedTools() bool {
 	// content is what scrolls away. See anchorBelow for why that is the right way
 	// round.
 	//
-	// The anchor is the LAST toggled tool: a selection can cover several, and only
+	// The anchor is the LAST toggled node: a selection can cover several, and only
 	// the content after all of them is guaranteed to hold still.
 	//
 	// Following is left alone — the viewport is pinned to the bottom there and
@@ -500,7 +516,7 @@ func (t *transcript) toggleSelectedTools() bool {
 		t.ensureSelectionVisible()
 		return true
 	}
-	if !t.anchorBelow(tools[len(tools)-1], toggle) {
+	if !t.anchorBelow(refs[len(refs)-1], toggle) {
 		// No span on one side of the change, so there is no honest delta to
 		// apply. Keep the old behaviour rather than guess.
 		t.ensureSelectionVisible()

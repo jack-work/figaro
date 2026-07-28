@@ -906,6 +906,13 @@ func (in *interactiveInput) consume(data []byte) (pending []byte, stop bool) {
 					delta = -3
 				case ldmouse.WheelDown:
 					delta = 3
+				case ldmouse.Left:
+					// PRESS ONLY. The terminal reports the release of the same click
+					// too, and a toggle gesture that fired on both would flip twice per
+					// click and so appear never to fire at all.
+					if ev.Pressed {
+						in.clickTranscript(ev)
+					}
 				}
 				if delta != 0 {
 					in.mu.Lock()
@@ -1141,6 +1148,29 @@ func (in *interactiveInput) selectNodeKey(delta int, ev keyEvent) keyVerdict {
 	in.mu.Unlock()
 	in.pageWanted = true
 	return keyHandled
+}
+
+// clickTranscript is a left-button press in the pager: select the node under the
+// pointer, or toggle its expansion when it is already the focus.
+//
+// Clickability is asked FIRST and the whole gesture is skipped when the answer
+// is no. A click is the one input that can miss — a keystroke is always aimed,
+// a pointer lands where it lands — so a click on a blank row between two nodes
+// must not cancel a search prompt, dismiss a panel, or cost a frame.
+func (in *interactiveInput) clickTranscript(ev ldmouse.Event) {
+	row := ev.Y - 1 // the report is 1-based; screen rows are 0-based
+	acted := false
+	in.mu.Lock()
+	if in.lt.transcriptClickable(row) {
+		in.cancelTranscriptSearchLocked()
+		acted = in.lt.transcriptClick(row, ev.Shift())
+	}
+	in.mu.Unlock()
+	if acted {
+		// Same reason ^N sets it: a selection near the floor of the retained window
+		// can want older history, and the fetch must run off the render lock.
+		in.pageWanted = true
+	}
 }
 
 func (in *interactiveInput) copySelection(ctx context.Context, cancel context.CancelFunc, gen uint64, plan selectionCopyPlan) {

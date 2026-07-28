@@ -148,6 +148,7 @@ type transcript struct {
 	// scroll-region machinery (the predicted post-shift grid and the row
 	// fingerprints that propose the shift), touched only inside planScroll.
 	rowBuf      []string     // the visible window, valid until the next render()
+	frameRefs   []nodeRef    // the node behind each BODY row of the last painted frame
 	lineBuf     []string     // whole-window rows, valid until the next lines()
 	keepBuf     map[int]bool // reused live-turn set for pruneCaches
 	paintBuf    []byte       // reused escape-sequence output buffer
@@ -1333,6 +1334,13 @@ func (t *transcript) renderFrame() {
 	// materialized, decorated and highlighted. C's primitives make each of
 	// those rows cost a slice read.
 	t.rowBuf = t.window(t.offset, t.offset+body, t.rowBuf)
+	// THE FRAME'S OWN ROW->NODE MAP, recorded here and nowhere else: a click
+	// arrives naming a screen row, and the only honest answer to "which node was
+	// on that row" is the one taken from the geometry that was actually painted.
+	// Re-deriving it at click time would consult an offset that a live token or a
+	// tail re-tune may already have moved — the same staleness selectNode's cold
+	// path documents for its viewport seed. See transcript_mouse.go.
+	t.frameRefs = t.rowRefs(t.offset, t.offset+body, t.frameRefs)
 	copy(screen[:body], t.rowBuf)
 	for k, l := range foot {
 		if r := body + k; r < t.h-2 {
@@ -1483,9 +1491,17 @@ func (t *transcript) setQueued(prompts []string, errMsg string) {
 // what the table cannot know: the pane's geometry and its dimming.
 func (t *transcript) helpLines() []string {
 	body := helpBody()
-	rows := make([]string, 0, len(body)+3)
+	rows := make([]string, 0, len(body)+5)
 	rows = append(rows, "")
 	rows = append(rows, body...)
+	// The mouse is documented HERE and not in the keymap because it is not a
+	// chord: the table is keyed by keystroke, and every invariant it enforces
+	// (one help row per binding, openers derived from the rows) is stated in terms
+	// of keys. Smuggling a pointer in as a fake chord would buy one help line at
+	// the cost of those invariants. The gesture still has to be discoverable,
+	// though — an affordance nobody is told about is one nobody uses (trap #6:
+	// test the path of someone who does not know the affordance exists).
+	rows = append(rows, mouseHelpRows()...)
 	if v := helpVersionLine(); v != "" {
 		rows = append(rows, "", "  "+v)
 	}
@@ -1712,7 +1728,7 @@ func pagerStatusPanel(t *transcript)  { t.showStatus = true }
 func pagerQueuedPanel(t *transcript)  { t.openQueuedPanel() }
 func pagerSelectNext(t *transcript)   { t.selectNode(1, false) }
 func pagerSelectPrev(t *transcript)   { t.selectNode(-1, false) }
-func pagerToggleTools(t *transcript)  { t.toggleSelectedTools() }
+func pagerToggleTools(t *transcript)  { t.toggleSelectedNodes() }
 
 // pagerClearSelection is Esc in the pager: drop the active selection, and do
 // nothing at all when there is none.

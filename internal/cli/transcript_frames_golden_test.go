@@ -87,7 +87,7 @@ func TestTranscriptFramesGolden(t *testing.T) {
 	section("highlighted", tr.lines())
 
 	tr.matchQuery = ""
-	tr.toggleSelectedTools() // no selection: inert
+	tr.toggleSelectedNodes() // no selection: inert
 	tr.selection = nodeSelection{}
 	section("plain-again", tr.lines())
 

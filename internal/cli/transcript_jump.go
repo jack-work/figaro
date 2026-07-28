@@ -316,7 +316,7 @@ func (t *transcript) landJump(line int, ref nodeRef) {
 	t.jumpNote = ""
 	t.stopFollowing()
 	if ref.valid() {
-		t.selectRef(ref)
+		t.selectRef(ref, false)
 	}
 	if line < 0 {
 		line = 0
@@ -327,12 +327,26 @@ func (t *transcript) landJump(line int, ref nodeRef) {
 // selectRef puts the selection on one node, carrying the hash the copy path
 // verifies endpoints with — which is why it goes through nodeRefs() rather
 // than minting a bare point.
-func (t *transcript) selectRef(ref nodeRef) bool {
+//
+// extend is the Shift variant: the anchor stays where it was and only the focus
+// moves, so a range can be built by pointing at its far end (Shift+click) just
+// as it can by walking to it (Shift+^N). A cold selection ignores extend — there
+// is no anchor yet to extend from.
+//
+// It does NOT touch the viewport, deliberately: the jump sets the offset itself
+// after detaching (see landJump), and a click is on screen already. Whoever
+// calls this owns where the page ends up.
+func (t *transcript) selectRef(ref nodeRef, extend bool) bool {
 	for _, p := range t.nodeRefs() {
-		if p.nodeRef == ref {
-			t.selection = nodeSelection{active: true, anchor: p, focus: p}
-			return true
+		if p.nodeRef != ref {
+			continue
 		}
+		if !extend || !t.selection.active {
+			t.selection.anchor = p
+		}
+		t.selection.focus = p
+		t.selection.active = true
+		return true
 	}
 	return false
 }

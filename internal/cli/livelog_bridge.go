@@ -636,6 +636,32 @@ func (t *livelogTurn) transcriptSelect(delta int, extend bool) {
 	t.tr.render()
 }
 
+// transcriptClickable reports whether a left click on this screen row would hit
+// a node. The input loop asks BEFORE it acts so that a click on chrome does not
+// cancel a search prompt the reader is still typing into — the mouse is the one
+// input device that reports where it landed rather than what was aimed at.
+func (t *livelogTurn) transcriptClickable(row int) bool {
+	return t.tr.active && t.tr.clickable(row)
+}
+
+// transcriptClick selects the node on a screen row, or toggles its expansion
+// when it is already the focus. Reports whether anything changed.
+func (t *livelogTurn) transcriptClick(row int, extend bool) bool {
+	if !t.tr.active {
+		return false
+	}
+	// A panel is dismissed by any acting gesture, exactly as it is by any key the
+	// panel does not itself bind (see transcript.dispatch). The click still
+	// resolves against the frame the panel was drawn over, which is the frame the
+	// user clicked — that is what makes frameRefs the right authority.
+	acted := t.tr.clickAt(row, extend)
+	if acted {
+		t.tr.closePanels()
+		t.tr.render()
+	}
+	return acted
+}
+
 func (t *livelogTurn) transcriptSelectionPlan() (selectionCopyPlan, bool) {
 	return t.tr.selectionPlan()
 }
