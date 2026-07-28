@@ -83,6 +83,34 @@ aborted script still cleans up. Not-ours, do **not** reap: daemons with
 `FIGARO_RUNTIME_DIR` unset (the live one), and anything under
 `/run/user/1000/figaro-dev-share-hush/run`.
 
+**A dead tmux server leaves a live-looking socket.** Found by BERTA mid-run:
+`kill-server` removes the server but leaves the socket *inode*, so
+
+```sh
+[ -S "$sock" ] && echo "server is up"      # WRONG: says up for a dead server
+tmux -S "$sock" has-session 2>/dev/null    # right: ask tmux, not the filesystem
+```
+
+Same family as trap #10 — **the artifact outlives the process.** `pp_alive` /
+`pp_server_alive` do it properly and `pp_down` now `rm -f`s the socket. If you
+wrote your own liveness probe as a file test, fix it.
+
+**`pp_seed` copies the CONFIG too, and that is not optional.** It does two
+unrelated things: the aria store (content to page through) *and*
+`~/.config/figaro` → `$FIGARO_CONFIG_DIR` (loadouts and provider credentials).
+Skip it and `FIGARO_CONFIG_DIR` points at an empty directory, so you get no
+loadouts and no credentials — a fresh turn then fails on the **first-run /
+missing-credential** path. Two consequences:
+
+- `figaro listen` against an unseeded store shows you a confusing *nothing*.
+- Worse for CHERUBINO specifically: an unseeded config makes a turn die with
+  "no credential", which is exactly the branch that reaches
+  `providerSetupHint()` at `stream.go:167`. You would photograph a real bleed
+  **for a reason you did not choose**, and mistake an accident for a repro. If
+  you are testing the error path, decide *which* error you are provoking and
+  make it deliberate.
+
+
 ---
 
 ## 2. Stamp the binary. Always.
