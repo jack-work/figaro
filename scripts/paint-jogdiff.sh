@@ -6,10 +6,25 @@
 # lie. Self-validating: it needs no model of what the content should be, which
 # is the point (see PAINT-REPRO.md §5).
 #
-#   scripts/paint-jogdiff.sh <hunter> <aria-id> [binary]
+#   scripts/paint-jogdiff.sh <hunter> [aria-id|-] [binary]
 #
-# e.g. scripts/paint-jogdiff.sh bartolo 8566c903
-#      scripts/paint-jogdiff.sh bartolo 8566c903 /tmp/paint-bartolo/figaro-fixed
+# e.g. scripts/paint-jogdiff.sh bartolo               # mint a synthetic fixture
+#      scripts/paint-jogdiff.sh bartolo -             # same
+#      scripts/paint-jogdiff.sh bartolo abc12345      # use an aria already in the store
+#      scripts/paint-jogdiff.sh bartolo - /var/tmp/paint-bartolo/figaro-fixed
+#
+# CONTENT. This used to call pp_seed, which copied the master's real aria store.
+# That is disarmed for privacy, so with no aria id this now MINTS A SYNTHETIC
+# FIXTURE via pp_fixture (one cheap turn; PP_FIXTURE_ROWS to size it). BASILIO
+# caught the stale call: the script exited 1 before doing anything, and every
+# instruction built on top of it was a document stating an intent the code did not
+# implement — the same family we had just spent the night auditing.
+#
+# KEEP FIXTURES TABLE-FREE (SUSANNA): a table's row count at a given width
+# changes after feat/table-wrap, so a resize across a table measures the merge
+# rather than the bug. pp_fixture is table-free by construction — bare integers —
+# which has a second virtue: every legitimate body row is an increasing integer,
+# so a gap row containing ANYTHING is self-evidently a bug and no oracle is needed.
 #
 # Exit 0 = every comparable gesture was CLEAN. Exit 1 = at least one
 # CONTAMINATED. Comparisons whose offset moved are reported SKIP and do not
@@ -18,17 +33,22 @@
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/paintpane.sh"
 
-HUNTER="${1:?usage: paint-jogdiff.sh <hunter> <aria-id> [binary]}"
-ARIA="${2:?usage: paint-jogdiff.sh <hunter> <aria-id> [binary]}"
+HUNTER="${1:?usage: paint-jogdiff.sh <hunter> [aria-id|-] [binary]}"
+ARIA="${2:--}"
 ALTBIN="${3:-}"
 
 pp_init "$HUNTER" || exit 1
 [ -n "$ALTBIN" ] && { PP_BIN="$ALTBIN"; echo "paintpane: OVERRIDE bin=$PP_BIN md5=$(md5sum "$PP_BIN" | cut -c1-12) ver=$("$PP_BIN" --version | head -1)"; }
-pp_seed || exit 1
 
 # One arm per binary means one daemon per binary: the CLI/daemon build handshake
 # refuses a mismatched pair outright. Always stop before starting.
 pp_run stop --force >/dev/null 2>&1; sleep 1
+
+if [ "$ARIA" = "-" ]; then
+  ARIA="$(pp_fixture "${PP_FIXTURE_ROWS:-400}")" || exit 1
+  [ -n "$ARIA" ] || { echo "paint-jogdiff: pp_fixture produced no aria id" >&2; exit 1; }
+fi
+echo "paint-jogdiff: driving aria $ARIA"
 
 pp_up 100 40 jog || exit 1
 pp_pager "$ARIA" || exit 1
@@ -68,6 +88,13 @@ jogdiff() {
 }
 
 # Deterministic start: top of the held window, then three half-pages down.
+#
+# NOTE ON GEOMETRY, since a stale comment here is how BASILIO's repro rotted: the
+# ABSOLUTE offset this lands on depends on the fixture size (it was 219-240 in a
+# 1058-row real aria; it will be elsewhere in a 400-row fixture). That does not
+# matter, and deliberately so — the oracle never asserts a position. It asserts
+# only that the two captures share the SAME footer range, and SKIPs when they do
+# not. Do not add an assertion about where this lands.
 pp_key g; pp_key g; pp_stable 8 2 >/dev/null
 for _ in 1 2 3; do pp_key d; sleep 0.3; done
 

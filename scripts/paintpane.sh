@@ -223,8 +223,9 @@ Then reply with the single word DONE and nothing else." 2>&1)" || {
   }
   PP_ARIA="$(printf '%s' "$out" | grep -o '"aria_id":"[^"]*"' | head -1 | cut -d'"' -f4)"
   [ -n "$PP_ARIA" ] || { pp_die "could not read aria id from: $out"; return 1; }
-  echo "paintpane: fixture aria $PP_ARIA (~$rows numbered rows)"
-  printf '%s' "$PP_ARIA"
+  # Human line to STDERR so a caller can capture the id cleanly on stdout.
+  echo "paintpane: fixture aria $PP_ARIA (~$rows numbered rows)" >&2
+  printf '%s\n' "$PP_ARIA"
 }
 
 
