@@ -132,8 +132,41 @@ which makes the fix worth more than it looks.
 | option | cost |
 |---|---|
 | **(i)** leave the pager, then print | probed and working, test passes; costs an unrequested view change + a `flushTail` dump |
-| **(ii)** route through the frame buffer as a styled status/error row | least disruptive, keeps the reader's place, consistent with invariant #1; needs an error channel into `transcript`/`statusLine` **and** a sub-decision: `providerSetupHint` is multi-line and the footer is one row |
+| **(ii)** route through the frame buffer as a styled status/error row | least disruptive, keeps the reader's place, consistent with invariant #1. **Costed to the field by CHERUBINO and materially smaller than it sounds: ONE new field** (`reason string` on `sessionStatus`, set under the existing mutex), **one new row** in `panelLines`, and a `clipToWidth` summary via the existing `jumpNote` mechanism. No new machinery, no new invariant, no new lock. |
 | **(iii)** suppress while the pager is up, surface in the `!` panel | cheapest, correct by construction; **an error the user never opens a panel to read is an error he may never see** — which contradicts the stated reason these writes exist |
+
+**Precedents that make (ii) a reuse rather than an invention** — all verified by
+CHERUBINO in the source, not assumed:
+
+- `transcript_jump.go:186` already does `t.jumpNote = err.Error()`. **An error
+  string on the status row is existing shipped behaviour**, cleared on the next
+  key at `transcript.go:1671`.
+- `showQueuedAuto` is a better precedent than "three panels exist": it opens a
+  panel because **state** changed rather than a key, and it already carries the
+  policy a reviewer would demand — *a panel the user opened by hand is never
+  auto-closed*. The hard question is pre-answered.
+- `statusPanelLines` already clips to `t.h-4`, so a long hint is **bounded by
+  construction** and cannot overrun the frame.
+- `sessionStatus` already has `turnStatusError` and `finishTurn(reason)`.
+- **The one real gap:** `finishTurn` *classifies* the reason and **throws it
+  away** — it lowercases it, switches on it to set `s.turn`, and never stores it
+  (`internal/cli/session_status.go`). That single omission is the whole cost.
+
+**The multi-line sub-decision does not need to reach the master as a choice.**
+CHERUBINO argued it out: truncating `providerSetupHint` to one row keeps the
+*diagnosis* and discards **every actionable line** — the user learns he has no
+credential and not one way to fix it, turning a recoverable error into a dead end,
+which is worse than the bleed it replaces. Truncation *is* right for a single-line
+reason like `error: anthropicsdk 401: …`. So: **summary row always, panel only when
+the text does not fit.** Complementary, not alternatives.
+
+**The corruption outlives the error.** CHERUBINO's addition, and it is the most
+important thing for pricing: once `t.prev` describes a terminal that no longer
+exists, **every later frame is diffed against a lie.** This is not "an error
+smudges the footer once" — it is "an error permanently desynchronises the painter
+until something forces those rows to differ". That is the **same broken invariant**
+BASILIO and BARTOLO reach by a different route: their fix and this one are two
+doors into one class of bug.
 
 **Recommended (ROSINA concurs, and it is CHERUBINO's refinement of her prior):
 (ii) for the error paths, (i) for Ctrl-C.** Ctrl-C is *already* an exit gesture so
