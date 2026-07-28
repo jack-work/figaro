@@ -8,10 +8,13 @@
 #
 #   scripts/paint-jogdiff.sh <hunter> [aria-id|-] [binary]
 #
-# e.g. scripts/paint-jogdiff.sh bartolo               # mint a synthetic fixture
-#      scripts/paint-jogdiff.sh bartolo -             # same
-#      scripts/paint-jogdiff.sh bartolo abc12345      # use an aria already in the store
-#      scripts/paint-jogdiff.sh bartolo - /var/tmp/paint-bartolo/figaro-fixed
+# e.g. scripts/paint-jogdiff.sh bartolo abc12345      # use an aria already in the store
+#      PP_ALLOW_TURN=1 scripts/paint-jogdiff.sh bartolo -   # MINT one — SPENDS A TURN
+#      scripts/paint-jogdiff.sh bartolo abc12345 /var/tmp/paint-bartolo/figaro-fixed
+#
+# THIS SCRIPT SPENDS A PROVIDER TURN IF YOU ASK IT TO MINT A FIXTURE, and only
+# then. Minting is gated behind PP_ALLOW_TURN=1 because FIGARO_CONFIG_DIR is the
+# REAL config by reference — see the guard below.
 #
 # CONTENT. This used to call pp_seed, which copied the master's real aria store.
 # That is disarmed for privacy, so with no aria id this now MINTS A SYNTHETIC
@@ -45,6 +48,41 @@ pp_init "$HUNTER" || exit 1
 pp_run stop --force >/dev/null 2>&1; sleep 1
 
 if [ "$ARIA" = "-" ]; then
+  # THIS IS THE ONLY PATH THAT SPENDS MONEY, AND IT IS NOW GATED.
+  #
+  # CHERUBINO caught the footgun, which was mine: pp_env resolves
+  # FIGARO_CONFIG_DIR to ${PP_CONFIG:-$HOME/.config/figaro} — the REAL config, by
+  # reference — and pp_fixture calls `pp_run new -j`. So `paint-jogdiff.sh
+  # <hunter> -` resolves the master's REAL credentials and spends a REAL provider
+  # turn, SILENTLY, as a side effect of a script whose name says "jogdiff". A
+  # stand-down would then be one unset variable away from being violated by
+  # whoever ran the obvious command.
+  #
+  # HONEST CORRECTION TO MY OWN EARLIER CLAIM: when I first wrote this guard the
+  # rationale above was FALSE. pp_run hardcoded FIGARO_CONFIG_DIR to the empty
+  # scratch config, so the mint could not have reached a real credential — it
+  # would have died with "figaro needs initial setup". BASILIO measured that.
+  # Fixing pp_run to consume pp_env (one authority for the environment) is what
+  # MAKES the hazard real, so the guard is right and was, briefly, right for a
+  # reason that did not hold. Recorded rather than quietly corrected.
+  #
+  # A GUARD BEATS A DOC LINE: a document stating an intent the code does not
+  # enforce is the exact family we spent the night auditing.
+  if [ -z "$PP_ALLOW_TURN" ]; then
+    cat >&2 <<EOF
+paint-jogdiff: REFUSING to mint a fixture, because that SPENDS A REAL PROVIDER TURN.
+
+  pp_fixture calls 'figaro new', and FIGARO_CONFIG_DIR resolves to the REAL config
+  BY REFERENCE, so this would use the master's real credentials and cost real
+  tokens as a side effect of a script whose name says "jogdiff".
+
+  Either point it at content that already exists:
+      scripts/paint-jogdiff.sh $HUNTER <aria-id>
+  or say so explicitly:
+      PP_ALLOW_TURN=1 scripts/paint-jogdiff.sh $HUNTER -
+EOF
+    exit 2
+  fi
   ARIA="$(pp_fixture "${PP_FIXTURE_ROWS:-400}")" || exit 1
   [ -n "$ARIA" ] || { echo "paint-jogdiff: pp_fixture produced no aria id" >&2; exit 1; }
 fi
@@ -52,6 +90,13 @@ echo "paint-jogdiff: driving aria $ARIA"
 
 pp_up 100 40 jog || exit 1
 pp_pager "$ARIA" || exit 1
+
+# REFUSE A FIXTURE THAT CANNOT FAIL. Without an `N–M/T` range in the footer the
+# transcript fits the pane, maxOff is 0, every motion is a no-op, and this whole
+# sweep would compare identical frames and print CLEAN for ANY binary — a
+# false-clean instrument, which is trap 12 committed by the tool that hunts it.
+# BASILIO measured the no-range footer on a 250-row synthetic fixture.
+pp_require_range || exit 3
 
 OUT="$PP_DIR/jogdiff"; mkdir -p "$OUT"; rm -f "$OUT"/*
 fails=0; skips=0; cleans=0
