@@ -60,6 +60,15 @@ A **private socket** is the whole defence: `kill-server` on your own socket
 provably cannot touch the user's sessions (`0 dev figaro-qua fx gw4 iq iq2` live
 on the default socket). Never run bare `tmux kill-server`.
 
+**`/tmp` is RAM.** It is a 28 G tmpfs shared with everything on the box, and a
+stamped figaro is ~38 MB. `pp_init` always builds to the same path (`-o
+"$PP_BIN"`) so *rebuilds overwrite and do not accumulate* — but **A/B variants
+do**: keep `figaro`, the arm you drive interactively, in `/tmp/paint-<hunter>/`,
+and put probe/fixed/variant binaries in `/var/tmp/paint-<hunter>/` (disk, 703 G
+free). Four hunters × one binary is ~154 MB of RAM; four hunters × three arms
+each is not. Record each arm's `md5sum` in your write-up either way — that is the
+evidence, not the file's location.
+
 **No nix dev shells.** A dev root is shared; a scratch store is not. So there is
 no `FIGARO_DEV_ROOT` to hand a sweeper — instead a daemon is attributable by env:
 
