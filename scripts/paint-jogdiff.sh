@@ -8,10 +8,13 @@
 #
 #   scripts/paint-jogdiff.sh <hunter> [aria-id|-] [binary]
 #
-# e.g. scripts/paint-jogdiff.sh bartolo               # mint a synthetic fixture
-#      scripts/paint-jogdiff.sh bartolo -             # same
-#      scripts/paint-jogdiff.sh bartolo abc12345      # use an aria already in the store
-#      scripts/paint-jogdiff.sh bartolo - /var/tmp/paint-bartolo/figaro-fixed
+# e.g. scripts/paint-jogdiff.sh bartolo abc12345      # use an aria already in the store
+#      PP_ALLOW_TURN=1 scripts/paint-jogdiff.sh bartolo -   # MINT one — SPENDS A TURN
+#      scripts/paint-jogdiff.sh bartolo abc12345 /var/tmp/paint-bartolo/figaro-fixed
+#
+# THIS SCRIPT SPENDS A PROVIDER TURN IF YOU ASK IT TO MINT A FIXTURE, and only
+# then. Minting is gated behind PP_ALLOW_TURN=1 because FIGARO_CONFIG_DIR is the
+# REAL config by reference — see the guard below.
 #
 # CONTENT. This used to call pp_seed, which copied the master's real aria store.
 # That is disarmed for privacy, so with no aria id this now MINTS A SYNTHETIC
@@ -45,6 +48,34 @@ pp_init "$HUNTER" || exit 1
 pp_run stop --force >/dev/null 2>&1; sleep 1
 
 if [ "$ARIA" = "-" ]; then
+  # THIS IS THE ONLY PATH THAT SPENDS MONEY, AND IT IS NOW GATED.
+  #
+  # CHERUBINO caught the footgun, which was mine: pp_env resolves
+  # FIGARO_CONFIG_DIR to ${PP_CONFIG:-$HOME/.config/figaro} — the REAL config, by
+  # reference — and pp_fixture calls `pp_run new -j`. So on any machine with
+  # PP_CONFIG unset, `paint-jogdiff.sh <hunter> -` would resolve the master's REAL
+  # credentials and spend a REAL provider turn, SILENTLY, as a side effect of a
+  # script whose name says "jogdiff". A stand-down would then be one unset
+  # variable away from being violated by whoever ran the obvious command.
+  #
+  # He proposed a line in the docs. A GUARD BEATS A DOC LINE: a document stating
+  # an intent the code does not enforce is the exact family we spent the night
+  # auditing. So the mint is opt-in, and the refusal says how to proceed.
+  if [ -z "$PP_ALLOW_TURN" ]; then
+    cat >&2 <<EOF
+paint-jogdiff: REFUSING to mint a fixture, because that SPENDS A REAL PROVIDER TURN.
+
+  pp_fixture calls 'figaro new', and FIGARO_CONFIG_DIR resolves to the REAL config
+  BY REFERENCE, so this would use the master's real credentials and cost real
+  tokens as a side effect of a script whose name says "jogdiff".
+
+  Either point it at content that already exists:
+      scripts/paint-jogdiff.sh $HUNTER <aria-id>
+  or say so explicitly:
+      PP_ALLOW_TURN=1 scripts/paint-jogdiff.sh $HUNTER -
+EOF
+    exit 2
+  fi
   ARIA="$(pp_fixture "${PP_FIXTURE_ROWS:-400}")" || exit 1
   [ -n "$ARIA" ] || { echo "paint-jogdiff: pp_fixture produced no aria id" >&2; exit 1; }
 fi

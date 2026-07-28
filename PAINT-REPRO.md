@@ -44,6 +44,30 @@ selection, `listen` is strictly better: free, instant, and deterministic.
 
 ---
 
+> ### ⚠ `paint-jogdiff.sh` SPENDS A PROVIDER TURN IF YOU ASK IT TO MINT
+>
+> Only then, and it is **gated** — not merely documented. CHERUBINO caught the
+> footgun, which was mine: `pp_env` resolves `FIGARO_CONFIG_DIR` to
+> `${PP_CONFIG:-$HOME/.config/figaro}` — **the real config, by reference** — and
+> `pp_fixture` calls `figaro new`. So `paint-jogdiff.sh <hunter> -` would have
+> resolved the master's **real credentials** and spent a **real provider turn**,
+> *silently*, as a side effect of a script whose name says "jogdiff". A stand-down
+> would then have been **one unset variable** away from being violated by whoever
+> ran the obvious command.
+>
+> He proposed a line in this file. **A guard beats a doc line** — a document
+> stating an intent the code does not enforce is the exact family we spent the
+> night auditing — so minting now refuses unless you opt in, and the refusal tells
+> you how to proceed:
+>
+> ```sh
+> scripts/paint-jogdiff.sh <hunter> <aria-id>          # free: uses existing content
+> PP_ALLOW_TURN=1 scripts/paint-jogdiff.sh <hunter> -  # SPENDS A TURN, deliberately
+> ```
+>
+> Measured: without `PP_ALLOW_TURN` it exits **2** having spent nothing; with an
+> explicit aria id it never reaches the guard.
+
 ## 1. Naming and cleanup contract (agreed with BERTA, the watchdog)
 
 > ### ⚠ STANDING ORDER — REPORTING
