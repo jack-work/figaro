@@ -169,22 +169,36 @@ pp_env() {
 # refuses to continue if anything group/world-readable survived. Auth then has to
 # come from the environment (e.g. ANTHROPIC_API_KEY) or the dev-hush path the
 # figaro skill documents — which is the correct posture for a throwaway store.
+#
+# DEREFERENCE. `cp -r` — and `tar` without -h, which is what this used to do —
+# copies a SYMLINK AS A SYMLINK, so a "isolated" config silently reaches back
+# into the original. SUSANNA measured it: her scratch config's skills/plaid and
+# skills/pishot.md were links into the master's LIVE ~/dev trees, so an arm that
+# believed it was reading an isolated skill was reading the live file, and a test
+# that believed it was hermetic was not. Verified here: ~/.config/figaro/skills
+# contains exactly those two links today. So: -h (tar) / -L (cp), and then ASSERT
+# no symlink survived, because a hermeticity claim is worth nothing unchecked.
+#
+# Same family as the credential rule below: A COPY THAT SILENTLY REACHES BACK
+# INTO THE ORIGINAL.
 pp_config_copy() {
   local dst="$PP_STORE/config"
   mkdir -p -m 700 "$dst" || return 1
   chmod 700 "$dst"
-  ( cd "$HOME/.config/figaro" 2>/dev/null && tar cf - \
+  ( cd "$HOME/.config/figaro" 2>/dev/null && tar cfh - \
       --exclude=providers --exclude=hush --exclude='*.age' --exclude='*.key' . ) \
     | ( cd "$dst" && tar xf - ) || return 1
   chmod -R go-rwx "$dst"
-  local leaky
+  local leaky links
   leaky="$(find "$dst" -type f \( -perm -g+r -o -perm -o+r \) 2>/dev/null | wc -l)"
   [ "$leaky" = 0 ] || { pp_die "REFUSING: $leaky group/world-readable file(s) under $dst"; return 1; }
+  links="$(find "$dst" -type l 2>/dev/null | wc -l)"
+  [ "$links" = 0 ] || { pp_die "REFUSING: $links symlink(s) under $dst — NOT hermetic, they reach back into the original"; return 1; }
   if [ -e "$dst/providers" ] || [ -e "$dst/hush" ]; then
     pp_die "REFUSING: providers/ or hush/ leaked into $dst"; return 1
   fi
   PP_CONFIG="$dst"
-  echo "paintpane: isolated config at $dst (no providers/, no hush/)"
+  echo "paintpane: isolated config at $dst (no providers/, no hush/, no symlinks)"
 }
 
 # pp_fixture [rows] [aria-out] — build a SYNTHETIC pager fixture.

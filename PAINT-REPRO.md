@@ -51,19 +51,53 @@ Violate this and a sweeper cannot tell your processes from the user's.
 > ### ⚠ NEVER RELY ON A PARENT DIRECTORY TO PROTECT A FILE YOU ARE ABOUT TO MOVE
 >
 > A real incident in this very operation, found by BERTA mid-run, and the most
-> expensive mistake in this file. The original `pp_seed` did
-> `cp -r ~/.config/figaro` into `/var/tmp/paint-<hunter>/config`. `cp` preserved
-> modes **faithfully** — that was never the problem. The problem is that
-> `providers/anthropic.toml` is itself mode **644**, and in the real config it is
-> safe only because its **parent is 700**. Copying it out from under that parent
-> put the master's Anthropic credential world-readable inside `/var/tmp`, which is
-> `1777`, world-traversable, **and survives reboot**. Four copies. Alongside four
-> 119 MB copies of his real aria store — his actual conversation history.
+> expensive mistake in this file.
+>
+> **The controlled experiment, from SUSANNA — quote this pair, not the single
+> case.** Two secrets were copied into the *same* four 755 directories in the
+> *same* minute by the *same* `cp`:
+>
+> | file | its own mode | outcome |
+> |---|---|---|
+> | `providers/anthropic.toml` | **644** | **EXPOSED** — world-readable in a 1777 tree |
+> | `hush/identity.age` (an AGE **private key**) | **600** | **safe** |
+>
+> One variable. **Its location saved nothing; its own mode saved everything.**
+> `cp` preserved modes faithfully in both cases — that was never the problem. The
+> problem is that `anthropic.toml` was safe in the real config *only because its
+> parent is 700*, and copying it out from under that parent left the master's
+> Anthropic credential world-readable inside `/var/tmp`, which is `1777`,
+> world-traversable, **and survives reboot**. Four copies. Alongside four 119 MB
+> copies of his real aria store — his actual conversation history.
+>
+> *A rule with a negative control is a rule someone will actually follow.*
 >
 > It is the trap #10 family one turn crueller: not an artifact outliving its
 > process, but **a secret outliving its shield**. And the durability that made
 > `/var/tmp` the right choice over tmpfs is exactly what makes it the wrong place
 > to leave one.
+>
+> ### ⚠ AND: A COPY THAT SILENTLY REACHES BACK INTO THE ORIGINAL
+>
+> Same family, different mechanism, also SUSANNA: **`cp -r` copies a symlink as a
+> symlink**, so an "isolated" scratch config is **not hermetic**. Hers had
+> `skills/plaid` and `skills/pishot.md` pointing back into the master's *live*
+> `~/dev` trees — an arm that believed it was reading an isolated skill was reading
+> the live file, and a test that believed it was hermetic was not. Verified here:
+> `~/.config/figaro/skills` contains exactly those two links today.
+>
+> Use **`cp -rL`** (or `tar -h`) wherever an arm needs real isolation, **and then
+> assert no symlink survived** — a hermeticity claim is worth nothing unchecked.
+> `pp_config_copy` now dereferences and refuses to proceed if it finds a link.
+>
+> She found it only because her own audit threw a **false positive** on symlink
+> modes (777, unsettable) and she *checked* instead of "fixing" it — the third time
+> in one night a diagnostic was right for a reason its author did not expect.
+>
+> **Not an exposure but still wrong:** a 0600 copy of a private key in a
+> reboot-surviving directory is not a leak, and **the correct number of them is
+> still zero.** Measured across every tree under my control: zero `*.age`, zero
+> `hush/`.
 >
 > **What the harness does now. Do not undo any of it.**
 >
@@ -73,6 +107,7 @@ Violate this and a sweeper cannot tell your processes from the user's.
 > | isolated config | `pp_config_copy`, if you truly need one. **Excludes `providers/` and `hush/`**, then *refuses to continue* if any group/world-readable file survived. Auth comes from the environment instead. |
 > | content | `pp_fixture N` — **synthetic, not the master's history** (below). |
 > | dirs | `mkdir -p -m 700` **before anything lands**. Do not trust umask; this box yields 755. |
+> | `/tmp/paint-<hunter>/` | **also 700.** BASILIO caught this after I had declared victory: I fixed `/var/tmp` and left `/tmp/paint-*` at **755 with 99 world-readable capture files** — and a jogdiff capture is *a photograph of the master's conversation*. BERTA's glob covered the path, not the **mode**. Closed, captures deleted; `pp_fixture` supersedes them. |
 > | teardown | `pp_down` `rm -rf`s the config copy **first**, then the store. |
 > | `pp_seed` | **disarmed** — prints why and exits 1 rather than silently no-op'ing, because three hunters had already been told to call it. |
 >
