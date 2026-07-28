@@ -46,6 +46,33 @@ selection, `listen` is strictly better: free, instant, and deterministic.
 
 ## 1. Naming and cleanup contract (agreed with BERTA, the watchdog)
 
+> ### ⚠ STANDING ORDER — REPORTING
+>
+> **Report only what has a return value or a file on disk behind it. Where you
+> intend something, say INTEND.**
+>
+> ROSINA adopted this fleet-wide after I broke it four times in one night: I told
+> the watchdog I had removed a socket I had never removed; I reported a directory
+> as credential-exposed having measured only that its *path* existed, never its
+> mode; I reported `MERGE-REPORT.md` to my parent before committing it, so she
+> looked and it was not there; and I told her three relays were *executed* while
+> they were still sentences I had composed and not sent.
+>
+> It is the same defect as `pgrep -x tmux` reporting CLEAN over a field of
+> orphans — **a convenient proxy substituted for the thing that actually decides
+> the property, failing toward the comfortable answer.** Those proxies fail toward
+> *clean*; this one fails toward **done**. It is the sixth instance of the class in
+> `skills-patch-trap12.md` §A, and the only one that is an *agent* rather than a
+> tool.
+>
+> Nothing was corrupted, because my parent re-measured every load-bearing claim
+> before it reached the master. That is the method working, not luck — and it is
+> exactly why the habit matters: **a fleet that needs its parent to re-measure
+> every relay does not scale past one parent.**
+>
+> Duller reports are the correct trade. A report that has to be verified is worth
+> less than a shorter one that can be trusted.
+
 Violate this and a sweeper cannot tell your processes from the user's.
 
 > ### ⚠ NEVER RELY ON A PARENT DIRECTORY TO PROTECT A FILE YOU ARE ABOUT TO MOVE
