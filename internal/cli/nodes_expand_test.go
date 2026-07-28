@@ -233,3 +233,57 @@ func TestSurfaceContract_OnlyTheTranscriptCollapses(t *testing.T) {
 		t.Errorf("transcript expansion did not restore prose: %d rows, want %d", got, full)
 	}
 }
+
+// TestClampTables_NeverEmitsABlankRow exists for a bug hunt happening on
+// another branch: a resize-duplication defect rooted in the painters' row diff,
+// where a shortened frame leaves `old` defaulting to "" for rows past the base
+// (Incipit.diffRange, and transcript.paint's `base` when it is short or is
+// predBuf). Anything that can put a BLANK row where there used to be text can
+// interact with that repro.
+//
+// The collapse cannot. Every row it emits is either a row it was handed,
+// verbatim, or the single dim hint — and the hint is never blank. So the number
+// of blank rows can only ever go DOWN across a clamp, never up.
+//
+// (The wrap fix moves the same way, and harder: before it, each wrapped cell
+// emitted height-1 VISIBLY BLANK continuation rows — that was the bug's
+// signature. After it, those rows carry text; 0 blank rows in any table render
+// across widths 26..140.)
+func TestClampTables_NeverEmitsABlankRow(t *testing.T) {
+	blanks := func(rows []string) int {
+		n := 0
+		for _, r := range rows {
+			if strings.TrimSpace(stripANSI(r)) == "" {
+				n++
+			}
+		}
+		return n
+	}
+	// A document with real blank separators AND a clampable table, so the count
+	// is not trivially zero on both sides.
+	md := "A paragraph before the table.\n\n" + tallTableMarkdown() +
+		"\nA paragraph after it, long enough to wrap at least once at any width.\n"
+	for w := 26; w <= 120; w += 2 {
+		in := render.Prose(md, w)
+		out := clampTables(in, proseTableCapDefault)
+		if len(out) >= len(in) {
+			continue // nothing clamped at this width; nothing to assert
+		}
+		if got, was := blanks(out), blanks(in); got > was {
+			t.Errorf("w=%d: clamp ADDED blank rows (%d -> %d)\n%s", w, was, got, dumpRows(out))
+		}
+		// And the row the clamp writes itself must never be blank.
+		found := false
+		for _, r := range out {
+			if strings.Contains(stripANSI(r), "more table lines") {
+				found = true
+				if strings.TrimSpace(stripANSI(r)) == "" {
+					t.Errorf("w=%d: the hint row is blank: %q", w, r)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("w=%d: rows were dropped (%d -> %d) with no hint row to say so", w, len(in), len(out))
+		}
+	}
+}
