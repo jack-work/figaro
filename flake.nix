@@ -21,7 +21,7 @@
       overlays.default = final: prev: {
         figaro = final.buildGoModule rec {
           pname = "figaro";
-          version = "0.15.0";
+          version = "0.15.1";
           src = self;
           vendorHash = "sha256-X/mdBj8snxUtLjvimWH5FohO6rHi7NdxYfPaia5eJxQ=";
           subPackages = [ "cmd/figaro" ];
