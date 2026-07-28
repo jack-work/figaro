@@ -3,7 +3,7 @@
 #
 # Why this exists, and why jog-and-diff is not enough on its own.
 #
-# The jog-and-diff oracle (PAINT-REPRO.md §5) captures a frame, moves the
+# The jog-and-diff oracle (docs/paint-repro.md §5) captures a frame, moves the
 # viewport away and back, and diffs. It is excellent, and it is how the bug was
 # first caught. But it has a blind spot that is exactly the case ALMAVIVA told me
 # to attack: the user said gaps are "TYPICALLY fixed upon return" — typically,

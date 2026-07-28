@@ -4,7 +4,7 @@
 # Captures the pager's frame, moves the viewport away and back to the SAME
 # offset, captures again, and diffs. Any difference means the first frame was a
 # lie. Self-validating: it needs no model of what the content should be, which
-# is the point (see PAINT-REPRO.md §5).
+# is the point (see docs/paint-repro.md §5).
 #
 #   scripts/paint-jogdiff.sh <hunter> [aria-id|-] [binary]
 #

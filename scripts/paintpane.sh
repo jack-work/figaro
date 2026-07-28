@@ -3,7 +3,7 @@
 # REAL pty, for hunting paint bugs (resize duplication, gap contamination,
 # status-bar bleed).
 #
-# Read PAINT-REPRO.md before using this. Every function here exists because a
+# Read docs/paint-repro.md before using this. Every function here exists because a
 # trap in the tmux-testing skill cost somebody a wrong answer; the trap number
 # is cited at each one.
 #
