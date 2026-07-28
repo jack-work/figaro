@@ -35,7 +35,8 @@ import "github.com/jack-work/figaro/internal/livedoc"
 // addressing is (turn, node), never LT. Sealed says the turn stopped moving;
 // it is orthogonal to whether a page showed you all of it.
 //
-// Live is the open suffix. Nil once the turn seals.
+// Live is the mutable suffix while one is active. It is nil before output,
+// between rounds, and after the turn seals; Sealed alone reports finality.
 type Turn struct {
 	ID uint64 `json:"turn"`
 
@@ -82,9 +83,10 @@ type Live struct {
 }
 
 // NodeDelta is a field-level change to one node, addressed by its positional
-// id within the turn. Ids are positional everywhere — in a committed part the
-// i'th node has id From+i and is omitted from the wire entirely; here it is
-// explicit because a delta references a node out of order.
+// ordinal within the turn. In a snapshot part the i'th node is addressed as
+// From+i. livedoc.Node still carries a legacy string ID as provenance/provider
+// metadata, but that is not a UI address. The ordinal is explicit here because
+// a delta may reference nodes sparsely.
 type NodeDelta struct {
 	ID    uint64                   `json:"id"`
 	Set   map[string]any           `json:"set,omitempty"`   // merge fields (create on first set; type required)
@@ -101,8 +103,10 @@ func (d NodeDelta) Empty() bool {
 // wire type. The wire speaks Page/TurnPart; this is what a folded client hands
 // its renderer.
 //
-// IDENTITY IS THE PAIR (Turn, From), NEVER Turn ALONE. A tall turn reaches the
-// renderer as SEVERAL messages — {Turn:1, From:0} then {Turn:1, From:12} —
+// SLICE IDENTITY IS THE PAIR (Turn, From), NEVER Turn ALONE. Node identity
+// inside the slice is (Turn, From+i), never livedoc.Node.ID. A tall turn
+// reaches the renderer as SEVERAL messages — {Turn:1, From:0} then
+// {Turn:1, From:12} —
 // because the client and the pager cut a turn into bounded units.
 // Any consumer that compares, orders, increments or de-duplicates on Turn by
 // itself is wrong, and this field was called LT until it had caused three

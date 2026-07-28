@@ -118,7 +118,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	}
 	defer fcli.Close()
 
-	// On desync, re-read from the last fully-committed LT.
+	// On desync, re-read from the highest fully sealed turn.
 	lt.setDesync(func(sinceLT int) {
 		go func() {
 			rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)

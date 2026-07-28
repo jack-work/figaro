@@ -111,7 +111,7 @@ prints a bare token count.
 ## Core concepts
 
 - **Arias**: persistent conversations, append-only IR log, fork-tree storage via [figwal](https://github.com/jack-work/figwal).
-- **Forking**: branch any past LT; both sides share the prefix. `attend` is your `cd`.
+- **Forking**: branch at a turn boundary; both sides share the canonical IR prefix. `attend` is your `cd`.
 - **Chalkboard**: per-aria key-value state, travels as patches, surfaces as system reminders.
 - **Loadouts**: TOML profiles (provider, model, credo, skills) inherited by new arias.
 - **Tools**: bash, read, write, edit, process. Parallel dispatch.
@@ -125,11 +125,26 @@ figaro send -r -- <prompt>      raw output (pipe-friendly)
 figaro list                     show arias
 figaro attend <id>              bind to an aria
 figaro fork                     branch at head
-figaro show <id> -n 5           last 5 messages
+figaro show <id> -n 5           last 5 turns
+figaro listen <id>              follow an aria without prompting it
 figaro set <key> <value>        patch chalkboard state
 figaro status                   current aria info
 figaro --help                   full command list
 ```
+
+## Alternate frontends
+
+Each aria exposes a semantic, turn-shaped UI stream over local NDJSON JSON-RPC:
+`figaro.read` pulls `aria.Page` snapshots/pages and `figaro.aria` pushes the same
+shape as nodes change; `turn.done` carries completion/idle control state. The
+stock `send`, `listen`, inline view, and transcript pager are clients of that
+stream. See [`docs/ui-stream.md`](docs/ui-stream.md) and
+[`docs/turn-addressing.md`](docs/turn-addressing.md).
+
+The socket surface is currently trusted-local and revision-coupled, not yet a
+stable public API. Protocol versioning, capability negotiation, public client
+packages/schema, slow-subscriber isolation, and a browser-safe bridge are
+tracked in the UI-stream protocol TODO.
 
 ## Updates
 

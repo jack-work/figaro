@@ -28,22 +28,19 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 	return &Client{cli: cli}, nil
 }
 
-// Qua sends a prompt and returns the cursor (highest committed figaro LT at
-// accept time) to stream from. The reply streams as figaro.aria notifications.
-//
-// steer marks the prompt a direction for the turn already running rather than
-// a new question. The caller is the only one who knows: on the wire the two
-// are identical, and inferring it merges exchanges that were meant to be
-// separate — silently, and only sometimes.
+// Qua sends a prompt and returns the newest materialized turn id at accept
+// time, an idempotent resume cursor. The reply streams as figaro.aria pages.
+// A prompt accepted while a turn is active becomes steering; one accepted
+// while idle opens a new turn. The server classifies it at the drain boundary.
 func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) (int, bool, error) {
 	var resp rpc.QuaResponse
 	err := c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, &resp)
 	return resp.Cursor, resp.Active, err
 }
 
-// Read pulls one aria read caught up from a turn cursor (the catch-up half of the
-// figaro.aria stream) — used to recover after a version desync, or to seed a
-// (re)connecting listener.
+// Read pulls one aria.Page forward from a turn cursor (the catch-up half of the
+// figaro.aria stream) — used after version desync or to seed a listener. The
+// request's JSON field remains named sinceLT for wire compatibility.
 func (c *Client) Read(ctx context.Context, sinceTurn int) (aria.Page, error) {
 	var r aria.Page
 	err := c.cli.Call(ctx, rpc.MethodRead, rpc.ReadRequest{SinceLT: sinceTurn}, &r)

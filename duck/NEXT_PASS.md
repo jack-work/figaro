@@ -63,44 +63,37 @@ Inspecting `arias/ir/<loadout>/<conv>/...jsonl`:
   assistant tic at seal; optionally stamp structural tics with created
   time.
 
-## 1. UI stream as a channel (design LOCKED, not built)
+## 1. UI projection as a channel (not built)
 
-The livedoc/UI doc is the third projection off the IR (alongside
-chalkboard + translations) and is currently **recomputed on demand**
-(`compose.Nodes` live; `compose.Units`→`renderNodes` in `show`). Make it
-a cached channel, isomorphic to the translation stream.
+The current UI IR is turn-shaped. `internal/uiir` projects canonical IR into
+`aria.Turn`; `aria.Server` holds the newest mutable suffix in memory, emits
+`aria.Page` frames, and hydrates a dormant aria by recomposing canonical IR.
+There is no persisted `ui` channel today.
 
-**Invariant (user, load-bearing):** the live *open* unit is NEVER written
-to the log until it is closed. You patch the in-flight message until it
-seals. The append-only WAL enforces this for free.
+A future cache remains isomorphic to a translation channel, but its immutable
+unit is now a **sealed turn**, not separate prompt/assistant messages:
 
-- Channel: `ui`, append-only, **one entry per CLOSED unit**, keyed by the
-  unit's IR main-LT.
-- Write point: `emitCommit` (and only there) — serialize the final
-  `livedoc.Node` list and append. The open tail lives only in memory
-  (`liveNodes` + in-flight msg) and streams as `open`/`patch`/`set` ops to
-  subscribers; it never touches the channel.
-- Serialize the **neutral** layer (`livedoc.Node` — already the wire
-  format), NOT `renderNodes` (width/theme/ANSI/bashCap — client-side).
-- Fingerprint = compose/render version; clear-on-mismatch exactly like
-  `translation.invalidateIfStale`. Unbumped → closed units byte-stable
-  ("never change a prefix" for the UI).
-- Read path: `show`/`aria.read` prefer the channel, fall back to
-  `compose` on miss/stale. The live unit (if any) comes from the op
-  stream / recompute, never the channel.
-- A turn = TWO closes (user-prompt unit, then assistant unit) → two
-  channel entries, each keyed to its anchor LT. Matches the existing
-  `emitSnapshot("user")→emitCommit` then assistant-unit flow.
-- Crash/interrupt with an open tail → nothing appended, no half-written
-  entry to repair; that range re-renders from IR next read.
-- Forks ride along (joint fork); a branch inherits the rendered prefix
-  and only re-renders its divergence.
-- Status: **cache/perf + render-stability, not correctness** (IR fully
-  determines it). Lower priority than translations (which back the
-  provider prompt cache = real money). Opt-in.
+- Channel: `ui`, append-only, one entry per `aria.Turn` with `Sealed:true`,
+  keyed to the turn's first main LT.
+- Write point: turn seal only. Never write `Turn.Live`, `NodeDelta`, or any
+  in-progress suffix to xwal.
+- Serialize the neutral UI IR (`Turn` plus `livedoc.Node` snapshots), never
+  renderer rows, ANSI, width, theme, transcript state, or spinner frames.
+- Fingerprint the projection schema/compose behavior and invalidate exactly as
+  translation caches do. Canonical IR remains truth; the UI channel is always
+  derivable.
+- `figaro.read` and `show --json` may read through the channel and fall back to
+  `internal/uiir` on miss/stale data. A live turn still comes only from the
+  actor's in-memory `aria.Server`.
+- Crash/interrupt before seal writes no UI-cache entry; canonical-IR repair and
+  recomposition produce the honest turn on the next open.
+- Joint forks inherit the cached sealed prefix and project only divergence.
+- Status: cache/performance and prefix byte-stability, not correctness. Lower
+  priority than provider translation caches.
 
-Build = register `ui` channel + append-at-commit (guard the open tail) +
-read-through in show. Small, additive, won't disturb fork-tree paths.
+Build = register the `ui` channel, define its fingerprinted sealed-turn codec,
+append exactly at seal, and add read-through/fallback. Do not revive the retired
+`log.snapshot` / `node.open` / `node.patch` / `node.set` protocol.
 
 ## 2. Declarative channel set ("track trees via an xwal store")
 
@@ -147,3 +140,25 @@ Per the cache_control work: retention should become a per-span score
 setting, promoting shared prefixes to 1h retention. The fork tree now
 exists to carry that graph; the hook is `resolveCacheControl` in
 provider/anthropicsdk/assemble.go.
+
+## 7. Versioned frontend protocol and capabilities (open)
+
+Alternate native frontends can already attach to an aria, pull `figaro.read`,
+and follow `figaro.aria` / `turn.done` over NDJSON JSON-RPC. That mechanism is
+revision-coupled, not yet a public compatibility contract.
+
+- Add an explicit protocol version and capability list to the angelus/aria
+  handshake. Distinguish required capabilities from optional additive fields.
+- Define version negotiation, compatibility ranges, and the failure returned
+  before an incompatible client starts folding frames. Exact build matching is
+  only the current CLI guard.
+- Move wire structs and the delta-folding client out of `internal/`, and publish
+  a language-neutral schema plus reconnect/desync examples.
+- Give each subscriber a bounded delivery queue or equivalent isolation. The
+  actor must preserve wire order without blocking on a slow external reader;
+  disconnect/drop-to-resync is preferable to stalling the turn.
+- Keep the current Unix-domain socket as the trusted local native path. A
+  browser frontend needs an authenticated loopback WebSocket bridge and origin
+  checks rather than exposing the unauthenticated aria RPC surface directly.
+- Consider a versioned `figaro events --jsonl` bridge as the smallest portable
+  frontend seam; it can hide endpoint discovery and transport differences.

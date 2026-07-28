@@ -7,14 +7,15 @@ import (
 	"github.com/jack-work/figaro/internal/livedoc"
 )
 
-// Client folds AriaReads into a local view. Live frames are folded into
-// materialized livedoc.Node instances by id; a close marker promotes them iff the
-// seen record version matches; any mismatch fires OnDesync with the last
-// fully-committed LT so the caller can reconnect and re-read.
+// Client folds Pages into a local range-backed view. Live frames are folded
+// into materialized livedoc.Node instances by positional ordinal; a suffix
+// close marker is accepted only when the seen record version matches. Any
+// mismatch fires OnDesync with the highest fully sealed turn so the caller can
+// re-read.
 //
 // OnClosed fires when a message finalizes; OnLive fires with the open message
 // (its suffix nodes, and the turn's inquiry while the suffix starts the turn);
-// OnDesync requests a catch-up from the given LT.
+// OnDesync requests a catch-up from the given sealed-turn cursor.
 // Since the range store landed (docs/range-store.md, phase 1) the retained
 // closed set is NOT a list: it is a set of contiguous intervals over (turn,
 // node) space, held by Store. Client is the shim that preserves the old API —
@@ -23,11 +24,12 @@ import (
 type Client struct {
 	mu sync.Mutex
 
-	store           *Store
-	closedSeen      map[int]bool
-	closedFloor     int
-	closedLimit     int
-	closedRev       uint64
+	store       *Store
+	closedSeen  map[int]bool
+	closedFloor int
+	closedLimit int
+	closedRev   uint64
+	// Highest fully sealed turn; the field name predates turn addressing.
 	lastCommittedLT int
 
 	// The open turn, materialized, lives in the store (Store.openTail): it
@@ -246,7 +248,7 @@ func (c *Client) SetClosedLimit(limit int) {
 	c.mu.Unlock()
 }
 
-// Cursor is the highest fully-committed LT — the resume point for a re-read.
+// Cursor is the highest fully sealed turn — the resume point for a re-read.
 func (c *Client) Cursor() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()

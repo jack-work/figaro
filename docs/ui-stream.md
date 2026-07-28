@@ -8,88 +8,173 @@ The data model behind all of this is the UI IR (`livedoc.Node`); see
 [ir-convergence.md](ir-convergence.md) for how it relates to the canonical fig
 IR. This doc is about the *stream* — how nodes get to the screen.
 
-## The shape: one paginated read, pushed and pulled
+## The shape: one turn-shaped page, pushed and pulled
 
-There is exactly one read shape, `aria.AriaRead`, served two ways:
+There is exactly one conversation-read shape, `aria.Page`, served two ways:
 
-- **pushed** live as `figaro.aria` notifications (`MethodAriaFrame`) — the server
-  streaming its own pagination as the turn unfolds;
-- **pulled** for catch-up via `figaro.read(sinceLT)` (`MethodRead`) — the same
-  read, caught up from a figaro LT. Subscribing ≡ a `read(0)` plus following the
-  push stream.
+- **pushed** as `figaro.aria` JSON-RPC notifications while a turn changes;
+- **pulled** with `figaro.read` for initial state, paging, and desync recovery.
+
+Every accepted connection to an aria socket is automatically registered for
+future notifications. There is no subscribe request today: connect, issue a
+read on that same NDJSON JSON-RPC connection, then continue consuming pushed
+frames. Read/push overlap is allowed and application is idempotent.
 
 ```go
-type AriaRead struct {
-    Committed []Committed `json:"committed,omitempty"` // messages that have closed
-    Live      *Live       `json:"live,omitempty"`      // the one open message, as deltas
+type Page struct {
+    Parts   []TurnPart `json:"parts,omitempty"`
+    More    More       `json:"more"`
+    Metrics *Metrics   `json:"metrics,omitempty"`
+}
+
+type TurnPart struct {
+    Turn
+    From        uint64 `json:"from"`
+    ClippedHead bool   `json:"clipped_head,omitempty"`
+    ClippedTail bool   `json:"clipped_tail,omitempty"`
+}
+
+type Turn struct {
+    ID      uint64         `json:"turn"`
+    Inquiry string         `json:"inquiry,omitempty"`
+    At      int64          `json:"at,omitempty"`
+    LTs     []uint64       `json:"lts,omitempty"`
+    Sealed  bool           `json:"sealed"`
+    Nodes   []livedoc.Node `json:"nodes,omitempty"`
+    Live    *Live          `json:"live,omitempty"`
 }
 ```
 
-A **committed** entry is a finalized message — either a full snapshot
-(`{lt, role, nodes}`, used on catch-up) or a close marker (`{lt, v}`, once a
-connection already streamed it live). The **live** entry is the single open
-message, carried as per-node deltas keyed by a stable id:
+A `Turn` is one exchange. `Inquiry` is the question that opened it — text on
+the turn, not a node — and every `TurnPart` states that question so a client
+joining mid-stream does not depend on having seen one special opening frame.
+`Nodes` contains agent output plus steering interjections. `LTs` and each
+node's source LTs are provenance only; the UI address is `(turn, node)`.
+
+A page is a contiguous window over those coordinates. In a `TurnPart`,
+`Nodes[i]` is at node ordinal `From+i`; `ClippedHead` and `ClippedTail` say the
+window omitted part of that turn. Current `livedoc.Node` values may also carry
+a legacy string `id` used as source/tool metadata. It is emitted on snapshots
+but is **not** the UI address and must not be used for ordering, deduplication,
+or delta routing.
+
+The newest turn may carry one mutable suffix:
 
 ```go
-type Live struct { LT, V int; Role string; Nodes []NodeDelta }
+type Live struct {
+    From  uint64      `json:"from"`
+    V     int         `json:"v"`
+    Nodes []NodeDelta `json:"nodes,omitempty"`
+}
+
 type NodeDelta struct {
-    ID    string                   // stable node id
-    Set   map[string]any           // merge fields (create on first set)
-    Unset []string                 // remove fields
-    Patch map[string]livedoc.Delta // splice a streamed string field (markdown/output)
+    ID    uint64                   `json:"id"`
+    Set   map[string]any           `json:"set,omitempty"`
+    Unset []string                 `json:"unset,omitempty"`
+    Patch map[string]livedoc.Delta `json:"patch,omitempty"`
 }
 ```
 
-`V` is a record version (0-indexed, ++ per frame). A client folds deltas into
-materialized nodes and promotes the open message to committed only when its seen
-version matches the close marker's `V`; a mismatch triggers a re-read from the
-last committed LT. `turn.done` is the one control signal — it reports the turn
-ended and whether the agent is now idle.
+`Live.From` is the immutability boundary: node ordinals below it are closed and
+will never change; ordinals at or above it may still receive deltas. `V` is the
+0-indexed frame version. `set` merges fields (and creates a node when `type`
+first appears), `unset` removes fields, and `patch` splices the previous
+`markdown` or `output` string using byte offsets.
 
-> ### Going turn-shaped
->
-> The read is being reshaped from *message* granularity to **turn** granularity:
-> one entry per turn, the user prompt and the assistant's nodes together, with
-> `Committed`/`Live` moving inside the turn to separate its frozen nodes from its
-> **open suffix**. `Live.From` — a single `uint64` node id — becomes the whole
-> boundary: `id < From` is committed and will never receive a delta.
->
-> The read also becomes genuinely **paginated and bidirectional** (budget in
-> bytes, granularity in nodes), because turns are far taller than messages:
-> measured over 127 turns in 40 real arias at width 100, median **221 rows**,
-> p90 **3043**, max **7988**. A turn-atomic read would regress the common case.
->
-> Full types, invariants and worked examples:
-> [turn-addressing.md](turn-addressing.md).
->
-> **Vocabulary note.** The renderer's ink-to-scrollback step is now
-> **freeze** (`Incipit.Freeze`). The word **seal** is reserved for exactly one
-> meaning: *a turn became immutable* — the moment its nodes stop moving and it
-> is written to the `ui` channel.
+A `Live` frame with deltas updates the suffix. A `Live` frame with no deltas is
+a close marker for that streaming suffix; it does **not** necessarily finish
+the whole turn, because another model/tool round may follow. A client promotes
+what it materialized only when the close marker's `V` matches its highest seen
+version. On mismatch it re-reads from its highest fully sealed turn. A part with
+`sealed:true` is the distinct, final signal that the entire turn is immutable.
 
-Node types: `prose` (assistant/user markdown), `thinking` (extended-thinking),
-`tool` (an invocation folded with its streamed result), `steering` (a user
+`turn.done` is the only control notification. Its params are
+`{"reason":"...","idle":true|false}`: the turn ended, and `idle` says whether
+queued work remains. It is not transcript content and does not replace the
+sealed `figaro.aria` frame.
+
+The current `figaro.read` request predates turn addressing, so two field names
+retain LT-era spelling. Forward catch-up uses `sinceLT` as a **turn cursor**;
+backward paging uses `before` plus `before_node`; `limit` is a byte budget. See
+[turn-addressing.md](turn-addressing.md) for the exact current requests,
+pagination rules, types, and worked examples.
+
+### Connection and endpoint discovery
+
+The Angelus supervisor and each live aria listen on local Unix-domain sockets;
+the transport payload is JSON-RPC 2.0 with one JSON object per line. The runtime
+root is `$FIGARO_RUNTIME_DIR` when set, otherwise `$XDG_RUNTIME_DIR/figaro`,
+otherwise the platform temporary directory plus `figaro`. On Windows the last
+case is normally `%TEMP%\figaro`. The supervisor is `angelus.sock` and aria
+sockets live under `figaros/<id>.sock`.
+
+Do not construct an aria path as the primary discovery mechanism. Connect to
+Angelus and attach by id so a dormant aria is restored and its actual endpoint
+is returned:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"figaro.attach","params":{"figaro_id":"85ac180e"}}
+```
+
+```json
+{"jsonrpc":"2.0","id":1,"result":{"figaro_id":"85ac180e","endpoint":{"scheme":"unix","address":".../figaros/85ac180e.sock"}}}
+```
+
+Connect to that endpoint, immediately issue an idempotent catch-up read, and
+keep one reader consuming interleaved responses and notifications:
+
+```json
+{"jsonrpc":"2.0","id":2,"method":"figaro.read","params":{"sinceLT":0,"limit":65536}}
+```
+
+A full frontend can also call `figaro.qua`, `figaro.interrupt`,
+`figaro.context`, `figaro.chalkboard`, `figaro.set`, `figaro.loadout`, and
+`figaro.queued` on the aria socket; creation, listing, forking, promotion, and
+lifecycle operations remain on Angelus. Request ids are integers in the current
+`jkrpc` framing.
+
+Node types: `prose` (assistant markdown), `thinking` (extended-thinking),
+`tool` (an invocation folded with its streamed result), and `steering` (a user
 message injected mid-turn — see below).
+
+### Protocol stability TODO
+
+The local socket protocol is usable by alternate frontends, but it is not yet
+a versioned public contract. The CLI currently protects itself by comparing
+its exact build revision with the angelus because wire shapes may change
+between builds. Before independent frontends are treated as supported clients:
+
+1. add a protocol version and capability list to the angelus/aria handshake;
+2. define compatibility and required/optional-field rules;
+3. publish the wire structs and delta-folding client outside `internal/` (plus
+   a language-neutral schema for non-Go clients);
+4. bound each subscriber independently so a slow reader cannot block aria
+   fan-out; and
+5. provide a portable bridge for clients, such as browsers, that cannot dial a
+   local Unix-domain socket directly.
+
+Until then, external clients should be revision-pinned and treat the sockets as
+a trusted, same-user interface: the aria connection also exposes mutating
+methods such as `figaro.qua`, `figaro.interrupt`, and `figaro.set`.
 
 ## Default view: inline-freeze, in native scrollback
 
-The default renderer (`internal/livelog/render`, `Inline`) draws **inline** — no
-alternate screen. The consequence is the headline feature:
+The default `Incipit` renderer (`internal/livelog/render`) draws **inline** —
+no alternate screen. The consequence is the headline feature:
 
-> **Your terminal's own scrollback owns the conversation.** Closed messages are
-> printed once and never touched again, so scrollback, search (your terminal's
-> `/`), mouse selection, and copy all work on the real transcript — figaro
-> doesn't capture the screen or hold it hostage in a pager.
+> **Your terminal's own scrollback owns the conversation.** Closed turn slices
+> are printed once and never touched again, so scrollback, search (your
+> terminal's `/`), mouse selection, and copy all work on the real transcript —
+> Figaro does not capture the screen or hold it hostage in a pager.
 
 The mechanism that makes this safe: the **immutability boundary is the resize
-boundary.** A message that has closed is frozen to scrollback exactly once; only
-the *open* message is a live, redrawable region. So a terminal resize repaints
-just that bounded open part — committed history is never reflowed or duplicated.
+boundary.** Closed nodes freeze to scrollback exactly once; only the open turn
+suffix is a live, redrawable region. A terminal resize therefore repaints just
+that bounded suffix — committed history is never reflowed or duplicated.
 
-Each turn opens with one dim full-width rule (a boundary between your shell
-prompt and the response), every message is prefaced with a blank line, and a
-message closes with a trailing rule: the id·time **bookend** after the assistant
-reply (gated on the `status_line` config), a plain wide rule after your prompt.
+Each turn opens with one dim full-width rule and renders its inquiry above the
+agent nodes. The assistant reply ends with the id·time **bookend** (gated on the
+`status_line` config).
 
 Inline keybindings while a turn streams:
 
@@ -102,7 +187,7 @@ Inline keybindings while a turn streams:
 ### The inherent inline limit
 
 Inline rendering is clean at normal pane sizes. The one case it cannot fix:
-shrinking the pane **shorter than the live message** makes the *terminal itself*
+shrinking the pane **shorter than the live suffix** makes the *terminal itself*
 scroll content into native scrollback before figaro's code runs — unreachable
 for in-place repaint. This is a property of inline drawing, not a bug; the
 alternate-screen transcript (no scrollback to lose) is the escape hatch when you
@@ -112,9 +197,10 @@ want a guaranteed-stable, scrollable view.
 
 Press **`Ctrl-T`** to open the transcript — a full-screen, alternate-screen
 pager over the *whole* conversation that **keeps streaming live** while you
-scroll. It shares the same `aria.Client` model as the inline view (it catches up
-with `read(0)` on entry), so both render identical content; only the active view
-paints.
+scroll. It shares the same `aria.Client`/range store as the inline view. On
+entry it pulls a recent backward page, fetches older ranges on demand, and
+continues folding live pushes, so both views render the same content; only the
+active view paints.
 
 Alternate screen is the right tool *here specifically* because it's a deliberate,
 toggled view: it gives a guaranteed-stable, scrollable surface without occluding

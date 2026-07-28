@@ -1,10 +1,12 @@
 # Turn addressing
 
 The canonical spec for turn ids, the turn-shaped UI IR, and the paginated read.
-Phase 2/3 implement against this document.
+The turn-shaped `aria.Page` wire and bidirectional node pagination are shipped;
+this document describes the current model and calls out legacy wire names where
+the implementation has not yet been renamed.
 
-The capital goal: **`fig send aria_id:LT` becomes `fig send aria_id:turn_id`**,
-with turn id correlated across every xwal channel.
+The central result: user-facing commands address **`aria_id:turn_id`**, while
+LT remains the storage and cross-channel coordinate underneath.
 
 ## Why
 
@@ -62,20 +64,22 @@ spec change.
    itself at turn end (see the seal-transition churn in
    `internal/compose/repro_test.go`).
 
-6. **Node ids are minted on block appearance, even when empty.** Today
-   `compose` skips empty prose/thinking (`TrimSpace(c.Text) == "" → continue`),
-   so a block that arrives empty and fills later would be minted *after* nodes
-   that follow it positionally. Mint on appearance and let the renderer skip
-   empties at draw time. Then **id order ≡ display order, permanently.**
+6. **Node ordinals are reserved on block appearance, even when empty.**
+   `compose` emits empty prose/thinking nodes and the renderer hides them. A
+   block that fills later therefore already owns its position and cannot shift
+   nodes that followed it. **Ordinal order ≡ display order, permanently.**
+   `livedoc.Node.ID` is a legacy source/provider receipt still serialized in
+   snapshots; it is not this ordinal and clients must not address by it.
 
 7. **A page that does not contain the open suffix is as immutable as a sealed
    page.** Follows from (4). Scrolling back through a live turn costs exactly
    what scrolling back through a sealed one costs.
 
-8. **The live turn lives in memory** and is written to xwal exactly once, on
-   seal. `_live` and `turn-wal` both persisted the live tail and were both
-   retired for it (`b8c126f`); the replacement is drain + tail repair at open
-   (`1d3a26b`). Do not re-litigate.
+8. **The live UI turn lives in memory.** `_live` and `turn-wal` both persisted
+   the live tail and were retired (`b8c126f`); the replacement is canonical-IR
+   append plus drain/tail repair at open (`1d3a26b`). The UI projection is
+   currently recomputed from that IR. If a derived `ui` xwal channel lands, it
+   may write a turn only after seal — never the mutable suffix.
 
 9. **At most one part per page carries `Live`, and it is the last.** Only the
    newest turn can be open, and a page is a contiguous window.
@@ -96,18 +100,19 @@ Phase 0 freed it.
 ```go
 // One page. Also the push frame — pull and push share this type.
 type Page struct {
-    Parts []TurnPart `json:"parts"`
-    More  More       `json:"more"`
+    Parts   []TurnPart `json:"parts,omitempty"`
+    More    More       `json:"more"`
+    Metrics *Metrics   `json:"metrics,omitempty"`
 }
 
 type More struct {
-    Before bool `json:"before"` // nodes exist below this window
-    After  bool `json:"after"`  // nodes exist above this window
+    Before bool `json:"before,omitempty"` // nodes exist below this window
+    After  bool `json:"after,omitempty"`  // nodes exist above this window
 }
 
 type TurnPart struct {
     Turn                        // embedded → JSON-inlined
-    From        uint64 `json:"from"`                   // node id of Nodes[0]
+    From        uint64 `json:"from"`                   // node ordinal of Nodes[0]
     ClippedHead bool   `json:"clipped_head,omitempty"` // From > 0
     ClippedTail bool   `json:"clipped_tail,omitempty"` // ends before the turn's last node
 }
@@ -115,21 +120,22 @@ type TurnPart struct {
 type Turn struct {
     ID      uint64  `json:"turn"`
     Inquiry string  `json:"inquiry,omitempty"` // the opening question — TEXT, not a node
-    LTs    []uint64 `json:"lts"`             // metadata only — never an address
-    Sealed bool     `json:"sealed"`          // turn lifecycle
-    Nodes  []Node   `json:"nodes,omitempty"` // contiguous from From
-    Live   *Live    `json:"live,omitempty"`  // the open suffix; nil once sealed
+    At      int64   `json:"at,omitempty"`      // inquiry time, Unix milliseconds
+    LTs    []uint64 `json:"lts,omitempty"`     // metadata only — never an address
+    Sealed bool     `json:"sealed"`            // turn lifecycle
+    Nodes  []Node   `json:"nodes,omitempty"`   // contiguous from From
+    Live   *Live    `json:"live,omitempty"`    // mutable suffix, when one is active
 }
 
 // Live is the open suffix of the turn.
 type Live struct {
     From  uint64      `json:"from"` // ← THE SUFFIX BOUNDARY
     V     int         `json:"v"`    // record version, ++ per frame
-    Nodes []NodeDelta `json:"nodes"`
+    Nodes []NodeDelta `json:"nodes,omitempty"`
 }
 
 type NodeDelta struct {
-    ID    uint64                   `json:"id"` // explicit: reference is non-positional
+    ID    uint64                   `json:"id"` // explicit positional node ordinal
     Set   map[string]any           `json:"set,omitempty"`
     Unset []string                 `json:"unset,omitempty"`
     Patch map[string]livedoc.Delta `json:"patch,omitempty"`
@@ -140,16 +146,17 @@ type NodeDelta struct {
 
 - `id < live.from` → committed, immutable, will never receive a delta
 - `id >= live.from` → open, may receive deltas
-- `live == nil` → the turn is sealed; every node is committed
+- `live == nil` → no suffix is moving now; consult `sealed` for turn finality
+- `sealed == true` → the whole turn is immutable and `live` is nil
 
-No per-node state flag and no separate delta key: **the node's own id is the
-delta key.** (`Node.ID` previously answered two questions — provenance and
-identity — which is the mess this whole effort undoes. Do not reintroduce a
-second identifier.)
+No per-node state flag is needed. The delta key is the node's **positional
+ordinal**, explicit as `NodeDelta.ID` because deltas may arrive sparsely.
 
-**Node ids inside a part are positional.** `Nodes[i].ID == From + i`, because a
-page window is contiguous. The per-node `id` is therefore **omitted from the
-wire** for nodes in `Turn.Nodes`; it stays explicit only in `NodeDelta`.
+**Node addresses inside a part are positional.** `Nodes[i]` is addressed as
+`From+i`, because a page window is contiguous. Current snapshot nodes still
+serialize `Node.ID` as a string (`"64.0"` for prose provenance or a provider
+tool-call id for tools). That field is legacy metadata, not the positional
+address; consumers must not compare, order, deduplicate, or route deltas by it.
 
 ### `Sealed` vs `Clipped*`
 
@@ -171,10 +178,11 @@ boundary turns can be clipped — the first at its head, the last at its tail.
 Everything between is whole. With a single turn in the page, that one turn may
 be clipped at both ends. This is a theorem of contiguity, not a rule to enforce.
 
-**Bidirectional.** `dir: forward | backward` is first-class, so a scrolling
-client can pull an earlier *or* a later page from any anchor. In particular
-**`fig show -n N` means paginate backwards from the end** — the tail of the
-newest turn(s) — and transacts in **turn ids, not LTs**.
+**Bidirectional.** `aria.Paginate` takes `Forward` or `Backward`, so a
+scrolling client can pull an earlier or a later page from any `(turn,node)`
+anchor. The transcript pager enters with a backward read from a beyond-the-end
+turn and then walks by anchors. The public coordinates are **turn ids and node
+ordinals, not LTs**.
 
 **Budget in bytes, granularity in nodes.** Emit nodes in order until the
 serialized size would exceed the budget; stop at a node boundary; **always emit
@@ -193,32 +201,51 @@ page_budget     = 65536   # bytes per page, server default
 page_budget_max = 524288  # ceiling on client requests
 ```
 
-Server default applies when the client omits `budget`; a client request is
-clamped to `page_budget_max`. Never let the client bound server memory.
+Server default applies when the client omits `limit` or sends a non-positive
+value; a client request is clamped to `page_budget_max`. Never let the client
+bound server memory.
 
-### Request
+### Current requests
+
+The request type predates turn addressing. Its JSON names are retained for wire
+compatibility even though their values now address turns:
 
 ```json
-{"method":"figaro.read","params":{
-  "turn":   7,          // null = newest
-  "from":   4,          // node id anchor; null = start (forward) / end (backward)
-  "dir":    "forward",  // or "backward"
-  "budget": 65536       // optional; server default, clamped to max
+{"jsonrpc":"2.0","id":1,"method":"figaro.read","params":{
+  "sinceLT": 7,
+  "limit": 65536
 }}
 ```
+
+That is a forward read from turn 7 (at node 0). Application is idempotent, so a
+recovery read may include the last sealed turn the client already holds.
+Backward paging names the exact oldest node already held and excludes it:
+
+```json
+{"jsonrpc":"2.0","id":2,"method":"figaro.read","params":{
+  "before": 7,
+  "before_node": 4,
+  "limit": 65536
+}}
+```
+
+A caller asks for the tail by using a turn cursor beyond the known end. On the
+Go side the typed client exposes `Read(sinceTurn)` and
+`ReadBefore(aria.Anchor{Turn, Node}, budget)`, hiding most of the legacy names.
 
 ### Paginating function
 
 ```go
-func Paginate(turns []Turn, from Cursor, dir Dir, budget int) Page
+func Paginate(turns []Turn, at Anchor, dir Direction, budget int) Page
 ```
 
 The server materializes whole turns in memory and slices on the way out. The
 cost being optimized is **wire bytes and client memory**, not server memory.
 
-A pure delta push is a `Page` with one part carrying `Live` and an empty
-`Nodes` — so push and pull collapse into one type, which is what
-`docs/ui-stream.md` already claims ("exactly one read shape, served two ways").
+A pure delta push is a `Page` with one part carrying `Live` and no snapshot
+`Nodes`; every pushed part also repeats its turn's `Inquiry`. Push and pull
+therefore use one type. A `Live` with no deltas closes the current streaming
+suffix; only `Sealed:true` closes the entire turn.
 
 ## Worked example
 

@@ -81,10 +81,10 @@ type Node struct {
 	// prose
 	Markdown string `json:"markdown,omitempty"`
 
-	// ID is the delta key — identity only. Phase 3 replaces it with the
-	// positional per-turn ordinal (Nodes[i].ID == From+i) and a uint64
-	// NodeDelta.ID; until then it stays the opaque string the live protocol
-	// already folds on.
+	// ID is legacy provenance/provider metadata: prose/thinking use an LT.block
+	// receipt and tools use the provider's tool-call id. It remains serialized
+	// in snapshots, but it is not UI identity. The aria wire addresses a node by
+	// the positional pair (turn, From+i), and NodeDelta.ID is that uint64 ordinal.
 	ID         string                 `json:"id,omitempty"`
 	Name       string                 `json:"name,omitempty"`    // tool name
 	Args       map[string]interface{} `json:"args,omitempty"`    // invocation arguments

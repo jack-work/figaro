@@ -8,12 +8,12 @@ import (
 )
 
 const (
-	// Live-render wire (server -> client). The conversation is delivered as
-	// aria reads: MethodAriaFrame pushes them live (server-pushed pagination),
-	// and MethodRead pulls one for catch-up from a figaro LT. Both carry an
-	// aria.AriaRead. MethodTurnDone is the one control signal (turn went idle).
-	MethodAriaFrame = "figaro.aria" // push one aria read (committed + live delta)
-	MethodTurnDone  = "turn.done"   // the turn went idle
+	// Live-render wire (server -> client). MethodAriaFrame pushes aria.Page
+	// values and MethodRead pulls the same shape for catch-up/paging. The UI
+	// cursor is a turn id plus, for backward paging, a node ordinal; legacy
+	// request field names still say LT. MethodTurnDone is separate control state.
+	MethodAriaFrame = "figaro.aria" // push one aria.Page snapshot/delta
+	MethodTurnDone  = "turn.done"   // turn ended; params report idle state
 
 	// Requests.
 	MethodQua        = "figaro.qua"
@@ -24,10 +24,9 @@ const (
 	MethodChalkboard = "figaro.chalkboard"
 	MethodQueued     = "figaro.queued"
 
-	// MethodRead pulls one aria read caught up from a figaro LT (the
-	// catch-up half of the same paginated read the MethodAriaFrame stream
-	// pushes), so a (re)connecting client can rebuild from its cursor and
-	// then follow the live frames on the same connection.
+	// MethodRead pulls one aria.Page from a turn cursor (the catch-up half of
+	// the same paginated shape MethodAriaFrame pushes), so a (re)connecting
+	// client can rebuild and follow live frames on the same connection.
 	MethodRead = "figaro.read"
 )
 
@@ -97,10 +96,9 @@ type ChalkboardPatch struct {
 
 type QuaResponse struct {
 	OK bool `json:"ok"`
-	// Cursor is the highest committed figaro LT at the moment the prompt was
-	// accepted. The client streams from here: everything after it (the prompt's
-	// own turn, or the live turn it steers) arrives as updates, and the stream
-	// ends on the turn.done that reports the agent idle.
+	// Cursor is the newest materialized TURN id when the prompt is accepted.
+	// The client reads from this idempotent resume point and then follows pushes
+	// through the turn.done that reports whether the agent is idle.
 	Cursor int `json:"cursor"`
 	// Active reports whether a turn was already in flight when the prompt was
 	// accepted (it queued/steers rather than starting fresh). The client uses
@@ -170,13 +168,11 @@ type QueuedPrompt struct {
 	Text string `json:"text"`
 }
 
-// ReadRequest is the catch-up request. SinceLT streams forward from a cursor
-// (0 = from the beginning). Before>0 switches to a backward keyset read:
-// return up to Limit closed messages with LT < Before, ascending — for pager
-// history without loading it all. BeforeNode is the node offset inside Before:
-// a pager whose oldest retained slice starts MID-TURN must exclude only what it
-// holds, or that turn's head — and the inquiry drawn above it — sits behind a
-// cursor no read can reach. The result is an aria.AriaRead.
+// ReadRequest is the turn-shaped aria.Page request. SinceLT is a legacy JSON
+// name: its value is the forward TURN cursor (0 = beginning). Before>0 switches
+// to a backward keyset read from the (Before, BeforeNode) UI coordinate. That
+// exact node is excluded because the caller already holds it; preserving the
+// node offset keeps a clipped turn's head reachable. Limit is a byte budget.
 type ReadRequest struct {
 	SinceLT    int `json:"sinceLT,omitempty"`
 	Before     int `json:"before,omitempty"`

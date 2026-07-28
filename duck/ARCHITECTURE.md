@@ -185,22 +185,66 @@ The `system.*` namespace is harness-reserved. Clients write under any other key.
 
 ## JSON-RPC surface
 
-**Angelus socket:** `figaro.create`, `figaro.attach`, `figaro.kill`, `figaro.list`, `aria.read`, `pid.bind`, `pid.resolve`, `pid.unbind`, `angelus.status`, `angelus.save_bindings`.
+All IPC is JSON-RPC 2.0 framed as one JSON object per line (NDJSON).
 
-**Figaro socket (requests):** `figaro.qua` (prompt; optional `chalkboard`), `figaro.interrupt`, `figaro.context`, `figaro.set`, `figaro.loadout`, `figaro.chalkboard`.
+**Angelus socket:** `figaro.create`, `figaro.attach`, `figaro.fork`,
+`figaro.promote`, `figaro.kill`, `figaro.list`, `aria.read`, `pid.bind`,
+`pid.resolve`, `pid.unbind`, `angelus.status`, `angelus.save_bindings`.
+`figaro.attach` lazily restores a dormant aria and returns its endpoint.
 
-### Streaming: the live-render node model
+**Figaro socket (requests):** `figaro.qua` (prompt; optional `chalkboard`),
+`figaro.read`, `figaro.interrupt`, `figaro.context`, `figaro.set`,
+`figaro.loadout`, `figaro.chalkboard`, `figaro.queued`.
 
-What travels on the socket is a **typed node list**, not the IR. Each conversational message (the user's prompt, then the agent's turn) is one unit: an append-only, positionally stable list of nodes — `prose` (a markdown span) or `tool` (`{name, args, status, output}`). The two long streamed fields, prose `markdown` and tool `output`, mutate by single-region splices; nodes are appended, never reordered. The `message.Content` IR stays canonical on disk and is the provider's input; the producer *translates* a turn into nodes (`internal/compose`), each consumer renders nodes its own way — prose as markdown, tools as native widgets (`internal/cli` tool widget / `web/conversation.html`) — and the node model + diff/apply (`internal/livedoc`) is shared by both ends. Notifications:
+Every accepted aria connection is automatically subscribed to subsequent
+notifications. A frontend calls `figaro.read` on that same connection for
+catch-up, then follows pushes; there is no explicit subscribe method.
 
-- `log.snapshot` `{role, nodes}` — establish the current live unit's full node list.
-- `node.open` `{index, node}` — append a node.
-- `node.patch` `{index, field, at, del, ins}` — a rune-aligned, single-region splice on a node's `markdown` or `output`.
-- `node.set` `{index, status}` — update a tool node's status (`running`→`ok`/`error`).
-- `log.commit` — freeze the live unit; the next snapshot/op is a new one.
-- `turn.done` `{reason}` — the turn went idle (reason carries an error string on failure).
+### Streaming: the turn-shaped aria page
 
-A turn emits the user prompt as one committed unit, then the agent reply as a live unit: `snapshot` (empty) → `open`/`patch`/`set` ops as the node list grows (the drain loop recomposes from the IR and `livedoc.DiffNodes`) → `commit`. Each tool is an independently addressable node, so parallel tools stream side by side without contending for one document; a running tool animates its spinner on the **consumer** (zero wire traffic), and output is clamped to its last N lines. There is no unit index — the server copy is authoritative and a faulted client reconnects and re-snapshots (`figaro.read` returns committed units + the live unit as node lists). Provider `Bus` calls are unchanged.
+The wire carries the **UI IR**, not canonical `message.Message` IR. The one
+conversation shape is `aria.Page`, used by both pull and push:
+
+```go
+type Page struct {
+    Parts   []TurnPart `json:"parts,omitempty"`
+    More    More       `json:"more"`
+    Metrics *Metrics   `json:"metrics,omitempty"`
+}
+```
+
+A `TurnPart` embeds a turn (`turn`, `inquiry`, `at`, provenance `lts`, `sealed`,
+`nodes`, optional `live`) and adds `from`, `clipped_head`, and `clipped_tail`.
+`Inquiry` is the question that opened the turn; nodes are agent `prose`,
+`thinking`, `tool` lifecycles, or user `steering` interjections. Every part
+repeats its inquiry so a listener joining mid-stream does not depend on one
+opening frame.
+
+The UI coordinate is `(turn, node ordinal)`. Snapshot node `i` is addressed as
+`from+i`. A node may still serialize a legacy string `id` carrying fig-IR or
+provider provenance; clients must not use it as UI identity. `Live.From` marks
+the mutable suffix and each `NodeDelta` addresses a positional ordinal with a
+`uint64 id`. Deltas merge `set` fields, remove `unset` fields, and splice
+`markdown`/`output` through `patch`.
+
+Notifications:
+
+- `figaro.aria` — one `Page`, either a snapshot/catch-up-compatible part, a
+  live delta, a live-suffix close marker, or a sealed turn;
+- `turn.done` `{reason,idle}` — control state saying the turn ended and whether
+  queued work remains.
+
+`figaro.read` is the pull half. Its current request retains pre-turn field
+names: `sinceLT` is a forward **turn** cursor; `before` and `before_node` form a
+backward `(turn,node)` anchor; `limit` is a byte budget. A missed live version
+causes a re-read from the client's highest fully sealed turn. Read/push overlap
+is valid and client application is idempotent.
+
+The canonical IR remains on disk and is the provider input. `internal/uiir`
+projects it to turns/nodes; `internal/livelog/aria.Server` derives pages and
+field deltas; consumers choose their own presentation. Tool output is bounded
+in the UI projection while the full result remains in canonical IR. Running
+spinners animate on the consumer, producing no timer traffic on the wire.
 
 ## CLI
 
@@ -212,10 +256,11 @@ A turn emits the user prompt as one committed unit, then the agent reply as a li
 | `figaro list` | List all arias (live + dormant) |
 | `figaro kill <id>` | Kill + delete aria |
 | `figaro attend <id>` | Rebind this shell |
-| `figaro context` | Dump message history as JSON |
+| `figaro show <id> -j` | Dump materialized UI turns as a `Page` |
 | `figaro models` | List provider models |
 | `figaro login <provider>` | OAuth PKCE |
-| `figaro rest` | Shut down the angelus |
+| `figaro listen <id>` | Follow an aria without sending a prompt |
+| `figaro stop` | Shut down the angelus |
 
 ## Layout
 
@@ -231,10 +276,16 @@ $XDG_RUNTIME_DIR/figaro/          angelus.sock, angelus.pid, figaros/<id>.sock
 
 ## Roadmap
 
-- More providers (the interface is small; the wiring isn't there)
-- Browser / chat frontends (just JSON-RPC clients)
-- WebSocket transport (unix/tcp already abstracted)
-- Agent pooling
-- Tool-execution sandboxing
-- Context compaction
-- Child-process agents (currently goroutines under the angelus)
+- **Version the frontend protocol and negotiate capabilities.** Add a protocol
+  version/capability list to the angelus/aria handshake, define compatibility
+  rules, publish the wire/folding client outside `internal/`, and provide a
+  language-neutral schema. Exact build matching is the temporary guard.
+- Isolate subscriber backpressure with bounded per-client delivery; one slow
+  external listener must not block the aria's ordered fan-out.
+- Browser / chat frontends through an authenticated loopback WebSocket bridge;
+  browsers cannot dial the current Unix-domain sockets directly.
+- More providers.
+- Agent pooling.
+- Tool-execution sandboxing.
+- Context compaction.
+- Child-process agents (currently goroutines under the angelus).

@@ -1,10 +1,9 @@
 // Package rpc defines JSON-RPC 2.0 types shared between figaro and
 // angelus sockets.
 //
-// The live-render wire is the aria read (see internal/livelog/aria): the
-// conversation is delivered as AriaRead pages, pushed live via
-// MethodAriaFrame and pulled for catch-up via MethodRead. There is no
-// positional op stream — the page carries livedoc.Nodes directly.
+// The live-render wire is aria.Page (see internal/livelog/aria), pushed via
+// MethodAriaFrame and pulled for catch-up/paging via MethodRead. Snapshot nodes
+// ride directly in TurnParts; only the newest mutable suffix uses NodeDelta.
 package rpc
 
 // Notification is a JSON-RPC 2.0 notification.
@@ -14,7 +13,8 @@ type Notification struct {
 	Params  interface{} `json:"params,omitempty"`
 }
 
-// DoneEntry signals the turn went idle. Params for MethodTurnDone.
+// DoneEntry signals that a turn ended. Idle reports whether queued work remains.
+// Params for MethodTurnDone.
 type DoneEntry struct {
 	Reason string `json:"reason"` // stop reason, or an error string
 	// Idle is true when the agent has no more queued work. A pointer so the

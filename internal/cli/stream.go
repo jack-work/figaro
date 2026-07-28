@@ -22,8 +22,8 @@ import (
 
 const spinnerFPS = 11 // spinner frames per second (~90ms/frame)
 
-// recentCursor is a beyond-the-end LT: ReadBefore(recentCursor, N) returns the
-// newest N committed messages — the pager's initial (lazy) window.
+// recentCursor is a beyond-the-end turn id. ReadBefore from it returns the
+// newest byte-bounded node page — the pager's initial lazy window.
 const recentCursor = 1 << 60
 
 // The opening preamble: how much history a new prompt is allowed to fetch, and
@@ -51,10 +51,10 @@ const (
 )
 
 // mustPromptFigaro is the interactive (TTY) prompt path. It renders the
-// aria-read wire through the incipit-freeze renderer: closed messages freeze to
-// native scrollback once and are never redrawn; only the open message is a live
-// region, so a terminal resize repaints just that bounded part. The renderer
-// folds each aria frame and animates spinners locally (no extra wire traffic).
+// turn-shaped aria.Page wire through the incipit-freeze renderer: closed turn
+// slices freeze to native scrollback once and are never redrawn; only the open
+// suffix is a live region. The renderer folds each frame and animates spinners
+// locally (no extra wire traffic).
 func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prompt string, loaded *config.Loaded, set renderSettings) {
 	ctx, span := figOtel.Start(ctx, "cli.prompt")
 	defer span.End()
@@ -204,7 +204,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	}
 	defer fcli.Close()
 
-	// On a version desync, re-read from the last fully-committed LT and re-apply
+	// On a version desync, re-read from the highest fully sealed turn and re-apply
 	// the full snapshot (off the notify path so the pump isn't blocked).
 	lt.setDesync(func(sinceLT int) {
 		go func() {

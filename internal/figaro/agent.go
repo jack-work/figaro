@@ -126,10 +126,8 @@ type Agent struct {
 	argPartials   map[string]string
 	turn          *turnState
 
-	// ariaSrv is the rendered conversation (committed units + the open one),
-	// the single source of the aria-read wire: it serves both the live push
-	// (MethodAriaFrame) and the catch-up pull (figaro.read). unitLT is the
-	// monotonic figaro LT assigned to each unit as it opens.
+	// ariaSrv materializes turn-shaped UI IR plus the newest mutable suffix. It
+	// is the single source of both figaro.aria pushes and figaro.read pulls.
 	ariaSrv *aria.Server
 
 	createdAt     time.Time
@@ -196,9 +194,8 @@ func NewAgent(cfg Config) *Agent {
 	messages := unwrapMessages(a.figLog.Read())
 	a.refreshMetricsFrom(messages)
 
-	// Build the rendered conversation from the log (each prior unit a closed
-	// aria message), then register the broadcast: every aria-server change is
-	// pushed to subscribers as one aria read.
+	// Build sealed UI turns from canonical IR, then broadcast every aria-server
+	// change to socket subscribers as one aria.Page.
 	a.ariaSrv = aria.NewServer()
 	for _, t := range a.projTurns(messages) {
 		a.ariaSrv.Commit(t)

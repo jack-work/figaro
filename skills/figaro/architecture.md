@@ -122,67 +122,63 @@ body on demand. Bundled first-party skills merge under the user's by name.
 
 ## The wire protocol — `internal/rpc`
 
-Per-aria request methods: `figaro.qua` (prompt; the reply streams back as
-notifications), `figaro.context`, `figaro.interrupt`, `figaro.set`,
-`figaro.loadout`, `figaro.chalkboard`, `figaro.read` (catch-up + follow).
-Angelus: `figaro.create`/`kill`/`list`/`attach`, `pid.bind`/`resolve`/`unbind`.
+Per-aria request methods: `figaro.qua` (prompt), `figaro.context`,
+`figaro.interrupt`, `figaro.set`, `figaro.loadout`, `figaro.chalkboard`,
+`figaro.queued`, and `figaro.read` (catch-up/paging). Angelus includes
+`figaro.create`/`fork`/`promote`/`kill`/`list`/`attach`,
+`pid.bind`/`resolve`/`unbind`, `aria.read`, and status/binding persistence.
 
-The reply is a **server-authoritative live-render stream** of notifications:
+The transport is NDJSON-framed JSON-RPC 2.0. Every accepted per-aria connection
+is automatically subscribed; call `figaro.read` on that connection for initial
+state, then keep reading notifications. There is no explicit subscribe method.
+The reply is a **server-authoritative live-render stream**:
 
 - `figaro.aria` (`MethodAriaFrame`) — push one **`Page`**: the single wire
   shape, pulled by `figaro.read` and pushed here. A `Page` is
-  `{parts []TurnPart, more}`; a `TurnPart` embeds a `Turn`
-  (`{turn, lts, sealed, nodes, live}`) plus `from` / `clipped_head` /
-  `clipped_tail`.
-- `turn.done` — the turn went idle.
+  `{parts []TurnPart, more, metrics?}`; a `TurnPart` embeds a `Turn`
+  (`{turn, inquiry, at, lts, sealed, nodes, live}`) plus `from` /
+  `clipped_head` / `clipped_tail`.
+- `turn.done` `{reason,idle}` — the turn ended; `idle` says whether queued work
+  remains. It is control state, not transcript content.
 
-Node ids are **positional**: inside a part the i'th node has id `from+i`, so
-committed nodes carry no id on the wire at all. `Live` is the **open suffix**
-of a turn — `live.from` is the boundary, and any node with `id < live.from` is
-committed and can never change again. That is what makes a page which does not
-contain the suffix as immutable as a sealed one. `NodeDelta` keeps an explicit
-`uint64` id only because a delta references out of order.
+Node **addresses** are positional: inside a part node `i` is `(turn, from+i)`.
+Current snapshot nodes may also serialize a legacy string `id` containing
+fig-IR provenance or a provider tool-call receipt; that field is not UI
+identity. `Live` is the open suffix — `live.from` is the boundary, and any
+ordinal below it is committed and can never change again. `NodeDelta` keeps an
+explicit positional `uint64 id` because a delta may reference nodes sparsely.
 
-A pure delta push is just a `Page` whose single part carries `live` and no
-`nodes` — push and pull are one type.
+A pure delta push is a `Page` whose single part carries `live` and no snapshot
+`nodes`. A `live` frame with no deltas closes the current streaming suffix, but
+only `sealed:true` makes the whole turn final. Every part repeats its `inquiry`
+so joining mid-stream does not depend on one opening frame. Push and pull use
+one type and overlapping application is idempotent.
 
 ## Live-render node model — `internal/livedoc` + `internal/cli`
 
-A live turn is an **append-only, index-stable** `[]Node`. A `Node`
-is `prose` | `thinking` | `tool` (tool carries `Name`/`Args`/`Status`
-∈ `running|ok|error`/`Output`). `DiffNodes(prev,next)` emits `OpOpen` /
-`OpPatch` (field splice) / `OpSet` (tool scalars); `ApplyOp` folds an op in.
-`internal/compose` builds nodes from the IR; `internal/render` renders prose
-via glamour (`render.Prose`).
+A live turn is an **append-only, ordinal-stable** `[]Node`. A `Node` is
+`prose` | `thinking` | `tool` | `steering`; a tool carries
+`Name`/`Args`/`Status` (`running|ok|error`)/`Output`. `internal/compose` builds
+nodes from canonical IR. `aria.Server` compares the materialized suffix and
+emits `NodeDelta{set,unset,patch}` frames; `aria.Client` folds them. The older
+`livedoc.Op`/`DiffNodes` helpers are local utilities, not the current RPC
+notification vocabulary. Presentation remains client-owned.
 
-The CLI painter (`internal/cli/live.go`, `nodes.go`) flushes finalized rows to
-**native terminal scrollback** and re-renders only the live tail in place.
-Hard-won invariants — break these and the cursor desyncs (duplicated/erased
-rows):
+`internal/cli/livelog_bridge.go` connects the folded client model to two
+renderers in `internal/livelog/render`:
 
-1. **One physical line per row.** Every rendered row passes through
-   `clipToWidth`, which clips to the viewport width AND flattens control
-   chars (newline/tab/CR) to spaces. A multi-line tool command must not smuggle
-   a newline into a row.
-2. **Flush watermark is a NODE index** (`flushedNodes`), not a row count.
-   Flushed nodes are frozen in scrollback and never re-rendered — so a
-   verbosity toggle (Ctrl-O) only ever repaints the still-live tail, never
-   reaches back into immutable scrollback. `flushedRows` separately tracks
-   viewport-overflow rows flushed off the top of the first live node.
-3. **The live region never exceeds the viewport** (overflow flushed off the
-   top, reflow-safe) — relative cursor moves clamp at viewport edges, so a
-   taller-than-viewport live region desyncs.
-4. `commit()` descends with real newlines (CUD clamps at the bottom instead of
-   scrolling). The bookend (status rule) is appended to the live tail every
-   repaint, never flushed.
-5. The VT test harness (`internal/cli/vt_test.go`, `newVTH` = finite scrolling
-   viewport) is the source of truth for painter correctness. Transient
-   glitches self-heal on the next op — assert the screen **after every frame**,
-   not just the final one.
+- **Incipit** paints inline. Closed slices freeze to native terminal scrollback
+  exactly once; only the open suffix remains repaintable. The inherent limit is
+  that the terminal may push an over-tall live region into scrollback before
+  Figaro can repaint it.
+- **Transcript** is the opt-in alternate-screen pager over retained/fetched
+  history. It continues applying live pages while the user scrolls and pages
+  older ranges by `(turn,node)` anchors.
 
-Presentation is a pure client concern: a single `verbose` toggle (Ctrl-O, or
-Ctrl-T as alias) expands tool inputs; thinking renders muted by default. The
-wire always carries full data.
+Presentation is a pure client concern. Ctrl-O toggles verbose tool input/output;
+Ctrl-T enters or leaves the transcript. Thinking is muted by default, tools are
+native widgets, and spinners animate locally. The wire carries semantic node
+data rather than terminal rows, ANSI, width, theme, or animation ticks.
 
 ## Provider layer — `internal/provider/anthropicsdk`
 
