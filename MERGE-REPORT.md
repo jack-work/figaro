@@ -117,6 +117,27 @@ text from some other line" are **the same pixels from two ends**.
   replacement — and the limitation is attached to it in `PAINT-REPRO.md` §5.
   His 312-frame VT suite is the instrument that closes the hole.
 
+## OPEN AND UNOWNED — restated so it cannot evaporate
+
+Nobody is working on these. They are recorded because BASILIO restated them
+rather than let them dissolve at the end of a long night, which is the correct
+instinct.
+
+| item | status |
+|---|---|
+| **Make `pp_fixture` fill a pane.** More nodes rather than one, or expand the node, or raise the 200-line retention. **The acceptance test is "the footer shows a RANGE"**, not "the script exits 0" — a fixture with no range cannot fail. Whether `Enter`/`C-o` lifts the `… last 10 of 200` collapse is **UNMEASURED.** | open |
+| **Restore `clipToWidth` on `gapRow`**, and correct the `commonRowPrefix` comment claiming runewidth agreement is "guaranteed for ASCII and box drawing" — **false**. Latent, locale-dependent, **NOT the master's bug** (his locale is `en_US.UTF-8`). | open |
+| **Add the unstated precondition to `planScroll`'s** "a mis-detected shift costs bytes, never correctness" — it holds **only while `t.prev` equals the terminal**, which was silently false after every resize. | open |
+| **`naivePaint` itself is unfixed.** BARTOLO wrote his own reference as an unconditional repaint and left the mirror in the tree. | open |
+| **A growth-safe PTY oracle does not exist.** Height growth changes the row total, so jog-and-diff correctly refuses to judge it; growth is covered only in the VT harness. | open |
+
+**Both sources of a range-carrying transcript are currently closed**, which is why
+the real-pty repro path is labelled *the shape, not a recipe*: a real aria needs
+`PP_SEED_REAL_STORE_I_ACCEPT_THE_PRIVACY_COST` (which should stay closed), and the
+synthetic fixture yields no range so `pp_require_range` correctly refuses it. The
+deterministic `go test` path is the one that **runs today** — no store, no daemon,
+no terminal, no tokens.
+
 ## The decision the master must make
 
 **`BLOCKED: CHERUBINO`** — how should an error render when it arrives while the
