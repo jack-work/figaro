@@ -195,3 +195,41 @@ func wordsOnly(s string) string {
 		return ' '
 	}, s)
 }
+
+// TestSurfaceContract_OnlyTheTranscriptCollapses pins WHERE the collapsed form
+// exists, which is the decision this branch had to make and got wrong once.
+//
+// The first answer was "the incipit expands with ^O", on the reasoning that ^O
+// already re-renders the live unit. Driven in a real pty, it does not work: a
+// table clamped to "… +4 more table lines" was still clamped after ^O, because
+// its prose node had already been flushed and flushed nodes are frozen in
+// scrollback (architecture.md invariant #2). A collapsed form nothing can
+// un-collapse is not a preview, it is data loss.
+//
+// So: the incipit (ariaView.Render) and `show` (renderNodeList) never collapse;
+// the transcript (ariaView.RenderExpanded, driven by t.expanded[ref]) does.
+func TestSurfaceContract_OnlyTheTranscriptCollapses(t *testing.T) {
+	n := proseNode(tallTableMarkdown())
+	const w = 40
+	view := &ariaView{settings: &renderSettings{}}
+
+	full := len(renderProseNode(n, w, true))
+
+	if got := len(view.Render(n, w, 0)); got != full {
+		t.Errorf("incipit collapsed prose: %d rows, want the full %d", got, full)
+	}
+	if got := len(renderNodeList([]livedoc.Node{n}, w, nodeBashCapDefault, 0, renderSettings{verbose: true})); got != full {
+		t.Errorf("show collapsed prose: %d rows, want the full %d", got, full)
+	}
+	// `show` with verbose off must behave the same: verbosity is about tool
+	// args, not about hiding table rows.
+	if got := len(renderNodeList([]livedoc.Node{n}, w, nodeBashCapDefault, 0, renderSettings{})); got != full {
+		t.Errorf("show (non-verbose) collapsed prose: %d rows, want the full %d", got, full)
+	}
+	if got := len(view.RenderExpanded(n, w, 0, false)); got >= full {
+		t.Errorf("transcript did NOT collapse prose: %d rows, full is %d", got, full)
+	}
+	if got := len(view.RenderExpanded(n, w, 0, true)); got != full {
+		t.Errorf("transcript expansion did not restore prose: %d rows, want %d", got, full)
+	}
+}

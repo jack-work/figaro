@@ -795,8 +795,25 @@ func (t *livelogTurn) setTranscriptQueued(prompts []string, errMsg string) {
 // and one dispatch: renderNode.
 type ariaView struct{ settings *renderSettings }
 
+// Render draws a node in its DEFAULT form for the live incipit.
+//
+// The incipit does not collapse prose, and that is a measured decision rather
+// than an omission. Two reasons, and the second is the load-bearing one:
+//
+//   - The incipit appends into NATIVE TERMINAL SCROLLBACK, which the terminal
+//     itself scrolls. Vertical space is not scarce there the way it is inside a
+//     managed viewport, so a tall table costs nothing but a scroll.
+//   - Nothing in the incipit can un-collapse after the fact. Flushed nodes are
+//     frozen in scrollback and never re-rendered (architecture.md invariant
+//     #2), so Ctrl-O reaches only the still-live tail. Driven in a real pty: a
+//     table clamped to "… +4 more table lines" was STILL clamped after Ctrl-O,
+//     because its prose node had already been flushed. A collapsed form with no
+//     reachable expansion is not a preview, it is data loss.
+//
+// So the collapsed form lives exactly where there is a gesture to undo it: the
+// transcript, which has a selection, an expanded map, and RenderExpanded below.
 func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
-	return v.RenderExpanded(n, width, tick, false)
+	return v.RenderExpanded(n, width, tick, true)
 }
 
 // RenderExpanded draws a node in its expanded or collapsed form. fullOutput is

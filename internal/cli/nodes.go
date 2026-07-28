@@ -179,14 +179,12 @@ func renderNodeList(nodes []livedoc.Node, width, bashCap int, tick uint64, set r
 			continue
 		}
 		var nr []string
-		// No selection model here, so no per-node expansion map: the incipit and
-		// `show` expand with the toggle they already have. Ctrl-O re-renders the
-		// live unit and already expands a tool's args, and `show` passes
-		// verbose:true, so making it lift the table cap too is the same gesture
-		// growing one more thing to reveal rather than a second mechanism. The
-		// transcript, which HAS a selection, drives expansion per node instead
-		// (ariaView.RenderExpanded).
-		nr = renderNode(n, width, bashCap, tick, set.verbose, set.verbose)
+		// expanded: true, unconditionally. This is `show`'s path (and the row
+		// counters'), and `show` is a one-shot dump the reader scrolls in their own
+		// terminal — there is no viewport to husband and no gesture to un-collapse
+		// with, so hiding table rows here would help nobody and could not be
+		// undone. Only the transcript collapses; see ariaView.Render.
+		nr = renderNode(n, width, bashCap, tick, set.verbose, true)
 		// Under the verbose toggle every node reports when it was written, the
 		// same way a tool reports started/finished. Tools already print their own
 		// richer timing, so they are left alone.
