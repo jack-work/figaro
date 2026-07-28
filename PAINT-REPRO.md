@@ -48,6 +48,56 @@ selection, `listen` is strictly better: free, instant, and deterministic.
 
 Violate this and a sweeper cannot tell your processes from the user's.
 
+> ### ⚠ NEVER RELY ON A PARENT DIRECTORY TO PROTECT A FILE YOU ARE ABOUT TO MOVE
+>
+> A real incident in this very operation, found by BERTA mid-run, and the most
+> expensive mistake in this file. The original `pp_seed` did
+> `cp -r ~/.config/figaro` into `/var/tmp/paint-<hunter>/config`. `cp` preserved
+> modes **faithfully** — that was never the problem. The problem is that
+> `providers/anthropic.toml` is itself mode **644**, and in the real config it is
+> safe only because its **parent is 700**. Copying it out from under that parent
+> put the master's Anthropic credential world-readable inside `/var/tmp`, which is
+> `1777`, world-traversable, **and survives reboot**. Four copies. Alongside four
+> 119 MB copies of his real aria store — his actual conversation history.
+>
+> It is the trap #10 family one turn crueller: not an artifact outliving its
+> process, but **a secret outliving its shield**. And the durability that made
+> `/var/tmp` the right choice over tmpfs is exactly what makes it the wrong place
+> to leave one.
+>
+> **What the harness does now. Do not undo any of it.**
+>
+> | concern | how it is handled |
+> |---|---|
+> | credentials | **never copied.** `FIGARO_CONFIG_DIR` is **shared by reference** to the real config — the documented `.#share-config` shape (isolate runtime+state, share config). A reference cannot be left behind with the wrong mode, so sharing does not reduce the risk, it **deletes the failure mode**. |
+> | isolated config | `pp_config_copy`, if you truly need one. **Excludes `providers/` and `hush/`**, then *refuses to continue* if any group/world-readable file survived. Auth comes from the environment instead. |
+> | content | `pp_fixture N` — **synthetic, not the master's history** (below). |
+> | dirs | `mkdir -p -m 700` **before anything lands**. Do not trust umask; this box yields 755. |
+> | teardown | `pp_down` `rm -rf`s the config copy **first**, then the store. |
+> | `pp_seed` | **disarmed** — prints why and exits 1 rather than silently no-op'ing, because three hunters had already been told to call it. |
+>
+> Measured, so the change need not worry you: with `providers/` and `hush/`
+> deleted, `figaro list -g -a` still lists all 305 arias and the zero-token pager
+> works normally. **Nothing the painters do needs the master's credentials.** Only
+> a turn that reaches a provider does, and the cheapest way to get one is a
+> deliberately garbage `ANTHROPIC_API_KEY` in the environment — which needs no
+> config at all (CHERUBINO's find; §8.3).
+
+**`pp_fixture` — synthetic content, and BETTER than real history for this job.**
+One tool call emitting `seq 1 N`, so the pager holds N strictly increasing
+numbered rows. Contamination becomes self-evident with no oracle at all: a row
+reading `247` where `312` belongs is visibly wrong, and **a gap row containing
+anything whatsoever is a bug, because every legitimate body row is a bare
+number.** Cost is one cheap turn — the N rows are *tool output*, not model output,
+so the model emits only a call and a word.
+
+```sh
+pp_init basilio
+ARIA=$(pp_fixture 400)     # deterministic, no privacy exposure
+pp_up 100 40 rz
+pp_pager "$ARIA"
+```
+
 ```
 tmux socket   /tmp/paint-<hunter>/tmux.sock     PRIVATE server, never the default socket
 tmux session  paint-<hunter>-<tag>
@@ -59,6 +109,15 @@ hunters       alma | basilio | bartolo | cherubino
 A **private socket** is the whole defence: `kill-server` on your own socket
 provably cannot touch the user's sessions (`0 dev figaro-qua fx gw4 iq iq2` live
 on the default socket). Never run bare `tmux kill-server`.
+
+**`/tmp` is RAM.** It is a 28 G tmpfs shared with everything on the box, and a
+stamped figaro is ~38 MB. `pp_init` always builds to the same path (`-o
+"$PP_BIN"`) so *rebuilds overwrite and do not accumulate* — but **A/B variants
+do**: keep `figaro`, the arm you drive interactively, in `/tmp/paint-<hunter>/`,
+and put probe/fixed/variant binaries in `/var/tmp/paint-<hunter>/` (disk, 703 G
+free). Four hunters × one binary is ~154 MB of RAM; four hunters × three arms
+each is not. Record each arm's `md5sum` in your write-up either way — that is the
+evidence, not the file's location.
 
 **No nix dev shells.** A dev root is shared; a scratch store is not. So there is
 no `FIGARO_DEV_ROOT` to hand a sweeper — instead a daemon is attributable by env:
