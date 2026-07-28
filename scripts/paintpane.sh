@@ -230,18 +230,34 @@ pp_resize() {
 # pp_leave — exit the pager and the CLI politely, so the daemon is not orphaned.
 pp_leave() { pp_key q; sleep 0.4; pp_key C-d; sleep 0.6; }
 
+# pp_alive — is OUR tmux server actually running?
+#
+# NOT `[ -S "$PP_SOCK" ]`. Found by BERTA the watchdog: `kill-server` leaves the
+# socket INODE behind, so a dead server still has a live-looking socket file and
+# a file test reports it as up. That is the trap #10 family — the artifact
+# outlives the process. Ask tmux, not the filesystem.
+pp_alive() { tmux -S "$PP_SOCK" has-session -t "$PP_SESS" 2>/dev/null; }
+
+# pp_server_alive — is any session left on our server?
+pp_server_alive() { tmux -S "$PP_SOCK" list-sessions >/dev/null 2>&1; }
+
 # pp_down — tear down BOTH halves.
 #
 # Trap #10: `tmux kill-server` leaves the scratch daemon RUNNING. On one night
 # seventeen agents each left one behind: 230 orphaned processes, 1.2 GB of
 # tmpfs, and a memory-pressure alert with processes already stalling. Every one
 # of them had been told to stop the daemon BEFORE testing and never after.
+#
+# Three halves, really: the daemon, the server, and the socket inode.
 pp_down() {
   trap - EXIT
   if [ -n "$PP_BIN" ] && [ -x "$PP_BIN" ]; then
     pp_run stop --force >/dev/null 2>&1
   fi
-  [ -n "$PP_SOCK" ] && [ -S "$PP_SOCK" ] && pp_tmux kill-server >/dev/null 2>&1
+  if [ -n "$PP_SOCK" ]; then
+    tmux -S "$PP_SOCK" kill-server >/dev/null 2>&1
+    rm -f "$PP_SOCK"   # else the next run's liveness probe sees a ghost
+  fi
   # Belt and braces: anything still holding our scratch runtime dir.
   local p
   for p in $(pgrep -x figaro 2>/dev/null); do
