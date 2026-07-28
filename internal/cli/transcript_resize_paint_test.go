@@ -68,30 +68,20 @@ func vtFromRows(w, h int, rows []string) *vtScreen {
 	return v
 }
 
-// resizeGrid models what a terminal does to its own grid on a WIDTH change: the
-// cells stay exactly where they are, truncated at the new width, or padded with
-// blanks when it grows. Nothing moves vertically.
-//
-// That is the whole model, and it is deliberately minimal. It is justified by
-// measurement, not by taste: a width-only change in a real tmux pane (100→72,
-// then 72→120) contaminated 5 and 3 rows respectively with no height change
-// available to explain it (PAINT-REPRO.md §8.1). So a width change alone is a
-// sufficient perturbation, and it is the one that isolates the paint diff from
-// terminal reflow.
-//
-// DELIBERATELY NOT MODELLED: the vertical shift a HEIGHT shrink causes. Measured
-// on this machine, an alt-screen shrink deletes min(rows_lost, cursor_y) rows
-// from the TOP and slides the rest up, because the painter parks the cursor on
-// the status row (PAINT-REPRO.md §6). That is a strictly harsher perturbation
-// than this one. Modelling it here would buy nothing this test does not already
-// prove and would put a guess about tmux's internals into an assertion; the real
-// thing is covered by the tmux replay case, where tmux does the resizing itself.
+// resizeGrid changes the screen's DIMENSIONS. It makes no claim about what a
+// terminal does to the surviving cells, because this test never relies on one:
+// every cell is overwritten with a marker immediately afterwards (see
+// scribbleUnknown). That is deliberate — an earlier version of this test modelled
+// "a width change truncates cells in place", which is true of tmux and which the
+// companion tmux case confirmed row-for-row, but a test that has to defend a
+// model of a terminal is a test carrying a liability. BASILIO's formulation is
+// strictly stronger and needs no model at all.
 func (v *vtScreen) resizeGrid(w, h int) {
 	cells := make([][]vtCell, h)
 	for r := 0; r < h; r++ {
 		cells[r] = make([]vtCell, w)
 		if r < v.h {
-			copy(cells[r], v.cells[r]) // truncates when narrower, zero-pads when wider
+			copy(cells[r], v.cells[r])
 		}
 	}
 	v.cells, v.w, v.h = cells, w, h
@@ -103,6 +93,31 @@ func (v *vtScreen) resizeGrid(w, h int) {
 		v.col = w - 1
 	}
 }
+
+// scribbleUnknown fills every cell with a marker the painter has no record of.
+//
+// THIS IS THE HEART OF THE TEST, and it is why no terminal behaviour has to be
+// modelled. A diffing painter is only sound because t.prev is a true statement
+// about the screen. resize() throws that knowledge away, and the contract it
+// takes on by doing so is: CONVERGE TO YOUR OWN BELIEF FROM AN ARBITRARY PRIOR
+// STATE. Scribbling is the arbitrary prior state, and it is strictly harsher than
+// anything a real terminal does — tmux truncates rows on a width change and
+// slides them on a height shrink, both of which leave SOME cells right by luck.
+// So a painter that converges from a scribble converges from any real resize,
+// which makes this an over-approximation in the safe direction: it cannot pass
+// while a real terminal fails.
+//
+// It must only be applied where the painter has genuinely discarded its record.
+// Between ordinary frames the painter is ENTITLED to trust t.prev, and scribbling
+// there would assert a contract it never made.
+func (v *vtScreen) scribbleUnknown() {
+	for r := 0; r < v.h; r++ {
+		for c := 0; c < v.w; c++ {
+			v.cells[r][c] = vtCell{r: '\u00a4'} // ¤ appears in no rendered row
+		}
+	}
+}
+
 
 // assertBelief is the assertion: what the terminal holds must equal what t.prev
 // claims it holds.
@@ -187,11 +202,14 @@ func TestTranscriptPaint_ResizeLeavesNoStaleRows(t *testing.T) {
 				}
 				return n
 			}
-			// resize does what a user's terminal does, in the order it does it:
-			// the terminal's grid changes first (it has already happened by the
-			// time SIGWINCH is delivered), then the application is told.
+			// resize does what a user's terminal does, in the order it does it: the
+			// terminal's grid changes first (it has already happened by the time
+			// SIGWINCH is delivered), then the application is told. The scribble
+			// stands in for "whatever the terminal left behind", harsher than any
+			// real case — see scribbleUnknown.
 			resize := func(nw, nh int) {
 				vt.resizeGrid(nw, nh)
+				vt.scribbleUnknown()
 				w, h = nw, nh
 				tr.resize(nw, nh)
 			}
@@ -211,20 +229,30 @@ func TestTranscriptPaint_ResizeLeavesNoStaleRows(t *testing.T) {
 				t.Logf("viewport holds %d intentionally-blank rows at %dx%d", got, w, h)
 			}
 
-			// WIDTH ONLY. No row moves; the terminal merely truncates. This is
-			// the minimal perturbation that reproduces the bug in a real pane.
+			// WIDTH ONLY — no row moves, so nothing but the paint diff can explain
+			// a difference.
 			resize(72, h)
 			step("after width shrink 100->72")
 
 			resize(120, h)
 			step("after width grow 72->120")
 
-			// Height too, and both at once — a real drag of a window corner.
+			// HEIGHT, BOTH DIRECTIONS. Growth was never judged by the real-pty
+			// oracle at all — a taller viewport pulls history, the row total moves
+			// (1028+ -> 1212+) and the jog lands on a different viewport, so that
+			// oracle correctly refuses to compare. Deterministically it is settled
+			// here, and on pristine code it fails in every direction.
 			resize(120, 24)
 			step("after height shrink 40->24")
 
+			resize(120, 56)
+			step("after height grow 24->56")
+
 			resize(64, 20)
-			step("after both 120x24 -> 64x20")
+			step("after both 120x56 -> 64x20")
+
+			resize(140, 60)
+			step("after both grow 64x20 -> 140x60")
 
 			// And the repair gesture the user described: moving away and back
 			// must not be what makes the screen correct.
@@ -236,6 +264,213 @@ func TestTranscriptPaint_ResizeLeavesNoStaleRows(t *testing.T) {
 				tr.scrollBy(2)
 				step(fmt.Sprintf("post-resize scroll down %d", i))
 			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ADVERSARIAL: does the belief invariant survive gestures with NO RESIZE?
+//
+// ALMAVIVA's convergence claim is that gap contamination and resize duplication
+// are one bug, reached only through a resize. His evidence was a real-pty sweep
+// showing scroll / C-n / Enter / C-o clean — but on ONE aria at ONE geometry,
+// and it never covered a search jump, the ! or ? panels, gg/G, a wheel burst, or
+// a history page landing mid-view. The user also said gaps are "TYPICALLY fixed
+// upon return", and that word leaves room for a fault the repair gesture does
+// not repair.
+//
+// The jog-and-diff oracle CANNOT settle this. It compares the painter against
+// itself: if a gesture leaves damage that the jog does not repair, the suspect
+// frame and the "truth" frame are equally wrong, the diff is empty, and it
+// reports clean. That blind spot is exactly where a second root cause would
+// hide. So this runs in the VT harness instead, where t.prev is absolute ground
+// truth and every frame is checked directly — no comparison against another
+// frame, no blind spot, no resize anywhere in the test.
+//
+// If this ever fails, there is a SECOND bug and it is not BASILIO's.
+// ---------------------------------------------------------------------------
+
+func TestTranscriptPaint_GesturesKeepBelief(t *testing.T) {
+	for _, regions := range []bool{true, false} {
+		name := "scroll-regions"
+		if !regions {
+			name = "full-repaint-fallback"
+		}
+		t.Run(name, func(t *testing.T) {
+			defer func(v bool) { transcriptScrollRegions = v }(transcriptScrollRegions)
+			transcriptScrollRegions = regions
+
+			const w, h = 100, 40
+			client := aria.NewClient()
+			client.SetClosedLimit(transcriptTailLimit)
+			committed := make([]aria.TurnPart, 16)
+			for i := range committed {
+				committed[i] = aria.TurnPart{Turn: aria.Turn{
+					ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 16),
+				}}
+			}
+			client.Apply(aria.Page{Parts: committed})
+
+			vt := newVT(w, h)
+			tr := newTranscript(vt, w, h, &ariaView{settings: &renderSettings{}}, client, "aria0001", time.Unix(0, 0))
+			tr.enter()
+			// A PASS IS ONLY AS STRONG AS THE NUMBER OF FRAMES IT CHECKED, so the
+			// count is reported. If it ever drops sharply, the fixture has stopped
+			// exercising something and the negative result has quietly weakened.
+			frames := 0
+			step := func(what string) {
+				t.Helper()
+				frames++
+				assertBelief(t, vt, tr.prev, w, h, what)
+			}
+			defer func() { t.Logf("belief invariant held across %d frames, no resize anywhere", frames) }()
+			step("enter")
+
+			// gg / G — the deliberate jumps, which do not route through the
+			// single-notch gesture and so land wherever they land.
+			tr.key('g')
+			tr.key('g')
+			step("gg to top")
+			tr.key('G')
+			step("G to tail")
+
+			// A wheel burst: a flick arrives as many reports in ONE read and is
+			// coalesced into a single frame. The coalescing is exactly the sort
+			// of place a frame gets skipped.
+			tr.beginBatch()
+			for range 23 {
+				tr.scrollBy(-1)
+			}
+			tr.endBatch()
+			step("wheel burst up (batched)")
+			tr.beginBatch()
+			for range 11 {
+				tr.scrollBy(2)
+			}
+			tr.endBatch()
+			step("wheel burst down (batched)")
+
+			// Arrow / page motions through the nav path rather than the letters.
+			for _, n := range []navKey{navPageUp, navPageUp, navUp, navPageDown, navDown, navHome, navEnd} {
+				tr.navMotion(n)
+				step(fmt.Sprintf("nav %d", n))
+			}
+
+			// Search: the query paints reverse-video highlights on every match,
+			// and n/N jump the viewport an arbitrary distance.
+			for range 20 {
+				tr.scrollBy(-1)
+			}
+			step("scroll before search")
+			tr.find("transcript")
+			step("search find")
+			for i := range 6 {
+				tr.findRepeat(1)
+				step(fmt.Sprintf("search next %d", i))
+			}
+			for i := range 4 {
+				tr.findRepeat(-1)
+				step(fmt.Sprintf("search prev %d", i))
+			}
+
+			// Panels grow the footer, which shrinks the body: the same
+			// row-budget change a resize causes, but WITHOUT the terminal
+			// reflowing underneath. A good place for a second bug to live.
+			tr.showStatus = true
+			tr.render()
+			step("status panel open")
+			for i := range 4 {
+				tr.scrollBy(-3)
+				step(fmt.Sprintf("scroll with status panel %d", i))
+			}
+			tr.showStatus = false
+			tr.render()
+			step("status panel closed")
+
+			tr.showHelp = true
+			tr.render()
+			step("help panel open")
+			for i := range 4 {
+				tr.scrollBy(3)
+				step(fmt.Sprintf("scroll with help panel %d", i))
+			}
+			tr.showHelp = false
+			tr.render()
+			step("help panel closed")
+
+			// The queued-prompts panel, opened the way the queue itself opens it.
+			tr.setQueued([]string{"a queued prompt", "and another one"}, "")
+			tr.showQueuedAuto(true)
+			step("queued panel open")
+			tr.showQueuedAuto(false)
+			step("queued panel closed")
+
+			// Selection + expansion interleaved with scrolling: expansion changes
+			// a message's height under the viewport, which moves every row below
+			// it without any resize.
+			for i := range 6 {
+				tr.key(0x0e) // C-n
+				step(fmt.Sprintf("select next %d", i))
+			}
+			tr.key('\r')
+			step("expand selected")
+			for i := range 4 {
+				tr.scrollBy(-2)
+				step(fmt.Sprintf("scroll while expanded %d", i))
+			}
+			tr.key('\r')
+			step("collapse selected")
+
+			// Verbosity, which re-renders every retained row.
+			tr.key(0x0f) // C-o
+			step("verbose on")
+			tr.key(0x0f)
+			step("verbose off")
+
+			// A long climb into history, which forces page landings mid-view.
+			for i := range 80 {
+				tr.scrollBy(-1)
+				step(fmt.Sprintf("deep climb %d", i))
+			}
+
+			// A LIVE STREAMING TURN — the one hunting ground the real-pty sweep
+			// could not reach without spending a provider turn, and the one place
+			// where content grows under the reader rather than being scrolled
+			// over. Driven here by applying an UNSEALED turn repeatedly with more
+			// nodes each time, which is what a delta push does.
+			//
+			// Both postures matter and they take different paths: while FOLLOWING
+			// the tail the live region advances the viewport, and while DETACHED
+			// the open turn still renders (openMessage is unconditional) beneath
+			// a window the reader has scrolled away from.
+			tr.key('G') // follow the tail
+			step("live: following before stream")
+			for n := 1; n <= 10; n++ {
+				client.Apply(aria.Page{Parts: []aria.TurnPart{{
+					Turn: aria.Turn{ID: 17, Sealed: false, Inquiry: "stream me", Nodes: heavyNodes(17, n)},
+				}}})
+				tr.render()
+				step(fmt.Sprintf("live: streaming while following, %d output lines", n))
+			}
+			for range 12 { // detach and sit in history
+				tr.scrollBy(-1)
+			}
+			step("live: detached")
+			for n := 11; n <= 20; n++ {
+				client.Apply(aria.Page{Parts: []aria.TurnPart{{
+					Turn: aria.Turn{ID: 17, Sealed: false, Inquiry: "stream me", Nodes: heavyNodes(17, n)},
+				}}})
+				tr.render()
+				step(fmt.Sprintf("live: streaming while detached, %d output lines", n))
+			}
+			// And the seal, which turns the live region into history.
+			client.Apply(aria.Page{Parts: []aria.TurnPart{{
+				Turn: aria.Turn{ID: 17, Sealed: true, Inquiry: "stream me", Nodes: heavyNodes(17, 20)},
+			}}})
+			tr.render()
+			step("live: turn sealed")
+			tr.key('G')
+			step("live: follow after seal")
 		})
 	}
 }
