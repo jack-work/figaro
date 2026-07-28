@@ -170,3 +170,98 @@ func TestSmoke_SteerOrderMatchesShow(t *testing.T) {
 		}
 	}
 }
+
+// Nothing may write to the terminal while the transcript pager owns it.
+//
+// CAUGHT (user's words): "Errors where the text bleeds into the status bar."
+//
+// The pager runs on the ALTERNATE SCREEN, and an alt screen has NO SCROLLBACK
+// (measured: alternate_on=1, history_size=0 — `capture-pane -p -S -` returns
+// exactly the visible rows). So a write to stdout/stderr while the pager is up
+// cannot land "below" anything. It lands ON THE GRID, at the cursor — and the
+// painter finishes every frame by writing screen[t.h-1], the status row, so the
+// cursor is parked there. Worse, those writes lead with "\n": on the bottom row
+// a newline SCROLLS THE WHOLE GRID UP, the painter is never told, and t.prev
+// stops describing the terminal. The visible result is the user's report plus a
+// DUPLICATED STATUS ROW — the same duplicated-footer signature that has already
+// shipped once from a different cause.
+//
+// Two sites are confirmed by real pty capture:
+//
+//   - internal/cli/stream.go:169  fmt.Fprintln(os.Stderr, "\n"+d.Reason)
+//     reached because livelogTurn.finishTurn (livelog_bridge.go:561) returns
+//     EARLY when t.tr.active — it does NOT leave the pager, so the comment at
+//     that call site ("tear the live region down FIRST, so an error hint lands
+//     on clean scrollback below it, not over the footer") is true inline and
+//     FALSE in the pager.
+//   - internal/cli/stream.go:358  fmt.Fprintln(os.Stderr, "\ninterrupting...")
+//     written BEFORE any abandon/leave, so a plain Ctrl-C mid-turn does it with
+//     no error involved at all.
+//
+// stream.go:346 ("follow: figaro listen …") is the NEGATIVE CONTROL and is
+// correct: abandon() calls leaveTranscript() first. Verified clean.
+//
+// COSTS NO TOKENS. A deliberately invalid ANTHROPIC_API_KEY makes the turn fail
+// with a 401 before a single token is generated, which is a better provocation
+// than a bogus model or a blanked credential: it corrupts no config, and it
+// lands on the "\n"+d.Reason branch rather than the providerSetupHint branch.
+//
+// THIS TEST IS EXPECTED TO FAIL until the bleed is fixed. The fix is a product
+// decision (leave the pager first / route through the frame buffer / suppress
+// and surface in the ! panel) and was deliberately left to the user.
+func TestSmoke_ErrorDoesNotBleedIntoStatusBar(t *testing.T) {
+	smokeEnabled(t)
+	// The invalid key must win over whatever the copied config resolves.
+	env := append(smokeStore(t), "ANTHROPIC_API_KEY=sk-ant-api03-deliberately-invalid-cherubino")
+	bin := smokeBinary(t)
+	p := newPane(t, env, bin, 100, 24)
+
+	// -l opens the transcript pager AT STARTUP, so the pager owns the terminal
+	// before the turn can fail. The turn then errors within about a second.
+	p.send(bin + " send -l -- 'say OK'")
+	p.key("Enter")
+	p.waitIdle(90 * time.Second)
+
+	vis, raw := p.visible(), p.rawVisible()
+
+	// The assertion is deliberately conditional on the pager still owning the
+	// grid, so that it PASSES under any of the three candidate fixes and FAILS
+	// only on the bug. An earlier draft skipped when the pager was absent, which
+	// could not tell "fixed by leaving the pager" from "the pager never came up",
+	// and a skip that looks like a pass is how a test stops being evidence.
+	if pagerChrome(vis) == 0 {
+		// The pager is gone: whatever printed, it did not print over a frame.
+		// That is fix (i) (leave before printing) — or the pager never opened at
+		// all, which this test simply has no opinion about.
+		return
+	}
+
+	// The pager owns the grid. Two things must hold.
+	//
+	// SECONDARY, AND KNOWN TIMING-DEPENDENT: a duplicated status row appears only
+	// if the painter repaints after the stray write scrolled the grid. Measured
+	// across runs it shows up most of the time but not every time, so it is
+	// asserted one-sided (> 1 is always wrong; a single row is fine) and it is
+	// NOT the load-bearing assertion. The escape-sequence check below is, because
+	// it is a property of the bytes themselves and does not race.
+	if got := statusRows(vis); got > 1 {
+		t.Errorf("status row appears %d times on the grid, want at most 1 — "+
+			"a second copy means the grid scrolled under the painter and t.prev "+
+			"no longer describes the terminal\n%s", got, vis)
+	}
+	// No row may carry text WITHOUT the footer's dim styling. Every row the
+	// renderer emits is wrapped in \x1b[2m … \x1b[0m (footer) or carries some
+	// SGR; a completely unstyled row among them was written straight to the
+	// terminal, bypassing the frame buffer. This is what distinguishes bug (b)
+	// from a clipToWidth failure, and it stays true under fixes (ii) and (iii)
+	// because both route the text through the renderer, which styles it.
+	for _, ln := range strings.Split(raw, "\n") {
+		if strings.TrimSpace(ln) == "" || !strings.Contains(ln, "error:") {
+			continue
+		}
+		if !strings.Contains(ln, "\x1b[") {
+			t.Errorf("error text reached the grid with NO escape sequences at all, "+
+				"so it bypassed the frame buffer entirely: %q\nfull grid:\n%s", ln, vis)
+		}
+	}
+}
