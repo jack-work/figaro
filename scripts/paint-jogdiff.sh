@@ -58,13 +58,17 @@ if [ "$ARIA" = "-" ]; then
   # stand-down would then be one unset variable away from being violated by
   # whoever ran the obvious command.
   #
-  # HONEST CORRECTION TO MY OWN EARLIER CLAIM: when I first wrote this guard the
-  # rationale above was FALSE. pp_run hardcoded FIGARO_CONFIG_DIR to the empty
-  # scratch config, so the mint could not have reached a real credential — it
-  # would have died with "figaro needs initial setup". BASILIO measured that.
-  # Fixing pp_run to consume pp_env (one authority for the environment) is what
-  # MAKES the hazard real, so the guard is right and was, briefly, right for a
-  # reason that did not hold. Recorded rather than quietly corrected.
+  # PRECISION ABOUT MY OWN ERROR, since BASILIO corrected me and the correction is
+  # technical rather than kind. I first wrote that this guard had been "briefly
+  # right for a reason that did not hold". That is wrong and it matters: the guard
+  # was right for a reason that WAS NOT YET TRUE. pp_run hardcoded the empty
+  # scratch config at the time, so the mint could not have reached a real
+  # credential — it would have died with "figaro needs initial setup", which he
+  # measured. Fixing pp_run to consume pp_env is what ARMED the hazard. DEFENDING A
+  # PATH BEFORE YOU OPEN IT IS THE ONLY ORDER THAT IS EVER SAFE, so the guard's
+  # placement was correct in anticipation and is not an instance of the defect
+  # class. The narrow, real instance is that the JUSTIFICATION I gave was false
+  # when I gave it. Overstating a fault is as inaccurate as hiding one.
   #
   # A GUARD BEATS A DOC LINE: a document stating an intent the code does not
   # enforce is the exact family we spent the night auditing.

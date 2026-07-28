@@ -82,6 +82,47 @@ are instances of it. Then trap 12 (§B) as its sharpest case.
 > Duller reports are the correct trade. A report that has to be verified is worth
 > less than a shorter one that can be trusted.
 >
+> ### And the same rule applied to DOCUMENTS
+>
+> BASILIO wrote the same defect **three times in one section, twenty minutes
+> apart**, and the third time is the instructive one:
+>
+> 1. the original repro named a real aria — it broke when the seeding step was
+>    correctly disarmed for privacy;
+> 2. correction 1 said "the script is broken at line 27" — the script was then
+>    fixed, so **the correction became the thing it was correcting**;
+> 3. correction 2 verified the fix properly and *then* wrote a runnable-looking
+>    block naming a real aria again — which still could not be run, **but now
+>    looked as though it could.**
+>
+> > **An unrunnable repro that says so is useful. An unrunnable repro that LOOKS
+> > runnable costs the next reader the hour it cost me to notice.**
+>
+> That is the documentary form of failing toward the comfortable answer: prose
+> tidies itself into looking executable. The fix is not better prose, it is
+> **labelling** — mark the shape as a shape, name the gate that closes it, and name
+> who can actually run it. Path (a), a deterministic `go test`, was marked as the
+> one that runs *today* with no store, no daemon, no terminal and no tokens.
+>
+> Two corollaries, both his:
+>
+> - **A correction is not exempt from the rule it enforces.** The most likely place
+>   to commit a defect is the paragraph announcing that you have fixed it.
+> - **Keep a superseded correction marked, not overwritten.** A correction that
+>   silently replaces its predecessor loses the record of *how* the document was
+>   wrong — which is the part worth reading.
+>
+> ### And do not overstate a fault either
+>
+> Accuracy cuts both ways. ALMAVIVA wrote that a guard had been "briefly right for
+> a reason that did not hold"; BASILIO corrected it, technically: the guard was
+> right for a reason **not yet true**, because the hazard it defended against was
+> armed by a *later* fix. **Defending a path before you open it is the only order
+> that is ever safe** — that is not the defect class, it is competence. The narrow
+> real instance was that the *justification* was false when given. **Overstating a
+> fault is as inaccurate as hiding one**, and it teaches the next reader the wrong
+> lesson.
+>
 > Two rules, and the second is the one people skip:
 >
 > **1. Match semantics, never spelling.** Ask what *decides* the property, and
