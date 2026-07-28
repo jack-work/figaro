@@ -821,16 +821,39 @@ func (t *livelogTurn) setTranscriptQueued(prompts []string, errMsg string) {
 // and one dispatch: renderNode.
 type ariaView struct{ settings *renderSettings }
 
+// Render draws a node in its DEFAULT form for the live incipit.
+//
+// The incipit does not collapse prose, and that is a measured decision rather
+// than an omission. Two reasons, and the second is the load-bearing one:
+//
+//   - The incipit appends into NATIVE TERMINAL SCROLLBACK, which the terminal
+//     itself scrolls. Vertical space is not scarce there the way it is inside a
+//     managed viewport, so a tall table costs nothing but a scroll.
+//   - Nothing in the incipit can un-collapse after the fact. Flushed nodes are
+//     frozen in scrollback and never re-rendered (architecture.md invariant
+//     #2), so Ctrl-O reaches only the still-live tail. Driven in a real pty: a
+//     table clamped to "… +4 more table lines" was STILL clamped after Ctrl-O,
+//     because its prose node had already been flushed. A collapsed form with no
+//     reachable expansion is not a preview, it is data loss.
+//
+// So the collapsed form lives exactly where there is a gesture to undo it: the
+// transcript, which has a selection, an expanded map, and RenderExpanded below.
 func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
-	return v.RenderExpanded(n, width, tick, false)
+	return v.RenderExpanded(n, width, tick, true)
 }
 
+// RenderExpanded draws a node in its expanded or collapsed form. fullOutput is
+// the transcript's per-node expansion state (t.expanded[ref]) and it now feeds
+// BOTH caps: a tool's output cap, as it always did, and prose's table cap. One
+// flag, one gesture, two kinds of node — which is what makes "expand this" mean
+// the same thing wherever the user points it.
 func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bool) []string {
 	bashCap := nodeBashCapDefault
 	if fullOutput {
 		bashCap = nodeOutputUnlimited
 	}
-	return renderNode(n, width, bashCap, uint64(tick), v.settings != nil && v.settings.verbose)
+	verbose := v.settings != nil && v.settings.verbose
+	return renderNode(n, width, bashCap, uint64(tick), verbose, fullOutput)
 }
 
 // turnFinished reports whether the turn being watched has ended. The drain
