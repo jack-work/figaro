@@ -982,7 +982,16 @@ func (t *transcript) resize(w, h int) {
 	// after re-rendering at the new width. (Skipped when following the tail.)
 	anchor, within := t.viewportAnchor()
 	t.w, t.h = w, h
-	t.prev = nil   // full repaint (diff vs nil); no \x1b[2J, which flickers
+	// Nil means "I know nothing about the screen", and paint honours that by
+	// repainting every row — including the blank ones, which is the whole point.
+	// It used to claim "full repaint (diff vs nil)" and not get one: paint read a
+	// missing base row as "", so every legitimately-blank row compared equal and
+	// was skipped, leaving the terminal's own post-resize leftovers in the gaps
+	// between nodes. See the comment in paint.
+	//
+	// Still no \x1b[2J: clearing flickers, and it is not needed once the frame
+	// actually covers every row.
+	t.prev = nil
 	t.buildIndex() // re-render at the new width, repopulating lineKey
 	t.restoreViewportAnchor(anchor, within)
 	t.render()
@@ -1541,12 +1550,30 @@ func (t *transcript) paint(screen []string) {
 		base = t.predBuf
 	}
 	for r := 0; r < len(screen); r++ {
+		// A ROW WE HAVE NO RECORD OF IS A ROW WE MUST PAINT — it is unknown, not
+		// blank. Reading the base as `var old string; if r < len(base) { old =
+		// base[r] }` and then comparing made a missing record indistinguishable
+		// from a record of an empty row, so every row whose new content is ""
+		// compared EQUAL to a base that did not exist and was skipped entirely.
+		//
+		// resize() nils prev precisely to say "the terminal reflowed under me, I
+		// know nothing" — and blank rows are everywhere, because entryLine
+		// returns "" for row 0 of every message separator. So each separator's
+		// blank row kept whatever the terminal had slid into it and stayed wrong
+		// until the viewport moved enough to make that row differ from t.prev:
+		// "the gaps in between nodes are populated with text that shouldn't be
+		// there from some other line... fixed upon return". Measured with a
+		// width-only resize, so no terminal row-shift is needed to provoke it.
+		//
+		// Guarding the compare on `r < len(base)` fixes the short-base case too
+		// (a screen taller than the record), and costs nothing on the hot path:
+		// when base is prev or predBuf it is always len(screen).
+		if r < len(base) && screen[r] == base[r] {
+			continue
+		}
 		var old string
 		if r < len(base) {
 			old = base[r]
-		}
-		if screen[r] == old {
-			continue
 		}
 		buf = appendRowUpdate(buf, r, old, screen[r])
 	}
