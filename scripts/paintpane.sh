@@ -59,7 +59,13 @@ pp_init() {
   PP_SOCK="$PP_DIR/tmux.sock"
   PP_STORE="/var/tmp/paint-$PP_HUNTER"
   PP_BIN="$PP_DIR/figaro"
-  mkdir -p "$PP_DIR" "$PP_STORE"/{state,run,config} || return 1
+  # RESTRICTED BEFORE ANYTHING LANDS. -m 700 on creation, then chmod anyway:
+  # /var/tmp is 1777 and world-traversable, umask on this box yields 755, and a
+  # dir that is briefly 755 is a dir that was briefly public. See pp_seed.
+  mkdir -p -m 700 "$PP_DIR" "$PP_STORE" || return 1
+  chmod 700 "$PP_DIR" "$PP_STORE" || return 1
+  mkdir -p -m 700 "$PP_STORE"/state "$PP_STORE"/run "$PP_STORE"/config || return 1
+  chmod 700 "$PP_STORE"/state "$PP_STORE"/run "$PP_STORE"/config || return 1
 
   ( cd "$PP_REPO" && go build \
       -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse --short=12 HEAD)" \
@@ -79,27 +85,134 @@ pp_init() {
 # renders history and never calls figaro.qua.
 #
 # The real store is only ever READ. The scratch daemon writes to the copy.
+#
+# ------------------------------------------------------------------------
+# SECURITY, and this was a real incident. See pp_env for the full story.
+# In one sentence: NEVER RELY ON A PARENT DIRECTORY TO PROTECT A FILE YOU ARE
+# ABOUT TO MOVE. Credentials are no longer copied at all (config is shared by
+# reference), content is now synthetic (pp_fixture), and pp_down deletes what
+# little remains.
+# ------------------------------------------------------------------------
+# pp_seed — DEPRECATED AND DISARMED. It copied the master's real aria store
+# (119 MB of his conversations) and his whole config (credentials) into a
+# world-traversable /var/tmp. Both are now refused. Use pp_fixture for content
+# and pp_config_copy if you must isolate config.
+#
+# Kept as a loud failure rather than deleted, because three hunters were told to
+# call it and a silent no-op would leave them driving an empty store and blaming
+# the pager.
 pp_seed() {
-  local src="${FIGARO_REAL_STATE:-$HOME/.local/state/figaro}"
-  [ -d "$src/arias" ] || pp_die "no aria store at $src/arias" || return 1
-  [ -d "$PP_STORE/state/arias" ] || cp -r "$src/arias" "$PP_STORE/state/arias" || return 1
-  [ -e "$PP_STORE/config/config.toml" ] || cp -r "$HOME/.config/figaro/." "$PP_STORE/config/" 2>/dev/null
-  echo "paintpane: seeded $(du -sh "$PP_STORE/state" | cut -f1) into $PP_STORE/state"
+  if [ -n "$PP_SEED_REAL_STORE_I_ACCEPT_THE_PRIVACY_COST" ]; then
+    local src="${FIGARO_REAL_STATE:-$HOME/.local/state/figaro}"
+    mkdir -p -m 700 "$PP_STORE/state"; chmod 700 "$PP_STORE" "$PP_STORE/state"
+    [ -d "$PP_STORE/state/arias" ] || cp -r "$src/arias" "$PP_STORE/state/arias" || return 1
+    chmod -R go-rwx "$PP_STORE/state"
+    echo "paintpane: WARNING seeded the REAL store at $PP_STORE/state (mode 700, deleted by pp_down)"
+    return 0
+  fi
+  cat >&2 <<'EOF'
+paintpane: pp_seed is DISABLED.
+
+  It used to copy ~/.config/figaro (PROVIDER CREDENTIALS) and 119 MB of the
+  master's real aria store (HIS CONVERSATION HISTORY) into /var/tmp, which is
+  world-traversable AND survives reboot. providers/anthropic.toml is mode 644
+  and was protected only by its 700 parent; the copy moved it out from under
+  the only thing defending it.
+
+  Use instead:
+    pp_fixture 400        deterministic synthetic content (one cheap turn),
+                          N numbered rows — contamination is self-evident
+    pp_config_copy        isolate config WITHOUT providers/ or hush/
+    (config is otherwise SHARED BY REFERENCE — see pp_env)
+
+  If you truly need real history, set
+  PP_SEED_REAL_STORE_I_ACCEPT_THE_PRIVACY_COST=1 and say so in your write-up.
+EOF
+  return 1
 }
 
 # pp_env — the env every command in the pane must carry.
 #
-# FIGARO_ARIA / FIGARO_NO_BIND are SCRUBBED deliberately. An aria's bash tool
-# exports FIGARO_ARIA=<its own id>, which is an IDENTITY: inherited into the
-# pane it makes every `figaro list` scope to the hunting aria and every
-# `figaro send` talk to itself. Measured: `figaro list -a` in a seeded 305-aria
-# store returned exactly ONE row until these were unset.
+# FIGARO_CONFIG_DIR IS SHARED BY REFERENCE, NOT COPIED. This is the documented
+# preset shape (see the figaro skill: isolate runtime+state, share config) and it
+# is here for a security reason, not a tidiness one.
+#
+# THE INCIDENT. pp_seed used to `cp -r ~/.config/figaro` into /var/tmp. `cp`
+# preserved modes faithfully — that was never the problem. The problem is that
+# providers/anthropic.toml is itself mode 644 and was safe in the real config
+# ONLY BECAUSE ITS PARENT IS 700. Copying it out from under that parent put the
+# master's Anthropic credential world-readable inside /var/tmp, which is 1777 AND
+# SURVIVES REBOOT. Four copies, for hunters who are painting frames and do not
+# need his credentials at all.
+#
+# NEVER RELY ON A PARENT DIRECTORY TO PROTECT A FILE YOU ARE ABOUT TO MOVE.
+#
+# A reference cannot be left behind with the wrong mode, so sharing is not merely
+# cheaper — it removes the failure mode. If you genuinely must isolate config,
+# use pp_config_copy, which EXCLUDES providers/ entirely.
+#
+# Separately: FIGARO_ARIA / FIGARO_NO_BIND are SCRUBBED wherever this env is
+# used (pp_run, pp_up). An aria's bash tool exports FIGARO_ARIA=<its own id>,
+# which is an IDENTITY: inherited into the pane it makes every `figaro list`
+# scope to the hunting aria and every `figaro send` talk to itself. Measured:
+# `figaro list -a` returned exactly ONE row out of 305 until these were unset.
 pp_env() {
   printf '%s\n' \
     "FIGARO_STATE_DIR=$PP_STORE/state" \
     "FIGARO_RUNTIME_DIR=$PP_STORE/run" \
-    "FIGARO_CONFIG_DIR=$PP_STORE/config"
+    "FIGARO_CONFIG_DIR=${PP_CONFIG:-$HOME/.config/figaro}"
 }
+
+# pp_config_copy — isolate config WITHOUT duplicating credentials.
+#
+# Copies loadouts/credo/skills and deliberately omits providers/ and hush/, then
+# refuses to continue if anything group/world-readable survived. Auth then has to
+# come from the environment (e.g. ANTHROPIC_API_KEY) or the dev-hush path the
+# figaro skill documents — which is the correct posture for a throwaway store.
+pp_config_copy() {
+  local dst="$PP_STORE/config"
+  mkdir -p -m 700 "$dst" || return 1
+  chmod 700 "$dst"
+  ( cd "$HOME/.config/figaro" 2>/dev/null && tar cf - \
+      --exclude=providers --exclude=hush --exclude='*.age' --exclude='*.key' . ) \
+    | ( cd "$dst" && tar xf - ) || return 1
+  chmod -R go-rwx "$dst"
+  local leaky
+  leaky="$(find "$dst" -type f \( -perm -g+r -o -perm -o+r \) 2>/dev/null | wc -l)"
+  [ "$leaky" = 0 ] || { pp_die "REFUSING: $leaky group/world-readable file(s) under $dst"; return 1; }
+  if [ -e "$dst/providers" ] || [ -e "$dst/hush" ]; then
+    pp_die "REFUSING: providers/ or hush/ leaked into $dst"; return 1
+  fi
+  PP_CONFIG="$dst"
+  echo "paintpane: isolated config at $dst (no providers/, no hush/)"
+}
+
+# pp_fixture [rows] [aria-out] — build a SYNTHETIC pager fixture.
+#
+# REPLACES the old pp_seed, which copied 119 MB of the master's real aria store —
+# his actual conversation history — into /var/tmp, four times. The painters need
+# ENOUGH CONTENT TO FILL A PAGER, not his history.
+#
+# This makes its own content instead, and the content is BETTER than real history
+# for the job: one tool call emitting `seq 1 N`, so the pager holds N strictly
+# increasing numbered rows. Contamination is then self-evident — a row reading
+# 247 where 312 belongs is a bug you can see without an oracle, and a gap row
+# holding text at all is a bug, because every legitimate body row is a number.
+#
+# Cost: ONE cheap turn. The N rows are TOOL OUTPUT, not model output, so the
+# model emits only a call and a word. No privacy exposure, and deterministic.
+pp_fixture() {
+  local rows="${1:-400}" out
+  out="$(pp_run new -j -- "Call the bash tool exactly once with the command: seq 1 $rows
+Then reply with the single word DONE and nothing else." 2>&1)" || {
+    pp_die "fixture turn failed: $out"; return 1
+  }
+  PP_ARIA="$(printf '%s' "$out" | grep -o '"aria_id":"[^"]*"' | head -1 | cut -d'"' -f4)"
+  [ -n "$PP_ARIA" ] || { pp_die "could not read aria id from: $out"; return 1; }
+  echo "paintpane: fixture aria $PP_ARIA (~$rows numbered rows)"
+  printf '%s' "$PP_ARIA"
+}
+
 
 pp_envargs() { local v; while read -r v; do printf ' %q' "$v"; done < <(pp_env); }
 
@@ -241,6 +354,85 @@ pp_alive() { tmux -S "$PP_SOCK" has-session -t "$PP_SESS" 2>/dev/null; }
 # pp_server_alive — is any session left on our server?
 pp_server_alive() { tmux -S "$PP_SOCK" list-sessions >/dev/null 2>&1; }
 
+# pp_tmux_servers — every tmux server belonging to a paint hunter.
+#
+# DO NOT USE `pgrep -x tmux`. It matches NOTHING, ever: tmux rewrites its
+# process title, so /proc/<pid>/comm is literally "tmux: server" or
+# "tmux: client" and never "tmux". BERTA measured it against a machine with FOUR
+# live servers — including two of ours — and got ZERO hits. A teardown check
+# written `pgrep -x tmux || echo clean` therefore reports CLEAN over a field of
+# orphans, which is the exact shape of the incident that produced trap #10's 230
+# orphaned processes.
+#
+# `pgrep tmux` (no -x) does work, because pgrep substring-matches comm. Only the
+# exact-match flag is fatal. We do not rely on either: we require comm to START
+# with "tmux" (so a shell whose command line merely mentions tmux — like the one
+# running this function — cannot match) and then match on the socket path.
+pp_tmux_servers() {
+  local p pid comm args
+  for p in /proc/[0-9]*; do
+    pid="${p#/proc/}"
+    comm="$(cat "$p/comm" 2>/dev/null)" || continue
+    case "$comm" in tmux*) ;; *) continue ;; esac
+    args="$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null)"
+    case "$args" in *"/tmp/paint-"*) printf '%s\t%s\t%s\n' "$pid" "$comm" "$args" ;; esac
+  done
+}
+
+# pp_figaro_daemons — every figaro process on a paint hunter's scratch store.
+#
+# NO NAME MATCHING. I first wrote this as `[ "$comm" = figaro ]` and it was blind
+# for exactly the reason `pgrep -x tmux` is blind, one function above — I
+# committed BERTA's trap while fixing BERTA's trap. `comm` is the binary
+# BASENAME, and an A/B arm is called `figaro-after`, `figaro-probe`,
+# `figaro-after2`… Measured: BASILIO had a live daemon named `figaro-after` on
+# /var/tmp/paint-basilio/run and the equality test reported ZERO daemons.
+#
+# So the environment is the only sound discriminator: FIGARO_RUNTIME_DIR cannot
+# be renamed and is what actually decides which store a process owns. Scan every
+# readable environ and match on that, with no assumption about the name at all.
+pp_figaro_daemons() {
+  local p pid rd
+  for p in /proc/[0-9]*; do
+    pid="${p#/proc/}"
+    rd="$(tr '\0' '\n' < "$p/environ" 2>/dev/null | grep -m1 '^FIGARO_RUNTIME_DIR=/var/tmp/paint-')" || continue
+    printf '%s\t%s\t%s\n' "$pid" "$(cat "$p/comm" 2>/dev/null)" "${rd#FIGARO_RUNTIME_DIR=}"
+  done
+}
+
+# pp_stale_pidfiles — angelus.pid files whose process is gone.
+#
+# Another artifact-outlives-the-process case: measured stale angelus.pid for two
+# hunters whose daemons had already exited. Never treat a pid FILE as liveness.
+pp_stale_pidfiles() {
+  local f pid
+  for f in /var/tmp/paint-*/run/angelus.pid; do
+    [ -f "$f" ] || continue
+    pid="$(cat "$f" 2>/dev/null)"
+    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || printf '%s\t%s\n' "$f" "${pid:-empty}"
+  done
+}
+
+# pp_verify_clean — assert teardown actually happened. Exit 0 = clean.
+#
+# Call this AFTER pp_down, and believe it rather than your intentions. I told the
+# watchdog I had removed a socket that I had in fact never removed; a claim is
+# not a measurement.
+pp_verify_clean() {
+  local bad=0 line
+  while IFS= read -r line; do [ -n "$line" ] && { echo "LEAK tmux server: $line"; bad=1; }; done < <(pp_tmux_servers)
+  while IFS= read -r line; do [ -n "$line" ] && { echo "LEAK figaro daemon: $line"; bad=1; }; done < <(pp_figaro_daemons)
+  while IFS= read -r line; do [ -n "$line" ] && echo "note: stale pidfile $line"; done < <(pp_stale_pidfiles)
+  for line in /tmp/paint-*/tmux.sock; do
+    [ -e "$line" ] || continue
+    tmux -S "$line" list-sessions >/dev/null 2>&1 \
+      && { echo "LEAK live server on $line"; bad=1; } \
+      || echo "note: dead socket inode $line (harmless; rm -f it)"
+  done
+  [ "$bad" -eq 0 ] && echo "pp_verify_clean: clean"
+  return "$bad"
+}
+
 # pp_down — tear down BOTH halves.
 #
 # Trap #10: `tmux kill-server` leaves the scratch daemon RUNNING. On one night
@@ -265,6 +457,16 @@ pp_down() {
       kill "$p" 2>/dev/null
     fi
   done
+  # THE CREDENTIAL COPY MUST GO. A teardown that leaves one behind is worse than
+  # one that leaks a tmux server: the server dies at reboot and /var/tmp does
+  # NOT. Config first, so an interrupted teardown removes secrets before bulk.
+  # Guarded by a path pattern so a mis-set PP_STORE cannot rm -rf something real.
+  case "$PP_STORE" in
+    /var/tmp/paint-?*)
+      rm -rf "$PP_STORE/config"
+      [ -n "$PP_KEEP_STORE" ] || rm -rf "$PP_STORE/state"
+      ;;
+  esac
   echo "paintpane: torn down ($PP_SESS)"
 }
 
