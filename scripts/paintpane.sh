@@ -395,7 +395,15 @@ pp_figaro_daemons() {
   local p pid rd
   for p in /proc/[0-9]*; do
     pid="${p#/proc/}"
-    rd="$(tr '\0' '\n' < "$p/environ" 2>/dev/null | grep -m1 '^FIGARO_RUNTIME_DIR=/var/tmp/paint-')" || continue
+    # -r FIRST. `tr ... < "$p/environ" 2>/dev/null` does NOT silence this: the
+    # redirection is performed by the SHELL and fails before tr ever runs, so the
+    # error comes from bash and 2>/dev/null on tr cannot catch it. Measured: 300+
+    # "Permission denied" lines for other users' processes, which is worse than
+    # useless — a diagnostic that floods is a diagnostic people learn to ignore,
+    # and this one exists to be believed.
+    [ -r "$p/environ" ] || continue
+    rd="$( { tr '\0' '\n' < "$p/environ" | grep -m1 '^FIGARO_RUNTIME_DIR=/var/tmp/paint-'; } 2>/dev/null )" || continue
+    [ -n "$rd" ] || continue
     printf '%s\t%s\t%s\n' "$pid" "$(cat "$p/comm" 2>/dev/null)" "${rd#FIGARO_RUNTIME_DIR=}"
   done
 }
@@ -452,8 +460,9 @@ pp_down() {
   fi
   # Belt and braces: anything still holding our scratch runtime dir.
   local p
-  for p in $(pgrep -x figaro 2>/dev/null); do
-    if tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -q "^FIGARO_RUNTIME_DIR=$PP_STORE/run$"; then
+  for p in $(pgrep -f 'figaro' 2>/dev/null); do
+    [ -r "/proc/$p/environ" ] || continue
+    if { tr '\0' '\n' < "/proc/$p/environ" | grep -q "^FIGARO_RUNTIME_DIR=$PP_STORE/run$"; } 2>/dev/null; then
       kill "$p" 2>/dev/null
     fi
   done
