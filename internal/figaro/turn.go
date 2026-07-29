@@ -207,7 +207,12 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 	}
 	if !combined.IsEmpty() {
 		if a.backend != nil {
-			if err := a.backend.ApplyChalkboard(a.id, combined); err != nil {
+			// NOTE: unlike applyControlPatch, this advances the in-memory
+			// chalkboard even when the append failed, so the turn proceeds on
+			// state the log does not have. Deliberately left alone here —
+			// changing it aborts a turn mid-flight, which is a behaviour
+			// change, not plumbing. See the version/ack work.
+			if _, err := a.backend.ApplyChalkboard(a.id, combined); err != nil {
 				slog.Error("turn chalkboard append", "aria", a.id, "err", err)
 			}
 		} else {

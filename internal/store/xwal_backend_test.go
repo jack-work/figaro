@@ -65,7 +65,7 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		t.Fatalf("credo = %q, want 'be terse'", str(cbGet(snap, "system.credo")))
 	}
 	// mutate via patch; re-derive sees it
-	if err := b.ApplyChalkboard(conv, patchSet(map[string]string{"system.cwd": "/tmp"})); err != nil {
+	if _, err := b.ApplyChalkboard(conv, patchSet(map[string]string{"system.cwd": "/tmp"})); err != nil {
 		t.Fatal(err)
 	}
 	snap, _ = b.ChalkboardState(conv)

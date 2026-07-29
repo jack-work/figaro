@@ -41,12 +41,12 @@ type liveForkBackend struct {
 	chalk      map[string]message.Patch
 }
 
-func (f *liveForkBackend) ApplyChalkboard(ariaID string, patch message.Patch) error {
+func (f *liveForkBackend) ApplyChalkboard(ariaID string, patch message.Patch) (uint64, error) {
 	if f.chalk == nil {
 		f.chalk = map[string]message.Patch{}
 	}
 	f.chalk[ariaID] = patch
-	return nil
+	return 0, nil
 }
 
 type coordinatingForkFigaro struct {

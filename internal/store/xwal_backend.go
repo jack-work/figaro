@@ -212,7 +212,7 @@ func (b *XwalBackend) ChalkboardPatches(ariaID string) (map[uint64][]message.Pat
 // ApplyChalkboard appends a patch to the chalkboard channel, keyed to the
 // next IR LT (a set records state for the turn about to happen). Routes
 // through Trunks.AppendChannel so it serializes with Fork/Promote.
-func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) error {
+func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) (uint64, error) {
 	pb, _ := json.Marshal(patch)
 	c := b.chalkCache(ariaID)
 	c.mu.Lock()
@@ -235,9 +235,9 @@ func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) error 
 	// "one ahead" semantics match the previous channelLast+1 behavior.
 	// Store.Append (not Trunks.AppendChannel): the poison gate and
 	// dirty/touch tracking must see chalkboard writes.
-	_, err := b.store.trunks.Append(ariaID, chanChalkboard, 0, pb, nil)
+	idx, err := b.store.trunks.Append(ariaID, chanChalkboard, 0, pb, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if c.ready && mainLT > 0 {
 		c.state = c.state.Apply(patch)
@@ -247,7 +247,7 @@ func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) error 
 	} else {
 		c.ready = false
 	}
-	return nil
+	return idx, nil
 }
 
 // ---- tree operations (delegated) ----

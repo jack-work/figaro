@@ -103,7 +103,7 @@ func BenchmarkDormantList(b *testing.B) {
 					if err != nil {
 						b.Fatal(err)
 					}
-					if err := backend.ApplyChalkboard(id, message.Patch{Set: map[string]json.RawMessage{
+					if _, err := backend.ApplyChalkboard(id, message.Patch{Set: map[string]json.RawMessage{
 						"mantra":     json.RawMessage(fmt.Sprintf("%q", fmt.Sprintf("aria %d", i))),
 						"system.cwd": json.RawMessage(`"/work"`),
 					}}); err != nil {

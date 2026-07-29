@@ -180,7 +180,7 @@ func seedChalkboardAria(tb testing.TB, m, n int) (string, string) {
 		tb.Fatal(err)
 	}
 	for _, p := range replayPatches(m, n) {
-		if err := be.ApplyChalkboard(aria, p); err != nil {
+		if _, err := be.ApplyChalkboard(aria, p); err != nil {
 			tb.Fatal(err)
 		}
 	}

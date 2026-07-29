@@ -748,27 +748,45 @@ func (a *Agent) serviceSets() bool {
 // Backed arias append it to the reducible chalkboard channel (keyed to
 // the next IR LT, so it rides the next turn as a transition); ephemeral
 // arias fold it onto an IR control-turn (no channel to hold it).
-func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
+//
+// It returns the durable VERSION the patch landed at, and the error if it
+// did not land at all. Both matter: this used to log the failure and return,
+// so a caller that had already been told OK never learned its write was gone.
+// Durability still precedes visibility — the in-memory chalkboard is advanced
+// only after the write returns — so a failure leaves the published board and
+// the log agreeing, and the caller free to retry.
+//
+// The two version spaces are disjoint but never mixed: an aria is backed or
+// ephemeral for its whole life, so a subscriber sees one monotonic sequence
+// either way. Backed arias count chalkboard-channel appends; ephemeral arias
+// count IR LTs, because there is no channel to append to.
+func (a *Agent) applyControlPatch(patch message.Patch, kind string) (uint64, error) {
 	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Set), "remove", len(patch.Remove))
+	var version uint64
 	if a.backend != nil {
-		if err := a.backend.ApplyChalkboard(a.id, patch); err != nil {
+		v, err := a.backend.ApplyChalkboard(a.id, patch)
+		if err != nil {
 			slog.Error(kind+" chalkboard append", "aria", a.id, "err", err)
-			return
+			return 0, err
 		}
+		version = v
 	} else {
 		msg := message.Message{
 			Role:      message.RoleInput,
 			Patches:   []message.Patch{patch},
 			Timestamp: time.Now().UnixMilli(),
 		}
-		if _, err := a.appendMsg(msg); err != nil {
+		ent, err := a.appendMsg(msg)
+		if err != nil {
 			slog.Error(kind+" append", "aria", a.id, "err", err)
-			return
+			return 0, err
 		}
+		version = ent.LT
 	}
 	a.chalkboard.Apply(patch)
 	a.refreshMetrics()
 	a.publishMetadata()
+	return version, nil
 }
 
 // chalkAccessor returns the per-LT transition source for the provider:
