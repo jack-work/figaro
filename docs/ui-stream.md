@@ -256,6 +256,15 @@ paging path, **bounded**; if it cannot be reached, the footer says so rather
 than hanging or landing somewhere else. `:` and `/` are each literal text inside
 the other's box.
 
+**A hole is not a turn.** The window can contain gaps — a `N turns not loaded`
+rule where history was evicted or arrived non-contiguously — and a gap entry
+carries turn `0`, an id no aria issues. A coordinate that lands inside one is
+*not yet*, never *absent*: the walk stays up, asks for that hole to be filled
+(even one the viewport cannot see), and **snaps to the real turn once the entry
+is ungapped**. `:0` likewise waits rather than landing on the sentinel standing
+where the beginning will be. What cannot exist — past the live tail, or below a
+proven floor with no hole — is still answered honestly and at once.
+
 The arrow cluster is an alias for the letter motions, and — like them — pressing
 one while a turn streams inline opens the pager first, so the gesture acts on
 arrival instead of looking like a dead keyboard.
@@ -271,6 +280,24 @@ At the bottom the view **follows** new output live (the status bar shows
 you. Messages that close while you're paging flush to the inline scrollback when
 you exit, so nothing is lost. If the turn finishes while you're reading, the
 command stays open until you close the pager.
+
+### The pager can open without being asked
+
+Three doors reach it, and **every one of them reads the aria's tail first**:
+
+| door | when |
+|---|---|
+| `Ctrl-T` / `Ctrl-L` / `figaro listen` | you asked |
+| an open turn taller than the viewport | it cannot be painted inline |
+| a resize that shrinks the viewport under the live region | same, from the other side |
+
+The last two are **automatic promotions**, and they used to open on nothing but
+the turn being streamed: no history above it, `More.Before` never set by any
+wire answer, and so the pager concluded that the question you had just typed was
+the beginning of the aria — scrolling up found nothing, forever. The read is now
+owed by the promotion itself (`livelogTurn.enterPager` → `catchUp`) and runs
+**off the render lock**, since one of its callers is the frame path. A failed
+read is not a floor: the claim is released so a later gesture retries.
 
 ## Steering: messages mid-turn
 
