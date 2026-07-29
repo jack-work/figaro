@@ -584,6 +584,19 @@ func encodeResponseMessage(
 				}
 			case message.ContentImage:
 				if content.Data != "" {
+					// A tool's image trails its function_call_output in the user
+					// message this loop emits after it, captioned with the call.
+					// OpenAI has since allowed an array-shaped output that could
+					// hold the image directly, but the Copilot proxy in front of
+					// this endpoint is unverified for it and a rejected item
+					// fails the whole turn; this shape only uses items the
+					// encoder already sends today.
+					if content.ToolCallID != "" {
+						userContent = append(userContent, responseContent{
+							Type: "input_text",
+							Text: toolImageCaption(content),
+						})
+					}
 					userContent = append(userContent, responseContent{
 						Type:     "input_image",
 						ImageURL: "data:" + content.MimeType + ";base64," + content.Data,
@@ -1161,4 +1174,15 @@ func hasResponseToolInvoke(content []message.Content) bool {
 func isResponseUnauthorized(err error) bool {
 	text := strings.ToLower(err.Error())
 	return strings.Contains(text, "401") || strings.Contains(text, "unauthorized")
+}
+
+// toolImageCaption names the call an image came from. The Responses shape
+// separates a tool's image from its function_call_output by a message
+// boundary, so without a caption a model facing several tool images in one
+// turn has nothing to bind them to.
+func toolImageCaption(c message.Content) string {
+	if c.ToolName != "" {
+		return fmt.Sprintf("[image output of tool %s (call %s)]", c.ToolName, c.ToolCallID)
+	}
+	return fmt.Sprintf("[image output of call %s]", c.ToolCallID)
 }

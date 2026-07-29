@@ -21,6 +21,7 @@ import (
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/toolout"
 	"github.com/jack-work/figaro/internal/turns"
 )
@@ -995,6 +996,8 @@ func (a *Agent) assembleToolResults(
 	outcomes map[string]toolOutcome,
 ) message.Message {
 	results := make([]message.Content, len(calls))
+	var images []message.Content
+	budget := toolImageBudget
 	for i, tc := range calls {
 		if !expect[tc.ToolCallID] {
 			results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, "Error: missing tool_call_id", true)
@@ -1006,6 +1009,12 @@ func (a *Agent) assembleToolResults(
 			if c.Type == message.ContentProse {
 				text += c.Text
 			}
+		}
+		kept, oversized, spent := harvestToolImages(tc, oc, budget)
+		budget -= spent
+		images = append(images, kept...)
+		for _, note := range oversized {
+			text += note
 		}
 		results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, text, oc.isErr)
 	}
@@ -1022,10 +1031,42 @@ func (a *Agent) assembleToolResults(
 	}
 	tic := message.Message{
 		Role:      message.RoleInput,
-		Content:   results,
+		Content:   append(results, images...),
 		Timestamp: time.Now().UnixMilli(),
 	}
 	return tic
+}
+
+// toolImageBudget caps the base64 bytes of tool imagery one tool_result tic
+// may carry. It is a hard safety limit, not taste: the tic is appended to the
+// IR as ONE figwal record, and a record that does not fit inside a single WAL
+// segment fails the append outright and takes the turn with it. Users may
+// legally configure store.segment_size down to 1MiB, so the budget stays well
+// under that with room for the text results sharing the record. Images past
+// the budget are dropped and announced in the tool's own result text — the
+// model is told it is missing a picture rather than left silently blind,
+// which is the failure this whole path exists to end.
+const toolImageBudget = 512 << 10
+
+// harvestToolImages pulls the image blocks out of one tool's outcome, tags
+// them with the call that produced them, and reports the budget it spent plus
+// a note for each image too large to send. Images ride along even when the
+// tool errored: a screenshot attached to a failure is usually the whole point.
+func harvestToolImages(tc message.Content, oc toolOutcome, budget int) (kept []message.Content, notes []string, spent int) {
+	for _, c := range oc.content {
+		if c.Type != message.ContentImage || c.Data == "" {
+			continue
+		}
+		if len(c.Data) > budget-spent {
+			notes = append(notes, fmt.Sprintf(
+				"\n[image omitted: %s of base64 exceeds the %s per-message image budget]",
+				tool.FormatSize(len(c.Data)), tool.FormatSize(toolImageBudget)))
+			continue
+		}
+		spent += len(c.Data)
+		kept = append(kept, message.ToolImageContent(tc.ToolCallID, tc.ToolName, c.MimeType, c.Data))
+	}
+	return kept, notes, spent
 }
 
 // nextIndex returns the LT the next appended message will occupy.
@@ -1063,8 +1104,7 @@ type toolEvent struct {
 	name    string
 	at      int64
 	chunk   string
-	final   message.Content // toolEnd: the appended tool_result block
-	outcome toolOutcome     // toolEnd: raw content for IR assembly
+	outcome toolOutcome // toolEnd: raw content for IR assembly
 }
 
 // toolOutcome holds the result of a single dispatched tool execution.
@@ -1132,12 +1172,6 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 		s.events <- toolEvent{kind: toolBegin, id: tc.ToolCallID, name: tc.ToolName, at: time.Now().UnixMilli()}
 
 		emitEnd := func(oc toolOutcome) {
-			var text string
-			for _, c := range oc.content {
-				if c.Type == message.ContentProse {
-					text += c.Text
-				}
-			}
 			p.outcome = oc
 			if a.isInterrupted() {
 				return
@@ -1147,7 +1181,6 @@ func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.
 				id:      tc.ToolCallID,
 				name:    tc.ToolName,
 				at:      time.Now().UnixMilli(),
-				final:   message.ToolResultContent(tc.ToolCallID, tc.ToolName, text, oc.isErr),
 				outcome: oc,
 			}
 		}
