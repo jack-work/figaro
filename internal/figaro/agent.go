@@ -57,8 +57,13 @@ type Config struct {
 	ID         string
 	SocketPath string
 	Provider   provider.Provider
-	Outfitter  *outfit.Outfitter
-	Tools      *tool.Registry
+	// ProviderFactory lets the agent REBIND its provider mid-conversation
+	// when system.provider (or a build-time knob) changes on the
+	// chalkboard. Nil pins the agent to Provider for life — fine for
+	// tests, wrong for a live aria, because the board is authoritative.
+	ProviderFactory ProviderFactory
+	Outfitter       *outfit.Outfitter
+	Tools           *tool.Registry
 	// Projector renders fig IR as UI IR. nil ships an engine with no display.
 	Projector  Projector
 	Backend    store.Backend // nil = ephemeral
@@ -90,9 +95,13 @@ type Config struct {
 type Agent struct {
 	id         string
 	socketPath string
-	prov       provider.Provider
-	outfitter  *outfit.Outfitter
-	tools      *tool.Registry
+	// provBind is the live provider binding (instance + the chalkboard
+	// coordinates that produced it). Written by the drain loop via
+	// syncProvider, read lock-free by status/metrics on RPC goroutines.
+	provBind    atomic.Pointer[providerBinding]
+	provFactory ProviderFactory
+	outfitter   *outfit.Outfitter
+	tools       *tool.Registry
 	// proj converts fig IR to UI IR. nil in a core-only build.
 	proj       Projector
 	inlineBoot *chalkboard.Patch // ephemeral first-turn boot fold
@@ -166,20 +175,20 @@ func NewAgent(cfg Config) *Agent {
 	}
 
 	a := &Agent{
-		id:         cfg.ID,
-		socketPath: cfg.SocketPath,
-		prov:       cfg.Provider,
-		outfitter:  cfg.Outfitter,
-		tools:      cfg.Tools,
-		proj:       cfg.Projector,
-		inlineBoot: cfg.InlineBoot,
-		backend:    cfg.Backend,
-		chalkboard: cfg.Chalkboard,
-		settings:   cfg.Settings,
-		createdAt:  createdAt,
-		lastActive: lastActive,
-		cancel:     cancel,
-		done:       make(chan struct{}),
+		id:          cfg.ID,
+		socketPath:  cfg.SocketPath,
+		provFactory: cfg.ProviderFactory,
+		outfitter:   cfg.Outfitter,
+		tools:       cfg.Tools,
+		proj:        cfg.Projector,
+		inlineBoot:  cfg.InlineBoot,
+		backend:     cfg.Backend,
+		chalkboard:  cfg.Chalkboard,
+		settings:    cfg.Settings,
+		createdAt:   createdAt,
+		lastActive:  lastActive,
+		cancel:      cancel,
+		done:        make(chan struct{}),
 	}
 
 	a.figLog = a.newLog()
@@ -189,6 +198,10 @@ func NewAgent(cfg Config) *Agent {
 		// pre-seeded from the reducible chalkboard channel by the caller.
 		a.chalkboard, _ = chalkboard.Open("")
 	}
+	// The caller built cfg.Provider from this very board, so pairing the
+	// instance with the board's current knobs makes the first syncProvider
+	// a no-op — and any later divergence a genuine rebind.
+	a.bindProvider(cfg.Provider)
 	a.inbox = NewInbox(ctx)
 
 	messages := unwrapMessages(a.figLog.Read())
@@ -337,7 +350,7 @@ func (a *Agent) refreshMetrics() {
 
 	snapshot := a.Snapshot()
 	model := snapshotString(snapshot, "system.model")
-	contextLimit := resolveContextLimit(a.prov, model, snapshot)
+	contextLimit := resolveContextLimit(a.provider(), model, snapshot)
 
 	a.mu.Lock()
 	a.tokensIn = in
@@ -373,7 +386,7 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	}
 	snapshot := a.Snapshot()
 	model := snapshotString(snapshot, "system.model")
-	contextLimit := resolveContextLimit(a.prov, model, snapshot)
+	contextLimit := resolveContextLimit(a.provider(), model, snapshot)
 
 	a.mu.Lock()
 	a.tokensIn = in
@@ -523,7 +536,7 @@ func (a *Agent) Info() FigaroInfo {
 	info := FigaroInfo{
 		ID:               a.id,
 		State:            state,
-		Provider:         a.prov.Name(),
+		Provider:         a.providerName(),
 		Model:            a.model,
 		MessageCount:     a.messageCount,
 		TokensIn:         a.tokensIn,
@@ -830,7 +843,7 @@ func (a *Agent) publishMetadata() {
 		CacheReadTokens:  a.cacheRead,
 		CacheWriteTokens: a.cacheWrite,
 		LastActiveMS:     a.lastActive.UnixMilli(),
-		Provider:         a.prov.Name(),
+		Provider:         a.providerName(),
 		Model:            a.model,
 		Mantra:           a.mantra,
 		Cwd:              a.cwd,

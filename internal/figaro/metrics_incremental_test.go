@@ -14,9 +14,10 @@ func TestRefreshMetricsIncrementalMatchesFullFold(t *testing.T) {
 	log := store.NewMemLog[message.Message]()
 	cb, _ := chalkboard.Open("")
 	a := &Agent{
-		figLog: log, prov: perfProvider{}, chalkboard: cb,
+		figLog: log, chalkboard: cb,
 		inbox: NewInbox(context.Background()),
 	}
+	a.bindProvider(perfProvider{})
 	sequence := []message.Message{
 		{Role: message.RoleGenesis},
 		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first prompt")}},

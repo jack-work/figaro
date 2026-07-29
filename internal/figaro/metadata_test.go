@@ -21,7 +21,6 @@ func TestPublishMetadataUsesIncrementalActorState(t *testing.T) {
 	backend := &metadataCaptureBackend{}
 	a := &Agent{
 		id:            "aria",
-		prov:          perfProvider{},
 		backend:       backend,
 		messageCount:  10_000,
 		turnCount:     5_000,

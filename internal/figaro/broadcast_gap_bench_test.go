@@ -60,11 +60,11 @@ func gapAgent(tb testing.TB, n int, withUsage bool) *Agent {
 	tb.Cleanup(func() { _ = cb.Close() })
 	a := &Agent{
 		figLog:     realisticLog(tb, n, withUsage),
-		prov:       perfProvider{},
 		chalkboard: cb,
 		proj:       uiir.New(nil),
 		ariaSrv:    aria.NewServer(),
 	}
+	a.bindProvider(perfProvider{})
 	a.refreshMetricsFrom(a.Context())
 	return a
 }

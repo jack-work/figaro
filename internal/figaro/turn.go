@@ -132,7 +132,7 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		figOtel.WithAttributes(
 			attribute.String("figaro.id", a.id),
 			attribute.String("figaro.model", a.currentModel()),
-			attribute.String("figaro.provider", a.prov.Name()),
+			attribute.String("figaro.provider", a.providerName()),
 		),
 	)
 	defer span.End()
@@ -358,6 +358,18 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	if a.turn == nil {
 		a.turn = newTurnState()
 	}
+	// The chalkboard is authoritative: re-resolve the provider now, after
+	// this round's queued `set`s have been serviced, so a provider switch
+	// lands on the very next round instead of waiting for a restart.
+	if err := a.syncProvider(); err != nil {
+		a.endTurn("error: " + err.Error())
+		return true
+	}
+	prov := a.provider()
+	if prov == nil {
+		a.endTurn("error: no provider configured (set system.provider)")
+		return true
+	}
 	bus := newTurnBus(turnCtx)
 	deferredLog := newDeferredAppendLog(a.figLog)
 	in := provider.SendInput{
@@ -378,9 +390,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			close(bus.toolsReady)
 		}()
 		started := time.Now()
-		err := a.prov.Send(turnCtx, in, bus)
+		err := prov.Send(turnCtx, in, bus)
 		figOtel.RecordRequestDuration(turnCtx, time.Since(started),
-			attribute.String("provider", a.prov.Name()),
+			attribute.String("provider", prov.Name()),
 			attribute.String("model", a.currentModel()),
 			attribute.String("status", statusOf(err)))
 		sendDone <- err

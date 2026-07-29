@@ -51,7 +51,8 @@ func longMemLog(tb testing.TB, n int) store.Log[message.Message] {
 func BenchmarkAgentRestoreHistory10000(b *testing.B) {
 	log := longMemLog(b, 10_000)
 	cb, _ := chalkboard.Open("")
-	a := &Agent{figLog: log, prov: perfProvider{}, chalkboard: cb}
+	a := &Agent{figLog: log, chalkboard: cb}
+	a.bindProvider(perfProvider{})
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -79,7 +80,8 @@ func BenchmarkInterruptRepair10000(b *testing.B) {
 func BenchmarkAgentInfo10000(b *testing.B) {
 	log := longMemLog(b, 10_000)
 	cb, _ := chalkboard.Open("")
-	a := &Agent{figLog: log, prov: perfProvider{}, chalkboard: cb, inbox: NewInbox(context.Background())}
+	a := &Agent{figLog: log, chalkboard: cb, inbox: NewInbox(context.Background())}
+	a.bindProvider(perfProvider{})
 	a.refreshMetrics()
 
 	b.ReportAllocs()
@@ -92,7 +94,8 @@ func BenchmarkAgentInfo10000(b *testing.B) {
 func BenchmarkAgentMetricRefresh10000(b *testing.B) {
 	log := longMemLog(b, 10_000)
 	cb, _ := chalkboard.Open("")
-	a := &Agent{figLog: log, prov: perfProvider{}, chalkboard: cb}
+	a := &Agent{figLog: log, chalkboard: cb}
+	a.bindProvider(perfProvider{})
 	a.refreshMetrics()
 
 	b.Run("full-fold", func(b *testing.B) {
@@ -119,10 +122,10 @@ func BenchmarkMetadataPublication10000(b *testing.B) {
 	a := &Agent{
 		id:         "perf",
 		figLog:     log,
-		prov:       perfProvider{},
 		chalkboard: cb,
 		backend:    backend,
 	}
+	a.bindProvider(perfProvider{})
 	a.refreshMetrics()
 
 	b.Run("legacy-two-history-reads", func(b *testing.B) {

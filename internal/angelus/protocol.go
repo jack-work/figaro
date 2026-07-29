@@ -30,8 +30,10 @@ import (
 	"github.com/jack-work/jkrpc"
 )
 
-// ProviderFactory creates one provider per Agent; instances never span arias.
-type ProviderFactory func(providerName string, knobs providerPkg.Knobs) (providerPkg.Provider, error)
+// ProviderFactory creates providers for an Agent; instances never span
+// arias. The agent keeps the factory so it can rebind mid-conversation when
+// system.provider changes on the chalkboard (see figaro.syncProvider).
+type ProviderFactory = figaro.ProviderFactory
 
 // ServerConfig holds dependencies for the angelus JSON-RPC handlers.
 type ServerConfig struct {
@@ -330,16 +332,17 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	reg := tool.DefaultRegistryForAria(id, cwdFromChalkboard(cbState, cwd))
 	agent := figaro.NewAgent(figaro.Config{
-		ID:         id,
-		SocketPath: sockPath,
-		Provider:   prov,
-		Outfitter:  h.outfitter,
-		Tools:      reg,
-		Projector:  uiir.New(reg),
-		Backend:    backend,
-		Chalkboard: cbState,
-		InlineBoot: inlineBoot,
-		Settings:   h.config,
+		ID:              id,
+		SocketPath:      sockPath,
+		Provider:        prov,
+		ProviderFactory: h.factory,
+		Outfitter:       h.outfitter,
+		Tools:           reg,
+		Projector:       uiir.New(reg),
+		Backend:         backend,
+		Chalkboard:      cbState,
+		InlineBoot:      inlineBoot,
+		Settings:        h.config,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -1165,17 +1168,18 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 	}
 	reg := tool.DefaultRegistryForAria(ariaID, cwdFromChalkboard(cb, toolRoot))
 	agent := figaro.NewAgent(figaro.Config{
-		ID:         ariaID,
-		SocketPath: sockPath,
-		Provider:   prov,
-		Outfitter:  h.outfitter,
-		Tools:      reg,
-		Projector:  uiir.New(reg),
-		Backend:    h.angelus.Backend,
-		Chalkboard: cb,
-		CreatedAt:  createdAt,
-		LastActive: lastActive,
-		Settings:   h.config,
+		ID:              ariaID,
+		SocketPath:      sockPath,
+		Provider:        prov,
+		ProviderFactory: h.factory,
+		Outfitter:       h.outfitter,
+		Tools:           reg,
+		Projector:       uiir.New(reg),
+		Backend:         h.angelus.Backend,
+		Chalkboard:      cb,
+		CreatedAt:       createdAt,
+		LastActive:      lastActive,
+		Settings:        h.config,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {

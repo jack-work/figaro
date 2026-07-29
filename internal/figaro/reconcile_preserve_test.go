@@ -32,9 +32,8 @@ func (reconcileNoopProvider) Send(context.Context, provider.SendInput, provider.
 func newBareAgent(t *testing.T, log store.Log[message.Message]) *Agent {
 	t.Helper()
 	cb, _ := chalkboard.Open("")
-	return &Agent{
+	a := &Agent{
 		id:         "recon-test",
-		prov:       reconcileNoopProvider{},
 		chalkboard: cb,
 		figLog:     log,
 		ariaSrv:    aria.NewServer(),
@@ -45,6 +44,8 @@ func newBareAgent(t *testing.T, log store.Log[message.Message]) *Agent {
 		// the separation the Projector interface buys.
 		proj: uiir.New(nil),
 	}
+	a.bindProvider(reconcileNoopProvider{})
+	return a
 }
 
 // TestReconcileAriaServer_PreservesStateOnShorterHistory pins the fix
