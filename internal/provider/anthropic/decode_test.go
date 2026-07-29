@@ -24,6 +24,12 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		name    string
 		fixture string
 		ir      message.Message
+		// encoded names the fixture the ENCODER must produce when it
+		// differs from the decode fixture. It differs for exactly one
+		// reason: thinking blocks. Their signature lives only in the
+		// translation cache, never in the IR, so this cache-miss encoder
+		// drops them rather than emit an unsigned block the API rejects.
+		encoded string
 	}{
 		{
 			name:    "text_assistant",
@@ -36,6 +42,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		{
 			name:    "mixed_assistant",
 			fixture: "mixed_assistant.json",
+			encoded: "mixed_assistant_unsigned_encode.json",
 			ir: message.Message{
 				Role: message.RoleOutput,
 				Content: []message.Content{
@@ -96,10 +103,17 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			require.NoError(t, err)
 			wire := bytes.TrimRight(wireBytes, "\n")
 
+			wantEncoded := wire
+			if tc.encoded != "" {
+				encBytes, err := os.ReadFile(filepath.Join("testdata", tc.encoded))
+				require.NoError(t, err)
+				wantEncoded = bytes.TrimRight(encBytes, "\n")
+			}
+
 			// Encode parity: IR → wire == fixture.
 			_, perFLT := a.projectMessages([]message.Message{tc.ir})
 			require.Len(t, perFLT, 1)
-			assert.Equal(t, string(wire), string(perFLT[0]), "encode parity")
+			assert.Equal(t, string(wantEncoded), string(perFLT[0]), "encode parity")
 
 			// Decode parity: fixture → IR == expected.
 			var nm nativeMessage
@@ -107,10 +121,11 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 			decoded := decodeNativeMessage(nm)
 			assertIRMessageEqual(t, tc.ir, decoded)
 
-			// Round trip: fixture → IR → wire == fixture.
+			// Round trip: fixture → IR → wire == fixture (modulo the
+			// unsigned thinking the encoder must drop).
 			_, perFLT2 := a.projectMessages([]message.Message{decoded})
 			require.Len(t, perFLT2, 1)
-			assert.Equal(t, string(wire), string(perFLT2[0]), "decode→encode round trip")
+			assert.Equal(t, string(wantEncoded), string(perFLT2[0]), "decode→encode round trip")
 		})
 	}
 }
@@ -142,4 +157,24 @@ func assertIRMessageEqual(t *testing.T, want, got message.Message) {
 			}
 		}
 	}
+}
+
+// TestEncodeDropsUnsignedThinking pins the rule that makes a provider switch
+// survivable: the IR holds no thinking signature (it holds no provider
+// secrets at all), so the cache-miss encoder must drop thinking blocks
+// rather than emit unsigned ones. History produced under another provider
+// has no anthropic translation to hit, so this path runs for real whenever
+// an aria moves back to anthropic mid-conversation.
+func TestEncodeDropsUnsignedThinking(t *testing.T) {
+	a := &Anthropic{}
+	_, perFLT := a.projectMessages([]message.Message{{
+		Role: message.RoleOutput,
+		Content: []message.Content{
+			{Type: message.ContentThinking, Text: "secret deliberation"},
+			message.TextContent("out loud"),
+		},
+	}})
+	require.Len(t, perFLT, 1)
+	assert.NotContains(t, string(perFLT[0]), "thinking")
+	assert.Contains(t, string(perFLT[0]), "out loud")
 }

@@ -611,7 +611,13 @@ func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snap
 			case message.ContentProse:
 				blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
 			case message.ContentThinking:
-				blocks = append(blocks, nativeBlock{Type: "thinking", Thinking: c.Text})
+				// Dropped. This is the cache-MISS fallback: the signed wire
+				// form of a thinking block lives only in the translation
+				// cache, and the IR carries no signature (by design — it
+				// holds no provider secrets). Re-emitting the text without
+				// its signature is a 400 once extended thinking is on, and
+				// this path is now routinely reached: history produced under
+				// another provider has no anthropic translations to hit.
 			case message.ContentToolInvoke:
 				// Force non-nil input (API requires it).
 				var input interface{}
