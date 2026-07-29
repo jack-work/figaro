@@ -205,6 +205,35 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
   flags. `anthropic-beta` does not need `interleaved-thinking` for adaptive
   models.
 
+### The provider binding is live, not a birthmark
+
+`system.provider` is chalkboard state like any other key, and the board is
+authoritative. The agent holds a `ProviderFactory` and re-resolves the binding
+at the top of **every** provider round (`internal/figaro/provbind.go`,
+`syncProvider`), after that round's queued `set`s are serviced — so
+`figaro set system.provider copilot` (or a re-applied loadout that moves the
+aria) takes effect on the next round, with no restart and no fork. Before
+this, the instance was frozen at create/restore: an aria whose provider was
+wedged (a persistent `overloaded_error`, say) could not be moved off it while
+the angelus stayed up, and `figaro status` cheerfully reported the *old*
+provider while the board said otherwise.
+
+- The binding is `{name, knobs, instance}` published through an
+  `atomic.Pointer` — written by the drain loop, read lock-free by
+  status/metrics on RPC goroutines.
+- **Model is not a rebuild trigger.** Every provider resolves `system.model`
+  from the per-turn snapshot inside `Send`; rebuilding on a model change would
+  only discard the in-memory wire projection. Build-time knobs
+  (`system.reminder_renderer`, `system.use_official_sdk`, `system.max_tokens`)
+  do trigger one.
+- A factory error **fails the turn** naming the provider. Falling back to the
+  old instance would silently contradict the board — the exact confusion the
+  bug produced.
+- Switching is safe because the IR is canonical and each provider owns its
+  own translation channel: the new provider simply re-projects the history it
+  has not seen. That makes the cache-miss encoder load-bearing — it must drop
+  unsigned thinking blocks (both the SDK and raw Anthropic encoders do).
+
 ## Tools: bash & backgrounding
 
 The bash tool (`internal/tool/bash.go`, `exec_local.go`) runs each command via
