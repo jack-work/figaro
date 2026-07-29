@@ -96,6 +96,41 @@ func (l *Loaded) SegmentSize() int {
 	return *l.Config.Store.SegmentSize
 }
 
+// imageShareNum/imageShareDen is the fraction of a WAL segment that inlined
+// imagery may claim: two thirds. The remaining third holds the tool_result
+// TEXT sharing the record (bounded at MaxOutputBytes per tool) plus the JSON
+// envelope, and figwal needs the whole record to fit an EMPTY segment with
+// nothing to spare.
+const (
+	imageShareNum = 2
+	imageShareDen = 3
+)
+
+// InlineImageBudget is the SINGLE policy point for how many base64 bytes of
+// tool imagery one tool_result record may carry.
+//
+// It is derived, not chosen. The tic is ONE figwal record and a record larger
+// than a segment fails the append outright, taking the turn with it — so the
+// ceiling has to move with `store.segment_size` rather than being a constant
+// pinned to the smallest legal configuration. A user who raises the segment
+// size to hold bigger screenshots gets bigger screenshots; one who lowers it
+// to the floor gets a proportionally tighter budget instead of a broken store.
+//
+// The provider ceiling caps the top end: past ~5MB per image the APIs refuse
+// it anyway, so a 64MiB segment buys context cost, not capability.
+func (l *Loaded) InlineImageBudget() int {
+	budget := l.SegmentSize() / imageShareDen * imageShareNum
+	if budget > maxInlineImageBytes {
+		budget = maxInlineImageBytes
+	}
+	return budget
+}
+
+// maxInlineImageBytes mirrors tool.ProviderImageCeiling. It is duplicated
+// rather than imported because internal/tool is a consumer of this package's
+// numbers, not a supplier — the dependency must not run both ways.
+const maxInlineImageBytes = 3500 << 10
+
 // validateStream rejects a negative coalescing window (a negative interval
 // would read as "never throttle", which is what 0 already means).
 func (c Config) validateStream() error {
@@ -106,13 +141,14 @@ func (c Config) validateStream() error {
 }
 
 // validateStore rejects a segment too small to hold one record. The largest
-// record seen in a real store is 128KB, but the read tool inlines images as
-// base64 with no cap, so the true ceiling is "whatever screenshot the agent
-// was asked to look at" — an undersized segment does not degrade, it turns
-// that append into a hard failure and loses the turn.
+// record seen in a real store is 128KB; the read tool inlines images as
+// base64, bounded by InlineImageBudget, which is itself derived FROM this
+// number — so the two cannot drift into a configuration that cannot append.
+// Below the floor there is no share of the segment large enough to hold a
+// legible picture and the text results beside it.
 func (c Config) validateStore() error {
 	if s := c.Store.SegmentSize; s != nil && *s < minSegmentSize {
-		return fmt.Errorf("config: store.segment_size (%d) must be >= %d: a WAL segment must fit ONE whole record, and figaro inlines images as base64 with no cap — a smaller segment makes figwal reject the append (\"payload too large for segment size\") the first time a screenshot is read", *s, minSegmentSize)
+		return fmt.Errorf("config: store.segment_size (%d) must be >= %d: a WAL segment must fit ONE whole record, and a tool_result carrying a base64 image is one record — below the floor there is no share of a segment big enough for a legible picture, and figwal rejects the append (\"payload too large for segment size\") outright", *s, minSegmentSize)
 	}
 	return nil
 }
