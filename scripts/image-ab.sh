@@ -155,22 +155,45 @@ echo
 
 # ------------------------------------------------------------------- the ruling
 
+# A near miss is not blindness. A model that answers 9X584 for 9XS84 has plainly
+# SEEN the picture and misread one glyph; calling that "did not see it" blames
+# the fix for the fixture. The verdict stays strict — four of five is still a
+# fail — but it names WHICH failure it is, so nobody debugs the wrong thing.
+# (The fixture alphabet has since been stripped of confusable pairs, so this
+# should now only fire on a real problem.)
+seen_code() { grep -oiE 'CODE=[A-Z0-9]{5}' <<<"$1" | head -1 | cut -d= -f2 | tr 'a-z' 'A-Z'; }
+hamming() {
+  local a=$1 b=$2 n=0 i
+  [ "${#a}" -ne "${#b}" ] && { echo 99; return; }
+  for ((i = 0; i < ${#a}; i++)); do [ "${a:i:1}" != "${b:i:1}" ] && n=$((n + 1)); done
+  echo $n
+}
+
+BEFORE_SAW=$(seen_code "$BEFORE_OUT")
+AFTER_SAW=$(seen_code "$AFTER_OUT")
+
 rc=0
 echo "──────────────────────────────────────────────────────────────"
 printf 'the image says          CODE=%s\n' "$CODE"
 
-if grep -qi "CODE=$CODE" <<<"$BEFORE_OUT"; then
+if [ "$BEFORE_SAW" = "$CODE" ]; then
   echo "BEFORE                  saw it — THE BUG IS NOT REPRODUCED"
   echo "                        (is $BEFORE_REF really unfixed?)"
   rc=1
 else
-  echo "BEFORE                  blind ✓  (the bug reproduces)"
+  printf 'BEFORE                  blind ✓  (answered %s)\n' "${BEFORE_SAW:-nothing}"
 fi
 
-if grep -qi "CODE=$CODE" <<<"$AFTER_OUT"; then
+if [ "$AFTER_SAW" = "$CODE" ]; then
   echo "AFTER                   saw it ✓  (the fix works)"
+elif [ -n "$AFTER_SAW" ] && [ "$(hamming "$CODE" "$AFTER_SAW")" -le 1 ]; then
+  printf 'AFTER                   answered %s — ONE GLYPH OFF\n' "$AFTER_SAW"
+  echo "                        The image DID reach the model: blind is not a"
+  echo "                        near miss. This is an OCR misread, not a"
+  echo "                        delivery failure. Re-run before acting on it."
+  rc=1
 else
-  echo "AFTER                   DID NOT SEE IT — THE FIX FAILED"
+  printf 'AFTER                   answered %s — THE FIX FAILED\n' "${AFTER_SAW:-nothing}"
   rc=1
 fi
 echo "──────────────────────────────────────────────────────────────"
