@@ -2,6 +2,7 @@ package figaro
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -997,7 +998,8 @@ func (a *Agent) assembleToolResults(
 ) message.Message {
 	results := make([]message.Content, len(calls))
 	var images []message.Content
-	budget := toolImageBudget
+	total := a.toolImageBudget()
+	budget := total
 	for i, tc := range calls {
 		if !expect[tc.ToolCallID] {
 			results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, "Error: missing tool_call_id", true)
@@ -1010,10 +1012,10 @@ func (a *Agent) assembleToolResults(
 				text += c.Text
 			}
 		}
-		kept, oversized, spent := harvestToolImages(tc, oc, budget)
+		kept, notes, spent := harvestToolImages(tc, oc, budget, total)
 		budget -= spent
 		images = append(images, kept...)
-		for _, note := range oversized {
+		for _, note := range notes {
 			text += note
 		}
 		results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, text, oc.isErr)
@@ -1037,36 +1039,94 @@ func (a *Agent) assembleToolResults(
 	return tic
 }
 
-// toolImageBudget caps the base64 bytes of tool imagery one tool_result tic
-// may carry. It is a hard safety limit, not taste: the tic is appended to the
-// IR as ONE figwal record, and a record that does not fit inside a single WAL
-// segment fails the append outright and takes the turn with it. Users may
-// legally configure store.segment_size down to 1MiB, so the budget stays well
-// under that with room for the text results sharing the record. Images past
-// the budget are dropped and announced in the tool's own result text — the
-// model is told it is missing a picture rather than left silently blind,
-// which is the failure this whole path exists to end.
-const toolImageBudget = 512 << 10
+// toolImageBudget is the base64 ceiling for ALL tool imagery on one
+// tool_result tic, derived from the configured WAL segment size.
+//
+// It is a hard safety limit, not taste: the tic is appended to the IR as ONE
+// figwal record, and a record that does not fit inside a single WAL segment
+// fails the append outright and takes the turn with it. config owns the
+// derivation (segment size, its floor, and the provider ceiling above which
+// bigger buys nothing) so the number moves with the store geometry instead of
+// being pinned to the smallest legal configuration — a user who raises
+// store.segment_size gets the headroom they paid for. Nil-safe: an agent
+// constructed without settings gets the same default the store would use.
+func (a *Agent) toolImageBudget() int { return a.settings.InlineImageBudget() }
 
 // harvestToolImages pulls the image blocks out of one tool's outcome, tags
 // them with the call that produced them, and reports the budget it spent plus
-// a note for each image too large to send. Images ride along even when the
-// tool errored: a screenshot attached to a failure is usually the whole point.
-func harvestToolImages(tc message.Content, oc toolOutcome, budget int) (kept []message.Content, notes []string, spent int) {
+// a note for any image it had to alter or could not carry. Images ride along
+// even when the tool errored: a screenshot attached to a failure is usually
+// the whole point.
+//
+// An image over the remaining budget is RESCALED, not discarded. The read tool
+// already fits each image to the whole-message budget at ingest, so the only
+// way to arrive here is several images in one parallel round competing for one
+// record — and dropping the losers would reproduce, at a different threshold,
+// the silent blindness this path exists to end. Dropping is reserved for an
+// image that cannot be encoded legibly in the space that is left, and it is
+// announced in that tool's own result text.
+func harvestToolImages(tc message.Content, oc toolOutcome, remaining, total int) (kept []message.Content, notes []string, spent int) {
 	for _, c := range oc.content {
 		if c.Type != message.ContentImage || c.Data == "" {
 			continue
 		}
-		if len(c.Data) > budget-spent {
-			notes = append(notes, fmt.Sprintf(
-				"\n[image omitted: %s of base64 exceeds the %s per-message image budget]",
-				tool.FormatSize(len(c.Data)), tool.FormatSize(toolImageBudget)))
+		left := remaining - spent
+		if len(c.Data) <= left {
+			spent += len(c.Data)
+			kept = append(kept, message.ToolImageContent(tc.ToolCallID, tc.ToolName, c.MimeType, c.Data))
 			continue
 		}
-		spent += len(c.Data)
-		kept = append(kept, message.ToolImageContent(tc.ToolCallID, tc.ToolName, c.MimeType, c.Data))
+		fitted, note, ok := refitToolImage(c, left)
+		if !ok {
+			// Say WHY, precisely. "Exceeds the budget" would be a lie when the
+			// budget was spent by an earlier call in the same round, and a model
+			// reasons from what it is told.
+			notes = append(notes, fmt.Sprintf(
+				"\n[image omitted: %s of base64 does not fit the %s still free in this message's %s image budget]",
+				tool.FormatSize(len(c.Data)), tool.FormatSize(maxInt(left, 0)), tool.FormatSize(total)))
+			continue
+		}
+		spent += len(fitted.Data)
+		kept = append(kept, message.ToolImageContent(tc.ToolCallID, tc.ToolName, fitted.MimeType, fitted.Data))
+		notes = append(notes, note)
 	}
 	return kept, notes, spent
+}
+
+// refitToolImage re-encodes one already-inlined image to fit the bytes still
+// free on this record, and returns the note that keeps the model's coordinates
+// honest.
+//
+// The factor is reported as a FURTHER multiplier rather than an absolute one:
+// the ingest note already told the model how this image relates to the file on
+// disk, and this pass only knows how the new pixels relate to the ones it was
+// handed. Two composable factors are correct; one absolute-looking factor that
+// silently measures from the wrong baseline is not.
+func refitToolImage(c message.Content, limit int) (tool.FittedImage, string, bool) {
+	raw, err := base64.StdEncoding.DecodeString(c.Data)
+	if err != nil {
+		return tool.FittedImage{}, "", false
+	}
+	fitted, err := tool.FitImage(raw, c.MimeType, tool.ImageLimits{MaxBase64: limit})
+	if err != nil {
+		return tool.FittedImage{}, "", false
+	}
+	if fitted.Resized {
+		return fitted, fmt.Sprintf(
+			"\n[image rescaled to %dx%d to share this message's image budget with the other tools in this round; "+
+				"multiply coordinates by a FURTHER %.2f, on top of any factor noted above]",
+			fitted.W, fitted.H, fitted.Scale()), true
+	}
+	return fitted, fmt.Sprintf(
+		"\n[image re-encoded as %s to share this message's image budget with the other tools in this round; "+
+			"coordinates are unchanged]", fitted.MimeType), true
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // nextIndex returns the LT the next appended message will occupy.

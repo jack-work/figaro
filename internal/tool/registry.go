@@ -83,27 +83,52 @@ func (r *Registry) Len() int {
 	return len(r.tools)
 }
 
+// RegistryOption tunes the default registry. Variadic so every existing call
+// site keeps compiling and only the callers that HAVE a configuration need to
+// know one exists.
+type RegistryOption func(*registryOpts)
+
+type registryOpts struct {
+	imageLimits ImageLimits
+}
+
+// WithImageBudget caps the base64 payload of one inlined image. The agent
+// passes config.InlineImageBudget() so the tool that PRODUCES the image is
+// bounded by the same number the store can actually append — an image fitted
+// at ingest never has to be dropped downstream.
+func WithImageBudget(maxBase64 int) RegistryOption {
+	return func(o *registryOpts) {
+		if maxBase64 > 0 {
+			o.imageLimits.MaxBase64 = maxBase64
+		}
+	}
+}
+
 // DefaultRegistry returns a registry with bash, read, write, edit.
 //
 // The bash tool gets a LocalExecutor with the default daemon-env
 // sanitizer wired in, so child processes don't inherit
 // _FIGARO_DAEMON / HUSH_* and silently re-enter daemon mode.
-func DefaultRegistry(cwd string) *Registry {
-	return DefaultRegistryFn(func() string { return cwd })
+func DefaultRegistry(cwd string, opts ...RegistryOption) *Registry {
+	return DefaultRegistryFn(func() string { return cwd }, opts...)
 }
 
 // DefaultRegistryFn is like DefaultRegistry but reads cwd at call time
 // via cwdFn. Agent wiring should pass a closure that pulls system.cwd
 // from the chalkboard.
-func DefaultRegistryFn(cwdFn func() string) *Registry {
-	return DefaultRegistryForAria("", cwdFn)
+func DefaultRegistryFn(cwdFn func() string, opts ...RegistryOption) *Registry {
+	return DefaultRegistryForAria("", cwdFn, opts...)
 }
 
 // DefaultRegistryForAria is DefaultRegistryFn for a named aria: the
 // bash tool exports FIGARO_ARIA=<ariaID> to its children, so nested
 // `figaro` calls are statically attended to the aria that spawned
 // them. Pass "" when there is no aria (tests, one-off registries).
-func DefaultRegistryForAria(ariaID string, cwdFn func() string) *Registry {
+func DefaultRegistryForAria(ariaID string, cwdFn func() string, opts ...RegistryOption) *Registry {
+	settings := registryOpts{imageLimits: DefaultImageLimits()}
+	for _, opt := range opts {
+		opt(&settings)
+	}
 	r := NewRegistry()
 	executor := NewLocalExecutor(
 		NewDefaultEnvSanitizer(),
@@ -119,7 +144,7 @@ func DefaultRegistryForAria(ariaID string, cwdFn func() string) *Registry {
 	r.MustRegister(
 		NewBashToolForAria(ariaID, cwdFn, executor, sessions),
 		NewProcessTool(sessions, nil),
-		NewReadTool(staticCwd),
+		&ReadTool{Cwd: staticCwd, ImageLimits: settings.imageLimits},
 		NewWriteTool(staticCwd),
 		NewEditTool(staticCwd),
 	)

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
 )
 
@@ -15,8 +16,9 @@ import (
 // path, and the per-message budget that keeps one screenshot from
 // overflowing a WAL segment and destroying the turn.
 func TestAssembleToolResultsImages(t *testing.T) {
-	big := strings.Repeat("A", toolImageBudget+1)
-	half := strings.Repeat("B", (toolImageBudget/2)+1)
+	budget := (&Agent{}).toolImageBudget()
+	big := strings.Repeat("A", budget+1)
+	half := strings.Repeat("B", (budget/2)+1)
 
 	tests := []struct {
 		name       string
@@ -174,17 +176,23 @@ func TestAssembleToolResultsImages(t *testing.T) {
 
 // TestAssembleToolResultsBudgetKeepsTicUnderSegment is the reason the budget
 // exists at all: the tic is one figwal record, and a record larger than a WAL
-// segment fails the append and takes the turn with it. store.segment_size may
-// legally be set as low as 1MiB.
+// segment fails the append and takes the turn with it. The budget is derived
+// from store.segment_size (config.InlineImageBudget), so this pins the
+// derivation rather than a constant: whatever the segment size, the imagery on
+// one record must leave room for the text results sharing it.
 func TestAssembleToolResultsBudgetKeepsTicUnderSegment(t *testing.T) {
-	const minSegment = 1 << 20
-	assert.Less(t, toolImageBudget, minSegment,
+	var noConfig *config.Loaded // nil-safe accessors: the built-in defaults
+	budget := (&Agent{}).toolImageBudget()
+
+	assert.Equal(t, noConfig.InlineImageBudget(), budget,
+		"the turn loop must spend the SAME budget the store derives, not its own")
+	assert.Less(t, budget, noConfig.SegmentSize(),
 		"the image budget must leave room for the result text sharing the record")
 
 	calls := []message.Content{toolCall("tc_1", "shot"), toolCall("tc_2", "shot")}
 	outcomes := map[string]toolOutcome{
-		"tc_1": {content: []message.Content{message.ImageContent("image/png", strings.Repeat("A", toolImageBudget))}},
-		"tc_2": {content: []message.Content{message.ImageContent("image/png", strings.Repeat("B", toolImageBudget))}},
+		"tc_1": {content: []message.Content{message.ImageContent("image/png", strings.Repeat("A", budget))}},
+		"tc_2": {content: []message.Content{message.ImageContent("image/png", strings.Repeat("B", budget))}},
 	}
 	expect := map[string]bool{"tc_1": true, "tc_2": true}
 
@@ -194,6 +202,6 @@ func TestAssembleToolResultsBudgetKeepsTicUnderSegment(t *testing.T) {
 	for _, c := range tic.Content {
 		total += len(c.Data)
 	}
-	assert.LessOrEqual(t, total, toolImageBudget,
+	assert.LessOrEqual(t, total, budget,
 		"two tools must share one budget, not get one each")
 }
