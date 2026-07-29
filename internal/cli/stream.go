@@ -286,6 +286,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				in.enterTranscript() // --listen: open the pager immediately
 			}
 			go in.run()
+		} else {
+			fmt.Fprintf(os.Stderr, "figaro: terminal input disabled: enter raw mode: %v\n", err)
 		}
 	}
 

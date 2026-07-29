@@ -175,6 +175,8 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 			defer fmt.Fprint(os.Stdout, disableModifiedKeyReporting)
 			defer os.Stdout.WriteString(ldmouse.Disable)
 			go in.run()
+		} else {
+			fmt.Fprintf(os.Stderr, "figaro: terminal input disabled: enter raw mode: %v\n", err)
 		}
 	}
 
