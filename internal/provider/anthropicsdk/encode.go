@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/packages/param"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
@@ -31,19 +32,27 @@ func (p *Provider) encode(msg message.Message, prevSnap chalkboard.Snapshot) ([]
 func (p *Provider) renderMessage(msg message.Message, prevSnap *chalkboard.Snapshot) (anthropic.MessageParam, bool) {
 	switch msg.Role {
 	case message.RoleInput:
+		toolImages := message.ToolImagesByCall(msg.Content)
 		var blocks []anthropic.ContentBlockParamUnion
 		for _, c := range msg.Content {
 			switch c.Type {
 			case message.ContentProse:
 				blocks = append(blocks, anthropic.NewTextBlock(c.Text))
 			case message.ContentImage:
+				// An image claimed by a tool_result in this same message is
+				// rendered inside that block instead. One that names no tool
+				// (a user attachment) or whose tool never landed still has to
+				// reach the model, so it falls through to a top-level block.
+				if _, claimed := toolImages[c.ToolCallID]; claimed && c.ToolCallID != "" {
+					continue
+				}
 				blocks = append(blocks, anthropic.NewImageBlockBase64(c.MimeType, c.Data))
 			case message.ContentToolResult:
 				text := c.Text
 				if text == "" {
 					text = "(empty)"
 				}
-				blocks = append(blocks, anthropic.NewToolResultBlock(c.ToolCallID, text, c.IsError))
+				blocks = append(blocks, toolResultBlock(c.ToolCallID, text, c.IsError, toolImages[c.ToolCallID]))
 			}
 		}
 		blocks = append(blocks, p.renderPatchBlocks(msg.Patches, prevSnap)...)
@@ -142,4 +151,36 @@ func escapeAttr(s string) string {
 	s = strings.ReplaceAll(s, `"`, "&quot;")
 	s = strings.ReplaceAll(s, "<", "&lt;")
 	return s
+}
+
+// toolResultBlock builds a tool_result whose content is the result text
+// followed by any images the tool produced. Anthropic accepts image blocks
+// inside a tool_result, so the picture stays attributed to its call rather
+// than trailing loose in the turn.
+func toolResultBlock(toolUseID, text string, isErr bool, images []message.Content) anthropic.ContentBlockParamUnion {
+	if len(images) == 0 {
+		return anthropic.NewToolResultBlock(toolUseID, text, isErr)
+	}
+	content := []anthropic.ToolResultBlockParamContentUnion{
+		{OfText: &anthropic.TextBlockParam{Text: text}},
+	}
+	for _, img := range images {
+		content = append(content, anthropic.ToolResultBlockParamContentUnion{
+			OfImage: &anthropic.ImageBlockParam{
+				Source: anthropic.ImageBlockParamSourceUnion{
+					OfBase64: &anthropic.Base64ImageSourceParam{
+						Data:      img.Data,
+						MediaType: anthropic.Base64ImageSourceMediaType(img.MimeType),
+					},
+				},
+			},
+		})
+	}
+	return anthropic.ContentBlockParamUnion{
+		OfToolResult: &anthropic.ToolResultBlockParam{
+			ToolUseID: toolUseID,
+			IsError:   param.NewOpt(isErr),
+			Content:   content,
+		},
+	}
 }

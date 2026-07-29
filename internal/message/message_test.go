@@ -205,3 +205,55 @@ func TestRoleFromWire_IsTheOnlyBoundary(t *testing.T) {
 		t.Errorf("unknown role must pass through, got %q", got)
 	}
 }
+
+func TestToolImagesByCall(t *testing.T) {
+	tests := []struct {
+		name    string
+		content []message.Content
+		want    map[string]int
+	}{
+		{
+			name:    "no tool results claims nothing",
+			content: []message.Content{message.ImageContent("image/png", "AAAA")},
+		},
+		{
+			name: "an image is claimed by its call",
+			content: []message.Content{
+				message.ToolResultContent("call-1", "read", "ok", false),
+				message.ToolImageContent("call-1", "read", "image/png", "AAAA"),
+			},
+			want: map[string]int{"call-1": 1},
+		},
+		{
+			name: "an untagged image is left for the caller to render",
+			content: []message.Content{
+				message.ToolResultContent("call-1", "read", "ok", false),
+				message.ImageContent("image/png", "AAAA"),
+			},
+		},
+		{
+			name: "an image naming a call with no result is left unclaimed",
+			content: []message.Content{
+				message.ToolResultContent("call-1", "read", "ok", false),
+				message.ToolImageContent("call-9", "ghost", "image/png", "AAAA"),
+			},
+		},
+		{
+			name: "an empty image is not claimed",
+			content: []message.Content{
+				message.ToolResultContent("call-1", "read", "ok", false),
+				message.ToolImageContent("call-1", "read", "image/png", ""),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := message.ToolImagesByCall(tt.content)
+			assert.Len(t, got, len(tt.want))
+			for id, n := range tt.want {
+				assert.Len(t, got[id], n)
+			}
+		})
+	}
+}

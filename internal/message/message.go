@@ -239,6 +239,22 @@ func ImageContent(mimeType, data string) Content {
 	return Content{Type: ContentImage, MimeType: mimeType, Data: data}
 }
 
+// ToolImageContent is an image a tool produced, riding on the tool_result
+// tic alongside the text results and tagged with the call that produced it.
+// The tag is what lets each encoder put the image where its provider wants
+// it: Anthropic nests it inside the matching tool_result block, while the
+// Responses encoder trails it in a following user message because a
+// function_call_output there carries a plain string.
+func ToolImageContent(toolCallID, toolName, mimeType, data string) Content {
+	return Content{
+		Type:       ContentImage,
+		ToolCallID: toolCallID,
+		ToolName:   toolName,
+		MimeType:   mimeType,
+		Data:       data,
+	}
+}
+
 // ToolResultContent constructs a tool_result content block.
 func ToolResultContent(toolCallID, toolName, text string, isErr bool) Content {
 	return Content{
@@ -295,4 +311,33 @@ func DanglingToolCallIDs(m Message) []string {
 		}
 	}
 	return ids
+}
+
+// ToolImagesByCall indexes the tool-produced images on a message by the call
+// that produced them — but only for calls that actually carry a tool_result
+// block in that same message. An encoder that nests images inside their
+// tool_result needs the restriction: an image naming a call with no result
+// would be claimed by a block that is never rendered, and vanish, which is
+// exactly the class of silent loss this indexing exists to prevent.
+func ToolImagesByCall(content []Content) map[string][]Content {
+	results := make(map[string]bool)
+	for _, c := range content {
+		if c.Type == ContentToolResult && c.ToolCallID != "" {
+			results[c.ToolCallID] = true
+		}
+	}
+	if len(results) == 0 {
+		return nil
+	}
+	var out map[string][]Content
+	for _, c := range content {
+		if c.Type != ContentImage || c.Data == "" || !results[c.ToolCallID] {
+			continue
+		}
+		if out == nil {
+			out = make(map[string][]Content)
+		}
+		out[c.ToolCallID] = append(out[c.ToolCallID], c)
+	}
+	return out
 }

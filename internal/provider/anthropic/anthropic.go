@@ -574,27 +574,33 @@ func (a *Anthropic) encode(msg message.Message, prevSnapshot chalkboard.Snapshot
 func (a *Anthropic) renderMessage(msg message.Message, prevSnap *chalkboard.Snapshot) (nativeMessage, bool) {
 	switch msg.Role {
 	case message.RoleInput:
+		toolImages := message.ToolImagesByCall(msg.Content)
 		var blocks []nativeBlock
 		for _, c := range msg.Content {
 			switch c.Type {
 			case message.ContentProse:
 				blocks = append(blocks, nativeBlock{Type: "text", Text: c.Text})
 			case message.ContentImage:
-				blocks = append(blocks, nativeBlock{
-					Type: "image",
-					Source: map[string]any{
-						"type": "base64", "media_type": c.MimeType, "data": c.Data,
-					},
-				})
+				// Claimed images render inside their tool_result below; an
+				// unclaimed one (user attachment, or a call with no result)
+				// still has to reach the model.
+				if _, claimed := toolImages[c.ToolCallID]; claimed && c.ToolCallID != "" {
+					continue
+				}
+				blocks = append(blocks, imageBlock(c))
 			case message.ContentToolResult:
 				text := c.Text
 				if text == "" {
 					text = "(empty)"
 				}
+				inner := []nativeBlock{{Type: "text", Text: text}}
+				for _, img := range toolImages[c.ToolCallID] {
+					inner = append(inner, imageBlock(img))
+				}
 				blocks = append(blocks, nativeBlock{
 					Type: "tool_result", ToolUseID: c.ToolCallID,
 					IsError: c.IsError,
-					Content: []nativeBlock{{Type: "text", Text: text}},
+					Content: inner,
 				})
 			}
 		}
@@ -1392,5 +1398,15 @@ func applyThinking(req *nativeRequest, snap chalkboard.Snapshot, model string) {
 	req.Thinking = &thinkingParam{Type: "enabled", BudgetTokens: budget, Display: "summarized"}
 	if req.MaxTokens <= budget {
 		req.MaxTokens = budget + 4096
+	}
+}
+
+// imageBlock renders one IR image block in Anthropic's base64 source shape.
+func imageBlock(c message.Content) nativeBlock {
+	return nativeBlock{
+		Type: "image",
+		Source: map[string]any{
+			"type": "base64", "media_type": c.MimeType, "data": c.Data,
+		},
 	}
 }

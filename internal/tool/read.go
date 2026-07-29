@@ -2,7 +2,6 @@ package tool
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
@@ -35,6 +34,10 @@ type Reader interface {
 // ReadTool implements both Reader and the generic Tool interface.
 type ReadTool struct {
 	Cwd string
+	// ImageLimits bounds an inlined image. The zero value takes
+	// DefaultImageLimits; the agent overrides MaxBase64 with the store's
+	// segment-derived budget, which is usually the stricter of the two.
+	ImageLimits ImageLimits
 }
 
 // NewReadTool constructs a ReadTool bound to cwd.
@@ -53,7 +56,9 @@ func (r *ReadTool) Description() string {
 			"(whichever is hit first). Use offset/limit for large files. "+
 			"Image files (JPEG, PNG, GIF, WebP) are detected automatically and returned as "+
 			"vision-compatible image content blocks — always use this tool instead of cat/bash "+
-			"when you need to view or analyze an image.",
+			"when you need to view or analyze an image. A large image is scaled down to fit; "+
+			"when that happens the result says so and gives the factor for mapping a coordinate "+
+			"on what you see back onto the original.",
 		MaxOutputLines, MaxOutputBytes/1024,
 	)
 }
@@ -83,19 +88,7 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 	}
 
 	if mimeType, ok := detectImageMIME(absPath); ok {
-		data, err := os.ReadFile(absPath)
-		if err != nil {
-			return nil, err
-		}
-		encoded := base64.StdEncoding.EncodeToString(data)
-		note := fmt.Sprintf("[Image: %s (%s, %s)]", filepath.Base(absPath), mimeType, FormatSize(len(data)))
-		if onOutput != nil {
-			onOutput([]byte(note))
-		}
-		return []message.Content{
-			message.TextContent(note),
-			message.ImageContent(mimeType, encoded),
-		}, nil
+		return r.readImage(absPath, mimeType, onOutput)
 	}
 
 	req := ReadRequest{Path: path}
@@ -114,6 +107,44 @@ func (r *ReadTool) Execute(ctx context.Context, args map[string]interface{}, onO
 		onOutput([]byte(res.Content))
 	}
 	return []message.Content{message.TextContent(res.Content)}, nil
+}
+
+// readImage inlines an image file, made to fit the configured ceiling.
+//
+// The picture is the point, so a too-large image is SCALED, not discarded:
+// dropping it would leave the model to answer questions about something it
+// cannot see. Only an image that cannot be encoded under the ceiling at any
+// size returns text alone — and then the note says so plainly, because a model
+// that knows it is blind can ask for a crop, while a model that does not will
+// invent what it thinks it saw.
+func (r *ReadTool) readImage(absPath, mimeType string, onOutput OnOutput) ([]message.Content, error) {
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil, err
+	}
+
+	name := filepath.Base(absPath)
+	fitted, ferr := FitImage(data, mimeType, r.ImageLimits)
+	if ferr != nil {
+		note := fmt.Sprintf("[Image: %s (%s, %s)]\n[image omitted: %s. Ask for a cropped or smaller copy.]",
+			name, mimeType, FormatSize(len(data)), ferr)
+		if onOutput != nil {
+			onOutput([]byte(note))
+		}
+		return []message.Content{message.TextContent(note)}, nil
+	}
+
+	note := fmt.Sprintf("[Image: %s (%s, %s)]", name, fitted.MimeType, FormatSize(len(data)))
+	if fit := fitted.Note(); fit != "" {
+		note += "\n" + fit
+	}
+	if onOutput != nil {
+		onOutput([]byte(note))
+	}
+	return []message.Content{
+		message.TextContent(note),
+		message.ImageContent(fitted.MimeType, fitted.Data),
+	}, nil
 }
 
 // detectImageMIME checks if a file is a supported image type.
