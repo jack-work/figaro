@@ -139,6 +139,10 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		tc: tc, lt: lt, fcli: fcli, mu: &mu, set: &set,
 		figaroID: figaroID, cancel: cancel, disconnectCh: disconnectCh,
 	}
+	// listen opens the pager through the deliberate door below, which reads; the
+	// hook is armed anyway so a promotion that happens some other way (a resize
+	// after an explicit exit, say) still owes and pays for its history.
+	in.lt.setCatchUp(in.pagerCatchUp)
 	in.enterTranscript()
 
 	// Local spinner animation.

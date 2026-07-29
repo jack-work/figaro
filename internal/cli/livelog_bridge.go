@@ -83,6 +83,11 @@ type livelogTurn struct {
 	seeded      []aria.Message
 	seedExtents map[int]uint64
 	seedMore    bool
+
+	// catchUp is the history read owed by a pager that opens WITHOUT a seed —
+	// i.e. by one of the two automatic promotions. Armed by the session
+	// (setCatchUp); nil in tests and in any view that has no RPC client.
+	catchUp func()
 }
 
 // sliceCursor addresses one pager unit: the turn and the node offset within it.
@@ -607,6 +612,17 @@ func (t *livelogTurn) enterTranscript() { t.enterPager() }
 // built around). The pager's window is the store's own tail, so a merged page
 // IS history the pager opens on; there is no second copy and no per-frame
 // merge (transcript.seed/withSeed/mergeSeed, deleted).
+//
+// WITH NO PAGE IN HAND, THE DOOR OWES A READ. Three doors reach this method
+// and only one of them used to arrive with history: Ctrl-T reads first
+// (interactiveInput.enterTranscript), but the two AUTOMATIC promotions — an
+// open turn taller than the viewport, and a resize that makes the live region
+// unpaintable — called it with an empty seed and an empty store. The pager
+// then opened on the running turn alone, with MoreBefore false, and
+// atAriaFloor reported the question the user had just asked as the beginning
+// of the aria: no history above it and no page ever requested, so scrolling up
+// found nothing. catchUp is that missing read, asked for HERE — where the
+// promotion actually happens — rather than at each door.
 func (t *livelogTurn) enterPager() {
 	t.client.Merge(t.seeded, t.seedExtents)
 	if len(t.seeded) > 0 {
@@ -616,7 +632,19 @@ func (t *livelogTurn) enterPager() {
 		t.client.SetMoreBefore(t.seedMore)
 	}
 	t.tr.enter()
+	if len(t.seeded) == 0 && t.catchUp != nil {
+		// Fires after the frame, and never blocks: the callers of this method
+		// hold the render lock (the frame path and the resize handler), so the
+		// hook may only arm a read, not perform one.
+		t.catchUp()
+	}
 }
+
+// setCatchUp arms the history read the automatic promotions owe (see
+// enterPager). Wired by the session, which owns the RPC client, for the same
+// reason setQueuedFetch and setHistoryFetcher are. Left nil the hook is simply
+// absent — which is what every renderer test wants.
+func (t *livelogTurn) setCatchUp(fn func()) { t.catchUp = fn }
 
 // hasSeed reports whether the pager can open on history already in hand — the
 // input loop asks so it can skip its blocking catch-up read.
@@ -924,3 +952,9 @@ func (t *livelogTurn) queuedRows() []string {
 // viewport (see Incipit), and a long queue must not be the thing that pushes
 // the reply off the top.
 const queuedRowsMax = 5
+
+// invalidateTranscriptWindow re-derives the pager's window. Older messages that
+// land AFTER the window was built (the catch-up read a promotion owes) are in
+// the store but not yet in the index; this is what puts them within reach of a
+// scroll.
+func (t *livelogTurn) invalidateTranscriptWindow() { t.tr.invalidateWindow() }
