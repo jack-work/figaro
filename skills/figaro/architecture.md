@@ -33,6 +33,40 @@ optional `Usage`, `Model`/`Provider`, `StopReason`, and a monotonic
 secrets — notably no Anthropic thinking *signature* (that lives only in the
 provider's wire cache; see Provider layer).
 
+### Tool imagery
+
+An `image` block on a tool_result tic carries `ToolCallID`/`ToolName`, naming
+the call that produced it (`message.ToolImageContent`). The IR keeps the
+association and each encoder decides placement: the Anthropic encoders nest the
+image inside the matching `tool_result` block, while the Responses encoder
+trails it in the following user message with a caption, because a
+`function_call_output` there is a plain string. `message.ToolImagesByCall` is
+the single index both Anthropic encoders share, and it deliberately refuses to
+claim an image whose call has no `tool_result` in the same message — a claimed
+image renders inside a block that never renders, i.e. vanishes.
+
+**Size is a durability constraint, not a taste one.** The tic is ONE figwal
+record, and a record that does not fit inside a WAL segment fails the append
+and takes the turn with it. So:
+
+- `config.InlineImageBudget()` is the single policy point — two thirds of
+  `store.segment_size`, capped at the provider ceiling (~3.5MB base64, past
+  which the APIs refuse it anyway). It moves with the store geometry rather
+  than being pinned to the smallest legal configuration.
+- `tool.FitImage` (in `internal/tool/image.go`) makes a picture fit rather than
+  dropping it: pass through → scale to 1568px (Anthropic's own downscale
+  threshold) → PNG → JPEG down a quality ladder → shrink 25% and retry. The
+  ladder's ORDER follows the source: lossless-in prefers PNG out, JPEG-in
+  prefers JPEG out. Resizing is only taken when it actually saves bytes.
+  Pure Go (`golang.org/x/image/draw`), no CGo.
+- `read` fits at ingest; `harvestToolImages` in the turn loop enforces the
+  shared per-message budget and re-fits anything a parallel round squeezed.
+  Dropping is the last resort and is always ANNOUNCED in that tool's own
+  result text, with the true reason.
+- A rescale emits a coordinate factor (`Multiply coordinates by N`) so a model
+  clicking what it sees can map back to the real screen. The turn loop's
+  second-pass note says FURTHER, because it composes with the ingest note.
+
 ## The chalkboard — `internal/chalkboard`
 
 Per-aria key→JSON state. Two namespaces:
