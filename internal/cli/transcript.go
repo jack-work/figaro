@@ -531,6 +531,28 @@ func (t *transcript) pageCursor() (transcriptPageRequest, bool) {
 		hole := *gap
 		return transcriptPageRequest{fill: &hole}, true
 	}
+	// A WALK DRIVES ITS OWN FILL. gapNear reports only the hole the VIEWPORT is
+	// about to paint; a jump is heading for a coordinate it cannot see yet, and
+	// its target may be inside a hole two screens away — jumpReachOf answers
+	// "not yet" for exactly that case. Without this branch that answer has
+	// nothing to wait for: atAriaFloor below is true (the hole is INSIDE the
+	// window, not under it), so no page is requested and the walk stands there
+	// saying "jumping to the beginning…" forever. It spends budget like any other
+	// fetch, so a hole that refuses to close ends in the honest failure rather
+	// than a spin.
+	if t.jump != nil {
+		if gap := t.oldestGap(); gap != nil {
+			if t.jump.fetches <= 0 {
+				t.abandonJump(fmt.Sprintf("%s is more than %d pages away — scroll or search for it",
+					t.jump.target, jumpBudget))
+				t.render()
+				return transcriptPageRequest{}, false
+			}
+			t.jump.fetches--
+			hole := *gap
+			return transcriptPageRequest{fill: &hole}, true
+		}
+	}
 	if !t.wantOlder() {
 		return transcriptPageRequest{}, false
 	}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
 // THE `:` JUMP: go to a coordinate.
@@ -241,12 +243,34 @@ func (t *transcript) jumpAdvance() {
 // jumpReachOf resolves a target against the loaded window: the absolute line
 // to land on, the node to put the selection on, and what to do if neither.
 // It reads the line index, so the caller must have built it (settle does).
+//
+// A HOLE IS NOT A TURN, and this is the only resolver that has to know it. Gap
+// entries stand in line space beside messages but carry turn 0 (buildIndex),
+// and reading their turn as an address is how `:0` used to land ON the
+// "N turns not loaded" rule — the reader asked for the beginning of the aria
+// and got a placeholder for it, with no selection, because firstRefOfTurn(0)
+// matches nothing. The same zero, read as the window's OLDEST turn, then made
+// every `tg.turn < oldest` test false, so a jump to a turn behind the hole was
+// answered "no turn N in this aria" — a denial about a conversation the pager
+// had simply not loaded yet.
+//
+// So: bounds come from MESSAGE entries only, and a target that could be inside
+// a hole resolves to jumpOlder — keep walking. pageCursor turns that into a
+// fill (see the jump branch there), jumpAdvance re-resolves when it lands, and
+// the landing happens on the real turn once the entry is ungapped. Delaying is
+// the whole trick: there is nothing to snap to until the rows exist.
 func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 	entries := t.index.entries
 	if len(entries) == 0 {
 		if t.atAriaFloor() {
 			return 0, nodeRef{}, jumpAbsent
 		}
+		return 0, nodeRef{}, jumpOlder
+	}
+	oldest, newest, haveTurns := t.windowTurnBounds()
+	if !haveTurns {
+		// Nothing but holes in the window: there is no address to compare
+		// against yet, and the fill is already owed.
 		return 0, nodeRef{}, jumpOlder
 	}
 	if tg.start {
@@ -257,12 +281,21 @@ func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 		if !t.atAriaFloor() {
 			return 0, nodeRef{}, jumpOlder
 		}
+		// Standing on the floor with a hole above the oldest message means the
+		// beginning is INSIDE the hole. Wait for it rather than landing on the
+		// sentinel that stands where it will be.
+		if entries[0].isGap() {
+			return 0, nodeRef{}, jumpOlder
+		}
 		e := &entries[0]
 		return e.start, t.firstRefOfTurn(e.turn), jumpHere
 	}
-	oldest, newest := entries[0].turn, entries[len(entries)-1].turn
 	switch {
 	case tg.turn < oldest:
+		// A hole below the oldest loaded turn may BE the target's home.
+		if t.leadingGap() {
+			return 0, nodeRef{}, jumpOlder
+		}
 		if t.atAriaFloor() {
 			return 0, nodeRef{}, jumpAbsent
 		}
@@ -282,14 +315,75 @@ func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 		if tg.turn == oldest && tg.node < int(t.oldestFrom()) && !t.atAriaFloor() {
 			return 0, nodeRef{}, jumpOlder
 		}
+		if t.hasGap() {
+			return 0, nodeRef{}, jumpOlder
+		}
 		return 0, nodeRef{}, jumpAbsent
 	}
 	for k := range entries {
-		if entries[k].turn == tg.turn {
+		if !entries[k].isGap() && entries[k].turn == tg.turn {
 			return entries[k].start, t.firstRefOfTurn(tg.turn), jumpHere
 		}
 	}
+	// Between the bounds and not in the index: the turn is inside a hole, and
+	// the only honest answer is "not yet".
+	if t.hasGap() {
+		return 0, nodeRef{}, jumpOlder
+	}
 	return 0, nodeRef{}, jumpAbsent
+}
+
+// windowTurnBounds is the oldest and newest TURN in the window, ignoring gap
+// entries — whose turn field is 0, an id no aria ever issues.
+func (t *transcript) windowTurnBounds() (oldest, newest int, ok bool) {
+	for k := range t.index.entries {
+		e := &t.index.entries[k]
+		if e.isGap() {
+			continue
+		}
+		if !ok {
+			oldest, newest, ok = e.turn, e.turn, true
+			continue
+		}
+		if e.turn < oldest {
+			oldest = e.turn
+		}
+		if e.turn > newest {
+			newest = e.turn
+		}
+	}
+	return oldest, newest, ok
+}
+
+// leadingGap reports whether a hole stands above the oldest message in the
+// window — i.e. whether history that is "below the floor" as far as the reader
+// is concerned is actually a hole INSIDE it.
+func (t *transcript) leadingGap() bool {
+	return len(t.index.entries) > 0 && t.index.entries[0].isGap()
+}
+
+// hasGap reports whether the window is missing anything inside itself. (whole()
+// asks a bigger question — no holes AND standing on the floor — and a jump only
+// cares about the holes.)
+func (t *transcript) hasGap() bool {
+	for k := range t.index.entries {
+		if t.index.entries[k].isGap() {
+			return true
+		}
+	}
+	return false
+}
+
+// oldestGap is the first hole in line space. A jump asks for THIS one rather
+// than gapNear's: a walk is heading for a coordinate it cannot see yet, so the
+// hole to close is the one nearest the beginning, not the one nearest the eye.
+func (t *transcript) oldestGap() *aria.Gap {
+	for k := range t.index.entries {
+		if e := &t.index.entries[k]; e.isGap() {
+			return e.gap
+		}
+	}
+	return nil
 }
 
 // firstRefOfTurn is the turn's first selectable point in reading order — its
