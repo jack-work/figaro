@@ -135,13 +135,70 @@ func (r *Router) HasCommand(name string) bool {
 	return ok
 }
 
+// Command looks up a registered command by name or alias.
+func (r *Router) Command(name string) (*Command, bool) {
+	cmd, ok := r.index[name]
+	return cmd, ok
+}
+
+// ReservedShorts are single-letter flags the ROUTER answers before any
+// command sees them. A command that declares one can never receive it, so
+// claiming one is a programming error, not a preference.
+//
+// The trap this exists to close: `ls` declared {Long:"home", Short:"h"} and
+// advertised "-h, --home" in help text — help text that `-h` itself printed,
+// because the dispatcher claims the token first. The flag was defined,
+// wired, correct, and unreachable. Worse, it was unreachable INCONSISTENTLY:
+// the help scan matches whole tokens, so `ls -ha` slipped past it and the
+// bundle expander resolved -h to --home. Same letter, two meanings, decided
+// by whether another letter happened to be ganged onto it.
+//
+// The fix is not to let commands win the token back — `-h` is worth more as
+// something a lost user can type blind on any verb than as one verb's
+// shorthand. The fix is to make the collision impossible to write.
+var ReservedShorts = map[string]string{
+	"h": "help",
+	"V": "version",
+}
+
 // Register adds a command to the router.
+//
+// It panics if the command claims a reserved short (see ReservedShorts).
+// That is deliberate: command tables are built at startup from literals, so
+// this fires the first time any test constructs the router — on the
+// developer, not silently on the user.
 func (r *Router) Register(cmd *Command) {
+	for _, f := range cmd.Flags {
+		if owner, taken := ReservedShorts[f.Short]; taken {
+			panic(fmt.Sprintf(
+				"cmdkit: command %q declares -%s for --%s, but -%s is reserved for %s "+
+					"and is answered before the command runs; give --%s another short or none",
+				cmd.Name, f.Short, f.Long, f.Short, owner, f.Long))
+		}
+	}
 	r.commands = append(r.commands, cmd)
 	r.index[cmd.Name] = cmd
 	for _, a := range cmd.Aliases {
 		r.index[a] = cmd
 	}
+}
+
+// ValidateReservedShorts reports every registered flag that claims a
+// reserved short. Register panics on the same condition; this is the
+// non-fatal form, for a test that wants all offenders named at once.
+func (r *Router) ValidateReservedShorts() error {
+	var bad []string
+	for _, cmd := range r.commands {
+		for _, f := range cmd.Flags {
+			if owner, taken := ReservedShorts[f.Short]; taken {
+				bad = append(bad, fmt.Sprintf("%s: -%s (--%s) collides with %s", cmd.Name, f.Short, f.Long, owner))
+			}
+		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("reserved shorts claimed by commands: %s", strings.Join(bad, "; "))
+	}
+	return nil
 }
 
 // Run dispatches args (without argv[0]). Returns the exit code.

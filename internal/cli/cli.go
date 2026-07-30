@@ -378,13 +378,14 @@ With no id, the pid-bound aria is used.`,
 		Aliases: []string{"ls"},
 		Group:   "Session",
 		Short:   "List arias — scoped to where you're attended (attend is `cd`)",
-		Usage:   "list [<id>] [-h|--home | -g|--global] [-a|--all | -n <count>] [-j|--json]",
+		Usage:   "list [<id>] [-H|--home | -g|--global] [-a|--all | -n <count>] [-j|--json]",
 		Long: "Lists arias `ls`-style relative to where you're attended (attend is\nthe `cd`).\n\n" +
 			"Scope:\n" +
 			"  (default)     attended → your conversation's tree (● = you);\n" +
 			"                detached → home (all top-level arias)\n" +
 			"  <id>          that aria's subtree\n" +
-			"  -h, --home    the home view (all top-level arias) without unbinding\n" +
+			"  -H, --home    the home view (all top-level arias) without unbinding\n" +
+			"                (-h is reserved for help, on every verb)\n" +
 			"  -g, --global  home plus the null + loadout anchors (the full tree)\n\n" +
 			"Cap (mutually exclusive):\n" +
 			"  (default)     10 most-recently-used\n" +
@@ -394,7 +395,7 @@ With no id, the pid-bound aria is used.`,
 			"                takes no other flags",
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
-			{Long: "home", Short: "h", IsBool: true, Description: "Home view: all top-level arias, without unbinding"},
+			{Long: "home", Short: "H", IsBool: true, Description: "Home view: all top-level arias, without unbinding (-h is help)"},
 			{Long: "global", Short: "g", IsBool: true, Description: "Full hierarchy incl. the null + loadout anchors"},
 			{Long: "all", Short: "a", IsBool: true, Description: "Show all (remove the 10-most-recent cap)"},
 			{Long: "limit", Short: "n", Description: "Cap to N rows (default 10)"},
