@@ -73,12 +73,29 @@ for debugging the fig IR, but it is not an address.
   then send to the new branch (and **rebind** this shell there;
   `--stay`/`--attend=false` to send but not move). Without `:<turn>`, plain
   append to the tail.
-- **`fork [<id>[:<turn>]] [--stay]`** — imperative branch, **no prompt**. A
+- **`fork [<id>[:<turn>]] [--stay] [-- <prompt>]`** — imperative branch. A
   `:<turn>` is an interior fork: everything through the end of turn
   `<turn>-1` is shared, the original suffix becomes the continuation, a fresh
   empty alternative diverges. No `:<turn>` = tail fork. Forking your **own** bound aria rebinds you to the
   continuation (same trunk/mantra, the alternative is the new branch);
   forking any other aria, or `--stay`, leaves your session untouched.
+
+  **With a prompt** it forks *and sends*, the way `new -- <prompt>` does. The
+  prompt always lands on the **alternative** — the fresh empty branch — and
+  the continuation is never written to. `--stay` then governs only the
+  **shell**: without it, forking your own aria moves you to the alternative
+  (that is where the prompt went); forking anyone else's aria never moves
+  you, so `fork <other>:12 --stay -- "try it this way"` is a clean fan-out.
+  Flags are `send`'s (same parser, same dispatch): `-r` raw, `-v` verbatim,
+  `-o` verbose, `-l` listen, `-x`(+`-n`/`-y`) exec, `-f` forget. `-e` is
+  **rejected** (a fork mints a persistent branch), and a send flag without a
+  prompt is an error rather than a no-op. `-j` prints one line —
+  `mode:"fork-send"`, `aria_id` = the branch. `fork --` with an empty body
+  opens the composer.
+
+  > Deliberate asymmetry: `send <id>:<turn> --stay` parks the branch and
+  > sends to the *original* trunk. `send`'s subject is the message (*where
+  > does this land?*); `fork`'s is the branch (*what did I just make?*).
 - **`attend <id>` / `<id>:<turn>` / `:<turn>`** (alias **`at`**) — bind this shell,
   like `cd`. CLI-native attendance: the pid↔trunk map (the angelus binding
   registry) is the binding authority; the figwal layer knows nothing of it. An
@@ -131,9 +148,22 @@ Columns: **ARIA** (mantra, or `aria <id>`, with tree glyphs + a
 **VER** (`live` or a short content-hash), **FORK** (`@N` — the LT a branch was
 taken at, blank for top-level arias), AGE, MSGS, CTX, CWD.
 
-## promote (planned, not built)
+## promote
 
-re-elect which root-to-leaf path is the *canonical* trunk (swap a branch with
-its parent). It is a **view/representation** concern — likely **not**
-core-store state (a UI-layer or separately-serialized overlay), with no
-figwal/xwal hierarchy mutation. Don't assume it exists yet.
+**`promote [<id>] [levels]`** re-elects which root-to-leaf path is the
+canonical trunk. The named trunk climbs its ancestry, absorbing each parent
+trunk's run, until it is the canonical line through them. Pure relabeling: no
+data moves, ids are stable, your binding is untouched.
+
+```sh
+figaro promote              the bound aria, one level
+figaro promote <id>         another aria, one level
+figaro promote <id> 10      up to 10 stump-bounded levels
+```
+
+Promotion stops at the loadout boundary. A top-level conversation is already
+rooted at a loadout and cannot climb into it; that is rejected rather than
+silently ignored, with a nudge toward making or editing a loadout instead.
+
+Implementation: `runPromote` (`internal/cli/manage.go`), the `figaro.promote`
+RPC, and `PromoteResponse{FigaroID, Climbed, AtStump}`.

@@ -163,10 +163,17 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				// No turn will open for this prompt, so stop waiting on an
 				// inquiry that is never coming.
 				noOnce.Do(func() { close(noTurn) })
+				// THE COMMENT ABOVE IS TRUE INLINE AND FALSE IN THE PAGER:
+				// finishTurn returns early while the pager is up, the alt
+				// screen has no scrollback, and the cursor is parked on the
+				// status row — so writing here landed the hint ON the footer
+				// and scrolled the grid out from under the painter's model.
+				// lt.report picks the right door for whichever renderer owns
+				// the terminal, and loses nothing either way.
 				if strings.Contains(d.Reason, "no credential") || strings.Contains(d.Reason, "resolve token") {
-					fmt.Fprint(os.Stderr, "\n"+providerSetupHint())
+					lt.report(providerSetupHint())
 				} else {
-					fmt.Fprintln(os.Stderr, "\n"+d.Reason)
+					lt.report(d.Reason)
 				}
 			}
 			settled := sendCursor >= 0 && idle
@@ -365,7 +372,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		wasRunning := running
 		mu.Unlock()
 		if wasRunning {
-			fmt.Fprintln(os.Stderr, "\ninterrupting...")
+			// Same door as the error path: in the pager this is a red token in
+			// the status row, inline it is the line on stderr it always was.
+			mu.Lock()
+			lt.report("interrupting...")
+			mu.Unlock()
 			intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
 			_ = fcli.Interrupt(intCtx)
 			intCancel()
@@ -375,7 +386,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			case <-time.After(3 * time.Second):
 				lt.abandon("interrupted (agent did not respond)", turnStatusInterrupted)
 			}
-			fmt.Fprintln(os.Stderr, "interrupted")
+			mu.Lock()
+			lt.report("interrupted")
+			mu.Unlock()
 		}
 	}
 }

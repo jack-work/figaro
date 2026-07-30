@@ -34,10 +34,30 @@ type sessionStatus struct {
 	metrics   aria.Metrics
 	turn      turnStatus
 	tick      uint64
+	// notice is trouble the user must see — an error reason, an interrupt
+	// notice — carried IN the frame buffer instead of being written straight
+	// to the terminal. While the pager is up there is no scrollback to write
+	// to, the cursor sits on the status row, and a raw write scrolls the grid
+	// out from under the painter (see transcript.screenMoved). So it lives
+	// here, is painted red at the LEFT of the status row, and sheds last.
+	notice string
 }
 
 func newSessionStatus(figaroID string, startedAt time.Time) *sessionStatus {
 	return &sessionStatus{figaroID: figaroID, startedAt: startedAt}
+}
+
+// setNotice publishes (or clears, with "") the red left-hand notice. Newlines
+// are folded to spaces: the status row is one physical line, and the full text
+// is reprinted to the shell by leaveTranscript, so nothing is lost by
+// flattening it here.
+func (s *sessionStatus) setNotice(text string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.notice = strings.Join(strings.Fields(text), " ")
+	s.mu.Unlock()
 }
 
 func (s *sessionStatus) update(metrics aria.Metrics) {
@@ -155,6 +175,14 @@ func (s *sessionStatus) statusLine(width int, hints bool) string {
 		rank int // shed order: lower sheds first (0 = mantra)
 	}
 	var tokens []tok
+	// THE NOTICE IS THE ONE TOKEN THAT MUST NOT BE SHED, and it goes first:
+	// trouble belongs where the eye lands, not after the token cost. Rank 6 is
+	// above every shed pass, so only the ellipsis can ever shorten it. Red is
+	// re-lit against the caller's dim wrapper (22 = not-dim) and handed back
+	// dim + default-foreground, so the rest of the row is unchanged.
+	if s.notice != "" {
+		tokens = append(tokens, tok{"\x1b[22;31m" + s.notice + "\x1b[39;2m", 6})
+	}
 	if mantra := strings.Join(strings.Fields(s.metrics.Mantra), " "); mantra != "" {
 		tokens = append(tokens, tok{truncRunes(mantra, 32), 0})
 	}
@@ -180,7 +208,7 @@ func (s *sessionStatus) statusLine(width int, hints bool) string {
 		}
 		return strings.Join(parts, " · ")
 	}
-	for rank := 0; rank < 4 && runewidth.StringWidth(join()) > width; rank++ {
+	for rank := 0; rank < 4 && displayWidth(join()) > width; rank++ {
 		kept := tokens[:0]
 		for _, t := range tokens {
 			if t.rank != rank {
@@ -189,7 +217,10 @@ func (s *sessionStatus) statusLine(width int, hints bool) string {
 		}
 		tokens = kept
 	}
-	return clipToWidth(join(), width)
+	// Ellipsis, not a hard clip: the status row is read as a sentence, and a
+	// bare cut ends mid-word with nothing to say it was cut. One column buys
+	// the difference between "cost 4.5k to" and "cost 4.5k…".
+	return clipToWidthEllipsis(join(), width)
 }
 
 // panelLines is the '!' status panel: the figaro-status detail rendered from

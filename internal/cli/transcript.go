@@ -51,6 +51,12 @@ type transcript struct {
 
 	prev    []string   // last painted screen (the frame the terminal is holding)
 	prefix  string     // one-shot escapes emitted with the next frame (see enter)
+	// resync clock: the painter's model of the screen (prev) is only true while
+	// figaro is the ONLY writer to the terminal. It is not. See screenMoved and
+	// resyncDue — lastFull is when the screen was last painted unconditionally,
+	// and now is injectable so the interval is testable without sleeping.
+	now      func() time.Time
+	lastFull time.Time
 	lineKey []sliceKey // slice owning each line of lines(), for resize anchoring
 	offset  int        // top line of the viewport into lines()
 	follow  bool       // stick to the bottom on new content
@@ -1053,6 +1059,52 @@ func (t *transcript) invalidateRows() {
 	t.rowCache = map[sliceKey]cachedMessage{}
 }
 
+// screenMoved voids the painter's model of the terminal: something wrote to
+// the screen outside the frame buffer, so t.prev — "the frame the terminal is
+// holding" — is now fiction, and the next frame must repaint in full.
+//
+// THE PAINTER IS NOT THE ONLY WRITER. While the pager is up the cursor is
+// parked on the last row (the painter finishes every frame there), the alt
+// screen has no scrollback, and a stray write of "\n"+text therefore SCROLLS
+// THE WHOLE GRID UP ONE ROW and drops text on it. Nothing about that reaches
+// the painter: on the next frame every row that composes identically compares
+// equal to prev and is skipped, and the rows that do differ are updated from a
+// shared-prefix divergence column (appendRowUpdate) — so the update writes a
+// TAIL onto a row whose left half now holds scrolled-up content. The visible
+// result is a stale status/rule fragment, frozen mid-spinner, sitting to the
+// right of unrelated prose, on row after row, for as long as the session
+// lasts: measured, and matching the user's report glyph for glyph.
+//
+// It persisted because nothing invalidated prev. A resize did (resize() nils
+// it), which is exactly why resizing or toggling fullscreen "fixed" it by
+// hand. This is that repair, made available to the writers that cause the
+// damage. Idempotent and free — the cost is one full frame.
+func (t *transcript) screenMoved() { t.prev = nil }
+
+// resyncDue reports whether the painter owes an unconditional full frame.
+//
+// screenMoved covers the writers we know about; this covers the ones we do
+// not — a library, the Go runtime, a provider SDK warning, anything holding
+// fd 1 or 2. A diff-based painter cannot detect that its model went stale, so
+// the only honest guarantee is a bounded one: whatever desynchronizes the
+// screen, it is corrected within transcriptResyncInterval rather than
+// persisting for the life of the session.
+//
+// The cost is one full frame per interval AND ONLY WHILE PAINTING — a pager
+// sitting idle paints nothing and so resyncs nothing (there is nothing to
+// repair: an idle screen no one is writing to cannot drift). A 100x40 frame is
+// ~4KB, so at the default interval this is under 1.5 KB/s in the worst case,
+// against a live stream that is already far noisier.
+func (t *transcript) resyncDue() bool {
+	if transcriptResyncInterval <= 0 {
+		return false
+	}
+	if t.now == nil {
+		t.now = time.Now
+	}
+	return t.now().Sub(t.lastFull) >= transcriptResyncInterval
+}
+
 // lines renders the retained message window and live tail to physical rows.
 // Committed messages are immutable, so their rendered rows are cached by turn;
 // only the open message renders every frame.
@@ -1583,7 +1635,20 @@ func (t *transcript) paint(screen []string) {
 	t.prefix = ""
 	buf = append(buf, "\x1b[?2026h"...)
 	base := t.prev
-	if plan, ok := t.planScroll(screen); ok {
+	// A FULL FRAME IS THE ONLY THING THAT CANNOT BE WRONG. base == nil says the
+	// painter has no claim on the screen (enter/resize/screenMoved); resyncDue
+	// says its claim has gone stale enough that it must be re-earned. Either way
+	// the diff below is skipped wholesale rather than trusted row by row — note
+	// that this also disables planScroll, whose prediction is a claim about the
+	// screen built from exactly the base we have just disowned.
+	full := base == nil || t.resyncDue()
+	if full {
+		base = nil
+		if t.now == nil {
+			t.now = time.Now
+		}
+		t.lastFull = t.now()
+	} else if plan, ok := t.planScroll(screen); ok {
 		buf = appendScroll(buf, plan)
 		base = t.predBuf
 	}

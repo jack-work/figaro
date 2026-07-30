@@ -1,7 +1,12 @@
 # The range store
 
-Status: **design, approved to build.** This file is the interface contract.
-Implementers code against this document, not against a conversation.
+> **STATUS: DESIGN, NOT BUILT.** There is no range API in `internal/store`
+> today: no `RangeStore`, no range constructor. Read this as a proposal, never
+> as a description of the code. Its earlier line, "approved to build", is
+> exactly the sentence that reads as shipped six months later.
+
+This file is the interface contract. Implementers code against this document,
+not against a conversation.
 
 ## Why
 

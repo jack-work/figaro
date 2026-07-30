@@ -125,6 +125,7 @@ figaro send -r -- <prompt>      raw output (pipe-friendly)
 figaro list                     show arias
 figaro attend <id>              bind to an aria
 figaro fork                     branch at head
+figaro fork <id>:12 -- <p>      branch at a turn and prompt the branch
 figaro show <id> -n 5           last 5 turns
 figaro listen <id>              follow an aria without prompting it
 figaro set <key> <value>        patch chalkboard state
@@ -138,8 +139,8 @@ Each aria exposes a semantic, turn-shaped UI stream over local NDJSON JSON-RPC:
 `figaro.read` pulls `aria.Page` snapshots/pages and `figaro.aria` pushes the same
 shape as nodes change; `turn.done` carries completion/idle control state. The
 stock `send`, `listen`, inline view, and transcript pager are clients of that
-stream. See [`docs/ui-stream.md`](docs/ui-stream.md) and
-[`docs/turn-addressing.md`](docs/turn-addressing.md).
+stream. See [`skills/figaro/reference/ui-stream.md`](skills/figaro/reference/ui-stream.md) and
+[`skills/figaro/reference/turns.md`](skills/figaro/reference/turns.md).
 
 The socket surface is currently trusted-local and revision-coupled, not yet a
 stable public API. Protocol versioning, capability negotiation, public client

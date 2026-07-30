@@ -1,4 +1,10 @@
-# PAINT-REPRO.md — a cookbook for hunting figaro's transcript-pager paint bugs
+# Paint repro: a cookbook for hunting transcript-pager paint bugs
+
+> **LIVE INSTRUMENT, not history.** Four scripts depend on the limits recorded
+> here: `scripts/paint-strayscroll.sh`, `paint-fuzz.sh`, `paint-gapcheck.sh`,
+> `paint-jogdiff.sh`. The method that generalizes out of it is
+> [ui-testing.md](ui-testing.md); this file is the measured casebook behind it.
+
 
 Written by ALMAVIVA in Phase 1 so BASILIO, BARTOLO and CHERUBINO do not each
 have to rediscover the same eleven traps. **Everything in here was measured on
@@ -7,6 +13,12 @@ I state a mechanism, I have a capture. Where I am guessing, it says so.
 
 Companion file: `scripts/paintpane.sh` (source it; every function cites the trap
 it exists to defend against).
+
+**If you are here to hunt something that is not a paint bug, start with
+[`tmux-procedure.md`](ui-testing.md)** — the same method with the pager
+specifics factored out: the phases, the oracle catalogue, the traps that belong
+to the procedure rather than the environment, and the criteria for promoting a
+manual sweep into a test case. This file stays the pager's own cookbook.
 
 ---
 
@@ -709,6 +721,107 @@ the brief's "When to yield" section is for.
 
 
 ---
+
+### 8.4 CLOSED — CHERUBINO's bug, captured, and the barrier that fixes it
+
+Hunted by the aria commissioned as *"the transcript resize smear"*. The user's
+report was resize-shaped ("resizing renders the terminal like this... recoverable
+if I resize again"), which is why it reached me as a resize bug. **It is not one.**
+The resize is the CURE. §8.3's mechanism (b) is the cause, and here is the capture
+CHERUBINO never got.
+
+**Two negative results first, both measured, both worth more than the guess they
+replaced:**
+
+1. **The pager's resize repaint is clean.** A 1624-message aria (`06c22c16`), ten
+   width and height changes, the §5 jog-and-diff oracle with the §8.1 range gate:
+   **0 divergent rows over 6 measured probes** (4 SKIPped on the range gate). The
+   post-resize byte stream reads `CUP + EL + content` for every row — a genuine
+   full frame. §8.2's blank-row hole is fixed in main and stayed fixed.
+2. **A shrinking status line is not a bug.** My first "repro" was the mantra
+   vanishing from the footer at 90 columns. The bytes showed figaro *composing*
+   the row without it: priority elision doing its job. Reported as a false lead
+   rather than filed as a finding.
+
+**The capture** (`listen` + a live turn + one injected write, zero tokens beyond
+the turn):
+
+| moment | status rows on screen |
+|---|---|
+| pager up, turn streaming | 1 |
+| after ONE `printf '\nSTRAY-WRITE' > $(tmux display -p '#{pane_tty}')` | **2** |
+| +4s | **2** — it persists |
+| after any resize | 1 — heals, exactly as the user reported |
+
+The second row is frozen mid-spinner, to the right of unrelated prose. Injecting
+from *outside* the process is the trick worth keeping: it proves the mechanism
+without needing to provoke whichever internal writer fired in the user's session.
+
+**A/B, identities printed (trap 11):**
+
+| arm | md5 | after the stray write |
+|---|---|---|
+| before | `5a37544349f5` | 2 status rows, persisting |
+| after | `2fafddf45911` | 1 |
+
+**The fix, in two layers.** `(*transcript).screenMoved()` voids the painter's
+model (`t.prev = nil`) and is called by the three §8.3 sites; and
+`transcriptResyncInterval` (2s of *active* painting) bounds the damage from
+writers nobody has enumerated. Both also disable `planScroll` for that frame,
+since its prediction is built from the base being disowned. Tests are canaried
+in `transcript_screenmoved_test.go` — with the fix reverted the failure prints
+`got "status ⠋ · ctx 1k", want "───── rule"`, which is the bug in miniature.
+
+**Decided by the master, and built:** trouble goes in the FRAME BUFFER as the
+red left-most token of the status row, and the row ellipsises when it overflows
+(`livelogTurn.report` picks the door by renderer; `leaveTranscript` reprints the
+full text to the shell so a multi-line hint is not lost to a one-row widget).
+Note `displayWidth`, which that needed: `runewidth.StringWidth` counts the BYTES
+of an SGR run as columns, so a dim wrapper alone measured eight columns of
+nothing and the footer shed tokens that fit.
+
+**Instruments, and what each one can actually decide:**
+
+| script | question it answers | can it discriminate arms? |
+|---|---|---|
+| `scripts/paint-strayscroll.sh` | does a bypassing write smear the transcript? | **YES** — inject, then HOLD STILL |
+| `scripts/paint-fuzz.sh` | do the invariants hold under randomized geometry + gestures? | **NO** — its own resizes repair the bug |
+
+That second row is the trap worth carrying forward. Run the fuzz against the
+PRE-FIX binary with `INJECT=1` and it reports **0 failures over 25 steps**,
+because every resize nils `t.prev` and heals the damage before the capture. A
+fuzz whose gestures cure what it hunts is a guard, not a repro. Measured passes
+on the fixed binary: idle **80 steps**, live **44 steps**, 0 failures.
+
+**Perf regression check** (`benchstat`, `-count 8 -benchtime 300x`, main
+@a6700c2 vs this branch, detached worktree so `main/` was never touched):
+
+```
+TranscriptPaintBytes/up      15.76µ → 12.85µ   -18.5%   (p=0.000)
+TranscriptPaintBytes/down    12.38µ →  9.27µ   -25.1%   (p=0.000)
+TranscriptPaintTick          10.94µ →  8.21µ   -25.0%   (p=0.000)
+TranscriptPaintHalfPage      17.36µ → 14.26µ   -17.9%   (p=0.000)
+TranscriptJourney/out20      40.88m → 39.10m    -4.4%   (p=0.010)
+TranscriptPaintOnly           4.32µ →  4.42µ       ~    (p=0.505)
+geomean                                        -13.8%
+B/op, allocs/op, B/frame, B/step, frames/step   IDENTICAL to the last digit
+```
+
+**Faster is a claim that needs a cause, not a victory lap.** It is
+`displayWidth` replacing `runewidth.StringWidth` in the footer's shed loop:
+StringWidth walks the BYTES of every SGR run, the footer is painted on every
+frame, and the paint benchmarks are footer-heavy. The load-bearing number is
+the second block — **bytes per frame are unchanged to the last digit**, which
+is what says the resync is not quietly repainting more than it claims. Its real
+cost is not in these benchmarks at all (they finish inside the interval): one
+full frame per 2s of ACTIVE painting, measured at **3057 bytes** for a 100x30
+repaint in the raw capture above, i.e. ~1.5 KB/s worst case against a stream
+that is already far noisier, and exactly zero when the pager is idle.
+
+**Still open:** a pane below 4 rows keeps a stale slice of the last frame until
+the next resize (`renderFrame` returns early by design — "skip the frame rather
+than crash"). Self-healing, deliberate, and outside this fix; noted because the
+fuzz photographs it and a future hunter will otherwise file it twice.
 
 ## 9. If BASILIO and BARTOLO converge
 

@@ -1,4 +1,14 @@
-# figaro IR ↔ UI IR convergence
+# figaro IR and UI IR convergence
+
+> **STATUS: PART SHIPPED, ONE PART OPEN.** Checked against source. The naming
+> pass landed (`message.ContentProse` exists, `message.go`). Turn addressing
+> landed and supersedes this file's turn-id discussion: `message.TurnID` is the
+> coordinate, LT is the storage substrate, both documented at `message.go`. See
+> [turns.md](turns.md), which is canonical for that.
+>
+> **Still open:** tool calling over a separate channel, this file's "key
+> blocker". There is no tool channel in `internal/store` today, so the Future
+> section below is a proposal, not a description.
 
 Two representations of a conversation exist today:
 
@@ -18,7 +28,7 @@ aria hydrates. A linked `ui` xwal channel remains an optional derived cache, not
 current storage.
 
 > **The convergence now has a plan and a shared coordinate.** See
-> [turn-addressing.md](turn-addressing.md). Both IRs carry a **turn id**; **LT
+> [turn-addressing.md](turns.md). Both IRs carry a **turn id**; **LT
 > joins, turn id addresses**. The open debate below ("should a live message be a
 > whole turn?") is **resolved: yes** — the UI IR unit is the turn, prompt and
 > reply together.
@@ -103,7 +113,7 @@ derived snapshot.
   the **turn**: user inquiry and assistant reply in one entry. Tools and
   steering do not make this hard once nodes carry `lts` — a tool node simply
   spans two LTs, and steering is the same primitive as the prompt at a later
-  position. See [turn-addressing.md](turn-addressing.md).
+  position. See [turn-addressing.md](turns.md).
 
 ## Challenges to call out
 

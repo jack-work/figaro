@@ -50,11 +50,28 @@ type sendOpts struct {
 // is how `--id` came to be ignored on the bare `figaro -- <prompt>` form
 // for the life of the tool.
 func extractSendFlags(args []string) (sendOpts, []string, error) {
+	return extractPromptFlags(args, false)
+}
+
+// extractForkFlags is extractSendFlags for `figaro fork`, where the prompt
+// is OPTIONAL: `fork <id>:12` is a complete gesture, so a bare positional
+// is the target even with no `--` boundary in sight. Sharing the parser is
+// deliberate — fork and send must not drift apart on what a flag or a
+// coordinate means.
+func extractForkFlags(args []string) (sendOpts, []string, error) {
+	return extractPromptFlags(args, true)
+}
+
+// extractPromptFlags is the shared implementation. bareTarget says whether a
+// positional is allowed without a `--` boundary (fork: yes; send: no, because
+// there a boundary-less bare word is a prompt the user forgot to delimit).
+func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, error) {
 	var opts sendOpts
 	rest := make([]string, 0, len(args))
 
 	// A bare positional is the target only in the `… -- <prompt>` form;
-	// without a `--`, bare args are the prompt itself.
+	// without a `--`, bare args are the prompt itself (except under
+	// bareTarget, where the prompt is optional to begin with).
 	hasDoubleDash := false
 	for _, a := range args {
 		if a == "--" {
@@ -78,7 +95,7 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			allBool := true
 			for _, r := range letters {
 				switch r {
-				case 'e', 'r', 'v', 'o', 't', 'x', 'n', 'y', 'f':
+				case 'e', 'r', 'v', 'o', 't', 'x', 'n', 'y', 'f', 'j', 'l':
 					// known bool short
 				default:
 					allBool = false
@@ -179,7 +196,7 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 		}
 		// First bare positional before a `--` boundary is the target
 		// ([<trunk>]:<LT>).
-		if hasDoubleDash && opts.target == "" && opts.id == "" && a != "" && !strings.HasPrefix(a, "-") {
+		if (hasDoubleDash || bareTarget) && opts.target == "" && opts.id == "" && a != "" && !strings.HasPrefix(a, "-") {
 			opts.target = a
 			i++
 			continue
@@ -188,7 +205,7 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 		switch {
 		case strings.HasPrefix(a, "-"):
 			return opts, nil, fmt.Errorf("unknown flag %q (flags go before `--`; everything after `--` is the prompt)", a)
-		case !hasDoubleDash:
+		case !hasDoubleDash && !bareTarget:
 			return opts, nil, fmt.Errorf("the prompt must follow `--` (got bare argument %q)", a)
 		default:
 			return opts, nil, fmt.Errorf("unexpected argument %q (the target is already %q)", a, opts.target+opts.id)
