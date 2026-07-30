@@ -454,6 +454,22 @@ func (a *Agent) turnActive() bool {
 }
 
 // Interrupt aborts the current turn. Idempotent when idle.
+//
+// It also COALESCES the queue — each contiguous run of waiting prompts folds
+// into one message, with the same semantics steering already has (texts joined
+// in order, chalkboard input merged so a later value wins). Three messages
+// typed during a long turn and then cut short are one question to answer, not
+// three turns to sit through.
+//
+// The fold happens only here. There is no mode threaded into the submit path
+// and no shared helper that checks whether it is being interrupted: this
+// function IS the interrupt path, and Inbox.CoalesceUserPromptRuns has exactly
+// one caller in the tree. A normal submit therefore cannot reach it by
+// construction rather than by convention.
+//
+// An IDLE aria coalesces nothing. There is no turn to interrupt, the drain
+// loop is already working through the queue, and folding under it would change
+// what a plain submit means — which is the one thing this must not do.
 func (a *Agent) Interrupt() {
 	a.mu.Lock()
 	if a.turnCancel == nil {
@@ -463,6 +479,7 @@ func (a *Agent) Interrupt() {
 	a.interrupted = true
 	cancel := a.turnCancel
 	a.mu.Unlock()
+	a.inbox.CoalesceUserPromptRuns()
 	cancel()
 }
 

@@ -252,6 +252,55 @@ func (b *Inbox) TakeReadySet() []event {
 	return taken
 }
 
+// CoalesceUserPromptRuns folds each CONTIGUOUS RUN of queued user prompts
+// into one event, parked at that run's first position and keeping its id.
+//
+// Called from Agent.Interrupt and NOWHERE ELSE. That is the whole guard: the
+// normal submit path (Send), the mid-turn steering drain
+// (TakeReadyUserPrompts) and the durability retry (Prepend) have no way to
+// reach this, so no flag has to be threaded anywhere and no shared helper has
+// to ask whether it is being interrupted. The result is an ORDINARY queue —
+// the drain loop cannot tell a fold happened, because there is nothing to
+// tell: one event holding one multi-line message is a shape it already
+// handles.
+//
+// A QUEUED SET OR FORK IS A BARRIER and is never crossed. All three takers
+// above are prefix-only precisely so FIFO across event kinds is preserved,
+// and this must not be the one place that reorders across them: a `set`
+// exists to change context BEFORE the prompt behind it, so folding that
+// prompt in front of the set would answer it against a chalkboard it was
+// never written against — with no error, no log line, and nothing to notice.
+// Across a fork it is worse: the message would land in the wrong trunk.
+//
+// In the gesture this exists for — a person with several messages typed
+// during one long turn, hitting Ctrl-C — set and fork arrive by CLI rather
+// than the composer, so there is no interleaved control event and run
+// coalescing IS whole-queue coalescing.
+func (b *Inbox) CoalesceUserPromptRuns() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.queue) < 2 {
+		return
+	}
+	out := make([]event, 0, len(b.queue))
+	for i := 0; i < len(b.queue); {
+		if b.queue[i].typ != eventUserPrompt {
+			out = append(out, b.queue[i])
+			i++
+			continue
+		}
+		j := i
+		for j < len(b.queue) && b.queue[j].typ == eventUserPrompt {
+			j++
+		}
+		if merged, ok := mergePromptEvents(b.queue[i:j]); ok {
+			out = append(out, merged)
+		}
+		i = j
+	}
+	b.queue = out
+}
+
 func (b *Inbox) signalReadyForkLocked() {
 	if len(b.queue) == 0 || b.queue[0].typ != eventFork {
 		return
