@@ -111,7 +111,7 @@ for debugging the fig IR, but it is not an address.
   `detach`** (removed) — `attend null` is the unbind. `attend ~` is kept as
   a legacy alias (the tilde must be quoted in the shell). Attending a
   cauterized (null/loadout) aria is rejected with a nudge toward
-  `attend null` / `ls -h` / `ls -g`.
+  `attend null` / `ls -H` / `ls -g`.
 - **`kill <id>`** — remove a trunk **and its whole subtree** (children
   included). Needs `--recursive`/`-r` to remove a trunk that has live
   branches.
@@ -128,7 +128,7 @@ for debugging the fig IR, but it is not an address.
 
 **Views (don't unbind you):**
 
-- **`-h`/`--home`** — the home view (all top-level arias + their branches)
+- **`-H`/`--home`** — the home view (all top-level arias + their branches)
   *without* unbinding; `●` stays on your real aria.
 - **`-g`/`--global`** — home **plus** the null + versioned-loadout anchors,
   drawn above the conversations (the infrastructure trunks).
@@ -148,9 +148,22 @@ Columns: **ARIA** (mantra, or `aria <id>`, with tree glyphs + a
 **VER** (`live` or a short content-hash), **FORK** (`@N` — the LT a branch was
 taken at, blank for top-level arias), AGE, MSGS, CTX, CWD.
 
-## promote (planned, not built)
+## promote
 
-re-elect which root-to-leaf path is the *canonical* trunk (swap a branch with
-its parent). It is a **view/representation** concern — likely **not**
-core-store state (a UI-layer or separately-serialized overlay), with no
-figwal/xwal hierarchy mutation. Don't assume it exists yet.
+**`promote [<id>] [levels]`** re-elects which root-to-leaf path is the
+canonical trunk. The named trunk climbs its ancestry, absorbing each parent
+trunk's run, until it is the canonical line through them. Pure relabeling: no
+data moves, ids are stable, your binding is untouched.
+
+```sh
+figaro promote              the bound aria, one level
+figaro promote <id>         another aria, one level
+figaro promote <id> 10      up to 10 stump-bounded levels
+```
+
+Promotion stops at the loadout boundary. A top-level conversation is already
+rooted at a loadout and cannot climb into it; that is rejected rather than
+silently ignored, with a nudge toward making or editing a loadout instead.
+
+Implementation: `runPromote` (`internal/cli/manage.go`), the `figaro.promote`
+RPC, and `PromoteResponse{FigaroID, Climbed, AtStump}`.

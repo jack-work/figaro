@@ -289,6 +289,14 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				figaroID: figaroID, cancel: cancel, disconnectCh: disconnectCh,
 			}
 			in.lt.setQueuedFetch(in.refreshQueued) // 'Q' works before the pager is ever opened
+			// Both are inert until the PAGER is up (a fetcher is only consulted by
+			// Store.Ensure, i.e. the prefetch worker), and both must be in place
+			// BEFORE the first frame, because the pager can open without being
+			// asked: an overflowing turn or a destructive resize promotes on the
+			// frame path, and a pager that opened that way used to have neither a
+			// way to ask for history nor any history to show.
+			in.lt.setHistoryFetcher(in.historyFetcher())
+			in.lt.setCatchUp(in.pagerCatchUp)
 			if set.listen {
 				in.enterTranscript() // --listen: open the pager immediately
 			}
@@ -435,6 +443,10 @@ type interactiveInput struct {
 	// viewport for a cursor exactly once, instead of once per wheel report.)
 	// Only ever touched on the input goroutine.
 	pageWanted bool
+	// caughtUp records that this session has read the aria's tail into the store
+	// once. Guarded by mu (pagerCatchUp is called with it already held). See
+	// pagerCatchUp: a failed read clears it, because a timeout is not a floor.
+	caughtUp bool
 	// lastNL is the last CR/LF byte we delivered (0 otherwise). Windows
 	// conhost and some other terminals emit CR+LF for a single Enter press;
 	// without dedup, a toggle-style binding (Enter -> expand tools) fires
@@ -460,6 +472,11 @@ type transcriptReadClient interface {
 // backward window stopped short of the live suffix and the forward one returned
 // the whole turn again — which is how a dormant aria rendered its last turn
 // twice.)
+//
+// This is the DELIBERATE door, so the read is synchronous: the reader asked for
+// the transcript and has nothing to look at until it lands. The automatic
+// promotions cannot afford that (they run under the render lock, on the frame
+// path and the resize handler) and take pagerCatchUp instead.
 func (in *interactiveInput) enterTranscript() {
 	in.mu.Lock()
 	already := in.lt.transcriptActive()
@@ -474,6 +491,7 @@ func (in *interactiveInput) enterTranscript() {
 	// pages older history in, asynchronously, as it always did.
 	if seeded {
 		in.mu.Lock()
+		in.caughtUp = true
 		in.lt.enterTranscript()
 		in.lt.setQueuedFetch(in.refreshQueued)
 		in.lt.setHistoryFetcher(in.historyFetcher())
@@ -484,6 +502,9 @@ func (in *interactiveInput) enterTranscript() {
 	r, rerr := in.fcli.ReadBefore(rctx, aria.Anchor{Turn: recentCursor}, wireBudget(transcriptPageSize))
 	rcancel()
 	in.mu.Lock()
+	// Claimed BEFORE the pager opens: enterPager fires the catch-up hook for a
+	// seedless pager, and this door has just done that read itself.
+	in.caughtUp = rerr == nil
 	in.lt.enterTranscript()
 	in.lt.setQueuedFetch(in.refreshQueued)
 	in.lt.setHistoryFetcher(in.historyFetcher())
@@ -495,6 +516,60 @@ func (in *interactiveInput) enterTranscript() {
 		in.lt.setMoreBefore(r.More.Before)
 	}
 	in.mu.Unlock()
+}
+
+// pagerCatchUp is the read the AUTOMATIC promotions owe, armed on the
+// livelogTurn and fired from enterPager.
+//
+// THE BUG IT EXISTS FOR. Ctrl-T and `figaro listen` read history before they
+// open the pager. The pager also opens BY ITSELF — an open turn taller than the
+// viewport (OnLive → openOverflows), or a resize that shrinks the viewport
+// under the live region — and those two doors read nothing. The store then held
+// exactly one turn: the one being streamed. With MoreBefore never set by any
+// wire answer it stays false, so transcript.atAriaFloor concluded that the
+// question the user had just typed WAS the beginning of the aria — no history
+// above it, no page ever requested by pageCursor, and scrolling up found
+// nothing, forever. The conversation was intact on disk and one `figaro listen`
+// away; only this view could not see it. It is the ordinary case on a small
+// window, which is why it was reported from Windows first.
+//
+// It must not block: both callers hold the render lock, and one of them is the
+// frame path. So it claims the read under the lock the caller already holds,
+// and performs it on its own goroutine.
+//
+// A FAILED READ IS NOT A FLOOR. On error the claim is released rather than
+// latched, so a later gesture can try again — the alternative is a session
+// permanently convinced it has seen the beginning because one RPC timed out.
+func (in *interactiveInput) pagerCatchUp() {
+	if in.caughtUp {
+		return
+	}
+	in.caughtUp = true
+	go in.readHistoryIntoPager()
+}
+
+func (in *interactiveInput) readHistoryIntoPager() {
+	rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	r, rerr := in.fcli.ReadBefore(rctx, aria.Anchor{Turn: recentCursor}, wireBudget(transcriptPageSize))
+	rcancel()
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if rerr != nil {
+		in.caughtUp = false
+		return
+	}
+	// The same fold, in the same order, as the deliberate door: apply carries the
+	// open suffix, and setMoreBefore records what the WIRE said about the
+	// beginning. Applying is safe here precisely because the pager is up — the
+	// inline branch of OnClosed (which freezes to native scrollback) is not
+	// reachable while tr.active, which is the trap this whole design is built
+	// around.
+	in.lt.apply(r)
+	in.lt.setMoreBefore(r.More.Before)
+	// The window was derived from the tail before this page existed; re-derive it
+	// so the rows that just arrived are reachable by a scroll.
+	in.lt.invalidateTranscriptWindow()
+	in.lt.render()
 }
 
 // pageTranscript keeps the retained window fed. It never blocks the caller: the

@@ -20,7 +20,7 @@
 //	      comparison that actually needs it, and memoised in a box shared
 //	      by every copy of the Value — canonicalising a whole board eagerly
 //	      at load time cost more than the equality checks ever save (see
-//	      RESULTS.md; the reducer fold regressed 5x before this was lazy).
+//	      the reducer fold regressed 5x before this was lazy).
 //
 // So {"a":1,"b":2} and {"b":2,"a":1} are Equal (no spurious reminder fires at
 // the agent) while each still serialises back as the author wrote it.

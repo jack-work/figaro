@@ -15,7 +15,7 @@ import (
 // Snapshot construction/read goes through the seam in
 // bench_seam_test.go. Fixtures live in bench_fixtures_test.go.
 //
-// Standard invocation (see scripts/chalkbench.sh and BASELINE.md):
+// Standard invocation (see scripts/chalkbench.sh):
 //
 //	go test ./internal/chalkboard -bench=. -benchmem -count=10 |
 //	    tee bench-before.txt

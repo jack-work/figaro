@@ -1,0 +1,121 @@
+# The command surface
+
+Every verb, and what it actually does. The nine daily gestures are in
+[SKILL.md](SKILL.md); this file is where you come for the rest, or for a flag's
+exact meaning.
+
+Three things hold across the whole CLI:
+
+- **`--` separates flags from a prompt.** Flags go before it, prompt after. A
+  `--` inside the prompt body is prompt text.
+- **Targeting** is `--id <id>` everywhere, or a positional `<id>` on most
+  verbs. With neither, a verb targets the aria this shell is attended to. The
+  precedence is `--id` beats `FIGARO_ARIA` beats the pid binding.
+- **`-j`/`--json`** submits and exits, printing one machine-readable line on
+  stdout and nothing else. It contradicts anything that streams or renders
+  (`-r`, `-v`, `-o`, `-l`, `-x`, `-e`), and says so rather than dropping them.
+- **`-h`/`--help`** prints that verb's help on **stdout**, exit 0 — reserved on
+  every verb, so no command may claim `-h` for itself. Usage printed because
+  argv was wrong goes to **stderr** with **exit 2**; exit 1 means the command
+  ran and failed. `figaro help [<verb>]` is the same help by another door.
+
+## Prompting
+
+| Command | Effect |
+|---|---|
+| `figaro -- <prompt>` | Prompt the attended aria. Creates one if this shell has no binding. |
+| `figaro send [flags] -- <prompt>` | The same, with the verb spelled out. Alias `qua`. |
+| `figaro new [--loadout <name>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
+| `figaro new` | With no prompt and no loadout: drop this shell's binding and go home. |
+
+`send` flags, all combinable unless noted:
+
+| Flag | Meaning |
+|---|---|
+| `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. |
+| `-e`, `--ephemeral` | Spin a throwaway in-memory aria and kill it when the turn ends. Contradicts `--id`. |
+| `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
+| `-o`, `--verbose` | Expand full tool inputs. Ctrl-O toggles it live. |
+| `-l`, `--listen` | Open the transcript pager at startup. |
+| `-v`, `--verbatim` | Dump raw wire frames as JSON, one object per line. |
+| `-x`, `--exec` | Treat the reply as a bash script and run it. `-n` prints without running, `-y` skips the confirmation. |
+| `-j`, `--json` | Submit, print one line `{aria_id, mode}`, exit. Contradicts `-r`/`-v`/`-o`/`-l`/`-x`/`-e`. |
+
+Persistence (`-e`) and formatting (`-r`) are orthogonal. The workhorse for
+scripts is `figaro send -er -- <prompt>`: one shot, isolated, pipe clean.
+
+Timing is not a flag. A prompt that arrives while a turn is running joins it as
+a steering aside; a prompt that arrives when nothing is running opens a turn.
+The classification happens where the queue is drained, and nowhere else.
+
+## Moving around
+
+| Command | Effect |
+|---|---|
+| `figaro ls [<id>]` | List arias, scoped to where you are attended. Alias `list`. |
+| `figaro ls -H` | Home view: every top-level aria, without unbinding you. (`-h` is help, on every verb.) |
+| `figaro ls -g` | Home plus the null root and loadout anchors. |
+| `figaro ls -a` / `-n N` | Remove the 10-row cap, or set it. Mutually exclusive. |
+| `figaro attend <id>` | Bind this shell to an aria. Alias `at`. |
+| `figaro attend <id>:<turn>` | Bind with a pending fork point: the next bare prompt forks there. |
+| `figaro attend null` | Go home. There is no `detach` verb. |
+| `figaro show [<id>]` | Render history. `-n N` last N turns, `-a` all, `-v` raw IR, `-l` no markdown, `-j` JSON. |
+| `figaro status [<id>]` | One aria in focus: provider, model, context, cost. `-m` adds cwd, loadout, fork origin. |
+| `figaro listen [<id>]` | Attach to the live stream without prompting. Ctrl-D detaches, the turn survives. |
+| `figaro hup [<id>]` | Hang up: interrupt the aria's current turn. |
+
+`ls` columns: ARIA (mantra, with `●` this shell, `▸` running, `○` idle), ID,
+LOADOUT, VER, FORK, AGE, MSGS, CTX, CWD. While your own turn is in flight your
+row shows `▸`, not `●`, so identify yourself from the header instead.
+
+## Branching
+
+| Command | Effect |
+|---|---|
+| `figaro fork` | Branch the attended aria at its head. |
+| `figaro fork <id>:12` | Interior fork: history through turn 11 is shared, the original suffix continues, a fresh empty alternative diverges. |
+| `figaro fork [flags] -- <prompt>` | Branch and immediately prompt the new branch. Takes `send`'s flags; `-e` is rejected. |
+| `figaro fork --stay` | Branch without moving this shell. |
+| `figaro promote <id> [levels]` | Make a trunk the canonical line through its ancestors. Pure relabeling. |
+| `figaro kill <id>` | Remove a trunk and its subtree. `-r` is required if it has live branches. |
+
+The model behind these, including what freezes and which child keeps the id, is
+[reference/trunks.md](reference/trunks.md).
+
+## State
+
+| Command | Effect |
+|---|---|
+| `figaro state [<id>]` | The folded chalkboard snapshot. `-j` for JSON. Alias `chalkboard`. |
+| `figaro set [<id>] <key> <value>` | Patch one key with no model round trip. |
+| `figaro unset [<id>] <key>...` | Remove keys. |
+| `figaro loadout <name>` | Apply a named loadout additively. `--list` to see them. |
+
+Setting a key is a real event in the conversation: on the tic where a
+non-`system` key changes, the agent sees a `<system-reminder>` naming it. Keys
+under `system.` are hidden from the agent and read directly by the harness.
+
+## Daemon and tools
+
+| Command | Effect |
+|---|---|
+| `figaro stop` | Shut down the angelus. Alias `rest`. `-f` to SIGKILL, `-k` to persist pid bindings. |
+| `figaro doctor gc` | Remove dead store channels. `-n` to report without touching. Requires the daemon stopped. |
+| `figaro doctor schema` | Report per-channel format versions. |
+| `figaro login <provider>` | OAuth login. |
+| `figaro models` | List available provider models. |
+| `figaro update [--check\|--apply]` | Check for a newer release. |
+| `figaro completion install [shell]` | Install shell completion. |
+| `figaro version` | Build identity: revision, exe path, Go version. Alias `v`. |
+
+The angelus respawns on the next command after a stop, so `figaro stop` is how
+you pick up a rebuilt binary.
+
+## Keys while streaming
+
+| Key | Effect |
+|---|---|
+| Ctrl-C | Interrupt the turn. |
+| Ctrl-D | Disconnect this CLI, leave the turn running. |
+| Ctrl-T | Open the transcript pager. |
+| Ctrl-O | Toggle verbose tool expansion. |

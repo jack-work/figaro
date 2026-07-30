@@ -135,7 +135,7 @@ type Snapshot struct {
   identical bytes. Hot paths (`chalkboardReduce`, `State.Open`/`Save`) call
   `MarshalJSON`/`UnmarshalJSON` **directly** to skip it;
   `TestSnapshotDirectCodecMatchesEncodingJSON` pins that the two spellings
-  agree. See `RESULTS.md` §4.
+  agree. Re-measure with `scripts/chalkbench-go.sh` if the question returns.
 
 `State` (`state.go`) is **one writer, many readers**. The writer is the agent's
 drain loop (`act` → `applyControlPatch` → `State.Apply`); readers are the

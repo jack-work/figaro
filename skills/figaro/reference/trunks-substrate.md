@@ -1,10 +1,12 @@
-# Forking & Trunks — design of record
+# Forking and trunks: the substrate
 
-Status: **shipped** (the trunk pass is built and on `main`). This document is the
-canonical reference for figaro's conversation-forking model: the figwal/xwal substrate
-it sits on, the terminology, and the codepaths as they exist today. Read it before
-touching anything under `internal/store`, the angelus fork/create/bind handlers, or the
-`fig send`/`fork`/`attend`/`kill`/`ls` CLI verbs.
+**Read this only when changing the machinery**: anything under
+`internal/store`, the angelus fork/create/bind handlers, or the figwal/xwal
+layering. To *use* forking, read [trunks.md](trunks.md) instead; it owns the
+gesture semantics and this file does not repeat them.
+
+Status: shipped. This is the deep reference: the substrate, the terminology,
+and the codepaths as they exist today.
 
 > The word **trunk** echoes opera's *aria di baule* — the "trunk aria" (or "suitcase
 > aria") a singer carried from production to production, packed in their travel trunk and
@@ -12,8 +14,7 @@ touching anything under `internal/store`, the angelus fork/create/bind handlers,
 > conversation carries through its forks.
 
 It is written so someone with zero prior context can follow the whole stack from the
-physical log up to the CLI. (A user-facing condensed version lives in the first-party
-skill at `skills/figaro/trunks.md`; this doc is the deep substrate reference.)
+physical log up to the CLI.
 
 > **Fork coordinates ARE turn ids.** `fig send <id>:<turn>` is the addressing
 > form; `:<LT>` is gone from every CLI surface. **LT remains the join key** — it is
@@ -21,7 +22,7 @@ skill at `skills/figaro/trunks.md`; this doc is the deep substrate reference.)
 > below still takes an `atMainLT`. Turn id is the *user-facing* coordinate and
 > projects down to `atMainLT = min(LTs of the turn) - 1` (see the next section
 > for why the −1). See
-> [turn-addressing.md](turn-addressing.md).
+> [turn-addressing.md](turns.md).
 
 ### `atMainLT` is inclusive of the frozen prefix
 
@@ -216,7 +217,7 @@ interface.
   (the required literal; `attend ~` is a legacy alias that needs quoting in the shell) is
   "go home" — `Unbind`; new conversations then default to the live loadout. Attending a
   **cauterized** (null/loadout) aria is rejected with a nudge toward
-  `attend null` / `ls -h` / `ls -g`.
+  `attend null` / `ls -H` / `ls -g`.
 - **The store flock**: the angelus is a strict singleton via an exclusive flock on
   `<store>/arias/.daemon.lock`, acquired **before** the backend opens and before the socket
   binds (`cli/angelus.go:lockStore`). Fixed a TOCTOU where two daemons could race-spawn and
@@ -294,32 +295,14 @@ The client owns: `pid → attended trunk` (plus an optional one-shot pending for
 legacy alias that needs quoting in the shell) clears it —
 "go home," after which new conversations default to the live loadout. There is **no
 `detach`** (removed). Attending a cauterized (null/loadout) aria is rejected with a nudge
-toward `attend null` / `ls -h` / `ls -g`.
+toward `attend null` / `ls -H` / `ls -g`.
 
 ### 4.2 `send` vs `fork`
-- **`send <trunk>:<turn> -- …`** — fork the trunk so that `<turn>` is *replaced*, then send
-  to the new branch and **rebind** there (`--stay`/`--attend=false` to send without moving).
-  Without `:<turn>` it is a plain **append** to the tail. The interior-fork case is
-  cauterization-aware: if the resolved LT is owned by the root or a loadout stump, a fresh
-  child conversation is spawned instead of a re-split (`store.ForkAt` via `Owner`).
-- **`fork [<trunk>[:<turn>]] [--stay] [-- <prompt>]`** — the **imperative** branch. No `:<turn>` =
-  tail fork (freeze the head; continuation keeps the trunk, a fresh empty alternative is the
-  new branch). `:<turn>` = interior fork; the branch shares everything through the end of
-  turn `<turn>-1`. Forking your **own** bound aria
-  rebinds you to the continuation (same trunk/mantra); forking any other aria, or `--stay`,
-  leaves your session untouched. `fork` (no arg) = `fork <current trunk>`.
-- **`fork … -- <prompt>`** — fork **and send**, the way `new -- <prompt>` does. The prompt
-  always lands on the **alternative** (the fresh empty branch); the continuation is never
-  written to. `--stay` governs the **shell** only — without it, forking your own bound aria
-  rebinds you to the *alternative* (that is where the prompt went), and forking anyone
-  else's never moves you. Flags come from `send`'s parser and are routed through `send`'s
-  own dispatch (`-r`/`-v`/`-o`/`-l`/`-x`+`-n`/`-y`/`-f`); `-e` is rejected (a fork is
-  persistent by nature), and the send flags without a prompt are errors rather than no-ops.
-  `-j` prints one line, `mode:"fork-send"`, `aria_id` = the branch.
 
-  Contrast `send <trunk>:<turn> --stay`, which parks the branch and sends to the *original*
-  trunk. `send`'s subject is the message (*where does this land?*); `fork`'s is the branch
-  (*what did I just make?*), so under `fork` the branch is always what gets prompted.
+The user-facing semantics of `send`, `fork`, `--stay` and `fork -- <prompt>`
+live in [trunks.md](trunks.md) and are deliberately not repeated here. What
+belongs to this file is the mechanism below: what the client resolves, and what
+the RPC does with it.
 
 ### 4.3 The resolution table
 
@@ -370,7 +353,7 @@ toward `attend null` / `ls -h` / `ls -g`.
   - **`figaro ls`** — *current scope*: **attended** → your aria's fork tree (top-level
     ancestor's whole tree, `●` marking you); **detached** → home (all top-level arias).
   - **`figaro ls <id>`** — scope to that aria's subtree.
-  - **`-h`/`--home`** — the home view (all top-level arias + branches) **without unbinding**;
+  - **`-H`/`--home`** — the home view (all top-level arias + branches) **without unbinding**;
     `●` stays on your real aria.
   - **`-g`/`--global`** — home **plus** the null + versioned-loadout anchors drawn *above*
     the conversations (the infrastructure trunks).
@@ -392,17 +375,16 @@ toward `attend null` / `ls -h` / `ls -g`.
   policy state unnecessary. The old per-aria-dir / `nodeRec` / `index.json` model is gone.
 - **Aria id = trunk id, stable across forks** (continuation keeps it; `cont == id`).
   Bind-to-trunk: forking your own trunk doesn't move you.
-- **One `send` path**: `send <id>:<turn>` forks-then-sends (rebinds; `--stay`); bare `send`
-  appends. `fork [<id>[:<turn>]] [--stay]` is the imperative no-prompt branch. `attend`/`at`
-  (with `attend null` to go home — `detach` **removed**, `~` kept as a legacy alias),
-  `kill <id>` (+ subtree, `-r`).
+- **One `send` path**: fork-then-send and plain append are the same codepath, discriminated
+  by whether the address carries a turn. The gesture semantics of `send`, `fork`, `attend`
+  and `kill` are owned by [trunks.md](trunks.md) and are not repeated here.
 - **Cauterization**: the null root and loadout stumps are closed — forking/sending "at"
   them spawns a child conversation (`Owner` + `SpawnUnderRoot`/`SpawnUnderStump`).
 - **The four-layer loadout tree**: `null` → content-versioned **loadout** stumps (dedup'd by
   `name@version`) → **top-level arias** (conversations under a loadout) → **branches** (forks
   of conversations); conversations inherit the loadout chalkboard.
 - **Trunk forest `list`/`ls`** (attend = `cd`): current-scope `ls`, `ls <id>` subtree,
-  `-h/--home` (view without unbinding), `-g/--global` (+ null/loadout anchors), cap
+  `-H/--home` (view without unbinding), `-g/--global` (+ null/loadout anchors), cap
   `-a/--all` | `-n N` (default 10), `--json` (all arias incl. null + loadouts, rejects other
   flags); `status -m/-j`, `state -j`, positional `show <id>` with `-n/--last`; LT realigned
   so shown N == `:N`.
