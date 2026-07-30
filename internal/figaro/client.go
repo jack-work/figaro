@@ -100,12 +100,23 @@ func (c *Client) Chalkboard(ctx context.Context) (*rpc.ChalkboardResponse, error
 	return &resp, nil
 }
 
-// Queued returns the aria's currently-queued user prompts (accepted by the
-// inbox, not yet drained). Read-only — there is no cancellation surface at
-// this layer.
+// Queued returns the aria's queued messages for DISPLAY: the prompts a human
+// would recognise as waiting, with pure chalkboard carriers omitted. The
+// response's Epoch names the generation those ids belong to.
 func (c *Client) Queued(ctx context.Context) (*rpc.QueuedResponse, error) {
 	var resp rpc.QueuedResponse
 	if err := c.cli.Call(ctx, rpc.MethodQueued, rpc.QueuedRequest{}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// QueuedAll is the CRUD view: every queued message, carriers included, because
+// anything that can be deleted has to be addressable.
+func (c *Client) QueuedAll(ctx context.Context) (*rpc.QueuedResponse, error) {
+	var resp rpc.QueuedResponse
+	req := rpc.QueuedRequest{IncludeCarriers: true}
+	if err := c.cli.Call(ctx, rpc.MethodQueued, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

@@ -2,20 +2,60 @@ package figaro
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"sync"
+	"time"
 )
 
 // Inbox is the per-aria user-RPC event queue.
+//
+// IDENTITY. Every queued user prompt carries an id, minted here, so the CRUD
+// surface has something to address. Ids are dense and per-INBOX, which makes
+// them typeable (`figaro queue rm 3`) but NOT durable: a new Inbox — a daemon
+// restart, a dormant→attach, a panic-restart of the drain loop — starts again
+// at 1. A client holding an id from a previous generation would otherwise
+// delete whatever holds that number now.
+//
+// So the inbox also mints an EPOCH: 8 bytes of crypto/rand, hex, once per
+// inbox. Every mutation must present the epoch its ids were read against, and
+// a mismatch is refused rather than resolved. The epoch is compared only for
+// EQUALITY — never ordered — which is exactly why a random nonce is the right
+// primitive here and a clock is not (a clock can go backwards), nor the log
+// tail (it does not advance when an agent boots, queues, and dies without
+// appending: the precise case that reproduces a colliding id).
 type Inbox struct {
 	mu     sync.Mutex
 	cond   *sync.Cond
 	queue  []event
 	wake   chan struct{} // queue-change signal only; events remain in the FIFO
 	closed bool
+
+	epoch  string
+	nextID uint64
+
+	// lifted holds prompts the drain loop has taken but not yet appended, and
+	// committed the last few it did append. Together they are what lets a
+	// refusal say WHICH kind of too-late it was — "committing" vs "committed"
+	// vs "never heard of it" — instead of collapsing all three into unknown.
+	lifted    []promptRef
+	committed []promptRef
 }
 
+// promptRef remembers an id after its event has left the queue. Merged travels
+// with it so an id folded away by an interrupt keeps resolving to its
+// survivor even after that survivor is itself drained.
+type promptRef struct {
+	id     uint64
+	merged []uint64
+}
+
+// committedRing bounds the memory of answered ids. It only has to outlive a
+// client's read→mutate round trip; past that, "unknown" is the honest answer.
+const committedRing = 64
+
 func NewInbox(ctx context.Context) *Inbox {
-	b := &Inbox{wake: make(chan struct{}, 1)}
+	b := &Inbox{wake: make(chan struct{}, 1), epoch: mintEpoch()}
 	b.cond = sync.NewCond(&b.mu)
 	go func() {
 		<-ctx.Done()
@@ -24,12 +64,42 @@ func NewInbox(ctx context.Context) *Inbox {
 	return b
 }
 
+// mintEpoch returns a fresh inbox generation token. crypto/rand cannot
+// meaningfully fail here, but if it ever did, a fixed string would silently
+// make every stale id look current — so fall back to something unique enough
+// to still differ from the previous generation.
+func mintEpoch() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "t" + hex.EncodeToString([]byte(time.Now().Format(time.RFC3339Nano)))
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// Epoch is the generation queued ids belong to.
+func (b *Inbox) Epoch() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.epoch
+}
+
 // Send enqueues an event. Returns false if closed.
 func (b *Inbox) Send(evt event) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closed {
 		return false
+	}
+	// Only prompts are addressable, so only prompts consume an id: a dense
+	// sequence a human can type beats one with gaps where a `set` went by.
+	// An event arriving with an id already set is a restored one (Prepend
+	// routes around Send, but be explicit) and keeps it.
+	if evt.typ == eventUserPrompt && evt.id == 0 {
+		b.nextID++
+		evt.id = b.nextID
+		if evt.at == 0 {
+			evt.at = time.Now().UnixMilli()
+		}
 	}
 	b.queue = append(b.queue, evt)
 	b.cond.Signal()
@@ -54,6 +124,7 @@ func (b *Inbox) Recv() (event, bool) {
 	evt := b.queue[0]
 	copy(b.queue, b.queue[1:])
 	b.queue = b.queue[:len(b.queue)-1]
+	b.liftLocked(evt)
 	b.mu.Unlock()
 	return evt, true
 }
@@ -70,8 +141,52 @@ func (b *Inbox) TakeReadyUserPrompts() []event {
 	taken := append([]event(nil), b.queue[:n]...)
 	copy(b.queue, b.queue[n:])
 	b.queue = b.queue[:len(b.queue)-n]
+	for _, evt := range taken {
+		b.liftLocked(evt)
+	}
 	b.signalReadyForkLocked()
 	return taken
+}
+
+// liftLocked records that a prompt left the queue for the drain loop. Until
+// MarkCommitted moves it on, a delete aimed at it is refused as "committing"
+// — it is becoming a message right now, and that is a different fact from
+// "already answered" or "never existed".
+func (b *Inbox) liftLocked(evt event) {
+	if evt.typ != eventUserPrompt || evt.id == 0 {
+		return
+	}
+	b.lifted = append(b.lifted, promptRef{id: evt.id, merged: evt.merged})
+}
+
+// MarkCommitted moves ids from in-flight to answered: the drain loop has
+// durably appended them to the IR, so a delete can no longer be honoured and
+// the refusal should say so precisely.
+func (b *Inbox) MarkCommitted(events []event) {
+	if len(events) == 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, evt := range events {
+		if evt.typ != eventUserPrompt || evt.id == 0 {
+			continue
+		}
+		b.dropLiftedLocked(evt.id)
+		b.committed = append(b.committed, promptRef{id: evt.id, merged: evt.merged})
+	}
+	if excess := len(b.committed) - committedRing; excess > 0 {
+		b.committed = append([]promptRef(nil), b.committed[excess:]...)
+	}
+}
+
+func (b *Inbox) dropLiftedLocked(id uint64) {
+	for i := range b.lifted {
+		if b.lifted[i].id == id {
+			b.lifted = append(b.lifted[:i], b.lifted[i+1:]...)
+			return
+		}
+	}
 }
 
 // Prepend restores events that could not be durably processed.
@@ -83,6 +198,14 @@ func (b *Inbox) Prepend(events []event) bool {
 	defer b.mu.Unlock()
 	if b.closed {
 		return false
+	}
+	// They are queued again, so they are no longer in flight: a delete aimed
+	// at one must go back to being honoured rather than refused as
+	// "committing" forever.
+	for _, evt := range events {
+		if evt.typ == eventUserPrompt && evt.id != 0 {
+			b.dropLiftedLocked(evt.id)
+		}
 	}
 	queue := make([]event, 0, len(events)+len(b.queue))
 	queue = append(queue, events...)
@@ -146,19 +269,26 @@ func (b *Inbox) IsIdle() bool {
 	return len(b.queue) == 0
 }
 
-// SnapshotUserPrompts returns the text of every queued user prompt (empty-text
-// prompts — pure chalkboard carriers — are omitted) in FIFO order, WITHOUT
-// removing them from the queue. Used by the read-only figaro.queued RPC so a
-// UI can show what the agent will pick up next; the inbox contract is not
-// affected. Non-prompt events (sets, forks) are skipped by design.
-func (b *Inbox) SnapshotUserPrompts() []string {
+// SnapshotPrompts returns a copy of every queued user prompt in FIFO order,
+// WITHOUT removing them. carriers==false omits empty-text prompts (pure
+// chalkboard carriers), which is what every display surface wants and what
+// this has always returned; the CRUD surface asks for them because it must be
+// able to address what it can delete.
+//
+// Non-prompt events (sets, forks) are skipped by design: this is the "what am
+// I about to be asked next?" view, not a dump of the actor's mailbox.
+func (b *Inbox) SnapshotPrompts(carriers bool) []event {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	out := make([]string, 0, len(b.queue))
+	out := make([]event, 0, len(b.queue))
 	for _, e := range b.queue {
-		if e.typ == eventUserPrompt && e.text != "" {
-			out = append(out, e.text)
+		if e.typ != eventUserPrompt {
+			continue
 		}
+		if !carriers && e.text == "" {
+			continue
+		}
+		out = append(out, e)
 	}
 	return out
 }

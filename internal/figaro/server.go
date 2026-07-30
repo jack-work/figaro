@@ -92,7 +92,14 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		return rpc.ChalkboardResponse{Snapshot: a.Snapshot()}, nil
 
 	case rpc.MethodQueued:
-		return rpc.QueuedResponse{Prompts: a.QueuedPrompts()}, nil
+		var req rpc.QueuedRequest
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, err
+			}
+		}
+		epoch, prompts := a.QueuedPrompts(req.IncludeCarriers)
+		return rpc.QueuedResponse{Epoch: epoch, Prompts: prompts}, nil
 
 	case rpc.MethodRead:
 		var req rpc.ReadRequest

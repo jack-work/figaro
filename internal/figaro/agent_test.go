@@ -1402,11 +1402,30 @@ func TestAgent_QueuedPromptsRPC(t *testing.T) {
 	a.SubmitPrompt(rpc.QuaRequest{Text: "two"})
 	a.SubmitPrompt(rpc.QuaRequest{Text: ""}) // carrier — must be omitted
 
-	snap := a.QueuedPrompts()
-	require.Equal(t, []rpc.QueuedPrompt{{Text: "one"}, {Text: "two"}}, snap)
+	epoch, snap := a.QueuedPrompts(false)
+	require.NotEmpty(t, epoch, "the queue view names the generation its ids belong to")
+	require.Equal(t, []string{"one", "two"}, queuedTexts(snap))
+	for _, p := range snap {
+		require.NotZero(t, p.ID, "a queued message is addressable")
+		require.Equal(t, rpc.QueueStateQueued, p.State)
+	}
 
 	// Read-only: a second snapshot returns the same list.
-	require.Equal(t, snap, a.QueuedPrompts())
+	epoch2, snap2 := a.QueuedPrompts(false)
+	require.Equal(t, epoch, epoch2)
+	require.Equal(t, snap, snap2)
+
+	// The carrier is hidden from the display view and present in the CRUD one.
+	_, all := a.QueuedPrompts(true)
+	require.Equal(t, []string{"one", "two", ""}, queuedTexts(all))
+}
+
+func queuedTexts(prompts []rpc.QueuedPrompt) []string {
+	out := make([]string, 0, len(prompts))
+	for _, p := range prompts {
+		out = append(out, p.Text)
+	}
+	return out
 }
 
 // blockedProvider is a Send that parks until release is closed, so tests can

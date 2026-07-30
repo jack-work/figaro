@@ -39,6 +39,14 @@ const (
 type event struct {
 	typ eventType
 
+	// Identity, eventUserPrompt only. id is minted by Inbox.Send and is unique
+	// within the inbox's epoch; merged names the ids folded INTO this event by
+	// an interrupt-time coalesce, so an id that no longer exists on its own can
+	// still be resolved to the message that absorbed it.
+	id     uint64
+	at     int64
+	merged []uint64
+
 	// eventUserPrompt
 	text       string
 	chalkboard *rpc.ChalkboardInput
@@ -416,16 +424,26 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 	})
 }
 
-// QueuedPrompts returns a read-only snapshot of user prompts sitting in the
-// inbox — accepted but not yet drained into a turn. FIFO order, oldest first.
-// The inbox is untouched; there is no cancellation surface at this layer.
-func (a *Agent) QueuedPrompts() []rpc.QueuedPrompt {
-	texts := a.inbox.SnapshotUserPrompts()
-	out := make([]rpc.QueuedPrompt, 0, len(texts))
-	for _, t := range texts {
-		out = append(out, rpc.QueuedPrompt{Text: t})
+// QueuedPrompts returns a read-only snapshot of the messages this aria has
+// accepted but not yet answered, in FIFO order, plus the epoch those ids
+// belong to. The inbox is untouched.
+//
+// carriers opts in to empty-text prompts (pure chalkboard carriers): the CRUD
+// surface must be able to address everything it can delete, while every
+// display surface wants them omitted — which is what this has always done.
+func (a *Agent) QueuedPrompts(carriers bool) (string, []rpc.QueuedPrompt) {
+	events := a.inbox.SnapshotPrompts(carriers)
+	out := make([]rpc.QueuedPrompt, 0, len(events))
+	for _, e := range events {
+		out = append(out, rpc.QueuedPrompt{
+			ID:     e.id,
+			Text:   e.text,
+			State:  rpc.QueueStateQueued,
+			At:     e.at,
+			Merged: e.merged,
+		})
 	}
-	return out
+	return a.inbox.Epoch(), out
 }
 
 // turnActive reports whether a turn is in flight (a prompt submitted now would

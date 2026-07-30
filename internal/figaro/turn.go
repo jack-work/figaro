@@ -164,6 +164,9 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
+	// It is a message now, not a queued one. A delete aimed at it from here on
+	// is refused as committed rather than silently missing its target.
+	a.inbox.MarkCommitted([]event{prompt})
 	a.startAssistantUnit()
 
 	// Drive: provider -> tools -> repeat.
@@ -850,12 +853,18 @@ func (a *Agent) appendPromptEvents(prompts []event) error {
 		}
 		return err
 	}
+	// Every id in the batch is now part of one durable message.
+	a.inbox.MarkCommitted(prompts)
 	return nil
 }
 
 // mergePromptEvents folds a drained batch into one prompt: texts joined by a
 // newline in queue order, chalkboard input merged in the same order so a later
 // prompt's value wins. Reports false when the batch is empty.
+//
+// Identity folds with the content: the result keeps the FIRST id (it is the
+// same message, continued) and records every other id in merged, so a client
+// that read the queue a moment ago can still find where its id went.
 func mergePromptEvents(prompts []event) (event, bool) {
 	if len(prompts) == 0 {
 		return event{}, false
@@ -864,12 +873,16 @@ func mergePromptEvents(prompts []event) (event, bool) {
 		return prompts[0], true
 	}
 	texts := make([]string, 0, len(prompts))
-	out := event{typ: eventUserPrompt}
-	for _, p := range prompts {
+	out := event{typ: eventUserPrompt, id: prompts[0].id, at: prompts[0].at}
+	for i, p := range prompts {
 		if p.text != "" {
 			texts = append(texts, p.text)
 		}
 		out.chalkboard = mergeChalkboardInput(out.chalkboard, p.chalkboard)
+		out.merged = append(out.merged, p.merged...)
+		if i > 0 && p.id != 0 {
+			out.merged = append(out.merged, p.id)
+		}
 	}
 	out.text = strings.Join(texts, "\n")
 	return out, true
