@@ -27,7 +27,19 @@ type Router struct {
 	// are non-empty. If nil, the router prints usage and exits 2.
 	Fallback func(args []string, extra interface{}) error
 
-	// Stderr is the output for help and errors. Defaults to os.Stderr.
+	// Stdout is where REQUESTED output goes: `--help`, `help <cmd>`, and
+	// `--version`. Defaults to os.Stdout.
+	//
+	// The split from Stderr is the whole rule, and it is about who asked.
+	// Help the user asked for is the command's primary output — it must be
+	// pipeable (`fig send --help | grep exec` is the universal reflex for a
+	// 3400-byte help block). Help the user did NOT ask for — usage printed
+	// because argv was wrong — is a diagnostic, and rides Stderr with a
+	// non-zero exit so it never pollutes a pipeline.
+	Stdout io.Writer
+
+	// Stderr is the output for errors and for usage printed as part of an
+	// error. Defaults to os.Stderr.
 	Stderr io.Writer
 
 	// Synopsis is extra usage lines printed under the Usage header —
@@ -46,6 +58,7 @@ func NewRouter(name string) *Router {
 	r := &Router{
 		Name:   name,
 		index:  make(map[string]*Command),
+		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	}
 	r.Register(&Command{
@@ -75,18 +88,19 @@ func (r *Router) Register(cmd *Command) {
 // Run dispatches args (without argv[0]). Returns the exit code.
 func (r *Router) Run(args []string) int {
 	if len(args) == 0 {
-		r.printUsage()
+		// Nobody asked for this: it is a misuse diagnostic. Stderr, exit 2.
+		r.printUsageTo(r.errw())
 		return 2
 	}
 
 	// Global flags handled before dispatch.
 	first := args[0]
 	if first == "--help" || first == "-h" {
-		r.printUsage()
+		r.PrintUsage()
 		return 0
 	}
 	if r.Version != "" && (first == "--version" || first == "-V") {
-		fmt.Fprintf(r.Stderr, "%s %s\n", r.Name, r.Version)
+		fmt.Fprintf(r.outw(), "%s %s\n", r.Name, r.Version)
 		return 0
 	}
 
@@ -103,12 +117,12 @@ func (r *Router) Run(args []string) int {
 		}
 		// Did-you-mean suggestion.
 		if suggestion := r.suggest(first); suggestion != "" {
-			fmt.Fprintf(r.Stderr, "error: unknown command %q\n", first)
-			fmt.Fprintf(r.Stderr, "  did you mean: %s %s\n\n", r.Name, suggestion)
+			fmt.Fprintf(r.errw(), "error: unknown command %q\n", first)
+			fmt.Fprintf(r.errw(), "  did you mean: %s %s\n\n", r.Name, suggestion)
 		} else {
-			fmt.Fprintf(r.Stderr, "error: unknown command %q\n\n", first)
+			fmt.Fprintf(r.errw(), "error: unknown command %q\n\n", first)
 		}
-		r.printUsage()
+		r.printUsageTo(r.errw())
 		return 2
 	}
 
@@ -117,7 +131,7 @@ func (r *Router) Run(args []string) int {
 	// Per-command --help.
 	for _, a := range tail {
 		if a == "--help" || a == "-h" {
-			r.printCommandHelp(cmd)
+			r.PrintCommandHelp(cmd)
 			return 0
 		}
 		if a == "--" {
@@ -325,9 +339,27 @@ func levenshtein(a, b string) int {
 
 // --- Help output ---
 
-func (r *Router) printUsage() {
-	w := r.Stderr
+// outw/errw resolve the writers, tolerating a zero-value Router (a Router
+// built as a struct literal rather than through NewRouter still prints).
+func (r *Router) outw() io.Writer {
+	if r.Stdout == nil {
+		return os.Stdout
+	}
+	return r.Stdout
+}
 
+func (r *Router) errw() io.Writer {
+	if r.Stderr == nil {
+		return os.Stderr
+	}
+	return r.Stderr
+}
+
+// PrintUsage writes the top-level help to Stdout. Exported so a `help`
+// verb (and figaro's bare-prompt dispatcher) can reach it.
+func (r *Router) PrintUsage() { r.printUsageTo(r.outw()) }
+
+func (r *Router) printUsageTo(w io.Writer) {
 	fmt.Fprintf(w, "Usage: %s <command> [flags] [args]\n", r.Name)
 	for _, line := range r.Synopsis {
 		fmt.Fprintf(w, "       %s\n", line)
@@ -351,9 +383,10 @@ func (r *Router) printUsage() {
 	fmt.Fprintf(w, "Run '%s <command> --help' for details on a command.\n", r.Name)
 }
 
-func (r *Router) printCommandHelp(cmd *Command) {
-	w := r.Stderr
+// PrintCommandHelp writes one command's help to Stdout.
+func (r *Router) PrintCommandHelp(cmd *Command) { r.printCommandHelpTo(r.outw(), cmd) }
 
+func (r *Router) printCommandHelpTo(w io.Writer, cmd *Command) {
 	usage := cmd.Usage
 	if usage == "" {
 		usage = cmd.Name
