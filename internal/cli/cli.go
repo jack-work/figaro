@@ -285,41 +285,6 @@ positional target needs the explicit verb or --id.`,
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:    "plain",
-		Aliases: []string{"l"},
-		Group:   "Prompt",
-		Short:   "(deprecated) Raw prompt — use `send -er` / `send -r --id <id>`",
-		Usage:   "plain [--id <id>] -- <prompt>",
-		Long:    "Deprecated. Without --id, equivalent to `figaro send -er`\n(ephemeral + raw). With --id, equivalent to `figaro send -r --id <id>`.\nWill be removed in a future release.",
-		PassRaw: true,
-		Run: func(ctx *cmdkit.RunContext) error {
-			ld := ctx.Extra.(*config.Loaded)
-			fmt.Fprintln(os.Stderr, "figaro plain: deprecated; use `figaro send -er` (ephemeral+raw) or `figaro send -r --id <id>` (named, raw) instead.")
-			runPlainPrompt(ld, ctx.RawArgs)
-			return nil
-		},
-		CompleteArgs: completePromptOrIDFlag,
-	})
-
-	r.Register(&cmdkit.Command{
-		Name:    "x",
-		Aliases: []string{"exec"},
-		Group:   "Prompt",
-		Short:   "(deprecated) Bash exec — use `send -x` / `send -ex`",
-		Usage:   "x [--id <id>] [-n|-y] -- <instruction>",
-		Long: `Deprecated. Equivalent to ` + "`figaro send --exec`" + `; bare ` + "`figaro x`" + ` is
-` + "`figaro send -ex`" + `. Will be removed in a future release.`,
-		PassRaw: true,
-		Run: func(ctx *cmdkit.RunContext) error {
-			ld := ctx.Extra.(*config.Loaded)
-			fmt.Fprintln(os.Stderr, "figaro x: deprecated; use `figaro send -x` (or `-ex` for ephemeral exec) instead.")
-			runExecPrompt(ld, ctx.RawArgs)
-			return nil
-		},
-		CompleteArgs: completePromptOrIDFlag,
-	})
-
-	r.Register(&cmdkit.Command{
 		Name:  "listen",
 		Group: "Prompt",
 		Short: "Attach to an aria's live stream without sending a prompt",

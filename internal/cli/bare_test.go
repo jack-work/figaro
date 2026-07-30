@@ -22,9 +22,11 @@ func TestIsBareForm(t *testing.T) {
 		{"known command with boundary", []string{"send", "--", "hello"}, false},
 		{"known command alias", []string{"qua", "--", "hello"}, false},
 		{"new with boundary", []string{"new", "--", "hello"}, false},
-		{"deprecated plain", []string{"plain", "--", "hello"}, false},
-		{"deprecated x", []string{"x", "--", "hello"}, false},
-		{"deprecated exec alias", []string{"exec", "--", "hello"}, false},
+		// `plain`, `x` and `exec` were deprecated aliases of send and are
+		// gone; they now behave like any other unknown leading word — the
+		// bare form claims them and rejects them with a did-you-mean.
+		{"removed plain", []string{"plain", "--", "hello"}, true},
+		{"removed x", []string{"x", "--", "hello"}, true},
 		// `--` stays mandatory: without it nothing is a prompt, so a
 		// mistyped subcommand still reaches the router's did-you-mean.
 		{"no boundary", []string{"hello", "world"}, false},

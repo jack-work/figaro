@@ -851,27 +851,6 @@ func (in *interactiveInput) refreshQueued() {
 	}()
 }
 
-func committedAfter(p aria.Page, after int) int {
-	n := 0
-	for _, part := range p.Parts {
-		if len(part.Nodes) > 0 && int(part.ID) > after {
-			n++
-		}
-	}
-	return n
-}
-
-func filterCommittedAfter(p aria.Page, after int) aria.Page {
-	out := p
-	out.Parts = nil
-	for _, part := range p.Parts {
-		if int(part.ID) > after {
-			out.Parts = append(out.Parts, part)
-		}
-	}
-	return out
-}
-
 // run reads input until stdin errors, Ctrl-C (cancel), or Ctrl-D (disconnect).
 // Call under a MakeRaw session so Ctrl-C/Ctrl-D arrive as bytes.
 //
