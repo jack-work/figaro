@@ -313,13 +313,39 @@ func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
 
 		// Long flag.
 		if strings.HasPrefix(arg, "--") {
+			// `--name=value` is the GNU form, and it was rejected outright:
+			// the whole token was looked up, so `--limit=5` came back as
+			// "unknown flag: --limit=5" while send.go's hand parser accepted
+			// `--id=x`. One binary, two grammars.
 			name := arg[2:]
+			inline, hasInline := "", false
+			if eq := strings.IndexByte(name, '='); eq >= 0 {
+				name, inline, hasInline = name[:eq], name[eq+1:], true
+			}
 			fd := findFlag(cmd.Flags, name, "")
 			if fd == nil {
 				return nil, fmt.Errorf("unknown flag: --%s", name)
 			}
 			if fd.IsBool {
-				ctx.Flags[fd.Long] = "true"
+				// A bool may carry an explicit truth value — `--attend=false`
+				// is a form send.go already honours — but nothing else.
+				val := "true"
+				if hasInline {
+					switch inline {
+					case "true", "1":
+						val = "true"
+					case "false", "0":
+						val = "false"
+					default:
+						return nil, fmt.Errorf("flag --%s takes no value (got %q); use --%s or --%s=false", name, inline, name, name)
+					}
+				}
+				ctx.Flags[fd.Long] = val
+			} else if hasInline {
+				if inline == "" {
+					return nil, fmt.Errorf("flag --%s requires a value", name)
+				}
+				ctx.Flags[fd.Long] = inline
 			} else {
 				i++
 				if i >= len(expanded) {
