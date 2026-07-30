@@ -794,6 +794,18 @@ func (a *Agent) commitPatch(patch message.Patch, kind string, inline *message.Me
 		version = ent.LT
 	}
 	a.chalkboard.ApplyAt(version, patch)
+	// Emit AFTER the durable write and AFTER the board is visible, carrying the
+	// patch itself. Order matters twice over: a frame sent before the write
+	// could announce a patch a crash then erased, and one sent before the apply
+	// would race a subscriber that went looking for the value.
+	//
+	// The version quoted is the BOARD's, not the local one: ApplyAt never
+	// rewinds, so this is monotonic even when a patch carried no durable index.
+	a.fanOut(rpc.Notification{
+		JSONRPC: "2.0",
+		Method:  rpc.MethodChalkFrame,
+		Params:  rpc.ChalkFrame{Version: a.chalkboard.Version(), Patch: patch},
+	})
 	return version, nil
 }
 

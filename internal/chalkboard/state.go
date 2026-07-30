@@ -131,6 +131,17 @@ func (s *State) ApplyAt(version uint64, p Patch) Snapshot {
 	return next
 }
 
+// SnapshotAt returns the snapshot and the version it reflects from ONE atomic
+// load. Snapshot() and Version() called separately are TWO loads and can
+// straddle a publication, yielding a snapshot labelled with a version it does
+// not actually contain — after which a client resuming from that version skips
+// the patch that landed in between. Any caller that reports both to a client
+// must use this.
+func (s *State) SnapshotAt() (Snapshot, uint64) {
+	b := s.load()
+	return b.snapshot, b.version
+}
+
 // Version is the durable index this board reflects: the highest append position
 // folded into it. Lock-free, safe from any goroutine. Zero means nothing
 // versioned has been applied — a fresh ephemeral board.

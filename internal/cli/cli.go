@@ -352,6 +352,43 @@ Keys:
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "chalk",
+		Group: "State",
+		Short: "Watch an aria's chalkboard change live",
+		Usage: "chalk [<id>] [--system] [-j]",
+		Long: `Follow one aria's chalkboard as it changes. Catches up to a
+versioned snapshot, then folds live patches as they land — the same
+contract listen uses for the conversation, over the chalkboard log.
+
+The row that just changed is highlighted, because the stream reports
+WHICH keys moved rather than merely that something did. Removals are
+named explicitly: a deleted key has no row left to mark.
+
+system.* keys are hidden unless --system is given, matching state.
+With -j, one JSON object per change is printed instead — the delta,
+not a re-dump of the board.
+
+With no id, the pid-bound aria is used. Stays open until Ctrl-C.`,
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Target aria id (defaults to this shell's)"},
+			{Long: "system", IsBool: true, Description: "Include system.* keys"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Emit one JSON object per change"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			id := ctx.Flag("id")
+			if id == "" && len(ctx.Args) > 0 {
+				id = ctx.Args[0]
+			}
+			runChalk(ld, id, ctx.BoolFlag("json"), ctx.BoolFlag("system"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "hup",
 		Group: "Prompt",
 		Short: "Hang up: interrupt an aria's current turn",

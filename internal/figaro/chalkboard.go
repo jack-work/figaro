@@ -15,6 +15,16 @@ func (a *Agent) Snapshot() chalkboard.Snapshot {
 	return a.chalkboard.Snapshot()
 }
 
+// ChalkboardAt returns the snapshot and the durable version it reflects, read
+// together. Callers reporting both to a client must use this rather than
+// Snapshot() + Version(): see chalkboard.State.SnapshotAt.
+func (a *Agent) ChalkboardAt() (chalkboard.Snapshot, uint64) {
+	if a.chalkboard == nil {
+		return chalkboard.Snapshot{}, 0
+	}
+	return a.chalkboard.SnapshotAt()
+}
+
 // Set applies a chalkboard patch. No LLM round-trip.
 func (a *Agent) Set(patch chalkboard.Patch) (set, removed []string, err error) {
 	if a.chalkboard == nil {
