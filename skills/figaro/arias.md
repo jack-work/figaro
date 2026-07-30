@@ -37,20 +37,40 @@ spread across the node dirs along its path.
 │   └── n1/ …                  sibling branches; nest n0/n1/… arbitrarily deep
 ├── chalkboard/                reducible channel (jsonmerge): same node tree,
 │   └── n0/ …                  patches on a per-segment watermark base
-├── translations/<provider>/   wire cache per provider: same node tree, FK'd
+├── translations-v2/<provider>/ wire cache per provider: same node tree, FK'd
 │   └── n0/ …                  to the IR by mainLT (preserves thinking sigs)
 ├── _meta/<id>.json            list/status metadata (msg count, tokens, last-active)
+├── schema.json                per-channel format versions (`figaro doctor schema`)
+├── policy.json                written by the xwal layer, not by figaro; empty in
+│                              practice, so nothing here reads it
 └── .daemon.lock               the exclusive store flock (one angelus per store)
+```
+
+A live store also carries **dead channels**: `turn-wal/` (superseded by drain
+plus tail repair), `_live/` (a retired transcript pivot, never a manifest
+entry), and the legacy `translations/` tree that `translations-v2/` replaced.
+Nothing reads or writes them. `internal/cli/doctor.go` names them:
+
+```go
+var deadChannels = []string{"turn-wal", "_live"}
+// plus: any channel whose name starts with "translations/"
+```
+
+**Read `translations-v2/<provider>/`, never `translations/`.** The live channel
+is built by `transChannel` in `internal/store/xwal_backend.go`:
+
+```go
+func transChannel(provider string) string { return "translations-v2/" + provider }
 ```
 
 Key points:
 
 - **Per-channel trees, not per-aria dirs.** `ir/`, `chalkboard/`, and
-  `translations/<provider>/` each mirror the same node tree (`n0/n1/…` with a
+  `translations-v2/<provider>/` each mirror the same node tree (`n0/n1/…` with a
   `.fork` marker carrying the fork base index). A fork forks all channels as a
   unit. Node ids (`n<N>`) are pure plumbing — never address them; address the
   trunk (= aria) id, which lives in the `.trunk` marker in the `ir/` tree.
-- **The IR is truth.** `translations/*` is a derivable wire cache; the
+- **The IR is truth.** `translations-v2/*` is a derivable wire cache; the
   chalkboard is reducible (a watermark + jsonmerge patches), so there is **no
   `chalkboard.json`** — fold it via the CLI's `state` (or figwal `StateAt`),
   don't read it raw.
