@@ -37,7 +37,6 @@ type vtStyle struct {
 	fg, bg                            string
 	bold, dim, italic                 bool
 	underline, reverse, strike, blink bool
-	conceal                           bool
 }
 
 type vtCell struct {
@@ -268,8 +267,6 @@ func (v *vtScreen) sgr(body string) {
 			v.cur.blink = true
 		case n == 7:
 			v.cur.reverse = true
-		case n == 8:
-			v.cur.conceal = true
 		case n == 9:
 			v.cur.strike = true
 		case n == 21:
@@ -284,8 +281,6 @@ func (v *vtScreen) sgr(body string) {
 			v.cur.blink = false
 		case n == 27:
 			v.cur.reverse = false
-		case n == 28:
-			v.cur.conceal = false
 		case n == 29:
 			v.cur.strike = false
 		case n >= 30 && n <= 37, n >= 90 && n <= 97:
