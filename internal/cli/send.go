@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -80,36 +81,14 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 		}
 	}
 
-	// First pass: expand bundled bool short flags so -ex -> -e -x,
-	// but stop at `--`.
-	expanded := make([]string, 0, len(args))
-	for i, a := range args {
-		if a == "--" {
-			expanded = append(expanded, args[i:]...)
-			break
-		}
-		// Bundle expansion: -<letters> where all letters are known
-		// bool shorts.
-		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
-			letters := a[1:]
-			allBool := true
-			for _, r := range letters {
-				switch r {
-				case 'e', 'r', 'v', 'o', 't', 'x', 'n', 'y', 'f', 'j', 'l':
-					// known bool short
-				default:
-					allBool = false
-				}
-			}
-			if allBool {
-				for _, r := range letters {
-					expanded = append(expanded, "-"+string(r))
-				}
-				continue
-			}
-		}
-		expanded = append(expanded, a)
-	}
+	// One expander, one table. send.go used to carry its own hardcoded
+	// letter list with no link to the flags below, which is how -j and -l
+	// came to be missing from it: `send -fj` — fire-and-forget plus the
+	// machine-readable line, the exact pair a script wants — failed as
+	// "unknown flag" while `-f -j` worked. The letters are now derived from
+	// sendFlagDefs, so a new short cannot be documented and un-gangable.
+	expanded := cmdkit.ExpandBundled(argsBeforeBoundary(args), sendFlagDefs)
+	expanded = append(expanded, argsFromBoundary(args)...)
 
 	i := 0
 	for i < len(expanded) {
@@ -212,6 +191,44 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 		}
 	}
 	return opts, rest, nil
+}
+
+// sendFlagDefs is the single source of truth for the prompt verbs' flags:
+// bundle expansion reads it, and it is what keeps the hand-rolled PassRaw
+// scan and the router's parser speaking the same language.
+var sendFlagDefs = []cmdkit.FlagDef{
+	{Long: "id", Description: "Target aria id"},
+	{Long: "ephemeral", Short: "e", IsBool: true, Description: "One-shot in-memory aria"},
+	{Long: "raw", Short: "r", IsBool: true, Description: "Raw stream: no ANSI, no markdown"},
+	{Long: "verbatim", Short: "v", IsBool: true, Description: "Dump the wire frames as JSON"},
+	{Long: "verbose", Short: "o", IsBool: true, Description: "Expand full tool inputs"},
+	{Long: "thinking", Short: "t", IsBool: true, Description: "Alias of --verbose"},
+	{Long: "listen", Short: "l", IsBool: true, Description: "Open the transcript at startup"},
+	{Long: "exec", Short: "x", IsBool: true, Description: "Treat the prompt as a bash instruction"},
+	{Long: "dry-run", Short: "n", IsBool: true, Description: "--exec only: print the script"},
+	{Long: "yes", Short: "y", IsBool: true, Description: "--exec only: skip confirmation"},
+	{Long: "forget", Short: "f", IsBool: true, Description: "Submit and exit; do not stream"},
+	{Long: "json", Short: "j", IsBool: true, Description: "Submit, print one JSON object, exit"},
+}
+
+// argsBeforeBoundary / argsFromBoundary split argv at the first bare `--`.
+// Everything after it is the prompt and must never be touched.
+func argsBeforeBoundary(args []string) []string {
+	for i, a := range args {
+		if a == "--" {
+			return args[:i]
+		}
+	}
+	return args
+}
+
+func argsFromBoundary(args []string) []string {
+	for i, a := range args {
+		if a == "--" {
+			return args[i:]
+		}
+	}
+	return nil
 }
 
 // parseTarget splits a target spec into a trunk id and an optional :<turn>.

@@ -440,6 +440,17 @@ func unconsumedFlagError(flags []FlagDef, tok string) error {
 	}
 }
 
+// ExpandBundled expands POSIX short-flag gangs (-ex -> -e -x) against a
+// flag table, leaving a token untouched unless EVERY letter is a known bool
+// short. Exported so the PassRaw parsers — which do their own scanning —
+// expand exactly as the router does, from the same table.
+//
+// Two expanders is how `-fj` died: send.go carried a hardcoded letter list
+// with no link to its documented flags, and -j and -l were simply missing
+// from it, so the fire-and-forget-plus-machine-output pair a script wants
+// failed as "unknown flag".
+func ExpandBundled(args []string, flags []FlagDef) []string { return expandBundled(args, flags) }
+
 func expandBundled(args []string, flags []FlagDef) []string {
 	out := make([]string, 0, len(args))
 	for _, a := range args {
