@@ -157,3 +157,58 @@ func TestLeaveDoesNotEraseTheScreen(t *testing.T) {
 		t.Fatalf("leave() still erases: %q", got)
 	}
 }
+
+// os.Exit does not run defers, and two exits in stream.go are os.Exit: die()
+// (reachable AFTER --listen has opened the pager — a Qua failure lands there)
+// and the Ctrl-C 130 path. Both used to leave the terminal on the alternate
+// screen, shell invisible. exitNow runs the registered hooks first.
+func TestExitHooksRunBeforeTheProcessGoes(t *testing.T) {
+	prevExit, prevHooks := exitProcess, exitHooks
+	defer func() { exitProcess, exitHooks = prevExit, prevHooks }()
+
+	var order []string
+	exitHooks = nil
+	exitProcess = func(int) { order = append(order, "exit") }
+	atExit(func() { order = append(order, "first") })
+	atExit(func() { order = append(order, "second") })
+
+	exitNow(1)
+
+	// LIFO like defers, and the process leaves last.
+	want := []string{"second", "first", "exit"}
+	if strings.Join(order, ",") != strings.Join(want, ",") {
+		t.Fatalf("hook order: got %v, want %v", order, want)
+	}
+	if exitHooks != nil {
+		t.Error("hooks must not run twice")
+	}
+}
+
+// die() and dieUsage() must go through the hooks, not around them — that is
+// the whole point, since die() is the exit that strands a pager.
+func TestDieRunsExitHooks(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func()
+		code int
+	}{
+		{"die", func() { die("boom") }, 1},
+		{"dieUsage", func() { dieUsage("bad argv") }, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prevExit, prevHooks := exitProcess, exitHooks
+			defer func() { exitProcess, exitHooks = prevExit, prevHooks }()
+			restored, code := false, 0
+			exitHooks = nil
+			exitProcess = func(c int) { code = c }
+			atExit(func() { restored = true })
+			tc.call()
+			if !restored {
+				t.Error("the terminal-restore hook did not run")
+			}
+			if code != tc.code {
+				t.Errorf("exit code %d, want %d", code, tc.code)
+			}
+		})
+	}
+}

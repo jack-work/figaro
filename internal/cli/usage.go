@@ -76,13 +76,37 @@ const exitInterrupted = 130
 // Tests swap it for a recorder; nothing else may touch it.
 var exitProcess = os.Exit
 
+// exitHooks are the things that MUST happen before the process goes, even on
+// the paths that never unwind: os.Exit does not run defers, and the pager's
+// `defer lt.leaveTranscript()` is exactly the kind of defer that matters. A
+// die() with the transcript up therefore left the user on the alternate
+// screen — shell invisible, cursor hidden, autowrap off — with the error
+// message painted on a buffer about to be abandoned. `figaro send -l` whose
+// Qua fails is that path today (stream.go dies after --listen has opened the
+// pager), and so is the Ctrl-C 130 exit.
+//
+// LIFO, like defers, because that is the order the registrations assume.
+var exitHooks []func()
+
+func atExit(f func()) { exitHooks = append(exitHooks, f) }
+
+// exitNow runs the hooks and exits. Every exit that is not a normal return
+// goes through here; exitProcess stays the raw primitive underneath it.
+func exitNow(code int) {
+	for i := len(exitHooks) - 1; i >= 0; i-- {
+		exitHooks[i]()
+	}
+	exitHooks = nil
+	exitProcess(code)
+}
+
 // die reports a RUNTIME failure (called correctly, did not succeed): exit 1.
 // dieUsage is for rejected argv: exit 2. Before the split, the same mistake
 // answered 2 from the router and 1 from the hand-rolled parsers — a seam no
 // user can see. clig.dev: 1 = general error, 2 = misuse.
 func die(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
-	exitProcess(1)
+	exitNow(1)
 }
 
 // dieUsage reports that ARGV WAS REJECTED — an unknown flag, a missing or
@@ -90,5 +114,5 @@ func die(format string, args ...interface{}) {
 // exits 2, matching what the router returns for the same class of mistake.
 func dieUsage(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
-	exitProcess(2)
+	exitNow(2)
 }

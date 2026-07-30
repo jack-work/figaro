@@ -101,6 +101,23 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	doneCh := make(chan struct{}, 1)
 	disconnectCh := make(chan struct{}, 1) // Ctrl-D: leave the turn running
 
+	// THE DEFERS ABOVE DO NOT RUN ON os.Exit, and two exits here are os.Exit:
+	// die() (a Qua failure lands AFTER --listen has already opened the pager)
+	// and the Ctrl-C 130 path. Both would leave the terminal on the alternate
+	// screen with the cursor hidden. Same work, registered where an abrupt
+	// exit can still reach it.
+	atExit(func() {
+		// TryLock, not Lock: the hook must never be the reason a dying
+		// process hangs. Every current caller is lock-free at the point it
+		// dies, so this takes the lock in practice — and if a future one is
+		// not, restoring the terminal unlocked still beats not restoring it.
+		if mu.TryLock() {
+			defer mu.Unlock()
+		}
+		lt.leaveTranscript()
+		fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
+	})
+
 	// mu serializes every renderer entry point; handing it to the pager arms
 	// the frame-rate ceiling, whose trailing repaint runs on a timer goroutine
 	// and so needs the same lock.
@@ -391,7 +408,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			mu.Unlock()
 		}
 		if code := interruptExit(wasRunning); code != 0 {
-			exitProcess(code)
+			exitNow(code) // hooks first: the pager may still be up
 		}
 	}
 }
