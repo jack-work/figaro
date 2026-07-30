@@ -66,8 +66,33 @@ func preDashFlagValue(args []string, names ...string) (string, bool, error) {
 	return "", false, nil
 }
 
-// die prints to stderr and exits 1.
+// exitProcess is os.Exit, indirected so the die helpers are testable.
+// Tests swap it for a recorder; nothing else may touch it.
+var exitProcess = os.Exit
+
+// die reports a RUNTIME failure — the command was called correctly and the
+// work did not succeed — and exits 1.
+//
+// Use dieUsage instead when argv itself was rejected. The two exit codes are
+// the contract clig.dev draws (1 = general error, 2 = misuse, from getopt),
+// and until this split existed figaro answered the SAME question with two
+// different codes depending on which parser happened to catch it:
+//
+//	figaro ls --bogus           -> 2   (router parse)
+//	figaro send --bogus -- hi   -> 1   (hand-rolled PassRaw parse)
+//	figaro attend               -> 2   (router arg-count)
+//	figaro send hello           -> 1   (hand-rolled boundary check)
+//
+// The split fell along an implementation seam no user can see.
 func die(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
-	os.Exit(1)
+	exitProcess(1)
+}
+
+// dieUsage reports that ARGV WAS REJECTED — an unknown flag, a missing or
+// malformed target, contradictory flags, a prompt in the wrong place — and
+// exits 2, matching what the router returns for the same class of mistake.
+func dieUsage(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
+	exitProcess(2)
 }

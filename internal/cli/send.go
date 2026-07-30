@@ -276,7 +276,7 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	opts, rest, err := extractSendFlags(rawArgs)
 	if err != nil {
-		die("%s: %s", verb, err)
+		dieUsage("%s: %s", verb, err)
 	}
 	prompt := extractPrompt(rest)
 	if prompt == "" {
@@ -300,9 +300,9 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		} else {
 			flags := "[--id <id>] [-e|--ephemeral] [-r|--raw] [-v|--verbatim] [-x|--exec] [-n] [-y] -- <prompt>"
 			if verb == "send" {
-				die("usage: figaro send %s", flags)
+				dieUsage("usage: figaro send %s", flags)
 			}
-			die("usage: %s %s", verb, flags)
+			dieUsage("usage: %s %s", verb, flags)
 		}
 	}
 
@@ -312,20 +312,20 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	}
 	trunkID, turn, hasTurn, perr := parseTarget(spec)
 	if perr != nil {
-		die("%s: %s", verb, perr)
+		dieUsage("%s: %s", verb, perr)
 	}
 
 	if opts.ephemeral && (opts.id != "" || opts.target != "") {
-		die("%s: --ephemeral and a target are contradictory", verb)
+		dieUsage("%s: --ephemeral and a target are contradictory", verb)
 	}
 	if (opts.dryRun || opts.skipYes) && !opts.exec {
-		die("%s: -n / -y only meaningful with --exec", verb)
+		dieUsage("%s: -n / -y only meaningful with --exec", verb)
 	}
 	if opts.forget && (opts.exec || opts.verbatim) {
-		die("%s: --forget contradicts --exec/--verbatim", verb)
+		dieUsage("%s: --forget contradicts --exec/--verbatim", verb)
 	}
 	if opts.forget && opts.ephemeral {
-		die("%s: --forget contradicts --ephemeral (the aria would be killed before the turn ran)", verb)
+		dieUsage("%s: --forget contradicts --ephemeral (the aria would be killed before the turn ran)", verb)
 	}
 
 	set := renderSettings{verbose: opts.verbose, listen: opts.listen}
@@ -335,7 +335,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	// (rebind), or the original with --attend=false/--stay.
 	if hasTurn {
 		if opts.ephemeral || opts.exec || opts.verbatim {
-			die("%s: <trunk>:<turn> is not compatible with --ephemeral/--exec/--verbatim", verb)
+			dieUsage("%s: <trunk>:<turn> is not compatible with --ephemeral/--exec/--verbatim", verb)
 		}
 		runSendForkAt(loaded, trunkID, turn, opts.stay, opts.json, prompt, set)
 		return

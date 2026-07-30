@@ -69,5 +69,7 @@ func unknownBareCommand(progName string, router *cmdkit.Router, word string) {
 	}
 	fmt.Fprintf(os.Stderr, "  to prompt an aria:  %s --id %s -- <prompt>\n", progName, word)
 	fmt.Fprintf(os.Stderr, "  or the explicit verb: %s send %s -- <prompt>\n", progName, word)
-	os.Exit(1)
+	// Misuse, not failure: the router answers an unknown command with 2, and
+	// the bare form is the same mistake reached by a different door.
+	exitProcess(2)
 }
