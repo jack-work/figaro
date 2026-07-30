@@ -262,3 +262,78 @@ func TestParseTarget(t *testing.T) {
 		}
 	}
 }
+
+// TestExtractForkFlags pins the one axis on which fork's parse differs from
+// send's: fork's prompt is OPTIONAL, so a bare positional is the target even
+// with no `--` boundary. Everything else (flags, --id, :<turn>, the "never
+// drop argv" rule) is the same code and must stay the same.
+func TestExtractForkFlags(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       []string
+		wantOpts sendOpts
+		wantRest []string
+		wantErr  string
+	}{
+		{
+			name:     "bare target, no boundary",
+			in:       []string{"aria1"},
+			wantOpts: sendOpts{target: "aria1"},
+			wantRest: []string{},
+		},
+		{
+			name:     "bare target at a turn, no boundary",
+			in:       []string{"aria1:12"},
+			wantOpts: sendOpts{target: "aria1:12"},
+			wantRest: []string{},
+		},
+		{
+			name:     "target with a prompt",
+			in:       []string{"aria1:12", "--", "what", "if"},
+			wantOpts: sendOpts{target: "aria1:12"},
+			wantRest: []string{"--", "what", "if"},
+		},
+		{
+			name:     "stay and json before the prompt",
+			in:       []string{"--stay", "-j", "--", "p"},
+			wantOpts: sendOpts{stay: true, json: true},
+			wantRest: []string{"--", "p"},
+		},
+		{
+			name:     "id flag with no boundary",
+			in:       []string{"--id", "abc12345", "--stay"},
+			wantOpts: sendOpts{id: "abc12345", stay: true},
+			wantRest: []string{},
+		},
+		{
+			name:    "second positional is still an error",
+			in:      []string{"aria1", "aria2"},
+			wantErr: `unexpected argument "aria2"`,
+		},
+		{
+			name:    "unknown flag is still an error",
+			in:      []string{"--stya", "--", "p"},
+			wantErr: `unknown flag "--stya"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotOpts, gotRest, err := extractForkFlags(tc.in)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("want error containing %q, got %v", tc.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gotOpts != tc.wantOpts {
+				t.Errorf("opts: got %+v, want %+v", gotOpts, tc.wantOpts)
+			}
+			if !reflect.DeepEqual(gotRest, tc.wantRest) {
+				t.Errorf("rest: got %v, want %v", gotRest, tc.wantRest)
+			}
+		})
+	}
+}
