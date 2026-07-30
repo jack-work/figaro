@@ -710,6 +710,60 @@ the brief's "When to yield" section is for.
 
 ---
 
+### 8.4 CLOSED — CHERUBINO's bug, captured, and the barrier that fixes it
+
+Hunted by the aria commissioned as *"the transcript resize smear"*. The user's
+report was resize-shaped ("resizing renders the terminal like this... recoverable
+if I resize again"), which is why it reached me as a resize bug. **It is not one.**
+The resize is the CURE. §8.3's mechanism (b) is the cause, and here is the capture
+CHERUBINO never got.
+
+**Two negative results first, both measured, both worth more than the guess they
+replaced:**
+
+1. **The pager's resize repaint is clean.** A 1624-message aria (`06c22c16`), ten
+   width and height changes, the §5 jog-and-diff oracle with the §8.1 range gate:
+   **0 divergent rows over 6 measured probes** (4 SKIPped on the range gate). The
+   post-resize byte stream reads `CUP + EL + content` for every row — a genuine
+   full frame. §8.2's blank-row hole is fixed in main and stayed fixed.
+2. **A shrinking status line is not a bug.** My first "repro" was the mantra
+   vanishing from the footer at 90 columns. The bytes showed figaro *composing*
+   the row without it: priority elision doing its job. Reported as a false lead
+   rather than filed as a finding.
+
+**The capture** (`listen` + a live turn + one injected write, zero tokens beyond
+the turn):
+
+| moment | status rows on screen |
+|---|---|
+| pager up, turn streaming | 1 |
+| after ONE `printf '\nSTRAY-WRITE' > $(tmux display -p '#{pane_tty}')` | **2** |
+| +4s | **2** — it persists |
+| after any resize | 1 — heals, exactly as the user reported |
+
+The second row is frozen mid-spinner, to the right of unrelated prose. Injecting
+from *outside* the process is the trick worth keeping: it proves the mechanism
+without needing to provoke whichever internal writer fired in the user's session.
+
+**A/B, identities printed (trap 11):**
+
+| arm | md5 | after the stray write |
+|---|---|---|
+| before | `5a37544349f5` | 2 status rows, persisting |
+| after | `2fafddf45911` | 1 |
+
+**The fix, in two layers.** `(*transcript).screenMoved()` voids the painter's
+model (`t.prev = nil`) and is called by the three §8.3 sites; and
+`transcriptResyncInterval` (2s of *active* painting) bounds the damage from
+writers nobody has enumerated. Both also disable `planScroll` for that frame,
+since its prediction is built from the base being disowned. Tests are canaried
+in `transcript_screenmoved_test.go` — with the fix reverted the failure prints
+`got "status ⠋ · ctx 1k", want "───── rule"`, which is the bug in miniature.
+
+**Still open, and deliberately not decided here:** *where* an error hint or an
+interrupt notice should go while the pager is up (frame-buffer status row / leave
+the pager first / the `!` panel). The barrier is correct under all three.
+
 ## 9. If BASILIO and BARTOLO converge
 
 One of you owns the fix on one branch; the other owns the **regression tests** —
