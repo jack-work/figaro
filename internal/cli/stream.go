@@ -163,6 +163,13 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				// No turn will open for this prompt, so stop waiting on an
 				// inquiry that is never coming.
 				noOnce.Do(func() { close(noTurn) })
+				// THE COMMENT ABOVE IS TRUE INLINE AND FALSE IN THE PAGER.
+				// finishTurn returns early while the pager is up (it does not
+				// leave it), the alt screen has no scrollback, and the cursor is
+				// parked on the status row — so this hint lands ON the footer and
+				// its leading newline scrolls the whole grid out from under the
+				// painter's model. Say so, and the next frame repaints in full.
+				lt.screenMoved()
 				if strings.Contains(d.Reason, "no credential") || strings.Contains(d.Reason, "resolve token") {
 					fmt.Fprint(os.Stderr, "\n"+providerSetupHint())
 				} else {
@@ -357,6 +364,12 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		wasRunning := running
 		mu.Unlock()
 		if wasRunning {
+			// Written straight to the terminal while the pager may still be up:
+			// on the alt grid the leading newline scrolls every row away from
+			// the painter's model of it. Announce it (see transcript.screenMoved).
+			mu.Lock()
+			lt.screenMoved()
+			mu.Unlock()
 			fmt.Fprintln(os.Stderr, "\ninterrupting...")
 			intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
 			_ = fcli.Interrupt(intCtx)
@@ -367,6 +380,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			case <-time.After(3 * time.Second):
 				lt.abandon("interrupted (agent did not respond)", turnStatusInterrupted)
 			}
+			mu.Lock()
+			lt.screenMoved()
+			mu.Unlock()
 			fmt.Fprintln(os.Stderr, "interrupted")
 		}
 	}
