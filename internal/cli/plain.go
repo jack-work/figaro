@@ -237,7 +237,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 		case <-fcli.Done():
 		case <-time.After(3 * time.Second):
 		}
-		return 130
+		return exitInterrupted
 	}
 }
 
@@ -281,7 +281,7 @@ func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, o
 		case <-fcli.Done():
 		case <-time.After(3 * time.Second):
 		}
-		return 130
+		return exitInterrupted
 	}
 }
 

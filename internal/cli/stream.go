@@ -382,7 +382,27 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			lt.report("interrupted")
 			mu.Unlock()
 		}
+		if code := interruptExit(wasRunning); code != 0 {
+			exitProcess(code)
+		}
 	}
+}
+
+// interruptExit is the Ctrl-C exit rule, named so it can be tested and so
+// the asymmetry is visible: an interrupted TURN is a failure (130, the
+// shell's 128+SIGINT), while a Ctrl-C with nothing running — listening
+// after turn-done — is a clean close.
+//
+// The raw path has always returned 130 (plainPrompt); this path fell out of
+// its select and exited 0, so `fig send -- … || retry` never fired and every
+// supervisor recorded a Ctrl-C'd turn as a completed one. Ctrl-D is
+// deliberately NOT this: the disconnect branch leaves the turn running on
+// purpose and stays 0.
+func interruptExit(wasRunning bool) int {
+	if wasRunning {
+		return exitInterrupted
+	}
+	return 0
 }
 
 // interactiveInput is the shared control-key + pager input loop for the live

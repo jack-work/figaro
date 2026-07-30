@@ -66,6 +66,12 @@ func preDashFlagValue(args []string, names ...string) (string, bool, error) {
 	return "", false, nil
 }
 
+// exitInterrupted is the shell's convention for "killed by SIGINT"
+// (128 + SIGINT). plainPrompt has always returned it; the interactive
+// stream used to exit 0 after a Ctrl-C, which told every caller that an
+// abandoned turn had succeeded.
+const exitInterrupted = 130
+
 // exitProcess is os.Exit, indirected so the die helpers are testable.
 // Tests swap it for a recorder; nothing else may touch it.
 var exitProcess = os.Exit
