@@ -39,9 +39,9 @@ func (b *metadataListBackend) Meta(string) (*store.AriaMeta, error) {
 	}, nil
 }
 
-func (b *metadataListBackend) ChalkboardState(string) (chalkboard.Snapshot, error) {
+func (b *metadataListBackend) ChalkboardState(string) (chalkboard.Snapshot, uint64, error) {
 	b.chalkReads.Add(1)
-	return chalkboard.Snapshot{}, nil
+	return chalkboard.Snapshot{}, 0, nil
 }
 
 func (b *metadataListBackend) Open(string) (store.Log[message.Message], error) {

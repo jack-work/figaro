@@ -89,7 +89,12 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		return rpc.LoadoutResponse{OK: true, Set: set}, nil
 
 	case rpc.MethodChalkboard:
-		return rpc.ChalkboardResponse{Snapshot: a.Snapshot()}, nil
+		// Snapshot and version must come from ONE read of the published board,
+		// or a patch landing between them yields a snapshot labelled with a
+		// version it does not contain — and the client resumes past a patch it
+		// never saw. ChalkboardAt returns the pair atomically.
+		snap, version := a.ChalkboardAt()
+		return rpc.ChalkboardResponse{Snapshot: snap, Version: version}, nil
 
 	case rpc.MethodQueued:
 		return rpc.QueuedResponse{Prompts: a.QueuedPrompts()}, nil

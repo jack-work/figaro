@@ -138,15 +138,33 @@ type Snapshot struct {
   agree. See `RESULTS.md` §4.
 
 `State` (`state.go`) is **one writer, many readers**. The writer is the agent's
-drain loop (`act` → `applyControlPatch` → `State.Apply`); readers are the
+drain loop (`act` → `commitPatch` → `State.ApplyAt`); readers are the
 `figaro.chalkboard` handler, `Agent.ApplyLoadout` and
 `Agent.chalkboardString`/`chalkboardInt`, all on RPC goroutines. `State`
-publishes `{snapshot, dirty}` as one immutable value through an
+publishes `{snapshot, dirty, version}` as one immutable value through an
 `atomic.Pointer`, so readers are **lock-free** and always see a complete
 board. (Before that, `State.snapshot` was a plain field read with no
 happens-before edge — a genuine data race, 11 reports per `-race` run.) One
 writer means the update path stores unconditionally; no CAS loop. `Save`
-clears the dirty flag with a single non-looping CAS.
+clears the dirty flag with a single non-looping CAS — and **must carry every
+other board field across**, since it rebuilds the value from scratch; a field
+omitted there is one `Save` silently resets.
+
+**`commitPatch` is the one function that advances the chalkboard** — save, make
+visible, record the version, in that order. Two sites used to do this
+independently and disagreed: the control path bailed on a failed write while the
+turn path applied the patch to memory anyway, leaving the agent (and the model,
+via a `<system-reminder>`) running on state the log never got. Durability
+precedes visibility: memory may lag the log, never lead it.
+
+**The version is assigned, never generated.** It is the store's append index —
+the chalkboard channel's own position for a backed aria, the IR LT for an
+ephemeral one — so `ChalkboardState` reports the index its fold stopped at and
+the seed path uses `ApplyAt`. A counter incremented by `State` would be a second
+number claiming to be the version and would drift from the channel. It advances
+even on a semantic no-op (still an append) and never moves backwards. Read it
+with `SnapshotAt()`/`Agent.ChalkboardAt()`, which take **one** atomic load:
+`Snapshot()` plus `Version()` is two, and can straddle a publication.
 
 Loadouts (`internal/outfit`) assemble the boot chalkboard from `config.toml`'s
 `default_loadout` chain. `fileName`/`dirName` tables load file bodies as
@@ -157,8 +175,9 @@ body on demand. Bundled first-party skills merge under the user's by name.
 ## The wire protocol — `internal/rpc`
 
 Per-aria request methods: `figaro.qua` (prompt), `figaro.context`,
-`figaro.interrupt`, `figaro.set`, `figaro.loadout`, `figaro.chalkboard`,
-`figaro.queued`, and `figaro.read` (catch-up/paging). Angelus includes
+`figaro.interrupt`, `figaro.set`, `figaro.loadout`, `figaro.chalkboard`
+(returns `{snapshot, version}`), `figaro.queued`, and `figaro.read`
+(catch-up/paging). Angelus includes
 `figaro.create`/`fork`/`promote`/`kill`/`list`/`attach`,
 `pid.bind`/`resolve`/`unbind`, `aria.read`, and status/binding persistence.
 
@@ -172,6 +191,21 @@ The reply is a **server-authoritative live-render stream**:
   `{parts []TurnPart, more, metrics?}`; a `TurnPart` embeds a `Turn`
   (`{turn, inquiry, at, lts, sealed, nodes, live}`) plus `from` /
   `clipped_head` / `clipped_tail`.
+- `figaro.chalk` (`MethodChalkFrame`) — push one **`ChalkFrame`**
+  `{version, patch}`: the chalkboard's counterpart to `figaro.aria`, the same
+  contract (a cursor plus deltas) over a different log. Catch up with
+  `figaro.chalkboard`, which returns `{snapshot, version}`, then follow frames
+  from that version. Frames are **self-contained** — they carry the patch, not a
+  nudge to re-read the board, because a bare "changed" ping races the writer: a
+  subscriber woken by it can read the published board before the in-memory apply
+  has run. `patch.remove` is explicit; deletes are never inferred from absence.
+  The version does not advance for a patch with no durable index yet (an
+  ephemeral aria's patch riding a message still being built), so a cursor may
+  repeat — it never goes backwards. Client: `internal/livelog/chalk`, which
+  mirrors `livelog/aria`'s client and reports **which keys** moved
+  (`OnChange(changed, snap)`) so a view repaints rows rather than screens. A
+  version gap fires `OnDesync` rather than folding across it. `figaro chalk
+  <id>` is the reference consumer.
 - `turn.done` `{reason,idle}` — the turn ended; `idle` says whether queued work
   remains. It is control state, not transcript content.
 

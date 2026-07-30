@@ -57,7 +57,7 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 	}
 
 	// chalkboard: inherited credo, re-derived via StateAt
-	snap, err := b.ChalkboardState(conv)
+	snap, _, err := b.ChalkboardState(conv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,10 +65,10 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		t.Fatalf("credo = %q, want 'be terse'", str(cbGet(snap, "system.credo")))
 	}
 	// mutate via patch; re-derive sees it
-	if err := b.ApplyChalkboard(conv, patchSet(map[string]string{"system.cwd": "/tmp"})); err != nil {
+	if _, err := b.ApplyChalkboard(conv, patchSet(map[string]string{"system.cwd": "/tmp"})); err != nil {
 		t.Fatal(err)
 	}
-	snap, _ = b.ChalkboardState(conv)
+	snap, _, _ = b.ChalkboardState(conv)
 	if str(cbGet(snap, "system.cwd")) != "/tmp" {
 		t.Fatalf("cwd after apply = %q", str(cbGet(snap, "system.cwd")))
 	}
@@ -94,7 +94,7 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 		t.Fatalf("fork: %v", err)
 	}
 	for _, id := range []string{cont, alt} {
-		snap, err := b.ChalkboardState(id)
+		snap, _, err := b.ChalkboardState(id)
 		if err != nil {
 			t.Fatalf("child %s chalkboard: %v", id, err)
 		}
@@ -233,7 +233,7 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 		t.Fatalf("alt must be a fresh trunk, got %q", alt)
 	}
 	// The alternative inherits the chalkboard prefix and is sendable.
-	snap, err := b.ChalkboardState(alt)
+	snap, _, err := b.ChalkboardState(alt)
 	if err != nil {
 		t.Fatalf("alt chalkboard: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestXwalBackend_CauterizedLoadoutFork(t *testing.T) {
 		t.Fatalf("sib must be a fresh conversation trunk, got %q", sib)
 	}
 	// The sibling shares the loadout chalkboard and is itself sendable.
-	snap, err := b.ChalkboardState(sib)
+	snap, _, err := b.ChalkboardState(sib)
 	if err != nil {
 		t.Fatalf("sib chalkboard: %v", err)
 	}

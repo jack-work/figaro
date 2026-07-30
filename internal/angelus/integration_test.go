@@ -284,7 +284,7 @@ model = "mock-model"
 	// inherited stamp, the alternative is re-stamped at fork time — an aria
 	// that forks itself must be able to learn its new id.
 	chalkAriaID := func(id string) string {
-		snap, serr := backend.ChalkboardState(id)
+		snap, _, serr := backend.ChalkboardState(id)
 		require.NoError(t, serr)
 		rawID, _ := snap.Get("aria_id")
 		var got string

@@ -5,6 +5,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/message"
 )
 
 const (
@@ -14,6 +15,11 @@ const (
 	// request field names still say LT. MethodTurnDone is separate control state.
 	MethodAriaFrame = "figaro.aria" // push one aria.Page snapshot/delta
 	MethodTurnDone  = "turn.done"   // turn ended; params report idle state
+
+	// MethodChalkFrame pushes one chalkboard patch as it lands. It is the
+	// chalkboard's answer to MethodAriaFrame: the same contract — a cursor plus
+	// deltas — over a different log. Params carry a ChalkFrame.
+	MethodChalkFrame = "figaro.chalk"
 
 	// Requests.
 	MethodQua        = "figaro.qua"
@@ -144,9 +150,34 @@ type LoadoutResponse struct {
 	Set []string `json:"set,omitempty"`
 }
 
-// ChalkboardResponse returns the agent's current snapshot.
+// ChalkboardResponse returns the agent's current snapshot and the durable
+// version it reflects. The version is the whole point of the pair: a snapshot
+// alone cannot say WHICH state it is, so a client holding one has no cursor to
+// resume a live stream from and must re-read the world on every reconnect.
+//
+// Catch up here, then follow MethodChalkFrame from Version onward.
 type ChalkboardResponse struct {
 	Snapshot chalkboard.Snapshot `json:"snapshot"`
+	Version  uint64              `json:"version"`
+}
+
+// ChalkFrame is one chalkboard patch as it lands, pushed live.
+//
+// It is SELF-CONTAINED on purpose: it carries the patch, not a nudge to go read
+// the board. A frame that only said "something changed" would race the writer —
+// a subscriber woken by it could read the published board before the in-memory
+// apply had run and see the very state it was told about as absent. Carrying the
+// patch means a subscriber folds locally and never touches shared state.
+//
+// Version is the durable cursor AFTER this patch. It does not advance for a
+// patch with no durable index yet (an ephemeral aria's patch riding a message
+// still being built), so a cursor may repeat; it never goes backwards.
+//
+// Patch.Remove is carried explicitly rather than inferred from absence — delta
+// protocols die on inferring deletes.
+type ChalkFrame struct {
+	Version uint64        `json:"version"`
+	Patch   message.Patch `json:"patch"`
 }
 
 // QueuedRequest asks for the currently-queued user prompts on this aria —

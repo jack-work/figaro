@@ -275,11 +275,12 @@ func newTestAgent(response string) *figaro.Agent {
 
 func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	backend, id := backedConv(t, t.TempDir())
-	require.NoError(t, backend.ApplyChalkboard(id, message.Patch{Set: map[string]json.RawMessage{
+	_, aerr := backend.ApplyChalkboard(id, message.Patch{Set: map[string]json.RawMessage{
 		"mantra":     json.RawMessage(`"initial"`),
 		"system.cwd": json.RawMessage(`"work"`),
-	}}))
-	snapshot, err := backend.ChalkboardState(id)
+	}})
+	require.NoError(t, aerr)
+	snapshot, _, err := backend.ChalkboardState(id)
 	require.NoError(t, err)
 	cb, _ := chalkboard.Open("")
 	cb.Apply(snapshot.AsPatch())

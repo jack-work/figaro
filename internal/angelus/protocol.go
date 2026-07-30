@@ -160,7 +160,7 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 	if h.cbTmpls == nil || h.angelus.Backend == nil {
 		return nil
 	}
-	snap, err := h.angelus.Backend.ChalkboardState(ariaID)
+	snap, _, err := h.angelus.Backend.ChalkboardState(ariaID)
 	if err != nil {
 		slog.Warn("chalkboard state (disabled for aria)", "aria", ariaID, "err", err)
 		return nil
@@ -317,15 +317,18 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		}
 		boot := convBootPatch(req.Patch, id, cwd)
 		if !boot.IsEmpty() {
-			if aerr := backend.ApplyChalkboard(id, boot); aerr != nil {
+			if _, aerr := backend.ApplyChalkboard(id, boot); aerr != nil {
 				return nil, fmt.Errorf("seed conversation chalkboard: %w", aerr)
 			}
 		}
-		snap, serr := backend.ChalkboardState(id)
+		snap, version, serr := backend.ChalkboardState(id)
 		if serr != nil {
 			return nil, fmt.Errorf("read conversation chalkboard: %w", serr)
 		}
-		cbState.Apply(snap.AsPatch())
+		// ApplyAt, not Apply: the seeded board must know WHICH version it is,
+		// or the first client to ask where to resume gets zero and re-reads the
+		// whole channel.
+		cbState.ApplyAt(version, snap.AsPatch())
 	}
 
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
@@ -409,7 +412,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		// this an aria cannot reliably fork itself.
 		if alt != "" && alt != req.FigaroID {
 			if b, merr := json.Marshal(alt); merr == nil {
-				if perr := h.angelus.Backend.ApplyChalkboard(alt, message.Patch{
+				if _, perr := h.angelus.Backend.ApplyChalkboard(alt, message.Patch{
 					Set: map[string]json.RawMessage{"aria_id": b},
 				}); perr != nil {
 					slog.Warn("fork: restamp aria_id", "alt", alt, "err", perr)

@@ -147,7 +147,7 @@ func BenchmarkChalkboardOpenReplay(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				snap, err := be.ChalkboardState(aria)
+				snap, _, err := be.ChalkboardState(aria)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -180,7 +180,7 @@ func seedChalkboardAria(tb testing.TB, m, n int) (string, string) {
 		tb.Fatal(err)
 	}
 	for _, p := range replayPatches(m, n) {
-		if err := be.ApplyChalkboard(aria, p); err != nil {
+		if _, err := be.ApplyChalkboard(aria, p); err != nil {
 			tb.Fatal(err)
 		}
 	}
