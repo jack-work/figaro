@@ -1,6 +1,6 @@
 ---
 name: figaro
-description: Read when driving figaro or working on it. Holds the daily gestures (send and forget, ls, show, fork), the vocabulary, and an index to everything deeper. Read this first when you need to run a figaro command, address another aria, understand a term in a figaro conversation, change the figaro repo, or edit these docs. It is an index, so each section below is loaded only when its topic is actually in play.
+description: Read before running any figaro command, addressing another aria, changing the figaro repo, or editing these docs. Holds the daily gestures (send and forget, ls, show, fork), the vocabulary, and an index that says when to open each deeper section.
 ---
 
 # Figaro
