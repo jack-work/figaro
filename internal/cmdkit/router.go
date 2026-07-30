@@ -226,9 +226,24 @@ func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
 			continue
 		}
 
+		// Positional arg — unless it still looks like a flag.
+		//
+		// A token starting with '-' that reached this point is argv nobody
+		// consumed: expandBundled declined it (some letter is not a known
+		// bool short) and it is too long to be a single short flag. Treating
+		// it as a positional is how `ls -hz` came to mean "list the aria
+		// named -hz", exit 0, no diagnostic — and how `kill -rx` came to
+		// aim a destructive verb at a typo.
+		//
+		// A bare "-" is exempt: it is the conventional name for stdin.
+		if len(arg) > 1 && arg[0] == '-' {
+			return nil, unconsumedFlagError(cmd.Flags, arg)
+		}
+
 		// Positional arg.
 		ctx.Args = append(ctx.Args, arg)
 		i++
+		continue
 	}
 
 	// Validate arg count.
@@ -240,6 +255,38 @@ func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
 	}
 
 	return ctx, nil
+}
+
+// unconsumedFlagError explains a dash-token that survived both the flag
+// branches and bundle expansion. It names the exact letters at fault so a
+// typo'd gang (`-hz`) and a mis-bundled value flag (`-an`, where -n takes a
+// value) get different, actionable messages.
+func unconsumedFlagError(flags []FlagDef, tok string) error {
+	var unknown []string
+	var valued []string
+	for _, r := range tok[1:] {
+		fd := findFlag(flags, "", string(r))
+		switch {
+		case fd == nil:
+			unknown = append(unknown, "-"+string(r))
+		case !fd.IsBool:
+			valued = append(valued, fmt.Sprintf("-%s/--%s", string(r), fd.Long))
+		}
+	}
+	switch {
+	case len(unknown) > 0:
+		// Teach the escape hatch in the same breath: a legitimate value that
+		// happens to start with '-' (`set mantra -x`) is now rejected here,
+		// and `--` is how it gets through.
+		return fmt.Errorf("unknown flag %q (unrecognized in the bundle: %s); if it is a value, put it after `--`",
+			tok, strings.Join(unknown, ", "))
+	case len(valued) > 0:
+		return fmt.Errorf("cannot bundle %q: %s take(s) a value — pass it on its own", tok, strings.Join(valued, ", "))
+	default:
+		// Every letter is a known bool short, so expandBundled should have
+		// taken it. Unreachable today; report rather than swallow.
+		return fmt.Errorf("unparsed flag %q", tok)
+	}
 }
 
 func expandBundled(args []string, flags []FlagDef) []string {
