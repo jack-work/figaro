@@ -318,35 +318,10 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	if opts.ephemeral && (opts.id != "" || opts.target != "") {
 		dieUsage("%s: --ephemeral and a target are contradictory", verb)
 	}
-	if (opts.dryRun || opts.skipYes) && !opts.exec {
-		dieUsage("%s: -n / -y only meaningful with --exec", verb)
+	if err := validateSendOpts(opts, hasTurn); err != nil {
+		dieUsage("%s: %s", verb, err)
 	}
-	if opts.forget && (opts.exec || opts.verbatim) {
-		dieUsage("%s: --forget contradicts --exec/--verbatim", verb)
-	}
-	if opts.forget && opts.ephemeral {
-		dieUsage("%s: --forget contradicts --ephemeral (the aria would be killed before the turn ran)", verb)
-	}
-
-	// --json is a MODE, not a decoration: submit the prompt, print exactly one
-	// object on stdout, exit. It was four different contracts before this:
-	//
-	//	send -j -- hi          parsed, then silently ignored
-	//	new -j                 fired a one-shot Qua and returned  (the right one)
-	//	send <id>:<turn> -j    printed the object AND THEN streamed the rendered
-	//	                       turn to the same stdout — unparseable for `| jq`
-	//	list --json            rejected every other flag
-	//
-	// Everything that renders, streams, or takes the terminal contradicts it.
-	// Saying so is the point: silently dropping -j is what made `send -j` a
-	// no-op for as long as the flag has existed.
 	if opts.json {
-		if bad := jsonIncompatible(opts); bad != "" {
-			dieUsage("%s: --json contradicts %s (--json submits and exits; there is no stream to shape)", verb, bad)
-		}
-		if opts.ephemeral {
-			dieUsage("%s: --json contradicts --ephemeral (the aria would be killed before the turn ran)", verb)
-		}
 		// The turn is submitted and not attached to — exactly --forget, which
 		// already knows how to emit the object.
 		opts.forget = true
@@ -358,9 +333,6 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	// on whichever trunk we end up attended to: the new alternative by default
 	// (rebind), or the original with --attend=false/--stay.
 	if hasTurn {
-		if opts.ephemeral || opts.exec || opts.verbatim {
-			dieUsage("%s: <trunk>:<turn> is not compatible with --ephemeral/--exec/--verbatim", verb)
-		}
 		runSendForkAt(loaded, trunkID, turn, opts.stay, opts.json, prompt, set)
 		return
 	}
@@ -394,10 +366,49 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	}
 }
 
+// validateSendOpts holds every "these flags contradict each other" rule for
+// the prompt verbs, as a PURE function: it decides, it does not exit, and it
+// never touches a socket.
+//
+// That last property is not cosmetic. These rules used to be inline in
+// runSendAs, so the only way to test them was to call the dispatcher — and a
+// dispatcher whose guard is neutered walks straight into mustConnectAngelus,
+// which in a test binary is a fork bomb (see refuseSelfSpawn). The test for a
+// rejection must not be able to launch a daemon when the rejection regresses.
+//
+// --json is a MODE, not a decoration: submit, print one object, exit. It was
+// four different contracts before — silently ignored on `send`, mode-changing
+// on `new`, print-then-stream on fork-send, exclusive on `list`. Everything
+// that renders, streams, or takes the terminal contradicts it, and saying so
+// is the point: dropping -j quietly is what made `send -j` a no-op for the
+// life of the flag.
+func validateSendOpts(opts sendOpts, hasTurn bool) error {
+	if (opts.dryRun || opts.skipYes) && !opts.exec {
+		return fmt.Errorf("-n / -y only meaningful with --exec")
+	}
+	if opts.forget && (opts.exec || opts.verbatim) {
+		return fmt.Errorf("--forget contradicts --exec/--verbatim")
+	}
+	if opts.forget && opts.ephemeral {
+		return fmt.Errorf("--forget contradicts --ephemeral (the aria would be killed before the turn ran)")
+	}
+	if hasTurn && (opts.ephemeral || opts.exec || opts.verbatim) {
+		return fmt.Errorf("<trunk>:<turn> is not compatible with --ephemeral/--exec/--verbatim")
+	}
+	if opts.json {
+		if bad := jsonIncompatible(opts); bad != "" {
+			return fmt.Errorf("--json contradicts %s (--json submits and exits; there is no stream to shape)", bad)
+		}
+		if opts.ephemeral {
+			return fmt.Errorf("--json contradicts --ephemeral (the aria would be killed before the turn ran)")
+		}
+	}
+	return nil
+}
+
 // jsonIncompatible names the first flag that cannot survive --json's
-// contract (submit, one object on stdout, exit). --raw and --verbatim want
-// the stream itself; --exec hands stdout to a script; --listen and
-// --verbose shape a render that will not happen.
+// contract. --raw and --verbatim want the stream itself; --exec hands stdout
+// to a script; --listen and --verbose shape a render that will not happen.
 func jsonIncompatible(opts sendOpts) string {
 	switch {
 	case opts.raw:

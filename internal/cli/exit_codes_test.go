@@ -54,9 +54,15 @@ func TestDieCodes(t *testing.T) {
 	}
 }
 
-// TestSendArgvRejectionExitsTwo walks the real send dispatcher with the
-// argv shapes users actually mistype. Every one of them is misuse, so
-// every one must answer 2 — the same code `figaro ls --bogus` gives.
+// TestSendArgvRejectionExitsTwo proves the WIRING — a rejected argv becomes
+// exit 2 — using shapes that die inside extractSendFlags, before dispatch
+// exists as a possibility.
+//
+// It deliberately does NOT walk the flag-contradiction table through
+// runSendAs. That is what lit the fork bomb on 2026-07-30: a dispatcher
+// reached with a neutered guard falls through to mustConnectAngelus, which
+// in a test binary re-execs the test binary as a daemon. The contradictions
+// are asserted on the pure validator instead (json_contract_test.go).
 func TestSendArgvRejectionExitsTwo(t *testing.T) {
 	cases := []struct {
 		name string
@@ -65,11 +71,8 @@ func TestSendArgvRejectionExitsTwo(t *testing.T) {
 		{"unknown long flag", []string{"--bogus", "--", "hi"}},
 		{"unknown short flag", []string{"-Z", "--", "hi"}},
 		{"prompt without the boundary", []string{"hello"}},
-		{"ephemeral with a target", []string{"-e", "--id", "abc12345", "--", "hi"}},
-		{"-n without --exec", []string{"-n", "--", "hi"}},
-		{"forget with verbatim", []string{"-f", "-v", "--", "hi"}},
-		{"forget with ephemeral", []string{"-f", "-e", "--", "hi"}},
 		{"bad turn coordinate", []string{"abc12345:0", "--", "hi"}},
+		{"--id without a value", []string{"--id", "--", "hi"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1,6 +1,9 @@
 package cli
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // One contract for -j/--json: submit the prompt, print exactly one object
 // on stdout, exit.
@@ -49,27 +52,90 @@ func TestJSONIncompatibleNamesTheOffender(t *testing.T) {
 	}
 }
 
-// TestJSONArgvIsRejectedNotIgnored walks the real dispatcher: every
-// combination that cannot honour -j must EXIT 2, not quietly drop a flag.
+// TestJSONArgvIsRejectedNotIgnored — every combination that cannot honour
+// -j must be REJECTED, not quietly dropped.
+//
+// This asserts the pure validator, deliberately. It used to call
+// runSendAs(nil, "send", args) and that is how the fork bomb was lit: with
+// the guard neutered for a canary, `-j -r` fell past the rejection into
+// runSendRaw -> mustConnectAngelus, which in a test binary re-execs the TEST
+// BINARY as a daemon. 1391 processes, 45.8G, the session gone. A test for a
+// rejection must not be able to launch a daemon when the rejection breaks.
 func TestJSONArgvIsRejectedNotIgnored(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		args []string
+		opts sendOpts
+		want string
 	}{
-		{"json with raw", []string{"-j", "-r", "--", "hi"}},
-		{"json with verbatim", []string{"-j", "-v", "--", "hi"}},
-		{"json with exec", []string{"-j", "-x", "--", "ls"}},
-		{"json with listen", []string{"-j", "-l", "--", "hi"}},
-		{"json with verbose", []string{"-j", "-o", "--", "hi"}},
-		{"json with ephemeral", []string{"-j", "-e", "--", "hi"}},
+		{"json with raw", sendOpts{json: true, raw: true}, "--raw"},
+		{"json with verbatim", sendOpts{json: true, verbatim: true}, "--verbatim"},
+		{"json with exec", sendOpts{json: true, exec: true}, "--exec"},
+		{"json with listen", sendOpts{json: true, listen: true}, "--listen"},
+		{"json with verbose", sendOpts{json: true, verbose: true}, "--verbose"},
+		{"json with ephemeral", sendOpts{json: true, ephemeral: true}, "--ephemeral"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			code, exited := captureExit(t, func() { runSendAs(nil, "send", tc.args) })
-			if !exited {
-				t.Fatal("expected rejection; the call returned (flag silently dropped?)")
+			err := validateSendOpts(tc.opts, false)
+			if err == nil {
+				t.Fatal("accepted silently — the flag would be dropped")
 			}
-			if code != 2 {
-				t.Errorf("exit %d, want 2 (misuse)", code)
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("message must name %s: %s", tc.want, err)
+			}
+		})
+	}
+}
+
+// TestValidateSendOptsAcceptsTheHonourableForms is the other direction: the
+// combinations that DO work must not start erroring.
+func TestValidateSendOptsAcceptsTheHonourableForms(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		opts    sendOpts
+		hasTurn bool
+	}{
+		{"bare json", sendOpts{json: true}, false},
+		{"json plus forget is the same gesture", sendOpts{json: true, forget: true}, false},
+		{"json on a fork-send", sendOpts{json: true}, true},
+		{"raw alone", sendOpts{raw: true}, false},
+		{"ephemeral raw", sendOpts{ephemeral: true, raw: true}, false},
+		{"exec with -n", sendOpts{exec: true, dryRun: true}, false},
+		{"exec with -y", sendOpts{exec: true, skipYes: true}, false},
+		{"plain forget", sendOpts{forget: true}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateSendOpts(tc.opts, tc.hasTurn); err != nil {
+				t.Errorf("rejected a valid form: %s", err)
+			}
+		})
+	}
+}
+
+// TestValidateSendOptsRejectsTheRest covers the contradictions that predate
+// --json, so the extraction into a pure function did not lose any of them.
+func TestValidateSendOptsRejectsTheRest(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		opts    sendOpts
+		hasTurn bool
+		want    string
+	}{
+		{"-n without exec", sendOpts{dryRun: true}, false, "only meaningful with --exec"},
+		{"-y without exec", sendOpts{skipYes: true}, false, "only meaningful with --exec"},
+		{"forget with exec", sendOpts{forget: true, exec: true}, false, "--forget contradicts"},
+		{"forget with verbatim", sendOpts{forget: true, verbatim: true}, false, "--forget contradicts"},
+		{"forget with ephemeral", sendOpts{forget: true, ephemeral: true}, false, "killed before the turn ran"},
+		{"turn with ephemeral", sendOpts{ephemeral: true}, true, "not compatible"},
+		{"turn with exec", sendOpts{exec: true}, true, "not compatible"},
+		{"turn with verbatim", sendOpts{verbatim: true}, true, "not compatible"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateSendOpts(tc.opts, tc.hasTurn)
+			if err == nil {
+				t.Fatal("accepted silently")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("want %q, got %s", tc.want, err)
 			}
 		})
 	}

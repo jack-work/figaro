@@ -70,6 +70,47 @@ func startupDiagnosis() string {
 	return ":\n  " + strings.Join(lines, "\n  ")
 }
 
+// refuseSelfSpawn stops the daemon bootstrap when the executable about to
+// be forked is not figaro.
+//
+// THE TRAP. ensureAngelus starts the daemon by re-executing ITSELF:
+// os.Executable() + exec.Command(exe) + _FIGARO_DAEMON=1, detached. Inside
+// a test binary os.Executable() is `cli.test`. So a test that reaches any
+// daemon-connecting path spawns a detached copy of the TEST BINARY, which
+// re-runs the suite, which reaches the path again, which spawns another.
+//
+// It is not a leak, it is a fork bomb. On 2026-07-30 at 01:43 a canary run
+// of TestJSONArgvIsRejectedNotIgnored put 1391 concurrent cli.test
+// processes in the kernel's OOM task dump — pids arriving in two tight
+// bursts (376, then 1013: the doubling) across a span of 6423 — peaking at
+// 45.8G RAM + 50.2G swap. The global OOM killer fired, systemd tore down
+// the graphical session, and the user's compositor took SIGTERM.
+//
+// The seatbelt is cheap; the failure it prevents is not recoverable by the
+// person watching. FIGARO_NO_SELF_SPAWN=1 arms it explicitly for harnesses
+// whose binary is not named *.test (benchmarks under a scope, fuzzers, CI).
+func refuseSelfSpawn(exe string) {
+	if envTruthy(os.Getenv("FIGARO_NO_SELF_SPAWN")) {
+		die("refusing to spawn an angelus: FIGARO_NO_SELF_SPAWN is set\n" +
+			"  a daemon-connecting path was reached under a harness that forbids it\n" +
+			"  inject an endpoint instead of starting a daemon")
+	}
+	if isTestBinary(exe) {
+		die("refusing to spawn an angelus from a test binary (%s)\n"+
+			"  a test reached a daemon-connecting path (mustConnectAngelus/ensureAngelus)\n"+
+			"  the daemon is started by re-executing os.Executable(), which here is the\n"+
+			"  TEST BINARY — every spawn re-runs the suite and spawns again (fork bomb)\n"+
+			"  tests must inject an endpoint, never reach the bootstrap", filepath.Base(exe))
+	}
+}
+
+// isTestBinary reports whether exe looks like a `go test` binary. Go names
+// them <pkg>.test (<pkg>.test.exe on Windows).
+func isTestBinary(exe string) bool {
+	base := strings.TrimSuffix(filepath.Base(exe), ".exe")
+	return strings.HasSuffix(base, ".test")
+}
+
 // ensureAngelus starts the angelus if needed.
 func ensureAngelus() {
 	sockPath := angelusSocketPath()
@@ -84,6 +125,7 @@ func ensureAngelus() {
 	if err != nil {
 		die("find executable: %s", err)
 	}
+	refuseSelfSpawn(exe)
 
 	cmd := exec.Command(exe)
 	cmd.Env = append(os.Environ(), "_FIGARO_DAEMON=1")
