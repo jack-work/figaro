@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"sync"
 	"time"
+
+	"github.com/jack-work/figaro/internal/rpc"
 )
 
 // Inbox is the per-aria user-RPC event queue.
@@ -326,6 +328,142 @@ func (b *Inbox) DrainUserPrompts() []event {
 	}
 	b.queue = kept
 	return drained
+}
+
+// DeletePrompts drops queued messages and reports, PER ID, what happened.
+//
+// A refusal is a decision, not a fault: an id the drain loop has already
+// lifted, or already answered, or that an interrupt folded into another
+// message, each get their own reason so the caller can act on the difference
+// instead of guessing at "it didn't work".
+//
+// epoch is a compare-and-swap token and is required whenever ids are named:
+// ids restart with every inbox, so resolving one against the wrong generation
+// would delete a different message than the caller read. A mismatch refuses
+// the WHOLE request — nothing is mutated — rather than deleting the ids that
+// happen to exist in both.
+//
+// The all-form names no id, so it needs no epoch and reports one result per
+// message actually removed (possibly none).
+func (b *Inbox) DeletePrompts(epoch string, ids []uint64, all bool) (string, []rpc.QueueResult) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if all {
+		var results []rpc.QueueResult
+		kept := make([]event, 0, len(b.queue))
+		for _, e := range b.queue {
+			if e.typ != eventUserPrompt {
+				kept = append(kept, e)
+				continue
+			}
+			results = append(results, rpc.QueueResult{ID: e.id, Outcome: rpc.QueueDeleted})
+		}
+		b.queue = kept
+		return b.epoch, results
+	}
+
+	results := make([]rpc.QueueResult, 0, len(ids))
+	if reason, detail, stale := b.staleLocked(epoch); stale {
+		for _, id := range ids {
+			results = append(results, rpc.QueueResult{
+				ID: id, Outcome: rpc.QueueRejected, Reason: reason, Detail: detail,
+			})
+		}
+		return b.epoch, results
+	}
+	for _, id := range ids {
+		if i := b.indexOfLocked(id); i >= 0 {
+			b.queue = append(b.queue[:i], b.queue[i+1:]...)
+			results = append(results, rpc.QueueResult{ID: id, Outcome: rpc.QueueDeleted})
+			continue
+		}
+		results = append(results, b.refuseLocked(id))
+	}
+	return b.epoch, results
+}
+
+// UpdatePrompt replaces the text of one queued message, with the same
+// per-id outcome and the same compare-and-swap rule as DeletePrompts.
+func (b *Inbox) UpdatePrompt(epoch string, id uint64, text string) (string, rpc.QueueResult) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if reason, detail, stale := b.staleLocked(epoch); stale {
+		return b.epoch, rpc.QueueResult{
+			ID: id, Outcome: rpc.QueueRejected, Reason: reason, Detail: detail,
+		}
+	}
+	if i := b.indexOfLocked(id); i >= 0 {
+		b.queue[i].text = text
+		return b.epoch, rpc.QueueResult{ID: id, Outcome: rpc.QueueUpdated}
+	}
+	return b.epoch, b.refuseLocked(id)
+}
+
+// staleLocked reports whether a caller's epoch disqualifies its ids.
+func (b *Inbox) staleLocked(epoch string) (rpc.QueueRejection, string, bool) {
+	if b.closed {
+		return rpc.RejectClosed, "the aria is stopping", true
+	}
+	if epoch == "" {
+		return rpc.RejectStale, "no epoch supplied: read the queue first, then mutate against what you read", true
+	}
+	if epoch != b.epoch {
+		return rpc.RejectStale, "the queue was rebuilt (the agent restarted); re-read it and try again", true
+	}
+	return "", "", false
+}
+
+func (b *Inbox) indexOfLocked(id uint64) int {
+	if id == 0 {
+		return -1
+	}
+	for i := range b.queue {
+		if b.queue[i].typ == eventUserPrompt && b.queue[i].id == id {
+			return i
+		}
+	}
+	return -1
+}
+
+// refuseLocked explains why an id that is not in the queue cannot be mutated.
+// The order is chronological — folded, then in flight, then answered, then
+// never heard of — so the reason is always the most specific true one.
+func (b *Inbox) refuseLocked(id uint64) rpc.QueueResult {
+	reject := func(reason rpc.QueueRejection, detail string, into uint64) rpc.QueueResult {
+		return rpc.QueueResult{
+			ID: id, Outcome: rpc.QueueRejected, Reason: reason, Detail: detail, Into: into,
+		}
+	}
+	for i := range b.queue {
+		if b.queue[i].typ == eventUserPrompt && containsID(b.queue[i].merged, id) {
+			return reject(rpc.RejectMerged,
+				"an interrupt folded this message into another one still queued", b.queue[i].id)
+		}
+	}
+	for _, ref := range b.lifted {
+		if ref.id == id || containsID(ref.merged, id) {
+			return reject(rpc.RejectCommitting,
+				"the agent lifted this message out of the queue and is committing it now", ref.id)
+		}
+	}
+	for _, ref := range b.committed {
+		if ref.id == id || containsID(ref.merged, id) {
+			return reject(rpc.RejectCommitted,
+				"already part of the conversation; it cannot be unasked", ref.id)
+		}
+	}
+	return reject(rpc.RejectUnknown, "no such queued message in this generation", 0)
+}
+
+func containsID(ids []uint64, id uint64) bool {
+	for _, v := range ids {
+		if v == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *Inbox) signalReadyForkLocked() {

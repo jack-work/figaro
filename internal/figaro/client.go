@@ -146,3 +146,24 @@ func (c *Client) Close() error {
 func (c *Client) Done() <-chan struct{} {
 	return c.cli.Done()
 }
+
+// DeleteQueued asks the aria to drop queued messages. The error return is for
+// TRANSPORT failures only; whether each id was actually dropped is in the
+// results, one per requested id, and a refusal there is a normal answer.
+func (c *Client) DeleteQueued(ctx context.Context, req rpc.QueueDeleteRequest) (*rpc.QueueDeleteResponse, error) {
+	var resp rpc.QueueDeleteResponse
+	if err := c.cli.Call(ctx, rpc.MethodQueueDelete, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// UpdateQueued rewrites one queued message's text. Same split: error is
+// transport, the outcome is in the result.
+func (c *Client) UpdateQueued(ctx context.Context, req rpc.QueueUpdateRequest) (*rpc.QueueUpdateResponse, error) {
+	var resp rpc.QueueUpdateResponse
+	if err := c.cli.Call(ctx, rpc.MethodQueueUpdate, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}

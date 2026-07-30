@@ -999,3 +999,16 @@ func sumUsage(msgs []message.Message) (in, out, cacheRead, cacheWrite int) {
 	}
 	return in, out, cacheRead, cacheWrite
 }
+
+// DeleteQueued asks the aria to drop queued messages, and reports what became
+// of each requested id. Rejections are results, not errors: asking to delete
+// something the agent has already committed is a legitimate request and a
+// legitimate refusal, and the caller is told which of the two it got.
+func (a *Agent) DeleteQueued(epoch string, ids []uint64, all bool) (string, []rpc.QueueResult) {
+	return a.inbox.DeletePrompts(epoch, ids, all)
+}
+
+// UpdateQueued rewrites one queued message's text, under the same rules.
+func (a *Agent) UpdateQueued(epoch string, id uint64, text string) (string, rpc.QueueResult) {
+	return a.inbox.UpdatePrompt(epoch, id, text)
+}
