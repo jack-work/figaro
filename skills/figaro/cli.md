@@ -56,6 +56,65 @@ Timing is not a flag. A prompt that arrives while a turn is running joins it as
 a steering aside; a prompt that arrives when nothing is running opens a turn.
 The classification happens where the queue is drained, and nowhere else.
 
+## The queue
+
+Prompts that arrive while the aria is busy wait in its **queue**. They are
+addressed by an id from the listing, paired with the **epoch** that id was read
+in — ids restart whenever the agent is rebuilt (a daemon restart, a
+dormant→attach), so every mutation re-reads first and hands the epoch back. A
+request from a previous generation is refused as `stale` rather than resolved
+against whatever holds that number now.
+
+| Command | Effect |
+|---|---|
+| `figaro queue [--id <aria>] [-j]` | List: id, state, age, text. |
+| `figaro queue rm <id>...` | Drop those messages. |
+| `figaro queue rm --all` | Drop all of them. |
+| `figaro queue edit <id> -- <text>` | Rewrite one. |
+
+To ADD to the queue, `send` — a queued message is just a prompt that arrived
+while the aria was busy, so there is no separate create verb. The sub-verb owns
+the positional slot, so another aria is `--id`, never a bare id.
+
+A refusal is an **answer**, not a crash. The agent declines to delete a message
+it has already committed, and says which: `committing` (lifted by the drain
+loop this instant), `committed` (already part of the conversation), `merged` (an
+interrupt folded it into another queued message — the survivor's id is given),
+`stale`, `unknown`, `closed`. Exit is 0 when every id was applied, 1 when any
+was refused, 2 for misuse.
+
+## Hanging up
+
+Two verbs, differing in one thing: what becomes of the queue.
+
+| Command | Effect |
+|---|---|
+| `figaro hup [<id>] [-j]` | Stop the turn, **keep** queued messages. |
+| `figaro cut [<id>] [-j]` | Stop the turn and **discard** them; `-j` returns them. |
+
+`hup` is the everyday one. **An interrupt coalesces each contiguous run of
+queued prompts into one message; a queued `set` or `fork` is a barrier.** So
+three notes typed during a long turn become one question with three lines,
+answered next — while a `set` queued between two of them still applies in
+order, because folding a prompt in front of it would answer that prompt against
+a chalkboard it was never written against.
+
+`cut` hands back what it dropped, verbatim, one entry per message as you typed
+it, with the chalkboard input each carried:
+
+    figaro cut -j > lost.json
+
+Clearing does not need a turn to be running. Neither verb touches a queued
+`set` or `fork`: they drop questions, not someone else's control events.
+
+In the transcript pager, **`H`** is `hup` from the keyboard: stop the turn and
+keep watching. It is the third thing you can do to a running turn — `Ctrl-C`
+stops it and exits, `Ctrl-D` exits and lets it run on, `H` stops it and stays.
+
+The wire behind all of this — the interrupt's queue disposition, the
+`(epoch, id)` identity, and the closed set of refusal reasons — is
+[reference/ui-stream.md](reference/ui-stream.md).
+
 ## Moving around
 
 | Command | Effect |
@@ -70,7 +129,9 @@ The classification happens where the queue is drained, and nowhere else.
 | `figaro show [<id>]` | Render history. `-n N` last N turns, `-a` all, `-v` raw IR, `-l` no markdown, `-j` JSON. |
 | `figaro status [<id>]` | One aria in focus: provider, model, context, cost. `-m` adds cwd, loadout, fork origin. |
 | `figaro listen [<id>]` | Attach to the live stream without prompting. Ctrl-D detaches, the turn survives. |
-| `figaro hup [<id>]` | Hang up: interrupt the aria's current turn. |
+| `figaro hup [<id>]` | Hang up: stop the turn, keep queued messages (see The queue). |
+| `figaro cut [<id>]` | Hang up and discard queued messages; `-j` returns them. |
+| `figaro queue [rm\|edit]` | Read, edit and delete what has not been answered yet. |
 
 `ls` columns: ARIA (mantra, with `●` this shell, `▸` running, `○` idle), ID,
 LOADOUT, VER, FORK, AGE, MSGS, CTX, CWD. While your own turn is in flight your
