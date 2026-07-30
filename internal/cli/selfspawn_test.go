@@ -7,26 +7,7 @@ import (
 	"testing"
 )
 
-// The fork bomb, and its seatbelt.
-//
-// ensureAngelus starts the daemon by re-executing ITSELF — os.Executable()
-// + exec.Command(exe) + _FIGARO_DAEMON=1, detached (angelus_client.go). In a
-// test binary os.Executable() is `cli.test`, so any test that reaches a
-// daemon-connecting path spawns a detached copy of the TEST BINARY, which
-// re-runs the suite, which reaches the path again, which spawns another.
-//
-// 2026-07-30 01:43: a canary run of TestJSONArgvIsRejectedNotIgnored — which
-// called runSendAs(nil, …) directly, and with the guard under test neutered
-// fell through to runSendRaw -> mustConnectAngelus — put 1391 concurrent
-// cli.test processes in the kernel's OOM task dump. Two bursts (376, then
-// 1013: the doubling), span 6423, 45.8G RAM + 50.2G swap, global OOM at
-// 01:43:14, graphical session torn down at 01:43:54, compositor SIGTERM'd.
-//
-// Two lessons, both encoded here:
-//   - The seatbelt: refuseSelfSpawn dies rather than forking a test binary.
-//   - Not driving into the wall: the tests that provoked it assert on pure
-//     predicates now (see json_contract_test.go), never on a dispatcher that
-//     can reach a socket.
+// The fork bomb, and its seatbelt. ensureAngelus re-execs os.Executable(),
 
 func TestIsTestBinary(t *testing.T) {
 	cases := []struct {
@@ -54,8 +35,6 @@ func TestIsTestBinary(t *testing.T) {
 // running binary IS a test binary, so the real os.Executable() must trip it.
 func TestRefuseSelfSpawnFromTestBinary(t *testing.T) {
 	// Isolate the test-binary branch from the env branch: the standing test
-	// recipe exports FIGARO_NO_SELF_SPAWN=1, which would refuse first and
-	// for a different reason.
 	t.Setenv("FIGARO_NO_SELF_SPAWN", "")
 	exe, err := os.Executable()
 	if err != nil {
@@ -117,12 +96,6 @@ func TestRealBinaryStillSpawns(t *testing.T) {
 }
 
 // captureStderr runs fn with os.Stderr redirected to a pipe and returns
-// what was written. die() writes there before exiting, so this is how the
-// message is inspected without a subprocess.
-//
-// The write end is closed BEFORE reading the result, not in a defer: `return
-// <-done` evaluates the receive first and the defer only afterwards, so a
-// deferred Close deadlocks against a reader waiting for EOF. (It did.)
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -148,14 +121,6 @@ func captureStderr(t *testing.T, fn func()) string {
 }
 
 // TestMain is the second cut of the same wire, and it is deliberate
-// redundancy: refuseSelfSpawn stops a parent from FORKING a test binary,
-// while this stops a test binary that somehow got forked anyway from
-// RUNNING the suite. Either alone breaks the chain; together, generation 1
-// cannot become generation 2 even if a future path skips the guard.
-//
-// _FIGARO_DAEMON=1 is the flag cli.Run uses to become the angelus. It has
-// no business in a test binary, and reaching TestMain with it set means the
-// bomb already lit.
 func TestMain(m *testing.M) {
 	if os.Getenv("_FIGARO_DAEMON") == "1" {
 		os.Stderr.WriteString(

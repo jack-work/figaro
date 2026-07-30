@@ -70,25 +70,16 @@ func startupDiagnosis() string {
 	return ":\n  " + strings.Join(lines, "\n  ")
 }
 
-// refuseSelfSpawn stops the daemon bootstrap when the executable about to
-// be forked is not figaro.
+// refuseSelfSpawn stops the bootstrap when the executable about to be
+// forked is not figaro.
 //
-// THE TRAP. ensureAngelus starts the daemon by re-executing ITSELF:
-// os.Executable() + exec.Command(exe) + _FIGARO_DAEMON=1, detached. Inside
-// a test binary os.Executable() is `cli.test`. So a test that reaches any
-// daemon-connecting path spawns a detached copy of the TEST BINARY, which
-// re-runs the suite, which reaches the path again, which spawns another.
-//
-// It is not a leak, it is a fork bomb. On 2026-07-30 at 01:43 a canary run
-// of TestJSONArgvIsRejectedNotIgnored put 1391 concurrent cli.test
-// processes in the kernel's OOM task dump — pids arriving in two tight
-// bursts (376, then 1013: the doubling) across a span of 6423 — peaking at
-// 45.8G RAM + 50.2G swap. The global OOM killer fired, systemd tore down
-// the graphical session, and the user's compositor took SIGTERM.
-//
-// The seatbelt is cheap; the failure it prevents is not recoverable by the
-// person watching. FIGARO_NO_SELF_SPAWN=1 arms it explicitly for harnesses
-// whose binary is not named *.test (benchmarks under a scope, fuzzers, CI).
+// ensureAngelus starts the daemon by re-executing os.Executable(), which in
+// a test binary is `cli.test` — so a test touching any daemon-connecting
+// path spawns a detached copy of the TEST BINARY, which re-runs the suite,
+// which spawns another. On 2026-07-30 that put 1391 cli.test processes in
+// the OOM task dump (45.8G + 50.2G swap) and took the desktop session with
+// it. FIGARO_NO_SELF_SPAWN=1 arms the same refusal for harnesses whose
+// binary is not named *.test.
 func refuseSelfSpawn(exe string) {
 	if envTruthy(os.Getenv("FIGARO_NO_SELF_SPAWN")) {
 		die("refusing to spawn an angelus: FIGARO_NO_SELF_SPAWN is set\n" +

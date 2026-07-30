@@ -6,18 +6,7 @@ import (
 	"testing"
 )
 
-// TestHelpVerb pins `help [<command>]`.
-//
-// WHAT WAS WRONG. No help verb existed and the router had no fallback, so
-// `figaro help` took the unknown-command path:
-//
-//	error: unknown command "help"
-//	  did you mean: figaro hup
-//
-// The most-guessed verb in the tool, answered with a suggestion to signal
-// the daemon — at the exact moment the user is lost. cli.go even gated its
-// update-check on `args[0] == "help"`, so the code already assumed the verb
-// existed.
+// `figaro help` used to take the unknown-command path and answer
 func TestHelpVerb(t *testing.T) {
 	build := func(out, errOut *bytes.Buffer) *Router {
 		r := NewRouter("figaro")

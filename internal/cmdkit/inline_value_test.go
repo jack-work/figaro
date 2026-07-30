@@ -6,12 +6,7 @@ import (
 	"testing"
 )
 
-// TestInlineFlagValues — `--name=value`, the GNU form.
-//
-// WHAT WAS WRONG. The long-flag branch looked up the WHOLE token, so
-// `--limit=5` came back "unknown flag: --limit=5" (exit 2) while
-// send.go's hand-rolled parser accepted `--id=x` happily. One binary,
-// two grammars, and the one that failed did so on the more standard form.
+// `--name=value`, the GNU form: the long-flag branch used to look up the
 func TestInlineFlagValues(t *testing.T) {
 	run := func(args ...string) (*RunContext, int, string) {
 		var got *RunContext

@@ -6,20 +6,7 @@ import (
 	"testing"
 )
 
-// TestUnconsumedDashTokens pins the rule that argv is never silently
-// swallowed.
-//
-// WHAT WAS WRONG. expandBundled only expands when EVERY letter is a known
-// bool short; otherwise the token passes through untouched. parse then
-// tested `--`, `--long`, and len==2 shorts — a 3+-char `-xyz` matched none
-// of them and fell through to `// Positional arg`. Probed on an ls-shaped
-// command before the fix:
-//
-//	ls -hz  -> exit 0, flags={}, args=[-hz]
-//	ls -an  -> exit 0, flags={}, args=[-an]
-//
-// So `fig ls -an` scoped the listing to an aria named "-an", and
-// `fig kill -rx` aimed a DESTRUCTIVE verb at a typo. Exit 0 throughout.
+// Argv is never silently swallowed. A 3+-char dash token that expandBundled
 func TestUnconsumedDashTokens(t *testing.T) {
 	build := func() (*Router, *[]string) {
 		var gotArgs []string

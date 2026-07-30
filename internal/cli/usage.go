@@ -76,20 +76,10 @@ const exitInterrupted = 130
 // Tests swap it for a recorder; nothing else may touch it.
 var exitProcess = os.Exit
 
-// die reports a RUNTIME failure — the command was called correctly and the
-// work did not succeed — and exits 1.
-//
-// Use dieUsage instead when argv itself was rejected. The two exit codes are
-// the contract clig.dev draws (1 = general error, 2 = misuse, from getopt),
-// and until this split existed figaro answered the SAME question with two
-// different codes depending on which parser happened to catch it:
-//
-//	figaro ls --bogus           -> 2   (router parse)
-//	figaro send --bogus -- hi   -> 1   (hand-rolled PassRaw parse)
-//	figaro attend               -> 2   (router arg-count)
-//	figaro send hello           -> 1   (hand-rolled boundary check)
-//
-// The split fell along an implementation seam no user can see.
+// die reports a RUNTIME failure (called correctly, did not succeed): exit 1.
+// dieUsage is for rejected argv: exit 2. Before the split, the same mistake
+// answered 2 from the router and 1 from the hand-rolled parsers — a seam no
+// user can see. clig.dev: 1 = general error, 2 = misuse.
 func die(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
 	exitProcess(1)

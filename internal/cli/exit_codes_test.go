@@ -7,24 +7,9 @@ import (
 	"github.com/jack-work/figaro/internal/cmdkit"
 )
 
-// Exit-code contract: 1 = it ran and failed, 2 = argv was rejected.
-//
-// WHAT WAS WRONG. die() exited 1 and was what every hand-rolled PassRaw
-// parser called; the router returned 2 for the identical class of mistake.
-// Probed against the real binary before this split:
-//
-//	figaro ls --bogus           -> 2   "unknown flag: --bogus"
-//	figaro send --bogus -- hi   -> 1   "unknown flag \"--bogus\""
-//	figaro attend               -> 2   "requires at least 1 argument(s)"
-//	figaro send hello           -> 1   "the prompt must follow `--`"
-//
-// Same question, two answers, split along a seam users cannot see. Any
-// script distinguishing misuse (2) from runtime failure (1) — the getopt
-// convention clig.dev documents — got a coin flip.
+// Exit-code contract: 1 = it ran and failed, 2 = argv was rejected. The
 
 // captureExit swaps the process-exit hook and returns the code die/dieUsage
-// asked for. The helpers do not return, so the recorder panics with a
-// sentinel to unwind, exactly as os.Exit would have ended the call.
 type exitPanic int
 
 func captureExit(t *testing.T, fn func()) (code int, ok bool) {
@@ -54,15 +39,7 @@ func TestDieCodes(t *testing.T) {
 	}
 }
 
-// TestSendArgvRejectionExitsTwo proves the WIRING — a rejected argv becomes
-// exit 2 — using shapes that die inside extractSendFlags, before dispatch
-// exists as a possibility.
-//
-// It deliberately does NOT walk the flag-contradiction table through
-// runSendAs. That is what lit the fork bomb on 2026-07-30: a dispatcher
-// reached with a neutered guard falls through to mustConnectAngelus, which
-// in a test binary re-execs the test binary as a daemon. The contradictions
-// are asserted on the pure validator instead (json_contract_test.go).
+// Proves the WIRING (rejected argv -> exit 2) with shapes that die inside
 func TestSendArgvRejectionExitsTwo(t *testing.T) {
 	cases := []struct {
 		name string
@@ -88,8 +65,6 @@ func TestSendArgvRejectionExitsTwo(t *testing.T) {
 }
 
 // TestUnknownBareCommandExitsTwo covers the other door onto the same
-// mistake: `figaro shwo -- x` is an unknown command, which the router
-// answers with 2, so the bare-prompt form must not answer 1.
 func TestUnknownBareCommandExitsTwo(t *testing.T) {
 	router := buildRouter("figaro", nil)
 	code, exited := captureExit(t, func() { unknownBareCommand("figaro", router, "shwo") })

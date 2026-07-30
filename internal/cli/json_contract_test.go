@@ -5,20 +5,7 @@ import (
 	"testing"
 )
 
-// One contract for -j/--json: submit the prompt, print exactly one object
-// on stdout, exit.
-//
-// WHAT WAS WRONG. The same word meant four things:
-//
-//	send -j -- hi        parsed, then SILENTLY IGNORED (opts.json was read
-//	                     only in runSendForget and runSendForkAt)
-//	new -j               fired a one-shot Qua and returned   (the right one)
-//	send <id>:<turn> -j  printed the object AND THEN streamed the rendered
-//	                     turn to the same stdout — unparseable for `| jq`
-//	list --json          rejected every other flag
-//
-// The first is the one that cost most: -j on the hottest verb did nothing
-// at all, and said nothing about it.
+// One contract for -j: submit, print one object, exit. It used to mean four
 
 func TestJSONImpliesSubmitAndExit(t *testing.T) {
 	// The rule, at the level it is decided: -j turns a send into a
@@ -52,15 +39,7 @@ func TestJSONIncompatibleNamesTheOffender(t *testing.T) {
 	}
 }
 
-// TestJSONArgvIsRejectedNotIgnored — every combination that cannot honour
-// -j must be REJECTED, not quietly dropped.
-//
-// This asserts the pure validator, deliberately. It used to call
-// runSendAs(nil, "send", args) and that is how the fork bomb was lit: with
-// the guard neutered for a canary, `-j -r` fell past the rejection into
-// runSendRaw -> mustConnectAngelus, which in a test binary re-execs the TEST
-// BINARY as a daemon. 1391 processes, 45.8G, the session gone. A test for a
-// rejection must not be able to launch a daemon when the rejection breaks.
+// Every combination that cannot honour -j must be REJECTED, not dropped.
 func TestJSONArgvIsRejectedNotIgnored(t *testing.T) {
 	for _, tc := range []struct {
 		name string

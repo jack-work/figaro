@@ -2,16 +2,7 @@ package cmdkit
 
 import "testing"
 
-// TestReservedShortsPanicOnRegister — the trap, closed at the only moment
-// it can be closed cheaply.
-//
-// WHAT WAS WRONG. `ls` declared {Long:"home", Short:"h"} and printed
-// "-h, --home" in its own help text. The router's per-command help scan
-// claims the token before parse runs, so the flag was unreachable — and
-// unreachable INCONSISTENTLY: `ls -h` printed help while `ls -ha` gave
-// home+all, because the scan matches whole tokens and the bundle expander
-// does not. The help text `-h` printed documented the flag `-h` had just
-// prevented you from using.
+// The trap, closed where it is cheap. `ls` declared -h for --home and
 func TestReservedShortsPanicOnRegister(t *testing.T) {
 	defer func() {
 		r := recover()

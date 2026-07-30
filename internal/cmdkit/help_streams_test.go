@@ -6,18 +6,7 @@ import (
 	"testing"
 )
 
-// TestHelpStreams pins the one rule that separates the two writers: who
-// asked.
-//
-// Before this, printUsage and printCommandHelp both opened with
-// `w := r.Stderr`, so `figaro --help` and `figaro send --help` produced
-// ZERO bytes on stdout — 3400 bytes of help, all on the diagnostic
-// channel. `fig send --help | grep exec` printed nothing at all, which
-// reads as a broken binary rather than a misrouted stream.
-//
-// The inverse must hold just as firmly: usage printed because argv was
-// wrong is a diagnostic. It stays on stderr with a non-zero code so it
-// can never pollute a pipeline.
+// The rule that separates the two writers: who asked. Help used to open
 func TestHelpStreams(t *testing.T) {
 	newRouter := func(out, errOut *bytes.Buffer) *Router {
 		r := NewRouter("figaro")

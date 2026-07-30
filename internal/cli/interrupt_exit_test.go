@@ -2,14 +2,7 @@ package cli
 
 import "testing"
 
-// TestInterruptExit — Ctrl-C on a running turn is a failure, not a success.
-//
-// WHAT WAS WRONG. plainPrompt (the raw path) has always returned 130, but
-// the interactive path's ctx.Done() branch in stream.go interrupted the
-// turn, printed "interrupted", and FELL OUT of the select — the process
-// exited 0. So `fig send -- … || retry` never fired, and any supervisor
-// or `&&` chain treated an abandoned turn as a completed one. Two paths
-// through the same gesture, two answers, and the common one was wrong.
+// Ctrl-C on a running turn is a failure, not a success. The raw path always
 func TestInterruptExit(t *testing.T) {
 	if got := interruptExit(true); got != 130 {
 		t.Errorf("Ctrl-C on a running turn: got %d, want 130 (128+SIGINT)", got)

@@ -268,7 +268,7 @@ func TestCompletionScriptsMentionDispatcher(t *testing.T) {
 // list in the middle of a prompt.
 func TestBarePromptDetectorSurvivesAMovedBoundary(t *testing.T) {
 	r := NewRouter("figaro")
-	r.Register(&Command{Name: "send", Short: "s", Run:  func(*RunContext) error { return nil }})
+	r.Register(&Command{Name: "send", Short: "s", Run: func(*RunContext) error { return nil }})
 
 	for _, tc := range []struct {
 		shell string

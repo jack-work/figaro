@@ -118,7 +118,6 @@ func (v *vtScreen) scribbleUnknown() {
 	}
 }
 
-
 // assertBelief is the assertion: what the terminal holds must equal what t.prev
 // claims it holds.
 //

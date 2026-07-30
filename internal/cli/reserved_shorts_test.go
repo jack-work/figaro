@@ -3,12 +3,6 @@ package cli
 import "testing"
 
 // TestFigaroClaimsNoReservedShorts asserts the rule over the REAL command
-// table — the assertion cmdkit's own tests cannot make, because cmdkit does
-// not know figaro's verbs.
-//
-// buildRouter would panic outright on a violation (Register enforces it);
-// this names the offender instead of dying with a stack, and it is the test
-// that fails the day someone reaches for -h again.
 func TestFigaroClaimsNoReservedShorts(t *testing.T) {
 	r := buildRouter("figaro", nil)
 	if err := r.ValidateReservedShorts(); err != nil {

@@ -81,12 +81,9 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 		}
 	}
 
-	// One expander, one table. send.go used to carry its own hardcoded
-	// letter list with no link to the flags below, which is how -j and -l
-	// came to be missing from it: `send -fj` — fire-and-forget plus the
-	// machine-readable line, the exact pair a script wants — failed as
-	// "unknown flag" while `-f -j` worked. The letters are now derived from
-	// sendFlagDefs, so a new short cannot be documented and un-gangable.
+	// One expander, one table: the letters come from sendFlagDefs, so a
+	// short cannot be documented and un-gangable at once (which is how
+	// `send -fj` failed while `-f -j` worked).
 	expanded := cmdkit.ExpandBundled(argsBeforeBoundary(args), sendFlagDefs)
 	expanded = append(expanded, argsFromBoundary(args)...)
 
@@ -383,22 +380,15 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	}
 }
 
-// validateSendOpts holds every "these flags contradict each other" rule for
-// the prompt verbs, as a PURE function: it decides, it does not exit, and it
-// never touches a socket.
+// validateSendOpts holds every "these flags contradict" rule for the prompt
+// verbs as a PURE function: it decides, never exits, never opens a socket.
+// That matters — inline in runSendAs, the only way to test a rejection was
+// to call the dispatcher, and a dispatcher past its guard reaches
+// mustConnectAngelus, which in a test binary is a fork bomb.
 //
-// That last property is not cosmetic. These rules used to be inline in
-// runSendAs, so the only way to test them was to call the dispatcher — and a
-// dispatcher whose guard is neutered walks straight into mustConnectAngelus,
-// which in a test binary is a fork bomb (see refuseSelfSpawn). The test for a
-// rejection must not be able to launch a daemon when the rejection regresses.
-//
-// --json is a MODE, not a decoration: submit, print one object, exit. It was
-// four different contracts before — silently ignored on `send`, mode-changing
-// on `new`, print-then-stream on fork-send, exclusive on `list`. Everything
-// that renders, streams, or takes the terminal contradicts it, and saying so
-// is the point: dropping -j quietly is what made `send -j` a no-op for the
-// life of the flag.
+// --json is a MODE (submit, one object, exit), so anything that renders,
+// streams or takes the terminal contradicts it. Saying so is the point:
+// dropping -j quietly made `send -j` a no-op for the life of the flag.
 func validateSendOpts(opts sendOpts, hasTurn bool) error {
 	if (opts.dryRun || opts.skipYes) && !opts.exec {
 		return fmt.Errorf("-n / -y only meaningful with --exec")

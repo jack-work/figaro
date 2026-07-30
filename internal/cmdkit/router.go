@@ -28,15 +28,9 @@ type Router struct {
 	// are non-empty. If nil, the router prints usage and exits 2.
 	Fallback func(args []string, extra interface{}) error
 
-	// Stdout is where REQUESTED output goes: `--help`, `help <cmd>`, and
-	// `--version`. Defaults to os.Stdout.
-	//
-	// The split from Stderr is the whole rule, and it is about who asked.
-	// Help the user asked for is the command's primary output — it must be
-	// pipeable (`fig send --help | grep exec` is the universal reflex for a
-	// 3400-byte help block). Help the user did NOT ask for — usage printed
-	// because argv was wrong — is a diagnostic, and rides Stderr with a
-	// non-zero exit so it never pollutes a pipeline.
+	// Stdout takes REQUESTED output: --help, help <cmd>, --version. The
+	// split is about who asked — help you asked for must be pipeable;
+	// usage printed because argv was wrong is a diagnostic (Stderr).
 	Stdout io.Writer
 
 	// Stderr is the output for errors and for usage printed as part of an
@@ -72,20 +66,10 @@ func NewRouter(name string) *Router {
 	return r
 }
 
-// registerHelp installs the `help [<command>]` verb.
-//
-// It lives in cmdkit rather than in each consumer's command table because
-// `help` is the router's own knowledge, and because leaving it out has a
-// specific failure mode: `figaro help` fell through to the unknown-command
-// path and answered
-//
-//	error: unknown command "help"
-//	  did you mean: figaro hup
-//
-// pointing the most-guessed verb in the tool at a daemon-signalling verb,
-// at the exact moment the user is lost. cli-design: "a `<tool> help
-// <subcommand>` form is appreciated in addition to `<tool> <subcommand>
-// --help`."
+// registerHelp installs `help [<command>]`. It lives here, not in each
+// consumer's table, because help is the router's own knowledge — and
+// because without it `figaro help` answered `unknown command "help", did
+// you mean: figaro hup`: the most-guessed verb, pointed at the daemon.
 func (r *Router) registerHelp() {
 	r.Register(&Command{
 		Name:    "help",
@@ -142,31 +126,18 @@ func (r *Router) Command(name string) (*Command, bool) {
 }
 
 // ReservedShorts are single-letter flags the ROUTER answers before any
-// command sees them. A command that declares one can never receive it, so
-// claiming one is a programming error, not a preference.
-//
-// The trap this exists to close: `ls` declared {Long:"home", Short:"h"} and
-// advertised "-h, --home" in help text — help text that `-h` itself printed,
-// because the dispatcher claims the token first. The flag was defined,
-// wired, correct, and unreachable. Worse, it was unreachable INCONSISTENTLY:
-// the help scan matches whole tokens, so `ls -ha` slipped past it and the
-// bundle expander resolved -h to --home. Same letter, two meanings, decided
-// by whether another letter happened to be ganged onto it.
-//
-// The fix is not to let commands win the token back — `-h` is worth more as
-// something a lost user can type blind on any verb than as one verb's
-// shorthand. The fix is to make the collision impossible to write.
+// command sees them, so a command declaring one can never receive it.
+// `ls` declared -h for --home and advertised it in the help text that -h
+// itself printed; `ls -h` gave help while `ls -ha` gave home. Making the
+// collision impossible to write beats adjudicating it per command.
 var ReservedShorts = map[string]string{
 	"h": "help",
 	"V": "version",
 }
 
-// Register adds a command to the router.
-//
-// It panics if the command claims a reserved short (see ReservedShorts).
-// That is deliberate: command tables are built at startup from literals, so
-// this fires the first time any test constructs the router — on the
-// developer, not silently on the user.
+// Register adds a command to the router. It panics if the command claims a
+// reserved short: tables are built from literals at startup, so this fires
+// on the developer at first construction, never silently on the user.
 func (r *Router) Register(cmd *Command) {
 	for _, f := range cmd.Flags {
 		if owner, taken := ReservedShorts[f.Short]; taken {
@@ -313,10 +284,8 @@ func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
 
 		// Long flag.
 		if strings.HasPrefix(arg, "--") {
-			// `--name=value` is the GNU form, and it was rejected outright:
-			// the whole token was looked up, so `--limit=5` came back as
-			// "unknown flag: --limit=5" while send.go's hand parser accepted
-			// `--id=x`. One binary, two grammars.
+			// `--name=value`: the whole token used to be looked up, so
+			// `--limit=5` was "unknown flag" while send.go took `--id=x`.
 			name := arg[2:]
 			inline, hasInline := "", false
 			if eq := strings.IndexByte(name, '='); eq >= 0 {
@@ -377,16 +346,10 @@ func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
 			continue
 		}
 
-		// Positional arg — unless it still looks like a flag.
-		//
-		// A token starting with '-' that reached this point is argv nobody
-		// consumed: expandBundled declined it (some letter is not a known
-		// bool short) and it is too long to be a single short flag. Treating
-		// it as a positional is how `ls -hz` came to mean "list the aria
-		// named -hz", exit 0, no diagnostic — and how `kill -rx` came to
-		// aim a destructive verb at a typo.
-		//
-		// A bare "-" is exempt: it is the conventional name for stdin.
+		// A '-' token that survived both flag branches and bundle expansion
+		// is argv nobody consumed. Treating it as a positional is how
+		// `ls -hz` meant "the aria named -hz" and `kill -rx` aimed a
+		// destructive verb at a typo. A bare "-" is exempt (stdin).
 		if len(arg) > 1 && arg[0] == '-' {
 			return nil, unconsumedFlagError(cmd.Flags, arg)
 		}
@@ -440,15 +403,9 @@ func unconsumedFlagError(flags []FlagDef, tok string) error {
 	}
 }
 
-// ExpandBundled expands POSIX short-flag gangs (-ex -> -e -x) against a
-// flag table, leaving a token untouched unless EVERY letter is a known bool
-// short. Exported so the PassRaw parsers — which do their own scanning —
-// expand exactly as the router does, from the same table.
-//
-// Two expanders is how `-fj` died: send.go carried a hardcoded letter list
-// with no link to its documented flags, and -j and -l were simply missing
-// from it, so the fire-and-forget-plus-machine-output pair a script wants
-// failed as "unknown flag".
+// ExpandBundled expands short-flag gangs (-ex -> -e -x) against a flag
+// table. Exported so the PassRaw parsers expand from the same table the
+// router does: two expanders is how `-fj` came to fail while `-f -j` worked.
 func ExpandBundled(args []string, flags []FlagDef) []string { return expandBundled(args, flags) }
 
 func expandBundled(args []string, flags []FlagDef) []string {
