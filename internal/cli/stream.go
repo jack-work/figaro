@@ -163,17 +163,17 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				// No turn will open for this prompt, so stop waiting on an
 				// inquiry that is never coming.
 				noOnce.Do(func() { close(noTurn) })
-				// THE COMMENT ABOVE IS TRUE INLINE AND FALSE IN THE PAGER.
-				// finishTurn returns early while the pager is up (it does not
-				// leave it), the alt screen has no scrollback, and the cursor is
-				// parked on the status row — so this hint lands ON the footer and
-				// its leading newline scrolls the whole grid out from under the
-				// painter's model. Say so, and the next frame repaints in full.
-				lt.screenMoved()
+				// THE COMMENT ABOVE IS TRUE INLINE AND FALSE IN THE PAGER:
+				// finishTurn returns early while the pager is up, the alt
+				// screen has no scrollback, and the cursor is parked on the
+				// status row — so writing here landed the hint ON the footer
+				// and scrolled the grid out from under the painter's model.
+				// lt.report picks the right door for whichever renderer owns
+				// the terminal, and loses nothing either way.
 				if strings.Contains(d.Reason, "no credential") || strings.Contains(d.Reason, "resolve token") {
-					fmt.Fprint(os.Stderr, "\n"+providerSetupHint())
+					lt.report(providerSetupHint())
 				} else {
-					fmt.Fprintln(os.Stderr, "\n"+d.Reason)
+					lt.report(d.Reason)
 				}
 			}
 			settled := sendCursor >= 0 && idle
@@ -364,13 +364,11 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		wasRunning := running
 		mu.Unlock()
 		if wasRunning {
-			// Written straight to the terminal while the pager may still be up:
-			// on the alt grid the leading newline scrolls every row away from
-			// the painter's model of it. Announce it (see transcript.screenMoved).
+			// Same door as the error path: in the pager this is a red token in
+			// the status row, inline it is the line on stderr it always was.
 			mu.Lock()
-			lt.screenMoved()
+			lt.report("interrupting...")
 			mu.Unlock()
-			fmt.Fprintln(os.Stderr, "\ninterrupting...")
 			intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
 			_ = fcli.Interrupt(intCtx)
 			intCancel()
@@ -381,9 +379,8 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 				lt.abandon("interrupted (agent did not respond)", turnStatusInterrupted)
 			}
 			mu.Lock()
-			lt.screenMoved()
+			lt.report("interrupted")
 			mu.Unlock()
-			fmt.Fprintln(os.Stderr, "interrupted")
 		}
 	}
 }

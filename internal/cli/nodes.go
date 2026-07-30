@@ -293,6 +293,59 @@ func escapeEnd(s string, i int) (int, bool) {
 }
 
 // clipToWidthRewrite is the general path: it materializes the clipped row.
+// displayWidth is the column count of a row with escape sequences excluded —
+// what the terminal will actually occupy. runewidth.StringWidth counts the
+// bytes of an SGR run as characters, which over-measures every styled row (a
+// dim wrapper alone is eight columns of nothing) and would shed footer tokens
+// that fit perfectly well.
+func displayWidth(s string) int {
+	col := 0
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b {
+			j, _ := escapeEnd(s, i)
+			i = j
+			continue
+		}
+		if c := s[i]; c >= 0x20 && c < 0x7f {
+			col++
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if size == 0 {
+			break
+		}
+		if r >= 0x20 {
+			col += runewidth.RuneWidth(r)
+		}
+		i += size
+	}
+	return col
+}
+
+// clipToWidthEllipsis is clipToWidth for a row the reader parses as a SENTENCE
+// rather than as a picture — the footer's status line. A hard clip there ends
+// mid-token with nothing to say anything was dropped ("cost 4.5k to"); one
+// column spent on an ellipsis says it ("cost 4.5k…").
+//
+// Body rows keep the hard clip on purpose: they are a picture, an ellipsis in
+// every wrapped paragraph would be noise, and prose is re-wrapped to the width
+// rather than truncated at it.
+func clipToWidthEllipsis(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if displayWidth(s) <= width && clipFits(s, width) {
+		return s
+	}
+	if width == 1 {
+		return "…\x1b[0m"
+	}
+	body := clipToWidthRewrite(s, width-1)
+	body = strings.TrimSuffix(body, "\x1b[0m")
+	return body + "…\x1b[0m"
+}
+
 func clipToWidthRewrite(s string, width int) string {
 	col := 0
 	var b strings.Builder

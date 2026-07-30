@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -38,6 +39,12 @@ type livelogTurn struct {
 	finished     bool
 	thinkingOpen bool // an OpenThinking placeholder is live and not yet adopted
 	pace         framePacer
+
+	// pendingReport holds trouble shown red-and-ellipsised in the pager's
+	// status row, kept whole so leaveTranscript can reprint it to the shell.
+	// The status row can only ever show one line of it; the user gets all of
+	// it the moment there is scrollback to put it in. See report().
+	pendingReport []string
 
 	// lastFrozen is the highest SLICE incipit has committed to native scrollback
 	// inline (via Freeze). It marks the flush boundary: on leaving the pager,
@@ -656,6 +663,32 @@ func (t *livelogTurn) invalidateTranscriptRows() { t.tr.invalidateRows() }
 // Callers hold the render mutex (every renderer entry point does).
 func (t *livelogTurn) screenMoved() { t.tr.screenMoved() }
 
+// report is where trouble goes: an error reason, a provider hint, an interrupt
+// notice. ONE call site decides how it reaches the user, because the answer
+// depends on which renderer owns the terminal:
+//
+//   - pager up: into the FRAME BUFFER as the red left-hand token of the status
+//     row, and remembered so leaveTranscript can reprint it in full to the
+//     shell. Nothing is written to the alt grid, so nothing scrolls the
+//     painter's model away (see transcript.screenMoved) and nothing is lost.
+//   - inline: straight to stderr, as before. The live region really is torn
+//     down there and real scrollback really does exist below it — the reasoning
+//     in stream.go's comment, which was only ever false for the pager.
+//
+// Caller holds the render mutex.
+func (t *livelogTurn) report(text string) {
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	if t.tr.active {
+		t.pendingReport = append(t.pendingReport, text)
+		t.status.setNotice(text)
+		t.tr.render()
+		return
+	}
+	fmt.Fprintln(os.Stderr, "\n"+text)
+}
+
 func (t *livelogTurn) transcriptSelect(delta int, extend bool) {
 	t.tr.selectNode(delta, extend)
 	t.tr.render()
@@ -706,6 +739,14 @@ func (t *livelogTurn) leaveTranscript() {
 	}
 	t.tr.leave()
 	t.flushTail()
+	// Whatever the status row could only show a slice of, said in full now
+	// that there is a shell to say it to. The pager showed it red and
+	// ellipsised; the scrollback gets every character.
+	for _, r := range t.pendingReport {
+		fmt.Fprintln(os.Stderr, r)
+	}
+	t.pendingReport = nil
+	t.status.setNotice("")
 }
 
 // flushTail (re)prints the un-frozen tail of the conversation to scrollback.
