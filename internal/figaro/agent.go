@@ -453,13 +453,19 @@ func (a *Agent) turnActive() bool {
 	return a.turnRunning.Load()
 }
 
-// Interrupt aborts the current turn. Idempotent when idle.
+// Interrupt aborts the current turn, keeping the queue. It is the shape the
+// Figaro interface uses (and the angelus's graceful shutdown, where dropping
+// what someone queued would be exactly the wrong courtesy).
+func (a *Agent) Interrupt() { a.Hangup(rpc.QueueKeep) }
+
+// Hangup aborts the current turn and says what became of the messages waiting
+// behind it.
 //
-// It also COALESCES the queue — each contiguous run of waiting prompts folds
-// into one message, with the same semantics steering already has (texts joined
-// in order, chalkboard input merged so a later value wins). Three messages
-// typed during a long turn and then cut short are one question to answer, not
-// three turns to sit through.
+// It also COALESCES the queue on the keep path — each contiguous run of
+// waiting prompts folds into one message, with the same semantics steering
+// already has (texts joined in order, chalkboard input merged so a later value
+// wins). Three messages typed during a long turn and then cut short are one
+// question to answer, not three turns to sit through.
 //
 // The fold happens only here. There is no mode threaded into the submit path
 // and no shared helper that checks whether it is being interrupted: this
@@ -470,17 +476,59 @@ func (a *Agent) turnActive() bool {
 // An IDLE aria coalesces nothing. There is no turn to interrupt, the drain
 // loop is already working through the queue, and folding under it would change
 // what a plain submit means — which is the one thing this must not do.
-func (a *Agent) Interrupt() {
+//
+// Two dispositions, named rather than negated, because the CLI verbs that
+// carry them are two different intentions:
+//
+//	QueueKeep  — stop the turn; the queue is answered next (`figaro hup`).
+//	QueueClear — stop the turn AND drop the queue, handing it back so it can
+//	             be persisted rather than lost (`figaro cut`).
+//
+// The response's Queue is THE QUEUE AS OF THE HANGUP either way — one field,
+// one meaning — and Cleared says which happened to it.
+//
+// Order is why clear does not simply reuse the keep path: the drain happens
+// BEFORE any fold, so what comes back is the messages as they were typed, each
+// with its own id. Coalescing first would hand back one blob and defeat the
+// point of returning it at all.
+//
+// Clearing does not require a live turn. A queue can be worth dropping between
+// turns, and refusing then would be a distinction with no meaning to the
+// person asking.
+func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
+	resp := rpc.InterruptResponse{OK: true, Epoch: a.inbox.Epoch()}
+
+	if disposition == rpc.QueueClear {
+		for _, e := range a.inbox.DrainUserPrompts() {
+			resp.Queue = append(resp.Queue, rpc.QueuedPrompt{
+				ID:         e.id,
+				Text:       e.text,
+				State:      rpc.QueueStateQueued,
+				At:         e.at,
+				Merged:     e.merged,
+				Chalkboard: e.chalkboard,
+			})
+		}
+		resp.Cleared = true
+	}
+
 	a.mu.Lock()
 	if a.turnCancel == nil {
 		a.mu.Unlock()
-		return
+		if !resp.Cleared {
+			_, resp.Queue = a.QueuedPrompts(true)
+		}
+		return resp
 	}
 	a.interrupted = true
 	cancel := a.turnCancel
 	a.mu.Unlock()
-	a.inbox.CoalesceUserPromptRuns()
+	if !resp.Cleared {
+		a.inbox.CoalesceUserPromptRuns()
+		_, resp.Queue = a.QueuedPrompts(true)
+	}
 	cancel()
+	return resp
 }
 
 // CoordinateFork runs storage fork coordination on the actor goroutine.

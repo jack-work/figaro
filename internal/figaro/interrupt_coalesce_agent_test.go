@@ -133,3 +133,58 @@ func TestInterrupt_PromptArrivingAfterTheFoldStaysSeparate(t *testing.T) {
 	assert.Equal(t, "one\ntwo", texts[0])
 	assert.Equal(t, "late", texts[1])
 }
+
+// ITEM 2. A clearing hangup drops the queue and hands it back VERBATIM — one
+// entry per message as typed, each with its own id — so `figaro cut -j` is a
+// save, not a lament. Coalescing first would return one blob and defeat that.
+func TestHangup_ClearDrainsVerbatim(t *testing.T) {
+	a, prov, done := newQueuedAgent(t, "clear-1")
+	defer done()
+
+	a.SubmitPrompt(rpc.QuaRequest{Text: "kickoff"})
+	require.Eventually(t, prov.blocked, 2*time.Second, 10*time.Millisecond)
+	a.SubmitPrompt(rpc.QuaRequest{Text: "one"})
+	a.SubmitPrompt(rpc.QuaRequest{Text: "two"})
+
+	resp := a.Hangup(rpc.QueueClear)
+
+	require.True(t, resp.OK)
+	assert.True(t, resp.Cleared)
+	assert.NotEmpty(t, resp.Epoch)
+	require.Len(t, resp.Queue, 2, "the drained messages come back one for one")
+	assert.Equal(t, "one", resp.Queue[0].Text)
+	assert.Equal(t, "two", resp.Queue[1].Text)
+	assert.NotEqual(t, resp.Queue[0].ID, resp.Queue[1].ID, "each keeps its own id")
+	assert.Empty(t, queuedTextsOf(a), "and the aria is left with nothing to answer")
+}
+
+// The keep path reports the queue as of the hangup — post-fold, because that
+// is what the aria will actually answer.
+func TestHangup_KeepReportsTheFoldedQueue(t *testing.T) {
+	a, prov, done := newQueuedAgent(t, "keep-1")
+	defer done()
+
+	a.SubmitPrompt(rpc.QuaRequest{Text: "kickoff"})
+	require.Eventually(t, prov.blocked, 2*time.Second, 10*time.Millisecond)
+	a.SubmitPrompt(rpc.QuaRequest{Text: "one"})
+	a.SubmitPrompt(rpc.QuaRequest{Text: "two"})
+
+	resp := a.Hangup(rpc.QueueKeep)
+
+	require.True(t, resp.OK)
+	assert.False(t, resp.Cleared, "keep must never report itself as cleared")
+	require.Len(t, resp.Queue, 1)
+	assert.Equal(t, "one\ntwo", resp.Queue[0].Text)
+}
+
+// Clearing is not gated on a live turn: a queue can be worth dropping between
+// turns, and refusing then would mean nothing to the person asking.
+func TestHangup_ClearWorksWithNoTurnRunning(t *testing.T) {
+	a, _, done := newQueuedAgent(t, "clear-2")
+	defer done()
+
+	resp := a.Hangup(rpc.QueueClear)
+	require.True(t, resp.OK)
+	assert.True(t, resp.Cleared)
+	assert.Empty(t, resp.Queue)
+}

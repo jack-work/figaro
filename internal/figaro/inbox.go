@@ -301,6 +301,33 @@ func (b *Inbox) CoalesceUserPromptRuns() {
 	b.queue = out
 }
 
+// DrainUserPrompts removes every queued user prompt and returns them
+// VERBATIM, in FIFO order, each with its own id — not folded. Control events
+// (sets, forks) are left in the queue: this drops the questions, it does not
+// cancel the chalkboard mutation or the fork someone else asked for.
+//
+// Verbatim is the point. What is drained is handed back so it can be written
+// to disk instead of lost, and a caller who typed three messages wants their
+// three messages back — not one blob that has to be unpicked.
+func (b *Inbox) DrainUserPrompts() []event {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.queue) == 0 {
+		return nil
+	}
+	drained := make([]event, 0, len(b.queue))
+	kept := make([]event, 0, len(b.queue))
+	for _, e := range b.queue {
+		if e.typ == eventUserPrompt {
+			drained = append(drained, e)
+			continue
+		}
+		kept = append(kept, e)
+	}
+	b.queue = kept
+	return drained
+}
+
 func (b *Inbox) signalReadyForkLocked() {
 	if len(b.queue) == 0 || b.queue[0].typ != eventFork {
 		return

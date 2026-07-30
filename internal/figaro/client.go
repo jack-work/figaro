@@ -67,9 +67,24 @@ func (c *Client) Context(ctx context.Context) (*rpc.ContextResponse, error) {
 	return &resp, nil
 }
 
-// Interrupt asks the figaro to abort its current turn.
+// Interrupt asks the figaro to abort its current turn, keeping whatever is
+// queued behind it. The queued messages coalesce into one combined message,
+// which is what the aria answers next.
 func (c *Client) Interrupt(ctx context.Context) error {
 	return c.cli.Call(ctx, rpc.MethodInterrupt, rpc.InterruptRequest{}, nil)
+}
+
+// Hangup is Interrupt with an explicit disposition for the queue, and the
+// queue itself comes back: what survived (keep) or what was dropped (clear).
+// A cleared queue is returned VERBATIM — one entry per message as typed — so
+// the caller can persist it instead of losing it.
+func (c *Client) Hangup(ctx context.Context, disposition rpc.QueueDisposition) (*rpc.InterruptResponse, error) {
+	var resp rpc.InterruptResponse
+	req := rpc.InterruptRequest{Queue: disposition}
+	if err := c.cli.Call(ctx, rpc.MethodInterrupt, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 // Set applies a chalkboard patch directly. No LLM round-trip.

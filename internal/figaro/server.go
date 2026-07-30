@@ -62,8 +62,22 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		return rpc.ContextResponse{Messages: out, Metrics: a.sessionMetrics()}, nil
 
 	case rpc.MethodInterrupt:
-		a.Interrupt()
-		return rpc.InterruptResponse{OK: true}, nil
+		var req rpc.InterruptRequest
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, err
+			}
+		}
+		// An unknown disposition is refused rather than guessed: the two verbs
+		// differ by whether the caller's queued messages survive, and a typo
+		// must not be resolved into the destructive one.
+		switch req.Queue {
+		case "", rpc.QueueKeep, rpc.QueueClear:
+		default:
+			return nil, fmt.Errorf("unknown queue disposition %q (want %q or %q)",
+				req.Queue, rpc.QueueKeep, rpc.QueueClear)
+		}
+		return a.Hangup(req.Queue), nil
 
 	case rpc.MethodSet:
 		var req rpc.SetRequest
