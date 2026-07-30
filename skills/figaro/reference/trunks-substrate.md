@@ -1,10 +1,12 @@
-# Forking & Trunks — design of record
+# Forking and trunks: the substrate
 
-Status: **shipped** (the trunk pass is built and on `main`). This document is the
-canonical reference for figaro's conversation-forking model: the figwal/xwal substrate
-it sits on, the terminology, and the codepaths as they exist today. Read it before
-touching anything under `internal/store`, the angelus fork/create/bind handlers, or the
-`fig send`/`fork`/`attend`/`kill`/`ls` CLI verbs.
+**Read this only when changing the machinery**: anything under
+`internal/store`, the angelus fork/create/bind handlers, or the figwal/xwal
+layering. To *use* forking, read [trunks.md](trunks.md) instead; it owns the
+gesture semantics and this file does not repeat them.
+
+Status: shipped. This is the deep reference: the substrate, the terminology,
+and the codepaths as they exist today.
 
 > The word **trunk** echoes opera's *aria di baule* — the "trunk aria" (or "suitcase
 > aria") a singer carried from production to production, packed in their travel trunk and
@@ -12,8 +14,7 @@ touching anything under `internal/store`, the angelus fork/create/bind handlers,
 > conversation carries through its forks.
 
 It is written so someone with zero prior context can follow the whole stack from the
-physical log up to the CLI. (A user-facing condensed version lives in the first-party
-skill at `skills/figaro/trunks.md`; this doc is the deep substrate reference.)
+physical log up to the CLI.
 
 > **Fork coordinates ARE turn ids.** `fig send <id>:<turn>` is the addressing
 > form; `:<LT>` is gone from every CLI surface. **LT remains the join key** — it is
@@ -297,29 +298,11 @@ legacy alias that needs quoting in the shell) clears it —
 toward `attend null` / `ls -h` / `ls -g`.
 
 ### 4.2 `send` vs `fork`
-- **`send <trunk>:<turn> -- …`** — fork the trunk so that `<turn>` is *replaced*, then send
-  to the new branch and **rebind** there (`--stay`/`--attend=false` to send without moving).
-  Without `:<turn>` it is a plain **append** to the tail. The interior-fork case is
-  cauterization-aware: if the resolved LT is owned by the root or a loadout stump, a fresh
-  child conversation is spawned instead of a re-split (`store.ForkAt` via `Owner`).
-- **`fork [<trunk>[:<turn>]] [--stay] [-- <prompt>]`** — the **imperative** branch. No `:<turn>` =
-  tail fork (freeze the head; continuation keeps the trunk, a fresh empty alternative is the
-  new branch). `:<turn>` = interior fork; the branch shares everything through the end of
-  turn `<turn>-1`. Forking your **own** bound aria
-  rebinds you to the continuation (same trunk/mantra); forking any other aria, or `--stay`,
-  leaves your session untouched. `fork` (no arg) = `fork <current trunk>`.
-- **`fork … -- <prompt>`** — fork **and send**, the way `new -- <prompt>` does. The prompt
-  always lands on the **alternative** (the fresh empty branch); the continuation is never
-  written to. `--stay` governs the **shell** only — without it, forking your own bound aria
-  rebinds you to the *alternative* (that is where the prompt went), and forking anyone
-  else's never moves you. Flags come from `send`'s parser and are routed through `send`'s
-  own dispatch (`-r`/`-v`/`-o`/`-l`/`-x`+`-n`/`-y`/`-f`); `-e` is rejected (a fork is
-  persistent by nature), and the send flags without a prompt are errors rather than no-ops.
-  `-j` prints one line, `mode:"fork-send"`, `aria_id` = the branch.
 
-  Contrast `send <trunk>:<turn> --stay`, which parks the branch and sends to the *original*
-  trunk. `send`'s subject is the message (*where does this land?*); `fork`'s is the branch
-  (*what did I just make?*), so under `fork` the branch is always what gets prompted.
+The user-facing semantics of `send`, `fork`, `--stay` and `fork -- <prompt>`
+live in [trunks.md](trunks.md) and are deliberately not repeated here. What
+belongs to this file is the mechanism below: what the client resolves, and what
+the RPC does with it.
 
 ### 4.3 The resolution table
 

@@ -1,232 +1,89 @@
 ---
 name: figaro
-description: Working on the figaro codebase itself — what it is, the safe dev-shell iteration loop, and an index into the architecture (IR/RPC/chalkboard/live-render/provider), aria reading, the mantra, and cache control. Read a section file when its topic is in play.
+description: Read when driving figaro or working on it. Holds the daily gestures (send and forget, ls, show, fork), the vocabulary, and an index to everything deeper. Read this first when you need to run a figaro command, address another aria, understand a term in a figaro conversation, change the figaro repo, or edit these docs. It is an index, so each section below is loaded only when its topic is actually in play.
 ---
 
 # Figaro
 
-Figaro is a local coding-agent / orchestration daemon. One real user (its
-author), maybe a few more — so don't agonize over backcompat; favor clean
-design and itemized commits.
+A local coding-agent daemon. One static Go binary, three roles: the `CLI` you
+type at, the `Angelus` supervisor that outlives your shell, and one `Agent` per
+conversation. An **aria** is one conversation.
 
-**Source:** `~/dev/figaro-qua/main` (treebear layout: the bare repo at
-`.bare`, worktrees as peers of `main/`). One static Go binary, **three
-roles** — `CLI`, the `Angelus` supervisor, and a per-aria `Agent`. All IPC
-is JSON-RPC 2.0, NDJSON, over Unix sockets. A Nix flake builds and tests it.
+## The gestures
 
-This skill is **first-party**: it lives in the repo at `skills/figaro/` and
-ships with the binary (`$out/share/figaro/skills`); the outfit loader merges
-it under `dirName = "skills"`, with the user's `~/.config/figaro/skills`
-overriding by name. Edit the source copy, not a config copy.
-
-## The one rule: never test against the live daemon
-
-Reinstalling figaro into `~/.nix-profile` stomps the running angelus, the
-user's arias, and the hush identity. The angelus is a strict singleton via an
-exclusive flock on `<store>/arias/.daemon.lock`, taken **before** it opens the
-backend or binds the socket — so a second daemon against the same store loses
-the lock and exits cleanly (a loser never opens the store or steals the live
-socket). That protects against accidental races, **not** against you pointing
-a test build at the real store: the lock makes them contend, it doesn't make
-sharing safe. Always test a worktree build through a **dev shell** that puts
-the freshly-built binary on `PATH` from the Nix store, isolated to taste:
-
-```
-nix develop                  # worktree binary; real config/runtime/state/hush
-nix develop .#share-hush     # isolate runtime/config/state; share hush — real OAuth + keys
-nix develop .#share-config   # isolate runtime/state + run an embedded dev hush; share config
-nix develop .#clean          # fully hermetic; triggers first-run flow
-nix develop .#swap           # swap nix-profile to the worktree binary, restore on exit
-```
-
-The two "share-*" presets cross opposite axes — pick by what you're
-actually exercising:
-
-- **`share-hush`** keeps the real hush agent (and so real provider OAuth
-  registrations + AGE-encrypted keys) reachable, but isolates config —
-  you'll hit the first-run loadout picker. Use this when the *credential
-  resolution / refresh path* is what you want to test against a live
-  provider.
-- **`share-config`** keeps the real loadouts/`providers/*.toml` reachable
-  but runs an **embedded dev hush** rooted at `$FIGARO_DEV_ROOT/hush` with
-  its own AGE identity, re-authenticated per shell (`fig login <provider>`
-  or `ANTHROPIC_API_KEY=…`). AGE-ENC values in the shared config can't be
-  decrypted by the fresh identity, so plan to re-auth. Use this when
-  you're iterating on loadout/agent logic and don't care about exercising
-  the real refresh wire.
-- **`clean`** isolates everything including hush — the truth-test for the
-  first-run flow and any auth migration.
-
-All three persist their dev root across shell entries (`$FIGARO_DEV_ROOT`
-is stable, not a fresh tmpdir). `rm -rf $FIGARO_STATE_DIR` for a clean
-slate.
-
-Inside a shell `figaro`/`fig`/`q` resolve to the same store binary; `which
-figaro` should show `/nix/store/...`, not `~/.nix-profile`. Four knobs
-(`mkFigaroShell`) flip between *share* (`null`) and *isolate*:
-`FIGARO_RUNTIME_DIR` (socket/PID/bindings), `FIGARO_CONFIG_DIR` (config.toml,
-loadouts, providers, credo, skills), `FIGARO_STATE_DIR` (aria store, OTel),
-`FIGARO_CACHE_DIR` (regenerable cache: update-check memo, …),
-`FIGARO_HUSH_APP` (provider credentials). Pre-set env vars win, so presets
-compose: `FIGARO_HUSH_APP=figaro nix develop .#clean`.
-
-For a quick wire-level experiment without a shell: `go build -o /tmp/x/figaro
-./cmd/figaro`, run it with `FIGARO_RUNTIME_DIR`/`FIGARO_STATE_DIR` pointed at
-temp dirs (inherit `FIGARO_CONFIG_DIR`/`FIGARO_HUSH_APP` for real creds), and
-set `FIGARO_WIRE_DIR=<dir>` to dump raw HTTP request/response bodies.
-`figaro rest` redeploys the daemon after a rebuild (it respawns on the next
-command). The shell here is zsh — globs abort on no-match.
-
-## The iteration loop
-
-1. Change one slice. Keep commits itemized and self-contained.
-2. `go build ./... && go vet ./... && go test ./...` — keep it green.
-3. Exercise it in a dev shell (or a temp-dir `go build`), with
-   `FIGARO_WIRE_DIR` when the wire matters. Pick the preset by what's
-   under test: `.#share-hush` for credential/refresh work, `.#share-config`
-   for loadout/agent iteration, `.#clean` for first-run / migration paths.
-4. Update the docs that the change touched — this skill and its sections are
-   the canonical record. A skill that lies is worse than no skill.
-
-## Knowing yourself: `FIGARO_ARIA`
-
-Every bash tool call an aria makes carries two vars:
-
-```
-FIGARO_ARIA=<the aria's own id>    identity
-FIGARO_NO_BIND=1                  may not mutate the pid-binding
-```
-
-So a shell-out is **statically attended to the aria that spawned it**.
-These need no `--id` from inside an aria — they mean *you*:
+Nine commands cover almost everything. Exact forms, not summaries.
 
 ```sh
-figaro state                    your own chalkboard
-figaro set mantra "..."          patch your own chalkboard
-figaro status                   your own provider/model/ctx
-figaro show -n 5                your own last 5 turns
-figaro send -f -- <text>        a note to yourself (steers the running turn)
+figaro -- <prompt>                 prompt the aria this shell is attended to
+figaro send -f --id <id> -- <p>    fire and forget: submit, do not stream, exit now
+figaro send -er -- <prompt>        one-shot throwaway aria, raw text on stdout
+figaro ls                          your own lineage: parent, siblings, branches
+figaro show <id> -n 5              the last 5 turns of an aria
+figaro fork <id>:12 -- <prompt>    branch at turn 12 and prompt the new branch
+figaro attend <id>                 bind this shell to an aria, like cd
+figaro state <id>                  that aria's chalkboard
+figaro status <id> -j | jq -r .state    dormant, idle, or active
 ```
 
-Precedence is **`--id` > `FIGARO_ARIA` > the pid binding**.
+Three rules that are not guessable:
 
-It is an **identity, not a binding**: nothing is written to the angelus,
-nothing is inherited from the terminal that started the daemon, and it
-cannot be moved. `figaro attend` **refuses** from inside an aria — an
-aria is always attended to itself, permanently. Addressing anyone else
-takes an explicit id, on every verb:
+- **`--` is mandatory** before a prompt. Everything after it is the prompt.
+- **`-f` is how you avoid waiting.** Without it, `send` attaches to the stream
+  and stays until the turn ends. With it, the daemon keeps working and you get
+  your shell back. Follow along later with `figaro listen <id>`.
+- **`ls` is scoped to where you are attended.** It is `ls`, not `ls -R /`.
+  Start scoped; widen with `-h` (home) or `-g` (global) only when scoped comes
+  back empty.
 
-```sh
-figaro send --id <other> -- <prompt>
-figaro show --id <other>
-figaro state --id <other>
-figaro kill <other>
-```
+Every command takes `--id <id>` to address a specific aria, `-j` for one line
+of JSON on stdout, and `-h` for its own help.
 
-A dangling id (your aria was killed mid-shell-out) reports "nothing
-bound" rather than erroring, so scripts keep their normal branch.
+## Vocabulary
 
-## Self-invocation
+One definition each. The file named owns the model behind it.
 
-Figaro can call itself as a subagent — useful for isolated sub-tasks whose
-context shouldn't pollute the current aria, or for pipe-friendly answers.
-Two flags on `figaro send` do the heavy lifting:
+| Term | One sentence | Owner |
+|---|---|---|
+| aria | One conversation, addressed by an opaque hex id. | [cli.md](cli.md) |
+| trunk | A root-to-leaf path through the fork forest; the aria id is its id, and it survives forks. | [reference/trunks.md](reference/trunks.md) |
+| turn | One exchange: your prompt plus everything the agent did about it. The coordinate `:N` in `<id>:<turn>`. | [reference/turns.md](reference/turns.md) |
+| LT | The storage coordinate, positional and cross-channel. Not an address you type. | [reference/turns.md](reference/turns.md) |
+| chalkboard | Per-aria key to JSON state that rides along with the conversation. | [reference/architecture.md](reference/architecture.md) |
+| loadout | The named profile a conversation is born under: model, credo, skills. | [start.md](start.md) |
+| angelus | The single supervisor daemon that owns the registry and outlives shells. | [reference/architecture.md](reference/architecture.md) |
 
-- **`-e` ephemeral** — the aria is not persisted; nothing to clean up, no
-  row in `figaro list` afterward.
-- **`-r` raw** — plain text on stdout, stripped of ANSI/live-render chrome.
-  Streamed, not buffered; safe to pipe.
+## Where everything else lives
 
-The workhorse pattern is `figaro send -er -- <prompt>` — one-shot,
-isolated, script-clean. Fan several out in parallel (background jobs or
-`xargs -P`) when the sub-questions are independent.
+Each row is a separate read. Open one only when its "when" is true of you.
 
-For persistent sub-arias, use `figaro new -- <prompt>` (mints an id you can
-keep talking to via `figaro send --id <id> -r -- <prompt>`), and
-`figaro kill <id>` when done so they don't accumulate in `list`.
-
-See the **figscript** skill for the full scripting recipe (parallel
-fan-out, error handling, JSON extraction).
-
-## Monitoring aria state (job polling)
-
-Every aria carries a **`state`** field published by the daemon — the way
-to tell whether a subagent is still working or has parked. Three values:
-
-| state | meaning |
+| File | When to read it |
 |---|---|
-| `dormant` | not loaded in memory; nothing running |
-| `idle` | loaded, no turn in flight and nothing queued |
-| `active` | a turn is in flight, OR work is queued behind one |
+| [start.md](start.md) | You are new to figaro and want the first hour to go well. Read once. |
+| [cli.md](cli.md) | You need a command that is not in the gesture list above, or a flag's exact meaning. |
+| [agents.md](agents.md) | You are an agent driving figaro, or you are writing a script that does. |
+| [maintaining.md](maintaining.md) | You are changing the figaro source, or handing changed source back to its owner. |
+| [updating-docs.md](updating-docs.md) | You are about to edit any file in this tree. Read it before, not after. |
 
-Source: `state := "idle"; if a.turnCtx != nil || !a.inbox.IsIdle() { state =
-"active" }` in `internal/figaro/agent.go` (Agent.Info); `dormant` is stamped on
-by the angelus when it merges disk-backed arias into the list response
-(`internal/angelus/protocol.go`).
+Deep chapters, in `reference/`. These are long by design and cost real context;
+open one when you are working inside that subsystem, not to browse.
 
-The `turnCtx` half matters, and this file used to omit it — which is worse than
-saying nothing, because it read as though `active` meant only "has queued
-work". A running turn normally has an EMPTY inbox: the event was dequeued to
-start it. An inbox-only rule would therefore report a busy agent as `idle`, and
-a supervisor polling "is my worker still going?" would collect it mid-flight.
-Trust the quoted line over the prose, and re-read the source when they
-disagree.
+| File | When to read it |
+|---|---|
+| [reference/trunks.md](reference/trunks.md) | Forking, branches, `attend`, and what `<id>:<turn>` addresses. |
+| [reference/turns.md](reference/turns.md) | Turn ids, the turn-shaped read wire, pagination. |
+| [reference/arias.md](reference/arias.md) | Reading an aria off disk, and the store layout. |
+| [reference/architecture.md](reference/architecture.md) | The three roles, the IR, the chalkboard, the RPC wire, the provider layer. |
+| [reference/ui-stream.md](reference/ui-stream.md) | How a conversation reaches a terminal: the read wire, inline freeze, the pager. |
+| [reference/ui-testing.md](reference/ui-testing.md) | Testing anything that paints, in a real pty. |
+| [reference/paint-repro.md](reference/paint-repro.md) | Hunting a specific paint bug, or running the `scripts/paint-*.sh` instruments. |
+| [reference/cache-control.md](reference/cache-control.md) | Prompt caching, and overriding it. |
+| [reference/mantra.md](reference/mantra.md) | Maintaining your aria's mantra. |
+| [reference/trunks-substrate.md](reference/trunks-substrate.md) | Changing `internal/store` or the fork handlers. Machinery, not usage. |
+| [reference/translation-lineage.md](reference/translation-lineage.md) | Provider wire caches across a fork. |
+| [reference/range-store.md](reference/range-store.md) | A design that is **not built**. Read as a proposal. |
+| [reference/ir-convergence.md](reference/ir-convergence.md) | Part shipped, one part open. Read for the open tool-channel question. |
+| [notes/](notes/) | Finished or abandoned work. Verify before trusting. |
 
-**One-shot poll (scriptable):**
-
-```sh
-figaro list -j | jq -r '.[] | select(.kind=="conversation") | "\(.state)\t\(.id)\t\(.mantra)"'
-```
-
-**Just one aria:**
-
-```sh
-figaro status <id> -j | jq -r .state
-# or: figaro list -j | jq -r '.[] | select(.id=="<id>") | .state'
-```
-
-`figaro status <id>` (non-JSON) also prints it near the top.
-
-**"Is anything working right now?" — exit-code style:**
-
-```sh
-figaro list -j | jq -e 'any(.state == "active")' >/dev/null && echo busy || echo quiet
-```
-
-**Live tail of one aria's frames** (pushed, not polled):
-
-```sh
-figaro listen <id>
-```
-
-Same live-render stream `send` uses mid-turn — tool calls and text as
-they happen. Ctrl-D detaches without killing the turn.
-
-**Caveats:**
-
-- `active` is edge-triggered off inbox depth. A turn parked waiting on
-  the provider still shows `active`; the flip to `idle` happens when the
-  drain loop finishes the event.
-- `last_active` (ms epoch, in `list -j` / `status -j`) is your recency
-  signal for dormant/idle arias — pair it with `state` if you want
-  "working *and* recently touched".
-- There is no push notification of state transitions on the CLI surface.
-  For reactive monitoring, poll `list -j` on an interval, or `listen` for
-  the frame-level truth.
-
-## Sections (read on demand)
-
-These live beside this file; read the one whose topic is in play.
-
-- **architecture.md** — the three roles, the IR, the chalkboard, the
-  JSON-RPC + live-render wire protocol, the live-render node model and
-  painter invariants, the provider/translation layer, and storage.
-- **arias.md** — how an aria is laid out on disk (the figwal trunk store) and
-  the two ways to read one (the `figaro` CLI vs raw JSONL).
-- **trunks.md** — the forking model: a trunk is a root-to-leaf path with a
-  stable id, loadout/conversation cauterization, LT numbering, and the
-  `attend`/`ls`(=`cd`)/`fork`/`kill` surface.
-- **mantra.md** — maintaining your aria's mantra (the essence phrase shown
-  in `figaro list`).
-- **cache-control.md** — how automatic prompt caching works and how to
-  override it.
+Other first-party skills stand on their own: **subagents** for fanning work
+out, **figscript** for scripting figaro from a shell, **figla** for waiting on
+something without polling.

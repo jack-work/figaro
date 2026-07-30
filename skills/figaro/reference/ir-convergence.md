@@ -1,4 +1,14 @@
-# figaro IR ↔ UI IR convergence
+# figaro IR and UI IR convergence
+
+> **STATUS: PART SHIPPED, ONE PART OPEN.** Checked against source. The naming
+> pass landed (`message.ContentProse` exists, `message.go`). Turn addressing
+> landed and supersedes this file's turn-id discussion: `message.TurnID` is the
+> coordinate, LT is the storage substrate, both documented at `message.go`. See
+> [turns.md](turns.md), which is canonical for that.
+>
+> **Still open:** tool calling over a separate channel, this file's "key
+> blocker". There is no tool channel in `internal/store` today, so the Future
+> section below is a proposal, not a description.
 
 Two representations of a conversation exist today:
 

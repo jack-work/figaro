@@ -1,6 +1,10 @@
 # Tool rendering & output refactor
 
-Status: planning. Branch `feat/generic-tool-ir` (worktree `tool-ir`), off `main`.
+> **STATUS: NOT BUILT, AND NO BRANCH.** The branch this plan names,
+> `feat/generic-tool-ir`, does not exist in this repository. A plan whose
+> branch has evaporated is not a plan. Kept for the reasoning only.
+
+Status: planning (historical). Branch `feat/generic-tool-ir` (worktree `tool-ir`), off `main`.
 First commit: revert of `b942a36` (the write line-by-line change) — see rationale below.
 
 ## Governing principle

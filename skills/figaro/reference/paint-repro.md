@@ -1,4 +1,10 @@
-# PAINT-REPRO.md — a cookbook for hunting figaro's transcript-pager paint bugs
+# Paint repro: a cookbook for hunting transcript-pager paint bugs
+
+> **LIVE INSTRUMENT, not history.** Four scripts depend on the limits recorded
+> here: `scripts/paint-strayscroll.sh`, `paint-fuzz.sh`, `paint-gapcheck.sh`,
+> `paint-jogdiff.sh`. The method that generalizes out of it is
+> [ui-testing.md](ui-testing.md); this file is the measured casebook behind it.
+
 
 Written by ALMAVIVA in Phase 1 so BASILIO, BARTOLO and CHERUBINO do not each
 have to rediscover the same eleven traps. **Everything in here was measured on
