@@ -302,12 +302,24 @@ toward `attend null` / `ls -h` / `ls -g`.
   Without `:<turn>` it is a plain **append** to the tail. The interior-fork case is
   cauterization-aware: if the resolved LT is owned by the root or a loadout stump, a fresh
   child conversation is spawned instead of a re-split (`store.ForkAt` via `Owner`).
-- **`fork [<trunk>[:<turn>]] [--stay]`** — the **imperative, no-prompt** branch. No `:<turn>` =
+- **`fork [<trunk>[:<turn>]] [--stay] [-- <prompt>]`** — the **imperative** branch. No `:<turn>` =
   tail fork (freeze the head; continuation keeps the trunk, a fresh empty alternative is the
   new branch). `:<turn>` = interior fork; the branch shares everything through the end of
   turn `<turn>-1`. Forking your **own** bound aria
   rebinds you to the continuation (same trunk/mantra); forking any other aria, or `--stay`,
   leaves your session untouched. `fork` (no arg) = `fork <current trunk>`.
+- **`fork … -- <prompt>`** — fork **and send**, the way `new -- <prompt>` does. The prompt
+  always lands on the **alternative** (the fresh empty branch); the continuation is never
+  written to. `--stay` governs the **shell** only — without it, forking your own bound aria
+  rebinds you to the *alternative* (that is where the prompt went), and forking anyone
+  else's never moves you. Flags come from `send`'s parser and are routed through `send`'s
+  own dispatch (`-r`/`-v`/`-o`/`-l`/`-x`+`-n`/`-y`/`-f`); `-e` is rejected (a fork is
+  persistent by nature), and the send flags without a prompt are errors rather than no-ops.
+  `-j` prints one line, `mode:"fork-send"`, `aria_id` = the branch.
+
+  Contrast `send <trunk>:<turn> --stay`, which parks the branch and sends to the *original*
+  trunk. `send`'s subject is the message (*where does this land?*); `fork`'s is the branch
+  (*what did I just make?*), so under `fork` the branch is always what gets prompted.
 
 ### 4.3 The resolution table
 
@@ -318,6 +330,7 @@ toward `attend null` / `ls -h` / `ls -g`.
 | `send :<turn> -- msg` | pid → trunk (fail if none); turn → `atMainLT` via `resolveTurn` | fork there, send to new branch, rebind |
 | `send <trunk>:<turn> -- msg` | turn → `atMainLT` | same |
 | `fork [<trunk>[:<turn>]]` | pid → trunk if bare; turn → `atMainLT` | imperative tail/interior fork, no message |
+| `fork [<trunk>[:<turn>]] -- msg` | same | fork, then send to the **alternative**; rebind there iff the target was your own bound aria and no `--stay` |
 | `attend <id>` / `:<turn>` | pid → trunk | bind shell (+ one-shot pending fork-point) |
 | `attend null` | — | unbind (go home); next conversation defaults to the live loadout |
 | `kill <trunk>` | — | remove trunk + subtree (`-r` for live branches) |

@@ -73,12 +73,29 @@ for debugging the fig IR, but it is not an address.
   then send to the new branch (and **rebind** this shell there;
   `--stay`/`--attend=false` to send but not move). Without `:<turn>`, plain
   append to the tail.
-- **`fork [<id>[:<turn>]] [--stay]`** — imperative branch, **no prompt**. A
+- **`fork [<id>[:<turn>]] [--stay] [-- <prompt>]`** — imperative branch. A
   `:<turn>` is an interior fork: everything through the end of turn
   `<turn>-1` is shared, the original suffix becomes the continuation, a fresh
   empty alternative diverges. No `:<turn>` = tail fork. Forking your **own** bound aria rebinds you to the
   continuation (same trunk/mantra, the alternative is the new branch);
   forking any other aria, or `--stay`, leaves your session untouched.
+
+  **With a prompt** it forks *and sends*, the way `new -- <prompt>` does. The
+  prompt always lands on the **alternative** — the fresh empty branch — and
+  the continuation is never written to. `--stay` then governs only the
+  **shell**: without it, forking your own aria moves you to the alternative
+  (that is where the prompt went); forking anyone else's aria never moves
+  you, so `fork <other>:12 --stay -- "try it this way"` is a clean fan-out.
+  Flags are `send`'s (same parser, same dispatch): `-r` raw, `-v` verbatim,
+  `-o` verbose, `-l` listen, `-x`(+`-n`/`-y`) exec, `-f` forget. `-e` is
+  **rejected** (a fork mints a persistent branch), and a send flag without a
+  prompt is an error rather than a no-op. `-j` prints one line —
+  `mode:"fork-send"`, `aria_id` = the branch. `fork --` with an empty body
+  opens the composer.
+
+  > Deliberate asymmetry: `send <id>:<turn> --stay` parks the branch and
+  > sends to the *original* trunk. `send`'s subject is the message (*where
+  > does this land?*); `fork`'s is the branch (*what did I just make?*).
 - **`attend <id>` / `<id>:<turn>` / `:<turn>`** (alias **`at`**) — bind this shell,
   like `cd`. CLI-native attendance: the pid↔trunk map (the angelus binding
   registry) is the binding authority; the figwal layer knows nothing of it. An

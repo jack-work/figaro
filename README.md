@@ -125,6 +125,7 @@ figaro send -r -- <prompt>      raw output (pipe-friendly)
 figaro list                     show arias
 figaro attend <id>              bind to an aria
 figaro fork                     branch at head
+figaro fork <id>:12 -- <p>      branch at a turn and prompt the branch
 figaro show <id> -n 5           last 5 turns
 figaro listen <id>              follow an aria without prompting it
 figaro set <key> <value>        patch chalkboard state
