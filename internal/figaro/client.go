@@ -16,6 +16,21 @@ type NotifyHandler func(method string, params json.RawMessage)
 // Client is a typed JSON-RPC client for talking to a figaro agent socket.
 type Client struct {
 	cli *jkrpc.Client
+	// caller is the aria this process belongs to; see angelus.Client.caller.
+	// The identity must survive BOTH hops (CLI -> angelus, angelus -> agent),
+	// and these are separate clients over separate sockets, so each presents
+	// it independently.
+	caller string
+}
+
+// call is the single point every request passes through; see
+// angelus.(*Client).call.
+func (c *Client) call(ctx context.Context, method string, params, result any) error {
+	raw, err := rpc.WithCaller(params, c.caller)
+	if err != nil {
+		return err
+	}
+	return c.cli.Call(ctx, method, raw, result)
 }
 
 // DialClient connects to a figaro agent.
@@ -25,7 +40,7 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 		return nil, err
 	}
 	cli := jkrpc.NewClient(conn, jkrpc.NotifyFunc(onNotify))
-	return &Client{cli: cli}, nil
+	return &Client{cli: cli, caller: rpc.CallerFromEnv()}, nil
 }
 
 // Qua sends a prompt and returns the newest materialized turn id at accept
@@ -34,7 +49,7 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 // while idle opens a new turn. The server classifies it at the drain boundary.
 func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) (int, bool, error) {
 	var resp rpc.QuaResponse
-	err := c.cli.Call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, &resp)
+	err := c.call(ctx, rpc.MethodQua, rpc.QuaRequest{Text: text, Chalkboard: cb}, &resp)
 	return resp.Cursor, resp.Active, err
 }
 
@@ -43,7 +58,7 @@ func (c *Client) Qua(ctx context.Context, text string, cb *rpc.ChalkboardInput) 
 // request's JSON field remains named sinceLT for wire compatibility.
 func (c *Client) Read(ctx context.Context, sinceTurn int) (aria.Page, error) {
 	var r aria.Page
-	err := c.cli.Call(ctx, rpc.MethodRead, rpc.ReadRequest{SinceLT: sinceTurn}, &r)
+	err := c.call(ctx, rpc.MethodRead, rpc.ReadRequest{SinceLT: sinceTurn}, &r)
 	return r, err
 }
 
@@ -54,14 +69,14 @@ func (c *Client) Read(ctx context.Context, sinceTurn int) (aria.Page, error) {
 func (c *Client) ReadBefore(ctx context.Context, at aria.Anchor, budget int) (aria.Page, error) {
 	var r aria.Page
 	req := rpc.ReadRequest{Before: int(at.Turn), BeforeNode: int(at.Node), Limit: budget}
-	err := c.cli.Call(ctx, rpc.MethodRead, req, &r)
+	err := c.call(ctx, rpc.MethodRead, req, &r)
 	return r, err
 }
 
 // Context returns all messages in the figaro's chat history.
 func (c *Client) Context(ctx context.Context) (*rpc.ContextResponse, error) {
 	var resp rpc.ContextResponse
-	if err := c.cli.Call(ctx, rpc.MethodContext, nil, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodContext, nil, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -71,7 +86,7 @@ func (c *Client) Context(ctx context.Context) (*rpc.ContextResponse, error) {
 // queued behind it. The queued messages coalesce into one combined message,
 // which is what the aria answers next.
 func (c *Client) Interrupt(ctx context.Context) error {
-	return c.cli.Call(ctx, rpc.MethodInterrupt, rpc.InterruptRequest{}, nil)
+	return c.call(ctx, rpc.MethodInterrupt, rpc.InterruptRequest{}, nil)
 }
 
 // Hangup is Interrupt with an explicit disposition for the queue, and the
@@ -90,7 +105,7 @@ func (c *Client) Hangup(ctx context.Context, disposition rpc.QueueDisposition) (
 // Set applies a chalkboard patch directly. No LLM round-trip.
 func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch) (*rpc.SetResponse, error) {
 	var resp rpc.SetResponse
-	if err := c.cli.Call(ctx, rpc.MethodSet, rpc.SetRequest{Patch: patch}, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodSet, rpc.SetRequest{Patch: patch}, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -100,7 +115,7 @@ func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch) (*rpc.SetRe
 // keys are removed; values equal to the current snapshot are skipped.
 func (c *Client) Loadout(ctx context.Context, name string) (*rpc.LoadoutResponse, error) {
 	var resp rpc.LoadoutResponse
-	if err := c.cli.Call(ctx, rpc.MethodLoadout, rpc.LoadoutRequest{Name: name}, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodLoadout, rpc.LoadoutRequest{Name: name}, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -109,7 +124,7 @@ func (c *Client) Loadout(ctx context.Context, name string) (*rpc.LoadoutResponse
 // Chalkboard returns the agent's current chalkboard snapshot.
 func (c *Client) Chalkboard(ctx context.Context) (*rpc.ChalkboardResponse, error) {
 	var resp rpc.ChalkboardResponse
-	if err := c.cli.Call(ctx, rpc.MethodChalkboard, nil, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodChalkboard, nil, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -120,7 +135,7 @@ func (c *Client) Chalkboard(ctx context.Context) (*rpc.ChalkboardResponse, error
 // response's Epoch names the generation those ids belong to.
 func (c *Client) Queued(ctx context.Context) (*rpc.QueuedResponse, error) {
 	var resp rpc.QueuedResponse
-	if err := c.cli.Call(ctx, rpc.MethodQueued, rpc.QueuedRequest{}, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodQueued, rpc.QueuedRequest{}, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
