@@ -10,6 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	figOtel "github.com/jack-work/figaro/internal/otel"
+	"github.com/jack-work/figaro/internal/rpc"
 )
 
 // Run dispatches a CLI invocation. progName is the basename of argv[0]
@@ -319,20 +320,71 @@ Keys:
 	r.Register(&cmdkit.Command{
 		Name:  "hup",
 		Group: "Prompt",
-		Short: "Hang up: interrupt an aria's current turn",
-		Usage: "hup [<id>]",
-		Long: `Send figaro.interrupt to a trunk — the same RPC Ctrl-C inside a
-send stream fires. The agent aborts whatever turn is in flight.
-With no id, the pid-bound aria is used.`,
+		Short: "Hang up: stop the turn, KEEP queued messages (`cut` discards them)",
+		Usage: "hup [<id>] [-j|--json]",
+		Long: `Hang up on the turn in flight — the same RPC Ctrl-C fires inside a
+send stream. Anything queued behind it is KEPT.
+
+The waiting messages coalesce into ONE combined message, which the aria
+answers next: three notes typed during a long turn are one question, not
+three turns to sit through. A queued chalkboard set or fork is a barrier
+and is never crossed.
+
+  figaro hup          stop the turn, keep the queue
+  figaro hup -j       the same, printing one JSON object: which aria, and
+                      the queue that survived
+
+To throw the queue away instead, use ` + "`figaro cut`" + ` — which hands it
+back so you can save it. With no id, the pid-bound aria is used.`,
 		ArgsMin: 0,
 		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "Print one JSON object (aria, cleared, queue) and exit"},
+		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			var id string
 			if len(ctx.Args) > 0 {
 				id = ctx.Args[0]
 			}
-			runHup(ld, id)
+			runHangup(ld, id, rpc.QueueKeep, ctx.BoolFlag("json"))
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "cut",
+		Group: "Prompt",
+		Short: "Hang up and DISCARD queued messages; -j returns them (`hup` keeps them)",
+		Usage: "cut [<id>] [-j|--json]",
+		Long: `Cut the line: stop the turn in flight AND drop everything queued
+behind it.
+
+The discarded messages are handed back rather than lost — verbatim, one
+entry per message as you typed it, with the chalkboard input each
+carried — so they can be persisted:
+
+  figaro cut          stop the turn, discard the queue (listed on stdout)
+  figaro cut -j > lost.json
+                      the same, as one JSON object you can keep
+
+Unlike ` + "`figaro hup`" + `, nothing survives to be answered. Clearing does
+not need a turn to be running — a queue is worth dropping between turns
+too. A queued chalkboard set or fork is not a question and is left
+alone. With no id, the pid-bound aria is used.`,
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "json", Short: "j", IsBool: true, Description: "Print one JSON object (aria, cleared, the drained queue) and exit"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			var id string
+			if len(ctx.Args) > 0 {
+				id = ctx.Args[0]
+			}
+			runHangup(ld, id, rpc.QueueClear, ctx.BoolFlag("json"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
