@@ -598,26 +598,22 @@ func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
 	})
 }
 
-// runFork branches a conversation. The target freezes (keeps its id as
-// an index node) and two fresh children are minted: the continuation
+// runFork branches a conversation, imperatively and with no prompt (the
+// prompt-bearing form lives in fork.go). The target freezes (keeps its id
+// as an index node) and two fresh children are minted: the continuation
 // (the original line) and an empty alternative.
 //
-// Target forms: bare (the shell-bound aria), `<id>`, or `<id>:<LT>` for
-// an interior fork at that IR logical time (history below <LT> is shared;
-// the original suffix becomes the continuation).
+// spec is the target: "" (the shell-bound aria), `<id>`, or `<id>:<turn>`
+// for an interior fork at that turn.
 //
 // Rescoping: when you fork your OWN bound aria, the shell rebinds to the
 // continuation so work carries on seamlessly (same trunk/mantra, new id)
 // — the bound aria froze, so you must move. Forking any OTHER aria, or
 // passing --stay, is a maintenance fork: your session is left untouched.
-func runFork(loaded *config.Loaded, idFlag string, args []string, stay, asJSON bool) {
-	target := idFlag
-	if target == "" && len(args) > 0 {
-		target = args[0]
-	}
+func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 	// Split an optional :<turn> suffix off the target. Shared parser — fork and
 	// send must not drift apart on what a coordinate means.
-	target, turn, hasTurn, perr := parseTarget(target)
+	target, turn, hasTurn, perr := parseTarget(spec)
 	if perr != nil {
 		die("fork: %s", perr)
 	}

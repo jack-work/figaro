@@ -455,7 +455,7 @@ With no id, the pid-bound aria is used.`,
 		Name:  "fork",
 		Group: "Session",
 		Short: "Branch a conversation: freeze it, mint two children",
-		Usage: "fork [--id <id> | <id>[:<turn>]] [--stay]",
+		Usage: "fork [--id <id> | <id>[:<turn>]] [--stay] [-r|-v|-o|-l|-x|-n|-y|-f|-j] [-- <prompt>]",
 		Long: `Branch a conversation. The target freezes (its id becomes a
 read-only index node) and two fresh children are minted: the
 continuation (the original line) and an empty alternative.
@@ -468,20 +468,42 @@ continuation (the original line) and an empty alternative.
 
 Forking your own bound aria rebinds this shell to the continuation
 (same trunk/mantra, new id) since the bound aria just froze. Forking
-any other aria, or passing --stay, leaves your session untouched.`,
-		ArgsMin: 0,
-		ArgsMax: 1,
+any other aria, or passing --stay, leaves your session untouched.
+
+With a prompt — ` + "`figaro fork [flags] -- <prompt>`" + ` — it also sends, the way
+` + "`figaro new -- <prompt>`" + ` does. The prompt always lands on the ALTERNATIVE
+(the fresh empty branch); the continuation is never written to. Parsing is
+` + "`send`" + `'s, so the send flags mean here exactly what they mean there:
+
+  figaro fork -- <prompt>              branch the bound aria, prompt the branch
+  figaro fork <id>:12 -- <prompt>      "what if turn 12 had gone this way"
+  figaro fork --stay <id> -- <p>       fan out a branch; do not move this shell
+  figaro fork -r -- <prompt>           branch, stream raw to stdout
+  figaro fork -fj -- <prompt>          branch, fire-and-forget, print the ids
+
+  -r/--raw, -v/--verbatim, -o/--verbose, -l/--listen, -x/--exec (+ -n, -y),
+  -f/--forget  — as in ` + "`figaro send`" + `; prompt-only (an error without one).
+  -j/--json    — one line on stdout: {aria_id, parent, continuation,
+                 alternative, turn, rescoped, mode}. mode is "fork" with no
+                 prompt, "fork-send" with one, and aria_id is then the branch.
+  --stay       — governs the SHELL only, never where the prompt lands. (This
+                 differs from ` + "`send <id>:<turn> --stay`" + `, which parks the branch
+                 and sends to the original trunk; under fork the branch is
+                 always the thing you just made, so it is always the thing
+                 that gets prompted.)
+  -e/--ephemeral is rejected: a fork mints a persistent branch.`,
+		PassRaw: true,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (defaults to this shell's); :<turn> for an interior fork"},
-			{Long: "stay", IsBool: true, Description: "Do not rebind this shell to the continuation"},
+			{Long: "stay", IsBool: true, Description: "Do not rebind this shell to the new branch/continuation"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit machine-readable result on stdout (parent, continuation, alternative, ...)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			runFork(ld, ctx.Flag("id"), ctx.Args, ctx.BoolFlag("stay"), ctx.BoolFlag("json"))
+			runForkCmd(ld, ctx.RawArgs)
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
+		CompleteArgs: completeForkPrompt,
 	})
 
 	r.Register(&cmdkit.Command{

@@ -122,3 +122,15 @@ func completeNewPrompt(c *cmdkit.CompleteContext) []string {
 	}
 	return completePromptOrIDFlag(c)
 }
+
+// completeForkPrompt serves `figaro fork`: aria ids in the target slot
+// (positional or after --id), prompt context past the `--` boundary.
+func completeForkPrompt(c *cmdkit.CompleteContext) []string {
+	if c == nil {
+		return nil
+	}
+	if c.PastSeparator {
+		return completePromptContext(c)
+	}
+	return completeAriaIDsPositionalOrFlag(c)
+}
