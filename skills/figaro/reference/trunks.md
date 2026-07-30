@@ -96,6 +96,38 @@ for debugging the fig IR, but it is not an address.
   > Deliberate asymmetry: `send <id>:<turn> --stay` parks the branch and
   > sends to the *original* trunk. `send`'s subject is the message (*where
   > does this land?*); `fork`'s is the branch (*what did I just make?*).
+
+  **An aria cannot fork itself from inside its own running turn.** Fork
+  coordination rides the agent's single-threaded inbox, so the fork queues
+  behind the very turn whose tool call is waiting on it — neither side can
+  move. With `[authz] policy = "default"` this is refused up front with an
+  error carrying the workaround; with the policy off it simply hangs.
+
+  The workaround is to **detach** the fork so it lands after the turn closes:
+
+  ```sh
+  mkdir -p /var/tmp/$FIGARO_ARIA
+  cat > /var/tmp/$FIGARO_ARIA/fork.sh <<'SH'
+  #!/usr/bin/env bash
+  set -u
+  figaro fork --id "$ARIA" --stay -j > "/var/tmp/$ARIA/fork.json"
+  SH
+  chmod +x /var/tmp/$FIGARO_ARIA/fork.sh
+  ARIA=$FIGARO_ARIA env -u FIGARO_ARIA -u FIGARO_NO_BIND \
+      setsid nohup /var/tmp/$FIGARO_ARIA/fork.sh >/dev/null 2>&1 &
+  ```
+
+  Read `fork.json` on the **next** turn to learn the ids. Unsetting
+  `FIGARO_ARIA`/`FIGARO_NO_BIND` matters: otherwise the detached child is
+  attributed back to the calling aria and lands in the same trap. Forking a
+  **different** aria mid-turn is fine — that aria's drain loop is free — and
+  so is forking yourself while **idle**, which is exactly what the detached
+  script does.
+
+  > This restriction is a **guardrail, not a cure**. The real defect is that
+  > trunk coordination blocks the actor loop at all; the fix is to store trunk
+  > state in its own reducible xwal channel the way the chalkboard is stored.
+  > See the note at `angelus.handlers.fork`.
 - **`attend <id>` / `<id>:<turn>` / `:<turn>`** (alias **`at`**) — bind this shell,
   like `cd`. CLI-native attendance: the pid↔trunk map (the angelus binding
   registry) is the binding authority; the figwal layer knows nothing of it. An

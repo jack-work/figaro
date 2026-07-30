@@ -165,6 +165,57 @@ Per-aria request methods: `figaro.qua` (prompt), `figaro.context`,
 The transport is NDJSON-framed JSON-RPC 2.0. Every accepted per-aria connection
 is automatically subscribed; call `figaro.read` on that connection for initial
 state, then keep reading notifications. There is no explicit subscribe method.
+
+### Caller identity — `x-internal-figaro-id`
+
+Every request carries the **calling aria's** id in a reserved params field
+(`rpc.CallerKey`), injected by both client hops (`WithCaller`) and read back by
+`CallerOf`. It rides in `params` and not in a top-level `meta` because the
+envelope belongs to **jkrpc**, an external module: `Client.Call` takes
+`(method, params, result)` and `HandlerFunc` receives only `(ctx, params)`, so
+an envelope slot would cost a jkrpc API change, a release, and a signature
+change to every handler — to carry one string `params` already carries.
+
+Injection is generic rather than a field on each request struct because
+`figaro.context` and `figaro.chalkboard` send **nil** params; there would be
+nothing to embed in, and those methods must still be authenticatable.
+
+This is **not** the target-selection rule. Selection is
+`--id > FIGARO_ARIA > pid binding` and answers *which aria am I talking about*;
+caller identity answers *which aria am I*, and only `FIGARO_ARIA` can — `--id`
+is an argument the caller chose, and a pid binding says which aria a shell is
+*attending*, not that it is one.
+
+### Authorization — `internal/authz`
+
+An **Authenticator** turns the credential into an `Identity`; a single
+**Policy** maps `(identity, method, raw params)` to allow or deny-with-reason.
+`authz.Guard` wraps the whole angelus handler map, so the guarded set is the
+served set and no handler opts in individually. Denials return JSON-RPC code
+**-32020** carrying the reason verbatim.
+
+`[authz]` in `config.toml` selects both, and **both default off** — an absent
+section behaves exactly as figaro did before:
+
+```toml
+[authz]
+caller_identity = true   # believe x-internal-figaro-id (default false)
+policy = "default"       # or "allow-all" (default)
+```
+
+The switch is the point: `FIGARO_ARIA` cannot be turned off, so a server has no
+state in which it may doubt it — and a credential that cannot be doubted
+authenticates nothing. `AriaHeader` is trust-on-assertion, not proof; it is an
+interface so `SO_PEERCRED` or a bearer token drops in without any policy or
+handler changing.
+
+The first rule, `NoSelfForkDuringTurn`, refuses a fork an aria issues against
+**itself while its own turn is running** — that deadlocks, because fork
+coordination rides the agent's single-threaded inbox. Its error text carries the
+detached-fork workaround. It is a **guardrail, not a cure**; the fix is to move
+trunk state into its own reducible xwal channel (noted at
+`angelus.handlers.fork`).
+
 The reply is a **server-authoritative live-render stream**:
 
 - `figaro.aria` (`MethodAriaFrame`) — push one **`Page`**: the single wire
