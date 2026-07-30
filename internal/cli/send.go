@@ -78,7 +78,7 @@ func extractSendFlags(args []string) (sendOpts, []string, error) {
 			allBool := true
 			for _, r := range letters {
 				switch r {
-				case 'e', 'r', 'v', 'o', 't', 'x', 'n', 'y', 'f':
+				case 'e', 'r', 'v', 'o', 't', 'x', 'n', 'y', 'f', 'j', 'l':
 					// known bool short
 				default:
 					allBool = false

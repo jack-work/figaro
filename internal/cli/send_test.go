@@ -117,6 +117,21 @@ func TestExtractSendFlags(t *testing.T) {
 			wantRest: []string{"--", "p"},
 		},
 		{
+			// -j and -l are bool shorts like the rest; they were missing
+			// from the bundle table, so `-fj` (the scripting workhorse:
+			// fire-and-forget + machine-readable) died as an unknown flag.
+			name:     "bundled fj",
+			in:       []string{"-fj", "--", "p"},
+			wantOpts: sendOpts{forget: true, json: true},
+			wantRest: []string{"--", "p"},
+		},
+		{
+			name:     "bundled rlo",
+			in:       []string{"-rlo", "--", "p"},
+			wantOpts: sendOpts{raw: true, listen: true, verbose: true},
+			wantRest: []string{"--", "p"},
+		},
+		{
 			name:     "dry-run",
 			in:       []string{"-x", "-n", "--", "ls"},
 			wantOpts: sendOpts{exec: true, dryRun: true},
