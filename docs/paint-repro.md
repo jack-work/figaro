@@ -760,9 +760,31 @@ since its prediction is built from the base being disowned. Tests are canaried
 in `transcript_screenmoved_test.go` — with the fix reverted the failure prints
 `got "status ⠋ · ctx 1k", want "───── rule"`, which is the bug in miniature.
 
-**Still open, and deliberately not decided here:** *where* an error hint or an
-interrupt notice should go while the pager is up (frame-buffer status row / leave
-the pager first / the `!` panel). The barrier is correct under all three.
+**Decided by the master, and built:** trouble goes in the FRAME BUFFER as the
+red left-most token of the status row, and the row ellipsises when it overflows
+(`livelogTurn.report` picks the door by renderer; `leaveTranscript` reprints the
+full text to the shell so a multi-line hint is not lost to a one-row widget).
+Note `displayWidth`, which that needed: `runewidth.StringWidth` counts the BYTES
+of an SGR run as columns, so a dim wrapper alone measured eight columns of
+nothing and the footer shed tokens that fit.
+
+**Instruments, and what each one can actually decide:**
+
+| script | question it answers | can it discriminate arms? |
+|---|---|---|
+| `scripts/paint-strayscroll.sh` | does a bypassing write smear the transcript? | **YES** — inject, then HOLD STILL |
+| `scripts/paint-fuzz.sh` | do the invariants hold under randomized geometry + gestures? | **NO** — its own resizes repair the bug |
+
+That second row is the trap worth carrying forward. Run the fuzz against the
+PRE-FIX binary with `INJECT=1` and it reports **0 failures over 25 steps**,
+because every resize nils `t.prev` and heals the damage before the capture. A
+fuzz whose gestures cure what it hunts is a guard, not a repro. Measured passes
+on the fixed binary: idle **80 steps**, live **44 steps**, 0 failures.
+
+**Still open:** a pane below 4 rows keeps a stale slice of the last frame until
+the next resize (`renderFrame` returns early by design — "skip the frame rather
+than crash"). Self-healing, deliberate, and outside this fix; noted because the
+fuzz photographs it and a future hunter will otherwise file it twice.
 
 ## 9. If BASILIO and BARTOLO converge
 
