@@ -38,19 +38,17 @@ type transcript struct {
 	status *sessionStatus
 
 	active      bool
-	showHelp    bool // '?': the footer grows into a key-reference panel
-	showStatus  bool // '!': the footer grows into the figaro-status panel
-	showQueued  bool // the footer grows into the queued-prompts panel
-	queuedByKey bool // ...because the user pressed 'Q', not because it filled
-	queuedList  []string
-	queuedErr   string
+	showHelp    bool     // '?': the footer grows into a key-reference panel
+	showStatus  bool     // '!': the footer grows into the figaro-status panel
+	showQueued  bool     // the footer grows into the queued-prompts panel
+	queuedByKey bool     // ...because the user pressed 'Q', not because it filled
 	queuedRows  []string // pre-rendered by livelogTurn; see queuedPanelLines
 	queuedFetch func()   // async refresh of the queued snapshot; set by the input loop
 	w, h        int
 	tick        int
 
-	prev    []string   // last painted screen (the frame the terminal is holding)
-	prefix  string     // one-shot escapes emitted with the next frame (see enter)
+	prev   []string // last painted screen (the frame the terminal is holding)
+	prefix string   // one-shot escapes emitted with the next frame (see enter)
 	// altPending/altOn are the alt-screen PAIRING. enter() queues the switch in
 	// prefix and sets altPending; the paint that actually emits it sets altOn;
 	// leave() writes the exit sequence only when altOn. Without this, a pager
@@ -64,10 +62,10 @@ type transcript struct {
 	// and now is injectable so the interval is testable without sleeping.
 	now      func() time.Time
 	lastFull time.Time
-	lineKey []sliceKey // slice owning each line of lines(), for resize anchoring
-	offset  int        // top line of the viewport into lines()
-	follow  bool       // stick to the bottom on new content
-	pendG   bool       // saw one 'g' (for gg)
+	lineKey  []sliceKey // slice owning each line of lines(), for resize anchoring
+	offset   int        // top line of the viewport into lines()
+	follow   bool       // stick to the bottom on new content
+	pendG    bool       // saw one 'g' (for gg)
 
 	// Frame scheduling. render() marks the screen stale and defers when a
 	// batch is open (an input burst being drained) or when the frame-rate gate
@@ -234,7 +232,19 @@ func (t *transcript) enter() {
 	// QUEUED, NOT WRITTEN: the switch rides the next frame, so a pager that
 	// never paints never switches the terminal at all. leave() must honour the
 	// same condition — that is what altPending/altOn record.
-	t.prefix = altScreenOn + autowrapOff + ldmouse.Enable + cursorHide + "\x1b[2J"
+	//
+	// TWO ESCAPES ARE GONE FROM THIS LINE, both provably redundant:
+	//
+	//   \x1b[2J   — DECSET 1049 switches to the alternate buffer "clearing it
+	//               first" (xterm ctlseqs). On a terminal that honours 1049 the
+	//               erase is a no-op; on one that does not, it is the exact
+	//               instruction that wipes the user's real screen — the hazard
+	//               just removed from leave(), sitting here in its other copy.
+	//   autowrapOff + cursorHide
+	//             — both entry points already emit them before a pager can
+	//               exist (stream.go, listen.go), newLivelogTurn has no third
+	//               caller, and nothing between there and here restores either.
+	t.prefix = altScreenOn + ldmouse.Enable
 	t.altPending = true
 	t.render()
 }
@@ -1536,10 +1546,9 @@ func (t *transcript) statusPanelLines() []string {
 }
 
 // queuedPanelLines is the 'Q' panel: the currently-queued (accepted but not
-// yet started) user prompts, oldest first. The list is a snapshot the input
-// loop refreshes asynchronously via figaro.queued (setting queuedList /
-// queuedErr under the shared render mutex). Purely observational — there is
-// no cancellation surface here.
+// yet started) user prompts, oldest first. The rows are a snapshot livelogTurn
+// hands down (queuedRows) as figaro.queued reports it. Purely observational —
+// there is no cancellation surface here.
 // showQueuedAuto opens or closes the panel because the QUEUE changed rather
 // than because a key was pressed. A panel the user opened by hand is never
 // auto-closed: draining the queue must not yank away a view they asked for.
@@ -1589,13 +1598,6 @@ func (t *transcript) openQueuedPanel() {
 	if t.queuedFetch != nil {
 		t.queuedFetch()
 	}
-}
-
-// setQueued updates the panel's cached snapshot. Called by the input loop
-// under the shared render mutex from the fetch goroutine's completion.
-func (t *transcript) setQueued(prompts []string, errMsg string) {
-	t.queuedList = prompts
-	t.queuedErr = errMsg
 }
 
 // helpLines is the '?' panel: the footer grown upward into a key reference,

@@ -397,8 +397,12 @@ func TestTranscriptPaint_GesturesKeepBelief(t *testing.T) {
 			tr.render()
 			step("help panel closed")
 
-			// The queued-prompts panel, opened the way the queue itself opens it.
-			tr.setQueued([]string{"a queued prompt", "and another one"}, "")
+			// The queued-prompts panel, opened the way the queue itself opens
+			// it — which means feeding queuedRows, the only field the panel
+			// reads. The call this replaced went to a setter that wrote two
+			// fields nobody read, so the panel rendered its "(none)" fallback
+			// while the comment claimed otherwise.
+			tr.queuedRows = []string{"", "↳ queued messages", "   a queued prompt", "   and another one"}
 			tr.showQueuedAuto(true)
 			step("queued panel open")
 			tr.showQueuedAuto(false)

@@ -983,7 +983,6 @@ func (t *livelogTurn) setQueued(prompts []string, errMsg string) {
 		t.tr.showQueuedAuto(false)
 	}
 	t.tr.queuedRows = t.queuedRows()
-	t.tr.setQueued(prompts, errMsg)
 }
 
 // queuedRows is the ONE rendering of the queue, so the inline trailer and the
