@@ -90,14 +90,27 @@ func bindingDisabled() bool {
 	return !interactive
 }
 
-// extractNoBindFlag removes --no-bind / --absolute / -A from args in
-// place and returns the filtered slice, setting noBindFlag if found.
-// Runs before router dispatch so any command can be called with the
-// flag regardless of its own flag definitions. Also recognizes --bind
-// as an explicit opt-in override.
+// extractNoBindFlag pulls the binding-policy flags out of argv and returns
+// the rest. It stops at the first bare `--`: everything after that boundary
+// is a prompt, and a prompt is not argv.
+//
+// It used to scan the whole slice, so `figaro send -- explain --no-bind`
+// deleted the token from the PROMPT and flipped the policy on the way past.
+// Two silent corruptions from one loop, and the same class as every other
+// defect on this surface: argv nobody consumed must not vanish.
 func extractNoBindFlag(args []string) []string {
 	out := args[:0]
+	pastBoundary := false
 	for _, a := range args {
+		if pastBoundary {
+			out = append(out, a)
+			continue
+		}
+		if a == "--" {
+			pastBoundary = true
+			out = append(out, a)
+			continue
+		}
 		switch a {
 		case "--no-bind", "--absolute", "-A":
 			noBindFlag = true
