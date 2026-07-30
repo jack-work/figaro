@@ -106,7 +106,8 @@ func completePromptOrIDFlag(c *cmdkit.CompleteContext) []string {
 }
 
 // completeNewPrompt is completePromptOrIDFlag plus loadout-name
-// suggestions after --loadout / -L. Used only by `figaro new`.
+// suggestions after --loadout / -L. Used by `new` and by `send`, which
+// takes the same flag for the aria it may create.
 func completeNewPrompt(c *cmdkit.CompleteContext) []string {
 	if c == nil {
 		return nil
