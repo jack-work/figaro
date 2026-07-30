@@ -66,7 +66,10 @@ type Backend interface {
 	// ChalkboardState folds the aria's reducible chalkboard channel to
 	// its current snapshot. The channel is the durable truth; there is
 	// no separate chalkboard file.
-	ChalkboardState(ariaID string) (chalkboard.Snapshot, error)
+	// The returned version is the chalkboard-channel index the fold stopped
+	// at — where a subscriber resuming from this snapshot must start reading.
+	// Without it a caller holds state and cannot say which state it is.
+	ChalkboardState(ariaID string) (chalkboard.Snapshot, uint64, error)
 
 	// ApplyChalkboard appends a state patch to the chalkboard channel,
 	// keyed to the next IR LT (the transition the next message carries).

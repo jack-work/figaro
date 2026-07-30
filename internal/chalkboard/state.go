@@ -9,13 +9,21 @@ import (
 	"sync/atomic"
 )
 
-// board is the unit of publication: the current snapshot plus whether it
-// holds changes not yet on disk. The two travel together so a reader can
-// never observe one without the other, and so publishing is a single
-// atomic pointer store.
+// board is the unit of publication: the current snapshot, whether it holds
+// changes not yet on disk, and the durable VERSION the snapshot reflects. The
+// three travel together so a reader can never observe one without the others,
+// and so publishing is a single atomic pointer store.
+//
+// version is ASSIGNED, never generated here. It is the append index the store
+// gave the patch (the chalkboard channel's own position, or the IR LT for an
+// ephemeral aria). A counter incremented by State would be a second number
+// claiming to be the version, and the two would drift the moment anything
+// reached the channel outside State's knowledge — which is exactly what a fold
+// at Open does.
 type board struct {
 	snapshot Snapshot
 	dirty    bool
+	version  uint64
 }
 
 // State is a per-aria chalkboard state handle.
@@ -85,24 +93,51 @@ func (s *State) Snapshot() Snapshot {
 	return s.load().snapshot
 }
 
-// Apply advances the state by the patch and returns the new board.
-// Writer-side only — see the concurrency contract on State.
+// Apply advances the state by the patch without moving the version. It is the
+// unversioned form, for callers with no durable index to quote — an ephemeral
+// aria whose patch rides a message that has not been appended yet.
 //
-// A patch that changes nothing publishes nothing and does not mark the
-// state dirty: the tree returns a pointer-identical root for a
-// semantically equal write, so there is no new state to persist.
+// A patch that changes nothing publishes nothing and does not mark the state
+// dirty: the tree returns a pointer-identical root for a semantically equal
+// write, so there is no new state to persist.
 func (s *State) Apply(p Patch) Snapshot {
+	return s.ApplyAt(0, p)
+}
+
+// ApplyAt advances the state by the patch and records that it now reflects the
+// given durable version. Writer-side only — see the concurrency contract on
+// State. Pass 0 when there is no durable index (see Apply).
+//
+// The version moves even when the patch is a semantic no-op. Re-writing the
+// value a key already holds leaves the tree pointer-identical, but it was still
+// an append, so the durable cursor moved; refusing to record that would leave
+// State.Version() lagging the channel and every client resuming from it would
+// re-read patches it already had.
+func (s *State) ApplyAt(version uint64, p Patch) Snapshot {
 	cur := s.load()
-	if p.IsEmpty() {
+	if p.IsEmpty() && version <= cur.version {
 		return cur.snapshot
 	}
 	next := cur.snapshot.Apply(p)
-	if next.root == cur.snapshot.root {
+	changed := next.root != cur.snapshot.root
+	if !changed && version <= cur.version {
 		return cur.snapshot
 	}
-	s.publish(board{snapshot: next, dirty: true})
+	v := cur.version
+	if version > v {
+		v = version
+	}
+	s.publish(board{snapshot: next, dirty: cur.dirty || changed, version: v})
 	return next
 }
+
+// Version is the durable index this board reflects: the highest append position
+// folded into it. Lock-free, safe from any goroutine. Zero means nothing
+// versioned has been applied — a fresh ephemeral board.
+//
+// This is the number a subscriber resumes from: "here is the state, it is at
+// version N, now stream me N+1 onward".
+func (s *State) Version() uint64 { return s.load().version }
 
 // Save flushes to disk if dirty. Atomic via tmp+rename.
 func (s *State) Save() error {
@@ -127,7 +162,12 @@ func (s *State) Save() error {
 	}
 	// Clear dirty only if nothing was published while we were writing. A
 	// failed swap means newer state exists and is legitimately still dirty.
-	s.published.CompareAndSwap(old, &board{snapshot: old.snapshot})
+	//
+	// The version MUST be carried across: this rebuilds the board from
+	// scratch, so a field omitted here is a field Save silently resets. A
+	// rewound version would hand every reconnecting subscriber a cursor
+	// pointing behind the state it already holds.
+	s.published.CompareAndSwap(old, &board{snapshot: old.snapshot, version: old.version})
 	return nil
 }
 

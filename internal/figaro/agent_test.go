@@ -280,7 +280,7 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 		"system.cwd": json.RawMessage(`"work"`),
 	}})
 	require.NoError(t, aerr)
-	snapshot, err := backend.ChalkboardState(id)
+	snapshot, _, err := backend.ChalkboardState(id)
 	require.NoError(t, err)
 	cb, _ := chalkboard.Open("")
 	cb.Apply(snapshot.AsPatch())

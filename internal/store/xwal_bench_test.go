@@ -294,7 +294,7 @@ func BenchmarkChalkboardState10000(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := be.ChalkboardState(id); err != nil {
+		if _, _, err := be.ChalkboardState(id); err != nil {
 			b.Fatal(err)
 		}
 	}

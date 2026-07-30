@@ -206,19 +206,18 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 		combined.Set["mantra"] = mv
 	}
 	if !combined.IsEmpty() {
-		if a.backend != nil {
-			// NOTE: unlike applyControlPatch, this advances the in-memory
-			// chalkboard even when the append failed, so the turn proceeds on
-			// state the log does not have. Deliberately left alone here —
-			// changing it aborts a turn mid-flight, which is a behaviour
-			// change, not plumbing. See the version/ack work.
-			if _, err := a.backend.ApplyChalkboard(a.id, combined); err != nil {
-				slog.Error("turn chalkboard append", "aria", a.id, "err", err)
-			}
-		} else {
-			msg.Patches = append(msg.Patches, combined)
+		// commitPatch owns the ordering for both the backed and ephemeral cases:
+		// backed appends to the chalkboard channel, ephemeral stages the patch on
+		// the message being built (hence `msg`). Either way memory is advanced
+		// only after the write succeeded.
+		//
+		// A failure is logged and the turn CONTINUES, deliberately — but it now
+		// continues on the last DURABLE state rather than on state that was never
+		// saved. This site used to apply the patch to memory regardless, which is
+		// how a turn could be primed with a value that vanished on restart.
+		if _, err := a.commitPatch(combined, "turn", &msg); err != nil {
+			slog.Error("turn chalkboard", "aria", a.id, "err", err)
 		}
-		a.chalkboard.Apply(combined)
 	}
 	// Ephemeral first message: fold the boot patch inline so the loadout
 	// reminders render (no channel to hold the transition). State is

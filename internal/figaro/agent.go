@@ -744,46 +744,74 @@ func (a *Agent) serviceSets() bool {
 	return len(evts) > 0
 }
 
-// applyControlPatch persists a state-only patch. No LLM round-trip.
-// Backed arias append it to the reducible chalkboard channel (keyed to
-// the next IR LT, so it rides the next turn as a transition); ephemeral
-// arias fold it onto an IR control-turn (no channel to hold it).
+// commitPatch is THE ONE WAY the chalkboard advances. Save, then make visible,
+// then record the version — in that order, always.
 //
-// It returns the durable VERSION the patch landed at, and the error if it
-// did not land at all. Both matter: this used to log the failure and return,
-// so a caller that had already been told OK never learned its write was gone.
-// Durability still precedes visibility — the in-memory chalkboard is advanced
-// only after the write returns — so a failure leaves the published board and
-// the log agreeing, and the caller free to retry.
+// Two call sites used to do this independently and had already drifted: the
+// control path bailed on a failed write, while the turn path logged the error
+// and updated memory anyway, leaving the agent working from state the log did
+// not have and the model already primed with it. Restart and the write is gone,
+// but the reply that depended on it is not. One function, one ordering.
 //
-// The two version spaces are disjoint but never mixed: an aria is backed or
-// ephemeral for its whole life, so a subscriber sees one monotonic sequence
-// either way. Backed arias count chalkboard-channel appends; ephemeral arias
-// count IR LTs, because there is no channel to append to.
-func (a *Agent) applyControlPatch(patch message.Patch, kind string) (uint64, error) {
+// DURABILITY PRECEDES VISIBILITY. On a failed write the in-memory board is left
+// untouched, so the board and the log stay in agreement and the caller is free
+// to retry. Memory may lag the log; it may never lead it.
+//
+// Where the version comes from depends on what holds the patch:
+//
+//   - backed aria: the chalkboard channel's append index.
+//   - ephemeral aria, inline: the patch rides a message the caller is still
+//     building, so there is no index yet — version 0, assigned when that
+//     message is appended. Staging cannot fail, so neither can this.
+//   - ephemeral aria, standalone: a control message is minted; its IR LT.
+//
+// The spaces are disjoint but never mixed: an aria is backed or ephemeral for
+// life, so a subscriber sees one monotonic sequence either way.
+func (a *Agent) commitPatch(patch message.Patch, kind string, inline *message.Message) (uint64, error) {
+	if patch.IsEmpty() {
+		return a.chalkboard.Version(), nil
+	}
 	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Set), "remove", len(patch.Remove))
 	var version uint64
-	if a.backend != nil {
+	switch {
+	case a.backend != nil:
 		v, err := a.backend.ApplyChalkboard(a.id, patch)
 		if err != nil {
-			slog.Error(kind+" chalkboard append", "aria", a.id, "err", err)
-			return 0, err
+			return 0, fmt.Errorf("%s chalkboard append: %w", kind, err)
 		}
 		version = v
-	} else {
-		msg := message.Message{
+	case inline != nil:
+		inline.Patches = append(inline.Patches, patch)
+	default:
+		ent, err := a.appendMsg(message.Message{
 			Role:      message.RoleInput,
 			Patches:   []message.Patch{patch},
 			Timestamp: time.Now().UnixMilli(),
-		}
-		ent, err := a.appendMsg(msg)
+		})
 		if err != nil {
-			slog.Error(kind+" append", "aria", a.id, "err", err)
-			return 0, err
+			return 0, fmt.Errorf("%s append: %w", kind, err)
 		}
 		version = ent.LT
 	}
-	a.chalkboard.Apply(patch)
+	a.chalkboard.ApplyAt(version, patch)
+	return version, nil
+}
+
+// applyControlPatch persists a state-only patch — no LLM round-trip — and
+// publishes the metadata a control mutation makes stale. It is commitPatch plus
+// the notifications that belong to the control path only; the turn path calls
+// commitPatch directly, because it publishes on its own schedule and an extra
+// fan-out per turn start is churn.
+//
+// Returns the durable version the patch landed at. This used to log a failed
+// write and return nothing, so a caller already told OK never learned its write
+// was gone.
+func (a *Agent) applyControlPatch(patch message.Patch, kind string) (uint64, error) {
+	version, err := a.commitPatch(patch, kind, nil)
+	if err != nil {
+		slog.Error(kind+" chalkboard", "aria", a.id, "err", err)
+		return 0, err
+	}
 	a.refreshMetrics()
 	a.publishMetadata()
 	return version, nil

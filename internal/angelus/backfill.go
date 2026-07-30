@@ -38,7 +38,7 @@ func (a *Angelus) metaBackfill(ctx context.Context) {
 		if meta.Mantra != "" || meta.LoadoutName != "" || meta.Cwd != "" {
 			continue // already carries identity fields
 		}
-		snap, err := a.Backend.ChalkboardState(id)
+		snap, _, err := a.Backend.ChalkboardState(id)
 		if err != nil {
 			continue
 		}

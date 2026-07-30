@@ -147,7 +147,7 @@ func BenchmarkChalkboardOpenReplay(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				snap, err := be.ChalkboardState(aria)
+				snap, _, err := be.ChalkboardState(aria)
 				if err != nil {
 					b.Fatal(err)
 				}

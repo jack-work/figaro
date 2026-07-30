@@ -41,6 +41,11 @@ type chalkCache struct {
 	ready   bool
 	state   chalkboard.Snapshot
 	patches map[uint64][]message.Patch
+	// version is the chalkboard-channel append index `state` reflects: the
+	// last index folded in. It is the cursor a subscriber resumes from, so it
+	// must track every write — including one that leaves the snapshot
+	// unchanged, because that was still an append.
+	version uint64
 }
 
 type metaCache struct {
@@ -133,14 +138,14 @@ func (b *XwalBackend) Kick() { b.store.trunks.Kick() }
 
 // ---- chalkboard (re-derived via StateAt; mutation appends a patch) ----
 
-func (b *XwalBackend) ChalkboardState(ariaID string) (chalkboard.Snapshot, error) {
+func (b *XwalBackend) ChalkboardState(ariaID string) (chalkboard.Snapshot, uint64, error) {
 	c := b.chalkCache(ariaID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := b.loadChalkboardLocked(ariaID, c); err != nil {
-		return chalkboard.Snapshot{}, err
+		return chalkboard.Snapshot{}, 0, err
 	}
-	return c.state.Clone(), nil
+	return c.state.Clone(), c.version, nil
 }
 
 func (b *XwalBackend) chalkCache(ariaID string) *chalkCache {
@@ -191,6 +196,8 @@ func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
 	}
 	c.state = state
 	c.patches = patches
+	// The walk stopped at `last`, so that is the index this fold reflects.
+	c.version = last
 	c.ready = true
 	return nil
 }
@@ -238,6 +245,9 @@ func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) (uint6
 	idx, err := b.store.trunks.Append(ariaID, chanChalkboard, 0, pb, nil)
 	if err != nil {
 		return 0, err
+	}
+	if idx > c.version {
+		c.version = idx
 	}
 	if c.ready && mainLT > 0 {
 		c.state = c.state.Apply(patch)
