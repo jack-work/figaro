@@ -4,10 +4,18 @@ Every verb, and what it actually does. The nine daily gestures are in
 [SKILL.md](SKILL.md); this file is where you come for the rest, or for a flag's
 exact meaning.
 
-Three things hold across the whole CLI:
+These hold across the whole CLI:
 
+- **Flags go after the verb.** `figaro send -e -- <prompt>`, never
+  `figaro -e send -- <prompt>`. The only tokens figaro reads *before* a verb
+  are `--version`/`-V`, `--help`/`-h`, and the binding overrides
+  `--no-bind`/`--absolute`/`-A`/`--bind`; anything else there is an unknown
+  command, and gets a did-you-mean rather than a guess. The bare prompt form
+  (`figaro [flags] -- <prompt>`) is the one exception, and it takes `send`'s
+  flags because it *is* `send`.
 - **`--` separates flags from a prompt.** Flags go before it, prompt after. A
-  `--` inside the prompt body is prompt text.
+  `--` inside the prompt body is prompt text, and nothing before the boundary
+  is dropped in silence — an unrecognized token is an error.
 - **Targeting** is `--id <id>` everywhere, or a positional `<id>` on most
   verbs. With neither, a verb targets the aria this shell is attended to. The
   precedence is `--id` beats `FIGARO_ARIA` beats the pid binding.
