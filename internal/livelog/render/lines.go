@@ -2,7 +2,8 @@ package render
 
 import (
 	"strings"
-	"unicode/utf8"
+
+	"github.com/mattn/go-runewidth"
 )
 
 // clip truncates s to at most width display columns and flattens embedded
@@ -39,12 +40,21 @@ func clip(s string, width int) string {
 		if r < 0x20 || r == 0x7f {
 			r = ' '
 		}
-		if col+1 > width {
+		// CELLS, NOT RUNES. A CJK ideograph or an emoji occupies two columns,
+		// so counting runes let a row "clipped to width" occupy width + the
+		// number of wide runes on it — measured at +12 on a 60-column pane
+		// for one line of Japanese, and at exactly +1 for a line carrying a
+		// single wide rune, which is the master's "one or two characters
+		// beyond the right edge". A row wider than the viewport wraps in the
+		// terminal (tmux: the UI breaks up) or is hidden (nvim nowrap: it
+		// obscures the right of the GUI) — the two symptoms are one bug.
+		w := runewidth.RuneWidth(r)
+		if col+w > width {
 			clipped = true
 			break
 		}
 		b.WriteRune(r)
-		col++
+		col += w
 		i++
 	}
 	if clipped {
@@ -53,8 +63,10 @@ func clip(s string, width int) string {
 	return b.String()
 }
 
-// hardWrap wraps each paragraph of s to at most width columns, preserving
-// explicit newlines. Width counts runes.
+// hardWrap wraps each paragraph of s to at most width COLUMNS, preserving
+// explicit newlines. It used to say "width counts runes", and did, which is
+// the same defect clip carried: tool output (nodeview.go wraps bodies through
+// here) ran past the right edge by one column per wide rune.
 func hardWrap(s string, width int) []string {
 	if width < 1 {
 		width = 1
@@ -68,13 +80,14 @@ func hardWrap(s string, width int) []string {
 		col := 0
 		var b strings.Builder
 		for _, r := range para {
-			if col+1 > width {
+			w := runewidth.RuneWidth(r)
+			if col+w > width {
 				out = append(out, b.String())
 				b.Reset()
 				col = 0
 			}
 			b.WriteRune(r)
-			col++
+			col += w
 		}
 		out = append(out, b.String())
 	}
@@ -82,5 +95,3 @@ func hardWrap(s string, width int) []string {
 }
 
 func isLetter(r rune) bool { return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') }
-
-var _ = utf8.RuneCountInString // reserved for a future width strategy
