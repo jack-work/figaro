@@ -179,7 +179,12 @@ func TestTranscript_HelpPanel(t *testing.T) {
 	if !tr.showHelp {
 		t.Fatalf("? should open the help panel")
 	}
-	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "copy selection") {
+	// A row from the TOP of the panel: helpLines clamps to the pane height and
+	// keeps the head (t.h-4 rows), so in a deliberately tiny 14-row fixture the
+	// tail of the list is not on screen. This asserts the panel rendered real
+	// generated content; that every binding has a row is TestHelpBody's job,
+	// where the whole list is compared without a viewport in the way.
+	if scr := strings.Join(ft.Screen(), "\n"); !strings.Contains(scr, "scroll · half-page") {
 		t.Fatalf("help panel content missing:\n%s", scr)
 	}
 	tr.key('?')

@@ -297,6 +297,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 	want := []string{
 		"  q                   exit; keeps the turn running",
 		"  ^C                  exit by interrupt; stops the turn",
+		"  H                   hang up: stop the turn, keep listening",
 		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",
 		"  ↑/↓ · PgUp/PgDn     the same, on the arrow cluster",
 		"  Home / End          top / bottom",

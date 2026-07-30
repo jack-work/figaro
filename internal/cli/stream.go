@@ -302,7 +302,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			// mid-pager can't leave the shell spewing raw \x1b[<…M.
 			defer os.Stdout.WriteString(ldmouse.Disable)
 			in = &interactiveInput{
-				tc: tc, lt: lt, fcli: fcli, mu: &mu, set: &set,
+				tc: tc, lt: lt, fcli: fcli, hangup: fcli, mu: &mu, set: &set,
 				figaroID: figaroID, cancel: cancel, disconnectCh: disconnectCh,
 			}
 			in.lt.setQueuedFetch(in.refreshQueued) // 'Q' works before the pager is ever opened
@@ -429,9 +429,12 @@ func interruptExit(wasRunning bool) int {
 // Ctrl-C/D/L/T/O and 'y' (copy id), plus the pager's scroll + mouse, so both
 // commands behave identically in incipit and transcript.
 type interactiveInput struct {
-	tc           term.Client
-	lt           *livelogTurn
-	fcli         transcriptReadClient
+	tc   term.Client
+	lt   *livelogTurn
+	fcli transcriptReadClient
+	// hangup is the H key's client. Nil leaves the key inert rather than
+	// crashing a session that was built without one.
+	hangup       hangupClient
 	mu           *sync.Mutex
 	set          *renderSettings
 	figaroID     string
@@ -469,6 +472,14 @@ type interactiveInput struct {
 	// without dedup, a toggle-style binding (Enter -> expand tools) fires
 	// twice and cancels itself out. Also covers the rare LF+CR order.
 	lastNL byte
+}
+
+// hangupClient is the one capability the H key needs. It is deliberately NOT
+// folded into transcriptReadClient: a stub that only serves history has no
+// business growing a method it will never call, and the ten of them in the
+// tests are evidence enough that the two roles are separate.
+type hangupClient interface {
+	Hangup(context.Context, rpc.QueueDisposition) (*rpc.InterruptResponse, error)
 }
 
 type transcriptReadClient interface {
@@ -1174,6 +1185,54 @@ func inputInterrupt(in *interactiveInput, ev keyEvent) keyVerdict {
 	in.cancelSelectionCopy()
 	in.cancel()
 	return keyStop
+}
+
+// inputHangUp is 'H' in the pager: stop the turn, and STAY.
+//
+// It is the third thing you can do to a running turn, and the one that was
+// missing. Ctrl-C stops the turn and takes the session with it; Ctrl-D leaves
+// the session and lets the turn run on; this stops the turn and keeps the
+// session — which is what you want when the model is off down the wrong path
+// and you intend to say so in a moment.
+//
+// The queue is KEPT (the same disposition `figaro hup` sends): whatever you
+// typed while it was working coalesces into one message and is answered next.
+// `figaro cut` is the other choice, and it is a separate deliberate act rather
+// than a modifier on this key — losing a queue must never be one keystroke
+// away from stopping a turn.
+//
+// The RPC runs off the input goroutine: the socket round trip must not freeze
+// the pager, and the reader gets an immediate notice either way. The turn's
+// own end arrives as turn.done, which paints the status token as usual.
+func inputHangUp(in *interactiveInput, _ keyEvent) keyVerdict {
+	if in.hangup == nil {
+		in.mu.Lock()
+		in.lt.report("hang up: not connected")
+		in.mu.Unlock()
+		return keyHandled
+	}
+	in.mu.Lock()
+	in.lt.report("hanging up — staying attached")
+	in.mu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		resp, err := in.hangup.Hangup(ctx, rpc.QueueKeep)
+		in.mu.Lock()
+		defer in.mu.Unlock()
+		switch {
+		case err != nil:
+			in.lt.report("hang up failed: " + err.Error())
+		case len(resp.Queue) > 0:
+			// Say what survived, because the whole point of keeping it is that
+			// it is about to be asked.
+			in.lt.report(fmt.Sprintf("hung up — listening (%s queued, answered next)",
+				plural(len(resp.Queue), "message")))
+		default:
+			in.lt.report("hung up — listening")
+		}
+	}()
+	return keyHandled
 }
 
 // inputDisconnect is Ctrl-D, and 'q' with the pager up: leave, and let the
