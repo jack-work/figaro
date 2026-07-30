@@ -225,3 +225,51 @@ func TestForkTargetHint(t *testing.T) {
 		t.Errorf("forkTargetHint: got %q", got)
 	}
 }
+
+// TestForkJSONSubmitsAndExits pins the second copy of the --json contract.
+//
+// `fork -- <prompt>` is a send, so it inherits send's rules — but it kept
+// its own copy of two of them and its own tail, which is how the fork-send
+// path went on printing the object AND THEN streaming the rendered turn to
+// the same stdout after `send` had stopped. Two copies of a rule is one
+// copy too many.
+func TestForkJSONSubmitsAndExits(t *testing.T) {
+	// The shared validator is what fork now consults: -j with anything that
+	// streams or renders is a usage error here exactly as it is on send.
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"json with raw", []string{"-j", "-r", "--", "p"}, "--raw"},
+		{"json with verbatim", []string{"-j", "-v", "--", "p"}, "--verbatim"},
+		{"json with exec", []string{"-j", "-x", "--", "p"}, "--exec"},
+		{"json with listen", []string{"-j", "-l", "--", "p"}, "--listen"},
+		{"json with verbose", []string{"-j", "-o", "--", "p"}, "--verbose"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := planFork(tc.args)
+			if err == nil {
+				t.Fatal("accepted silently — the flag would be dropped")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("message must name %s: %s", tc.want, err)
+			}
+		})
+	}
+}
+
+// TestForkJSONIsPlannedAsAPrompt guards the honourable form: `fork -j --
+// <prompt>` must plan cleanly (it submits and exits at run time).
+func TestForkJSONIsPlannedAsAPrompt(t *testing.T) {
+	plan, err := planFork([]string{"-j", "--", "what if"})
+	if err != nil {
+		t.Fatalf("rejected a valid form: %s", err)
+	}
+	if !plan.hasPrompt() {
+		t.Error("plan lost the prompt")
+	}
+	if !plan.opts.json {
+		t.Error("plan lost --json")
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/angelus"
@@ -78,11 +79,13 @@ func planFork(args []string) (forkPlan, error) {
 		}
 		return plan, nil
 	}
-	if (opts.dryRun || opts.skipYes) && !opts.exec {
-		return forkPlan{}, fmt.Errorf("-n / -y only meaningful with --exec")
-	}
-	if opts.forget && (opts.exec || opts.verbatim) {
-		return forkPlan{}, fmt.Errorf("--forget contradicts --exec/--verbatim")
+	// The same contradictions `send` enforces, from the same function — a
+	// fork's prompt is a send, and two copies of a rule is how the fork-send
+	// path came to keep the print-JSON-then-stream contract after send lost
+	// it. --json's rules ride along: -j with --raw/--verbatim/--exec/
+	// --listen/--verbose cannot be honoured here either.
+	if err := validateSendOpts(opts, false); err != nil {
+		return forkPlan{}, err
 	}
 	return plan, nil
 }
@@ -247,6 +250,15 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 	if branch == "" {
 		die("fork: no alternative branch to prompt")
 	}
+	if opts.json {
+		// --json submits and exits: the object printed above IS the output.
+		// This path used to print it and then stream the rendered turn onto
+		// the same stdout — the second copy of the defect `send` shed.
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer cancel()
+		submitAndExit(ctx, loaded, branch, prompt)
+		return
+	}
 	promptForkedAria(loaded, branch, opts, prompt)
 }
 
@@ -268,13 +280,11 @@ func forkPromptRoute(opts sendOpts) string {
 }
 
 // promptForkedAria sends the prompt to the freshly minted branch, reusing
-// `send`'s dispatch table verbatim. --json is cleared: the fork already
-// emitted the one machine-readable line (mode "fork-send"), and a second
-// object on stdout would break every `| jq` in the wild.
+// `send`'s dispatch table verbatim. It is never reached under --json: that
+// contract submits and exits before this point.
 func promptForkedAria(loaded *config.Loaded, ariaID string, opts sendOpts, prompt string) {
 	opts.id = ariaID
 	opts.target = ""
-	opts.json = false
 	set := renderSettings{verbose: opts.verbose, listen: opts.listen}
 	switch forkPromptRoute(opts) {
 	case "forget":
