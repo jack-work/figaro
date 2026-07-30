@@ -6,75 +6,53 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/jack-work/figaro/internal/outfit"
 )
 
-func TestWriteStarterLoadoutCreatesFolderSkill(t *testing.T) {
-	root := t.TempDir()
-	loadout := filepath.Join(root, "loadouts", "default.toml")
-	require.NoError(t, writeStarterLoadout(loadout, "copilot", "gpt-test"))
+// First run writes a loadout and NOTHING else.
+//
+// It used to also drop a `howto` folder skill into the user's config, back
+// when copying a file into ~/.config was the only way to have a skill at all.
+// First-party skills ship inside the binary now and load from there, so that
+// copy bought nothing and cost something real: a config skill shadows a
+// bundled one BY NAME (internal/outfit: user config loads second and wins),
+// so the copy silently outranks the shipped skill forever and drifts away
+// from it. One such shadow in this repo's history ended up 201 lines behind
+// on one file while holding the only copy of a section on another.
+//
+// The rule this pins: first run scaffolds configuration, never documentation.
+func TestWriteStarterLoadoutWritesNoSkills(t *testing.T) {
+	cfg := t.TempDir()
+	path := filepath.Join(cfg, "loadouts", "starter.toml")
 
-	skillPath := filepath.Join(root, "skills", "howto", "SKILL.md")
-	body, err := os.ReadFile(skillPath)
+	require.NoError(t, writeStarterLoadout(path, "anthropic", "claude-opus-4"))
+
+	body, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.Equal(t, starterHowToSkill, string(body))
-	_, err = os.Stat(filepath.Join(root, "skills", "howto.md"))
-	require.True(t, os.IsNotExist(err))
+	require.Contains(t, string(body), `provider = "anthropic"`)
+	require.Contains(t, string(body), `model = "claude-opus-4"`)
+
+	// The loadout must still declare the skills table: that is what makes
+	// the BUNDLED skills load. It just must not populate the directory.
+	require.Contains(t, string(body), `dirName = "skills"`)
+
+	_, err = os.Stat(filepath.Join(cfg, "skills"))
+	require.True(t, os.IsNotExist(err), "first run must not create a skills directory")
 }
 
-func TestWriteStarterLoadoutPreservesExistingSkill(t *testing.T) {
-	for _, name := range []string{"legacy-file", "lowercase-folder"} {
-		t.Run(name, func(t *testing.T) {
-			root := t.TempDir()
-			switch name {
-			case "legacy-file":
-				require.NoError(t, os.MkdirAll(filepath.Join(root, "skills"), 0o700))
-				require.NoError(t, os.WriteFile(
-					filepath.Join(root, "skills", "howto.md"),
-					[]byte("custom"),
-					0o600,
-				))
-			case "lowercase-folder":
-				require.NoError(t, os.MkdirAll(filepath.Join(root, "skills", "howto"), 0o700))
-				require.NoError(t, os.WriteFile(
-					filepath.Join(root, "skills", "howto", "skill.md"),
-					[]byte("custom"),
-					0o600,
-				))
-			}
+// The skills table names a directory that does not exist, which must be a
+// no-op rather than an error. Otherwise the change above would break every
+// fresh install.
+func TestMissingUserSkillsDirIsNotAnError(t *testing.T) {
+	cfg := t.TempDir()
+	path := filepath.Join(cfg, "loadouts", "starter.toml")
+	require.NoError(t, writeStarterLoadout(path, "anthropic", ""))
 
-			loadout := filepath.Join(root, "loadouts", "default.toml")
-			require.NoError(t, writeStarterLoadout(loadout, "copilot", "gpt-test"))
-			switch name {
-			case "legacy-file":
-				_, err := os.Stat(filepath.Join(root, "skills", "howto"))
-				require.True(t, os.IsNotExist(err))
-			case "lowercase-folder":
-				body, err := os.ReadFile(filepath.Join(root, "skills", "howto", "skill.md"))
-				require.NoError(t, err)
-				require.Equal(t, "custom", string(body))
-			}
-		})
-	}
-}
-
-func TestWriteStarterLoadoutRepairsEmptyFolder(t *testing.T) {
-	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "skills", "howto"), 0o700))
-	loadout := filepath.Join(root, "loadouts", "default.toml")
-	require.NoError(t, writeStarterLoadout(loadout, "copilot", "gpt-test"))
-	_, err := os.Stat(filepath.Join(root, "skills", "howto", "SKILL.md"))
+	t.Setenv("FIGARO_BUNDLED_SKILLS", "0") // isolate: bundled skills off
+	patch, err := outfit.New(cfg).Load("starter")
 	require.NoError(t, err)
-}
-
-func TestWriteStarterLoadoutRejectsEmptySymlinkFolder(t *testing.T) {
-	root := t.TempDir()
-	target := filepath.Join(t.TempDir(), "target")
-	require.NoError(t, os.MkdirAll(target, 0o700))
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "skills"), 0o700))
-	if err := os.Symlink(target, filepath.Join(root, "skills", "howto")); err != nil {
-		t.Skipf("directory symlinks unavailable: %v", err)
+	for k := range patch.Set {
+		require.NotContains(t, k, "skills.", "no user skills exist to load")
 	}
-	loadout := filepath.Join(root, "loadouts", "default.toml")
-	err := writeStarterLoadout(loadout, "copilot", "gpt-test")
-	require.ErrorContains(t, err, "symlink has no SKILL.md")
 }

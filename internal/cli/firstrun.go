@@ -419,12 +419,12 @@ func createDefaultLoadout(loaded *config.Loaded, providerName, model string) (st
 	return name, nil
 }
 
-// writeStarterLoadout writes a minimal loadout file plus a starter
-// folder skill containing the bundled `howto` onboarding skill.
-// Parent directories are created with 0700. The loadout references
-// the skills directory via `skills = { dirName = "skills" }` so the
-// agent sees the howto on every new aria — a brand-new user can run
-// `figaro -- teach me how to use figaro` and the lesson kicks off.
+// writeStarterLoadout writes a minimal loadout file. Parent directories
+// are created with 0700. It writes NO skills: the loadout references the
+// skills directory via `skills = { dirName = "skills" }`, and that alone
+// is enough, because first-party skills ship inside the binary and load
+// from there. A skill copied into config would shadow the bundled one by
+// name and then drift, which is the failure this deliberately avoids.
 //
 // model is written as [system].model when non-empty.
 func writeStarterLoadout(path, providerName, model string) error {
@@ -447,59 +447,9 @@ provider = %q
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		return err
 	}
-	// Drop the bundled howto skill next to the loadout so the new user
-	// has at least one skill on day one. Path resolution: the loadout
-	// lives at <config>/loadouts/<name>.toml, so the skills dir is
-	// <config>/skills.
-	cfgRoot := filepath.Dir(filepath.Dir(path))
-	skillsDir := filepath.Join(cfgRoot, "skills")
-	if err := os.MkdirAll(skillsDir, 0700); err != nil {
-		return err
-	}
-	legacyHowto := filepath.Join(skillsDir, "howto.md")
-	if _, err := os.Stat(legacyHowto); err == nil {
-		return nil
-	}
-	howtoDir := filepath.Join(skillsDir, "howto")
-	if info, err := os.Lstat(howtoDir); err == nil {
-		if starterSkillManifest(howtoDir) != "" {
-			return nil
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("starter howto symlink has no SKILL.md: %s", howtoDir)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("starter howto path is not a directory: %s", howtoDir)
-		}
-	} else if os.IsNotExist(err) {
-		if err := os.MkdirAll(howtoDir, 0700); err != nil {
-			return err
-		}
-	} else {
-		return err
-	}
-	howtoPath := filepath.Join(howtoDir, "SKILL.md")
-	// Don't clobber an existing howto — the user may have edited it.
-	if _, err := os.Stat(howtoPath); os.IsNotExist(err) {
-		if err := os.WriteFile(howtoPath, []byte(starterHowToSkill), 0600); err != nil {
-			return fmt.Errorf("write starter howto skill: %w", err)
-		}
-	}
 	return nil
 }
 
-func starterSkillManifest(dir string) string {
-	for _, name := range []string{"SKILL.md", "skill.md"} {
-		path := filepath.Join(dir, name)
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			return path
-		}
-	}
-	return ""
-}
-
-// patchDefaultLoadout rewrites config.toml in place to set
-// default_loadout = "<name>". Existing keys are preserved.
 func patchDefaultLoadout(configPath, loadoutName string) error {
 	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
 		return err
