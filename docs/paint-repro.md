@@ -781,6 +781,31 @@ because every resize nils `t.prev` and heals the damage before the capture. A
 fuzz whose gestures cure what it hunts is a guard, not a repro. Measured passes
 on the fixed binary: idle **80 steps**, live **44 steps**, 0 failures.
 
+**Perf regression check** (`benchstat`, `-count 8 -benchtime 300x`, main
+@a6700c2 vs this branch, detached worktree so `main/` was never touched):
+
+```
+TranscriptPaintBytes/up      15.76µ → 12.85µ   -18.5%   (p=0.000)
+TranscriptPaintBytes/down    12.38µ →  9.27µ   -25.1%   (p=0.000)
+TranscriptPaintTick          10.94µ →  8.21µ   -25.0%   (p=0.000)
+TranscriptPaintHalfPage      17.36µ → 14.26µ   -17.9%   (p=0.000)
+TranscriptJourney/out20      40.88m → 39.10m    -4.4%   (p=0.010)
+TranscriptPaintOnly           4.32µ →  4.42µ       ~    (p=0.505)
+geomean                                        -13.8%
+B/op, allocs/op, B/frame, B/step, frames/step   IDENTICAL to the last digit
+```
+
+**Faster is a claim that needs a cause, not a victory lap.** It is
+`displayWidth` replacing `runewidth.StringWidth` in the footer's shed loop:
+StringWidth walks the BYTES of every SGR run, the footer is painted on every
+frame, and the paint benchmarks are footer-heavy. The load-bearing number is
+the second block — **bytes per frame are unchanged to the last digit**, which
+is what says the resync is not quietly repainting more than it claims. Its real
+cost is not in these benchmarks at all (they finish inside the interval): one
+full frame per 2s of ACTIVE painting, measured at **3057 bytes** for a 100x30
+repaint in the raw capture above, i.e. ~1.5 KB/s worst case against a stream
+that is already far noisier, and exactly zero when the pager is idle.
+
 **Still open:** a pane below 4 rows keeps a stale slice of the last frame until
 the next resize (`renderFrame` returns early by design — "skip the frame rather
 than crash"). Self-healing, deliberate, and outside this fix; noted because the
