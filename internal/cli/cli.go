@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
@@ -388,6 +389,85 @@ alone. With no id, the pid-bound aria is used.`,
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "queue",
+		Group: "Prompt",
+		Short: "Read, edit and delete the messages an aria has not answered yet",
+		Usage: "queue [ls] | queue rm <id>... | queue rm --all | queue edit <id> -- <text>   [--id <aria>] [-j]",
+		Long: `The queue is what the aria has accepted but not yet answered.
+
+  figaro queue                    list it: id, state, age, text
+  figaro queue rm 3 5             drop those messages
+  figaro queue rm --all           drop all of them
+  figaro queue edit 3 -- new text rewrite one
+
+To ADD to the queue, send: a queued message is just a prompt that
+arrived while the aria was busy.
+
+Ids come from the listing and are only meaningful in the generation they
+were read from — they restart whenever the agent is rebuilt — so every
+mutation re-reads the queue first and names that generation. If the
+agent restarted in between, the request is refused as stale rather than
+resolved against a different message.
+
+A refusal is an ANSWER, not a crash: the agent will decline to delete a
+message it has already committed to the conversation, and says which of
+"committing", "committed", "merged" (an interrupt folded it into another
+queued message — the survivor's id is named), "stale" or "unknown"
+applies. Exit is 0 when every id was applied, 1 when any was refused.
+
+The aria is --id <aria>, or the one this shell is attended to. The
+positional slot belongs to the sub-verb.`,
+		Flags: []cmdkit.FlagDef{
+			{Long: "id", Description: "Address a specific aria (default: the attended one)"},
+			{Long: "all", IsBool: true, Description: "queue rm: drop every queued message"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Print one JSON object and exit"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			ariaID := ctx.Flag("id")
+			asJSON := ctx.BoolFlag("json")
+			all := ctx.BoolFlag("all")
+
+			verb := "ls"
+			if len(ctx.Args) > 0 {
+				verb = ctx.Args[0]
+			}
+			switch verb {
+			case "ls", "list":
+				if len(ctx.Args) > 1 {
+					dieUsage("queue ls takes no arguments (address an aria with --id)")
+				}
+				if all {
+					dieUsage("queue ls: --all belongs to `queue rm`")
+				}
+				runQueueList(ld, ariaID, asJSON)
+			case "rm", "delete":
+				ids := parseQueueIDs(ctx.Args[1:])
+				switch {
+				case all && len(ids) > 0:
+					dieUsage("queue rm: --all and explicit ids are mutually exclusive")
+				case !all && len(ids) == 0:
+					dieUsage("queue rm: name the ids to drop, or pass --all")
+				}
+				runQueueRemove(ld, ariaID, ids, all, asJSON)
+			case "edit", "update":
+				if len(ctx.Args) < 3 {
+					dieUsage("queue edit: usage is `figaro queue edit <id> -- <text>`")
+				}
+				ids := parseQueueIDs(ctx.Args[1:2])
+				text := queueEditText(ctx.Args[2:])
+				if strings.TrimSpace(text) == "" {
+					dieUsage("queue edit: the replacement text is empty (use `queue rm %d` to drop it)", ids[0])
+				}
+				runQueueEdit(ld, ariaID, ids[0], text, asJSON)
+			default:
+				dieUsage("queue: unknown sub-verb %q (want ls, rm or edit)", verb)
+			}
+			return nil
+		},
 	})
 
 	r.Register(&cmdkit.Command{
