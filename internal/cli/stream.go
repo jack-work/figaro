@@ -390,7 +390,21 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			lt.report("interrupted")
 			mu.Unlock()
 		}
+		if code := interruptExit(wasRunning); code != 0 {
+			exitProcess(code)
+		}
 	}
+}
+
+// interruptExit is the Ctrl-C rule: an interrupted TURN is 130 (128+SIGINT),
+// a Ctrl-C with nothing running is a clean 0. This path used to fall out of
+// its select and exit 0, so `send … || retry` never fired. Ctrl-D stays 0 —
+// it leaves the turn running on purpose.
+func interruptExit(wasRunning bool) int {
+	if wasRunning {
+		return exitInterrupted
+	}
+	return 0
 }
 
 // interactiveInput is the shared control-key + pager input loop for the live
@@ -904,27 +918,6 @@ func (in *interactiveInput) refreshQueued() {
 		in.lt.setTranscriptQueued(texts, "")
 		in.lt.render()
 	}()
-}
-
-func committedAfter(p aria.Page, after int) int {
-	n := 0
-	for _, part := range p.Parts {
-		if len(part.Nodes) > 0 && int(part.ID) > after {
-			n++
-		}
-	}
-	return n
-}
-
-func filterCommittedAfter(p aria.Page, after int) aria.Page {
-	out := p
-	out.Parts = nil
-	for _, part := range p.Parts {
-		if int(part.ID) > after {
-			out.Parts = append(out.Parts, part)
-		}
-	}
-	return out
 }
 
 // run reads input until stdin errors, Ctrl-C (cancel), or Ctrl-D (disconnect).

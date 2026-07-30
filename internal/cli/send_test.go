@@ -337,3 +337,61 @@ func TestExtractForkFlags(t *testing.T) {
 		})
 	}
 }
+
+// TestBundleExpansionFollowsTheFlagTable is the drift guard for #9.
+//
+// send.go used to carry a hardcoded bundle-letter list with no link to its
+// documented flags. -j and -l were missing from it, so `send -fj` — the
+// fire-and-forget-plus-machine-output pair a script wants — failed as
+// "unknown flag" while `-f -j` worked. Now the letters come from
+// sendFlagDefs, so a flag cannot be documented and un-gangable at once.
+func TestBundleExpansionFollowsTheFlagTable(t *testing.T) {
+	for _, f := range sendFlagDefs {
+		if f.Short == "" || !f.IsBool {
+			continue
+		}
+		t.Run("-"+f.Short+" gangs", func(t *testing.T) {
+			// Pair it with -e (or -r, if this IS -e) and require both to land.
+			partner := "e"
+			if f.Short == "e" {
+				partner = "r"
+			}
+			opts, _, err := extractSendFlags([]string{"-" + f.Short + partner, "--", "p"})
+			if err != nil {
+				t.Fatalf("bundle -%s%s rejected: %s", f.Short, partner, err)
+			}
+			if !flagIsSet(opts, f.Short) {
+				t.Errorf("-%s did not survive the bundle", f.Short)
+			}
+			if !flagIsSet(opts, partner) {
+				t.Errorf("-%s (the partner) did not survive the bundle", partner)
+			}
+		})
+	}
+}
+
+func flagIsSet(o sendOpts, short string) bool {
+	switch short {
+	case "e":
+		return o.ephemeral
+	case "r":
+		return o.raw
+	case "v":
+		return o.verbatim
+	case "o", "t":
+		return o.verbose
+	case "l":
+		return o.listen
+	case "x":
+		return o.exec
+	case "n":
+		return o.dryRun
+	case "y":
+		return o.skipYes
+	case "f":
+		return o.forget
+	case "j":
+		return o.json
+	}
+	return false
+}

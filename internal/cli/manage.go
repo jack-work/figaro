@@ -581,7 +581,7 @@ func runKill(loaded *config.Loaded, idFlag string, args []string, recursive bool
 		ariaID = args[0]
 	}
 	if ariaID == "" {
-		die("usage: figaro kill [--id <trunk> | <trunk>] [--recursive]")
+		dieUsage("usage: figaro kill [--id <trunk> | <trunk>] [--recursive]")
 	}
 	runKillByID(loaded, ariaID, recursive)
 }
@@ -615,7 +615,7 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 	// send must not drift apart on what a coordinate means.
 	target, turn, hasTurn, perr := parseTarget(spec)
 	if perr != nil {
-		die("fork: %s", perr)
+		dieUsage("fork: %s", perr)
 	}
 	var atMainLT uint64
 
@@ -629,7 +629,7 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 		}
 		if target == "" {
 			if bound == "" {
-				die("fork: no aria bound to this shell (try: <id> or <id>:<turn>)")
+				dieUsage("fork: no aria bound to this shell (try: <id> or <id>:<turn>)")
 			}
 			target = bound
 		}
@@ -722,7 +722,7 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 	if len(args) > 1 {
 		n, err := strconv.Atoi(args[len(args)-1])
 		if err != nil || n < 1 {
-			die("promote: bad level count %q (want a positive integer)", args[len(args)-1])
+			dieUsage("promote: bad level count %q (want a positive integer)", args[len(args)-1])
 		}
 		levels = n
 	}
@@ -735,7 +735,7 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 			}
 		}
 		if target == "" {
-			die("promote: no aria bound to this shell (try: promote <id> [levels])")
+			dieUsage("promote: no aria bound to this shell (try: promote <id> [levels])")
 		}
 		resp, err := acli.Promote(ctx, target, levels)
 		if err != nil {

@@ -111,7 +111,7 @@ for debugging the fig IR, but it is not an address.
   `detach`** (removed) — `attend null` is the unbind. `attend ~` is kept as
   a legacy alias (the tilde must be quoted in the shell). Attending a
   cauterized (null/loadout) aria is rejected with a nudge toward
-  `attend null` / `ls -h` / `ls -g`.
+  `attend null` / `ls -H` / `ls -g`.
 - **`kill <id>`** — remove a trunk **and its whole subtree** (children
   included). Needs `--recursive`/`-r` to remove a trunk that has live
   branches.
@@ -128,7 +128,7 @@ for debugging the fig IR, but it is not an address.
 
 **Views (don't unbind you):**
 
-- **`-h`/`--home`** — the home view (all top-level arias + their branches)
+- **`-H`/`--home`** — the home view (all top-level arias + their branches)
   *without* unbinding; `●` stays on your real aria.
 - **`-g`/`--global`** — home **plus** the null + versioned-loadout anchors,
   drawn above the conversations (the infrastructure trunks).

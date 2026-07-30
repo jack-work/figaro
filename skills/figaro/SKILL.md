@@ -32,7 +32,7 @@ Three rules that are not guessable:
   and stays until the turn ends. With it, the daemon keeps working and you get
   your shell back. Follow along later with `figaro listen <id>`.
 - **`ls` is scoped to where you are attended.** It is `ls`, not `ls -R /`.
-  Start scoped; widen with `-h` (home) or `-g` (global) only when scoped comes
+  Start scoped; widen with `-H` (home) or `-g` (global) only when scoped comes
   back empty.
 
 Every command takes `--id <id>` to address a specific aria, `-j` for one line

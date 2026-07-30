@@ -11,8 +11,13 @@ Three things hold across the whole CLI:
 - **Targeting** is `--id <id>` everywhere, or a positional `<id>` on most
   verbs. With neither, a verb targets the aria this shell is attended to. The
   precedence is `--id` beats `FIGARO_ARIA` beats the pid binding.
-- **`-j`/`--json`** prints one machine-readable line on stdout and nothing else
-  worth parsing. `-h`/`--help` prints that verb's own help.
+- **`-j`/`--json`** submits and exits, printing one machine-readable line on
+  stdout and nothing else. It contradicts anything that streams or renders
+  (`-r`, `-v`, `-o`, `-l`, `-x`, `-e`), and says so rather than dropping them.
+- **`-h`/`--help`** prints that verb's help on **stdout**, exit 0 — reserved on
+  every verb, so no command may claim `-h` for itself. Usage printed because
+  argv was wrong goes to **stderr** with **exit 2**; exit 1 means the command
+  ran and failed. `figaro help [<verb>]` is the same help by another door.
 
 ## Prompting
 
@@ -34,7 +39,7 @@ Three things hold across the whole CLI:
 | `-l`, `--listen` | Open the transcript pager at startup. |
 | `-v`, `--verbatim` | Dump raw wire frames as JSON, one object per line. |
 | `-x`, `--exec` | Treat the reply as a bash script and run it. `-n` prints without running, `-y` skips the confirmation. |
-| `-j`, `--json` | One line: `{aria_id, mode}`. |
+| `-j`, `--json` | Submit, print one line `{aria_id, mode}`, exit. Contradicts `-r`/`-v`/`-o`/`-l`/`-x`/`-e`. |
 
 Persistence (`-e`) and formatting (`-r`) are orthogonal. The workhorse for
 scripts is `figaro send -er -- <prompt>`: one shot, isolated, pipe clean.
@@ -43,14 +48,12 @@ Timing is not a flag. A prompt that arrives while a turn is running joins it as
 a steering aside; a prompt that arrives when nothing is running opens a turn.
 The classification happens where the queue is drained, and nowhere else.
 
-Deprecated, still present: `plain` (use `send -er`), `x` (use `send -x`).
-
 ## Moving around
 
 | Command | Effect |
 |---|---|
 | `figaro ls [<id>]` | List arias, scoped to where you are attended. Alias `list`. |
-| `figaro ls -h` | Home view: every top-level aria, without unbinding you. |
+| `figaro ls -H` | Home view: every top-level aria, without unbinding you. (`-h` is help, on every verb.) |
 | `figaro ls -g` | Home plus the null root and loadout anchors. |
 | `figaro ls -a` / `-n N` | Remove the 10-row cap, or set it. Mutually exclusive. |
 | `figaro attend <id>` | Bind this shell to an aria. Alias `at`. |

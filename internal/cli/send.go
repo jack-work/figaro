@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -80,36 +81,11 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 		}
 	}
 
-	// First pass: expand bundled bool short flags so -ex -> -e -x,
-	// but stop at `--`.
-	expanded := make([]string, 0, len(args))
-	for i, a := range args {
-		if a == "--" {
-			expanded = append(expanded, args[i:]...)
-			break
-		}
-		// Bundle expansion: -<letters> where all letters are known
-		// bool shorts.
-		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
-			letters := a[1:]
-			allBool := true
-			for _, r := range letters {
-				switch r {
-				case 'e', 'r', 'v', 'o', 't', 'x', 'n', 'y', 'f', 'j', 'l':
-					// known bool short
-				default:
-					allBool = false
-				}
-			}
-			if allBool {
-				for _, r := range letters {
-					expanded = append(expanded, "-"+string(r))
-				}
-				continue
-			}
-		}
-		expanded = append(expanded, a)
-	}
+	// One expander, one table: the letters come from sendFlagDefs, so a
+	// short cannot be documented and un-gangable at once (which is how
+	// `send -fj` failed while `-f -j` worked).
+	expanded := cmdkit.ExpandBundled(argsBeforeBoundary(args), sendFlagDefs)
+	expanded = append(expanded, argsFromBoundary(args)...)
 
 	i := 0
 	for i < len(expanded) {
@@ -214,6 +190,44 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 	return opts, rest, nil
 }
 
+// sendFlagDefs is the single source of truth for the prompt verbs' flags:
+// bundle expansion reads it, and it is what keeps the hand-rolled PassRaw
+// scan and the router's parser speaking the same language.
+var sendFlagDefs = []cmdkit.FlagDef{
+	{Long: "id", Description: "Target aria id"},
+	{Long: "ephemeral", Short: "e", IsBool: true, Description: "One-shot in-memory aria"},
+	{Long: "raw", Short: "r", IsBool: true, Description: "Raw stream: no ANSI, no markdown"},
+	{Long: "verbatim", Short: "v", IsBool: true, Description: "Dump the wire frames as JSON"},
+	{Long: "verbose", Short: "o", IsBool: true, Description: "Expand full tool inputs"},
+	{Long: "thinking", Short: "t", IsBool: true, Description: "Alias of --verbose"},
+	{Long: "listen", Short: "l", IsBool: true, Description: "Open the transcript at startup"},
+	{Long: "exec", Short: "x", IsBool: true, Description: "Treat the prompt as a bash instruction"},
+	{Long: "dry-run", Short: "n", IsBool: true, Description: "--exec only: print the script"},
+	{Long: "yes", Short: "y", IsBool: true, Description: "--exec only: skip confirmation"},
+	{Long: "forget", Short: "f", IsBool: true, Description: "Submit and exit; do not stream"},
+	{Long: "json", Short: "j", IsBool: true, Description: "Submit, print one JSON object, exit"},
+}
+
+// argsBeforeBoundary / argsFromBoundary split argv at the first bare `--`.
+// Everything after it is the prompt and must never be touched.
+func argsBeforeBoundary(args []string) []string {
+	for i, a := range args {
+		if a == "--" {
+			return args[:i]
+		}
+	}
+	return args
+}
+
+func argsFromBoundary(args []string) []string {
+	for i, a := range args {
+		if a == "--" {
+			return args[i:]
+		}
+	}
+	return nil
+}
+
 // parseTarget splits a target spec into a trunk id and an optional :<turn>.
 // "" -> bound trunk, no turn. ":6" -> bound trunk at turn 6. "t1:6" -> trunk
 // t1 at turn 6. "t1" -> trunk t1, no turn.
@@ -276,7 +290,7 @@ func runSend(loaded *config.Loaded, rawArgs []string) {
 func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	opts, rest, err := extractSendFlags(rawArgs)
 	if err != nil {
-		die("%s: %s", verb, err)
+		dieUsage("%s: %s", verb, err)
 	}
 	prompt := extractPrompt(rest)
 	if prompt == "" {
@@ -300,9 +314,9 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		} else {
 			flags := "[--id <id>] [-e|--ephemeral] [-r|--raw] [-v|--verbatim] [-x|--exec] [-n] [-y] -- <prompt>"
 			if verb == "send" {
-				die("usage: figaro send %s", flags)
+				dieUsage("usage: figaro send %s", flags)
 			}
-			die("usage: %s %s", verb, flags)
+			dieUsage("usage: %s %s", verb, flags)
 		}
 	}
 
@@ -312,20 +326,19 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	}
 	trunkID, turn, hasTurn, perr := parseTarget(spec)
 	if perr != nil {
-		die("%s: %s", verb, perr)
+		dieUsage("%s: %s", verb, perr)
 	}
 
 	if opts.ephemeral && (opts.id != "" || opts.target != "") {
-		die("%s: --ephemeral and a target are contradictory", verb)
+		dieUsage("%s: --ephemeral and a target are contradictory", verb)
 	}
-	if (opts.dryRun || opts.skipYes) && !opts.exec {
-		die("%s: -n / -y only meaningful with --exec", verb)
+	if err := validateSendOpts(opts, hasTurn); err != nil {
+		dieUsage("%s: %s", verb, err)
 	}
-	if opts.forget && (opts.exec || opts.verbatim) {
-		die("%s: --forget contradicts --exec/--verbatim", verb)
-	}
-	if opts.forget && opts.ephemeral {
-		die("%s: --forget contradicts --ephemeral (the aria would be killed before the turn ran)", verb)
+	if opts.json {
+		// The turn is submitted and not attached to — exactly --forget, which
+		// already knows how to emit the object.
+		opts.forget = true
 	}
 
 	set := renderSettings{verbose: opts.verbose, listen: opts.listen}
@@ -334,9 +347,6 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	// on whichever trunk we end up attended to: the new alternative by default
 	// (rebind), or the original with --attend=false/--stay.
 	if hasTurn {
-		if opts.ephemeral || opts.exec || opts.verbatim {
-			die("%s: <trunk>:<turn> is not compatible with --ephemeral/--exec/--verbatim", verb)
-		}
 		runSendForkAt(loaded, trunkID, turn, opts.stay, opts.json, prompt, set)
 		return
 	}
@@ -368,6 +378,58 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		}
 		promptAria(loaded, opts.id, prompt, set)
 	}
+}
+
+// validateSendOpts holds every "these flags contradict" rule for the prompt
+// verbs as a PURE function: it decides, never exits, never opens a socket.
+// That matters — inline in runSendAs, the only way to test a rejection was
+// to call the dispatcher, and a dispatcher past its guard reaches
+// mustConnectAngelus, which in a test binary is a fork bomb.
+//
+// --json is a MODE (submit, one object, exit), so anything that renders,
+// streams or takes the terminal contradicts it. Saying so is the point:
+// dropping -j quietly made `send -j` a no-op for the life of the flag.
+func validateSendOpts(opts sendOpts, hasTurn bool) error {
+	if (opts.dryRun || opts.skipYes) && !opts.exec {
+		return fmt.Errorf("-n / -y only meaningful with --exec")
+	}
+	if opts.forget && (opts.exec || opts.verbatim) {
+		return fmt.Errorf("--forget contradicts --exec/--verbatim")
+	}
+	if opts.forget && opts.ephemeral {
+		return fmt.Errorf("--forget contradicts --ephemeral (the aria would be killed before the turn ran)")
+	}
+	if hasTurn && (opts.ephemeral || opts.exec || opts.verbatim) {
+		return fmt.Errorf("<trunk>:<turn> is not compatible with --ephemeral/--exec/--verbatim")
+	}
+	if opts.json {
+		if bad := jsonIncompatible(opts); bad != "" {
+			return fmt.Errorf("--json contradicts %s (--json submits and exits; there is no stream to shape)", bad)
+		}
+		if opts.ephemeral {
+			return fmt.Errorf("--json contradicts --ephemeral (the aria would be killed before the turn ran)")
+		}
+	}
+	return nil
+}
+
+// jsonIncompatible names the first flag that cannot survive --json's
+// contract. --raw and --verbatim want the stream itself; --exec hands stdout
+// to a script; --listen and --verbose shape a render that will not happen.
+func jsonIncompatible(opts sendOpts) string {
+	switch {
+	case opts.raw:
+		return "--raw"
+	case opts.verbatim:
+		return "--verbatim"
+	case opts.exec:
+		return "--exec"
+	case opts.listen:
+		return "--listen"
+	case opts.verbose:
+		return "--verbose"
+	}
+	return ""
 }
 
 // runSendEphemeralRaw spins an ephemeral aria, streams raw output

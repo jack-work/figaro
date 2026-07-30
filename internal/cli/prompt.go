@@ -93,6 +93,32 @@ func runNewPrompt(loaded *config.Loaded, prompt, loadout string, set renderSetti
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
 
+// submitAndExit queues a prompt on an existing aria and returns without
+// attaching to the stream — the tail of every --json path. Kept in one
+// place so "what --json does" cannot drift between send, new and fork.
+func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt string) {
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+
+	ep, err := resolveAria(ctx, acli, ariaID)
+	if err != nil {
+		die("%s", err)
+	}
+	prompt = expandAtRefsForEndpoint(ctx, ep, prompt)
+
+	fcli, derr := figaro.DialClient(ep, func(string, json.RawMessage) {})
+	if derr != nil {
+		die("connect figaro: %s", derr)
+	}
+	defer fcli.Close()
+
+	qctx, qcancel := context.WithTimeout(ctx, 10*time.Second)
+	defer qcancel()
+	if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptChalkboard()); qerr != nil {
+		die("prompt: %s", qerr)
+	}
+}
+
 // runSendForkAt implements `send <trunk>:<turn>`: fork the trunk at the turn's
 // first LT (imperative interior fork, empty alternative), then send the prompt
 // to the trunk we end up attended to. By default we rebind this shell to the
@@ -166,6 +192,11 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, turn uint64, stay, asJ
 			Turn:         turn,
 			Mode:         "fork-send",
 		})
+		// --json submits and exits. This used to print the object and then
+		// stream the rendered turn to the SAME stdout, so `| jq` got one
+		// object followed by rendered prose. The object is the whole output.
+		submitAndExit(ctx, loaded, target, prompt)
+		return
 	}
 
 	ep, err := resolveAria(ctx, acli, target)

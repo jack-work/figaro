@@ -32,7 +32,7 @@ import (
 // This is the one place in the fleet's benchmark work that lives in
 // `package store`: chalkboardReduce is package-private.
 //
-// Standard invocation (see BASELINE.md):
+// Standard invocation:
 //
 //	go test ./internal/store -run XXX -bench 'Chalkboard' -benchmem \
 //	    -benchtime=1x -count=5 | tee bench-store-before.txt

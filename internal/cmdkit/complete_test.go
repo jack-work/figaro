@@ -268,7 +268,7 @@ func TestCompletionScriptsMentionDispatcher(t *testing.T) {
 // list in the middle of a prompt.
 func TestBarePromptDetectorSurvivesAMovedBoundary(t *testing.T) {
 	r := NewRouter("figaro")
-	r.Register(&Command{Name: "send", Short: "s", Run:  func(*RunContext) error { return nil }})
+	r.Register(&Command{Name: "send", Short: "s", Run: func(*RunContext) error { return nil }})
 
 	for _, tc := range []struct {
 		shell string
@@ -280,7 +280,11 @@ func TestBarePromptDetectorSurvivesAMovedBoundary(t *testing.T) {
 		want []string
 	}{
 		{"fish", r.writeFishCompletion, `test $tokens[2] = "--"`,
-			[]string{`contains -- "--" $tokens[2..-1]`, `contains -- $tokens[2] send`}},
+			// The verb list is not asserted verbatim: it is every registered
+			// command, and cmdkit now registers a built-in `help`, so pinning
+			// the exact string would make this test a census of the command
+			// table rather than a check of the boundary detector.
+			[]string{`contains -- "--" $tokens[2..-1]`, `contains -- $tokens[2] `, `send`}},
 		{"bash", r.writeBashCompletion, `if [ "$verb" = "--" ]; then`,
 			[]string{`for w in "${COMP_WORDS[@]:1}"`, `case " $commands " in *" $verb "*)`}},
 	} {

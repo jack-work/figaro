@@ -1,187 +1,20 @@
 package cli
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"os/signal"
 	"strings"
 	"time"
 
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/rpc"
-	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
 )
-
-// runPlainPrompt streams raw output from an aria. With no --id, it
-// creates an ephemeral aria, streams, and kills it. With --id, it
-// scopes to that aria (auto-creating if missing) and leaves it alive.
-func runPlainPrompt(loaded *config.Loaded, rawArgs []string) {
-	id, rest, err := extractIDFlag(rawArgs)
-	if err != nil {
-		die("plain: %s", err)
-	}
-	prompt := extractPrompt(rest)
-	if prompt == "" {
-		die("usage: figaro plain [--id <id>] -- <prompt>")
-	}
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-
-	var figaroID string
-	var figaroEP transport.Endpoint
-	ephemeral := id == ""
-
-	if ephemeral {
-		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, "", nil) })
-		if err != nil {
-			die("create figaro: %s", err)
-		}
-		figaroID = createResp.FigaroID
-		figaroEP = transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
-		defer func() {
-			killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer killCancel()
-			_ = acli.Kill(killCtx, figaroID, false)
-		}()
-		if err := waitForSocket(figaroEP.Address, 3*time.Second); err != nil {
-			die("plain: %s", err)
-		}
-	} else {
-		figaroID, figaroEP, err = resolveTargetEndpoint(ctx, loaded, acli, id, true)
-		if err != nil {
-			die("%s", err)
-		}
-	}
-
-	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
-	exitCode := plainPrompt(ctx, figaroEP, prompt, os.Stdout)
-	if exitCode != 0 {
-		os.Exit(exitCode)
-	}
-}
-
-// execOwnFlags are the flags `x` parses out of rest itself; the id
-// extractor passes them through instead of rejecting them.
-var execOwnFlags = []string{"-n", "--dry-run", "-y", "--yes"}
-
-// runExecPrompt asks a figaro for bash, then executes it. With --id
-// the prompt is scoped to that aria (auto-created if missing) and the
-// aria is left alive afterward; without --id, an ephemeral aria is
-// spun up and killed.
-func runExecPrompt(loaded *config.Loaded, rawArgs []string) {
-	id, rest, err := extractIDFlagAllowing(rawArgs, execOwnFlags)
-	if err != nil {
-		die("x: %s", err)
-	}
-	instruction := extractPrompt(rest)
-	if instruction == "" {
-		die("usage: figaro x [--id <id>] [-n|-y] -- <instruction>")
-	}
-
-	dryRun := false
-	skipConfirm := false
-	for _, a := range rest {
-		if a == "--" {
-			break
-		}
-		switch a {
-		case "-n", "--dry-run":
-			dryRun = true
-		case "-y", "--yes":
-			skipConfirm = true
-		}
-	}
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
-	acli := mustConnectAngelus(loaded)
-	defer acli.Close()
-
-	var figaroID string
-	var figaroEP transport.Endpoint
-	ephemeral := id == ""
-
-	if ephemeral {
-		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, "", nil) })
-		if err != nil {
-			die("create figaro: %s", err)
-		}
-		figaroID = createResp.FigaroID
-		figaroEP = transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
-		defer func() {
-			killCtx, killCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer killCancel()
-			_ = acli.Kill(killCtx, figaroID, false)
-		}()
-		if err := waitForSocket(figaroEP.Address, 3*time.Second); err != nil {
-			die("x: %s", err)
-		}
-	} else {
-		figaroID, figaroEP, err = resolveTargetEndpoint(ctx, loaded, acli, id, true)
-		if err != nil {
-			die("%s", err)
-		}
-	}
-	_ = figaroID
-
-	instruction = expandAtRefsForEndpoint(ctx, figaroEP, instruction)
-	prompt := "You will write a bash script. Output ONLY raw bash, " +
-		"no markdown fences, no prose, no commentary, no explanations. " +
-		"The script will be executed verbatim via `bash -c`. " +
-		"Instruction: " + instruction
-
-	var buf bytes.Buffer
-	exitCode := plainPrompt(ctx, figaroEP, prompt, &buf)
-	if exitCode != 0 {
-		os.Exit(exitCode)
-	}
-
-	script := stripBashFences(buf.String())
-	if strings.TrimSpace(script) == "" {
-		die("figaro x: empty script from agent")
-	}
-
-	if dryRun {
-		fmt.Print(script)
-		if !strings.HasSuffix(script, "\n") {
-			fmt.Println()
-		}
-		return
-	}
-
-	if !skipConfirm && term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprintln(os.Stderr, "--- figaro x: about to execute ---")
-		fmt.Fprintln(os.Stderr, script)
-		fmt.Fprintln(os.Stderr, "--- press enter to run, ctrl-c to abort ---")
-		bufio.NewReader(os.Stdin).ReadString('\n')
-	}
-
-	sh := exec.Command("bash", "-c", script)
-	sh.Stdin = os.Stdin
-	sh.Stdout = os.Stdout
-	sh.Stderr = os.Stderr
-	if err := sh.Run(); err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			os.Exit(ee.ExitCode())
-		}
-		die("figaro x: bash: %s", err)
-	}
-}
 
 // stripBashFences removes markdown code fences.
 func stripBashFences(s string) string {
@@ -237,7 +70,7 @@ func plainPrompt(ctx context.Context, ep transport.Endpoint, prompt string, out 
 		case <-fcli.Done():
 		case <-time.After(3 * time.Second):
 		}
-		return 130
+		return exitInterrupted
 	}
 }
 
@@ -281,7 +114,7 @@ func verbatimPrompt(ctx context.Context, ep transport.Endpoint, prompt string, o
 		case <-fcli.Done():
 		case <-time.After(3 * time.Second):
 		}
-		return 130
+		return exitInterrupted
 	}
 }
 

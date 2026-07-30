@@ -66,8 +66,29 @@ func preDashFlagValue(args []string, names ...string) (string, bool, error) {
 	return "", false, nil
 }
 
-// die prints to stderr and exits 1.
+// exitInterrupted is the shell's convention for "killed by SIGINT"
+// (128 + SIGINT). plainPrompt has always returned it; the interactive
+// stream used to exit 0 after a Ctrl-C, which told every caller that an
+// abandoned turn had succeeded.
+const exitInterrupted = 130
+
+// exitProcess is os.Exit, indirected so the die helpers are testable.
+// Tests swap it for a recorder; nothing else may touch it.
+var exitProcess = os.Exit
+
+// die reports a RUNTIME failure (called correctly, did not succeed): exit 1.
+// dieUsage is for rejected argv: exit 2. Before the split, the same mistake
+// answered 2 from the router and 1 from the hand-rolled parsers — a seam no
+// user can see. clig.dev: 1 = general error, 2 = misuse.
 func die(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
-	os.Exit(1)
+	exitProcess(1)
+}
+
+// dieUsage reports that ARGV WAS REJECTED — an unknown flag, a missing or
+// malformed target, contradictory flags, a prompt in the wrong place — and
+// exits 2, matching what the router returns for the same class of mistake.
+func dieUsage(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
+	exitProcess(2)
 }

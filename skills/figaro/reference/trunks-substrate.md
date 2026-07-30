@@ -217,7 +217,7 @@ interface.
   (the required literal; `attend ~` is a legacy alias that needs quoting in the shell) is
   "go home" — `Unbind`; new conversations then default to the live loadout. Attending a
   **cauterized** (null/loadout) aria is rejected with a nudge toward
-  `attend null` / `ls -h` / `ls -g`.
+  `attend null` / `ls -H` / `ls -g`.
 - **The store flock**: the angelus is a strict singleton via an exclusive flock on
   `<store>/arias/.daemon.lock`, acquired **before** the backend opens and before the socket
   binds (`cli/angelus.go:lockStore`). Fixed a TOCTOU where two daemons could race-spawn and
@@ -295,7 +295,7 @@ The client owns: `pid → attended trunk` (plus an optional one-shot pending for
 legacy alias that needs quoting in the shell) clears it —
 "go home," after which new conversations default to the live loadout. There is **no
 `detach`** (removed). Attending a cauterized (null/loadout) aria is rejected with a nudge
-toward `attend null` / `ls -h` / `ls -g`.
+toward `attend null` / `ls -H` / `ls -g`.
 
 ### 4.2 `send` vs `fork`
 
@@ -353,7 +353,7 @@ the RPC does with it.
   - **`figaro ls`** — *current scope*: **attended** → your aria's fork tree (top-level
     ancestor's whole tree, `●` marking you); **detached** → home (all top-level arias).
   - **`figaro ls <id>`** — scope to that aria's subtree.
-  - **`-h`/`--home`** — the home view (all top-level arias + branches) **without unbinding**;
+  - **`-H`/`--home`** — the home view (all top-level arias + branches) **without unbinding**;
     `●` stays on your real aria.
   - **`-g`/`--global`** — home **plus** the null + versioned-loadout anchors drawn *above*
     the conversations (the infrastructure trunks).
@@ -384,7 +384,7 @@ the RPC does with it.
   `name@version`) → **top-level arias** (conversations under a loadout) → **branches** (forks
   of conversations); conversations inherit the loadout chalkboard.
 - **Trunk forest `list`/`ls`** (attend = `cd`): current-scope `ls`, `ls <id>` subtree,
-  `-h/--home` (view without unbinding), `-g/--global` (+ null/loadout anchors), cap
+  `-H/--home` (view without unbinding), `-g/--global` (+ null/loadout anchors), cap
   `-a/--all` | `-n N` (default 10), `--json` (all arias incl. null + loadouts, rejects other
   flags); `status -m/-j`, `state -j`, positional `show <id>` with `-n/--last`; LT realigned
   so shown N == `:N`.

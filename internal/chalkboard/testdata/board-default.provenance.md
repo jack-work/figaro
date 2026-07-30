@@ -55,4 +55,4 @@ rm -rf /tmp/chalkcap/run /tmp/chalkcap/state
 
 Only re-capture if the fixture must reflect a changed loadout — and then
 say so loudly in the report, because it invalidates comparison against any
-previously recorded `bench-before.txt`.
+a previously recorded baseline.
