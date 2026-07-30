@@ -1,6 +1,7 @@
 package cmdkit
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -67,7 +68,65 @@ func NewRouter(name string) *Router {
 		PassRaw: true,
 		Run:     r.runComplete,
 	})
+	r.registerHelp()
 	return r
+}
+
+// registerHelp installs the `help [<command>]` verb.
+//
+// It lives in cmdkit rather than in each consumer's command table because
+// `help` is the router's own knowledge, and because leaving it out has a
+// specific failure mode: `figaro help` fell through to the unknown-command
+// path and answered
+//
+//	error: unknown command "help"
+//	  did you mean: figaro hup
+//
+// pointing the most-guessed verb in the tool at a daemon-signalling verb,
+// at the exact moment the user is lost. cli-design: "a `<tool> help
+// <subcommand>` form is appreciated in addition to `<tool> <subcommand>
+// --help`."
+func (r *Router) registerHelp() {
+	r.Register(&Command{
+		Name:    "help",
+		Group:   "System",
+		Short:   "Show help for " + r.Name + " or one of its commands",
+		Usage:   "help [<command>]",
+		ArgsMax: 1,
+		Run: func(ctx *RunContext) error {
+			if len(ctx.Args) == 0 {
+				r.PrintUsage()
+				return nil
+			}
+			name := ctx.Args[0]
+			cmd, ok := r.index[name]
+			if !ok {
+				// Same courtesy the dispatcher extends, and the same exit
+				// code: this is misuse, so it must not print help to stdout
+				// and claim success.
+				fmt.Fprintf(r.errw(), "error: unknown command %q\n", name)
+				if s := r.suggest(name); s != "" {
+					fmt.Fprintf(r.errw(), "  did you mean: %s help %s\n\n", r.Name, s)
+				}
+				r.printUsageTo(r.errw())
+				return errUsage
+			}
+			r.PrintCommandHelp(cmd)
+			return nil
+		},
+		CompleteArgs: func(ctx *CompleteContext) []string { return r.CommandNames() },
+	})
+}
+
+// CommandNames lists the visible command names, for completion.
+func (r *Router) CommandNames() []string {
+	names := make([]string, 0, len(r.commands))
+	for _, cmd := range r.commands {
+		if !cmd.Hidden {
+			names = append(names, cmd.Name)
+		}
+	}
+	return names
 }
 
 // HasCommand reports whether name matches a registered command or alias.
@@ -149,11 +208,20 @@ func (r *Router) Run(args []string) int {
 
 	// Run the command.
 	if err := cmd.Run(ctx); err != nil {
-		fmt.Fprintf(r.Stderr, "error: %s\n", err)
+		if errors.Is(err, errUsage) {
+			// The command already printed its own diagnostic; this is
+			// misuse, so it exits 2 like every other rejected argv.
+			return 2
+		}
+		fmt.Fprintf(r.errw(), "error: %s\n", err)
 		return 1
 	}
 	return 0
 }
+
+// errUsage lets a command report "argv was rejected, and I have already
+// said why" — the router turns it into exit 2 with no second message.
+var errUsage = errors.New("usage")
 
 // parse processes flags and positional args for a command.
 func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
