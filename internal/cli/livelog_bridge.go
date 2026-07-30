@@ -187,6 +187,23 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 // more often than this.
 const transcriptFrameInterval = time.Second / 120
 
+// transcriptResyncInterval is how long the painter may trust its own model of
+// the screen before re-earning it with an unconditional full frame.
+//
+// It exists because figaro is not the only writer to the terminal: while the
+// pager is up, ANY write that bypasses the frame buffer (an error hint, an
+// interrupt notice, a library, the Go runtime) lands on the alt grid at the
+// cursor and, with a leading newline, scrolls every row out from under the
+// painter's model — which then paints row TAILS onto rows whose left half is
+// something else entirely, forever. See (*transcript).screenMoved.
+//
+// Known writers call screenMoved and are repaired on the next frame; this is
+// the bound for the unknown ones. Two seconds is chosen to be well under the
+// time it takes a reader to decide the screen is broken, and far above the
+// frame interval, so it costs one full frame per two seconds of ACTIVE
+// painting and nothing at all when the pager is idle.
+const transcriptResyncInterval = 2 * time.Second
+
 // framePacer is the transcript's frame-rate gate. It answers "may I paint
 // now?" and, when the answer is no, owes a trailing flush so the settled state
 // always reaches the screen — dropping the LAST frame of a burst is the one
@@ -630,6 +647,14 @@ func (t *livelogTurn) inTranscript() bool { return t.tr.active }
 func (t *livelogTurn) transcriptDispatch(ev keyEvent) { t.tr.dispatch(ev) }
 
 func (t *livelogTurn) invalidateTranscriptRows() { t.tr.invalidateRows() }
+
+// screenMoved forwards the "something wrote outside the frame buffer" barrier
+// to the pager. Safe to call whether or not the pager is up: when it is down
+// there is no painter model to void, and the incipit renderer's live region is
+// bounded by frozen scrollback rather than by a screen model.
+//
+// Callers hold the render mutex (every renderer entry point does).
+func (t *livelogTurn) screenMoved() { t.tr.screenMoved() }
 
 func (t *livelogTurn) transcriptSelect(delta int, extend bool) {
 	t.tr.selectNode(delta, extend)
