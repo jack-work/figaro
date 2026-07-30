@@ -28,7 +28,7 @@ aria hydrates. A linked `ui` xwal channel remains an optional derived cache, not
 current storage.
 
 > **The convergence now has a plan and a shared coordinate.** See
-> [turn-addressing.md](turn-addressing.md). Both IRs carry a **turn id**; **LT
+> [turn-addressing.md](turns.md). Both IRs carry a **turn id**; **LT
 > joins, turn id addresses**. The open debate below ("should a live message be a
 > whole turn?") is **resolved: yes** — the UI IR unit is the turn, prompt and
 > reply together.
@@ -113,7 +113,7 @@ derived snapshot.
   the **turn**: user inquiry and assistant reply in one entry. Tools and
   steering do not make this hard once nodes carry `lts` — a tool node simply
   spans two LTs, and steering is the same primitive as the prompt at a later
-  position. See [turn-addressing.md](turn-addressing.md).
+  position. See [turn-addressing.md](turns.md).
 
 ## Challenges to call out
 

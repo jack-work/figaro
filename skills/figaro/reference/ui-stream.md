@@ -96,7 +96,7 @@ sealed `figaro.aria` frame.
 The current `figaro.read` request predates turn addressing, so two field names
 retain LT-era spelling. Forward catch-up uses `sinceLT` as a **turn cursor**;
 backward paging uses `before` plus `before_node`; `limit` is a byte budget. See
-[turn-addressing.md](turn-addressing.md) for the exact current requests,
+[turn-addressing.md](turns.md) for the exact current requests,
 pagination rules, types, and worked examples.
 
 ### Connection and endpoint discovery

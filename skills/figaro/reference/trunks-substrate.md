@@ -22,7 +22,7 @@ physical log up to the CLI.
 > below still takes an `atMainLT`. Turn id is the *user-facing* coordinate and
 > projects down to `atMainLT = min(LTs of the turn) - 1` (see the next section
 > for why the −1). See
-> [turn-addressing.md](turn-addressing.md).
+> [turn-addressing.md](turns.md).
 
 ### `atMainLT` is inclusive of the frozen prefix
 
@@ -375,10 +375,9 @@ the RPC does with it.
   policy state unnecessary. The old per-aria-dir / `nodeRec` / `index.json` model is gone.
 - **Aria id = trunk id, stable across forks** (continuation keeps it; `cont == id`).
   Bind-to-trunk: forking your own trunk doesn't move you.
-- **One `send` path**: `send <id>:<turn>` forks-then-sends (rebinds; `--stay`); bare `send`
-  appends. `fork [<id>[:<turn>]] [--stay]` is the imperative no-prompt branch. `attend`/`at`
-  (with `attend null` to go home — `detach` **removed**, `~` kept as a legacy alias),
-  `kill <id>` (+ subtree, `-r`).
+- **One `send` path**: fork-then-send and plain append are the same codepath, discriminated
+  by whether the address carries a turn. The gesture semantics of `send`, `fork`, `attend`
+  and `kill` are owned by [trunks.md](trunks.md) and are not repeated here.
 - **Cauterization**: the null root and loadout stumps are closed — forking/sending "at"
   them spawns a child conversation (`Owner` + `SpawnUnderRoot`/`SpawnUnderStump`).
 - **The four-layer loadout tree**: `null` → content-versioned **loadout** stumps (dedup'd by

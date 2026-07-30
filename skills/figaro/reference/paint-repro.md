@@ -15,7 +15,7 @@ Companion file: `scripts/paintpane.sh` (source it; every function cites the trap
 it exists to defend against).
 
 **If you are here to hunt something that is not a paint bug, start with
-[`tmux-procedure.md`](tmux-procedure.md)** — the same method with the pager
+[`tmux-procedure.md`](ui-testing.md)** — the same method with the pager
 specifics factored out: the phases, the oracle catalogue, the traps that belong
 to the procedure rather than the environment, and the criteria for promoting a
 manual sweep into a test case. This file stays the pager's own cookbook.
