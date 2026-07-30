@@ -51,6 +51,13 @@ type transcript struct {
 
 	prev    []string   // last painted screen (the frame the terminal is holding)
 	prefix  string     // one-shot escapes emitted with the next frame (see enter)
+	// altPending/altOn are the alt-screen PAIRING. enter() queues the switch in
+	// prefix and sets altPending; the paint that actually emits it sets altOn;
+	// leave() writes the exit sequence only when altOn. Without this, a pager
+	// that never painted (h < 4, or a frame deferred behind the rate gate) still
+	// wrote 2J + ?1049l — to the user's real screen.
+	altPending bool
+	altOn      bool
 	// resync clock: the painter's model of the screen (prev) is only true while
 	// figaro is the ONLY writer to the terminal. It is not. See screenMoved and
 	// resyncDue — lastFull is when the screen was last painted unconditionally,
@@ -224,18 +231,46 @@ func (t *transcript) enter() {
 	t.from = aria.Anchor{}
 	t.invalidateWindow() // a fresh session always rebuilds the window from the tail
 	t.resetToTail()
+	// QUEUED, NOT WRITTEN: the switch rides the next frame, so a pager that
+	// never paints never switches the terminal at all. leave() must honour the
+	// same condition — that is what altPending/altOn record.
 	t.prefix = altScreenOn + autowrapOff + ldmouse.Enable + cursorHide + "\x1b[2J"
+	t.altPending = true
 	t.render()
 }
 
-// leave restores the normal screen. Mouse reporting is disabled before the
-// alt-screen swap so no stray \x1b[<…M leaks into the shell.
+// leave restores the normal screen — but ONLY if enter() ever actually reached
+// it. Mouse reporting is disabled before the alt-screen swap so no stray
+// \x1b[<…M leaks into the shell.
+//
+// THE PAIRING IS THE WHOLE POINT, and it was broken. enter() only QUEUES the
+// switch (t.prefix, emitted by the next paint), and a frame is not guaranteed:
+// renderFrame returns early under 4 rows, and render() can defer behind the
+// frame-rate gate. leave() nonetheless wrote the exit sequence unconditionally
+// — so on a terminal we had never switched, \x1b[2J erased THE USER'S OWN
+// SCREEN and \x1b[?1049l swapped away from a buffer we were not in. Measured
+// in a real pty at 3 rows: ?1049h = 0, ?1049l = 1, 2J = 1.
+//
+// The irony is that leave() already knew: it clears t.prefix with the comment
+// "a frame that never painted must not switch us back" — and then switched
+// back anyway. altOn closes that asymmetry.
+//
+// The erase is gone too, and its absence is deliberate. \x1b[?1049l RESTORES
+// the primary screen by definition, so clearing the alt buffer first buys
+// nothing on a conforming terminal; on one that does not honour 1049 (conhost
+// without VT processing — where the pager's frames land in the primary buffer
+// as ordinary text, which is the Windows symptom) it is the one instruction
+// that destroys what the user was looking at.
 func (t *transcript) leave() {
 	t.active = false
 	t.selection = nodeSelection{} // no selection survives outside the pager
 	t.prefix = ""                 // a frame that never painted must not switch us back
+	t.altPending = false
 	t.client.SetClosedLimit(transcriptTailLimit)
-	io.WriteString(t.out, "\x1b[2J"+ldmouse.Disable+altScreenOff)
+	if t.altOn {
+		io.WriteString(t.out, ldmouse.Disable+altScreenOff)
+		t.altOn = false
+	}
 	t.prev = nil
 }
 
@@ -1632,6 +1667,12 @@ func (t *transcript) nextScreen() []string {
 // frame it displaces goes back to screenSpare for the next compose.
 func (t *transcript) paint(screen []string) {
 	buf := append(t.paintBuf[:0], t.prefix...)
+	// THE SWITCH HAS NOW REACHED THE TERMINAL — record it, because leave() is
+	// only allowed to switch back if this happened. enter() queues; this is the
+	// only place the queue is drained.
+	if t.altPending && t.prefix != "" {
+		t.altOn, t.altPending = true, false
+	}
 	t.prefix = ""
 	buf = append(buf, "\x1b[?2026h"...)
 	base := t.prev
