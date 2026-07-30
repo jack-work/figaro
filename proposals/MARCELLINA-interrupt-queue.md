@@ -560,3 +560,42 @@ TasksMax=256 --setenv=FIGARO_NO_SELF_SPAWN=1`), every fix canaried with
 I believe all of these are right and am implementing them as given. If one
 turns out to be wrong when it meets the code, I report it rather than working
 around it.
+
+---
+
+## 9. As built
+
+Implemented in eleven commits on `feat/interrupt-queue`. Every ruling landed as
+given; nothing was reversed. Five places where the code is tighter or narrower
+than this note said, each deliberate:
+
+1. **The epoch lives on the RESPONSE, not on each queued message.** One field
+   per read instead of one per element: a list cannot then contain elements
+   from two generations, which is a state the per-element form could express
+   and the agent could never produce.
+2. **`hangupClient` is its own interface.** The H key needs exactly `Hangup`,
+   so it is not folded into `transcriptReadClient` — whose ten test stubs would
+   have had to grow a method none of them will ever call.
+3. **The all-form of delete reports one result per message actually removed**
+   (possibly none), rather than a synthetic `{id: 0}` row. It names no id, so
+   there is no id whose fate needs reporting; an ids-form request answered with
+   an empty result list remains a protocol violation.
+4. **`figaro queue` targets with `--id` only.** The sub-verb owns the
+   positional slot, and `figaro queue rm 3` must not be ambiguous between an
+   aria and a queue id.
+5. **Malformed mutations are errors, not rejection reasons** — naming no ids,
+   naming both ids and `--all`, updating to empty text. The closed reason set
+   stays a set of *decisions the agent made*, not a bin for bad argv.
+
+Two findings worth keeping:
+
+- **The pairing invariant is closed by THREE mechanisms**, not one:
+  `repairTurnTail`'s committed branch, its uncommitted branch, and
+  `repairInterruptedTail` at boot. Disabling any one leaves the tests green —
+  genuine redundancy, and a trap for anyone canarying a change here: canary the
+  branch your fixture actually reaches, and verify the mutation landed.
+- **The H key's proof needed three attempts** before it proved anything: the
+  first fired after the turn had already finished, the second gated on a screen
+  grep for "bash" that matched the *mantra* in the footer. The trigger oracle is
+  now the IR (a tool node with `status: running`); the screen remains the
+  instrument for the claim.
