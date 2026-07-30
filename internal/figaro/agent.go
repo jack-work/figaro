@@ -453,6 +453,9 @@ func (a *Agent) turnActive() bool {
 	return a.turnRunning.Load()
 }
 
+// TurnActive implements Figaro. Lock-free by design; see the interface doc.
+func (a *Agent) TurnActive() bool { return a.turnActive() }
+
 // Interrupt aborts the current turn, keeping the queue. It is the shape the
 // Figaro interface uses (and the angelus's graceful shutdown, where dropping
 // what someone queued would be exactly the wrong courtesy).

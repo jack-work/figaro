@@ -17,6 +17,13 @@ type Figaro interface {
 	Interrupt()
 	Info() FigaroInfo
 	Kill()
+
+	// TurnActive reports whether a turn is in flight. Separate from Info()
+	// on purpose: Info takes the agent's lock and can block (see
+	// TestRegistryListDoesNotHoldRegistryLockDuringInfo), and this is asked
+	// on the authorization path of every fork request. It is a lock-free
+	// atomic load, so a policy check can never stall the caller it guards.
+	TurnActive() bool
 }
 
 // FigaroInfo holds metadata about a figaro.
