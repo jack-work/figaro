@@ -328,6 +328,30 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		dieUsage("%s: --forget contradicts --ephemeral (the aria would be killed before the turn ran)", verb)
 	}
 
+	// --json is a MODE, not a decoration: submit the prompt, print exactly one
+	// object on stdout, exit. It was four different contracts before this:
+	//
+	//	send -j -- hi          parsed, then silently ignored
+	//	new -j                 fired a one-shot Qua and returned  (the right one)
+	//	send <id>:<turn> -j    printed the object AND THEN streamed the rendered
+	//	                       turn to the same stdout — unparseable for `| jq`
+	//	list --json            rejected every other flag
+	//
+	// Everything that renders, streams, or takes the terminal contradicts it.
+	// Saying so is the point: silently dropping -j is what made `send -j` a
+	// no-op for as long as the flag has existed.
+	if opts.json {
+		if bad := jsonIncompatible(opts); bad != "" {
+			dieUsage("%s: --json contradicts %s (--json submits and exits; there is no stream to shape)", verb, bad)
+		}
+		if opts.ephemeral {
+			dieUsage("%s: --json contradicts --ephemeral (the aria would be killed before the turn ran)", verb)
+		}
+		// The turn is submitted and not attached to — exactly --forget, which
+		// already knows how to emit the object.
+		opts.forget = true
+	}
+
 	set := renderSettings{verbose: opts.verbose, listen: opts.listen}
 
 	// `send <trunk>:<turn>` — fork at that turn, then send. The message lands
@@ -368,6 +392,26 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		}
 		promptAria(loaded, opts.id, prompt, set)
 	}
+}
+
+// jsonIncompatible names the first flag that cannot survive --json's
+// contract (submit, one object on stdout, exit). --raw and --verbatim want
+// the stream itself; --exec hands stdout to a script; --listen and
+// --verbose shape a render that will not happen.
+func jsonIncompatible(opts sendOpts) string {
+	switch {
+	case opts.raw:
+		return "--raw"
+	case opts.verbatim:
+		return "--verbatim"
+	case opts.exec:
+		return "--exec"
+	case opts.listen:
+		return "--listen"
+	case opts.verbose:
+		return "--verbose"
+	}
+	return ""
 }
 
 // runSendEphemeralRaw spins an ephemeral aria, streams raw output
