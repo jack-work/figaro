@@ -204,8 +204,10 @@ func reportQueueResults(ariaID, epoch string, results []rpc.QueueResult, asJSON 
 	}
 	for _, r := range results {
 		if r.Outcome == rpc.QueueRejected {
-			// Runtime outcome, not misuse: exit 1, never 2.
-			exitProcess(1)
+			// Runtime outcome, not misuse: exit 1, never 2. Through exitNow,
+			// not the raw exitProcess: os.Exit runs no defers, so every abrupt
+			// exit owes the terminal-restore hooks a chance to run.
+			exitNow(1)
 			return
 		}
 	}

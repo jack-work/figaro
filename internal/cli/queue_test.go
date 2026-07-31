@@ -78,6 +78,30 @@ func TestReportQueueResults_ExitCodes(t *testing.T) {
 	}
 }
 
+// A refusal leaves through exitNow, so whatever a TTY command registered to
+// put the terminal back still runs. os.Exit runs no defers; that is the whole
+// reason exitNow exists, and a path that calls the raw primitive silently
+// opts out of it.
+func TestReportQueueResults_RefusalRunsExitHooks(t *testing.T) {
+	prevExit, prevHooks := exitProcess, exitHooks
+	defer func() { exitProcess, exitHooks = prevExit, prevHooks }()
+	restored, code := false, 0
+	exitHooks = nil
+	exitProcess = func(c int) { code = c }
+	atExit(func() { restored = true })
+
+	reportQueueResults("a", "e", []rpc.QueueResult{
+		{ID: 1, Outcome: rpc.QueueRejected, Reason: rpc.RejectCommitted},
+	}, false)
+
+	if !restored {
+		t.Error("the terminal-restore hook did not run on the refusal exit")
+	}
+	if code != 1 {
+		t.Errorf("exit code %d, want 1", code)
+	}
+}
+
 // -j is one object, and results is an array even when the server refused
 // everything — a consumer doing .results[] must not special-case null.
 func TestQueueResultJSON_IsOneObject(t *testing.T) {
