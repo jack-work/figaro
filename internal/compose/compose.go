@@ -85,7 +85,9 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 			if turns.IsSteering(m) {
 				for ci, c := range m.Content {
 					if c.Type == message.ContentProse && strings.TrimSpace(c.Text) != "" {
-						nodes = append(nodes, textNode(livedoc.NodeSteering, roleInput, m.LogicalTime, ci, m.Timestamp, c.Text))
+						n := textNode(livedoc.NodeSteering, roleInput, m.LogicalTime, ci, m.Timestamp, c.Text)
+						n.Sender = c.Sender
+						nodes = append(nodes, n)
 					}
 				}
 			}

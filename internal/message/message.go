@@ -170,6 +170,27 @@ type Content struct {
 
 	// Reason populates ContentInterrupt blocks.
 	Reason InterruptReason `json:"reason,omitempty"`
+
+	// Sender attributes THIS block to whoever submitted it.
+	//
+	// A user message is not always one submission. Consecutive prompts drain
+	// and fold into ONE message (mergePromptEvents), and those prompts may come
+	// from different places: a human, a parent aria, a sibling three worktrees
+	// away. Before this they arrived as one anonymous blob and arias genuinely
+	// could not tell who was talking — there was nothing on the message to say.
+	//
+	// It lives on Content rather than on Message because Message.Content IS the
+	// list of payloads, so one field makes each payload attributed without a
+	// second parallel list for every consumer to learn and for the two to
+	// disagree about. A multi-block submission (text plus an image) is a RUN of
+	// Contents sharing a Sender; runs are self-describing, with no grouping
+	// structure that can desync from the content it groups.
+	//
+	// Rendered form, not an id: "aria 76062b18" for an authenticated aria,
+	// a bare label for an asserted one (see rpc.Attribution). Empty means
+	// unknown, and every renderer draws NOTHING rather than "unknown" — a
+	// blank attribution is noise on every message that never had one.
+	Sender string `json:"sender,omitempty"`
 }
 
 // Usage tracks token consumption for a single assistant response.
@@ -233,6 +254,13 @@ type Message struct {
 
 func TextContent(text string) Content {
 	return Content{Type: ContentProse, Text: text}
+}
+
+// SenderText is prose attributed to a submitter. An empty sender yields
+// exactly TextContent, so an unattributed message serializes byte-identically
+// to one written before Sender existed.
+func SenderText(sender, text string) Content {
+	return Content{Type: ContentProse, Text: text, Sender: sender}
 }
 
 func ImageContent(mimeType, data string) Content {

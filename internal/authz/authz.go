@@ -64,10 +64,12 @@ type Identity struct {
 // authenticated identity. Empty means unknown, and callers render nothing
 // rather than guessing.
 func (i Identity) Attribution() string {
-	if i.Authenticated && i.FigaroID != "" {
-		return rpc.AriaLabelPrefix + i.FigaroID
+	if i.Authenticated {
+		return rpc.Attribution(i.FigaroID, i.Label)
 	}
-	return i.Label
+	// Not authenticated: whatever id was presented carries no weight here, so
+	// only the asserted label can speak.
+	return rpc.Attribution("", i.Label)
 }
 
 // Anonymous reports whether no aria was authenticated.

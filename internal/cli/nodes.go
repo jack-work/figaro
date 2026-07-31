@@ -401,7 +401,24 @@ func renderSteeringNode(n livedoc.Node, width int, expanded bool) []string {
 	// thought already in motion, it does not open a turn. The inquiry gets a run
 	// header and full-strength prose; steering gets an inline marker and a dim
 	// blockquote gutter, so it reads as an aside within the agent's stream.
-	return append([]string{term.Dim("↳ input")}, nodeProseRows(n, width, expanded)...)
+	head := term.Dim("↳ input")
+	if n.Sender != "" {
+		head += " " + term.Dim("· "+n.Sender)
+	}
+	return append([]string{head}, nodeProseRows(n, width, expanded)...)
+}
+
+// senderRow is the dim attribution line drawn ABOVE a block's text, in the
+// same register as block timestamps and tool durations.
+//
+// Empty sender draws NOTHING — not a blank row, not "unknown". Most messages
+// in an existing log carry no sender, and a placeholder on every one of them
+// would be noise where there used to be none.
+func senderRow(sender string, width int) []string {
+	if sender == "" {
+		return nil
+	}
+	return []string{clipToWidth(term.Dim("  "+sender), width)}
 }
 
 // nodeMarkdown is the markdown a non-tool node renders from. Thinking and

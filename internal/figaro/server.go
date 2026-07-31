@@ -52,7 +52,10 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		}
 		cursor := int(a.ariaSrv.LastTurn())
 		active := a.turnActive()
-		a.SubmitPrompt(req)
+		// Attribution comes off the request itself, not from the authn
+		// provider: the agent socket has none, and a human — never
+		// authenticated — is exactly the caller a confused aria needs named.
+		a.SubmitPromptFrom(req, rpc.SenderFrom(params))
 		return rpc.QuaResponse{OK: true, Cursor: cursor, Active: active}, nil
 
 	case rpc.MethodContext:

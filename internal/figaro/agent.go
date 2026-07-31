@@ -36,6 +36,14 @@ const (
 	eventFork
 )
 
+// promptSegment is one submission inside a (possibly folded) user message:
+// the text and who sent it. Sender is already rendered (rpc.Attribution), so
+// no consumer re-derives it and none can disagree about the spelling.
+type promptSegment struct {
+	sender string
+	text   string
+}
+
 type event struct {
 	typ eventType
 
@@ -50,6 +58,11 @@ type event struct {
 	// eventUserPrompt
 	text       string
 	chalkboard *rpc.ChalkboardInput
+	// segments is this event's attributed payloads, in submission order.
+	// A fresh submit has exactly one; mergePromptEvents concatenates them, so
+	// a folded message keeps WHO SAID WHAT instead of flattening it into one
+	// anonymous blob. text stays the joined display/mantra form.
+	segments []promptSegment
 
 	// eventSet
 	setPatch message.Patch
@@ -416,12 +429,21 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 }
 
 // SubmitPrompt enqueues a prompt; the reply streams as log.* frames.
-func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
-	a.inbox.Send(event{
+func (a *Agent) SubmitPrompt(req rpc.QuaRequest) { a.SubmitPromptFrom(req, "") }
+
+// SubmitPromptFrom is SubmitPrompt with the caller's rendered attribution.
+// sender is "" when nobody said who they were, which stays unattributed all
+// the way down rather than becoming "unknown".
+func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) {
+	evt := event{
 		typ:        eventUserPrompt,
 		text:       req.Text,
 		chalkboard: req.Chalkboard,
-	})
+	}
+	if req.Text != "" {
+		evt.segments = []promptSegment{{sender: sender, text: req.Text}}
+	}
+	a.inbox.Send(evt)
 }
 
 // QueuedPrompts returns a read-only snapshot of the messages this aria has

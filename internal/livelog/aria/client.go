@@ -631,6 +631,11 @@ func setField(n *livedoc.Node, field string, v any) {
 		n.Name = asStr(v)
 	case "summary":
 		n.Summary = asStr(v)
+	case "sender":
+		// Dropping this silently would make every STREAMED input block look
+		// unattributed while a re-read showed its sender — the same exchange
+		// telling two stories, which is exactly how the role field broke once.
+		n.Sender = asStr(v)
 	case "status":
 		n.Status = asStr(v)
 	case "markdown":

@@ -227,13 +227,23 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 		}
 		a.inlineBoot = nil
 	}
-	if prompt.text != "" {
+	if blocks := senderRuns(prompt.segments); len(blocks) > 0 {
+		msg.Content = append(msg.Content, blocks...)
+	} else if prompt.text != "" {
+		// No segments: an event built directly (tests, internal submissions).
 		msg.Content = append(msg.Content, message.TextContent(prompt.text))
+	}
+	if len(msg.Content) > 0 {
 		// Only an inquiry opens a turn. A steer joins the exchange already in
 		// flight, so the counter must not move — otherwise the live turn id
 		// runs ahead of the one the projection derives, the client sees a new
 		// turn, and the turn being steered is abandoned mid-stream with its
 		// closing prose never rendered.
+		//
+		// Keyed on the CONTENT, not on which branch produced it. Attaching this
+		// to one of the two paths above is exactly the bug that shipped for a
+		// moment here: the attributed path skipped openTurn, so the second turn
+		// recomposed the first and the reply arrived twice.
 		if !steering {
 			a.openTurn()
 		}
@@ -909,6 +919,10 @@ func mergePromptEvents(prompts []event) (event, bool) {
 			texts = append(texts, p.text)
 		}
 		out.chalkboard = mergeChalkboardInput(out.chalkboard, p.chalkboard)
+		// Concatenated, never flattened: the fold is exactly where attribution
+		// used to be lost. Three nudges from three senders become one message
+		// of three attributed segments, not one anonymous paragraph.
+		out.segments = append(out.segments, p.segments...)
 		out.merged = append(out.merged, p.merged...)
 		if i > 0 && p.id != 0 {
 			out.merged = append(out.merged, p.id)
@@ -923,6 +937,35 @@ func mergePromptEvents(prompts []event) (event, bool) {
 	// what they were. What the user sees and what the agent reads agree.
 	out.text = strings.Join(texts, "\n\n")
 	return out, true
+}
+
+// senderRuns folds attributed segments into one Content per RUN of consecutive
+// segments sharing a sender.
+//
+// NOT one Content per segment. Within a run the texts are joined by a BLANK
+// line, which is the separator mergePromptEvents chose and for the reason it
+// chose it: prose renders as markdown, where a lone newline is a soft break, so
+// glamour would rejoin three messages into one garbled sentence. Splitting a
+// run into separate blocks would hand that same problem to the provider, which
+// concatenates a user message's text blocks.
+//
+// So the common case — several nudges from ONE sender, or from none at all —
+// is exactly one block, byte-identical to what the fold produced before
+// attribution existed. A block appears only where the sender actually CHANGES,
+// which is the only place a reader needs telling.
+func senderRuns(segments []promptSegment) []message.Content {
+	var out []message.Content
+	for _, seg := range segments {
+		if seg.text == "" {
+			continue
+		}
+		if n := len(out); n > 0 && out[n-1].Sender == seg.sender {
+			out[n-1].Text += "\n\n" + seg.text
+			continue
+		}
+		out = append(out, message.SenderText(seg.sender, seg.text))
+	}
+	return out
 }
 
 // mergeChalkboardInput merges b over a, in queue order, without mutating either.

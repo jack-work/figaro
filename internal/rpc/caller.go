@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Caller identity on the wire.
@@ -64,9 +65,15 @@ const CallerLabelKey = "x-caller"
 // worse than unattributed. SanitizeLabel strips it.
 const AriaLabelPrefix = "aria "
 
-// MaxCallerLabelLen bounds an asserted label. It is caller-supplied text that
-// lands in the model's context on every message, so it is capped rather than
-// trusted to be reasonable.
+// MaxCallerLabelLen bounds an asserted label, in RUNES. It is caller-supplied
+// text that lands in the model's context on every message, so it is capped
+// rather than trusted to be reasonable.
+//
+// Runes, not bytes: a byte cap cuts a multi-byte rune in half, and the invalid
+// tail that leaves is not merely ugly. encoding/json replaces invalid UTF-8
+// with U+FFFD, so the value on the wire would differ from the value sanitized,
+// and a second sanitize pass would produce a third answer — which is exactly
+// what a fuzzer found here.
 const MaxCallerLabelLen = 64
 
 // Caller is the decode side of CallerKey. Embed it in a request struct that
@@ -108,8 +115,8 @@ func SanitizeLabel(s string) string {
 		}
 		s = trimmed
 	}
-	if len(s) > MaxCallerLabelLen {
-		s = strings.TrimSpace(s[:MaxCallerLabelLen])
+	if utf8.RuneCountInString(s) > MaxCallerLabelLen {
+		s = strings.TrimSpace(string([]rune(s)[:MaxCallerLabelLen]))
 	}
 	return s
 }
@@ -233,4 +240,36 @@ func CallerOf(params json.RawMessage) string {
 		return ""
 	}
 	return c.FigaroID
+}
+
+// Attribution is the ONE place the rendered form of a sender is decided, so
+// the model, the transcript, the inline view and `figaro show` cannot drift
+// into disagreeing about who spoke.
+//
+// An authenticated aria renders "aria <id>"; an asserted label renders BARE.
+// The asymmetry is load-bearing: SanitizeLabel reserves the "aria " prefix, so
+// an assertion can never dress itself as an aria. Empty means UNKNOWN, and
+// callers must render nothing at all rather than "unknown" or a blank line —
+// most messages in an existing log have no sender and should look untouched.
+func Attribution(figaroID, label string) string {
+	if figaroID != "" {
+		return AriaLabelPrefix + figaroID
+	}
+	return SanitizeLabel(label)
+}
+
+// SenderFrom renders the attribution carried by a request's params.
+//
+// Attribution is deliberately NOT gated on the authn provider: a human at a
+// terminal is never authenticated and is exactly the caller a confused aria
+// most needs named. Disabling the provider withholds AUTHORITY (see
+// authz.AriaHeader), not identity.
+//
+// It is therefore trust-on-assertion, like the credential itself. Anything
+// that can set FIGARO_ARIA can claim that id. That is honest for a 0600 unix
+// socket and is why nothing here feeds an authorization decision — the policy
+// reads authz.Identity, which distinguishes proof from assertion; this only
+// says whose name to print.
+func SenderFrom(params json.RawMessage) string {
+	return Attribution(CallerOf(params), LabelOf(params))
 }
