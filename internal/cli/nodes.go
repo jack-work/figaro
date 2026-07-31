@@ -114,7 +114,7 @@ func nodeExpandable(n livedoc.Node, width int) bool {
 		width = 80
 	}
 	rows := render.Prose(nodeMarkdown(n), proseWidth(n, width))
-	return len(clampTables(rows, proseTableCapDefault)) != len(rows)
+	return len(clampTables(rows, proseTableCapDefault, proseWidth(n, width))) != len(rows)
 }
 
 // renderTurnRows renders a whole exchange — the inquiry that opened the turn,
@@ -445,36 +445,15 @@ func renderSteeringNode(n livedoc.Node, width int, expanded bool) []string {
 	return append([]string{head}, nodeProseRows(n, width, expanded)...)
 }
 
-// nodeMarkdown is the markdown a non-tool node renders from. Thinking and
-// steering are drawn as blockquotes; prose is itself. One function so the
-// renderers and nodeExpandable cannot disagree about what a node's text is —
-// they must render the SAME markdown or the predicate lies.
-func nodeMarkdown(n livedoc.Node) string {
-	switch n.Type {
-	case livedoc.NodeThinking, livedoc.NodeSteering:
-		return blockquote(n.Markdown)
-	default:
-		return n.Markdown
-	}
-}
+// nodeMarkdown is the markdown a non-tool node renders from — the node's own
+// text, for every kind. Thinking and steering used to be wrapped in blockquote
+// syntax here; they now reserve width and draw their rule themselves (see
+// nodeProseRows), because glamour prefixes markdown LINES and figaro needs
+// every rendered ROW ruled.
+func nodeMarkdown(n livedoc.Node) string { return n.Markdown }
 
 // quoteGutter is the rule figaro draws down the left of thinking and steering,
-// and figaro draws it ITSELF, on every row, rather than asking glamour for a
-// blockquote.
-//
-// glamour applies a blockquote prefix per MARKDOWN LINE, not per rendered row.
-// A paragraph that word-wraps therefore produced continuation rows carrying the
-// margin and NO rule — measured across widths 50..130 with one real thinking
-// paragraph, 21 of those 81 widths emitted at least one gutterless row,
-// including 100, 101 and 73. That is the "sometimes" in the report: it depends
-// on where the wrap happens to land, so it comes and goes with the terminal.
-//
-// Reducing the width handed to glamour does NOT fix it (measured: 23 of 81
-// broken instead of 21 — it only moves which widths break), because the defect
-// is not a budget, it is that the decoration is applied to the wrong unit. So
-// the decoration becomes ours: render the markdown plain at width - 4, then
-// prefix every row. The gutter is then present by construction, at every width,
-// which is the same reason tool output has always drawn its own.
+// on every rendered row, itself — see nodeProseRows for why glamour cannot.
 const quoteGutter = "  │ "
 
 // quoted reports whether a node draws under the gutter.
@@ -485,200 +464,50 @@ func quoted(t livedoc.NodeType) bool {
 // proseWidth is the width a node's markdown is rendered at: the full width,
 // less the gutter for quoted kinds. nodeExpandable and the renderers must both
 // use it, or the predicate lies about what a row will hold.
-func proseWidth(n livedoc.Node, width int) int { return width }
+func proseWidth(n livedoc.Node, width int) int {
+	if w := width - quoteGutterCells; quoted(n.Type) && w > 0 {
+		return w
+	}
+	return width
+}
+
+// quoteGutterCells is quoteGutter's width on screen: four columns, not four
+// bytes — the rule is a three-byte rune.
+const quoteGutterCells = 4
 
 // nodeProseRows renders a non-tool node's markdown, clamping over-tall tables
 // unless the node is expanded. This is prose's whole collapsed form.
 func nodeProseRows(n livedoc.Node, width int, expanded bool) []string {
-	rows := render.Prose(nodeMarkdown(n), width)
+	rows := render.Prose(nodeMarkdown(n), proseWidth(n, width))
 	if !expanded {
-		rows = clampTables(rows, proseTableCapDefault)
+		rows = clampTables(rows, proseTableCapDefault, proseWidth(n, width))
 	}
 	if !quoted(n.Type) {
 		return rows
 	}
-	return repairQuoteRule(rows, width)
-}
-
-// repairQuoteRule puts the rule back on rows that word-wrap dropped it from.
-//
-// glamour applies a blockquote prefix per MARKDOWN LINE, not per rendered ROW.
-// A paragraph long enough to wrap therefore renders as a first row carrying the
-// rule and continuation rows carrying only the paragraph inset:
-//
-//	│ …to give a comprehensive
-//	response                      <- the reported "wrapping" in thinking blocks
-//
-// Measured on one real paragraph across widths 50..130, 21 of those 81 widths
-// emit at least one such row, including 100, 101 and 73 — which is why it comes
-// and goes with the terminal size.
-//
-// The repair is deliberately the SMALLEST one: rows that already carry the rule
-// are returned untouched, byte for byte, so the frames goldens and their
-// cell-level pre-SGR proof stay meaningful. A row that lacks it has its leading
-// inset replaced by the rule and two trailing spaces dropped, so the row keeps
-// exactly the width it had.
-//
-// Rendering the markdown plain and prefixing every row was tried first and
-// rejected: it changes the styling and padding of EVERY thinking row, which
-// makes the pre-SGR proof fail for reasons unrelated to this defect.
-func repairQuoteRule(rows []string, width int) []string {
-	// The rule must land in the SAME column on every row, and that column is
-	// whichever one glamour used on the rows it got right. Placing it relative
-	// to each row's OWN inset was the first attempt and it was wrong: a
-	// continuation row is inset by two columns where a ruled row is inset by
-	// three, so repaired rows drew their rule one column left of the rest —
+	// THE RULE IS DRAWN, NOT REPAIRED.
 	//
-	//	   │ …there are commits about viewport
-	//	 │ rendering                              <- reported as "absent indentation"
-	//	   │ behavior that look relevant.
+	// Thinking used to be handed to glamour as markdown blockquote syntax, and
+	// glamour applies a blockquote prefix per MARKDOWN LINE, not per rendered
+	// ROW — so a paragraph long enough to wrap produced continuation rows with
+	// no rule at all. Three attempts to repair those rows AFTERWARDS each failed
+	// for one structural reason: putting a two-cell rule where glamour put a
+	// two-cell inset needs two columns the row does not have, and no post-hoc
+	// edit can create horizontal space. Only re-wrapping can. Those versions
+	// drew the rule one column left of the block (read as missing indentation),
+	// and then ate the right-hand end of any row without slack — "… +261 more
+	// table lines" came back as "… +261 more tabl".
 	//
-	// which is the same block reading as ragged rather than ruled.
-	col := ruleColumn(rows)
+	// So the width is reserved BEFORE rendering and the rule is prefixed after.
+	// Nothing to detect, nothing to restore, nothing to clip: the defect is
+	// unrepresentable rather than tested for. Tool output has always drawn its
+	// own gutter this way.
+	dim := term.Dim(quoteGutter) // one styled rule, not one per row
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		r = repairOneQuoteRow(r, col)
-		// AND the row must not exceed the viewport. glamour's blockquote emits
-		// a row ONE CELL WIDER than asked at some widths — measured at 5 of the
-		// 81 widths 50..130 (61, 63, 74, 112, 122), while plain prose never
-		// does it. That single cell is the other half of the report: hidden
-		// under nvim's nowrap, wrapped under tmux, "one or two characters
-		// beyond the right edge", in thinking blocks particularly.
-		if width > 0 && displayWidth(r) > width {
-			r = clipToWidth(r, width)
-		}
-		out = append(out, r)
+		out = append(out, dim+r)
 	}
 	return out
-}
-
-func repairOneQuoteRow(row string, col int) string {
-	if firstVisible(row) == quoteRuleGlyph {
-		return row // already ruled: untouched, byte for byte
-	}
-	k := leadingVisibleSpaces(row)
-	if k == 0 || col < 0 {
-		return row // not an inset continuation row; leave it alone
-	}
-	at, ok := visibleColOffset(row, k)
-	if !ok {
-		return row
-	}
-	// Keep any SGR opened before the content, then rebuild the left edge at the
-	// shared rule column.
-	return leadingEscapes(row) + strings.Repeat(" ", col) + quoteRule + row[at:]
-}
-
-// ruleColumn is the visible column the rule sits in on the rows glamour ruled,
-// or -1 when no row in the block has one.
-func ruleColumn(rows []string) int {
-	for _, r := range rows {
-		if firstVisible(r) != quoteRuleGlyph {
-			continue
-		}
-		return leadingVisibleSpaces(r)
-	}
-	return -1
-}
-
-// leadingEscapes returns the SGR runs a row opens with, before its first
-// visible column.
-func leadingEscapes(row string) string {
-	i := 0
-	for i < len(row) {
-		if row[i] == 0x1b {
-			j, _ := escapeEnd(row, i)
-			i = j
-			continue
-		}
-		break
-	}
-	return row[:i]
-}
-
-// firstVisible returns the first printing (non-space, non-escape) glyph of row,
-// or "" if there is none. Rows arrive with SGR runs interleaved, so a byte-wise
-// prefix test reads an escape and concludes the row is unruled — which is how
-// the first version of this repair drew a SECOND rule on rows that already had
-// one.
-func firstVisible(row string) string {
-	for i := 0; i < len(row); {
-		if row[i] == 0x1b {
-			j, _ := escapeEnd(row, i)
-			i = j
-			continue
-		}
-		if row[i] == ' ' {
-			i++
-			continue
-		}
-		r, _ := utf8.DecodeRuneInString(row[i:])
-		return string(r)
-	}
-	return ""
-}
-
-// leadingVisibleSpaces counts the space columns a row opens with, ignoring the
-// SGR runs between them.
-func leadingVisibleSpaces(row string) int {
-	n := 0
-	for i := 0; i < len(row); {
-		if row[i] == 0x1b {
-			j, _ := escapeEnd(row, i)
-			i = j
-			continue
-		}
-		if row[i] != ' ' {
-			break
-		}
-		n++
-		i++
-	}
-	return n
-}
-
-// visibleColOffset returns the byte offset at visible column col.
-func visibleColOffset(row string, col int) (int, bool) {
-	seen, i := 0, 0
-	for i < len(row) {
-		if seen == col {
-			return i, true
-		}
-		if row[i] == 0x1b {
-			j, _ := escapeEnd(row, i)
-			i = j
-			continue
-		}
-		_, sz := utf8.DecodeRuneInString(row[i:])
-		i += sz
-		seen++
-	}
-	return i, seen == col
-}
-
-// quoteRule is the rule as glamour draws it — 256-colour 252 in both colour
-// modes — so a repaired row is indistinguishable from one glamour got right.
-const (
-	quoteRuleGlyph = "│"
-	quoteRule      = "\x1b[38;5;252m│ \x1b[0m"
-)
-
-// dedentProse removes one proseIndent from a rendered row, looking past the
-// leading SGR runs glamour emits before the first visible column.
-func dedentProse(row string) string {
-	i := 0
-	for i < len(row) {
-		if row[i] == 0x1b {
-			j, _ := escapeEnd(row, i)
-			i = j
-			continue
-		}
-		break
-	}
-	if strings.HasPrefix(row[i:], proseIndent) {
-		return row[:i] + row[i+len(proseIndent):]
-	}
-	return row
 }
 
 // clampTables limits each rendered markdown table to cap physical rows,
@@ -691,7 +520,7 @@ func dedentProse(row string) string {
 // Returns rows unchanged — same backing array, no allocation — when no table
 // overruns, which is every ordinary width. That matters: this runs on every
 // row-cache fill and every incipit repaint.
-func clampTables(rows []string, cap int) []string {
+func clampTables(rows []string, cap, width int) []string {
 	if cap <= 0 || len(rows) == 0 {
 		return rows
 	}
@@ -712,7 +541,16 @@ func clampTables(rows []string, cap int) []string {
 		out = append(out, rows[at:s[0]]...)
 		if h := s[1] - s[0]; h > cap {
 			out = append(out, rows[s[0]:s[0]+cap]...)
-			out = append(out, term.Dim(fmt.Sprintf("  … +%d more table lines", h-cap)))
+			// The note is content like any other row: it must fit the width the
+			// rows were rendered at. It never had to before, because that width
+			// was always the full one; now a quoted node reserves four columns for
+			// its rule, and an unclipped note ran past the edge (caught by
+			// TestClampTables_HoldsPainterInvariant at w=26, not by me).
+			note := fmt.Sprintf("  … +%d more table lines", h-cap)
+			if width > 0 {
+				note = clipToWidth(note, width)
+			}
+			out = append(out, term.Dim(note))
 		} else {
 			out = append(out, rows[s[0]:s[1]]...)
 		}

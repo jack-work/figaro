@@ -153,7 +153,7 @@ func TestClampTables_HoldsPainterInvariant(t *testing.T) {
 // the hot render path allocates nothing.
 func TestClampTables_LeavesShortTablesAlone(t *testing.T) {
 	rows := render.Prose("| a | b |\n|---|---|\n| 1 | 2 |\n", 60)
-	out := clampTables(rows, proseTableCapDefault)
+	out := clampTables(rows, proseTableCapDefault, 0)
 	if len(out) != len(rows) {
 		t.Fatalf("short table was clamped: %d -> %d rows", len(rows), len(out))
 	}
@@ -162,7 +162,7 @@ func TestClampTables_LeavesShortTablesAlone(t *testing.T) {
 	}
 	// And prose with no table at all.
 	rows = render.Prose(strings.Repeat("a paragraph of words. ", 30), 60)
-	if out := clampTables(rows, proseTableCapDefault); &out[0] != &rows[0] {
+	if out := clampTables(rows, proseTableCapDefault, 0); &out[0] != &rows[0] {
 		t.Errorf("table-free prose reallocated")
 	}
 }
@@ -171,7 +171,7 @@ func TestClampTables_LeavesShortTablesAlone(t *testing.T) {
 // everything and, as a consequence, makes prose unexpandable.
 func TestClampTables_Uncapped(t *testing.T) {
 	rows := render.Prose(tallTableMarkdown(), 40)
-	if out := clampTables(rows, proseTableUncapped); len(out) != len(rows) {
+	if out := clampTables(rows, proseTableUncapped, 0); len(out) != len(rows) {
 		t.Errorf("uncapped clamp removed %d rows", len(rows)-len(out))
 	}
 }
@@ -265,7 +265,7 @@ func TestClampTables_NeverEmitsABlankRow(t *testing.T) {
 		"\nA paragraph after it, long enough to wrap at least once at any width.\n"
 	for w := 26; w <= 120; w += 2 {
 		in := render.Prose(md, w)
-		out := clampTables(in, proseTableCapDefault)
+		out := clampTables(in, proseTableCapDefault, 0)
 		if len(out) >= len(in) {
 			continue // nothing clamped at this width; nothing to assert
 		}

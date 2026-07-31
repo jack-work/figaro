@@ -5,89 +5,117 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/render"
 )
 
-// A thinking block draws a rule down its left edge. EVERY row must carry it,
-// at EVERY width.
+// A thinking block draws a rule down its left edge. Three properties:
 //
-// WHAT WAS WRONG. The rule came from glamour: thinking was wrapped in markdown
-// blockquote syntax and rendered. glamour applies a blockquote prefix per
-// MARKDOWN LINE, not per rendered ROW, so a paragraph long enough to word-wrap
-// produced continuation rows carrying the paragraph inset and no rule:
+//	PRESENT  every non-blank row carries the rule
+//	ALIGNED  every rule in the block sits in the SAME column
+//	INTACT   the words are exactly the words, nothing trimmed
 //
-//	│ I'll need to read through the plan document and review the diffs to give a comprehensive
-//	response                                    <- no rule, and it looks like a wrap artefact
-//	│ about the repository, the worktree setup, ...
+// All three matter because the first two versions of this test asserted only
+// PRESENT, and the third only PRESENT and ALIGNED — and each time the broken
+// output satisfied everything asserted. Output with the rule drawn one column
+// too far left is PRESENT. Output with two characters chopped off the right is
+// PRESENT and ALIGNED. A property that is true of the bug is not a test; INTACT
+// is what catches a repair that pays for the rule with somebody's words.
 //
-// which is exactly what the owner reported, in his own words: wrapping "in
-// thinking blocks particularly", appearing at some terminal sizes and not
-// others. Measured across widths 50..130 on one real paragraph, 21 of those 81
-// widths emitted at least one gutterless row — including 100, 101 and 73. The
-// "sometimes" is where the wrap happens to land.
+// The corpus is deliberately not one paragraph: fences, tables, unbreakable
+// tokens, URLs, CJK, emoji and mixed content are where the wrap decisions
+// differ, and the earlier "0 of 81 widths" result held only for the one
+// paragraph it was measured on.
 //
-// Reducing the width handed to glamour does NOT fix it (measured: 23 of 81
-// broken instead of 21 — it only moves which widths break). The defect is not a
-// budget: the decoration is applied to the wrong unit. So figaro draws the
-// gutter itself, on every row, the way tool output always has.
-//
-// A SECOND defect lives in the same rows and this test pins it too: glamour's
-// blockquote emits a row ONE CELL WIDER than the width it was given at some
-// widths — measured at 5 of the 81 widths 50..130 (61, 63, 74, 112, 122),
-// while plain prose never does it. That cell is the other half of the report:
-// hidden under nvim's nowrap, wrapped under tmux.
-//
-// CANARIES (both watched):
-//   - make repairOneQuoteRow return row unchanged ->
-//     `thinking w=50: row 1 has no gutter: "  response"`
-//   - drop the clipToWidth in repairQuoteRule ->
-//     `thinking w=61: row 3 is 62 cells, past the edge`
-func TestThinkingKeepsItsGutterAtEveryWidth(t *testing.T) {
-	const sample = "I'll need to read through the plan document and review the diffs to give a " +
-		"comprehensive response about the repository, the worktree setup, console issues on " +
-		"Windows, and my broader context around skills and approach."
+// CANARY (watched): render at `width` instead of proseWidth(n, width) and every
+// row overflows by four cells at every width.
+func TestThinkingRuleIsPresentAlignedAndLossless(t *testing.T) {
+	shapes := map[string]string{
+		"paragraph": "I'll need to read through the plan document and review the diffs to give a " +
+			"comprehensive response about the repository, the worktree setup, console issues on " +
+			"Windows, and my broader context around skills and approach.",
+		"long-token": "prefix longIdentifierNameThatCannotBeBrokenAcrossLinesAtAll suffix",
+		"url":        "see https://example.com/a/very/long/path/that/will/not/break/anywhere for details",
+		"fence":      "before\n```go\nfunc f() { return errors.New(\"a fairly long line of code\") }\n```\nafter",
+		"table":      "| col | another column |\n|---|---|\n| a | b |\n| c | d |",
+		"cjk":        "これは日本語のテキストで、折り返しの計算を確かめるためのものです。さらに続きます。",
+		"emoji":      "status 🎉 shipped 🚀 and 🧪 tested 🔬 across 🌍 every 🖥 width we care about",
+		"list":       "- first item that runs on a while\n- second item\n  - nested item that also runs on",
+		"empty":      "",
+		"blank":      "   ",
+	}
 
 	for _, typ := range []livedoc.NodeType{livedoc.NodeThinking, livedoc.NodeSteering} {
-		for w := 50; w <= 130; w++ {
-			rows := nodeProseRows(livedoc.Node{Type: typ, Markdown: sample}, w, false)
-			if len(rows) < 2 {
-				t.Fatalf("%v w=%d: fixture must WRAP to be able to fail, got %d row(s)", typ, w, len(rows))
-			}
-			col := -1
-			for i, r := range rows {
-				plain := strings.TrimRight(stripSGRForTest(r), " ")
-				if strings.TrimSpace(plain) == "" {
-					continue
+		for name, md := range shapes {
+			for w := 20; w <= 200; w++ {
+				n := livedoc.Node{Type: typ, Markdown: md}
+				rows := nodeProseRows(n, w, false)
+
+				// INTACT: the same words glamour rendered, in the same order.
+				// The oracle is glamour's OWN output at the same width, not the
+				// raw markdown — glamour legitimately drops a fence language and
+				// re-flows text, and comparing against markdown would fail for
+				// its choices instead of for this transform's mistakes.
+				plainRows := render.Prose(nodeMarkdown(n), proseWidth(n, w))
+				if got, want := words(strings.Join(rows, "\n")), words(strings.Join(plainRows, "\n")); got != want {
+					t.Fatalf("%v/%s w=%d: words changed\n got: %q\nwant: %q", typ, name, w, got, want)
 				}
-				if !strings.HasPrefix(strings.TrimLeft(plain, " "), "│") {
-					t.Fatalf("%v w=%d: row %d has no gutter: %q", typ, w, i, plain)
-				}
-				if got := displayWidth(r); got > w {
-					t.Fatalf("%v w=%d: row %d is %d cells, past the edge: %q", typ, w, i, got, plain)
-				}
-				// EVERY rule in a block sits in the SAME column. Repairing a row
-				// relative to its own inset satisfied "has a gutter" while
-				// drawing it one column left of its neighbours, which reads as
-				// missing indentation — the second report on this bug.
-				at := len(plain) - len(strings.TrimLeft(plain, " "))
-				if col < 0 {
-					col = at
-				} else if at != col {
-					t.Fatalf("%v w=%d: row %d puts its rule at column %d, the block uses %d: %q",
-						typ, w, i, at, col, plain)
+
+				col := -1
+				for i, r := range rows {
+					plain := strings.TrimRight(stripSGRForTest(r), " ")
+					if strings.TrimSpace(plain) == "" {
+						continue
+					}
+					at := len(plain) - len(strings.TrimLeft(plain, " "))
+					// PRESENT
+					if !strings.HasPrefix(plain[at:], "│") {
+						t.Fatalf("%v/%s w=%d: row %d has no rule: %q", typ, name, w, i, plain)
+					}
+					// ALIGNED
+					if col < 0 {
+						col = at
+					} else if at != col {
+						t.Fatalf("%v/%s w=%d: row %d rules at column %d, the block uses %d: %q",
+							typ, name, w, i, at, col, plain)
+					}
 				}
 			}
 		}
 	}
 }
 
+// words is visible text with the rule and all spacing removed — what a renderer
+// may never change. Markdown punctuation is stripped so the comparison is about
+// content, not about how glamour chose to draw a fence or a table.
+func words(s string) string {
+	s = stripSGRForTest(s)
+	for _, drop := range []string{"│", "`", "|", "-", "*", ">", "─", "•"} {
+		s = strings.ReplaceAll(s, drop, " ")
+	}
+	return strings.Join(strings.Fields(s), " ")
+}
+
 // TestProseIsNotQuoted guards the other side: ordinary assistant prose must NOT
-// grow a gutter. Without this, "give every row a gutter" could be satisfied by
-// giving every node one.
+// grow a rule. Without it, "every row has a rule" could be satisfied by giving
+// every node one.
 func TestProseIsNotQuoted(t *testing.T) {
 	rows := nodeProseRows(livedoc.Node{Type: livedoc.NodeProse, Markdown: "plain prose, no rule"}, 60, false)
 	for i, r := range rows {
 		if strings.Contains(stripSGRForTest(r), "│") {
-			t.Fatalf("prose row %d drew a gutter: %q", i, stripSGRForTest(r))
+			t.Fatalf("prose row %d drew a rule: %q", i, stripSGRForTest(r))
+		}
+	}
+}
+
+// TestQuotedRowsFitTheViewport: reserving the rule's width before rendering is
+// the whole point, so no quoted row may exceed the width it was rendered for.
+func TestQuotedRowsFitTheViewport(t *testing.T) {
+	md := "a reasonably long sentence that will certainly need to wrap at the narrow widths"
+	for w := 20; w <= 200; w++ {
+		for _, r := range nodeProseRows(livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}, w, false) {
+			if got := displayWidth(r); got > w {
+				t.Fatalf("w=%d: row is %d cells: %q", w, got, stripSGRForTest(r))
+			}
 		}
 	}
 }
