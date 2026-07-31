@@ -194,35 +194,68 @@ func StripEscapes(s string) string {
 			i++
 			continue
 		}
-		i++ // the ESC itself is never content
-		if i >= len(s) {
-			break
-		}
-		switch s[i] {
-		case '[': // CSI: params then one final byte
-			i++
-			for i < len(s) && isCSIParamByte(s[i]) {
-				i++
-			}
-			if i < len(s) {
-				i++ // the final byte
-			}
-		case ']': // OSC: runs to BEL or ST
-			i++
-			for i < len(s) {
-				if s[i] == 0x07 {
-					i++
-					break
-				}
-				if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
-					i += 2
-					break
-				}
-				i++
-			}
-		default: // two-byte escape, or a lone ESC before ordinary text
-			i++
-		}
+		i = skipEscape(s, i)
 	}
 	return b.String()
+}
+
+// skipEscape returns the index just past the escape sequence beginning at i
+// (s[i] == ESC), consuming the WHOLE sequence for every form the terminal
+// grammar defines. Each arm below is a leak that was measured, not imagined:
+//
+//	CSI      ESC [ params intermediates final — '?' is a PARAMETER byte, and
+//	         omitting it left "\x1b[?25l" printing "25l". That is cursor-hide;
+//	         with alt-screen it is what every pasted tool transcript carries.
+//	OSC      ESC ] … BEL or ST
+//	DCS/…    ESC P, ESC _, ESC ^, ESC X … ST — payloads, not two-byte escapes
+//	SS2/SS3  ESC N, ESC O + one byte — "\x1bOP" printed "P"
+//	charset  ESC ( ) * + - . / + one byte — "\x1b(B" printed "B"
+//	other    ESC + one byte
+func skipEscape(s string, i int) int {
+	i++ // ESC
+	if i >= len(s) {
+		return i
+	}
+	switch c := s[i]; {
+	case c == '[':
+		i++
+		for i < len(s) && s[i] >= 0x30 && s[i] <= 0x3f { // params, incl. ? < = > ; :
+			i++
+		}
+		// Intermediates EXCLUDING space (0x21..0x2f, not 0x20). Space is a
+		// legal intermediate — `ESC [ Ps SP q` sets the cursor style — but a
+		// TRUNCATED sequence followed by ordinary prose is far more common in
+		// model-pasted text, and treating space as an intermediate ate the next
+		// word's first letter: "trunc \x1b[38;5; and text" printed "trunc nd
+		// text". The trade is one leaked final byte from a rare cursor-style
+		// sequence against a swallowed word, and the word wins.
+		for i < len(s) && s[i] >= 0x21 && s[i] <= 0x2f {
+			i++
+		}
+		if i < len(s) && s[i] >= 0x40 && s[i] <= 0x7e { // a final byte, or nothing
+			i++
+		}
+	case c == ']' || c == 'P' || c == '_' || c == '^' || c == 'X':
+		// String-payload sequences: run to BEL or ST.
+		i++
+		for i < len(s) {
+			if s[i] == 0x07 {
+				return i + 1
+			}
+			if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
+				return i + 2
+			}
+			i++
+		}
+	case c == 'N' || c == 'O': // single shifts: one byte follows
+		i += 2
+	case c == '(' || c == ')' || c == '*' || c == '+' || c == '-' || c == '.' || c == '/':
+		i += 2 // charset designator: one byte follows
+	default:
+		i++
+	}
+	if i > len(s) {
+		i = len(s)
+	}
+	return i
 }

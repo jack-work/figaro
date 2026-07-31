@@ -6,11 +6,16 @@ import (
 	"testing"
 )
 
+// proseUncached mirrors Prose without the cache. It must mirror EVERY step, or
+// the transparency test starts measuring the mirror instead of the cache: it
+// caught exactly that when Prose gained StripEscapes and hardWrapOverlong and
+// this did not.
 func proseUncached(md string, width int) []string {
+	md = StripEscapes(md)
 	if strings.Count(md, "```")%2 == 1 {
 		md += "\n```"
 	}
-	return SanitizeRows(renderMarkdown(md, width))
+	return hardWrapOverlong(SanitizeRows(renderMarkdown(md, width)), width)
 }
 
 var proseCorpus = []string{

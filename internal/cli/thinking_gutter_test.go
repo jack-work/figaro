@@ -132,10 +132,22 @@ func TestTheGutterCostsExactlyItsColumns(t *testing.T) {
 				t.Fatalf("w=%d: %d quoted rows vs %d rendered", w, len(quoted), len(plain))
 			}
 			for i := range quoted {
-				want := displayWidth(plain[i]) + quoteGutterCells - len(proseIndent)
+				// The rule STANDS IN glamour's margin where there is one, so it
+				// costs 2 net. A row with no margin to stand in — a hard-wrap
+				// continuation chunk, or a row glamour emitted flush — pays the
+				// full 4. Both are correct; what must never happen is paying
+				// more than the gutter is wide.
+				cost := quoteGutterCells
+				if strings.HasPrefix(stripSGRForTest(plain[i]), proseIndent) {
+					cost -= len(proseIndent)
+				}
+				want := displayWidth(plain[i]) + cost
 				if got := displayWidth(quoted[i]); got != want {
-					t.Fatalf("w=%d row %d: %d cells, want %d (gutter must cost exactly %d-%d): %q",
-						w, i, got, want, quoteGutterCells, len(proseIndent), stripSGRForTest(quoted[i]))
+					t.Fatalf("w=%d row %d: %d cells, want %d (gutter costs %d here): %q",
+						w, i, got, want, cost, stripSGRForTest(quoted[i]))
+				}
+				if got := displayWidth(quoted[i]); got > w {
+					t.Fatalf("w=%d row %d: %d cells, past the edge: %q", w, i, got, stripSGRForTest(quoted[i]))
 				}
 			}
 		}

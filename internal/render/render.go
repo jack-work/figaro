@@ -8,6 +8,7 @@ package render
 import (
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/mattn/go-runewidth"
@@ -50,7 +51,7 @@ func Prose(md string, width int) []string {
 	if rows, ok := lookupProse(md, width); ok {
 		return rows
 	}
-	rows := SanitizeRows(renderMarkdown(md, width))
+	rows := hardWrapOverlong(SanitizeRows(renderMarkdown(md, width)), width)
 	storeProse(md, width, rows)
 	return append([]string(nil), rows...)
 }
@@ -183,4 +184,135 @@ func visiblyBlank(s string) bool {
 		}
 	}
 	return true
+}
+
+// cells is a row's width on screen: escapes cost nothing, wide runes cost two.
+func cells(s string) int {
+	n := 0
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b {
+			i = escEnd(s, i)
+			continue
+		}
+		r, sz := utf8.DecodeRuneInString(s[i:])
+		n += runewidth.RuneWidth(r)
+		i += sz
+	}
+	return n
+}
+
+// escEnd returns the index just past the escape sequence starting at i.
+func escEnd(s string, i int) int {
+	i++ // ESC
+	if i >= len(s) {
+		return i
+	}
+	switch s[i] {
+	case '[':
+		i++
+		for i < len(s) && isCSIParamByte(s[i]) {
+			i++
+		}
+		if i < len(s) {
+			i++
+		}
+	case ']':
+		i++
+		for i < len(s) {
+			if s[i] == 0x07 {
+				return i + 1
+			}
+			if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
+				return i + 2
+			}
+			i++
+		}
+	default:
+		i++
+	}
+	return i
+}
+
+// hardWrapOverlong is the fallback for content glamour will not break.
+//
+// glamour wraps on word boundaries, so a token longer than the wrap width — a
+// URL, a long identifier, a CJK run — is emitted whole and the row overruns the
+// width it was given. An UNCLOSED FENCE is worse: it ignores the wrap width
+// entirely, overrunning by 11 cells at w=20. Downstream every painter clips, so
+// the overrun did not corrupt the screen — it silently ATE THE TAIL of whatever
+// would not fit, which is the same class of loss as a truncated table note.
+//
+// Wrapping is the honest answer: the text is all still there, on the next row.
+// Rows that already fit are returned untouched, which is every ordinary row at
+// every ordinary width, so this costs one width measurement per row.
+func hardWrapOverlong(rows []string, width int) []string {
+	if width <= 0 {
+		return rows
+	}
+	over := false
+	for _, r := range rows {
+		if cells(r) > width {
+			over = true
+			break
+		}
+	}
+	if !over {
+		return rows // same backing array, no allocation
+	}
+	out := make([]string, 0, len(rows)+2)
+	for _, r := range rows {
+		if cells(r) <= width {
+			out = append(out, r)
+			continue
+		}
+		out = append(out, splitToWidth(r, width)...)
+	}
+	return out
+}
+
+// splitToWidth cuts one row into chunks of at most width cells, carrying the
+// active SGR run onto each continuation so a colour does not bleed or vanish.
+func splitToWidth(row string, width int) []string {
+	var out []string
+	var chunk strings.Builder
+	var style strings.Builder // SGR seen since the last reset
+	col := 0
+	flush := func() {
+		if chunk.Len() > 0 {
+			out = append(out, chunk.String())
+			chunk.Reset()
+		}
+		col = 0
+		if style.Len() > 0 {
+			chunk.WriteString(style.String())
+		}
+	}
+	for i := 0; i < len(row); {
+		if row[i] == 0x1b {
+			j := escEnd(row, i)
+			seq := row[i:j]
+			chunk.WriteString(seq)
+			if strings.HasSuffix(seq, "m") {
+				if seq == "\x1b[0m" || seq == "\x1b[m" {
+					style.Reset()
+				} else {
+					style.WriteString(seq)
+				}
+			}
+			i = j
+			continue
+		}
+		r, sz := utf8.DecodeRuneInString(row[i:])
+		w := runewidth.RuneWidth(r)
+		if col+w > width {
+			flush()
+		}
+		chunk.WriteRune(r)
+		col += w
+		i += sz
+	}
+	if chunk.Len() > 0 {
+		out = append(out, chunk.String())
+	}
+	return out
 }

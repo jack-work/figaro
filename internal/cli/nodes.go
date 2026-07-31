@@ -473,6 +473,15 @@ func proseWidth(n livedoc.Node, width int) int {
 
 // quoteGutterCells is quoteGutter's width on screen: four columns, not four
 // bytes — the rule is a three-byte rune.
+//
+// The full four are reserved even though the rule STANDS IN glamour's
+// two-column margin and so usually costs only two. A row with no margin to
+// stand in pays the whole four: a hard-wrap continuation chunk (see
+// render.hardWrapOverlong) has none, and neither does a row glamour emits
+// flush. Reserving two was measured and overflows — w=20, CJK, 22 cells in a
+// 20-column viewport. Those two columns are recoverable by teaching the hard
+// wrap to carry the leading margin onto its continuations; that is a separate
+// change with its own test, not a constant to shave here.
 const quoteGutterCells = 4
 
 // nodeProseRows renders a non-tool node's markdown, clamping over-tall tables
