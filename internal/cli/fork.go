@@ -294,7 +294,7 @@ func promptForkedAria(loaded *config.Loaded, ariaID string, opts sendOpts, promp
 	case "exec":
 		runSendExec(loaded, opts, prompt)
 	case "raw":
-		runSendRaw(loaded, ariaID, prompt)
+		runSendRaw(loaded, ariaID, "", prompt)
 	default:
 		promptAria(loaded, ariaID, prompt, set)
 	}

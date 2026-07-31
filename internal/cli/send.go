@@ -391,7 +391,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	case opts.ephemeral:
 		runSendEphemeralRich(loaded, opts, prompt, set)
 	case opts.raw:
-		runSendRaw(loaded, opts.id, prompt)
+		runSendRaw(loaded, opts.id, opts.loadout, prompt)
 	default:
 		// Today's interactive send: pid-bound or --id named.
 		if opts.id == "" {
@@ -517,16 +517,17 @@ func runSendEphemeralRich(loaded *config.Loaded, opts sendOpts, prompt string, s
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
 }
 
-// runSendRaw streams raw output from a persistent aria (bound or
-// named). The aria is left alive; only the formatting is raw.
-func runSendRaw(loaded *config.Loaded, ariaID, prompt string) {
+// runSendRaw streams raw output from a persistent aria (bound, named, or
+// minted here when this shell has none). The aria is left alive; only the
+// formatting is raw.
+func runSendRaw(loaded *config.Loaded, ariaID, loadout, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	_, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, true)
+	_, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, true, loadout)
 	if err != nil {
 		die("%s", err)
 	}
@@ -564,7 +565,7 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 			die("send: %s", err)
 		}
 	} else {
-		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true)
+		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.loadout)
 		if err != nil {
 			die("%s", err)
 		}
@@ -602,7 +603,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 			die("send: %s", err)
 		}
 	} else {
-		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true)
+		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.loadout)
 		if err != nil {
 			die("%s", err)
 		}
@@ -658,13 +659,20 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 // sends figaro.interrupt. Useful from scripts, or when you want a prompt
 // to run and check on it later via `figaro show` / `figaro listen`.
 func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// 30s, not 10: this call may now MINT the aria before submitting, and a
+	// cold daemon plus a first-run loadout render does not fit in ten.
+	//
+	// TODO(perf): put this back to 10s once the `new`/`fork` latency work
+	// lands. The extra 20s buys exactly one thing — the create — and that
+	// cost is the thing being fixed there. A timeout widened for a slow path
+	// outlives the slowness unless someone writes down when to close it.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	ariaID, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true)
+	ariaID, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.loadout)
 	if err != nil {
 		die("%s", err)
 	}
