@@ -203,8 +203,29 @@ the inline view and `figaro show` cannot drift:
 | caller | renders as |
 |---|---|
 | authenticated aria | `aria 76062b18` |
-| asserted label (`x-caller`) | bare, e.g. `Jack` |
+| **the duke** (end user) | the target aria's `duke-title`, else `user` |
+| explicit label (`FIGARO_CALLER`) | bare, e.g. `ci-bot` |
 | unknown | **nothing at all** — not `unknown`, not a blank row |
+
+**The duke is the end user** — the person the agent serves, as distinct from an
+aria or an anonymous script. Their name does not live in shell config: an
+*interactive* CLI sends a **placeholder** in `x-caller`, and the agent resolves
+it against the **target aria's** chalkboard key **`duke-title`** (default
+`user`). Set it in a loadout:
+
+```toml
+duke-title = "gluck"
+```
+
+`x-caller` is a **typed ref**, not a string, and that is a security property
+rather than tidiness: `FIGARO_CALLER` only ever populates `label`, so no value
+of it can produce `duke: true`. The guarantee is a type, not a reserved word.
+
+Only an **interactive** process presents the duke — the same TTY signal that
+decides the binding policy — so an aria's shell-out cannot speak as its master
+by accident. A figaro that deliberately allocates itself a terminal still can:
+a known gap, accepted until real authentication, and exactly why none of this
+reaches an authorization decision.
 
 `aria ` is a **reserved prefix**: `SanitizeLabel` strips it, so
 `FIGARO_CALLER="aria 999"` renders `999` and cannot impersonate proof.
