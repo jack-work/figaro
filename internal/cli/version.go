@@ -39,6 +39,13 @@ func runVersion() {
 // debug.ReadBuildInfo otherwise. Empty when neither knows (a bare `go build`
 // outside a repo), in which case callers must skip build comparisons rather
 // than treat unknown as mismatched.
+//
+// `go install <module>/cmd/figaro@vX.Y.Z` records no VCS settings at all —
+// the module proxy ships a zip, not a checkout — so the module version is the
+// only identity such a binary has. It is a real one: two binaries reporting
+// the same module version are the same source. Falling back to it keeps the
+// daemon handshake honest for the install path most users actually take;
+// without it every proxy-built CLI reports "unknown" and mismatches go silent.
 func buildRevision() string {
 	if commit != "" {
 		return commit
@@ -51,6 +58,18 @@ func buildRevision() string {
 		if s.Key == "vcs.revision" {
 			return s.Value
 		}
+	}
+	return moduleVersion(info)
+}
+
+// moduleVersion is the release Go stamped into a `<module>@version` install.
+// Empty for anything built from a local tree, where Go writes "(devel)".
+func moduleVersion(info *debug.BuildInfo) string {
+	if info == nil {
+		return ""
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
 	}
 	return ""
 }
@@ -81,9 +100,7 @@ func printVersion(w io.Writer) {
 			}
 		}
 	}
-	if rev == "" {
-		rev = "unknown"
-	} else if len(rev) > 12 {
+	if len(rev) > 12 {
 		rev = rev[:12]
 	}
 	dirty := ""
@@ -95,10 +112,19 @@ func printVersion(w io.Writer) {
 	if module == "" {
 		module = "(unknown)"
 	}
-	if semver != "" {
-		fmt.Fprintf(w, "figaro %s (%s%s, %s/%s, %s)\n", semver, rev, dirty, runtime.GOOS, runtime.GOARCH, info.GoVersion)
-	} else {
+	release := semver
+	if release == "" {
+		release = moduleVersion(info)
+	}
+	switch {
+	case release != "" && rev != "":
+		fmt.Fprintf(w, "figaro %s (%s%s, %s/%s, %s)\n", release, rev, dirty, runtime.GOOS, runtime.GOARCH, info.GoVersion)
+	case release != "":
+		fmt.Fprintf(w, "figaro %s (%s/%s, %s)\n", release, runtime.GOOS, runtime.GOARCH, info.GoVersion)
+	case rev != "":
 		fmt.Fprintf(w, "figaro %s%s (%s/%s, %s)\n", rev, dirty, runtime.GOOS, runtime.GOARCH, info.GoVersion)
+	default:
+		fmt.Fprintf(w, "figaro unknown (%s/%s, %s)\n", runtime.GOOS, runtime.GOARCH, info.GoVersion)
 	}
 	fmt.Fprintf(w, "  module:    %s\n", module)
 	fmt.Fprintf(w, "  exe:       %s\n", currentExe())
