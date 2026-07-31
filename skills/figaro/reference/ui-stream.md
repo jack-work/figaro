@@ -106,13 +106,23 @@ method: `figaro.qua` IS the create.
 ```
 
 `queue` in the response is the queue **as of the hangup** — one field, one
-meaning — and `cleared` says whether those messages were removed. On the keep
-path the queue is **coalesced**: each contiguous run of queued prompts folds
-into one message (texts joined in order, chalkboard input merged so a later
-value wins), and **a queued `set` or `fork` is a barrier** that is never
-crossed. On the clear path the drain happens BEFORE any fold, so what comes
-back is verbatim — one entry per message, each with its own id — which is what
-makes it worth persisting.
+meaning — and `cleared` says whether those messages were removed. On the clear
+path the drain happens BEFORE any fold, so what comes back is verbatim — one
+entry per message, each with its own id — which is what makes it worth
+persisting.
+
+**Coalescing is a property of DRAINING, not of interrupting.** All three drain
+sites — the idle drain that opens a turn, the two mid-turn drains that steer
+one, and the interrupt — fold the contiguous run of queued prompts into one
+message: texts joined by a BLANK LINE (a lone newline is a soft break in
+markdown, so the screen would rejoin them), chalkboard input merged in queue
+order so a later value wins. **A queued `set` or `fork` is a barrier** that is
+never crossed. A lone prompt is passed through unchanged.
+
+An interrupted turn **never drains**: a round that opened with a cancelled
+context cannot answer what it lifts, and prompts lifted there were committed to
+the log and then abandoned unanswered. They stay queued, and the next turn asks
+them.
 
 **Identity.** A queued message is `(epoch, id)`. `id` is a small dense counter;
 `epoch` names the INBOX GENERATION, minted afresh every time an agent is

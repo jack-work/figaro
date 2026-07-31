@@ -58,6 +58,17 @@ The classification happens where the queue is drained, and nowhere else.
 
 ## The queue
 
+**Every drain coalesces the contiguous run of queued prompts into one message;
+a queued `set` or `fork` is a barrier.** Four chained sends against an idle
+aria are one reply and then ONE combined question — not four turns to sit
+through — and the same is true of messages queued behind a turn you then
+interrupt. The messages are separated by a blank line, so they stay separate
+lines on screen and separate messages to the model. A `set` queued between two
+of them still applies in order, because folding a prompt in front of it would
+answer that prompt against a chalkboard it was never written against.
+
+A single submit is untouched: one message in, one message out.
+
 Prompts that arrive while the aria is busy wait in its **queue**. They are
 addressed by an id from the listing, paired with the **epoch** that id was read
 in — ids restart whenever the agent is rebuilt (a daemon restart, a
@@ -90,14 +101,14 @@ Two verbs, differing in one thing: what becomes of the queue.
 | Command | Effect |
 |---|---|
 | `figaro hup [<id>] [-j]` | Stop the turn, **keep** queued messages. |
-| `figaro cut [<id>] [-j]` | Stop the turn and **discard** them; `-j` returns them. |
+| `figaro hup -d [<id>] [-j]` | Stop the turn and **discard** them. |
+| `figaro cut [<id>] [-j]` | Shorthand for `hup -d`. |
 
-`hup` is the everyday one. **An interrupt coalesces each contiguous run of
-queued prompts into one message; a queued `set` or `fork` is a barrier.** So
-three notes typed during a long turn become one question with three lines,
-answered next — while a `set` queued between two of them still applies in
-order, because folding a prompt in front of it would answer that prompt against
-a chalkboard it was never written against.
+Both forms **return** the queued messages — listed on stdout, or as JSON with
+`-j` — so discarding is not losing.
+
+`hup` is the everyday one, and what it leaves behind is governed by the rule
+below.
 
 `cut` hands back what it dropped, verbatim, one entry per message as you typed
 it, with the chalkboard input each carried:
@@ -107,9 +118,12 @@ it, with the chalkboard input each carried:
 Clearing does not need a turn to be running. Neither verb touches a queued
 `set` or `fork`: they drop questions, not someone else's control events.
 
-In the transcript pager, **`H`** is `hup` from the keyboard: stop the turn and
-keep watching. It is the third thing you can do to a running turn — `Ctrl-C`
-stops it and exits, `Ctrl-D` exits and lets it run on, `H` stops it and stays.
+In the transcript pager, **`H`** is `hup` from the keyboard and **`X`** is
+`hup -d`: both stop the turn and keep watching. They are the third thing you
+can do to a running turn — `Ctrl-C` stops it and exits, `Ctrl-D` exits and lets
+it run on, `H`/`X` stop it and stay. What `X` drops is printed into the status
+line and reprinted to the shell when you leave the pager, so the text survives
+even though its place in the queue does not.
 
 The wire behind all of this — the interrupt's queue disposition, the
 `(epoch, id)` identity, and the closed set of refusal reasons — is
@@ -129,8 +143,8 @@ The wire behind all of this — the interrupt's queue disposition, the
 | `figaro show [<id>]` | Render history. `-n N` last N turns, `-a` all, `-v` raw IR, `-l` no markdown, `-j` JSON. |
 | `figaro status [<id>]` | One aria in focus: provider, model, context, cost. `-m` adds cwd, loadout, fork origin. |
 | `figaro listen [<id>]` | Attach to the live stream without prompting. Ctrl-D detaches, the turn survives. |
-| `figaro hup [<id>]` | Hang up: stop the turn, keep queued messages (see The queue). |
-| `figaro cut [<id>]` | Hang up and discard queued messages; `-j` returns them. |
+| `figaro hup [<id>] [-d]` | Hang up: stop the turn; `-d` also discards the queue (see The queue). |
+| `figaro cut [<id>]` | Shorthand for `hup -d`; `-j` returns the messages. |
 | `figaro queue [rm\|edit]` | Read, edit and delete what has not been answered yet. |
 
 `ls` columns: ARIA (mantra, with `●` this shell, `▸` running, `○` idle), ID,
