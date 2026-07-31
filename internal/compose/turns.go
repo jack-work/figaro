@@ -1,6 +1,8 @@
 package compose
 
 import (
+	"strings"
+
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/turns"
@@ -22,11 +24,45 @@ import (
 // The turn ARITHMETIC it rests on (which message opens a turn, what id each
 // carries) lives in internal/turns, which knows only the fig IR. This function
 // is the only part that needs the UI IR.
+// InquirySegmentsOf is a turn's opening question split by WHO ASKED IT: one
+// entry per RUN of consecutive prose blocks sharing a Sender, in message order.
+//
+// It lives here rather than beside turns.Text because internal/turns
+// deliberately imports nothing but the fig IR — turn identity is a property of
+// the canonical record, not of any rendering of it — and a segment is an aria
+// wire type. compose is the package that already bridges the two.
+//
+// Returns nil when nothing carries a sender, so a turn recorded before
+// attribution existed produces no segments and every renderer falls back to the
+// joined text unchanged.
+func InquirySegmentsOf(m message.Message) []aria.InquirySegment {
+	var out []aria.InquirySegment
+	attributed := false
+	for _, c := range m.Content {
+		if c.Type != message.ContentProse || strings.TrimSpace(c.Text) == "" {
+			continue
+		}
+		if c.Sender != "" {
+			attributed = true
+		}
+		if n := len(out); n > 0 && out[n-1].Sender == c.Sender {
+			out[n-1].Text += "\n" + c.Text
+			continue
+		}
+		out = append(out, aria.InquirySegment{Sender: c.Sender, Text: c.Text})
+	}
+	if !attributed {
+		return nil
+	}
+	return out
+}
+
 func Turns(msgs []message.Message, summarize ToolSummary, previewArg ToolPreviewArg) []aria.Turn {
 	turns.StampIDs(msgs)
 	var out []aria.Turn
 	var group []message.Message
 	var inquiry string
+	var segments []aria.InquirySegment
 	var at int64
 	var id, first, last uint64
 
@@ -35,10 +71,11 @@ func Turns(msgs []message.Message, summarize ToolSummary, previewArg ToolPreview
 			return
 		}
 		out = append(out, aria.Turn{
-			ID: id, Inquiry: inquiry, At: at, LTs: []uint64{first, last}, Sealed: true,
+			ID: id, Inquiry: inquiry, InquirySegments: segments,
+			At: at, LTs: []uint64{first, last}, Sealed: true,
 			Nodes: Nodes(group, nil, nil, summarize, previewArg),
 		})
-		group, id, inquiry, at = nil, 0, "", 0
+		group, id, inquiry, segments, at = nil, 0, "", nil, 0
 	}
 
 	for _, m := range msgs {
@@ -50,6 +87,7 @@ func Turns(msgs []message.Message, summarize ToolSummary, previewArg ToolPreview
 			// boundary by construction: a turn cannot open without one, and a
 			// second cannot arrive without closing the first.
 			inquiry = turns.Text(m)
+			segments = InquirySegmentsOf(m)
 			// The inquiry is bare text and cannot carry its own timestamp, so the
 			// TURN carries it: At is when the question arrived.
 			at = m.Timestamp

@@ -43,7 +43,11 @@ type Client struct {
 	// said anything, so it must be held here to be attached to whichever slice
 	// turns out to start the turn.
 	emitted map[int]int
-	inquiry map[int]string
+	// inquiry holds a turn's opening question until a slice carries it away.
+	// Text and segments travel in ONE map: a second map keyed the same way
+	// cost a whole allocation and its growth per client, and measured as a
+	// ~19% B/op regression on the fold path for a field most turns leave nil.
+	inquiry map[int]heldInquiry
 
 	OnClosed  func(Message)
 	OnLive    func(Message)
@@ -51,9 +55,18 @@ type Client struct {
 	OnMetrics func(Metrics)
 }
 
+// heldInquiry is a turn's question and its per-sender split, parked together
+// until a slice starts the turn. One value in one map rather than two maps
+// keyed alike: the second map's allocation and growth showed up as a B/op
+// regression on the fold path, for a field most turns leave nil.
+type heldInquiry struct {
+	text     string
+	segments []InquirySegment
+}
+
 // NewClient returns a fresh client.
 func NewClient() *Client {
-	return &Client{store: NewStore(), closedSeen: map[int]bool{}, emitted: map[int]int{}, inquiry: map[int]string{}}
+	return &Client{store: NewStore(), closedSeen: map[int]bool{}, emitted: map[int]int{}, inquiry: map[int]heldInquiry{}}
 }
 
 // Store exposes the range store beneath the client. Phase 1 has no consumer:
@@ -295,7 +308,7 @@ func (c *Client) Apply(p Page) {
 		// Recording it is bookkeeping and always safe. OPENING on it is not, and is
 		// what history is refused.
 		if part.Inquiry != "" && !part.ClippedHead {
-			c.inquiry[id] = part.Inquiry
+			c.inquiry[id] = heldInquiry{text: part.Inquiry, segments: part.InquirySegments}
 			if staged {
 				c.store.ClaimOpen(id)
 			}
@@ -366,7 +379,7 @@ func (c *Client) Apply(p Page) {
 			if s := c.emitted[id]; s < len(nodes) {
 				finalized = append(finalized, c.message(id, s, nodes[s:]))
 				c.store.SetTurnLen(uint64(id), uint64(len(nodes)))
-			} else if s == 0 && c.inquiry[id] != "" {
+			} else if s == 0 && c.inquiry[id].text != "" {
 				finalized = append(finalized, c.message(id, 0, nil))
 				c.store.SetTurnLen(uint64(id), 1)
 			} else if len(nodes) > 0 {
@@ -389,7 +402,7 @@ func (c *Client) Apply(p Page) {
 				if !part.ClippedTail {
 					c.store.SetTurnLen(uint64(id), part.From+uint64(len(part.Nodes)))
 				}
-			} else if c.inquiry[id] != "" {
+			} else if c.inquiry[id].text != "" {
 				finalized = append(finalized, c.message(id, 0, nil))
 				if !part.ClippedTail {
 					c.store.SetTurnLen(uint64(id), 1)
@@ -499,7 +512,8 @@ func turnRole(nodes []livedoc.Node) string {
 func (c *Client) message(turn, from int, nodes []livedoc.Node) Message {
 	m := Message{Turn: turn, From: uint64(from), Role: turnRole(nodes), Nodes: nodes}
 	if from == 0 {
-		m.Inquiry = c.inquiry[turn]
+		held := c.inquiry[turn]
+		m.Inquiry, m.InquirySegments = held.text, held.segments
 	}
 	return m
 }
@@ -631,6 +645,11 @@ func setField(n *livedoc.Node, field string, v any) {
 		n.Name = asStr(v)
 	case "summary":
 		n.Summary = asStr(v)
+	case "sender":
+		// Dropping this silently would make every STREAMED input block look
+		// unattributed while a re-read showed its sender — the same exchange
+		// telling two stories, which is exactly how the role field broke once.
+		n.Sender = asStr(v)
 	case "status":
 		n.Status = asStr(v)
 	case "markdown":

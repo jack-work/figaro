@@ -23,6 +23,7 @@ func (m *mockFigaro) ID() string         { return m.id }
 func (m *mockFigaro) SocketPath() string { return m.socketPath }
 func (m *mockFigaro) Interrupt()         {}
 func (m *mockFigaro) Kill()              { m.killed = true }
+func (m *mockFigaro) TurnActive() bool   { return false }
 func (m *mockFigaro) Info() figaro.FigaroInfo {
 	return figaro.FigaroInfo{
 		ID:        m.id,

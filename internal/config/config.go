@@ -67,6 +67,34 @@ type Config struct {
 
 	// Store bounds the on-disk WAL geometry. See StoreConfig.
 	Store StoreConfig `toml:"store"`
+
+	// Authz gates the RPC surface. See AuthzConfig.
+	Authz AuthzConfig `toml:"authz"`
+}
+
+// AuthzConfig selects the authentication provider and the authorization
+// policy for the RPC surface (see internal/authz).
+//
+// Both default OFF, so a config that says nothing behaves exactly as figaro
+// did before authorization existed. Turning them on is a deliberate act,
+// which is the whole point: a credential nobody can disable is not a
+// credential, and a policy nobody can select is not a policy.
+type AuthzConfig struct {
+	// CallerIdentity enables the authn provider that reads the caller's aria
+	// id from the x-internal-figaro-id params field (rpc.CallerKey). When
+	// false, every request is anonymous no matter what it presented — the
+	// server has chosen not to trust the wire.
+	//
+	// Pointer so unset is distinguishable from an explicit false.
+	CallerIdentity *bool `toml:"caller_identity"`
+
+	// Policy names the authorization policy. "" or "allow-all" gates
+	// nothing; "default" selects authz.DefaultRules (today: refuse a
+	// self-fork issued from inside a running turn).
+	//
+	// A name rather than a bool because the policy is a seam, not a switch:
+	// the next policy is a different table, not a second flag.
+	Policy string `toml:"policy"`
 }
 
 // StoreConfig sizes the aria log on disk.
@@ -247,6 +275,26 @@ func (l *Loaded) Interactive() bool {
 		return true
 	}
 	return *l.Config.Interactive
+}
+
+// CallerIdentityEnabled reports whether the caller-identity authn provider
+// is on. Default false — today's behavior.
+func (l *Loaded) CallerIdentityEnabled() bool {
+	if l.Config.Authz.CallerIdentity == nil {
+		return false
+	}
+	return *l.Config.Authz.CallerIdentity
+}
+
+// AuthzPolicy returns the configured policy name, normalized. Empty means
+// allow-all.
+func (l *Loaded) AuthzPolicy() string {
+	switch p := strings.ToLower(strings.TrimSpace(l.Config.Authz.Policy)); p {
+	case "", "allow-all", "none", "off":
+		return "allow-all"
+	default:
+		return p
+	}
 }
 
 // RefSigil returns the chalkboard reference sigil. Default "@".

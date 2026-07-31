@@ -56,6 +56,7 @@ type Incipit struct {
 	Bookend func() []string          // closes an assistant message (the two-row status footer)
 	Rule    func() string            // closes any other message (a plain full-width rule)
 	Header  func(role string) string // printed above each message; "" suppresses
+	Sender  func(name string) string // styles a per-segment attribution; nil suppresses
 	// Queued renders prompts the agent has accepted but not yet placed in the
 	// transcript. They are LIVE CHROME, drawn just above the bookend and never
 	// frozen: a queued prompt has not happened yet, so committing it to
@@ -84,13 +85,14 @@ type Incipit struct {
 
 	// Open-message live region:
 	liveTurn    int
-	liveFrom    uint64   // start of the open suffix
-	liveCount   int      // node count of the open suffix; (turn,from,count) is the region's identity
-	liveInquiry string   // the turn's opening question, drawn above the nodes
-	role        string   // open message's role; selects Bookend (assistant) vs Rule
-	live        []string // rows on screen for the open message
-	vt          int      // rows of the live region scrolled above the viewport
-	cur         int      // cursor row within the live region (0 = top)
+	liveFrom    uint64                // start of the open suffix
+	liveCount   int                   // node count of the open suffix; (turn,from,count) is the region's identity
+	liveInquiry string                // the turn's opening question, drawn above the nodes
+	liveSegs    []aria.InquirySegment // that question split by sender; nil when unattributed
+	role        string                // open message's role; selects Bookend (assistant) vs Rule
+	live        []string              // rows on screen for the open message
+	vt          int                   // rows of the live region scrolled above the viewport
+	cur         int                   // cursor row within the live region (0 = top)
 }
 
 // NewIncipit returns an inline renderer drawing to term via view.
@@ -170,7 +172,7 @@ func (i *Incipit) Freeze(m aria.Message) {
 			// stranded in scrollback per message — two footers for a single
 			// exchange, which is not what the sketch asks for.
 			closer, endsInRule := i.closer(m.Role)
-			i.paint(i.composeWith(m.Inquiry, m.Nodes, closer))
+			i.paint(i.composeWith(m.Inquiry, m.InquirySegments, m.Nodes, closer))
 			i.dropBelow()
 			i.reset()
 			i.atRule = endsInRule
@@ -194,7 +196,7 @@ func (i *Incipit) Freeze(m aria.Message) {
 		io.WriteString(i.term, "\x1b[J") // cursor is parked at the live top
 		i.reset()
 	}
-	rows := i.messageRows(m.Inquiry, m.Role, m.Nodes)
+	rows := i.messageRows(m.Inquiry, m.InquirySegments, m.Role, m.Nodes)
 	var b strings.Builder
 	for _, r := range i.topMargin() {
 		b.WriteString(r)
@@ -245,7 +247,7 @@ func (i *Incipit) Resume(closed []aria.Message, open *aria.Message) {
 // prefaced with a blank line plus the role header (when configured) — the same
 // leading rule Freeze/compose apply.
 func (i *Incipit) printMessage(m aria.Message) {
-	body := i.messageRows(m.Inquiry, m.Role, m.Nodes)
+	body := i.messageRows(m.Inquiry, m.InquirySegments, m.Role, m.Nodes)
 	if len(body) == 0 {
 		return
 	}
@@ -271,6 +273,7 @@ func (i *Incipit) Open(m aria.Message) {
 	if i.thinking && m.Role == i.role {
 		i.thinking = false
 		i.liveTurn, i.liveFrom, i.liveCount, i.liveInquiry = m.Turn, m.From, len(m.Nodes), m.Inquiry
+		i.liveSegs = m.InquirySegments
 		i.paint(i.compose(m.Nodes))
 		return
 	}
@@ -288,7 +291,7 @@ func (i *Incipit) Open(m aria.Message) {
 		i.liveTurn, i.liveFrom = m.Turn, m.From
 	}
 	i.liveCount = len(m.Nodes)
-	i.liveInquiry = m.Inquiry
+	i.liveInquiry, i.liveSegs = m.Inquiry, m.InquirySegments
 	i.role = m.Role
 	i.paint(i.compose(m.Nodes))
 }
@@ -382,14 +385,14 @@ func clipRows(rows []string, h int) []string {
 }
 
 func (i *Incipit) compose(nodes []livedoc.Node) []string {
-	return i.composeWith(i.liveInquiry, nodes, i.footer())
+	return i.composeWith(i.liveInquiry, i.liveSegs, nodes, i.footer())
 }
 
 // composeWith builds the region's rows with an explicit trailer. The LIVE
 // region trails the pinned footer; a region being FROZEN trails its role's
 // closer instead, because the footer is chrome — committing it would strand a
 // status bar in scrollback above the very message that follows it.
-func (i *Incipit) composeWith(inquiry string, nodes []livedoc.Node, foot []string) []string {
+func (i *Incipit) composeWith(inquiry string, segments []aria.InquirySegment, nodes []livedoc.Node, foot []string) []string {
 	w, _ := i.term.Size()
 	if i.bodyHidden() {
 		rows := make([]string, 0, len(foot))
@@ -398,7 +401,7 @@ func (i *Incipit) composeWith(inquiry string, nodes []livedoc.Node, foot []strin
 		}
 		return clipRows(rows, i.viewportHeight())
 	}
-	body := i.messageRows(inquiry, i.role, nodes)
+	body := i.messageRows(inquiry, segments, i.role, nodes)
 	// Every message is prefaced with a blank row — frozen into scrollback
 	// alongside the rest of the live region — unless the row above it is
 	// already this message's overline (see atRule).
@@ -428,8 +431,8 @@ func (i *Incipit) composeWith(inquiry string, nodes []livedoc.Node, foot []strin
 // (thinking hidden, minted-but-empty prose, a tool already drawn) must not
 // print a header over empty space, and at submit the live region is
 // deliberately bodyless — the inquiry has arrived, the reply has not.
-func (i *Incipit) messageRows(inquiry, role string, nodes []livedoc.Node) []string {
-	rows := i.inquiryRows(inquiry)
+func (i *Incipit) messageRows(inquiry string, segments []aria.InquirySegment, role string, nodes []livedoc.Node) []string {
+	rows := i.inquiryRows(inquiry, segments)
 	body := i.renderNodes(nodes)
 	if len(body) == 0 {
 		return rows
@@ -459,7 +462,7 @@ func (i *Incipit) rule() string {
 // inquiryRows draws the question that opened the turn: the input header, a
 // blank, then the text as prose. Same prose renderer the nodes use, so the
 // question looks the same whether you watch it arrive or read it back.
-func (i *Incipit) inquiryRows(inquiry string) []string {
+func (i *Incipit) inquiryRows(inquiry string, segments []aria.InquirySegment) []string {
 	if strings.TrimSpace(inquiry) == "" {
 		return nil
 	}
@@ -468,11 +471,30 @@ func (i *Incipit) inquiryRows(inquiry string) []string {
 		w = 80
 	}
 	var rows []string
+	// ONE header for the whole question, however many people wrote it: the
+	// submissions folded into one message, and a header apiece would say
+	// otherwise. Senders are drawn per segment instead, dim, above their text.
 	if h := i.header(livedoc.RoleInput); h != "" {
 		rows = append(rows, h, "")
 	}
-	for _, l := range render.Prose(inquiry, w) {
-		rows = append(rows, clip(l, w))
+	if len(segments) == 0 {
+		for _, l := range render.Prose(inquiry, w) {
+			rows = append(rows, clip(l, w))
+		}
+		return rows
+	}
+	for k, seg := range segments {
+		if k > 0 {
+			rows = append(rows, "")
+		}
+		// An unknown sender draws NOTHING — not a blank row, not "unknown".
+		if seg.Sender != "" && i.Sender != nil {
+			// Indented to match render.Prose's inset; see cli.proseIndent.
+			rows = append(rows, clip(i.Sender("  "+seg.Sender), w))
+		}
+		for _, l := range render.Prose(seg.Text, w) {
+			rows = append(rows, clip(l, w))
+		}
 	}
 	return rows
 }
@@ -641,7 +663,7 @@ func (i *Incipit) dropBelow() {
 }
 
 func (i *Incipit) reset() {
-	i.liveTurn, i.liveFrom, i.liveCount, i.liveInquiry = 0, 0, 0, ""
+	i.liveTurn, i.liveFrom, i.liveCount, i.liveInquiry, i.liveSegs = 0, 0, 0, "", nil
 	i.role, i.live, i.vt, i.cur = "", nil, 0, 0
 	i.thinking = false
 }

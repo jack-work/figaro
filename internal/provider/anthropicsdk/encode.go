@@ -34,9 +34,26 @@ func (p *Provider) renderMessage(msg message.Message, prevSnap *chalkboard.Snaps
 	case message.RoleInput:
 		toolImages := message.ToolImagesByCall(msg.Content)
 		var blocks []anthropic.ContentBlockParamUnion
+		lastSender := ""
 		for _, c := range msg.Content {
 			switch c.Type {
 			case message.ContentProse:
+				// A user message may be several submissions folded together,
+				// each with its own sender. Announce a sender when it CHANGES,
+				// so a run of blocks from one caller costs one line and the
+				// model still reads an unambiguous "who said what".
+				//
+				// A message with no senders emits exactly what it always did:
+				// no extra block, byte-identical wire. That is not tidiness —
+				// the provider wire cache is keyed by LT and holds signed
+				// thinking blocks, so silently re-encoding old messages would
+				// invalidate caches and replay unsigned blocks as 400s.
+				if c.Sender != "" && c.Sender != lastSender {
+					blocks = append(blocks, anthropic.NewTextBlock(senderReminder(c.Sender)))
+				}
+				if c.Sender != "" {
+					lastSender = c.Sender
+				}
 				blocks = append(blocks, anthropic.NewTextBlock(c.Text))
 			case message.ContentImage:
 				// An image claimed by a tool_result in this same message is
@@ -183,4 +200,11 @@ func toolResultBlock(toolUseID, text string, isErr bool, images []message.Conten
 			Content:   content,
 		},
 	}
+}
+
+// senderReminder renders one attribution for the model, in the same
+// <system-reminder> shape the chalkboard uses, so there is one convention for
+// "harness metadata inside a message" rather than two.
+func senderReminder(sender string) string {
+	return "<system-reminder name=\"sender\">" + sender + "</system-reminder>"
 }

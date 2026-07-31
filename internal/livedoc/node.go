@@ -81,6 +81,12 @@ type Node struct {
 	// prose
 	Markdown string `json:"markdown,omitempty"`
 
+	// Sender attributes an input block to whoever submitted it, already
+	// rendered (see rpc.Attribution). One user message can fold several
+	// submissions from different callers, so attribution belongs on the NODE,
+	// not on the message. Empty means unknown and draws nothing at all.
+	Sender string `json:"sender,omitempty"`
+
 	// ID is legacy provenance/provider metadata: prose/thinking use an LT.block
 	// receipt and tools use the provider's tool-call id. It remains serialized
 	// in snapshots, but it is not UI identity. The aria wire addresses a node by

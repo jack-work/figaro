@@ -10,6 +10,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
 )
@@ -121,12 +122,12 @@ func nodeExpandable(n livedoc.Node, width int) bool {
 // between them. The inquiry is TEXT ON THE TURN, so it is drawn from
 // Turn.Inquiry; no renderer looks for it in the node list, because it is not
 // there.
-func renderTurnRows(inquiry string, nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) []string {
+func renderTurnRows(inquiry string, segments []aria.InquirySegment, nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) []string {
 	if width <= 0 {
 		width = 80
 	}
 	var rows []string
-	if iq := inquiryProse(inquiry, width); len(iq) > 0 {
+	if iq := inquiryRowsFor(inquiry, segments, width); len(iq) > 0 {
 		rows = append(rows, messageHeader(livedoc.RoleInput), "")
 		for _, l := range iq {
 			rows = append(rows, clipToWidth(l, width))
@@ -146,6 +147,42 @@ func renderTurnRows(inquiry string, nodes []livedoc.Node, width, bashCap int, ti
 		rows = append(rows, h, "")
 	}
 	return append(rows, body...)
+}
+
+// proseIndent matches the inset render.Prose gives a paragraph, so metadata
+// drawn beside prose lines up with it instead of floating left of it.
+const proseIndent = "  "
+
+// inquiryRowsFor draws a turn's opening question, attributed when it can be.
+//
+// ONE "> input" header for the whole question however many people wrote it —
+// they are one message, and a header per submission would say otherwise. Each
+// segment is then prefaced by its sender in the dim register used for block
+// timestamps and tool durations, with a blank line between segments so the
+// parts read as separate messages rather than one paragraph.
+//
+// An UNKNOWN sender draws NOTHING — not "unknown", not a blank row. Most
+// messages ever written carry no sender, and a placeholder on each of them
+// would be noise where there used to be none. With no attribution at all the
+// output is exactly what it was before senders existed.
+func inquiryRowsFor(inquiry string, segments []aria.InquirySegment, width int) []string {
+	if len(segments) == 0 {
+		return inquiryProse(inquiry, width)
+	}
+	var rows []string
+	for i, seg := range segments {
+		if i > 0 {
+			rows = append(rows, "")
+		}
+		if seg.Sender != "" {
+			// Indented to sit under the prose, which render.Prose insets. A
+			// flush-left attribution over an inset paragraph reads as a
+			// heading rather than as a label on the text below it.
+			rows = append(rows, clipToWidth(term.Dim(proseIndent+seg.Sender), width))
+		}
+		rows = append(rows, inquiryProse(seg.Text, width)...)
+	}
+	return rows
 }
 
 // inquiryProse wraps a turn's opening question to the same prose renderer its
@@ -401,7 +438,11 @@ func renderSteeringNode(n livedoc.Node, width int, expanded bool) []string {
 	// thought already in motion, it does not open a turn. The inquiry gets a run
 	// header and full-strength prose; steering gets an inline marker and a dim
 	// blockquote gutter, so it reads as an aside within the agent's stream.
-	return append([]string{term.Dim("↳ input")}, nodeProseRows(n, width, expanded)...)
+	head := term.Dim("↳ input")
+	if n.Sender != "" {
+		head += " " + term.Dim("· "+n.Sender)
+	}
+	return append([]string{head}, nodeProseRows(n, width, expanded)...)
 }
 
 // nodeMarkdown is the markdown a non-tool node renders from. Thinking and

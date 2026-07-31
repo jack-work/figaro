@@ -401,6 +401,29 @@ the RPC does with it.
 
 ## 7. Known edges & assumptions
 
+- **Self-fork from inside a running turn deadlocks.** `CoordinateFork` pushes an
+  `eventFork` onto the agent's inbox and waits for the drain loop; the drain loop
+  handles one event at a time. So a fork an aria issues against *itself* while its
+  own turn is running queues behind that turn, and the turn cannot finish while
+  the tool call that issued the fork is blocked on it.
+
+  Guarded (not fixed) by `authz.NoSelfForkDuringTurn`, which converts the hang
+  into an error carrying the detached-fork workaround — see `skills/figaro/trunks.md`.
+  Forking a *different* aria mid-turn is safe (that aria's loop is free), and so
+  is forking yourself while idle.
+
+  **The real fix, deferred:** trunk information should not ride the actor's
+  single-threaded event loop. It belongs in its own **reducible xwal channel**,
+  stored the way the chalkboard is — watermark plus patches, mirroring the same
+  node tree. xwal already permits it: a related channel's `Append` explicitly
+  allows `mainLT` to *exceed the current main tail* ("to support catch-up"), so
+  trunk writes need not wait on the timeline, and `repair.go` already treats a
+  reducible watermark ahead of main as normal. Mirror the chalkboard's three
+  methods in `internal/store/xwal_backend.go` (`ApplyChalkboard`,
+  `ChalkboardState`, `ChalkboardPatches`). One gotcha: the channel's foreign-key
+  index maps a main LT to the **last** entry at that LT, so a mapping with
+  several entries per LT must range-scan rather than `Lookup`.
+
 - **`set`-then-immediate-`fork`** with no committed turn between drops the pending chalkboard
   patch at the boundary (it keys to next-LT, which is the fork point) — commit a turn first.
 - A freshly-spawned **dormant** child shows `MSGS 0` in `list` until it takes a turn (count

@@ -165,6 +165,122 @@ Per-aria request methods: `figaro.qua` (prompt), `figaro.context`,
 The transport is NDJSON-framed JSON-RPC 2.0. Every accepted per-aria connection
 is automatically subscribed; call `figaro.read` on that connection for initial
 state, then keep reading notifications. There is no explicit subscribe method.
+
+### Caller identity — `x-internal-figaro-id`
+
+Every request carries the **calling aria's** id in a reserved params field
+(`rpc.CallerKey`), injected by both client hops (`WithCaller`) and read back by
+`CallerOf`. It rides in `params` and not in a top-level `meta` because the
+envelope belongs to **jkrpc**, an external module: `Client.Call` takes
+`(method, params, result)` and `HandlerFunc` receives only `(ctx, params)`, so
+an envelope slot would cost a jkrpc API change, a release, and a signature
+change to every handler — to carry one string `params` already carries.
+
+Injection is generic rather than a field on each request struct because
+`figaro.context` and `figaro.chalkboard` send **nil** params; there would be
+nothing to embed in, and those methods must still be authenticatable.
+
+This is **not** the target-selection rule. Selection is
+`--id > FIGARO_ARIA > pid binding` and answers *which aria am I talking about*;
+caller identity answers *which aria am I*, and only `FIGARO_ARIA` can — `--id`
+is an argument the caller chose, and a pid binding says which aria a shell is
+*attending*, not that it is one.
+
+### Attribution — who sent each part of a message
+
+A user message is **not always one submission**. Consecutive prompts drain and
+fold into one message, and they may come from different callers. `Content` and
+`livedoc.Node` therefore carry a **`Sender`**, and `aria.Turn` carries
+**`InquirySegments`** — the opening question split by who asked it.
+
+`Turn.Inquiry` is unchanged and remains the canonical *text* (search, selection
+hashing, the mantra seed and height estimation all want one string); the
+segments are the attribution layer over it.
+
+Rendering is decided once, in **`rpc.Attribution`**, so the model, the pager,
+the inline view and `figaro show` cannot drift:
+
+| caller | renders as |
+|---|---|
+| authenticated aria | `aria 76062b18` |
+| **the duke** (end user) | the target aria's `duke-title`, else `user` |
+| explicit label (`FIGARO_CALLER`) | bare, e.g. `ci-bot` |
+| unknown | **nothing at all** — not `unknown`, not a blank row |
+
+**The duke is the end user** — the person the agent serves, as distinct from an
+aria or an anonymous script. Their name does not live in shell config: an
+*interactive* CLI sends a **placeholder** in `x-caller`, and the agent resolves
+it against the **target aria's** chalkboard key **`duke-title`** (default
+`user`). Set it in a loadout:
+
+```toml
+duke-title = "gluck"
+```
+
+`x-caller` is a **typed ref**, not a string, and that is a security property
+rather than tidiness: `FIGARO_CALLER` only ever populates `label`, so no value
+of it can produce `duke: true`. The guarantee is a type, not a reserved word.
+
+Only an **interactive** process presents the duke — the same TTY signal that
+decides the binding policy — so an aria's shell-out cannot speak as its master
+by accident. A figaro that deliberately allocates itself a terminal still can:
+a known gap, accepted until real authentication, and exactly why none of this
+reaches an authorization decision.
+
+`aria ` is a **reserved prefix**: `SanitizeLabel` strips it, so
+`FIGARO_CALLER="aria 999"` renders `999` and cannot impersonate proof.
+
+Blocks fold into **runs** — one block per run of consecutive same-sender
+submissions, joined by a blank line. So the common case (one sender, or none)
+is one block, and a message with no senders encodes **byte-identically** to
+before, which matters because the provider wire cache is keyed by LT and holds
+signed thinking blocks.
+
+On screen: **one `> input` header** for the whole question however many people
+wrote it, each segment prefaced by its sender in the dim register block
+timestamps use, indented to sit under the prose.
+
+### Authorization — `internal/authz`
+
+An **Authenticator** turns the credential into an `Identity`; a single
+**Policy** maps `(identity, method, raw params)` to allow or deny-with-reason.
+`authz.Guard` wraps the whole angelus handler map, so the guarded set is the
+served set and no handler opts in individually. Denials return JSON-RPC code
+**-32020** carrying the reason verbatim.
+
+`[authz]` in `config.toml` selects both, and **both default off** — an absent
+section behaves exactly as figaro did before:
+
+```toml
+[authz]
+caller_identity = true   # believe x-internal-figaro-id (default false)
+policy = "default"       # or "allow-all" (default)
+```
+
+`x-caller` is **attribution only and never authorizes**. It lands in
+`Identity.Label`, a different field from `FigaroID`, and `SelfTargeted()`
+requires an authenticated identity — so an assertion naming its own target
+cannot impersonate it. Anyone who can set an environment variable can set the
+label; if a policy keyed on it, every rule would be one `FIGARO_CALLER=…` away
+from bypass. The separation is a field, not a convention.
+
+Attribution is read **regardless of the switch**: a human is never
+authenticated and is exactly the caller a confused aria most needs named.
+Disabling the provider withholds *authority*, not identity.
+
+The switch is the point: `FIGARO_ARIA` cannot be turned off, so a server has no
+state in which it may doubt it — and a credential that cannot be doubted
+authenticates nothing. `AriaHeader` is trust-on-assertion, not proof; it is an
+interface so `SO_PEERCRED` or a bearer token drops in without any policy or
+handler changing.
+
+The first rule, `NoSelfForkDuringTurn`, refuses a fork an aria issues against
+**itself while its own turn is running** — that deadlocks, because fork
+coordination rides the agent's single-threaded inbox. Its error text carries the
+detached-fork workaround. It is a **guardrail, not a cure**; the fix is to move
+trunk state into its own reducible xwal channel (noted at
+`angelus.handlers.fork`).
+
 The reply is a **server-authoritative live-render stream**:
 
 - `figaro.aria` (`MethodAriaFrame`) — push one **`Page`**: the single wire

@@ -147,7 +147,7 @@ func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	// A whole turn shows BOTH voices, each under its own header, in order —
 	// the question first, though it is text rather than a node.
 	turn := stripANSI(strings.Join(
-		renderTurnRows("what is the codeword?", []livedoc.Node{reply}, 60, 0, 0, renderSettings{}), "\n"))
+		renderTurnRows("what is the codeword?", nil, []livedoc.Node{reply}, 60, 0, 0, renderSettings{}), "\n"))
 	ui, fi := strings.Index(turn, "> input"), strings.Index(turn, "< figaro")
 	if ui < 0 || fi < 0 || ui > fi {
 		t.Fatalf("turn must head the inquiry then the output run:\n%s", turn)

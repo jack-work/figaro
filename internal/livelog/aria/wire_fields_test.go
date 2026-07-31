@@ -37,6 +37,7 @@ func TestLiveDeltaCarriesEveryNodeField(t *testing.T) {
 		Status:     livedoc.StatusOK,
 		Output:     "out",
 		Summary:    "ls",
+		Sender:     "aria 76062b18",
 		StartedAt:  111,
 		FinishedAt: 222,
 	}

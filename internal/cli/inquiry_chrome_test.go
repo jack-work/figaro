@@ -28,7 +28,7 @@ func TestInquiryChromeAgreesAcrossViews(t *testing.T) {
 	want := []string{"> input", "", question, "", "─", "< figaro", "", "THEANSWER"}
 
 	t.Run("show", func(t *testing.T) {
-		got := renderTurnRows(question, nodes, 48, 0, 0, renderSettings{})
+		got := renderTurnRows(question, nil, nodes, 48, 0, 0, renderSettings{})
 		assertChrome(t, got, want)
 	})
 
@@ -126,7 +126,7 @@ func TestVoiceHeaderHugsItsRule(t *testing.T) {
 
 	t.Run("show", func(t *testing.T) {
 		assertNoGapBelowRule(t, "renderTurnRows",
-			renderTurnRows("QUESTIONONE", nodes1, 48, 0, 0, renderSettings{}))
+			renderTurnRows("QUESTIONONE", nil, nodes1, 48, 0, 0, renderSettings{}))
 	})
 
 	t.Run("pager", func(t *testing.T) {

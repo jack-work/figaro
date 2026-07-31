@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/jack-work/figaro/internal/authz"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
@@ -69,7 +70,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 		availableProviders: cfg.AvailableProviders,
 	}
 	return &Handlers{
-		Map: map[string]jkrpc.HandlerFunc{
+		Map: authz.Guard(map[string]jkrpc.HandlerFunc{
 			rpc.MethodCreate:       h.create,
 			rpc.MethodFork:         h.fork,
 			rpc.MethodPromote:      h.promote,
@@ -82,9 +83,44 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodStatus:       h.status,
 			rpc.MethodSaveBindings: h.saveBindings,
 			rpc.MethodAriaRead:     h.ariaRead,
-		},
+		}, h.authenticator(), h.policy()),
 		h: h,
 	}
+}
+
+// authenticator builds the configured authn provider. Disabled by default, so
+// a config that says nothing behaves as figaro did before this existed.
+func (h *handlers) authenticator() authz.Authenticator {
+	return authz.AriaHeader{Enabled: h.config != nil && h.config.CallerIdentityEnabled()}
+}
+
+// policy builds the configured authorization policy. The turn-active predicate
+// is read off the live registry: a dormant or unknown aria has no turn in
+// flight, so it cannot be mid-turn, and a fork of it is free to proceed.
+//
+// TurnActive is used rather than Info().State because Info takes the agent's
+// lock and can block (TestRegistryListDoesNotHoldRegistryLockDuringInfo); a
+// policy check that stalls on the very agent it is guarding would reintroduce
+// the hazard this rule exists to catch.
+func (h *handlers) policy() authz.Policy {
+	name := "allow-all"
+	if h.config != nil {
+		name = h.config.AuthzPolicy()
+	}
+	switch name {
+	case "default":
+		return authz.DefaultRules(h.turnActive)
+	default:
+		return authz.AllowAll()
+	}
+}
+
+func (h *handlers) turnActive(ariaID string) bool {
+	if h.angelus == nil || h.angelus.Registry == nil {
+		return false
+	}
+	live := h.angelus.Registry.Get(ariaID)
+	return live != nil && live.TurnActive()
 }
 
 // Restore lazily re-creates the agent for ariaID.
@@ -424,6 +460,35 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if forkOwner.Trunk != "" && h.angelus.Registry.Get(forkOwner.Trunk) != nil {
 		coordinatorID = forkOwner.Trunk
 	}
+	// THE TRUNK IMPLEMENTATION SHOULD NOT BLOCK THE MAIN THREAD.
+	//
+	// CoordinateFork pushes an event onto the agent's inbox and waits for the
+	// drain loop to run it. The drain loop handles ONE event at a time, so a
+	// fork issued by an aria against itself from inside its own running turn
+	// queues behind that turn — and the turn cannot finish while the tool call
+	// that issued the fork waits on it. Neither side can move.
+	//
+	// The fix is not to police the call. Trunk information belongs in a
+	// SEPARATE XWAL MAPPING, stored the way the chalkboard is: its own
+	// reducible channel (watermark + patches) mirroring the same node tree,
+	// rather than riding the actor's single-threaded event loop. xwal already
+	// supports what that needs — a related channel's entries are tagged with
+	// the main LT they belong to, and Append's contract explicitly allows a
+	// channel to run AHEAD of the main tail ("it may exceed the current main
+	// tail, to support catch-up"), which is exactly the property that lets
+	// trunk writes land without waiting on the timeline. repair.go already
+	// treats a reducible watermark ahead of main as a normal condition. The
+	// shape to mirror is the chalkboard's three methods in
+	// internal/store/xwal_backend.go: ApplyChalkboard (append a patch),
+	// ChalkboardState (fold to a snapshot), ChalkboardPatches (group by LT).
+	// One gotcha to carry over: the channel's foreign-key index maps mainLT to
+	// the LAST entry at that LT, so a mapping with several entries per LT must
+	// range-scan rather than Lookup.
+	//
+	// That removes the deadlock at the root. The authz rule that refuses a
+	// self-fork mid-turn (authz.NoSelfForkDuringTurn) is a GUARDRAIL, NOT THE
+	// CURE — it converts a hang into an actionable error and nothing more.
+	// Deferred deliberately: another aria takes this.
 	if live := h.angelus.Registry.Get(coordinatorID); live != nil {
 		if coordinator, ok := live.(interface{ CoordinateFork(func() error) error }); ok {
 			err = coordinator.CoordinateFork(runFork)

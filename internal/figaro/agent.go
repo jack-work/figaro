@@ -36,6 +36,14 @@ const (
 	eventFork
 )
 
+// promptSegment is one submission inside a (possibly folded) user message:
+// the text and who sent it. Sender is already rendered (rpc.Attribution), so
+// no consumer re-derives it and none can disagree about the spelling.
+type promptSegment struct {
+	sender string
+	text   string
+}
+
 type event struct {
 	typ eventType
 
@@ -50,6 +58,11 @@ type event struct {
 	// eventUserPrompt
 	text       string
 	chalkboard *rpc.ChalkboardInput
+	// segments is this event's attributed payloads, in submission order.
+	// A fresh submit has exactly one; mergePromptEvents concatenates them, so
+	// a folded message keeps WHO SAID WHAT instead of flattening it into one
+	// anonymous blob. text stays the joined display/mantra form.
+	segments []promptSegment
 
 	// eventSet
 	setPatch message.Patch
@@ -261,6 +274,17 @@ func (a *Agent) ID() string { return a.id }
 func (a *Agent) SocketPath() string { return a.socketPath }
 
 // chalkboardString reads a system.* string key. Empty when missing.
+// dukeTitle is what THIS aria calls its end user, from its chalkboard, or the
+// generic default when it does not say. Passed to rpc.SenderFrom so the duke
+// placeholder an interactive CLI sends resolves against the aria being
+// addressed rather than against the shell that sent it.
+func (a *Agent) dukeTitle() string {
+	if t := a.chalkboardString(rpc.DukeTitleKey); t != "" {
+		return t
+	}
+	return rpc.DefaultDukeTitle
+}
+
 func (a *Agent) chalkboardString(key string) string {
 	if a.chalkboard == nil {
 		return ""
@@ -416,12 +440,21 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 }
 
 // SubmitPrompt enqueues a prompt; the reply streams as log.* frames.
-func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
-	a.inbox.Send(event{
+func (a *Agent) SubmitPrompt(req rpc.QuaRequest) { a.SubmitPromptFrom(req, "") }
+
+// SubmitPromptFrom is SubmitPrompt with the caller's rendered attribution.
+// sender is "" when nobody said who they were, which stays unattributed all
+// the way down rather than becoming "unknown".
+func (a *Agent) SubmitPromptFrom(req rpc.QuaRequest, sender string) {
+	evt := event{
 		typ:        eventUserPrompt,
 		text:       req.Text,
 		chalkboard: req.Chalkboard,
-	})
+	}
+	if req.Text != "" {
+		evt.segments = []promptSegment{{sender: sender, text: req.Text}}
+	}
+	a.inbox.Send(evt)
 }
 
 // QueuedPrompts returns a read-only snapshot of the messages this aria has
@@ -452,6 +485,9 @@ func (a *Agent) QueuedPrompts(carriers bool) (string, []rpc.QueuedPrompt) {
 func (a *Agent) turnActive() bool {
 	return a.turnRunning.Load()
 }
+
+// TurnActive implements Figaro. Lock-free by design; see the interface doc.
+func (a *Agent) TurnActive() bool { return a.turnActive() }
 
 // Interrupt aborts the current turn, keeping the queue. It is the shape the
 // Figaro interface uses (and the angelus's graceful shutdown, where dropping

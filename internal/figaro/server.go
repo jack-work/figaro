@@ -52,7 +52,14 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		}
 		cursor := int(a.ariaSrv.LastTurn())
 		active := a.turnActive()
-		a.SubmitPrompt(req)
+		// Attribution comes off the request itself, not from the authn
+		// provider: the agent socket has none, and a human — never
+		// authenticated — is exactly the caller a confused aria needs named.
+		//
+		// The duke placeholder is resolved HERE, against THIS aria's
+		// chalkboard, because the caller cannot know what this aria calls
+		// its end user — that is precisely why it sends a placeholder.
+		a.SubmitPromptFrom(req, rpc.SenderFrom(params, a.dukeTitle))
 		return rpc.QuaResponse{OK: true, Cursor: cursor, Active: active}, nil
 
 	case rpc.MethodContext:

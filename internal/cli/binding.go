@@ -45,6 +45,10 @@ func initBindingPolicy() {
 	noBindEnv = envTruthy(os.Getenv("FIGARO_NO_BIND"))
 	interactive = term.IsTerminal(int(os.Stdin.Fd())) ||
 		term.IsTerminal(int(os.Stderr.Fd()))
+	// The same signal arms the DUKE placeholder: only a human at a terminal
+	// speaks for the end user, so an aria's own shell-out — never a TTY —
+	// cannot present itself as its master by accident.
+	rpc.SetInteractive(interactive)
 }
 
 // envAriaID returns the aria id pinned by FIGARO_ARIA, or "" if unset

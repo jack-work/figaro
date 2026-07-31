@@ -331,6 +331,7 @@ func delta(id uint64, old, n livedoc.Node) NodeDelta {
 	scalar("role", old.Role, n.Role)
 	scalar("name", old.Name, n.Name)
 	scalar("summary", old.Summary, n.Summary)
+	scalar("sender", old.Sender, n.Sender)
 	scalar("status", old.Status, n.Status)
 	scalar("tool_call_id", old.ToolCallID, n.ToolCallID)
 	scalarInt("started_at", old.StartedAt, n.StartedAt)
@@ -375,6 +376,7 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 	str("status", n.Status)
 	str("tool_call_id", n.ToolCallID)
 	str("markdown", n.Markdown)
+	str("sender", n.Sender)
 	str("output", n.Output)
 	if n.Args != nil {
 		set["args"] = n.Args
@@ -404,18 +406,21 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 // It is the whole of the prompt's UI IR, which is why it broadcasts: a watching
 // client must show the question the instant it commits, not when the agent's
 // first token arrives.
-func (s *Server) OpenInquiry(id uint64, inquiry string) {
+func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegment) {
 	s.mu.Lock()
 	if n := len(s.turns); n == 0 || s.turns[n-1].ID != id {
 		s.turns = append(s.turns, Turn{ID: id})
 	}
 	i := len(s.turns) - 1
 	s.turns[i].Inquiry = inquiry
+	s.turns[i].InquirySegments = segments
 	from := uint64(len(s.turns[i].Nodes))
 	subs := s.subsLocked()
 	s.mu.Unlock()
 	deliver(subs, Page{Parts: []TurnPart{{
-		Turn: Turn{ID: id, Inquiry: inquiry}, From: from, ClippedHead: from > 0,
+		Turn:        Turn{ID: id, Inquiry: inquiry, InquirySegments: segments},
+		From:        from,
+		ClippedHead: from > 0,
 	}}})
 }
 

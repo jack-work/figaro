@@ -36,6 +36,11 @@ func New(r *tool.Registry) *Projector {
 	}
 }
 
+// InquirySegments implements figaro.Projector.
+func (p *Projector) InquirySegments(m message.Message) []aria.InquirySegment {
+	return compose.InquirySegmentsOf(m)
+}
+
 func (p *Projector) Turns(msgs []message.Message) []aria.Turn {
 	return compose.Turns(msgs, p.summarize, p.previewArg)
 }

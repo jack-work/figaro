@@ -120,6 +120,9 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	in.Bookend = bookend
 	in.Rule = rule
 	in.Header = messageHeader
+	// Attribution rides in the dim register block timestamps and tool
+	// durations use, so a sender reads as metadata rather than as content.
+	in.Sender = dimSender
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view, status: status}
 	in.Queued = t.queuedRows // the queue is live chrome in the inline view too
 	t.client.SetClosedLimit(transcriptTailLimit)
