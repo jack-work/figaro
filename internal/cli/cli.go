@@ -184,7 +184,7 @@ fig IR, but it is not an address: turns are.`,
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
+		Usage:   "send [--id <id>] [-L <loadout>] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding) — or, inside an aria's
 own bash tool, the aria itself (FIGARO_ARIA). With --id, targets
@@ -197,6 +197,12 @@ Flags:
   -e, --ephemeral
                  Spin a one-shot in-memory aria; kill it on completion.
                  Contradicts --id. Says nothing about formatting.
+  -L, --loadout <name>
+                 The loadout for an aria THIS CALL creates: with -e, or in a
+                 shell with no binding. A target (--id/<id>/<id>:<turn>) names
+                 an aria that already exists, so --loadout is rejected there
+                 rather than ignored. Defaults to config.toml's
+                 default_loadout, exactly as new --loadout does.
   -r, --raw      Stream verbatim to stdout: no ANSI, no markdown.
                  Pipe-friendly. Says nothing about persistence.
   -v, --verbatim Dump the raw wire frames as JSON (one {"method","params"}
@@ -234,8 +240,9 @@ Keys while streaming:
   figaro send --id myid -- <prompt>    prompt a named aria (rich)
   figaro send -r -- <prompt>           bound aria, raw stream
   figaro send -e -- <prompt>           ephemeral, rich
-  figaro send -er -- <prompt>          ephemeral + raw (was: ` + "`figaro plain`" + `)
+  figaro send -er -- <prompt>          ephemeral + raw
   figaro send -ex -y -- <instruction>  ephemeral exec, no confirmation
+  figaro send -L sonn5 -er -- <p>      ephemeral aria on a named loadout, raw
   figaro send -f --id myid -- <prompt> fire-and-forget; do not stream
   figaro send -- <nudge>               sent mid-turn, this steers that turn
 
@@ -249,7 +256,7 @@ positional target needs the explicit verb or --id.`,
 			runSend(ld, ctx.RawArgs)
 			return nil
 		},
-		CompleteArgs: completePromptOrIDFlag,
+		CompleteArgs: completeNewPrompt,
 	})
 
 	r.Register(&cmdkit.Command{

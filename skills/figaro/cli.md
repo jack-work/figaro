@@ -40,8 +40,9 @@ These hold across the whole CLI:
 
 | Flag | Meaning |
 |---|---|
-| `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. |
+| `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. Mints an aria if this shell has none (the id goes to stderr, or to stdout with `-j`). |
 | `-e`, `--ephemeral` | Spin a throwaway in-memory aria and kill it when the turn ends. Contradicts `--id`. |
+| `-L`, `--loadout <name>` | The loadout for an aria **this call creates** — with `-e`, or in a shell with no binding. Rejected against a target (`--id`, `<id>`, `<id>:<turn>`), which names an aria that already exists. Defaults to config.toml's `default_loadout`, as `new --loadout` does. Takes a value, so it does not gang: `-er -L sonn5`, not `-erL`. |
 | `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
 | `-o`, `--verbose` | Expand full tool inputs. Ctrl-O toggles it live. |
 | `-l`, `--listen` | Open the transcript pager at startup. |

@@ -44,7 +44,7 @@ func runLoadout(loaded *config.Loaded, ariaID, loadoutName string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false)
+	_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, "")
 	if err != nil {
 		die("%s", err)
 	}

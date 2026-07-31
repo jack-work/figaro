@@ -17,19 +17,33 @@ import (
 // Aria ids are system-minted, so a missing explicitID is always an
 // error — there is no create-by-name. autoCreate is retained for call
 // compatibility but no longer creates.
-func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, explicitID string, autoCreate bool) (string, transport.Endpoint, error) {
-	_ = loaded
-	_ = autoCreate
+func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, explicitID string, autoCreate bool, loadout string) (string, transport.Endpoint, error) {
 	if explicitID == "" {
-		r, err := resolveBinding(ctx, acli, os.Getppid())
+		ppid := os.Getppid()
+		r, err := resolveBinding(ctx, acli, ppid)
 		if err != nil {
 			return "", transport.Endpoint{}, fmt.Errorf("resolve: %w", err)
 		}
 		if !r.Found {
-			if bindingDisabled() {
-				return "", transport.Endpoint{}, fmt.Errorf("no aria specified (pass --id <id>; binding disabled in this shell)")
+			// autoCreate has been a parameter here since the function
+			// existed, discarded by `_ = autoCreate` on the second line.
+			// Every prompt path passes true and every read-only path passes
+			// false, so the intent was written down and never honoured:
+			// `send -f`, `-r` and `-v` all refused to work in a shell with
+			// no binding, while a plain `send` in the same shell minted an
+			// aria happily. Which flag you chose decided whether the verb
+			// could create — and nothing said so.
+			if !mintsWhenUnbound(autoCreate) {
+				if bindingDisabled() {
+					return "", transport.Endpoint{}, fmt.Errorf("no aria specified (pass --id <id>; binding disabled in this shell)")
+				}
+				return "", transport.Endpoint{}, fmt.Errorf("no figaro bound to this shell (try: --id <id> or attend <id>)")
 			}
-			return "", transport.Endpoint{}, fmt.Errorf("no figaro bound to this shell (try: --id <id> or attend <id>)")
+			// Mint one, on the named loadout, and bind this shell to it —
+			// bindBinding is a no-op when binding is disabled, so a script
+			// gets the aria without acquiring a binding it never asked for.
+			id, ep := mustCreateAndBindLoadout(ctx, acli, loaded, ppid, loadout)
+			return id, ep, nil
 		}
 		return r.FigaroID, transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}, nil
 	}
@@ -49,3 +63,10 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *ang
 	}
 	return "", transport.Endpoint{}, fmt.Errorf("attach %q: %w", explicitID, err)
 }
+
+// mintsWhenUnbound is the create decision, pulled out so the truth table is
+// testable without a daemon: a call that reached here has no --id and no
+// binding, so the only question left is whether the verb is allowed to make
+// one. Prompt verbs are; read-only verbs (hup, listen, loadout) are not,
+// because "show me the aria" cannot sensibly answer by inventing one.
+func mintsWhenUnbound(autoCreate bool) bool { return autoCreate }

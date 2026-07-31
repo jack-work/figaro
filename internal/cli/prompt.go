@@ -15,8 +15,10 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// runPrompt resolves the shell-bound figaro and prompts it.
-func runPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
+// runPrompt resolves the shell-bound figaro and prompts it. loadout names
+// the loadout for an aria this call MINTS (an unattended shell); it is
+// ignored when a binding already exists, because then no aria is created.
+func runPrompt(loaded *config.Loaded, loadout, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -43,7 +45,7 @@ func runPrompt(loaded *config.Loaded, prompt string, set renderSettings) {
 		figaroID = resp.FigaroID
 		figaroEP = transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
 	} else {
-		figaroID, figaroEP = mustCreateAndBind(ctx, acli, loaded, ppid)
+		figaroID, figaroEP = mustCreateAndBindLoadout(ctx, acli, loaded, ppid, loadout)
 	}
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
