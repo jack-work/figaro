@@ -52,6 +52,7 @@ func TestThinkingKeepsItsGutterAtEveryWidth(t *testing.T) {
 			if len(rows) < 2 {
 				t.Fatalf("%v w=%d: fixture must WRAP to be able to fail, got %d row(s)", typ, w, len(rows))
 			}
+			col := -1
 			for i, r := range rows {
 				plain := strings.TrimRight(stripSGRForTest(r), " ")
 				if strings.TrimSpace(plain) == "" {
@@ -62,6 +63,17 @@ func TestThinkingKeepsItsGutterAtEveryWidth(t *testing.T) {
 				}
 				if got := displayWidth(r); got > w {
 					t.Fatalf("%v w=%d: row %d is %d cells, past the edge: %q", typ, w, i, got, plain)
+				}
+				// EVERY rule in a block sits in the SAME column. Repairing a row
+				// relative to its own inset satisfied "has a gutter" while
+				// drawing it one column left of its neighbours, which reads as
+				// missing indentation — the second report on this bug.
+				at := len(plain) - len(strings.TrimLeft(plain, " "))
+				if col < 0 {
+					col = at
+				} else if at != col {
+					t.Fatalf("%v w=%d: row %d puts its rule at column %d, the block uses %d: %q",
+						typ, w, i, at, col, plain)
 				}
 			}
 		}

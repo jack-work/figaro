@@ -523,9 +523,21 @@ func nodeProseRows(n livedoc.Node, width int, expanded bool) []string {
 // rejected: it changes the styling and padding of EVERY thinking row, which
 // makes the pre-SGR proof fail for reasons unrelated to this defect.
 func repairQuoteRule(rows []string, width int) []string {
+	// The rule must land in the SAME column on every row, and that column is
+	// whichever one glamour used on the rows it got right. Placing it relative
+	// to each row's OWN inset was the first attempt and it was wrong: a
+	// continuation row is inset by two columns where a ruled row is inset by
+	// three, so repaired rows drew their rule one column left of the rest —
+	//
+	//	   │ …there are commits about viewport
+	//	 │ rendering                              <- reported as "absent indentation"
+	//	   │ behavior that look relevant.
+	//
+	// which is the same block reading as ragged rather than ruled.
+	col := ruleColumn(rows)
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		r = repairOneQuoteRow(r)
+		r = repairOneQuoteRow(r, col)
 		// AND the row must not exceed the viewport. glamour's blockquote emits
 		// a row ONE CELL WIDER than asked at some widths — measured at 5 of the
 		// 81 widths 50..130 (61, 63, 74, 112, 122), while plain prose never
@@ -540,23 +552,48 @@ func repairQuoteRule(rows []string, width int) []string {
 	return out
 }
 
-func repairOneQuoteRow(row string) string {
+func repairOneQuoteRow(row string, col int) string {
 	if firstVisible(row) == quoteRuleGlyph {
 		return row // already ruled: untouched, byte for byte
 	}
 	k := leadingVisibleSpaces(row)
-	if k < len(proseIndent) {
+	if k == 0 || col < 0 {
 		return row // not an inset continuation row; leave it alone
 	}
-	// The rule is exactly as wide as the inset it REPLACES (two cells), so the
-	// row keeps the width it had and the rule lands in the column glamour draws
-	// it in on the rows it got right.
-	a, aok := visibleColOffset(row, k-len(proseIndent))
-	b, bok := visibleColOffset(row, k)
-	if !aok || !bok {
+	at, ok := visibleColOffset(row, k)
+	if !ok {
 		return row
 	}
-	return row[:a] + quoteRule + row[b:]
+	// Keep any SGR opened before the content, then rebuild the left edge at the
+	// shared rule column.
+	return leadingEscapes(row) + strings.Repeat(" ", col) + quoteRule + row[at:]
+}
+
+// ruleColumn is the visible column the rule sits in on the rows glamour ruled,
+// or -1 when no row in the block has one.
+func ruleColumn(rows []string) int {
+	for _, r := range rows {
+		if firstVisible(r) != quoteRuleGlyph {
+			continue
+		}
+		return leadingVisibleSpaces(r)
+	}
+	return -1
+}
+
+// leadingEscapes returns the SGR runs a row opens with, before its first
+// visible column.
+func leadingEscapes(row string) string {
+	i := 0
+	for i < len(row) {
+		if row[i] == 0x1b {
+			j, _ := escapeEnd(row, i)
+			i = j
+			continue
+		}
+		break
+	}
+	return row[:i]
 }
 
 // firstVisible returns the first printing (non-space, non-escape) glyph of row,
