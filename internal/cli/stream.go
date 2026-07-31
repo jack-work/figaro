@@ -295,7 +295,26 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// transcript) — the input loop owns them, not a SIGINT handler.
 	if tc.IsTTY() {
 		if restore, err := tc.MakeRaw(); err == nil {
-			defer restore()
+			// The restore must survive os.Exit, not only a normal return.
+			// MEASURED on Linux before this line existed: Ctrl-C during a
+			// running turn exits 130 through exitNow, which runs the hooks and
+			// then os.Exit — skipping every defer. `stty -g` before/after
+			// differed in c_lflag (8a3b -> a30: ECHO and ICANON cleared), so
+			// the user's shell was left in RAW MODE — no echo, no line editing
+			// — by the most ordinary gesture there is.
+			//
+			// The atExit hook above already restores the screen, the cursor and
+			// autowrap for exactly this reason; the terminal MODE was the one
+			// piece still left on a defer. On Windows this same closure now
+			// also restores the console OUTPUT mode (VT processing +
+			// DISABLE_NEWLINE_AUTO_RETURN), so leaving it on a defer would leak
+			// a changed right-edge wrap policy into the shell after a Ctrl-C.
+			//
+			// sync.OnceFunc because both paths fire on a normal return: the
+			// defer runs, and then exitNow's hooks would run it again.
+			restoreOnce := sync.OnceFunc(restore)
+			defer restoreOnce()
+			atExit(restoreOnce)
 			fmt.Fprint(os.Stdout, enableModifiedKeyReporting)
 			defer fmt.Fprint(os.Stdout, disableModifiedKeyReporting)
 			// Belt-and-braces: always disable mouse reporting on exit so a crash
