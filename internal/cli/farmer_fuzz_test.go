@@ -97,16 +97,18 @@ func TestFarmerQuoteInvariants(t *testing.T) {
 						continue
 					}
 					key := func(k string) string { return name + "/" + k }
-					// OVERFLOW IS ONLY THE GUTTER'S FAULT WHERE PROSE FITS.
-					// glamour will not break an unbreakable token — a CJK run,
-					// a long URL — so the same markdown overflows as ordinary
-					// prose too, at 78 to 86 of these 181 widths, and failing
-					// on that would just re-report glamour every run. What the
-					// gutter must never do is overflow a width where the SAME
-					// content, unquoted, fits.
-					if got := displayWidth(r); got > w && !proseOverflowsAt(md, w) {
+					// OVERFLOW MUST BE INHERITED, NEVER ADDED. glamour overruns
+					// the width it is GIVEN (an unclosed fence at 12 of these
+					// 181 widths, by up to 11 cells at w=20), so a blunt
+					// row<=width here just re-reports glamour every run — and a
+					// blunt row<=width guarded by "prose fits" fires on the
+					// boundary width where prose fits and the two-column-tighter
+					// quoted render does not. The contract is the delta: a
+					// quoted row may exceed the viewport only where glamour's
+					// own row already exceeded the width it was rendered at.
+					if got := displayWidth(r); got > w && !glamourOverranAt(md, w) {
 						if _, ok := seen[key("overwide")]; !ok {
-							seen[key("overwide")] = fail{name, w, fmt.Sprintf("row is %d cells > width, where prose FITS", got), i, plain}
+							seen[key("overwide")] = fail{name, w, fmt.Sprintf("row is %d cells > width, and glamour stayed inside its own budget", got), i, plain}
 						}
 					}
 					if !strings.HasPrefix(strings.TrimLeft(plain, " "), "│") {
@@ -136,7 +138,8 @@ func TestFarmerQuoteInvariants(t *testing.T) {
 
 // TestFarmerRowsAreGlamourPlusGutter is the strongest form of "the words
 // survive": a quoted row must be the gutter and then glamour's own row, byte
-// for byte, at the reserved width. Anything weaker (words compare, prefix
+// for byte, at the reserved width, with the two-column margin the rule stands
+// in removed and nothing else touched. Anything weaker (words compare, prefix
 // check) is satisfiable by output that has been re-padded or clipped.
 func TestFarmerRowsAreGlamourPlusGutter(t *testing.T) {
 	bad := 0
@@ -150,7 +153,7 @@ func TestFarmerRowsAreGlamourPlusGutter(t *testing.T) {
 				t.Fatalf("%s w=%d: row count changed %d -> %d", name, w, len(raw), len(got))
 			}
 			for i := range raw {
-				want := term.Dim(quoteGutter) + raw[i]
+				want := term.Dim(quoteGutter) + dedentProse(raw[i])
 				if got[i] != want {
 					if bad < 6 {
 						t.Errorf("%s w=%d row %d: row is not gutter+glamour:\n  want %q\n   got %q", name, w, i, want, got[i])
@@ -207,6 +210,17 @@ func isFinalByte(c byte) bool {
 // proseOverflowsAt reports whether the same markdown, rendered as ordinary
 // prose, already exceeds the width — i.e. whether glamour, not the gutter, is
 // the one that cannot fit it.
+func glamourOverranAt(md string, w int) bool {
+	n := livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}
+	pw := proseWidth(n, w)
+	for _, r := range clampTables(render.Prose(nodeMarkdown(n), pw), proseTableCapDefault, pw) {
+		if displayWidth(r) > pw {
+			return true
+		}
+	}
+	return false
+}
+
 func proseOverflowsAt(md string, w int) bool {
 	for _, r := range nodeProseRows(livedoc.Node{Type: livedoc.NodeProse, Markdown: md}, w, false) {
 		if displayWidth(r) > w {

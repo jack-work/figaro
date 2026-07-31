@@ -27,8 +27,11 @@ func FuzzThinkingGutter(f *testing.F) {
 		rows := nodeProseRows(livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}, w, false)
 		col := -1
 		for i, r := range rows {
-			if d := displayWidth(r); d > w {
-				t.Fatalf("w=%d row %d is %d cells: %q", w, i, d, farmerStrip(r))
+			// Overflow must be INHERITED, never added: glamour overruns the
+			// width it is given (an unbreakable token, an unclosed fence), and
+			// re-reporting that every run is noise. The contract is the delta.
+			if d := displayWidth(r); d > w && !glamourOverranAt(md, w) {
+				t.Fatalf("w=%d row %d is %d cells, and glamour stayed inside its own budget: %q", w, i, d, farmerStrip(r))
 			}
 			plain := strings.TrimRight(farmerStrip(r), " ")
 			if strings.TrimSpace(plain) == "" {
