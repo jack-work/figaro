@@ -195,6 +195,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		fmt.Println(term.Dim(fmt.Sprintf("[%d]", u.ID)))
 		fmt.Println()
 		rows := renderTurnRows(u.Inquiry, u.InquirySegments, u.Nodes, width, 0, 0, renderSettings{verbose: true})
+		auditRows(rows, width, "show")
 		fmt.Println(strings.Join(rows, "\n"))
 		fmt.Println()
 	}

@@ -68,11 +68,15 @@ func (a *widthAudit) Write(p []byte) (int, error) {
 
 // check splits a write into the rows it paints and measures each one.
 //
-// Rows are separated by CR-LF in everything the renderer emits. A row may also
-// carry cursor motion, which is not ink and does not advance the column — so
-// the measurement strips escapes and counts CELLS, the mistake that has been
-// made three separate ways on this branch (bytes, runes, and StringWidth over
-// an SGR run).
+// SPLITTING IS THE WHOLE DIFFICULTY. The incipit separates rows with CR-LF, but
+// the pager positions each row with CUP (ESC [ row ; col H) and never emits a
+// newline at all — so splitting on CR-LF alone measured an entire FRAME as one
+// row and reported 1,634 cells in a 100-column terminal. That is a broken
+// instrument reporting a spectacular bug, which is worse than reporting
+// nothing: it buries the one real hit (a 128-cell status rule) under noise.
+//
+// So a row ends at CR-LF, at a bare CR, or at any cursor-positioning escape.
+// Everything between those is what lands on one line of the screen.
 func (a *widthAudit) check(s string) {
 	w, _ := a.size()
 	if w <= 0 {
@@ -83,7 +87,7 @@ func (a *widthAudit) check(s string) {
 	if a.nreport > 200 {
 		return // a broken frame would otherwise report forever
 	}
-	for _, row := range strings.Split(s, "\r\n") {
+	for _, row := range splitPaintedRows(s) {
 		if row == "" {
 			continue
 		}
@@ -129,4 +133,77 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// splitPaintedRows cuts a write into the pieces that land on separate screen
+// lines: CR-LF, a bare CR, and the cursor-motion escapes the pager uses to
+// place each row (CUP/HVP `H`/`f`, and vertical moves `A`/`B`/`E`/`F`).
+func splitPaintedRows(s string) []string {
+	var rows []string
+	var cur strings.Builder
+	flush := func() {
+		rows = append(rows, cur.String())
+		cur.Reset()
+	}
+	for i := 0; i < len(s); {
+		if s[i] == '\r' {
+			flush()
+			i++
+			if i < len(s) && s[i] == '\n' {
+				i++
+			}
+			continue
+		}
+		if s[i] == '\n' {
+			flush()
+			i++
+			continue
+		}
+		if s[i] == 0x1b {
+			j, _ := escapeEnd(s, i)
+			seq := s[i:j]
+			if n := len(seq); n > 0 {
+				switch seq[n-1] {
+				case 'H', 'f', 'A', 'B', 'E', 'F':
+					flush()
+					i = j
+					continue
+				}
+			}
+			cur.WriteString(seq)
+			i = j
+			continue
+		}
+		cur.WriteByte(s[i])
+		i++
+	}
+	flush()
+	return rows
+}
+
+// auditRows reports rows a NON-painter surface is about to print. `figaro show`
+// writes straight to stdout rather than through the Terminal, so the writer
+// wrapper never sees it — and it renders the same nodes the pager does, which
+// makes it exactly the kind of gap an audit is supposed not to have.
+func auditRows(rows []string, width int, surface string) {
+	dest := strings.TrimSpace(os.Getenv("FIGARO_WIDTH_AUDIT"))
+	if dest == "" || width <= 0 {
+		return
+	}
+	sink := os.Stderr
+	if dest != "1" && dest != "true" {
+		f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			return
+		}
+		defer f.Close()
+		sink = f
+	}
+	for i, row := range rows {
+		ink := strings.TrimRight(stripEsc(row), " ")
+		if n := displayWidth(ink); n > width {
+			fmt.Fprintf(sink, "OVER INK [%s]: width=%d ink=%d (+%d) row=%d\n  %q\n",
+				surface, width, n, n-width, i, ink)
+		}
+	}
 }

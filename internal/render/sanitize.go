@@ -231,21 +231,23 @@ func skipEscape(s string, i int) int {
 	}
 	switch c := s[i]; {
 	case c == '[':
+		// CSI: scan to a FINAL byte (0x40..0x7e), the way a terminal does — so
+		// "\x1b[\xff\xfem" is consumed through its 'm' rather than leaking two
+		// replacement characters. But abort at a space or a control byte and
+		// consume only what was scanned: a real CSI does not contain them, and
+		// treating them as part of the sequence is what let a TRUNCATED escape
+		// eat the next word ("trunc \x1b[38;5; and text" -> "trunc nd text").
+		// Malformed prefix dropped, following text untouched.
 		i++
-		for i < len(s) && s[i] >= 0x30 && s[i] <= 0x3f { // params, incl. ? < = > ; :
-			i++
-		}
-		// Intermediates EXCLUDING space (0x21..0x2f, not 0x20). Space is a
-		// legal intermediate — `ESC [ Ps SP q` sets the cursor style — but a
-		// TRUNCATED sequence followed by ordinary prose is far more common in
-		// model-pasted text, and treating space as an intermediate ate the next
-		// word's first letter: "trunc \x1b[38;5; and text" printed "trunc nd
-		// text". The trade is one leaked final byte from a rare cursor-style
-		// sequence against a swallowed word, and the word wins.
-		for i < len(s) && s[i] >= 0x21 && s[i] <= 0x2f {
-			i++
-		}
-		if i < len(s) && s[i] >= 0x40 && s[i] <= 0x7e { // a final byte, or nothing
+		for i < len(s) {
+			c := s[i]
+			if c >= 0x40 && c <= 0x7e { // final byte
+				i++
+				break
+			}
+			if c == 0x20 || c < 0x20 { // malformed: stop, keep the text
+				break
+			}
 			i++
 		}
 	case c == ']' || c == 'P' || c == '_' || c == '^' || c == 'X':

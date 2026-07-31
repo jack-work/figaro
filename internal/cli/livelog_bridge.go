@@ -119,7 +119,11 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	// FIGARO_WIDTH_AUDIT: report any row written past the viewport, from inside
 	// the process, in the terminal where it actually happens. Off by default and
 	// free when off. See width_audit.go for why the detector had to move here.
-	term.SetWriter(auditWriter(out, term.Size))
+	// One audited writer for BOTH surfaces. The pager writes straight to `out`
+	// rather than through the Terminal, so auditing only the incipit left the
+	// half the reporter was looking at uninstrumented.
+	audited := auditWriter(out, term.Size)
+	term.SetWriter(audited)
 	in := ldrender.NewIncipit(term, view)
 	in.Bookend = bookend
 	in.Rule = rule
@@ -130,7 +134,7 @@ func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID 
 	t := &livelogTurn{in: in, term: term, client: aria.NewClient(), view: view, status: status}
 	in.Queued = t.queuedRows // the queue is live chrome in the inline view too
 	t.client.SetClosedLimit(transcriptTailLimit)
-	t.tr = newTranscript(out, w, h, view, t.client, figaroID, startedAt)
+	t.tr = newTranscript(audited, w, h, view, t.client, figaroID, startedAt)
 	if status != nil {
 		t.tr.status = status
 		t.client.OnMetrics = status.update

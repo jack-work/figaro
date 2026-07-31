@@ -391,22 +391,28 @@ func clipToWidthEllipsis(s string, width int) string {
 func clipToWidthRewrite(s string, width int) string {
 	col := 0
 	var b strings.Builder
-	rs := []rune(s)
 	clipped := false
-	for i := 0; i < len(rs); {
-		if rs[i] == '\x1b' { // copy the whole escape sequence, uncounted
-			j := i + 1
-			for j < len(rs) && !((rs[j] >= 'A' && rs[j] <= 'Z') || (rs[j] >= 'a' && rs[j] <= 'z')) {
-				j++
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b { // copy the whole escape sequence, uncounted
+			// render.SkipEscape, not a third hand-rolled scanner. This loop
+			// used to advance to the first ASCII LETTER, so a bare ESC ate the
+			// character after it and that character was written UNCOUNTED —
+			// the row then rendered one cell PAST THE EDGE. Measured in a real
+			// pane: clip to 10 produced 11 visible columns. An OSC ended early
+			// for the same reason ("\x1b]0;title\x07" stopped at the 't' of
+			// "title"), which clips the row short and loses text instead.
+			j := render.SkipEscape(s, i)
+			seq := s[i:j]
+			if !utf8.ValidString(seq) {
+				// Never put invalid UTF-8 on the wire: round-trip through runes
+				// so stray bytes become U+FFFD, as this has always done.
+				seq = string([]rune(seq))
 			}
-			if j < len(rs) {
-				j++
-			}
-			b.WriteString(string(rs[i:j]))
+			b.WriteString(seq)
 			i = j
 			continue
 		}
-		r := rs[i]
+		r, sz := utf8.DecodeRuneInString(s[i:])
 		if r < 0x20 || r == 0x7f { // control char → space (keeps the row one physical line)
 			r = ' '
 		}
@@ -417,8 +423,9 @@ func clipToWidthRewrite(s string, width int) string {
 		}
 		b.WriteRune(r)
 		col += w
-		i++
+		i += sz
 	}
+
 	if clipped {
 		b.WriteString("\x1b[0m")
 	}
