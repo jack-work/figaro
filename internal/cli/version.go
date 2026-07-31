@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"strings"
 )
 
 // commit and commitTime are populated via -ldflags at build time:
@@ -139,4 +140,31 @@ func currentExe() string {
 		return "?"
 	}
 	return exe
+}
+
+// buildIdentityKind names WHICH identity scheme a build string belongs to.
+//
+// Two schemes coexist and are not comparable. A source build (nix, or
+// `go build` in a checkout) reports a git revision; a `go install
+// <module>@vX.Y.Z` reports the module version, because the proxy ships a zip
+// with no VCS metadata at all. Both are real identities and neither can be
+// converted into the other, so "different string" does NOT imply "different
+// source" across schemes — a nix daemon and a proxy-installed CLI built from
+// the SAME release will never compare equal.
+//
+// checkDaemonBuild uses this to refuse only within a scheme, and to warn
+// across one. Comparing like with like is the whole rule.
+func buildIdentityKind(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	if strings.HasPrefix(s, "v") && strings.ContainsRune(s, '.') {
+		return "module"
+	}
+	for _, r := range s {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+			return "other"
+		}
+	}
+	return "revision"
 }

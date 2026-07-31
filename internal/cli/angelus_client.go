@@ -218,10 +218,10 @@ func checkDaemonBuild(cli *angelus.Client) {
 	if err != nil || st == nil {
 		return // transient: not worth blocking on
 	}
-	switch {
-	case st.Build == mine:
-		return // matched, or both unknown
-	case mine == "":
+	switch buildHandshake(st.Build, mine) {
+	case handshakeOK:
+		return
+	case handshakeCLIUnknown:
 		// We cannot prove incompatibility, but silence is the failure mode we
 		// are here to kill: warn loudly rather than let the user stare at an
 		// empty screen.
@@ -230,21 +230,66 @@ func checkDaemonBuild(cli *angelus.Client) {
 				"        the running angelus (%s). If output is missing or garbled,\n"+
 				"        run `figaro stop` and retry; see the tmux-testing skill to\n"+
 				"        build a stamped binary.\n", short12(st.Build))
-		return
-	case st.Build == "":
-		// The daemon predates this check, so it is necessarily older than this
-		// binary.
+	case handshakeDaemonOld:
 		fmt.Fprintf(os.Stderr,
 			"figaro: the running angelus predates the build check, so it is older\n"+
 				"        than this CLI (%s). If output is missing or garbled,\n"+
 				"        run `figaro stop` and retry.\n", short12(mine))
-		return
+	case handshakeMixedSchemes:
+		fmt.Fprintf(os.Stderr,
+			"figaro: this CLI and the running angelus name their builds differently,\n"+
+				"        so they cannot be compared:\n"+
+				"          daemon %s (%s)\n          cli    %s (%s)\n"+
+				"        They may or may not be the same release. If output is missing\n"+
+				"        or garbled, run `figaro stop` — the next command starts an\n"+
+				"        angelus from THIS binary, and the pair matches by construction.\n",
+			short12(st.Build), buildIdentityKind(st.Build), short12(mine), buildIdentityKind(mine))
+	case handshakeRefuse:
+		die("running angelus is a different build than this CLI:\n"+
+			"  daemon %s\n  cli    %s\n"+
+			"the wire changes between builds, so this pair would render nothing.\n"+
+			"run `figaro stop` and retry.", short12(st.Build), short12(mine))
 	}
-	die("running angelus is a different build than this CLI:\n"+
-		"  daemon %s\n  cli    %s\n"+
-		"the wire changes between builds, so this pair would render nothing.\n"+
-		"run `figaro stop` and retry.", short12(st.Build), short12(mine))
 }
+
+// buildHandshake is the whole decision, pure so it can be tested as a matrix
+// rather than through a daemon.
+//
+// The rule is COMPARE LIKE WITH LIKE. A source build reports a git revision; a
+// `go install <module>@vX.Y.Z` reports the module version, because the proxy
+// ships a zip with no VCS metadata. Neither converts into the other, so across
+// schemes a difference proves nothing — a nix daemon beside a proxy CLI of the
+// SAME release can never compare equal.
+//
+// Refusing there would brick a legitimate pair with no path back: the user's
+// only tools are the two binaries now refusing each other. Within a scheme a
+// difference is real and the wire may differ, so it still refuses. `figaro
+// stop` dials the socket directly (system.go) and does not consult this check,
+// which is what keeps the remedy reachable in every branch below.
+func buildHandshake(daemon, mine string) handshakeVerdict {
+	switch {
+	case daemon == mine:
+		return handshakeOK // matched, or both unknown
+	case mine == "":
+		return handshakeCLIUnknown
+	case daemon == "":
+		return handshakeDaemonOld
+	case buildIdentityKind(daemon) != buildIdentityKind(mine):
+		return handshakeMixedSchemes
+	default:
+		return handshakeRefuse
+	}
+}
+
+type handshakeVerdict int
+
+const (
+	handshakeOK handshakeVerdict = iota
+	handshakeCLIUnknown
+	handshakeDaemonOld
+	handshakeMixedSchemes
+	handshakeRefuse
+)
 
 func short12(s string) string {
 	if len(s) > 12 {
