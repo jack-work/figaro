@@ -376,7 +376,16 @@ type CreateResponse struct {
 // shared prefix below it freezes).
 type ForkRequest struct {
 	FigaroID string `json:"figaro_id"`
-	AtMainLT uint64 `json:"at_main_lt,omitempty"`
+	// AtTurn is the turn to REPLACE. Zero forks at the head.
+	//
+	// The wire speaks turns because that is the coordinate a human names
+	// (`fig fork <id>:12`) and the one `fig show` prints. It used to speak
+	// at_main_lt, so every caller had to read the aria's whole message list
+	// just to translate, then send a number no user ever typed. The server
+	// owns the translation now: turn N's fork point is the LT that ENDS
+	// turn N-1, so the branch retains everything through the previous
+	// exchange and the new prompt becomes turn N.
+	AtTurn uint64 `json:"at_turn,omitempty"`
 }
 
 // ForkResponse returns the two fresh child ids. The parent freezes and

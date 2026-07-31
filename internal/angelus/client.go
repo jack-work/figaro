@@ -61,11 +61,11 @@ func (c *Client) Create(ctx context.Context, loadout string, patch *rpc.Chalkboa
 }
 
 // Fork branches a conversation: the node freezes and both children get
-// fresh system-minted ids. atMainLT == 0 forks at the head; a positive
-// value is an interior fork at that IR logical time.
-func (c *Client) Fork(ctx context.Context, figaroID string, atMainLT uint64) (*rpc.ForkResponse, error) {
+// fresh system-minted ids. atTurn == 0 forks at the head; a positive value
+// is an interior fork that REPLACES that turn. The server maps it to an LT.
+func (c *Client) Fork(ctx context.Context, figaroID string, atTurn uint64) (*rpc.ForkResponse, error) {
 	var resp rpc.ForkResponse
-	err := c.call(ctx, rpc.MethodFork, rpc.ForkRequest{FigaroID: figaroID, AtMainLT: atMainLT}, &resp)
+	err := c.call(ctx, rpc.MethodFork, rpc.ForkRequest{FigaroID: figaroID, AtTurn: atTurn}, &resp)
 	return &resp, err
 }
 

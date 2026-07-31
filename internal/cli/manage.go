@@ -635,11 +635,7 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 		}
 
 		if hasTurn {
-			lt, rerr := resolveTurn(ctx, acli, target, turn)
-			if rerr != nil {
-				die("fork: %s", rerr)
-			}
-			atMainLT = lt
+			atMainLT = turn // a turn on the wire; the server maps it to an LT
 		}
 
 		resp, err := waitForFork(ctx, acli, target, atMainLT)

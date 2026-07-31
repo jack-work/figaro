@@ -41,6 +41,19 @@ type liveForkBackend struct {
 	owner      store.OwnerInfo
 	nodes      map[string]store.NodeView
 	chalk      map[string]message.Patch
+	log        store.Log[message.Message]
+}
+
+// Open backs forkPointOf, which maps a turn id to a fork LT. The log holds one
+// completed exchange so turn 1 resolves.
+func (f *liveForkBackend) Open(string) (store.Log[message.Message], error) {
+	if f.log == nil {
+		l := store.NewMemLog[message.Message]()
+		l.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleInput, TurnID: 1}})
+		l.Append(store.Entry[message.Message]{Payload: message.Message{Role: message.RoleOutput, TurnID: 1}})
+		f.log = l
+	}
+	return f.log, nil
 }
 
 func (f *liveForkBackend) ApplyChalkboard(ariaID string, patch message.Patch) error {
@@ -121,7 +134,7 @@ func TestInteriorForkAtRootDoesNotCopyConversationState(t *testing.T) {
 		owner: store.OwnerInfo{IsRoot: true},
 	}
 	h := &handlers{angelus: &Angelus{Registry: NewRegistry(), Backend: backend}}
-	params, err := json.Marshal(rpc.ForkRequest{FigaroID: "parent", AtMainLT: 1})
+	params, err := json.Marshal(rpc.ForkRequest{FigaroID: "parent", AtTurn: 1})
 	require.NoError(t, err)
 
 	_, err = h.fork(t.Context(), params)
@@ -158,7 +171,7 @@ func TestForkDoesNotGoThroughAnyActor(t *testing.T) {
 		owner:      store.OwnerInfo{Trunk: owner.id},
 	}
 	h := &handlers{angelus: &Angelus{Registry: registry, Backend: backend}}
-	params, err := json.Marshal(rpc.ForkRequest{FigaroID: target.id, AtMainLT: 1})
+	params, err := json.Marshal(rpc.ForkRequest{FigaroID: target.id, AtTurn: 1})
 	require.NoError(t, err)
 
 	_, err = h.fork(t.Context(), params)
@@ -503,4 +516,78 @@ func TestRegistryListDoesNotHoldRegistryLockDuringInfo(t *testing.T) {
 	}
 	close(f.release)
 	<-listed
+}
+
+// selfForkTool forks the aria it is running inside, from inside the tool call,
+// and waits for the answer. That is what `figaro fork --id <me>` does: the tool
+// blocks on an RPC that targets its own aria.
+type selfForkTool struct {
+	h      *handlers
+	ariaID string
+	result chan forkResult
+}
+
+func (*selfForkTool) Name() string        { return "blocking" }
+func (*selfForkTool) Description() string { return "forks its own aria" }
+func (*selfForkTool) Parameters() any     { return map[string]any{"type": "object"} }
+func (s *selfForkTool) Execute(ctx context.Context, _ map[string]any, _ tool.OnOutput) ([]message.Content, error) {
+	params, _ := json.Marshal(rpc.ForkRequest{FigaroID: s.ariaID})
+	value, err := s.h.fork(ctx, params)
+	s.result <- forkResult{value: value, err: err}
+	return []message.Content{message.TextContent("forked")}, nil
+}
+
+// A FIGARO MUST BE ABLE TO FORK ITSELF.
+//
+// This is the deadlock the whole trunk-index effort exists to remove, reduced
+// to its smallest shape. The fork used to be handed to the target's inbox and
+// waited on; a self-fork therefore queued behind the very turn whose tool call
+// was waiting for it. The tool could not return until the fork ran, and the
+// fork could not run until the tool returned.
+//
+// figwal already excludes a fork from concurrent appends via lockLineage, so
+// the inbox hop was a second lock over the first, and it was the second one
+// that closed the circle. This test hangs on the old code and passes on the
+// new; the timeout IS the assertion.
+func TestFigaroCanForkItselfFromInsideItsOwnTurn(t *testing.T) {
+	backend, err := store.NewXwalBackend(t.TempDir(), 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, backend.Close()) })
+	loadout, err := backend.CreateLoadout("selffork", message.Patch{Set: map[string]json.RawMessage{
+		"system.provider": json.RawMessage(`"active-tool"`),
+		"system.model":    json.RawMessage(`"test"`),
+	}})
+	require.NoError(t, err)
+	id, err := backend.CreateConversation(loadout)
+	require.NoError(t, err)
+	snapshot, err := backend.ChalkboardState(id)
+	require.NoError(t, err)
+	cb, _ := chalkboard.Open("")
+	cb.Apply(snapshot.AsPatch())
+
+	registry := NewRegistry()
+	h := &handlers{angelus: &Angelus{Registry: registry, Backend: backend}}
+	forkTool := &selfForkTool{h: h, ariaID: id, result: make(chan forkResult, 1)}
+	tools := tool.NewRegistry()
+	tools.MustRegister(forkTool)
+
+	agent := figaro.NewAgent(figaro.Config{
+		ID: id, Provider: &activeToolProvider{}, Tools: tools,
+		Backend: backend, Chalkboard: cb,
+	})
+	t.Cleanup(agent.Kill)
+	require.NoError(t, registry.Register(agent))
+
+	agent.SubmitPrompt(rpc.QuaRequest{Text: "fork yourself"})
+
+	select {
+	case result := <-forkTool.result:
+		require.NoError(t, result.err, "self-fork returned an error")
+		resp := result.value.(rpc.ForkResponse)
+		require.Equal(t, id, resp.Parent)
+		require.NotEmpty(t, resp.Alternative, "no alternative minted")
+		require.NotEqual(t, resp.Alternative, resp.Continuation)
+	case <-time.After(15 * time.Second):
+		t.Fatal("DEADLOCK: a figaro could not fork itself from inside its own turn")
+	}
 }
