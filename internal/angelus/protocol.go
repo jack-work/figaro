@@ -455,49 +455,25 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		return nil
 	}
 
-	var err error
-	coordinatorID := req.FigaroID
-	if forkOwner.Trunk != "" && h.angelus.Registry.Get(forkOwner.Trunk) != nil {
-		coordinatorID = forkOwner.Trunk
-	}
-	// THE TRUNK IMPLEMENTATION SHOULD NOT BLOCK THE MAIN THREAD.
+	// Run the fork here, not on the target's actor.
 	//
-	// CoordinateFork pushes an event onto the agent's inbox and waits for the
-	// drain loop to run it. The drain loop handles ONE event at a time, so a
-	// fork issued by an aria against itself from inside its own running turn
-	// queues behind that turn — and the turn cannot finish while the tool call
-	// that issued the fork waits on it. Neither side can move.
+	// It used to be handed to the agent's inbox and waited on, so that a fork
+	// could not re-home the log while the agent was appending to it. figwal
+	// already guarantees that: Trunks.Append and the flat creators both take
+	// lockLineage(trunk), so they are mutually excluded whoever calls them.
+	// The inbox hop was a second lock over the first.
 	//
-	// The fix is not to police the call. Trunk information belongs in a
-	// SEPARATE XWAL MAPPING, stored the way the chalkboard is: its own
-	// reducible channel (watermark + patches) mirroring the same node tree,
-	// rather than riding the actor's single-threaded event loop. xwal already
-	// supports what that needs — a related channel's entries are tagged with
-	// the main LT they belong to, and Append's contract explicitly allows a
-	// channel to run AHEAD of the main tail ("it may exceed the current main
-	// tail, to support catch-up"), which is exactly the property that lets
-	// trunk writes land without waiting on the timeline. repair.go already
-	// treats a reducible watermark ahead of main as a normal condition. The
-	// shape to mirror is the chalkboard's three methods in
-	// internal/store/xwal_backend.go: ApplyChalkboard (append a patch),
-	// ChalkboardState (fold to a snapshot), ChalkboardPatches (group by LT).
-	// One gotcha to carry over: the channel's foreign-key index maps mainLT to
-	// the LAST entry at that LT, so a mapping with several entries per LT must
-	// range-scan rather than Lookup.
+	// And it was the second lock that deadlocked. A figaro forking ITSELF does
+	// so from a tool call, which runs on its own drain loop; the fork then
+	// queued behind a turn that could not finish until the tool call returned,
+	// and the tool call could not return until the fork ran. An aria could not
+	// fork itself, which is the one caller that most wants to.
 	//
-	// That removes the deadlock at the root. The authz rule that refuses a
-	// self-fork mid-turn (authz.NoSelfForkDuringTurn) is a GUARDRAIL, NOT THE
-	// CURE — it converts a hang into an actionable error and nothing more.
-	// Deferred deliberately: another aria takes this.
-	if live := h.angelus.Registry.Get(coordinatorID); live != nil {
-		if coordinator, ok := live.(interface{ CoordinateFork(func() error) error }); ok {
-			err = coordinator.CoordinateFork(runFork)
-		} else {
-			err = runFork()
-		}
-	} else {
-		err = runFork()
-	}
+	// This is the cure the deferred note here asked for, arrived at from the
+	// other end: rather than move trunk state off the actor, stop routing the
+	// fork through the actor at all. authz.NoSelfForkDuringTurn stays as a
+	// guardrail, but it no longer guards a hang.
+	err := runFork()
 	if err != nil {
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}

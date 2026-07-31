@@ -28,7 +28,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -37,7 +36,6 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figaro/internal/trunkindex"
 	"github.com/jack-work/figwal/segment"
 	"github.com/jack-work/figwal/xwal"
 )
@@ -144,11 +142,7 @@ func chalkboardReduce(state, patch []byte) ([]byte, error) {
 //
 // Affects new segments only — existing arias keep their oversized files and
 // simply stop growing them.
-func storeOptions(segmentSize int) xwal.StoreOptions { return storeOptionsIdx(segmentSize, nil) }
-
-// storeOptionsIdx is storeOptions plus a maintained topology index. A nil idx
-// keeps figwal's default, which re-walks the marker tree on every mutation.
-func storeOptionsIdx(segmentSize int, idx xwal.TopologyIndex) xwal.StoreOptions {
+func storeOptions(segmentSize int) xwal.StoreOptions {
 	if segmentSize <= 0 {
 		var noConfig *config.Loaded // the accessor is nil-safe on purpose
 		segmentSize = noConfig.SegmentSize()
@@ -163,7 +157,6 @@ func storeOptionsIdx(segmentSize int, idx xwal.TopologyIndex) xwal.StoreOptions 
 		SegmentSize: int64(segmentSize),
 		Genesis:     genesis,
 		MintTrunkID: hexTrunkID,
-		Index:       idx,
 		Reducers: map[string]xwal.Reducer{
 			chanChalkboard: {Reduce: chalkboardReduce, Initial: []byte("{}")},
 		},
@@ -182,7 +175,6 @@ type XwalStore struct {
 	root     string
 	mu       sync.Mutex
 	trunks   *xwal.Store
-	idx      *trunkindex.Index
 	topology atomic.Pointer[topologySnapshot]
 	now      func() int64
 }
@@ -204,13 +196,7 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
-	// The topology index lives beside the tree, not inside it: it is a cache
-	// of the .trunk markers, and losing it costs one rebuild, not data.
-	idx, ierr := trunkindex.New(filepath.Join(root, "topology.json"), hexTrunkID)
-	if ierr != nil {
-		return nil, ierr
-	}
-	st, err := xwal.OpenStore(root, storeOptionsIdx(segmentSize, idx))
+	st, err := xwal.OpenStore(root, storeOptions(segmentSize))
 	if err != nil {
 		return nil, err
 	}
@@ -219,24 +205,13 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 		return nil, err
 	}
 	return &XwalStore{
-		root: root, trunks: st, idx: idx,
+		root: root, trunks: st,
 		now: func() int64 { return time.Now().UnixMilli() },
 	}, nil
 }
 
-// Close releases the tree and flushes the topology index. The index writes in
-// the background so callers never wait on the disk, which means shutdown is the
-// one place that has to wait: without this the last few mutations are only in
-// memory and the next open rebuilds them from the markers.
-func (s *XwalStore) Close() error {
-	err := s.trunks.Close()
-	if s.idx != nil {
-		if ferr := s.idx.Close(); ferr != nil && err == nil {
-			err = ferr
-		}
-	}
-	return err
-}
+// Close releases the tree.
+func (s *XwalStore) Close() error { return s.trunks.Close() }
 
 // OpenNode opens the xwal for an aria id (the trunk's live head). Caller
 // closes it.
