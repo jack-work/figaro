@@ -321,8 +321,8 @@ Keys:
 	r.Register(&cmdkit.Command{
 		Name:  "hup",
 		Group: "Prompt",
-		Short: "Hang up: stop the turn, KEEP queued messages (`cut` discards them)",
-		Usage: "hup [<id>] [-j|--json]",
+		Short: "Hang up: stop the turn, KEEP queued messages (-d discards them)",
+		Usage: "hup [<id>] [-d|--drop-queued-messages] [-j|--json]",
 		Long: `Hang up on the turn in flight — the same RPC Ctrl-C fires inside a
 send stream. Anything queued behind it is KEPT.
 
@@ -332,14 +332,20 @@ three turns to sit through. A queued chalkboard set or fork is a barrier
 and is never crossed.
 
   figaro hup          stop the turn, keep the queue
-  figaro hup -j       the same, printing one JSON object: which aria, and
-                      the queue that survived
+  figaro hup -d       stop the turn and DROP the queue
+  figaro hup -j       either of the above as one JSON object
 
-To throw the queue away instead, use ` + "`figaro cut`" + ` — which hands it
-back so you can save it. With no id, the pid-bound aria is used.`,
+Both forms RETURN the queued messages — listed on stdout, or as JSON
+with -j — so dropping them is not the same as losing them:
+
+  figaro hup -dj > lost.json
+
+` + "`figaro cut`" + ` is the shorthand for ` + "`figaro hup -d`" + `. With no id, the
+pid-bound aria is used.`,
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
+			{Long: "drop-queued-messages", Short: "d", IsBool: true, Description: "Discard the queued messages (they are still returned)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Print one JSON object (aria, cleared, queue) and exit"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
@@ -348,7 +354,11 @@ back so you can save it. With no id, the pid-bound aria is used.`,
 			if len(ctx.Args) > 0 {
 				id = ctx.Args[0]
 			}
-			runHangup(ld, id, rpc.QueueKeep, ctx.BoolFlag("json"))
+			disposition := rpc.QueueKeep
+			if ctx.BoolFlag("drop-queued-messages") {
+				disposition = rpc.QueueClear
+			}
+			runHangup(ld, id, disposition, ctx.BoolFlag("json"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
@@ -357,7 +367,7 @@ back so you can save it. With no id, the pid-bound aria is used.`,
 	r.Register(&cmdkit.Command{
 		Name:  "cut",
 		Group: "Prompt",
-		Short: "Hang up and DISCARD queued messages; -j returns them (`hup` keeps them)",
+		Short: "Shorthand for `hup -d`: stop the turn, DISCARD queued messages (returned)",
 		Usage: "cut [<id>] [-j|--json]",
 		Long: `Cut the line: stop the turn in flight AND drop everything queued
 behind it.

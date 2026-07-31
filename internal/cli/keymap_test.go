@@ -298,6 +298,7 @@ func TestHelpBody_MatchesTheOldHandWrittenPanel(t *testing.T) {
 		"  q                   exit; keeps the turn running",
 		"  ^C                  exit by interrupt; stops the turn",
 		"  H                   hang up: stop the turn, keep listening",
+		"  X                   hang up and drop queued messages (printed on exit)",
 		"  j/k · u/d · gg/G    scroll · half-page · top/bottom",
 		"  ↑/↓ · PgUp/PgDn     the same, on the arrow cluster",
 		"  Home / End          top / bottom",

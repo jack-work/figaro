@@ -88,14 +88,14 @@ func runHangup(loaded *config.Loaded, ariaID string, disposition rpc.QueueDispos
 		fmt.Println("  queue: nothing was waiting")
 	case resp.Cleared:
 		fmt.Printf("  queue: %s discarded (re-run with -j to keep %s)\n",
-			plural(len(queue), "message"), theyThem(len(queue)))
+			queueCount(queue), theyThem(len(queue)))
 		for _, p := range queue {
 			fmt.Printf("    %d  %s\n", p.ID, queueRowText(p.Text))
 		}
 	case len(queue) == 0:
 		fmt.Println("  queue: nothing was waiting")
 	default:
-		fmt.Printf("  queue: %s kept, to be answered next\n", plural(len(queue), "message"))
+		fmt.Printf("  queue: %s kept, to be answered next\n", queueCount(queue))
 		for _, p := range queue {
 			fmt.Printf("    %d  %s\n", p.ID, queueRowText(p.Text))
 		}
@@ -107,6 +107,21 @@ func verbFor(disposition rpc.QueueDisposition) string {
 		return "cut"
 	}
 	return "hup"
+}
+
+// queueCount counts messages, and says when one of them is several folded
+// together. "1 message kept" after queueing three is true and baffling; the
+// fold is the reason, so the fold is named.
+func queueCount(queue []rpc.QueuedPrompt) string {
+	folded := 0
+	for _, p := range queue {
+		folded += len(p.Merged)
+	}
+	out := plural(len(queue), "message")
+	if folded > 0 {
+		out += fmt.Sprintf(" (folded from %d)", len(queue)+folded)
+	}
+	return out
 }
 
 func plural(n int, noun string) string {

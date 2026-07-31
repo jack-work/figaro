@@ -267,6 +267,16 @@ var keymap = []keyBinding{
 		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
 		help: helpHangUp, input: inputHangUp,
 	},
+	{
+		// The same gesture, dropping the queue. Deliberately NOT next to 'H'
+		// on the keyboard and deliberately not a modifier on it: this is the
+		// destructive one, and the two must not be neighbours. What it drops is
+		// printed into the pager's notice and reprinted to the shell on the way
+		// out, so a slip costs you the queue's PLACE, not its text.
+		chord: byteChord('X'), modes: inTranscript | inPanel,
+		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
+		help: helpHangUpDrop, input: inputHangUpDrop,
+	},
 
 	// -- pager level: selection --------------------------------------------
 	{chord: byteChord(0x0e), modes: inTranscript, open: opensPager, help: helpSelect, pager: pagerSelectNext},
@@ -375,6 +385,7 @@ const (
 	helpExpand
 	helpInterrupt
 	helpHangUp
+	helpHangUpDrop
 	helpEscape
 	helpListen
 	helpDetach
@@ -398,6 +409,7 @@ var helpRows = []helpRow{
 	{helpDetach, "q", "exit; keeps the turn running"},
 	{helpInterrupt, "^C", "exit by interrupt; stops the turn"},
 	{helpHangUp, "H", "hang up: stop the turn, keep listening"},
+	{helpHangUpDrop, "X", "hang up and drop queued messages (printed on exit)"},
 	{helpScroll, "j/k · u/d · gg/G", "scroll · half-page · top/bottom"},
 	{helpArrows, "↑/↓ · PgUp/PgDn", "the same, on the arrow cluster"},
 	{helpHomeEnd, "Home / End", "top / bottom"},

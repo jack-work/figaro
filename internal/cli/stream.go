@@ -1205,6 +1205,18 @@ func inputInterrupt(in *interactiveInput, ev keyEvent) keyVerdict {
 // the pager, and the reader gets an immediate notice either way. The turn's
 // own end arrives as turn.done, which paints the status token as usual.
 func inputHangUp(in *interactiveInput, _ keyEvent) keyVerdict {
+	return in.hangUp(rpc.QueueKeep)
+}
+
+// inputHangUpDrop is 'X': the same, and the queue goes with it. What was
+// dropped is reported rather than swallowed — into the status notice, and
+// through the pending report, which leaveTranscript reprints to the shell. So
+// the text survives even though its place in the queue does not.
+func inputHangUpDrop(in *interactiveInput, _ keyEvent) keyVerdict {
+	return in.hangUp(rpc.QueueClear)
+}
+
+func (in *interactiveInput) hangUp(disposition rpc.QueueDisposition) keyVerdict {
 	if in.hangup == nil {
 		in.mu.Lock()
 		in.lt.report("hang up: not connected")
@@ -1212,22 +1224,42 @@ func inputHangUp(in *interactiveInput, _ keyEvent) keyVerdict {
 		return keyHandled
 	}
 	in.mu.Lock()
-	in.lt.report("hanging up — staying attached")
+	if disposition == rpc.QueueClear {
+		in.lt.report("hanging up — dropping the queue")
+	} else {
+		in.lt.report("hanging up — staying attached")
+	}
 	in.mu.Unlock()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		resp, err := in.hangup.Hangup(ctx, rpc.QueueKeep)
+		resp, err := in.hangup.Hangup(ctx, disposition)
 		in.mu.Lock()
 		defer in.mu.Unlock()
 		switch {
 		case err != nil:
 			in.lt.report("hang up failed: " + err.Error())
+		case resp.Cleared && len(resp.Queue) > 0:
+			// ONE report, with the list inside it. report() folds newlines for
+			// the status row (which is one physical line) and keeps the raw
+			// text for the pending report, which leaveTranscript reprints to
+			// the shell — so the summary is readable live and the full list
+			// lands in scrollback. N separate reports would instead leave the
+			// status row showing only the LAST message, which is how this read
+			// in the pty: a lone "doomed two" with no header.
+			var b strings.Builder
+			fmt.Fprintf(&b, "hung up — listening; dropped %s:", queueCount(resp.Queue))
+			for _, p := range resp.Queue {
+				b.WriteString("\n  " + queueRowText(p.Text))
+			}
+			in.lt.report(b.String())
+		case resp.Cleared:
+			in.lt.report("hung up — listening (nothing was queued)")
 		case len(resp.Queue) > 0:
 			// Say what survived, because the whole point of keeping it is that
 			// it is about to be asked.
 			in.lt.report(fmt.Sprintf("hung up — listening (%s queued, answered next)",
-				plural(len(resp.Queue), "message")))
+				queueCount(resp.Queue)))
 		default:
 			in.lt.report("hung up — listening")
 		}
