@@ -28,6 +28,18 @@ import (
 // mouse modes, OSC) from tool output or model-emitted text can never
 // reach the host terminal.
 func Prose(md string, width int) []string {
+	// Sanitize on the way IN. glamour drops the ESC byte of an escape it does
+	// not understand and keeps the parameter bytes as visible text — while
+	// having wrapped as though the whole sequence were zero-width — so
+	// `\x1b[31mred` came back as a row four cells wider than asked for, at every
+	// width, with "[31m" printed. Models paste ANSI out of tool output
+	// constantly, so this is a live path, and a bare ESC could also shift a
+	// gutter's column by riding along in the row prefix.
+	//
+	// Fixing it here rather than clipping the result keeps the defect out of
+	// the pipeline entirely: nothing downstream has to know that a row's byte
+	// count and its cell count disagree.
+	md = SanitizeForTerminal(md)
 	if strings.Count(md, "```")%2 == 1 {
 		md += "\n```"
 	}

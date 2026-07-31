@@ -107,14 +107,36 @@ func TestProseIsNotQuoted(t *testing.T) {
 	}
 }
 
-// TestQuotedRowsFitTheViewport: reserving the rule's width before rendering is
-// the whole point, so no quoted row may exceed the width it was rendered for.
-func TestQuotedRowsFitTheViewport(t *testing.T) {
-	md := "a reasonably long sentence that will certainly need to wrap at the narrow widths"
-	for w := 20; w <= 200; w++ {
-		for _, r := range nodeProseRows(livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}, w, false) {
-			if got := displayWidth(r); got > w {
-				t.Fatalf("w=%d: row is %d cells: %q", w, got, stripSGRForTest(r))
+// TestTheGutterCostsExactlyItsColumns is the honest form of "rows fit".
+//
+// A blunt `row <= width` is NOT true at this level and asserting it would be a
+// lie with a green tick: glamour itself overruns the width it is given on a
+// nested list, a fence, an indented block and an unclosed fence (by up to seven
+// cells), so a quoted row inherits that. What this function is responsible for
+// is the DELTA — the gutter costs its four columns, minus the two-column margin
+// it stands in, and nothing more. Every painter owns the edge beyond that.
+func TestTheGutterCostsExactlyItsColumns(t *testing.T) {
+	shapes := []string{
+		"a reasonably long sentence that will certainly need to wrap at narrow widths",
+		"- nested\n  - list\n    - deeper item that runs on for a while here",
+		"```\nunclosed fence with a long line of content inside it\n",
+		"> a model-written blockquote that is long enough to wrap somewhere",
+		"これは日本語のテキストで、折り返しの計算を確かめるためのものです。",
+	}
+	for _, md := range shapes {
+		for w := 20; w <= 200; w++ {
+			n := livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}
+			quoted := nodeProseRows(n, w, false)
+			plain := render.Prose(nodeMarkdown(n), proseWidth(n, w))
+			if len(quoted) != len(plain) {
+				t.Fatalf("w=%d: %d quoted rows vs %d rendered", w, len(quoted), len(plain))
+			}
+			for i := range quoted {
+				want := displayWidth(plain[i]) + quoteGutterCells - len(proseIndent)
+				if got := displayWidth(quoted[i]); got != want {
+					t.Fatalf("w=%d row %d: %d cells, want %d (gutter must cost exactly %d-%d): %q",
+						w, i, got, want, quoteGutterCells, len(proseIndent), stripSGRForTest(quoted[i]))
+				}
 			}
 		}
 	}

@@ -498,6 +498,13 @@ func nodeProseRows(n livedoc.Node, width int, expanded bool) []string {
 	// and then ate the right-hand end of any row without slack — "… +261 more
 	// table lines" came back as "… +261 more tabl".
 	//
+	// CONTRACT: a row may exceed `width` only where glamour's OWN output at the
+	// reserved width already does — a nested list, a fence, an unclosed fence
+	// (by up to 7 cells). This function adds the gutter and nothing else, and
+	// does not clip: every painter already owns its edge (renderNodeList at
+	// width, plainNodeRow at t.w-1, the incipit at w), and a clip here was one
+	// column STRICTER than the frame, deleting a character that was on screen.
+	//
 	// So the width is reserved BEFORE rendering and the rule is prefixed after.
 	// Nothing to detect, nothing to restore, nothing to clip: the defect is
 	// unrepresentable rather than tested for. Tool output has always drawn its
@@ -505,9 +512,29 @@ func nodeProseRows(n livedoc.Node, width int, expanded bool) []string {
 	dim := term.Dim(quoteGutter) // one styled rule, not one per row
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, dim+r)
+		// The rule STANDS IN glamour's own paragraph margin rather than sitting
+		// on top of it. Prefixing without dedenting put thinking text at column
+		// 6 while the prose around it starts at 2 — two columns of content lost
+		// at every width, for nothing. Dedenting puts it at 4, which is where
+		// the old blockquote had it.
+		out = append(out, dim+dedentProse(r))
 	}
 	return out
+}
+
+// dedentProse removes one proseIndent from a rendered row, looking past the
+// SGR runs glamour emits before the first visible column. The inset is uniform,
+// so nested content keeps its relative depth.
+func dedentProse(row string) string {
+	i := 0
+	for i < len(row) && row[i] == 0x1b {
+		j, _ := escapeEnd(row, i)
+		i = j
+	}
+	if strings.HasPrefix(row[i:], proseIndent) {
+		return row[:i] + row[i+len(proseIndent):]
+	}
+	return row
 }
 
 // clampTables limits each rendered markdown table to cap physical rows,
@@ -541,14 +568,11 @@ func clampTables(rows []string, cap, width int) []string {
 		out = append(out, rows[at:s[0]]...)
 		if h := s[1] - s[0]; h > cap {
 			out = append(out, rows[s[0]:s[0]+cap]...)
-			// The note is content like any other row: it must fit the width the
-			// rows were rendered at. It never had to before, because that width
-			// was always the full one; now a quoted node reserves four columns for
-			// its rule, and an unclipped note ran past the edge (caught by
-			// TestClampTables_HoldsPainterInvariant at w=26, not by me).
+			// The note is a SENTENCE, so it ellipsises rather than being cut mid
+			// word: hard-clipping gave "… +261 more tabl" at narrow widths.
 			note := fmt.Sprintf("  … +%d more table lines", h-cap)
 			if width > 0 {
-				note = clipToWidth(note, width)
+				note = clipToWidthEllipsis(note, width)
 			}
 			out = append(out, term.Dim(note))
 		} else {
@@ -625,10 +649,14 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 		if bashCap >= 0 && total > bashCap {
 			rows = append(rows, term.Dim(fmt.Sprintf("  │ … last %d of %d lines", bashCap, total)))
 		}
-		const gutter = "  │ "
-		dimGutter := term.Dim(gutter) // hoisted: one styled gutter, not one per line
+		dimGutter := term.Dim(quoteGutter) // hoisted: one styled gutter, not one per line
 		for _, l := range lines {
-			rows = append(rows, dimGutter+truncCols(l, width-len(gutter)))
+			// CELLS, not bytes: this said width-len(gutter), and len("  │ ") is
+			// SIX for a FOUR-column gutter (the rule is a three-byte rune), so
+			// every tool-output row was trimmed two columns narrower than it had
+			// room for. Same gutter, same constant, one place — thinking and tool
+			// output cannot drift apart again.
+			rows = append(rows, dimGutter+truncCols(l, width-quoteGutterCells))
 		}
 	}
 	return rows
