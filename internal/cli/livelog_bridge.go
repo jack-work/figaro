@@ -686,14 +686,6 @@ func (t *livelogTurn) transcriptDispatch(ev keyEvent) { t.tr.dispatch(ev) }
 
 func (t *livelogTurn) invalidateTranscriptRows() { t.tr.invalidateRows() }
 
-// screenMoved forwards the "something wrote outside the frame buffer" barrier
-// to the pager. Safe to call whether or not the pager is up: when it is down
-// there is no painter model to void, and the incipit renderer's live region is
-// bounded by frozen scrollback rather than by a screen model.
-//
-// Callers hold the render mutex (every renderer entry point does).
-func (t *livelogTurn) screenMoved() { t.tr.screenMoved() }
-
 // report is where trouble goes: an error reason, a provider hint, an interrupt
 // notice. ONE call site decides how it reaches the user, because the answer
 // depends on which renderer owns the terminal:
@@ -851,11 +843,6 @@ func lastTurnStart(v aria.View) int {
 // transcriptScroll moves the pager viewport by delta lines (native wheel).
 func (t *livelogTurn) transcriptScroll(delta int) { t.tr.scrollBy(delta) }
 
-// transcriptSearching reports whether the pager is in its search prompt. The
-// input loop no longer asks — the search box is a keymap mode now (modeSearch,
-// see transcriptMode) — but it remains the plain question to ask about state.
-func (t *livelogTurn) transcriptSearching() bool { return t.tr.active && t.tr.inSearch }
-
 // transcriptMode is the keymap's view of the pager: which input mode a
 // keystroke lands in.
 func (t *livelogTurn) transcriptMode() keyMode { return t.tr.mode() }
@@ -952,11 +939,6 @@ func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bo
 	verbose := v.settings != nil && v.settings.verbose
 	return renderNode(n, width, bashCap, uint64(tick), verbose, fullOutput)
 }
-
-// turnFinished reports whether the turn being watched has ended. The drain
-// asks so it knows whether a draft is a steer (aimed at a running turn) or an
-// ordinary prompt (which will open its own).
-func (t *livelogTurn) turnFinished() bool { return t.finished }
 
 // openRule prints the session's opening rule through the inline renderer, which
 // then knows the first message sits directly under it and needs no top margin

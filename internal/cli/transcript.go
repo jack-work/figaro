@@ -832,16 +832,6 @@ func keyOf(m aria.Message) sliceKey {
 // turn is the turn id a unit belongs to.
 func (k sliceKey) turn() int { return int(k >> sliceKeyFromBits) }
 
-// turnVoice is the voice a unit renders under. Every node is agent output, so
-// a unit with nodes is the agent's; one without is an inquiry whose turn
-// produced nothing.
-func turnVoice(nodes []livedoc.Node) string {
-	if len(nodes) == 0 {
-		return livedoc.RoleInput
-	}
-	return livedoc.RoleOutput
-}
-
 // resetToTail re-points the window at the STORE's tail. It does not copy: the
 // window is the interval [from, ∞) and the store is its only holder, so
 // "rebuilding" it is recomputing one anchor — the floor, tailKeep messages

@@ -3,7 +3,6 @@
 package term
 
 import (
-	"fmt"
 	"os"
 	"sync"
 
@@ -199,28 +198,3 @@ func TruncateVisible(s string, maxCols int) string {
 	}
 	return string(out) // no truncation needed
 }
-
-// WrapCount returns how many rows visLen occupies at termWidth.
-func WrapCount(visLen, termWidth int) int {
-	if termWidth <= 0 || visLen <= 0 {
-		return 1
-	}
-	lines := (visLen + termWidth - 1) / termWidth
-	if lines < 1 {
-		lines = 1
-	}
-	return lines
-}
-
-// CursorUp returns the ANSI cursor-up sequence.
-func CursorUp(n int) string {
-	return fmt.Sprintf("\033[%dA", n)
-}
-
-// CursorDown returns the ANSI sequence to move the cursor down n lines.
-func CursorDown(n int) string {
-	return fmt.Sprintf("\033[%dB", n)
-}
-
-// EraseLine returns the ANSI sequence to erase the current line.
-const EraseLine = "\r\033[2K"

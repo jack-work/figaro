@@ -32,20 +32,6 @@ func TestDimForceColor(t *testing.T) {
 	}
 }
 
-func TestCursorUp(t *testing.T) {
-	got := CursorUp(3)
-	if got != "\033[3A" {
-		t.Errorf("CursorUp(3) = %q, want %q", got, "\033[3A")
-	}
-}
-
-func TestCursorDown(t *testing.T) {
-	got := CursorDown(5)
-	if got != "\033[5B" {
-		t.Errorf("CursorDown(5) = %q, want %q", got, "\033[5B")
-	}
-}
-
 func TestWidth(t *testing.T) {
 	// In CI/test environment, stdout is probably not a TTY.
 	w := Width()
@@ -81,23 +67,5 @@ func TestTruncateVisible(t *testing.T) {
 	}
 	if !strings.Contains(got, "…") {
 		t.Errorf("expected ellipsis in %q", got)
-	}
-}
-
-func TestWrapCount(t *testing.T) {
-	cases := []struct {
-		visLen, w, want int
-	}{
-		{80, 80, 1},
-		{81, 80, 2},
-		{160, 80, 2},
-		{161, 80, 3},
-		{0, 80, 1},
-	}
-	for _, tc := range cases {
-		got := WrapCount(tc.visLen, tc.w)
-		if got != tc.want {
-			t.Errorf("WrapCount(%d, %d) = %d, want %d", tc.visLen, tc.w, got, tc.want)
-		}
 	}
 }
