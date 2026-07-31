@@ -12,6 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // Run dispatches a CLI invocation. progName is the basename of argv[0]
@@ -26,6 +27,26 @@ func Run(progName string, args []string) {
 	if os.Getenv("_FIGARO_DAEMON") == "1" || (len(args) > 0 && args[0] == "--angelus") {
 		runAngelus()
 		return
+	}
+
+	// Arm the console we WRITE to, before the first escape leaves the process.
+	//
+	// On Windows nothing ever enabled ENABLE_VIRTUAL_TERMINAL_PROCESSING on
+	// stdout, so figaro's escapes were honoured only where something else had
+	// already turned it on: measured at stdout mode 0x0003 under a bare conhost
+	// (inert) against 0x0007 under Windows Terminal. Where it is off,
+	// \x1b[?1049h does nothing and the pager's frames land in the PRIMARY
+	// buffer as ordinary text — the transcript dumped into the user's
+	// scrollback. It rides here rather than inside MakeRaw because MakeRaw is
+	// about the console we READ and only runs on an interactive path, while
+	// the first escapes (autowrapOff+cursorHide) are written before any raw
+	// session exists and `figaro show` renders ANSI without one at all.
+	//
+	// Off Windows this is a no-op. A redirected stdout degrades to a no-op
+	// too — `figaro list -j | jq` is the ordinary case, not an error.
+	if restoreConsole := term.ArmOutput(); restoreConsole != nil {
+		defer restoreConsole()
+		atExit(restoreConsole)
 	}
 
 	// --version / -V pre-empt the router so they need no config or session.

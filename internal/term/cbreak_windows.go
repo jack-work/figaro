@@ -40,17 +40,26 @@ func MakeRaw(fd int) (func(), error) {
 	if err := windows.SetConsoleMode(h, rawInputMode(old)); err != nil {
 		return nil, err
 	}
-	restoreOut := armOutput()
-	return func() {
-		restoreOut()
-		_ = windows.SetConsoleMode(h, old)
-	}, nil
+	return func() { _ = windows.SetConsoleMode(h, old) }, nil
 }
 
-// armOutput turns on VT output processing and deferred right-edge wrap for
-// stdout, returning the restore. A non-console stdout (piped, redirected) is
-// not an error: there is simply nothing to arm.
-func armOutput() func() {
+// ArmOutput turns on VT output processing and deferred right-edge wrap for
+// stdout, returning the restore.
+//
+// It is SEPARATE from MakeRaw, and called EARLIER, because the two answer
+// different questions: MakeRaw is about the console we READ (and only runs on
+// an interactive TTY path), while this is about the console we WRITE. figaro
+// writes its first escapes — autowrapOff+cursorHide — before any raw-mode
+// session exists, and paths that never take raw mode at all (`figaro show`
+// rendering markdown, a non-interactive listen) still emit ANSI. Arming inside
+// MakeRaw left every one of those unarmed, which on a bare conhost means the
+// escapes print as literal text.
+//
+// A non-console stdout (piped, redirected, a service with no console) is NOT
+// an error: there is simply nothing to arm, and a failed SetConsoleMode is a
+// normal condition. Both degrade to a no-op restore rather than a failure,
+// because a redirected stdout is the ordinary case for `figaro list -j | jq`.
+func ArmOutput() func() {
 	h := windows.Handle(os.Stdout.Fd())
 	var old uint32
 	if err := windows.GetConsoleMode(h, &old); err != nil {
