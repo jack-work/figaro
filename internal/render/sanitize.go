@@ -166,3 +166,63 @@ func isCursorOrEraseFinal(b byte) bool {
 	}
 	return false
 }
+
+// StripEscapes removes every ESC-introduced sequence, and any stray ESC, from
+// text that is about to be RENDERED AS MARKDOWN.
+//
+// It is the input-side counterpart to SanitizeForTerminal, and it exists
+// because that function is the wrong tool here: SanitizeForTerminal's job is to
+// protect the host terminal from state-mutating sequences in output figaro is
+// about to print, so it deliberately KEEPS SGR verbatim. Handing markdown to
+// glamour with SGR still in it produced a row four cells wider than the width
+// it was given, at every width, with "[31m" printed as visible text — glamour
+// drops the ESC byte, keeps the parameter bytes as content, and has already
+// wrapped as though the whole sequence were zero-width.
+//
+// Models paste ANSI out of tool output constantly, so this is a live path. The
+// right answer for markdown is that an escape is not content and not styling:
+// it is noise, and it goes.
+func StripEscapes(s string) string {
+	if !strings.ContainsRune(s, 0x1b) {
+		return s // the overwhelmingly common case, untouched and unallocated
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		if s[i] != 0x1b {
+			b.WriteByte(s[i])
+			i++
+			continue
+		}
+		i++ // the ESC itself is never content
+		if i >= len(s) {
+			break
+		}
+		switch s[i] {
+		case '[': // CSI: params then one final byte
+			i++
+			for i < len(s) && isCSIParamByte(s[i]) {
+				i++
+			}
+			if i < len(s) {
+				i++ // the final byte
+			}
+		case ']': // OSC: runs to BEL or ST
+			i++
+			for i < len(s) {
+				if s[i] == 0x07 {
+					i++
+					break
+				}
+				if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
+					i += 2
+					break
+				}
+				i++
+			}
+		default: // two-byte escape, or a lone ESC before ordinary text
+			i++
+		}
+	}
+	return b.String()
+}

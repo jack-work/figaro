@@ -36,10 +36,14 @@ func Prose(md string, width int) []string {
 	// constantly, so this is a live path, and a bare ESC could also shift a
 	// gutter's column by riding along in the row prefix.
 	//
+	// StripEscapes, NOT SanitizeForTerminal: that one is an OUTPUT sanitizer and
+	// deliberately keeps SGR verbatim, so it left this bug exactly as it was —
+	// and I claimed otherwise for a whole commit because no test contradicted me.
+	//
 	// Fixing it here rather than clipping the result keeps the defect out of
 	// the pipeline entirely: nothing downstream has to know that a row's byte
 	// count and its cell count disagree.
-	md = SanitizeForTerminal(md)
+	md = StripEscapes(md)
 	if strings.Count(md, "```")%2 == 1 {
 		md += "\n```"
 	}
