@@ -351,6 +351,22 @@ func (a *Agent) startAssistantUnit() {
 // tool_result message that appends in turn. Returns true when the turn
 // is complete, false when another round is needed.
 func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done bool) {
+	// The interrupt may have landed between rounds. Ending here says
+	// "interrupted", which is true; falling through would call the provider
+	// with a dead context and end the turn as "error: context canceled",
+	// which is the same event wearing a fault's clothes.
+	if a.isInterrupted() {
+		if repaired, err := a.repairTurnTail(); err != nil {
+			a.reconcileAriaServer()
+			a.finishTurn("error: interrupt recovery: " + err.Error())
+			return true
+		} else if len(repaired) > 0 {
+			a.emitDelta(a.composeTurn(nil))
+		}
+		a.serviceForks()
+		a.endTurn("interrupted")
+		return true
+	}
 	if allowSteering {
 		if err := a.prepareProviderRound(); err != nil {
 			a.endTurn("error: append steering prompt: " + err.Error())
@@ -756,6 +772,15 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 // prompt as its own user message, and opens a fresh assistant unit for the
 // next provider round.
 func (a *Agent) appendSteeringPrompts() error {
+	// AN INTERRUPTED TURN DOES NOT TAKE THE QUEUE WITH IT. Draining here after
+	// the cancel is how queued messages got "received" — appended to the log,
+	// visible on screen — and then never answered: the round that absorbed
+	// them opened with an already-cancelled context, so it died immediately
+	// and took them down with it. They stay queued instead, and the next turn
+	// (a fresh one, opened by the drain loop) asks them properly.
+	if a.isInterrupted() {
+		return nil
+	}
 	a.serviceSets()
 	prompts := a.inbox.TakeReadyUserPrompts()
 	if len(prompts) == 0 {
@@ -775,6 +800,11 @@ func (a *Agent) appendSteeringPrompts() error {
 }
 
 func (a *Agent) prepareProviderRound() error {
+	// Same rule as appendSteeringPrompts, at the other drain site: a cancelled
+	// turn must not lift prompts it cannot answer.
+	if a.isInterrupted() {
+		return nil
+	}
 	for {
 		progressed := a.serviceForks()
 		if a.serviceSets() {
