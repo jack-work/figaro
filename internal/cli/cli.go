@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
@@ -44,10 +45,13 @@ func Run(progName string, args []string) {
 	//
 	// Off Windows this is a no-op. A redirected stdout degrades to a no-op
 	// too — `figaro list -j | jq` is the ordinary case, not an error.
-	if restoreConsole := term.ArmOutput(); restoreConsole != nil {
-		defer restoreConsole()
-		atExit(restoreConsole)
-	}
+	// OnceFunc because both paths fire on a normal return: the defer runs, and
+	// then exitNow's hooks would run it again. (No nil check: neither platform
+	// returns one — Windows hands back a no-op restore when there is no console
+	// to arm, and off Windows the whole function is a no-op.)
+	restoreConsole := sync.OnceFunc(term.ArmOutput())
+	defer restoreConsole()
+	atExit(restoreConsole)
 
 	// --version / -V pre-empt the router so they need no config or session.
 	if len(args) > 0 {
