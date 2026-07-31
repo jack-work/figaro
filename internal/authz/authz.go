@@ -36,13 +36,38 @@ import (
 // Anonymous is a legitimate identity, not an error; whether it is sufficient
 // for a given method is the policy's decision.
 type Identity struct {
-	// FigaroID is the calling aria, or "" for anonymous.
+	// FigaroID is the calling aria, or "" for anonymous. AUTHENTICATED: a
+	// policy may key on it.
 	FigaroID string
 	// Authenticated distinguishes "no credential presented" from "credential
 	// presented and accepted". It is not simply FigaroID != "": a disabled
 	// authenticator produces an anonymous identity even when a credential was
 	// on the wire, and the difference is auditable.
 	Authenticated bool
+	// Label is an ASSERTED caller name (rpc.CallerLabelKey / FIGARO_CALLER),
+	// carried for ATTRIBUTION ONLY.
+	//
+	// IT MUST NEVER REACH AN AUTHORIZATION DECISION. Anyone who can set an
+	// environment variable can set it to anything, so a policy keyed on it is
+	// one `FIGARO_CALLER=…` away from being bypassed. It is a separate field
+	// from FigaroID rather than a fallback into it precisely so that rule is
+	// enforced by the type and not by everyone remembering it — a rule that
+	// lives only in a comment is a rule that gets broken.
+	Label string
+}
+
+// Attribution renders who is speaking, for the model and for the UI.
+//
+// An authenticated aria renders "aria <id>"; an asserted label renders BARE.
+// The asymmetry is the point: rpc.SanitizeLabel strips the reserved "aria "
+// prefix from labels, so an assertion can never dress itself as an
+// authenticated identity. Empty means unknown, and callers render nothing
+// rather than guessing.
+func (i Identity) Attribution() string {
+	if i.Authenticated && i.FigaroID != "" {
+		return rpc.AriaLabelPrefix + i.FigaroID
+	}
+	return i.Label
 }
 
 // Anonymous reports whether no aria was authenticated.
@@ -83,15 +108,22 @@ type AriaHeader struct {
 }
 
 // Authenticate implements Authenticator.
+//
+// The asserted Label is read REGARDLESS of Enabled. Attribution is not gated
+// by authentication: a human at a terminal is never authenticated and is
+// exactly the caller whose name the model most needs. Disabling the provider
+// withholds AUTHORITY, not identity — with it off, a presented aria id is
+// ignored for policy purposes but the request is still attributable.
 func (a AriaHeader) Authenticate(_ string, params json.RawMessage) Identity {
+	id := Identity{Label: rpc.LabelOf(params)}
 	if !a.Enabled {
-		return Identity{}
+		return id
 	}
-	id := rpc.CallerOf(params)
-	if id == "" {
-		return Identity{}
+	if figaroID := rpc.CallerOf(params); figaroID != "" {
+		id.FigaroID = figaroID
+		id.Authenticated = true
 	}
-	return Identity{FigaroID: id, Authenticated: true}
+	return id
 }
 
 // Request is everything a policy is allowed to see. Params stays raw so a rule

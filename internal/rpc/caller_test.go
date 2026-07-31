@@ -10,7 +10,7 @@ import (
 // those are the three shapes the two client hops actually send.
 func TestWithCallerRoundTrip(t *testing.T) {
 	t.Run("struct params keep their fields", func(t *testing.T) {
-		raw, err := WithCaller(ForkRequest{FigaroID: "target01", AtMainLT: 7}, "caller99")
+		raw, err := WithCaller(ForkRequest{FigaroID: "target01", AtMainLT: 7}, "caller99", "")
 		if err != nil {
 			t.Fatalf("WithCaller: %v", err)
 		}
@@ -31,7 +31,7 @@ func TestWithCallerRoundTrip(t *testing.T) {
 		// figaro.context and figaro.chalkboard pass nil. If nil could not
 		// carry an identity, those methods would be unauthenticatable and the
 		// policy seam would have a hole in it.
-		raw, err := WithCaller(nil, "caller99")
+		raw, err := WithCaller(nil, "caller99", "")
 		if err != nil {
 			t.Fatalf("WithCaller(nil): %v", err)
 		}
@@ -43,7 +43,7 @@ func TestWithCallerRoundTrip(t *testing.T) {
 	t.Run("empty caller adds nothing", func(t *testing.T) {
 		// A human at a terminal has no aria identity; the wire must look
 		// exactly as it did before this change.
-		raw, err := WithCaller(InterruptRequest{}, "")
+		raw, err := WithCaller(InterruptRequest{}, "", "")
 		if err != nil {
 			t.Fatalf("WithCaller: %v", err)
 		}
@@ -61,7 +61,7 @@ func TestWithCallerRoundTrip(t *testing.T) {
 		in := SetRequest{Patch: ChalkboardPatch{
 			Set: map[string]json.RawMessage{"k": json.RawMessage(`{"deep":[1,2,3]}`)},
 		}}
-		raw, err := WithCaller(in, "caller99")
+		raw, err := WithCaller(in, "caller99", "")
 		if err != nil {
 			t.Fatalf("WithCaller: %v", err)
 		}
@@ -83,7 +83,7 @@ func TestWithCallerRejectsNonObjectParams(t *testing.T) {
 		"string": "hello",
 		"number": 42,
 	} {
-		if _, err := WithCaller(params, "caller99"); err == nil {
+		if _, err := WithCaller(params, "caller99", ""); err == nil {
 			t.Fatalf("%s params: want error, got nil", name)
 		}
 	}

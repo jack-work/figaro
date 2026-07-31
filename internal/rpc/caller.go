@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode"
 )
 
 // Caller identity on the wire.
@@ -44,12 +45,95 @@ import (
 // public contract.
 const CallerKey = "x-internal-figaro-id"
 
+// CallerLabelKey is the params field carrying an ASSERTED caller label — a
+// free-form name for a caller that is not an aria (a human at a terminal,
+// typically sourced from FIGARO_CALLER by an interactive shell).
+//
+// IT IS NOT A CREDENTIAL AND MUST NEVER REACH AN AUTHORIZATION DECISION.
+// Anyone who can set an environment variable can set this to anything; if a
+// policy ever keyed on it, every rule would be one `FIGARO_CALLER=…` away from
+// being bypassed. It exists for ATTRIBUTION only: so the model can tell who is
+// talking to it. See authz.Identity, where it lands in Label rather than
+// FigaroID precisely so the type system keeps them apart.
+const CallerLabelKey = "x-caller"
+
+// AriaLabelPrefix is reserved. An authenticated aria renders as "aria <id>";
+// an asserted label renders bare. If a label could begin with this prefix, a
+// human setting FIGARO_CALLER="aria 76062b18" would be indistinguishable from
+// the real aria in the model's context — confidently misinformed, which is
+// worse than unattributed. SanitizeLabel strips it.
+const AriaLabelPrefix = "aria "
+
+// MaxCallerLabelLen bounds an asserted label. It is caller-supplied text that
+// lands in the model's context on every message, so it is capped rather than
+// trusted to be reasonable.
+const MaxCallerLabelLen = 64
+
 // Caller is the decode side of CallerKey. Embed it in a request struct that
 // wants the identity typed, or use CallerOf to read it out of raw params
 // without knowing the request's shape at all — which is what the server-side
 // authenticator does, because it runs before dispatch has chosen a type.
 type Caller struct {
 	FigaroID string `json:"x-internal-figaro-id,omitempty"`
+	Label    string `json:"x-caller,omitempty"`
+}
+
+// SanitizeLabel makes an asserted label safe to render and safe to store.
+//
+// Three things, each for a reason:
+//   - control characters are stripped, because the label is interpolated into
+//     terminal rows and into the model's context; an embedded newline or escape
+//     would break the first and could forge structure in the second;
+//   - the reserved "aria " prefix is removed, so an assertion cannot dress
+//     itself as an authenticated identity (see AriaLabelPrefix);
+//   - the result is truncated to MaxCallerLabelLen.
+//
+// Returns "" when nothing usable survives, which callers treat as unknown.
+func SanitizeLabel(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r == '\t' {
+			return ' '
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+	s = strings.TrimSpace(s)
+	// Repeatedly, so "aria aria x" cannot smuggle one through.
+	for {
+		trimmed := strings.TrimSpace(strings.TrimPrefix(s, AriaLabelPrefix))
+		if trimmed == s {
+			break
+		}
+		s = trimmed
+	}
+	if len(s) > MaxCallerLabelLen {
+		s = strings.TrimSpace(s[:MaxCallerLabelLen])
+	}
+	return s
+}
+
+// LabelFromEnv is the asserted label this process presents, from FIGARO_CALLER.
+//
+// An interactive shell sets it (a fish config guarded on interactivity, say);
+// a script leaves it unset and is simply unattributed. It is sanitized here so
+// nothing downstream has to remember to.
+func LabelFromEnv() string {
+	return SanitizeLabel(os.Getenv("FIGARO_CALLER"))
+}
+
+// LabelOf reads the asserted label out of raw params, sanitized. Like CallerOf
+// it never errors — an unusable label is an absent one.
+func LabelOf(params json.RawMessage) string {
+	if len(params) == 0 {
+		return ""
+	}
+	var c Caller
+	if err := json.Unmarshal(params, &c); err != nil {
+		return ""
+	}
+	return SanitizeLabel(c.Label)
 }
 
 // CallerFromEnv is the credential a CLI invocation presents: the aria that
@@ -94,17 +178,14 @@ func CallerFromEnv() string {
 // figaro method takes an object or nothing, so a scalar or array here is a
 // programming mistake, and quietly dropping a credential is the worst possible
 // response to one.
-func WithCaller(params any, callerID string) (json.RawMessage, error) {
+func WithCaller(params any, callerID, label string) (json.RawMessage, error) {
 	raw, err := json.Marshal(params)
 	if err != nil {
 		return nil, fmt.Errorf("marshal params: %w", err)
 	}
-	if callerID == "" {
+	label = SanitizeLabel(label)
+	if callerID == "" && label == "" {
 		return raw, nil
-	}
-	id, err := json.Marshal(callerID)
-	if err != nil {
-		return nil, fmt.Errorf("marshal caller id: %w", err)
 	}
 	fields := map[string]json.RawMessage{}
 	if trimmed := strings.TrimSpace(string(raw)); trimmed != "" && trimmed != "null" {
@@ -112,7 +193,20 @@ func WithCaller(params any, callerID string) (json.RawMessage, error) {
 			return nil, fmt.Errorf("params must be a JSON object to carry %s: %w", CallerKey, err)
 		}
 	}
-	fields[CallerKey] = id
+	if callerID != "" {
+		id, mErr := json.Marshal(callerID)
+		if mErr != nil {
+			return nil, fmt.Errorf("marshal caller id: %w", mErr)
+		}
+		fields[CallerKey] = id
+	}
+	if label != "" {
+		lb, mErr := json.Marshal(label)
+		if mErr != nil {
+			return nil, fmt.Errorf("marshal caller label: %w", mErr)
+		}
+		fields[CallerLabelKey] = lb
+	}
 	out, err := json.Marshal(fields)
 	if err != nil {
 		return nil, fmt.Errorf("re-marshal params: %w", err)
