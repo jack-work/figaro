@@ -408,19 +408,6 @@ func renderSteeringNode(n livedoc.Node, width int, expanded bool) []string {
 	return append([]string{head}, nodeProseRows(n, width, expanded)...)
 }
 
-// senderRow is the dim attribution line drawn ABOVE a block's text, in the
-// same register as block timestamps and tool durations.
-//
-// Empty sender draws NOTHING — not a blank row, not "unknown". Most messages
-// in an existing log carry no sender, and a placeholder on every one of them
-// would be noise where there used to be none.
-func senderRow(sender string, width int) []string {
-	if sender == "" {
-		return nil
-	}
-	return []string{clipToWidth(term.Dim("  "+sender), width)}
-}
-
 // nodeMarkdown is the markdown a non-tool node renders from. Thinking and
 // steering are drawn as blockquotes; prose is itself. One function so the
 // renderers and nodeExpandable cannot disagree about what a node's text is —
