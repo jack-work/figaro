@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mattn/go-runewidth"
+
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -28,6 +30,31 @@ func Run(progName string, args []string) {
 	if os.Getenv("_FIGARO_DAEMON") == "1" || (len(args) > 0 && args[0] == "--angelus") {
 		runAngelus()
 		return
+	}
+
+	// AMBIGUOUS-WIDTH GLYPHS: believe the terminal, not the default table.
+	//
+	// U+2500 (─) and U+2502 (│) are East Asian AMBIGUOUS — one cell in most
+	// terminals, TWO where ambiguous-wide is configured. Every rule figaro draws
+	// is made of ─ and every thinking gutter of │, and every row is built on
+	// go-runewidth's answer of ONE. On an ambiguous-wide terminal each of those
+	// rows is drawn twice as wide as figaro measured it, so a full-width rule
+	// lands at 200 cells in a 100-column pane and runs off the edge.
+	//
+	// Measured on the same captured output at width 100: zero rows over as a
+	// normal terminal, 48 rows over as an ambiguous-wide one, worst +100. That
+	// is invisible to every test that measures figaro against figaro, which is
+	// why three rounds of sweeps came back clean while the report stood.
+	//
+	// One switch, consulted once, and it reaches every measurement: the CLI's
+	// displayWidth, render's cells, livelog's clip and hardWrap all resolve
+	// through go-runewidth's DefaultCondition.
+	//
+	//	FIGARO_AMBIGUOUS_WIDE=1   ─ │ … are two cells, as your terminal draws them
+	//
+	// scripts/term-ambiwidth.sh asks your terminal which it is.
+	if envTruthy(os.Getenv("FIGARO_AMBIGUOUS_WIDE")) {
+		runewidth.DefaultCondition.EastAsianWidth = true
 	}
 
 	// Arm the console we WRITE to, before the first escape leaves the process.
