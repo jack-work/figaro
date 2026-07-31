@@ -316,17 +316,22 @@ func clipFits(s string, width int) bool {
 // rune's bytes are all >= 0x80 and so can never be mistaken for the
 // terminating letter.
 func escapeEnd(s string, i int) (int, bool) {
+	// ONE grammar, in render.SkipEscape. This used to scan to the first ASCII
+	// letter, which is not what an escape is: a bare ESC swallowed the
+	// character after it, so displayWidth UNDERCOUNTED and clipToWidth emitted
+	// a row one cell past the edge — measured, clip to 10 gave 11 visible
+	// cells. An OSC whose payload contains a letter ended early instead, which
+	// clips short and loses text. Tool output reaches these clips with escapes
+	// intact, because SanitizeForTerminal deliberately keeps SGR.
+	end := render.SkipEscape(s, i)
 	ascii := true
-	for j := i + 1; j < len(s); j++ {
-		c := s[j]
-		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
-			return j + 1, ascii
-		}
-		if c >= utf8.RuneSelf {
+	for j := i; j < end; j++ {
+		if s[j] >= utf8.RuneSelf {
 			ascii = false
+			break
 		}
 	}
-	return len(s), ascii
+	return end, ascii
 }
 
 // clipToWidthRewrite is the general path: it materializes the clipped row.

@@ -116,6 +116,10 @@ func (c sliceCursor) after(o sliceCursor) bool {
 func newLivelogTurn(out io.Writer, w, h int, settings *renderSettings, figaroID string, startedAt time.Time, status *sessionStatus, bookend func() []string, rule func() string) *livelogTurn {
 	view := &ariaView{settings: settings}
 	term := ldrender.NewANSITerminal(out, w, h)
+	// FIGARO_WIDTH_AUDIT: report any row written past the viewport, from inside
+	// the process, in the terminal where it actually happens. Off by default and
+	// free when off. See width_audit.go for why the detector had to move here.
+	term.SetWriter(auditWriter(out, term.Size))
 	in := ldrender.NewIncipit(term, view)
 	in.Bookend = bookend
 	in.Rule = rule

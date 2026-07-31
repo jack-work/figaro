@@ -35,3 +35,9 @@ func (t *ANSITerminal) Size() (int, int)            { return t.width, t.height }
 // SetSize updates the reported size; call it from a SIGWINCH handler before the
 // next render so the renderer reconciles to the new viewport.
 func (t *ANSITerminal) SetSize(width, height int) { t.width, t.height = width, height }
+
+// SetWriter swaps the underlying writer. It exists so a caller can interpose on
+// the write path — the CLI's width audit wraps it to measure every row against
+// the size this terminal reports — without the renderer knowing or paying for
+// it when the audit is off.
+func (t *ANSITerminal) SetWriter(w io.Writer) { t.w = w }

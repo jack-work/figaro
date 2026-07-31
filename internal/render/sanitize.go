@@ -204,6 +204,14 @@ func StripEscapes(s string) string {
 	return b.String()
 }
 
+// SkipEscape is skipEscape, exported so every package measures escapes with
+// ONE grammar. internal/cli had its own, which scanned to the first ASCII
+// LETTER: a bare ESC therefore swallowed the character after it, displayWidth
+// undercounted by one, and clipToWidth let a row through one cell PAST THE
+// EDGE — the reported "one or two characters beyond the right side". An OSC
+// title ended it early instead, which clips a row short and loses text.
+func SkipEscape(s string, i int) int { return skipEscape(s, i) }
+
 // skipEscape returns the index just past the escape sequence beginning at i
 // (s[i] == ESC), consuming the WHOLE sequence for every form the terminal
 // grammar defines. Each arm below is a leak that was measured, not imagined:
