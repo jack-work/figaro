@@ -15,11 +15,12 @@ func TestFarmerClipEatsContent(t *testing.T) {
 		worst, worstW, hits := 0, 0, 0
 		for w := 20; w <= 200; w++ {
 			n := livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}
-			raw := clampTables(render.Prose(nodeMarkdown(n), w), proseTableCapDefault)
+			pw := proseWidth(n, w)
+			raw := clampTables(render.Prose(nodeMarkdown(n), pw), proseTableCapDefault, pw)
 			lost := 0
 			for _, r := range raw {
-				if d := displayWidth(r); d > w {
-					lost += d - w
+				if d := displayWidth(r); d > pw {
+					lost += d - pw
 				}
 			}
 			if lost > 0 {
@@ -72,7 +73,8 @@ func TestFarmerRepairEatsText(t *testing.T) {
 	for name, md := range farmerCorpus() {
 		for w := 20; w <= 200; w++ {
 			n := livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}
-			raw := clampTables(render.Prose(nodeMarkdown(n), w), proseTableCapDefault)
+			pw := proseWidth(n, w)
+			raw := clampTables(render.Prose(nodeMarkdown(n), pw), proseTableCapDefault, pw)
 			got := nodeProseRows(n, w, false)
 			if len(raw) != len(got) {
 				t.Fatalf("%s w=%d: row count changed", name, w)
