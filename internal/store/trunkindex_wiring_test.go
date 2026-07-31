@@ -31,7 +31,7 @@ func TestStoreUsesTheMaintainedTopologyIndex(t *testing.T) {
 		}
 		convs = append(convs, c)
 	}
-	if err := st.Close(); err != nil { // Close flushes the background writer
+	if err := st.trunks.Close(); err != nil { // flushes the index writer
 		t.Fatal(err)
 	}
 
@@ -51,7 +51,7 @@ func TestStoreUsesTheMaintainedTopologyIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st2.Close()
+	defer st2.trunks.Close()
 	seen := map[string]bool{}
 	for _, n := range st2.Nodes() {
 		seen[n.ID] = true
