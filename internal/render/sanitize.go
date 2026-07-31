@@ -23,7 +23,10 @@
 
 package render
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // SanitizeForTerminal returns s with terminal-state-mutating ANSI
 // sequences removed. Pure function; preserves SGR and cursor/erase
@@ -150,6 +153,8 @@ func isCSIParamByte(b byte) bool {
 		return true
 	case b == '<' || b == '=' || b == '>':
 		return true
+	case b == '?': // a PARAMETER byte. Omitting it leaked "\x1b[?25l" as "25l".
+		return true
 	case b == ' ' || b == '!':
 		return true
 	}
@@ -252,7 +257,16 @@ func skipEscape(s string, i int) int {
 	case c == '(' || c == ')' || c == '*' || c == '+' || c == '-' || c == '.' || c == '/':
 		i += 2 // charset designator: one byte follows
 	default:
-		i++
+		// One RUNE, not one byte. A bare ESC before ordinary text is not a
+		// sequence at all, and advancing a single byte cut a multi-byte rune in
+		// half — "\x1b\u0631" came back as invalid UTF-8. Only reachable from
+		// splitToWidth, and only because that used to carry its own second copy
+		// of this scanner; there is one now.
+		_, sz := utf8.DecodeRuneInString(s[i:])
+		if sz == 0 {
+			sz = 1
+		}
+		i += sz
 	}
 	if i > len(s) {
 		i = len(s)

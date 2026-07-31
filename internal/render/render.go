@@ -191,7 +191,7 @@ func cells(s string) int {
 	n := 0
 	for i := 0; i < len(s); {
 		if s[i] == 0x1b {
-			i = escEnd(s, i)
+			i = skipEscape(s, i)
 			continue
 		}
 		r, sz := utf8.DecodeRuneInString(s[i:])
@@ -199,38 +199,6 @@ func cells(s string) int {
 		i += sz
 	}
 	return n
-}
-
-// escEnd returns the index just past the escape sequence starting at i.
-func escEnd(s string, i int) int {
-	i++ // ESC
-	if i >= len(s) {
-		return i
-	}
-	switch s[i] {
-	case '[':
-		i++
-		for i < len(s) && isCSIParamByte(s[i]) {
-			i++
-		}
-		if i < len(s) {
-			i++
-		}
-	case ']':
-		i++
-		for i < len(s) {
-			if s[i] == 0x07 {
-				return i + 1
-			}
-			if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
-				return i + 2
-			}
-			i++
-		}
-	default:
-		i++
-	}
-	return i
 }
 
 // hardWrapOverlong is the fallback for content glamour will not break.
@@ -289,7 +257,7 @@ func splitToWidth(row string, width int) []string {
 	}
 	for i := 0; i < len(row); {
 		if row[i] == 0x1b {
-			j := escEnd(row, i)
+			j := skipEscape(row, i)
 			seq := row[i:j]
 			chunk.WriteString(seq)
 			if strings.HasSuffix(seq, "m") {

@@ -3,6 +3,7 @@ package render
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // Content glamour will not break must still fit the width it was given.
@@ -55,4 +56,27 @@ func longRuns(md string) []string {
 		}
 	}
 	return out
+}
+
+// One escape scanner, not two. splitToWidth and cells used a second, sloppier
+// one whose default arm advanced a single byte past the ESC — so a multi-byte
+// rune immediately after a bare ESC was cut mid-sequence and the row came back
+// as invalid UTF-8. Unreachable through Prose today, because StripEscapes runs
+// first and removes the ESC; that is precisely why it is worth closing rather
+// than arguing about. Two scanners disagreeing inside one package is the shape
+// every rendering bug on this branch started as.
+//
+// CANARY (watched): restore the one-byte default arm ->
+//
+//	splitToWidth returns invalid UTF-8 for "\x1bر"
+func TestSplitToWidthKeepsRunesWhole(t *testing.T) {
+	for _, in := range []string{"\x1bر", "\x1b(Bر", "\x1bOPر", "a\x1b[?25lب", "\x1b_x\x1b\\ن"} {
+		for w := 1; w <= 8; w++ {
+			for _, row := range splitToWidth(in, w) {
+				if !utf8.ValidString(row) {
+					t.Fatalf("splitToWidth(%q, %d) produced invalid UTF-8: %q", in, w, row)
+				}
+			}
+		}
+	}
 }
