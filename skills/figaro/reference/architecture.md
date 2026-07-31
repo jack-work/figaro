@@ -186,6 +186,39 @@ caller identity answers *which aria am I*, and only `FIGARO_ARIA` can — `--id`
 is an argument the caller chose, and a pid binding says which aria a shell is
 *attending*, not that it is one.
 
+### Attribution — who sent each part of a message
+
+A user message is **not always one submission**. Consecutive prompts drain and
+fold into one message, and they may come from different callers. `Content` and
+`livedoc.Node` therefore carry a **`Sender`**, and `aria.Turn` carries
+**`InquirySegments`** — the opening question split by who asked it.
+
+`Turn.Inquiry` is unchanged and remains the canonical *text* (search, selection
+hashing, the mantra seed and height estimation all want one string); the
+segments are the attribution layer over it.
+
+Rendering is decided once, in **`rpc.Attribution`**, so the model, the pager,
+the inline view and `figaro show` cannot drift:
+
+| caller | renders as |
+|---|---|
+| authenticated aria | `aria 76062b18` |
+| asserted label (`x-caller`) | bare, e.g. `Jack` |
+| unknown | **nothing at all** — not `unknown`, not a blank row |
+
+`aria ` is a **reserved prefix**: `SanitizeLabel` strips it, so
+`FIGARO_CALLER="aria 999"` renders `999` and cannot impersonate proof.
+
+Blocks fold into **runs** — one block per run of consecutive same-sender
+submissions, joined by a blank line. So the common case (one sender, or none)
+is one block, and a message with no senders encodes **byte-identically** to
+before, which matters because the provider wire cache is keyed by LT and holds
+signed thinking blocks.
+
+On screen: **one `> input` header** for the whole question however many people
+wrote it, each segment prefaced by its sender in the dim register block
+timestamps use, indented to sit under the prose.
+
 ### Authorization — `internal/authz`
 
 An **Authenticator** turns the credential into an `Identity`; a single
@@ -202,6 +235,17 @@ section behaves exactly as figaro did before:
 caller_identity = true   # believe x-internal-figaro-id (default false)
 policy = "default"       # or "allow-all" (default)
 ```
+
+`x-caller` is **attribution only and never authorizes**. It lands in
+`Identity.Label`, a different field from `FigaroID`, and `SelfTargeted()`
+requires an authenticated identity — so an assertion naming its own target
+cannot impersonate it. Anyone who can set an environment variable can set the
+label; if a policy keyed on it, every rule would be one `FIGARO_CALLER=…` away
+from bypass. The separation is a field, not a convention.
+
+Attribution is read **regardless of the switch**: a human is never
+authenticated and is exactly the caller a confused aria most needs named.
+Disabling the provider withholds *authority*, not identity.
 
 The switch is the point: `FIGARO_ARIA` cannot be turned off, so a server has no
 state in which it may doubt it — and a credential that cannot be doubted
