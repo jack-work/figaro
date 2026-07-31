@@ -489,7 +489,8 @@ func (i *Incipit) inquiryRows(inquiry string, segments []aria.InquirySegment) []
 		}
 		// An unknown sender draws NOTHING — not a blank row, not "unknown".
 		if seg.Sender != "" && i.Sender != nil {
-			rows = append(rows, clip(i.Sender(seg.Sender), w))
+			// Indented to match render.Prose's inset; see cli.proseIndent.
+			rows = append(rows, clip(i.Sender("  "+seg.Sender), w))
 		}
 		for _, l := range render.Prose(seg.Text, w) {
 			rows = append(rows, clip(l, w))

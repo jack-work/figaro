@@ -149,6 +149,10 @@ func renderTurnRows(inquiry string, segments []aria.InquirySegment, nodes []live
 	return append(rows, body...)
 }
 
+// proseIndent matches the inset render.Prose gives a paragraph, so metadata
+// drawn beside prose lines up with it instead of floating left of it.
+const proseIndent = "  "
+
 // inquiryRowsFor draws a turn's opening question, attributed when it can be.
 //
 // ONE "> input" header for the whole question however many people wrote it —
@@ -171,7 +175,10 @@ func inquiryRowsFor(inquiry string, segments []aria.InquirySegment, width int) [
 			rows = append(rows, "")
 		}
 		if seg.Sender != "" {
-			rows = append(rows, clipToWidth(term.Dim(seg.Sender), width))
+			// Indented to sit under the prose, which render.Prose insets. A
+			// flush-left attribution over an inset paragraph reads as a
+			// heading rather than as a label on the text below it.
+			rows = append(rows, clipToWidth(term.Dim(proseIndent+seg.Sender), width))
 		}
 		rows = append(rows, inquiryProse(seg.Text, width)...)
 	}
