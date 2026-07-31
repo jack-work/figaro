@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mattn/go-runewidth"
-
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	figOtel "github.com/jack-work/figaro/internal/otel"
@@ -53,9 +51,7 @@ func Run(progName string, args []string) {
 	//	FIGARO_AMBIGUOUS_WIDE=1   ─ │ … are two cells, as your terminal draws them
 	//
 	// scripts/term-ambiwidth.sh asks your terminal which it is.
-	if envTruthy(os.Getenv("FIGARO_AMBIGUOUS_WIDE")) {
-		runewidth.DefaultCondition.EastAsianWidth = true
-	}
+	applyAmbiguousWidth()
 
 	// Arm the console we WRITE to, before the first escape leaves the process.
 	//
