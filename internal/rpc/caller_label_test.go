@@ -55,7 +55,7 @@ func TestSanitizeLabelIsBounded(t *testing.T) {
 // aria has an id and usually no label; a script has neither.
 func TestWithCallerCarriesIdAndLabelIndependently(t *testing.T) {
 	t.Run("label only", func(t *testing.T) {
-		raw, err := WithCaller(ForkRequest{FigaroID: "t"}, "", "Jack")
+		raw, err := WithCaller(ForkRequest{FigaroID: "t"}, "", &CallerRef{Label: "Jack"})
 		if err != nil {
 			t.Fatalf("WithCaller: %v", err)
 		}
@@ -68,7 +68,7 @@ func TestWithCallerCarriesIdAndLabelIndependently(t *testing.T) {
 	})
 
 	t.Run("id only", func(t *testing.T) {
-		raw, err := WithCaller(ForkRequest{FigaroID: "t"}, "aria0001", "")
+		raw, err := WithCaller(ForkRequest{FigaroID: "t"}, "aria0001", nil)
 		if err != nil {
 			t.Fatalf("WithCaller: %v", err)
 		}
@@ -81,7 +81,7 @@ func TestWithCallerCarriesIdAndLabelIndependently(t *testing.T) {
 	})
 
 	t.Run("neither adds nothing", func(t *testing.T) {
-		raw, err := WithCaller(ForkRequest{FigaroID: "t"}, "", "")
+		raw, err := WithCaller(ForkRequest{FigaroID: "t"}, "", nil)
 		if err != nil {
 			t.Fatalf("WithCaller: %v", err)
 		}
@@ -99,7 +99,7 @@ func TestWithCallerCarriesIdAndLabelIndependently(t *testing.T) {
 	t.Run("a label is sanitized on the way out", func(t *testing.T) {
 		// Sanitizing only on read would leave the forged value on the wire and
 		// in the IR, where some other consumer could trust it.
-		raw, err := WithCaller(ForkRequest{FigaroID: "t"}, "", "aria 999")
+		raw, err := WithCaller(ForkRequest{FigaroID: "t"}, "", &CallerRef{Label: "aria 999"})
 		if err != nil {
 			t.Fatalf("WithCaller: %v", err)
 		}

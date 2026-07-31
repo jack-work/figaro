@@ -13,7 +13,7 @@ import (
 
 func forkParams(t *testing.T, target, caller string) json.RawMessage {
 	t.Helper()
-	raw, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: target}, caller, "")
+	raw, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: target}, caller, nil)
 	if err != nil {
 		t.Fatalf("WithCaller: %v", err)
 	}

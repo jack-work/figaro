@@ -76,7 +76,7 @@ func FuzzWithCallerRoundTrip(f *testing.F) {
 	f.Add("a1b2c3d4", "")
 	f.Add("../../etc", "aria aria aria x")
 	f.Fuzz(func(t *testing.T, id, label string) {
-		raw, err := WithCaller(ForkRequest{FigaroID: "target"}, id, label)
+		raw, err := WithCaller(ForkRequest{FigaroID: "target"}, id, &CallerRef{Label: label})
 		if err != nil {
 			return // non-object params is the only legal error, unreachable here
 		}
@@ -107,7 +107,7 @@ func FuzzWithCallerRoundTrip(f *testing.F) {
 			t.Fatalf("label %q was promoted to an aria attribution: %q", label, attr)
 		}
 		// And SenderFrom, the path the agent actually uses, agrees.
-		if from := SenderFrom(raw); from != attr {
+		if from := SenderFrom(raw, nil); from != attr {
 			t.Fatalf("SenderFrom disagrees with Attribution: %q vs %q", from, attr)
 		}
 	})

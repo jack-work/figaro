@@ -46,9 +46,8 @@ import (
 // public contract.
 const CallerKey = "x-internal-figaro-id"
 
-// CallerLabelKey is the params field carrying an ASSERTED caller label — a
-// free-form name for a caller that is not an aria (a human at a terminal,
-// typically sourced from FIGARO_CALLER by an interactive shell).
+// CallerLabelKey is the params field carrying an ASSERTED caller reference —
+// who is calling, when the caller is not an aria.
 //
 // IT IS NOT A CREDENTIAL AND MUST NEVER REACH AN AUTHORIZATION DECISION.
 // Anyone who can set an environment variable can set this to anything; if a
@@ -81,9 +80,51 @@ const MaxCallerLabelLen = 64
 // without knowing the request's shape at all — which is what the server-side
 // authenticator does, because it runs before dispatch has chosen a type.
 type Caller struct {
-	FigaroID string `json:"x-internal-figaro-id,omitempty"`
-	Label    string `json:"x-caller,omitempty"`
+	FigaroID string     `json:"x-internal-figaro-id,omitempty"`
+	Caller   *CallerRef `json:"x-caller,omitempty"`
 }
+
+// CallerRef is who is calling, when the caller is not an aria. It is a TYPED
+// OBJECT rather than a string on purpose.
+//
+// The common case is "the end user is typing" — the DUKE — and the CLI cannot
+// name them: the name belongs to the aria being addressed, not to the shell.
+// So the CLI sends a PLACEHOLDER and the server resolves it against the target
+// aria's chalkboard (see DukeTitleKey). That is what keeps the user's name out
+// of shell config entirely.
+//
+// A placeholder must not collide with anything a human could type, and a
+// reserved string is a poor way to guarantee that — someone eventually types
+// the reserved word. A separate BOOL cannot be reached from a string at all:
+// FIGARO_CALLER only ever populates Label, so no value of it can produce
+// Duke:true. The guarantee is structural, not lexical.
+type CallerRef struct {
+	// Duke marks the caller as the end user, to be named by the target aria's
+	// chalkboard rather than by the caller. Set only by an INTERACTIVE CLI, so
+	// an aria shelling out cannot accidentally speak as its master.
+	Duke bool `json:"duke,omitempty"`
+
+	// Label is an explicit asserted name (FIGARO_CALLER), which OVERRIDES the
+	// duke placeholder when set. Sanitized; never a credential.
+	Label string `json:"label,omitempty"`
+}
+
+// Empty reports whether the ref names nobody.
+func (c *CallerRef) Empty() bool {
+	return c == nil || (!c.Duke && c.Label == "")
+}
+
+// DukeTitleKey is the chalkboard key naming the end user for an aria. Set it
+// in a loadout ("gluck") and every prompt that aria receives from a human
+// terminal is attributed to that name.
+//
+// "Duke" is the harness's word for the END USER — the person the agent serves,
+// as distinct from an aria (another figaro) or an anonymous script.
+const DukeTitleKey = "duke-title"
+
+// DefaultDukeTitle is what an aria calls its end user when its chalkboard does
+// not say. Deliberately generic: a wrong name is worse than a plain one.
+const DefaultDukeTitle = "user"
 
 // SanitizeLabel makes an asserted label safe to render and safe to store.
 //
@@ -121,6 +162,37 @@ func SanitizeLabel(s string) string {
 	return s
 }
 
+// interactive records whether this process is a human at a terminal. The CLI
+// arms it once at startup (SetInteractive), the same way it computes its
+// binding policy once, so every client dialled afterwards agrees.
+//
+// It gates the DUKE placeholder and nothing else: a non-interactive
+// invocation — a script, or an aria's own shell-out — presents no duke, so a
+// figaro cannot speak as its master by accident. An aria that deliberately
+// allocates itself a terminal can still do it; that is a known gap, accepted
+// until real authentication closes it, and it is why none of this is allowed
+// near an authorization decision.
+var interactive bool
+
+// SetInteractive arms the duke placeholder. Call once, at startup.
+func SetInteractive(v bool) { interactive = v }
+
+// CallerRefFromEnv is the reference this process presents.
+//
+// FIGARO_CALLER is an OVERRIDE: when set it names the caller explicitly and
+// suppresses the placeholder, which is what makes a script able to say who it
+// is acting for. Otherwise an interactive terminal presents the duke, and
+// anything else presents nothing at all.
+func CallerRefFromEnv() *CallerRef {
+	if label := LabelFromEnv(); label != "" {
+		return &CallerRef{Label: label}
+	}
+	if interactive {
+		return &CallerRef{Duke: true}
+	}
+	return nil
+}
+
 // LabelFromEnv is the asserted label this process presents, from FIGARO_CALLER.
 //
 // An interactive shell sets it (a fish config guarded on interactivity, say);
@@ -130,17 +202,33 @@ func LabelFromEnv() string {
 	return SanitizeLabel(os.Getenv("FIGARO_CALLER"))
 }
 
-// LabelOf reads the asserted label out of raw params, sanitized. Like CallerOf
-// it never errors — an unusable label is an absent one.
-func LabelOf(params json.RawMessage) string {
+// CallerRefOf reads the asserted caller reference out of raw params, with its
+// label sanitized. Like CallerOf it never errors — an unusable ref is an absent
+// one, and whether absence is acceptable is the policy's decision.
+func CallerRefOf(params json.RawMessage) *CallerRef {
 	if len(params) == 0 {
-		return ""
+		return nil
 	}
 	var c Caller
-	if err := json.Unmarshal(params, &c); err != nil {
+	if err := json.Unmarshal(params, &c); err != nil || c.Caller == nil {
+		return nil
+	}
+	ref := *c.Caller
+	ref.Label = SanitizeLabel(ref.Label)
+	if ref.Empty() {
+		return nil
+	}
+	return &ref
+}
+
+// LabelOf is the asserted label alone, ignoring the duke placeholder — the
+// placeholder has no name until a server resolves it against an aria.
+func LabelOf(params json.RawMessage) string {
+	ref := CallerRefOf(params)
+	if ref == nil {
 		return ""
 	}
-	return SanitizeLabel(c.Label)
+	return ref.Label
 }
 
 // CallerFromEnv is the credential a CLI invocation presents: the aria that
@@ -185,13 +273,20 @@ func CallerFromEnv() string {
 // figaro method takes an object or nothing, so a scalar or array here is a
 // programming mistake, and quietly dropping a credential is the worst possible
 // response to one.
-func WithCaller(params any, callerID, label string) (json.RawMessage, error) {
+func WithCaller(params any, callerID string, ref *CallerRef) (json.RawMessage, error) {
 	raw, err := json.Marshal(params)
 	if err != nil {
 		return nil, fmt.Errorf("marshal params: %w", err)
 	}
-	label = SanitizeLabel(label)
-	if callerID == "" && label == "" {
+	if ref != nil {
+		clean := *ref
+		clean.Label = SanitizeLabel(clean.Label)
+		ref = &clean
+		if ref.Empty() {
+			ref = nil
+		}
+	}
+	if callerID == "" && ref == nil {
 		return raw, nil
 	}
 	fields := map[string]json.RawMessage{}
@@ -207,12 +302,12 @@ func WithCaller(params any, callerID, label string) (json.RawMessage, error) {
 		}
 		fields[CallerKey] = id
 	}
-	if label != "" {
-		lb, mErr := json.Marshal(label)
+	if ref != nil {
+		rb, mErr := json.Marshal(ref)
 		if mErr != nil {
-			return nil, fmt.Errorf("marshal caller label: %w", mErr)
+			return nil, fmt.Errorf("marshal caller ref: %w", mErr)
 		}
-		fields[CallerLabelKey] = lb
+		fields[CallerLabelKey] = rb
 	}
 	out, err := json.Marshal(fields)
 	if err != nil {
@@ -270,6 +365,29 @@ func Attribution(figaroID, label string) string {
 // socket and is why nothing here feeds an authorization decision — the policy
 // reads authz.Identity, which distinguishes proof from assertion; this only
 // says whose name to print.
-func SenderFrom(params json.RawMessage) string {
-	return Attribution(CallerOf(params), LabelOf(params))
+func SenderFrom(params json.RawMessage, dukeTitle func() string) string {
+	if id := CallerOf(params); id != "" {
+		return AriaLabelPrefix + id
+	}
+	ref := CallerRefOf(params)
+	if ref == nil {
+		return ""
+	}
+	// An explicit label wins over the placeholder: FIGARO_CALLER is an
+	// override, and a caller that named itself has said something the target
+	// aria's chalkboard cannot know.
+	if ref.Label != "" {
+		return ref.Label
+	}
+	if !ref.Duke {
+		return ""
+	}
+	// The duke is named by the ARIA BEING ADDRESSED, not by the caller. That
+	// is the whole point: the user's name lives in a loadout, not in a shell.
+	if dukeTitle != nil {
+		if t := SanitizeLabel(dukeTitle()); t != "" {
+			return t
+		}
+	}
+	return DefaultDukeTitle
 }

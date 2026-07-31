@@ -274,6 +274,17 @@ func (a *Agent) ID() string { return a.id }
 func (a *Agent) SocketPath() string { return a.socketPath }
 
 // chalkboardString reads a system.* string key. Empty when missing.
+// dukeTitle is what THIS aria calls its end user, from its chalkboard, or the
+// generic default when it does not say. Passed to rpc.SenderFrom so the duke
+// placeholder an interactive CLI sends resolves against the aria being
+// addressed rather than against the shell that sent it.
+func (a *Agent) dukeTitle() string {
+	if t := a.chalkboardString(rpc.DukeTitleKey); t != "" {
+		return t
+	}
+	return rpc.DefaultDukeTitle
+}
+
 func (a *Agent) chalkboardString(key string) string {
 	if a.chalkboard == nil {
 		return ""

@@ -21,15 +21,15 @@ type Client struct {
 	// and these are separate clients over separate sockets, so each presents
 	// it independently.
 	caller string
-	// label is the ASSERTED caller name (FIGARO_CALLER), for attribution
-	// only. It is never a credential; see rpc.CallerLabelKey.
-	label string
+	// ref is the ASSERTED caller reference (the duke placeholder, or an
+	// explicit FIGARO_CALLER label). Attribution only, never a credential.
+	ref *rpc.CallerRef
 }
 
 // call is the single point every request passes through; see
 // angelus.(*Client).call.
 func (c *Client) call(ctx context.Context, method string, params, result any) error {
-	raw, err := rpc.WithCaller(params, c.caller, c.label)
+	raw, err := rpc.WithCaller(params, c.caller, c.ref)
 	if err != nil {
 		return err
 	}
@@ -43,7 +43,7 @@ func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) 
 		return nil, err
 	}
 	cli := jkrpc.NewClient(conn, jkrpc.NotifyFunc(onNotify))
-	return &Client{cli: cli, caller: rpc.CallerFromEnv(), label: rpc.LabelFromEnv()}, nil
+	return &Client{cli: cli, caller: rpc.CallerFromEnv(), ref: rpc.CallerRefFromEnv()}, nil
 }
 
 // Qua sends a prompt and returns the newest materialized turn id at accept

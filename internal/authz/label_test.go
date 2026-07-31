@@ -16,7 +16,7 @@ import (
 func TestLabelCannotAuthorize(t *testing.T) {
 	// A caller asserts a label that names the very aria it is targeting, with
 	// no aria credential at all.
-	params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "aria0001"}, "", "aria0001")
+	params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "aria0001"}, "", &rpc.CallerRef{Label: "aria0001"})
 	if err != nil {
 		t.Fatalf("WithCaller: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestLabelCannotAuthorize(t *testing.T) {
 // authenticated and is exactly the caller the model most needs named; turning
 // the provider off withholds AUTHORITY, not identity.
 func TestLabelSurvivesADisabledProvider(t *testing.T) {
-	params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "t"}, "aria0001", "Jack")
+	params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "t"}, "aria0001", &rpc.CallerRef{Label: "Jack"})
 	if err != nil {
 		t.Fatalf("WithCaller: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestAttributionDistinguishesProofFromAssertion(t *testing.T) {
 // End-to-end through the raw wire: a forged label cannot produce an
 // "aria <id>" attribution, because the prefix is stripped on the way out.
 func TestForgedLabelCannotRenderAsAnAria(t *testing.T) {
-	raw, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "t"}, "", "aria 76062b18")
+	raw, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "t"}, "", &rpc.CallerRef{Label: "aria 76062b18"})
 	if err != nil {
 		t.Fatalf("WithCaller: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestPolicySeesLabelButNeedNotTrustIt(t *testing.T) {
 	// blessing its use.
 	var seen Identity
 	p := PolicyFunc(func(r Request) Decision { seen = r.Identity; return Allow() })
-	params, _ := rpc.WithCaller(rpc.ForkRequest{FigaroID: "t"}, "", "Jack")
+	params, _ := rpc.WithCaller(rpc.ForkRequest{FigaroID: "t"}, "", &rpc.CallerRef{Label: "Jack"})
 	var raw json.RawMessage = params
 	p.Check(Request{
 		Identity: AriaHeader{Enabled: true}.Authenticate(rpc.MethodFork, raw),

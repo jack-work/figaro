@@ -48,7 +48,7 @@ func TestForkPolicyOffByDefault(t *testing.T) {
 		Config:  &config.Loaded{}, // no [authz] section at all
 		Ctx:     context.Background(),
 	})
-	params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "aria0001"}, "aria0001", "")
+	params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "aria0001"}, "aria0001", nil)
 	if err != nil {
 		t.Fatalf("WithCaller: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestForkPolicyOffByDefault(t *testing.T) {
 // instructions, all the way out through the handler map.
 func TestForkDeniedForSelfDuringTurn(t *testing.T) {
 	hs := authzHandlers(t, true, "default", &liveForkFigaro{id: "aria0001", turnActive: true})
-	params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "aria0001"}, "aria0001", "")
+	params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "aria0001"}, "aria0001", nil)
 	if err != nil {
 		t.Fatalf("WithCaller: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestForkAllowedWhenNotASelfForkMidTurn(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			hs := authzHandlers(t, tc.callerIdentity, "default",
 				&liveForkFigaro{id: "aria0001", turnActive: tc.turnActive})
-			params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: tc.target}, tc.caller, "")
+			params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: tc.target}, tc.caller, nil)
 			if err != nil {
 				t.Fatalf("WithCaller: %v", err)
 			}
@@ -146,7 +146,7 @@ func TestTurnActivePredicateHandlesUnknownAria(t *testing.T) {
 // allow-all rather than silently selecting rules nobody asked for.
 func TestUnknownPolicyNameFallsBackToAllowAll(t *testing.T) {
 	hs := authzHandlers(t, true, "no-such-policy", &liveForkFigaro{id: "aria0001", turnActive: true})
-	params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "aria0001"}, "aria0001", "")
+	params, err := rpc.WithCaller(rpc.ForkRequest{FigaroID: "aria0001"}, "aria0001", nil)
 	if err != nil {
 		t.Fatalf("WithCaller: %v", err)
 	}

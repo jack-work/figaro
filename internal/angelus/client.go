@@ -19,9 +19,9 @@ type Client struct {
 	// read per call so one connection cannot change identity mid-stream.
 	// Empty for a human-driven CLI, which then puts nothing extra on the wire.
 	caller string
-	// label is the ASSERTED caller name (FIGARO_CALLER), for attribution
-	// only. It is never a credential; see rpc.CallerLabelKey.
-	label string
+	// ref is the ASSERTED caller reference (the duke placeholder, or an
+	// explicit FIGARO_CALLER label). Attribution only, never a credential.
+	ref *rpc.CallerRef
 }
 
 // call is the single point every request passes through, so the caller
@@ -29,7 +29,7 @@ type Client struct {
 // marshals whatever it is given, and json.RawMessage passes through verbatim),
 // splices the identity in, and hands the bytes on.
 func (c *Client) call(ctx context.Context, method string, params, result any) error {
-	raw, err := rpc.WithCaller(params, c.caller, c.label)
+	raw, err := rpc.WithCaller(params, c.caller, c.ref)
 	if err != nil {
 		return err
 	}
@@ -42,7 +42,7 @@ func DialClient(ep transport.Endpoint) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{cli: jkrpc.NewClient(conn, nil), caller: rpc.CallerFromEnv(), label: rpc.LabelFromEnv()}, nil
+	return &Client{cli: jkrpc.NewClient(conn, nil), caller: rpc.CallerFromEnv(), ref: rpc.CallerRefFromEnv()}, nil
 }
 
 // Status reports the running daemon's uptime, population and BUILD. The build

@@ -48,6 +48,7 @@ type KeyDoc struct {
 // harness reads or writes. Order is stable; callers may filter by Mode.
 func WellKnownKeys() []KeyDoc {
 	return []KeyDoc{
+		{Key: "duke-title", Short: `What this aria calls its END USER (default "user"); set it in a loadout and a human's prompts are attributed to that name`, Mode: KeyUserSettable},
 		{Key: "system.credo", Short: "Credo source (string or {content,filePath,frontmatter}); providers read this as the system prompt", Mode: KeyUserSettable},
 		{Key: "system.tags", Short: "Per-LT annotations (e.g. system.tags[42].cache_control)", Mode: KeyUserSettable},
 		{Key: "system.cache_control", Short: `Auto cache-marker policy; ON by default (short). "none" disables; "5m"/"1h" force a TTL`, Mode: KeyUserSettable},
