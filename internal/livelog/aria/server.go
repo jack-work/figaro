@@ -137,8 +137,9 @@ func (s *Server) Update(nodes []livedoc.Node) {
 	}
 	v := s.open.ver
 	s.open.ver++
+	inquiry, segments := s.inquiryOfLocked(s.open.id)
 	frame := Page{Parts: []TurnPart{{
-		Turn: Turn{ID: s.open.id, Inquiry: s.inquiryOfLocked(s.open.id),
+		Turn: Turn{ID: s.open.id, Inquiry: inquiry, InquirySegments: segments,
 			Live: &Live{From: s.open.from, V: v, Nodes: deltas}},
 		From: s.open.from,
 	}}}
@@ -165,8 +166,9 @@ func (s *Server) Close() {
 	}
 	id, from := s.open.id, s.open.from
 	s.open = nil
+	inquiry, segments := s.inquiryOfLocked(id)
 	frame := Page{Parts: []TurnPart{{
-		Turn: Turn{ID: id, Inquiry: s.inquiryOfLocked(id),
+		Turn: Turn{ID: id, Inquiry: inquiry, InquirySegments: segments,
 			Live: &Live{From: from, V: lastV}},
 		From: from,
 	}}}
@@ -424,8 +426,8 @@ func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegme
 	}}})
 }
 
-// inquiryOfLocked is the recorded question for a turn, or "" if none. Caller
-// holds s.mu.
+// inquiryOfLocked is the recorded question for a turn — its text AND the
+// segments naming who asked it — or the zero values if none. Caller holds s.mu.
 //
 // EVERY PART CARRIES ITS TURN'S QUESTION. It used to ride exactly one frame —
 // the OpenInquiry broadcast — and every streaming frame afterwards described
@@ -434,17 +436,26 @@ func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegme
 // later re-supplied it: only the seal carries the whole Turn, which is why the
 // question appeared when the turn ENDED and not before.
 //
+// It returns the SEGMENTS for the same reason, and that half was missing:
+// re-supplying the text alone made every streaming frame a part that named the
+// question but not its askers, and the client holds what a part last said
+// (heldInquiry) — so the attributed inquiry OpenInquiry had just broadcast was
+// overwritten with an unattributed copy by the very next frame. `figaro show`
+// re-derives segments from the IR and was right; the live surfaces were told
+// the question came from nobody. A steer was unaffected: it is a node, and a
+// node carries its own sender.
+//
 // A part is a description of a turn, so it states what the turn IS. The
 // question is not a delta and cannot be reconstructed from one; leaving it off
 // made a part that says "here are nodes for turn 7" without saying what turn 7
 // asked, which is a hole the client cannot fill. Repeating it costs the
 // prompt's bytes per frame over a unix socket, and buys the invariant that a
 // part is never partial about identity.
-func (s *Server) inquiryOfLocked(id uint64) string {
+func (s *Server) inquiryOfLocked(id uint64) (string, []InquirySegment) {
 	for i := range s.turns {
 		if s.turns[i].ID == id {
-			return s.turns[i].Inquiry
+			return s.turns[i].Inquiry, s.turns[i].InquirySegments
 		}
 	}
-	return ""
+	return "", nil
 }
