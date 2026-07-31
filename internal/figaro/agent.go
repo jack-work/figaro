@@ -39,6 +39,14 @@ const (
 type event struct {
 	typ eventType
 
+	// Identity, eventUserPrompt only. id is minted by Inbox.Send and is unique
+	// within the inbox's epoch; merged names the ids folded INTO this event by
+	// an interrupt-time coalesce, so an id that no longer exists on its own can
+	// still be resolved to the message that absorbed it.
+	id     uint64
+	at     int64
+	merged []uint64
+
 	// eventUserPrompt
 	text       string
 	chalkboard *rpc.ChalkboardInput
@@ -416,16 +424,26 @@ func (a *Agent) SubmitPrompt(req rpc.QuaRequest) {
 	})
 }
 
-// QueuedPrompts returns a read-only snapshot of user prompts sitting in the
-// inbox — accepted but not yet drained into a turn. FIFO order, oldest first.
-// The inbox is untouched; there is no cancellation surface at this layer.
-func (a *Agent) QueuedPrompts() []rpc.QueuedPrompt {
-	texts := a.inbox.SnapshotUserPrompts()
-	out := make([]rpc.QueuedPrompt, 0, len(texts))
-	for _, t := range texts {
-		out = append(out, rpc.QueuedPrompt{Text: t})
+// QueuedPrompts returns a read-only snapshot of the messages this aria has
+// accepted but not yet answered, in FIFO order, plus the epoch those ids
+// belong to. The inbox is untouched.
+//
+// carriers opts in to empty-text prompts (pure chalkboard carriers): the CRUD
+// surface must be able to address everything it can delete, while every
+// display surface wants them omitted — which is what this has always done.
+func (a *Agent) QueuedPrompts(carriers bool) (string, []rpc.QueuedPrompt) {
+	events := a.inbox.SnapshotPrompts(carriers)
+	out := make([]rpc.QueuedPrompt, 0, len(events))
+	for _, e := range events {
+		out = append(out, rpc.QueuedPrompt{
+			ID:     e.id,
+			Text:   e.text,
+			State:  rpc.QueueStateQueued,
+			At:     e.at,
+			Merged: e.merged,
+		})
 	}
-	return out
+	return a.inbox.Epoch(), out
 }
 
 // turnActive reports whether a turn is in flight (a prompt submitted now would
@@ -435,17 +453,82 @@ func (a *Agent) turnActive() bool {
 	return a.turnRunning.Load()
 }
 
-// Interrupt aborts the current turn. Idempotent when idle.
-func (a *Agent) Interrupt() {
+// Interrupt aborts the current turn, keeping the queue. It is the shape the
+// Figaro interface uses (and the angelus's graceful shutdown, where dropping
+// what someone queued would be exactly the wrong courtesy).
+func (a *Agent) Interrupt() { a.Hangup(rpc.QueueKeep) }
+
+// Hangup aborts the current turn and says what became of the messages waiting
+// behind it.
+//
+// It also COALESCES the queue on the keep path — each contiguous run of
+// waiting prompts folds into one message, with the same semantics steering
+// already has (texts joined in order, chalkboard input merged so a later value
+// wins). Three messages typed during a long turn and then cut short are one
+// question to answer, not three turns to sit through.
+//
+// The fold happens only here. There is no mode threaded into the submit path
+// and no shared helper that checks whether it is being interrupted: this
+// function IS the interrupt path, and Inbox.CoalesceUserPromptRuns has exactly
+// one caller in the tree. A normal submit therefore cannot reach it by
+// construction rather than by convention.
+//
+// An IDLE aria coalesces nothing. There is no turn to interrupt, the drain
+// loop is already working through the queue, and folding under it would change
+// what a plain submit means — which is the one thing this must not do.
+//
+// Two dispositions, named rather than negated, because the CLI verbs that
+// carry them are two different intentions:
+//
+//	QueueKeep  — stop the turn; the queue is answered next (`figaro hup`).
+//	QueueClear — stop the turn AND drop the queue, handing it back so it can
+//	             be persisted rather than lost (`figaro cut`).
+//
+// The response's Queue is THE QUEUE AS OF THE HANGUP either way — one field,
+// one meaning — and Cleared says which happened to it.
+//
+// Order is why clear does not simply reuse the keep path: the drain happens
+// BEFORE any fold, so what comes back is the messages as they were typed, each
+// with its own id. Coalescing first would hand back one blob and defeat the
+// point of returning it at all.
+//
+// Clearing does not require a live turn. A queue can be worth dropping between
+// turns, and refusing then would be a distinction with no meaning to the
+// person asking.
+func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
+	resp := rpc.InterruptResponse{OK: true, Epoch: a.inbox.Epoch()}
+
+	if disposition == rpc.QueueClear {
+		for _, e := range a.inbox.DrainUserPrompts() {
+			resp.Queue = append(resp.Queue, rpc.QueuedPrompt{
+				ID:         e.id,
+				Text:       e.text,
+				State:      rpc.QueueStateQueued,
+				At:         e.at,
+				Merged:     e.merged,
+				Chalkboard: e.chalkboard,
+			})
+		}
+		resp.Cleared = true
+	}
+
 	a.mu.Lock()
 	if a.turnCancel == nil {
 		a.mu.Unlock()
-		return
+		if !resp.Cleared {
+			_, resp.Queue = a.QueuedPrompts(true)
+		}
+		return resp
 	}
 	a.interrupted = true
 	cancel := a.turnCancel
 	a.mu.Unlock()
+	if !resp.Cleared {
+		a.inbox.CoalesceUserPromptRuns()
+		_, resp.Queue = a.QueuedPrompts(true)
+	}
 	cancel()
+	return resp
 }
 
 // CoordinateFork runs storage fork coordination on the actor goroutine.
@@ -698,8 +781,29 @@ func (a *Agent) act(ctx context.Context) {
 		}
 		switch evt.typ {
 		case eventUserPrompt:
-			slog.Debug("event UserPrompt", "aria", a.id, "text", truncLog(evt.text, 60))
-			a.runTurn(ctx, evt)
+			// COALESCE THE WAITING RUN. Everything queued behind this prompt
+			// with no control event in between is part of the same ask: three
+			// notes typed while the previous turn was finishing are one
+			// question, not three turns to sit through — and that is true
+			// whether the turn ahead of them completed or was interrupted.
+			//
+			// This is the third and last drain site to fold, and it is why the
+			// fold is a property of DRAINING rather than of interrupting. The
+			// mid-turn drains (prepareProviderRound, appendSteeringPrompts)
+			// have always folded their batch; only this one, the idle path,
+			// took a single event and gave each message its own turn.
+			//
+			// A lone prompt is still exactly itself: TakeReadyUserPrompts
+			// returns nothing, mergePromptEvents short-circuits, and one
+			// submit remains one message.
+			batch := append([]event{evt}, a.inbox.TakeReadyUserPrompts()...)
+			merged, ok := mergePromptEvents(batch)
+			if !ok {
+				continue
+			}
+			slog.Debug("event UserPrompt", "aria", a.id,
+				"text", truncLog(merged.text, 60), "folded", len(batch))
+			a.runTurn(ctx, merged)
 		case eventSet:
 			a.applyControlPatch(evt.setPatch, "set")
 		case eventFork:
@@ -915,4 +1019,17 @@ func sumUsage(msgs []message.Message) (in, out, cacheRead, cacheWrite int) {
 		}
 	}
 	return in, out, cacheRead, cacheWrite
+}
+
+// DeleteQueued asks the aria to drop queued messages, and reports what became
+// of each requested id. Rejections are results, not errors: asking to delete
+// something the agent has already committed is a legitimate request and a
+// legitimate refusal, and the caller is told which of the two it got.
+func (a *Agent) DeleteQueued(epoch string, ids []uint64, all bool) (string, []rpc.QueueResult) {
+	return a.inbox.DeletePrompts(epoch, ids, all)
+}
+
+// UpdateQueued rewrites one queued message's text, under the same rules.
+func (a *Agent) UpdateQueued(epoch string, id uint64, text string) (string, rpc.QueueResult) {
+	return a.inbox.UpdatePrompt(epoch, id, text)
 }

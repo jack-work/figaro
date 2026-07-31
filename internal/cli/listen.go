@@ -136,7 +136,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	// figaro listen opens directly in the transcript (its home): load the recent
 	// window; older history pages in on scroll-up and live frames follow.
 	in := &interactiveInput{
-		tc: tc, lt: lt, fcli: fcli, mu: &mu, set: &set,
+		tc: tc, lt: lt, fcli: fcli, hangup: fcli, mu: &mu, set: &set,
 		figaroID: figaroID, cancel: cancel, disconnectCh: disconnectCh,
 	}
 	// listen opens the pager through the deliberate door below, which reads; the

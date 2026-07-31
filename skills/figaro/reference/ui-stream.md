@@ -88,6 +88,56 @@ what it materialized only when the close marker's `V` matches its highest seen
 version. On mismatch it re-reads from its highest fully sealed turn. A part with
 `sealed:true` is the distinct, final signal that the entire turn is immutable.
 
+### The queue: interrupt disposition, identity, and refusals
+
+Prompts accepted while a turn is running wait in the aria's queue.
+`figaro.queued` reads it (`{"include_carriers":true}` adds the empty-text
+chalkboard carriers, which the default omits, as it always has);
+`figaro.queue.update` and `figaro.queue.delete` mutate it. There is no create
+method: `figaro.qua` IS the create.
+
+`figaro.interrupt` takes an explicit disposition for the queue, defaulting to
+`keep` so a client that predates the field is unchanged:
+
+```json
+{"queue": "keep"}     // stop the turn; the queue is answered next
+{"queue": "clear"}    // stop the turn and drop the queue
+→ {"ok": true, "cleared": false, "epoch": "…", "queue": [ … ]}
+```
+
+`queue` in the response is the queue **as of the hangup** — one field, one
+meaning — and `cleared` says whether those messages were removed. On the clear
+path the drain happens BEFORE any fold, so what comes back is verbatim — one
+entry per message, each with its own id — which is what makes it worth
+persisting.
+
+**Coalescing is a property of DRAINING, not of interrupting.** All three drain
+sites — the idle drain that opens a turn, the two mid-turn drains that steer
+one, and the interrupt — fold the contiguous run of queued prompts into one
+message: texts joined by a BLANK LINE (a lone newline is a soft break in
+markdown, so the screen would rejoin them), chalkboard input merged in queue
+order so a later value wins. **A queued `set` or `fork` is a barrier** that is
+never crossed. A lone prompt is passed through unchanged.
+
+An interrupted turn **never drains**: a round that opened with a cancelled
+context cannot answer what it lifts, and prompts lifted there were committed to
+the log and then abandoned unanswered. They stay queued, and the next turn asks
+them.
+
+**Identity.** A queued message is `(epoch, id)`. `id` is a small dense counter;
+`epoch` names the INBOX GENERATION, minted afresh every time an agent is
+constructed. Ids restart with it, so a mutation must present the epoch its ids
+were read against; a mismatch is refused as `stale` and nothing is mutated. The
+epoch is compared only for equality, and is a string on the wire because a
+64-bit nonce would lose precision in a JSON number.
+
+**Refusals are results.** Both mutators succeed at the RPC level and report one
+outcome per requested id (`deleted`/`updated`/`rejected`), in request order.
+Neither response has a summary `ok` field: reading the outcome is the only way
+to learn anything. The reason set is closed — `committing`, `committed`,
+`merged` (with `into`, the surviving id), `stale`, `unknown`, `closed` — and
+the JSON-RPC error channel is reserved for transport and malformed requests.
+
 `turn.done` is the only control notification. Its params are
 `{"reason":"...","idle":true|false}`: the turn ended, and `idle` says whether
 queued work remains. It is not transcript content and does not replace the
@@ -128,8 +178,9 @@ keep one reader consuming interleaved responses and notifications:
 ```
 
 A full frontend can also call `figaro.qua`, `figaro.interrupt`,
-`figaro.context`, `figaro.chalkboard`, `figaro.set`, `figaro.loadout`, and
-`figaro.queued` on the aria socket; creation, listing, forking, promotion, and
+`figaro.context`, `figaro.chalkboard`, `figaro.set`, `figaro.loadout`,
+`figaro.queued`, `figaro.queue.update` and `figaro.queue.delete` on the aria
+socket; creation, listing, forking, promotion, and
 lifecycle operations remain on Angelus. Request ids are integers in the current
 `jkrpc` framing.
 

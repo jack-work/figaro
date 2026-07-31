@@ -24,6 +24,13 @@ const (
 	MethodChalkboard = "figaro.chalkboard"
 	MethodQueued     = "figaro.queued"
 
+	// The queue mutators. Reading the queue stays on MethodQueued (it predates
+	// them and its shape is unchanged); these two are the U and D of the CRUD,
+	// while C is MethodQua — a queued message IS a submitted prompt, so there
+	// is deliberately no second create path.
+	MethodQueueUpdate = "figaro.queue.update"
+	MethodQueueDelete = "figaro.queue.delete"
+
 	// MethodRead pulls one aria.Page from a turn cursor (the catch-up half of
 	// the same paginated shape MethodAriaFrame pushes), so a (re)connecting
 	// client can rebuild and follow live frames on the same connection.
@@ -107,10 +114,36 @@ type QuaResponse struct {
 	Active bool `json:"active,omitempty"`
 }
 
-type InterruptRequest struct{}
+// QueueDisposition says what a hangup does with the messages the aria has
+// accepted but not yet answered. It is an explicit enum rather than a boolean
+// because the two CLI verbs that carry it (`hup` keeps, `cut` discards) must
+// each name a disposition outright — a negated flag is how a caller ends up
+// discarding a queue it meant to keep.
+type QueueDisposition string
 
+const (
+	// QueueKeep leaves the queue in place. It is the zero value, so a client
+	// that predates this field gets exactly the old behaviour.
+	QueueKeep QueueDisposition = "keep"
+	// QueueClear drains the queue and returns what it drained.
+	QueueClear QueueDisposition = "clear"
+)
+
+// InterruptRequest asks the aria to stop the turn in flight, and says what to
+// do with anything queued behind it.
+type InterruptRequest struct {
+	Queue QueueDisposition `json:"queue,omitempty"` // "" == QueueKeep
+}
+
+// InterruptResponse reports the hangup. Queue is THE QUEUE AS OF THE HANGUP —
+// one meaning, always populated — and Cleared says whether those messages were
+// removed or left to be answered. Epoch names the inbox generation the ids in
+// Queue belong to (see QueueDeleteRequest).
 type InterruptResponse struct {
-	OK bool `json:"ok"`
+	OK      bool           `json:"ok"`
+	Cleared bool           `json:"cleared,omitempty"`
+	Epoch   string         `json:"epoch,omitempty"`
+	Queue   []QueuedPrompt `json:"queue,omitempty"`
 }
 
 type ContextRequest struct{}
@@ -149,23 +182,135 @@ type ChalkboardResponse struct {
 	Snapshot chalkboard.Snapshot `json:"snapshot"`
 }
 
-// QueuedRequest asks for the currently-queued user prompts on this aria —
-// accepted by the inbox but not yet drained into a turn. It is a read-only
-// snapshot; there is deliberately no cancellation surface here.
-type QueuedRequest struct{}
+// QueuedRequest asks for the messages this aria has accepted but not yet
+// answered. IncludeCarriers opts in to the empty-text prompts that carry only
+// a chalkboard patch: they are addressable by the CRUD surface and so must be
+// listable, but they render as nothing, so the default stays exactly what it
+// has always been — the prompts a human would recognise as queued.
+type QueuedRequest struct {
+	IncludeCarriers bool `json:"include_carriers,omitempty"`
+}
 
-// QueuedResponse carries the queued user prompts in FIFO order (oldest first).
-// Non-prompt inbox events (chalkboard sets, fork coordination) are omitted —
-// this is the "what am I about to be asked next?" view.
+// QueuedResponse carries the queued messages in FIFO order (oldest first).
+//
+// Epoch names the INBOX GENERATION these ids belong to. It is minted afresh
+// every time an agent is constructed — a daemon restart, a dormant→attach —
+// and ids restart with it, so an id is only meaningful when paired with the
+// epoch it was read against. Mutators require it back (QueueDeleteRequest);
+// that is what stops a stale id from deleting a different message that happens
+// to hold that number now.
 type QueuedResponse struct {
+	Epoch   string         `json:"epoch"`
 	Prompts []QueuedPrompt `json:"prompts"`
 }
 
-// QueuedPrompt is one queued user prompt. Text is the exact string the user
-// submitted; a prompt with empty text is a pure chalkboard-carrier and is
-// omitted from the snapshot.
+// QueueState is where a message sits in its short life.
+type QueueState string
+
+const (
+	// QueueStateQueued: in the inbox, deletable.
+	QueueStateQueued QueueState = "queued"
+	// QueueStateCommitting: lifted by the drain loop and on its way into the
+	// IR. Visible, but no longer deletable — see QueueRejection.
+	QueueStateCommitting QueueState = "committing"
+)
+
+// QueuedPrompt is one queued message. Text is the exact string submitted; a
+// prompt with empty text is a pure chalkboard carrier and is only listed when
+// the request asked for carriers.
 type QueuedPrompt struct {
-	Text string `json:"text"`
+	ID    uint64     `json:"id"`
+	Text  string     `json:"text"`
+	State QueueState `json:"state,omitempty"`
+	At    int64      `json:"at,omitempty"` // accepted-at, unix millis
+	// Merged lists the ids folded INTO this message when an interrupt
+	// coalesced a run of queued prompts, so a client holding one of those ids
+	// can still find where it went.
+	Merged []uint64 `json:"merged,omitempty"`
+	// Chalkboard rides only on DRAINED payloads (the response to a clearing
+	// hangup), so that what was drained can be persisted losslessly rather
+	// than lost.
+	Chalkboard *ChalkboardInput `json:"chalkboard,omitempty"`
+}
+
+// QueueOutcome is what happened to ONE requested mutation.
+//
+// There is deliberately no summary "ok" on either mutator response: reading
+// the per-id outcome is the only way to learn anything, so it cannot be
+// skipped and defaulted to success. A refusal is a legitimate decision by the
+// agent — not a fault — so it travels as data, and the JSON-RPC error channel
+// stays reserved for transport and malformed requests.
+type QueueOutcome string
+
+const (
+	QueueDeleted  QueueOutcome = "deleted"
+	QueueUpdated  QueueOutcome = "updated"
+	QueueRejected QueueOutcome = "rejected"
+)
+
+// QueueRejection is the closed set of reasons a mutation was refused.
+type QueueRejection string
+
+const (
+	// RejectCommitting: the drain loop lifted it out of the queue as the
+	// request arrived. It is becoming a message right now.
+	RejectCommitting QueueRejection = "committing"
+	// RejectCommitted: already appended to the IR by the running turn. This is
+	// the honest answer to "delete the in-flight one": a legitimate ask, and a
+	// legitimate refusal.
+	RejectCommitted QueueRejection = "committed"
+	// RejectMerged: an interrupt folded it into another queued message. Into
+	// names the survivor, so the caller can retarget rather than guess.
+	RejectMerged QueueRejection = "merged"
+	// RejectStale: the epoch belongs to a previous inbox generation, so the id
+	// cannot be resolved safely. Nothing was mutated.
+	RejectStale QueueRejection = "stale"
+	// RejectUnknown: never seen in this generation, or long since answered.
+	RejectUnknown QueueRejection = "unknown"
+	// RejectClosed: the inbox is shut (the aria is stopping).
+	RejectClosed QueueRejection = "closed"
+)
+
+// QueueResult is one requested id's fate. Reason is set exactly when Outcome
+// is QueueRejected; Detail is prose for a human and is never parsed.
+type QueueResult struct {
+	ID      uint64         `json:"id"`
+	Outcome QueueOutcome   `json:"outcome"`
+	Reason  QueueRejection `json:"reason,omitempty"`
+	Detail  string         `json:"detail,omitempty"`
+	Into    uint64         `json:"into,omitempty"` // RejectMerged: the surviving id
+}
+
+// QueueDeleteRequest asks the aria to drop queued messages.
+//
+// Epoch is the generation IDs were read against and is REQUIRED whenever IDs
+// is non-empty — it is a compare-and-swap token, not decoration. All names no
+// id at all ("whatever is queued now"), so it needs no epoch.
+type QueueDeleteRequest struct {
+	Epoch string   `json:"epoch,omitempty"`
+	IDs   []uint64 `json:"ids,omitempty"`
+	All   bool     `json:"all,omitempty"`
+}
+
+// QueueDeleteResponse carries one result per requested id, in request order.
+// A stale or all-form request that resolves to nothing still reports a result
+// (with ID 0 for the all-form), so an empty Results for a non-empty request is
+// a protocol violation rather than a silent success.
+type QueueDeleteResponse struct {
+	Epoch   string        `json:"epoch"`
+	Results []QueueResult `json:"results"`
+}
+
+// QueueUpdateRequest replaces the text of one queued message.
+type QueueUpdateRequest struct {
+	Epoch string `json:"epoch"`
+	ID    uint64 `json:"id"`
+	Text  string `json:"text"`
+}
+
+type QueueUpdateResponse struct {
+	Epoch  string      `json:"epoch"`
+	Result QueueResult `json:"result"`
 }
 
 // ReadRequest is the turn-shaped aria.Page request. SinceLT is a legacy JSON

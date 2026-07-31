@@ -253,6 +253,31 @@ var keymap = []keyBinding{
 	{chord: byteChord('!'), modes: inTranscript, open: opensPager, help: helpStatusPanel, pager: pagerStatusPanel},
 	{chord: byteChord('Q'), modes: inTranscript, open: opensPager, help: helpQueuedPanel, pager: pagerQueuedPanel},
 
+	// -- input level: hang up, and stay ------------------------------------
+	{
+		// The gesture Ctrl-C could never be: stop the conversation HERE and
+		// keep watching. Ctrl-C ends the session with it (keyStop, exit 130);
+		// this one returns keyHandled, so the pager stays up and the aria
+		// stays ready for the next thing you type.
+		//
+		// Transcript-only by design. In incipit a printable byte composes a
+		// steer, and an incipit session closes on turn.done anyway — there is
+		// no "and stay" to offer there.
+		chord: byteChord('H'), modes: inTranscript | inPanel,
+		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
+		help: helpHangUp, input: inputHangUp,
+	},
+	{
+		// The same gesture, dropping the queue. Deliberately NOT next to 'H'
+		// on the keyboard and deliberately not a modifier on it: this is the
+		// destructive one, and the two must not be neighbours. What it drops is
+		// printed into the pager's notice and reprinted to the shell on the way
+		// out, so a slip costs you the queue's PLACE, not its text.
+		chord: byteChord('X'), modes: inTranscript | inPanel,
+		open: staysInline, why: "it addresses a turn that is streaming in the view you are already in",
+		help: helpHangUpDrop, input: inputHangUpDrop,
+	},
+
 	// -- pager level: selection --------------------------------------------
 	{chord: byteChord(0x0e), modes: inTranscript, open: opensPager, help: helpSelect, pager: pagerSelectNext},
 	{chord: byteChord(0x10), modes: inTranscript, open: opensPager, help: helpSelect, pager: pagerSelectPrev},
@@ -359,6 +384,8 @@ const (
 	helpSelectExtend
 	helpExpand
 	helpInterrupt
+	helpHangUp
+	helpHangUpDrop
 	helpEscape
 	helpListen
 	helpDetach
@@ -381,6 +408,8 @@ type helpRow struct {
 var helpRows = []helpRow{
 	{helpDetach, "q", "exit; keeps the turn running"},
 	{helpInterrupt, "^C", "exit by interrupt; stops the turn"},
+	{helpHangUp, "H", "hang up: stop the turn, keep listening"},
+	{helpHangUpDrop, "X", "hang up and drop queued messages (printed on exit)"},
 	{helpScroll, "j/k · u/d · gg/G", "scroll · half-page · top/bottom"},
 	{helpArrows, "↑/↓ · PgUp/PgDn", "the same, on the arrow cluster"},
 	{helpHomeEnd, "Home / End", "top / bottom"},

@@ -164,6 +164,9 @@ func (a *Agent) runTurn(ctx context.Context, prompt event) {
 		a.endTurn(fmt.Sprintf("error: append message: %s", err))
 		return
 	}
+	// It is a message now, not a queued one. A delete aimed at it from here on
+	// is refused as committed rather than silently missing its target.
+	a.inbox.MarkCommitted([]event{prompt})
 	a.startAssistantUnit()
 
 	// Drive: provider -> tools -> repeat.
@@ -348,6 +351,22 @@ func (a *Agent) startAssistantUnit() {
 // tool_result message that appends in turn. Returns true when the turn
 // is complete, false when another round is needed.
 func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done bool) {
+	// The interrupt may have landed between rounds. Ending here says
+	// "interrupted", which is true; falling through would call the provider
+	// with a dead context and end the turn as "error: context canceled",
+	// which is the same event wearing a fault's clothes.
+	if a.isInterrupted() {
+		if repaired, err := a.repairTurnTail(); err != nil {
+			a.reconcileAriaServer()
+			a.finishTurn("error: interrupt recovery: " + err.Error())
+			return true
+		} else if len(repaired) > 0 {
+			a.emitDelta(a.composeTurn(nil))
+		}
+		a.serviceForks()
+		a.endTurn("interrupted")
+		return true
+	}
 	if allowSteering {
 		if err := a.prepareProviderRound(); err != nil {
 			a.endTurn("error: append steering prompt: " + err.Error())
@@ -753,6 +772,15 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 // prompt as its own user message, and opens a fresh assistant unit for the
 // next provider round.
 func (a *Agent) appendSteeringPrompts() error {
+	// AN INTERRUPTED TURN DOES NOT TAKE THE QUEUE WITH IT. Draining here after
+	// the cancel is how queued messages got "received" — appended to the log,
+	// visible on screen — and then never answered: the round that absorbed
+	// them opened with an already-cancelled context, so it died immediately
+	// and took them down with it. They stay queued instead, and the next turn
+	// (a fresh one, opened by the drain loop) asks them properly.
+	if a.isInterrupted() {
+		return nil
+	}
 	a.serviceSets()
 	prompts := a.inbox.TakeReadyUserPrompts()
 	if len(prompts) == 0 {
@@ -772,6 +800,11 @@ func (a *Agent) appendSteeringPrompts() error {
 }
 
 func (a *Agent) prepareProviderRound() error {
+	// Same rule as appendSteeringPrompts, at the other drain site: a cancelled
+	// turn must not lift prompts it cannot answer.
+	if a.isInterrupted() {
+		return nil
+	}
 	for {
 		progressed := a.serviceForks()
 		if a.serviceSets() {
@@ -850,12 +883,18 @@ func (a *Agent) appendPromptEvents(prompts []event) error {
 		}
 		return err
 	}
+	// Every id in the batch is now part of one durable message.
+	a.inbox.MarkCommitted(prompts)
 	return nil
 }
 
 // mergePromptEvents folds a drained batch into one prompt: texts joined by a
 // newline in queue order, chalkboard input merged in the same order so a later
 // prompt's value wins. Reports false when the batch is empty.
+//
+// Identity folds with the content: the result keeps the FIRST id (it is the
+// same message, continued) and records every other id in merged, so a client
+// that read the queue a moment ago can still find where its id went.
 func mergePromptEvents(prompts []event) (event, bool) {
 	if len(prompts) == 0 {
 		return event{}, false
@@ -864,14 +903,25 @@ func mergePromptEvents(prompts []event) (event, bool) {
 		return prompts[0], true
 	}
 	texts := make([]string, 0, len(prompts))
-	out := event{typ: eventUserPrompt}
-	for _, p := range prompts {
+	out := event{typ: eventUserPrompt, id: prompts[0].id, at: prompts[0].at}
+	for i, p := range prompts {
 		if p.text != "" {
 			texts = append(texts, p.text)
 		}
 		out.chalkboard = mergeChalkboardInput(out.chalkboard, p.chalkboard)
+		out.merged = append(out.merged, p.merged...)
+		if i > 0 && p.id != 0 {
+			out.merged = append(out.merged, p.id)
+		}
 	}
-	out.text = strings.Join(texts, "\n")
+	// A BLANK line between them, not a single newline. Two reasons, and they
+	// point the same way. On screen, prose is rendered as markdown, where a
+	// lone newline is a SOFT break — glamour rejoins the lines and three
+	// messages arrive as "test2 test3 test4", which is what made this look
+	// like one garbled sentence. And for the model, a blank line is the
+	// unambiguous mark of "these were separate messages", which is exactly
+	// what they were. What the user sees and what the agent reads agree.
+	out.text = strings.Join(texts, "\n\n")
 	return out, true
 }
 

@@ -67,9 +67,24 @@ func (c *Client) Context(ctx context.Context) (*rpc.ContextResponse, error) {
 	return &resp, nil
 }
 
-// Interrupt asks the figaro to abort its current turn.
+// Interrupt asks the figaro to abort its current turn, keeping whatever is
+// queued behind it. The queued messages coalesce into one combined message,
+// which is what the aria answers next.
 func (c *Client) Interrupt(ctx context.Context) error {
 	return c.cli.Call(ctx, rpc.MethodInterrupt, rpc.InterruptRequest{}, nil)
+}
+
+// Hangup is Interrupt with an explicit disposition for the queue, and the
+// queue itself comes back: what survived (keep) or what was dropped (clear).
+// A cleared queue is returned VERBATIM — one entry per message as typed — so
+// the caller can persist it instead of losing it.
+func (c *Client) Hangup(ctx context.Context, disposition rpc.QueueDisposition) (*rpc.InterruptResponse, error) {
+	var resp rpc.InterruptResponse
+	req := rpc.InterruptRequest{Queue: disposition}
+	if err := c.cli.Call(ctx, rpc.MethodInterrupt, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 // Set applies a chalkboard patch directly. No LLM round-trip.
@@ -100,12 +115,23 @@ func (c *Client) Chalkboard(ctx context.Context) (*rpc.ChalkboardResponse, error
 	return &resp, nil
 }
 
-// Queued returns the aria's currently-queued user prompts (accepted by the
-// inbox, not yet drained). Read-only — there is no cancellation surface at
-// this layer.
+// Queued returns the aria's queued messages for DISPLAY: the prompts a human
+// would recognise as waiting, with pure chalkboard carriers omitted. The
+// response's Epoch names the generation those ids belong to.
 func (c *Client) Queued(ctx context.Context) (*rpc.QueuedResponse, error) {
 	var resp rpc.QueuedResponse
 	if err := c.cli.Call(ctx, rpc.MethodQueued, rpc.QueuedRequest{}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// QueuedAll is the CRUD view: every queued message, carriers included, because
+// anything that can be deleted has to be addressable.
+func (c *Client) QueuedAll(ctx context.Context) (*rpc.QueuedResponse, error) {
+	var resp rpc.QueuedResponse
+	req := rpc.QueuedRequest{IncludeCarriers: true}
+	if err := c.cli.Call(ctx, rpc.MethodQueued, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -119,4 +145,25 @@ func (c *Client) Close() error {
 // Done returns a channel closed when the connection dies.
 func (c *Client) Done() <-chan struct{} {
 	return c.cli.Done()
+}
+
+// DeleteQueued asks the aria to drop queued messages. The error return is for
+// TRANSPORT failures only; whether each id was actually dropped is in the
+// results, one per requested id, and a refusal there is a normal answer.
+func (c *Client) DeleteQueued(ctx context.Context, req rpc.QueueDeleteRequest) (*rpc.QueueDeleteResponse, error) {
+	var resp rpc.QueueDeleteResponse
+	if err := c.cli.Call(ctx, rpc.MethodQueueDelete, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// UpdateQueued rewrites one queued message's text. Same split: error is
+// transport, the outcome is in the result.
+func (c *Client) UpdateQueued(ctx context.Context, req rpc.QueueUpdateRequest) (*rpc.QueueUpdateResponse, error) {
+	var resp rpc.QueueUpdateResponse
+	if err := c.cli.Call(ctx, rpc.MethodQueueUpdate, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }

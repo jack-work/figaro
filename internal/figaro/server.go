@@ -25,6 +25,8 @@ var agentMethods = []string{
 	rpc.MethodLoadout,
 	rpc.MethodChalkboard,
 	rpc.MethodQueued,
+	rpc.MethodQueueUpdate,
+	rpc.MethodQueueDelete,
 	rpc.MethodRead,
 }
 
@@ -62,8 +64,22 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		return rpc.ContextResponse{Messages: out, Metrics: a.sessionMetrics()}, nil
 
 	case rpc.MethodInterrupt:
-		a.Interrupt()
-		return rpc.InterruptResponse{OK: true}, nil
+		var req rpc.InterruptRequest
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, err
+			}
+		}
+		// An unknown disposition is refused rather than guessed: the two verbs
+		// differ by whether the caller's queued messages survive, and a typo
+		// must not be resolved into the destructive one.
+		switch req.Queue {
+		case "", rpc.QueueKeep, rpc.QueueClear:
+		default:
+			return nil, fmt.Errorf("unknown queue disposition %q (want %q or %q)",
+				req.Queue, rpc.QueueKeep, rpc.QueueClear)
+		}
+		return a.Hangup(req.Queue), nil
 
 	case rpc.MethodSet:
 		var req rpc.SetRequest
@@ -92,7 +108,49 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		return rpc.ChalkboardResponse{Snapshot: a.Snapshot()}, nil
 
 	case rpc.MethodQueued:
-		return rpc.QueuedResponse{Prompts: a.QueuedPrompts()}, nil
+		var req rpc.QueuedRequest
+		if len(params) > 0 {
+			if err := json.Unmarshal(params, &req); err != nil {
+				return nil, err
+			}
+		}
+		epoch, prompts := a.QueuedPrompts(req.IncludeCarriers)
+		return rpc.QueuedResponse{Epoch: epoch, Prompts: prompts}, nil
+
+	case rpc.MethodQueueDelete:
+		var req rpc.QueueDeleteRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+		// A request that names nothing is malformed, not a refusal: there is
+		// no id whose fate could be reported, so it belongs on the error
+		// channel rather than in an empty result list a caller might read as
+		// success.
+		if len(req.IDs) == 0 && !req.All {
+			return nil, fmt.Errorf("queue delete: name ids or pass all")
+		}
+		if len(req.IDs) > 0 && req.All {
+			return nil, fmt.Errorf("queue delete: ids and all are mutually exclusive")
+		}
+		epoch, results := a.DeleteQueued(req.Epoch, req.IDs, req.All)
+		return rpc.QueueDeleteResponse{Epoch: epoch, Results: results}, nil
+
+	case rpc.MethodQueueUpdate:
+		var req rpc.QueueUpdateRequest
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+		if req.ID == 0 {
+			return nil, fmt.Errorf("queue update: name the message id")
+		}
+		// Empty text would silently turn a question into a chalkboard carrier
+		// — a shape the caller almost certainly did not mean and cannot see.
+		// Malformed input, so: error, not a rejection reason.
+		if req.Text == "" {
+			return nil, fmt.Errorf("queue update: text is empty (delete it instead)")
+		}
+		epoch, result := a.UpdateQueued(req.Epoch, req.ID, req.Text)
+		return rpc.QueueUpdateResponse{Epoch: epoch, Result: result}, nil
 
 	case rpc.MethodRead:
 		var req rpc.ReadRequest
