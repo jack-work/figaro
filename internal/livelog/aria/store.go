@@ -215,6 +215,7 @@ func sliceNodes(m Message, lo, hi uint64) Message {
 	out := Message{Turn: m.Turn, From: lo, Role: m.Role, Nodes: m.Nodes[lo-m.From : hi-m.From+1]}
 	if out.From == 0 {
 		out.Inquiry = m.Inquiry
+		out.InquirySegments = m.InquirySegments
 	}
 	return out
 }

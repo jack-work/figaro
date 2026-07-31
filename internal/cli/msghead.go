@@ -37,3 +37,11 @@ func messageHeader(role string) string {
 		return ""
 	}
 }
+
+// dimSender styles a per-segment attribution for the inline view. It is the
+// same dim register block timestamps and tool durations use, so a sender reads
+// as metadata about the message rather than as part of it.
+//
+// Package-level because `term` is shadowed by a local terminal variable at the
+// call site — a method value there would silently resolve to the wrong thing.
+func dimSender(name string) string { return term.Dim(name) }

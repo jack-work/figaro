@@ -42,8 +42,9 @@ type Client struct {
 	// its first slice carries it away. The inquiry commits before the agent has
 	// said anything, so it must be held here to be attached to whichever slice
 	// turns out to start the turn.
-	emitted map[int]int
-	inquiry map[int]string
+	emitted  map[int]int
+	inquiry  map[int]string
+	segments map[int][]InquirySegment
 
 	OnClosed  func(Message)
 	OnLive    func(Message)
@@ -53,7 +54,7 @@ type Client struct {
 
 // NewClient returns a fresh client.
 func NewClient() *Client {
-	return &Client{store: NewStore(), closedSeen: map[int]bool{}, emitted: map[int]int{}, inquiry: map[int]string{}}
+	return &Client{store: NewStore(), closedSeen: map[int]bool{}, emitted: map[int]int{}, inquiry: map[int]string{}, segments: map[int][]InquirySegment{}}
 }
 
 // Store exposes the range store beneath the client. Phase 1 has no consumer:
@@ -296,6 +297,9 @@ func (c *Client) Apply(p Page) {
 		// what history is refused.
 		if part.Inquiry != "" && !part.ClippedHead {
 			c.inquiry[id] = part.Inquiry
+			if len(part.InquirySegments) > 0 {
+				c.segments[id] = part.InquirySegments
+			}
 			if staged {
 				c.store.ClaimOpen(id)
 			}
@@ -398,6 +402,7 @@ func (c *Client) Apply(p Page) {
 		}
 		delete(c.emitted, id)
 		delete(c.inquiry, id)
+		delete(c.segments, id)
 		c.advanceCommitted(id)
 		if c.store.OpenTurn() == id {
 			c.store.ResetOpen()
@@ -500,6 +505,7 @@ func (c *Client) message(turn, from int, nodes []livedoc.Node) Message {
 	m := Message{Turn: turn, From: uint64(from), Role: turnRole(nodes), Nodes: nodes}
 	if from == 0 {
 		m.Inquiry = c.inquiry[turn]
+		m.InquirySegments = c.segments[turn]
 	}
 	return m
 }

@@ -48,6 +48,21 @@ type Turn struct {
 	// Renderers draw it from here, above Nodes[0]. Nothing in Nodes echoes it.
 	Inquiry string `json:"inquiry,omitempty"`
 
+	// InquirySegments is the same question, split by WHO ASKED IT.
+	//
+	// One turn can be opened by several submissions folded together — an aria
+	// and a human both writing while the agent was busy — and Inquiry is their
+	// joined text, which cannot say which words were whose. The segments can.
+	//
+	// Inquiry stays the canonical TEXT (search, selection hashing, the mantra
+	// seed, height estimation all want the question as one string) and remains
+	// exactly what it always was, so nothing that reads it needs to change.
+	// Segments are the attribution layer over it: a renderer that shows senders
+	// walks these, one that does not keeps using Inquiry. Empty for every turn
+	// written before attribution existed, and for every turn whose submitters
+	// were unknown — in which case renderers draw no attribution at all.
+	InquirySegments []InquirySegment `json:"inquiry_segments,omitempty"`
+
 	// At is when the inquiry arrived (unix millis). It lives on the turn
 	// because Inquiry is bare text and cannot carry a timestamp of its own.
 	At int64 `json:"at,omitempty"`
@@ -56,6 +71,14 @@ type Turn struct {
 	Sealed bool           `json:"sealed"`
 	Nodes  []livedoc.Node `json:"nodes,omitempty"`
 	Live   *Live          `json:"live,omitempty"`
+}
+
+// InquirySegment is one submission inside a turn's opening question: the text
+// and who sent it, already rendered (rpc.Attribution) so no consumer re-derives
+// the spelling. An empty Sender means unknown and draws nothing.
+type InquirySegment struct {
+	Sender string `json:"sender,omitempty"`
+	Text   string `json:"text"`
 }
 
 // Metrics summarizes the current session for the status surfaces. ContextLimit
@@ -121,6 +144,8 @@ type Message struct {
 	// (From == 0). A later slice must leave it empty, or a page that starts
 	// mid-turn would print the question a second time.
 	Inquiry string
-	Role    string
-	Nodes   []livedoc.Node
+	// InquirySegments splits Inquiry by sender; see Turn.InquirySegments.
+	InquirySegments []InquirySegment
+	Role            string
+	Nodes           []livedoc.Node
 }

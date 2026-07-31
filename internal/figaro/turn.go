@@ -306,7 +306,10 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 			// The inquiry is TEXT ON THE TURN, not a node: recording it is
 			// the whole of the prompt's UI IR. It broadcasts, so a watching
 			// client shows the question the instant it commits.
-			a.ariaSrv.OpenInquiry(a.turnID, prompt.text)
+			// Segments come off the MESSAGE, not the event: the message is what
+			// the projection will re-derive them from on a re-read, so live and
+			// re-read cannot tell two different stories about who asked.
+			a.ariaSrv.OpenInquiry(a.turnID, prompt.text, a.projInquirySegments(msg)...)
 		}
 	}
 	return entry, nil

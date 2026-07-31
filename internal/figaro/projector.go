@@ -26,6 +26,13 @@ type Projector interface {
 	// Turns projects sealed history into committed turns.
 	Turns(msgs []message.Message) []aria.Turn
 
+	// InquirySegments splits one opening message into its per-sender parts.
+	// It goes through the projector for the same reason Turns does: the
+	// fig IR -> UI IR conversion is the dependency this seam exists to keep
+	// out of the engine, and deriving segments here rather than importing
+	// compose is what keeps projector_boundary_test.go true.
+	InquirySegments(m message.Message) []aria.InquirySegment
+
 	// Nodes projects the open streaming region. tails carries the governor's
 	// per-tool output tails, argPartials the still-truncated tool_use argument
 	// JSON keyed by tool_call_id.
@@ -44,6 +51,14 @@ func (a *Agent) projTurns(msgs []message.Message) []aria.Turn {
 		return nil
 	}
 	return a.proj.Turns(msgs)
+}
+
+// projInquirySegments is the nil-safe form of Projector.InquirySegments.
+func (a *Agent) projInquirySegments(m message.Message) []aria.InquirySegment {
+	if a.proj == nil {
+		return nil
+	}
+	return a.proj.InquirySegments(m)
 }
 
 // projNodes is the nil-safe form of Projector.Nodes.

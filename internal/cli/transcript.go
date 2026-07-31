@@ -1280,7 +1280,7 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 	// slice only. It occupies no node index, so its rows carry the sentinel ref
 	// (see inquiryNode) — that is what makes it select, copy and highlight
 	// exactly as a node does, which is how it behaved when it WAS one.
-	if iq := inquiryProse(m.Inquiry, t.w-2); len(iq) > 0 {
+	if iq := inquiryRowsFor(m.Inquiry, m.InquirySegments, t.w-2); len(iq) > 0 {
 		ref := nodeRef{turn: m.Turn, index: inquiryNode}
 		rows = append(rows, transcriptRow{text: messageHeader(livedoc.RoleInput)}, transcriptRow{})
 		if coords {

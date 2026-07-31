@@ -406,18 +406,21 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 // It is the whole of the prompt's UI IR, which is why it broadcasts: a watching
 // client must show the question the instant it commits, not when the agent's
 // first token arrives.
-func (s *Server) OpenInquiry(id uint64, inquiry string) {
+func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegment) {
 	s.mu.Lock()
 	if n := len(s.turns); n == 0 || s.turns[n-1].ID != id {
 		s.turns = append(s.turns, Turn{ID: id})
 	}
 	i := len(s.turns) - 1
 	s.turns[i].Inquiry = inquiry
+	s.turns[i].InquirySegments = segments
 	from := uint64(len(s.turns[i].Nodes))
 	subs := s.subsLocked()
 	s.mu.Unlock()
 	deliver(subs, Page{Parts: []TurnPart{{
-		Turn: Turn{ID: id, Inquiry: inquiry}, From: from, ClippedHead: from > 0,
+		Turn:        Turn{ID: id, Inquiry: inquiry, InquirySegments: segments},
+		From:        from,
+		ClippedHead: from > 0,
 	}}})
 }
 
