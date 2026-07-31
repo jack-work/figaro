@@ -33,6 +33,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.6
 	github.com/charmbracelet/huh v1.0.0
 	github.com/creack/pty v1.1.24
+	github.com/jack-work/pstate v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -114,3 +115,7 @@ require (
 	golang.org/x/sync v0.18.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/jack-work/figwal => /home/gluck/dev/figwal
+
+replace github.com/jack-work/pstate => /home/gluck/dev/pstate

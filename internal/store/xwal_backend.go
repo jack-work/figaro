@@ -397,5 +397,5 @@ func (b *XwalBackend) Close() error {
 	b.open = map[string]*ariaHandle{}
 	b.chalk = map[string]*chalkCache{}
 	b.metas = map[string]*metaCache{}
-	return b.store.trunks.Close()
+	return b.store.Close()
 }
