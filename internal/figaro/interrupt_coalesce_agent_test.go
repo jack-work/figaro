@@ -66,7 +66,7 @@ func TestInterrupt_CoalescesTheWaitingQueue(t *testing.T) {
 	epoch, prompts := a.QueuedPrompts(false)
 	require.NotEmpty(t, epoch)
 	require.Len(t, prompts, 1, "the whole waiting run is one message")
-	assert.Equal(t, "one\ntwo\nthree", prompts[0].Text)
+	assert.Equal(t, "one\n\ntwo\n\nthree", prompts[0].Text)
 	assert.Equal(t, uint64(2), prompts[0].ID, "the survivor keeps the first id of the run")
 	assert.Equal(t, []uint64{3, 4}, prompts[0].Merged, "and names the ids it absorbed")
 }
@@ -130,7 +130,7 @@ func TestInterrupt_PromptArrivingAfterTheFoldStaysSeparate(t *testing.T) {
 
 	texts := queuedTextsOf(a)
 	require.Len(t, texts, 2, "the late prompt is a separate event")
-	assert.Equal(t, "one\ntwo", texts[0])
+	assert.Equal(t, "one\n\ntwo", texts[0])
 	assert.Equal(t, "late", texts[1])
 }
 
@@ -174,7 +174,7 @@ func TestHangup_KeepReportsTheFoldedQueue(t *testing.T) {
 	require.True(t, resp.OK)
 	assert.False(t, resp.Cleared, "keep must never report itself as cleared")
 	require.Len(t, resp.Queue, 1)
-	assert.Equal(t, "one\ntwo", resp.Queue[0].Text)
+	assert.Equal(t, "one\n\ntwo", resp.Queue[0].Text)
 }
 
 // Clearing is not gated on a live turn: a queue can be worth dropping between

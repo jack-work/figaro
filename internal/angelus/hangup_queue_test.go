@@ -130,7 +130,7 @@ func TestHangup_KeepOverTheWire(t *testing.T) {
 	assert.False(t, resp.Cleared)
 	assert.NotEmpty(t, resp.Epoch)
 	require.Len(t, resp.Queue, 1, "the waiting run comes back as the one message it became")
-	assert.Equal(t, "one\ntwo", resp.Queue[0].Text)
+	assert.Equal(t, "one\n\ntwo", resp.Queue[0].Text)
 }
 
 func TestHangup_ClearOverTheWire(t *testing.T) {
@@ -184,7 +184,7 @@ func TestHangup_BareInterruptKeepsTheQueue(t *testing.T) {
 		if err != nil {
 			return false
 		}
-		return contextCarriesText(t, resp.Messages, "one\ntwo")
+		return contextCarriesText(t, resp.Messages, "one\n\ntwo")
 	}, 3*time.Second, 25*time.Millisecond,
 		"the kept queue must reach the conversation as ONE combined message")
 }

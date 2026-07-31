@@ -28,7 +28,7 @@ func TestCoalesce_FoldsAContiguousRun(t *testing.T) {
 
 	snap := b.SnapshotPrompts(true)
 	require.Len(t, snap, 1, "a contiguous run is one message")
-	assert.Equal(t, "one\ntwo\nthree", snap[0].text)
+	assert.Equal(t, "one\n\ntwo\n\nthree", snap[0].text)
 	// Identity folds with the content: the survivor keeps the first id and
 	// names what it absorbed, so a client holding id 2 can still find it.
 	assert.Equal(t, uint64(1), snap[0].id)
@@ -52,7 +52,7 @@ func TestCoalesce_AQueuedSetBlocksTheFold(t *testing.T) {
 
 	require.Len(t, b.queue, 3, "the set must survive between the two runs")
 	assert.Equal(t, eventUserPrompt, b.queue[0].typ)
-	assert.Equal(t, "one\ntwo", b.queue[0].text)
+	assert.Equal(t, "one\n\ntwo", b.queue[0].text)
 	assert.Equal(t, eventSet, b.queue[1].typ, "order across event kinds is preserved")
 	assert.Equal(t, eventUserPrompt, b.queue[2].typ)
 	assert.Equal(t, "three", b.queue[2].text, "a prompt behind a set is NOT folded in front of it")
@@ -75,7 +75,7 @@ func TestCoalesce_AQueuedForkBlocksTheFold(t *testing.T) {
 	require.Len(t, b.queue, 3)
 	assert.Equal(t, "before", b.queue[0].text)
 	assert.Equal(t, eventFork, b.queue[1].typ)
-	assert.Equal(t, "after-a\nafter-b", b.queue[2].text, "the run AFTER the fork folds on its own")
+	assert.Equal(t, "after-a\n\nafter-b", b.queue[2].text, "the run AFTER the fork folds on its own")
 }
 
 // A carrier (empty text, chalkboard only) folds into the run it sits in: its

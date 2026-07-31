@@ -781,8 +781,29 @@ func (a *Agent) act(ctx context.Context) {
 		}
 		switch evt.typ {
 		case eventUserPrompt:
-			slog.Debug("event UserPrompt", "aria", a.id, "text", truncLog(evt.text, 60))
-			a.runTurn(ctx, evt)
+			// COALESCE THE WAITING RUN. Everything queued behind this prompt
+			// with no control event in between is part of the same ask: three
+			// notes typed while the previous turn was finishing are one
+			// question, not three turns to sit through — and that is true
+			// whether the turn ahead of them completed or was interrupted.
+			//
+			// This is the third and last drain site to fold, and it is why the
+			// fold is a property of DRAINING rather than of interrupting. The
+			// mid-turn drains (prepareProviderRound, appendSteeringPrompts)
+			// have always folded their batch; only this one, the idle path,
+			// took a single event and gave each message its own turn.
+			//
+			// A lone prompt is still exactly itself: TakeReadyUserPrompts
+			// returns nothing, mergePromptEvents short-circuits, and one
+			// submit remains one message.
+			batch := append([]event{evt}, a.inbox.TakeReadyUserPrompts()...)
+			merged, ok := mergePromptEvents(batch)
+			if !ok {
+				continue
+			}
+			slog.Debug("event UserPrompt", "aria", a.id,
+				"text", truncLog(merged.text, 60), "folded", len(batch))
+			a.runTurn(ctx, merged)
 		case eventSet:
 			a.applyControlPatch(evt.setPatch, "set")
 		case eventFork:

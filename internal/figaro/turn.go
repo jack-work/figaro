@@ -884,7 +884,14 @@ func mergePromptEvents(prompts []event) (event, bool) {
 			out.merged = append(out.merged, p.id)
 		}
 	}
-	out.text = strings.Join(texts, "\n")
+	// A BLANK line between them, not a single newline. Two reasons, and they
+	// point the same way. On screen, prose is rendered as markdown, where a
+	// lone newline is a SOFT break — glamour rejoins the lines and three
+	// messages arrive as "test2 test3 test4", which is what made this look
+	// like one garbled sentence. And for the model, a blank line is the
+	// unambiguous mark of "these were separate messages", which is exactly
+	// what they were. What the user sees and what the agent reads agree.
+	out.text = strings.Join(texts, "\n\n")
 	return out, true
 }
 

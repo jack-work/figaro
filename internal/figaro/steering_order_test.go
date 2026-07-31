@@ -99,7 +99,7 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	require.Equal(t, message.ContentToolResult, msgs[2].Content[0].Type)
 	require.Len(t, msgs[3].Content, 1)
 	require.Equal(t, message.ContentProse, msgs[3].Content[0].Type)
-	require.Equal(t, "steer one\nsteer two", msgs[3].Content[0].Text)
+	require.Equal(t, "steer one\n\nsteer two", msgs[3].Content[0].Text)
 	require.True(t, msgs[3].Steering, "a prompt drained mid-turn is classified at the drain")
 
 	// The canonical order survives as ONE turn. A steer is a direction aimed at
@@ -129,8 +129,9 @@ func TestPromptDuringToolRoundKeepsCanonicalOrder(t *testing.T) {
 	require.Equal(t, []string{"tool", "steering", "prose"}, kinds,
 		"the drained batch is ONE steering node inside the turn it steers, "+
 			"and the tool call it interrupted must survive")
-	require.Equal(t, "steer one\nsteer two", read.Parts[0].Nodes[1].Markdown,
-		"both queued texts survive, joined by a newline — nothing is dropped")
+	require.Equal(t, "steer one\n\nsteer two", read.Parts[0].Nodes[1].Markdown,
+		"both queued texts survive, separated by a BLANK line so markdown keeps "+
+			"them on separate rows — nothing is dropped and nothing is rejoined")
 	require.Equal(t, int32(2), prov.calls.Load())
 }
 

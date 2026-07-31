@@ -591,11 +591,15 @@ done:
 }
 
 func TestAgent_FIFOOrdering(t *testing.T) {
-	// Provider echoes the prompt text back.
+	// Two prompts submitted back to back are answered IN ORDER. Whether they
+	// arrive as one turn or two is timing, not contract: the drain folds the
+	// contiguous run it finds, so a second prompt that lands before the first
+	// is lifted joins it — which is the point (four chained sends should be one
+	// question, not four turns to sit through). What must never change is the
+	// order they reach the model in.
 	a := newTestAgent("")
 	a.Kill() // kill the default one
 
-	// Use a provider that echoes the prompt (via the messages).
 	a = figaro.NewAgent(figaro.Config{
 		Projector:  uiir.New(nil),
 		ID:         "fifo-test",
@@ -606,29 +610,44 @@ func TestAgent_FIFOOrdering(t *testing.T) {
 
 	ch, _ := subscribeChan(a)
 
-	// Enqueue two prompts rapidly.
 	submitPrompt(a, "first")
 	submitPrompt(a, "second")
 
-	// Collect two done notifications.
-	doneCount := 0
+	// Settle on IDLE rather than on a turn count.
 	timeout := time.After(5 * time.Second)
-	for doneCount < 2 {
+	for settled := false; !settled; {
 		select {
 		case n := <-ch:
-			if n.Method == rpc.MethodTurnDone {
-				doneCount++
+			if n.Method != rpc.MethodTurnDone {
+				continue
 			}
+			var d rpc.DoneEntry
+			raw, _ := json.Marshal(n.Params)
+			_ = json.Unmarshal(raw, &d)
+			settled = d.Idle == nil || *d.Idle
 		case <-timeout:
-			t.Fatalf("timeout: only got %d done notifications", doneCount)
+			t.Fatal("timeout waiting for the aria to go idle")
 		}
 	}
 
-	// Both prompts should be in context, in order.
-	msgs := a.Context()
-	require.GreaterOrEqual(t, len(msgs), 4) // user, assistant, user, assistant
-	assert.Equal(t, message.RoleInput, msgs[0].Role)
-	assert.Equal(t, message.RoleInput, msgs[2].Role)
+	// Both prompts reached the conversation, in the order they were sent —
+	// whether as one input message or two.
+	var input string
+	for _, m := range a.Context() {
+		if m.Role != message.RoleInput {
+			continue
+		}
+		for _, c := range m.Content {
+			if c.Type == message.ContentProse {
+				input += c.Text + "\n"
+			}
+		}
+	}
+	first := strings.Index(input, "first")
+	second := strings.Index(input, "second")
+	require.GreaterOrEqual(t, first, 0, "the first prompt never reached the conversation")
+	require.GreaterOrEqual(t, second, 0, "the second prompt never reached the conversation")
+	assert.Less(t, first, second, "prompts must reach the model in submission order")
 }
 
 func TestAgent_MultipleSubscribers(t *testing.T) {

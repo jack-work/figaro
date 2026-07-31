@@ -14,7 +14,13 @@ import (
 // separate user messages and keep reading exactly as they did, because nothing
 // on disk is migrated and turns.Opens / turns.IsSteering / compose.Turns are
 // unchanged. This test pins the WRITE side.
-func TestMergePromptEvents_JoinsWithNewline(t *testing.T) {
+// The separator is a BLANK LINE, and both halves of that matter. On screen,
+// prose is markdown: a lone newline is a SOFT break, so glamour rejoined three
+// messages into one sentence ("test2 test3 test4") — which is how this was
+// reported. For the model, a blank line is the unambiguous mark of separate
+// messages. One separator satisfies both, so what the reader sees and what the
+// agent reads cannot drift.
+func TestMergePromptEvents_JoinsWithABlankLine(t *testing.T) {
 	got, ok := mergePromptEvents([]event{
 		{typ: eventUserPrompt, text: "a"},
 		{typ: eventUserPrompt, text: "b"},
@@ -23,8 +29,8 @@ func TestMergePromptEvents_JoinsWithNewline(t *testing.T) {
 	if !ok {
 		t.Fatal("a non-empty batch must merge")
 	}
-	if got.text != "a\nb\nc" {
-		t.Errorf("text = %q, want %q — join with \\n, no separator, no trim", got.text, "a\nb\nc")
+	if got.text != "a\n\nb\n\nc" {
+		t.Errorf("text = %q, want %q — blank line between, no trim", got.text, "a\n\nb\n\nc")
 	}
 }
 
@@ -49,8 +55,10 @@ func TestMergePromptEvents_SkipsEmptyTexts(t *testing.T) {
 		{typ: eventUserPrompt, text: ""},
 		{typ: eventUserPrompt, text: "second"},
 	})
-	if got.text != "first\nsecond" {
-		t.Errorf("text = %q, want %q", got.text, "first\nsecond")
+	// A BLANK line between them: a lone newline is a soft break in markdown,
+	// so the screen rejoined the messages into one sentence.
+	if got.text != "first\n\nsecond" {
+		t.Errorf("text = %q, want %q", got.text, "first\n\nsecond")
 	}
 }
 
