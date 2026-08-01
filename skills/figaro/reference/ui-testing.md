@@ -60,9 +60,18 @@ pp_init <name>        # stamped build + scratch store + PRIVATE tmux socket
 
 Non-negotiables, each of which has cost somebody a wrong answer:
 
-- **Stamp the binary.** A plain `go build` in a *worktree* records no revision
-  (Go's VCS detection needs `.git` to be a directory), so `--version` says
-  `unknown` and the CLI/daemon build handshake cannot fire.
+- **Build it in a DEV SHELL, not with `go build`.** `nix develop --command`
+  gives the flake's binary, toolchain and dependency closure; a worktree
+  `go build` gives yours. A whole night of this hunt ran on stamped scratch
+  builds under Go 1.26.5 while the flake builds under 1.26.1 — a difference
+  that can decide whether a rendering bug reproduces at all. See
+  [maintaining.md](../maintaining.md) for the presets and how to isolate the
+  store inside a shell.
+- **If you must use `go build`, stamp it.** A plain `go build` in a *worktree*
+  records no revision (Go's VCS detection needs `.git` to be a directory), so
+  `--version` says `unknown` and the CLI/daemon build handshake cannot fire.
+  Stamping makes a scratch build LOOK like the real one; it does not make it
+  the real one.
 - **Absolute paths into the pane.** `tmux new-session -e PATH=…` is silently
   ignored; a pane that runs bare `figaro` runs the INSTALLED one, and an A/B
   then compares a binary with itself.

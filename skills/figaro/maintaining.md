@@ -30,6 +30,19 @@ Never work in `main/` itself. It is the owner's checkout.
 
 ## Dev shells
 
+**The dev shell is the default; a scratch `go build` is the exception.** Reach
+for `go build` only for a wire-level probe where the binary's provenance cannot
+matter — dumping request bodies, checking an exit code. Anything you intend to
+BELIEVE about behaviour, and everything about rendering, goes through a shell.
+
+The reason is not ceremony. A worktree `go build` differs from the flake build
+in the Go toolchain, the dependency closure and the environment, and any of
+those can decide whether a bug reproduces. One night of UI hunting was done
+entirely on `go build -o /var/tmp/...` binaries stamped with `-ldflags`, which
+looked equivalent and were not: Go 1.26.5 against the flake's 1.26.1. Stamping
+a scratch build makes it LOOK like the real thing, which is what makes this
+trap worth naming.
+
 Four env knobs (`mkFigaroShell` in `flake.nix`) flip between share (`null`) and
 isolate. Every preset is a choice about which ones to isolate.
 
@@ -54,6 +67,20 @@ Pre-set env vars win, so presets compose:
 across entries rather than a fresh tmpdir; `rm -rf $FIGARO_STATE_DIR` for a
 clean slate. Inside a shell, `which figaro` must print `/nix/store/...`, never
 `~/.nix-profile`.
+
+That composition is how you TEST inside a shell without touching the owner's
+data. The presets isolate by category, but any knob can be overridden per
+invocation, and non-interactive work is what `--command` is for:
+
+```sh
+FIGARO_RUNTIME_DIR=/var/tmp/x/run FIGARO_STATE_DIR=/var/tmp/x/state \
+  FIGARO_CONFIG_DIR=$HOME/.config/figaro \
+  nix develop .#share-hush --command bash -c 'figaro send -e -- "…"'
+```
+
+Real credentials and real loadouts, an isolated store and socket, the flake's
+own binary — and no first-run picker, because the config knob was overridden.
+A shell entry takes tens of seconds, so give it room in any timeout.
 
 ## Without a shell
 
