@@ -51,6 +51,9 @@ type metaCache struct {
 
 // NewXwalBackend opens the aria tree at root. segmentSize <= 0 takes the
 // configured default; the daemon passes config's, tests pass nothing.
+//
+// The presentation hierarchy defaults to the topology. A build with the
+// trunk capability replaces it via Store().SetTree; see internal/figaro/wire.
 func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 	st, err := OpenXwalStore(root, segmentSize)
 	if err != nil {
@@ -64,6 +67,10 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 		metas: map[string]*metaCache{},
 	}, nil
 }
+
+// Store is the underlying aria store, for wiring that installs optional
+// capabilities.
+func (b *XwalBackend) Store() *XwalStore { return b.store }
 
 // handleLocked returns the shared handle for an aria, opening it once.
 // Caller holds b.mu. The handle carries the row caches for the aria's

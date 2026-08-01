@@ -11,6 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/transport"
@@ -19,7 +20,17 @@ import (
 // ariaBackend constructs the XWAL aria tree under the configured state root,
 // sized by `[store] segment_size` (config owns the default and its floor).
 func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
-	return store.NewXwalBackend(filepath.Join(stateDir(), "arias"), loaded.SegmentSize())
+	root := filepath.Join(stateDir(), "arias")
+	b, err := store.NewXwalBackend(root, loaded.SegmentSize())
+	if err != nil {
+		return nil, err
+	}
+	// The one place the trunk capability is decided. With it off, nothing
+	// constructs a trunk pstate and the hierarchy is the fork topology.
+	if err := wire.Install(b.Store(), root, wire.Capabilities{Trunks: loaded.Trunks()}); err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 func angelusRuntimeDir() string {

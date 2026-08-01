@@ -36,6 +36,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/topo"
 	"github.com/jack-work/figwal/segment"
 	"github.com/jack-work/figwal/xwal"
 )
@@ -177,7 +178,56 @@ type XwalStore struct {
 	trunks   *xwal.Store
 	topology atomic.Pointer[topologySnapshot]
 	now      func() int64
+	// tree is the PRESENTATION hierarchy: what fig ls draws and what a
+	// delete takes. Never consulted for forking — that reads .from.
+	tree topo.Tree
 }
+
+// Topology exposes the .from adjacency for topo.Tree and boundary
+// computation. It is the only lineage figwal considers authoritative.
+type xwalTopology struct{ s *XwalStore }
+
+func (t xwalTopology) From(id string) (string, bool) {
+	n, ok := t.s.Node(id)
+	if !ok {
+		return "", false
+	}
+	return n.Parent, true
+}
+
+func (t xwalTopology) Nodes() []string {
+	snap := t.s.topology.Load()
+	if snap == nil {
+		return nil
+	}
+	out := make([]string, 0, len(snap.nodes))
+	for _, n := range snap.nodes {
+		out = append(out, n.ID)
+	}
+	return out
+}
+
+func (t xwalTopology) ChildrenOf(id string) []string {
+	var out []string
+	for _, n := range t.Nodes() {
+		if p, ok := t.From(n); ok && p == id && n != id {
+			out = append(out, n)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Tree is the presentation hierarchy in force.
+func (s *XwalStore) Tree() topo.Tree { return s.tree }
+
+// TopologyAdjacency is the .from lineage, for building a presentation tree
+// on top of it.
+func (s *XwalStore) TopologyAdjacency() topo.Topology { return xwalTopology{s} }
+
+// SetTree installs a presentation hierarchy. The wiring calls this with a
+// trunk capability; without one the store keeps the topology tree.
+func (s *XwalStore) SetTree(t topo.Tree) { s.tree = t }
 
 type topologySnapshot struct {
 	version         uint64
@@ -204,10 +254,12 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	if err := ensureSchema(root, st); err != nil {
 		return nil, err
 	}
-	return &XwalStore{
+	x := &XwalStore{
 		root: root, trunks: st,
 		now: func() int64 { return time.Now().UnixMilli() },
-	}, nil
+	}
+	x.tree = topo.FromTopology(xwalTopology{x})
+	return x, nil
 }
 
 // Close releases the tree.
@@ -309,18 +361,25 @@ func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err er
 	return id, alt, nil
 }
 
-// Promote climbs a conversation trunk up `levels` stump-bounded levels,
-// relabeling the canonical trunk path (the trunk absorbs its parent trunk's
-// run). Returns the number of levels actually climbed. xwal.ErrAtStump means
-// the trunk is rooted directly at a loadout — there is nothing to promote into.
+// Promote raises an aria in the PRESENTATION hierarchy. It edits the trunk
+// pstate and writes nothing to any aria's history, so it is O(1) in history
+// length. ErrAtStump means there is nothing above to promote into, or the
+// build has no trunk capability at all.
 func (s *XwalStore) Promote(id string, levels int) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	climbed, err := s.trunks.Promote(id, levels)
-	if errors.Is(err, xwal.ErrAtStump) {
-		return climbed, ErrAtStump
+	for climbed := 0; climbed < levels; climbed++ {
+		if err := s.tree.Promote(id); err != nil {
+			if errors.Is(err, topo.ErrNoPromote) {
+				return climbed, ErrAtStump
+			}
+			if climbed > 0 {
+				return climbed, nil // ran out of levels to climb; not an error
+			}
+			return 0, ErrAtStump
+		}
 	}
-	return climbed, err
+	return levels, nil
 }
 
 // OwnerOf resolves which node owns atMainLT along a trunk's lineage (a trunk,
