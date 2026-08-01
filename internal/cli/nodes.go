@@ -742,15 +742,6 @@ func formatToolTime(ms int64) string {
 	return time.UnixMilli(ms).Format("2006-01-02 15:04:05.000 MST")
 }
 
-// blockquote prefixes each line of s with "> " (markdown blockquote).
-func blockquote(s string) string {
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	for i, l := range lines {
-		lines[i] = "> " + l
-	}
-	return strings.Join(lines, "\n")
-}
-
 // hardWrap char-wraps s (runewidth-aware) to at most w columns per line,
 // preserving explicit newlines.
 func hardWrap(s string, w int) []string {

@@ -24,13 +24,13 @@ func TestAutoCreateWiring(t *testing.T) {
 	// signature loses the parameter, and the table below is what a reviewer
 	// checks it against.
 	mayCreate := map[string]bool{
-		"send -f (forget)": true,
-		"send -r (raw)":    true,
+		"send -f (forget)":   true,
+		"send -r (raw)":      true,
 		"send -v (verbatim)": true,
-		"send -x (exec)":   true,
-		"hup":              false,
-		"listen":           false,
-		"loadout":          false,
+		"send -x (exec)":     true,
+		"hup":                false,
+		"listen":             false,
+		"loadout":            false,
 	}
 	for verb, want := range mayCreate {
 		if got := mintsWhenUnbound(want); got != want {

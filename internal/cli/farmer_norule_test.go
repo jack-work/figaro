@@ -32,7 +32,7 @@ func TestFarmerBlocksWithNoRuleAtAll(t *testing.T) {
 			rows := nodeProseRows(livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}, w, false)
 			nonblank, ruled := 0, 0
 			for _, r := range rows {
-				p := strings.TrimSpace(farmerStrip(r))
+				p := strings.TrimSpace(stripANSI(r))
 				if p == "" {
 					continue
 				}
@@ -51,7 +51,7 @@ func TestFarmerBlocksWithNoRuleAtAll(t *testing.T) {
 func firstFew(rows []string) []string {
 	out := []string{}
 	for _, r := range rows {
-		out = append(out, strings.TrimRight(farmerStrip(r), " "))
+		out = append(out, strings.TrimRight(stripANSI(r), " "))
 		if len(out) >= 3 {
 			break
 		}

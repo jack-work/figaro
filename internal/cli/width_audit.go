@@ -13,28 +13,34 @@ import (
 // The width audit: figaro tells us when it writes past the edge, in the
 // reporter's own terminal.
 //
-// WHY THIS EXISTS. A right-edge overflow was reported three times and could not
-// be reproduced from outside. Every external instrument tried first answered a
-// blurrier question than the one asked:
+// WHY IT IS INSIDE THE PROCESS. A right-edge overflow was reported four times
+// and could not be reproduced from outside, because every external instrument
+// answers a blurrier question: a tmux sweep of `show`, the pager and a live
+// turn was clean at every width from 20 to 200; `capture-pane -J` rejoins a
+// wrapped line, so its "worst offender" was 120 cells of trailing PADDING; and
+// a captured pane also holds rows frozen at a PREVIOUS width, and the shell's
+// own echo. Nothing that cannot separate what figaro WROTE from what the
+// terminal REMEMBERS can convict figaro — or clear it.
 //
-//   - a tmux sweep of `show`, the pager and a live turn was clean at every
-//     width from 20 to 200, at ~30 seconds per width;
-//   - `capture-pane -J` rejoins a wrapped line, so its "worst offender" turned
-//     out to be 120 cells of trailing PADDING, not text;
-//   - a captured pane also holds rows frozen at a PREVIOUS width and the
-//     shell's own echo, neither of which figaro wrote at the current width.
-//
-// An instrument that cannot separate what figaro wrote from what the terminal
-// remembers cannot convict figaro. So the detector moves inside: it sees the
-// bytes at the moment they are written, and it knows the width they were
-// written for. It costs one width measurement per row and runs only when asked.
+// WHY IT IS ALWAYS ON. Asking a reporter to set a variable, reproduce on
+// demand and send a log is three chances to lose the evidence. The cost is one
+// cell-count per emitted row, capped at 20 reports and de-duplicated, written
+// to <cache>/width-overruns.log, and the file is not created until something
+// is wrong.
 //
 //	FIGARO_WIDTH_AUDIT=1                 report to stderr
 //	FIGARO_WIDTH_AUDIT=/tmp/audit.log    report to a file (recommended: stderr
 //	                                     is inside the region being painted)
+//	FIGARO_WIDTH_AUDIT=off               disable
 //
 // Every report names the width, the overrun, and the row verbatim, so the next
 // question is "which surface produced THAT" rather than "does it happen".
+//
+// WHAT IT ANSWERED. Driven against the reporter's own aria in a 66x30 pane,
+// this log stayed EMPTY while the prose was visibly broken — which is how the
+// hunt left the painter and went to the renderer, where glamour was wrapping
+// every paragraph twice (30aae84). An instrument that clears the accused is
+// worth as much as one that convicts.
 type widthAudit struct {
 	inner   interface{ Write([]byte) (int, error) }
 	size    func() (int, int)
@@ -56,17 +62,8 @@ type widthAudit struct {
 	col int
 }
 
-// auditWriter wraps out whenever there is somewhere to report to.
-//
-// ALWAYS ON, BY DEFAULT, AND THIS IS THE POINT. A right-edge overflow has been
-// reported four times and reproduced from another machine exactly once. Asking
-// the reporter to set an env var, reproduce on demand and send a log is three
-// chances to lose the evidence; figaro can simply keep the receipt itself.
-//
-// The cost is one cell-count per emitted row, capped at 20 reports per process
-// and de-duplicated, written to <cache>/width-overruns.log. FIGARO_WIDTH_AUDIT
-// still redirects it to stderr or a chosen file for a deliberate hunt, and
-// FIGARO_WIDTH_AUDIT=off disables it outright.
+// auditWriter wraps out unless the audit is switched off. See the type's doc
+// for why it is on by default.
 func auditWriter(out interface{ Write([]byte) (int, error) }, size func() (int, int)) interface {
 	Write([]byte) (int, error)
 } {
@@ -187,59 +184,6 @@ func stripEsc(s string) string {
 		i++
 	}
 	return b.String()
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-// splitPaintedRows cuts a write into the pieces that land on separate screen
-// lines: CR-LF, a bare CR, and the cursor-motion escapes the pager uses to
-// place each row (CUP/HVP `H`/`f`, and vertical moves `A`/`B`/`E`/`F`).
-func splitPaintedRows(s string) []string {
-	var rows []string
-	var cur strings.Builder
-	flush := func() {
-		rows = append(rows, cur.String())
-		cur.Reset()
-	}
-	for i := 0; i < len(s); {
-		if s[i] == '\r' {
-			flush()
-			i++
-			if i < len(s) && s[i] == '\n' {
-				i++
-			}
-			continue
-		}
-		if s[i] == '\n' {
-			flush()
-			i++
-			continue
-		}
-		if s[i] == 0x1b {
-			j, _ := escapeEnd(s, i)
-			seq := s[i:j]
-			if n := len(seq); n > 0 {
-				switch seq[n-1] {
-				case 'H', 'f', 'A', 'B', 'E', 'F':
-					flush()
-					i = j
-					continue
-				}
-			}
-			cur.WriteString(seq)
-			i = j
-			continue
-		}
-		cur.WriteByte(s[i])
-		i++
-	}
-	flush()
-	return rows
 }
 
 // auditRows reports rows a NON-painter surface is about to print. `figaro show`

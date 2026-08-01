@@ -1,14 +1,25 @@
 package render
 
 import (
-	"regexp"
 	"strings"
 	"testing"
 )
 
-var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
-func stripANSI(s string) string { return ansiRE.ReplaceAllString(s, "") }
+// stripANSI is the package's one visible-text helper: what a row puts on
+// screen, measured with the same scanner the code wraps with (skipEscape), not
+// a regexp that only knows SGR.
+func stripANSI(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b {
+			i = skipEscape(s, i)
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
 
 func visible(lines []string) string { return stripANSI(strings.Join(lines, "\n")) }
 

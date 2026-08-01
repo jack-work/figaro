@@ -31,9 +31,9 @@ func FuzzThinkingGutter(f *testing.F) {
 			// width it is given (an unbreakable token, an unclosed fence), and
 			// re-reporting that every run is noise. The contract is the delta.
 			if d := displayWidth(r); d > w && !glamourOverranAt(md, w) {
-				t.Fatalf("w=%d row %d is %d cells, and glamour stayed inside its own budget: %q", w, i, d, farmerStrip(r))
+				t.Fatalf("w=%d row %d is %d cells, and glamour stayed inside its own budget: %q", w, i, d, stripANSI(r))
 			}
-			plain := strings.TrimRight(farmerStrip(r), " ")
+			plain := strings.TrimRight(stripANSI(r), " ")
 			if strings.TrimSpace(plain) == "" {
 				continue
 			}

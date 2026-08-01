@@ -8,22 +8,16 @@ import (
 )
 
 // stripANSI removes ANSI escape sequences so tests can assert on visible text.
+// It uses escapeEnd — the package's ONE escape grammar (b568b6f) — rather than
+// a fourth hand-rolled scanner; farmerStrip was a fifth, and is gone.
 func stripANSI(s string) string {
 	var b strings.Builder
-	rs := []rune(s)
-	for i := 0; i < len(rs); {
-		if rs[i] == '\x1b' {
-			j := i + 1
-			for j < len(rs) && !((rs[j] >= 'A' && rs[j] <= 'Z') || (rs[j] >= 'a' && rs[j] <= 'z')) {
-				j++
-			}
-			if j < len(rs) {
-				j++
-			}
-			i = j
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b {
+			i, _ = escapeEnd(s, i)
 			continue
 		}
-		b.WriteRune(rs[i])
+		b.WriteByte(s[i])
 		i++
 	}
 	return b.String()

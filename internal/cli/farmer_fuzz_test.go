@@ -61,19 +61,6 @@ func tableFixture(n int) string {
 // rune (the rune-wise one in thinking_gutter_test.go walks runes, which is
 // fine, but this one shares escapeEnd with production so the test and the code
 // agree on where an escape ends).
-func farmerStrip(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); {
-		if s[i] == 0x1b {
-			j, _ := escapeEnd(s, i)
-			i = j
-			continue
-		}
-		b.WriteByte(s[i])
-		i++
-	}
-	return b.String()
-}
 
 // TestFarmerQuoteInvariants sweeps every width 20..200 over the corpus and
 // asserts the three claimed invariants.
@@ -92,7 +79,7 @@ func TestFarmerQuoteInvariants(t *testing.T) {
 				rows := nodeProseRows(livedoc.Node{Type: typ, Markdown: md}, w, false)
 				col := -1
 				for i, r := range rows {
-					plain := strings.TrimRight(farmerStrip(r), " ")
+					plain := strings.TrimRight(stripANSI(r), " ")
 					if strings.TrimSpace(plain) == "" {
 						continue
 					}
@@ -207,23 +194,15 @@ func isFinalByte(c byte) bool {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
 }
 
-// proseOverflowsAt reports whether the same markdown, rendered as ordinary
-// prose, already exceeds the width — i.e. whether glamour, not the gutter, is
-// the one that cannot fit it.
+// glamourOverranAt reports whether the markdown, rendered at the RESERVED
+// width, already exceeds it — i.e. whether glamour, not the gutter, is the one
+// that cannot fit it. (The doc comment used to name proseOverflowsAt, a second
+// helper that no test called.)
 func glamourOverranAt(md string, w int) bool {
 	n := livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}
 	pw := proseWidth(n, w)
 	for _, r := range clampTables(render.Prose(nodeMarkdown(n), pw), proseTableCapDefault, pw) {
 		if displayWidth(r) > pw {
-			return true
-		}
-	}
-	return false
-}
-
-func proseOverflowsAt(md string, w int) bool {
-	for _, r := range nodeProseRows(livedoc.Node{Type: livedoc.NodeProse, Markdown: md}, w, false) {
-		if displayWidth(r) > w {
 			return true
 		}
 	}

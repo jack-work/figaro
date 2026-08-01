@@ -6,22 +6,6 @@ import (
 	"unicode/utf8"
 )
 
-// NOTE: this used escEnd, which 77806bd deleted when the package went down to
-// ONE escape scanner. skipEscape is that scanner, and it is what splitToWidth
-// itself uses — so the oracle now measures with the same ruler as the code.
-func farmerVisible(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); {
-		if s[i] == 0x1b {
-			i = skipEscape(s, i)
-			continue
-		}
-		b.WriteByte(s[i])
-		i++
-	}
-	return b.String()
-}
-
 // TestFarmerSplitToWidthKeepsEverything: the whole point of hard-wrapping
 // rather than clipping is that the text survives. Concatenating the chunks must
 // reproduce the row's visible text exactly, every chunk must fit, and no chunk
@@ -52,7 +36,7 @@ func TestFarmerSplitToWidthKeepsEverything(t *testing.T) {
 					t.Errorf("%s w=%d chunk %d is %d cells: %q", name, w, i, got, c)
 					break
 				}
-				if farmerVisible(c) == "" {
+				if stripANSI(c) == "" {
 					t.Errorf("%s w=%d chunk %d is escapes only (a phantom row): %q", name, w, i, c)
 					break
 				}
@@ -60,10 +44,10 @@ func TestFarmerSplitToWidthKeepsEverything(t *testing.T) {
 					t.Errorf("%s w=%d chunk %d is not valid UTF-8: %q", name, w, i, c)
 					break
 				}
-				joined.WriteString(farmerVisible(c))
+				joined.WriteString(stripANSI(c))
 			}
-			if joined.String() != farmerVisible(row) {
-				t.Errorf("%s w=%d: text changed\n  was %q\n  now %q", name, w, farmerVisible(row), joined.String())
+			if joined.String() != stripANSI(row) {
+				t.Errorf("%s w=%d: text changed\n  was %q\n  now %q", name, w, stripANSI(row), joined.String())
 			}
 		}
 	}
@@ -108,16 +92,16 @@ func FuzzSplitToWidth(f *testing.F) {
 			// cells and is returned untouched), so asserting it here would be
 			// stricter than the call site and would report a defect that cannot
 			// occur.
-			if farmerVisible(row) != "" && farmerVisible(c) == "" {
+			if stripANSI(row) != "" && stripANSI(c) == "" {
 				t.Fatalf("w=%d chunk %d is escapes only: %q", w, i, c)
 			}
 			if !utf8.ValidString(c) {
 				t.Fatalf("w=%d chunk %d is invalid UTF-8: %q", w, i, c)
 			}
-			joined.WriteString(farmerVisible(c))
+			joined.WriteString(stripANSI(c))
 		}
-		if joined.String() != farmerVisible(row) {
-			t.Fatalf("w=%d: text changed\n  was %q\n  now %q", w, farmerVisible(row), joined.String())
+		if joined.String() != stripANSI(row) {
+			t.Fatalf("w=%d: text changed\n  was %q\n  now %q", w, stripANSI(row), joined.String())
 		}
 	})
 }

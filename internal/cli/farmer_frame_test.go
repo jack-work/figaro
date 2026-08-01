@@ -48,7 +48,7 @@ func TestFarmerFrameRowsFitEveryWidth(t *testing.T) {
 				if d := displayWidth(r); d > w {
 					if !seen[state] {
 						seen[state] = true
-						t.Errorf("%s w=%d row %d is %d cells: %q", state, w, i, d, farmerStrip(r))
+						t.Errorf("%s w=%d row %d is %d cells: %q", state, w, i, d, stripANSI(r))
 					}
 				}
 			}
@@ -86,7 +86,7 @@ func TestFarmerResizeStable(t *testing.T) {
 		for i := range want {
 			if got[i] != want[i] {
 				t.Errorf("path %v: row %d differs after the round trip:\n  before %q\n   after %q",
-					path, i, farmerStrip(want[i]), farmerStrip(got[i]))
+					path, i, stripANSI(want[i]), stripANSI(got[i]))
 				break
 			}
 		}
@@ -102,7 +102,7 @@ func TestFarmerFrameRuleColumn(t *testing.T) {
 		tr := farmerTranscript(t, w, 60)
 		col, blockOpen := -1, false
 		for i, r := range tr.lines() {
-			plain := strings.TrimRight(farmerStrip(r), " ")
+			plain := strings.TrimRight(stripANSI(r), " ")
 			if strings.TrimSpace(plain) == "" {
 				col, blockOpen = -1, false // a blank row ends the block
 				continue
