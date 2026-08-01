@@ -546,16 +546,35 @@ func nodeProseRows(n livedoc.Node, width int, expanded bool) []string {
 // dedentProse removes one proseIndent from a rendered row, looking past the
 // SGR runs glamour emits before the first visible column. The inset is uniform,
 // so nested content keeps its relative depth.
+//
+// THE ESCAPES ARE NOT ALL AT THE FRONT. This used to skip a leading run of
+// escapes and then test for two literal spaces, which held only because
+// glamour v1 emitted its margin as one unbroken "  ". v2 splits it — space,
+// SGR, space — so the prefix test missed, the row was not dedented, and the
+// gutter cost four columns instead of two: thinking text at column 6 while the
+// prose beside it starts at 4. The farmer's 24-shape gutter fuzz caught it at
+// `emoji w=20 row 3`. So: consume two VISIBLE spaces, wherever the escapes
+// fall, and keep every escape.
 func dedentProse(row string) string {
-	i := 0
-	for i < len(row) && row[i] == 0x1b {
-		j, _ := escapeEnd(row, i)
-		i = j
+	var keep strings.Builder
+	i, dropped := 0, 0
+	for i < len(row) && dropped < len(proseIndent) {
+		if row[i] == 0x1b {
+			j, _ := escapeEnd(row, i)
+			keep.WriteString(row[i:j])
+			i = j
+			continue
+		}
+		if row[i] != ' ' {
+			break
+		}
+		i++
+		dropped++
 	}
-	if strings.HasPrefix(row[i:], proseIndent) {
-		return row[:i] + row[i+len(proseIndent):]
+	if dropped < len(proseIndent) {
+		return row // not inset: nothing to stand in
 	}
-	return row
+	return keep.String() + row[i:]
 }
 
 // clampTables limits each rendered markdown table to cap physical rows,
