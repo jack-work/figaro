@@ -720,16 +720,22 @@ With a prompt — ` + "`figaro fork [flags] -- <prompt>`" + ` — it also sends,
 		Group: "Session",
 		Short: "Make a trunk the canonical line through its ancestors",
 		Usage: "promote [--id <id> | <id>] [levels]",
-		Long: `Promote a conversation trunk: it climbs up its ancestry, absorbing
-each parent trunk's run so it becomes the canonical line. Pure
-relabeling — no data moves, ids are stable, your binding is untouched.
+		Long: `Raise an aria in the tree ` + "`figaro ls`" + ` draws: it takes its parent's
+place, and the parent comes to sit under it.
+
+This is presentation only. Nothing moves on disk, no history changes, and
+the aria still reads exactly the turns it read before — so a promote is
+instant no matter how long the conversation is, and cannot fail halfway.
 
   figaro promote              promote the bound aria one level
   figaro promote <id>         promote another aria one level
-  figaro promote <id> 10      climb up to 10 stump-bounded levels
+  figaro promote <id> 10      climb up to 10 levels
 
 Promotion stops at the loadout boundary: a top-level conversation has
-nothing to promote into ("cannot promote into a loadout").`,
+nothing to promote into ("cannot promote into a loadout").
+
+Needs the trunk capability (` + "`trunks = true`" + `, the default). Without it,
+aria nesting follows fork history alone and there is nothing to promote.`,
 		ArgsMin: 0,
 		ArgsMax: 2,
 		Flags: []cmdkit.FlagDef{
