@@ -6,6 +6,7 @@
 package render
 
 import (
+	"log/slog"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -59,20 +60,58 @@ func Prose(md string, width int) []string {
 // word-wrapped lines with surrounding blank padding trimmed; on a glamour
 // failure it falls back to plain wrapped text so the live region never
 // blanks.
-func renderMarkdown(text string, width int) []string {
+func renderMarkdown(text string, width int) (rows []string) {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
-	r := rendererFor(width)
-	out, err := r.Render(text)
-	if err != nil || out == "" {
-		var rows []string
+	plain := func() []string {
+		var out []string
 		for _, l := range strings.Split(text, "\n") {
-			rows = append(rows, wrapPlain(l, width)...)
+			out = append(out, wrapPlain(l, width)...)
 		}
-		return trimBlankEdges(rows)
+		return trimBlankEdges(out)
+	}
+	// A glamour PANIC must not reach the caller. renderMarkdown already falls
+	// back to plain text when Render returns an error, but a panic blew straight
+	// through that, and figaro renders from detached goroutines (refreshQueued),
+	// so it took the whole CLI down instead of spoiling one frame.
+	//
+	// Observed: a table row carrying more cells than the table's Alignments
+	// ("index out of range [3] with length 3" in TableElement.setStyles). That
+	// particular one is fixed by the lock below, but glamour parses untrusted
+	// model output and this is the boundary where that stops being fatal.
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Warn("markdown render panicked; falling back to plain text",
+				"panic", r, "width", width, "bytes", len(text))
+			rows = plain()
+		}
+	}()
+	out, err := renderLocked(text, width)
+	if err != nil || out == "" {
+		return plain()
 	}
 	return trimBlankEdges(strings.Split(strings.TrimRight(out, "\n"), "\n"))
+}
+
+// renderLocked renders under the renderer lock.
+//
+// A glamour TermRenderer IS NOT SAFE FOR CONCURRENT USE: it accumulates state
+// on itself while walking the document — the block stack, and a table's rows
+// and headers, reset only in the table's Finish. Two goroutines rendering at
+// the same width shared one cached renderer and interleaved cells into a single
+// row; the row then had more cells than the table's Alignments, which glamour
+// indexes by column, and it panicked.
+//
+// The mutex used to guard only the cache lookup and was released before the
+// caller rendered, which protected the map and nothing else. Holding it across
+// Render serializes rendering per process. That is acceptable because Prose is
+// memoized (lookupProse) so repeat frames never reach here, and because the
+// alternative — a renderer per call — re-parses the style sheet every time.
+func renderLocked(text string, width int) (string, error) {
+	rendererMu.Lock()
+	defer rendererMu.Unlock()
+	return rendererForLocked(width).Render(text)
 }
 
 // rendererCache memoizes one glamour renderer per width. Construction
@@ -82,9 +121,9 @@ var (
 	rendererCache = map[int]*glamour.TermRenderer{}
 )
 
-func rendererFor(width int) *glamour.TermRenderer {
-	rendererMu.Lock()
-	defer rendererMu.Unlock()
+// rendererForLocked returns the memoized renderer for width. CALLER HOLDS
+// rendererMu, and must keep holding it across Render — see renderLocked.
+func rendererForLocked(width int) *glamour.TermRenderer {
 	if r, ok := rendererCache[width]; ok {
 		return r
 	}
