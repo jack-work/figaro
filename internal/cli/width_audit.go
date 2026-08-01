@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -41,26 +42,52 @@ type widthAudit struct {
 	sink    *os.File
 	seen    map[string]bool
 	nreport int
+	// lazy opens the default report file on the FIRST overrun, so a healthy
+	// session never creates one.
+	lazy func() *os.File
+	// lastW is the width the carried column belongs to. A resize moves the
+	// cursor under us, so a column carried across one is meaningless — and
+	// reporting it produced empty-ink "overruns" on every resize, which is a
+	// detector crying wolf at the exact moment the user is looking.
+	lastW int
 	// col is the cursor column CARRIED ACROSS WRITES. A row is not one write:
 	// the incipit appends streaming deltas, so resetting the column per call
 	// measured a long row in innocent-looking pieces and reported nothing.
 	col int
 }
 
-// auditWriter wraps out when FIGARO_WIDTH_AUDIT is set, and returns out
-// untouched otherwise — the audit must cost nothing when it is off.
+// auditWriter wraps out whenever there is somewhere to report to.
+//
+// ALWAYS ON, BY DEFAULT, AND THIS IS THE POINT. A right-edge overflow has been
+// reported four times and reproduced from another machine exactly once. Asking
+// the reporter to set an env var, reproduce on demand and send a log is three
+// chances to lose the evidence; figaro can simply keep the receipt itself.
+//
+// The cost is one cell-count per emitted row, capped at 20 reports per process
+// and de-duplicated, written to <cache>/width-overruns.log. FIGARO_WIDTH_AUDIT
+// still redirects it to stderr or a chosen file for a deliberate hunt, and
+// FIGARO_WIDTH_AUDIT=off disables it outright.
 func auditWriter(out interface{ Write([]byte) (int, error) }, size func() (int, int)) interface {
 	Write([]byte) (int, error)
 } {
 	dest := strings.TrimSpace(os.Getenv("FIGARO_WIDTH_AUDIT"))
-	if dest == "" {
+	if dest == "off" || dest == "0" {
 		return out
 	}
-	sink := os.Stderr
-	if dest != "1" && dest != "true" {
-		if f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
-			sink = f
+	var sink *os.File
+	switch {
+	case dest == "":
+		// The default: a quiet receipt beside the cache, opened lazily so an
+		// ordinary run touches no file at all.
+		return &widthAudit{inner: out, size: size, seen: map[string]bool{}, lazy: defaultOverrunLog}
+	case dest == "1" || dest == "true":
+		sink = os.Stderr
+	default:
+		f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			return out
 		}
+		sink = f
 	}
 	fmt.Fprintf(sink, "\n=== figaro width audit armed %s ===\n", time.Now().Format(time.RFC3339))
 	return &widthAudit{inner: out, size: size, sink: sink, seen: map[string]bool{}}
@@ -89,7 +116,14 @@ func (a *widthAudit) check(s string) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.nreport > 200 {
+	if w != a.lastW {
+		a.lastW, a.col = w, 0 // the terminal clamped the cursor; so do we
+	}
+	cap := 20
+	if a.lazy == nil {
+		cap = 200 // a deliberate hunt wants everything
+	}
+	if a.nreport > cap {
 		return // a broken frame would otherwise report forever
 	}
 	// THE COLUMN A ROW STARTS AT IS PART OF ITS WIDTH.
@@ -105,6 +139,9 @@ func (a *widthAudit) check(s string) {
 			continue
 		}
 		ink := strings.TrimRight(stripEsc(row.text), " ")
+		if ink == "" {
+			continue // nothing visible: an empty row cannot be past the edge
+		}
 		inkW := row.col + displayWidth(ink)
 		padW := row.col + displayWidth(stripEsc(row.text))
 		if inkW <= w && padW <= w {
@@ -113,6 +150,17 @@ func (a *widthAudit) check(s string) {
 		key := fmt.Sprintf("%d:%d:%d:%.40s", w, row.col, inkW, ink)
 		if a.seen[key] {
 			continue
+		}
+		if a.sink == nil {
+			if a.lazy == nil {
+				return
+			}
+			f := a.lazy()
+			if f == nil {
+				return
+			}
+			a.sink = f
+			fmt.Fprintf(a.sink, "\n=== figaro %s, %s ===\n", buildRevision(), time.Now().Format(time.RFC3339))
 		}
 		a.seen[key] = true
 		a.nreport++
@@ -327,4 +375,22 @@ func auditCallers() string {
 		}
 	}
 	return strings.Join(out, " <- ")
+}
+
+// defaultOverrunLog is where figaro leaves the receipt when nobody asked: a
+// single file beside the cache, named so it is obvious what it is and safe to
+// delete.
+func defaultOverrunLog() *os.File {
+	dir := cacheDir()
+	if dir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "width-overruns.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil
+	}
+	return f
 }

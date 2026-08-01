@@ -74,11 +74,42 @@ func TestWidthAuditCountsTheColumnARowStartsAt(t *testing.T) {
 	}
 }
 
-// Unarmed, the writer is returned untouched — no wrapper, no measurement.
-func TestWidthAuditIsFreeWhenUnarmed(t *testing.T) {
+// With no env var set, an overrun still leaves a receipt — and a healthy
+// session creates no file at all.
+//
+// Four reports of this bug produced one reproduction, because every route to
+// evidence went through the reporter remembering to arm something first.
+// figaro keeps the receipt itself now: the file is opened lazily, on the first
+// overrun, so the common case touches nothing.
+func TestOverrunsAreRecordedWithoutBeingAsked(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("FIGARO_CACHE_DIR", dir)
 	t.Setenv("FIGARO_WIDTH_AUDIT", "")
+	log := filepath.Join(dir, "width-overruns.log")
+
+	w := auditWriter(&nopWriter{}, func() (int, int) { return 20, 40 })
+	w.Write([]byte("12345678901234567890\r\n")) // exactly 20: fits
+	if _, err := os.Stat(log); err == nil {
+		t.Fatal("a healthy session must not create a report file")
+	}
+
+	w.Write([]byte("123456789012345678901234\r\n")) // 24 cells
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatalf("an overrun left no receipt: %v", err)
+	}
+	if !strings.Contains(string(b), "ends=24") {
+		t.Fatalf("receipt does not name the overrun:\n%s", b)
+	}
+}
+
+// FIGARO_WIDTH_AUDIT=off must return the writer untouched: somebody who does
+// not want the measurement should not pay for it.
+func TestOverrunRecordingCanBeTurnedOff(t *testing.T) {
+	t.Setenv("FIGARO_CACHE_DIR", t.TempDir())
+	t.Setenv("FIGARO_WIDTH_AUDIT", "off")
 	inner := &nopWriter{}
 	if got := auditWriter(inner, func() (int, int) { return 20, 40 }); got != inner {
-		t.Fatalf("unarmed audit wrapped the writer: %T", got)
+		t.Fatalf("audit=off still wrapped the writer: %T", got)
 	}
 }
