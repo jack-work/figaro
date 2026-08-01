@@ -618,6 +618,16 @@ func decorateNodeRow(plain string, mark selectionMark) string {
 	}
 	// Re-emit the background after every reset in the body so highlighting
 	// survives inline styling (dim, cyan, etc. inside a rendered node).
-	body = strings.ReplaceAll(body, reset, reset+bgSelect)
+	//
+	// BOTH RESET FORMS. `\x1b[m` is `\x1b[0m` with the parameter omitted, and it
+	// clears the wash exactly as thoroughly. glamour v1 only ever emitted the
+	// long form, so matching one spelling was enough by accident; v2 emits the
+	// short one, and a selected row whose content ended in `\x1b[m` lost its
+	// highlight from there to the right edge — the `\x1b[K` then erased with the
+	// DEFAULT background. TestGoldenFramesMatchPreSGRAtTheCellLevel caught it at
+	// cell 0,45, which is the only reason anybody knows.
+	for _, r := range []string{reset, "\x1b[m"} {
+		body = strings.ReplaceAll(body, r, r+bgSelect)
+	}
 	return bgSelect + gutter + reset + bgSelect + body + "\x1b[K" + reset
 }

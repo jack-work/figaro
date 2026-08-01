@@ -115,7 +115,13 @@ func TestRenderProseNode_CollapseHidesAndExpandRestores(t *testing.T) {
 	}
 	// And the CANARY for the clamp itself: the collapsed form must actually be
 	// missing something the expanded form has, or this test cannot fail.
-	if strings.Contains(" "+strings.Join(strings.Fields(wordsOnly(stripANSI(strings.Join(collapsed, " ")))), " ")+" ", " cauterized ") {
+	//
+	// The word comes from the LAST row of the expanded table on purpose. It used
+	// to be "cauterized", one row earlier — and glamour v2 wraps this table one
+	// row tighter than v1 did, which lifted "cauterized" above the clamp and
+	// turned the canary green while the clamp still worked. A canary anchored to
+	// the last row cannot drift under a renderer that only gets tighter.
+	if strings.Contains(" "+strings.Join(strings.Fields(wordsOnly(stripANSI(strings.Join(collapsed, " ")))), " ")+" ", " prompts ") {
 		t.Errorf("collapsed form hid nothing — the clamp is inert\n%s", dumpRows(collapsed))
 	}
 }

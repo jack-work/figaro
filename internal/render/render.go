@@ -10,9 +10,8 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/charmbracelet/glamour"
+	"charm.land/glamour/v2"
 	"github.com/mattn/go-runewidth"
-	"github.com/muesli/termenv"
 )
 
 // Prose renders a full markdown string through glamour — prose, lists,
@@ -103,13 +102,20 @@ func rendererFor(width int) *glamour.TermRenderer {
 	// token still overruns at any bias — glamour will not hyphenate — which
 	// is why every caller clips (clipToWidth) and why that is not this
 	// function's job.
+	//
+	// The bias is unchanged under glamour v2; re-measured at widths 40/60/64/80,
+	// the widest row is exactly `width`.
 	wrap := width + 2
 	if wrap < 1 {
 		wrap = 1
 	}
 	opts := []glamour.TermRendererOption{
 		glamour.WithStandardStyle("dark"),
-		glamour.WithColorProfile(termenv.TrueColor), // pinned: determinism, not env-detected
+		// NO WithColorProfile. v1 had one and it was pinned to TrueColor for
+		// determinism; v2 has no such option, because lipgloss emits the style's
+		// own colour verbatim ("252" still comes out as ESC[38;5;252m) and any
+		// downgrade happens at the writer, not here. So the output is as
+		// deterministic as it was, by construction rather than by a pin.
 		glamour.WithWordWrap(wrap),
 		// THE TABLE FIX, stated explicitly rather than left to the default.
 		// glamour's table renderer used to give every cell a lipgloss style
