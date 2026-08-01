@@ -71,21 +71,21 @@ decoder produced rather than the ones the server sent.
 With no `--record`, `Tap` returns the connection unchanged — the ordinary path
 does not even allocate a wrapper. `TestNilWriterIsNotAWrapper` pins that.
 
-### The server-side option, deliberately not taken (yet)
+### The server-side option, REJECTED
 
-`figaro.Agent` already has the matching seam:
+`figaro.Agent` has a matching seam — `Subscribe(Notifier)`, which `serveConn`
+uses to hand each connection's jkrpc server the frame stream. A decorator there
+would record every client of every aria from inside the daemon.
 
-```go
-type Notifier interface{ Notify(method string, params any) error }
-func (a *Agent) Subscribe(n Notifier) func()        // serveConn subscribes the jkrpc server
-```
+**The owner has ruled that out, and the ruling is the design.** A daemon that
+can record is a daemon that records arias nobody asked about: the flag would
+live far from the conversation it captures, one careless default would tape
+every aria on the machine, and the files would accumulate where no one is
+looking. Recording is a property of a REQUEST, not of the server.
 
-Wrapping that in `serveConn` would record **every** client of every aria from
-inside the daemon — the "record all bad arias automatically" mode. It is a
-ten-line decorator. It is not built here because it puts a test-only writer in
-the production server path and needs a policy for where the files go and when
-they are deleted; the client-side tap answers today's question with none of
-that. When always-on recording is wanted, that is the door.
+So the tap is client-side and per-invocation. The daemon has no recording code,
+no recording flag and no idea it is being recorded. The scope of a tape is
+exactly one CLI process's one connection, and it ends when that process does.
 
 ## How replay works
 
@@ -215,15 +215,14 @@ Prototype, on `test/aria-tape`. Built and measured:
 
 Not built, in rough order of value:
 
-1. **Server-side always-on recording** via the `Notifier` seam (above).
-2. **A trim tool.** A two-minute tape is 250 KB; a bad turn on a real aria can
+1. **A trim tool.** A two-minute tape is 250 KB; a bad turn on a real aria can
    be tens of MB. `figaro replay --from/--to` plus a `--write` would cut a
    fixture down to the frames that matter.
-3. **Golden frames on the headless path.** The infrastructure already exists
+2. **Golden frames on the headless path.** The infrastructure already exists
    (`-update-frames`, `testdata/transcript_frames.golden`); a tape golden is
    the same trick with the pages coming off disk.
-4. **Input on the tape.** Keystrokes are not recorded, so a bug that needs a
+3. **Input on the tape.** Keystrokes are not recorded, so a bug that needs a
    scroll or a `Ctrl-T` cannot be replayed hands-free yet. The tape format has
    room: a third direction (`"key"`) with the same clock.
-5. **A scrubber**, for promoting recordings of real work into committed
+4. **A scrubber**, for promoting recordings of real work into committed
    fixtures.
