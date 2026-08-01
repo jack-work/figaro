@@ -101,3 +101,25 @@ func parseCursorReply(s string) (r struct {
 	r.col, r.ok = col, true
 	return
 }
+
+// MeasureDrawn reports how many columns the terminal actually advanced when it
+// drew s — the ground truth figaro's own measurement is checked against.
+func MeasureDrawn(s string, timeout time.Duration) (int, bool) {
+	if !IsTerminal(int(os.Stdin.Fd())) || !IsTerminal(int(os.Stdout.Fd())) {
+		return 0, false
+	}
+	restore, err := MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		return 0, false
+	}
+	defer restore()
+	if _, err := os.Stdout.WriteString("\r" + s + "\x1b[6n"); err != nil {
+		return 0, false
+	}
+	col, ok := readCursorCol(timeout)
+	os.Stdout.WriteString("\r\x1b[2K")
+	if !ok {
+		return 0, false
+	}
+	return col - 1, true
+}

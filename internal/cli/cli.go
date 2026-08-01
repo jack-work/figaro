@@ -881,7 +881,7 @@ nothing to promote into ("cannot promote into a loadout").`,
 		Name:  "doctor",
 		Group: "System",
 		Short: "Store maintenance: gc removes dead channels; schema reports channel versions",
-		Usage: "doctor <gc [--dry-run] | schema>",
+		Usage: "doctor <gc [--dry-run] | schema | term>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
 		},
@@ -894,6 +894,8 @@ nothing to promote into ("cannot promote into a loadout").`,
 				return runDoctorGC(ctx.BoolFlag("dry-run"))
 			case "schema":
 				return runDoctorSchema()
+			case "term":
+				return runDoctorTerm()
 			}
 			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema>")
 		},

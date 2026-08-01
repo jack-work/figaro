@@ -41,6 +41,10 @@ type widthAudit struct {
 	sink    *os.File
 	seen    map[string]bool
 	nreport int
+	// col is the cursor column CARRIED ACROSS WRITES. A row is not one write:
+	// the incipit appends streaming deltas, so resetting the column per call
+	// measured a long row in innocent-looking pieces and reported nothing.
+	col int
 }
 
 // auditWriter wraps out when FIGARO_WIDTH_AUDIT is set, and returns out
@@ -96,8 +100,7 @@ func (a *widthAudit) check(s string) {
 	// look innocent on their own. So the write is replayed as a cursor —
 	// CR/CUP set the column, text advances it — and what is reported is where
 	// the row ENDS.
-	col := 0
-	for _, row := range splitPaintedRowsAt(s, &col) {
+	for _, row := range splitPaintedRowsAt(s, &a.col) {
 		if row.text == "" {
 			continue
 		}
