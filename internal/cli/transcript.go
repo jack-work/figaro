@@ -465,10 +465,10 @@ func (t *transcript) tailKeep() int {
 	if t.tailWant > 0 {
 		return t.tailWant
 	}
-	if t.avgRowsPerMessage() == 0 {
-		return transcriptMinPageSize
-	}
-	return t.pageMessages()
+	// COLD: nothing rendered, so no height is known and every number here would
+	// be invented. Start at the floor and let tuneTail walk up, which is
+	// invisible — the rows it adds are ABOVE a viewport pinned to the tail.
+	return transcriptMinPageSize
 }
 
 // transcriptPrefetchScreens is how close (in viewports) the scroll position has
@@ -935,38 +935,95 @@ func (t *transcript) tuneTail() bool {
 	if t.tailTuned || !t.follow {
 		return false
 	}
-	held, have := t.heldWindow() // committed rows + the messages they belong to
+	_, have := t.heldWindow() // the messages the window holds
 	if have == 0 {
 		return false
 	}
-	total := t.index.total // + the open message: what the viewport shows
-	want, budget := t.pageMessages(), pageRowBudget()
-	if have > 0 && held > 0 && total < t.h { // never leave the viewport half-empty
-		perMsg := max(held/have, 1)
-		if need := (t.h + perMsg - 1) / perMsg; need > want {
-			want = need
-		}
+	budget := pageRowBudget()
+	fits, rows := t.tailFit(budget)
+
+	// OVERSHOT: the window holds more rows than the budget, and because the
+	// walk measured every one of them we know exactly where to cut AND that the
+	// message just outside the cut overflows. That is the whole convergence
+	// argument: the boundary is a fact about heights we have, not a prediction
+	// from an average, so re-deriving it gives the same answer forever.
+	if fits < have {
+		t.tailWant = fits
+		t.tailTuned = true // the cut IS the fixed point; do not re-tune into it
+		before := t.from
+		t.resetToTail()
+		t.tailTuned = true // resetToTail cleared it; the cut still stands
+		return t.from != before
 	}
-	grow := want > have && (held < budget*3/4 || total < t.h)
-	shrink := want < have && held > budget*5/4
-	if !grow && !shrink {
-		// CONVERGED — and the size we converged at is now the window's, latched.
-		// The window is derived from tailKeep() on every frame rather than held
-		// as a snapshot, so leaving tailWant unset would let the size drift with
-		// pageMessages()'s own input (the measured rows-per-message, which the
-		// window itself determines). Latching makes the fixed point explicit.
+
+	// UNDER BUDGET: the window is everything we hold and it does not fill the
+	// budget (or the viewport). Ask for more. The average is used HERE, as a
+	// hint for how far to jump, and nowhere else — a wrong hint costs one extra
+	// pass, where before it was the control law and could not settle.
+	//
+	// TWO CEILINGS, because they bound different costs. The ROW budget bounds
+	// what a frame and a scroll-back cost, and it is the one the cut above
+	// enforces. The MESSAGE ceiling bounds what the per-frame index rebuild
+	// costs, which is O(messages) regardless of how short they are — without it
+	// an aria of one-line answers would retain thousands of them inside the row
+	// budget. Both yield to the viewport: a window that cannot fill the screen
+	// is not a window, so an unfilled viewport grows past either.
+	full := rows >= budget || have >= transcriptPageSize
+	if full && t.index.total >= t.h {
 		t.tailWant = have
 		t.tailTuned = true
 		return false
 	}
+	want := have + max(t.pageMessages(), 1)
 	before := t.from
 	t.tailWant = want
 	t.resetToTail() // clears tailTuned; re-derives the floor
 	if t.from == before {
-		t.tailTuned = true // no messages available to move: stop trying
+		t.tailTuned = true // no messages left to take: this is the whole aria
 		return false
 	}
 	return true
+}
+
+// tailFit walks the retained window from the NEWEST committed message
+// backwards, adding real measured heights, and reports how many messages fit
+// inside budget rows (at least one) and how many rows they are.
+//
+// THIS IS THE FIXED POINT the old geometry did not have. tuneTail used to size
+// the window as budget/(average height of the window that sizing produced) —
+// a controller whose feedback was its own output, damped by a 600/1000-row
+// hysteresis band. An average is the wrong instrument the moment the
+// distribution has a spike, and this distribution always does: a tool dump is
+// 400 rows and an "ok" is 4. One message taller than the band left the loop
+// with NO fixed point, so the window alternated between two floors on every
+// frame, forever, and the range row in the footer wavered with it
+// (1043-1072/1072+ / 546-575/575+, measured 2026-08-01). settle() ran three
+// passes per frame, an odd number, so consecutive frames landed on opposite
+// phases of the cycle.
+//
+// A suffix sum of measured heights cannot do that. It is a pure function of
+// the heights, so the same window yields the same cut; and the cut is only
+// ever taken when the window ALREADY overflows, so the message beyond it has
+// been measured too.
+//
+// The open message is excluded, as it was: the budget governs how much
+// committed history to retain, and the live message changes height on every
+// token. A zero-height entry still counts as one row, or a run of them would
+// let the walk take the whole aria.
+func (t *transcript) tailFit(budget int) (messages, rows int) {
+	for k := len(t.index.entries) - 1; k >= 0; k-- {
+		e := &t.index.entries[k]
+		if e.open {
+			continue
+		}
+		h := max(e.height(), 1)
+		if messages > 0 && rows+h > budget {
+			break
+		}
+		rows += h
+		messages++
+	}
+	return messages, rows
 }
 
 // invalidateWindow is the ONE authority on "the retained window changed". Every

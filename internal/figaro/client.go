@@ -38,7 +38,13 @@ func (c *Client) call(ctx context.Context, method string, params, result any) er
 
 // DialClient connects to a figaro agent.
 func DialClient(ep transport.Endpoint, onNotify NotifyHandler) (*Client, error) {
-	conn, err := transport.Dial(ep)
+	return DialClientWith(ep, onNotify, nil)
+}
+
+// DialClientWith is DialClient with connection middleware — the seam the wire
+// recorder hangs on. Passing nil is DialClient exactly.
+func DialClientWith(ep transport.Endpoint, onNotify NotifyHandler, tap transport.Tap) (*Client, error) {
+	conn, err := transport.DialWith(ep, tap)
 	if err != nil {
 		return nil, err
 	}

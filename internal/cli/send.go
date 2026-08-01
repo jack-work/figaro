@@ -37,6 +37,7 @@ type sendOpts struct {
 	json      bool   // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
 	listen    bool   // --listen / -l: auto-enter the transcript at startup
 	loadout   string // --loadout / -L: the loadout a CREATED aria is minted on
+	record    string // --record: write a wire tape of this stream (testing)
 }
 
 // extractSendFlags scans a PassRaw arg list for the send command's
@@ -142,6 +143,20 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			}
 			i++
 			continue
+		case a == "--record":
+			if i+1 >= len(expanded) || expanded[i+1] == "--" {
+				return opts, nil, fmt.Errorf("--record requires a path")
+			}
+			opts.record = expanded[i+1]
+			i += 2
+			continue
+		case strings.HasPrefix(a, "--record="):
+			opts.record = strings.TrimPrefix(a, "--record=")
+			if opts.record == "" {
+				return opts, nil, fmt.Errorf("--record requires a path")
+			}
+			i++
+			continue
 		case a == "--ephemeral", a == "-e":
 			opts.ephemeral = true
 			i++
@@ -222,6 +237,7 @@ var sendFlagDefs = []cmdkit.FlagDef{
 	{Long: "verbose", Short: "o", IsBool: true, Description: "Expand full tool inputs"},
 	{Long: "thinking", Short: "t", IsBool: true, Description: "Alias of --verbose"},
 	{Long: "listen", Short: "l", IsBool: true, Description: "Open the transcript at startup"},
+	{Long: "record", Description: "Record the aria wire to a tape file (testing)"},
 	{Long: "exec", Short: "x", IsBool: true, Description: "Treat the prompt as a bash instruction"},
 	{Long: "dry-run", Short: "n", IsBool: true, Description: "--exec only: print the script"},
 	{Long: "yes", Short: "y", IsBool: true, Description: "--exec only: skip confirmation"},
@@ -363,7 +379,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 		opts.forget = true
 	}
 
-	set := renderSettings{verbose: opts.verbose, listen: opts.listen}
+	set := renderSettings{verbose: opts.verbose, listen: opts.listen, record: opts.record}
 
 	// `send <trunk>:<turn>` — fork at that turn, then send. The message lands
 	// on whichever trunk we end up attended to: the new alternative by default

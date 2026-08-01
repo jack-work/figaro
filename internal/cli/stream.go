@@ -15,6 +15,7 @@ import (
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/tape"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
 	"github.com/mattn/go-runewidth"
@@ -222,7 +223,30 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// the history it follows rather than over it. Nothing is dropped.
 	lt.holdFrames()
 
-	fcli, err := figaro.DialClient(ep, onNotify)
+	// The wire tape (testing): --record tees every JSON-RPC message this
+	// stream exchanges, so a turn that painted wrong can be replayed exactly.
+	var rec *tape.Writer
+	if set.record != "" {
+		var terr error
+		rec, terr = tape.Create(set.record, tape.Header{
+			Aria:    figaroID,
+			Cols:    term.Width(),
+			Rows:    term.Height(),
+			Term:    os.Getenv("TERM"),
+			Binary:  buildRevision(),
+			Command: strings.Join(os.Args, " "),
+		})
+		if terr != nil {
+			die("record: %s", terr)
+		}
+		defer func() {
+			if cerr := rec.Close(); cerr != nil {
+				fmt.Fprintf(os.Stderr, "figaro: tape: %v\n", cerr)
+			}
+		}()
+	}
+
+	fcli, err := figaro.DialClientWith(ep, onNotify, tapeTap(rec))
 	if err != nil {
 		die("connect figaro: %s", err)
 	}
