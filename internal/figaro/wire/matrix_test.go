@@ -2,6 +2,7 @@ package wire_test
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -89,6 +90,20 @@ func TestPromoteOnlyWithTheCapability(t *testing.T) {
 			t.Fatal("promote succeeded without the trunk capability")
 		}
 	})
+}
+
+// A trunkless figaro writes NO presentation state, ever. This is the
+// concrete form of "the capability is optional": not merely unused, absent.
+func TestTrunklessWritesNoPstate(t *testing.T) {
+	b, root := backend(t, false)
+	l, _ := b.CreateLoadout("d", patch("system.model", "m"))
+	conv, _ := b.CreateConversation(l)
+	if _, _, err := b.Fork(conv); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "trunks.json")); !os.IsNotExist(err) {
+		t.Fatalf("a trunkless figaro wrote a trunk pstate (err=%v)", err)
+	}
 }
 
 // A trunkless figaro is always normalized: the two hierarchies are one, so
