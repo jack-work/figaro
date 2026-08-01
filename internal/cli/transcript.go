@@ -1039,6 +1039,26 @@ func (t *transcript) messages() []aria.Message {
 // the backward fetch must be anchored on the node — see transcriptPageRequest.
 func (t *transcript) oldestFrom() uint64 { return t.from.Node }
 
+// setSize records a new viewport for a transcript that is NOT on screen.
+//
+// The pager can be entered long after a resize — the frame path enters it by
+// itself the moment the live region grows taller than the viewport — and until
+// this existed it entered with the width it was CONSTRUCTED with. A session
+// started at 100 columns and resized to 40 painted its first pager frame, and
+// every frame after it, at 100: measured at 68 rows past the edge, up to 100
+// cells into a 40-column pane, from (*transcript).paint.
+//
+// So the hidden pager is kept current. No paint, no index rebuild — just the
+// size, and the two things that are only true of the old one.
+func (t *transcript) setSize(w, h int) {
+	if w == t.w && h == t.h {
+		return
+	}
+	t.w, t.h = w, h
+	t.prev = nil
+	t.invalidateRows()
+}
+
 func (t *transcript) resize(w, h int) {
 	// Anchor on the message at the viewport top: a width change re-wraps rows and
 	// changes line counts, so keeping the raw line offset would jump the view.
@@ -1046,6 +1066,22 @@ func (t *transcript) resize(w, h int) {
 	// after re-rendering at the new width. (Skipped when following the tail.)
 	anchor, within := t.viewportAnchor()
 	t.w, t.h = w, h
+	// THE ROW CACHE IS NOT KEYED BY WIDTH. rowCache holds each committed
+	// message's rendered rows under (turn, from) alone, and buildIndex below
+	// reads it rather than re-rendering — so without this line a width change
+	// re-serves rows composed for the OLD width, forever, and the pager paints
+	// them into the new viewport.
+	//
+	// MEASURED, from inside the process (FIGARO_WIDTH_AUDIT), on one resize from
+	// 100 to 40 columns with six seconds of settling first: 67 rows written past
+	// the edge, up to 100 cells into a 40-column pane, still going fourteen
+	// seconds later. Every one of them came from (*transcript).paint. That is
+	// the reported "text beyond the right side that goes away on a rerender" —
+	// a later resize happens to rebuild the entries the anchor restore touches.
+	//
+	// invalidateRows already existed for this shape of problem and was wired
+	// only to the verbosity toggle; a width change is the same event.
+	t.invalidateRows()
 	// Nil means "I know nothing about the screen", and paint honours that by
 	// repainting every row — including the blank ones, which is the whole point.
 	// It used to claim "full repaint (diff vs nil)" and not get one: paint read a

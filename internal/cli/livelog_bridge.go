@@ -579,6 +579,12 @@ func (t *livelogTurn) tick() {
 // not thrash into it.
 func (t *livelogTurn) resize(w, h int) {
 	t.term.SetSize(w, h)
+	if !t.tr.active {
+		// Tell the pager even while it is hidden: it may enter itself on the
+		// very next frame (below), or minutes later when the live region
+		// outgrows the viewport, and it must not enter with a stale width.
+		t.tr.setSize(w, h)
+	}
 	if !t.tr.active && h >= minPagerHeight && t.in.LiveHeight() > h {
 		t.enterPager()
 	}

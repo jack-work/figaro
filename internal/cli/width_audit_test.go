@@ -35,7 +35,7 @@ func TestWidthAuditReportsOnlyRealOverruns(t *testing.T) {
 		t.Fatalf("audit wrote no log: %v", err)
 	}
 	got := string(b)
-	if !strings.Contains(got, "OVER INK: width=20 ink=24") {
+	if !strings.Contains(got, "OVER INK: width=20 ioctl=") || !strings.Contains(got, "startcol=0 ends=24") {
 		t.Fatalf("ink overrun not reported:\n%s", got)
 	}
 	if !strings.Contains(got, "OVER PADDING: width=20") {
@@ -43,6 +43,34 @@ func TestWidthAuditReportsOnlyRealOverruns(t *testing.T) {
 	}
 	if n := strings.Count(got, "OVER "); n != 2 {
 		t.Fatalf("want exactly 2 reports (the two overruns), got %d:\n%s", n, got)
+	}
+}
+
+// A row can fit on its own and still run off the edge, because it did not start
+// at column 1. Measuring the row alone is a second way to be blind: the row is
+// innocent, the width is innocent, and the screen is wrong by exactly the
+// offset — which is what "a couple of characters beyond the edge" looks like.
+//
+// CANARY (watched): ignore the start column (measure the row alone) and the
+// second write below stops being reported.
+func TestWidthAuditCountsTheColumnARowStartsAt(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "audit.log")
+	t.Setenv("FIGARO_WIDTH_AUDIT", log)
+	w := auditWriter(&nopWriter{}, func() (int, int) { return 20, 40 })
+
+	w.Write([]byte("\rshort\r\n"))           // 5 cells from column 0: fits
+	w.Write([]byte("\x1b[1;15Hsevencl\r\n")) // 7 cells from column 14: ends at 21
+
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatalf("audit wrote no log: %v", err)
+	}
+	got := string(b)
+	if !strings.Contains(got, "startcol=14 ends=21") {
+		t.Fatalf("a row overflowing because of where it STARTS was not reported:\n%s", got)
+	}
+	if strings.Contains(got, "%!q(MISSING)") {
+		t.Fatalf("report is malformed:\n%s", got)
 	}
 }
 

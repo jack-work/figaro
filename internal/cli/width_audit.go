@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -87,17 +88,26 @@ func (a *widthAudit) check(s string) {
 	if a.nreport > 200 {
 		return // a broken frame would otherwise report forever
 	}
-	for _, row := range splitPaintedRows(s) {
-		if row == "" {
+	// THE COLUMN A ROW STARTS AT IS PART OF ITS WIDTH.
+	//
+	// This audit began by measuring rows as though each started at column 1,
+	// which is a second way to be blind: a row emitted from a stale cursor
+	// column overflows by exactly the offset, and both the row and the width
+	// look innocent on their own. So the write is replayed as a cursor —
+	// CR/CUP set the column, text advances it — and what is reported is where
+	// the row ENDS.
+	col := 0
+	for _, row := range splitPaintedRowsAt(s, &col) {
+		if row.text == "" {
 			continue
 		}
-		ink := strings.TrimRight(stripEsc(row), " ")
-		inkW := displayWidth(ink)
-		padW := displayWidth(stripEsc(row))
+		ink := strings.TrimRight(stripEsc(row.text), " ")
+		inkW := row.col + displayWidth(ink)
+		padW := row.col + displayWidth(stripEsc(row.text))
 		if inkW <= w && padW <= w {
 			continue
 		}
-		key := fmt.Sprintf("%d:%d:%.40s", w, inkW, ink)
+		key := fmt.Sprintf("%d:%d:%d:%.40s", w, row.col, inkW, ink)
 		if a.seen[key] {
 			continue
 		}
@@ -107,8 +117,8 @@ func (a *widthAudit) check(s string) {
 		if inkW > w {
 			kind = "INK"
 		}
-		fmt.Fprintf(a.sink, "OVER %s: width=%d ink=%d pad=%d (+%d)\n  %q\n",
-			kind, w, inkW, padW, max(inkW, padW)-w, ink)
+		fmt.Fprintf(a.sink, "OVER %s: width=%d ioctl=%d startcol=%d ends=%d pad=%d (+%d)\n  %q\n  from: %s\n",
+			kind, w, termWidth(), row.col, inkW, padW, max(inkW, padW)-w, ink, auditCallers())
 	}
 }
 
@@ -206,4 +216,112 @@ func auditRows(rows []string, width int, surface string) {
 				surface, width, n, n-width, i, ink)
 		}
 	}
+}
+
+// paintedRow is a run of text plus the column it began at.
+type paintedRow struct {
+	col  int
+	text string
+}
+
+// splitPaintedRowsAt replays a write as a cursor would see it: CR returns to
+// column 0, CUP/HVP set it, a vertical move starts a new row at the current
+// column, and text advances it. *col carries the position across writes,
+// because a frame is not emitted in one call.
+func splitPaintedRowsAt(s string, col *int) []paintedRow {
+	var rows []paintedRow
+	cur := paintedRow{col: *col}
+	var b strings.Builder
+	flush := func(next int) {
+		cur.text = b.String()
+		rows = append(rows, cur)
+		b.Reset()
+		cur = paintedRow{col: next}
+	}
+	for i := 0; i < len(s); {
+		switch {
+		case s[i] == '\r':
+			flush(0)
+			i++
+			if i < len(s) && s[i] == '\n' {
+				i++
+			}
+		case s[i] == '\n':
+			flush(0)
+			i++
+		case s[i] == 0x1b:
+			j, _ := escapeEnd(s, i)
+			seq := s[i:j]
+			if n := len(seq); n > 1 {
+				switch seq[n-1] {
+				case 'H', 'f':
+					flush(cupColumn(seq))
+					i = j
+					continue
+				case 'A', 'B', 'E', 'F':
+					// E/F return to column 1; A/B keep the column.
+					next := *col + displayWidth(stripEsc(b.String()))
+					if seq[n-1] == 'E' || seq[n-1] == 'F' {
+						next = 0
+					}
+					flush(next)
+					i = j
+					continue
+				}
+			}
+			b.WriteString(seq)
+			i = j
+		default:
+			b.WriteByte(s[i])
+			i++
+		}
+	}
+	cur.text = b.String()
+	rows = append(rows, cur)
+	*col = cur.col + displayWidth(stripEsc(cur.text))
+	return rows
+}
+
+// cupColumn reads the column out of ESC [ row ; col H (defaulting to 1).
+func cupColumn(seq string) int {
+	body := strings.TrimSuffix(strings.TrimPrefix(seq, "\x1b["), string(seq[len(seq)-1]))
+	parts := strings.Split(body, ";")
+	if len(parts) < 2 {
+		return 0
+	}
+	n := 0
+	for _, c := range parts[1] {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+	}
+	if n > 0 {
+		return n - 1
+	}
+	return 0
+}
+
+// auditCallers names who emitted the row. Reading the renderer to guess which
+// surface produced an over-wide row went three rounds and found nothing; the
+// stack answers it outright.
+func auditCallers() string {
+	pcs := make([]uintptr, 12)
+	n := runtime.Callers(3, pcs)
+	frames := runtime.CallersFrames(pcs[:n])
+	var out []string
+	for {
+		f, more := frames.Next()
+		name := f.Function
+		if i := strings.LastIndex(name, "/"); i >= 0 {
+			name = name[i+1:]
+		}
+		if !strings.Contains(name, "width_audit") {
+			out = append(out, fmt.Sprintf("%s:%d", name, f.Line))
+		}
+		if !more || len(out) >= 6 {
+			break
+		}
+	}
+	return strings.Join(out, " <- ")
 }
