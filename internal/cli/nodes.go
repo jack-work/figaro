@@ -44,6 +44,9 @@ type renderSettings struct {
 	verbose  bool
 	jsonMode bool // -j / --json: emit a single {aria_id, ...} JSON line on stdout instead of a live render
 	listen   bool // -l / --listen: auto-enter the transcript at startup
+	// record is a path for the wire tape (testing). Empty is the ordinary
+	// path: nothing is opened, nothing is wrapped. See internal/tape.
+	record string
 }
 
 // nodeExpandable — THE SEAM between the gesture and the renderer — lives below,

@@ -16,6 +16,7 @@ import (
 	ldmouse "github.com/jack-work/figaro/internal/livelog/render/mouse"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/tape"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
 )
@@ -27,7 +28,11 @@ import (
 // inside a send stream); Ctrl-D disconnects without touching the turn.
 //
 // With no ariaID, the pid-bound aria is used.
-func runListen(loaded *config.Loaded, ariaID string) {
+//
+// recordPath, when set, tees the aria wire into a tape (see internal/tape):
+// the testing affordance that turns a bug someone SAW into a bug CI can
+// replay. It is inert when empty — no file, no wrapper, no cost.
+func runListen(loaded *config.Loaded, ariaID, recordPath, note string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -39,7 +44,31 @@ func runListen(loaded *config.Loaded, ariaID string) {
 		die("%s", err)
 	}
 
-	tailFigaro(ctx, cancel, figaroEP, resolvedID, loaded)
+	var rec *tape.Writer
+	if recordPath != "" {
+		// The header is taken BEFORE the dial so its Started is the zero of
+		// every frame offset, including the catch-up read the pager fires on
+		// its way up.
+		rec, err = tape.Create(recordPath, tape.Header{
+			Aria:    resolvedID,
+			Cols:    term.Width(),
+			Rows:    term.Height(),
+			Term:    os.Getenv("TERM"),
+			Binary:  buildRevision(),
+			Command: strings.Join(os.Args, " "),
+			Note:    note,
+		})
+		if err != nil {
+			die("record: %s", err)
+		}
+		defer func() {
+			if cerr := rec.Close(); cerr != nil {
+				fmt.Fprintf(os.Stderr, "figaro: tape: %v\n", cerr)
+			}
+		}()
+	}
+
+	tailFigaro(ctx, cancel, figaroEP, resolvedID, loaded, tailOpts{tape: rec})
 }
 
 // tailFigaro is the read-only twin of mustPromptFigaro. It opens the
@@ -48,11 +77,30 @@ func runListen(loaded *config.Loaded, ariaID string) {
 // disconnect (turn keeps running); Ctrl-T -> transcript pager.
 // Returns when the user disconnects, the agent socket dies, or ctx
 // is canceled.
-func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.Endpoint, figaroID string, loaded *config.Loaded) {
+// tailOpts are the affordances only a non-interactive caller wants. The zero
+// value is `figaro listen` exactly, which is why they are a struct and not
+// three more positional parameters: the ordinary path names none of them.
+type tailOpts struct {
+	// tape records the wire (nil = record nothing).
+	tape *tape.Writer
+	// end closes when the stream is over by the caller's own reckoning — the
+	// end of a replayed tape. It joins the SAME select the turn-over path uses,
+	// so the exit is the clean one and not an invented interrupt.
+	end <-chan struct{}
+	// startedAt overrides the session clock shown in the status row. A replay
+	// passes the recording's own start so the same tape paints the same pixels
+	// at any hour; live callers leave it zero and get time.Now.
+	startedAt time.Time
+}
+
+func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.Endpoint, figaroID string, loaded *config.Loaded, opt tailOpts) {
 	ctx, span := figOtel.Start(ctx, "cli.listen")
 	defer span.End()
 
-	startedAt := time.Now()
+	startedAt := opt.startedAt
+	if startedAt.IsZero() {
+		startedAt = time.Now()
+	}
 	status := newSessionStatus(figaroID, startedAt)
 
 	// We want Ctrl-C to mean "interrupt the in-flight turn" (parity
@@ -112,7 +160,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		}
 	}
 
-	fcli, err := figaro.DialClient(ep, onNotify)
+	fcli, err := figaro.DialClientWith(ep, onNotify, tapeTap(opt.tape))
 	if err != nil {
 		die("connect figaro: %s", err)
 	}
@@ -186,6 +234,9 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 
 	select {
 	case <-doneCh:
+	case <-opt.end:
+		// The tape ran out. Leave the way a finished turn leaves.
+		lt.finishTurn("")
 	case <-disconnectCh:
 		lt.abandon("disconnected — turn (if any) continues", turnStatusDisconnected)
 	case <-fcli.Done():

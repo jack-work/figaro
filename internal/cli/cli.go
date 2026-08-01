@@ -358,19 +358,65 @@ Keys:
   Ctrl-D   Disconnect this CLI; the turn keeps running.
   Ctrl-T   Open the full-screen transcript pager.
   Ctrl-O   Toggle verbose tool-input expansion.
-  q / Esc  (in pager) leave pager and return to the inline tail.`,
+  q / Esc  (in pager) leave pager and return to the inline tail.
+
+TESTING: --record <file> writes a wire tape — every JSON-RPC message
+this CLI exchanged with the agent, with the time it crossed. Replay it
+with ` + "`figaro replay <file>`" + ` to reproduce the exact stream, and
+the exact rendering, with no daemon and no provider. A tape carries the
+aria's content; it is written only when you ask for it.`,
 		ArgsMin: 0,
 		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "record", Description: "Record the aria wire to a tape file (testing)"},
+			{Long: "note", Description: "Note stored in the tape header: what you are hunting"},
+		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			var id string
 			if len(ctx.Args) > 0 {
 				id = ctx.Args[0]
 			}
-			runListen(ld, id)
+			runListen(ld, id, ctx.Flag("record"), ctx.Flag("note"))
 			return nil
 		},
 		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "replay",
+		Group: "Prompt",
+		Short: "Replay a recorded aria wire tape through the real renderer",
+		Usage: "replay <tape> [--speed <x>] [--summary]",
+		Long: `Play back a tape taken with ` + "`figaro listen --record`" + `.
+
+The tape is the whole world: no angelus, no agent, no provider, no aria
+store, no tokens. A local socket speaks the recorded JSON-RPC frames on
+their recorded schedule and the ordinary listen renderer — same pager,
+same pacer, same catch-up — draws them. What you see is what was seen.
+
+  figaro replay bug.tape              real time
+  figaro replay bug.tape --speed 4    four times faster
+  figaro replay bug.tape --summary    what is on the tape, without playing it`,
+		ArgsMin: 1,
+		ArgsMax: 1,
+		Flags: []cmdkit.FlagDef{
+			{Long: "speed", Description: "Playback rate; 1 is real time (default 1)"},
+			{Long: "summary", IsBool: true, Description: "Describe the tape and exit"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			speed := 1.0
+			if v := ctx.Flag("speed"); v != "" {
+				f, err := strconv.ParseFloat(v, 64)
+				if err != nil {
+					return fmt.Errorf("--speed %q: not a number", v)
+				}
+				speed = f
+			}
+			runReplay(ld, ctx.Args[0], speed, ctx.BoolFlag("summary"))
+			return nil
+		},
 	})
 
 	r.Register(&cmdkit.Command{
