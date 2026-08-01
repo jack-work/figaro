@@ -112,7 +112,9 @@ Commits are itemized and self-contained. There is one real user, so a clean
 design beats a compatibility shim.
 
 For UI work, a pty is the only honest oracle: see
-[reference/ui-testing.md](reference/ui-testing.md).
+[reference/ui-testing.md](reference/ui-testing.md). To reproduce a rendering
+bug from a real session rather than a guess, record and replay it:
+[reference/tapes.md](reference/tapes.md).
 
 ## Handing work back: the owner validates in a dev shell
 

@@ -19,7 +19,7 @@
 // aria's prose, tool output, cwd and chalkboard — everything the pager could
 // paint. It is written only where the caller asked for it, never by default,
 // and a tape promoted to a committed fixture wants a read before it is
-// committed. See docs/aria-tape.md, "What a tape holds".
+// committed. See skills/figaro/reference/tapes.md.
 package tape
 
 import (
