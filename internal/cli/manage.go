@@ -705,10 +705,11 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 	})
 }
 
-// runPromote climbs a conversation trunk up N stump-bounded levels — it
-// becomes the canonical line through its ancestors, absorbing each parent
-// trunk's run. Pure relabeling: no data moves, ids are stable, your binding
-// is untouched.
+// runPromote raises an aria in the PRESENTATION hierarchy: it takes its
+// parent's place in the tree fig ls draws, and the parent comes to sit under
+// it. Nothing moves on disk and no history changes — the aria still reads
+// exactly the turns it did before, so this is instant regardless of how long
+// the conversation is. Needs the trunk capability.
 func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 	target := idFlag
 	if target == "" && len(args) > 0 {
@@ -736,6 +737,11 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 		resp, err := acli.Promote(ctx, target, levels)
 		if err != nil {
 			die("promote: %s", err)
+		}
+		if resp.Unsupported {
+			die("promote: this figaro is built without the trunk capability, so there is\n" +
+				"  no hierarchy to promote within. Aria nesting follows fork history alone.\n" +
+				"  Set `trunks = true` in config.toml and restart the daemon to enable it.")
 		}
 		if resp.AtStump {
 			die("promote: %s is rooted at a loadout — cannot promote into a loadout; make or edit a loadout instead", target)

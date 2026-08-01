@@ -406,12 +406,16 @@ type PromoteRequest struct {
 	Levels   int    `json:"levels,omitempty"`
 }
 
-// PromoteResponse reports how many levels the trunk actually climbed. AtStump
-// is true when it could not climb at all (the trunk is rooted at a loadout).
+// PromoteResponse reports how many levels the aria actually climbed.
+// AtStump is true when it could not climb at all: it is already at the top
+// of its presentation hierarchy, or the server has no trunk capability and
+// therefore no hierarchy to edit (Unsupported).
 type PromoteResponse struct {
 	FigaroID string `json:"figaro_id"`
 	Climbed  int    `json:"climbed"`
 	AtStump  bool   `json:"at_stump,omitempty"`
+	// Unsupported reports a server built without the trunk capability.
+	Unsupported bool `json:"unsupported,omitempty"`
 }
 
 // Endpoint describes how to connect to a figaro.

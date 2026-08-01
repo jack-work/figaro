@@ -15,6 +15,10 @@ import (
 // domain message ("cannot promote into a loadout; make/edit a loadout").
 var ErrAtStump = errors.New("trunk is rooted at a loadout; cannot promote further")
 
+// ErrNoTrunkCapability reports a figaro built without the presentation
+// hierarchy: promotion is meaningless, not merely refused.
+var ErrNoTrunkCapability = errors.New("this figaro has no trunk capability")
+
 // AriaMeta is the per-aria summary stored by the backend.
 type AriaMeta struct {
 	MessageCount     int    `json:"message_count,omitempty"`

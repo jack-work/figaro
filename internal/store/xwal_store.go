@@ -366,12 +366,13 @@ func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err er
 // length. ErrAtStump means there is nothing above to promote into, or the
 // build has no trunk capability at all.
 func (s *XwalStore) Promote(id string, levels int) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// NO s.mu here: the tree resolves lineage through Node, which refreshes
+	// the topology snapshot under s.mu. Holding it across the tree call
+	// deadlocks. The tree carries its own lock and its write is atomic.
 	for climbed := 0; climbed < levels; climbed++ {
 		if err := s.tree.Promote(id); err != nil {
 			if errors.Is(err, topo.ErrNoPromote) {
-				return climbed, ErrAtStump
+				return climbed, ErrNoTrunkCapability
 			}
 			if climbed > 0 {
 				return climbed, nil // ran out of levels to climb; not an error

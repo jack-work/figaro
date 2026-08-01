@@ -647,6 +647,9 @@ func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interfa
 		return nil, errors.New("promote: no backend (ephemeral angelus)")
 	}
 	climbed, err := h.angelus.Backend.Promote(req.FigaroID, req.Levels)
+	if errors.Is(err, store.ErrNoTrunkCapability) {
+		return rpc.PromoteResponse{FigaroID: req.FigaroID, Unsupported: true}, nil
+	}
 	if errors.Is(err, store.ErrAtStump) {
 		return rpc.PromoteResponse{FigaroID: req.FigaroID, Climbed: 0, AtStump: true}, nil
 	}
