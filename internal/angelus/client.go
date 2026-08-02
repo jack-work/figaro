@@ -80,6 +80,16 @@ func (c *Client) CreateEphemeral(ctx context.Context, loadout string, patch *rpc
 
 // Promote climbs a conversation trunk up `levels` stump-bounded levels (it
 // absorbs its parent trunk's run). levels <= 0 means one level.
+// Normalize forces deferred topology work to run now. Blocking by design.
+func (c *Client) Normalize(ctx context.Context, segments bool) (*rpc.NormalizeResponse, error) {
+	var resp rpc.NormalizeResponse
+	err := c.cli.Call(ctx, rpc.MethodNormalize, rpc.NormalizeRequest{Segments: segments}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Client) Promote(ctx context.Context, figaroID string, levels int) (*rpc.PromoteResponse, error) {
 	var resp rpc.PromoteResponse
 	err := c.call(ctx, rpc.MethodPromote, rpc.PromoteRequest{FigaroID: figaroID, Levels: levels}, &resp)

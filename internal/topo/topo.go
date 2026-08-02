@@ -39,6 +39,9 @@ type Tree interface {
 	// Normalized reports whether this tree agrees with the topology, which
 	// is what makes a delete's boundary provably empty.
 	Normalized() bool
+	// Overridden is every aria whose presentation parent differs from its
+	// topology parent. Empty exactly when Normalized.
+	Overridden() []string
 }
 
 // Topology is the adjacency figwal owns, as this package needs it.
@@ -59,6 +62,7 @@ func (x topoTree) Parent(id string) (string, bool) { return x.t.From(id) }
 func (x topoTree) Children(id string) []string     { return x.t.ChildrenOf(id) }
 func (x topoTree) Promote(string) error            { return ErrNoPromote }
 func (x topoTree) Normalized() bool                { return true }
+func (x topoTree) Overridden() []string            { return nil }
 
 func (x topoTree) DeleteSet(id string) []string {
 	return DescendantClosure(x, id)

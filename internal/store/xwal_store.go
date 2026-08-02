@@ -620,6 +620,29 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 	return s.trunks.Remove(id, recursive)
 }
 
+// Normalize makes every aria independent of the arias it is no longer
+// presented under: each one absorbs the history prefix it reads through an
+// ancestor. After it, a delete's boundary is empty whatever the
+// presentation hierarchy says, so nothing is ever owed at delete time.
+//
+// This is the DEFERRED work made immediate. It is O(absorbed bytes), so it
+// is the one operation here that is not instant; everything else stays so
+// precisely because this can be postponed.
+func (s *XwalStore) Normalize() (int, error) {
+	done := 0
+	for _, id := range s.tree.Overridden() {
+		node, ok := s.trunks.HeadNode(id)
+		if !ok {
+			continue
+		}
+		if err := s.trunks.Detach(node); err != nil {
+			return done, fmt.Errorf("normalize %s: %w", id, err)
+		}
+		done++
+	}
+	return done, nil
+}
+
 // deleteOrphans is the survivors a delete of id would strand. Empty whenever
 // the presentation hierarchy is normalized, which is always without the
 // trunk capability.

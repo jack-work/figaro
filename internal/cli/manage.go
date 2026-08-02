@@ -705,6 +705,36 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 	})
 }
 
+// runNormalize forces the deferred topology work: every aria presented away
+// from where its history lives absorbs that history, after which no delete
+// can owe a boundary repair. Blocking on purpose.
+func runNormalize(loaded *config.Loaded, segments bool) {
+	WithAngelus(loaded, func(acli *angelus.Client) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		resp, err := acli.Normalize(ctx, segments)
+		if err != nil {
+			die("normalize: %s", err)
+		}
+		if resp.Unsupported {
+			die("normalize: this figaro has no trunk capability, so its hierarchy already\n" +
+				"  follows fork history and there is nothing to normalize.")
+		}
+		if resp.NoSegments {
+			fmt.Fprintln(os.Stderr, "normalize: --segments is not implemented yet; segments were left alone")
+		}
+		switch resp.Detached {
+		case 0:
+			fmt.Fprintln(os.Stderr, "normalize: already normalized — nothing to absorb")
+		case 1:
+			fmt.Fprintln(os.Stderr, "normalize: 1 aria now owns its history outright")
+		default:
+			fmt.Fprintf(os.Stderr, "normalize: %d arias now own their history outright\n", resp.Detached)
+		}
+		return nil
+	})
+}
+
 // runPromote raises an aria in the PRESENTATION hierarchy: it takes its
 // parent's place in the tree fig ls draws, and the parent comes to sit under
 // it. Nothing moves on disk and no history changes — the aria still reads

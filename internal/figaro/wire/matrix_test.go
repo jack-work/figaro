@@ -176,3 +176,55 @@ func TestDeleteRepairsTheBoundary(t *testing.T) {
 		t.Fatalf("survivor lost inherited state: %s -> %s", bv, av)
 	}
 }
+
+// Normalize is the deferred work made immediate: after it, no delete can
+// owe a boundary repair, whatever the presentation hierarchy says.
+func TestNormalizeMakesDeletesFree(t *testing.T) {
+	b, _ := backend(t, true)
+	l, _ := b.CreateLoadout("d", patch("system.model", "m"))
+	conv, _ := b.CreateConversation(l)
+	_, alt, err := b.Fork(conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Store().Promote(alt, 1); err != nil {
+		t.Fatal(err)
+	}
+	if b.Store().Tree().Normalized() {
+		t.Fatal("a promoted forest must not be normalized")
+	}
+	n, err := b.Normalize()
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if n == 0 {
+		t.Fatal("normalize absorbed nothing, but an aria was promoted")
+	}
+	// The survivor now owns its history, so the delete owes no repair.
+	before, _ := b.ChalkboardState(alt)
+	if err := b.Store().RemoveLeaf(conv, true); err != nil {
+		t.Fatalf("delete after normalize: %v", err)
+	}
+	after, err := b.ChalkboardState(alt)
+	if err != nil {
+		t.Fatalf("survivor broken by the delete: %v", err)
+	}
+	bv, _ := before.Get("system.model")
+	av, _ := after.Get("system.model")
+	if string(av) != string(bv) {
+		t.Fatalf("survivor state changed: %s -> %s", bv, av)
+	}
+}
+
+// A trunkless figaro is normalized by construction, so normalize is a
+// no-op rather than an error.
+func TestNormalizeIsANoOpWithoutTheCapability(t *testing.T) {
+	b, _ := backend(t, false)
+	n, err := b.Normalize()
+	if err != nil {
+		t.Fatalf("normalize without the capability: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("normalize absorbed %d on a trunkless figaro", n)
+	}
+}

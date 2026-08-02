@@ -716,6 +716,35 @@ With a prompt — ` + "`figaro fork [flags] -- <prompt>`" + ` — it also sends,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "normalize",
+		Group: "Session",
+		Short: "Run deferred topology work now",
+		Usage: "normalize [--segments]",
+		Long: `Make every aria independent of ancestors it is no longer presented
+under: each absorbs the history it currently reads through them.
+
+Everything else in the trunk surface is instant because this can be
+postponed. Deletes repair only what they must, at delete time. Run this
+when you would rather pay the cost now, in one blocking pass.
+
+  figaro normalize             absorb history for every promoted aria
+  figaro normalize --segments  also repack partially filled segments
+
+Nothing changes about what any aria reads; only where the bytes live.
+Needs the trunk capability -- a trunkless figaro is normalized already.`,
+		ArgsMin: 0,
+		ArgsMax: 0,
+		Flags: []cmdkit.FlagDef{
+			{Long: "segments", IsBool: true, Description: "Also repack partially filled segments"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			runNormalize(ld, ctx.BoolFlag("segments"))
+			return nil
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "promote",
 		Group: "Session",
 		Short: "Make a trunk the canonical line through its ancestors",

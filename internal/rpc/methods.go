@@ -65,6 +65,7 @@ const (
 	MethodCreate      = "figaro.create"
 	MethodFork        = "figaro.fork"
 	MethodPromote     = "figaro.promote"
+	MethodNormalize   = "figaro.normalize"
 	MethodKill        = "figaro.kill"
 	MethodList        = "figaro.list"
 	MethodAttach      = "figaro.attach"
@@ -401,6 +402,23 @@ type ForkResponse struct {
 
 // PromoteRequest climbs a conversation trunk up Levels stump-bounded levels,
 // relabeling the canonical trunk path so it absorbs its parent trunk's run.
+// NormalizeRequest forces deferred topology work to run now. It is the one
+// blocking operation in the trunk surface: everything else is instant
+// because this can be postponed.
+type NormalizeRequest struct {
+	// Segments also repacks partially filled segment files. Not yet
+	// implemented; the server reports it rather than silently ignoring it.
+	Segments bool `json:"segments,omitempty"`
+}
+
+// NormalizeResponse reports how many arias were made independent of the
+// ancestors they are no longer presented under.
+type NormalizeResponse struct {
+	Detached    int  `json:"detached"`
+	Unsupported bool `json:"unsupported,omitempty"`
+	NoSegments  bool `json:"no_segments,omitempty"`
+}
+
 type PromoteRequest struct {
 	FigaroID string `json:"figaro_id"`
 	Levels   int    `json:"levels,omitempty"`

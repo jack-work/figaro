@@ -68,6 +68,9 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 	}, nil
 }
 
+// Normalize runs deferred topology work now. See XwalStore.Normalize.
+func (b *XwalBackend) Normalize() (int, error) { return b.store.Normalize() }
+
 // Store is the underlying aria store, for wiring that installs optional
 // capabilities.
 func (b *XwalBackend) Store() *XwalStore { return b.store }

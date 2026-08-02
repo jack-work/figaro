@@ -158,6 +158,20 @@ func (x *Tree) Reparent(id, parent string) error {
 	return x.save()
 }
 
+// Overridden is every aria whose presentation parent differs from its
+// topology parent — exactly the arias that make a delete's boundary
+// non-empty, and so the set normalization must make independent.
+func (x *Tree) Overridden() []string {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	out := make([]string, 0, len(x.over))
+	for id := range x.over {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Forget drops an aria's override, for use after it is deleted.
 func (x *Tree) Forget(ids ...string) error {
 	x.mu.Lock()

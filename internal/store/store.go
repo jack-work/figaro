@@ -108,6 +108,11 @@ type Backend interface {
 	// actually climbed; xwal.ErrAtStump means it is rooted at a loadout.
 	Promote(ariaID string, levels int) (climbed int, err error)
 
+	// Normalize runs deferred topology work now: every aria presented away
+	// from where its history lives absorbs that history. Blocking, and
+	// O(absorbed bytes) -- the only operation here that is not instant.
+	Normalize() (detached int, err error)
+
 	// OwnerResolution reports which node owns atMainLT along a trunk's
 	// lineage (a parent trunk, a loadout, or the genesis root).
 	OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo, error)

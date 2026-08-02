@@ -75,6 +75,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodCreate:       h.create,
 			rpc.MethodFork:         h.fork,
 			rpc.MethodPromote:      h.promote,
+			rpc.MethodNormalize:    h.normalize,
 			rpc.MethodKill:         h.kill,
 			rpc.MethodList:         h.list,
 			rpc.MethodAttach:       h.attach,
@@ -638,6 +639,25 @@ func (h *handlers) messageCountAt(id string, atMainLT uint64) int {
 // promote climbs a conversation trunk up N stump-bounded levels (it absorbs
 // its parent trunk's run). A live agent on the trunk keeps its id (promotion
 // only relabels ancestor markers), so no agent is killed.
+func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.NormalizeRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	if h.angelus.Backend == nil {
+		return nil, errors.New("normalize: no backend (ephemeral angelus)")
+	}
+	n, err := h.angelus.Backend.Normalize()
+	if errors.Is(err, store.ErrNoTrunkCapability) {
+		return rpc.NormalizeResponse{Unsupported: true}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("normalized topology", "detached", n)
+	return rpc.NormalizeResponse{Detached: n, NoSegments: req.Segments}, nil
+}
+
 func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.PromoteRequest
 	if err := json.Unmarshal(params, &req); err != nil {
