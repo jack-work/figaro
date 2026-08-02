@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/message"
@@ -139,4 +140,29 @@ func TestPromotionBreaksNormalization(t *testing.T) {
 		t.Fatal("a promoted forest is not normalized: a delete must repair its boundary")
 	}
 	var _ topo.Tree = tree
+}
+
+// A promoted forest can produce a delete that takes a directory some
+// survivor still reads through. Until boundary repair exists, that delete
+// must be refused, not performed.
+func TestDeleteRefusesToOrphan(t *testing.T) {
+	b, _ := backend(t, true)
+	l, _ := b.CreateLoadout("d", patch("system.model", "m"))
+	conv, _ := b.CreateConversation(l)
+	_, alt, err := b.Fork(conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// alt takes conv's place; conv comes to sit under alt. alt still reads
+	// its history through conv, so deleting conv's subtree would strand it.
+	if _, err := b.Store().Promote(alt, 1); err != nil {
+		t.Fatal(err)
+	}
+	err = b.Store().RemoveLeaf(conv, true)
+	if err == nil {
+		t.Fatal("delete of a promoted parent succeeded; it orphans the promoted aria")
+	}
+	if !strings.Contains(err.Error(), "orphan") {
+		t.Fatalf("delete error = %v, want an orphan refusal", err)
+	}
 }

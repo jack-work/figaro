@@ -19,6 +19,11 @@ var ErrAtStump = errors.New("trunk is rooted at a loadout; cannot promote furthe
 // hierarchy: promotion is meaningless, not merely refused.
 var ErrNoTrunkCapability = errors.New("this figaro has no trunk capability")
 
+// ErrWouldOrphan reports a delete that would strand a surviving aria: the
+// directory holds a prefix that aria still reads its history through.
+// Promotion is what lets the two hierarchies diverge far enough for this.
+var ErrWouldOrphan = errors.New("delete would orphan a surviving aria")
+
 // AriaMeta is the per-aria summary stored by the backend.
 type AriaMeta struct {
 	MessageCount     int    `json:"message_count,omitempty"`

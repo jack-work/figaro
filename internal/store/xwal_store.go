@@ -588,10 +588,30 @@ func splitLoadoutKey(key string) (name, ver string) {
 	return key, ""
 }
 
-// RemoveLeaf deletes a trunk (its subtree) via xwal.Trunks. Trunk-addressed;
-// refuses a trunk with live branches unless recursive.
+// RemoveLeaf deletes an aria via xwal.Trunks. Trunk-addressed; refuses one
+// with live branches unless recursive.
+//
+// It also refuses a delete that would ORPHAN a survivor. Once an aria has
+// been promoted the two hierarchies diverge, and a delete that follows
+// presentation can take a directory that some surviving aria still inherits
+// its history through. Boundary names exactly those survivors; repairing
+// them (absorbing the prefix they borrow, then re-pointing) is not built
+// yet, so we refuse rather than corrupt.
 func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
+	if orphans := s.deleteOrphans(id); len(orphans) > 0 {
+		return fmt.Errorf("%w: %v still read history through it", ErrWouldOrphan, orphans)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.trunks.Remove(id, recursive)
+}
+
+// deleteOrphans is the survivors a delete of id would strand. Empty whenever
+// the presentation hierarchy is normalized, which is always without the
+// trunk capability.
+func (s *XwalStore) deleteOrphans(id string) []string {
+	if s.tree.Normalized() {
+		return nil
+	}
+	return topo.Boundary(s.TopologyAdjacency(), s.tree.DeleteSet(id))
 }
