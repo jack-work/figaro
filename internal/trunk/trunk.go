@@ -151,7 +151,21 @@ func (x *Tree) DeleteSet(id string) []string {
 
 // Normalized reports whether every aria still sits where its history says.
 // True means a delete's boundary is provably empty and no repair is needed.
-func (x *Tree) Normalized() bool { return len(x.Overridden()) == 0 }
+// Normalized reports whether any aria still sits away from where its
+// history lives. Delete takes this path, so it answers on the first
+// survivor rather than allocating and sorting the whole list.
+func (x *Tree) Normalized() bool {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	for id := range x.over {
+		up, ok := x.topo.From(id)
+		if !ok || up == "" || x.isRootLocked(up) {
+			continue
+		}
+		return false
+	}
+	return true
+}
 
 // Promote raises id one level: it takes its grandparent's place, and the
 // parent it displaced comes to sit under it.
