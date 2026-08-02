@@ -151,11 +151,7 @@ func (x *Tree) DeleteSet(id string) []string {
 
 // Normalized reports whether every aria still sits where its history says.
 // True means a delete's boundary is provably empty and no repair is needed.
-func (x *Tree) Normalized() bool {
-	x.mu.RLock()
-	defer x.mu.RUnlock()
-	return len(x.over) == 0
-}
+func (x *Tree) Normalized() bool { return len(x.Overridden()) == 0 }
 
 // Promote raises id one level: it takes its grandparent's place, and the
 // parent it displaced comes to sit under it.
@@ -202,17 +198,36 @@ func (x *Tree) Reparent(id, parent string) error {
 }
 
 // Overridden is every aria whose presentation parent differs from its
-// topology parent — exactly the arias that make a delete's boundary
-// non-empty, and so the set normalization must make independent.
+// topology parent AND which still reads its history through an ancestor —
+// exactly the arias that can make a delete's boundary non-empty.
+//
+// The second condition is what makes normalization terminate. Absorbing an
+// aria's history empties its .from, after which no delete can orphan it and
+// its presentation edge is free; keeping it listed here would re-absorb it
+// on every run and leave Normalized() false forever, so the operation meant
+// to establish the invariant would never report it established.
 func (x *Tree) Overridden() []string {
 	x.mu.RLock()
 	defer x.mu.RUnlock()
 	out := make([]string, 0, len(x.over))
 	for id := range x.over {
+		up, ok := x.topo.From(id)
+		if !ok || up == "" || x.isRootLocked(up) {
+			continue // nothing above it that a delete could take away
+		}
 		out = append(out, id)
 	}
 	sort.Strings(out)
 	return out
+}
+
+// isRootLocked reports whether id is the null root. The root is the only
+// node with no .from at all -- that is the discriminator the flat design
+// settled on -- and it is the one ancestor no delete may remove, so an
+// aria sitting directly under it can never be orphaned.
+func (x *Tree) isRootLocked(id string) bool {
+	up, ok := x.topo.From(id)
+	return ok && up == ""
 }
 
 // Forget drops an aria's override, for use after it is deleted.

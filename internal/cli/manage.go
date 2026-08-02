@@ -720,9 +720,6 @@ func runNormalize(loaded *config.Loaded, segments bool) {
 			die("normalize: this figaro has no trunk capability, so its hierarchy already\n" +
 				"  follows fork history and there is nothing to normalize.")
 		}
-		if resp.NoSegments {
-			fmt.Fprintln(os.Stderr, "normalize: --segments is not implemented yet; segments were left alone")
-		}
 		switch resp.Detached {
 		case 0:
 			fmt.Fprintln(os.Stderr, "normalize: already normalized — nothing to absorb")

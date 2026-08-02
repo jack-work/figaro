@@ -29,8 +29,13 @@ func (f fake) ChildrenOf(id string) []string {
 	return out
 }
 
-// The diagram: B and C fork from A, D forks from C.
-func forest() fake { return fake{"A": "", "B": "A", "C": "A", "D": "C"} }
+// The diagram: B and C fork from A, D forks from C -- under the null root,
+// which is the only node with no .from and the one ancestor no delete can
+// take. Leaving it out would make A look like a root and quietly change
+// what "has an ancestor to lose" means.
+func forest() fake {
+	return fake{"null": "", "A": "null", "B": "A", "C": "A", "D": "C"}
+}
 
 func TestTrunklessDeleteTakesTheSubtree(t *testing.T) {
 	tree := FromTopology(forest())

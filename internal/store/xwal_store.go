@@ -629,7 +629,7 @@ func (s *XwalStore) Normalize() (int, error) {
 	for _, id := range s.tree.Overridden() {
 		node, ok := s.trunks.HeadNode(id)
 		if !ok {
-			continue
+			return done, fmt.Errorf("normalize: no node for %s", id)
 		}
 		if err := s.trunks.Detach(node); err != nil {
 			return done, fmt.Errorf("normalize %s: %w", id, err)

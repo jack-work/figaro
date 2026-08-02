@@ -647,6 +647,9 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 	if h.angelus.Backend == nil {
 		return nil, errors.New("normalize: no backend (ephemeral angelus)")
 	}
+	if req.Segments {
+		return nil, errors.New("normalize: --segments is not implemented yet")
+	}
 	n, err := h.angelus.Backend.Normalize()
 	if errors.Is(err, store.ErrNoTrunkCapability) {
 		return rpc.NormalizeResponse{Unsupported: true}, nil
@@ -655,7 +658,7 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 		return nil, err
 	}
 	slog.Info("normalized topology", "detached", n)
-	return rpc.NormalizeResponse{Detached: n, NoSegments: req.Segments}, nil
+	return rpc.NormalizeResponse{Detached: n}, nil
 }
 
 func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interface{}, error) {

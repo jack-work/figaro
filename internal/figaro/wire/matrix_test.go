@@ -228,3 +228,38 @@ func TestNormalizeIsANoOpWithoutTheCapability(t *testing.T) {
 		t.Fatalf("normalize absorbed %d on a trunkless figaro", n)
 	}
 }
+
+// Normalize must be idempotent IN EFFECT: once an aria has absorbed its
+// history it can never be orphaned again, so the operation that made that
+// true has to report itself done. Otherwise every run re-absorbs every
+// promoted aria (O(bytes) each) and the "boundary is empty" invariant that
+// delete relies on never becomes true.
+func TestNormalizeIsIdempotent(t *testing.T) {
+	b, _ := backend(t, true)
+	l, _ := b.CreateLoadout("d", patch("system.model", "m"))
+	conv, _ := b.CreateConversation(l)
+	_, alt, err := b.Fork(conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Store().Promote(alt, 1); err != nil {
+		t.Fatal(err)
+	}
+	first, err := b.Normalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == 0 {
+		t.Fatal("normalize absorbed nothing, but an aria was promoted")
+	}
+	if !b.Store().Tree().Normalized() {
+		t.Error("after normalize the tree must report itself normalized")
+	}
+	second, err := b.Normalize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != 0 {
+		t.Fatalf("second normalize absorbed %d again; it is not idempotent", second)
+	}
+}

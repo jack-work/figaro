@@ -29,8 +29,13 @@ func (f fake) ChildrenOf(id string) []string {
 	return out
 }
 
-// The diagram: B and C fork from A, D forks from C.
-func forest() fake { return fake{"A": "", "B": "A", "C": "A", "D": "C"} }
+// The diagram: B and C fork from A, D forks from C -- under the null root,
+// which is the only node with no .from and the one ancestor no delete can
+// take. Leaving it out would make A look like a root and quietly change
+// what "has an ancestor to lose" means.
+func forest() fake {
+	return fake{"null": "", "A": "null", "B": "A", "C": "A", "D": "C"}
+}
 
 func open(t *testing.T) (*Tree, fake) {
 	t.Helper()
@@ -61,8 +66,8 @@ func TestPromoteMovesPresentationOnly(t *testing.T) {
 	if err := x.Promote("B"); err != nil {
 		t.Fatal(err)
 	}
-	if p, _ := x.Parent("B"); p != "" {
-		t.Errorf("presentation Parent(B) = %q, want root", p)
+	if p, _ := x.Parent("B"); p != "null" {
+		t.Errorf("presentation Parent(B) = %q, want the null root", p)
 	}
 	if p, _ := x.Parent("A"); p != "B" {
 		t.Errorf("presentation Parent(A) = %q, want B", p)

@@ -400,8 +400,6 @@ type ForkResponse struct {
 	OwnerNote    string `json:"owner_note,omitempty"`
 }
 
-// PromoteRequest climbs a conversation trunk up Levels stump-bounded levels,
-// relabeling the canonical trunk path so it absorbs its parent trunk's run.
 // NormalizeRequest forces deferred topology work to run now. It is the one
 // blocking operation in the trunk surface: everything else is instant
 // because this can be postponed.
@@ -416,9 +414,10 @@ type NormalizeRequest struct {
 type NormalizeResponse struct {
 	Detached    int  `json:"detached"`
 	Unsupported bool `json:"unsupported,omitempty"`
-	NoSegments  bool `json:"no_segments,omitempty"`
 }
 
+// PromoteRequest climbs a conversation trunk up Levels stump-bounded levels,
+// relabeling the canonical trunk path so it absorbs its parent trunk's run.
 type PromoteRequest struct {
 	FigaroID string `json:"figaro_id"`
 	Levels   int    `json:"levels,omitempty"`
