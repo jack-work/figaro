@@ -15,6 +15,7 @@ package trunk
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -65,25 +66,24 @@ func Open(dir string, t topo.Topology) (*Tree, error) {
 		return nil, fmt.Errorf("trunk: %s is version %d, this figaro understands %d",
 			x.path, s.Version, stateVersion)
 	}
-	for k, v := range s.Parent {
-		x.over[k] = v
+	x.over = maps.Clone(s.Parent)
+	if x.over == nil {
+		x.over = map[string]string{}
 	}
 	return x, nil
 }
 
 func (x *Tree) save() error {
-	s := state{Version: stateVersion, Parent: map[string]string{}}
-	for k, v := range x.over {
-		s.Parent[k] = v
-	}
+	s := state{Version: stateVersion, Parent: maps.Clone(x.over)}
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	// fsync the file AND the directory before and after the rename. Without
-	// it a promote can simply vanish on a crash, or the rename can be undone
-	// -- the file is the only record of it, since nothing on disk can
-	// reconstruct presentation intent.
+	// fsync the file BEFORE the rename and the directory AFTER it: the
+	// content must be durable before anything points at it, and the rename
+	// must be durable before we claim it happened. Without both a promote
+	// can simply vanish -- this file is its only record, since nothing on
+	// disk can reconstruct presentation intent.
 	tmp := x.path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
