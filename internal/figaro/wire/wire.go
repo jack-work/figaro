@@ -10,7 +10,6 @@ package wire
 
 import (
 	"github.com/jack-work/figaro/internal/store"
-	"github.com/jack-work/figaro/internal/topo"
 	"github.com/jack-work/figaro/internal/trunk"
 )
 
@@ -47,7 +46,3 @@ func Install(s *store.XwalStore, root string, caps Capabilities) error {
 	s.SetTree(t)
 	return nil
 }
-
-// Tree is the presentation hierarchy in force, for callers that only need
-// to read it.
-func Tree(s *store.XwalStore) topo.Tree { return s.Tree() }

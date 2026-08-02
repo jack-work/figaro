@@ -129,3 +129,29 @@ func TestReparentToTopologyClearsTheOverride(t *testing.T) {
 		t.Error("tree must be normalized once every override matches topology")
 	}
 }
+
+// Promoting an aria back to where its history puts it must leave NO
+// override. Otherwise Normalized() stays false forever and every later
+// delete pays to repair a boundary that is already empty.
+func TestPromoteBackToTopologyClearsTheOverride(t *testing.T) {
+	x, _ := open(t)
+	if err := x.Promote("D"); err != nil { // D: C -> A, C under D
+		t.Fatal(err)
+	}
+	if x.Normalized() {
+		t.Fatal("a promoted tree is not normalized")
+	}
+	// Put it back: D under C, C under A again.
+	if err := x.Promote("C"); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := x.Parent("D"); p != "C" {
+		t.Fatalf("Parent(D) = %q, want C", p)
+	}
+	if p, _ := x.Parent("C"); p != "A" {
+		t.Fatalf("Parent(C) = %q, want A", p)
+	}
+	if !x.Normalized() {
+		t.Error("a tree back in agreement with history must be normalized")
+	}
+}

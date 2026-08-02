@@ -591,12 +591,11 @@ func splitLoadoutKey(key string) (name, ver string) {
 // RemoveLeaf deletes an aria via xwal.Trunks. Trunk-addressed; refuses one
 // with live branches unless recursive.
 //
-// It also refuses a delete that would ORPHAN a survivor. Once an aria has
-// been promoted the two hierarchies diverge, and a delete that follows
-// presentation can take a directory that some surviving aria still inherits
-// its history through. Boundary names exactly those survivors; repairing
-// them (absorbing the prefix they borrow, then re-pointing) is not built
-// yet, so we refuse rather than corrupt.
+// Once an aria has been promoted the two hierarchies diverge, and a delete
+// that follows presentation can take a directory some surviving aria still
+// inherits its history through. Those survivors absorb the prefix they
+// borrow and stop pointing at it BEFORE anything is unlinked, so a crash
+// between the two leaves them reading through directories still present.
 func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 	// Repair the boundary FIRST: every survivor that reads its history
 	// through this delete set absorbs that prefix and stops pointing at it.
@@ -611,9 +610,6 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 		if err := s.trunks.Detach(node); err != nil {
 			return fmt.Errorf("%w: detaching %s: %v", ErrWouldOrphan, orphan, err)
 		}
-	}
-	if orphans := s.deleteOrphans(id); len(orphans) > 0 {
-		return fmt.Errorf("%w: %v still read history through it", ErrWouldOrphan, orphans)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

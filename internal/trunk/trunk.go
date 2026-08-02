@@ -34,13 +34,17 @@ type state struct {
 	Parent  map[string]string `json:"parent,omitempty"`
 }
 
+// stateVersion is the on-disk format. Open REFUSES anything newer rather
+// than silently reading a file it does not understand: a version nobody
+// validates is decoration.
+const stateVersion = 1
+
 // Tree is a presentation hierarchy backed by overrides on disk.
 type Tree struct {
-	mu    sync.RWMutex
-	path  string
-	topo  topo.Topology
-	over  map[string]string
-	dirty bool
+	mu   sync.RWMutex
+	path string
+	topo topo.Topology
+	over map[string]string
 }
 
 // Open loads the overrides beside a store, or starts empty.
@@ -57,6 +61,10 @@ func Open(dir string, t topo.Topology) (*Tree, error) {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return nil, fmt.Errorf("trunk: parse %s: %w", x.path, err)
 	}
+	if s.Version > stateVersion {
+		return nil, fmt.Errorf("trunk: %s is version %d, this figaro understands %d",
+			x.path, s.Version, stateVersion)
+	}
 	for k, v := range s.Parent {
 		x.over[k] = v
 	}
@@ -64,7 +72,7 @@ func Open(dir string, t topo.Topology) (*Tree, error) {
 }
 
 func (x *Tree) save() error {
-	s := state{Version: 1, Parent: map[string]string{}}
+	s := state{Version: stateVersion, Parent: map[string]string{}}
 	for k, v := range x.over {
 		s.Parent[k] = v
 	}
@@ -72,15 +80,39 @@ func (x *Tree) save() error {
 	if err != nil {
 		return err
 	}
+	// fsync the file AND the directory before and after the rename. Without
+	// it a promote can simply vanish on a crash, or the rename can be undone
+	// -- the file is the only record of it, since nothing on disk can
+	// reconstruct presentation intent.
 	tmp := x.path + ".tmp"
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	if err := os.Rename(tmp, x.path); err != nil {
+		os.Remove(tmp)
 		return err
 	}
-	x.dirty = false
-	return nil
+	dir, err := os.Open(filepath.Dir(x.path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 // Parent is the override if one exists, else the topology edge.
@@ -110,7 +142,12 @@ func (x *Tree) Children(id string) []string {
 	return out
 }
 
-func (x *Tree) DeleteSet(id string) []string { return topo.DescendantClosure(x, id) }
+func (x *Tree) DeleteSet(id string) []string {
+	x.mu.RLock()
+	kids := topo.ChildIndex(x.topo, x.parentLocked)
+	x.mu.RUnlock()
+	return topo.DescendantClosure(kids, id)
+}
 
 // Normalized reports whether every aria still sits where its history says.
 // True means a delete's boundary is provably empty and no repair is needed.
@@ -138,10 +175,21 @@ func (x *Tree) Promote(id string) error {
 	if grand == id {
 		return fmt.Errorf("trunk: %q and %q already swapped", id, parent)
 	}
-	x.over[id] = grand
-	x.over[parent] = id
-	x.dirty = true
+	x.setLocked(id, grand)
+	x.setLocked(parent, id)
 	return x.save()
+}
+
+// setLocked records a presentation edge, dropping the override entirely
+// when it agrees with the topology. ONE rule, so an aria promoted back to
+// where its history puts it leaves no trace -- otherwise Normalized() stays
+// false forever and every later delete repairs an empty boundary.
+func (x *Tree) setLocked(id, parent string) {
+	if up, ok := x.topo.From(id); ok && up == parent {
+		delete(x.over, id)
+		return
+	}
+	x.over[id] = parent
 }
 
 // Reparent sets an explicit presentation edge. Used by normalization to put
@@ -149,12 +197,7 @@ func (x *Tree) Promote(id string) error {
 func (x *Tree) Reparent(id, parent string) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	if up, ok := x.topo.From(id); ok && up == parent {
-		delete(x.over, id) // back to the default: no override needed
-	} else {
-		x.over[id] = parent
-	}
-	x.dirty = true
+	x.setLocked(id, parent)
 	return x.save()
 }
 

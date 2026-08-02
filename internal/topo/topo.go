@@ -20,7 +20,10 @@
 // comes from.
 package topo
 
-import "errors"
+import (
+	"errors"
+	"sort"
+)
 
 // ErrNoPromote reports that the running configuration has no presentation
 // hierarchy to edit, so promotion is meaningless rather than merely failed.
@@ -65,21 +68,39 @@ func (x topoTree) Normalized() bool                { return true }
 func (x topoTree) Overridden() []string            { return nil }
 
 func (x topoTree) DeleteSet(id string) []string {
-	return DescendantClosure(x, id)
+	return DescendantClosure(ChildIndex(x.t, x.t.From), id)
 }
 
-// DescendantClosure is id plus everything under it, breadth-first. Shared by
-// both implementations: only the edges differ.
-func DescendantClosure(tree Tree, id string) []string {
+// DescendantClosure is id plus everything under it, breadth-first.
+//
+// Takes the whole parent->children adjacency in ONE pass. Asking a Tree for
+// Children per node makes this O(n^2), because both implementations answer
+// that by scanning every node.
+func DescendantClosure(kids map[string][]string, id string) []string {
 	seen := map[string]bool{id: true}
 	out := []string{id}
 	for i := 0; i < len(out); i++ {
-		for _, c := range tree.Children(out[i]) {
+		for _, c := range kids[out[i]] {
 			if !seen[c] {
 				seen[c] = true
 				out = append(out, c)
 			}
 		}
+	}
+	return out
+}
+
+// ChildIndex is the presentation adjacency, built once.
+func ChildIndex(t Topology, parentOf func(string) (string, bool)) map[string][]string {
+	nodes := t.Nodes()
+	out := make(map[string][]string, len(nodes))
+	for _, n := range nodes {
+		if p, ok := parentOf(n); ok && p != n {
+			out[p] = append(out[p], n)
+		}
+	}
+	for _, v := range out {
+		sort.Strings(v)
 	}
 	return out
 }
