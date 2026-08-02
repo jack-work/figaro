@@ -598,6 +598,20 @@ func splitLoadoutKey(key string) (name, ver string) {
 // them (absorbing the prefix they borrow, then re-pointing) is not built
 // yet, so we refuse rather than corrupt.
 func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
+	// Repair the boundary FIRST: every survivor that reads its history
+	// through this delete set absorbs that prefix and stops pointing at it.
+	// Only then does anything get unlinked, so a crash between the two
+	// leaves survivors that still read through directories still present.
+	for _, orphan := range s.deleteOrphans(id) {
+		// Boundary speaks in aria ids; Detach addresses the node directory.
+		node, ok := s.trunks.HeadNode(orphan)
+		if !ok {
+			return fmt.Errorf("%w: no node for %s", ErrWouldOrphan, orphan)
+		}
+		if err := s.trunks.Detach(node); err != nil {
+			return fmt.Errorf("%w: detaching %s: %v", ErrWouldOrphan, orphan, err)
+		}
+	}
 	if orphans := s.deleteOrphans(id); len(orphans) > 0 {
 		return fmt.Errorf("%w: %v still read history through it", ErrWouldOrphan, orphans)
 	}

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/message"
@@ -143,9 +142,9 @@ func TestPromotionBreaksNormalization(t *testing.T) {
 }
 
 // A promoted forest can produce a delete that takes a directory some
-// survivor still reads through. Until boundary repair exists, that delete
-// must be refused, not performed.
-func TestDeleteRefusesToOrphan(t *testing.T) {
+// survivor still reads through. The survivor absorbs that prefix first,
+// then the delete proceeds and it is unharmed.
+func TestDeleteRepairsTheBoundary(t *testing.T) {
 	b, _ := backend(t, true)
 	l, _ := b.CreateLoadout("d", patch("system.model", "m"))
 	conv, _ := b.CreateConversation(l)
@@ -158,11 +157,22 @@ func TestDeleteRefusesToOrphan(t *testing.T) {
 	if _, err := b.Store().Promote(alt, 1); err != nil {
 		t.Fatal(err)
 	}
-	err = b.Store().RemoveLeaf(conv, true)
-	if err == nil {
-		t.Fatal("delete of a promoted parent succeeded; it orphans the promoted aria")
+	// The boundary is repaired first: alt absorbs the prefix it borrows,
+	// then conv's subtree goes. alt must survive with its history intact.
+	before, err := b.ChalkboardState(alt)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "orphan") {
-		t.Fatalf("delete error = %v, want an orphan refusal", err)
+	if err := b.Store().RemoveLeaf(conv, true); err != nil {
+		t.Fatalf("delete after boundary repair: %v", err)
+	}
+	after, err := b.ChalkboardState(alt)
+	if err != nil {
+		t.Fatalf("the promoted aria did not survive the delete: %v", err)
+	}
+	bv, _ := before.Get("system.model")
+	av, _ := after.Get("system.model")
+	if string(av) != string(bv) || string(av) == "" {
+		t.Fatalf("survivor lost inherited state: %s -> %s", bv, av)
 	}
 }
