@@ -3,9 +3,19 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+    # figwal is co-developed in a sibling checkout, so go.mod carries a
+    # `replace` at an absolute path. That path does NOT exist inside the
+    # nix build sandbox, so the replace is rewritten below to point at
+    # this input instead. Re-point it at the published module (and drop
+    # the rewrite) once figwal's version is cut and pushed.
+    figwal = {
+      url = "git+file:///home/gluck/dev/figwal";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, figwal }:
     let
       supportedSystems = [
         "x86_64-linux"
@@ -23,7 +33,20 @@
           pname = "figaro";
           version = "0.17.1";
           src = self;
-          vendorHash = "sha256-urPc0EfJLiOpScmqzfput/W4QtVVfnYIlGz3apQ3RbE=";
+          vendorHash = "sha256-rMMrYa98cq+85lQUGP3Xgv5xsPOf7+RwlHnkrEiIsik=";
+
+          # figwal is co-developed, so go.mod carries a `replace` at an
+          # absolute path that does not exist in the build sandbox. COPY the
+          # input into the source tree and replace to a RELATIVE path: a
+          # replace pointing straight at the store makes the vendor
+          # derivation reference a store path, which a fixed-output
+          # derivation may not do.
+          overrideModAttrs = _: { inherit postPatch; };
+          postPatch = ''
+            cp -r ${figwal} ./_figwal
+            chmod -R u+w ./_figwal
+            go mod edit -replace github.com/jack-work/figwal=./_figwal
+          '';
           subPackages = [ "cmd/figaro" ];
           env.CGO_ENABLED = 0;
 
