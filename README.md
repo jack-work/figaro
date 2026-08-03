@@ -4,6 +4,11 @@
 
 A coding agent with few opinions, firmly held. Supports multi-agent, context forking, fully persistent structured metadata, and terminal-native semantics out of box.  One binary: CLI, supervisor daemon, agent runtime. JSON-RPC over unix sockets.  Tutto pulito, bravo bravissimo.
 
+## Supported Providers
+- Anthropic, via API key or Max Subscription OAuth
+- Copilot, personal or enterprise (GPT 5.6, Opus 4.5-5 and Sonnet 4.5-5 tested)
+- More to come (file an issue if you want to see another provider supported)
+
 ## Install
 
 ```bash
