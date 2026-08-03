@@ -31,7 +31,7 @@ func runDoctorGC(dryRun bool) error {
 		cli.Close()
 		return fmt.Errorf("angelus is running; stop it first (figaro stop)")
 	}
-	root := filepath.Join(stateDir(), "arias")
+	root := ariaRoot()
 	manPath := filepath.Join(root, "xwal.json")
 	raw, err := os.ReadFile(manPath)
 	if err != nil {
@@ -127,7 +127,7 @@ func dirSize(dir string) int64 {
 // binary understands. It reads the sidecar directly, so it still answers when
 // the schema gate is exactly what refused to open the store.
 func runDoctorSchema() error {
-	root := filepath.Join(stateDir(), "arias")
+	root := ariaRoot()
 	reports, err := store.SchemaStatus(root)
 	if err != nil {
 		return err

@@ -21,7 +21,7 @@ import (
 // ariaBackend constructs the XWAL aria tree under the configured state root,
 // sized by `[store] segment_size` (config owns the default and its floor).
 func ariaBackend(loaded *config.Loaded) (store.Backend, error) {
-	root := filepath.Join(stateDir(), "arias")
+	root := ariaRoot()
 	b, err := store.NewXwalBackend(root, loaded.SegmentSize())
 	if err != nil {
 		return nil, err
@@ -205,13 +205,18 @@ func ensureAngelus() {
 	}
 }
 
+// ariaRoot is the aria store's directory. ONE spelling, because the
+// startup notice is only truthful while every caller agrees on it, and
+// the notice is the one that would drift silently -- it degrades to
+// "still starting" with no error.
+func ariaRoot() string { return filepath.Join(stateDir(), "arias") }
+
 // startupActivity says what the daemon is doing, and only says the thing
 // it can check. Asserting a migration that is not happening is what sends
 // a user to pkill -- a wrong explanation is worse than none. NeedsFlatten
 // is one file read.
 func startupActivity() string {
-	root := filepath.Join(stateDir(), "arias")
-	if need, err := xwal.NeedsFlatten(root); err == nil && need {
+	if need, err := xwal.NeedsFlatten(ariaRoot()); err == nil && need {
 		return "migrating the store layout — let it finish; interrupting a migration " +
 			"is the one thing that can cost you arias"
 	}
