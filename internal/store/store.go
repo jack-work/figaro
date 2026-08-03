@@ -24,6 +24,14 @@ var ErrNoTrunkCapability = errors.New("this figaro has no trunk capability")
 // Promotion is what lets the two hierarchies diverge far enough for this.
 var ErrWouldOrphan = errors.New("delete would orphan a surviving aria")
 
+// VersionedPatch is a chalkboard patch with its durable version -- its own
+// index in the chalkboard channel. The board is unkeyed, so this is the
+// only coordinate a patch carries.
+type VersionedPatch struct {
+	Version uint64
+	Patch   message.Patch
+}
+
 // AriaMeta is the per-aria summary stored by the backend.
 type AriaMeta struct {
 	MessageCount     int    `json:"message_count,omitempty"`
@@ -84,7 +92,7 @@ type Backend interface {
 	// ChalkboardPatches returns every chalkboard patch grouped by the IR
 	// logical time it is keyed to (the transitions to render per message).
 	// Empty patches (genesis/seed no-ops) are omitted.
-	ChalkboardPatches(ariaID string) (map[uint64][]message.Patch, error)
+	ChalkboardPatches(ariaID string) ([]VersionedPatch, error)
 
 	// CreateLoadout materializes (or reuses) the loadout node for
 	// (name, content-version-of-patch) and returns its id.

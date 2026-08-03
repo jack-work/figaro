@@ -9,6 +9,11 @@ type Entry[T any] struct {
 	FigaroLT    uint64
 	Payload     T
 	Fingerprint string
+	// ChalkVersion, on IR entries only: how far the chalkboard had advanced
+	// when this turn was written. The board is unkeyed, so a patch carries
+	// no turn; this is the other side of that association, and it rides
+	// along on a record the reader is already holding.
+	ChalkVersion uint64
 }
 
 // Log is one column of an aria's write-ahead log. Logs are

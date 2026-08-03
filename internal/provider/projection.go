@@ -61,7 +61,9 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 			continue
 		}
 		if config.Chalkboard != nil {
-			msg.Patches = config.Chalkboard.PatchesAt(entry.LT)
+			// The entry itself says how far the board had advanced; no
+			// lookup, no scan, no map.
+			msg.Patches = config.Chalkboard.PatchesUpTo(entry.ChalkVersion)
 		}
 
 		var encoded []json.RawMessage

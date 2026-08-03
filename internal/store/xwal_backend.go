@@ -37,10 +37,12 @@ type ariaHandle struct {
 }
 
 type chalkCache struct {
-	mu      sync.Mutex
-	ready   bool
-	state   chalkboard.Snapshot
-	patches map[uint64][]message.Patch
+	mu    sync.Mutex
+	ready bool
+	state chalkboard.Snapshot
+	// patches in version order. No grouping by turn: an IR entry carries
+	// the board version at its turn, so the reader walks both in step.
+	patches []VersionedPatch
 }
 
 type metaCache struct {
@@ -184,7 +186,7 @@ func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
 		first = 1
 	}
 	state := chalkboard.Snapshot{}
-	patches := map[uint64][]message.Patch{}
+	var patches []VersionedPatch
 	for lt := first; lt >= 1 && lt <= last; lt++ {
 		rec, err := xw.ReadAt(chanChalkboard, lt)
 		if err != nil {
@@ -196,7 +198,7 @@ func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
 		}
 		state = state.Apply(p)
 		if !p.IsEmpty() {
-			patches[rec.MainLT] = append(patches[rec.MainLT], p)
+			patches = append(patches, VersionedPatch{Version: lt, Patch: p})
 		}
 	}
 	c.state = state
@@ -205,18 +207,14 @@ func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
 	return nil
 }
 
-func (b *XwalBackend) ChalkboardPatches(ariaID string) (map[uint64][]message.Patch, error) {
+func (b *XwalBackend) ChalkboardPatches(ariaID string) ([]VersionedPatch, error) {
 	c := b.chalkCache(ariaID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := b.loadChalkboardLocked(ariaID, c); err != nil {
 		return nil, err
 	}
-	out := make(map[uint64][]message.Patch, len(c.patches))
-	for lt, ps := range c.patches {
-		out[lt] = append([]message.Patch(nil), ps...)
-	}
-	return out, nil
+	return append([]VersionedPatch(nil), c.patches...), nil
 }
 
 // ApplyChalkboard appends a patch and returns its VERSION: the patch's own
@@ -249,7 +247,7 @@ func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) (uint6
 	if c.ready {
 		c.state = c.state.Apply(patch)
 		if !patch.IsEmpty() {
-			c.patches[version] = append(c.patches[version], patch)
+			c.patches = append(c.patches, VersionedPatch{Version: version, Patch: patch})
 		}
 	}
 	return version, nil

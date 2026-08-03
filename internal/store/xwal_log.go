@@ -57,10 +57,11 @@ func decodeRecord[T any](r xwal.Record) (Entry[T], bool) {
 		}
 	}
 	return Entry[T]{
-		LT:          r.ChannelLT,
-		FigaroLT:    r.MainLT,
-		Payload:     v,
-		Fingerprint: decodeMeta(r.Meta),
+		LT:           r.ChannelLT,
+		FigaroLT:     r.MainLT,
+		Payload:      v,
+		Fingerprint:  decodeMeta(r.Meta),
+		ChalkVersion: r.Cursors[chanChalkboard],
 	}, true
 }
 
