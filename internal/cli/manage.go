@@ -599,17 +599,18 @@ func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
 }
 
 // runFork branches a conversation, imperatively and with no prompt (the
-// prompt-bearing form lives in fork.go). The target freezes (keeps its id
-// as an index node) and two fresh children are minted: the continuation
-// (the original line) and an empty alternative.
+// prompt-bearing form lives in fork.go). A HEAD fork keeps the target's id
+// on the continuation and mints ONE new aria, the alternative; the target
+// is NOT frozen and stays live at the same id. An INTERIOR fork (<id>:<turn>)
+// splits at that turn instead.
 //
 // spec is the target: "" (the shell-bound aria), `<id>`, or `<id>:<turn>`
 // for an interior fork at that turn.
 //
-// Rescoping: when you fork your OWN bound aria, the shell rebinds to the
-// continuation so work carries on seamlessly (same trunk/mantra, new id)
-// — the bound aria froze, so you must move. Forking any OTHER aria, or
-// passing --stay, is a maintenance fork: your session is left untouched.
+// Rescoping: when you fork your OWN bound aria, the shell stays on the
+// continuation, which KEEPS the target's id, trunk and mantra — the aria
+// is not frozen and nothing addressing it breaks. Forking any OTHER aria,
+// or passing --stay, is a maintenance fork: your session is left untouched.
 func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 	// Split an optional :<turn> suffix off the target. Shared parser — fork and
 	// send must not drift apart on what a coordinate means.
@@ -690,7 +691,7 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 			contNote = "(this shell)"
 		}
 		fmt.Fprintf(os.Stderr,
-			"forked %s at %s (now a frozen fork point)\n  continuation %s  %s\n  alternative  %s  (attend it to diverge)\n",
+			"forked %s at %s\n  continuation %s  %s\n  alternative  %s  (attend it to diverge)\n",
 			resp.Parent, at, resp.Continuation, contNote, resp.Alternative)
 		return nil
 	})
