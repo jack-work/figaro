@@ -1363,7 +1363,7 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 	// slice only. It occupies no node index, so its rows carry the sentinel ref
 	// (see inquiryNode) — that is what makes it select, copy and highlight
 	// exactly as a node does, which is how it behaved when it WAS one.
-	if iq := inquiryRowsFor(m.Inquiry, m.InquirySegments, t.w-2); len(iq) > 0 {
+	if iq := inquiryRowsFor(m.Inquiry, m.InquirySegments, t.w); len(iq) > 0 {
 		ref := nodeRef{turn: m.Turn, index: inquiryNode}
 		rows = append(rows, transcriptRow{text: messageHeader(livedoc.RoleInput)}, transcriptRow{})
 		if coords {
@@ -1438,8 +1438,19 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 	return cachedMessage{rows: rows}
 }
 
+// renderNode renders one node at THE PANE'S OWN WIDTH — the same budget the
+// inline renderer (ldrender.Incipit.renderNodes) gives the same node.
+//
+// It used to ask for t.w-2: one column for the selection bar, one spent on
+// nothing in particular. So the pager wrapped the same paragraph two columns
+// narrower than the incipit had, and indented it one column further, and the
+// same node read differently above and below the fold — the owner's report
+// ("the spacing in transcript mode should be the same as outside of transcript
+// mode"). The bar now lives INSIDE glamour's two-column margin instead of
+// buying a column from the text (see decorateNodeRow), so there is nothing left
+// to reserve. TestPagerRowsMatchIncipitRows is the invariant.
 func (t *transcript) renderNode(n livedoc.Node, ref nodeRef) []string {
-	width := t.w - 2
+	width := t.w
 	if width < 1 {
 		width = 1
 	}
@@ -2201,7 +2212,6 @@ func (t *transcript) findPage(q string, messages []aria.Message) bool {
 			t.rowCache[keyOf(m)] = rows
 		}
 		for _, row := range rows.rows {
-			// searchText strips the gutter column plainNodeRow baked in.
 			if searchContains(row.searchText(), q) {
 				t.buildIndex()
 				for i := range t.index.total {
