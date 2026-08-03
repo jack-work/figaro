@@ -168,7 +168,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 			fmt.Fprintf(os.Stderr, "forked %s at %s -> %s (parked; staying on %s)\n", trunkID, at, fr.Alternative, trunkID)
 		}
 	} else {
-		unbindBinding(ctx, acli, ppid)
+		// Registry.Bind rebinds in place; no Unbind needed first.
 		if err := bindBinding(ctx, acli, ppid, fr.Alternative, 0); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not attend %s: %s\n", fr.Alternative, err)
 		}

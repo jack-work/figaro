@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/livedoc"
-	"github.com/jack-work/figaro/internal/term"
 )
 
 // COORDINATES: the address of a thing, drawn on the thing.
@@ -70,14 +69,6 @@ func coordLabel(turn, node int, at int64) string {
 		s += coordSep + time.UnixMilli(at).Format("15:04:05")
 	}
 	return s
-}
-
-// coordRow is the coordinate as a transcript row: dim, gutter-prefixed and
-// clipped exactly like the node rows it introduces, and carrying the node's
-// own ref so it selects with it.
-func (t *transcript) coordRow(ref nodeRef, at int64) transcriptRow {
-	label := term.Dim(coordLabel(ref.turn, ref.index, at))
-	return transcriptRow{text: collapseSGR(plainNodeRow(label, t.w)), ref: ref}
 }
 
 // verbose is the pager's view of the Ctrl-O toggle. The transcript does not own

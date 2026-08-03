@@ -21,15 +21,6 @@ type Capabilities struct {
 	Trunks bool
 }
 
-// Names are the capability names as they go over the wire.
-func (c Capabilities) Names() []string {
-	var out []string
-	if c.Trunks {
-		out = append(out, "trunks")
-	}
-	return out
-}
-
 // Install gives the store its presentation hierarchy.
 //
 // Without the trunk capability the store keeps topo.FromTopology: the

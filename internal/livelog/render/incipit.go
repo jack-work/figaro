@@ -438,25 +438,6 @@ func (i *Incipit) composer() Composer {
 		}}
 }
 
-// rule is the plain full-width separator, clipped to the terminal. Empty when
-// the caller configured none.
-func (i *Incipit) rule() string {
-	if i.Rule == nil {
-		return ""
-	}
-	w, _ := i.term.Size()
-	return clip(i.Rule(), w)
-}
-
-// header returns the role-header line for role (e.g. "> input") or "" if no
-// Header function is configured or the role has no glyph.
-func (i *Incipit) header(role string) string {
-	if i.Header == nil {
-		return ""
-	}
-	return i.Header(role)
-}
-
 // footer returns the rows pinned at the bottom of the LIVE region. Unlike
 // closer(), it does not depend on the role: the status bar is a fixture of the
 // view — present at submit, during streaming, at completion, and after a pager

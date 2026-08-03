@@ -1030,9 +1030,9 @@ func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoRespo
 	}
 }
 
-// fillFromNode adds the fork-forest position (vector/trunk/parent/frozen)
-// from the tree, marking frozen nodes' state. The forest is snapshotted by
-// the caller (once per request) and indexed by id, so this is a map lookup.
+// fillFromNode adds the fork-forest position (vector/trunk/parent/branched-at)
+// from the tree. The forest is snapshotted by the caller (once per request)
+// and indexed by id, so this is a map lookup.
 func (h *handlers) fillFromNode(nodes map[string]store.NodeView, entry *rpc.FigaroInfoResponse) {
 	n, ok := nodes[entry.ID]
 	if !ok {
@@ -1041,7 +1041,6 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, entry *rpc.Figa
 	entry.Vector = n.Vector
 	entry.Trunk = n.Trunk
 	entry.Parent = n.Parent
-	entry.Frozen = n.Frozen
 	entry.BranchedLT = n.BranchedLT
 	entry.Kind = n.Kind
 	// Ceremonial loadout anchors carry their name + a live/stale label here
@@ -1049,9 +1048,6 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, entry *rpc.Figa
 	if n.Kind == string(loadoutKind) {
 		entry.LoadoutName = n.Loadout
 		entry.LoadoutVer = loadoutVerLabel(n.Version, h.currentLoadoutHash(n.Loadout))
-	}
-	if n.Frozen && entry.State != "active" {
-		entry.State = "frozen"
 	}
 }
 

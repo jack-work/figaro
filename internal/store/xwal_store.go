@@ -519,15 +519,19 @@ func stampLoadout(p message.Patch, name, ver string) message.Patch {
 }
 
 // NodeView is a read-only snapshot of an aria (trunk) for listing/lineage.
+//
+// It carries no `Frozen`/`Children`/`Depth`: those belonged to figaro's own
+// pre-trunk forest, where forking froze the target into a read-only index
+// node and minted two fresh children. Since the trunk migration the aria id
+// is stable — the continuation IS the aria you forked — so no aria is ever
+// frozen, and node-level children/depth are figwal's business, not a
+// listing's.
 type NodeView struct {
 	ID         string
 	Parent     string
 	Kind       string
 	Loadout    string
 	Version    string
-	Children   []string
-	Frozen     bool
-	Depth      int
 	Trunk      string
 	Vector     []int
 	BranchedLT uint64 // main-LT this trunk diverged from its parent

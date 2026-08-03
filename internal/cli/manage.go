@@ -638,11 +638,15 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 			die("fork: %s", err)
 		}
 
-		// Rebind only when we forked our own bound aria (it just froze, so
-		// the continuation is where "we" continue) and --stay wasn't given.
+		// Rebinding is mostly ceremony now: a fork keeps the aria id, so the
+		// continuation IS the aria this shell is already bound to. The Bind
+		// still earns its keep — it clears any pending fork point on the
+		// binding (atLT 0), and a cauterized fork (redirected to a fresh
+		// conversation under a loadout or the root) can hand back a
+		// continuation that really is somewhere else. Registry.Bind rebinds
+		// in place, so no Unbind is needed first.
 		rescoped := false
 		if target == bound && !stay {
-			unbindBinding(ctx, acli, ppid)
 			if err := bindBinding(ctx, acli, ppid, resp.Continuation, 0); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not bind shell to continuation: %s\n", err)
 			} else {

@@ -160,9 +160,6 @@ func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool, forkTu
 				rowf("forked-from", "%s", f.Parent)
 			}
 		}
-		if f.Frozen {
-			row("frozen", "yes")
-		}
 	}
 
 	w.Flush()

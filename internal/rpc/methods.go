@@ -349,12 +349,12 @@ type FigaroInfoResponse struct {
 
 	// Fork-forest position (conversation nodes). Vector is the
 	// child-index path (0, 0.0, 0.1, …); Trunk is the thread id that
-	// flows down the continuation line; Parent is the node forked from;
-	// Frozen marks a fork point (read-only index node).
+	// flows down the continuation line; Parent is the aria branched from.
+	// There is no "frozen" here: a fork leaves its target live under the
+	// same id, so no aria is ever a read-only index node.
 	Vector     []int  `json:"vector,omitempty"`
 	Trunk      string `json:"trunk,omitempty"`
 	Parent     string `json:"parent,omitempty"`
-	Frozen     bool   `json:"frozen,omitempty"`
 	BranchedLT uint64 `json:"branched_lt,omitempty"` // main-LT this trunk diverged at
 	Kind       string `json:"kind,omitempty"`        // "conversation" | "loadout" | "null" (set in global listings)
 }

@@ -187,11 +187,11 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 		branch = resp.Alternative
 
 		// Move to the branch we just prompted — but only when we forked our
-		// OWN bound aria (it just froze), and only without --stay. Forking
-		// someone else's aria is a fan-out; it never steals this shell.
+		// OWN bound aria, and only without --stay. Forking someone else's
+		// aria is a fan-out; it never steals this shell. Registry.Bind
+		// rebinds in place, so no Unbind is needed first.
 		rescoped := false
 		if target == bound && !opts.stay {
-			unbindBinding(ctx, acli, ppid)
 			if berr := bindBinding(ctx, acli, ppid, resp.Alternative, 0); berr != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not attend %s: %s\n", resp.Alternative, berr)
 			} else {
