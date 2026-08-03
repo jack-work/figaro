@@ -162,3 +162,36 @@ func TestSchemaWrittenOnFirstOpen(t *testing.T) {
 		}
 	}
 }
+
+// A store written by a NEWER build must be refused, not silently
+// misread. This is the gate that covers the chalkboard becoming unkeyed:
+// an older binary reads its main LT of 0 as real and loses every inline
+// transition, so the IR bump has to stop it at the door.
+func TestSchemaRefusesANewerStore(t *testing.T) {
+	dir := t.TempDir()
+	b, err := NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, _ := b.CreateLoadout("d", message.Patch{})
+	if _, err := b.CreateConversation(l); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Pretend the store was written by a build one version ahead.
+	stored, err := readSchema(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored[chanIR] = channelSchemas[chanIR].version + 1
+	if err := writeSchema(dir, stored); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewXwalBackend(dir, 0); err == nil {
+		t.Fatal("opened a store written by a newer build")
+	} else if !strings.Contains(err.Error(), "newer build") {
+		t.Fatalf("error = %v, want a refusal naming the newer build", err)
+	}
+}

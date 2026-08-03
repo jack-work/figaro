@@ -50,7 +50,22 @@ var channelSchemas = map[string]channelSchema{
 	// steer would open a spurious turn and truncate the exchange it belongs
 	// to — shifting every turn id after it, which is the coordinate
 	// `send`/`fork <trunk>:<turn>` addresses. The gate makes that a refusal.
-	chanIR:             {version: 3, class: classCanonical},
+	// v4: a main record carries a CURSOR STAMP -- where each unkeyed channel
+	// stood when the record was written -- and the chalkboard became unkeyed
+	// in the same release, so its records now carry main LT 0 instead of a
+	// real one. Reading an old store is transparent: a record with no stamp
+	// falls back to deriving the boundary from the chalkboard's old main-LT
+	// key, so nothing is rewritten and no converter is needed.
+	//
+	// The bump is for the OTHER direction, and it is why it lives HERE
+	// rather than on the chalkboard. An older binary has no notion of a
+	// stamp and would read the chalkboard's main LT of 0 as real, bucketing
+	// every board patch at LT 0: inline state transitions silently vanish,
+	// and a fork would inherit the wrong slice of the board. Gating on the
+	// IR version refuses that store outright, which covers the chalkboard's
+	// change too -- a chalkboard bump would instead demand a v1->v2
+	// converter for a migration that needs no data to move.
+	chanIR:             {version: 4, class: classCanonical},
 	chanChalkboard:     {version: 1, class: classReducible},
 	"translations-v2/": {version: 1, class: classDerived},
 	chanUI:             {version: 1, class: classDerived},
