@@ -414,6 +414,29 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 //
 // figwal retains [First, atMainLT] INCLUSIVE and the branch begins at
 // atMainLT+1, which is why this is first-1 and not first.
+// checkForkLT refuses an LT past the aria's own tail. A turn is validated
+// by lookup ("it has turns 1..N"); an LT is a raw coordinate, so without
+// this a typo forks at a point that does not exist yet and the branch
+// silently inherits everything instead of the prefix the user asked for.
+func (h *handlers) checkForkLT(ariaID string, lt uint64) error {
+	if lt == 0 {
+		return nil
+	}
+	log, err := h.angelus.Backend.Open(ariaID)
+	if err != nil {
+		return fmt.Errorf("fork: open %s: %w", ariaID, err)
+	}
+	entries := log.Read()
+	var tail uint64
+	if n := len(entries); n > 0 {
+		tail = entries[n-1].LT
+	}
+	if lt > tail {
+		return fmt.Errorf("aria %s has no LT %d (its logical time runs 1..%d)", ariaID, lt, tail)
+	}
+	return nil
+}
+
 func (h *handlers) forkPointOf(ariaID string, turn uint64) (uint64, error) {
 	if turn == 0 {
 		return 0, nil // head fork
@@ -449,26 +472,45 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	var cont, alt string
 	note := ""
 	var forkOwner store.OwnerInfo
-	// A turn is the coordinate; the LT is an implementation detail below here.
-	atMainLT, terr := h.forkPointOf(req.FigaroID, req.AtTurn)
-	if terr != nil {
-		return nil, terr
+	// Two coordinates, and the server owns the translation between them.
+	// A TURN is what a human names and what `fig show` prints; an LT is the
+	// model's own step count. Both name a fork point; neither can be
+	// inferred from the other's magnitude, which is exactly how an LT once
+	// arrived in the turn field and made every `send <id>:<turn>` fail.
+	if req.AtTurn > 0 && req.AtLT > 0 {
+		return nil, fmt.Errorf("fork: give a turn (:%d) or an LT (.%d), not both", req.AtTurn, req.AtLT)
 	}
-	// AtTurn says WHETHER this is interior; atMainLT says WHERE. They are not
-	// the same question: forking at turn 1 retains nothing before it, so its
-	// LT is 0 — which is also the head-fork sentinel. Reading interior-ness off
-	// the LT collapsed "replace the first turn" into "fork at the head".
-	interior := req.AtTurn > 0
+	atMainLT := req.AtLT
+	if req.AtTurn > 0 {
+		lt, terr := h.forkPointOf(req.FigaroID, req.AtTurn)
+		if terr != nil {
+			return nil, terr
+		}
+		atMainLT = lt
+	}
+	if err := h.checkForkLT(req.FigaroID, req.AtLT); err != nil {
+		return nil, err
+	}
+	// The COORDINATE says whether this is interior; atMainLT says where.
+	// They are not the same question: forking at turn 1 retains nothing
+	// before it, so its LT is 0 -- which is also the head-fork sentinel.
+	// Reading interior-ness off the LT collapsed "replace the first turn"
+	// into "fork at the head".
+	interior := req.AtTurn > 0 || req.AtLT > 0
+	where := fmt.Sprintf("turn %d", req.AtTurn)
+	if req.AtLT > 0 {
+		where = fmt.Sprintf("LT %d", req.AtLT)
+	}
 	if interior {
 		if owner, err := h.angelus.Backend.OwnerResolution(req.FigaroID, atMainLT); err == nil {
 			forkOwner = owner
 			switch {
 			case owner.IsRoot:
-				note = fmt.Sprintf("turn %d is the genesis root — spawned a fresh loadoutless conversation there", req.AtTurn)
+				note = fmt.Sprintf("%s is the genesis root — spawned a fresh loadoutless conversation there", where)
 			case owner.Loadout != "":
-				note = fmt.Sprintf("turn %d is in loadout %s — spawned a fresh conversation under it", req.AtTurn, owner.Loadout)
+				note = fmt.Sprintf("%s is in loadout %s — spawned a fresh conversation under it", where, owner.Loadout)
 			case owner.Trunk != "" && owner.Trunk != req.FigaroID:
-				note = fmt.Sprintf("turn %d lives in trunk %s — branching there", req.AtTurn, owner.Trunk)
+				note = fmt.Sprintf("%s lives in trunk %s — branching there", where, owner.Trunk)
 			}
 		}
 	}
@@ -522,7 +564,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err != nil {
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
-	slog.Info("forked figaro", "parent", req.FigaroID, "at", req.AtTurn, "lt", atMainLT, "continuation", cont, "alternative", alt)
+	slog.Info("forked figaro", "parent", req.FigaroID, "turn", req.AtTurn, "lt", atMainLT, "continuation", cont, "alternative", alt)
 	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil
 }
 

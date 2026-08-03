@@ -19,11 +19,11 @@ func waitForFork(
 	ctx context.Context,
 	client *angelus.Client,
 	ariaID string,
-	atMainLT uint64,
+	at forkPoint,
 ) (*rpc.ForkResponse, error) {
 	done := make(chan forkCallResult, 1)
 	go func() {
-		response, err := client.Fork(ctx, ariaID, atMainLT)
+		response, err := client.Fork(ctx, ariaID, at.turn, at.lt)
 		done <- forkCallResult{response: response, err: err}
 	}()
 

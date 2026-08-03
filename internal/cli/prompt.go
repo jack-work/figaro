@@ -39,7 +39,7 @@ func runPrompt(loaded *config.Loaded, loadout, prompt string, set renderSettings
 		// Bound at a pending fork-point (attend <id>:<LT>): this prompt forks
 		// there and moves to the new branch (one-shot — the rebind clears it).
 		if resp.AtMainLT > 0 {
-			runSendForkAt(loaded, resp.FigaroID, resp.AtMainLT, false, false, prompt, set)
+			runSendForkAt(loaded, resp.FigaroID, forkPoint{lt: resp.AtMainLT}, false, false, prompt, set)
 			return
 		}
 		figaroID = resp.FigaroID
@@ -132,7 +132,7 @@ func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt st
 // replaces the question onward. That boundary is always a user message, so the
 // frozen history always ends on a complete assistant message — no tool_invoke
 // is left dangling and no interrupted-tool synthesis can occur.
-func runSendForkAt(loaded *config.Loaded, trunkID string, turn uint64, stay, asJSON bool, prompt string, set renderSettings) {
+func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, asJSON bool, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -148,14 +148,14 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, turn uint64, stay, asJ
 		trunkID = r.FigaroID
 	}
 
-	atMainLT, err := resolveTurn(ctx, acli, trunkID, turn)
+	// The coordinate goes on the wire AS NAMED. This used to resolve the
+	// turn to an LT here and then send that LT in the turn field, so the
+	// server read a logical time as a turn number -- and since an LT is far
+	// larger than the turn count, `send <id>:<turn>` failed every time with
+	// "aria has no turn N". The server owns the translation.
+	fr, err := waitForFork(ctx, acli, trunkID, at)
 	if err != nil {
-		die("send: %s", err)
-	}
-
-	fr, err := waitForFork(ctx, acli, trunkID, atMainLT)
-	if err != nil {
-		die("send: fork %s at turn %d: %s", trunkID, turn, err)
+		die("send: fork %s at %s: %s", trunkID, at, err)
 	}
 	if fr.OwnerNote != "" {
 		fmt.Fprintf(os.Stderr, "%s\n", fr.OwnerNote)
@@ -165,7 +165,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, turn uint64, stay, asJ
 	if stay {
 		target = trunkID // parked alternative; shell stays on the original
 		if !asJSON {
-			fmt.Fprintf(os.Stderr, "forked %s at turn %d -> %s (parked; staying on %s)\n", trunkID, turn, fr.Alternative, trunkID)
+			fmt.Fprintf(os.Stderr, "forked %s at %s -> %s (parked; staying on %s)\n", trunkID, at, fr.Alternative, trunkID)
 		}
 	} else {
 		unbindBinding(ctx, acli, ppid)
@@ -173,7 +173,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, turn uint64, stay, asJ
 			fmt.Fprintf(os.Stderr, "warning: could not attend %s: %s\n", fr.Alternative, err)
 		}
 		if !asJSON {
-			fmt.Fprintf(os.Stderr, "forked %s at turn %d -> attending %s\n", trunkID, turn, fr.Alternative)
+			fmt.Fprintf(os.Stderr, "forked %s at %s -> attending %s\n", trunkID, at, fr.Alternative)
 		}
 	}
 
@@ -191,7 +191,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, turn uint64, stay, asJ
 			Parent:       fr.Parent,
 			Alternative:  fr.Alternative,
 			Continuation: fr.Continuation,
-			Turn:         turn,
+			Turn:         at.turn,
 			Mode:         "fork-send",
 		})
 		// --json submits and exits. This used to print the object and then

@@ -653,7 +653,7 @@ positional slot belongs to the sub-verb.`,
 		Aliases: []string{"at"},
 		Group:   "Session",
 		Short:   "Bind this shell to an existing aria (optionally at a turn)",
-		Usage:   "attend <id> | <id>:<turn> | :<turn> | null",
+		Usage:   "attend <id> | <id>:<turn> | <id>.<lt> | :<turn> | null",
 		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point — the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live loadout.\n\nTerminal-only. Inside an aria's own bash tool, FIGARO_ARIA statically\nattends that shell to the aria that spawned it, and attend refuses — reach\nanother aria with an explicit --id instead.",
 		ArgsMin: 1,
 		ArgsMax: 1,
@@ -678,7 +678,15 @@ continuation (the original line) and an empty alternative.
   figaro fork <id>            branch another aria at its head (maintenance)
   figaro fork <id>:12         interior fork — history before turn 12 is shared,
                               the original suffix becomes the continuation
+  figaro fork <id>.842        the same, at an LT instead of a turn
   figaro fork --stay          branch but do not rebind this shell
+
+TWO COORDINATES. :N is a TURN -- one exchange, the number show prints,
+and what you normally want. .N is an LT -- one step of the model's
+experience, the number show -v prints. Prefer the colon: most LTs sit
+mid-tool, where a fork strands a tool_invoke without its result. Reach for
+the dot when you already hold an LT, or need a point no turn boundary names.
+Both work for send, fork and attend; naming both at once is an error.
 
 Forking your own bound aria rebinds this shell to the continuation
 (same trunk/mantra, new id) since the bound aria just froze. Forking

@@ -139,7 +139,7 @@ The wire behind all of this — the interrupt's queue disposition, the
 | `figaro ls -g` | Home plus the null root and loadout anchors. |
 | `figaro ls -a` / `-n N` | Remove the 10-row cap, or set it. Mutually exclusive. |
 | `figaro attend <id>` | Bind this shell to an aria. Alias `at`. |
-| `figaro attend <id>:<turn>` | Bind with a pending fork point: the next bare prompt forks there. |
+| `figaro attend <id>:<turn>` | Bind with a pending fork point: the next bare prompt forks there. `<id>.<lt>` names an LT instead of a turn. |
 | `figaro attend null` | Go home. There is no `detach` verb. |
 | `figaro show [<id>]` | Render history — the same rows `listen` draws. `-n N` last N turns, `-a` all, `-o` block addresses and timestamps, `-v` raw IR, `-l` no markdown, `-j` JSON. |
 | `figaro status [<id>]` | One aria in focus: provider, model, context, cost. `-m` adds cwd, loadout, fork origin. |

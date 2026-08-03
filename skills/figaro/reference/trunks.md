@@ -63,20 +63,37 @@ Every turn has a figwal **main-LT**, continuous along the trunk's node chain:
 
 `figaro show` labels each **turn** by its **turn id**, and `send`/`fork`/
 `attend`'s `:<turn>` address that — the shown number **is** the fork
-coordinate. LT is the *model's* coordinate (it counts the steps the model
-experienced, and most LTs sit mid-tool); it stays visible under `show -v/-l`
-for debugging the fig IR, but it is not an address.
+coordinate.
+
+### Two coordinates: `:turn` and `.LT`
+
+| form | coordinate | what it means |
+|---|---|---|
+| `<id>:<n>` | **turn** | The exchange: your prompt and everything the agent did about it. What `show` prints, and what you normally want. |
+| `<id>.<n>` | **LT** | The model's logical time — one step of its experience. What `show -v/-l` prints. |
+
+The colon is the human coordinate; the dot is the model's. **Prefer the
+colon.** Most LTs sit mid-tool, and forking there strands a `tool_invoke`
+without its result, so `.LT` is the *precise* form rather than the safe one.
+Reach for it when you already hold an LT (from `show -v`, a log line, a
+tool), or to branch somewhere no turn boundary exists.
+
+Both work everywhere a coordinate does — `send`, `fork`, `attend` — because
+one parser reads them, and the daemon accepts both on the wire (`at_turn`
+and `at_lt`) and does any translation itself. Naming both at once is an
+error rather than a precedence rule.
 
 ## Commands
 
-- **`send <id>:<turn> -- …`** — fork the trunk so `<turn>` is **replaced**,
-  then send to the new branch (and **rebind** this shell there;
-  `--stay`/`--attend=false` to send but not move). Without `:<turn>`, plain
+- **`send <id>:<turn> -- …`** (or `<id>.<lt>`) — fork the trunk so `<turn>` is
+  **replaced**, then send to the new branch (and **rebind** this shell there;
+  `--stay`/`--attend=false` to send but not move). Without a coordinate, plain
   append to the tail.
-- **`fork [<id>[:<turn>]] [--stay] [-- <prompt>]`** — imperative branch. A
+- **`fork [<id>[:<turn>|.<lt>]] [--stay] [-- <prompt>]`** — imperative branch. A
   `:<turn>` is an interior fork: everything through the end of turn
   `<turn>-1` is shared, the original suffix becomes the continuation, a fresh
-  empty alternative diverges. No `:<turn>` = tail fork. Forking your **own** bound aria rebinds you to the
+  empty alternative diverges. `.<lt>` forks at that logical time exactly. No
+  coordinate = tail fork. Forking your **own** bound aria rebinds you to the
   continuation (same trunk/mantra, the alternative is the new branch);
   forking any other aria, or `--stay`, leaves your session untouched.
 

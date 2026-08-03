@@ -440,23 +440,61 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 		return err
 	}
 	defer x.Close()
-	gen, _ := json.Marshal(message.Message{Role: message.RoleInput, Timestamp: s.now()})
-	glt, err := x.AppendMain(gen, nil)
-	if err != nil {
-		return err
-	}
 	patch := message.Patch{}
 	if cbPatch != nil {
 		patch = *cbPatch
 	}
 	pb, _ := json.Marshal(patch)
-	if _, err = x.Append(chanChalkboard, glt, pb, nil); err != nil {
+
+	// THE BOARD PATCH GOES FIRST, and the order is the whole point.
+	//
+	// A main record carries a CURSOR STAMP: where each unkeyed channel stood
+	// when the record was written. The loadout's reminders are meant to
+	// render at THIS record -- once, in the prefix every conversation under
+	// the stump inherits -- and the projection renders exactly the patches at
+	// or below the record's stamp. Writing the record first stamped it one
+	// index BELOW the patch it introduces, so PatchesUpTo() returned nothing
+	// and no aria created under the stump ever rendered its skills, its credo
+	// or anything else the loadout sets.
+	//
+	// The patch is keyed to the LT the birth record is about to take, which is
+	// what it was keyed to before (the record's own LT) and is the reducible
+	// one-ahead convention the flush coherence rule already allows. On an
+	// unkeyed chalkboard the key is ignored and the stamp is what matters;
+	// keying it correctly keeps the keyed case honest rather than relying on
+	// the channel happening to be unkeyed.
+	next := mainTailOf(x) + 1
+	if _, err := x.Append(chanChalkboard, next, pb, nil); err != nil {
 		return err
+	}
+	gen, _ := json.Marshal(message.Message{Role: message.RoleInput, Timestamp: s.now()})
+	glt, err := x.AppendMain(gen, nil)
+	if err != nil {
+		return err
+	}
+	if glt != next {
+		// Nothing else may write to a stump: CreateLoadout holds s.mu and the
+		// stump is minted here. If this ever fires, the patch is keyed to a
+		// record that does not exist and the reminders would render against
+		// the wrong turn.
+		return fmt.Errorf("xwal store: stump %s birth record landed at %d, board patch keyed to %d",
+			stump, glt, next)
 	}
 	// Birth records must be durable before conversations spawn under the
 	// stump — a crash between spawn and the next flush would orphan the
 	// children's fork base.
 	return x.SyncCoherent()
+}
+
+// mainTailOf is the stump's main channel tail, for keying a record to the
+// LT the next append will take.
+func mainTailOf(x *xwal.XWAL) uint64 {
+	for _, ch := range x.Channels() {
+		if ch.Name == chanIR {
+			return ch.Last
+		}
+	}
+	return 0
 }
 
 // contentVersion is the value-stable content hash of a loadout patch.

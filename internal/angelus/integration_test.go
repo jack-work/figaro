@@ -274,7 +274,7 @@ model = "mock-model"
 
 	// Fork (trunk model): the aria id is STABLE — the continuation keeps it
 	// (cont == id, bind-to-trunk), only the alternative is new.
-	fr, err := acli.Fork(ctx, created.FigaroID, 0)
+	fr, err := acli.Fork(ctx, created.FigaroID, 0, 0)
 	require.NoError(t, err)
 	require.NotEqual(t, fr.Continuation, fr.Alternative)
 	require.Equal(t, created.FigaroID, fr.Continuation)
@@ -330,7 +330,7 @@ model = "mock-model"
 
 	// The trunk is stable and stays live — re-forking the same id again
 	// just adds another alternative (bind-to-trunk: forking doesn't move you).
-	fr2, err := acli.Fork(ctx, created.FigaroID, 0)
+	fr2, err := acli.Fork(ctx, created.FigaroID, 0, 0)
 	require.NoError(t, err, "the trunk stays live and re-forkable")
 	require.NotEqual(t, fr2.Continuation, fr2.Alternative)
 	require.Equal(t, created.FigaroID, fr2.Continuation)

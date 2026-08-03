@@ -261,6 +261,22 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 		}
 		e.LT = lt
 		e.FigaroLT = lt
+		// READ THE RECORD BACK. The append STAMPS the entry with the
+		// chalkboard cursor -- where the board stood at this LT -- and that
+		// stamp is what the projection renders deltas against. The caller's
+		// struct does not have it and never did, so returning the caller's
+		// struct handed the cache an entry whose ChalkVersion was zero for
+		// the life of the process: every reminder was filtered out by
+		// PatchesUpTo(0), and the aria saw none of its own state. It looked
+		// right after a restart, because the cache is rebuilt by decoding
+		// the log, which has the stamp.
+		//
+		// One in-memory read per IR append, and it reports what was
+		// actually written rather than what we believed we wrote -- which
+		// covers the next field of this kind as well as this one.
+		if stamped, ok := l.readBack(lt); ok {
+			e.ChalkVersion = stamped.ChalkVersion
+		}
 		return e, nil
 	}
 	lt, aerr := l.store.trunks.Append(l.ariaID, l.channel, e.FigaroLT, payload, meta)
@@ -269,6 +285,24 @@ func (l *xwalLog[T]) Append(e Entry[T]) (Entry[T], error) {
 	}
 	e.LT = lt
 	return e, nil
+}
+
+// readBack decodes the record just appended, for the fields the store
+// stamps and the caller cannot know. Failure is not fatal: the entry is
+// still valid, it simply lacks a stamp, which is what the caller had
+// before asking.
+func (l *xwalLog[T]) readBack(lt uint64) (Entry[T], bool) {
+	var out Entry[T]
+	var ok bool
+	_ = l.openOnce(func(xw *xwal.XWAL) error {
+		r, err := xw.ReadAt(l.channel, lt)
+		if err != nil {
+			return nil
+		}
+		out, ok = decodeRecord[T](r)
+		return nil
+	})
+	return out, ok
 }
 
 // Clear goes through Store.Clear, which drops the channel's pending
