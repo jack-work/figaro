@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/figwal/xwal"
 )
 
 // ariaBackend constructs the XWAL aria tree under the configured state root,
@@ -165,6 +166,7 @@ func ensureAngelus() {
 	// silence, is a failure.
 	start := time.Now()
 	var deferred time.Time // when our child stood down for an incumbent
+	var lastNotice time.Time
 	notified := false
 	for {
 		if cli, err := angelus.DialClient(ep); err == nil {
@@ -193,25 +195,41 @@ func ensureAngelus() {
 		case time.Since(start) > startupHardCap:
 			die("angelus has not answered in %s%s", startupHardCap, startupDiagnosis())
 		}
-		if !notified && time.Since(start) > startupNoticeAfter {
+		if time.Since(lastNotice) > startupNoticeEvery && time.Since(start) > startupNoticeAfter {
+			lastNotice = time.Now()
 			notified = true
-			fmt.Fprintf(os.Stderr,
-				"angelus: still starting after %s — the first run after an upgrade migrates the "+
-					"store layout. Let it finish; interrupting a migration is the one thing that "+
-					"can cost you arias. Progress: %s\n",
-				startupNoticeAfter, angelusStartupLog())
+			fmt.Fprintf(os.Stderr, "angelus: %s (waited %s; giving up at %s)\n",
+				startupActivity(), time.Since(start).Round(time.Second), startupHardCap)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 }
 
+// startupActivity says what the daemon is doing, and only says the thing
+// it can check. Asserting a migration that is not happening is what sends
+// a user to pkill -- a wrong explanation is worse than none. NeedsFlatten
+// is one file read.
+func startupActivity() string {
+	root := filepath.Join(stateDir(), "arias")
+	if need, err := xwal.NeedsFlatten(root); err == nil && need {
+		return "migrating the store layout — let it finish; interrupting a migration " +
+			"is the one thing that can cost you arias"
+	}
+	return "still starting"
+}
+
 const (
 	// startupNoticeAfter is when we start explaining rather than waiting
-	// silently; startupHardCap is the only thing that can call a LIVE
-	// daemon a failure, and it is deliberately far longer than any
-	// migration measured (about 5s for 483 nodes) so that a bigger store
-	// is slow rather than broken.
+	// silently, and startupNoticeEvery keeps explaining: one hopeful
+	// sentence followed by ten minutes of silence reads exactly like the
+	// hang the sentence told the user not to interrupt.
+	//
+	// startupHardCap is the only thing that can call a LIVE daemon a
+	// failure, and it is deliberately far past any migration measured
+	// (about 5s for 483 nodes) so that a bigger store is slow rather than
+	// broken. Every notice names it, so the silence has a stated end.
 	startupNoticeAfter = 3 * time.Second
+	startupNoticeEvery = 30 * time.Second
 	startupHardCap     = 10 * time.Minute
 	// incumbentGrace is how long we keep dialing after our own child stood
 	// down for an existing daemon. Short: the incumbent is already up, or
