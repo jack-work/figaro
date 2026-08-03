@@ -77,6 +77,35 @@ func rawInputMode(mode uint32) uint32 {
 	return mode
 }
 
+// DISABLE_NEWLINE_AUTO_RETURN is deliberately NOT set here. It defers the
+// right-edge wrap, which the painter wants — but it also stops a bare LF from
+// implying a carriage return, and every line-oriented command (`list`, `show`,
+// `status`) writes bare \n through fmt.Println. Armed globally at startup it
+// staircased all of them rightward until they wrapped, which reads as "figaro
+// ignores my terminal width". The painter arms it for itself: ArmDeferredWrap.
 func vtOutputMode(mode uint32) uint32 {
-	return mode | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING | windows.DISABLE_NEWLINE_AUTO_RETURN
+	return mode | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING
+}
+
+// ArmDeferredWrap defers the right-edge wrap for the duration of a PAINTED
+// session, and returns the restore.
+//
+// The painter lands rows at EXACTLY the viewport width and does its own
+// one-row-per-line cursor math, so it needs the console to hold the cursor on
+// the last cell instead of wrapping the instant that cell is written (measured
+// under conhost at width 120: 2 rows without the flag, 1 with; Windows Terminal
+// was already 1). It is scoped to the painter because the same flag breaks
+// every command that emits ordinary newlines.
+//
+// A non-console stdout degrades to a no-op restore, as in ArmOutput.
+func ArmDeferredWrap() func() {
+	h := windows.Handle(os.Stdout.Fd())
+	var old uint32
+	if err := windows.GetConsoleMode(h, &old); err != nil {
+		return func() {}
+	}
+	if err := windows.SetConsoleMode(h, old|windows.DISABLE_NEWLINE_AUTO_RETURN); err != nil {
+		return func() {}
+	}
+	return func() { _ = windows.SetConsoleMode(h, old) }
 }
