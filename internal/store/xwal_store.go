@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"sync"
@@ -255,6 +256,14 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
+	// Before the store opens, because an unmigrated store does not open at
+	// all -- and before THAT was true, it opened reporting its loadouts and
+	// none of its arias. The single writer (the daemon) owns this; the
+	// migration takes the store lock itself, so a second process waits for
+	// a store rather than half-reading one.
+	if err := migrateLayout(root); err != nil {
+		return nil, err
+	}
 	st, err := xwal.OpenStore(root, storeOptions(segmentSize))
 	if err != nil {
 		return nil, err
@@ -273,6 +282,29 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 
 // Close releases the tree.
 func (s *XwalStore) Close() error { return s.trunks.Close() }
+
+// migrateLayout brings a store written by an older figaro up to the layout
+// this build reads: every node at depth 1, lineage in its own marker. It is
+// automatic because the alternative is a daemon that refuses to start until
+// the user runs a command he has not heard of -- but it is not silent, and
+// it is not partial. Either it finishes or the open fails.
+//
+// The check costs one file read on a store that needs nothing.
+func migrateLayout(root string) error {
+	need, err := xwal.NeedsFlatten(root)
+	if err != nil || !need {
+		return err
+	}
+	start := time.Now()
+	rep, err := xwal.Flatten(root)
+	if err != nil {
+		return fmt.Errorf("store %s needs a layout migration and it failed: %w", root, err)
+	}
+	slog.Info("store layout migrated",
+		"nodes", rep.Nodes, "moved", rep.Moved, "markers", rep.Markers,
+		"retired", rep.Retired, "ms", time.Since(start).Milliseconds())
+	return nil
+}
 
 // OpenNode opens the xwal for an aria id (the trunk's live head). Caller
 // closes it.
