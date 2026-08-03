@@ -41,7 +41,7 @@
           pname = "figaro";
           version = "0.17.1";
           src = self;
-          vendorHash = "sha256-B6+trr5v9yR62yUADRDoNl+Y5QY2LPkynGfeIPkwCmU=";
+          vendorHash = "sha256-GjkdTILdMFrRP2dOYafg0USRFD/U41WRRTkevvXCj/w=";
 
           # figwal is co-developed, so go.mod carries a `replace` at an
           # absolute path that does not exist in the build sandbox. COPY the

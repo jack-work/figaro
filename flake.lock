@@ -3,11 +3,11 @@
     "figwal": {
       "flake": false,
       "locked": {
-        "lastModified": 1785742517,
-        "narHash": "sha256-CB/QVsrrmysHNflP7Or6e8cBr/OMx83tkzcQvCMsle8=",
+        "lastModified": 1785743010,
+        "narHash": "sha256-E0AWZbITI71mJETCl/129G2JatK23QItuGHdaR/6HV8=",
         "ref": "refs/heads/master",
-        "rev": "e11d53958201734a1ea9b8d82472781f6a9ac4bd",
-        "revCount": 131,
+        "rev": "747b996d05d234452a1a2437ef98d16513bf8f26",
+        "revCount": 132,
         "type": "git",
         "url": "file:///home/gluck/dev/figwal"
       },
