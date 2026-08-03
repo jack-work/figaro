@@ -2,7 +2,7 @@
 
 *Largo al factotum della calcolatore.*
 
-A coding agent with few opinions, but firmly held. Supports multi-agent, context forking, fully persistent structured metadata, and terminal-native semantics out of box.  One binary: CLI, supervisor daemon, agent runtime. JSON-RPC over unix sockets.  Tutto pulito, bravo bravissimo.
+A coding agent with few opinions, firmly held. Supports multi-agent, context forking, fully persistent structured metadata, and terminal-native semantics out of box.  One binary: CLI, supervisor daemon, agent runtime. JSON-RPC over unix sockets.  Tutto pulito, bravo bravissimo.
 
 ## Install
 
