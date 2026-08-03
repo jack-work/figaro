@@ -65,10 +65,18 @@ var channelSchemas = map[string]channelSchema{
 	// IR version refuses that store outright, which covers the chalkboard's
 	// change too -- a chalkboard bump would instead demand a v1->v2
 	// converter for a migration that needs no data to move.
-	chanIR:             {version: 4, class: classCanonical},
-	chanChalkboard:     {version: 1, class: classReducible},
-	"translations-v2/": {version: 1, class: classDerived},
-	chanUI:             {version: 1, class: classDerived},
+	chanIR:         {version: 4, class: classCanonical},
+	chanChalkboard: {version: 1, class: classReducible},
+	// v2: not a shape change -- a POISON sweep. A projection bug rendered the
+	// whole chalkboard onto one message per provider round-trip instead of the
+	// delta, and the encoder wrote that into these per-LT caches, so the
+	// duplication is durable and re-reading does not undo it. Measured on real
+	// arias: 31-60% of a conversation's cached bytes were repeated board, and
+	// six seats sat at 95-101% of their context limit because of it.
+	// Bumping a derived channel drops it; the projection regenerates it lazily
+	// and correctly. Nothing canonical moves.
+	"translations-v2/": {version: 2, class: classDerived},
+	chanUI:            {version: 1, class: classDerived},
 }
 
 // schemaFor resolves a concrete channel name to its schema, returning the
