@@ -81,14 +81,22 @@ type AssistantCache struct {
 // Chalkboard supplies the board patches that landed before a turn, so the
 // projection can render a `set` inline where it happened.
 //
-// PatchesUpTo takes a chalkboard VERSION, not an IR LT. The board is
+// PatchesBetween takes chalkboard VERSIONS, not IR LTs. The board is
 // unkeyed -- a patch is written with no reference to the timeline -- and
 // the association runs the other way: each IR entry records how far the
-// board had advanced when it was written. The projection walks entries in
-// order and hands over that number, so an implementation returns the
-// patches since the last call and needs no index at all.
+// board had advanced when it was written. The projection hands over the
+// previous entry's mark and this one's, and gets the patches that landed
+// between them: (after, upTo].
+//
+// It is deliberately ABSOLUTE rather than a cursor. A cursor has to be
+// driven exactly once, in order, from the beginning -- and the projection
+// does no such thing: it warm-starts at previous.Entries and walks only the
+// untranslated suffix. A fresh cursor pointed at that suffix replayed the
+// WHOLE board onto the first new message, and the encoder baked it into the
+// per-LT cache, so every provider round-trip permanently re-sent all of the
+// aria's state. An absolute range cannot express that bug.
 type Chalkboard interface {
-	PatchesUpTo(version uint64) []message.Patch
+	PatchesBetween(after, upTo uint64) []message.Patch
 }
 
 // SendInput is one turn's input.

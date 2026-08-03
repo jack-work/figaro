@@ -914,6 +914,10 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 // chalkAccessor returns the per-LT transition source for the provider:
 // for backed arias, the chalkboard's patches in version order; nil for
 // ephemeral (the provider falls back to inline IR patches).
+//
+// TODO: ChalkboardPatches copies the aria's ENTIRE patch history on every
+// Send, which is O(total board) on a path that renders O(delta). See
+// plans/chalkboard-projection-followups.md §1.
 func (a *Agent) chalkAccessor() provider.Chalkboard {
 	if a.backend == nil {
 		return nil
@@ -926,18 +930,27 @@ func (a *Agent) chalkAccessor() provider.Chalkboard {
 	return &patchCursor{patches: ps}
 }
 
-// patchCursor hands out the patches since the last call. The projection
-// walks entries in ascending order and each carries the board version at
-// its turn, so this is a single forward walk over the patch list -- no map,
-// no index, and no re-read of the timeline to build one.
+// patchCursor walks the patch list forward, once. The projection asks for an
+// absolute range -- (after, upTo] -- so the cursor never has to guess where it
+// is: it skips anything at or below the low bound and takes what is in range.
+// The index only ever advances, so a pass costs the patches it actually
+// touches, not a scan per entry.
+//
+// The range is absolute rather than implicit BECAUSE the projection warm-starts
+// mid-log. A cursor that assumed "you have already been driven over everything
+// before this" replayed the whole board onto the first new message, and the
+// per-LT cache made that permanent.
 type patchCursor struct {
 	patches []store.VersionedPatch
 	i       int
 }
 
-func (c *patchCursor) PatchesUpTo(version uint64) []message.Patch {
+func (c *patchCursor) PatchesBetween(after, upTo uint64) []message.Patch {
+	for c.i < len(c.patches) && c.patches[c.i].Version <= after {
+		c.i++
+	}
 	var out []message.Patch
-	for c.i < len(c.patches) && c.patches[c.i].Version <= version {
+	for c.i < len(c.patches) && c.patches[c.i].Version <= upTo {
 		out = append(out, c.patches[c.i].Patch)
 		c.i++
 	}

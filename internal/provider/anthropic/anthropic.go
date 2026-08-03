@@ -1056,11 +1056,12 @@ func (a *Anthropic) acceptAssistantProjection(lt uint64, encoded []json.RawMessa
 	}
 	state := provider.AppendEncodedMessage(a.projection.State, encoded, lt)
 	a.projection = &provider.IncrementalProjection[provider.EncodedMessages]{
-		State:       state,
-		Chalkboard:  a.projection.Chalkboard,
-		Fingerprint: a.projection.Fingerprint,
-		Entries:     a.projection.Entries + 1,
-		LastLT:      lt,
+		State:            state,
+		Chalkboard:       a.projection.Chalkboard,
+		Fingerprint:      a.projection.Fingerprint,
+		Entries:          a.projection.Entries + 1,
+		LastLT:           lt,
+		LastChalkVersion: a.projection.LastChalkVersion,
 	}
 }
 
