@@ -225,7 +225,7 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 			// live exchange over a chalkboard write is a worse failure than
 			// proceeding without it — the error is logged and the message still
 			// reaches the model.
-			if err := a.backend.ApplyChalkboard(a.id, combined); err != nil {
+			if _, err := a.backend.ApplyChalkboard(a.id, combined); err != nil {
 				slog.Error("turn chalkboard append", "aria", a.id, "err", err)
 				combined = chalkboard.Patch{}
 			}

@@ -166,6 +166,15 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 			transChannel("copilot-messages"),
 			transChannel("copilot-responses"),
 		},
+		// The chalkboard is UNKEYED: a patch is a declaration of intent, not
+		// a fact about a turn, so it should not have to read the timeline to
+		// be written. That is what lets a `set` land mid-turn.
+		//
+		// The translations channels stay KEYED, and deliberately: their main
+		// LT is a lookup key ("the provider message for turn k"), and a
+		// translation is derived AFTER its turn exists, so there is no
+		// moment at which the main record could stamp a cursor for it.
+		Unkeyed: []string{chanChalkboard},
 	}
 }
 
@@ -415,7 +424,7 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 	// Birth records must be durable before conversations spawn under the
 	// stump — a crash between spawn and the next flush would orphan the
 	// children's fork base.
-	return x.FlushCoherent()
+	return x.SyncCoherent()
 }
 
 // contentVersion is the value-stable content hash of a loadout patch.

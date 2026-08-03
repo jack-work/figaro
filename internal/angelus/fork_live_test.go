@@ -41,6 +41,7 @@ type liveForkBackend struct {
 	owner      store.OwnerInfo
 	nodes      map[string]store.NodeView
 	chalk      map[string]message.Patch
+	chalkVer   uint64
 	log        store.Log[message.Message]
 }
 
@@ -56,12 +57,13 @@ func (f *liveForkBackend) Open(string) (store.Log[message.Message], error) {
 	return f.log, nil
 }
 
-func (f *liveForkBackend) ApplyChalkboard(ariaID string, patch message.Patch) error {
+func (f *liveForkBackend) ApplyChalkboard(ariaID string, patch message.Patch) (uint64, error) {
 	if f.chalk == nil {
 		f.chalk = map[string]message.Patch{}
 	}
 	f.chalk[ariaID] = patch
-	return nil
+	f.chalkVer++
+	return f.chalkVer, nil
 }
 
 type coordinatingForkFigaro struct {

@@ -79,7 +79,7 @@ type Backend interface {
 
 	// ApplyChalkboard appends a state patch to the chalkboard channel,
 	// keyed to the next IR LT (the transition the next message carries).
-	ApplyChalkboard(ariaID string, patch message.Patch) error
+	ApplyChalkboard(ariaID string, patch message.Patch) (version uint64, err error)
 
 	// ChalkboardPatches returns every chalkboard patch grouped by the IR
 	// logical time it is keyed to (the transitions to render per message).

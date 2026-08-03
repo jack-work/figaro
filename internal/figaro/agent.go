@@ -891,7 +891,7 @@ func (a *Agent) serviceSets() bool {
 func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Set), "remove", len(patch.Remove))
 	if a.backend != nil {
-		if err := a.backend.ApplyChalkboard(a.id, patch); err != nil {
+		if _, err := a.backend.ApplyChalkboard(a.id, patch); err != nil {
 			slog.Error(kind+" chalkboard append", "aria", a.id, "err", err)
 			return
 		}
