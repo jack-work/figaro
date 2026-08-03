@@ -45,7 +45,7 @@ func TestAttributedInquiryShapeAgreesAcrossViews(t *testing.T) {
 	}
 
 	t.Run("show", func(t *testing.T) {
-		assertChrome(t, renderTurnRows(joined, segs, nodes, 48, 0, 0, renderSettings{}), want)
+		assertChrome(t, renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: joined, InquirySegments: segs, Nodes: nodes}, 48, 0, renderSettings{}), want)
 	})
 
 	t.Run("pager", func(t *testing.T) {
@@ -87,12 +87,12 @@ func TestUnattributedInquiryIsUnchanged(t *testing.T) {
 	nodes := []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "THEANSWER"}}
 	want := []string{"> input", "", "THEQUESTION", "", "─", "< figaro", "", "THEANSWER"}
 
-	withSegs := renderTurnRows("THEQUESTION", nil, nodes, 48, 0, 0, renderSettings{})
+	withSegs := renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: "THEQUESTION", InquirySegments: nil, Nodes: nodes}, 48, 0, renderSettings{})
 	assertChrome(t, withSegs, want)
 
 	// A segment list carrying no senders is the same thing said differently,
 	// and must render identically — otherwise the presence of the field, not
 	// the presence of a sender, would change the screen.
 	blank := []aria.InquirySegment{{Text: "THEQUESTION"}}
-	assertChrome(t, renderTurnRows("THEQUESTION", blank, nodes, 48, 0, 0, renderSettings{}), want)
+	assertChrome(t, renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: "THEQUESTION", InquirySegments: blank, Nodes: nodes}, 48, 0, renderSettings{}), want)
 }

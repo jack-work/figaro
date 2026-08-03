@@ -154,7 +154,7 @@ func buildRouter(progName string, loaded *config.Loaded) *cmdkit.Router {
 		Aliases: []string{"history"},
 		Group:   "Prompt",
 		Short:   "Render an aria's message history",
-		Usage:   "show [<id>] [-n N | --from A [--to B] | --before T | -a] [-j] [-v] [-l]",
+		Usage:   "show [<id>] [-n N | --from A [--to B] | --before T | -a] [-j] [-o] [-v] [-l]",
 		Long: `Render an aria's history as turns. A turn is one exchange: your
 question and every node the agent produced about it. The optional
 positional is the target aria id; default is the pid-bound aria.
@@ -170,6 +170,7 @@ Turns are labeled by their turn id — the coordinate send/fork
   figaro show --before 12 -n 5     5 turns before turn 12 (paginate backwards)
   figaro show -a                   every turn
   figaro show -j                   turns as raw JSON (the wire IR verbatim)
+  figaro show -o                   with each block's address and timestamp
   figaro show eac16fef -v          verbose IR, labeled by LT
   figaro show -l                   raw IR, no rendering
 
@@ -179,6 +180,7 @@ fig IR, but it is not an address: turns are.`,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (alias for the positional)"},
+			{Long: "details", Short: "o", IsBool: true, Description: "Block addresses and timestamps, as Ctrl-O shows in the pager"},
 			{Long: "verbose", Short: "v", IsBool: true, Description: "Raw IR with patches, thinking, usage, transitions"},
 			{Long: "literal", Short: "l", IsBool: true, Description: "No ANSI / markdown rendering"},
 			{Long: "all", Short: "a", IsBool: true, Description: "Show every turn, not just last N"},
@@ -197,6 +199,9 @@ fig IR, but it is not an address: turns are.`,
 			}
 			// renderAria has its own flag parser; reassemble the parsed flags.
 			var args []string
+			if ctx.BoolFlag("details") {
+				args = append(args, "-o")
+			}
 			if ctx.BoolFlag("verbose") {
 				args = append(args, "-v")
 			}

@@ -101,10 +101,6 @@ type nodeSpan struct {
 	last  int
 }
 
-type expandableNodeView interface {
-	RenderExpanded(n livedoc.Node, width, tick int, fullOutput bool) []string
-}
-
 type selectionMark struct {
 	selected bool
 	active   bool

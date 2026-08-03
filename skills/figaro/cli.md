@@ -141,7 +141,7 @@ The wire behind all of this — the interrupt's queue disposition, the
 | `figaro attend <id>` | Bind this shell to an aria. Alias `at`. |
 | `figaro attend <id>:<turn>` | Bind with a pending fork point: the next bare prompt forks there. |
 | `figaro attend null` | Go home. There is no `detach` verb. |
-| `figaro show [<id>]` | Render history. `-n N` last N turns, `-a` all, `-v` raw IR, `-l` no markdown, `-j` JSON. |
+| `figaro show [<id>]` | Render history — the same rows `listen` draws. `-n N` last N turns, `-a` all, `-o` block addresses and timestamps, `-v` raw IR, `-l` no markdown, `-j` JSON. |
 | `figaro status [<id>]` | One aria in focus: provider, model, context, cost. `-m` adds cwd, loadout, fork origin. |
 | `figaro listen [<id>]` | Attach to the live stream without prompting. Ctrl-D detaches, the turn survives. |
 | `figaro hup [<id>] [-d]` | Hang up: stop the turn; `-d` also discards the queue (see The queue). |

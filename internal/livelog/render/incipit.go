@@ -7,7 +7,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/internal/render"
 )
 
 // NodeView renders one block to terminal rows. Each row must be a single
@@ -418,35 +417,25 @@ func (i *Incipit) composeWith(inquiry string, segments []aria.InquirySegment, no
 	return rows
 }
 
-// messageRows is one message's body: the turn's opening question under the
-// input header, the RULE that closes it, then the nodes under the speaker's
-// header. It is the ONE place the inquiry is drawn — it is text on the turn,
-// not a node, so no node walk can produce it.
-//
-// The rule appears only when the agent actually says something in this message.
-// A question with nothing under it is closed by the message's own closer (see
-// Freeze/printMessage), which is the same rule; drawing both would double it.
-//
-// No header over an empty run: a run whose nodes all render to nothing
-// (thinking hidden, minted-but-empty prose, a tool already drawn) must not
-// print a header over empty space, and at submit the live region is
-// deliberately bodyless — the inquiry has arrived, the reply has not.
+// messageRows is one message's body, composed by the one composer every
+// surface shares (compose.go). The incipit supplies its chrome hooks and its
+// view; the shape of a message is not its to decide.
 func (i *Incipit) messageRows(inquiry string, segments []aria.InquirySegment, role string, nodes []livedoc.Node) []string {
-	rows := i.inquiryRows(inquiry, segments)
-	body := i.renderNodes(nodes)
-	if len(body) == 0 {
-		return rows
-	}
-	if len(rows) > 0 {
-		rows = append(rows, "")
-		if r := i.rule(); r != "" {
-			rows = append(rows, r)
-		}
-	}
-	if h := i.header(role); h != "" {
-		rows = append(rows, h, "")
-	}
-	return append(rows, body...)
+	w, _ := i.term.Size()
+	return Text(i.composer().Message(aria.Message{
+		Role: role, Inquiry: inquiry, InquirySegments: segments, Nodes: nodes,
+	}, w))
+}
+
+// composer is the incipit's composition: its view, its chrome, its tick.
+func (i *Incipit) composer() Composer {
+	return Composer{View: i.view, Header: i.Header, Sender: i.Sender, Tick: i.tick,
+		Rule: func() string {
+			if i.Rule == nil {
+				return ""
+			}
+			return i.Rule()
+		}}
 }
 
 // rule is the plain full-width separator, clipped to the terminal. Empty when
@@ -457,46 +446,6 @@ func (i *Incipit) rule() string {
 	}
 	w, _ := i.term.Size()
 	return clip(i.Rule(), w)
-}
-
-// inquiryRows draws the question that opened the turn: the input header, a
-// blank, then the text as prose. Same prose renderer the nodes use, so the
-// question looks the same whether you watch it arrive or read it back.
-func (i *Incipit) inquiryRows(inquiry string, segments []aria.InquirySegment) []string {
-	if strings.TrimSpace(inquiry) == "" {
-		return nil
-	}
-	w, _ := i.term.Size()
-	if w <= 0 {
-		w = 80
-	}
-	var rows []string
-	// ONE header for the whole question, however many people wrote it: the
-	// submissions folded into one message, and a header apiece would say
-	// otherwise. Senders are drawn per segment instead, dim, above their text.
-	if h := i.header(livedoc.RoleInput); h != "" {
-		rows = append(rows, h, "")
-	}
-	if len(segments) == 0 {
-		for _, l := range render.Prose(inquiry, w) {
-			rows = append(rows, clip(l, w))
-		}
-		return rows
-	}
-	for k, seg := range segments {
-		if k > 0 {
-			rows = append(rows, "")
-		}
-		// An unknown sender draws NOTHING — not a blank row, not "unknown".
-		if seg.Sender != "" && i.Sender != nil {
-			// Indented to match render.Prose's inset; see cli.proseIndent.
-			rows = append(rows, clip(i.Sender("  "+seg.Sender), w))
-		}
-		for _, l := range render.Prose(seg.Text, w) {
-			rows = append(rows, clip(l, w))
-		}
-	}
-	return rows
 }
 
 // header returns the role-header line for role (e.g. "> input") or "" if no
@@ -544,28 +493,6 @@ func (i *Incipit) closer(role string) (rows []string, endsInRule bool) {
 		return []string{i.Rule()}, true
 	}
 	return nil, false
-}
-
-func (i *Incipit) renderNodes(nodes []livedoc.Node) []string {
-	w, _ := i.term.Size()
-	if w <= 0 {
-		w = 80
-	}
-	var rows []string
-	for k, n := range nodes {
-		// Minted-but-empty prose/thinking (docs/turn-addressing.md, invariant 6)
-		// holds a node id so later ids cannot shift; it draws nothing.
-		if n.Type != livedoc.NodeTool && strings.TrimSpace(n.Markdown) == "" {
-			continue
-		}
-		if k > 0 {
-			rows = append(rows, "")
-		}
-		for _, l := range i.view.Render(n, w, i.tick) {
-			rows = append(rows, clip(l, w))
-		}
-	}
-	return rows
 }
 
 // paint line-diffs newRows against the on-screen live region. Cursor enters and

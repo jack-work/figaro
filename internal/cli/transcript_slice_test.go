@@ -126,12 +126,12 @@ func TestSliceTurn_RealAriaUnitsAreBounded(t *testing.T) {
 	}
 	worstTurn, worstUnit, units := 0, 0, 0
 	for _, tn := range turns {
-		if n := len(renderNodeList(tn.Nodes, 100, 200, 0, renderSettings{})); n > worstTurn {
+		if n := len(renderNodeList(tn.Nodes, 100, 0, renderSettings{})); n > worstTurn {
 			worstTurn = n
 		}
 		for _, m := range sliceTurn(tn.ID, 0, tn.Nodes) {
 			units++
-			if n := len(renderNodeList(m.Nodes, 100, 200, 0, renderSettings{})); n > worstUnit {
+			if n := len(renderNodeList(m.Nodes, 100, 0, renderSettings{})); n > worstUnit {
 				worstUnit = n
 			}
 		}

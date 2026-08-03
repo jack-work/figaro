@@ -224,12 +224,15 @@ func TestSurfaceContract_OnlyTheTranscriptCollapses(t *testing.T) {
 	if got := len(view.Render(n, w, 0)); got != full {
 		t.Errorf("incipit collapsed prose: %d rows, want the full %d", got, full)
 	}
-	if got := len(renderNodeList([]livedoc.Node{n}, w, nodeBashCapDefault, 0, renderSettings{verbose: true})); got != full {
-		t.Errorf("show collapsed prose: %d rows, want the full %d", got, full)
+	if got := len(renderNodeList([]livedoc.Node{n}, w, 0, renderSettings{verbose: true})); got != full+1 {
+		// +1: under -o `show` draws the block's coordinate row above it, the
+		// same row Ctrl-O draws in the pager. Metadata is added; nothing is
+		// taken away.
+		t.Errorf("show -o collapsed prose: %d rows, want the full %d plus its coordinate row", got, full)
 	}
-	// `show` with verbose off must behave the same: verbosity is about tool
-	// args, not about hiding table rows.
-	if got := len(renderNodeList([]livedoc.Node{n}, w, nodeBashCapDefault, 0, renderSettings{})); got != full {
+	// `show` without -o must behave the same: the metadata knob is about
+	// addresses and timings, not about hiding table rows.
+	if got := len(renderNodeList([]livedoc.Node{n}, w, 0, renderSettings{})); got != full {
 		t.Errorf("show (non-verbose) collapsed prose: %d rows, want the full %d", got, full)
 	}
 	if got := len(view.RenderExpanded(n, w, 0, false)); got >= full {

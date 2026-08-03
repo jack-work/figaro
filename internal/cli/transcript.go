@@ -1354,110 +1354,72 @@ func (t *transcript) layout(foot int) (body, maxOff int) {
 
 // renderMsgBase renders one message without selection decoration. Committed
 // instances are cached; open messages are rebuilt on every live frame.
+//
+// The SHAPE of the message — question, rule, header, blocks, blanks — is the
+// composer's (ldrender.Composer), shared with the incipit and with `show`. What
+// is the pager's own is what it does with the rows: address them, so selection,
+// search and the coordinate jump can find a block; store them in their resting
+// form; and collapse the rendition churn on the way into the cache.
 func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
-	var rows []transcriptRow
-	// Ctrl-O draws each node's (turn, node, timestamp) above it; see
-	// transcript_coords.go. Asked once per message render, not once per row.
-	coords := t.verbose()
-	// The turn's opening question is TEXT ON THE TURN, carried by its first
-	// slice only. It occupies no node index, so its rows carry the sentinel ref
-	// (see inquiryNode) — that is what makes it select, copy and highlight
-	// exactly as a node does, which is how it behaved when it WAS one.
-	if iq := inquiryRowsFor(m.Inquiry, m.InquirySegments, t.w); len(iq) > 0 {
-		ref := nodeRef{turn: m.Turn, index: inquiryNode}
-		rows = append(rows, transcriptRow{text: messageHeader(livedoc.RoleInput)}, transcriptRow{})
-		if coords {
-			// No timestamp: the question's arrival time lives on aria.Turn.At,
-			// and aria.Message — the pager's unit — does not carry it. The
-			// ADDRESS is what the jump needs, and the address is what we have.
-			rows = append(rows, t.coordRow(ref, 0))
+	composed := t.composer(m).Message(m, t.w)
+	rows := make([]transcriptRow, 0, len(composed))
+	for _, r := range composed {
+		switch r.Block {
+		case ldrender.BlockChrome:
+			rows = append(rows, transcriptRow{text: r.Text})
+			continue
 		}
-		for _, l := range iq {
-			rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(l, t.w)), ref: ref})
+		ref := nodeRefAt(m, r.Block)
+		if r.Block == ldrender.BlockInquiry {
+			// The turn's opening question is TEXT ON THE TURN. It occupies no
+			// node index, so its rows carry the sentinel ref — that is what
+			// makes it select, copy and highlight exactly as a node does, which
+			// is how it behaved when it WAS one.
+			ref = nodeRef{turn: m.Turn, index: inquiryNode}
 		}
-		// A blank and the RULE close the question before the agent speaks. The
-		// question used to be its own message and got that rule as the message
-		// separator; the two voices now share one message, so it is drawn here.
-		if len(m.Nodes) > 0 {
-			rows = append(rows, transcriptRow{}, transcriptRow{text: t.transRule()})
-		}
-	}
-	if h := messageHeader(m.Role); h != "" && len(m.Nodes) > 0 {
-		rows = append(rows, transcriptRow{text: h}, transcriptRow{})
-	}
-	for k, n := range m.Nodes {
-		if k > 0 {
-			rows = append(rows, transcriptRow{})
-		}
-		ref := nodeRefAt(m, k)
-		if coords {
-			rows = append(rows, t.coordRow(ref, nodeCoordAt(n)))
-		}
-		for _, l := range t.renderNode(n, ref) {
-			// Rows are stored already clipped and gutter-prefixed (their
-			// unselected resting form) so a frame that touches nothing
-			// allocates nothing; see plainNodeRow. collapseSGR then strips the
-			// rendition churn glamour emits per cell — 3/4 of the retained row
-			// text, and of the bytes each painted frame puts on the wire. It is
-			// applied here, on the way into the cache, so the saving is paid
-			// once and collected on every frame; see sgr.go.
-			//
-			// FUTURE WORK, evaluated and deferred at the B+E merge: E proposed
-			// doing the collapse inside the memoized render.Prose instead, so
-			// the cost is paid once per (markdown, width) rather than once per
-			// row-cache fill, and the live inline path benefits too. Measured on
-			// this stack the prize is real — with the Prose memo warm, the
-			// collapse is 1.2 ms and ~316 KB of the 3.1 ms it takes to fill the
-			// cache for a heavy aria (BenchmarkTranscriptHeavyEnter: 1.86 ms
-			// without it, 3.08 ms with), which is what a width change, a Ctrl-O
-			// and every landing page pay. Sampling says the transform commutes
-			// with clipToWidth, including on truncating clips, so the row cache
-			// would still come out collapsed.
-			//
-			// It is deferred because the move is not local. collapseSGR would
-			// have to live in internal/render (cli imports render, not the other
-			// way), while its proof apparatus — sgr_vt_test.go's VT model — is
-			// needed by tests on BOTH sides (the golden cell-level proof and the
-			// painter composition tests are cli's), so the model wants a third
-			// package (internal/render/sgrtest) before the transform can move at
-			// all. And the same change silently rewrites the bytes the live
-			// inline renderer (ldrender.Incipit) puts on the terminal, a path
-			// this campaign has no cell-level coverage for. The follow-up is
-			// therefore: extract the model, then move the transform, then add a
-			// commutation fuzz target for clipToWidth and incipit coverage —
-			// four changes, none of which belong in a merge commit.
-			rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(l, t.w)), ref: ref})
-		}
-	}
-	// Committed rows are retained for as long as the page is, so hand back an
-	// exactly-sized array: append growth leaves up to 65% slack, and at 32
-	// bytes a row that is real memory held for the whole session.
-	if cap(rows) > len(rows) {
-		rows = append(make([]transcriptRow, 0, len(rows)), rows...)
+		// Rows are stored already clipped (their unselected resting form) so a
+		// frame that touches nothing allocates nothing; see plainNodeRow.
+		// collapseSGR then strips the rendition churn glamour emits per cell —
+		// 3/4 of the retained row text, and of the bytes each painted frame puts
+		// on the wire. It is applied here, on the way into the cache, so the
+		// saving is paid once and collected on every frame; see sgr.go.
+		//
+		// FUTURE WORK, evaluated and deferred at the B+E merge: E proposed
+		// doing the collapse inside the memoized render.Prose instead, so the
+		// cost is paid once per (markdown, width) rather than once per row-cache
+		// fill, and the live inline path benefits too. Measured on this stack
+		// the prize is real — with the Prose memo warm, the collapse is 1.2 ms
+		// and ~316 KB of the 3.1 ms it takes to fill the cache for a heavy aria
+		// (BenchmarkTranscriptHeavyEnter: 1.86 ms without it, 3.08 ms with).
+		// It is deferred because collapseSGR would have to live in
+		// internal/render while its proof apparatus (sgr_vt_test.go's VT model)
+		// is needed by tests on both sides, so the model wants a third package
+		// before the transform can move at all.
+		rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(r.Text, t.w)), ref: ref})
 	}
 	return cachedMessage{rows: rows}
 }
 
-// renderNode renders one node at THE PANE'S OWN WIDTH — the same budget the
-// inline renderer (ldrender.Incipit.renderNodes) gives the same node.
-//
-// It used to ask for t.w-2: one column for the selection bar, one spent on
-// nothing in particular. So the pager wrapped the same paragraph two columns
-// narrower than the incipit had, and indented it one column further, and the
-// same node read differently above and below the fold — the owner's report
-// ("the spacing in transcript mode should be the same as outside of transcript
-// mode"). The bar now lives INSIDE glamour's two-column margin instead of
-// buying a column from the text (see decorateNodeRow), so there is nothing left
-// to reserve. TestPagerRowsMatchIncipitRows is the invariant.
-func (t *transcript) renderNode(n livedoc.Node, ref nodeRef) []string {
-	width := t.w
-	if width < 1 {
-		width = 1
+// composer is the pager's composition: the shared shape, plus the two things
+// only the pager has — the Ctrl-O coordinate row above each block, and the
+// per-block expansion state a gesture toggles.
+func (t *transcript) composer(m aria.Message) ldrender.Composer {
+	c := ldrender.Composer{
+		View: t.view, Header: messageHeader, Rule: t.transRule, Sender: dimSender, Tick: t.tick,
+		Expanded: func(block int) bool { return t.expanded[nodeRefAt(m, block)] },
 	}
-	if view, ok := t.view.(expandableNodeView); ok {
-		return view.RenderExpanded(n, width, t.tick, t.expanded[ref])
+	if t.verbose() {
+		// Ctrl-O draws each block's (turn, node, timestamp) above it; see
+		// transcript_coords.go. Asked once per message render, not once per row.
+		c.Coord = func(block int, n livedoc.Node) string {
+			ref := nodeRefAt(m, block)
+			if block == ldrender.BlockInquiry {
+				ref = nodeRef{turn: m.Turn, index: inquiryNode}
+			}
+			return term.Dim(coordLabel(ref.turn, ref.index, nodeCoordAt(n)))
+		}
 	}
-	return t.view.Render(n, width, t.tick)
+	return c
 }
 
 func (t *transcript) render() {
