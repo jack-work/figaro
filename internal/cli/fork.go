@@ -177,16 +177,14 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 			target = bound
 		}
 
-		var atMainLT uint64
+		// The turn goes on the wire as a turn. The server maps it to an LT;
+		// the client used to read the aria's whole message list to do that.
+		var atTurn uint64
 		if hasTurn {
-			lt, rerr := resolveTurn(ctx, acli, target, turn)
-			if rerr != nil {
-				die("fork: %s", rerr)
-			}
-			atMainLT = lt
+			atTurn = turn
 		}
 
-		resp, err := waitForFork(ctx, acli, target, atMainLT)
+		resp, err := waitForFork(ctx, acli, target, atTurn)
 		if err != nil {
 			die("fork: %s", err)
 		}

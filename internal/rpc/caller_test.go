@@ -10,7 +10,7 @@ import (
 // those are the three shapes the two client hops actually send.
 func TestWithCallerRoundTrip(t *testing.T) {
 	t.Run("struct params keep their fields", func(t *testing.T) {
-		raw, err := WithCaller(ForkRequest{FigaroID: "target01", AtMainLT: 7}, "caller99", nil)
+		raw, err := WithCaller(ForkRequest{FigaroID: "target01", AtTurn: 7}, "caller99", nil)
 		if err != nil {
 			t.Fatalf("WithCaller: %v", err)
 		}
@@ -22,7 +22,7 @@ func TestWithCallerRoundTrip(t *testing.T) {
 		if err := json.Unmarshal(raw, &req); err != nil {
 			t.Fatalf("unmarshal payload: %v", err)
 		}
-		if req.FigaroID != "target01" || req.AtMainLT != 7 {
+		if req.FigaroID != "target01" || req.AtTurn != 7 {
 			t.Fatalf("payload mangled: %+v", req)
 		}
 	})

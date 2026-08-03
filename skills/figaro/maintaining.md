@@ -60,7 +60,21 @@ isolate. Every preset is a choice about which ones to isolate.
 | `.#share-hush` | config, runtime, state | testing credential resolution or refresh against a live provider. Real OAuth and AGE keys stay reachable, so you meet the first-run loadout picker. |
 | `.#share-config` | runtime, state, hush | iterating on loadout or agent logic. Real loadouts and `providers/*.toml`, but an embedded dev hush at `$FIGARO_DEV_ROOT/hush` with its own AGE identity. Re-auth each shell (`fig login <provider>` or `ANTHROPIC_API_KEY=...`); AGE-ENC values in the shared config cannot be decrypted by the fresh identity. |
 | `.#clean` | everything | the truth test for the first-run flow and for auth migration |
+| `.#snapshot` | runtime, state, hush-agent socket | **store migrations.** Seeds `$FIGARO_STATE_DIR/arias` with a `cp -a` COPY of your real arias and reads the real config. The only honest fixture for a migration is your actual data; the only safe one is a copy of it. |
 | `.#swap` | nothing | swap the nix-profile binary for this build, restore on exit |
+
+`.#snapshot` copies once per dev root and then leaves the copy alone, so a
+half-migrated store survives for inspection. It is **disposable and not cheap**
+(hundreds of MB):
+
+```
+figaro-snapshot-reseed     # discard the copy, take a fresh one
+rm -rf $FIGARO_DEV_ROOT    # throw the whole thing away
+```
+
+Never run a migration against `~/.local/state/figaro/arias` directly. A
+migration rewrites the store in place, and unlike a bad build it cannot be
+undone by rebuilding.
 
 Pre-set env vars win, so presets compose:
 `FIGARO_HUSH_APP=figaro nix develop .#clean`. `$FIGARO_DEV_ROOT` is stable

@@ -104,7 +104,7 @@ func TestAngelusClientPresentsCallerOnBothParamShapes(t *testing.T) {
 	if err := json.Unmarshal(got, &fr); err != nil {
 		t.Fatalf("payload: %v", err)
 	}
-	if fr.FigaroID != "target07" || fr.AtMainLT != 3 {
+	if fr.FigaroID != "target07" || fr.AtTurn != 3 {
 		t.Fatalf("payload mangled: %+v (params: %s)", fr, got)
 	}
 

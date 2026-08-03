@@ -26,6 +26,7 @@ import (
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/tool"
+	"github.com/jack-work/figaro/internal/turns"
 	"github.com/jack-work/figaro/internal/uiir"
 	"github.com/jack-work/figwal/segment"
 	"github.com/jack-work/jkrpc"
@@ -74,6 +75,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodCreate:       h.create,
 			rpc.MethodFork:         h.fork,
 			rpc.MethodPromote:      h.promote,
+			rpc.MethodNormalize:    h.normalize,
 			rpc.MethodKill:         h.kill,
 			rpc.MethodList:         h.list,
 			rpc.MethodAttach:       h.attach,
@@ -353,7 +355,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		}
 		boot := convBootPatch(req.Patch, id, cwd)
 		if !boot.IsEmpty() {
-			if aerr := backend.ApplyChalkboard(id, boot); aerr != nil {
+			if _, aerr := backend.ApplyChalkboard(id, boot); aerr != nil {
 				return nil, fmt.Errorf("seed conversation chalkboard: %w", aerr)
 			}
 		}
@@ -403,6 +405,39 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 // fork branches a conversation at its head. The addressed trunk keeps its id
 // and remains live; the alternative is a new dormant conversation.
+// forkPointOf maps a turn id to the main-LT a fork takes.
+//
+// Turn N's fork point is the LT that ENDS turn N-1: the branch then retains
+// everything through the previous exchange and the caller's new prompt becomes
+// turn N. That boundary is the tail of a completed exchange, so a tool_invoke
+// is never left without its result.
+//
+// figwal retains [First, atMainLT] INCLUSIVE and the branch begins at
+// atMainLT+1, which is why this is first-1 and not first.
+func (h *handlers) forkPointOf(ariaID string, turn uint64) (uint64, error) {
+	if turn == 0 {
+		return 0, nil // head fork
+	}
+	log, err := h.angelus.Backend.Open(ariaID)
+	if err != nil {
+		return 0, fmt.Errorf("fork: open %s: %w", ariaID, err)
+	}
+	entries := log.Read()
+	msgs := make([]message.Message, len(entries))
+	for i, e := range entries {
+		msgs[i] = e.Payload
+		msgs[i].LogicalTime = e.LT
+	}
+	first, _, ok := turns.Span(msgs, turn)
+	if !ok {
+		if last := turns.StampIDs(msgs); last > 0 {
+			return 0, fmt.Errorf("aria %s has no turn %d (it has turns 1..%d)", ariaID, turn, last)
+		}
+		return 0, fmt.Errorf("aria %s has no turns yet", ariaID)
+	}
+	return first - 1, nil
+}
+
 func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.ForkRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -414,38 +449,48 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	var cont, alt string
 	note := ""
 	var forkOwner store.OwnerInfo
-	if req.AtMainLT > 0 {
-		if owner, err := h.angelus.Backend.OwnerResolution(req.FigaroID, req.AtMainLT); err == nil {
+	// A turn is the coordinate; the LT is an implementation detail below here.
+	atMainLT, terr := h.forkPointOf(req.FigaroID, req.AtTurn)
+	if terr != nil {
+		return nil, terr
+	}
+	// AtTurn says WHETHER this is interior; atMainLT says WHERE. They are not
+	// the same question: forking at turn 1 retains nothing before it, so its
+	// LT is 0 — which is also the head-fork sentinel. Reading interior-ness off
+	// the LT collapsed "replace the first turn" into "fork at the head".
+	interior := req.AtTurn > 0
+	if interior {
+		if owner, err := h.angelus.Backend.OwnerResolution(req.FigaroID, atMainLT); err == nil {
 			forkOwner = owner
 			switch {
 			case owner.IsRoot:
-				note = fmt.Sprintf("LT %d is the genesis root — spawned a fresh loadoutless conversation there", req.AtMainLT)
+				note = fmt.Sprintf("turn %d is the genesis root — spawned a fresh loadoutless conversation there", req.AtTurn)
 			case owner.Loadout != "":
-				note = fmt.Sprintf("LT %d is in loadout %s — spawned a fresh conversation under it", req.AtMainLT, owner.Loadout)
+				note = fmt.Sprintf("turn %d is in loadout %s — spawned a fresh conversation under it", req.AtTurn, owner.Loadout)
 			case owner.Trunk != "" && owner.Trunk != req.FigaroID:
-				note = fmt.Sprintf("LT %d lives in trunk %s — branching there", req.AtMainLT, owner.Trunk)
+				note = fmt.Sprintf("turn %d lives in trunk %s — branching there", req.AtTurn, owner.Trunk)
 			}
 		}
 	}
 	runFork := func() error {
 		parentMeta := h.forkMetaSnapshot(req.FigaroID)
 		var err error
-		if req.AtMainLT > 0 {
-			cont, alt, err = h.angelus.Backend.ForkAt(req.FigaroID, req.AtMainLT)
+		if interior {
+			cont, alt, err = h.angelus.Backend.ForkAt(req.FigaroID, atMainLT)
 		} else {
 			cont, alt, err = h.angelus.Backend.Fork(req.FigaroID)
 		}
 		if err != nil {
 			return err
 		}
-		h.seedForkMeta(parentMeta, req.FigaroID, alt, req.AtMainLT, forkOwner)
+		h.seedForkMeta(parentMeta, req.FigaroID, alt, atMainLT, interior, forkOwner)
 		// The alternative inherits the parent's chalkboard — including the
 		// parent's aria_id. Re-stamp so the forked agent knows its own id
 		// (a normal state transition it sees on its next turn); without
 		// this an aria cannot reliably fork itself.
 		if alt != "" && alt != req.FigaroID {
 			if b, merr := json.Marshal(alt); merr == nil {
-				if perr := h.angelus.Backend.ApplyChalkboard(alt, message.Patch{
+				if _, perr := h.angelus.Backend.ApplyChalkboard(alt, message.Patch{
 					Set: map[string]json.RawMessage{"aria_id": b},
 				}); perr != nil {
 					slog.Warn("fork: restamp aria_id", "alt", alt, "err", perr)
@@ -455,53 +500,29 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		return nil
 	}
 
-	var err error
-	coordinatorID := req.FigaroID
-	if forkOwner.Trunk != "" && h.angelus.Registry.Get(forkOwner.Trunk) != nil {
-		coordinatorID = forkOwner.Trunk
-	}
-	// THE TRUNK IMPLEMENTATION SHOULD NOT BLOCK THE MAIN THREAD.
+	// Run the fork here, not on the target's actor.
 	//
-	// CoordinateFork pushes an event onto the agent's inbox and waits for the
-	// drain loop to run it. The drain loop handles ONE event at a time, so a
-	// fork issued by an aria against itself from inside its own running turn
-	// queues behind that turn — and the turn cannot finish while the tool call
-	// that issued the fork waits on it. Neither side can move.
+	// It used to be handed to the agent's inbox and waited on, so that a fork
+	// could not re-home the log while the agent was appending to it. figwal
+	// already guarantees that: Trunks.Append and the flat creators both take
+	// lockLineage(trunk), so they are mutually excluded whoever calls them.
+	// The inbox hop was a second lock over the first.
 	//
-	// The fix is not to police the call. Trunk information belongs in a
-	// SEPARATE XWAL MAPPING, stored the way the chalkboard is: its own
-	// reducible channel (watermark + patches) mirroring the same node tree,
-	// rather than riding the actor's single-threaded event loop. xwal already
-	// supports what that needs — a related channel's entries are tagged with
-	// the main LT they belong to, and Append's contract explicitly allows a
-	// channel to run AHEAD of the main tail ("it may exceed the current main
-	// tail, to support catch-up"), which is exactly the property that lets
-	// trunk writes land without waiting on the timeline. repair.go already
-	// treats a reducible watermark ahead of main as a normal condition. The
-	// shape to mirror is the chalkboard's three methods in
-	// internal/store/xwal_backend.go: ApplyChalkboard (append a patch),
-	// ChalkboardState (fold to a snapshot), ChalkboardPatches (group by LT).
-	// One gotcha to carry over: the channel's foreign-key index maps mainLT to
-	// the LAST entry at that LT, so a mapping with several entries per LT must
-	// range-scan rather than Lookup.
+	// And it was the second lock that deadlocked. A figaro forking ITSELF does
+	// so from a tool call, which runs on its own drain loop; the fork then
+	// queued behind a turn that could not finish until the tool call returned,
+	// and the tool call could not return until the fork ran. An aria could not
+	// fork itself, which is the one caller that most wants to.
 	//
-	// That removes the deadlock at the root. The authz rule that refuses a
-	// self-fork mid-turn (authz.NoSelfForkDuringTurn) is a GUARDRAIL, NOT THE
-	// CURE — it converts a hang into an actionable error and nothing more.
-	// Deferred deliberately: another aria takes this.
-	if live := h.angelus.Registry.Get(coordinatorID); live != nil {
-		if coordinator, ok := live.(interface{ CoordinateFork(func() error) error }); ok {
-			err = coordinator.CoordinateFork(runFork)
-		} else {
-			err = runFork()
-		}
-	} else {
-		err = runFork()
-	}
+	// This is the cure the deferred note here asked for, arrived at from the
+	// other end: rather than move trunk state off the actor, stop routing the
+	// fork through the actor at all. authz.NoSelfForkDuringTurn stays as a
+	// guardrail, but it no longer guards a hang.
+	err := runFork()
 	if err != nil {
 		return nil, fmt.Errorf("fork %q: %w", req.FigaroID, err)
 	}
-	slog.Info("forked figaro", "parent", req.FigaroID, "at", req.AtMainLT, "continuation", cont, "alternative", alt)
+	slog.Info("forked figaro", "parent", req.FigaroID, "at", req.AtTurn, "lt", atMainLT, "continuation", cont, "alternative", alt)
 	return rpc.ForkResponse{Parent: req.FigaroID, Continuation: cont, Alternative: alt, OwnerNote: note}, nil
 }
 
@@ -538,7 +559,9 @@ func (h *handlers) forkMetaSnapshot(parent string) *store.AriaMeta {
 	return &copy
 }
 
-func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMainLT uint64, owner store.OwnerInfo) {
+// interior says whether this was a turn-addressed fork. atMainLT alone cannot:
+// forking at turn 1 has LT 0, which is also the head-fork sentinel.
+func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMainLT uint64, interior bool, owner store.OwnerInfo) {
 	if meta == nil {
 		return
 	}
@@ -546,7 +569,7 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 	now := time.Now().UnixMilli()
 	copy.CreatedAtMS = now
 	copy.LastActiveMS = now
-	if atMainLT > 0 {
+	if interior {
 		copy.MessageCount = h.messageCountAt(parent, atMainLT)
 		copy.TurnCount = 0
 		copy.TokensIn = 0
@@ -616,6 +639,28 @@ func (h *handlers) messageCountAt(id string, atMainLT uint64) int {
 // promote climbs a conversation trunk up N stump-bounded levels (it absorbs
 // its parent trunk's run). A live agent on the trunk keeps its id (promotion
 // only relabels ancestor markers), so no agent is killed.
+func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.NormalizeRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	if h.angelus.Backend == nil {
+		return nil, errors.New("normalize: no backend (ephemeral angelus)")
+	}
+	if req.Segments {
+		return nil, errors.New("normalize: --segments is not implemented yet")
+	}
+	n, err := h.angelus.Backend.Normalize()
+	if errors.Is(err, store.ErrNoTrunkCapability) {
+		return rpc.NormalizeResponse{Unsupported: true}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("normalized topology", "detached", n)
+	return rpc.NormalizeResponse{Detached: n}, nil
+}
+
 func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.PromoteRequest
 	if err := json.Unmarshal(params, &req); err != nil {
@@ -625,6 +670,9 @@ func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interfa
 		return nil, errors.New("promote: no backend (ephemeral angelus)")
 	}
 	climbed, err := h.angelus.Backend.Promote(req.FigaroID, req.Levels)
+	if errors.Is(err, store.ErrNoTrunkCapability) {
+		return rpc.PromoteResponse{FigaroID: req.FigaroID, Unsupported: true}, nil
+	}
 	if errors.Is(err, store.ErrAtStump) {
 		return rpc.PromoteResponse{FigaroID: req.FigaroID, Climbed: 0, AtStump: true}, nil
 	}

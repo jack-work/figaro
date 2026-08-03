@@ -78,8 +78,17 @@ type AssistantCache struct {
 // (a message's bytes depend only on state up to that message). Live state for the
 // system prefix still arrives via SendInput.Snapshot, which is rebuilt
 // each turn and never cached per-LT.
+// Chalkboard supplies the board patches that landed before a turn, so the
+// projection can render a `set` inline where it happened.
+//
+// PatchesUpTo takes a chalkboard VERSION, not an IR LT. The board is
+// unkeyed -- a patch is written with no reference to the timeline -- and
+// the association runs the other way: each IR entry records how far the
+// board had advanced when it was written. The projection walks entries in
+// order and hands over that number, so an implementation returns the
+// patches since the last call and needs no index at all.
 type Chalkboard interface {
-	PatchesAt(lt uint64) []message.Patch
+	PatchesUpTo(version uint64) []message.Patch
 }
 
 // SendInput is one turn's input.
@@ -87,7 +96,7 @@ type SendInput struct {
 	AriaID     string
 	FigLog     store.Log[message.Message]
 	Snapshot   chalkboard.Snapshot
-	Chalkboard Chalkboard // per-LT transitions; nil = none (ephemeral)
+	Chalkboard Chalkboard // inline transitions; nil = none (ephemeral)
 	Tools      []Tool
 	MaxTokens  int
 }

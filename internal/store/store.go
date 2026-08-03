@@ -15,6 +15,23 @@ import (
 // domain message ("cannot promote into a loadout; make/edit a loadout").
 var ErrAtStump = errors.New("trunk is rooted at a loadout; cannot promote further")
 
+// ErrNoTrunkCapability reports a figaro built without the presentation
+// hierarchy: promotion is meaningless, not merely refused.
+var ErrNoTrunkCapability = errors.New("this figaro has no trunk capability")
+
+// ErrWouldOrphan reports a delete that would strand a surviving aria: the
+// directory holds a prefix that aria still reads its history through.
+// Promotion is what lets the two hierarchies diverge far enough for this.
+var ErrWouldOrphan = errors.New("delete would orphan a surviving aria")
+
+// VersionedPatch is a chalkboard patch with its durable version -- its own
+// index in the chalkboard channel. The board is unkeyed, so this is the
+// only coordinate a patch carries.
+type VersionedPatch struct {
+	Version uint64
+	Patch   message.Patch
+}
+
 // AriaMeta is the per-aria summary stored by the backend.
 type AriaMeta struct {
 	MessageCount     int    `json:"message_count,omitempty"`
@@ -70,12 +87,12 @@ type Backend interface {
 
 	// ApplyChalkboard appends a state patch to the chalkboard channel,
 	// keyed to the next IR LT (the transition the next message carries).
-	ApplyChalkboard(ariaID string, patch message.Patch) error
+	ApplyChalkboard(ariaID string, patch message.Patch) (version uint64, err error)
 
 	// ChalkboardPatches returns every chalkboard patch grouped by the IR
 	// logical time it is keyed to (the transitions to render per message).
 	// Empty patches (genesis/seed no-ops) are omitted.
-	ChalkboardPatches(ariaID string) (map[uint64][]message.Patch, error)
+	ChalkboardPatches(ariaID string) ([]VersionedPatch, error)
 
 	// CreateLoadout materializes (or reuses) the loadout node for
 	// (name, content-version-of-patch) and returns its id.
@@ -98,6 +115,11 @@ type Backend interface {
 	// (it absorbs its parent trunk's run). Returns the number of levels
 	// actually climbed; xwal.ErrAtStump means it is rooted at a loadout.
 	Promote(ariaID string, levels int) (climbed int, err error)
+
+	// Normalize runs deferred topology work now: every aria presented away
+	// from where its history lives absorbs that history. Blocking, and
+	// O(absorbed bytes) -- the only operation here that is not instant.
+	Normalize() (detached int, err error)
 
 	// OwnerResolution reports which node owns atMainLT along a trunk's
 	// lineage (a parent trunk, a loadout, or the genesis root).

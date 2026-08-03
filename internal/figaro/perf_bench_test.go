@@ -185,7 +185,7 @@ func BenchmarkLiveFramePersistence(b *testing.B) {
 			a.emitDelta(nodes)
 			if persist {
 				blob, err := json.Marshal(aria.Message{
-					Turn: 1,
+					Turn:  1,
 					Role:  string(message.RoleOutput),
 					Nodes: nodes,
 				})

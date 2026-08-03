@@ -284,7 +284,7 @@ func BenchmarkChalkboardState10000(b *testing.B) {
 		b.Fatal(err)
 	}
 	for i := 0; i < 10_000; i++ {
-		if err := be.ApplyChalkboard(id, patchSet(map[string]string{
+		if _, err := be.ApplyChalkboard(id, patchSet(map[string]string{
 			fmt.Sprintf("key%d", i%100): fmt.Sprintf("value%d", i),
 		})); err != nil {
 			b.Fatal(err)
@@ -315,7 +315,7 @@ func BenchmarkChalkboardPatches10000(b *testing.B) {
 		b.Fatal(err)
 	}
 	for i := 0; i < 10_000; i++ {
-		if err := be.ApplyChalkboard(id, patchSet(map[string]string{
+		if _, err := be.ApplyChalkboard(id, patchSet(map[string]string{
 			fmt.Sprintf("key%d", i%100): fmt.Sprintf("value%d", i),
 		})); err != nil {
 			b.Fatal(err)

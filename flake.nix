@@ -3,6 +3,13 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+    # figwal is a PUBLISHED module now: go.mod requires
+    # github.com/jack-work/figwal at a real version and carries no
+    # `replace`, so the vendor derivation fetches it like any other
+    # dependency and this flake needs no input for it. Bumping figwal is
+    # one step again -- edit go.mod, then reset vendorHash from the "got:"
+    # value nix prints.
   };
 
   outputs = { self, nixpkgs }:
@@ -23,7 +30,8 @@
           pname = "figaro";
           version = "0.17.1";
           src = self;
-          vendorHash = "sha256-urPc0EfJLiOpScmqzfput/W4QtVVfnYIlGz3apQ3RbE=";
+          vendorHash = "sha256-ofhx6bYn6amandMPq8dI8W61UH+U1sA71u7e5cu1tfY=";
+
           subPackages = [ "cmd/figaro" ];
           env.CGO_ENABLED = 0;
 
@@ -225,6 +233,31 @@
             ${mkKnob "FIGARO_STATE_DIR"   "state"  state}
             ${mkHushKnob hush}
 
+            ${if name == "snapshot" then ''
+            # Seed the dev state dir with a COPY of the real arias, once per
+            # dev root. The source is only ever read; every write in this shell
+            # lands on the copy. Nothing here can reach the live daemon, whose
+            # runtime dir is dev-scoped above.
+            figaro-snapshot-reseed() {
+              local src="''${XDG_STATE_HOME:-$HOME/.local/state}/figaro/arias"
+              if [ ! -d "$src" ]; then
+                echo "snapshot: no arias at $src" >&2; return 1
+              fi
+              echo "snapshot: copying $(du -sh "$src" | cut -f1) from $src ..." >&2
+              rm -rf "$FIGARO_STATE_DIR/arias"
+              mkdir -p "$FIGARO_STATE_DIR"
+              cp -a "$src" "$FIGARO_STATE_DIR/arias"
+              date -Is > "$FIGARO_STATE_DIR/.snapshot-taken"
+              echo "snapshot: ready at $FIGARO_STATE_DIR/arias" >&2
+            }
+            if [ ! -e "$FIGARO_STATE_DIR/.snapshot-taken" ]; then
+              figaro-snapshot-reseed
+            else
+              echo "snapshot: reusing copy from $(cat "$FIGARO_STATE_DIR/.snapshot-taken")" >&2
+              echo "snapshot: figaro-snapshot-reseed for a fresh one; rm -rf \$FIGARO_DEV_ROOT to discard" >&2
+            fi
+            '' else ""}
+
             # Point figaro/fig/q at THIS worktree's build, in a bin dir
             # prepended to PATH. We symlink all three names (not just q) so a
             # global figaro install can't shadow the dev binary. NOTE: an
@@ -290,6 +323,26 @@
           name = "share-config";
           config = null;
           hush   = "@dev";
+        };
+
+        # A COPY of your real arias + config, isolated in a dev root.
+        #
+        # For migrations and anything else that rewrites the store on disk,
+        # where the only honest fixture is your actual data and the only safe
+        # one is a copy of it. Runtime/state/hush are dev-scoped, so the live
+        # daemon is never touched; the snapshot is seeded once per dev root and
+        # then belongs to you.
+        #
+        # It is DISPOSABLE by design and it is not cheap (the author's store is
+        # ~385MB). Tear it down when the experiment is over:
+        #     rm -rf $FIGARO_DEV_ROOT
+        #
+        # Re-seed a fresh copy without leaving the shell:
+        #     figaro-snapshot-reseed
+        snapshot = mkFigaroShell {
+          name = "snapshot";
+          config = null;   # read the real loadouts/providers; never written
+          hush   = null;   # real credentials, so a migrated aria can be run
         };
 
         # `nix develop .#swap` enters a shell that swaps the user's

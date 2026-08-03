@@ -716,20 +716,55 @@ With a prompt — ` + "`figaro fork [flags] -- <prompt>`" + ` — it also sends,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "normalize",
+		Group: "Session",
+		Short: "Run deferred topology work now",
+		Usage: "normalize [--segments]",
+		Long: `Make every aria independent of ancestors it is no longer presented
+under: each absorbs the history it currently reads through them.
+
+Everything else in the trunk surface is instant because this can be
+postponed. Deletes repair only what they must, at delete time. Run this
+when you would rather pay the cost now, in one blocking pass.
+
+  figaro normalize             absorb history for every promoted aria
+  figaro normalize --segments  also repack partially filled segments
+
+Nothing changes about what any aria reads; only where the bytes live.
+Needs the trunk capability -- a trunkless figaro is normalized already.`,
+		ArgsMin: 0,
+		ArgsMax: 0,
+		Flags: []cmdkit.FlagDef{
+			{Long: "segments", IsBool: true, Description: "Also repack partially filled segments"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			runNormalize(ld, ctx.BoolFlag("segments"))
+			return nil
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "promote",
 		Group: "Session",
 		Short: "Make a trunk the canonical line through its ancestors",
 		Usage: "promote [--id <id> | <id>] [levels]",
-		Long: `Promote a conversation trunk: it climbs up its ancestry, absorbing
-each parent trunk's run so it becomes the canonical line. Pure
-relabeling — no data moves, ids are stable, your binding is untouched.
+		Long: `Raise an aria in the tree ` + "`figaro ls`" + ` draws: it takes its parent's
+place, and the parent comes to sit under it.
+
+This is presentation only. Nothing moves on disk, no history changes, and
+the aria still reads exactly the turns it read before — so a promote is
+instant no matter how long the conversation is, and cannot fail halfway.
 
   figaro promote              promote the bound aria one level
   figaro promote <id>         promote another aria one level
-  figaro promote <id> 10      climb up to 10 stump-bounded levels
+  figaro promote <id> 10      climb up to 10 levels
 
 Promotion stops at the loadout boundary: a top-level conversation has
-nothing to promote into ("cannot promote into a loadout").`,
+nothing to promote into ("cannot promote into a loadout").
+
+Needs the trunk capability (` + "`trunks = true`" + `, the default). Without it,
+aria nesting follows fork history alone and there is nothing to promote.`,
 		ArgsMin: 0,
 		ArgsMax: 2,
 		Flags: []cmdkit.FlagDef{

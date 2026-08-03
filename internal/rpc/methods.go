@@ -65,6 +65,7 @@ const (
 	MethodCreate      = "figaro.create"
 	MethodFork        = "figaro.fork"
 	MethodPromote     = "figaro.promote"
+	MethodNormalize   = "figaro.normalize"
 	MethodKill        = "figaro.kill"
 	MethodList        = "figaro.list"
 	MethodAttach      = "figaro.attach"
@@ -376,7 +377,16 @@ type CreateResponse struct {
 // shared prefix below it freezes).
 type ForkRequest struct {
 	FigaroID string `json:"figaro_id"`
-	AtMainLT uint64 `json:"at_main_lt,omitempty"`
+	// AtTurn is the turn to REPLACE. Zero forks at the head.
+	//
+	// The wire speaks turns because that is the coordinate a human names
+	// (`fig fork <id>:12`) and the one `fig show` prints. It used to speak
+	// at_main_lt, so every caller had to read the aria's whole message list
+	// just to translate, then send a number no user ever typed. The server
+	// owns the translation now: turn N's fork point is the LT that ENDS
+	// turn N-1, so the branch retains everything through the previous
+	// exchange and the new prompt becomes turn N.
+	AtTurn uint64 `json:"at_turn,omitempty"`
 }
 
 // ForkResponse returns the two fresh child ids. The parent freezes and
@@ -390,6 +400,22 @@ type ForkResponse struct {
 	OwnerNote    string `json:"owner_note,omitempty"`
 }
 
+// NormalizeRequest forces deferred topology work to run now. It is the one
+// blocking operation in the trunk surface: everything else is instant
+// because this can be postponed.
+type NormalizeRequest struct {
+	// Segments also repacks partially filled segment files. Not yet
+	// implemented; the server reports it rather than silently ignoring it.
+	Segments bool `json:"segments,omitempty"`
+}
+
+// NormalizeResponse reports how many arias were made independent of the
+// ancestors they are no longer presented under.
+type NormalizeResponse struct {
+	Detached    int  `json:"detached"`
+	Unsupported bool `json:"unsupported,omitempty"`
+}
+
 // PromoteRequest climbs a conversation trunk up Levels stump-bounded levels,
 // relabeling the canonical trunk path so it absorbs its parent trunk's run.
 type PromoteRequest struct {
@@ -397,12 +423,16 @@ type PromoteRequest struct {
 	Levels   int    `json:"levels,omitempty"`
 }
 
-// PromoteResponse reports how many levels the trunk actually climbed. AtStump
-// is true when it could not climb at all (the trunk is rooted at a loadout).
+// PromoteResponse reports how many levels the aria actually climbed.
+// AtStump is true when it could not climb at all: it is already at the top
+// of its presentation hierarchy, or the server has no trunk capability and
+// therefore no hierarchy to edit (Unsupported).
 type PromoteResponse struct {
 	FigaroID string `json:"figaro_id"`
 	Climbed  int    `json:"climbed"`
 	AtStump  bool   `json:"at_stump,omitempty"`
+	// Unsupported reports a server built without the trunk capability.
+	Unsupported bool `json:"unsupported,omitempty"`
 }
 
 // Endpoint describes how to connect to a figaro.

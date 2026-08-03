@@ -891,7 +891,7 @@ func (a *Agent) serviceSets() bool {
 func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 	slog.Debug("event "+kind, "aria", a.id, "set", len(patch.Set), "remove", len(patch.Remove))
 	if a.backend != nil {
-		if err := a.backend.ApplyChalkboard(a.id, patch); err != nil {
+		if _, err := a.backend.ApplyChalkboard(a.id, patch); err != nil {
 			slog.Error(kind+" chalkboard append", "aria", a.id, "err", err)
 			return
 		}
@@ -912,24 +912,37 @@ func (a *Agent) applyControlPatch(patch message.Patch, kind string) {
 }
 
 // chalkAccessor returns the per-LT transition source for the provider:
-// for backed arias, the reducible chalkboard channel grouped by IR LT;
-// nil for ephemeral (the provider falls back to inline IR patches).
+// for backed arias, the chalkboard's patches in version order; nil for
+// ephemeral (the provider falls back to inline IR patches).
 func (a *Agent) chalkAccessor() provider.Chalkboard {
 	if a.backend == nil {
 		return nil
 	}
-	m, err := a.backend.ChalkboardPatches(a.id)
+	ps, err := a.backend.ChalkboardPatches(a.id)
 	if err != nil {
 		slog.Warn("chalkboard patches (transitions disabled this turn)", "aria", a.id, "err", err)
 		return nil
 	}
-	return patchMap(m)
+	return &patchCursor{patches: ps}
 }
 
-// patchMap implements provider.Chalkboard over a pre-read LT->patches map.
-type patchMap map[uint64][]message.Patch
+// patchCursor hands out the patches since the last call. The projection
+// walks entries in ascending order and each carries the board version at
+// its turn, so this is a single forward walk over the patch list -- no map,
+// no index, and no re-read of the timeline to build one.
+type patchCursor struct {
+	patches []store.VersionedPatch
+	i       int
+}
 
-func (m patchMap) PatchesAt(lt uint64) []message.Patch { return m[lt] }
+func (c *patchCursor) PatchesUpTo(version uint64) []message.Patch {
+	var out []message.Patch
+	for c.i < len(c.patches) && c.patches[c.i].Version <= version {
+		out = append(out, c.patches[c.i].Patch)
+		c.i++
+	}
+	return out
+}
 
 // endTurn fans out turn.done and persists chalkboard + meta.
 // endTurn commits the live unit (it became a real IR message) and signals idle.

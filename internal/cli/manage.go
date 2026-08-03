@@ -635,11 +635,7 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 		}
 
 		if hasTurn {
-			lt, rerr := resolveTurn(ctx, acli, target, turn)
-			if rerr != nil {
-				die("fork: %s", rerr)
-			}
-			atMainLT = lt
+			atMainLT = turn // a turn on the wire; the server maps it to an LT
 		}
 
 		resp, err := waitForFork(ctx, acli, target, atMainLT)
@@ -709,10 +705,38 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 	})
 }
 
-// runPromote climbs a conversation trunk up N stump-bounded levels — it
-// becomes the canonical line through its ancestors, absorbing each parent
-// trunk's run. Pure relabeling: no data moves, ids are stable, your binding
-// is untouched.
+// runNormalize forces the deferred topology work: every aria presented away
+// from where its history lives absorbs that history, after which no delete
+// can owe a boundary repair. Blocking on purpose.
+func runNormalize(loaded *config.Loaded, segments bool) {
+	WithAngelus(loaded, func(acli *angelus.Client) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		resp, err := acli.Normalize(ctx, segments)
+		if err != nil {
+			die("normalize: %s", err)
+		}
+		if resp.Unsupported {
+			die("normalize: this figaro has no trunk capability, so its hierarchy already\n" +
+				"  follows fork history and there is nothing to normalize.")
+		}
+		switch resp.Detached {
+		case 0:
+			fmt.Fprintln(os.Stderr, "normalize: already normalized — nothing to absorb")
+		case 1:
+			fmt.Fprintln(os.Stderr, "normalize: 1 aria now owns its history outright")
+		default:
+			fmt.Fprintf(os.Stderr, "normalize: %d arias now own their history outright\n", resp.Detached)
+		}
+		return nil
+	})
+}
+
+// runPromote raises an aria in the PRESENTATION hierarchy: it takes its
+// parent's place in the tree fig ls draws, and the parent comes to sit under
+// it. Nothing moves on disk and no history changes — the aria still reads
+// exactly the turns it did before, so this is instant regardless of how long
+// the conversation is. Needs the trunk capability.
 func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 	target := idFlag
 	if target == "" && len(args) > 0 {
@@ -740,6 +764,11 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 		resp, err := acli.Promote(ctx, target, levels)
 		if err != nil {
 			die("promote: %s", err)
+		}
+		if resp.Unsupported {
+			die("promote: this figaro is built without the trunk capability, so there is\n" +
+				"  no hierarchy to promote within. Aria nesting follows fork history alone.\n" +
+				"  Set `trunks = true` in config.toml and restart the daemon to enable it.")
 		}
 		if resp.AtStump {
 			die("promote: %s is rooted at a loadout — cannot promote into a loadout; make or edit a loadout instead", target)

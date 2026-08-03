@@ -187,14 +187,20 @@ func TestSegmentRollsAtSegmentSize(t *testing.T) {
 			if err := b.store.trunks.Close(); err != nil { // flush to disk
 				t.Fatal(err)
 			}
-			// The aria's segments live in the leaf dir carrying the .trunk marker.
+			// The aria's segments live in the node dir carrying figwal's
+			// identity marker. (.node since figwal merged .from and .trunk;
+			// both names are checked so this does not silently find nothing
+			// again if the layout moves.)
 			var leaf string
 			filepath.WalkDir(filepath.Join(dir, chanIR), func(p string, d os.DirEntry, err error) error {
-				if err == nil && !d.IsDir() && d.Name() == ".trunk" {
+				if err == nil && !d.IsDir() && (d.Name() == ".node" || d.Name() == ".trunk") {
 					leaf = filepath.Dir(p)
 				}
 				return nil
 			})
+			if leaf == "" {
+				t.Fatal("no node marker found under the ir channel; figwal's layout moved")
+			}
 			segs, _ := filepath.Glob(filepath.Join(leaf, "*.jsonl"))
 			if len(segs) < 2 {
 				t.Fatalf("wrote 1.5x segment size (%d bytes) into %d segment(s): %v", tc.want, len(segs), segs)

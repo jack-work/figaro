@@ -37,10 +37,12 @@ type ariaHandle struct {
 }
 
 type chalkCache struct {
-	mu      sync.Mutex
-	ready   bool
-	state   chalkboard.Snapshot
-	patches map[uint64][]message.Patch
+	mu    sync.Mutex
+	ready bool
+	state chalkboard.Snapshot
+	// patches in version order. No grouping by turn: an IR entry carries
+	// the board version at its turn, so the reader walks both in step.
+	patches []VersionedPatch
 }
 
 type metaCache struct {
@@ -51,6 +53,9 @@ type metaCache struct {
 
 // NewXwalBackend opens the aria tree at root. segmentSize <= 0 takes the
 // configured default; the daemon passes config's, tests pass nothing.
+//
+// The presentation hierarchy defaults to the topology. A build with the
+// trunk capability replaces it via Store().SetTree; see internal/figaro/wire.
 func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 	st, err := OpenXwalStore(root, segmentSize)
 	if err != nil {
@@ -64,6 +69,13 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 		metas: map[string]*metaCache{},
 	}, nil
 }
+
+// Normalize runs deferred topology work now. See XwalStore.Normalize.
+func (b *XwalBackend) Normalize() (int, error) { return b.store.Normalize() }
+
+// Store is the underlying aria store, for wiring that installs optional
+// capabilities.
+func (b *XwalBackend) Store() *XwalStore { return b.store }
 
 // handleLocked returns the shared handle for an aria, opening it once.
 // Caller holds b.mu. The handle carries the row caches for the aria's
@@ -174,7 +186,7 @@ func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
 		first = 1
 	}
 	state := chalkboard.Snapshot{}
-	patches := map[uint64][]message.Patch{}
+	var patches []VersionedPatch
 	for lt := first; lt >= 1 && lt <= last; lt++ {
 		rec, err := xw.ReadAt(chanChalkboard, lt)
 		if err != nil {
@@ -186,7 +198,7 @@ func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
 		}
 		state = state.Apply(p)
 		if !p.IsEmpty() {
-			patches[rec.MainLT] = append(patches[rec.MainLT], p)
+			patches = append(patches, VersionedPatch{Version: lt, Patch: p})
 		}
 	}
 	c.state = state
@@ -195,59 +207,50 @@ func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
 	return nil
 }
 
-func (b *XwalBackend) ChalkboardPatches(ariaID string) (map[uint64][]message.Patch, error) {
+func (b *XwalBackend) ChalkboardPatches(ariaID string) ([]VersionedPatch, error) {
 	c := b.chalkCache(ariaID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := b.loadChalkboardLocked(ariaID, c); err != nil {
 		return nil, err
 	}
-	out := make(map[uint64][]message.Patch, len(c.patches))
-	for lt, ps := range c.patches {
-		out[lt] = append([]message.Patch(nil), ps...)
-	}
-	return out, nil
+	return append([]VersionedPatch(nil), c.patches...), nil
 }
 
-// ApplyChalkboard appends a patch to the chalkboard channel, keyed to the
-// next IR LT (a set records state for the turn about to happen). Routes
-// through Trunks.AppendChannel so it serializes with Fork/Promote.
-func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) error {
+// ApplyChalkboard appends a patch and returns its VERSION: the patch's own
+// durable index in the chalkboard channel.
+//
+// It does not read the timeline. The channel is unkeyed, so a patch is
+// written with no reference to the turn in flight and nothing to serialize
+// against -- which is what lets a `set` land mid-turn instead of waiting
+// for the round to end.
+//
+// The version is the number both an acknowledgement and a resume cursor
+// need, and it is the append position, NOT an IR LT: several patches can
+// arrive between two turns, so only the position tells them apart. It
+// survives reopen because the channel is the durable truth.
+//
+// Durability precedes visibility: the in-memory board advances only after
+// the append returns, so a failure leaves the published board and the log
+// agreeing rather than diverging.
+func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) (uint64, error) {
 	pb, _ := json.Marshal(patch)
 	c := b.chalkCache(ariaID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	var mainLT uint64
-	if c.ready {
-		b.mu.Lock()
-		h := b.open[ariaID]
-		b.mu.Unlock()
-		if h != nil {
-			if tail, ok := h.ir.PeekTail(); ok {
-				mainLT = tail.LT + 1
-			} else {
-				mainLT = 1
-			}
-		}
-	}
-	// Pass mainLT=0 to let Trunks compute (mainTail+1) internally; the
-	// chalkboard channel is reducible/keyed-forward and the default
-	// "one ahead" semantics match the previous channelLast+1 behavior.
-	// Store.Append (not Trunks.AppendChannel): the poison gate and
-	// dirty/touch tracking must see chalkboard writes.
-	_, err := b.store.trunks.Append(ariaID, chanChalkboard, 0, pb, nil)
+	// Store.Append, not Trunks.AppendChannel: the poison gate and the
+	// dirty/touch bookkeeping must see chalkboard writes.
+	version, err := b.store.trunks.Append(ariaID, chanChalkboard, 0, pb, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if c.ready && mainLT > 0 {
+	if c.ready {
 		c.state = c.state.Apply(patch)
 		if !patch.IsEmpty() {
-			c.patches[mainLT] = append(c.patches[mainLT], patch)
+			c.patches = append(c.patches, VersionedPatch{Version: version, Patch: patch})
 		}
-	} else {
-		c.ready = false
 	}
-	return nil
+	return version, nil
 }
 
 // ---- tree operations (delegated) ----
@@ -397,5 +400,5 @@ func (b *XwalBackend) Close() error {
 	b.open = map[string]*ariaHandle{}
 	b.chalk = map[string]*chalkCache{}
 	b.metas = map[string]*metaCache{}
-	return b.store.trunks.Close()
+	return b.store.trunks.Close() // Trunks.Close flushes the topology index
 }

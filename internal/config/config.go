@@ -18,6 +18,15 @@ type Config struct {
 	// Empty triggers the first-run flow (see rpc.ErrNoDefaultLoadout).
 	DefaultLoadout string `toml:"default_loadout"`
 
+	// Trunks enables the trunk capability: a presentation hierarchy an
+	// aria can be promoted within, independent of where its history comes
+	// from, and a delete that follows it. Default true.
+	//
+	// With it off, figaro has no trunk pstate at all: the hierarchy IS the
+	// fork topology, `fig promote` reports that the server cannot serve it,
+	// and a delete can never orphan a survivor because the two agree.
+	Trunks *bool `toml:"trunks"`
+
 	// EchoPrompt controls whether the CLI echoes the prompt.
 	// Pointer to distinguish unset (default true) from explicit false.
 	EchoPrompt *bool `toml:"echo_prompt"`
@@ -250,6 +259,14 @@ func (c Config) validateWire() error {
 		}
 	}
 	return nil
+}
+
+// Trunks reports whether the trunk capability is enabled. Default true.
+func (l *Loaded) Trunks() bool {
+	if l.Config.Trunks == nil {
+		return true
+	}
+	return *l.Config.Trunks
 }
 
 // EchoPrompt returns whether to echo the prompt. Default true.

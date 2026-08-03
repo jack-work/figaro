@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"sync"
@@ -36,6 +37,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/topo"
 	"github.com/jack-work/figwal/segment"
 	"github.com/jack-work/figwal/xwal"
 )
@@ -165,6 +167,15 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 			transChannel("copilot-messages"),
 			transChannel("copilot-responses"),
 		},
+		// The chalkboard is UNKEYED: a patch is a declaration of intent, not
+		// a fact about a turn, so it should not have to read the timeline to
+		// be written. That is what lets a `set` land mid-turn.
+		//
+		// The translations channels stay KEYED, and deliberately: their main
+		// LT is a lookup key ("the provider message for turn k"), and a
+		// translation is derived AFTER its turn exists, so there is no
+		// moment at which the main record could stamp a cursor for it.
+		Unkeyed: []string{chanChalkboard},
 	}
 }
 
@@ -177,7 +188,56 @@ type XwalStore struct {
 	trunks   *xwal.Store
 	topology atomic.Pointer[topologySnapshot]
 	now      func() int64
+	// tree is the PRESENTATION hierarchy: what fig ls draws and what a
+	// delete takes. Never consulted for forking — that reads .from.
+	tree topo.Tree
 }
+
+// Topology exposes the .from adjacency for topo.Tree and boundary
+// computation. It is the only lineage figwal considers authoritative.
+type xwalTopology struct{ s *XwalStore }
+
+func (t xwalTopology) From(id string) (string, bool) {
+	n, ok := t.s.Node(id)
+	if !ok {
+		return "", false
+	}
+	return n.Parent, true
+}
+
+func (t xwalTopology) Nodes() []string {
+	snap := t.s.topology.Load()
+	if snap == nil {
+		return nil
+	}
+	out := make([]string, 0, len(snap.nodes))
+	for _, n := range snap.nodes {
+		out = append(out, n.ID)
+	}
+	return out
+}
+
+func (t xwalTopology) ChildrenOf(id string) []string {
+	var out []string
+	for _, n := range t.Nodes() {
+		if p, ok := t.From(n); ok && p == id && n != id {
+			out = append(out, n)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Tree is the presentation hierarchy in force.
+func (s *XwalStore) Tree() topo.Tree { return s.tree }
+
+// TopologyAdjacency is the .from lineage, for building a presentation tree
+// on top of it.
+func (s *XwalStore) TopologyAdjacency() topo.Topology { return xwalTopology{s} }
+
+// SetTree installs a presentation hierarchy. The wiring calls this with a
+// trunk capability; without one the store keeps the topology tree.
+func (s *XwalStore) SetTree(t topo.Tree) { s.tree = t }
 
 type topologySnapshot struct {
 	version         uint64
@@ -196,6 +256,14 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
+	// Before the store opens, because an unmigrated store does not open at
+	// all -- and before THAT was true, it opened reporting its loadouts and
+	// none of its arias. The single writer (the daemon) owns this; the
+	// migration takes the store lock itself, so a second process waits for
+	// a store rather than half-reading one.
+	if err := migrateLayout(root); err != nil {
+		return nil, err
+	}
 	st, err := xwal.OpenStore(root, storeOptions(segmentSize))
 	if err != nil {
 		return nil, err
@@ -204,10 +272,38 @@ func OpenXwalStore(root string, segmentSize int) (*XwalStore, error) {
 	if err := ensureSchema(root, st); err != nil {
 		return nil, err
 	}
-	return &XwalStore{
+	x := &XwalStore{
 		root: root, trunks: st,
 		now: func() int64 { return time.Now().UnixMilli() },
-	}, nil
+	}
+	x.tree = topo.FromTopology(xwalTopology{x})
+	return x, nil
+}
+
+// Close releases the tree.
+func (s *XwalStore) Close() error { return s.trunks.Close() }
+
+// migrateLayout brings a store written by an older figaro up to the layout
+// this build reads: every node at depth 1, lineage in its own marker. It is
+// automatic because the alternative is a daemon that refuses to start until
+// the user runs a command he has not heard of -- but it is not silent, and
+// it is not partial. Either it finishes or the open fails.
+//
+// The check costs one file read on a store that needs nothing.
+func migrateLayout(root string) error {
+	need, err := xwal.NeedsFlatten(root)
+	if err != nil || !need {
+		return err
+	}
+	start := time.Now()
+	rep, err := xwal.Flatten(root)
+	if err != nil {
+		return fmt.Errorf("store %s needs a layout migration and it failed: %w", root, err)
+	}
+	slog.Info("store layout migrated",
+		"nodes", rep.Nodes, "moved", rep.Moved, "markers", rep.Markers,
+		"retired", rep.Retired, "ms", time.Since(start).Milliseconds())
+	return nil
 }
 
 // OpenNode opens the xwal for an aria id (the trunk's live head). Caller
@@ -306,18 +402,26 @@ func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err er
 	return id, alt, nil
 }
 
-// Promote climbs a conversation trunk up `levels` stump-bounded levels,
-// relabeling the canonical trunk path (the trunk absorbs its parent trunk's
-// run). Returns the number of levels actually climbed. xwal.ErrAtStump means
-// the trunk is rooted directly at a loadout — there is nothing to promote into.
+// Promote raises an aria in the PRESENTATION hierarchy. It edits the trunk
+// pstate and writes nothing to any aria's history, so it is O(1) in history
+// length. ErrAtStump means there is nothing above to promote into, or the
+// build has no trunk capability at all.
 func (s *XwalStore) Promote(id string, levels int) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	climbed, err := s.trunks.Promote(id, levels)
-	if errors.Is(err, xwal.ErrAtStump) {
-		return climbed, ErrAtStump
+	// NO s.mu here: the tree resolves lineage through Node, which refreshes
+	// the topology snapshot under s.mu. Holding it across the tree call
+	// deadlocks. The tree carries its own lock and its write is atomic.
+	for climbed := 0; climbed < levels; climbed++ {
+		if err := s.tree.Promote(id); err != nil {
+			if errors.Is(err, topo.ErrNoPromote) {
+				return climbed, ErrNoTrunkCapability
+			}
+			if climbed > 0 {
+				return climbed, nil // ran out of levels to climb; not an error
+			}
+			return 0, ErrAtStump
+		}
 	}
-	return climbed, err
+	return levels, nil
 }
 
 // OwnerOf resolves which node owns atMainLT along a trunk's lineage (a trunk,
@@ -352,7 +456,7 @@ func (s *XwalStore) writeStumpBirth(stump string, cbPatch *message.Patch) error 
 	// Birth records must be durable before conversations spawn under the
 	// stump — a crash between spawn and the next flush would orphan the
 	// children's fork base.
-	return x.FlushCoherent()
+	return x.SyncCoherent()
 }
 
 // contentVersion is the value-stable content hash of a loadout patch.
@@ -525,10 +629,63 @@ func splitLoadoutKey(key string) (name, ver string) {
 	return key, ""
 }
 
-// RemoveLeaf deletes a trunk (its subtree) via xwal.Trunks. Trunk-addressed;
-// refuses a trunk with live branches unless recursive.
+// RemoveLeaf deletes an aria via xwal.Trunks. Trunk-addressed; refuses one
+// with live branches unless recursive.
+//
+// Once an aria has been promoted the two hierarchies diverge, and a delete
+// that follows presentation can take a directory some surviving aria still
+// inherits its history through. Those survivors absorb the prefix they
+// borrow and stop pointing at it BEFORE anything is unlinked, so a crash
+// between the two leaves them reading through directories still present.
 func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
+	// Repair the boundary FIRST: every survivor that reads its history
+	// through this delete set absorbs that prefix and stops pointing at it.
+	// Only then does anything get unlinked, so a crash between the two
+	// leaves survivors that still read through directories still present.
+	for _, orphan := range s.deleteOrphans(id) {
+		// Boundary speaks in aria ids; Detach addresses the node directory.
+		node, ok := s.trunks.HeadNode(orphan)
+		if !ok {
+			return fmt.Errorf("%w: no node for %s", ErrWouldOrphan, orphan)
+		}
+		if err := s.trunks.Detach(node); err != nil {
+			return fmt.Errorf("%w: detaching %s: %v", ErrWouldOrphan, orphan, err)
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.trunks.Remove(id, recursive)
+}
+
+// Normalize makes every aria independent of the arias it is no longer
+// presented under: each one absorbs the history prefix it reads through an
+// ancestor. After it, a delete's boundary is empty whatever the
+// presentation hierarchy says, so nothing is ever owed at delete time.
+//
+// This is the DEFERRED work made immediate. It is O(absorbed bytes), so it
+// is the one operation here that is not instant; everything else stays so
+// precisely because this can be postponed.
+func (s *XwalStore) Normalize() (int, error) {
+	done := 0
+	for _, id := range s.tree.Overridden() {
+		node, ok := s.trunks.HeadNode(id)
+		if !ok {
+			return done, fmt.Errorf("normalize: no node for %s", id)
+		}
+		if err := s.trunks.Detach(node); err != nil {
+			return done, fmt.Errorf("normalize %s: %w", id, err)
+		}
+		done++
+	}
+	return done, nil
+}
+
+// deleteOrphans is the survivors a delete of id would strand. Empty whenever
+// the presentation hierarchy is normalized, which is always without the
+// trunk capability.
+func (s *XwalStore) deleteOrphans(id string) []string {
+	if s.tree.Normalized() {
+		return nil
+	}
+	return topo.Boundary(s.TopologyAdjacency(), s.tree.DeleteSet(id))
 }
