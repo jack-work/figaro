@@ -137,7 +137,11 @@ func ensureAngelus() {
 	// Best-effort: if we cannot open the log, fall back to the old
 	// discard rather than refusing to start a daemon over it.
 	if err := os.MkdirAll(angelusRuntimeDir(), 0o700); err == nil {
-		if f, err := os.Create(angelusStartupLog()); err == nil {
+		// APPEND, not truncate. Several clients racing a cold start each
+		// open this file, and O_CREATE|O_TRUNC let a loser wipe the log the
+		// winner was writing into -- including the only trace a daemon
+		// crash leaves.
+		if f, err := os.OpenFile(angelusStartupLog(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
 			cmd.Stderr = f
 			defer f.Close() // the child holds its own dup
 		}
@@ -152,23 +156,68 @@ func ensureAngelus() {
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 
-	deadline := time.Now().Add(5 * time.Second)
+	// A LIVE daemon is never declared dead. The old rule was a flat five
+	// seconds, and the first open after an upgrade migrates the store
+	// layout, which takes about five seconds on a real one — so the CLI
+	// told the user his daemon had failed at the exact moment when killing
+	// it would destroy his arias. Now: while the child is alive we keep
+	// waiting and say what it is doing; only an exit, or a very long
+	// silence, is a failure.
+	start := time.Now()
+	var deferred time.Time // when our child stood down for an incumbent
+	notified := false
 	for {
 		if cli, err := angelus.DialClient(ep); err == nil {
 			cli.Close()
+			if notified {
+				fmt.Fprintln(os.Stderr, "angelus: ready")
+			}
 			return
 		}
 		select {
 		case werr := <-exited:
-			die("angelus exited during startup (%v)%s", werr, startupDiagnosis())
+			if werr != nil {
+				die("angelus exited during startup (%v)%s", werr, startupDiagnosis())
+			}
+			// Exit 0 means it found an incumbent and stood down. That is
+			// the ordinary outcome of several clients starting at once,
+			// not an error: keep dialing for the incumbent instead of
+			// reporting a failure with a nil cause.
+			deferred = time.Now()
 		default:
 		}
-		if !time.Now().Before(deadline) {
-			die("angelus did not start within 5 seconds%s", startupDiagnosis())
+		switch {
+		case !deferred.IsZero() && time.Since(deferred) > incumbentGrace:
+			die("angelus stood down for another instance that never answered on %s%s",
+				angelusSocketPath(), startupDiagnosis())
+		case time.Since(start) > startupHardCap:
+			die("angelus has not answered in %s%s", startupHardCap, startupDiagnosis())
+		}
+		if !notified && time.Since(start) > startupNoticeAfter {
+			notified = true
+			fmt.Fprintf(os.Stderr,
+				"angelus: still starting after %s — the first run after an upgrade migrates the "+
+					"store layout. Let it finish; interrupting a migration is the one thing that "+
+					"can cost you arias. Progress: %s\n",
+				startupNoticeAfter, angelusStartupLog())
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+const (
+	// startupNoticeAfter is when we start explaining rather than waiting
+	// silently; startupHardCap is the only thing that can call a LIVE
+	// daemon a failure, and it is deliberately far longer than any
+	// migration measured (about 5s for 483 nodes) so that a bigger store
+	// is slow rather than broken.
+	startupNoticeAfter = 3 * time.Second
+	startupHardCap     = 10 * time.Minute
+	// incumbentGrace is how long we keep dialing after our own child stood
+	// down for an existing daemon. Short: the incumbent is already up, or
+	// it is not.
+	incumbentGrace = 10 * time.Second
+)
 
 func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
 	_ = loaded
