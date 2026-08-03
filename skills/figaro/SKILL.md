@@ -46,7 +46,7 @@ One definition each. The file named owns the model behind it.
 |---|---|---|
 | aria | One conversation, addressed by an opaque hex id. | [cli.md](cli.md) |
 | trunk | A root-to-leaf path through the fork forest; the aria id is its id, and it survives forks. | [reference/trunks.md](reference/trunks.md) |
-| turn | One exchange: your prompt plus everything the agent did about it. The coordinate `:N` in `<id>:<turn>`. | [reference/turns.md](reference/turns.md) |
+| turn | One exchange: your prompt plus everything the agent did about it. The coordinate `:N` in `<id>:<turn>`; `.N` addresses an LT instead. | [reference/turns.md](reference/turns.md) |
 | LT | The storage coordinate, positional and cross-channel. Not an address you type. | [reference/turns.md](reference/turns.md) |
 | chalkboard | Per-aria key to JSON state that rides along with the conversation. | [reference/architecture.md](reference/architecture.md) |
 | loadout | The named profile a conversation is born under: model, credo, skills. | [start.md](start.md) |
@@ -69,7 +69,7 @@ open one when you are working inside that subsystem, not to browse.
 
 | File | When to read it |
 |---|---|
-| [reference/trunks.md](reference/trunks.md) | Forking, branches, `attend`, and what `<id>:<turn>` addresses. |
+| [reference/trunks.md](reference/trunks.md) | Forking, branches, `attend`, and what `<id>:<turn>` and `<id>.<lt>` address. |
 | [reference/turns.md](reference/turns.md) | Turn ids, the turn-shaped read wire, pagination. |
 | [reference/arias.md](reference/arias.md) | Reading an aria off disk, and the store layout. |
 | [reference/architecture.md](reference/architecture.md) | The three roles, the IR, the chalkboard, the RPC wire, the provider layer. |

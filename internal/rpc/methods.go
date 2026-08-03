@@ -372,21 +372,32 @@ type CreateResponse struct {
 	Endpoint Endpoint `json:"endpoint"`
 }
 
-// ForkRequest branches a conversation. AtMainLT == 0 forks at the head;
-// a positive value is an interior fork at that IR logical time (the
-// shared prefix below it freezes).
+// ForkRequest branches a conversation. With neither coordinate set it forks
+// at the head.
 type ForkRequest struct {
 	FigaroID string `json:"figaro_id"`
-	// AtTurn is the turn to REPLACE. Zero forks at the head.
+	// AtTurn is the turn to REPLACE, the coordinate a human names
+	// (`fig fork <id>:12`) and the one `fig show` prints. Turn N's fork
+	// point is the LT that ENDS turn N-1, so the branch retains everything
+	// through the previous exchange and the new prompt becomes turn N.
 	//
-	// The wire speaks turns because that is the coordinate a human names
-	// (`fig fork <id>:12`) and the one `fig show` prints. It used to speak
-	// at_main_lt, so every caller had to read the aria's whole message list
-	// just to translate, then send a number no user ever typed. The server
-	// owns the translation now: turn N's fork point is the LT that ENDS
-	// turn N-1, so the branch retains everything through the previous
-	// exchange and the new prompt becomes turn N.
+	// The server owns that translation. It used to be done client-side,
+	// which meant every caller read the aria's whole message list to
+	// convert -- and one of them then sent the CONVERTED LT in this field,
+	// a number the server read back as a turn. Since an LT is far larger
+	// than the turn count, `send <id>:<turn>` failed every time with "aria
+	// has no turn N".
 	AtTurn uint64 `json:"at_turn,omitempty"`
+	// AtLT is the same request in the MODEL's coordinate: the IR logical
+	// time to fork at, exactly (`fig fork <id>.42` -- the dot form). It is
+	// for callers that already hold an LT, and for forking where no turn
+	// boundary exists, which a turn cannot express.
+	//
+	// Two named fields rather than one plus a flag, because the bug above
+	// was a uint64 in the wrong slot: with separate names a misplaced
+	// coordinate is a stated error in the handler instead of a plausible
+	// number that means something else. Setting both is refused.
+	AtLT uint64 `json:"at_lt,omitempty"`
 }
 
 // ForkResponse returns the two fresh child ids. The parent freezes and

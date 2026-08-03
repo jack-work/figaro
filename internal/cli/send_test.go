@@ -237,19 +237,26 @@ func TestParseTarget(t *testing.T) {
 		spec    string
 		trunk   string
 		turn    uint64
-		hasTurn bool
+		lt      uint64
 		wantErr bool
 	}{
-		{"", "", 0, false, false},
-		{":6", "", 6, true, false},
-		{"t1:6", "t1", 6, true, false},
-		{"t1", "t1", 0, false, false},
-		{":", "", 0, false, true},
-		{"t1:x", "", 0, false, true},
-		{"t1:0", "", 0, false, true}, // turns are 1-based
+		{"", "", 0, 0, false},
+		{":6", "", 6, 0, false},
+		{"t1:6", "t1", 6, 0, false},
+		{"t1", "t1", 0, 0, false},
+		{":", "", 0, 0, true},
+		{"t1:x", "", 0, 0, true},
+		{"t1:0", "", 0, 0, true}, // turns are 1-based
+		// The DOT form is the model's coordinate. Same parser, so the two
+		// can never drift on what a suffix means.
+		{".42", "", 0, 42, false},
+		{"t1.42", "t1", 0, 42, false},
+		{"t1.", "", 0, 0, true},
+		{"t1.x", "", 0, 0, true},
+		{"t1.0", "", 0, 0, true}, // LTs are 1-based
 	}
 	for _, c := range cases {
-		trunk, turn, hasTurn, err := parseTarget(c.spec)
+		trunk, at, err := parseTarget(c.spec)
 		if (err != nil) != c.wantErr {
 			t.Errorf("%q: err=%v wantErr=%v", c.spec, err, c.wantErr)
 			continue
@@ -257,8 +264,9 @@ func TestParseTarget(t *testing.T) {
 		if c.wantErr {
 			continue
 		}
-		if trunk != c.trunk || turn != c.turn || hasTurn != c.hasTurn {
-			t.Errorf("%q: got (%q,%d,%v) want (%q,%d,%v)", c.spec, trunk, turn, hasTurn, c.trunk, c.turn, c.hasTurn)
+		if trunk != c.trunk || at.turn != c.turn || at.lt != c.lt {
+			t.Errorf("%q: got (%q, turn %d, lt %d) want (%q, turn %d, lt %d)",
+				c.spec, trunk, at.turn, at.lt, c.trunk, c.turn, c.lt)
 		}
 	}
 }
@@ -394,4 +402,41 @@ func flagIsSet(o sendOpts, short string) bool {
 		return o.json
 	}
 	return false
+}
+
+// The defect this file's parser exists to prevent, pinned as behaviour:
+// `send <id>:<turn>` used to resolve the turn to an LT client-side and then
+// send that LT in the TURN field. Since an LT is far larger than the turn
+// count, the server rejected every one with "aria has no turn N".
+//
+// The two coordinates now travel in separate, named fields, so the only way
+// to reintroduce it is to write the wrong field name — which reads as a bug
+// instead of as a plausible number.
+func TestForkPointKeepsTurnsAndLTsApart(t *testing.T) {
+	trunk, at, err := parseTarget("a1b2c3d4:12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trunk != "a1b2c3d4" || at.turn != 12 || at.lt != 0 {
+		t.Errorf(":12 parsed as trunk=%q turn=%d lt=%d", trunk, at.turn, at.lt)
+	}
+	if at.String() != "turn 12" {
+		t.Errorf("a turn describes itself as %q", at.String())
+	}
+
+	trunk, at, err = parseTarget("a1b2c3d4.900")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trunk != "a1b2c3d4" || at.lt != 900 || at.turn != 0 {
+		t.Errorf(".900 parsed as trunk=%q turn=%d lt=%d", trunk, at.turn, at.lt)
+	}
+	if at.String() != "LT 900" {
+		t.Errorf("an LT describes itself as %q", at.String())
+	}
+
+	// A head fork names neither, and both verbs read that the same way.
+	if _, at, err = parseTarget("a1b2c3d4"); err != nil || !at.isHead() {
+		t.Errorf("bare id: at=%+v err=%v; want the head", at, err)
+	}
 }

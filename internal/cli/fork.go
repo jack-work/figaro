@@ -67,7 +67,7 @@ func planFork(args []string) (forkPlan, error) {
 	plan.prompt = extractPrompt(rest)
 	plan.compose = plan.prompt == "" && hasDashBoundary(rest)
 
-	if _, _, _, perr := parseTarget(plan.spec); perr != nil {
+	if _, _, perr := parseTarget(plan.spec); perr != nil {
 		return forkPlan{}, perr
 	}
 	if opts.ephemeral {
@@ -156,7 +156,7 @@ func forkTargetHint(spec string) string {
 // prompt to the alternative through the same dispatch `send` uses, so -r,
 // -v, -o, -l, -x/-n/-y and -f behave identically on either verb.
 func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt string) {
-	target, turn, hasTurn, perr := parseTarget(spec)
+	target, at, perr := parseTarget(spec)
 	if perr != nil {
 		die("fork: %s", perr)
 	}
@@ -177,14 +177,10 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 			target = bound
 		}
 
-		// The turn goes on the wire as a turn. The server maps it to an LT;
-		// the client used to read the aria's whole message list to do that.
-		var atTurn uint64
-		if hasTurn {
-			atTurn = turn
-		}
+		// The coordinate goes on the wire in the form the user named it;
+		// the server owns any translation.
 
-		resp, err := waitForFork(ctx, acli, target, atTurn)
+		resp, err := waitForFork(ctx, acli, target, at)
 		if err != nil {
 			die("fork: %s", err)
 		}
@@ -220,7 +216,7 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 				Parent:       resp.Parent,
 				Continuation: resp.Continuation,
 				Alternative:  resp.Alternative,
-				Turn:         turn,
+				Turn:         at.turn,
 				Rescoped:     rescoped,
 				OwnerNote:    resp.OwnerNote,
 				Mode:         "fork-send",
@@ -228,10 +224,6 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 			return nil
 		}
 
-		at := "head"
-		if hasTurn {
-			at = fmt.Sprintf("turn %d", turn)
-		}
 		if resp.OwnerNote != "" {
 			fmt.Fprintf(os.Stderr, "%s\n", resp.OwnerNote)
 		}

@@ -61,11 +61,15 @@ func (c *Client) Create(ctx context.Context, loadout string, patch *rpc.Chalkboa
 }
 
 // Fork branches a conversation: the node freezes and both children get
-// fresh system-minted ids. atTurn == 0 forks at the head; a positive value
-// is an interior fork that REPLACES that turn. The server maps it to an LT.
-func (c *Client) Fork(ctx context.Context, figaroID string, atTurn uint64) (*rpc.ForkResponse, error) {
+// fresh system-minted ids. A zero request forks at the head; atTurn
+// REPLACES that turn (the server maps it to an LT) and atLT forks at that
+// logical time exactly. They are separate parameters, and separate wire
+// fields, because passing one where the other belonged is the defect this
+// signature exists to prevent.
+func (c *Client) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64) (*rpc.ForkResponse, error) {
 	var resp rpc.ForkResponse
-	err := c.call(ctx, rpc.MethodFork, rpc.ForkRequest{FigaroID: figaroID, AtTurn: atTurn}, &resp)
+	err := c.call(ctx, rpc.MethodFork,
+		rpc.ForkRequest{FigaroID: figaroID, AtTurn: atTurn, AtLT: atLT}, &resp)
 	return &resp, err
 }
 

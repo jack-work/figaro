@@ -105,7 +105,7 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 				return opts, nil, fmt.Errorf("--id given more than once")
 			}
 			opts.id = expanded[i+1]
-			if _, _, _, err := parseTarget(opts.id); err != nil {
+			if _, _, err := parseTarget(opts.id); err != nil {
 				return opts, nil, err
 			}
 			i += 2
@@ -118,7 +118,7 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			if opts.id == "" {
 				return opts, nil, fmt.Errorf("--id requires a value")
 			}
-			if _, _, _, err := parseTarget(opts.id); err != nil {
+			if _, _, err := parseTarget(opts.id); err != nil {
 				return opts, nil, err
 			}
 			i++
@@ -266,37 +266,74 @@ func argsFromBoundary(args []string) []string {
 	return nil
 }
 
-// parseTarget splits a target spec into a trunk id and an optional :<turn>.
-// "" -> bound trunk, no turn. ":6" -> bound trunk at turn 6. "t1:6" -> trunk
-// t1 at turn 6. "t1" -> trunk t1, no turn.
+// forkPoint is WHERE in an aria a fork lands, in whichever coordinate the
+// user named. Zero value = the head.
 //
-// The suffix is a TURN ID, not an LT. LT is the model's coordinate — it counts
-// the steps the model experienced — and it is the wrong thing to hand a human,
-// because most LTs sit mid-tool where a fork would strand a tool_invoke without
-// its result. A turn is the exchange: your question and everything the agent
-// did about it. `figaro show` prints the turn id; that is the number you type.
+// Two coordinates, one type, because they are not interchangeable and used
+// to be passed as bare uint64s in adjacent parameters -- which is how an LT
+// came to be sent in the turn field, making `send <id>:<turn>` fail every
+// time it was used.
 //
-// Shared by `send` and `fork` so the two cannot drift apart.
-func parseTarget(spec string) (trunk string, turn uint64, hasTurn bool, err error) {
-	if spec == "" {
-		return "", 0, false, nil
+//	:<n>   TURN   the exchange: your question and everything the agent did
+//	              about it. What `fig show` prints, and what a human means.
+//	.<n>   LT     the model's logical time: one step of the model's
+//	              experience. Most LTs sit mid-tool, where a fork would
+//	              strand a tool_invoke without its result -- so it is the
+//	              precise form, not the friendly one.
+type forkPoint struct {
+	turn uint64
+	lt   uint64
+}
+
+func (f forkPoint) isHead() bool { return f.turn == 0 && f.lt == 0 }
+
+// String names the coordinate the way the user typed it, for messages.
+func (f forkPoint) String() string {
+	switch {
+	case f.turn > 0:
+		return fmt.Sprintf("turn %d", f.turn)
+	case f.lt > 0:
+		return fmt.Sprintf("LT %d", f.lt)
+	default:
+		return "the head"
 	}
+}
+
+// parseTarget splits a target spec into a trunk id and an optional fork
+// point: ":<n>" is a turn, ".<n>" is an LT.
+//
+//	""       -> bound trunk, at its head
+//	":6"     -> bound trunk at turn 6
+//	"t1:6"   -> trunk t1 at turn 6
+//	"t1.42"  -> trunk t1 at LT 42
+//	"t1"     -> trunk t1, at its head
+//
+// Shared by `send` and `fork` so the two cannot drift apart on what a
+// coordinate means.
+func parseTarget(spec string) (trunk string, at forkPoint, err error) {
+	if spec == "" {
+		return "", forkPoint{}, nil
+	}
+	trunk = spec
 	if i := strings.LastIndex(spec, ":"); i >= 0 {
-		trunk = spec[:i]
 		n, perr := strconv.ParseUint(spec[i+1:], 10, 64)
 		if perr != nil || n == 0 {
-			return "", 0, false, fmt.Errorf("bad :<turn> in %q (want [<trunk>]:<n>, turns start at 1)", spec)
+			return "", forkPoint{}, fmt.Errorf("bad :<turn> in %q (want [<trunk>]:<n>, turns start at 1)", spec)
 		}
-		turn, hasTurn = n, true
-	} else {
-		trunk = spec
+		trunk, at.turn = spec[:i], n
+	} else if i := strings.LastIndex(spec, "."); i >= 0 {
+		n, perr := strconv.ParseUint(spec[i+1:], 10, 64)
+		if perr != nil || n == 0 {
+			return "", forkPoint{}, fmt.Errorf("bad .<lt> in %q (want [<trunk>].<n>, LTs start at 1)", spec)
+		}
+		trunk, at.lt = spec[:i], n
 	}
 	if trunk != "" {
 		if verr := validateSendID(trunk); verr != nil {
-			return "", 0, false, verr
+			return "", forkPoint{}, verr
 		}
 	}
-	return trunk, turn, hasTurn, nil
+	return trunk, at, nil
 }
 
 // validateSendID wraps rpc.ValidateAriaID with a friendlier error
@@ -362,7 +399,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	if spec == "" {
 		spec = opts.target
 	}
-	trunkID, turn, hasTurn, perr := parseTarget(spec)
+	trunkID, at, perr := parseTarget(spec)
 	if perr != nil {
 		dieUsage("%s: %s", verb, perr)
 	}
@@ -370,7 +407,7 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	if opts.ephemeral && (opts.id != "" || opts.target != "") {
 		dieUsage("%s: --ephemeral and a target are contradictory", verb)
 	}
-	if err := validateSendOpts(opts, hasTurn); err != nil {
+	if err := validateSendOpts(opts, !at.isHead()); err != nil {
 		dieUsage("%s: %s", verb, err)
 	}
 	if opts.json {
@@ -384,11 +421,11 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	// `send <trunk>:<turn>` — fork at that turn, then send. The message lands
 	// on whichever trunk we end up attended to: the new alternative by default
 	// (rebind), or the original with --attend=false/--stay.
-	if hasTurn {
-		runSendForkAt(loaded, trunkID, turn, opts.stay, opts.json, prompt, set)
+	if !at.isHead() {
+		runSendForkAt(loaded, trunkID, at, opts.stay, opts.json, prompt, set)
 		return
 	}
-	// No turn: a positional target is just the aria to send to.
+	// No coordinate: a positional target is just the aria to send to.
 	if opts.id == "" {
 		opts.id = trunkID
 	} else {

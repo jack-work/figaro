@@ -613,11 +613,10 @@ func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
 func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 	// Split an optional :<turn> suffix off the target. Shared parser — fork and
 	// send must not drift apart on what a coordinate means.
-	target, turn, hasTurn, perr := parseTarget(spec)
+	target, at, perr := parseTarget(spec)
 	if perr != nil {
 		dieUsage("fork: %s", perr)
 	}
-	var atMainLT uint64
 
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx := context.Background()
@@ -634,11 +633,7 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 			target = bound
 		}
 
-		if hasTurn {
-			atMainLT = turn // a turn on the wire; the server maps it to an LT
-		}
-
-		resp, err := waitForFork(ctx, acli, target, atMainLT)
+		resp, err := waitForFork(ctx, acli, target, at)
 		if err != nil {
 			die("fork: %s", err)
 		}
@@ -679,7 +674,7 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 				Parent:       resp.Parent,
 				Continuation: resp.Continuation,
 				Alternative:  resp.Alternative,
-				Turn:         turn,
+				Turn:         at.turn,
 				Rescoped:     rescoped,
 				OwnerNote:    resp.OwnerNote,
 				Mode:         "fork",
@@ -687,10 +682,6 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 			return nil
 		}
 
-		at := "head"
-		if hasTurn {
-			at = fmt.Sprintf("turn %d", turn)
-		}
 		if resp.OwnerNote != "" {
 			fmt.Fprintf(os.Stderr, "%s\n", resp.OwnerNote)
 		}
@@ -808,7 +799,7 @@ func runAttend(loaded *config.Loaded, spec string) {
 		})
 		return
 	}
-	trunk, turn, hasTurn, err := parseTarget(spec)
+	trunk, at, err := parseTarget(spec)
 	if err != nil {
 		die("attend: %s", err)
 	}
@@ -823,9 +814,11 @@ func runAttend(loaded *config.Loaded, spec string) {
 			}
 			trunk = r.FigaroID
 		}
-		var atMainLT uint64
-		if hasTurn {
-			lt, rerr := resolveTurn(ctx, acli, trunk, turn)
+		// A binding anchor is an LT, so a named TURN is resolved here; a
+		// named LT is already the thing bindBinding wants.
+		atMainLT := at.lt
+		if at.turn > 0 {
+			lt, rerr := resolveTurn(ctx, acli, trunk, at.turn)
 			if rerr != nil {
 				die("attend: %s", rerr)
 			}
@@ -845,8 +838,8 @@ func runAttend(loaded *config.Loaded, spec string) {
 			}
 			die("attend: %s", err)
 		}
-		if hasTurn {
-			fmt.Fprintf(os.Stderr, "attending %s at turn %d (next prompt forks there)\n", trunk, turn)
+		if !at.isHead() {
+			fmt.Fprintf(os.Stderr, "attending %s at %s (next prompt forks there)\n", trunk, at)
 		} else {
 			fmt.Fprintf(os.Stderr, "attending %s\n", trunk)
 		}
