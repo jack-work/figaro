@@ -195,18 +195,28 @@ func contentEnvelope(body, path string) ContentEnvelope {
 
 // extractFrontmatter returns the raw text between the opening and
 // closing `---` fences, or ("", false) if no parseable frontmatter
-// block is found. The body must begin with `---\n` (BOM and leading
-// whitespace are not tolerated — frontmatter is opt-in).
+// block is found. The body must begin with a `---` fence on its own
+// line (BOM and leading whitespace are not tolerated — frontmatter is
+// opt-in), but the line ending may be LF or CRLF.
+//
+// CRLF is not a nicety. The failure is SILENT AND EXPENSIVE: a skill whose
+// fence is not recognised falls through to the full-body envelope, so the
+// WHOLE FILE lands in the chalkboard and is inherited by every aria minted
+// from that loadout. Six skills saved with Windows line endings put 101KB —
+// roughly 25k tokens — into every new aria on this author's box, none of it
+// asked for and none of it visible as anything but a large context.
 func extractFrontmatter(body string) (string, bool) {
-	if !strings.HasPrefix(body, "---\n") {
-		return "", false
+	rest, ok := strings.CutPrefix(body, "---\n")
+	if !ok {
+		if rest, ok = strings.CutPrefix(body, "---\r\n"); !ok {
+			return "", false
+		}
 	}
-	rest := body[4:]
 	end := strings.Index(rest, "\n---")
 	if end < 0 {
 		return "", false
 	}
-	return rest[:end], true
+	return strings.TrimSuffix(rest[:end], "\r"), true
 }
 
 // loadDir reads file skills and directory skills from dir. A directory skill
