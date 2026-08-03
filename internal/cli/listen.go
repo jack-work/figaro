@@ -127,6 +127,11 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 	// The renderer owns the cursor + auto-margin off, same as send.
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
 	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
+	// See runStream: the deferred right-edge wrap belongs to the painter, not
+	// to every command that prints a line.
+	restoreWrap := sync.OnceFunc(term.ArmDeferredWrap())
+	defer restoreWrap()
+	atExit(restoreWrap)
 	defer lt.leaveTranscript()
 	lt.openRule() // the renderer owns the rule AND the margin under it
 

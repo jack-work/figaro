@@ -88,6 +88,13 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// the normal scrollback.
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
 	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
+	// The painter's half of the console arming: hold the cursor on the last
+	// cell instead of wrapping the instant it is written. Scoped to the painted
+	// session — armed globally it staircases every fmt.Println. OnceFunc for the
+	// same reason as cli.go's: the defer and exitNow's hooks both fire.
+	restoreWrap := sync.OnceFunc(term.ArmDeferredWrap())
+	defer restoreWrap()
+	atExit(restoreWrap)
 	defer lt.leaveTranscript() // restore the screen if we exit while in the pager
 
 	// Static opening rule: a single dim horizontal line separating the user's
