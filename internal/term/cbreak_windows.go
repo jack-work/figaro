@@ -21,13 +21,16 @@ import (
 // (a tool's child process) can clear the flag mid-session, which is why the
 // symptom comes and goes on a terminal that started out fine.
 //
-// DISABLE_NEWLINE_AUTO_RETURN rides along because it is the same defect at the
-// other edge of the screen: without it the console advances the cursor the
-// instant the last cell of a row is written, instead of deferring the wrap the
-// way every UNIX terminal does. render.Prose lands glamour at EXACTLY the
-// viewport width, so a full-width row cost two rows and the painter's
-// one-row-per-line cursor math drifted (measured under conhost at width 120:
-// 2 rows as found, 1 with the flag; Windows Terminal was already 1).
+// DISABLE_NEWLINE_AUTO_RETURN does NOT ride along, though it addresses the
+// same defect at the other edge of the screen: without it the console advances
+// the cursor the instant the last cell of a row is written, instead of
+// deferring the wrap the way every UNIX terminal does. render.Prose lands
+// glamour at EXACTLY the viewport width, so a full-width row cost two rows and
+// the painter's one-row-per-line cursor math drifted (measured under conhost at
+// width 120: 2 rows as found, 1 with the flag; Windows Terminal was already 1).
+// But the same flag also stops a bare LF from implying a carriage return, which
+// staircases every fmt.Println, so it is armed per painted session instead --
+// see ArmDeferredWrap and vtOutputMode below.
 //
 // The restore puts both handles back, and it is the same closure the renderer
 // already unwinds — so this costs no new lifecycle.
