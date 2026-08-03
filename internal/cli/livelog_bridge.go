@@ -431,7 +431,7 @@ func (t *livelogTurn) seedContext(msgs []aria.Message) {
 	// closes with the plain rule instead.
 	save := t.in.Bookend
 	t.in.Bookend = nil
-	t.in.Resume(shown, nil)
+	t.in.Resume(shown, nil, 0) // fitPreamble already bounded this to the viewport
 	t.in.Bookend = save
 	// Resume cleared the live region, which is where a footer pinned at submit
 	// was living. Say so, or armThinking would think one is still up and the
@@ -786,13 +786,22 @@ func (t *livelogTurn) leaveTranscript() {
 	t.status.setNotice("")
 }
 
+// scrollbackTailRows is how many physical rows of conversation leaving the
+// pager may put into native scrollback. The message-level bounds below (the
+// freeze boundary, and lastTurnStart on a cold exit) are not bounds a reader
+// can feel: ONE turn of tool output is routinely thousands of rows, and Ctrl-T
+// dumped every one of them into the shell. A hundred rows is a screen or two —
+// enough to see where you left off, and the rest is a `figaro show` away.
+const scrollbackTailRows = 100
+
 // flushTail (re)prints the un-frozen tail of the conversation to scrollback.
 // Boundary: whatever incipit already froze inline stays put; only what
-// streamed while the pager was up is emitted. If we entered the pager cold
-// (nothing frozen inline, e.g. `figaro listen`), bound the dump to the last
-// turn rather than replaying the whole history. Resume clears the partial live
-// region the alt-screen restore left behind, prints the closed messages in
-// full, and — if a message is still streaming — reopens a live region.
+// streamed while the pager was up is emitted, and only its last
+// scrollbackTailRows rows. If we entered the pager cold (nothing frozen
+// inline, e.g. `figaro listen`), bound the dump to the last turn rather than
+// replaying the whole history. Resume clears the partial live region the
+// alt-screen restore left behind, prints the closed messages, and — if a
+// message is still streaming — reopens a live region.
 func (t *livelogTurn) flushTail() {
 	v := t.client.View()
 
@@ -830,7 +839,7 @@ func (t *livelogTurn) flushTail() {
 		return
 	}
 	sort.SliceStable(closed, func(i, j int) bool { return cursorOf(closed[j]).after(cursorOf(closed[i])) })
-	t.in.Resume(closed, open)
+	t.in.Resume(closed, open, scrollbackTailRows)
 	if len(closed) > 0 {
 		t.lastFrozen = cursorOf(closed[len(closed)-1])
 	}

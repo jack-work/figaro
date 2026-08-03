@@ -164,7 +164,7 @@ func TestVoiceHeaderHugsItsRule(t *testing.T) {
 		in.Resume([]aria.Message{
 			{Turn: 1, Inquiry: "QUESTIONONE", Role: livedoc.RoleOutput, Nodes: nodes1},
 			{Turn: 2, Inquiry: "QUESTIONTWO", Role: livedoc.RoleOutput, Nodes: nodes2},
-		}, nil)
+		}, nil, 0)
 		assertNoGapBelowRule(t, "incipit resume", ft.Screen())
 	})
 }

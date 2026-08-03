@@ -226,32 +226,88 @@ func (i *Incipit) Freeze(m aria.Message) {
 
 // Resume rebuilds the inline view after the transcript pager closes. The
 // alt-screen restored whatever partial live region was on screen when the pager
-// opened; this clears it, prints the given closed messages to scrollback in full
-// (the bookend follows the assistant only), and — if a message is still
-// streaming — starts a fresh live region. The cursor lands on a new line below
-// everything, so input resumes after the content like `figaro show`.
-func (i *Incipit) Resume(closed []aria.Message, open *aria.Message) {
+// opened; this clears it, prints the given closed messages to scrollback (the
+// bookend follows the assistant only), and — if a message is still streaming —
+// starts a fresh live region. The cursor lands on a new line below everything,
+// so input resumes after the content like `figaro show`.
+//
+// maxRows CAPS WHAT REACHES SCROLLBACK, counted in physical rows, keeping the
+// LAST maxRows (0 = unbounded). Leaving the pager used to replay every message
+// the pager had shown — an hour of tool output, thousands of rows, dumped into
+// the shell in one burst on Ctrl-T. The tail is what a reader wants back; the
+// rest is a `figaro show` away. The clip is applied to the assembled rows, not
+// per message, so the boundary lands mid-message when that is where row 100
+// falls.
+func (i *Incipit) Resume(closed []aria.Message, open *aria.Message, maxRows int) {
 	io.WriteString(i.term, "\x1b[J") // clear the restored partial region
 	i.reset()
-	for _, m := range closed {
-		i.printMessage(m)
+	if rows, endsInRule, ok := i.tailRows(closed, maxRows); ok {
+		io.WriteString(i.term, strings.Join(rows, "\r\n")+"\r\n")
+		i.atRule = endsInRule
 	}
 	if open != nil && open.Turn != 0 {
 		i.Open(*open)
 	}
 }
 
-// printMessage writes a closed message's rows to scrollback (bookend after an
-// assistant message), leaving the cursor on a fresh line below. Each message is
-// prefaced with a blank line plus the role header (when configured) — the same
-// leading rule Freeze/compose apply.
-func (i *Incipit) printMessage(m aria.Message) {
-	body := i.messageRows(m.Inquiry, m.InquirySegments, m.Role, m.Nodes)
-	if len(body) == 0 {
-		return
+// tailRows renders the newest messages back-to-front until maxRows physical
+// rows are in hand, then returns them in order clipped to that budget, plus
+// the atRule state the last message leaves behind. ok is false when nothing
+// renders (every message empty, or none given).
+//
+// It walks BACKWARDS on purpose: a hundred rows off the end of a ten-thousand
+// row conversation must not cost ten thousand rows of rendering. That is only
+// sound because the one piece of cross-message state a message's rows depend
+// on — atRule, i.e. "is the row above me already my overline" — is a pure
+// function of the PREVIOUS message's role (see closer), so it can be answered
+// without having rendered anything before it.
+func (i *Incipit) tailRows(closed []aria.Message, maxRows int) (rows []string, endsInRule, ok bool) {
+	var chunks [][]string
+	total := 0
+	for k := len(closed) - 1; k >= 0; k-- {
+		atRule := i.atRule
+		if k > 0 {
+			_, atRule = i.closer(closed[k-1].Role)
+		}
+		chunk, ends := i.messagePrintRows(closed[k], atRule)
+		if len(chunk) == 0 {
+			continue
+		}
+		if !ok {
+			endsInRule, ok = ends, true
+		}
+		chunks = append(chunks, chunk)
+		if total += len(chunk); maxRows > 0 && total >= maxRows {
+			break
+		}
 	}
-	rows := append(i.topMargin(), body...)
+	if !ok {
+		return nil, false, false
+	}
+	for k := len(chunks) - 1; k >= 0; k-- {
+		rows = append(rows, chunks[k]...)
+	}
+	if maxRows > 0 && len(rows) > maxRows {
+		rows = rows[len(rows)-maxRows:]
+	}
+	return rows, endsInRule, true
+}
+
+// messagePrintRows renders a closed message as it appears in scrollback
+// (bookend after an assistant message), prefaced with a blank line plus the
+// role header when configured — the same leading rule Freeze/compose apply.
+// atRule says whether the row above is already this message's overline, so no
+// top margin is drawn; endsInRule reports the same fact for the message below.
+func (i *Incipit) messagePrintRows(m aria.Message, atRule bool) (rows []string, endsInRule bool) {
+	body := i.messageRows(m.Inquiry, m.InquirySegments, m.Role, m.Nodes)
 	closer, endsInRule := i.closer(m.Role)
+	if len(body) == 0 {
+		return nil, endsInRule
+	}
+	if !atRule {
+		rows = append(rows, "")
+	}
+	rows = append(rows, body...)
 	if len(closer) > 0 {
 		w, _ := i.term.Size()
 		rows = append(rows, "")
@@ -259,8 +315,7 @@ func (i *Incipit) printMessage(m aria.Message) {
 			rows = append(rows, clip(s, w))
 		}
 	}
-	io.WriteString(i.term, strings.Join(rows, "\r\n")+"\r\n")
-	i.atRule = endsInRule
+	return rows, endsInRule
 }
 
 // Open paints (or repaints) the open message's blocks as the live region.
