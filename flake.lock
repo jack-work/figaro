@@ -1,21 +1,5 @@
 {
   "nodes": {
-    "figwal": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1785744276,
-        "narHash": "sha256-9GHRU55KDikgpgv1fBqfKUJO24HDJo++QIi5pEK9ISQ=",
-        "ref": "refs/heads/master",
-        "rev": "e496755bf7f6d7f2baa602202ade8f64fc7193ab",
-        "revCount": 133,
-        "type": "git",
-        "url": "file:///home/gluck/dev/figwal"
-      },
-      "original": {
-        "type": "git",
-        "url": "file:///home/gluck/dev/figwal"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1775710090,
@@ -34,7 +18,6 @@
     },
     "root": {
       "inputs": {
-        "figwal": "figwal",
         "nixpkgs": "nixpkgs"
       }
     }

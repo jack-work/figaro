@@ -4,26 +4,15 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-    # figwal is co-developed in a sibling checkout, so go.mod carries a
-    # `replace` at an absolute path. That path does NOT exist inside the
-    # nix build sandbox, so the replace is rewritten below to point at
-    # this input instead. Re-point it at the published module (and drop
-    # the rewrite) once figwal's version is cut and pushed.
-    #
-    # AFTER EVERY FIGWAL COMMIT, two steps, in this order:
-    #   nix flake update figwal        # the input pins figwal's COMMITTED head
-    #   <set vendorHash to the "got:" value nix prints, then rebuild>
-    # The vendor tree contains a copy of figwal, so its hash moves with it;
-    # skipping the second step makes nix reuse the OLD vendored figwal and
-    # fail with "unknown field" against the new API. Plain go build/test in
-    # the worktree read the live tree and need neither step.
-    figwal = {
-      url = "git+file:///home/gluck/dev/figwal";
-      flake = false;
-    };
+    # figwal is a PUBLISHED module now: go.mod requires
+    # github.com/jack-work/figwal at a real version and carries no
+    # `replace`, so the vendor derivation fetches it like any other
+    # dependency and this flake needs no input for it. Bumping figwal is
+    # one step again -- edit go.mod, then reset vendorHash from the "got:"
+    # value nix prints.
   };
 
-  outputs = { self, nixpkgs, figwal }:
+  outputs = { self, nixpkgs }:
     let
       supportedSystems = [
         "x86_64-linux"
@@ -41,20 +30,8 @@
           pname = "figaro";
           version = "0.17.1";
           src = self;
-          vendorHash = "sha256-61dPfGfgOJvEYcXgjZmeVTfPG4/krGzJVO3dV7lr984=";
+          vendorHash = "sha256-ofhx6bYn6amandMPq8dI8W61UH+U1sA71u7e5cu1tfY=";
 
-          # figwal is co-developed, so go.mod carries a `replace` at an
-          # absolute path that does not exist in the build sandbox. COPY the
-          # input into the source tree and replace to a RELATIVE path: a
-          # replace pointing straight at the store makes the vendor
-          # derivation reference a store path, which a fixed-output
-          # derivation may not do.
-          overrideModAttrs = _: { inherit postPatch; };
-          postPatch = ''
-            cp -r ${figwal} ./_figwal
-            chmod -R u+w ./_figwal
-            go mod edit -replace github.com/jack-work/figwal=./_figwal
-          '';
           subPackages = [ "cmd/figaro" ];
           env.CGO_ENABLED = 0;
 

@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/anthropics/anthropic-sdk-go v1.42.0
 	github.com/google/uuid v1.6.0
-	github.com/jack-work/figwal v0.11.0
+	github.com/jack-work/figwal v0.12.1
 	github.com/jack-work/hush v0.6.1
 	github.com/jack-work/largo v0.2.3
 	github.com/pmezard/go-difflib v1.0.0
@@ -114,5 +114,3 @@ require (
 	golang.org/x/sync v0.18.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/jack-work/figwal => /home/gluck/dev/figwal
