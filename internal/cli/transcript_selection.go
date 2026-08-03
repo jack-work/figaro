@@ -85,13 +85,10 @@ type transcriptRow struct {
 	ref  nodeRef
 }
 
-// searchText is the row's content as history search sees it: node rows are
-// stored in their plainNodeRow form, so the blank gutter column has to come
-// back off before matching.
+// searchText is the row's text as the reader sees it. Node rows carry no
+// prefix of their own — the selection bar is painted over glamour's margin at
+// decoration time, not baked into the stored row — so this is the row.
 func (r transcriptRow) searchText() string {
-	if r.ref.valid() {
-		return strings.TrimPrefix(r.text, " ")
-	}
 	return r.text
 }
 
@@ -102,10 +99,6 @@ type cachedMessage struct {
 type nodeSpan struct {
 	first int
 	last  int
-}
-
-type expandableNodeView interface {
-	RenderExpanded(n livedoc.Node, width, tick int, fullOutput bool) []string
 }
 
 type selectionMark struct {
@@ -561,20 +554,54 @@ func (t *transcript) ensureSelectionVisible() {
 	}
 }
 
-// plainNodeRow is a node row in its undecorated resting state: clipped to
-// the gutter width and prefixed with the one blank column that an unselected
-// row shows where a selected row shows its bar.
+// plainNodeRow is a node row in its undecorated resting state: clipped to the
+// pane width, and NOTHING ELSE.
+//
+// It used to prepend one blank column for the selection bar to stand in, which
+// cost the pager a column of text and shifted every node one column right of
+// where the inline renderer draws the same node. The bar now stands in
+// glamour's own left margin (decorateNodeRow), so the resting row is exactly
+// the row the incipit paints — which is the invariant
+// TestPagerRowsMatchIncipitRows pins.
 //
 // This is computed once, when the message's rows are rendered into the row
 // cache, rather than per frame: the transcript re-materializes every retained
-// row on every keypress, and " " + clip(row) was the single largest allocator
-// left in the frame path. decorateNodeRow then only has to do work for the
+// row on every keypress. decorateNodeRow then only has to do work for the
 // handful of rows that are actually selected.
 func plainNodeRow(row string, width int) string {
-	if width < 2 {
-		width = 2
+	if width < 1 {
+		width = 1
 	}
-	return " " + clipToWidth(row, width-1)
+	return clipToWidth(row, width)
+}
+
+// barOverMargin puts the one-column selection bar at the head of a row.
+//
+// Rows a renderer wraps through glamour arrive with a two-column left margin,
+// so the bar REPLACES a blank the row was already spending and the text does
+// not move. Rows with no margin to stand in — a tool header ("✓ bash"), the
+// steering marker — get the bar INSERTED and the row clipped back to the cells
+// it had, so a selected row can never be wider than an unselected one. Either
+// way the bar is drawn: selection is never silent.
+//
+// Leading escapes are copied verbatim, uncounted: glamour opens a row with its
+// style, and a bar written before that style would be recoloured by it.
+//
+// width is the PANE, not the row: a row shorter than the pane has room for the
+// bar without giving anything up, and clipping to the row's own width instead
+// threw the bar away on an empty row and on one whose first glyph is wide.
+func barOverMargin(row, bar string, width int) string {
+	if width < 1 {
+		width = 1
+	}
+	i := 0
+	for i < len(row) && row[i] == 0x1b {
+		i, _ = escapeEnd(row, i)
+	}
+	if i < len(row) && row[i] == ' ' {
+		return row[:i] + bar + row[i+1:] // stand in the margin: same width
+	}
+	return clipToWidth(row[:i]+bar+row[i:], width)
 }
 
 // decorateNodeRow paints a single transcript row with its selection cue. The
@@ -584,9 +611,12 @@ func plainNodeRow(row string, width int) string {
 // background wash so the extent of a multi-block selection is visible without
 // relying on a wide gutter.
 //
-// It takes the row in its plainNodeRow form (already clipped, already carrying
-// the blank gutter column), so the unselected case — the overwhelming majority
-// of rows in any frame — returns it untouched with zero allocation.
+// It takes the row in its plainNodeRow form (clipped, and otherwise exactly
+// the row the inline renderer paints), so the unselected case — the
+// overwhelming majority of rows in any frame — returns it untouched with zero
+// allocation. The bar is written INTO the row's own left margin
+// (barOverMargin), which is why a selected row is the same width, and starts
+// at the same column, as an unselected one.
 //
 // Background painting has two subtleties. First, any `\x1b[0m` inside the
 // row resets ALL SGR — including our background — so every reset in the
@@ -595,11 +625,10 @@ func plainNodeRow(row string, width int) string {
 // row, so we trail with `\x1b[K` (erase-to-end at the current, i.e. selected,
 // background) to extend the wash to the right edge. A final `\x1b[0m` clears
 // everything before the next row begins.
-func decorateNodeRow(plain string, mark selectionMark) string {
+func decorateNodeRow(plain string, mark selectionMark, width int) string {
 	if !mark.selected && !mark.active {
 		return plain
 	}
-	body := strings.TrimPrefix(plain, " ") // drop the blank gutter column
 	const (
 		reset      = "\x1b[0m"
 		bgSelect   = "\x1b[48;5;238m" // subtle dark gray wash (xterm 256-color)
@@ -607,15 +636,13 @@ func decorateNodeRow(plain string, mark selectionMark) string {
 		gutterFocs = "\x1b[1;96m▎"    // bright bold cyan bar for focused node
 	)
 	if !term.Enabled() {
-		if mark.active {
-			return "▎" + body
-		}
-		return "▎" + body
+		return barOverMargin(plain, "▎", width)
 	}
 	gutter := gutterSel
 	if mark.active {
 		gutter = gutterFocs
 	}
+	body := plain
 	// Re-emit the background after every reset in the body so highlighting
 	// survives inline styling (dim, cyan, etc. inside a rendered node).
 	//
@@ -629,5 +656,7 @@ func decorateNodeRow(plain string, mark selectionMark) string {
 	for _, r := range []string{reset, "\x1b[m"} {
 		body = strings.ReplaceAll(body, r, r+bgSelect)
 	}
-	return bgSelect + gutter + reset + bgSelect + body + "\x1b[K" + reset
+	// The bar goes in AFTER that substitution, so its own reset (which ends the
+	// bar's colour before the text resumes) is not itself re-washed.
+	return bgSelect + barOverMargin(body, gutter+reset+bgSelect, width) + "\x1b[K" + reset
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jack-work/figaro/internal/livedoc"
+	"github.com/jack-work/figaro/internal/livelog/aria"
 )
 
 // stripANSI removes ANSI escape sequences so tests can assert on visible text.
@@ -31,7 +32,7 @@ func TestRenderToolNode_UniformAcrossTools(t *testing.T) {
 		{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK, Summary: "/tmp/a"},
 		{Type: livedoc.NodeTool, Name: "mystery", Status: livedoc.StatusOK, Summary: "k=v"},
 	}
-	rows := renderNodeList(nodes, 80, 10, 0, renderSettings{})
+	rows := renderNodeList(nodes, 80, 0, renderSettings{})
 	if len(rows) < 5 {
 		t.Fatalf("want at least 5 rows (3 headers + 2 separators), got %d: %v", len(rows), rows)
 	}
@@ -141,7 +142,7 @@ func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	// A whole turn shows BOTH voices, each under its own header, in order —
 	// the question first, though it is text rather than a node.
 	turn := stripANSI(strings.Join(
-		renderTurnRows("what is the codeword?", nil, []livedoc.Node{reply}, 60, 0, 0, renderSettings{}), "\n"))
+		renderTurnRows(aria.Message{Role: livedoc.RoleOutput, Inquiry: "what is the codeword?", InquirySegments: nil, Nodes: []livedoc.Node{reply}}, 60, 0, renderSettings{}), "\n"))
 	ui, fi := strings.Index(turn, "> input"), strings.Index(turn, "< figaro")
 	if ui < 0 || fi < 0 || ui > fi {
 		t.Fatalf("turn must head the inquiry then the output run:\n%s", turn)

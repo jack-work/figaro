@@ -5,8 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattn/go-runewidth"
 	"testing"
+
+	"github.com/mattn/go-runewidth"
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"

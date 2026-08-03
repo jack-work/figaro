@@ -11,6 +11,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
 )
@@ -121,133 +122,45 @@ func nodeExpandable(n livedoc.Node, width int) bool {
 }
 
 // renderTurnRows renders a whole exchange — the inquiry that opened the turn,
-// then what the agent made of it — each under its own run header, with the rule
-// between them. The inquiry is TEXT ON THE TURN, so it is drawn from
-// Turn.Inquiry; no renderer looks for it in the node list, because it is not
-// there.
-func renderTurnRows(inquiry string, segments []aria.InquirySegment, nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) []string {
-	if width <= 0 {
-		width = 80
+// then what the agent made of it — through the ONE composer every surface
+// shares (ldrender.Composer, compose.go). `show` is its caller; the pager and
+// the incipit reach the composer directly.
+func renderTurnRows(m aria.Message, width int, tick uint64, set renderSettings) []string {
+	return ldrender.Text(turnComposer(m.Turn, width, tick, set).Message(m, width))
+}
+
+// renderNodeList renders a node list with no turn chrome around it.
+func renderNodeList(nodes []livedoc.Node, width int, tick uint64, set renderSettings) []string {
+	return ldrender.Text(turnComposer(0, width, tick, set).Nodes(nodes, width))
+}
+
+// turnComposer is `show`'s composition: the shared shape, the shared chrome,
+// and — under --details — the same per-block coordinate row Ctrl-O draws in the
+// pager, instead of the timestamp line `show` used to invent for itself.
+//
+// Blocks are drawn EXPANDED, as the incipit draws them (Composer.Expanded nil):
+// `show` is a one-shot dump the reader scrolls in their own terminal, with no
+// viewport to husband and no gesture to un-collapse with, so a collapsed table
+// there could not be recovered.
+func turnComposer(turn, width int, tick uint64, set renderSettings) ldrender.Composer {
+	c := ldrender.Composer{
+		View:   &ariaView{settings: &set},
+		Header: messageHeader,
+		Rule:   func() string { return dimTransRule(width) },
+		Sender: dimSender,
+		Tick:   int(tick),
 	}
-	var rows []string
-	if iq := inquiryRowsFor(inquiry, segments, width); len(iq) > 0 {
-		rows = append(rows, messageHeader(livedoc.RoleInput), "")
-		for _, l := range iq {
-			rows = append(rows, clipToWidth(l, width))
+	if set.verbose {
+		c.Coord = func(block int, n livedoc.Node) string {
+			return term.Dim(coordLabel(turn, block, nodeCoordAt(n)))
 		}
 	}
-	body := renderNodeList(nodes, width, bashCap, tick, set)
-	if len(body) == 0 {
-		return rows
-	}
-	if len(rows) > 0 {
-		// The question closes with a blank and the RULE before the agent speaks.
-		// It used to get that rule for free, as the closer of its own message;
-		// now the two voices share one message and the rule is drawn here.
-		rows = append(rows, "", dimTransRule(width))
-	}
-	if h := messageHeader(livedoc.RoleOutput); h != "" {
-		rows = append(rows, h, "")
-	}
-	return append(rows, body...)
+	return c
 }
 
 // proseIndent matches the inset render.Prose gives a paragraph, so metadata
 // drawn beside prose lines up with it instead of floating left of it.
 const proseIndent = "  "
-
-// inquiryRowsFor draws a turn's opening question, attributed when it can be.
-//
-// ONE "> input" header for the whole question however many people wrote it —
-// they are one message, and a header per submission would say otherwise. Each
-// segment is then prefaced by its sender in the dim register used for block
-// timestamps and tool durations, with a blank line between segments so the
-// parts read as separate messages rather than one paragraph.
-//
-// An UNKNOWN sender draws NOTHING — not "unknown", not a blank row. Most
-// messages ever written carry no sender, and a placeholder on each of them
-// would be noise where there used to be none. With no attribution at all the
-// output is exactly what it was before senders existed.
-func inquiryRowsFor(inquiry string, segments []aria.InquirySegment, width int) []string {
-	if len(segments) == 0 {
-		return inquiryProse(inquiry, width)
-	}
-	var rows []string
-	for i, seg := range segments {
-		if i > 0 {
-			rows = append(rows, "")
-		}
-		if seg.Sender != "" {
-			// Indented to sit under the prose, which render.Prose insets. A
-			// flush-left attribution over an inset paragraph reads as a
-			// heading rather than as a label on the text below it.
-			rows = append(rows, clipToWidth(term.Dim(proseIndent+seg.Sender), width))
-		}
-		rows = append(rows, inquiryProse(seg.Text, width)...)
-	}
-	return rows
-}
-
-// inquiryProse wraps a turn's opening question to the same prose renderer its
-// nodes use, so the question looks exactly as it did when it was still a node.
-// The caller supplies the "> input" header, because each view decorates rows
-// its own way. Empty inquiry, no rows.
-//
-// Deliberately NOT table-clamped: a node is the agent's output and may be
-// summarised, but the question is the user's own text and figaro does not
-// truncate what the user wrote.
-func inquiryProse(inquiry string, width int) []string {
-	if strings.TrimSpace(inquiry) == "" {
-		return nil
-	}
-	if width <= 0 {
-		width = 80
-	}
-	return render.Prose(inquiry, width)
-}
-
-// renderNodeList renders a unit's whole node list to terminal rows. The list
-// is walked uniformly — every tool renders through renderToolNode with no
-// per-tool branching. One blank row separates adjacent blocks; a final
-// clipToWidth pass keeps every row on a single physical line.
-func renderNodeList(nodes []livedoc.Node, width, bashCap int, tick uint64, set renderSettings) []string {
-	if width <= 0 {
-		width = 80
-	}
-	if bashCap <= 0 {
-		bashCap = nodeBashCapDefault
-	}
-	var rows []string
-	for i, n := range nodes {
-		// Empty prose/thinking nodes are minted by the projection so ids cannot
-		// shift when a block fills (docs/turn-addressing.md, invariant 6).
-		// Hiding them is the renderer's job, not the projection's.
-		if n.Type != livedoc.NodeTool && strings.TrimSpace(n.Markdown) == "" {
-			continue
-		}
-		var nr []string
-		// expanded: true, unconditionally. This is `show`'s path (and the row
-		// counters'), and `show` is a one-shot dump the reader scrolls in their own
-		// terminal — there is no viewport to husband and no gesture to un-collapse
-		// with, so hiding table rows here would help nobody and could not be
-		// undone. Only the transcript collapses; see ariaView.Render.
-		nr = renderNode(n, width, bashCap, tick, set.verbose, true)
-		// Under the verbose toggle every node reports when it was written, the
-		// same way a tool reports started/finished. Tools already print their own
-		// richer timing, so they are left alone.
-		if set.verbose && n.At != 0 && n.Type != livedoc.NodeTool {
-			nr = append(nr, term.Dim("  "+formatToolTime(n.At)))
-		}
-		if i > 0 {
-			nr = append([]string{""}, nr...)
-		}
-		rows = append(rows, nr...)
-	}
-	for i := range rows {
-		rows[i] = clipToWidth(rows[i], width)
-	}
-	return rows
-}
 
 // clipToWidth truncates a styled row to at most width display columns,
 // passing ANSI escape sequences through uncounted and appending a reset so

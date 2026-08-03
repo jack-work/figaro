@@ -15,6 +15,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/compose"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
@@ -37,6 +38,7 @@ type showOpts struct {
 	jsonOut  bool
 	verbose  bool
 	literal  bool
+	details  bool // -o: the metadata Ctrl-O shows in the pager
 }
 
 // renderAria prints history for an aria. The default view derives the
@@ -66,6 +68,8 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	for i := 0; i < len(expanded); i++ {
 		a := expanded[i]
 		switch {
+		case a == "-o" || a == "--details":
+			opts.details = true
 		case a == "-v" || a == "--verbose":
 			opts.verbose = true
 		case a == "-l" || a == "--literal":
@@ -97,7 +101,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		default:
 			n, err := strconv.Atoi(a)
 			if err != nil {
-				die("usage: figaro show [--id <id>] [N | --last N | --from A [--to B] | -a] [-j|--json] [-v] [-l]")
+				die("usage: figaro show [--id <id>] [N | --last N | --from A [--to B] | -a] [-j|--json] [-o] [-v] [-l]")
 			}
 			opts.last = n
 		}
@@ -194,7 +198,14 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		u := turns[i]
 		fmt.Println(term.Dim(fmt.Sprintf("[%d]", u.ID)))
 		fmt.Println()
-		rows := renderTurnRows(u.Inquiry, u.InquirySegments, u.Nodes, width, 0, 0, renderSettings{verbose: true})
+		// The DEFAULT is what `figaro listen` draws: the same composer, the
+		// same rows, no metadata. `-o` adds the addresses and timestamps Ctrl-O
+		// shows in the pager — it used to be on unconditionally, which meant
+		// every `show` printed detail nobody had asked for.
+		rows := renderTurnRows(aria.Message{
+			Turn: int(u.ID), Role: livedoc.RoleOutput,
+			Inquiry: u.Inquiry, InquirySegments: u.InquirySegments, Nodes: u.Nodes,
+		}, width, 0, renderSettings{verbose: opts.details})
 		auditRows(rows, width, "show")
 		fmt.Println(strings.Join(rows, "\n"))
 		fmt.Println()

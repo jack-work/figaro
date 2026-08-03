@@ -349,7 +349,7 @@ func (t *transcript) entryLine(e *lineEntry, rel int, hl string, sel selectionSp
 	if r.ref.valid() {
 		// r.text is already in its plainNodeRow resting form, so this is a
 		// no-op returning line untouched unless the row is actually selected.
-		line = decorateNodeRow(line, sel.mark(r.ref))
+		line = decorateNodeRow(line, sel.mark(r.ref), t.w)
 	}
 	if hl != "" {
 		line = highlightMatches(line, hl)
