@@ -14,6 +14,11 @@ type IncrementalProjection[T any] struct {
 	Fingerprint string
 	Entries     int
 	LastLT      uint64
+	// LastChalkVersion is how far the board had advanced at the last entry
+	// projected. It MUST survive a warm start: without it the next pass asks
+	// for patches from 0 and re-renders the whole board onto the first new
+	// message, which the per-LT cache then makes permanent.
+	LastChalkVersion uint64
 }
 
 type ProjectionStats struct {
@@ -44,6 +49,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 	stats := ProjectionStats{Entries: len(entries)}
 	state := config.Initial
 	snap := chalkboard.Snapshot{}
+	var lastChalk uint64
 
 	if previous := config.Previous; previous != nil &&
 		previous.Fingerprint == config.Fingerprint &&
@@ -51,6 +57,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		(previous.Entries == 0 || entries[previous.Entries-1].LT == previous.LastLT) {
 		state = previous.State
 		snap = previous.Chalkboard
+		lastChalk = previous.LastChalkVersion
 		stats.StartIndex = previous.Entries
 	}
 
@@ -61,9 +68,12 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 			continue
 		}
 		if config.Chalkboard != nil {
-			// The entry itself says how far the board had advanced; no
-			// lookup, no scan, no map.
-			msg.Patches = config.Chalkboard.PatchesUpTo(entry.ChalkVersion)
+			// (after, upTo]: the previous entry's mark and this one's. Absolute,
+			// so a warm start renders exactly the same patches a cold walk would.
+			msg.Patches = config.Chalkboard.PatchesBetween(lastChalk, entry.ChalkVersion)
+		}
+		if entry.ChalkVersion > lastChalk {
+			lastChalk = entry.ChalkVersion
 		}
 
 		var encoded []json.RawMessage
@@ -110,11 +120,12 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		lastLT = entries[len(entries)-1].LT
 	}
 	return &IncrementalProjection[T]{
-		State:       state,
-		Chalkboard:  snap,
-		Fingerprint: config.Fingerprint,
-		Entries:     len(entries),
-		LastLT:      lastLT,
+		State:            state,
+		Chalkboard:       snap,
+		Fingerprint:      config.Fingerprint,
+		Entries:          len(entries),
+		LastLT:           lastLT,
+		LastChalkVersion: lastChalk,
 	}, stats, nil
 }
 
