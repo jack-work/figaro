@@ -150,14 +150,18 @@ func mustBody(tr *transcript) int {
 	return body
 }
 
-// stripCue removes the selection gutter so two frames can be compared for
-// CONTENT movement. The cue appearing is the point; the rows moving is the bug.
+// stripCue reduces a rendered row to the thing this test is about: WHERE
+// ITS TEXT IS. A selection legitimately changes how the row is drawn -- the
+// gutter cue appears, and the whole row is wrapped in a highlight -- and
+// none of that is movement. Only a row whose TEXT differs has moved.
+//
+// It used to strip the cue alone, so the highlight made a stationary row
+// compare unequal and the test reported a scroll of "0 rows up from the
+// bottom" -- a scroll of nothing, which is what a scroll of nothing looks
+// like when the comparison is too literal.
 func stripCue(s string) string {
-	if len(s) == 0 {
-		return s
-	}
-	r := []rune(s)
-	if r[0] == '▎' {
+	r := []rune(stripSGRForTest(s))
+	if len(r) > 0 && r[0] == '▎' {
 		r[0] = ' '
 	}
 	return string(r)
