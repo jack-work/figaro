@@ -1,8 +1,13 @@
 # Figaro
 
-*Largo al factotum della citta.*
+*Largo al factotum della calcolatore.*
 
-A Go CLI coding agent. One binary: CLI, supervisor daemon, agent runtime. JSON-RPC over unix sockets.
+A coding agent with few opinions, firmly held. Supports multi-agent, context forking, fully persistent structured metadata, and terminal-native semantics out of box.  One binary: CLI, supervisor daemon, agent runtime. JSON-RPC over unix sockets.  Tutto pulito, bravo bravissimo.
+
+## Supported Providers
+- Anthropic, via API key or Max Subscription OAuth
+- Copilot, personal or enterprise (GPT 5.6, Opus 4.5-5 and Sonnet 4.5-5 tested)
+- More to come (file an issue if you want to see another provider supported)
 
 ## Install
 
@@ -170,6 +175,16 @@ go install github.com/jack-work/figaro/cmd/figaro@vX.Y.Z
 nix build                       # produces result/bin/figaro + fig symlink
 nix develop                     # dev shell with Go, tools, isolated hush
 ```
+
+## Tips
+The primary supported user interface for figaro is provided by the CLI.  It is designed such that context may be viewed live or snapshot quickly to avoid context switching overhead demanded by one-stop-shop coding agent applications, such as Claude Code, Codex, or Pi Agent.  Rather than running a binary and typing a message in a chatbox, figaro wants to be passed messages shell using CLI verbs.  Messaging verbs (i.e. send, new, fork) will bind the caller shell to the TUI LLM transcript if the response outgrows available terminal scrollback.  The `--forget` flag will prevent that bind, allowing for multi agent communication within a single shell and without leaving standard shell REPL or blocking it for any period of time.
+
+Idiomatically, a shell alias or binary `q` may be defined which aliases to `fig send --`.  The single character alias makes the standard use case, messaging figaro and binding to shell, easier to type.  The project author uses this alias and several others to avoid CLI verbiage.  Other aliases, however, may naturally be defined to support emergent or alternative use cases.  Figaro is in the service of the user; figaro-specific shell configurations are idiomatic.
+
+The chalkboard is the internal name for structured state which serves both to expose structured state as agent context, and to configure figaro runtime.  Set values with `fig set key value`.  The system prefix is not natively shown to the model.
+
+## On Isolation
+Figaro has only filesystem based isolation. It is currently used with full userspace privileges. It inherits the permissions of its user caller. While figaro can be run in a sandbox, a gateway is necessary to broker sandbox ingress.  Furthermore, figaro is not prevented from calling any other figaro aria in its instance.  Native sandboxing via first party gateway and permission modeling is a TODO.  File an issue if you want to see it sooner rather than later.
 
 ## License
 
