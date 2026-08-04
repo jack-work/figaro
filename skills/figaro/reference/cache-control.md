@@ -30,10 +30,27 @@ Confirm it's working from a `FIGARO_WIRE_DIR` dump: a follow-up turn shows
 `system.cache_control` on the chalkboard overrides the default:
 
 ```
-figaro set system.cache_control none      # disable caching entirely
+figaro set system.cache_control none      # stop signalling (see below)
 figaro set system.cache_control 1h        # long (1h) retention
 figaro set system.cache_control ephemeral # explicit short (the default)
 ```
+
+**`none` stops figaro signalling; it does not stop the provider caching.**
+The distinction is the provider's, not ours, and it was measured:
+
+- **Anthropic-family** (anthropic, anthropicsdk, copilot serving Claude)
+  caches only what you mark. With `none`, a turn whose prompt had been
+  reading 8,833 tokens from cache reported **9,118 uncached input tokens and
+  a cache-read delta of exactly 0**. Here `none` really does turn caching
+  off.
+- **OpenAI-family** (copilot serving GPT, and any gateway routing to an
+  OpenAI model) caches a stable prefix implicitly, with no request-side
+  signal at all. `none` removes markers that path never needed; the provider
+  keeps caching and keeps discounting. Expect cache reads with caching
+  "off", and do not write a test that asserts otherwise — an implicit-caching
+  provider will fail it by working correctly.
+
+So `none` is "send no directives", which is all a client can promise.
 
 Retention is a `ttl` field, not a type — `1h` reaches the wire as
 `{"type":"ephemeral","ttl":"1h"}`. Neither TTL needs a beta header. 1h costs

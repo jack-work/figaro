@@ -267,7 +267,7 @@ func TestCachingIsOnByDefault(t *testing.T) {
 		"default aria must mark the system prefix")
 	assert.NotNil(t, req.Tools[len(req.Tools)-1].CacheControl,
 		"default aria must mark the tool prefix")
-	assert.Greater(t, countCacheMarkers(req), 0, "default aria must cache something")
+	assert.Greater(t, countCacheMarkers(req), 0, "default aria must SIGNAL caching (markers are all figaro controls; whether the provider then caches is its decision)")
 }
 
 // TestCachingOffIsHonoured keeps the escape hatch working.
