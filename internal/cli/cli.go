@@ -668,11 +668,13 @@ positional slot belongs to the sub-verb.`,
 	r.Register(&cmdkit.Command{
 		Name:  "fork",
 		Group: "Session",
-		Short: "Branch a conversation: freeze it, mint two children",
+		Short: "Branch a conversation: keep this id, mint an alternative",
 		Usage: "fork [--id <id> | <id>[:<turn>]] [--stay] [-r|-v|-o|-l|-x|-n|-y|-f|-j] [-- <prompt>]",
-		Long: `Branch a conversation. The target freezes (its id becomes a
-read-only index node) and two fresh children are minted: the
-continuation (the original line) and an empty alternative.
+		Long: `Branch a conversation. A HEAD fork keeps the target's id on the
+continuation line and mints ONE new aria, the alternative. The target is
+NOT frozen and does NOT become read-only: it stays live at the same id,
+so anything already addressing it keeps working. Only an INTERIOR fork
+(<id>:12) freezes a node, and it freezes the fork POINT, not the target.
 
   figaro fork                 branch the bound aria at its head
   figaro fork <id>            branch another aria at its head (maintenance)
@@ -688,9 +690,11 @@ mid-tool, where a fork strands a tool_invoke without its result. Reach for
 the dot when you already hold an LT, or need a point no turn boundary names.
 Both work for send, fork and attend; naming both at once is an error.
 
-Forking your own bound aria rebinds this shell to the continuation
-(same trunk/mantra, new id) since the bound aria just froze. Forking
-any other aria, or passing --stay, leaves your session untouched.
+Forking your own bound aria at its head leaves this shell bound to the
+same id: the continuation keeps the target's id, trunk and mantra, and
+the aria is never frozen. Forking any other aria, or passing --stay,
+also leaves your session untouched. SELF-FORKING IS SAFE -- it does not
+cost you your id, your inbox, or any message in flight.
 
 With a prompt — ` + "`figaro fork [flags] -- <prompt>`" + ` — it also sends, the way
 ` + "`figaro new -- <prompt>`" + ` does. The prompt always lands on the ALTERNATIVE
