@@ -31,8 +31,6 @@ import (
 
 const (
 	providerName      = "anthropic"
-	apiBaseURL        = "https://api.anthropic.com/v1"
-	apiMessagesURL    = apiBaseURL + "/messages"
 	apiVersion        = "2023-06-01"
 	claudeCodeVersion = "2.1.62"
 )
@@ -44,6 +42,12 @@ type Anthropic struct {
 	MaxTokens        int
 	HTTPClient       *http.Client
 	ReminderRenderer string // "tag" (default) or "tool"
+
+	// Route is where this provider sends and what that endpoint honours.
+	// It is not part of Fingerprint: per-message cache bytes are dialect
+	// state, not route state, so pointing the same provider at a proxy
+	// must not invalidate an aria's translation cache.
+	Route provider.Route
 
 	// Templates renders Patches as system-reminder blocks. nil = skip.
 	Templates *template.Template
@@ -72,11 +76,22 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 		auth:             resolver,
 		Model:            knobs.Model,
 		MaxTokens:        knobs.MaxTokens,
-		HTTPClient:       &http.Client{Timeout: 10 * time.Minute},
+		HTTPClient:       &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
 		ReminderRenderer: rr,
 		CacheOpen:        cacheOpen,
 		CacheNamespace:   providerName,
+		Route:            provider.WithBaseURLOverride(provider.AnthropicDirect(), providerName),
 	}, nil
+}
+
+// route returns this provider's route, defaulting to the stock Anthropic
+// endpoint. A zero-value Route must never silently mean "no caching" — that
+// is how the direct provider ended up marking nothing at all.
+func (a *Anthropic) route() provider.Route {
+	if a.Route.BaseURL == "" {
+		return provider.WithBaseURLOverride(provider.AnthropicDirect(), providerName)
+	}
+	return a.Route
 }
 
 // cacheFor returns this provider's lineage cache, opening lazily.
@@ -283,7 +298,7 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 
 func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	resp, _, err := a.doWithAuthRetry(ctx, func(apiKey string) (*http.Request, error) {
-		req, err := http.NewRequestWithContext(ctx, "GET", apiBaseURL+"/models?limit=100", nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", a.route().ModelsURL()+"?limit=100", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -494,6 +509,9 @@ type thinkingParam struct {
 
 type cacheControl struct {
 	Type string `json:"type"`
+	// TTL is the retention: "" (provider default, 5m) or "1h". It is a
+	// field of its own — a retention written into Type is rejected.
+	TTL string `json:"ttl,omitempty"`
 }
 
 type systemBlock struct {
@@ -796,17 +814,27 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 		}
 	}
 
-	if cacheSetting := snapshot.Lookup("system.cache_control"); cacheSetting != nil {
-		markCacheBreakpoints(&req, *cacheSetting)
+	if policy := provider.ResolveCachePolicy(snapshot); !policy.Off() {
+		route := a.route()
+		// Deliberately NOT gated on the model's minimum cacheable size.
+		// Figaro spends 3 of 4 slots, so there is no scarcity to protect,
+		// and a marker below the minimum is ignored rather than charged.
+		// Gating would trade a free no-op for a false negative on any
+		// prompt a chars/4 estimate under-counts. The thresholds live in
+		// provider.CacheMinTokens for an endpoint that DOES have to ration
+		// slots and knows which model it resolved.
+		if plan := route.MarkPlan(provider.ResolveMarkMode(snapshot)); plan.Blocks {
+			markCacheBreakpoints(&req, policy, plan, route.Caps)
+		}
 	}
-	applyMessageTags(&req, msgLTs, snapshot)
+	applyMessageTags(&req, msgLTs, snapshot, a.route().Caps)
 	applyThinking(&req, snapshot, model)
 	return req, nil
 }
 
 // applyMessageTags reads system.tags and applies per-message
 // cache_control overrides keyed by logical time.
-func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.Snapshot) {
+func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.Snapshot, caps provider.CacheCaps) {
 	raw, ok := snapshot.Get("system.tags")
 	if !ok || len(raw) == 0 {
 		return
@@ -842,26 +870,88 @@ func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.S
 		}
 		m := &req.Messages[idx]
 		if k := len(m.Content); k > 0 {
-			m.Content[k-1].CacheControl = &cacheControl{Type: tag.CacheControl}
+			policy := provider.ParseCachePolicy(tag.CacheControl)
+			if policy.Off() {
+				continue
+			}
+			m.Content[k-1].CacheControl = controlFor(policy, caps)
 		}
 	}
 }
 
-// markCacheBreakpoints attaches cache_control to the last block of
-// each cacheable region.
-func markCacheBreakpoints(req *nativeRequest, setting string) {
-	if n := len(req.System); n > 0 {
-		req.System[n-1].CacheControl = &cacheControl{Type: setting}
+// controlFor renders a policy for the wire, dropping a ttl the route will
+// not honour rather than sending one that is ignored or rejected.
+func controlFor(p provider.CachePolicy, caps provider.CacheCaps) *cacheControl {
+	cc := &cacheControl{Type: p.Type}
+	if caps.TTL {
+		cc.TTL = p.TTL
 	}
-	if n := len(req.Tools); n > 0 {
-		req.Tools[n-1].CacheControl = &cacheControl{Type: setting}
+	return cc
+}
+
+// markCacheBreakpoints attaches cache_control to the static prefix (last
+// system block + last tool) and the rolling tail (leaf of the LAST input
+// message), caching the whole prompt-so-far so the next turn reads it back.
+// That is 3 of Anthropic's 4 breakpoints; the fourth is left for a
+// downstream gateway to top up, and for the per-fork long-retention marker.
+//
+// The tail is marked LAST in wire order deliberately. Anthropic honours
+// every breakpoint, but a gateway lowering these markers to Gemini keeps
+// only the final one — LiteLLM shipped a first-found bug over exactly this
+// (litellm#17201), so the ordering is a contract, not an accident.
+func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan provider.MarkPlan, caps provider.CacheCaps) {
+	cc := controlFor(policy, caps)
+	budget := caps.MaxMarkers
+	if budget > provider.AutoCacheBreakpoints {
+		budget = provider.AutoCacheBreakpoints
 	}
-	if n := len(req.Messages); n >= 2 {
-		m := &req.Messages[n-2]
+	spend := func() bool {
+		if budget <= 0 {
+			return false
+		}
+		budget--
+		return true
+	}
+	if n := len(req.System); n > 0 && spend() {
+		req.System[n-1].CacheControl = cc
+	}
+	if n := len(req.Tools); n > 0 && spend() {
+		req.Tools[n-1].CacheControl = cc
+	}
+	if !plan.Tail {
+		return
+	}
+	if n := len(req.Messages); n >= 1 && spend() {
+		m := &req.Messages[n-1]
 		if k := len(m.Content); k > 0 {
-			m.Content[k-1].CacheControl = &cacheControl{Type: setting}
+			m.Content[k-1].CacheControl = cc
 		}
 	}
+}
+
+// countCacheMarkers reports how many explicit cache_control markers a
+// request carries. Exercised by tests and the fuzz target: a fifth marker
+// is a 400 from the API, not a warning.
+func countCacheMarkers(req nativeRequest) int {
+	n := 0
+	for _, s := range req.System {
+		if s.CacheControl != nil {
+			n++
+		}
+	}
+	for _, t := range req.Tools {
+		if t.CacheControl != nil {
+			n++
+		}
+	}
+	for _, m := range req.Messages {
+		for _, c := range m.Content {
+			if c.CacheControl != nil {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // Send drives one turn: catch up cache, POST, stream SSE, land
@@ -895,7 +985,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	}
 
 	resp, _, err := a.doWithAuthRetry(ctx, func(token string) (*http.Request, error) {
-		httpReq, herr := http.NewRequestWithContext(ctx, "POST", apiMessagesURL, bytes.NewReader(body))
+		httpReq, herr := http.NewRequestWithContext(ctx, "POST", a.route().MessagesURL(), bytes.NewReader(body))
 		if herr != nil {
 			return nil, fmt.Errorf("create request: %w", herr)
 		}

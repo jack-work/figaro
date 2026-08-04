@@ -87,7 +87,8 @@ func TestProjectTools_RoundTrip(t *testing.T) {
 // sets cache_control on:
 //   - the last system block,
 //   - the last tool definition,
-//   - the last content block of the second-to-last message.
+//   - the last content block of the LAST message (the rolling tail, so the
+//     next turn reads the whole transcript back out of cache).
 func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
@@ -113,23 +114,25 @@ func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 	require.NotNil(t, req.Tools[len(req.Tools)-1].CacheControl, "last tool must have cache_control set")
 	assert.Equal(t, "ephemeral", req.Tools[len(req.Tools)-1].CacheControl.Type)
 
-	require.GreaterOrEqual(t, len(req.Messages), 2, "expect at least two messages for the message-level breakpoint")
-	stm := req.Messages[len(req.Messages)-2]
-	require.NotEmpty(t, stm.Content, "second-to-last message must have content")
-	require.NotNil(t, stm.Content[len(stm.Content)-1].CacheControl, "second-to-last message's last content block must have cache_control set")
+	require.GreaterOrEqual(t, len(req.Messages), 2, "expect at least two messages")
+	stm := req.Messages[len(req.Messages)-1]
+	require.NotEmpty(t, stm.Content, "tail message must have content")
+	require.NotNil(t, stm.Content[len(stm.Content)-1].CacheControl, "the tail message's last content block must have cache_control set")
 	assert.Equal(t, "ephemeral", stm.Content[len(stm.Content)-1].CacheControl.Type)
 
-	// And: the last message (the new user prompt) must NOT have cache_control —
-	// it's not yet "stable" so it shouldn't pollute the cache prefix.
-	lastMsg := req.Messages[len(req.Messages)-1]
-	require.NotEmpty(t, lastMsg.Content)
-	assert.Nil(t, lastMsg.Content[len(lastMsg.Content)-1].CacheControl, "the leaf user prompt must not carry cache_control")
+	// The tail marker deliberately covers the new user prompt. The old rule
+	// here ("leave the leaf unmarked, it isn't stable yet") cost a message of
+	// cache coverage every turn: the prompt IS part of the prefix on the next
+	// turn, so leaving it unmarked forces a fresh write of it every time.
+	// anthropicsdk has always marked n-1; this is the two paths converging.
 }
 
-// TestProjectMessages_NoMessageBreakpoint_WhenSingleMessage verifies
-// that the message-level breakpoint is suppressed when there is only
-// one message — there is no "stable prior leaf" to anchor.
-func TestProjectMessages_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
+// TestProjectMessages_SingleMessageStillMarksTheTail verifies that a first
+// turn is marked. The old rule suppressed the message-level breakpoint
+// below two messages, so an aria's opening turn — typically the largest
+// stable prefix it will ever have, credo plus tools — wrote no cache at all
+// and turn two paid full price for it.
+func TestProjectMessages_SingleMessageStillMarksTheTail(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
 		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first prompt — nothing on disk yet")}},
@@ -139,7 +142,7 @@ func TestProjectMessages_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
 
 	require.Len(t, req.Messages, 1)
 	require.NotEmpty(t, req.Messages[0].Content)
-	assert.Nil(t, req.Messages[0].Content[0].CacheControl, "single message must not carry cache_control")
+	assert.NotNil(t, req.Messages[0].Content[0].CacheControl, "the opening turn must write the cache")
 }
 
 // TestProjectMessages_StableAcrossCalls verifies that the same input
@@ -218,7 +221,138 @@ func TestProjectMessages_PerLTTag(t *testing.T) {
 		"message at LT 11 must carry cache_control from system.tags")
 	assert.Equal(t, "ephemeral", tagged.Content[len(tagged.Content)-1].CacheControl.Type)
 
-	// Other messages should not carry it (no system.cache_control set).
+	// The untagged, non-tail message carries nothing; the tail carries the
+	// automatic rolling marker (caching is on by default).
 	assert.Nil(t, req.Messages[0].Content[0].CacheControl)
-	assert.Nil(t, req.Messages[2].Content[0].CacheControl)
+	assert.NotNil(t, req.Messages[2].Content[0].CacheControl, "the rolling tail marker is automatic")
+	assert.LessOrEqual(t, countCacheMarkers(req), provider.MaxCacheBreakpoints,
+		"per-LT tags layer on top of the automatic markers and must not breach the API cap")
+}
+
+// TestCachingIsOnByDefault pins the contract that known_keys.go and the
+// cache-control skill both state: caching is ON at short retention with no
+// chalkboard key set at all.
+//
+// It was not. The direct provider marked breakpoints only when
+// system.cache_control was explicitly set, so every default aria — this is
+// the provider you get without UseOfficialSDK — sent zero cache_control
+// markers and re-paid full input price for its entire prefix every turn.
+//
+// Scale, measured on two live figaro arias running the SDK path (which did
+// mark), `figaro status <id> -j`:
+//
+//	aria 30bc6333: cache_read=13,661,486  uncached input=210
+//	aria ed3915b1: cache_read= 4,522,492  uncached input=122
+//
+// 99.998% of input tokens arrived as cache reads. Billed at Sonnet 4.5
+// rates ($3.00/M input, $0.30/M cache read, $3.75/M cache write), the first
+// aria cost ~$4.98 with caching and would have cost ~$41.69 without: an 8.4x
+// input bill for a one-line difference in behaviour.
+func TestCachingIsOnByDefault(t *testing.T) {
+	a := &Anthropic{}
+	msgs := []message.Message{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first turn")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("first reply")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("second turn")}},
+	}
+	tools := []provider.Tool{{Name: "alpha", Description: "first", Parameters: fakeSchema()}}
+
+	// No system.cache_control key anywhere on the board.
+	snap := systemSnapshot(t, "you are a test agent")
+	req, err := a.projectMessagesWithModel(a.encodeAll(msgs), snap, tools, 1024, false, "claude-test")
+	require.NoError(t, err)
+
+	require.NotEmpty(t, req.System)
+	assert.NotNil(t, req.System[len(req.System)-1].CacheControl,
+		"default aria must mark the system prefix")
+	assert.NotNil(t, req.Tools[len(req.Tools)-1].CacheControl,
+		"default aria must mark the tool prefix")
+	assert.Greater(t, countCacheMarkers(req), 0, "default aria must SIGNAL caching (markers are all figaro controls; whether the provider then caches is its decision)")
+}
+
+// TestCachingOffIsHonoured keeps the escape hatch working.
+func TestCachingOffIsHonoured(t *testing.T) {
+	a := &Anthropic{}
+	msgs := []message.Message{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("only turn")}},
+	}
+	snap := withKey(systemSnapshot(t, "you are a test agent"), "system.cache_control", json.RawMessage(`"none"`))
+	req, err := a.projectMessagesWithModel(a.encodeAll(msgs), snap, nil, 1024, false, "claude-test")
+	require.NoError(t, err)
+	assert.Equal(t, 0, countCacheMarkers(req), `system.cache_control "none" must mark nothing`)
+}
+
+// TestNeverExceedsTheAPIMarkerCap is the assertion that a fifth marker is a
+// hard 400: figaro emits at most 3, leaving one slot for a gateway.
+func TestNeverExceedsTheAPIMarkerCap(t *testing.T) {
+	a := &Anthropic{}
+	var msgs []message.Message
+	for i := 0; i < 12; i++ {
+		role := message.RoleInput
+		if i%2 == 1 {
+			role = message.RoleOutput
+		}
+		msgs = append(msgs, message.Message{Role: role, Content: []message.Content{message.TextContent("turn")}})
+	}
+	tools := []provider.Tool{
+		{Name: "alpha", Description: "a", Parameters: fakeSchema()},
+		{Name: "beta", Description: "b", Parameters: fakeSchema()},
+	}
+	req, err := a.projectMessagesWithModel(a.encodeAll(msgs), systemSnapshot(t, "credo"), tools, 1024, false, "claude-test")
+	require.NoError(t, err)
+	assert.LessOrEqual(t, countCacheMarkers(req), provider.AutoCacheBreakpoints,
+		"figaro must emit at most 3 markers so a downstream gateway can top up within Anthropic's cap of 4")
+}
+
+// TestTTLIsAFieldNotAType is bug 3: `figaro set system.cache_control 1h`
+// used to write the retention into the type field, producing
+// {"type":"1h"} — a documented setting that the API rejects.
+func TestTTLIsAFieldNotAType(t *testing.T) {
+	a := &Anthropic{}
+	msgs := []message.Message{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("turn")}},
+	}
+	snap := withKey(systemSnapshot(t, "credo"), "system.cache_control", json.RawMessage(`"1h"`))
+	req, err := a.projectMessagesWithModel(a.encodeAll(msgs), snap, nil, 1024, false, "claude-test")
+	require.NoError(t, err)
+
+	cc := req.System[len(req.System)-1].CacheControl
+	require.NotNil(t, cc)
+	assert.Equal(t, "ephemeral", cc.Type, "type is an enum of exactly one value")
+	assert.Equal(t, "1h", cc.TTL, "retention rides in ttl")
+
+	raw, err := json.Marshal(cc)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"type":"ephemeral","ttl":"1h"}`, string(raw))
+}
+
+// A per-LT tag took the same unvalidated path, so system.tags[N].cache_control
+// "none" emitted {"type":"none"} instead of disabling the marker.
+func TestPerLTTagNoneDisablesRatherThanEmittingGarbage(t *testing.T) {
+	a := &Anthropic{}
+	msgs := []message.Message{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("one")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("two")}},
+	}
+	snap := withKey(systemSnapshot(t, "credo"), "system.tags", json.RawMessage(`{"10":{"cache_control":"none"}}`))
+	req, err := a.projectMessagesWithLTs(a.encodeAll(msgs), []uint64{10, 11}, snap, nil, 1024, false, "claude-test")
+	require.NoError(t, err)
+	assert.Nil(t, req.Messages[0].Content[0].CacheControl, `a "none" tag must not stamp a marker`)
+}
+
+// The ttl is dropped on a route that does not honour it rather than sent to
+// be ignored or rejected.
+func TestTTLDroppedOnARouteThatDoesNotHonourIt(t *testing.T) {
+	a := &Anthropic{Route: provider.GatewayRoute("http://127.0.0.1:61890/v1")}
+	msgs := []message.Message{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("turn")}},
+	}
+	snap := withKey(systemSnapshot(t, "credo"), "system.cache_control", json.RawMessage(`"1h"`))
+	snap = withKey(snap, provider.CacheMarkersKey, json.RawMessage(`"blocks"`))
+	req, err := a.projectMessagesWithModel(a.encodeAll(msgs), snap, nil, 1024, false, "claude-test")
+	require.NoError(t, err)
+	cc := req.System[len(req.System)-1].CacheControl
+	require.NotNil(t, cc)
+	assert.Equal(t, "ephemeral", cc.Type)
+	assert.Empty(t, cc.TTL, "a route without TTL support must not be sent one")
 }

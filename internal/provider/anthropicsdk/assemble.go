@@ -29,8 +29,8 @@ func buildParams(messages []anthropic.MessageParam, lts []uint64, snap chalkboar
 	// adjacent same-role messages by concatenating their content blocks.
 	params.Messages, msgLTs = coalesceMessages(params.Messages, msgLTs)
 
-	if setting := resolveCacheControl(snap); setting != "" {
-		markCacheBreakpoints(&params, setting)
+	if policy := resolveCacheControl(snap); !policy.Off() {
+		markCacheBreakpoints(&params, policy)
 	}
 	applyMessageTags(&params, msgLTs, snap)
 	applyThinking(&params, snap, model)
@@ -248,11 +248,8 @@ func toolInputSchema(params any) anthropic.ToolInputSchemaParam {
 	return schema
 }
 
-// resolveCacheControl decides the automatic cache_control setting. Caching is
-// ON by default at short (5m) ephemeral retention — the static prefix (system
-// + tools) is then a cache read on every turn after the first, and the rolling
-// breakpoint caches the growing transcript. system.cache_control overrides:
-// "none"/"off"/"false" disable it; "ephemeral"/"5m"/"1h" force a TTL.
+// resolveCacheControl is provider.ResolveCachePolicy — kept as a named
+// wrapper because the FUTURE note below is about this call site.
 //
 // FUTURE (conversation forks): retention becomes a per-span score rather than
 // one flat setting. When the IR carries a fork graph, a provider-implemented
@@ -260,18 +257,9 @@ func toolInputSchema(params any) anthropic.ToolInputSchemaParam {
 // that graph — chiefly its descendant/child count, i.e. how many branches
 // reuse the prefix — memoize the score across breakpoints (so a shared prefix
 // isn't recomputed per fork), and promote spans above a threshold to long (1h)
-// retention. (1h additionally needs the extended-cache-ttl beta we don't send
-// yet.) Keep that decision funnelled through here.
-func resolveCacheControl(snap chalkboard.Snapshot) string {
-	if cc := snap.Lookup("system.cache_control"); cc != nil {
-		switch strings.ToLower(strings.TrimSpace(*cc)) {
-		case "none", "off", "false", "":
-			return ""
-		default:
-			return *cc
-		}
-	}
-	return "ephemeral" // default: short automatic caching
+// retention. Keep that decision funnelled through here.
+func resolveCacheControl(snap chalkboard.Snapshot) provider.CachePolicy {
+	return provider.ResolveCachePolicy(snap)
 }
 
 // markCacheBreakpoints attaches cache_control to the static prefix (last
@@ -279,8 +267,8 @@ func resolveCacheControl(snap chalkboard.Snapshot) string {
 // message), caching the whole prompt-so-far so the next turn reads it. This is
 // 3 of Anthropic's 4 breakpoints, leaving one for a future per-fork long-
 // retention marker (see resolveCacheControl).
-func markCacheBreakpoints(params *anthropic.MessageNewParams, setting string) {
-	cc := cacheControlOf(setting)
+func markCacheBreakpoints(params *anthropic.MessageNewParams, policy provider.CachePolicy) {
+	cc := cacheControlOf(policy)
 	if n := len(params.System); n > 0 {
 		params.System[n-1].CacheControl = cc
 	}
@@ -327,20 +315,17 @@ func applyMessageTags(params *anthropic.MessageNewParams, msgLTs []uint64, snap 
 		if !ok {
 			continue
 		}
-		setLeafCache(&params.Messages[idx], cacheControlOf(tag.CacheControl))
+		if policy := provider.ParseCachePolicy(tag.CacheControl); !policy.Off() {
+			setLeafCache(&params.Messages[idx], cacheControlOf(policy))
+		}
 	}
 }
 
 // cacheControlOf produces a non-zero CacheControlEphemeralParam so
-// the field survives the parent struct's omitzero shadowing. The
-// setting string is the legacy figaro value: "ephemeral" -> default
-// TTL (5m); "5m" or "1h" map to the explicit TTL fields.
-func cacheControlOf(setting string) anthropic.CacheControlEphemeralParam {
+// the field survives the parent struct's omitzero shadowing.
+func cacheControlOf(p provider.CachePolicy) anthropic.CacheControlEphemeralParam {
 	cc := anthropic.NewCacheControlEphemeralParam()
-	switch setting {
-	case "5m":
-		cc.TTL = anthropic.CacheControlEphemeralTTLTTL5m
-	case "1h":
+	if p.TTL == "1h" {
 		cc.TTL = anthropic.CacheControlEphemeralTTLTTL1h
 	}
 	return cc

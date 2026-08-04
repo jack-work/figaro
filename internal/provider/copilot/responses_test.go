@@ -208,13 +208,29 @@ func TestResponsesProviderStreamsAndCachesAssistant(t *testing.T) {
 	assert.Equal(t, "be concise", request.Instructions)
 	require.Len(t, request.Input, 1)
 	assert.Contains(t, string(request.Input[0]), `"ciao"`)
+	// What the CLIENT sent, through the real Send path: GPT-5.6 needs a
+	// stable cache key to route a conversation back to its warm machine.
+	assert.Equal(t, provider.SessionKey("aria-1"), request.PromptCacheKey)
+	assert.NotEmpty(t, request.PromptCacheKey)
+	assert.NotContains(t, request.PromptCacheKey, "aria-1", "the key must not leak the aria id")
+	// A single user turn has no completed exchange behind it, so no
+	// explicit breakpoint is stamped and the implicit one stands alone.
+	assert.NotContains(t, string(request.Input[0]), "prompt_cache_breakpoint")
 	assert.Equal(t, []message.Content{{Type: message.ContentProse, Text: "salve"}}, bus.deltas)
 	require.Len(t, bus.messages, 1)
 	assert.Equal(t, "salve", bus.messages[0].Content[0].Text)
 	assert.Equal(t, message.StopEnd, bus.messages[0].StopReason)
-	assert.Equal(t, 11, bus.messages[0].Usage.InputTokens)
+	// input_tokens (11) is INCLUSIVE of the cached (5) and written (2)
+	// tokens broken out beside it, so the uncached remainder is 4. This
+	// assertion previously read 11, which pinned a double count: every
+	// cached token was also counted as fresh input.
+	assert.Equal(t, 4, bus.messages[0].Usage.InputTokens)
 	assert.Equal(t, 5, bus.messages[0].Usage.CacheReadTokens)
 	assert.Equal(t, 2, bus.messages[0].Usage.CacheWriteTokens)
+	assert.Equal(t, 3, bus.messages[0].Usage.OutputTokens)
+	// The invariant that matters: the four buckets tokens.ContextFromUsage
+	// sums must equal the provider's own input_tokens + output_tokens.
+	assert.Equal(t, 11+3, tokens.ContextFromUsage(bus.messages[0].Usage))
 
 	entries := cache.Read()
 	require.Len(t, entries, 1)
@@ -954,4 +970,255 @@ func TestResponsesProviderHonorsContextDeadline(t *testing.T) {
 
 	err := p.Send(ctx, provider.SendInput{AriaID: "aria-1", FigLog: log}, &responseTestBus{})
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+// --- GPT-5.6 prompt caching -------------------------------------------------
+
+func assistantItem(t *testing.T, text string) json.RawMessage {
+	t.Helper()
+	raw, err := marshalResponseItem(responseMessage("assistant", []responseContent{
+		{Type: "output_text", Text: text},
+	}))
+	require.NoError(t, err)
+	return raw
+}
+
+func userItem(t *testing.T, text string) json.RawMessage {
+	t.Helper()
+	raw, err := marshalResponseItem(responseMessage("user", []responseContent{
+		{Type: "input_text", Text: text},
+	}))
+	require.NoError(t, err)
+	return raw
+}
+
+func breakpointsIn(t *testing.T, input []json.RawMessage) []int {
+	t.Helper()
+	var out []int
+	for i, raw := range input {
+		var item responseInputItem
+		if json.Unmarshal(raw, &item) != nil {
+			continue
+		}
+		for _, c := range item.Content {
+			if c.PromptCacheBreakpoint != nil {
+				out = append(out, i)
+			}
+		}
+	}
+	return out
+}
+
+// The mark goes BEHIND the newest turn. GPT-5.6 carries an implicit
+// breakpoint at the latest user message and does not fall back to the
+// longest matching unmarked prefix, so the useful explicit mark is one that
+// existed byte for byte on the previous turn.
+func TestPromptCacheBreakpointLandsOnTheLastAssistantItem(t *testing.T) {
+	input := []json.RawMessage{
+		userItem(t, "first"),
+		assistantItem(t, "first reply"),
+		userItem(t, "second"),
+	}
+	marked, n := markPromptCacheBreakpoint(input)
+	assert.Equal(t, 1, n)
+	assert.Equal(t, []int{1}, breakpointsIn(t, marked),
+		"the mark belongs on the last assistant item, not on the new user turn")
+}
+
+// inputFor returns the live projection slice. Stamping it in place would
+// bake a moving marker into the per-LT cache forever.
+func TestPromptCacheBreakpointDoesNotMutateTheProjection(t *testing.T) {
+	input := []json.RawMessage{
+		userItem(t, "first"),
+		assistantItem(t, "first reply"),
+		userItem(t, "second"),
+	}
+	before := make([]string, len(input))
+	for i, raw := range input {
+		before[i] = string(raw)
+	}
+
+	marked, n := markPromptCacheBreakpoint(input)
+	require.Equal(t, 1, n)
+
+	for i, raw := range input {
+		assert.Equal(t, before[i], string(raw),
+			"item %d of the caller's slice was mutated; that slice is the retained projection", i)
+	}
+	assert.NotEqual(t, string(input[1]), string(marked[1]), "the returned copy must carry the mark")
+	assert.Empty(t, breakpointsIn(t, input), "the projection must stay unmarked")
+}
+
+// Marking twice must not accumulate: each turn stamps exactly one.
+func TestPromptCacheBreakpointIsIdempotentAcrossTurns(t *testing.T) {
+	input := []json.RawMessage{userItem(t, "first"), assistantItem(t, "reply"), userItem(t, "second")}
+	once, _ := markPromptCacheBreakpoint(input)
+	twice, _ := markPromptCacheBreakpoint(input)
+	assert.Equal(t, breakpointsIn(t, once), breakpointsIn(t, twice))
+	assert.Len(t, breakpointsIn(t, twice), 1, "one mark per request, never accumulating")
+}
+
+// A first turn has nothing behind it that was ever cached.
+func TestPromptCacheBreakpointSkippedOnTheFirstTurn(t *testing.T) {
+	input := []json.RawMessage{userItem(t, "only turn")}
+	marked, n := markPromptCacheBreakpoint(input)
+	assert.Equal(t, 0, n)
+	assert.Empty(t, breakpointsIn(t, marked))
+}
+
+// The breakpoint is ADDITIVE: no prompt_cache_options.mode is sent, so
+// OpenAI's automatic breakpoints stay in play and a bad placement cannot
+// forfeit the whole prefix at the 1.25x write rate.
+func TestNoExplicitModeIsSent(t *testing.T) {
+	body, err := json.Marshal(responseCreateRequest{Type: "response.create", Model: "gpt-5.6-sol"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), "prompt_cache_options",
+		"mode=explicit disables OpenAI-managed breakpoints; ship the additive half first")
+}
+
+// The key must be the SAME derivation openaichat uses, so one conversation
+// pins to one name on both OpenAI-family routes — and it must never be the
+// raw aria id.
+func TestPromptCacheKeyMatchesTheSharedDerivation(t *testing.T) {
+	const aria = "4cf7d08f"
+	key := provider.SessionKey(aria)
+	assert.NotEmpty(t, key)
+	assert.NotContains(t, key, aria, "the key must not leak the aria id")
+	assert.Equal(t, key, provider.SessionKey(aria), "stable across turns and restarts")
+	assert.NotEqual(t, key, provider.SessionKey("30bc6333"))
+
+	body, err := json.Marshal(responseCreateRequest{
+		Type: "response.create", Model: "gpt-5.6-sol", PromptCacheKey: key,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"prompt_cache_key":"`+key+`"`)
+}
+
+// TestPromptCacheBreakpointOnTheWireAcrossTurns drives two real turns
+// through Send over a real websocket and asserts what the CLIENT put on the
+// wire — the only thing figaro controls, and the only thing observable on
+// this route at all (it speaks websocket, so wirelog cannot see it and
+// FIGARO_WIRE_DIR yields nothing here).
+func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
+	requests := make(chan responseCreateRequest, 3)
+	reply := func(conn *websocket.Conn, text string) {
+		require.NoError(t, websocket.JSON.Send(conn, map[string]any{
+			"type": "response.completed",
+			"response": map[string]any{
+				"status": "completed",
+				"usage": map[string]any{
+					"input_tokens":  2000,
+					"output_tokens": 2,
+					"input_tokens_details": map[string]any{
+						"cached_tokens":      1920,
+						"cache_write_tokens": 0,
+					},
+				},
+				"output": []any{
+					map[string]any{
+						"type": "message", "role": "assistant",
+						"content": []any{map[string]any{"type": "output_text", "text": text}},
+					},
+				},
+			},
+		}))
+	}
+	server := newResponseServer(t, func(conn *websocket.Conn) {
+		defer conn.Close()
+		var request responseCreateRequest
+		require.NoError(t, websocket.JSON.Receive(conn, &request))
+		requests <- request
+		reply(conn, "ok")
+	})
+
+	cache := store.NewMemLog[[]json.RawMessage]()
+	p := newResponsesTestProvider(server, cache)
+	log := newResponsesInputLog(t)
+	snap := chalkboard.FromMap(map[string]json.RawMessage{"system.credo": json.RawMessage(`"be concise"`)})
+
+	// Turn 1: nothing completed behind it.
+	require.NoError(t, p.Send(context.Background(), provider.SendInput{
+		AriaID: "aria-gc", FigLog: log, Snapshot: snap, MaxTokens: 64,
+	}, &responseTestBus{}))
+	first := <-requests
+
+	// Turn 2: a completed exchange now sits behind the new prompt.
+	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		Role:    message.RoleInput,
+		Content: []message.Content{message.TextContent("again")},
+	}})
+	require.NoError(t, err)
+	require.NoError(t, p.Send(context.Background(), provider.SendInput{
+		AriaID: "aria-gc", FigLog: log, Snapshot: snap, MaxTokens: 64,
+	}, &responseTestBus{}))
+	second := <-requests
+
+	countBreakpoints := func(items []json.RawMessage) int {
+		n := 0
+		for _, raw := range items {
+			var item responseInputItem
+			if json.Unmarshal(raw, &item) != nil {
+				continue
+			}
+			for _, c := range item.Content {
+				if c.PromptCacheBreakpoint != nil {
+					n++
+				}
+			}
+		}
+		return n
+	}
+
+	assert.Equal(t, 0, countBreakpoints(first.Input),
+		"turn 1 has no completed exchange behind it; the implicit breakpoint stands alone")
+	assert.Equal(t, 1, countBreakpoints(second.Input),
+		"turn 2 must carry exactly one explicit breakpoint")
+
+	// Turn 3 is where in-place stamping would show itself: the projection
+	// is warm-started from the previous turn's state, so a marker written
+	// into it would still be there AND a new one would be added. Two turns
+	// cannot see that; three can.
+	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
+		Role:    message.RoleInput,
+		Content: []message.Content{message.TextContent("third")},
+	}})
+	require.NoError(t, err)
+	require.NoError(t, p.Send(context.Background(), provider.SendInput{
+		AriaID: "aria-gc", FigLog: log, Snapshot: snap, MaxTokens: 64,
+	}, &responseTestBus{}))
+	third := <-requests
+	assert.Equal(t, 1, countBreakpoints(third.Input),
+		"exactly one marker per request; markers must not accumulate across turns")
+
+	// It must sit on the assistant item, not on the new user turn.
+	var marked responseInputItem
+	for _, raw := range second.Input {
+		var item responseInputItem
+		if json.Unmarshal(raw, &item) != nil {
+			continue
+		}
+		for _, c := range item.Content {
+			if c.PromptCacheBreakpoint != nil {
+				marked = item
+			}
+		}
+	}
+	assert.Equal(t, "assistant", marked.Role,
+		"the mark belongs behind the newest turn, on a boundary that existed last turn")
+
+	// One conversation, one key, both turns.
+	assert.Equal(t, provider.SessionKey("aria-gc"), first.PromptCacheKey)
+	assert.Equal(t, first.PromptCacheKey, second.PromptCacheKey,
+		"a key that changes between turns is a key that pins nothing")
+
+	// The per-LT cache must never carry the moving marker. Note this
+	// assertion alone is weak: cache entries are written during projection,
+	// BEFORE stamping, so in-place mutation of the retained state would not
+	// show up here. The turn-3 count above is what catches that.
+	for _, entry := range cache.Read() {
+		for _, raw := range entry.Payload {
+			assert.NotContains(t, string(raw), "prompt_cache_breakpoint",
+				"a marker baked into the translation cache could never move forward")
+		}
+	}
 }

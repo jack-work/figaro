@@ -99,8 +99,8 @@ func legacyBuildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkb
 		}
 	}
 	params.Messages, msgLTs = coalesceMessages(params.Messages, msgLTs)
-	if setting := resolveCacheControl(snap); setting != "" {
-		markCacheBreakpoints(&params, setting)
+	if policy := resolveCacheControl(snap); !policy.Off() {
+		markCacheBreakpoints(&params, policy)
 	}
 	applyMessageTags(&params, msgLTs, snap)
 	applyThinking(&params, snap, model)
