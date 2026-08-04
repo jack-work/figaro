@@ -509,6 +509,9 @@ type thinkingParam struct {
 
 type cacheControl struct {
 	Type string `json:"type"`
+	// TTL is the retention: "" (provider default, 5m) or "1h". It is a
+	// field of its own — a retention written into Type is rejected.
+	TTL string `json:"ttl,omitempty"`
 }
 
 type systemBlock struct {
@@ -824,14 +827,14 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 			markCacheBreakpoints(&req, policy, plan, route.Caps)
 		}
 	}
-	applyMessageTags(&req, msgLTs, snapshot)
+	applyMessageTags(&req, msgLTs, snapshot, a.route().Caps)
 	applyThinking(&req, snapshot, model)
 	return req, nil
 }
 
 // applyMessageTags reads system.tags and applies per-message
 // cache_control overrides keyed by logical time.
-func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.Snapshot) {
+func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.Snapshot, caps provider.CacheCaps) {
 	raw, ok := snapshot.Get("system.tags")
 	if !ok || len(raw) == 0 {
 		return
@@ -867,9 +870,23 @@ func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.S
 		}
 		m := &req.Messages[idx]
 		if k := len(m.Content); k > 0 {
-			m.Content[k-1].CacheControl = &cacheControl{Type: tag.CacheControl}
+			policy := provider.ParseCachePolicy(tag.CacheControl)
+			if policy.Off() {
+				continue
+			}
+			m.Content[k-1].CacheControl = controlFor(policy, caps)
 		}
 	}
+}
+
+// controlFor renders a policy for the wire, dropping a ttl the route will
+// not honour rather than sending one that is ignored or rejected.
+func controlFor(p provider.CachePolicy, caps provider.CacheCaps) *cacheControl {
+	cc := &cacheControl{Type: p.Type}
+	if caps.TTL {
+		cc.TTL = p.TTL
+	}
+	return cc
 }
 
 // markCacheBreakpoints attaches cache_control to the static prefix (last
@@ -883,7 +900,7 @@ func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.S
 // only the final one — LiteLLM shipped a first-found bug over exactly this
 // (litellm#17201), so the ordering is a contract, not an accident.
 func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan provider.MarkPlan, caps provider.CacheCaps) {
-	cc := &cacheControl{Type: policy.Type}
+	cc := controlFor(policy, caps)
 	budget := caps.MaxMarkers
 	if budget > provider.AutoCacheBreakpoints {
 		budget = provider.AutoCacheBreakpoints
@@ -913,7 +930,8 @@ func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan 
 }
 
 // countCacheMarkers reports how many explicit cache_control markers a
-// request carries. A fifth is a 400 from the API, not a warning.
+// request carries. Exercised by tests and the fuzz target: a fifth marker
+// is a 400 from the API, not a warning.
 func countCacheMarkers(req nativeRequest) int {
 	n := 0
 	for _, s := range req.System {

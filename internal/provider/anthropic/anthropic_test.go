@@ -303,3 +303,56 @@ func TestNeverExceedsTheAPIMarkerCap(t *testing.T) {
 	assert.LessOrEqual(t, countCacheMarkers(req), provider.AutoCacheBreakpoints,
 		"figaro must emit at most 3 markers so a downstream gateway can top up within Anthropic's cap of 4")
 }
+
+// TestTTLIsAFieldNotAType is bug 3: `figaro set system.cache_control 1h`
+// used to write the retention into the type field, producing
+// {"type":"1h"} — a documented setting that the API rejects.
+func TestTTLIsAFieldNotAType(t *testing.T) {
+	a := &Anthropic{}
+	msgs := []message.Message{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("turn")}},
+	}
+	snap := withKey(systemSnapshot(t, "credo"), "system.cache_control", json.RawMessage(`"1h"`))
+	req, err := a.projectMessagesWithModel(a.encodeAll(msgs), snap, nil, 1024, false, "claude-test")
+	require.NoError(t, err)
+
+	cc := req.System[len(req.System)-1].CacheControl
+	require.NotNil(t, cc)
+	assert.Equal(t, "ephemeral", cc.Type, "type is an enum of exactly one value")
+	assert.Equal(t, "1h", cc.TTL, "retention rides in ttl")
+
+	raw, err := json.Marshal(cc)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"type":"ephemeral","ttl":"1h"}`, string(raw))
+}
+
+// A per-LT tag took the same unvalidated path, so system.tags[N].cache_control
+// "none" emitted {"type":"none"} instead of disabling the marker.
+func TestPerLTTagNoneDisablesRatherThanEmittingGarbage(t *testing.T) {
+	a := &Anthropic{}
+	msgs := []message.Message{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("one")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("two")}},
+	}
+	snap := withKey(systemSnapshot(t, "credo"), "system.tags", json.RawMessage(`{"10":{"cache_control":"none"}}`))
+	req, err := a.projectMessagesWithLTs(a.encodeAll(msgs), []uint64{10, 11}, snap, nil, 1024, false, "claude-test")
+	require.NoError(t, err)
+	assert.Nil(t, req.Messages[0].Content[0].CacheControl, `a "none" tag must not stamp a marker`)
+}
+
+// The ttl is dropped on a route that does not honour it rather than sent to
+// be ignored or rejected.
+func TestTTLDroppedOnARouteThatDoesNotHonourIt(t *testing.T) {
+	a := &Anthropic{Route: provider.GatewayRoute("http://127.0.0.1:61890/v1")}
+	msgs := []message.Message{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("turn")}},
+	}
+	snap := withKey(systemSnapshot(t, "credo"), "system.cache_control", json.RawMessage(`"1h"`))
+	snap = withKey(snap, provider.CacheMarkersKey, json.RawMessage(`"blocks"`))
+	req, err := a.projectMessagesWithModel(a.encodeAll(msgs), snap, nil, 1024, false, "claude-test")
+	require.NoError(t, err)
+	cc := req.System[len(req.System)-1].CacheControl
+	require.NotNil(t, cc)
+	assert.Equal(t, "ephemeral", cc.Type)
+	assert.Empty(t, cc.TTL, "a route without TTL support must not be sent one")
+}
