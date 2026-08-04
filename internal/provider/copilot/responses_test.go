@@ -208,6 +208,14 @@ func TestResponsesProviderStreamsAndCachesAssistant(t *testing.T) {
 	assert.Equal(t, "be concise", request.Instructions)
 	require.Len(t, request.Input, 1)
 	assert.Contains(t, string(request.Input[0]), `"ciao"`)
+	// What the CLIENT sent, through the real Send path: GPT-5.6 needs a
+	// stable cache key to route a conversation back to its warm machine.
+	assert.Equal(t, provider.SessionKey("aria-1"), request.PromptCacheKey)
+	assert.NotEmpty(t, request.PromptCacheKey)
+	assert.NotContains(t, request.PromptCacheKey, "aria-1", "the key must not leak the aria id")
+	// A single user turn has no completed exchange behind it, so no
+	// explicit breakpoint is stamped and the implicit one stands alone.
+	assert.NotContains(t, string(request.Input[0]), "prompt_cache_breakpoint")
 	assert.Equal(t, []message.Content{{Type: message.ContentProse, Text: "salve"}}, bus.deltas)
 	require.Len(t, bus.messages, 1)
 	assert.Equal(t, "salve", bus.messages[0].Content[0].Text)
@@ -1084,4 +1092,133 @@ func TestPromptCacheKeyMatchesTheSharedDerivation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Contains(t, string(body), `"prompt_cache_key":"`+key+`"`)
+}
+
+// TestPromptCacheBreakpointOnTheWireAcrossTurns drives two real turns
+// through Send over a real websocket and asserts what the CLIENT put on the
+// wire — the only thing figaro controls, and the only thing observable on
+// this route at all (it speaks websocket, so wirelog cannot see it and
+// FIGARO_WIRE_DIR yields nothing here).
+func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
+	requests := make(chan responseCreateRequest, 3)
+	reply := func(conn *websocket.Conn, text string) {
+		require.NoError(t, websocket.JSON.Send(conn, map[string]any{
+			"type": "response.completed",
+			"response": map[string]any{
+				"status": "completed",
+				"usage": map[string]any{
+					"input_tokens":  2000,
+					"output_tokens": 2,
+					"input_tokens_details": map[string]any{
+						"cached_tokens":      1920,
+						"cache_write_tokens": 0,
+					},
+				},
+				"output": []any{
+					map[string]any{
+						"type": "message", "role": "assistant",
+						"content": []any{map[string]any{"type": "output_text", "text": text}},
+					},
+				},
+			},
+		}))
+	}
+	server := newResponseServer(t, func(conn *websocket.Conn) {
+		defer conn.Close()
+		var request responseCreateRequest
+		require.NoError(t, websocket.JSON.Receive(conn, &request))
+		requests <- request
+		reply(conn, "ok")
+	})
+
+	cache := store.NewMemLog[[]json.RawMessage]()
+	p := newResponsesTestProvider(server, cache)
+	log := newResponsesInputLog(t)
+	snap := chalkboard.FromMap(map[string]json.RawMessage{"system.credo": json.RawMessage(`"be concise"`)})
+
+	// Turn 1: nothing completed behind it.
+	require.NoError(t, p.Send(context.Background(), provider.SendInput{
+		AriaID: "aria-gc", FigLog: log, Snapshot: snap, MaxTokens: 64,
+	}, &responseTestBus{}))
+	first := <-requests
+
+	// Turn 2: a completed exchange now sits behind the new prompt.
+	_, err := log.Append(store.Entry[message.Message]{Payload: message.Message{
+		Role:    message.RoleInput,
+		Content: []message.Content{message.TextContent("again")},
+	}})
+	require.NoError(t, err)
+	require.NoError(t, p.Send(context.Background(), provider.SendInput{
+		AriaID: "aria-gc", FigLog: log, Snapshot: snap, MaxTokens: 64,
+	}, &responseTestBus{}))
+	second := <-requests
+
+	countBreakpoints := func(items []json.RawMessage) int {
+		n := 0
+		for _, raw := range items {
+			var item responseInputItem
+			if json.Unmarshal(raw, &item) != nil {
+				continue
+			}
+			for _, c := range item.Content {
+				if c.PromptCacheBreakpoint != nil {
+					n++
+				}
+			}
+		}
+		return n
+	}
+
+	assert.Equal(t, 0, countBreakpoints(first.Input),
+		"turn 1 has no completed exchange behind it; the implicit breakpoint stands alone")
+	assert.Equal(t, 1, countBreakpoints(second.Input),
+		"turn 2 must carry exactly one explicit breakpoint")
+
+	// Turn 3 is where in-place stamping would show itself: the projection
+	// is warm-started from the previous turn's state, so a marker written
+	// into it would still be there AND a new one would be added. Two turns
+	// cannot see that; three can.
+	_, err = log.Append(store.Entry[message.Message]{Payload: message.Message{
+		Role:    message.RoleInput,
+		Content: []message.Content{message.TextContent("third")},
+	}})
+	require.NoError(t, err)
+	require.NoError(t, p.Send(context.Background(), provider.SendInput{
+		AriaID: "aria-gc", FigLog: log, Snapshot: snap, MaxTokens: 64,
+	}, &responseTestBus{}))
+	third := <-requests
+	assert.Equal(t, 1, countBreakpoints(third.Input),
+		"exactly one marker per request; markers must not accumulate across turns")
+
+	// It must sit on the assistant item, not on the new user turn.
+	var marked responseInputItem
+	for _, raw := range second.Input {
+		var item responseInputItem
+		if json.Unmarshal(raw, &item) != nil {
+			continue
+		}
+		for _, c := range item.Content {
+			if c.PromptCacheBreakpoint != nil {
+				marked = item
+			}
+		}
+	}
+	assert.Equal(t, "assistant", marked.Role,
+		"the mark belongs behind the newest turn, on a boundary that existed last turn")
+
+	// One conversation, one key, both turns.
+	assert.Equal(t, provider.SessionKey("aria-gc"), first.PromptCacheKey)
+	assert.Equal(t, first.PromptCacheKey, second.PromptCacheKey,
+		"a key that changes between turns is a key that pins nothing")
+
+	// The per-LT cache must never carry the moving marker. Note this
+	// assertion alone is weak: cache entries are written during projection,
+	// BEFORE stamping, so in-place mutation of the retained state would not
+	// show up here. The turn-3 count above is what catches that.
+	for _, entry := range cache.Read() {
+		for _, raw := range entry.Payload {
+			assert.NotContains(t, string(raw), "prompt_cache_breakpoint",
+				"a marker baked into the translation cache could never move forward")
+		}
+	}
 }
