@@ -511,3 +511,28 @@ func TestExplicitZeroUsageFoldsToNil(t *testing.T) {
 		t.Error("an empty usage block must map to nil")
 	}
 }
+
+// The conservative default is correct and was silent: a gateway configured
+// with base_url alone gets no markers and no session key. This pins WHAT
+// the default is, so a change to it has to be deliberate.
+func TestBareBaseURLGatewayIsUncachedAndUnsticky(t *testing.T) {
+	route := provider.UncachedRoute("http://127.0.0.1:61890/v1")
+	if route.Caps.BlockMarkers || route.Caps.TopLevel {
+		t.Error("an endpoint given only a base_url must not be marked")
+	}
+	if route.Caps.SessionKey {
+		t.Error("...and gets no session key either; loosening this is a deliberate change, not a default")
+	}
+	p := newTestProvider(t, route, provider.MarkAuto)
+	req, err := p.assemble(encodeAll(t, p, conversation()),
+		snap(t, map[string]any{"system.credo": "credo"}), nil, 1024, "aria1")
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if req.SessionID != "" || req.PromptCacheKey != "" {
+		t.Errorf("session key leaked to an untrusted route: %q/%q", req.SessionID, req.PromptCacheKey)
+	}
+	if countCacheMarkers(req) != 0 {
+		t.Error("markers leaked to an untrusted route")
+	}
+}

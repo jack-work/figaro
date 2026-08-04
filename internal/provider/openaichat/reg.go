@@ -3,6 +3,7 @@ package openaichat
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -124,6 +125,20 @@ func build(ctx provider.BuildContext, route provider.Route, name string, cfg Con
 	if err != nil {
 		return nil, err
 	}
+	// Say which route was resolved and what it will do. The conservative
+	// default — an endpoint we were merely handed gets no markers and no
+	// session key — is correct, but silence about it means the first
+	// symptom is a wire dump showing nothing where the user expected
+	// caching. Name it once, at construction.
+	markers := "off (endpoint not trusted for cache directives)"
+	if route.Caps.TopLevel {
+		markers = "request-level directive"
+	} else if route.Caps.BlockMarkers {
+		markers = "per-block"
+	}
+	slog.Info("openaichat route resolved",
+		"provider", name, "base_url", route.BaseURL, "dialect", route.Dialect,
+		"markers", markers, "session_key", route.Caps.SessionKey)
 	if mode := strings.TrimSpace(cfg.CacheMarkers); mode != "" && !strings.EqualFold(mode, "trusted") {
 		p.setMarkMode(parseMode(mode))
 	}
