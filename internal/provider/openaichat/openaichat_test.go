@@ -3,6 +3,8 @@ package openaichat
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -439,3 +441,42 @@ func FuzzStampLeafCache(f *testing.F) {
 		}
 	})
 }
+
+// A local gateway holds the real provider credentials itself. Demanding one
+// from figaro means inventing a secret that nothing reads — and the CLI's
+// credential gate is keyed on the provider name, so it refused to start a
+// turn at all ("No provider connected") until one existed. Found by driving
+// the real binary in a pty against a local endpoint; no unit test saw it,
+// because no unit test went through the credential gate.
+func TestAuthOptionalRouteSendsNoAuthorizationHeader(t *testing.T) {
+	p := newTestProvider(t, provider.GatewayRoute("http://x/v1"), provider.MarkAuto)
+	p.auth = failingResolver{}
+	req, err := http.NewRequest("POST", "http://x/v1/chat/completions", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.authorize(req); err != nil {
+		t.Fatalf("an auth-optional route must not fail on a missing credential: %v", err)
+	}
+	if got := req.Header.Get("Authorization"); got != "" {
+		t.Errorf("want no Authorization header, got %q", got)
+	}
+}
+
+// A route that DOES need a credential must still fail loudly rather than
+// send an anonymous request and collect a 401 later.
+func TestAuthRequiredRouteFailsLoudly(t *testing.T) {
+	p := newTestProvider(t, provider.OpenRouterRoute(), provider.MarkAuto)
+	p.auth = failingResolver{}
+	req, _ := http.NewRequest("POST", "http://x/v1/chat/completions", nil)
+	if err := p.authorize(req); err == nil {
+		t.Error("openrouter without a credential must error, not send an anonymous request")
+	}
+}
+
+type failingResolver struct{}
+
+func (failingResolver) Resolve() (string, error) { return "", errNoCredential }
+func (failingResolver) Invalidate(string) error  { return nil }
+
+var errNoCredential = errors.New("no credential available")

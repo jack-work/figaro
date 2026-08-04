@@ -8,6 +8,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/store"
@@ -112,6 +113,13 @@ func build(ctx provider.BuildContext, route provider.Route, name string, cfg Con
 	if resolver == nil {
 		resolver = staticToken(cfg.APIKey)
 	}
+	if route.AuthOptional {
+		// A local gateway holds the real provider credentials itself. The
+		// CLI's credential gate is keyed on the provider name and would
+		// otherwise refuse to start a turn ("No provider connected") until
+		// the user exported a secret that nothing reads.
+		resolver = optionalToken{inner: resolver, fallback: cfg.APIKey}
+	}
 	p, err := New(knobs, resolver, route, cacheOpen)
 	if err != nil {
 		return nil, err
@@ -134,6 +142,29 @@ func parseMode(s string) provider.MarkMode {
 		return provider.MarkNone
 	}
 	return provider.MarkAuto
+}
+
+// optionalToken degrades a missing credential to the empty string, which
+// the request builder reads as "send no Authorization header".
+type optionalToken struct {
+	inner    auth.TokenResolver
+	fallback string
+}
+
+func (o optionalToken) Resolve() (string, error) {
+	if o.inner != nil {
+		if tok, err := o.inner.Resolve(); err == nil && tok != "" {
+			return tok, nil
+		}
+	}
+	return o.fallback, nil
+}
+
+func (o optionalToken) Invalidate(token string) error {
+	if o.inner != nil {
+		return o.inner.Invalidate(token)
+	}
+	return nil
 }
 
 // staticToken is the credential source for a route that needs none. It

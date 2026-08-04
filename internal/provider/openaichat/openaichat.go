@@ -155,7 +155,15 @@ func (p *Provider) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 func (p *Provider) authorize(req *http.Request) error {
 	key, err := p.auth.Resolve()
 	if err != nil {
-		return fmt.Errorf("resolve token: %w", err)
+		if !p.Route.AuthOptional {
+			return fmt.Errorf("resolve token: %w", err)
+		}
+		return nil
+	}
+	if key == "" {
+		// An endpoint that needs no credential gets no header, rather than
+		// an empty Bearer that some servers reject outright.
+		return nil
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	return nil
