@@ -23,6 +23,7 @@ import (
 	// Provider registrations (init side effects).
 	_ "github.com/jack-work/figaro/internal/provider/anthropic"
 	_ "github.com/jack-work/figaro/internal/provider/copilot"
+	_ "github.com/jack-work/figaro/internal/provider/openaichat"
 )
 
 // KnownProviders returns the names of all registered providers.

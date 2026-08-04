@@ -179,6 +179,11 @@ type Route struct {
 	Auth        AuthStyle
 	ModelPrefix string // e.g. "anthropic/" for OpenRouter model ids
 	Caps        CacheCaps
+
+	// AuthOptional marks a route that may be reached without a credential.
+	// A local gateway holds the real provider keys itself; demanding one
+	// from figaro would invent a secret to satisfy a check.
+	AuthOptional bool
 }
 
 // AnthropicDirect is the stock route: api.anthropic.com, native Messages,
@@ -228,10 +233,11 @@ func OpenRouterRoute() Route {
 // what it receives.
 func GatewayRoute(baseURL string) Route {
 	return Route{
-		Name:    "gateway",
-		BaseURL: strings.TrimRight(baseURL, "/"),
-		Dialect: DialectOpenAIChat,
-		Auth:    AuthBearer,
+		Name:         "gateway",
+		BaseURL:      strings.TrimRight(baseURL, "/"),
+		Dialect:      DialectOpenAIChat,
+		Auth:         AuthBearer,
+		AuthOptional: true,
 		Caps: CacheCaps{
 			BlockMarkers: true,
 			TopLevel:     true,
@@ -248,10 +254,11 @@ func GatewayRoute(baseURL string) Route {
 // property of the route rather than an assumption.
 func UncachedRoute(baseURL string) Route {
 	return Route{
-		Name:    "gateway",
-		BaseURL: strings.TrimRight(baseURL, "/"),
-		Dialect: DialectOpenAIChat,
-		Auth:    AuthBearer,
+		Name:         "gateway",
+		BaseURL:      strings.TrimRight(baseURL, "/"),
+		Dialect:      DialectOpenAIChat,
+		Auth:         AuthBearer,
+		AuthOptional: true,
 	}
 }
 
