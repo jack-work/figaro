@@ -195,6 +195,14 @@ func (p *responsesProvider) sendWithToken(
 	}
 	logPromptCacheEconomics(response.Usage, breakpoints)
 	if len(assistant.Content) == 0 && len(response.Output) == 0 {
+		// A turn that produced nothing renders as nothing: no text, no
+		// aria, no error. Silence here is indistinguishable from a bug
+		// anywhere upstream, and it cost two agents an afternoon.
+		slog.Warn("copilot responses: empty completion, nothing to render",
+			"model", model, "status", response.Status,
+			"input_tokens", response.Usage.InputTokens,
+			"output_tokens", response.Usage.OutputTokens,
+			"reasoning_tokens", response.Usage.OutputTokensDetails.ReasoningTokens)
 		return nil
 	}
 	assistant.Timestamp = time.Now().UnixMilli()
