@@ -811,8 +811,18 @@ func (a *Anthropic) projectMessagesWithLTs(perMessage [][]json.RawMessage, lts [
 		}
 	}
 
-	if cacheSetting := snapshot.Lookup("system.cache_control"); cacheSetting != nil {
-		markCacheBreakpoints(&req, *cacheSetting)
+	if policy := provider.ResolveCachePolicy(snapshot); !policy.Off() {
+		route := a.route()
+		// Deliberately NOT gated on the model's minimum cacheable size.
+		// Figaro spends 3 of 4 slots, so there is no scarcity to protect,
+		// and a marker below the minimum is ignored rather than charged.
+		// Gating would trade a free no-op for a false negative on any
+		// prompt a chars/4 estimate under-counts. The thresholds live in
+		// provider.CacheMinTokens for an endpoint that DOES have to ration
+		// slots and knows which model it resolved.
+		if plan := route.MarkPlan(provider.ResolveMarkMode(snapshot)); plan.Blocks {
+			markCacheBreakpoints(&req, policy, plan, route.Caps)
+		}
 	}
 	applyMessageTags(&req, msgLTs, snapshot)
 	applyThinking(&req, snapshot, model)
@@ -864,19 +874,58 @@ func applyMessageTags(req *nativeRequest, msgLTs []uint64, snapshot chalkboard.S
 
 // markCacheBreakpoints attaches cache_control to the last block of
 // each cacheable region.
-func markCacheBreakpoints(req *nativeRequest, setting string) {
-	if n := len(req.System); n > 0 {
-		req.System[n-1].CacheControl = &cacheControl{Type: setting}
+func markCacheBreakpoints(req *nativeRequest, policy provider.CachePolicy, plan provider.MarkPlan, caps provider.CacheCaps) {
+	cc := &cacheControl{Type: policy.Type}
+	budget := caps.MaxMarkers
+	if budget > provider.AutoCacheBreakpoints {
+		budget = provider.AutoCacheBreakpoints
 	}
-	if n := len(req.Tools); n > 0 {
-		req.Tools[n-1].CacheControl = &cacheControl{Type: setting}
+	spend := func() bool {
+		if budget <= 0 {
+			return false
+		}
+		budget--
+		return true
 	}
-	if n := len(req.Messages); n >= 2 {
+	if n := len(req.System); n > 0 && spend() {
+		req.System[n-1].CacheControl = cc
+	}
+	if n := len(req.Tools); n > 0 && spend() {
+		req.Tools[n-1].CacheControl = cc
+	}
+	if !plan.Tail {
+		return
+	}
+	if n := len(req.Messages); n >= 2 && spend() {
 		m := &req.Messages[n-2]
 		if k := len(m.Content); k > 0 {
-			m.Content[k-1].CacheControl = &cacheControl{Type: setting}
+			m.Content[k-1].CacheControl = cc
 		}
 	}
+}
+
+// countCacheMarkers reports how many explicit cache_control markers a
+// request carries. A fifth is a 400 from the API, not a warning.
+func countCacheMarkers(req nativeRequest) int {
+	n := 0
+	for _, s := range req.System {
+		if s.CacheControl != nil {
+			n++
+		}
+	}
+	for _, t := range req.Tools {
+		if t.CacheControl != nil {
+			n++
+		}
+	}
+	for _, m := range req.Messages {
+		for _, c := range m.Content {
+			if c.CacheControl != nil {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // Send drives one turn: catch up cache, POST, stream SSE, land

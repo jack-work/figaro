@@ -222,3 +222,78 @@ func TestProjectMessages_PerLTTag(t *testing.T) {
 	assert.Nil(t, req.Messages[0].Content[0].CacheControl)
 	assert.Nil(t, req.Messages[2].Content[0].CacheControl)
 }
+
+// TestCachingIsOnByDefault pins the contract that known_keys.go and the
+// cache-control skill both state: caching is ON at short retention with no
+// chalkboard key set at all.
+//
+// It was not. The direct provider marked breakpoints only when
+// system.cache_control was explicitly set, so every default aria — this is
+// the provider you get without UseOfficialSDK — sent zero cache_control
+// markers and re-paid full input price for its entire prefix every turn.
+//
+// Scale, measured on two live figaro arias running the SDK path (which did
+// mark), `figaro status <id> -j`:
+//
+//	aria 30bc6333: cache_read=13,661,486  uncached input=210
+//	aria ed3915b1: cache_read= 4,522,492  uncached input=122
+//
+// 99.998% of input tokens arrived as cache reads. Billed at Sonnet 4.5
+// rates ($3.00/M input, $0.30/M cache read, $3.75/M cache write), the first
+// aria cost ~$4.98 with caching and would have cost ~$41.69 without: an 8.4x
+// input bill for a one-line difference in behaviour.
+func TestCachingIsOnByDefault(t *testing.T) {
+	a := &Anthropic{}
+	msgs := []message.Message{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first turn")}},
+		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("first reply")}},
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("second turn")}},
+	}
+	tools := []provider.Tool{{Name: "alpha", Description: "first", Parameters: fakeSchema()}}
+
+	// No system.cache_control key anywhere on the board.
+	snap := systemSnapshot(t, "you are a test agent")
+	req, err := a.projectMessagesWithModel(a.encodeAll(msgs), snap, tools, 1024, false, "claude-test")
+	require.NoError(t, err)
+
+	require.NotEmpty(t, req.System)
+	assert.NotNil(t, req.System[len(req.System)-1].CacheControl,
+		"default aria must mark the system prefix")
+	assert.NotNil(t, req.Tools[len(req.Tools)-1].CacheControl,
+		"default aria must mark the tool prefix")
+	assert.Greater(t, countCacheMarkers(req), 0, "default aria must cache something")
+}
+
+// TestCachingOffIsHonoured keeps the escape hatch working.
+func TestCachingOffIsHonoured(t *testing.T) {
+	a := &Anthropic{}
+	msgs := []message.Message{
+		{Role: message.RoleInput, Content: []message.Content{message.TextContent("only turn")}},
+	}
+	snap := withKey(systemSnapshot(t, "you are a test agent"), "system.cache_control", json.RawMessage(`"none"`))
+	req, err := a.projectMessagesWithModel(a.encodeAll(msgs), snap, nil, 1024, false, "claude-test")
+	require.NoError(t, err)
+	assert.Equal(t, 0, countCacheMarkers(req), `system.cache_control "none" must mark nothing`)
+}
+
+// TestNeverExceedsTheAPIMarkerCap is the assertion that a fifth marker is a
+// hard 400: figaro emits at most 3, leaving one slot for a gateway.
+func TestNeverExceedsTheAPIMarkerCap(t *testing.T) {
+	a := &Anthropic{}
+	var msgs []message.Message
+	for i := 0; i < 12; i++ {
+		role := message.RoleInput
+		if i%2 == 1 {
+			role = message.RoleOutput
+		}
+		msgs = append(msgs, message.Message{Role: role, Content: []message.Content{message.TextContent("turn")}})
+	}
+	tools := []provider.Tool{
+		{Name: "alpha", Description: "a", Parameters: fakeSchema()},
+		{Name: "beta", Description: "b", Parameters: fakeSchema()},
+	}
+	req, err := a.projectMessagesWithModel(a.encodeAll(msgs), systemSnapshot(t, "credo"), tools, 1024, false, "claude-test")
+	require.NoError(t, err)
+	assert.LessOrEqual(t, countCacheMarkers(req), provider.AutoCacheBreakpoints,
+		"figaro must emit at most 3 markers so a downstream gateway can top up within Anthropic's cap of 4")
+}
