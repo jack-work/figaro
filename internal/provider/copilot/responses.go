@@ -141,6 +141,7 @@ func (p *responsesProvider) sendWithToken(
 	if len(input) == 0 {
 		return fmt.Errorf("copilot responses: empty context")
 	}
+	input, breakpoints := markPromptCacheBreakpoint(input)
 
 	model, maxTokens, machineID := p.settings()
 	if model == "" {
@@ -175,6 +176,7 @@ func (p *responsesProvider) sendWithToken(
 		Text:              options.text,
 		TopP:              options.topP,
 		Tools:             responseTools(in.Tools),
+		PromptCacheKey:    provider.SessionKey(in.AriaID),
 	}
 	if maxTokens > 0 {
 		request.MaxOutputTokens = maxTokens
@@ -191,6 +193,7 @@ func (p *responsesProvider) sendWithToken(
 	if err != nil {
 		return err
 	}
+	logPromptCacheEconomics(response.Usage, breakpoints)
 	if len(assistant.Content) == 0 && len(response.Output) == 0 {
 		return nil
 	}
@@ -505,6 +508,12 @@ type responseCreateRequest struct {
 	Text              *responseText      `json:"text,omitempty"`
 	TopP              *float64           `json:"top_p,omitempty"`
 	Tools             []responseTool     `json:"tools,omitempty"`
+	// PromptCacheKey pins cache routing for a conversation. OpenAI states
+	// it must be set on GPT-5.6 and later to get the reliable cache
+	// matching; without it, requests are routed by a hash of roughly the
+	// first 256 tokens and a conversation can drift onto a machine holding
+	// no cache for it.
+	PromptCacheKey string `json:"prompt_cache_key,omitempty"`
 }
 
 type responseReasoning struct {
@@ -670,6 +679,22 @@ type responseContent struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
 	ImageURL string `json:"image_url,omitempty"`
+	// PromptCacheBreakpoint marks the end of a reusable prefix. It is
+	// stamped onto the assembled request, never onto the per-LT cached
+	// bytes: the mark moves forward as the conversation grows, and a mark
+	// baked into a cached item could never move.
+	PromptCacheBreakpoint *promptCacheBreakpoint `json:"prompt_cache_breakpoint,omitempty"`
+}
+
+// promptCacheBreakpoint is the GPT-5.6+ explicit cache marker.
+//
+// Deliberately paired with NO prompt_cache_options.mode="explicit": a bare
+// breakpoint is ADDITIVE, leaving OpenAI's automatic breakpoints in place,
+// so a bad placement costs nothing. Setting the mode disables the automatic
+// ones, and then a single misplaced mark forfeits the whole prefix on every
+// turn — at the 1.25x cache-write rate GPT-5.6 introduced.
+type promptCacheBreakpoint struct {
+	Type string `json:"type"`
 }
 
 type responseInputItem struct {
@@ -1190,4 +1215,75 @@ func toolImageCaption(c message.Content) string {
 		return fmt.Sprintf("[image output of tool %s (call %s)]", c.ToolName, c.ToolCallID)
 	}
 	return fmt.Sprintf("[image output of call %s]", c.ToolCallID)
+}
+
+// markPromptCacheBreakpoint stamps one explicit breakpoint at the end of the
+// last completed exchange, and reports how many it placed.
+//
+// Placement is deliberately BEHIND the newest turn. GPT-5.6 already carries
+// an implicit breakpoint at the latest user/tool message, and — unlike
+// earlier models — it does NOT fall back to the longest matching unmarked
+// prefix when that fails. So a changed tail returns cached_tokens=0 even
+// though thousands of leading tokens are identical. A mark on the last
+// assistant item is a boundary that existed, byte for byte, on the previous
+// turn, which gives the miss somewhere to land.
+//
+// The first turn of an aria has no assistant item and gets no mark: there is
+// nothing behind it that was ever cached, and the implicit breakpoint
+// already covers what there is.
+// It returns a COPY. inputFor hands back projection.State, the live slice the
+// provider retains between turns, so stamping in place would bake this
+// turn's marker into the per-LT cache permanently: it could never move
+// forward, the next turn would add a second one, and the bytes of an item
+// already inside a cached prefix would have changed underneath it.
+func markPromptCacheBreakpoint(input []json.RawMessage) ([]json.RawMessage, int) {
+	for i := len(input) - 1; i >= 0; i-- {
+		var item responseInputItem
+		if err := json.Unmarshal(input[i], &item); err != nil {
+			continue
+		}
+		if item.Type != "message" || item.Role != "assistant" {
+			continue
+		}
+		leaf := -1
+		for j, c := range item.Content {
+			if c.Type == "output_text" || c.Type == "input_text" || c.Text != "" {
+				leaf = j
+			}
+		}
+		if leaf < 0 {
+			return input, 0
+		}
+		item.Content[leaf].PromptCacheBreakpoint = &promptCacheBreakpoint{Type: "explicit"}
+		raw, err := marshalResponseItem(item)
+		if err != nil {
+			return input, 0
+		}
+		out := make([]json.RawMessage, len(input))
+		copy(out, input)
+		out[i] = raw
+		return out, 1
+	}
+	return input, 0
+}
+
+// logPromptCacheEconomics records what the cache actually did.
+//
+// This route speaks websocket, so wirelog — which wraps an http
+// RoundTripper — cannot see it and FIGARO_WIRE_DIR yields nothing here. The
+// usage numbers are the only instrument available, and on GPT-5.6 they are
+// the ones that matter: writes are billed at 1.25x the uncached rate, so a
+// breakpoint that re-writes every turn costs more than not caching at all.
+// Reads-per-write is the number that tells you which you have.
+func logPromptCacheEconomics(usage responseUsage, breakpoints int) {
+	reads := usage.InputTokensDetails.CachedTokens
+	writes := usage.InputTokensDetails.CacheWriteTokens
+	if reads == 0 && writes == 0 {
+		return
+	}
+	slog.Debug("copilot responses prompt cache",
+		"cache_read_tokens", reads,
+		"cache_write_tokens", writes,
+		"uncached_input_tokens", usage.InputTokens-reads-writes,
+		"explicit_breakpoints", breakpoints)
 }

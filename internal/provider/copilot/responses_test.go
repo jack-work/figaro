@@ -963,3 +963,125 @@ func TestResponsesProviderHonorsContextDeadline(t *testing.T) {
 	err := p.Send(ctx, provider.SendInput{AriaID: "aria-1", FigLog: log}, &responseTestBus{})
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
+
+// --- GPT-5.6 prompt caching -------------------------------------------------
+
+func assistantItem(t *testing.T, text string) json.RawMessage {
+	t.Helper()
+	raw, err := marshalResponseItem(responseMessage("assistant", []responseContent{
+		{Type: "output_text", Text: text},
+	}))
+	require.NoError(t, err)
+	return raw
+}
+
+func userItem(t *testing.T, text string) json.RawMessage {
+	t.Helper()
+	raw, err := marshalResponseItem(responseMessage("user", []responseContent{
+		{Type: "input_text", Text: text},
+	}))
+	require.NoError(t, err)
+	return raw
+}
+
+func breakpointsIn(t *testing.T, input []json.RawMessage) []int {
+	t.Helper()
+	var out []int
+	for i, raw := range input {
+		var item responseInputItem
+		if json.Unmarshal(raw, &item) != nil {
+			continue
+		}
+		for _, c := range item.Content {
+			if c.PromptCacheBreakpoint != nil {
+				out = append(out, i)
+			}
+		}
+	}
+	return out
+}
+
+// The mark goes BEHIND the newest turn. GPT-5.6 carries an implicit
+// breakpoint at the latest user message and does not fall back to the
+// longest matching unmarked prefix, so the useful explicit mark is one that
+// existed byte for byte on the previous turn.
+func TestPromptCacheBreakpointLandsOnTheLastAssistantItem(t *testing.T) {
+	input := []json.RawMessage{
+		userItem(t, "first"),
+		assistantItem(t, "first reply"),
+		userItem(t, "second"),
+	}
+	marked, n := markPromptCacheBreakpoint(input)
+	assert.Equal(t, 1, n)
+	assert.Equal(t, []int{1}, breakpointsIn(t, marked),
+		"the mark belongs on the last assistant item, not on the new user turn")
+}
+
+// inputFor returns the live projection slice. Stamping it in place would
+// bake a moving marker into the per-LT cache forever.
+func TestPromptCacheBreakpointDoesNotMutateTheProjection(t *testing.T) {
+	input := []json.RawMessage{
+		userItem(t, "first"),
+		assistantItem(t, "first reply"),
+		userItem(t, "second"),
+	}
+	before := make([]string, len(input))
+	for i, raw := range input {
+		before[i] = string(raw)
+	}
+
+	marked, n := markPromptCacheBreakpoint(input)
+	require.Equal(t, 1, n)
+
+	for i, raw := range input {
+		assert.Equal(t, before[i], string(raw),
+			"item %d of the caller's slice was mutated; that slice is the retained projection", i)
+	}
+	assert.NotEqual(t, string(input[1]), string(marked[1]), "the returned copy must carry the mark")
+	assert.Empty(t, breakpointsIn(t, input), "the projection must stay unmarked")
+}
+
+// Marking twice must not accumulate: each turn stamps exactly one.
+func TestPromptCacheBreakpointIsIdempotentAcrossTurns(t *testing.T) {
+	input := []json.RawMessage{userItem(t, "first"), assistantItem(t, "reply"), userItem(t, "second")}
+	once, _ := markPromptCacheBreakpoint(input)
+	twice, _ := markPromptCacheBreakpoint(input)
+	assert.Equal(t, breakpointsIn(t, once), breakpointsIn(t, twice))
+	assert.Len(t, breakpointsIn(t, twice), 1, "one mark per request, never accumulating")
+}
+
+// A first turn has nothing behind it that was ever cached.
+func TestPromptCacheBreakpointSkippedOnTheFirstTurn(t *testing.T) {
+	input := []json.RawMessage{userItem(t, "only turn")}
+	marked, n := markPromptCacheBreakpoint(input)
+	assert.Equal(t, 0, n)
+	assert.Empty(t, breakpointsIn(t, marked))
+}
+
+// The breakpoint is ADDITIVE: no prompt_cache_options.mode is sent, so
+// OpenAI's automatic breakpoints stay in play and a bad placement cannot
+// forfeit the whole prefix at the 1.25x write rate.
+func TestNoExplicitModeIsSent(t *testing.T) {
+	body, err := json.Marshal(responseCreateRequest{Type: "response.create", Model: "gpt-5.6-sol"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), "prompt_cache_options",
+		"mode=explicit disables OpenAI-managed breakpoints; ship the additive half first")
+}
+
+// The key must be the SAME derivation openaichat uses, so one conversation
+// pins to one name on both OpenAI-family routes — and it must never be the
+// raw aria id.
+func TestPromptCacheKeyMatchesTheSharedDerivation(t *testing.T) {
+	const aria = "4cf7d08f"
+	key := provider.SessionKey(aria)
+	assert.NotEmpty(t, key)
+	assert.NotContains(t, key, aria, "the key must not leak the aria id")
+	assert.Equal(t, key, provider.SessionKey(aria), "stable across turns and restarts")
+	assert.NotEqual(t, key, provider.SessionKey("30bc6333"))
+
+	body, err := json.Marshal(responseCreateRequest{
+		Type: "response.create", Model: "gpt-5.6-sol", PromptCacheKey: key,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"prompt_cache_key":"`+key+`"`)
+}
