@@ -41,8 +41,13 @@ type assembled struct {
 func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled, error) {
 	var out assembled
 	byIndex := map[int]*toolCall{}
+	byID := map[string]int{}
 	var order []int
 	started := map[int]bool{}
+	// Synthetic slots count down so they can never collide with a real
+	// index; haveLast is a separate flag because -1 is a legal slot here.
+	lastIdx, haveLast := 0, false
+	nextSynthetic := -1
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
@@ -80,10 +85,32 @@ func drainSSE(ctx context.Context, body io.Reader, bus provider.Bus) (assembled,
 				bus.PushDelta(message.TextContent(text))
 			}
 			for _, tc := range choice.Delta.ToolCalls {
+				// `index` is required by the spec and gateways omit it
+				// anyway. Defaulting the missing case to 0 merged every
+				// call of a turn into one slot and concatenated their
+				// arguments — a client must not silently corrupt a tool
+				// call because an upstream left a field out. With no
+				// index: a new id opens a new slot, and a bare fragment
+				// continues the slot it is obviously continuing.
 				idx := 0
-				if tc.Index != nil {
+				switch {
+				case tc.Index != nil:
 					idx = *tc.Index
+				case tc.ID != "":
+					if seen, ok := byID[tc.ID]; ok {
+						idx = seen
+					} else {
+						idx = nextSynthetic
+						nextSynthetic--
+						byID[tc.ID] = idx
+					}
+				case haveLast:
+					idx = lastIdx
+				default:
+					idx = nextSynthetic
+					nextSynthetic--
 				}
+				lastIdx, haveLast = idx, true
 				cur, ok := byIndex[idx]
 				if !ok {
 					cur = &toolCall{Type: "function"}

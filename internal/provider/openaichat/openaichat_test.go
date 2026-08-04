@@ -536,3 +536,55 @@ func TestBareBaseURLGatewayIsUncachedAndUnsticky(t *testing.T) {
 		t.Error("markers leaked to an untrusted route")
 	}
 }
+
+// A gateway that omits `index` on tool_call deltas must not have its calls
+// merged. Defaulting the missing index to 0 put every call of a turn in one
+// slot and concatenated their arguments; downstream that surfaced as a tool
+// invoked with arguments belonging to a different call — or with none at
+// all. Twenty turns of a real session were lost to this class of failure.
+func TestToolCallsWithoutIndexDoNotMerge(t *testing.T) {
+	stream := strings.Join([]string{
+		`data: {"choices":[{"delta":{"tool_calls":[{"id":"a","type":"function","function":{"name":"bash","arguments":"{\"command\":"}}]}}]}`,
+		`data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"\"ls\"}"}}]}}]}`,
+		`data: {"choices":[{"delta":{"tool_calls":[{"id":"b","type":"function","function":{"name":"read","arguments":"{\"path\":"}}]}}]}`,
+		`data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"\"x.md\"}"}}]}}]}`,
+		`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+		"data: [DONE]",
+	}, "\n\n") + "\n"
+
+	got, err := drainSSE(context.Background(), strings.NewReader(stream), &recordingBus{})
+	if err != nil {
+		t.Fatalf("drainSSE: %v", err)
+	}
+	if len(got.ToolCalls) != 2 {
+		t.Fatalf("want 2 calls, got %d: %+v", len(got.ToolCalls), got.ToolCalls)
+	}
+	byName := map[string]string{}
+	for _, c := range got.ToolCalls {
+		byName[c.Function.Name] = c.Function.Arguments
+	}
+	if byName["bash"] != `{"command":"ls"}` {
+		t.Errorf("bash arguments = %q, want {\"command\":\"ls\"}", byName["bash"])
+	}
+	if byName["read"] != `{"path":"x.md"}` {
+		t.Errorf("read arguments = %q, want {\"path\":\"x.md\"}", byName["read"])
+	}
+}
+
+// The single-call case a gateway most often emits: no index anywhere, id and
+// name on the first fragment only. It must still assemble.
+func TestSingleToolCallWithoutIndexAssembles(t *testing.T) {
+	stream := strings.Join([]string{
+		`data: {"choices":[{"delta":{"tool_calls":[{"id":"a","function":{"name":"bash","arguments":"{\"comm"}}]}}]}`,
+		`data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"and\":\"ls -la\"}"}}]}}]}`,
+		"data: [DONE]",
+	}, "\n\n") + "\n"
+
+	got, err := drainSSE(context.Background(), strings.NewReader(stream), &recordingBus{})
+	if err != nil {
+		t.Fatalf("drainSSE: %v", err)
+	}
+	if len(got.ToolCalls) != 1 || got.ToolCalls[0].Function.Arguments != `{"command":"ls -la"}` {
+		t.Fatalf("got %+v", got.ToolCalls)
+	}
+}
