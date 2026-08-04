@@ -480,3 +480,34 @@ func (failingResolver) Resolve() (string, error) { return "", errNoCredential }
 func (failingResolver) Invalidate(string) error  { return nil }
 
 var errNoCredential = errors.New("no credential available")
+
+// A stream that carries no usage block must not be mistaken for a turn
+// that used no tokens. Found in the e2e round against a gateway whose
+// streaming path returned no usage at all: every bucket read 0 while the
+// context figure kept climbing off the estimator, so the aria looked
+// accounted for. drainSSE must report nil — not a zeroed Usage — so the
+// caller can tell the two apart and say so.
+func TestNoUsageBlockIsDistinctFromZeroUsage(t *testing.T) {
+	stream := "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
+		"data: [DONE]\n\n"
+	got, err := drainSSE(context.Background(), strings.NewReader(stream), &recordingBus{})
+	if err != nil {
+		t.Fatalf("drainSSE: %v", err)
+	}
+	if got.Usage != nil {
+		t.Fatalf("a missing usage block must stay nil, got %+v — a zeroed Usage would fold as a real measurement of zero", got.Usage)
+	}
+	if msg := got.toIRMessage(); msg.Usage != nil {
+		t.Errorf("IR message usage = %+v, want nil", msg.Usage)
+	}
+}
+
+// And the reverse: an explicit all-zero usage block is also nil, because
+// there is nothing to account and folding zeros would be indistinguishable
+// from the case above anyway.
+func TestExplicitZeroUsageFoldsToNil(t *testing.T) {
+	if (chatUsage{}).toIR() != nil {
+		t.Error("an empty usage block must map to nil")
+	}
+}

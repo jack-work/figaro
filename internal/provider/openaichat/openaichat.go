@@ -221,6 +221,16 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 	if err != nil {
 		return err
 	}
+	if out.Usage == nil {
+		// "No usage block" is not "usage was zero". With nothing to fold,
+		// every bucket reads 0 while the context figure keeps growing off
+		// the chars/4 estimate — an aria that looks accounted for and is
+		// not. Cheaper to say so here than to diff figaro against the
+		// endpoint's own log, which is how this was found.
+		slog.Warn("no usage block in response; token accounting for this turn is unavailable",
+			"route", p.Route.Name, "model", req.Model,
+			"hint", "gateway must send stream_options.include_usage")
+	}
 	msg := out.toIRMessage()
 	if len(msg.Content) == 0 {
 		return nil
