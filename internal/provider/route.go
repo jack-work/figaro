@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"os"
 	"strings"
+
+	"github.com/jack-work/figaro/internal/chalkboard"
 )
 
 // Dialect names the wire format a route speaks. It is deliberately separate
@@ -73,12 +75,99 @@ type CacheCaps struct {
 	SessionKey bool
 }
 
-// MarkTail reports whether the rolling transcript tail should be marked with
-// a per-block marker. When the route can advance the breakpoint itself
-// (TopLevel), it must not: a moving per-block marker rewrites the bytes of a
-// message that was already part of a cached prefix, which invalidates the
-// very cache it is trying to fill.
+// MarkTail is retained for callers that only need the tail question. It is
+// the auto-mode answer; prefer MarkPlan when the aria's configured mode
+// matters.
 func (c CacheCaps) MarkTail() bool { return c.BlockMarkers && !c.TopLevel }
+
+// CacheMarkersKey selects HOW a route is marked, independent of whether
+// caching is on at all (that is system.cache_control). Per-aria, settable
+// at runtime with `figaro set`, so both modes are reachable by
+// configuration without a rebuild.
+const CacheMarkersKey = "system.cache_markers"
+
+// MarkMode is the configured marking strategy for a route.
+type MarkMode string
+
+const (
+	// MarkAuto lets the route decide: a gateway that advances the
+	// breakpoint itself gets the request-level directive, everything else
+	// gets per-block markers.
+	MarkAuto MarkMode = "auto"
+	// MarkBlocks forces per-block markers where the route honours them.
+	MarkBlocks MarkMode = "blocks"
+	// MarkTopLevel forces the single request-level directive.
+	MarkTopLevel MarkMode = "top-level"
+	// MarkNone marks nothing, whatever the route can do.
+	MarkNone MarkMode = "none"
+)
+
+// ResolveMarkMode reads the configured marking strategy off the chalkboard.
+func ResolveMarkMode(snap chalkboard.Snapshot) MarkMode {
+	if v := snap.Lookup(CacheMarkersKey); v != nil {
+		switch strings.ToLower(strings.TrimSpace(*v)) {
+		case "blocks", "block", "explicit":
+			return MarkBlocks
+		case "top-level", "toplevel", "top_level", "automatic":
+			return MarkTopLevel
+		case "none", "off", "false":
+			return MarkNone
+		}
+	}
+	return MarkAuto
+}
+
+// MarkPlan is the resolved answer to "what do I stamp on this request?".
+// Every field is a function of the route's capabilities and the aria's
+// configured mode — both stable for the life of a turn — and never of a
+// message's position. That is what keeps serialization byte-stable: a
+// message's shape cannot change from one turn to the next.
+type MarkPlan struct {
+	// Blocks means content is emitted as a block list and the static
+	// prefix (last system block, last tool) carries markers.
+	Blocks bool
+	// Tail means the rolling transcript tail carries the final marker.
+	Tail bool
+	// TopLevel means one request-level cache_control directive is sent and
+	// the gateway advances the breakpoint itself.
+	TopLevel bool
+}
+
+// Marking reports whether anything at all is stamped.
+func (p MarkPlan) Marking() bool { return p.Blocks || p.TopLevel }
+
+// MarkPlan resolves capabilities and configured mode into a plan.
+//
+// Auto prefers the request-level directive wherever a route offers one. A
+// client cannot know which model a ROUTER will choose — that is the whole
+// point of a router, the arm is picked after the request arrives — and both
+// the minimum cacheable prompt size and the breakpoint budget are
+// per-model. Only the endpoint that resolves the arm can place breakpoints
+// correctly, so figaro hands it the intent and lets it place them.
+func (r Route) MarkPlan(mode MarkMode) MarkPlan {
+	switch mode {
+	case MarkNone:
+		return MarkPlan{}
+	case MarkBlocks:
+		if r.Caps.BlockMarkers {
+			return MarkPlan{Blocks: true, Tail: true}
+		}
+		return MarkPlan{}
+	case MarkTopLevel:
+		if r.Caps.TopLevel {
+			return MarkPlan{TopLevel: true}
+		}
+		return MarkPlan{}
+	default:
+		if r.Caps.TopLevel {
+			return MarkPlan{TopLevel: true}
+		}
+		if r.Caps.BlockMarkers {
+			return MarkPlan{Blocks: true, Tail: true}
+		}
+		return MarkPlan{}
+	}
+}
 
 // Route is one addressable endpoint: where to send, what dialect it speaks,
 // how to authenticate, and what it will honour. Providers hold a Route
@@ -130,9 +219,13 @@ func OpenRouterRoute() Route {
 }
 
 // GatewayRoute is a local OpenAI-compatible gateway (coding-router and
-// friends). Same dialect as OpenRouter, but it does not advertise a
-// top-level directive: a router that re-decides its upstream per turn has
-// to see figaro's own markers to preserve and top them up.
+// friends) that speaks the OpenRouter dialect.
+//
+// It advertises the top-level directive, so auto mode sends bare strings and
+// one request-level cache_control and lets the gateway place breakpoints for
+// whichever arm it resolved. `figaro set system.cache_markers blocks` forces
+// per-block marking instead, for a gateway that only preserves and tops up
+// what it receives.
 func GatewayRoute(baseURL string) Route {
 	return Route{
 		Name:    "gateway",
@@ -141,6 +234,7 @@ func GatewayRoute(baseURL string) Route {
 		Auth:    AuthBearer,
 		Caps: CacheCaps{
 			BlockMarkers: true,
+			TopLevel:     true,
 			TTL:          false,
 			MaxMarkers:   AutoCacheBreakpoints,
 			SessionKey:   true,

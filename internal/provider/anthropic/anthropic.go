@@ -31,8 +31,6 @@ import (
 
 const (
 	providerName      = "anthropic"
-	apiBaseURL        = "https://api.anthropic.com/v1"
-	apiMessagesURL    = apiBaseURL + "/messages"
 	apiVersion        = "2023-06-01"
 	claudeCodeVersion = "2.1.62"
 )
@@ -44,6 +42,12 @@ type Anthropic struct {
 	MaxTokens        int
 	HTTPClient       *http.Client
 	ReminderRenderer string // "tag" (default) or "tool"
+
+	// Route is where this provider sends and what that endpoint honours.
+	// It is not part of Fingerprint: per-message cache bytes are dialect
+	// state, not route state, so pointing the same provider at a proxy
+	// must not invalidate an aria's translation cache.
+	Route provider.Route
 
 	// Templates renders Patches as system-reminder blocks. nil = skip.
 	Templates *template.Template
@@ -76,7 +80,18 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 		ReminderRenderer: rr,
 		CacheOpen:        cacheOpen,
 		CacheNamespace:   providerName,
+		Route:            provider.WithBaseURLOverride(provider.AnthropicDirect(), providerName),
 	}, nil
+}
+
+// route returns this provider's route, defaulting to the stock Anthropic
+// endpoint. A zero-value Route must never silently mean "no caching" — that
+// is how the direct provider ended up marking nothing at all.
+func (a *Anthropic) route() provider.Route {
+	if a.Route.BaseURL == "" {
+		return provider.WithBaseURLOverride(provider.AnthropicDirect(), providerName)
+	}
+	return a.Route
 }
 
 // cacheFor returns this provider's lineage cache, opening lazily.
@@ -283,7 +298,7 @@ func (a *Anthropic) doWithAuthRetry(ctx context.Context, build func(apiKey strin
 
 func (a *Anthropic) Models(ctx context.Context) ([]provider.ModelInfo, error) {
 	resp, _, err := a.doWithAuthRetry(ctx, func(apiKey string) (*http.Request, error) {
-		req, err := http.NewRequestWithContext(ctx, "GET", apiBaseURL+"/models?limit=100", nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", a.route().ModelsURL()+"?limit=100", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -895,7 +910,7 @@ func (a *Anthropic) Send(ctx context.Context, in provider.SendInput, bus provide
 	}
 
 	resp, _, err := a.doWithAuthRetry(ctx, func(token string) (*http.Request, error) {
-		httpReq, herr := http.NewRequestWithContext(ctx, "POST", apiMessagesURL, bytes.NewReader(body))
+		httpReq, herr := http.NewRequestWithContext(ctx, "POST", a.route().MessagesURL(), bytes.NewReader(body))
 		if herr != nil {
 			return nil, fmt.Errorf("create request: %w", herr)
 		}

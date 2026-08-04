@@ -56,15 +56,56 @@ func TestBaseURLOverrideUnsetLeavesRouteAlone(t *testing.T) {
 // per-block marker. Marking a message on turn N and un-marking it on turn
 // N+1 rewrites bytes that are already inside the cached prefix, which
 // invalidates the cache the marker exists to fill.
-func TestMarkTailIsSuppressedWhenGatewayAdvancesIt(t *testing.T) {
-	if !GatewayRoute("http://x/v1").Caps.MarkTail() {
-		t.Error("a gateway with no top-level directive must take a per-block tail marker")
+func TestMarkPlanAutoPrefersTheGatewayDirective(t *testing.T) {
+	gw := GatewayRoute("http://x/v1").MarkPlan(MarkAuto)
+	if !gw.TopLevel || gw.Blocks || gw.Tail {
+		t.Errorf("gateway auto plan = %+v, want top-level only (the router owns placement)", gw)
 	}
-	if OpenRouterRoute().Caps.MarkTail() {
-		t.Error("OpenRouter advances the breakpoint itself; a moving block marker would churn prefix bytes")
+	or := OpenRouterRoute().MarkPlan(MarkAuto)
+	if !or.TopLevel || or.Tail {
+		t.Errorf("openrouter auto plan = %+v, want top-level only", or)
 	}
-	if UncachedRoute("http://x/v1").Caps.MarkTail() {
-		t.Error("an unknown gateway must never be marked")
+	direct := AnthropicDirect().MarkPlan(MarkAuto)
+	if !direct.Blocks || !direct.Tail || direct.TopLevel {
+		t.Errorf("anthropic auto plan = %+v, want per-block with a rolling tail", direct)
+	}
+}
+
+// Both modes must be reachable by configuration alone, no rebuild.
+func TestMarkPlanModesAreConfigurable(t *testing.T) {
+	gw := GatewayRoute("http://x/v1")
+	if p := gw.MarkPlan(MarkBlocks); !p.Blocks || !p.Tail || p.TopLevel {
+		t.Errorf("forced blocks = %+v, want per-block with a rolling tail", p)
+	}
+	if p := gw.MarkPlan(MarkNone); p.Marking() {
+		t.Errorf("forced none = %+v, want nothing stamped", p)
+	}
+	if p := AnthropicDirect().MarkPlan(MarkTopLevel); p.Marking() {
+		t.Errorf("native Anthropic has no request-level directive; got %+v", p)
+	}
+	if p := UncachedRoute("http://x/v1").MarkPlan(MarkBlocks); p.Marking() {
+		t.Errorf("an unknown gateway must never be marked, even when forced; got %+v", p)
+	}
+}
+
+func TestResolveMarkMode(t *testing.T) {
+	cases := map[string]MarkMode{
+		"":          MarkAuto,
+		"blocks":    MarkBlocks,
+		"explicit":  MarkBlocks,
+		"top-level": MarkTopLevel,
+		"automatic": MarkTopLevel,
+		"none":      MarkNone,
+		"garbage":   MarkAuto,
+	}
+	for setting, want := range cases {
+		snap := snapWith(t, map[string]any{CacheMarkersKey: setting})
+		if got := ResolveMarkMode(snap); got != want {
+			t.Errorf("ResolveMarkMode(%q) = %q, want %q", setting, got, want)
+		}
+	}
+	if got := ResolveMarkMode(snapWith(t, nil)); got != MarkAuto {
+		t.Errorf("absent key = %q, want auto", got)
 	}
 }
 
