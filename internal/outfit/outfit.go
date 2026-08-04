@@ -216,7 +216,13 @@ func extractFrontmatter(body string) (string, bool) {
 	if end < 0 {
 		return "", false
 	}
-	return strings.TrimSuffix(rest[:end], "\r"), true
+	// Normalise the block itself, not just the closing fence. The
+	// frontmatter string lands in the chalkboard verbatim and the loadout's
+	// content version is a hash of that patch -- so a CRLF-saved skill and
+	// an LF-saved copy of the SAME skill would otherwise mint two different
+	// loadout stumps, with two shared prefixes and two caches, on two
+	// machines editing one repository.
+	return strings.ReplaceAll(strings.TrimSuffix(rest[:end], "\r"), "\r\n", "\n"), true
 }
 
 // loadDir reads file skills and directory skills from dir. A directory skill

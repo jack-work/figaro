@@ -154,10 +154,13 @@ func (a *Angelus) handleConn(ctx context.Context, conn net.Conn) {
 	}
 }
 
-// pidMonitor polls bound PIDs every 2 seconds and unbinds dead ones.
+// pidMonitor polls bound PIDs every 2 seconds and unbinds dead ones, and
+// on a slower beat releases the caches of arias nobody is using.
 func (a *Angelus) pidMonitor(ctx context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+	evict := time.NewTicker(evictInterval)
+	defer evict.Stop()
 
 	for {
 		select {
@@ -165,7 +168,48 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 			return
 		case <-ticker.C:
 			a.reapDeadPIDs()
+		case <-evict.C:
+			a.evictIdleArias()
 		}
+	}
+}
+
+const (
+	// evictInterval is how often idle arias are released, and evictAfter is
+	// how long a cache survives without use. Both are generous: the cost of
+	// evicting too eagerly is a rebuild on the next read, and the cost of
+	// evicting too late is only memory, so this errs toward keeping a
+	// conversation warm for as long as someone plausibly comes back to it.
+	evictInterval = 2 * time.Minute
+	evictAfter    = 15 * time.Minute
+)
+
+// idleEvictor is the backend's half of the contract. Kept as an interface
+// rather than added to store.Backend so an ephemeral or test backend does
+// not have to implement a cache policy it does not have.
+type idleEvictor interface {
+	EvictIdle(live map[string]bool, idle time.Duration) int
+	Resident() int
+}
+
+// evictIdleArias releases the cached IR, translations, board and metadata of
+// every aria with no live agent that nobody has touched recently.
+//
+// An aria with an agent is NEVER evicted: the backend shares one cachedLog
+// per (aria, channel) so a reader sees the writer's appends, and dropping it
+// mid-life would hand the next reader a second instance built from disk.
+// Everything evicted is rebuilt from the store on the next read.
+func (a *Angelus) evictIdleArias() {
+	ev, ok := a.Backend.(idleEvictor)
+	if !ok {
+		return
+	}
+	live := map[string]bool{}
+	for _, f := range a.Registry.List() {
+		live[f.ID] = true
+	}
+	if n := ev.EvictIdle(live, evictAfter); n > 0 {
+		slog.Info("released idle aria caches", "evicted", n, "live", len(live), "resident", ev.Resident())
 	}
 }
 

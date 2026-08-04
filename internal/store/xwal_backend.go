@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
@@ -29,6 +30,17 @@ type XwalBackend struct {
 	open  map[string]*ariaHandle
 	chalk map[string]*chalkCache
 	metas map[string]*metaCache
+	// touched is when each aria's caches were last used. These caches are
+	// PURE COST once an aria has no agent: cachedLog decodes an entire IR
+	// and every translation into the heap at construction, chalkCache holds
+	// the whole board and every patch, and nothing but Remove ever deleted
+	// an entry. Measured on a real daemon: 209 arias resident, 107,439
+	// messages, 3.0 GB private -- against 424 MB of IR on disk, because Go
+	// structs run 3-5x the encoded bytes.
+	//
+	// Every one of them is rebuildable from the store, so residency is a
+	// cache decision and wants a cache's discipline.
+	touched map[string]time.Time
 }
 
 type ariaHandle struct {
@@ -62,11 +74,12 @@ func NewXwalBackend(root string, segmentSize int) (*XwalBackend, error) {
 		return nil, err
 	}
 	return &XwalBackend{
-		root:  root,
-		store: st,
-		open:  map[string]*ariaHandle{},
-		chalk: map[string]*chalkCache{},
-		metas: map[string]*metaCache{},
+		root:    root,
+		store:   st,
+		open:    map[string]*ariaHandle{},
+		chalk:   map[string]*chalkCache{},
+		metas:   map[string]*metaCache{},
+		touched: map[string]time.Time{},
 	}, nil
 }
 
@@ -82,6 +95,7 @@ func (b *XwalBackend) Store() *XwalStore { return b.store }
 // channels; nothing else. Fresh *xwal.XWAL instances are opened on
 // demand by the xwalLog inside each cachedLog.
 func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
+	b.touchLocked(id)
 	if h := b.open[id]; h != nil {
 		return h, nil
 	}
@@ -158,6 +172,7 @@ func (b *XwalBackend) ChalkboardState(ariaID string) (chalkboard.Snapshot, error
 func (b *XwalBackend) chalkCache(ariaID string) *chalkCache {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.touchLocked(ariaID)
 	c := b.chalk[ariaID]
 	if c == nil {
 		c = &chalkCache{}
@@ -287,6 +302,61 @@ func (b *XwalBackend) Nodes() []NodeView               { return b.store.Nodes() 
 func (b *XwalBackend) Conversations() []NodeView       { return b.store.Conversations() }
 func (b *XwalBackend) ConversationIDs() []string       { return b.store.ConversationIDs() }
 
+func (b *XwalBackend) touchLocked(id string) {
+	if b.touched != nil {
+		b.touched[id] = time.Now()
+	}
+}
+
+// EvictIdle drops the cached IR, translations, board and metadata of every
+// aria that is NOT live and has not been touched for idle. It returns how
+// many it released.
+//
+// Two rules, and the first is not negotiable. An aria with a LIVE AGENT is
+// never evicted: cachedLog is shared per (aria, channel) precisely so a
+// reader sees the writer's appends, and dropping it mid-life would hand the
+// next reader a second instance built from disk while the agent still holds
+// the first. Everything here is rebuildable, but rebuildable is not the same
+// as interchangeable while someone is writing.
+//
+// The second is that eviction is a CACHE decision, so it costs only the next
+// read. The store below has always had this discipline (xwal.Store unloads an
+// idle lineage's head); this layer simply never participated in it, which is
+// the whole of the leak.
+func (b *XwalBackend) EvictIdle(live map[string]bool, idle time.Duration) int {
+	cutoff := time.Now().Add(-idle)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := 0
+	for id := range b.touched {
+		if live[id] || b.touched[id].After(cutoff) {
+			continue
+		}
+		if _, held := b.open[id]; !held {
+			if _, hasChalk := b.chalk[id]; !hasChalk {
+				if _, hasMeta := b.metas[id]; !hasMeta {
+					delete(b.touched, id)
+					continue
+				}
+			}
+		}
+		delete(b.open, id)
+		delete(b.chalk, id)
+		delete(b.metas, id)
+		delete(b.touched, id)
+		n++
+	}
+	return n
+}
+
+// Resident reports how many arias hold cached state, for the daemon to log
+// and for a test to assert on without reaching into the maps.
+func (b *XwalBackend) Resident() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.open)
+}
+
 // dropHandle removes the aria's handle shell from the open map. Used by
 // Remove after the trunk is gone. No xwal to close — handles don't own
 // any.
@@ -376,6 +446,7 @@ func (b *XwalBackend) loadMetaLocked(ariaID string, c *metaCache) error {
 func (b *XwalBackend) metaCache(ariaID string) *metaCache {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.touchLocked(ariaID)
 	c := b.metas[ariaID]
 	if c == nil {
 		c = &metaCache{}

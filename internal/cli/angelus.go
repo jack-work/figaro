@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -67,6 +68,25 @@ func keepHushAlive(ctx context.Context) {
 	}
 }
 
+// defaultMemLimit is a SOFT ceiling for the daemon's heap: Go collects
+// harder as it approaches instead of growing to meet whatever the last big
+// sweep asked for. It is a backstop, not the fix -- idle-aria eviction is
+// the fix -- and it is deliberately well above a healthy daemon's working
+// set (measured: ~40 MB fresh, a few hundred MB with a dozen live arias)
+// so it only bites when something is retaining more than it should.
+//
+// GOMEMLIMIT in the environment always wins: Go reads it at startup, and a
+// user who has set one has an opinion worth more than this default.
+const defaultMemLimit = 2 << 30 // 2 GiB
+
+func armMemoryLimit() {
+	if os.Getenv("GOMEMLIMIT") != "" {
+		return
+	}
+	debug.SetMemoryLimit(defaultMemLimit)
+	slog.Info("daemon memory limit armed", "soft_limit_bytes", defaultMemLimit)
+}
+
 func runAngelus() {
 	loaded := mustLoadConfig()
 	runtimeDir := angelusRuntimeDir()
@@ -96,6 +116,8 @@ func runAngelus() {
 		fmt.Fprintf(os.Stderr, "angelus: aria backend: %v\n", err)
 		os.Exit(1)
 	}
+
+	armMemoryLimit()
 
 	a := angelus.New(angelus.Config{
 		RuntimeDir: runtimeDir,
