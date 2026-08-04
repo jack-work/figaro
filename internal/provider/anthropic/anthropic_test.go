@@ -87,7 +87,8 @@ func TestProjectTools_RoundTrip(t *testing.T) {
 // sets cache_control on:
 //   - the last system block,
 //   - the last tool definition,
-//   - the last content block of the second-to-last message.
+//   - the last content block of the LAST message (the rolling tail, so the
+//     next turn reads the whole transcript back out of cache).
 func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
@@ -113,23 +114,25 @@ func TestProjectMessages_CacheBreakpoints(t *testing.T) {
 	require.NotNil(t, req.Tools[len(req.Tools)-1].CacheControl, "last tool must have cache_control set")
 	assert.Equal(t, "ephemeral", req.Tools[len(req.Tools)-1].CacheControl.Type)
 
-	require.GreaterOrEqual(t, len(req.Messages), 2, "expect at least two messages for the message-level breakpoint")
-	stm := req.Messages[len(req.Messages)-2]
-	require.NotEmpty(t, stm.Content, "second-to-last message must have content")
-	require.NotNil(t, stm.Content[len(stm.Content)-1].CacheControl, "second-to-last message's last content block must have cache_control set")
+	require.GreaterOrEqual(t, len(req.Messages), 2, "expect at least two messages")
+	stm := req.Messages[len(req.Messages)-1]
+	require.NotEmpty(t, stm.Content, "tail message must have content")
+	require.NotNil(t, stm.Content[len(stm.Content)-1].CacheControl, "the tail message's last content block must have cache_control set")
 	assert.Equal(t, "ephemeral", stm.Content[len(stm.Content)-1].CacheControl.Type)
 
-	// And: the last message (the new user prompt) must NOT have cache_control —
-	// it's not yet "stable" so it shouldn't pollute the cache prefix.
-	lastMsg := req.Messages[len(req.Messages)-1]
-	require.NotEmpty(t, lastMsg.Content)
-	assert.Nil(t, lastMsg.Content[len(lastMsg.Content)-1].CacheControl, "the leaf user prompt must not carry cache_control")
+	// The tail marker deliberately covers the new user prompt. The old rule
+	// here ("leave the leaf unmarked, it isn't stable yet") cost a message of
+	// cache coverage every turn: the prompt IS part of the prefix on the next
+	// turn, so leaving it unmarked forces a fresh write of it every time.
+	// anthropicsdk has always marked n-1; this is the two paths converging.
 }
 
-// TestProjectMessages_NoMessageBreakpoint_WhenSingleMessage verifies
-// that the message-level breakpoint is suppressed when there is only
-// one message — there is no "stable prior leaf" to anchor.
-func TestProjectMessages_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
+// TestProjectMessages_SingleMessageStillMarksTheTail verifies that a first
+// turn is marked. The old rule suppressed the message-level breakpoint
+// below two messages, so an aria's opening turn — typically the largest
+// stable prefix it will ever have, credo plus tools — wrote no cache at all
+// and turn two paid full price for it.
+func TestProjectMessages_SingleMessageStillMarksTheTail(t *testing.T) {
 	a := &Anthropic{}
 	msgs := []message.Message{
 		{Role: message.RoleInput, Content: []message.Content{message.TextContent("first prompt — nothing on disk yet")}},
@@ -139,7 +142,7 @@ func TestProjectMessages_NoMessageBreakpoint_WhenSingleMessage(t *testing.T) {
 
 	require.Len(t, req.Messages, 1)
 	require.NotEmpty(t, req.Messages[0].Content)
-	assert.Nil(t, req.Messages[0].Content[0].CacheControl, "single message must not carry cache_control")
+	assert.NotNil(t, req.Messages[0].Content[0].CacheControl, "the opening turn must write the cache")
 }
 
 // TestProjectMessages_StableAcrossCalls verifies that the same input
@@ -218,9 +221,12 @@ func TestProjectMessages_PerLTTag(t *testing.T) {
 		"message at LT 11 must carry cache_control from system.tags")
 	assert.Equal(t, "ephemeral", tagged.Content[len(tagged.Content)-1].CacheControl.Type)
 
-	// Other messages should not carry it (no system.cache_control set).
+	// The untagged, non-tail message carries nothing; the tail carries the
+	// automatic rolling marker (caching is on by default).
 	assert.Nil(t, req.Messages[0].Content[0].CacheControl)
-	assert.Nil(t, req.Messages[2].Content[0].CacheControl)
+	assert.NotNil(t, req.Messages[2].Content[0].CacheControl, "the rolling tail marker is automatic")
+	assert.LessOrEqual(t, countCacheMarkers(req), provider.MaxCacheBreakpoints,
+		"per-LT tags layer on top of the automatic markers and must not breach the API cap")
 }
 
 // TestCachingIsOnByDefault pins the contract that known_keys.go and the
