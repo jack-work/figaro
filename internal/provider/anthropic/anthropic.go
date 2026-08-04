@@ -76,7 +76,7 @@ func New(knobs provider.Knobs, resolver auth.TokenResolver, cacheOpen func(aria 
 		auth:             resolver,
 		Model:            knobs.Model,
 		MaxTokens:        knobs.MaxTokens,
-		HTTPClient:       &http.Client{Timeout: 10 * time.Minute},
+		HTTPClient:       &http.Client{Timeout: 10 * time.Minute, Transport: &wirelog.Transport{Inner: http.DefaultTransport}},
 		ReminderRenderer: rr,
 		CacheOpen:        cacheOpen,
 		CacheNamespace:   providerName,
