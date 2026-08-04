@@ -1108,12 +1108,16 @@ func responseArgumentBytes(raw json.RawMessage) []byte {
 func decodeResponseAssistant(response responseObject) (message.Message, error) {
 	out := message.Message{
 		Role: message.RoleOutput,
-		Usage: &message.Usage{
-			InputTokens:      response.Usage.InputTokens,
-			OutputTokens:     response.Usage.OutputTokens,
-			CacheReadTokens:  response.Usage.InputTokensDetails.CachedTokens,
-			CacheWriteTokens: response.Usage.InputTokensDetails.CacheWriteTokens,
-		},
+		// input_tokens is INCLUSIVE of the cached/written breakdown beside
+		// it (the wire proves it: total_tokens == input_tokens +
+		// output_tokens). Copying it straight into InputTokens counted every
+		// cached token twice in tokens.ContextFromUsage.
+		Usage: provider.UsageFromInclusivePrompt(
+			response.Usage.InputTokens,
+			response.Usage.InputTokensDetails.CachedTokens,
+			response.Usage.InputTokensDetails.CacheWriteTokens,
+			response.Usage.OutputTokens,
+		),
 	}
 	for _, raw := range response.Output {
 		var item responseOutputItem

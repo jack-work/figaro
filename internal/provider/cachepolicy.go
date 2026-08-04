@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/message"
 )
 
 // CacheControlKey is the chalkboard key that overrides the automatic
@@ -135,4 +136,37 @@ func EstimateWireTokens(bytes int) int {
 		return 0
 	}
 	return (bytes + 3) / 4
+}
+
+// UsageFromInclusivePrompt maps an OpenAI-family usage block into figaro's
+// four buckets.
+//
+// The OpenAI wire (both Chat Completions' prompt_tokens and the Responses
+// API's input_tokens) reports a prompt count that is INCLUSIVE of the cache
+// reads and writes broken out beside it, and confirms it arithmetically:
+// total_tokens = prompt + output. Anthropic reports the same three numbers
+// DISJOINT. figaro's InputTokens is the uncached remainder, because
+// tokens.ContextFromUsage sums all four — so a provider that copies an
+// inclusive prompt count straight into InputTokens counts every cached
+// token twice, and a fully cached aria reports nearly double its real size.
+//
+// One definition, so the Chat Completions and Responses paths cannot drift
+// apart on it.
+func UsageFromInclusivePrompt(promptTokens, cachedTokens, cacheWriteTokens, outputTokens int) *message.Usage {
+	if promptTokens == 0 && outputTokens == 0 && cachedTokens == 0 && cacheWriteTokens == 0 {
+		return nil
+	}
+	input := promptTokens - cachedTokens - cacheWriteTokens
+	if input < 0 {
+		// A provider that reports an exclusive prompt count (or a bad
+		// breakdown) must not push the remainder negative and make the
+		// context figure smaller than the prompt.
+		input = 0
+	}
+	return &message.Usage{
+		InputTokens:      input,
+		OutputTokens:     outputTokens,
+		CacheReadTokens:  cachedTokens,
+		CacheWriteTokens: cacheWriteTokens,
+	}
 }

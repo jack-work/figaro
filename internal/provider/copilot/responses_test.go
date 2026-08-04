@@ -212,9 +212,17 @@ func TestResponsesProviderStreamsAndCachesAssistant(t *testing.T) {
 	require.Len(t, bus.messages, 1)
 	assert.Equal(t, "salve", bus.messages[0].Content[0].Text)
 	assert.Equal(t, message.StopEnd, bus.messages[0].StopReason)
-	assert.Equal(t, 11, bus.messages[0].Usage.InputTokens)
+	// input_tokens (11) is INCLUSIVE of the cached (5) and written (2)
+	// tokens broken out beside it, so the uncached remainder is 4. This
+	// assertion previously read 11, which pinned a double count: every
+	// cached token was also counted as fresh input.
+	assert.Equal(t, 4, bus.messages[0].Usage.InputTokens)
 	assert.Equal(t, 5, bus.messages[0].Usage.CacheReadTokens)
 	assert.Equal(t, 2, bus.messages[0].Usage.CacheWriteTokens)
+	assert.Equal(t, 3, bus.messages[0].Usage.OutputTokens)
+	// The invariant that matters: the four buckets tokens.ContextFromUsage
+	// sums must equal the provider's own input_tokens + output_tokens.
+	assert.Equal(t, 11+3, tokens.ContextFromUsage(bus.messages[0].Usage))
 
 	entries := cache.Read()
 	require.Len(t, entries, 1)
