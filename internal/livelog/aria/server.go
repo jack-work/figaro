@@ -341,6 +341,7 @@ func delta(id uint64, old, n livedoc.Node) NodeDelta {
 	scalarInt("at", old.At, n.At)
 	streamed("markdown", old.Markdown, n.Markdown)
 	streamed("output", old.Output, n.Output)
+	streamed("input", old.Input, n.Input)
 	if !reflect.DeepEqual(old.Args, n.Args) {
 		if n.Args == nil {
 			unset = append(unset, "args")
@@ -380,6 +381,7 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 	str("markdown", n.Markdown)
 	str("sender", n.Sender)
 	str("output", n.Output)
+	str("input", n.Input)
 	if n.Args != nil {
 		set["args"] = n.Args
 	}

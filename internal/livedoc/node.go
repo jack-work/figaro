@@ -91,14 +91,25 @@ type Node struct {
 	// receipt and tools use the provider's tool-call id. It remains serialized
 	// in snapshots, but it is not UI identity. The aria wire addresses a node by
 	// the positional pair (turn, From+i), and NodeDelta.ID is that uint64 ordinal.
-	ID         string                 `json:"id,omitempty"`
-	Name       string                 `json:"name,omitempty"`    // tool name
-	Args       map[string]interface{} `json:"args,omitempty"`    // invocation arguments
-	Status     string                 `json:"status,omitempty"`  // running | ok | error
-	Output     string                 `json:"output,omitempty"`  // streamed result text
-	Summary    string                 `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
-	StartedAt  int64                  `json:"started_at,omitempty"`
-	FinishedAt int64                  `json:"finished_at,omitempty"`
+	ID     string                 `json:"id,omitempty"`
+	Name   string                 `json:"name,omitempty"`   // tool name
+	Args   map[string]interface{} `json:"args,omitempty"`   // invocation arguments
+	Status string                 `json:"status,omitempty"` // running | ok | error
+	// Input is the tool's arguments AS THEY ARRIVE — the raw, still-truncated
+	// JSON prefix the provider is streaming. Args is the same thing decoded,
+	// and only exists once the whole object parses, so Input is what there is
+	// to show while the model is still writing it.
+	//
+	// It is a STREAMED field (spliced by livedoc.Diff, like markdown and
+	// output), and it is not append-only: a bounded tail drops leading bytes
+	// as it slides, and it is cleared when Args lands. Both are ordinary
+	// deltas — Delta carries Del as well as Ins — so a shrink costs one splice
+	// and needs nothing new on the wire.
+	Input      string `json:"input,omitempty"`
+	Output     string `json:"output,omitempty"`  // streamed result text
+	Summary    string `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
+	StartedAt  int64  `json:"started_at,omitempty"`
+	FinishedAt int64  `json:"finished_at,omitempty"`
 }
 
 // OpKind discriminates a node mutation on the wire.
