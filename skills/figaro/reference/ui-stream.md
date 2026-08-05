@@ -78,8 +78,20 @@ type NodeDelta struct {
 `Live.From` is the immutability boundary: node ordinals below it are closed and
 will never change; ordinals at or above it may still receive deltas. `V` is the
 0-indexed frame version. `set` merges fields (and creates a node when `type`
-first appears), `unset` removes fields, and `patch` splices the previous
-`markdown` or `output` string using byte offsets.
+first appears), `unset` removes fields, and `patch` splices a previous
+**streamed string** using byte offsets. Three fields are streamed:
+`markdown`, `output`, and `input`.
+
+`input` is a tool's arguments **as they arrive** — the raw, still-truncated
+JSON prefix — beside `args`, which is the same thing decoded and therefore
+only exists once the whole object parses. It is what there is to show while
+the model is still writing a large argument, and it is deliberately not
+append-only: a bounded tail drops leading bytes as it slides, and the field is
+cleared (an `unset`) the moment `args` lands. A `Delta` carries `del` as well
+as `ins`, so a shrink is one ordinary splice and needs nothing new on the
+wire. Whether the fragments arrive smoothly at all is a **provider** question
+— see `system.eager_tool_streaming` in
+[architecture.md](architecture.md).
 
 A `Live` frame with deltas updates the suffix. A `Live` frame with no deltas is
 a close marker for that streaming suffix; it does **not** necessarily finish
@@ -185,7 +197,7 @@ lifecycle operations remain on Angelus. Request ids are integers in the current
 `jkrpc` framing.
 
 Node types: `prose` (assistant markdown), `thinking` (extended-thinking),
-`tool` (an invocation folded with its streamed result), and `steering` (a user
+`tool` (an invocation folded with its streamed input and result), and `steering` (a user
 message injected mid-turn — see below).
 
 ### Protocol stability TODO
