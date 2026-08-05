@@ -303,9 +303,10 @@ func TestPagerStreamingToolExpandsItsArguments(t *testing.T) {
 	tr, _, _ := streamingFixture(t, strings.Repeat("a line of the file being written\n", 30))
 
 	folded := argRowsOf(tr)
-	// the `content` label + the streaming window + the short `path` row.
-	if len(folded) != 2+argStreamLines {
-		t.Fatalf("folded: %d argument rows, want %d:\n%s", len(folded), 2+argStreamLines, strings.Join(folded, "\n"))
+	// label + window + the blank row closing a multi-line value + `path`.
+	wantFolded := 3 + argStreamLines
+	if len(folded) != wantFolded {
+		t.Fatalf("folded: %d argument rows, want %d:\n%s", len(folded), wantFolded, strings.Join(folded, "\n"))
 	}
 
 	if !tr.toggleSelectedNodes() {

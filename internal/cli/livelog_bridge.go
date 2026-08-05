@@ -968,7 +968,12 @@ func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bo
 		bashCap = nodeOutputUnlimited
 	}
 	verbose := v.settings != nil && v.settings.verbose
-	return renderNode(n, width, bashCap, uint64(tick), verbose, verbose || (v.gesture && fullOutput))
+	// CONTENT expands on a real per-node gesture only. Ctrl-O (verbose) adds
+	// METADATA — the timestamps, the coordinate row — and deliberately no
+	// longer opens content: "verbosity" and "show me all of this one thing"
+	// are different questions, and one key answering both meant neither could
+	// be asked alone.
+	return renderNode(n, width, bashCap, uint64(tick), verbose, v.gesture && fullOutput)
 }
 
 // openRule prints the session's opening rule through the inline renderer, which

@@ -478,28 +478,30 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 	}
 	// The arguments — streaming or settled, folded or expanded, one shape.
 	args := toolArgRows(n, width, expand)
+	meta := toolMetaRows(n, width, verbose || expand)
 
-	header := glyph + " " + term.Cyan(name)
+	header := glyph + " " + term.Arg(name)
 	// The summary is the FALLBACK, not the headline: when the argument block
 	// is drawn it already carries the command, on its own line, in full. Two
 	// copies of the same string is what pushed the duration off the right of
-	// the screen — 65% of the owner's tool headers lost it at width 80 —
-	// so the header keeps the one thing that must never be lost.
+	// the screen — 65% of the owner's tool headers lost it at width 80 — so
+	// the header keeps the one thing that must never be lost.
 	if n.Summary != "" && len(args) == 0 {
 		header = header + " " + term.Dim(truncCols(n.Summary, toolSummaryCap))
 	}
 	if n.StartedAt != 0 {
 		header += " " + term.Dim("["+toolDuration(n, time.Now())+"]")
 	}
-	rows := make([]string, 1, 6+len(args)+max(bashCap, 0))
+	// The header closes with a rule to the right margin, which is what makes
+	// the block read as one object rather than a stack of unrelated rows.
+	if fill := width - term.VisibleLen(header) - 1; fill > 0 {
+		header += " " + term.Dim(strings.Repeat("─", fill))
+	}
+
+	rows := make([]string, 1, 8+len(args)+len(meta)+max(bashCap, 0))
 	rows[0] = header
 	rows = append(rows, args...)
-	if verbose && n.StartedAt != 0 {
-		rows = append(rows, term.Dim("  started "+formatToolTime(n.StartedAt)))
-		if n.FinishedAt != 0 {
-			rows = append(rows, term.Dim("  finished "+formatToolTime(n.FinishedAt)))
-		}
-	}
+	rows = append(rows, meta...)
 
 	if strings.TrimSpace(n.Output) != "" {
 		// Tool stdout is the most likely vector for terminal-state
@@ -511,8 +513,13 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 		safe := render.SanitizeForTerminal(output)
 		shown, total := tailOutput(safe, bashCap)
 		lines := strings.Split(shown, "\n")
+		// A rule between the call and its result, so the eye can see where one
+		// stops and the other begins. Only when there is something to divide.
+		if len(rows) > 1 {
+			rows = append(rows, blockRule(width))
+		}
 		if bashCap >= 0 && total > bashCap {
-			rows = append(rows, term.Dim(fmt.Sprintf("  │ … last %d of %d lines", bashCap, total)))
+			rows = append(rows, blockRow(width, term.Dim(fmt.Sprintf("… last %d of %d lines", bashCap, total))))
 		}
 		dimGutter := term.Dim(quoteGutter) // hoisted: one styled gutter, not one per line
 		for _, l := range lines {
@@ -521,7 +528,7 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 			// every tool-output row was trimmed two columns narrower than it had
 			// room for. Same gutter, same constant, one place — thinking and tool
 			// output cannot drift apart again.
-			rows = append(rows, dimGutter+truncCols(l, width-quoteGutterCells))
+			rows = append(rows, dimGutter+truncCols(l, blockWidth(width)))
 		}
 	}
 	return rows
@@ -552,38 +559,26 @@ const argGutterCells = quoteGutterCells
 // push every value off the right of the screen.
 const argLabelCap = 12
 
-// toolArgRows draws a tool's arguments: one label per field, its value beside
-// it when it is short and beneath it when it is not, under the argument
-// gutter. The same shape whether the value is still arriving (Input, a
-// truncated JSON prefix walked by partialjson) or settled (Args, decoded) — a
-// node must not change layout under the user just because the model finished
-// typing.
+// toolArgRows draws a tool's arguments under the block rule: one label per
+// field, its value beside it when it is short and beneath it when it is not.
+// The same shape whether the value is still arriving (Input, a truncated JSON
+// prefix walked by partialjson) or settled (Args, decoded) — a node must not
+// change layout under the reader because the model finished typing.
 //
-// WHEN it is drawn differs, and deliberately:
+// A folded multi-line value says so on its LABEL row — `content (…last 5 of
+// 41 lines)` — rather than in a row of its own. The count moves as the value
+// grows, which is information while it is arriving and a fact afterwards; what
+// it must not do is cost a row, because rows are what is being rationed.
 //
-//   - while the arguments are STREAMING, always. That is the point: you watch
-//     the write take shape. Collapsed keeps the last argPreviewLines rows of
-//     each value, a moving window on what is being typed.
-//   - once they have SETTLED, only when expanded. A finished transcript is
-//     mostly settled tools, and printing every argument of every one of them
-//     would triple the height of a page to say what the header already
-//     summarises. Enter on the selection (or Ctrl-O) is the ask.
-//
-// Neither prints a "… last N of M" banner. The output block earns one because
-// its text is a finished artifact you might want the size of; an argument
-// mid-flight is a window, and a banner that changes every frame is noise.
+// A multi-line value is followed by a blank rule row, so the next argument
+// starts clear of it. A single-line value is not: nothing has been separated.
 func toolArgRows(n livedoc.Node, width int, expand bool) []string {
 	fields := toolArgFields(n)
 	if len(fields) == 0 {
 		return nil
 	}
 	streaming := strings.TrimSpace(n.Input) != ""
-	gutter := term.Arg(argGutter)
-	avail := width - argGutterCells
-	if avail < 8 {
-		avail = 8
-	}
-	// One label column for the whole block, so short values line up.
+	avail := blockWidth(width)
 	label := 0
 	for _, f := range fields {
 		if n := runewidth.StringWidth(f.Name); n > label && n <= argLabelCap {
@@ -593,58 +588,108 @@ func toolArgRows(n livedoc.Node, width int, expand bool) []string {
 	var rows []string
 	for _, f := range fields {
 		value := strings.TrimRight(render.SanitizeForTerminal(f.Value), "\n")
-		name := term.Dim(runewidth.FillRight(f.Name, label))
 		// A short one-line value rides beside its label; anything longer gets
 		// the label to itself and the value indented beneath, where a wrapped
 		// remainder cannot be read as the next argument.
 		if !strings.Contains(value, "\n") && runewidth.StringWidth(value) <= avail-label-1 {
-			row := gutter + name
+			row := blockRow(width, term.Label(runewidth.FillRight(f.Name, label)))
 			if value != "" {
 				row += " " + term.Arg(value)
 			}
 			rows = append(rows, row)
 			continue
 		}
-		rows = append(rows, gutter+name)
-		rows = append(rows, argValueRows(value, avail-2, expand, streaming, gutter)...)
+		lines := hardWrap(value, avail-2)
+		kept := foldArgLines(lines, expand, streaming)
+		head := f.Name
+		if len(kept) < len(lines) {
+			head += " " + argFoldNote(len(kept), len(lines), streaming)
+		}
+		rows = append(rows, blockRow(width, term.Label(head)))
+		for _, l := range kept {
+			rows = append(rows, blockRow(width, "  "+term.Arg(truncCols(l, avail-2))))
+		}
+		rows = append(rows, blockRow(width, "")) // a multiline value closes with air
 	}
 	return rows
 }
 
-// argValueRows wraps one value and folds it: the LAST argStreamLines rows
-// while it is arriving, the FIRST argSettledLines once it has stopped, all of
-// it when expanded. tailOutput is the same helper the output block folds with,
-// so the two cannot drift; the head cut is a slice, since there is no
-// equivalent to take.
-func argValueRows(value string, w int, expand, streaming bool, gutter string) []string {
-	lines := hardWrap(value, w)
-	if !expand {
-		switch {
-		case streaming && len(lines) > argStreamLines:
-			shown, _ := tailOutput(strings.Join(lines, "\n"), argStreamLines)
-			lines = strings.Split(shown, "\n")
-		case !streaming:
-			// The head, skipping blank rows: a two-row preview spent on
-			// whitespace says nothing. Blank rows inside the kept range are
-			// dropped rather than counted, so the preview is always two rows
-			// of actual content.
-			kept := make([]string, 0, argSettledLines)
-			for _, l := range lines {
-				if strings.TrimSpace(l) == "" {
-					continue
-				}
-				if kept = append(kept, l); len(kept) == argSettledLines {
-					break
-				}
+// foldArgLines applies the fold: the LAST argStreamLines rows while the value
+// is arriving, the FIRST argSettledLines (blank rows skipped) once it has
+// stopped, everything when expanded. tailOutput is the same helper the output
+// block folds with, so the two cannot drift.
+func foldArgLines(lines []string, expand, streaming bool) []string {
+	if expand {
+		return lines
+	}
+	switch {
+	case streaming && len(lines) > argStreamLines:
+		shown, _ := tailOutput(strings.Join(lines, "\n"), argStreamLines)
+		return strings.Split(shown, "\n")
+	case !streaming:
+		kept := make([]string, 0, argSettledLines)
+		for _, l := range lines {
+			if strings.TrimSpace(l) == "" {
+				continue
 			}
-			lines = kept
+			if kept = append(kept, l); len(kept) == argSettledLines {
+				break
+			}
 		}
+		return kept
 	}
-	out := make([]string, 0, len(lines))
-	for _, l := range lines {
-		out = append(out, gutter+"  "+term.Arg(truncCols(l, w)))
+	return lines
+}
+
+// argFoldNote is the label's suffix when a value is folded. It says which END
+// was kept, because that differs by phase and the reader cannot otherwise tell
+// whether they are looking at the beginning of a command or the end of one.
+func argFoldNote(shown, total int, streaming bool) string {
+	end := "first"
+	if streaming {
+		end = "last"
 	}
-	return out
+	return fmt.Sprintf("(…%s %d of %d lines)", end, shown, total)
+}
+
+// blockWidth is the room a block row has for content: the pane, less the
+// gutter, less ONE column of right padding. The padding is there because a row
+// rendered flush to the last column has been seen to spill a character — wide
+// runes and the selection bar each cost a cell the arithmetic did not always
+// account for — and a column of air is cheaper than a wrapped glyph.
+func blockWidth(width int) int {
+	w := width - quoteGutterCells - 1
+	if w < 8 {
+		w = 8
+	}
+	return w
+}
+
+// blockRow puts one row inside the tool block, under the SAME rule the output
+// uses. The rule is identical in glyph and colour on both sides of the block:
+// what tells an argument from output is the colour of the TEXT, not the
+// furniture around it.
+//
+// It CLIPS, and that is the point: every row in the block goes through here,
+// so no row can be wider than its pane. The label row was the one that got
+// away — a fold note like `command (…first 2 of 39 lines)` is longer than a
+// narrow pane and nothing was trimming it, which is the "one character past
+// the wrap" the owner reported.
+func blockRow(width int, content string) string {
+	return term.Dim(quoteGutter) + clipToWidth(content, blockWidth(width))
+}
+
+// blockRule is the horizontal divider drawn between the parts of a block — in
+// the header, and between the arguments and the output — so the eye can see
+// where the call stops and its result begins.
+func blockRule(width int) string {
+	n := blockWidth(width)
+	if n < 1 {
+		return term.Dim(quoteGutter)
+	}
+	// Flush against the bar — `  │────`, not `  │ ────` — so the divider reads
+	// as part of the block's frame rather than as a row of content in it.
+	return term.Dim(strings.TrimRight(quoteGutter, " ") + strings.Repeat("─", n+1))
 }
 
 // toolArgFields is the one place that answers "what are this tool's
@@ -728,6 +773,23 @@ func toolDuration(n livedoc.Node, now time.Time) string {
 
 func formatToolTime(ms int64) string {
 	return time.UnixMilli(ms).Format("2006-01-02 15:04:05.000 MST")
+}
+
+// toolMetaRows draws the call's metadata inside the block. It is what Ctrl-O
+// shows and what a selection shows, and it is deliberately the ONLY thing
+// Ctrl-O adds: verbosity is metadata, not content. Drawn under the same rule
+// as everything else in the block — before this they hung off the left margin
+// in their own indentation, which read as though they belonged to the turn
+// rather than to the call.
+func toolMetaRows(n livedoc.Node, width int, show bool) []string {
+	if !show || n.StartedAt == 0 {
+		return nil
+	}
+	rows := []string{blockRow(width, term.Label("started ")+term.Arg(formatToolTime(n.StartedAt)))}
+	if n.FinishedAt != 0 {
+		rows = append(rows, blockRow(width, term.Label("finished ")+term.Arg(formatToolTime(n.FinishedAt))))
+	}
+	return rows
 }
 
 // hardWrap char-wraps s (runewidth-aware) to at most w columns per line,

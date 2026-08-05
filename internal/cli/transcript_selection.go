@@ -78,6 +78,12 @@ type selectionCopyPlan struct {
 	lo   selectionPoint
 	hi   selectionPoint
 	open *aria.Message
+	// expanded is the fold state at the moment the yank was asked for. The
+	// copy follows the EYE: a folded tool yanks its output, an expanded one
+	// yanks the call and the result in full. Snapshotted into the plan so the
+	// copier — which may page history in the background — never reads the
+	// live map from another goroutine.
+	expanded map[nodeRef]bool
 }
 
 type transcriptRow struct {
@@ -267,12 +273,27 @@ func (t *transcript) selectionPlan() (selectionCopyPlan, bool) {
 		copy.Nodes = append([]livedoc.Node(nil), m.Nodes...)
 		open = &copy
 	}
-	return selectionCopyPlan{lo: lo, hi: hi, open: open}, true
+	expanded := make(map[nodeRef]bool, len(t.expanded))
+	for ref, on := range t.expanded {
+		if on {
+			expanded[ref] = true
+		}
+	}
+	return selectionCopyPlan{lo: lo, hi: hi, open: open, expanded: expanded}, true
 }
 
-func nodeClipboardText(n livedoc.Node) string {
+// nodeClipboardText is what `y` puts on the clipboard for one node. For a
+// tool it follows the EYE: what is on screen folded is the output, so that is
+// what a fold-state yank gives; an expanded node shows the call and its
+// result, so an expanded yank gives both, in full and untruncated. Copying
+// something the reader cannot see is how a yank ends up in a commit message
+// nobody meant to write.
+func nodeClipboardText(n livedoc.Node, expanded bool) string {
 	switch n.Type {
 	case livedoc.NodeTool:
+		if expanded {
+			return toolClipboardFull(n)
+		}
 		if n.Output != "" {
 			return n.Output
 		}
@@ -301,7 +322,7 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(aria.Anchor, 
 	var newest []string
 	foundLo, foundHi := false, false
 	if plan.open != nil {
-		text, lo, hi, err := selectedMessageText(*plan.open, plan)
+		text, lo, hi, err := selectedMessageText(*plan.open, plan, plan.expanded)
 		if err != nil {
 			return "", err
 		}
@@ -335,7 +356,7 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(aria.Anchor, 
 		}
 		var page []string
 		for _, m := range messages {
-			text, lo, hi, err := selectedMessageText(m, plan)
+			text, lo, hi, err := selectedMessageText(m, plan, plan.expanded)
 			if err != nil {
 				return "", err
 			}
@@ -361,7 +382,7 @@ func selectionText(plan selectionCopyPlan, pageSize int, read func(aria.Anchor, 
 	return strings.Join(out, "\n\n"), nil
 }
 
-func selectedMessageText(m aria.Message, plan selectionCopyPlan) ([]string, bool, bool, error) {
+func selectedMessageText(m aria.Message, plan selectionCopyPlan, expanded map[nodeRef]bool) ([]string, bool, bool, error) {
 	var out []string
 	foundLo, foundHi := false, false
 	// One rule for the question and for every node: the hash is taken only at an
@@ -395,11 +416,29 @@ func selectedMessageText(m aria.Message, plan selectionCopyPlan) ([]string, bool
 		}
 	}
 	for i, n := range m.Nodes {
-		if err := take(nodeRefAt(m, i), n, nodeClipboardText(n)); err != nil {
+		ref := nodeRefAt(m, i)
+		if err := take(ref, n, nodeClipboardText(n, expanded[ref])); err != nil {
 			return nil, false, false, err
 		}
 	}
 	return out, foundLo, foundHi, nil
+}
+
+// toolClipboardFull is an expanded tool node's yank: the call, then its
+// result, both whole. The arguments come from the decoded map when it exists
+// and from the streamed prefix when it does not, so yanking a call that is
+// still being written gives what has arrived rather than nothing.
+func toolClipboardFull(n livedoc.Node) string {
+	var b strings.Builder
+	b.WriteString(n.Name)
+	for _, f := range toolArgFields(n) {
+		fmt.Fprintf(&b, "\n%s: %s", f.Name, f.Value)
+	}
+	if n.Output != "" {
+		b.WriteString("\n\n")
+		b.WriteString(n.Output)
+	}
+	return b.String()
 }
 
 func pointLess(a, b selectionPoint) bool {
@@ -630,10 +669,14 @@ func decorateNodeRow(plain string, mark selectionMark, width int) string {
 		return plain
 	}
 	const (
-		reset      = "\x1b[0m"
-		bgSelect   = "\x1b[48;5;238m" // subtle dark gray wash (xterm 256-color)
-		gutterSel  = "\x1b[36m▎"      // cyan slim bar for range members
-		gutterFocs = "\x1b[1;96m▎"    // bright bold cyan bar for focused node
+		reset = "\x1b[0m"
+		// Kanagawa waveBlue1 #223249: a blue wash rather than a grey frost.
+		// The grey one (238) sat too close to dim foreground text and made a
+		// selected row harder to read than an unselected one, which is the
+		// opposite of what a selection is for.
+		bgSelect   = "\x1b[48;5;24m"
+		gutterSel  = "\x1b[36m▎"   // cyan slim bar for range members
+		gutterFocs = "\x1b[1;96m▎" // bright bold cyan bar for focused node
 	)
 	if !term.Enabled() {
 		return barOverMargin(plain, "▎", width)
