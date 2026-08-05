@@ -1395,7 +1395,7 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 		// internal/render while its proof apparatus (sgr_vt_test.go's VT model)
 		// is needed by tests on both sides, so the model wants a third package
 		// before the transform can move at all.
-		rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(r.Text, t.w)), ref: ref})
+		rows = append(rows, transcriptRow{text: sgrCollapse(plainNodeRow(r.Text, t.w)), ref: ref})
 	}
 	return cachedMessage{rows: rows}
 }

@@ -113,6 +113,14 @@ const (
 	codeRed   = "\033[31m"
 	codeGreen = "\033[32m"
 	codeCyan  = "\033[36m"
+
+	// codeArg is the off colour tool ARGUMENTS are drawn in: a soft blue-grey
+	// (xterm 256). Arguments are neither prose (the agent's voice), nor tool
+	// output (the machine's), nor thinking (dim) — they are what the agent is
+	// about to DO, and on a dense screen that distinction is worth a colour of
+	// its own. 256-colour, like the transcript's selection wash, so it reads
+	// as a tint rather than one of the eight loud primaries.
+	codeArg = "\033[38;5;109m"
 )
 
 // Dim wraps s in dim (faint) ANSI if color is enabled.
@@ -145,6 +153,14 @@ func Cyan(s string) string {
 		return s
 	}
 	return codeCyan + s + reset
+}
+
+// Arg wraps s in the argument colour if color is enabled.
+func Arg(s string) string {
+	if !Enabled() {
+		return s
+	}
+	return codeArg + s + reset
 }
 
 // VisibleLen returns visible columns ignoring ANSI escapes.

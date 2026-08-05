@@ -8,6 +8,7 @@ import (
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // stripANSI removes ANSI escape sequences so tests can assert on visible text.
@@ -178,15 +179,15 @@ func TestRenderToolNode_StreamingInput(t *testing.T) {
 	}
 	want := []string{
 		"⠋ write",
-		"  ┆ path    /var/tmp/x.md",
-		"  ┆ content",
-		"  ┆   1. alpha",
-		"  ┆   2. beta",
+		"  │ content",
+		"  │   1. alpha",
+		"  │   2. beta",
+		"  │ path    /var/tmp/x.md",
 	}
 	assertRows(t, renderNodeRows(t, n, 44, 10, false), want)
 }
 
-// Folded, ONE argument shows its last argPreviewLines rows — a moving window
+// Folded, ONE argument shows its last argStreamLines rows — a moving window
 // on what is being typed, not a summary of it. No "… last N of M" banner: the
 // count changes every frame, which is noise rather than information.
 func TestRenderToolNode_StreamingInputIsAMovingWindow(t *testing.T) {
@@ -199,11 +200,11 @@ func TestRenderToolNode_StreamingInputIsAMovingWindow(t *testing.T) {
 		Input: `{"path":"/x","content":"` + body.String(),
 	}
 	rows := renderNodeRows(t, n, 60, 10, false)
-	// header + path + content label + argPreviewLines value rows
-	if len(rows) != 3+argPreviewLines {
-		t.Fatalf("folded stream should be %d rows, got %d:\n%s", 3+argPreviewLines, len(rows), strings.Join(rows, "\n"))
+	// header + content label + argStreamLines value rows + the path row
+	if len(rows) != 3+argStreamLines {
+		t.Fatalf("folded stream should be %d rows, got %d:\n%s", 3+argStreamLines, len(rows), strings.Join(rows, "\n"))
 	}
-	if !strings.Contains(rows[len(rows)-1], "39.") {
+	if !strings.Contains(rows[len(rows)-2], "39.") {
 		t.Errorf("the window should hold the NEWEST lines, got %q", rows[len(rows)-1])
 	}
 	for _, r := range rows {
@@ -212,31 +213,28 @@ func TestRenderToolNode_StreamingInputIsAMovingWindow(t *testing.T) {
 		}
 	}
 	// Expanded, every line is there.
-	if got := renderNodeRows(t, n, 60, nodeOutputUnlimited, true); len(got) <= 3+argPreviewLines {
+	if got := renderNodeRows(t, n, 60, nodeOutputUnlimited, true); len(got) <= 3+argStreamLines {
 		t.Fatalf("expanded should reveal the whole value, got %d rows", len(got))
 	}
 }
 
-// A settled tool keeps its arguments folded away — a transcript is mostly
-// settled tools, and printing every argument of every one would say what the
-// header already summarises, three times as tall. Enter (or Ctrl-O) is the
-// ask, and then the SAME block appears, in the same shape.
-func TestRenderToolNode_SettledArgsAppearOnlyOnExpand(t *testing.T) {
+// A settled tool keeps its arguments, folded to the FIRST argSettledLines rows
+// of each value: nothing is moving any more, so the useful part is the head —
+// what this call is — not the tail, which is only where it stopped. The header
+// drops its summary once the block is drawn, because the block already carries
+// the command in full, and two copies of it are what pushed the duration off
+// the right of the screen.
+func TestRenderToolNode_SettledArgsPreviewFromTheHead(t *testing.T) {
 	n := livedoc.Node{
 		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
 		Summary: "git push", Args: map[string]any{"command": "git push origin main", "timeout": 240},
 		Output: "everything up-to-date",
 	}
-	for _, r := range renderNodeRows(t, n, 60, nodeBashCapDefault, false) {
-		if strings.Contains(r, "┆") {
-			t.Fatalf("folded settled tool should not draw arguments: %q", r)
-		}
-	}
-	rows := renderNodeRows(t, n, 60, nodeOutputUnlimited, true)
+	rows := renderNodeRows(t, n, 60, nodeBashCapDefault, false)
 	assertRows(t, rows[:3], []string{
-		"✓ bash git push",
-		"  ┆ command git push origin main",
-		"  ┆ timeout 240",
+		"✓ bash",
+		"  │ command git push origin main",
+		"  │ timeout 240",
 	})
 }
 
@@ -255,6 +253,21 @@ func TestNodeExpandable_StreamingToolWithNoOutput(t *testing.T) {
 	}
 	if nodeExpandable(livedoc.Node{Type: livedoc.NodeTool, Name: "bash"}) {
 		t.Error("a tool with neither arguments nor output reveals nothing")
+	}
+}
+
+// Arguments are drawn in their own colour, which is what tells them from tool
+// output now that both use the same rule. Vacuous when colour is off (term.Arg
+// is the identity then) and load-bearing when it is on.
+func TestRenderToolNode_ArgumentsAreDrawnInTheArgumentColour(t *testing.T) {
+	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
+		Input: `{"path":"/x.md"}`}
+	joined := strings.Join(renderToolNode(n, 60, 10, 0, false, false), "\n")
+	if !strings.Contains(joined, term.Arg("/x.md")) {
+		t.Errorf("argument value is not drawn through term.Arg:\n%q", joined)
+	}
+	if !strings.Contains(joined, term.Arg(argGutter)) {
+		t.Errorf("argument rule is not drawn through term.Arg:\n%q", joined)
 	}
 }
 
@@ -297,23 +310,31 @@ func TestIncipitDrawsArgumentsFoldedButOutputWhole(t *testing.T) {
 		Input:  `{"path":"/x.md","content":"` + body,
 		Output: strings.TrimRight(strings.Repeat("output line\n", 40), "\n"),
 	}
-	rowsOf := func(view ldrender.NodeView, expanded func(int) bool) (args, out int) {
+	// Argument rows and output rows share the same RULE — that is the point of
+	// the change, and colour carries the distinction (term.Arg), which a test
+	// cannot force here because the colour mode is resolved once at init. So
+	// the two are counted on fixtures that have only one of them.
+	ruleRows := func(view ldrender.NodeView, expanded func(int) bool, node livedoc.Node) int {
 		c := ldrender.Composer{View: view, Tick: 0, Expanded: expanded}
-		for _, r := range c.Nodes([]livedoc.Node{n}, 70) {
-			switch plain := stripANSI(r.Text); {
-			case strings.Contains(plain, "┆"):
-				args++
-			case strings.Contains(plain, "│"):
-				out++
+		count := 0
+		for _, r := range c.Nodes([]livedoc.Node{node}, 70) {
+			if strings.Contains(stripANSI(r.Text), "│") {
+				count++
 			}
 		}
-		return
+		return count
+	}
+	argsOnly := n
+	argsOnly.Output = ""
+	outOnly := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK, Output: n.Output}
+	rowsOf := func(view ldrender.NodeView, expanded func(int) bool) (args, out int) {
+		return ruleRows(view, expanded, argsOnly), ruleRows(view, expanded, outOnly)
 	}
 
 	// Expanded nil is the incipit: no gesture, "draw the fullest form".
 	args, out := rowsOf(&ariaView{settings: &renderSettings{}}, nil)
-	if args != 2+argPreviewLines {
-		t.Errorf("incipit arguments: %d rows, want %d (the moving window)", args, 2+argPreviewLines)
+	if args != 2+argStreamLines {
+		t.Errorf("incipit arguments: %d rows, want %d (the moving window)", args, 2+argStreamLines)
 	}
 	if out != 40 {
 		t.Errorf("incipit output: %d rows, want all 40 — inline never collapses what it cannot reopen", out)
@@ -323,8 +344,8 @@ func TestIncipitDrawsArgumentsFoldedButOutputWhole(t *testing.T) {
 	// gets the same window — one shape, two surfaces.
 	unexpanded := func(int) bool { return false }
 	pagerArgs, pagerOut := rowsOf(pagerView(&ariaView{settings: &renderSettings{}}), unexpanded)
-	if pagerArgs != 2+argPreviewLines {
-		t.Errorf("pager unexpanded arguments: %d rows, want %d", pagerArgs, 2+argPreviewLines)
+	if pagerArgs != 2+argStreamLines {
+		t.Errorf("pager unexpanded arguments: %d rows, want %d", pagerArgs, 2+argStreamLines)
 	}
 	if pagerOut != nodeBashCapDefault+1 { // + the "… last N of M lines" note
 		t.Errorf("pager unexpanded output: %d rows, want %d — the pager DOES collapse output", pagerOut, nodeBashCapDefault+1)

@@ -289,7 +289,9 @@ func argRowsOf(tr *transcript) []string {
 	var out []string
 	for _, e := range tr.index.entries {
 		for _, r := range e.rows {
-			if plain := stripANSI(r.text); strings.Contains(plain, "┆") {
+			// The fixture's tool has no output, so every rule row is an
+			// argument row.
+			if plain := stripANSI(r.text); strings.Contains(plain, "│") {
 				out = append(out, plain)
 			}
 		}
@@ -301,9 +303,9 @@ func TestPagerStreamingToolExpandsItsArguments(t *testing.T) {
 	tr, _, _ := streamingFixture(t, strings.Repeat("a line of the file being written\n", 30))
 
 	folded := argRowsOf(tr)
-	// path (short, beside its label) + the `content` label + the 2-row window.
-	if len(folded) != 2+argPreviewLines {
-		t.Fatalf("folded: %d argument rows, want %d:\n%s", len(folded), 2+argPreviewLines, strings.Join(folded, "\n"))
+	// the `content` label + the streaming window + the short `path` row.
+	if len(folded) != 2+argStreamLines {
+		t.Fatalf("folded: %d argument rows, want %d:\n%s", len(folded), 2+argStreamLines, strings.Join(folded, "\n"))
 	}
 
 	if !tr.toggleSelectedNodes() {
@@ -327,13 +329,14 @@ func TestPagerStreamingToolExpandsItsArguments(t *testing.T) {
 // The window follows the stream: as patches arrive, the two rows on screen are
 // the two most recent, not the two oldest.
 func TestPagerStreamingWindowFollowsTheStream(t *testing.T) {
-	tr, _, tool := streamingFixture(t, "1. first line of the file\n2. second line of the file\n")
+	// More lines than the window holds, so it has something to roll past.
+	tr, _, tool := streamingFixture(t, "1. first line of the file\n2. second\n3. third\n4. fourth\n5. fifth\n6. sixth\n")
 	before := argRowsOf(tr)
-	if !strings.Contains(strings.Join(before, "\n"), "2. second line") {
+	if !strings.Contains(strings.Join(before, "\n"), "6. sixth") {
 		t.Fatalf("window should hold the newest lines:\n%s", strings.Join(before, "\n"))
 	}
 
-	tool.Input += "3. third line of the file\n4. fourth line of the file\n"
+	tool.Input += "7. seventh line of the file\n8. eighth line of the file\n"
 	tr.client.Apply(aria.Page{Parts: []aria.TurnPart{
 		{Turn: aria.Turn{ID: 1, Inquiry: "write it", Sealed: false,
 			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "on it"}, tool}}},
@@ -341,7 +344,7 @@ func TestPagerStreamingWindowFollowsTheStream(t *testing.T) {
 	tr.rowCache = map[sliceKey]cachedMessage{}
 
 	after := strings.Join(argRowsOf(tr), "\n")
-	if !strings.Contains(after, "4. fourth line") {
+	if !strings.Contains(after, "8. eighth line") {
 		t.Errorf("window did not follow the stream:\n%s", after)
 	}
 	if strings.Contains(after, "1. first line") {

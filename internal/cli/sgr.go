@@ -347,6 +347,14 @@ type sgrSeq struct {
 	absolute   bool
 }
 
+// sgrCollapse is the row cache's rendition collapse, indirected for exactly
+// one reason: the golden regenerator has to be able to produce the
+// PRE-COLLAPSE companion frames that TestGoldenFramesMatchPreSGRAtTheCellLevel
+// compares against. Without the seam those companions can only be produced by
+// an older binary, so the first content change after them retires a proof
+// nobody meant to retire. Production always uses collapseSGR.
+var sgrCollapse = collapseSGR
+
 // collapseSGR returns s with every rendition-neutral escape sequence removed.
 // The result is byte-different but cell-identical (see FuzzSGRCollapse and the
 // VT model in sgr_vt_test.go). Rows that have nothing to drop are returned as
