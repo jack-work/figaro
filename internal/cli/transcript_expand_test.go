@@ -352,3 +352,64 @@ func TestPagerStreamingWindowFollowsTheStream(t *testing.T) {
 		t.Errorf("window should have rolled past the first line:\n%s", after)
 	}
 }
+
+// Escape clears the SELECTION and leaves the EXPANSION alone. Collapsing is a
+// deliberate act — select the node again and press Enter — not a side effect
+// of pointing somewhere else.
+//
+// The bug underneath was worse than the gesture: pruneCaches walks the store's
+// window to decide what to keep, and the OPEN turn is not in that window. Its
+// caches were therefore pruned as though it had scrolled out of history. The
+// row cache merely re-renders, but `expanded` is user state, and it was being
+// dropped on Escape — and on EVERY FRAME while following the live tail, which
+// is why expanding a streaming tool looked like it did not work.
+func TestEscapeKeepsExpansionOnTheOpenTurn(t *testing.T) {
+	tr, ref, _ := streamingFixture(t, strings.Repeat("a line of the file being written\n", 30))
+	if !tr.toggleSelectedNodes() {
+		t.Fatal("fixture: the tool did not expand")
+	}
+	expanded := len(argRowsOf(tr))
+
+	tr.clearSelection()
+	if !tr.expanded[ref] {
+		t.Error("Escape dropped the expansion")
+	}
+	if got := len(argRowsOf(tr)); got != expanded {
+		t.Errorf("after Escape: %d argument rows, want the expanded %d", got, expanded)
+	}
+	if tr.selection.active {
+		t.Error("Escape should still clear the selection")
+	}
+
+	// Following the tail prunes once per frame; the expansion must survive it.
+	tr.follow = true
+	tr.resetToTail()
+	if !tr.expanded[ref] {
+		t.Error("a frame while following dropped the expansion")
+	}
+
+	// And selecting it again collapses it — the only way back.
+	tr.selection = nodeSelection{active: true,
+		anchor: selectionPoint{nodeRef: ref, hash: tr.expandedHashProbe(ref)},
+		focus:  selectionPoint{nodeRef: ref, hash: tr.expandedHashProbe(ref)}}
+	if !tr.toggleSelectedNodes() {
+		t.Fatal("re-selecting did not toggle")
+	}
+	if tr.expanded[ref] {
+		t.Error("Enter on the selected node should collapse it again")
+	}
+}
+
+// expandedHashProbe is the node hash the selection endpoints carry, looked up
+// by ref — the tests build selections by hand and must agree with the guard.
+func (t *transcript) expandedHashProbe(ref nodeRef) uint64 {
+	var h uint64
+	if open := t.openMessage(); open != nil && open.Turn == ref.turn {
+		for i, n := range open.Nodes {
+			if nodeRefAt(*open, i) == ref {
+				h = nodeHash(n)
+			}
+		}
+	}
+	return h
+}
