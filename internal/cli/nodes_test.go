@@ -70,7 +70,7 @@ func TestRenderToolNode_RunningOutputClampedToBashCap(t *testing.T) {
 		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusRunning,
 		Summary: "long", Output: strings.Join(lines, "\n"),
 	}
-	rows := renderToolNode(n, 80, 5, 0, false) // bashCap=5
+	rows := renderToolNode(n, 80, 5, 0, false, false) // bashCap=5
 	joined := stripANSI(strings.Join(rows, "\n"))
 	if strings.Contains(joined, "EARLY_LEAK_SENTINEL") {
 		t.Errorf("early output must be clamped, but leaked:\n%s", joined)
@@ -89,7 +89,7 @@ func TestRenderToolNode_TimingAndVerboseDetails(t *testing.T) {
 		FinishedAt: 1_700_000_001_250,
 	}
 
-	rows := renderToolNode(n, 120, 5, 0, true)
+	rows := renderToolNode(n, 120, 5, 0, true, true)
 	joined := stripANSI(strings.Join(rows, "\n"))
 	if !strings.Contains(joined, "[1.2s]") {
 		t.Fatalf("duration missing: %s", joined)
@@ -117,7 +117,7 @@ func TestRenderToolNodeSanitizesBeforeTailClamp(t *testing.T) {
 		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
 		Output: "\x1b]2;hidden\nOSC payload\nmore payload\x07\nvisible",
 	}
-	rendered := strings.Join(renderToolNode(n, 80, 2, 0, false), "\n")
+	rendered := strings.Join(renderToolNode(n, 80, 2, 0, false, false), "\n")
 	if strings.Contains(rendered, "OSC payload") || strings.ContainsRune(rendered, '\a') {
 		t.Fatalf("control-string payload leaked after tail clamp: %q", rendered)
 	}
@@ -165,69 +165,115 @@ func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	}
 }
 
-// A running tool draws its arguments as they arrive: each field's label on its
-// own line, the value beneath and indented one step further, so a wrapped
-// value cannot be misread as the next argument. Nothing here knows what a
-// "write" or a "bash" is — the block is walked out of the partial JSON.
+// A running tool draws its arguments as they arrive: a short value beside its
+// label, a long one beneath it, all under the argument gutter — which is a
+// different rule, in a different colour, from the one tool OUTPUT uses, so a
+// dense transcript says at a glance what the agent asked for and what the
+// command printed. Nothing here knows what a "write" or a "bash" is.
 func TestRenderToolNode_StreamingInput(t *testing.T) {
 	n := livedoc.Node{
 		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
 		Input: `{"path":"/var/tmp/x.md","content":"1. alpha\n2. beta`,
 	}
-	rows := renderNodeRows(t, n, 40, 10)
 	want := []string{
 		"⠋ write",
-		"  path",
-		"    /var/tmp/x.md",
-		"  content",
-		"    1. alpha",
-		"    2. beta",
+		"  ┆ path    /var/tmp/x.md",
+		"  ┆ content",
+		"  ┆   1. alpha",
+		"  ┆   2. beta",
 	}
-	if len(rows) != len(want) {
-		t.Fatalf("got %d rows, want %d:\n%s", len(rows), len(want), strings.Join(rows, "\n"))
-	}
-	for i := range want {
-		if rows[i] != want[i] {
-			t.Errorf("row %d: got %q, want %q", i, rows[i], want[i])
-		}
-	}
+	assertRows(t, renderNodeRows(t, n, 44, 10, false), want)
 }
 
-// The block is tail-clamped like tool output: a 4 KB argument may not push the
-// rest of the conversation off the screen.
-func TestRenderToolNode_StreamingInputIsBounded(t *testing.T) {
+// Folded, ONE argument shows its last argPreviewLines rows — a moving window
+// on what is being typed, not a summary of it. No "… last N of M" banner: the
+// count changes every frame, which is noise rather than information.
+func TestRenderToolNode_StreamingInputIsAMovingWindow(t *testing.T) {
 	var body strings.Builder
-	for i := range 200 {
+	for i := range 40 {
 		fmt.Fprintf(&body, "%d. a line of the file being written\\n", i)
 	}
 	n := livedoc.Node{
 		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
 		Input: `{"path":"/x","content":"` + body.String(),
 	}
-	if rows := renderNodeRows(t, n, 60, 10); len(rows) != 1+10 {
-		t.Fatalf("want header + 10 clamped rows, got %d", len(rows))
+	rows := renderNodeRows(t, n, 60, 10, false)
+	// header + path + content label + argPreviewLines value rows
+	if len(rows) != 3+argPreviewLines {
+		t.Fatalf("folded stream should be %d rows, got %d:\n%s", 3+argPreviewLines, len(rows), strings.Join(rows, "\n"))
+	}
+	if !strings.Contains(rows[len(rows)-1], "39.") {
+		t.Errorf("the window should hold the NEWEST lines, got %q", rows[len(rows)-1])
+	}
+	for _, r := range rows {
+		if strings.Contains(r, "last") && strings.Contains(r, "lines") {
+			t.Errorf("no truncation banner belongs on a streaming argument: %q", r)
+		}
+	}
+	// Expanded, every line is there.
+	if got := renderNodeRows(t, n, 60, nodeOutputUnlimited, true); len(got) <= 3+argPreviewLines {
+		t.Fatalf("expanded should reveal the whole value, got %d rows", len(got))
 	}
 }
 
-// Once the decoded Args land the streaming block is gone: compose clears
-// Input, and the header's summary says the same thing in one line.
-func TestRenderToolNode_NoInputBlockOnceArgsLand(t *testing.T) {
+// A settled tool keeps its arguments folded away — a transcript is mostly
+// settled tools, and printing every argument of every one would say what the
+// header already summarises, three times as tall. Enter (or Ctrl-O) is the
+// ask, and then the SAME block appears, in the same shape.
+func TestRenderToolNode_SettledArgsAppearOnlyOnExpand(t *testing.T) {
 	n := livedoc.Node{
 		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
-		Summary: "ls -la", Args: map[string]any{"command": "ls -la"},
+		Summary: "git push", Args: map[string]any{"command": "git push origin main", "timeout": 240},
+		Output: "everything up-to-date",
 	}
-	for _, r := range renderNodeRows(t, n, 40, 10) {
-		if strings.HasPrefix(r, "  command") {
-			t.Fatalf("input block survived Args landing:\n%s", r)
+	for _, r := range renderNodeRows(t, n, 60, nodeBashCapDefault, false) {
+		if strings.Contains(r, "┆") {
+			t.Fatalf("folded settled tool should not draw arguments: %q", r)
+		}
+	}
+	rows := renderNodeRows(t, n, 60, nodeOutputUnlimited, true)
+	assertRows(t, rows[:3], []string{
+		"✓ bash git push",
+		"  ┆ command git push origin main",
+		"  ┆ timeout 240",
+	})
+}
+
+// The gesture must not be inert on the node you most want to open: a running
+// tool has no output yet, and its arguments are the whole story.
+func TestNodeExpandable_StreamingToolWithNoOutput(t *testing.T) {
+	streaming := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
+		Input: `{"path":"/x","content":"a`}
+	if !nodeExpandable(streaming) {
+		t.Error("a streaming tool must be expandable — its arguments are what there is to see")
+	}
+	settled := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Args: map[string]any{"command": "ls"}}
+	if !nodeExpandable(settled) {
+		t.Error("a settled tool hides its arguments, so it has something to reveal")
+	}
+	if nodeExpandable(livedoc.Node{Type: livedoc.NodeTool, Name: "bash"}) {
+		t.Error("a tool with neither arguments nor output reveals nothing")
+	}
+}
+
+func assertRows(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("got %d rows, want %d:\n%s", len(got), len(want), strings.Join(got, "\n"))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("row %d: got %q, want %q", i, got[i], want[i])
 		}
 	}
 }
 
 // renderNodeRows renders a node and strips styling, so assertions are about
 // layout rather than escape codes.
-func renderNodeRows(t *testing.T, n livedoc.Node, width, cap int) []string {
+func renderNodeRows(t *testing.T, n livedoc.Node, width, cap int, expand bool) []string {
 	t.Helper()
-	raw := renderToolNode(n, width, cap, 0, false)
+	raw := renderToolNode(n, width, cap, 0, false, expand)
 	out := make([]string, len(raw))
 	for i, r := range raw {
 		out[i] = stripANSI(r)

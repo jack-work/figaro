@@ -145,7 +145,7 @@ func TestIntegration_ClickOnATableIsInert(t *testing.T) {
 func TestIntegration_TableTextSurvivesTheRoundTrip(t *testing.T) {
 	for _, width := range []int{60, 80, 100, 140} {
 		rows := renderNode(livedoc.Node{Type: livedoc.NodeProse, Markdown: tableProse(6)},
-			width, nodeBashCapDefault, 0, false)
+			width, nodeBashCapDefault, 0, false, false)
 		joined := stripANSI(strings.Join(rows, "\n"))
 		for i := range 6 {
 			if !strings.Contains(joined, fmt.Sprintf("note %d", i)) {
