@@ -239,7 +239,9 @@ func (i *Incipit) Freeze(m aria.Message) {
 // per message, so the boundary lands mid-message when that is where row 100
 // falls.
 func (i *Incipit) Resume(closed []aria.Message, open *aria.Message, maxRows int) {
-	io.WriteString(i.term, "\x1b[J") // clear the restored partial region
+	// CR first: the column \x1b[?1049l restores to is the terminal's answer,
+	// not ours (microsoft/terminal#381).
+	io.WriteString(i.term, "\r\x1b[J") // clear the restored partial region
 	i.reset()
 	if rows, endsInRule, ok := i.tailRows(closed, maxRows); ok {
 		io.WriteString(i.term, strings.Join(rows, "\r\n")+"\r\n")
