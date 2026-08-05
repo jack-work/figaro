@@ -95,26 +95,39 @@ wire. Whether the fragments arrive smoothly at all is a **provider** question
 
 ### How a tool draws
 
-A tool is drawn as one framed block: a header that closes with a rule to the
-right margin, the call, a divider, then the result.
+A tool call is one framed box, not a stack of adjacent rows.
 
 ```
-✓ bash [5ms] ──────────────────────────────────────────
-  │ command cd /var/tmp/x && grep -n 'è' opera.md
-  │ started 2026-08-05 10:40:33.291 EDT      ← Ctrl-O / selection only
-  │────────────────────────────────────────────────────
-  │ 20:18. Its patter climax — Figaro qua, Figaro là
+⠋ write ─────────────────────────────────────┐
+  │                                          │
+  │ content (…last 5 of 54 lines)            │
+  │   37. Bartolo is consoled with the dowry.│
+  │                                          │
+  │ path    /var/tmp/x/opera.md              │
+  │                                          │
+✓ done [4ms] ────────────────────────────────┤
+  │                                          │
+  │ Wrote 5453 bytes to /var/tmp/x/opera.md  │
+  │                                          │
+  └──────────────────────────────────────────┘
 ```
 
-The rule is the SAME glyph and the SAME dim on both sides of the divider: what
-tells an argument from output is the colour of the **text** (Kanagawa
-springBlue for the tool name and every argument value, fujiGray for labels),
-not the furniture. Every row in the block is clipped to the pane less one
-column of padding.
+The header sits **on** the top edge, the way a fieldset legend does; the
+junction is labelled the same way with what the *execution* is doing
+(`running`/`done`/`failed`). **The junction and the floor arrive with the
+result** — until the tool has run there is nothing to divide and nothing to
+close under, so a streaming box is open at the bottom.
+
+The box is fitted to its **content**, never wider than the pane less a column,
+with two columns of right padding. A full-width box is indistinguishable from
+the turn rule above it, which is genuinely full width. Under about 27 columns
+the frame is dropped for plain gutter rows: a frame that cannot close is worse
+than no frame. `box.row` clips as well as pads, which is the only way the right
+border lands in the same column on every row.
 
 | | folded | expanded (`Enter` on the selection) |
 |---|---|---|
-| **arguments** | last **5** rows while streaming, first **2** once settled | every row |
+| **arguments** | last **5** rows while streaming, first **2** once settled, overflow **ellipsised** | every row, **wrapped** |
 | **output** | last 10 rows + a `… last N of M lines` note | every row |
 | **metadata** (`started`/`finished`) | hidden | shown |
 
@@ -124,9 +137,13 @@ questions, and one key answering both meant neither could be asked alone.
 
 A folded multi-line value names its fold on its **label** — `content (…last 5
 of 41 lines)`, and `(…first 2 of 41 lines)` once settled, because a reader
-cannot otherwise tell which end they are looking at. The total tracks the value
-as it grows. A multi-line value closes with a blank rule row; a single-line one
-does not.
+cannot otherwise tell which end they are looking at. Expanded, the note is gone
+and the value wraps instead: there is nothing to count when everything is
+shown.
+
+Colour carries what the frame does not: Kanagawa springBlue for the tool name
+and every argument value, fujiGray for labels, and the same dim for every rule
+in the box.
 
 `y` follows the eye: a folded tool yanks its **output**, an expanded one yanks
 the **call and the result**, both in full.
