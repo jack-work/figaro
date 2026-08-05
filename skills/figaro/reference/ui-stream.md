@@ -95,19 +95,46 @@ wire. Whether the fragments arrive smoothly at all is a **provider** question
 
 ### How a tool draws
 
-A tool node has two collapsible parts, and they answer to the same gesture but
-not to the same default.
+A tool is drawn as one framed block: a header that closes with a rule to the
+right margin, the call, a divider, then the result.
 
-| | folded | expanded (`Enter` on the selection, or `Ctrl-O`) |
+```
+✓ bash [5ms] ──────────────────────────────────────────
+  │ command cd /var/tmp/x && grep -n 'è' opera.md
+  │ started 2026-08-05 10:40:33.291 EDT      ← Ctrl-O / selection only
+  │────────────────────────────────────────────────────
+  │ 20:18. Its patter climax — Figaro qua, Figaro là
+```
+
+The rule is the SAME glyph and the SAME dim on both sides of the divider: what
+tells an argument from output is the colour of the **text** (Kanagawa
+springBlue for the tool name and every argument value, fujiGray for labels),
+not the furniture. Every row in the block is clipped to the pane less one
+column of padding.
+
+| | folded | expanded (`Enter` on the selection) |
 |---|---|---|
-| **arguments** (`  ┆ `, cyan) | the last **2 rows** of each value — a moving window on what is being typed; drawn **only while streaming** | every row, streaming or settled |
-| **output** (`  │ `, dim) | last 10 rows + a `… last N of M lines` note | every row |
+| **arguments** | last **5** rows while streaming, first **2** once settled | every row |
+| **output** | last 10 rows + a `… last N of M lines` note | every row |
+| **metadata** (`started`/`finished`) | hidden | shown |
+
+`Ctrl-O` shows the metadata and the coordinate row and **nothing else** — it no
+longer opens content. Verbosity and "open this one thing" are different
+questions, and one key answering both meant neither could be asked alone.
+
+A folded multi-line value names its fold on its **label** — `content (…last 5
+of 41 lines)`, and `(…first 2 of 41 lines)` once settled, because a reader
+cannot otherwise tell which end they are looking at. The total tracks the value
+as it grows. A multi-line value closes with a blank rule row; a single-line one
+does not.
+
+`y` follows the eye: a folded tool yanks its **output**, an expanded one yanks
+the **call and the result**, both in full.
 
 Two rules that are easy to get wrong:
 
-- **A settled tool hides its arguments** until asked. A transcript is mostly
-  settled tools; printing every argument of every one restates the header at
-  three times the height.
+- **A settled tool folds its arguments to the head.** Nothing is moving any
+  more, so the useful part is what the call *is*, not where it stopped.
 - **The incipit folds arguments but never folds output.** Inline rows freeze to
   scrollback and cannot be re-rendered, so a collapsed *output* there could
   never be recovered — but a streaming *argument* is a live window, and
@@ -115,8 +142,8 @@ Two rules that are easy to get wrong:
   `Composer.Expanded == nil` default ("no gesture here, draw the fullest form")
   therefore reaches output only; see `ariaView.gesture`.
 
-There is no `… last N of M` note on arguments: mid-flight that count changes
-every frame, which is noise rather than information.
+The argument fold note lives on the label rather than in a row of its own,
+because rows are what is being rationed.
 
 A `Live` frame with deltas updates the suffix. A `Live` frame with no deltas is
 a close marker for that streaming suffix; it does **not** necessarily finish
