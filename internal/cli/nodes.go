@@ -12,6 +12,7 @@ import (
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
+	"github.com/jack-work/figaro/internal/partialjson"
 	"github.com/jack-work/figaro/internal/render"
 	"github.com/jack-work/figaro/internal/term"
 )
@@ -485,6 +486,11 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 			}
 		}
 	}
+	// The arguments as they arrive, while the model is still writing them:
+	// each field's LABEL on its own line and its value beneath, so a wrapped
+	// value can never be read as the next argument. Only until Args lands —
+	// compose clears Input then, and the header's Summary says it in one line.
+	rows = append(rows, streamingInputRows(n.Input, width, bashCap)...)
 	if expand && n.StartedAt != 0 {
 		rows = append(rows, term.Dim("  started "+formatToolTime(n.StartedAt)))
 		if n.FinishedAt != 0 {
@@ -514,6 +520,43 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 			// output cannot drift apart again.
 			rows = append(rows, dimGutter+truncCols(l, width-quoteGutterCells))
 		}
+	}
+	return rows
+}
+
+// streamingInputRows draws a tool's still-arriving arguments. The value is a
+// truncated JSON object, so it is walked field by field with partialjson —
+// generically, consulting no tool name — and the whole block is tail-clamped,
+// because the newest bytes are the ones worth watching.
+func streamingInputRows(input string, width, cap int) []string {
+	if strings.TrimSpace(input) == "" {
+		return nil
+	}
+	fields := partialjson.Fields([]byte(input))
+	if len(fields) == 0 {
+		return nil
+	}
+	const g = "  "
+	var rows []string
+	for _, f := range fields {
+		rows = append(rows, term.Dim(g+f.Name))
+		for _, l := range hardWrap(render.SanitizeForTerminal(f.Value), width-len(g)-2) {
+			rows = append(rows, g+"  "+truncCols(l, width-len(g)-2))
+		}
+	}
+	if cap >= 0 && len(rows) > cap {
+		rows = rows[len(rows)-cap:]
+	}
+	return rows
+}
+
+// tailRows hard-wraps text to w columns and keeps the LAST limit rows, which
+// is what a still-growing value wants: the newest bytes are the interesting
+// ones, and the region stays bounded however large the argument gets.
+func tailRows(text string, w, limit int) []string {
+	rows := hardWrap(strings.TrimRight(text, "\n"), w)
+	if limit >= 0 && len(rows) > limit {
+		rows = rows[len(rows)-limit:]
 	}
 	return rows
 }
