@@ -1405,7 +1405,9 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 // per-block expansion state a gesture toggles.
 func (t *transcript) composer(m aria.Message) ldrender.Composer {
 	c := ldrender.Composer{
-		View: t.view, Header: messageHeader, Rule: t.transRule, Sender: dimSender, Tick: t.tick,
+		// The pager is the surface where Enter means something, so its view
+		// may open arguments as well as output (see ariaView.gesture).
+		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, Sender: dimSender, Tick: t.tick,
 		Expanded: func(block int) bool { return t.expanded[nodeRefAt(m, block)] },
 	}
 	if t.verbose() {

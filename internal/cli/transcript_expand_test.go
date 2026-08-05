@@ -248,3 +248,103 @@ func TestEnsureSelectionVisibleUsesLayoutBody(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Selecting a STREAMING tool and pressing Enter opens its arguments, and the
+// window keeps streaming underneath the selection.
+//
+// The gesture used to be inert on exactly this node: nodeExpandable answered
+// "has output?", and a tool whose arguments are still arriving has none yet —
+// so the one block a reader most wants to open (a running write, to watch the
+// file arrive) was the one Enter did nothing to.
+// ---------------------------------------------------------------------------
+
+func streamingFixture(t *testing.T, body string) (*transcript, nodeRef, livedoc.Node) {
+	t.Helper()
+	tool := livedoc.Node{
+		Type: livedoc.NodeTool, ID: "t1", Name: "write", Status: livedoc.StatusRunning,
+		Input: `{"path":"/x.md","content":"` + body,
+	}
+	client := aria.NewClient()
+	client.SetClosedLimit(transcriptTailLimit)
+	client.Apply(aria.Page{Parts: []aria.TurnPart{
+		{Turn: aria.Turn{ID: 1, Inquiry: "write it", Sealed: false,
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "on it"}, tool}}},
+	}})
+	tr := newTranscript(ldrender.NewFakeTerminal(80, 24), 80, 24, &ariaView{settings: &renderSettings{}},
+		client, "aria1234", time.Unix(0, 0))
+	tr.enter()
+	tr.follow = false
+	ref := nodeRef{turn: 1, index: 1}
+	tr.selection = nodeSelection{
+		active: true,
+		anchor: selectionPoint{nodeRef: ref, hash: nodeHash(tool)},
+		focus:  selectionPoint{nodeRef: ref, hash: nodeHash(tool)},
+	}
+	return tr, ref, tool
+}
+
+func argRowsOf(tr *transcript) []string {
+	tr.buildIndex()
+	var out []string
+	for _, e := range tr.index.entries {
+		for _, r := range e.rows {
+			if plain := stripANSI(r.text); strings.Contains(plain, "┆") {
+				out = append(out, plain)
+			}
+		}
+	}
+	return out
+}
+
+func TestPagerStreamingToolExpandsItsArguments(t *testing.T) {
+	tr, _, _ := streamingFixture(t, strings.Repeat("a line of the file being written\n", 30))
+
+	folded := argRowsOf(tr)
+	// path (short, beside its label) + the `content` label + the 2-row window.
+	if len(folded) != 2+argPreviewLines {
+		t.Fatalf("folded: %d argument rows, want %d:\n%s", len(folded), 2+argPreviewLines, strings.Join(folded, "\n"))
+	}
+
+	if !tr.toggleSelectedNodes() {
+		t.Fatal("Enter was inert on a streaming tool — nodeExpandable must answer for arguments")
+	}
+	expanded := argRowsOf(tr)
+	if len(expanded) <= len(folded) {
+		t.Fatalf("expanding revealed nothing: %d rows before, %d after", len(folded), len(expanded))
+	}
+
+	// Collapsing returns to the window, so the gesture is a toggle rather than
+	// a one-way door.
+	if !tr.toggleSelectedNodes() {
+		t.Fatal("second Enter did not collapse")
+	}
+	if got := len(argRowsOf(tr)); got != len(folded) {
+		t.Fatalf("collapse: %d argument rows, want %d", got, len(folded))
+	}
+}
+
+// The window follows the stream: as patches arrive, the two rows on screen are
+// the two most recent, not the two oldest.
+func TestPagerStreamingWindowFollowsTheStream(t *testing.T) {
+	tr, _, tool := streamingFixture(t, "1. first line of the file\n2. second line of the file\n")
+	before := argRowsOf(tr)
+	if !strings.Contains(strings.Join(before, "\n"), "2. second line") {
+		t.Fatalf("window should hold the newest lines:\n%s", strings.Join(before, "\n"))
+	}
+
+	tool.Input += "3. third line of the file\n4. fourth line of the file\n"
+	tr.client.Apply(aria.Page{Parts: []aria.TurnPart{
+		{Turn: aria.Turn{ID: 1, Inquiry: "write it", Sealed: false,
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "on it"}, tool}}},
+	}})
+	tr.rowCache = map[sliceKey]cachedMessage{}
+
+	after := strings.Join(argRowsOf(tr), "\n")
+	if !strings.Contains(after, "4. fourth line") {
+		t.Errorf("window did not follow the stream:\n%s", after)
+	}
+	if strings.Contains(after, "1. first line") {
+		t.Errorf("window should have rolled past the first line:\n%s", after)
+	}
+}

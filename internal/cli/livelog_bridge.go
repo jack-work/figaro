@@ -911,7 +911,30 @@ func (t *livelogTurn) setTranscriptQueued(prompts []string, errMsg string) {
 // ariaView renders a block by reusing figaro's existing node renderers, so
 // inline and transcript draw identically. One representation: livedoc.Node,
 // and one dispatch: renderNode.
-type ariaView struct{ settings *renderSettings }
+type ariaView struct {
+	settings *renderSettings
+	// gesture is true only on a surface that HAS a per-node expansion gesture
+	// — the pager. It exists because Composer.Expanded == nil means "this
+	// surface cannot un-collapse anything, so draw the fullest form", which is
+	// right for OUTPUT (the incipit freezes to scrollback; `show` is a one-shot
+	// dump) and wrong for ARGUMENTS, whose collapsed form is a live window the
+	// reader is meant to watch. Without it the incipit asked for the whole
+	// argument on every frame and the moving window never appeared.
+	gesture bool
+}
+
+// pagerView returns v as the pager sees it: a surface where Enter means
+// something, so per-node expansion may open arguments as well as output. Any
+// other NodeView passes through unchanged.
+func pagerView(v ldrender.NodeView) ldrender.NodeView {
+	av, ok := v.(*ariaView)
+	if !ok {
+		return v
+	}
+	c := *av
+	c.gesture = true
+	return &c
+}
 
 // Render draws a node in its DEFAULT form for the live incipit.
 //
@@ -931,11 +954,7 @@ type ariaView struct{ settings *renderSettings }
 // So the collapsed form lives exactly where there is a gesture to undo it: the
 // transcript, which has a selection, an expanded map, and RenderExpanded below.
 func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
-	// Output uncapped (see above); ARGUMENTS collapsed, because the inline
-	// view has no selection to expand them with and a streaming argument is
-	// meant to be a small moving window until Ctrl-O asks for the rest.
-	verbose := v.settings != nil && v.settings.verbose
-	return renderNode(n, width, nodeOutputUnlimited, uint64(tick), verbose, verbose)
+	return v.RenderExpanded(n, width, tick, true)
 }
 
 // RenderExpanded draws a node in its expanded or collapsed form. fullOutput is
@@ -949,7 +968,7 @@ func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bo
 		bashCap = nodeOutputUnlimited
 	}
 	verbose := v.settings != nil && v.settings.verbose
-	return renderNode(n, width, bashCap, uint64(tick), verbose, fullOutput || verbose)
+	return renderNode(n, width, bashCap, uint64(tick), verbose, verbose || (v.gesture && fullOutput))
 }
 
 // openRule prints the session's opening rule through the inline renderer, which

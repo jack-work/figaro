@@ -7,6 +7,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
 // stripANSI removes ANSI escape sequences so tests can assert on visible text.
@@ -279,4 +280,53 @@ func renderNodeRows(t *testing.T, n livedoc.Node, width, cap int, expand bool) [
 		out[i] = stripANSI(r)
 	}
 	return out
+}
+
+// The INCIPIT must not expand arguments, and the reason is not obvious: the
+// shared Composer treats a nil Expanded map as "this surface has no gesture,
+// so draw the fullest form", which is right for output (inline rows freeze to
+// scrollback and can never be re-rendered) and wrong for a streaming argument,
+// whose whole value is that it stays a small moving window until asked.
+//
+// Driven through the real Composer rather than the view, because the nil-map
+// default lives there and that is the thing being pinned.
+func TestIncipitDrawsArgumentsFoldedButOutputWhole(t *testing.T) {
+	body := strings.Repeat("a line of the file being written\\n", 20)
+	n := livedoc.Node{
+		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
+		Input:  `{"path":"/x.md","content":"` + body,
+		Output: strings.TrimRight(strings.Repeat("output line\n", 40), "\n"),
+	}
+	rowsOf := func(view ldrender.NodeView, expanded func(int) bool) (args, out int) {
+		c := ldrender.Composer{View: view, Tick: 0, Expanded: expanded}
+		for _, r := range c.Nodes([]livedoc.Node{n}, 70) {
+			switch plain := stripANSI(r.Text); {
+			case strings.Contains(plain, "┆"):
+				args++
+			case strings.Contains(plain, "│"):
+				out++
+			}
+		}
+		return
+	}
+
+	// Expanded nil is the incipit: no gesture, "draw the fullest form".
+	args, out := rowsOf(&ariaView{settings: &renderSettings{}}, nil)
+	if args != 2+argPreviewLines {
+		t.Errorf("incipit arguments: %d rows, want %d (the moving window)", args, 2+argPreviewLines)
+	}
+	if out != 40 {
+		t.Errorf("incipit output: %d rows, want all 40 — inline never collapses what it cannot reopen", out)
+	}
+
+	// The pager always states the per-node answer, and an unexpanded node
+	// gets the same window — one shape, two surfaces.
+	unexpanded := func(int) bool { return false }
+	pagerArgs, pagerOut := rowsOf(pagerView(&ariaView{settings: &renderSettings{}}), unexpanded)
+	if pagerArgs != 2+argPreviewLines {
+		t.Errorf("pager unexpanded arguments: %d rows, want %d", pagerArgs, 2+argPreviewLines)
+	}
+	if pagerOut != nodeBashCapDefault+1 { // + the "… last N of M lines" note
+		t.Errorf("pager unexpanded output: %d rows, want %d — the pager DOES collapse output", pagerOut, nodeBashCapDefault+1)
+	}
 }
