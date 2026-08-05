@@ -93,6 +93,31 @@ wire. Whether the fragments arrive smoothly at all is a **provider** question
 — see `system.eager_tool_streaming` in
 [architecture.md](architecture.md).
 
+### How a tool draws
+
+A tool node has two collapsible parts, and they answer to the same gesture but
+not to the same default.
+
+| | folded | expanded (`Enter` on the selection, or `Ctrl-O`) |
+|---|---|---|
+| **arguments** (`  ┆ `, cyan) | the last **2 rows** of each value — a moving window on what is being typed; drawn **only while streaming** | every row, streaming or settled |
+| **output** (`  │ `, dim) | last 10 rows + a `… last N of M lines` note | every row |
+
+Two rules that are easy to get wrong:
+
+- **A settled tool hides its arguments** until asked. A transcript is mostly
+  settled tools; printing every argument of every one restates the header at
+  three times the height.
+- **The incipit folds arguments but never folds output.** Inline rows freeze to
+  scrollback and cannot be re-rendered, so a collapsed *output* there could
+  never be recovered — but a streaming *argument* is a live window, and
+  expanding it inline would print a whole file body on every frame. The
+  `Composer.Expanded == nil` default ("no gesture here, draw the fullest form")
+  therefore reaches output only; see `ariaView.gesture`.
+
+There is no `… last N of M` note on arguments: mid-flight that count changes
+every frame, which is noise rather than information.
+
 A `Live` frame with deltas updates the suffix. A `Live` frame with no deltas is
 a close marker for that streaming suffix; it does **not** necessarily finish
 the whole turn, because another model/tool round may follow. A client promotes
@@ -243,7 +268,7 @@ Inline keybindings while a turn streams:
 
 | Key | Action |
 | --- | --- |
-| `Ctrl-O` | toggle verbosity (expand tool args / full output) |
+| `Ctrl-O` | toggle verbosity (expand tool arguments and full output) |
 | `Ctrl-T` | open the transcript pager (below) |
 | `Ctrl-D` | end the turn |
 
