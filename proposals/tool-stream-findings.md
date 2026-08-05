@@ -365,7 +365,17 @@ draw. Fixing it means giving the invocation a timestamp in the IR, which is a
 storage change, not a rendering one. Declining it is a perfectly good answer;
 the layout fix stands either way.
 
-**4. `figaro replay` re-wraps a tape recorded at a different width.** A tape
+**4. The duration counts EXECUTION only, so a 30-second write reads `[0ms]`.**
+Seen live: `✓ write [0ms]` after half a minute of the file streaming in.
+`started_at` is stamped at `toolBegin` (`turn.go:1467`), when the tool starts
+running — but for a large write nearly all the wall time is the model *writing
+the arguments*, which is over by then. Stamping it at `evToolStart` (the block
+opening) would make the number "how long this call has taken", generation
+included, which is what a reader watching a spinner is asking. It also
+conflates two phases in one number, which is why it is a decision rather than a
+fix. Two lines either way.
+
+**5. `figaro replay` re-wraps a tape recorded at a different width.** A tape
 carries the geometry it was recorded at; replaying into a wider pane re-wraps
 the recorded rows and can drop a character at a wrap seam. The renderer itself
 is lossless (proved in-process at 104/100/80, decorated rows included) and live
