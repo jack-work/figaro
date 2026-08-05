@@ -138,6 +138,14 @@ that can guarantee no row outruns its pane.
 | **output** | last 10 rows + a `… last N of M lines` note | every row |
 | **metadata** (`started`/`finished`) | hidden | shown |
 
+**Expansion is per node and it persists.** `Esc` clears the *selection* and
+leaves the expansion alone; the way back is to select the node again and press
+`Enter`, or to leave the pager. (Expansion state lives in `transcript.expanded`,
+keyed by `(turn, node)`. `pruneCaches` must keep the OPEN turn — it is the live
+suffix and is not in the store's window, so a walk of the window alone prunes
+it as though it had scrolled out of history. That dropped a live expansion on
+`Esc` and on every frame while following the tail.)
+
 `Ctrl-O` shows the metadata and the coordinate row and **nothing else** — it no
 longer opens content. Verbosity and "open this one thing" are different
 questions, and one key answering both meant neither could be asked alone.

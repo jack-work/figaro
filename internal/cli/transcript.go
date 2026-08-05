@@ -1055,6 +1055,17 @@ func (t *transcript) pruneCaches() {
 		keep[m.Turn] = true
 		return true
 	})
+	// The OPEN turn is not in the store's window — it is the live suffix, held
+	// separately — so a walk of the window alone does not see it. Without this
+	// line its caches were pruned as though it had scrolled out of history:
+	// the row cache re-renders and nobody notices, but `expanded` is USER
+	// state, and losing it silently undid an expansion the reader had just
+	// asked for. It undid it on Escape (which clears the selection through
+	// here) and, worse, on every frame while following the live tail — so
+	// expanding a streaming tool appeared not to work at all.
+	if open := t.openMessage(); open != nil {
+		keep[open.Turn] = true
+	}
 	for k := range t.rowCache {
 		if !keep[k.turn()] {
 			delete(t.rowCache, k)
