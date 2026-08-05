@@ -12,12 +12,12 @@ import (
 )
 
 // buildParams layers request-local changes over the immutable parsed projection.
-func buildParams(messages []anthropic.MessageParam, lts []uint64, snap chalkboard.Snapshot, tools []provider.Tool, maxTokens int64, oauth bool, model string) anthropic.MessageNewParams {
+func buildParams(messages []anthropic.MessageParam, lts []uint64, snap chalkboard.Snapshot, tools []provider.Tool, maxTokens int64, oauth bool, model string, eagerAllowed bool) anthropic.MessageNewParams {
 	params := anthropic.MessageNewParams{
 		MaxTokens: maxTokens,
 		Model:     anthropic.Model(model),
 		System:    systemBlocks(snap, oauth),
-		Tools:     toolUnions(tools),
+		Tools:     toolUnions(tools, eagerAllowed && eagerToolStreaming(snap)),
 		Messages:  append([]anthropic.MessageParam(nil), messages...),
 	}
 	msgLTs := lts
@@ -195,17 +195,36 @@ func readCredo(snap chalkboard.Snapshot) string {
 	return ""
 }
 
-func toolUnions(tools []provider.Tool) []anthropic.ToolUnionParam {
+// eagerToolStreaming reads the chalkboard opt-in for fine-grained tool-input
+// streaming. Absent means absent: the field is omitted and the API applies its
+// documented default, which BUFFERS each parameter value until it is complete
+// — the reason a 5 KB write argument shows nothing for 25 seconds and then all
+// at once.
+func eagerToolStreaming(snap chalkboard.Snapshot) bool {
+	raw, ok := snap.Get("system.eager_tool_streaming")
+	if !ok {
+		return false
+	}
+	var b bool
+	_ = json.Unmarshal(raw, &b)
+	return b
+}
+
+func toolUnions(tools []provider.Tool, eager bool) []anthropic.ToolUnionParam {
 	if len(tools) == 0 {
 		return nil
 	}
 	out := make([]anthropic.ToolUnionParam, len(tools))
 	for i, t := range tools {
-		out[i] = anthropic.ToolUnionParam{OfTool: &anthropic.ToolParam{
+		param := &anthropic.ToolParam{
 			Name:        t.Name,
 			Description: anthropic.String(t.Description),
 			InputSchema: toolInputSchema(t.Parameters),
-		}}
+		}
+		if eager {
+			param.EagerInputStreaming = anthropic.Bool(true)
+		}
+		out[i] = anthropic.ToolUnionParam{OfTool: param}
 	}
 	return out
 }

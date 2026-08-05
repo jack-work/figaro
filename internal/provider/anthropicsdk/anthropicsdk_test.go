@@ -78,7 +78,7 @@ func legacyBuildParams(perMessage [][]json.RawMessage, lts []uint64, snap chalkb
 		MaxTokens: maxTokens,
 		Model:     anthropic.Model(model),
 		System:    systemBlocks(snap, oauth),
-		Tools:     toolUnions(tools),
+		Tools:     toolUnions(tools, false),
 	}
 	var msgLTs []uint64
 	for i, entry := range perMessage {
@@ -249,7 +249,7 @@ func TestBuildParams_CacheBreakpoints(t *testing.T) {
 	snap = withKey(snap, "system.cache_control", json.RawMessage(`"ephemeral"`))
 
 	projected := projectAll(t, encodeAll(p, msgs), []uint64{1, 2, 3})
-	params := buildParams(projected.Messages, projected.LogicalTimes, snap, tools, 1024, false, "claude-test")
+	params := buildParams(projected.Messages, projected.LogicalTimes, snap, tools, 1024, false, "claude-test", false)
 
 	// System.
 	require.NotEmpty(t, params.System)
@@ -286,7 +286,7 @@ func TestBuildParams_SingleMessageBreakpoint(t *testing.T) {
 	snap = withKey(snap, "system.cache_control", json.RawMessage(`"ephemeral"`))
 
 	projected := projectAll(t, encodeAll(p, msgs), []uint64{1})
-	params := buildParams(projected.Messages, projected.LogicalTimes, snap, nil, 1024, false, "claude-test")
+	params := buildParams(projected.Messages, projected.LogicalTimes, snap, nil, 1024, false, "claude-test", false)
 
 	require.Len(t, params.Messages, 1)
 	require.NotEmpty(t, params.Messages[0].Content)
@@ -306,14 +306,14 @@ func TestBuildParams_CacheDefaultsOnAndNoneDisables(t *testing.T) {
 	// Default: unset → caching applied.
 	on := systemSnapshot(t, "agent")
 	projected := projectAll(t, encodeAll(p, msgs), []uint64{1})
-	params := buildParams(projected.Messages, projected.LogicalTimes, on, nil, 1024, false, "claude-test")
+	params := buildParams(projected.Messages, projected.LogicalTimes, on, nil, 1024, false, "claude-test", false)
 	require.NotEmpty(t, params.System)
 	assertCacheStamp(t, params.System[len(params.System)-1].CacheControl, "default-on system block")
 
 	// "none" → no stamps anywhere.
 	off := systemSnapshot(t, "agent")
 	off = withKey(off, "system.cache_control", json.RawMessage(`"none"`))
-	params = buildParams(projected.Messages, projected.LogicalTimes, off, nil, 1024, false, "claude-test")
+	params = buildParams(projected.Messages, projected.LogicalTimes, off, nil, 1024, false, "claude-test", false)
 	require.NotEmpty(t, params.System)
 	assert.True(t, isUnstamped(params.System[len(params.System)-1].CacheControl), "none must not stamp system")
 	require.NotEmpty(t, params.Messages[0].Content)
@@ -335,8 +335,8 @@ func TestBuildParams_StableAcrossCalls(t *testing.T) {
 	pre := encodeAll(p, msgs)
 	projected := projectAll(t, pre, []uint64{1, 2, 3})
 
-	r1 := buildParams(projected.Messages, projected.LogicalTimes, snap, tools, 1024, false, "claude-test")
-	r2 := buildParams(projected.Messages, projected.LogicalTimes, snap, tools, 1024, false, "claude-test")
+	r1 := buildParams(projected.Messages, projected.LogicalTimes, snap, tools, 1024, false, "claude-test", false)
+	r2 := buildParams(projected.Messages, projected.LogicalTimes, snap, tools, 1024, false, "claude-test", false)
 
 	b1, err := json.Marshal(r1)
 	require.NoError(t, err)
@@ -354,7 +354,7 @@ func TestBuildParams_OAuthSystemArray(t *testing.T) {
 	snap = withKey(snap, "system.cache_control", json.RawMessage(`"ephemeral"`))
 
 	projected := projectAll(t, encodeAll(p, msgs), []uint64{1})
-	params := buildParams(projected.Messages, projected.LogicalTimes, snap, nil, 1024, true, "claude-test")
+	params := buildParams(projected.Messages, projected.LogicalTimes, snap, nil, 1024, true, "claude-test", false)
 
 	require.Len(t, params.System, 2, "OAuth system must have two blocks: Claude Code identity + credo")
 	assert.Contains(t, params.System[0].Text, "Claude Code")
@@ -378,7 +378,7 @@ func TestBuildParams_PerLTTag(t *testing.T) {
 	snap = withKey(snap, "system.cache_control", json.RawMessage(`"none"`)) // isolate per-LT tagging from auto-breakpoints
 	snap = withKey(snap, "system.tags", json.RawMessage(`{"11":{"cache_control":"ephemeral"}}`))
 
-	params := buildParams(projected.Messages, projected.LogicalTimes, snap, nil, 1024, false, "claude-test")
+	params := buildParams(projected.Messages, projected.LogicalTimes, snap, nil, 1024, false, "claude-test", false)
 	require.Len(t, params.Messages, 3)
 
 	tagged := params.Messages[1]
@@ -476,7 +476,7 @@ func TestBuildParams_ByteIdenticalToCachedReconstruction(t *testing.T) {
 			}
 			want, err := legacyBuildParams(perMessage, lts, tc.snap, tools, maxOut, tc.oauth, tc.model)
 			require.NoError(t, err)
-			got := buildParams(projected.Messages, projected.LogicalTimes, tc.snap, tools, maxOut, tc.oauth, tc.model)
+			got := buildParams(projected.Messages, projected.LogicalTimes, tc.snap, tools, maxOut, tc.oauth, tc.model, false)
 			wantJSON, err := json.Marshal(want)
 			require.NoError(t, err)
 			gotJSON, err := json.Marshal(got)
@@ -496,8 +496,8 @@ func TestToolUnions_RoundTrip(t *testing.T) {
 		{Name: "alpha", Description: "first", Parameters: fakeSchema()},
 		{Name: "beta", Description: "second", Parameters: fakeSchema()},
 	}
-	a := toolUnions(tools)
-	b := toolUnions(tools)
+	a := toolUnions(tools, false)
+	b := toolUnions(tools, false)
 	abytes, err := json.Marshal(a)
 	require.NoError(t, err)
 	bbytes, err := json.Marshal(b)

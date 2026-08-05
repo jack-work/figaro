@@ -75,6 +75,14 @@ type Provider struct {
 	// of what the token looks like.
 	NoOAuthIdentity bool
 
+	// NoEagerToolStreaming refuses the eager_input_streaming tool field on
+	// this endpoint no matter what the chalkboard asks for. The GitHub
+	// Copilot Anthropic-dialect endpoint rejects the field outright
+	// (400 "tools.0.custom.eager_input_streaming: Extra inputs are not
+	// permitted"), so a chalkboard opt-in must not be able to break every
+	// request there. See internal/provider/copilot/copilot.go.
+	NoEagerToolStreaming bool
+
 	// CacheOpen opens the per-aria translation cache. nil disables caching.
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
 	CacheNamespace string
@@ -206,7 +214,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		if terr != nil {
 			return fmt.Errorf("resolve token: %w", terr)
 		}
-		params := buildParams(projected.Messages, projected.LogicalTimes, in.Snapshot, in.Tools, int64(maxTokens), isOAuthToken(tok) && !p.NoOAuthIdentity, model)
+		params := buildParams(projected.Messages, projected.LogicalTimes, in.Snapshot, in.Tools, int64(maxTokens), isOAuthToken(tok) && !p.NoOAuthIdentity, model, !p.NoEagerToolStreaming)
 		client := anthropic.NewClient(opts...)
 		stream := client.Messages.NewStreaming(ctx, params, opts...)
 		assembled, raw, serr := drainStream(ctx, stream, model, bus)

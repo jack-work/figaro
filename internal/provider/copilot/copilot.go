@@ -69,6 +69,11 @@ func New(
 		return nil, err
 	}
 	inner.NoOAuthIdentity = true
+	// The Copilot Anthropic-dialect endpoint rejects eager_input_streaming
+	// outright (it used to ignore it silently), so the chalkboard opt-in must
+	// not reach it. Claude models here keep the API's buffered default; GPT
+	// models take the responses route, which streams arguments natively.
+	inner.NoEagerToolStreaming = true
 	inner.CacheNamespace = "copilot-messages"
 	inner.ExtraOptions = copilotRequestOptions(tokenSrc)
 
