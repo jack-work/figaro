@@ -6,6 +6,7 @@
 package partialjson
 
 import (
+	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -358,4 +359,69 @@ func (p *parser) skipNumber() bool {
 		return false
 	}
 	return p.i > start
+}
+
+// Field is one top-level field of a (possibly truncated) JSON object.
+// Value is decoded for strings and raw for everything else; Done says the
+// value was terminated in the prefix rather than cut off mid-flight.
+type Field struct {
+	Name  string
+	Value string
+	Done  bool
+}
+
+// Fields walks the top-level fields of a JSON object prefix in order,
+// stopping at the first truncation. Like StringField it never errors: it
+// returns what is safely readable so far, so repeated calls on a growing
+// input are monotonic and a live view never rewrites what it showed.
+//
+// It exists so a renderer can show a tool's arguments while they stream
+// WITHOUT knowing anything about the tool. The alternative — asking each tool
+// which single argument to preview — is what this replaced.
+func Fields(data []byte) []Field {
+	p := parser{b: data}
+	if !p.skipWS() || p.peek() != '{' {
+		return nil
+	}
+	p.i++
+	var out []Field
+	for {
+		if !p.skipWS() || p.peek() == '}' {
+			return out
+		}
+		key, ok := p.parseCompleteString()
+		if !ok {
+			return out
+		}
+		if !p.skipWS() || p.peek() != ':' {
+			return out
+		}
+		p.i++
+		if !p.skipWS() {
+			return append(out, Field{Name: key})
+		}
+		if p.peek() == '"' {
+			p.i++
+			v := p.decodeTolerant()
+			// decodeTolerant stops ON the closing quote when the value is
+			// whole, and at the end of the buffer when it is still arriving.
+			done := p.peek() == '"'
+			out = append(out, Field{Name: key, Value: v, Done: done})
+			if !done {
+				return out
+			}
+			p.i++ // past the closing quote
+		} else {
+			start := p.i
+			if !p.skipValue() {
+				out = append(out, Field{Name: key, Value: string(p.b[start:])})
+				return out
+			}
+			out = append(out, Field{Name: key, Value: strings.TrimSpace(string(p.b[start:p.i])), Done: true})
+		}
+		if !p.skipWS() || p.peek() != ',' {
+			return out
+		}
+		p.i++
+	}
 }

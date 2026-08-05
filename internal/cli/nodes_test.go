@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -162,4 +163,74 @@ func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	if a := stripANSI(strings.Join(view.Render(reply, 60, 0), "\n")); strings.Contains(a, "↳ input") {
 		t.Fatalf("output prose drew the user's marker: %q", a)
 	}
+}
+
+// A running tool draws its arguments as they arrive: each field's label on its
+// own line, the value beneath and indented one step further, so a wrapped
+// value cannot be misread as the next argument. Nothing here knows what a
+// "write" or a "bash" is — the block is walked out of the partial JSON.
+func TestRenderToolNode_StreamingInput(t *testing.T) {
+	n := livedoc.Node{
+		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
+		Input: `{"path":"/var/tmp/x.md","content":"1. alpha\n2. beta`,
+	}
+	rows := renderNodeRows(t, n, 40, 10)
+	want := []string{
+		"⠋ write",
+		"  path",
+		"    /var/tmp/x.md",
+		"  content",
+		"    1. alpha",
+		"    2. beta",
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("got %d rows, want %d:\n%s", len(rows), len(want), strings.Join(rows, "\n"))
+	}
+	for i := range want {
+		if rows[i] != want[i] {
+			t.Errorf("row %d: got %q, want %q", i, rows[i], want[i])
+		}
+	}
+}
+
+// The block is tail-clamped like tool output: a 4 KB argument may not push the
+// rest of the conversation off the screen.
+func TestRenderToolNode_StreamingInputIsBounded(t *testing.T) {
+	var body strings.Builder
+	for i := range 200 {
+		fmt.Fprintf(&body, "%d. a line of the file being written\\n", i)
+	}
+	n := livedoc.Node{
+		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
+		Input: `{"path":"/x","content":"` + body.String(),
+	}
+	if rows := renderNodeRows(t, n, 60, 10); len(rows) != 1+10 {
+		t.Fatalf("want header + 10 clamped rows, got %d", len(rows))
+	}
+}
+
+// Once the decoded Args land the streaming block is gone: compose clears
+// Input, and the header's summary says the same thing in one line.
+func TestRenderToolNode_NoInputBlockOnceArgsLand(t *testing.T) {
+	n := livedoc.Node{
+		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Summary: "ls -la", Args: map[string]any{"command": "ls -la"},
+	}
+	for _, r := range renderNodeRows(t, n, 40, 10) {
+		if strings.HasPrefix(r, "  command") {
+			t.Fatalf("input block survived Args landing:\n%s", r)
+		}
+	}
+}
+
+// renderNodeRows renders a node and strips styling, so assertions are about
+// layout rather than escape codes.
+func renderNodeRows(t *testing.T, n livedoc.Node, width, cap int) []string {
+	t.Helper()
+	raw := renderToolNode(n, width, cap, 0, false)
+	out := make([]string, len(raw))
+	for i, r := range raw {
+		out[i] = stripANSI(r)
+	}
+	return out
 }
