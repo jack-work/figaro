@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"github.com/mattn/go-runewidth"
 	"strings"
 	"testing"
 
@@ -167,63 +168,84 @@ func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	}
 }
 
-// A running tool draws its arguments as they arrive: a short value beside its
-// label, a long one beneath it, all under the argument gutter — which is a
-// different rule, in a different colour, from the one tool OUTPUT uses, so a
-// dense transcript says at a glance what the agent asked for and what the
-// command printed. Nothing here knows what a "write" or a "bash" is.
-func TestRenderToolNode_StreamingInput(t *testing.T) {
+// The block, in the shape the owner's notes specify: a header that closes with
+// a rule to the right margin, one label per argument, a fold note on the label
+// rather than in a row of its own, air after a multi-line value, and a divider
+// between the call and its result.
+func TestRenderToolNode_BlockShape(t *testing.T) {
 	n := livedoc.Node{
 		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
 		Input: `{"path":"/var/tmp/x.md","content":"1. alpha\n2. beta`,
 	}
-	want := []string{
-		"⠋ write",
+	assertRows(t, renderNodeRows(t, n, 44, 10, false), []string{
+		"⠋ write ────────────────────────────────────",
 		"  │ content",
 		"  │   1. alpha",
 		"  │   2. beta",
+		"  │ ",
 		"  │ path    /var/tmp/x.md",
-	}
-	assertRows(t, renderNodeRows(t, n, 44, 10, false), want)
+	})
 }
 
-// Folded, ONE argument shows its last argStreamLines rows — a moving window
-// on what is being typed, not a summary of it. No "… last N of M" banner: the
-// count changes every frame, which is noise rather than information.
-func TestRenderToolNode_StreamingInputIsAMovingWindow(t *testing.T) {
-	var body strings.Builder
-	for i := range 40 {
-		fmt.Fprintf(&body, "%d. a line of the file being written\\n", i)
-	}
-	n := livedoc.Node{
-		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
-		Input: `{"path":"/x","content":"` + body.String(),
-	}
-	rows := renderNodeRows(t, n, 60, 10, false)
-	// header + content label + argStreamLines value rows + the path row
-	if len(rows) != 3+argStreamLines {
-		t.Fatalf("folded stream should be %d rows, got %d:\n%s", 3+argStreamLines, len(rows), strings.Join(rows, "\n"))
-	}
-	if !strings.Contains(rows[len(rows)-2], "39.") {
-		t.Errorf("the window should hold the NEWEST lines, got %q", rows[len(rows)-1])
-	}
-	for _, r := range rows {
-		if strings.Contains(r, "last") && strings.Contains(r, "lines") {
-			t.Errorf("no truncation banner belongs on a streaming argument: %q", r)
+// A folded multi-line value names the fold on its LABEL — which end, how much
+// of how many — and the total moves as the value grows. No row is spent on it.
+func TestRenderToolNode_FoldNoteRidesOnTheLabel(t *testing.T) {
+	body := func(n int) string {
+		var b strings.Builder
+		for i := 1; i <= n; i++ {
+			fmt.Fprintf(&b, "%d. a line\\n", i)
 		}
+		return b.String()
 	}
-	// Expanded, every line is there.
-	if got := renderNodeRows(t, n, 60, nodeOutputUnlimited, true); len(got) <= 3+argStreamLines {
-		t.Fatalf("expanded should reveal the whole value, got %d rows", len(got))
+	streaming := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
+		Input: `{"content":"` + body(9)}
+	rows := renderNodeRows(t, streaming, 50, 10, false)
+	if !strings.Contains(rows[1], "content (…last "+fmt.Sprint(argStreamLines)+" of 9 lines)") {
+		t.Errorf("streaming label should name the tail fold: %q", rows[1])
+	}
+	// The total tracks the value: nine lines becomes twelve.
+	streaming.Input = `{"content":"` + body(12)
+	if rows = renderNodeRows(t, streaming, 50, 10, false); !strings.Contains(rows[1], "of 12 lines") {
+		t.Errorf("fold note should follow the value as it grows: %q", rows[1])
+	}
+	settled := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
+		Args: map[string]any{"content": strings.ReplaceAll(body(9), "\\n", "\n")}}
+	rows = renderNodeRows(t, settled, 50, 10, false)
+	if !strings.Contains(rows[1], "(…first "+fmt.Sprint(argSettledLines)+" of 9 lines)") {
+		t.Errorf("settled label should name the HEAD fold: %q", rows[1])
+	}
+}
+
+// THE INVARIANT the owner asked for: the duration is on screen at every width.
+// It was appended after an 80-column summary before, and the summary shoved it
+// off the right at 65% of his tool calls.
+func TestRenderToolNode_DurationSurvivesEveryWidth(t *testing.T) {
+	n := livedoc.Node{
+		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Summary:   strings.Repeat("a very long command line ", 20),
+		Args:      map[string]any{"command": strings.Repeat("a very long command line ", 20)},
+		Output:    "done",
+		StartedAt: 1785862036094, FinishedAt: 1785862097094,
+	}
+	want := "[1m01s]"
+	for w := 20; w <= 200; w++ {
+		for _, expand := range []bool{false, true} {
+			rows := renderNodeRows(t, n, w, 10, expand)
+			if !strings.Contains(rows[0], want) {
+				t.Fatalf("width %d expand=%v: header %q lost the duration", w, expand, rows[0])
+			}
+			for i, r := range rows {
+				if got := runewidth.StringWidth(r); got > w {
+					t.Fatalf("width %d expand=%v: row %d is %d cells: %q", w, expand, i, got, r)
+				}
+			}
+		}
 	}
 }
 
 // A settled tool keeps its arguments, folded to the FIRST argSettledLines rows
 // of each value: nothing is moving any more, so the useful part is the head —
-// what this call is — not the tail, which is only where it stopped. The header
-// drops its summary once the block is drawn, because the block already carries
-// the command in full, and two copies of it are what pushed the duration off
-// the right of the screen.
+// what this call is — not the tail, which is only where it stopped.
 func TestRenderToolNode_SettledArgsPreviewFromTheHead(t *testing.T) {
 	n := livedoc.Node{
 		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
@@ -232,10 +254,31 @@ func TestRenderToolNode_SettledArgsPreviewFromTheHead(t *testing.T) {
 	}
 	rows := renderNodeRows(t, n, 60, nodeBashCapDefault, false)
 	assertRows(t, rows[:3], []string{
-		"✓ bash",
+		"✓ bash ─────────────────────────────────────────────────────",
 		"  │ command git push origin main",
 		"  │ timeout 240",
 	})
+}
+
+// Ctrl-O adds METADATA and nothing else. Verbosity and "open this one thing"
+// are different questions; one key answering both meant neither could be asked
+// alone.
+func TestRenderToolNode_VerboseAddsMetadataNotContent(t *testing.T) {
+	n := livedoc.Node{
+		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
+		Args:      map[string]any{"content": strings.Repeat("a line\n", 20)},
+		StartedAt: 1785862036094, FinishedAt: 1785862036099,
+	}
+	folded := renderToolNode(n, 60, nodeBashCapDefault, 0, false, false)
+	verbose := renderToolNode(n, 60, nodeBashCapDefault, 0, true, false)
+	extra := len(verbose) - len(folded)
+	if extra != 2 {
+		t.Fatalf("Ctrl-O added %d rows, want exactly the two timestamps", extra)
+	}
+	joined := strings.Join(verbose, "\n")
+	if !strings.Contains(stripANSI(joined), "  │ started ") {
+		t.Errorf("timestamps must sit INSIDE the block:\n%s", stripANSI(joined))
+	}
 }
 
 // The gesture must not be inert on the node you most want to open: a running
@@ -249,25 +292,25 @@ func TestNodeExpandable_StreamingToolWithNoOutput(t *testing.T) {
 	settled := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
 		Args: map[string]any{"command": "ls"}}
 	if !nodeExpandable(settled) {
-		t.Error("a settled tool hides its arguments, so it has something to reveal")
+		t.Error("a settled tool folds its arguments, so it has something to reveal")
 	}
 	if nodeExpandable(livedoc.Node{Type: livedoc.NodeTool, Name: "bash"}) {
 		t.Error("a tool with neither arguments nor output reveals nothing")
 	}
 }
 
-// Arguments are drawn in their own colour, which is what tells them from tool
-// output now that both use the same rule. Vacuous when colour is off (term.Arg
-// is the identity then) and load-bearing when it is on.
-func TestRenderToolNode_ArgumentsAreDrawnInTheArgumentColour(t *testing.T) {
+// Arguments and the tool NAME are drawn in one colour (Kanagawa springBlue),
+// and the block's rule is drawn in the SAME dim the output rule uses. Vacuous
+// without colour, load-bearing with it — and it is the thing the owner asked
+// for twice: one blue for the call, furniture identical on both sides.
+func TestRenderToolNode_ColoursAreConsistent(t *testing.T) {
 	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
 		Input: `{"path":"/x.md"}`}
 	joined := strings.Join(renderToolNode(n, 60, 10, 0, false, false), "\n")
-	if !strings.Contains(joined, term.Arg("/x.md")) {
-		t.Errorf("argument value is not drawn through term.Arg:\n%q", joined)
-	}
-	if !strings.Contains(joined, term.Arg(argGutter)) {
-		t.Errorf("argument rule is not drawn through term.Arg:\n%q", joined)
+	for _, want := range []string{term.Arg("write"), term.Arg("/x.md"), term.Dim(quoteGutter)} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing %q in:\n%q", want, joined)
+		}
 	}
 }
 
@@ -278,7 +321,7 @@ func assertRows(t *testing.T, got, want []string) {
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Errorf("row %d: got %q, want %q", i, got[i], want[i])
+			t.Errorf("row %d:\n got %q\nwant %q", i, got[i], want[i])
 		}
 	}
 }
@@ -332,9 +375,11 @@ func TestIncipitDrawsArgumentsFoldedButOutputWhole(t *testing.T) {
 	}
 
 	// Expanded nil is the incipit: no gesture, "draw the fullest form".
+	// label + the window + the blank row that closes a multi-line value.
+	wantArgs := 2 + argStreamLines + 1
 	args, out := rowsOf(&ariaView{settings: &renderSettings{}}, nil)
-	if args != 2+argStreamLines {
-		t.Errorf("incipit arguments: %d rows, want %d (the moving window)", args, 2+argStreamLines)
+	if args != wantArgs {
+		t.Errorf("incipit arguments: %d rows, want %d (the moving window)", args, wantArgs)
 	}
 	if out != 40 {
 		t.Errorf("incipit output: %d rows, want all 40 — inline never collapses what it cannot reopen", out)
@@ -344,8 +389,8 @@ func TestIncipitDrawsArgumentsFoldedButOutputWhole(t *testing.T) {
 	// gets the same window — one shape, two surfaces.
 	unexpanded := func(int) bool { return false }
 	pagerArgs, pagerOut := rowsOf(pagerView(&ariaView{settings: &renderSettings{}}), unexpanded)
-	if pagerArgs != 2+argStreamLines {
-		t.Errorf("pager unexpanded arguments: %d rows, want %d", pagerArgs, 2+argStreamLines)
+	if pagerArgs != wantArgs {
+		t.Errorf("pager unexpanded arguments: %d rows, want %d", pagerArgs, wantArgs)
 	}
 	if pagerOut != nodeBashCapDefault+1 { // + the "… last N of M lines" note
 		t.Errorf("pager unexpanded output: %d rows, want %d — the pager DOES collapse output", pagerOut, nodeBashCapDefault+1)

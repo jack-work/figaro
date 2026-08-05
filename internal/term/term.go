@@ -114,13 +114,20 @@ const (
 	codeGreen = "\033[32m"
 	codeCyan  = "\033[36m"
 
-	// codeArg is the off colour tool ARGUMENTS are drawn in: a soft blue-grey
-	// (xterm 256). Arguments are neither prose (the agent's voice), nor tool
-	// output (the machine's), nor thinking (dim) — they are what the agent is
-	// about to DO, and on a dense screen that distinction is worth a colour of
-	// its own. 256-colour, like the transcript's selection wash, so it reads
-	// as a tint rather than one of the eight loud primaries.
-	codeArg = "\033[38;5;109m"
+	// The palette below is Kanagawa, at the owner's request, in xterm-256
+	// (the terminal's own 8 primaries vary per theme, and truecolor is not
+	// safe to assume through tmux). Each constant names the Kanagawa colour it
+	// approximates and the hex it comes from, so a future eye can check the
+	// match rather than guess at the intent.
+	//
+	// codeArg — springBlue #7FB4CA. Everything that names or describes the
+	// CALL is drawn in it: the tool's name and its argument values. One colour
+	// for one idea; two blues side by side (a cyan name against a blue-grey
+	// argument) read as two ideas and clashed.
+	codeArg = "\033[38;5;110m"
+	// codeLabel — fujiGray #727169, for argument NAMES. Quieter than the
+	// values they introduce, so a label never competes with what it labels.
+	codeLabel = "\033[38;5;242m"
 )
 
 // Dim wraps s in dim (faint) ANSI if color is enabled.
@@ -155,12 +162,21 @@ func Cyan(s string) string {
 	return codeCyan + s + reset
 }
 
-// Arg wraps s in the argument colour if color is enabled.
+// Arg wraps s in the argument colour (Kanagawa springBlue) if color is
+// enabled. Tool names and argument values share it.
 func Arg(s string) string {
 	if !Enabled() {
 		return s
 	}
 	return codeArg + s + reset
+}
+
+// Label wraps s in the argument-label colour (Kanagawa fujiGray).
+func Label(s string) string {
+	if !Enabled() {
+		return s
+	}
+	return codeLabel + s + reset
 }
 
 // VisibleLen returns visible columns ignoring ANSI escapes.
