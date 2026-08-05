@@ -60,7 +60,7 @@ func BenchmarkAgentRestoreHistory10000(b *testing.B) {
 		repairInterruptedTail(a.figLog, "perf")
 		messages := unwrapMessages(a.figLog.Read())
 		a.refreshMetricsFrom(messages)
-		turns := compose.Turns(messages, nil, nil)
+		turns := compose.Turns(messages, nil)
 		if len(turns) == 0 {
 			b.Fatal("no restored turns")
 		}

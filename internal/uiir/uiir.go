@@ -23,16 +23,14 @@ import (
 // serialises every call behind its own lock, which is also why the timing map
 // needs none.
 type Projector struct {
-	summarize  compose.ToolSummary
-	previewArg compose.ToolPreviewArg
-	timings    map[string]compose.ToolTiming
+	summarize compose.ToolSummary
+	timings   map[string]compose.ToolTiming
 }
 
 // New returns a Projector that renders tools using the given registry.
 func New(r *tool.Registry) *Projector {
 	return &Projector{
-		summarize:  compose.ToolSummary(tool.Summarizer(r)),
-		previewArg: compose.ToolPreviewArg(tool.PreviewArger(r)),
+		summarize: compose.ToolSummary(tool.Summarizer(r)),
 	}
 }
 
@@ -42,11 +40,11 @@ func (p *Projector) InquirySegments(m message.Message) []aria.InquirySegment {
 }
 
 func (p *Projector) Turns(msgs []message.Message) []aria.Turn {
-	return compose.Turns(msgs, p.summarize, p.previewArg)
+	return compose.Turns(msgs, p.summarize)
 }
 
 func (p *Projector) Nodes(msgs []message.Message, tails, argPartials map[string]string) []livedoc.Node {
-	return compose.Nodes(msgs, tails, argPartials, p.summarize, p.previewArg, p.timings)
+	return compose.Nodes(msgs, tails, argPartials, p.summarize, p.timings)
 }
 
 func (p *Projector) ResetTools() { p.timings = map[string]compose.ToolTiming{} }
