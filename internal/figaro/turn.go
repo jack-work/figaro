@@ -103,7 +103,33 @@ func (b *turnBus) PushToolInvokeStart(toolCallID, toolName string) {
 }
 
 func (b *turnBus) PushToolInvokeDelta(toolCallID, partialJSON string) {
+	logArgDelta(toolCallID, partialJSON)
 	b.events <- busEvent{kind: evToolArgs, id: toolCallID, partial: partialJSON}
+}
+
+// logArgDelta is a TEMPORARY measurement instrument, env-gated and off by
+// default: FIGARO_ARGDELTA_LOG=<file> appends one NDJSON line per streamed
+// tool-argument fragment, with the wall-clock time it reached the bus.
+//
+// It sits at the one point every provider adapter converges on, so it answers
+// "did the deltas arrive smoothly?" for routes wirelog cannot see (the copilot
+// responses websocket). Delete it once the question is settled.
+func logArgDelta(toolCallID, partialJSON string) {
+	path := os.Getenv("FIGARO_ARGDELTA_LOG")
+	if path == "" {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	rec, _ := json.Marshal(struct {
+		T     float64 `json:"t"`
+		ID    string  `json:"id"`
+		Bytes int     `json:"bytes"`
+	}{T: float64(time.Now().UnixNano()) / 1e9, ID: toolCallID, Bytes: len(partialJSON)})
+	f.Write(append(rec, '\n'))
 }
 
 // PushMessageEnd is a no-op under the log.* model: the stop reason rides
