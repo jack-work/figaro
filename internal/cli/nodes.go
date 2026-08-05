@@ -44,12 +44,21 @@ type renderSettings struct {
 // marked it "↳ input". Two renderers for one representation is the exact defect
 // class turn addressing exists to remove; there is now one.
 //
-// Expansion reaches it as bashCap and nothing else: only a tool has a
-// collapsed form.
-func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) []string {
+// Expansion arrives twice, because a tool now has TWO collapsible parts that
+// answer to different policies. bashCap collapses the OUTPUT — and the incipit
+// always passes it uncapped, since nothing there can un-collapse after the
+// fact (architecture.md invariant #2). expanded collapses the ARGUMENTS, and
+// the incipit must NOT force that one: a streaming argument inline is a moving
+// window on something being typed, and its whole value is that it stays small
+// until asked. In the pager both come from the same gesture.
+func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, expanded bool) []string {
 	switch {
 	case n.Type == livedoc.NodeTool:
-		return renderToolNode(n, width, bashCap, tick, verbose)
+		// Either gesture expands a tool: Ctrl-O (global) or Enter on the
+		// selection (per node). They were not the same flag, so selecting a
+		// tool and pressing Enter expanded its OUTPUT and left its arguments
+		// hidden behind a different key.
+		return renderToolNode(n, width, bashCap, tick, verbose, expanded)
 	case n.Type == livedoc.NodeThinking:
 		return renderThinkingNode(n, width)
 	// Steering is the only input-voice NODE there is — the inquiry is text on
@@ -69,7 +78,13 @@ func nodeExpandable(n livedoc.Node) bool {
 	if n.Type != livedoc.NodeTool {
 		return false
 	}
-	return strings.TrimSpace(n.Output) != ""
+	// Output OR arguments. A tool whose arguments are still streaming has no
+	// output yet and is precisely the node you most want to open — a running
+	// write, to watch the file arrive — so an output-only test made Enter
+	// inert on it. A settled tool hides its arguments until asked, so it has
+	// something to reveal even when its output is short.
+	return strings.TrimSpace(n.Output) != "" ||
+		strings.TrimSpace(n.Input) != "" || len(n.Args) > 0
 }
 
 // renderTurnRows renders a whole exchange — the inquiry that opened the turn,
@@ -446,7 +461,7 @@ func dedentProse(row string) string {
 // output under a dim gutter, tail-clamped to bashCap lines. In verbose mode
 // Args are also rendered generically as sorted key=value lines. The client
 // never inspects n.Name.
-func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool) []string {
+func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, expand bool) []string {
 	var glyph string
 	switch n.Status {
 	case livedoc.StatusOK:
@@ -472,26 +487,9 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 	rows := make([]string, 1, 6+max(bashCap, 0))
 	rows[0] = header
 
-	if expand && len(n.Args) > 0 {
-		const g = "  "
-		keys := make([]string, 0, len(n.Args))
-		for k := range n.Args {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			line := fmt.Sprintf("%s=%v", k, n.Args[k])
-			for _, l := range hardWrap(line, width-len(g)) {
-				rows = append(rows, term.Dim(g+l))
-			}
-		}
-	}
-	// The arguments as they arrive, while the model is still writing them:
-	// each field's LABEL on its own line and its value beneath, so a wrapped
-	// value can never be read as the next argument. Only until Args lands —
-	// compose clears Input then, and the header's Summary says it in one line.
-	rows = append(rows, streamingInputRows(n.Input, width, bashCap)...)
-	if expand && n.StartedAt != 0 {
+	// The arguments — streaming or settled, folded or expanded, one shape.
+	rows = append(rows, toolArgRows(n, width, expand)...)
+	if verbose && n.StartedAt != 0 {
 		rows = append(rows, term.Dim("  started "+formatToolTime(n.StartedAt)))
 		if n.FinishedAt != 0 {
 			rows = append(rows, term.Dim("  finished "+formatToolTime(n.FinishedAt)))
@@ -524,30 +522,117 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool
 	return rows
 }
 
-// streamingInputRows draws a tool's still-arriving arguments. The value is a
-// truncated JSON object, so it is walked field by field with partialjson —
-// generically, consulting no tool name — and the whole block is tail-clamped,
-// because the newest bytes are the ones worth watching.
-func streamingInputRows(input string, width, cap int) []string {
-	if strings.TrimSpace(input) == "" {
+// argPreviewLines is how many rows of ONE argument's value survive the fold.
+// Two, because the collapsed block is a moving window on something being
+// typed, not a summary of it: you want to see the last thing written and the
+// shape of the line before it. Expanded (Ctrl-O, or Enter on the selection)
+// lifts the cap entirely.
+const argPreviewLines = 2
+
+// argGutter marks argument rows. Tool OUTPUT already owns `  │ `, and telling
+// what the agent SAID from what the command PRINTED at a glance is most of
+// what makes a dense transcript readable, so the arguments get their own rule
+// in their own colour.
+const argGutter = "  ┆ "
+const argGutterCells = 4
+
+// argLabelCap bounds the shared label column so one long argument name cannot
+// push every value off the right of the screen.
+const argLabelCap = 12
+
+// toolArgRows draws a tool's arguments: one label per field, its value beside
+// it when it is short and beneath it when it is not, under the argument
+// gutter. The same shape whether the value is still arriving (Input, a
+// truncated JSON prefix walked by partialjson) or settled (Args, decoded) — a
+// node must not change layout under the user just because the model finished
+// typing.
+//
+// WHEN it is drawn differs, and deliberately:
+//
+//   - while the arguments are STREAMING, always. That is the point: you watch
+//     the write take shape. Collapsed keeps the last argPreviewLines rows of
+//     each value, a moving window on what is being typed.
+//   - once they have SETTLED, only when expanded. A finished transcript is
+//     mostly settled tools, and printing every argument of every one of them
+//     would triple the height of a page to say what the header already
+//     summarises. Enter on the selection (or Ctrl-O) is the ask.
+//
+// Neither prints a "… last N of M" banner. The output block earns one because
+// its text is a finished artifact you might want the size of; an argument
+// mid-flight is a window, and a banner that changes every frame is noise.
+func toolArgRows(n livedoc.Node, width int, expand bool) []string {
+	streaming := strings.TrimSpace(n.Input) != ""
+	if !streaming && !expand {
 		return nil
 	}
-	fields := partialjson.Fields([]byte(input))
+	fields := toolArgFields(n)
 	if len(fields) == 0 {
 		return nil
 	}
-	const g = "  "
-	var rows []string
+	gutter := term.Cyan(argGutter)
+	avail := width - argGutterCells
+	if avail < 8 {
+		avail = 8
+	}
+	// One label column for the whole block, so short values line up.
+	label := 0
 	for _, f := range fields {
-		rows = append(rows, term.Dim(g+f.Name))
-		for _, l := range hardWrap(render.SanitizeForTerminal(f.Value), width-len(g)-2) {
-			rows = append(rows, g+"  "+truncCols(l, width-len(g)-2))
+		if n := runewidth.StringWidth(f.Name); n > label && n <= argLabelCap {
+			label = n
 		}
 	}
-	if cap >= 0 && len(rows) > cap {
-		rows = rows[len(rows)-cap:]
+	var rows []string
+	for _, f := range fields {
+		value := strings.TrimRight(render.SanitizeForTerminal(f.Value), "\n")
+		name := term.Dim(runewidth.FillRight(f.Name, label))
+		// A short one-line value rides beside its label; anything longer gets
+		// the label to itself and the value indented beneath, where a wrapped
+		// remainder cannot be read as the next argument.
+		if !strings.Contains(value, "\n") && runewidth.StringWidth(value) <= avail-label-1 {
+			row := gutter + name
+			if value != "" {
+				row += " " + value
+			}
+			rows = append(rows, row)
+			continue
+		}
+		rows = append(rows, gutter+name)
+		lines := hardWrap(value, avail-2)
+		if !expand && len(lines) > argPreviewLines {
+			shown, _ := tailOutput(strings.Join(lines, "\n"), argPreviewLines)
+			lines = strings.Split(shown, "\n")
+		}
+		for _, l := range lines {
+			rows = append(rows, gutter+"  "+truncCols(l, avail-2))
+		}
 	}
 	return rows
+}
+
+// toolArgFields is the one place that answers "what are this tool's
+// arguments" — the streaming prefix while it arrives, the decoded map once it
+// lands. No tool name is consulted in either case.
+func toolArgFields(n livedoc.Node) []partialjson.Field {
+	if strings.TrimSpace(n.Input) != "" {
+		return partialjson.Fields([]byte(n.Input))
+	}
+	if len(n.Args) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(n.Args))
+	for k := range n.Args {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]partialjson.Field, 0, len(keys))
+	for _, k := range keys {
+		v, ok := n.Args[k].(string)
+		if !ok {
+			v = fmt.Sprintf("%v", n.Args[k])
+		}
+		out = append(out, partialjson.Field{Name: k, Value: v, Done: true})
+	}
+	return out
 }
 
 // tailRows hard-wraps text to w columns and keeps the LAST limit rows, which

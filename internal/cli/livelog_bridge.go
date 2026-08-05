@@ -931,19 +931,25 @@ type ariaView struct{ settings *renderSettings }
 // So the collapsed form lives exactly where there is a gesture to undo it: the
 // transcript, which has a selection, an expanded map, and RenderExpanded below.
 func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
-	return v.RenderExpanded(n, width, tick, true)
+	// Output uncapped (see above); ARGUMENTS collapsed, because the inline
+	// view has no selection to expand them with and a streaming argument is
+	// meant to be a small moving window until Ctrl-O asks for the rest.
+	verbose := v.settings != nil && v.settings.verbose
+	return renderNode(n, width, nodeOutputUnlimited, uint64(tick), verbose, verbose)
 }
 
 // RenderExpanded draws a node in its expanded or collapsed form. fullOutput is
-// the transcript's per-node expansion state (t.expanded[ref]); a tool's output
-// cap is the only thing it decides.
+// the transcript's per-node expansion state (t.expanded[ref]), and it now
+// decides BOTH of a tool's collapsible parts: Enter on the selection opens the
+// output and the arguments together, which is what "expand this" has always
+// looked like it meant.
 func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bool) []string {
 	bashCap := nodeBashCapDefault
 	if fullOutput {
 		bashCap = nodeOutputUnlimited
 	}
 	verbose := v.settings != nil && v.settings.verbose
-	return renderNode(n, width, bashCap, uint64(tick), verbose)
+	return renderNode(n, width, bashCap, uint64(tick), verbose, fullOutput || verbose)
 }
 
 // openRule prints the session's opening rule through the inline renderer, which

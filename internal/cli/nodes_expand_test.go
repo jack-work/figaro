@@ -50,7 +50,7 @@ func TestNodeExpandable(t *testing.T) {
 	for _, tc := range cases {
 		if got := nodeExpandable(tc.n); got != tc.want {
 			t.Errorf("%s: nodeExpandable = %v, want %v\nrender:\n%s",
-				tc.name, got, tc.want, dumpRows(renderNode(tc.n, w, nodeBashCapDefault, 0, false)))
+				tc.name, got, tc.want, dumpRows(renderNode(tc.n, w, nodeBashCapDefault, 0, false, false)))
 		}
 	}
 }
@@ -73,8 +73,8 @@ func TestNodeExpandable_AgreesWithTheRender(t *testing.T) {
 	}
 	for _, w := range []int{26, 40, 60, 80, 120} {
 		for _, n := range nodes {
-			collapsed := renderNode(n, w, nodeBashCapDefault, 0, false)
-			expanded := renderNode(n, w, nodeOutputUnlimited, 0, false)
+			collapsed := renderNode(n, w, nodeBashCapDefault, 0, false, false)
+			expanded := renderNode(n, w, nodeOutputUnlimited, 0, false, false)
 			differ := len(collapsed) != len(expanded)
 			got := nodeExpandable(n)
 			if !got && differ {
@@ -127,7 +127,7 @@ func TestProseRows_HoldPainterInvariant(t *testing.T) {
 	}
 	for w := 26; w <= 120; w += 3 {
 		for _, n := range nodes {
-			for i, row := range renderNode(n, w, nodeBashCapDefault, 0, false) {
+			for i, row := range renderNode(n, w, nodeBashCapDefault, 0, false, false) {
 				if strings.ContainsAny(row, "\n\r\t") {
 					t.Fatalf("%s @ w=%d: row %d smuggles a control char: %q", n.Type, w, i, row)
 				}
