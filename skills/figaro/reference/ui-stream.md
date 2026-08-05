@@ -95,35 +95,42 @@ wire. Whether the fragments arrive smoothly at all is a **provider** question
 
 ### How a tool draws
 
-A tool call is one framed box, not a stack of adjacent rows.
+A tool call is one block: a left rule, and two labelled dividers.
 
 ```
-⠋ write ─────────────────────────────────────┐
-  │                                          │
-  │ content (…last 5 of 54 lines)            │
-  │   37. Bartolo is consoled with the dowry.│
-  │                                          │
-  │ path    /var/tmp/x/opera.md              │
-  │                                          │
-✓ done [4ms] ────────────────────────────────┤
-  │                                          │
-  │ Wrote 5453 bytes to /var/tmp/x/opera.md  │
-  │                                          │
-  └──────────────────────────────────────────┘
+✓ write [31.2s] ──────────────────────────────
+  │
+  │ content (…first 2 of 45 lines)
+  │   1. Il barbiere di Siviglia is an opera…
+  │
+  │ path    /var/tmp/x/opera.md
+  │
+✓ done [4ms] ─────────────────────────────────
+  │
+  │ Wrote 5453 bytes to /var/tmp/x/opera.md
+  │
 ```
 
-The header sits **on** the top edge, the way a fieldset legend does; the
-junction is labelled the same way with what the *execution* is doing
-(`running`/`done`/`failed`). **The junction and the floor arrive with the
-result** — until the tool has run there is nothing to divide and nothing to
-close under, so a streaming box is open at the bottom.
+**Two clocks.** The header carries GENERATION — how long the model spent
+writing the call, `OpenedAt` to `StartedAt` — and the divider carries RUNTIME,
+`StartedAt` to `FinishedAt`. On a large write they differ by half a minute, and
+only the second used to exist, which is why such a call rendered `[0ms]` after
+thirty seconds of visible streaming. `OpenedAt` is stamped at `evToolStart`,
+the only place that knows it; an aria older than the field falls back to
+showing the runtime in the header.
+
+The header sits **on** its rule, the way a fieldset legend does; the divider is
+labelled the same way with what the *execution* is doing
+(`running`/`done`/`failed`). **The divider arrives with the result** — until
+the tool has run there is nothing to divide. There is no right border and no
+floor: a closed box made the left of the screen busy, and the part of a frame
+that earns its keep is the part the eye follows down.
 
 The box is fitted to its **content**, never wider than the pane less a column,
 with two columns of right padding. A full-width box is indistinguishable from
-the turn rule above it, which is genuinely full width. Under about 27 columns
-the frame is dropped for plain gutter rows: a frame that cannot close is worse
-than no frame. `box.row` clips as well as pads, which is the only way the right
-border lands in the same column on every row.
+the turn rule above it, which is genuinely full width. Under about 27 columns the
+frame is dropped for plain gutter rows. `box.row` clips, which is the one place
+that can guarantee no row outruns its pane.
 
 | | folded | expanded (`Enter` on the selection) |
 |---|---|---|
