@@ -126,7 +126,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 
 	// The renderer owns the cursor + auto-margin off, same as send.
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
-	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
+	defer endSession(os.Stdout)
 	// See runStream: the deferred right-edge wrap belongs to the painter, not
 	// to every command that prints a line.
 	restoreWrap := sync.OnceFunc(term.ArmDeferredWrap())
@@ -160,7 +160,7 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 			_ = json.Unmarshal(params, &d)
 			lt.finishTurn(d.Reason)
 			if strings.HasPrefix(d.Reason, "error:") {
-				fmt.Fprintln(os.Stderr, "\n"+d.Reason)
+				sessionLine(os.Stderr, "\r\n"+d.Reason)
 			}
 		}
 	}
@@ -243,15 +243,15 @@ func tailFigaro(ctx context.Context, cancel context.CancelFunc, ep transport.End
 		// The tape ran out. Leave the way a finished turn leaves.
 		lt.finishTurn("")
 	case <-disconnectCh:
-		lt.abandon("disconnected — turn (if any) continues", turnStatusDisconnected)
+		lt.abandon(turnStatusDisconnected)
 	case <-fcli.Done():
-		lt.abandon("aria disconnected", turnStatusError)
+		lt.abandon(turnStatusError)
 	case <-ctx.Done():
 		// Ctrl-C from signal.NotifyContext: interrupt the turn, then leave.
-		fmt.Fprintln(os.Stderr, "\ninterrupting...")
+		sessionLine(os.Stderr, "\r\ninterrupting...")
 		intCtx, intCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		_ = fcli.Interrupt(intCtx)
 		intCancel()
-		lt.abandon("interrupted", turnStatusInterrupted)
+		lt.abandon(turnStatusInterrupted)
 	}
 }

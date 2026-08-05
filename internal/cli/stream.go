@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -18,7 +19,6 @@ import (
 	"github.com/jack-work/figaro/internal/tape"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
-	"github.com/mattn/go-runewidth"
 )
 
 const spinnerFPS = 11 // spinner frames per second (~90ms/frame)
@@ -87,7 +87,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 	// cursor. It draws in incipit (no alternate screen) — frozen output lands in
 	// the normal scrollback.
 	fmt.Fprint(os.Stdout, autowrapOff+cursorHide)
-	defer fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
+	defer endSession(os.Stdout)
 	// The painter's half of the console arming: hold the cursor on the last
 	// cell instead of wrapping the instant it is written. Scoped to the painted
 	// session — armed globally it staircases every fmt.Println. OnceFunc for the
@@ -123,7 +123,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			defer mu.Unlock()
 		}
 		lt.leaveTranscript()
-		fmt.Fprint(os.Stdout, cursorShow+autowrapOn)
+		endSession(os.Stdout)
 	})
 
 	// mu serializes every renderer entry point; handing it to the pager arms
@@ -426,11 +426,9 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 		// q / Ctrl-D. If the turn already finished while the pager was up this
 		// is a clean exit, not an abandonment: no rule, no follow hint, and the
 		// completed tail reaches scrollback intact.
-		if lt.abandon("disconnected — turn continues", turnStatusDisconnected) {
-			fmt.Fprintln(os.Stderr, "follow: figaro listen "+figaroID)
-		}
+		lt.abandon(turnStatusDisconnected)
 	case <-fcli.Done():
-		lt.abandon("agent disconnected before turn completed", turnStatusError)
+		lt.abandon(turnStatusError)
 		os.Exit(1)
 	case <-ctx.Done():
 		// Ctrl-C: interrupt the in-flight turn; if nothing's running (e.g.
@@ -451,7 +449,7 @@ func mustPromptFigaro(ctx context.Context, ep transport.Endpoint, figaroID, prom
 			case <-doneCh:
 			case <-fcli.Done():
 			case <-time.After(3 * time.Second):
-				lt.abandon("interrupted (agent did not respond)", turnStatusInterrupted)
+				lt.abandon(turnStatusInterrupted)
 			}
 			mu.Lock()
 			lt.report("interrupted")
@@ -1473,23 +1471,17 @@ func (in *interactiveInput) coalesceNewline(b byte) bool {
 // the closer after a non-assistant (user/steering) message.
 func dimRule() string { return term.Dim(strings.Repeat("─", termWidth())) }
 
-// abandonRule returns a labeled dim rule used when a live region ends without
-// a normal freeze (crash, disconnect, interrupt-timeout). Shape: "─── [reason] ───..."
-func abandonRule(reason string) string {
-	return labeledRule("[" + reason + "]")
+// sessionLine writes a line with an explicit CR: a painted session has
+// DISABLE_NEWLINE_AUTO_RETURN armed on Windows, where a bare LF staircases
+// (microsoft/WSL#1273).
+func sessionLine(w io.Writer, s string) {
+	fmt.Fprint(w, s+"\r\n")
 }
 
-// labeledRule builds "─── <label> ───…" filled with box-drawing dashes to the
-// exact viewport width. Widths are DISPLAY columns (runewidth): the dashes and
-// "·" are multi-byte, and byte-length math is what made these rules render
-// shorter than the plain dimRule.
-func labeledRule(label string) string {
-	prefix := "─── " + label + " "
-	fill := termWidth() - runewidth.StringWidth(prefix)
-	if fill < 3 {
-		fill = 3
-	}
-	return term.Dim(prefix + strings.Repeat("─", fill))
+// endSession is the last write: the shell prompts where we leave the cursor,
+// so return the carriage. A lone CR adds no row.
+func endSession(w io.Writer) {
+	fmt.Fprint(w, "\r"+cursorShow+autowrapOn)
 }
 
 // termWidth returns the terminal width, defaulting to 80.

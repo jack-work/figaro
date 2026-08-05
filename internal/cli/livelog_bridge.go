@@ -512,37 +512,22 @@ func (t *livelogTurn) preambleHeight(m aria.Message, w int) int {
 func (t *livelogTurn) setDesync(fn func(int)) { t.client.OnDesync = fn }
 func (t *livelogTurn) transcriptActive() bool { return t.tr.active }
 
-// abandon closes a live region without a normal Freeze: paint a labeled
-// dim rule across the boundary so what follows isn't glued to the orphaned
-// output. reason is the short label (e.g. "disconnected — turn continues").
+// abandon closes a live region left mid-turn: flush the pager's tail, park
+// below the region, set the footer's status. Nothing is printed past the
+// status bookend — it already says "disconnected".
 //
-// If the pager is up, restore the screen and flush the tail to scrollback
-// FIRST (so the labeled rule lands below the recovered turn, not on the
-// about-to-be-torn-down alt screen), then draw the rule.
-//
-// A turn that ALREADY FINISHED is not being abandoned — the pager was merely
-// closed after the fact. Flushing the completed tail and keeping the real
-// outcome is the whole job there; overwriting the status and dropping
-// t.pending is how a reply the user watched arrive was lost.
-//
-// st is what the FOOTER should say; reason is what the RULE across the
-// boundary should read. They answer different questions — the status describes
-// the turn, the rule describes the seam — so the caller states both rather than
-// one being parsed out of the other's English.
-//
-// Reports whether it actually abandoned anything, so the caller can skip the
-// "follow: figaro listen" hint for a turn that is already over.
-func (t *livelogTurn) abandon(reason string, st turnStatus) bool {
+// A turn that ALREADY FINISHED is not abandoned: the pager was closed after
+// the fact, so the tail is flushed and the real outcome kept.
+func (t *livelogTurn) abandon(st turnStatus) {
 	if t.finished {
 		t.leaveTranscript()
 		t.freezePending()
-		return false
+		return
 	}
 	t.status.setTurn(st)
 	t.pending = nil
 	t.leaveTranscript()
-	t.in.AbandonOpen(abandonRule(reason))
-	return true
+	t.in.AbandonOpen("")
 }
 
 func (t *livelogTurn) tick() {
@@ -723,7 +708,7 @@ func (t *livelogTurn) report(text string) {
 		t.tr.render()
 		return
 	}
-	fmt.Fprintln(os.Stderr, "\n"+text)
+	sessionLine(os.Stderr, "\r\n"+text)
 }
 
 func (t *livelogTurn) transcriptSelect(delta int, extend bool) {
@@ -780,7 +765,7 @@ func (t *livelogTurn) leaveTranscript() {
 	// that there is a shell to say it to. The pager showed it red and
 	// ellipsised; the scrollback gets every character.
 	for _, r := range t.pendingReport {
-		fmt.Fprintln(os.Stderr, r)
+		sessionLine(os.Stderr, r)
 	}
 	t.pendingReport = nil
 	t.status.setNotice("")

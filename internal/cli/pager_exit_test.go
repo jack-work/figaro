@@ -40,15 +40,13 @@ func TestPagerExitFlushesLaterSlicesOfAnAlreadyFrozenTurn(t *testing.T) {
 	lt.finishTurn("completed")
 	out.Reset()
 
-	if lt.abandon("disconnected — turn continues", turnStatusDisconnected) {
-		t.Fatal("a finished turn is not abandoned: q after completion is a clean exit")
-	}
+	lt.abandon(turnStatusDisconnected)
 	got := out.String()
 	if !strings.Contains(got, "FINALANSWER") {
 		t.Fatalf("the completed reply never reached scrollback:\n%s", got)
 	}
-	if strings.Contains(got, "turn continues") {
-		t.Fatalf("scrollback claims the turn continues, but it sealed:\n%s", got)
+	if strings.Contains(got, "turn continues") || strings.Contains(got, "follow: figaro listen") {
+		t.Fatalf("the exit wrote chrome past the status bookend:\n%s", got)
 	}
 	// The footer describes the TURN, and a finished turn is finished whether or
 	// not this CLI is still watching. Reporting "disconnected" over a sealed
@@ -61,7 +59,7 @@ func TestPagerExitFlushesLaterSlicesOfAnAlreadyFrozenTurn(t *testing.T) {
 // A turn genuinely still running must still say so — the fix must not silence
 // the honest case — and detaching from it is NOT a failure. A user choosing to
 // stop watching is a decision, not an error; calling it one erodes trust in
-// every other status we show.
+// every other status we show. It says so in one place: the status bookend.
 func TestPagerExitStillWarnsWhileTheTurnRuns(t *testing.T) {
 	var out bytes.Buffer
 	status := newSessionStatus("aria1234", time.Now())
@@ -71,11 +69,9 @@ func TestPagerExitStillWarnsWhileTheTurnRuns(t *testing.T) {
 	lt.enterTranscript()
 	out.Reset()
 
-	if !lt.abandon("disconnected — turn continues", turnStatusDisconnected) {
-		t.Fatal("an unfinished turn IS abandoned and must keep its warning")
-	}
-	if !strings.Contains(out.String(), "turn continues") {
-		t.Fatalf("missing the abandon rule for a live turn:\n%s", out.String())
+	lt.abandon(turnStatusDisconnected)
+	if got := out.String(); strings.Contains(got, "turn continues") || strings.Contains(got, "follow:") {
+		t.Fatalf("the exit wrote chrome past the status bookend:\n%s", got)
 	}
 	if l := status.turnLabel(); l != "disconnected ⠸" {
 		t.Fatalf("detaching from a live turn reported %q, want disconnected ⠸", l)
@@ -114,4 +110,44 @@ func page(turn uint64, liveFrom uint64, ds ...aria.NodeDelta) aria.Page {
 		ID:   turn,
 		Live: &aria.Live{From: liveFrom, Nodes: ds},
 	}}}}
+}
+
+// Every newline a painted session emits must be CRLF: with
+// DISABLE_NEWLINE_AUTO_RETURN armed a bare LF staircases (microsoft/WSL#1273).
+func TestPainterSessionWritesOnlyCRLF(t *testing.T) {
+	var out bytes.Buffer
+	status := newSessionStatus("aria1234", time.Now())
+	lt := newLivelogTurn(&out, 80, 20, &renderSettings{}, "aria1234", time.Now(), status, func() []string { return bookendLines(status) }, dimRule)
+	lt.apply(inquiryPage(1, "the question"))
+	lt.apply(page(1, 0, delta(0, livedoc.RoleOutput, "a reply that is streaming")))
+	lt.enterTranscript()
+	lt.apply(page(1, 1, delta(1, livedoc.RoleOutput, "and more of it")))
+	lt.abandon(turnStatusDisconnected)
+
+	s := out.String()
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' && (i == 0 || s[i-1] != '\r') {
+			t.Fatalf("bare LF at byte %d — on Windows this staircases:\n%q", i, s[max(0, i-60):min(len(s), i+10)])
+		}
+	}
+}
+
+func TestSessionLineAndEndSession(t *testing.T) {
+	var b bytes.Buffer
+	sessionLine(&b, "hello")
+	if got := b.String(); got != "hello\r\n" {
+		t.Errorf("sessionLine wrote %q, want %q", got, "hello\r\n")
+	}
+	b.Reset()
+	endSession(&b)
+	got := b.String()
+	if got[0] != '\r' {
+		t.Errorf("endSession must return the carriage first (the shell draws its prompt where we leave the cursor); got %q", got)
+	}
+	if !strings.Contains(got, cursorShow) || !strings.Contains(got, autowrapOn) {
+		t.Errorf("endSession must hand the terminal back: %q", got)
+	}
+	if strings.Contains(got, "\n") {
+		t.Errorf("endSession must not add a blank row: %q", got)
+	}
 }
