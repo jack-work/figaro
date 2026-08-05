@@ -289,9 +289,9 @@ func argRowsOf(tr *transcript) []string {
 	var out []string
 	for _, e := range tr.index.entries {
 		for _, r := range e.rows {
-			// The fixture's tool has no output, so every rule row is an
-			// argument row.
-			if plain := stripANSI(r.text); strings.Contains(plain, "│") {
+			// The fixture's tool has no output, so every content row inside
+			// the box is an argument row.
+			if plain := stripANSI(r.text); boxContentText(plain) != "" {
 				out = append(out, plain)
 			}
 		}
@@ -303,8 +303,8 @@ func TestPagerStreamingToolExpandsItsArguments(t *testing.T) {
 	tr, _, _ := streamingFixture(t, strings.Repeat("a line of the file being written\n", 30))
 
 	folded := argRowsOf(tr)
-	// label + window + the blank row closing a multi-line value + `path`.
-	wantFolded := 3 + argStreamLines
+	// The label, the moving window, and the `path` field's own row.
+	wantFolded := 2 + argStreamLines
 	if len(folded) != wantFolded {
 		t.Fatalf("folded: %d argument rows, want %d:\n%s", len(folded), wantFolded, strings.Join(folded, "\n"))
 	}
