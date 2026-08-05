@@ -24,8 +24,8 @@ func TestFarmerGutterCostsNoMoreThanItsWidth(t *testing.T) {
 		for w := 20; w <= 200; w++ {
 			n := livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}
 			pw := proseWidth(n, w)
-			raw := clampTables(render.Prose(nodeMarkdown(n), pw), proseTableCapDefault, pw)
-			got := nodeProseRows(n, w, false)
+			raw := render.Prose(nodeMarkdown(n), pw)
+			got := nodeProseRows(n, w)
 			if len(got) != len(raw) {
 				t.Fatalf("%s w=%d: %d rows vs %d rendered", name, w, len(got), len(raw))
 			}
@@ -60,8 +60,8 @@ func TestFarmerRepairEatsText(t *testing.T) {
 		for w := 20; w <= 200; w++ {
 			n := livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}
 			pw := proseWidth(n, w)
-			raw := clampTables(render.Prose(nodeMarkdown(n), pw), proseTableCapDefault, pw)
-			got := nodeProseRows(n, w, false)
+			raw := render.Prose(nodeMarkdown(n), pw)
+			got := nodeProseRows(n, w)
 			if len(raw) != len(got) {
 				t.Fatalf("%s w=%d: row count changed", name, w)
 			}

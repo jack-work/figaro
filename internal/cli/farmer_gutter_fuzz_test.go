@@ -24,7 +24,7 @@ func FuzzThinkingGutter(f *testing.F) {
 			t.Skip()
 		}
 		w = 20 + (w%181+181)%181 // 20..200
-		rows := nodeProseRows(livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}, w, false)
+		rows := nodeProseRows(livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}, w)
 		col := -1
 		for i, r := range rows {
 			// Overflow must be INHERITED, never added: glamour overruns the

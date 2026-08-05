@@ -29,7 +29,7 @@ func TestFarmerBlocksWithNoRuleAtAll(t *testing.T) {
 	}
 	for name, md := range cases {
 		for _, w := range []int{20, 40, 80, 120, 200} {
-			rows := nodeProseRows(livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}, w, false)
+			rows := nodeProseRows(livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}, w)
 			nonblank, ruled := 0, 0
 			for _, r := range rows {
 				p := strings.TrimSpace(stripANSI(r))

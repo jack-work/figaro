@@ -446,7 +446,7 @@ func (t *transcript) toggleSelectedNodes() bool {
 	appendMessage := func(m aria.Message) {
 		for i, n := range m.Nodes {
 			ref := nodeRefAt(m, i)
-			if marks[ref].selected && nodeExpandable(n, t.w-2) {
+			if marks[ref].selected && nodeExpandable(n) {
 				refs = append(refs, ref)
 			}
 		}

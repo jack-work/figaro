@@ -425,7 +425,7 @@ func firstToolRow(t *testing.T, tr *transcript) (int, nodeRef) {
 		if !ref.valid() {
 			continue
 		}
-		if n, ok := tr.nodeAt(ref); ok && nodeExpandable(n, tr.w-2) {
+		if n, ok := tr.nodeAt(ref); ok && nodeExpandable(n) {
 			return row, ref
 		}
 	}

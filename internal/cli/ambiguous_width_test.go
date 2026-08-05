@@ -46,7 +46,7 @@ func TestAmbiguousWideReachesTheRenderer(t *testing.T) {
 	setAmbiguousWide(t, true)
 	md := "a sentence long enough to wrap a few times at these widths, plus a rule ───── inside it"
 	for w := 30; w <= 120; w++ {
-		for i, r := range nodeProseRows(thinkingNode(md), w, false) {
+		for i, r := range nodeProseRows(thinkingNode(md), w) {
 			if got := displayWidth(r); got > w {
 				t.Fatalf("ambiguous-wide w=%d row %d: %d cells: %q", w, i, got, stripSGRForTest(r))
 			}

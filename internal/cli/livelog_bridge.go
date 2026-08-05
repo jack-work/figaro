@@ -950,17 +950,15 @@ func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
 }
 
 // RenderExpanded draws a node in its expanded or collapsed form. fullOutput is
-// the transcript's per-node expansion state (t.expanded[ref]) and it now feeds
-// BOTH caps: a tool's output cap, as it always did, and prose's table cap. One
-// flag, one gesture, two kinds of node — which is what makes "expand this" mean
-// the same thing wherever the user points it.
+// the transcript's per-node expansion state (t.expanded[ref]); a tool's output
+// cap is the only thing it decides.
 func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bool) []string {
 	bashCap := nodeBashCapDefault
 	if fullOutput {
 		bashCap = nodeOutputUnlimited
 	}
 	verbose := v.settings != nil && v.settings.verbose
-	return renderNode(n, width, bashCap, uint64(tick), verbose, fullOutput)
+	return renderNode(n, width, bashCap, uint64(tick), verbose)
 }
 
 // openRule prints the session's opening rule through the inline renderer, which

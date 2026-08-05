@@ -118,7 +118,7 @@ func (t *transcript) nodeAt(ref nodeRef) (node livedoc.Node, ok bool) {
 // in exactly the way a no-op looks correct.
 func (t *transcript) toggleExpansionOf(ref nodeRef) bool {
 	n, ok := t.nodeAt(ref)
-	if !ok || !nodeExpandable(n, t.w-2) {
+	if !ok || !nodeExpandable(n) {
 		return false
 	}
 	return t.toggleExpansion([]nodeRef{ref})

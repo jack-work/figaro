@@ -76,7 +76,7 @@ func TestFarmerQuoteInvariants(t *testing.T) {
 	for name, md := range farmerCorpus() {
 		for _, typ := range []livedoc.NodeType{livedoc.NodeThinking, livedoc.NodeSteering} {
 			for w := 20; w <= 200; w++ {
-				rows := nodeProseRows(livedoc.Node{Type: typ, Markdown: md}, w, false)
+				rows := nodeProseRows(livedoc.Node{Type: typ, Markdown: md}, w)
 				col := -1
 				for i, r := range rows {
 					plain := strings.TrimRight(stripANSI(r), " ")
@@ -134,8 +134,8 @@ func TestFarmerRowsAreGlamourPlusGutter(t *testing.T) {
 		for w := 20; w <= 200; w++ {
 			n := livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}
 			pw := proseWidth(n, w)
-			raw := clampTables(render.Prose(nodeMarkdown(n), pw), proseTableCapDefault, pw)
-			got := nodeProseRows(n, w, false)
+			raw := render.Prose(nodeMarkdown(n), pw)
+			got := nodeProseRows(n, w)
 			if len(got) != len(raw) {
 				t.Fatalf("%s w=%d: row count changed %d -> %d", name, w, len(raw), len(got))
 			}
@@ -161,7 +161,7 @@ func TestFarmerEscapesIntact(t *testing.T) {
 	seen := map[string]bool{}
 	for name, md := range farmerCorpus() {
 		for w := 20; w <= 200; w++ {
-			rows := nodeProseRows(livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}, w, false)
+			rows := nodeProseRows(livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}, w)
 			for i, r := range rows {
 				for j := 0; j < len(r); {
 					if r[j] != 0x1b {
@@ -201,7 +201,7 @@ func isFinalByte(c byte) bool {
 func glamourOverranAt(md string, w int) bool {
 	n := livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}
 	pw := proseWidth(n, w)
-	for _, r := range clampTables(render.Prose(nodeMarkdown(n), pw), proseTableCapDefault, pw) {
+	for _, r := range render.Prose(nodeMarkdown(n), pw) {
 		if displayWidth(r) > pw {
 			return true
 		}

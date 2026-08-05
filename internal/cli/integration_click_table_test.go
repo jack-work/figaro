@@ -13,23 +13,13 @@ import (
 	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 )
 
-// THE MERGE, AS A TEST.
+// The gesture seam, end to end: nodeExpandable says whether a node has a
+// collapsed form, renderNode draws it at that cap, and the pager's pointer has
+// to agree with both. feat/table-wrap and feat/mouse-nodes each owned one half
+// and neither could assert the pair, so the walk lives here.
 //
-// feat/table-wrap gives a wide markdown table a collapsed form. feat/mouse-nodes
-// gives the pager a pointer. Neither branch can assert the pair: on table-wrap
-// alone nothing opens the clamp, and on mouse-nodes alone no prose node has a
-// collapsed form to open. So the claim "the seam held" belongs here, in a test
-// that fails if either half regresses — rather than in a merge commit message,
-// where a claim cannot fail.
-//
-// The seam is two names agreed before either branch was built:
-//
-//	nodeExpandable(n, width) bool                 — has a collapsed form?
-//	renderNode(n, w, cap, tick, verbose, expanded) — render it either way
-//
-// This walks the whole gesture through them: clamp -> click -> open -> click ->
-// closed, on a PROSE node, which is the case that did not exist on either
-// branch alone.
+// It runs on a TOOL, which is the only node with a collapsed form now; prose's
+// inertness is asserted beside it.
 
 func tableProse(rows int) string {
 	var b strings.Builder
@@ -40,15 +30,24 @@ func tableProse(rows int) string {
 	return b.String()
 }
 
-func TestIntegration_ClickOpensAClampedTable(t *testing.T) {
-	const width, height = 100, 40
-	md := tableProse(14)
+func toolWithOutput(lines int) livedoc.Node {
+	var b strings.Builder
+	for i := range lines {
+		fmt.Fprintf(&b, "output line %d\n", i)
+	}
+	return livedoc.Node{
+		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		ToolCallID: "tc1", Summary: "seq 1 40", Output: b.String(),
+	}
+}
 
-	// HALF ONE: the node has a collapsed form at all. If this fails, the clamp
-	// (table-wrap) regressed and the gesture has nothing to open.
-	node := livedoc.Node{Type: livedoc.NodeProse, Markdown: md}
-	if !nodeExpandable(node, width-2) {
-		t.Fatal("a 14-row table is not reported expandable: the clamp half of the merge is gone")
+func TestIntegration_ClickOpensAClampedTool(t *testing.T) {
+	const width, height = 100, 40
+	node := toolWithOutput(40)
+
+	// HALF ONE: the node has a collapsed form at all.
+	if !nodeExpandable(node) {
+		t.Fatal("a 40-line tool output is not reported expandable: the renderer half of the seam is gone")
 	}
 
 	ft := ldrender.NewFakeTerminal(width, height)
@@ -60,7 +59,7 @@ func TestIntegration_ClickOpensAClampedTable(t *testing.T) {
 	tr.enter()
 	tr.render()
 
-	const hint = "more table lines"
+	const hint = "last 10 of 40 lines"
 	body := func() string { return stripANSI(strings.Join(tr.lines(), "\n")) }
 	if !strings.Contains(body(), hint) {
 		t.Fatalf("no clamp hint in the collapsed render:\n%s", body())
@@ -72,9 +71,9 @@ func TestIntegration_ClickOpensAClampedTable(t *testing.T) {
 	row := clickRowOf(t, tr, ref)
 
 	if !tr.clickAt(row, false) { // select
-		t.Fatal("click did not select the table node")
+		t.Fatal("click did not select the tool node")
 	}
-	if strings.Contains(body(), "wrap at any sane width 13") {
+	if strings.Contains(body(), "output line 0") {
 		t.Fatal("selecting expanded the node: the two gestures have collapsed into one")
 	}
 	tr.render()
@@ -86,8 +85,8 @@ func TestIntegration_ClickOpensAClampedTable(t *testing.T) {
 	if strings.Contains(after, hint) {
 		t.Fatalf("clamp hint survived expansion:\n%s", after)
 	}
-	if !strings.Contains(after, "wrap at any sane width 13") {
-		t.Fatalf("expansion did not reveal the last table row:\n%s", after)
+	if !strings.Contains(after, "output line 0") {
+		t.Fatalf("expansion did not reveal the head of the output:\n%s", after)
 	}
 	tr.render()
 
@@ -99,14 +98,54 @@ func TestIntegration_ClickOpensAClampedTable(t *testing.T) {
 	}
 }
 
+// TestIntegration_ClickOnATableIsInert: a table has nothing to reveal, so
+// pointing at it may select it and must never change what it draws.
+func TestIntegration_ClickOnATableIsInert(t *testing.T) {
+	const width, height = 100, 40
+	node := livedoc.Node{Type: livedoc.NodeProse, Markdown: tableProse(14)}
+
+	if nodeExpandable(node) {
+		t.Fatal("prose reported expandable: the table clamp is back")
+	}
+
+	ft := ldrender.NewFakeTerminal(width, height)
+	client := aria.NewClient()
+	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
+		ID: 1, Sealed: true, Nodes: []livedoc.Node{node},
+	}}}})
+	tr := newTranscript(ft, width, height, &ariaView{settings: &renderSettings{}}, client, "aria1234", time.Now())
+	tr.enter()
+	tr.render()
+
+	body := func() string { return stripANSI(strings.Join(tr.lines(), "\n")) }
+	if got := body(); strings.Contains(got, "more table lines") {
+		t.Fatalf("the table was clamped:\n%s", got)
+	}
+	// The last row is on screen from the start — that is the whole point.
+	if got := body(); !strings.Contains(got, "wrap at any sane width 13") {
+		t.Fatalf("the last table row is not drawn without expanding:\n%s", got)
+	}
+
+	// Compare across the TOGGLE, not the selection: the first click draws a
+	// selection bar, which is a correct change.
+	ref := nodeRef{turn: 1, index: 0}
+	tr.clickAt(clickRowOf(t, tr, ref), false) // select
+	tr.render()
+	selected := body()
+	tr.clickAt(clickRowOf(t, tr, ref), false) // would have expanded
+	tr.render()
+	if got := body(); got != selected {
+		t.Errorf("a click changed an unexpandable node's render:\nbefore:\n%s\nafter:\n%s", selected, got)
+	}
+}
+
 // TestIntegration_TableTextSurvivesTheRoundTrip is the user's actual complaint,
-// asserted at the boundary the loss used to happen at: no cell content may be
-// missing from the EXPANDED render, and no row may exceed the width (invariant
-// #1, which a wrapping fix is the most likely thing to break).
+// asserted where the loss used to happen: no cell content missing, no row wider
+// than the pane.
 func TestIntegration_TableTextSurvivesTheRoundTrip(t *testing.T) {
 	for _, width := range []int{60, 80, 100, 140} {
 		rows := renderNode(livedoc.Node{Type: livedoc.NodeProse, Markdown: tableProse(6)},
-			width, nodeBashCapDefault, 0, false, true)
+			width, nodeBashCapDefault, 0, false)
 		joined := stripANSI(strings.Join(rows, "\n"))
 		for i := range 6 {
 			if !strings.Contains(joined, fmt.Sprintf("note %d", i)) {

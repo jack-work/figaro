@@ -20,21 +20,6 @@ const (
 	nodeBashCapDefault  = 10
 	nodeOutputUnlimited = -1
 	toolSummaryCap      = 80 // default truncation for a tool's summary line
-
-	// proseTableCapDefault is the collapsed height of ONE rendered markdown
-	// table, in physical rows including its header and rule. It is prose's
-	// answer to nodeBashCapDefault and it exists for the same reason: wrapping
-	// a table's cells (which is what makes it readable at all — see
-	// internal/render) also makes it TALL, and a transcript of tall tables is
-	// its own kind of unreadable. A 2-row table costs 4 rows at 80 columns, 7
-	// at 40 and 11 at 26, so this cap does not bite at any ordinary width; it
-	// catches the long table on the narrow pane.
-	//
-	// Set it to proseTableUncapped to render every table in full always, which
-	// makes prose permanently unexpandable. That is the one-constant switch for
-	// the taste call.
-	proseTableCapDefault = 12
-	proseTableUncapped   = -1
 )
 
 // renderSettings is the consumer-side verbosity toggle. The wire/IR always
@@ -50,13 +35,6 @@ type renderSettings struct {
 	record string
 }
 
-// nodeExpandable — THE SEAM between the gesture and the renderer — lives below,
-// beside the clamp it consults. feat/mouse-nodes shipped a placeholder here
-// (tools only, the behaviour toggleSelectedTools had inline); feat/table-wrap
-// replaced it with the real predicate, which also answers for prose whose
-// collapsed render drops rows. The merge kept BOTH copies without a textual
-// conflict — a reminder that "auto-merging <file>" is not a semantic claim.
-
 // renderNode draws ONE node. This is the single dispatch on node kind, shared
 // by every view: `show` (via renderNodeList), the inline incipit and the
 // transcript pager (via ariaView). It used to exist twice — ariaView switched
@@ -65,60 +43,32 @@ type renderSettings struct {
 // marked it "↳ input". Two renderers for one representation is the exact defect
 // class turn addressing exists to remove; there is now one.
 //
-// expanded is the node's expansion state, made EXPLICIT. bashCap already
-// carried it for tools (nodeBashCapDefault vs nodeOutputUnlimited) and nothing
-// else needed it; prose needs it too, so it stops being smuggled in a cap and
-// becomes a parameter. Callers that have no expansion model — `show`, the
-// incipit — pass their verbose flag, which is the toggle the user already has
-// there (see renderNodeList).
-func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, expanded bool) []string {
+// Expansion reaches it as bashCap and nothing else: only a tool has a
+// collapsed form.
+func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) []string {
 	switch {
 	case n.Type == livedoc.NodeTool:
 		return renderToolNode(n, width, bashCap, tick, verbose)
 	case n.Type == livedoc.NodeThinking:
-		return renderThinkingNode(n, width, expanded)
+		return renderThinkingNode(n, width)
 	// Steering is the only input-voice NODE there is — the inquiry is text on
 	// the turn and never reaches here — so this marker cannot be mistaken for
 	// the question that opened the turn.
 	case n.Type == livedoc.NodeSteering:
-		return renderSteeringNode(n, width, expanded)
+		return renderSteeringNode(n, width)
 	default:
-		return renderProseNode(n, width, expanded)
+		return renderProseNode(n, width)
 	}
 }
 
-// nodeExpandable reports whether a node has a collapsed form — i.e. whether
-// toggling its expansion would reveal anything its collapsed render does not
-// already show. It is the predicate a gesture asks before it acts, so that a
-// click on something with nothing to reveal is inert rather than a silent flag
-// flip.
-//
-// The two kinds answer differently, on purpose:
-//
-//   - A TOOL is expandable when it has output. This is deliberately the same
-//     test the tool-only toggle used before there was anything else to expand,
-//     so generalizing the gesture cannot change what a click on a tool does.
-//     (A stricter "and the output actually exceeds the cap" would be more
-//     honest to the name and is a one-line change, but it is a behaviour change
-//     and not this function's to make.)
-//   - PROSE is expandable when its collapsed render genuinely drops rows —
-//     which today means it contains a table taller than proseTableCapDefault.
-//     Ordinary prose is never expandable, at any width.
-//
-// Cheap enough to call per gesture: render.Prose is memoized on
-// (markdown, width) and the caller is about to render the node anyway.
-func nodeExpandable(n livedoc.Node, width int) bool {
-	if n.Type == livedoc.NodeTool {
-		return strings.TrimSpace(n.Output) != ""
-	}
-	if strings.TrimSpace(n.Markdown) == "" {
+// nodeExpandable reports whether toggling a node would reveal anything, so a
+// gesture with nothing to show is inert rather than a silent flag flip. Only a
+// tool has a second form; prose renders whole at every width.
+func nodeExpandable(n livedoc.Node) bool {
+	if n.Type != livedoc.NodeTool {
 		return false
 	}
-	if width <= 0 {
-		width = 80
-	}
-	rows := render.Prose(nodeMarkdown(n), proseWidth(n, width))
-	return len(clampTables(rows, proseTableCapDefault, proseWidth(n, width))) != len(rows)
+	return strings.TrimSpace(n.Output) != ""
 }
 
 // renderTurnRows renders a whole exchange — the inquiry that opened the turn,
@@ -348,20 +298,20 @@ func clipToWidthRewrite(s string, width int) string {
 	return b.String()
 }
 
-func renderProseNode(n livedoc.Node, width int, expanded bool) []string {
-	return nodeProseRows(n, width, expanded)
+func renderProseNode(n livedoc.Node, width int) []string {
+	return nodeProseRows(n, width)
 }
 
 // renderThinkingNode renders extended-thinking text as a dim blockquote
 // (glamour styles "> " spans), visually distinct from the agent's prose.
-func renderThinkingNode(n livedoc.Node, width int, expanded bool) []string {
-	return nodeProseRows(n, width, expanded)
+func renderThinkingNode(n livedoc.Node, width int) []string {
+	return nodeProseRows(n, width)
 }
 
 // renderSteeringNode renders a user message injected mid-turn — a steering
 // interjection — under a marked gutter so it reads as the user's voice inside
 // the assistant's turn, distinct from prose and thinking.
-func renderSteeringNode(n livedoc.Node, width int, expanded bool) []string {
+func renderSteeringNode(n livedoc.Node, width int) []string {
 	// Subdued relative to the inquiry, deliberately: steering nudges a train of
 	// thought already in motion, it does not open a turn. The inquiry gets a run
 	// header and full-strength prose; steering gets an inline marker and a dim
@@ -370,7 +320,7 @@ func renderSteeringNode(n livedoc.Node, width int, expanded bool) []string {
 	if n.Sender != "" {
 		head += " " + term.Dim("· "+n.Sender)
 	}
-	return append([]string{head}, nodeProseRows(n, width, expanded)...)
+	return append([]string{head}, nodeProseRows(n, width)...)
 }
 
 // nodeMarkdown is the markdown a non-tool node renders from — the node's own
@@ -412,13 +362,9 @@ func proseWidth(n livedoc.Node, width int) int {
 // change with its own test, not a constant to shave here.
 const quoteGutterCells = 4
 
-// nodeProseRows renders a non-tool node's markdown, clamping over-tall tables
-// unless the node is expanded. This is prose's whole collapsed form.
-func nodeProseRows(n livedoc.Node, width int, expanded bool) []string {
+// nodeProseRows renders a non-tool node's markdown, whole.
+func nodeProseRows(n livedoc.Node, width int) []string {
 	rows := render.Prose(nodeMarkdown(n), proseWidth(n, width))
-	if !expanded {
-		rows = clampTables(rows, proseTableCapDefault, proseWidth(n, width))
-	}
 	if !quoted(n.Type) {
 		return rows
 	}
@@ -491,52 +437,6 @@ func dedentProse(row string) string {
 		return row // not inset: nothing to stand in
 	}
 	return keep.String() + row[i:]
-}
-
-// clampTables limits each rendered markdown table to cap physical rows,
-// replacing the remainder with a dim count. It is the prose analogue of a
-// tool's output cap and shares its idiom, with one deliberate difference: a
-// tool keeps the TAIL of its output ("… last 10 of 42 lines") because the end
-// of a command's output is the interesting part, while a table keeps its HEAD,
-// because a table without its header row is not a table.
-//
-// Returns rows unchanged — same backing array, no allocation — when no table
-// overruns, which is every ordinary width. That matters: this runs on every
-// row-cache fill and every incipit repaint.
-func clampTables(rows []string, cap, width int) []string {
-	if cap <= 0 || len(rows) == 0 {
-		return rows
-	}
-	spans := render.TableSpans(rows)
-	over := false
-	for _, s := range spans {
-		if s[1]-s[0] > cap {
-			over = true
-			break
-		}
-	}
-	if !over {
-		return rows
-	}
-	out := make([]string, 0, len(rows))
-	at := 0
-	for _, s := range spans {
-		out = append(out, rows[at:s[0]]...)
-		if h := s[1] - s[0]; h > cap {
-			out = append(out, rows[s[0]:s[0]+cap]...)
-			// The note is a SENTENCE, so it ellipsises rather than being cut mid
-			// word: hard-clipping gave "… +261 more tabl" at narrow widths.
-			note := fmt.Sprintf("  … +%d more table lines", h-cap)
-			if width > 0 {
-				note = clipToWidthEllipsis(note, width)
-			}
-			out = append(out, term.Dim(note))
-		} else {
-			out = append(out, rows[s[0]:s[1]]...)
-		}
-		at = s[1]
-	}
-	return append(out, rows[at:]...)
 }
 
 // renderToolNode draws a tool as a widget with ZERO per-tool control flow:

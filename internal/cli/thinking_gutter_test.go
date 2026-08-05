@@ -48,7 +48,7 @@ func TestThinkingRuleIsPresentAlignedAndLossless(t *testing.T) {
 		for name, md := range shapes {
 			for w := 20; w <= 200; w++ {
 				n := livedoc.Node{Type: typ, Markdown: md}
-				rows := nodeProseRows(n, w, false)
+				rows := nodeProseRows(n, w)
 
 				// INTACT: the same words glamour rendered, in the same order.
 				// The oracle is glamour's OWN output at the same width, not the
@@ -99,7 +99,7 @@ func words(s string) string {
 // grow a rule. Without it, "every row has a rule" could be satisfied by giving
 // every node one.
 func TestProseIsNotQuoted(t *testing.T) {
-	rows := nodeProseRows(livedoc.Node{Type: livedoc.NodeProse, Markdown: "plain prose, no rule"}, 60, false)
+	rows := nodeProseRows(livedoc.Node{Type: livedoc.NodeProse, Markdown: "plain prose, no rule"}, 60)
 	for i, r := range rows {
 		if strings.Contains(stripSGRForTest(r), "│") {
 			t.Fatalf("prose row %d drew a rule: %q", i, stripSGRForTest(r))
@@ -126,7 +126,7 @@ func TestTheGutterCostsExactlyItsColumns(t *testing.T) {
 	for _, md := range shapes {
 		for w := 20; w <= 200; w++ {
 			n := livedoc.Node{Type: livedoc.NodeThinking, Markdown: md}
-			quoted := nodeProseRows(n, w, false)
+			quoted := nodeProseRows(n, w)
 			plain := render.Prose(nodeMarkdown(n), proseWidth(n, w))
 			if len(quoted) != len(plain) {
 				t.Fatalf("w=%d: %d quoted rows vs %d rendered", w, len(quoted), len(plain))
