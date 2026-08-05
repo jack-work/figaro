@@ -77,7 +77,7 @@ func keepHushAlive(ctx context.Context) {
 //
 // GOMEMLIMIT in the environment always wins: Go reads it at startup, and a
 // user who has set one has an opinion worth more than this default.
-const defaultMemLimit = 2 << 30 // 2 GiB
+const defaultMemLimit int64 = 2 << 30 // 2 GiB
 
 func armMemoryLimit() {
 	if os.Getenv("GOMEMLIMIT") != "" {
