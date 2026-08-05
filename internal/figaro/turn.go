@@ -507,6 +507,7 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				asmMsg.addText(ev.content.Type, ev.content.Text)
 			case evToolStart:
 				asmMsg.toolOpen(ev.id, ev.name)
+				a.openToolTiming(ev.id, time.Now().UnixMilli())
 				force = true
 			case evToolArgs:
 				a.argPartials[ev.id] += ev.partial
@@ -1462,6 +1463,17 @@ func (a *Agent) composeTurn(inflight *message.Message) []livedoc.Node {
 		logComposeFrame(dir, a.id, inflight != nil, nodes)
 	}
 	return nodes
+}
+
+// openToolTiming stamps the start of GENERATION: the provider has opened a
+// tool block and the model is about to write its arguments. Nothing else knows
+// this moment — by the time the tool is dispatched the writing is over, which
+// is why a thirty-second write used to render [0ms].
+func (a *Agent) openToolTiming(id string, at int64) {
+	if a.proj == nil {
+		return
+	}
+	a.proj.ToolOpened(id, at)
 }
 
 func (a *Agent) startToolTiming(id string, at int64) {

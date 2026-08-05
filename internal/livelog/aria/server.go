@@ -336,6 +336,7 @@ func delta(id uint64, old, n livedoc.Node) NodeDelta {
 	scalar("sender", old.Sender, n.Sender)
 	scalar("status", old.Status, n.Status)
 	scalar("tool_call_id", old.ToolCallID, n.ToolCallID)
+	scalarInt("opened_at", old.OpenedAt, n.OpenedAt)
 	scalarInt("started_at", old.StartedAt, n.StartedAt)
 	scalarInt("finished_at", old.FinishedAt, n.FinishedAt)
 	scalarInt("at", old.At, n.At)
@@ -384,6 +385,9 @@ func fullSet(id uint64, n livedoc.Node) NodeDelta {
 	str("input", n.Input)
 	if n.Args != nil {
 		set["args"] = n.Args
+	}
+	if n.OpenedAt != 0 {
+		set["opened_at"] = n.OpenedAt
 	}
 	if n.StartedAt != 0 {
 		set["started_at"] = n.StartedAt

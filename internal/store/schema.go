@@ -76,7 +76,7 @@ var channelSchemas = map[string]channelSchema{
 	// Bumping a derived channel drops it; the projection regenerates it lazily
 	// and correctly. Nothing canonical moves.
 	"translations-v2/": {version: 2, class: classDerived},
-	chanUI:            {version: 1, class: classDerived},
+	chanUI:             {version: 1, class: classDerived},
 }
 
 // schemaFor resolves a concrete channel name to its schema, returning the

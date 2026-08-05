@@ -171,35 +171,38 @@ func TestRenderToolNode_BoxShape(t *testing.T) {
 		Args:   map[string]any{"path": "/x.md"},
 		Output: "Wrote 5 bytes", StartedAt: 1785862036094, FinishedAt: 1785862036098,
 	}
-	// The box is fitted to its CONTENT, not to the pane: 44 columns of terminal,
-	// a box of 27. A full-width box is indistinguishable from the turn rule
-	// above it, which is genuinely full width.
+	// A left rule and two labelled dividers — no right border, no floor. A
+	// fully closed box made the left of the screen too busy; this is the part
+	// of the frame the eye actually follows.
+	//
+	// The block is fitted to its CONTENT, not to the pane: 44 columns of
+	// terminal, a block of 26. Full width would be indistinguishable from the
+	// turn rule above it, which is genuinely full width.
 	assertRows(t, renderNodeRows(t, n, 44, 10, false), []string{
-		"✓ write [4ms] ────────────┐",
-		"  │                       │",
-		"  │ path /x.md            │",
-		"  │                       │",
-		"✓ done [4ms] ─────────────┤",
-		"  │                       │",
-		"  │ Wrote 5 bytes         │",
-		"  │                       │",
-		"  └───────────────────────┘",
+		"✓ write [4ms] ────────────",
+		"  │ ",
+		"  │ path /x.md",
+		"  │ ",
+		"✓ done [4ms] ─────────────",
+		"  │ ",
+		"  │ Wrote 5 bytes",
+		"  │ ",
 	})
 }
 
 // While the arguments are still arriving there is no junction and no floor:
 // the box is open at the bottom, because closing it early would mean
 // reopening it when the result lands.
-func TestRenderToolNode_BoxStaysOpenWhileStreaming(t *testing.T) {
+func TestRenderToolNode_NoJunctionUntilItRuns(t *testing.T) {
 	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
 		Input: `{"path":"/x.md"}`}
 	rows := renderNodeRows(t, n, 44, nodeOutputUnlimited, false)
-	last := rows[len(rows)-1]
-	if strings.Contains(last, "└") || strings.Contains(last, "┘") {
-		t.Errorf("a streaming box must not be closed yet: %q", last)
+	joined := strings.Join(rows, "\n")
+	if strings.Contains(joined, "done") || strings.Contains(joined, "running") {
+		t.Errorf("no junction until the tool has run:\n%s", joined)
 	}
-	if !strings.HasSuffix(rows[0], "┐") {
-		t.Errorf("but it must be opened: %q", rows[0])
+	if !strings.HasPrefix(rows[0], "⠋ write") || !strings.Contains(rows[0], "─") {
+		t.Errorf("the header rule must open the block: %q", rows[0])
 	}
 }
 
@@ -357,14 +360,10 @@ func TestRenderToolNode_ColoursAreConsistent(t *testing.T) {
 // row or a row that is not part of a box.
 func boxContentText(plain string) string {
 	i := strings.Index(plain, "│")
-	if i < 0 || strings.ContainsAny(plain, "┐┤└┘") {
+	if i < 0 {
 		return ""
 	}
-	j := strings.LastIndex(plain, "│")
-	if j <= i {
-		return ""
-	}
-	return strings.TrimSpace(plain[i+len("│") : j])
+	return strings.TrimSpace(plain[i+len("│"):])
 }
 
 func assertRows(t *testing.T, got, want []string) {
@@ -450,5 +449,39 @@ func TestIncipitDrawsArgumentsFoldedButOutputWhole(t *testing.T) {
 	}
 	if pagerOut != nodeBashCapDefault+1 { // + the "… last N of M lines" note
 		t.Errorf("pager unexpanded output: %d rows, want %d — the pager DOES collapse output", pagerOut, nodeBashCapDefault+1)
+	}
+}
+
+// Two clocks: the header carries GENERATION (how long the model spent writing
+// the call), the junction carries RUNTIME. They differ by thirty seconds on a
+// large write, and only the second used to exist — which is why such a write
+// rendered `[0ms]` after half a minute of streaming.
+func TestRenderToolNode_TwoClocks(t *testing.T) {
+	opened := int64(1785862030000)
+	n := livedoc.Node{
+		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
+		Args: map[string]any{"path": "/x.md"}, Output: "Wrote 5 bytes",
+		OpenedAt: opened, StartedAt: opened + 31200, FinishedAt: opened + 31204,
+	}
+	rows := renderNodeRows(t, n, 60, 10, false)
+	if !strings.Contains(rows[0], "[31.2s]") {
+		t.Errorf("header should carry the generation clock: %q", rows[0])
+	}
+	var junction string
+	for _, r := range rows {
+		if strings.Contains(r, "done") {
+			junction = r
+		}
+	}
+	if !strings.Contains(junction, "[4ms]") {
+		t.Errorf("junction should carry the runtime: %q", junction)
+	}
+
+	// An aria older than the opened_at clock has no generation to show, so the
+	// header falls back to the runtime rather than to a blank.
+	old := n
+	old.OpenedAt = 0
+	if got := renderNodeRows(t, old, 60, 10, false)[0]; !strings.Contains(got, "[4ms]") {
+		t.Errorf("without opened_at the header should fall back to the runtime: %q", got)
 	}
 }

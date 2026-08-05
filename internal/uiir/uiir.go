@@ -49,6 +49,18 @@ func (p *Projector) Nodes(msgs []message.Message, tails, argPartials map[string]
 
 func (p *Projector) ResetTools() { p.timings = map[string]compose.ToolTiming{} }
 
+// ToolOpened stamps the moment the model began writing a call. First stamp
+// wins: the block opens once, and a re-emitted frame must not restart the
+// generation clock.
+func (p *Projector) ToolOpened(id string, at int64) {
+	t := p.at(id)
+	if t == nil || t.OpenedAt != 0 {
+		return
+	}
+	t.OpenedAt = at
+	p.timings[id] = *t
+}
+
 func (p *Projector) ToolStarted(id string, at int64) {
 	t := p.at(id)
 	if t == nil || t.StartedAt != 0 {

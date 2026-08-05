@@ -484,8 +484,14 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 	result := toolResultRows(n, probe.content, bashCap, expand)
 	b := newBox(width, widestCell(call, result))
 
+	// The header's clock is GENERATION — how long the model spent writing this
+	// call. On an aria older than that clock there is nothing to show, so it
+	// falls back to the runtime rather than to a blank.
 	head := glyph + " " + term.Arg(name)
-	if n.StartedAt != 0 {
+	switch gen := toolGeneration(n); {
+	case gen != "":
+		head += " " + term.Dim("["+gen+"]")
+	case n.StartedAt != 0:
 		head += " " + term.Dim("["+toolDuration(n, time.Now())+"]")
 	}
 	if !b.fits(width) {
@@ -512,13 +518,12 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 	// tool has run there is nothing to divide and nothing to close under, and
 	// a box closed early would have to reopen.
 	if len(result) > 0 {
-		rows = append(rows, b.junction(toolStatusLabel(glyph, n.Status, toolDurationOrEmpty(n))))
+		rows = append(rows, b.junction(toolStatusLabel(glyph, n.Status, toolRuntime(n))))
 		rows = append(rows, b.blank())
 		for _, r := range result {
 			rows = append(rows, b.row(r))
 		}
 		rows = append(rows, b.blank())
-		rows = append(rows, b.bottom())
 	}
 	return rows
 }
@@ -599,7 +604,12 @@ func toolDuration(n livedoc.Node, now time.Time) string {
 	if end == 0 {
 		end = now.UnixMilli()
 	}
-	d := time.Duration(end-n.StartedAt) * time.Millisecond
+	return formatDuration(end - n.StartedAt)
+}
+
+// formatDuration renders a span of milliseconds the way both clocks want it.
+func formatDuration(ms int64) string {
+	d := time.Duration(ms) * time.Millisecond
 	if d < 0 {
 		d = 0
 	}
