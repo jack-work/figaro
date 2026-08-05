@@ -47,10 +47,9 @@ const (
 	// boxPadLeft the air between that border and the content.
 	boxIndent  = "  "
 	boxPadLeft = " "
-	// boxPadRight is the air between content and the right border. TWO
-	// columns, at the owner's request: one column reads as a clipped row
-	// rather than as a frame, and the box must be visibly narrower than the
-	// full-width turn rule so the two are not confused.
+	// boxPadRight is the air kept to the right of content. There is no right
+	// border to protect any more, but the block must stay visibly narrower
+	// than the full-width turn rule so the two are not confused.
 	boxPadRight = "  "
 	// boxRightGap keeps the whole box clear of the pane's last column. A box
 	// drawn flush to the edge has nowhere to put its border when a wide rune
@@ -69,10 +68,10 @@ type box struct {
 	total   int // columns from the margin to the right border, inclusive
 }
 
-// newBox fits a box to the widest content row it will have to hold, bounded by
-// the pane. widest is measured in cells, and may be zero.
+// newBox fits a block to the widest content row it will have to hold, bounded
+// by the pane. widest is measured in cells, and may be zero.
 func newBox(width, widest int) box {
-	frame := len(boxIndent) + 1 + len(boxPadLeft) + len(boxPadRight) + 1
+	frame := len(boxIndent) + 1 + len(boxPadLeft) + len(boxPadRight)
 	max := width - boxRightGap - frame
 	if max < boxMinContent {
 		max = boxMinContent
@@ -92,58 +91,42 @@ func newBox(width, widest int) box {
 // worse than no frame.
 func (b box) fits(width int) bool { return b.total <= width-boxRightGap }
 
-// row draws one body row: left border, content padded to the content column,
-// right border. content may carry ANSI; padding is measured in cells.
+// row draws one body row: the left rule, then the content. There is NO right
+// border and no floor — a fully closed box made the left of the screen too
+// busy, and the frame that earns its keep is the one the eye follows down.
+//
+// It still CLIPS. Every row in the block comes through here, so this is the
+// one place that can guarantee no row outruns its pane, and the rows that
+// overflow are never the ones you predict (a fold note at width 20, a
+// timestamp at width 28).
 func (b box) row(content string) string {
-	// CLIP as well as pad. Every row in the box comes through here, so this is
-	// the one place that can guarantee the right border lands in the same
-	// column on every row — and the rows that overflow are never the ones you
-	// predict (a fold note at width 20, a timestamp at width 28).
 	if term.VisibleLen(content) > b.content {
 		content = clipToWidthEllipsis(content, b.content)
 	}
-	pad := b.content - term.VisibleLen(content)
-	if pad < 0 {
-		pad = 0
-	}
-	return term.Dim(boxIndent+"│"+boxPadLeft) + content + strings.Repeat(" ", pad) +
-		term.Dim(boxPadRight+"│")
+	return term.Dim(boxIndent+"│"+boxPadLeft) + content
 }
 
 // blank is the air row that opens and closes each section of the box.
 func (b box) blank() string { return b.row("") }
 
-// top draws the header: the label, then the edge out to the corner. The label
-// is NOT inside the border — it sits on the edge, the way a fieldset legend
-// does, so the eye reads it as naming the box rather than as its first row.
-func (b box) top(label string) string {
-	return b.edge(label, "┐")
-}
+// top draws the header: the label, then a rule out to the block's width. The
+// label is NOT inside the frame — it sits on the rule, the way a fieldset
+// legend does, so the eye reads it as naming the block rather than as its
+// first row.
+func (b box) top(label string) string { return b.edge(label) }
 
 // junction draws the divider between the call and its result, labelled the
-// same way as the top.
-func (b box) junction(label string) string {
-	return b.edge(label, "┤")
-}
+// same way as the top: one glyph, one word, one duration.
+func (b box) junction(label string) string { return b.edge(label) }
 
-// bottom closes the box.
-func (b box) bottom() string {
-	return term.Dim(boxIndent + "└" + strings.Repeat("─", b.total-len(boxIndent)-2) + "┘")
-}
-
-// edge draws a labelled horizontal edge ending in corner. A label longer than
-// the box is clipped to it: the corner is not optional, because an unclosed
-// frame reads as a rendering fault.
-func (b box) edge(label, corner string) string {
-	room := b.total - 1
+// edge draws a labelled horizontal rule. A label longer than the block is
+// clipped to it.
+func (b box) edge(label string) string {
+	room := b.total
 	if term.VisibleLen(label) > room {
-		label = clipToWidth(label, room)
+		return clipToWidth(label, room)
 	}
-	fill := room - term.VisibleLen(label)
-	if fill < 0 {
-		fill = 0
-	}
-	return label + term.Dim(strings.Repeat("─", fill)+corner)
+	return label + term.Dim(strings.Repeat("─", room-term.VisibleLen(label)))
 }
 
 // boxLines renders one value into body rows: WRAPPED when expanded, and
@@ -162,12 +145,9 @@ func boxLines(value string, width int, expand bool) []string {
 }
 
 // toolStatusLabel is the junction's label: what the EXECUTION is doing, as
-// distinct from what the header names, which is the call.
-//
-// The duration on it is the execution's. When the generation clock lands (the
-// agent knows when the tool block opened; it does not publish it yet) the
-// header takes that number and this one stays the runtime, which is the split
-// the owner drew.
+// distinct from what the header names, which is the call. Its duration is the
+// RUNTIME; the header's is the GENERATION. Two clocks, because for a large
+// write they differ by thirty seconds and only one of them used to exist.
 func toolStatusLabel(glyph, status string, dur string) string {
 	word := "done"
 	switch status {
@@ -345,11 +325,33 @@ func toolMetaRows(n livedoc.Node, show bool) []string {
 	return rows
 }
 
-// toolDurationOrEmpty is the execution duration, or "" when the tool has not
-// started running yet.
-func toolDurationOrEmpty(n livedoc.Node) string {
+// toolRuntime is how long the call has been RUNNING: started to finished, or
+// to now while it still is. Empty before it starts.
+func toolRuntime(n livedoc.Node) string {
 	if n.StartedAt == 0 {
 		return ""
 	}
-	return toolDuration(n, time.Now())
+	end := n.FinishedAt
+	if end == 0 {
+		end = time.Now().UnixMilli()
+	}
+	return formatDuration(end - n.StartedAt)
+}
+
+// toolGeneration is how long the MODEL spent writing the call: the block
+// opening to the moment it began running, or to now while it is still being
+// written.
+//
+// Empty when the aria predates the opened_at clock — every tool node already
+// on disk. Those fall back to the runtime in the header, which is what they
+// have always shown, rather than to a blank.
+func toolGeneration(n livedoc.Node) string {
+	if n.OpenedAt == 0 {
+		return ""
+	}
+	end := n.StartedAt
+	if end == 0 {
+		end = time.Now().UnixMilli()
+	}
+	return formatDuration(end - n.OpenedAt)
 }

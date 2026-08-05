@@ -105,11 +105,18 @@ type Node struct {
 	// as it slides, and it is cleared when Args lands. Both are ordinary
 	// deltas — Delta carries Del as well as Ins — so a shrink costs one splice
 	// and needs nothing new on the wire.
-	Input      string `json:"input,omitempty"`
-	Output     string `json:"output,omitempty"`  // streamed result text
-	Summary    string `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
-	StartedAt  int64  `json:"started_at,omitempty"`
-	FinishedAt int64  `json:"finished_at,omitempty"`
+	Input   string `json:"input,omitempty"`
+	Output  string `json:"output,omitempty"`  // streamed result text
+	Summary string `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
+	// OpenedAt is when the model began WRITING this call — the moment the tool
+	// block opened on the provider stream, before a single argument byte had
+	// arrived. StartedAt is when the call began RUNNING. The gap between them
+	// is GENERATION, which for a large write is nearly all of the wall time
+	// and used to be invisible: a thirty-second write rendered [0ms], because
+	// the only clock there started after the writing was over.
+	OpenedAt   int64 `json:"opened_at,omitempty"`
+	StartedAt  int64 `json:"started_at,omitempty"`
+	FinishedAt int64 `json:"finished_at,omitempty"`
 }
 
 // OpKind discriminates a node mutation on the wire.
@@ -138,11 +145,18 @@ type Op struct {
 	Ins   string `json:"ins,omitempty"`
 
 	// set: a tool node's scalar fields.
-	Status     string                 `json:"status,omitempty"`
-	Name       string                 `json:"name,omitempty"`
-	Args       map[string]interface{} `json:"args,omitempty"`
-	StartedAt  int64                  `json:"started_at,omitempty"`
-	FinishedAt int64                  `json:"finished_at,omitempty"`
+	Status string                 `json:"status,omitempty"`
+	Name   string                 `json:"name,omitempty"`
+	Args   map[string]interface{} `json:"args,omitempty"`
+	// OpenedAt is when the model began WRITING this call — the moment the
+	// tool block opened on the provider stream, before a single argument
+	// byte had arrived. StartedAt is when the call began RUNNING. The gap
+	// between them is generation, which for a large write is nearly all of
+	// the wall time and used to be invisible: a thirty-second write read
+	// [0ms], because the only clock started after the writing was over.
+	OpenedAt   int64 `json:"opened_at,omitempty"`
+	StartedAt  int64 `json:"started_at,omitempty"`
+	FinishedAt int64 `json:"finished_at,omitempty"`
 }
 
 // DiffNodes derives the minimal op sequence turning old into next. The

@@ -675,6 +675,8 @@ func setField(n *livedoc.Node, field string, v any) {
 		n.Input = asStr(v)
 	case "id":
 		n.ID = asStr(v)
+	case "opened_at":
+		n.OpenedAt = asInt64(v)
 	case "started_at":
 		n.StartedAt = asInt64(v)
 	case "finished_at":

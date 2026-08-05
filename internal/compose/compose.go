@@ -52,6 +52,9 @@ type ToolSummary func(name string, args map[string]any) string
 // ToolPreviewArg returns the name of the "body" argument whose live-streaming
 // value should surface as a running tool node's preview (e.g. "content" for
 type ToolTiming struct {
+	// OpenedAt is when the tool block opened on the provider stream — the
+	// start of GENERATION. StartedAt/FinishedAt bracket EXECUTION.
+	OpenedAt   int64
 	StartedAt  int64
 	FinishedAt int64
 }
@@ -145,6 +148,7 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 		Summary:    summaryFor(name, inv.Arguments, summarize),
 	}
 	if timing, ok := timings[inv.ToolCallID]; ok {
+		n.OpenedAt = timing.OpenedAt
 		n.StartedAt = timing.StartedAt
 		n.FinishedAt = timing.FinishedAt
 	}
