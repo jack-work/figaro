@@ -329,3 +329,45 @@ about.
   reports `no aria matching '<id>'`, which reads like "no such aria". I used the
   `.#snapshot` preset instead (with `FIGARO_STATE_DIR` overridden onto
   `/var/tmp`, since the dev root is tmpfs). Worth telling `ce1b6b07`.
+
+---
+
+## Deferred, awaiting the owner's review
+
+Raised at the end of a handoff and never properly reviewed, so they are written
+down here rather than left in a channel. Neither is started.
+
+**1. The header layout (problem #4 of the original commission).** The duration
+is still appended after an 80-column summary and is still clipped away at
+narrow widths: measured over aria `cf3fc17d`, **312 of 477 tool headers (65%)
+lose it at width 80**. The condition, exactly:
+
+```
+2 + len(name) + 1 + min(80, summaryCols) + 1 + len(durText) > width
+```
+
+The owner's sketch fixes it by construction — `✓ bash [1m1s]` with the command
+on its own line — which makes the header a fixed ~15 columns and the duration
+unloseable. Partly overtaken by events: the argument block now carries the
+command on its own line already, so what remains is (a) dropping the summary
+from the header when the argument block is drawn, and (b) an invariant test
+that the duration is present at every width from 20 to 200.
+
+**2. Bash syntax highlighting inside the argument block.** Wanted in the
+sketch, deliberately last: it needs a highlighter dependency and a colour
+budget, and the readability win was already banked by the label/value layout.
+
+**3. Persisting tool timings into the fig IR.** The larger of the three, and
+the one that touches the IR rather than the UI. `StartedAt`/`FinishedAt` live
+only in the Projector's in-memory map, so **0 of 477** historical tool nodes
+carry a duration at all — `figaro show` and the pager over history have none to
+draw. Fixing it means giving the invocation a timestamp in the IR, which is a
+storage change, not a rendering one. Declining it is a perfectly good answer;
+the layout fix stands either way.
+
+**4. `figaro replay` re-wraps a tape recorded at a different width.** A tape
+carries the geometry it was recorded at; replaying into a wider pane re-wraps
+the recorded rows and can drop a character at a wrap seam. The renderer itself
+is lossless (proved in-process at 104/100/80, decorated rows included) and live
+runs at the pane's own width are clean. Pre-existing, not caused by the
+streaming work, and not fixed.
