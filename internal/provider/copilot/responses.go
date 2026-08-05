@@ -1006,6 +1006,7 @@ func readResponseStream(ctx context.Context, conn *websocket.Conn, bus provider.
 
 	calls := map[string]*responseCall{}
 	items := map[string]*responseCall{}
+	byIndex := map[int]*responseCall{}
 	for {
 		var raw json.RawMessage
 		if err := websocket.JSON.Receive(conn, &raw); err != nil {
@@ -1033,19 +1034,20 @@ func readResponseStream(ctx context.Context, conn *websocket.Conn, bus provider.
 				if event.Item.ID != "" {
 					items[event.Item.ID] = call
 				}
+				byIndex[event.OutputIndex] = call
 				if event.Item.Arguments != nil {
 					call.arguments.Write(responseArgumentBytes(event.Item.Arguments))
 				}
 				bus.PushToolInvokeStart(call.ID, call.Name)
 			}
 		case "response.function_call_arguments.delta":
-			call := responseCallFor(calls, items, event)
+			call := responseCallFor(calls, items, byIndex, event)
 			if call != nil && event.Delta != "" {
 				call.arguments.WriteString(event.Delta)
 				bus.PushToolInvokeDelta(call.ID, event.Delta)
 			}
 		case "response.function_call_arguments.done":
-			call := responseCallFor(calls, items, event)
+			call := responseCallFor(calls, items, byIndex, event)
 			if call != nil {
 				if len(event.Arguments) > 0 {
 					call.arguments.Reset()
@@ -1098,14 +1100,20 @@ func ensureResponseCall(calls map[string]*responseCall, id, name string) *respon
 	return call
 }
 
-func responseCallFor(calls map[string]*responseCall, items map[string]*responseCall, event responseStreamEvent) *responseCall {
+func responseCallFor(calls map[string]*responseCall, items map[string]*responseCall, byIndex map[int]*responseCall, event responseStreamEvent) *responseCall {
 	if event.CallID != "" {
 		return ensureResponseCall(calls, event.CallID, event.Name)
 	}
 	if event.ItemID != "" {
-		return items[event.ItemID]
+		if call := items[event.ItemID]; call != nil {
+			return call
+		}
 	}
-	return nil
+	// output_index is the last resort and, on the GitHub Copilot proxy, the
+	// ONLY stable handle: it re-encrypts item_id per event, so the id on a
+	// delta never equals the one announced at output_item.added and every
+	// streamed argument fragment was silently dropped.
+	return byIndex[event.OutputIndex]
 }
 
 func readyResponseCall(call *responseCall, bus provider.Bus) error {
