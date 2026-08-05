@@ -1,5 +1,15 @@
 # PROPOSAL — table wrap and prose expansion
 
+> **PARTLY SUPERSEDED (2026-08-04).** The *wrap* half of this proposal stands:
+> a markdown table is still wrapped to the pane, which was the complaint that
+> started the branch. The *collapse* half is gone — `clampTables`,
+> `proseTableCapDefault`, `render.TableSpans` and prose's whole expansion path
+> were removed on `feat/no-table-truncation`, on the owner's instruction: a
+> transcript shows what was written, and a table is not truncated at any
+> height. `nodeExpandable` therefore answers for tools alone again, and
+> `renderNode` no longer takes an `expanded` flag. Read §"What 'collapsed'
+> means for prose" below as history, not as the current code.
+
 Branch **`feat/table-wrap`** off `main` at `5069adf`. Three commits:
 
 | | |
