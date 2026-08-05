@@ -476,19 +476,24 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 	if name == "" {
 		name = "tool"
 	}
+	// The arguments — streaming or settled, folded or expanded, one shape.
+	args := toolArgRows(n, width, expand)
+
 	header := glyph + " " + term.Cyan(name)
-	if n.Summary != "" {
+	// The summary is the FALLBACK, not the headline: when the argument block
+	// is drawn it already carries the command, on its own line, in full. Two
+	// copies of the same string is what pushed the duration off the right of
+	// the screen — 65% of the owner's tool headers lost it at width 80 —
+	// so the header keeps the one thing that must never be lost.
+	if n.Summary != "" && len(args) == 0 {
 		header = header + " " + term.Dim(truncCols(n.Summary, toolSummaryCap))
 	}
 	if n.StartedAt != 0 {
 		header += " " + term.Dim("["+toolDuration(n, time.Now())+"]")
 	}
-	// Header, optional arg/timestamp lines, then the tail-clamped output.
-	rows := make([]string, 1, 6+max(bashCap, 0))
+	rows := make([]string, 1, 6+len(args)+max(bashCap, 0))
 	rows[0] = header
-
-	// The arguments — streaming or settled, folded or expanded, one shape.
-	rows = append(rows, toolArgRows(n, width, expand)...)
+	rows = append(rows, args...)
 	if verbose && n.StartedAt != 0 {
 		rows = append(rows, term.Dim("  started "+formatToolTime(n.StartedAt)))
 		if n.FinishedAt != 0 {
@@ -522,19 +527,26 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 	return rows
 }
 
-// argPreviewLines is how many rows of ONE argument's value survive the fold.
-// Two, because the collapsed block is a moving window on something being
-// typed, not a summary of it: you want to see the last thing written and the
-// shape of the line before it. Expanded (Ctrl-O, or Enter on the selection)
-// lifts the cap entirely.
-const argPreviewLines = 2
+// Two folds, because a value that is still arriving and a value that has
+// settled are different objects to a reader.
+//
+//   - STREAMING keeps the LAST argStreamLines rows: a moving window on what is
+//     being typed, and five is enough to see a paragraph take shape rather
+//     than a single line twitching.
+//   - SETTLED keeps the FIRST argSettledLines: nothing is moving any more, so
+//     the useful thing is the head — what this call is — not the tail, which
+//     is where it happened to stop.
+//
+// Expanded (Enter on the selection, or Ctrl-O) lifts both.
+const argStreamLines = 5
+const argSettledLines = 2
 
-// argGutter marks argument rows. Tool OUTPUT already owns `  │ `, and telling
-// what the agent SAID from what the command PRINTED at a glance is most of
-// what makes a dense transcript readable, so the arguments get their own rule
-// in their own colour.
-const argGutter = "  ┆ "
-const argGutterCells = 4
+// argGutter marks argument rows. It is the SAME rule the output block draws —
+// a dotted variant read as a different kind of object rather than the same
+// object in a different voice — and the distinction is carried by colour
+// instead: the rule and the text are drawn in term.Arg, against output's dim.
+const argGutter = quoteGutter
+const argGutterCells = quoteGutterCells
 
 // argLabelCap bounds the shared label column so one long argument name cannot
 // push every value off the right of the screen.
@@ -561,15 +573,12 @@ const argLabelCap = 12
 // its text is a finished artifact you might want the size of; an argument
 // mid-flight is a window, and a banner that changes every frame is noise.
 func toolArgRows(n livedoc.Node, width int, expand bool) []string {
-	streaming := strings.TrimSpace(n.Input) != ""
-	if !streaming && !expand {
-		return nil
-	}
 	fields := toolArgFields(n)
 	if len(fields) == 0 {
 		return nil
 	}
-	gutter := term.Cyan(argGutter)
+	streaming := strings.TrimSpace(n.Input) != ""
+	gutter := term.Arg(argGutter)
 	avail := width - argGutterCells
 	if avail < 8 {
 		avail = 8
@@ -591,22 +600,51 @@ func toolArgRows(n livedoc.Node, width int, expand bool) []string {
 		if !strings.Contains(value, "\n") && runewidth.StringWidth(value) <= avail-label-1 {
 			row := gutter + name
 			if value != "" {
-				row += " " + value
+				row += " " + term.Arg(value)
 			}
 			rows = append(rows, row)
 			continue
 		}
 		rows = append(rows, gutter+name)
-		lines := hardWrap(value, avail-2)
-		if !expand && len(lines) > argPreviewLines {
-			shown, _ := tailOutput(strings.Join(lines, "\n"), argPreviewLines)
-			lines = strings.Split(shown, "\n")
-		}
-		for _, l := range lines {
-			rows = append(rows, gutter+"  "+truncCols(l, avail-2))
-		}
+		rows = append(rows, argValueRows(value, avail-2, expand, streaming, gutter)...)
 	}
 	return rows
+}
+
+// argValueRows wraps one value and folds it: the LAST argStreamLines rows
+// while it is arriving, the FIRST argSettledLines once it has stopped, all of
+// it when expanded. tailOutput is the same helper the output block folds with,
+// so the two cannot drift; the head cut is a slice, since there is no
+// equivalent to take.
+func argValueRows(value string, w int, expand, streaming bool, gutter string) []string {
+	lines := hardWrap(value, w)
+	if !expand {
+		switch {
+		case streaming && len(lines) > argStreamLines:
+			shown, _ := tailOutput(strings.Join(lines, "\n"), argStreamLines)
+			lines = strings.Split(shown, "\n")
+		case !streaming:
+			// The head, skipping blank rows: a two-row preview spent on
+			// whitespace says nothing. Blank rows inside the kept range are
+			// dropped rather than counted, so the preview is always two rows
+			// of actual content.
+			kept := make([]string, 0, argSettledLines)
+			for _, l := range lines {
+				if strings.TrimSpace(l) == "" {
+					continue
+				}
+				if kept = append(kept, l); len(kept) == argSettledLines {
+					break
+				}
+			}
+			lines = kept
+		}
+	}
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		out = append(out, gutter+"  "+term.Arg(truncCols(l, w)))
+	}
+	return out
 }
 
 // toolArgFields is the one place that answers "what are this tool's
@@ -614,7 +652,13 @@ func toolArgRows(n livedoc.Node, width int, expand bool) []string {
 // lands. No tool name is consulted in either case.
 func toolArgFields(n livedoc.Node) []partialjson.Field {
 	if strings.TrimSpace(n.Input) != "" {
-		return partialjson.Fields([]byte(n.Input))
+		f := partialjson.Fields([]byte(n.Input))
+		// By name, in BOTH phases. The streamed order is the model's (arrival)
+		// and the settled order is a Go map's (arbitrary), so anything else
+		// reshuffles the block the instant the arguments land — a node
+		// changing shape under the reader for no reason they can see.
+		sort.Slice(f, func(i, j int) bool { return f[i].Name < f[j].Name })
+		return f
 	}
 	if len(n.Args) == 0 {
 		return nil
