@@ -120,7 +120,7 @@ func TestSliceTurn_RealAriaUnitsAreBounded(t *testing.T) {
 		env.P.LogicalTime = env.M
 		msgs = append(msgs, env.P)
 	}
-	turns := compose.Turns(msgs, nil, nil)
+	turns := compose.Turns(msgs, nil)
 	if len(turns) == 0 {
 		t.Fatal("no turns parsed")
 	}

@@ -46,7 +46,7 @@ func TestTurns_RealAriaHasAnInquiryPerTurn(t *testing.T) {
 		t.Errorf("expected input+output after normalisation, got %v", roles)
 	}
 
-	turns := Turns(msgs, nil, nil)
+	turns := Turns(msgs, nil)
 	if len(turns) == 0 {
 		t.Fatal("no turns from real data")
 	}

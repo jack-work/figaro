@@ -163,7 +163,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 	}
 	turns.StampIDs(msgs)
 	reg := tool.DefaultRegistry("")
-	turns := compose.Turns(msgs, compose.ToolSummary(tool.Summarizer(reg)), compose.ToolPreviewArg(tool.PreviewArger(reg)))
+	turns := compose.Turns(msgs, compose.ToolSummary(tool.Summarizer(reg)))
 	lo, hi := selectTurnRange(turns, opts)
 
 	if opts.jsonOut {

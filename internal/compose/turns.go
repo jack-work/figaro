@@ -57,7 +57,7 @@ func InquirySegmentsOf(m message.Message) []aria.InquirySegment {
 	return out
 }
 
-func Turns(msgs []message.Message, summarize ToolSummary, previewArg ToolPreviewArg) []aria.Turn {
+func Turns(msgs []message.Message, summarize ToolSummary) []aria.Turn {
 	turns.StampIDs(msgs)
 	var out []aria.Turn
 	var group []message.Message
@@ -73,7 +73,7 @@ func Turns(msgs []message.Message, summarize ToolSummary, previewArg ToolPreview
 		out = append(out, aria.Turn{
 			ID: id, Inquiry: inquiry, InquirySegments: segments,
 			At: at, LTs: []uint64{first, last}, Sealed: true,
-			Nodes: Nodes(group, nil, nil, summarize, previewArg),
+			Nodes: Nodes(group, nil, nil, summarize),
 		})
 		group, id, inquiry, segments, at = nil, 0, "", nil, 0
 	}
