@@ -29,32 +29,25 @@ func stripANSI(s string) string {
 }
 
 func TestRenderToolNode_UniformAcrossTools(t *testing.T) {
-	// bash, write, and an unknown tool ALL render as: glyph name summary.
-	// No per-tool code path — same shape, same code.
-	nodes := []livedoc.Node{
-		{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK, Summary: "ls -la"},
-		{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK, Summary: "/tmp/a"},
-		{Type: livedoc.NodeTool, Name: "mystery", Status: livedoc.StatusOK, Summary: "k=v"},
-	}
-	rows := renderNodeList(nodes, 80, 0, renderSettings{})
-	if len(rows) < 5 {
-		t.Fatalf("want at least 5 rows (3 headers + 2 separators), got %d: %v", len(rows), rows)
-	}
-	// The three headers land at rows[0], rows[2], rows[4] (blank between).
-	want := []struct{ name, summary string }{
-		{"bash", "ls -la"},
-		{"write", "/tmp/a"},
-		{"mystery", "k=v"},
-	}
-	for i, w := range want {
-		got := stripANSI(rows[i*2])
-		if !strings.Contains(got, w.name) || !strings.Contains(got, w.summary) {
-			t.Errorf("row %d: want name=%q summary=%q, got %q", i*2, w.name, w.summary, got)
+	// The renderer has zero per-tool control flow: it reads Name and the
+	// argument fields and nothing else. Three tools, one shape.
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"bash", map[string]any{"command": "ls -la"}, "command ls -la"},
+		{"write", map[string]any{"path": "/tmp/a"}, "path /tmp/a"},
+		{"mystery", map[string]any{"k": "v"}, "k v"},
+	} {
+		n := livedoc.Node{Type: livedoc.NodeTool, Name: tc.name, Status: livedoc.StatusOK, Args: tc.args}
+		rows := renderNodeRows(t, n, 60, 10, false)
+		if !strings.HasPrefix(rows[0], "✓ "+tc.name+" ") {
+			t.Errorf("%s: header = %q", tc.name, rows[0])
 		}
-	}
-	// Separator blanks in between.
-	if rows[1] != "" || rows[3] != "" {
-		t.Errorf("want blank separators at 1,3: %q %q", rows[1], rows[3])
+		if !strings.Contains(strings.Join(rows, "\n"), tc.want) {
+			t.Errorf("%s: block does not carry %q:\n%s", tc.name, tc.want, strings.Join(rows, "\n"))
+		}
 	}
 }
 
@@ -168,23 +161,69 @@ func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	}
 }
 
-// The block, in the shape the owner's notes specify: a header that closes with
-// a rule to the right margin, one label per argument, a fold note on the label
-// rather than in a row of its own, air after a multi-line value, and a divider
-// between the call and its result.
-func TestRenderToolNode_BlockShape(t *testing.T) {
+// The box, in the shape the owner's fourth round specifies: a top edge the
+// header sits on, air, the call, air, a labelled junction, air, the result,
+// air, and a floor. The floor and the junction arrive WITH the result — until
+// the tool has run there is nothing to divide and nothing to close under.
+func TestRenderToolNode_BoxShape(t *testing.T) {
 	n := livedoc.Node{
-		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
-		Input: `{"path":"/var/tmp/x.md","content":"1. alpha\n2. beta`,
+		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
+		Args:   map[string]any{"path": "/x.md"},
+		Output: "Wrote 5 bytes", StartedAt: 1785862036094, FinishedAt: 1785862036098,
 	}
+	// The box is fitted to its CONTENT, not to the pane: 44 columns of terminal,
+	// a box of 27. A full-width box is indistinguishable from the turn rule
+	// above it, which is genuinely full width.
 	assertRows(t, renderNodeRows(t, n, 44, 10, false), []string{
-		"⠋ write ────────────────────────────────────",
-		"  │ content",
-		"  │   1. alpha",
-		"  │   2. beta",
-		"  │ ",
-		"  │ path    /var/tmp/x.md",
+		"✓ write [4ms] ────────────┐",
+		"  │                       │",
+		"  │ path /x.md            │",
+		"  │                       │",
+		"✓ done [4ms] ─────────────┤",
+		"  │                       │",
+		"  │ Wrote 5 bytes         │",
+		"  │                       │",
+		"  └───────────────────────┘",
 	})
+}
+
+// While the arguments are still arriving there is no junction and no floor:
+// the box is open at the bottom, because closing it early would mean
+// reopening it when the result lands.
+func TestRenderToolNode_BoxStaysOpenWhileStreaming(t *testing.T) {
+	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
+		Input: `{"path":"/x.md"}`}
+	rows := renderNodeRows(t, n, 44, nodeOutputUnlimited, false)
+	last := rows[len(rows)-1]
+	if strings.Contains(last, "└") || strings.Contains(last, "┘") {
+		t.Errorf("a streaming box must not be closed yet: %q", last)
+	}
+	if !strings.HasSuffix(rows[0], "┐") {
+		t.Errorf("but it must be opened: %q", rows[0])
+	}
+}
+
+// Folded rows ELLIPSISE; expanded rows WRAP. That is the whole difference
+// between the two states, and it is why a folded row never needs a wrap.
+func TestRenderToolNode_FoldedEllipsisesExpandedWraps(t *testing.T) {
+	long := "a single very long line of argument text that will not fit inside a narrow box at all"
+	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
+		Args: map[string]any{"content": long + "\nsecond line"}}
+	folded := strings.Join(renderNodeRows(t, n, 50, 10, false), "\n")
+	if !strings.Contains(folded, "…") {
+		t.Errorf("folded overflow should be occluded by an ellipsis:\n%s", folded)
+	}
+	expanded := renderNodeRows(t, n, 50, nodeOutputUnlimited, true)
+	var joined string
+	for _, r := range expanded {
+		joined += strings.TrimSpace(strings.Trim(strings.TrimPrefix(strings.TrimSpace(r), "│"), "│"))
+	}
+	if strings.Contains(strings.Join(expanded, ""), "…") {
+		t.Errorf("expanded content should wrap, not ellipsise:\n%s", strings.Join(expanded, "\n"))
+	}
+	if !strings.Contains(strings.ReplaceAll(joined, " ", ""), strings.ReplaceAll(long, " ", "")[:40]) {
+		t.Errorf("expanded content lost text while wrapping:\n%s", strings.Join(expanded, "\n"))
+	}
 }
 
 // A folded multi-line value names the fold on its LABEL — which end, how much
@@ -200,19 +239,19 @@ func TestRenderToolNode_FoldNoteRidesOnTheLabel(t *testing.T) {
 	streaming := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
 		Input: `{"content":"` + body(9)}
 	rows := renderNodeRows(t, streaming, 50, 10, false)
-	if !strings.Contains(rows[1], "content (…last "+fmt.Sprint(argStreamLines)+" of 9 lines)") {
-		t.Errorf("streaming label should name the tail fold: %q", rows[1])
+	if !strings.Contains(strings.Join(rows, "\n"), "content (…last "+fmt.Sprint(argStreamLines)+" of 9 lines)") {
+		t.Errorf("streaming label should name the tail fold:\n%s", strings.Join(rows, "\n"))
 	}
 	// The total tracks the value: nine lines becomes twelve.
 	streaming.Input = `{"content":"` + body(12)
-	if rows = renderNodeRows(t, streaming, 50, 10, false); !strings.Contains(rows[1], "of 12 lines") {
-		t.Errorf("fold note should follow the value as it grows: %q", rows[1])
+	if rows = renderNodeRows(t, streaming, 50, 10, false); !strings.Contains(strings.Join(rows, "\n"), "of 12 lines") {
+		t.Errorf("fold note should follow the value as it grows:\n%s", strings.Join(rows, "\n"))
 	}
 	settled := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
 		Args: map[string]any{"content": strings.ReplaceAll(body(9), "\\n", "\n")}}
 	rows = renderNodeRows(t, settled, 50, 10, false)
-	if !strings.Contains(rows[1], "(…first "+fmt.Sprint(argSettledLines)+" of 9 lines)") {
-		t.Errorf("settled label should name the HEAD fold: %q", rows[1])
+	if !strings.Contains(strings.Join(rows, "\n"), "(…first "+fmt.Sprint(argSettledLines)+" of 9 lines)") {
+		t.Errorf("settled label should name the HEAD fold:\n%s", strings.Join(rows, "\n"))
 	}
 }
 
@@ -252,12 +291,12 @@ func TestRenderToolNode_SettledArgsPreviewFromTheHead(t *testing.T) {
 		Summary: "git push", Args: map[string]any{"command": "git push origin main", "timeout": 240},
 		Output: "everything up-to-date",
 	}
-	rows := renderNodeRows(t, n, 60, nodeBashCapDefault, false)
-	assertRows(t, rows[:3], []string{
-		"✓ bash ─────────────────────────────────────────────────────",
-		"  │ command git push origin main",
-		"  │ timeout 240",
-	})
+	joined := strings.Join(renderNodeRows(t, n, 60, nodeBashCapDefault, false), "\n")
+	for _, want := range []string{"command git push origin main", "timeout 240"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("settled box should carry %q:\n%s", want, joined)
+		}
+	}
 }
 
 // Ctrl-O adds METADATA and nothing else. Verbosity and "open this one thing"
@@ -314,6 +353,20 @@ func TestRenderToolNode_ColoursAreConsistent(t *testing.T) {
 	}
 }
 
+// boxContentText returns the text inside a box row, or "" for an edge, an air
+// row or a row that is not part of a box.
+func boxContentText(plain string) string {
+	i := strings.Index(plain, "│")
+	if i < 0 || strings.ContainsAny(plain, "┐┤└┘") {
+		return ""
+	}
+	j := strings.LastIndex(plain, "│")
+	if j <= i {
+		return ""
+	}
+	return strings.TrimSpace(plain[i+len("│") : j])
+}
+
 func assertRows(t *testing.T, got, want []string) {
 	t.Helper()
 	if len(got) != len(want) {
@@ -357,11 +410,14 @@ func TestIncipitDrawsArgumentsFoldedButOutputWhole(t *testing.T) {
 	// the change, and colour carries the distinction (term.Arg), which a test
 	// cannot force here because the colour mode is resolved once at init. So
 	// the two are counted on fixtures that have only one of them.
+	// Count the box's CONTENT rows — interior rows carrying text — rather than
+	// every row with a border in it, so the assertions survive a change to the
+	// frame and stay about what is shown.
 	ruleRows := func(view ldrender.NodeView, expanded func(int) bool, node livedoc.Node) int {
 		c := ldrender.Composer{View: view, Tick: 0, Expanded: expanded}
 		count := 0
 		for _, r := range c.Nodes([]livedoc.Node{node}, 70) {
-			if strings.Contains(stripANSI(r.Text), "│") {
+			if boxContentText(stripANSI(r.Text)) != "" {
 				count++
 			}
 		}
@@ -375,8 +431,8 @@ func TestIncipitDrawsArgumentsFoldedButOutputWhole(t *testing.T) {
 	}
 
 	// Expanded nil is the incipit: no gesture, "draw the fullest form".
-	// label + the window + the blank row that closes a multi-line value.
-	wantArgs := 2 + argStreamLines + 1
+	// The label, the moving window, and the `path` field's own row.
+	wantArgs := 2 + argStreamLines
 	args, out := rowsOf(&ariaView{settings: &renderSettings{}}, nil)
 	if args != wantArgs {
 		t.Errorf("incipit arguments: %d rows, want %d (the moving window)", args, wantArgs)
