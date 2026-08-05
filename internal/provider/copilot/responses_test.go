@@ -1222,3 +1222,66 @@ func TestPromptCacheBreakpointOnTheWireAcrossTurns(t *testing.T) {
 		}
 	}
 }
+
+// TestResponseCallForReencryptedItemID pins the lookup that decides whether a
+// streamed tool-argument fragment reaches the bus at all.
+//
+// The bug: on the GitHub Copilot proxy, `response.output_item.added` announces
+// a function_call with an encrypted `item.id`, and every subsequent
+// `response.function_call_arguments.delta` for that same item carries a
+// DIFFERENT encryption of it. Keying only on item_id therefore missed on every
+// delta, `call` came back nil, and the push was skipped silently — measured on
+// gpt-5.6-sol: 1211 upstream argument deltas, 0 forwarded. The arguments still
+// arrived whole on `output_item.done`, so nothing looked broken; the tool node
+// simply sat empty for 25 seconds and then filled in one jump.
+//
+// output_index is the stable handle across those events, and it is what makes
+// the fallback correct.
+func TestResponseCallForReencryptedItemID(t *testing.T) {
+	calls := map[string]*responseCall{}
+	items := map[string]*responseCall{}
+	byIndex := map[int]*responseCall{}
+
+	added := responseStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 1,
+		Item: responseOutputItem{
+			Type:   "function_call",
+			ID:     "ENCRYPTED-BLOB-AT-ADD",
+			CallID: "call_abc123",
+			Name:   "write",
+		},
+	}
+	call := ensureResponseCall(calls, added.Item.CallID, added.Item.Name)
+	items[added.Item.ID] = call
+	byIndex[added.OutputIndex] = call
+
+	// A delta as the proxy actually sends it: no call_id, an item_id that is a
+	// fresh encryption of the same item, and the item's output_index.
+	delta := responseStreamEvent{
+		Type:        "response.function_call_arguments.delta",
+		OutputIndex: 1,
+		ItemID:      "A-DIFFERENT-ENCRYPTION-OF-THE-SAME-ITEM",
+		Delta:       `{"pa`,
+	}
+	if got := responseCallFor(calls, items, byIndex, delta); got != call {
+		t.Fatalf("delta with a re-encrypted item_id did not resolve to its call: got %v, want %p", got, call)
+	}
+
+	// The direct handles still win, and still work.
+	byItem := responseStreamEvent{ItemID: "ENCRYPTED-BLOB-AT-ADD", OutputIndex: 99}
+	if got := responseCallFor(calls, items, byIndex, byItem); got != call {
+		t.Fatalf("item_id lookup regressed: got %v, want %p", got, call)
+	}
+	byCall := responseStreamEvent{CallID: "call_abc123"}
+	if got := responseCallFor(calls, items, byIndex, byCall); got != call {
+		t.Fatalf("call_id lookup regressed: got %v, want %p", got, call)
+	}
+
+	// An index nobody announced is still nothing — the fallback must not
+	// invent a call for an unrelated output item.
+	stray := responseStreamEvent{ItemID: "UNKNOWN", OutputIndex: 7}
+	if got := responseCallFor(calls, items, byIndex, stray); got != nil {
+		t.Fatalf("unknown output_index resolved to %v, want nil", got)
+	}
+}
