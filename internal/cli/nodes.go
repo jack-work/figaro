@@ -460,15 +460,19 @@ func dedentProse(row string) string {
 // Args are also rendered generically as sorted key=value lines. The client
 // never inspects n.Name.
 func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, expand bool) []string {
-	var glyph string
+	// The spinner belongs to the CALL while it is still happening; the
+	// checkmark (or cross) belongs to the `done` label, once there is
+	// something to report. Only one of them is ever drawn.
+	frames := livedoc.SpinnerFrames
+	spinner := term.Cyan(string(frames[int(tick)%len(frames)]))
+	statusGlyph := term.Green("✓")
 	switch n.Status {
-	case livedoc.StatusOK:
-		glyph = term.Green("✓")
 	case livedoc.StatusError:
-		glyph = term.Red("✗")
-	default:
-		frames := livedoc.SpinnerFrames
-		glyph = term.Cyan(string(frames[int(tick)%len(frames)]))
+		statusGlyph = term.Red("✗")
+	case livedoc.StatusRunning, "":
+		// Output is arriving but the call has not finished: the label is
+		// "running", and a checkmark beside it would be a lie.
+		statusGlyph = spinner
 	}
 	name := n.Name
 	if name == "" {
@@ -487,7 +491,10 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 	// The header's clock is GENERATION — how long the model spent writing this
 	// call. On an aria older than that clock there is nothing to show, so it
 	// falls back to the runtime rather than to a blank.
-	head := glyph + " " + term.Arg(name)
+	head := term.Arg(name)
+	if n.Status == livedoc.StatusRunning || n.Status == "" {
+		head = spinner + " " + head
+	}
 	switch gen := toolGeneration(n); {
 	case gen != "":
 		head += " " + term.Dim("["+gen+"]")
@@ -512,19 +519,25 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 		for _, r := range call {
 			rows = append(rows, b.row(r))
 		}
-		rows = append(rows, b.blank())
+		// The closing air belongs to a block that has something AFTER it. While
+		// the arguments are still arriving there is nothing below, and a
+		// trailing rule row reads as a dangling thread.
+		if len(result) > 0 {
+			rows = append(rows, b.blank())
+		}
 	}
 	// The junction and the floor appear together with the RESULT: until the
 	// tool has run there is nothing to divide and nothing to close under, and
 	// a box closed early would have to reopen.
 	if len(result) > 0 {
-		rows = append(rows, b.junction(toolStatusLabel(glyph, n.Status, toolRuntime(n))))
+		rows = append(rows, b.junction(toolStatusLabel(statusGlyph, n.Status, toolRuntime(n))))
 		rows = append(rows, b.blank())
 		for _, r := range result {
 			rows = append(rows, b.row(r))
 		}
-		// No trailing air: the block ends where its output ends, and the turn
-		// already puts a blank line between nodes.
+		// A stub elbow closes the block. No trailing air: the turn already puts
+		// a blank line between nodes.
+		rows = append(rows, b.elbow())
 	}
 	return rows
 }

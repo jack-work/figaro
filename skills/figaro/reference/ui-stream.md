@@ -98,16 +98,27 @@ wire. Whether the fragments arrive smoothly at all is a **provider** question
 A tool call is one block: a left gutter, and two labels.
 
 ```
-✓ bash [1.4s]
+bash [1.4s]
   │
-  │ command
-  │   cd /var/tmp/x && grep -nE '1[6-9][0-9]{2}' opera.md
+  │ command cd /var/tmp/x && grep -nE '1[6-9][0-9]{2}' opera.md
   │
 ✓ done [7ms]
   │
   │ … last 10 of 13 lines
   │ 10:8. That title deferred to Paisiello, whose 1782 Barbiere held the stage.
+  └──
 ```
+
+**One glyph per block**, on the status label, where the outcome is reported:
+`✓ done`, `✗ failed`, or the spinner while output is still arriving. The header
+carries the spinner only while the call is still being written. A stub elbow
+closes a finished block; while the arguments stream there is no elbow and no
+trailing rule row.
+
+A **one-line** argument stays beside its label however long it is, cut with an
+ellipsis — dropping it onto its own row made one argument look like two and
+left the label column saying nothing. Expanded is the exception: there the
+value is meant to be read, so it takes the label to itself and wraps beneath.
 
 There are no horizontal rules and no box: a bar across the screen for every
 tool call made the transcript look ruled rather than written, and the gutter
