@@ -120,11 +120,16 @@ const (
 	// approximates and the hex it comes from, so a future eye can check the
 	// match rather than guess at the intent.
 	//
-	// codeArg — springBlue #7FB4CA. Everything that names or describes the
-	// CALL is drawn in it: the tool's name and its argument values. One colour
-	// for one idea; two blues side by side (a cyan name against a blue-grey
-	// argument) read as two ideas and clashed.
+	// codeArg — springBlue #7FB4CA. What NAMES the call: the tool's name and
+	// the status word beside its result. One colour for one idea; a cyan name
+	// against a blue-grey argument read as two ideas and clashed.
 	codeArg = "\033[38;5;110m"
+	// codeBody — the body-text grey glamour renders prose and thinking in
+	// (xterm 252, Kanagawa fujiWhite #DCD7BA). Argument VALUES take it, so an
+	// argument, a thought and a tool's output are one voice at three
+	// indentations rather than three colours competing down the left of the
+	// screen.
+	codeBody = "\033[38;5;252m"
 	// codeLabel — fujiGray #727169, for argument NAMES. Quieter than the
 	// values they introduce, so a label never competes with what it labels.
 	codeLabel = "\033[38;5;242m"
@@ -169,6 +174,14 @@ func Arg(s string) string {
 		return s
 	}
 	return codeArg + s + reset
+}
+
+// Body wraps s in the body-text colour prose and thinking already use.
+func Body(s string) string {
+	if !Enabled() {
+		return s
+	}
+	return codeBody + s + reset
 }
 
 // Label wraps s in the argument-label colour (Kanagawa fujiGray).

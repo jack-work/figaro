@@ -190,7 +190,10 @@ func TestRenderToolNode_ColoursAreConsistent(t *testing.T) {
 	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
 		Input: `{"path":"/x.md"}`}
 	joined := strings.Join(renderToolNode(n, 60, 10, 0, false, false), "\n")
-	for _, want := range []string{term.Arg("write"), term.Arg("/x.md"), term.Dim(quoteGutter)} {
+	// The NAME is the call's colour; the VALUE is the body colour prose and
+	// thinking use, so the three read as one voice; the rule is the same dim
+	// the output rule uses.
+	for _, want := range []string{term.Arg("write"), term.Body("/x.md"), term.Dim(quoteGutter)} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing %q in:\n%q", want, joined)
 		}
