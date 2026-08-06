@@ -42,7 +42,7 @@ func TestRenderToolNode_UniformAcrossTools(t *testing.T) {
 	} {
 		n := livedoc.Node{Type: livedoc.NodeTool, Name: tc.name, Status: livedoc.StatusOK, Args: tc.args}
 		rows := renderNodeRows(t, n, 60, 10, false)
-		if strings.TrimSpace(rows[0]) != "✓ "+tc.name && !strings.HasPrefix(rows[0], "✓ "+tc.name+" ") {
+		if !strings.HasPrefix(rows[0], tc.name) {
 			t.Errorf("%s: header = %q", tc.name, rows[0])
 		}
 		if !strings.Contains(strings.Join(rows, "\n"), tc.want) {
@@ -171,19 +171,19 @@ func TestRenderToolNode_BoxShape(t *testing.T) {
 		Args:   map[string]any{"path": "/x.md"},
 		Output: "Wrote 5 bytes", StartedAt: 1785862036094, FinishedAt: 1785862036098,
 	}
-	// A left gutter and two labels, and no rules at all: a horizontal bar
-	// across the screen for every tool call made the transcript look ruled
-	// rather than written. The block ends where its output ends — the turn
-	// already puts a blank line between nodes.
-	// The block is fitted to its content, not to the pane.
+	// A left gutter, two labels, and a stub elbow. No rules: a bar across the
+	// screen for every tool call made the transcript look ruled rather than
+	// written. The GLYPH belongs to the status label, not to the name — one
+	// mark per block, where the outcome is reported.
 	assertRows(t, renderNodeRows(t, n, 44, 10, false), []string{
-		"✓ write [4ms]",
+		"write [4ms]",
 		"  │ ",
 		"  │ path /x.md",
 		"  │ ",
 		"✓ done [4ms]",
 		"  │ ",
 		"  │ Wrote 5 bytes",
+		"  └──",
 	})
 }
 
@@ -195,11 +195,14 @@ func TestRenderToolNode_NoJunctionUntilItRuns(t *testing.T) {
 		Input: `{"path":"/x.md"}`}
 	rows := renderNodeRows(t, n, 44, nodeOutputUnlimited, false)
 	joined := strings.Join(rows, "\n")
-	if strings.Contains(joined, "done") || strings.Contains(joined, "running") {
-		t.Errorf("no junction until the tool has run:\n%s", joined)
+	if strings.Contains(joined, "done") || strings.Contains(joined, "└") {
+		t.Errorf("no status label and no elbow until the tool has run:\n%s", joined)
 	}
 	if !strings.HasPrefix(rows[0], "⠋ write") {
-		t.Errorf("the header must name the call: %q", rows[0])
+		t.Errorf("a call still being written carries the spinner: %q", rows[0])
+	}
+	if strings.TrimSpace(rows[len(rows)-1]) == "│" {
+		t.Errorf("no trailing rule row while the arguments stream: %q", rows[len(rows)-1])
 	}
 }
 
@@ -480,5 +483,62 @@ func TestRenderToolNode_TwoClocks(t *testing.T) {
 	old.OpenedAt = 0
 	if got := renderNodeRows(t, old, 60, 10, false)[0]; !strings.Contains(got, "[4ms]") {
 		t.Errorf("without opened_at the header should fall back to the runtime: %q", got)
+	}
+}
+
+// A one-line argument stays BESIDE its label however long it is, cut with an
+// ellipsis. Dropping it onto its own row made one argument look like two and
+// left the label column saying nothing. Expanded is the exception: there the
+// value is meant to be read, so it takes the label to itself and wraps.
+func TestRenderToolNode_LongSingleLineArgStaysOnItsLabelRow(t *testing.T) {
+	long := "cd /var/tmp/x && grep -n -i 'rossini' opera.md && echo done with a tail far longer than the pane"
+	n := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Args: map[string]any{"command": long}, Output: "ok"}
+
+	folded := renderNodeRows(t, n, 60, 10, false)
+	var label string
+	for _, r := range folded {
+		if strings.Contains(r, "command") {
+			label = r
+		}
+	}
+	if !strings.Contains(label, "command cd /var/tmp/x") {
+		t.Errorf("folded: the value should ride beside its label: %q", label)
+	}
+	if !strings.Contains(label, "…") {
+		t.Errorf("folded: an over-long value should be ellipsised: %q", label)
+	}
+
+	expanded := renderNodeRows(t, n, 60, nodeOutputUnlimited, true)
+	var joined string
+	for i, r := range expanded {
+		if strings.HasSuffix(strings.TrimSpace(r), "command") {
+			joined = strings.Join(expanded[i:i+3], "\n")
+		}
+	}
+	if joined == "" || strings.Contains(joined, "…") {
+		t.Errorf("expanded: the label should take its own row and the value wrap beneath:\n%s",
+			strings.Join(expanded, "\n"))
+	}
+}
+
+// One glyph per block, on the status label — and it tells the truth: a cross
+// when the call failed, the spinner while output is still arriving.
+func TestRenderToolNode_StatusGlyphReportsTheOutcome(t *testing.T) {
+	base := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Args: map[string]any{"command": "false"}, Output: "boom"}
+	for _, tc := range []struct{ status, want string }{
+		{livedoc.StatusOK, "✓ done"},
+		{livedoc.StatusError, "✗ failed"},
+		{livedoc.StatusRunning, "running"},
+	} {
+		n := base
+		n.Status = tc.status
+		joined := strings.Join(renderNodeRows(t, n, 60, 10, false), "\n")
+		if !strings.Contains(joined, tc.want) {
+			t.Errorf("status %q: want %q in\n%s", tc.status, tc.want, joined)
+		}
+		if tc.status == livedoc.StatusError && strings.Contains(joined, "✓") {
+			t.Errorf("a failed call must not carry a checkmark:\n%s", joined)
+		}
 	}
 }

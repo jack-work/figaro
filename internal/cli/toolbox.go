@@ -109,6 +109,11 @@ func (b box) row(content string) string {
 // blank is the air row that opens and closes each section of the box.
 func (b box) blank() string { return b.row("") }
 
+// elbow closes a finished block: a stub, not a floor. It says "this call ends
+// here" without drawing a rule across the screen, which is what made the
+// transcript look ruled rather than written.
+func (b box) elbow() string { return term.Dim(boxIndent + "└──") }
+
 // top and junction are the block's two labels: what the CALL is, and what its
 // EXECUTION is doing. They carry no rule — a horizontal bar across the screen
 // for every tool call made the transcript look ruled rather than written, and
@@ -143,7 +148,9 @@ func toolStatusLabel(glyph, status string, dur string) string {
 	case "error":
 		word = "failed"
 	}
-	label := glyph + " " + term.Label(word)
+	// The status word is the tool name's colour: they are the two things that
+	// NAME this block, one at each end of it.
+	label := glyph + " " + term.Arg(word)
 	if dur != "" {
 		label += " " + term.Dim("["+dur+"]")
 	}
@@ -199,13 +206,19 @@ func toolArgRows(n livedoc.Node, content int, expand bool) []string {
 	var rows []string
 	for _, f := range fields {
 		value := strings.TrimRight(render.SanitizeForTerminal(f.Value), "\n")
-		// A short one-line value rides beside its label; anything longer gets
-		// the label to itself and the value indented beneath, where a wrapped
-		// remainder cannot be read as the next argument.
-		if !strings.Contains(value, "\n") && runewidth.StringWidth(value) <= content-label-1 {
+		// A ONE-LINE value rides beside its label however long it is, cut with
+		// an ellipsis when it does not fit. Dropping a long command onto its
+		// own row below the label made a single argument look like two, and
+		// the label column then said nothing at all.
+		//
+		// Expanded is the exception: there the value is meant to be READ, so
+		// one that cannot fit takes the label to itself and wraps beneath it.
+		oneLine := !strings.Contains(value, "\n")
+		room := content - label - 1
+		if oneLine && (!expand || runewidth.StringWidth(value) <= room) {
 			row := term.Label(runewidth.FillRight(f.Name, label))
 			if value != "" {
-				row += " " + term.Arg(value)
+				row += " " + term.Arg(clipToWidthEllipsis(value, room))
 			}
 			rows = append(rows, row)
 			continue
