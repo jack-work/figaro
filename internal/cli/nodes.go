@@ -506,7 +506,7 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 	}
 
 	rows := make([]string, 0, len(call)+len(result)+6)
-	rows = append(rows, b.top(head+" "))
+	rows = append(rows, b.top(head))
 	if len(call) > 0 {
 		rows = append(rows, b.blank())
 		for _, r := range call {
@@ -523,7 +523,8 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 		for _, r := range result {
 			rows = append(rows, b.row(r))
 		}
-		rows = append(rows, b.blank())
+		// No trailing air: the block ends where its output ends, and the turn
+		// already puts a blank line between nodes.
 	}
 	return rows
 }

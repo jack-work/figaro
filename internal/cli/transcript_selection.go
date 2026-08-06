@@ -670,11 +670,19 @@ func decorateNodeRow(plain string, mark selectionMark, width int) string {
 	}
 	const (
 		reset = "\x1b[0m"
-		// Kanagawa waveBlue1 #223249: a blue wash rather than a grey frost.
-		// The grey one (238) sat too close to dim foreground text and made a
-		// selected row harder to read than an unselected one, which is the
-		// opposite of what a selection is for.
-		bgSelect   = "\x1b[48;5;24m"
+		// ONE STEP off the background, not a hue. Kanagawa sumiInk2 #2A2A37
+		// (xterm 236): dark enough to disappear into a dark theme and light
+		// enough to read as a lift, with the foreground untouched.
+		//
+		// Both previous attempts failed the same way, which is a documented
+		// trap rather than bad luck — "selection backgrounds that make
+		// highlighted text unreadable" is one of the standard complaints about
+		// terminal themes. Grey 238 sat close enough to dim foreground text to
+		// grey it out; blue 24 was legible but loud against every theme that
+		// was not blue. A wash that competes with the text has already lost:
+		// the SELECTION BAR in the gutter is what marks the row, and the wash
+		// only has to say "this run, not that one".
+		bgSelect   = "\x1b[48;5;236m"
 		gutterSel  = "\x1b[36m▎"   // cyan slim bar for range members
 		gutterFocs = "\x1b[1;96m▎" // bright bold cyan bar for focused node
 	)
