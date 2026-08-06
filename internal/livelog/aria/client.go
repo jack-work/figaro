@@ -632,6 +632,8 @@ func foldDelta(n livedoc.Node, d NodeDelta) livedoc.Node {
 			n.Markdown = livedoc.Apply(n.Markdown, dl)
 		case "output":
 			n.Output = livedoc.Apply(n.Output, dl)
+		case "input":
+			n.Input = livedoc.Apply(n.Input, dl)
 		}
 	}
 	return n
@@ -669,8 +671,12 @@ func setField(n *livedoc.Node, field string, v any) {
 		n.Src = asSrcs(v)
 	case "output":
 		n.Output = asStr(v)
+	case "input":
+		n.Input = asStr(v)
 	case "id":
 		n.ID = asStr(v)
+	case "opened_at":
+		n.OpenedAt = asInt64(v)
 	case "started_at":
 		n.StartedAt = asInt64(v)
 	case "finished_at":

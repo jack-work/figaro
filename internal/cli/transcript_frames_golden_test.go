@@ -53,6 +53,30 @@ func frameFixture(t *testing.T) *transcript {
 // with a search highlight. This is the end-to-end guard for the allocation
 // surgery in clipToWidth / decorateNodeRow — the frames must not move.
 func TestTranscriptFramesGolden(t *testing.T) {
+	got := buildGoldenFrames(t)
+
+	// The pre-collapse companion is regenerated in the same pass, so the
+	// cell-level proof beside these frames survives a content change instead
+	// of silently becoming a comparison of two different fixtures.
+	if *updateGolden {
+		prev := sgrCollapse
+		sgrCollapse = func(s string) string { return s }
+		pre := buildGoldenFrames(t)
+		sgrCollapse = prev
+		name := "transcript_frames.pre-sgr.golden"
+		if term.Enabled() {
+			name = "transcript_frames_color.pre-sgr.golden"
+		}
+		if err := os.WriteFile(filepath.Join("testdata", name), []byte(pre), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeOrCompareGolden(t, got)
+}
+
+func buildGoldenFrames(t *testing.T) string {
+	t.Helper()
 	var b strings.Builder
 	section := func(name string, rows []string) {
 		b.WriteString("## " + name + "\n")
@@ -91,10 +115,15 @@ func TestTranscriptFramesGolden(t *testing.T) {
 	tr.selection = nodeSelection{}
 	section("plain-again", tr.lines())
 
-	got := b.String()
-	// Selection decoration branches on term.Enabled(), so both branches get a
-	// golden; run the package a second time with FORCE_COLOR=1 to cover the
-	// styled one.
+	return b.String()
+}
+
+// writeOrCompareGolden writes the frames under -update-frames, else diffs them.
+// Selection decoration branches on term.Enabled(), so both branches get a
+// golden; run the package a second time with FORCE_COLOR=1 to cover the
+// styled one.
+func writeOrCompareGolden(t *testing.T, got string) {
+	t.Helper()
 	name := "transcript_frames.golden"
 	if term.Enabled() {
 		name = "transcript_frames_color.golden"

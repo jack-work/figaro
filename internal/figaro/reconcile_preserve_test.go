@@ -102,7 +102,7 @@ func TestReconcileAriaServer_AllowsGrow(t *testing.T) {
 
 	// Ensure the log actually yields one turn under compose (a prompt and its
 	// reply are ONE exchange now, not two units).
-	turns := compose.Turns(unwrapMessages(logMem.Read()), nil, nil)
+	turns := compose.Turns(unwrapMessages(logMem.Read()))
 	require.Len(t, turns, 1)
 
 	a := newBareAgent(t, logMem)

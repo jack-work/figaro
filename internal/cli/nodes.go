@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -43,12 +42,21 @@ type renderSettings struct {
 // marked it "↳ input". Two renderers for one representation is the exact defect
 // class turn addressing exists to remove; there is now one.
 //
-// Expansion reaches it as bashCap and nothing else: only a tool has a
-// collapsed form.
-func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose bool) []string {
+// Expansion arrives twice, because a tool now has TWO collapsible parts that
+// answer to different policies. bashCap collapses the OUTPUT — and the incipit
+// always passes it uncapped, since nothing there can un-collapse after the
+// fact (architecture.md invariant #2). expanded collapses the ARGUMENTS, and
+// the incipit must NOT force that one: a streaming argument inline is a moving
+// window on something being typed, and its whole value is that it stays small
+// until asked. In the pager both come from the same gesture.
+func renderNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, expanded bool) []string {
 	switch {
 	case n.Type == livedoc.NodeTool:
-		return renderToolNode(n, width, bashCap, tick, verbose)
+		// Either gesture expands a tool: Ctrl-O (global) or Enter on the
+		// selection (per node). They were not the same flag, so selecting a
+		// tool and pressing Enter expanded its OUTPUT and left its arguments
+		// hidden behind a different key.
+		return renderToolNode(n, width, bashCap, tick, verbose, expanded)
 	case n.Type == livedoc.NodeThinking:
 		return renderThinkingNode(n, width)
 	// Steering is the only input-voice NODE there is — the inquiry is text on
@@ -68,7 +76,13 @@ func nodeExpandable(n livedoc.Node) bool {
 	if n.Type != livedoc.NodeTool {
 		return false
 	}
-	return strings.TrimSpace(n.Output) != ""
+	// Output OR arguments. A tool whose arguments are still streaming has no
+	// output yet and is precisely the node you most want to open — a running
+	// write, to watch the file arrive — so an output-only test made Enter
+	// inert on it. A settled tool hides its arguments until asked, so it has
+	// something to reveal even when its output is short.
+	return strings.TrimSpace(n.Output) != "" ||
+		strings.TrimSpace(n.Input) != "" || len(n.Args) > 0
 }
 
 // renderTurnRows renders a whole exchange — the inquiry that opened the turn,
@@ -445,79 +459,6 @@ func dedentProse(row string) string {
 // output under a dim gutter, tail-clamped to bashCap lines. In verbose mode
 // Args are also rendered generically as sorted key=value lines. The client
 // never inspects n.Name.
-func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, expand bool) []string {
-	var glyph string
-	switch n.Status {
-	case livedoc.StatusOK:
-		glyph = term.Green("✓")
-	case livedoc.StatusError:
-		glyph = term.Red("✗")
-	default:
-		frames := livedoc.SpinnerFrames
-		glyph = term.Cyan(string(frames[int(tick)%len(frames)]))
-	}
-	name := n.Name
-	if name == "" {
-		name = "tool"
-	}
-	header := glyph + " " + term.Cyan(name)
-	if n.Summary != "" {
-		header = header + " " + term.Dim(truncCols(n.Summary, toolSummaryCap))
-	}
-	if n.StartedAt != 0 {
-		header += " " + term.Dim("["+toolDuration(n, time.Now())+"]")
-	}
-	// Header, optional arg/timestamp lines, then the tail-clamped output.
-	rows := make([]string, 1, 6+max(bashCap, 0))
-	rows[0] = header
-
-	if expand && len(n.Args) > 0 {
-		const g = "  "
-		keys := make([]string, 0, len(n.Args))
-		for k := range n.Args {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			line := fmt.Sprintf("%s=%v", k, n.Args[k])
-			for _, l := range hardWrap(line, width-len(g)) {
-				rows = append(rows, term.Dim(g+l))
-			}
-		}
-	}
-	if expand && n.StartedAt != 0 {
-		rows = append(rows, term.Dim("  started "+formatToolTime(n.StartedAt)))
-		if n.FinishedAt != 0 {
-			rows = append(rows, term.Dim("  finished "+formatToolTime(n.FinishedAt)))
-		}
-	}
-
-	if strings.TrimSpace(n.Output) != "" {
-		// Tool stdout is the most likely vector for terminal-state
-		// escapes that could break the painter (alt-screen, cursor
-		// visibility, line wrap, mouse modes, OSC). Sanitize before
-		// rendering so a wayward bubbletea / huh / less / etc. can
-		// never bleed its escapes into the host terminal.
-		output := strings.TrimRight(n.Output, "\n")
-		safe := render.SanitizeForTerminal(output)
-		shown, total := tailOutput(safe, bashCap)
-		lines := strings.Split(shown, "\n")
-		if bashCap >= 0 && total > bashCap {
-			rows = append(rows, term.Dim(fmt.Sprintf("  │ … last %d of %d lines", bashCap, total)))
-		}
-		dimGutter := term.Dim(quoteGutter) // hoisted: one styled gutter, not one per line
-		for _, l := range lines {
-			// CELLS, not bytes: this said width-len(gutter), and len("  │ ") is
-			// SIX for a FOUR-column gutter (the rule is a three-byte rune), so
-			// every tool-output row was trimmed two columns narrower than it had
-			// room for. Same gutter, same constant, one place — thinking and tool
-			// output cannot drift apart again.
-			rows = append(rows, dimGutter+truncCols(l, width-quoteGutterCells))
-		}
-	}
-	return rows
-}
-
 func tailOutput(output string, limit int) (string, int) {
 	total := 1 + strings.Count(output, "\n")
 	if limit < 0 || total <= limit {
@@ -536,12 +477,33 @@ func tailOutput(output string, limit int) (string, int) {
 	return output[at+1:], total
 }
 
-func toolDuration(n livedoc.Node, now time.Time) string {
-	end := n.FinishedAt
-	if end == 0 {
-		end = now.UnixMilli()
+// timeNow is the clock the tool duration reads. Indirected for one reason: a
+// running call's elapsed time is `now - opened`, which makes any snapshot of
+// it non-deterministic. The golden freezes this; production never touches it.
+var timeNow = time.Now
+
+// toolElapsed is how long this call has taken, all in: the model writing it
+// plus the tool running it. One number, because the header has one slot — the
+// split is in the expanded view, where `started` and `finished` bracket the
+// execution and everything before `started` was generation.
+func toolElapsed(n livedoc.Node) string {
+	from := n.OpenedAt
+	if from == 0 {
+		from = n.StartedAt
 	}
-	d := time.Duration(end-n.StartedAt) * time.Millisecond
+	if from == 0 {
+		return ""
+	}
+	to := n.FinishedAt
+	if to == 0 {
+		to = timeNow().UnixMilli()
+	}
+	return formatDuration(to - from)
+}
+
+// formatDuration renders a span of milliseconds the way both clocks want it.
+func formatDuration(ms int64) string {
+	d := time.Duration(ms) * time.Millisecond
 	if d < 0 {
 		d = 0
 	}

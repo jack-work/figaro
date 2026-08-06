@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -247,4 +248,171 @@ func TestEnsureSelectionVisibleUsesLayoutBody(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Selecting a STREAMING tool and pressing Enter opens its arguments, and the
+// window keeps streaming underneath the selection.
+//
+// The gesture used to be inert on exactly this node: nodeExpandable answered
+// "has output?", and a tool whose arguments are still arriving has none yet —
+// so the one block a reader most wants to open (a running write, to watch the
+// file arrive) was the one Enter did nothing to.
+// ---------------------------------------------------------------------------
+
+func streamingFixture(t *testing.T, body string) (*transcript, nodeRef, livedoc.Node) {
+	t.Helper()
+	tool := livedoc.Node{
+		Type: livedoc.NodeTool, ID: "t1", Name: "write", Status: livedoc.StatusRunning,
+		Input: `{"path":"/x.md","content":"` + body,
+	}
+	client := aria.NewClient()
+	client.SetClosedLimit(transcriptTailLimit)
+	client.Apply(aria.Page{Parts: []aria.TurnPart{
+		{Turn: aria.Turn{ID: 1, Inquiry: "write it", Sealed: false,
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "on it"}, tool}}},
+	}})
+	tr := newTranscript(ldrender.NewFakeTerminal(80, 24), 80, 24, &ariaView{settings: &renderSettings{}},
+		client, "aria1234", time.Unix(0, 0))
+	tr.enter()
+	tr.follow = false
+	ref := nodeRef{turn: 1, index: 1}
+	tr.selection = nodeSelection{
+		active: true,
+		anchor: selectionPoint{nodeRef: ref, hash: nodeHash(tool)},
+		focus:  selectionPoint{nodeRef: ref, hash: nodeHash(tool)},
+	}
+	return tr, ref, tool
+}
+
+func argRowsOf(tr *transcript) []string {
+	tr.buildIndex()
+	var out []string
+	for _, e := range tr.index.entries {
+		for _, r := range e.rows {
+			// The fixture's tool has no output, so every content row inside
+			// the box is an argument row.
+			if plain := stripANSI(r.text); boxContentText(plain) != "" {
+				out = append(out, plain)
+			}
+		}
+	}
+	return out
+}
+
+func TestPagerStreamingToolExpandsItsArguments(t *testing.T) {
+	tr, _, _ := streamingFixture(t, strings.Repeat("a line of the file being written\n", 30))
+
+	folded := argRowsOf(tr)
+	if len(folded) == 0 {
+		t.Fatal("fixture: the streaming tool drew no content")
+	}
+
+	if !tr.toggleSelectedNodes() {
+		t.Fatal("Enter was inert on a streaming tool — nodeExpandable must answer for arguments")
+	}
+	expanded := argRowsOf(tr)
+	if len(expanded) <= len(folded) {
+		t.Fatalf("expanding revealed nothing: %d rows before, %d after", len(folded), len(expanded))
+	}
+
+	// Collapsing returns to the window, so the gesture is a toggle rather than
+	// a one-way door.
+	if !tr.toggleSelectedNodes() {
+		t.Fatal("second Enter did not collapse")
+	}
+	if got := len(argRowsOf(tr)); got != len(folded) {
+		t.Fatalf("collapse: %d argument rows, want %d", got, len(folded))
+	}
+}
+
+// The window follows the stream: as patches arrive, the two rows on screen are
+// the two most recent, not the two oldest.
+func TestPagerStreamingWindowFollowsTheStream(t *testing.T) {
+	// More lines than the body's clamp holds, so it has something to roll past.
+	var seed strings.Builder
+	for i := 1; i <= nodeBashCapDefault+2; i++ {
+		fmt.Fprintf(&seed, "%d. line of the file\n", i)
+	}
+	tr, _, tool := streamingFixture(t, seed.String())
+	before := argRowsOf(tr)
+	if !strings.Contains(strings.Join(before, "\n"), fmt.Sprintf("%d. line", nodeBashCapDefault+2)) {
+		t.Fatalf("window should hold the newest lines:\n%s", strings.Join(before, "\n"))
+	}
+
+	tool.Input += fmt.Sprintf("%d. line of the file\n%d. line of the file\n", nodeBashCapDefault+3, nodeBashCapDefault+4)
+	tr.client.Apply(aria.Page{Parts: []aria.TurnPart{
+		{Turn: aria.Turn{ID: 1, Inquiry: "write it", Sealed: false,
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "on it"}, tool}}},
+	}})
+	tr.rowCache = map[sliceKey]cachedMessage{}
+
+	after := strings.Join(argRowsOf(tr), "\n")
+	if !strings.Contains(after, fmt.Sprintf("%d. line", nodeBashCapDefault+4)) {
+		t.Errorf("window did not follow the stream:\n%s", after)
+	}
+	if strings.Contains(after, "│ 1. line of the file") {
+		t.Errorf("window should have rolled past the first line:\n%s", after)
+	}
+}
+
+// Escape clears the SELECTION and leaves the EXPANSION alone. Collapsing is a
+// deliberate act — select the node again and press Enter — not a side effect
+// of pointing somewhere else.
+//
+// The bug underneath was worse than the gesture: pruneCaches walks the store's
+// window to decide what to keep, and the OPEN turn is not in that window. Its
+// caches were therefore pruned as though it had scrolled out of history. The
+// row cache merely re-renders, but `expanded` is user state, and it was being
+// dropped on Escape — and on EVERY FRAME while following the live tail, which
+// is why expanding a streaming tool looked like it did not work.
+func TestEscapeKeepsExpansionOnTheOpenTurn(t *testing.T) {
+	tr, ref, _ := streamingFixture(t, strings.Repeat("a line of the file being written\n", 30))
+	if !tr.toggleSelectedNodes() {
+		t.Fatal("fixture: the tool did not expand")
+	}
+	expanded := len(argRowsOf(tr))
+
+	tr.clearSelection()
+	if !tr.expanded[ref] {
+		t.Error("Escape dropped the expansion")
+	}
+	if got := len(argRowsOf(tr)); got != expanded {
+		t.Errorf("after Escape: %d argument rows, want the expanded %d", got, expanded)
+	}
+	if tr.selection.active {
+		t.Error("Escape should still clear the selection")
+	}
+
+	// Following the tail prunes once per frame; the expansion must survive it.
+	tr.follow = true
+	tr.resetToTail()
+	if !tr.expanded[ref] {
+		t.Error("a frame while following dropped the expansion")
+	}
+
+	// And selecting it again collapses it — the only way back.
+	tr.selection = nodeSelection{active: true,
+		anchor: selectionPoint{nodeRef: ref, hash: tr.expandedHashProbe(ref)},
+		focus:  selectionPoint{nodeRef: ref, hash: tr.expandedHashProbe(ref)}}
+	if !tr.toggleSelectedNodes() {
+		t.Fatal("re-selecting did not toggle")
+	}
+	if tr.expanded[ref] {
+		t.Error("Enter on the selected node should collapse it again")
+	}
+}
+
+// expandedHashProbe is the node hash the selection endpoints carry, looked up
+// by ref — the tests build selections by hand and must agree with the guard.
+func (t *transcript) expandedHashProbe(ref nodeRef) uint64 {
+	var h uint64
+	if open := t.openMessage(); open != nil && open.Turn == ref.turn {
+		for i, n := range open.Nodes {
+			if nodeRefAt(*open, i) == ref {
+				h = nodeHash(n)
+			}
+		}
+	}
+	return h
 }

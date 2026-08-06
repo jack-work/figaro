@@ -37,7 +37,7 @@ func inqConversation() []message.Message {
 // non-empty prose, so a turn cannot open without an inquiry, and a second
 // inquiry cannot arrive without closing the first.
 func TestTurns_EveryTurnHasExactlyOneInquiry(t *testing.T) {
-	tns := Turns(inqConversation(), nil, nil)
+	tns := Turns(inqConversation())
 	if len(tns) == 0 {
 		t.Fatal("no turns")
 	}
@@ -58,7 +58,7 @@ func TestTurns_EveryTurnHasExactlyOneInquiry(t *testing.T) {
 // the prompt node agreed — its whole purpose was to license removing the node,
 // which this now pins.
 func TestTurns_InquiryIsNotANode(t *testing.T) {
-	for _, tn := range Turns(inqConversation(), nil, nil) {
+	for _, tn := range Turns(inqConversation()) {
 		for i, n := range tn.Nodes {
 			if n.Markdown == tn.Inquiry {
 				t.Errorf("turn %d node %d echoes the inquiry %q — the question is not a node",
@@ -73,7 +73,7 @@ func TestTurns_InquiryIsNotANode(t *testing.T) {
 	}
 	// Turn 1 opens with a question and answers it: its first node is the
 	// agent's, not the user's.
-	tns := Turns(inqConversation(), nil, nil)
+	tns := Turns(inqConversation())
 	if n := tns[0].Nodes[0]; n.Type != livedoc.NodeThinking {
 		t.Errorf("turn 1 node 0 = %s, want the agent's first block (thinking)", n.Type)
 	}

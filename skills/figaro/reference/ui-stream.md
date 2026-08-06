@@ -78,8 +78,111 @@ type NodeDelta struct {
 `Live.From` is the immutability boundary: node ordinals below it are closed and
 will never change; ordinals at or above it may still receive deltas. `V` is the
 0-indexed frame version. `set` merges fields (and creates a node when `type`
-first appears), `unset` removes fields, and `patch` splices the previous
-`markdown` or `output` string using byte offsets.
+first appears), `unset` removes fields, and `patch` splices a previous
+**streamed string** using byte offsets. Three fields are streamed:
+`markdown`, `output`, and `input`.
+
+`input` is a tool's arguments **as they arrive** — the raw, still-truncated
+JSON prefix — beside `args`, which is the same thing decoded and therefore
+only exists once the whole object parses. It is what there is to show while
+the model is still writing a large argument, and it is deliberately not
+append-only: a bounded tail drops leading bytes as it slides, and the field is
+cleared (an `unset`) the moment `args` lands. A `Delta` carries `del` as well
+as `ins`, so a shrink is one ordinary splice and needs nothing new on the
+wire. Whether the fragments arrive smoothly at all is a **provider** question
+— see `system.eager_tool_streaming` in
+[architecture.md](architecture.md).
+
+### How a tool draws
+
+One table in the CLI (`internal/cli/toolbox.go`, `toolStyles`) says how every
+tool is drawn, keyed by the tool NAME the wire already carries. It is
+presentation policy — the server has no business knowing that a shell wants a
+`$` — and it is the only place any of it is written down. A second frontend
+lifts the table rather than the renderer.
+
+| field | means |
+|---|---|
+| `Label` | replaces the tool's name on the minimized header (`$` for shells) |
+| `Headline` | the argument that speaks for the call: the command, the path |
+| `Body` | an argument to draw in place of the tool's own output |
+
+```go
+"bash":  {Label: "$", Headline: "command"},
+"write": {Headline: "path", Body: "content"},
+"read":  {Headline: "path"},
+```
+
+An unknown tool keeps its name and takes its first argument as the headline —
+the same shape as the known ones, not a special case.
+
+```
+minimized                                    expanded (Enter, or Ctrl-O)
+✓ $ grep -n baritone opera.md [1.4s]         ✓ bash [1.4s]
+  │ … last 10 of 32 lines                      │ grep -n baritone opera.md
+  │ 15:13. Figaro is a baritone.                │ timeout 240
+                                               │ started 2026-08-06 01:33:48.347 EDT
+✓ write /var/tmp/x/opera.md [17.2s]            │ finished 2026-08-06 01:33:48.365 EDT
+  │ … last 10 of 32 lines                      │
+  │ 33. Rossini's Almaviva is a tenor.          │ 15:13. Figaro is a baritone.
+```
+
+Minimized, the header carries the CALL — what a reader scanning a transcript is
+looking for — and the body carries the result, clamped, each row **cut** rather
+than wrapped: a preview that reflows is harder to scan than one that stops.
+Expanded, the header steps back to the tool's name because the call is about to
+be shown in full: the headline argument first (in the call colour, unlabelled),
+then the other arguments, then `started`/`finished`, then one blank row, then
+the whole output, wrapped.
+
+`write` sets `Body: "content"`, so the file body streams in exactly the way a
+command's output does, and its receipt ("Wrote N bytes") is never shown — the
+content is the interesting half and the reader can see it.
+
+The duration is **one number**: opened to finished, the model writing the call
+plus the tool running it. The split is in the expanded view, where `started`
+and `finished` bracket the execution and everything before `started` was
+generation.
+
+**Expansion is per node and it persists.** `Esc` clears the *selection* and
+leaves the expansion alone; the way back is to select the node again and press
+`Enter`, or to leave the pager. (Expansion state lives in `transcript.expanded`,
+keyed by `(turn, node)`. `pruneCaches` must keep the OPEN turn — it is the live
+suffix and is not in the store's window, so a walk of the window alone prunes
+it as though it had scrolled out of history. That dropped a live expansion on
+`Esc` and on every frame while following the tail.)
+
+`Ctrl-O` shows the metadata and the coordinate row and **nothing else** — it no
+longer opens content. Verbosity and "open this one thing" are different
+questions, and one key answering both meant neither could be asked alone.
+
+A folded multi-line value names its fold on its **label** — `content (…last 5
+of 41 lines)`, and `(…first 2 of 41 lines)` once settled, because a reader
+cannot otherwise tell which end they are looking at. Expanded, the note is gone
+and the value wraps instead: there is nothing to count when everything is
+shown.
+
+Colour carries what the layout does not: Kanagawa springBlue for the tool name
+and every argument value, fujiGray for labels, and the same dim for every rule
+in the box.
+
+`y` follows the eye: a folded tool yanks its **output**, an expanded one yanks
+the **call and the result**, both in full.
+
+Two rules that are easy to get wrong:
+
+- **A settled tool folds its arguments to the head.** Nothing is moving any
+  more, so the useful part is what the call *is*, not where it stopped.
+- **Only the pager has an expansion gesture**, so every other surface draws the
+  minimized form. That reverses an older decision for the incipit, which used
+  to draw every row of a tool's output because inline rows freeze to scrollback
+  and a collapse there can never be undone. True — but written when a collapse
+  was SILENT. The `… last N of M lines` banner now says what was elided,
+  `figaro show` has the rest, and a 60-line file written inline buried the
+  conversation it belonged to. See `ariaView.gesture`.
+
+The argument fold note lives on the label rather than in a row of its own,
+because rows are what is being rationed.
 
 A `Live` frame with deltas updates the suffix. A `Live` frame with no deltas is
 a close marker for that streaming suffix; it does **not** necessarily finish
@@ -185,7 +288,7 @@ lifecycle operations remain on Angelus. Request ids are integers in the current
 `jkrpc` framing.
 
 Node types: `prose` (assistant markdown), `thinking` (extended-thinking),
-`tool` (an invocation folded with its streamed result), and `steering` (a user
+`tool` (an invocation folded with its streamed input and result), and `steering` (a user
 message injected mid-turn — see below).
 
 ### Protocol stability TODO
@@ -231,7 +334,7 @@ Inline keybindings while a turn streams:
 
 | Key | Action |
 | --- | --- |
-| `Ctrl-O` | toggle verbosity (expand tool args / full output) |
+| `Ctrl-O` | toggle verbosity (expand tool arguments and full output) |
 | `Ctrl-T` | open the transcript pager (below) |
 | `Ctrl-D` | end the turn |
 

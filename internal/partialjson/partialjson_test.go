@@ -162,3 +162,94 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// Fields is the generic walk the renderer uses to show a tool's arguments as
+// they stream, so it is held to the same two properties StringField is: it
+// agrees with encoding/json on whole input, and it never rewrites what it has
+// already shown as the input grows.
+func TestFieldsFullMatchesEncodingJSON(t *testing.T) {
+	for _, f := range fixtures {
+		t.Run(f.name, func(t *testing.T) {
+			var m map[string]any
+			if err := json.Unmarshal([]byte(f.json), &m); err != nil {
+				t.Fatalf("fixture unparseable: %v", err)
+			}
+			got := Fields([]byte(f.json))
+			if len(got) != len(m) {
+				t.Fatalf("Fields returned %d fields, want %d (%+v)", len(got), len(m), got)
+			}
+			for _, fld := range got {
+				if !fld.Done {
+					t.Errorf("%q: Done=false on whole input", fld.Name)
+				}
+				want, ok := m[fld.Name]
+				if !ok {
+					t.Errorf("Fields invented %q", fld.Name)
+					continue
+				}
+				if s, isStr := want.(string); isStr && fld.Value != s {
+					t.Errorf("%q: got %q, want %q", fld.Name, fld.Value, s)
+				}
+			}
+		})
+	}
+}
+
+// Monotonic over every prefix: the value shown for a field may only grow, and
+// a field once listed may not vanish. A live view that rewrites itself is
+// worse than one that lags.
+func TestFieldsMonotonicOverEveryPrefix(t *testing.T) {
+	for _, f := range fixtures {
+		t.Run(f.name, func(t *testing.T) {
+			seen := map[string]string{}
+			var order []string
+			for i := 0; i <= len(f.json); i++ {
+				for _, fld := range Fields([]byte(f.json[:i])) {
+					prev, had := seen[fld.Name]
+					if !had {
+						order = append(order, fld.Name)
+					} else if len(fld.Value) < len(prev) || (len(fld.Value) >= len(prev) && fld.Value[:len(prev)] != prev) {
+						t.Fatalf("prefix %d: %q went %q -> %q", i, fld.Name, prev, fld.Value)
+					}
+					seen[fld.Name] = fld.Value
+				}
+			}
+			for i, name := range order {
+				if i > 0 && name == order[i-1] {
+					t.Fatalf("field %q listed twice in order %v", name, order)
+				}
+			}
+		})
+	}
+}
+
+// The truncation cases the renderer actually meets, mid-key and mid-value.
+func TestFieldsTruncation(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []Field
+	}{
+		{`{`, nil},
+		{`{"pa`, nil},
+		{`{"path"`, nil},
+		{`{"path":`, []Field{{Name: "path"}}},
+		{`{"path":"/x`, []Field{{Name: "path", Value: "/x"}}},
+		{`{"path":"/x"`, []Field{{Name: "path", Value: "/x", Done: true}}},
+		{`{"path":"/x","n":2`, []Field{{Name: "path", Value: "/x", Done: true}, {Name: "n", Value: "2"}}},
+		{`{"a":"1","b":"2"}`, []Field{{Name: "a", Value: "1", Done: true}, {Name: "b", Value: "2", Done: true}}},
+		{`not json`, nil},
+		{``, nil},
+	}
+	for _, tc := range cases {
+		got := Fields([]byte(tc.in))
+		if len(got) != len(tc.want) {
+			t.Errorf("%q: got %+v, want %+v", tc.in, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i].Name != tc.want[i].Name || got[i].Value != tc.want[i].Value || got[i].Done != tc.want[i].Done {
+				t.Errorf("%q field %d: got %+v, want %+v", tc.in, i, got[i], tc.want[i])
+			}
+		}
+	}
+}

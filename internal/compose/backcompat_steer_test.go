@@ -25,7 +25,7 @@ func TestTurns_LegacySeparateSteersStillRenderSeparately(t *testing.T) {
 		{Role: message.RoleInput, Steering: true, Content: []message.Content{prose("nudge two")}},
 		asstLT(0, prose("done")), // turn 1
 	}
-	tns := Turns(legacy, nil, nil)
+	tns := Turns(legacy)
 	if len(tns) != 1 {
 		t.Fatalf("legacy log produced %d turns, want 1 — separate steers must not open turns", len(tns))
 	}
@@ -55,7 +55,7 @@ func TestTurns_ConcatenatedSteerIsOneNode(t *testing.T) {
 		}},
 		asstLT(0, prose("done")),
 	}
-	tns := Turns(modern, nil, nil)
+	tns := Turns(modern)
 	if len(tns) != 1 {
 		t.Fatalf("got %d turns, want 1", len(tns))
 	}

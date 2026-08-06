@@ -40,7 +40,11 @@ type Projector interface {
 
 	// ResetTools clears per-turn tool timing state.
 	ResetTools()
-	// ToolStarted/ToolFinished record when a tool ran, for display only.
+	// ToolOpened records when the model began WRITING a call; ToolStarted /
+	// ToolFinished bracket when it RAN. Display only. The gap between opened
+	// and started is generation, which for a large argument is nearly all of
+	// the wall time.
+	ToolOpened(id string, at int64)
 	ToolStarted(id string, at int64)
 	ToolFinished(id string, at int64)
 }

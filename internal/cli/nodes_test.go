@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"github.com/mattn/go-runewidth"
 	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/term"
 )
 
 // stripANSI removes ANSI escape sequences so tests can assert on visible text.
@@ -24,36 +26,6 @@ func stripANSI(s string) string {
 	return b.String()
 }
 
-func TestRenderToolNode_UniformAcrossTools(t *testing.T) {
-	// bash, write, and an unknown tool ALL render as: glyph name summary.
-	// No per-tool code path — same shape, same code.
-	nodes := []livedoc.Node{
-		{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK, Summary: "ls -la"},
-		{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK, Summary: "/tmp/a"},
-		{Type: livedoc.NodeTool, Name: "mystery", Status: livedoc.StatusOK, Summary: "k=v"},
-	}
-	rows := renderNodeList(nodes, 80, 0, renderSettings{})
-	if len(rows) < 5 {
-		t.Fatalf("want at least 5 rows (3 headers + 2 separators), got %d: %v", len(rows), rows)
-	}
-	// The three headers land at rows[0], rows[2], rows[4] (blank between).
-	want := []struct{ name, summary string }{
-		{"bash", "ls -la"},
-		{"write", "/tmp/a"},
-		{"mystery", "k=v"},
-	}
-	for i, w := range want {
-		got := stripANSI(rows[i*2])
-		if !strings.Contains(got, w.name) || !strings.Contains(got, w.summary) {
-			t.Errorf("row %d: want name=%q summary=%q, got %q", i*2, w.name, w.summary, got)
-		}
-	}
-	// Separator blanks in between.
-	if rows[1] != "" || rows[3] != "" {
-		t.Errorf("want blank separators at 1,3: %q %q", rows[1], rows[3])
-	}
-}
-
 func TestRenderToolNode_RunningOutputClampedToBashCap(t *testing.T) {
 	// A running tool whose Output has many lines: the visible body is
 	// tail-clamped to bashCap — earlier lines must not leak.
@@ -69,32 +41,13 @@ func TestRenderToolNode_RunningOutputClampedToBashCap(t *testing.T) {
 		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusRunning,
 		Summary: "long", Output: strings.Join(lines, "\n"),
 	}
-	rows := renderToolNode(n, 80, 5, 0, false) // bashCap=5
+	rows := renderToolNode(n, 80, 5, 0, false, false) // bashCap=5
 	joined := stripANSI(strings.Join(rows, "\n"))
 	if strings.Contains(joined, "EARLY_LEAK_SENTINEL") {
 		t.Errorf("early output must be clamped, but leaked:\n%s", joined)
 	}
 	if !strings.Contains(joined, "LATE_TAIL_SENTINEL") {
 		t.Errorf("late tail should be visible:\n%s", joined)
-	}
-}
-
-func TestRenderToolNode_TimingAndVerboseDetails(t *testing.T) {
-	n := livedoc.Node{
-		Type:       livedoc.NodeTool,
-		Name:       "bash",
-		Status:     livedoc.StatusOK,
-		StartedAt:  1_700_000_000_000,
-		FinishedAt: 1_700_000_001_250,
-	}
-
-	rows := renderToolNode(n, 120, 5, 0, true)
-	joined := stripANSI(strings.Join(rows, "\n"))
-	if !strings.Contains(joined, "[1.2s]") {
-		t.Fatalf("duration missing: %s", joined)
-	}
-	if !strings.Contains(joined, "started ") || !strings.Contains(joined, "finished ") {
-		t.Fatalf("verbose timestamps missing: %s", joined)
 	}
 }
 
@@ -116,7 +69,7 @@ func TestRenderToolNodeSanitizesBeforeTailClamp(t *testing.T) {
 		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
 		Output: "\x1b]2;hidden\nOSC payload\nmore payload\x07\nvisible",
 	}
-	rendered := strings.Join(renderToolNode(n, 80, 2, 0, false), "\n")
+	rendered := strings.Join(renderToolNode(n, 80, 2, 0, false, false), "\n")
 	if strings.Contains(rendered, "OSC payload") || strings.ContainsRune(rendered, '\a') {
 		t.Fatalf("control-string payload leaked after tail clamp: %q", rendered)
 	}
@@ -162,4 +115,101 @@ func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	if a := stripANSI(strings.Join(view.Render(reply, 60, 0), "\n")); strings.Contains(a, "↳ input") {
 		t.Fatalf("output prose drew the user's marker: %q", a)
 	}
+}
+
+// THE INVARIANT the owner asked for: the duration is on screen at every width.
+// It was appended after an 80-column summary before, and the summary shoved it
+// off the right at 65% of his tool calls.
+func TestRenderToolNode_DurationSurvivesEveryWidth(t *testing.T) {
+	n := livedoc.Node{
+		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Summary:   strings.Repeat("a very long command line ", 20),
+		Args:      map[string]any{"command": strings.Repeat("a very long command line ", 20)},
+		Output:    "done",
+		StartedAt: 1785862036094, FinishedAt: 1785862097094,
+	}
+	want := "[1m01s]"
+	for w := 20; w <= 200; w++ {
+		for _, expand := range []bool{false, true} {
+			rows := renderNodeRows(t, n, w, 10, expand)
+			if !strings.Contains(rows[0], want) {
+				t.Fatalf("width %d expand=%v: header %q lost the duration", w, expand, rows[0])
+			}
+			for i, r := range rows {
+				if got := runewidth.StringWidth(r); got > w {
+					t.Fatalf("width %d expand=%v: row %d is %d cells: %q", w, expand, i, got, r)
+				}
+			}
+		}
+	}
+}
+
+// The gesture must not be inert on the node you most want to open: a running
+// tool has no output yet, and its arguments are the whole story.
+func TestNodeExpandable_StreamingToolWithNoOutput(t *testing.T) {
+	streaming := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
+		Input: `{"path":"/x","content":"a`}
+	if !nodeExpandable(streaming) {
+		t.Error("a streaming tool must be expandable — its arguments are what there is to see")
+	}
+	settled := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Args: map[string]any{"command": "ls"}}
+	if !nodeExpandable(settled) {
+		t.Error("a settled tool folds its arguments, so it has something to reveal")
+	}
+	if nodeExpandable(livedoc.Node{Type: livedoc.NodeTool, Name: "bash"}) {
+		t.Error("a tool with neither arguments nor output reveals nothing")
+	}
+}
+
+// Arguments and the tool NAME are drawn in one colour (Kanagawa springBlue),
+// and the block's rule is drawn in the SAME dim the output rule uses. Vacuous
+// without colour, load-bearing with it — and it is the thing the owner asked
+// for twice: one blue for the call, furniture identical on both sides.
+func TestRenderToolNode_ColoursAreConsistent(t *testing.T) {
+	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
+		Args: map[string]any{"path": "/x.md", "content": "a line"}}
+	joined := strings.Join(renderToolNode(n, 60, 10, 0, false, false), "\n")
+	// Three colours, one meaning each: the call (name and headline argument),
+	// the body text prose and thinking already use, and the dim rule. A golden
+	// records the LAYOUT; only a test can say what colour a run carries.
+	for _, want := range []string{term.Arg("write"), term.Body("/x.md"), term.Dim(toolGutter)} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing %q in:\n%q", want, joined)
+		}
+	}
+}
+
+// boxContentText returns the text inside a box row, or "" for an edge, an air
+// row or a row that is not part of a box.
+func boxContentText(plain string) string {
+	i := strings.Index(plain, "│")
+	if i < 0 {
+		return ""
+	}
+	return strings.TrimSpace(plain[i+len("│"):])
+}
+
+func assertRows(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("got %d rows, want %d:\n%s", len(got), len(want), strings.Join(got, "\n"))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("row %d:\n got %q\nwant %q", i, got[i], want[i])
+		}
+	}
+}
+
+// renderNodeRows renders a node and strips styling, so assertions are about
+// layout rather than escape codes.
+func renderNodeRows(t *testing.T, n livedoc.Node, width, cap int, expand bool) []string {
+	t.Helper()
+	raw := renderToolNode(n, width, cap, 0, false, expand)
+	out := make([]string, len(raw))
+	for i, r := range raw {
+		out[i] = stripANSI(r)
+	}
+	return out
 }

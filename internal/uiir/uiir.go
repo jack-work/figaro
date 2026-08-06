@@ -23,17 +23,12 @@ import (
 // serialises every call behind its own lock, which is also why the timing map
 // needs none.
 type Projector struct {
-	summarize  compose.ToolSummary
-	previewArg compose.ToolPreviewArg
-	timings    map[string]compose.ToolTiming
+	timings map[string]compose.ToolTiming
 }
 
 // New returns a Projector that renders tools using the given registry.
 func New(r *tool.Registry) *Projector {
-	return &Projector{
-		summarize:  compose.ToolSummary(tool.Summarizer(r)),
-		previewArg: compose.ToolPreviewArg(tool.PreviewArger(r)),
-	}
+	return &Projector{}
 }
 
 // InquirySegments implements figaro.Projector.
@@ -42,14 +37,26 @@ func (p *Projector) InquirySegments(m message.Message) []aria.InquirySegment {
 }
 
 func (p *Projector) Turns(msgs []message.Message) []aria.Turn {
-	return compose.Turns(msgs, p.summarize, p.previewArg)
+	return compose.Turns(msgs)
 }
 
 func (p *Projector) Nodes(msgs []message.Message, tails, argPartials map[string]string) []livedoc.Node {
-	return compose.Nodes(msgs, tails, argPartials, p.summarize, p.previewArg, p.timings)
+	return compose.Nodes(msgs, tails, argPartials, p.timings)
 }
 
 func (p *Projector) ResetTools() { p.timings = map[string]compose.ToolTiming{} }
+
+// ToolOpened stamps the moment the model began writing a call. First stamp
+// wins: the block opens once, and a re-emitted frame must not restart the
+// generation clock.
+func (p *Projector) ToolOpened(id string, at int64) {
+	t := p.at(id)
+	if t == nil || t.OpenedAt != 0 {
+		return
+	}
+	t.OpenedAt = at
+	p.timings[id] = *t
+}
 
 func (p *Projector) ToolStarted(id string, at int64) {
 	t := p.at(id)

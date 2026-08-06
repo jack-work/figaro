@@ -1055,6 +1055,17 @@ func (t *transcript) pruneCaches() {
 		keep[m.Turn] = true
 		return true
 	})
+	// The OPEN turn is not in the store's window — it is the live suffix, held
+	// separately — so a walk of the window alone does not see it. Without this
+	// line its caches were pruned as though it had scrolled out of history:
+	// the row cache re-renders and nobody notices, but `expanded` is USER
+	// state, and losing it silently undid an expansion the reader had just
+	// asked for. It undid it on Escape (which clears the selection through
+	// here) and, worse, on every frame while following the live tail — so
+	// expanding a streaming tool appeared not to work at all.
+	if open := t.openMessage(); open != nil {
+		keep[open.Turn] = true
+	}
 	for k := range t.rowCache {
 		if !keep[k.turn()] {
 			delete(t.rowCache, k)
@@ -1395,7 +1406,7 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 		// internal/render while its proof apparatus (sgr_vt_test.go's VT model)
 		// is needed by tests on both sides, so the model wants a third package
 		// before the transform can move at all.
-		rows = append(rows, transcriptRow{text: collapseSGR(plainNodeRow(r.Text, t.w)), ref: ref})
+		rows = append(rows, transcriptRow{text: sgrCollapse(plainNodeRow(r.Text, t.w)), ref: ref})
 	}
 	return cachedMessage{rows: rows}
 }
@@ -1405,7 +1416,9 @@ func (t *transcript) renderMsgBase(m aria.Message) cachedMessage {
 // per-block expansion state a gesture toggles.
 func (t *transcript) composer(m aria.Message) ldrender.Composer {
 	c := ldrender.Composer{
-		View: t.view, Header: messageHeader, Rule: t.transRule, Sender: dimSender, Tick: t.tick,
+		// The pager is the surface where Enter means something, so its view
+		// may open arguments as well as output (see ariaView.gesture).
+		View: pagerView(t.view), Header: messageHeader, Rule: t.transRule, Sender: dimSender, Tick: t.tick,
 		Expanded: func(block int) bool { return t.expanded[nodeRefAt(m, block)] },
 	}
 	if t.verbose() {
@@ -2268,7 +2281,7 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 			return true
 		}
 		if n.StartedAt != 0 {
-			if strings.Contains(toolDuration(n, time.Now()), q) {
+			if strings.Contains(toolElapsed(n), q) {
 				return true
 			}
 			if verbose && (strings.Contains("started "+formatToolTime(n.StartedAt), q) ||

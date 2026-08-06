@@ -25,7 +25,7 @@ func TestNodes_TextAndThinking(t *testing.T) {
 	nodes := Nodes([]message.Message{assistant(
 		message.Content{Type: message.ContentThinking, Text: "let me think"},
 		message.Content{Type: message.ContentProse, Text: "Here is the answer."},
-	)}, nil, nil, nil, nil)
+	)}, nil, nil, nil)
 	if len(nodes) != 2 {
 		t.Fatalf("want thinking + text node, got %d: %+v", len(nodes), nodes)
 	}
@@ -38,7 +38,7 @@ func TestNodes_TextAndThinking(t *testing.T) {
 }
 
 func TestNodes_RunningTool(t *testing.T) {
-	nodes := Nodes([]message.Message{assistant(invoke("t1", "bash", "ls -la"))}, nil, nil, nil, nil)
+	nodes := Nodes([]message.Message{assistant(invoke("t1", "bash", "ls -la"))}, nil, nil, nil)
 	if len(nodes) != 1 || nodes[0].Type != livedoc.NodeTool {
 		t.Fatalf("want 1 tool node: %+v", nodes)
 	}
@@ -56,7 +56,7 @@ func TestNodes_RunningTool(t *testing.T) {
 
 func TestNodes_RunningToolWithPartial(t *testing.T) {
 	partials := map[string]string{"t1": "line1\nline2\n"}
-	nodes := Nodes([]message.Message{assistant(invoke("t1", "bash", "tail -f log"))}, partials, nil, nil, nil)
+	nodes := Nodes([]message.Message{assistant(invoke("t1", "bash", "tail -f log"))}, partials, nil, nil)
 	if nodes[0].Status != livedoc.StatusRunning {
 		t.Fatal("tool should still be running")
 	}
@@ -68,10 +68,10 @@ func TestNodes_RunningToolWithPartial(t *testing.T) {
 func TestNodes_ToolTiming(t *testing.T) {
 	nodes := Nodes(
 		[]message.Message{assistant(invoke("t1", "bash", "ls"))},
-		nil, nil, nil, nil,
-		map[string]ToolTiming{"t1": {StartedAt: 100, FinishedAt: 250}},
+		nil, nil,
+		map[string]ToolTiming{"t1": {OpenedAt: 40, StartedAt: 100, FinishedAt: 250}},
 	)
-	if nodes[0].StartedAt != 100 || nodes[0].FinishedAt != 250 {
+	if nodes[0].OpenedAt != 40 || nodes[0].StartedAt != 100 || nodes[0].FinishedAt != 250 {
 		t.Fatalf("tool timing = %+v", nodes[0])
 	}
 }
@@ -80,62 +80,16 @@ func TestNodes_CompletedAndFailedTool(t *testing.T) {
 	ok := Nodes([]message.Message{
 		assistant(invoke("t1", "bash", "echo hi")),
 		toolResultTic(result("t1", "bash", "hi\n", false)),
-	}, nil, nil, nil, nil)
+	}, nil, nil, nil)
 	if ok[0].Status != livedoc.StatusOK || ok[0].Output != "hi" {
 		t.Errorf("completed tool wrong: %+v", ok[0])
 	}
 	bad := Nodes([]message.Message{
 		assistant(invoke("t2", "bash", "false")),
 		toolResultTic(result("t2", "bash", "boom", true)),
-	}, nil, nil, nil, nil)
+	}, nil, nil, nil)
 	if bad[0].Status != livedoc.StatusError {
 		t.Errorf("failed tool should be error: %+v", bad[0])
-	}
-}
-
-func TestNodes_CompletedBodyPreviewToolRetainsBody(t *testing.T) {
-	// A write-like tool returns a terse summary to the model but declares
-	// "content" as its preview arg. The completed node shows the written body
-	// (tail-previewed like bash), not the summary — while res.Text (what the
-	// model sees) is untouched.
-	inv := message.Content{
-		Type: message.ContentToolInvoke, ToolCallID: "w1", ToolName: "write",
-		Arguments: map[string]interface{}{"path": "f.txt", "content": "alpha\nbeta\ngamma"},
-	}
-	preview := func(name string) string {
-		if name == "write" {
-			return "content"
-		}
-		return ""
-	}
-	nodes := Nodes([]message.Message{
-		assistant(inv),
-		toolResultTic(result("w1", "write", "Wrote 16 bytes to f.txt", false)),
-	}, nil, nil, nil, preview)
-	if len(nodes) != 1 || nodes[0].Status != livedoc.StatusOK {
-		t.Fatalf("want 1 completed node, got %+v", nodes)
-	}
-	if nodes[0].Output != "alpha\nbeta\ngamma" {
-		t.Errorf("completed write should retain the written body, got %q", nodes[0].Output)
-	}
-}
-
-func TestNodes_CompletedBodyPreviewToolErrorShowsResult(t *testing.T) {
-	// On error the model-facing result is shown, not the body.
-	inv := message.Content{
-		Type: message.ContentToolInvoke, ToolCallID: "w1", ToolName: "write",
-		Arguments: map[string]interface{}{"content": "alpha"},
-	}
-	preview := func(string) string { return "content" }
-	nodes := Nodes([]message.Message{
-		assistant(inv),
-		toolResultTic(result("w1", "write", "Error: permission denied", true)),
-	}, nil, nil, nil, preview)
-	if nodes[0].Status != livedoc.StatusError {
-		t.Fatalf("status = %v", nodes[0].Status)
-	}
-	if nodes[0].Output != "Error: permission denied" {
-		t.Errorf("errored write should show the result, got %q", nodes[0].Output)
 	}
 }
 
@@ -144,7 +98,7 @@ func TestNodes_SkipsUserPromptAndDeterministic(t *testing.T) {
 		{Role: message.RoleInput, Content: []message.Content{{Type: message.ContentProse, Text: "do the thing"}}},
 		assistant(message.Content{Type: message.ContentProse, Text: "on it"}),
 	}
-	nodes := Nodes(msgs, nil, nil, nil, nil)
+	nodes := Nodes(msgs, nil, nil, nil)
 	if len(nodes) != 1 || nodes[0].Markdown != "on it" {
 		t.Fatalf("the user's prompt must not appear in the agent turn: %+v", nodes)
 	}

@@ -24,7 +24,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figaro/internal/partialjson"
 	"github.com/jack-work/figaro/internal/turns"
 )
 
@@ -44,18 +43,12 @@ func nodeID(lt uint64, blockIdx int) string {
 // the canonical Content IR.
 const composeBashCap = 200
 
-// ToolSummary returns a one-line display description for a tool call given
-// its name and arguments. It is the ONLY per-tool hook the composer exposes;
-// the client renders the resulting Summary verbatim. Return "" to fall back
-// to the generic sorted key=value formatting.
-type ToolSummary func(name string, args map[string]any) string
-
 // ToolPreviewArg returns the name of the "body" argument whose live-streaming
 // value should surface as a running tool node's preview (e.g. "content" for
-// write). Return "" to opt out — the vast majority of tools do.
-type ToolPreviewArg func(name string) string
-
 type ToolTiming struct {
+	// OpenedAt is when the tool block opened on the provider stream — the
+	// start of GENERATION. StartedAt/FinishedAt bracket EXECUTION.
+	OpenedAt   int64
 	StartedAt  int64
 	FinishedAt int64
 }
@@ -65,9 +58,8 @@ type ToolTiming struct {
 // invoke → a tool node folding in its result (or streamed partial). A
 // tool with no result yet is left status=running with whatever output has
 // streamed. argPartials carries the raw, still-truncated tool_use argument
-// JSON per tool_call_id; when execution output hasn't started and the tool
-// declares a preview arg, its live value seeds the node's Output.
-func Nodes(msgs []message.Message, partials, argPartials map[string]string, summarize ToolSummary, previewArg ToolPreviewArg, timings ...map[string]ToolTiming) []livedoc.Node {
+// JSON per tool_call_id; it becomes the node's Input, for every tool alike.
+func Nodes(msgs []message.Message, partials, argPartials map[string]string, timings ...map[string]ToolTiming) []livedoc.Node {
 	results := indexResults(msgs)
 	var toolTimings map[string]ToolTiming
 	if len(timings) > 0 {
@@ -106,7 +98,7 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 			case message.ContentThinking:
 				nodes = append(nodes, textNode(livedoc.NodeThinking, roleOutput, m.LogicalTime, ci, m.Timestamp, c.Text))
 			case message.ContentToolInvoke:
-				nodes = append(nodes, toolNode(c, m.LogicalTime, ci, results, partials, argPartials, summarize, previewArg, toolTimings))
+				nodes = append(nodes, toolNode(c, m.LogicalTime, ci, results, partials, argPartials, toolTimings))
 			}
 		}
 	}
@@ -133,7 +125,7 @@ func textNode(t livedoc.NodeType, role string, lt uint64, block int, at int64, t
 	}
 }
 
-func toolNode(inv message.Content, lt uint64, block int, results map[string]resultAt, partials, argPartials map[string]string, summarize ToolSummary, previewArg ToolPreviewArg, timings map[string]ToolTiming) livedoc.Node {
+func toolNode(inv message.Content, lt uint64, block int, results map[string]resultAt, partials, argPartials map[string]string, timings map[string]ToolTiming) livedoc.Node {
 	name := inv.ToolName
 	if name == "" {
 		name = "tool"
@@ -147,9 +139,10 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 		Src:        []livedoc.Src{{LT: lt, Block: block}},
 		Name:       name,
 		Args:       inv.Arguments,
-		Summary:    summaryFor(name, inv.Arguments, summarize),
+		Summary:    summaryFor(inv.Arguments),
 	}
 	if timing, ok := timings[inv.ToolCallID]; ok {
+		n.OpenedAt = timing.OpenedAt
 		n.StartedAt = timing.StartedAt
 		n.FinishedAt = timing.FinishedAt
 	}
@@ -166,44 +159,26 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 			n.Status = livedoc.StatusError
 		}
 		n.Output = tailBound(res.Text)
-		// Body-preview tools (e.g. write) keep the written body on screen
-		// rather than collapsing to the terse result summary, so the content
-		// is retained and tail-previewed like bash output. Display only: the
-		// canonical Content IR (res.Text) is still what the model receives.
-		if !res.IsError && previewArg != nil {
-			if pa := previewArg(name); pa != "" {
-				if body, ok := inv.Arguments[pa].(string); ok && body != "" {
-					n.Output = tailBound(body)
-				}
-			}
-		}
 	} else {
 		n.Status = livedoc.StatusRunning
 		n.Output = tailBound(partials[inv.ToolCallID])
-		// Generation-phase preview: if the tool has no execution output yet
-		// and declares a body arg, surface its still-streaming value.
-		if n.Output == "" && previewArg != nil {
-			if pa := previewArg(name); pa != "" {
-				if raw := argPartials[inv.ToolCallID]; raw != "" {
-					v, _ := partialjson.StringField([]byte(raw), pa)
-					n.Output = tailBound(v)
-				}
-			}
+		// Generation phase: the arguments are still arriving. Show the raw
+		// prefix for EVERY tool — no name is consulted and none is special —
+		// and drop it the moment the decoded Arguments land, since Args says
+		// the same thing without the truncation.
+		if len(inv.Arguments) == 0 {
+			n.Input = tailBound(argPartials[inv.ToolCallID])
 		}
 	}
 	return n
 }
 
-// summaryFor computes a tool node's Summary: prefer the caller's per-tool
-// summarizer when non-nil and non-empty; else fall back to generic sorted
-// key=value pairs. This is the only place args are formatted for display
-// generically — no tool names appear.
-func summaryFor(name string, args map[string]any, summarize ToolSummary) string {
-	if summarize != nil {
-		if s := summarize(name, args); s != "" {
-			return s
-		}
-	}
+// summaryFor is a tool node's one-line description, used for SEARCH and for
+// the clipboard — never for rendering, which reads the arguments directly
+// through the CLI's tool table. It is deliberately generic: the per-tool
+// Summarize() hooks it used to call said which argument spoke for a call,
+// which is the same thing the table says, in a second place.
+func summaryFor(args map[string]any) string {
 	if len(args) == 0 {
 		return ""
 	}

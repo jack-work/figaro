@@ -351,6 +351,19 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
   high) and `system.thinking_budget`.
 - **Automatic prompt caching** (`resolveCacheControl` / `markCacheBreakpoints`)
   — see cache-control.md.
+- **Streamed tool input** (`assemble.go::eagerToolStreaming`). Anthropic
+  **buffers each tool parameter value** until it is complete before streaming
+  it, so a large argument arrives in one lump: measured on a 5 KB `write`,
+  seven fragments in the first half-second (the short `path`) and then 25
+  seconds of silence before the rest. `system.eager_tool_streaming = true`
+  sets the per-tool `eager_input_streaming` field, which turns the buffering
+  off; absent or false omits the field and keeps the API default. The price,
+  documented by Anthropic, is that a truncated stream can now yield partial or
+  invalid JSON — figaro only ever *displays* the prefix (see below), and the
+  decoded arguments still come from the completed block.
+  **Copilot refuses it**: the Anthropic-dialect endpoint rejects the field
+  with a 400, so `anthropicsdk.Provider.NoEagerToolStreaming` (set by the
+  copilot provider) drops it there whatever the board says.
 - **Auth** (`auth.go`) — OAuth via hush; Claude-Code identity headers + beta
   flags. `anthropic-beta` does not need `interleaved-thinking` for adaptive
   models.

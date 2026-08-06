@@ -91,14 +91,32 @@ type Node struct {
 	// receipt and tools use the provider's tool-call id. It remains serialized
 	// in snapshots, but it is not UI identity. The aria wire addresses a node by
 	// the positional pair (turn, From+i), and NodeDelta.ID is that uint64 ordinal.
-	ID         string                 `json:"id,omitempty"`
-	Name       string                 `json:"name,omitempty"`    // tool name
-	Args       map[string]interface{} `json:"args,omitempty"`    // invocation arguments
-	Status     string                 `json:"status,omitempty"`  // running | ok | error
-	Output     string                 `json:"output,omitempty"`  // streamed result text
-	Summary    string                 `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
-	StartedAt  int64                  `json:"started_at,omitempty"`
-	FinishedAt int64                  `json:"finished_at,omitempty"`
+	ID     string                 `json:"id,omitempty"`
+	Name   string                 `json:"name,omitempty"`   // tool name
+	Args   map[string]interface{} `json:"args,omitempty"`   // invocation arguments
+	Status string                 `json:"status,omitempty"` // running | ok | error
+	// Input is the tool's arguments AS THEY ARRIVE — the raw, still-truncated
+	// JSON prefix the provider is streaming. Args is the same thing decoded,
+	// and only exists once the whole object parses, so Input is what there is
+	// to show while the model is still writing it.
+	//
+	// It is a STREAMED field (spliced by livedoc.Diff, like markdown and
+	// output), and it is not append-only: a bounded tail drops leading bytes
+	// as it slides, and it is cleared when Args lands. Both are ordinary
+	// deltas — Delta carries Del as well as Ins — so a shrink costs one splice
+	// and needs nothing new on the wire.
+	Input   string `json:"input,omitempty"`
+	Output  string `json:"output,omitempty"`  // streamed result text
+	Summary string `json:"summary,omitempty"` // producer-computed one-line tool description (client renders verbatim)
+	// OpenedAt is when the model began WRITING this call — the moment the tool
+	// block opened on the provider stream, before a single argument byte had
+	// arrived. StartedAt is when the call began RUNNING. The gap between them
+	// is GENERATION, which for a large write is nearly all of the wall time
+	// and used to be invisible: a thirty-second write rendered [0ms], because
+	// the only clock there started after the writing was over.
+	OpenedAt   int64 `json:"opened_at,omitempty"`
+	StartedAt  int64 `json:"started_at,omitempty"`
+	FinishedAt int64 `json:"finished_at,omitempty"`
 }
 
 // OpKind discriminates a node mutation on the wire.
@@ -127,11 +145,18 @@ type Op struct {
 	Ins   string `json:"ins,omitempty"`
 
 	// set: a tool node's scalar fields.
-	Status     string                 `json:"status,omitempty"`
-	Name       string                 `json:"name,omitempty"`
-	Args       map[string]interface{} `json:"args,omitempty"`
-	StartedAt  int64                  `json:"started_at,omitempty"`
-	FinishedAt int64                  `json:"finished_at,omitempty"`
+	Status string                 `json:"status,omitempty"`
+	Name   string                 `json:"name,omitempty"`
+	Args   map[string]interface{} `json:"args,omitempty"`
+	// OpenedAt is when the model began WRITING this call — the moment the
+	// tool block opened on the provider stream, before a single argument
+	// byte had arrived. StartedAt is when the call began RUNNING. The gap
+	// between them is generation, which for a large write is nearly all of
+	// the wall time and used to be invisible: a thirty-second write read
+	// [0ms], because the only clock started after the writing was over.
+	OpenedAt   int64 `json:"opened_at,omitempty"`
+	StartedAt  int64 `json:"started_at,omitempty"`
+	FinishedAt int64 `json:"finished_at,omitempty"`
 }
 
 // DiffNodes derives the minimal op sequence turning old into next. The

@@ -911,7 +911,30 @@ func (t *livelogTurn) setTranscriptQueued(prompts []string, errMsg string) {
 // ariaView renders a block by reusing figaro's existing node renderers, so
 // inline and transcript draw identically. One representation: livedoc.Node,
 // and one dispatch: renderNode.
-type ariaView struct{ settings *renderSettings }
+type ariaView struct {
+	settings *renderSettings
+	// gesture is true only on a surface that HAS a per-node expansion gesture
+	// — the pager. It exists because Composer.Expanded == nil means "this
+	// surface cannot un-collapse anything, so draw the fullest form", which is
+	// right for OUTPUT (the incipit freezes to scrollback; `show` is a one-shot
+	// dump) and wrong for ARGUMENTS, whose collapsed form is a live window the
+	// reader is meant to watch. Without it the incipit asked for the whole
+	// argument on every frame and the moving window never appeared.
+	gesture bool
+}
+
+// pagerView returns v as the pager sees it: a surface where Enter means
+// something, so per-node expansion may open arguments as well as output. Any
+// other NodeView passes through unchanged.
+func pagerView(v ldrender.NodeView) ldrender.NodeView {
+	av, ok := v.(*ariaView)
+	if !ok {
+		return v
+	}
+	c := *av
+	c.gesture = true
+	return &c
+}
 
 // Render draws a node in its DEFAULT form for the live incipit.
 //
@@ -935,15 +958,28 @@ func (v *ariaView) Render(n livedoc.Node, width, tick int) []string {
 }
 
 // RenderExpanded draws a node in its expanded or collapsed form. fullOutput is
-// the transcript's per-node expansion state (t.expanded[ref]); a tool's output
-// cap is the only thing it decides.
+// the transcript's per-node expansion state (t.expanded[ref]), and it now
+// decides BOTH of a tool's collapsible parts: Enter on the selection opens the
+// output and the arguments together, which is what "expand this" has always
+// looked like it meant.
 func (v *ariaView) RenderExpanded(n livedoc.Node, width, tick int, fullOutput bool) []string {
-	bashCap := nodeBashCapDefault
-	if fullOutput {
-		bashCap = nodeOutputUnlimited
-	}
 	verbose := v.settings != nil && v.settings.verbose
-	return renderNode(n, width, bashCap, uint64(tick), verbose)
+	// Expansion is a per-node GESTURE, and only the pager has one. A surface
+	// without one draws the minimized form — clamped body, `… last N of M
+	// lines` above it — rather than the fullest one.
+	//
+	// That reverses an older decision for the incipit, deliberately. It used
+	// to draw every row of a tool's output on the grounds that inline rows
+	// freeze to scrollback and a collapse there can never be undone. True, but
+	// it was written when a collapse was SILENT: the banner now says exactly
+	// what was elided, `figaro show` has the rest, and a 60-line file written
+	// inline buried the conversation it belonged to.
+	expand := verbose || (v.gesture && fullOutput)
+	cap := nodeBashCapDefault
+	if expand {
+		cap = nodeOutputUnlimited
+	}
+	return renderNode(n, width, cap, uint64(tick), verbose, expand)
 }
 
 // openRule prints the session's opening rule through the inline renderer, which
