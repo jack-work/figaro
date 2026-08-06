@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
@@ -42,6 +43,9 @@ func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.Message
 	// Per-block running byte count of accumulated input_json_delta
 	// payloads. Reported on block_stop and dumped on failure.
 	bytesByIdx := map[int]int64{}
+	// Per-block latch for the wire canary: it speaks once per tool block or
+	// not at all. See reportUnescapedChunk.
+	rawWire := map[int]bool{}
 
 	for stream.Next() {
 		if err := ctx.Err(); err != nil {
@@ -56,7 +60,7 @@ func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.Message
 		case anthropic.ContentBlockStartEvent:
 			handleBlockStart(ctx, v, bus)
 		case anthropic.ContentBlockDeltaEvent:
-			handleBlockDelta(ctx, v, &acc, bus, seenInputDelta, bytesByIdx)
+			handleBlockDelta(ctx, v, event.RawJSON(), &acc, bus, seenInputDelta, bytesByIdx, rawWire)
 		case anthropic.ContentBlockStopEvent:
 			handleBlockStop(ctx, v, &acc, bytesByIdx, bus)
 		case anthropic.MessageStopEvent:
@@ -103,7 +107,7 @@ func handleBlockStart(ctx context.Context, ev anthropic.ContentBlockStartEvent, 
 	}
 }
 
-func handleBlockDelta(ctx context.Context, ev anthropic.ContentBlockDeltaEvent, acc *anthropic.Message, bus provider.Bus, seen map[int]bool, bytesByIdx map[int]int64) {
+func handleBlockDelta(ctx context.Context, ev anthropic.ContentBlockDeltaEvent, rawEvent string, acc *anthropic.Message, bus provider.Bus, seen map[int]bool, bytesByIdx map[int]int64, rawWire map[int]bool) {
 	switch d := ev.Delta.AsAny().(type) {
 	case anthropic.TextDelta:
 		if d.Text != "" {
@@ -127,6 +131,7 @@ func handleBlockDelta(ctx context.Context, ev anthropic.ContentBlockDeltaEvent, 
 		}
 		bus.PushToolInvokeDelta(owner.ID, d.PartialJSON)
 		bytesByIdx[idx] += int64(len(d.PartialJSON))
+		reportUnescapedChunk(ctx, owner, idx, d.PartialJSON, rawEvent, rawWire)
 		if !seen[idx] {
 			seen[idx] = true
 			figOtel.Event(ctx, "provider.tool_use.first_input_delta",
@@ -263,4 +268,47 @@ func jsonSyntaxOffset(err error) int64 {
 		return se.Offset
 	}
 	return -1
+}
+
+// reportUnescapedChunk is the WIRE CANARY: it fires the first time a tool
+// block receives an argument fragment that is already impossible, and it
+// carries the bytes that settle who broke it.
+//
+// `partial_json` is a JSON string whose contents are a fragment of the tool
+// input's JSON TEXT. A tab inside an argument therefore travels as the FOUR
+// bytes `\\t` and must arrive as the TWO bytes `\t`. If it arrives as one raw
+// tab, one decoding too many has happened somewhere — and JSON forbids a raw
+// control character inside a string literal, so that fragment can never
+// reassemble into anything valid. The turn is already lost at this moment,
+// several seconds before json.Marshal says so at content_block_stop.
+//
+// Whose fault it is, is decidable right here and nowhere else, because this is
+// the last place both forms exist at once:
+//
+//   - wire.doubled_escape true: the wire was correct and something below us
+//     decoded twice. TestWireIsDecodedExactlyOnce says that something is not
+//     figaro and not the SDK — so look at whatever sits between.
+//   - wire.doubled_escape false: the fragment arrived single-escaped. Nothing
+//     downstream could have produced that; the sender did.
+//
+// Once per block, capped: a 1.7 KB `edit` is fifty of these events, and the
+// first one already carries the answer.
+func reportUnescapedChunk(ctx context.Context, owner anthropic.ContentBlockUnion, idx int, chunk, rawEvent string, seen map[int]bool) {
+	if seen[idx] {
+		return
+	}
+	at := strings.IndexFunc(chunk, func(r rune) bool { return r < 0x20 })
+	if at < 0 {
+		return
+	}
+	seen[idx] = true
+	figOtel.Event(ctx, "provider.tool_use.unescaped_chunk",
+		attribute.String("tool_call_id", owner.ID),
+		attribute.String("tool_name", owner.Name),
+		attribute.Int("chunk.len", len(chunk)),
+		attribute.Int("chunk.raw_control_at", at),
+		attribute.String("chunk.decoded", windowAround([]byte(chunk), at, 120)),
+		attribute.Bool("wire.doubled_escape", strings.Contains(rawEvent, `\\`)),
+		attribute.String("wire.raw", safeHead([]byte(rawEvent), dumpBytes)),
+	)
 }

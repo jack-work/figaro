@@ -357,13 +357,38 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
   seven fragments in the first half-second (the short `path`) and then 25
   seconds of silence before the rest. `system.eager_tool_streaming = true`
   sets the per-tool `eager_input_streaming` field, which turns the buffering
-  off; absent or false omits the field and keeps the API default. The price,
-  documented by Anthropic, is that a truncated stream can now yield partial or
-  invalid JSON — figaro only ever *displays* the prefix (see below), and the
-  decoded arguments still come from the completed block.
+  off; absent or false omits the field and keeps the API default.
   **Copilot refuses it**: the Anthropic-dialect endpoint rejects the field
   with a 400, so `anthropicsdk.Provider.NoEagerToolStreaming` (set by the
   copilot provider) drops it there whatever the board says.
+  **The price is real and it is paid in whole tool calls.** The buffering is
+  what guarantees a parameter arrives as complete, ESCAPED JSON text. Without
+  it the model's own escaping mistakes arrive verbatim: raw tabs, raw newlines,
+  bare quotes, a string value that never closes. Measured 2026-08-06 — five
+  turns, every one an `edit` carrying Go source, every affected aria carrying
+  the key, and the one aria without it never hit it once. Three mechanisms
+  answer, in order:
+  1. `repairAccumulatedToolInput` (decode.go) escapes RAW CONTROL CHARACTERS in
+     place, gated on `json.Valid` twice, so a payload broken only that way is
+     mended and nothing else is ever rewritten.
+  2. `quarantineMalformedToolInput` (decode.go) catches the rest. The bytes are
+     kept verbatim under `message.MalformedArgsKey`, which is a legal JSON
+     object — so the tool_use replays and its tool_result is not orphaned — and
+     the call is REFUSED rather than guessed: half-parsed `edit` arguments
+     would write the wrong bytes into a source file. The agent turns it into an
+     error result and the model resends. **One bad block costs one tool call,
+     not the turn**; before this it cost the thinking, the prose, and every
+     tool call already streamed.
+  3. `Provider.noteQuarantine` latches eager streaming OFF for that aria, in
+     memory, so the retry cannot repeat the failure. The chalkboard is not
+     rewritten: a new process starts from the user's stated preference again.
+  `provider.tool_use.unescaped_chunk` (stream.go) is the canary that named the
+  cause and will name the next one: it fires on the first argument fragment
+  carrying a raw control character, seconds before the marshal fails, and
+  carries `wire.doubled_escape` — false means the fragment was already
+  single-escaped when it reached us, true would mean something below us decoded
+  twice (`TestWireIsDecodedExactlyOnce` says that something is neither figaro
+  nor the SDK).
 - **Auth** (`auth.go`) — OAuth via hush; Claude-Code identity headers + beta
   flags. `anthropic-beta` does not need `interleaved-thinking` for adaptive
   models.

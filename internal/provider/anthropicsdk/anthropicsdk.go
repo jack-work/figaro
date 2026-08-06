@@ -18,10 +18,12 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/message"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/anthropicmodels"
 	"github.com/jack-work/figaro/internal/store"
@@ -82,6 +84,11 @@ type Provider struct {
 	// permitted"), so a chalkboard opt-in must not be able to break every
 	// request there. See internal/provider/copilot/copilot.go.
 	NoEagerToolStreaming bool
+
+	// eagerOff latches eager streaming OFF for one aria, for the life of this
+	// process, after that aria has once been sent a tool input that was not
+	// JSON. See noteQuarantine.
+	eagerOff map[string]bool
 
 	// CacheOpen opens the per-aria translation cache. nil disables caching.
 	CacheOpen      func(aria string) (store.Log[[]json.RawMessage], error)
@@ -214,7 +221,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		if terr != nil {
 			return fmt.Errorf("resolve token: %w", terr)
 		}
-		params := buildParams(projected.Messages, projected.LogicalTimes, in.Snapshot, in.Tools, int64(maxTokens), isOAuthToken(tok) && !p.NoOAuthIdentity, model, !p.NoEagerToolStreaming)
+		params := buildParams(projected.Messages, projected.LogicalTimes, in.Snapshot, in.Tools, int64(maxTokens), isOAuthToken(tok) && !p.NoOAuthIdentity, model, p.eagerAllowed(in.AriaID))
 		client := anthropic.NewClient(opts...)
 		stream := client.Messages.NewStreaming(ctx, params, opts...)
 		assembled, raw, serr := drainStream(ctx, stream, model, bus)
@@ -223,6 +230,7 @@ func (p *Provider) Send(ctx context.Context, in provider.SendInput, bus provider
 		}
 		msg = assembled
 		acc = raw
+		p.noteQuarantine(ctx, in.AriaID, raw)
 		return nil
 	})
 	if err != nil {
@@ -302,4 +310,77 @@ func (p *Provider) resolveModel(snap chalkboard.Snapshot) string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.model
+}
+
+// eagerAllowed reports whether this request may ask for unbuffered tool-input
+// streaming: the endpoint must permit it, and this aria must not have already
+// been burned by it.
+func (p *Provider) eagerAllowed(aria string) bool {
+	if p.NoEagerToolStreaming {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return !p.eagerOff[aria]
+}
+
+// noteQuarantine latches eager streaming off for an aria that has just been
+// sent a tool input which was not JSON.
+//
+// THE KNOB IS THE CAUSE, and this is the whole of the causal chain:
+// `system.eager_tool_streaming` sets `eager_input_streaming` on every tool,
+// which turns OFF the API's per-parameter BUFFERING. The buffering is what
+// guarantees a parameter arrives as complete, escaped JSON text; without it
+// the model's own escaping mistakes reach us verbatim — raw tabs, raw
+// newlines, bare quotes, a string value that never closes. Anthropic documents
+// the trade; figaro opted in for a live view of arguments as they are written.
+//
+// MEASURED: five turns in one day, every one of them an `edit` carrying Go
+// source, and every affected aria had the key set. The aria without it never
+// failed once.
+//
+// So the opt-in is honoured until it is disproved, and then it is not. The
+// first bad payload costs one tool call (it is quarantined, not executed); the
+// retry, and everything after it in that aria, goes back to the buffered path
+// that cannot produce this failure. Per aria, in memory: the user's chalkboard
+// is not rewritten behind his back, and a new process starts from his stated
+// preference again.
+func (p *Provider) noteQuarantine(ctx context.Context, aria string, acc anthropic.Message) {
+	if !hasQuarantinedTool(acc) {
+		return
+	}
+	p.mu.Lock()
+	already := p.eagerOff[aria]
+	if !already {
+		if p.eagerOff == nil {
+			p.eagerOff = map[string]bool{}
+		}
+		p.eagerOff[aria] = true
+	}
+	p.mu.Unlock()
+	if already {
+		return
+	}
+	figOtel.Event(ctx, "provider.eager_tool_streaming.disabled",
+		attribute.String("aria", aria),
+		attribute.String("reason", "a tool input arrived that was not JSON"),
+	)
+}
+
+// hasQuarantinedTool reports whether any block of the accumulated turn is a
+// tool call figaro refused (see message.MalformedArgs).
+func hasQuarantinedTool(acc anthropic.Message) bool {
+	for _, b := range acc.Content {
+		if b.Type != "tool_use" {
+			continue
+		}
+		var args map[string]json.RawMessage
+		if json.Unmarshal(b.Input, &args) != nil || len(args) != 1 {
+			continue
+		}
+		if _, ok := args[message.MalformedArgsKey]; ok {
+			return true
+		}
+	}
+	return false
 }
