@@ -7,7 +7,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	ldrender "github.com/jack-work/figaro/internal/livelog/render"
 	"github.com/jack-work/figaro/internal/term"
 )
 
@@ -49,25 +48,6 @@ func TestRenderToolNode_RunningOutputClampedToBashCap(t *testing.T) {
 	}
 	if !strings.Contains(joined, "LATE_TAIL_SENTINEL") {
 		t.Errorf("late tail should be visible:\n%s", joined)
-	}
-}
-
-func TestRenderToolNode_TimingAndVerboseDetails(t *testing.T) {
-	n := livedoc.Node{
-		Type:       livedoc.NodeTool,
-		Name:       "bash",
-		Status:     livedoc.StatusOK,
-		StartedAt:  1_700_000_000_000,
-		FinishedAt: 1_700_000_001_250,
-	}
-
-	rows := renderToolNode(n, 120, 5, 0, true, true)
-	joined := stripANSI(strings.Join(rows, "\n"))
-	if !strings.Contains(joined, "[1.2s]") {
-		t.Fatalf("duration missing: %s", joined)
-	}
-	if !strings.Contains(joined, "started ") || !strings.Contains(joined, "finished ") {
-		t.Fatalf("verbose timestamps missing: %s", joined)
 	}
 }
 
@@ -187,13 +167,13 @@ func TestNodeExpandable_StreamingToolWithNoOutput(t *testing.T) {
 // without colour, load-bearing with it — and it is the thing the owner asked
 // for twice: one blue for the call, furniture identical on both sides.
 func TestRenderToolNode_ColoursAreConsistent(t *testing.T) {
-	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
-		Input: `{"path":"/x.md"}`}
+	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
+		Args: map[string]any{"path": "/x.md", "content": "a line"}}
 	joined := strings.Join(renderToolNode(n, 60, 10, 0, false, false), "\n")
-	// The NAME is the call's colour; the VALUE is the body colour prose and
-	// thinking use, so the three read as one voice; the rule is the same dim
-	// the output rule uses.
-	for _, want := range []string{term.Arg("write"), term.Body("/x.md"), term.Dim(quoteGutter)} {
+	// Three colours, one meaning each: the call (name and headline argument),
+	// the body text prose and thinking already use, and the dim rule. A golden
+	// records the LAYOUT; only a test can say what colour a run carries.
+	for _, want := range []string{term.Arg("write"), term.Body("/x.md"), term.Dim(toolGutter)} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing %q in:\n%q", want, joined)
 		}
@@ -232,66 +212,4 @@ func renderNodeRows(t *testing.T, n livedoc.Node, width, cap int, expand bool) [
 		out[i] = stripANSI(r)
 	}
 	return out
-}
-
-// The INCIPIT must not expand arguments, and the reason is not obvious: the
-// shared Composer treats a nil Expanded map as "this surface has no gesture,
-// so draw the fullest form", which is right for output (inline rows freeze to
-// scrollback and can never be re-rendered) and wrong for a streaming argument,
-// whose whole value is that it stays a small moving window until asked.
-//
-// Driven through the real Composer rather than the view, because the nil-map
-// default lives there and that is the thing being pinned.
-func TestIncipitDrawsArgumentsFoldedButOutputWhole(t *testing.T) {
-	body := strings.Repeat("a line of the file being written\\n", 20)
-	n := livedoc.Node{
-		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
-		Input:  `{"path":"/x.md","content":"` + body,
-		Output: strings.TrimRight(strings.Repeat("output line\n", 40), "\n"),
-	}
-	// Argument rows and output rows share the same RULE — that is the point of
-	// the change, and colour carries the distinction (term.Arg), which a test
-	// cannot force here because the colour mode is resolved once at init. So
-	// the two are counted on fixtures that have only one of them.
-	// Count the box's CONTENT rows — interior rows carrying text — rather than
-	// every row with a border in it, so the assertions survive a change to the
-	// frame and stay about what is shown.
-	ruleRows := func(view ldrender.NodeView, expanded func(int) bool, node livedoc.Node) int {
-		c := ldrender.Composer{View: view, Tick: 0, Expanded: expanded}
-		count := 0
-		for _, r := range c.Nodes([]livedoc.Node{node}, 70) {
-			if boxContentText(stripANSI(r.Text)) != "" {
-				count++
-			}
-		}
-		return count
-	}
-	argsOnly := n
-	argsOnly.Output = ""
-	outOnly := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK, Output: n.Output}
-	rowsOf := func(view ldrender.NodeView, expanded func(int) bool) (args, out int) {
-		return ruleRows(view, expanded, argsOnly), ruleRows(view, expanded, outOnly)
-	}
-
-	// Expanded nil is the incipit: no gesture, "draw the fullest form".
-	// The label, the moving window, and the `path` field's own row.
-	wantArgs := 2 + argStreamLines
-	args, out := rowsOf(&ariaView{settings: &renderSettings{}}, nil)
-	if args != wantArgs {
-		t.Errorf("incipit arguments: %d rows, want %d (the moving window)", args, wantArgs)
-	}
-	if out != 40 {
-		t.Errorf("incipit output: %d rows, want all 40 — inline never collapses what it cannot reopen", out)
-	}
-
-	// The pager always states the per-node answer, and an unexpanded node
-	// gets the same window — one shape, two surfaces.
-	unexpanded := func(int) bool { return false }
-	pagerArgs, pagerOut := rowsOf(pagerView(&ariaView{settings: &renderSettings{}}), unexpanded)
-	if pagerArgs != wantArgs {
-		t.Errorf("pager unexpanded arguments: %d rows, want %d", pagerArgs, wantArgs)
-	}
-	if pagerOut != nodeBashCapDefault+1 { // + the "… last N of M lines" note
-		t.Errorf("pager unexpanded output: %d rows, want %d — the pager DOES collapse output", pagerOut, nodeBashCapDefault+1)
-	}
 }

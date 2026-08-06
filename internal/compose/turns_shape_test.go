@@ -45,7 +45,7 @@ func TestTurns_InquiryIsTextAndNodesAreTheReply(t *testing.T) {
 		toolResultTic(result("t1", "bash", "hi", false)),
 		assistant(message.TextContent("second answer")),
 	}
-	turns := Turns(msgs, nil)
+	turns := Turns(msgs)
 	if len(turns) != 2 {
 		t.Fatalf("got %d turns, want 2: %+v", len(turns), turns)
 	}
@@ -75,7 +75,7 @@ func TestTurns_SkipsControlOnlyTics(t *testing.T) {
 		control,
 		userPrompt("hello"),
 		assistant(message.TextContent("hi there")),
-	}, nil)
+	})
 	if len(turns) != 1 {
 		t.Fatalf("control tic should not open a turn; got %+v", turns)
 	}
@@ -102,7 +102,7 @@ func TestTurns_ToolBeforeSteeringSharingItsLT(t *testing.T) {
 	for i := range msgs {
 		msgs[i].LogicalTime = uint64(60 + i) // 60 prompt, 61 asst, 62 results, 63 asst
 	}
-	turns := Turns(msgs, nil)
+	turns := Turns(msgs)
 	if len(turns) != 1 {
 		t.Fatalf("steering must not open a turn; got %d: %+v", len(turns), turns)
 	}
@@ -156,10 +156,10 @@ func TestTurns_PureUnderOpenTail(t *testing.T) {
 	for i := range msgs {
 		msgs[i].LogicalTime = uint64(i + 1)
 	}
-	full := Turns(append([]message.Message(nil), msgs...), nil)
+	full := Turns(append([]message.Message(nil), msgs...))
 
 	for n := 1; n <= len(msgs); n++ {
-		prefix := Turns(append([]message.Message(nil), msgs[:n]...), nil)
+		prefix := Turns(append([]message.Message(nil), msgs[:n]...))
 		for i, tn := range prefix {
 			if i >= len(full) {
 				t.Fatalf("prefix %d produced turn %d beyond the full projection", n, i)
@@ -195,8 +195,8 @@ func TestTurns_EmptyBlocksAreMintedNotSkipped(t *testing.T) {
 	prompt := userPrompt("q")
 	prompt.LogicalTime = 1
 
-	before := Turns([]message.Message{prompt, empty}, nil)
-	after := Turns([]message.Message{prompt, filled}, nil)
+	before := Turns([]message.Message{prompt, empty})
+	after := Turns([]message.Message{prompt, filled})
 
 	if len(before[0].Nodes) != len(after[0].Nodes) {
 		t.Fatalf("node count moved when the empty block filled: %d -> %d",

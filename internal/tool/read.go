@@ -45,11 +45,6 @@ func NewReadTool(cwd string) *ReadTool { return &ReadTool{Cwd: cwd} }
 
 func (r *ReadTool) Name() string { return "read" }
 
-func (r *ReadTool) Summarize(args map[string]any) string {
-	p, _ := args["path"].(string)
-	return p
-}
-
 func (r *ReadTool) Description() string {
 	return fmt.Sprintf(
 		"Read the contents of a file. For text files, output is truncated to %d lines or %dKB "+

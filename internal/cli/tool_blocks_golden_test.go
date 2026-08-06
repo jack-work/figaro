@@ -27,48 +27,42 @@ var updateToolBlocks = flag.Bool("update-tool-blocks", false, "rewrite testdata/
 // contract — those are in nodes_test.go and transcript_expand_test.go.
 //
 // The cases are the states the owner reviewed, in the order he reviewed them.
+// The cases are the states the owner reviewed, across the tool styles the
+// table knows: a shell, a file write, a read, and one it has never heard of.
 func toolBlockCases() []struct {
 	name              string
 	node              livedoc.Node
 	width, bashCap    int
 	verbose, expanded bool
 } {
-	opened := int64(1785862030000)
-	longCmd := "cd /var/tmp/x && grep -n -i 'rossini' opera.md && echo done with a tail far longer than the pane"
-	body := "# Sixty Facts\n1. Il barbiere di Siviglia is an opera buffa in two acts by Rossini.\n2. The libretto was by Cesare Sterbini.\n3. It premiered in Rome in 1816.\n4. Rossini was twenty-three.\n5. He wrote it in under three weeks."
-	out := strings.TrimRight(strings.Repeat("9:7. Mozart's Le nozze di Figaro sets the sequel.\n", 13), "\n")
+	o := int64(1785862030000)
+	cmd := `cd /var/tmp/x && grep -niE "bass|baritone|tenor|soprano" opera.md`
+	out := strings.TrimRight(strings.Repeat("15:13. Figaro, the barber of the title, is a baritone.\n", 13), "\n")
+	body := strings.TrimRight(strings.Repeat("33. Rossini's Almaviva is a demanding tenor part.\n", 13), "\n")
 
-	bash := livedoc.Node{
-		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
-		Args: map[string]any{"command": longCmd}, Output: out,
-		OpenedAt: opened, StartedAt: opened + 1400, FinishedAt: opened + 1407,
-	}
-	write := livedoc.Node{
-		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
+	bash := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Args: map[string]any{"command": cmd, "timeout": 240}, Output: out,
+		OpenedAt: o, StartedAt: o + 1400, FinishedAt: o + 1407}
+	write := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
 		Args:     map[string]any{"path": "/var/tmp/x/opera.md", "content": body},
 		Output:   "Wrote 5453 bytes to /var/tmp/x/opera.md",
-		OpenedAt: opened, StartedAt: opened + 31200, FinishedAt: opened + 31204,
-	}
-	streaming := livedoc.Node{
-		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
-		Input:    `{"path":"/var/tmp/x/opera.md","content":"` + strings.ReplaceAll(body, "\n", `\n`),
-		OpenedAt: opened,
-	}
-	failed := livedoc.Node{
-		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusError,
+		OpenedAt: o, StartedAt: o + 31200, FinishedAt: o + 31204}
+	streaming := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
+		Input: `{"path":"/var/tmp/x/opera.md","content":"` + strings.ReplaceAll(body, "\n", `\n`), OpenedAt: o}
+	read := livedoc.Node{Type: livedoc.NodeTool, Name: "read", Status: livedoc.StatusOK,
+		Args: map[string]any{"path": "/var/tmp/x/opera.md", "limit": 3}, Output: body,
+		OpenedAt: o, StartedAt: o + 40, FinishedAt: o + 44}
+	proc := livedoc.Node{Type: livedoc.NodeTool, Name: "process", Status: livedoc.StatusOK,
+		Args: map[string]any{"action": "poll", "session": "bg-3"}, Output: "still running",
+		OpenedAt: o, StartedAt: o + 5, FinishedAt: o + 9}
+	unknown := livedoc.Node{Type: livedoc.NodeTool, Name: "mystery", Status: livedoc.StatusOK,
+		Args: map[string]any{"zeta": "last", "alpha": "first"}, Output: "done",
+		OpenedAt: o, StartedAt: o + 2, FinishedAt: o + 3}
+	failed := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusError,
 		Args: map[string]any{"command": "false"}, Output: "exit status 1",
-		OpenedAt: opened, StartedAt: opened + 900, FinishedAt: opened + 903,
-	}
-	running := livedoc.Node{
-		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusRunning,
-		Args: map[string]any{"command": "sleep 30"}, Output: "still going",
-		OpenedAt: opened, StartedAt: opened + 200,
-	}
-	legacy := livedoc.Node{ // an aria older than the generation clock
-		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
-		Args: map[string]any{"command": "ls"}, Output: "a\nb",
-		StartedAt: opened, FinishedAt: opened + 4,
-	}
+		OpenedAt: o, StartedAt: o + 900, FinishedAt: o + 903}
+	legacy := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Args: map[string]any{"command": "ls"}, Output: "a\nb", StartedAt: o, FinishedAt: o + 4}
 
 	return []struct {
 		name              string
@@ -76,18 +70,17 @@ func toolBlockCases() []struct {
 		width, bashCap    int
 		verbose, expanded bool
 	}{
-		{"bash · folded", bash, 78, nodeBashCapDefault, false, false},
-		{"bash · expanded (Enter)", bash, 78, nodeOutputUnlimited, false, true},
-		{"bash · verbose (Ctrl-O) adds metadata only", bash, 78, nodeBashCapDefault, true, false},
-		{"write · folded, head of a multiline value", write, 78, nodeBashCapDefault, false, false},
-		{"write · expanded", write, 78, nodeOutputUnlimited, false, true},
-		{"write · streaming, tail of a growing value", streaming, 78, nodeOutputUnlimited, false, false},
-		{"write · streaming, expanded", streaming, 78, nodeOutputUnlimited, false, true},
+		{"bash · minimized", bash, 78, nodeBashCapDefault, false, false},
+		{"bash · expanded", bash, 78, nodeBashCapDefault, false, true},
+		{"write · minimized (content is the body; no byte count)", write, 78, nodeBashCapDefault, false, false},
+		{"write · expanded", write, 78, nodeBashCapDefault, false, true},
+		{"write · streaming", streaming, 78, nodeBashCapDefault, false, false},
+		{"read · minimized", read, 78, nodeBashCapDefault, false, false},
+		{"process · drawn like a shell", proc, 78, nodeBashCapDefault, false, false},
+		{"unknown tool · name and first argument", unknown, 78, nodeBashCapDefault, false, false},
 		{"bash · failed", failed, 78, nodeBashCapDefault, false, false},
-		{"bash · running, output arriving", running, 78, nodeBashCapDefault, false, false},
 		{"bash · no generation clock (old aria)", legacy, 78, nodeBashCapDefault, false, false},
 		{"bash · narrow pane", bash, 46, nodeBashCapDefault, false, false},
-		{"bash · too narrow to frame", bash, 24, nodeBashCapDefault, false, false},
 	}
 }
 
@@ -95,8 +88,11 @@ func TestToolBlockGolden(t *testing.T) {
 	// A running call's duration is `now - opened`, so the clock is frozen at a
 	// fixed point past the fixture's timestamps. Without this the snapshot
 	// changes every second and the golden is worthless.
+	// A running call's elapsed time is `now - opened`, so the clock is frozen
+	// past the fixtures' timestamps. Without this the snapshot changes every
+	// second and the golden is worthless.
 	defer func(prev func() time.Time) { timeNow = prev }(timeNow)
-	timeNow = func() time.Time { return time.UnixMilli(1785862030000 + 12_500) }
+	timeNow = func() time.Time { return time.UnixMilli(1785862030000 + 17_200) }
 
 	var b strings.Builder
 	for _, c := range toolBlockCases() {

@@ -43,12 +43,6 @@ func nodeID(lt uint64, blockIdx int) string {
 // the canonical Content IR.
 const composeBashCap = 200
 
-// ToolSummary returns a one-line display description for a tool call given
-// its name and arguments. It is the ONLY per-tool hook the composer exposes;
-// the client renders the resulting Summary verbatim. Return "" to fall back
-// to the generic sorted key=value formatting.
-type ToolSummary func(name string, args map[string]any) string
-
 // ToolPreviewArg returns the name of the "body" argument whose live-streaming
 // value should surface as a running tool node's preview (e.g. "content" for
 type ToolTiming struct {
@@ -65,7 +59,7 @@ type ToolTiming struct {
 // tool with no result yet is left status=running with whatever output has
 // streamed. argPartials carries the raw, still-truncated tool_use argument
 // JSON per tool_call_id; it becomes the node's Input, for every tool alike.
-func Nodes(msgs []message.Message, partials, argPartials map[string]string, summarize ToolSummary, timings ...map[string]ToolTiming) []livedoc.Node {
+func Nodes(msgs []message.Message, partials, argPartials map[string]string, timings ...map[string]ToolTiming) []livedoc.Node {
 	results := indexResults(msgs)
 	var toolTimings map[string]ToolTiming
 	if len(timings) > 0 {
@@ -104,7 +98,7 @@ func Nodes(msgs []message.Message, partials, argPartials map[string]string, summ
 			case message.ContentThinking:
 				nodes = append(nodes, textNode(livedoc.NodeThinking, roleOutput, m.LogicalTime, ci, m.Timestamp, c.Text))
 			case message.ContentToolInvoke:
-				nodes = append(nodes, toolNode(c, m.LogicalTime, ci, results, partials, argPartials, summarize, toolTimings))
+				nodes = append(nodes, toolNode(c, m.LogicalTime, ci, results, partials, argPartials, toolTimings))
 			}
 		}
 	}
@@ -131,7 +125,7 @@ func textNode(t livedoc.NodeType, role string, lt uint64, block int, at int64, t
 	}
 }
 
-func toolNode(inv message.Content, lt uint64, block int, results map[string]resultAt, partials, argPartials map[string]string, summarize ToolSummary, timings map[string]ToolTiming) livedoc.Node {
+func toolNode(inv message.Content, lt uint64, block int, results map[string]resultAt, partials, argPartials map[string]string, timings map[string]ToolTiming) livedoc.Node {
 	name := inv.ToolName
 	if name == "" {
 		name = "tool"
@@ -145,7 +139,7 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 		Src:        []livedoc.Src{{LT: lt, Block: block}},
 		Name:       name,
 		Args:       inv.Arguments,
-		Summary:    summaryFor(name, inv.Arguments, summarize),
+		Summary:    summaryFor(inv.Arguments),
 	}
 	if timing, ok := timings[inv.ToolCallID]; ok {
 		n.OpenedAt = timing.OpenedAt
@@ -179,16 +173,12 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 	return n
 }
 
-// summaryFor computes a tool node's Summary: prefer the caller's per-tool
-// summarizer when non-nil and non-empty; else fall back to generic sorted
-// key=value pairs. This is the only place args are formatted for display
-// generically — no tool names appear.
-func summaryFor(name string, args map[string]any, summarize ToolSummary) string {
-	if summarize != nil {
-		if s := summarize(name, args); s != "" {
-			return s
-		}
-	}
+// summaryFor is a tool node's one-line description, used for SEARCH and for
+// the clipboard — never for rendering, which reads the arguments directly
+// through the CLI's tool table. It is deliberately generic: the per-tool
+// Summarize() hooks it used to call said which argument spoke for a call,
+// which is the same thing the table says, in a second place.
+func summaryFor(args map[string]any) string {
 	if len(args) == 0 {
 		return ""
 	}

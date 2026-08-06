@@ -95,58 +95,54 @@ wire. Whether the fragments arrive smoothly at all is a **provider** question
 
 ### How a tool draws
 
-A tool call is one block: a left gutter, and two labels.
+One table in the CLI (`internal/cli/toolbox.go`, `toolStyles`) says how every
+tool is drawn, keyed by the tool NAME the wire already carries. It is
+presentation policy — the server has no business knowing that a shell wants a
+`$` — and it is the only place any of it is written down. A second frontend
+lifts the table rather than the renderer.
+
+| field | means |
+|---|---|
+| `Label` | replaces the tool's name on the minimized header (`$` for shells) |
+| `Headline` | the argument that speaks for the call: the command, the path |
+| `Body` | an argument to draw in place of the tool's own output |
+
+```go
+"bash":  {Label: "$", Headline: "command"},
+"write": {Headline: "path", Body: "content"},
+"read":  {Headline: "path"},
+```
+
+An unknown tool keeps its name and takes its first argument as the headline —
+the same shape as the known ones, not a special case.
 
 ```
-  bash [1.4s]
-  │
-  │ command cd /var/tmp/x && grep -nE '1[6-9][0-9]{2}' opera.md
-  │
-✓ done [7ms]
-  │
-  │ … last 10 of 13 lines
-  │ 10:8. That title deferred to Paisiello, whose 1782 Barbiere held the stage.
-  └──
+minimized                                    expanded (Enter, or Ctrl-O)
+✓ $ grep -n baritone opera.md [1.4s]         ✓ bash [1.4s]
+  │ … last 10 of 32 lines                      │ grep -n baritone opera.md
+  │ 15:13. Figaro is a baritone.                │ timeout 240
+                                               │ started 2026-08-06 01:33:48.347 EDT
+✓ write /var/tmp/x/opera.md [17.2s]            │ finished 2026-08-06 01:33:48.365 EDT
+  │ … last 10 of 32 lines                      │
+  │ 33. Rossini's Almaviva is a tenor.          │ 15:13. Figaro is a baritone.
 ```
 
-**One glyph per block**, on the status label, where the outcome is reported:
-`✓ done`, `✗ failed`, or the spinner while output is still arriving. The header
-carries the spinner only while the call is still being written. A stub elbow
-closes a finished block; while the arguments stream there is no elbow and no
-trailing rule row.
+Minimized, the header carries the CALL — what a reader scanning a transcript is
+looking for — and the body carries the result, clamped, each row **cut** rather
+than wrapped: a preview that reflows is harder to scan than one that stops.
+Expanded, the header steps back to the tool's name because the call is about to
+be shown in full: the headline argument first (in the call colour, unlabelled),
+then the other arguments, then `started`/`finished`, then one blank row, then
+the whole output, wrapped.
 
-A **one-line** argument stays beside its label however long it is, cut with an
-ellipsis — dropping it onto its own row made one argument look like two and
-left the label column saying nothing. Expanded is the exception: there the
-value is meant to be read, so it takes the label to itself and wraps beneath.
+`write` sets `Body: "content"`, so the file body streams in exactly the way a
+command's output does, and its receipt ("Wrote N bytes") is never shown — the
+content is the interesting half and the reader can see it.
 
-There are no horizontal rules and no box: a bar across the screen for every
-tool call made the transcript look ruled rather than written, and the gutter
-already says where the block starts and stops. The block ends where its output
-ends — the turn puts a blank line between nodes.
-
-**Two clocks.** The header carries GENERATION — how long the model spent
-writing the call, `OpenedAt` to `StartedAt` — and the divider carries RUNTIME,
-`StartedAt` to `FinishedAt`. On a large write they differ by half a minute, and
-only the second used to exist, which is why such a call rendered `[0ms]` after
-thirty seconds of visible streaming. `OpenedAt` is stamped at `evToolStart`,
-the only place that knows it; an aria older than the field falls back to
-showing the runtime in the header.
-
-The second label says what the *execution* is doing (`running`/`done`/`failed`)
-and **arrives with the result** — until the tool has run there is nothing to
-announce.
-
-Rows are fitted to the pane less a couple of columns, and `box.row` clips —
-the one place that can guarantee no row outruns its pane. The rows that
-overflow are never the ones you predict (a fold note at width 20, a timestamp
-at width 28).
-
-| | folded | expanded (`Enter` on the selection) |
-|---|---|---|
-| **arguments** | last **5** rows while streaming, first **2** once settled, overflow **ellipsised** | every row, **wrapped** |
-| **output** | last 10 rows + a `… last N of M lines` note | every row |
-| **metadata** (`started`/`finished`) | hidden | shown |
+The duration is **one number**: opened to finished, the model writing the call
+plus the tool running it. The split is in the expanded view, where `started`
+and `finished` bracket the execution and everything before `started` was
+generation.
 
 **Expansion is per node and it persists.** `Esc` clears the *selection* and
 leaves the expansion alone; the way back is to select the node again and press

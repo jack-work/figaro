@@ -20,7 +20,6 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/term"
-	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/turns"
 )
 
@@ -162,8 +161,7 @@ func renderAria(loaded *config.Loaded, id string, args []string) {
 		msgs[i].LogicalTime = e.LT
 	}
 	turns.StampIDs(msgs)
-	reg := tool.DefaultRegistry("")
-	turns := compose.Turns(msgs, compose.ToolSummary(tool.Summarizer(reg)))
+	turns := compose.Turns(msgs)
 	lo, hi := selectTurnRange(turns, opts)
 
 	if opts.jsonOut {
