@@ -65,6 +65,17 @@ func drainStream(ctx context.Context, stream *ssestream.Stream[anthropic.Message
 
 		if err := acc.Accumulate(event); err != nil {
 			recordAccumulateFailure(ctx, event, &acc, bytesByIdx, err)
+			// ONE UNUSABLE BLOCK MUST NOT COST THE WHOLE TURN. The thinking,
+			// the prose and every tool call already streamed are in hand and
+			// paid for; throwing them away because the model owed us one
+			// escape is the expensive half of this failure, not the cheap one.
+			// Quarantine the offending block and carry on — the call comes
+			// back as an error result, and the model resends it.
+			if quarantineMalformedToolInput(ctx, &acc, err) {
+				if retry := acc.Accumulate(event); retry == nil {
+					continue
+				}
+			}
 			return message.Message{}, anthropic.Message{}, fmt.Errorf("accumulate: %w", err)
 		}
 	}

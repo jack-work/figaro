@@ -1128,6 +1128,18 @@ func (a *Agent) assembleToolResults(
 	total := a.toolImageBudget()
 	budget := total
 	for i, tc := range calls {
+		// The arguments never arrived intact, so nothing was executed. Say
+		// exactly that, and say it to the MODEL: this is the whole repair
+		// path — one round trip, and it resends the call it owed us.
+		if _, bad := message.MalformedArgsOf(tc); bad {
+			results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName,
+				"Error: the arguments for this tool call did not arrive as valid JSON, "+
+					"so it was NOT executed and nothing was changed. Send the call again. "+
+					"If an argument carries source text, every tab, newline and double "+
+					"quote inside it must be escaped (\\t, \\n, \\\"); consider a smaller payload.",
+				true)
+			continue
+		}
 		if !expect[tc.ToolCallID] {
 			results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName, "Error: missing tool_call_id", true)
 			continue
@@ -1338,6 +1350,15 @@ func newSpecDispatcher(events chan toolEvent) *specDispatcher {
 // those into the open tool_result message.
 func (s *specDispatcher) dispatch(turnCtx context.Context, a *Agent, tc message.Content) *toolPending {
 	if tc.Type != message.ContentToolInvoke || tc.ToolCallID == "" {
+		return nil
+	}
+	// A QUARANTINED CALL NEVER RUNS. Its arguments did not arrive as valid
+	// JSON, so there is nothing to run it WITH: executing on a guess is how a
+	// half-parsed `edit` writes the wrong bytes into a source file. Refusing
+	// here — the one chokepoint every tool passes through — leaves the call
+	// with no outcome, and assembleToolResults turns that into an error result
+	// the model can act on.
+	if _, bad := message.MalformedArgsOf(tc); bad {
 		return nil
 	}
 	s.mu.Lock()

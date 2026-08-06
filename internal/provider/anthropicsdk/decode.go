@@ -1,12 +1,15 @@
 package anthropicsdk
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/jack-work/figaro/internal/message"
+	figOtel "github.com/jack-work/figaro/internal/otel"
 )
 
 // validAccumulatedBlock reports whether an accumulated block is
@@ -221,4 +224,44 @@ func escapeControl(c byte) string {
 	}
 	const hex = "0123456789abcdef"
 	return `\u00` + string([]byte{hex[c>>4], hex[c&0xf]})
+}
+
+// quarantineMalformedToolInput rescues a turn whose tool_use block carries
+// arguments that are not JSON, by replacing the wreckage with a legal envelope
+// that says so and keeps the bytes.
+//
+// It runs only after repairAccumulatedToolInput has already declined — i.e.
+// the input is broken by more than raw control characters. MEASURED, four
+// times in one day, always the same shape: an `edit` whose Go source arrived
+// with its tabs, newlines AND quotes unescaped, so a string value never closes
+// and the next key runs into it. Escaping harder cannot recover that: the
+// boundary between a value and the key after it is gone, and a guess would
+// write the wrong bytes into the user's source file.
+//
+// So the call is not repaired, it is REFUSED — and refusing costs one tool
+// call instead of an entire turn. The envelope is a JSON object, which is what
+// keeps the wire legal: the assistant message replays with its tool_use, its
+// tool_result pairs with it, and the cache path (cacheableAccumulatedBlock)
+// sees an object rather than a fatal block. Downstream, message.MalformedArgs
+// is the whole contract: it never executes, and the model is told to resend.
+func quarantineMalformedToolInput(ctx context.Context, acc *anthropic.Message, cause error) bool {
+	for i := len(acc.Content) - 1; i >= 0; i-- {
+		cb := &acc.Content[i]
+		if cb.Type != "tool_use" || json.Valid(cb.Input) {
+			continue
+		}
+		envelope, err := json.Marshal(message.MalformedArgs(string(cb.Input)))
+		if err != nil {
+			return false
+		}
+		figOtel.Event(ctx, "provider.tool_use.input_quarantined",
+			attribute.String("tool_call_id", cb.ID),
+			attribute.String("tool_name", cb.Name),
+			attribute.Int("input_len", len(cb.Input)),
+			attribute.String("cause", cause.Error()),
+		)
+		cb.Input = envelope
+		return true
+	}
+	return false
 }

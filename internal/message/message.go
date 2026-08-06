@@ -369,3 +369,38 @@ func ToolImagesByCall(content []Content) map[string][]Content {
 	}
 	return out
 }
+
+// MalformedArgsKey is the sole key of the arguments map figaro synthesizes for
+// a tool call whose arguments DID NOT ARRIVE AS VALID JSON.
+//
+// A provider streams a tool call's arguments as a sequence of JSON fragments.
+// When the concatenation is not parseable — a raw tab where an escape was
+// owed, a string that never closes — the call cannot be executed, but the rest
+// of the turn is unharmed: the thinking, the prose, and every other tool call
+// are already in hand. So the block is QUARANTINED rather than mourned: the
+// bytes that arrived are preserved verbatim under this key, which keeps the
+// wire legal (a tool_use must replay, or its tool_result is orphaned) while
+// telling everything downstream that the call must not run.
+//
+// The key is deliberately ugly and namespaced: it shares a map with argument
+// names the model chose, and it must not collide with one.
+const MalformedArgsKey = "__figaro_malformed_tool_input__"
+
+// MalformedArgs is the arguments map for a quarantined tool call.
+func MalformedArgs(raw string) map[string]interface{} {
+	return map[string]interface{}{MalformedArgsKey: raw}
+}
+
+// MalformedArgsOf reports whether a tool invoke was quarantined, and returns
+// the bytes that actually arrived.
+func MalformedArgsOf(c Content) (string, bool) {
+	if c.Type != ContentToolInvoke || len(c.Arguments) != 1 {
+		return "", false
+	}
+	raw, ok := c.Arguments[MalformedArgsKey]
+	if !ok {
+		return "", false
+	}
+	s, _ := raw.(string)
+	return s, true
+}
