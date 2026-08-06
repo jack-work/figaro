@@ -124,3 +124,101 @@ func mapStopReason(s anthropic.StopReason) message.StopReason {
 	}
 	return ""
 }
+
+// repairAccumulatedToolInput escapes control characters the model left RAW
+// inside the just-closed tool_use block's input, in place, before the SDK
+// marshals it.
+//
+// MEASURED failure: a turn dies at content_block_stop with
+//
+//	accumulate: error converting content block to JSON: json: error calling
+//	MarshalJSON for type json.RawMessage: invalid character '\t' in string literal
+//
+// The mechanism is exact. The SDK appends every `input_json_delta` chunk to
+// `acc.Content[i].Input` (a json.RawMessage), then at content_block_stop calls
+// json.Marshal on the block — and marshaling a RawMessage VALIDATES it. JSON
+// forbids unescaped bytes below 0x20 inside a string, so one literal TAB in a
+// tool argument (an `edit` carrying Go source is the reliable way to produce
+// one) takes down the whole turn, including every tool call already streamed.
+//
+// Dropping the fine-grained-tool-streaming beta (see auth.go) removed the
+// STRUCTURAL half of this: chunks now reassemble into complete JSON. It cannot
+// remove this half — the buffering guarantee is about where the chunk
+// boundaries fall, not about how the model escaped its own string contents.
+//
+// So the bytes are repaired rather than mourned: the turn's work is already
+// done and the only thing standing between it and the user is an escape the
+// model owed us. Gated on json.Valid, so a well-formed input costs one scan
+// and is never rewritten.
+func repairAccumulatedToolInput(cb *anthropic.ContentBlockUnion) bool {
+	if cb.Type != "tool_use" || len(cb.Input) == 0 || json.Valid(cb.Input) {
+		return false
+	}
+	fixed, changed := escapeRawControlChars(cb.Input)
+	if !changed || !json.Valid(fixed) {
+		// Not the control-char defect, or not the ONLY defect. Leave the
+		// buffer as it stands so the failure dump reports what really
+		// arrived rather than a half-mended copy of it.
+		return false
+	}
+	cb.Input = fixed
+	return true
+}
+
+// escapeRawControlChars rewrites bytes below 0x20 that appear INSIDE a JSON
+// string literal into their escape sequences, and reports whether it changed
+// anything.
+//
+// The string-literal state matters: the same tab between two tokens is legal
+// whitespace and must survive untouched, or a pretty-printed tool input would
+// be corrupted by the very function meant to save it. Bytes outside strings
+// are copied verbatim, and the input is returned unaliased when clean.
+func escapeRawControlChars(in []byte) ([]byte, bool) {
+	var out []byte
+	inString, escaped := false, false
+	for i := 0; i < len(in); i++ {
+		c := in[i]
+		switch {
+		case !inString:
+			if c == '"' {
+				inString = true
+			}
+		case escaped:
+			escaped = false
+		case c == '\\':
+			escaped = true
+		case c == '"':
+			inString = false
+		case c < 0x20:
+			if out == nil {
+				out = append(out, in[:i]...)
+			}
+			out = append(out, escapeControl(c)...)
+			continue
+		}
+		if out != nil {
+			out = append(out, c)
+		}
+	}
+	if out == nil {
+		return in, false
+	}
+	return out, true
+}
+
+func escapeControl(c byte) string {
+	switch c {
+	case '\t':
+		return `\t`
+	case '\n':
+		return `\n`
+	case '\r':
+		return `\r`
+	case '\b':
+		return `\b`
+	case '\f':
+		return `\f`
+	}
+	const hex = "0123456789abcdef"
+	return `\u00` + string([]byte{hex[c>>4], hex[c&0xf]})
+}

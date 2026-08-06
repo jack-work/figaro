@@ -132,6 +132,18 @@ func handleBlockStop(ctx context.Context, ev anthropic.ContentBlockStopEvent, ac
 	if idx < 0 || idx >= len(acc.Content) {
 		return
 	}
+	// Repair BEFORE anything reads the buffer. Two readers are about to
+	// reject a raw control character inside a string literal: the
+	// speculative decode below (json.Unmarshal), and — moments later, in
+	// drainStream — the SDK's own json.Marshal of this block, which is the
+	// one that kills the turn. See repairAccumulatedToolInput.
+	if repairAccumulatedToolInput(&acc.Content[idx]) {
+		figOtel.Event(ctx, "provider.tool_use.input_repaired",
+			attribute.String("tool_call_id", acc.Content[idx].ID),
+			attribute.String("tool_name", acc.Content[idx].Name),
+			attribute.Int("input_len", len(acc.Content[idx].Input)),
+		)
+	}
 	b := acc.Content[idx]
 	if b.Type != "tool_use" {
 		return

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/anthropics/anthropic-sdk-go"
 )
 
 // helpers — verify the byte windowing the failure dump relies on
@@ -119,3 +121,55 @@ type wrapped struct {
 
 func (w *wrapped) Error() string { return w.prefix + ": " + w.err.Error() }
 func (w *wrapped) Unwrap() error { return w.err }
+
+// The turn-killer: one raw TAB inside a tool argument's string literal.
+// json.Marshal of the block is exactly what the SDK does at
+// content_block_stop, and it is what produced
+//
+//	accumulate: error converting content block to JSON: json: error calling
+//	MarshalJSON for type json.RawMessage: invalid character '\t' in string literal
+//
+// The first assertion is the canary: if the SDK ever stops validating the
+// RawMessage, this test says so instead of quietly guarding nothing.
+func TestRepairAccumulatedToolInput(t *testing.T) {
+	block := func(in string) anthropic.ContentBlockUnion {
+		return anthropic.ContentBlockUnion{
+			Type: "tool_use", ID: "toolu_1", Name: "edit",
+			Input: json.RawMessage(in),
+		}
+	}
+
+	cb := block("{\"new_text\":\"func f() {\n\treturn 1\n}\"}")
+	if _, err := json.Marshal(&cb); err == nil {
+		t.Fatal("SDK no longer rejects raw control chars in a RawMessage; this guard may be obsolete")
+	}
+	if !repairAccumulatedToolInput(&cb) {
+		t.Fatal("repair declined the exact input that kills the turn")
+	}
+	if _, err := json.Marshal(&cb); err != nil {
+		t.Fatalf("block still unmarshalable after repair: %v", err)
+	}
+	var args struct {
+		NewText string `json:"new_text"`
+	}
+	if err := json.Unmarshal(cb.Input, &args); err != nil {
+		t.Fatalf("repaired input does not decode: %v", err)
+	}
+	if args.NewText != "func f() {\n\treturn 1\n}" {
+		t.Fatalf("repair changed the VALUE, not just its escaping: %q", args.NewText)
+	}
+
+	// Tabs and newlines BETWEEN tokens are legal whitespace: a
+	// pretty-printed input must survive the scan untouched.
+	pretty := block("{\n\t\"a\": 1\n}")
+	if repairAccumulatedToolInput(&pretty) {
+		t.Fatalf("repaired a valid pretty-printed input: %s", pretty.Input)
+	}
+
+	// A different defect is not ours to mend: leave the bytes alone so the
+	// failure dump reports what actually arrived.
+	broken := block(`{"a":1 "b":2}`)
+	if repairAccumulatedToolInput(&broken) {
+		t.Fatalf("claimed to repair a structurally malformed input: %s", broken.Input)
+	}
+}
