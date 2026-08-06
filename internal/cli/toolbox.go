@@ -224,7 +224,7 @@ func toolArgRows(n livedoc.Node, content int, expand bool) []string {
 		if oneLine && (!expand || runewidth.StringWidth(value) <= room) {
 			row := term.Label(runewidth.FillRight(f.Name, label))
 			if value != "" {
-				row += " " + term.Arg(clipToWidthEllipsis(value, room))
+				row += " " + term.Body(clipToWidthEllipsis(value, room))
 			}
 			rows = append(rows, row)
 			continue
@@ -237,7 +237,7 @@ func toolArgRows(n livedoc.Node, content int, expand bool) []string {
 		}
 		rows = append(rows, term.Label(head))
 		for _, l := range kept {
-			rows = append(rows, "  "+term.Arg(l))
+			rows = append(rows, "  "+term.Body(l))
 		}
 		// A multi-line value closes with air, so the next argument starts
 		// clear of it. A single-line value does not: nothing was separated.
@@ -321,9 +321,9 @@ func toolMetaRows(n livedoc.Node, show bool) []string {
 	if !show || n.StartedAt == 0 {
 		return nil
 	}
-	rows := []string{term.Label("started ") + term.Arg(formatToolTime(n.StartedAt))}
+	rows := []string{term.Label("started ") + term.Body(formatToolTime(n.StartedAt))}
 	if n.FinishedAt != 0 {
-		rows = append(rows, term.Label("finished ")+term.Arg(formatToolTime(n.FinishedAt)))
+		rows = append(rows, term.Label("finished ")+term.Body(formatToolTime(n.FinishedAt)))
 	}
 	return rows
 }
