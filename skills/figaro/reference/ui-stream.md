@@ -46,8 +46,18 @@ type Turn struct {
 ```
 
 A `Turn` is one exchange. `Inquiry` is the question that opened it — text on
-the turn, not a node — and every `TurnPart` states that question so a client
-joining mid-stream does not depend on having seen one special opening frame.
+the turn, not a node.
+
+**An absent `Inquiry` means UNCHANGED, not empty.** A part is a delta against a
+turn the client already holds, and the client keeps the question it was given.
+It is restated only on the frames that ESTABLISH a turn — the `OpenInquiry`
+broadcast, the first frame of each streaming suffix, the suffix close, the
+seal, and every snapshot — which is every frame a client can legitimately see
+first. Restating it on all of them was **38% of the bytes pushed** on a measured
+tape, and 62% of a turn's wire cost in the benchmark.
+
+A client that joined mid-turn and missed those frames recovers through the
+`figaro.read` it is required to issue on connect; reads always carry it.
 `Nodes` contains agent output plus steering interjections. `LTs` and each
 node's source LTs are provenance only; the UI address is `(turn, node)`.
 

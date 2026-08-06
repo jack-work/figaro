@@ -137,7 +137,14 @@ func (s *Server) Update(nodes []livedoc.Node) {
 	}
 	v := s.open.ver
 	s.open.ver++
-	inquiry, segments := s.inquiryOfLocked(s.open.id)
+	// The question rides the frames that ESTABLISH this streaming suffix — its
+	// first, and its close — and no others. See inquiryOfLocked.
+	// The question rides the frames that ESTABLISH this streaming suffix — its
+	// first, and its close — and no others. See inquiryOfLocked.
+	inquiry, segments := "", []InquirySegment(nil)
+	if v == 0 {
+		inquiry, segments = s.inquiryOfLocked(s.open.id)
+	}
 	frame := Page{Parts: []TurnPart{{
 		Turn: Turn{ID: s.open.id, Inquiry: inquiry, InquirySegments: segments,
 			Live: &Live{From: s.open.from, V: v, Nodes: deltas}},
@@ -435,12 +442,33 @@ func (s *Server) OpenInquiry(id uint64, inquiry string, segments ...InquirySegme
 // inquiryOfLocked is the recorded question for a turn — its text AND the
 // segments naming who asked it — or the zero values if none. Caller holds s.mu.
 //
-// EVERY PART CARRIES ITS TURN'S QUESTION. It used to ride exactly one frame —
-// the OpenInquiry broadcast — and every streaming frame afterwards described
-// the same turn without it. A client that had not folded that single frame
-// before nodes arrived had a turn with content and no question, and nothing
-// later re-supplied it: only the seal carries the whole Turn, which is why the
-// question appeared when the turn ENDED and not before.
+// WHICH FRAMES CARRY IT, and why it is not all of them.
+//
+// It used to ride exactly ONE frame, the OpenInquiry broadcast. A client that
+// had not folded that single frame before nodes arrived held a turn with
+// content and no question, and nothing later re-supplied it — only the seal
+// carries the whole Turn, which is why the question appeared when the turn
+// ENDED and not before. The fix was to put it on every part.
+//
+// That fix was too broad. A part is a DELTA against a turn the client already
+// holds, and the client has always kept the question it was given
+// (Client.inquiry, re-applied in Client.message) — so an absent inquiry means
+// UNCHANGED, exactly as an absent node field does. Restating it on every frame
+// of a streaming turn was 38% of the bytes pushed on a measured tape.
+//
+// So it rides the frames that ESTABLISH a turn, which is every frame a client
+// can legitimately see FIRST:
+//
+//   - OpenInquiry, when the question is recorded;
+//   - the first frame of each streaming suffix (v == 0), which closes the race
+//     the original bug was about: a client that subscribed after OpenInquiry
+//     and before any node;
+//   - Close, the suffix's own end marker;
+//   - Seal, and every snapshot — so `figaro.read` always answers with it, which
+//     is what a client joining mid-turn is required to issue anyway.
+//
+// What it does NOT ride is the 2nd..Nth delta of a suffix, which is all of the
+// traffic and none of the information.
 //
 // It returns the SEGMENTS for the same reason, and that half was missing:
 // re-supplying the text alone made every streaming frame a part that named the
