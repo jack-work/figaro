@@ -2281,7 +2281,7 @@ func (t *transcript) messageMayRenderQuery(m aria.Message, q string) bool {
 			return true
 		}
 		if n.StartedAt != 0 {
-			if strings.Contains(toolDuration(n, time.Now()), q) {
+			if strings.Contains(toolElapsed(n), q) {
 				return true
 			}
 			if verbose && (strings.Contains("started "+formatToolTime(n.StartedAt), q) ||

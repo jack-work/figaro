@@ -459,145 +459,6 @@ func dedentProse(row string) string {
 // output under a dim gutter, tail-clamped to bashCap lines. In verbose mode
 // Args are also rendered generically as sorted key=value lines. The client
 // never inspects n.Name.
-func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, expand bool) []string {
-	// The spinner belongs to the CALL while it is still happening; the
-	// checkmark (or cross) belongs to the `done` label, once there is
-	// something to report. Only one of them is ever drawn.
-	frames := livedoc.SpinnerFrames
-	spinner := term.Cyan(string(frames[int(tick)%len(frames)]))
-	statusGlyph := term.Green("✓")
-	switch n.Status {
-	case livedoc.StatusError:
-		statusGlyph = term.Red("✗")
-	case livedoc.StatusRunning, "":
-		// Output is arriving but the call has not finished: the label is
-		// "running", and a checkmark beside it would be a lie.
-		statusGlyph = spinner
-	}
-	name := n.Name
-	if name == "" {
-		name = "tool"
-	}
-
-	// Content first, geometry second: the box is fitted to what it has to
-	// hold, so it is never wider than its widest row and never wider than the
-	// pane. Two passes over the same builders — one to measure at the widest
-	// the pane would allow, one to draw at the width that fits.
-	probe := newBox(width, width)
-	call := toolCallRows(n, probe.content, verbose || expand, expand)
-	result := toolResultRows(n, probe.content, bashCap, expand)
-	b := newBox(width, widestCell(call, result))
-
-	// The header's clock is GENERATION — how long the model spent writing this
-	// call. On an aria older than that clock there is nothing to show, so it
-	// falls back to the runtime rather than to a blank.
-	// The name sits in the glyph's column pair, so it lines up with the word
-	// in the status label below it — `write` over `done`, whether or not this
-	// row has a spinner on it.
-	head := "  " + term.Arg(name)
-	if n.Status == livedoc.StatusRunning || n.Status == "" {
-		head = spinner + " " + term.Arg(name)
-	}
-	switch gen := toolGeneration(n); {
-	case gen != "":
-		head += " " + term.Dim("["+gen+"]")
-	case n.StartedAt != 0:
-		head += " " + term.Dim("["+toolDuration(n, timeNow())+"]")
-	}
-	if !b.fits(width) {
-		// Too narrow to frame. Fall back to plain gutter rows rather than draw
-		// a box that cannot close — but the header keeps its duration, which
-		// is the one thing that must survive every width.
-		return append([]string{clipToWidth(head, width)}, plainBlockRows(width, call, result)...)
-	}
-	if b.content != probe.content {
-		call = toolCallRows(n, b.content, verbose || expand, expand)
-		result = toolResultRows(n, b.content, bashCap, expand)
-	}
-
-	rows := make([]string, 0, len(call)+len(result)+6)
-	rows = append(rows, b.top(head))
-	if len(call) > 0 {
-		rows = append(rows, b.blank())
-		for _, r := range call {
-			rows = append(rows, b.row(r))
-		}
-		// The closing air belongs to a block that has something AFTER it. While
-		// the arguments are still arriving there is nothing below, and a
-		// trailing rule row reads as a dangling thread.
-		if len(result) > 0 {
-			rows = append(rows, b.blank())
-		}
-	}
-	// The junction and the floor appear together with the RESULT: until the
-	// tool has run there is nothing to divide and nothing to close under, and
-	// a box closed early would have to reopen.
-	if len(result) > 0 {
-		rows = append(rows, b.junction(toolStatusLabel(statusGlyph, n.Status, toolRuntime(n))))
-		rows = append(rows, b.blank())
-		for _, r := range result {
-			rows = append(rows, b.row(r))
-		}
-		// A stub elbow closes the block. No trailing air: the turn already puts
-		// a blank line between nodes.
-		rows = append(rows, b.elbow())
-	}
-	return rows
-}
-
-// plainBlockRows is the unframed fallback for a pane too narrow to hold a box.
-func plainBlockRows(width int, sets ...[]string) []string {
-	var out []string
-	for _, set := range sets {
-		for _, r := range set {
-			out = append(out, term.Dim(quoteGutter)+clipToWidth(r, blockWidth(width)))
-		}
-	}
-	return out
-}
-
-// toolCallRows is everything above the junction: the arguments, then the
-// metadata a selection or Ctrl-O asks for.
-func toolCallRows(n livedoc.Node, content int, meta, expand bool) []string {
-	rows := toolArgRows(n, content, expand)
-	return append(rows, toolMetaRows(n, meta)...)
-}
-
-// toolResultRows is everything below the junction: the tool's own output,
-// sanitized, tail-clamped when folded and whole when expanded.
-func toolResultRows(n livedoc.Node, content, bashCap int, expand bool) []string {
-	if strings.TrimSpace(n.Output) == "" {
-		return nil
-	}
-	// Tool stdout is the most likely vector for terminal-state escapes that
-	// could break the painter (alt-screen, cursor visibility, line wrap, mouse
-	// modes, OSC). Sanitize before rendering so a wayward bubbletea / huh /
-	// less can never bleed its escapes into the host terminal.
-	safe := render.SanitizeForTerminal(strings.TrimRight(n.Output, "\n"))
-	shown, total := tailOutput(safe, bashCap)
-	var rows []string
-	if bashCap >= 0 && total > bashCap && !expand {
-		rows = append(rows, term.Dim(fmt.Sprintf("… last %d of %d lines", bashCap, total)))
-	}
-	if expand {
-		shown = safe
-	}
-	for _, l := range strings.Split(shown, "\n") {
-		rows = append(rows, boxLines(l, content, expand)...)
-	}
-	return rows
-}
-
-// blockWidth is the room an unframed block row has: the pane, less the gutter,
-// less one column of padding.
-func blockWidth(width int) int {
-	w := width - quoteGutterCells - 1
-	if w < 8 {
-		w = 8
-	}
-	return w
-}
-
 func tailOutput(output string, limit int) (string, int) {
 	total := 1 + strings.Count(output, "\n")
 	if limit < 0 || total <= limit {
@@ -616,12 +477,28 @@ func tailOutput(output string, limit int) (string, int) {
 	return output[at+1:], total
 }
 
-func toolDuration(n livedoc.Node, now time.Time) string {
-	end := n.FinishedAt
-	if end == 0 {
-		end = now.UnixMilli()
+// timeNow is the clock the tool duration reads. Indirected for one reason: a
+// running call's elapsed time is `now - opened`, which makes any snapshot of
+// it non-deterministic. The golden freezes this; production never touches it.
+var timeNow = time.Now
+
+// toolElapsed is how long this call has taken, all in: the model writing it
+// plus the tool running it. One number, because the header has one slot — the
+// split is in the expanded view, where `started` and `finished` bracket the
+// execution and everything before `started` was generation.
+func toolElapsed(n livedoc.Node) string {
+	from := n.OpenedAt
+	if from == 0 {
+		from = n.StartedAt
 	}
-	return formatDuration(end - n.StartedAt)
+	if from == 0 {
+		return ""
+	}
+	to := n.FinishedAt
+	if to == 0 {
+		to = timeNow().UnixMilli()
+	}
+	return formatDuration(to - from)
 }
 
 // formatDuration renders a span of milliseconds the way both clocks want it.

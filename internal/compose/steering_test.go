@@ -33,7 +33,7 @@ func TestSteerJoinsTheTurnItSteers(t *testing.T) {
 		asstLT(0, prose("all done")),
 	}
 
-	tns := Turns(msgs, nil)
+	tns := Turns(msgs)
 
 	if len(tns) != 1 {
 		for _, tn := range tns {
@@ -76,7 +76,7 @@ func TestLegacySteerShapeStillRenders(t *testing.T) {
 		inqUser(inqResult("t1"), prose("legacy steer")),
 		asstLT(0, prose("answer")),
 	}
-	tns := Turns(msgs, nil)
+	tns := Turns(msgs)
 	if len(tns) != 1 {
 		t.Fatalf("got %d turns, want 1", len(tns))
 	}
