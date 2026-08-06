@@ -109,25 +109,12 @@ func (b box) row(content string) string {
 // blank is the air row that opens and closes each section of the box.
 func (b box) blank() string { return b.row("") }
 
-// top draws the header: the label, then a rule out to the block's width. The
-// label is NOT inside the frame — it sits on the rule, the way a fieldset
-// legend does, so the eye reads it as naming the block rather than as its
-// first row.
-func (b box) top(label string) string { return b.edge(label) }
-
-// junction draws the divider between the call and its result, labelled the
-// same way as the top: one glyph, one word, one duration.
-func (b box) junction(label string) string { return b.edge(label) }
-
-// edge draws a labelled horizontal rule. A label longer than the block is
-// clipped to it.
-func (b box) edge(label string) string {
-	room := b.total
-	if term.VisibleLen(label) > room {
-		return clipToWidth(label, room)
-	}
-	return label + term.Dim(strings.Repeat("─", room-term.VisibleLen(label)))
-}
+// top and junction are the block's two labels: what the CALL is, and what its
+// EXECUTION is doing. They carry no rule — a horizontal bar across the screen
+// for every tool call made the transcript look ruled rather than written, and
+// the left gutter already says where the block starts and stops.
+func (b box) top(label string) string      { return clipToWidth(label, b.total) }
+func (b box) junction(label string) string { return clipToWidth(label, b.total) }
 
 // boxLines renders one value into body rows: WRAPPED when expanded, and
 // ELLIPSISED to a single row when not. The fold is the whole difference
@@ -160,7 +147,7 @@ func toolStatusLabel(glyph, status string, dur string) string {
 	if dur != "" {
 		label += " " + term.Dim("["+dur+"]")
 	}
-	return label + " "
+	return label
 }
 
 // widestCell is the widest of a set of already-rendered contents, in cells.

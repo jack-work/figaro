@@ -95,21 +95,24 @@ wire. Whether the fragments arrive smoothly at all is a **provider** question
 
 ### How a tool draws
 
-A tool call is one block: a left rule, and two labelled dividers.
+A tool call is one block: a left gutter, and two labels.
 
 ```
-✓ write [31.2s] ──────────────────────────────
+✓ bash [1.4s]
   │
-  │ content (…first 2 of 45 lines)
-  │   1. Il barbiere di Siviglia is an opera…
+  │ command
+  │   cd /var/tmp/x && grep -nE '1[6-9][0-9]{2}' opera.md
   │
-  │ path    /var/tmp/x/opera.md
+✓ done [7ms]
   │
-✓ done [4ms] ─────────────────────────────────
-  │
-  │ Wrote 5453 bytes to /var/tmp/x/opera.md
-  │
+  │ … last 10 of 13 lines
+  │ 10:8. That title deferred to Paisiello, whose 1782 Barbiere held the stage.
 ```
+
+There are no horizontal rules and no box: a bar across the screen for every
+tool call made the transcript look ruled rather than written, and the gutter
+already says where the block starts and stops. The block ends where its output
+ends — the turn puts a blank line between nodes.
 
 **Two clocks.** The header carries GENERATION — how long the model spent
 writing the call, `OpenedAt` to `StartedAt` — and the divider carries RUNTIME,
@@ -119,18 +122,14 @@ thirty seconds of visible streaming. `OpenedAt` is stamped at `evToolStart`,
 the only place that knows it; an aria older than the field falls back to
 showing the runtime in the header.
 
-The header sits **on** its rule, the way a fieldset legend does; the divider is
-labelled the same way with what the *execution* is doing
-(`running`/`done`/`failed`). **The divider arrives with the result** — until
-the tool has run there is nothing to divide. There is no right border and no
-floor: a closed box made the left of the screen busy, and the part of a frame
-that earns its keep is the part the eye follows down.
+The second label says what the *execution* is doing (`running`/`done`/`failed`)
+and **arrives with the result** — until the tool has run there is nothing to
+announce.
 
-The box is fitted to its **content**, never wider than the pane less a column,
-with two columns of right padding. A full-width box is indistinguishable from
-the turn rule above it, which is genuinely full width. Under about 27 columns the
-frame is dropped for plain gutter rows. `box.row` clips, which is the one place
-that can guarantee no row outruns its pane.
+Rows are fitted to the pane less a couple of columns, and `box.row` clips —
+the one place that can guarantee no row outruns its pane. The rows that
+overflow are never the ones you predict (a fold note at width 20, a timestamp
+at width 28).
 
 | | folded | expanded (`Enter` on the selection) |
 |---|---|---|
@@ -156,7 +155,7 @@ cannot otherwise tell which end they are looking at. Expanded, the note is gone
 and the value wraps instead: there is nothing to count when everything is
 shown.
 
-Colour carries what the frame does not: Kanagawa springBlue for the tool name
+Colour carries what the layout does not: Kanagawa springBlue for the tool name
 and every argument value, fujiGray for labels, and the same dim for every rule
 in the box.
 
