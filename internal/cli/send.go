@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -692,7 +691,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 		fmt.Fprintln(os.Stderr, "--- figaro send --exec: about to execute ---")
 		fmt.Fprintln(os.Stderr, script)
 		fmt.Fprintln(os.Stderr, "--- press enter to run, ctrl-c to abort ---")
-		bufio.NewReader(os.Stdin).ReadString('\n')
+		_, _ = term.ReadLine("")
 	}
 
 	sh := exec.Command("bash", "-c", script)

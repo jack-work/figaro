@@ -76,6 +76,18 @@ func Run(progName string, args []string) {
 	defer restoreConsole()
 	atExit(restoreConsole)
 
+	// Repair the console we READ, before the first prompt asks it for a line.
+	// figaro clears line-editing, echo and Ctrl-C processing for every
+	// interactive session, and a session killed without unwinding leaves them
+	// clear for every process that touches that console afterwards — PSReadLine
+	// saves and restores whatever it finds, so the damage outlives the shell
+	// prompt and the next figaro's MakeRaw dutifully saves RAW as the mode to
+	// return to. In that state a prompt echoes nothing and Enter sends a bare
+	// \r. Unlike the output arming this takes NO restore: what it replaces is
+	// wreckage, and handing it back is how the wreckage spreads. A no-op off
+	// Windows and on a redirected stdin.
+	term.SanitizeInput()
+
 	// --version / -V pre-empt the router so they need no config or session.
 	if len(args) > 0 {
 		switch args[0] {

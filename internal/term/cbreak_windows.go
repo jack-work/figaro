@@ -80,6 +80,67 @@ func rawInputMode(mode uint32) uint32 {
 	return mode
 }
 
+// cookedInput is the trio a line-oriented prompt needs: the console does the
+// editing, echoes what is typed, and turns Ctrl-C into an interrupt.
+const cookedInput = windows.ENABLE_LINE_INPUT | windows.ENABLE_ECHO_INPUT | windows.ENABLE_PROCESSED_INPUT
+
+// cookedInputMode is rawInputMode's inverse: line editing, echo and Ctrl-C
+// back on, VT input off, everything else the console arrived with untouched.
+func cookedInputMode(mode uint32) uint32 {
+	mode |= cookedInput
+	mode &^= windows.ENABLE_VIRTUAL_TERMINAL_INPUT
+	return mode
+}
+
+// ArmCookedInput puts the console we READ into line mode for the duration of a
+// plain prompt, and returns the restore.
+//
+// A prompt must not inherit its input mode. figaro itself clears those three
+// flags for every interactive session (MakeRaw), and console mode belongs to
+// the console, not the process: one session killed without unwinding leaves
+// them clear for everything that touches the console afterwards. Then the next
+// prompt echoes nothing, and Enter delivers a bare \r that no ReadString('\n')
+// will ever see. SanitizeInput heals that at startup; this owns it per read, so
+// neither depends on the other.
+//
+// A non-console stdin (piped, redirected) degrades to a no-op restore, as in
+// ArmOutput — `echo y | figaro …` is an ordinary case, not an error.
+func ArmCookedInput() func() {
+	h := windows.Handle(os.Stdin.Fd())
+	var old uint32
+	if err := windows.GetConsoleMode(h, &old); err != nil {
+		return func() {}
+	}
+	if err := windows.SetConsoleMode(h, cookedInputMode(old)); err != nil {
+		return func() {}
+	}
+	return func() { _ = windows.SetConsoleMode(h, old) }
+}
+
+// SanitizeInput repairs a console left in raw mode by a figaro that died
+// without unwinding — a crash, a taskkill, a window closed mid-session.
+//
+// It is deliberately NOT paired with a restore: the state it replaces is
+// wreckage, and handing it back to the shell is how the wreckage propagates
+// (PSReadLine saves and restores whatever it finds around each prompt, so a
+// poisoned console stays poisoned until the window closes, and the next
+// figaro's MakeRaw dutifully saves RAW as the mode to return to).
+//
+// It only acts when ALL THREE cooked flags are clear, which no console hands
+// out and only a raw-mode session produces. A console with any of them set is
+// somebody's deliberate state and is left alone.
+func SanitizeInput() {
+	h := windows.Handle(os.Stdin.Fd())
+	var old uint32
+	if err := windows.GetConsoleMode(h, &old); err != nil {
+		return // not a console: nothing to repair
+	}
+	if old&cookedInput != 0 {
+		return
+	}
+	_ = windows.SetConsoleMode(h, cookedInputMode(old))
+}
+
 // DISABLE_NEWLINE_AUTO_RETURN is deliberately NOT set here. It defers the
 // right-edge wrap, which the painter wants — but it also stops a bare LF from
 // implying a carriage return, and every line-oriented command (`list`, `show`,

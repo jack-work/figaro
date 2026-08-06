@@ -6,7 +6,6 @@ package tui
 // a single function the caller doesn't have to branch around.
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strconv"
@@ -71,10 +70,7 @@ func pickProviderFallback(title string, options []ProviderOption) (string, error
 		fmt.Fprintf(os.Stderr, "       %s  %s%s\n", num, o.Label, hint)
 	}
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintf(os.Stderr, "       Pick [1]: ")
-
-	reader := bufio.NewReader(os.Stdin)
-	line, err := reader.ReadString('\n')
+	line, err := term.ReadLine("       Pick [1]: ")
 	if err != nil {
 		return "", fmt.Errorf("read choice: %w", err)
 	}

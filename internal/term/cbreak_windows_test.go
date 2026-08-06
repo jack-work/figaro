@@ -80,3 +80,28 @@ func TestStartupArmingDoesNotDisableNewlineAutoReturn(t *testing.T) {
 		t.Fatalf("arming cleared a flag the console arrived with: %#x -> %#x", armed, got)
 	}
 }
+
+// The INPUT half's inverse. A prompt must not inherit its mode: the same three
+// flags rawInputMode clears are the ones a line-oriented read needs, and a
+// session killed mid-flight leaves them clear for every later process on that
+// console. MEASURED: `figaro login copilot` hung at its first prompt with no
+// echo, because Enter delivers a bare \r once ENABLE_LINE_INPUT is off.
+func TestCookedInputModeInvertsRawAndPreservesUnrelatedFlags(t *testing.T) {
+	const unrelated = uint32(windows.ENABLE_WINDOW_INPUT | windows.ENABLE_MOUSE_INPUT | windows.ENABLE_QUICK_EDIT_MODE)
+
+	poisoned := rawInputMode(cookedInput | unrelated)
+	got := cookedInputMode(poisoned)
+	if got&cookedInput != cookedInput {
+		t.Fatalf("cooked mode did not restore line editing/echo/Ctrl-C: mode=%#x", got)
+	}
+	if got&windows.ENABLE_VIRTUAL_TERMINAL_INPUT != 0 {
+		t.Fatalf("cooked mode left VT input armed: mode=%#x", got)
+	}
+	if got&unrelated != unrelated {
+		t.Fatalf("cooked mode cleared a flag the console arrived with: mode=%#x", got)
+	}
+	// SanitizeInput's gate: only an ALL-THREE-clear console is wreckage.
+	if poisoned&cookedInput != 0 {
+		t.Fatalf("a raw console should trip the sanitize gate: mode=%#x", poisoned)
+	}
+}

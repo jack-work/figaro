@@ -23,3 +23,11 @@ func MakeRaw(fd int) (func(), error) {
 	}
 	return func() { _ = unix.IoctlSetTermios(fd, ioctlSetTermios, old) }, nil
 }
+
+// ArmCookedInput is a no-op off Windows: a UNIX terminal is left cooked by the
+// shell that hands it over, and readline resets it besides.
+func ArmCookedInput() func() { return func() {} }
+
+// SanitizeInput is a no-op off Windows. See the Windows half for why it must
+// exist there.
+func SanitizeInput() {}

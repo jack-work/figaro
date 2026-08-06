@@ -27,7 +27,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -270,10 +269,7 @@ func pickFromMenuNumbered(options []providerChoice) (providerChoice, error) {
 		fmt.Fprintf(os.Stderr, "       %s  %s%s\n", cyan(num), opt.label, hint)
 	}
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintf(os.Stderr, "       Pick [1]: ")
-
-	reader := bufio.NewReader(os.Stdin)
-	line, err := reader.ReadString('\n')
+	line, err := term.ReadLine("       Pick [1]: ")
 	if err != nil {
 		return providerChoice{}, fmt.Errorf("read choice: %w", err)
 	}
@@ -304,8 +300,7 @@ func runOAuthInline(providerName string, cfg auth.OAuthConfig) error {
 	hushClient := h.Client()
 	return auth.Login(hushClient, cfg, func() (string, error) {
 		// Login prints the (styled) paste prompt; we only read.
-		reader := bufio.NewReader(os.Stdin)
-		line, err := reader.ReadString('\n')
+		line, err := term.ReadLine("")
 		return strings.TrimSpace(line), err
 	})
 }
@@ -315,9 +310,7 @@ func runOAuthInline(providerName string, cfg auth.OAuthConfig) error {
 // runCopilotLogin runs the device code flow, then encrypts and stores
 // the GitHub access token as the copilot provider's api_key.
 func runCopilotLogin(loaded *config.Loaded) error {
-	fmt.Fprint(os.Stderr, "       GitHub Enterprise domain (blank for github.com): ")
-	reader := bufio.NewReader(os.Stdin)
-	line, err := reader.ReadString('\n')
+	line, err := term.ReadLine("       GitHub Enterprise domain (blank for github.com): ")
 	if err != nil {
 		return fmt.Errorf("read domain: %w", err)
 	}

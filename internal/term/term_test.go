@@ -1,6 +1,8 @@
 package term
 
 import (
+	"bufio"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -67,5 +69,44 @@ func TestTruncateVisible(t *testing.T) {
 	}
 	if !strings.Contains(got, "…") {
 		t.Errorf("expected ellipsis in %q", got)
+	}
+}
+
+// A prompt must end on \r as surely as on \n. On a Windows console left in raw
+// mode by a figaro that died without unwinding (console mode belongs to the
+// console, not the process), Enter delivers a bare \r — and the old
+// ReadString('\n') waited for a byte that would never arrive. MEASURED:
+// `figaro login copilot` hung at its first prompt, echoing nothing, and took
+// two Ctrl-C to leave.
+func TestReadLineTerminators(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+		rest string // what the NEXT prompt must see
+	}{
+		{"lf", "github.com\nnext", "github.com", "next"},
+		{"crlf", "github.com\r\nnext", "github.com", "next"},
+		{"bare cr (raw console)", "github.com\rnext", "github.com", "next"},
+		{"eof without terminator", "github.com", "github.com", ""},
+		{"empty line accepts the default", "\nnext", "", "next"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := bufio.NewReader(strings.NewReader(tc.in))
+			got, err := readLine(r)
+			if err != nil && err != io.EOF {
+				t.Fatalf("readLine: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("line = %q, want %q", got, tc.want)
+			}
+			// The paired \n of a CRLF must not surface as a phantom
+			// empty line at the next prompt.
+			rest, _ := io.ReadAll(r)
+			if string(rest) != tc.rest {
+				t.Fatalf("next prompt would see %q, want %q", rest, tc.rest)
+			}
+		})
 	}
 }
