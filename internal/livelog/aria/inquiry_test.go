@@ -8,7 +8,7 @@ import (
 	"github.com/jack-work/figaro/internal/livedoc"
 )
 
-// A CLIENT ALWAYS HAS THE QUESTION.
+// A CLIENT ALWAYS HAS THE QUESTION, AND KNOWS WHO ASKED IT.
 //
 // That is the property; "every part carries it" was one way to get it, and an
 // expensive one — on a measured tape the restated question was 38% of the
@@ -22,8 +22,10 @@ import (
 // can answer what was asked".
 func TestClientAlwaysHasTheQuestion(t *testing.T) {
 	const q = "WHATDIDIASK"
+	const who = "aria 123456"
+	segs := []InquirySegment{{Sender: who, Text: q}}
 	drive := func(s *Server) {
-		s.OpenInquiry(1, q)
+		s.OpenInquiry(1, q, segs...)
 		s.OpenTurn(1)
 		s.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering"}})
 		s.Update([]livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answering more"}})
@@ -47,9 +49,19 @@ func TestClientAlwaysHasTheQuestion(t *testing.T) {
 		for _, f := range frames[:n] {
 			c.Apply(f)
 		}
-		if got := questionOf(c, 1); got != q {
+		got, sender := questionOf(c, 1)
+		if got != q {
 			t.Fatalf("after %d of %d frames the client cannot answer what was asked: %q",
 				n, len(frames), got)
+		}
+		// The text and its senders travel TOGETHER, always. A restatement
+		// carrying the text alone is not a harmless omission: the client holds
+		// what a part last said, so it would overwrite an attributed question
+		// with an unattributed one and the live surfaces would render a
+		// question nobody asked.
+		if sender != who {
+			t.Fatalf("after %d of %d frames the question lost its sender: %q",
+				n, len(frames), sender)
 		}
 	}
 }
@@ -72,25 +84,28 @@ func TestLateJoinerRecoversTheQuestionFromARead(t *testing.T) {
 	for _, f := range late {
 		c.Apply(f)
 	}
-	if got := questionOf(c, 1); got == q {
+	if got, _ := questionOf(c, 1); got == q {
 		t.Fatal("fixture broken: the late joiner was supposed to miss the question")
 	}
 	c.Apply(s.Read(Anchor{}, 1<<20))
-	if got := questionOf(c, 1); got != q {
+	if got, _ := questionOf(c, 1); got != q {
 		t.Errorf("a read must re-supply the question, got %q", got)
 	}
 }
 
 // questionOf is what the client can say about a turn, through its own view —
 // not by reaching into the frames it was given.
-func questionOf(c *Client, turn int) string {
+func questionOf(c *Client, turn int) (question, sender string) {
 	v := c.View()
 	for _, m := range append(append([]Message(nil), v.Closed...), open(v)...) {
 		if m.Turn == turn && m.Inquiry != "" {
-			return m.Inquiry
+			if len(m.InquirySegments) > 0 {
+				sender = m.InquirySegments[0].Sender
+			}
+			return m.Inquiry, sender
 		}
 	}
-	return ""
+	return "", ""
 }
 
 func open(v View) []Message {
