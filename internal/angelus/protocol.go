@@ -75,6 +75,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodCreate:       h.create,
 			rpc.MethodFork:         h.fork,
 			rpc.MethodPromote:      h.promote,
+			rpc.MethodImport:       h.importAria,
 			rpc.MethodNormalize:    h.normalize,
 			rpc.MethodKill:         h.kill,
 			rpc.MethodList:         h.list,
@@ -701,6 +702,89 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 	}
 	slog.Info("normalized topology", "detached", n)
 	return rpc.NormalizeResponse{Detached: n}, nil
+}
+
+// importAria restores an exported aria as a NEW conversation.
+//
+// It grafts nothing. The loadout is resolved by content (CreateLoadout is
+// content-addressed, so an identical loadout is reused rather than
+// duplicated), a conversation is spawned under it, and the messages are
+// appended through the ordinary path. Every identity — node id, fork base, LT
+// — is minted by THIS store, which is why an import can never collide with
+// what is already here and never needs a renumbering pass.
+//
+// What it deliberately does not carry: the provider translation caches. They
+// are a derivable wire cache, and the price of dropping them is one cache-miss
+// on the next turn (which, per the anthropic assembler, replays without
+// thinking blocks rather than with unsigned ones). Exactness is the graft's
+// job — see proposals/aria-graft.md — not this one's.
+func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.ImportRequest
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, err
+	}
+	if h.angelus.Backend == nil {
+		return nil, errors.New("import: no backend (ephemeral angelus)")
+	}
+	if req.Loadout == "" {
+		return nil, errors.New("import: no loadout named")
+	}
+	loadoutID, err := h.angelus.Backend.CreateLoadout(req.Loadout, req.LoadoutPatch)
+	if err != nil {
+		return nil, fmt.Errorf("import: loadout %q: %w", req.Loadout, err)
+	}
+	id, err := h.angelus.Backend.CreateConversation(loadoutID)
+	if err != nil {
+		return nil, fmt.Errorf("import: create conversation: %w", err)
+	}
+	log, err := h.angelus.Backend.Open(id)
+	if err != nil {
+		return nil, fmt.Errorf("import: open %q: %w", id, err)
+	}
+	for i, m := range req.Messages {
+		if _, err := log.Append(store.Entry[message.Message]{Payload: m}); err != nil {
+			return nil, fmt.Errorf("import: append message %d of %d: %w", i+1, len(req.Messages), err)
+		}
+	}
+	// The chalkboard last, and as ONE patch: it is the aria's settled state,
+	// not a history of how it got there. aria_id is re-stamped because the
+	// exported board carries the id it had in the store it came from — the
+	// same re-stamp a fork does, for the same reason.
+	patch := req.Chalkboard
+	if patch.Set == nil {
+		patch.Set = map[string]json.RawMessage{}
+	}
+	if b, mErr := json.Marshal(id); mErr == nil {
+		patch.Set["aria_id"] = b
+	}
+	if _, err := h.angelus.Backend.ApplyChalkboard(id, patch); err != nil {
+		return nil, fmt.Errorf("import: chalkboard: %w", err)
+	}
+	// The list sidecar, so an imported aria is a first-class row in `figaro
+	// ls` rather than an id with dashes after it. Derived from what actually
+	// arrived; the token counts are the source's and are carried as history,
+	// not as a claim about this store's spend.
+	meta := &store.AriaMeta{
+		MessageCount: len(req.Messages),
+		LastActiveMS: time.Now().UnixMilli(),
+		LoadoutName:  req.Loadout,
+		Mantra:       req.Mantra,
+		Provider:     req.Provider,
+		Model:        req.Model,
+	}
+	for _, m := range req.Messages {
+		if m.Role == message.RoleOutput {
+			meta.TurnCount++
+		}
+	}
+	if err := h.angelus.Backend.SetMeta(id, meta); err != nil {
+		slog.Warn("import: set meta", "id", id, "err", err)
+	}
+	h.angelus.Backend.Kick()
+	slog.Info("imported aria", "id", id, "loadout", req.Loadout, "messages", len(req.Messages))
+	return rpc.ImportResponse{
+		FigaroID: id, Loadout: req.Loadout, Messages: len(req.Messages), WasID: req.WasID,
+	}, nil
 }
 
 func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interface{}, error) {

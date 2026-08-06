@@ -5,6 +5,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/message"
 )
 
 const (
@@ -65,6 +66,7 @@ const (
 	MethodCreate      = "figaro.create"
 	MethodFork        = "figaro.fork"
 	MethodPromote     = "figaro.promote"
+	MethodImport      = "figaro.import"
 	MethodNormalize   = "figaro.normalize"
 	MethodKill        = "figaro.kill"
 	MethodList        = "figaro.list"
@@ -444,6 +446,35 @@ type PromoteResponse struct {
 	AtStump  bool   `json:"at_stump,omitempty"`
 	// Unsupported reports a server built without the trunk capability.
 	Unsupported bool `json:"unsupported,omitempty"`
+}
+
+// ImportRequest restores an exported aria into this store as a NEW
+// conversation. Nothing is grafted: the loadout is resolved or created by
+// content, a fresh conversation is spawned under it, and Messages are appended
+// through the ordinary path — so node ids, fork bases and LTs are the
+// destination's own and can never collide with what is already there.
+//
+// WasID is the id the aria had where it came from. It is PROVENANCE, not a
+// request: the destination mints its own, because a trunk id is unique per
+// store and honouring the old one would be the first collision an import is
+// built to avoid. It is echoed back so the caller can say what moved.
+type ImportRequest struct {
+	Loadout      string            `json:"loadout"`
+	LoadoutPatch message.Patch     `json:"loadout_patch,omitempty"`
+	Chalkboard   message.Patch     `json:"chalkboard,omitempty"`
+	Messages     []message.Message `json:"messages"`
+	WasID        string            `json:"was_id,omitempty"`
+	Mantra       string            `json:"mantra,omitempty"`
+	Provider     string            `json:"provider,omitempty"`
+	Model        string            `json:"model,omitempty"`
+}
+
+// ImportResponse names the aria that was created, and what it used to be.
+type ImportResponse struct {
+	FigaroID string `json:"figaro_id"`
+	Loadout  string `json:"loadout"`
+	Messages int    `json:"messages"`
+	WasID    string `json:"was_id,omitempty"`
 }
 
 // Endpoint describes how to connect to a figaro.

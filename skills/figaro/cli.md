@@ -162,9 +162,22 @@ row shows `▸`, not `●`, so identify yourself from the header instead.
 | `figaro fork --stay` | Branch without moving this shell. |
 | `figaro promote <id> [levels]` | Make a trunk the canonical line through its ancestors. Pure relabeling. |
 | `figaro kill <id>` | Remove a trunk and its subtree. `-r` is required if it has live branches. |
+| `figaro export [<id>] [-o <f>]` | Write an aria to a portable file: loadout, chalkboard, every message. |
+| `figaro import <file>` | Restore one into THIS store as a new conversation. `-` reads stdin. |
 
 The model behind these, including what freezes and which child keeps the id, is
 [reference/trunks.md](reference/trunks.md).
+
+**Moving an aria between stores** — out of a dev shell, onto another machine —
+is `export` then `import`. They carry CONTENT, not identity: node ids, fork
+bases and LTs belong to the store an aria is in, so the destination mints its
+own and an import can never collide with what is already there. Three things do
+not travel: the aria's id (a trunk id is unique per store — the old one is
+reported as provenance), branches, and the provider translation caches, so the
+first turn after an import re-translates. Preserving all three needs a byte-level
+graft, which is designed in [proposals/aria-graft.md](../../proposals/aria-graft.md)
+and deliberately not built: an import that goes wrong refuses, while a graft
+that goes wrong yields a store that looks fine.
 
 ## State
 

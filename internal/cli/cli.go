@@ -762,6 +762,56 @@ Needs the trunk capability -- a trunkless figaro is normalized already.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "export",
+		Group: "Session",
+		Short: "Write an aria to a portable file",
+		Usage: "export [<id>] [-o <file>]",
+		Long: `Write an aria to a file that another store can import: its loadout,
+its chalkboard, and every message, with no store-local identity in it.
+
+  figaro export                     the bound aria, to stdout
+  figaro export 14bf8211 -o keep.json
+
+It carries CONTENT, not identity. Node ids, fork bases and LTs belong to the
+store an aria is in, not to the aria — so they are left behind and the
+destination mints its own. That is what makes an import unable to collide.
+
+The provider translation caches do not travel either. They are a derivable
+wire cache; the price is one cache-miss on the first turn after an import.`,
+		PassRaw: true,
+		Run: func(ctx *cmdkit.RunContext) error {
+			runExport(ctx.Extra.(*config.Loaded), ctx.RawArgs)
+			return nil
+		},
+		CompleteArgs: completeAriaIDsPositionalOrFlag,
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:  "import",
+		Group: "Session",
+		Short: "Restore an exported aria into this store",
+		Usage: "import <file>",
+		Long: `Restore an aria written by ` + "`figaro export`" + ` as a NEW conversation.
+
+  figaro import keep.json
+  figaro export --id X | ssh other-box figaro import -
+
+The loadout is resolved by content (an identical one is reused, not
+duplicated), a fresh conversation is spawned under it, and the messages are
+appended through the ordinary path. Every identity is minted by THIS store, so
+an import can never collide with what is already here.
+
+The exported id is offered, not demanded: it is taken when free and replaced
+when not, and the tool says which happened.`,
+		ArgsMin: 0,
+		ArgsMax: 1,
+		Run: func(ctx *cmdkit.RunContext) error {
+			runImport(ctx.Extra.(*config.Loaded), ctx.Args)
+			return nil
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "promote",
 		Group: "Session",
 		Short: "Make a trunk the canonical line through its ancestors",

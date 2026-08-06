@@ -100,6 +100,13 @@ func (c *Client) Promote(ctx context.Context, figaroID string, levels int) (*rpc
 	return &resp, err
 }
 
+// Import restores an exported aria as a new conversation. See the handler.
+func (c *Client) Import(ctx context.Context, req rpc.ImportRequest) (*rpc.ImportResponse, error) {
+	var resp rpc.ImportResponse
+	err := c.call(ctx, rpc.MethodImport, req, &resp)
+	return &resp, err
+}
+
 func (c *Client) Kill(ctx context.Context, figaroID string, recursive bool) error {
 	return c.call(ctx, rpc.MethodKill, rpc.KillRequest{FigaroID: figaroID, Recursive: recursive}, nil)
 }
