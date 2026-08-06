@@ -170,6 +170,12 @@ func widestCell(rows ...[]string) int {
 	return w
 }
 
+// timeNow is the clock the two tool durations read. Indirected for one
+// reason: a running call's duration is `now - opened`, which makes any
+// snapshot of it non-deterministic. The golden freezes this; production never
+// touches it.
+var timeNow = time.Now
+
 // argStreamLines / argSettledLines are the folds on ONE argument's value.
 // Streaming keeps the LAST rows — a moving window on what is being typed;
 // settled keeps the FIRST — what the call is, rather than where it stopped.
@@ -330,7 +336,7 @@ func toolRuntime(n livedoc.Node) string {
 	}
 	end := n.FinishedAt
 	if end == 0 {
-		end = time.Now().UnixMilli()
+		end = timeNow().UnixMilli()
 	}
 	return formatDuration(end - n.StartedAt)
 }
@@ -348,7 +354,7 @@ func toolGeneration(n livedoc.Node) string {
 	}
 	end := n.StartedAt
 	if end == 0 {
-		end = time.Now().UnixMilli()
+		end = timeNow().UnixMilli()
 	}
 	return formatDuration(end - n.OpenedAt)
 }

@@ -502,7 +502,7 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 	case gen != "":
 		head += " " + term.Dim("["+gen+"]")
 	case n.StartedAt != 0:
-		head += " " + term.Dim("["+toolDuration(n, time.Now())+"]")
+		head += " " + term.Dim("["+toolDuration(n, timeNow())+"]")
 	}
 	if !b.fits(width) {
 		// Too narrow to frame. Fall back to plain gutter rows rather than draw

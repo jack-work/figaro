@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"github.com/mattn/go-runewidth"
 	"strings"
 	"testing"
@@ -26,29 +25,6 @@ func stripANSI(s string) string {
 		i++
 	}
 	return b.String()
-}
-
-func TestRenderToolNode_UniformAcrossTools(t *testing.T) {
-	// The renderer has zero per-tool control flow: it reads Name and the
-	// argument fields and nothing else. Three tools, one shape.
-	for _, tc := range []struct {
-		name string
-		args map[string]any
-		want string
-	}{
-		{"bash", map[string]any{"command": "ls -la"}, "command ls -la"},
-		{"write", map[string]any{"path": "/tmp/a"}, "path /tmp/a"},
-		{"mystery", map[string]any{"k": "v"}, "k v"},
-	} {
-		n := livedoc.Node{Type: livedoc.NodeTool, Name: tc.name, Status: livedoc.StatusOK, Args: tc.args}
-		rows := renderNodeRows(t, n, 60, 10, false)
-		if !strings.HasPrefix(rows[0], "  "+tc.name) {
-			t.Errorf("%s: header = %q", tc.name, rows[0])
-		}
-		if !strings.Contains(strings.Join(rows, "\n"), tc.want) {
-			t.Errorf("%s: block does not carry %q:\n%s", tc.name, tc.want, strings.Join(rows, "\n"))
-		}
-	}
 }
 
 func TestRenderToolNode_RunningOutputClampedToBashCap(t *testing.T) {
@@ -161,103 +137,6 @@ func TestInquiryDrawsAsTheUsersVoiceInEveryView(t *testing.T) {
 	}
 }
 
-// The box, in the shape the owner's fourth round specifies: a top edge the
-// header sits on, air, the call, air, a labelled junction, air, the result,
-// air, and a floor. The floor and the junction arrive WITH the result — until
-// the tool has run there is nothing to divide and nothing to close under.
-func TestRenderToolNode_BoxShape(t *testing.T) {
-	n := livedoc.Node{
-		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
-		Args:   map[string]any{"path": "/x.md"},
-		Output: "Wrote 5 bytes", StartedAt: 1785862036094, FinishedAt: 1785862036098,
-	}
-	// A left gutter, two labels, and a stub elbow. No rules: a bar across the
-	// screen for every tool call made the transcript look ruled rather than
-	// written. The GLYPH belongs to the status label, not to the name — one
-	// mark per block, where the outcome is reported.
-	assertRows(t, renderNodeRows(t, n, 44, 10, false), []string{
-		"  write [4ms]",
-		"  │ ",
-		"  │ path /x.md",
-		"  │ ",
-		"✓ done [4ms]",
-		"  │ ",
-		"  │ Wrote 5 bytes",
-		"  └──",
-	})
-}
-
-// While the arguments are still arriving there is no junction and no floor:
-// the box is open at the bottom, because closing it early would mean
-// reopening it when the result lands.
-func TestRenderToolNode_NoJunctionUntilItRuns(t *testing.T) {
-	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
-		Input: `{"path":"/x.md"}`}
-	rows := renderNodeRows(t, n, 44, nodeOutputUnlimited, false)
-	joined := strings.Join(rows, "\n")
-	if strings.Contains(joined, "done") || strings.Contains(joined, "└") {
-		t.Errorf("no status label and no elbow until the tool has run:\n%s", joined)
-	}
-	if !strings.HasPrefix(rows[0], "⠋ write") {
-		t.Errorf("a call still being written carries the spinner: %q", rows[0])
-	}
-	if strings.TrimSpace(rows[len(rows)-1]) == "│" {
-		t.Errorf("no trailing rule row while the arguments stream: %q", rows[len(rows)-1])
-	}
-}
-
-// Folded rows ELLIPSISE; expanded rows WRAP. That is the whole difference
-// between the two states, and it is why a folded row never needs a wrap.
-func TestRenderToolNode_FoldedEllipsisesExpandedWraps(t *testing.T) {
-	long := "a single very long line of argument text that will not fit inside a narrow box at all"
-	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
-		Args: map[string]any{"content": long + "\nsecond line"}}
-	folded := strings.Join(renderNodeRows(t, n, 50, 10, false), "\n")
-	if !strings.Contains(folded, "…") {
-		t.Errorf("folded overflow should be occluded by an ellipsis:\n%s", folded)
-	}
-	expanded := renderNodeRows(t, n, 50, nodeOutputUnlimited, true)
-	var joined string
-	for _, r := range expanded {
-		joined += strings.TrimSpace(strings.Trim(strings.TrimPrefix(strings.TrimSpace(r), "│"), "│"))
-	}
-	if strings.Contains(strings.Join(expanded, ""), "…") {
-		t.Errorf("expanded content should wrap, not ellipsise:\n%s", strings.Join(expanded, "\n"))
-	}
-	if !strings.Contains(strings.ReplaceAll(joined, " ", ""), strings.ReplaceAll(long, " ", "")[:40]) {
-		t.Errorf("expanded content lost text while wrapping:\n%s", strings.Join(expanded, "\n"))
-	}
-}
-
-// A folded multi-line value carries its count on the LABEL — `(2 of 41 lines)`
-// — and the total moves as the value grows. No row is spent on it.
-func TestRenderToolNode_FoldNoteRidesOnTheLabel(t *testing.T) {
-	body := func(n int) string {
-		var b strings.Builder
-		for i := 1; i <= n; i++ {
-			fmt.Fprintf(&b, "%d. a line\\n", i)
-		}
-		return b.String()
-	}
-	streaming := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
-		Input: `{"content":"` + body(9)}
-	rows := renderNodeRows(t, streaming, 50, 10, false)
-	if !strings.Contains(strings.Join(rows, "\n"), "content ("+fmt.Sprint(argStreamLines)+" of 9 lines)") {
-		t.Errorf("streaming label should carry the count:\n%s", strings.Join(rows, "\n"))
-	}
-	// The total tracks the value: nine lines becomes twelve.
-	streaming.Input = `{"content":"` + body(12)
-	if rows = renderNodeRows(t, streaming, 50, 10, false); !strings.Contains(strings.Join(rows, "\n"), "of 12 lines") {
-		t.Errorf("fold note should follow the value as it grows:\n%s", strings.Join(rows, "\n"))
-	}
-	settled := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
-		Args: map[string]any{"content": strings.ReplaceAll(body(9), "\\n", "\n")}}
-	rows = renderNodeRows(t, settled, 50, 10, false)
-	if !strings.Contains(strings.Join(rows, "\n"), "("+fmt.Sprint(argSettledLines)+" of 9 lines)") {
-		t.Errorf("settled label should carry the count:\n%s", strings.Join(rows, "\n"))
-	}
-}
-
 // THE INVARIANT the owner asked for: the duration is on screen at every width.
 // It was appended after an 80-column summary before, and the summary shoved it
 // off the right at 65% of his tool calls.
@@ -282,44 +161,6 @@ func TestRenderToolNode_DurationSurvivesEveryWidth(t *testing.T) {
 				}
 			}
 		}
-	}
-}
-
-// A settled tool keeps its arguments, folded to the FIRST argSettledLines rows
-// of each value: nothing is moving any more, so the useful part is the head —
-// what this call is — not the tail, which is only where it stopped.
-func TestRenderToolNode_SettledArgsPreviewFromTheHead(t *testing.T) {
-	n := livedoc.Node{
-		Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
-		Summary: "git push", Args: map[string]any{"command": "git push origin main", "timeout": 240},
-		Output: "everything up-to-date",
-	}
-	joined := strings.Join(renderNodeRows(t, n, 60, nodeBashCapDefault, false), "\n")
-	for _, want := range []string{"command git push origin main", "timeout 240"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("settled box should carry %q:\n%s", want, joined)
-		}
-	}
-}
-
-// Ctrl-O adds METADATA and nothing else. Verbosity and "open this one thing"
-// are different questions; one key answering both meant neither could be asked
-// alone.
-func TestRenderToolNode_VerboseAddsMetadataNotContent(t *testing.T) {
-	n := livedoc.Node{
-		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
-		Args:      map[string]any{"content": strings.Repeat("a line\n", 20)},
-		StartedAt: 1785862036094, FinishedAt: 1785862036099,
-	}
-	folded := renderToolNode(n, 60, nodeBashCapDefault, 0, false, false)
-	verbose := renderToolNode(n, 60, nodeBashCapDefault, 0, true, false)
-	extra := len(verbose) - len(folded)
-	if extra != 2 {
-		t.Fatalf("Ctrl-O added %d rows, want exactly the two timestamps", extra)
-	}
-	joined := strings.Join(verbose, "\n")
-	if !strings.Contains(stripANSI(joined), "  │ started ") {
-		t.Errorf("timestamps must sit INSIDE the block:\n%s", stripANSI(joined))
 	}
 }
 
@@ -449,131 +290,5 @@ func TestIncipitDrawsArgumentsFoldedButOutputWhole(t *testing.T) {
 	}
 	if pagerOut != nodeBashCapDefault+1 { // + the "… last N of M lines" note
 		t.Errorf("pager unexpanded output: %d rows, want %d — the pager DOES collapse output", pagerOut, nodeBashCapDefault+1)
-	}
-}
-
-// Two clocks: the header carries GENERATION (how long the model spent writing
-// the call), the junction carries RUNTIME. They differ by thirty seconds on a
-// large write, and only the second used to exist — which is why such a write
-// rendered `[0ms]` after half a minute of streaming.
-func TestRenderToolNode_TwoClocks(t *testing.T) {
-	opened := int64(1785862030000)
-	n := livedoc.Node{
-		Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
-		Args: map[string]any{"path": "/x.md"}, Output: "Wrote 5 bytes",
-		OpenedAt: opened, StartedAt: opened + 31200, FinishedAt: opened + 31204,
-	}
-	rows := renderNodeRows(t, n, 60, 10, false)
-	if !strings.Contains(rows[0], "[31.2s]") {
-		t.Errorf("header should carry the generation clock: %q", rows[0])
-	}
-	var junction string
-	for _, r := range rows {
-		if strings.Contains(r, "done") {
-			junction = r
-		}
-	}
-	if !strings.Contains(junction, "[4ms]") {
-		t.Errorf("junction should carry the runtime: %q", junction)
-	}
-
-	// An aria older than the opened_at clock has no generation to show, so the
-	// header falls back to the runtime rather than to a blank.
-	old := n
-	old.OpenedAt = 0
-	if got := renderNodeRows(t, old, 60, 10, false)[0]; !strings.Contains(got, "[4ms]") {
-		t.Errorf("without opened_at the header should fall back to the runtime: %q", got)
-	}
-}
-
-// A one-line argument stays BESIDE its label however long it is, cut with an
-// ellipsis. Dropping it onto its own row made one argument look like two and
-// left the label column saying nothing. Expanded is the exception: there the
-// value is meant to be read, so it takes the label to itself and wraps.
-func TestRenderToolNode_LongSingleLineArgStaysOnItsLabelRow(t *testing.T) {
-	long := "cd /var/tmp/x && grep -n -i 'rossini' opera.md && echo done with a tail far longer than the pane"
-	n := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
-		Args: map[string]any{"command": long}, Output: "ok"}
-
-	folded := renderNodeRows(t, n, 60, 10, false)
-	var label string
-	for _, r := range folded {
-		if strings.Contains(r, "command") {
-			label = r
-		}
-	}
-	if !strings.Contains(label, "command cd /var/tmp/x") {
-		t.Errorf("folded: the value should ride beside its label: %q", label)
-	}
-	if !strings.Contains(label, "…") {
-		t.Errorf("folded: an over-long value should be ellipsised: %q", label)
-	}
-
-	expanded := renderNodeRows(t, n, 60, nodeOutputUnlimited, true)
-	var joined string
-	for i, r := range expanded {
-		if strings.HasSuffix(strings.TrimSpace(r), "command") {
-			joined = strings.Join(expanded[i:i+3], "\n")
-		}
-	}
-	if joined == "" || strings.Contains(joined, "…") {
-		t.Errorf("expanded: the label should take its own row and the value wrap beneath:\n%s",
-			strings.Join(expanded, "\n"))
-	}
-}
-
-// One glyph per block, on the status label — and it tells the truth: a cross
-// when the call failed, the spinner while output is still arriving.
-func TestRenderToolNode_StatusGlyphReportsTheOutcome(t *testing.T) {
-	base := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Args: map[string]any{"command": "false"}, Output: "boom"}
-	for _, tc := range []struct{ status, want string }{
-		{livedoc.StatusOK, "✓ done"},
-		{livedoc.StatusError, "✗ failed"},
-		{livedoc.StatusRunning, "running"},
-	} {
-		n := base
-		n.Status = tc.status
-		joined := strings.Join(renderNodeRows(t, n, 60, 10, false), "\n")
-		if !strings.Contains(joined, tc.want) {
-			t.Errorf("status %q: want %q in\n%s", tc.status, tc.want, joined)
-		}
-		if tc.status == livedoc.StatusError && strings.Contains(joined, "✓") {
-			t.Errorf("a failed call must not carry a checkmark:\n%s", joined)
-		}
-	}
-}
-
-// The name sits in the glyph's column pair, so it lines up with the word in
-// the status label below it — `write` over `done` — whether or not that row
-// carries a spinner.
-func TestRenderToolNode_NameAlignsWithTheStatusWord(t *testing.T) {
-	settled := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
-		Args: map[string]any{"path": "/x"}, Output: "ok"}
-	// COLUMNS, not bytes: ✓ is a three-byte rune one column wide, so a byte
-	// index puts the status word two places right of where the eye sees it.
-	col := func(row, word string) int {
-		i := strings.Index(row, word)
-		if i < 0 {
-			return -1
-		}
-		return runewidth.StringWidth(row[:i])
-	}
-	rows := renderNodeRows(t, settled, 50, 10, false)
-	nameCol := col(rows[0], "write")
-	wordCol := -1
-	for _, r := range rows {
-		if c := col(r, "done"); c >= 0 {
-			wordCol = c
-		}
-	}
-	if nameCol != wordCol {
-		t.Errorf("name at column %d, status word at %d:\n%s", nameCol, wordCol, strings.Join(rows, "\n"))
-	}
-
-	// The spinner occupies the same pair while the call is being written.
-	streaming := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
-		Input: `{"path":"/x"}`}
-	if got := col(renderNodeRows(t, streaming, 50, 10, false)[0], "write"); got != nameCol {
-		t.Errorf("streaming name at column %d, want %d", got, nameCol)
 	}
 }
