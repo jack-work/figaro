@@ -227,7 +227,7 @@ func toolArgRows(n livedoc.Node, content int, expand bool) []string {
 		kept := foldArgLines(lines, expand, streaming)
 		head := f.Name
 		if len(kept) < len(lines) {
-			head += " " + argFoldNote(len(kept), len(lines), streaming)
+			head += " " + argFoldNote(len(kept), len(lines))
 		}
 		rows = append(rows, term.Label(head))
 		for _, l := range kept {
@@ -270,15 +270,12 @@ func foldArgLines(lines []string, expand, streaming bool) []string {
 	return lines
 }
 
-// argFoldNote says which END was kept, because that differs by phase and a
-// reader cannot otherwise tell whether they are looking at the beginning of a
-// command or the end of one.
-func argFoldNote(shown, total int, streaming bool) string {
-	end := "first"
-	if streaming {
-		end = "last"
-	}
-	return fmt.Sprintf("(…%s %d of %d lines)", end, shown, total)
+// argFoldNote is the count on a folded value's label: `(2 of 41 lines)`. Which
+// END was kept is not spelled out — streaming keeps the tail, settled keeps the
+// head — because the value is right there to read and the words cost more than
+// they explain.
+func argFoldNote(shown, total int) string {
+	return fmt.Sprintf("(%d of %d lines)", shown, total)
 }
 
 // toolArgFields answers "what are this tool's arguments" — the streaming

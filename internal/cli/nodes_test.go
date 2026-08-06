@@ -42,7 +42,7 @@ func TestRenderToolNode_UniformAcrossTools(t *testing.T) {
 	} {
 		n := livedoc.Node{Type: livedoc.NodeTool, Name: tc.name, Status: livedoc.StatusOK, Args: tc.args}
 		rows := renderNodeRows(t, n, 60, 10, false)
-		if !strings.HasPrefix(rows[0], tc.name) {
+		if !strings.HasPrefix(rows[0], "  "+tc.name) {
 			t.Errorf("%s: header = %q", tc.name, rows[0])
 		}
 		if !strings.Contains(strings.Join(rows, "\n"), tc.want) {
@@ -176,7 +176,7 @@ func TestRenderToolNode_BoxShape(t *testing.T) {
 	// written. The GLYPH belongs to the status label, not to the name — one
 	// mark per block, where the outcome is reported.
 	assertRows(t, renderNodeRows(t, n, 44, 10, false), []string{
-		"write [4ms]",
+		"  write [4ms]",
 		"  │ ",
 		"  │ path /x.md",
 		"  │ ",
@@ -229,8 +229,8 @@ func TestRenderToolNode_FoldedEllipsisesExpandedWraps(t *testing.T) {
 	}
 }
 
-// A folded multi-line value names the fold on its LABEL — which end, how much
-// of how many — and the total moves as the value grows. No row is spent on it.
+// A folded multi-line value carries its count on the LABEL — `(2 of 41 lines)`
+// — and the total moves as the value grows. No row is spent on it.
 func TestRenderToolNode_FoldNoteRidesOnTheLabel(t *testing.T) {
 	body := func(n int) string {
 		var b strings.Builder
@@ -242,8 +242,8 @@ func TestRenderToolNode_FoldNoteRidesOnTheLabel(t *testing.T) {
 	streaming := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
 		Input: `{"content":"` + body(9)}
 	rows := renderNodeRows(t, streaming, 50, 10, false)
-	if !strings.Contains(strings.Join(rows, "\n"), "content (…last "+fmt.Sprint(argStreamLines)+" of 9 lines)") {
-		t.Errorf("streaming label should name the tail fold:\n%s", strings.Join(rows, "\n"))
+	if !strings.Contains(strings.Join(rows, "\n"), "content ("+fmt.Sprint(argStreamLines)+" of 9 lines)") {
+		t.Errorf("streaming label should carry the count:\n%s", strings.Join(rows, "\n"))
 	}
 	// The total tracks the value: nine lines becomes twelve.
 	streaming.Input = `{"content":"` + body(12)
@@ -253,8 +253,8 @@ func TestRenderToolNode_FoldNoteRidesOnTheLabel(t *testing.T) {
 	settled := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
 		Args: map[string]any{"content": strings.ReplaceAll(body(9), "\\n", "\n")}}
 	rows = renderNodeRows(t, settled, 50, 10, false)
-	if !strings.Contains(strings.Join(rows, "\n"), "(…first "+fmt.Sprint(argSettledLines)+" of 9 lines)") {
-		t.Errorf("settled label should name the HEAD fold:\n%s", strings.Join(rows, "\n"))
+	if !strings.Contains(strings.Join(rows, "\n"), "("+fmt.Sprint(argSettledLines)+" of 9 lines)") {
+		t.Errorf("settled label should carry the count:\n%s", strings.Join(rows, "\n"))
 	}
 }
 
@@ -540,5 +540,40 @@ func TestRenderToolNode_StatusGlyphReportsTheOutcome(t *testing.T) {
 		if tc.status == livedoc.StatusError && strings.Contains(joined, "✓") {
 			t.Errorf("a failed call must not carry a checkmark:\n%s", joined)
 		}
+	}
+}
+
+// The name sits in the glyph's column pair, so it lines up with the word in
+// the status label below it — `write` over `done` — whether or not that row
+// carries a spinner.
+func TestRenderToolNode_NameAlignsWithTheStatusWord(t *testing.T) {
+	settled := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
+		Args: map[string]any{"path": "/x"}, Output: "ok"}
+	// COLUMNS, not bytes: ✓ is a three-byte rune one column wide, so a byte
+	// index puts the status word two places right of where the eye sees it.
+	col := func(row, word string) int {
+		i := strings.Index(row, word)
+		if i < 0 {
+			return -1
+		}
+		return runewidth.StringWidth(row[:i])
+	}
+	rows := renderNodeRows(t, settled, 50, 10, false)
+	nameCol := col(rows[0], "write")
+	wordCol := -1
+	for _, r := range rows {
+		if c := col(r, "done"); c >= 0 {
+			wordCol = c
+		}
+	}
+	if nameCol != wordCol {
+		t.Errorf("name at column %d, status word at %d:\n%s", nameCol, wordCol, strings.Join(rows, "\n"))
+	}
+
+	// The spinner occupies the same pair while the call is being written.
+	streaming := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
+		Input: `{"path":"/x"}`}
+	if got := col(renderNodeRows(t, streaming, 50, 10, false)[0], "write"); got != nameCol {
+		t.Errorf("streaming name at column %d, want %d", got, nameCol)
 	}
 }
