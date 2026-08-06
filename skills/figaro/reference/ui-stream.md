@@ -173,12 +173,13 @@ Two rules that are easy to get wrong:
 
 - **A settled tool folds its arguments to the head.** Nothing is moving any
   more, so the useful part is what the call *is*, not where it stopped.
-- **The incipit folds arguments but never folds output.** Inline rows freeze to
-  scrollback and cannot be re-rendered, so a collapsed *output* there could
-  never be recovered — but a streaming *argument* is a live window, and
-  expanding it inline would print a whole file body on every frame. The
-  `Composer.Expanded == nil` default ("no gesture here, draw the fullest form")
-  therefore reaches output only; see `ariaView.gesture`.
+- **Only the pager has an expansion gesture**, so every other surface draws the
+  minimized form. That reverses an older decision for the incipit, which used
+  to draw every row of a tool's output because inline rows freeze to scrollback
+  and a collapse there can never be undone. True — but written when a collapse
+  was SILENT. The `… last N of M lines` banner now says what was elided,
+  `figaro show` has the rest, and a 60-line file written inline buried the
+  conversation it belonged to. See `ariaView.gesture`.
 
 The argument fold note lives on the label rather than in a row of its own,
 because rows are what is being rationed.
