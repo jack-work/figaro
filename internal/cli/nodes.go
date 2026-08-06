@@ -491,9 +491,12 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 	// The header's clock is GENERATION — how long the model spent writing this
 	// call. On an aria older than that clock there is nothing to show, so it
 	// falls back to the runtime rather than to a blank.
-	head := term.Arg(name)
+	// The name sits in the glyph's column pair, so it lines up with the word
+	// in the status label below it — `write` over `done`, whether or not this
+	// row has a spinner on it.
+	head := "  " + term.Arg(name)
 	if n.Status == livedoc.StatusRunning || n.Status == "" {
-		head = spinner + " " + head
+		head = spinner + " " + term.Arg(name)
 	}
 	switch gen := toolGeneration(n); {
 	case gen != "":

@@ -98,7 +98,7 @@ wire. Whether the fragments arrive smoothly at all is a **provider** question
 A tool call is one block: a left gutter, and two labels.
 
 ```
-bash [1.4s]
+  bash [1.4s]
   │
   │ command cd /var/tmp/x && grep -nE '1[6-9][0-9]{2}' opera.md
   │
