@@ -24,8 +24,8 @@ import (
 func daemonFixture(t *testing.T) (*angelus.Angelus, *angelus.Client, context.Context) {
 	t.Helper()
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
-	require.NoError(t, os.WriteFile(dir+"/loadouts/mock.toml", []byte(`
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
 [system]
 provider = "mock"
 model = "mock-model"

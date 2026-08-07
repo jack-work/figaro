@@ -233,8 +233,8 @@ func deltaB(before, after uint64) string {
 func benchDaemon(t *testing.T) (*angelus.Angelus, *angelus.Client, context.Context) {
 	t.Helper()
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
-	require.NoError(t, os.WriteFile(dir+"/loadouts/mock.toml", []byte(`
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
 [system]
 provider = "mock"
 model = "mock-model"
@@ -242,7 +242,7 @@ model = "mock-model"
 	// dormant_after_minutes = 0 disables the sweep: this test drives
 	// reclamation by hand so the numbers are attributable.
 	require.NoError(t, os.WriteFile(dir+"/config.toml", []byte(`
-default_loadout = "mock"
+default_outfit = "mock"
 
 [memory]
 dormant_after_minutes = 0

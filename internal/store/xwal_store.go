@@ -706,6 +706,14 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 	return nil
 }
 
+// CollectStump removes a childless outfit stump. Refuses one still hosting
+// arias — the caller is expected to have checked, so a refusal is a race.
+func (s *XwalStore) CollectStump(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.trunks.RemoveStump(id)
+}
+
 // stumpOf names the stump hosting a trunk, "" when it hangs off the root.
 func (s *XwalStore) stumpOf(id string) string {
 	for _, st := range s.trunks.Stumps() {

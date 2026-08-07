@@ -146,7 +146,7 @@ something that exists. It is still small: one line per turn at the point
 Print the `[memory]` values in effect, with defaults marked. A user tuning knobs
 should not have to guess whether their file was read — during the hibernation
 fuzz an entire run was wasted on a config directory that lacked `credo.md`, and
-the failure surfaced as a loadout error rather than a config one.
+the failure surfaced as an outfit error rather than a config one.
 
 Also print, when true, the two conditions that mean reclamation cannot work:
 `dormant_after_minutes = 0` (disabled), and every resident aria having a live

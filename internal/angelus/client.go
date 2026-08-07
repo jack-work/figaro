@@ -60,6 +60,13 @@ func (c *Client) Create(ctx context.Context, outfit string, patch *rpc.Chalkboar
 	return &resp, err
 }
 
+// GC collects outfit stumps nothing is using. DryRun reports without removing.
+func (c *Client) GC(ctx context.Context, dryRun bool) (*rpc.GCResponse, error) {
+	var resp rpc.GCResponse
+	err := c.call(ctx, rpc.MethodGC, rpc.GCRequest{DryRun: dryRun}, &resp)
+	return &resp, err
+}
+
 // Fork branches a conversation: the node freezes and both children get
 // fresh system-minted ids. A zero request forks at the head; atTurn
 // REPLACES that turn (the server maps it to an LT) and atLT forks at that

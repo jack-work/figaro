@@ -22,11 +22,11 @@ func benchStore(tb testing.TB, n int) (store.Backend, string) {
 	}
 	tb.Cleanup(func() { backend.Close() })
 
-	loadout, err := backend.CreateLoadout("bench", message.Patch{})
+	outfit, err := backend.CreateOutfit("bench", message.Patch{})
 	if err != nil {
 		tb.Fatal(err)
 	}
-	id, err := backend.CreateConversation(loadout)
+	id, err := backend.CreateConversation(outfit)
 	if err != nil {
 		tb.Fatal(err)
 	}

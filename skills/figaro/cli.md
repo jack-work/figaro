@@ -187,6 +187,7 @@ that goes wrong yields a store that looks fine.
 | `figaro set [<id>] <key> <value>` | Patch one key with no model round trip. |
 | `figaro unset [<id>] <key>...` | Remove keys. |
 | `figaro outfit <name>[,<name>...]` | Apply named outfits additively, folded left to right (later wins). `--list` to see them. |
+| `figaro gc [--dry-run]` | Collect outfit stumps nothing is using. One stump exists per outfit VERSION; killing an aria collects its stump when it was the last child, so `gc` sweeps the versions that predate that. Content-addressed, so a collected stump is re-minted identically by the next aria that wants it. |
 | `figaro outfit --tree [<name>]` | Draw an outfit's layer closure and apply nothing — green where a layer resolves, red where it does not. Reads the config dir directly, so it needs no aria and no daemon. Exits non-zero when the closure has a gap. |
 
 Setting a key is a real event in the conversation: on the tic where a

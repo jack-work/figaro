@@ -581,6 +581,11 @@ func (b *XwalBackend) Remove(ariaID string, recursive bool) error {
 	return b.store.RemoveLeaf(ariaID, recursive)
 }
 
+// CollectStump removes a childless outfit stump. See XwalStore.CollectStump.
+func (b *XwalBackend) CollectStump(stumpID string) error {
+	return b.store.CollectStump(stumpID)
+}
+
 func (b *XwalBackend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()

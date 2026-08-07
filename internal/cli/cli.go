@@ -971,6 +971,31 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:  "gc",
+		Group: "System",
+		Short: "Collect outfit stumps nothing is using",
+		Usage: "gc [--dry-run] [-j|--json]",
+		Long: "An outfit stump is content-addressed (<outfit>@<hash>), so one exists\n" +
+			"per outfit VERSION: editing an outfit mints a new stump the next time an\n" +
+			"aria is born under it. Killing an aria collects its stump when it was the\n" +
+			"last child, so `gc` is the sweep for versions that predate that.\n\n" +
+			"Collecting loses nothing: the stump is content-addressed, so the next aria\n" +
+			"wanting that outfit re-mints the same id. Only stumps with no arias under\n" +
+			"them are taken.\n\n" +
+			"  figaro gc --dry-run   show what would go\n" +
+			"  figaro gc             take it",
+		Flags: []cmdkit.FlagDef{
+			{Long: "dry-run", IsBool: true, Description: "Report what would be collected; remove nothing"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Emit the report as JSON"},
+		},
+		Run: func(ctx *cmdkit.RunContext) error {
+			ld := ctx.Extra.(*config.Loaded)
+			runGC(ld, ctx.BoolFlag("dry-run"), ctx.BoolFlag("json"))
+			return nil
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:    "status",
 		Aliases: []string{"info"},
 		Group:   "Session",

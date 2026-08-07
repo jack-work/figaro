@@ -115,6 +115,7 @@ const (
 	MethodPromote     = "figaro.promote"
 	MethodImport      = "figaro.import"
 	MethodNormalize   = "figaro.normalize"
+	MethodGC          = "figaro.gc"
 	MethodKill        = "figaro.kill"
 	MethodList        = "figaro.list"
 	MethodAttach      = "figaro.attach"
@@ -522,6 +523,30 @@ type ImportResponse struct {
 	Outfit   string `json:"outfit"`
 	Messages int    `json:"messages"`
 	WasID    string `json:"was_id,omitempty"`
+}
+
+// GCRequest asks the angelus to collect outfit stumps nothing is using.
+type GCRequest struct {
+	// DryRun reports what would go without removing anything.
+	DryRun bool `json:"dry_run,omitempty"`
+}
+
+// GCStump is one outfit stump and its fate.
+type GCStump struct {
+	ID       string `json:"id"`
+	Outfit   string `json:"outfit,omitempty"`
+	Version  string `json:"version,omitempty"`
+	Children int    `json:"children"`
+	// Collected is true when it was removed, or — under DryRun — would be.
+	Collected bool   `json:"collected,omitempty"`
+	Err       string `json:"err,omitempty"`
+}
+
+// GCResponse lists every stump considered, in name order.
+type GCResponse struct {
+	Stumps    []GCStump `json:"stumps"`
+	Collected int       `json:"collected"`
+	DryRun    bool      `json:"dry_run,omitempty"`
 }
 
 // Endpoint describes how to connect to a figaro.

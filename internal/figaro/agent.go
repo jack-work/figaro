@@ -469,8 +469,7 @@ func (a *Agent) seedMetricsFromMeta() bool {
 	a.model = model
 	a.mantra = snapshotString(snapshot, "mantra")
 	a.cwd = snapshotString(snapshot, "system.cwd")
-	a.loadoutName = snapshotString(snapshot, "system.loadout_name")
-	a.loadoutVer = snapshotString(snapshot, "system.loadout_version")
+	a.outfitName, a.outfitVer = snapshotOutfit(snapshot)
 	a.mu.Unlock()
 	return true
 }

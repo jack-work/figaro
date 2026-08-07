@@ -182,7 +182,7 @@ for the copy.
 ## Configuration — `[memory]` in `config.toml`
 
 Daemon policy, not conversation state, so it lives in `config.toml` and never in
-a loadout or the chalkboard.
+an outfit or the chalkboard.
 
 ```toml
 [memory]

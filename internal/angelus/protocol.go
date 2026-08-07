@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"text/template"
 	"time"
@@ -77,6 +78,7 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodPromote:        h.promote,
 			rpc.MethodImport:         h.importAria,
 			rpc.MethodNormalize:      h.normalize,
+			rpc.MethodGC:             h.gc,
 			rpc.MethodKill:           h.kill,
 			rpc.MethodList:           h.list,
 			rpc.MethodAttach:         h.attach,
@@ -690,6 +692,65 @@ func (h *handlers) messageCountAt(id string, atMainLT uint64) int {
 // promote climbs a conversation trunk up N stump-bounded levels (it absorbs
 // its parent trunk's run). A live agent on the trunk keeps its id (promotion
 // only relabels ancestor markers), so no agent is killed.
+// gc collects outfit stumps nothing is using.
+//
+// A stump is content-addressed (<outfit>@<hash>), so one accumulates per outfit
+// VERSION: every edit to an outfit mints a new one the next time an aria is
+// born under it, and until stumps became collectible nothing ever took the old
+// ones away. Killing an aria now collects its stump when it was the last
+// child; this is the sweep for everything that predates that.
+//
+// Collecting loses nothing — the next aria wanting that outfit re-mints the
+// same id — so the only question is whether anything is still under it, which
+// the topology answers directly.
+func (h *handlers) gc(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req rpc.GCRequest
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, err
+		}
+	}
+	if h.angelus.Backend == nil {
+		return nil, errors.New("gc: no backend (ephemeral angelus)")
+	}
+
+	nodes := h.angelus.Backend.Nodes()
+	children := map[string]int{}
+	for _, n := range nodes {
+		if n.Parent != "" {
+			children[n.Parent]++
+		}
+	}
+
+	resp := rpc.GCResponse{DryRun: req.DryRun}
+	for _, n := range nodes {
+		if n.Kind != "outfit" {
+			continue
+		}
+		entry := rpc.GCStump{
+			ID: n.ID, Outfit: n.Outfit, Version: n.Version,
+			Children: children[n.ID],
+		}
+		if entry.Children == 0 {
+			entry.Collected = true
+			if !req.DryRun {
+				if err := h.angelus.Backend.CollectStump(n.ID); err != nil {
+					entry.Collected, entry.Err = false, err.Error()
+				}
+			}
+			if entry.Collected {
+				resp.Collected++
+			}
+		}
+		resp.Stumps = append(resp.Stumps, entry)
+	}
+	sort.Slice(resp.Stumps, func(i, j int) bool { return resp.Stumps[i].ID < resp.Stumps[j].ID })
+	if !req.DryRun && resp.Collected > 0 {
+		slog.Info("collected outfit stumps", "count", resp.Collected)
+	}
+	return resp, nil
+}
+
 func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req rpc.NormalizeRequest
 	if err := json.Unmarshal(params, &req); err != nil {

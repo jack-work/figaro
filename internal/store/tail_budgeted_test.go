@@ -18,9 +18,9 @@ func realAria(t testing.TB, n, textBytes int) (*XwalBackend, string) {
 	require.NoError(t, err)
 	t.Cleanup(func() { be.Close() })
 
-	loadout, err := be.CreateLoadout("l", message.Patch{})
+	outfit, err := be.CreateOutfit("l", message.Patch{})
 	require.NoError(t, err)
-	id, err := be.CreateConversation(loadout)
+	id, err := be.CreateConversation(outfit)
 	require.NoError(t, err)
 
 	log, err := be.Open(id)

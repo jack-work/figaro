@@ -86,7 +86,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-rm -rf "$BOX" "$RT"; mkdir -p "$BOX"/{cfg/loadouts,state} "$RT"
+rm -rf "$BOX" "$RT"; mkdir -p "$BOX"/{cfg/outfits,state} "$RT"
 
 # A teardown that does not require remembering four paths.
 cat > "$BOX/teardown.sh" <<TD
@@ -110,7 +110,7 @@ echo "== building $(git -C "$ROOT" rev-parse --short HEAD)"
 # Egregiously short on purpose: one minute is the floor above "disabled", and a
 # one-second sweep means you see the transition rather than wait for it.
 cat > "$BOX/cfg/config.toml" <<'EOF'
-default_loadout = "hibdemo"
+default_outfit = "hibdemo"
 check_updates = false
 
 [memory]
@@ -125,13 +125,13 @@ You are a scratch aria in a hibernation demo. Answer briefly.
 EOF
 
 # Borrow a provider from the real config so no credentials are copied or read
-# here; hush resolves them in the daemon. Falls back to a bare loadout, which
+# here; hush resolves them in the daemon. Falls back to a bare outfit, which
 # is enough to MINT arias (no model call) but not to prompt one.
 REAL=${FIGARO_REAL_CONFIG:-$HOME/.config/figaro}
-if [[ -f "$REAL/loadouts/default.toml" ]]; then
-  cp "$REAL"/loadouts/*.toml "$BOX/cfg/loadouts/" 2>/dev/null || true
+if [[ -f "$REAL/outfits/default.toml" ]]; then
+  cp "$REAL"/outfits/*.toml "$BOX/cfg/outfits/" 2>/dev/null || true
 fi
-cat > "$BOX/cfg/loadouts/hibdemo.toml" <<'EOF'
+cat > "$BOX/cfg/outfits/hibdemo.toml" <<'EOF'
 [system]
 provider = "anthropic"
 model = "claude-sonnet-4-5"
@@ -144,13 +144,13 @@ FIGARO_RUNTIME_DIR=$RT FIGARO_STATE_DIR=$BOX/state FIGARO_CONFIG_DIR=$BOX/cfg \
 for _ in $(seq 1 40); do [[ -S $RT/angelus.sock ]] && break; sleep 0.25; done
 [[ -S $RT/angelus.sock ]] || { echo "daemon did not start; see $BOX/daemon.out"; exit 1; }
 
-# `figaro new --loadout X` with no prompt mints an aria and takes no turn, so
+# `figaro new --outfit X` with no prompt mints an aria and takes no turn, so
 # this costs nothing. (Bare `figaro new` unattends instead, and
 # `figaro new -- <prompt>` would spend tokens.)
 echo "== minting $ARIAS arias (no model calls)"
 : > "$BOX/ids"
 for i in $(seq 1 "$ARIAS"); do
-  id=$(fig new --loadout hibdemo -j 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin)["aria_id"])')
+  id=$(fig new --outfit hibdemo -j 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin)["aria_id"])')
   echo "$id" >> "$BOX/ids"
   printf '   %s\n' "$id"
 done
@@ -189,7 +189,7 @@ else
   done < "$BOX/ids"
   if [[ ${done_n:-0} -lt $ARIAS ]]; then
     echo "   NOTE: not every aria answered. Transcripts will be thin or blank."
-    echo "         Check the provider in $BOX/cfg/loadouts/hibdemo.toml."
+    echo "         Check the provider in $BOX/cfg/outfits/hibdemo.toml."
   fi
 fi
 

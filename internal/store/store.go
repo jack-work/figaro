@@ -150,6 +150,11 @@ type Backend interface {
 	// Node / Nodes expose the tree for lineage + listing.
 	Node(id string) (NodeView, bool)
 	Nodes() []NodeView
+
+	// CollectStump removes a childless outfit stump. Stumps are content
+	// addressed, so a collected one is re-minted identically by the next aria
+	// that wants that outfit; this reclaims the versions nothing uses.
+	CollectStump(stumpID string) error
 	Conversations() []NodeView
 	ConversationIDs() []string
 
