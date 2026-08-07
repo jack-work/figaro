@@ -8,15 +8,22 @@ source named here and trust it over this file.
 - **CLI** (`internal/cli`) — what the user runs. Connects to the angelus or a
   per-aria socket and renders the stream.
 - **Angelus** (`internal/angelus`) — the long-running supervisor (single
-  instance via flock). Owns the registry of arias, spawns per-aria agents,
-  routes pid bindings, serves `figaro.list`/`create`/`kill`/`attach`. Survives
-  shells. `figaro rest` stops it; the next command respawns it.
-- **Agent** (`internal/figaro`) — one per aria (= one conversation). Owns the
-  figLog (IR), the chalkboard, the tool registry, and the turn loop. Mutations
-  funnel through its **inbox** (an event queue), so there is exactly one
-  writer to the chalkboard and the log — e.g. a `figaro set` arriving mid-turn
-  is serialized, not raced. Chalkboard *reads* need no inbox: snapshots are
-  immutable and published atomically (see the chalkboard section).
+  instance via flock). Owns the registry of arias, the **endpoint** each aria is
+  reachable at, the daemon-wide session registry, pid bindings, and
+  `figaro.list`/`create`/`kill`/`attach`. Survives shells. `figaro rest` stops
+  it; the next command respawns it.
+- **Agent** (`internal/figaro`) — one per aria (= one conversation), and
+  **transient**. Owns the figLog (IR), the chalkboard, the tool registry, and
+  the turn loop. Mutations funnel through its **inbox** (an event queue), so
+  there is exactly one writer to the chalkboard and the log — e.g. a `figaro
+  set` arriving mid-turn is serialized, not raced. Chalkboard *reads* need no
+  inbox: snapshots are immutable and published atomically (see the chalkboard
+  section).
+
+An agent is a memory decision, not an identity. It is built on demand and
+reclaimed when idle, while the aria's endpoint, bindings and background jobs
+outlive it — so "the aria" and "the agent serving it" are different lifetimes.
+See [reclamation.md](reclamation.md).
 
 ## The IR — `internal/message`
 
@@ -160,11 +167,19 @@ Per-aria request methods: `figaro.qua` (prompt), `figaro.context`,
 `figaro.interrupt`, `figaro.set`, `figaro.loadout`, `figaro.chalkboard`,
 `figaro.queued`, and `figaro.read` (catch-up/paging). Angelus includes
 `figaro.create`/`fork`/`promote`/`kill`/`list`/`attach`,
-`pid.bind`/`resolve`/`unbind`, `aria.read`, and status/binding persistence.
+`pid.bind`/`resolve`/`unbind`, `aria.read`, `aria.page`/`context`/`chalkboard`
+(the same reads addressed by aria id), and status/binding persistence.
 
 The transport is NDJSON-framed JSON-RPC 2.0. Every accepted per-aria connection
 is automatically subscribed; call `figaro.read` on that connection for initial
-state, then keep reading notifications. There is no explicit subscribe method.
+state, then keep reading notifications. There is no explicit subscribe method —
+though subscription is tracked per-(conn, aria) rather than per-conn, so adding
+one is a change of listener count rather than of architecture.
+
+The per-aria socket is served by the **angelus**, not by the agent, and answers
+whether or not an agent is resident: `rpc.MethodNeedsAgent` decides which
+methods are served from the store and which wake the aria. See
+[reclamation.md](reclamation.md).
 
 ### Caller identity — `x-internal-figaro-id`
 
@@ -460,8 +475,17 @@ foreground exit — and that has consequences for `&`:
 Rule of thumb: don't background with bare `&` and assume completion. Use
 `background:true` + the `process` tool, `& wait`, or serial commands.
 
+Sessions live on the **daemon** (`Angelus.Sessions`), not on the agent, keyed by
+aria id as scope — so a backgrounded job survives its agent being reclaimed and
+keeps its id across a wake. `figaro kill` reaps an aria's sessions; hibernation
+does not.
+
 ## Storage
 
 State root `~/.local/state/figaro/arias/`: parallel XWAL trees in `ir/`,
 `chalkboard/`, and `translations/<provider>/`, plus `_meta/<id>.json`
 for list/status metadata. See arias.md for reading these safely.
+
+`XwalBackend` memoizes one row cache per (aria, channel) so a reader sees the
+writer's appends lock-free. Those caches are bounded and evictable; what they
+cost and when they are released is [reclamation.md](reclamation.md).

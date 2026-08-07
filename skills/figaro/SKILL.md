@@ -78,6 +78,7 @@ open one when you are working inside that subsystem, not to browse.
 | [reference/tapes.md](reference/tapes.md) | A rendering bug someone SAW and you cannot reproduce, or you want one recorded for CI. |
 | [reference/paint-repro.md](reference/paint-repro.md) | Hunting a specific paint bug, or running the `scripts/paint-*.sh` instruments. |
 | [reference/cache-control.md](reference/cache-control.md) | Prompt caching, and overriding it. |
+| [reference/reclamation.md](reference/reclamation.md) | What a live aria costs, when the daemon reclaims one, and the `[memory]` knobs. Read before changing the hub, the sweep, or the row caches. |
 | [reference/mantra.md](reference/mantra.md) | Maintaining your aria's mantra. |
 | [reference/trunks-substrate.md](reference/trunks-substrate.md) | Changing `internal/store` or the fork handlers. Machinery, not usage. |
 | [reference/translation-lineage.md](reference/translation-lineage.md) | Provider wire caches across a fork. |

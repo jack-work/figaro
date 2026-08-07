@@ -272,8 +272,11 @@ case is normally `%TEMP%\figaro`. The supervisor is `angelus.sock` and aria
 sockets live under `figaros/<id>.sock`.
 
 Do not construct an aria path as the primary discovery mechanism. Connect to
-Angelus and attach by id so a dormant aria is restored and its actual endpoint
-is returned:
+Angelus and attach by id, which opens the aria's endpoint if it is not already
+listening and returns its actual address. `attach` does **not** wake the aria —
+it guarantees somewhere to dial, and the aria wakes on the first request that
+needs a turn loop, which for a transcript or a pager is never. See
+[reclamation.md](reclamation.md).
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"figaro.attach","params":{"figaro_id":"85ac180e"}}
