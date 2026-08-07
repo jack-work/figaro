@@ -12,6 +12,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/store"
@@ -37,6 +38,10 @@ type Angelus struct {
 	// with it. See tool.WithSessions.
 	Sessions *tool.SessionRegistry
 
+	// Settings is the loaded config, read for reclamation policy. nil is
+	// legal and means every default.
+	Settings *config.Loaded
+
 	listener  net.Listener
 	cancel    context.CancelFunc
 	pprofPath string // set by StartPprof; empty when profiling is not armed
@@ -44,8 +49,9 @@ type Angelus struct {
 
 // Config holds the settings for creating an Angelus.
 type Config struct {
-	RuntimeDir string        // e.g. $XDG_RUNTIME_DIR/figaro
-	Backend    store.Backend // aria persistence (nil = ephemeral-only)
+	RuntimeDir string         // e.g. $XDG_RUNTIME_DIR/figaro
+	Backend    store.Backend  // aria persistence (nil = ephemeral-only)
+	Settings   *config.Loaded // reclamation policy; nil = defaults
 }
 
 // New creates an Angelus. Call Run() to start it.
@@ -63,6 +69,7 @@ func New(cfg Config) *Angelus {
 		RuntimeDir: cfg.RuntimeDir,
 		StartedAt:  time.Now(), // set-once at construction; read concurrently (Uptime)
 		Sessions:   tool.NewSessionRegistry(tool.DefaultSessionTTL),
+		Settings:   cfg.Settings,
 	}
 	return a
 }
@@ -172,7 +179,7 @@ func (a *Angelus) handleConn(ctx context.Context, conn net.Conn) {
 func (a *Angelus) pidMonitor(ctx context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-	evict := time.NewTicker(evictInterval)
+	evict := time.NewTicker(a.sweepInterval())
 	defer evict.Stop()
 
 	for {
@@ -187,14 +194,25 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 	}
 }
 
+// Reclamation policy. Both come from [memory] in config.toml; the constants
+// here are only the fallback for a daemon started without one.
+func (a *Angelus) sweepInterval() time.Duration {
+	if d := a.Settings.SweepInterval(); d > 0 {
+		return d
+	}
+	return defaultSweepInterval
+}
+
+func (a *Angelus) dormantAfter() time.Duration {
+	if a.Settings == nil {
+		return defaultDormantAfter
+	}
+	return a.Settings.DormantAfter() // 0 means never, and the caller honours it
+}
+
 const (
-	// evictInterval is how often idle arias are released, and evictAfter is
-	// how long a cache survives without use. Both are generous: the cost of
-	// evicting too eagerly is a rebuild on the next read, and the cost of
-	// evicting too late is only memory, so this errs toward keeping a
-	// conversation warm for as long as someone plausibly comes back to it.
-	evictInterval = 2 * time.Minute
-	evictAfter    = 15 * time.Minute
+	defaultSweepInterval = 2 * time.Minute
+	defaultDormantAfter  = 15 * time.Minute
 )
 
 // idleEvictor is the backend's half of the contract. Kept as an interface
@@ -221,7 +239,11 @@ func (a *Angelus) evictIdleArias() {
 	for _, f := range a.Registry.List() {
 		live[f.ID] = true
 	}
-	if n := ev.EvictIdle(live, evictAfter); n > 0 {
+	idle := a.dormantAfter()
+	if idle <= 0 {
+		return // reclamation disabled
+	}
+	if n := ev.EvictIdle(live, idle); n > 0 {
 		slog.Info("released idle aria caches", "evicted", n, "live", len(live), "resident", ev.Resident())
 	}
 }

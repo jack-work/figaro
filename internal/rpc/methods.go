@@ -38,6 +38,18 @@ const (
 	MethodRead = "figaro.read"
 )
 
+// The angelus-side read methods. They take an aria id and are answered
+// from the store when no agent is live, so a dormant aria is readable
+// without waking it — reading was the last thing that pinned an agent in
+// memory. The per-aria equivalents above stay exactly as they are: when an
+// agent IS live it holds in-flight state the store does not have, and
+// these delegate to it.
+const (
+	MethodAriaPage       = "aria.page"       // one aria.Page window of sealed history
+	MethodAriaContext    = "aria.context"    // fig IR plus render metrics
+	MethodAriaChalkboard = "aria.chalkboard" // the durable chalkboard snapshot
+)
+
 // Typed JSON-RPC error codes for figaro. The -32000..-32099 range
 // is reserved by JSON-RPC 2.0 for application errors.
 const (
@@ -582,6 +594,23 @@ type MemStatus struct {
 type SaveBindingsResponse struct {
 	OK    bool `json:"ok"`
 	Count int  `json:"count"` // number of bindings written
+}
+
+// AriaIDRequest names an aria and nothing else: the whole request for the
+// angelus-side context and chalkboard reads.
+type AriaIDRequest struct {
+	FigaroID string `json:"figaro_id"`
+}
+
+// AriaPageRequest is ReadRequest plus the aria it addresses. The cursor
+// fields keep ReadRequest's names and meanings so a client can move between
+// the per-aria socket and the angelus without reshaping its paging.
+type AriaPageRequest struct {
+	FigaroID   string `json:"figaro_id"`
+	SinceLT    int    `json:"sinceLT,omitempty"`
+	Before     int    `json:"before,omitempty"`
+	BeforeNode int    `json:"before_node,omitempty"`
+	Limit      int    `json:"limit,omitempty"`
 }
 
 // AriaReadRequest names the aria and the window of entries to return.

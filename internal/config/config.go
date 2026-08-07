@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -77,6 +78,9 @@ type Config struct {
 	// Store bounds the on-disk WAL geometry. See StoreConfig.
 	Store StoreConfig `toml:"store"`
 
+	// Memory tunes when the daemon reclaims an idle aria. See MemoryConfig.
+	Memory MemoryConfig `toml:"memory"`
+
 	// Authz gates the RPC surface. See AuthzConfig.
 	Authz AuthzConfig `toml:"authz"`
 }
@@ -116,13 +120,61 @@ type StoreConfig struct {
 	SegmentSize *int `toml:"segment_size"`
 }
 
+// MemoryConfig tunes reclamation. Both knobs trade memory against a
+// rebuild: reclaiming too eagerly costs the next reader a restore,
+// reclaiming too late costs only RSS. The defaults err toward keeping a
+// conversation warm as long as someone plausibly comes back to it.
+type MemoryConfig struct {
+	// DormantAfterMinutes is how long an aria must sit idle — no turn in
+	// flight, nothing queued — before the daemon reclaims it. Default 15.
+	//
+	// Do not set this low. Restore is O(history): ~15 ms to open the xwal
+	// head at 600 messages, ~9 ms to rebuild the UI at 10k, ~42 ms at 50k.
+	// Paid once it is invisible; paid every thirty seconds it is a flap that
+	// costs more than the memory it saves. Zero or negative disables
+	// reclamation entirely, which is a debugging setting, not a tuning one.
+	DormantAfterMinutes *int `toml:"dormant_after_minutes"`
+
+	// SweepIntervalSeconds is how often the daemon looks. Default 120.
+	// Reclamation is never urgent, so this is deliberately slower than the
+	// 2-second pid monitor it rides beside.
+	SweepIntervalSeconds *int `toml:"sweep_interval_seconds"`
+}
+
 const (
-	defaultSegmentSize = 2 * 1024 * 1024
+	defaultDormantAfter  = 15 * time.Minute
+	defaultSweepInterval = 2 * time.Minute
+	defaultSegmentSize   = 2 * 1024 * 1024
 	// minSegmentSize is a HARD floor, not taste: figwal fails an append with
 	// "payload too large for segment size" when a single record cannot fit
 	// inside one empty segment.
 	minSegmentSize = 1024 * 1024
 )
+
+// DormantAfter is how long an aria may sit idle before the daemon reclaims
+// it. Nil-safe. A non-positive configured value disables reclamation and is
+// returned as 0, which every caller reads as "never".
+func (l *Loaded) DormantAfter() time.Duration {
+	if l == nil || l.Config.Memory.DormantAfterMinutes == nil {
+		return defaultDormantAfter
+	}
+	if *l.Config.Memory.DormantAfterMinutes <= 0 {
+		return 0
+	}
+	return time.Duration(*l.Config.Memory.DormantAfterMinutes) * time.Minute
+}
+
+// SweepInterval is how often the reclamation sweep runs. Nil-safe, and
+// floored at one second so a misconfiguration cannot spin the ticker.
+func (l *Loaded) SweepInterval() time.Duration {
+	if l == nil || l.Config.Memory.SweepIntervalSeconds == nil {
+		return defaultSweepInterval
+	}
+	if *l.Config.Memory.SweepIntervalSeconds < 1 {
+		return time.Second
+	}
+	return time.Duration(*l.Config.Memory.SweepIntervalSeconds) * time.Second
+}
 
 // SegmentSize returns the WAL segment size in bytes. Nil-safe, so a store
 // opened without config still gets the same geometry as one opened with it.

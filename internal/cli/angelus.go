@@ -122,6 +122,7 @@ func runAngelus() {
 	a := angelus.New(angelus.Config{
 		RuntimeDir: runtimeDir,
 		Backend:    backend,
+		Settings:   loaded,
 	})
 	a.Build = buildRevision()
 
