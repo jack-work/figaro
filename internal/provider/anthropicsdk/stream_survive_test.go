@@ -127,9 +127,6 @@ func TestMalformedToolInputDoesNotKillTheTurn(t *testing.T) {
 	if json.Valid([]byte(broken)) {
 		t.Fatal("fixture: the payload must be the broken one")
 	}
-	if fixed, _ := escapeRawControlChars([]byte(broken)); json.Valid(fixed) {
-		t.Fatal("fixture: control-char repair must NOT be enough, or this is the other bug")
-	}
 
 	fig, acc, err := drainStream(context.Background(),
 		sseStream(toolTurn(t, "the prose that would have been lost", []string{broken})),
@@ -171,9 +168,14 @@ func TestMalformedToolInputDoesNotKillTheTurn(t *testing.T) {
 	}
 }
 
-// The control-char case still repairs, and is NOT quarantined: a turn that can
-// be saved whole must be saved whole.
-func TestControlCharsStillRepairInsteadOfQuarantine(t *testing.T) {
+// A payload broken ONLY by raw control characters is refused too. There used
+// to be a repair for this case — escape the control bytes in place and carry
+// on — and it was sound, but it is a second rule to hold in the head and it
+// rewrites bytes the model sent. One rule reads better and matches what the
+// API documents: if it does not parse, it does not run. The cost is one extra
+// round trip on the narrowest case; the benefit is that nothing in figaro
+// quietly edits a model's output.
+func TestControlCharsAreRefusedLikeEverythingElse(t *testing.T) {
 	raw := "{\"path\": \"x.go\", \"new_text\": \"\tindented\"}"
 	if json.Valid([]byte(raw)) {
 		t.Fatal("fixture: the tab must be raw")
@@ -181,17 +183,18 @@ func TestControlCharsStillRepairInsteadOfQuarantine(t *testing.T) {
 	fig, _, err := drainStream(context.Background(),
 		sseStream(toolTurn(t, "ok", []string{raw})), "claude-opus-5", nopBus{})
 	if err != nil {
-		t.Fatalf("repairable input must not fail: %v", err)
+		t.Fatalf("the turn must survive: %v", err)
 	}
 	for _, c := range fig.Content {
 		if c.Type != message.ContentToolInvoke {
 			continue
 		}
-		if _, bad := message.MalformedArgsOf(c); bad {
-			t.Fatal("a repairable call was quarantined instead of mended")
+		got, bad := message.MalformedArgsOf(c)
+		if !bad {
+			t.Fatal("an unparseable call must be quarantined, not run")
 		}
-		if c.Arguments["new_text"] != "\tindented" {
-			t.Errorf("arguments = %v", c.Arguments)
+		if got != raw {
+			t.Errorf("the bytes must reach the model verbatim:\n got %q\nwant %q", got, raw)
 		}
 	}
 }
