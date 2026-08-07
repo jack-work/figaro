@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -73,15 +74,66 @@ func toolArgFields(n livedoc.Node) []partialjson.Field {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	out := make([]partialjson.Field, 0, len(keys))
+	var out []partialjson.Field
 	for _, k := range keys {
-		v, ok := n.Args[k].(string)
-		if !ok {
-			v = fmt.Sprintf("%v", n.Args[k])
-		}
-		out = append(out, partialjson.Field{Name: k, Value: v, Done: true})
+		out = flattenArg(out, k, n.Args[k], 0)
 	}
 	return out
+}
+
+// flattenArg turns one argument into the fields a reader can actually read,
+// naming nested ones by PATH: `edits[0].new_text` rather than `edits`.
+//
+// It used to be `fmt.Sprintf("%v", v)` for anything that was not a string,
+// which is Go's syntax, not the model's: an `edit` rendered as
+//
+//	edits [map[new_text:// render draws one block… old_text:…]]
+//
+// — map order unspecified, the strings' newlines and tabs collapsed into one
+// unreadable line, and the actual edit invisible at any width or expansion.
+// Worse, it was a REGRESSION at the moment of settling: while the arguments
+// were still arriving the streaming parser showed the raw JSON, which at
+// least parsed by eye.
+//
+// Flattening instead of pretty-printing is what makes the strings readable:
+// each leaf is handed over as ITS OWN VALUE, so the tool block wraps and
+// clamps it exactly as it does `content` or `command` — real newlines, real
+// tabs, no escapes. There is no per-tool control flow here and no tool name
+// is consulted; `edit` simply happens to be the only shape that needed it.
+func flattenArg(out []partialjson.Field, name string, v any, depth int) []partialjson.Field {
+	const maxDepth = 4
+	switch t := v.(type) {
+	case string:
+		return append(out, partialjson.Field{Name: name, Value: t, Done: true})
+	case map[string]any:
+		if depth >= maxDepth || len(t) == 0 {
+			break
+		}
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			out = flattenArg(out, name+"."+k, t[k], depth+1)
+		}
+		return out
+	case []any:
+		if depth >= maxDepth || len(t) == 0 {
+			break
+		}
+		for i, e := range t {
+			out = flattenArg(out, fmt.Sprintf("%s[%d]", name, i), e, depth+1)
+		}
+		return out
+	}
+	// A scalar that is not a string, or a nest too deep to name: JSON, which is
+	// at least the notation the value arrived in. %v never is.
+	b, err := json.Marshal(v)
+	if err != nil {
+		b = []byte(fmt.Sprintf("%v", v))
+	}
+	return append(out, partialjson.Field{Name: name, Value: string(b), Done: true})
 }
 
 // pick returns the named argument, or — when the tool has no such argument at
