@@ -250,6 +250,12 @@ func displayWidth(s string) int {
 // mid-token with nothing to say anything was dropped ("cost 4.5k to"); one
 // column spent on an ellipsis says it ("cost 4.5k…").
 //
+// The ellipsis is spent only when text was actually DROPPED, which is not the
+// same as "the row had to be rewritten". A row carrying a tab or a control
+// char fails clipFits and gets rewritten however short it is, and stamping it
+// with an ellipsis put a phantom "…" on the end of every tab-indented line of
+// an edit's diff.
+//
 // Body rows keep the hard clip on purpose: they are a picture, an ellipsis in
 // every wrapped paragraph would be noise, and prose is re-wrapped to the width
 // rather than truncated at it.
@@ -260,15 +266,24 @@ func clipToWidthEllipsis(s string, width int) string {
 	if displayWidth(s) <= width && clipFits(s, width) {
 		return s
 	}
+	if body, clipped := clipRewrite(s, width); !clipped {
+		return body
+	}
 	if width == 1 {
 		return "…\x1b[0m"
 	}
-	body := clipToWidthRewrite(s, width-1)
+	body, _ := clipRewrite(s, width-1)
 	body = strings.TrimSuffix(body, "\x1b[0m")
 	return body + "…\x1b[0m"
 }
 
 func clipToWidthRewrite(s string, width int) string {
+	out, _ := clipRewrite(s, width)
+	return out
+}
+
+// clipRewrite materializes the row and reports whether anything was dropped.
+func clipRewrite(s string, width int) (string, bool) {
 	col := 0
 	var b strings.Builder
 	clipped := false
@@ -309,7 +324,7 @@ func clipToWidthRewrite(s string, width int) string {
 	if clipped {
 		b.WriteString("\x1b[0m")
 	}
-	return b.String()
+	return b.String(), clipped
 }
 
 func renderProseNode(n livedoc.Node, width int) []string {

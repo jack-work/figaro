@@ -184,7 +184,7 @@ func TestRenderToolNode_ColoursAreConsistent(t *testing.T) {
 // does not is left alone, however diff-shaped its output looks.
 func TestRenderToolNode_DiffRowsArePainted(t *testing.T) {
 	defer term.SetColorMode(term.ColorAlways)()
-	out := "Successfully applied 1 edit(s) to /x.py\n\n-1 was\n+1 is"
+	out := "-1 was\n+1 is"
 	edit := livedoc.Node{Type: livedoc.NodeTool, Name: "edit", Status: livedoc.StatusOK,
 		Args: map[string]any{"path": "/x.py"}, Output: out}
 	joined := strings.Join(renderToolNode(edit, 60, 10, 0, false, false), "\n")
@@ -233,4 +233,18 @@ func renderNodeRows(t *testing.T, n livedoc.Node, width, cap int, expand bool) [
 		out[i] = stripANSI(r)
 	}
 	return out
+}
+
+// A row that had to be REWRITTEN is not a row that was CLIPPED. Tab-indented
+// source fails clipFits however short it is, and the ellipsis used to be
+// stamped on it anyway — a phantom "…" on every line of a Go file's diff.
+func TestClipToWidthEllipsis_NoPhantomOnRewrittenRow(t *testing.T) {
+	for _, s := range []string{"\tshort", " 50 \tOpenedAt: o}", "a\tb\tc"} {
+		if got := clipToWidthEllipsis(s, 60); strings.HasSuffix(stripANSI(got), "…") {
+			t.Errorf("clipToWidthEllipsis(%q, 60) = %q; nothing was dropped", s, stripANSI(got))
+		}
+	}
+	if got := clipToWidthEllipsis("\tabcdefghij", 6); !strings.HasSuffix(stripANSI(got), "…") {
+		t.Errorf("clipToWidthEllipsis = %q; want an ellipsis, text was dropped", stripANSI(got))
+	}
 }

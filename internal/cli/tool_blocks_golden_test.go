@@ -46,7 +46,7 @@ func toolBlockCases() []struct {
 		OpenedAt: o, StartedAt: o + 1400, FinishedAt: o + 1407}
 	write := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
 		Args:     map[string]any{"path": "/var/tmp/x/opera.md", "content": body},
-		Output:   "Wrote 5453 bytes to /var/tmp/x/opera.md",
+		Output:   "/var/tmp/x/opera.md",
 		OpenedAt: o, StartedAt: o + 31200, FinishedAt: o + 31204}
 	streaming := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusRunning,
 		Input: `{"path":"/var/tmp/x/opera.md","content":"` + strings.ReplaceAll(body, "\n", `\n`), OpenedAt: o}
@@ -70,7 +70,7 @@ func toolBlockCases() []struct {
 	diff := tool.GenerateDiff(oldText+"\n", newText+"\n", 2)
 	edit := livedoc.Node{Type: livedoc.NodeTool, Name: "edit", Status: livedoc.StatusOK,
 		Args:     map[string]any{"path": "/var/tmp/x/retry.py", "old_text": oldText, "new_text": newText},
-		Output:   "Successfully applied 1 edit(s) to /var/tmp/x/retry.py\n\n" + diff.Diff,
+		Output:   diff.Diff,
 		OpenedAt: o, StartedAt: o + 7300, FinishedAt: o + 7312}
 	editing := livedoc.Node{Type: livedoc.NodeTool, Name: "edit", Status: livedoc.StatusRunning,
 		Input:    `{"path":"/var/tmp/x/retry.py","old_text":"` + strings.ReplaceAll(oldText, "\n", `\n`) + `","new_text":"def retry(fn, retries=DEFAULT_RETRIES):\n    last = None\n    for i in ra`,
@@ -94,8 +94,8 @@ func toolBlockCases() []struct {
 		{"bash · no generation clock (old aria)", legacy, 78, nodeBashCapDefault, false, false},
 		{"bash · narrow pane", bash, 46, nodeBashCapDefault, false, false},
 		{"edit · minimized (the diff is the body)", edit, 78, nodeBashCapDefault, false, false},
-		{"edit · expanded (arguments are blocks, not scars)", edit, 78, 6, false, true},
-		{"edit · streaming (one growing region, the rest done)", editing, 78, 6, false, true},
+		{"edit · expanded (the result stands in; arguments only allude)", edit, 78, 6, false, true},
+		{"edit · streaming (no result yet, so arguments are blocks)", editing, 78, 6, false, true},
 	}
 }
 

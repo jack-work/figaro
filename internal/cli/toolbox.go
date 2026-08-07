@@ -193,6 +193,9 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 	st := styleFor(n.Name)
 	fields := toolArgFields(n)
 	settled := strings.TrimSpace(n.Input) == ""
+	// settled says the arguments have landed; settledResult says the call has.
+	settledResult := n.FinishedAt != 0 ||
+		n.Status == livedoc.StatusOK || n.Status == livedoc.StatusError
 	headline, hasHeadline := pick(fields, st.Headline, settled)
 
 	glyph := term.Green("✓")
@@ -244,18 +247,19 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 			if f.Name == headline.Name || f.Name == st.Body {
 				continue
 			}
-			// A multi-line argument is a block, not a row: `edit`'s texts are
-			// the whole point of the call, and oneLine leaves a first line and
-			// a scar. Clamped from the HEAD — an argument begins with the
-			// interesting part, where output ends with it.
-			if strings.ContainsRune(f.Value, '\n') {
+			// While the call is still being written its arguments are all there
+			// is to look at, so a multi-line one is a block, head-clamped. Once
+			// the result lands it stands in for them and each argument shrinks
+			// to one clipped row — an allusion to the call, not the payload.
+			// A yank still gives them whole; see toolClipboardFull.
+			if !settledResult && strings.ContainsRune(f.Value, '\n') {
 				row(term.Label(f.Name))
 				for _, l := range argBlock(f.Value, content, bashCap) {
 					row(l)
 				}
 				continue
 			}
-			row(term.Label(f.Name) + " " + term.Body(f.Value))
+			row(argRow(f.Name, f.Value, content))
 		}
 		if n.StartedAt != 0 {
 			row(term.Label("started ") + term.Body(formatToolTime(n.StartedAt)))
@@ -287,6 +291,13 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 		row(paint(clipToWidthEllipsis(l, content)))
 	}
 	return rows
+}
+
+// argRow draws one argument as exactly one row: newlines flattened to a ⏎
+// scar, the rest clipped to an ellipsis.
+func argRow(name, value string, width int) string {
+	v := oneLine(render.SanitizeForTerminal(value))
+	return term.Label(name) + " " + term.Body(clipToWidthEllipsis(v, width-len(name)-1))
 }
 
 // argBlock draws a multi-line argument value: head-clamped to limit rows,

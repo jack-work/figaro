@@ -174,7 +174,9 @@ func GenerateDiff(oldContent, newContent string, contextLines int) DiffResult {
 	fmtLine := func(prefix string, num int, text string) string {
 		return fmt.Sprintf("%s%*d %s", prefix, width, num, text)
 	}
-	ellipsis := fmt.Sprintf(" %s ...", strings.Repeat(" ", width))
+
+	// Every row is `[-+ ]<n> <text>`. Elisions need no `...` marker: the jump in
+	// line numbers already says where the gap is.
 
 	for i, op := range ops {
 		if op.Tag == 'e' {
@@ -195,7 +197,6 @@ func GenerateDiff(oldContent, newContent string, contextLines int) DiffResult {
 						out = append(out, fmtLine(" ", oldNum, line))
 						oldNum++
 					}
-					out = append(out, ellipsis)
 					tailStart := len(segment) - contextLines
 					oldNum = op.I1 + 1 + tailStart
 					for _, line := range segment[tailStart:] {
@@ -205,23 +206,17 @@ func GenerateDiff(oldContent, newContent string, contextLines int) DiffResult {
 				}
 			case hasLeading:
 				show := segment
-				truncated := false
 				if len(show) > contextLines {
 					show = show[:contextLines]
-					truncated = true
 				}
 				for _, line := range show {
 					out = append(out, fmtLine(" ", oldNum, line))
 					oldNum++
 				}
-				if truncated {
-					out = append(out, ellipsis)
-				}
 			case hasTrailing:
 				tail := segment
 				if len(tail) > contextLines {
 					tail = tail[len(tail)-contextLines:]
-					out = append(out, ellipsis)
 					oldNum = op.I2 - len(tail) + 1
 				}
 				for _, line := range tail {

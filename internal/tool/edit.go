@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -98,9 +99,10 @@ func (e *EditTool) Execute(ctx context.Context, args map[string]interface{}, onO
 		return nil, err
 	}
 
-	msg := fmt.Sprintf("Successfully applied %d edit(s) to %s", res.EditsApplied, res.Path)
-	if res.Diff != "" {
-		msg += "\n\n" + res.Diff
+	// The diff is the result; success and path are already known to the caller.
+	msg := res.Diff
+	if strings.TrimSpace(msg) == "" {
+		msg = res.Path
 	}
 	if onOutput != nil {
 		onOutput([]byte(msg))

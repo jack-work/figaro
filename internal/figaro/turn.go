@@ -510,6 +510,9 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 				a.openToolTiming(ev.id, time.Now().UnixMilli())
 				force = true
 			case evToolArgs:
+				// Streamed unconditionally, though a collapsed tool block never
+				// draws them. If the bytes ever matter, drop them here for
+				// unexpanded nodes and catch up on demand when one is opened.
 				a.argPartials[ev.id] += ev.partial
 			case evToolReady:
 				asmMsg.toolReady(ev.id, ev.name, ev.args)

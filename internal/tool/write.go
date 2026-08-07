@@ -58,7 +58,8 @@ func (w *WriteTool) Execute(ctx context.Context, args map[string]interface{}, on
 	if err != nil {
 		return nil, err
 	}
-	result := fmt.Sprintf("Wrote %d bytes to %s", res.BytesWritten, res.Path)
+	// The resolved path is the only fact the caller did not already have.
+	result := res.Path
 	if onOutput != nil {
 		onOutput([]byte(result))
 	}
