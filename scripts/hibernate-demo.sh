@@ -63,7 +63,19 @@ try: print(json.load(sys.stdin).get("message_count", 0))
 except Exception: print(0)'; }
 
 cleanup() {
-  [[ $KEEP == 1 ]] && { echo; echo "KEEP=1: left running. tmux attach -t $SESSION"; echo "  teardown: tmux kill-session -t $SESSION; FIGARO_RUNTIME_DIR=$RT $BIN stop --force; rm -rf $BOX $RT"; return; }
+  if [[ $KEEP == 1 ]]; then
+    # ATTACH=1 hands the terminal straight to tmux, so the whole demo is one
+    # command. exec, so this script's shell is replaced rather than left
+    # waiting behind the session.
+    if [[ ${ATTACH:-0} == 1 ]] && [[ -t 1 ]]; then
+      echo; echo "attaching to $SESSION (Ctrl-b d to detach)"
+      echo "  teardown: $BOX/teardown.sh"
+      exec tmux attach -t "$SESSION"
+    fi
+    echo; echo "KEEP=1: left running. tmux attach -t $SESSION"
+    echo "  teardown: $BOX/teardown.sh"
+    return
+  fi
   echo
   echo "== teardown"
   tmux kill-session -t $SESSION 2>/dev/null || true
@@ -75,6 +87,16 @@ cleanup() {
 trap cleanup EXIT
 
 rm -rf "$BOX" "$RT"; mkdir -p "$BOX"/{cfg/loadouts,state} "$RT"
+
+# A teardown that does not require remembering four paths.
+cat > "$BOX/teardown.sh" <<TD
+#!/usr/bin/env bash
+tmux kill-session -t $SESSION 2>/dev/null
+FIGARO_RUNTIME_DIR=$RT $BIN stop --force >/dev/null 2>&1
+sleep 1; rm -rf $BOX $RT
+echo "hibdemo $RUN torn down"
+TD
+chmod +x "$BOX/teardown.sh"
 
 # A plain `go build` in a git WORKTREE stamps no revision -- Go's VCS
 # autodetection only fires when .git is a directory. Stamp by hand or
