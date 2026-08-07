@@ -211,6 +211,29 @@ under `system.` are hidden from the agent and read directly by the harness.
 The angelus respawns on the next command after a stop, so `figaro stop` is how
 you pick up a rebuilt binary.
 
+## The vault
+
+figaro embeds hush rather than talking to the user's: its own identity
+(`~/.config/figaro/hush/identity.age`), its own agent, and its own OS-keyring
+entry under service `figaro` — *not* `hush`. The `hush` binary on PATH therefore
+addresses a different instance and cannot repair figaro's. Alias: `figaro hush`.
+
+| Command | Effect |
+|---|---|
+| `figaro vault status` | Mode, identity path, public key, agent liveness, unlock method, and whether the saved passphrase actually decrypts the identity. |
+| `figaro vault forget` | Delete the keyring entry. The next figaro command prompts. |
+| `figaro vault unlock` | Prompt, verify against the identity, save to the keyring, start the agent. |
+| `figaro vault lock` | Stop the agent, dropping the decrypted identity from memory. |
+
+The failure this exists for: a saved passphrase that stops decrypting makes
+every command die with `incorrect passphrase`, and the unlock backend's
+self-heal (clear the entry, re-prompt) cannot help if the entry keeps coming
+back wrong. `vault status` names the condition and `vault forget` is the exit;
+`ensureHush` prints both when it sees that error. hush ≤ v0.6.2 could *cause*
+it: `Hooks.Verify` was handed the live passphrase buffer, and `identity.Unlock`
+zeroes what it is given, so the verified passphrase reached the keyring as NUL
+bytes. Fixed in v0.6.3 — verification runs against a copy.
+
 ## Keys while streaming
 
 | Key | Effect |

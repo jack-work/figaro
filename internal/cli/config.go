@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"text/template"
 	"time"
@@ -124,6 +125,15 @@ func mustHush() *managed.Hush {
 func ensureHush() {
 	h := mustHush()
 	if err := h.EnsureReady(); err != nil {
+		// A saved passphrase that stopped decrypting is otherwise a dead
+		// end: every command fails and nothing names the lever.
+		if strings.Contains(err.Error(), "incorrect passphrase") {
+			fmt.Fprintf(os.Stderr, "figaro: hush: %s\n\n", err)
+			fmt.Fprintln(os.Stderr, "The saved passphrase does not decrypt this vault.")
+			fmt.Fprintln(os.Stderr, "  figaro vault status    inspect it")
+			fmt.Fprintln(os.Stderr, "  figaro vault forget    clear it and be prompted again")
+			os.Exit(1)
+		}
 		die("hush: %s", err)
 	}
 }

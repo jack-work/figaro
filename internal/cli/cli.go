@@ -1099,6 +1099,40 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 	})
 
 	r.Register(&cmdkit.Command{
+		Name:    "vault",
+		Aliases: []string{"hush"},
+		Group:   "System",
+		Short:   "Inspect and repair figaro's embedded secrets vault",
+		Usage:   "vault <status | forget | unlock | lock>",
+		Long: `figaro runs its own hush: its own identity, agent, and keyring entry
+(service "figaro"). The hush binary on PATH addresses a different
+instance, so these are the levers for this one.
+
+  status   mode, identity, agent, and whether the saved passphrase works
+  forget   clear the saved passphrase; the next command prompts
+  unlock   prompt, verify, save, and start the agent
+  lock     stop the agent, dropping the decrypted identity`,
+		ArgsMin: 1,
+		ArgsMax: 1,
+		Run: func(ctx *cmdkit.RunContext) error {
+			switch ctx.Args[0] {
+			case "status":
+				return runVaultStatus()
+			case "forget":
+				return runVaultForget()
+			case "unlock":
+				return runVaultUnlock()
+			case "lock":
+				return runVaultLock()
+			}
+			return fmt.Errorf("usage: vault <status | forget | unlock | lock>")
+		},
+		CompleteArgs: func(ctx *cmdkit.CompleteContext) []string {
+			return []string{"status", "forget", "unlock", "lock"}
+		},
+	})
+
+	r.Register(&cmdkit.Command{
 		Name:  "update",
 		Group: "System",
 		Short: "Check for a newer figaro release",
