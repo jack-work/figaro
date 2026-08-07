@@ -394,7 +394,15 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 
-	go agent.StartSocket(h.ctx)
+	// The endpoint is the angelus's, not the agent's: it must already be
+	// listening when this response hands the caller a path to dial, and it
+	// must still be listening after the agent is reclaimed.
+	unbind, herr := h.bindAgentToHub(id, agent)
+	if herr != nil {
+		agent.Kill()
+		return nil, fmt.Errorf("create %s: open endpoint: %w", id, herr)
+	}
+	agent.OnTeardown(unbind)
 
 	slog.Info("created figaro",
 		"id", id, "loadout", loadoutName, "provider", provName, "model", knobs.Model, "socket", sockPath)
@@ -951,6 +959,13 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
+	// The endpoint outlives the AGENT, not the aria. A deleted aria has no
+	// address, so the hub goes with it and connected clients get their EOF —
+	// which is correct here and exactly what must not happen on hibernate.
+	if hb := h.angelus.Hubs.drop(req.FigaroID); hb != nil {
+		hb.Close()
+	}
+
 	slog.Info("killed figaro", "id", req.FigaroID)
 	return rpc.KillResponse{OK: true}, nil
 }
@@ -1439,7 +1454,12 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		return nil, fmt.Errorf("restore %s: register: %w", ariaID, err)
 	}
 
-	go agent.StartSocket(ctx)
+	unbind, herr := h.bindAgentToHub(ariaID, agent)
+	if herr != nil {
+		h.angelus.Registry.Kill(ariaID)
+		return nil, fmt.Errorf("restore %s: open endpoint: %w", ariaID, herr)
+	}
+	agent.OnTeardown(unbind)
 
 	slog.Info("restored figaro",
 		"id", ariaID, "provider", provName, "model", knobs.Model)

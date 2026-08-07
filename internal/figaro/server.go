@@ -8,7 +8,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/rpc"
-	"github.com/jack-work/jkrpc"
 )
 
 // AgentServer is the figaro-side JSON-RPC contract.
@@ -30,16 +29,13 @@ var agentMethods = []string{
 	rpc.MethodRead,
 }
 
-// buildHandlers wires AgentServer.Handle into the jsonrpc handler map.
-func buildHandlers(srv AgentServer) map[string]jkrpc.HandlerFunc {
-	handlers := make(map[string]jkrpc.HandlerFunc, len(agentMethods))
-	for _, m := range agentMethods {
-		method := m
-		handlers[method] = func(ctx context.Context, params json.RawMessage) (any, error) {
-			return srv.Handle(ctx, method, params)
-		}
-	}
-	return handlers
+// AgentMethods is the method set an aria endpoint exposes. Exported because
+// the angelus now owns that endpoint (see angelus.ariaHub) and must serve
+// exactly this set whether or not an agent is resident behind it.
+func AgentMethods() []string {
+	out := make([]string, len(agentMethods))
+	copy(out, agentMethods)
+	return out
 }
 
 // Handle dispatches RPC methods.

@@ -180,6 +180,7 @@ func runDoctorMem(asJSON bool) error {
 	m := st.Mem
 	fmt.Printf("arias      live=%d  resident=%d  bound-pids=%d\n",
 		m.LiveArias, m.ResidentArias, st.BoundPIDs)
+	fmt.Printf("endpoints  open=%d  attached-clients=%d\n", m.Endpoints, m.AttachedClients)
 	fmt.Printf("runtime    goroutines=%d  sessions=%d  gc=%d\n",
 		m.Goroutines, m.Sessions, m.NumGC)
 	fmt.Printf("heap       alloc=%s  inuse=%s  sys=%s  total-sys=%s\n",

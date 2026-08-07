@@ -1,69 +1,19 @@
 package figaro
 
 import (
-	"context"
-	"net"
-	"os"
-
-	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/jkrpc"
 )
 
-// StartSocket starts the JSON-RPC socket listener.
-func (a *Agent) StartSocket(ctx context.Context) error {
-	ep := transport.UnixEndpoint(a.socketPath)
-
-	os.Remove(a.socketPath)
-
-	ln, err := transport.Listen(ep)
-	if err != nil {
-		return err
-	}
-
-	if err := os.Chmod(a.socketPath, 0600); err != nil {
-		ln.Close()
-		return err
-	}
-
-	go func() {
-		<-ctx.Done()
-		ln.Close()
-	}()
-
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				return nil
-			default:
-				continue
-			}
-		}
-		go a.serveConn(ctx, conn)
-	}
-}
-
-// serveConn handles a single JSON-RPC connection.
-func (a *Agent) serveConn(ctx context.Context, conn net.Conn) {
-	jconn := jkrpc.NewConn(conn)
-	srv := jkrpc.NewServer(jconn, buildHandlers(a))
-
-	unsub := a.Subscribe(srv)
-	defer unsub()
-
-	done := make(chan struct{})
-	go func() {
-		srv.Serve(ctx)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-ctx.Done():
-		srv.Stop()
-	}
-}
+// The agent no longer owns a socket. Its endpoint is angelus-side
+// (angelus.ariaHub), which is what lets the aria be reclaimed from memory
+// while attached clients stay connected, and what lets a dormant aria answer
+// a dial at all.
+//
+// SocketPath survives on Config and on the Figaro interface because it is
+// the ADDRESS an aria is reachable at — resolve and attach hand it to
+// clients — and that address is still a pure function of the id. What is
+// gone is the listener: StartSocket, its accept loop, and the per-connection
+// Subscribe that tied every client's lifetime to the agent's.
 
 var _ Figaro = (*Agent)(nil) // compile-time interface check
 var _ AgentServer = (*Agent)(nil)

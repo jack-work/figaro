@@ -42,6 +42,10 @@ type Angelus struct {
 	// legal and means every default.
 	Settings *config.Loaded
 
+	// Hubs is the set of aria endpoints. Each outlives the agent behind it,
+	// so reclaiming an agent does not disconnect anybody. See ariaHub.
+	Hubs *hubs
+
 	listener  net.Listener
 	cancel    context.CancelFunc
 	pprofPath string // set by StartPprof; empty when profiling is not armed
@@ -70,6 +74,7 @@ func New(cfg Config) *Angelus {
 		StartedAt:  time.Now(), // set-once at construction; read concurrently (Uptime)
 		Sessions:   tool.NewSessionRegistry(tool.DefaultSessionTTL),
 		Settings:   cfg.Settings,
+		Hubs:       newHubs(),
 	}
 	return a
 }
@@ -261,6 +266,9 @@ func (a *Angelus) reapDeadPIDs() {
 
 // Stop shuts down the angelus.
 func (a *Angelus) Stop() {
+	if a.Hubs != nil {
+		a.Hubs.closeAll()
+	}
 	if a.cancel != nil {
 		a.cancel()
 	}

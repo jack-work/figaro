@@ -140,7 +140,10 @@ type Agent struct {
 	interrupted bool
 
 	mu   sync.RWMutex
-	subs map[Notifier]struct{} // socket clients + in-process listeners
+	subs map[Notifier]struct{} // normally exactly one: the aria's hub
+	// teardown runs after the drain loop exits. Holds the hub unbind, so
+	// the endpoint outlives the agent.
+	teardown []func()
 
 	// Live-render state, owned by the drain loop. turnStartLT is the FigaroLT
 	// (main LT) of the last figLog entry before this turn's agent messages —
@@ -694,13 +697,32 @@ func (a *Agent) sessionMetrics() *aria.Metrics {
 	}
 }
 
+// OnTeardown registers a func to run when the agent is torn down, after the
+// drain loop has exited. The angelus uses it to unbind from the aria's hub:
+// the endpoint must survive the agent, so the agent cannot own that cleanup
+// and cannot be trusted to know the endpoint exists.
+func (a *Agent) OnTeardown(fn func()) {
+	if fn == nil {
+		return
+	}
+	a.mu.Lock()
+	a.teardown = append(a.teardown, fn)
+	a.mu.Unlock()
+}
+
 func (a *Agent) Kill() {
 	a.cancel()
 	<-a.done // wait for drain loop to exit
 
 	a.mu.Lock()
 	a.subs = nil
+	teardown := a.teardown
+	a.teardown = nil
 	a.mu.Unlock()
+
+	for _, fn := range teardown {
+		fn()
+	}
 
 	if a.chalkboard != nil {
 		if err := a.chalkboard.Close(); err != nil {

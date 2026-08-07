@@ -100,5 +100,11 @@ func (a *Angelus) MemStatus() *rpc.MemStatus {
 	if ev, ok := a.Backend.(idleEvictor); ok {
 		st.ResidentArias = ev.Resident()
 	}
+	if a.Hubs != nil {
+		for _, hb := range a.Hubs.all() {
+			st.Endpoints++
+			st.AttachedClients += hb.Attached()
+		}
+	}
 	return st
 }

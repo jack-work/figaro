@@ -50,6 +50,26 @@ const (
 	MethodAriaChalkboard = "aria.chalkboard" // the durable chalkboard snapshot
 )
 
+// MethodNeedsAgent reports whether a method requires a running turn loop.
+//
+// The false set is the read half: history, context and chalkboard are pure
+// functions of the store, so an aria endpoint can answer them while the aria
+// is dormant and nothing has to be woken. Everything else — prompting,
+// interrupting, patching the board, touching the queue — either mutates
+// durable state through the agent's serialization or needs in-flight state
+// that only a live turn has, and must wake.
+//
+// Default is TRUE. A method added later and not classified here wakes the
+// aria, which is the safe direction to be wrong in: a needless restore costs
+// milliseconds, while serving a mutation from a stale read costs correctness.
+func MethodNeedsAgent(method string) bool {
+	switch method {
+	case MethodRead, MethodContext, MethodChalkboard:
+		return false
+	}
+	return true
+}
+
 // Typed JSON-RPC error codes for figaro. The -32000..-32099 range
 // is reserved by JSON-RPC 2.0 for application errors.
 const (
@@ -580,6 +600,13 @@ type MemStatus struct {
 	ResidentArias int `json:"resident_arias"` // aria handles cached in the backend; agents pin them
 	Sessions      int `json:"sessions"`       // backgrounded exec sessions, all arias
 	Goroutines    int `json:"goroutines"`     // per-aria goroutines should fall when arias do
+
+	// Endpoints is open aria sockets, and AttachedClients the connections
+	// across them. Both are independent of LiveArias by design: an endpoint
+	// with clients and no agent is a reclaimed aria whose shells are still
+	// attached, which is the state hibernation exists to produce.
+	Endpoints       int `json:"endpoints"`
+	AttachedClients int `json:"attached_clients"`
 
 	HeapAllocBytes uint64 `json:"heap_alloc_bytes"` // live heap objects
 	HeapInuseBytes uint64 `json:"heap_inuse_bytes"` // spans in use, incl. fragmentation
