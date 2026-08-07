@@ -184,6 +184,12 @@ func report(t *testing.T, arias, turns, clients int, before, after snapshot,
 	t.Logf("  goroutines        %10d %12d %10d",
 		before.mem.Goroutines, after.mem.Goroutines,
 		after.mem.Goroutines-before.mem.Goroutines)
+	t.Logf("  resident IR rows  %10d %12d %10d",
+		before.mem.ResidentIRRows, after.mem.ResidentIRRows,
+		after.mem.ResidentIRRows-before.mem.ResidentIRRows)
+	t.Logf("  resident IR bytes %10s %12s %10s",
+		humanB(uint64(before.mem.ResidentIRBytes)), humanB(uint64(after.mem.ResidentIRBytes)),
+		deltaB(uint64(before.mem.ResidentIRBytes), uint64(after.mem.ResidentIRBytes)))
 	t.Logf("  heap alloc        %10s %12s %10s",
 		humanB(before.heap), humanB(after.heap), deltaB(before.heap, after.heap))
 	t.Logf("  heap inuse        %10s %12s %10s",

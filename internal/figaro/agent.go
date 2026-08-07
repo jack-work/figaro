@@ -229,7 +229,14 @@ func NewAgent(cfg Config) *Agent {
 	a.inbox = NewInbox(ctx)
 
 	messages := unwrapMessages(a.figLog.Read())
-	a.refreshMetricsFrom(messages)
+	// Metrics come off the _meta sidecar when it is current, which after
+	// Backend.Open it always is: healMeta folds any suffix past the watermark
+	// on the read path. That turns construction's metric pass from a walk of
+	// every message into a struct copy — and, more importantly, removes one of
+	// the reasons the whole decoded log had to be materialized here at all.
+	if !a.seedMetricsFromMeta() {
+		a.refreshMetricsFrom(messages)
+	}
 
 	// Build sealed UI turns from canonical IR, then broadcast every aria-server
 	// change to socket subscribers as one aria.Page.
@@ -404,6 +411,55 @@ func (a *Agent) refreshMetrics() {
 	a.loadoutName = snapshotString(snapshot, "system.loadout_name")
 	a.loadoutVer = snapshotString(snapshot, "system.loadout_version")
 	a.mu.Unlock()
+}
+
+// seedMetricsFromMeta loads the checkpointed counters instead of recomputing
+// them. Returns false when the sidecar cannot be trusted, in which case the
+// caller must fall back to the full fold.
+//
+// The trust condition is the sidecar's watermark matching the log's tail: the
+// sidecar is a checkpoint, not a mirror, and healMeta only runs on the read
+// path. A mismatch means a crash mid-turn or an aria older than the sidecar,
+// both of which the walk handles and then publishMetadata repairs.
+func (a *Agent) seedMetricsFromMeta() bool {
+	if a.backend == nil {
+		return false
+	}
+	meta, err := a.backend.Meta(a.id)
+	if err != nil || meta == nil || meta.LastFigaroLT == 0 {
+		return false
+	}
+	tail, ok := a.figLog.PeekTail()
+	if !ok || tail.LT != meta.LastFigaroLT {
+		return false
+	}
+
+	snapshot := a.Snapshot()
+	model := snapshotString(snapshot, "system.model")
+
+	a.mu.Lock()
+	a.tokensIn = meta.TokensIn
+	a.tokensOut = meta.TokensOut
+	a.cacheRead = meta.CacheReadTokens
+	a.cacheWrite = meta.CacheWriteTokens
+	a.messageCount = meta.MessageCount
+	a.turnCount = meta.TurnCount
+	a.metricsLT = meta.LastFigaroLT
+	a.contextTokens = meta.ContextTokens
+	a.contextExact = meta.ContextExact
+	// The limit is a live provider+model lookup, never a checkpointed number:
+	// a model swap between runs must not be reported from a stale sidecar.
+	a.contextLimit = resolveContextLimit(a.provider(), model, snapshot)
+	// Chalkboard-owned fields come from the board, which is authoritative and
+	// already open. Taking them from the sidecar would let a stale mantra
+	// survive a `figaro set`.
+	a.model = model
+	a.mantra = snapshotString(snapshot, "mantra")
+	a.cwd = snapshotString(snapshot, "system.cwd")
+	a.loadoutName = snapshotString(snapshot, "system.loadout_name")
+	a.loadoutVer = snapshotString(snapshot, "system.loadout_version")
+	a.mu.Unlock()
+	return true
 }
 
 func (a *Agent) refreshMetricsFrom(msgs []message.Message) {

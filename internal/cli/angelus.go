@@ -119,6 +119,18 @@ func runAngelus() {
 
 	armMemoryLimit()
 
+	// The window has to be set before any aria is opened, or the first handles
+	// built are unbounded for the daemon's whole life. Optional interface, for
+	// the same reason the other cache policies are: a backend without a window
+	// should not have to pretend it has one.
+	if w, ok := backend.(interface {
+		SetIRWindow(int)
+		SetIRBudget(int)
+	}); ok {
+		w.SetIRWindow(loaded.IRWindow())
+		w.SetIRBudget(loaded.IRWindowBytes())
+	}
+
 	a := angelus.New(angelus.Config{
 		RuntimeDir: runtimeDir,
 		Backend:    backend,

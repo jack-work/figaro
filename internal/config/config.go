@@ -139,6 +139,42 @@ type MemoryConfig struct {
 	// Reclamation is never urgent, so this is deliberately slower than the
 	// 2-second pid monitor it rides beside.
 	SweepIntervalSeconds *int `toml:"sweep_interval_seconds"`
+
+	// MaxLiveArias caps resident agents. 0 (default) is unbounded, which is
+	// correct for a desktop: the time rule already bounds a normal session,
+	// and a cap set below the working set turns into a restore flap that
+	// costs more than the memory it saves.
+	//
+	// It is a SOFT cap. An aria mid-turn counts toward it and cannot be
+	// reclaimed, because the alternative is killing turns to hit a number.
+	MaxLiveArias *int `toml:"max_live_arias"`
+
+	// IRWindow bounds how many decoded IR entries stay resident per aria.
+	// 0 (default) retains everything, which is the behaviour figaro has always
+	// had.
+	//
+	// The decoded fig IR is the largest thing a live aria holds — 4-5x its
+	// encoded bytes, measured at 12.5 MiB on a 2500-message aria — and almost
+	// none of it is needed: translation reads the suffix past its watermark,
+	// rendering reads recent turns, and backward paging is served from the
+	// store by the angelus reader without touching this window.
+	//
+	// Do not set it below one turn's worth of messages. A turn that appends
+	// past the window mid-flight re-reads its own tail from disk, which is
+	// correct but pointless. 512 is generous for every observed aria.
+	IRWindow *int `toml:"ir_window"`
+
+	// IRWindowMB bounds resident decoded IR per aria in mebibytes, and is the
+	// knob to reach for: it bounds the axis that actually costs.
+	//
+	// Row count does not. Measured on a real 2556-message aria, dropping 80%
+	// of ROWS released only 26% of BYTES — a long agentic conversation puts
+	// short prose at the head and large tool results at the tail, so a row
+	// budget bounds the wrong end of a skewed distribution.
+	//
+	// 0 (default) is unbounded. 4 holds a comfortable working tail on every
+	// aria measured.
+	IRWindowMB *int `toml:"ir_window_mb"`
 }
 
 const (
@@ -175,6 +211,51 @@ func (l *Loaded) SweepInterval() time.Duration {
 	}
 	return time.Duration(*l.Config.Memory.SweepIntervalSeconds) * time.Second
 }
+
+// MaxLiveArias is the resident-agent cap, or 0 for unbounded. Nil-safe.
+func (l *Loaded) MaxLiveArias() int {
+	if l == nil || l.Config.Memory.MaxLiveArias == nil || *l.Config.Memory.MaxLiveArias < 0 {
+		return 0
+	}
+	return *l.Config.Memory.MaxLiveArias
+}
+
+// IRWindow is the resident decoded-IR cap per aria, or 0 for unbounded.
+// Nil-safe, and floored at minIRWindow so a value too small to hold a turn
+// cannot be configured: below that the window thrashes against its own
+// appends.
+func (l *Loaded) IRWindow() int {
+	if l == nil || l.Config.Memory.IRWindow == nil || *l.Config.Memory.IRWindow <= 0 {
+		return 0
+	}
+	if w := *l.Config.Memory.IRWindow; w < minIRWindow {
+		return minIRWindow
+	}
+	return *l.Config.Memory.IRWindow
+}
+
+// IRWindowBytes is the resident decoded-IR byte budget per aria, or 0 for
+// unbounded. Nil-safe, floored for the same reason IRWindow is: a budget too
+// small to hold a turn makes an in-flight turn re-read its own tail.
+func (l *Loaded) IRWindowBytes() int {
+	if l == nil || l.Config.Memory.IRWindowMB == nil || *l.Config.Memory.IRWindowMB <= 0 {
+		return 0
+	}
+	if mb := *l.Config.Memory.IRWindowMB; mb < minIRWindowMB {
+		return minIRWindowMB << 20
+	}
+	return *l.Config.Memory.IRWindowMB << 20
+}
+
+const (
+	// minIRWindow is a floor, not taste: a window smaller than one turn's
+	// worth of messages makes an in-flight turn re-read its own tail from disk
+	// on every append.
+	minIRWindow = 64
+	// minIRWindowMB is the same floor in bytes. One turn carrying a couple of
+	// large tool results is comfortably under a mebibyte.
+	minIRWindowMB = 1
+)
 
 // SegmentSize returns the WAL segment size in bytes. Nil-safe, so a store
 // opened without config still gets the same geometry as one opened with it.

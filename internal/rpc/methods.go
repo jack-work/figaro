@@ -608,6 +608,15 @@ type MemStatus struct {
 	Endpoints       int `json:"endpoints"`
 	AttachedClients int `json:"attached_clients"`
 
+	// ResidentIRRows is decoded IR entries held across every open aria. It is
+	// the number the IR window bounds, and the one that moves when the window
+	// is doing anything at all.
+	ResidentIRRows int `json:"resident_ir_rows"`
+	// ResidentIRBytes is the estimated retained size of those rows, which is
+	// the number that correlates with RSS. Rows are a poor proxy: the large
+	// entries cluster at the tail of a conversation.
+	ResidentIRBytes int `json:"resident_ir_bytes"`
+
 	HeapAllocBytes uint64 `json:"heap_alloc_bytes"` // live heap objects
 	HeapInuseBytes uint64 `json:"heap_inuse_bytes"` // spans in use, incl. fragmentation
 	HeapSysBytes   uint64 `json:"heap_sys_bytes"`   // heap reserved from the OS

@@ -44,3 +44,39 @@ func TestSweepIntervalFloored(t *testing.T) {
 		require.Equal(t, time.Second, l.SweepInterval(), "sweep_interval_seconds=%d", secs)
 	}
 }
+
+func TestMaxLiveArias(t *testing.T) {
+	var l *Loaded
+	require.Zero(t, l.MaxLiveArias(), "nil config must be unbounded")
+	require.Zero(t, (&Loaded{}).MaxLiveArias(), "unset must be unbounded")
+
+	for _, in := range []int{0, -3} {
+		l := &Loaded{Config: Config{Memory: MemoryConfig{MaxLiveArias: &in}}}
+		require.Zero(t, l.MaxLiveArias(), "max_live_arias=%d", in)
+	}
+	n := 8
+	l = &Loaded{Config: Config{Memory: MemoryConfig{MaxLiveArias: &n}}}
+	require.Equal(t, 8, l.MaxLiveArias())
+}
+
+func TestIRWindow(t *testing.T) {
+	var l *Loaded
+	require.Zero(t, l.IRWindow(), "nil config must retain everything")
+	require.Zero(t, (&Loaded{}).IRWindow(), "unset must retain everything")
+
+	for _, in := range []int{0, -1} {
+		l := &Loaded{Config: Config{Memory: MemoryConfig{IRWindow: &in}}}
+		require.Zero(t, l.IRWindow(), "ir_window=%d disables", in)
+	}
+
+	// A window too small to hold a turn thrashes against its own appends, so
+	// it is floored rather than honoured.
+	for _, in := range []int{1, 63} {
+		l := &Loaded{Config: Config{Memory: MemoryConfig{IRWindow: &in}}}
+		require.Equal(t, minIRWindow, l.IRWindow(), "ir_window=%d must be floored", in)
+	}
+
+	n := 1024
+	l = &Loaded{Config: Config{Memory: MemoryConfig{IRWindow: &n}}}
+	require.Equal(t, 1024, l.IRWindow())
+}

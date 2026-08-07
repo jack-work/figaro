@@ -14,6 +14,15 @@ type Entry[T any] struct {
 	// no turn; this is the other side of that association, and it rides
 	// along on a record the reader is already holding.
 	ChalkVersion uint64
+	// EncodedBytes is the record's on-disk payload size, captured at decode
+	// because that is the one place it is known for free.
+	//
+	// It exists to size the cache. Estimating retained bytes from the decoded
+	// struct means guessing at allocator rounding on every string, slice and
+	// boxed map value — an attempt at that came out 3x low. The encoded size,
+	// times a measured inflation factor, is both cheaper and closer: decoded
+	// IR ran 4.0x and 5.3x its encoded bytes on two real arias.
+	EncodedBytes int
 }
 
 // Log is one column of an aria's write-ahead log. Logs are
@@ -44,29 +53,55 @@ type Log[T any] interface {
 	Clear() error
 }
 
-type snapshotLog[T any] interface {
-	Snapshot() []Entry[T]
+// tailAfterLog is the suffix read. Optional so an implementation without a
+// cheap one falls back to the generic walk.
+type tailAfterLog[T any] interface {
+	TailAfter(lt uint64) ([]Entry[T], int)
+}
+
+// TailAfter returns the entries strictly after channel LT lt, ascending, plus
+// the log's total entry count.
+//
+// It exists so an incremental consumer can read the suffix it needs WITHOUT
+// materializing the prefix it does not. That distinction is the difference
+// between a translator holding 12 MiB of decoded IR and holding the handful
+// of messages it is about to encode: the fig IR is 4-5x its wire bytes, so
+// the prefix is the single largest thing a live aria pins.
+//
+// The total is returned alongside because the caller needs both halves to
+// validate its watermark: prefix length is total-len(suffix), and comparing
+// that against the count it last saw proves the log has only been appended
+// to. Returning them together makes that check one atomic read rather than
+// two that can disagree.
+func TailAfter[T any](log Log[T], lt uint64) ([]Entry[T], int) {
+	if t, ok := log.(tailAfterLog[T]); ok {
+		return t.TailAfter(lt)
+	}
+	all := log.Read()
+	i := 0
+	for i < len(all) && all[i].LT <= lt {
+		i++
+	}
+	return all[i:], len(all)
 }
 
 type tailSnapshotLog[T any] interface {
 	TailSnapshot(n int) []Entry[T]
 }
 
-// Snapshot returns a read-only, point-in-time view when the log is already
-// materialized in memory, falling back to Read for other implementations.
-func Snapshot[T any](log Log[T]) []Entry[T] {
-	if s, ok := log.(snapshotLog[T]); ok {
-		return s.Snapshot()
-	}
-	return log.Read()
-}
+// store.Snapshot is gone on purpose. It returned the cache's own backing
+// slice when the log happened to be materialized, which made "the entire log
+// is in RAM" free at the call site and therefore load-bearing everywhere.
+// Both users wanted a suffix; they use TailAfter. A consumer that genuinely
+// needs every entry calls Read and pays for the copy, which is the honest
+// price once the prefix may not be resident.
 
 // TailSnapshot returns a read-only ascending view of the last n entries.
 func TailSnapshot[T any](log Log[T], n int) []Entry[T] {
 	if s, ok := log.(tailSnapshotLog[T]); ok {
 		return s.TailSnapshot(n)
 	}
-	entries := Snapshot(log)
+	entries := log.Read()
 	if n <= 0 || len(entries) == 0 {
 		return nil
 	}

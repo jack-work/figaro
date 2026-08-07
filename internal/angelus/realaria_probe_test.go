@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
@@ -87,14 +88,68 @@ func TestRealAriaMemory(t *testing.T) {
 	}
 	defer backend.Close()
 
-	irBytes, irKeep := heapDelta(func() any {
+	// FIGARO_PROBE_WINDOW measures the IR window's effect on the row that
+	// dominates. Unset retains everything, which is the before.
+	if w := os.Getenv("FIGARO_PROBE_WINDOW"); w != "" {
+		n, perr := strconv.Atoi(w)
+		if perr != nil {
+			t.Fatalf("FIGARO_PROBE_WINDOW: %v", perr)
+		}
+		backend.SetIRWindow(n)
+		t.Logf("ir_window = %d rows", n)
+	}
+	if mb := os.Getenv("FIGARO_PROBE_WINDOW_MB"); mb != "" {
+		n, perr := strconv.Atoi(mb)
+		if perr != nil {
+			t.Fatalf("FIGARO_PROBE_WINDOW_MB: %v", perr)
+		}
+		backend.SetIRBudget(n << 20)
+		t.Logf("ir_window_mb = %d", n)
+	}
+
+	// RESIDENCY, not the cost of one read. The daemon's steady state is the
+	// cache holding rows while nobody is reading, so the log handle is what we
+	// keep alive and the Read result is deliberately discarded — retaining it
+	// would measure a caller's copy and, under a window, would pull the whole
+	// log back off disk to do so.
+	irBytes, logKeep := heapDelta(func() any {
 		log, err := backend.Open(id)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return log.Read()
+		return log
 	})
-	rows := irKeep.([]store.Entry[message.Message])
+	irLog := logKeep.(store.Log[message.Message])
+	t.Logf("resident: %d of %d rows, %s estimated",
+		backend.ResidentRows(), irLog.Len(), human(uint64(backend.ResidentIRBytes())))
+
+	// Isolate what a TRIM releases, on the same object, so construction's
+	// transient decode cannot be mistaken for retained bytes.
+	if keep := 512; irLog.Len() > keep {
+		if tr, ok := irLog.(interface {
+			Trim(int) int
+			Resident() int
+		}); ok {
+			var pre, post runtime.MemStats
+			runtime.GC()
+			runtime.GC()
+			runtime.ReadMemStats(&pre)
+			dropped := tr.Trim(keep)
+			runtime.GC()
+			runtime.GC()
+			runtime.ReadMemStats(&post)
+			freed := uint64(0)
+			if pre.HeapAlloc > post.HeapAlloc {
+				freed = pre.HeapAlloc - post.HeapAlloc
+			}
+			t.Logf("trim to %d: dropped %d rows, released %s (now %d resident)",
+				keep, dropped, human(freed), tr.Resident())
+		}
+	}
+
+	// A separate read for the content stats below. Not folded into the
+	// measurement above, for the reason just stated.
+	rows := irLog.Read()
 
 	proj := uiir.New(nil)
 	uiBytes, uiKeep := heapDelta(func() any {
@@ -150,6 +205,7 @@ func TestRealAriaMemory(t *testing.T) {
 	t.Logf("  shares: IR %.0f%%  UI %.0f%%  trans %.0f%%",
 		100*ratio(irBytes, total), 100*ratio(uiBytes, total), 100*ratio(transBytes, total))
 
+	runtime.KeepAlive(logKeep)
 	runtime.KeepAlive(uiKeep)
 	runtime.KeepAlive(cbKeep)
 	runtime.KeepAlive(transKeep)

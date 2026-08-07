@@ -328,7 +328,12 @@ func contextSizeForLog(log store.Log[message.Message]) (int, bool) {
 		return total, len(tail) == 0
 	}
 
-	entries := store.Snapshot(log)
+	// Cold path: no usage anywhere in the last 64 entries, so find the last
+	// one that has any. Read() rather than a zero-copy snapshot, deliberately
+	// — under a windowed cache the prefix may not be resident at all, and a
+	// rare path should pay a re-read instead of forcing the whole log to stay
+	// in memory for the common one.
+	entries := log.Read()
 	watermark := -1
 	for i := len(entries) - 1; i >= 0; i-- {
 		if entries[i].Payload.Usage != nil {

@@ -44,24 +44,49 @@ type ProjectionConfig[T any] struct {
 
 // ProjectIncrementally validates one append-only watermark, then visits only
 // the untranslated suffix. The retained state is in-memory and derivable.
+//
+// It READS only the suffix too, which it did not used to: the whole log was
+// materialized and then sliced, so a warm pass that touched three messages
+// still required all N to be decoded and resident. Since the decoded fig IR
+// runs 4-5x its wire bytes and is the largest thing a live aria holds, that
+// slice was the single biggest reason an agent could not be made cheap.
+//
+// What the wire needs in full is the ENCODED projection, carried in
+// Previous.State — bytes, not structs, and unavoidable because it is the
+// request body. The decoded prefix was never needed for anything.
 func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjection[T], ProjectionStats, error) {
-	entries := store.Snapshot(config.Log)
-	stats := ProjectionStats{Entries: len(entries)}
 	state := config.Initial
 	snap := chalkboard.Snapshot{}
 	var lastChalk uint64
 
+	// A warm start reads from the watermark; a cold one reads everything.
+	// TailAfter(0) is the whole log, so the two are one call.
+	var watermark uint64
+	if previous := config.Previous; previous != nil && previous.Fingerprint == config.Fingerprint {
+		watermark = previous.LastLT
+	}
+	entries, total := store.TailAfter(config.Log, watermark)
+	stats := ProjectionStats{Entries: total}
+	prefix := total - len(entries)
+
+	// The watermark is only trustworthy if the prefix is exactly as long as it
+	// was when the watermark was taken. Anything else — a Clear, a fork
+	// rewrite, a fingerprint change that raced us — means the cached state
+	// describes a log that no longer exists, so fall back to a cold walk.
 	if previous := config.Previous; previous != nil &&
 		previous.Fingerprint == config.Fingerprint &&
-		previous.Entries <= len(entries) &&
-		(previous.Entries == 0 || entries[previous.Entries-1].LT == previous.LastLT) {
+		previous.Entries == prefix {
 		state = previous.State
 		snap = previous.Chalkboard
 		lastChalk = previous.LastChalkVersion
-		stats.StartIndex = previous.Entries
+		stats.StartIndex = prefix
+	} else if prefix > 0 {
+		// Watermark rejected but we only read the suffix. Re-read cold.
+		entries, total = store.TailAfter(config.Log, 0)
+		stats = ProjectionStats{Entries: total}
 	}
 
-	for _, entry := range entries[stats.StartIndex:] {
+	for _, entry := range entries {
 		msg := entry.Payload
 		msg.LogicalTime = entry.LT
 		if msg.Role == message.RoleGenesis {
@@ -115,7 +140,10 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		}
 	}
 
-	var lastLT uint64
+	// lastLT must be the tail of the WHOLE log, not of the suffix we walked:
+	// on a warm pass with nothing new the suffix is empty and the watermark
+	// has to stay where it was, or the next pass re-reads from zero.
+	lastLT := watermark
 	if len(entries) > 0 {
 		lastLT = entries[len(entries)-1].LT
 	}
@@ -123,7 +151,7 @@ func ProjectIncrementally[T any](config ProjectionConfig[T]) (*IncrementalProjec
 		State:            state,
 		Chalkboard:       snap,
 		Fingerprint:      config.Fingerprint,
-		Entries:          len(entries),
+		Entries:          stats.Entries,
 		LastLT:           lastLT,
 		LastChalkVersion: lastChalk,
 	}, stats, nil

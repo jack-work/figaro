@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -199,7 +200,9 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 			// of decoded IR becomes eligible on the NEXT tick rather than
 			// waiting a whole extra cycle to be noticed.
 			a.hibernateIdleArias()
+			a.capLiveArias()
 			a.evictIdleArias()
+			a.trimResident()
 		}
 	}
 }
@@ -297,6 +300,129 @@ func (a *Angelus) hibernateIdleArias() {
 			"live", a.Registry.FigaroCount())
 	}
 }
+
+// capLiveArias enforces max_live_arias by reclaiming the least recently active
+// idle agents until the count is under the cap.
+//
+// It is a SOFT cap and deliberately so: an aria mid-turn counts toward it and
+// is skipped, because hitting a number is never worth killing a turn. When the
+// cap cannot be met it says so once per sweep, so a value set below the
+// working set is visible rather than silently burning restores.
+//
+// LastActive is the LRU key, which Registry.List already carries. It is also
+// the flap guard: an aria woken moments ago is exempt, since restore is
+// O(history) and evicting the thing that just paid for itself is how a cap
+// becomes more expensive than the memory it saves.
+func (a *Angelus) capLiveArias() {
+	max := a.maxLiveArias()
+	if max <= 0 {
+		return
+	}
+	all := a.Registry.List()
+	over := len(all) - max
+	if over <= 0 {
+		return
+	}
+
+	fresh := time.Now().Add(-capFlapGuard)
+	victims := make([]figaro.FigaroInfo, 0, len(all))
+	for _, info := range all {
+		if info.State == "idle" && info.LastActive.Before(fresh) {
+			victims = append(victims, info)
+		}
+	}
+	sort.Slice(victims, func(i, j int) bool {
+		return victims[i].LastActive.Before(victims[j].LastActive)
+	})
+
+	reclaimed := 0
+	for _, v := range victims {
+		if reclaimed >= over {
+			break
+		}
+		if err := a.Registry.Hibernate(v.ID); err != nil {
+			slog.Debug("cap declined", "aria", v.ID, "err", err)
+			continue
+		}
+		reclaimed++
+		slog.Info("reclaimed for cap", "aria", v.ID, "live", a.Registry.FigaroCount(), "cap", max)
+	}
+	if reclaimed < over {
+		slog.Info("live aria cap not met",
+			"cap", max, "live", a.Registry.FigaroCount(), "over_by", over-reclaimed,
+			"reason", "remaining arias are active or recently woken")
+	}
+}
+
+// capFlapGuard exempts a recently woken aria from the cap. Restore costs
+// O(history); reclaiming what just paid that cost is the flap the plan warned
+// about.
+const capFlapGuard = time.Minute
+
+func (a *Angelus) maxLiveArias() int {
+	if a.Settings == nil {
+		return 0
+	}
+	return a.Settings.MaxLiveArias()
+}
+
+// irWindow is the resident decoded-IR row cap per aria.
+func (a *Angelus) irWindow() int {
+	if a.Settings == nil {
+		return 0
+	}
+	return a.Settings.IRWindow()
+}
+
+// irBudget is the resident decoded-IR byte budget per aria.
+func (a *Angelus) irBudget() int {
+	if a.Settings == nil {
+		return 0
+	}
+	return a.Settings.IRWindowBytes()
+}
+
+// residentTrimmer is the backend's half of the windowing contract, an optional
+// interface for the same reason idleEvictor is one: a test or ephemeral
+// backend has no window to trim.
+type residentTrimmer interface {
+	TrimResident(live map[string]bool, keep int) int
+	ResidentRows() int
+	ResidentIRBytes() int
+}
+
+// trimResident shrinks the IR window of every aria with no live agent.
+//
+// The window already bounds itself on append, so this is not what keeps a busy
+// aria in check — it is the lifecycle half: an aria that has just been
+// reclaimed is holding a full window it will not read again until someone
+// wakes it, and only the daemon knows that transition happened.
+func (a *Angelus) trimResident() {
+	keep := a.irWindow()
+	if keep <= 0 && a.irBudget() <= 0 {
+		return
+	}
+	if keep <= 0 {
+		// Byte-budgeted only: pass a row cap the budget will bind before, so
+		// the trim is decided by bytes rather than by an accidental row count.
+		keep = trimRowsUnbounded
+	}
+	tr, ok := a.Backend.(residentTrimmer)
+	if !ok {
+		return
+	}
+	live := map[string]bool{}
+	for _, f := range a.Registry.List() {
+		live[f.ID] = true
+	}
+	if n := tr.TrimResident(live, keep); n > 0 {
+		slog.Info("trimmed resident IR", "rows_released", n,
+			"rows_resident", tr.ResidentRows(), "bytes_resident", tr.ResidentIRBytes())
+	}
+}
+
+// trimRowsUnbounded stands in for "no row cap" when only a byte budget is set.
+const trimRowsUnbounded = 1 << 30
 
 // EvictNow drops the cached IR, translations and board of every aria with no
 // live agent, regardless of how recently it was touched and regardless of

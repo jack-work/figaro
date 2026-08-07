@@ -41,7 +41,46 @@ type XwalBackend struct {
 	// Every one of them is rebuildable from the store, so residency is a
 	// cache decision and wants a cache's discipline.
 	touched map[string]time.Time
+
+	// irWindow bounds resident decoded IR entries per aria. 0 retains
+	// everything. Translation caches are deliberately NOT windowed: their
+	// payload is the request body, so the wire form must be complete, and
+	// measured they are a fraction of the decoded IR anyway.
+	irWindow int
+	// irBudget bounds resident decoded IR in bytes. It is the knob that
+	// actually controls memory; see cachedLog.budget.
+	irBudget int
 }
+
+// irEntrySize estimates one IR entry's retained bytes as its encoded size
+// times a measured inflation factor.
+//
+// Deriving it from the decoded struct instead was tried and abandoned: it
+// means guessing allocator rounding for every string, slice and boxed
+// map[string]interface{} value, and the attempt came out 3x low (4.1 MiB
+// estimated against 12.1 MiB measured on a real aria). The encoded size is
+// known for free at decode, and the ratio between the two is stable — 4.0x and
+// 5.3x on two real arias — so one constant beats a model.
+//
+// An entry appended this process has no encoded size recorded by the caller;
+// fall back to the content bytes, which is the right order of magnitude and
+// self-corrects on the next restore.
+func irEntrySize(e Entry[message.Message]) int {
+	if e.EncodedBytes > 0 {
+		return e.EncodedBytes * irDecodeInflation
+	}
+	n := 0
+	for _, c := range e.Payload.Content {
+		n += len(c.Text) + len(c.Data)
+	}
+	return n * irDecodeInflation
+}
+
+// irDecodeInflation is how much larger decoded IR is than its wire bytes.
+// Measured, not assumed: 4.0x on a 2556-message aria and 5.3x on a
+// 1760-message one. The higher of the two, so a budget under-holds rather than
+// over-holds — being wrong toward less memory is the safe direction here.
+const irDecodeInflation = 5
 
 type ariaHandle struct {
 	ir    *cachedLog[message.Message]
@@ -107,7 +146,9 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	}
 	_ = xw.Close()
 	h := &ariaHandle{
-		ir:    newCachedLog[message.Message](newXwalLog[message.Message](b.store, id, chanIR, true)),
+		ir: newWindowedLog[message.Message](
+			newXwalLog[message.Message](b.store, id, chanIR, true),
+			b.irWindow, b.irBudget, irEntrySize),
 		trans: map[string]*cachedLog[[]json.RawMessage]{},
 	}
 	b.open[id] = h
@@ -323,6 +364,81 @@ func (b *XwalBackend) touchLocked(id string) {
 // read. The store below has always had this discipline (xwal.Store unloads an
 // idle lineage's head); this layer simply never participated in it, which is
 // the whole of the leak.
+// SetIRWindow sets the resident decoded-IR cap for handles opened from here
+// on. Existing handles keep their window: changing it under a live agent
+// mid-turn is not worth the coordination, and a restart applies it everywhere.
+func (b *XwalBackend) SetIRWindow(n int) {
+	b.mu.Lock()
+	b.irWindow = n
+	b.mu.Unlock()
+}
+
+// SetIRBudget sets the resident decoded-IR byte budget for handles opened from
+// here on. Same "new handles only" rule as SetIRWindow.
+func (b *XwalBackend) SetIRBudget(n int) {
+	b.mu.Lock()
+	b.irBudget = n
+	b.mu.Unlock()
+}
+
+// TrimResident trims every non-live aria's IR window to keep entries and
+// reports how many rows were released. It is the reaper's control surface: the
+// caller decides WHEN, this decides how.
+//
+// Live arias are skipped for the same reason EvictIdle skips them — one
+// cachedLog is shared between the writing agent and concurrent readers, and a
+// window is only safe to shrink when nobody is mid-fold across it.
+func (b *XwalBackend) TrimResident(live map[string]bool, keep int) int {
+	b.mu.Lock()
+	handles := make([]*ariaHandle, 0, len(b.open))
+	for id, h := range b.open {
+		if !live[id] {
+			handles = append(handles, h)
+		}
+	}
+	b.mu.Unlock()
+
+	released := 0
+	for _, h := range handles {
+		if h.ir != nil {
+			released += h.ir.Trim(keep)
+		}
+	}
+	return released
+}
+
+// ResidentRows reports resident decoded IR entries across every open aria —
+// the number a window bounds, as opposed to Resident's aria count.
+func (b *XwalBackend) ResidentRows() int {
+	n, _ := b.residency()
+	return n
+}
+
+// ResidentIRBytes is the estimated retained size of every open aria's IR
+// window. This is the number to watch: rows are a poor proxy, because the
+// large entries cluster at the tail.
+func (b *XwalBackend) ResidentIRBytes() int {
+	_, n := b.residency()
+	return n
+}
+
+func (b *XwalBackend) residency() (rows, bytes int) {
+	b.mu.Lock()
+	handles := make([]*ariaHandle, 0, len(b.open))
+	for _, h := range b.open {
+		handles = append(handles, h)
+	}
+	b.mu.Unlock()
+
+	for _, h := range handles {
+		if h.ir != nil {
+			rows += h.ir.Resident()
+			bytes += h.ir.ResidentBytes()
+		}
+	}
+	return rows, bytes
+}
+
 func (b *XwalBackend) EvictIdle(live map[string]bool, idle time.Duration) int {
 	cutoff := time.Now().Add(-idle)
 	b.mu.Lock()
