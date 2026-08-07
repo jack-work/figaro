@@ -148,10 +148,12 @@ func runAngelus() {
 	// primary fix for the long-autonomous-session credential loss.
 	go keepHushAlive(ctx)
 
-	angelus.RestoreBindings(a.Registry, a.BindingsPath(), func(ariaID string) error {
-		_, err := handlers.Restore(ctx, ariaID)
-		return err
-	})
+	// Rebind surviving shells WITHOUT restoring their arias. A daemon restart
+	// used to wake every aria that had a live terminal, which on a busy
+	// machine is most of them — minutes of restore and gigabytes resident
+	// before anyone had asked for anything. The binding alone is what a shell
+	// needs; the aria wakes on its next prompt.
+	angelus.RestoreBindings(a.Registry, a.BindingsPath(), handlers.OpenEndpoint)
 
 	drained := make(chan struct{})
 	go func() {

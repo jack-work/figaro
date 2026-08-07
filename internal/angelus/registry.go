@@ -25,6 +25,10 @@ type Registry struct {
 	figaroPIDs map[string]map[int]struct{}
 
 	killing map[string]bool
+	// retiring mirrors killing for hibernation. Separate because the two
+	// differ in what survives: killing deletes an aria, retiring only
+	// reclaims its agent.
+	retiring map[string]bool
 
 	draining atomic.Bool
 }
@@ -37,6 +41,7 @@ func NewRegistry() *Registry {
 		pidToLT:     make(map[int]uint64),
 		figaroPIDs:  make(map[string]map[int]struct{}),
 		killing:     make(map[string]bool),
+		retiring:    make(map[string]bool),
 	}
 }
 
@@ -91,17 +96,78 @@ func (r *Registry) Kill(id string) error {
 	return nil
 }
 
+// Hibernate reclaims an aria's agent while KEEPING everything that makes the
+// aria addressable: its pid bindings, its trunk, its endpoint. It is Kill
+// minus the deletion.
+//
+// The differences from Kill are the whole feature, so they are spelled out:
+// bindings survive (a bound shell's next bare prompt must land on the same
+// trunk, not mint a new aria), figaroPIDs survives (the sweep must not
+// silently detach a terminal), and the caller does NOT drop the hub — the
+// endpoint outliving the agent is the point.
+//
+// Refuses an aria with a turn in flight, and re-checks that immediately
+// before teardown: a prompt can arrive between the sweep's decision and this
+// call, and losing that race must cost a skipped reclamation, never a
+// dropped prompt. The id stays published until teardown completes, exactly
+// as Kill does, so a concurrent restore cannot build a second agent against
+// a still-sealing log.
+func (r *Registry) Hibernate(id string) error {
+	r.mu.Lock()
+	f, exists := r.figaros[id]
+	if !exists || r.killing[id] || r.retiring[id] {
+		r.mu.Unlock()
+		return fmt.Errorf("figaro %q not reclaimable", id)
+	}
+	if f.Info().State != "idle" {
+		r.mu.Unlock()
+		return fmt.Errorf("figaro %q is active", id)
+	}
+	r.retiring[id] = true
+	r.mu.Unlock()
+
+	// Last look before the irreversible part. A turn that opened while we
+	// were taking the flag wins.
+	if f.Info().State != "idle" {
+		r.mu.Lock()
+		delete(r.retiring, id)
+		r.mu.Unlock()
+		return fmt.Errorf("figaro %q became active", id)
+	}
+
+	f.Kill() // tears the agent down; runs OnTeardown, which unbinds the hub
+
+	r.mu.Lock()
+	delete(r.figaros, id)
+	delete(r.retiring, id)
+	r.mu.Unlock()
+	return nil
+}
+
+// Retiring reports whether an aria is mid-hibernate. A restore must wait
+// rather than race it.
+func (r *Registry) Retiring(id string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.retiring[id]
+}
+
 // Bind maps a pid to a figaro. Unbinds from any previous figaro.
 // Bind binds pid to figaroID with an optional pending fork-point lt (0 = the
 // trunk's leaf). lt is always (re)set, so a plain rebind clears any prior
 // pending LT.
+// A binding names WHICH ARIA a shell is attended to. That is an identity
+// fact, not a memory fact, so it deliberately does NOT require the aria to
+// be resident: binding a dormant aria is legal and does not wake it. This is
+// what makes `figaro attend` free, and what lets a bound shell keep its
+// attendance across a hibernate — without it, the sweep would silently
+// detach every terminal it reclaimed.
 func (r *Registry) Bind(pid int, figaroID string, lt uint64) error {
+	if figaroID == "" {
+		return fmt.Errorf("bind: empty figaro id")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	if _, exists := r.figaros[figaroID]; !exists {
-		return fmt.Errorf("figaro %q not found", figaroID)
-	}
 
 	if existing, ok := r.pidToFigaro[pid]; ok && existing == figaroID {
 		r.pidToLT[pid] = lt
@@ -112,11 +178,16 @@ func (r *Registry) Bind(pid int, figaroID string, lt uint64) error {
 
 	r.pidToFigaro[pid] = figaroID
 	r.pidToLT[pid] = lt
+	if r.figaroPIDs[figaroID] == nil {
+		r.figaroPIDs[figaroID] = map[int]struct{}{}
+	}
 	r.figaroPIDs[figaroID][pid] = struct{}{}
 	return nil
 }
 
-// Resolve returns the figaro for a pid.
+// Resolve returns the aria a pid is attended to. The figaro is nil when the
+// aria is dormant, which is now an ordinary answer rather than a miss: the
+// caller has the id, and the id is all an endpoint address needs.
 func (r *Registry) Resolve(pid int) (string, figaro.Figaro, uint64) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

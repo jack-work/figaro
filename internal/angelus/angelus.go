@@ -194,6 +194,11 @@ func (a *Angelus) pidMonitor(ctx context.Context) {
 		case <-ticker.C:
 			a.reapDeadPIDs()
 		case <-evict.C:
+			// Order matters: reclaim agents first, then sweep caches. An
+			// aria hibernated on this tick is no longer live, so its 12-14 MB
+			// of decoded IR becomes eligible on the NEXT tick rather than
+			// waiting a whole extra cycle to be noticed.
+			a.hibernateIdleArias()
 			a.evictIdleArias()
 		}
 	}
@@ -251,6 +256,66 @@ func (a *Angelus) evictIdleArias() {
 	if n := ev.EvictIdle(live, idle); n > 0 {
 		slog.Info("released idle aria caches", "evicted", n, "live", len(live), "resident", ev.Resident())
 	}
+}
+
+// hibernateIdleArias reclaims the agent of every aria that has been idle
+// longer than the configured window.
+//
+// The predicate is only what it needs to be:
+//
+//	state == "idle" && now - LastActive > dormantAfter
+//
+// Notably absent: bound pids, attached clients, and running background
+// sessions. Each of those used to be a reason to refuse, and each would have
+// made hibernation impossible for exactly the arias that cost the most — a
+// terminal left open all afternoon is the common case. They are gone because
+// what they protected moved: bindings survive Hibernate, clients hang off the
+// hub rather than the agent, and sessions live on the daemon.
+//
+// LastActive is the key, not "time since the sweep last looked": restore is
+// O(history), so an aria woken a moment ago must not be reclaimed again on
+// the next tick. That is the flap the memo warned about.
+func (a *Angelus) hibernateIdleArias() {
+	idle := a.dormantAfter()
+	if idle <= 0 {
+		return // reclamation disabled
+	}
+	cutoff := time.Now().Add(-idle)
+
+	for _, info := range a.Registry.List() {
+		if info.State != "idle" || info.LastActive.After(cutoff) {
+			continue
+		}
+		if err := a.Registry.Hibernate(info.ID); err != nil {
+			// A refusal is ordinary: the aria took a prompt between the
+			// decision and the teardown. It will be reconsidered next tick.
+			slog.Debug("hibernate declined", "aria", info.ID, "err", err)
+			continue
+		}
+		slog.Info("hibernated aria", "aria", info.ID,
+			"idle_for", time.Since(info.LastActive).Round(time.Second),
+			"live", a.Registry.FigaroCount())
+	}
+}
+
+// EvictNow drops the cached IR, translations and board of every aria with no
+// live agent, regardless of how recently it was touched and regardless of
+// whether the timed sweep is enabled at all.
+//
+// It deliberately bypasses the policy rather than reusing it: the policy
+// answers "has nobody wanted this for a while", and this answers "reclaim
+// what is reclaimable, now". A measurement that had to wait out the ticker
+// would be measuring the ticker.
+func (a *Angelus) EvictNow() int {
+	ev, ok := a.Backend.(idleEvictor)
+	if !ok {
+		return 0
+	}
+	live := map[string]bool{}
+	for _, f := range a.Registry.List() {
+		live[f.ID] = true
+	}
+	return ev.EvictIdle(live, 0)
 }
 
 // reapDeadPIDs checks all bound PIDs and unbinds any that are no longer alive.

@@ -113,11 +113,29 @@ func TestRegistry_ResolveUnbound(t *testing.T) {
 	assert.Nil(t, f)
 }
 
-func TestRegistry_BindToNonexistentFigaro(t *testing.T) {
+// Binding no longer requires residency. It used to: Bind checked
+// r.figaros[id] and refused, which meant `figaro attend` had to restore an
+// aria before it could name it, and meant hibernation would have silently
+// detached every bound shell.
+//
+// A binding says WHICH ARIA a shell is attended to — identity, not memory —
+// so the Registry accepts a dormant id. Proving the aria exists at all moved
+// up to the handler (handlers.requireAria), which is the layer that has a
+// store to ask.
+func TestRegistry_BindDormantAriaIsLegal(t *testing.T) {
 	r := angelus.NewRegistry()
-	err := r.Bind(1234, "nonexistent", 0)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
+	require.NoError(t, r.Bind(1234, "dormant-aria", 0))
+
+	id, f, _ := r.Resolve(1234)
+	assert.Equal(t, "dormant-aria", id, "binding lost")
+	assert.Nil(t, f, "a dormant aria has no agent, and that is not an error")
+	assert.Equal(t, []int{1234}, r.BoundPIDs("dormant-aria"))
+}
+
+// An empty id is still refused: it is not an aria, dormant or otherwise.
+func TestRegistry_BindEmptyIDFails(t *testing.T) {
+	r := angelus.NewRegistry()
+	assert.Error(t, r.Bind(1234, "", 0))
 }
 
 func TestRegistry_BindSamePidSameFigaro_Noop(t *testing.T) {

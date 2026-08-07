@@ -60,7 +60,8 @@ func SaveBindings(r *Registry, path string) error {
 	return nil
 }
 
-// AriaRestorer revives a dormant aria by ID.
+// AriaRestorer prepares an aria to be bound. It used to revive one; it now
+// only opens its endpoint, because a rebind must not wake anything.
 type AriaRestorer func(ariaID string) error
 
 // RestoreBindings loads saved bindings, rebinds surviving PIDs,
