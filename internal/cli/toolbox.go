@@ -43,6 +43,9 @@ type toolStyle struct {
 	// command's output does — and its receipt ("Wrote N bytes") is dropped,
 	// since the content is the interesting half and the reader can see it.
 	Body string
+	// Diff paints the body's +/- lines. The tool declares that its output is a
+	// diff; the renderer never guesses from the shape of a line.
+	Diff bool
 }
 
 var toolStyles = map[string]toolStyle{
@@ -50,7 +53,7 @@ var toolStyles = map[string]toolStyle{
 	"process": {Label: "$", Headline: "command"},
 	"write":   {Headline: "path", Body: "content"},
 	"read":    {Headline: "path"},
-	"edit":    {Headline: "path"},
+	"edit":    {Headline: "path", Diff: true},
 }
 
 // styleFor answers for every tool, named or not. An unknown tool keeps its
@@ -241,7 +244,18 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 			if f.Name == headline.Name || f.Name == st.Body {
 				continue
 			}
-			row(term.Label(f.Name) + " " + term.Body(oneLine(f.Value)))
+			// A multi-line argument is a block, not a row: `edit`'s texts are
+			// the whole point of the call, and oneLine leaves a first line and
+			// a scar. Clamped from the HEAD — an argument begins with the
+			// interesting part, where output ends with it.
+			if strings.ContainsRune(f.Value, '\n') {
+				row(term.Label(f.Name))
+				for _, l := range argBlock(f.Value, content, bashCap) {
+					row(l)
+				}
+				continue
+			}
+			row(term.Label(f.Name) + " " + term.Body(f.Value))
 		}
 		if n.StartedAt != 0 {
 			row(term.Label("started ") + term.Body(formatToolTime(n.StartedAt)))
@@ -263,15 +277,70 @@ func renderToolNode(n livedoc.Node, width, bashCap int, tick uint64, verbose, ex
 		row("") // one blank row, where the junction used to be
 	}
 	for _, l := range body {
+		paint := diffPaint(st, l)
 		if expand {
 			for _, w := range hardWrap(l, content) {
-				row(w)
+				row(paint(w))
 			}
 			continue
 		}
-		row(clipToWidthEllipsis(l, content))
+		row(paint(clipToWidthEllipsis(l, content)))
 	}
 	return rows
+}
+
+// argBlock draws a multi-line argument value: head-clamped to limit rows,
+// wrapped to width, in the body voice.
+func argBlock(value string, width, limit int) []string {
+	text := strings.TrimRight(render.SanitizeForTerminal(value), "\n")
+	if text == "" {
+		return nil
+	}
+	shown, total := headOutput(text, limit)
+	var out []string
+	if limit >= 0 && total > limit {
+		out = append(out, term.Dim(fmt.Sprintf("… first %d of %d lines", limit, total)))
+	}
+	for _, l := range strings.Split(shown, "\n") {
+		for _, w := range hardWrap(l, width) {
+			out = append(out, term.Body(w))
+		}
+	}
+	return out
+}
+
+// headOutput is tailOutput's twin, keeping the FIRST limit lines.
+func headOutput(text string, limit int) (string, int) {
+	total := 1 + strings.Count(text, "\n")
+	if limit < 0 || total <= limit {
+		return text, total
+	}
+	if limit == 0 {
+		return "", total
+	}
+	at := -1
+	for range limit {
+		i := strings.IndexByte(text[at+1:], '\n')
+		if i < 0 {
+			return text, total
+		}
+		at += i + 1
+	}
+	return text[:at], total
+}
+
+// diffPaint answers how one body line is coloured. A row is painted by its
+// SOURCE line's marker, so a wrapped continuation keeps its side of the diff.
+func diffPaint(st toolStyle, line string) func(string) string {
+	if st.Diff {
+		switch {
+		case strings.HasPrefix(line, "+"):
+			return term.DiffAdd
+		case strings.HasPrefix(line, "-"):
+			return term.DiffDel
+		}
+	}
+	return func(s string) string { return s }
 }
 
 // oneLine flattens a value for a row that must be exactly one: a multi-line

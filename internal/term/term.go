@@ -42,6 +42,14 @@ func detect() {
 	mode = ColorAuto
 }
 
+// SetColorMode overrides the detected mode and returns the restore. For tests:
+// a colour assertion is vacuous on the non-TTY stdout a test binary has.
+func SetColorMode(m ColorMode) func() {
+	prev := mode
+	mode = m
+	return func() { mode = prev }
+}
+
 // Enabled reports whether color output should be used.
 func Enabled() bool {
 	switch mode {
@@ -106,91 +114,64 @@ func sizeOr(measured, fallback int) int {
 	return fallback
 }
 
-const (
-	reset = "\033[0m"
+const reset = "\033[0m"
 
-	codeDim   = "\033[2m"
-	codeRed   = "\033[31m"
-	codeGreen = "\033[32m"
-	codeCyan  = "\033[36m"
+// A palette is the whole theme: one SGR body per role. Roles are named for
+// MEANING, not for hue, so a second palette is a second var rather than a
+// rewrite of every call site.
+//
+// Kanagawa, at the owner's request, in xterm-256 — the terminal's own 8
+// primaries vary per theme, and truecolor is not safe to assume through tmux.
+// Each field names the Kanagawa colour it approximates.
+type palette struct {
+	dim   string
+	red   string
+	green string
+	cyan  string
 
-	// The palette below is Kanagawa, at the owner's request, in xterm-256
-	// (the terminal's own 8 primaries vary per theme, and truecolor is not
-	// safe to assume through tmux). Each constant names the Kanagawa colour it
-	// approximates and the hex it comes from, so a future eye can check the
-	// match rather than guess at the intent.
-	//
-	// codeArg — springBlue #7FB4CA. What NAMES the call: the tool's name and
-	// the status word beside its result. One colour for one idea; a cyan name
-	// against a blue-grey argument read as two ideas and clashed.
-	codeArg = "\033[38;5;110m"
-	// codeBody — the body-text grey glamour renders prose and thinking in
-	// (xterm 252, Kanagawa fujiWhite #DCD7BA). Argument VALUES take it, so an
-	// argument, a thought and a tool's output are one voice at three
-	// indentations rather than three colours competing down the left of the
-	// screen.
-	codeBody = "\033[38;5;252m"
-	// codeLabel — fujiGray #727169, for argument NAMES. Quieter than the
-	// values they introduce, so a label never competes with what it labels.
-	codeLabel = "\033[38;5;242m"
-)
+	arg   string // springBlue #7FB4CA — what NAMES a call: tool name, status word
+	body  string // fujiWhite #DCD7BA — prose, thinking, argument VALUES: one voice
+	label string // fujiGray #727169 — argument NAMES, quieter than their values
 
-// Dim wraps s in dim (faint) ANSI if color is enabled.
-func Dim(s string) string {
+	diffAdd string // added line: autumnGreen #76946A on a winterGreen wash
+	diffDel string // removed line: autumnRed #C34043 on a winterRed wash
+}
+
+var kanagawa = palette{
+	dim:     "\033[2m",
+	red:     "\033[31m",
+	green:   "\033[32m",
+	cyan:    "\033[36m",
+	arg:     "\033[38;5;110m",
+	body:    "\033[38;5;252m",
+	label:   "\033[38;5;242m",
+	diffAdd: "\033[38;5;108;48;5;22m",
+	diffDel: "\033[38;5;167;48;5;52m",
+}
+
+// active is the palette in force. One var is the whole theme mechanism until
+// there is a second theme to choose between.
+var active = kanagawa
+
+// paint wraps s in one role's SGR, or returns it bare when colour is off.
+func paint(code, s string) string {
 	if !Enabled() {
 		return s
 	}
-	return codeDim + s + reset
+	return code + s + reset
 }
 
-// Red wraps s in red ANSI if color is enabled.
-func Red(s string) string {
-	if !Enabled() {
-		return s
-	}
-	return codeRed + s + reset
-}
-
-// Green wraps s in green ANSI if color is enabled.
-func Green(s string) string {
-	if !Enabled() {
-		return s
-	}
-	return codeGreen + s + reset
-}
-
-// Cyan wraps s in cyan ANSI if color is enabled.
-func Cyan(s string) string {
-	if !Enabled() {
-		return s
-	}
-	return codeCyan + s + reset
-}
-
-// Arg wraps s in the argument colour (Kanagawa springBlue) if color is
-// enabled. Tool names and argument values share it.
-func Arg(s string) string {
-	if !Enabled() {
-		return s
-	}
-	return codeArg + s + reset
-}
-
-// Body wraps s in the body-text colour prose and thinking already use.
-func Body(s string) string {
-	if !Enabled() {
-		return s
-	}
-	return codeBody + s + reset
-}
-
-// Label wraps s in the argument-label colour (Kanagawa fujiGray).
-func Label(s string) string {
-	if !Enabled() {
-		return s
-	}
-	return codeLabel + s + reset
-}
+// One function per role. The name says what the thing IS; the palette says
+// what colour that is today.
+func Dim(s string) string     { return paint(active.dim, s) }
+func Red(s string) string     { return paint(active.red, s) }
+func Green(s string) string   { return paint(active.green, s) }
+func Cyan(s string) string    { return paint(active.cyan, s) }
+func Arg(s string) string     { return paint(active.arg, s) }
+func Body(s string) string    { return paint(active.body, s) }
+func Label(s string) string   { return paint(active.label, s) }
+func DiffAdd(s string) string { return paint(active.diffAdd, s) }
+func DiffDel(s string) string { return paint(active.diffDel, s) }
 
 // VisibleLen returns visible columns ignoring ANSI escapes.
 func VisibleLen(s string) int {

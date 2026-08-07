@@ -163,10 +163,10 @@ func TestNodeExpandable_StreamingToolWithNoOutput(t *testing.T) {
 }
 
 // Arguments and the tool NAME are drawn in one colour (Kanagawa springBlue),
-// and the block's rule is drawn in the SAME dim the output rule uses. Vacuous
-// without colour, load-bearing with it — and it is the thing the owner asked
-// for twice: one blue for the call, furniture identical on both sides.
+// and the block's rule is drawn in the SAME dim the output rule uses — one
+// blue for the call, furniture identical on both sides.
 func TestRenderToolNode_ColoursAreConsistent(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)()
 	n := livedoc.Node{Type: livedoc.NodeTool, Name: "write", Status: livedoc.StatusOK,
 		Args: map[string]any{"path": "/x.md", "content": "a line"}}
 	joined := strings.Join(renderToolNode(n, 60, 10, 0, false, false), "\n")
@@ -177,6 +177,27 @@ func TestRenderToolNode_ColoursAreConsistent(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Errorf("missing %q in:\n%q", want, joined)
 		}
+	}
+}
+
+// A tool that declares its output a diff gets its +/- lines painted; one that
+// does not is left alone, however diff-shaped its output looks.
+func TestRenderToolNode_DiffRowsArePainted(t *testing.T) {
+	defer term.SetColorMode(term.ColorAlways)()
+	out := "Successfully applied 1 edit(s) to /x.py\n\n-1 was\n+1 is"
+	edit := livedoc.Node{Type: livedoc.NodeTool, Name: "edit", Status: livedoc.StatusOK,
+		Args: map[string]any{"path": "/x.py"}, Output: out}
+	joined := strings.Join(renderToolNode(edit, 60, 10, 0, false, false), "\n")
+	for _, want := range []string{term.DiffDel("-1 was"), term.DiffAdd("+1 is")} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing %q in:\n%q", want, joined)
+		}
+	}
+
+	sh := livedoc.Node{Type: livedoc.NodeTool, Name: "bash", Status: livedoc.StatusOK,
+		Args: map[string]any{"command": "git diff"}, Output: out}
+	if strings.Contains(strings.Join(renderToolNode(sh, 60, 10, 0, false, false), "\n"), term.DiffAdd("+1 is")) {
+		t.Error("a shell's output was painted as a diff")
 	}
 }
 
