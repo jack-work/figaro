@@ -224,30 +224,48 @@ func (l *xwalLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
 		if n > 0 {
 			out = make([]Entry[T], 0, n)
 		}
-		// Seek to the watermark instead of scanning to it. MainLT is
-		// non-decreasing along a channel, so the start index is a binary
-		// search — this used to ReadAt every record from the head and merely
-		// skip the ones below figaroLT, which made a suffix read O(N) disk
-		// reads for O(suffix) results.
+		// Seek to the watermark instead of scanning to it. This used to ReadAt
+		// every record from the head and merely skip the ones below figaroLT,
+		// which made a suffix read O(N) reads for O(suffix) results.
 		start := first
 		if figaroLT > first {
-			lo, hi := first, last
-			for lo < hi {
-				mid := lo + (hi-lo)/2
-				r, err := xw.ReadAt(l.channel, mid)
-				if err != nil {
-					// A hole: fall back to a scan from here rather than
-					// guessing which half it is in.
-					lo = mid + 1
-					continue
+			if l.isMain {
+				// The main channel is identity — figwal guarantees
+				// main-LT == channel-LT there — so the start index IS the
+				// watermark. O(1), no search.
+				start = figaroLT
+			} else {
+				// A side channel's main-LT is non-decreasing but not equal to
+				// its channel-LT, so the start has to be found. Binary search
+				// over ReadAt, which is itself O(1): figwal's cacheSnapshot
+				// indexes entries by (idx - firstIdx) in memory rather than
+				// scanning segments, so this costs log2(N) array reads and no
+				// disk I/O.
+				//
+				// TODO(perf): make this O(1) too. A per-channel index of
+				// main-LT -> channel-LT would do it, and figwal already builds
+				// one for Lookup (ch.lookup); exposing a "first channel-LT at
+				// or after this main-LT" query would remove the search
+				// entirely. Deferred because side-channel suffix reads are not
+				// on the hot path — the IR is, and the IR takes the O(1) branch
+				// above.
+				lo, hi := first, last
+				for lo < hi {
+					mid := lo + (hi-lo)/2
+					r, err := xw.ReadAt(l.channel, mid)
+					if err != nil {
+						// A hole: step past it rather than guess a half.
+						lo = mid + 1
+						continue
+					}
+					if r.MainLT < figaroLT {
+						lo = mid + 1
+					} else {
+						hi = mid
+					}
 				}
-				if r.MainLT < figaroLT {
-					lo = mid + 1
-				} else {
-					hi = mid
-				}
+				start = lo
 			}
-			start = lo
 		}
 		for lt := start; lt <= last && (n <= 0 || len(out) < n); lt++ {
 			r, err := xw.ReadAt(l.channel, lt)
