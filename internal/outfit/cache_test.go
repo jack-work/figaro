@@ -180,3 +180,34 @@ func BenchmarkResolveClosure(b *testing.B) {
 		}
 	}
 }
+
+// A deleted outfit must not sit in the cache forever. Nothing sweeps on a
+// timer: a stale entry is dropped the next time it is touched, and the sweep
+// on insert bounds the map for a caller minting many short-lived names.
+func TestDeletedOutfitIsEvictedFromTheCache(t *testing.T) {
+	dir := t.TempDir()
+	writeOutfit(t, dir, "doomed", "[system]\nmodel = \"m\"\n")
+	o := outfit.New(dir)
+
+	_, err := o.Load("doomed")
+	require.NoError(t, err)
+	require.Equal(t, 1, o.CachedFolds())
+
+	require.NoError(t, os.Remove(filepath.Join(dir, "outfits", "doomed.toml")))
+	_, err = o.Load("doomed")
+	require.NoError(t, err, "a requested outfit that vanished is an absence, not a fault")
+	assert.Equal(t, 0, o.CachedFolds(), "the entry for a deleted outfit must be dropped")
+}
+
+func TestCacheDoesNotGrowWithoutBound(t *testing.T) {
+	dir := t.TempDir()
+	o := outfit.New(dir)
+	for i := 0; i < 500; i++ {
+		name := fmt.Sprintf("ephemeral-%03d", i)
+		writeOutfit(t, dir, name, "[system]\nmodel = \"m\"\n")
+		_, err := o.Load(name)
+		require.NoError(t, err)
+		require.NoError(t, os.Remove(filepath.Join(dir, "outfits", name+".toml")))
+	}
+	assert.LessOrEqual(t, o.CachedFolds(), 65, "the fold cache must stay bounded")
+}

@@ -95,16 +95,29 @@ type cacheEntry[T any] struct {
 	deps  []dep
 }
 
+// get returns a live entry, and DROPS a stale one on the way past. That is the
+// whole reaping story for an outfit that was edited or deleted: the next touch
+// evicts it. An entry nobody ever asks for again is caught by the sweep in put.
 func (c *cache[T]) get(key string) (T, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.entries[key]
-	if !ok || !fresh(e.deps) {
+	if !ok {
+		var zero T
+		return zero, false
+	}
+	if !fresh(e.deps) {
+		delete(c.entries, key)
 		var zero T
 		return zero, false
 	}
 	return e.value, true
 }
+
+// sweepAt is the size past which put looks for garbage. A real config holds a
+// handful of outfits, so the sweep is normally never reached; it exists so that
+// a caller minting many short-lived names cannot grow the map without bound.
+const sweepAt = 64
 
 func (c *cache[T]) put(key string, value T, deps []dep) {
 	c.mu.Lock()
@@ -113,4 +126,27 @@ func (c *cache[T]) put(key string, value T, deps []dep) {
 		c.entries = map[string]cacheEntry[T]{}
 	}
 	c.entries[key] = cacheEntry[T]{value: value, deps: deps}
+	if len(c.entries) > sweepAt {
+		c.sweepLocked()
+	}
+}
+
+// sweepLocked drops every entry whose dependencies have moved. An outfit that
+// was deleted can never be fresh again, so this collects it; one that was
+// merely edited is dropped a little early and refolded on demand.
+func (c *cache[T]) sweepLocked() {
+	for k, e := range c.entries {
+		if k == "" || !fresh(e.deps) {
+			delete(c.entries, k)
+		}
+	}
+}
+
+// Forget drops an entry by key, whether or not it is still fresh. This is what
+// an EPHEMERAL outfit needs: its definition never existed on disk, so no stat
+// can ever invalidate it, and only its owner knows when it is done.
+func (c *cache[T]) Forget(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.entries, key)
 }

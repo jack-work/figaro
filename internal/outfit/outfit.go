@@ -178,6 +178,10 @@ func (o *Outfitter) resolve(name string, stack []string, memo map[string]*Closur
 	c := &Closure{Name: name}
 	path, err := o.resolvePath(name)
 	if err != nil {
+		// The file is gone. Nothing downstream will consult its cached fold —
+		// resolution stops here — so this is the only moment we learn it is
+		// collectible, and the only place that can reap it.
+		o.folded.Forget(name)
 		memo[name] = c
 		return c
 	}
@@ -570,3 +574,16 @@ func bundledSkillsRoot() string {
 	}
 	return filepath.Join(filepath.Dir(exe), "..", "share", "figaro")
 }
+
+// CachedFolds reports how many composed patches are held. For tests and for
+// anyone wondering whether the cache is reaping.
+func (o *Outfitter) CachedFolds() int {
+	o.folded.mu.Lock()
+	defer o.folded.mu.Unlock()
+	return len(o.folded.entries)
+}
+
+// Forget drops an outfit's cached fold. On-disk outfits do not need this — a
+// stat invalidates them — but an outfit that never had a file cannot be
+// invalidated by anything on disk, so its owner must say when it is done.
+func (o *Outfitter) Forget(name string) { o.folded.Forget(name) }

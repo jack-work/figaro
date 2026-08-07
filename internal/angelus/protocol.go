@@ -159,21 +159,8 @@ type handlers struct {
 	// h.config concurrently.
 	configMu sync.Mutex
 
-	// outfitHashCache memoizes currentOutfitHash with a short TTL. List
-	// calls it once per aria, but outfit content is shared and expensive to
-	// hash (outfitter.Load re-reads every skill file), so without this an
-	// 8-aria list re-read all skills 8× (~0.5s) and starved completion's
-	// short-timeout List call.
-	outfitHashMu    sync.Mutex
-	outfitHashCache map[string]outfitHashEntry
-
 	restoreMu    sync.Mutex
 	restoreLocks map[string]*sync.Mutex
-}
-
-type outfitHashEntry struct {
-	hash string
-	at   time.Time
 }
 
 type listEnrichment struct {
@@ -227,26 +214,24 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 
 // currentOutfitHash is the content hash the outfit would have right now
 // (recomputed from the on-disk definition), or "" if it can't be loaded.
+//
+// This used to memoize with a 3-second TTL, because folding an outfit re-read
+// every skill file and `list` calls this once per aria. The Outfitter now
+// caches its folds against the files they were built from, so the repeat cost
+// is a stat per dependency — cheaper than the TTL was, and never stale.
 func (h *handlers) currentOutfitHash(name string) string {
 	if h.outfitter == nil {
 		return ""
 	}
-	h.outfitHashMu.Lock()
-	defer h.outfitHashMu.Unlock()
-	if h.outfitHashCache == nil {
-		h.outfitHashCache = map[string]outfitHashEntry{}
+	p, err := h.outfitter.Load(name)
+	if err != nil {
+		return ""
 	}
-	if e, ok := h.outfitHashCache[name]; ok && time.Since(e.at) < 3*time.Second {
-		return e.hash
+	body, err := json.Marshal(p)
+	if err != nil {
+		return ""
 	}
-
-	hash := ""
-	if p, err := h.outfitter.Load(name); err == nil {
-		if body, merr := json.Marshal(p); merr == nil {
-			hash, _ = segment.ValueHash(body)
-		}
-	}
-	h.outfitHashCache[name] = outfitHashEntry{hash: hash, at: time.Now()}
+	hash, _ := segment.ValueHash(body)
 	return hash
 }
 
