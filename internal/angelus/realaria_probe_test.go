@@ -2,6 +2,7 @@ package angelus
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"runtime"
 	"testing"
@@ -12,11 +13,45 @@ import (
 	"github.com/jack-work/figaro/internal/uiir"
 )
 
-// TestRealAriaMemory weighs a REAL aria's holders. Synthetic data gets the
-// ratio BETWEEN rows backwards — small uniform prose messages make the
-// composed UI look like 1.5x the decoded IR, where real arias (tool calls,
-// large results, multi-provider translation lineage) put it at 0.2x — so
-// any claim about which row dominates has to be made against a real store.
+// heapDelta reports live-heap growth across fn, holding the result alive so
+// the GC cannot reclaim what we are weighing. Two GCs each side: the first
+// sweeps, the second collects what the first's finalizers freed.
+func heapDelta(fn func() any) (bytes uint64, keep any) {
+	runtime.GC()
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	keep = fn()
+	runtime.GC()
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	if after.HeapAlloc < before.HeapAlloc {
+		return 0, keep
+	}
+	return after.HeapAlloc - before.HeapAlloc, keep
+}
+
+func human(b uint64) string {
+	switch {
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1f MiB", float64(b)/(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.1f KiB", float64(b)/(1<<10))
+	}
+	return fmt.Sprintf("%d B", b)
+}
+
+func ratio(a, b uint64) float64 {
+	if b == 0 {
+		return 0
+	}
+	return float64(a) / float64(b)
+}
+
+// TestRealAriaMemory weighs a REAL aria's holders. It must be a real store:
+// synthetic prose gets the ratio BETWEEN rows backwards — uniform small
+// messages make the composed UI look like 1.5x the decoded IR, where real
+// arias (tool calls, large results, multi-provider lineage) put it at 0.2x.
 //
 // Point it at a COPY. It opens the store for reading only, but a live daemon
 // holds the lock and there is no reason to gamble a 300 MB store on that.
