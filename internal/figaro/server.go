@@ -3,10 +3,13 @@ package figaro
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/jack-work/figaro/internal/livelog/aria"
+	"strings"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
+	"github.com/jack-work/figaro/internal/livelog/aria"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
@@ -101,9 +104,9 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		set, err := a.ApplyOutfit(req.Name)
+		set, err := a.ApplyOutfit(req.Names)
 		if err != nil {
-			return nil, err
+			return nil, outfitError(err)
 		}
 		return rpc.OutfitResponse{OK: true, Set: set}, nil
 
@@ -171,4 +174,36 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		return a.Read(aria.Anchor{Turn: uint64(req.SinceLT)}, req.Limit), nil
 	}
 	return nil, fmt.Errorf("unknown method: %s", method)
+}
+
+// outfitError types a failed outfit resolution for the wire. A missing layer
+// carries its closure, because "which layer, and where in the graph" is the
+// question the caller actually has; anything else travels as-is.
+func outfitError(err error) error {
+	var missing *outfit.MissingError
+	if !errors.As(err, &missing) {
+		return err
+	}
+	data, mErr := json.Marshal(rpc.ErrorData{
+		Name:          strings.Join(missing.Missing, ","),
+		OutfitClosure: OutfitClosureWire(missing.Closure),
+	})
+	if mErr != nil {
+		return err
+	}
+	return &jkrpc.Error{Code: rpc.ErrOutfitNotFound, Message: err.Error(), Data: data}
+}
+
+// OutfitClosureWire converts a resolved layer closure to its wire shape. It
+// lives here because internal/outfit is a domain package and does not know
+// about the wire, and angelus needs the same conversion for its mint path.
+func OutfitClosureWire(c *outfit.Closure) *rpc.OutfitLayer {
+	if c == nil {
+		return nil
+	}
+	out := &rpc.OutfitLayer{Name: c.Name, Path: c.Path, Found: c.Found, Cycle: c.Cycle}
+	for _, l := range c.Layers {
+		out.Layers = append(out.Layers, OutfitClosureWire(l))
+	}
+	return out
 }

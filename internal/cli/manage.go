@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,10 +9,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
+	"github.com/jack-work/figaro/internal/cli/figtree"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
@@ -29,8 +28,52 @@ type lsOpts struct {
 	rootID  string
 }
 
-type listRow struct {
-	aria, id, outfit, ver, fork, age, msgs, ctx, cwd, detail string
+// The figtree field names `list` populates and its columns read.
+const (
+	fieldID     = "id"
+	fieldOutfit = "outfit"
+	fieldVer    = "ver"
+	fieldFork   = "fork"
+	fieldAge    = "age"
+	fieldMsgs   = "msgs"
+	fieldCtx    = "ctx"
+	fieldCwd    = "cwd"
+	fieldDetail = "detail"
+)
+
+// listColumns is the table `list` prints at a given width: the full nine, a
+// reduced six, or — for the global hierarchy, whose rows are anchors rather
+// than conversations — the tree, its id and one detail line.
+func listColumns(width int, global bool) []figtree.Column {
+	switch {
+	case global:
+		return []figtree.Column{
+			{Header: "ARIA"},
+			{Header: "ID", Field: fieldID},
+			{Header: "DETAIL", Field: fieldDetail},
+		}
+	case width < listFullWidth:
+		return []figtree.Column{
+			{Header: "ARIA"},
+			{Header: "ID", Field: fieldID},
+			{Header: "OUTFIT", Field: fieldOutfit, Max: 18},
+			{Header: "AGE", Field: fieldAge},
+			{Header: "MSGS", Field: fieldMsgs},
+			{Header: "CTX", Field: fieldCtx},
+		}
+	default:
+		return []figtree.Column{
+			{Header: "ARIA"},
+			{Header: "ID", Field: fieldID},
+			{Header: "OUTFIT", Field: fieldOutfit},
+			{Header: "VER", Field: fieldVer},
+			{Header: "FORK", Field: fieldFork},
+			{Header: "AGE", Field: fieldAge},
+			{Header: "MSGS", Field: fieldMsgs},
+			{Header: "CTX", Field: fieldCtx},
+			{Header: "CWD", Field: fieldCwd},
+		}
+	}
 }
 
 func runList(loaded *config.Loaded, o lsOpts) {
@@ -114,118 +157,9 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			figs = kept
 		}
 
-		// Build the fork forest: index by vector, group children, collect
-		// roots (depth-0 conversations). Trees float up by their most-recent
-		// member; within a tree, children sort by branch order (vector).
-		byVec := map[string]rpc.FigaroInfoResponse{}
-		kids := map[string][]rpc.FigaroInfoResponse{}
-		var roots []rpc.FigaroInfoResponse
-		for _, f := range figs {
-			if len(f.Vector) == 0 {
-				continue
-			}
-			byVec[vecKey(f.Vector)] = f
-			// Roots are depth-0 conversations, or — when scoped to a subtree —
-			// the named trunk itself; everything else nests under its parent.
-			isRoot := len(f.Vector) == 1
-			if rootID != "" {
-				isRoot = f.ID == rootID
-			}
-			if isRoot {
-				roots = append(roots, f)
-			} else {
-				pk := vecKey(f.Vector[:len(f.Vector)-1])
-				kids[pk] = append(kids[pk], f)
-			}
-		}
-		lastComp := func(v []int) int { return v[len(v)-1] }
-		for k := range kids {
-			ks := kids[k]
-			sort.Slice(ks, func(i, j int) bool { return lastComp(ks[i].Vector) < lastComp(ks[j].Vector) })
-		}
-		var subtreeRecency func(f rpc.FigaroInfoResponse) int64
-		subtreeRecency = func(f rpc.FigaroInfoResponse) int64 {
-			best := f.LastActive
-			for _, c := range kids[vecKey(f.Vector)] {
-				if r := subtreeRecency(c); r > best {
-					best = r
-				}
-			}
-			return best
-		}
-		sort.SliceStable(roots, func(i, j int) bool {
-			return subtreeRecency(roots[i]) > subtreeRecency(roots[j])
-		})
-
-		// Flatten to rendered rows: tree glyphs in an ARIA cell.
-		var rows []listRow
 		ppid := os.Getppid()
-		marker := func(f rpc.FigaroInfoResponse) string {
-			if slices.Contains(f.BoundPIDs, ppid) {
-				return "●"
-			}
-			if f.State == "active" {
-				return "▸"
-			}
-			return "○"
-		}
-		var emit func(f rpc.FigaroInfoResponse, prefix string, isLast, isRoot bool)
-		emit = func(f rpc.FigaroInfoResponse, prefix string, isLast, isRoot bool) {
-			glyph := ""
-			if !isRoot {
-				glyph = prefix + "├─"
-				if isLast {
-					glyph = prefix + "└─"
-				}
-			}
-			label := f.Mantra
-			if label == "" {
-				label = "aria " + f.ID
-			}
-			ctxStr := "-"
-			if f.ContextTokens > 0 {
-				ctxStr = formatCtxCell(f.ContextTokens)
-				if !f.ContextExact {
-					ctxStr = "~" + ctxStr
-				}
-			}
-			// Branches are MARKED, not numbered. The forest records a fork point
-			// as an LT (BranchedLT), but the coordinate `send/fork <id>:N` takes
-			// is a TURN — printing the LT here and letting it read as a fork
-			// argument is the exact class of trap this project exists to remove
-			// (the old comment claimed the two were the same; they never were
-			// after turn addressing, and are off by a whole exchange).
-			//
-			// Resolving LT -> turn needs the trunk's message log, which `list`
-			// deliberately does not read: it would be one full log read per
-			// branch on every listing. `figaro status <id>` does read it and
-			// prints the exact `parent:turn` you can fork with.
-			fork := "-"
-			if len(f.Vector) > 1 && f.BranchedLT > 1 {
-				fork = "yes"
-			}
-			rows = append(rows, listRow{
-				aria: glyph + marker(f) + " " + truncRunes(label, 44),
-				id:   f.ID, outfit: dash(f.OutfitName), ver: dash(f.OutfitVer),
-				fork: fork, age: relAge(f.LastActive),
-				msgs: fmt.Sprintf("%d", f.MessageCount), ctx: ctxStr, cwd: shortCwd(f.Cwd),
-			})
-			cp := prefix
-			if !isRoot {
-				if isLast {
-					cp += "  "
-				} else {
-					cp += "│ "
-				}
-			}
-			ck := kids[vecKey(f.Vector)]
-			for i, c := range ck {
-				emit(c, cp, i == len(ck)-1, false)
-			}
-		}
-		for _, r := range roots {
-			emit(r, "", true, true)
-		}
+		tree, roots := listForest(figs, rootID, ppid)
+		rows := tree.Rows()
 
 		total := len(rows)
 		shown := total
@@ -267,10 +201,126 @@ func runList(loaded *config.Loaded, o lsOpts) {
 	})
 }
 
+// listForest builds the rendered rows for the scoped fork forest, and the
+// top-level roots it grouped them under. Pure: the caller has already
+// fetched and scoped figs.
+func listForest(figs []rpc.FigaroInfoResponse, rootID string, ppid int) (figtree.Tree, []rpc.FigaroInfoResponse) {
+	// Build the fork forest: index by vector, group children, collect
+	// roots (depth-0 conversations). Trees float up by their most-recent
+	// member; within a tree, children sort by branch order (vector).
+	byVec := map[string]rpc.FigaroInfoResponse{}
+	kids := map[string][]rpc.FigaroInfoResponse{}
+	var roots []rpc.FigaroInfoResponse
+	for _, f := range figs {
+		if len(f.Vector) == 0 {
+			continue
+		}
+		byVec[vecKey(f.Vector)] = f
+		// Roots are depth-0 conversations, or — when scoped to a subtree —
+		// the named trunk itself; everything else nests under its parent.
+		isRoot := len(f.Vector) == 1
+		if rootID != "" {
+			isRoot = f.ID == rootID
+		}
+		if isRoot {
+			roots = append(roots, f)
+		} else {
+			pk := vecKey(f.Vector[:len(f.Vector)-1])
+			kids[pk] = append(kids[pk], f)
+		}
+	}
+	lastComp := func(v []int) int { return v[len(v)-1] }
+	for k := range kids {
+		ks := kids[k]
+		sort.Slice(ks, func(i, j int) bool { return lastComp(ks[i].Vector) < lastComp(ks[j].Vector) })
+	}
+	var subtreeRecency func(f rpc.FigaroInfoResponse) int64
+	subtreeRecency = func(f rpc.FigaroInfoResponse) int64 {
+		best := f.LastActive
+		for _, c := range kids[vecKey(f.Vector)] {
+			if r := subtreeRecency(c); r > best {
+				best = r
+			}
+		}
+		return best
+	}
+	sort.SliceStable(roots, func(i, j int) bool {
+		return subtreeRecency(roots[i]) > subtreeRecency(roots[j])
+	})
+
+	// Flatten to rendered rows: tree glyphs in an ARIA cell.
+	marker := func(f rpc.FigaroInfoResponse) string {
+		if slices.Contains(f.BoundPIDs, ppid) {
+			return "●"
+		}
+		if f.State == "active" {
+			return "▸"
+		}
+		return "○"
+	}
+	build := func(f rpc.FigaroInfoResponse) *figtree.Node {
+		label := f.Mantra
+		if label == "" {
+			label = "aria " + f.ID
+		}
+		ctxStr := "-"
+		if f.ContextTokens > 0 {
+			ctxStr = formatCtxCell(f.ContextTokens)
+			if !f.ContextExact {
+				ctxStr = "~" + ctxStr
+			}
+		}
+		// Branches are MARKED, not numbered. The forest records a fork point
+		// as an LT (BranchedLT), but the coordinate `send/fork <id>:N` takes
+		// is a TURN — printing the LT here and letting it read as a fork
+		// argument is the exact class of trap this project exists to remove
+		// (the old comment claimed the two were the same; they never were
+		// after turn addressing, and are off by a whole exchange).
+		//
+		// Resolving LT -> turn needs the trunk's message log, which `list`
+		// deliberately does not read: it would be one full log read per
+		// branch on every listing. `figaro status <id>` does read it and
+		// prints the exact `parent:turn` you can fork with.
+		fork := "-"
+		if len(f.Vector) > 1 && f.BranchedLT > 1 {
+			fork = "yes"
+		}
+		return &figtree.Node{
+			Marker: marker(f),
+			Label:  truncRunes(label, 44),
+			Fields: map[string]string{
+				fieldID:     f.ID,
+				fieldOutfit: dash(f.OutfitName),
+				fieldVer:    dash(f.OutfitVer),
+				fieldFork:   fork,
+				fieldAge:    relAge(f.LastActive),
+				fieldMsgs:   fmt.Sprintf("%d", f.MessageCount),
+				fieldCtx:    ctxStr,
+				fieldCwd:    shortCwd(f.Cwd),
+			},
+		}
+	}
+	var grow func(f rpc.FigaroInfoResponse) *figtree.Node
+	grow = func(f rpc.FigaroInfoResponse) *figtree.Node {
+		n := build(f)
+		for _, c := range kids[vecKey(f.Vector)] {
+			n.Children = append(n.Children, grow(c))
+		}
+		return n
+	}
+	tree := figtree.Tree{}
+	for _, r := range roots {
+		tree.Roots = append(tree.Roots, grow(r))
+	}
+	return tree, roots
+}
+
 // renderGlobal prints the full hierarchy — null → outfits → conversations →
 // branches — by parent links. ● marks the attended aria, or, when detached,
 // the live outfit (your implicit home).
-func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
+// globalForest builds the rendered rows for the whole hierarchy, walked by
+// parent links. Pure, so its shape can be pinned without an angelus.
+func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtree.Tree {
 	byID := map[string]rpc.FigaroInfoResponse{}
 	childrenOf := map[string][]string{}
 	nullID := ""
@@ -294,7 +344,6 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 			}
 		}
 	}
-	ppid := os.Getppid()
 	mark := func(f rpc.FigaroInfoResponse) string {
 		if slices.Contains(f.BoundPIDs, ppid) || (f.ID != "" && f.ID == liveOutfit) {
 			return "●"
@@ -304,17 +353,9 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 		}
 		return "○"
 	}
-	var rows []listRow
-	var emit func(id, prefix string, isLast, isRoot bool)
-	emit = func(id, prefix string, isLast, isRoot bool) {
+	var grow func(id string) *figtree.Node
+	grow = func(id string) *figtree.Node {
 		f := byID[id]
-		glyph := ""
-		if !isRoot {
-			glyph = prefix + "├─"
-			if isLast {
-				glyph = prefix + "└─"
-			}
-		}
 		var label, detail string
 		switch f.Kind {
 		case "null":
@@ -332,28 +373,29 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 			}
 			detail = fmt.Sprintf("%d msgs", f.MessageCount)
 		}
-		rows = append(rows, listRow{
-			aria:   glyph + mark(f) + " " + truncRunes(label, 46),
-			id:     f.ID,
-			detail: detail,
-			msgs:   strconv.Itoa(f.MessageCount),
-		})
-		cp := prefix
-		if !isRoot {
-			if isLast {
-				cp += "  "
-			} else {
-				cp += "│ "
-			}
+		n := &figtree.Node{
+			Marker: mark(f),
+			Label:  truncRunes(label, 46),
+			Fields: map[string]string{
+				fieldID:     f.ID,
+				fieldDetail: detail,
+				fieldMsgs:   strconv.Itoa(f.MessageCount),
+			},
 		}
-		ck := childrenOf[id]
-		for i, c := range ck {
-			emit(c, cp, i == len(ck)-1, false)
+		for _, c := range childrenOf[id] {
+			n.Children = append(n.Children, grow(c))
 		}
+		return n
 	}
+	tree := figtree.Tree{}
 	if nullID != "" {
-		emit(nullID, "", true, true)
+		tree.Roots = append(tree.Roots, grow(nullID))
 	}
+	return tree
+}
+
+func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
+	rows := globalForest(figs, boundID, os.Getppid()).Rows()
 	total := len(rows)
 	shown := total
 	if limit > 0 && total > limit {
@@ -393,7 +435,7 @@ func listOutputWidth() int {
 
 // renderListRows chooses a table only when it can fit without terminal
 // wrapping. Narrow terminals instead get one clipped hierarchy line per aria.
-func renderListRows(rows []listRow, width int, global bool) string {
+func renderListRows(rows []figtree.Row, width int, global bool) string {
 	if width <= 0 {
 		width = 80
 	}
@@ -404,46 +446,17 @@ func renderListRows(rows []listRow, width int, global bool) string {
 		}
 		return out.String()
 	}
-
-	var out bytes.Buffer
-	w := tabwriter.NewWriter(&out, 0, 4, 2, ' ', 0)
-	switch {
-	case global:
-		fmt.Fprintln(w, "ARIA\tID\tDETAIL")
-		for _, r := range rows {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", r.aria, r.id, r.detail)
-		}
-	case width < listFullWidth:
-		fmt.Fprintln(w, "ARIA\tID\tOUTFIT\tAGE\tMSGS\tCTX")
-		for _, r := range rows {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-				r.aria, r.id, truncRunes(r.outfit, 18), r.age, r.msgs, r.ctx)
-		}
-	default:
-		fmt.Fprintln(w, "ARIA\tID\tOUTFIT\tVER\tFORK\tAGE\tMSGS\tCTX\tCWD")
-		for _, r := range rows {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				r.aria, r.id, r.outfit, r.ver, r.fork, r.age, r.msgs, r.ctx, r.cwd)
-		}
-	}
-	w.Flush()
-
-	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
-	var clipped strings.Builder
-	for _, line := range lines {
-		fmt.Fprintln(&clipped, truncateVisible(line, width))
-	}
-	return clipped.String()
+	return figtree.RenderRows(rows, listColumns(width, global), width)
 }
 
-func compactListRow(r listRow, width int) string {
-	id := truncRunes(r.id, 8)
+func compactListRow(r figtree.Row, width int) string {
+	id := truncRunes(r.Field(fieldID), 8)
 	parts := []string{id}
-	if r.age != "" && r.age != "-" {
-		parts = append(parts, r.age)
+	if age := r.Field(fieldAge); age != "" && age != "-" {
+		parts = append(parts, age)
 	}
-	if r.msgs != "" {
-		parts = append(parts, r.msgs+"msg")
+	if msgs := r.Field(fieldMsgs); msgs != "" {
+		parts = append(parts, msgs+"msg")
 	}
 	suffix := strings.Join(parts, " ")
 	labelWidth := width - term.VisibleLen(suffix) - 1
@@ -452,9 +465,9 @@ func compactListRow(r listRow, width int) string {
 		labelWidth = width - term.VisibleLen(suffix) - 1
 	}
 	if labelWidth <= 0 {
-		return truncateVisible(r.aria+" "+suffix, width)
+		return truncateVisible(r.Cell()+" "+suffix, width)
 	}
-	return truncateVisible(r.aria, labelWidth) + " " + suffix
+	return truncateVisible(r.Cell(), labelWidth) + " " + suffix
 }
 
 func truncateVisible(s string, width int) string {

@@ -42,7 +42,7 @@ These hold across the whole CLI:
 |---|---|
 | `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. Mints an aria if this shell has none (the id goes to stderr, or to stdout with `-j`). |
 | `-e`, `--ephemeral` | Spin a throwaway in-memory aria and kill it when the turn ends. Contradicts `--id`. |
-| `-L`, `--outfit <name>` | The outfit for an aria **this call creates** — with `-e`, or in a shell with no binding. Rejected against a target (`--id`, `<id>`, `<id>:<turn>`), which names an aria that already exists. Defaults to config.toml's `default_outfit`, as `new --outfit` does. Takes a value, so it does not gang: `-er -L sonn5`, not `-erL`. |
+| `-O`, `--outfit <name>` | The outfit for an aria **this call creates** — with `-e`, or in a shell with no binding. Rejected against a target (`--id`, `<id>`, `<id>:<turn>`), which names an aria that already exists. Defaults to config.toml's `default_outfit`, as `new --outfit` does. Takes a value, so it does not gang: `-er -O sonn5`, not `-erO`. |
 | `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
 | `-o`, `--verbose` | Expand full tool inputs. Ctrl-O toggles it live. |
 | `-l`, `--listen` | Open the transcript pager at startup. |
@@ -186,7 +186,7 @@ that goes wrong yields a store that looks fine.
 | `figaro state [<id>]` | The folded chalkboard snapshot. `-j` for JSON. Alias `chalkboard`. |
 | `figaro set [<id>] <key> <value>` | Patch one key with no model round trip. |
 | `figaro unset [<id>] <key>...` | Remove keys. |
-| `figaro outfit <name>` | Apply a named outfit additively. `--list` to see them. |
+| `figaro outfit <name>[,<name>...]` | Apply named outfits additively, folded left to right (later wins). `--list` to see them. |
 
 Setting a key is a real event in the conversation: on the tic where a
 non-`system` key changes, the agent sees a `<system-reminder>` naming it. Keys

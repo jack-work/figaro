@@ -30,14 +30,14 @@ user_id = 7
 	assert.Equal(t, `7`, string(patch.Set["user_id"]))
 }
 
-func TestLoad_SourceChain(t *testing.T) {
+func TestLoad_LayerChain(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "base.toml"), []byte(`
 system = { model = "default-model", max_tokens = 8192 }
 `), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "config.toml"), []byte(`
-source = "base"
+layers = ["base"]
 system = { model = "override-model" }
 friendly_name = "Top"
 `), 0600))
@@ -120,8 +120,8 @@ skills = { dirName = "skills" }
 func TestLoad_CycleDetected(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "a.toml"), []byte(`source = "b"`), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "b.toml"), []byte(`source = "a"`), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "a.toml"), []byte(`layers = ["b"]`), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "b.toml"), []byte(`layers = ["a"]`), 0600))
 
 	_, err := outfit.New(dir).Load("a")
 	require.Error(t, err)

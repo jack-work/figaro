@@ -1556,12 +1556,19 @@ func (h *handlers) errNoProvider(outfitName string) error {
 }
 
 // errOutfitNotFound builds a typed JSON-RPC error for a missing
-// named outfit. cause carries the underlying outfit error.
+// named outfit. cause carries the underlying outfit error, and when that names
+// a broken layer reference the whole closure travels with it, so the caller can
+// draw where the gap is.
 func (h *handlers) errOutfitNotFound(name string, cause error) error {
-	data, _ := json.Marshal(rpc.ErrorData{
+	payload := rpc.ErrorData{
 		Name:        name,
 		SearchPaths: []string{h.config.OutfitPath(name)},
-	})
+	}
+	var missing *outfit.MissingError
+	if errors.As(cause, &missing) {
+		payload.OutfitClosure = figaro.OutfitClosureWire(missing.Closure)
+	}
+	data, _ := json.Marshal(payload)
 	return &jkrpc.Error{
 		Code:    rpc.ErrOutfitNotFound,
 		Message: fmt.Sprintf("outfit %q not found: %s", name, cause),

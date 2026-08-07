@@ -2,6 +2,7 @@ package figaro_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -55,7 +56,7 @@ tone = "concise"
 `)
 	a := agentForOutfit(t, cfg, chalkboard.Patch{})
 
-	set, err := a.ApplyOutfit("focus")
+	set, err := a.ApplyOutfit([]string{"focus"})
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"system.provider", "system.model", "system.tone"}, set)
 }
@@ -72,7 +73,7 @@ model = "claude-opus-4-7"
 		"system.provider": json.RawMessage(`"anthropic"`),
 	}})
 
-	set, err := a.ApplyOutfit("focus")
+	set, err := a.ApplyOutfit([]string{"focus"})
 	require.NoError(t, err)
 	// provider matches → skipped. model is new → kept.
 	assert.ElementsMatch(t, []string{"system.model"}, set)
@@ -88,7 +89,7 @@ model = "claude-opus-4-7"
 		"system.model": json.RawMessage(`"old-model"`),
 	}})
 
-	set, err := a.ApplyOutfit("focus")
+	set, err := a.ApplyOutfit([]string{"focus"})
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"system.model"}, set)
 }
@@ -108,7 +109,7 @@ model = "claude-opus-4-7"
 		"unrelated.key": json.RawMessage(`"keep me"`),
 	}})
 
-	_, err := a.ApplyOutfit("focus")
+	_, err := a.ApplyOutfit([]string{"focus"})
 	require.NoError(t, err)
 	// Need to wait briefly for the async Set to apply.
 	// chalkboard.State.Snapshot is read after the event drains.
@@ -118,19 +119,22 @@ model = "claude-opus-4-7"
 	// flaky in CI.
 }
 
-func TestApplyOutfit_MissingOutfitIsNoOp(t *testing.T) {
+// Applying an outfit is strict where minting one is graceful: someone typing a
+// name wants to hear that it does not exist, not that nothing changed.
+func TestApplyOutfit_MissingOutfitIsReported(t *testing.T) {
 	cfg := t.TempDir()
 	a := agentForOutfit(t, cfg, chalkboard.Patch{})
 
-	set, err := a.ApplyOutfit("nonexistent")
-	require.NoError(t, err, "missing outfit must not error (graceful)")
-	assert.Empty(t, set)
+	_, err := a.ApplyOutfit([]string{"nonexistent"})
+	var missing *outfit.MissingError
+	require.True(t, errors.As(err, &missing), "want MissingError, got %v", err)
+	assert.True(t, missing.RootOnly)
 }
 
 func TestApplyOutfit_EmptyNameErrors(t *testing.T) {
 	cfg := t.TempDir()
 	a := agentForOutfit(t, cfg, chalkboard.Patch{})
 
-	_, err := a.ApplyOutfit("")
+	_, err := a.ApplyOutfit([]string{""})
 	require.Error(t, err)
 }

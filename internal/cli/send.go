@@ -520,7 +520,7 @@ func runSendEphemeralRaw(loaded *config.Loaded, opts sendOpts, prompt string) {
 
 	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
 	if err != nil {
-		die("create figaro: %s", err)
+		dieWithClosure(err, "create figaro: %s", err)
 	}
 	figaroID := createResp.FigaroID
 	figaroEP := transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
@@ -552,7 +552,7 @@ func runSendEphemeralRich(loaded *config.Loaded, opts sendOpts, prompt string, s
 
 	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
 	if err != nil {
-		die("create figaro: %s", err)
+		dieWithClosure(err, "create figaro: %s", err)
 	}
 	figaroID := createResp.FigaroID
 	figaroEP := transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
@@ -605,7 +605,7 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 	if opts.ephemeral {
 		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
 		if err != nil {
-			die("create figaro: %s", err)
+			dieWithClosure(err, "create figaro: %s", err)
 		}
 		figaroEP = transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
 		defer func() {
@@ -643,7 +643,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 	if opts.ephemeral || opts.id == "" {
 		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
 		if err != nil {
-			die("create figaro: %s", err)
+			dieWithClosure(err, "create figaro: %s", err)
 		}
 		figaroEP = transport.Endpoint{Scheme: createResp.Endpoint.Scheme, Address: createResp.Endpoint.Address}
 		defer func() {

@@ -937,9 +937,9 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 	r.Register(&cmdkit.Command{
 		Name:    "outfit",
 		Group:   "State",
-		Short:   "Apply a named outfit additively to an aria",
-		Usage:   "outfit [--id <id>] <name> | outfit --list",
-		Long:    "Loads ~/.config/figaro/outfits/<name>.toml and applies it as an\nadditive chalkboard patch: keys whose values match the current\nsnapshot are skipped, and no keys are ever removed.\n\nExamples:\n  figaro outfit focus            # apply 'focus' outfit to the bound aria\n  figaro outfit --id myid focus  # apply to a specific aria\n  figaro outfit --list           # show available outfits",
+		Short:   "Apply named outfits additively to an aria",
+		Usage:   "outfit [--id <id>] <name>[,<name>...] | outfit --list",
+		Long:    "Loads ~/.config/figaro/outfits/<name>.toml and applies it as an\nadditive chalkboard patch: keys whose values match the current\nsnapshot are skipped, and no keys are ever removed.\n\nSeveral outfits may be named, comma-separated. They are folded left to\nright, each taking precedence over the ones before it — the same rule an\noutfit's own `layers = [...]` follows, so `outfit a,b` and an outfit\ndeclaring `layers = [\"a\", \"b\"]` compose identically.\n\nExamples:\n  figaro outfit focus              # apply 'focus' to the bound aria\n  figaro outfit pr-review,opus5    # fold both, opus5 winning\n  figaro outfit --id myid focus    # apply to a specific aria\n  figaro outfit --list             # show available outfits",
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
@@ -953,7 +953,7 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 				return nil
 			}
 			if len(ctx.Args) == 0 {
-				die("usage: figaro outfit [--id <id>] <name>")
+				die("usage: figaro outfit [--id <id>] <name>[,<name>...]")
 			}
 			runOutfit(ld, ctx.Flag("id"), ctx.Args[0])
 			return nil

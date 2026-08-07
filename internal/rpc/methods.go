@@ -92,6 +92,21 @@ type ErrorData struct {
 	Outfit             string   `json:"outfit,omitempty"`
 	Name               string   `json:"name,omitempty"`
 	SearchPaths        []string `json:"search_paths,omitempty"`
+
+	// OutfitClosure is the layer graph an outfit was resolved through, sent
+	// with ErrOutfitNotFound so the caller can show WHERE the gap is instead
+	// of only naming it. Each node reports whether it was found on disk.
+	OutfitClosure *OutfitLayer `json:"outfit_closure,omitempty"`
+}
+
+// OutfitLayer is one node of an outfit's layer closure. A node with no Name is
+// the synthetic root that holds several requested outfits side by side.
+type OutfitLayer struct {
+	Name   string         `json:"name,omitempty"`
+	Path   string         `json:"path,omitempty"`
+	Found  bool           `json:"found"`
+	Cycle  bool           `json:"cycle,omitempty"`
+	Layers []*OutfitLayer `json:"layers,omitempty"`
 }
 
 const (
@@ -199,11 +214,11 @@ type SetResponse struct {
 	Remove []string `json:"remove,omitempty"`
 }
 
-// OutfitRequest names an outfit to apply additively to the aria's
-// current chalkboard. Keys with values equal to the current snapshot
-// are skipped; no removals are performed.
+// OutfitRequest names the outfits to apply additively to the aria's current
+// chalkboard, each taking precedence over the ones before it. Keys with values
+// equal to the current snapshot are skipped; no removals are performed.
 type OutfitRequest struct {
-	Name string `json:"name"`
+	Names []string `json:"names"`
 }
 
 // OutfitResponse lists the keys created or updated.

@@ -262,7 +262,7 @@ func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *
 		return acli.Create(ctx, outfit, nil)
 	})
 	if err != nil {
-		die("create figaro: %s", err)
+		dieWithClosure(err, "create figaro: %s", err)
 	}
 
 	if err := bindBinding(ctx, acli, ppid, createResp.FigaroID, 0); err != nil {
@@ -275,7 +275,7 @@ func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *
 	}
 
 	if err := waitForSocket(ep.Address, 3*time.Second); err != nil {
-		die("create figaro: %s", err)
+		dieWithClosure(err, "create figaro: %s", err)
 	}
 
 	return createResp.FigaroID, ep

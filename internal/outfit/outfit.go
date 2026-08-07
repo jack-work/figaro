@@ -7,6 +7,7 @@ package outfit
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,51 +28,268 @@ func New(configDir string) *Outfitter {
 	return &Outfitter{configDir: configDir}
 }
 
-// Load resolves an outfit and returns the chalkboard patch.
-//
-// A missing outfit file is NOT an error: an empty patch is
-// returned. The caller decides whether the resulting absence of
-// system.provider is fatal. Parse errors and source-chain cycles
-// still bubble up.
+// Closure is one node of an outfit's layer graph: the outfit itself, the
+// layers it declares, and whether each was actually found on disk. It is built
+// even when layers are missing, because a broken reference is best explained by
+// showing the shape it was found in.
+type Closure struct {
+	Name   string
+	Path   string // "" when the outfit was not found
+	Found  bool
+	Cycle  bool // this name is already being resolved further up the chain
+	Layers []*Closure
+}
+
+// Walk visits the closure depth-first, parents before layers.
+func (c *Closure) Walk(fn func(*Closure)) {
+	if c == nil {
+		return
+	}
+	fn(c)
+	for _, l := range c.Layers {
+		l.Walk(fn)
+	}
+}
+
+// MissingError reports that something in the closure is not on disk. It
+// carries the whole closure so a caller can show where the gap is rather than
+// only name it.
+type MissingError struct {
+	Closure *Closure
+	Missing []string
+	// RootOnly is true when the only thing missing is the outfit that was
+	// asked for. That is the ordinary "no such outfit" and callers may treat
+	// it as an absence rather than a fault — the first-run flow does.
+	RootOnly bool
+}
+
+func (e *MissingError) Error() string {
+	if len(e.Missing) == 1 {
+		return fmt.Sprintf("outfit: %q does not exist", e.Missing[0])
+	}
+	return fmt.Sprintf("outfit: missing layers: %s", strings.Join(e.Missing, ", "))
+}
+
+// CycleError reports a layer that lists one of its own ancestors.
+type CycleError struct {
+	Closure *Closure
+	At      string
+}
+
+func (e *CycleError) Error() string {
+	return fmt.Sprintf("outfit: cycle in layers at %q", e.At)
+}
+
+// Load resolves one outfit and returns the chalkboard patch.
 func (o *Outfitter) Load(name string) (chalkboard.Patch, error) {
 	if name == "" {
 		return chalkboard.Patch{}, nil
 	}
-	flat := map[string]json.RawMessage{}
-	visited := map[string]bool{}
-	if err := o.loadInto(name, flat, visited); err != nil {
-		if os.IsNotExist(err) {
+	return o.LoadAll([]string{name})
+}
+
+// LoadAll folds several outfits into one patch, each taking precedence over
+// the ones before it — the same rule that orders an outfit's own layers, so
+// `figaro outfit a,b` and an outfit declaring `layers = ["a", "b"]` compose
+// identically.
+//
+// An outfit that was ASKED for but does not exist yields an empty patch and no
+// error: the first-run flow scaffolds config by letting that absence through
+// and noticing the missing system.provider downstream. A layer referenced by an
+// outfit that DOES exist is the opposite case — a broken reference, always an
+// error, because the alternative is what this used to do: discard the whole
+// patch and let a typo look like an empty outfit.
+//
+// Use LoadStrict where absence is a fault in itself.
+func (o *Outfitter) LoadAll(names []string) (chalkboard.Patch, error) {
+	return o.loadAll(names, false)
+}
+
+// LoadStrict is LoadAll with a missing outfit treated as a fault even when it
+// is the one that was asked for. This is what applying an outfit by name wants:
+// `figaro outfit nope` should say so, not quietly change nothing.
+func (o *Outfitter) LoadStrict(names []string) (chalkboard.Patch, error) {
+	return o.loadAll(names, true)
+}
+
+func (o *Outfitter) loadAll(names []string, strict bool) (chalkboard.Patch, error) {
+	if len(names) == 0 {
+		return chalkboard.Patch{}, nil
+	}
+	root := o.ResolveAll(names)
+	if err := closureError(root, names); err != nil {
+		var missing *MissingError
+		if !strict && errors.As(err, &missing) && missing.RootOnly {
 			return chalkboard.Patch{}, nil
 		}
 		return chalkboard.Patch{}, err
 	}
+	flat := map[string]json.RawMessage{}
+	memo := map[string]map[string]json.RawMessage{}
+	for _, layer := range root.Layers {
+		keys, err := o.fold(layer, memo)
+		if err != nil {
+			return chalkboard.Patch{}, err
+		}
+		for k, v := range keys {
+			flat[k] = v
+		}
+	}
 	return chalkboard.Patch{Set: flat}, nil
 }
 
-// loadInto resolves an outfit recursively via source chains.
-func (o *Outfitter) loadInto(name string, flat map[string]json.RawMessage, visited map[string]bool) error {
-	if visited[name] {
-		return fmt.Errorf("outfit: cycle in source chain at %q", name)
-	}
-	visited[name] = true
+// Resolve builds the closure for one outfit without reading any of it.
+func (o *Outfitter) Resolve(name string) *Closure {
+	return o.resolve(name, nil, map[string]*Closure{})
+}
 
-	path, err := o.resolvePath(name)
-	if err != nil {
-		return err
+// ResolveAll builds a synthetic root whose layers are names, in order. The
+// root is not an outfit and is never rendered as one.
+func (o *Outfitter) ResolveAll(names []string) *Closure {
+	root := &Closure{Found: true}
+	memo := map[string]*Closure{}
+	for _, n := range names {
+		root.Layers = append(root.Layers, o.resolve(n, nil, memo))
 	}
-	raw := map[string]any{}
-	if _, err := toml.DecodeFile(path, &raw); err != nil {
-		return fmt.Errorf("outfit: parse %s: %w", path, err)
-	}
+	return root
+}
 
-	if src, ok := raw["source"].(string); ok && src != "" {
-		if err := o.loadInto(src, flat, visited); err != nil {
-			return err
+// resolve reads one outfit's layer list and recurses. stack is the chain
+// currently being resolved, so a name that reappears on it is a cycle rather
+// than a second visit; memo holds finished nodes, which by definition are not
+// on the stack.
+func (o *Outfitter) resolve(name string, stack []string, memo map[string]*Closure) *Closure {
+	for _, s := range stack {
+		if s == name {
+			return &Closure{Name: name, Found: true, Cycle: true}
 		}
 	}
-	delete(raw, "source")
+	if c, ok := memo[name]; ok {
+		return c
+	}
+	c := &Closure{Name: name}
+	path, err := o.resolvePath(name)
+	if err != nil {
+		memo[name] = c
+		return c
+	}
+	c.Path, c.Found = path, true
 
-	return o.flatten("", raw, flat)
+	names, lErr := o.declaredLayers(path)
+	if lErr != nil {
+		// A malformed layers list is reported by fold, which parses the file
+		// for real. The closure just stops descending.
+		memo[name] = c
+		return c
+	}
+	for _, l := range names {
+		c.Layers = append(c.Layers, o.resolve(l, append(stack, name), memo))
+	}
+	memo[name] = c
+	return c
+}
+
+// declaredLayers reads just the layers key from an outfit file.
+func (o *Outfitter) declaredLayers(path string) ([]string, error) {
+	raw := map[string]any{}
+	if _, err := toml.DecodeFile(path, &raw); err != nil {
+		return nil, fmt.Errorf("outfit: parse %s: %w", path, err)
+	}
+	return layerNames(path, raw)
+}
+
+// layerNames extracts and validates the layers key.
+//
+// `source` was the single-parent spelling this replaced. It is rejected rather
+// than ignored: left alone it would flatten into a chalkboard key named
+// "source", which is the silent kind of wrong.
+func layerNames(path string, raw map[string]any) ([]string, error) {
+	if _, ok := raw["source"]; ok {
+		return nil, fmt.Errorf("outfit: %s: `source` is no longer read; use `layers = [\"name\"]`", path)
+	}
+	value, ok := raw["layers"]
+	if !ok {
+		return nil, nil
+	}
+	list, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("outfit: %s: layers must be an array of outfit names, got %T", path, value)
+	}
+	out := make([]string, 0, len(list))
+	for i, item := range list {
+		name, ok := item.(string)
+		if !ok {
+			return nil, fmt.Errorf("outfit: %s: layers[%d] must be a string, got %T", path, i, item)
+		}
+		if name == "" {
+			return nil, fmt.Errorf("outfit: %s: layers[%d] is empty", path, i)
+		}
+		out = append(out, name)
+	}
+	return out, nil
+}
+
+// closureError reports the first structural fault in a closure: a cycle, or
+// anything not on disk.
+func closureError(root *Closure, requested []string) error {
+	var cycle string
+	var missing []string
+	root.Walk(func(c *Closure) {
+		if c.Cycle && cycle == "" {
+			cycle = c.Name
+		}
+		if !c.Found {
+			missing = append(missing, c.Name)
+		}
+	})
+	if cycle != "" {
+		return &CycleError{Closure: root, At: cycle}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	rootOnly := true
+	for _, layer := range root.Layers {
+		if layer.Found {
+			rootOnly = false
+		}
+	}
+	if len(requested) != len(missing) {
+		rootOnly = false
+	}
+	return &MissingError{Closure: root, Missing: missing, RootOnly: rootOnly}
+}
+
+// fold returns one outfit's flattened keys: its layers in order, then its own,
+// so the nearest declaration wins. Memoised per name, which makes a layer
+// shared by several others cheap to apply at each of its positions.
+func (o *Outfitter) fold(c *Closure, memo map[string]map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+	if done, ok := memo[c.Name]; ok {
+		return done, nil
+	}
+	flat := map[string]json.RawMessage{}
+	for _, layer := range c.Layers {
+		keys, err := o.fold(layer, memo)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range keys {
+			flat[k] = v
+		}
+	}
+	raw := map[string]any{}
+	if _, err := toml.DecodeFile(c.Path, &raw); err != nil {
+		return nil, fmt.Errorf("outfit: parse %s: %w", c.Path, err)
+	}
+	if _, err := layerNames(c.Path, raw); err != nil {
+		return nil, err
+	}
+	delete(raw, "layers")
+	if err := o.flatten("", raw, flat); err != nil {
+		return nil, err
+	}
+	memo[c.Name] = flat
+	return flat, nil
 }
 
 // resolvePath finds an outfit file (outfits/<name>.toml). The

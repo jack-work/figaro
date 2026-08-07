@@ -31,21 +31,24 @@ func (a *Agent) Set(patch chalkboard.Patch) (set, removed []string, err error) {
 	return set, removed, nil
 }
 
-// ApplyOutfit loads the named outfit and applies it additively to
-// the current chalkboard. Keys whose value already equals the
-// outfit's value are skipped; no keys are ever removed. Returns the
-// list of keys created or updated.
-func (a *Agent) ApplyOutfit(name string) ([]string, error) {
+// ApplyOutfit folds the named outfits — each taking precedence over the ones
+// before it — and applies the result additively to the current chalkboard.
+// Keys whose value already equals the outfit's value are skipped; no keys are
+// ever removed. Returns the list of keys created or updated.
+//
+// Absence is strict here, unlike at mint time: someone naming an outfit to
+// apply wants to hear that it does not exist, not to be told nothing changed.
+func (a *Agent) ApplyOutfit(names []string) ([]string, error) {
 	if a.chalkboard == nil {
 		return nil, fmt.Errorf("outfit requires a chalkboard")
 	}
 	if a.outfitter == nil {
 		return nil, fmt.Errorf("outfit requires an outfitter")
 	}
-	if name == "" {
+	if len(names) == 0 {
 		return nil, fmt.Errorf("outfit name required")
 	}
-	loaded, err := a.outfitter.Load(name)
+	loaded, err := a.outfitter.LoadStrict(names)
 	if err != nil {
 		return nil, err
 	}

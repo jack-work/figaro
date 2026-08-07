@@ -4,6 +4,7 @@ package term
 
 import (
 	"os"
+	"sort"
 	"sync"
 
 	"golang.org/x/term"
@@ -135,6 +136,9 @@ type palette struct {
 
 	diffAdd string // added line: autumnGreen #76946A on a winterGreen wash
 	diffDel string // removed line: autumnRed #C34043 on a winterRed wash
+
+	present string // a thing that IS there: diffAdd's autumnGreen, no wash
+	absent  string // a thing that is NOT: diffDel's autumnRed, no wash
 }
 
 var kanagawa = palette{
@@ -147,6 +151,8 @@ var kanagawa = palette{
 	label:   "\033[38;5;242m",
 	diffAdd: "\033[38;5;108;48;5;22m",
 	diffDel: "\033[38;5;167;48;5;52m",
+	present: "\033[38;5;108m",
+	absent:  "\033[38;5;167m",
 }
 
 // active is the palette in force. One var is the whole theme mechanism until
@@ -172,6 +178,44 @@ func Body(s string) string    { return paint(active.body, s) }
 func Label(s string) string   { return paint(active.label, s) }
 func DiffAdd(s string) string { return paint(active.diffAdd, s) }
 func DiffDel(s string) string { return paint(active.diffDel, s) }
+func Present(s string) string { return paint(active.present, s) }
+func Absent(s string) string  { return paint(active.absent, s) }
+
+// roles indexes the palette by name, so a caller carrying a role as DATA (a
+// config value, a wire field) can paint with it without importing a func.
+var roles = map[string]func(string) string{
+	"dim":      Dim,
+	"red":      Red,
+	"green":    Green,
+	"cyan":     Cyan,
+	"arg":      Arg,
+	"body":     Body,
+	"label":    Label,
+	"diff-add": DiffAdd,
+	"diff-del": DiffDel,
+	"present":  Present,
+	"absent":   Absent,
+}
+
+// Paint applies the named role, or returns s unchanged when the name is not a
+// role. An unknown name is deliberately not an error: a colour is decoration,
+// and losing it must never be worse than the thing it decorates.
+func Paint(role, s string) string {
+	if f, ok := roles[role]; ok {
+		return f(s)
+	}
+	return s
+}
+
+// Roles returns every role name, sorted. For validation and completion.
+func Roles() []string {
+	out := make([]string, 0, len(roles))
+	for name := range roles {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // VisibleLen returns visible columns ignoring ANSI escapes.
 func VisibleLen(s string) int {

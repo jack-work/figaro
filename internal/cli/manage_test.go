@@ -4,15 +4,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jack-work/figaro/internal/cli/figtree"
 	"github.com/jack-work/figaro/internal/term"
 )
 
 func TestRenderListRowsUsesCompactHierarchyOnNarrowTerminals(t *testing.T) {
-	rows := []listRow{{
-		aria: "│ └─▸ a very long aria mantra that must not wrap",
-		id:   "dac6cb6d",
-		age:  "4m",
-		msgs: "12",
+	rows := []figtree.Row{{
+		Branch: "│ └─",
+		Marker: "▸",
+		Label:  "a very long aria mantra that must not wrap",
+		Fields: map[string]string{fieldID: "dac6cb6d", fieldAge: "4m", fieldMsgs: "12"},
 	}}
 
 	got := renderListRows(rows, 48, false)
@@ -33,13 +34,13 @@ func TestRenderListRowsUsesCompactHierarchyOnNarrowTerminals(t *testing.T) {
 }
 
 func TestRenderListRowsUsesReducedColumnsOnMediumTerminals(t *testing.T) {
-	rows := []listRow{{
-		aria:   "○ orchard",
-		id:     "1af9efd8",
-		outfit: "default-production-outfit",
-		age:    "2h",
-		msgs:   "42",
-		ctx:    "19k",
+	rows := []figtree.Row{{
+		Marker: "○",
+		Label:  "orchard",
+		Fields: map[string]string{
+			fieldID: "1af9efd8", fieldOutfit: "default-production-outfit",
+			fieldAge: "2h", fieldMsgs: "42", fieldCtx: "19k",
+		},
 	}}
 
 	got := renderListRows(rows, 120, false)

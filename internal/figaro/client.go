@@ -120,11 +120,12 @@ func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch) (*rpc.SetRe
 	return &resp, nil
 }
 
-// Outfit applies a named outfit additively to the chalkboard. No
-// keys are removed; values equal to the current snapshot are skipped.
-func (c *Client) Outfit(ctx context.Context, name string) (*rpc.OutfitResponse, error) {
+// Outfit applies named outfits additively to the chalkboard, each taking
+// precedence over the ones before it. No keys are removed; values equal to the
+// current snapshot are skipped.
+func (c *Client) Outfit(ctx context.Context, names []string) (*rpc.OutfitResponse, error) {
 	var resp rpc.OutfitResponse
-	if err := c.call(ctx, rpc.MethodOutfit, rpc.OutfitRequest{Name: name}, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodOutfit, rpc.OutfitRequest{Names: names}, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
