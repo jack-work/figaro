@@ -53,6 +53,13 @@ type Log[T any] interface {
 	Clear() error
 }
 
+// tailBudgetedLog reads the tail without decoding the prefix. Optional: an
+// implementation that cannot do it gets the read-everything-then-compact path,
+// which is correct and merely wasteful.
+type tailBudgetedLog[T any] interface {
+	TailBudgeted(budget, maxRows, inflation int) ([]Entry[T], int)
+}
+
 // tailAfterLog is the suffix read. Optional so an implementation without a
 // cheap one falls back to the generic walk.
 type tailAfterLog[T any] interface {

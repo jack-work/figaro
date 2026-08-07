@@ -81,21 +81,9 @@ func (l *xwalLog[T]) openOnce(fn func(*xwal.XWAL) error) error {
 func (l *xwalLog[T]) Read() []Entry[T] {
 	var out []Entry[T]
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
-		var first, last uint64
-		for _, c := range xw.Channels() {
-			if c.Name == l.channel {
-				first, last = c.First, c.Last
-				break
-			}
-		}
-		// first == 0 with last > 0 means "channel has entries starting at
-		// index 1 with no parent to inherit from" (common for a channel
-		// added mid-life). Normalize to 1.
-		if first == 0 {
-			if last == 0 {
-				return nil
-			}
-			first = 1
+		first, last, ok := channelBounds(xw, l.channel)
+		if !ok {
+			return nil
 		}
 		out = make([]Entry[T], 0, last-first+1)
 		for lt := first; lt <= last; lt++ {
@@ -110,6 +98,100 @@ func (l *xwalLog[T]) Read() []Entry[T] {
 		return nil
 	})
 	return out
+}
+
+// channelBoundsLocked reports the channel's first and last LT. ok is false for
+// an empty channel. Cheap: it reads the manifest, not the segments.
+func channelBounds(xw *xwal.XWAL, channel string) (first, last uint64, ok bool) {
+	for _, c := range xw.Channels() {
+		if c.Name == channel {
+			first, last = c.First, c.Last
+			break
+		}
+	}
+	// first == 0 with last > 0 means "channel starts at index 1 with no parent
+	// to inherit from" (common for a channel added mid-life). Normalize.
+	if first == 0 {
+		if last == 0 {
+			return 0, 0, false
+		}
+		first = 1
+	}
+	if last < first {
+		return 0, 0, false
+	}
+	return first, last, true
+}
+
+// TailBudgeted reads BACKWARD from the channel tail, decoding only entries it
+// keeps, and stops once the accumulated encoded bytes would exceed budget or
+// the count would exceed maxRows. It returns the entries ascending, plus the
+// channel's total entry count.
+//
+// It exists because building a windowed cache used to read and json.Unmarshal
+// the whole channel and then throw most of it away — 2556 decodes to keep 420,
+// with a transient allocation of the full 12 MiB to hold 2. Steady state was
+// bounded; the moment of opening was not, and a burst of opens (a daemon
+// restart, several attends) stacked those peaks.
+//
+// The saving is possible because xwal.ReadAt is random access by LT and a
+// record's encoded size is known BEFORE it is decoded, so the budget can be
+// satisfied without unmarshalling a single entry that will be dropped.
+//
+// budget <= 0 and maxRows <= 0 both mean unbounded, in which case this is
+// Read with extra steps; callers should not do that.
+func (l *xwalLog[T]) TailBudgeted(budget, maxRows, inflation int) ([]Entry[T], int) {
+	var (
+		out   []Entry[T]
+		total int
+	)
+	_ = l.openOnce(func(xw *xwal.XWAL) error {
+		first, last, ok := channelBounds(xw, l.channel)
+		if !ok {
+			return nil
+		}
+		total = int(last-first) + 1
+
+		bytes := 0
+		for lt := last; lt >= first; lt-- {
+			r, err := xw.ReadAt(l.channel, lt)
+			if err != nil {
+				if lt == first {
+					break
+				}
+				continue
+			}
+			// The size gate runs on the ENCODED record, before decode. Always
+			// keep at least one entry: PeekTail and the append path read it.
+			cost := len(r.Payload) * inflation
+			if len(out) > 0 {
+				if budget > 0 && bytes+cost > budget {
+					break
+				}
+				if maxRows > 0 && len(out) >= maxRows {
+					break
+				}
+			}
+			e, decoded := decodeRecord[T](r)
+			if !decoded {
+				if lt == first {
+					break
+				}
+				continue
+			}
+			out = append(out, e)
+			bytes += cost
+			if lt == first {
+				break // uint64 would wrap
+			}
+		}
+		return nil
+	})
+	// Read backward, returned ascending.
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, total
 }
 
 func (l *xwalLog[T]) Len() int {
@@ -135,23 +217,39 @@ func (l *xwalLog[T]) Len() int {
 func (l *xwalLog[T]) ReadFrom(figaroLT uint64, n int) []Entry[T] {
 	var out []Entry[T]
 	_ = l.openOnce(func(xw *xwal.XWAL) error {
-		var first, last uint64
-		for _, c := range xw.Channels() {
-			if c.Name == l.channel {
-				first, last = c.First, c.Last
-				break
-			}
-		}
-		if first == 0 && last > 0 {
-			first = 1
-		}
-		if first == 0 || last < first {
+		first, last, ok := channelBounds(xw, l.channel)
+		if !ok {
 			return nil
 		}
 		if n > 0 {
 			out = make([]Entry[T], 0, n)
 		}
-		for lt := first; lt <= last && (n <= 0 || len(out) < n); lt++ {
+		// Seek to the watermark instead of scanning to it. MainLT is
+		// non-decreasing along a channel, so the start index is a binary
+		// search — this used to ReadAt every record from the head and merely
+		// skip the ones below figaroLT, which made a suffix read O(N) disk
+		// reads for O(suffix) results.
+		start := first
+		if figaroLT > first {
+			lo, hi := first, last
+			for lo < hi {
+				mid := lo + (hi-lo)/2
+				r, err := xw.ReadAt(l.channel, mid)
+				if err != nil {
+					// A hole: fall back to a scan from here rather than
+					// guessing which half it is in.
+					lo = mid + 1
+					continue
+				}
+				if r.MainLT < figaroLT {
+					lo = mid + 1
+				} else {
+					hi = mid
+				}
+			}
+			start = lo
+		}
+		for lt := start; lt <= last && (n <= 0 || len(out) < n); lt++ {
 			r, err := xw.ReadAt(l.channel, lt)
 			if err != nil || r.MainLT < figaroLT {
 				continue

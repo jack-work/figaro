@@ -65,16 +65,42 @@ type cachedLog[T any] struct {
 var _ Log[any] = (*cachedLog[any])(nil)
 
 func newCachedLog[T any](inner Log[T]) *cachedLog[T] {
-	return newWindowedLog[T](inner, 0, 0, nil)
+	return newWindowedLog[T](inner, 0, 0, 1, nil)
 }
 
 // newWindowedLog builds a cache bounded by row count, byte budget, or both.
 // Zero for either disables it; both zero retains everything.
-func newWindowedLog[T any](inner Log[T], window, budget int, sizeOf func(Entry[T]) int) *cachedLog[T] {
+// inflation is how much larger a decoded entry is than its encoded record, so
+// the tail read's byte gate is denominated in the same units as sizeOf. Passing
+// them separately is the price of gating BEFORE decode: the gate sees encoded
+// bytes, the accounting sees decoded estimates, and the two must agree or the
+// window holds the wrong amount.
+func newWindowedLog[T any](inner Log[T], window, budget, inflation int, sizeOf func(Entry[T]) int) *cachedLog[T] {
+	if inflation < 1 {
+		inflation = 1
+	}
 	c := &cachedLog[T]{
 		inner: inner, byFK: map[uint64]int{},
 		window: window, budget: budget, sizeOf: sizeOf,
 	}
+
+	// A bounded cache reads only the tail it will keep, when the inner log can
+	// serve one. Reading everything and compacting afterwards worked but had to
+	// touch the whole channel to do it: 2556 json.Unmarshals to retain 420, and
+	// a transient allocation of the full log to hold a fraction of it. Steady
+	// state was bounded; the moment of opening was not, and a burst of opens
+	// stacked those peaks.
+	if tb, ok := inner.(tailBudgetedLog[T]); ok && (budget > 0 || window > 0) {
+		rows, total := tb.TailBudgeted(budget, window, inflation)
+		c.rows = rows
+		c.trimmed = total - len(rows)
+		for i, e := range rows {
+			c.byFK[e.FigaroLT] = c.trimmed + i
+			c.bytes += c.sizeOfLocked(e)
+		}
+		return c
+	}
+
 	for _, e := range inner.Read() {
 		c.byFK[e.FigaroLT] = len(c.rows)
 		c.rows = append(c.rows, e)

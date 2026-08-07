@@ -15,7 +15,7 @@ func windowFixture(t testing.TB, n, window int) (*cachedLog[uint64], []uint64) {
 	for i := range fks {
 		fks[i] = uint64((i + 1) * 10)
 	}
-	return newWindowedLog[uint64](buildLog(t, fks), window, 0, nil), fks
+	return newWindowedLog[uint64](buildLog(t, fks), window, 0, 1, nil), fks
 }
 
 // A window keeps only the tail resident, and Len still reports the whole log:
@@ -149,7 +149,7 @@ func BenchmarkWindowTailAfter(b *testing.B) {
 				for i := range fks {
 					fks[i] = uint64((i + 1) * 10)
 				}
-				c := newWindowedLog[uint64](buildLog(b, fks), w, 0, nil)
+				c := newWindowedLog[uint64](buildLog(b, fks), w, 0, 1, nil)
 				// A warm watermark two entries behind the tail. It must be
 				// the channel LT, which is what TailAfter keys on.
 				all := c.Read()
@@ -170,7 +170,7 @@ func BenchmarkWindowTailAfter(b *testing.B) {
 func BenchmarkWindowAppend(b *testing.B) {
 	for _, w := range []int{0, 512} {
 		b.Run(fmt.Sprintf("window=%d", w), func(b *testing.B) {
-			c := newWindowedLog[uint64](buildLog(b, []uint64{10}), w, 0, nil)
+			c := newWindowedLog[uint64](buildLog(b, []uint64{10}), w, 0, 1, nil)
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
@@ -205,7 +205,7 @@ func TestWindow_ByteBudgetBoundsBytes(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	c := newWindowedLog[uint64](inner, 0, 3000, costOf)
+	c := newWindowedLog[uint64](inner, 0, 3000, 1, costOf)
 	assert.LessOrEqual(t, c.ResidentBytes(), 3000, "budget exceeded")
 	assert.Positive(t, c.Resident(), "budget trimmed everything")
 	// 3000 bytes of a 1000-byte tail buys ~3 entries, not 3000/10=300.
@@ -224,7 +224,7 @@ func TestWindow_ByteBudgetKeepsOneOversizeEntry(t *testing.T) {
 		_, err := inner.Append(Entry[uint64]{FigaroLT: uint64(len(inner.Read()) + 1), Payload: v})
 		require.NoError(t, err)
 	}
-	c := newWindowedLog[uint64](inner, 0, 100, costOf)
+	c := newWindowedLog[uint64](inner, 0, 100, 1, costOf)
 	assert.Equal(t, 1, c.Resident())
 	tail, ok := c.PeekTail()
 	require.True(t, ok)
@@ -243,7 +243,7 @@ func TestWindow_RowAndByteBoundsCompose(t *testing.T) {
 		require.NoError(t, err)
 	}
 	// Rows allow 50, bytes allow 10 entries. Bytes bind.
-	c := newWindowedLog[uint64](inner, 50, 100, costOf)
+	c := newWindowedLog[uint64](inner, 50, 100, 1, costOf)
 	assert.LessOrEqual(t, c.Resident(), 10)
 	assert.LessOrEqual(t, c.ResidentBytes(), 100)
 }

@@ -112,6 +112,13 @@ func TestRealAriaMemory(t *testing.T) {
 	// keep alive and the Read result is deliberately discarded — retaining it
 	// would measure a caller's copy and, under a window, would pull the whole
 	// log back off disk to do so.
+	// TotalAlloc measures bytes EVER allocated, so it catches the transient
+	// decode a GC-bracketed HeapAlloc delta hides. That transient is the whole
+	// point of the tail read: the old path decoded every record and dropped
+	// most of them.
+	var allocPre runtime.MemStats
+	runtime.ReadMemStats(&allocPre)
+
 	irBytes, logKeep := heapDelta(func() any {
 		log, err := backend.Open(id)
 		if err != nil {
@@ -119,6 +126,11 @@ func TestRealAriaMemory(t *testing.T) {
 		}
 		return log
 	})
+	var allocPost runtime.MemStats
+	runtime.ReadMemStats(&allocPost)
+	t.Logf("open allocated %s total (transient + retained)",
+		human(allocPost.TotalAlloc-allocPre.TotalAlloc))
+
 	irLog := logKeep.(store.Log[message.Message])
 	t.Logf("resident: %d of %d rows, %s estimated",
 		backend.ResidentRows(), irLog.Len(), human(uint64(backend.ResidentIRBytes())))

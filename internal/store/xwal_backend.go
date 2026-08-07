@@ -148,7 +148,7 @@ func (b *XwalBackend) handleLocked(id string) (*ariaHandle, error) {
 	h := &ariaHandle{
 		ir: newWindowedLog[message.Message](
 			newXwalLog[message.Message](b.store, id, chanIR, true),
-			b.irWindow, b.irBudget, irEntrySize),
+			b.irWindow, b.irBudget, irDecodeInflation, irEntrySize),
 		trans: map[string]*cachedLog[[]json.RawMessage]{},
 	}
 	b.open[id] = h
