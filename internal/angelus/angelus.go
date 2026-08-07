@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -46,6 +47,10 @@ type Angelus struct {
 	// Hubs is the set of aria endpoints. Each outlives the agent behind it,
 	// so reclaiming an agent does not disconnect anybody. See ariaHub.
 	Hubs *hubs
+
+	// capShortBy is the last reported shortfall against max_live_arias, so a
+	// standing condition is logged on change rather than on every sweep.
+	capShortBy atomic.Int32
 
 	listener  net.Listener
 	cancel    context.CancelFunc
@@ -347,9 +352,14 @@ func (a *Angelus) capLiveArias() {
 		reclaimed++
 		slog.Info("reclaimed for cap", "aria", v.ID, "live", a.Registry.FigaroCount(), "cap", max)
 	}
-	if reclaimed < over {
+	// Say it once per situation, not once per sweep. A cap that cannot be met
+	// is a standing condition, and on a fast sweep interval reporting it every
+	// tick buries the events that matter: a 1-second sweep against an unmeetable
+	// cap wrote 60 identical lines in a minute during the fuzz.
+	shortBy := over - reclaimed
+	if shortBy != int(a.capShortBy.Swap(int32(shortBy))) && shortBy > 0 {
 		slog.Info("live aria cap not met",
-			"cap", max, "live", a.Registry.FigaroCount(), "over_by", over-reclaimed,
+			"cap", max, "live", a.Registry.FigaroCount(), "over_by", shortBy,
 			"reason", "remaining arias are active or recently woken")
 	}
 }
