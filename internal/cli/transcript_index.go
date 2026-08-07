@@ -154,9 +154,17 @@ func (t *transcript) buildIndex() {
 	// advanced by asking the entry, not by re-deriving it here — the two
 	// disagreeing is how a gap could be one row in the index and several on
 	// screen, which no frame golden would catch.
+	// A SEPARATOR MARKS A TURN BOUNDARY, NOT AN ENTRY BOUNDARY. One turn can be
+	// several entries — a long agentic turn is delivered in slices, and paging
+	// back into it delivers more — and a rule between those slices says "another
+	// exchange began here" when nothing did. That is what made a long turn read
+	// as a run of turns each missing its question.
+	prevTurn := -1
 	add := func(turn int, key sliceKey, rows []transcriptRow, open bool, gap *aria.Gap) {
+		sep := total > 0 && turn != prevTurn
+		prevTurn = turn
 		e := lineEntry{
-			turn: turn, key: key, start: total, sep: total > 0,
+			turn: turn, key: key, start: total, sep: sep,
 			open: open, rows: rows, gap: gap,
 		}
 		entries = append(entries, e)

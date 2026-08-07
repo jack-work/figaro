@@ -140,9 +140,10 @@ func (d NodeDelta) Empty() bool {
 type Message struct {
 	Turn int    // turn id — NOT a logical time, and NOT unique per message
 	From uint64 // node offset within the turn; >0 means this is a later slice of it
-	// Inquiry is the turn's opening question, carried ONLY by its first slice
-	// (From == 0). A later slice must leave it empty, or a page that starts
-	// mid-turn would print the question a second time.
+	// Inquiry is the turn's opening question, carried ONLY by the slice that
+	// STARTS the turn (From == 0). A later slice must leave it empty, or a long
+	// turn re-asks its own question at every page boundary and halfway down its
+	// own live suffix.
 	Inquiry string
 	// InquirySegments splits Inquiry by sender; see Turn.InquirySegments.
 	InquirySegments []InquirySegment

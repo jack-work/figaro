@@ -24,8 +24,13 @@ import (
 type Client struct {
 	mu sync.Mutex
 
-	store       *Store
-	closedSeen  map[int]bool
+	store      *Store
+	closedSeen map[int]bool
+	// closedFrom is the LOWEST offset finalized for a closed turn — the floor a
+	// later, earlier page can still fill in beneath. Without it a turn first met
+	// by its tail could never be completed: it was marked seen and every later
+	// part for it was skipped whole, dropping the head nodes AND the question.
+	closedFrom  map[int]int
 	closedFloor int
 	closedLimit int
 	closedRev   uint64
@@ -66,7 +71,7 @@ type heldInquiry struct {
 
 // NewClient returns a fresh client.
 func NewClient() *Client {
-	return &Client{store: NewStore(), closedSeen: map[int]bool{}, emitted: map[int]int{}, inquiry: map[int]heldInquiry{}}
+	return &Client{store: NewStore(), closedSeen: map[int]bool{}, closedFrom: map[int]int{}, emitted: map[int]int{}, inquiry: map[int]heldInquiry{}}
 }
 
 // Store exposes the range store beneath the client. Phase 1 has no consumer:
@@ -302,14 +307,19 @@ func (c *Client) Apply(p Page) {
 
 		// The inquiry is TEXT ON THE TURN, not a node, and it commits before the
 		// agent has said anything — so it arrives on a part of its own, with no
-		// nodes and no Live. Hold it until a slice starts the turn, and open the
-		// turn now so the question paints the instant it is asked.
-		//
-		// Recording it is bookkeeping and always safe. OPENING on it is not, and is
-		// what history is refused.
-		if part.Inquiry != "" && !part.ClippedHead {
+		// nodes and no Live. Hold it until the head slice carries it away, and open
+		// the turn now so the question paints the instant it is asked.
+		if part.Inquiry != "" {
+			// RECORDING is bookkeeping and always safe — including on a
+			// clipped-head part, which is what a backward page into history is
+			// made of. It used to sit inside the ClippedHead guard, against its
+			// own comment, so paging up through an old aria never learned any of
+			// its questions and the head slice, when it arrived, drew none.
 			c.inquiry[id] = heldInquiry{text: part.Inquiry, segments: part.InquirySegments}
-			if staged {
+			// OPENING is what history is refused: a part whose head was clipped
+			// describes a turn we hold only the tail of, and claiming the open
+			// slot for it would destroy the live turn on its way past.
+			if staged && !part.ClippedHead {
 				c.store.ClaimOpen(id)
 			}
 		}
@@ -360,6 +370,17 @@ func (c *Client) Apply(p Page) {
 			continue
 		}
 		if c.seenClosed(id) {
+			// A turn already seen closed can still be COMPLETED DOWNWARD. A
+			// backward page delivers the tail of the oldest turn it reaches, so
+			// the page after it carries that turn's head — and skipping it
+			// wholesale dropped the opening nodes, and the question with them.
+			// Only what lies below the floor is adopted; the rest we already hold.
+			if floor, ok := c.closedFrom[id]; ok && len(part.Nodes) > 0 && int(part.From) < floor {
+				n := min(floor-int(part.From), len(part.Nodes))
+				finalized = append(finalized, c.message(id, int(part.From),
+					append([]livedoc.Node(nil), part.Nodes[:n]...)))
+				c.closedFrom[id] = int(part.From)
+			}
 			c.advanceCommitted(id)
 			continue
 		}
@@ -410,7 +431,14 @@ func (c *Client) Apply(p Page) {
 			}
 		}
 		delete(c.emitted, id)
-		delete(c.inquiry, id)
+		c.noteClosedFrom(id, finalized)
+		// The held question is spent only once the HEAD slice has carried it away.
+		// A part clipped at the head is not that slice: the page holding the head
+		// arrives later, and discarding here is how a turn met by scrolling up
+		// lost its question for good.
+		if !part.ClippedHead {
+			delete(c.inquiry, id)
+		}
 		c.advanceCommitted(id)
 		if c.store.OpenTurn() == id {
 			c.store.ResetOpen()
@@ -506,9 +534,20 @@ func turnRole(nodes []livedoc.Node) string {
 	return livedoc.RoleOutput
 }
 
-// message builds one closed slice of a turn. Only the slice that STARTS the
-// turn carries the inquiry; a later one leaving it set would print the question
-// again at every page boundary.
+// message builds one slice of a turn. THE SLICE THAT STARTS THE TURN CARRIES
+// THE QUESTION, and no other does: a turn is an inquiry followed by the answer
+// to it, and a question drawn above node 64 of 130 says an exchange began where
+// the reader is merely standing.
+//
+// The rule is `from == 0` and it holds for the live suffix too. That matters:
+// once a long turn releases its head to scrollback the open region sits at
+// from>0, so a rule that let a later slice speak made every long turn re-ask
+// its own question halfway down, in the pager AND inline.
+//
+// A reader who holds only the tail of a turn therefore sees no question. That
+// is the honest state — the head is not here — and it is temporary: paging up
+// delivers the head, and the question comes with it
+// (TestScrollingBackCompletesATurnsHead).
 func (c *Client) message(turn, from int, nodes []livedoc.Node) Message {
 	m := Message{Turn: turn, From: uint64(from), Role: turnRole(nodes), Nodes: nodes}
 	if from == 0 {
@@ -540,6 +579,7 @@ func (c *Client) trimClosed() {
 	// copy doubled the retention path's allocation.
 	first, n := 0, 0
 	c.closedSeen = make(map[int]bool, c.closedLimit)
+	c.closedFrom = make(map[int]int, c.closedLimit)
 	c.store.ForEach(func(m Message) bool {
 		if n == 0 {
 			first = m.Turn
@@ -550,6 +590,26 @@ func (c *Client) trimClosed() {
 	})
 	if n > 0 && first > c.closedFloor {
 		c.closedFloor = first
+	}
+	// A question held for a turn whose head never arrived would otherwise
+	// outlive every slice of it. Retention is the one place that knows.
+	for id := range c.inquiry {
+		if id < c.closedFloor {
+			delete(c.inquiry, id)
+		}
+	}
+}
+
+// noteClosedFrom records the lowest offset finalized for a turn, so a later
+// page carrying earlier nodes knows how much of itself is new.
+func (c *Client) noteClosedFrom(id int, finalized []Message) {
+	for _, m := range finalized {
+		if m.Turn != id {
+			continue
+		}
+		if cur, ok := c.closedFrom[id]; !ok || int(m.From) < cur {
+			c.closedFrom[id] = int(m.From)
+		}
 	}
 }
 

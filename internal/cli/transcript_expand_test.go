@@ -416,3 +416,64 @@ func (t *transcript) expandedHashProbe(ref nodeRef) uint64 {
 	}
 	return h
 }
+
+// A SEPARATOR MARKS A TURN BOUNDARY, NOT AN ENTRY BOUNDARY.
+//
+// One turn can be several entries: a long agentic turn is delivered in slices,
+// and paging back into it delivers more. A rule between those slices claims
+// another exchange began where none did — and since the question is drawn only
+// on the slice that STARTS a turn, every later slice showed a rule, a
+// `< figaro` header and no question. That is what "the transcript omits
+// inquiries" turned out to be.
+//
+// Measured from the owner's own recorded tape of the failing case: ONE turn,
+// two slices at offsets 74 and 64 of a 130-node turn, both carrying the
+// inquiry on the wire, neither entitled to draw it.
+func TestSeparatorOnlyAtATurnBoundary(t *testing.T) {
+	long := make([]livedoc.Node, 0, 12)
+	for i := range 12 {
+		long = append(long, livedoc.Node{Type: livedoc.NodeProse, Markdown: fmt.Sprintf("node %d", i)})
+	}
+	client := aria.NewClient()
+	client.SetClosedLimit(transcriptTailLimit)
+	// Turn 9 arrives as TWO slices, as a long turn does; turn 10 is its own.
+	// The tail slice arrives first, as a backward page delivers it, then the
+	// page holding the head — which is exactly the owner's recorded case.
+	client.Apply(aria.Page{Parts: []aria.TurnPart{
+		{Turn: aria.Turn{ID: 9, Inquiry: "the long question", Sealed: true, Nodes: long[6:]},
+			From: 6, ClippedHead: true},
+	}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{
+		{Turn: aria.Turn{ID: 9, Inquiry: "the long question", Sealed: true, Nodes: long[:6]}, From: 0},
+	}})
+	client.Apply(aria.Page{Parts: []aria.TurnPart{
+		{Turn: aria.Turn{ID: 10, Inquiry: "the next question", Sealed: true,
+			Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "answer"}}}, From: 0},
+	}})
+
+	tr := newTranscript(ldrender.NewFakeTerminal(60, 24), 60, 24,
+		&ariaView{settings: &renderSettings{}}, client, "aria1234", time.Unix(0, 0))
+	tr.enter()
+	tr.follow = false
+	tr.buildIndex()
+
+	var seps, entries int
+	byTurn := map[int]int{}
+	for _, e := range tr.index.entries {
+		entries++
+		byTurn[e.turn]++
+		if e.sep {
+			seps++
+		}
+	}
+	if byTurn[9] < 2 {
+		t.Fatalf("fixture: turn 9 should be several entries, got %d", byTurn[9])
+	}
+	// The first entry never gets one, so N turns give N-1 separators however
+	// many entries they are spread across.
+	if want := len(byTurn) - 1; seps != want {
+		t.Errorf("%d separators across %d entries of %d turns, want %d — a rule between "+
+			"slices of one turn reads as a turn that lost its question",
+			seps, entries, len(byTurn), want)
+	}
+}
