@@ -130,6 +130,22 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 	if name == "" {
 		name = "tool"
 	}
+	args := inv.Arguments
+	// A QUARANTINED CALL IS SHOWN AS THE BYTES THAT ARRIVED. Its arguments
+	// never parsed, so figaro wrapped them in an envelope to keep the wire
+	// legal (message.MalformedArgs) — but that envelope is bookkeeping, not
+	// something a reader asked to see, and rendering it would put a sentinel
+	// key where the arguments belong AND hide the very bytes worth looking at.
+	//
+	// So the envelope is unwrapped back into Input, which is the field for
+	// exactly this: the raw, still-unparsed argument text. Unlike the live
+	// prefix it survives a reload, because it travels on the message rather
+	// than in the turn's scratch map — the failed call reads the same tomorrow
+	// as it did while it was streaming.
+	rawArgs, quarantined := message.MalformedArgsOf(inv)
+	if quarantined {
+		args = nil
+	}
 	n := livedoc.Node{
 		Type:       livedoc.NodeTool,
 		ID:         inv.ToolCallID,
@@ -138,8 +154,11 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 		LTs:        []uint64{lt},
 		Src:        []livedoc.Src{{LT: lt, Block: block}},
 		Name:       name,
-		Args:       inv.Arguments,
-		Summary:    summaryFor(inv.Arguments),
+		Args:       args,
+		Summary:    summaryFor(args),
+	}
+	if quarantined {
+		n.Input = tailBound(rawArgs)
 	}
 	if timing, ok := timings[inv.ToolCallID]; ok {
 		n.OpenedAt = timing.OpenedAt
@@ -166,7 +185,7 @@ func toolNode(inv message.Content, lt uint64, block int, results map[string]resu
 		// prefix for EVERY tool — no name is consulted and none is special —
 		// and drop it the moment the decoded Arguments land, since Args says
 		// the same thing without the truncation.
-		if len(inv.Arguments) == 0 {
+		if len(args) == 0 && !quarantined {
 			n.Input = tailBound(argPartials[inv.ToolCallID])
 		}
 	}

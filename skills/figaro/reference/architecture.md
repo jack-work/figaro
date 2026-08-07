@@ -385,9 +385,13 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
      An earlier control-character repair (81137e6) was reverted in b64d0b6: it
      was sound but it was a second rule, and it rewrote model output where
      nothing downstream could tell.
-  2. `Provider.noteQuarantine` latches eager streaming OFF for that aria, in
-     memory, so the retry cannot repeat the failure. The chalkboard is not
-     rewritten: a new process starts from the user's stated preference again.
+  2. `compose.toolNode` unwraps the envelope back into `Node.Input`, so a
+     failed call is drawn as THE BYTES THAT ARRIVED rather than as a sentinel
+     argument row — which is the whole point of unbuffered streaming, and the
+     bytes ride the message, so it reads the same after a reload as it did
+     live. **figaro never stands eager streaming down**: an earlier per-aria
+     latch was reverted, because the model simply resends and a resample
+     almost always succeeds.
   `provider.tool_use.unescaped_chunk` (stream.go) is the canary that named the
   cause and will name the next one: it fires on the first argument fragment
   carrying a raw control character, seconds before the marshal fails, and
