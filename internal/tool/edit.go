@@ -39,13 +39,33 @@ func NewEditTool(cwd string) *EditTool { return &EditTool{Cwd: cwd} }
 func (e *EditTool) Name() string { return "edit" }
 
 func (e *EditTool) Description() string {
-	return "Edit a single file using one or more exact-text replacements. " +
-		"Every edits[].old_text must match a unique, non-overlapping region of " +
-		"the original file. All edits are matched against the original content, " +
-		"not incrementally. If two changes affect the same block or nearby lines, " +
-		"merge them into one edit instead of emitting overlapping edits."
+	return "Replace one exact region of a file with new text. " +
+		"old_text must match a UNIQUE region of the file — if it appears more than " +
+		"once, include surrounding lines until it does not. " +
+		"To make several changes, issue several edit calls; they may be issued " +
+		"together and are applied one at a time, each against the file as it " +
+		"stands. If two changes touch the same block or adjacent lines, make them " +
+		"one call with a wider old_text instead."
 }
 
+// Parameters — EVERY VALUE IS A SCALAR STRING, AND THAT IS THE POINT.
+//
+// Claude's tool-call format says it: "String and scalar parameters should be
+// specified as is, while lists and objects should use JSON format." A scalar
+// is handed over verbatim and the SERVER encodes it; a list or an object is
+// JSON the MODEL has to author by hand, escaping every tab, newline and quote
+// inside it.
+//
+// This tool used to take `edits: [{old_text, new_text}]` — the only
+// array-of-objects in figaro's tool tree — and it was the only tool that ever
+// produced malformed arguments: measured over one day, 5 failures in 24 large
+// `edit` calls against 0 in 277 large `bash` and `write` calls, which carry
+// payloads just as big through scalar strings. The nesting was the whole
+// difference. One replacement per call costs a second tool call and buys back
+// an entire class of failure.
+//
+// It is also the shape Anthropic ships for its own editor
+// (str_replace_based_edit_tool: command/path/old_str/new_str, no arrays).
 func (e *EditTool) Parameters() interface{} {
 	return map[string]interface{}{
 		"type": "object",
@@ -54,26 +74,16 @@ func (e *EditTool) Parameters() interface{} {
 				"type":        "string",
 				"description": "Path to the file to edit (relative or absolute)",
 			},
-			"edits": map[string]interface{}{
-				"type":        "array",
-				"description": "One or more targeted replacements. Each entry is matched against the original file.",
-				"items": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"old_text": map[string]interface{}{
-							"type":        "string",
-							"description": "Exact text to find. Must be unique in the original file and must not overlap with other edits.",
-						},
-						"new_text": map[string]interface{}{
-							"type":        "string",
-							"description": "Replacement text.",
-						},
-					},
-					"required": []string{"old_text", "new_text"},
-				},
+			"old_text": map[string]interface{}{
+				"type":        "string",
+				"description": "Exact text to find, matched against the file as it currently stands. Must appear exactly once — widen it with surrounding lines if it does not.",
+			},
+			"new_text": map[string]interface{}{
+				"type":        "string",
+				"description": "Replacement text. Empty deletes the matched region.",
 			},
 		},
-		"required": []string{"path", "edits"},
+		"required": []string{"path", "old_text", "new_text"},
 	}
 }
 
@@ -149,15 +159,26 @@ func (e *EditTool) Edit(ctx context.Context, req EditRequest) (EditResult, error
 	return result, nil
 }
 
-// parseEditArgs lifts the JSON-map arg shape into EditRequest.
+// parseEditArgs lifts the arg map into EditRequest.
+//
+// The scalar form is the tool's shape. The legacy `edits: [...]` array is
+// still ACCEPTED, and deliberately so: a long aria's history is full of calls
+// in the old shape, and a model reads its own transcript as an example of how
+// this tool is used. Refusing would turn every such imitation into a wasted
+// round trip. Nothing advertises it — the schema offers scalars only — so it
+// fades as histories turn over, and it can be deleted then.
 func parseEditArgs(args map[string]interface{}) (EditRequest, error) {
 	path, _ := args["path"].(string)
 	if path == "" {
 		return EditRequest{}, fmt.Errorf("path is required")
 	}
+	if old, ok := args["old_text"].(string); ok {
+		newText, _ := args["new_text"].(string)
+		return EditRequest{Path: path, Edits: []EditOp{{OldText: old, NewText: newText}}}, nil
+	}
 	rawEdits, ok := args["edits"].([]interface{})
 	if !ok {
-		return EditRequest{}, fmt.Errorf("edits must be an array")
+		return EditRequest{}, fmt.Errorf("old_text is required")
 	}
 	if len(rawEdits) == 0 {
 		return EditRequest{}, fmt.Errorf("edits must contain at least one replacement")
