@@ -60,7 +60,7 @@ can diverge into two branches that share an immutable prefix. The storage substr
 wrapper **xwal** (which forks several parallel logs — the IR, the chalkboard, the
 translation caches — together as one unit), and figwal's **`xwal.Trunks`** forest layer
 (nodes + trunks + heads on disk). figaro stacks only *policy* on top: a null root →
-loadout stumps → conversation trunks. The **trunk** is the thing humans and the API
+outfit stumps → conversation trunks. The **trunk** is the thing humans and the API
 address — its id is the aria id, **stable across forks** (the continuation keeps it) —
 while the per-fork **node id** (`n0/n1/…`) is pure plumbing, never addressed.
 
@@ -147,7 +147,7 @@ is the trunk id per node, kept in a **`.trunk` marker** in each node's `ir/` dir
 - `CreateTrunks(dir, cfg) → (*Trunks, rootTrunkID)` seeds the genesis root trunk;
   `OpenTrunks(dir, cfg)` reopens.
 - `SpawnChild(trunk)` mints an N-ary child trunk under a (typically cauterized) trunk —
-  the create path for both loadouts and conversations.
+  the create path for both outfits and conversations.
 - `ForkTail(trunk)` / `ForkAt(trunk, atMainLT)` branch; the **continuation keeps the
   trunk id**, the alternative is the returned new id. `Owner(id, atMainLT)` resolves
   which root, stump, or trunk owns an interior LT.
@@ -161,30 +161,30 @@ With the forest in figwal, figaro keeps **only policy**. `XwalStore`
 (`xwal_backend.go`) adds the memoized per-aria handle cache + the `store.Backend`
 interface.
 
-- **`nodeKind`**: `null` | `loadout` | `conversation`. It is derived from XWAL
+- **`nodeKind`**: `null` | `outfit` | `conversation`. It is derived from XWAL
   topology: the markerless root is null, markerless depth-one stumps are
-  loadouts, and live trunks are conversations.
-- There is no policy side-file. Loadout stump names (`name@version`) provide
+  outfits, and live trunks are conversations.
+- There is no policy side-file. Outfit stump names (`name@version`) provide
   durable identity and deduplication.
 - **The full tree (four layers):**
   - **`null`** — the genesis root, **one per store** (`xwal.CreateTrunks`). Ceremonial,
     **closed**. Pure structure.
-  - **`loadout(name@content-hash)` stumps** — `CreateStump`, **one per distinct
-    loadout name + content-version** (content-versioned via `segment.ValueHash` over the
-    stable loadout patch, dedup'd by its `name@version` stump name). Each carries a
-    renderable `RoleUser` birth message stamping that loadout's chalkboard — `skills.*`,
-    `system.credo`, `system.model`, the `keyLoadoutName`/`keyLoadoutVer` stamp — baked
+  - **`outfit(name@content-hash)` stumps** — `CreateStump`, **one per distinct
+    outfit name + content-version** (content-versioned via `segment.ValueHash` over the
+    stable outfit patch, dedup'd by its `name@version` stump name). Each carries a
+    renderable `RoleUser` birth message stamping that outfit's chalkboard — `skills.*`,
+    `system.credo`, `system.model`, the `keyOutfitName`/`keyOutfitVer` stamp — baked
     **once** into a shared prefix. **Closed.**
-  - **`conversation` trunks** — `CreateConversation` = `SpawnUnderStump(loadout)`; inherit the
-    loadout's rendered prefix via the fork watermark. **Live.** A conversation whose parent
-    is a loadout is a **top-level aria** (a root of the conversation forest).
+  - **`conversation` trunks** — `CreateConversation` = `SpawnUnderStump(outfit)`; inherit the
+    outfit's rendered prefix via the fork watermark. **Live.** A conversation whose parent
+    is an outfit is a **top-level aria** (a root of the conversation forest).
   - **branches** — forks of conversations; a conversation whose parent is *another
     conversation*. (Still `kindConversation`; the distinction is lineage.)
-- **Cauterization** (`cauterized` = kind is null or loadout): the root and loadout stumps are
+- **Cauterization** (`cauterized` = kind is null or outfit): the root and outfit stumps are
   **closed** — you can't append to or continue them; they are structure, not conversation.
   A fork/send "at" a cauterized trunk does **not** re-split it: `Fork`/`ForkAt` redirect to
   `SpawnChild(owner)` — a fresh child conversation — instead of `ForkTail`/`ForkAt`. This
-  is why "create" and "fork a loadout" are one mechanism.
+  is why "create" and "fork an outfit" are one mechanism.
 - **The aria id is the trunk id**, returned stable from `Fork`/`ForkAt` as `cont == id`
   (bind-to-trunk: forking your own trunk doesn't move you).
 - **Forest vectors** (`vectorsLocked`): each conversation trunk gets a child-index path
@@ -195,16 +195,16 @@ interface.
   `parent:turn` a fork takes (`BranchedLT-1` was the pre-turn-addressing display and was
   off by a whole exchange).
 - **`Backend` interface** (`store.go`): `Open`/`OpenTranslation`/`ChalkboardState`/
-  `ApplyChalkboard`/`ChalkboardPatches`/`CreateLoadout`/`CreateConversation`/`Fork`/`ForkAt`/
+  `ApplyChalkboard`/`ChalkboardPatches`/`CreateOutfit`/`CreateConversation`/`Fork`/`ForkAt`/
   `Node`/`Nodes`/`Conversations`/`ConversationIDs`/`Meta`/`SetMeta`/`Remove`/`Close`.
   `XwalBackend` memoizes one shared row cache per aria; callers never close what `Open`
   returns.
 
 ### The daemon & client (`internal/angelus/`, `internal/cli/`, `internal/rpc/`)
-- **Create**: resolve loadout name (or `config.DefaultLoadout`) → `outfitter.Load` → stable
-  `loadoutPatch` → `CreateLoadout` (dedup by content version) → `CreateConversation` → append
+- **Create**: resolve outfit name (or `config.DefaultOutfit`) → `outfitter.Load` → stable
+  `outfitPatch` → `CreateOutfit` (dedup by content version) → `CreateConversation` → append
   a per-conversation boot transition (runtime fill-ins + `req.Patch`) to the chalkboard
-  channel. The conversation inherits the loadout's full chalkboard (`skills.*`,
+  channel. The conversation inherits the outfit's full chalkboard (`skills.*`,
   `system.credo`, `system.model`, …).
 - **Fork**: kills the live agent; `ForkAt`/`Fork`; returns `{Parent, Continuation,
   Alternative}` (Continuation == the stable aria id).
@@ -215,8 +215,8 @@ interface.
   the figwal layer knows nothing of it, the binding authority is consulted by the client,
   and the conversation RPCs are fully resolved to a trunk before the call. `attend null`
   (the required literal; `attend ~` is a legacy alias that needs quoting in the shell) is
-  "go home" — `Unbind`; new conversations then default to the live loadout. Attending a
-  **cauterized** (null/loadout) aria is rejected with a nudge toward
+  "go home" — `Unbind`; new conversations then default to the live outfit. Attending a
+  **cauterized** (null/outfit) aria is rejected with a nudge toward
   `attend null` / `ls -H` / `ls -g`.
 - **The store flock**: the angelus is a strict singleton via an exclusive flock on
   `<store>/arias/.daemon.lock`, acquired **before** the backend opens and before the socket
@@ -230,7 +230,7 @@ interface.
   branch (`runFork`, `manage.go`). `kill <id>` removes a trunk + subtree (`--recursive` for
   live branches). `show [<id>]` takes the aria id **positionally** (bare-N replaced by
   `-n/--last`); turns are labeled by **turn id**, which is exactly the `:N` a fork takes.
-  `--from`/`--to`/`--before` are turn ids too; `-n` paginates backwards from the end. `status -m/--more` surfaces derived detail (mantra, cwd, loadout version,
+  `--from`/`--to`/`--before` are turn ids too; `-n` paginates backwards from the end. `status -m/--more` surfaces derived detail (mantra, cwd, outfit version,
   fork origin, created); `-j/--json` (`-mj` clusters). `list`/`status`/`state` all take
   `-j/--json`. The old `derive` verb was **removed** — its values surface in `status --more`
   (the derivation *workers* still run, feeding `list`/`status`).
@@ -293,8 +293,8 @@ authority it consults to resolve "current," not a thing the conversation API is 
 The client owns: `pid → attended trunk` (plus an optional one-shot pending fork-point LT).
 `attend <id>`/`<id>:<turn>`/`:<turn>` set it; **`attend null`** (the required literal; `~` is a
 legacy alias that needs quoting in the shell) clears it —
-"go home," after which new conversations default to the live loadout. There is **no
-`detach`** (removed). Attending a cauterized (null/loadout) aria is rejected with a nudge
+"go home," after which new conversations default to the live outfit. There is **no
+`detach`** (removed). Attending a cauterized (null/outfit) aria is rejected with a nudge
 toward `attend null` / `ls -H` / `ls -g`.
 
 ### 4.2 `send` vs `fork`
@@ -315,25 +315,25 @@ the RPC does with it.
 | `fork [<trunk>[:<turn>]]` | pid → trunk if bare; turn → `atMainLT` | imperative tail/interior fork, no message |
 | `fork [<trunk>[:<turn>]] -- msg` | same | fork, then send to the **alternative**; rebind there iff the target was your own bound aria and no `--stay` |
 | `attend <id>` / `:<turn>` | pid → trunk | bind shell (+ one-shot pending fork-point) |
-| `attend null` | — | unbind (go home); next conversation defaults to the live loadout |
+| `attend null` | — | unbind (go home); next conversation defaults to the live outfit |
 | `kill <trunk>` | — | remove trunk + subtree (`-r` for live branches) |
-| `send` *unattended* / `new` | resolve default/named loadout stump | spawn a conversation under it, send |
+| `send` *unattended* / `new` | resolve default/named outfit stump | spawn a conversation under it, send |
 
-### 4.4 Loadouts are cauterized stumps; create = spawn under a loadout
-- A loadout **version** is its own ceremonial stump (one per `name@content-version`), and is
+### 4.4 Outfits are cauterized stumps; create = spawn under an outfit
+- An outfit **version** is its own ceremonial stump (one per `name@content-version`), and is
   **closed**: forking/sending "at" it never re-splits it — it **spawns a new child
-  conversation** (cauterization). A conversation inherits the loadout's full chalkboard
-  (`skills.*`, `system.credo`, `system.model`, the loadout name/version stamp).
-- `fig new`, `fig new --loadout <id>`, and `fig send --` *with nothing attended* all resolve a
-  loadout stump → spawn a conversation under it → bind → send (`CreateLoadout` dedups by
-  content version; `CreateConversation` = `SpawnUnderStump(loadout)`).
-- Chalkboard-key completion falls back to the **default loadout** when no aria is bound.
+  conversation** (cauterization). A conversation inherits the outfit's full chalkboard
+  (`skills.*`, `system.credo`, `system.model`, the outfit name/version stamp).
+- `fig new`, `fig new --outfit <id>`, and `fig send --` *with nothing attended* all resolve a
+  outfit stump → spawn a conversation under it → bind → send (`CreateOutfit` dedups by
+  content version; `CreateConversation` = `SpawnUnderStump(outfit)`).
+- Chalkboard-key completion falls back to the **default outfit** when no aria is bound.
 
-### 4.5 Loadout materialization
-- Loadouts materialize **lazily** on first create (`CreateLoadout`): the stable loadout patch
+### 4.5 Outfit materialization
+- Outfits materialize **lazily** on first create (`CreateOutfit`): the stable outfit patch
   is content-hashed (`segment.ValueHash`); a matching `name@version` stump is reused, a new
-  hash mints a new loadout stump. Old versions stick around unchanged. (An eager
-  bootstrap/`loadout reload` action remains a possible future refinement, not a current
+  hash mints a new outfit stump. Old versions stick around unchanged. (An eager
+  bootstrap/`outfit reload` action remains a possible future refinement, not a current
   command.)
 
 ---
@@ -345,7 +345,7 @@ the RPC does with it.
 - **Node ids** (`n0/n1/…`) are internal plumbing; resolved via `trunk → head node`. Never
   shown, never addressed.
 - **An LT is a trunk-relative position** (figwal main-LT), continuous across the trunk's node
-  chain: `1`=genesis, `2`=loadout birth, `3+`=conversation turns. `send`/`fork`/`attend`
+  chain: `1`=genesis, `2`=outfit birth, `3+`=conversation turns. `send`/`fork`/`attend`
   the resolved LT tells which root, stump, or trunk owns it (`Owner`); `show` labels each
   **turn** by its turn id, which is the `:N` a fork takes — no realignment needed.
 - **`list`/`ls` is the conversation forest, with `attend` as `cd`.** The shipped navigation
@@ -355,14 +355,14 @@ the RPC does with it.
   - **`figaro ls <id>`** — scope to that aria's subtree.
   - **`-H`/`--home`** — the home view (all top-level arias + branches) **without unbinding**;
     `●` stays on your real aria.
-  - **`-g`/`--global`** — home **plus** the null + versioned-loadout anchors drawn *above*
+  - **`-g`/`--global`** — home **plus** the null + versioned-outfit anchors drawn *above*
     the conversations (the infrastructure trunks).
   - **cap:** default = the **10 most-recently-used**; **`-a`/`--all`** removes the cap;
     **`-n N`** sets it (`-a`/`-n` mutually exclusive).
   - **`--json`** — a pro/dev escape hatch: the global state of **all** arias incl. null +
-    loadouts, **always**; rejects every other flag.
+    outfits, **always**; rejects every other flag.
   - Columns: **ARIA** (mantra or `aria <id>`, tree glyphs + `●`this/`▸`running/`○`idle),
-    **ID**, **LOADOUT**, **VER** (`live` or short content-hash), **FORK** (`@N` = the LT a
+    **ID**, **OUTFIT**, **VER** (`live` or short content-hash), **FORK** (`@N` = the LT a
     branch was taken at, blank for top-level arias), **AGE**, **MSGS**, **CTX**, **CWD**.
 
 ---
@@ -371,21 +371,21 @@ the RPC does with it.
 
 **Shipped** (the whole trunk pass):
 - **The forest lives in figwal** (`xwal.Trunks`): nodes/trunks/heads/forks/LTs on disk, disk
-  as the sole source of truth. The markerless root and named loadout stumps make separate
+  as the sole source of truth. The markerless root and named outfit stumps make separate
   policy state unnecessary. The old per-aria-dir / `nodeRec` / `index.json` model is gone.
 - **Aria id = trunk id, stable across forks** (continuation keeps it; `cont == id`).
   Bind-to-trunk: forking your own trunk doesn't move you.
 - **One `send` path**: fork-then-send and plain append are the same codepath, discriminated
   by whether the address carries a turn. The gesture semantics of `send`, `fork`, `attend`
   and `kill` are owned by [trunks.md](trunks.md) and are not repeated here.
-- **Cauterization**: the null root and loadout stumps are closed — forking/sending "at"
+- **Cauterization**: the null root and outfit stumps are closed — forking/sending "at"
   them spawns a child conversation (`Owner` + `SpawnUnderRoot`/`SpawnUnderStump`).
-- **The four-layer loadout tree**: `null` → content-versioned **loadout** stumps (dedup'd by
-  `name@version`) → **top-level arias** (conversations under a loadout) → **branches** (forks
-  of conversations); conversations inherit the loadout chalkboard.
+- **The four-layer outfit tree**: `null` → content-versioned **outfit** stumps (dedup'd by
+  `name@version`) → **top-level arias** (conversations under an outfit) → **branches** (forks
+  of conversations); conversations inherit the outfit chalkboard.
 - **Trunk forest `list`/`ls`** (attend = `cd`): current-scope `ls`, `ls <id>` subtree,
-  `-H/--home` (view without unbinding), `-g/--global` (+ null/loadout anchors), cap
-  `-a/--all` | `-n N` (default 10), `--json` (all arias incl. null + loadouts, rejects other
+  `-H/--home` (view without unbinding), `-g/--global` (+ null/outfit anchors), cap
+  `-a/--all` | `-n N` (default 10), `--json` (all arias incl. null + outfits, rejects other
   flags); `status -m/-j`, `state -j`, positional `show <id>` with `-n/--last`; LT realigned
   so shown N == `:N`.
 - **Single-daemon flock** on `<store>/arias/.daemon.lock` (`cli/angelus.go`).
@@ -393,7 +393,7 @@ the RPC does with it.
 
 **Left / future:**
 - **Re-split-below into closed history through figaro**: figwal supports interior forks below
-  indices owned by closed anchors at the disk layer (and cauterization routes loadout/null LTs
+  indices owned by closed anchors at the disk layer (and cauterization routes outfit/null LTs
   through `SpawnUnderStump`/`SpawnUnderRoot`); arbitrary deep historical re-splits inside
   *conversation* ancestors are exercised via `Owner` + `ForkAt`.
 
@@ -428,5 +428,5 @@ the RPC does with it.
   patch at the boundary (it keys to next-LT, which is the fork point) — commit a turn first.
 - A freshly-spawned **dormant** child shows `MSGS 0` in `list` until it takes a turn (count
   comes from the per-aria `_meta` sidecar).
-- **Default loadout source:** the configured `default_loadout` (`config.go`), latest hash;
+- **Default outfit source:** the configured `default_outfit` (`config.go`), latest hash;
   chalkboard-key completion falls back to it when no aria is bound.

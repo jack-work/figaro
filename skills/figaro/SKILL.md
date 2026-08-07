@@ -49,7 +49,7 @@ One definition each. The file named owns the model behind it.
 | turn | One exchange: your prompt plus everything the agent did about it. The coordinate `:N` in `<id>:<turn>`; `.N` addresses an LT instead. | [reference/turns.md](reference/turns.md) |
 | LT | The storage coordinate, positional and cross-channel. Not an address you type. | [reference/turns.md](reference/turns.md) |
 | chalkboard | Per-aria key to JSON state that rides along with the conversation. | [reference/architecture.md](reference/architecture.md) |
-| loadout | The named profile a conversation is born under: model, credo, skills. | [start.md](start.md) |
+| outfit | The named profile a conversation is born under: model, credo, skills. | [start.md](start.md) |
 | angelus | The single supervisor daemon that owns the registry and outlives shells. | [reference/architecture.md](reference/architecture.md) |
 
 ## Where everything else lives

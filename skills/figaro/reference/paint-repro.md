@@ -274,9 +274,9 @@ wrote your own liveness probe as a file test, fix it.
 
 **`pp_seed` copies the CONFIG too, and that is not optional.** It does two
 unrelated things: the aria store (content to page through) *and*
-`~/.config/figaro` → `$FIGARO_CONFIG_DIR` (loadouts and provider credentials).
+`~/.config/figaro` → `$FIGARO_CONFIG_DIR` (outfits and provider credentials).
 Skip it and `FIGARO_CONFIG_DIR` points at an empty directory, so you get no
-loadouts and no credentials — a fresh turn then fails on the **first-run /
+outfits and no credentials — a fresh turn then fails on the **first-run /
 missing-credential** path. Two consequences:
 
 - `figaro listen` against an unseeded store shows you a confusing *nothing*.

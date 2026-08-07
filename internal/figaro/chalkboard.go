@@ -31,19 +31,19 @@ func (a *Agent) Set(patch chalkboard.Patch) (set, removed []string, err error) {
 	return set, removed, nil
 }
 
-// ApplyLoadout loads the named loadout and applies it additively to
+// ApplyOutfit loads the named outfit and applies it additively to
 // the current chalkboard. Keys whose value already equals the
-// loadout's value are skipped; no keys are ever removed. Returns the
+// outfit's value are skipped; no keys are ever removed. Returns the
 // list of keys created or updated.
-func (a *Agent) ApplyLoadout(name string) ([]string, error) {
+func (a *Agent) ApplyOutfit(name string) ([]string, error) {
 	if a.chalkboard == nil {
-		return nil, fmt.Errorf("loadout requires a chalkboard")
+		return nil, fmt.Errorf("outfit requires a chalkboard")
 	}
 	if a.outfitter == nil {
-		return nil, fmt.Errorf("loadout requires an outfitter")
+		return nil, fmt.Errorf("outfit requires an outfitter")
 	}
 	if name == "" {
-		return nil, fmt.Errorf("loadout name required")
+		return nil, fmt.Errorf("outfit name required")
 	}
 	loaded, err := a.outfitter.Load(name)
 	if err != nil {

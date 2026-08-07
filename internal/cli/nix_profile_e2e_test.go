@@ -58,14 +58,14 @@ cleanup() {
 }
 trap cleanup EXIT
 test -n "${COPILOT_GITHUB_TOKEN:-}"
-mkdir -p "$FIGARO_CONFIG_DIR/loadouts" "$FIGARO_CONFIG_DIR/providers"
+mkdir -p "$FIGARO_CONFIG_DIR/outfits" "$FIGARO_CONFIG_DIR/providers"
 if [ -n "${COPILOT_ENTERPRISE_DOMAIN:-}" ]; then
   printf 'enterprise_domain = "%s"\n' "$COPILOT_ENTERPRISE_DOMAIN" > "$FIGARO_CONFIG_DIR/providers/copilot.toml"
 fi
 cat > "$FIGARO_CONFIG_DIR/config.toml" <<'EOF'
-default_loadout = "gpt-e2e"
+default_outfit = "gpt-e2e"
 EOF
-cat > "$FIGARO_CONFIG_DIR/loadouts/gpt-e2e.toml" <<'EOF'
+cat > "$FIGARO_CONFIG_DIR/outfits/gpt-e2e.toml" <<'EOF'
 [system]
 provider = "copilot"
 model = "gpt-5.6-terra"

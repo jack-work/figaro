@@ -72,12 +72,12 @@ func testReadSubscribeAfterInterrupt(t *testing.T, restart bool) {
 	// -- Phase 1: create + prompt + interrupt mid-turn -------------------
 	backend1, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
-	loadout, err := backend1.CreateLoadout("d", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := backend1.CreateOutfit("d", message.Patch{Set: map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"m"`),
 		"system.provider": json.RawMessage(`"slow-stream"`),
 	}})
 	require.NoError(t, err)
-	conv, err := backend1.CreateConversation(loadout)
+	conv, err := backend1.CreateConversation(outfit)
 	require.NoError(t, err)
 
 	started := make(chan struct{})

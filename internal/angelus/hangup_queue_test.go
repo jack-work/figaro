@@ -52,8 +52,8 @@ func (p *parkedProvider) Send(ctx context.Context, _ provider.SendInput, _ provi
 func hangupFixture(t *testing.T) (transport.Endpoint, *parkedProvider, func()) {
 	t.Helper()
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
-	require.NoError(t, os.WriteFile(dir+"/loadouts/parked.toml", []byte(`
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
+	require.NoError(t, os.WriteFile(dir+"/outfits/parked.toml", []byte(`
 [system]
 provider = "parked"
 model = "m"

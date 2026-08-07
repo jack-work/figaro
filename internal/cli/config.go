@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -19,7 +20,15 @@ import (
 )
 
 func mustLoadConfig() *config.Loaded {
-	loaded, err := config.Load(config.DefaultConfigDir())
+	dir := config.DefaultConfigDir()
+	if changes, mErr := config.MigrateLegacyOutfits(dir); mErr != nil {
+		slog.Warn("outfit migration", "dir", dir, "err", mErr)
+	} else {
+		for _, c := range changes {
+			fmt.Fprintln(os.Stderr, "figaro: "+c)
+		}
+	}
+	loaded, err := config.Load(dir)
 	if err != nil {
 		die("config: %s", err)
 	}
@@ -111,7 +120,7 @@ func mustHush() *managed.Hush {
 // The first-run identity flow (prompt for passphrase, init the age
 // identity, persist to keyring) is owned by hush's managed package —
 // figaro is just a consumer here. Anything more elaborate (provider
-// selection, default loadout) is layered above via runFirstRunIfNeeded.
+// selection, default outfit) is layered above via runFirstRunIfNeeded.
 func ensureHush() {
 	h := mustHush()
 	if err := h.EnsureReady(); err != nil {

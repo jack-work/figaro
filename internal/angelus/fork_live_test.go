@@ -125,13 +125,13 @@ func TestForkKeepsLiveAgentRunning(t *testing.T) {
 func TestInteriorForkAtRootDoesNotCopyConversationState(t *testing.T) {
 	backend := &liveForkBackend{
 		parentMeta: &store.AriaMeta{
-			MessageCount:   12,
-			Provider:       "provider",
-			Model:          "model",
-			Mantra:         "mantra",
-			Cwd:            "work",
-			LoadoutName:    "loadout",
-			LoadoutVersion: "version",
+			MessageCount:  12,
+			Provider:      "provider",
+			Model:         "model",
+			Mantra:        "mantra",
+			Cwd:           "work",
+			OutfitName:    "outfit",
+			OutfitVersion: "version",
 		},
 		owner: store.OwnerInfo{IsRoot: true},
 	}
@@ -146,8 +146,8 @@ func TestInteriorForkAtRootDoesNotCopyConversationState(t *testing.T) {
 	require.Empty(t, backend.childMeta.Model)
 	require.Empty(t, backend.childMeta.Mantra)
 	require.Empty(t, backend.childMeta.Cwd)
-	require.Empty(t, backend.childMeta.LoadoutName)
-	require.Empty(t, backend.childMeta.LoadoutVersion)
+	require.Empty(t, backend.childMeta.OutfitName)
+	require.Empty(t, backend.childMeta.OutfitVersion)
 }
 
 // A fork must NOT be handed to any agent's actor.
@@ -232,12 +232,12 @@ func TestForkDuringActiveStreamKeepsContinuationRunning(t *testing.T) {
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, backend.Close()) })
-	loadout, err := backend.CreateLoadout("fork", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := backend.CreateOutfit("fork", message.Patch{Set: map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"active-fork"`),
 		"system.model":    json.RawMessage(`"test"`),
 	}})
 	require.NoError(t, err)
-	id, err := backend.CreateConversation(loadout)
+	id, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
 	snapshot, err := backend.ChalkboardState(id)
 	require.NoError(t, err)
@@ -397,12 +397,12 @@ func TestForkDuringActiveToolKeepsToolAndContinuationRunning(t *testing.T) {
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, backend.Close()) })
-	loadout, err := backend.CreateLoadout("fork-tool", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := backend.CreateOutfit("fork-tool", message.Patch{Set: map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"active-tool"`),
 		"system.model":    json.RawMessage(`"test"`),
 	}})
 	require.NoError(t, err)
-	id, err := backend.CreateConversation(loadout)
+	id, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
 	snapshot, err := backend.ChalkboardState(id)
 	require.NoError(t, err)
@@ -555,12 +555,12 @@ func TestFigaroCanForkItselfFromInsideItsOwnTurn(t *testing.T) {
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, backend.Close()) })
-	loadout, err := backend.CreateLoadout("selffork", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := backend.CreateOutfit("selffork", message.Patch{Set: map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"active-tool"`),
 		"system.model":    json.RawMessage(`"test"`),
 	}})
 	require.NoError(t, err)
-	id, err := backend.CreateConversation(loadout)
+	id, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
 	snapshot, err := backend.ChalkboardState(id)
 	require.NoError(t, err)

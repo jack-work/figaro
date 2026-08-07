@@ -175,7 +175,7 @@ The per-message bytes are written exactly once and reused on every subsequent tu
 
 ## Credo
 
-Providers read `system.credo` from the chalkboard and inject it as the API's system prompt. The credo is a literal string (or a `ContentEnvelope` `{content, frontmatter, filePath}` when sourced via the outfitter's `fileName=` loader). No derivation, no templating — what you put in `system.credo` is what the model sees. To pick up edits to the on-disk credo file, re-apply the loadout: `figaro loadout <name>`.
+Providers read `system.credo` from the chalkboard and inject it as the API's system prompt. The credo is a literal string (or a `ContentEnvelope` `{content, frontmatter, filePath}` when sourced via the outfitter's `fileName=` loader). No derivation, no templating — what you put in `system.credo` is what the model sees. To pick up edits to the on-disk credo file, re-apply the outfit: `figaro outfit <name>`.
 
 ## Chalkboard
 
@@ -194,7 +194,7 @@ All IPC is JSON-RPC 2.0 framed as one JSON object per line (NDJSON).
 
 **Figaro socket (requests):** `figaro.qua` (prompt; optional `chalkboard`),
 `figaro.read`, `figaro.interrupt`, `figaro.context`, `figaro.set`,
-`figaro.loadout`, `figaro.chalkboard`, `figaro.queued`.
+`figaro.outfit`, `figaro.chalkboard`, `figaro.queued`.
 
 Every accepted aria connection is automatically subscribed to subsequent
 notifications. A frontend calls `figaro.read` on that same connection for
@@ -252,7 +252,7 @@ spinners animate on the consumer, producing no timer traffic on the wire.
 |---------|-------------|
 | `q <prompt>` / `figaro -- <prompt>` | Prompt (auto-resolves or creates) |
 | `figaro send [--id <id>] [-e] [-r] [-x] -- <prompt>` | Explicit prompt; `-e` ephemeral, `-r` raw, `-x` bash exec (orthogonal flags) |
-| `figaro new -- <prompt>` | New conversation with chosen loadout/patch |
+| `figaro new -- <prompt>` | New conversation with chosen outfit/patch |
 | `figaro list` | List all arias (live + dormant) |
 | `figaro kill <id>` | Kill + delete aria |
 | `figaro attend <id>` | Rebind this shell |

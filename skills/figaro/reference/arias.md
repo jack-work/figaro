@@ -29,7 +29,7 @@ spread across the node dirs along its path.
 ├── xwal.json                  channel manifest (main=ir, codec=jsonl, reducers)
 ├── ir/                        the MAIN channel = the fork-node tree (the IR log)
 │   ├── <NNN>.jsonl            root node's IR segments (figwal NDJSON)
-│   ├── <loadout>@<hash>/      markerless loadout stump
+│   ├── <outfit>@<hash>/      markerless outfit stump
 │   ├── n0/                    a fork child: .fork (base index) + its own segments
 │   │   ├── .fork
 │   │   ├── .trunk
@@ -74,7 +74,7 @@ Key points:
   chalkboard is reducible (a watermark + jsonmerge patches), so there is **no
   `chalkboard.json`** — fold it via the CLI's `state` (or figwal `StateAt`),
   don't read it raw.
-- **Closed/ceremonial trunks** (the null root and loadouts) live in the same
+- **Closed/ceremonial trunks** (the null root and outfits) live in the same
   tree but never append — see [trunks.md](trunks.md).
 
 ## Entry + payload shape
@@ -114,7 +114,7 @@ chalkboard mutations riding on user-role tics.
 ## Path A — the `figaro` CLI
 
 ```
-figaro list                       the conversation forest (id, loadout, ver, fork, mantra…). alias: ls
+figaro list                       the conversation forest (id, outfit, ver, fork, mantra…). alias: ls
 figaro show                       render the bound aria's history (last 10 turns)
 figaro show <id>                  render a specific aria (the id is positional now)
 figaro show <id> -n 20            last 20 turns (paginates backwards from the end)

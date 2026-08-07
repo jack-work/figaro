@@ -53,10 +53,10 @@ func (c *Client) Status(ctx context.Context) (*rpc.StatusResponse, error) {
 	return &resp, err
 }
 
-// Create starts a new figaro with the named loadout.
-func (c *Client) Create(ctx context.Context, loadout string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
+// Create starts a new figaro with the named outfit.
+func (c *Client) Create(ctx context.Context, outfit string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
-	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Loadout: loadout, Patch: patch}, &resp)
+	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Outfit: outfit, Patch: patch}, &resp)
 	return &resp, err
 }
 
@@ -74,10 +74,10 @@ func (c *Client) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64)
 }
 
 // CreateEphemeral creates an in-memory-only figaro.
-func (c *Client) CreateEphemeral(ctx context.Context, loadout string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
+func (c *Client) CreateEphemeral(ctx context.Context, outfit string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
 	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{
-		Loadout: loadout, Patch: patch, Ephemeral: true,
+		Outfit: outfit, Patch: patch, Ephemeral: true,
 	}, &resp)
 	return &resp, err
 }
@@ -130,7 +130,7 @@ func (c *Client) ListIDs(ctx context.Context) (*rpc.ListResponse, error) {
 }
 
 // ListGlobal returns the aria list including the ceremonial anchors (the null
-// genesis trunk + every versioned loadout), each with Kind/Parent set — for the
+// genesis trunk + every versioned outfit), each with Kind/Parent set — for the
 // `ls -g` hierarchy and the `--json` escape hatch.
 func (c *Client) ListGlobal(ctx context.Context) (*rpc.ListResponse, error) {
 	var resp rpc.ListResponse

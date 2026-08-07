@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,12 +13,12 @@ import (
 )
 
 // Config is the top-level figaro configuration. Provider/model knobs
-// have moved into loadouts; this file holds only the chosen loadout
+// have moved into outfits; this file holds only the chosen outfit
 // and CLI-side ergonomics.
 type Config struct {
-	// DefaultLoadout names the loadout used when -L is not specified.
-	// Empty triggers the first-run flow (see rpc.ErrNoDefaultLoadout).
-	DefaultLoadout string `toml:"default_loadout"`
+	// DefaultOutfit names the outfit used when -O is not specified.
+	// Empty triggers the first-run flow (see rpc.ErrNoDefaultOutfit).
+	DefaultOutfit string `toml:"default_outfit"`
 
 	// Trunks enables the trunk capability: a presentation hierarchy an
 	// aria can be promoted within, independent of where its history comes
@@ -531,14 +532,29 @@ func (l *Loaded) ProviderAuthPath(name string) string {
 	return filepath.Join(l.ConfigDir, "providers", name+".toml")
 }
 
-// LoadoutsDir returns the directory housing loadout TOML files.
-func (l *Loaded) LoadoutsDir() string {
-	return filepath.Join(l.ConfigDir, "loadouts")
+// OutfitsDir returns the directory housing outfit TOML files.
+func (l *Loaded) OutfitsDir() string {
+	return filepath.Join(l.ConfigDir, "outfits")
 }
 
-// LoadoutPath returns the path to a named loadout file.
-func (l *Loaded) LoadoutPath(name string) string {
-	return filepath.Join(l.LoadoutsDir(), name+".toml")
+// outfitDirs lists where an outfit may live, canonical first (loadouts/ is the
+// pre-rename name).
+func (l *Loaded) outfitDirs() []string {
+	return []string{
+		filepath.Join(l.ConfigDir, "outfits"),
+		filepath.Join(l.ConfigDir, "loadouts"),
+	}
+}
+
+// OutfitPath returns the path to a named outfit file.
+func (l *Loaded) OutfitPath(name string) string {
+	for _, dir := range l.outfitDirs() {
+		path := filepath.Join(dir, name+".toml")
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return filepath.Join(l.OutfitsDir(), name+".toml")
 }
 
 // ListProviders returns provider names with auth files on disk.
@@ -562,23 +578,32 @@ func (l *Loaded) ListProviders() []string {
 	return names
 }
 
-// ListLoadouts returns the names of every loadout file on disk.
-func (l *Loaded) ListLoadouts() []string {
-	entries, err := os.ReadDir(l.LoadoutsDir())
-	if err != nil {
-		return nil
-	}
+// ListOutfits returns the names of every outfit file on disk.
+func (l *Loaded) ListOutfits() []string {
+	seen := map[string]bool{}
 	var names []string
-	for _, e := range entries {
-		if e.IsDir() {
+	for _, dir := range l.outfitDirs() {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
 			continue
 		}
-		name := e.Name()
-		if !strings.HasSuffix(name, ".toml") {
-			continue
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if !strings.HasSuffix(name, ".toml") {
+				continue
+			}
+			name = strings.TrimSuffix(name, ".toml")
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			names = append(names, name)
 		}
-		names = append(names, strings.TrimSuffix(name, ".toml"))
 	}
+	sort.Strings(names)
 	return names
 }
 
@@ -631,6 +656,15 @@ func Load(configDir string) (*Loaded, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", configPath, err)
 	}
+	// default_loadout is the pre-rename key; default_outfit wins when both exist.
+	if cfg.DefaultOutfit == "" {
+		var legacy struct {
+			DefaultOutfit string `toml:"default_loadout"`
+		}
+		if err := toml.Unmarshal(data, &legacy); err == nil {
+			cfg.DefaultOutfit = legacy.DefaultOutfit
+		}
+	}
 
 	if err := cfg.validateWire(); err != nil {
 		return nil, err
@@ -646,6 +680,6 @@ func Load(configDir string) (*Loaded, error) {
 }
 
 func defaultConfig() Config {
-	// No DefaultLoadout: empty triggers the first-run flow.
+	// No DefaultOutfit: empty triggers the first-run flow.
 	return Config{}
 }

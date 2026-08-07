@@ -50,13 +50,13 @@ lineage, depth-truncated). `--json` for the machine view. Fold together
 with 0a (the trunk/vector model IS the list model).
 
 ### 0c. Data-quality bugs found on disk (diagnosed 2026-06-27)
-Inspecting `arias/ir/<loadout>/<conv>/...jsonl`:
+Inspecting `arias/ir/<outfit>/<conv>/...jsonl`:
 - **`logical_time` is always 0 on disk** — never written meaningfully
   (only set on read via `unwrapMessages` from the frame `_idx`). The real
   LT is the frame `_idx`/`m` (coherent + monotonic). Fix: drop it from the
   persisted payload (`omitempty` + never set at write); frame index is the
   single source of truth.
-- **`timestamp` non-monotonic**: structural tics (genesis + loadout birth)
+- **`timestamp` non-monotonic**: structural tics (genesis + outfit birth)
   carry `timestamp:0`, AND the **assistant message is never stamped**
   (provider appends the sealed assistant `Message` with no `Timestamp`).
   So you see 0 (genesis) → real (user) → 0 (assistant). Fix: stamp the

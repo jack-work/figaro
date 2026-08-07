@@ -40,13 +40,30 @@ import (
 type portableAria struct {
 	Figaro   string            `json:"figaro"`             // format marker + version
 	AriaID   string            `json:"aria_id,omitempty"`  // the id it had; offered, not demanded
-	Loadout  string            `json:"loadout"`            // the loadout name to resolve or create
+	Outfit   string            `json:"outfit"`             // the outfit name to resolve or create
 	Mantra   string            `json:"mantra,omitempty"`   // for the human reading the file
 	Provider string            `json:"provider,omitempty"` // provenance, for the list sidecar
 	Model    string            `json:"model,omitempty"`
 	Exported string            `json:"exported,omitempty"` // RFC3339, provenance only
 	Board    message.Patch     `json:"chalkboard,omitempty"`
 	Messages []message.Message `json:"messages"`
+}
+
+// UnmarshalJSON accepts the pre-rename "loadout" field; only "outfit" is written.
+func (d *portableAria) UnmarshalJSON(b []byte) error {
+	type alias portableAria
+	var wire struct {
+		alias
+		LegacyOutfit string `json:"loadout,omitempty"`
+	}
+	if err := json.Unmarshal(b, &wire); err != nil {
+		return err
+	}
+	*d = portableAria(wire.alias)
+	if d.Outfit == "" {
+		d.Outfit = wire.LegacyOutfit
+	}
+	return nil
 }
 
 const portableFormat = "aria/v1"
@@ -120,7 +137,7 @@ func exportAria(ctx context.Context, acli *angelus.Client, loaded *config.Loaded
 		if err := json.Unmarshal(e.Payload, &m); err != nil {
 			return portableAria{}, fmt.Errorf("parse LT=%d: %w", e.LT, err)
 		}
-		// Scaffolding does not travel. The genesis tic and the loadout-birth
+		// Scaffolding does not travel. The genesis tic and the outfit-birth
 		// stamp belong to the store's topology — the destination mints its own
 		// when it spawns — and a contentless input tic is a pure chalkboard
 		// carrier, whose effect is already in the folded board below. What is
@@ -156,8 +173,13 @@ func exportAria(ctx context.Context, acli *angelus.Client, loaded *config.Loaded
 		}
 		doc.Board.Set[k] = v
 	}
-	if raw, ok := board.Get("system.loadout_name"); ok {
-		_ = json.Unmarshal(raw, &doc.Loadout)
+	if raw, ok := board.Get("system.outfit_name"); ok {
+		_ = json.Unmarshal(raw, &doc.Outfit)
+	}
+	if doc.Outfit == "" {
+		if raw, ok := board.Get("system.loadout_name"); ok {
+			_ = json.Unmarshal(raw, &doc.Outfit)
+		}
 	}
 	if raw, ok := board.Get("mantra"); ok {
 		_ = json.Unmarshal(raw, &doc.Mantra)
@@ -168,8 +190,8 @@ func exportAria(ctx context.Context, acli *angelus.Client, loaded *config.Loaded
 	if raw, ok := board.Get("system.model"); ok {
 		_ = json.Unmarshal(raw, &doc.Model)
 	}
-	if doc.Loadout == "" {
-		doc.Loadout = "imported"
+	if doc.Outfit == "" {
+		doc.Outfit = "imported"
 	}
 	return doc, nil
 }
@@ -213,7 +235,7 @@ func runImport(loaded *config.Loaded, args []string) {
 	defer acli.Close()
 
 	resp, err := acli.Import(ctx, rpc.ImportRequest{
-		Loadout:    doc.Loadout,
+		Outfit:     doc.Outfit,
 		Chalkboard: doc.Board,
 		Messages:   doc.Messages,
 		WasID:      doc.AriaID,
@@ -224,8 +246,8 @@ func runImport(loaded *config.Loaded, args []string) {
 	if err != nil {
 		die("import: %s", err)
 	}
-	fmt.Fprintf(os.Stderr, "imported %d messages as %s (loadout %s)\n",
-		resp.Messages, resp.FigaroID, resp.Loadout)
+	fmt.Fprintf(os.Stderr, "imported %d messages as %s (outfit %s)\n",
+		resp.Messages, resp.FigaroID, resp.Outfit)
 	if resp.WasID != "" {
 		fmt.Fprintf(os.Stderr, "  it was %s where it came from — a trunk id is unique per store, so this one is new\n", resp.WasID)
 	}

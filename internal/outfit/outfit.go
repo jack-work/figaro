@@ -1,6 +1,6 @@
 // Package outfit assembles an aria's chalkboard from on-disk config.
 //
-// Load reads a named loadout TOML chain and returns a chalkboard patch.
+// Load reads a named outfit TOML chain and returns a chalkboard patch.
 // Providers read `system.credo` (and other system keys) straight off
 // the chalkboard — no derivation step.
 package outfit
@@ -17,7 +17,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 )
 
-// Outfitter assembles chalkboards from on-disk loadouts.
+// Outfitter assembles chalkboards from on-disk outfits.
 type Outfitter struct {
 	configDir string
 }
@@ -27,9 +27,9 @@ func New(configDir string) *Outfitter {
 	return &Outfitter{configDir: configDir}
 }
 
-// Load resolves a loadout and returns the chalkboard patch.
+// Load resolves an outfit and returns the chalkboard patch.
 //
-// A missing loadout file is NOT an error: an empty patch is
+// A missing outfit file is NOT an error: an empty patch is
 // returned. The caller decides whether the resulting absence of
 // system.provider is fatal. Parse errors and source-chain cycles
 // still bubble up.
@@ -48,7 +48,7 @@ func (o *Outfitter) Load(name string) (chalkboard.Patch, error) {
 	return chalkboard.Patch{Set: flat}, nil
 }
 
-// loadInto resolves a loadout recursively via source chains.
+// loadInto resolves an outfit recursively via source chains.
 func (o *Outfitter) loadInto(name string, flat map[string]json.RawMessage, visited map[string]bool) error {
 	if visited[name] {
 		return fmt.Errorf("outfit: cycle in source chain at %q", name)
@@ -74,17 +74,20 @@ func (o *Outfitter) loadInto(name string, flat map[string]json.RawMessage, visit
 	return o.flatten("", raw, flat)
 }
 
-// resolvePath finds a loadout file (loadouts/<name>.toml). The
+// resolvePath finds an outfit file (outfits/<name>.toml). The
 // legacy providers/<name>/config.toml fallback has been removed:
 // provider directories now only carry auth credentials.
 func (o *Outfitter) resolvePath(name string) (string, error) {
-	path := filepath.Join(o.configDir, "loadouts", name+".toml")
-	if _, err := os.Stat(path); err == nil {
-		return path, nil
-	} else if !os.IsNotExist(err) {
-		return "", fmt.Errorf("outfit: stat %s: %w", path, err)
+	// loadouts/ is the pre-rename directory, still read if it survived.
+	canonical := filepath.Join(o.configDir, "outfits", name+".toml")
+	for _, path := range []string{canonical, filepath.Join(o.configDir, "loadouts", name+".toml")} {
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("outfit: stat %s: %w", path, err)
+		}
 	}
-	return "", &os.PathError{Op: "open", Path: path, Err: os.ErrNotExist}
+	return "", &os.PathError{Op: "open", Path: canonical, Err: os.ErrNotExist}
 }
 
 // flatten walks a TOML tree into dotted chalkboard keys, expanding
@@ -202,7 +205,7 @@ func contentEnvelope(body, path string) ContentEnvelope {
 // CRLF is not a nicety. The failure is SILENT AND EXPENSIVE: a skill whose
 // fence is not recognised falls through to the full-body envelope, so the
 // WHOLE FILE lands in the chalkboard and is inherited by every aria minted
-// from that loadout. Six skills saved with Windows line endings put 101KB —
+// from that outfit. Six skills saved with Windows line endings put 101KB —
 // roughly 25k tokens — into every new aria on this author's box, none of it
 // asked for and none of it visible as anything but a large context.
 func extractFrontmatter(body string) (string, bool) {
@@ -217,10 +220,10 @@ func extractFrontmatter(body string) (string, bool) {
 		return "", false
 	}
 	// Normalise the block itself, not just the closing fence. The
-	// frontmatter string lands in the chalkboard verbatim and the loadout's
+	// frontmatter string lands in the chalkboard verbatim and the outfit's
 	// content version is a hash of that patch -- so a CRLF-saved skill and
 	// an LF-saved copy of the SAME skill would otherwise mint two different
-	// loadout stumps, with two shared prefixes and two caches, on two
+	// outfit stumps, with two shared prefixes and two caches, on two
 	// machines editing one repository.
 	return strings.ReplaceAll(strings.TrimSuffix(rest[:end], "\r"), "\r\n", "\n"), true
 }

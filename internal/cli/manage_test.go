@@ -16,7 +16,7 @@ func TestRenderListRowsUsesCompactHierarchyOnNarrowTerminals(t *testing.T) {
 	}}
 
 	got := renderListRows(rows, 48, false)
-	if strings.Contains(got, "LOADOUT") {
+	if strings.Contains(got, "OUTFIT") {
 		t.Fatalf("narrow list must not render a table: %q", got)
 	}
 	if !strings.Contains(got, "└─▸") || !strings.Contains(got, "dac6cb6d") {
@@ -34,16 +34,16 @@ func TestRenderListRowsUsesCompactHierarchyOnNarrowTerminals(t *testing.T) {
 
 func TestRenderListRowsUsesReducedColumnsOnMediumTerminals(t *testing.T) {
 	rows := []listRow{{
-		aria:    "○ orchard",
-		id:      "1af9efd8",
-		loadout: "default-production-loadout",
-		age:     "2h",
-		msgs:    "42",
-		ctx:     "19k",
+		aria:   "○ orchard",
+		id:     "1af9efd8",
+		outfit: "default-production-outfit",
+		age:    "2h",
+		msgs:   "42",
+		ctx:    "19k",
 	}}
 
 	got := renderListRows(rows, 120, false)
-	if !strings.Contains(got, "LOADOUT") || strings.Contains(got, "FORK") {
+	if !strings.Contains(got, "OUTFIT") || strings.Contains(got, "FORK") {
 		t.Fatalf("medium list must use reduced columns: %q", got)
 	}
 	for _, line := range strings.Split(strings.TrimSpace(got), "\n") {

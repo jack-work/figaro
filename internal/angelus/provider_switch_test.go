@@ -53,8 +53,8 @@ func (m *namedMockProvider) Send(_ context.Context, in provider.SendInput, bus p
 // provider with `figaro set system.provider …`, with no restart and no fork.
 func TestIntegration_ProviderSwitchMidConversation(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
-	require.NoError(t, os.WriteFile(dir+"/loadouts/mock.toml", []byte(`
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
 [system]
 provider = "mock"
 model = "mock-model"

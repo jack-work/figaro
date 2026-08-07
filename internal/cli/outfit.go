@@ -1,7 +1,7 @@
-// Package cli — `figaro loadout` command.
+// Package cli — `figaro outfit` command.
 //
-// Applies a named loadout additively to the current aria's
-// chalkboard. The loadout file is resolved by the angelus (it
+// Applies a named outfit additively to the current aria's
+// chalkboard. The outfit file is resolved by the angelus (it
 // owns the configDir); the CLI only forwards the name.
 package cli
 
@@ -16,10 +16,10 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// completeLoadouts completes the `loadout` command: available loadout names
+// completeOutfits completes the `outfit` command: available outfit names
 // for the positional slot (sourced from the config, so it works with no aria
 // attached), or aria ids after --id.
-func completeLoadouts(c *cmdkit.CompleteContext) []string {
+func completeOutfits(c *cmdkit.CompleteContext) []string {
 	if c == nil {
 		return nil
 	}
@@ -30,13 +30,13 @@ func completeLoadouts(c *cmdkit.CompleteContext) []string {
 	if loaded == nil {
 		return nil
 	}
-	return loaded.ListLoadouts()
+	return loaded.ListOutfits()
 }
 
-// runLoadout calls figaro.loadout on the targeted aria.
-func runLoadout(loaded *config.Loaded, ariaID, loadoutName string) {
-	if loadoutName == "" {
-		die("usage: figaro loadout [--id <id>] <name>")
+// runOutfit calls figaro.outfit on the targeted aria.
+func runOutfit(loaded *config.Loaded, ariaID, outfitName string) {
+	if outfitName == "" {
+		die("usage: figaro outfit [--id <id>] <name>")
 	}
 
 	ctx := context.Background()
@@ -55,31 +55,31 @@ func runLoadout(loaded *config.Loaded, ariaID, loadoutName string) {
 	}
 	defer fcli.Close()
 
-	resp, err := fcli.Loadout(ctx, loadoutName)
+	resp, err := fcli.Outfit(ctx, outfitName)
 	if err != nil {
-		die("loadout %q: %s", loadoutName, err)
+		die("outfit %q: %s", outfitName, err)
 	}
 
 	if len(resp.Set) == 0 {
-		fmt.Fprintf(os.Stderr, "loadout %q: no changes (chalkboard already matches)\n", loadoutName)
+		fmt.Fprintf(os.Stderr, "outfit %q: no changes (chalkboard already matches)\n", outfitName)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "loadout %q applied (%d keys):\n", loadoutName, len(resp.Set))
+	fmt.Fprintf(os.Stderr, "outfit %q applied (%d keys):\n", outfitName, len(resp.Set))
 	for _, k := range resp.Set {
 		fmt.Fprintf(os.Stderr, "  %s\n", k)
 	}
 }
 
-// runLoadoutList prints the loadouts available on disk.
-func runLoadoutList(loaded *config.Loaded) {
-	names := loaded.ListLoadouts()
+// runOutfitList prints the outfits available on disk.
+func runOutfitList(loaded *config.Loaded) {
+	names := loaded.ListOutfits()
 	if len(names) == 0 {
-		fmt.Fprintln(os.Stderr, "no loadouts found in", loaded.LoadoutsDir())
+		fmt.Fprintln(os.Stderr, "no outfits found in", loaded.OutfitsDir())
 		return
 	}
 	for _, n := range names {
 		marker := ""
-		if n == loaded.Config.DefaultLoadout {
+		if n == loaded.Config.DefaultOutfit {
 			marker = " (default)"
 		}
 		fmt.Printf("%s%s\n", n, marker)

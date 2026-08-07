@@ -28,9 +28,9 @@ figaro login copilot        # or: figaro login anthropic
 figaro -- buongiorno
 ```
 
-The first prompt triggers a setup wizard (provider, model, loadout). After that, `figaro --` is all you need.
+The first prompt triggers a setup wizard (provider, model, outfit). After that, `figaro --` is all you need.
 
-Run `figaro -- :skills.howto!` to start the interactive tutorial (the howto skill walks you through arias, forking, the chalkboard, and loadouts in character).
+Run `figaro -- :skills.howto!` to start the interactive tutorial (the howto skill walks you through arias, forking, the chalkboard, and outfits in character).
 
 ### Copilot models
 
@@ -47,7 +47,7 @@ figaro models
 For noninteractive use, Copilot credentials are read in this order:
 `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, then `GITHUB_TOKEN`.
 
-Choose a catalog model in a loadout:
+Choose a catalog model in an outfit:
 
 ```toml
 [system]
@@ -118,7 +118,7 @@ prints a bare token count.
 - **Arias**: persistent conversations, append-only IR log, fork-tree storage via [figwal](https://github.com/jack-work/figwal).
 - **Forking**: branch at a turn boundary; both sides share the canonical IR prefix. `attend` is your `cd`.
 - **Chalkboard**: per-aria key-value state, travels as patches, surfaces as system reminders.
-- **Loadouts**: TOML profiles (provider, model, credo, skills) inherited by new arias.
+- **Outfits**: TOML profiles (provider, model, credo, skills) inherited by new arias.
 - **Tools**: bash, read, write, edit, process. Parallel dispatch.
 - **Providers**: Anthropic (direct + SDK), GitHub Copilot. Registry-driven, no switches.
 

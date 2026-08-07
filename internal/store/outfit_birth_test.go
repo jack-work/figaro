@@ -8,33 +8,33 @@ import (
 	"github.com/jack-work/figaro/internal/message"
 )
 
-// A loadout's reminders render ONCE, at the stump's birth record, in the
+// An outfit's reminders render ONCE, at the stump's birth record, in the
 // prefix every conversation under that stump inherits. The projection
 // renders exactly the patches at or below a record's CURSOR STAMP, so the
 // birth record must be stamped at or after the patch it introduces.
 //
 // It was stamped one index BELOW it: the record was appended before the
 // patch, so PatchesUpTo() returned nothing and no aria created under the
-// stump rendered its skills, its credo, or anything else the loadout sets.
+// stump rendered its skills, its credo, or anything else the outfit sets.
 // The board itself was intact the whole time — `figaro state` showed every
 // key — because the snapshot path folds the inherited prefix and only the
 // turn-scoped projection reads the stamp. That is why it looked like a
 // rendering bug and was a write-ordering one.
-func TestStumpBirthRecordIsStampedAtItsOwnLoadoutPatch(t *testing.T) {
+func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
 	be, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer be.Close()
 
-	loadout, err := be.CreateLoadout("opus5", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := be.CreateOutfit("opus5", message.Patch{Set: map[string]json.RawMessage{
 		"skills.golang": json.RawMessage(`{"frontmatter":"name: golang"}`),
 		"duke-title":    json.RawMessage(`"Gluck"`),
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	aria, err := be.CreateConversation(loadout)
+	aria, err := be.CreateConversation(outfit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,16 +43,16 @@ func TestStumpBirthRecordIsStampedAtItsOwnLoadoutPatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var loadoutVersion uint64
+	var outfitVersion uint64
 	for _, p := range patches {
 		for k := range p.Patch.Set {
 			if strings.HasPrefix(k, "skills.") {
-				loadoutVersion = p.Version
+				outfitVersion = p.Version
 			}
 		}
 	}
-	if loadoutVersion == 0 {
-		t.Fatal("the conversation does not inherit the loadout patch at all")
+	if outfitVersion == 0 {
+		t.Fatal("the conversation does not inherit the outfit patch at all")
 	}
 
 	lg, err := be.Open(aria)
@@ -67,14 +67,14 @@ func TestStumpBirthRecordIsStampedAtItsOwnLoadoutPatch(t *testing.T) {
 			continue
 		}
 		for cursor < len(patches) && patches[cursor].Version <= e.ChalkVersion {
-			if patches[cursor].Version == loadoutVersion {
+			if patches[cursor].Version == outfitVersion {
 				delivered = true
 			}
 			cursor++
 		}
 	}
 	if !delivered {
-		t.Errorf("the loadout patch (version %d) is never delivered to any entry: "+
-			"a new aria renders none of its loadout's system-reminders", loadoutVersion)
+		t.Errorf("the outfit patch (version %d) is never delivered to any entry: "+
+			"a new aria renders none of its outfit's system-reminders", outfitVersion)
 	}
 }

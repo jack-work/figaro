@@ -101,7 +101,7 @@ type Config struct {
 	// InlineBoot is the ephemeral-only boot patch. Backed arias hold
 	// their boot transition in the chalkboard channel; ephemeral arias
 	// have no channel, so this patch is folded onto the first IR turn so
-	// the loadout reminders still render. Ignored when Backend != nil.
+	// the outfit reminders still render. Ignored when Backend != nil.
 	InlineBoot *chalkboard.Patch
 
 	// Settings is the loaded user configuration. Today the agent reads only
@@ -178,8 +178,8 @@ type Agent struct {
 	model         string
 	mantra        string
 	cwd           string
-	loadoutName   string
-	loadoutVer    string
+	outfitName    string
+	outfitVer     string
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -334,6 +334,20 @@ func snapshotString(snapshot chalkboard.Snapshot, key string) string {
 	return value
 }
 
+// snapshotOutfit reads the outfit stamp, falling back to the pre-rename keys
+// that arias minted before the rename carry.
+func snapshotOutfit(snapshot chalkboard.Snapshot) (name, version string) {
+	name = snapshotString(snapshot, "system.outfit_name")
+	if name == "" {
+		name = snapshotString(snapshot, "system.loadout_name")
+	}
+	version = snapshotString(snapshot, "system.outfit_version")
+	if version == "" {
+		version = snapshotString(snapshot, "system.loadout_version")
+	}
+	return name, version
+}
+
 // resolveContextLimit reports the effective prompt cap for the current model.
 //
 // Precedence: an explicit system.max_context_tokens on the chalkboard wins
@@ -408,8 +422,7 @@ func (a *Agent) refreshMetrics() {
 	a.model = model
 	a.mantra = snapshotString(snapshot, "mantra")
 	a.cwd = snapshotString(snapshot, "system.cwd")
-	a.loadoutName = snapshotString(snapshot, "system.loadout_name")
-	a.loadoutVer = snapshotString(snapshot, "system.loadout_version")
+	a.outfitName, a.outfitVer = snapshotOutfit(snapshot)
 	a.mu.Unlock()
 }
 
@@ -493,8 +506,7 @@ func (a *Agent) refreshMetricsFrom(msgs []message.Message) {
 	a.model = model
 	a.mantra = snapshotString(snapshot, "mantra")
 	a.cwd = snapshotString(snapshot, "system.cwd")
-	a.loadoutName = snapshotString(snapshot, "system.loadout_name")
-	a.loadoutVer = snapshotString(snapshot, "system.loadout_version")
+	a.outfitName, a.outfitVer = snapshotOutfit(snapshot)
 	a.mu.Unlock()
 }
 
@@ -728,8 +740,8 @@ func (a *Agent) Info() FigaroInfo {
 		LastActive:       a.lastActive,
 		Mantra:           a.mantra,
 		Cwd:              a.cwd,
-		LoadoutName:      a.loadoutName,
-		LoadoutVersion:   a.loadoutVer,
+		OutfitName:       a.outfitName,
+		OutfitVersion:    a.outfitVer,
 		LastFigaroLT:     a.metricsLT,
 	}
 	a.mu.RUnlock()
@@ -1091,8 +1103,8 @@ func (a *Agent) publishMetadata() {
 		Model:            a.model,
 		Mantra:           a.mantra,
 		Cwd:              a.cwd,
-		LoadoutName:      a.loadoutName,
-		LoadoutVersion:   a.loadoutVer,
+		OutfitName:       a.outfitName,
+		OutfitVersion:    a.outfitVer,
 		ContextTokens:    a.contextTokens,
 		ContextLimit:     a.contextLimit,
 		ContextExact:     a.contextExact,

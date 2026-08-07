@@ -91,7 +91,7 @@ func BenchmarkDormantList(b *testing.B) {
 			}
 			b.Cleanup(func() { _ = backend.Close() })
 			if n > 0 {
-				loadout, err := backend.CreateLoadout("perf", message.Patch{Set: map[string]json.RawMessage{
+				outfit, err := backend.CreateOutfit("perf", message.Patch{Set: map[string]json.RawMessage{
 					"system.provider": json.RawMessage(`"perf"`),
 					"system.model":    json.RawMessage(`"perf-model"`),
 				}})
@@ -99,7 +99,7 @@ func BenchmarkDormantList(b *testing.B) {
 					b.Fatal(err)
 				}
 				for i := 0; i < n; i++ {
-					id, err := backend.CreateConversation(loadout)
+					id, err := backend.CreateConversation(outfit)
 					if err != nil {
 						b.Fatal(err)
 					}

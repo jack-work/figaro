@@ -254,7 +254,7 @@ an agent reads *before* building a scratch store, not after.
 > `FIGARO_CONFIG_DIR` **by reference** — a reference cannot be left behind with the
 > wrong mode, so sharing does not reduce the risk, it *deletes the failure mode*.
 > If isolation is genuinely required, copy by **ALLOW-LIST** (`config.toml`,
-> `credo.md`, `loadouts`, `skills`) and **never by exclusion** — an exclusion list
+> `credo.md`, `outfits`, `skills`) and **never by exclusion** — an exclusion list
 > is a promise about every file that will ever exist. And **dereference**: `cp -r`
 > copies a symlink *as a symlink*, so an "isolated" config silently reaches back
 > into the original (measured: `skills/plaid` and `skills/pishot.md` are links into

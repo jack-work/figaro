@@ -105,8 +105,8 @@ func completePromptOrIDFlag(c *cmdkit.CompleteContext) []string {
 	return nil
 }
 
-// completeNewPrompt is completePromptOrIDFlag plus loadout-name
-// suggestions after --loadout / -L. Used by `new` and by `send`, which
+// completeNewPrompt is completePromptOrIDFlag plus outfit-name
+// suggestions after --outfit / -O. Used by `new` and by `send`, which
 // takes the same flag for the aria it may create.
 func completeNewPrompt(c *cmdkit.CompleteContext) []string {
 	if c == nil {
@@ -114,9 +114,9 @@ func completeNewPrompt(c *cmdkit.CompleteContext) []string {
 	}
 	if len(c.Args) > 0 {
 		switch c.Args[len(c.Args)-1] {
-		case "--loadout", "-L":
+		case "--outfit", "-O":
 			if loaded, ok := c.Extra.(*config.Loaded); ok && loaded != nil {
-				return loaded.ListLoadouts()
+				return loaded.ListOutfits()
 			}
 			return nil
 		}

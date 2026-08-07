@@ -104,15 +104,15 @@ func useCopilotTerra(t *testing.T, env []string) {
 	if dir == "" {
 		t.Fatal("smoke store has no config dir")
 	}
-	if err := os.WriteFile(dir+"/config.toml", []byte("default_loadout = \"copilot\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(dir+"/config.toml", []byte("default_outfit = \"copilot\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	lo, err := os.ReadFile(dir + "/loadouts/copilot.toml")
+	lo, err := os.ReadFile(dir + "/outfits/copilot.toml")
 	if err != nil {
-		t.Skipf("no copilot loadout in the copied config: %v", err)
+		t.Skipf("no copilot outfit in the copied config: %v", err)
 	}
 	patched := strings.ReplaceAll(string(lo), "gpt-5.6-sol", "gpt-5.6-terra")
-	if err := os.WriteFile(dir+"/loadouts/copilot.toml", []byte(patched), 0o600); err != nil {
+	if err := os.WriteFile(dir+"/outfits/copilot.toml", []byte(patched), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

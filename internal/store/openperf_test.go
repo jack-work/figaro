@@ -17,7 +17,7 @@ func seedLargeAria(tb testing.TB, nMsgs, msgBytes int) (string, string) {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	id, err := be.CreateLoadout("perf", message.Patch{})
+	id, err := be.CreateOutfit("perf", message.Patch{})
 	if err != nil {
 		tb.Fatal(err)
 	}

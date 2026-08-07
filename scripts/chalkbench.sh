@@ -1,30 +1,30 @@
 #!/usr/bin/env bash
 # chalkbench.sh — end-to-end chalkboard timing against an ISOLATED daemon.
 #
-# `figaro set` / `unset` / `loadout` / `state` are pure state operations:
+# `figaro set` / `unset` / `outfit` / `state` are pure state operations:
 # no LLM round-trip, no tokens, no money. So we can time the real CLI
 # against a real daemon — as long as that daemon is not the user's.
 #
 # Everything runs in a fresh temp dir:
 #   FIGARO_RUNTIME_DIR=$TMP/run   FIGARO_STATE_DIR=$TMP/state
 # while FIGARO_CONFIG_DIR / FIGARO_HUSH_APP are inherited so the real
-# loadout + skills are visible (we want a realistic board). The script
+# outfit + skills are visible (we want a realistic board). The script
 # refuses to run if those point at the user's live store, tears the
 # daemon down on exit, and removes the temp dir.
 #
-# Usage:  scripts/chalkbench.sh [-L <loadout>] [-k <ops>] [-i <inflate keys>]
+# Usage:  scripts/chalkbench.sh [-O <outfit>] [-k <ops>] [-i <inflate keys>]
 # Output: a table of milliseconds on stdout.
 
 set -euo pipefail
 
-LOADOUT=""
+OUTFIT=""
 OPS=50
 INFLATE=1000
 INFLATE_VALUE_BYTES=2048
 
-while getopts "L:k:i:h" opt; do
+while getopts "O:k:i:h" opt; do
   case "$opt" in
-    L) LOADOUT="$OPTARG" ;;
+    O) OUTFIT="$OPTARG" ;;
     k) OPS="$OPTARG" ;;
     i) INFLATE="$OPTARG" ;;
     h) sed -n '2,20p' "$0"; exit 0 ;;
@@ -78,10 +78,10 @@ echo "chalkbench: building $REPO/cmd/figaro -> $FIG" >&2
 go build -ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse --short=12 HEAD)" \
   -o "$FIG" ./cmd/figaro || die "build failed"
 
-if [ -z "$LOADOUT" ]; then
+if [ -z "$OUTFIT" ]; then
   cfg="${FIGARO_CONFIG_DIR:-$HOME/.config/figaro}/config.toml"
-  LOADOUT="$(sed -n 's/^default_loadout[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' "$cfg" | head -1)"
-  [ -n "$LOADOUT" ] || die "no default_loadout in $cfg; pass -L <name>"
+  OUTFIT="$(sed -n 's/^default_outfit[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' "$cfg" | head -1)"
+  [ -n "$OUTFIT" ] || die "no default_outfit in $cfg; pass -O <name>"
 fi
 
 # --- timing helpers ---------------------------------------------------
@@ -106,7 +106,7 @@ TAG=small
 do_set()     { fig set --id "$ARIA" "bench.k$IDX" "v$IDX-$TAG"; }
 do_state()   { fig state --id "$ARIA" -j; }
 do_unset()   { fig unset --id "$ARIA" "bench.k$IDX"; }
-do_loadout() { fig loadout --id "$ARIA" "$LOADOUT"; }
+do_outfit() { fig outfit --id "$ARIA" "$OUTFIT"; }
 do_list()    { fig list -j; }
 
 # top-level key count of the aria's board
@@ -115,10 +115,10 @@ board_bytes() { fig state --id "$ARIA" -j | wc -c; }
 
 # --- run --------------------------------------------------------------
 start=$(now_ms)
-ARIA="$(fig new --loadout "$LOADOUT" -j | sed -n 's/.*"aria_id":"\([^"]*\)".*/\1/p')"
+ARIA="$(fig new --outfit "$OUTFIT" -j | sed -n 's/.*"aria_id":"\([^"]*\)".*/\1/p')"
 end=$(now_ms)
-[ -n "$ARIA" ] || die "could not create aria on loadout $LOADOUT"
-row "new --loadout $LOADOUT (daemon cold start incl.)" 1 "$((end - start))"
+[ -n "$ARIA" ] || die "could not create aria on outfit $OUTFIT"
+row "new --outfit $OUTFIT (daemon cold start incl.)" 1 "$((end - start))"
 
 KEYS0=$(board_keys)
 BYTES0=$(board_bytes)
@@ -127,7 +127,7 @@ time_block "list -j (RPC + process overhead baseline)" "$OPS" do_list
 TAG=small
 time_block "set (small board)" "$OPS" do_set
 time_block "state -j (small board)" "$OPS" do_state
-time_block "loadout $LOADOUT re-apply (small board)" 1 do_loadout
+time_block "outfit $OUTFIT re-apply (small board)" 1 do_outfit
 time_block "unset (small board)" "$OPS" do_unset
 
 # --- inflate ----------------------------------------------------------
@@ -145,7 +145,7 @@ BYTES1=$(board_bytes)
 TAG=large
 time_block "set (large board)" "$OPS" do_set
 time_block "state -j (large board)" "$OPS" do_state
-time_block "loadout $LOADOUT re-apply (large board)" 1 do_loadout
+time_block "outfit $OUTFIT re-apply (large board)" 1 do_outfit
 time_block "unset (large board)" "$OPS" do_unset
 
 # --- cold replay ------------------------------------------------------
@@ -159,7 +159,7 @@ time_block "state -j after daemon restart (cold replay)" 1 do_state
 printf '\n'
 printf 'chalkbench — isolated daemon, no LLM round-trips\n'
 printf '  repo:     %s (%s)\n' "$REPO" "$(git rev-parse --short HEAD)"
-printf '  loadout:  %s\n' "$LOADOUT"
+printf '  outfit:  %s\n' "$OUTFIT"
 printf '  board:    %s keys / %s bytes  ->  %s keys / %s bytes after inflate\n' \
   "$KEYS0" "$BYTES0" "$KEYS1" "$BYTES1"
 printf '  store:    %s (removed on exit)\n\n' "$FIGARO_STATE_DIR"

@@ -15,7 +15,7 @@ import (
 // Benchmark fixtures. Three boards, all deterministic:
 //
 //   default — the real thing. A verbatim capture of the user's default
-//             loadout board (26 skill envelopes + system.credo + the
+//             outfit board (26 skill envelopes + system.credo + the
 //             system.* scalars), committed as
 //             testdata/board-default.json. See
 //             testdata/board-default.provenance.md for exactly how it

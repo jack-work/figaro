@@ -1,5 +1,5 @@
 // Package cli — helpers shared between provider construction and
-// the first-run / loadout flows.
+// the first-run / outfit flows.
 package cli
 
 import (
@@ -19,15 +19,15 @@ import (
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 )
 
-// readLoadoutKnobs loads a named loadout via the outfitter and
+// readOutfitKnobs loads a named outfit via the outfitter and
 // extracts the provider.Knobs from system.* keys. Returns an empty
 // Knobs on any failure (callers are expected to substitute defaults).
-func readLoadoutKnobs(loaded *config.Loaded, loadoutName string) providerPkg.Knobs {
-	if loaded == nil || loadoutName == "" {
+func readOutfitKnobs(loaded *config.Loaded, outfitName string) providerPkg.Knobs {
+	if loaded == nil || outfitName == "" {
 		return providerPkg.Knobs{}
 	}
 	ofit := outfit.New(loaded.ConfigDir)
-	patch, err := ofit.Load(loadoutName)
+	patch, err := ofit.Load(outfitName)
 	if err != nil || patch.IsEmpty() {
 		return providerPkg.Knobs{}
 	}

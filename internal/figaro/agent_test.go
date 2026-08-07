@@ -305,8 +305,8 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	require.Equal(t, "mock-model-v1", meta.Model)
 	require.Equal(t, "initial", meta.Mantra)
 	require.Equal(t, "work", meta.Cwd)
-	require.Equal(t, "d", meta.LoadoutName)
-	require.NotEmpty(t, meta.LoadoutVersion)
+	require.Equal(t, "d", meta.OutfitName)
+	require.NotEmpty(t, meta.OutfitVersion)
 	require.Equal(t, createdAt.UnixMilli(), meta.CreatedAtMS)
 	require.Equal(t, lastActive.UnixMilli(), meta.LastActiveMS)
 
@@ -320,7 +320,7 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 }
 
-// backedConv builds an XwalBackend, materializes a loadout + a fresh
+// backedConv builds an XwalBackend, materializes an outfit + a fresh
 // conversation, and returns the backend and the minted conversation id.
 // The caller builds the agent (so it can set the response, seed the
 // chalkboard, etc.).
@@ -328,7 +328,7 @@ func backedConv(t *testing.T, dir string) (store.Backend, string) {
 	t.Helper()
 	b, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
-	l, err := b.CreateLoadout("d", message.Patch{Set: map[string]json.RawMessage{
+	l, err := b.CreateOutfit("d", message.Patch{Set: map[string]json.RawMessage{
 		"system.model":      json.RawMessage(`"mock-model-v1"`),
 		"system.provider":   json.RawMessage(`"mock"`),
 		"system.max_tokens": json.RawMessage(`1024`),
@@ -352,7 +352,7 @@ func unwrapForTest(entries []store.Entry[message.Message]) []message.Message {
 }
 
 // nonGenesis returns the content-bearing turns (drops structural birth
-// tics and the loadout's empty-content reminder tic).
+// tics and the outfit's empty-content reminder tic).
 func nonGenesis(msgs []message.Message) []message.Message {
 	var out []message.Message
 	for _, m := range msgs {
@@ -360,7 +360,7 @@ func nonGenesis(msgs []message.Message) []message.Message {
 			continue
 		}
 		if m.Role == message.RoleInput && len(m.Content) == 0 && len(m.Patches) == 0 {
-			continue // loadout birth tic
+			continue // outfit birth tic
 		}
 		out = append(out, m)
 	}

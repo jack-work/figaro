@@ -45,14 +45,14 @@ func TestPreDashFlagValue(t *testing.T) {
 		wantOK  bool
 		wantErr bool
 	}{
-		{"absent", []string{"--", "hi"}, []string{"--loadout"}, "", false, false},
-		{"space form", []string{"--loadout", "focus", "--", "hi"}, []string{"--loadout", "-L"}, "focus", true, false},
-		{"equals form", []string{"--loadout=focus", "--", "hi"}, []string{"--loadout"}, "focus", true, false},
-		{"short alias", []string{"-L", "focus", "--", "hi"}, []string{"--loadout", "-L"}, "focus", true, false},
-		{"missing value at end", []string{"--loadout"}, []string{"--loadout"}, "", false, true},
-		{"missing value before dashdash", []string{"--loadout", "--", "hi"}, []string{"--loadout"}, "", false, true},
-		{"empty after equals", []string{"--loadout=", "--", "hi"}, []string{"--loadout"}, "", false, true},
-		{"after dashdash ignored", []string{"--", "--loadout", "focus"}, []string{"--loadout"}, "", false, false},
+		{"absent", []string{"--", "hi"}, []string{"--outfit"}, "", false, false},
+		{"space form", []string{"--outfit", "focus", "--", "hi"}, []string{"--outfit", "-O"}, "focus", true, false},
+		{"equals form", []string{"--outfit=focus", "--", "hi"}, []string{"--outfit"}, "focus", true, false},
+		{"short alias", []string{"-O", "focus", "--", "hi"}, []string{"--outfit", "-O"}, "focus", true, false},
+		{"missing value at end", []string{"--outfit"}, []string{"--outfit"}, "", false, true},
+		{"missing value before dashdash", []string{"--outfit", "--", "hi"}, []string{"--outfit"}, "", false, true},
+		{"empty after equals", []string{"--outfit=", "--", "hi"}, []string{"--outfit"}, "", false, true},
+		{"after dashdash ignored", []string{"--", "--outfit", "focus"}, []string{"--outfit"}, "", false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

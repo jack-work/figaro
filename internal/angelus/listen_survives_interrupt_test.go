@@ -80,8 +80,8 @@ func (p *switchProvider) Send(ctx context.Context, in provider.SendInput, bus pr
 func TestListenSurvivesConcurrentInterruptedSend(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
-	require.NoError(t, os.WriteFile(dir+"/loadouts/switch.toml", []byte(`
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
+	require.NoError(t, os.WriteFile(dir+"/outfits/switch.toml", []byte(`
 [system]
 provider = "switch"
 model = "m"

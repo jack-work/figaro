@@ -19,7 +19,7 @@ BOX=/tmp/figaro-verify
 BIN=$BOX/figaro
 PORT=${PORT:-8917}
 
-rm -rf "$BOX"; mkdir -p "$BOX"/{cfg/loadouts,cfg/providers,state,rt,cache,wire}
+rm -rf "$BOX"; mkdir -p "$BOX"/{cfg/outfits,cfg/providers,state,rt,cache,wire}
 trap 'kill $(cat "$BOX/rt/angelus.pid" 2>/dev/null) 2>/dev/null || true; kill ${GW_PID:-0} 2>/dev/null || true' EXIT
 
 echo "== building from $(git -C "$ROOT" rev-parse --short HEAD)"
@@ -34,7 +34,7 @@ base_url = "http://127.0.0.1:$PORT/v1"
 cache_markers = "trusted"
 EOF
 printf 'You are a terse test agent. Reply with one word.\n' > "$BOX/cfg/credo.md"
-cat > "$BOX/cfg/loadouts/verify.toml" <<'EOF'
+cat > "$BOX/cfg/outfits/verify.toml" <<'EOF'
 duke-title = "verifier"
 
 [system]
@@ -44,7 +44,7 @@ max_tokens = 64
 credo      = { fileName = "credo.md" }
 EOF
 cat > "$BOX/cfg/config.toml" <<'EOF'
-default_loadout = "verify"
+default_outfit = "verify"
 interactive = false
 EOF
 
@@ -55,7 +55,7 @@ echo "== turn 1"
 "$BIN" new -f -- "say ok" >/dev/null 2>&1
 sleep 6
 # The tree glyphs shift awk's columns, so match the id by shape: the aria
-# line is the only one carrying a bare 8-hex token (loadout ids are
+# line is the only one carrying a bare 8-hex token (outfit ids are
 # name@hex, and the @ keeps them out).
 ARIA=$("$BIN" ls -g 2>/dev/null | grep "say ok" | head -1 | grep -oE '(^|[^@[:alnum:]])[0-9a-f]{8}([^[:alnum:]]|$)' | grep -oE '[0-9a-f]{8}' | head -1)
 [ -n "$ARIA" ] || { echo "FAIL: no aria was created"; exit 1; }

@@ -50,9 +50,9 @@ func (m *mockProviderForIntegration) Send(_ context.Context, in provider.SendInp
 func TestIntegration_CreateAndPrompt(t *testing.T) {
 	dir := t.TempDir()
 
-	// Mock loadout — the create path resolves it via outfit.
-	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
-	require.NoError(t, os.WriteFile(dir+"/loadouts/mock.toml", []byte(`
+	// Mock outfit — the create path resolves it via outfit.
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
 [system]
 provider = "mock"
 model = "mock-model"
@@ -159,8 +159,8 @@ model = "mock-model"
 func TestIntegration_Attach(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
-	require.NoError(t, os.WriteFile(dir+"/loadouts/mock.toml", []byte(`
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
 [system]
 provider = "mock"
 model = "mock-model"
@@ -220,8 +220,8 @@ model = "mock-model"
 // independently — the whole daemon fork path end to end (mock provider).
 func TestIntegration_Fork(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
-	require.NoError(t, os.WriteFile(dir+"/loadouts/mock.toml", []byte(`
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
 [system]
 provider = "mock"
 model = "mock-model"

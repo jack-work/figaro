@@ -24,7 +24,7 @@ type board struct {
 //
 // The writer is the agent's inbox drain loop (Agent.act -> applyControlPatch
 // -> State.Apply). Readers are everyone else — the figaro.chalkboard RPC
-// handler, Agent.ApplyLoadout, Agent.chalkboardString/chalkboardInt via
+// handler, Agent.ApplyOutfit, Agent.chalkboardString/chalkboardInt via
 // Agent.Info — and they run on RPC goroutines, concurrently with the writer.
 //
 // Because a Snapshot is an immutable persistent value, publishing one through

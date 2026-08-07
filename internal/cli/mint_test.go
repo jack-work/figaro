@@ -30,7 +30,7 @@ func TestAutoCreateWiring(t *testing.T) {
 		"send -x (exec)":     true,
 		"hup":                false,
 		"listen":             false,
-		"loadout":            false,
+		"outfit":             false,
 	}
 	for verb, want := range mayCreate {
 		if got := mintsWhenUnbound(want); got != want {

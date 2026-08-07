@@ -21,7 +21,7 @@ const (
 	MethodContext    = "figaro.context"
 	MethodInterrupt  = "figaro.interrupt"
 	MethodSet        = "figaro.set"
-	MethodLoadout    = "figaro.loadout"
+	MethodOutfit     = "figaro.outfit"
 	MethodChalkboard = "figaro.chalkboard"
 	MethodQueued     = "figaro.queued"
 
@@ -73,23 +73,23 @@ func MethodNeedsAgent(method string) bool {
 // Typed JSON-RPC error codes for figaro. The -32000..-32099 range
 // is reserved by JSON-RPC 2.0 for application errors.
 const (
-	// ErrNoDefaultLoadout: config.toml has no default_loadout and the
+	// ErrNoDefaultOutfit: config.toml has no default_outfit and the
 	// request omitted one. Data: ErrorData{AvailableProviders}.
-	ErrNoDefaultLoadout = -32010
+	ErrNoDefaultOutfit = -32010
 
-	// ErrNoProvider: resolved loadout has no system.provider key.
-	// Data: ErrorData{AvailableProviders, Loadout}.
+	// ErrNoProvider: resolved outfit has no system.provider key.
+	// Data: ErrorData{AvailableProviders, Outfit}.
 	ErrNoProvider = -32011
 
-	// ErrLoadoutNotFound: named loadout is not on disk.
+	// ErrOutfitNotFound: named outfit is not on disk.
 	// Data: ErrorData{Name, SearchPaths}.
-	ErrLoadoutNotFound = -32012
+	ErrOutfitNotFound = -32012
 )
 
 // ErrorData is the structured payload attached to typed JSON-RPC errors.
 type ErrorData struct {
 	AvailableProviders []string `json:"available_providers,omitempty"`
-	Loadout            string   `json:"loadout,omitempty"`
+	Outfit             string   `json:"outfit,omitempty"`
 	Name               string   `json:"name,omitempty"`
 	SearchPaths        []string `json:"search_paths,omitempty"`
 }
@@ -199,15 +199,15 @@ type SetResponse struct {
 	Remove []string `json:"remove,omitempty"`
 }
 
-// LoadoutRequest names a loadout to apply additively to the aria's
+// OutfitRequest names an outfit to apply additively to the aria's
 // current chalkboard. Keys with values equal to the current snapshot
 // are skipped; no removals are performed.
-type LoadoutRequest struct {
+type OutfitRequest struct {
 	Name string `json:"name"`
 }
 
-// LoadoutResponse lists the keys created or updated.
-type LoadoutResponse struct {
+// OutfitResponse lists the keys created or updated.
+type OutfitResponse struct {
 	OK  bool     `json:"ok"`
 	Set []string `json:"set,omitempty"`
 }
@@ -377,8 +377,8 @@ type FigaroInfoResponse struct {
 	LastActive       int64  `json:"last_active"`             // unix millis
 	Mantra           string `json:"mantra"`                  // agent-maintained essence phrase (chalkboard "mantra")
 	Cwd              string `json:"cwd"`                     // working directory (chalkboard "system.cwd")
-	LoadoutName      string `json:"loadout_name,omitempty"`  // chalkboard system.loadout_name
-	LoadoutVer       string `json:"loadout_ver,omitempty"`   // "live" if the stamped hash matches the current loadout, else its short hash
+	OutfitName       string `json:"outfit_name,omitempty"`   // chalkboard system.outfit_name
+	OutfitVer        string `json:"outfit_ver,omitempty"`    // "live" if the stamped hash matches the current outfit, else its short hash
 	BoundPIDs        []int  `json:"bound_pids"`
 
 	// Fork-forest position (conversation nodes). Vector is the
@@ -390,13 +390,13 @@ type FigaroInfoResponse struct {
 	Trunk      string `json:"trunk,omitempty"`
 	Parent     string `json:"parent,omitempty"`
 	BranchedLT uint64 `json:"branched_lt,omitempty"` // main-LT this trunk diverged at
-	Kind       string `json:"kind,omitempty"`        // "conversation" | "loadout" | "null" (set in global listings)
+	Kind       string `json:"kind,omitempty"`        // "conversation" | "outfit" | "null" (set in global listings)
 }
 
-// CreateRequest names the loadout for a new aria. The system mints the
+// CreateRequest names the outfit for a new aria. The system mints the
 // aria id; callers cannot choose it.
 type CreateRequest struct {
-	Loadout   string           `json:"loadout,omitempty"`
+	Outfit    string           `json:"outfit,omitempty"`
 	Patch     *ChalkboardPatch `json:"patch,omitempty"`
 	Ephemeral bool             `json:"ephemeral,omitempty"`
 }
@@ -437,7 +437,7 @@ type ForkRequest struct {
 // ForkResponse returns the two fresh child ids. The parent freezes and
 // keeps its id as a navigable (read-only) index node. OwnerNote, when set,
 // announces that an interior <id>:<LT> resolved to an owning ancestor (a
-// parent trunk, a loadout, or the genesis root) and what was branched there.
+// parent trunk, an outfit, or the genesis root) and what was branched there.
 type ForkResponse struct {
 	Parent       string `json:"parent"`
 	Continuation string `json:"continuation"`
@@ -481,7 +481,7 @@ type PromoteResponse struct {
 }
 
 // ImportRequest restores an exported aria into this store as a NEW
-// conversation. Nothing is grafted: the loadout is resolved or created by
+// conversation. Nothing is grafted: the outfit is resolved or created by
 // content, a fresh conversation is spawned under it, and Messages are appended
 // through the ordinary path — so node ids, fork bases and LTs are the
 // destination's own and can never collide with what is already there.
@@ -491,20 +491,20 @@ type PromoteResponse struct {
 // store and honouring the old one would be the first collision an import is
 // built to avoid. It is echoed back so the caller can say what moved.
 type ImportRequest struct {
-	Loadout      string            `json:"loadout"`
-	LoadoutPatch message.Patch     `json:"loadout_patch,omitempty"`
-	Chalkboard   message.Patch     `json:"chalkboard,omitempty"`
-	Messages     []message.Message `json:"messages"`
-	WasID        string            `json:"was_id,omitempty"`
-	Mantra       string            `json:"mantra,omitempty"`
-	Provider     string            `json:"provider,omitempty"`
-	Model        string            `json:"model,omitempty"`
+	Outfit      string            `json:"outfit"`
+	OutfitPatch message.Patch     `json:"outfit_patch,omitempty"`
+	Chalkboard  message.Patch     `json:"chalkboard,omitempty"`
+	Messages    []message.Message `json:"messages"`
+	WasID       string            `json:"was_id,omitempty"`
+	Mantra      string            `json:"mantra,omitempty"`
+	Provider    string            `json:"provider,omitempty"`
+	Model       string            `json:"model,omitempty"`
 }
 
 // ImportResponse names the aria that was created, and what it used to be.
 type ImportResponse struct {
 	FigaroID string `json:"figaro_id"`
-	Loadout  string `json:"loadout"`
+	Outfit   string `json:"outfit"`
 	Messages int    `json:"messages"`
 	WasID    string `json:"was_id,omitempty"`
 }
@@ -535,9 +535,9 @@ type AttachResponse struct {
 }
 
 // ListRequest options. IDsOnly skips the per-aria chalkboard + forest fills
-// (mantra, cwd, loadout hash, vector) — much cheaper when the caller only needs
+// (mantra, cwd, outfit hash, vector) — much cheaper when the caller only needs
 // the ids (e.g. shell completion). Global also includes the ceremonial anchors
-// (the null genesis trunk + every versioned loadout) with Kind/Parent set, for
+// (the null genesis trunk + every versioned outfit) with Kind/Parent set, for
 // the `ls -g` hierarchy and the `--json` escape hatch.
 type ListRequest struct {
 	IDsOnly bool `json:"ids_only,omitempty"`

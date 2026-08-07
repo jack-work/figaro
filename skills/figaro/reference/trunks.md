@@ -21,44 +21,44 @@ under you — forking your own trunk doesn't relocate you.
 
 Node ids are pure plumbing; nothing in the CLI ever addresses them.
 
-## The loadout tree (the policy layer)
+## The outfit tree (the policy layer)
 
 figaro derives three node kinds from XWAL topology: the markerless root is
-`null`, markerless depth-one stumps are loadouts, and live trunks are
+`null`, markerless depth-one stumps are outfits, and live trunks are
 conversations. The full tree, top to bottom:
 
 - **null** — the genesis root, **one per store** (`xwal.CreateTrunks`).
   Ceremonial, **closed**. Pure structure.
-- **loadout** (`name@content-hash`) — a named `CreateStump` child of null;
-  **one per distinct loadout name + content-version**, deduped by its stump
-  name. Each carries that loadout's chalkboard stamp baked once
-  into a **shared prefix**: `system.loadout_name`/`system.loadout_version`,
-  plus the whole loadout chalkboard — `skills.*`, `system.credo`,
+- **outfit** (`name@content-hash`) — a named `CreateStump` child of null;
+  **one per distinct outfit name + content-version**, deduped by its stump
+  name. Each carries that outfit's chalkboard stamp baked once
+  into a **shared prefix**: `system.outfit_name`/`system.outfit_version`,
+  plus the whole outfit chalkboard — `skills.*`, `system.credo`,
   `system.model`, …. **Closed.**
-- **conversation** — `SpawnUnderStump` from a *loadout*; inherits the loadout's
+- **conversation** — `SpawnUnderStump` from a *outfit*; inherits the outfit's
   rendered prefix via the fork watermark (cached once, shared by every
   conversation under it). The only **live** kind.
 - **branch** — a fork of a conversation. Also a conversation, just one whose
-  parent is another conversation rather than a loadout.
+  parent is another conversation rather than an outfit.
 
 **Top-level aria vs branch.** A **top-level aria** is a conversation whose
-parent is a loadout — a root of the conversation forest. A **branch** is a
+parent is an outfit — a root of the conversation forest. A **branch** is a
 conversation whose parent is another conversation. (Both are `kindConversation`
 on disk; the distinction is lineage.)
 
-**Cauterization:** the null root and loadout stumps are **closed** — you can't
+**Cauterization:** the null root and outfit stumps are **closed** — you can't
 append to or continue them; they're structure, not conversation. Forking or
 sending "at" a cauterized trunk does *not* re-split it — it spawns a **fresh
 child conversation** beneath it instead (`ForkAt` redirects through
 `SpawnUnderRoot`/`SpawnUnderStump`). This is why "create" and "fork a
-loadout" are the same mechanism.
+outfit" are the same mechanism.
 
 ## LT numbering
 
 Every turn has a figwal **main-LT**, continuous along the trunk's node chain:
 
 - `1` = genesis (the root tic; filtered from rendering/context)
-- `2` = loadout birth (the chalkboard stamp message)
+- `2` = outfit birth (the chalkboard stamp message)
 - `3+` = conversation turns
 
 `figaro show` labels each **turn** by its **turn id**, and `send`/`fork`/
@@ -155,11 +155,11 @@ error rather than a precedence rule.
   that spawned it, permanently (see the figaro SKILL). An aria reaches another
   aria with an explicit `--id`, never by attending it.
 - **`attend null`** (the literal `null`) — **go home**: unbind the shell. New
-  conversations then default to the live loadout. The word echoes the
-  **kindNull** genesis root that sits above every loadout. There is **no
+  conversations then default to the live outfit. The word echoes the
+  **kindNull** genesis root that sits above every outfit. There is **no
   `detach`** (removed) — `attend null` is the unbind. `attend ~` is kept as
   a legacy alias (the tilde must be quoted in the shell). Attending a
-  cauterized (null/loadout) aria is rejected with a nudge toward
+  cauterized (null/outfit) aria is rejected with a nudge toward
   `attend null` / `ls -H` / `ls -g`.
 - **`kill <id>`** — remove a trunk **and its whole subtree** (children
   included). Needs `--recursive`/`-r` to remove a trunk that has live
@@ -179,7 +179,7 @@ error rather than a precedence rule.
 
 - **`-H`/`--home`** — the home view (all top-level arias + their branches)
   *without* unbinding; `●` stays on your real aria.
-- **`-g`/`--global`** — home **plus** the null + versioned-loadout anchors,
+- **`-g`/`--global`** — home **plus** the null + versioned-outfit anchors,
   drawn above the conversations (the infrastructure trunks).
 
 **Cap:**
@@ -190,10 +190,10 @@ error rather than a precedence rule.
 **JSON:**
 
 - **`--json`** — a pro/dev escape hatch: the global state of **all** arias
-  incl. null + loadouts, **always**. Rejects every other flag.
+  incl. null + outfits, **always**. Rejects every other flag.
 
 Columns: **ARIA** (mantra, or `aria <id>`, with tree glyphs + a
-`●`this-shell / `▸`running / `○`idle marker), **ID** (opaque hex), **LOADOUT**,
+`●`this-shell / `▸`running / `○`idle marker), **ID** (opaque hex), **OUTFIT**,
 **VER** (`live` or a short content-hash), **FORK** (`@N` — the LT a branch was
 taken at, blank for top-level arias), AGE, MSGS, CTX, CWD.
 
@@ -210,9 +210,9 @@ figaro promote <id>         another aria, one level
 figaro promote <id> 10      up to 10 stump-bounded levels
 ```
 
-Promotion stops at the loadout boundary. A top-level conversation is already
-rooted at a loadout and cannot climb into it; that is rejected rather than
-silently ignored, with a nudge toward making or editing a loadout instead.
+Promotion stops at the outfit boundary. A top-level conversation is already
+rooted at an outfit and cannot climb into it; that is rejected rather than
+silently ignored, with a nudge toward making or editing an outfit instead.
 
 Implementation: `runPromote` (`internal/cli/manage.go`), the `figaro.promote`
 RPC, and `PromoteResponse{FigaroID, Climbed, AtStump}`.

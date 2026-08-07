@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// seedTree builds a representative aria forest: `stumps` loadouts, each with
+// seedTree builds a representative aria forest: `stumps` outfits, each with
 // `convs` top-level conversations, each conversation forked `branches` times
 // (so the tree has real lineage/depth, not a flat list). Every trunk gets a
 // couple of real turns so it has a non-empty head + chalkboard to open.
@@ -30,10 +30,10 @@ func seedTree(tb testing.TB, b *XwalBackend, stumps, convs, branches int) int {
 	tb.Helper()
 	total := 0
 	for si := 0; si < stumps; si++ {
-		l, err := b.CreateLoadout(fmt.Sprintf("loadout%d", si), patchSet(map[string]string{
-			"system.model":  "m",
-			"system.credo":  "be terse",
-			"loadout_field": fmt.Sprintf("v%d", si),
+		l, err := b.CreateOutfit(fmt.Sprintf("outfit%d", si), patchSet(map[string]string{
+			"system.model": "m",
+			"system.credo": "be terse",
+			"outfit_field": fmt.Sprintf("v%d", si),
 		}))
 		if err != nil {
 			tb.Fatal(err)
@@ -140,14 +140,14 @@ func TestConversationList_TrunkScanCount(t *testing.T) {
 		}
 	}
 
-	var loadoutID string
+	var outfitID string
 	for _, n := range all {
-		if n.Kind == string(kindLoadout) {
-			loadoutID = n.ID
+		if n.Kind == string(kindOutfit) {
+			outfitID = n.ID
 			break
 		}
 	}
-	created, err := b.CreateConversation(loadoutID)
+	created, err := b.CreateConversation(outfitID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,11 +275,11 @@ func BenchmarkChalkboardState10000(b *testing.B) {
 		b.Fatal(err)
 	}
 	defer be.Close()
-	loadout, err := be.CreateLoadout("perf", patchSet(map[string]string{"system.model": "m"}))
+	outfit, err := be.CreateOutfit("perf", patchSet(map[string]string{"system.model": "m"}))
 	if err != nil {
 		b.Fatal(err)
 	}
-	id, err := be.CreateConversation(loadout)
+	id, err := be.CreateConversation(outfit)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -306,11 +306,11 @@ func BenchmarkChalkboardPatches10000(b *testing.B) {
 		b.Fatal(err)
 	}
 	defer be.Close()
-	loadout, err := be.CreateLoadout("perf", patchSet(map[string]string{"system.model": "m"}))
+	outfit, err := be.CreateOutfit("perf", patchSet(map[string]string{"system.model": "m"}))
 	if err != nil {
 		b.Fatal(err)
 	}
-	id, err := be.CreateConversation(loadout)
+	id, err := be.CreateConversation(outfit)
 	if err != nil {
 		b.Fatal(err)
 	}

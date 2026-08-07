@@ -2,7 +2,7 @@
 //
 // Provider factories take operational knobs (model, max_tokens,
 // reminder_renderer, use_official_sdk) extracted by the angelus
-// from the loadout's system.* chalkboard keys. Credentials are
+// from the outfit's system.* chalkboard keys. Credentials are
 // resolved through the auth strategy chain: env var, plaintext
 // api_key in providers/<name>.toml, hush-encrypted api_key in
 // providers/<name>.toml, OAuth via hush.
@@ -147,7 +147,7 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 	if reg == nil {
 		return nil, 0
 	}
-	knobs := defaultLoadoutKnobs(loaded)
+	knobs := defaultOutfitKnobs(loaded)
 	if knobs.Model == "" {
 		knobs.Model = reg.DefaultModel
 	}
@@ -169,11 +169,11 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 	return p, knobs.MaxTokens
 }
 
-// defaultLoadoutKnobs reads the default loadout (if any) and returns
+// defaultOutfitKnobs reads the default outfit (if any) and returns
 // its system.* operational knobs.
-func defaultLoadoutKnobs(loaded *config.Loaded) providerPkg.Knobs {
-	if loaded == nil || loaded.Config.DefaultLoadout == "" {
+func defaultOutfitKnobs(loaded *config.Loaded) providerPkg.Knobs {
+	if loaded == nil || loaded.Config.DefaultOutfit == "" {
 		return providerPkg.Knobs{}
 	}
-	return readLoadoutKnobs(loaded, loaded.Config.DefaultLoadout)
+	return readOutfitKnobs(loaded, loaded.Config.DefaultOutfit)
 }

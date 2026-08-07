@@ -35,7 +35,7 @@ type sendOpts struct {
 	forget    bool   // --forget / -f: submit and exit; do not stream
 	json      bool   // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
 	listen    bool   // --listen / -l: auto-enter the transcript at startup
-	loadout   string // --loadout / -L: the loadout a CREATED aria is minted on
+	outfit    string // --outfit / -O: the outfit a CREATED aria is minted on
 	record    string // --record: write a wire tape of this stream (testing)
 }
 
@@ -122,23 +122,23 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			}
 			i++
 			continue
-		case a == "--loadout", a == "-L":
+		case a == "--outfit", a == "-O":
 			if i+1 >= len(expanded) || expanded[i+1] == "--" {
-				return opts, nil, fmt.Errorf("--loadout requires a value")
+				return opts, nil, fmt.Errorf("--outfit requires a value")
 			}
-			if opts.loadout != "" {
-				return opts, nil, fmt.Errorf("--loadout given more than once")
+			if opts.outfit != "" {
+				return opts, nil, fmt.Errorf("--outfit given more than once")
 			}
-			opts.loadout = expanded[i+1]
+			opts.outfit = expanded[i+1]
 			i += 2
 			continue
-		case strings.HasPrefix(a, "--loadout="):
-			if opts.loadout != "" {
-				return opts, nil, fmt.Errorf("--loadout given more than once")
+		case strings.HasPrefix(a, "--outfit="):
+			if opts.outfit != "" {
+				return opts, nil, fmt.Errorf("--outfit given more than once")
 			}
-			opts.loadout = strings.TrimPrefix(a, "--loadout=")
-			if opts.loadout == "" {
-				return opts, nil, fmt.Errorf("--loadout requires a value")
+			opts.outfit = strings.TrimPrefix(a, "--outfit=")
+			if opts.outfit == "" {
+				return opts, nil, fmt.Errorf("--outfit requires a value")
 			}
 			i++
 			continue
@@ -242,7 +242,7 @@ var sendFlagDefs = []cmdkit.FlagDef{
 	{Long: "yes", Short: "y", IsBool: true, Description: "--exec only: skip confirmation"},
 	{Long: "forget", Short: "f", IsBool: true, Description: "Submit and exit; do not stream"},
 	{Long: "json", Short: "j", IsBool: true, Description: "Submit, print one JSON object, exit"},
-	{Long: "loadout", Short: "L", Description: "Loadout for an aria this call CREATES (-e, or an unattended shell)"},
+	{Long: "outfit", Short: "O", Description: "Outfit for an aria this call CREATES (-e, or an unattended shell)"},
 }
 
 // argsBeforeBoundary / argsFromBoundary split argv at the first bare `--`.
@@ -443,11 +443,11 @@ func runSendAs(loaded *config.Loaded, verb string, rawArgs []string) {
 	case opts.ephemeral:
 		runSendEphemeralRich(loaded, opts, prompt, set)
 	case opts.raw:
-		runSendRaw(loaded, opts.id, opts.loadout, prompt)
+		runSendRaw(loaded, opts.id, opts.outfit, prompt)
 	default:
 		// Today's interactive send: pid-bound or --id named.
 		if opts.id == "" {
-			runPrompt(loaded, opts.loadout, prompt, set)
+			runPrompt(loaded, opts.outfit, prompt, set)
 			return
 		}
 		promptAria(loaded, opts.id, prompt, set)
@@ -476,8 +476,8 @@ func validateSendOpts(opts sendOpts, hasTurn bool) error {
 	if hasTurn && (opts.ephemeral || opts.exec || opts.verbatim) {
 		return fmt.Errorf("<trunk>:<turn> is not compatible with --ephemeral/--exec/--verbatim")
 	}
-	if opts.loadout != "" && !opts.ephemeral && (opts.id != "" || opts.target != "" || hasTurn) {
-		return fmt.Errorf("--loadout applies to an aria this call creates; a target names one that already exists (use -e, or drop the target)")
+	if opts.outfit != "" && !opts.ephemeral && (opts.id != "" || opts.target != "" || hasTurn) {
+		return fmt.Errorf("--outfit applies to an aria this call creates; a target names one that already exists (use -e, or drop the target)")
 	}
 	if opts.json {
 		if bad := jsonIncompatible(opts); bad != "" {
@@ -518,7 +518,7 @@ func runSendEphemeralRaw(loaded *config.Loaded, opts sendOpts, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.loadout, nil) })
+	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
 	if err != nil {
 		die("create figaro: %s", err)
 	}
@@ -550,7 +550,7 @@ func runSendEphemeralRich(loaded *config.Loaded, opts sendOpts, prompt string, s
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.loadout, nil) })
+	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
 	if err != nil {
 		die("create figaro: %s", err)
 	}
@@ -572,14 +572,14 @@ func runSendEphemeralRich(loaded *config.Loaded, opts sendOpts, prompt string, s
 // runSendRaw streams raw output from a persistent aria (bound, named, or
 // minted here when this shell has none). The aria is left alive; only the
 // formatting is raw.
-func runSendRaw(loaded *config.Loaded, ariaID, loadout, prompt string) {
+func runSendRaw(loaded *config.Loaded, ariaID, outfit, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	_, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, true, loadout)
+	_, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, true, outfit)
 	if err != nil {
 		die("%s", err)
 	}
@@ -603,7 +603,7 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 
 	var figaroEP transport.Endpoint
 	if opts.ephemeral {
-		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.loadout, nil) })
+		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
 		if err != nil {
 			die("create figaro: %s", err)
 		}
@@ -617,7 +617,7 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 			die("send: %s", err)
 		}
 	} else {
-		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.loadout)
+		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
 		if err != nil {
 			die("%s", err)
 		}
@@ -641,7 +641,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 
 	var figaroEP transport.Endpoint
 	if opts.ephemeral || opts.id == "" {
-		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.loadout, nil) })
+		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
 		if err != nil {
 			die("create figaro: %s", err)
 		}
@@ -655,7 +655,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 			die("send: %s", err)
 		}
 	} else {
-		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.loadout)
+		_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
 		if err != nil {
 			die("%s", err)
 		}
@@ -712,7 +712,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 // to run and check on it later via `figaro show` / `figaro listen`.
 func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	// 30s, not 10: this call may now MINT the aria before submitting, and a
-	// cold daemon plus a first-run loadout render does not fit in ten.
+	// cold daemon plus a first-run outfit render does not fit in ten.
 	//
 	// TODO(perf): put this back to 10s once the `new`/`fork` latency work
 	// lands. The extra 20s buys exactly one thing — the create — and that
@@ -724,7 +724,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	ariaID, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.loadout)
+	ariaID, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, opts.id, true, opts.outfit)
 	if err != nil {
 		die("%s", err)
 	}

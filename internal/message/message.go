@@ -30,7 +30,7 @@ const (
 	RoleSystemInterrupt Role = "system.interrupt"
 
 	// RoleGenesis marks a node's birth message in the IR — written when a
-	// fork node is created (null root, loadout node, conversation) so the
+	// fork node is created (null root, outfit node, conversation) so the
 	// log is non-empty and forkable, and to anchor provenance. It is
 	// filtered from provider rendering (it is structural, not a turn).
 	RoleGenesis Role = "genesis"
@@ -70,9 +70,9 @@ func (r *Role) UnmarshalJSON(b []byte) error {
 }
 
 // IsCeremonial reports whether m is a structural/inherited marker rather than
-// a conversational message: the root genesis sentinel, or the loadout-birth
+// a conversational message: the root genesis sentinel, or the outfit-birth
 // (a RoleInput message with no renderable content — it carries only the
-// loadout's chalkboard stamp, inherited by every conversation in the shared
+// outfit's chalkboard stamp, inherited by every conversation in the shared
 // prefix). These anchor the IR but are not turns, so the conversation's
 // message count must not include them.
 func IsCeremonial(m Message) bool {
@@ -88,7 +88,7 @@ func IsCeremonial(m Message) bool {
 				return false
 			}
 		}
-		return true // empty user marker (loadout birth)
+		return true // empty user marker (outfit birth)
 	}
 	return false
 }

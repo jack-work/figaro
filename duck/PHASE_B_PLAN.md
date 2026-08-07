@@ -10,9 +10,9 @@ memory ([[project_figwal_forking]]).
 ```
 arias/                         <- the data dir IS the null root (xwal root, manifest here)
   null genesis: IR=[genesis tic], chalkboard=[root defaults], then SEALED (read-only)
-  └─ loadout node  L@<verhash>  (fork of null; chalkboard += L's patch;
-     │                           system.loadout_name=L, system.loadout_version=<verhash> [immutable])
-     ├─ conversation  (fork of the loadout node; rich/empty prefix shared)
+  └─ outfit node  L@<verhash>  (fork of null; chalkboard += L's patch;
+     │                           system.outfit_name=L, system.outfit_version=<verhash> [immutable])
+     ├─ conversation  (fork of the outfit node; rich/empty prefix shared)
      │  └─ conversation' (fork of a conversation = branching; shared rich prefix)
      └─ conversation ...
 ```
@@ -20,10 +20,10 @@ arias/                         <- the data dir IS the null root (xwal root, mani
 - **null** = the arias directory itself; a closed root node. Not empty (figwal
   can't fork an empty log): seeded with ONE genesis IR tic + the root-level
   default chalkboard, then sealed forever.
-- **loadout node** = fork(null) + apply the loadout's resolved patch. One node
-  per (name, version). `system.loadout_name` + `system.loadout_version` are
+- **outfit node** = fork(null) + apply the outfit's resolved patch. One node
+  per (name, version). `system.outfit_name` + `system.outfit_version` are
   immutable chalkboard keys (set once; reducer/set refuses to change them).
-- **conversation** = fork(loadout node). Inherits loadout defaults via the
+- **conversation** = fork(outfit node). Inherits outfit defaults via the
   chalkboard **watermark** — no more bootPatch injection.
 - **branching** a live conversation = fork(conversation), same op, rich prefix.
 
@@ -56,16 +56,16 @@ navigable index node) and yields **new-id children**:
 
 ## Versioning + hashing
 
-- loadout version = value-stable content hash of the resolved loadout patch
+- outfit version = value-stable content hash of the resolved outfit patch
   (canonical JSON), using figwal's `segment.ValueHash` scheme (same as the
   `_hash` sidecar) — one hashing convention project-wide.
-- loadout TOML change -> new hash -> new loadout node; existing conversations keep
+- outfit TOML change -> new hash -> new outfit node; existing conversations keep
   their node+version; versions coexist. ("never change a prefix.")
 
 ## Resolution index (at the null root / arias dir)
 
 - `id -> branch path` (resolve any aria id to its nested branch).
-- `(loadout_name, version) -> loadout node id` (find/reuse a loadout node).
+- `(outfit_name, version) -> outfit node id` (find/reuse an outfit node).
 - Registry/angelus resolves through this. Crash-safe writes (tmp+rename).
 
 ## Store layer (thin over xwal v0.5.0)
@@ -85,13 +85,13 @@ dual-read. (User approved.)
 
 ## Testing
 
-- Go unit tests: xwalLog, XwalBackend, chalkboard channel, loadout
+- Go unit tests: xwalLog, XwalBackend, chalkboard channel, outfit
   materialization/versioning, fork identity + index resolution.
 - End-to-end daemon via the tmux skill (`~/.config/figaro/skills/tmux.md`),
   isolated FIGARO_RUNTIME_DIR + FIGARO_STATE_DIR (never the live daemon),
-  inherited config/hush/auth: create (=fork loadout) -> turn -> set -> fork ->
-  verify shared prefix, divergent chalkboard+IR, transitions inline, loadout
-  version preserved across a loadout edit.
+  inherited config/hush/auth: create (=fork outfit) -> turn -> set -> fork ->
+  verify shared prefix, divergent chalkboard+IR, transitions inline, outfit
+  version preserved across an outfit edit.
 
 ## CLI fork rendering (user reqs, build at the fork/list step)
 - `figaro ls`/`list` gains `--json` (machine view of the tree).
@@ -100,7 +100,7 @@ dual-read. (User approved.)
 - The user wants a HORIZONTALLY-heavy layout: each aria a line, lineage shown as
   aligned ancestor columns (a "vector column" of ancestor ids/mantras) so depth is
   visible side-by-side and "this one is forked deeper" reads at a glance. Sketch:
-  one row per aria; columns = ancestry levels (arias › loadout@ver › conv › fork…),
+  one row per aria; columns = ancestry levels (arias › outfit@ver › conv › fork…),
   leaf's mantra as the readable label, recency + depth markers. Brainstorm/optionally
   web-search a good compact-ancestry layout when building this.
 
@@ -114,8 +114,8 @@ dual-read. (User approved.)
 
 ## Build order
 1. store: `xwalLog` + `XwalBackend` + chalkboard State view (+ unit tests, green).
-2. null-root genesis + loadout-node materialization + version hash + index.
-3. rewire create = fork loadout; drop bootPatch + caller ids; chalkboard channel
+2. null-root genesis + outfit-node materialization + version hash + index.
+3. rewire create = fork outfit; drop bootPatch + caller ids; chalkboard channel
    wired into agent + encoder (transitions from channel) + `figaro set`.
 4. `figaro fork` (CLI + angelus RPC + agent) = xwal.Fork at IR tail, mint child id.
 5. tmux e2e; then migration/backup.

@@ -83,17 +83,17 @@ The **mantra** is the phrase shown in `figaro ls`, so a well-kept mantra is how
 a list of twenty conversations stays readable. Agents maintain their own; see
 [reference/mantra.md](reference/mantra.md).
 
-## 6. The loadout, which makes it yours
+## 6. The outfit, which makes it yours
 
-A **loadout** is the profile a conversation is born under: which model, which
+A **outfit** is the profile a conversation is born under: which model, which
 credo (the standing instructions that shape voice and behaviour), and which
-skills are available. It lives in `~/.config/figaro/loadouts/<name>.toml`, and
+skills are available. It lives in `~/.config/figaro/outfits/<name>.toml`, and
 `config.toml` names the default.
 
 ```sh
-figaro loadout --list             what profiles exist
-figaro new --loadout <name>       start a conversation under one
-figaro loadout <name>             apply one to the current aria, additively
+figaro outfit --list             what profiles exist
+figaro new --outfit <name>       start a conversation under one
+figaro outfit <name>             apply one to the current aria, additively
 ```
 
 Skills are markdown files under `~/.config/figaro/skills/`. Each one's

@@ -49,13 +49,13 @@ func TestImportLandsAsAWholeConversation(t *testing.T) {
 		say(message.RoleOutput, "beta"),
 	}
 	resp := importReq(t, h, rpc.ImportRequest{
-		Loadout:  "opus5-ant",
+		Outfit:   "opus5-ant",
 		WasID:    "23a5a06d",
 		Mantra:   "a portable aria",
 		Messages: msgs,
 		Chalkboard: message.Patch{Set: map[string]json.RawMessage{
-			"mantra":              json.RawMessage(`"a portable aria"`),
-			"system.loadout_name": json.RawMessage(`"opus5-ant"`),
+			"mantra":             json.RawMessage(`"a portable aria"`),
+			"system.outfit_name": json.RawMessage(`"opus5-ant"`),
 		}},
 	})
 
@@ -93,16 +93,16 @@ func TestImportLandsAsAWholeConversation(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, meta)
 	require.Equal(t, len(msgs), meta.MessageCount)
-	require.Equal(t, "opus5-ant", meta.LoadoutName)
+	require.Equal(t, "opus5-ant", meta.OutfitName)
 	require.Equal(t, "a portable aria", meta.Mantra)
 }
 
 // Importing the same aria twice gives two independent conversations under ONE
-// loadout: CreateLoadout is content-addressed, so an identical loadout is
+// outfit: CreateOutfit is content-addressed, so an identical outfit is
 // reused rather than duplicated, while the conversations cannot share an id.
-func TestImportTwiceSharesTheLoadoutAndNothingElse(t *testing.T) {
+func TestImportTwiceSharesTheOutfitAndNothingElse(t *testing.T) {
 	h, backend := importFixture(t)
-	req := rpc.ImportRequest{Loadout: "opus5-ant", Messages: []message.Message{say(message.RoleInput, "hello")}}
+	req := rpc.ImportRequest{Outfit: "opus5-ant", Messages: []message.Message{say(message.RoleInput, "hello")}}
 
 	first := importReq(t, h, req)
 	second := importReq(t, h, req)
@@ -110,19 +110,19 @@ func TestImportTwiceSharesTheLoadoutAndNothingElse(t *testing.T) {
 
 	stumps := map[string]int{}
 	for _, n := range backend.Nodes() {
-		if n.Kind == "loadout" {
+		if n.Kind == "outfit" {
 			stumps[n.ID]++
 		}
 	}
-	require.Len(t, stumps, 1, "an identical loadout is reused, not duplicated: %v", stumps)
+	require.Len(t, stumps, 1, "an identical outfit is reused, not duplicated: %v", stumps)
 }
 
 // An import into a store that already has arias disturbs none of them.
 func TestImportLeavesExistingAriasAlone(t *testing.T) {
 	h, backend := importFixture(t)
-	loadout, err := backend.CreateLoadout("resident", message.Patch{})
+	outfit, err := backend.CreateOutfit("resident", message.Patch{})
 	require.NoError(t, err)
-	resident, err := backend.CreateConversation(loadout)
+	resident, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
 	rlog, err := backend.Open(resident)
 	require.NoError(t, err)
@@ -131,7 +131,7 @@ func TestImportLeavesExistingAriasAlone(t *testing.T) {
 	before := len(rlog.Read())
 
 	imported := importReq(t, h, rpc.ImportRequest{
-		Loadout: "opus5-ant", Messages: []message.Message{say(message.RoleInput, "newcomer")},
+		Outfit: "opus5-ant", Messages: []message.Message{say(message.RoleInput, "newcomer")},
 	})
 	require.NotEqual(t, resident, imported.FigaroID)
 
@@ -147,12 +147,12 @@ func TestImportLeavesExistingAriasAlone(t *testing.T) {
 	require.Contains(t, texts, "I was here first")
 }
 
-// A loadout is required: without one there is no stump to spawn under, and
+// An outfit is required: without one there is no stump to spawn under, and
 // guessing would put the aria somewhere the reader did not ask for.
-func TestImportRefusesWithoutALoadout(t *testing.T) {
+func TestImportRefusesWithoutAOutfit(t *testing.T) {
 	h, _ := importFixture(t)
 	params, err := json.Marshal(rpc.ImportRequest{Messages: []message.Message{say(message.RoleInput, "x")}})
 	require.NoError(t, err)
 	_, err = h.importAria(context.Background(), params)
-	require.ErrorContains(t, err, "no loadout named")
+	require.ErrorContains(t, err, "no outfit named")
 }

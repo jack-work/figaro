@@ -28,9 +28,9 @@ func newBackedConversation(t *testing.T) (*store.XwalBackend, string) {
 	t.Helper()
 	b, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
-	loadout, err := b.CreateLoadout("test", message.Patch{})
+	outfit, err := b.CreateOutfit("test", message.Patch{})
 	require.NoError(t, err)
-	id, err := b.CreateConversation(loadout)
+	id, err := b.CreateConversation(outfit)
 	require.NoError(t, err)
 	return b, id
 }

@@ -40,9 +40,9 @@ func TestShutdownDrainSealsPartialTurn(t *testing.T) {
 	backend, err := store.NewXwalBackend(t.TempDir(), 0)
 	require.NoError(t, err)
 	defer backend.Close()
-	loadout, err := backend.CreateLoadout("test", message.Patch{})
+	outfit, err := backend.CreateOutfit("test", message.Patch{})
 	require.NoError(t, err)
-	conv, err := backend.CreateConversation(loadout)
+	conv, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
 
 	prov := &hangingProvider{started: make(chan struct{})}
@@ -77,8 +77,8 @@ func TestShutdownDrainSealsPartialTurn(t *testing.T) {
 
 func TestConcurrentRestoreRepairsOnce(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(dir+"/loadouts", 0700))
-	require.NoError(t, os.WriteFile(dir+"/loadouts/mock.toml", []byte(`
+	require.NoError(t, os.MkdirAll(dir+"/outfits", 0700))
+	require.NoError(t, os.WriteFile(dir+"/outfits/mock.toml", []byte(`
 [system]
 provider = "mock"
 model = "mock-model"
@@ -87,9 +87,9 @@ model = "mock-model"
 	backend, err := store.NewXwalBackend(dir+"/arias", 0)
 	require.NoError(t, err)
 	defer backend.Close()
-	loadout, err := backend.CreateLoadout("mock", message.Patch{})
+	outfit, err := backend.CreateOutfit("mock", message.Patch{})
 	require.NoError(t, err)
-	conv, err := backend.CreateConversation(loadout)
+	conv, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
 	ir, err := backend.Open(conv)
 	require.NoError(t, err)

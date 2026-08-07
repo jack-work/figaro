@@ -21,7 +21,7 @@ var agentMethods = []string{
 	rpc.MethodContext,
 	rpc.MethodInterrupt,
 	rpc.MethodSet,
-	rpc.MethodLoadout,
+	rpc.MethodOutfit,
 	rpc.MethodChalkboard,
 	rpc.MethodQueued,
 	rpc.MethodQueueUpdate,
@@ -96,16 +96,16 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		}
 		return rpc.SetResponse{OK: true, Set: set, Remove: removed}, nil
 
-	case rpc.MethodLoadout:
-		var req rpc.LoadoutRequest
+	case rpc.MethodOutfit:
+		var req rpc.OutfitRequest
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		set, err := a.ApplyLoadout(req.Name)
+		set, err := a.ApplyOutfit(req.Name)
 		if err != nil {
 			return nil, err
 		}
-		return rpc.LoadoutResponse{OK: true, Set: set}, nil
+		return rpc.OutfitResponse{OK: true, Set: set}, nil
 
 	case rpc.MethodChalkboard:
 		return rpc.ChalkboardResponse{Snapshot: a.Snapshot()}, nil

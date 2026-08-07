@@ -145,11 +145,11 @@ func printStatusPanel(out *os.File, f *rpc.FigaroInfoResponse, more bool, forkTu
 	// Derived / extra detail (formerly the `derive` command's territory).
 	if more {
 		row("cwd", dash(f.Cwd))
-		loadout := dash(f.LoadoutName)
-		if f.LoadoutVer != "" {
-			loadout += " (" + f.LoadoutVer + ")"
+		outfit := dash(f.OutfitName)
+		if f.OutfitVer != "" {
+			outfit += " (" + f.OutfitVer + ")"
 		}
-		row("loadout", loadout)
+		row("outfit", outfit)
 		if f.CreatedAt != 0 {
 			row("created", time.UnixMilli(f.CreatedAt).Format("2006-01-02 15:04:05"))
 		}

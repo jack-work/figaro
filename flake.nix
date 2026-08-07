@@ -120,7 +120,7 @@
         # The dev-shell knobs are:
         #
         #   runtime  → FIGARO_RUNTIME_DIR  (socket, bindings, PID)
-        #   config   → FIGARO_CONFIG_DIR   (loadouts, providers, config.toml)
+        #   config   → FIGARO_CONFIG_DIR   (outfits, providers, config.toml)
         #   state    → FIGARO_STATE_DIR    (arias, OTel data)
         #   hush     → FIGARO_HUSH_APP     (hush identity + socket)
         #
@@ -304,14 +304,14 @@
 
         # Share the global hush identity (so you don't have to
         # re-add provider keys) but isolate runtime/config/state.
-        # Useful for testing new loadouts/configs against real
+        # Useful for testing new outfits/configs against real
         # provider credentials without polluting the real config.
         share-hush = mkFigaroShell {
           name = "share-hush";
           hush = null;
         };
 
-        # Share config (real providers, real loadouts) but isolate
+        # Share config (real providers, real outfits) but isolate
         # runtime + state AND run an isolated, embedded hush (its own
         # identity, re-authenticated per shell — `q login` or set
         # ANTHROPIC_API_KEY on first use). The shared agent's socket
@@ -341,7 +341,7 @@
         #     figaro-snapshot-reseed
         snapshot = mkFigaroShell {
           name = "snapshot";
-          config = null;   # read the real loadouts/providers; never written
+          config = null;   # read the real outfits/providers; never written
           hush   = null;   # real credentials, so a migrated aria can be run
         };
 

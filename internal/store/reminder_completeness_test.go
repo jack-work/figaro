@@ -19,14 +19,14 @@ import (
 // aria HAS and has never been told about, which is invisible: `figaro
 // state` shows it, the model does not know it.
 //
-// Two defects hid under the absence of this assertion. The loadout patch
+// Two defects hid under the absence of this assertion. The outfit patch
 // was written after the record meant to introduce it, so no aria rendered
 // its skills; and every entry appended in-process came back with cursor
 // zero, because the cache stored the caller's struct instead of the record
 // that was written -- so nothing rendered at all until a restart.
 //
-// The loadout needs no special case, and that is the point of the model:
-// the null root's board is empty, so the loadout's own patch IS the
+// The outfit needs no special case, and that is the point of the model:
+// the null root's board is empty, so the outfit's own patch IS the
 // snapshot, and every aria forked from the stump inherits it as an
 // ordinary delta.
 func TestEveryPatchIsShownToTheAria(t *testing.T) {
@@ -36,14 +36,14 @@ func TestEveryPatchIsShownToTheAria(t *testing.T) {
 	}
 	defer be.Close()
 
-	loadout, err := be.CreateLoadout("opus5", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := be.CreateOutfit("opus5", message.Patch{Set: map[string]json.RawMessage{
 		"skills.golang": json.RawMessage(`{"frontmatter":"name: golang"}`),
 		"duke-title":    json.RawMessage(`"Gluck"`),
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	aria, err := be.CreateConversation(loadout)
+	aria, err := be.CreateConversation(outfit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,13 +129,13 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	}
 	defer be.Close()
 
-	loadout, err := be.CreateLoadout("opus5", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := be.CreateOutfit("opus5", message.Patch{Set: map[string]json.RawMessage{
 		"skills.golang": json.RawMessage(`{"frontmatter":"name: golang"}`),
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	parent, err := be.CreateConversation(loadout)
+	parent, err := be.CreateConversation(outfit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,8 +209,8 @@ func TestAForkedAriaIsShownItsNewAriaID(t *testing.T) {
 	if got, _ := shown.Get("aria_id"); string(got) != want {
 		t.Errorf("folding what the branch was shown gives aria_id=%s, want %s", got, want)
 	}
-	// And the loadout still reaches the branch across the fork.
+	// And the outfit still reaches the branch across the fork.
 	if _, ok := shown.Get("skills.golang"); !ok {
-		t.Error("the branch was never shown the loadout's skills")
+		t.Error("the branch was never shown the outfit's skills")
 	}
 }

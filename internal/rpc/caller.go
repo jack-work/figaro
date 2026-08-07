@@ -115,7 +115,7 @@ func (c *CallerRef) Empty() bool {
 }
 
 // DukeTitleKey is the chalkboard key naming the end user for an aria. Set it
-// in a loadout ("gluck") and every prompt that aria receives from a human
+// in an outfit ("gluck") and every prompt that aria receives from a human
 // terminal is attributed to that name.
 //
 // "Duke" is the harness's word for the END USER — the person the agent serves,
@@ -383,7 +383,7 @@ func SenderFrom(params json.RawMessage, dukeTitle func() string) string {
 		return ""
 	}
 	// The duke is named by the ARIA BEING ADDRESSED, not by the caller. That
-	// is the whole point: the user's name lives in a loadout, not in a shell.
+	// is the whole point: the user's name lives in an outfit, not in a shell.
 	if dukeTitle != nil {
 		if t := SanitizeLabel(dukeTitle()); t != "" {
 			return t

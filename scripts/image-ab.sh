@@ -20,28 +20,28 @@
 # their md5s are printed and COMPARED — the script aborts if they match.
 #
 # Everything runs against an ISOLATED daemon in a temp dir. FIGARO_CONFIG_DIR
-# and FIGARO_HUSH_APP are inherited so real loadouts and credentials are
+# and FIGARO_HUSH_APP are inherited so real outfits and credentials are
 # visible; the script refuses to run if the state/runtime dirs would be the
 # user's own, and tears both daemons down on exit.
 #
 # COSTS REAL TOKENS. Two short turns per model, one tool call each.
 #
 # Usage:
-#   scripts/image-ab.sh                          # default loadout
-#   scripts/image-ab.sh -L copilot               # a named loadout
+#   scripts/image-ab.sh                          # default outfit
+#   scripts/image-ab.sh -L copilot               # a named outfit
 #   scripts/image-ab.sh -L opus5 -m claude-sonnet-5
 #   scripts/image-ab.sh -b <ref>                 # compare against another ref
 #
 set -euo pipefail
 
-LOADOUT=""
+OUTFIT=""
 MODEL=""
 BEFORE_REF="origin/main"
 KEEP=0
 
 while getopts "L:m:b:kh" opt; do
   case $opt in
-    L) LOADOUT=$OPTARG ;;
+    L) OUTFIT=$OPTARG ;;
     m) MODEL=$OPTARG ;;
     b) BEFORE_REF=$OPTARG ;;
     k) KEEP=1 ;;
@@ -124,7 +124,7 @@ arm() {
   DAEMONS+=("$env_dir")
 
   local args=(new)
-  [ -n "$LOADOUT" ] && args+=(--loadout "$LOADOUT")
+  [ -n "$OUTFIT" ] && args+=(--outfit "$OUTFIT")
 
   local id reply
   id=$(FIGARO_RUNTIME_DIR="$env_dir/run" FIGARO_STATE_DIR="$env_dir/state" \

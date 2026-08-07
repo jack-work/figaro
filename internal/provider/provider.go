@@ -24,7 +24,7 @@ type Tool struct {
 	Parameters  interface{} `json:"parameters"`
 }
 
-// Knobs are operational provider settings derived from the loadout's
+// Knobs are operational provider settings derived from the outfit's
 // system.* chalkboard keys. The harness reads these to construct the
 // provider; the agent never sees them (no rendering template).
 type Knobs struct {

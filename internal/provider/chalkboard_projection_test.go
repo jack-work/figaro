@@ -75,7 +75,7 @@ func renderedKeys(config ProjectionConfig[EncodedMessages]) (*IncrementalProject
 func TestWarmProjectionRendersWhatAColdOneWould(t *testing.T) {
 	build := func() *store.MemLog[message.Message] {
 		log := store.NewMemLog[message.Message]()
-		stamp(t, log, "one", 2)   // the loadout patch lands here
+		stamp(t, log, "one", 2)   // the outfit patch lands here
 		stamp(t, log, "two", 4)   // two more patches
 		stamp(t, log, "three", 5) // one more
 		return log

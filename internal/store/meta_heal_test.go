@@ -27,7 +27,7 @@ func healFixtureSized(t *testing.T, dir string, n, segmentSize int) (*XwalBacken
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { b.Close() })
-	l, err := b.CreateLoadout("default", patchSet(map[string]string{"system.credo": "be terse"}))
+	l, err := b.CreateOutfit("default", patchSet(map[string]string{"system.credo": "be terse"}))
 	if err != nil {
 		t.Fatal(err)
 	}

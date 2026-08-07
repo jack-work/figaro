@@ -156,7 +156,7 @@ func TestInterruptSentinel_Roundtrip(t *testing.T) {
 func TestCountMessages_ExcludesCeremonial(t *testing.T) {
 	msgs := []message.Message{
 		{Role: message.RoleGenesis}, // ceremonial (genesis)
-		{Role: message.RoleInput},   // ceremonial (empty loadout birth)
+		{Role: message.RoleInput},   // ceremonial (empty outfit birth)
 		{Role: message.RoleInput, Content: []message.Content{message.TextContent("u1")}},                        // counts
 		{Role: message.RoleOutput, Content: []message.Content{message.TextContent("a1")}},                       // counts
 		{Role: message.RoleInput, Content: []message.Content{message.ToolResultContent("c", "t", "ok", false)}}, // counts (tool result tic)

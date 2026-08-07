@@ -13,7 +13,7 @@ import (
 func TestLoadParsesAuthzSection(t *testing.T) {
 	dir := t.TempDir()
 	body := `
-default_loadout = "opus5"
+default_outfit = "opus5"
 
 [authz]
 caller_identity = true

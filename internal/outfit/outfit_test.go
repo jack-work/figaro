@@ -15,8 +15,8 @@ import (
 
 func TestLoad_FlattensInlineTables(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"), []byte(`
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "config.toml"), []byte(`
 system = { model = "claude-x", max_tokens = 1024 }
 friendly_name = "Figaro"
 user_id = 7
@@ -32,11 +32,11 @@ user_id = 7
 
 func TestLoad_SourceChain(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "base.toml"), []byte(`
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "base.toml"), []byte(`
 system = { model = "default-model", max_tokens = 8192 }
 `), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"), []byte(`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "config.toml"), []byte(`
 source = "base"
 system = { model = "override-model" }
 friendly_name = "Top"
@@ -52,8 +52,8 @@ friendly_name = "Top"
 func TestLoad_FileName_NoFrontmatter_StoresContent(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "credo.md"), []byte("# Credo\nbody"), 0600))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"), []byte(`
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "config.toml"), []byte(`
 system = { credo = { fileName = "credo.md" } }
 `), 0600))
 
@@ -70,8 +70,8 @@ func TestLoad_FileName_WithFrontmatter_StripsBody(t *testing.T) {
 	dir := t.TempDir()
 	contents := "---\nname: foo\ndescription: a foo\n---\nthe body goes here\nand keeps going"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "foo.md"), []byte(contents), 0600))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"), []byte(`
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "config.toml"), []byte(`
 foo = { fileName = "foo.md" }
 `), 0600))
 
@@ -91,8 +91,8 @@ func TestLoad_DirName(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "skills", "go.md"), []byte("go body"), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "skills", "bravo.md"),
 		[]byte("---\nname: bravo\ndescription: B\n---\nbravo body"), 0600))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"), []byte(`
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "config.toml"), []byte(`
 skills = { dirName = "skills" }
 `), 0600))
 
@@ -119,9 +119,9 @@ skills = { dirName = "skills" }
 
 func TestLoad_CycleDetected(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "a.toml"), []byte(`source = "b"`), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "b.toml"), []byte(`source = "a"`), 0600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "a.toml"), []byte(`source = "b"`), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "b.toml"), []byte(`source = "a"`), 0600))
 
 	_, err := outfit.New(dir).Load("a")
 	require.Error(t, err)
@@ -130,22 +130,22 @@ func TestLoad_CycleDetected(t *testing.T) {
 
 func TestLoad_EmptyNameReturnsEmptyPatch(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"), []byte(`x = 1`), 0600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "config.toml"), []byte(`x = 1`), 0600))
 
 	// Empty name no longer defaults to "config" — callers must
-	// resolve the name (e.g. via config.DefaultLoadout) themselves.
+	// resolve the name (e.g. via config.DefaultOutfit) themselves.
 	patch, err := outfit.New(dir).Load("")
 	require.NoError(t, err)
-	assert.True(t, patch.IsEmpty(), "empty loadout name must yield empty patch")
+	assert.True(t, patch.IsEmpty(), "empty outfit name must yield empty patch")
 }
 
 func TestLoad_MissingFileIsNotAnError(t *testing.T) {
 	dir := t.TempDir()
-	// No loadouts/ directory at all.
+	// No outfits/ directory at all.
 	patch, err := outfit.New(dir).Load("nonexistent")
 	require.NoError(t, err)
-	assert.True(t, patch.IsEmpty(), "missing loadout must yield empty patch (graceful)")
+	assert.True(t, patch.IsEmpty(), "missing outfit must yield empty patch (graceful)")
 }
 
 // A subdirectory with a SKILL.md is one skill keyed by the dir name; bundled
@@ -165,8 +165,8 @@ func TestLoad_DirSkill_AndBundledMerge(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "skills"), 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "skills", "mine.md"), []byte("user mine"), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "skills", "shared.md"), []byte("user shared"), 0600))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"),
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "config.toml"),
 		[]byte("skills = { dirName = \"skills\" }\n"), 0600))
 
 	patch, err := outfit.New(dir).Load("config")
@@ -203,8 +203,8 @@ func TestLoad_DirSkill_UserSymlinkAndLowercaseManifest(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("directory symlinks unavailable: %v", err)
 	}
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "loadouts"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "loadouts", "config.toml"),
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "config.toml"),
 		[]byte("skills = { dirName = \"skills\" }\n"), 0600))
 
 	patch, err := outfit.New(dir).Load("config")

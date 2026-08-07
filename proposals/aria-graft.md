@@ -29,11 +29,11 @@ Verified against a live store, not inferred:
   (reducible/jsonmerge), `turn-wal` and `translations-v2/<provider>` (opaque),
   plus the legacy `translations/<provider>`.
 - Every channel mirrors the **same node tree**, and that tree is **flat**:
-  `ir/n0`, `ir/n1`, … `ir/n542`, plus loadout stumps named
-  `<loadout>@<content-hash>`. Nesting is expressed by a marker, not by
+  `ir/n0`, `ir/n1`, … `ir/n542`, plus outfit stumps named
+  `<outfit>@<content-hash>`. Nesting is expressed by a marker, not by
   directory depth.
 - Each node dir holds `<NNNNN>.jsonl` segments plus two markers:
-  `.node` — `from=<parent dir name>`, `kind=null|loadout|conversation`,
+  `.node` — `from=<parent dir name>`, `kind=null|outfit|conversation`,
   `trunk=<aria id>` — and `.fork` — `base=<index into the parent's log>`.
 - `_meta/<aria>.json` is the list sidecar. `_live/` holds transient sidecars.
 
@@ -47,7 +47,7 @@ Four facts make a graft tractable, and all four were checked:
    fact that makes a general graft possible at all.
 2. **Node names are referenced in exactly one place**: `.node from=`. Nothing
    inside a payload names a node. So renaming is a bounded rewrite.
-3. **Loadout stumps are content-addressed** (`name@hash`), so they merge by
+3. **Outfit stumps are content-addressed** (`name@hash`), so they merge by
    *identity*: a stump already present is reused, never copied, never renamed.
    Only conversations need new names.
 4. **A trunk id appears inside a payload**, not only in `.node`: the

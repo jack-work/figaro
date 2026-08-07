@@ -124,7 +124,7 @@ func smokeStore(t *testing.T) []string {
 			t.Fatal(err)
 		}
 	}
-	// Provider credentials and loadouts come from the real config, copied. We
+	// Provider credentials and outfits come from the real config, copied. We
 	// read it; we never write it.
 	//
 	// THE COPY CARRIES CREDENTIALS, SO IT IS HARDENED EXPLICITLY. `cp` without

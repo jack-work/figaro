@@ -236,7 +236,7 @@ func (a *Agent) appendUserPrompt(prompt event, allowInlineBoot, steering bool) (
 			a.chalkboard.Apply(combined)
 		}
 	}
-	// Ephemeral first message: fold the boot patch inline so the loadout
+	// Ephemeral first message: fold the boot patch inline so the outfit
 	// reminders render (no channel to hold the transition). State is
 	// already seeded by the caller, so this is render-only.
 	if allowInlineBoot && a.backend == nil && a.inlineBoot != nil && a.figLog.Len() == 0 {
@@ -1703,7 +1703,7 @@ func assistantToolInvokes(m message.Message) []message.Content {
 //     This lets clients ship a full chalkboard copy without racing
 //     concurrent set/unset from another shell.
 //   - Patch is explicit set + remove; mutations the client really
-//     means. `figaro set`/`unset`/`loadout` land here.
+//     means. `figaro set`/`unset`/`outfit` land here.
 //
 // system.* on Context is dropped: the harness owns that namespace,
 // and a stale client view must not clobber it. Patch is left intact

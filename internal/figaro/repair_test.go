@@ -170,7 +170,7 @@ func TestTailRepair_FileBackedPersists(t *testing.T) {
 
 	b1, err := store.NewXwalBackend(dir, 0)
 	require.NoError(t, err)
-	l, err := b1.CreateLoadout("d", message.Patch{})
+	l, err := b1.CreateOutfit("d", message.Patch{})
 	require.NoError(t, err)
 	conv, err := b1.CreateConversation(l)
 	require.NoError(t, err)

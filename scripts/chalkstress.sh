@@ -3,7 +3,7 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# `figaro set` / `unset` / `loadout` route through the agent inbox and are
+# `figaro set` / `unset` / `outfit` route through the agent inbox and are
 # applied on the *agent* goroutine (Agent.act -> applyControlPatch ->
 # chalkboard.State.Apply). `figaro state` (rpc.MethodChalkboard) calls
 # Agent.Snapshot() inline on the *RPC* goroutine (StartSocket -> `go
@@ -50,7 +50,7 @@
 #   STRESS_READERS   concurrent `state` readers              (default 6)
 #   STRESS_DURATION  seconds of hammering                    (default 20)
 #   STRESS_KEYS      keys per writer range                   (default 24)
-#   STRESS_LOADOUT   loadout to mint the aria with           (default: default)
+#   STRESS_OUTFIT   outfit to mint the aria with           (default: default)
 #   STRESS_KEEP      keep the temp root for post-mortem      (default: unset)
 #   STRESS_RACE      build the daemon with -race and hand-start it so its
 #                    stderr is captured; ANY "WARNING: DATA RACE" in the
@@ -64,7 +64,7 @@
 # ---------
 # Everything runs against a freshly built binary in a throwaway temp root with
 # its own FIGARO_RUNTIME_DIR and FIGARO_STATE_DIR. FIGARO_CONFIG_DIR and
-# FIGARO_HUSH_APP are inherited so the loadout is realistic (~30 skill blobs).
+# FIGARO_HUSH_APP are inherited so the outfit is realistic (~30 skill blobs).
 # No LLM turn is ever started, so this costs zero tokens. The user's live
 # daemon must never be touched — see guard_isolation() below.
 
@@ -78,7 +78,7 @@ WRITERS=${STRESS_WRITERS:-4}
 READERS=${STRESS_READERS:-6}
 DURATION=${STRESS_DURATION:-20}
 KEYS=${STRESS_KEYS:-24}
-LOADOUT=${STRESS_LOADOUT:-default}
+OUTFIT=${STRESS_OUTFIT:-default}
 
 command -v jq >/dev/null || fail "jq is required"
 command -v go >/dev/null || fail "go is required"
@@ -186,8 +186,8 @@ if [ -n "${STRESS_RACE:-}" ]; then
 	[ -S "$FIGARO_RUNTIME_DIR/angelus.sock" ] || fail "hand-started angelus never bound its socket"
 fi
 
-log "minting aria on loadout '$LOADOUT' (no prompt, no turn, no tokens)"
-NEW_JSON=$(fig new --loadout "$LOADOUT" -j 2>/dev/null) || fail "figaro new failed: $NEW_JSON"
+log "minting aria on outfit '$OUTFIT' (no prompt, no turn, no tokens)"
+NEW_JSON=$(fig new --outfit "$OUTFIT" -j 2>/dev/null) || fail "figaro new failed: $NEW_JSON"
 ARIA=$(printf '%s' "$NEW_JSON" | jq -r '.aria_id // empty')
 [ -n "$ARIA" ] || fail "could not parse aria id from: $NEW_JSON"
 log "aria $ARIA"
@@ -206,7 +206,7 @@ mkdir -p "$ERRDIR"
 
 # ---------------------------------------------------------------------------
 # 4. Fan out: writers on disjoint key ranges, readers in a tight loop,
-#    periodic loadout re-applies, plus show/status readers.
+#    periodic outfit re-applies, plus show/status readers.
 # ---------------------------------------------------------------------------
 END=$(( $(date +%s) + DURATION ))
 running() { [ "$(date +%s)" -lt "$END" ]; }
@@ -260,14 +260,14 @@ reader() { # $1 = reader index
 	echo "$n" >"$ERRDIR/r$r.reads"
 }
 
-loadout_reapplier() {
+outfit_reapplier() {
 	local n=0
 	while running; do
-		quiet "$ERRDIR/loadout.err" "loadout" -- loadout --id "$ARIA" "$LOADOUT"
+		quiet "$ERRDIR/outfit.err" "outfit" -- outfit --id "$ARIA" "$OUTFIT"
 		sleep 0.7
 		n=$((n + 1))
 	done
-	echo "$n" >"$ERRDIR/loadout.rounds"
+	echo "$n" >"$ERRDIR/outfit.rounds"
 }
 
 misc_reader() {
@@ -281,11 +281,11 @@ misc_reader() {
 	echo "$n" >"$ERRDIR/misc.rounds"
 }
 
-log "stressing for ${DURATION}s: $WRITERS writers x $KEYS keys, $READERS readers, 1 loadout re-applier, 1 misc reader"
+log "stressing for ${DURATION}s: $WRITERS writers x $KEYS keys, $READERS readers, 1 outfit re-applier, 1 misc reader"
 pids=()
 for w in $(seq 0 $((WRITERS - 1))); do writer "$w" & pids+=($!); done
 for r in $(seq 0 $((READERS - 1))); do reader "$r" & pids+=($!); done
-loadout_reapplier & pids+=($!)
+outfit_reapplier & pids+=($!)
 misc_reader & pids+=($!)
 
 for p in "${pids[@]}"; do wait "$p"; done

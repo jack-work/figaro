@@ -49,7 +49,7 @@ isolate. Every preset is a choice about which ones to isolate.
 | Knob | Holds |
 |---|---|
 | `FIGARO_RUNTIME_DIR` | socket, PID, bindings |
-| `FIGARO_CONFIG_DIR` | config.toml, loadouts, providers, credo, skills |
+| `FIGARO_CONFIG_DIR` | config.toml, outfits, providers, credo, skills |
 | `FIGARO_STATE_DIR` | aria store, OTel |
 | `FIGARO_CACHE_DIR` | regenerable cache (update-check memo and friends) |
 | `FIGARO_HUSH_APP` | provider credentials |
@@ -57,8 +57,8 @@ isolate. Every preset is a choice about which ones to isolate.
 | Preset | Isolates | Reach for it when |
 |---|---|---|
 | `nix develop` | nothing | a quick look at the worktree binary |
-| `.#share-hush` | config, runtime, state | testing credential resolution or refresh against a live provider. Real OAuth and AGE keys stay reachable, so you meet the first-run loadout picker. |
-| `.#share-config` | runtime, state, hush | iterating on loadout or agent logic. Real loadouts and `providers/*.toml`, but an embedded dev hush at `$FIGARO_DEV_ROOT/hush` with its own AGE identity. Re-auth each shell (`fig login <provider>` or `ANTHROPIC_API_KEY=...`); AGE-ENC values in the shared config cannot be decrypted by the fresh identity. |
+| `.#share-hush` | config, runtime, state | testing credential resolution or refresh against a live provider. Real OAuth and AGE keys stay reachable, so you meet the first-run outfit picker. |
+| `.#share-config` | runtime, state, hush | iterating on outfit or agent logic. Real outfits and `providers/*.toml`, but an embedded dev hush at `$FIGARO_DEV_ROOT/hush` with its own AGE identity. Re-auth each shell (`fig login <provider>` or `ANTHROPIC_API_KEY=...`); AGE-ENC values in the shared config cannot be decrypted by the fresh identity. |
 | `.#clean` | everything | the truth test for the first-run flow and for auth migration |
 | `.#snapshot` | runtime, state, hush-agent socket | **store migrations.** Seeds `$FIGARO_STATE_DIR/arias` with a `cp -a` COPY of your real arias and reads the real config. The only honest fixture for a migration is your actual data; the only safe one is a copy of it. |
 | `.#swap` | nothing | swap the nix-profile binary for this build, restore on exit |
@@ -92,7 +92,7 @@ FIGARO_RUNTIME_DIR=/var/tmp/x/run FIGARO_STATE_DIR=/var/tmp/x/state \
   nix develop .#share-hush --command bash -c 'figaro send -e -- "…"'
 ```
 
-Real credentials and real loadouts, an isolated store and socket, the flake's
+Real credentials and real outfits, an isolated store and socket, the flake's
 own binary — and no first-run picker, because the config knob was overridden.
 A shell entry takes tens of seconds, so give it room in any timeout.
 

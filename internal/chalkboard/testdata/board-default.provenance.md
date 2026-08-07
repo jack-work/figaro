@@ -1,6 +1,6 @@
 # board-default.json — provenance
 
-`board-default.json` is a **verbatim capture of the real default-loadout
+`board-default.json` is a **verbatim capture of the real default-outfit
 chalkboard** of this machine's figaro user, frozen so the benchmarks in
 `chalkboard_bench_test.go` are hermetic and reproducible anywhere. Nothing
 in the benchmark suite reads live config; it reads this file.
@@ -16,7 +16,7 @@ in the benchmark suite reads live config; it reads this file.
   bytes, the largest single value).
 - the `system.*` scalars: `provider`, `model`, `max_tokens`,
   `use_official_sdk`, `reminder_renderer`, `thinking_effort`, `cwd`, `root`,
-  `loadout_name`, `loadout_version`, plus `aria_id`.
+  `outfit_name`, `outfit_version`, plus `aria_id`.
 
 `system.cwd` / `system.root` read `/tmp/chalkcap` — the capture happened
 there. `aria_id` is the throwaway aria's id. Neither affects what is being
@@ -42,7 +42,7 @@ export FIGARO_STATE_DIR=/tmp/chalkcap/state
 export FIGARO_BUNDLED_SKILLS=<repo>
 mkdir -p "$FIGARO_RUNTIME_DIR" "$FIGARO_STATE_DIR"
 
-id=$(./figaro new --loadout opus5 -j | jq -r .aria_id)   # no prompt => no turn, no tokens
+id=$(./figaro new --outfit opus5 -j | jq -r .aria_id)   # no prompt => no turn, no tokens
 ./figaro state "$id" -j | jq -S . > <repo>/internal/chalkboard/testdata/board-default.json
 
 ./figaro rest                      # tear the isolated daemon down
@@ -53,6 +53,6 @@ rm -rf /tmp/chalkcap/run /tmp/chalkcap/state
 
 ## Re-capturing
 
-Only re-capture if the fixture must reflect a changed loadout — and then
+Only re-capture if the fixture must reflect a changed outfit — and then
 say so loudly in the report, because it invalidates comparison against any
 a previously recorded baseline.

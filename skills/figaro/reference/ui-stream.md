@@ -294,7 +294,7 @@ keep one reader consuming interleaved responses and notifications:
 ```
 
 A full frontend can also call `figaro.qua`, `figaro.interrupt`,
-`figaro.context`, `figaro.chalkboard`, `figaro.set`, `figaro.loadout`,
+`figaro.context`, `figaro.chalkboard`, `figaro.set`, `figaro.outfit`,
 `figaro.queued`, `figaro.queue.update` and `figaro.queue.delete` on the aria
 socket; creation, listing, forking, promotion, and
 lifecycle operations remain on Angelus. Request ids are integers in the current

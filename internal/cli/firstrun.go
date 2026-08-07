@@ -13,12 +13,12 @@
 //     API-key prompt). Stores the result through hush so secrets
 //     never touch disk in plaintext.
 //
-//  3. Default loadout. Scaffolds a minimal `loadouts/default.toml`
+//  3. Default outfit. Scaffolds a minimal `outfits/default.toml`
 //     bound to the provider chosen in (2) and points config.toml's
-//     default_loadout at it. So `fig "..."` works after this returns.
+//     default_outfit at it. So `fig "..."` works after this returns.
 //
 // Triggers: angelus emits a typed JSON-RPC error
-// (ErrNoDefaultLoadout / ErrNoProvider). createWithFirstRun catches
+// (ErrNoDefaultOutfit / ErrNoProvider). createWithFirstRun catches
 // it, drives the wizard, retries the underlying call.
 //
 // Non-TTY callers get a clear error directing them to set things up
@@ -55,10 +55,10 @@ import (
 // underlying provider (e.g. "anthropic") can appear multiple times
 // here with different modes (OAuth vs API key) — the menu shows the
 // human-facing options; the underlying provider name is what gets
-// written into the loadout.
+// written into the outfit.
 type providerChoice struct {
 	label    string // shown in the menu
-	provider string // value for loadout's [system].provider
+	provider string // value for outfit's [system].provider
 	hint     string // short description after the label
 	setup    func(loaded *config.Loaded) error
 }
@@ -143,7 +143,7 @@ func createWithFirstRun(ctx context.Context, loaded *config.Loaded, fn createFn)
 		return nil, err
 	}
 	switch code {
-	case rpc.ErrNoDefaultLoadout, rpc.ErrNoProvider:
+	case rpc.ErrNoDefaultOutfit, rpc.ErrNoProvider:
 		if werr := runWizard(loaded, data); werr != nil {
 			return nil, werr
 		}
@@ -170,17 +170,17 @@ func decodeTypedError(err error) (rpc.ErrorData, int, bool) {
 // runWizard orchestrates the three-station first-run flow. Hush
 // (Station 1) was already handled by ensureHush before any RPC went
 // out, so this drives Stations 2 (provider + credentials) and 3
-// (default loadout).
+// (default outfit).
 func runWizard(loaded *config.Loaded, data rpc.ErrorData) error {
 	if !isStdinTTY() {
 		return fmt.Errorf(
 			"figaro needs initial setup but stdin is not a TTY.\n"+
 				"  Run an interactive `figaro` invocation once to walk through setup,\n"+
 				"  or configure manually:\n"+
-				"    - set default_loadout in %s\n"+
+				"    - set default_outfit in %s\n"+
 				"    - create %s with `[system]\\nprovider = \"<name>\"`\n"+
 				"    - run `figaro login <provider>` to add credentials",
-			loaded.ConfigPath, loaded.LoadoutPath("default"))
+			loaded.ConfigPath, loaded.OutfitPath("default"))
 	}
 
 	options := catalogFor(data.AvailableProviders)
@@ -206,9 +206,9 @@ func runWizard(loaded *config.Loaded, data rpc.ErrorData) error {
 	}
 	fmt.Fprintln(os.Stderr)
 
-	// --- Station 3: default loadout --------------------------------------
-	printStep(3, 3, "Default loadout")
-	fmt.Fprintln(os.Stderr, dim("     A loadout bundles a provider + model so `fig` knows what to do"))
+	// --- Station 3: default outfit --------------------------------------
+	printStep(3, 3, "Default outfit")
+	fmt.Fprintln(os.Stderr, dim("     An outfit bundles a provider + model so `fig` knows what to do"))
 	fmt.Fprintln(os.Stderr, dim("     when you don't pass flags. We'll make one for you and set it as default."))
 	fmt.Fprintln(os.Stderr)
 
@@ -218,12 +218,12 @@ func runWizard(loaded *config.Loaded, data rpc.ErrorData) error {
 	// fall back to defaultModelFor so first-run never blocks on it.
 	chosenModel := pickModelOrFallback(loaded, chosen.provider)
 
-	loadoutName, err := createDefaultLoadout(loaded, chosen.provider, chosenModel)
+	outfitName, err := createDefaultOutfit(loaded, chosen.provider, chosenModel)
 	if err != nil {
-		return fmt.Errorf("loadout: %w", err)
+		return fmt.Errorf("outfit: %w", err)
 	}
-	fmt.Fprintln(os.Stderr, "  "+green("✓")+" wrote loadout "+cyan(loadoutName)+" → provider="+cyan(chosen.provider))
-	fmt.Fprintln(os.Stderr, "  "+green("✓")+" set as default_loadout in "+dim(loaded.ConfigPath))
+	fmt.Fprintln(os.Stderr, "  "+green("✓")+" wrote outfit "+cyan(outfitName)+" → provider="+cyan(chosen.provider))
+	fmt.Fprintln(os.Stderr, "  "+green("✓")+" set as default_outfit in "+dim(loaded.ConfigPath))
 	fmt.Fprintln(os.Stderr)
 
 	printDone()
@@ -389,43 +389,43 @@ func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
 	return nil
 }
 
-// createDefaultLoadout writes loadouts/default.toml (or
+// createDefaultOutfit writes outfits/default.toml (or
 // default-<provider>.toml if the former exists) and points
-// config.toml's default_loadout at it. model is the explicit model id
+// config.toml's default_outfit at it. model is the explicit model id
 // to write under [system]; pass "" to use defaultModelFor(providerName).
-// Returns the loadout name.
-func createDefaultLoadout(loaded *config.Loaded, providerName, model string) (string, error) {
+// Returns the outfit name.
+func createDefaultOutfit(loaded *config.Loaded, providerName, model string) (string, error) {
 	name := "default"
-	if _, err := os.Stat(loaded.LoadoutPath(name)); err == nil {
+	if _, err := os.Stat(loaded.OutfitPath(name)); err == nil {
 		name = "default-" + providerName
 	}
 	if model == "" {
 		model = defaultModelFor(providerName)
 	}
-	if err := writeStarterLoadout(loaded.LoadoutPath(name), providerName, model); err != nil {
-		return "", fmt.Errorf("scaffold loadout: %w", err)
+	if err := writeStarterOutfit(loaded.OutfitPath(name), providerName, model); err != nil {
+		return "", fmt.Errorf("scaffold outfit: %w", err)
 	}
-	if err := patchDefaultLoadout(loaded.ConfigPath, name); err != nil {
+	if err := patchDefaultOutfit(loaded.ConfigPath, name); err != nil {
 		return "", fmt.Errorf("patch config.toml: %w", err)
 	}
-	loaded.Config.DefaultLoadout = name
+	loaded.Config.DefaultOutfit = name
 	return name, nil
 }
 
-// writeStarterLoadout writes a minimal loadout file. Parent directories
-// are created with 0700. It writes NO skills: the loadout references the
+// writeStarterOutfit writes a minimal outfit file. Parent directories
+// are created with 0700. It writes NO skills: the outfit references the
 // skills directory via `skills = { dirName = "skills" }`, and that alone
 // is enough, because first-party skills ship inside the binary and load
 // from there. A skill copied into config would shadow the bundled one by
 // name and then drift, which is the failure this deliberately avoids.
 //
 // model is written as [system].model when non-empty.
-func writeStarterLoadout(path, providerName, model string) error {
+func writeStarterOutfit(path, providerName, model string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
 	body := fmt.Sprintf(`# Scaffolded by figaro first-run setup.
-# Edit to taste; see docs/loadouts for the schema.
+# Edit to taste; see docs/outfits for the schema.
 
 # Skills may be markdown files or folders containing SKILL.md plus
 # supplemental files. dirName fans them out as skills.<name>.
@@ -443,7 +443,7 @@ provider = %q
 	return nil
 }
 
-func patchDefaultLoadout(configPath, loadoutName string) error {
+func patchDefaultOutfit(configPath, outfitName string) error {
 	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
 		return err
 	}
@@ -455,7 +455,8 @@ func patchDefaultLoadout(configPath, loadoutName string) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	raw["default_loadout"] = loadoutName
+	delete(raw, "default_loadout")
+	raw["default_outfit"] = outfitName
 
 	f, err := os.OpenFile(configPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
@@ -514,7 +515,7 @@ func isStdinTTY() bool {
 // its model list and prompts the user to pick one. On any failure
 // (no network, listing endpoint missing, user dismisses the prompt)
 // it falls back to defaultModelFor(providerName). Never blocks the
-// wizard — the loadout always gets *some* model.
+// wizard — the outfit always gets *some* model.
 func pickModelOrFallback(loaded *config.Loaded, providerName string) string {
 	fallback := defaultModelFor(providerName)
 

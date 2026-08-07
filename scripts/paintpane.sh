@@ -165,7 +165,7 @@ pp_env() {
 
 # pp_config_copy — isolate config WITHOUT duplicating credentials.
 #
-# Copies loadouts/credo/skills and deliberately omits providers/ and hush/, then
+# Copies outfits/credo/skills and deliberately omits providers/ and hush/, then
 # refuses to continue if anything group/world-readable survived. Auth then has to
 # come from the environment (e.g. ANTHROPIC_API_KEY) or the dev-hush path the
 # figaro skill documents — which is the correct posture for a throwaway store.

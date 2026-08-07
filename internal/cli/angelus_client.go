@@ -254,12 +254,12 @@ func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
 	return cli
 }
 
-// mustCreateAndBindLoadout mints an aria and binds this shell to it. An
-// empty loadout name means "use the configured default_loadout" (angelus
+// mustCreateAndBindOutfit mints an aria and binds this shell to it. An
+// empty outfit name means "use the configured default_outfit" (angelus
 // resolves it server-side).
-func mustCreateAndBindLoadout(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int, loadout string) (string, transport.Endpoint) {
+func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int, outfit string) (string, transport.Endpoint) {
 	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) {
-		return acli.Create(ctx, loadout, nil)
+		return acli.Create(ctx, outfit, nil)
 	})
 	if err != nil {
 		die("create figaro: %s", err)

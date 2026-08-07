@@ -63,7 +63,7 @@ Load-bearing. Breaking them produces races, lost messages, or silent corruption.
 
 ## Hot spots
 
-- `internal/figaro/agent.go` — drain loop, turn lifecycle, interrupt handling, panic recovery, in-progress-tic accumulation, set/loadout patch dispatch.
+- `internal/figaro/agent.go` — drain loop, turn lifecycle, interrupt handling, panic recovery, in-progress-tic accumulation, set/outfit patch dispatch.
 - `internal/figaro/turn_seal.go` — in-memory turn state, interrupt/drain sealing, interrupted tool results.
 - `internal/figaro/translator.go` — `synchronize` and its three sub-passes. The bidirectional sync between figStream and the translator stream.
 - `internal/figaro/inbox.go` — selfish vs. patient semantics, routing subscriber.

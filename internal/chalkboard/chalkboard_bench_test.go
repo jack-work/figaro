@@ -95,7 +95,7 @@ func BenchmarkDiff(b *testing.B) {
 // swap it measures the pathological case of two structurally unrelated
 // trees holding near-identical content — no sharing, so no
 // pointer-identity pruning. Every real Diff in figaro (turn.go's context
-// combine, ApplyLoadout, Render's prev) compares a board with its own
+// combine, ApplyOutfit, Render's prev) compares a board with its own
 // descendant, which is the case below. Keep both: one is the worst case,
 // one is the real case.
 func BenchmarkDiffDerived(b *testing.B) {

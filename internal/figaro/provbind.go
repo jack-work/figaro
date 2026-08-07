@@ -89,7 +89,7 @@ func (a *Agent) providerName() string {
 
 // syncProvider re-resolves the provider from the chalkboard. It runs at the
 // top of every provider round, so `figaro set system.provider …` (or a
-// re-applied loadout that moves the aria to another provider) takes effect
+// re-applied outfit that moves the aria to another provider) takes effect
 // on the very next round — no restart, no fork.
 //
 // A conversation is provider-agnostic by construction: the IR is canonical

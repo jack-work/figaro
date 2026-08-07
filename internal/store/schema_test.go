@@ -20,7 +20,7 @@ func seedSchemaStore(tb testing.TB) (string, string) {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	lo, err := be.CreateLoadout("schema", message.Patch{})
+	lo, err := be.CreateOutfit("schema", message.Patch{})
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestSchemaRefusesANewerStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, _ := b.CreateLoadout("d", message.Patch{})
+	l, _ := b.CreateOutfit("d", message.Patch{})
 	if _, err := b.CreateConversation(l); err != nil {
 		t.Fatal(err)
 	}

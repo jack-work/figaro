@@ -16,7 +16,7 @@ import (
 // The seam this covers: figaro migrates a store BEFORE it opens it. Nothing
 // in figwal's own suite proves that the daemon's open path does it, and the
 // failure it prevents is the quiet one -- a store that opens reporting its
-// loadouts and none of its arias.
+// outfits and none of its arias.
 
 func seedForkedArias(t *testing.T, root string) (ids []string, boards map[string]string) {
 	t.Helper()
@@ -24,11 +24,11 @@ func seedForkedArias(t *testing.T, root string) (ids []string, boards map[string
 	if err != nil {
 		t.Fatal(err)
 	}
-	loadout, err := be.CreateLoadout("mig", message.Patch{})
+	outfit, err := be.CreateOutfit("mig", message.Patch{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	aria, err := be.CreateConversation(loadout)
+	aria, err := be.CreateConversation(outfit)
 	if err != nil {
 		t.Fatal(err)
 	}

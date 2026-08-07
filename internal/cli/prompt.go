@@ -15,10 +15,10 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// runPrompt resolves the shell-bound figaro and prompts it. loadout names
-// the loadout for an aria this call MINTS (an unattended shell); it is
+// runPrompt resolves the shell-bound figaro and prompts it. outfit names
+// the outfit for an aria this call MINTS (an unattended shell); it is
 // ignored when a binding already exists, because then no aria is created.
-func runPrompt(loaded *config.Loaded, loadout, prompt string, set renderSettings) {
+func runPrompt(loaded *config.Loaded, outfit, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -45,7 +45,7 @@ func runPrompt(loaded *config.Loaded, loadout, prompt string, set renderSettings
 		figaroID = resp.FigaroID
 		figaroEP = transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
 	} else {
-		figaroID, figaroEP = mustCreateAndBindLoadout(ctx, acli, loaded, ppid, loadout)
+		figaroID, figaroEP = mustCreateAndBindOutfit(ctx, acli, loaded, ppid, outfit)
 	}
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
@@ -54,7 +54,7 @@ func runPrompt(loaded *config.Loaded, loadout, prompt string, set renderSettings
 // runNewPrompt creates a fresh figaro and prompts it. Under jsonMode
 // the streaming render is skipped: the aria is created, prompted via a
 // fire-and-forget Qua, and a single JSON line is emitted on stdout.
-func runNewPrompt(loaded *config.Loaded, prompt, loadout string, set renderSettings) {
+func runNewPrompt(loaded *config.Loaded, prompt, outfit string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -64,7 +64,7 @@ func runNewPrompt(loaded *config.Loaded, prompt, loadout string, set renderSetti
 	ppid := os.Getppid()
 	unbindBinding(ctx, acli, ppid)
 
-	figaroID, figaroEP := mustCreateAndBindLoadout(ctx, acli, loaded, ppid, loadout)
+	figaroID, figaroEP := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, outfit)
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 
 	if set.jsonMode {
@@ -270,7 +270,7 @@ func waitForSocket(path string, timeout time.Duration) error {
 }
 
 // runUnattend drops this shell's aria binding (bare `figaro new`). New
-// conversations then default to the live loadout. Idempotent when unbound.
+// conversations then default to the live outfit. Idempotent when unbound.
 func runUnattend(loaded *config.Loaded) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -289,17 +289,17 @@ func runUnattend(loaded *config.Loaded) {
 	}
 }
 
-// runNewFromLoadout mints a fresh aria under the named loadout, binds it,
-// and returns without prompting (`figaro new --loadout X`). A prompt needs
-// the `--` boundary (`figaro new --loadout X -- <prompt>`).
-func runNewFromLoadout(loaded *config.Loaded, loadout string, set renderSettings) {
+// runNewFromOutfit mints a fresh aria under the named outfit, binds it,
+// and returns without prompting (`figaro new --outfit X`). A prompt needs
+// the `--` boundary (`figaro new --outfit X -- <prompt>`).
+func runNewFromOutfit(loaded *config.Loaded, outfit string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 	ppid := os.Getppid()
 	unbindBinding(ctx, acli, ppid)
-	figaroID, _ := mustCreateAndBindLoadout(ctx, acli, loaded, ppid, loadout)
+	figaroID, _ := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, outfit)
 	if set.jsonMode {
 		enc := json.NewEncoder(os.Stdout)
 		_ = enc.Encode(struct {
@@ -308,5 +308,5 @@ func runNewFromLoadout(loaded *config.Loaded, loadout string, set renderSettings
 		}{AriaID: figaroID, Mode: "new"})
 		return
 	}
-	fmt.Fprintf(os.Stderr, "created %s under loadout %q (attended; no prompt sent)\n", figaroID, loadout)
+	fmt.Fprintf(os.Stderr, "created %s under outfit %q (attended; no prompt sent)\n", figaroID, outfit)
 }

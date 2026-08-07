@@ -19,7 +19,7 @@ import (
 // json.Marshal does to a map[string]json.RawMessage is the truth, and a
 // Snapshot must produce exactly that.
 //
-// The board under test is a real capture of the default loadout (37
+// The board under test is a real capture of the default outfit (37
 // keys, 15KB, skill envelopes with em-dashes and embedded newlines,
 // system.* scalars) — see testdata/board-default.provenance.md — not a
 // hand-written toy.

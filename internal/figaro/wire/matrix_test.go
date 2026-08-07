@@ -51,7 +51,7 @@ func eachCapability(t *testing.T, fn func(t *testing.T, b *store.XwalBackend, tr
 // Forking, reading and listing must not care whether the capability exists.
 func TestAriasWorkEitherWay(t *testing.T) {
 	eachCapability(t, func(t *testing.T, b *store.XwalBackend, trunks bool) {
-		l, err := b.CreateLoadout("d", patch("system.model", "m"))
+		l, err := b.CreateOutfit("d", patch("system.model", "m"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -67,7 +67,7 @@ func TestAriasWorkEitherWay(t *testing.T) {
 			t.Fatalf("chalkboard: %v", err)
 		}
 		if v, ok := snap.Get("system.model"); !ok || string(v) != `"m"` {
-			t.Errorf("conversation lost its loadout chalkboard: %s ok=%v", v, ok)
+			t.Errorf("conversation lost its outfit chalkboard: %s ok=%v", v, ok)
 		}
 	})
 }
@@ -76,7 +76,7 @@ func TestAriasWorkEitherWay(t *testing.T) {
 // the store says so rather than pretending to succeed.
 func TestPromoteOnlyWithTheCapability(t *testing.T) {
 	eachCapability(t, func(t *testing.T, b *store.XwalBackend, trunks bool) {
-		l, _ := b.CreateLoadout("d", patch("system.model", "m"))
+		l, _ := b.CreateOutfit("d", patch("system.model", "m"))
 		conv, _ := b.CreateConversation(l)
 		_, alt, err := b.Fork(conv)
 		if err != nil {
@@ -96,7 +96,7 @@ func TestPromoteOnlyWithTheCapability(t *testing.T) {
 // concrete form of "the capability is optional": not merely unused, absent.
 func TestTrunklessWritesNoPstate(t *testing.T) {
 	b, root := backend(t, false)
-	l, _ := b.CreateLoadout("d", patch("system.model", "m"))
+	l, _ := b.CreateOutfit("d", patch("system.model", "m"))
 	conv, _ := b.CreateConversation(l)
 	if _, _, err := b.Fork(conv); err != nil {
 		t.Fatal(err)
@@ -122,7 +122,7 @@ func TestTrunklessIsAlwaysNormalized(t *testing.T) {
 // normalization -- that flag is what a delete consults before unlinking.
 func TestPromotionBreaksNormalization(t *testing.T) {
 	b, _ := backend(t, true)
-	l, _ := b.CreateLoadout("d", patch("system.model", "m"))
+	l, _ := b.CreateOutfit("d", patch("system.model", "m"))
 	conv, _ := b.CreateConversation(l)
 	_, alt, err := b.Fork(conv)
 	if err != nil {
@@ -146,7 +146,7 @@ func TestPromotionBreaksNormalization(t *testing.T) {
 // then the delete proceeds and it is unharmed.
 func TestDeleteRepairsTheBoundary(t *testing.T) {
 	b, _ := backend(t, true)
-	l, _ := b.CreateLoadout("d", patch("system.model", "m"))
+	l, _ := b.CreateOutfit("d", patch("system.model", "m"))
 	conv, _ := b.CreateConversation(l)
 	_, alt, err := b.Fork(conv)
 	if err != nil {
@@ -181,7 +181,7 @@ func TestDeleteRepairsTheBoundary(t *testing.T) {
 // owe a boundary repair, whatever the presentation hierarchy says.
 func TestNormalizeMakesDeletesFree(t *testing.T) {
 	b, _ := backend(t, true)
-	l, _ := b.CreateLoadout("d", patch("system.model", "m"))
+	l, _ := b.CreateOutfit("d", patch("system.model", "m"))
 	conv, _ := b.CreateConversation(l)
 	_, alt, err := b.Fork(conv)
 	if err != nil {
@@ -236,7 +236,7 @@ func TestNormalizeIsANoOpWithoutTheCapability(t *testing.T) {
 // delete relies on never becomes true.
 func TestNormalizeIsIdempotent(t *testing.T) {
 	b, _ := backend(t, true)
-	l, _ := b.CreateLoadout("d", patch("system.model", "m"))
+	l, _ := b.CreateOutfit("d", patch("system.model", "m"))
 	conv, _ := b.CreateConversation(l)
 	_, alt, err := b.Fork(conv)
 	if err != nil {

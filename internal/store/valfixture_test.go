@@ -34,7 +34,7 @@ func TestGenerateNumberedFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer backend.Close()
-	loadout, err := backend.CreateLoadout("numbered", message.Patch{
+	outfit, err := backend.CreateOutfit("numbered", message.Patch{
 		Set: map[string]json.RawMessage{
 			"system.provider": json.RawMessage(`"copilot"`),
 			"system.model":    json.RawMessage(`"gpt-5.6-sol"`),
@@ -43,7 +43,7 @@ func TestGenerateNumberedFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := backend.CreateConversation(loadout)
+	id, err := backend.CreateConversation(outfit)
 	if err != nil {
 		t.Fatal(err)
 	}

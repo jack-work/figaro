@@ -111,7 +111,7 @@ func TestDukeRequiresInteractive(t *testing.T) {
 }
 
 // A resolved duke title is sanitized like any other label: it reaches the model
-// and the terminal, and a loadout is as capable of holding a newline as an env
+// and the terminal, and an outfit is as capable of holding a newline as an env
 // var is.
 func TestResolvedDukeTitleIsSanitized(t *testing.T) {
 	raw, _ := WithCaller(QuaRequest{Text: "hi"}, "", &CallerRef{Duke: true})

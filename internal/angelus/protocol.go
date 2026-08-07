@@ -159,19 +159,19 @@ type handlers struct {
 	// h.config concurrently.
 	configMu sync.Mutex
 
-	// loadoutHashCache memoizes currentLoadoutHash with a short TTL. List
-	// calls it once per aria, but loadout content is shared and expensive to
+	// outfitHashCache memoizes currentOutfitHash with a short TTL. List
+	// calls it once per aria, but outfit content is shared and expensive to
 	// hash (outfitter.Load re-reads every skill file), so without this an
 	// 8-aria list re-read all skills 8× (~0.5s) and starved completion's
 	// short-timeout List call.
-	loadoutHashMu    sync.Mutex
-	loadoutHashCache map[string]loadoutHashEntry
+	outfitHashMu    sync.Mutex
+	outfitHashCache map[string]outfitHashEntry
 
 	restoreMu    sync.Mutex
 	restoreLocks map[string]*sync.Mutex
 }
 
-type loadoutHashEntry struct {
+type outfitHashEntry struct {
 	hash string
 	at   time.Time
 }
@@ -183,16 +183,16 @@ type listEnrichment struct {
 
 // reloadConfigIfChanged re-reads config.toml from disk when the
 // in-memory copy looks stale relative to a wizard write. We're
-// conservative: only reload when the in-memory DefaultLoadout is
+// conservative: only reload when the in-memory DefaultOutfit is
 // empty AND a config.toml exists on disk. This means tests that
-// inject loaded.Config.DefaultLoadout in memory without a backing
+// inject loaded.Config.DefaultOutfit in memory without a backing
 // file are untouched, while the production case (first-run wizard
-// writes config.toml + a loadout, then retries Create) sees the
+// writes config.toml + an outfit, then retries Create) sees the
 // fresh value.
 func (h *handlers) reloadConfigIfChanged() {
 	h.configMu.Lock()
 	defer h.configMu.Unlock()
-	if h.config.Config.DefaultLoadout != "" {
+	if h.config.Config.DefaultOutfit != "" {
 		return // already have one in memory; nothing the wizard could change
 	}
 	if _, err := os.Stat(h.config.ConfigPath); err != nil {
@@ -225,18 +225,18 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 	return st
 }
 
-// currentLoadoutHash is the content hash the loadout would have right now
+// currentOutfitHash is the content hash the outfit would have right now
 // (recomputed from the on-disk definition), or "" if it can't be loaded.
-func (h *handlers) currentLoadoutHash(name string) string {
+func (h *handlers) currentOutfitHash(name string) string {
 	if h.outfitter == nil {
 		return ""
 	}
-	h.loadoutHashMu.Lock()
-	defer h.loadoutHashMu.Unlock()
-	if h.loadoutHashCache == nil {
-		h.loadoutHashCache = map[string]loadoutHashEntry{}
+	h.outfitHashMu.Lock()
+	defer h.outfitHashMu.Unlock()
+	if h.outfitHashCache == nil {
+		h.outfitHashCache = map[string]outfitHashEntry{}
 	}
-	if e, ok := h.loadoutHashCache[name]; ok && time.Since(e.at) < 3*time.Second {
+	if e, ok := h.outfitHashCache[name]; ok && time.Since(e.at) < 3*time.Second {
 		return e.hash
 	}
 
@@ -246,13 +246,13 @@ func (h *handlers) currentLoadoutHash(name string) string {
 			hash, _ = segment.ValueHash(body)
 		}
 	}
-	h.loadoutHashCache[name] = loadoutHashEntry{hash: hash, at: time.Now()}
+	h.outfitHashCache[name] = outfitHashEntry{hash: hash, at: time.Now()}
 	return hash
 }
 
-// loadoutVerLabel renders the version column: "live" when the stamped hash
+// outfitVerLabel renders the version column: "live" when the stamped hash
 // matches the current one, else the stamped hash's first 8 chars.
-func loadoutVerLabel(stamped, current string) string {
+func outfitVerLabel(stamped, current string) string {
 	if stamped == "" {
 		return ""
 	}
@@ -274,37 +274,37 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		return nil, err
 	}
 
-	// Resolve the loadout name. Empty request → configured default →
+	// Resolve the outfit name. Empty request → configured default →
 	// typed JSON-RPC error so the client can drive first-run setup.
 	//
 	// We re-read config.toml from disk first so that wizard-driven
-	// changes (the first-run flow scaffolds a loadout + sets
-	// default_loadout, then retries this Create call) are picked up
+	// changes (the first-run flow scaffolds an outfit + sets
+	// default_outfit, then retries this Create call) are picked up
 	// without a daemon restart. One os.ReadFile + toml.Unmarshal per
 	// request is cheap relative to anything downstream.
 	h.reloadConfigIfChanged()
-	loadoutName := req.Loadout
-	if loadoutName == "" {
-		loadoutName = h.config.Config.DefaultLoadout
+	outfitName := req.Outfit
+	if outfitName == "" {
+		outfitName = h.config.Config.DefaultOutfit
 	}
-	if loadoutName == "" {
-		return nil, h.errNoDefaultLoadout()
+	if outfitName == "" {
+		return nil, h.errNoDefaultOutfit()
 	}
 
-	// Resolve loadout -> chalkboard patch. Missing files are not
+	// Resolve outfit -> chalkboard patch. Missing files are not
 	// fatal; the patch comes back empty and req.Patch may still
-	// supply system.provider. loadoutPatch is the STABLE loadout (it
-	// defines the loadout node's identity/version); base layers the
+	// supply system.provider. outfitPatch is the STABLE outfit (it
+	// defines the outfit node's identity/version); base layers the
 	// per-create req.Patch overrides on top for provider/knob resolution.
-	loadoutPatch, err := h.outfitter.Load(loadoutName)
+	outfitPatch, err := h.outfitter.Load(outfitName)
 	if err != nil {
-		return nil, h.errLoadoutNotFound(loadoutName, err)
+		return nil, h.errOutfitNotFound(outfitName, err)
 	}
 	base := chalkboard.Patch{Set: map[string]json.RawMessage{}}
-	for k, v := range loadoutPatch.Set {
+	for k, v := range outfitPatch.Set {
 		base.Set[k] = v
 	}
-	base.Remove = append(base.Remove, loadoutPatch.Remove...)
+	base.Remove = append(base.Remove, outfitPatch.Remove...)
 	if req.Patch != nil {
 		for k, v := range req.Patch.Set {
 			base.Set[k] = v
@@ -314,12 +314,12 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 
 	provName := patchString(base, "system.provider")
 	if provName == "" {
-		return nil, h.errNoProvider(loadoutName)
+		return nil, h.errNoProvider(outfitName)
 	}
 	knobs := knobsFromPatch(base)
 
 	span.SetAttributes(
-		attribute.String("figaro.loadout", loadoutName),
+		attribute.String("figaro.outfit", outfitName),
 		attribute.String("figaro.provider", provName),
 		attribute.String("figaro.model", knobs.Model),
 	)
@@ -344,7 +344,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	var inlineBoot *chalkboard.Patch
 
 	if backend == nil {
-		// Ephemeral: no channel. Seed state with the full loadout +
+		// Ephemeral: no channel. Seed state with the full outfit +
 		// runtime fill-ins, and fold the same patch on the first message so
 		// reminders render.
 		id = uuid.New().String()[:8]
@@ -354,17 +354,17 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		bp := boot
 		inlineBoot = &bp
 	} else {
-		// Materialize/reuse the loadout node (identity = stable loadout
+		// Materialize/reuse the outfit node (identity = stable outfit
 		// patch), fork it into a fresh conversation, then write the
 		// per-conversation boot transition (runtime fill-ins + req.Patch
-		// overrides) to its chalkboard channel. The loadout's own
-		// reminders render in the shared loadout-node prefix.
-		loadoutID, lerr := backend.CreateLoadout(loadoutName, loadoutPatch)
+		// overrides) to its chalkboard channel. The outfit's own
+		// reminders render in the shared outfit-node prefix.
+		outfitID, lerr := backend.CreateOutfit(outfitName, outfitPatch)
 		if lerr != nil {
-			return nil, fmt.Errorf("create loadout node: %w", lerr)
+			return nil, fmt.Errorf("create outfit node: %w", lerr)
 		}
 		var cerr error
-		id, cerr = backend.CreateConversation(loadoutID)
+		id, cerr = backend.CreateConversation(outfitID)
 		if cerr != nil {
 			return nil, fmt.Errorf("create conversation: %w", cerr)
 		}
@@ -416,7 +416,7 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	agent.OnTeardown(unbind)
 
 	slog.Info("created figaro",
-		"id", id, "loadout", loadoutName, "provider", provName, "model", knobs.Model, "socket", sockPath)
+		"id", id, "outfit", outfitName, "provider", provName, "model", knobs.Model, "socket", sockPath)
 
 	return rpc.CreateResponse{
 		FigaroID: id,
@@ -530,9 +530,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			forkOwner = owner
 			switch {
 			case owner.IsRoot:
-				note = fmt.Sprintf("%s is the genesis root — spawned a fresh loadoutless conversation there", where)
-			case owner.Loadout != "":
-				note = fmt.Sprintf("%s is in loadout %s — spawned a fresh conversation under it", where, owner.Loadout)
+				note = fmt.Sprintf("%s is the genesis root — spawned a fresh outfitless conversation there", where)
+			case owner.Outfit != "":
+				note = fmt.Sprintf("%s is in outfit %s — spawned a fresh conversation under it", where, owner.Outfit)
 			case owner.Trunk != "" && owner.Trunk != req.FigaroID:
 				note = fmt.Sprintf("%s lives in trunk %s — branching there", where, owner.Trunk)
 			}
@@ -613,8 +613,8 @@ func (h *handlers) forkMetaSnapshot(parent string) *store.AriaMeta {
 		copy.Model = info.Model
 		copy.Mantra = info.Mantra
 		copy.Cwd = info.Cwd
-		copy.LoadoutName = info.LoadoutName
-		copy.LoadoutVersion = info.LoadoutVersion
+		copy.OutfitName = info.OutfitName
+		copy.OutfitVersion = info.OutfitVersion
 		copy.ContextTokens = info.ContextTokens
 		copy.ContextLimit = info.ContextLimit
 		copy.ContextExact = info.ContextExact
@@ -650,16 +650,16 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 		copy.Model = ""
 		copy.Mantra = ""
 		copy.Cwd = ""
-		copy.LoadoutName = ""
-		copy.LoadoutVersion = ""
+		copy.OutfitName = ""
+		copy.OutfitVersion = ""
 		if !owner.IsRoot {
-			loadoutID := owner.Loadout
-			if loadoutID == "" {
-				loadoutID = h.loadoutAncestor(parent)
+			outfitID := owner.Outfit
+			if outfitID == "" {
+				outfitID = h.outfitAncestor(parent)
 			}
-			if loadout, ok := h.angelus.Backend.Node(loadoutID); ok && loadout.Kind == string(loadoutKind) {
-				copy.LoadoutName = loadout.Loadout
-				copy.LoadoutVersion = loadout.Version
+			if outfit, ok := h.angelus.Backend.Node(outfitID); ok && outfit.Kind == string(outfitKind) {
+				copy.OutfitName = outfit.Outfit
+				copy.OutfitVersion = outfit.Version
 			}
 		}
 	}
@@ -669,13 +669,13 @@ func (h *handlers) seedForkMeta(meta *store.AriaMeta, parent, child string, atMa
 	}
 }
 
-func (h *handlers) loadoutAncestor(id string) string {
+func (h *handlers) outfitAncestor(id string) string {
 	for id != "" {
 		node, ok := h.angelus.Backend.Node(id)
 		if !ok {
 			return ""
 		}
-		if node.Kind == string(loadoutKind) {
+		if node.Kind == string(outfitKind) {
 			return node.ID
 		}
 		id = node.Parent
@@ -693,8 +693,8 @@ func (h *handlers) messageCountAt(id string, atMainLT uint64) int {
 		if !ok || node.Parent == "" {
 			break
 		}
-		if parent, ok := h.angelus.Backend.Node(node.Parent); ok && parent.Kind == string(loadoutKind) {
-			count-- // loadout birth
+		if parent, ok := h.angelus.Backend.Node(node.Parent); ok && parent.Kind == string(outfitKind) {
+			count-- // outfit birth
 			break
 		}
 		id = node.Parent
@@ -729,8 +729,8 @@ func (h *handlers) normalize(ctx context.Context, params json.RawMessage) (inter
 
 // importAria restores an exported aria as a NEW conversation.
 //
-// It grafts nothing. The loadout is resolved by content (CreateLoadout is
-// content-addressed, so an identical loadout is reused rather than
+// It grafts nothing. The outfit is resolved by content (CreateOutfit is
+// content-addressed, so an identical outfit is reused rather than
 // duplicated), a conversation is spawned under it, and the messages are
 // appended through the ordinary path. Every identity — node id, fork base, LT
 // — is minted by THIS store, which is why an import can never collide with
@@ -749,14 +749,14 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	if h.angelus.Backend == nil {
 		return nil, errors.New("import: no backend (ephemeral angelus)")
 	}
-	if req.Loadout == "" {
-		return nil, errors.New("import: no loadout named")
+	if req.Outfit == "" {
+		return nil, errors.New("import: no outfit named")
 	}
-	loadoutID, err := h.angelus.Backend.CreateLoadout(req.Loadout, req.LoadoutPatch)
+	outfitID, err := h.angelus.Backend.CreateOutfit(req.Outfit, req.OutfitPatch)
 	if err != nil {
-		return nil, fmt.Errorf("import: loadout %q: %w", req.Loadout, err)
+		return nil, fmt.Errorf("import: outfit %q: %w", req.Outfit, err)
 	}
-	id, err := h.angelus.Backend.CreateConversation(loadoutID)
+	id, err := h.angelus.Backend.CreateConversation(outfitID)
 	if err != nil {
 		return nil, fmt.Errorf("import: create conversation: %w", err)
 	}
@@ -790,7 +790,7 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 	meta := &store.AriaMeta{
 		MessageCount: len(req.Messages),
 		LastActiveMS: time.Now().UnixMilli(),
-		LoadoutName:  req.Loadout,
+		OutfitName:   req.Outfit,
 		Mantra:       req.Mantra,
 		Provider:     req.Provider,
 		Model:        req.Model,
@@ -804,9 +804,9 @@ func (h *handlers) importAria(ctx context.Context, params json.RawMessage) (inte
 		slog.Warn("import: set meta", "id", id, "err", err)
 	}
 	h.angelus.Backend.Kick()
-	slog.Info("imported aria", "id", id, "loadout", req.Loadout, "messages", len(req.Messages))
+	slog.Info("imported aria", "id", id, "outfit", req.Outfit, "messages", len(req.Messages))
 	return rpc.ImportResponse{
-		FigaroID: id, Loadout: req.Loadout, Messages: len(req.Messages), WasID: req.WasID,
+		FigaroID: id, Outfit: req.Outfit, Messages: len(req.Messages), WasID: req.WasID,
 	}, nil
 }
 
@@ -832,7 +832,7 @@ func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interfa
 	return rpc.PromoteResponse{FigaroID: req.FigaroID, Climbed: climbed}, nil
 }
 
-// runtimeFillins returns the per-process boot keys the loadout can't
+// runtimeFillins returns the per-process boot keys the outfit can't
 // supply: the working dir (system.cwd/root), allowlisted env vars, and
 // the aria id (non-system, so the agent can read it from a reminder and
 // `figaro set --id <id> mantra …`).
@@ -854,9 +854,9 @@ func runtimeFillins(ariaID, cwd string) chalkboard.Patch {
 }
 
 // convBootPatch is the conversation's boot transition: runtime fill-ins
-// plus the per-create req.Patch overrides. The loadout itself is NOT
+// plus the per-create req.Patch overrides. The outfit itself is NOT
 // re-stated here — it is inherited via the fork watermark and rendered
-// in the shared loadout-node prefix.
+// in the shared outfit-node prefix.
 func convBootPatch(reqPatch *rpc.ChalkboardPatch, ariaID, cwd string) chalkboard.Patch {
 	p := runtimeFillins(ariaID, cwd)
 	if reqPatch != nil {
@@ -868,9 +868,9 @@ func convBootPatch(reqPatch *rpc.ChalkboardPatch, ariaID, cwd string) chalkboard
 	return p
 }
 
-// bootPatchEphemeral is the ephemeral boot: the full resolved loadout
+// bootPatchEphemeral is the ephemeral boot: the full resolved outfit
 // (no channel to inherit from) plus runtime fill-ins. max_tokens
-// defaults when the loadout omits it.
+// defaults when the outfit omits it.
 func bootPatchEphemeral(base chalkboard.Patch, ariaID, cwd string) chalkboard.Patch {
 	p := chalkboard.Patch{Set: map[string]json.RawMessage{}}
 	for k, v := range base.Set {
@@ -932,7 +932,7 @@ func patchBool(p chalkboard.Patch, key string) bool {
 }
 
 // knobsFromPatch extracts the operational provider knobs from a
-// loadout patch's system.* keys.
+// outfit patch's system.* keys.
 func knobsFromPatch(p chalkboard.Patch) providerPkg.Knobs {
 	return providerPkg.Knobs{
 		Model:            patchString(p, "system.model"),
@@ -1012,11 +1012,11 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			LastActive:       info.LastActive.UnixMilli(),
 			Mantra:           info.Mantra,
 			Cwd:              info.Cwd,
-			LoadoutName:      info.LoadoutName,
+			OutfitName:       info.OutfitName,
 			BoundPIDs:        boundPIDs[info.ID],
 		}
-		if !req.IDsOnly && info.LoadoutName != "" {
-			entry.LoadoutVer = loadoutVerLabel(info.LoadoutVersion, h.currentLoadoutHash(info.LoadoutName))
+		if !req.IDsOnly && info.OutfitName != "" {
+			entry.OutfitVer = outfitVerLabel(info.OutfitVersion, h.currentOutfitHash(info.OutfitName))
 		}
 		result = append(result, entry)
 	}
@@ -1075,8 +1075,8 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 	}
 
 	// Global: also surface the ceremonial anchors — the null genesis trunk and
-	// every versioned loadout — that the conversation filter above skips.
-	// fillFromNode below stamps their Kind/Loadout/Version/Parent.
+	// every versioned outfit — that the conversation filter above skips.
+	// fillFromNode below stamps their Kind/Outfit/Version/Parent.
 	if req.Global {
 		for _, n := range nodeList {
 			if n.Kind == conversationKind {
@@ -1141,15 +1141,15 @@ func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoRespo
 	entry.Model = meta.Model
 	entry.Mantra = meta.Mantra
 	entry.Cwd = meta.Cwd
-	entry.LoadoutName = meta.LoadoutName
+	entry.OutfitName = meta.OutfitName
 	if meta.CreatedAtMS != 0 {
 		entry.CreatedAt = meta.CreatedAtMS
 	}
 	if meta.LastActiveMS != 0 {
 		entry.LastActive = meta.LastActiveMS
 	}
-	if meta.LoadoutName != "" {
-		entry.LoadoutVer = loadoutVerLabel(meta.LoadoutVersion, h.currentLoadoutHash(meta.LoadoutName))
+	if meta.OutfitName != "" {
+		entry.OutfitVer = outfitVerLabel(meta.OutfitVersion, h.currentOutfitHash(meta.OutfitName))
 	}
 }
 
@@ -1166,19 +1166,19 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, entry *rpc.Figa
 	entry.Parent = n.Parent
 	entry.BranchedLT = n.BranchedLT
 	entry.Kind = n.Kind
-	// Ceremonial loadout anchors carry their name + a live/stale label here
+	// Ceremonial outfit anchors carry their name + a live/stale label here
 	// (conversations get those from their chalkboard stamp instead).
-	if n.Kind == string(loadoutKind) {
-		entry.LoadoutName = n.Loadout
-		entry.LoadoutVer = loadoutVerLabel(n.Version, h.currentLoadoutHash(n.Loadout))
+	if n.Kind == string(outfitKind) {
+		entry.OutfitName = n.Outfit
+		entry.OutfitVer = outfitVerLabel(n.Version, h.currentOutfitHash(n.Outfit))
 	}
 }
 
-// loadoutKind / nullKind / conversationKind mirror the store's nodeKind string
+// outfitKind / nullKind / conversationKind mirror the store's nodeKind string
 // values (the store package's constants are unexported).
 const (
 	nullKind         = "null"
-	loadoutKind      = "loadout"
+	outfitKind       = "outfit"
 	conversationKind = "conversation"
 )
 
@@ -1530,41 +1530,41 @@ func cwdFromChalkboard(cbState *chalkboard.State, fallback string) func() string
 	}
 }
 
-// errNoDefaultLoadout builds a typed JSON-RPC error directing the
-// client to drive first-run loadout selection.
-func (h *handlers) errNoDefaultLoadout() error {
+// errNoDefaultOutfit builds a typed JSON-RPC error directing the
+// client to drive first-run outfit selection.
+func (h *handlers) errNoDefaultOutfit() error {
 	data, _ := json.Marshal(rpc.ErrorData{AvailableProviders: h.availableProviders})
 	return &jkrpc.Error{
-		Code:    rpc.ErrNoDefaultLoadout,
-		Message: "no default loadout configured",
+		Code:    rpc.ErrNoDefaultOutfit,
+		Message: "no default outfit configured",
 		Data:    data,
 	}
 }
 
 // errNoProvider builds a typed JSON-RPC error indicating the
-// resolved loadout has no system.provider key.
-func (h *handlers) errNoProvider(loadoutName string) error {
+// resolved outfit has no system.provider key.
+func (h *handlers) errNoProvider(outfitName string) error {
 	data, _ := json.Marshal(rpc.ErrorData{
 		AvailableProviders: h.availableProviders,
-		Loadout:            loadoutName,
+		Outfit:             outfitName,
 	})
 	return &jkrpc.Error{
 		Code:    rpc.ErrNoProvider,
-		Message: fmt.Sprintf("loadout %q has no system.provider", loadoutName),
+		Message: fmt.Sprintf("outfit %q has no system.provider", outfitName),
 		Data:    data,
 	}
 }
 
-// errLoadoutNotFound builds a typed JSON-RPC error for a missing
-// named loadout. cause carries the underlying outfit error.
-func (h *handlers) errLoadoutNotFound(name string, cause error) error {
+// errOutfitNotFound builds a typed JSON-RPC error for a missing
+// named outfit. cause carries the underlying outfit error.
+func (h *handlers) errOutfitNotFound(name string, cause error) error {
 	data, _ := json.Marshal(rpc.ErrorData{
 		Name:        name,
-		SearchPaths: []string{h.config.LoadoutPath(name)},
+		SearchPaths: []string{h.config.OutfitPath(name)},
 	})
 	return &jkrpc.Error{
-		Code:    rpc.ErrLoadoutNotFound,
-		Message: fmt.Sprintf("loadout %q not found: %s", name, cause),
+		Code:    rpc.ErrOutfitNotFound,
+		Message: fmt.Sprintf("outfit %q not found: %s", name, cause),
 		Data:    data,
 	}
 }

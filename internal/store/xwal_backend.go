@@ -311,11 +311,11 @@ func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) (uint6
 
 // ---- tree operations (delegated) ----
 
-func (b *XwalBackend) CreateLoadout(name string, patch message.Patch) (string, error) {
-	return b.store.CreateLoadout(name, patch)
+func (b *XwalBackend) CreateOutfit(name string, patch message.Patch) (string, error) {
+	return b.store.CreateOutfit(name, patch)
 }
-func (b *XwalBackend) CreateConversation(loadoutID string) (string, error) {
-	return b.store.CreateConversation(loadoutID)
+func (b *XwalBackend) CreateConversation(outfitID string) (string, error) {
+	return b.store.CreateConversation(outfitID)
 }
 func (b *XwalBackend) Fork(ariaID string) (cont, alt string, err error) {
 	return b.store.Fork(ariaID)
@@ -335,7 +335,7 @@ func (b *XwalBackend) OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo
 	if err != nil {
 		return OwnerInfo{}, err
 	}
-	return OwnerInfo{Trunk: o.Trunk, Loadout: o.Stump, IsRoot: o.IsRoot}, nil
+	return OwnerInfo{Trunk: o.Trunk, Outfit: o.Stump, IsRoot: o.IsRoot}, nil
 }
 
 func (b *XwalBackend) Node(id string) (NodeView, bool) { return b.store.Node(id) }

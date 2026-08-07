@@ -21,7 +21,7 @@ func TestIdleAriasAreEvictedAndRebuildIdentically(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer be.Close()
-	loadout, err := be.CreateLoadout("l", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := be.CreateOutfit("l", message.Patch{Set: map[string]json.RawMessage{
 		"skills.x": json.RawMessage(`1`),
 	}})
 	if err != nil {
@@ -29,7 +29,7 @@ func TestIdleAriasAreEvictedAndRebuildIdentically(t *testing.T) {
 	}
 	var arias []string
 	for i := 0; i < 3; i++ {
-		id, err := be.CreateConversation(loadout)
+		id, err := be.CreateConversation(outfit)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -100,11 +100,11 @@ func TestRecentlyTouchedAriasSurviveEviction(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer be.Close()
-	loadout, err := be.CreateLoadout("l", message.Patch{})
+	outfit, err := be.CreateOutfit("l", message.Patch{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := be.CreateConversation(loadout)
+	id, err := be.CreateConversation(outfit)
 	if err != nil {
 		t.Fatal(err)
 	}

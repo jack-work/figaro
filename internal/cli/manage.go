@@ -30,7 +30,7 @@ type lsOpts struct {
 }
 
 type listRow struct {
-	aria, id, loadout, ver, fork, age, msgs, ctx, cwd, detail string
+	aria, id, outfit, ver, fork, age, msgs, ctx, cwd, detail string
 }
 
 func runList(loaded *config.Loaded, o lsOpts) {
@@ -39,7 +39,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		defer cancel()
 
 		// --json: the prodev escape hatch — the whole store (incl. the null +
-		// loadout anchors) as one JSON array. No scoping, no rendering.
+		// outfit anchors) as one JSON array. No scoping, no rendering.
 		if o.jsonOut {
 			resp, err := acli.ListGlobal(ctx)
 			if err != nil {
@@ -60,7 +60,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			boundID = r.FigaroID
 		}
 
-		// Global view: the full null → loadout → conversation → branch tree.
+		// Global view: the full null → outfit → conversation → branch tree.
 		if o.global {
 			resp, err := acli.ListGlobal(ctx)
 			if err != nil {
@@ -206,7 +206,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			}
 			rows = append(rows, listRow{
 				aria: glyph + marker(f) + " " + truncRunes(label, 44),
-				id:   f.ID, loadout: dash(f.LoadoutName), ver: dash(f.LoadoutVer),
+				id:   f.ID, outfit: dash(f.OutfitName), ver: dash(f.OutfitVer),
 				fork: fork, age: relAge(f.LastActive),
 				msgs: fmt.Sprintf("%d", f.MessageCount), ctx: ctxStr, cwd: shortCwd(f.Cwd),
 			})
@@ -267,9 +267,9 @@ func runList(loaded *config.Loaded, o lsOpts) {
 	})
 }
 
-// renderGlobal prints the full hierarchy — null → loadouts → conversations →
+// renderGlobal prints the full hierarchy — null → outfits → conversations →
 // branches — by parent links. ● marks the attended aria, or, when detached,
-// the live loadout (your implicit home).
+// the live outfit (your implicit home).
 func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 	byID := map[string]rpc.FigaroInfoResponse{}
 	childrenOf := map[string][]string{}
@@ -285,18 +285,18 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 		ids := childrenOf[p]
 		sort.SliceStable(ids, func(i, j int) bool { return byID[ids[i]].LastActive > byID[ids[j]].LastActive })
 	}
-	liveLoadout := ""
+	liveOutfit := ""
 	if boundID == "" {
 		for _, f := range figs {
-			if f.Kind == "loadout" && f.LoadoutVer == "live" {
-				liveLoadout = f.ID
+			if f.Kind == "outfit" && f.OutfitVer == "live" {
+				liveOutfit = f.ID
 				break
 			}
 		}
 	}
 	ppid := os.Getppid()
 	mark := func(f rpc.FigaroInfoResponse) string {
-		if slices.Contains(f.BoundPIDs, ppid) || (f.ID != "" && f.ID == liveLoadout) {
+		if slices.Contains(f.BoundPIDs, ppid) || (f.ID != "" && f.ID == liveOutfit) {
 			return "●"
 		}
 		if f.State == "active" {
@@ -319,12 +319,12 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 		switch f.Kind {
 		case "null":
 			label, detail = "null", "genesis root · ceremonial"
-		case "loadout":
-			ver := f.LoadoutVer
+		case "outfit":
+			ver := f.OutfitVer
 			if ver == "" {
 				ver = "?"
 			}
-			label, detail = "loadout "+dash(f.LoadoutName)+"@"+ver, "ceremonial"
+			label, detail = "outfit "+dash(f.OutfitName)+"@"+ver, "ceremonial"
 		default:
 			label = f.Mantra
 			if label == "" {
@@ -362,7 +362,7 @@ func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
 	}
 	hint := " · attending " + boundID
 	if boundID == "" {
-		hint = " · home (live loadout)"
+		hint = " · home (live outfit)"
 	}
 	width := listOutputWidth()
 	summary := ""
@@ -414,16 +414,16 @@ func renderListRows(rows []listRow, width int, global bool) string {
 			fmt.Fprintf(w, "%s\t%s\t%s\n", r.aria, r.id, r.detail)
 		}
 	case width < listFullWidth:
-		fmt.Fprintln(w, "ARIA\tID\tLOADOUT\tAGE\tMSGS\tCTX")
+		fmt.Fprintln(w, "ARIA\tID\tOUTFIT\tAGE\tMSGS\tCTX")
 		for _, r := range rows {
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-				r.aria, r.id, truncRunes(r.loadout, 18), r.age, r.msgs, r.ctx)
+				r.aria, r.id, truncRunes(r.outfit, 18), r.age, r.msgs, r.ctx)
 		}
 	default:
-		fmt.Fprintln(w, "ARIA\tID\tLOADOUT\tVER\tFORK\tAGE\tMSGS\tCTX\tCWD")
+		fmt.Fprintln(w, "ARIA\tID\tOUTFIT\tVER\tFORK\tAGE\tMSGS\tCTX\tCWD")
 		for _, r := range rows {
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				r.aria, r.id, r.loadout, r.ver, r.fork, r.age, r.msgs, r.ctx, r.cwd)
+				r.aria, r.id, r.outfit, r.ver, r.fork, r.age, r.msgs, r.ctx, r.cwd)
 		}
 	}
 	w.Flush()
@@ -643,7 +643,7 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 		// continuation IS the aria this shell is already bound to. The Bind
 		// still earns its keep — it clears any pending fork point on the
 		// binding (atLT 0), and a cauterized fork (redirected to a fresh
-		// conversation under a loadout or the root) can hand back a
+		// conversation under an outfit or the root) can hand back a
 		// continuation that really is somewhere else. Registry.Bind rebinds
 		// in place, so no Unbind is needed first.
 		rescoped := false
@@ -767,7 +767,7 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 				"  Set `trunks = true` in config.toml and restart the daemon to enable it.")
 		}
 		if resp.AtStump {
-			die("promote: %s is rooted at a loadout — cannot promote into a loadout; make or edit a loadout instead", target)
+			die("promote: %s is rooted at an outfit — cannot promote into an outfit; make or edit an outfit instead", target)
 		}
 		fmt.Fprintf(os.Stderr, "promoted %s by %d level(s) — it is now the canonical line through its ancestors\n", target, resp.Climbed)
 		return nil
@@ -790,8 +790,8 @@ func runAttend(loaded *config.Loaded, spec string) {
 		die("attend: binding disabled (--no-bind, FIGARO_NO_BIND, or non-interactive shell); this command has no effect here")
 	}
 	// "null" is home: drop this shell's binding (the angelus pid→aria map),
-	// echoing the kindNull genesis root that sits above every loadout. New
-	// conversations then default to the live loadout. `null` is a required
+	// echoing the kindNull genesis root that sits above every outfit. New
+	// conversations then default to the live outfit. `null` is a required
 	// literal; there is no `detach`. `~` is kept as a legacy alias so old
 	// muscle memory still works (it must be quoted in the shell).
 	if spec == "null" || spec == "~" {
@@ -799,7 +799,7 @@ func runAttend(loaded *config.Loaded, spec string) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			_ = unbindBinding(ctx, acli, os.Getppid())
-			fmt.Fprintln(os.Stderr, "home — unbound; new conversations will use the live loadout")
+			fmt.Fprintln(os.Stderr, "home — unbound; new conversations will use the live outfit")
 			return nil
 		})
 		return
@@ -830,14 +830,14 @@ func runAttend(loaded *config.Loaded, spec string) {
 			atMainLT = lt
 		}
 		if err := bindBinding(ctx, acli, ppid, trunk, atMainLT); err != nil {
-			// A cauterized anchor (null/loadout) can't be attended — nudge.
+			// A cauterized anchor (null/outfit) can't be attended — nudge.
 			if r, e := acli.ListGlobal(ctx); e == nil {
 				for _, f := range r.Figaros {
-					if f.ID == trunk && (f.Kind == "null" || f.Kind == "loadout") {
+					if f.ID == trunk && (f.Kind == "null" || f.Kind == "outfit") {
 						die("%s is a %s — a closed anchor, not a conversation; it can't be attended.\n"+
-							"  figaro attend null  go home (unbind; new conversations use the live loadout)\n"+
+							"  figaro attend null  go home (unbind; new conversations use the live outfit)\n"+
 							"  figaro ls -h        lists top-level conversations (use -a or -n N to show all or N most recent in scope)\n"+
-							"  figaro ls -g        show the full hierarchy (null + loadouts + conversations)", trunk, f.Kind)
+							"  figaro ls -g        show the full hierarchy (null + outfits + conversations)", trunk, f.Kind)
 					}
 				}
 			}

@@ -161,7 +161,7 @@ func rebindAgent(t *testing.T, f *rebindFactory, boot map[string]json.RawMessage
 
 // TestProviderRebindsMidConversation is the regression test for the bug that
 // stranded a live aria on a wedged provider: `system.provider` changed on the
-// chalkboard (by `figaro set` or a re-applied loadout) but the agent kept the
+// chalkboard (by `figaro set` or a re-applied outfit) but the agent kept the
 // instance it was constructed with, so the switch only took effect if the
 // whole agent was re-created. It must take effect on the next round.
 func TestProviderRebindsMidConversation(t *testing.T) {

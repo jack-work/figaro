@@ -45,14 +45,14 @@ func TestPrintStatusPanelShowsContextCapacityAndTokenCost(t *testing.T) {
 	}
 }
 
-func TestPrintStatusPanelOmitsLoadoutParentAsForkOrigin(t *testing.T) {
+func TestPrintStatusPanelOmitsOutfitParentAsForkOrigin(t *testing.T) {
 	out, err := os.CreateTemp(t.TempDir(), "status")
 	if err != nil {
 		t.Fatal(err)
 	}
 	printStatusPanel(out, &rpc.FigaroInfoResponse{
 		ID:         "dac6cb6d",
-		Parent:     "default-loadout",
+		Parent:     "default-outfit",
 		BranchedLT: 0,
 		Vector:     []int{0},
 	}, true, 0)
@@ -64,6 +64,6 @@ func TestPrintStatusPanelOmitsLoadoutParentAsForkOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(body), "forked-from") {
-		t.Fatalf("top-level loadout parent must not be shown as a fork:\n%s", body)
+		t.Fatalf("top-level outfit parent must not be shown as a fork:\n%s", body)
 	}
 }

@@ -146,7 +146,7 @@ type Snapshot struct {
 
 `State` (`state.go`) is **one writer, many readers**. The writer is the agent's
 drain loop (`act` → `applyControlPatch` → `State.Apply`); readers are the
-`figaro.chalkboard` handler, `Agent.ApplyLoadout` and
+`figaro.chalkboard` handler, `Agent.ApplyOutfit` and
 `Agent.chalkboardString`/`chalkboardInt`, all on RPC goroutines. `State`
 publishes `{snapshot, dirty}` as one immutable value through an
 `atomic.Pointer`, so readers are **lock-free** and always see a complete
@@ -155,8 +155,8 @@ happens-before edge — a genuine data race, 11 reports per `-race` run.) One
 writer means the update path stores unconditionally; no CAS loop. `Save`
 clears the dirty flag with a single non-looping CAS.
 
-Loadouts (`internal/outfit`) assemble the boot chalkboard from `config.toml`'s
-`default_loadout` chain. `fileName`/`dirName` tables load file bodies as
+Outfits (`internal/outfit`) assemble the boot chalkboard from `config.toml`'s
+`default_outfit` chain. `fileName`/`dirName` tables load file bodies as
 content envelopes (`{frontmatter|content, filePath}`) — skills come in this
 way (`skills.<base>`), so the agent sees a skill's frontmatter and reads its
 body on demand. Bundled first-party skills merge under the user's by name.
@@ -164,7 +164,7 @@ body on demand. Bundled first-party skills merge under the user's by name.
 ## The wire protocol — `internal/rpc`
 
 Per-aria request methods: `figaro.qua` (prompt), `figaro.context`,
-`figaro.interrupt`, `figaro.set`, `figaro.loadout`, `figaro.chalkboard`,
+`figaro.interrupt`, `figaro.set`, `figaro.outfit`, `figaro.chalkboard`,
 `figaro.queued`, and `figaro.read` (catch-up/paging). Angelus includes
 `figaro.create`/`fork`/`promote`/`kill`/`list`/`attach`,
 `pid.bind`/`resolve`/`unbind`, `aria.read`, `aria.page`/`context`/`chalkboard`
@@ -226,7 +226,7 @@ the inline view and `figaro show` cannot drift:
 aria or an anonymous script. Their name does not live in shell config: an
 *interactive* CLI sends a **placeholder** in `x-caller`, and the agent resolves
 it against the **target aria's** chalkboard key **`duke-title`** (default
-`user`). Set it in a loadout:
+`user`). Set it in an outfit:
 
 ```toml
 duke-title = "gluck"
@@ -424,7 +424,7 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
 authoritative. The agent holds a `ProviderFactory` and re-resolves the binding
 at the top of **every** provider round (`internal/figaro/provbind.go`,
 `syncProvider`), after that round's queued `set`s are serviced — so
-`figaro set system.provider copilot` (or a re-applied loadout that moves the
+`figaro set system.provider copilot` (or a re-applied outfit that moves the
 aria) takes effect on the next round, with no restart and no fork. Before
 this, the instance was frozen at create/restore: an aria whose provider was
 wedged (a persistent `overloaded_error`, say) could not be moved off it while

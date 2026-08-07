@@ -120,11 +120,11 @@ func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch) (*rpc.SetRe
 	return &resp, nil
 }
 
-// Loadout applies a named loadout additively to the chalkboard. No
+// Outfit applies a named outfit additively to the chalkboard. No
 // keys are removed; values equal to the current snapshot are skipped.
-func (c *Client) Loadout(ctx context.Context, name string) (*rpc.LoadoutResponse, error) {
-	var resp rpc.LoadoutResponse
-	if err := c.call(ctx, rpc.MethodLoadout, rpc.LoadoutRequest{Name: name}, &resp); err != nil {
+func (c *Client) Outfit(ctx context.Context, name string) (*rpc.OutfitResponse, error) {
+	var resp rpc.OutfitResponse
+	if err := c.call(ctx, rpc.MethodOutfit, rpc.OutfitRequest{Name: name}, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

@@ -8,7 +8,7 @@ type tp struct {
 	S string `json:"s"`
 }
 
-// mustBackendWithConv creates a fresh backend, seeds a loadout + one
+// mustBackendWithConv creates a fresh backend, seeds an outfit + one
 // conversation, and returns them. The conversation id is a real trunk
 // id; xwalLog operations against it exercise the full store path
 // (OpenNode → Trunks.Head / Trunks.Append).
@@ -19,9 +19,9 @@ func mustBackendWithConv(t *testing.T) (*XwalBackend, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = b.Close() })
-	l, err := b.CreateLoadout("default", patchSet(nil))
+	l, err := b.CreateOutfit("default", patchSet(nil))
 	if err != nil {
-		t.Fatalf("create loadout: %v", err)
+		t.Fatalf("create outfit: %v", err)
 	}
 	conv, err := b.CreateConversation(l)
 	if err != nil {
@@ -91,26 +91,26 @@ func TestXwalLog_ReadsSurvivePromote(t *testing.T) {
 	}
 	warmedLen := len(ir.Read())
 
-	// Create a sibling conversation under the same loadout and promote
+	// Create a sibling conversation under the same outfit and promote
 	// it. Under the OLD backend this triggered evictAll and would
 	// invalidate every cached handle. Under the new backend it's a
 	// no-op for this aria's row cache.
 	nodes := b.store.Nodes()
-	var loadoutID string
+	var outfitID string
 	for _, n := range nodes {
-		if n.Kind == string(kindLoadout) {
-			loadoutID = n.ID
+		if n.Kind == string(kindOutfit) {
+			outfitID = n.ID
 			break
 		}
 	}
-	if loadoutID == "" {
-		t.Fatal("no loadout node found")
+	if outfitID == "" {
+		t.Fatal("no outfit node found")
 	}
-	sibling, err := b.CreateConversation(loadoutID)
+	sibling, err := b.CreateConversation(outfitID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The sibling is rooted at the loadout stump, so Promote returns
+	// The sibling is rooted at the outfit stump, so Promote returns
 	// ErrAtStump — but the point of the test is that our conv's
 	// handle is untouched regardless.
 	_, _ = b.Promote(sibling, 1)

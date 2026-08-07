@@ -8,7 +8,7 @@ import (
 
 // metaBackfill upgrades AriaMeta sidecars written by builds that predate the
 // metadata-only dormant listing. Those sidecars carry the counts but not the
-// chalkboard-derived identity fields (mantra, cwd, loadout, provider/model),
+// chalkboard-derived identity fields (mantra, cwd, outfit, provider/model),
 // so every dormant aria listed as a bare "aria <id>" row. The truth still
 // lives in each aria's chalkboard; fold it in once and the sidecar is current
 // forever after (live actors republish full meta on every turn).
@@ -35,7 +35,7 @@ func (a *Angelus) metaBackfill(ctx context.Context) {
 		if err != nil || meta == nil {
 			continue
 		}
-		if meta.Mantra != "" || meta.LoadoutName != "" || meta.Cwd != "" {
+		if meta.Mantra != "" || meta.OutfitName != "" || meta.Cwd != "" {
 			continue // already carries identity fields
 		}
 		snap, err := a.Backend.ChalkboardState(id)
@@ -53,14 +53,20 @@ func (a *Angelus) metaBackfill(ctx context.Context) {
 		}
 		mantra := get("mantra")
 		cwd := get("system.cwd")
-		loadout := get("system.loadout_name")
-		if mantra == "" && cwd == "" && loadout == "" {
+		outfit := get("system.outfit_name")
+		if outfit == "" {
+			outfit = get("system.loadout_name")
+		}
+		if mantra == "" && cwd == "" && outfit == "" {
 			continue // nothing to fold in
 		}
 		meta.Mantra = mantra
 		meta.Cwd = cwd
-		meta.LoadoutName = loadout
-		meta.LoadoutVersion = get("system.loadout_version")
+		meta.OutfitName = outfit
+		meta.OutfitVersion = get("system.outfit_version")
+		if meta.OutfitVersion == "" {
+			meta.OutfitVersion = get("system.loadout_version")
+		}
 		if meta.Provider == "" {
 			meta.Provider = get("system.provider")
 		}

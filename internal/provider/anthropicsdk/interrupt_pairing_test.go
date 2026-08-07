@@ -81,12 +81,12 @@ func TestInterruptedTurn_BuiltRequestPairsEveryToolUse(t *testing.T) {
 	require.NoError(t, err)
 	defer backend.Close()
 
-	loadout, err := backend.CreateLoadout("d", message.Patch{Set: map[string]json.RawMessage{
+	outfit, err := backend.CreateOutfit("d", message.Patch{Set: map[string]json.RawMessage{
 		"system.model":    json.RawMessage(`"m"`),
 		"system.provider": json.RawMessage(`"interrupted-tool"`),
 	}})
 	require.NoError(t, err)
-	conv, err := backend.CreateConversation(loadout)
+	conv, err := backend.CreateConversation(outfit)
 	require.NoError(t, err)
 
 	toolStarted := make(chan struct{})

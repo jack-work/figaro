@@ -184,7 +184,7 @@ func (s *tapeServer) serve(ctx context.Context, conn net.Conn) {
 	handlers := map[string]jkrpc.HandlerFunc{}
 	for _, m := range []string{
 		rpc.MethodRead, rpc.MethodQueued, rpc.MethodChalkboard, rpc.MethodContext,
-		rpc.MethodInterrupt, rpc.MethodSet, rpc.MethodLoadout, rpc.MethodQua,
+		rpc.MethodInterrupt, rpc.MethodSet, rpc.MethodOutfit, rpc.MethodQua,
 		rpc.MethodQueueUpdate, rpc.MethodQueueDelete,
 	} {
 		method := m

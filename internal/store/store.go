@@ -11,9 +11,9 @@ import (
 )
 
 // ErrAtStump means a Promote could not climb at all: the trunk is rooted
-// directly at a loadout (the cauterization boundary). Callers map it to a
-// domain message ("cannot promote into a loadout; make/edit a loadout").
-var ErrAtStump = errors.New("trunk is rooted at a loadout; cannot promote further")
+// directly at an outfit (the cauterization boundary). Callers map it to a
+// domain message ("cannot promote into an outfit; make/edit an outfit").
+var ErrAtStump = errors.New("trunk is rooted at an outfit; cannot promote further")
 
 // ErrNoTrunkCapability reports a figaro built without the presentation
 // hierarchy: promotion is meaningless, not merely refused.
@@ -46,21 +46,43 @@ type AriaMeta struct {
 	Model            string `json:"model,omitempty"`
 	Mantra           string `json:"mantra,omitempty"`
 	Cwd              string `json:"cwd,omitempty"`
-	LoadoutName      string `json:"loadout_name,omitempty"`
-	LoadoutVersion   string `json:"loadout_version,omitempty"`
+	OutfitName       string `json:"outfit_name,omitempty"`
+	OutfitVersion    string `json:"outfit_version,omitempty"`
 	ContextTokens    int    `json:"context_tokens,omitempty"`
 	ContextLimit     int    `json:"context_limit,omitempty"`
 	ContextExact     bool   `json:"context_exact,omitempty"`
 	CreatedAtMS      int64  `json:"created_at_ms,omitempty"`
 }
 
+// UnmarshalJSON accepts the pre-rename loadout_* keys existing sidecars carry;
+// only outfit_* is written back.
+func (m *AriaMeta) UnmarshalJSON(b []byte) error {
+	type alias AriaMeta
+	var wire struct {
+		alias
+		LegacyOutfitName    string `json:"loadout_name,omitempty"`
+		LegacyOutfitVersion string `json:"loadout_version,omitempty"`
+	}
+	if err := json.Unmarshal(b, &wire); err != nil {
+		return err
+	}
+	*m = AriaMeta(wire.alias)
+	if m.OutfitName == "" {
+		m.OutfitName = wire.LegacyOutfitName
+	}
+	if m.OutfitVersion == "" {
+		m.OutfitVersion = wire.LegacyOutfitVersion
+	}
+	return nil
+}
+
 // OwnerInfo describes which node owns a main-LT along a trunk's lineage:
-// a parent trunk (Trunk set), a loadout (Loadout set, its stump name), or
+// a parent trunk (Trunk set), an outfit (Outfit set, its stump name), or
 // the genesis root (IsRoot). Used for the <id>:<LT> addressing announcement.
 type OwnerInfo struct {
-	Trunk   string
-	Loadout string
-	IsRoot  bool
+	Trunk  string
+	Outfit string
+	IsRoot bool
 }
 
 // Backend is the aria storage provider. One per angelus. The only
@@ -94,12 +116,12 @@ type Backend interface {
 	// Empty patches (genesis/seed no-ops) are omitted.
 	ChalkboardPatches(ariaID string) ([]VersionedPatch, error)
 
-	// CreateLoadout materializes (or reuses) the loadout node for
+	// CreateOutfit materializes (or reuses) the outfit node for
 	// (name, content-version-of-patch) and returns its id.
-	CreateLoadout(name string, patch message.Patch) (string, error)
+	CreateOutfit(name string, patch message.Patch) (string, error)
 
-	// CreateConversation forks a loadout node into a fresh conversation.
-	CreateConversation(loadoutID string) (string, error)
+	// CreateConversation forks an outfit node into a fresh conversation.
+	CreateConversation(outfitID string) (string, error)
 
 	// Fork branches a conversation at its head: the node freezes and
 	// keeps its id as an index node; both children get fresh ids.
@@ -113,7 +135,7 @@ type Backend interface {
 
 	// Promote climbs a conversation trunk up `levels` stump-bounded levels
 	// (it absorbs its parent trunk's run). Returns the number of levels
-	// actually climbed; xwal.ErrAtStump means it is rooted at a loadout.
+	// actually climbed; xwal.ErrAtStump means it is rooted at an outfit.
 	Promote(ariaID string, levels int) (climbed int, err error)
 
 	// Normalize runs deferred topology work now: every aria presented away
@@ -122,7 +144,7 @@ type Backend interface {
 	Normalize() (detached int, err error)
 
 	// OwnerResolution reports which node owns atMainLT along a trunk's
-	// lineage (a parent trunk, a loadout, or the genesis root).
+	// lineage (a parent trunk, an outfit, or the genesis root).
 	OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo, error)
 
 	// Node / Nodes expose the tree for lineage + listing.

@@ -241,7 +241,7 @@ func TestWire_Context_IsAdditive(t *testing.T) {
 }
 
 func TestWire_Context_DoesNotRemoveUnmentionedSnapshotKeys(t *testing.T) {
-	// A loaded chalkboard may contain keys (skills, loadout
+	// A loaded chalkboard may contain keys (skills, outfit
 	// values, etc.) the client never carries in Context. Sending a
 	// Context turn whose contents differ from those keys must not
 	// remove them — only set the keys the client explicitly named.

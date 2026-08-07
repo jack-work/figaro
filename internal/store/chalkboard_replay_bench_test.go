@@ -47,7 +47,7 @@ var replayGrid = []struct{ m, n int }{
 }
 
 // replayBoardJSON returns the marshalled starting board: m keys of
-// modest ~64-byte values, the size a real `figaro set`/loadout key runs.
+// modest ~64-byte values, the size a real `figaro set`/outfit key runs.
 func replayBoardJSON(m int) []byte {
 	board := make(map[string]json.RawMessage, m)
 	for k, v := range replayBoardMap(m) {
@@ -171,11 +171,11 @@ func seedChalkboardAria(tb testing.TB, m, n int) (string, string) {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	loadout, err := be.CreateLoadout("bench", message.Patch{Set: replayBoardMap(m)})
+	outfit, err := be.CreateOutfit("bench", message.Patch{Set: replayBoardMap(m)})
 	if err != nil {
 		tb.Fatal(err)
 	}
-	aria, err := be.CreateConversation(loadout)
+	aria, err := be.CreateConversation(outfit)
 	if err != nil {
 		tb.Fatal(err)
 	}

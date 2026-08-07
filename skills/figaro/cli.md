@@ -33,8 +33,8 @@ These hold across the whole CLI:
 |---|---|
 | `figaro -- <prompt>` | Prompt the attended aria. Creates one if this shell has no binding. |
 | `figaro send [flags] -- <prompt>` | The same, with the verb spelled out. Alias `qua`. |
-| `figaro new [--loadout <name>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
-| `figaro new` | With no prompt and no loadout: drop this shell's binding and go home. |
+| `figaro new [--outfit <name>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
+| `figaro new` | With no prompt and no outfit: drop this shell's binding and go home. |
 
 `send` flags, all combinable unless noted:
 
@@ -42,7 +42,7 @@ These hold across the whole CLI:
 |---|---|
 | `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. Mints an aria if this shell has none (the id goes to stderr, or to stdout with `-j`). |
 | `-e`, `--ephemeral` | Spin a throwaway in-memory aria and kill it when the turn ends. Contradicts `--id`. |
-| `-L`, `--loadout <name>` | The loadout for an aria **this call creates** — with `-e`, or in a shell with no binding. Rejected against a target (`--id`, `<id>`, `<id>:<turn>`), which names an aria that already exists. Defaults to config.toml's `default_loadout`, as `new --loadout` does. Takes a value, so it does not gang: `-er -L sonn5`, not `-erL`. |
+| `-L`, `--outfit <name>` | The outfit for an aria **this call creates** — with `-e`, or in a shell with no binding. Rejected against a target (`--id`, `<id>`, `<id>:<turn>`), which names an aria that already exists. Defaults to config.toml's `default_outfit`, as `new --outfit` does. Takes a value, so it does not gang: `-er -L sonn5`, not `-erL`. |
 | `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
 | `-o`, `--verbose` | Expand full tool inputs. Ctrl-O toggles it live. |
 | `-l`, `--listen` | Open the transcript pager at startup. |
@@ -136,20 +136,20 @@ The wire behind all of this — the interrupt's queue disposition, the
 |---|---|
 | `figaro ls [<id>]` | List arias, scoped to where you are attended. Alias `list`. |
 | `figaro ls -H` | Home view: every top-level aria, without unbinding you. (`-h` is help, on every verb.) |
-| `figaro ls -g` | Home plus the null root and loadout anchors. |
+| `figaro ls -g` | Home plus the null root and outfit anchors. |
 | `figaro ls -a` / `-n N` | Remove the 10-row cap, or set it. Mutually exclusive. |
 | `figaro attend <id>` | Bind this shell to an aria. Alias `at`. |
 | `figaro attend <id>:<turn>` | Bind with a pending fork point: the next bare prompt forks there. `<id>.<lt>` names an LT instead of a turn. |
 | `figaro attend null` | Go home. There is no `detach` verb. |
 | `figaro show [<id>]` | Render history — the same rows `listen` draws. `-n N` last N turns, `-a` all, `-o` block addresses and timestamps, `-v` raw IR, `-l` no markdown, `-j` JSON. |
-| `figaro status [<id>]` | One aria in focus: provider, model, context, cost. `-m` adds cwd, loadout, fork origin. |
+| `figaro status [<id>]` | One aria in focus: provider, model, context, cost. `-m` adds cwd, outfit, fork origin. |
 | `figaro listen [<id>]` | Attach to the live stream without prompting. Ctrl-D detaches, the turn survives. |
 | `figaro hup [<id>] [-d]` | Hang up: stop the turn; `-d` also discards the queue (see The queue). |
 | `figaro cut [<id>]` | Shorthand for `hup -d`; `-j` returns the messages. |
 | `figaro queue [rm\|edit]` | Read, edit and delete what has not been answered yet. |
 
 `ls` columns: ARIA (mantra, with `●` this shell, `▸` running, `○` idle), ID,
-LOADOUT, VER, FORK, AGE, MSGS, CTX, CWD. While your own turn is in flight your
+OUTFIT, VER, FORK, AGE, MSGS, CTX, CWD. While your own turn is in flight your
 row shows `▸`, not `●`, so identify yourself from the header instead.
 
 ## Branching
@@ -162,7 +162,7 @@ row shows `▸`, not `●`, so identify yourself from the header instead.
 | `figaro fork --stay` | Branch without moving this shell. |
 | `figaro promote <id> [levels]` | Make a trunk the canonical line through its ancestors. Pure relabeling. |
 | `figaro kill <id>` | Remove a trunk and its subtree. `-r` is required if it has live branches. |
-| `figaro export [<id>] [-o <f>]` | Write an aria to a portable file: loadout, chalkboard, every message. |
+| `figaro export [<id>] [-o <f>]` | Write an aria to a portable file: outfit, chalkboard, every message. |
 | `figaro import <file>` | Restore one into THIS store as a new conversation. `-` reads stdin. |
 
 The model behind these, including what freezes and which child keeps the id, is
@@ -186,7 +186,7 @@ that goes wrong yields a store that looks fine.
 | `figaro state [<id>]` | The folded chalkboard snapshot. `-j` for JSON. Alias `chalkboard`. |
 | `figaro set [<id>] <key> <value>` | Patch one key with no model round trip. |
 | `figaro unset [<id>] <key>...` | Remove keys. |
-| `figaro loadout <name>` | Apply a named loadout additively. `--list` to see them. |
+| `figaro outfit <name>` | Apply a named outfit additively. `--list` to see them. |
 
 Setting a key is a real event in the conversation: on the tic where a
 non-`system` key changes, the agent sees a `<system-reminder>` naming it. Keys

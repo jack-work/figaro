@@ -23,7 +23,7 @@ func TestGeneratePerformanceFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer backend.Close()
-	loadout, err := backend.CreateLoadout("performance", message.Patch{
+	outfit, err := backend.CreateOutfit("performance", message.Patch{
 		Set: map[string]json.RawMessage{
 			"system.provider": json.RawMessage(`"copilot"`),
 			"system.model":    json.RawMessage(`"gpt-5.6-sol"`),
@@ -34,7 +34,7 @@ func TestGeneratePerformanceFixture(t *testing.T) {
 	}
 	body := "synthetic performance history"
 	for i := 0; i < arias; i++ {
-		id, err := backend.CreateConversation(loadout)
+		id, err := backend.CreateConversation(outfit)
 		if err != nil {
 			t.Fatal(err)
 		}

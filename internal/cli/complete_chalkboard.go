@@ -54,10 +54,10 @@ func completeChalkboardKeys(c *cmdkit.CompleteContext) []string {
 		add(k)
 	}
 	// No aria bound to this shell (softFetchLiveKeys came back empty): fall
-	// back to the default loadout's chalkboard keys (its skills + system.*),
-	// read straight from the loadout definition so completion still works.
+	// back to the default outfit's chalkboard keys (its skills + system.*),
+	// read straight from the outfit definition so completion still works.
 	if len(live) == 0 {
-		for _, k := range loadoutFallbackKeys(c) {
+		for _, k := range outfitFallbackKeys(c) {
 			add(k)
 		}
 	}
@@ -65,17 +65,17 @@ func completeChalkboardKeys(c *cmdkit.CompleteContext) []string {
 	return out
 }
 
-// loadoutFallbackKeys returns the chalkboard keys the default loadout sets,
+// outfitFallbackKeys returns the chalkboard keys the default outfit sets,
 // read from config (no aria needed). Empty when unavailable.
-func loadoutFallbackKeys(c *cmdkit.CompleteContext) []string {
+func outfitFallbackKeys(c *cmdkit.CompleteContext) []string {
 	if c == nil {
 		return nil
 	}
 	loaded, _ := c.Extra.(*config.Loaded)
-	if loaded == nil || loaded.Config.DefaultLoadout == "" {
+	if loaded == nil || loaded.Config.DefaultOutfit == "" {
 		return nil
 	}
-	patch, err := outfit.New(loaded.ConfigDir).Load(loaded.Config.DefaultLoadout)
+	patch, err := outfit.New(loaded.ConfigDir).Load(loaded.Config.DefaultOutfit)
 	if err != nil {
 		return nil
 	}

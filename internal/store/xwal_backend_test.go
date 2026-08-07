@@ -20,8 +20,8 @@ func TestXwalBackend_EndToEnd(t *testing.T) {
 
 	defer b.Close()
 
-	// create = fork a loadout into a conversation
-	l, err := b.CreateLoadout("default", patchSet(map[string]string{"system.credo": "be terse"}))
+	// create = fork an outfit into a conversation
+	l, err := b.CreateOutfit("default", patchSet(map[string]string{"system.credo": "be terse"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,11 +144,11 @@ func TestXwalBackendForkKeepsLiveLogUsable(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b.Close()
-	loadout, err := b.CreateLoadout("default", patchSet(map[string]string{"system.model": "m"}))
+	outfit, err := b.CreateOutfit("default", patchSet(map[string]string{"system.model": "m"}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	conv, err := b.CreateConversation(loadout)
+	conv, err := b.CreateConversation(outfit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b.Close()
-	l, _ := b.CreateLoadout("d", patchSet(map[string]string{"system.model": "m"}))
+	l, _ := b.CreateOutfit("d", patchSet(map[string]string{"system.model": "m"}))
 	conv, _ := b.CreateConversation(l)
 
 	ir, _ := b.Open(conv)
@@ -249,25 +249,25 @@ func TestXwalBackend_ForkAtInterior(t *testing.T) {
 	}
 }
 
-func TestXwalBackend_CauterizedLoadoutFork(t *testing.T) {
+func TestXwalBackend_CauterizedOutfitFork(t *testing.T) {
 	b, err := NewXwalBackend(t.TempDir(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer b.Close()
-	l, _ := b.CreateLoadout("d", patchSet(map[string]string{"system.model": "m"}))
+	l, _ := b.CreateOutfit("d", patchSet(map[string]string{"system.model": "m"}))
 	conv, _ := b.CreateConversation(l)
-	// Give conv a couple own turns so LT 2 (the loadout birth) is clearly an
+	// Give conv a couple own turns so LT 2 (the outfit birth) is clearly an
 	// inherited, ceremonial LT.
 	ir, _ := b.Open(conv)
 	for i := 0; i < 2; i++ {
 		ir.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}})
 	}
-	// Fork conv at LT 2 — owned by the LOADOUT. Cauterized => a NEW conversation
-	// sharing the loadout, NOT a re-split of the loadout into a continuation.
+	// Fork conv at LT 2 — owned by the OUTFIT. Cauterized => a NEW conversation
+	// sharing the outfit, NOT a re-split of the outfit into a continuation.
 	cont, sib, err := b.ForkAt(conv, 2)
 	if err != nil {
-		t.Fatalf("cauterized fork at loadout LT: %v", err)
+		t.Fatalf("cauterized fork at outfit LT: %v", err)
 	}
 	if cont != conv {
 		t.Fatalf("cont should stay conv: %s != %s", cont, conv)
@@ -275,21 +275,21 @@ func TestXwalBackend_CauterizedLoadoutFork(t *testing.T) {
 	if sib == conv || sib == l || sib == "" {
 		t.Fatalf("sib must be a fresh conversation trunk, got %q", sib)
 	}
-	// The sibling shares the loadout chalkboard and is itself sendable.
+	// The sibling shares the outfit chalkboard and is itself sendable.
 	snap, err := b.ChalkboardState(sib)
 	if err != nil {
 		t.Fatalf("sib chalkboard: %v", err)
 	}
 	if str(cbGet(snap, "system.model")) != "m" {
-		t.Fatalf("sib lost the shared loadout model: %q", str(cbGet(snap, "system.model")))
+		t.Fatalf("sib lost the shared outfit model: %q", str(cbGet(snap, "system.model")))
 	}
 	sibIR, _ := b.Open(sib)
 	if _, err := sibIR.Append(Entry[message.Message]{Payload: message.Message{Role: message.RoleInput}}); err != nil {
 		t.Fatalf("send to cauterized sibling: %v", err)
 	}
-	// And the loadout still has NO live head of its own (stays ceremonial).
+	// And the outfit still has NO live head of its own (stays ceremonial).
 	if _, ok := b.Node(l); !ok {
-		t.Fatalf("loadout %s should still resolve", l)
+		t.Fatalf("outfit %s should still resolve", l)
 	}
 }
 
@@ -299,7 +299,7 @@ func TestXwalBackend_ForestVectors(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer b.Close()
-	l, _ := b.CreateLoadout("d", patchSet(nil))
+	l, _ := b.CreateOutfit("d", patchSet(nil))
 	c1, _ := b.CreateConversation(l) // root [0]
 	c2, _ := b.CreateConversation(l) // root [1]
 	// give c1 a turn so it's interior-forkable, then fork it -> a branch [0,0]
@@ -343,7 +343,7 @@ func TestNoStranding_SiblingPromoteDoesNotInvalidate(t *testing.T) {
 	}
 	defer b.Close()
 
-	l, _ := b.CreateLoadout("d", patchSet(nil))
+	l, _ := b.CreateOutfit("d", patchSet(nil))
 	convA, _ := b.CreateConversation(l)
 	convB, _ := b.CreateConversation(l)
 
@@ -380,7 +380,7 @@ func TestNoStranding_ConcurrentAppendsAcrossArias(t *testing.T) {
 	}
 	defer b.Close()
 
-	l, _ := b.CreateLoadout("d", patchSet(nil))
+	l, _ := b.CreateOutfit("d", patchSet(nil))
 	const numArias = 4
 	const perWriter = 20
 
@@ -415,7 +415,7 @@ func TestNoStranding_ConcurrentAppendsAcrossArias(t *testing.T) {
 		defer wg.Done()
 		for j := 0; j < 10; j++ {
 			// Promote every aria (returns ErrAtStump because they're
-			// rooted at the loadout, but the code path still runs).
+			// rooted at the outfit, but the code path still runs).
 			for _, id := range arias {
 				_, _ = b.Promote(id, 1)
 			}

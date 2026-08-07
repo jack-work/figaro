@@ -80,10 +80,10 @@ Diverge the alternative (id printed by `fork`):
 ## 5. Verify the tree on disk
 
 ```fish
-cat $FIGARO_STATE_DIR/arias/index.json   # nodes (null -> loadout -> conversations), frozen flags, loadouts map
+cat $FIGARO_STATE_DIR/arias/index.json   # nodes (null -> outfit -> conversations), frozen flags, outfits map
 ```
 
-You should see: one `null` root (`"arias"`), one `loadout` node per
+You should see: one `null` root (`"arias"`), one `outfit` node per
 (name, content-version), and conversation nodes — the forked parent with
 `"frozen": true` and two children pointing at it via `parent`.
 
@@ -96,10 +96,10 @@ rm -rf $FIGARO_RUNTIME_DIR $FIGARO_STATE_DIR /tmp/figt
 
 ## What to look for / known rough edges
 
-- **Loadout reminders render once** in the shared loadout prefix (the
-  loadout node's renderable birth tic) and are inherited by every
+- **Outfit reminders render once** in the shared outfit prefix (the
+  outfit node's renderable birth tic) and are inherited by every
   conversation — check `show -v` on a second conversation from the same
-  loadout: its skills/credo come from the cached prefix, not re-injected.
+  outfit: its skills/credo come from the cached prefix, not re-injected.
 - **`set` then immediately `fork`** with no turn in between: the pending
   patch rides only the continuation (known edge — commit a turn between
   `set` and `fork` for it to reach both).

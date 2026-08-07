@@ -249,7 +249,7 @@ fig IR, but it is not an address: turns are.`,
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-L <loadout>] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
+		Usage:   "send [--id <id>] [-O <outfit>] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding) — or, inside an aria's
 own bash tool, the aria itself (FIGARO_ARIA). With --id, targets
@@ -262,12 +262,12 @@ Flags:
   -e, --ephemeral
                  Spin a one-shot in-memory aria; kill it on completion.
                  Contradicts --id. Says nothing about formatting.
-  -L, --loadout <name>
-                 The loadout for an aria THIS CALL creates: with -e, or in a
+  -O, --outfit <name>
+                 The outfit for an aria THIS CALL creates: with -e, or in a
                  shell with no binding. A target (--id/<id>/<id>:<turn>) names
-                 an aria that already exists, so --loadout is rejected there
+                 an aria that already exists, so --outfit is rejected there
                  rather than ignored. Defaults to config.toml's
-                 default_loadout, exactly as new --loadout does.
+                 default_outfit, exactly as new --outfit does.
   -r, --raw      Stream verbatim to stdout: no ANSI, no markdown.
                  Pipe-friendly. Says nothing about persistence.
   -v, --verbatim Dump the raw wire frames as JSON (one {"method","params"}
@@ -307,7 +307,7 @@ Keys while streaming:
   figaro send -e -- <prompt>           ephemeral, rich
   figaro send -er -- <prompt>          ephemeral + raw
   figaro send -ex -y -- <instruction>  ephemeral exec, no confirmation
-  figaro send -L sonn5 -er -- <p>      ephemeral aria on a named loadout, raw
+  figaro send -O sonn5 -er -- <p>      ephemeral aria on a named outfit, raw
   figaro send -f --id myid -- <prompt> fire-and-forget; do not stream
   figaro send -- <nudge>               sent mid-turn, this steers that turn
 
@@ -328,31 +328,31 @@ positional target needs the explicit verb or --id.`,
 		Name:    "new",
 		Group:   "Prompt",
 		Short:   "Start a fresh aria and prompt it",
-		Usage:   "new [-j|--json] [--loadout <name>] [-- <prompt>]",
-		Long:    "Creates a new aria (server-generated id), binds it to this shell, and — when a prompt follows `--` — sends it.\n\n  figaro new -- <prompt>               fresh aria on the default loadout, prompted\n  figaro new --loadout <name> -- <p>   fresh aria on a named loadout, prompted\n  figaro new --loadout <name>          fresh aria on a named loadout, attended, no turn\n  figaro new                           unattend this shell (go home)\n\n-j/--json emits {aria_id, mode:'new'} on stdout. --loadout/-L defaults to\nconfig.toml's default_loadout.",
+		Usage:   "new [-j|--json] [--outfit <name>] [-- <prompt>]",
+		Long:    "Creates a new aria (server-generated id), binds it to this shell, and — when a prompt follows `--` — sends it.\n\n  figaro new -- <prompt>               fresh aria on the default outfit, prompted\n  figaro new --outfit <name> -- <p>   fresh aria on a named outfit, prompted\n  figaro new --outfit <name>          fresh aria on a named outfit, attended, no turn\n  figaro new                           unattend this shell (go home)\n\n-j/--json emits {aria_id, mode:'new'} on stdout. --outfit/-O defaults to\nconfig.toml's default_outfit.",
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			prompt := extractPrompt(ctx.RawArgs)
 			asJSON := hasPreDashFlag(ctx.RawArgs, "--json", "-j")
-			loadout, _, lerr := preDashFlagValue(ctx.RawArgs, "--loadout", "-L")
+			outfit, _, lerr := preDashFlagValue(ctx.RawArgs, "--outfit", "-O")
 			if lerr != nil {
 				return fmt.Errorf("new: %s", lerr)
 			}
 			if prompt == "" {
-				if loadout == "" {
+				if outfit == "" {
 					// Bare `figaro new`: drop the shell's binding (go home).
-					// New conversations then default to the live loadout.
+					// New conversations then default to the live outfit.
 					runUnattend(ld)
 					return nil
 				}
-				// `figaro new --loadout X` with no prompt: mint a fresh aria
-				// under the loadout and attend it, no turn. A prompt requires
+				// `figaro new --outfit X` with no prompt: mint a fresh aria
+				// under the outfit and attend it, no turn. A prompt requires
 				// the `--` boundary.
-				runNewFromLoadout(ld, loadout, renderSettings{jsonMode: asJSON})
+				runNewFromOutfit(ld, outfit, renderSettings{jsonMode: asJSON})
 				return nil
 			}
-			runNewPrompt(ld, prompt, loadout, renderSettings{jsonMode: asJSON})
+			runNewPrompt(ld, prompt, outfit, renderSettings{jsonMode: asJSON})
 			return nil
 		},
 		CompleteArgs: completeNewPrompt,
@@ -611,17 +611,17 @@ positional slot belongs to the sub-verb.`,
 			"  <id>          that aria's subtree\n" +
 			"  -H, --home    the home view (all top-level arias) without unbinding\n" +
 			"                (-h is reserved for help, on every verb)\n" +
-			"  -g, --global  home plus the null + loadout anchors (the full tree)\n\n" +
+			"  -g, --global  home plus the null + outfit anchors (the full tree)\n\n" +
 			"Cap (mutually exclusive):\n" +
 			"  (default)     10 most-recently-used\n" +
 			"  -a, --all     no cap\n" +
 			"  -n <count>    cap to <count>\n\n" +
-			"  -j, --json    pro/dev: every aria incl. null + loadouts as JSON;\n" +
+			"  -j, --json    pro/dev: every aria incl. null + outfits as JSON;\n" +
 			"                takes no other flags",
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "home", Short: "H", IsBool: true, Description: "Home view: all top-level arias, without unbinding (-h is help)"},
-			{Long: "global", Short: "g", IsBool: true, Description: "Full hierarchy incl. the null + loadout anchors"},
+			{Long: "global", Short: "g", IsBool: true, Description: "Full hierarchy incl. the null + outfit anchors"},
 			{Long: "all", Short: "a", IsBool: true, Description: "Show all (remove the 10-most-recent cap)"},
 			{Long: "limit", Short: "n", Description: "Cap to N rows (default 10)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Pro/dev: all arias (incl. anchors) as JSON; no other flags"},
@@ -666,7 +666,7 @@ positional slot belongs to the sub-verb.`,
 		Group:   "Session",
 		Short:   "Bind this shell to an existing aria (optionally at a turn)",
 		Usage:   "attend <id> | <id>:<turn> | <id>.<lt> | :<turn> | null",
-		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point — the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live loadout.\n\nTerminal-only. Inside an aria's own bash tool, FIGARO_ARIA statically\nattends that shell to the aria that spawned it, and attend refuses — reach\nanother aria with an explicit --id instead.",
+		Long:    "Binds this shell to an aria. With :<turn> the binding carries a pending\nfork-point — the next bare prompt (`fig -- …`) forks the trunk there and\nmoves to the new branch. `:<turn>` alone re-pins the already-bound aria.\n\n`attend null` goes home: drops this shell's binding (named for the kindNull\ngenesis root). New conversations then default to the live outfit.\n\nTerminal-only. Inside an aria's own bash tool, FIGARO_ARIA statically\nattends that shell to the aria that spawned it, and attend refuses — reach\nanother aria with an explicit --id instead.",
 		ArgsMin: 1,
 		ArgsMax: 1,
 		Run: func(ctx *cmdkit.RunContext) error {
@@ -778,7 +778,7 @@ Needs the trunk capability -- a trunkless figaro is normalized already.`,
 		Group: "Session",
 		Short: "Write an aria to a portable file",
 		Usage: "export [<id>] [-o <file>]",
-		Long: `Write an aria to a file that another store can import: its loadout,
+		Long: `Write an aria to a file that another store can import: its outfit,
 its chalkboard, and every message, with no store-local identity in it.
 
   figaro export                     the bound aria, to stdout
@@ -808,7 +808,7 @@ wire cache; the price is one cache-miss on the first turn after an import.`,
   figaro import keep.json
   figaro export --id X | ssh other-box figaro import -
 
-The loadout is resolved by content (an identical one is reused, not
+The outfit is resolved by content (an identical one is reused, not
 duplicated), a fresh conversation is spawned under it, and the messages are
 appended through the ordinary path. Every identity is minted by THIS store, so
 an import can never collide with what is already here.
@@ -839,8 +839,8 @@ instant no matter how long the conversation is, and cannot fail halfway.
   figaro promote <id>         promote another aria one level
   figaro promote <id> 10      climb up to 10 levels
 
-Promotion stops at the loadout boundary: a top-level conversation has
-nothing to promote into ("cannot promote into a loadout").
+Promotion stops at the outfit boundary: a top-level conversation has
+nothing to promote into ("cannot promote into an outfit").
 
 Needs the trunk capability (` + "`trunks = true`" + `, the default). Without it,
 aria nesting follows fork history alone and there is nothing to promote.`,
@@ -935,30 +935,30 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 	})
 
 	r.Register(&cmdkit.Command{
-		Name:    "loadout",
+		Name:    "outfit",
 		Group:   "State",
-		Short:   "Apply a named loadout additively to an aria",
-		Usage:   "loadout [--id <id>] <name> | loadout --list",
-		Long:    "Loads ~/.config/figaro/loadouts/<name>.toml and applies it as an\nadditive chalkboard patch: keys whose values match the current\nsnapshot are skipped, and no keys are ever removed.\n\nExamples:\n  figaro loadout focus            # apply 'focus' loadout to the bound aria\n  figaro loadout --id myid focus  # apply to a specific aria\n  figaro loadout --list           # show available loadouts",
+		Short:   "Apply a named outfit additively to an aria",
+		Usage:   "outfit [--id <id>] <name> | outfit --list",
+		Long:    "Loads ~/.config/figaro/outfits/<name>.toml and applies it as an\nadditive chalkboard patch: keys whose values match the current\nsnapshot are skipped, and no keys are ever removed.\n\nExamples:\n  figaro outfit focus            # apply 'focus' outfit to the bound aria\n  figaro outfit --id myid focus  # apply to a specific aria\n  figaro outfit --list           # show available outfits",
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
-			{Long: "list", IsBool: true, Description: "List available loadouts and exit"},
+			{Long: "list", IsBool: true, Description: "List available outfits and exit"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			if ctx.BoolFlag("list") {
-				runLoadoutList(ld)
+				runOutfitList(ld)
 				return nil
 			}
 			if len(ctx.Args) == 0 {
-				die("usage: figaro loadout [--id <id>] <name>")
+				die("usage: figaro outfit [--id <id>] <name>")
 			}
-			runLoadout(ld, ctx.Flag("id"), ctx.Args[0])
+			runOutfit(ld, ctx.Flag("id"), ctx.Args[0])
 			return nil
 		},
-		CompleteArgs: completeLoadouts,
+		CompleteArgs: completeOutfits,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -967,7 +967,7 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 		Group:   "Session",
 		Short:   "Show a focused view of one aria",
 		Usage:   "status [<id> | --id <id>] [-m] [-j]",
-		Long:    "Prints mantra, provider, model, message count, context-window usage,\nand cumulative token cost for the named aria (or the one bound to this\nshell). Reads the same data the `list` table uses; dormant arias are\nbackfilled from the meta derivation.\n\n  -m/--more   also surface cwd, loadout version, fork origin, created\n  -j/--json   emit the full status as JSON (combine: -mj)",
+		Long:    "Prints mantra, provider, model, message count, context-window usage,\nand cumulative token cost for the named aria (or the one bound to this\nshell). Reads the same data the `list` table uses; dormant arias are\nbackfilled from the meta derivation.\n\n  -m/--more   also surface cwd, outfit version, fork origin, created\n  -j/--json   emit the full status as JSON (combine: -mj)",
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
