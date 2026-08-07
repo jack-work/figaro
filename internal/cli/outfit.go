@@ -19,6 +19,7 @@ import (
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
 )
@@ -210,6 +211,43 @@ func outfitClosureMarker(l *rpc.OutfitLayer) string {
 		return "✓"
 	}
 	return "✗"
+}
+
+// runOutfitTree prints an outfit's layer closure without applying anything.
+//
+// It resolves against the config dir directly rather than asking an aria, so it
+// works with nothing bound and no daemon running — which is what inspecting a
+// composition wants. Exit status follows the closure: 0 when every layer was
+// found, 1 when the picture has red in it, so it can gate a script.
+func runOutfitTree(loaded *config.Loaded, arg string) {
+	names := splitOutfitNames(arg)
+	if len(names) == 0 {
+		names = splitOutfitNames(loaded.Config.DefaultOutfit)
+	}
+	if len(names) == 0 {
+		die("outfit --tree: name an outfit, or set default_outfit in %s", loaded.ConfigPath)
+	}
+	closure := figaro.OutfitClosureWire(outfit.New(loaded.ConfigDir).ResolveAll(names))
+	fmt.Print(renderOutfitClosure(closure))
+	if broken := outfitClosureBroken(closure); len(broken) > 0 {
+		fmt.Fprintf(os.Stderr, "\n%d unresolved: %s\n", len(broken), strings.Join(broken, ", "))
+		exitNow(1)
+	}
+}
+
+// outfitClosureBroken names every node that is missing or cyclic.
+func outfitClosureBroken(l *rpc.OutfitLayer) []string {
+	if l == nil {
+		return nil
+	}
+	var out []string
+	if l.Name != "" && (!l.Found || l.Cycle) {
+		out = append(out, l.Name)
+	}
+	for _, child := range l.Layers {
+		out = append(out, outfitClosureBroken(child)...)
+	}
+	return out
 }
 
 // runOutfitList prints the outfits available on disk.

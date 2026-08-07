@@ -115,6 +115,7 @@ figaro outfit --list             what profiles exist
 figaro new --outfit <name>       start a conversation under one
 figaro outfit <name>             apply one to the current aria, additively
 figaro outfit <a>,<b>            fold several, each winning over the last
+figaro outfit --tree <name>      draw the layer closure; applies nothing
 ```
 
 Skills are markdown files under `~/.config/figaro/skills/`. Each one's

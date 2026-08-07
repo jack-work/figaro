@@ -18,9 +18,17 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 )
 
-// Outfitter assembles chalkboards from on-disk outfits.
+// Outfitter assembles chalkboards from on-disk outfits. Safe for concurrent
+// use, and worth reusing: it caches what it reads against the files it read
+// (see cache.go), so a repeat fold costs a stat per dependency.
 type Outfitter struct {
 	configDir string
+
+	// layersOf caches an outfit's declared layers, keyed by file path.
+	layersOf cache[[]string]
+	// folded caches a fully composed patch, keyed by outfit name, against the
+	// dependencies of its whole closure.
+	folded cache[map[string]json.RawMessage]
 }
 
 // New returns an Outfitter rooted at configDir.
@@ -125,13 +133,13 @@ func (o *Outfitter) loadAll(names []string, strict bool) (chalkboard.Patch, erro
 		return chalkboard.Patch{}, err
 	}
 	flat := map[string]json.RawMessage{}
-	memo := map[string]map[string]json.RawMessage{}
+	memo := map[string]foldResult{}
 	for _, layer := range root.Layers {
-		keys, err := o.fold(layer, memo)
+		sub, err := o.fold(layer, memo)
 		if err != nil {
 			return chalkboard.Patch{}, err
 		}
-		for k, v := range keys {
+		for k, v := range sub.keys {
 			flat[k] = v
 		}
 	}
@@ -189,13 +197,22 @@ func (o *Outfitter) resolve(name string, stack []string, memo map[string]*Closur
 	return c
 }
 
-// declaredLayers reads just the layers key from an outfit file.
+// declaredLayers reads just the layers key from an outfit file. Cached against
+// the file, so resolving a closure re-parses nothing that has not changed.
 func (o *Outfitter) declaredLayers(path string) ([]string, error) {
+	if names, ok := o.layersOf.get(path); ok {
+		return names, nil
+	}
 	raw := map[string]any{}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
 		return nil, fmt.Errorf("outfit: parse %s: %w", path, err)
 	}
-	return layerNames(path, raw)
+	names, err := layerNames(path, raw)
+	if err != nil {
+		return nil, err
+	}
+	o.layersOf.put(path, names, []dep{statDep(path)})
+	return names, nil
 }
 
 // layerNames extracts and validates the layers key.
@@ -263,33 +280,59 @@ func closureError(root *Closure, requested []string) error {
 // fold returns one outfit's flattened keys: its layers in order, then its own,
 // so the nearest declaration wins. Memoised per name, which makes a layer
 // shared by several others cheap to apply at each of its positions.
-func (o *Outfitter) fold(c *Closure, memo map[string]map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+func (o *Outfitter) fold(c *Closure, memo map[string]foldResult) (foldResult, error) {
 	if done, ok := memo[c.Name]; ok {
 		return done, nil
 	}
+	if keys, ok := o.folded.get(c.Name); ok {
+		done := foldResult{keys: keys, deps: o.foldedDeps(c.Name)}
+		memo[c.Name] = done
+		return done, nil
+	}
 	flat := map[string]json.RawMessage{}
+	d := &deps{}
 	for _, layer := range c.Layers {
-		keys, err := o.fold(layer, memo)
+		sub, err := o.fold(layer, memo)
 		if err != nil {
-			return nil, err
+			return foldResult{}, err
 		}
-		for k, v := range keys {
+		for k, v := range sub.keys {
 			flat[k] = v
 		}
+		d.merge(sub.deps)
 	}
 	raw := map[string]any{}
 	if _, err := toml.DecodeFile(c.Path, &raw); err != nil {
-		return nil, fmt.Errorf("outfit: parse %s: %w", c.Path, err)
+		return foldResult{}, fmt.Errorf("outfit: parse %s: %w", c.Path, err)
 	}
 	if _, err := layerNames(c.Path, raw); err != nil {
-		return nil, err
+		return foldResult{}, err
 	}
 	delete(raw, "layers")
-	if err := o.flatten("", raw, flat); err != nil {
-		return nil, err
+	d.add(c.Path)
+	if err := o.flatten("", raw, flat, d); err != nil {
+		return foldResult{}, err
 	}
-	memo[c.Name] = flat
-	return flat, nil
+	done := foldResult{keys: flat, deps: d.seen}
+	memo[c.Name] = done
+	o.folded.put(c.Name, flat, d.seen)
+	return done, nil
+}
+
+// foldResult is a composed patch and the files it was composed from. The deps
+// travel with the keys so a parent inherits them directly rather than reading
+// them back out of the cache, which a concurrent invalidation could have
+// emptied — and a parent missing a child's dependency is a stale patch.
+type foldResult struct {
+	keys map[string]json.RawMessage
+	deps []dep
+}
+
+// foldedDeps returns the dependencies a cached fold was built from.
+func (o *Outfitter) foldedDeps(name string) []dep {
+	o.folded.mu.Lock()
+	defer o.folded.mu.Unlock()
+	return o.folded.entries[name].deps
 }
 
 // resolvePath finds an outfit file (outfits/<name>.toml). The
@@ -325,7 +368,7 @@ func (o *Outfitter) resolvePath(name string) (string, error) {
 // `frontmatter` is the raw frontmatter text (between the fences),
 // unparsed; the agent reads the file when it wants the body. When
 // no frontmatter is present, the full body lands in `content`.
-func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]json.RawMessage) error {
+func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]json.RawMessage, d *deps) error {
 	for k, v := range in {
 		key := k
 		if prefix != "" {
@@ -336,6 +379,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 			if fn, ok := val["fileName"].(string); ok && len(val) == 1 {
 				path := filepath.Join(o.configDir, fn)
 				body, err := os.ReadFile(path)
+				d.add(path)
 				if err != nil {
 					return fmt.Errorf("outfit: %s fileName=%q: %w", key, fn, err)
 				}
@@ -354,7 +398,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				// skills appear without copying anything into config.
 				m := map[string]ContentEnvelope{}
 				if root := bundledSkillsRoot(); root != "" {
-					b, err := loadDir(filepath.Join(root, dn))
+					b, err := loadDir(filepath.Join(root, dn), d)
 					if err != nil {
 						return fmt.Errorf("outfit: %s bundled dirName=%q: %w", key, dn, err)
 					}
@@ -362,7 +406,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 						m[name] = env
 					}
 				}
-				u, err := loadDir(filepath.Join(o.configDir, dn))
+				u, err := loadDir(filepath.Join(o.configDir, dn), d)
 				if err != nil {
 					return fmt.Errorf("outfit: %s dirName=%q: %w", key, dn, err)
 				}
@@ -378,7 +422,7 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				}
 				continue
 			}
-			if err := o.flatten(key, val, out); err != nil {
+			if err := o.flatten(key, val, out, d); err != nil {
 				return err
 			}
 		default:
@@ -448,7 +492,10 @@ func extractFrontmatter(body string) (string, bool) {
 
 // loadDir reads file skills and directory skills from dir. A directory skill
 // is keyed by its directory name and rooted at SKILL.md (or skill.md).
-func loadDir(dir string) (map[string]ContentEnvelope, error) {
+func loadDir(dir string, d *deps) (map[string]ContentEnvelope, error) {
+	// The directory's own stat comes first: adding or removing a skill changes
+	// it while leaving every surviving file untouched.
+	d.add(dir)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -472,6 +519,7 @@ func loadDir(dir string) (map[string]ContentEnvelope, error) {
 				continue
 			}
 			body, err := os.ReadFile(skillPath)
+			d.add(skillPath)
 			if err != nil {
 				continue
 			}
@@ -480,6 +528,7 @@ func loadDir(dir string) (map[string]ContentEnvelope, error) {
 		}
 		path := filepath.Join(dir, e.Name())
 		body, err := os.ReadFile(path)
+		d.add(path)
 		if err != nil {
 			return nil, err
 		}

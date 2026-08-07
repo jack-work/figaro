@@ -121,3 +121,24 @@ func TestRenderOutfitClosureExplainsACycle(t *testing.T) {
 		t.Fatalf("cycle not marked as a fault: %q", got)
 	}
 }
+
+// --tree resolves against the config dir directly, so it must work with no
+// aria bound and no daemon running.
+func TestOutfitTreeExitsNonZeroOnlyWhenTheClosureIsBroken(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		layer  *rpc.OutfitLayer
+		broken int
+	}{
+		{"whole", &rpc.OutfitLayer{Name: "a", Found: true}, 0},
+		{"missing leaf", &rpc.OutfitLayer{Name: "a", Found: true, Layers: []*rpc.OutfitLayer{{Name: "b"}}}, 1},
+		{"cycle", &rpc.OutfitLayer{Name: "a", Found: true, Layers: []*rpc.OutfitLayer{{Name: "a", Found: true, Cycle: true}}}, 1},
+		{"two gaps", &rpc.OutfitLayer{Name: "a", Found: true, Layers: []*rpc.OutfitLayer{{Name: "b"}, {Name: "c"}}}, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := outfitClosureBroken(tc.layer); len(got) != tc.broken {
+				t.Fatalf("broken = %v, want %d", got, tc.broken)
+			}
+		})
+	}
+}

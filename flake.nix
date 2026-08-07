@@ -132,12 +132,18 @@
         # like "figaro-dev-<profile>", not a path, because hush
         # derives its own dirs from AppName internally. To share the
         # global hush identity, set hush = null.
+        # seedConfig copies the real config into a dev-scoped config dir on
+        # first entry, so a shell can be given your actual outfits, skills and
+        # credo while every write lands on the copy. Credentials are NOT
+        # copied — providers/ is symlinked, so a secret is never duplicated on
+        # disk — and hush is left to its own knob.
         mkFigaroShell = {
           name,
           runtime ? "@dev",
           config  ? "@dev",
           state   ? "@dev",
           hush    ? "@dev",
+          seedConfig ? false,
         }: let
           # Translate a knob value into a shell snippet that either
           # exports the env var or leaves it inherited. "@dev" is
@@ -232,6 +238,46 @@
             ${mkKnob "FIGARO_CONFIG_DIR"  "config" config}
             ${mkKnob "FIGARO_STATE_DIR"   "state"  state}
             ${mkHushKnob hush}
+
+            ${if seedConfig then ''
+            # Seed the dev config dir with a COPY of the real one, once per dev
+            # root. Everything that DEFINES a composition travels — config.toml,
+            # outfits (or a pre-rename loadouts/), skills, credo — so the shell
+            # sees your real outfits and can be edited freely without touching
+            # them.
+            #
+            # providers/ is SYMLINKED rather than copied: it holds credentials,
+            # and one copy of a secret on disk is enough. hush follows its own
+            # knob, so pass hush = null to reach the real agent.
+            figaro-config-reseed() {
+              local src="''${XDG_CONFIG_HOME:-$HOME/.config}/figaro"
+              if [ ! -d "$src" ]; then
+                echo "sandbox: no config at $src" >&2; return 1
+              fi
+              mkdir -p "$FIGARO_CONFIG_DIR"
+              local entry base
+              for entry in "$src"/*; do
+                [ -e "$entry" ] || continue
+                base="$(basename "$entry")"
+                case "$base" in
+                  providers|hush|hush.bak-*) continue ;;
+                esac
+                rm -rf "$FIGARO_CONFIG_DIR/$base"
+                cp -a "$entry" "$FIGARO_CONFIG_DIR/$base"
+              done
+              if [ -d "$src/providers" ]; then
+                ln -sfn "$src/providers" "$FIGARO_CONFIG_DIR/providers"
+              fi
+              date -Is > "$FIGARO_CONFIG_DIR/.config-copied"
+              echo "sandbox: config copied from $src (providers symlinked)" >&2
+            }
+            if [ ! -e "$FIGARO_CONFIG_DIR/.config-copied" ]; then
+              figaro-config-reseed
+            else
+              echo "sandbox: reusing config copy from $(cat "$FIGARO_CONFIG_DIR/.config-copied")" >&2
+              echo "sandbox: figaro-config-reseed for a fresh one; rm -rf \$FIGARO_DEV_ROOT to discard" >&2
+            fi
+            '' else ""}
 
             ${if name == "snapshot" then ''
             # Seed the dev state dir with a COPY of the real arias, once per
@@ -343,6 +389,24 @@
           name = "snapshot";
           config = null;   # read the real outfits/providers; never written
           hush   = null;   # real credentials, so a migrated aria can be run
+        };
+
+        # A COPY of your real config, isolated in a dev root.
+        #
+        # `nix develop .#sandbox` gives you your actual outfits, skills and
+        # credo — writable, and reachable by `figaro outfit --tree` — with the
+        # runtime and state dev-scoped so the live daemon and your arias are
+        # never touched. hush is shared, so turns can actually run.
+        #
+        # Credentials are not duplicated: providers/ is a symlink to the real
+        # one. Everything else is a copy and belongs to you.
+        #
+        # Re-seed without leaving the shell:  figaro-config-reseed
+        # Discard it entirely:                rm -rf $FIGARO_DEV_ROOT
+        sandbox = mkFigaroShell {
+          name = "sandbox";
+          seedConfig = true;
+          hush = null;   # real credentials, so the copy can run a turn
         };
 
         # `nix develop .#swap` enters a shell that swaps the user's

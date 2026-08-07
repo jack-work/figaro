@@ -938,18 +938,27 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 		Name:    "outfit",
 		Group:   "State",
 		Short:   "Apply named outfits additively to an aria",
-		Usage:   "outfit [--id <id>] <name>[,<name>...] | outfit --list",
-		Long:    "Loads ~/.config/figaro/outfits/<name>.toml and applies it as an\nadditive chalkboard patch: keys whose values match the current\nsnapshot are skipped, and no keys are ever removed.\n\nSeveral outfits may be named, comma-separated. They are folded left to\nright, each taking precedence over the ones before it — the same rule an\noutfit's own `layers = [...]` follows, so `outfit a,b` and an outfit\ndeclaring `layers = [\"a\", \"b\"]` compose identically.\n\nExamples:\n  figaro outfit focus              # apply 'focus' to the bound aria\n  figaro outfit pr-review,opus5    # fold both, opus5 winning\n  figaro outfit --id myid focus    # apply to a specific aria\n  figaro outfit --list             # show available outfits",
+		Usage:   "outfit [--id <id>] <name>[,<name>...] | outfit --tree [<name>] | outfit --list",
+		Long:    "Loads ~/.config/figaro/outfits/<name>.toml and applies it as an\nadditive chalkboard patch: keys whose values match the current\nsnapshot are skipped, and no keys are ever removed.\n\nSeveral outfits may be named, comma-separated. They are folded left to\nright, each taking precedence over the ones before it — the same rule an\noutfit's own `layers = [...]` follows, so `outfit a,b` and an outfit\ndeclaring `layers = [\"a\", \"b\"]` compose identically.\n\nExamples:\n  figaro outfit focus              # apply 'focus' to the bound aria\n  figaro outfit pr-review,opus5    # fold both, opus5 winning\n  figaro outfit --id myid focus    # apply to a specific aria\n  figaro outfit --tree pr-review   # draw the layer closure, apply nothing\n  figaro outfit --list             # show available outfits",
 		ArgsMin: 0,
 		ArgsMax: 1,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
 			{Long: "list", IsBool: true, Description: "List available outfits and exit"},
+			{Long: "tree", IsBool: true, Description: "Print the layer closure and exit; applies nothing"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
 			if ctx.BoolFlag("list") {
 				runOutfitList(ld)
+				return nil
+			}
+			if ctx.BoolFlag("tree") {
+				arg := ""
+				if len(ctx.Args) > 0 {
+					arg = ctx.Args[0]
+				}
+				runOutfitTree(ld, arg)
 				return nil
 			}
 			if len(ctx.Args) == 0 {
