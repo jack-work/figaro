@@ -37,8 +37,9 @@ type Angelus struct {
 	// children's addressability with it. See tool.WithSessions.
 	Sessions *tool.SessionRegistry
 
-	listener net.Listener
-	cancel   context.CancelFunc
+	listener  net.Listener
+	cancel    context.CancelFunc
+	pprofPath string // set by StartPprof; empty when profiling is not armed
 }
 
 // Config holds the settings for creating an Angelus.
@@ -114,6 +115,10 @@ func (a *Angelus) Run(ctx context.Context) error {
 	// daemon main (runAngelus) removes it after Shutdown finishes.
 
 	slog.Info("angelus started", "pid", os.Getpid(), "socket", a.SocketPath)
+
+	// Diagnostic, opt-in, never fatal: an unavailable profiler must not
+	// keep the daemon from starting.
+	_ = a.StartPprof(ctx)
 
 	go a.pidMonitor(ctx)
 	go a.metaBackfill(ctx)

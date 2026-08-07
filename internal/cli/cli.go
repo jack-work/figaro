@@ -1040,14 +1040,15 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 	r.Register(&cmdkit.Command{
 		Name:  "doctor",
 		Group: "System",
-		Short: "Store maintenance: gc removes dead channels; schema reports channel versions",
-		Usage: "doctor <gc [--dry-run] | schema | term>",
+		Short: "Store maintenance: gc removes dead channels; schema reports channel versions; mem reports the daemon's footprint",
+		Usage: "doctor <gc [--dry-run] | schema | term | mem [-j]>",
 		Flags: []cmdkit.FlagDef{
 			{Long: "dry-run", Short: "n", IsBool: true, Description: "Report what would be removed without touching the store"},
+			{Long: "json", Short: "j", IsBool: true, Description: "Machine-readable output (mem)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			if len(ctx.Args) != 1 {
-				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema>")
+				return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j]>")
 			}
 			switch ctx.Args[0] {
 			case "gc":
@@ -1056,8 +1057,10 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 				return runDoctorSchema()
 			case "term":
 				return runDoctorTerm()
+			case "mem":
+				return runDoctorMem(ctx.BoolFlag("json"))
 			}
-			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema>")
+			return fmt.Errorf("usage: doctor <gc [--dry-run] | schema | term | mem [-j]>")
 		},
 	})
 

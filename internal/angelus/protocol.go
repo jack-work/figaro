@@ -1225,6 +1225,7 @@ func (h *handlers) status(ctx context.Context, params json.RawMessage) (interfac
 		FigaroCount: h.angelus.Registry.FigaroCount(),
 		BoundPIDs:   h.angelus.Registry.BoundPIDCount(),
 		Build:       h.angelus.Build,
+		Mem:         h.angelus.MemStatus(),
 	}, nil
 }
 

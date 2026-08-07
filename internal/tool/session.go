@@ -270,6 +270,17 @@ func (r *SessionRegistry) List(scope string) []*ExecSession {
 	return out
 }
 
+// Count returns the number of sessions in the registry across every
+// scope, reaping finished ones first. Daemon accounting, not a tool
+// surface: no scope means no isolation, so this returns a number and
+// never a session.
+func (r *SessionRegistry) Count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.reapLocked()
+	return len(r.sessions)
+}
+
 // KillScope kills every session under scope and drops them all. It is
 // the deletion path: an aria that is being removed takes its background
 // processes with it. Hibernation must NOT call this — a dormant aria's

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/store"
@@ -147,4 +149,79 @@ func runDoctorSchema() error {
 		fmt.Printf("%-20s disk=%-4s binary=%-4d %s%s\n", r.Channel, disk, r.Known, r.Status, note)
 	}
 	return nil
+}
+
+// runDoctorMem asks the running daemon what it is holding. It is the
+// answer to "the daemon is at 3 GB": which of live agents, cached aria
+// handles, sessions or goroutines is the number attached to.
+//
+// It reports the daemon's accounting, never the client's — a fresh CLI
+// process has nothing interesting to say about the heap of a daemon that
+// has been up for a week.
+func runDoctorMem(asJSON bool) error {
+	cli, err := angelus.DialClient(transport.UnixEndpoint(angelusSocketPath()))
+	if err != nil {
+		return fmt.Errorf("no angelus running: %w", err)
+	}
+	defer cli.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	st, err := cli.Status(ctx)
+	if err != nil {
+		return err
+	}
+	if st.Mem == nil {
+		return fmt.Errorf("the running angelus predates memory accounting; `figaro stop` and retry")
+	}
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(st.Mem)
+	}
+
+	m := st.Mem
+	fmt.Printf("arias      live=%d  resident=%d  bound-pids=%d\n",
+		m.LiveArias, m.ResidentArias, st.BoundPIDs)
+	fmt.Printf("runtime    goroutines=%d  sessions=%d  gc=%d\n",
+		m.Goroutines, m.Sessions, m.NumGC)
+	fmt.Printf("heap       alloc=%s  inuse=%s  sys=%s  total-sys=%s\n",
+		humanBytes(int64(m.HeapAllocBytes)), humanBytes(int64(m.HeapInuseBytes)),
+		humanBytes(int64(m.HeapSysBytes)), humanBytes(int64(m.SysBytes)))
+
+	limit := "unlimited"
+	if m.MemLimitBytes != angelus.UnlimitedMemLimit {
+		limit = humanBytes(m.MemLimitBytes)
+	}
+	fmt.Printf("limit      %s (GOMEMLIMIT, soft)\n", limit)
+
+	if m.PprofSocket == "" {
+		fmt.Printf("pprof      not armed — restart the daemon with %s=1\n", angelus.PprofEnv)
+	} else {
+		fmt.Printf("pprof      %s\n", m.PprofSocket)
+		fmt.Printf("           go tool pprof -http=: 'http+unix://%s/debug/pprof/heap'\n", m.PprofSocket)
+	}
+
+	// live arias pin resident handles: eviction cannot touch them. Saying
+	// so beats making the reader remember the rule.
+	if m.LiveArias > 0 && m.LiveArias == m.ResidentArias {
+		fmt.Printf("\nevery resident aria has a live agent, so idle eviction can free nothing.\n")
+	}
+	return nil
+}
+
+// humanBytes renders a byte count at three significant figures. Sizes
+// here span kilobytes to gigabytes and are read by eye, not parsed —
+// --json exists for the machine.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit && exp < 4; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTP"[exp])
 }
