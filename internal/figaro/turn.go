@@ -1128,16 +1128,15 @@ func (a *Agent) assembleToolResults(
 	total := a.toolImageBudget()
 	budget := total
 	for i, tc := range calls {
-		// The arguments never arrived intact, so nothing was executed. Say
-		// exactly that, and say it to the MODEL: this is the whole repair
-		// path — one round trip, and it resends the call it owed us.
-		if _, bad := message.MalformedArgsOf(tc); bad {
+		// The arguments never arrived intact, so nothing was executed. Report
+		// it in the shape the API documents for exactly this case — an
+		// is_error result whose content is {"INVALID_JSON": "<what arrived>"}
+		// — and hand back the bytes rather than a description of them. That is
+		// the whole repair path: one round trip, and the model resends the
+		// call it owed us.
+		if raw, bad := message.MalformedArgsOf(tc); bad {
 			results[i] = message.ToolResultContent(tc.ToolCallID, tc.ToolName,
-				"Error: the arguments for this tool call did not arrive as valid JSON, "+
-					"so it was NOT executed and nothing was changed. Send the call again. "+
-					"If an argument carries source text, every tab, newline and double "+
-					"quote inside it must be escaped (\\t, \\n, \\\"); consider a smaller payload.",
-				true)
+				message.InvalidJSONResult(raw), true)
 			continue
 		}
 		if !expect[tc.ToolCallID] {

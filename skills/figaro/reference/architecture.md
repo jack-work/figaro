@@ -366,20 +366,26 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
   it the model's own escaping mistakes arrive verbatim: raw tabs, raw newlines,
   bare quotes, a string value that never closes. Measured 2026-08-06 — five
   turns, every one an `edit` carrying Go source, every affected aria carrying
-  the key, and the one aria without it never hit it once. Three mechanisms
-  answer, in order:
-  1. `repairAccumulatedToolInput` (decode.go) escapes RAW CONTROL CHARACTERS in
-     place, gated on `json.Valid` twice, so a payload broken only that way is
-     mended and nothing else is ever rewritten.
-  2. `quarantineMalformedToolInput` (decode.go) catches the rest. The bytes are
-     kept verbatim under `message.MalformedArgsKey`, which is a legal JSON
-     object — so the tool_use replays and its tool_result is not orphaned — and
-     the call is REFUSED rather than guessed: half-parsed `edit` arguments
-     would write the wrong bytes into a source file. The agent turns it into an
-     error result and the model resends. **One bad block costs one tool call,
-     not the turn**; before this it cost the thinking, the prose, and every
-     tool call already streamed.
-  3. `Provider.noteQuarantine` latches eager streaming OFF for that aria, in
+  the key, and the one aria without it never hit it once. **Anthropic documents
+  this outcome**: the input is streamed "without server-side buffering or JSON
+  validation", so invalid JSON is contractual, and the prescribed response is
+  not to repair it but to "report the failure back to Claude instead".
+  ONE RULE — IF IT DOES NOT PARSE, IT DOES NOT RUN — in two mechanisms:
+  1. `quarantineMalformedToolInput` (decode.go). The bytes are kept verbatim
+     under `message.MalformedArgsKey`, which is a legal JSON object — so the
+     tool_use replays and its tool_result is not orphaned — and the call is
+     REFUSED rather than guessed: half-parsed `edit` arguments would write the
+     wrong bytes into a source file, and the damage is not invertible anyway
+     (measured across five payloads: 83 escape characters in one, zero in
+     another, and in that one a required argument never transmitted at all).
+     The agent returns the documented result — `is_error` with content
+     `{"INVALID_JSON": "<what arrived>"}`, built by the encoder — and the model
+     resends. **One bad block costs one tool call, not the turn**; before this
+     it cost the thinking, the prose, and every tool call already streamed.
+     An earlier control-character repair (81137e6) was reverted in b64d0b6: it
+     was sound but it was a second rule, and it rewrote model output where
+     nothing downstream could tell.
+  2. `Provider.noteQuarantine` latches eager streaming OFF for that aria, in
      memory, so the retry cannot repeat the failure. The chalkboard is not
      rewritten: a new process starts from the user's stated preference again.
   `provider.tool_use.unescaped_chunk` (stream.go) is the canary that named the

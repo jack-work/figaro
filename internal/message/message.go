@@ -391,6 +391,29 @@ func MalformedArgs(raw string) map[string]interface{} {
 	return map[string]interface{}{MalformedArgsKey: raw}
 }
 
+// InvalidJSONResult is the tool_result CONTENT for a quarantined call, in the
+// shape Anthropic publishes for fine-grained tool streaming:
+//
+//	{"INVALID_JSON": "<the unparseable input you received>"}
+//
+// serialized to a string, returned with is_error set. The wrapper is what
+// makes it unambiguous to the model that the input never parsed — rather than
+// prose it has to interpret — and it hands back the exact bytes that arrived,
+// which is the only copy anyone has.
+//
+// Built with the JSON encoder, never by concatenation: the payload is by
+// definition full of unescaped quotes and control characters, and this is the
+// one place they must be escaped correctly.
+func InvalidJSONResult(raw string) string {
+	b, err := json.Marshal(map[string]string{"INVALID_JSON": raw})
+	if err != nil {
+		// Unreachable for a map[string]string, and a silent empty result
+		// would be worse than a plain sentence.
+		return "INVALID_JSON: the tool input could not be parsed or re-encoded"
+	}
+	return string(b)
+}
+
 // MalformedArgsOf reports whether a tool invoke was quarantined, and returns
 // the bytes that actually arrived.
 func MalformedArgsOf(c Content) (string, bool) {

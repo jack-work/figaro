@@ -1,7 +1,7 @@
 package figaro
 
 import (
-	"strings"
+	"encoding/json"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/message"
@@ -43,10 +43,19 @@ func TestMalformedCallIsRefusedWithAnActionableError(t *testing.T) {
 	if got.ToolCallID != "tc_1" {
 		t.Errorf("tool_call_id = %q, want tc_1", got.ToolCallID)
 	}
-	for _, want := range []string{"did not arrive as valid JSON", "NOT executed", "Send the call again"} {
-		if !strings.Contains(got.Text, want) {
-			t.Errorf("the error must say %q; got %q", want, got.Text)
-		}
+	// The shape the API documents: {"INVALID_JSON": "<what arrived>"}, built
+	// with the encoder — the payload is by definition full of unescaped quotes
+	// and control characters, and this is where they must survive.
+	var wrapper map[string]string
+	if err := json.Unmarshal([]byte(got.Text), &wrapper); err != nil {
+		t.Fatalf("the result content must be the documented JSON wrapper: %v (%q)", err, got.Text)
+	}
+	if len(wrapper) != 1 {
+		t.Errorf("the wrapper carries one key, got %v", wrapper)
+	}
+	if raw, _ := message.MalformedArgsOf(bad); wrapper["INVALID_JSON"] != raw {
+		t.Errorf("the model must get the bytes that arrived, verbatim:\n got %q\nwant %q",
+			wrapper["INVALID_JSON"], raw)
 	}
 	if tic.Content[1].IsError {
 		t.Error("the healthy call in the same turn was collateral damage")
