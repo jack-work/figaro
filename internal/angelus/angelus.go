@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/figaro"
 	figOtel "github.com/jack-work/figaro/internal/otel"
 	"github.com/jack-work/figaro/internal/store"
+	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -29,6 +30,12 @@ type Angelus struct {
 	// Build is this daemon's VCS revision, reported over angelus.status so a
 	// CLI can refuse to speak to a daemon from a different build.
 	Build string
+
+	// Sessions is the daemon-wide registry of backgrounded exec sessions,
+	// keyed by aria id as scope. It is deliberately NOT per-agent: an
+	// agent that is killed or (soon) hibernated must not take its
+	// children's addressability with it. See tool.WithSessions.
+	Sessions *tool.SessionRegistry
 
 	listener net.Listener
 	cancel   context.CancelFunc
@@ -54,6 +61,7 @@ func New(cfg Config) *Angelus {
 		SocketPath: filepath.Join(cfg.RuntimeDir, "angelus.sock"),
 		RuntimeDir: cfg.RuntimeDir,
 		StartedAt:  time.Now(), // set-once at construction; read concurrently (Uptime)
+		Sessions:   tool.NewSessionRegistry(tool.DefaultSessionTTL),
 	}
 	return a
 }

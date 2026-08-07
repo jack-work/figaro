@@ -270,6 +270,32 @@ func (r *SessionRegistry) List(scope string) []*ExecSession {
 	return out
 }
 
+// KillScope kills every session under scope and drops them all. It is
+// the deletion path: an aria that is being removed takes its background
+// processes with it. Hibernation must NOT call this — a dormant aria's
+// jobs keep running and stay addressable after a wake, which is the
+// whole reason this registry is daemon-scoped rather than per-agent.
+//
+// Returns the number of sessions dropped.
+func (r *SessionRegistry) KillScope(scope string) int {
+	r.mu.Lock()
+	victims := make([]*ExecSession, 0, len(r.sessions))
+	for id, s := range r.sessions {
+		if s.Scope == scope {
+			victims = append(victims, s)
+			delete(r.sessions, id)
+		}
+	}
+	r.mu.Unlock()
+
+	// Killing outside the lock: Kill signals a process group and a
+	// supervisor goroutine may be finishing the same session.
+	for _, s := range victims {
+		_ = s.Kill()
+	}
+	return len(victims)
+}
+
 // Remove drops a session from the registry, returning it if present.
 // It does not kill the process; callers wanting that should Kill first.
 func (r *SessionRegistry) Remove(scope, id string) (*ExecSession, bool) {

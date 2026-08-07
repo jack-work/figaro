@@ -370,7 +370,8 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
 
 	reg := tool.DefaultRegistryForAria(id, cwdFromChalkboard(cbState, cwd),
-		tool.WithImageBudget(h.config.InlineImageBudget()))
+		tool.WithImageBudget(h.config.InlineImageBudget()),
+		tool.WithSessions(h.angelus.Sessions))
 	agent := figaro.NewAgent(figaro.Config{
 		ID:              id,
 		SocketPath:      sockPath,
@@ -932,6 +933,15 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
+	// Kill is a deletion, dormancy is not: a removed aria takes its
+	// background jobs with it. Unconditional, because a hibernated aria
+	// has no live agent and still owns running children.
+	if h.angelus.Sessions != nil {
+		if n := h.angelus.Sessions.KillScope(req.FigaroID); n > 0 {
+			slog.Info("killed aria sessions", "id", req.FigaroID, "sessions", n)
+		}
+	}
+
 	if h.angelus.Backend != nil {
 		if err := h.angelus.Backend.Remove(req.FigaroID, req.Recursive); err != nil {
 			return nil, err // surface "has live branches" etc. to the caller
@@ -1403,7 +1413,8 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 		}
 	}
 	reg := tool.DefaultRegistryForAria(ariaID, cwdFromChalkboard(cb, toolRoot),
-		tool.WithImageBudget(h.config.InlineImageBudget()))
+		tool.WithImageBudget(h.config.InlineImageBudget()),
+		tool.WithSessions(h.angelus.Sessions))
 	agent := figaro.NewAgent(figaro.Config{
 		ID:              ariaID,
 		SocketPath:      sockPath,
