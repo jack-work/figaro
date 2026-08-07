@@ -696,7 +696,54 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.trunks.Remove(id, recursive)
+	// Which stump hosts it must be read BEFORE the removal; afterwards the
+	// topology no longer knows the two were related.
+	stump := s.stumpOf(id)
+	if err := s.trunks.Remove(id, recursive); err != nil {
+		return err
+	}
+	s.collectStump(stump)
+	return nil
+}
+
+// stumpOf names the stump hosting a trunk, "" when it hangs off the root.
+func (s *XwalStore) stumpOf(id string) string {
+	for _, st := range s.trunks.Stumps() {
+		for _, child := range st.Children {
+			if string(child) == id {
+				return st.Name
+			}
+		}
+	}
+	return ""
+}
+
+// collectStump removes a stump that has just lost its last child.
+//
+// An outfit stump is content-addressed (<name>@<hash>), so it is minted afresh
+// by the next aria that wants it: collecting one loses nothing and is what
+// keeps a store from accumulating a directory per outfit version forever. A
+// recursive delete can take several children at once, which is why this asks
+// the topology rather than counting — whatever is left is what is left.
+//
+// A failure here is logged, not returned: the aria IS deleted by this point,
+// and failing the delete because the collection failed would be a lie.
+func (s *XwalStore) collectStump(name string) {
+	if name == "" {
+		return
+	}
+	for _, st := range s.trunks.Stumps() {
+		if st.Name != name {
+			continue
+		}
+		if len(st.Children) > 0 {
+			return // still hosting arias; nothing to collect
+		}
+		if err := s.trunks.RemoveStump(name); err != nil {
+			slog.Warn("collect outfit stump", "stump", name, "err", err)
+		}
+		return
+	}
 }
 
 // Normalize makes every aria independent of the arias it is no longer

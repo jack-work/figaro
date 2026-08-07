@@ -113,8 +113,8 @@ github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUq
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
 github.com/invopop/jsonschema v0.13.0 h1:KvpoAJWEjR3uD9Kbm2HWJmqsEaHt8lBUpd0qHcIi21E=
 github.com/invopop/jsonschema v0.13.0/go.mod h1:ffZ5Km5SWWRAIN6wbDXItl95euhFz2uON45H2qjYt+0=
-github.com/jack-work/figwal v0.12.1 h1:wMeazYXWFt+cVc4ORsss3zOp4RsU6+NAsSwq+C5CX+A=
-github.com/jack-work/figwal v0.12.1/go.mod h1:Z8jdAyQX7X5gQN7r31Gc6vLX7f2/ayRyaiPUupE8yWw=
+github.com/jack-work/figwal v0.12.2 h1:Y0OLAeth0DiOEW7pBFa/3sAV00eOMjd8InaZy5ojVcM=
+github.com/jack-work/figwal v0.12.2/go.mod h1:Z8jdAyQX7X5gQN7r31Gc6vLX7f2/ayRyaiPUupE8yWw=
 github.com/jack-work/hush v0.6.2 h1:V+2jvRcfuTK7i+oSBrFTHT1m5cOk6zyeKTMPtt40MDA=
 github.com/jack-work/hush v0.6.2/go.mod h1:798Ylz6CWDvZLvOWvyjWUvke/YwdaKY9X+U6jLu9Gh8=
 github.com/jack-work/jkrpc v0.1.0 h1:qx03oLiVLuCL/2j3MDy0KLPvGs0Soja/oaQ4YlM9cVg=
