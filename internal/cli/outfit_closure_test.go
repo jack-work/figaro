@@ -98,10 +98,6 @@ func TestRenderOutfitClosureUsesTheDiffPalette(t *testing.T) {
 	if !strings.Contains(got, term.Absent("gone")) {
 		t.Fatalf("missing outfit not painted absent: %q", got)
 	}
-	// The same foregrounds the diff renderer paints with.
-	if !strings.Contains(got, "\033[38;5;108m") || !strings.Contains(got, "\033[38;5;167m") {
-		t.Fatalf("closure did not use the diff palette: %q", got)
-	}
 }
 
 // A cycle is a found file that must still read as a fault.

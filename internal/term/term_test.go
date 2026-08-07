@@ -110,3 +110,22 @@ func TestReadLineTerminators(t *testing.T) {
 		})
 	}
 }
+
+// present/absent exist so a tree can mark what is there and what is not. They
+// are required to be the diff renderer's own green and red — the claim lives
+// here, where the palette is defined, rather than in each caller that paints.
+func TestPresentAndAbsentShareTheDiffForegrounds(t *testing.T) {
+	restore := SetColorMode(ColorAlways)
+	defer restore()
+
+	for _, tc := range []struct{ name, role, diff string }{
+		{"present", active.present, active.diffAdd},
+		{"absent", active.absent, active.diffDel},
+	} {
+		fg, _, _ := strings.Cut(tc.diff, ";48;")
+		if tc.role != fg+"m" {
+			t.Errorf("%s = %q, want the diff foreground %q (from %q)",
+				tc.name, tc.role, fg+"m", tc.diff)
+		}
+	}
+}

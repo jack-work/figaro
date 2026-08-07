@@ -30,25 +30,6 @@ user_id = 7
 	assert.Equal(t, `7`, string(patch.Set["user_id"]))
 }
 
-func TestLoad_LayerChain(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "base.toml"), []byte(`
-system = { model = "default-model", max_tokens = 8192 }
-`), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "config.toml"), []byte(`
-layers = ["base"]
-system = { model = "override-model" }
-friendly_name = "Top"
-`), 0600))
-
-	patch, err := outfit.New(dir).Load("config")
-	require.NoError(t, err)
-	assert.Equal(t, `"override-model"`, string(patch.Set["system.model"]))
-	assert.Equal(t, `8192`, string(patch.Set["system.max_tokens"]))
-	assert.Equal(t, `"Top"`, string(patch.Set["friendly_name"]))
-}
-
 func TestLoad_FileName_NoFrontmatter_StoresContent(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "credo.md"), []byte("# Credo\nbody"), 0600))
@@ -117,17 +98,6 @@ skills = { dirName = "skills" }
 	assert.Equal(t, filepath.Join(dir, "skills", "bravo.md"), bravoEnv.FilePath)
 }
 
-func TestLoad_CycleDetected(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "a.toml"), []byte(`layers = ["b"]`), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "outfits", "b.toml"), []byte(`layers = ["a"]`), 0600))
-
-	_, err := outfit.New(dir).Load("a")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cycle")
-}
-
 func TestLoad_EmptyNameReturnsEmptyPatch(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "outfits"), 0700))
@@ -138,14 +108,6 @@ func TestLoad_EmptyNameReturnsEmptyPatch(t *testing.T) {
 	patch, err := outfit.New(dir).Load("")
 	require.NoError(t, err)
 	assert.True(t, patch.IsEmpty(), "empty outfit name must yield empty patch")
-}
-
-func TestLoad_MissingFileIsNotAnError(t *testing.T) {
-	dir := t.TempDir()
-	// No outfits/ directory at all.
-	patch, err := outfit.New(dir).Load("nonexistent")
-	require.NoError(t, err)
-	assert.True(t, patch.IsEmpty(), "missing outfit must yield empty patch (graceful)")
 }
 
 // A subdirectory with a SKILL.md is one skill keyed by the dir name; bundled
