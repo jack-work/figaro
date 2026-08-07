@@ -22,26 +22,45 @@
 # the session on exit -- an orphaned scratch daemon is how seventeen agents
 # once left 230 processes behind.
 #
-#   scripts/hibernate-demo.sh                 5 arias, no model calls
+# Each aria is SEEDED with one short turn before the sweep, so when you attach
+# you see real transcripts that happen to be hibernated. Without that the panes
+# are blank -- correct, since an unprompted aria has no history, but useless: a
+# blank pane cannot tell you "connected and healthy" apart from "hung".
+#
+#   scripts/hibernate-demo.sh                 5 arias, one short turn each
 #   ARIAS=3 scripts/hibernate-demo.sh         fewer panes
-#   PROMPT=1 scripts/hibernate-demo.sh        also prompt one after it hibernates
-#                                             (COSTS TOKENS: needs a real
-#                                              provider from ~/.config/figaro)
+#   NO_TOKENS=1 scripts/hibernate-demo.sh     skip seeding: no model calls at
+#                                             all, and blank transcripts
+#   WAKE=1 scripts/hibernate-demo.sh          also prompt one AFTER it hibernates,
+#                                             to watch frames stream in
 #   KEEP=1 scripts/hibernate-demo.sh          leave it running to poke at
+#
+# Seeding and waking need a real provider, borrowed from ~/.config/figaro. A few
+# hundred tokens per run.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BOX=/tmp/figaro-hibdemo
-RT=/run/user/$(id -u)/figaro-hibdemo
+# Per-run identity. An earlier version hardcoded one path, so a second run
+# rm -rf'd the first run's box out from under its live daemon while its author
+# was still looking at it. Nothing shared, nothing to collide.
+RUN=${RUN:-$$}
+BOX=/tmp/figaro-hibdemo-$RUN
+RT=/run/user/$(id -u)/figaro-hibdemo-$RUN
 BIN=$BOX/figaro
-SESSION=hibdemo
+SESSION=hibdemo-$RUN
 ARIAS=${ARIAS:-5}
-PROMPT=${PROMPT:-0}
+NO_TOKENS=${NO_TOKENS:-0}
+WAKE=${WAKE:-0}
 KEEP=${KEEP:-0}
 
 fig() { FIGARO_RUNTIME_DIR=$RT FIGARO_STATE_DIR=$BOX/state FIGARO_CONFIG_DIR=$BOX/cfg "$BIN" "$@"; }
 mem() { fig doctor mem 2>/dev/null | head -3 | tr -s ' '; }
 counters() { fig doctor mem 2>/dev/null | grep -oE 'live=[0-9]+|attached-clients=[0-9]+|resident-rows=[0-9]+' | tr '\n' ' '; }
+# Message count straight off the store, so it is true whether or not an agent
+# is resident -- which after the sweep is the only way to ask.
+msgcount() { fig status "$1" -j 2>/dev/null | python3 -c 'import sys,json
+try: print(json.load(sys.stdin).get("message_count", 0))
+except Exception: print(0)'; }
 
 cleanup() {
   [[ $KEEP == 1 ]] && { echo; echo "KEEP=1: left running. tmux attach -t $SESSION"; echo "  teardown: tmux kill-session -t $SESSION; FIGARO_RUNTIME_DIR=$RT $BIN stop --force; rm -rf $BOX $RT"; return; }
@@ -114,6 +133,44 @@ for i in $(seq 1 "$ARIAS"); do
   printf '   %s\n' "$id"
 done
 
+if [[ $NO_TOKENS == 1 ]]; then
+  echo "== NO_TOKENS=1: skipping the seed turn, transcripts will be BLANK"
+  echo "   (an unprompted aria has no history; that is correct and unwatchable)"
+else
+  echo "== seeding one short turn each, so the transcripts are not blank"
+  # -f: submit and return. A streaming send would hold this script for the whole
+  # turn, and five of them held it indefinitely once.
+  i=0
+  while read -r id; do
+    i=$((i+1))
+    fig send -f --id "$id" -- "Reply with one short sentence naming yourself as demo aria $i of $ARIAS." >/dev/null 2>&1 || true
+  done < "$BOX/ids"
+
+  # Poll the STORE for the replies rather than trusting the sends, and give up
+  # rather than hang: a provider that cannot answer must not wedge the demo.
+  #
+  # Two is the target, not three: message_count excludes ceremonial rows, so a
+  # seeded aria is exactly prompt + reply. Requiring three never matched, so
+  # this waited out its whole timeout and the arias hibernated DURING seeding —
+  # which made the "before the sweep" reading show live=0 and look broken.
+  echo "   waiting for replies (up to 45s)"
+  for _ in $(seq 1 45); do
+    done_n=0
+    while read -r id; do
+      [[ $(msgcount "$id") -ge 2 ]] && done_n=$((done_n+1))
+    done < "$BOX/ids"
+    [[ $done_n -ge $ARIAS ]] && break
+    sleep 1
+  done
+  while read -r id; do
+    printf '   %s  messages=%s\n' "$id" "$(msgcount "$id")"
+  done < "$BOX/ids"
+  if [[ ${done_n:-0} -lt $ARIAS ]]; then
+    echo "   NOTE: not every aria answered. Transcripts will be thin or blank."
+    echo "         Check the provider in $BOX/cfg/loadouts/hibdemo.toml."
+  fi
+fi
+
 echo "== attaching a listener to each, in tmux"
 tmux kill-session -t $SESSION 2>/dev/null || true
 tmux new-session -d -s $SESSION -x 200 -y 51
@@ -162,10 +219,10 @@ for line in open(sys.argv[1]):
         print(f"   [{d['SeverityText']}] {msg} {attrs}")
 PY
 
-if [[ $PROMPT == 1 ]]; then
+if [[ $WAKE == 1 ]]; then
   id=$(head -1 "$BOX/ids")
   echo
-  echo "== prompting the reclaimed aria $id (listener is pane 0) -- THIS SPENDS TOKENS"
+  echo "== prompting the reclaimed aria $id (listener is pane 0)"
   fig send -f --id "$id" -- "Output exactly 6 lines. Line N is: ZQ<N> then one short sentence about tides." >/dev/null 2>&1
   prev=-1
   for i in $(seq 1 100); do
@@ -182,6 +239,15 @@ if [[ $PROMPT == 1 ]]; then
   echo "   that was already open before the aria was reclaimed."
 fi
 
+echo
+echo "== what you should SEE in the panes"
+if [[ $NO_TOKENS == 1 ]]; then
+  echo "   Blank transcripts (NO_TOKENS=1 skipped the seed) with a live footer."
+else
+  echo "   A real prompt and reply in every pane, with a footer naming the aria."
+  echo "   Those arias are all hibernated. The transcript is served from the"
+  echo "   store by the endpoint, with no agent behind it."
+fi
 echo
 echo "== look at it yourself"
 echo "   tmux attach -t $SESSION        (Ctrl-b d to detach)"
