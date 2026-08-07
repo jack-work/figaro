@@ -151,13 +151,10 @@ func runDoctorSchema() error {
 	return nil
 }
 
-// runDoctorMem asks the running daemon what it is holding. It is the
-// answer to "the daemon is at 3 GB": which of live agents, cached aria
-// handles, sessions or goroutines is the number attached to.
-//
-// It reports the daemon's accounting, never the client's — a fresh CLI
-// process has nothing interesting to say about the heap of a daemon that
-// has been up for a week.
+// runDoctorMem asks the running daemon what it is holding: the answer to
+// "the daemon is at 3 GB" is which of live agents, cached aria handles,
+// sessions or goroutines the number is attached to. It reports the
+// daemon's accounting, never this process's.
 func runDoctorMem(asJSON bool) error {
 	cli, err := angelus.DialClient(transport.UnixEndpoint(angelusSocketPath()))
 	if err != nil {
@@ -202,17 +199,16 @@ func runDoctorMem(asJSON bool) error {
 		fmt.Printf("           go tool pprof -http=: 'http+unix://%s/debug/pprof/heap'\n", m.PprofSocket)
 	}
 
-	// live arias pin resident handles: eviction cannot touch them. Saying
-	// so beats making the reader remember the rule.
+	// A live aria pins its resident handle, so eviction cannot touch it.
+	// Saying so beats making the reader remember the rule.
 	if m.LiveArias > 0 && m.LiveArias == m.ResidentArias {
 		fmt.Printf("\nevery resident aria has a live agent, so idle eviction can free nothing.\n")
 	}
 	return nil
 }
 
-// humanBytes renders a byte count at three significant figures. Sizes
-// here span kilobytes to gigabytes and are read by eye, not parsed —
-// --json exists for the machine.
+// humanBytes renders a byte count at three significant figures. These are
+// read by eye, not parsed — --json exists for the machine.
 func humanBytes(n int64) string {
 	const unit = 1024
 	if n < unit {

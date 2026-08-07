@@ -32,9 +32,9 @@ type Angelus struct {
 	Build string
 
 	// Sessions is the daemon-wide registry of backgrounded exec sessions,
-	// keyed by aria id as scope. It is deliberately NOT per-agent: an
-	// agent that is killed or (soon) hibernated must not take its
-	// children's addressability with it. See tool.WithSessions.
+	// keyed by aria id as scope. Deliberately not per-agent: an agent that
+	// is killed or hibernated must not take its children's addressability
+	// with it. See tool.WithSessions.
 	Sessions *tool.SessionRegistry
 
 	listener  net.Listener
@@ -116,8 +116,8 @@ func (a *Angelus) Run(ctx context.Context) error {
 
 	slog.Info("angelus started", "pid", os.Getpid(), "socket", a.SocketPath)
 
-	// Diagnostic, opt-in, never fatal: an unavailable profiler must not
-	// keep the daemon from starting.
+	// Diagnostic and opt-in: an unavailable profiler must not keep the
+	// daemon from starting.
 	_ = a.StartPprof(ctx)
 
 	go a.pidMonitor(ctx)

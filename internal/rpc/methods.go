@@ -554,44 +554,29 @@ type StatusResponse struct {
 	// between builds — so the mismatch must be named, not suffered.
 	Build string `json:"build,omitempty"`
 
-	// Mem is the daemon's memory accounting. Omitted by daemons that
-	// predate it, which is why every field is a plain number and the
-	// struct is a pointer: an absent block means "this daemon cannot
-	// say", not "zero".
+	// Mem is a pointer so an older daemon's silence reads as "cannot
+	// say" rather than zero.
 	Mem *MemStatus `json:"mem,omitempty"`
 }
 
-// MemStatus is what the daemon can say about its own footprint without a
-// profiler attached. It exists because the memory numbers that motivated
-// aria eviction were observations of RSS, not attributions: nothing
-// distinguished "the backend is holding N decoded logs" from "an agent is
-// holding a composed UI". These counters make the next tuning decision
-// evidence-based.
+// MemStatus is what the daemon can say about its footprint with no
+// profiler attached. The numbers that motivated aria eviction were
+// observations of RSS, not attributions — nothing distinguished a backend
+// holding decoded logs from an agent holding a composed UI.
 type MemStatus struct {
-	// LiveArias is agents resident in the registry — the arias that
-	// eviction is currently forbidden to touch.
-	LiveArias int `json:"live_arias"`
-	// ResidentArias is aria handles cached in the backend: decoded IR,
-	// translations and boards. Eviction moves this number; agents pin it.
-	ResidentArias int `json:"resident_arias"`
-	// Sessions is backgrounded exec sessions across every aria.
-	Sessions int `json:"sessions"`
-	// Goroutines is a cheap leak detector: per-aria goroutines (drain
-	// loop, listener, per-conn servers) should fall when arias do.
-	Goroutines int `json:"goroutines"`
+	LiveArias     int `json:"live_arias"`     // agents in the registry; eviction may not touch these
+	ResidentArias int `json:"resident_arias"` // aria handles cached in the backend; agents pin them
+	Sessions      int `json:"sessions"`       // backgrounded exec sessions, all arias
+	Goroutines    int `json:"goroutines"`     // per-aria goroutines should fall when arias do
 
 	HeapAllocBytes uint64 `json:"heap_alloc_bytes"` // live heap objects
 	HeapInuseBytes uint64 `json:"heap_inuse_bytes"` // spans in use, incl. fragmentation
 	HeapSysBytes   uint64 `json:"heap_sys_bytes"`   // heap reserved from the OS
 	SysBytes       uint64 `json:"sys_bytes"`        // total from the OS, all arenas
 	NumGC          uint32 `json:"num_gc"`
-	// MemLimitBytes is the armed GOMEMLIMIT soft ceiling. math.MaxInt64
-	// means unlimited, which is Go's own encoding of "no limit set".
-	MemLimitBytes int64 `json:"mem_limit_bytes"`
+	MemLimitBytes  int64  `json:"mem_limit_bytes"` // armed GOMEMLIMIT; MaxInt64 = unlimited
 
-	// PprofSocket is where a profiler can attach, empty when the daemon
-	// was not started with profiling armed.
-	PprofSocket string `json:"pprof_socket,omitempty"`
+	PprofSocket string `json:"pprof_socket,omitempty"` // empty when not armed
 }
 
 type SaveBindingsResponse struct {

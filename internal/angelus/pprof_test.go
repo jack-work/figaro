@@ -3,103 +3,61 @@ package angelus
 import (
 	"context"
 	"net"
+	"net/http"
 	"os"
-	"path/filepath"
 	"testing"
-	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestMemStatusReportsCounters(t *testing.T) {
 	a := New(Config{RuntimeDir: t.TempDir()})
-
-	st := a.MemStatus()
-	if st == nil {
-		t.Fatal("MemStatus returned nil")
-	}
-	if st.Goroutines <= 0 {
-		t.Errorf("goroutines = %d, want > 0", st.Goroutines)
-	}
-	if st.HeapAllocBytes == 0 || st.SysBytes == 0 {
-		t.Errorf("heap numbers look unread: alloc=%d sys=%d", st.HeapAllocBytes, st.SysBytes)
-	}
-	if st.MemLimitBytes <= 0 {
-		t.Errorf("mem limit = %d, want a positive ceiling or MaxInt64", st.MemLimitBytes)
-	}
-	if st.LiveArias != 0 || st.Sessions != 0 {
-		t.Errorf("fresh angelus reports live=%d sessions=%d, want 0/0", st.LiveArias, st.Sessions)
-	}
-	if st.PprofSocket != "" {
-		t.Errorf("pprof reported as armed (%q) without StartPprof", st.PprofSocket)
-	}
-}
-
-// A session belongs to the daemon, so the daemon can count it — this is
-// the number that says whether hibernation is leaking children.
-func TestMemStatusCountsSessions(t *testing.T) {
-	a := New(Config{RuntimeDir: t.TempDir()})
-	s := a.Sessions.Create("aria-a", "sleep 30")
+	a.Sessions.Create("aria-a", "sleep 30")
 	t.Cleanup(func() { a.Sessions.KillScope("aria-a") })
 
-	if got := a.MemStatus().Sessions; got != 1 {
-		t.Fatalf("sessions = %d, want 1 (created %s)", got, s.ID)
-	}
+	st := a.MemStatus()
+	require.NotNil(t, st)
+	require.Positive(t, st.Goroutines)
+	require.Positive(t, st.HeapAllocBytes, "heap numbers unread: %+v", st)
+	require.Positive(t, st.SysBytes)
+	require.Positive(t, st.MemLimitBytes, "MaxInt64 when unlimited, never zero")
+	require.Equal(t, 1, st.Sessions)
+	require.Zero(t, st.LiveArias)
+	require.Empty(t, st.PprofSocket, "advertises a profiler never armed")
 }
 
-// Profiling is opt-in. A daemon that armed it without being asked would
-// be exposing pprof's handlers for the rest of its life.
-func TestStartPprofOffByDefault(t *testing.T) {
-	t.Setenv(PprofEnv, "")
-	a := New(Config{RuntimeDir: t.TempDir()})
+// Off by default: pprof's handlers stop the world and leak argv, and this
+// daemon is long-lived. Armed, it must be reachable and owner-only.
+func TestStartPprof(t *testing.T) {
+	t.Run("unarmed", func(t *testing.T) {
+		t.Setenv(PprofEnv, "")
+		a := New(Config{RuntimeDir: t.TempDir()})
+		require.NoError(t, a.StartPprof(context.Background()))
+		_, err := os.Stat(a.PprofSocketPath())
+		require.True(t, os.IsNotExist(err), "socket exists without %s", PprofEnv)
+	})
 
-	if err := a.StartPprof(context.Background()); err != nil {
-		t.Fatalf("StartPprof unarmed returned %v, want nil", err)
-	}
-	if _, err := os.Stat(a.PprofSocketPath()); !os.IsNotExist(err) {
-		t.Fatalf("pprof socket exists without %s set", PprofEnv)
-	}
-	if a.MemStatus().PprofSocket != "" {
-		t.Fatal("MemStatus advertises a profiler that was never armed")
-	}
-}
+	t.Run("armed", func(t *testing.T) {
+		t.Setenv(PprofEnv, "1")
+		a := New(Config{RuntimeDir: t.TempDir()})
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		require.NoError(t, a.StartPprof(ctx))
 
-func TestStartPprofServesWhenArmed(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv(PprofEnv, "1")
-	a := New(Config{RuntimeDir: dir})
+		sock := a.PprofSocketPath()
+		fi, err := os.Stat(sock)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0600), fi.Mode().Perm())
+		require.Equal(t, sock, a.MemStatus().PprofSocket)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	if err := a.StartPprof(ctx); err != nil {
-		t.Fatalf("StartPprof: %v", err)
-	}
-
-	sock := filepath.Join(dir, PprofSocketName)
-	fi, err := os.Stat(sock)
-	if err != nil {
-		t.Fatalf("pprof socket: %v", err)
-	}
-	// Same trust boundary as angelus.sock: owner only.
-	if perm := fi.Mode().Perm(); perm != 0600 {
-		t.Errorf("pprof socket mode = %o, want 600", perm)
-	}
-	if got := a.MemStatus().PprofSocket; got != sock {
-		t.Errorf("MemStatus pprof = %q, want %q", got, sock)
-	}
-
-	conn, err := net.DialTimeout("unix", sock, 2*time.Second)
-	if err != nil {
-		t.Fatalf("dial pprof: %v", err)
-	}
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
-	if _, err := conn.Write([]byte("GET /debug/pprof/heap?debug=1 HTTP/1.0\r\n\r\n")); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	buf := make([]byte, 15)
-	if _, err := conn.Read(buf); err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	conn.Close()
-	if string(buf[:9]) != "HTTP/1.0 " || string(buf[9:12]) != "200" {
-		t.Fatalf("pprof responded %q, want a 200", buf)
-	}
+		c := &http.Client{Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "unix", sock)
+			},
+		}}
+		resp, err := c.Get("http://x/debug/pprof/heap?debug=1")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, 200, resp.StatusCode)
+	})
 }

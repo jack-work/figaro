@@ -933,9 +933,9 @@ func (h *handlers) kill(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
-	// Kill is a deletion, dormancy is not: a removed aria takes its
-	// background jobs with it. Unconditional, because a hibernated aria
-	// has no live agent and still owns running children.
+	// Kill is a deletion and dormancy is not: a removed aria takes its
+	// background jobs with it. Unconditional, because a hibernated aria has
+	// no live agent and still owns running children.
 	if h.angelus.Sessions != nil {
 		if n := h.angelus.Sessions.KillScope(req.FigaroID); n > 0 {
 			slog.Info("killed aria sessions", "id", req.FigaroID, "sessions", n)

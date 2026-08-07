@@ -93,15 +93,12 @@ type registryOpts struct {
 	sessions    *SessionRegistry
 }
 
-// WithSessions makes the registry's bash and process tools share a
-// SessionRegistry owned by the caller instead of minting a private one.
-//
-// The daemon passes one instance for every aria. That is what lets a
-// backgrounded job outlive its agent: sessions are keyed by scope (the
-// aria id), so an agent can be torn down and rebuilt while its children
-// keep running under ids that stay stable across the round trip. It also
-// makes `seq` daemon-global, so a wake cannot mint a `bg-1` that collides
-// with an orphan still answering to that name.
+// WithSessions shares a caller-owned SessionRegistry instead of minting a
+// private one. The daemon passes one instance for every aria, which is
+// what lets a backgrounded job outlive its agent: sessions are keyed by
+// scope, so an agent can be torn down and rebuilt while its children keep
+// running under ids that stay stable. It also makes seq daemon-global, so
+// a wake cannot mint a bg-1 that an orphan still answers to.
 func WithSessions(sessions *SessionRegistry) RegistryOption {
 	return func(o *registryOpts) {
 		if sessions != nil {
@@ -143,11 +140,9 @@ func DefaultRegistryFn(cwdFn func() string, opts ...RegistryOption) *Registry {
 // `figaro` calls are statically attended to the aria that spawned
 // them. Pass "" when there is no aria (tests, one-off registries).
 //
-// The aria id is also the SESSION SCOPE. That matters once a caller
-// passes WithSessions: one registry serves every aria, and the scope is
-// the only thing keeping one aria's `bg-1` out of another's `process
-// list`. With a private registry the scope is cosmetic; with a shared
-// one it is the isolation boundary.
+// The aria id is also the SESSION SCOPE, which matters once a caller
+// passes WithSessions: with a private registry the scope is cosmetic, with
+// a shared one it is the isolation boundary.
 func DefaultRegistryForAria(ariaID string, cwdFn func() string, opts ...RegistryOption) *Registry {
 	settings := registryOpts{imageLimits: DefaultImageLimits()}
 	for _, opt := range opts {
@@ -169,8 +164,8 @@ func DefaultRegistryForAria(ariaID string, cwdFn func() string, opts ...Registry
 	if sessions == nil {
 		sessions = NewSessionRegistry(DefaultSessionTTL)
 	}
-	// Both tools must agree on the scope or the process tool cannot see
-	// what bash spawned. Empty ariaID falls through to defaultScope.
+	// Both tools must agree on the scope or process cannot see what bash
+	// spawned. Empty ariaID falls through to defaultScope.
 	var scopeFn func() string
 	if ariaID != "" {
 		scopeFn = func() string { return ariaID }
