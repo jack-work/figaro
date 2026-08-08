@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -90,6 +91,20 @@ func TestSaveBindings_StableOrdering(t *testing.T) {
 		}
 		assert.Equal(t, string(first), string(data), "save %d differs: map order leaked", i)
 	}
+}
+
+// A v1 file (parent pids) must not be replayed into a v2 daemon.
+func TestRestoreBindings_SkipsOldVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bindings.json")
+	self := os.Getpid()
+	require.NoError(t, os.WriteFile(path,
+		[]byte(`{"bindings":[{"pid":`+strconv.Itoa(self)+`,"figaro_id":"stale"}]}`), 0o600))
+
+	r := angelus.NewRegistry()
+	angelus.RestoreBindings(r, path, nil)
+
+	id, _, _ := r.Resolve(self)
+	assert.Empty(t, id, "a v1 binding was replayed under v2 key semantics")
 }
 
 func TestRestoreBindings_SkipsDeadPID(t *testing.T) {

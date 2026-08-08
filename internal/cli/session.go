@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
@@ -56,7 +55,7 @@ func WithSessionFor(loaded *config.Loaded, explicitID string, fn func(s *Session
 				return err
 			}
 		} else {
-			r, err := resolveBinding(ctx, acli, os.Getppid())
+			r, err := resolveBinding(ctx, acli, shellPID)
 			if err != nil {
 				return err
 			}

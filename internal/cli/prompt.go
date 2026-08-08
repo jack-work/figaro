@@ -25,7 +25,7 @@ func runPrompt(loaded *config.Loaded, outfit, prompt string, set renderSettings)
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	ppid := os.Getppid()
+	ppid := shellPID
 
 	resp, err := resolveBinding(ctx, acli, ppid)
 	if err != nil {
@@ -61,7 +61,7 @@ func runNewPrompt(loaded *config.Loaded, prompt, outfit string, set renderSettin
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	ppid := os.Getppid()
+	ppid := shellPID
 	unbindBinding(ctx, acli, ppid)
 
 	figaroID, figaroEP := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, outfit)
@@ -139,7 +139,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	ppid := os.Getppid()
+	ppid := shellPID
 	if trunkID == "" {
 		r, err := resolveBinding(ctx, acli, ppid)
 		if err != nil || !r.Found {
@@ -276,7 +276,7 @@ func runUnattend(loaded *config.Loaded) {
 	defer cancel()
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
-	ppid := os.Getppid()
+	ppid := shellPID
 	bound := ""
 	if r, err := resolveBinding(ctx, acli, ppid); err == nil && r.Found {
 		bound = r.FigaroID
@@ -297,7 +297,7 @@ func runNewFromOutfit(loaded *config.Loaded, outfit string, set renderSettings) 
 	defer cancel()
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
-	ppid := os.Getppid()
+	ppid := shellPID
 	unbindBinding(ctx, acli, ppid)
 	figaroID, _ := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, outfit)
 	if set.jsonMode {

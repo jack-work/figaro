@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -19,7 +18,7 @@ import (
 // compatibility but no longer creates.
 func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, explicitID string, autoCreate bool, outfit string) (string, transport.Endpoint, error) {
 	if explicitID == "" {
-		ppid := os.Getppid()
+		ppid := shellPID
 		r, err := resolveBinding(ctx, acli, ppid)
 		if err != nil {
 			return "", transport.Endpoint{}, fmt.Errorf("resolve: %w", err)

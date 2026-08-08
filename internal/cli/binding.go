@@ -37,12 +37,14 @@ var (
 	forceBind   bool // --bind: bind even when no stream is a TTY
 	noBindEnv   bool // set at Run start from FIGARO_NO_BIND
 	interactive bool // set at Run start; true when at least one std stream is a TTY
+	shellPID    int  // set at Run start; the process this shell's binding is keyed to
 )
 
 // initBindingPolicy computes the interactive/env state once at Run.
 // Called before the router runs so the policy is stable across a call.
 func initBindingPolicy() {
 	noBindEnv = envTruthy(os.Getenv("FIGARO_NO_BIND"))
+	shellPID = shellKey()
 	interactive = term.IsTerminal(int(os.Stdin.Fd())) ||
 		term.IsTerminal(int(os.Stderr.Fd()))
 	// The same signal arms the DUKE placeholder: only a human at a terminal

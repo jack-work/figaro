@@ -99,7 +99,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 		}
 
 		boundID := ""
-		if r, rerr := resolveBinding(ctx, acli, os.Getppid()); rerr == nil && r.Found {
+		if r, rerr := resolveBinding(ctx, acli, shellPID); rerr == nil && r.Found {
 			boundID = r.FigaroID
 		}
 
@@ -157,7 +157,7 @@ func runList(loaded *config.Loaded, o lsOpts) {
 			figs = kept
 		}
 
-		ppid := os.Getppid()
+		ppid := shellPID
 		tree, roots := listForest(figs, rootID, ppid)
 		rows := tree.Rows()
 
@@ -395,7 +395,7 @@ func globalForest(figs []rpc.FigaroInfoResponse, boundID string, ppid int) figtr
 }
 
 func renderGlobal(figs []rpc.FigaroInfoResponse, boundID string, limit int) {
-	rows := globalForest(figs, boundID, os.Getppid()).Rows()
+	rows := globalForest(figs, boundID, shellPID).Rows()
 	total := len(rows)
 	shown := total
 	if limit > 0 && total > limit {
@@ -634,7 +634,7 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx := context.Background()
-		ppid := os.Getppid()
+		ppid := shellPID
 
 		bound := ""
 		if r, err := resolveBinding(ctx, acli, ppid); err == nil && r.Found {
@@ -763,7 +763,7 @@ func runPromote(loaded *config.Loaded, idFlag string, args []string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if target == "" {
-			if r, err := resolveBinding(ctx, acli, os.Getppid()); err == nil && r.Found {
+			if r, err := resolveBinding(ctx, acli, shellPID); err == nil && r.Found {
 				target = r.FigaroID
 			}
 		}
@@ -811,7 +811,7 @@ func runAttend(loaded *config.Loaded, spec string) {
 		WithAngelus(loaded, func(acli *angelus.Client) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			_ = unbindBinding(ctx, acli, os.Getppid())
+			_ = unbindBinding(ctx, acli, shellPID)
 			fmt.Fprintln(os.Stderr, "home — unbound; new conversations will use the live outfit")
 			return nil
 		})
@@ -824,7 +824,7 @@ func runAttend(loaded *config.Loaded, spec string) {
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		ppid := os.Getppid()
+		ppid := shellPID
 		if trunk == "" {
 			r, rerr := resolveBinding(ctx, acli, ppid)
 			if rerr != nil || !r.Found {

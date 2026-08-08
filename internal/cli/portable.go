@@ -93,7 +93,7 @@ func runExport(loaded *config.Loaded, args []string) {
 	defer acli.Close()
 
 	if id == "" {
-		r, err := resolveBinding(ctx, acli, os.Getppid())
+		r, err := resolveBinding(ctx, acli, shellPID)
 		if err != nil || !r.Found {
 			die("export: no aria bound to this shell (try: figaro export <id>)")
 		}

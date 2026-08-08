@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -98,7 +97,7 @@ func softFetchLiveKeys() []string {
 		return nil
 	}
 	defer acli.Close()
-	r, err := resolveBinding(ctx, acli, os.Getppid())
+	r, err := resolveBinding(ctx, acli, shellPID)
 	if err != nil || !r.Found {
 		return nil
 	}

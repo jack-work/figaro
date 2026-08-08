@@ -20,8 +20,13 @@ type bindingEntry struct {
 }
 
 type bindingsFile struct {
+	Version  int            `json:"version"`
 	Bindings []bindingEntry `json:"bindings"`
 }
+
+// bindingsVersion is what the PID field means: v1 the caller's parent, v2
+// the session leader. A mismatch is skipped, not translated.
+const bindingsVersion = 2
 
 // SaveBindings persists PID->figaro bindings atomically, sorted by
 // (aria, pid) so identical state writes identical bytes.
@@ -50,7 +55,7 @@ func SaveBindings(r *Registry, path string) error {
 		}
 	}
 
-	data, err := json.Marshal(bindingsFile{Bindings: entries})
+	data, err := json.Marshal(bindingsFile{Version: bindingsVersion, Bindings: entries})
 	if err != nil {
 		return fmt.Errorf("marshal bindings: %w", err)
 	}
@@ -93,6 +98,11 @@ func RestoreBindings(r *Registry, path string, restore AriaRestorer) {
 	var file bindingsFile
 	if err := json.Unmarshal(data, &file); err != nil {
 		slog.Warn("bindings parse", "path", path, "err", err)
+		return
+	}
+	if file.Version != bindingsVersion {
+		slog.Info("bindings from an older key scheme, skipping",
+			"have", file.Version, "want", bindingsVersion, "dropped", len(file.Bindings))
 		return
 	}
 

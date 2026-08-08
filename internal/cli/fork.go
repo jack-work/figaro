@@ -164,7 +164,7 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 	branch := ""
 	WithAngelus(loaded, func(acli *angelus.Client) error {
 		ctx := context.Background()
-		ppid := os.Getppid()
+		ppid := shellPID
 
 		bound := ""
 		if r, err := resolveBinding(ctx, acli, ppid); err == nil && r.Found {
