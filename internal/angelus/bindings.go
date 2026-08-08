@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 )
 
@@ -22,19 +23,28 @@ type bindingsFile struct {
 	Bindings []bindingEntry `json:"bindings"`
 }
 
-// SaveBindings persists PID->figaro bindings atomically.
+// SaveBindings persists PID->figaro bindings atomically, sorted by
+// (aria, pid) so identical state writes identical bytes.
 func SaveBindings(r *Registry, path string) error {
 	if r == nil {
 		return fmt.Errorf("nil registry")
 	}
 
-	infos := r.List()
+	byFigaro := r.BoundPIDsByFigaro()
+	ids := make([]string, 0, len(byFigaro))
+	for id := range byFigaro {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
 	var entries []bindingEntry
-	for _, info := range infos {
-		for _, pid := range r.BoundPIDs(info.ID) {
+	for _, id := range ids {
+		pids := byFigaro[id]
+		sort.Ints(pids)
+		for _, pid := range pids {
 			entries = append(entries, bindingEntry{
 				PID:       pid,
-				FigaroID:  info.ID,
+				FigaroID:  id,
 				StartTime: pidStartTime(pid),
 			})
 		}

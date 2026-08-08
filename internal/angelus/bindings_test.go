@@ -47,6 +47,51 @@ func TestSaveAndRestoreBindings_LivePIDs(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "bindings file should be removed after restore")
 }
 
+// A binding to a dormant aria must survive the round trip. Nothing is
+// registered here: dormant is the point.
+func TestSaveAndRestoreBindings_DormantAria(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bindings.json")
+
+	r := angelus.NewRegistry()
+	self := os.Getpid()
+	require.NoError(t, r.Bind(self, "sleeper", 0))
+	require.Empty(t, r.List(), "the aria is dormant; nothing is resident")
+
+	require.NoError(t, angelus.SaveBindings(r, path))
+
+	r2 := angelus.NewRegistry()
+	angelus.RestoreBindings(r2, path, nil)
+
+	id, f, _ := r2.Resolve(self)
+	assert.Equal(t, "sleeper", id, "binding to a dormant aria was not persisted")
+	assert.Nil(t, f, "still dormant after restore: a rebind must not wake anything")
+}
+
+// The file is rewritten on every save, so identical state must produce
+// identical bytes.
+func TestSaveBindings_StableOrdering(t *testing.T) {
+	dir := t.TempDir()
+
+	r := angelus.NewRegistry()
+	for i, id := range []string{"zeta", "alpha", "mu"} {
+		require.NoError(t, r.Bind(9000+i, id, 0))
+	}
+
+	var first []byte
+	for i := range 5 {
+		path := filepath.Join(dir, "bindings.json")
+		require.NoError(t, angelus.SaveBindings(r, path))
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.NoError(t, os.Remove(path))
+		if i == 0 {
+			first = data
+			continue
+		}
+		assert.Equal(t, string(first), string(data), "save %d differs: map order leaked", i)
+	}
+}
+
 func TestRestoreBindings_SkipsDeadPID(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bindings.json")
