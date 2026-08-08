@@ -41,13 +41,20 @@ branch.
 ## Binding is off by default for you
 
 The pid binding exists so an interactive shell can `attend` once. Scripts must
-not inherit it. Binding is disabled when `FIGARO_NO_BIND=1` is set, when
-`--no-bind` is passed, or when neither stdin nor stderr is a TTY. A TTY on
-either one is enough to opt in, which covers `figaro send ... | jq` typed by a
-human.
+not *mutate* it. Writing one (`attend`, and the implicit bind a new aria does)
+is disabled when `FIGARO_NO_BIND=1` is set, when `--no-bind` is passed, or when
+neither stdin nor stderr is a TTY.
 
-The failure this prevents is real: a child figaro grabbing its parent's binding
-and forking the wrong aria.
+*Reading* one is not, since 0.21.2: asking which aria a shell attends survives
+a missing TTY, so prompt segments and `figaro status | jq` work. `--no-bind`
+still hides it — that is a stated intent, not a guess about the terminal.
+`--bind` forces the write path on where the TTY rule would switch it off.
+
+None of this reaches you: `FIGARO_ARIA` outranks every rung above, so an
+aria's shell-out is attended to itself and can neither read nor write the
+parent shell's binding. That is the failure being prevented — a child figaro
+grabbing its parent's binding and forking the wrong aria — and it is now
+answered by identity rather than by guessing at file descriptors.
 
 ## Sub-arias
 

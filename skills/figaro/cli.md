@@ -152,6 +152,14 @@ The wire behind all of this — the interrupt's queue disposition, the
 OUTFIT, VER, FORK, AGE, MSGS, CTX, CWD. While your own turn is in flight your
 row shows `▸`, not `●`, so identify yourself from the header instead.
 
+`attend` binds the **terminal**, not the process that typed it: on unix the key
+is the session leader, so subshells, pipelines, `$(...)`, `timeout figaro …`
+and a shell-prompt segment all resolve to the same aria. A script run from an
+attended shell therefore speaks to that shell's aria — it cannot move the
+attendance, only use it. Windows has no POSIX session and keys on the parent.
+Override with `--no-bind`/`-A` (ignore the binding) or `--bind` (use it where
+the no-TTY rule would switch writes off); both go before the verb.
+
 ## Branching
 
 | Command | Effect |

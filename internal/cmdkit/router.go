@@ -42,6 +42,10 @@ type Router struct {
 	// `figaro [flags] -- <prompt>`).
 	Synopsis []string
 
+	// GlobalFlags are flags the caller consumes before dispatch, so no
+	// Command declares them and nothing else would ever print them.
+	GlobalFlags []FlagDef
+
 	// barePromptComplete is the CompleteArgs callback invoked when
 	// the user is in the bare-prompt form (`<prog> -- <body>`, or an
 	// alias thereof). See SetBarePromptComplete.
@@ -542,6 +546,18 @@ func (r *Router) printUsageTo(w io.Writer) {
 				name = cmd.Usage
 			}
 			fmt.Fprintf(w, "  %-24s %s\n", name, cmd.Short)
+		}
+		fmt.Fprintln(w)
+	}
+
+	if len(r.GlobalFlags) > 0 {
+		fmt.Fprintln(w, "Global flags (any command):")
+		for _, f := range r.GlobalFlags {
+			name := "--" + f.Long
+			if f.Short != "" {
+				name = "-" + f.Short + ", " + name
+			}
+			fmt.Fprintf(w, "  %-24s %s\n", name, f.Description)
 		}
 		fmt.Fprintln(w)
 	}

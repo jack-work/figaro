@@ -1198,6 +1198,14 @@ auto-load it on the next tab.
 	// The bare form is not a registered command — Run dispatches it before
 	// the router sees argv — so it needs its own usage line.
 	r.Synopsis = []string{progName + " [send flags] -- <prompt>   (same flags as `" + progName + " send`)"}
+	// Consumed by extractNoBindFlag before dispatch, so no Command declares
+	// them and nothing else would print them.
+	r.GlobalFlags = []cmdkit.FlagDef{
+		{Long: "no-bind", Short: "A", IsBool: true,
+			Description: "Absolute mode: ignore this shell's attend binding (alias --absolute; FIGARO_NO_BIND=1)"},
+		{Long: "bind", IsBool: true,
+			Description: "Use the binding even where it is off by default (--no-bind, FIGARO_NO_BIND)"},
+	}
 
 	return r
 }
