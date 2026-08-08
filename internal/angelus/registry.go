@@ -45,7 +45,8 @@ func NewRegistry() *Registry {
 	}
 }
 
-// Register adds a figaro to the registry.
+// Register adds a figaro to the registry. It must not touch figaroPIDs:
+// Bind is that map's only writer, and it allocates lazily.
 func (r *Registry) Register(f figaro.Figaro) error {
 	if r.draining.Load() {
 		return fmt.Errorf("angelus: shutting down, refusing new figaros")
@@ -58,7 +59,6 @@ func (r *Registry) Register(f figaro.Figaro) error {
 		return fmt.Errorf("figaro %q already registered", f.ID())
 	}
 	r.figaros[f.ID()] = f
-	r.figaroPIDs[f.ID()] = make(map[int]struct{})
 	return nil
 }
 

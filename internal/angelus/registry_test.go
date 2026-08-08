@@ -132,6 +132,22 @@ func TestRegistry_BindDormantAriaIsLegal(t *testing.T) {
 	assert.Equal(t, []int{1234}, r.BoundPIDs("dormant-aria"))
 }
 
+// ...and waking it must not cost the binding. pidToFigaro and figaroPIDs are
+// inverses; a path that moves one without the other is a bug.
+func TestRegistry_WakingABoundDormantAriaKeepsItsPIDs(t *testing.T) {
+	r := angelus.NewRegistry()
+	require.NoError(t, r.Bind(1234, "sleeper", 0))
+
+	require.NoError(t, r.Register(newMock("sleeper")), "the aria wakes")
+
+	assert.Equal(t, []int{1234}, r.BoundPIDs("sleeper"),
+		"Register erased the pid set Bind had already filled")
+
+	id, f, _ := r.Resolve(1234)
+	assert.Equal(t, "sleeper", id)
+	assert.NotNil(t, f, "resident now, so Resolve hands back the agent")
+}
+
 // An empty id is still refused: it is not an aria, dormant or otherwise.
 func TestRegistry_BindEmptyIDFails(t *testing.T) {
 	r := angelus.NewRegistry()
