@@ -88,6 +88,10 @@ func (r *Registry) Kill(id string) error {
 	r.mu.Lock()
 	for pid := range r.figaroPIDs[id] {
 		delete(r.pidToFigaro, pid)
+		// Also the pending fork point. Unobservable through Resolve, which
+		// gates pidToLT behind pidToFigaro, so this is a leak rather than a
+		// wrong answer -- and the only map a killed aria used to leave behind.
+		delete(r.pidToLT, pid)
 	}
 	delete(r.figaroPIDs, id)
 	delete(r.figaros, id)

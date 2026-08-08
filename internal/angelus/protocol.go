@@ -1098,7 +1098,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			continue
 		}
 		seen[id] = struct{}{}
-		entry := rpc.FigaroInfoResponse{ID: id, State: "dormant"}
+		entry := rpc.FigaroInfoResponse{ID: id, State: "dormant", BoundPIDs: boundPIDs[id]}
 		if req.IDsOnly {
 			if meta, _ := h.angelus.Backend.Meta(id); meta != nil {
 				entry.MessageCount = meta.MessageCount
@@ -1132,7 +1132,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 				continue
 			}
 			seen[n.ID] = struct{}{}
-			result = append(result, rpc.FigaroInfoResponse{ID: n.ID, State: "anchor"})
+			result = append(result, rpc.FigaroInfoResponse{ID: n.ID, State: "anchor", BoundPIDs: boundPIDs[n.ID]})
 		}
 	}
 

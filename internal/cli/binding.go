@@ -34,7 +34,7 @@ import (
 // `figaro send ... | jq`).
 var (
 	noBindFlag  bool // set by extractNoBindFlag
-	forceBind   bool // reserved: --bind override (currently unused)
+	forceBind   bool // --bind: bind even when no stream is a TTY
 	noBindEnv   bool // set at Run start from FIGARO_NO_BIND
 	interactive bool // set at Run start; true when at least one std stream is a TTY
 )

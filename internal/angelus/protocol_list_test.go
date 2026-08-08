@@ -1,6 +1,7 @@
 package angelus
 
 import (
+	"slices"
 	"sync/atomic"
 	"testing"
 
@@ -73,5 +74,29 @@ func TestDormantListUsesMetadataOnly(t *testing.T) {
 	}
 	if got := backend.logReads.Load(); got != 0 {
 		t.Fatalf("dormant list counted canonical log %d times", got)
+	}
+}
+
+// A dormant aria still reports the shells attending it. Presence is a
+// property of the binding, not of residency: `attend` deliberately does not
+// wake anything, so if the dormant branch omits BoundPIDs the caller can
+// never draw an attended-but-sleeping aria as "here".
+func TestDormantListReportsBoundPIDs(t *testing.T) {
+	reg := NewRegistry()
+	if err := reg.Bind(4242, "dormant", 0); err != nil {
+		t.Fatal(err)
+	}
+	h := &handlers{angelus: &Angelus{Registry: reg, Backend: &metadataListBackend{}}}
+
+	response, err := h.list(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	figaros := response.(rpc.ListResponse).Figaros
+	if len(figaros) != 1 {
+		t.Fatalf("got %d figaros, want 1", len(figaros))
+	}
+	if got := figaros[0]; got.State != "dormant" || !slices.Contains(got.BoundPIDs, 4242) {
+		t.Fatalf("dormant entry lost its bound pid: %#v", got)
 	}
 }
