@@ -129,8 +129,8 @@ func TestIncipit_NoHeaderOverAnEmptyRun(t *testing.T) {
 	// a slice whose only node renders to nothing
 	in.Freeze(aria.Message{Turn: 3, Role: livedoc.RoleOutput,
 		Nodes: []livedoc.Node{{ID: "n0", Type: livedoc.NodeProse, Markdown: "   "}}})
-	// then one with real content — the steer rides INSIDE the agent's run, so
-	// the header belongs to the agent and there is exactly one of it
+	// then a continuation carrying the steer. A steer rides INSIDE the agent's
+	// run and is not a question, so it earns no header of its own either.
 	in.Freeze(aria.Message{Turn: 3, From: 1, Role: livedoc.RoleOutput,
 		Nodes: []livedoc.Node{{ID: "n1", Type: livedoc.NodeSteering, Markdown: "steer me"}}})
 
@@ -138,8 +138,8 @@ func TestIncipit_NoHeaderOverAnEmptyRun(t *testing.T) {
 	if !strings.Contains(joined, "steer me") {
 		t.Fatalf("steer text missing:\n%s", joined)
 	}
-	if n := strings.Count(joined, "< figaro"); n != 1 {
-		t.Errorf("want exactly one header, over the run with content, got %d:\n%s", n, joined)
+	if n := strings.Count(joined, "< figaro"); n != 0 {
+		t.Errorf("no header: the empty run has nothing to head and a steer is not a question; got %d:\n%s", n, joined)
 	}
 	if n := strings.Count(joined, "> input"); n != 0 {
 		t.Errorf("a steer is not a voice change; got %d input headers:\n%s", n, joined)

@@ -138,8 +138,13 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 	}
 
 	// content streams in; the real assistant frame adopts the region
-	in.Open(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
-	in.Freeze(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
+	// The inquiry rides the frame that ESTABLISHES the suffix, exactly as the
+	// aria server sends it; the header follows the question, so a fixture
+	// without one would be testing a frame production never emits.
+	in.Open(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Inquiry: "ask",
+		Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
+	in.Freeze(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Inquiry: "ask",
+		Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
 	scr = strings.Join(ft.Screen(), "\n")
 	if strings.Count(scr, "< figaro") != 1 {
 		t.Fatalf("figaro header must appear once (no orphan):\n%s", scr)
