@@ -57,6 +57,47 @@ func TestBindingDisabled_FlagsAndEnv(t *testing.T) {
 	}
 }
 
+// TestResolveDisabled_TTYDoesNotHideTheAnswer pins the one rung that
+// differs from bindingDisabled: reading which aria a shell attends
+// survives a missing TTY, so prompt segments and `fig status | jq` work.
+// Stated intent (--no-bind, FIGARO_NO_BIND) still hides it.
+func TestResolveDisabled_TTYDoesNotHideTheAnswer(t *testing.T) {
+	saveFlag, saveForce, saveEnv, saveInt := noBindFlag, forceBind, noBindEnv, interactive
+	t.Cleanup(func() {
+		noBindFlag, forceBind, noBindEnv, interactive = saveFlag, saveForce, saveEnv, saveInt
+	})
+	t.Setenv("FIGARO_ARIA", "")
+
+	cases := []struct {
+		name        string
+		noBindFlag  bool
+		forceBind   bool
+		noBindEnv   bool
+		interactive bool
+		wantResolve bool // resolveDisabled()
+		wantBind    bool // bindingDisabled()
+	}{
+		{"interactive", false, false, false, true, false, false},
+		{"no tty: reads live, writes do not", false, false, false, false, false, true},
+		{"--no-bind hides both", true, false, false, true, true, true},
+		{"env hides both", false, false, true, true, true, true},
+		{"--bind overrides --no-bind for both", true, true, false, true, false, false},
+		{"no tty and --no-bind still hidden", true, false, false, false, true, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			noBindFlag, forceBind, noBindEnv, interactive = tc.noBindFlag, tc.forceBind, tc.noBindEnv, tc.interactive
+			if got := resolveDisabled(); got != tc.wantResolve {
+				t.Errorf("resolveDisabled() = %v, want %v", got, tc.wantResolve)
+			}
+			if got := bindingDisabled(); got != tc.wantBind {
+				t.Errorf("bindingDisabled() = %v, want %v", got, tc.wantBind)
+			}
+		})
+	}
+}
+
 // TestExtractNoBindFlag verifies that --no-bind / --absolute / -A are
 // stripped from args and set noBindFlag, and that --bind sets forceBind.
 // Args before and after the flag should be preserved in order.

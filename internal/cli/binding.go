@@ -77,8 +77,8 @@ func envAriaID() string {
 	return id
 }
 
-// bindingDisabled is the single query every CLI helper consults before
-// touching the pid-binding.
+// bindingDisabled is the query every CLI helper consults before MUTATING
+// the pid-binding.
 func bindingDisabled() bool {
 	// A statically-attended shell has no binding to mutate: its identity
 	// came in over the environment and outranks even --bind.
@@ -92,6 +92,29 @@ func bindingDisabled() bool {
 		return true
 	}
 	return !interactive
+}
+
+// resolveDisabled is the same question for READING the binding, and it
+// differs in one rung: a missing TTY does not hide the answer.
+//
+// Asking which aria a shell attends is not a mutation. The answer is
+// already public — `figaro list` prints it — and the hazard the tty rung
+// was added for (a nested figaro inheriting its parent's binding) is now
+// answered by identity: an agent's children carry FIGARO_ARIA, which
+// outranks everything here. What the rung actually cost was every
+// legitimate reader that redirects, which is all of them: prompt
+// segments, statuslines, `fig status | jq`.
+//
+// --no-bind still hides it. "Absolute mode" means address explicitly, and
+// that is a stated intent rather than a guess about the terminal.
+func resolveDisabled() bool {
+	if envAriaID() != "" {
+		return true
+	}
+	if forceBind {
+		return false
+	}
+	return noBindFlag || noBindEnv
 }
 
 // extractNoBindFlag pulls the binding-policy flags out of argv and returns
@@ -149,7 +172,7 @@ func resolveBinding(ctx context.Context, acli *angelus.Client, ppid int) (*rpc.R
 	if id := envAriaID(); id != "" {
 		return resolveEnvAria(ctx, acli, id)
 	}
-	if bindingDisabled() {
+	if resolveDisabled() {
 		return &rpc.ResolveResponse{Found: false}, nil
 	}
 	return acli.Resolve(ctx, ppid)

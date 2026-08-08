@@ -34,7 +34,7 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *ang
 			// aria happily. Which flag you chose decided whether the verb
 			// could create — and nothing said so.
 			if !mintsWhenUnbound(autoCreate) {
-				if bindingDisabled() {
+				if resolveDisabled() {
 					return "", transport.Endpoint{}, fmt.Errorf("no aria specified (pass --id <id>; binding disabled in this shell)")
 				}
 				return "", transport.Endpoint{}, fmt.Errorf("no figaro bound to this shell (try: --id <id> or attend <id>)")
