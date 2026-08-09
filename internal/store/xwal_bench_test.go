@@ -205,14 +205,15 @@ func BenchmarkConversations(b *testing.B) {
 	b.ReportMetric(float64(n), "trunks")
 }
 
-// BenchmarkListPathAfter / BenchmarkListPathBefore bracket the angelus list
-// path's forest fill. BEFORE: the handler called Backend.Node(id) once per
-// result, and EACH Node() recomputed the whole forest (1 List + 1 Stumps + a
-// vectorsLocked List) — O(N) full scans => O(N^2) trunk-head opens. AFTER:
-// the handler snapshots Backend.Nodes() ONCE and indexes by id — a single
-// forest fill regardless of N. These benchmarks reproduce both call patterns
-// over the same seeded tree so the win is provable.
-func BenchmarkListPathBefore(b *testing.B) {
+// BenchmarkListPathFill is the angelus list path's forest fill: one
+// Backend.Nodes() snapshot, indexed by id, however many rows follow.
+//
+// It used to be a pair, bracketing the O(N^2) it replaced -- the handler
+// called Backend.Node(id) per result and each call recomputed the whole
+// forest. The "before" arm is gone: the topology snapshot is cached by
+// version now, so the pattern it measured no longer costs what it cost, and a
+// benchmark whose premise has expired reports a number nobody can read.
+func BenchmarkListPathFill(b *testing.B) {
 	be, err := NewXwalBackend(b.TempDir(), 0)
 	if err != nil {
 		b.Fatal(err)
@@ -224,29 +225,7 @@ func BenchmarkListPathBefore(b *testing.B) {
 	trunkScanCount.Store(0)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = be.Nodes()           // backend.List() / first forest fill
-		for _, id := range ids { // OLD: per-entry Backend.Node => O(N) full scans
-			_, _ = be.Node(id)
-		}
-	}
-	b.StopTimer()
-	b.ReportMetric(float64(trunkScanCount.Load())/float64(b.N), "scans/op")
-	b.ReportMetric(float64(len(ids)), "trunks")
-}
-
-func BenchmarkListPathAfter(b *testing.B) {
-	be, err := NewXwalBackend(b.TempDir(), 0)
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer be.Close()
-	seedTree(b, be, 4, 3, 2)
-	ids := convIDs(be)
-
-	trunkScanCount.Store(0)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		nodes := map[string]NodeView{} // NEW: one snapshot, indexed by id
+		nodes := map[string]NodeView{} // one snapshot, indexed by id
 		for _, n := range be.Nodes() {
 			nodes[n.ID] = n
 		}
