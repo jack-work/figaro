@@ -181,11 +181,27 @@ figaro new -O 'base,{ "mantra" : "test" }'
 figaro new -O 'base,{"x":1,"mantra":"test"}'   # and with the keys the other way
 ```
 
-The label is the human half and carries no identity of its own beyond the
-names: adjacent literals collapse to one `{}`, because folding `{"a":1}` then
-`{"b":2}` IS folding `{"a":1,"b":2}`. What the label does buy is that an inline
-term renders as something no name may contain, so a stamp carrying one cannot
-be re-resolved by accident.
+The label is the names in order plus one `{}` if any term was a literal, and
+that is all: a literal is anonymous, and the hash already says everything about
+it. So WHERE a literal sits changes the fold but not the identity —
+
+```sh
+figaro new -O base,x=1,mantra=test      # all three land on
+figaro new -O x=1,base,mantra=test      # base,{}@0523455ab442fec2
+figaro new -O x=1,mantra=test,base      # because base sets neither key
+```
+
+— while a literal that actually collides folds differently, hashes
+differently, and is a different stump:
+
+```sh
+figaro new -O setsx,x=1     # x=1  setsx,{}@994a6d0c…
+figaro new -O x=1,setsx     # x=9  setsx,{}@cbeef30a…   (setsx sets x=9)
+```
+
+Content decides sameness; the label only has to be readable, and to render a
+literal as something no name may contain, so a stamp carrying one cannot be
+re-resolved by accident.
 
 Change one byte of an outfit file and the next birth hashes differently, so it
 mints a new stump; arias already under the old one stay there, and `figaro ls`

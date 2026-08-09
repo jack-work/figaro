@@ -70,25 +70,32 @@ func (s Spec) Validate() error {
 }
 
 // Label is what an aria born on this spec is stamped with, and the stump
-// directory it lives under. An inline term renders as `{}` — something
-// ValidName refuses — so a label carrying one cannot be re-parsed as a spec,
-// which is what makes "this stamp is not re-resolvable" enforced rather than
-// hoped for.
+// directory it lives under. It is the NAMES in order, plus a single `{}` when
+// any term was a literal.
+//
+// The stump id is `<label>@<hash of the folded patch>`, so the label must not
+// separate what the content unites. Literals are anonymous — the hash already
+// says everything about them — and where they sit changes the FOLD, not the
+// identity: `base,x=1` and `x=1,base` fold to one patch when they do not
+// collide, and must then be one stump. Rendering their positions minted a
+// second stump with a byte-identical birth record: another gc entry, and a
+// split provider cache prefix for no reason.
+//
+// `{}` is deliberately something ValidName refuses, so a stamp carrying a
+// literal cannot be re-parsed as a spec — which is what makes "this version is
+// not re-resolvable" enforced rather than hoped for.
 func (s Spec) Label() string {
-	parts := make([]string, 0, len(s))
+	parts := make([]string, 0, len(s)+1)
 	inline := false
 	for _, t := range s {
-		if t.Name != "" {
-			parts, inline = append(parts, t.Name), false
+		if t.Name == "" {
+			inline = true
 			continue
 		}
-		// Adjacent literals ARE one literal: folding {"a":1} then {"b":2} is
-		// folding {"a":1,"b":2}, same keys and same content hash. Labelling
-		// them separately would mint a second stump holding a byte-identical
-		// birth record — `a,x=1,y=2` and `a,{"x":1,"y":2}` are the same outfit.
-		if !inline {
-			parts, inline = append(parts, "{}"), true
-		}
+		parts = append(parts, t.Name)
+	}
+	if inline {
+		parts = append(parts, "{}")
 	}
 	return strings.Join(parts, ",")
 }
