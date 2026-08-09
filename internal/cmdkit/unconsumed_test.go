@@ -37,9 +37,9 @@ func TestUnconsumedDashTokens(t *testing.T) {
 			wantErr: `unknown flag "-az" (unrecognized in the bundle: -z)`,
 		},
 		{
-			name: "a value flag cannot be bundled",
+			name: "a value flag ends the bundle and wants its value",
 			args: []string{"ls", "-an"}, wantCode: 2,
-			wantErr: `cannot bundle "-an": -n/--limit take(s) a value`,
+			wantErr: `flag -n requires a value`,
 		},
 		{
 			name: "several unknown letters are all named",

@@ -376,35 +376,27 @@ func (r *Router) parse(cmd *Command, args []string) (*RunContext, error) {
 }
 
 // unconsumedFlagError explains a dash-token that survived both the flag
-// branches and bundle expansion. It names the exact letters at fault so a
-// typo'd gang (`-hz`) and a mis-bundled value flag (`-an`, where -n takes a
-// value) get different, actionable messages.
+// branches and bundle expansion, naming the exact letters at fault. A bundle
+// reaches here only when one of its letters is unknown: a value-taking short
+// ends the bundle and consumes the rest as its value, so `-an5` and `-an 5`
+// are both `--limit 5`.
 func unconsumedFlagError(flags []FlagDef, tok string) error {
 	var unknown []string
-	var valued []string
 	for _, r := range tok[1:] {
-		fd := findFlag(flags, "", string(r))
-		switch {
-		case fd == nil:
+		if findFlag(flags, "", string(r)) == nil {
 			unknown = append(unknown, "-"+string(r))
-		case !fd.IsBool:
-			valued = append(valued, fmt.Sprintf("-%s/--%s", string(r), fd.Long))
 		}
 	}
-	switch {
-	case len(unknown) > 0:
-		// Teach the escape hatch in the same breath: a legitimate value that
-		// happens to start with '-' (`set mantra -x`) is now rejected here,
-		// and `--` is how it gets through.
-		return fmt.Errorf("unknown flag %q (unrecognized in the bundle: %s); if it is a value, put it after `--`",
-			tok, strings.Join(unknown, ", "))
-	case len(valued) > 0:
-		return fmt.Errorf("cannot bundle %q: %s take(s) a value — pass it on its own", tok, strings.Join(valued, ", "))
-	default:
-		// Every letter is a known bool short, so expandBundled should have
-		// taken it. Unreachable today; report rather than swallow.
+	if len(unknown) == 0 {
+		// Unreachable while expandBundled takes every known bundle; report
+		// rather than swallow.
 		return fmt.Errorf("unparsed flag %q", tok)
 	}
+	// Teach the escape hatch in the same breath: a legitimate value that
+	// happens to start with '-' (`set mantra -x`) is rejected here, and `--`
+	// is how it gets through.
+	return fmt.Errorf("unknown flag %q (unrecognized in the bundle: %s); if it is a value, put it after `--`",
+		tok, strings.Join(unknown, ", "))
 }
 
 // ExpandBundled expands short-flag gangs (-ex -> -e -x) against a flag
@@ -412,29 +404,42 @@ func unconsumedFlagError(flags []FlagDef, tok string) error {
 // router does: two expanders is how `-fj` came to fail while `-f -j` worked.
 func ExpandBundled(args []string, flags []FlagDef) []string { return expandBundled(args, flags) }
 
+// expandBundled splits `-abc` into `-a -b -c`. A short that TAKES A VALUE
+// ends the bundle, getopt-style: the rest of the token is its value when there
+// is one (`-eOsonn5`), and otherwise the next argv token is (`-eO sonn5`).
+// A bundle containing an unknown letter is left exactly as it was typed, so
+// the caller reports it rather than this function inventing flags.
 func expandBundled(args []string, flags []FlagDef) []string {
 	out := make([]string, 0, len(args))
 	for _, a := range args {
 		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
-			// Check that all chars are known bool short flags.
-			allBool := true
-			for _, r := range a[1:] {
-				fd := findFlag(flags, "", string(r))
-				if fd == nil || !fd.IsBool {
-					allBool = false
-					break
-				}
-			}
-			if allBool {
-				for _, r := range a[1:] {
-					out = append(out, "-"+string(r))
-				}
+			if expanded, ok := splitBundle(a[1:], flags); ok {
+				out = append(out, expanded...)
 				continue
 			}
 		}
 		out = append(out, a)
 	}
 	return out
+}
+
+func splitBundle(letters string, flags []FlagDef) ([]string, bool) {
+	var out []string
+	for i, r := range letters {
+		fd := findFlag(flags, "", string(r))
+		if fd == nil {
+			return nil, false
+		}
+		out = append(out, "-"+string(r))
+		if fd.IsBool {
+			continue
+		}
+		if rest := letters[i+len(string(r)):]; rest != "" {
+			out = append(out, rest)
+		}
+		return out, true
+	}
+	return out, true
 }
 
 func findFlag(flags []FlagDef, long, short string) *FlagDef {
