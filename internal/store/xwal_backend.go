@@ -362,9 +362,25 @@ func (b *XwalBackend) ConversationIDs() []string { return b.store.ConversationID
 // outfitLabel is a stump's own account of itself.
 type outfitLabel struct{ name, version string }
 
+// labelAll resolves each DISTINCT stump once and fills the rest from that.
+// Per-node locking here cost more than the read it was protecting: a listing
+// is thousands of nodes over a handful of outfits.
 func (b *XwalBackend) labelAll(nodes []NodeView) []NodeView {
+	var seen map[string]outfitLabel
 	for i := range nodes {
-		b.label(&nodes[i])
+		id := nodes[i].Stump
+		if id == "" {
+			continue
+		}
+		l, ok := seen[id]
+		if !ok {
+			l = b.stumpLabel(id)
+			if seen == nil {
+				seen = map[string]outfitLabel{}
+			}
+			seen[id] = l
+		}
+		nodes[i].Outfit, nodes[i].Version = l.name, l.version
 	}
 	return nodes
 }
@@ -378,9 +394,11 @@ func (b *XwalBackend) label(n *NodeView) {
 }
 
 // stumpLabel reads a stump's name and version out of the birth patch it wrote,
-// which is the only place either has ever been stated authoritatively -- the
-// id used to restate the name, and a chalkboard key of the same name is the
-// agent's mutable copy.
+// which is the only place either has ever been stated authoritatively -- the id
+// used to restate the name, and a chalkboard key of the same name is the
+// agent's mutable copy. Memoized for the life of the process: a stump id is the
+// hash of content that contains the label, and a stump cannot be patched, so
+// id -> label is a pure function.
 func (b *XwalBackend) stumpLabel(id string) outfitLabel {
 	b.mu.Lock()
 	l, ok := b.labels[id]

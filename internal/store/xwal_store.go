@@ -594,7 +594,7 @@ type NodeView struct {
 // view renders a live (conversation) trunk. Its parent for the global
 // hierarchy is its outfit stump (top-level) or its parent conversation trunk
 // (a branch); an outfitless top-level trunk hangs off the root.
-func (s *XwalStore) view(t xwal.TrunkInfo, vec map[string][]int, stump map[string]string) NodeView {
+func (s *XwalStore) view(t xwal.TrunkInfo, at map[string]place) NodeView {
 	parent := t.Parent
 	if parent == "" {
 		if t.Stump != "" {
@@ -603,9 +603,10 @@ func (s *XwalStore) view(t xwal.TrunkInfo, vec map[string][]int, stump map[strin
 			parent = rootID // outfitless top-level conversation
 		}
 	}
+	p := at[t.ID]
 	return NodeView{
 		ID: t.ID, Parent: parent, Kind: string(kindConversation), Trunk: t.ID,
-		Stump: stump[t.ID], Vector: vec[t.ID], BranchedLT: t.BranchedLT,
+		Stump: p.stump, Vector: p.vec, BranchedLT: t.BranchedLT,
 	}
 }
 
@@ -614,43 +615,49 @@ func (s *XwalStore) view(t xwal.TrunkInfo, vec map[string][]int, stump map[strin
 // is parentVec+[k]. Siblings are ordered by id (stable; display re-sorts by
 // recency). The trunk list is passed in so callers compute it once per
 // request (it costs a full disk scan). Caller holds mu.
-func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) (map[string][]int, map[string]string) {
+// place is where a trunk sits: its fork-forest vector, and the stump it was
+// born under. One map for both, because they are found by the same walk and
+// a second map of the same keys is a second allocation per node.
+type place struct {
+	vec   []int
+	stump string
+}
+
+func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string]place {
 	live := make(map[string]bool, len(infos))
 	for _, ti := range infos {
 		live[ti.ID] = true
 	}
+	type seed struct{ id, stump string }
 	kids := map[string][]string{}
-	born := map[string]string{}
-	var roots []string
+	var roots []seed
 	for _, ti := range infos {
-		born[ti.ID] = ti.Stump // set only on a trunk rooted directly at one
 		if ti.Parent != "" && live[ti.Parent] {
 			kids[ti.Parent] = append(kids[ti.Parent], ti.ID) // branch of a conversation
 		} else {
-			roots = append(roots, ti.ID) // top-level conversation (parent is a stump/root)
+			roots = append(roots, seed{ti.ID, ti.Stump}) // top-level (parent is a stump/root)
 		}
 	}
-	sort.Strings(roots)
+	sort.Slice(roots, func(i, j int) bool { return roots[i].id < roots[j].id })
 	for k := range kids {
 		sort.Strings(kids[k])
 	}
-	// The stump rides the same walk. figwal names it only for a trunk rooted
-	// directly at one, so a branch inherits it from the trunk it forked — down
-	// the LINEAGE edge these kids were built from, which is the only edge
-	// allowed to decide where an aria's data came from (see internal/topo).
-	vec := map[string][]int{}
-	stump := map[string]string{}
+	// One walk, one map. The stump rides alongside the vector: figwal names it
+	// only for a trunk rooted directly at one, so a branch inherits it from the
+	// trunk it forked — down the LINEAGE edge these kids were built from, the
+	// only edge allowed to decide where an aria's data came from (internal/topo).
+	at := make(map[string]place, len(infos))
 	var assign func(id string, prefix []int, from string)
 	assign = func(id string, prefix []int, from string) {
-		vec[id], stump[id] = prefix, from
+		at[id] = place{prefix, from}
 		for i, c := range kids[id] {
 			assign(c, append(append([]int(nil), prefix...), i), from)
 		}
 	}
 	for i, r := range roots {
-		assign(r, []int{i}, born[r])
+		assign(r.id, []int{i}, r.stump)
 	}
-	return vec, stump
+	return at
 }
 
 func (s *XwalStore) topologySnapshot() *topologySnapshot {
@@ -667,13 +674,13 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 	}
 
 	infos := s.listTrunks()
-	vec, stump := s.vectorsLocked(infos)
+	at := s.vectorsLocked(infos)
 	conversations := make([]NodeView, 0, len(infos))
 	ids := make([]string, 0, len(infos))
 	nodes := make([]NodeView, 0, len(infos)+1)
 	byID := make(map[string]NodeView, len(infos)+1)
 	for _, t := range infos {
-		node := s.view(t, vec, stump)
+		node := s.view(t, at)
 		conversations = append(conversations, node)
 		ids = append(ids, node.ID)
 		nodes = append(nodes, node)

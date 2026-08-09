@@ -239,9 +239,22 @@ func (h *handlers) currentOutfitHash(name string) (current, legacy string) {
 
 // outfitVer is the version column for one row: re-resolve the outfit named by
 // the stamp, and compare.
-func (h *handlers) outfitVer(stamped, name string) string {
-	current, legacy := h.currentOutfitHash(name)
-	return outfitVerLabel(stamped, current, legacy)
+//
+// A listing asks this once per ROW and the answer only depends on the outfit,
+// so it carries a per-request memo. Without one, a store of 200 arias on one
+// outfit re-marshalled and re-hashed that outfit's whole patch — skills and
+// all — 200 times, and twice each since the legacy generation joined the
+// comparison. The fold underneath is cached; the hashing was not.
+func (h *handlers) outfitVer(vers map[string][2]string, stamped, name string) string {
+	hashes, ok := vers[name]
+	if !ok {
+		current, legacy := h.currentOutfitHash(name)
+		hashes = [2]string{current, legacy}
+		if vers != nil {
+			vers[name] = hashes
+		}
+	}
+	return outfitVerLabel(stamped, hashes[0], hashes[1])
 }
 
 // outfitVerLabel renders the version column: "live" when the stamped hash
@@ -1101,11 +1114,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			LastActive:       info.LastActive.UnixMilli(),
 			Mantra:           info.Mantra,
 			Cwd:              info.Cwd,
-			OutfitName:       info.OutfitName,
 			BoundPIDs:        boundPIDs[info.ID],
-		}
-		if !req.IDsOnly && info.OutfitName != "" {
-			entry.OutfitVer = h.outfitVer(info.OutfitVersion, info.OutfitName)
 		}
 		result = append(result, entry)
 	}
@@ -1179,11 +1188,15 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		}
 	}
 
-	// Forest position for every entry (live + dormant), from the snapshot.
+	// Forest position for every entry (live + dormant), from the snapshot —
+	// and the outfit columns, which come from the stump and from nowhere else.
+	// vers memoizes the re-resolve per outfit; it lives here because this pass
+	// is single-threaded, unlike the metadata fill above.
 	if !req.IDsOnly {
 		h.enrichList(result, enrichments)
+		vers := map[string][2]string{}
 		for i := range result {
-			h.fillFromNode(nodeByID, &result[i])
+			h.fillFromNode(nodeByID, vers, &result[i])
 		}
 	}
 
@@ -1230,22 +1243,18 @@ func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoRespo
 	entry.Model = meta.Model
 	entry.Mantra = meta.Mantra
 	entry.Cwd = meta.Cwd
-	entry.OutfitName = meta.OutfitName
 	if meta.CreatedAtMS != 0 {
 		entry.CreatedAt = meta.CreatedAtMS
 	}
 	if meta.LastActiveMS != 0 {
 		entry.LastActive = meta.LastActiveMS
 	}
-	if meta.OutfitName != "" {
-		entry.OutfitVer = h.outfitVer(meta.OutfitVersion, meta.OutfitName)
-	}
 }
 
 // fillFromNode adds the fork-forest position (vector/trunk/parent/branched-at)
 // from the tree. The forest is snapshotted by the caller (once per request)
 // and indexed by id, so this is a map lookup.
-func (h *handlers) fillFromNode(nodes map[string]store.NodeView, entry *rpc.FigaroInfoResponse) {
+func (h *handlers) fillFromNode(nodes map[string]store.NodeView, vers map[string][2]string, entry *rpc.FigaroInfoResponse) {
 	n, ok := nodes[entry.ID]
 	if !ok {
 		return
@@ -1257,7 +1266,7 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, entry *rpc.Figa
 	entry.Kind = n.Kind
 	if n.Kind == string(outfitKind) {
 		entry.OutfitName = n.Outfit
-		entry.OutfitVer = h.outfitVer(n.Version, n.Outfit)
+		entry.OutfitVer = h.outfitVer(vers, n.Version, n.Outfit)
 		return
 	}
 	// A conversation's outfit is the stump it was BORN under, carried down the
@@ -1269,7 +1278,7 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, entry *rpc.Figa
 	// breath.
 	if n.Outfit != "" {
 		entry.OutfitName = n.Outfit
-		entry.OutfitVer = h.outfitVer(n.Version, n.Outfit)
+		entry.OutfitVer = h.outfitVer(vers, n.Version, n.Outfit)
 	}
 }
 
