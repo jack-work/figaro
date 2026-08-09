@@ -128,7 +128,7 @@ design beats a compatibility shim.
 For UI work, a pty is the only honest oracle: see
 [ui-testing.md](ui-testing.md). To reproduce a rendering
 bug from a real session rather than a guess, record and replay it:
-[tapes.md](tapes.md).
+[tapes.md](../debugging/tapes.md).
 
 ## Releasing: `scripts/release.sh`, always
 

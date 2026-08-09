@@ -23,7 +23,10 @@ A pty is the only honest oracle for anything that draws.
 |---|---|
 | [ui-testing.md](ui-testing.md) | Changing the incipit, the pager, the composer, footers, freeze or scrollback — or a green test disagrees with a human. |
 | [paint-repro.md](paint-repro.md) | Hunting one specific paint bug, or running the `scripts/paint-*.sh` instruments. |
-| [tapes.md](tapes.md) | A rendering bug someone SAW and you cannot reproduce, or you want one recorded for CI. |
+
+To capture a real session and replay it as a fixture, see
+[../debugging/tapes.md](../debugging/tapes.md) — it serves debugging as much as
+it serves CI, so it lives outside this tree.
 
 ## Subsystem machinery
 

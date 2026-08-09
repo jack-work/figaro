@@ -77,6 +77,7 @@ about changing figaro rather than using it live under
 | [reference/ui-stream.md](reference/ui-stream.md) | How a conversation reaches a terminal: the read wire, inline freeze, the pager. |
 | [reference/cache-control.md](reference/cache-control.md) | Prompt caching, and overriding it. |
 | [reference/outfits.md](reference/outfits.md) | Composing outfits, the `-O` spec syntax, or `-O` did not do what you expected. |
+| [debugging/tapes.md](debugging/tapes.md) | Record an aria's wire and replay it: a rendering bug someone SAW and you cannot reproduce, or one recorded for CI. |
 | [reference/mantra.md](reference/mantra.md) | Maintaining your aria's mantra. |
 
 Other first-party skills stand on their own: **subagents** for fanning work
