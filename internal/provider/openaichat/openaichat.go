@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/jack-work/figaro/internal/auth"
@@ -43,6 +44,10 @@ type Provider struct {
 	// and a shape change has to invalidate the translation cache rather
 	// than leave two shapes interleaved in one cached prefix.
 	markMode provider.MarkMode
+
+	// Templates renders chalkboard patches as <system-reminder> text, the
+	// same projection the Anthropic providers do. nil = skip.
+	Templates *template.Template
 }
 
 // New constructs a Chat Completions provider for a route.
@@ -300,9 +305,11 @@ func (p *Provider) assemble(perMessage [][]json.RawMessage, snapshot chalkboard.
 	return req, nil
 }
 
-// encode projects one IR message to wire bytes for the per-LT cache.
-func (p *Provider) encode(msg message.Message, _ chalkboard.Snapshot) ([]json.RawMessage, error) {
-	msgs, err := encodeMessage(msg, p.plan().Blocks)
+// encode projects one IR message to wire bytes for the per-LT cache. The
+// snapshot is the board as of the PREVIOUS message: chalkboard patches render
+// against it, so a reminder says what changed rather than restating the board.
+func (p *Provider) encode(msg message.Message, prevSnapshot chalkboard.Snapshot) ([]json.RawMessage, error) {
+	msgs, err := encodeMessage(msg, p.plan().Blocks, p.renderPatches(msg.Patches, prevSnapshot))
 	if err != nil {
 		return nil, err
 	}
@@ -315,6 +322,26 @@ func (p *Provider) encode(msg message.Message, _ chalkboard.Snapshot) ([]json.Ra
 		out = append(out, raw)
 	}
 	return out, nil
+}
+
+// renderPatches turns chalkboard patches into reminder text. One string per
+// patched key, in the order the patches arrived.
+func (p *Provider) renderPatches(patches []message.Patch, snap chalkboard.Snapshot) []string {
+	if len(patches) == 0 || p.Templates == nil {
+		return nil
+	}
+	var out []string
+	for _, patch := range patches {
+		rendered, err := chalkboard.Render(patch, snap, p.Templates)
+		if err != nil {
+			slog.Warn("openaichat: render patch", "err", err)
+		}
+		for _, r := range rendered {
+			out = append(out, fmt.Sprintf("<system-reminder name=%q>\n%s\n</system-reminder>", r.Key, r.Body))
+		}
+		snap = snap.Apply(patch)
+	}
+	return out
 }
 
 func (p *Provider) assistantCache(msg message.Message) (provider.AssistantCache, error) {

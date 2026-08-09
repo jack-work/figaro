@@ -125,6 +125,7 @@ func build(ctx provider.BuildContext, route provider.Route, name string, cfg Con
 	if err != nil {
 		return nil, err
 	}
+	p.Templates = ctx.Templates
 	// Say which route was resolved and what it will do. The conservative
 	// default — an endpoint we were merely handed gets no markers and no
 	// session key — is correct, but silence about it means the first

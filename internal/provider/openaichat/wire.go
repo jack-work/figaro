@@ -165,7 +165,7 @@ func stampLeafCache(m *chatMessage, cc *cacheControl) bool {
 // encodeMessage projects one IR message onto the dialect. Markers are never
 // written here: this output is cached per-LT, and a marker baked into a
 // cached message would be immovable exactly where it has to move.
-func encodeMessage(msg message.Message, blocks bool) ([]chatMessage, error) {
+func encodeMessage(msg message.Message, blocks bool, reminders []string) ([]chatMessage, error) {
 	switch msg.Role {
 	case message.RoleInput:
 		var text string
@@ -207,6 +207,9 @@ func encodeMessage(msg message.Message, blocks bool) ([]chatMessage, error) {
 				}
 				results = append(results, chatMessage{Role: "user", Content: raw})
 			}
+		}
+		for _, r := range reminders {
+			text = joinText(text, r)
 		}
 		out := results
 		if text != "" {
