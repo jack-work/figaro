@@ -8,8 +8,8 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/figaro/internal/outfit"
+	"github.com/jack-work/figaro/internal/transport"
 )
 
 // resolveTargetEndpoint resolves both id and endpoint. Used by verbs
