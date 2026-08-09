@@ -216,6 +216,21 @@ Change one byte of an outfit file and the next birth hashes differently, so it
 mints a new stump; arias already under the old one stay there, and `figaro ls`
 shows their version instead of `live`.
 
+## The label is a UI concern; the hash is the value
+
+`figaro ls`'s OUTFIT column names the **stump** an aria was born under, read
+from the topology. It is not `system.outfit_name`. That key still rides the
+chalkboard, where the agent can see it (and change it — the chalkboard is
+mutable by design), but nothing structural reads it: a `set system.outfit_name
+x` used to rename the aria's outfit in every listing and, because the column is
+what the version is re-resolved against, report an unchanged outfit as stale in
+the same breath.
+
+So a row's outfit is immutable for the life of the aria, and a fork keeps its
+parent's — the branch is under the same stump. An aria spawned under the root
+with no stump carries no outfit rather than borrowing one, and an outfit with
+no names in it displays as `{}` with its hash in the VER column.
+
 ## Stumps and `gc`
 
 One stump exists per outfit VERSION, so editing an outfit mints a new stump the

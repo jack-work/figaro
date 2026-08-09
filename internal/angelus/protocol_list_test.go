@@ -18,7 +18,15 @@ type metadataListBackend struct {
 }
 
 func (b *metadataListBackend) Conversations() []store.NodeView {
-	return []store.NodeView{{ID: "dormant", Kind: conversationKind, Trunk: "dormant", Vector: []int{0}}}
+	return []store.NodeView{{ID: "dormant", Kind: conversationKind, Trunk: "dormant", Vector: []int{0}, Parent: "base@abc123"}}
+}
+
+// Nodes is Conversations plus the ceremonial anchors. A listing walks to the
+// stump for the outfit label, so it needs them even when it does not show them.
+func (b *metadataListBackend) Nodes() []store.NodeView {
+	return append([]store.NodeView{
+		{ID: "base@abc123", Kind: string(outfitKind), Parent: "null", Outfit: "base", Version: "abc123"},
+	}, b.Conversations()...)
 }
 
 func (b *metadataListBackend) Meta(string) (*store.AriaMeta, error) {
@@ -98,5 +106,27 @@ func TestDormantListReportsBoundPIDs(t *testing.T) {
 	}
 	if got := figaros[0]; got.State != "dormant" || !slices.Contains(got.BoundPIDs, 4242) {
 		t.Fatalf("dormant entry lost its bound pid: %#v", got)
+	}
+}
+
+// The outfit column names the STUMP an aria was born under, which is minted
+// with the hash and never changes. It used to name a chalkboard key of the
+// same name, so `set system.outfit_name x` renamed the aria's outfit in every
+// listing — and, since the column is what the version is re-resolved against,
+// reported an unchanged outfit as stale in the same breath.
+func TestListLabelsFromTheStumpNotTheChalkboard(t *testing.T) {
+	backend := &metadataListBackend{}
+	h := &handlers{angelus: &Angelus{Registry: NewRegistry(), Backend: backend}}
+
+	resp, err := h.list(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	figaros := resp.(rpc.ListResponse).Figaros
+	if len(figaros) != 1 {
+		t.Fatalf("got %d figaros, want 1", len(figaros))
+	}
+	if got := figaros[0].OutfitName; got != "base" {
+		t.Errorf("outfit label: got %q, want the stump's %q", got, "base")
 	}
 }
