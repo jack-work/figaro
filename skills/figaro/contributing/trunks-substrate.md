@@ -2,7 +2,7 @@
 
 **Read this only when changing the machinery**: anything under
 `internal/store`, the angelus fork/create/bind handlers, or the figwal/xwal
-layering. To *use* forking, read [trunks.md](trunks.md) instead; it owns the
+layering. To *use* forking, read [trunks.md](../reference/trunks.md) instead; it owns the
 gesture semantics and this file does not repeat them.
 
 Status: shipped. This is the deep reference: the substrate, the terminology,
@@ -22,7 +22,7 @@ physical log up to the CLI.
 > below still takes an `atMainLT`. Turn id is the *user-facing* coordinate and
 > projects down to `atMainLT = min(LTs of the turn) - 1` (see the next section
 > for why the −1). See
-> [turn-addressing.md](turns.md).
+> [../reference/turns.md](../reference/turns.md).
 
 ### `atMainLT` is inclusive of the frozen prefix
 
@@ -300,7 +300,7 @@ toward `attend null` / `ls -H` / `ls -g`.
 ### 4.2 `send` vs `fork`
 
 The user-facing semantics of `send`, `fork`, `--stay` and `fork -- <prompt>`
-live in [trunks.md](trunks.md) and are deliberately not repeated here. What
+live in [trunks.md](../reference/trunks.md) and are deliberately not repeated here. What
 belongs to this file is the mechanism below: what the client resolves, and what
 the RPC does with it.
 
@@ -377,7 +377,7 @@ the RPC does with it.
   Bind-to-trunk: forking your own trunk doesn't move you.
 - **One `send` path**: fork-then-send and plain append are the same codepath, discriminated
   by whether the address carries a turn. The gesture semantics of `send`, `fork`, `attend`
-  and `kill` are owned by [trunks.md](trunks.md) and are not repeated here.
+  and `kill` are owned by [trunks.md](../reference/trunks.md) and are not repeated here.
 - **Cauterization**: the null root and outfit stumps are closed — forking/sending "at"
   them spawns a child conversation (`Owner` + `SpawnUnderRoot`/`SpawnUnderStump`).
 - **The four-layer outfit tree**: `null` → content-versioned **outfit** stumps (dedup'd by

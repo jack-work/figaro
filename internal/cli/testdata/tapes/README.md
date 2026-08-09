@@ -1,7 +1,7 @@
 # Tapes
 
 Fixtures for `tape_replay_test.go` and `figaro replay`. Format:
-`skills/figaro/reference/tapes.md`.
+`skills/figaro/contributing/tapes.md`.
 
 | Tape | Origin | Expected |
 |---|---|---|

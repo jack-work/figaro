@@ -23,7 +23,7 @@ source named here and trust it over this file.
 An agent is a memory decision, not an identity. It is built on demand and
 reclaimed when idle, while the aria's endpoint, bindings and background jobs
 outlive it — so "the aria" and "the agent serving it" are different lifetimes.
-See [reclamation.md](reclamation.md).
+See [reclamation.md](../contributing/reclamation.md).
 
 ## The IR — `internal/message`
 
@@ -180,7 +180,7 @@ one is a change of listener count rather than of architecture.
 The per-aria socket is served by the **angelus**, not by the agent, and answers
 whether or not an agent is resident: `rpc.MethodNeedsAgent` decides which
 methods are served from the store and which wake the aria. See
-[reclamation.md](reclamation.md).
+[reclamation.md](../contributing/reclamation.md).
 
 ### Caller identity — `x-internal-figaro-id`
 
@@ -489,4 +489,4 @@ for list/status metadata. See arias.md for reading these safely.
 
 `XwalBackend` memoizes one row cache per (aria, channel) so a reader sees the
 writer's appends lock-free. Those caches are bounded and evictable; what they
-cost and when they are released is [reclamation.md](reclamation.md).
+cost and when they are released is [reclamation.md](../contributing/reclamation.md).

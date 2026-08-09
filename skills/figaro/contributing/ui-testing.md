@@ -66,7 +66,7 @@ Non-negotiables, each of which has cost somebody a wrong answer:
   `go build` gives yours. A whole night of this hunt ran on stamped scratch
   builds under Go 1.26.5 while the flake builds under 1.26.1 — a difference
   that can decide whether a rendering bug reproduces at all. See
-  [maintaining.md](../maintaining.md) for the presets and how to isolate the
+  [maintaining.md](maintaining.md) for the presets and how to isolate the
   store inside a shell.
 - **If you must use `go build`, stamp it.** A plain `go build` in a *worktree*
   records no revision (Go's VCS detection needs `.git` to be a directory), so

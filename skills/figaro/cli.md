@@ -210,7 +210,7 @@ under `system.` are hidden from the agent and read directly by the harness.
 | `figaro stop` | Shut down the angelus. Alias `rest`. `-f` to SIGKILL, `-k` to persist pid bindings. |
 | `figaro doctor gc` | Remove dead store channels. `-n` to report without touching. Requires the daemon stopped. |
 | `figaro doctor schema` | Report per-channel format versions. |
-| `figaro doctor mem [-j]` | What the daemon is holding: live/resident arias, IR cache, endpoints, attached clients, heap. See [reference/reclamation.md](reference/reclamation.md). |
+| `figaro doctor mem [-j]` | What the daemon is holding: live/resident arias, IR cache, endpoints, attached clients, heap. See [contributing/reclamation.md](contributing/reclamation.md). |
 | `figaro login <provider>` | OAuth login. |
 | `figaro models` | List available provider models. |
 | `figaro update [--check\|--apply]` | Check for a newer release. |

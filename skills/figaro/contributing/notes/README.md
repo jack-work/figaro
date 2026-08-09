@@ -9,7 +9,7 @@ description of the code.
 
 If you find yourself relying on one of these to answer a question about how
 figaro behaves today, that is a signal the answer belongs in
-[../reference/](../reference/), freshly checked against source.
+[../reference/](../../reference/), freshly checked against source.
 
 | File | What it is |
 |---|---|

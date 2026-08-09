@@ -3,8 +3,8 @@
 For the owner and for contributors: how to change figaro without breaking
 the running one, and how to hand work back so it can actually be validated.
 
-Using figaro is a different job; that lives in [cli.md](cli.md) and
-[agents.md](agents.md).
+Using figaro is a different job; that lives in [cli.md](../cli.md) and
+[agents.md](../agents.md).
 
 ## The one rule: never test against the live daemon
 
@@ -126,9 +126,9 @@ Commits are itemized and self-contained. There is one real user, so a clean
 design beats a compatibility shim.
 
 For UI work, a pty is the only honest oracle: see
-[reference/ui-testing.md](reference/ui-testing.md). To reproduce a rendering
+[ui-testing.md](ui-testing.md). To reproduce a rendering
 bug from a real session rather than a guess, record and replay it:
-[reference/tapes.md](reference/tapes.md).
+[tapes.md](tapes.md).
 
 ## Releasing: `scripts/release.sh`, always
 

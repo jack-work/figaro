@@ -5,7 +5,7 @@ default **inline-freeze** renderer (native scrollback), and the opt-in
 **transcript** pager (a live, scrollable full-screen view).
 
 The data model behind all of this is the UI IR (`livedoc.Node`); see
-[ir-convergence.md](ir-convergence.md) for how it relates to the canonical fig
+[ir-convergence.md](../contributing/ir-convergence.md) for how it relates to the canonical fig
 IR. This doc is about the *stream* — how nodes get to the screen.
 
 ## The shape: one turn-shaped page, pushed and pulled
@@ -259,7 +259,7 @@ sealed `figaro.aria` frame.
 The current `figaro.read` request predates turn addressing, so two field names
 retain LT-era spelling. Forward catch-up uses `sinceLT` as a **turn cursor**;
 backward paging uses `before` plus `before_node`; `limit` is a byte budget. See
-[turn-addressing.md](turns.md) for the exact current requests,
+[turns.md](turns.md) for the exact current requests,
 pagination rules, types, and worked examples.
 
 ### Connection and endpoint discovery
@@ -276,7 +276,7 @@ Angelus and attach by id, which opens the aria's endpoint if it is not already
 listening and returns its actual address. `attach` does **not** wake the aria —
 it guarantees somewhere to dial, and the aria wakes on the first request that
 needs a turn loop, which for a transcript or a pager is never. See
-[reclamation.md](reclamation.md).
+[reclamation.md](../contributing/reclamation.md).
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"figaro.attach","params":{"figaro_id":"85ac180e"}}
