@@ -29,9 +29,17 @@ n=3   on=true              a value that parses as JSON keeps its type
 '{"layers":["a"],"x":1}'   an inline term may name layers of its own
 ```
 
-`=`, `/` and `\` are illegal in a name: the first is the sugar's separator, the
-others would let a name climb out of the outfits directory. Commas inside
-quotes, braces or brackets are data, not separators.
+A name is a file basename, and the grammar is narrow about it: no whitespace,
+no `=` (the sugar's separator), no `/` or `\` (a name must not climb out of the
+outfits directory), no `{} []` or quotes, and no leading `-` (so `-O -j` says
+so locally instead of asking the server for an outfit called `-j`). The same
+gate applies to a `layers` entry, wherever it is declared.
+
+Commas inside quotes, braces or brackets are data, not separators — but the
+structure must balance. An unmatched `}` or `"` is an error, not a mode in
+which commas stop separating. An inline term that sets nothing (`{}`) is an
+error too, and inline terms are capped at 64 KiB in total: one fold becomes one
+chalkboard record, and a record larger than a WAL segment cannot be written.
 
 The sugar is client-side. On the wire a spec is JSON — an array whose elements
 are strings or objects, and a bare string is read as one spec:
@@ -52,7 +60,10 @@ aria (an unbound shell, or `-e`). The folded patch defines a content-addressed
 under, so the outfit's reminders are rendered once in a shared prefix that
 every conversation under it inherits. The aria is stamped with
 `system.outfit_name` and `system.outfit_version`; `figaro ls` shows both, with
-`live` when the stamped hash still matches what is on disk.
+`live` when the stamped hash still matches what is on disk. An inline term has
+no name to stamp, so it is labelled `{}` — deliberately something the grammar
+refuses, which is what makes "this version cannot be re-resolved" a fact rather
+than a hope.
 
 **Fold.** Everywhere else. The spec is folded and applied to the aria's
 existing chalkboard, **additively**: keys already holding that value are
@@ -80,6 +91,12 @@ call and merges it into that prompt's patch, so:
 - the fold and the message are one event, so the reminder renders on the turn
   that asked for it rather than the one after;
 - an explicit `set` on the same call wins over the outfit.
+
+The resolve happens at accept and the FOLD happens at drain, against the board
+the patch actually lands on. That is not an implementation detail: a `set` or
+`unset` queued behind a running turn has not touched the board yet, so a diff
+taken at accept can call a key "already equal", omit it, and let the queued
+removal win — the turn answered without the key you dressed for.
 
 `figaro.fork` carries the spec too, and applies it to the **alternative** the
 moment it exists — resolved before the fork so a bad spec costs nothing,
@@ -153,6 +170,6 @@ wanting that outfit re-mints the same id.
 | `LoadSpec`, closures, layers, `fileName`/`dirName` | `internal/outfit/outfit.go` |
 | the additive diff | `chalkboard.Additive` |
 | fold on a live aria | `figaro.Agent.OutfitPatch` / `ApplyOutfit` |
-| fold on a prompt | `figaro.Agent.DressPrompt` |
+| resolve at accept / fold at drain | `figaro.Agent.CheckPromptOutfit` / `combineChalkboardInput` |
 | birth, and the default | `angelus.handlers.create` |
 | fold on a fork | `angelus.handlers.fork` |

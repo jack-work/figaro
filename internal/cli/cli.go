@@ -1030,8 +1030,12 @@ Rules worth knowing:
     <system-reminder> for exactly what changed.
   - A name that does not exist is an error everywhere except one place: the
     configured default_outfit, whose absence is what triggers first-run setup.
-  - ` + "`=`" + `, ` + "`/`" + ` and ` + "`\\`" + ` cannot appear in a name — the first is the inline
-    sugar, the others would let a name climb out of the outfits directory.
+  - A name is a file basename: no whitespace, no ` + "`=`" + ` (the sugar), no ` + "`/`" + ` or
+    ` + "`\\`" + ` (which would climb out of the outfits directory), no brackets or
+    quotes, no leading ` + "`-`" + `. Layer names obey the same rule.
+  - Structure must balance. An unmatched brace or quote is an error, and an
+    inline term that sets nothing is too. Inline terms are capped at 64 KiB:
+    one fold is one chalkboard record.
   - Repeating -O appends: ` + "`-O a -O b`" + ` is ` + "`-O a,b`" + `.
   - On the wire a spec is JSON: {"outfit":["sonn5",{"ttl":"1h"}]}. The sugar is
     parsed by the CLI, so a typo costs no round trip.
