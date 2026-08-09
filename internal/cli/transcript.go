@@ -657,8 +657,18 @@ func (t *transcript) applyPage(req transcriptPageRequest, page historyPage) {
 		return
 	}
 	if len(page.msgs) == 0 {
-		// An empty ReadBefore IS the floor, and it is the only way to find it on
-		// a FORKED aria, whose first turn id is not 1.
+		// An empty ReadBefore IS the floor, and it is the only way to find it:
+		// nothing on the wire reports where an aria BEGINS. Page.More is two
+		// booleans — there is more before, there is more after — so the floor
+		// can be proven only by asking for what is below it and being handed
+		// nothing.
+		//
+		// It is not that a fork starts high. A fork shares its parent's prefix
+		// and can read it, so its history opens where the parent's did: every
+		// aria in this store, forks included, opens at turn 1 (measured across
+		// 35 of them, three generations deep — 1-10, then 1-17, then 1-20).
+		// The floor is unassumable because it is unreported, not because it
+		// moves.
 		t.client.SetMoreBefore(false)
 		t.reachedFloor()
 		return

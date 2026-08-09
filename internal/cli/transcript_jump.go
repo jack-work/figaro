@@ -274,10 +274,15 @@ func (t *transcript) jumpReachOf(tg jumpTarget) (int, nodeRef, jumpReach) {
 		return 0, nodeRef{}, jumpOlder
 	}
 	if tg.start {
-		// The floor is only known once the store has said so. Note that it is
-		// NOT "turn 1": a forked aria continues its parent's numbering, and an
-		// empty ReadBefore proves the floor exactly so the lowest EXISTING turn
-		// is what we land on, whatever it is called.
+		// The floor is only known once the store has said so, because nothing
+		// on the wire says where an aria begins — an empty ReadBefore is the
+		// only proof there is. So this lands on the lowest turn that EXISTS,
+		// whatever it is called, rather than on a number chosen here.
+		//
+		// In practice that number is 1, forks included: a fork can read its
+		// parent's prefix, so its history opens where the parent's did. The
+		// point is not that 1 is wrong — it is that a client cannot tell 1
+		// from any other floor without asking, and asking is a walk.
 		if !t.atAriaFloor() {
 			return 0, nodeRef{}, jumpOlder
 		}
