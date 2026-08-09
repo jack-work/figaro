@@ -71,8 +71,8 @@ func TestGhostHeader_ContinuationSliceDrawsSpuriousHeader(t *testing.T) {
 
 // The two producers of continuation slices, proven to produce From > 0.
 
-// 1. A page window that opens mid-turn: assemble() sets From=first,
-//    ClippedHead=true, and committedMessages drops the inquiry for it.
+//  1. A page window that opens mid-turn: assemble() sets From=first,
+//     ClippedHead=true, and committedMessages drops the inquiry for it.
 func TestGhostHeader_ClippedPagePartProducesHeaderlessSlice(t *testing.T) {
 	nodes := make([]livedoc.Node, 31)
 	for i := range nodes {
@@ -95,8 +95,8 @@ func TestGhostHeader_ClippedPagePartProducesHeaderlessSlice(t *testing.T) {
 	}
 }
 
-// 2. A turn over transcriptUnitChars, cut by appendTurnSlices. Every unit
-//    after the first has From > 0 and no inquiry.
+//  2. A turn over transcriptUnitChars, cut by appendTurnSlices. Every unit
+//     after the first has From > 0 and no inquiry.
 func TestGhostHeader_OversizeTurnSliceProducesHeaderlessSlice(t *testing.T) {
 	big := strings.Repeat("x", transcriptUnitChars/2+1)
 	nodes := []livedoc.Node{

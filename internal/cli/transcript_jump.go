@@ -412,6 +412,7 @@ func (t *transcript) firstRefOfTurn(turn int) nodeRef {
 // The offset is set last for the same reason: stopFollowing re-derives it for
 // the detached geometry, and would otherwise overwrite the landing.
 func (t *transcript) landJump(line int, ref nodeRef) {
+	t.wantTop = false
 	t.jumpNote = ""
 	t.stopFollowing()
 	if ref.valid() {

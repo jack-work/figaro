@@ -64,8 +64,25 @@ type transcript struct {
 	lastFull time.Time
 	lineKey  []sliceKey // slice owning each line of lines(), for resize anchoring
 	offset   int        // top line of the viewport into lines()
-	follow   bool       // stick to the bottom on new content
-	pendG    bool       // saw one 'g' (for gg)
+	// wantTop is a STANDING request for the beginning, armed by Home/gg.
+	//
+	// It exists because "top of the retained window" is not a place that holds
+	// still. Sitting at offset 0 is what arms the backward prefetch; when that
+	// page lands, older rows are prepended and restoreViewportAnchor — rightly,
+	// for an ordinary scroll — keeps the reader on the content they were
+	// looking at, which is now a long way down. Measured on a 206-message aria,
+	// five presses of Home in a row:
+	//
+	//	126–148/620 → 83–105/702 → 251–273/952 → 63–85/1014 → 273–295/1286
+	//
+	// The window grows every time and the reader never arrives. So the gesture
+	// records an INTENT rather than a position: while it stands, a landing
+	// re-pins to 0 instead of restoring the anchor, and each landing arms the
+	// next fetch, so the walk to the floor happens on the paging path and never
+	// blocks a keystroke. Any deliberate move elsewhere retracts it.
+	wantTop bool
+	follow  bool // stick to the bottom on new content
+	pendG   bool // saw one 'g' (for gg)
 
 	// Frame scheduling. render() marks the screen stale and defers when a
 	// batch is open (an input burst being drained) or when the frame-rate gate
@@ -302,6 +319,7 @@ func (t *transcript) leave() {
 // not to the frame: an offset put out of range by anything else (a search jump,
 // a page landing, a resize) is clamped, as it always was.
 func (t *transcript) scroll(delta int) {
+	t.wantTop = false
 	t.stopFollowing()
 	t.offset += delta
 	if _, maxOff := t.layout(len(t.footLines())); t.offset > maxOff {
@@ -640,7 +658,16 @@ func (t *transcript) absorbOlder(gained []aria.Message, anchor sliceKey, within 
 		return
 	}
 	t.buildIndex()
-	t.restoreViewportAnchor(anchor, within)
+	if t.wantTop {
+		// The reader asked for the beginning and has not asked for anything
+		// since. Hold them at the top of what is now held; the floor clears it.
+		t.offset = 0
+		if t.atAriaFloor() {
+			t.wantTop = false
+		}
+	} else {
+		t.restoreViewportAnchor(anchor, within)
+	}
 	t.jumpAdvance()
 }
 
@@ -855,6 +882,7 @@ func (k sliceKey) turn() int { return int(k >> sliceKeyFromBits) }
 // is cheaper than checking whether a copy of it is current — and a copy can
 // disagree with the store, which is the disease this phase treats.
 func (t *transcript) resetToTail() {
+	t.wantTop = false
 	keep := t.tailKeep()
 	n := t.client.Count()
 	if keep > n {
@@ -1942,10 +1970,15 @@ func pagerTail(t *transcript) {
 	t.resetToTail()
 }
 
-// pagerTop jumps to the top of the retained window (Home, and the second g).
+// pagerTop goes to the beginning (Home, and the second g).
+//
+// Still the CHEAP gesture — no walk is armed, nothing blocks, and a reader
+// already standing on the floor simply lands. What it adds is that the request
+// SURVIVES the fetch it provokes; see transcript.wantTop.
 func pagerTop(t *transcript) {
 	t.stopFollowing()
 	t.offset = 0
+	t.wantTop = !t.atAriaFloor()
 }
 
 // pagerPendingTop is the second half of the two-key gg gesture; the first 'g'

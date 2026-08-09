@@ -110,16 +110,21 @@ func TestTranscript_LazyOlderPaging(t *testing.T) {
 	if !ok || req.before != 5 {
 		t.Fatalf("pageCursor = (%d,%v), want (5,true)", req.before, ok)
 	}
-	// Page in the older window; the viewport anchors (offset shifts down so the
-	// content the user was reading stays put).
+	// Page in the older window. The reader asked for the TOP and has asked for
+	// nothing since, so the standing request wins over the viewport anchor: they
+	// stay at the top of what is now held, and see the history they went there
+	// for without pressing anything again.
+	//
+	// Anchoring is still right for an ordinary scroll — a page landing must not
+	// yank the rows you are reading — and that is asserted separately. It was
+	// asserted HERE too, which made the anchor look like the rule rather than
+	// the default, and hid the reason Home never converged.
 	tr.applyPage(req, committedPage(aria.Page{Parts: []aria.TurnPart{msg(1), msg(2), msg(3), msg(4)}}))
-	if tr.offset <= off0 {
-		t.Fatalf("offset should shift down to anchor after prepend (was %d, now %d)", off0, tr.offset)
+	if tr.offset != 0 {
+		t.Fatalf("a standing Home should hold the top after a prepend (was %d, now %d)", off0, tr.offset)
 	}
-	tr.key('g')
-	tr.key('g')
 	if !strings.Contains(strings.Join(ft.Screen(), "\n"), "msg01") {
-		t.Fatalf("after paging, the top should show msg01")
+		t.Fatalf("after paging, the top should show msg01 with no second gg")
 	}
 	// Oldest is now LT 1 — nothing older; paging stops.
 	req, ok = tr.pageCursor()
