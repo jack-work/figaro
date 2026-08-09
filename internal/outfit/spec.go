@@ -76,12 +76,19 @@ func (s Spec) Validate() error {
 // hoped for.
 func (s Spec) Label() string {
 	parts := make([]string, 0, len(s))
+	inline := false
 	for _, t := range s {
 		if t.Name != "" {
-			parts = append(parts, t.Name)
+			parts, inline = append(parts, t.Name), false
 			continue
 		}
-		parts = append(parts, "{}")
+		// Adjacent literals ARE one literal: folding {"a":1} then {"b":2} is
+		// folding {"a":1,"b":2}, same keys and same content hash. Labelling
+		// them separately would mint a second stump holding a byte-identical
+		// birth record — `a,x=1,y=2` and `a,{"x":1,"y":2}` are the same outfit.
+		if !inline {
+			parts, inline = append(parts, "{}"), true
+		}
 	}
 	return strings.Join(parts, ",")
 }

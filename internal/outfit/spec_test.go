@@ -103,7 +103,7 @@ func TestSpecLabel(t *testing.T) {
 		"a,b":             "a,b",
 		`a,ttl=1h`:        "a,{}",
 		`{"ttl":"1h"}`:    "{}",
-		`{"a":1},{"b":2}`: "{},{}",
+		`{"a":1},{"b":2}`: "{}", // adjacent literals are one literal
 	} {
 		spec, err := outfit.ParseSpec(in)
 		if err != nil {
@@ -187,5 +187,27 @@ func TestUnquotedLiteralsAreExplained(t *testing.T) {
 	_, err = outfit.ParseSpec("mantra:test")
 	if err == nil || !strings.Contains(err.Error(), "cannot contain `:`") {
 		t.Errorf("want the brace-expansion trap named, got %v", err)
+	}
+}
+
+// Adjacent literals fold to one patch, so they must label as one: otherwise
+// `a,x=1,y=2` and `a,{"x":1,"y":2}` mint two stumps with identical content.
+func TestAdjacentInlineTermsLabelAsOne(t *testing.T) {
+	for _, pair := range [][2]string{
+		{`base,x=1,mantra=test`, `base,{"x":1,"mantra":"test"}`},
+		{`x=1,y=2,base`, `{"x":1,"y":2},base`},
+		{`a,x=1,b,y=2`, `a,{"x":1},b,{"y":2}`},
+	} {
+		l, err := outfit.ParseSpec(pair[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := outfit.ParseSpec(pair[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if l.Label() != r.Label() {
+			t.Errorf("%s labels %q but %s labels %q", pair[0], l.Label(), pair[1], r.Label())
+		}
 	}
 }

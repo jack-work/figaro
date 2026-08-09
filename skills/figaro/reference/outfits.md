@@ -167,6 +167,30 @@ agent gets a `filePath` and reads the body if it decides to); anything else
 lands whole. Bundled first-party skills load first and the config directory
 overrides them by name.
 
+## What makes two births the same outfit
+
+The stump id is `<label>@<hash>`, and the hash is the **canonical** JSON of the
+folded patch: keys sorted, no whitespace, numbers by value. Everything is
+decoded and re-marshalled on the way in, so formatting never reaches it. All of
+these are one stump, minted once and reused:
+
+```sh
+figaro new -O 'base,{"mantra":"test"}'
+figaro new -O base,mantra=test
+figaro new -O 'base,{ "mantra" : "test" }'
+figaro new -O 'base,{"x":1,"mantra":"test"}'   # and with the keys the other way
+```
+
+The label is the human half and carries no identity of its own beyond the
+names: adjacent literals collapse to one `{}`, because folding `{"a":1}` then
+`{"b":2}` IS folding `{"a":1,"b":2}`. What the label does buy is that an inline
+term renders as something no name may contain, so a stamp carrying one cannot
+be re-resolved by accident.
+
+Change one byte of an outfit file and the next birth hashes differently, so it
+mints a new stump; arias already under the old one stay there, and `figaro ls`
+shows their version instead of `live`.
+
 ## Stumps and `gc`
 
 One stump exists per outfit VERSION, so editing an outfit mints a new stump the
