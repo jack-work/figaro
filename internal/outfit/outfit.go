@@ -215,9 +215,10 @@ func (o *Outfitter) resolve(name string, stack []string, memo map[string]*Closur
 // declaredLayers reads just the layers key from an outfit file. Cached against
 // the file, so resolving a closure re-parses nothing that has not changed.
 func (o *Outfitter) declaredLayers(path string) ([]string, error) {
-	if names, ok := o.layersOf.get(path); ok {
+	if names, _, ok := o.layersOf.get(path); ok {
 		return names, nil
 	}
+	stamp := statDep(path)
 	raw := map[string]any{}
 	if _, err := toml.DecodeFile(path, &raw); err != nil {
 		return nil, fmt.Errorf("outfit: parse %s: %w", path, err)
@@ -226,7 +227,7 @@ func (o *Outfitter) declaredLayers(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	o.layersOf.put(path, names, []dep{statDep(path)})
+	o.layersOf.put(path, names, []dep{stamp})
 	return names, nil
 }
 
@@ -253,8 +254,8 @@ func layerNames(path string, raw map[string]any) ([]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("outfit: %s: layers[%d] must be a string, got %T", path, i, item)
 		}
-		if name == "" {
-			return nil, fmt.Errorf("outfit: %s: layers[%d] is empty", path, i)
+		if err := ValidName(name); err != nil {
+			return nil, fmt.Errorf("outfit: %s: layers[%d]: %w", path, i, err)
 		}
 		out = append(out, name)
 	}
@@ -301,8 +302,8 @@ func (o *Outfitter) fold(c *Closure, memo map[string]foldResult) (foldResult, er
 		if done, ok := memo[c.Name]; ok {
 			return done, nil
 		}
-		if keys, ok := o.folded.get(c.Name); ok {
-			done := foldResult{keys: keys, deps: o.foldedDeps(c.Name)}
+		if keys, deps, ok := o.folded.get(c.Name); ok {
+			done := foldResult{keys: keys, deps: deps}
 			memo[c.Name] = done
 			return done, nil
 		}
@@ -322,12 +323,15 @@ func (o *Outfitter) fold(c *Closure, memo map[string]foldResult) (foldResult, er
 	raw, source := c.Inline, "inline outfit"
 	if cacheable {
 		raw, source = map[string]any{}, c.Path
+		// Stamp BEFORE reading. A write that lands between the read and the
+		// stat is invisible the other way round: the entry caches half a file
+		// under the finished write's mtime, and nothing ever invalidates it.
+		d.add(c.Path)
 		if _, err := toml.DecodeFile(c.Path, &raw); err != nil {
 			return foldResult{}, fmt.Errorf("outfit: parse %s: %w", c.Path, err)
 		}
-		d.add(c.Path)
 	} else {
-		raw = withoutLayers(raw)
+		raw = copyLiteral(raw)
 	}
 	if _, err := layerNames(source, raw); err != nil {
 		return foldResult{}, err
@@ -344,8 +348,9 @@ func (o *Outfitter) fold(c *Closure, memo map[string]foldResult) (foldResult, er
 	return done, nil
 }
 
-// withoutLayers copies a literal so folding never mutates the caller's map.
-func withoutLayers(in map[string]any) map[string]any {
+// copyLiteral copies an inline term so folding never mutates the caller's map
+// (the delete of `layers` below would otherwise edit the request).
+func copyLiteral(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
 		out[k] = v
@@ -360,13 +365,6 @@ func withoutLayers(in map[string]any) map[string]any {
 type foldResult struct {
 	keys map[string]json.RawMessage
 	deps []dep
-}
-
-// foldedDeps returns the dependencies a cached fold was built from.
-func (o *Outfitter) foldedDeps(name string) []dep {
-	o.folded.mu.Lock()
-	defer o.folded.mu.Unlock()
-	return o.folded.entries[name].deps
 }
 
 // resolvePath finds an outfit file (outfits/<name>.toml). The
@@ -412,8 +410,8 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 		case map[string]any:
 			if fn, ok := val["fileName"].(string); ok && len(val) == 1 {
 				path := filepath.Join(o.configDir, fn)
-				body, err := os.ReadFile(path)
 				d.add(path)
+				body, err := os.ReadFile(path)
 				if err != nil {
 					return fmt.Errorf("outfit: %s fileName=%q: %w", key, fn, err)
 				}
@@ -552,8 +550,8 @@ func loadDir(dir string, d *deps) (map[string]ContentEnvelope, error) {
 			if skillPath == "" {
 				continue
 			}
-			body, err := os.ReadFile(skillPath)
 			d.add(skillPath)
+			body, err := os.ReadFile(skillPath)
 			if err != nil {
 				continue
 			}
@@ -561,8 +559,8 @@ func loadDir(dir string, d *deps) (map[string]ContentEnvelope, error) {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
-		body, err := os.ReadFile(path)
 		d.add(path)
+		body, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}

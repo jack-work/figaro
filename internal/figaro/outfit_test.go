@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/outfit"
+	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/uiir"
 )
@@ -137,4 +138,44 @@ func TestApplyOutfit_EmptyNameErrors(t *testing.T) {
 
 	_, err := a.ApplyOutfit(outfit.Names(""))
 	require.Error(t, err)
+}
+
+// A prompt's outfit is folded against the board it LANDS on, not the board at
+// the moment the call was accepted.
+//
+// The regression: a queued `unset k` has not touched the snapshot yet, so an
+// accept-time diff sees k already equal to the outfit's value, omits it, and
+// the queued removal then wins — the turn is answered without the key the
+// caller dressed for, silently.
+func TestPromptOutfitIsFoldedAgainstTheBoardItLandsOn(t *testing.T) {
+	cfg := t.TempDir()
+	writeOutfit(t, cfg, "focus", "tone = \"concise\"\n")
+	a := agentForOutfit(t, cfg, chalkboard.Patch{
+		Set: map[string]json.RawMessage{"tone": json.RawMessage(`"concise"`)},
+	})
+
+	// Queue the removal FIRST, exactly as `figaro unset tone` would while a
+	// turn is running, then accept a prompt wearing the outfit that sets it.
+	_, _, err := a.Set(chalkboard.Patch{Remove: []string{"tone"}})
+	require.NoError(t, err)
+
+	req := rpc.QuaRequest{Text: "hi", Chalkboard: &rpc.ChalkboardInput{Outfit: outfit.Names("focus")}}
+	require.NoError(t, a.CheckPromptOutfit(&req))
+	runOneTurn(t, a, req.Text, req.Chalkboard)
+
+	snap := a.Snapshot()
+	got, ok := snap.Get("tone")
+	require.True(t, ok, "the outfit's key was dropped by the queued unset")
+	assert.Equal(t, `"concise"`, string(got))
+}
+
+// A spec that does not resolve fails the call, before anything is queued.
+func TestPromptOutfitRefusedAtAccept(t *testing.T) {
+	a := agentForOutfit(t, t.TempDir(), chalkboard.Patch{})
+	req := rpc.QuaRequest{Text: "hi", Chalkboard: &rpc.ChalkboardInput{Outfit: outfit.Names("nope")}}
+	var missing *outfit.MissingError
+	require.True(t, errors.As(a.CheckPromptOutfit(&req), &missing))
+
+	_, prompts := a.QueuedPrompts(true)
+	assert.Empty(t, prompts)
 }

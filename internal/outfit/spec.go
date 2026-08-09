@@ -57,6 +57,9 @@ func (s Spec) Validate() error {
 			}
 			continue
 		}
+		if len(t.Inline) == 0 {
+			return fmt.Errorf("outfit: an inline term sets nothing (%s)", t)
+		}
 		b, err := json.Marshal(t.Inline)
 		if err != nil {
 			return fmt.Errorf("outfit: inline term: %w", err)
@@ -70,9 +73,15 @@ func (s Spec) Validate() error {
 	return nil
 }
 
-// Label is the name an aria born on this spec is stamped with. Inline terms
-// have no name of their own, so they render as "inline"; the stump is
-// content-addressed either way.
+// Label is the name an aria born on this spec is stamped with, and the stump
+// directory it lives under.
+//
+// An inline term has no name, and renders as `{}` — deliberately something
+// ValidName refuses, so a label carrying one cannot be re-parsed as a spec.
+// That is what makes "this stamp is not re-resolvable" a fact rather than a
+// hope: a label of "inline" would parse as an ordinary name, and the day
+// someone wrote outfits/inline.toml every inline-born aria would report the
+// wrong version.
 func (s Spec) Label() string {
 	parts := make([]string, 0, len(s))
 	for _, t := range s {
@@ -80,7 +89,7 @@ func (s Spec) Label() string {
 			parts = append(parts, t.Name)
 			continue
 		}
-		parts = append(parts, "inline")
+		parts = append(parts, "{}")
 	}
 	return strings.Join(parts, ",")
 }
@@ -174,8 +183,12 @@ func (s *Spec) UnmarshalJSON(b []byte) error {
 // that parses as JSON keeps its type (3, true, "quoted", [1,2]) while anything
 // else is taken as a string.
 func ParseSpec(text string) (Spec, error) {
+	parts, err := splitTerms(text)
+	if err != nil {
+		return nil, err
+	}
 	var out Spec
-	for _, part := range splitTerms(text) {
+	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
@@ -241,6 +254,10 @@ func ValidName(name string) error {
 		return fmt.Errorf("outfit: empty name")
 	case name == "." || name == "..":
 		return fmt.Errorf("outfit: %q is not a name", name)
+	case strings.HasPrefix(name, "-"):
+		// `-O -j` used to make an outfit called "-j" and fail one round trip
+		// later, on the server, in the wrong vocabulary.
+		return fmt.Errorf("outfit: %q looks like a flag, not an outfit (--outfit takes a value)", name)
 	case strings.ContainsAny(name, "=/\\"):
 		return fmt.Errorf("outfit: %q: a name cannot contain = / or \\", name)
 	case strings.ContainsAny(name, `{}[]"`):
@@ -255,7 +272,10 @@ func ValidName(name string) error {
 }
 
 // splitTerms splits on commas that are not inside quotes, braces or brackets.
-func splitTerms(text string) []string {
+// Unbalanced structure is an error rather than a mode: a stray `}` used to
+// drive depth negative and a stray `"` used to flip quoting on, and from there
+// the commas stopped separating and the whole tail arrived as one "name".
+func splitTerms(text string) ([]string, error) {
 	var (
 		out   []string
 		depth int
@@ -276,6 +296,9 @@ func splitTerms(text string) []string {
 			depth++
 		case r == '}' || r == ']':
 			depth--
+			if depth < 0 {
+				return nil, fmt.Errorf("outfit: %s: unbalanced %q", text, r)
+			}
 		case r == ',' && depth == 0:
 			out = append(out, cur.String())
 			cur.Reset()
@@ -283,6 +306,12 @@ func splitTerms(text string) []string {
 		}
 		cur.WriteRune(r)
 	}
+	if quote {
+		return nil, fmt.Errorf("outfit: %s: unterminated quote", text)
+	}
+	if depth != 0 {
+		return nil, fmt.Errorf("outfit: %s: unbalanced { or [", text)
+	}
 	out = append(out, cur.String())
-	return out
+	return out, nil
 }

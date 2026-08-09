@@ -309,5 +309,5 @@ func runNewFromOutfit(loaded *config.Loaded, spec outfit.Spec, set renderSetting
 		}{AriaID: figaroID, Mode: "new"})
 		return
 	}
-	fmt.Fprintf(os.Stderr, "created %s under outfit %q (attended; no prompt sent)\n", figaroID, spec.String())
+	fmt.Fprintf(os.Stderr, "created %s under outfit %s (attended; no prompt sent)\n", figaroID, shortSpec(spec))
 }

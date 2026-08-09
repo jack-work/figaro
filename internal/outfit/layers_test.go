@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -153,7 +154,7 @@ func TestMalformedLayersIsReported(t *testing.T) {
 	for _, tc := range []struct{ name, body, want string }{
 		{"a bare string", "layers = \"base\"\n", "must be an array"},
 		{"a non-string element", "layers = [1]\n", "must be a string"},
-		{"an empty element", "layers = [\"\"]\n", "is empty"},
+		{"an empty element", "layers = [\"\"]\n", "empty name"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -195,4 +196,45 @@ func TestInlineTermFoldsLikeANamedOne(t *testing.T) {
 	_, err = o.LoadSpec(spec, false)
 	var missing *outfit.MissingError
 	require.True(t, errors.As(err, &missing), "want MissingError, got %v", err)
+}
+
+// One Outfitter serves every aria in the daemon, and a fold reads files,
+// caches, and (for inline terms) a map the caller still holds. Fold the same
+// spec from many goroutines under -race, and prove every answer is identical.
+func TestConcurrentFoldsAgree(t *testing.T) {
+	dir := t.TempDir()
+	writeOutfit(t, dir, "base", "[system]\nmodel = \"base-model\"\n")
+	writeOutfit(t, dir, "top", "layers = [\"base\"]\n[system]\ncredo = \"top\"\n")
+	o := outfit.New(dir)
+	spec, err := outfit.ParseSpec(`top,base,{"layers":["top"],"ttl":"1h"}`)
+	require.NoError(t, err)
+
+	want, err := o.LoadSpec(spec, true)
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			got, err := o.LoadSpec(spec, true)
+			assert.NoError(t, err)
+			assert.Equal(t, len(want.Set), len(got.Set))
+			for k, v := range want.Set {
+				assert.Equal(t, string(v), string(got.Set[k]), k)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// A layer name is resolved into the outfits directory exactly as a spec name
+// is, so it must pass the same gate: `layers = ["../../secrets"]` is refused
+// where it is declared, not silently opened.
+func TestLayerNamesObeyTheNameGrammar(t *testing.T) {
+	dir := t.TempDir()
+	writeOutfit(t, dir, "sneaky", "layers = [\"../../secrets\"]\n")
+	_, err := outfit.New(dir).Load("sneaky")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot contain")
 }

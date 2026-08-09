@@ -98,20 +98,23 @@ type cacheEntry[T any] struct {
 // get returns a live entry, and DROPS a stale one on the way past. That is the
 // whole reaping story for an outfit that was edited or deleted: the next touch
 // evicts it. An entry nobody ever asks for again is caught by the sweep in put.
-func (c *cache[T]) get(key string) (T, bool) {
+// The dependencies come back WITH the value, under one lock. Reading them in a
+// second call let a concurrent eviction answer "no dependencies", and a parent
+// that cached a child's fold with an empty dependency list never invalidates
+// again: the child's file could change forever and the parent would keep
+// serving the old patch.
+func (c *cache[T]) get(key string) (T, []dep, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.entries[key]
-	if !ok {
+	if !ok || !fresh(e.deps) {
+		if ok {
+			delete(c.entries, key)
+		}
 		var zero T
-		return zero, false
+		return zero, nil, false
 	}
-	if !fresh(e.deps) {
-		delete(c.entries, key)
-		var zero T
-		return zero, false
-	}
-	return e.value, true
+	return e.value, e.deps, true
 }
 
 // sweepAt is the size past which put looks for garbage. A real config holds a

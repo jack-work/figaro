@@ -559,24 +559,33 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		// parent's aria_id. Re-stamp so the forked agent knows its own id
 		// (a normal state transition it sees on its next turn); without
 		// this an aria cannot reliably fork itself.
-		if alt != "" && alt != req.FigaroID {
-			patch := message.Patch{Set: map[string]json.RawMessage{}}
+		if alt == "" || alt == req.FigaroID {
+			// No branch of its own to dress. Nothing can carry the outfit, so
+			// say so rather than reporting a fork that quietly ignored -O.
 			if !dress.IsEmpty() {
-				// Additive against what the child inherited, so the reminder
-				// names what actually changed and nothing else.
-				if snap, serr := h.angelus.Backend.ChalkboardState(alt); serr == nil {
-					dress = chalkboard.Additive(snap, dress)
-				}
-				for k, v := range dress.Set {
-					patch.Set[k] = v
-				}
+				return fmt.Errorf("fork: no alternative to dress (outfit %s not applied)", req.Outfit)
 			}
-			if b, merr := json.Marshal(alt); merr == nil {
-				patch.Set["aria_id"] = b
+			return nil
+		}
+		patch := message.Patch{Set: map[string]json.RawMessage{}}
+		if !dress.IsEmpty() {
+			// Additive against what the child inherited, so the reminder names
+			// what actually changed. If the child's board cannot be read the
+			// fold is NOT applied wholesale: that would announce changes that
+			// did not happen and write a record per inherited key.
+			snap, serr := h.angelus.Backend.ChalkboardState(alt)
+			if serr != nil {
+				return fmt.Errorf("fork: read %s chalkboard to dress it: %w", alt, serr)
 			}
-			if _, perr := h.angelus.Backend.ApplyChalkboard(alt, patch); perr != nil {
-				slog.Warn("fork: stamp child chalkboard", "alt", alt, "err", perr)
+			for k, v := range chalkboard.Additive(snap, dress).Set {
+				patch.Set[k] = v
 			}
+		}
+		if b, merr := json.Marshal(alt); merr == nil {
+			patch.Set["aria_id"] = b
+		}
+		if _, perr := h.angelus.Backend.ApplyChalkboard(alt, patch); perr != nil {
+			slog.Warn("fork: stamp child chalkboard", "alt", alt, "err", perr)
 		}
 		return nil
 	}

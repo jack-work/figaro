@@ -101,9 +101,9 @@ func TestSpecLabel(t *testing.T) {
 	for in, want := range map[string]string{
 		"a":               "a",
 		"a,b":             "a,b",
-		`a,ttl=1h`:        "a,inline",
-		`{"ttl":"1h"}`:    "inline",
-		`{"a":1},{"b":2}`: "inline,inline",
+		`a,ttl=1h`:        "a,{}",
+		`{"ttl":"1h"}`:    "{}",
+		`{"a":1},{"b":2}`: "{},{}",
 	} {
 		spec, err := outfit.ParseSpec(in)
 		if err != nil {
@@ -144,6 +144,33 @@ func TestNameGrammarIsNarrow(t *testing.T) {
 	for _, good := range []string{"sonn5", "pr-review", "opus5.1", "a_b", "modèle"} {
 		if _, err := outfit.ParseSpec(good); err != nil {
 			t.Errorf("ParseSpec(%q): %v", good, err)
+		}
+	}
+}
+
+// The stamp an inline-born aria carries must not read back as a spec: that is
+// what lets a listing say "this version cannot be re-resolved" truthfully.
+func TestInlineLabelIsNotAName(t *testing.T) {
+	spec, err := outfit.ParseSpec(`base,ttl=1h`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := outfit.ParseSpec(spec.Label()); err == nil {
+		t.Fatalf("label %q parsed back as a spec", spec.Label())
+	}
+	names, err := outfit.ParseSpec(outfit.Names("a", "b").Label())
+	if err != nil || names.String() != "a,b" {
+		t.Fatalf("an all-names label must round trip: %v %v", names, err)
+	}
+}
+
+// Structure is balanced or it is an error. Unbalanced brackets and quotes used
+// to switch the splitter into a mode where commas stopped separating, and the
+// whole tail arrived as one impossible "name".
+func TestSpecStructureMustBalance(t *testing.T) {
+	for _, bad := range []string{`a},b`, `a],b`, `{"a":1}}`, `k="unclosed`, `"a,b"`, `{"a":1`, `-j`, `--outfit`, `{}`} {
+		if got, err := outfit.ParseSpec(bad); err == nil {
+			t.Errorf("ParseSpec(%q) = %s, want an error", bad, got)
 		}
 	}
 }

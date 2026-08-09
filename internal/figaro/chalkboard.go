@@ -2,6 +2,7 @@ package figaro
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
@@ -77,30 +78,42 @@ func (a *Agent) OutfitPatch(spec outfit.Spec) (chalkboard.Patch, error) {
 	return chalkboard.Additive(a.chalkboard.Snapshot(), loaded), nil
 }
 
-// DressPrompt folds any outfit a prompt carries into that prompt's chalkboard
-// patch. The fold and the message are then ONE accepted call: a bad spec is
-// refused here, before anything is queued, and a good one rides the same event
-// as the text, so the <system-reminder> renders on the turn that asked for it.
+// CheckPromptOutfit resolves the outfit a prompt carries, without applying it.
+// It runs where the call is ACCEPTED, so a spec that does not resolve fails the
+// whole qua — with its layer closure attached — before anything is queued.
 //
-// The outfit loses to an explicit patch on the same call (`set` is the user
-// speaking now; the outfit is a wardrobe).
-func (a *Agent) DressPrompt(req *rpc.QuaRequest) error {
+// It deliberately does not compute the patch here. Accept time and drain time
+// see different boards: an `unset` queued behind an active turn has not touched
+// the snapshot yet, so a diff taken now can judge a key "already equal", omit
+// it, and let the queued removal win — the outfit silently missing from the
+// very turn that asked for it. The fold is cached, so paying for it twice costs
+// a stat per dependency and buys a patch that is additive against the board it
+// actually lands on (see combineChalkboardInput).
+func (a *Agent) CheckPromptOutfit(req *rpc.QuaRequest) error {
 	if req.Chalkboard == nil || req.Chalkboard.Outfit.IsEmpty() {
 		return nil
 	}
-	patch, err := a.OutfitPatch(req.Chalkboard.Outfit)
+	if a.outfitter == nil {
+		return fmt.Errorf("outfit requires an outfitter")
+	}
+	_, err := a.outfitter.LoadSpec(req.Chalkboard.Outfit, true)
+	return err
+}
+
+// outfitPatchFor folds a spec and returns only what it would change on snap.
+// Errors are logged, not returned: the spec was resolved at accept time, so a
+// failure here means the files moved underneath a queued prompt, and dropping
+// the turn over it is worse than answering without the outfit.
+func (a *Agent) outfitPatchFor(spec outfit.Spec, snap chalkboard.Snapshot) chalkboard.Patch {
+	if spec.IsEmpty() || a.outfitter == nil {
+		return chalkboard.Patch{}
+	}
+	loaded, err := a.outfitter.LoadSpec(spec, true)
 	if err != nil {
-		return err
+		slog.Error("prompt outfit", "aria", a.id, "spec", spec.String(), "err", err)
+		return chalkboard.Patch{}
 	}
-	req.Chalkboard.Outfit = nil
-	if patch.IsEmpty() {
-		return nil
-	}
-	if p := req.Chalkboard.Patch; p != nil {
-		patch = chalkboard.Merge(patch, chalkboard.Patch{Set: p.Set, Remove: p.Remove})
-	}
-	req.Chalkboard.Patch = &rpc.ChalkboardPatch{Set: patch.Set, Remove: patch.Remove}
-	return nil
+	return chalkboard.Additive(snap, loaded)
 }
 
 func withoutSystemNS(s chalkboard.Snapshot) chalkboard.Snapshot {

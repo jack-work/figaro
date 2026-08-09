@@ -50,7 +50,7 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		if err := a.DressPrompt(&req); err != nil {
+		if err := a.CheckPromptOutfit(&req); err != nil {
 			return nil, outfitError(err)
 		}
 		cursor := int(a.ariaSrv.LastTurn())

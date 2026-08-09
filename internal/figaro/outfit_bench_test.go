@@ -110,23 +110,23 @@ func BenchmarkApplyOutfitReapplied(b *testing.B) {
 	}
 }
 
-// BenchmarkDressPromptNoOutfit is what carrying the spec on every prompt costs
+// BenchmarkCheckPromptNoOutfit is what carrying the spec on every prompt costs
 // a prompt that names none: the whole point is that it is nothing.
-func BenchmarkDressPromptNoOutfit(b *testing.B) {
+func BenchmarkCheckPromptNoOutfit(b *testing.B) {
 	a := benchAgent(b, benchConfig(b, 40, 3000), chalkboard.Patch{})
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		req := rpc.QuaRequest{Text: "hi", Chalkboard: &rpc.ChalkboardInput{}}
-		if err := a.DressPrompt(&req); err != nil {
+		if err := a.CheckPromptOutfit(&req); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
-// BenchmarkDressPromptWarm is a prompt that DOES carry one, against a board
-// that already matches: the fold is cached and the diff comes out empty, so
-// this is the steady-state cost of `send -O <same outfit>`.
-func BenchmarkDressPromptWarm(b *testing.B) {
+// BenchmarkCheckPromptWarm is the accept-time resolve for a prompt that DOES
+// carry one: the strict fold, cached. The drain-time fold that follows it is
+// BenchmarkApplyOutfitReapplied.
+func BenchmarkCheckPromptWarm(b *testing.B) {
 	dir := benchConfig(b, 40, 3000)
 	seed, err := outfit.New(dir).Load("full")
 	if err != nil {
@@ -136,7 +136,7 @@ func BenchmarkDressPromptWarm(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		req := rpc.QuaRequest{Text: "hi", Chalkboard: &rpc.ChalkboardInput{Outfit: outfit.Names("full")}}
-		if err := a.DressPrompt(&req); err != nil {
+		if err := a.CheckPromptOutfit(&req); err != nil {
 			b.Fatal(err)
 		}
 	}
