@@ -113,7 +113,7 @@ func mustParseSpec(arg, usage string) outfit.Spec {
 // runOutfit calls figaro.outfit on the targeted aria.
 func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 	spec := mustParseSpec(arg, "figaro state outfit [--id <id>] <spec>")
-	label := spec.String()
+	label := shortSpec(spec)
 
 	ctx := context.Background()
 
@@ -144,6 +144,16 @@ func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 	for _, k := range resp.Set {
 		fmt.Fprintf(os.Stderr, "  %s\n", k)
 	}
+}
+
+// shortSpec renders a spec for a human-facing line. A literal can be
+// kilobytes; a notice that reprints it is not a notice.
+func shortSpec(spec outfit.Spec) string {
+	text := spec.String()
+	if len(text) <= 72 {
+		return text
+	}
+	return text[:69] + "..."
 }
 
 // dieOutfitFailure reports a failed apply.

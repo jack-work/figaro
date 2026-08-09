@@ -2,6 +2,7 @@ package outfit_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jack-work/figaro/internal/outfit"
@@ -111,5 +112,22 @@ func TestSpecLabel(t *testing.T) {
 		if got := spec.Label(); got != want {
 			t.Errorf("ParseSpec(%q).Label() = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// An inline term is argv, and one fold becomes one chalkboard record: a record
+// larger than a WAL segment cannot be appended at all, so the boundary refuses
+// it rather than the store losing it.
+func TestSpecRejectsOversizedInline(t *testing.T) {
+	big := `{"k":"` + strings.Repeat("x", outfit.MaxInlineBytes) + `"}`
+	if _, err := outfit.ParseSpec(big); err == nil {
+		t.Fatal("accepted an oversized inline term")
+	}
+	var wire outfit.Spec
+	if err := json.Unmarshal([]byte("["+big+"]"), &wire); err != nil {
+		t.Fatal(err)
+	}
+	if err := wire.Validate(); err == nil {
+		t.Fatal("wire form skipped the limit")
 	}
 }

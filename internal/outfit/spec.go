@@ -38,6 +38,37 @@ func InlineSpec(m map[string]any) Spec { return Spec{{Inline: m}} }
 
 func (s Spec) IsEmpty() bool { return len(s) == 0 }
 
+// MaxInlineBytes caps the literals in one spec. An outfit's own file may be as
+// large as its skills need, but an inline term is argv, and argv reaches
+// megabytes: the whole fold becomes ONE chalkboard record, and a record larger
+// than a WAL segment (1 MiB floor, 2 MiB default) cannot be appended at all.
+// Trim is the intent anyway; a big literal wants a file with a name.
+const MaxInlineBytes = 64 << 10
+
+// Validate rejects a spec that cannot reasonably be applied. It runs on the
+// server too, because a Spec can arrive as JSON without passing ParseSpec.
+func (s Spec) Validate() error {
+	total := 0
+	for _, t := range s {
+		if t.Name != "" {
+			if err := ValidName(t.Name); err != nil {
+				return err
+			}
+			continue
+		}
+		b, err := json.Marshal(t.Inline)
+		if err != nil {
+			return fmt.Errorf("outfit: inline term: %w", err)
+		}
+		total += len(b)
+	}
+	if total > MaxInlineBytes {
+		return fmt.Errorf("outfit: inline terms are %d bytes, over the %d-byte limit — put them in an outfit file",
+			total, MaxInlineBytes)
+	}
+	return nil
+}
+
 // Label is the name an aria born on this spec is stamped with. Inline terms
 // have no name of their own, so they render as "inline"; the stump is
 // content-addressed either way.
@@ -168,7 +199,7 @@ func ParseSpec(text string) (Spec, error) {
 			out = append(out, Term{Name: part})
 		}
 	}
-	return out, nil
+	return out, out.Validate()
 }
 
 // parsePair reads `key=value`. The value is JSON when it parses as JSON and a

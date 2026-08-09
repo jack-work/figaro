@@ -114,6 +114,9 @@ func (o *Outfitter) LoadSpec(spec Spec, strict bool) (chalkboard.Patch, error) {
 	if spec.IsEmpty() {
 		return chalkboard.Patch{}, nil
 	}
+	if err := spec.Validate(); err != nil {
+		return chalkboard.Patch{}, err
+	}
 	root := o.ResolveSpec(spec)
 	if err := closureError(root, spec); err != nil {
 		var missing *MissingError
