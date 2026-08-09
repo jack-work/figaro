@@ -9,17 +9,35 @@ package store
 //
 //   - root: the channel dir itself (xwal.CreateTrunks genesis). Markerless,
 //     ceremonial — the "null" anchor. Addressed by the rootID sentinel.
-//   - outfit: a markerless, named stump (CreateStump) holding a renderable
-//     RoleInput birth message that carries the outfit's chalkboard stamp
-//     (system.outfit_name/version). One per (name, content-version); the
-//     stump NAME is "<name>@<content-version>", so the dedup map lives on
-//     disk (Stumps()) — no policy side-file. Ceremonial.
+//   - outfit: a markerless stump (CreateStump) holding a renderable RoleInput
+//     birth message that carries the outfit's chalkboard stamp
+//     (system.outfit_name/version). One per (name, content-version), and its
+//     id IS that version, so the dedup map lives on disk (Stumps()) — no
+//     policy side-file. Ceremonial.
 //   - conversation: SpawnUnderStump(outfit) — inherits the outfit's
 //     rendered prefix via the fork watermark. A live trunk.
 //
 // The aria id IS the trunk id (stable across forks — the continuation keeps
 // it). Trunk identity, the node tree, and fork mechanics live on disk in
 // figwal; figaro derives outfits/null from the stump/root structure.
+//
+// WHERE THIS IS GOING (cast objects). A stump is very nearly a cast object
+// already: a durable reducible thing that an aria observes. The difference is
+// one rule — a stump cannot be PATCHED, only forked — and that rule is what
+// makes everything above true. Minting an aria will become "fork a cast
+// object; the fork backs the figaro, the object keeps its own history", which
+// is exactly SpawnUnderStump with the parent allowed to go on living.
+//
+// So the vocabulary settles as: an OUTFIT is a named spec; a spec materializes
+// as a cast object; a cast object is a stump when it is closed to patches, and
+// an ordinary object when it is not; a stump can be used as a spec in turn,
+// and can be forked for a regular object as well as for an aria. Something may
+// eventually re-materialize stumps from specs when the files change.
+//
+// Stump VERSIONING is a different axis from an object's history, and stays
+// that way: a new version is a whole new stump with a different hash, because
+// no version can ever be produced FROM a stump. That is why the id here is a
+// content hash and nothing else, and why nothing renames one.
 
 import (
 	"crypto/rand"
@@ -729,7 +747,6 @@ func (s *XwalStore) Node(id string) (NodeView, bool) {
 	return node, ok
 }
 
-
 // RemoveLeaf deletes an aria via xwal.Trunks. Trunk-addressed; refuses one
 // with live branches unless recursive.
 //
@@ -774,10 +791,9 @@ func (s *XwalStore) CollectStump(id string) error {
 	return s.trunks.RemoveStump(id)
 }
 
-
 // collectStump removes a stump that has just lost its last child.
 //
-// An outfit stump is content-addressed (<name>@<hash>), so it is minted afresh
+// An outfit stump is content-addressed, so it is minted afresh
 // by the next aria that wants it: collecting one loses nothing and is what
 // keeps a store from accumulating a directory per outfit version forever. A
 // recursive delete can take several children at once, which is why this asks

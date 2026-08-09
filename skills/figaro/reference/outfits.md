@@ -239,6 +239,21 @@ was the last child; `figaro gc` sweeps the versions that predate that.
 Collecting loses nothing: the stump is content-addressed, so the next aria
 wanting that outfit re-mints the same id.
 
+## Where this is going
+
+A stump is very nearly a **cast object** already: a durable reducible thing an
+aria observes. The difference is one rule — a stump cannot be patched, only
+forked — and that rule is what makes content-addressing work. Minting an aria
+becomes "fork a cast object; the fork backs the figaro, the object keeps its
+own history".
+
+So the vocabulary settles as: an outfit is a named **spec**; a spec
+materializes as a cast object; a cast object is a **stump** when it is closed
+to patches and an ordinary object when it is not; a stump can be used as a spec
+in turn. Stump versioning stays a separate axis from an object's history — a
+new version is a whole new stump, because no version can be produced *from*
+one.
+
 ## Source
 
 | Thing | Where |
