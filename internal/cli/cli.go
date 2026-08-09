@@ -341,7 +341,11 @@ a prompt follows ` + "`--`" + ` — sends it.
   figaro new -O <spec> -- <p>       fresh aria on a named outfit, prompted
   figaro new -O <spec>              fresh aria on a named outfit, attended, no turn
   figaro new -O ttl=1h -- <p>       fresh aria on an inline outfit
-  figaro new                        unattend this shell (go home)
+  figaro new                        fresh aria on the default outfit, attended
+
+new always mints. To go home instead, ` + "`figaro attend null`" + ` drops this
+shell's binding — which is what bare ` + "`new`" + ` used to do, a second spelling
+of another verb sitting on the obvious meaning of this one.
 
 The outfit is the aria's BIRTH outfit here: the stump it is spawned under,
 which is what ` + "`figaro ls`" + ` shows in the OUTFIT column. It defaults to
@@ -366,19 +370,13 @@ already exists (--id, -e, -x) are refused rather than ignored.
 			}
 			prompt := extractPrompt(rest)
 			set := renderSettings{jsonMode: opts.json}
-			switch {
-			case prompt == "" && opts.outfit.IsEmpty():
-				// Bare `figaro new`: drop the shell's binding (go home).
-				// New conversations then default to the live outfit.
-				runUnattend(ld)
-			case prompt == "":
-				// `figaro new --outfit X` with no prompt: mint a fresh aria
-				// under the outfit and attend it, no turn. A prompt requires
-				// the `--` boundary.
+			if prompt == "" {
+				// No prompt: mint under the spec (empty = default_outfit) and
+				// attend it, no turn. A prompt needs the `--` boundary.
 				runNewFromOutfit(ld, opts.outfit, set)
-			default:
-				runNewPrompt(ld, prompt, opts.outfit, set)
+				return nil
 			}
+			runNewPrompt(ld, prompt, opts.outfit, set)
 			return nil
 		},
 		CompleteArgs: completeNewPrompt,

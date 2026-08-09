@@ -34,7 +34,7 @@ These hold across the whole CLI:
 | `figaro -- <prompt>` | Prompt the attended aria. Creates one if this shell has no binding. |
 | `figaro send [flags] -- <prompt>` | The same, with the verb spelled out. Alias `qua`. |
 | `figaro new [-O <spec>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
-| `figaro new` | With no prompt and no outfit: drop this shell's binding and go home. |
+| `figaro new` | With no prompt: mint on the default outfit and attend it, no turn. `new` always mints; `figaro attend null` is how you go home. |
 
 `send` flags, all combinable unless noted:
 

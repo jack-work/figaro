@@ -270,8 +270,8 @@ func waitForSocket(path string, timeout time.Duration) error {
 	return fmt.Errorf("figaro socket %s did not accept connections within %s: %w", path, timeout, lastErr)
 }
 
-// runUnattend drops this shell's aria binding (bare `figaro new`). New
-// conversations then default to the live outfit. Idempotent when unbound.
+// runUnattend drops this shell's aria binding (`figaro attend null`). New
+// conversations then use the default outfit. Idempotent when unbound.
 func runUnattend(loaded *config.Loaded) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -284,15 +284,15 @@ func runUnattend(loaded *config.Loaded) {
 	}
 	_ = unbindBinding(ctx, acli, ppid)
 	if bound != "" {
-		fmt.Fprintf(os.Stderr, "unattended %s\n", bound)
+		fmt.Fprintf(os.Stderr, "home — unattended %s; new conversations use the default outfit\n", bound)
 	} else {
 		fmt.Fprintln(os.Stderr, "no aria bound to this shell")
 	}
 }
 
-// runNewFromOutfit mints a fresh aria under the named outfit, binds it,
-// and returns without prompting (`figaro new --outfit X`). A prompt needs
-// the `--` boundary (`figaro new --outfit X -- <prompt>`).
+// runNewFromOutfit mints a fresh aria under spec, binds it, and returns
+// without prompting (`figaro new [-O X]`). An empty spec is the configured
+// default_outfit, resolved server-side. A prompt needs the `--` boundary.
 func runNewFromOutfit(loaded *config.Loaded, spec outfit.Spec, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -309,5 +309,9 @@ func runNewFromOutfit(loaded *config.Loaded, spec outfit.Spec, set renderSetting
 		}{AriaID: figaroID, Mode: "new"})
 		return
 	}
-	fmt.Fprintf(os.Stderr, "created %s under outfit %s (attended; no prompt sent)\n", figaroID, shortSpec(spec))
+	dressed := "the default outfit"
+	if !spec.IsEmpty() {
+		dressed = "outfit " + shortSpec(spec)
+	}
+	fmt.Fprintf(os.Stderr, "created %s under %s (attended; no prompt sent)\n", figaroID, dressed)
 }

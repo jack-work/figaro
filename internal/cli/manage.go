@@ -809,13 +809,7 @@ func runAttend(loaded *config.Loaded, spec string) {
 	// literal; there is no `detach`. `~` is kept as a legacy alias so old
 	// muscle memory still works (it must be quoted in the shell).
 	if spec == "null" || spec == "~" {
-		WithAngelus(loaded, func(acli *angelus.Client) error {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			_ = unbindBinding(ctx, acli, shellPID)
-			fmt.Fprintln(os.Stderr, "home — unbound; new conversations will use the live outfit")
-			return nil
-		})
+		runUnattend(loaded)
 		return
 	}
 	trunk, at, err := parseTarget(spec)
