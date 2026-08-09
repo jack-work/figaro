@@ -317,13 +317,20 @@ func (s *XwalStore) OpenNode(id string) (*xwal.XWAL, error) {
 // outfitStump is the stump name for a (name, content-version) outfit.
 func outfitStump(name, ver string) string { return name + "@" + ver }
 
-// CreateOutfit returns the outfit id (its stump name) for (name,
-// content-version-of-patch), materializing it as a markerless stump under the
-// root if it does not exist yet.
+// CreateOutfit returns the outfit id for this outfit, materializing it as a
+// markerless stump under the root if it does not exist yet.
+//
+// The id is `<name>@<version>`, and the VERSION is the identity: the name is
+// folded into the hashed content (see OutfitVersion), so the name in the id is
+// a readable restatement of something the hash already covers, not a second
+// key. Two spellings that produce the same name and the same patch are the
+// same outfit and share a stump; two outfits with identical bodies and
+// different names are different outfits and do not.
 func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ver, err := contentVersion(patch)
+	named := withOutfitName(patch, name)
+	ver, err := contentVersion(named)
 	if err != nil {
 		return "", err
 	}
@@ -339,7 +346,7 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 	// The outfit's birth message is renderable (RoleInput, empty content): its
 	// chalkboard patch renders as the outfit's <system-reminder> blocks ONCE
 	// in this shared prefix, inherited (cached) by every conversation.
-	stamped := stampOutfit(patch, name, ver)
+	stamped := withOutfitVersion(named, ver)
 	if err := s.writeStumpBirth(stump, &stamped); err != nil {
 		return "", err
 	}
@@ -497,7 +504,27 @@ func mainTailOf(x *xwal.XWAL) uint64 {
 	return 0
 }
 
-// contentVersion is the value-stable content hash of an outfit patch.
+// OutfitVersion is an outfit's IDENTITY: the value-stable hash of the birth
+// record it writes, minus the version field, which cannot cover its own hash.
+//
+// The name is inside the hash, not merely alongside it. That is what lets
+// everything else key on content alone: where a literal sits in a spec changes
+// the fold and not the identity, so `base,x=1` and `x=1,base` are one outfit
+// when they do not collide -- while `a` and `b` with byte-identical bodies stay
+// two outfits, because a listing that reported an aria under a name nobody
+// asked for would be worse than a duplicate stump.
+func OutfitVersion(name string, patch message.Patch) (string, error) {
+	return contentVersion(withOutfitName(patch, name))
+}
+
+// LegacyOutfitVersion is OutfitVersion as it was before the name joined the
+// hash. It exists so a listing does not call every aria minted by an older
+// build stale; delete it when no store in use still holds a stump from one.
+func LegacyOutfitVersion(patch message.Patch) (string, error) {
+	return contentVersion(patch)
+}
+
+// contentVersion is the value-stable content hash of a patch.
 func contentVersion(patch message.Patch) (string, error) {
 	body, err := json.Marshal(patch)
 	if err != nil {
@@ -506,15 +533,21 @@ func contentVersion(patch message.Patch) (string, error) {
 	return segment.ValueHash(body)
 }
 
-func stampOutfit(p message.Patch, name, ver string) message.Patch {
-	set := make(map[string]json.RawMessage, len(p.Set)+2)
+func withOutfitName(p message.Patch, name string) message.Patch {
+	return withKey(p, keyOutfitName, name)
+}
+
+func withOutfitVersion(p message.Patch, ver string) message.Patch {
+	return withKey(p, keyOutfitVer, ver)
+}
+
+func withKey(p message.Patch, key, value string) message.Patch {
+	set := make(map[string]json.RawMessage, len(p.Set)+1)
 	for k, v := range p.Set {
 		set[k] = v
 	}
-	nb, _ := json.Marshal(name)
-	vb, _ := json.Marshal(ver)
-	set[keyOutfitName] = nb
-	set[keyOutfitVer] = vb
+	b, _ := json.Marshal(value)
+	set[key] = b
 	return message.Patch{Set: set, Remove: p.Remove}
 }
 

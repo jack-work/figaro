@@ -29,7 +29,6 @@ import (
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/turns"
 	"github.com/jack-work/figaro/internal/uiir"
-	"github.com/jack-work/figwal/segment"
 	"github.com/jack-work/jkrpc"
 )
 
@@ -221,33 +220,41 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 // every skill file and `list` calls this once per aria. The Outfitter now
 // caches its folds against the files they were built from, so the repeat cost
 // is a stat per dependency — cheaper than the TTL was, and never stale.
-func (h *handlers) currentOutfitHash(name string) string {
+func (h *handlers) currentOutfitHash(name string) (current, legacy string) {
 	if h.outfitter == nil {
-		return ""
+		return "", ""
 	}
 	spec, perr := outfit.ParseSpec(name)
 	if perr != nil {
-		return "" // a stamped label with an inline term is not re-resolvable
+		return "", "" // a stamp carrying a literal is not re-resolvable
 	}
 	p, err := h.outfitter.LoadSpec(spec, false)
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	body, err := json.Marshal(p)
-	if err != nil {
-		return ""
-	}
-	hash, _ := segment.ValueHash(body)
-	return hash
+	current, _ = store.OutfitVersion(name, p)
+	legacy, _ = store.LegacyOutfitVersion(p)
+	return current, legacy
+}
+
+// outfitVer is the version column for one row: re-resolve the outfit named by
+// the stamp, and compare.
+func (h *handlers) outfitVer(stamped, name string) string {
+	current, legacy := h.currentOutfitHash(name)
+	return outfitVerLabel(stamped, current, legacy)
 }
 
 // outfitVerLabel renders the version column: "live" when the stamped hash
 // matches the current one, else the stamped hash's first 8 chars.
-func outfitVerLabel(stamped, current string) string {
+//
+// legacy is the same fold hashed the pre-name way. An aria minted by an older
+// build carries that stamp and its outfit has not changed, so calling it stale
+// would be a lie told by a hash input, not by an outfit. Goes when it can.
+func outfitVerLabel(stamped, current, legacy string) string {
 	if stamped == "" {
 		return ""
 	}
-	if current != "" && stamped == current {
+	if stamped == current || (legacy != "" && stamped == legacy) {
 		return "live"
 	}
 	if len(stamped) > 8 {
@@ -1098,7 +1105,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 			BoundPIDs:        boundPIDs[info.ID],
 		}
 		if !req.IDsOnly && info.OutfitName != "" {
-			entry.OutfitVer = outfitVerLabel(info.OutfitVersion, h.currentOutfitHash(info.OutfitName))
+			entry.OutfitVer = h.outfitVer(info.OutfitVersion, info.OutfitName)
 		}
 		result = append(result, entry)
 	}
@@ -1231,7 +1238,7 @@ func (h *handlers) fillFromMeta(meta *store.AriaMeta, entry *rpc.FigaroInfoRespo
 		entry.LastActive = meta.LastActiveMS
 	}
 	if meta.OutfitName != "" {
-		entry.OutfitVer = outfitVerLabel(meta.OutfitVersion, h.currentOutfitHash(meta.OutfitName))
+		entry.OutfitVer = h.outfitVer(meta.OutfitVersion, meta.OutfitName)
 	}
 }
 
@@ -1252,7 +1259,7 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, entry *rpc.Figa
 	// (conversations get those from their chalkboard stamp instead).
 	if n.Kind == string(outfitKind) {
 		entry.OutfitName = n.Outfit
-		entry.OutfitVer = outfitVerLabel(n.Version, h.currentOutfitHash(n.Outfit))
+		entry.OutfitVer = h.outfitVer(n.Version, n.Outfit)
 	}
 }
 

@@ -78,3 +78,26 @@ func TestStumpBirthRecordIsStampedAtItsOwnOutfitPatch(t *testing.T) {
 			"a new aria renders none of its outfit's system-reminders", outfitVersion)
 	}
 }
+
+// The version IS the identity: the hash of the record the stump writes, minus
+// the version field. So the name is inside it — two outfits with identical
+// bodies and different names are two outfits — and a name is all that can
+// separate two identical folds.
+func TestOutfitVersionCoversTheName(t *testing.T) {
+	body := message.Patch{Set: map[string]json.RawMessage{"x": json.RawMessage(`1`)}}
+
+	a, _ := OutfitVersion("alpha", body)
+	b, _ := OutfitVersion("beta", body)
+	if a == b {
+		t.Fatal("identical bodies under different names must not share a stump")
+	}
+	again, _ := OutfitVersion("alpha", message.Patch{
+		Set: map[string]json.RawMessage{"x": json.RawMessage(` 1 `)},
+	})
+	if again != a {
+		t.Errorf("formatting reached the hash: %s != %s", again, a)
+	}
+	if legacy, _ := LegacyOutfitVersion(body); legacy == a {
+		t.Error("the pre-name hash must be a different generation")
+	}
+}

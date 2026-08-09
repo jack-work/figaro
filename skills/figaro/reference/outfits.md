@@ -169,10 +169,15 @@ overrides them by name.
 
 ## What makes two births the same outfit
 
-The stump id is `<label>@<hash>`, and the hash is the **canonical** JSON of the
-folded patch: keys sorted, no whitespace, numbers by value. Everything is
-decoded and re-marshalled on the way in, so formatting never reaches it. All of
-these are one stump, minted once and reused:
+The stump id is `<label>@<version>`, and the **version is the identity**: the
+canonical hash (keys sorted, no whitespace, numbers by value) of the birth
+record the stump writes, minus the version field, which cannot cover its own
+hash. Everything is decoded and re-marshalled on the way in, so formatting
+never reaches it.
+
+The name is INSIDE that hash, not merely alongside it. That is what lets
+everything else key on content alone. All of these are one stump, minted once
+and reused:
 
 ```sh
 figaro new -O 'base,{"mantra":"test"}'
@@ -199,9 +204,13 @@ figaro new -O setsx,x=1     # x=1  setsx,{}@994a6d0c…
 figaro new -O x=1,setsx     # x=9  setsx,{}@cbeef30a…   (setsx sets x=9)
 ```
 
-Content decides sameness; the label only has to be readable, and to render a
-literal as something no name may contain, so a stamp carrying one cannot be
-re-resolved by accident.
+Two outfits with identical bodies and different NAMES stay two outfits, because
+the name is hashed with the body — a listing that reported an aria under a name
+nobody asked for would be worse than a duplicate stump.
+
+Content decides sameness; the label in the id is a readable restatement of what
+the hash already covers, and it renders a literal as something no name may
+contain, so a stamp carrying one cannot be re-resolved by accident.
 
 Change one byte of an outfit file and the next birth hashes differently, so it
 mints a new stump; arias already under the old one stay there, and `figaro ls`
