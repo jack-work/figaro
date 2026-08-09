@@ -94,30 +94,45 @@ func schemaFor(name string) (channelSchema, string, bool) {
 	return channelSchema{}, "", false
 }
 
+// storeVersion is the generation of MEANING this build writes: not the shape
+// of a record (that is a channel schema) and not the arrangement on disk (that
+// is figwal's layout), but what correctly-shaped data is taken to mean.
+//
+// 1: a stump's id is its content version alone. The name is inside the hashed
+// content and inside the birth record, so nothing parses an id.
+//
+// It exists so that the next change of meaning is a comparison rather than a
+// probe. Detection logic infers "have I run?" from the data and is wrong the
+// day the data has another reason to look that way; a recorded number states
+// it. A store minted from here on is stamped at creation, and a store with no
+// stamp is generation 0 -- the one inference, made once per store, ever.
+const storeVersion = 1
+
 type schemaFile struct {
-	Channels map[string]int `json:"channels"`
+	StoreVersion int            `json:"store-version"`
+	Channels     map[string]int `json:"channels"`
 }
 
-func readSchema(root string) (map[string]int, error) {
+func readSchema(root string) (schemaFile, error) {
 	raw, err := os.ReadFile(filepath.Join(root, schemaFileName))
 	if os.IsNotExist(err) {
-		return map[string]int{}, nil
+		return schemaFile{Channels: map[string]int{}}, nil
 	}
 	if err != nil {
-		return nil, err
+		return schemaFile{}, err
 	}
 	var f schemaFile
 	if err := json.Unmarshal(raw, &f); err != nil {
-		return nil, fmt.Errorf("store schema: %w", err)
+		return schemaFile{}, fmt.Errorf("store schema: %w", err)
 	}
 	if f.Channels == nil {
 		f.Channels = map[string]int{}
 	}
-	return f.Channels, nil
+	return f, nil
 }
 
-func writeSchema(root string, m map[string]int) error {
-	raw, err := json.MarshalIndent(schemaFile{Channels: m}, "", "  ")
+func writeSchema(root string, f schemaFile) error {
+	raw, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -137,10 +152,21 @@ func writeSchema(root string, m map[string]int) error {
 // never cleared, only ever derived-on-read; a reducible channel needs a real
 // converter and fails loudly until one is registered.
 func ensureSchema(root string, trunks *xwal.Store) error {
-	stored, err := readSchema(root)
+	f, err := readSchema(root)
 	if err != nil {
 		return err
 	}
+	if f.StoreVersion > storeVersion {
+		return fmt.Errorf(
+			"store is generation %d but this figaro understands %d: "+
+				"refusing to open a store written by a newer build (upgrade figaro)",
+			f.StoreVersion, storeVersion)
+	}
+	// Nothing to run between 0 and 1: neither id shape is parsed, and a
+	// stump has always stated its own name. When a generation DOES need work
+	// the registry goes here, keyed on this number rather than on a probe.
+	f.StoreVersion = storeVersion
+	stored := f.Channels
 	var bust []string
 	for key, want := range channelSchemas {
 		have, seen := stored[key]
@@ -166,7 +192,8 @@ func ensureSchema(root string, trunks *xwal.Store) error {
 			return err
 		}
 	}
-	return writeSchema(root, stored)
+	f.Channels = stored
+	return writeSchema(root, f)
 }
 
 // clearDerived drops every derived-cache channel belonging to one of keys,
@@ -205,13 +232,21 @@ type SchemaReport struct {
 	Status  string
 }
 
+// StoreGeneration reports the store's recorded generation and this build's,
+// read straight from the sidecar so it answers even when the gate refused.
+func StoreGeneration(root string) (onDisk, known int, err error) {
+	f, err := readSchema(root)
+	return f.StoreVersion, storeVersion, err
+}
+
 // SchemaStatus reads the sidecar directly, without opening the store — so it
 // still answers when ensureSchema is precisely what refused the open.
 func SchemaStatus(root string) ([]SchemaReport, error) {
-	stored, err := readSchema(root)
+	f, err := readSchema(root)
 	if err != nil {
 		return nil, err
 	}
+	stored := f.Channels
 	out := make([]SchemaReport, 0, len(channelSchemas))
 	for key, want := range channelSchemas {
 		r := SchemaReport{Channel: strings.TrimSuffix(key, "/"), OnDisk: stored[key], Known: want.version, Status: "ok"}

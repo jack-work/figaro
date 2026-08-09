@@ -30,6 +30,11 @@ type XwalBackend struct {
 	open  map[string]*ariaHandle
 	chalk map[string]*chalkCache
 	metas map[string]*metaCache
+	// labels is stump id -> what its birth record says it is. Never evicted
+	// and never invalidated: a stump id is the hash of content that contains
+	// the label, and a stump cannot be patched, so the mapping is a pure
+	// function of the id.
+	labels map[string]outfitLabel
 	// touched is when each aria's caches were last used. These caches are
 	// PURE COST once an aria has no agent: cachedLog decodes an entire IR
 	// and every translation into the heap at construction, chalkCache holds
@@ -338,10 +343,74 @@ func (b *XwalBackend) OwnerResolution(ariaID string, atMainLT uint64) (OwnerInfo
 	return OwnerInfo{Trunk: o.Trunk, Outfit: o.Stump, IsRoot: o.IsRoot}, nil
 }
 
-func (b *XwalBackend) Node(id string) (NodeView, bool) { return b.store.Node(id) }
-func (b *XwalBackend) Nodes() []NodeView               { return b.store.Nodes() }
-func (b *XwalBackend) Conversations() []NodeView       { return b.store.Conversations() }
-func (b *XwalBackend) ConversationIDs() []string       { return b.store.ConversationIDs() }
+// A node's OUTFIT is resolved here rather than in the store: the store knows
+// ids and the topology, the backend knows how to read a node. The stump each
+// node was born under comes from the topology walk; its label comes from its
+// own birth record, once.
+func (b *XwalBackend) Node(id string) (NodeView, bool) {
+	n, ok := b.store.Node(id)
+	if ok {
+		b.label(&n)
+	}
+	return n, ok
+}
+
+func (b *XwalBackend) Nodes() []NodeView         { return b.labelAll(b.store.Nodes()) }
+func (b *XwalBackend) Conversations() []NodeView { return b.labelAll(b.store.Conversations()) }
+func (b *XwalBackend) ConversationIDs() []string { return b.store.ConversationIDs() }
+
+// outfitLabel is a stump's own account of itself.
+type outfitLabel struct{ name, version string }
+
+func (b *XwalBackend) labelAll(nodes []NodeView) []NodeView {
+	for i := range nodes {
+		b.label(&nodes[i])
+	}
+	return nodes
+}
+
+func (b *XwalBackend) label(n *NodeView) {
+	if n.Stump == "" {
+		return
+	}
+	l := b.stumpLabel(n.Stump)
+	n.Outfit, n.Version = l.name, l.version
+}
+
+// stumpLabel reads a stump's name and version out of the birth patch it wrote,
+// which is the only place either has ever been stated authoritatively -- the
+// id used to restate the name, and a chalkboard key of the same name is the
+// agent's mutable copy.
+func (b *XwalBackend) stumpLabel(id string) outfitLabel {
+	b.mu.Lock()
+	l, ok := b.labels[id]
+	b.mu.Unlock()
+	if ok {
+		return l
+	}
+	if snap, err := b.ChalkboardState(id); err == nil {
+		l = outfitLabel{name: snapString(snap, keyOutfitName), version: snapString(snap, keyOutfitVer)}
+	}
+	b.mu.Lock()
+	if b.labels == nil {
+		b.labels = map[string]outfitLabel{}
+	}
+	b.labels[id] = l
+	b.mu.Unlock()
+	return l
+}
+
+func snapString(s chalkboard.Snapshot, key string) string {
+	raw, ok := s.Get(key)
+	if !ok {
+		return ""
+	}
+	var out string
+	if json.Unmarshal(raw, &out) != nil {
+		return ""
+	}
+	return out
+}
 
 func (b *XwalBackend) touchLocked(id string) {
 	if b.touched != nil {

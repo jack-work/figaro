@@ -101,3 +101,78 @@ func TestOutfitVersionCoversTheName(t *testing.T) {
 		t.Error("the pre-name hash must be a different generation")
 	}
 }
+
+// A stump states its own name, so a listing never has to parse an id — which
+// is what lets the id be the content version alone, and what lets a store
+// written before that keep its `<name>@<version>` directories untouched.
+func TestStumpNamesItselfWhateverItsIdLooksLike(t *testing.T) {
+	dir := t.TempDir()
+	b, err := NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	id, err := b.CreateOutfit("sonn5", message.Patch{
+		Set: map[string]json.RawMessage{"system.model": json.RawMessage(`"m"`)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(id, "@") || strings.Contains(id[1:], "@") {
+		t.Fatalf("stump id %q: want a bare @<version>", id)
+	}
+	conv, err := b.CreateConversation(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	byID := map[string]NodeView{}
+	for _, n := range b.Nodes() {
+		byID[n.ID] = n
+	}
+	if got := byID[id]; got.Outfit != "sonn5" || got.Version != id[1:] {
+		t.Errorf("stump node: outfit %q version %q", got.Outfit, got.Version)
+	}
+	// The conversation carries the stump it was born under, and its label.
+	if got := byID[conv]; got.Stump != id || got.Outfit != "sonn5" {
+		t.Errorf("conversation: stump %q outfit %q", got.Stump, got.Outfit)
+	}
+}
+
+// A branch inherits its birth stump down the LINEAGE edge, however deep. The
+// listing used to climb presentation parents instead, which a promote moves.
+func TestForkedBranchesKeepTheirBirthStump(t *testing.T) {
+	dir := t.TempDir()
+	b, err := NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	id, err := b.CreateOutfit("house", message.Patch{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conv, err := b.CreateConversation(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	depth := []string{conv}
+	for i := 0; i < 3; i++ {
+		_, alt, ferr := b.Fork(depth[len(depth)-1])
+		if ferr != nil {
+			t.Fatal(ferr)
+		}
+		depth = append(depth, alt)
+	}
+	byID := map[string]NodeView{}
+	for _, n := range b.Nodes() {
+		byID[n.ID] = n
+	}
+	for i, aria := range depth {
+		if got := byID[aria]; got.Stump != id || got.Outfit != "house" {
+			t.Errorf("depth %d (%s): stump %q outfit %q, want %q/house", i, aria, got.Stump, got.Outfit, id)
+		}
+	}
+}

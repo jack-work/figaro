@@ -17,16 +17,13 @@ type metadataListBackend struct {
 	logReads   atomic.Int64
 }
 
+// A conversation carries the stump it was born under, and its label, resolved
+// by the backend from the stump's own record.
 func (b *metadataListBackend) Conversations() []store.NodeView {
-	return []store.NodeView{{ID: "dormant", Kind: conversationKind, Trunk: "dormant", Vector: []int{0}, Parent: "base@abc123"}}
-}
-
-// Nodes is Conversations plus the ceremonial anchors. A listing walks to the
-// stump for the outfit label, so it needs them even when it does not show them.
-func (b *metadataListBackend) Nodes() []store.NodeView {
-	return append([]store.NodeView{
-		{ID: "base@abc123", Kind: string(outfitKind), Parent: "null", Outfit: "base", Version: "abc123"},
-	}, b.Conversations()...)
+	return []store.NodeView{{
+		ID: "dormant", Kind: conversationKind, Trunk: "dormant", Vector: []int{0},
+		Parent: "@abc123", Stump: "@abc123", Outfit: "base", Version: "abc123",
+	}}
 }
 
 func (b *metadataListBackend) Meta(string) (*store.AriaMeta, error) {

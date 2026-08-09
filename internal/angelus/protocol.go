@@ -1123,11 +1123,7 @@ func (h *handlers) list(ctx context.Context, params json.RawMessage) (interface{
 		case req.Global:
 			nodeList = h.angelus.Backend.Nodes()
 		default:
-			// Nodes(), not Conversations(): an ordinary listing does not SHOW
-			// the ceremonial anchors, but it has to be able to walk to them —
-			// a conversation's outfit label is the stump it hangs under, and
-			// the filter below keeps them out of the result.
-			nodeList = h.angelus.Backend.Nodes()
+			nodeList = h.angelus.Backend.Conversations()
 		}
 		for _, n := range nodeList {
 			if n.Kind == conversationKind {
@@ -1264,32 +1260,17 @@ func (h *handlers) fillFromNode(nodes map[string]store.NodeView, entry *rpc.Figa
 		entry.OutfitVer = h.outfitVer(n.Version, n.Outfit)
 		return
 	}
-	// A conversation's outfit is the STUMP it hangs under, not the chalkboard
-	// key of the same name. The stump is minted with the hash and never
-	// changes; the chalkboard is the agent's own mutable state, so reading the
-	// label from there let one `set system.outfit_name x` rename an aria's
-	// outfit in every listing -- and, because the column is what the version
-	// is re-resolved against, report an unchanged outfit as stale in the same
-	// breath. The label is a UI concern and the hash is the value; taking both
-	// from the stump is what keeps them honest.
-	if label, ver, ok := stumpOf(nodes, entry.ID); ok {
-		entry.OutfitName = label
-		entry.OutfitVer = h.outfitVer(ver, label)
+	// A conversation's outfit is the stump it was BORN under, carried down the
+	// lineage by the topology walk -- not `system.outfit_name`, which is the
+	// agent's own mutable copy, and not the presentation parent, which a
+	// promote moves. Both were live lies: one `set` renamed an aria's outfit in
+	// every listing and, because this column is what the version is
+	// re-resolved against, reported an unchanged outfit as stale in the same
+	// breath.
+	if n.Outfit != "" {
+		entry.OutfitName = n.Outfit
+		entry.OutfitVer = h.outfitVer(n.Version, n.Outfit)
 	}
-}
-
-// stumpOf walks presentation parents to the outfit a conversation was born
-// under. A conversation spawned under the root has none, and says so by
-// carrying no outfit at all rather than borrowing one.
-func stumpOf(nodes map[string]store.NodeView, id string) (label, version string, ok bool) {
-	seen := map[string]bool{}
-	for n, found := nodes[id]; found && !seen[n.ID]; n, found = nodes[n.Parent] {
-		seen[n.ID] = true
-		if n.Kind == string(outfitKind) {
-			return n.Outfit, n.Version, true
-		}
-	}
-	return "", "", false
 }
 
 // outfitKind / nullKind / conversationKind mirror the store's nodeKind string

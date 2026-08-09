@@ -343,7 +343,7 @@ func BenchmarkVectors10000Branches(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if got := len(s.vectorsLocked(infos)); got != len(infos) {
+		if got := func() int { v, _ := s.vectorsLocked(infos); return len(v) }(); got != len(infos) {
 			b.Fatalf("vectors = %d, want %d", got, len(infos))
 		}
 	}

@@ -311,11 +311,28 @@ func migrateLayout(root string) error {
 func (s *XwalStore) OpenNode(id string) (*xwal.XWAL, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.trunks.Head(id)
+	x, err := s.trunks.Head(id)
+	if err == nil {
+		return x, nil
+	}
+	// A stump is not a trunk, and its branch has its own accessor. It is
+	// openable for the same reason it is worth opening: it holds the birth
+	// record that states the outfit's name.
+	if sx, serr := s.trunks.StumpHead(id); serr == nil {
+		return sx, nil
+	}
+	return nil, err
 }
 
-// outfitStump is the stump name for a (name, content-version) outfit.
-func outfitStump(name, ver string) string { return name + "@" + ver }
+// outfitStump is a stump's id: its content version, and nothing else. The
+// name is already inside the hash (see OutfitVersion) and inside the birth
+// record the stump writes, so putting it in the id too would be a compound key
+// for something with one key. The "@" makes it unmistakably not an aria id.
+//
+// Stumps minted before this carry "<name>@<version>". They are not renamed and
+// need no migration: nothing parses a stump id, and their label is read from
+// their own record like every other stump's.
+func outfitStump(ver string) string { return "@" + ver }
 
 // CreateOutfit returns the outfit id for this outfit, materializing it as a
 // markerless stump under the root if it does not exist yet.
@@ -334,7 +351,7 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 	if err != nil {
 		return "", err
 	}
-	stump := outfitStump(name, ver)
+	stump := outfitStump(ver)
 	for _, st := range s.trunks.Stumps() {
 		if st.Name == stump {
 			return stump, nil // already materialized
@@ -560,11 +577,15 @@ func withKey(p message.Patch, key, value string) message.Patch {
 // frozen, and node-level children/depth are figwal's business, not a
 // listing's.
 type NodeView struct {
-	ID         string
-	Parent     string
-	Kind       string
-	Outfit     string
-	Version    string
+	ID     string
+	Parent string
+	Kind   string
+	// Stump is the outfit node this conversation was BORN under, carried down
+	// the lineage by the topology walk. Not the presentation parent: a promote
+	// moves where a row appears, never where its data came from.
+	Stump      string
+	Outfit     string // the stump's label; filled by the backend
+	Version    string // the stump's content version; same
 	Trunk      string
 	Vector     []int
 	BranchedLT uint64 // main-LT this trunk diverged from its parent
@@ -573,7 +594,7 @@ type NodeView struct {
 // view renders a live (conversation) trunk. Its parent for the global
 // hierarchy is its outfit stump (top-level) or its parent conversation trunk
 // (a branch); an outfitless top-level trunk hangs off the root.
-func (s *XwalStore) view(t xwal.TrunkInfo, vec map[string][]int) NodeView {
+func (s *XwalStore) view(t xwal.TrunkInfo, vec map[string][]int, stump map[string]string) NodeView {
 	parent := t.Parent
 	if parent == "" {
 		if t.Stump != "" {
@@ -584,7 +605,7 @@ func (s *XwalStore) view(t xwal.TrunkInfo, vec map[string][]int) NodeView {
 	}
 	return NodeView{
 		ID: t.ID, Parent: parent, Kind: string(kindConversation), Trunk: t.ID,
-		Vector: vec[t.ID], BranchedLT: t.BranchedLT,
+		Stump: stump[t.ID], Vector: vec[t.ID], BranchedLT: t.BranchedLT,
 	}
 }
 
@@ -593,14 +614,16 @@ func (s *XwalStore) view(t xwal.TrunkInfo, vec map[string][]int) NodeView {
 // is parentVec+[k]. Siblings are ordered by id (stable; display re-sorts by
 // recency). The trunk list is passed in so callers compute it once per
 // request (it costs a full disk scan). Caller holds mu.
-func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string][]int {
+func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) (map[string][]int, map[string]string) {
 	live := make(map[string]bool, len(infos))
 	for _, ti := range infos {
 		live[ti.ID] = true
 	}
 	kids := map[string][]string{}
+	born := map[string]string{}
 	var roots []string
 	for _, ti := range infos {
+		born[ti.ID] = ti.Stump // set only on a trunk rooted directly at one
 		if ti.Parent != "" && live[ti.Parent] {
 			kids[ti.Parent] = append(kids[ti.Parent], ti.ID) // branch of a conversation
 		} else {
@@ -611,18 +634,23 @@ func (s *XwalStore) vectorsLocked(infos []xwal.TrunkInfo) map[string][]int {
 	for k := range kids {
 		sort.Strings(kids[k])
 	}
+	// The stump rides the same walk. figwal names it only for a trunk rooted
+	// directly at one, so a branch inherits it from the trunk it forked — down
+	// the LINEAGE edge these kids were built from, which is the only edge
+	// allowed to decide where an aria's data came from (see internal/topo).
 	vec := map[string][]int{}
-	var assign func(id string, prefix []int)
-	assign = func(id string, prefix []int) {
-		vec[id] = prefix
+	stump := map[string]string{}
+	var assign func(id string, prefix []int, from string)
+	assign = func(id string, prefix []int, from string) {
+		vec[id], stump[id] = prefix, from
 		for i, c := range kids[id] {
-			assign(c, append(append([]int(nil), prefix...), i))
+			assign(c, append(append([]int(nil), prefix...), i), from)
 		}
 	}
 	for i, r := range roots {
-		assign(r, []int{i})
+		assign(r, []int{i}, born[r])
 	}
-	return vec
+	return vec, stump
 }
 
 func (s *XwalStore) topologySnapshot() *topologySnapshot {
@@ -639,13 +667,13 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 	}
 
 	infos := s.listTrunks()
-	vec := s.vectorsLocked(infos)
+	vec, stump := s.vectorsLocked(infos)
 	conversations := make([]NodeView, 0, len(infos))
 	ids := make([]string, 0, len(infos))
 	nodes := make([]NodeView, 0, len(infos)+1)
 	byID := make(map[string]NodeView, len(infos)+1)
 	for _, t := range infos {
-		node := s.view(t, vec)
+		node := s.view(t, vec, stump)
 		conversations = append(conversations, node)
 		ids = append(ids, node.ID)
 		nodes = append(nodes, node)
@@ -655,8 +683,7 @@ func (s *XwalStore) topologySnapshot() *topologySnapshot {
 	nodes = append(nodes, root)
 	byID[root.ID] = root
 	for _, st := range s.listStumps() {
-		name, ver := splitOutfitKey(st.Name)
-		node := NodeView{ID: st.Name, Kind: string(kindOutfit), Parent: rootID, Outfit: name, Version: ver}
+		node := NodeView{ID: st.Name, Kind: string(kindOutfit), Parent: rootID, Stump: st.Name}
 		nodes = append(nodes, node)
 		byID[node.ID] = node
 	}
@@ -695,14 +722,6 @@ func (s *XwalStore) Node(id string) (NodeView, bool) {
 	return node, ok
 }
 
-func splitOutfitKey(key string) (name, ver string) {
-	for i := len(key) - 1; i >= 0; i-- {
-		if key[i] == '@' {
-			return key[:i], key[i+1:]
-		}
-	}
-	return key, ""
-}
 
 // RemoveLeaf deletes an aria via xwal.Trunks. Trunk-addressed; refuses one
 // with live branches unless recursive.
@@ -727,11 +746,12 @@ func (s *XwalStore) RemoveLeaf(id string, recursive bool) error {
 			return fmt.Errorf("%w: detaching %s: %v", ErrWouldOrphan, orphan, err)
 		}
 	}
+	// Which stump hosts it must be read BEFORE the removal (afterwards the
+	// topology no longer knows the two were related) and before the lock:
+	// topologySnapshot takes s.mu itself.
+	stump := s.topologySnapshot().byID[id].Stump
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Which stump hosts it must be read BEFORE the removal; afterwards the
-	// topology no longer knows the two were related.
-	stump := s.stumpOf(id)
 	if err := s.trunks.Remove(id, recursive); err != nil {
 		return err
 	}
@@ -747,17 +767,6 @@ func (s *XwalStore) CollectStump(id string) error {
 	return s.trunks.RemoveStump(id)
 }
 
-// stumpOf names the stump hosting a trunk, "" when it hangs off the root.
-func (s *XwalStore) stumpOf(id string) string {
-	for _, st := range s.trunks.Stumps() {
-		for _, child := range st.Children {
-			if string(child) == id {
-				return st.Name
-			}
-		}
-	}
-	return ""
-}
 
 // collectStump removes a stump that has just lost its last child.
 //

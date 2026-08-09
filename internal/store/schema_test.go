@@ -157,9 +157,12 @@ func TestSchemaWrittenOnFirstOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	for key, want := range channelSchemas {
-		if got[key] != want.version {
-			t.Errorf("schema[%q] = %d, want %d", key, got[key], want.version)
+		if got.Channels[key] != want.version {
+			t.Errorf("schema[%q] = %d, want %d", key, got.Channels[key], want.version)
 		}
+	}
+	if got.StoreVersion != storeVersion {
+		t.Errorf("store-version = %d, want %d", got.StoreVersion, storeVersion)
 	}
 }
 
@@ -185,7 +188,7 @@ func TestSchemaRefusesANewerStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored[chanIR] = channelSchemas[chanIR].version + 1
+	stored.Channels[chanIR] = channelSchemas[chanIR].version + 1
 	if err := writeSchema(dir, stored); err != nil {
 		t.Fatal(err)
 	}
@@ -193,5 +196,28 @@ func TestSchemaRefusesANewerStore(t *testing.T) {
 		t.Fatal("opened a store written by a newer build")
 	} else if !strings.Contains(err.Error(), "newer build") {
 		t.Fatalf("error = %v, want a refusal naming the newer build", err)
+	}
+}
+
+// The generation is a statement, not a probe: a store minted now carries it,
+// and one written by a newer build is refused rather than half-understood.
+func TestStoreGenerationIsStampedAndGated(t *testing.T) {
+	dir := t.TempDir()
+	b, err := NewXwalBackend(dir, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Close()
+	if disk, known, err := StoreGeneration(dir); err != nil || disk != storeVersion || known != storeVersion {
+		t.Fatalf("generation on disk %d / known %d (err %v)", disk, known, err)
+	}
+
+	f, _ := readSchema(dir)
+	f.StoreVersion = storeVersion + 1
+	if err := writeSchema(dir, f); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewXwalBackend(dir, 0); err == nil || !strings.Contains(err.Error(), "newer build") {
+		t.Fatalf("opened a store from a newer generation: %v", err)
 	}
 }

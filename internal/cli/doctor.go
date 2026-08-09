@@ -134,6 +134,16 @@ func runDoctorSchema() error {
 	if err != nil {
 		return err
 	}
+	if disk, known, gerr := store.StoreGeneration(root); gerr == nil {
+		note := ""
+		switch {
+		case disk > known:
+			note = "  ← written by a newer figaro; this build refuses to open it"
+		case disk < known:
+			note = "  ← stamped on next open"
+		}
+		fmt.Printf("%-20s disk=%-4d binary=%-4d%s\n", "store-version", disk, known, note)
+	}
 	for _, r := range reports {
 		disk := fmt.Sprint(r.OnDisk)
 		if r.OnDisk == 0 {

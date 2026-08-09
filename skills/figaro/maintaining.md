@@ -130,6 +130,42 @@ For UI work, a pty is the only honest oracle: see
 bug from a real session rather than a guess, record and replay it:
 [reference/tapes.md](reference/tapes.md).
 
+## Versions on disk: which one to bump
+
+Three, with three owners. The test is always the same: **who cannot read what.**
+
+| Bump | When | Where |
+|---|---|---|
+| figwal `layoutVersion` | the arrangement of nodes and markers on disk changes | figwal's manifest |
+| a channel schema | a record's SHAPE changes, or an older binary would misread the bytes | `channelSchemas`, `internal/store/schema.go` |
+| `store-version` | the MEANING of correctly-shaped data changes: an id convention, a stamped field, a sidecar that must now exist | `storeVersion`, same file |
+
+Rules:
+
+- Bump when an OLDER binary would misread what this one writes. Backward
+  compatible reading is not a reason to bump; forward misreading always is.
+- A bump with no migration is legal only for `classCanonical` — derived on
+  read, never rewritten. Anything else owes a converter, and `ensureSchema`
+  will refuse the store until it has one.
+- `store-version` exists so the next change of meaning is a COMPARISON, not a
+  probe. Detection logic infers "have I run?" from the data and is wrong the
+  day the data has another reason to look that way. A store minted now is
+  stamped; a store with no stamp is generation 0, which is the only inference,
+  made once per store.
+- Format ⇒ eager, fatal, versioned (`migrateLayout`). Content drift ⇒ lazy,
+  silent, watermarked (`healMeta`). Decide which you are writing first.
+
+Fixtures for a conversion, both kinds:
+
+- **Inverse builders** — build with the current writer, de-migrate in test
+  code. figwal's `nest()` is the model, and so is its guard: assert the fixture
+  really is old (`"fixture is not nested; the test would prove nothing"`),
+  or the day the inverse stops working every migration test passes vacuously.
+- **One frozen store per generation**, written by a build that existed,
+  committed as JSONL directories (they diff as text) and NEVER regenerated. If
+  a migration would change what a fixture produces, add a fixture. A fixture
+  that tracks the current writer is a mirror, not a witness.
+
 ## Handing work back: the owner validates in a dev shell
 
 This is the most common flow there is, and agents get it wrong by default.
