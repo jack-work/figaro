@@ -552,7 +552,7 @@ func runSendEphemeralRaw(loaded *config.Loaded, opts sendOpts, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
+	createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
 	if err != nil {
 		dieWithClosure(err, "create figaro: %s", err)
 	}
@@ -584,7 +584,7 @@ func runSendEphemeralRich(loaded *config.Loaded, opts sendOpts, prompt string, s
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
+	createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
 	if err != nil {
 		dieWithClosure(err, "create figaro: %s", err)
 	}
@@ -637,7 +637,7 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 
 	var figaroEP transport.Endpoint
 	if opts.ephemeral {
-		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
+		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
 		if err != nil {
 			dieWithClosure(err, "create figaro: %s", err)
 		}
@@ -675,7 +675,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 
 	var figaroEP transport.Endpoint
 	if opts.ephemeral || opts.id == "" {
-		createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
+		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
 		if err != nil {
 			dieWithClosure(err, "create figaro: %s", err)
 		}

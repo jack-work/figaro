@@ -43,6 +43,7 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
+	"github.com/jack-work/figaro/internal/outfit"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/copilot"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -131,9 +132,14 @@ func catalogFor(available []string) []providerChoice {
 // CreateEphemeral without per-call duplication.
 type createFn func() (*rpc.CreateResponse, error)
 
-// createWithFirstRun invokes fn once. On a typed first-run error,
-// drives the wizard and retries.
-func createWithFirstRun(ctx context.Context, loaded *config.Loaded, fn createFn) (*rpc.CreateResponse, error) {
+// createWithFirstRun invokes fn once. On a typed first-run error, drives the
+// wizard and retries.
+//
+// spec is what the caller ASKED for. The wizard scaffolds a default outfit and
+// points config.toml at it, which is the right answer for a store that has
+// none and the wrong answer for `-O pair` where pair exists and simply sets no
+// provider: naming an outfit is not asking to be reconfigured.
+func createWithFirstRun(ctx context.Context, loaded *config.Loaded, spec outfit.Spec, fn createFn) (*rpc.CreateResponse, error) {
 	resp, err := fn()
 	if err == nil {
 		return resp, nil
@@ -144,6 +150,10 @@ func createWithFirstRun(ctx context.Context, loaded *config.Loaded, fn createFn)
 	}
 	switch code {
 	case rpc.ErrNoDefaultOutfit, rpc.ErrNoProvider:
+		if !spec.IsEmpty() {
+			return nil, fmt.Errorf("outfit %s sets no system.provider — add one to %s, or layer an outfit that has one",
+				spec, loaded.OutfitPath(spec.Label()))
+		}
 		if werr := runWizard(loaded, data); werr != nil {
 			return nil, werr
 		}

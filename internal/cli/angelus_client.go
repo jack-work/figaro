@@ -259,7 +259,7 @@ func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
 // empty outfit name means "use the configured default_outfit" (angelus
 // resolves it server-side).
 func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int, spec outfit.Spec) (string, transport.Endpoint) {
-	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) {
+	createResp, err := createWithFirstRun(ctx, loaded, spec, func() (*rpc.CreateResponse, error) {
 		return acli.Create(ctx, spec, nil)
 	})
 	if err != nil {

@@ -137,10 +137,10 @@ func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 	}
 
 	if len(resp.Set) == 0 {
-		fmt.Fprintf(os.Stderr, "outfit %q: no changes (chalkboard already matches)\n", label)
+		fmt.Fprintf(os.Stderr, "outfit %s: no changes (chalkboard already matches)\n", label)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "outfit %q applied (%d keys):\n", label, len(resp.Set))
+	fmt.Fprintf(os.Stderr, "outfit %s applied (%d keys):\n", label, len(resp.Set))
 	for _, k := range resp.Set {
 		fmt.Fprintf(os.Stderr, "  %s\n", k)
 	}
@@ -148,7 +148,7 @@ func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 
 // dieOutfitFailure reports a failed apply.
 func dieOutfitFailure(label string, err error) {
-	dieWithClosure(err, "outfit %q: %s", label, err)
+	dieWithClosure(err, "outfit %s: %s", label, err)
 }
 
 // dieWithClosure reports err, drawing the outfit layer closure when the server

@@ -249,7 +249,7 @@ fig IR, but it is not an address: turns are.`,
 		Aliases: []string{"qua"},
 		Group:   "Prompt",
 		Short:   "Send a prompt to an aria",
-		Usage:   "send [--id <id>] [-O <outfit>] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
+		Usage:   "send [--id <id>] [-O <spec>] [-e] [-r] [-v] [-o] [-l] [-x] [-n] [-y] [-f] [-j] -- <prompt>",
 		Long: `Send a prompt to an aria. Without --id, targets the pid-bound
 aria (creating one if this shell has no binding) — or, inside an aria's
 own bash tool, the aria itself (FIGARO_ARIA). With --id, targets
@@ -262,12 +262,16 @@ Flags:
   -e, --ephemeral
                  Spin a one-shot in-memory aria; kill it on completion.
                  Contradicts --id. Says nothing about formatting.
-  -O, --outfit <name>
-                 The outfit for an aria THIS CALL creates: with -e, or in a
-                 shell with no binding. A target (--id/<id>/<id>:<turn>) names
-                 an aria that already exists, so --outfit is rejected there
-                 rather than ignored. Defaults to config.toml's
-                 default_outfit, exactly as new --outfit does.
+  -O, --outfit <spec>
+                 Dress the aria in an outfit. On an aria THIS CALL creates it
+                 is the birth outfit; on one that already exists it is folded
+                 onto the chalkboard in the SAME call as the prompt, so the
+                 turn you are sending is answered wearing it. Additive: keys
+                 already holding the value are skipped, nothing is removed.
+                 A spec is names, k=v pairs and JSON literals, comma-joined
+                 and folded left to right (-O sonn5,ttl=1h). Repeating -O
+                 appends. Defaults to config.toml's default_outfit.
+                 See ` + "`figaro help outfits`" + ` for the syntax.
   -r, --raw      Stream verbatim to stdout: no ANSI, no markdown.
                  Pipe-friendly. Says nothing about persistence.
   -v, --verbatim Dump the raw wire frames as JSON (one {"method","params"}
@@ -308,6 +312,7 @@ Keys while streaming:
   figaro send -er -- <prompt>          ephemeral + raw
   figaro send -ex -y -- <instruction>  ephemeral exec, no confirmation
   figaro send -O sonn5 -er -- <p>      ephemeral aria on a named outfit, raw
+  figaro send -O focus --id x -- <p>   fold focus onto x, then ask
   figaro send -f --id myid -- <prompt> fire-and-forget; do not stream
   figaro send -- <nudge>               sent mid-turn, this steers that turn
 
@@ -328,8 +333,25 @@ positional target needs the explicit verb or --id.`,
 		Name:    "new",
 		Group:   "Prompt",
 		Short:   "Start a fresh aria and prompt it",
-		Usage:   "new [-j|--json] [--outfit <name>] [-- <prompt>]",
-		Long:    "Creates a new aria (server-generated id), binds it to this shell, and — when a prompt follows `--` — sends it.\n\n  figaro new -- <prompt>               fresh aria on the default outfit, prompted\n  figaro new --outfit <name> -- <p>   fresh aria on a named outfit, prompted\n  figaro new --outfit <name>          fresh aria on a named outfit, attended, no turn\n  figaro new                           unattend this shell (go home)\n\n-j/--json emits {aria_id, mode:'new'} on stdout. --outfit/-O defaults to\nconfig.toml's default_outfit.",
+		Usage:   "new [-j|--json] [-O <spec>] [-- <prompt>]",
+		Long: `Creates a new aria (server-generated id), binds it to this shell, and — when
+a prompt follows ` + "`--`" + ` — sends it.
+
+  figaro new -- <prompt>            fresh aria on the default outfit, prompted
+  figaro new -O <spec> -- <p>       fresh aria on a named outfit, prompted
+  figaro new -O <spec>              fresh aria on a named outfit, attended, no turn
+  figaro new -O ttl=1h -- <p>       fresh aria on an inline outfit
+  figaro new                        unattend this shell (go home)
+
+The outfit is the aria's BIRTH outfit here: the stump it is spawned under,
+which is what ` + "`figaro ls`" + ` shows in the OUTFIT column. It defaults to
+config.toml's default_outfit. See ` + "`figaro help outfits`" + ` for the spec syntax.
+
+new shares send's flag parser, so -O, -j and the short bundles behave
+identically; the flags that only make sense when sending to something that
+already exists (--id, -e, -x) are refused rather than ignored.
+
+-j/--json emits {aria_id, mode:'new'} on stdout.`,
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
@@ -722,6 +744,8 @@ With a prompt — ` + "`figaro fork [flags] -- <prompt>`" + ` — it also sends,
   figaro fork --stay <id> -- <p>       fan out a branch; do not move this shell
   figaro fork -r -- <prompt>           branch, stream raw to stdout
   figaro fork -fj -- <prompt>          branch, fire-and-forget, print the ids
+  figaro fork -O review -- <prompt>    branch, dress the branch, then ask
+  figaro fork -O ttl=1h                branch and dress it; say nothing yet
 
   -r/--raw, -v/--verbatim, -o/--verbose, -l/--listen, -x/--exec (+ -n, -y),
   -f/--forget  — as in ` + "`figaro send`" + `; prompt-only (an error without one).
@@ -733,11 +757,16 @@ With a prompt — ` + "`figaro fork [flags] -- <prompt>`" + ` — it also sends,
                  and sends to the original trunk; under fork the branch is
                  always the thing you just made, so it is always the thing
                  that gets prompted.)
+  -O/--outfit  — dresses the ALTERNATIVE, in the same call that mints it: the
+                 fold lands on the new branch's chalkboard before anything is
+                 said to it, so the first turn is answered wearing it. Legal
+                 with or without a prompt. See ` + "`figaro help outfits`" + `.
   -e/--ephemeral is rejected: a fork mints a persistent branch.`,
 		PassRaw: true,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (defaults to this shell's); :<turn> for an interior fork"},
 			{Long: "stay", IsBool: true, Description: "Do not rebind this shell to the new branch/continuation"},
+			{Long: "outfit", Short: "O", Description: "Dress the new branch (see `figaro help outfits`)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit machine-readable result on stdout (parent, continuation, alternative, ...)"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
@@ -962,6 +991,61 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 			return nil
 		},
 		CompleteArgs: completeAriaIDsAfterFlag(completeChalkboardKeys),
+	})
+
+	r.Register(&cmdkit.Command{
+		Name:   "outfits",
+		Group:  "State",
+		Hidden: true,
+		Short:  "The outfit spec syntax (a help topic)",
+		Usage:  "help outfits",
+		Long: `An OUTFIT is a named patch for an aria's chalkboard: model, credo,
+skills, and anything else you keep together. A SPEC is what you type where an
+outfit is asked for. It is a comma-separated list of terms, folded LEFT TO
+RIGHT — later terms win, exactly as an outfit's own ` + "`layers = [...]`" + ` does.
+
+  sonn5                     one outfit, from outfits/sonn5.toml
+  sonn5,focus               both, focus winning
+  ttl=1h                    an inline term: one key, one value
+  mantra="cool thing"       quoted values keep their spaces
+  n=3   on=true             a value that parses as JSON keeps its type
+  '{"ttl":"1h","n":3}'      the literal the sugar stands for
+  '{"layers":["a"],"x":1}'  an inline term may name layers of its own
+  sonn5,ttl=1h              mix freely
+
+Where a spec goes:
+
+  figaro new -O <spec> -- <p>        BIRTH: the stump the aria is spawned
+                                     under, stamped as its outfit, shown by ls
+  figaro send -O <spec> -- <p>       FOLD: applied to the aria's chalkboard in
+  figaro fork -O <spec> [-- <p>]     the same call as the prompt (on fork, to
+                                     the new branch, before it is spoken to)
+  figaro state outfit <spec>         FOLD, with no prompt
+  figaro state outfit --tree <spec>  draw the layer closure, apply nothing
+  figaro state outfit --list         what is on disk
+
+Rules worth knowing:
+
+  - The fold is ADDITIVE. Keys already holding the outfit's value are skipped
+    and nothing is ever removed, so re-applying is free and the aria sees a
+    <system-reminder> for exactly what changed.
+  - A name that does not exist is an error everywhere except one place: the
+    configured default_outfit, whose absence is what triggers first-run setup.
+  - ` + "`=`" + `, ` + "`/`" + ` and ` + "`\\`" + ` cannot appear in a name — the first is the inline
+    sugar, the others would let a name climb out of the outfits directory.
+  - Repeating -O appends: ` + "`-O a -O b`" + ` is ` + "`-O a,b`" + `.
+  - On the wire a spec is JSON: {"outfit":["sonn5",{"ttl":"1h"}]}. The sugar is
+    parsed by the CLI, so a typo costs no round trip.
+
+Outfits live in ~/.config/figaro/outfits/<name>.toml. default_outfit in
+config.toml names the one an aria is born under when nothing else is said; it
+takes a full spec, so it may compose too.`,
+		Run: func(ctx *cmdkit.RunContext) error {
+			if cmd, ok := r.Command("outfits"); ok {
+				r.PrintCommandHelp(cmd)
+			}
+			return nil
+		},
 	})
 
 	r.Register(&cmdkit.Command{
