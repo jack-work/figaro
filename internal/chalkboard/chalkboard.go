@@ -122,14 +122,13 @@ func (s Snapshot) AsPatch() Patch {
 	return p
 }
 
-// Additive keeps only what p would actually change on s: keys it does not
-// hold, and keys holding a different value. Removals are dropped.
+// Additive keeps only what p would actually change on s: keys s does not hold,
+// and keys holding a different value. Removals are dropped.
 //
-// It is what dressing an aria in an outfit means — fold the outfit, keep the
-// difference — and it is one function because both places that do it (a live
-// aria and a freshly forked child) must agree. Setting a semantically equal
-// value would otherwise be persisted as a patch record and rendered as a
-// <system-reminder> announcing a change that did not happen.
+// It is what dressing an aria in an outfit means, and it is one function
+// because every place that does it must agree. Setting a semantically equal
+// value would otherwise persist a patch record and render a <system-reminder>
+// announcing a change that did not happen.
 func Additive(s Snapshot, p Patch) Patch {
 	return s.Apply(Patch{Set: p.Set}).Diff(s)
 }

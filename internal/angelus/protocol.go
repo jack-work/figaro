@@ -512,10 +512,9 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.checkForkLT(req.FigaroID, req.AtLT); err != nil {
 		return nil, err
 	}
-	// Dress the child in the same call that mints it. Resolved BEFORE the
-	// fork so a bad spec costs nothing, applied AFTER, on the alternative:
-	// a patch sent to the parent first can be acknowledged and still miss
-	// the branch (the fork snapshots storage, the set rides the actor queue).
+	// Dress the child in the call that mints it: resolved BEFORE the fork so
+	// a bad spec costs nothing, applied AFTER, on the alternative. A patch
+	// sent to the parent first can be ACKed and still miss the branch.
 	dress, derr := h.outfitter.LoadSpec(req.Outfit, true)
 	if derr != nil {
 		return nil, h.errOutfitNotFound(req.Outfit.Label(), derr)

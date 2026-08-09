@@ -154,42 +154,33 @@ func Run(progName string, args []string) {
 	os.Exit(code)
 }
 
-// buildRouter is the whole command surface, declared once.
+// buildRouter is the whole command surface, declared once. Every command is a
+// cmdkit.Command value here; the router owns dispatch, help, arg counts and
+// completion, so a Command declares what it accepts and Run does the work.
 //
-// How a verb becomes behaviour.
+// Two shapes, one field apart:
 //
-// Every command is a cmdkit.Command value in this function. The router owns
-// dispatch, help, arg-count checks and completion, so a Command declares WHAT
-// it accepts and Run says what to do with it. Two shapes, and the difference
-// is one field:
+//   - Parsed (default). Flags is the table. The router parses argv, expands
+//     short bundles (a value-taking short ends the bundle: -erOsonn5 is
+//     -e -r -O sonn5), refuses unknown flags, enforces ArgsMin/ArgsMax.
+//     `state`, `set`, `attend`, `gc`, `kill`.
+//   - PassRaw. Run gets the untouched tail, for grammars the router cannot
+//     express: everything after `--` is a prompt and must not be inspected,
+//     and a positional may be <id>:<turn>. `send`, `new`, `fork` — sharing one
+//     parser (extractPromptFlags, send.go) that reads the same table
+//     (sendFlagDefs) the router would have. One table, so a flag cannot be
+//     documented in help and unparsed in practice.
 //
-//   - Parsed (the default). Flags is the table; the router parses argv against
-//     it, expands short bundles (a value-taking short ends the bundle and eats
-//     the rest of the token, so -erOsonn5 is -e -r -O sonn5), rejects unknown
-//     flags, enforces ArgsMin/ArgsMax, and hands Run a RunContext of Flags and
-//     Args. `state`, `set`, `attend`, `gc`, `kill` are these.
-//   - PassRaw. The router hands Run the untouched arg tail. This is for the
-//     verbs whose grammar the router cannot express: everything after `--` is
-//     a prompt and must not be looked at, and a positional may be
-//     <id>:<turn>. `send`, `new` and `fork` are these, and they share ONE
-//     hand-rolled parser -- extractPromptFlags in send.go -- reading the SAME
-//     table (sendFlagDefs) the router would have used. One table, so a flag
-//     cannot be documented in help and unparsed in practice.
+// -O traces both. On the prompt verbs extractPromptFlags parses it into
+// sendOpts.outfit and parks it in promptOutfit, so buildPromptChalkboard puts
+// it on the same RPC as the message — no verb assembles its own prompt, so
+// none can carry the flag and forget the fold. On `state outfit` it is the
+// verb's first positional, and reaches the same ParseSpec and the same fold.
 //
-// So there are exactly two ways a flag reaches code, and -O is a good trace of
-// both. On the prompt verbs it is parsed by extractPromptFlags into
-// sendOpts.outfit (an outfit.Spec) and, on the way out, parked in promptOutfit
-// so buildPromptChalkboard puts it on the SAME RPC as the message: no verb can
-// carry the flag and forget the fold, because none of them assembles the
-// prompt itself. On `state outfit` it is not a flag at all -- it is the verb's
-// first positional -- and reaches the same outfit.ParseSpec, the same
-// outfit.Spec on the wire, the same fold in the daemon.
-//
-// Where Run bodies live: manage.go (list/fork/kill/promote/...), prompt.go and
-// send.go (the prompt verbs), outfit.go (state outfit), chalkboard.go
-// (state/set/unset), portable.go (export/import), firstrun.go (the wizard the
-// create path falls into). Completion callbacks are CompleteArgs, in
-// complete_*.go, and they consult the same helpers the commands do.
+// Run bodies: manage.go (list/fork/kill/promote), prompt.go and send.go
+// (prompting), outfit.go (state outfit), chalkboard.go (state/set/unset),
+// portable.go (export/import), firstrun.go (the wizard create falls into).
+// Completions are CompleteArgs callbacks in complete_*.go.
 //
 // figaro:
 // There has to be a better way to maintain these, like in declarative configurations perhaps.

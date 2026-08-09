@@ -239,11 +239,9 @@ func (o *sendOpts) addOutfit(text string) error {
 	return nil
 }
 
-// armOutfit hands the parsed spec to the prompt builder. Every verb that can
-// send (send, fork, new, and the bare form) parses through here, so none of
-// them can forget to carry the outfit: buildPromptChalkboard puts it on the
-// SAME call as the message, and the aria folds it onto the chalkboard before
-// the turn it rides.
+// armOutfit hands the parsed spec to the prompt builder. Every sending verb
+// parses through here, so none can forget to carry it: buildPromptChalkboard
+// puts it on the same call as the message.
 func (o sendOpts) armOutfit() error {
 	promptOutfit = o.outfit
 	return nil

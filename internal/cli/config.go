@@ -143,10 +143,9 @@ func ensureHush() {
 // These are read in the CLI process (which inherits the user's
 // shell env) and sent with every prompt so the agent always has
 // up-to-date values.
-// promptOutfit is the spec the invocation asked for, parked by the flag
+// promptOutfit is the spec this invocation asked for, parked by the flag
 // parser (sendOpts.armOutfit) and read by every prompt path. It rides the
-// prompt itself, so the fold and the message are one call and the resulting
-// <system-reminder> renders on the turn that asked for it.
+// prompt itself, so the reminder renders on the turn that asked for it.
 var promptOutfit outfit.Spec
 
 func buildPromptChalkboard() *rpc.ChalkboardInput {

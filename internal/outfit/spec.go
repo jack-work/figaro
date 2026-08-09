@@ -34,16 +34,12 @@ func Names(names ...string) Spec {
 	return out
 }
 
-// Inline builds a single-term Spec from a literal.
-func InlineSpec(m map[string]any) Spec { return Spec{{Inline: m}} }
-
 func (s Spec) IsEmpty() bool { return len(s) == 0 }
 
-// MaxInlineBytes caps the literals in one spec. An outfit's own file may be as
-// large as its skills need, but an inline term is argv, and argv reaches
-// megabytes: the whole fold becomes ONE chalkboard record, and a record larger
-// than a WAL segment (1 MiB floor, 2 MiB default) cannot be appended at all.
-// Trim is the intent anyway; a big literal wants a file with a name.
+// MaxInlineBytes caps the literals in one spec. An outfit file may be as large
+// as its skills need, but an inline term is argv: one fold is ONE chalkboard
+// record, and a record larger than a WAL segment (1 MiB floor) cannot be
+// appended at all. A big literal wants a file with a name.
 const MaxInlineBytes = 64 << 10
 
 // Validate rejects a spec that cannot reasonably be applied. It runs on the
@@ -73,15 +69,11 @@ func (s Spec) Validate() error {
 	return nil
 }
 
-// Label is the name an aria born on this spec is stamped with, and the stump
-// directory it lives under.
-//
-// An inline term has no name, and renders as `{}` — deliberately something
-// ValidName refuses, so a label carrying one cannot be re-parsed as a spec.
-// That is what makes "this stamp is not re-resolvable" a fact rather than a
-// hope: a label of "inline" would parse as an ordinary name, and the day
-// someone wrote outfits/inline.toml every inline-born aria would report the
-// wrong version.
+// Label is what an aria born on this spec is stamped with, and the stump
+// directory it lives under. An inline term renders as `{}` — something
+// ValidName refuses — so a label carrying one cannot be re-parsed as a spec,
+// which is what makes "this stamp is not re-resolvable" enforced rather than
+// hoped for.
 func (s Spec) Label() string {
 	parts := make([]string, 0, len(s))
 	for _, t := range s {
@@ -171,17 +163,15 @@ func (s *Spec) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// ParseSpec reads the CLI syntax. Terms are separated by top-level commas
-// (commas inside quotes, braces or brackets are data):
+// ParseSpec reads the CLI syntax. Terms split on top-level commas; commas
+// inside quotes, braces or brackets are data.
 //
-//	sonn5                       a named outfit on disk
-//	sonn5,focus                 two, folded left to right
-//	ttl=1h,mantra="cool thing"  key=value sugar, one inline term each
-//	{"ttl":"1h"}                an inline literal, layers = [...] allowed
+//	sonn5,focus                 names, folded left to right
+//	ttl=1h,mantra="cool thing"  sugar: one inline term each
+//	{"ttl":"1h"}                the literal it stands for; layers allowed
 //
-// The sugar is only sugar: k=v becomes the inline object {"k":v}, and a value
-// that parses as JSON keeps its type (3, true, "quoted", [1,2]) while anything
-// else is taken as a string.
+// A k=v value that parses as JSON keeps its type (3, true, [1,2]); anything
+// else is a string.
 func ParseSpec(text string) (Spec, error) {
 	parts, err := splitTerms(text)
 	if err != nil {
@@ -242,12 +232,10 @@ func parsePair(part string) (string, any, error) {
 	return key, value, nil
 }
 
-// ValidName rejects the strings that cannot name an outfit file. A name is a
-// file basename, so it is deliberately narrow: `=` is the inline sugar's
-// separator, a path separator would let a name climb out of the outfits
-// directory, and the punctuation the spec grammar uses would otherwise pass
-// through as a name that can only ever be missing (`[1,2]` and `a}` both
-// arrive here when a literal is malformed).
+// ValidName is the gate every name passes, in a spec or in a layers list. A
+// name is a file basename, so it is narrow: `=` is the sugar's separator, a
+// path separator would climb out of the outfits directory, and the grammar's
+// own punctuation would otherwise arrive as a name that can only be missing.
 func ValidName(name string) error {
 	switch {
 	case name == "":

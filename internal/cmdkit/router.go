@@ -404,11 +404,10 @@ func unconsumedFlagError(flags []FlagDef, tok string) error {
 // router does: two expanders is how `-fj` came to fail while `-f -j` worked.
 func ExpandBundled(args []string, flags []FlagDef) []string { return expandBundled(args, flags) }
 
-// expandBundled splits `-abc` into `-a -b -c`. A short that TAKES A VALUE
-// ends the bundle, getopt-style: the rest of the token is its value when there
-// is one (`-eOsonn5`), and otherwise the next argv token is (`-eO sonn5`).
-// A bundle containing an unknown letter is left exactly as it was typed, so
-// the caller reports it rather than this function inventing flags.
+// expandBundled splits `-abc` into `-a -b -c`. A short that takes a VALUE ends
+// the bundle, getopt-style: the rest of the token is its value (`-eOsonn5`),
+// or the next argv token is (`-eO sonn5`). A bundle with an unknown letter is
+// left as typed, so the caller names it rather than this inventing flags.
 func expandBundled(args []string, flags []FlagDef) []string {
 	out := make([]string, 0, len(args))
 	for _, a := range args {
