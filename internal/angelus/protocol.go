@@ -225,7 +225,11 @@ func (h *handlers) currentOutfitHash(name string) string {
 	if h.outfitter == nil {
 		return ""
 	}
-	p, err := h.outfitter.Load(name)
+	spec, perr := outfit.ParseSpec(name)
+	if perr != nil {
+		return "" // a stamped label with an inline term is not re-resolvable
+	}
+	p, err := h.outfitter.LoadSpec(spec, false)
 	if err != nil {
 		return ""
 	}
@@ -270,20 +274,26 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	// without a daemon restart. One os.ReadFile + toml.Unmarshal per
 	// request is cheap relative to anything downstream.
 	h.reloadConfigIfChanged()
-	outfitName := req.Outfit
-	if outfitName == "" {
-		outfitName = h.config.Config.DefaultOutfit
+	spec := req.Outfit
+	if spec.IsEmpty() {
+		parsed, perr := outfit.ParseSpec(h.config.Config.DefaultOutfit)
+		if perr != nil {
+			return nil, perr
+		}
+		spec = parsed
 	}
-	if outfitName == "" {
+	if spec.IsEmpty() {
 		return nil, h.errNoDefaultOutfit()
 	}
+	outfitName := spec.Label()
 
-	// Resolve outfit -> chalkboard patch. Missing files are not
-	// fatal; the patch comes back empty and req.Patch may still
-	// supply system.provider. outfitPatch is the STABLE outfit (it
-	// defines the outfit node's identity/version); base layers the
+	// Resolve outfit -> chalkboard patch. An outfit the CALLER named must
+	// exist (a typo is a typo); the configured default may not, because the
+	// first-run flow rides on that absence — the patch comes back empty and
+	// req.Patch may still supply system.provider. outfitPatch is the STABLE
+	// outfit (it defines the outfit node's identity/version); base layers the
 	// per-create req.Patch overrides on top for provider/knob resolution.
-	outfitPatch, err := h.outfitter.Load(outfitName)
+	outfitPatch, err := h.outfitter.LoadSpec(spec, !req.Outfit.IsEmpty())
 	if err != nil {
 		return nil, h.errOutfitNotFound(outfitName, err)
 	}
@@ -502,6 +512,14 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.checkForkLT(req.FigaroID, req.AtLT); err != nil {
 		return nil, err
 	}
+	// Dress the child in the same call that mints it. Resolved BEFORE the
+	// fork so a bad spec costs nothing, applied AFTER, on the alternative:
+	// a patch sent to the parent first can be acknowledged and still miss
+	// the branch (the fork snapshots storage, the set rides the actor queue).
+	dress, derr := h.outfitter.LoadSpec(req.Outfit, true)
+	if derr != nil {
+		return nil, h.errOutfitNotFound(req.Outfit.Label(), derr)
+	}
 	// The COORDINATE says whether this is interior; atMainLT says where.
 	// They are not the same question: forking at turn 1 retains nothing
 	// before it, so its LT is 0 -- which is also the head-fork sentinel.
@@ -542,12 +560,22 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 		// (a normal state transition it sees on its next turn); without
 		// this an aria cannot reliably fork itself.
 		if alt != "" && alt != req.FigaroID {
-			if b, merr := json.Marshal(alt); merr == nil {
-				if _, perr := h.angelus.Backend.ApplyChalkboard(alt, message.Patch{
-					Set: map[string]json.RawMessage{"aria_id": b},
-				}); perr != nil {
-					slog.Warn("fork: restamp aria_id", "alt", alt, "err", perr)
+			patch := message.Patch{Set: map[string]json.RawMessage{}}
+			if !dress.IsEmpty() {
+				// Additive against what the child inherited, so the reminder
+				// names what actually changed and nothing else.
+				if snap, serr := h.angelus.Backend.ChalkboardState(alt); serr == nil {
+					dress = chalkboard.Additive(snap, dress)
 				}
+				for k, v := range dress.Set {
+					patch.Set[k] = v
+				}
+			}
+			if b, merr := json.Marshal(alt); merr == nil {
+				patch.Set["aria_id"] = b
+			}
+			if _, perr := h.angelus.Backend.ApplyChalkboard(alt, patch); perr != nil {
+				slog.Warn("fork: stamp child chalkboard", "alt", alt, "err", perr)
 			}
 		}
 		return nil

@@ -56,7 +56,7 @@ tone = "concise"
 `)
 	a := agentForOutfit(t, cfg, chalkboard.Patch{})
 
-	set, err := a.ApplyOutfit([]string{"focus"})
+	set, err := a.ApplyOutfit(outfit.Names("focus"))
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"system.provider", "system.model", "system.tone"}, set)
 }
@@ -73,7 +73,7 @@ model = "claude-opus-4-7"
 		"system.provider": json.RawMessage(`"anthropic"`),
 	}})
 
-	set, err := a.ApplyOutfit([]string{"focus"})
+	set, err := a.ApplyOutfit(outfit.Names("focus"))
 	require.NoError(t, err)
 	// provider matches → skipped. model is new → kept.
 	assert.ElementsMatch(t, []string{"system.model"}, set)
@@ -89,7 +89,7 @@ model = "claude-opus-4-7"
 		"system.model": json.RawMessage(`"old-model"`),
 	}})
 
-	set, err := a.ApplyOutfit([]string{"focus"})
+	set, err := a.ApplyOutfit(outfit.Names("focus"))
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"system.model"}, set)
 }
@@ -109,7 +109,7 @@ model = "claude-opus-4-7"
 		"unrelated.key": json.RawMessage(`"keep me"`),
 	}})
 
-	_, err := a.ApplyOutfit([]string{"focus"})
+	_, err := a.ApplyOutfit(outfit.Names("focus"))
 	require.NoError(t, err)
 	// Need to wait briefly for the async Set to apply.
 	// chalkboard.State.Snapshot is read after the event drains.
@@ -125,7 +125,7 @@ func TestApplyOutfit_MissingOutfitIsReported(t *testing.T) {
 	cfg := t.TempDir()
 	a := agentForOutfit(t, cfg, chalkboard.Patch{})
 
-	_, err := a.ApplyOutfit([]string{"nonexistent"})
+	_, err := a.ApplyOutfit(outfit.Names("nonexistent"))
 	var missing *outfit.MissingError
 	require.True(t, errors.As(err, &missing), "want MissingError, got %v", err)
 	assert.True(t, missing.RootOnly)
@@ -135,6 +135,6 @@ func TestApplyOutfit_EmptyNameErrors(t *testing.T) {
 	cfg := t.TempDir()
 	a := agentForOutfit(t, cfg, chalkboard.Patch{})
 
-	_, err := a.ApplyOutfit([]string{""})
+	_, err := a.ApplyOutfit(outfit.Names(""))
 	require.Error(t, err)
 }

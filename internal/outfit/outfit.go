@@ -46,6 +46,9 @@ type Closure struct {
 	Found  bool
 	Cycle  bool // this name is already being resolved further up the chain
 	Layers []*Closure
+	// Inline is the literal body when this node came from an inline term
+	// rather than a file. Inline nodes are always found and never cached.
+	Inline map[string]any
 }
 
 // Walk visits the closure depth-first, parents before layers.
@@ -88,44 +91,31 @@ func (e *CycleError) Error() string {
 	return fmt.Sprintf("outfit: cycle in layers at %q", e.At)
 }
 
-// Load resolves one outfit and returns the chalkboard patch.
+// Load resolves one named outfit and returns the chalkboard patch.
 func (o *Outfitter) Load(name string) (chalkboard.Patch, error) {
-	if name == "" {
-		return chalkboard.Patch{}, nil
-	}
-	return o.LoadAll([]string{name})
+	return o.LoadSpec(Names(name), false)
 }
 
-// LoadAll folds several outfits into one patch, each taking precedence over
-// the ones before it — the same rule that orders an outfit's own layers, so
-// `figaro outfit a,b` and an outfit declaring `layers = ["a", "b"]` compose
+// LoadSpec folds a spec into one patch, each term taking precedence over the
+// ones before it — the same rule that orders an outfit's own layers, so
+// `state outfit a,b` and an outfit declaring `layers = ["a", "b"]` compose
 // identically.
 //
-// An outfit that was ASKED for but does not exist yields an empty patch and no
-// error: the first-run flow scaffolds config by letting that absence through
-// and noticing the missing system.provider downstream. A layer referenced by an
-// outfit that DOES exist is the opposite case — a broken reference, always an
-// error, because the alternative is what this used to do: discard the whole
-// patch and let a typo look like an empty outfit.
+// strict decides what absence means. Lenient (false) lets an outfit that was
+// ASKED for but does not exist yield an empty patch: the first-run flow
+// scaffolds config by letting that absence through and noticing the missing
+// system.provider downstream. Strict (true) is what applying an outfit by name
+// wants: `state outfit nope` should say so, not quietly change nothing.
 //
-// Use LoadStrict where absence is a fault in itself.
-func (o *Outfitter) LoadAll(names []string) (chalkboard.Patch, error) {
-	return o.loadAll(names, false)
-}
-
-// LoadStrict is LoadAll with a missing outfit treated as a fault even when it
-// is the one that was asked for. This is what applying an outfit by name wants:
-// `figaro outfit nope` should say so, not quietly change nothing.
-func (o *Outfitter) LoadStrict(names []string) (chalkboard.Patch, error) {
-	return o.loadAll(names, true)
-}
-
-func (o *Outfitter) loadAll(names []string, strict bool) (chalkboard.Patch, error) {
-	if len(names) == 0 {
+// A layer referenced by an outfit that DOES exist is a broken reference under
+// either setting, because the alternative is to discard the whole patch and
+// let a typo look like an empty outfit.
+func (o *Outfitter) LoadSpec(spec Spec, strict bool) (chalkboard.Patch, error) {
+	if spec.IsEmpty() {
 		return chalkboard.Patch{}, nil
 	}
-	root := o.ResolveAll(names)
-	if err := closureError(root, names); err != nil {
+	root := o.ResolveSpec(spec)
+	if err := closureError(root, spec); err != nil {
 		var missing *MissingError
 		if !strict && errors.As(err, &missing) && missing.RootOnly {
 			return chalkboard.Patch{}, nil
@@ -146,20 +136,38 @@ func (o *Outfitter) loadAll(names []string, strict bool) (chalkboard.Patch, erro
 	return chalkboard.Patch{Set: flat}, nil
 }
 
-// Resolve builds the closure for one outfit without reading any of it.
+// Resolve builds the closure for one named outfit without reading any of it.
 func (o *Outfitter) Resolve(name string) *Closure {
 	return o.resolve(name, nil, map[string]*Closure{})
 }
 
-// ResolveAll builds a synthetic root whose layers are names, in order. The
-// root is not an outfit and is never rendered as one.
-func (o *Outfitter) ResolveAll(names []string) *Closure {
+// ResolveSpec builds a synthetic root whose layers are the spec's terms, in
+// order. The root is not an outfit and is never rendered as one.
+func (o *Outfitter) ResolveSpec(spec Spec) *Closure {
 	root := &Closure{Found: true}
 	memo := map[string]*Closure{}
-	for _, n := range names {
-		root.Layers = append(root.Layers, o.resolve(n, nil, memo))
+	for _, t := range spec {
+		root.Layers = append(root.Layers, o.resolveTerm(t, memo))
 	}
 	return root
+}
+
+// resolveTerm resolves a name from disk, or wraps an inline literal in a node
+// of its own so both kinds fold through the same path. An inline term's
+// `layers` are resolved like any other.
+func (o *Outfitter) resolveTerm(t Term, memo map[string]*Closure) *Closure {
+	if t.Name != "" {
+		return o.resolve(t.Name, nil, memo)
+	}
+	c := &Closure{Name: t.String(), Found: true, Inline: t.Inline}
+	names, err := layerNames("inline outfit", t.Inline)
+	if err != nil {
+		return c // fold parses it for real and reports
+	}
+	for _, l := range names {
+		c.Layers = append(c.Layers, o.resolve(l, nil, memo))
+	}
+	return c
 }
 
 // resolve reads one outfit's layer list and recurses. stack is the chain
@@ -252,7 +260,7 @@ func layerNames(path string, raw map[string]any) ([]string, error) {
 
 // closureError reports the first structural fault in a closure: a cycle, or
 // anything not on disk.
-func closureError(root *Closure, requested []string) error {
+func closureError(root *Closure, requested Spec) error {
 	var cycle string
 	var missing []string
 	root.Walk(func(c *Closure) {
@@ -285,13 +293,16 @@ func closureError(root *Closure, requested []string) error {
 // so the nearest declaration wins. Memoised per name, which makes a layer
 // shared by several others cheap to apply at each of its positions.
 func (o *Outfitter) fold(c *Closure, memo map[string]foldResult) (foldResult, error) {
-	if done, ok := memo[c.Name]; ok {
-		return done, nil
-	}
-	if keys, ok := o.folded.get(c.Name); ok {
-		done := foldResult{keys: keys, deps: o.foldedDeps(c.Name)}
-		memo[c.Name] = done
-		return done, nil
+	cacheable := c.Inline == nil
+	if cacheable {
+		if done, ok := memo[c.Name]; ok {
+			return done, nil
+		}
+		if keys, ok := o.folded.get(c.Name); ok {
+			done := foldResult{keys: keys, deps: o.foldedDeps(c.Name)}
+			memo[c.Name] = done
+			return done, nil
+		}
 	}
 	flat := map[string]json.RawMessage{}
 	d := &deps{}
@@ -305,22 +316,38 @@ func (o *Outfitter) fold(c *Closure, memo map[string]foldResult) (foldResult, er
 		}
 		d.merge(sub.deps)
 	}
-	raw := map[string]any{}
-	if _, err := toml.DecodeFile(c.Path, &raw); err != nil {
-		return foldResult{}, fmt.Errorf("outfit: parse %s: %w", c.Path, err)
+	raw, source := c.Inline, "inline outfit"
+	if cacheable {
+		raw, source = map[string]any{}, c.Path
+		if _, err := toml.DecodeFile(c.Path, &raw); err != nil {
+			return foldResult{}, fmt.Errorf("outfit: parse %s: %w", c.Path, err)
+		}
+		d.add(c.Path)
+	} else {
+		raw = withoutLayers(raw)
 	}
-	if _, err := layerNames(c.Path, raw); err != nil {
+	if _, err := layerNames(source, raw); err != nil {
 		return foldResult{}, err
 	}
 	delete(raw, "layers")
-	d.add(c.Path)
 	if err := o.flatten("", raw, flat, d); err != nil {
 		return foldResult{}, err
 	}
 	done := foldResult{keys: flat, deps: d.seen}
-	memo[c.Name] = done
-	o.folded.put(c.Name, flat, d.seen)
+	if cacheable {
+		memo[c.Name] = done
+		o.folded.put(c.Name, flat, d.seen)
+	}
 	return done, nil
+}
+
+// withoutLayers copies a literal so folding never mutates the caller's map.
+func withoutLayers(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // foldResult is a composed patch and the files it was composed from. The deps

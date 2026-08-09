@@ -15,6 +15,7 @@ import (
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
@@ -30,13 +31,13 @@ type sendOpts struct {
 	verbatim  bool // --verbatim / -v: dump raw wire frames as JSON
 	verbose   bool // --verbose / -o (or -t alias): expand tool inputs (Ctrl-O toggles live)
 	exec      bool
-	dryRun    bool   // --exec only
-	skipYes   bool   // --exec only
-	forget    bool   // --forget / -f: submit and exit; do not stream
-	json      bool   // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
-	listen    bool   // --listen / -l: auto-enter the transcript at startup
-	outfit    string // --outfit / -O: the outfit a CREATED aria is minted on
-	record    string // --record: write a wire tape of this stream (testing)
+	dryRun    bool        // --exec only
+	skipYes   bool        // --exec only
+	forget    bool        // --forget / -f: submit and exit; do not stream
+	json      bool        // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
+	listen    bool        // --listen / -l: auto-enter the transcript at startup
+	outfit    outfit.Spec // --outfit / -O: the outfit this call dresses the aria in
+	record    string      // --record: write a wire tape of this stream (testing)
 }
 
 // extractSendFlags scans a PassRaw arg list for the send command's
@@ -93,7 +94,7 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 		a := expanded[i]
 		if a == "--" {
 			rest = append(rest, expanded[i:]...)
-			return opts, rest, nil
+			return opts, rest, opts.armOutfit()
 		}
 		switch {
 		case a == "--id":
@@ -126,19 +127,14 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			if i+1 >= len(expanded) || expanded[i+1] == "--" {
 				return opts, nil, fmt.Errorf("--outfit requires a value")
 			}
-			if opts.outfit != "" {
-				return opts, nil, fmt.Errorf("--outfit given more than once")
+			if err := opts.addOutfit(expanded[i+1]); err != nil {
+				return opts, nil, err
 			}
-			opts.outfit = expanded[i+1]
 			i += 2
 			continue
 		case strings.HasPrefix(a, "--outfit="):
-			if opts.outfit != "" {
-				return opts, nil, fmt.Errorf("--outfit given more than once")
-			}
-			opts.outfit = strings.TrimPrefix(a, "--outfit=")
-			if opts.outfit == "" {
-				return opts, nil, fmt.Errorf("--outfit requires a value")
+			if err := opts.addOutfit(strings.TrimPrefix(a, "--outfit=")); err != nil {
+				return opts, nil, err
 			}
 			i++
 			continue
@@ -222,7 +218,32 @@ func extractPromptFlags(args []string, bareTarget bool) (sendOpts, []string, err
 			return opts, nil, fmt.Errorf("unexpected argument %q (the target is already %q)", a, opts.target+opts.id)
 		}
 	}
-	return opts, rest, nil
+	return opts, rest, opts.armOutfit()
+}
+
+// addOutfit folds one -O value onto the spec. Repeats compose rather than
+// conflict: `-O a -O b` means `-O a,b`, the same left-to-right fold every
+// other outfit surface uses.
+func (o *sendOpts) addOutfit(text string) error {
+	if strings.TrimSpace(text) == "" {
+		return fmt.Errorf("--outfit requires a value")
+	}
+	spec, err := outfit.ParseSpec(text)
+	if err != nil {
+		return err
+	}
+	o.outfit = append(o.outfit, spec...)
+	return nil
+}
+
+// armOutfit hands the parsed spec to the prompt builder. Every verb that can
+// send (send, fork, new, and the bare form) parses through here, so none of
+// them can forget to carry the outfit: buildPromptChalkboard puts it on the
+// SAME call as the message, and the aria folds it onto the chalkboard before
+// the turn it rides.
+func (o sendOpts) armOutfit() error {
+	promptOutfit = o.outfit
+	return nil
 }
 
 // sendFlagDefs is the single source of truth for the prompt verbs' flags:
@@ -242,7 +263,7 @@ var sendFlagDefs = []cmdkit.FlagDef{
 	{Long: "yes", Short: "y", IsBool: true, Description: "--exec only: skip confirmation"},
 	{Long: "forget", Short: "f", IsBool: true, Description: "Submit and exit; do not stream"},
 	{Long: "json", Short: "j", IsBool: true, Description: "Submit, print one JSON object, exit"},
-	{Long: "outfit", Short: "O", Description: "Outfit for an aria this call CREATES (-e, or an unattended shell)"},
+	{Long: "outfit", Short: "O", Description: "Outfit(s) to dress the aria in: names, k=v, or a JSON literal"},
 }
 
 // argsBeforeBoundary / argsFromBoundary split argv at the first bare `--`.
@@ -476,9 +497,6 @@ func validateSendOpts(opts sendOpts, hasTurn bool) error {
 	if hasTurn && (opts.ephemeral || opts.exec || opts.verbatim) {
 		return fmt.Errorf("<trunk>:<turn> is not compatible with --ephemeral/--exec/--verbatim")
 	}
-	if opts.outfit != "" && !opts.ephemeral && (opts.id != "" || opts.target != "" || hasTurn) {
-		return fmt.Errorf("--outfit applies to an aria this call creates; a target names one that already exists (use -e, or drop the target)")
-	}
 	if opts.json {
 		if bad := jsonIncompatible(opts); bad != "" {
 			return fmt.Errorf("--json contradicts %s (--json submits and exits; there is no stream to shape)", bad)
@@ -488,6 +506,22 @@ func validateSendOpts(opts sendOpts, hasTurn bool) error {
 		}
 	}
 	return nil
+}
+
+// validateNewOpts holds `new`'s own rules. It shares send's parser, so it must
+// say which of send's flags it cannot honour rather than ignoring them: `new`
+// always creates, so a target contradicts it, and an ephemeral aria is `send
+// -e`'s business.
+func validateNewOpts(opts sendOpts) error {
+	switch {
+	case opts.id != "" || opts.target != "":
+		return fmt.Errorf("new always creates an aria; drop the target (or use `send --id`)")
+	case opts.ephemeral:
+		return fmt.Errorf("--ephemeral is `send -e`; new mints a persistent aria")
+	case opts.exec || opts.dryRun || opts.skipYes:
+		return fmt.Errorf("--exec is `send -x`")
+	}
+	return validateSendOpts(opts, false)
 }
 
 // jsonIncompatible names the first flag that cannot survive --json's
@@ -572,14 +606,14 @@ func runSendEphemeralRich(loaded *config.Loaded, opts sendOpts, prompt string, s
 // runSendRaw streams raw output from a persistent aria (bound, named, or
 // minted here when this shell has none). The aria is left alive; only the
 // formatting is raw.
-func runSendRaw(loaded *config.Loaded, ariaID, outfit, prompt string) {
+func runSendRaw(loaded *config.Loaded, ariaID string, spec outfit.Spec, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	_, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, true, outfit)
+	_, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, true, spec)
 	if err != nil {
 		die("%s", err)
 	}
@@ -738,7 +772,7 @@ func runSendForget(loaded *config.Loaded, opts sendOpts, prompt string) {
 	defer fcli.Close()
 
 	if _, _, qerr := fcli.Qua(ctx, prompt, buildPromptChalkboard()); qerr != nil {
-		die("prompt: %s", qerr)
+		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
 	if opts.json {
 		enc := json.NewEncoder(os.Stdout)

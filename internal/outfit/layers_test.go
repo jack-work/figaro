@@ -92,7 +92,7 @@ func TestMissingLayerIsAnErrorCarryingTheClosure(t *testing.T) {
 }
 
 // An outfit that was asked for and does not exist is an absence for Load (the
-// first-run flow rides on it) and a fault for LoadStrict.
+// first-run flow rides on it) and a fault under strict.
 func TestRequestedOutfitMissingIsGracefulButStrictReportsIt(t *testing.T) {
 	dir := t.TempDir()
 	o := outfit.New(dir)
@@ -101,20 +101,20 @@ func TestRequestedOutfitMissingIsGracefulButStrictReportsIt(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, patch.IsEmpty())
 
-	_, err = o.LoadStrict([]string{"nope"})
+	_, err = o.LoadSpec(outfit.Names("nope"), true)
 	var missing *outfit.MissingError
 	require.True(t, errors.As(err, &missing), "want MissingError, got %v", err)
 	assert.True(t, missing.RootOnly)
 	assert.Equal(t, []string{"nope"}, missing.Missing)
 }
 
-// LoadAll is the comma-separated form, and must order exactly as layers do.
-func TestLoadAllOrdersLikeLayers(t *testing.T) {
+// A multi-term spec must order exactly as layers do.
+func TestSpecOrdersLikeLayers(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "a", "[system]\nmodel = \"a\"\ncredo = \"a\"\n")
 	writeOutfit(t, dir, "b", "[system]\nmodel = \"b\"\n")
 
-	patch, err := outfit.New(dir).LoadAll([]string{"a", "b"})
+	patch, err := outfit.New(dir).LoadSpec(outfit.Names("a", "b"), false)
 	require.NoError(t, err)
 	assert.Equal(t, `"b"`, string(patch.Set["system.model"]))
 	assert.Equal(t, `"a"`, string(patch.Set["system.credo"]))
@@ -163,4 +163,36 @@ func TestMalformedLayersIsReported(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.want)
 		})
 	}
+}
+
+// An inline term folds exactly where a named one would, may declare layers of
+// its own, and is never cached (the same Outfitter must see a changed literal).
+func TestInlineTermFoldsLikeANamedOne(t *testing.T) {
+	dir := t.TempDir()
+	writeOutfit(t, dir, "base", "[system]\nmodel = \"base-model\"\ncredo = \"base\"\n")
+	o := outfit.New(dir)
+
+	spec, err := outfit.ParseSpec(`base,{"system.model":"inline-model","ttl":"1h"}`)
+	require.NoError(t, err)
+	patch, err := o.LoadSpec(spec, true)
+	require.NoError(t, err)
+	assert.Equal(t, `"inline-model"`, string(patch.Set["system.model"]))
+	assert.Equal(t, `"base"`, string(patch.Set["system.credo"]))
+	assert.Equal(t, `"1h"`, string(patch.Set["ttl"]))
+
+	// layers inside a literal resolve like any other, and never leak as a key.
+	spec, err = outfit.ParseSpec(`{"layers":["base"],"ttl":"2h"}`)
+	require.NoError(t, err)
+	patch, err = o.LoadSpec(spec, true)
+	require.NoError(t, err)
+	assert.Equal(t, `"base-model"`, string(patch.Set["system.model"]))
+	assert.Equal(t, `"2h"`, string(patch.Set["ttl"]))
+	assert.NotContains(t, patch.Set, "layers")
+
+	// A literal naming a missing layer is a broken reference, always.
+	spec, err = outfit.ParseSpec(`{"layers":["nope"]}`)
+	require.NoError(t, err)
+	_, err = o.LoadSpec(spec, false)
+	var missing *outfit.MissingError
+	require.True(t, errors.As(err, &missing), "want MissingError, got %v", err)
 }

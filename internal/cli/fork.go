@@ -113,7 +113,7 @@ func runForkCmd(loaded *config.Loaded, rawArgs []string) {
 		}
 	}
 	if plan.prompt == "" {
-		runFork(loaded, plan.spec, plan.opts.stay, plan.opts.json)
+		runFork(loaded, plan.spec, plan.opts)
 		return
 	}
 	runForkPrompt(loaded, plan.spec, plan.opts, plan.prompt)
@@ -180,7 +180,7 @@ func runForkPrompt(loaded *config.Loaded, spec string, opts sendOpts, prompt str
 		// The coordinate goes on the wire in the form the user named it;
 		// the server owns any translation.
 
-		resp, err := waitForFork(ctx, acli, target, at)
+		resp, err := waitForFork(ctx, acli, target, at, opts.outfit)
 		if err != nil {
 			die("fork: %s", err)
 		}
@@ -284,7 +284,7 @@ func promptForkedAria(loaded *config.Loaded, ariaID string, opts sendOpts, promp
 	case "exec":
 		runSendExec(loaded, opts, prompt)
 	case "raw":
-		runSendRaw(loaded, ariaID, "", prompt)
+		runSendRaw(loaded, ariaID, nil, prompt)
 	default:
 		promptAria(loaded, ariaID, prompt, set)
 	}

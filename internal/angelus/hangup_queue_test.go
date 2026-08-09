@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/outfit"
 	"os"
 	"sync"
 	"testing"
@@ -78,7 +79,7 @@ model = "m"
 
 	acli, err := angelus.DialClient(transport.UnixEndpoint(a.SocketPath))
 	require.NoError(t, err)
-	create, err := acli.Create(ctx, "parked", nil)
+	create, err := acli.Create(ctx, outfit.Names("parked"), nil)
 	require.NoError(t, err)
 	acli.Close()
 

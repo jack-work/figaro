@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -161,7 +162,7 @@ func TestPlanFork(t *testing.T) {
 			if plan.compose != tc.wantCompos {
 				t.Errorf("compose: got %v, want %v", plan.compose, tc.wantCompos)
 			}
-			if plan.opts != tc.wantOpts {
+			if !reflect.DeepEqual(plan.opts, tc.wantOpts) {
 				t.Errorf("opts: got %+v, want %+v", plan.opts, tc.wantOpts)
 			}
 			if got, want := plan.hasPrompt(), tc.wantPrompt != "" || tc.wantCompos; got != want {

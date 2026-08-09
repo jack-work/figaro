@@ -51,7 +51,7 @@ func openQueueSession(loaded *config.Loaded, ariaID string) (*queueSession, cont
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
 	acli := mustConnectAngelus(loaded)
-	resolvedID, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, "")
+	resolvedID, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, nil)
 	if err != nil {
 		acli.Close()
 		cancel()

@@ -76,7 +76,7 @@ func BenchmarkApplyOutfitFirstTime(b *testing.B) {
 		b.StopTimer()
 		a := benchAgent(b, dir, chalkboard.Patch{})
 		b.StartTimer()
-		if _, err := a.ApplyOutfit([]string{"full"}); err != nil {
+		if _, err := a.ApplyOutfit(outfit.Names("full")); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -99,7 +99,7 @@ func BenchmarkApplyOutfitReapplied(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		set, err := a.ApplyOutfit([]string{"full"})
+		set, err := a.ApplyOutfit(outfit.Names("full"))
 		if err != nil {
 			b.Fatal(err)
 		}

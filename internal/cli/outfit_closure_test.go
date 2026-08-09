@@ -8,25 +8,6 @@ import (
 	"github.com/jack-work/figaro/internal/term"
 )
 
-func TestSplitOutfitNames(t *testing.T) {
-	for _, tc := range []struct {
-		in   string
-		want []string
-	}{
-		{"focus", []string{"focus"}},
-		{"pr-review,opus5", []string{"pr-review", "opus5"}},
-		{" pr-review , opus5 ", []string{"pr-review", "opus5"}},
-		{"a,,b", []string{"a", "b"}},
-		{",", nil},
-		{"", nil},
-	} {
-		got := splitOutfitNames(tc.in)
-		if strings.Join(got, "|") != strings.Join(tc.want, "|") {
-			t.Fatalf("splitOutfitNames(%q) = %v, want %v", tc.in, got, tc.want)
-		}
-	}
-}
-
 // The closure is drawn so the GAP is located, not merely named: a layer four
 // levels down reads as a red leaf under green parents.
 func TestRenderOutfitClosureMarksFoundAndMissing(t *testing.T) {

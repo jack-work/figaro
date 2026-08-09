@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jack-work/figaro/internal/outfit"
 	"net"
 	"os"
 	"runtime"
@@ -56,7 +57,7 @@ func TestEndToEndResourceProfile(t *testing.T) {
 	ids := make([]string, 0, arias)
 	socks := make([]string, 0, arias)
 	for i := 0; i < arias; i++ {
-		created, err := acli.Create(ctx, "mock", nil)
+		created, err := acli.Create(ctx, outfit.Names("mock"), nil)
 		require.NoError(t, err)
 		ids = append(ids, created.FigaroID)
 		socks = append(socks, created.Endpoint.Address)

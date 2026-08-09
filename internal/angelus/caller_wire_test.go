@@ -92,7 +92,7 @@ func TestAngelusClientPresentsCallerOnBothParamShapes(t *testing.T) {
 	defer cli.Close()
 	ctx := context.Background()
 
-	if _, err := cli.Fork(ctx, "target07", 3, 0); err != nil {
+	if _, err := cli.Fork(ctx, "target07", 3, 0, nil); err != nil {
 		t.Fatalf("fork: %v", err)
 	}
 	got := rs.next(t)
@@ -128,7 +128,7 @@ func TestAngelusClientOmitsCallerWhenUnset(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer cli.Close()
-	if _, err := cli.Fork(context.Background(), "target07", 0, 0); err != nil {
+	if _, err := cli.Fork(context.Background(), "target07", 0, 0, nil); err != nil {
 		t.Fatalf("fork: %v", err)
 	}
 	got := rs.next(t)

@@ -333,26 +333,30 @@ positional target needs the explicit verb or --id.`,
 		PassRaw: true,
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
-			prompt := extractPrompt(ctx.RawArgs)
-			asJSON := hasPreDashFlag(ctx.RawArgs, "--json", "-j")
-			outfit, _, lerr := preDashFlagValue(ctx.RawArgs, "--outfit", "-O")
-			if lerr != nil {
-				return fmt.Errorf("new: %s", lerr)
+			// Same parser as send and fork: -O composes the same way, shorts
+			// bundle the same way, and a rejection reads the same.
+			opts, rest, perr := extractPromptFlags(ctx.RawArgs, false)
+			if perr != nil {
+				return fmt.Errorf("new: %s", perr)
 			}
-			if prompt == "" {
-				if outfit == "" {
-					// Bare `figaro new`: drop the shell's binding (go home).
-					// New conversations then default to the live outfit.
-					runUnattend(ld)
-					return nil
-				}
+			if err := validateNewOpts(opts); err != nil {
+				return fmt.Errorf("new: %s", err)
+			}
+			prompt := extractPrompt(rest)
+			set := renderSettings{jsonMode: opts.json}
+			switch {
+			case prompt == "" && opts.outfit.IsEmpty():
+				// Bare `figaro new`: drop the shell's binding (go home).
+				// New conversations then default to the live outfit.
+				runUnattend(ld)
+			case prompt == "":
 				// `figaro new --outfit X` with no prompt: mint a fresh aria
 				// under the outfit and attend it, no turn. A prompt requires
 				// the `--` boundary.
-				runNewFromOutfit(ld, outfit, renderSettings{jsonMode: asJSON})
-				return nil
+				runNewFromOutfit(ld, opts.outfit, set)
+			default:
+				runNewPrompt(ld, prompt, opts.outfit, set)
 			}
-			runNewPrompt(ld, prompt, outfit, renderSettings{jsonMode: asJSON})
 			return nil
 		},
 		CompleteArgs: completeNewPrompt,
@@ -880,23 +884,49 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 		Name:    "state",
 		Aliases: []string{"chalkboard"},
 		Group:   "State",
-		Short:   "Show the current chalkboard snapshot",
-		Usage:   "state [<id> | --id <id>] [-j]",
-		ArgsMax: 1,
+		Short:   "Show the chalkboard, or dress it in an outfit",
+		Usage:   "state [<id> | --id <id>] [-j] | state outfit <spec> | state outfit --list | state outfit --tree [<spec>]",
+		Long: `The aria's state, and the verbs that shape it.
+
+  figaro state                     print the chalkboard
+  figaro state --id <id> -j        another aria's, as JSON
+  figaro state outfit focus        fold an outfit onto this aria, now
+  figaro state outfit a,b          fold both, b winning
+  figaro state outfit ttl=1h       fold an inline literal
+  figaro state outfit --tree a     draw a's layer closure, apply nothing
+  figaro state outfit --list       the outfits on disk
+
+` + "`state outfit`" + ` is an ADDITIVE fold: keys already holding the outfit's
+value are skipped and nothing is ever removed, so re-applying is free and the
+aria sees a <system-reminder> for exactly what changed. It is the same fold
+` + "`-O`" + ` performs on send/new/fork; the verb form exists because dressing
+state is an action, not a modifier on one.
+
+See ` + "`figaro help outfits`" + ` for the spec syntax.`,
+		ArgsMax: 2,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit the snapshot as a JSON object"},
+			{Long: "list", IsBool: true, Description: "outfit: list available outfits and exit"},
+			{Long: "tree", IsBool: true, Description: "outfit: print the layer closure and exit; applies nothing"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
+			args := ctx.Args
+			if len(args) > 0 && args[0] == "outfit" {
+				return runStateOutfit(ld, ctx, args[1:])
+			}
+			if ctx.BoolFlag("list") || ctx.BoolFlag("tree") {
+				return fmt.Errorf("--list/--tree belong to `state outfit`")
+			}
 			id := ctx.Flag("id")
-			if id == "" && len(ctx.Args) > 0 {
-				id = ctx.Args[0]
+			if id == "" && len(args) > 0 {
+				id = args[0]
 			}
 			runChalkboard(ld, id, ctx.BoolFlag("json"))
 			return nil
 		},
-		CompleteArgs: completeAriaIDsPositionalOrFlag,
+		CompleteArgs: completeStateArgs,
 	})
 
 	r.Register(&cmdkit.Command{
@@ -932,42 +962,6 @@ aria nesting follows fork history alone and there is nothing to promote.`,
 			return nil
 		},
 		CompleteArgs: completeAriaIDsAfterFlag(completeChalkboardKeys),
-	})
-
-	r.Register(&cmdkit.Command{
-		Name:    "outfit",
-		Group:   "State",
-		Short:   "Apply named outfits additively to an aria",
-		Usage:   "outfit [--id <id>] <name>[,<name>...] | outfit --tree [<name>] | outfit --list",
-		Long:    "Loads ~/.config/figaro/outfits/<name>.toml and applies it as an\nadditive chalkboard patch: keys whose values match the current\nsnapshot are skipped, and no keys are ever removed.\n\nSeveral outfits may be named, comma-separated. They are folded left to\nright, each taking precedence over the ones before it — the same rule an\noutfit's own `layers = [...]` follows, so `outfit a,b` and an outfit\ndeclaring `layers = [\"a\", \"b\"]` compose identically.\n\nExamples:\n  figaro outfit focus              # apply 'focus' to the bound aria\n  figaro outfit pr-review,opus5    # fold both, opus5 winning\n  figaro outfit --id myid focus    # apply to a specific aria\n  figaro outfit --tree pr-review   # draw the layer closure, apply nothing\n  figaro outfit --list             # show available outfits",
-		ArgsMin: 0,
-		ArgsMax: 1,
-		Flags: []cmdkit.FlagDef{
-			{Long: "id", Description: "Target aria id (overrides pid binding)"},
-			{Long: "list", IsBool: true, Description: "List available outfits and exit"},
-			{Long: "tree", IsBool: true, Description: "Print the layer closure and exit; applies nothing"},
-		},
-		Run: func(ctx *cmdkit.RunContext) error {
-			ld := ctx.Extra.(*config.Loaded)
-			if ctx.BoolFlag("list") {
-				runOutfitList(ld)
-				return nil
-			}
-			if ctx.BoolFlag("tree") {
-				arg := ""
-				if len(ctx.Args) > 0 {
-					arg = ctx.Args[0]
-				}
-				runOutfitTree(ld, arg)
-				return nil
-			}
-			if len(ctx.Args) == 0 {
-				die("usage: figaro outfit [--id <id>] <name>[,<name>...]")
-			}
-			runOutfit(ld, ctx.Flag("id"), ctx.Args[0])
-			return nil
-		},
-		CompleteArgs: completeOutfits,
 	})
 
 	r.Register(&cmdkit.Command{

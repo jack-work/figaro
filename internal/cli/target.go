@@ -9,6 +9,7 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/transport"
+	"github.com/jack-work/figaro/internal/outfit"
 )
 
 // resolveTargetEndpoint resolves both id and endpoint. Used by verbs
@@ -16,7 +17,7 @@ import (
 // Aria ids are system-minted, so a missing explicitID is always an
 // error — there is no create-by-name. autoCreate is retained for call
 // compatibility but no longer creates.
-func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, explicitID string, autoCreate bool, outfit string) (string, transport.Endpoint, error) {
+func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *angelus.Client, explicitID string, autoCreate bool, spec outfit.Spec) (string, transport.Endpoint, error) {
 	if explicitID == "" {
 		ppid := shellPID
 		r, err := resolveBinding(ctx, acli, ppid)
@@ -41,7 +42,7 @@ func resolveTargetEndpoint(ctx context.Context, loaded *config.Loaded, acli *ang
 			// Mint one, on the named outfit, and bind this shell to it —
 			// bindBinding is a no-op when binding is disabled, so a script
 			// gets the aria without acquiring a binding it never asked for.
-			id, ep := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, outfit)
+			id, ep := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, spec)
 			return id, ep, nil
 		}
 		return r.FigaroID, transport.Endpoint{Scheme: r.Endpoint.Scheme, Address: r.Endpoint.Address}, nil

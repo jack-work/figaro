@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
@@ -80,7 +81,7 @@ func TestFigaroInfoResponse(t *testing.T) {
 
 func TestCreateRequest(t *testing.T) {
 	roundTrip(t, "create_request.json", rpc.CreateRequest{
-		Outfit: "anthropic",
+		Outfit: outfit.Names("anthropic"),
 		Patch: &rpc.ChalkboardPatch{
 			Set: map[string]json.RawMessage{
 				"system.model": json.RawMessage(`"claude-sonnet-4-20250514"`),

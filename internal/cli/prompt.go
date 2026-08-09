@@ -12,13 +12,14 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// runPrompt resolves the shell-bound figaro and prompts it. outfit names
-// the outfit for an aria this call MINTS (an unattended shell); it is
-// ignored when a binding already exists, because then no aria is created.
-func runPrompt(loaded *config.Loaded, outfit, prompt string, set renderSettings) {
+// runPrompt resolves the shell-bound figaro and prompts it. spec dresses the
+// aria: it is the birth outfit when this call mints one, and rides the prompt
+// as a chalkboard patch when the shell is already bound (see promptOutfit).
+func runPrompt(loaded *config.Loaded, spec outfit.Spec, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -45,7 +46,7 @@ func runPrompt(loaded *config.Loaded, outfit, prompt string, set renderSettings)
 		figaroID = resp.FigaroID
 		figaroEP = transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
 	} else {
-		figaroID, figaroEP = mustCreateAndBindOutfit(ctx, acli, loaded, ppid, outfit)
+		figaroID, figaroEP = mustCreateAndBindOutfit(ctx, acli, loaded, ppid, spec)
 	}
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
@@ -54,7 +55,7 @@ func runPrompt(loaded *config.Loaded, outfit, prompt string, set renderSettings)
 // runNewPrompt creates a fresh figaro and prompts it. Under jsonMode
 // the streaming render is skipped: the aria is created, prompted via a
 // fire-and-forget Qua, and a single JSON line is emitted on stdout.
-func runNewPrompt(loaded *config.Loaded, prompt, outfit string, set renderSettings) {
+func runNewPrompt(loaded *config.Loaded, prompt string, spec outfit.Spec, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -64,7 +65,7 @@ func runNewPrompt(loaded *config.Loaded, prompt, outfit string, set renderSettin
 	ppid := shellPID
 	unbindBinding(ctx, acli, ppid)
 
-	figaroID, figaroEP := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, outfit)
+	figaroID, figaroEP := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, spec)
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 
 	if set.jsonMode {
@@ -76,7 +77,7 @@ func runNewPrompt(loaded *config.Loaded, prompt, outfit string, set renderSettin
 		qctx, qcancel := context.WithTimeout(ctx, 10*time.Second)
 		if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptChalkboard()); qerr != nil {
 			qcancel()
-			die("prompt: %s", qerr)
+			dieWithClosure(qerr, "prompt: %s", qerr)
 		}
 		qcancel()
 		enc := json.NewEncoder(os.Stdout)
@@ -117,7 +118,7 @@ func submitAndExit(ctx context.Context, loaded *config.Loaded, ariaID, prompt st
 	qctx, qcancel := context.WithTimeout(ctx, 10*time.Second)
 	defer qcancel()
 	if _, _, qerr := fcli.Qua(qctx, prompt, buildPromptChalkboard()); qerr != nil {
-		die("prompt: %s", qerr)
+		dieWithClosure(qerr, "prompt: %s", qerr)
 	}
 }
 
@@ -153,7 +154,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 	// server read a logical time as a turn number -- and since an LT is far
 	// larger than the turn count, `send <id>:<turn>` failed every time with
 	// "aria has no turn N". The server owns the translation.
-	fr, err := waitForFork(ctx, acli, trunkID, at)
+	fr, err := waitForFork(ctx, acli, trunkID, at, nil)
 	if err != nil {
 		die("send: fork %s at %s: %s", trunkID, at, err)
 	}
@@ -292,14 +293,14 @@ func runUnattend(loaded *config.Loaded) {
 // runNewFromOutfit mints a fresh aria under the named outfit, binds it,
 // and returns without prompting (`figaro new --outfit X`). A prompt needs
 // the `--` boundary (`figaro new --outfit X -- <prompt>`).
-func runNewFromOutfit(loaded *config.Loaded, outfit string, set renderSettings) {
+func runNewFromOutfit(loaded *config.Loaded, spec outfit.Spec, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 	ppid := shellPID
 	unbindBinding(ctx, acli, ppid)
-	figaroID, _ := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, outfit)
+	figaroID, _ := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, spec)
 	if set.jsonMode {
 		enc := json.NewEncoder(os.Stdout)
 		_ = enc.Encode(struct {
@@ -308,5 +309,5 @@ func runNewFromOutfit(loaded *config.Loaded, outfit string, set renderSettings) 
 		}{AriaID: figaroID, Mode: "new"})
 		return
 	}
-	fmt.Fprintf(os.Stderr, "created %s under outfit %q (attended; no prompt sent)\n", figaroID, outfit)
+	fmt.Fprintf(os.Stderr, "created %s under outfit %q (attended; no prompt sent)\n", figaroID, spec.String())
 }

@@ -3,6 +3,7 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/jack-work/figaro/internal/outfit"
 	"os"
 	"sync"
 	"testing"
@@ -91,7 +92,7 @@ model = "mock-model"
 	require.NoError(t, err)
 	defer acli.Close()
 
-	resp, err := acli.Create(ctx, "mock", nil)
+	resp, err := acli.Create(ctx, outfit.Names("mock"), nil)
 	require.NoError(t, err)
 
 	ep := transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}

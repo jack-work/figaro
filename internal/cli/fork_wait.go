@@ -8,6 +8,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/outfit"
 )
 
 type forkCallResult struct {
@@ -20,10 +21,11 @@ func waitForFork(
 	client *angelus.Client,
 	ariaID string,
 	at forkPoint,
+	spec outfit.Spec,
 ) (*rpc.ForkResponse, error) {
 	done := make(chan forkCallResult, 1)
 	go func() {
-		response, err := client.Fork(ctx, ariaID, at.turn, at.lt)
+		response, err := client.Fork(ctx, ariaID, at.turn, at.lt, spec)
 		done <- forkCallResult{response: response, err: err}
 	}()
 

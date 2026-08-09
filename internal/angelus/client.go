@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/jkrpc"
@@ -53,10 +54,11 @@ func (c *Client) Status(ctx context.Context) (*rpc.StatusResponse, error) {
 	return &resp, err
 }
 
-// Create starts a new figaro with the named outfit.
-func (c *Client) Create(ctx context.Context, outfit string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
+// Create starts a new figaro dressed in spec. An empty spec means the
+// configured default_outfit; the angelus resolves both.
+func (c *Client) Create(ctx context.Context, spec outfit.Spec, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
-	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Outfit: outfit, Patch: patch}, &resp)
+	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Outfit: spec, Patch: patch}, &resp)
 	return &resp, err
 }
 
@@ -73,18 +75,18 @@ func (c *Client) GC(ctx context.Context, dryRun bool) (*rpc.GCResponse, error) {
 // logical time exactly. They are separate parameters, and separate wire
 // fields, because passing one where the other belonged is the defect this
 // signature exists to prevent.
-func (c *Client) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64) (*rpc.ForkResponse, error) {
+func (c *Client) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64, spec outfit.Spec) (*rpc.ForkResponse, error) {
 	var resp rpc.ForkResponse
 	err := c.call(ctx, rpc.MethodFork,
-		rpc.ForkRequest{FigaroID: figaroID, AtTurn: atTurn, AtLT: atLT}, &resp)
+		rpc.ForkRequest{FigaroID: figaroID, AtTurn: atTurn, AtLT: atLT, Outfit: spec}, &resp)
 	return &resp, err
 }
 
 // CreateEphemeral creates an in-memory-only figaro.
-func (c *Client) CreateEphemeral(ctx context.Context, outfit string, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
+func (c *Client) CreateEphemeral(ctx context.Context, spec outfit.Spec, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
 	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{
-		Outfit: outfit, Patch: patch, Ephemeral: true,
+		Outfit: spec, Patch: patch, Ephemeral: true,
 	}, &resp)
 	return &resp, err
 }

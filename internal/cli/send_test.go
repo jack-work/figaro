@@ -220,7 +220,7 @@ func TestExtractSendFlags(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if gotOpts != tc.wantOpts {
+			if !reflect.DeepEqual(gotOpts, tc.wantOpts) {
 				t.Errorf("opts: got %+v, want %+v", gotOpts, tc.wantOpts)
 			}
 			if !reflect.DeepEqual(gotRest, tc.wantRest) {
@@ -336,7 +336,7 @@ func TestExtractForkFlags(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if gotOpts != tc.wantOpts {
+			if !reflect.DeepEqual(gotOpts, tc.wantOpts) {
 				t.Errorf("opts: got %+v, want %+v", gotOpts, tc.wantOpts)
 			}
 			if !reflect.DeepEqual(gotRest, tc.wantRest) {

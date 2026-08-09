@@ -6,6 +6,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
+	"github.com/jack-work/figaro/internal/outfit"
 )
 
 const (
@@ -140,10 +141,13 @@ type QuaRequest struct {
 	Chalkboard *ChalkboardInput `json:"chalkboard,omitempty"`
 }
 
-// ChalkboardInput carries an optional state update.
+// ChalkboardInput carries an optional state update. Outfit is folded from
+// disk by the aria and applied under Patch, so a prompt and the outfit it
+// should be answered in are one call.
 type ChalkboardInput struct {
 	Context map[string]json.RawMessage `json:"context,omitempty"`
 	Patch   *ChalkboardPatch           `json:"patch,omitempty"`
+	Outfit  outfit.Spec                `json:"outfit,omitempty"`
 }
 
 // ChalkboardPatch is the wire shape for a chalkboard delta.
@@ -216,10 +220,10 @@ type SetResponse struct {
 }
 
 // OutfitRequest names the outfits to apply additively to the aria's current
-// chalkboard, each taking precedence over the ones before it. Keys with values
-// equal to the current snapshot are skipped; no removals are performed.
+// chalkboard, each term taking precedence over the ones before it. Keys with
+// values equal to the current snapshot are skipped; no removals are performed.
 type OutfitRequest struct {
-	Names []string `json:"names"`
+	Outfit outfit.Spec `json:"outfit"`
 }
 
 // OutfitResponse lists the keys created or updated.
@@ -412,7 +416,7 @@ type FigaroInfoResponse struct {
 // CreateRequest names the outfit for a new aria. The system mints the
 // aria id; callers cannot choose it.
 type CreateRequest struct {
-	Outfit    string           `json:"outfit,omitempty"`
+	Outfit    outfit.Spec      `json:"outfit,omitempty"`
 	Patch     *ChalkboardPatch `json:"patch,omitempty"`
 	Ephemeral bool             `json:"ephemeral,omitempty"`
 }
@@ -448,6 +452,10 @@ type ForkRequest struct {
 	// coordinate is a stated error in the handler instead of a plausible
 	// number that means something else. Setting both is refused.
 	AtLT uint64 `json:"at_lt,omitempty"`
+	// Outfit dresses the ALTERNATIVE the moment it exists, before anything is
+	// said to it: the fold lands on the child's chalkboard in the same call
+	// that mints it, so a prompt sent next is answered in that outfit.
+	Outfit outfit.Spec `json:"outfit,omitempty"`
 }
 
 // ForkResponse returns the two fresh child ids. The parent freezes and

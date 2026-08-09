@@ -624,7 +624,8 @@ func runKillByID(loaded *config.Loaded, figaroID string, recursive bool) {
 // continuation, which KEEPS the target's id, trunk and mantra — the aria
 // is not frozen and nothing addressing it breaks. Forking any OTHER aria,
 // or passing --stay, is a maintenance fork: your session is left untouched.
-func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
+func runFork(loaded *config.Loaded, spec string, opts sendOpts) {
+	stay, asJSON := opts.stay, opts.json
 	// Split an optional :<turn> suffix off the target. Shared parser — fork and
 	// send must not drift apart on what a coordinate means.
 	target, at, perr := parseTarget(spec)
@@ -647,7 +648,7 @@ func runFork(loaded *config.Loaded, spec string, stay, asJSON bool) {
 			target = bound
 		}
 
-		resp, err := waitForFork(ctx, acli, target, at)
+		resp, err := waitForFork(ctx, acli, target, at, opts.outfit)
 		if err != nil {
 			die("fork: %s", err)
 		}

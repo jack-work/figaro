@@ -39,7 +39,7 @@ func runListen(loaded *config.Loaded, ariaID, recordPath, note string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	resolvedID, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, "")
+	resolvedID, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, nil)
 	if err != nil {
 		die("%s", err)
 	}

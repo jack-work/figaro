@@ -44,7 +44,7 @@ func runHangup(loaded *config.Loaded, ariaID string, disposition rpc.QueueDispos
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	resolvedID, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, "")
+	resolvedID, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, nil)
 	if err != nil {
 		die("%s", err)
 	}

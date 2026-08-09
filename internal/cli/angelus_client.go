@@ -13,6 +13,7 @@ import (
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro/wire"
 	"github.com/jack-work/figaro/internal/rpc"
+	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/figwal/xwal"
@@ -257,9 +258,9 @@ func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
 // mustCreateAndBindOutfit mints an aria and binds this shell to it. An
 // empty outfit name means "use the configured default_outfit" (angelus
 // resolves it server-side).
-func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int, outfit string) (string, transport.Endpoint) {
+func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int, spec outfit.Spec) (string, transport.Endpoint) {
 	createResp, err := createWithFirstRun(ctx, loaded, func() (*rpc.CreateResponse, error) {
-		return acli.Create(ctx, outfit, nil)
+		return acli.Create(ctx, spec, nil)
 	})
 	if err != nil {
 		dieWithClosure(err, "create figaro: %s", err)

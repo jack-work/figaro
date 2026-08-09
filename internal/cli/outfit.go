@@ -1,8 +1,8 @@
-// Package cli — `figaro outfit` command.
+// Package cli — `figaro state outfit`.
 //
-// Applies named outfits additively to the current aria's chalkboard. The
-// outfit files are resolved by the angelus (it owns the configDir); the CLI
-// only forwards the names.
+// Applies a spec additively to the current aria's chalkboard. Names are
+// resolved by the aria (the daemon owns the configDir); the CLI parses the
+// syntax, so a typo costs no round trip, and forwards JSON.
 package cli
 
 import (
@@ -24,10 +24,45 @@ import (
 	"github.com/jack-work/figaro/internal/transport"
 )
 
-// completeOutfits completes the `outfit` command: available outfit names for
-// the positional slot (sourced from the config, so it works with no aria
+// runStateOutfit is `figaro state outfit …`: the apply, the closure and the
+// listing. It is a verb rather than a flag because dressing state is an
+// action; the same fold reaches send/new/fork through -O.
+func runStateOutfit(loaded *config.Loaded, ctx *cmdkit.RunContext, args []string) error {
+	arg := ""
+	if len(args) > 0 {
+		arg = args[0]
+	}
+	switch {
+	case ctx.BoolFlag("list"):
+		runOutfitList(loaded)
+	case ctx.BoolFlag("tree"):
+		runOutfitTree(loaded, arg)
+	case arg == "":
+		return fmt.Errorf("usage: figaro state outfit [--id <id>] <spec>")
+	default:
+		runOutfit(loaded, ctx.Flag("id"), arg)
+	}
+	return nil
+}
+
+// completeStateArgs offers the `outfit` sub-verb first, then whatever that
+// position wants: aria ids for the snapshot form, outfit names after `outfit`.
+func completeStateArgs(c *cmdkit.CompleteContext) []string {
+	if c == nil {
+		return nil
+	}
+	for _, a := range c.Args {
+		if a == "outfit" {
+			return completeOutfits(c)
+		}
+	}
+	return append([]string{"outfit"}, completeAriaIDsPositionalOrFlag(c)...)
+}
+
+// completeOutfits completes `state outfit`: available outfit names for the
+// positional slot (sourced from the config, so it works with no aria
 // attached), or aria ids after --id. A comma-separated list completes its last
-// segment, so `figaro outfit a,<TAB>` offers the rest.
+// segment, so `figaro state outfit a,<TAB>` offers the rest.
 func completeOutfits(c *cmdkit.CompleteContext) []string {
 	if c == nil {
 		return nil
@@ -48,8 +83,10 @@ func completeOutfits(c *cmdkit.CompleteContext) []string {
 		return names
 	}
 	chosen := map[string]bool{}
-	for _, n := range splitOutfitNames(prefix) {
-		chosen[n] = true
+	if spec, err := outfit.ParseSpec(prefix); err == nil {
+		for _, t := range spec {
+			chosen[t.Name] = true
+		}
 	}
 	out := make([]string, 0, len(names))
 	for _, n := range names {
@@ -60,32 +97,30 @@ func completeOutfits(c *cmdkit.CompleteContext) []string {
 	return out
 }
 
-// splitOutfitNames parses the comma-separated form. Comma is the separator, so
-// an outfit whose file name contains one cannot be named this way.
-func splitOutfitNames(arg string) []string {
-	var out []string
-	for _, part := range strings.Split(arg, ",") {
-		if p := strings.TrimSpace(part); p != "" {
-			out = append(out, p)
-		}
+// mustParseSpec parses the CLI syntax or explains why it cannot, without
+// opening a socket.
+func mustParseSpec(arg, usage string) outfit.Spec {
+	spec, err := outfit.ParseSpec(arg)
+	if err != nil {
+		die("%s", err)
 	}
-	return out
+	if spec.IsEmpty() {
+		die("usage: %s", usage)
+	}
+	return spec
 }
 
 // runOutfit calls figaro.outfit on the targeted aria.
 func runOutfit(loaded *config.Loaded, ariaID, arg string) {
-	names := splitOutfitNames(arg)
-	if len(names) == 0 {
-		die("usage: figaro outfit [--id <id>] <name>[,<name>...]")
-	}
-	label := strings.Join(names, ",")
+	spec := mustParseSpec(arg, "figaro state outfit [--id <id>] <spec>")
+	label := spec.String()
 
 	ctx := context.Background()
 
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, "")
+	_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, nil)
 	if err != nil {
 		die("%s", err)
 	}
@@ -96,7 +131,7 @@ func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 	}
 	defer fcli.Close()
 
-	resp, err := fcli.Outfit(ctx, names)
+	resp, err := fcli.Outfit(ctx, spec)
 	if err != nil {
 		dieOutfitFailure(label, err)
 	}
@@ -121,14 +156,24 @@ func dieOutfitFailure(label string, err error) {
 // and every one that was not is red, so a broken reference several layers down
 // is located rather than merely named. Without a closure it is an ordinary die.
 func dieWithClosure(err error, format string, args ...any) {
+	if !reportClosure(err, format, args...) {
+		die(format, args...)
+	}
+	exitNow(1)
+}
+
+// reportClosure prints err with its closure tree when it carries one, and
+// reports whether it did. Callers that return an exit code rather than dying
+// use it directly.
+func reportClosure(err error, format string, args ...any) bool {
 	closure := outfitClosureFrom(err)
 	if closure == nil {
-		die(format, args...)
+		return false
 	}
 	fmt.Fprintf(os.Stderr, "error: "+format+"\n\n", args...)
 	fmt.Fprint(os.Stderr, renderOutfitClosure(closure))
 	fmt.Fprintln(os.Stderr)
-	exitNow(1)
+	return true
 }
 
 // outfitClosureFrom digs the layer closure out of a typed RPC error.
@@ -220,14 +265,14 @@ func outfitClosureMarker(l *rpc.OutfitLayer) string {
 // composition wants. Exit status follows the closure: 0 when every layer was
 // found, 1 when the picture has red in it, so it can gate a script.
 func runOutfitTree(loaded *config.Loaded, arg string) {
-	names := splitOutfitNames(arg)
-	if len(names) == 0 {
-		names = splitOutfitNames(loaded.Config.DefaultOutfit)
+	if strings.TrimSpace(arg) == "" {
+		arg = loaded.Config.DefaultOutfit
 	}
-	if len(names) == 0 {
-		die("outfit --tree: name an outfit, or set default_outfit in %s", loaded.ConfigPath)
+	if strings.TrimSpace(arg) == "" {
+		die("state outfit --tree: name an outfit, or set default_outfit in %s", loaded.ConfigPath)
 	}
-	closure := figaro.OutfitClosureWire(outfit.New(loaded.ConfigDir).ResolveAll(names))
+	spec := mustParseSpec(arg, "figaro state outfit --tree <spec>")
+	closure := figaro.OutfitClosureWire(outfit.New(loaded.ConfigDir).ResolveSpec(spec))
 	fmt.Print(renderOutfitClosure(closure))
 	if broken := outfitClosureBroken(closure); len(broken) > 0 {
 		fmt.Fprintf(os.Stderr, "\n%d unresolved: %s\n", len(broken), strings.Join(broken, ", "))
