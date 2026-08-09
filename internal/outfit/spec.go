@@ -187,7 +187,7 @@ func ParseSpec(text string) (Spec, error) {
 		case strings.HasPrefix(part, "{"):
 			var inline map[string]any
 			if err := json.Unmarshal([]byte(part), &inline); err != nil {
-				return nil, fmt.Errorf("outfit: %s: not a JSON object: %w", part, err)
+				return nil, fmt.Errorf("outfit: %s: not a JSON object%s: %w", part, sugarHint(part), err)
 			}
 			out = append(out, Term{Inline: inline})
 		case strings.ContainsRune(part, '='):
@@ -204,6 +204,18 @@ func ParseSpec(text string) (Spec, error) {
 		}
 	}
 	return out, out.Validate()
+}
+
+// sugarHint answers the commonest way a literal is mistyped: unquoted keys,
+// `{mantra:test}`, which is not JSON and is spelled `mantra=test` here. The
+// braces are the worse half of that mistake — see ValidName on `:`.
+func sugarHint(part string) string {
+	body := strings.TrimSuffix(strings.TrimPrefix(part, "{"), "}")
+	k, v, ok := strings.Cut(body, ":")
+	if !ok || strings.ContainsAny(body, `"{}[],`) || strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
+		return ""
+	}
+	return fmt.Sprintf(" (for a one-key literal, write %s=%s)", strings.TrimSpace(k), strings.TrimSpace(v))
 }
 
 // parsePair reads `key=value`. The value is JSON when it parses as JSON and a
@@ -250,6 +262,12 @@ func ValidName(name string) error {
 		return fmt.Errorf("outfit: %q: a name cannot contain = / or \\", name)
 	case strings.ContainsAny(name, `{}[]"`):
 		return fmt.Errorf("outfit: %q: a name cannot contain {} [] or a quote (an inline term must be a whole JSON object)", name)
+	case strings.Contains(name, ":"):
+		// `-O {a:1,b:2}` unquoted is brace-EXPANDED by the shell into two
+		// words with the braces gone, so this is usually a literal that never
+		// reached us. `:` is also the turn coordinate, so it can never be part
+		// of a name anyway.
+		return fmt.Errorf("outfit: %q: a name cannot contain `:` — for a literal, quote it ('{\"a\":1}') or use the sugar (a=1)", name)
 	}
 	for _, r := range name {
 		if unicode.IsSpace(r) || unicode.IsControl(r) {

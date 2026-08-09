@@ -29,9 +29,22 @@ n=3   on=true              a value that parses as JSON keeps its type
 '{"layers":["a"],"x":1}'   an inline term may name layers of its own
 ```
 
+### The shell is half of this grammar
+
+A literal must be QUOTED. Unquoted, two things go wrong before figaro sees
+anything: `{mantra:test}` is not JSON (keys are quoted in JSON — the sugar
+`mantra=test` is what you want), and `{a:1,b:2}` is **brace-expanded by the
+shell** into two separate words with the braces gone, so the term never
+arrives at all. Both are refused by name rather than as "no such outfit".
+
+```sh
+figaro new -O 'base,{"ttl":"1h"}'   # quoted literal
+figaro new -O base,ttl=1h           # the same thing, no quoting needed
+```
+
 A name is a file basename, and the grammar is narrow about it: no whitespace,
 no `=` (the sugar's separator), no `/` or `\` (a name must not climb out of the
-outfits directory), no `{} []` or quotes, and no leading `-` (so `-O -j` says
+outfits directory), no `{} []`, quotes or `:`, and no leading `-` (so `-O -j` says
 so locally instead of asking the server for an outfit called `-j`). The same
 gate applies to a `layers` entry, wherever it is declared.
 

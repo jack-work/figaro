@@ -1062,6 +1062,9 @@ Rules worth knowing:
   - Structure must balance. An unmatched brace or quote is an error, and an
     inline term that sets nothing is too. Inline terms are capped at 64 KiB:
     one fold is one chalkboard record.
+  - QUOTE a literal. Unquoted, ` + "`{mantra:test}`" + ` is not JSON (use the sugar,
+    ` + "`mantra=test`" + `) and ` + "`{a:1,b:2}`" + ` is brace-expanded by the shell into two
+    words with the braces gone, so it never reaches figaro at all.
   - Repeating -O appends: ` + "`-O a -O b`" + ` is ` + "`-O a,b`" + `.
   - On the wire a spec is JSON: {"outfit":["sonn5",{"ttl":"1h"}]}. The sugar is
     parsed by the CLI, so a typo costs no round trip.

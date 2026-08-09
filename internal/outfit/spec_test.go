@@ -174,3 +174,18 @@ func TestSpecStructureMustBalance(t *testing.T) {
 		}
 	}
 }
+
+// The shell is half of this grammar. `-O {mantra:test}` is not JSON, and
+// `-O {a:1,b:2}` never arrives at all — bash expands it into two words with
+// the braces gone — so both must fail in the vocabulary of the fix.
+func TestUnquotedLiteralsAreExplained(t *testing.T) {
+	_, err := outfit.ParseSpec("{mantra:test}")
+	if err == nil || !strings.Contains(err.Error(), "mantra=test") {
+		t.Errorf("want the sugar suggested, got %v", err)
+	}
+	// What the shell actually delivers once it has expanded the braces.
+	_, err = outfit.ParseSpec("mantra:test")
+	if err == nil || !strings.Contains(err.Error(), "cannot contain `:`") {
+		t.Errorf("want the brace-expansion trap named, got %v", err)
+	}
+}
