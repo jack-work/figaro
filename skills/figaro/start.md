@@ -85,38 +85,25 @@ a list of twenty conversations stays readable. Agents maintain their own; see
 
 ## 6. The outfit, which makes it yours
 
-An **outfit** is the profile a conversation is born under: which model, which
-credo (the standing instructions that shape voice and behaviour), and which
-skills are available. It lives in `~/.config/figaro/outfits/<name>.toml`, and
+An **outfit** is a named patch for the chalkboard: which model, which credo
+(the standing instructions that shape voice and behaviour), and which skills
+are available. It lives in `~/.config/figaro/outfits/<name>.toml`, and
 `config.toml` names the default.
 
-Outfits compose. An outfit may declare `layers`, and the patch it delivers is
-its layers folded left to right, then its own keys on top — so the nearest
-declaration always wins, and merging happens per chalkboard key rather than
-wholesale (a layer setting `system.model` does not disturb a sibling's
-`system.max_tokens`, and skills merge one at a time).
-
-```toml
-# ~/.config/figaro/outfits/pr-review.toml
-layers = ["house-style", "opus5-ant"]
-
-[system]
-thinking_effort = "high"
-```
-
-A layer's own layers are folded before it contributes, so a nested outfit
-arrives as one already-composed patch at the position it is named in. A layer
-named twice is applied at both positions. A layer that does not exist is an
-error that draws the whole closure, green for found and red for missing, rather
-than silently yielding an empty outfit.
-
 ```sh
-figaro outfit --list             what profiles exist
-figaro new --outfit <name>       start a conversation under one
-figaro outfit <name>             apply one to the current aria, additively
-figaro outfit <a>,<b>            fold several, each winning over the last
-figaro outfit --tree <name>      draw the layer closure; applies nothing
+figaro state outfit --list        what profiles exist
+figaro new -O <name>              start a conversation under one
+figaro send -O <name> -- <p>      dress the aria you are talking to, then ask
+figaro state outfit <name>        dress it now, with nothing to say
+figaro state outfit --tree <name> draw the layer closure; applies nothing
 ```
+
+Outfits compose. An outfit may declare `layers`, and several may be named at
+once (`-O a,b`, folded left to right). Applying one is additive: keys already
+holding that value are skipped, nothing is ever removed, and the agent sees a
+`<system-reminder>` for exactly what changed. The whole model, including the
+inline `-O ttl=1h` form and what "birth" means differently from "fold", is
+[reference/outfits.md](reference/outfits.md).
 
 Skills are markdown files under `~/.config/figaro/skills/`. Each one's
 front-matter description is always visible to the agent; the body is read only

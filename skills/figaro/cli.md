@@ -33,7 +33,7 @@ These hold across the whole CLI:
 |---|---|
 | `figaro -- <prompt>` | Prompt the attended aria. Creates one if this shell has no binding. |
 | `figaro send [flags] -- <prompt>` | The same, with the verb spelled out. Alias `qua`. |
-| `figaro new [--outfit <name>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
+| `figaro new [-O <spec>] -- <prompt>` | Mint a fresh aria, bind this shell to it, prompt it. |
 | `figaro new` | With no prompt and no outfit: drop this shell's binding and go home. |
 
 `send` flags, all combinable unless noted:
@@ -42,7 +42,7 @@ These hold across the whole CLI:
 |---|---|
 | `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. Mints an aria if this shell has none (the id goes to stderr, or to stdout with `-j`). |
 | `-e`, `--ephemeral` | Spin a throwaway in-memory aria and kill it when the turn ends. Contradicts `--id`. |
-| `-O`, `--outfit <name>` | The outfit for an aria **this call creates** — with `-e`, or in a shell with no binding. Rejected against a target (`--id`, `<id>`, `<id>:<turn>`), which names an aria that already exists. Defaults to config.toml's `default_outfit`, as `new --outfit` does. Takes a value, so it does not gang: `-er -O sonn5`, not `-erO`. |
+| `-O`, `--outfit <spec>` | Dress the aria. On one this call creates it is the birth outfit; on one that already exists the spec is folded onto its chalkboard **in the same call as the prompt**, so that turn is answered wearing it. Repeats append (`-O a -O b` = `-O a,b`). Bundles like any value-taking short: `-erO sonn5` or `-erOsonn5`. Defaults to `default_outfit`. See [reference/outfits.md](reference/outfits.md). |
 | `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
 | `-o`, `--verbose` | Expand full tool inputs. Ctrl-O toggles it live. |
 | `-l`, `--listen` | Open the transcript pager at startup. |
@@ -194,9 +194,9 @@ that goes wrong yields a store that looks fine.
 | `figaro state [<id>]` | The folded chalkboard snapshot. `-j` for JSON. Alias `chalkboard`. |
 | `figaro set [<id>] <key> <value>` | Patch one key with no model round trip. |
 | `figaro unset [<id>] <key>...` | Remove keys. |
-| `figaro outfit <name>[,<name>...]` | Apply named outfits additively, folded left to right (later wins). `--list` to see them. |
+| `figaro state outfit <spec>` | Fold an outfit onto this aria now: additive, nothing removed, a `<system-reminder>` for what changed. A spec is names, `k=v` and JSON literals, comma-joined (`sonn5,ttl=1h`). `--list` for what is on disk. See [reference/outfits.md](reference/outfits.md). |
 | `figaro gc [--dry-run]` | Collect outfit stumps nothing is using. One stump exists per outfit VERSION; killing an aria collects its stump when it was the last child, so `gc` sweeps the versions that predate that. Content-addressed, so a collected stump is re-minted identically by the next aria that wants it. |
-| `figaro outfit --tree [<name>]` | Draw an outfit's layer closure and apply nothing — green where a layer resolves, red where it does not. Reads the config dir directly, so it needs no aria and no daemon. Exits non-zero when the closure has a gap. |
+| `figaro state outfit --tree [<spec>]` | Draw the layer closure and apply nothing — green where a layer resolves, red where it does not. Reads the config dir directly, so it needs no aria and no daemon. Exits non-zero when the closure has a gap. |
 
 Setting a key is a real event in the conversation: on the tic where a
 non-`system` key changes, the agent sees a `<system-reminder>` naming it. Keys

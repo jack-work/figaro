@@ -49,7 +49,7 @@ One definition each. The file named owns the model behind it.
 | turn | One exchange: your prompt plus everything the agent did about it. The coordinate `:N` in `<id>:<turn>`; `.N` addresses an LT instead. | [reference/turns.md](reference/turns.md) |
 | LT | The storage coordinate, positional and cross-channel. Not an address you type. | [reference/turns.md](reference/turns.md) |
 | chalkboard | Per-aria key to JSON state that rides along with the conversation. | [reference/architecture.md](reference/architecture.md) |
-| outfit | The named profile a conversation is born under: model, credo, skills. | [start.md](start.md) |
+| outfit | A named patch for a chalkboard: model, credo, skills. Named by a SPEC — `sonn5,ttl=1h` — which is folded at birth or onto a live aria. | [reference/outfits.md](reference/outfits.md) |
 | angelus | The single supervisor daemon that owns the registry and outlives shells. | [reference/architecture.md](reference/architecture.md) |
 
 ## Where everything else lives
@@ -79,6 +79,7 @@ open one when you are working inside that subsystem, not to browse.
 | [reference/paint-repro.md](reference/paint-repro.md) | Hunting a specific paint bug, or running the `scripts/paint-*.sh` instruments. |
 | [reference/cache-control.md](reference/cache-control.md) | Prompt caching, and overriding it. |
 | [reference/reclamation.md](reference/reclamation.md) | What a live aria costs, when the daemon reclaims one, and the `[memory]` knobs. Read before changing the hub, the sweep, or the row caches. |
+| [reference/outfits.md](reference/outfits.md) | Composing outfits, the `-O` spec syntax, or `-O` did not do what you expected. |
 | [reference/mantra.md](reference/mantra.md) | Maintaining your aria's mantra. |
 | [reference/trunks-substrate.md](reference/trunks-substrate.md) | Changing `internal/store` or the fork handlers. Machinery, not usage. |
 | [reference/translation-lineage.md](reference/translation-lineage.md) | Provider wire caches across a fork. |

@@ -324,7 +324,7 @@ the RPC does with it.
   **closed**: forking/sending "at" it never re-splits it — it **spawns a new child
   conversation** (cauterization). A conversation inherits the outfit's full chalkboard
   (`skills.*`, `system.credo`, `system.model`, the outfit name/version stamp).
-- `fig new`, `fig new --outfit <id>`, and `fig send --` *with nothing attended* all resolve a
+- `fig new`, `fig new -O <spec>`, and `fig send --` *with nothing attended* all resolve a
   outfit stump → spawn a conversation under it → bind → send (`CreateOutfit` dedups by
   content version; `CreateConversation` = `SpawnUnderStump(outfit)`).
 - Chalkboard-key completion falls back to the **default outfit** when no aria is bound.

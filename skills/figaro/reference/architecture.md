@@ -155,8 +155,9 @@ happens-before edge — a genuine data race, 11 reports per `-race` run.) One
 writer means the update path stores unconditionally; no CAS loop. `Save`
 clears the dirty flag with a single non-looping CAS.
 
-Outfits (`internal/outfit`) assemble the boot chalkboard from `config.toml`'s
-`default_outfit` chain. `fileName`/`dirName` tables load file bodies as
+Outfits (`internal/outfit`) assemble a chalkboard patch from a SPEC — names,
+inline literals, and their layers — defaulting to `config.toml`'s
+`default_outfit` ([reference/outfits.md](outfits.md)). `fileName`/`dirName` tables load file bodies as
 content envelopes (`{frontmatter|content, filePath}`) — skills come in this
 way (`skills.<base>`), so the agent sees a skill's frontmatter and reads its
 body on demand. Bundled first-party skills merge under the user's by name.
