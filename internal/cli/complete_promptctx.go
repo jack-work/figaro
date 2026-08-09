@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/jack-work/figaro/internal/cmdkit"
-	"github.com/jack-work/figaro/internal/config"
 )
 
 // completePromptContext is the candidate pool for the cursor when it
@@ -105,21 +104,27 @@ func completePromptOrIDFlag(c *cmdkit.CompleteContext) []string {
 	return nil
 }
 
-// completeNewPrompt is completePromptOrIDFlag plus outfit-name
-// suggestions after --outfit / -O. Used by `new` and by `send`, which
-// takes the same flag for the aria it may create.
+// completeOutfitFlag offers outfit names when the cursor sits after -O. Every
+// prompt verb takes the flag, so every prompt verb consults this first.
+func completeOutfitFlag(c *cmdkit.CompleteContext) []string {
+	if len(c.Args) == 0 {
+		return nil
+	}
+	switch c.Args[len(c.Args)-1] {
+	case "--outfit", "-O":
+		return completeOutfits(c)
+	}
+	return nil
+}
+
+// completeNewPrompt is completePromptOrIDFlag plus outfit names after -O.
+// Used by `new` and by `send`.
 func completeNewPrompt(c *cmdkit.CompleteContext) []string {
 	if c == nil {
 		return nil
 	}
-	if len(c.Args) > 0 {
-		switch c.Args[len(c.Args)-1] {
-		case "--outfit", "-O":
-			if loaded, ok := c.Extra.(*config.Loaded); ok && loaded != nil {
-				return loaded.ListOutfits()
-			}
-			return nil
-		}
+	if out := completeOutfitFlag(c); out != nil {
+		return out
 	}
 	return completePromptOrIDFlag(c)
 }
@@ -129,6 +134,9 @@ func completeNewPrompt(c *cmdkit.CompleteContext) []string {
 func completeForkPrompt(c *cmdkit.CompleteContext) []string {
 	if c == nil {
 		return nil
+	}
+	if out := completeOutfitFlag(c); out != nil {
+		return out
 	}
 	if c.PastSeparator {
 		return completePromptContext(c)
