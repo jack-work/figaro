@@ -32,6 +32,9 @@ func runStateOutfit(loaded *config.Loaded, ctx *cmdkit.RunContext, args []string
 	if len(args) > 0 {
 		arg = args[0]
 	}
+	if len(args) > 1 {
+		return fmt.Errorf("one spec, comma-separated: `state outfit %s`", strings.Join(args, ","))
+	}
 	switch {
 	case ctx.BoolFlag("list"):
 		runOutfitList(loaded)

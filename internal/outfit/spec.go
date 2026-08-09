@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // Spec is an ordered list of outfit terms, folded left to right: each term
@@ -217,24 +218,38 @@ func parsePair(part string) (string, any, error) {
 		return key, "", nil
 	}
 	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		// A value that OPENS a quote and does not parse is an unterminated
+		// string, not a string that happens to start with a quote: taking it
+		// literally would silently store the quote.
+		if strings.HasPrefix(raw, `"`) {
+			return "", nil, fmt.Errorf("outfit: %s: unterminated quoted value", part)
+		}
 		return key, raw, nil
 	}
 	return key, value, nil
 }
 
-// ValidName rejects the strings that cannot name an outfit file. `=` is
-// reserved for the inline sugar and a separator would let a name climb out of
-// the outfits directory.
+// ValidName rejects the strings that cannot name an outfit file. A name is a
+// file basename, so it is deliberately narrow: `=` is the inline sugar's
+// separator, a path separator would let a name climb out of the outfits
+// directory, and the punctuation the spec grammar uses would otherwise pass
+// through as a name that can only ever be missing (`[1,2]` and `a}` both
+// arrive here when a literal is malformed).
 func ValidName(name string) error {
 	switch {
 	case name == "":
 		return fmt.Errorf("outfit: empty name")
-	case strings.ContainsAny(name, "=/\\"):
-		return fmt.Errorf("outfit: %q: a name cannot contain = / or \\", name)
-	case strings.ContainsAny(name, "\n\t"):
-		return fmt.Errorf("outfit: %q: a name cannot contain whitespace", name)
 	case name == "." || name == "..":
 		return fmt.Errorf("outfit: %q is not a name", name)
+	case strings.ContainsAny(name, "=/\\"):
+		return fmt.Errorf("outfit: %q: a name cannot contain = / or \\", name)
+	case strings.ContainsAny(name, `{}[]"`):
+		return fmt.Errorf("outfit: %q: a name cannot contain {} [] or a quote (an inline term must be a whole JSON object)", name)
+	}
+	for _, r := range name {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return fmt.Errorf("outfit: %q: a name cannot contain whitespace", name)
+		}
 	}
 	return nil
 }

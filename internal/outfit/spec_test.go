@@ -131,3 +131,19 @@ func TestSpecRejectsOversizedInline(t *testing.T) {
 		t.Fatal("wire form skipped the limit")
 	}
 }
+
+// A name is a file basename. Everything the spec grammar itself uses must be
+// refused there, or a malformed literal arrives as a name that can only ever
+// be missing.
+func TestNameGrammarIsNarrow(t *testing.T) {
+	for _, bad := range []string{"a b", "a\tb", "[1,2]", "a}", `a"b`, "{oops", "a\u00a0b", "a\x00b", ".", "..", "a/b", `a\b`} {
+		if _, err := outfit.ParseSpec(bad); err == nil {
+			t.Errorf("ParseSpec(%q) accepted it as a name", bad)
+		}
+	}
+	for _, good := range []string{"sonn5", "pr-review", "opus5.1", "a_b", "modèle"} {
+		if _, err := outfit.ParseSpec(good); err != nil {
+			t.Errorf("ParseSpec(%q): %v", good, err)
+		}
+	}
+}

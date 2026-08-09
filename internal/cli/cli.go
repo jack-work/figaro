@@ -932,7 +932,6 @@ aria sees a <system-reminder> for exactly what changed. It is the same fold
 state is an action, not a modifier on one.
 
 See ` + "`figaro help outfits`" + ` for the spec syntax.`,
-		ArgsMax: 2,
 		Flags: []cmdkit.FlagDef{
 			{Long: "id", Description: "Target aria id (overrides pid binding)"},
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit the snapshot as a JSON object"},

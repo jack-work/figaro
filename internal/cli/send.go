@@ -232,6 +232,9 @@ func (o *sendOpts) addOutfit(text string) error {
 	if err != nil {
 		return err
 	}
+	if spec.IsEmpty() {
+		return fmt.Errorf("--outfit %q names nothing", text)
+	}
 	o.outfit = append(o.outfit, spec...)
 	return nil
 }
