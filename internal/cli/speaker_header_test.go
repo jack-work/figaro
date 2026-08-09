@@ -11,7 +11,7 @@ import (
 
 // The composer the pager builds (transcript.composer), minus the pager state
 // the header decision does not depend on.
-func probeComposer() ldrender.Composer {
+func headerComposer() ldrender.Composer {
 	return ldrender.Composer{
 		View:   pagerView(&ariaView{}),
 		Header: messageHeader,
@@ -41,25 +41,27 @@ func hasHeader(rows []ldrender.Row) bool {
 
 // A slice that STARTS a turn carries the question, and the header belongs
 // there. This is the control.
-func TestGhostHeader_FirstSliceIsCorrect(t *testing.T) {
+func TestSpeakerHeader_FirstSliceIsCorrect(t *testing.T) {
 	m := aria.Message{
 		Turn: 8, From: 0, Role: livedoc.RoleOutput,
 		Inquiry: "mint a bunch of new arias",
 		Nodes:   []livedoc.Node{toolNode("a", "bash", "ok")},
 	}
-	if !hasHeader(probeComposer().Message(m, 80)) {
+	if !hasHeader(headerComposer().Message(m, 80)) {
 		t.Fatalf("first slice should carry the header")
 	}
 }
 
-// A CONTINUATION slice of the same turn carries no question — and must not
-// announce the speaker again. Today it does.
-func TestGhostHeader_ContinuationSliceDrawsSpuriousHeader(t *testing.T) {
+// A CONTINUATION slice of the same turn carries no question, so it must not
+// announce the speaker again: the header belongs to the inquiry seam, and a
+// continuation has no seam. This is the reported bug — a "< figaro" printed
+// between two tool nodes of one turn, at the page boundary that cut it.
+func TestSpeakerHeader_ContinuationCarriesNone(t *testing.T) {
 	m := aria.Message{
 		Turn: 8, From: 21, Role: livedoc.RoleOutput,
 		Nodes: []livedoc.Node{toolNode("b", "bash", "figaro set --id 07fd7beb system.model claude-fable-5")},
 	}
-	rows := probeComposer().Message(m, 80)
+	rows := headerComposer().Message(m, 80)
 	if hasHeader(rows) {
 		var b strings.Builder
 		for _, r := range rows {
@@ -73,7 +75,7 @@ func TestGhostHeader_ContinuationSliceDrawsSpuriousHeader(t *testing.T) {
 
 //  1. A page window that opens mid-turn: assemble() sets From=first,
 //     ClippedHead=true, and committedMessages drops the inquiry for it.
-func TestGhostHeader_ClippedPagePartProducesHeaderlessSlice(t *testing.T) {
+func TestSpeakerHeader_ClippedPagePartProducesHeaderlessSlice(t *testing.T) {
 	nodes := make([]livedoc.Node, 31)
 	for i := range nodes {
 		nodes[i] = toolNode("n", "bash", "x")
@@ -90,14 +92,14 @@ func TestGhostHeader_ClippedPagePartProducesHeaderlessSlice(t *testing.T) {
 	if msgs[0].From != 21 || msgs[0].Inquiry != "" {
 		t.Fatalf("want From=21 with no inquiry, got From=%d inquiry=%q", msgs[0].From, msgs[0].Inquiry)
 	}
-	if hasHeader(probeComposer().Message(msgs[0], 80)) {
+	if hasHeader(headerComposer().Message(msgs[0], 80)) {
 		t.Fatalf("clipped page part rendered a speaker header with no question above it")
 	}
 }
 
 //  2. A turn over transcriptUnitChars, cut by appendTurnSlices. Every unit
 //     after the first has From > 0 and no inquiry.
-func TestGhostHeader_OversizeTurnSliceProducesHeaderlessSlice(t *testing.T) {
+func TestSpeakerHeader_OversizeTurnSliceProducesHeaderlessSlice(t *testing.T) {
 	big := strings.Repeat("x", transcriptUnitChars/2+1)
 	nodes := []livedoc.Node{
 		toolNode("a", "bash", big),
@@ -112,7 +114,7 @@ func TestGhostHeader_OversizeTurnSliceProducesHeaderlessSlice(t *testing.T) {
 		if m.From == 0 {
 			t.Fatalf("continuation unit has From=0")
 		}
-		if hasHeader(probeComposer().Message(m, 80)) {
+		if hasHeader(headerComposer().Message(m, 80)) {
 			t.Fatalf("continuation unit (From=%d) rendered a speaker header", m.From)
 		}
 	}
