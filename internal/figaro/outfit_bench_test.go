@@ -10,6 +10,7 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/outfit"
+	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/uiir"
 )
@@ -105,6 +106,49 @@ func BenchmarkApplyOutfitReapplied(b *testing.B) {
 		}
 		if len(set) != 0 {
 			b.Fatalf("re-apply wrote %d keys; the additive diff should be empty", len(set))
+		}
+	}
+}
+
+// BenchmarkDressPromptNoOutfit is what carrying the spec on every prompt costs
+// a prompt that names none: the whole point is that it is nothing.
+func BenchmarkDressPromptNoOutfit(b *testing.B) {
+	a := benchAgent(b, benchConfig(b, 40, 3000), chalkboard.Patch{})
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		req := rpc.QuaRequest{Text: "hi", Chalkboard: &rpc.ChalkboardInput{}}
+		if err := a.DressPrompt(&req); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkDressPromptWarm is a prompt that DOES carry one, against a board
+// that already matches: the fold is cached and the diff comes out empty, so
+// this is the steady-state cost of `send -O <same outfit>`.
+func BenchmarkDressPromptWarm(b *testing.B) {
+	dir := benchConfig(b, 40, 3000)
+	seed, err := outfit.New(dir).Load("full")
+	if err != nil {
+		b.Fatal(err)
+	}
+	a := benchAgent(b, dir, seed)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		req := rpc.QuaRequest{Text: "hi", Chalkboard: &rpc.ChalkboardInput{Outfit: outfit.Names("full")}}
+		if err := a.DressPrompt(&req); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkParseSpec is the client-side syntax, on the worst realistic input:
+// names, sugar and a literal in one spec.
+func BenchmarkParseSpec(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := outfit.ParseSpec(`terse,thorough,ttl=1h,{"mantra":"a, b","n":3}`); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
