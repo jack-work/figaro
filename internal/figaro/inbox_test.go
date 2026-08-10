@@ -29,39 +29,6 @@ func TestInbox_FIFO(t *testing.T) {
 	assert.Equal(t, "second", evt.text)
 }
 
-func TestInbox_ReadyForksPreserveFIFO(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	b := NewInbox(ctx)
-	b.Send(event{typ: eventSet})
-	b.Send(event{typ: eventFork})
-
-	assert.Empty(t, b.TakeReadyForks())
-	evt, ok := b.Recv()
-	require.True(t, ok)
-	assert.Equal(t, eventSet, evt.typ)
-	require.Len(t, b.TakeReadyForks(), 1)
-	assert.True(t, b.IsIdle())
-}
-
-func TestInbox_RemovingPromptRearmsReadyFork(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	b := NewInbox(ctx)
-	b.Send(event{typ: eventUserPrompt})
-	b.Send(event{typ: eventFork})
-
-	<-b.Wake()
-	assert.Empty(t, b.TakeReadyForks())
-	require.Len(t, b.TakeReadyUserPrompts(), 1)
-	select {
-	case <-b.Wake():
-	case <-time.After(time.Second):
-		t.Fatal("ready fork was not re-armed")
-	}
-	require.Len(t, b.TakeReadyForks(), 1)
-}
-
 func TestInbox_TakeReadySetContiguousPrefix(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -91,24 +58,6 @@ func TestInbox_SetPromptSetBoundaries(t *testing.T) {
 	require.Len(t, p, 1)
 	assert.Equal(t, "mid", p[0].text)
 	require.Len(t, b.TakeReadySet(), 1) // trailing set
-	assert.True(t, b.IsIdle())
-}
-
-func TestInbox_PromptForkPromptBoundaries(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	b := NewInbox(ctx)
-	b.Send(event{typ: eventUserPrompt, text: "first"})
-	b.Send(event{typ: eventFork})
-	b.Send(event{typ: eventUserPrompt, text: "second"})
-
-	first := b.TakeReadyUserPrompts()
-	require.Len(t, first, 1)
-	assert.Equal(t, "first", first[0].text)
-	require.Len(t, b.TakeReadyForks(), 1)
-	second := b.TakeReadyUserPrompts()
-	require.Len(t, second, 1)
-	assert.Equal(t, "second", second[0].text)
 	assert.True(t, b.IsIdle())
 }
 
@@ -217,7 +166,6 @@ func TestInbox_SnapshotPromptsFIFOAndReadOnly(t *testing.T) {
 	b.Send(event{typ: eventSet})
 	b.Send(event{typ: eventUserPrompt, text: ""}) // carrier
 	b.Send(event{typ: eventUserPrompt, text: "second"})
-	b.Send(event{typ: eventFork})
 
 	require.Equal(t, []string{"first", "second"}, promptTexts(b.SnapshotPrompts(false)))
 

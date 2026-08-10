@@ -496,7 +496,7 @@ func (n *queuePanicNotifier) Notify(method string, params any) error {
 	return nil
 }
 
-func TestPanicRecoveryPreservesQueuedPromptAndFork(t *testing.T) {
+func TestPanicRecoveryPreservesQueuedPrompt(t *testing.T) {
 	b, id := newBackedConversation(t)
 	defer b.Close()
 	prov := &panicQueueProvider{started: make(chan struct{}), release: make(chan struct{})}
@@ -513,27 +513,12 @@ func TestPanicRecoveryPreservesQueuedPromptAndFork(t *testing.T) {
 	}
 
 	a.SubmitPrompt(rpc.QuaRequest{Text: "second"})
-	forkRan := make(chan struct{})
-	forkDone := make(chan error, 1)
-	go func() {
-		forkDone <- a.CoordinateFork(func() error {
-			close(forkRan)
-			return nil
-		})
-	}()
 	close(prov.release)
 	select {
 	case <-notifier.panicked:
 	case <-time.After(5 * time.Second):
 		t.Fatal("notifier did not panic")
 	}
-	select {
-	case <-forkRan:
-	case <-time.After(5 * time.Second):
-		t.Fatal("queued fork was not serviced after panic")
-	}
-	require.NoError(t, <-forkDone)
-
 	deadline := time.After(5 * time.Second)
 	done := 0
 	for done < 2 {
@@ -674,77 +659,3 @@ func TestCacheAppendFailureEndsTurnKeepsAssistant(t *testing.T) {
 	assert.Zero(t, prov2.callCount())
 }
 
-type appendBarrierProvider struct {
-	afterAck chan struct{}
-	release  chan struct{}
-}
-
-func (p *appendBarrierProvider) Name() string        { return "append-barrier" }
-func (p *appendBarrierProvider) Fingerprint() string { return "append-barrier/v1" }
-func (p *appendBarrierProvider) SetModel(string)     {}
-func (p *appendBarrierProvider) Models(context.Context) ([]provider.ModelInfo, error) {
-	return nil, nil
-}
-func (p *appendBarrierProvider) Send(_ context.Context, in provider.SendInput, bus provider.Bus) error {
-	msg := message.Message{
-		Role: message.RoleOutput, Content: []message.Content{message.TextContent("appended")},
-		StopReason: message.StopEnd, Timestamp: time.Now().UnixMilli(),
-	}
-	if _, err := in.FigLog.Append(store.Entry[message.Message]{Payload: msg}); err != nil {
-		return err
-	}
-	bus.PushFigaro(msg, provider.AssistantCache{
-		Namespace:   "append-barrier",
-		Payload:     []json.RawMessage{json.RawMessage(`{"native":"appended"}`)},
-		Fingerprint: p.Fingerprint(),
-	})
-	close(p.afterAck)
-	<-p.release
-	return nil
-}
-
-func TestQueuedForkWaitsForProviderCacheAppend(t *testing.T) {
-	b, id := newBackedConversation(t)
-	defer b.Close()
-	prov := &appendBarrierProvider{afterAck: make(chan struct{}), release: make(chan struct{})}
-	a := figaro.NewAgent(figaro.Config{Projector: uiir.New(nil), ID: id, Provider: prov, Backend: b, Tools: tool.NewRegistry()})
-	defer a.Kill()
-	ch, _ := subscribeChan(a)
-	a.SubmitPrompt(rpc.QuaRequest{Text: "go"})
-	select {
-	case <-prov.afterAck:
-	case <-time.After(5 * time.Second):
-		t.Fatal("assistant IR was not acknowledged")
-	}
-
-	var cont, alt string
-	forkDone := make(chan error, 1)
-	go func() {
-		forkDone <- a.CoordinateFork(func() error {
-			var err error
-			cont, alt, err = b.Fork(id)
-			return err
-		})
-	}()
-	select {
-	case err := <-forkDone:
-		t.Fatalf("fork crossed provider cache barrier: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	close(prov.release)
-	require.NoError(t, <-forkDone)
-	waitDone(t, ch)
-
-	for _, branch := range []string{cont, alt} {
-		ir, err := b.Open(branch)
-		require.NoError(t, err)
-		tail, ok := ir.PeekTail()
-		require.True(t, ok)
-		assert.Equal(t, message.RoleOutput, tail.Payload.Role)
-		cache, err := b.OpenTranslation(branch, "append-barrier")
-		require.NoError(t, err)
-		cached, ok := cache.Lookup(tail.LT)
-		require.True(t, ok, "cache missing on branch %s", branch)
-		assert.JSONEq(t, `{"native":"appended"}`, string(cached.Payload[0]))
-	}
-}

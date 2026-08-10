@@ -146,7 +146,6 @@ func (b *Inbox) TakeReadyUserPrompts() []event {
 	for _, evt := range taken {
 		b.liftLocked(evt)
 	}
-	b.signalReadyForkLocked()
 	return taken
 }
 
@@ -221,26 +220,9 @@ func (b *Inbox) Prepend(events []event) bool {
 	return true
 }
 
-func (b *Inbox) TakeReadyForks() []event {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	n := 0
-	for n < len(b.queue) {
-		if b.queue[n].typ != eventFork {
-			break
-		}
-		n++
-	}
-	taken := append([]event(nil), b.queue[:n]...)
-	copy(b.queue, b.queue[n:])
-	b.queue = b.queue[:len(b.queue)-n]
-	return taken
-}
-
-// TakeReadySet removes the contiguous eventSet prefix — the chalkboard-patch
-// analog of TakeReadyForks. It never jumps a set over an earlier prompt or
-// fork, so FIFO order across event kinds is preserved by the caller's drain
-// loop.
+// TakeReadySet removes the contiguous eventSet prefix. It never jumps a set
+// over an earlier prompt, so FIFO order across event kinds is preserved by the
+// caller's drain loop.
 func (b *Inbox) TakeReadySet() []event {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -464,16 +446,6 @@ func containsID(ids []uint64, id uint64) bool {
 		}
 	}
 	return false
-}
-
-func (b *Inbox) signalReadyForkLocked() {
-	if len(b.queue) == 0 || b.queue[0].typ != eventFork {
-		return
-	}
-	select {
-	case b.wake <- struct{}{}:
-	default:
-	}
 }
 
 // IsIdle reports whether the inbox is empty (no events queued).

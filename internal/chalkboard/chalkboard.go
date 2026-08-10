@@ -29,11 +29,6 @@ import (
 // pointer identity (treediff.go).
 type Snapshot struct {
 	root *node
-	// version counts content-changing derivations from an empty board.
-	// It is never serialised and is not part of equality; it exists so
-	// "has this board moved?" is answerable without walking the tree,
-	// and so a future LT-keyed retention pass has a handle to key on.
-	version uint64
 }
 
 // FromMap builds a Snapshot from a plain map. The map is copied (to the
@@ -151,7 +146,7 @@ func (s Snapshot) Apply(p Patch) Snapshot {
 	if t.root == s.root {
 		return s
 	}
-	return Snapshot{root: t.root, version: s.version + 1}
+	return Snapshot{root: t.root}
 }
 
 // MarshalJSON emits the flat object form — {"key": value, ...} with keys

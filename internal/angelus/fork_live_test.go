@@ -66,16 +66,6 @@ func (f *liveForkBackend) ApplyChalkboard(ariaID string, patch message.Patch) (u
 	return f.chalkVer, nil
 }
 
-type coordinatingForkFigaro struct {
-	liveForkFigaro
-	coordinated atomic.Int32
-}
-
-func (f *coordinatingForkFigaro) CoordinateFork(run func() error) error {
-	f.coordinated.Add(1)
-	return run()
-}
-
 func (b *liveForkBackend) Fork(id string) (string, string, error) {
 	b.forked = true
 	return id, "alternative", nil
@@ -152,36 +142,6 @@ func TestInteriorForkAtRootDoesNotCopyConversationState(t *testing.T) {
 
 // A fork must NOT be handed to any agent's actor.
 //
-// It used to be: the angelus sent the fork closure to the owning trunk's inbox
-// and waited, so that a fork could not re-home the log while the agent appended
-// to it. figwal already guarantees that — Trunks.Append and Trunks.ForkTail
-// both take lockLineage(trunk) — so the hop was a second lock over the first.
-//
-// It was also a deadlock. A figaro forking ITSELF does so from a tool call,
-// which runs on its own drain loop; the fork queued behind a turn that could
-// not finish until the tool returned, and the tool could not return until the
-// fork ran. This test previously asserted the coordination happened; it now
-// asserts it does not, because the coordination was the bug.
-func TestForkDoesNotGoThroughAnyActor(t *testing.T) {
-	target := &coordinatingForkFigaro{liveForkFigaro: liveForkFigaro{id: "target"}}
-	owner := &coordinatingForkFigaro{liveForkFigaro: liveForkFigaro{id: "owner"}}
-	registry := NewRegistry()
-	require.NoError(t, registry.Register(target))
-	require.NoError(t, registry.Register(owner))
-	backend := &liveForkBackend{
-		parentMeta: &store.AriaMeta{},
-		owner:      store.OwnerInfo{Trunk: owner.id},
-	}
-	h := &handlers{angelus: &Angelus{Registry: registry, Backend: backend}}
-	params, err := json.Marshal(rpc.ForkRequest{FigaroID: target.id, AtTurn: 1})
-	require.NoError(t, err)
-
-	_, err = h.fork(t.Context(), params)
-	require.NoError(t, err)
-	require.Equal(t, int32(0), target.coordinated.Load(), "fork was handed to the target's actor")
-	require.Equal(t, int32(0), owner.coordinated.Load(), "fork was handed to the owning trunk's actor")
-}
-
 type activeForkProvider struct {
 	started  chan struct{}
 	release  chan struct{}

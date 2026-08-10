@@ -58,26 +58,6 @@ func TestCoalesce_AQueuedSetBlocksTheFold(t *testing.T) {
 	assert.Equal(t, "three", b.queue[2].text, "a prompt behind a set is NOT folded in front of it")
 }
 
-// Same rule, higher stakes: coalescing across a fork would move a message into
-// the wrong trunk.
-func TestCoalesce_AQueuedForkBlocksTheFold(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	b := NewInbox(ctx)
-
-	b.Send(event{typ: eventUserPrompt, text: "before"})
-	b.Send(event{typ: eventFork})
-	b.Send(event{typ: eventUserPrompt, text: "after-a"})
-	b.Send(event{typ: eventUserPrompt, text: "after-b"})
-
-	b.CoalesceUserPromptRuns()
-
-	require.Len(t, b.queue, 3)
-	assert.Equal(t, "before", b.queue[0].text)
-	assert.Equal(t, eventFork, b.queue[1].typ)
-	assert.Equal(t, "after-a\n\nafter-b", b.queue[2].text, "the run AFTER the fork folds on its own")
-}
-
 // A carrier (empty text, chalkboard only) folds into the run it sits in: its
 // patch rides on the combined message, in queue order, so a later value wins.
 func TestCoalesce_CarrierPatchesRideTheCombinedMessage(t *testing.T) {

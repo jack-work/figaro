@@ -3,7 +3,6 @@ package figaro
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"runtime"
 	"sync"
@@ -33,7 +32,6 @@ type eventType int
 const (
 	eventUserPrompt eventType = iota
 	eventSet
-	eventFork
 )
 
 // promptSegment is one submission inside a (possibly folded) user message:
@@ -66,10 +64,6 @@ type event struct {
 
 	// eventSet
 	setPatch message.Patch
-
-	// eventFork
-	fork     func() error
-	forkDone chan error
 }
 
 // Config is the constructor input for NewAgent. Configured values
@@ -637,26 +631,6 @@ func (a *Agent) Hangup(disposition rpc.QueueDisposition) rpc.InterruptResponse {
 	return resp
 }
 
-// CoordinateFork runs storage fork coordination on the actor goroutine.
-// Active turns service it between stream/tool events without cancellation.
-func (a *Agent) CoordinateFork(run func() error) error {
-	done := make(chan error, 1)
-	if !a.inbox.Send(event{typ: eventFork, fork: run, forkDone: done}) {
-		return fmt.Errorf("figaro %s is stopped", a.id)
-	}
-	select {
-	case err := <-done:
-		return err
-	case <-a.done:
-		select {
-		case err := <-done:
-			return err
-		default:
-			return fmt.Errorf("figaro %s stopped before fork", a.id)
-		}
-	}
-}
-
 func (a *Agent) Context() []message.Message {
 	return unwrapMessages(a.figLog.Read())
 }
@@ -931,34 +905,8 @@ func (a *Agent) act(ctx context.Context) {
 			a.runTurn(ctx, merged)
 		case eventSet:
 			a.applyControlPatch(evt.setPatch, "set")
-		case eventFork:
-			a.executeFork(evt)
 		}
 	}
-}
-
-func (a *Agent) executeFork(evt event) {
-	var err error
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("fork coordination panic: %v", r)
-			}
-		}()
-		err = evt.fork()
-	}()
-	evt.forkDone <- err
-}
-
-// serviceForks executes any queued forks at a round boundary. Returns true
-// when it serviced at least one, so a drain loop can re-check for events the
-// fork uncovered. Statement callers may ignore the result.
-func (a *Agent) serviceForks() bool {
-	evts := a.inbox.TakeReadyForks()
-	for _, evt := range evts {
-		a.executeFork(evt)
-	}
-	return len(evts) > 0
 }
 
 // serviceSets applies any queued chalkboard patches at a round boundary, the

@@ -395,7 +395,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		} else if len(repaired) > 0 {
 			a.emitDelta(a.composeTurn(nil))
 		}
-		a.serviceForks()
 		a.endTurn("interrupted")
 		return true
 	}
@@ -405,7 +404,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			return true
 		}
 	} else {
-		a.serviceForks()
 		a.serviceSets()
 	}
 	if a.turn == nil {
@@ -488,7 +486,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	for events != nil {
 		select {
 		case <-forkWake:
-			a.serviceForks()
 		case ev, ok := <-events:
 			if !ok {
 				events = nil
@@ -642,12 +639,10 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		}
 		if len(repairedMessages) > 0 {
 			a.emitDelta(a.composeTurn(nil))
-			a.serviceForks()
 			a.endTurn("error: " + roundErr.Error())
 			return true
 		}
 		a.reconcileAriaServer()
-		a.serviceForks()
 		a.finishTurn("error: " + roundErr.Error())
 		return true
 	}
@@ -673,17 +668,14 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		if len(repairedMessages) > 0 {
 			a.emitDelta(a.composeTurn(nil))
 		}
-		a.serviceForks()
 		a.endTurn("interrupted")
 		return true
 	}
 	if sendErr != nil {
 		if a.turn == nil {
 			if appended {
-				a.serviceForks()
 				a.endTurn("error: " + sendErr.Error())
 			} else {
-				a.serviceForks()
 				a.endTurnDiscarding("error: " + sendErr.Error())
 			}
 			return true
@@ -697,7 +689,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 		} else if err != nil {
 			a.reconcileAriaServer()
 		}
-		a.serviceForks()
 		if err != nil {
 			a.finishTurn("error: " + sendErr.Error())
 		} else {
@@ -718,7 +709,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 			}
 			a.turn = nil
 		}
-		a.serviceForks()
 		a.endTurn(string(message.StopEnd))
 		return true
 	}
@@ -727,7 +717,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	if len(calls) == 0 {
 		a.turn = nil
 		a.waitWithForks(specDone)
-		a.serviceForks()
 		stopReason := lastFig.StopReason
 		if stopReason == "" {
 			stopReason = message.StopEnd
@@ -737,7 +726,6 @@ func (a *Agent) driveOneRound(turnCtx context.Context, allowSteering bool) (done
 	}
 
 	if appendedAwaitingProvider {
-		a.serviceForks()
 	}
 	a.waitWithForks(specDone)
 
@@ -842,14 +830,11 @@ func (a *Agent) prepareProviderRound() error {
 		return nil
 	}
 	for {
-		progressed := a.serviceForks()
-		if a.serviceSets() {
-			progressed = true
-		}
+		progressed := a.serviceSets()
 		prompts := a.inbox.TakeReadyUserPrompts()
 		if len(prompts) == 0 {
-			// A serviced control event may have uncovered a fork or set
-			// behind it; loop again before concluding the queue is drained.
+			// A serviced set may have uncovered another behind it; loop again
+			// before concluding the queue is drained.
 			if progressed {
 				continue
 			}
@@ -1069,7 +1054,6 @@ toolLoop:
 		var ok bool
 		select {
 		case <-a.inbox.Wake():
-			a.serviceForks()
 			continue
 		case <-turnCtx.Done():
 			break toolLoop
@@ -1121,7 +1105,6 @@ func (a *Agent) waitWithForks(done <-chan struct{}) {
 		case <-done:
 			return
 		case <-a.inbox.Wake():
-			a.serviceForks()
 		}
 	}
 }
