@@ -298,7 +298,24 @@ literally, casting calls.
   surface, the twelve-aria stress recipe, `-count=6` benchmark slopes,
   migrations rehearsed on a COPY of the real store.
 
-## 10. figwal-future (recorded, deliberately not commissioned)
+## 10. figwal — in-scope work (authority granted to update master + release)
+
+Gluck 2026-08-10: "you may update figwal master and release as you please.
+embody it in this work."
+
+1. **Mandatory server timestamps on EVERY record, in every channel, of
+   every xwal** — LT, payload, and a real wall-clock timestamp recorded by
+   figwal itself at append time (never caller-supplied). Form patches, IR
+   records, translations: all of them. The JSONL envelope already carries
+   `_idx`/`_hash` sidecars; a `_ts` sidecar (or a stamped-frame field)
+   joins them. Reads TOLERATE legacy records without it (zero time); no
+   segment rewrite — `_hash` covers the payload alone, so old bytes stand.
+   This is what listing recency reads (§5).
+2. **`SpawnChild` for arbitrary nodes** — the spawn-beneath shape
+   generalized from stumps/root to any form node (§8.1). New trunk minted
+   under a form parent.
+
+## 10b. figwal-future (recorded, deliberately not commissioned)
 
 figwal should tolerate primitives without unused channel baggage: a node
 declares which channels it carries; the node marker moves out of `irDir`
@@ -308,11 +325,13 @@ at node creation — bind forks, nothing converts. Touches `forkFlat`/
 `channelBases` (per-node channel sets), marker relocation + migration, and
 `Flatten`.
 
-## 11. Flagged interpretations (defaults chosen, veto welcome)
+## 11. Interpretations — RESOLVED (Gluck, 2026-08-10)
 
-1. Form recency in listings = last form-channel write.
-2. `-n` tree pruning: uncounted dim scaffolding for connective ancestors.
-3. The nearest-unbound-ancestor annotation on `fig ls` applies always, not
-   only while attending a form.
-4. `fig form ls` while attending a FIGARO scopes to its nearest unbound
-   ancestor's subtree.
+1. Form recency in listings: superseded by §10.1 — every record carries a
+   figwal-stamped server timestamp; recency reads that, uniformly, for
+   forms and figaros alike.
+2. `-n` tree pruning (uncounted dim scaffolding): confirmed — today's
+   semantics are good enough for figaros, so they are good enough for both.
+3. Nearest-unbound-ancestor annotation applies always: confirmed.
+4. `fig form ls` while attending a FIGARO shows the nearest unbound form's
+   tree: confirmed.
