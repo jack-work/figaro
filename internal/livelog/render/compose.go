@@ -105,7 +105,7 @@ func (c Composer) Nodes(nodes []livedoc.Node, w int) []Row {
 	}
 	var rows []Row
 	for k, n := range nodes {
-		// Minted-but-empty prose/thinking (docs/turn-addressing.md, invariant 6)
+		// Minted-but-empty prose/thinking (skills/figaro/reference/turns.md, invariant 6)
 		// holds a node id so later ids cannot shift; it draws nothing.
 		if n.Type != livedoc.NodeTool && strings.TrimSpace(n.Markdown) == "" {
 			continue

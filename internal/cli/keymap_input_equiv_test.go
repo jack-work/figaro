@@ -81,7 +81,7 @@ import (
 // press.
 //
 // The window is now an interval into the store rather than a copy of it
-// (docs/range-store.md phase 2), so there is no stale snapshot to be caught
+// (skills/figaro/contributing/range-store.md phase 2), so there is no stale snapshot to be caught
 // behind: the first ^N selects, which detaches (fol=false) and gives the live
 // padding row back to content (off 753 -> 752). Everything else in those rows
 // is untouched, and no other state's rows moved at all.

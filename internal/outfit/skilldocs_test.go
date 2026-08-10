@@ -136,18 +136,24 @@ func TestSkillLinkLabelsMatchTargets(t *testing.T) {
 	}
 }
 
-// TestSkillPathsCitedFromOutsideResolve: a `skills/figaro/...` path written in
-// a Go comment or a README ELSEWHERE in the repo must still name a file.
+// TestSkillPathsCitedFromOutsideResolve: a path into the doc tree written in a
+// Go comment or a README ELSEWHERE in the repo must still name a file.
 //
 // The three tests above walk the tree and cannot see a citation from outside
-// it, which is exactly where the last restructure left two dead ones:
-// internal/tape/tape.go and internal/cli/testdata/tapes/README.md both still
-// said contributing/tapes.md after tapes.md moved to debugging/. A reader
-// following either landed nowhere, and the whole suite was green.
+// it, which is where the last two restructures left twenty-three dead ones:
+// internal/tape/tape.go and internal/cli/testdata/tapes/README.md still said
+// contributing/tapes.md after tapes.md moved to debugging/, and twenty-one
+// comments still said docs/<x>.md years after docs/ stopped holding any of
+// them — including four naming turn-addressing.md, the same vanished file the
+// label test caught inside the tree. A reader following any of them landed
+// nowhere, and the whole suite was green.
+//
+// docs/ is matched as well as skills/ because that is where these files USED
+// to live: a citation that still says docs/ is the exact shape of the mistake.
 func TestSkillPathsCitedFromOutsideResolve(t *testing.T) {
 	root := skillsDir(t)
 	repo := filepath.Dir(root)
-	cite := regexp.MustCompile(`skills/figaro/[A-Za-z0-9_./-]+\.md`)
+	cite := regexp.MustCompile(`\b(?:skills/figaro|docs)/[A-Za-z0-9_./-]+\.md`)
 	n := 0
 	err := filepath.WalkDir(repo, func(path string, d os.DirEntry, err error) error {
 		if err != nil {

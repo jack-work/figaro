@@ -13,7 +13,7 @@ import (
 
 // PROPERTY TESTS ON THE RANGE ALGEBRA.
 //
-// These are the contract's non-negotiable half (docs/range-store.md, "Testing
+// These are the contract's non-negotiable half (skills/figaro/contributing/range-store.md, "Testing
 // standard"). They are randomized with a FIXED SEED so a failure reproduces,
 // and every failure shrinks its input before reporting, because "some sequence
 // of 40 inserts broke it" is not a bug report.
@@ -86,7 +86,7 @@ func anchorsOf(s *Store) []Anchor {
 	return out
 }
 
-// checkInvariants asserts 1, 2 and 3 of docs/range-store.md over a whole store.
+// checkInvariants asserts 1, 2 and 3 of skills/figaro/contributing/range-store.md over a whole store.
 //
 // truth is the GENERATOR's model of how many anchors each turn really has —
 // deliberately not the store's own `ends`, which is bookkeeping the store

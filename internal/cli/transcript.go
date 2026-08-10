@@ -120,7 +120,7 @@ type transcript struct {
 	// interval [from, ∞), whose floor is the anchor of its oldest message. There
 	// is no second copy of anything, in either direction.
 	//
-	// This is what dissolves the frozen detached tail (docs/range-store.md, bug
+	// This is what dissolves the frozen detached tail (skills/figaro/contributing/range-store.md, bug
 	// B). The pager used to snapshot the closed tail into t.pages and freeze the
 	// open message beside it (heldOpen), because client.Open() is the open
 	// SUFFIX: as Live.From advances, nodes LEAVE the suffix and become closed
@@ -375,7 +375,7 @@ const (
 
 // transcriptWindowRows is the retained-window budget in rendered rows. A var,
 // not a const, so the geometry sweep in transcript_geometry_bench_test.go can
-// measure the tradeoff it encodes. See docs/transcript-paging.md for the
+// measure the tradeoff it encodes. See skills/figaro/contributing/notes/transcript-paging.md for the
 // numbers behind the chosen value.
 //
 // RE-DERIVED FOR THE MERGED STACK. Axis D measured the knee at 1200 rows
@@ -723,7 +723,7 @@ func anchorOf(m aria.Message) aria.Anchor {
 // historyPage is a fetched page folded into the pager's units, WITH the turn
 // extents the wire stated. The extents are what let the store decide that the
 // last node of turn t and the first of turn t+1 are neighbours rather than a
-// hole: an anchor cannot answer that on its own (docs/range-store.md,
+// hole: an anchor cannot answer that on its own (skills/figaro/contributing/range-store.md,
 // "Adjacency is NOT decidable from an anchor"), and a page clipped at its tail
 // states nothing, so the map is deliberately partial.
 type historyPage struct {
@@ -1122,7 +1122,7 @@ func (t *transcript) pruneCaches() {
 //
 // GAP-BLIND BY CHOICE, which is the contract's default mode: over the store's
 // window interval it asks for what is held and is never lied to about
-// adjacency — it simply gets less. See docs/range-store.md, "The two verbs".
+// adjacency — it simply gets less. See skills/figaro/contributing/range-store.md, "The two verbs".
 func (t *transcript) forEachMessage(fn func(aria.Message)) {
 	t.client.ForEachIn(t.from, windowEnd, func(m aria.Message) bool {
 		fn(m)

@@ -158,7 +158,7 @@ func BenchmarkTranscriptGeometryFollow(b *testing.B) {
 // It sweeps budget x journey depth and prints fetches / refetched messages /
 // node re-renders / peak retained bytes. A report, not an assertion (the
 // numbers are machine- and fixture-dependent); the conclusion it supports is
-// written up in docs/transcript-paging.md. Enable with
+// written up in skills/figaro/contributing/notes/transcript-paging.md. Enable with
 // FIGARO_PAGING_REPORT=1 go test ./internal/cli/ -run GeometryDepth -v.
 func TestTranscriptGeometryDepthReport(t *testing.T) {
 	if os.Getenv("FIGARO_PAGING_REPORT") == "" {

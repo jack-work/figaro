@@ -108,4 +108,4 @@ Wire types and the folding client are under `internal/`, and the CLI compares
 exact build revisions because different builds may not agree on the wire.
 Protocol versioning, capability negotiation, public client/schema packages,
 and per-subscriber backpressure isolation are tracked in
-[`docs/ui-stream.md`](../../docs/ui-stream.md#protocol-stability-todo).
+[`skills/figaro/reference/ui-stream.md`](../../skills/figaro/reference/ui-stream.md#protocol-stability-todo).

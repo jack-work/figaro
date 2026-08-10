@@ -186,7 +186,7 @@ func TestIncipit_ThinkingAbandonedOnEarlyError(t *testing.T) {
 }
 
 // The projection mints prose/thinking nodes even when empty, so a block that
-// fills later cannot shift the ids after it (docs/turn-addressing.md,
+// fills later cannot shift the ids after it (skills/figaro/reference/turns.md,
 // invariant 6). Hiding them is the renderer's job: an empty node must occupy
 // no rows, while a tool node with no output yet still draws its header.
 func TestIncipit_MintedEmptyNodesDrawNothing(t *testing.T) {

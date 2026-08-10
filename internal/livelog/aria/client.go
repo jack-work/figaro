@@ -16,7 +16,7 @@ import (
 // OnClosed fires when a message finalizes; OnLive fires with the open message
 // (its suffix nodes, and the turn's inquiry while the suffix starts the turn);
 // OnDesync requests a catch-up from the given sealed-turn cursor.
-// Since the range store landed (docs/range-store.md, phase 1) the retained
+// Since the range store landed (skills/figaro/contributing/range-store.md, phase 1) the retained
 // closed set is NOT a list: it is a set of contiguous intervals over (turn,
 // node) space, held by Store. Client is the shim that preserves the old API —
 // View/Open/OnClosed/OnLive — over the new substrate. Nothing outside this

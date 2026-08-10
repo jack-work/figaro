@@ -59,7 +59,7 @@ func TestTranscriptPaint_RealTerminalResize(t *testing.T) {
 			const w0, h0 = 100, 40
 			const w1, h1 = 72, 40 // WIDTH ONLY: no row moves, so nothing but the
 			// paint diff can explain a difference. Measured
-			// as sufficient in a real pane (docs/paint-repro.md §8.1).
+			// as sufficient in a real pane (skills/figaro/contributing/paint-repro.md §8.1).
 
 			dir := t.TempDir()
 			preFile := filepath.Join(dir, "pre.bin")

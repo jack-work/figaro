@@ -10,7 +10,7 @@ import (
 
 // The phase-2 surface: what a WINDOWED reader (the pager) needs of the store
 // to stop keeping a second copy of the conversation. Every test here is a
-// canary for a specific claim in docs/range-store.md's migration step 2.
+// canary for a specific claim in skills/figaro/contributing/range-store.md's migration step 2.
 
 func histMsg(turn int, from uint64, n int) Message {
 	m := Message{Turn: turn, From: from, Role: livedoc.RoleOutput}
