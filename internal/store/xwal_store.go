@@ -91,6 +91,21 @@ func hexTrunkID() string {
 	return hex.EncodeToString(b)
 }
 
+// mintTrunkID gives each species its id shape: unbound forms mint as
+// "@<hex>" — the sigil that makes a form id unmistakably not an aria id
+// (the same convention retired stump ids established, so a legacy stump
+// id already reads as what it now is: a form). Everything else mints
+// bare hex, exactly as arias always have.
+func mintTrunkID(kind string) string {
+	if kind == string(kindForm) {
+		return formSigil + hexTrunkID()
+	}
+	return hexTrunkID()
+}
+
+// formSigil prefixes every unbound form id.
+const formSigil = "@"
+
 const (
 	chanIR = "ir"
 	// chanForm is the form channel — the aria's state. It was "chalkboard" on
@@ -124,6 +139,10 @@ const (
 	kindNull         nodeKind = "null"
 	kindOutfit       nodeKind = "outfit"
 	kindConversation nodeKind = "conversation"
+	// kindForm is an unbound form: a live, patchable forking point.
+	// Recorded in the figwal node marker at mint, immutable from then on —
+	// binding forks, nothing converts.
+	kindForm nodeKind = "form"
 )
 
 // formReduce folds a message.Patch (JSON) onto a form
@@ -187,7 +206,7 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 		Codec:       "jsonl",
 		SegmentSize: int64(segmentSize),
 		Genesis:     genesis,
-		MintTrunkID: hexTrunkID,
+		MintTrunkID: mintTrunkID,
 		Reducers: map[string]xwal.Reducer{
 			chanForm: {Reduce: formReduce, Initial: []byte("{}")},
 		},
@@ -429,7 +448,10 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 // parent == "" forks the null root — which is what `fig new` is. A non-empty
 // parent branches that aria: at.MainLT == 0 takes the head, otherwise the
 // interior point (cauterizing to a fresh child when that point is owned by the
-// root or a stump, which is what ForkAt already decides).
+// root or a stump, which is what ForkAt already decides). A FORM parent spawns
+// a NEW trunk beneath the live form — binding — because ForkTail on a form
+// would be a continuation, and a form is a forking point, not a conversation
+// to continue. The form stays appendable; the child snapshots it at its tail.
 //
 // THE PATCH IS REQUIRED. A fork that transforms nothing is a fork nobody can
 // name: the child's identity IS the hash of the patch it was born carrying, and
@@ -443,6 +465,32 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 // the patch it introduces, so nothing rendered: no skills, no credo, nothing the
 // birth patch set. This function is now the only place that ordering lives.
 func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch) (child string, version uint64, err error) {
+	return s.forkWithKind(parent, atMainLT, patch, string(kindConversation))
+}
+
+// CreateForm mints an UNBOUND FORM: parent "" forks the null root, a form
+// parent duplicates that form's state into a fresh @id. Forms have no
+// interior points to fork at — their timeline is one ceremonial record —
+// so there is no atMainLT here. Only forms fork independently: a
+// conversation parent is refused, because a bound form's fork is the
+// aria's fork and it goes through ForkWith.
+func (s *XwalStore) CreateForm(parent string, patch message.Patch) (id string, version uint64, err error) {
+	if parent != "" {
+		s.mu.Lock()
+		kind, known := s.trunks.Kind(parent)
+		legacyStump := s.isStumpLocked(parent)
+		s.mu.Unlock()
+		if !legacyStump && (!known || kind != string(kindForm)) {
+			return "", 0, fmt.Errorf("xwal store: create form: parent %s is not an unbound form", parent)
+		}
+	}
+	return s.forkWithKind(parent, 0, patch, string(kindForm))
+}
+
+// forkWithKind is the shared birth mechanics: pick the spawn shape from
+// the parent's species, then land the birth patch and its cursor-stamped
+// record in order. Caller chooses what species the CHILD is.
+func (s *XwalStore) forkWithKind(parent string, atMainLT uint64, patch message.Patch, kind string) (child string, version uint64, err error) {
 	if patch.IsEmpty() {
 		return "", 0, fmt.Errorf("xwal store: fork-with: a fork must carry a patch")
 	}
@@ -451,12 +499,18 @@ func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch
 
 	switch {
 	case parent == "":
-		child, err = s.trunks.SpawnUnderRoot()
+		child, err = s.trunks.SpawnUnderRootKind(kind)
 	case s.isStumpLocked(parent):
 		// A stump is not a trunk and has no tail to fork: spawning beneath it
 		// is what "fork the outfit" means, and the child inherits the birth
-		// record every sibling reads.
-		child, err = s.trunks.SpawnUnderStump(parent)
+		// record every sibling reads. Legacy stumps remain bindable — they
+		// were always forms in spirit, and now in name.
+		child, err = s.trunks.SpawnUnderStumpKind(parent, kind)
+	case s.isFormLocked(parent):
+		// A live, patchable forking point: spawn a NEW trunk beneath it.
+		// The form is not written, not frozen, and later patches to it
+		// belong to the form alone (proved in figwal's spawnkind tests).
+		child, err = s.trunks.SpawnChildKind(parent, kind)
 	case atMainLT == 0:
 		child, err = s.trunks.ForkTail(parent)
 	default:
@@ -470,6 +524,12 @@ func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch
 		return "", 0, err
 	}
 	return child, version, nil
+}
+
+// isFormLocked reports whether an id names an unbound form. Caller holds s.mu.
+func (s *XwalStore) isFormLocked(id string) bool {
+	kind, ok := s.trunks.Kind(id)
+	return ok && kind == string(kindForm)
 }
 
 // writeBirth appends a node's birth patch and the renderable record that carries

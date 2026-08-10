@@ -296,6 +296,20 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 	return child, version, nil
 }
 
+// CreateForm mints an unbound form: see XwalStore.CreateForm. `fig form
+// new` forks the null root; `fig form fork` duplicates a form. Same
+// forms-cache hygiene as ForkWith, same reason.
+func (b *XwalBackend) CreateForm(parent string, patch message.Patch) (string, uint64, error) {
+	id, version, err := b.store.CreateForm(parent, patch)
+	if err != nil {
+		return "", 0, err
+	}
+	b.mu.Lock()
+	delete(b.forms, id)
+	b.mu.Unlock()
+	return id, version, nil
+}
+
 func (b *XwalBackend) CreateOutfit(name string, patch message.Patch) (string, error) {
 	return b.store.CreateOutfit(name, patch)
 }
