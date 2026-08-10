@@ -117,7 +117,25 @@ exactly one writer, so appending to the shared backing array is safe: a
 published state holds a slice header with its own length, and a later append
 either writes past that length (which no reader reads) or reallocates.
 
-    FormApplySameAria   40.45 µs -> 17.84 µs   (main: 14.07 µs, +27% and O(1))
+### The size of the win is not a number, it is a slope
+
+My headline (40.45 µs -> 17.84 µs) is an artifact of the benchtime I happened to
+run: in this benchmark the history length IS b.N, and the cost removed was
+O(history), so a single pair of numbers says more about the harness than about
+the change. Review could not reproduce it and was right not to. -count=3 at each
+N, µs/op:
+
+| N | before | after |
+|---|---|---|
+| 200 | 22.21 | 19.54 |
+| 1000 | 21.41 | 18.22 |
+| 3000 | 30.32 | 17.52 |
+
+After is FLAT and drifting down as the append amortizes. Before GROWS, gently to
+1000 and then turning — total work was O(N^2). That is O(1) versus O(history)
+SHOWN, and it does not depend on which benchtime anyone picked.
+
+What remains against main is the actor hop: roughly +27% and O(1).
 
 The 27% that remains is the actor hop — Send, handler, commit, reply channel —
 which is what buys the single writer, the atomic If-Match and durability before
