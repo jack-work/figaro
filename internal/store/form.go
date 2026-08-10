@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/jack-work/figaro/internal/actor"
 	"github.com/jack-work/figaro/internal/form"
 	"github.com/jack-work/figaro/internal/message"
 )
@@ -28,12 +29,8 @@ import (
 // cycle and hang. A Form is happy to exist with no aria attached at all.
 type Form struct {
 	log   FormLog
-	write chan formWrite
-	done  chan struct{}
-
+	write *actor.Queue[formWrite]
 	state atomic.Pointer[formState]
-
-	closeOnce sync.Once
 }
 
 // formState is one published version: the tree, the durable index it stands
@@ -69,7 +66,7 @@ type FormLog interface {
 // OpenForm replays the log and starts the writer. The replay is the cold cost;
 // afterwards every read is an atomic load.
 func OpenForm(log FormLog) (*Form, error) {
-	f := &Form{log: log, write: make(chan formWrite), done: make(chan struct{})}
+	f := &Form{log: log}
 	st := &formState{}
 	if err := log.RangePatches(func(index uint64, payload []byte) error {
 		var p message.Patch
@@ -86,7 +83,11 @@ func OpenForm(log FormLog) (*Form, error) {
 		return nil, err
 	}
 	f.state.Store(st)
-	go f.run()
+	// The runtime is internal/actor, the same one the aria's inbox runs on: one
+	// goroutine, FIFO, close refuses. No Coalescer — two form patches could be
+	// merged, but each carries its own version and its own reply, so folding
+	// them would have to invent an answer for a caller that asked about one.
+	f.write = actor.Start[formWrite](nil, func(w formWrite) { w.reply <- f.commit(w) }, nil)
 	return f, nil
 }
 
@@ -113,30 +114,15 @@ func (f *Form) Patches() []VersionedPatch {
 // field) safe against a second shell doing the same thing.
 func (f *Form) Apply(patch message.Patch, ifVersion uint64) (uint64, error) {
 	reply := make(chan formResult, 1)
-	select {
-	case f.write <- formWrite{patch: patch, ifVersion: ifVersion, reply: reply}:
-	case <-f.done:
+	if !f.write.Send(formWrite{patch: patch, ifVersion: ifVersion, reply: reply}) {
 		return 0, fmt.Errorf("form is closed")
 	}
 	res := <-reply
 	return res.version, res.err
 }
 
-// Close stops the writer. Queued writes are refused, not dropped silently.
-func (f *Form) Close() {
-	f.closeOnce.Do(func() { close(f.done) })
-}
-
-func (f *Form) run() {
-	for {
-		select {
-		case <-f.done:
-			return
-		case w := <-f.write:
-			w.reply <- f.commit(w)
-		}
-	}
-}
+// Close stops the writer. Further writes are refused rather than dropped.
+func (f *Form) Close() { f.write.Close() }
 
 func (f *Form) commit(w formWrite) formResult {
 	st := f.state.Load()

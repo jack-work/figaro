@@ -123,8 +123,8 @@ func TestQueueDelete_AllNeedsNoEpochAndSparesControlEvents(t *testing.T) {
 	require.Len(t, results, 2)
 	assert.Equal(t, rpc.QueueDeleted, results[0].Outcome)
 	assert.Empty(t, b.SnapshotPrompts(true))
-	require.Len(t, b.queue, 1, "a queued set is not a question and is not dropped")
-	assert.Equal(t, eventSet, b.queue[0].typ)
+	require.Len(t, b.pending(), 1, "a queued set is not a question and is not dropped")
+	assert.Equal(t, eventSet, b.pending()[0].typ)
 }
 
 func TestQueueDelete_UnknownID(t *testing.T) {

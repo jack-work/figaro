@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jack-work/figaro/internal/actor"
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
@@ -27,12 +28,13 @@ import (
 // tail (it does not advance when an agent boots, queues, and dies without
 // appending: the precise case that reproduces a colliding id).
 type Inbox struct {
-	mu     sync.Mutex
-	cond   *sync.Cond
-	queue  []event
-	wake   chan struct{} // queue-change signal only; events remain in the FIFO
-	closed bool
+	// q is the runtime — internal/actor, the same single-writer queue a Form
+	// writes through. Everything below it is prompt bookkeeping, which is what
+	// an inbox IS beyond the queue.
+	q    *actor.Queue[event]
+	wake chan struct{} // queue-change signal only; events remain in the FIFO
 
+	mu     sync.Mutex // guards the bookkeeping, always taken INSIDE q's lock
 	epoch  string
 	nextID uint64
 
@@ -58,11 +60,10 @@ const committedRing = 64
 
 func NewInbox(ctx context.Context) *Inbox {
 	b := &Inbox{wake: make(chan struct{}, 1), epoch: mintEpoch()}
-	b.cond = sync.NewCond(&b.mu)
-	go func() {
-		<-ctx.Done()
-		b.Close()
-	}()
+	// No handler: an inbox is drained by the agent's own loop calling Recv, not
+	// by a goroutine the queue owns. Start still gives the FIFO, the wait, and
+	// the close semantics — the parts that were worth having once.
+	b.q = actor.Start[event](ctx, nil, nil)
 	return b
 }
 
@@ -85,47 +86,44 @@ func (b *Inbox) Epoch() string {
 	return b.epoch
 }
 
-// Send enqueues an event. Returns false if closed.
-func (b *Inbox) Send(evt event) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.closed {
-		return false
-	}
-	// Only prompts are addressable, so only prompts consume an id: a dense
-	// sequence a human can type beats one with gaps where a `set` went by.
-	// An event arriving with an id already set is a restored one (Prepend
-	// routes around Send, but be explicit) and keeps it.
-	if evt.typ == eventUserPrompt && evt.id == 0 {
-		b.nextID++
-		evt.id = b.nextID
-		if evt.at == 0 {
-			evt.at = time.Now().UnixMilli()
-		}
-	}
-	b.queue = append(b.queue, evt)
-	b.cond.Signal()
+// signalWake nudges a waiter that the queue changed. The event stays in the
+// FIFO; this is only a "look again".
+func (b *Inbox) signalWake() {
 	select {
 	case b.wake <- struct{}{}:
 	default:
 	}
+}
+
+// Send enqueues an event. Returns false if closed.
+func (b *Inbox) Send(evt event) bool {
+	// Only prompts are addressable, so only prompts consume an id: a dense
+	// sequence a human can type beats one with gaps where a `set` went by. An
+	// event arriving with an id already set is a restored one and keeps it.
+	if evt.typ == eventUserPrompt && evt.id == 0 {
+		b.mu.Lock()
+		b.nextID++
+		evt.id = b.nextID
+		b.mu.Unlock()
+		if evt.at == 0 {
+			evt.at = time.Now().UnixMilli()
+		}
+	}
+	if !b.q.Send(evt) {
+		return false
+	}
+	b.signalWake()
 	return true
 }
 
 func (b *Inbox) Wake() <-chan struct{} { return b.wake }
 
 func (b *Inbox) Recv() (event, bool) {
-	b.mu.Lock()
-	for len(b.queue) == 0 && !b.closed {
-		b.cond.Wait()
-	}
-	if b.closed && len(b.queue) == 0 {
-		b.mu.Unlock()
+	evt, ok := b.q.Recv()
+	if !ok {
 		return event{}, false
 	}
-	evt := b.queue[0]
-	copy(b.queue, b.queue[1:])
-	b.queue = b.queue[:len(b.queue)-1]
+	b.mu.Lock()
 	b.liftLocked(evt)
 	b.mu.Unlock()
 	return evt, true
@@ -134,18 +132,12 @@ func (b *Inbox) Recv() (event, bool) {
 // TakeReadyUserPrompts removes the contiguous user-prompt prefix. It never
 // jumps prompts over an earlier control or fork event.
 func (b *Inbox) TakeReadyUserPrompts() []event {
+	taken := b.q.TakeWhile(func(e event) bool { return e.typ == eventUserPrompt })
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	n := 0
-	for n < len(b.queue) && b.queue[n].typ == eventUserPrompt {
-		n++
-	}
-	taken := append([]event(nil), b.queue[:n]...)
-	copy(b.queue, b.queue[n:])
-	b.queue = b.queue[:len(b.queue)-n]
 	for _, evt := range taken {
 		b.liftLocked(evt)
 	}
+	b.mu.Unlock()
 	return taken
 }
 
@@ -195,28 +187,23 @@ func (b *Inbox) Prepend(events []event) bool {
 	if len(events) == 0 {
 		return true
 	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.closed {
+	if b.q.Closed() {
 		return false
 	}
-	// They are queued again, so they are no longer in flight: a delete aimed
-	// at one must go back to being honoured rather than refused as
-	// "committing" forever.
-	for _, evt := range events {
-		if evt.typ == eventUserPrompt && evt.id != 0 {
-			b.dropLiftedLocked(evt.id)
+	b.q.Do(func(pending []event) []event {
+		// They are queued again, so they are no longer in flight: a delete
+		// aimed at one must go back to being honoured rather than refused as
+		// "committing" forever.
+		b.mu.Lock()
+		for _, evt := range events {
+			if evt.typ == eventUserPrompt && evt.id != 0 {
+				b.dropLiftedLocked(evt.id)
+			}
 		}
-	}
-	queue := make([]event, 0, len(events)+len(b.queue))
-	queue = append(queue, events...)
-	queue = append(queue, b.queue...)
-	b.queue = queue
-	b.cond.Signal()
-	select {
-	case b.wake <- struct{}{}:
-	default:
-	}
+		b.mu.Unlock()
+		return append(append(make([]event, 0, len(events)+len(pending)), events...), pending...)
+	})
+	b.signalWake()
 	return true
 }
 
@@ -224,16 +211,7 @@ func (b *Inbox) Prepend(events []event) bool {
 // over an earlier prompt, so FIFO order across event kinds is preserved by the
 // caller's drain loop.
 func (b *Inbox) TakeReadySet() []event {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	n := 0
-	for n < len(b.queue) && b.queue[n].typ == eventSet {
-		n++
-	}
-	taken := append([]event(nil), b.queue[:n]...)
-	copy(b.queue, b.queue[n:])
-	b.queue = b.queue[:len(b.queue)-n]
-	return taken
+	return b.q.TakeWhile(func(e event) bool { return e.typ == eventSet })
 }
 
 // CoalesceUserPromptRuns folds each CONTIGUOUS RUN of queued user prompts
@@ -261,28 +239,28 @@ func (b *Inbox) TakeReadySet() []event {
 // than the composer, so there is no interleaved control event and run
 // coalescing IS whole-queue coalescing.
 func (b *Inbox) CoalesceUserPromptRuns() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if len(b.queue) < 2 {
-		return
-	}
-	out := make([]event, 0, len(b.queue))
-	for i := 0; i < len(b.queue); {
-		if b.queue[i].typ != eventUserPrompt {
-			out = append(out, b.queue[i])
-			i++
-			continue
+	b.q.Do(func(pending []event) []event {
+		if len(pending) < 2 {
+			return pending
 		}
-		j := i
-		for j < len(b.queue) && b.queue[j].typ == eventUserPrompt {
-			j++
+		out := make([]event, 0, len(pending))
+		for i := 0; i < len(pending); {
+			if pending[i].typ != eventUserPrompt {
+				out = append(out, pending[i])
+				i++
+				continue
+			}
+			j := i
+			for j < len(pending) && pending[j].typ == eventUserPrompt {
+				j++
+			}
+			if merged, ok := mergePromptEvents(pending[i:j]); ok {
+				out = append(out, merged)
+			}
+			i = j
 		}
-		if merged, ok := mergePromptEvents(b.queue[i:j]); ok {
-			out = append(out, merged)
-		}
-		i = j
-	}
-	b.queue = out
+		return out
+	})
 }
 
 // DrainUserPrompts removes every queued user prompt and returns them
@@ -294,21 +272,22 @@ func (b *Inbox) CoalesceUserPromptRuns() {
 // to disk instead of lost, and a caller who typed three messages wants their
 // three messages back — not one blob that has to be unpicked.
 func (b *Inbox) DrainUserPrompts() []event {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if len(b.queue) == 0 {
-		return nil
-	}
-	drained := make([]event, 0, len(b.queue))
-	kept := make([]event, 0, len(b.queue))
-	for _, e := range b.queue {
-		if e.typ == eventUserPrompt {
-			drained = append(drained, e)
-			continue
+	var drained []event
+	b.q.Do(func(pending []event) []event {
+		if len(pending) == 0 {
+			return pending
 		}
-		kept = append(kept, e)
-	}
-	b.queue = kept
+		kept := make([]event, 0, len(pending))
+		drained = make([]event, 0, len(pending))
+		for _, e := range pending {
+			if e.typ == eventUserPrompt {
+				drained = append(drained, e)
+				continue
+			}
+			kept = append(kept, e)
+		}
+		return kept
+	})
 	return drained
 }
 
@@ -328,21 +307,33 @@ func (b *Inbox) DrainUserPrompts() []event {
 // The all-form names no id, so it needs no epoch and reports one result per
 // message actually removed (possibly none).
 func (b *Inbox) DeletePrompts(epoch string, ids []uint64, all bool) (string, []rpc.QueueResult) {
+	var epochOut string
+	var results []rpc.QueueResult
+	b.q.Do(func(pending []event) []event {
+		var kept []event
+		kept, epochOut, results = b.deleteLocked(pending, epoch, ids, all)
+		return kept
+	})
+	return epochOut, results
+}
+
+// deleteLocked runs inside the queue's lock; it takes the bookkeeping lock
+// second, and nothing takes them the other way round.
+func (b *Inbox) deleteLocked(queue []event, epoch string, ids []uint64, all bool) ([]event, string, []rpc.QueueResult) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if all {
 		var results []rpc.QueueResult
-		kept := make([]event, 0, len(b.queue))
-		for _, e := range b.queue {
+		kept := make([]event, 0, len(queue))
+		for _, e := range queue {
 			if e.typ != eventUserPrompt {
 				kept = append(kept, e)
 				continue
 			}
 			results = append(results, rpc.QueueResult{ID: e.id, Outcome: rpc.QueueDeleted})
 		}
-		b.queue = kept
-		return b.epoch, results
+		return kept, b.epoch, results
 	}
 
 	results := make([]rpc.QueueResult, 0, len(ids))
@@ -352,40 +343,46 @@ func (b *Inbox) DeletePrompts(epoch string, ids []uint64, all bool) (string, []r
 				ID: id, Outcome: rpc.QueueRejected, Reason: reason, Detail: detail,
 			})
 		}
-		return b.epoch, results
+		return queue, b.epoch, results
 	}
 	for _, id := range ids {
-		if i := b.indexOfLocked(id); i >= 0 {
-			b.queue = append(b.queue[:i], b.queue[i+1:]...)
+		if i := indexOf(queue, id); i >= 0 {
+			queue = append(queue[:i], queue[i+1:]...)
 			results = append(results, rpc.QueueResult{ID: id, Outcome: rpc.QueueDeleted})
 			continue
 		}
-		results = append(results, b.refuseLocked(id))
+		results = append(results, b.refuseLocked(queue, id))
 	}
-	return b.epoch, results
+	return queue, b.epoch, results
 }
 
 // UpdatePrompt replaces the text of one queued message, with the same
 // per-id outcome and the same compare-and-swap rule as DeletePrompts.
 func (b *Inbox) UpdatePrompt(epoch string, id uint64, text string) (string, rpc.QueueResult) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if reason, detail, stale := b.staleLocked(epoch); stale {
-		return b.epoch, rpc.QueueResult{
-			ID: id, Outcome: rpc.QueueRejected, Reason: reason, Detail: detail,
+	var epochOut string
+	var result rpc.QueueResult
+	b.q.Do(func(pending []event) []event {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		epochOut = b.epoch
+		if reason, detail, stale := b.staleLocked(epoch); stale {
+			result = rpc.QueueResult{ID: id, Outcome: rpc.QueueRejected, Reason: reason, Detail: detail}
+			return pending
 		}
-	}
-	if i := b.indexOfLocked(id); i >= 0 {
-		b.queue[i].text = text
-		return b.epoch, rpc.QueueResult{ID: id, Outcome: rpc.QueueUpdated}
-	}
-	return b.epoch, b.refuseLocked(id)
+		if i := indexOf(pending, id); i >= 0 {
+			pending[i].text = text
+			result = rpc.QueueResult{ID: id, Outcome: rpc.QueueUpdated}
+			return pending
+		}
+		result = b.refuseLocked(pending, id)
+		return pending
+	})
+	return epochOut, result
 }
 
 // staleLocked reports whether a caller's epoch disqualifies its ids.
 func (b *Inbox) staleLocked(epoch string) (rpc.QueueRejection, string, bool) {
-	if b.closed {
+	if b.q.Closed() {
 		return rpc.RejectClosed, "the aria is stopping", true
 	}
 	if epoch == "" {
@@ -397,12 +394,12 @@ func (b *Inbox) staleLocked(epoch string) (rpc.QueueRejection, string, bool) {
 	return "", "", false
 }
 
-func (b *Inbox) indexOfLocked(id uint64) int {
+func indexOf(queue []event, id uint64) int {
 	if id == 0 {
 		return -1
 	}
-	for i := range b.queue {
-		if b.queue[i].typ == eventUserPrompt && b.queue[i].id == id {
+	for i := range queue {
+		if queue[i].typ == eventUserPrompt && queue[i].id == id {
 			return i
 		}
 	}
@@ -412,16 +409,16 @@ func (b *Inbox) indexOfLocked(id uint64) int {
 // refuseLocked explains why an id that is not in the queue cannot be mutated.
 // The order is chronological — folded, then in flight, then answered, then
 // never heard of — so the reason is always the most specific true one.
-func (b *Inbox) refuseLocked(id uint64) rpc.QueueResult {
+func (b *Inbox) refuseLocked(queue []event, id uint64) rpc.QueueResult {
 	reject := func(reason rpc.QueueRejection, detail string, into uint64) rpc.QueueResult {
 		return rpc.QueueResult{
 			ID: id, Outcome: rpc.QueueRejected, Reason: reason, Detail: detail, Into: into,
 		}
 	}
-	for i := range b.queue {
-		if b.queue[i].typ == eventUserPrompt && containsID(b.queue[i].merged, id) {
+	for i := range queue {
+		if queue[i].typ == eventUserPrompt && containsID(queue[i].merged, id) {
 			return reject(rpc.RejectMerged,
-				"an interrupt folded this message into another one still queued", b.queue[i].id)
+				"an interrupt folded this message into another one still queued", queue[i].id)
 		}
 	}
 	for _, ref := range b.lifted {
@@ -449,11 +446,7 @@ func containsID(ids []uint64, id uint64) bool {
 }
 
 // IsIdle reports whether the inbox is empty (no events queued).
-func (b *Inbox) IsIdle() bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return len(b.queue) == 0
-}
+func (b *Inbox) IsIdle() bool { return b.q.IsIdle() }
 
 // SnapshotPrompts returns a copy of every queued user prompt in FIFO order,
 // WITHOUT removing them. carriers==false omits empty-text prompts (pure
@@ -464,28 +457,29 @@ func (b *Inbox) IsIdle() bool {
 // Non-prompt events (sets, forks) are skipped by design: this is the "what am
 // I about to be asked next?" view, not a dump of the actor's mailbox.
 func (b *Inbox) SnapshotPrompts(carriers bool) []event {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	out := make([]event, 0, len(b.queue))
-	for _, e := range b.queue {
-		if e.typ != eventUserPrompt {
-			continue
+	var out []event
+	b.q.Read(func(pending []event) {
+		out = make([]event, 0, len(pending))
+		for _, e := range pending {
+			if e.typ != eventUserPrompt {
+				continue
+			}
+			if !carriers && e.text == "" {
+				continue
+			}
+			out = append(out, e)
 		}
-		if !carriers && e.text == "" {
-			continue
-		}
-		out = append(out, e)
-	}
+	})
 	return out
 }
 
-func (b *Inbox) Close() {
-	b.mu.Lock()
-	if b.closed {
-		b.mu.Unlock()
-		return
-	}
-	b.closed = true
-	b.cond.Broadcast()
-	b.mu.Unlock()
+func (b *Inbox) Close() { b.q.Close() }
+
+// pending is the queued events, for a test that asserts on order across event
+// kinds. Not for production: a caller that reads the queue to decide what to do
+// with it is racing the drain loop.
+func (b *Inbox) pending() []event {
+	var out []event
+	b.q.Read(func(p []event) { out = append([]event(nil), p...) })
+	return out
 }

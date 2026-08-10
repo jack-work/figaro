@@ -50,12 +50,12 @@ func TestCoalesce_AQueuedSetBlocksTheFold(t *testing.T) {
 
 	b.CoalesceUserPromptRuns()
 
-	require.Len(t, b.queue, 3, "the set must survive between the two runs")
-	assert.Equal(t, eventUserPrompt, b.queue[0].typ)
-	assert.Equal(t, "one\n\ntwo", b.queue[0].text)
-	assert.Equal(t, eventSet, b.queue[1].typ, "order across event kinds is preserved")
-	assert.Equal(t, eventUserPrompt, b.queue[2].typ)
-	assert.Equal(t, "three", b.queue[2].text, "a prompt behind a set is NOT folded in front of it")
+	require.Len(t, b.pending(), 3, "the set must survive between the two runs")
+	assert.Equal(t, eventUserPrompt, b.pending()[0].typ)
+	assert.Equal(t, "one\n\ntwo", b.pending()[0].text)
+	assert.Equal(t, eventSet, b.pending()[1].typ, "order across event kinds is preserved")
+	assert.Equal(t, eventUserPrompt, b.pending()[2].typ)
+	assert.Equal(t, "three", b.pending()[2].text, "a prompt behind a set is NOT folded in front of it")
 }
 
 // A carrier (empty text, form only) folds into the run it sits in: its

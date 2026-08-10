@@ -76,8 +76,8 @@ func TestDrain_SetStillBlocksTheIdleFold(t *testing.T) {
 	merged, _ := mergePromptEvents(batch)
 
 	assert.Equal(t, "one\n\ntwo", merged.text)
-	require.Len(t, b.queue, 2, "the set and the prompt behind it stay queued")
-	assert.Equal(t, eventSet, b.queue[0].typ)
+	require.Len(t, b.pending(), 2, "the set and the prompt behind it stay queued")
+	assert.Equal(t, eventSet, b.pending()[0].typ)
 }
 
 // THE BUG BEHIND "the messages were received, but the turn ended abruptly".
