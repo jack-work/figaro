@@ -571,7 +571,15 @@ func (t *transcript) lowerFloor(a aria.Anchor) {
 // reachedFloor is what to do when the walk can go no further: a search that
 // found nothing goes home, and a jump resolves against the beginning it was
 // waiting for (`:0` lands on the lowest turn that actually exists).
+//
+// A standing Home is satisfied here too. The floor is proven two ways — a page
+// that lands on it (absorbOlder, which clears the request as it re-pins) and an
+// EMPTY backward read, which is this path and is the only proof for an aria
+// whose oldest turn the wire will not hand over again. Clearing in one place
+// and not the other left the request standing forever on the commoner of the
+// two, which is a stale intent waiting for a later landing to act on.
 func (t *transcript) reachedFloor() {
+	t.wantTop = false
 	t.finishSearch(false)
 	t.jumpAdvance()
 	t.render()
