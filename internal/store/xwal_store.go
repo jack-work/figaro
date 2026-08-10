@@ -405,6 +405,81 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 	return stump, nil
 }
 
+// ForkWith is the ONE birth verb: fork a node and land a patch on the child, in
+// one critical section.
+//
+// parent == "" forks the null root — which is what `fig new` is. A non-empty
+// parent branches that aria: at.MainLT == 0 takes the head, otherwise the
+// interior point (cauterizing to a fresh child when that point is owned by the
+// root or a stump, which is what ForkAt already decides).
+//
+// THE PATCH IS REQUIRED. A fork that transforms nothing is a fork nobody can
+// name: the child's identity IS the hash of the patch it was born carrying, and
+// at minimum that patch re-stamps aria_id, because a child inheriting its
+// parent's id cannot fork itself afterwards.
+//
+// The patch is appended BEFORE the child's first main record, and that order is
+// the whole point. A main record carries a cursor stamp — where each unkeyed
+// channel stood when it was written — and the projection renders exactly the
+// patches at or below it. Writing the record first stamped it one index BELOW
+// the patch it introduces, so nothing rendered: no skills, no credo, nothing the
+// birth patch set. This function is now the only place that ordering lives.
+func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch) (child string, version uint64, err error) {
+	if patch.IsEmpty() {
+		return "", 0, fmt.Errorf("xwal store: fork-with: a fork must carry a patch")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	switch {
+	case parent == "":
+		child, err = s.trunks.SpawnUnderRoot()
+	case atMainLT == 0:
+		child, err = s.trunks.ForkTail(parent)
+	default:
+		child, err = s.forkAtLocked(parent, atMainLT)
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	version, err = s.writeBirth(child, patch)
+	if err != nil {
+		return "", 0, err
+	}
+	return child, version, nil
+}
+
+// writeBirth appends a node's birth patch and the renderable record that carries
+// its cursor stamp. Caller holds s.mu.
+func (s *XwalStore) writeBirth(node string, patch message.Patch) (uint64, error) {
+	x, err := s.trunks.Head(node)
+	if err != nil {
+		return 0, err
+	}
+	defer x.Close()
+	pb, err := json.Marshal(patch)
+	if err != nil {
+		return 0, err
+	}
+	next := mainTailOf(x) + 1
+	version, err := x.Append(chanForm, next, pb, nil)
+	if err != nil {
+		return 0, err
+	}
+	gen, _ := json.Marshal(message.Message{Role: message.RoleInput, Timestamp: s.now()})
+	glt, err := x.AppendMain(gen, nil)
+	if err != nil {
+		return 0, err
+	}
+	if glt != next {
+		return 0, fmt.Errorf("xwal store: %s birth record landed at %d, form patch keyed to %d",
+			node, glt, next)
+	}
+	// Durable before anything spawns beneath it: a crash between here and the
+	// next flush would orphan a child's fork base.
+	return version, x.SyncCoherent()
+}
+
 // CreateConversation spawns a conversation from an outfit stump.
 func (s *XwalStore) CreateConversation(outfitID string) (string, error) {
 	s.mu.Lock()
@@ -443,9 +518,20 @@ func (s *XwalStore) Fork(id string) (cont, alt string, err error) {
 func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	alt, err = s.forkAtLocked(id, atMainLT)
+	if err != nil {
+		return "", "", err
+	}
+	return id, alt, nil
+}
+
+// forkAtLocked is ForkAt's decision, shared with ForkWith. Caller holds s.mu.
+func (s *XwalStore) forkAtLocked(id string, atMainLT uint64) (string, error) {
+	var alt string
+	var err error
 	owner, oerr := s.trunks.Owner(id, atMainLT)
 	if oerr != nil {
-		return "", "", oerr
+		return "", oerr
 	}
 	switch {
 	case owner.IsRoot:
@@ -456,9 +542,9 @@ func (s *XwalStore) ForkAt(id string, atMainLT uint64) (cont, alt string, err er
 		alt, err = s.trunks.ForkAt(id, atMainLT)
 	}
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-	return id, alt, nil
+	return alt, nil
 }
 
 // Promote raises an aria in the PRESENTATION hierarchy. It edits the trunk
@@ -575,6 +661,10 @@ func OutfitVersion(name string, patch message.Patch) (string, error) {
 func LegacyOutfitVersion(patch message.Patch) (string, error) {
 	return contentVersion(patch)
 }
+
+// ContentVersion is the value-stable content hash of a patch: an aria's identity
+// is the hash of the patch it was born carrying.
+func ContentVersion(patch message.Patch) (string, error) { return contentVersion(patch) }
 
 // contentVersion is the value-stable content hash of a patch.
 func contentVersion(patch message.Patch) (string, error) {

@@ -352,25 +352,22 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		bp := boot
 		inlineBoot = &bp
 	} else {
-		// Materialize/reuse the outfit node (identity = stable outfit
-		// patch), fork it into a fresh conversation, then write the
-		// per-conversation boot transition (runtime fill-ins + req.Patch
-		// overrides) to its form channel. The outfit's own
-		// reminders render in the shared outfit-node prefix.
-		outfitID, lerr := backend.CreateOutfit(outfitName, outfitPatch)
-		if lerr != nil {
-			return nil, fmt.Errorf("create outfit node: %w", lerr)
-		}
+		// Birth is a fork of the null root carrying its whole form: no outfit
+		// node in between. The aria's identity is the hash of this patch, and
+		// it states its own name — where a stump used to state it for a family
+		// of arias that shared a rendered prefix. That prefix is what this
+		// trades away, deliberately: one node per aria, one patch, one record.
+		birth := birthPatch(outfitPatch, outfitName, cwd)
 		var cerr error
-		id, cerr = backend.CreateConversation(outfitID)
+		id, _, cerr = backend.ForkWith("", 0, birth)
 		if cerr != nil {
-			return nil, fmt.Errorf("create conversation: %w", cerr)
+			return nil, fmt.Errorf("mint aria: %w", cerr)
 		}
-		boot := convBootPatch(id, cwd)
-		if !boot.IsEmpty() {
-			if _, aerr := backend.ApplyForm(id, boot); aerr != nil {
-				return nil, fmt.Errorf("seed conversation form: %w", aerr)
-			}
+		// aria_id can only be stamped once the id exists, so it rides a second
+		// patch rather than the birth one — which keeps the birth patch a pure
+		// function of what was asked for, and so a stable identity.
+		if _, aerr := backend.ApplyForm(id, convBootPatch(id, cwd)); aerr != nil {
+			return nil, fmt.Errorf("stamp aria id: %w", aerr)
 		}
 		snap, serr := backend.FormState(id)
 		if serr != nil {
@@ -551,47 +548,24 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	}
 	runFork := func() error {
 		parentMeta := h.forkMetaSnapshot(req.FigaroID)
-		var err error
+		// One critical section: the branch and the patch that dresses it. A
+		// patch sent afterwards can be ACKed on the parent and miss the child;
+		// a patch sent before has no child to land on.
+		at := uint64(0)
 		if interior {
-			cont, alt, err = h.angelus.Backend.ForkAt(req.FigaroID, atMainLT)
-		} else {
-			cont, alt, err = h.angelus.Backend.Fork(req.FigaroID)
+			at = atMainLT
 		}
-		if err != nil {
-			return err
+		var ferr error
+		alt, _, ferr = h.angelus.Backend.ForkWith(req.FigaroID, at, forkDress(dress, req.FigaroID))
+		if ferr != nil {
+			return ferr
 		}
+		cont = req.FigaroID
 		h.seedForkMeta(parentMeta, req.FigaroID, alt, atMainLT, interior, forkOwner)
-		// The alternative inherits the parent's form — including the
-		// parent's aria_id. Re-stamp so the forked agent knows its own id
-		// (a normal state transition it sees on its next turn); without
-		// this an aria cannot reliably fork itself.
-		if alt == "" || alt == req.FigaroID {
-			// No branch of its own to dress. Nothing can carry the outfit, so
-			// say so rather than reporting a fork that quietly ignored -O.
-			if !dress.IsEmpty() {
-				return fmt.Errorf("fork: no alternative to dress (patch not applied)")
-			}
-			return nil
-		}
-		patch := message.Patch{Set: map[string]json.RawMessage{}}
-		if !dress.IsEmpty() {
-			// Additive against what the child inherited, so the reminder names
-			// what actually changed. If the child's board cannot be read the
-			// fold is NOT applied wholesale: that would announce changes that
-			// did not happen and write a record per inherited key.
-			snap, serr := h.angelus.Backend.FormState(alt)
-			if serr != nil {
-				return fmt.Errorf("fork: read %s form to dress it: %w", alt, serr)
-			}
-			for k, v := range form.Additive(snap, dress).Set {
-				patch.Set[k] = v
-			}
-		}
-		if b, merr := json.Marshal(alt); merr == nil {
-			patch.Set["aria_id"] = b
-		}
-		if _, perr := h.angelus.Backend.ApplyForm(alt, patch); perr != nil {
-			slog.Warn("fork: stamp child form", "alt", alt, "err", perr)
+		// The child inherited its parent's aria_id with everything else; it
+		// learns its own here, as a normal transition it sees on its next turn.
+		if _, aerr := h.angelus.Backend.ApplyForm(alt, withAriaID(form.Patch{}, alt)); aerr != nil {
+			slog.Warn("fork: stamp child aria id", "alt", alt, "err", aerr)
 		}
 		return nil
 	}
@@ -925,6 +899,48 @@ func (h *handlers) promote(ctx context.Context, params json.RawMessage) (interfa
 // supply: the working dir (system.cwd/root), allowlisted env vars, and
 // the aria id (non-system, so the agent can read it from a reminder and
 // `figaro set --id <id> mantra …`).
+// birthPatch is what an aria is born carrying: the materialized outfit, the name
+// it answers to, and the content hash of both. The hash covers the patch minus
+// itself — it cannot cover its own value — and the NAME is inside it, so two
+// outfits with identical bodies and different names stay two identities.
+// forkDress is what a branch is born carrying. The dressing may be empty — a
+// plain `fig fork` asks for nothing — but the patch may not be: the child
+// inherits its parent's form, aria_id included, and an aria that answers to its
+// parent's id cannot fork itself. The re-stamp is the floor.
+func forkDress(dress form.Patch, parent string) form.Patch {
+	p := form.Patch{Set: map[string]json.RawMessage{}, Remove: dress.Remove}
+	for k, v := range dress.Set {
+		p.Set[k] = v
+	}
+	// A placeholder the writer replaces would be a lie; the id is not known
+	// until the child exists, so aria_id is re-stamped by the boot patch that
+	// follows. What this guarantees is that the birth patch is never empty.
+	p.Set["system.forked_from"] = json.RawMessage(`"` + parent + `"`)
+	return p
+}
+
+func birthPatch(outfitPatch form.Patch, outfitName, cwd string) form.Patch {
+	p := form.Patch{Set: map[string]json.RawMessage{}, Remove: outfitPatch.Remove}
+	for k, v := range outfitPatch.Set {
+		p.Set[k] = v
+	}
+	if b, err := json.Marshal(outfitName); err == nil && outfitName != "" {
+		p.Set["system.outfit_name"] = b
+	}
+	if ver, err := store.ContentVersion(p); err == nil {
+		if b, mErr := json.Marshal(ver); mErr == nil {
+			p.Set["system.outfit_version"] = b
+		}
+	}
+	// cwd rides the birth patch so the very first turn resolves tools against
+	// the right root; aria_id cannot, because the id does not exist yet.
+	if b, err := json.Marshal(cwd); err == nil && cwd != "" {
+		p.Set["system.cwd"] = b
+		p.Set["system.root"] = b
+	}
+	return p
+}
+
 func runtimeFillins(ariaID, cwd string) form.Patch {
 	p := form.Patch{Set: map[string]json.RawMessage{}}
 	if b, err := json.Marshal(ariaID); err == nil && ariaID != "" {

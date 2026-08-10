@@ -3,6 +3,7 @@ package angelus
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -69,6 +70,19 @@ func (f *liveForkBackend) ApplyForm(ariaID string, patch message.Patch) (uint64,
 func (b *liveForkBackend) Fork(id string) (string, string, error) {
 	b.forked = true
 	return id, "alternative", nil
+}
+
+func (b *liveForkBackend) ForkWith(_ string, _ uint64, patch message.Patch) (string, uint64, error) {
+	if patch.IsEmpty() {
+		return "", 0, fmt.Errorf("fork-with: a fork must carry a patch")
+	}
+	b.forked = true
+	if b.chalk == nil {
+		b.chalk = map[string]message.Patch{}
+	}
+	b.chalk["alternative"] = patch
+	b.chalkVer++
+	return "alternative", b.chalkVer, nil
 }
 
 func (b *liveForkBackend) ForkAt(id string, _ uint64) (string, string, error) {

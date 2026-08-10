@@ -268,6 +268,22 @@ func (b *XwalBackend) ApplyFormIf(ariaID string, patch message.Patch, ifVersion 
 
 // ---- tree operations (delegated) ----
 
+// ForkWith is the one birth verb: see XwalStore.ForkWith. Every aria arrives
+// this way — `fig new` forks the null root, `fig fork` forks an aria — and the
+// patch it carries is its identity.
+func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Patch) (string, uint64, error) {
+	child, version, err := b.store.ForkWith(parent, atMainLT, patch)
+	if err != nil {
+		return "", 0, err
+	}
+	// The Form for a node born a moment ago must not be a replay of a channel
+	// that was empty when someone else opened it first.
+	b.mu.Lock()
+	delete(b.forms, child)
+	b.mu.Unlock()
+	return child, version, nil
+}
+
 func (b *XwalBackend) CreateOutfit(name string, patch message.Patch) (string, error) {
 	return b.store.CreateOutfit(name, patch)
 }
@@ -318,19 +334,24 @@ type outfitLabel struct{ name, version string }
 // Per-node locking here cost more than the read it was protecting: a listing
 // is thousands of nodes over a handful of outfits.
 func (b *XwalBackend) labelAll(nodes []NodeView) []NodeView {
+	// Two shapes in one listing: an aria under a stump takes the stump's label
+	// (memoized per stump — a listing of 200 arias on four outfits reads four
+	// birth records), and an aria born of ForkWith states its own on its form.
 	var seen map[string]outfitLabel
 	for i := range nodes {
-		id := nodes[i].Stump
-		if id == "" {
+		stump := nodes[i].Stump
+		if stump == "" {
+			l := b.labelOf(&nodes[i])
+			nodes[i].Outfit, nodes[i].Version = l.name, l.version
 			continue
 		}
-		l, ok := seen[id]
+		l, ok := seen[stump]
 		if !ok {
-			l = b.stumpLabel(id)
+			l = b.stumpLabel(stump)
 			if seen == nil {
 				seen = map[string]outfitLabel{}
 			}
-			seen[id] = l
+			seen[stump] = l
 		}
 		nodes[i].Outfit, nodes[i].Version = l.name, l.version
 	}
@@ -338,11 +359,34 @@ func (b *XwalBackend) labelAll(nodes []NodeView) []NodeView {
 }
 
 func (b *XwalBackend) label(n *NodeView) {
-	if n.Stump == "" {
-		return
-	}
-	l := b.stumpLabel(n.Stump)
+	l := b.labelOf(n)
 	n.Outfit, n.Version = l.name, l.version
+}
+
+// labelOf answers what an aria is wearing, from the one place that states it.
+//
+// An aria born since ForkWith says so on its OWN form: the birth patch carries
+// system.outfit_name and the content hash of itself. An aria born before that
+// hangs under a stump, and the stump's birth record is where the name lives —
+// read once and memoized, which immutability licenses.
+//
+// Two shapes, and no migration between them: re-parenting an old aria would mean
+// copying its inherited prefix into its own channel, renumbering its form
+// versions, and every IR record's cursor stamp would then point at the wrong
+// patch. The old shape reads fine; it just stops being minted.
+func (b *XwalBackend) labelOf(n *NodeView) outfitLabel {
+	if n.Stump != "" {
+		return b.stumpLabel(n.Stump)
+	}
+	snap, err := b.FormState(n.ID)
+	if err != nil {
+		return outfitLabel{}
+	}
+	l := outfitLabel{name: snapString(snap, keyOutfitName), version: snapString(snap, keyOutfitVer)}
+	if l.name == "" {
+		l.name, l.version = snapString(snap, keyLegacyName), snapString(snap, keyLegacyVer)
+	}
+	return l
 }
 
 // stumpLabel reads a stump's name and version out of the birth patch it wrote,
