@@ -358,11 +358,29 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				continue
 			}
 			if dn, ok := val["dirName"].(string); ok && len(val) == 1 {
-				// Bundled (first-party, shipped with the binary) skills load
-				// first; the user's config dir loads second and overrides by
-				// name. So a user can shadow a bundled skill, and first-party
-				// skills appear without copying anything into config.
+				// The user's config dir loads first; BUNDLED (first-party,
+				// shipped with the binary) skills load second and win by name.
+				//
+				// That order used to be the other way round, and it was a trap
+				// with no alarm on it. A copy in ~/.config outranked the
+				// shipped skill FOREVER: an upgrade could not reach it, so the
+				// copy silently fell behind the binary it documented — one such
+				// shadow in this repo's history ended up 201 lines stale while
+				// holding the only copy of a section that had moved. A skill
+				// that ships with figaro is part of figaro, and an install must
+				// be able to correct it.
+				//
+				// A name the binary does not ship is untouched, so a user's own
+				// skills are safe; to override a bundled one, give it a
+				// different name.
 				m := map[string]ContentEnvelope{}
+				u, err := loadDir(filepath.Join(o.configDir, dn), d)
+				if err != nil {
+					return fmt.Errorf("outfit: %s dirName=%q: %w", key, dn, err)
+				}
+				for name, env := range u {
+					m[name] = env
+				}
 				if root := bundledSkillsRoot(); root != "" {
 					b, err := loadDir(filepath.Join(root, dn), d)
 					if err != nil {
@@ -371,13 +389,6 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 					for name, env := range b {
 						m[name] = env
 					}
-				}
-				u, err := loadDir(filepath.Join(o.configDir, dn), d)
-				if err != nil {
-					return fmt.Errorf("outfit: %s dirName=%q: %w", key, dn, err)
-				}
-				for name, env := range u {
-					m[name] = env
 				}
 				for name, env := range m {
 					b, err := json.Marshal(env)

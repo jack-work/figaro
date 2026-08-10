@@ -77,13 +77,22 @@
             ln -s figaro $out/bin/fig
 
             # First-party skills ship alongside the binary at
-            # $out/share/figaro/skills; outfit's loader merges them under any
-            # `dirName = "skills"` table (user config overrides by name). See
-            # bundledSkillsRoot (<exe>/../share/figaro).
-            if [ -d "$src/skills" ]; then
-              mkdir -p $out/share/figaro
-              cp -r $src/skills $out/share/figaro/skills
+            # $out/share/figaro/skills; outfit's loader merges them OVER any
+            # `dirName = "skills"` table, so an upgrade corrects a skill even
+            # when a copy sits in the user's config. See bundledSkillsRoot
+            # (<exe>/../share/figaro).
+            #
+            # NOT conditional. A missing skills/ used to skip this silently and
+            # ship a figaro whose first-party skills simply did not exist —
+            # indistinguishable, at runtime, from a figaro that has none,
+            # because the loader treats an absent directory as an empty one.
+            # Failing the build is the only place that difference is visible.
+            if [ ! -d "$src/skills" ]; then
+              echo "figaro: no skills/ in the source tree — refusing to ship a binary with no first-party skills" >&2
+              exit 1
             fi
+            mkdir -p $out/share/figaro
+            cp -r $src/skills $out/share/figaro/skills
           '' + final.lib.optionalString
             (final.stdenv.buildPlatform.canExecute final.stdenv.hostPlatform) ''
             installShellCompletion --cmd figaro \

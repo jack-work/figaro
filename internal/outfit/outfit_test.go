@@ -110,8 +110,10 @@ func TestLoad_EmptyNameReturnsEmptyPatch(t *testing.T) {
 	assert.True(t, patch.IsEmpty(), "empty outfit name must yield empty patch")
 }
 
-// A subdirectory with a SKILL.md is one skill keyed by the dir name; bundled
-// first-party skills merge under the user's, which override by name.
+// A subdirectory with a SKILL.md is one skill keyed by the dir name; the user's
+// skills merge under the BUNDLED ones, which win by name — an install must be
+// able to correct a skill it ships, and a config copy that outranks the binary
+// forever is a copy that silently falls behind it.
 func TestLoad_DirSkill_AndBundledMerge(t *testing.T) {
 	bundled := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(bundled, "skills", "figaro"), 0700))
@@ -142,12 +144,13 @@ func TestLoad_DirSkill_AndBundledMerge(t *testing.T) {
 	_, hasArch := patch.Set["skills.architecture"]
 	assert.False(t, hasArch, "section files must not surface as their own skills")
 
-	// Merge: user-only present; shared overridden by user.
+	// Merge: a name the binary does not ship is the user's and is untouched; a
+	// name it does ship is the binary's.
 	var mine, shared outfit.ContentEnvelope
 	require.NoError(t, json.Unmarshal(patch.Set["skills.mine"], &mine))
 	assert.Equal(t, "user mine", mine.Content)
 	require.NoError(t, json.Unmarshal(patch.Set["skills.shared"], &shared))
-	assert.Equal(t, "user shared", shared.Content, "user skill overrides bundled by name")
+	assert.Equal(t, "bundled shared", shared.Content, "a bundled skill overrides a config copy by name")
 }
 
 func TestLoad_DirSkill_UserSymlinkAndLowercaseManifest(t *testing.T) {
