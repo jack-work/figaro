@@ -167,3 +167,57 @@ func TestContextCancelCloses(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+// Close draws the line at ACCEPTANCE, not at the queue: what Send already took
+// is still delivered, and only new sends are refused.
+//
+// The asymmetry is load-bearing. Form.Apply blocks on a reply its handler
+// produces, so dropping accepted items would leave every caller past Send
+// waiting forever — the hang this is supposed to prevent. The doc used to claim
+// the opposite of what the code did, which is worse than either behaviour.
+func TestCloseDeliversWhatWasAlreadyAccepted(t *testing.T) {
+	q := actor.Start[int](context.Background(), nil, nil)
+	for _, n := range []int{1, 2, 3} {
+		if !q.Send(n) {
+			t.Fatal("send refused before Close")
+		}
+	}
+	q.Close()
+	if q.Send(4) {
+		t.Fatal("a closed queue accepted a new item")
+	}
+	for _, want := range []int{1, 2, 3} {
+		got, ok := q.Recv()
+		if !ok || got != want {
+			t.Fatalf("after Close: got (%d, %v), want (%d, true)", got, ok, want)
+		}
+	}
+	if _, ok := q.Recv(); ok {
+		t.Fatal("Recv returned a fourth item")
+	}
+}
+
+// The same rule with a handler draining: an item accepted before Close still
+// reaches the handler, so a caller waiting on its reply is answered.
+func TestCloseLetsTheHandlerFinishAcceptedWork(t *testing.T) {
+	release := make(chan struct{})
+	done := make(chan int, 3)
+	q := actor.Start(context.Background(), func(n int) {
+		if n == 1 {
+			<-release
+		}
+		done <- n
+	}, nil)
+	for _, n := range []int{1, 2, 3} {
+		q.Send(n)
+	}
+	q.Close()
+	close(release)
+	for i := 0; i < 3; i++ {
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("only %d of 3 accepted items ran after Close", i)
+		}
+	}
+}

@@ -26,13 +26,35 @@ import (
 // an aria that moved while we were dialing), and the cure is to ask for the
 // snapshot again — which is idempotent, because the version IS the durable
 // index. Guessing, or applying out of order, is how a mirror silently diverges.
+//
+// A SCHEMA mismatch is a different failure wearing the same clothes, and it must
+// not share an answer with a gap. A gap is transient and re-reading cures it; a
+// peer speaking a shape we do not know will send the next delta in that same
+// shape, so re-reading cures nothing and asking again per delta is a refetch
+// storm against someone who will never agree. Say it once, stop applying.
 type formMirror struct {
 	mu      sync.Mutex
 	snap    form.Snapshot
 	version uint64
 	// gaps counts resyncs, so a listener can say it noticed instead of hiding it.
 	gaps int
+	// schema is the envelope version a peer sent that we could not read, once
+	// seen. Non-zero means this mirror has stopped tracking.
+	schema int
 }
+
+// formApply is what a delta did. Three outcomes, because there are three
+// different things to do about them.
+type formApply int
+
+const (
+	// formApplied: folded in, or already held.
+	formApplied formApply = iota
+	// formResync: we missed one. Re-read the snapshot.
+	formResync
+	// formIncompatible: the peer speaks a shape we do not. Nothing to re-read.
+	formIncompatible
+)
 
 func (m *formMirror) reset(snap form.Snapshot, version uint64) {
 	m.mu.Lock()
@@ -42,21 +64,22 @@ func (m *formMirror) reset(snap form.Snapshot, version uint64) {
 
 // apply folds a delta in. Returns false when the delta does not follow ours, in
 // which case the caller must re-read the snapshot.
-func (m *formMirror) apply(d rpc.FormDelta) bool {
+func (m *formMirror) apply(d rpc.FormDelta) formApply {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	switch {
 	case d.Schema != rpc.FormDeltaSchema:
-		return false
+		m.schema = d.Schema
+		return formIncompatible
 	case d.Version <= m.version:
-		return true // already have it; a replay after resync is not a gap
+		return formApplied // already have it; a replay after resync is not a gap
 	case d.Version != m.version+1:
 		m.gaps++
-		return false
+		return formResync
 	}
 	m.snap = m.snap.Apply(d.Patch)
 	m.version = d.Version
-	return true
+	return formApplied
 }
 
 func (m *formMirror) state() (form.Snapshot, uint64, int) {

@@ -165,9 +165,14 @@ func (q *Queue[E]) Closed() bool {
 	}
 }
 
-// Close refuses future sends and unblocks the drain. Items already queued are
-// dropped: a closing aria is not going to answer them, and pretending otherwise
-// is how a shutdown hangs.
+// Close refuses future sends and unblocks the drain. What was ALREADY ACCEPTED
+// is still delivered: Recv returns false only once the queue is empty.
+//
+// That asymmetry is load-bearing, not sloppiness. A caller past Send is often
+// waiting on a reply the handler produces — Form.Apply blocks on exactly that —
+// so dropping accepted items would leave it waiting forever. The line is drawn
+// at acceptance: Send refuses (returns false) after Close, and anything it
+// already took is answered.
 func (q *Queue[E]) Close() {
 	q.mu.Lock()
 	already := q.closed

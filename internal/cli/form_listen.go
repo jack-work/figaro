@@ -55,11 +55,17 @@ func runFormListen(loaded *config.Loaded, ariaID string) {
 			if json.Unmarshal(params, &d) != nil {
 				return
 			}
-			if !mirror.apply(d) {
+			switch mirror.apply(d) {
+			case formResync:
 				view.resync()
-				return
+			case formIncompatible:
+				// Said once, and then we stop: refetching per delta would be a
+				// storm against a peer that cannot agree with us.
+				view.stop(fmt.Sprintf("this daemon speaks form schema %d, this client speaks %d — not tracking",
+					d.Schema, rpc.FormDeltaSchema))
+			default:
+				view.paint()
 			}
-			view.paint()
 		})
 	if err != nil {
 		die("dial aria: %s", err)
@@ -133,13 +139,30 @@ type formView struct {
 	cursor  int
 	top     int
 	notice  string
+	stopped bool
 	refetch func() (form.Snapshot, uint64, error)
+}
+
+// stop parks the view: the notice stays, and nothing is applied or refetched
+// after it. Reserved for a failure no retry can cure.
+func (v *formView) stop(reason string) {
+	v.mu.Lock()
+	if v.stopped {
+		v.mu.Unlock()
+		return
+	}
+	v.stopped, v.notice = true, reason
+	v.mu.Unlock()
+	v.paint()
 }
 
 // resync re-reads the snapshot. The mirror asks for this when a delta does not
 // follow the one before it, which is the only honest answer to a gap.
 func (v *formView) resync() {
-	if v.refetch == nil {
+	v.mu.Lock()
+	stopped := v.stopped
+	v.mu.Unlock()
+	if v.refetch == nil || stopped {
 		return
 	}
 	snap, version, err := v.refetch()
