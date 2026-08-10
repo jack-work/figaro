@@ -612,6 +612,33 @@ var pagerOracle = []struct {
 	}},
 }
 
+// sweepPager presses every byte and every navigation key in one state and
+// returns what each left behind, keyed by the oracle's name for it.
+//
+// THE VERIFIER AND THE REGENERATOR SHARE THIS ON PURPOSE. Two copies of the
+// sweep can disagree about which keys are pressed or in what state, and the
+// failure mode is silent: the regenerator records cells the verifier never
+// reads, and the frozen table stops describing the thing under test.
+func sweepPager(setup func(*transcript), keys map[string]string) (cells map[string]string, base int) {
+	base = inertOffset(setup, keys)
+	cells = make(map[string]string, 128+int(navEnd-navUp)+1)
+	record := func(name string, press func(*transcript)) {
+		tr := oracleTranscript()
+		setup(tr)
+		press(tr)
+		cells[name] = oracleSignature(tr, base)
+	}
+	for b := 0; b < 128; b++ {
+		b := byte(b)
+		record(fmt.Sprintf("0x%02x", b), func(tr *transcript) { tr.key(b) })
+	}
+	for n := navUp; n <= navEnd; n++ {
+		n := n
+		record(navName(n), func(tr *transcript) { tr.navMotion(n) })
+	}
+	return cells, base
+}
+
 // TestKeymap_PagerBehaviourIsUnchanged sweeps every byte and every navigation
 // key through every mode and compares against the frozen oracle.
 func TestKeymap_PagerBehaviourIsUnchanged(t *testing.T) {
@@ -621,30 +648,19 @@ func TestKeymap_PagerBehaviourIsUnchanged(t *testing.T) {
 			t.Fatalf("oracle names state %q, which the harness does not build", row.state)
 		}
 		t.Run(row.state, func(t *testing.T) {
-			base := inertOffset(setup, row.keys)
-			press := func(name string, press func(*transcript)) {
-				tr := oracleTranscript()
-				setup(tr)
-				press(tr)
+			cells, _ := sweepPager(setup, row.keys)
+			for name, got := range cells {
 				want, special := row.keys[name]
 				if !special {
 					want = row.inert
 				}
-				if got := oracleSignature(tr, base); got != want {
+				if got != want {
 					verdict := "differs from the pre-refactor dispatch"
 					if !special {
 						verdict = "was inert before the refactor and is not now"
 					}
 					t.Errorf("%s in %s mode %s:\n got %s\nwant %s", name, row.state, verdict, got, want)
 				}
-			}
-			for b := 0; b < 128; b++ {
-				b := byte(b)
-				press(fmt.Sprintf("0x%02x", b), func(tr *transcript) { tr.key(b) })
-			}
-			for n := navUp; n <= navEnd; n++ {
-				n := n
-				press(navName(n), func(tr *transcript) { tr.navMotion(n) })
 			}
 		})
 	}

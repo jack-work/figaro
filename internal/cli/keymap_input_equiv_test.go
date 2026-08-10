@@ -738,6 +738,21 @@ func inputInertOffset(tb testing.TB, build func(testing.TB) *inputProbe, bound m
 	return 0
 }
 
+// sweepInput is sweepPager's twin for the real input loop: every key of the
+// sweep through one state, keyed by the oracle's name. Shared by the verifier
+// and the regenerator for the reason stated on sweepPager.
+func sweepInput(tb testing.TB, build func(testing.TB) *inputProbe, keys map[string]string) (cells map[string]string, base int) {
+	base = inputInertOffset(tb, build, keys)
+	cells = make(map[string]string)
+	for _, k := range inputSweepKeys() {
+		p := build(tb)
+		rest, stop := p.in.consume([]byte(k.data))
+		settleProbe(tb, p)
+		cells[k.name] = inputSignature(p, stop, rest, base)
+	}
+	return cells, base
+}
+
 // TestKeymap_InputBehaviourIsUnchanged sweeps every key through the real input
 // loop in every mode and compares against the frozen oracle. A key missing
 // from a row is an assertion too: it must leave the state an unbound control
@@ -749,21 +764,18 @@ func TestKeymap_InputBehaviourIsUnchanged(t *testing.T) {
 			t.Fatalf("oracle names state %q, which the harness does not build", row.state)
 		}
 		t.Run(row.state, func(t *testing.T) {
-			base := inputInertOffset(t, build, row.keys)
-			for _, k := range inputSweepKeys() {
-				p := build(t)
-				rest, stop := p.in.consume([]byte(k.data))
-				settleProbe(t, p)
-				want, special := row.keys[k.name]
+			cells, _ := sweepInput(t, build, row.keys)
+			for name, got := range cells {
+				want, special := row.keys[name]
 				if !special {
 					want = row.inert
 				}
-				if got := inputSignature(p, stop, rest, base); got != want {
+				if got != want {
 					verdict := "differs from the pre-refactor input loop"
 					if !special {
 						verdict = "was inert before the refactor and is not now"
 					}
-					t.Errorf("%s in %s mode %s:\n got %s\nwant %s", k.name, row.state, verdict, got, want)
+					t.Errorf("%s in %s mode %s:\n got %s\nwant %s", name, row.state, verdict, got, want)
 				}
 			}
 		})
