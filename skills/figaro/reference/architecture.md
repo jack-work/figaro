@@ -13,11 +13,11 @@ source named here and trust it over this file.
   `figaro.list`/`create`/`kill`/`attach`. Survives shells. `figaro rest` stops
   it; the next command respawns it.
 - **Agent** (`internal/figaro`) — one per aria (= one conversation), and
-  **transient**. Owns the figLog (IR), the chalkboard, the tool registry, and
+  **transient**. Owns the figLog (IR), the form, the tool registry, and
   the turn loop. Mutations funnel through its **inbox** (an event queue), so
-  there is exactly one writer to the chalkboard and the log — e.g. a `figaro
-  set` arriving mid-turn is serialized, not raced. Chalkboard *reads* need no
-  inbox: snapshots are immutable and published atomically (see the chalkboard
+  there is exactly one writer to the form and the log — e.g. a `figaro
+  set` arriving mid-turn is serialized, not raced. Form *reads* need no
+  inbox: snapshots are immutable and published atomically (see the form
   section).
 
 An agent is a memory decision, not an identity. It is built on demand and
@@ -34,7 +34,7 @@ it and cached; the IR is canonical.
 A `Message` has a `Role` (`user` | `assistant` | `tool_result` | `system` |
 `system.interrupt`) and `[]Content`. Content `Type` is one of `text`,
 `thinking`, `tool_invoke` (assistant calls), `tool_result`, `interrupt`,
-`image`. Messages also carry `Patches` (chalkboard mutations riding on a tic),
+`image`. Messages also carry `Patches` (form mutations riding on a tic),
 optional `Usage`, `Model`/`Provider`, `StopReason`, and a monotonic
 `LogicalTime` (LT). The IR is provider-agnostic: it holds **no** provider
 secrets — notably no Anthropic thinking *signature* (that lives only in the
@@ -74,14 +74,14 @@ and takes the turn with it. So:
   clicking what it sees can map back to the real screen. The turn loop's
   second-pass note says FURTHER, because it composes with the ingest note.
 
-## The chalkboard — `internal/chalkboard`
+## The form — `internal/form`
 
 Per-aria key→JSON state. Two namespaces:
 
 - `system.*` — harness-reserved. Providers read these directly
   (`system.credo`, `system.model`, `system.cwd`, `system.cache_control`,
   `system.thinking_budget`, `system.thinking_effort`, …). **Hidden from the
-  agent**: `chalkboard.Render` skips any `system.` key.
+  agent**: `form.Render` skips any `system.` key.
 - everything else — surfaced to the agent. On the tic where a key changes,
   `Render` projects it as a `<system-reminder name="<key>">…</system-reminder>`
   text block (templated if a template exists, else the bare value). This is
@@ -102,7 +102,7 @@ type Snapshot struct {
 ```
 
 - `Clone()` is the **identity function**. It used to deep-copy every value on
-  every read (per RPC, per turn, inside `chalkboardString`).
+  every read (per RPC, per turn, inside `formString`).
 - `Apply` **path-copies**: only the O(k·log n) nodes on the touched paths are
   new; every other subtree is shared with the receiver. A patch that changes
   nothing returns the receiver *pointer-identically*, and `State.Apply` then
@@ -118,7 +118,7 @@ type Snapshot struct {
 - `Value` (`value.go`) holds the caller's **exact bytes** (`raw`) plus a
   canonical form (compacted, object keys sorted recursively) used **only** for
   `Equal`, computed lazily on first comparison and memoised. Nothing ever
-  rewrites stored bytes. That is what keeps `chalkboard.json` byte-identical
+  rewrites stored bytes. That is what keeps the form channel byte-identical
   while making equality semantic: a value that changes only in key order,
   whitespace or escape spelling compares equal and fires **no**
   `<system-reminder>`. Numbers compare by literal token, so `1` and `1.0` are
@@ -129,9 +129,9 @@ type Snapshot struct {
   board: `cur.Apply(candidate).Diff(cur)`.
 - `MarshalJSON`/`UnmarshalJSON` emit and read the **flat object** form
   (`{"key": value, …}`, keys lexical). Three things consume it: the reducible
-  chalkboard channel's watermark/state records in the aria store (see
-  [arias.md](arias.md) — those are content-hashed), the `figaro.chalkboard` RPC
-  response, and `State.Save`'s `chalkboard.json` when a State is opened with a
+  form channel's watermark/state records in the aria store (see
+  [arias.md](arias.md) — those are content-hashed), the `figaro.form` RPC
+  response, and `State.Save`'s the form channel when a State is opened with a
   path (the agent opens with `""`, i.e. in-memory only). `MarshalJSON`
   delegates to `encoding/json` over a `map[string]json.RawMessage` and never
   hand-rolls the object: `encoding/json`
@@ -139,15 +139,15 @@ type Snapshot struct {
   `\u0026`, and that post-processing is part of the bytes already on disk.
 - **The custom codec is charged twice.** `encoding/json` re-scans a marshaler's
   output and pre-scans an unmarshaler's input: ~2x on a 15KB board, for
-  identical bytes. Hot paths (`chalkboardReduce`, `State.Open`/`Save`) call
+  identical bytes. Hot paths (`formReduce`, `State.Open`/`Save`) call
   `MarshalJSON`/`UnmarshalJSON` **directly** to skip it;
   `TestSnapshotDirectCodecMatchesEncodingJSON` pins that the two spellings
   agree. Re-measure with `scripts/chalkbench-go.sh` if the question returns.
 
 `State` (`state.go`) is **one writer, many readers**. The writer is the agent's
 drain loop (`act` → `applyControlPatch` → `State.Apply`); readers are the
-`figaro.chalkboard` handler, `Agent.ApplyOutfit` and
-`Agent.chalkboardString`/`chalkboardInt`, all on RPC goroutines. `State`
+`figaro.form` handler and
+`Agent.formString`/`formInt`, all on RPC goroutines. `State`
 publishes `{snapshot, dirty}` as one immutable value through an
 `atomic.Pointer`, so readers are **lock-free** and always see a complete
 board. (Before that, `State.snapshot` was a plain field read with no
@@ -155,7 +155,7 @@ happens-before edge — a genuine data race, 11 reports per `-race` run.) One
 writer means the update path stores unconditionally; no CAS loop. `Save`
 clears the dirty flag with a single non-looping CAS.
 
-Outfits (`internal/outfit`) assemble a chalkboard patch from a SPEC — names,
+Outfits (`internal/outfit`) assemble a form patch from a SPEC — names,
 inline literals, and their layers — defaulting to `config.toml`'s
 `default_outfit` ([reference/outfits.md](outfits.md)). `fileName`/`dirName` tables load file bodies as
 content envelopes (`{frontmatter|content, filePath}`) — skills come in this
@@ -165,10 +165,10 @@ body on demand. Bundled first-party skills merge under the user's by name.
 ## The wire protocol — `internal/rpc`
 
 Per-aria request methods: `figaro.qua` (prompt), `figaro.context`,
-`figaro.interrupt`, `figaro.set`, `figaro.outfit`, `figaro.chalkboard`,
+`figaro.interrupt`, `figaro.set`, `figaro.form`,
 `figaro.queued`, and `figaro.read` (catch-up/paging). Angelus includes
 `figaro.create`/`fork`/`promote`/`kill`/`list`/`attach`,
-`pid.bind`/`resolve`/`unbind`, `aria.read`, `aria.page`/`context`/`chalkboard`
+`pid.bind`/`resolve`/`unbind`, `aria.read`, `aria.page`/`context`/`form`
 (the same reads addressed by aria id), and status/binding persistence.
 
 The transport is NDJSON-framed JSON-RPC 2.0. Every accepted per-aria connection
@@ -193,7 +193,7 @@ an envelope slot would cost a jkrpc API change, a release, and a signature
 change to every handler — to carry one string `params` already carries.
 
 Injection is generic rather than a field on each request struct because
-`figaro.context` and `figaro.chalkboard` send **nil** params; there would be
+`figaro.context` and `figaro.form` send **nil** params; there would be
 nothing to embed in, and those methods must still be authenticatable.
 
 This is **not** the target-selection rule. Selection is
@@ -226,7 +226,7 @@ the inline view and `figaro show` cannot drift:
 **The duke is the end user** — the person the agent serves, as distinct from an
 aria or an anonymous script. Their name does not live in shell config: an
 *interactive* CLI sends a **placeholder** in `x-caller`, and the agent resolves
-it against the **target aria's** chalkboard key **`duke-title`** (default
+it against the **target aria's** form key **`duke-title`** (default
 `user`). Set it in an outfit:
 
 ```toml
@@ -421,7 +421,7 @@ Translates IR ↔ Anthropic wire and caches the per-aria wire bytes
 
 ### The provider binding is live, not a birthmark
 
-`system.provider` is chalkboard state like any other key, and the board is
+`system.provider` is form state like any other key, and the board is
 authoritative. The agent holds a `ProviderFactory` and re-resolves the binding
 at the top of **every** provider round (`internal/figaro/provbind.go`,
 `syncProvider`), after that round's queued `set`s are serviced — so
@@ -484,7 +484,7 @@ does not.
 ## Storage
 
 State root `~/.local/state/figaro/arias/`: parallel XWAL trees in `ir/`,
-`chalkboard/`, and `translations/<provider>/`, plus `_meta/<id>.json`
+`form/`, and `translations/<provider>/`, plus `_meta/<id>.json`
 for list/status metadata. See arias.md for reading these safely.
 
 `XwalBackend` memoizes one row cache per (aria, channel) so a reader sees the

@@ -31,9 +31,9 @@ conversations. The full tree, top to bottom:
   Ceremonial, **closed**. Pure structure.
 - **outfit** (`name@content-hash`) — a named `CreateStump` child of null;
   **one per distinct outfit name + content-version**, deduped by its stump
-  name. Each carries that outfit's chalkboard stamp baked once
+  name. Each carries that outfit's form stamp baked once
   into a **shared prefix**: `system.outfit_name`/`system.outfit_version`,
-  plus the whole outfit chalkboard — `skills.*`, `system.credo`,
+  plus the whole outfit form — `skills.*`, `system.credo`,
   `system.model`, …. **Closed.**
 - **conversation** — `SpawnUnderStump` from a *outfit*; inherits the outfit's
   rendered prefix via the fork watermark (cached once, shared by every
@@ -58,7 +58,7 @@ outfit" are the same mechanism.
 Every turn has a figwal **main-LT**, continuous along the trunk's node chain:
 
 - `1` = genesis (the root tic; filtered from rendering/context)
-- `2` = outfit birth (the chalkboard stamp message)
+- `2` = outfit birth (the form stamp message)
 - `3+` = conversation turns
 
 `figaro show` labels each **turn** by its **turn id**, and `send`/`fork`/
@@ -143,7 +143,7 @@ error rather than a precedence rule.
 
   > This restriction is a **guardrail, not a cure**. The real defect is that
   > trunk coordination blocks the actor loop at all; the fix is to store trunk
-  > state in its own reducible xwal channel the way the chalkboard is stored.
+  > state in its own reducible xwal channel the way the form is stored.
   > See the note at `angelus.handlers.fork`.
 - **`attend <id>` / `<id>:<turn>` / `:<turn>`** (alias **`at`**) — bind this shell,
   like `cd`. CLI-native attendance: the pid↔trunk map (the angelus binding

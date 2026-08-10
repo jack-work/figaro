@@ -88,7 +88,7 @@ names are the target: `prose`, `thinking`, `tool`, `image`.
 
 ## Configuration provenance
 
-`model` and `provider` are chalkboard values. The fig IR carries content and
+`model` and `provider` are form values. The fig IR carries content and
 provenance; configuration is read from `system.model` and `system.provider`.
 Dormant list metadata comes from the live `_meta` summary, not a second
 derived snapshot.

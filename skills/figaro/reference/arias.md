@@ -15,7 +15,7 @@ Two ways to read one — pick deliberately:
 
 When in doubt, prefer the CLI — direct reads understand neither forks (a
 trunk's history is spread across its node chain, with shared prefixes pulled
-from parent dirs) nor the chalkboard watermark fold.
+from parent dirs) nor the form watermark fold.
 
 ## Disk layout
 
@@ -35,7 +35,7 @@ spread across the node dirs along its path.
 │   │   ├── .trunk
 │   │   └── <NNN>.jsonl
 │   └── n1/ …                  sibling branches; nest n0/n1/… arbitrarily deep
-├── chalkboard/                reducible channel (jsonmerge): same node tree,
+├── form/                reducible channel (jsonmerge): same node tree,
 │   └── n0/ …                  patches on a per-segment watermark base
 ├── translations-v2/<provider>/ wire cache per provider: same node tree, FK'd
 │   └── n0/ …                  to the IR by mainLT (preserves thinking sigs)
@@ -65,14 +65,14 @@ func transChannel(provider string) string { return "translations-v2/" + provider
 
 Key points:
 
-- **Per-channel trees, not per-aria dirs.** `ir/`, `chalkboard/`, and
+- **Per-channel trees, not per-aria dirs.** `ir/`, `form/`, and
   `translations-v2/<provider>/` each mirror the same node tree (`n0/n1/…` with a
   `.fork` marker carrying the fork base index). A fork forks all channels as a
   unit. Node ids (`n<N>`) are pure plumbing — never address them; address the
   trunk (= aria) id, which lives in the `.trunk` marker in the `ir/` tree.
 - **The IR is truth.** `translations-v2/*` is a derivable wire cache; the
-  chalkboard is reducible (a watermark + jsonmerge patches), so there is **no
-  `chalkboard.json`** — fold it via the CLI's `state` (or figwal `StateAt`),
+  form is reducible (a watermark + jsonmerge patches), so there is **no
+  the form channel** — fold it via the CLI's `state` (or figwal `StateAt`),
   don't read it raw.
 - **Closed/ceremonial trunks** (the null root and outfits) live in the same
   tree but never append — see [trunks.md](trunks.md).
@@ -109,7 +109,7 @@ channel itself, and points back at an IR LT in the related channels);
 ```
 
 Assistant tool calls are `tool_invoke` (not `tool_call`). `patches` are
-chalkboard mutations riding on user-role tics.
+form mutations riding on user-role tics.
 
 ## Path A — the `figaro` CLI
 
@@ -123,7 +123,7 @@ figaro show <id> -v               verbose: include patches, thinking, usage, tra
 figaro show <id> -l               literal: raw text, no markdown (best for piping)
 figaro show <id> -j               turns as raw JSON (the wire IR verbatim)
 figaro status <id> -m             provider/model/ctx + derived detail (mantra, cwd, fork origin)
-figaro state <id>                 the folded chalkboard snapshot (-j for JSON)
+figaro state <id>                 the folded form snapshot (-j for JSON)
 ```
 
 `show` takes the aria id as a **positional** (or `--id`, or — inside an aria's
@@ -183,6 +183,6 @@ for case-insensitive, `rg -F` for literal strings.)
 | Aria might be live / actively written | CLI |
 | A single trunk's stitched history (across forks) | CLI |
 | Pretty rendering, last N units | CLI |
-| Folded chalkboard state | CLI (`state`) |
+| Folded form state | CLI (`state`) |
 | Bulk "does X appear anywhere" grep over the forest | Direct |
 | Raw `LT`/`MainLT`/figwal sidecar fields | Direct |

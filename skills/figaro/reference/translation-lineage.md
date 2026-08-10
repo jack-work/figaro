@@ -21,7 +21,7 @@ XWAL owns:
 - one physical prefix shared by every descendant.
 
 Figaro should not place another full-history cache or lock around these views.
-Provider translators retain only their fingerprint, chalkboard state at the
+Provider translators retain only their fingerprint, form state at the
 watermark, and provider-native input projection.
 
 ## Catch-up
@@ -43,7 +43,7 @@ translation lookup, and catch-up may not scan the prefix.
 - copying or backfilling a parent's translation records into a child;
 - predeclaring a fixed list of provider channels;
 - one `Lookup` per historical IR message;
-- rebuilding chalkboard state from the beginning on each turn;
+- rebuilding form state from the beginning on each turn;
 - treating Figaro's `cachedLog` as the durable hot-state owner.
 
 These either duplicate prefix bytes, make provider registration static, or

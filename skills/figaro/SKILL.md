@@ -21,7 +21,7 @@ figaro ls                          your own lineage: parent, siblings, branches
 figaro show <id> -n 5              the last 5 turns of an aria
 figaro fork <id>:12 -- <prompt>    branch at turn 12 and prompt the new branch
 figaro attend <id>                 bind this shell to an aria, like cd
-figaro state <id>                  that aria's chalkboard
+figaro state <id>                  that aria's form
 figaro status <id> -j | jq -r .state    dormant, idle, or active
 ```
 
@@ -48,8 +48,8 @@ One definition each. The file named owns the model behind it.
 | trunk | A root-to-leaf path through the fork forest; the aria id is its id, and it survives forks. | [reference/trunks.md](reference/trunks.md) |
 | turn | One exchange: your prompt plus everything the agent did about it. The coordinate `:N` in `<id>:<turn>`; `.N` addresses an LT instead. | [reference/turns.md](reference/turns.md) |
 | LT | The storage coordinate, positional and cross-channel. Not an address you type. | [reference/turns.md](reference/turns.md) |
-| chalkboard | Per-aria key to JSON state that rides along with the conversation. | [reference/architecture.md](reference/architecture.md) |
-| outfit | A named patch for a chalkboard: model, credo, skills. Named by a SPEC — `sonn5,ttl=1h` — which is folded at birth or onto a live aria. | [reference/outfits.md](reference/outfits.md) |
+| form | Per-aria key to JSON state that rides along with the conversation. | [reference/architecture.md](reference/architecture.md) |
+| outfit | A named patch for a form: model, credo, skills. Named by a SPEC — `sonn5,ttl=1h` — which is folded at birth or onto a live aria. | [reference/outfits.md](reference/outfits.md) |
 | angelus | The single supervisor daemon that owns the registry and outlives shells. | [reference/architecture.md](reference/architecture.md) |
 
 ## Where everything else lives
@@ -72,7 +72,7 @@ open one when you are working inside that subsystem, not to browse.
 | [reference/trunks.md](reference/trunks.md) | Forking, branches, `attend`, and what `<id>:<turn>` and `<id>.<lt>` address. |
 | [reference/turns.md](reference/turns.md) | Turn ids, the turn-shaped read wire, pagination. |
 | [reference/arias.md](reference/arias.md) | Reading an aria off disk, and the store layout. |
-| [reference/architecture.md](reference/architecture.md) | The three roles, the IR, the chalkboard, the RPC wire, the provider layer. |
+| [reference/architecture.md](reference/architecture.md) | The three roles, the IR, the form, the RPC wire, the provider layer. |
 | [reference/ui-stream.md](reference/ui-stream.md) | How a conversation reaches a terminal: the read wire, inline freeze, the pager. |
 | [reference/ui-testing.md](reference/ui-testing.md) | Testing anything that paints, in a real pty. |
 | [reference/tapes.md](reference/tapes.md) | A rendering bug someone SAW and you cannot reproduce, or you want one recorded for CI. |

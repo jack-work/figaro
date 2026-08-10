@@ -21,7 +21,7 @@ a store):
 | **decoded IR** (`cachedLog`) | **12.5 MiB — 86%** | **14.3 MiB — 63%** |
 | composed UI (`aria.Server`) | 2.0 MiB — 14% | 2.4 MiB — 10% |
 | translations, per provider | 1.2 KiB — 0% | 6.0 MiB — 26% |
-| chalkboard | 48 KiB | 43 KiB |
+| form | 48 KiB | 43 KiB |
 | **total** | **14.5 MiB** | **22.7 MiB** |
 
 The decoded IR runs **4–5x its encoded bytes** and dominates. Two consequences
@@ -70,7 +70,7 @@ the hub binds. See `angelus/hub.go`.
   id in the envelope) is a change of *listener count*, not of architecture.
 
 Requests route on liveness. `rpc.MethodNeedsAgent` classifies the surface:
-`figaro.read`, `figaro.context` and `figaro.chalkboard` are pure functions of
+`figaro.read`, `figaro.context` and `figaro.form` are pure functions of
 the store and are served from it while the aria is dormant; everything else
 wakes. **Default is `true`** — a method added later and left unclassified wakes
 rather than being answered from stale bytes, because a needless restore costs
@@ -182,7 +182,7 @@ for the copy.
 ## Configuration — `[memory]` in `config.toml`
 
 Daemon policy, not conversation state, so it lives in `config.toml` and never in
-an outfit or the chalkboard.
+an outfit or the form.
 
 ```toml
 [memory]
@@ -223,10 +223,10 @@ and the counters as the sweep runs. What to look for is two numbers at once —
 
 - **Side-channel suffix seeks are O(log N), not O(1).** The main channel is
   identity (main-LT == channel-LT), so `ReadFrom` seeks directly; translations
-  and the chalkboard binary-search. figwal already builds a main-LT index for
+  and the form binary-search. figwal already builds a main-LT index for
   `Lookup`, and exposing a "first channel-LT at or after this main-LT" query
   would remove the search. `TODO(perf)` in `store/xwal_log.go`.
-- **The chalkboard patch list is not windowed.** It holds the board plus every
+- **The form patch list is not windowed.** It holds the board plus every
   patch. Measured at ~45 KiB, so this is design tidiness, not a memory win.
 - **Memory-pressure triggering does not exist.** The time rule and the cap are
   the only policies. Add one only if measurement demands it.

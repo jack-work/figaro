@@ -1,4 +1,4 @@
-# Outfits, the chalkboard, and `state`
+# Outfits, the form, and `state`
 
 The model behind every place an outfit can be named. Read it when you are
 composing outfits, when `-O` did not do what you expected, or before changing
@@ -8,8 +8,8 @@ anything under `internal/outfit`.
 
 | Noun | What it is |
 |---|---|
-| chalkboard | An aria's key → JSON state, versioned alongside the conversation. Non-`system` keys the agent sees change; `system.*` is the harness's own namespace (model, credo, skills, cwd). |
-| outfit | A named patch for a chalkboard, at `~/.config/figaro/outfits/<name>.toml`. |
+| form | An aria's key → JSON state, versioned alongside the conversation. Non-`system` keys the agent sees change; `system.*` is the harness's own namespace (model, credo, skills, cwd). |
+| outfit | A named patch for a form, at `~/.config/figaro/outfits/<name>.toml`. |
 | spec | What you type where an outfit is asked for: an ordered list of terms. |
 
 ## The spec
@@ -52,7 +52,7 @@ Commas inside quotes, braces or brackets are data, not separators — but the
 structure must balance. An unmatched `}` or `"` is an error, not a mode in
 which commas stop separating. An inline term that sets nothing (`{}`) is an
 error too, and inline terms are capped at 64 KiB in total: one fold becomes one
-chalkboard record, and a record larger than a WAL segment cannot be written.
+form record, and a record larger than a WAL segment cannot be written.
 
 The sugar is client-side. On the wire a spec is JSON — an array whose elements
 are strings or objects, and a bare string is read as one spec:
@@ -68,18 +68,25 @@ Two different things happen to an outfit, and which one you get depends on
 whether the call creates the aria.
 
 **Birth.** `figaro new -O <spec>`, and `send -O` when this call has to mint an
-aria (an unbound shell, or `-e`). The folded patch defines a content-addressed
-**stump** — one per (name, content version) — which the conversation is spawned
-under, so the outfit's reminders are rendered once in a shared prefix that
-every conversation under it inherits. The aria is stamped with
-`system.outfit_name` and `system.outfit_version`; `figaro ls` shows both, with
-`live` when the stamped hash still matches what is on disk. An inline term has
-no name to stamp, so it is labelled `{}` — deliberately something the grammar
-refuses, which is what makes "this version cannot be re-resolved" a fact rather
-than a hope.
+aria (an unbound shell, or `-e`).
+
+TWO PATCHES, and which is which is the whole economy. The **stump** carries the
+DEFAULT outfit's closure and nothing else — one per content version — so its
+identity is a pure function of that closure and every aria wearing the outfit
+shares one node, one set of records, and one rendered prefix in the provider's
+cache. The **child** carries what `-O` asked for, plus the runtime fill-ins. So
+`-O` ADDS to the default rather than replacing it, and that rule falls out of
+the topology instead of being arranged.
+
+Folding `-O` into the stump (which is what 0.22.x did) minted a private stump
+per literal, so `-O mantra=x` defeated the sharing stumps exist for.
+
+Collection spares the LIVE default, by hash rather than by name: edit an
+outfit's files and the hash moves, so the version nobody wears is reaped once
+its last aria dies while the current one stays warm.
 
 **Fold.** Everywhere else. The spec is folded and applied to the aria's
-existing chalkboard, **additively**: keys already holding that value are
+existing form, **additively**: keys already holding that value are
 skipped, and nothing is ever removed. Re-applying is therefore free, and the
 agent sees a `<system-reminder>` for exactly what changed.
 
@@ -95,9 +102,11 @@ born, which is provenance and does not change.
 
 ## One call, not two
 
-On the prompt verbs the spec travels **on the prompt itself**
-(`figaro.qua`'s `chalkboard.outfit`). The agent resolves it when it accepts the
-call and merges it into that prompt's patch, so:
+On the prompt verbs the dressing travels **on the prompt itself**
+(`figaro.qua`'s `form.patch`). A name is not resolved by the client: it becomes
+an entry in the patch's `layers` directive, which the SERVER materializes when
+it accepts the call — which is what lets the same `-O` mean the same thing on a
+live aria as at birth. So:
 
 - a spec that does not resolve fails the call, with the layer closure attached,
   before anything is queued;
@@ -126,14 +135,15 @@ thinking_effort = "high"
 ```
 
 An outfit's patch is its layers folded left to right, then its own keys on top.
-Merging is per chalkboard key, so a layer setting `system.model` does not
+Merging is per form key, so a layer setting `system.model` does not
 disturb a sibling's `system.max_tokens`, and skills merge one at a time. A
 layer's own layers are folded before it contributes; a layer named twice
 applies at both positions; a cycle is refused.
 
 ```sh
 figaro state outfit --tree pr-review    the closure, green found, red missing
-figaro state outfit --list              what is on disk
+figaro state outfit --list              what the server has on disk
+figaro state outfit --refresh           re-read outfits and config from disk
 ```
 
 `--tree` reads the config directory directly, so it works with no aria and no
@@ -220,7 +230,7 @@ shows their version instead of `live`.
 
 `figaro ls`'s OUTFIT column names the **stump** an aria was born under, read
 from the topology. It is not `system.outfit_name`. That key still rides the
-chalkboard, where the agent can see it (and change it — the chalkboard is
+form, where the agent can see it (and change it — the form is
 mutable by design), but nothing structural reads it: a `set system.outfit_name
 x` used to rename the aria's outfit in every listing and, because the column is
 what the version is re-resolved against, report an unchanged outfit as stale in
@@ -260,8 +270,8 @@ one.
 |---|---|
 | `Spec`, `Term`, `ParseSpec` | `internal/outfit/spec.go` |
 | `LoadSpec`, closures, layers, `fileName`/`dirName` | `internal/outfit/outfit.go` |
-| the additive diff | `chalkboard.Additive` |
+| the additive diff | `form.Additive` |
 | fold on a live aria | `figaro.Agent.OutfitPatch` / `ApplyOutfit` |
-| resolve at accept / fold at drain | `figaro.Agent.CheckPromptOutfit` / `combineChalkboardInput` |
+| resolve at accept / fold at drain | `figaro.Agent.CheckPromptOutfit` / `combineFormInput` |
 | birth, and the default | `angelus.handlers.create` |
 | fold on a fork | `angelus.handlers.fork` |

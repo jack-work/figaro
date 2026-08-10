@@ -42,7 +42,7 @@ These hold across the whole CLI:
 |---|---|
 | `-f`, `--forget` | Submit and exit. Do not attach to the stream, do not interrupt on Ctrl-C. The turn keeps running in the daemon. Mints an aria if this shell has none (the id goes to stderr, or to stdout with `-j`). |
 | `-e`, `--ephemeral` | Spin a throwaway in-memory aria and kill it when the turn ends. Contradicts `--id`. |
-| `-O`, `--outfit <spec>` | Dress the aria. On one this call creates it is the birth outfit; on one that already exists the spec is folded onto its chalkboard **in the same call as the prompt**, so that turn is answered wearing it. Repeats append (`-O a -O b` = `-O a,b`). Bundles like any value-taking short: `-erO sonn5` or `-erOsonn5`. Defaults to `default_outfit`. See [reference/outfits.md](reference/outfits.md). |
+| `-O`, `--outfit <spec>` | Dress the aria. On one this call creates it is the birth outfit; on one that already exists the spec is folded onto its form **in the same call as the prompt**, so that turn is answered wearing it. Repeats append (`-O a -O b` = `-O a,b`). Bundles like any value-taking short: `-erO sonn5` or `-erOsonn5`. Defaults to `default_outfit`. See [reference/outfits.md](reference/outfits.md). |
 | `-r`, `--raw` | Plain text on stdout: no ANSI, no markdown. Streamed, not buffered. |
 | `-o`, `--verbose` | Expand full tool inputs. Ctrl-O toggles it live. |
 | `-l`, `--listen` | Open the transcript pager at startup. |
@@ -66,7 +66,7 @@ through — and the same is true of messages queued behind a turn you then
 interrupt. The messages are separated by a blank line, so they stay separate
 lines on screen and separate messages to the model. A `set` queued between two
 of them still applies in order, because folding a prompt in front of it would
-answer that prompt against a chalkboard it was never written against.
+answer that prompt against a form it was never written against.
 
 A single submit is untouched: one message in, one message out.
 
@@ -112,7 +112,7 @@ Both forms **return** the queued messages — listed on stdout, or as JSON with
 below.
 
 `cut` hands back what it dropped, verbatim, one entry per message as you typed
-it, with the chalkboard input each carried:
+it, with the form input each carried:
 
     figaro cut -j > lost.json
 
@@ -170,7 +170,7 @@ the no-TTY rule would switch writes off); both go before the verb.
 | `figaro fork --stay` | Branch without moving this shell. |
 | `figaro promote <id> [levels]` | Make a trunk the canonical line through its ancestors. Pure relabeling. |
 | `figaro kill <id>` | Remove a trunk and its subtree. `-r` is required if it has live branches. |
-| `figaro export [<id>] [-o <f>]` | Write an aria to a portable file: outfit, chalkboard, every message. |
+| `figaro export [<id>] [-o <f>]` | Write an aria to a portable file: outfit, form, every message. |
 | `figaro import <file>` | Restore one into THIS store as a new conversation. `-` reads stdin. |
 
 The model behind these, including what freezes and which child keeps the id, is
@@ -191,12 +191,13 @@ that goes wrong yields a store that looks fine.
 
 | Command | Effect |
 |---|---|
-| `figaro state [<id>]` | The folded chalkboard snapshot. `-j` for JSON. Alias `chalkboard`. |
+| `figaro state [<id>]` | The folded form snapshot. `-j` for JSON. Alias `form`. |
 | `figaro set [<id>] <key> <value>` | Patch one key with no model round trip. |
 | `figaro unset [<id>] <key>...` | Remove keys. |
-| `figaro state outfit <spec>` | Fold an outfit onto this aria now: additive, nothing removed, a `<system-reminder>` for what changed. A spec is names, `k=v` and JSON literals, comma-joined (`sonn5,ttl=1h`). `--list` for what is on disk. See [reference/outfits.md](reference/outfits.md). |
+| `figaro state outfit <spec>` | Fold an outfit onto this aria now: additive, nothing removed, a `<system-reminder>` for what changed. A dressing is names, `k=v` and JSON literals, comma-joined (`sonn5,ttl=1h`); names become a `layers` directive the SERVER materializes, so the same `-O` means the same thing at birth and on a live aria. `--list` for what is on disk. See [reference/outfits.md](reference/outfits.md). |
 | `figaro gc [--dry-run]` | Collect outfit stumps nothing is using. One stump exists per outfit VERSION; killing an aria collects its stump when it was the last child, so `gc` sweeps the versions that predate that. Content-addressed, so a collected stump is re-minted identically by the next aria that wants it. |
-| `figaro state outfit --tree [<spec>]` | Draw the layer closure and apply nothing — green where a layer resolves, red where it does not. Reads the config dir directly, so it needs no aria and no daemon. Exits non-zero when the closure has a gap. |
+| `figaro form listen [<id>]` | Watch the form as a live JSON tree, in the alt screen. The client keeps its OWN copy and applies the patches the server broadcasts (`form.delta`), so it is the same tree and the same algebra on both ends. `j`/`k` move, `enter` expands, `y` yanks, `e`/`d` page. |
+| `figaro state outfit --tree [<spec>]` | Draw the layer closure and apply nothing — green where a layer resolves, red where it does not. The angelus resolves it — the outfits directory is the server's state, so a client asks rather than reading it. Exits non-zero when the closure has a gap. |
 
 Setting a key is a real event in the conversation: on the tic where a
 non-`system` key changes, the agent sees a `<system-reminder>` naming it. Keys

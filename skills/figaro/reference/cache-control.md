@@ -27,7 +27,7 @@ Confirm it's working from a `FIGARO_WIRE_DIR` dump: a follow-up turn shows
 
 ## Overriding
 
-`system.cache_control` on the chalkboard overrides the default:
+`system.cache_control` on the form overrides the default:
 
 ```
 figaro set system.cache_control none      # stop signalling (see below)

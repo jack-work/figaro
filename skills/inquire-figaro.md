@@ -15,7 +15,7 @@ delete this file.
 
 ## Ground rules
 
-- **Never inquire yourself.** Your aria id arrives in the chalkboard
+- **Never inquire yourself.** Your aria id arrives in the form
   as `<system-reminder name="aria_id">`. Filter it out.
 - **Only already-opened arias.** Don't `figaro new`. The set is
   discovered, not created.
@@ -35,8 +35,8 @@ delete this file.
 
 ```bash
 # you should be able to use the environment variable set in the caller figaro for this if its called by a figaro
-# if and only if that value is lost need you use the aria id from the chalkboard.
-SELF="<your aria id from the chalkboard>"
+# if and only if that value is lost need you use the aria id from the form.
+SELF="<your aria id from the form>"
 WINDOW_MS=$((60*60*1000))   # e.g. last hour; adjust per user ask
 NOW=$(date +%s%3N)
 CUT=$((NOW - WINDOW_MS))

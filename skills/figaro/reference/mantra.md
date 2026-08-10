@@ -8,7 +8,7 @@ story turns.
 
 ## Your identity
 
-Your aria id is supplied in your chalkboard as a
+Your aria id is supplied in your form as a
 `<system-reminder name="aria_id">` block, and your bash tool carries it as
 `$FIGARO_ARIA`. You are statically attended to yourself, so **no `--id` is
 needed to address yourself** — pass one only to touch a *different* aria.

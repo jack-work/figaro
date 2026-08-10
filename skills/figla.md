@@ -42,7 +42,7 @@ figla cancel --aria $MY_ARIA fx-footer-exit-hang
 # … or it does not, and a message arrives carrying the state already gathered
 ```
 
-Your own aria id is in your chalkboard as `<system-reminder name="aria_id">`.
+Your own aria id is in your form as `<system-reminder name="aria_id">`.
 
 ## Why `--watch` matters
 

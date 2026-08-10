@@ -69,7 +69,7 @@ Turn numbers are the ones `figaro show` prints. The original is never
 rewritten. The model behind this, including which child keeps the id, is
 [reference/trunks.md](reference/trunks.md).
 
-## 5. The chalkboard, and the mantra
+## 5. The form, and the mantra
 
 Every aria carries a small key-value slate that rides along with the
 conversation. The agent sees non-`system` keys change as they change.
@@ -85,7 +85,7 @@ a list of twenty conversations stays readable. Agents maintain their own; see
 
 ## 6. The outfit, which makes it yours
 
-An **outfit** is a named patch for the chalkboard: which model, which credo
+An **outfit** is a named patch for the form: which model, which credo
 (the standing instructions that shape voice and behaviour), and which skills
 are available. It lives in `~/.config/figaro/outfits/<name>.toml`, and
 `config.toml` names the default.

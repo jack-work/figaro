@@ -16,8 +16,8 @@ So a shell-out is statically attended to the aria that spawned it. These need
 no `--id`, because they already mean you:
 
 ```sh
-figaro state                 your chalkboard
-figaro set mantra "..."      patch your chalkboard
+figaro state                 your form
+figaro set mantra "..."      patch your form
 figaro status                your provider, model, context
 figaro show -n 5             your last 5 turns
 figaro send -f -- <text>     a note to yourself; mid-turn it steers the turn

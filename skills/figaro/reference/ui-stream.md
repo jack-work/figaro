@@ -205,7 +205,7 @@ version. On mismatch it re-reads from its highest fully sealed turn. A part with
 
 Prompts accepted while a turn is running wait in the aria's queue.
 `figaro.queued` reads it (`{"include_carriers":true}` adds the empty-text
-chalkboard carriers, which the default omits, as it always has);
+form carriers, which the default omits, as it always has);
 `figaro.queue.update` and `figaro.queue.delete` mutate it. There is no create
 method: `figaro.qua` IS the create.
 
@@ -228,7 +228,7 @@ persisting.
 sites — the idle drain that opens a turn, the two mid-turn drains that steer
 one, and the interrupt — fold the contiguous run of queued prompts into one
 message: texts joined by a BLANK LINE (a lone newline is a soft break in
-markdown, so the screen would rejoin them), chalkboard input merged in queue
+markdown, so the screen would rejoin them), form input merged in queue
 order so a later value wins. **A queued `set` or `fork` is a barrier** that is
 never crossed. A lone prompt is passed through unchanged.
 
@@ -294,7 +294,7 @@ keep one reader consuming interleaved responses and notifications:
 ```
 
 A full frontend can also call `figaro.qua`, `figaro.interrupt`,
-`figaro.context`, `figaro.chalkboard`, `figaro.set`, `figaro.outfit`,
+`figaro.context`, `figaro.form`, `figaro.set`, `figaro.outfit`,
 `figaro.queued`, `figaro.queue.update` and `figaro.queue.delete` on the aria
 socket; creation, listing, forking, promotion, and
 lifecycle operations remain on Angelus. Request ids are integers in the current

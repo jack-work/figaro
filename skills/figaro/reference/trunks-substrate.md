@@ -57,7 +57,7 @@ user-initiated forks.
 A figaro conversation is an append-only log that can **fork**: at any point, history
 can diverge into two branches that share an immutable prefix. The storage substrate is
 **figwal** (a segmented write-ahead log with a native fork engine), its multi-channel
-wrapper **xwal** (which forks several parallel logs — the IR, the chalkboard, the
+wrapper **xwal** (which forks several parallel logs — the IR, the form, the
 translation caches — together as one unit), and figwal's **`xwal.Trunks`** forest layer
 (nodes + trunks + heads on disk). figaro stacks only *policy* on top: a null root →
 outfit stumps → conversation trunks. The **trunk** is the thing humans and the API
@@ -110,7 +110,7 @@ unit. figaro's three channels (the "triune"):
 |---|---|---|
 | `ir` | `ChannelLog` (main) | the canonical message timeline; LTs come from here |
 | `translations/<provider>` | `ChannelLog` | cached wire-bytes per IR LT (preserves thinking signatures) |
-| `chalkboard` | `ChannelReducible` | structured state as patches on a watermark base |
+| `form` | `ChannelReducible` | structured state as patches on a watermark base |
 
 Terminology & mechanics (`xwal/xwal.go`, `xwal/fork.go`):
 - **`XWAL` = one *opened branch*** of the multi-channel log. `branch []string` is the chain
@@ -120,8 +120,8 @@ Terminology & mechanics (`xwal/xwal.go`, `xwal/fork.go`):
   IR LTs (for catch-up). `AppendMain(payload,meta)` (`xwal.go:397`) writes the IR and returns
   its LT; `Append(channel, mainLT, payload, meta)` (`xwal.go:411`) writes a related channel.
 - **Reducible channels** ride a per-segment **watermark** + patches; `StateAt(channel, lt)`
-  (`xwal.go:474`) folds the nearest watermark with the patches after it. The chalkboard is
-  this — there is **no `chalkboard.json`**; the channel is the durable truth.
+  (`xwal.go:474`) folds the nearest watermark with the patches after it. The form is
+  this — there is **no the form channel**; the channel is the durable truth.
 - **`meta`** is an opaque per-entry side-channel (`xwal.go:546-557`) — figaro stores the
   translation fingerprint here.
 - **Joint fork** (`xwal/fork.go:51`): `Fork(atMainLT, childName, oldFutureName) → *XWAL`.
@@ -172,7 +172,7 @@ interface.
   - **`outfit(name@content-hash)` stumps** — `CreateStump`, **one per distinct
     outfit name + content-version** (content-versioned via `segment.ValueHash` over the
     stable outfit patch, dedup'd by its `name@version` stump name). Each carries a
-    renderable `RoleUser` birth message stamping that outfit's chalkboard — `skills.*`,
+    renderable `RoleUser` birth message stamping that outfit's form — `skills.*`,
     `system.credo`, `system.model`, the `keyOutfitName`/`keyOutfitVer` stamp — baked
     **once** into a shared prefix. **Closed.**
   - **`conversation` trunks** — `CreateConversation` = `SpawnUnderStump(outfit)`; inherit the
@@ -194,8 +194,8 @@ interface.
   in its FORK column, and `status -m` resolves it against the parent to print the exact
   `parent:turn` a fork takes (`BranchedLT-1` was the pre-turn-addressing display and was
   off by a whole exchange).
-- **`Backend` interface** (`store.go`): `Open`/`OpenTranslation`/`ChalkboardState`/
-  `ApplyChalkboard`/`ChalkboardPatches`/`CreateOutfit`/`CreateConversation`/`Fork`/`ForkAt`/
+- **`Backend` interface** (`store.go`): `Open`/`OpenTranslation`/`FormState`/
+  `ApplyForm`/`FormPatches`/`CreateOutfit`/`CreateConversation`/`Fork`/`ForkAt`/
   `Node`/`Nodes`/`Conversations`/`ConversationIDs`/`Meta`/`SetMeta`/`Remove`/`Close`.
   `XwalBackend` memoizes one shared row cache per aria; callers never close what `Open`
   returns.
@@ -203,8 +203,8 @@ interface.
 ### The daemon & client (`internal/angelus/`, `internal/cli/`, `internal/rpc/`)
 - **Create**: resolve outfit name (or `config.DefaultOutfit`) → `outfitter.Load` → stable
   `outfitPatch` → `CreateOutfit` (dedup by content version) → `CreateConversation` → append
-  a per-conversation boot transition (runtime fill-ins + `req.Patch`) to the chalkboard
-  channel. The conversation inherits the outfit's full chalkboard (`skills.*`,
+  a per-conversation boot transition (runtime fill-ins + `req.Patch`) to the form
+  channel. The conversation inherits the outfit's full form (`skills.*`,
   `system.credo`, `system.model`, …).
 - **Fork**: kills the live agent; `ForkAt`/`Fork`; returns `{Parent, Continuation,
   Alternative}` (Continuation == the stable aria id).
@@ -258,7 +258,7 @@ The **trunk** is the primary identity; the rename below shipped.
 **A trunk is the chain of continuations** — the "keep working" side of every fork; a
 root-to-leaf path through the fork forest. It has a stable id (the aria id), a
 dynamically-resolved **head node** (the live writable leaf), a **mantra** (essence phrase,
-from the chalkboard, auto-seeded from the first user message), and a parent trunk +
+from the form, auto-seeded from the first user message), and a parent trunk +
 **branched-at LT**.
 
 ```
@@ -322,12 +322,12 @@ the RPC does with it.
 ### 4.4 Outfits are cauterized stumps; create = spawn under an outfit
 - An outfit **version** is its own ceremonial stump (one per `name@content-version`), and is
   **closed**: forking/sending "at" it never re-splits it — it **spawns a new child
-  conversation** (cauterization). A conversation inherits the outfit's full chalkboard
+  conversation** (cauterization). A conversation inherits the outfit's full form
   (`skills.*`, `system.credo`, `system.model`, the outfit name/version stamp).
 - `fig new`, `fig new -O <spec>`, and `fig send --` *with nothing attended* all resolve a
   outfit stump → spawn a conversation under it → bind → send (`CreateOutfit` dedups by
   content version; `CreateConversation` = `SpawnUnderStump(outfit)`).
-- Chalkboard-key completion falls back to the **default outfit** when no aria is bound.
+- Form-key completion falls back to the **default outfit** when no aria is bound.
 
 ### 4.5 Outfit materialization
 - Outfits materialize **lazily** on first create (`CreateOutfit`): the stable outfit patch
@@ -382,7 +382,7 @@ the RPC does with it.
   them spawns a child conversation (`Owner` + `SpawnUnderRoot`/`SpawnUnderStump`).
 - **The four-layer outfit tree**: `null` → content-versioned **outfit** stumps (dedup'd by
   `name@version`) → **top-level arias** (conversations under an outfit) → **branches** (forks
-  of conversations); conversations inherit the outfit chalkboard.
+  of conversations); conversations inherit the outfit form.
 - **Trunk forest `list`/`ls`** (attend = `cd`): current-scope `ls`, `ls <id>` subtree,
   `-H/--home` (view without unbinding), `-g/--global` (+ null/outfit anchors), cap
   `-a/--all` | `-n N` (default 10), `--json` (all arias incl. null + outfits, rejects other
@@ -414,19 +414,19 @@ the RPC does with it.
 
   **The real fix, deferred:** trunk information should not ride the actor's
   single-threaded event loop. It belongs in its own **reducible xwal channel**,
-  stored the way the chalkboard is — watermark plus patches, mirroring the same
+  stored the way the form is — watermark plus patches, mirroring the same
   node tree. xwal already permits it: a related channel's `Append` explicitly
   allows `mainLT` to *exceed the current main tail* ("to support catch-up"), so
   trunk writes need not wait on the timeline, and `repair.go` already treats a
-  reducible watermark ahead of main as normal. Mirror the chalkboard's three
-  methods in `internal/store/xwal_backend.go` (`ApplyChalkboard`,
-  `ChalkboardState`, `ChalkboardPatches`). One gotcha: the channel's foreign-key
+  reducible watermark ahead of main as normal. Mirror the form's three
+  methods in `internal/store/xwal_backend.go` (`ApplyForm`,
+  `FormState`, `FormPatches`). One gotcha: the channel's foreign-key
   index maps a main LT to the **last** entry at that LT, so a mapping with
   several entries per LT must range-scan rather than `Lookup`.
 
-- **`set`-then-immediate-`fork`** with no committed turn between drops the pending chalkboard
+- **`set`-then-immediate-`fork`** with no committed turn between drops the pending form
   patch at the boundary (it keys to next-LT, which is the fork point) — commit a turn first.
 - A freshly-spawned **dormant** child shows `MSGS 0` in `list` until it takes a turn (count
   comes from the per-aria `_meta` sidecar).
 - **Default outfit source:** the configured `default_outfit` (`config.go`), latest hash;
-  chalkboard-key completion falls back to it when no aria is bound.
+  form-key completion falls back to it when no aria is bound.
