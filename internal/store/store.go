@@ -111,7 +111,6 @@ type Backend interface {
 	// the aria's form channel — the version a conditional Set quotes.
 	FormVersion(ariaID string) (uint64, error)
 
-
 	// ApplyFormIf appends a patch unless the form has moved off ifVersion
 	// (zero applies unconditionally). The comparison happens in the form's
 	// writer, atomically with the append.

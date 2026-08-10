@@ -249,3 +249,54 @@ func TestLayerNamesObeyTheNameGrammar(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot contain")
 }
+
+// A fileName/dirName reference is DATA, and the loader is what turns it into a
+// read inside the daemon. Before the spec collapse a client could send
+// `-O '{"x":{"fileName":"../../.ssh/id_ed25519"}}'` and have the contents folded
+// onto its own form and rendered to a provider. That door is closed; this keeps
+// it closed.
+func TestLoaderRefusesPathsOutsideTheConfigDir(t *testing.T) {
+	root := t.TempDir()
+	cfg := filepath.Join(root, "config")
+	require.NoError(t, os.MkdirAll(filepath.Join(cfg, "outfits"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "secrets"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "secrets", "id_ed25519"),
+		[]byte("PRIVATE KEY MATERIAL"), 0o600))
+
+	for _, tc := range []struct{ name, body string }{
+		{"fileName climbs out", "leak = { fileName = \"../secrets/id_ed25519\" }\n"},
+		{"dirName climbs out", "leak = { dirName = \"../secrets\" }\n"},
+		{"fileName is absolute", "leak = { fileName = \"/etc/passwd\" }\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writeOutfit(t, cfg, "leaky", tc.body)
+			patch, err := outfit.New(cfg).Load("leaky")
+			for k, v := range patch.Set {
+				assert.NotContains(t, string(v), "PRIVATE KEY MATERIAL", k)
+			}
+			if err == nil {
+				// An absolute path is re-rooted rather than refused, so it can
+				// only ever name something inside the config dir — which here
+				// does not exist, and the open error is the report.
+				assert.Empty(t, patch.Set)
+			}
+		})
+	}
+}
+
+// A symlink INSIDE the config dir pointing out of it is the version of this bug
+// that survives a naive prefix test.
+func TestLoaderRefusesASymlinkOutOfTheConfigDir(t *testing.T) {
+	root := t.TempDir()
+	cfg := filepath.Join(root, "config")
+	require.NoError(t, os.MkdirAll(filepath.Join(cfg, "outfits"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "secrets"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "secrets", "key"), []byte("PRIVATE KEY MATERIAL"), 0o600))
+	require.NoError(t, os.Symlink(filepath.Join(root, "secrets"), filepath.Join(cfg, "escape")))
+
+	writeOutfit(t, cfg, "leaky", "leak = { dirName = \"escape\" }\n")
+	patch, err := outfit.New(cfg).Load("leaky")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "resolves outside")
+	assert.Empty(t, patch.Set)
+}

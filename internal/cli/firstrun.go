@@ -436,8 +436,9 @@ func createDefaultOutfit(ctx context.Context, acli *angelus.Client, existing []s
 // starterOutfitBody is a minimal outfit. It declares NO skills of its own: the
 // outfit references the skills directory via `skills = { dirName = "skills" }`,
 // and that alone is enough, because first-party skills ship inside the binary
-// and load from there. A skill copied into config would shadow the bundled one
-// by name and then drift, which is the failure this deliberately avoids.
+// and load from there. A copy in config would be overridden by the shipped one
+// anyway, so it would sit there stale and unread — which is the pointlessness
+// this deliberately avoids.
 func starterOutfitBody(providerName, model string) string {
 	body := fmt.Sprintf(`# Scaffolded by figaro first-run setup.
 # Edit to taste; see docs/outfits for the schema.

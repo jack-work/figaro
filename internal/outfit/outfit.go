@@ -343,7 +343,10 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 		switch val := v.(type) {
 		case map[string]any:
 			if fn, ok := val["fileName"].(string); ok && len(val) == 1 {
-				path := filepath.Join(o.configDir, fn)
+				path, perr := assetPath(o.configDir, fn)
+				if perr != nil {
+					return fmt.Errorf("outfit: %s fileName=%q: %w", key, fn, perr)
+				}
 				d.add(path)
 				body, err := os.ReadFile(path)
 				if err != nil {
@@ -374,7 +377,11 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 				// skills are safe; to override a bundled one, give it a
 				// different name.
 				m := map[string]ContentEnvelope{}
-				u, err := loadDir(filepath.Join(o.configDir, dn), d)
+				udir, uerr := assetPath(o.configDir, dn)
+				if uerr != nil {
+					return fmt.Errorf("outfit: %s dirName=%q: %w", key, dn, uerr)
+				}
+				u, err := loadDir(udir, d)
 				if err != nil {
 					return fmt.Errorf("outfit: %s dirName=%q: %w", key, dn, err)
 				}
@@ -382,7 +389,11 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 					m[name] = env
 				}
 				if root := bundledSkillsRoot(); root != "" {
-					b, err := loadDir(filepath.Join(root, dn), d)
+					bdir, berr := assetPath(root, dn)
+					if berr != nil {
+						return fmt.Errorf("outfit: %s bundled dirName=%q: %w", key, dn, berr)
+					}
+					b, err := loadDir(bdir, d)
 					if err != nil {
 						return fmt.Errorf("outfit: %s bundled dirName=%q: %w", key, dn, err)
 					}
@@ -411,6 +422,47 @@ func (o *Outfitter) flatten(prefix string, in map[string]any, out map[string]jso
 		}
 	}
 	return nil
+}
+
+// assetPath resolves a fileName/dirName reference against the root it is
+// allowed to read, and refuses anything that leaves it.
+//
+// The reference is DATA. It arrives from an outfit file today, and an outfit
+// file is the user's own — but the loader is the thing that turns a string into
+// a file read inside the daemon, and the daemon reads with the daemon's
+// privileges on the daemon's filesystem. Before the spec collapse a client could
+// send `-O '{"x":{"fileName":"../../.ssh/id_ed25519"}}'` and have the contents
+// folded onto its own form and rendered to a provider: a confused deputy with a
+// one-flag trigger. That path is gone (a literal's keys never reach the loader
+// now), and this makes sure it cannot come back by another door.
+//
+// Symlinks are followed and then checked, so a link inside the root pointing
+// out of it is refused too — that is the version of this bug that survives a
+// naive prefix test.
+func assetPath(root, ref string) (string, error) {
+	if ref == "" {
+		return "", fmt.Errorf("empty path")
+	}
+	if filepath.IsAbs(ref) {
+		return "", fmt.Errorf("%q must be relative to the config directory", ref)
+	}
+	joined := filepath.Join(root, filepath.Clean("/"+ref))
+	real, err := filepath.EvalSymlinks(joined)
+	if err != nil {
+		// Not there yet (or a broken link): the caller reports the open error,
+		// which is the more useful message. The clean-and-rejoin above already
+		// removed any `..`, so nothing outside root can be named here.
+		return joined, nil
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		realRoot = root
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%q resolves outside %s", ref, realRoot)
+	}
+	return joined, nil
 }
 
 // ContentEnvelope is the form shape for fileName/dirName-loaded
