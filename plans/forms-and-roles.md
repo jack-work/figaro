@@ -278,3 +278,36 @@ honest view of what figaro understands. They are different questions and the
 completion currently answers the second while appearing to answer the first.
 Consider marking catalog-only entries in the completion display so the
 difference is visible at the point of use.
+
+---
+
+## Part 9 — `fig form listen` keymap: follow transcript mode, do not invent
+
+The TUI shipped in v0.23.0 with the minimum (`j`/`k` move, `enter` expand a
+branch, `y` yank, `e`/`d` page). It should grow the movement vocabulary the
+transcript pager already teaches, so a reader who knows one knows the other.
+Read the pager's key handling first and mirror its idiom rather than inventing a
+second dialect in the same binary.
+
+Wanted:
+
+- **`gg` / `G`** — top and bottom. `gg` is a two-key sequence, so it needs the
+  pending-prefix handling the pager already has; do not hand-roll a timer.
+- **`u` / `d`** — up and down (half-page, vim's `C-u`/`C-d` sense).
+  **Reconcile with the existing `e`/`d` paging**: `d` is currently page-down, so
+  `u`/`d` as half-page either replaces that pair or collides with it. Pick one
+  and say so in the footer; two bindings for one motion is how a keymap rots.
+- **String search with highlight** — search VALUES, not just keys, and highlight
+  the match in place. A form holds skill bodies measured in kilobytes, so search
+  is the only way to find anything in one.
+- **`enter` on a LEAF expands its text.** Today `enter` only opens branches and a
+  leaf renders as a single clipped line (`formValuePreview` cuts at 120 chars).
+  A leaf holding a whole credo or a skill body needs a way to read it — expand
+  in place, or a pager pane. This is the one that makes the TUI usable on a real
+  form rather than a toy one.
+
+Everything else the pager offers for free (scrollback discipline, the frame-rate
+ceiling, the deferred right-edge wrap) is worth taking rather than
+re-deriving — see `skills/tmux-testing.md` for how to verify any of it honestly,
+because a keymap is exactly the kind of thing that looks right in a unit test and
+is wrong on a screen.
