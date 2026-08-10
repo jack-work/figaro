@@ -72,7 +72,7 @@ func TestAgentClientPresentsCallerAcrossTheSecondHop(t *testing.T) {
 	patch := rpc.ChalkboardPatch{Set: map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"keep me exact"`),
 	}}
-	if _, err := cli.Set(context.Background(), patch); err != nil {
+	if _, err := cli.Set(context.Background(), patch, 0); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	got := next()

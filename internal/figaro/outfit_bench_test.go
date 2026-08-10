@@ -1,6 +1,7 @@
 package figaro_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +11,6 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/figaro"
 	"github.com/jack-work/figaro/internal/outfit"
-	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/tool"
 	"github.com/jack-work/figaro/internal/uiir"
 )
@@ -68,87 +68,61 @@ func benchAgent(b *testing.B, configDir string, initial chalkboard.Patch) *figar
 	return a
 }
 
-// BenchmarkApplyOutfitFirstTime is applying to a FRESH board: every key is new,
-// so this is the full cost — fold plus the additive diff plus the patch append.
-func BenchmarkApplyOutfitFirstTime(b *testing.B) {
-	dir := benchConfig(b, 40, 3000)
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		b.StopTimer()
-		a := benchAgent(b, dir, chalkboard.Patch{})
-		b.StartTimer()
-		if _, err := a.ApplyOutfit(outfit.Names("full")); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-// BenchmarkApplyOutfitReapplied is applying to a board that ALREADY matches:
-// the fold is cached and the additive diff comes out empty, so nothing is
-// written. This is the common case — re-applying an outfit to a live aria.
-//
-// The board is seeded directly rather than by a first ApplyOutfit, because
-// Agent.Set is asynchronous: it queues the patch for the agent's run loop, so
-// an immediate second call would still read the pre-apply snapshot.
-func BenchmarkApplyOutfitReapplied(b *testing.B) {
-	dir := benchConfig(b, 40, 3000)
-	seed, err := outfit.New(dir).Load("full")
-	if err != nil {
-		b.Fatal(err)
-	}
-	a := benchAgent(b, dir, chalkboard.Patch{Set: seed.Set})
-	b.ReportAllocs()
+// BenchmarkDressFirstTime is materializing a composition onto a FRESH board:
+// the full cost — the closure fold plus the patch append.
+func BenchmarkDressFirstTime(b *testing.B) {
+	dir := benchConfig(b, 40, 4096)
+	a := benchAgent(b, dir, chalkboard.Patch{})
+	patch := benchDress("full")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		set, err := a.ApplyOutfit(outfit.Names("full"))
-		if err != nil {
-			b.Fatal(err)
-		}
-		if len(set) != 0 {
-			b.Fatalf("re-apply wrote %d keys; the additive diff should be empty", len(set))
-		}
-	}
-}
-
-// BenchmarkCheckPromptNoOutfit is what carrying the spec on every prompt costs
-// a prompt that names none: the whole point is that it is nothing.
-func BenchmarkCheckPromptNoOutfit(b *testing.B) {
-	a := benchAgent(b, benchConfig(b, 40, 3000), chalkboard.Patch{})
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		req := rpc.QuaRequest{Text: "hi", Chalkboard: &rpc.ChalkboardInput{}}
-		if err := a.CheckPromptOutfit(&req); err != nil {
+		if _, _, err := a.Set(patch, 0); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
-// BenchmarkCheckPromptWarm is the accept-time resolve for a prompt that DOES
-// carry one: the strict fold, cached. The drain-time fold that follows it is
-// BenchmarkApplyOutfitReapplied.
-func BenchmarkCheckPromptWarm(b *testing.B) {
-	dir := benchConfig(b, 40, 3000)
-	seed, err := outfit.New(dir).Load("full")
-	if err != nil {
+// BenchmarkMaterializeWarm is the accept-time expansion alone, warm: the price
+// every patch carrying a layers directive pays.
+func BenchmarkMaterializeWarm(b *testing.B) {
+	dir := benchConfig(b, 40, 4096)
+	a := benchAgent(b, dir, chalkboard.Patch{})
+	patch := benchDress("full")
+	if _, err := a.Materialize(patch); err != nil {
 		b.Fatal(err)
 	}
-	a := benchAgent(b, dir, seed)
-	b.ReportAllocs()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		req := rpc.QuaRequest{Text: "hi", Chalkboard: &rpc.ChalkboardInput{Outfit: outfit.Names("full")}}
-		if err := a.CheckPromptOutfit(&req); err != nil {
+		if _, err := a.Materialize(patch); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
-// BenchmarkParseSpec is the client-side syntax, on the worst realistic input:
-// names, sugar and a literal in one spec.
-func BenchmarkParseSpec(b *testing.B) {
-	b.ReportAllocs()
+// BenchmarkMaterializeNoLayers is the cost of the check on a patch that names
+// nothing — every `fig set` pays this and no more.
+func BenchmarkMaterializeNoLayers(b *testing.B) {
+	dir := benchConfig(b, 40, 4096)
+	a := benchAgent(b, dir, chalkboard.Patch{})
+	patch := chalkboard.Patch{Set: map[string]json.RawMessage{"mantra": json.RawMessage(`"x"`)}}
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := outfit.ParseSpec(`terse,thorough,ttl=1h,{"mantra":"a, b","n":3}`); err != nil {
+		if _, err := a.Materialize(patch); err != nil {
 			b.Fatal(err)
 		}
 	}
+}
+
+func BenchmarkParsePatch(b *testing.B) {
+	const text = `house,terse,{"ttl":"1h","mantra":"bench"},full`
+	for i := 0; i < b.N; i++ {
+		if _, err := outfit.ParsePatch(text); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func benchDress(names ...string) chalkboard.Patch {
+	b, _ := json.Marshal(names)
+	return chalkboard.Patch{Set: map[string]json.RawMessage{"layers": b}}
 }

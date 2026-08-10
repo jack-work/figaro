@@ -141,7 +141,6 @@ func TestInteriorForkAtRootDoesNotCopyConversationState(t *testing.T) {
 }
 
 // A fork must NOT be handed to any agent's actor.
-//
 type activeForkProvider struct {
 	started  chan struct{}
 	release  chan struct{}

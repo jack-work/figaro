@@ -6,7 +6,6 @@ import (
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/message"
-	"github.com/jack-work/figaro/internal/outfit"
 )
 
 const (
@@ -22,7 +21,6 @@ const (
 	MethodContext    = "figaro.context"
 	MethodInterrupt  = "figaro.interrupt"
 	MethodSet        = "figaro.set"
-	MethodOutfit     = "figaro.outfit"
 	MethodChalkboard = "figaro.chalkboard"
 	MethodQueued     = "figaro.queued"
 
@@ -131,6 +129,15 @@ const (
 	// race across processes.
 	MethodAriaRead = "aria.read"
 
+	// MethodOutfits answers what outfits exist and how one composes. The
+	// outfits directory is the SERVER's state, so a client asks rather than
+	// reading it: the daemon may not even share a filesystem with the caller.
+	MethodOutfits = "angelus.outfits"
+
+	// MethodConfigure patches the server's configuration. The first-run
+	// wizard is a client, so it cannot write config.toml itself.
+	MethodConfigure = "angelus.configure"
+
 	MethodStatus       = "angelus.status"
 	MethodSaveBindings = "angelus.save_bindings"
 )
@@ -141,20 +148,18 @@ type QuaRequest struct {
 	Chalkboard *ChalkboardInput `json:"chalkboard,omitempty"`
 }
 
-// ChalkboardInput carries an optional state update. Outfit is folded from
-// disk by the aria and applied under Patch, so a prompt and the outfit it
-// should be answered in are one call.
+// ChalkboardInput carries an optional state update: the client's passive view
+// of state at send time, and the delta it means. An outfit is assembled into
+// Patch by the client, so a prompt and the state it should be answered in are
+// one call.
 type ChalkboardInput struct {
 	Context map[string]json.RawMessage `json:"context,omitempty"`
 	Patch   *ChalkboardPatch           `json:"patch,omitempty"`
-	Outfit  outfit.Spec                `json:"outfit,omitempty"`
 }
 
-// ChalkboardPatch is the wire shape for a chalkboard delta.
-type ChalkboardPatch struct {
-	Set    map[string]json.RawMessage `json:"set,omitempty"`
-	Remove []string                   `json:"remove,omitempty"`
-}
+// ChalkboardPatch is the wire shape for a chalkboard delta. It is the internal
+// patch: one type, so no boundary retypes it.
+type ChalkboardPatch = message.Patch
 
 type QuaResponse struct {
 	OK bool `json:"ok"`
@@ -211,6 +216,11 @@ type ContextResponse struct {
 // SetRequest applies a chalkboard patch directly.
 type SetRequest struct {
 	Patch ChalkboardPatch `json:"patch"`
+	// IfVersion refuses the patch unless the board is still at this durable
+	// version. Zero is unconditional. It exists for read-modify-write: editing
+	// inside a value (an array element, a nested field) means reading it first,
+	// and without this the write cannot tell that the value moved underneath.
+	IfVersion uint64 `json:"if_version,omitempty"`
 }
 
 type SetResponse struct {
@@ -219,22 +229,11 @@ type SetResponse struct {
 	Remove []string `json:"remove,omitempty"`
 }
 
-// OutfitRequest names the outfits to apply additively to the aria's current
-// chalkboard, each term taking precedence over the ones before it. Keys with
-// values equal to the current snapshot are skipped; no removals are performed.
-type OutfitRequest struct {
-	Outfit outfit.Spec `json:"outfit"`
-}
-
-// OutfitResponse lists the keys created or updated.
-type OutfitResponse struct {
-	OK  bool     `json:"ok"`
-	Set []string `json:"set,omitempty"`
-}
-
-// ChalkboardResponse returns the agent's current snapshot.
+// ChalkboardResponse returns the agent's current snapshot and the durable
+// version it stands at, which is what a conditional Set quotes back.
 type ChalkboardResponse struct {
 	Snapshot chalkboard.Snapshot `json:"snapshot"`
+	Version  uint64              `json:"version,omitempty"`
 }
 
 // QueuedRequest asks for the messages this aria has accepted but not yet
@@ -415,8 +414,10 @@ type FigaroInfoResponse struct {
 
 // CreateRequest names the outfit for a new aria. The system mints the
 // aria id; callers cannot choose it.
+// CreateRequest mints an aria from a patch. An empty patch means the
+// configured default_outfit, which the angelus assembles; a patch that arrives
+// is folded ON TOP of that default, so `-O mantra=x` adds rather than replaces.
 type CreateRequest struct {
-	Outfit    outfit.Spec      `json:"outfit,omitempty"`
 	Patch     *ChalkboardPatch `json:"patch,omitempty"`
 	Ephemeral bool             `json:"ephemeral,omitempty"`
 }
@@ -452,10 +453,10 @@ type ForkRequest struct {
 	// coordinate is a stated error in the handler instead of a plausible
 	// number that means something else. Setting both is refused.
 	AtLT uint64 `json:"at_lt,omitempty"`
-	// Outfit dresses the ALTERNATIVE the moment it exists, before anything is
-	// said to it: the fold lands on the child's chalkboard in the same call
-	// that mints it, so a prompt sent next is answered in that outfit.
-	Outfit outfit.Spec `json:"outfit,omitempty"`
+	// Patch dresses the ALTERNATIVE the moment it exists, before anything is
+	// said to it: it lands on the child's chalkboard in the same call that
+	// mints it, so a prompt sent next is answered with it in place.
+	Patch *ChalkboardPatch `json:"patch,omitempty"`
 }
 
 // ForkResponse returns the two fresh child ids. The parent freezes and
@@ -531,6 +532,44 @@ type ImportResponse struct {
 	Outfit   string `json:"outfit"`
 	Messages int    `json:"messages"`
 	WasID    string `json:"was_id,omitempty"`
+}
+
+// OutfitsRequest asks what outfits exist, and how Spec composes. Spec is the
+// `-O` syntax; empty means the configured default.
+type OutfitsRequest struct {
+	Spec string `json:"spec,omitempty"`
+}
+
+// OutfitsResponse is the outfits on disk, the configured default, and the layer
+// closure of the requested spec — found and missing nodes alike, because a
+// broken reference is best explained by the shape it was found in.
+type OutfitsResponse struct {
+	Default string       `json:"default,omitempty"`
+	Names   []string     `json:"names,omitempty"`
+	Closure *OutfitLayer `json:"closure,omitempty"`
+}
+
+// ConfigureRequest patches the server's config.toml. Only the keys the wizard
+// needs are addressable: a client may point the daemon at an outfit and write
+// the starter outfit itself, and nothing else.
+type ConfigureRequest struct {
+	// DefaultOutfit sets config.default_outfit. Empty leaves it alone.
+	DefaultOutfit string `json:"default_outfit,omitempty"`
+	// Outfit writes outfits/<name>.toml from Body, refusing to clobber an
+	// existing file. Both must be set together.
+	Outfit string `json:"outfit,omitempty"`
+	Body   string `json:"body,omitempty"`
+	// Refresh re-reads config.toml and drops every cached outfit fold, so an
+	// outfit edited or added by hand is picked up without a daemon restart.
+	// Config is otherwise read once, at start.
+	Refresh bool `json:"refresh,omitempty"`
+}
+
+// ConfigureResponse reports what the server wrote.
+type ConfigureResponse struct {
+	DefaultOutfit string `json:"default_outfit,omitempty"`
+	OutfitPath    string `json:"outfit_path,omitempty"`
+	Refreshed     bool   `json:"refreshed,omitempty"`
 }
 
 // GCRequest asks the angelus to collect outfit stumps nothing is using.

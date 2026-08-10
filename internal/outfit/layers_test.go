@@ -82,8 +82,7 @@ func TestMissingLayerIsAnErrorCarryingTheClosure(t *testing.T) {
 	assert.False(t, missing.RootOnly)
 
 	// The closure must describe the shape the gap was found in.
-	require.Len(t, missing.Closure.Layers, 1)
-	top := missing.Closure.Layers[0]
+	top := missing.Closure
 	assert.Equal(t, "top", top.Name)
 	assert.True(t, top.Found)
 	require.Len(t, top.Layers, 2)
@@ -92,30 +91,30 @@ func TestMissingLayerIsAnErrorCarryingTheClosure(t *testing.T) {
 	assert.Equal(t, "absent", top.Layers[1].Name)
 }
 
-// An outfit that was asked for and does not exist is an absence for Load (the
-// first-run flow rides on it) and a fault under strict.
-func TestRequestedOutfitMissingIsGracefulButStrictReportsIt(t *testing.T) {
+// An outfit that does not exist is an absence for LoadOptional (the first-run
+// flow rides on it) and a fault for Load.
+func TestMissingOutfitIsOptionalAbsenceButLoadReportsIt(t *testing.T) {
 	dir := t.TempDir()
 	o := outfit.New(dir)
 
-	patch, err := o.Load("nope")
+	patch, err := o.LoadOptional("nope")
 	require.NoError(t, err)
 	assert.True(t, patch.IsEmpty())
 
-	_, err = o.LoadSpec(outfit.Names("nope"), true)
+	_, err = o.Load("nope")
 	var missing *outfit.MissingError
 	require.True(t, errors.As(err, &missing), "want MissingError, got %v", err)
 	assert.True(t, missing.RootOnly)
 	assert.Equal(t, []string{"nope"}, missing.Missing)
 }
 
-// A multi-term spec must order exactly as layers do.
-func TestSpecOrdersLikeLayers(t *testing.T) {
+// A multi-name dressing must order exactly as layers do.
+func TestNamesOrderLikeLayers(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "a", "[system]\nmodel = \"a\"\ncredo = \"a\"\n")
 	writeOutfit(t, dir, "b", "[system]\nmodel = \"b\"\n")
 
-	patch, err := outfit.New(dir).LoadSpec(outfit.Names("a", "b"), false)
+	patch, err := outfit.New(dir).Names("a", "b")
 	require.NoError(t, err)
 	assert.Equal(t, `"b"`, string(patch.Set["system.model"]))
 	assert.Equal(t, `"a"`, string(patch.Set["system.credo"]))
@@ -166,50 +165,62 @@ func TestMalformedLayersIsReported(t *testing.T) {
 	}
 }
 
-// An inline term folds exactly where a named one would, may declare layers of
-// its own, and is never cached (the same Outfitter must see a changed literal).
-func TestInlineTermFoldsLikeANamedOne(t *testing.T) {
+// A literal's own keys beat the layers it names, and the directive never leaks
+// onto a board.
+func TestMaterializePutsLayersUnderTheLiteral(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"base-model\"\ncredo = \"base\"\n")
 	o := outfit.New(dir)
 
-	spec, err := outfit.ParseSpec(`base,{"system.model":"inline-model","ttl":"1h"}`)
+	asked, err := outfit.ParsePatch(`base,{"system.model":"inline-model","ttl":"1h"}`)
 	require.NoError(t, err)
-	patch, err := o.LoadSpec(spec, true)
+	patch, err := o.Materialize(asked, "")
 	require.NoError(t, err)
 	assert.Equal(t, `"inline-model"`, string(patch.Set["system.model"]))
 	assert.Equal(t, `"base"`, string(patch.Set["system.credo"]))
 	assert.Equal(t, `"1h"`, string(patch.Set["ttl"]))
+	assert.NotContains(t, patch.Set, "layers")
 
-	// layers inside a literal resolve like any other, and never leak as a key.
-	spec, err = outfit.ParseSpec(`{"layers":["base"],"ttl":"2h"}`)
+	// layers declared inside a literal resolve like any other.
+	asked, err = outfit.ParsePatch(`{"layers":["base"],"ttl":"2h"}`)
 	require.NoError(t, err)
-	patch, err = o.LoadSpec(spec, true)
+	patch, err = o.Materialize(asked, "")
 	require.NoError(t, err)
 	assert.Equal(t, `"base-model"`, string(patch.Set["system.model"]))
 	assert.Equal(t, `"2h"`, string(patch.Set["ttl"]))
-	assert.NotContains(t, patch.Set, "layers")
 
-	// A literal naming a missing layer is a broken reference, always.
-	spec, err = outfit.ParseSpec(`{"layers":["nope"]}`)
+	// A missing layer is a broken reference, always.
+	asked, err = outfit.ParsePatch(`{"layers":["nope"]}`)
 	require.NoError(t, err)
-	_, err = o.LoadSpec(spec, false)
+	_, err = o.Materialize(asked, "")
 	var missing *outfit.MissingError
 	require.True(t, errors.As(err, &missing), "want MissingError, got %v", err)
+
+	// `default` is the one lenient name: unset folds nothing, so the first-run
+	// flow can notice a missing provider instead of a missing file.
+	asked, err = outfit.ParsePatch(`default`)
+	require.NoError(t, err)
+	patch, err = o.Materialize(asked, "")
+	require.NoError(t, err)
+	assert.True(t, patch.IsEmpty())
+
+	patch, err = o.Materialize(asked, "base")
+	require.NoError(t, err)
+	assert.Equal(t, `"base-model"`, string(patch.Set["system.model"]))
 }
 
-// One Outfitter serves every aria in the daemon, and a fold reads files,
-// caches, and (for inline terms) a map the caller still holds. Fold the same
-// spec from many goroutines under -race, and prove every answer is identical.
+// One Outfitter serves every aria in the daemon, and a fold reads files and
+// caches. Materialize the same patch from many goroutines under -race, and
+// prove every answer is identical.
 func TestConcurrentFoldsAgree(t *testing.T) {
 	dir := t.TempDir()
 	writeOutfit(t, dir, "base", "[system]\nmodel = \"base-model\"\n")
 	writeOutfit(t, dir, "top", "layers = [\"base\"]\n[system]\ncredo = \"top\"\n")
 	o := outfit.New(dir)
-	spec, err := outfit.ParseSpec(`top,base,{"layers":["top"],"ttl":"1h"}`)
+	asked, err := outfit.ParsePatch(`top,base,{"layers":["top"],"ttl":"1h"}`)
 	require.NoError(t, err)
 
-	want, err := o.LoadSpec(spec, true)
+	want, err := o.Materialize(asked, "")
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
@@ -217,7 +228,7 @@ func TestConcurrentFoldsAgree(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			got, err := o.LoadSpec(spec, true)
+			got, err := o.Materialize(asked, "")
 			assert.NoError(t, err)
 			assert.Equal(t, len(want.Set), len(got.Set))
 			for k, v := range want.Set {

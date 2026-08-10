@@ -194,7 +194,7 @@ func TestDeletedOutfitIsEvictedFromTheCache(t *testing.T) {
 	require.Equal(t, 1, o.CachedFolds())
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "outfits", "doomed.toml")))
-	_, err = o.Load("doomed")
+	_, err = o.LoadOptional("doomed")
 	require.NoError(t, err, "a requested outfit that vanished is an absence, not a fault")
 	assert.Equal(t, 0, o.CachedFolds(), "the entry for a deleted outfit must be dropped")
 }

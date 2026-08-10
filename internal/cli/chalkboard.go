@@ -30,25 +30,27 @@ func runSetArgs(loaded *config.Loaded, ariaID, keyArg, raw string) {
 	}
 
 	var topValue json.RawMessage
+	var ifVersion uint64
 	if len(path) == 0 {
 		topValue = value
 	} else {
-		current := mustFetchChalkboardKey(loaded, ariaID, top)
+		current, version := mustFetchChalkboardKey(loaded, ariaID, top)
 		merged, err := deepSetJSON(current, path, value)
 		if err != nil {
 			die("set: %s", err)
 		}
-		topValue = merged
+		topValue, ifVersion = merged, version
 	}
 
 	patch := rpc.ChalkboardPatch{Set: map[string]json.RawMessage{top: topValue}}
-	resp := mustCallSet(loaded, ariaID, patch)
+	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
 	fmt.Fprintf(os.Stderr, "set %s = %s (figaro %s)\n", keyArg, value, resp.figaroID)
 }
 
 // runUnsetArgs removes chalkboard keys.
 func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 	patch := rpc.ChalkboardPatch{}
+	var ifVersion uint64
 	for _, keyArg := range args {
 		top, path, err := parseChalkboardPath(keyArg)
 		if err != nil {
@@ -58,10 +60,11 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 			patch.Remove = append(patch.Remove, top)
 			continue
 		}
-		current := mustFetchChalkboardKey(loaded, ariaID, top)
+		current, version := mustFetchChalkboardKey(loaded, ariaID, top)
 		if len(current) == 0 {
 			continue
 		}
+		ifVersion = version
 		pruned, dropTop, err := deepDeleteJSON(current, path)
 		if err != nil {
 			die("unset: %s", err)
@@ -79,7 +82,7 @@ func runUnsetArgs(loaded *config.Loaded, ariaID string, args []string) {
 		fmt.Fprintln(os.Stderr, "unset: nothing to do")
 		return
 	}
-	resp := mustCallSet(loaded, ariaID, patch)
+	resp := mustCallSet(loaded, ariaID, patch, ifVersion)
 	fmt.Fprintf(os.Stderr, "unset %s (figaro %s)\n", strings.Join(args, ", "), resp.figaroID)
 }
 
@@ -271,8 +274,12 @@ func fetchChalkboardSnapshot(loaded *config.Loaded, ariaID string) chalkboard.Sn
 	return snap
 }
 
-func mustFetchChalkboardKey(loaded *config.Loaded, ariaID, key string) json.RawMessage {
+// mustFetchChalkboardKey reads one key AND the version the board stood at, so
+// the write that follows can be conditional: editing inside a value means
+// reading it first, and two shells doing that must not clobber each other.
+func mustFetchChalkboardKey(loaded *config.Loaded, ariaID, key string) (json.RawMessage, uint64) {
 	var result json.RawMessage
+	var version uint64
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -281,9 +288,10 @@ func mustFetchChalkboardKey(loaded *config.Loaded, ariaID, key string) json.RawM
 			die("chalkboard: %s", err)
 		}
 		result, _ = resp.Snapshot.Get(key)
+		version = resp.Version
 		return nil
 	})
-	return result
+	return result, version
 }
 
 type setResult struct {
@@ -291,12 +299,12 @@ type setResult struct {
 	resp     *rpc.SetResponse
 }
 
-func mustCallSet(loaded *config.Loaded, ariaID string, patch rpc.ChalkboardPatch) setResult {
+func mustCallSet(loaded *config.Loaded, ariaID string, patch rpc.ChalkboardPatch, ifVersion uint64) setResult {
 	var result setResult
 	WithSessionFor(loaded, ariaID, func(s *Session) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		resp, err := s.Figaro.Set(ctx, patch)
+		resp, err := s.Figaro.Set(ctx, patch, ifVersion)
 		if err != nil {
 			die("set: %s", err)
 		}

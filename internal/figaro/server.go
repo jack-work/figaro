@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/livelog/aria"
 	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -25,7 +24,6 @@ var agentMethods = []string{
 	rpc.MethodContext,
 	rpc.MethodInterrupt,
 	rpc.MethodSet,
-	rpc.MethodOutfit,
 	rpc.MethodChalkboard,
 	rpc.MethodQueued,
 	rpc.MethodQueueUpdate,
@@ -50,8 +48,14 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		if err := a.CheckPromptOutfit(&req); err != nil {
-			return nil, outfitError(err)
+		// The prompt's patch may name layers; expand them HERE so a spec that
+		// does not resolve fails the qua before anything is queued.
+		if req.Chalkboard != nil && req.Chalkboard.Patch != nil {
+			materialized, merr := a.Materialize(*req.Chalkboard.Patch)
+			if merr != nil {
+				return nil, outfitError(merr)
+			}
+			req.Chalkboard.Patch = &materialized
 		}
 		cursor := int(a.ariaSrv.LastTurn())
 		active := a.turnActive()
@@ -96,23 +100,11 @@ func (a *Agent) Handle(ctx context.Context, method string, params json.RawMessag
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, err
 		}
-		patch := chalkboard.Patch{Set: req.Patch.Set, Remove: req.Patch.Remove}
-		set, removed, err := a.Set(patch)
+		set, removed, err := a.Set(req.Patch, req.IfVersion)
 		if err != nil {
 			return nil, err
 		}
 		return rpc.SetResponse{OK: true, Set: set, Remove: removed}, nil
-
-	case rpc.MethodOutfit:
-		var req rpc.OutfitRequest
-		if err := json.Unmarshal(params, &req); err != nil {
-			return nil, err
-		}
-		set, err := a.ApplyOutfit(req.Outfit)
-		if err != nil {
-			return nil, outfitError(err)
-		}
-		return rpc.OutfitResponse{OK: true, Set: set}, nil
 
 	case rpc.MethodChalkboard:
 		return rpc.ChalkboardResponse{Snapshot: a.Snapshot()}, nil

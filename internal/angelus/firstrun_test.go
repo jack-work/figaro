@@ -70,7 +70,7 @@ func TestCreate_NoDefaultOutfit_ReturnsTypedError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	_, err = acli.Create(ctx, nil, nil)
+	_, err = acli.Create(ctx, nil)
 	require.Error(t, err)
 
 	var jerr *jkrpc.Error
@@ -102,7 +102,7 @@ model = "some-model"
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	_, err = acli.Create(ctx, nil, nil)
+	_, err = acli.Create(ctx, nil)
 	require.Error(t, err)
 
 	var jerr *jkrpc.Error
@@ -131,7 +131,7 @@ func TestCreate_MissingOutfitName_ReturnsTypedError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	_, err = acli.Create(ctx, nil, nil)
+	_, err = acli.Create(ctx, nil)
 	require.Error(t, err)
 
 	var jerr *jkrpc.Error

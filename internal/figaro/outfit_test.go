@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -47,135 +48,63 @@ func agentForOutfit(t *testing.T, configDir string, initial chalkboard.Patch) *f
 	return a
 }
 
-func TestApplyOutfit_AddsMissingKeys(t *testing.T) {
-	cfg := t.TempDir()
-	writeOutfit(t, cfg, "focus", `
-[system]
-provider = "anthropic"
-model = "claude-opus-4-7"
-tone = "concise"
-`)
-	a := agentForOutfit(t, cfg, chalkboard.Patch{})
+// A layer that does not exist is refused where the call is accepted, with the
+// closure attached — not logged at drain, where nobody sees it.
+func TestSetRefusesAMissingLayer(t *testing.T) {
+	dir := t.TempDir()
+	a := agentForOutfit(t, dir, chalkboard.Patch{})
 
-	set, err := a.ApplyOutfit(outfit.Names("focus"))
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"system.provider", "system.model", "system.tone"}, set)
-}
-
-func TestApplyOutfit_SkipsEqualValues(t *testing.T) {
-	cfg := t.TempDir()
-	writeOutfit(t, cfg, "focus", `
-[system]
-provider = "anthropic"
-model = "claude-opus-4-7"
-`)
-	// Pre-seed the chalkboard with the same provider.
-	a := agentForOutfit(t, cfg, chalkboard.Patch{Set: map[string]json.RawMessage{
-		"system.provider": json.RawMessage(`"anthropic"`),
-	}})
-
-	set, err := a.ApplyOutfit(outfit.Names("focus"))
-	require.NoError(t, err)
-	// provider matches → skipped. model is new → kept.
-	assert.ElementsMatch(t, []string{"system.model"}, set)
-}
-
-func TestApplyOutfit_OverwritesDifferingValues(t *testing.T) {
-	cfg := t.TempDir()
-	writeOutfit(t, cfg, "focus", `
-[system]
-model = "claude-opus-4-7"
-`)
-	a := agentForOutfit(t, cfg, chalkboard.Patch{Set: map[string]json.RawMessage{
-		"system.model": json.RawMessage(`"old-model"`),
-	}})
-
-	set, err := a.ApplyOutfit(outfit.Names("focus"))
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"system.model"}, set)
-}
-
-func TestApplyOutfit_IgnoresOutfitRemoveContract(t *testing.T) {
-	// The additive contract: even if an outfit source-chain somehow
-	// produces a Remove list, ApplyOutfit must never act on it.
-	// (Outfitter.Load doesn't currently emit Remove, so this is a
-	// defense-in-depth assertion via observed behavior: no key in
-	// the existing chalkboard should disappear.)
-	cfg := t.TempDir()
-	writeOutfit(t, cfg, "focus", `
-[system]
-model = "claude-opus-4-7"
-`)
-	a := agentForOutfit(t, cfg, chalkboard.Patch{Set: map[string]json.RawMessage{
-		"unrelated.key": json.RawMessage(`"keep me"`),
-	}})
-
-	_, err := a.ApplyOutfit(outfit.Names("focus"))
-	require.NoError(t, err)
-	// Need to wait briefly for the async Set to apply.
-	// chalkboard.State.Snapshot is read after the event drains.
-	// In practice the test harness's other tests rely on this
-	// timing; we cheat by reading via the agent's snapshot RPC
-	// path indirectly. Skip the assertion if the timing proves
-	// flaky in CI.
-}
-
-// Applying an outfit is strict where minting one is graceful: someone typing a
-// name wants to hear that it does not exist, not that nothing changed.
-func TestApplyOutfit_MissingOutfitIsReported(t *testing.T) {
-	cfg := t.TempDir()
-	a := agentForOutfit(t, cfg, chalkboard.Patch{})
-
-	_, err := a.ApplyOutfit(outfit.Names("nonexistent"))
+	_, _, err := a.Set(dressPatch("nope"), 0)
 	var missing *outfit.MissingError
 	require.True(t, errors.As(err, &missing), "want MissingError, got %v", err)
-	assert.True(t, missing.RootOnly)
 }
 
-func TestApplyOutfit_EmptyNameErrors(t *testing.T) {
-	cfg := t.TempDir()
-	a := agentForOutfit(t, cfg, chalkboard.Patch{})
+// The same, one call further out: a prompt carrying a bad dressing fails the
+// qua rather than queueing and losing the outfit at drain.
+func TestPromptRefusedAtAccept(t *testing.T) {
+	dir := t.TempDir()
+	a := agentForOutfit(t, dir, chalkboard.Patch{})
 
-	_, err := a.ApplyOutfit(outfit.Names(""))
+	patch := dressPatch("nope")
+	_, err := a.Handle(t.Context(), rpc.MethodQua, mustJSON(t, rpc.QuaRequest{
+		Text:       "hello",
+		Chalkboard: &rpc.ChalkboardInput{Patch: &patch},
+	}))
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nope")
 }
 
-// A prompt's outfit is folded against the board it LANDS on, not the board at
-// the moment the call was accepted.
-//
-// The regression: a queued `unset k` has not touched the snapshot yet, so an
-// accept-time diff sees k already equal to the outfit's value, omits it, and
-// the queued removal then wins — the turn is answered without the key the
-// caller dressed for, silently.
-func TestPromptOutfitIsFoldedAgainstTheBoardItLandsOn(t *testing.T) {
-	cfg := t.TempDir()
-	writeOutfit(t, cfg, "focus", "tone = \"concise\"\n")
-	a := agentForOutfit(t, cfg, chalkboard.Patch{
-		Set: map[string]json.RawMessage{"tone": json.RawMessage(`"concise"`)},
-	})
+// A named layer's keys land on the board, under whatever the same patch set
+// itself: a client that wrote both meant its own value.
+func TestSetMaterializesLayersUnderItsOwnKeys(t *testing.T) {
+	dir := t.TempDir()
+	writeOutfit(t, dir, "base", "[system]\nmodel = \"base-model\"\ntone = \"dry\"\n")
+	a := agentForOutfit(t, dir, chalkboard.Patch{})
 
-	// Queue the removal FIRST, exactly as `figaro unset tone` would while a
-	// turn is running, then accept a prompt wearing the outfit that sets it.
-	_, _, err := a.Set(chalkboard.Patch{Remove: []string{"tone"}})
+	patch := dressPatch("base")
+	patch.Set["system.model"] = json.RawMessage(`"mine"`)
+	set, _, err := a.Set(patch, 0)
 	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"system.model", "system.tone"}, set)
 
-	req := rpc.QuaRequest{Text: "hi", Chalkboard: &rpc.ChalkboardInput{Outfit: outfit.Names("focus")}}
-	require.NoError(t, a.CheckPromptOutfit(&req))
-	runOneTurn(t, a, req.Text, req.Chalkboard)
-
-	snap := a.Snapshot()
-	got, ok := snap.Get("tone")
-	require.True(t, ok, "the outfit's key was dropped by the queued unset")
-	assert.Equal(t, `"concise"`, string(got))
+	require.Eventually(t, func() bool {
+		snap := a.Snapshot()
+		model, _ := snap.Get("system.model")
+		tone, _ := snap.Get("system.tone")
+		return string(model) == `"mine"` && string(tone) == `"dry"`
+	}, time.Second, 5*time.Millisecond)
+	assert.False(t, a.Snapshot().Has("layers"), "the directive must not reach the board")
 }
 
-// A spec that does not resolve fails the call, before anything is queued.
-func TestPromptOutfitRefusedAtAccept(t *testing.T) {
-	a := agentForOutfit(t, t.TempDir(), chalkboard.Patch{})
-	req := rpc.QuaRequest{Text: "hi", Chalkboard: &rpc.ChalkboardInput{Outfit: outfit.Names("nope")}}
-	var missing *outfit.MissingError
-	require.True(t, errors.As(a.CheckPromptOutfit(&req), &missing))
+// dressPatch is `-O <names>`: the layers directive a client sends.
+func dressPatch(names ...string) chalkboard.Patch {
+	b, _ := json.Marshal(names)
+	return chalkboard.Patch{Set: map[string]json.RawMessage{"layers": b}}
+}
 
-	_, prompts := a.QueuedPrompts(true)
-	assert.Empty(t, prompts)
+func mustJSON(t *testing.T, v any) json.RawMessage {
+	t.Helper()
+	b, err := json.Marshal(v)
+	require.NoError(t, err)
+	return b
 }

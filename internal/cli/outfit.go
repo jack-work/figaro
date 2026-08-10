@@ -36,6 +36,8 @@ func runStateOutfit(loaded *config.Loaded, ctx *cmdkit.RunContext, args []string
 		return fmt.Errorf("one spec, comma-separated: `state outfit %s`", strings.Join(args, ","))
 	}
 	switch {
+	case ctx.BoolFlag("refresh"):
+		runOutfitRefresh(loaded)
 	case ctx.BoolFlag("list"):
 		runOutfitList(loaded)
 	case ctx.BoolFlag("tree"):
@@ -73,11 +75,10 @@ func completeOutfits(c *cmdkit.CompleteContext) []string {
 	if len(c.Args) > 0 && c.Args[len(c.Args)-1] == "--id" {
 		return softFetchAriaIDs()
 	}
-	loaded, _ := c.Extra.(*config.Loaded)
-	if loaded == nil {
+	names := softFetchOutfitNames()
+	if len(names) == 0 {
 		return nil
 	}
-	names := loaded.ListOutfits()
 	prefix := ""
 	if i := strings.LastIndex(c.Current, ","); i >= 0 {
 		prefix = c.Current[:i+1]
@@ -86,9 +87,9 @@ func completeOutfits(c *cmdkit.CompleteContext) []string {
 		return names
 	}
 	chosen := map[string]bool{}
-	if spec, err := outfit.ParseSpec(prefix); err == nil {
-		for _, t := range spec {
-			chosen[t.Name] = true
+	if names, err := outfit.TermNames(prefix); err == nil {
+		for _, n := range names {
+			chosen[n] = true
 		}
 	}
 	out := make([]string, 0, len(names))
@@ -100,30 +101,16 @@ func completeOutfits(c *cmdkit.CompleteContext) []string {
 	return out
 }
 
-// mustParseSpec parses the CLI syntax or explains why it cannot, without
-// opening a socket.
-func mustParseSpec(arg, usage string) outfit.Spec {
-	spec, err := outfit.ParseSpec(arg)
-	if err != nil {
-		die("%s", err)
-	}
-	if spec.IsEmpty() {
-		die("usage: %s", usage)
-	}
-	return spec
-}
-
-// runOutfit calls figaro.outfit on the targeted aria.
+// runOutfit dresses the targeted aria: `-O`'s syntax parsed into a patch and
+// applied like any other. The server resolves the layers it names.
 func runOutfit(loaded *config.Loaded, ariaID, arg string) {
-	spec := mustParseSpec(arg, "figaro state outfit [--id <id>] <spec>")
-	label := shortSpec(spec)
+	d := mustParseDressing(arg, "figaro state outfit [--id <id>] <spec>")
 
 	ctx := context.Background()
-
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, nil)
+	_, ep, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, false, dressing{})
 	if err != nil {
 		die("%s", err)
 	}
@@ -134,29 +121,18 @@ func runOutfit(loaded *config.Loaded, ariaID, arg string) {
 	}
 	defer fcli.Close()
 
-	resp, err := fcli.Outfit(ctx, spec)
+	resp, err := fcli.Set(ctx, *d.patch, 0)
 	if err != nil {
-		dieOutfitFailure(label, err)
+		dieOutfitFailure(d.label(), err)
 	}
-
 	if len(resp.Set) == 0 {
-		fmt.Fprintf(os.Stderr, "outfit %s: no changes (chalkboard already matches)\n", label)
+		fmt.Fprintf(os.Stderr, "outfit %s: no changes (chalkboard already matches)\n", d.label())
 		return
 	}
-	fmt.Fprintf(os.Stderr, "outfit %s applied (%d keys):\n", label, len(resp.Set))
+	fmt.Fprintf(os.Stderr, "outfit %s applied (%d keys):\n", d.label(), len(resp.Set))
 	for _, k := range resp.Set {
 		fmt.Fprintf(os.Stderr, "  %s\n", k)
 	}
-}
-
-// shortSpec renders a spec for a human-facing line. A literal can be
-// kilobytes; a notice that reprints it is not a notice.
-func shortSpec(spec outfit.Spec) string {
-	text := spec.String()
-	if len(text) <= 72 {
-		return text
-	}
-	return text[:69] + "..."
 }
 
 // dieOutfitFailure reports a failed apply.
@@ -273,21 +249,21 @@ func outfitClosureMarker(l *rpc.OutfitLayer) string {
 
 // runOutfitTree prints an outfit's layer closure without applying anything.
 //
-// It resolves against the config dir directly rather than asking an aria, so it
-// works with nothing bound and no daemon running — which is what inspecting a
-// composition wants. Exit status follows the closure: 0 when every layer was
-// found, 1 when the picture has red in it, so it can gate a script.
+// The angelus resolves it: the outfits directory is the server's state. Exit
+// status follows the closure — 0 when every layer was found, 1 when the picture
+// has red in it, so it can gate a script.
 func runOutfitTree(loaded *config.Loaded, arg string) {
-	if strings.TrimSpace(arg) == "" {
-		arg = loaded.Config.DefaultOutfit
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+	resp, err := acli.Outfits(context.Background(), arg)
+	if err != nil {
+		dieWithClosure(err, "state outfit --tree: %s", err)
 	}
-	if strings.TrimSpace(arg) == "" {
-		die("state outfit --tree: name an outfit, or set default_outfit in %s", loaded.ConfigPath)
+	if resp.Closure == nil {
+		die("state outfit --tree: name an outfit, or set a default with the first-run flow")
 	}
-	spec := mustParseSpec(arg, "figaro state outfit --tree <spec>")
-	closure := figaro.OutfitClosureWire(outfit.New(loaded.ConfigDir).ResolveSpec(spec))
-	fmt.Print(renderOutfitClosure(closure))
-	if broken := outfitClosureBroken(closure); len(broken) > 0 {
+	fmt.Print(renderOutfitClosure(resp.Closure))
+	if broken := outfitClosureBroken(resp.Closure); len(broken) > 0 {
 		fmt.Fprintf(os.Stderr, "\n%d unresolved: %s\n", len(broken), strings.Join(broken, ", "))
 		exitNow(1)
 	}
@@ -308,16 +284,32 @@ func outfitClosureBroken(l *rpc.OutfitLayer) []string {
 	return out
 }
 
-// runOutfitList prints the outfits available on disk.
+// runOutfitRefresh tells the angelus to re-read config and drop its cached
+// folds, for an outfit added or edited by hand.
+func runOutfitRefresh(loaded *config.Loaded) {
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+	if _, err := acli.Configure(context.Background(), rpc.ConfigureRequest{Refresh: true}); err != nil {
+		die("state outfit --refresh: %s", err)
+	}
+	fmt.Fprintln(os.Stderr, "outfits refreshed")
+}
+
+// runOutfitList prints the outfits the server has on disk.
 func runOutfitList(loaded *config.Loaded) {
-	names := loaded.ListOutfits()
-	if len(names) == 0 {
-		fmt.Fprintln(os.Stderr, "no outfits found in", loaded.OutfitsDir())
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+	resp, err := acli.Outfits(context.Background(), "")
+	if err != nil {
+		die("state outfit --list: %s", err)
+	}
+	if len(resp.Names) == 0 {
+		fmt.Fprintln(os.Stderr, "no outfits found")
 		return
 	}
-	for _, n := range names {
+	for _, n := range resp.Names {
 		marker := ""
-		if n == loaded.Config.DefaultOutfit {
+		if n == resp.Default {
 			marker = " (default)"
 		}
 		fmt.Printf("%s%s\n", n, marker)

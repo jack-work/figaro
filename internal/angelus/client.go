@@ -3,7 +3,6 @@ package angelus
 import (
 	"context"
 
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/jkrpc"
@@ -54,11 +53,25 @@ func (c *Client) Status(ctx context.Context) (*rpc.StatusResponse, error) {
 	return &resp, err
 }
 
-// Create starts a new figaro dressed in spec. An empty spec means the
-// configured default_outfit; the angelus resolves both.
-func (c *Client) Create(ctx context.Context, spec outfit.Spec, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
+// Create starts a new figaro from a patch. An empty patch means the configured
+// default_outfit; a patch is folded on top of it.
+func (c *Client) Create(ctx context.Context, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
-	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Outfit: spec, Patch: patch}, &resp)
+	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Patch: patch}, &resp)
+	return &resp, err
+}
+
+// Outfits asks what outfits exist and how a spec composes.
+func (c *Client) Outfits(ctx context.Context, spec string) (*rpc.OutfitsResponse, error) {
+	var resp rpc.OutfitsResponse
+	err := c.call(ctx, rpc.MethodOutfits, rpc.OutfitsRequest{Spec: spec}, &resp)
+	return &resp, err
+}
+
+// Configure patches the server's config: the seam the first-run wizard drives.
+func (c *Client) Configure(ctx context.Context, req rpc.ConfigureRequest) (*rpc.ConfigureResponse, error) {
+	var resp rpc.ConfigureResponse
+	err := c.call(ctx, rpc.MethodConfigure, req, &resp)
 	return &resp, err
 }
 
@@ -75,19 +88,17 @@ func (c *Client) GC(ctx context.Context, dryRun bool) (*rpc.GCResponse, error) {
 // logical time exactly. They are separate parameters, and separate wire
 // fields, because passing one where the other belonged is the defect this
 // signature exists to prevent.
-func (c *Client) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64, spec outfit.Spec) (*rpc.ForkResponse, error) {
+func (c *Client) Fork(ctx context.Context, figaroID string, atTurn, atLT uint64, patch *rpc.ChalkboardPatch) (*rpc.ForkResponse, error) {
 	var resp rpc.ForkResponse
 	err := c.call(ctx, rpc.MethodFork,
-		rpc.ForkRequest{FigaroID: figaroID, AtTurn: atTurn, AtLT: atLT, Outfit: spec}, &resp)
+		rpc.ForkRequest{FigaroID: figaroID, AtTurn: atTurn, AtLT: atLT, Patch: patch}, &resp)
 	return &resp, err
 }
 
 // CreateEphemeral creates an in-memory-only figaro.
-func (c *Client) CreateEphemeral(ctx context.Context, spec outfit.Spec, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
+func (c *Client) CreateEphemeral(ctx context.Context, patch *rpc.ChalkboardPatch) (*rpc.CreateResponse, error) {
 	var resp rpc.CreateResponse
-	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{
-		Outfit: spec, Patch: patch, Ephemeral: true,
-	}, &resp)
+	err := c.call(ctx, rpc.MethodCreate, rpc.CreateRequest{Patch: patch, Ephemeral: true}, &resp)
 	return &resp, err
 }
 

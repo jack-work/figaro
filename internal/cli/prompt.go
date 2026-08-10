@@ -12,14 +12,13 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
 // runPrompt resolves the shell-bound figaro and prompts it. spec dresses the
 // aria: it is the birth outfit when this call mints one, and rides the prompt
 // as a chalkboard patch when the shell is already bound (see promptOutfit).
-func runPrompt(loaded *config.Loaded, spec outfit.Spec, prompt string, set renderSettings) {
+func runPrompt(loaded *config.Loaded, d dressing, prompt string, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -46,7 +45,7 @@ func runPrompt(loaded *config.Loaded, spec outfit.Spec, prompt string, set rende
 		figaroID = resp.FigaroID
 		figaroEP = transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
 	} else {
-		figaroID, figaroEP = mustCreateAndBindOutfit(ctx, acli, loaded, ppid, spec)
+		figaroID, figaroEP = mustCreateAndBindOutfit(ctx, acli, loaded, ppid, d)
 	}
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 	mustPromptFigaro(ctx, figaroEP, figaroID, prompt, loaded, set)
@@ -55,7 +54,7 @@ func runPrompt(loaded *config.Loaded, spec outfit.Spec, prompt string, set rende
 // runNewPrompt creates a fresh figaro and prompts it. Under jsonMode
 // the streaming render is skipped: the aria is created, prompted via a
 // fire-and-forget Qua, and a single JSON line is emitted on stdout.
-func runNewPrompt(loaded *config.Loaded, prompt string, spec outfit.Spec, set renderSettings) {
+func runNewPrompt(loaded *config.Loaded, prompt string, d dressing, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -65,7 +64,7 @@ func runNewPrompt(loaded *config.Loaded, prompt string, spec outfit.Spec, set re
 	ppid := shellPID
 	unbindBinding(ctx, acli, ppid)
 
-	figaroID, figaroEP := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, spec)
+	figaroID, figaroEP := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, d)
 	prompt = expandAtRefsForEndpoint(ctx, figaroEP, prompt)
 
 	if set.jsonMode {
@@ -154,7 +153,7 @@ func runSendForkAt(loaded *config.Loaded, trunkID string, at forkPoint, stay, as
 	// server read a logical time as a turn number -- and since an LT is far
 	// larger than the turn count, `send <id>:<turn>` failed every time with
 	// "aria has no turn N". The server owns the translation.
-	fr, err := waitForFork(ctx, acli, trunkID, at, nil)
+	fr, err := waitForFork(ctx, acli, trunkID, at, dressing{})
 	if err != nil {
 		die("send: fork %s at %s: %s", trunkID, at, err)
 	}
@@ -290,17 +289,17 @@ func runUnattend(loaded *config.Loaded) {
 	}
 }
 
-// runNewFromOutfit mints a fresh aria under spec, binds it, and returns
+// runNewFromOutfit mints a fresh aria under d, binds it, and returns
 // without prompting (`figaro new [-O X]`). An empty spec is the configured
 // default_outfit, resolved server-side. A prompt needs the `--` boundary.
-func runNewFromOutfit(loaded *config.Loaded, spec outfit.Spec, set renderSettings) {
+func runNewFromOutfit(loaded *config.Loaded, d dressing, set renderSettings) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 	ppid := shellPID
 	unbindBinding(ctx, acli, ppid)
-	figaroID, _ := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, spec)
+	figaroID, _ := mustCreateAndBindOutfit(ctx, acli, loaded, ppid, d)
 	if set.jsonMode {
 		enc := json.NewEncoder(os.Stdout)
 		_ = enc.Encode(struct {
@@ -310,8 +309,8 @@ func runNewFromOutfit(loaded *config.Loaded, spec outfit.Spec, set renderSetting
 		return
 	}
 	dressed := "the default outfit"
-	if !spec.IsEmpty() {
-		dressed = "outfit " + shortSpec(spec)
+	if !d.IsEmpty() {
+		dressed = "outfit " + d.label()
 	}
 	fmt.Fprintf(os.Stderr, "created %s under %s (attended; no prompt sent)\n", figaroID, dressed)
 }

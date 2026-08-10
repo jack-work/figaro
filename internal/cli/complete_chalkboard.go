@@ -9,9 +9,7 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/cmdkit"
-	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/transport"
 )
 
@@ -52,37 +50,10 @@ func completeChalkboardKeys(c *cmdkit.CompleteContext) []string {
 	for _, k := range live {
 		add(k)
 	}
-	// No aria bound to this shell (softFetchLiveKeys came back empty): fall
-	// back to the default outfit's chalkboard keys (its skills + system.*),
-	// read straight from the outfit definition so completion still works.
-	if len(live) == 0 {
-		for _, k := range outfitFallbackKeys(c) {
-			add(k)
-		}
-	}
+	// Nothing bound: nothing to complete. Keys belong to an aria, and a shell
+	// that has not run `fig new` has no aria to have them.
 	sort.Strings(out)
 	return out
-}
-
-// outfitFallbackKeys returns the chalkboard keys the default outfit sets,
-// read from config (no aria needed). Empty when unavailable.
-func outfitFallbackKeys(c *cmdkit.CompleteContext) []string {
-	if c == nil {
-		return nil
-	}
-	loaded, _ := c.Extra.(*config.Loaded)
-	if loaded == nil || loaded.Config.DefaultOutfit == "" {
-		return nil
-	}
-	patch, err := outfit.New(loaded.ConfigDir).Load(loaded.Config.DefaultOutfit)
-	if err != nil {
-		return nil
-	}
-	keys := make([]string, 0, len(patch.Set))
-	for k := range patch.Set {
-		keys = append(keys, k)
-	}
-	return keys
 }
 
 // softFetchLiveKeys best-effort fetches snapshot keys for the

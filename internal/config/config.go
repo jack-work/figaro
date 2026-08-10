@@ -683,3 +683,29 @@ func defaultConfig() Config {
 	// No DefaultOutfit: empty triggers the first-run flow.
 	return Config{}
 }
+
+// SetDefaultOutfit points config.toml at an outfit, preserving everything else
+// in the file. The first-run flow drives it through the angelus: a client may
+// not write the daemon's config itself.
+func SetDefaultOutfit(configPath, outfitName string) error {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+		return err
+	}
+	raw := map[string]any{}
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err := toml.Unmarshal(data, &raw); err != nil {
+			return fmt.Errorf("parse existing config: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	delete(raw, "default_loadout")
+	raw["default_outfit"] = outfitName
+
+	f, err := os.OpenFile(configPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return toml.NewEncoder(f).Encode(raw)
+}

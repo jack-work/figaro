@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jack-work/figaro/internal/angelus"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 )
 
@@ -21,11 +20,11 @@ func waitForFork(
 	client *angelus.Client,
 	ariaID string,
 	at forkPoint,
-	spec outfit.Spec,
+	d dressing,
 ) (*rpc.ForkResponse, error) {
 	done := make(chan forkCallResult, 1)
 	go func() {
-		response, err := client.Fork(ctx, ariaID, at.turn, at.lt, spec)
+		response, err := client.Fork(ctx, ariaID, at.turn, at.lt, d.patch)
 		done <- forkCallResult{response: response, err: err}
 	}()
 

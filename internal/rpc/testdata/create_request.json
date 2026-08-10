@@ -1,7 +1,7 @@
 {
-  "outfit": "anthropic",
   "patch": {
     "set": {
+      "layers": ["anthropic"],
       "system.model": "claude-sonnet-4-20250514"
     }
   }

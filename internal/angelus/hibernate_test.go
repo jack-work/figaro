@@ -3,7 +3,6 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/internal/outfit"
 	"net"
 	"os"
 	"testing"
@@ -22,7 +21,7 @@ import (
 func TestAttendDoesNotWake(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	created, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 	id := created.FigaroID
 	require.NoError(t, a.Registry.Kill(id)) // make it dormant
@@ -69,7 +68,7 @@ func TestAttendUnknownAriaFails(t *testing.T) {
 func TestBindingSurvivesHibernate(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	created, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 	id := created.FigaroID
 	pid := os.Getpid()
@@ -89,7 +88,7 @@ func TestBindingSurvivesHibernate(t *testing.T) {
 func TestHibernateKeepsAriaAddressable(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	created, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 	id, sock := created.FigaroID, created.Endpoint.Address
 
@@ -125,7 +124,7 @@ func TestHibernateKeepsAriaAddressable(t *testing.T) {
 func TestHibernateRefusesActiveAria(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	created, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 	id := created.FigaroID
 
@@ -161,7 +160,7 @@ func TestHibernateRefusesActiveAria(t *testing.T) {
 func TestHibernateIsIdempotent(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	created, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 	id := created.FigaroID
 
@@ -175,7 +174,7 @@ func TestHibernateIsIdempotent(t *testing.T) {
 func TestHibernateWakeCycle(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	created, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 	id := created.FigaroID
 

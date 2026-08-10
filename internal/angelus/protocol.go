@@ -76,6 +76,8 @@ func NewHandlers(cfg ServerConfig) *Handlers {
 			rpc.MethodFork:           h.fork,
 			rpc.MethodPromote:        h.promote,
 			rpc.MethodImport:         h.importAria,
+			rpc.MethodOutfits:        h.outfits,
+			rpc.MethodConfigure:      h.configure,
 			rpc.MethodNormalize:      h.normalize,
 			rpc.MethodGC:             h.gc,
 			rpc.MethodKill:           h.kill,
@@ -169,29 +171,14 @@ type listEnrichment struct {
 	ariaID string
 }
 
-// reloadConfigIfChanged re-reads config.toml from disk when the
-// in-memory copy looks stale relative to a wizard write. We're
-// conservative: only reload when the in-memory DefaultOutfit is
-// empty AND a config.toml exists on disk. This means tests that
-// inject loaded.Config.DefaultOutfit in memory without a backing
-// file are untouched, while the production case (first-run wizard
-// writes config.toml + an outfit, then retries Create) sees the
-// fresh value.
-func (h *handlers) reloadConfigIfChanged() {
+// settings is the in-memory config and the outfitter over it, read under the
+// lock. Config is loaded once at start and re-read only when a client changes
+// it through MethodConfigure — the first-run wizard's seam — so no request pays
+// a stat, and the two fields can never be observed half-swapped.
+func (h *handlers) settings() (*config.Loaded, *outfit.Outfitter) {
 	h.configMu.Lock()
 	defer h.configMu.Unlock()
-	if h.config.Config.DefaultOutfit != "" {
-		return // already have one in memory; nothing the wizard could change
-	}
-	if _, err := os.Stat(h.config.ConfigPath); err != nil {
-		return // no file on disk; can't possibly have new state
-	}
-	fresh, err := config.Load(h.config.ConfigDir)
-	if err != nil {
-		return
-	}
-	h.config = fresh
-	h.outfitter = outfit.New(fresh.ConfigDir)
+	return h.config, h.outfitter
 }
 
 // openAriaChalkboard returns the in-memory chalkboard hot view for an
@@ -221,14 +208,15 @@ func (h *handlers) openAriaChalkboard(ariaID string) *chalkboard.State {
 // caches its folds against the files they were built from, so the repeat cost
 // is a stat per dependency — cheaper than the TTL was, and never stale.
 func (h *handlers) currentOutfitHash(name string) (current, legacy string) {
-	if h.outfitter == nil {
+	_, ofit := h.settings()
+	if ofit == nil {
 		return "", ""
 	}
-	spec, perr := outfit.ParseSpec(name)
-	if perr != nil {
+	names, perr := outfit.TermNames(name)
+	if perr != nil || len(names) == 0 {
 		return "", "" // a stamp carrying a literal is not re-resolvable
 	}
-	p, err := h.outfitter.LoadSpec(spec, false)
+	p, err := ofit.Names(names...)
 	if err != nil {
 		return "", ""
 	}
@@ -293,41 +281,34 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	// default_outfit, then retries this Create call) are picked up
 	// without a daemon restart. One os.ReadFile + toml.Unmarshal per
 	// request is cheap relative to anything downstream.
-	h.reloadConfigIfChanged()
-	spec := req.Outfit
-	if spec.IsEmpty() {
-		parsed, perr := outfit.ParseSpec(h.config.Config.DefaultOutfit)
-		if perr != nil {
-			return nil, perr
-		}
-		spec = parsed
-	}
-	if spec.IsEmpty() {
-		return nil, h.errNoDefaultOutfit()
-	}
-	outfitName := spec.Label()
+	loaded, ofit := h.settings()
 
-	// Resolve outfit -> chalkboard patch. An outfit the CALLER named must
-	// exist (a typo is a typo); the configured default may not, because the
-	// first-run flow rides on that absence — the patch comes back empty and
-	// req.Patch may still supply system.provider. outfitPatch is the STABLE
-	// outfit (it defines the outfit node's identity/version); base layers the
-	// per-create req.Patch overrides on top for provider/knob resolution.
-	outfitPatch, err := h.outfitter.LoadSpec(spec, !req.Outfit.IsEmpty())
+	// Birth is a fork of the null form carrying a patch, and that patch always
+	// wears the default underneath: `layers:["default"]` folded first, whatever
+	// the caller sent on top. One rule for -O — it adds, it never replaces — so
+	// `send -O mantra=x` from an unbound shell means something.
+	asked := chalkboard.Patch{}
+	if req.Patch != nil {
+		asked = *req.Patch
+	}
+	asked, err := outfit.WithLayer(asked, outfit.NameDefault)
+	if err != nil {
+		return nil, err
+	}
+	outfitName := outfit.Label(asked, loaded.Config.DefaultOutfit)
+	base, err := ofit.Materialize(asked, loaded.Config.DefaultOutfit)
 	if err != nil {
 		return nil, h.errOutfitNotFound(outfitName, err)
 	}
-	base := chalkboard.Patch{Set: map[string]json.RawMessage{}}
-	for k, v := range outfitPatch.Set {
-		base.Set[k] = v
+	// Nothing configured and nothing sent: there is no first move to make.
+	// A default that IS named but missing on disk falls through, so the
+	// failure is reported as the missing provider it actually is.
+	if base.IsEmpty() && loaded.Config.DefaultOutfit == "" {
+		return nil, h.errNoDefaultOutfit()
 	}
-	base.Remove = append(base.Remove, outfitPatch.Remove...)
-	if req.Patch != nil {
-		for k, v := range req.Patch.Set {
-			base.Set[k] = v
-		}
-		base.Remove = append(base.Remove, req.Patch.Remove...)
-	}
+	// outfitPatch is the STABLE identity of the node this aria hangs under;
+	// the per-create fill-ins ride the conversation's own boot patch.
+	outfitPatch := base
 
 	provName := patchString(base, "system.provider")
 	if provName == "" {
@@ -401,20 +382,20 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	sockPath := filepath.Join(h.angelus.FigaroSocketDir(), id+".sock")
 
 	reg := tool.DefaultRegistryForAria(id, cwdFromChalkboard(cbState, cwd),
-		tool.WithImageBudget(h.config.InlineImageBudget()),
+		tool.WithImageBudget(loaded.InlineImageBudget()),
 		tool.WithSessions(h.angelus.Sessions))
 	agent := figaro.NewAgent(figaro.Config{
 		ID:              id,
 		SocketPath:      sockPath,
 		Provider:        prov,
 		ProviderFactory: h.factory,
-		Outfitter:       h.outfitter,
+		Outfitter:       ofit,
 		Tools:           reg,
 		Projector:       uiir.New(reg),
 		Backend:         backend,
 		Chalkboard:      cbState,
 		InlineBoot:      inlineBoot,
-		Settings:        h.config,
+		Settings:        loaded,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -532,12 +513,18 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 	if err := h.checkForkLT(req.FigaroID, req.AtLT); err != nil {
 		return nil, err
 	}
-	// Dress the child in the call that mints it: resolved BEFORE the fork so
-	// a bad spec costs nothing, applied AFTER, on the alternative. A patch
-	// sent to the parent first can be ACKed and still miss the branch.
-	dress, derr := h.outfitter.LoadSpec(req.Outfit, true)
-	if derr != nil {
-		return nil, h.errOutfitNotFound(req.Outfit.Label(), derr)
+	// Dress the child in the call that mints it, on the alternative and after
+	// the fork: a patch sent to the parent first can be ACKed and still miss
+	// the branch.
+	var dress chalkboard.Patch
+	if req.Patch != nil {
+		_, ofit := h.settings()
+		loaded, _ := h.settings()
+		materialized, merr := ofit.Materialize(*req.Patch, loaded.Config.DefaultOutfit)
+		if merr != nil {
+			return nil, h.errOutfitNotFound(outfit.Label(*req.Patch, loaded.Config.DefaultOutfit), merr)
+		}
+		dress = materialized
 	}
 	// The COORDINATE says whether this is interior; atMainLT says where.
 	// They are not the same question: forking at turn 1 retains nothing
@@ -582,7 +569,7 @@ func (h *handlers) fork(ctx context.Context, params json.RawMessage) (interface{
 			// No branch of its own to dress. Nothing can carry the outfit, so
 			// say so rather than reporting a fork that quietly ignored -O.
 			if !dress.IsEmpty() {
-				return fmt.Errorf("fork: no alternative to dress (outfit %s not applied)", req.Outfit)
+				return fmt.Errorf("fork: no alternative to dress (patch not applied)")
 			}
 			return nil
 		}
@@ -1585,22 +1572,23 @@ func (h *handlers) restoreOne(ctx context.Context, ariaID string) (figaro.Figaro
 			lastActive = time.UnixMilli(meta.LastActiveMS)
 		}
 	}
+	loaded, ofit := h.settings()
 	reg := tool.DefaultRegistryForAria(ariaID, cwdFromChalkboard(cb, toolRoot),
-		tool.WithImageBudget(h.config.InlineImageBudget()),
+		tool.WithImageBudget(loaded.InlineImageBudget()),
 		tool.WithSessions(h.angelus.Sessions))
 	agent := figaro.NewAgent(figaro.Config{
 		ID:              ariaID,
 		SocketPath:      sockPath,
 		Provider:        prov,
 		ProviderFactory: h.factory,
-		Outfitter:       h.outfitter,
+		Outfitter:       ofit,
 		Tools:           reg,
 		Projector:       uiir.New(reg),
 		Backend:         h.angelus.Backend,
 		Chalkboard:      cb,
 		CreatedAt:       createdAt,
 		LastActive:      lastActive,
-		Settings:        h.config,
+		Settings:        loaded,
 	})
 
 	if err := h.angelus.Registry.Register(agent); err != nil {
@@ -1670,7 +1658,7 @@ func (h *handlers) errNoProvider(outfitName string) error {
 func (h *handlers) errOutfitNotFound(name string, cause error) error {
 	payload := rpc.ErrorData{
 		Name:        name,
-		SearchPaths: []string{h.config.OutfitPath(name)},
+		SearchPaths: []string{loadedOutfitPath(h, name)},
 	}
 	var missing *outfit.MissingError
 	if errors.As(cause, &missing) {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 
 	"github.com/jack-work/figaro/internal/livelog/aria"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/transport"
 	"github.com/jack-work/jkrpc"
@@ -113,9 +112,9 @@ func (c *Client) Hangup(ctx context.Context, disposition rpc.QueueDisposition) (
 }
 
 // Set applies a chalkboard patch directly. No LLM round-trip.
-func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch) (*rpc.SetResponse, error) {
+func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch, ifVersion uint64) (*rpc.SetResponse, error) {
 	var resp rpc.SetResponse
-	if err := c.call(ctx, rpc.MethodSet, rpc.SetRequest{Patch: patch}, &resp); err != nil {
+	if err := c.call(ctx, rpc.MethodSet, rpc.SetRequest{Patch: patch, IfVersion: ifVersion}, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -123,14 +122,6 @@ func (c *Client) Set(ctx context.Context, patch rpc.ChalkboardPatch) (*rpc.SetRe
 
 // Outfit applies a spec additively to the chalkboard, each term taking
 // precedence over the ones before it. No keys are removed; values equal to the
-// current snapshot are skipped.
-func (c *Client) Outfit(ctx context.Context, spec outfit.Spec) (*rpc.OutfitResponse, error) {
-	var resp rpc.OutfitResponse
-	if err := c.call(ctx, rpc.MethodOutfit, rpc.OutfitRequest{Outfit: spec}, &resp); err != nil {
-		return nil, err
-	}
-	return &resp, nil
-}
 
 // Chalkboard returns the agent's current chalkboard snapshot.
 func (c *Client) Chalkboard(ctx context.Context) (*rpc.ChalkboardResponse, error) {

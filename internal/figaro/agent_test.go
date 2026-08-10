@@ -312,7 +312,7 @@ func TestAgentPersistsCompleteListMetadata(t *testing.T) {
 
 	_, _, err = a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
 		"mantra": json.RawMessage(`"updated"`),
-	}})
+	}}, 0)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		meta, err = backend.Meta(id)

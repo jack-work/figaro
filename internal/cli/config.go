@@ -16,7 +16,6 @@ import (
 
 	"github.com/jack-work/figaro/internal/chalkboard"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/tui"
 )
@@ -143,10 +142,10 @@ func ensureHush() {
 // These are read in the CLI process (which inherits the user's
 // shell env) and sent with every prompt so the agent always has
 // up-to-date values.
-// promptOutfit is the spec this invocation asked for, parked by the flag
-// parser (sendOpts.armOutfit) and read by every prompt path. It rides the
-// prompt itself, so the reminder renders on the turn that asked for it.
-var promptOutfit outfit.Spec
+// promptDressing is what `-O` asked for, parked by the flag parser
+// (sendOpts.armOutfit) and read by every prompt path. It rides the prompt
+// itself, so the reminder renders on the turn that asked for it.
+var promptDressing dressing
 
 func buildPromptChalkboard() *rpc.ChalkboardInput {
 	cwd, _ := os.Getwd()
@@ -164,10 +163,10 @@ func buildPromptChalkboard() *rpc.ChalkboardInput {
 	for k, v := range chalkboard.EnvironmentSnapshot() {
 		snap[k] = v
 	}
-	if len(snap) == 0 && promptOutfit.IsEmpty() {
+	if len(snap) == 0 && promptDressing.IsEmpty() {
 		return nil
 	}
-	return &rpc.ChalkboardInput{Context: snap, Outfit: promptOutfit}
+	return &rpc.ChalkboardInput{Context: snap, Patch: promptDressing.patch}
 }
 
 // buildChalkboard loads body templates with user overrides.

@@ -2,13 +2,26 @@ package figaro
 
 import (
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/jack-work/figaro/internal/chalkboard"
-	"github.com/jack-work/figaro/internal/outfit"
-	"github.com/jack-work/figaro/internal/rpc"
 )
+
+// Materialize expands a patch's `layers` directive into the keys those outfits
+// set. It runs at ACCEPT time, not at apply: expansion depends only on the
+// patch and the outfits on disk, never on the board, so doing it here buys the
+// caller a synchronous error instead of a log line — and the writer then holds
+// a patch that needs nothing from the filesystem.
+func (a *Agent) Materialize(patch chalkboard.Patch) (chalkboard.Patch, error) {
+	if a.outfitter == nil {
+		return patch, nil
+	}
+	var def string
+	if a.settings != nil {
+		def = a.settings.Config.DefaultOutfit
+	}
+	return a.outfitter.Materialize(patch, def)
+}
 
 // Snapshot returns a clone of the agent's chalkboard.
 func (a *Agent) Snapshot() chalkboard.Snapshot {
@@ -18,13 +31,39 @@ func (a *Agent) Snapshot() chalkboard.Snapshot {
 	return a.chalkboard.Snapshot()
 }
 
+// Version is the durable version the agent's board stands at: the index of the
+// last patch appended to its chalkboard channel. Zero when there is no store.
+func (a *Agent) Version() uint64 {
+	if a.backend == nil {
+		return 0
+	}
+	v, err := a.backend.ChalkboardVersion(a.id)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
 // Set applies a chalkboard patch. No LLM round-trip.
-func (a *Agent) Set(patch chalkboard.Patch) (set, removed []string, err error) {
+//
+// ifVersion, when non-zero, refuses the patch unless the board is still at
+// that durable version — the guard a read-modify-write needs, since editing
+// inside a value means reading it first.
+func (a *Agent) Set(patch chalkboard.Patch, ifVersion uint64) (set, removed []string, err error) {
 	if a.chalkboard == nil {
 		return nil, nil, fmt.Errorf("set requires a chalkboard")
 	}
 	if patch.IsEmpty() {
 		return nil, nil, nil
+	}
+	patch, err = a.Materialize(patch)
+	if err != nil {
+		return nil, nil, err
+	}
+	if ifVersion != 0 {
+		if have := a.Version(); have != ifVersion {
+			return nil, nil, fmt.Errorf("chalkboard moved: at version %d, not %d — re-read and retry", have, ifVersion)
+		}
 	}
 	for k := range patch.Set {
 		set = append(set, k)
@@ -32,68 +71,6 @@ func (a *Agent) Set(patch chalkboard.Patch) (set, removed []string, err error) {
 	removed = append(removed, patch.Remove...)
 	a.inbox.Send(event{typ: eventSet, setPatch: patch})
 	return set, removed, nil
-}
-
-// ApplyOutfit folds a spec and applies what it would actually change to the
-// current chalkboard: keys already holding the value are skipped, and no key is
-// ever removed. Returns the keys created or updated. This is `state outfit`.
-//
-// Absence is strict here, unlike at mint time: someone naming an outfit to
-// apply wants to hear that it does not exist, not that nothing changed.
-func (a *Agent) ApplyOutfit(spec outfit.Spec) ([]string, error) {
-	if a.chalkboard == nil {
-		return nil, fmt.Errorf("outfit requires a chalkboard")
-	}
-	if a.outfitter == nil {
-		return nil, fmt.Errorf("outfit requires an outfitter")
-	}
-	if spec.IsEmpty() {
-		return nil, fmt.Errorf("outfit name required")
-	}
-	loaded, err := a.outfitter.LoadSpec(spec, true)
-	if err != nil {
-		return nil, err
-	}
-	patch := chalkboard.Additive(a.chalkboard.Snapshot(), loaded)
-	if patch.IsEmpty() {
-		return nil, nil
-	}
-	set, _, err := a.Set(patch)
-	return set, err
-}
-
-// CheckPromptOutfit resolves a prompt's outfit without applying it, so a spec
-// that does not resolve fails the qua before anything is queued.
-//
-// It must not compute the patch here. A set queued behind an active turn has
-// not touched the snapshot yet, so a diff taken now can call a key "already
-// equal" and let the queued removal win. combineChalkboardInput folds it at
-// drain instead; the fold is cached, so the second one costs a stat per file.
-func (a *Agent) CheckPromptOutfit(req *rpc.QuaRequest) error {
-	if req.Chalkboard == nil || req.Chalkboard.Outfit.IsEmpty() {
-		return nil
-	}
-	if a.outfitter == nil {
-		return fmt.Errorf("outfit requires an outfitter")
-	}
-	_, err := a.outfitter.LoadSpec(req.Chalkboard.Outfit, true)
-	return err
-}
-
-// outfitPatchFor folds a spec and returns only what it would change on snap.
-// Errors are logged, not returned: the spec resolved at accept time, so a
-// failure here means the files moved under a queued prompt, and killing the
-// turn over it is worse than answering without the outfit.
-func (a *Agent) outfitPatchFor(spec outfit.Spec, snap chalkboard.Snapshot) chalkboard.Patch {
-	if spec.IsEmpty() || a.outfitter == nil {
-		return chalkboard.Patch{}
-	}
-	loaded, err := a.outfitter.LoadSpec(spec, true)
-	if err != nil {
-		slog.Error("prompt outfit", "aria", a.id, "spec", spec.String(), "err", err)
-		return chalkboard.Patch{}
-	}
-	return chalkboard.Additive(snap, loaded)
 }
 
 func withoutSystemNS(s chalkboard.Snapshot) chalkboard.Snapshot {

@@ -963,6 +963,7 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 			{Long: "json", Short: "j", IsBool: true, Description: "Emit the snapshot as a JSON object"},
 			{Long: "list", IsBool: true, Description: "outfit: list available outfits and exit"},
 			{Long: "tree", IsBool: true, Description: "outfit: print the layer closure and exit; applies nothing"},
+			{Long: "refresh", IsBool: true, Description: "outfit: re-read outfits and config from disk"},
 		},
 		Run: func(ctx *cmdkit.RunContext) error {
 			ld := ctx.Extra.(*config.Loaded)
@@ -970,8 +971,8 @@ See ` + "`figaro help outfits`" + ` for the spec syntax.`,
 			if len(args) > 0 && args[0] == "outfit" {
 				return runStateOutfit(ld, ctx, args[1:])
 			}
-			if ctx.BoolFlag("list") || ctx.BoolFlag("tree") {
-				return fmt.Errorf("--list/--tree belong to `state outfit`")
+			if ctx.BoolFlag("list") || ctx.BoolFlag("tree") || ctx.BoolFlag("refresh") {
+				return fmt.Errorf("--list/--tree/--refresh belong to `state outfit`")
 			}
 			id := ctx.Flag("id")
 			if id == "" && len(args) > 0 {

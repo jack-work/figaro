@@ -3,7 +3,6 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/internal/outfit"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -118,7 +117,7 @@ model = "m"
 	require.NoError(t, err)
 	defer acli.Close()
 
-	create, err := acli.Create(ctx, outfit.Names("switch"), nil)
+	create, err := acli.Create(ctx, dress(t, "switch"))
 	require.NoError(t, err)
 	figEP := transport.Endpoint{Scheme: create.Endpoint.Scheme, Address: create.Endpoint.Address}
 	waitForFigaro(t, figEP)

@@ -68,7 +68,7 @@ func TestChalkboardRPCRaceRepro(t *testing.T) {
 				val, _ := json.Marshal(fmt.Sprintf("v%d", i))
 				_, _, err := a.Set(chalkboard.Patch{
 					Set: map[string]json.RawMessage{key: val},
-				})
+				}, 0)
 				if err != nil {
 					t.Errorf("Set: %v", err)
 					return

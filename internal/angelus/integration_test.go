@@ -3,7 +3,6 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/internal/outfit"
 	"os"
 	"testing"
 	"time"
@@ -89,7 +88,7 @@ model = "mock-model"
 	require.NoError(t, err)
 	defer acli.Close()
 
-	createResp, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	createResp, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 	assert.NotEmpty(t, createResp.FigaroID)
 	assert.Equal(t, "unix", createResp.Endpoint.Scheme)
@@ -206,7 +205,7 @@ model = "mock-model"
 	require.Error(t, err)
 
 	// Create a live aria (system-minted id), then Attach is a no-op success.
-	resp, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	resp, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.FigaroID)
 
@@ -250,7 +249,7 @@ model = "mock-model"
 	defer acli.Close()
 
 	// Create + drive one turn.
-	created, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	created, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 	figEP := transport.Endpoint{Scheme: created.Endpoint.Scheme, Address: created.Endpoint.Address}
 	waitForFigaro(t, figEP)

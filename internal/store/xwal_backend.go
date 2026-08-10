@@ -96,6 +96,9 @@ type chalkCache struct {
 	mu    sync.Mutex
 	ready bool
 	state chalkboard.Snapshot
+	// version is the durable index of the last patch folded into state: what a
+	// conditional Set quotes back, and what an IR record's cursor stamped.
+	version uint64
 	// patches in version order. No grouping by turn: an IR entry carries
 	// the board version at its turn, so the reader walks both in step.
 	patches []VersionedPatch
@@ -264,8 +267,20 @@ func (b *XwalBackend) loadChalkboardLocked(ariaID string, c *chalkCache) error {
 	}
 	c.state = state
 	c.patches = patches
+	c.version = last
 	c.ready = true
 	return nil
+}
+
+// ChalkboardVersion is the durable index of the aria's last board patch.
+func (b *XwalBackend) ChalkboardVersion(ariaID string) (uint64, error) {
+	c := b.chalkCache(ariaID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := b.loadChalkboardLocked(ariaID, c); err != nil {
+		return 0, err
+	}
+	return c.version, nil
 }
 
 func (b *XwalBackend) ChalkboardPatches(ariaID string) ([]VersionedPatch, error) {
@@ -307,6 +322,7 @@ func (b *XwalBackend) ApplyChalkboard(ariaID string, patch message.Patch) (uint6
 	}
 	if c.ready {
 		c.state = c.state.Apply(patch)
+		c.version = version
 		if !patch.IsEmpty() {
 			c.patches = append(c.patches, VersionedPatch{Version: version, Patch: patch})
 		}

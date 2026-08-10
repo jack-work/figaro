@@ -21,7 +21,7 @@ func TestSendOutfitParses(t *testing.T) {
 		{name: "absent", in: []string{"-e", "--", "p"}, want: ""},
 		{name: "comma folds", in: []string{"-O", "a,b", "--", "p"}, want: "a,b"},
 		{name: "repeats fold", in: []string{"-O", "a", "-O", "b", "--", "p"}, want: "a,b"},
-		{name: "sugar", in: []string{"-O", "ttl=1h", "--", "p"}, want: `{"ttl":"1h"}`},
+		{name: "sugar", in: []string{"-O", "ttl=1h", "--", "p"}, want: "ttl=1h"},
 		{name: "literal", in: []string{"-O", `{"ttl":"1h"}`, "--", "p"}, want: `{"ttl":"1h"}`},
 		{name: "against a target", in: []string{"--id", "abc12345", "-O", "a", "--", "p"}, want: "a"},
 		{name: "bundled with value", in: []string{"-erOsonn5", "--", "p"}, want: "sonn5"},
@@ -44,7 +44,7 @@ func TestSendOutfitParses(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got := opts.outfit.String(); got != tc.want {
+			if got := opts.outfit.text; got != tc.want {
 				t.Errorf("outfit: got %q, want %q", got, tc.want)
 			}
 			if got := extractPrompt(rest); got != "p" {
@@ -58,26 +58,29 @@ func TestSendOutfitParses(t *testing.T) {
 // the SAME call as the text. Every prompt verb goes through this parser, so
 // none of them can carry the flag and forget the fold.
 func TestParsedOutfitRidesThePrompt(t *testing.T) {
-	defer func() { promptOutfit = nil }()
+	defer func() { promptDressing = dressing{} }()
 
-	promptOutfit = nil
+	promptDressing = dressing{}
 	if _, _, err := extractSendFlags([]string{"-O", "a,ttl=1h", "--", "p"}); err != nil {
 		t.Fatal(err)
 	}
 	in := buildPromptChalkboard()
-	if in == nil {
+	if in == nil || in.Patch == nil {
 		t.Fatal("no chalkboard input")
 	}
-	if got := in.Outfit.String(); got != `a,{"ttl":"1h"}` {
-		t.Errorf("prompt outfit: %q", got)
+	if got := string(in.Patch.Set["layers"]); got != `["a"]` {
+		t.Errorf("prompt layers: %q", got)
+	}
+	if got := string(in.Patch.Set["ttl"]); got != `"1h"` {
+		t.Errorf("prompt ttl: %q", got)
 	}
 
-	promptOutfit = nil
+	promptDressing = dressing{}
 	if _, _, err := extractSendFlags([]string{"--", "p"}); err != nil {
 		t.Fatal(err)
 	}
-	if in := buildPromptChalkboard(); in != nil && !in.Outfit.IsEmpty() {
-		t.Errorf("outfit invented from nothing: %v", in.Outfit)
+	if in := buildPromptChalkboard(); in != nil && in.Patch != nil {
+		t.Errorf("patch invented from nothing: %v", in.Patch)
 	}
 }
 

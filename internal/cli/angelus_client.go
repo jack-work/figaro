@@ -12,7 +12,6 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro/wire"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
 	"github.com/jack-work/figaro/internal/transport"
@@ -255,12 +254,11 @@ func mustConnectAngelus(loaded *config.Loaded) *angelus.Client {
 	return cli
 }
 
-// mustCreateAndBindOutfit mints an aria and binds this shell to it. An
-// empty outfit name means "use the configured default_outfit" (angelus
-// resolves it server-side).
-func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int, spec outfit.Spec) (string, transport.Endpoint) {
-	createResp, err := createWithFirstRun(ctx, loaded, spec, func() (*rpc.CreateResponse, error) {
-		return acli.Create(ctx, spec, nil)
+// mustCreateAndBindOutfit mints an aria and binds this shell to it. An empty
+// dressing means "as usual" — the angelus folds the configured default.
+func mustCreateAndBindOutfit(ctx context.Context, acli *angelus.Client, loaded *config.Loaded, ppid int, d dressing) (string, transport.Endpoint) {
+	createResp, err := createWithFirstRun(ctx, loaded, d, func() (*rpc.CreateResponse, error) {
+		return acli.Create(ctx, d.patch)
 	})
 	if err != nil {
 		dieWithClosure(err, "create figaro: %s", err)

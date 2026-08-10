@@ -3,7 +3,6 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/internal/outfit"
 	"net"
 	"os"
 	"testing"
@@ -71,7 +70,7 @@ model = "mock-model"
 func TestEndpointOutlivesAgent(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	created, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 	sock := created.Endpoint.Address
 	require.FileExists(t, sock, "endpoint not listening when Create returned")
@@ -119,7 +118,7 @@ func TestEndpointOutlivesAgent(t *testing.T) {
 func TestPromptWakesReclaimedAria(t *testing.T) {
 	a, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	created, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 	require.NoError(t, a.Registry.Kill(created.FigaroID))
 	require.Nil(t, a.Registry.Get(created.FigaroID))
@@ -147,7 +146,7 @@ func TestPromptWakesReclaimedAria(t *testing.T) {
 func TestKillRemovesEndpoint(t *testing.T) {
 	_, acli, ctx := daemonFixture(t)
 
-	created, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	created, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 	sock := created.Endpoint.Address
 	require.FileExists(t, sock)

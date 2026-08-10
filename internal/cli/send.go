@@ -15,7 +15,6 @@ import (
 	"github.com/jack-work/figaro/internal/cmdkit"
 	"github.com/jack-work/figaro/internal/config"
 	"github.com/jack-work/figaro/internal/figaro"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/term"
 	"github.com/jack-work/figaro/internal/transport"
@@ -31,13 +30,13 @@ type sendOpts struct {
 	verbatim  bool // --verbatim / -v: dump raw wire frames as JSON
 	verbose   bool // --verbose / -o (or -t alias): expand tool inputs (Ctrl-O toggles live)
 	exec      bool
-	dryRun    bool        // --exec only
-	skipYes   bool        // --exec only
-	forget    bool        // --forget / -f: submit and exit; do not stream
-	json      bool        // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
-	listen    bool        // --listen / -l: auto-enter the transcript at startup
-	outfit    outfit.Spec // --outfit / -O: the outfit this call dresses the aria in
-	record    string      // --record: write a wire tape of this stream (testing)
+	dryRun    bool     // --exec only
+	skipYes   bool     // --exec only
+	forget    bool     // --forget / -f: submit and exit; do not stream
+	json      bool     // --json / -j: emit machine-readable result on stdout ({aria_id, ...})
+	listen    bool     // --listen / -l: auto-enter the transcript at startup
+	outfit    dressing // --outfit / -O: what this call dresses the aria in
+	record    string   // --record: write a wire tape of this stream (testing)
 }
 
 // extractSendFlags scans a PassRaw arg list for the send command's
@@ -228,22 +227,23 @@ func (o *sendOpts) addOutfit(text string) error {
 	if strings.TrimSpace(text) == "" {
 		return fmt.Errorf("--outfit requires a value")
 	}
-	spec, err := outfit.ParseSpec(text)
+	joined := text
+	if o.outfit.text != "" {
+		joined = o.outfit.text + "," + text
+	}
+	d, err := parseDressing(joined)
 	if err != nil {
 		return err
 	}
-	if spec.IsEmpty() {
-		return fmt.Errorf("--outfit %q names nothing", text)
-	}
-	o.outfit = append(o.outfit, spec...)
+	o.outfit = d
 	return nil
 }
 
-// armOutfit hands the parsed spec to the prompt builder. Every sending verb
+// armOutfit hands the parsed dressing to the prompt builder. Every sending verb
 // parses through here, so none can forget to carry it: buildPromptChalkboard
 // puts it on the same call as the message.
 func (o sendOpts) armOutfit() error {
-	promptOutfit = o.outfit
+	promptDressing = o.outfit
 	return nil
 }
 
@@ -553,7 +553,7 @@ func runSendEphemeralRaw(loaded *config.Loaded, opts sendOpts, prompt string) {
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
+	createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit.patch) })
 	if err != nil {
 		dieWithClosure(err, "create figaro: %s", err)
 	}
@@ -585,7 +585,7 @@ func runSendEphemeralRich(loaded *config.Loaded, opts sendOpts, prompt string, s
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
+	createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit.patch) })
 	if err != nil {
 		dieWithClosure(err, "create figaro: %s", err)
 	}
@@ -607,14 +607,14 @@ func runSendEphemeralRich(loaded *config.Loaded, opts sendOpts, prompt string, s
 // runSendRaw streams raw output from a persistent aria (bound, named, or
 // minted here when this shell has none). The aria is left alive; only the
 // formatting is raw.
-func runSendRaw(loaded *config.Loaded, ariaID string, spec outfit.Spec, prompt string) {
+func runSendRaw(loaded *config.Loaded, ariaID string, d dressing, prompt string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	acli := mustConnectAngelus(loaded)
 	defer acli.Close()
 
-	_, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, true, spec)
+	_, figaroEP, err := resolveTargetEndpoint(ctx, loaded, acli, ariaID, true, d)
 	if err != nil {
 		die("%s", err)
 	}
@@ -638,7 +638,7 @@ func runSendVerbatim(loaded *config.Loaded, opts sendOpts, prompt string) {
 
 	var figaroEP transport.Endpoint
 	if opts.ephemeral {
-		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
+		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit.patch) })
 		if err != nil {
 			dieWithClosure(err, "create figaro: %s", err)
 		}
@@ -676,7 +676,7 @@ func runSendExec(loaded *config.Loaded, opts sendOpts, instruction string) {
 
 	var figaroEP transport.Endpoint
 	if opts.ephemeral || opts.id == "" {
-		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit, nil) })
+		createResp, err := createWithFirstRun(ctx, loaded, opts.outfit, func() (*rpc.CreateResponse, error) { return acli.CreateEphemeral(ctx, opts.outfit.patch) })
 		if err != nil {
 			dieWithClosure(err, "create figaro: %s", err)
 		}

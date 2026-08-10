@@ -147,13 +147,10 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 	if reg == nil {
 		return nil, 0
 	}
-	knobs := defaultOutfitKnobs(loaded)
-	if knobs.Model == "" {
-		knobs.Model = reg.DefaultModel
-	}
-	if knobs.MaxTokens == 0 {
-		knobs.MaxTokens = 8192
-	}
+	// The registry's own defaults: this is a read-only flow that needs a model
+	// to authenticate with, not the model an aria would use. Reading that off
+	// the default outfit meant a client folding server state to list models.
+	knobs := providerPkg.Knobs{Model: reg.DefaultModel, MaxTokens: 8192}
 	resolver, err := buildResolver(loaded, name)
 	if err != nil {
 		return nil, 0
@@ -167,13 +164,4 @@ func buildProvider(loaded *config.Loaded, name string) (providerPkg.Provider, in
 		return nil, 0
 	}
 	return p, knobs.MaxTokens
-}
-
-// defaultOutfitKnobs reads the default outfit (if any) and returns
-// its system.* operational knobs.
-func defaultOutfitKnobs(loaded *config.Loaded) providerPkg.Knobs {
-	if loaded == nil || loaded.Config.DefaultOutfit == "" {
-		return providerPkg.Knobs{}
-	}
-	return readOutfitKnobs(loaded, loaded.Config.DefaultOutfit)
 }

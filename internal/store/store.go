@@ -107,6 +107,10 @@ type Backend interface {
 	// no separate chalkboard file.
 	ChalkboardState(ariaID string) (chalkboard.Snapshot, error)
 
+	// ChalkboardVersion is the durable index of the last patch appended to
+	// the aria's chalkboard channel — the version a conditional Set quotes.
+	ChalkboardVersion(ariaID string) (uint64, error)
+
 	// ApplyChalkboard appends a state patch to the chalkboard channel,
 	// keyed to the next IR LT (the transition the next message carries).
 	ApplyChalkboard(ariaID string, patch message.Patch) (version uint64, err error)

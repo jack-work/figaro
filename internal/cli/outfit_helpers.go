@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -15,56 +14,7 @@ import (
 
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/outfit"
-	providerPkg "github.com/jack-work/figaro/internal/provider"
 )
-
-// readOutfitKnobs loads a named outfit via the outfitter and
-// extracts the provider.Knobs from system.* keys. Returns an empty
-// Knobs on any failure (callers are expected to substitute defaults).
-func readOutfitKnobs(loaded *config.Loaded, outfitName string) providerPkg.Knobs {
-	if loaded == nil || outfitName == "" {
-		return providerPkg.Knobs{}
-	}
-	ofit := outfit.New(loaded.ConfigDir)
-	patch, err := ofit.Load(outfitName)
-	if err != nil || patch.IsEmpty() {
-		return providerPkg.Knobs{}
-	}
-	pickStr := func(key string) string {
-		raw, ok := patch.Set[key]
-		if !ok {
-			return ""
-		}
-		var s string
-		_ = json.Unmarshal(raw, &s)
-		return s
-	}
-	pickInt := func(key string) int {
-		raw, ok := patch.Set[key]
-		if !ok {
-			return 0
-		}
-		var n int
-		_ = json.Unmarshal(raw, &n)
-		return n
-	}
-	pickBool := func(key string) bool {
-		raw, ok := patch.Set[key]
-		if !ok {
-			return false
-		}
-		var b bool
-		_ = json.Unmarshal(raw, &b)
-		return b
-	}
-	return providerPkg.Knobs{
-		Model:            pickStr("system.model"),
-		MaxTokens:        pickInt("system.max_tokens"),
-		ReminderRenderer: pickStr("system.reminder_renderer"),
-		UseOfficialSDK:   pickBool("system.use_official_sdk"),
-	}
-}
 
 // encryptedAPIKey reads an AGE-encrypted api_key from a provider auth
 // TOML file and decrypts it through hush. Mtime-cached.

@@ -43,7 +43,6 @@ import (
 	"github.com/jack-work/figaro/internal/angelus"
 	"github.com/jack-work/figaro/internal/auth"
 	"github.com/jack-work/figaro/internal/config"
-	"github.com/jack-work/figaro/internal/outfit"
 	providerPkg "github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/provider/copilot"
 	"github.com/jack-work/figaro/internal/rpc"
@@ -139,7 +138,7 @@ type createFn func() (*rpc.CreateResponse, error)
 // points config.toml at it, which is the right answer for a store that has
 // none and the wrong answer for `-O pair` where pair exists and simply sets no
 // provider: naming an outfit is not asking to be reconfigured.
-func createWithFirstRun(ctx context.Context, loaded *config.Loaded, spec outfit.Spec, fn createFn) (*rpc.CreateResponse, error) {
+func createWithFirstRun(ctx context.Context, loaded *config.Loaded, d dressing, fn createFn) (*rpc.CreateResponse, error) {
 	resp, err := fn()
 	if err == nil {
 		return resp, nil
@@ -150,11 +149,11 @@ func createWithFirstRun(ctx context.Context, loaded *config.Loaded, spec outfit.
 	}
 	switch code {
 	case rpc.ErrNoDefaultOutfit, rpc.ErrNoProvider:
-		if !spec.IsEmpty() {
-			return nil, fmt.Errorf("outfit %s sets no system.provider — add one to %s, or layer an outfit that has one",
-				spec, loaded.OutfitPath(spec.Label()))
+		if !d.IsEmpty() {
+			return nil, fmt.Errorf("-O %s sets no system.provider — add one to that outfit, or layer one that has it",
+				d.label())
 		}
-		if werr := runWizard(loaded, data); werr != nil {
+		if werr := runWizard(ctx, loaded, data); werr != nil {
 			return nil, werr
 		}
 		return fn()
@@ -181,7 +180,7 @@ func decodeTypedError(err error) (rpc.ErrorData, int, bool) {
 // (Station 1) was already handled by ensureHush before any RPC went
 // out, so this drives Stations 2 (provider + credentials) and 3
 // (default outfit).
-func runWizard(loaded *config.Loaded, data rpc.ErrorData) error {
+func runWizard(ctx context.Context, loaded *config.Loaded, data rpc.ErrorData) error {
 	if !isStdinTTY() {
 		return fmt.Errorf(
 			"figaro needs initial setup but stdin is not a TTY.\n"+
@@ -228,7 +227,13 @@ func runWizard(loaded *config.Loaded, data rpc.ErrorData) error {
 	// fall back to defaultModelFor so first-run never blocks on it.
 	chosenModel := pickModelOrFallback(loaded, chosen.provider)
 
-	outfitName, err := createDefaultOutfit(loaded, chosen.provider, chosenModel)
+	acli := mustConnectAngelus(loaded)
+	defer acli.Close()
+	var existing []string
+	if list, lerr := acli.Outfits(ctx, ""); lerr == nil {
+		existing = list.Names
+	}
+	outfitName, err := createDefaultOutfit(ctx, acli, existing, chosen.provider, chosenModel)
 	if err != nil {
 		return fmt.Errorf("outfit: %w", err)
 	}
@@ -399,41 +404,41 @@ func runAPIKeyInline(loaded *config.Loaded, providerName string) error {
 	return nil
 }
 
-// createDefaultOutfit writes outfits/default.toml (or
-// default-<provider>.toml if the former exists) and points
-// config.toml's default_outfit at it. model is the explicit model id
-// to write under [system]; pass "" to use defaultModelFor(providerName).
-// Returns the outfit name.
-func createDefaultOutfit(loaded *config.Loaded, providerName, model string) (string, error) {
+// createDefaultOutfit asks the ANGELUS to write outfits/default.toml (or
+// default-<provider>.toml if that name is taken) and point default_outfit at
+// it. The wizard composes the body — that is client ergonomics — but the file
+// and the config are the server's state, so the server writes them.
+func createDefaultOutfit(ctx context.Context, acli *angelus.Client, existing []string, providerName, model string) (string, error) {
 	name := "default"
-	if _, err := os.Stat(loaded.OutfitPath(name)); err == nil {
-		name = "default-" + providerName
+	for _, n := range existing {
+		if n == name {
+			name = "default-" + providerName
+			break
+		}
 	}
 	if model == "" {
 		model = defaultModelFor(providerName)
 	}
-	if err := writeStarterOutfit(loaded.OutfitPath(name), providerName, model); err != nil {
-		return "", fmt.Errorf("scaffold outfit: %w", err)
+	resp, err := acli.Configure(ctx, rpc.ConfigureRequest{
+		DefaultOutfit: name,
+		Outfit:        name,
+		Body:          starterOutfitBody(providerName, model),
+	})
+	if err != nil {
+		return "", err
 	}
-	if err := patchDefaultOutfit(loaded.ConfigPath, name); err != nil {
-		return "", fmt.Errorf("patch config.toml: %w", err)
+	if resp.DefaultOutfit != "" {
+		name = resp.DefaultOutfit
 	}
-	loaded.Config.DefaultOutfit = name
 	return name, nil
 }
 
-// writeStarterOutfit writes a minimal outfit file. Parent directories
-// are created with 0700. It writes NO skills: the outfit references the
-// skills directory via `skills = { dirName = "skills" }`, and that alone
-// is enough, because first-party skills ship inside the binary and load
-// from there. A skill copied into config would shadow the bundled one by
-// name and then drift, which is the failure this deliberately avoids.
-//
-// model is written as [system].model when non-empty.
-func writeStarterOutfit(path, providerName, model string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
+// starterOutfitBody is a minimal outfit. It declares NO skills of its own: the
+// outfit references the skills directory via `skills = { dirName = "skills" }`,
+// and that alone is enough, because first-party skills ship inside the binary
+// and load from there. A skill copied into config would shadow the bundled one
+// by name and then drift, which is the failure this deliberately avoids.
+func starterOutfitBody(providerName, model string) string {
 	body := fmt.Sprintf(`# Scaffolded by figaro first-run setup.
 # Edit to taste; see docs/outfits for the schema.
 
@@ -447,33 +452,7 @@ provider = %q
 	if model != "" {
 		body += fmt.Sprintf("model = %q\n", model)
 	}
-	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
-		return err
-	}
-	return nil
-}
-
-func patchDefaultOutfit(configPath, outfitName string) error {
-	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
-		return err
-	}
-	raw := map[string]any{}
-	if data, err := os.ReadFile(configPath); err == nil {
-		if err := toml.Unmarshal(data, &raw); err != nil {
-			return fmt.Errorf("parse existing config: %w", err)
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	delete(raw, "default_loadout")
-	raw["default_outfit"] = outfitName
-
-	f, err := os.OpenFile(configPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return toml.NewEncoder(f).Encode(raw)
+	return body
 }
 
 // --- pretty bits -----------------------------------------------------------
@@ -508,7 +487,7 @@ func printDone() {
 // when bound (modulo context — caller supplies one).
 var _ = func(acli *angelus.Client, ctx context.Context) createFn {
 	return func() (*rpc.CreateResponse, error) {
-		return acli.Create(ctx, nil, nil)
+		return acli.Create(ctx, nil)
 	}
 }
 

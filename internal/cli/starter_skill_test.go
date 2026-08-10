@@ -22,14 +22,10 @@ import (
 // on one file while holding the only copy of a section on another.
 //
 // The rule this pins: first run scaffolds configuration, never documentation.
-func TestWriteStarterOutfitWritesNoSkills(t *testing.T) {
+func TestStarterOutfitBodyDeclaresNoSkills(t *testing.T) {
 	cfg := t.TempDir()
-	path := filepath.Join(cfg, "outfits", "starter.toml")
 
-	require.NoError(t, writeStarterOutfit(path, "anthropic", "claude-opus-4"))
-
-	body, err := os.ReadFile(path)
-	require.NoError(t, err)
+	body := starterOutfitBody("anthropic", "claude-opus-4")
 	require.Contains(t, string(body), `provider = "anthropic"`)
 	require.Contains(t, string(body), `model = "claude-opus-4"`)
 
@@ -37,7 +33,7 @@ func TestWriteStarterOutfitWritesNoSkills(t *testing.T) {
 	// the BUNDLED skills load. It just must not populate the directory.
 	require.Contains(t, string(body), `dirName = "skills"`)
 
-	_, err = os.Stat(filepath.Join(cfg, "skills"))
+	_, err := os.Stat(filepath.Join(cfg, "skills"))
 	require.True(t, os.IsNotExist(err), "first run must not create a skills directory")
 }
 
@@ -47,7 +43,8 @@ func TestWriteStarterOutfitWritesNoSkills(t *testing.T) {
 func TestMissingUserSkillsDirIsNotAnError(t *testing.T) {
 	cfg := t.TempDir()
 	path := filepath.Join(cfg, "outfits", "starter.toml")
-	require.NoError(t, writeStarterOutfit(path, "anthropic", ""))
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte(starterOutfitBody("anthropic", "")), 0o600))
 
 	t.Setenv("FIGARO_BUNDLED_SKILLS", "0") // isolate: bundled skills off
 	patch, err := outfit.New(cfg).Load("starter")

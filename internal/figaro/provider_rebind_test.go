@@ -178,7 +178,7 @@ func TestProviderRebindsMidConversation(t *testing.T) {
 	_, _, err := a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"beta"`),
 		"system.model":    json.RawMessage(`"m-2"`),
-	}})
+	}}, 0)
 	require.NoError(t, err)
 
 	runTurn(t, a, ch, "second")
@@ -202,7 +202,7 @@ func TestProviderModelChangeDoesNotRebuild(t *testing.T) {
 
 	_, _, err := a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"m-2"`),
-	}})
+	}}, 0)
 	require.NoError(t, err)
 	runTurn(t, a, ch, "second")
 
@@ -226,7 +226,7 @@ func TestProviderKnobChangeRebuilds(t *testing.T) {
 
 	_, _, err := a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
 		"system.use_official_sdk": json.RawMessage(`true`),
-	}})
+	}}, 0)
 	require.NoError(t, err)
 	runTurn(t, a, ch, "second")
 
@@ -250,7 +250,7 @@ func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 	f.setFail("gamma", true)
 	_, _, err := a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"gamma"`),
-	}})
+	}}, 0)
 	require.NoError(t, err)
 	reason := runTurn(t, a, ch, "second")
 
@@ -261,7 +261,7 @@ func TestProviderRebindFailureEndsTurnAndRecovers(t *testing.T) {
 	f.setFail("gamma", false)
 	_, _, err = a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"beta"`),
-	}})
+	}}, 0)
 	require.NoError(t, err)
 	runTurn(t, a, ch, "third")
 	require.NotNil(t, f.inst("beta", false))

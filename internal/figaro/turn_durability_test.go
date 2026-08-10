@@ -658,4 +658,3 @@ func TestCacheAppendFailureEndsTurnKeepsAssistant(t *testing.T) {
 	assert.Equal(t, message.RoleOutput, got[len(got)-1].Role, "next open sees the canonical assistant, unblocked")
 	assert.Zero(t, prov2.callCount())
 }
-

@@ -19,7 +19,6 @@ import (
 	"github.com/jack-work/figaro/internal/livedoc"
 	"github.com/jack-work/figaro/internal/message"
 	figOtel "github.com/jack-work/figaro/internal/otel"
-	"github.com/jack-work/figaro/internal/outfit"
 	"github.com/jack-work/figaro/internal/provider"
 	"github.com/jack-work/figaro/internal/rpc"
 	"github.com/jack-work/figaro/internal/store"
@@ -1012,10 +1011,6 @@ func mergeChalkboardInput(a, b *rpc.ChalkboardInput) *rpc.ChalkboardInput {
 			out.Patch.Remove = append(out.Patch.Remove, src.Remove...)
 		}
 	}
-	// Specs concatenate: folding a,b is folding a then b, which is exactly
-	// what two coalesced prompts each carrying one asked for. Dropping this
-	// would lose an outfit whenever two prompts merged into one turn.
-	out.Outfit = append(append(outfit.Spec{}, a.Outfit...), b.Outfit...)
 	return out
 }
 
@@ -1692,9 +1687,6 @@ func assistantToolInvokes(m message.Message) []message.Content {
 //     concurrent set/unset from another shell.
 //   - Patch is explicit set + remove; mutations the client really
 //     means. `figaro set`/`unset` land here.
-//   - Outfit is a spec to fold from disk, additively, under Patch. It is
-//     resolved where the call is accepted (Agent.CheckPromptOutfit) and
-//     folded here, against the board the patch will actually land on.
 //
 // system.* on Context is dropped: the harness owns that namespace,
 // and a stale client view must not clobber it. Patch is left intact
@@ -1712,12 +1704,9 @@ func (a *Agent) combineChalkboardInput(input *rpc.ChalkboardInput) chalkboard.Pa
 	if input.Context != nil {
 		ctxPatch = additivePatch(withoutSystemNS(chalkboard.FromMap(input.Context)), snap)
 	}
-	// Precedence: the client's passive view, then the outfit it asked for,
-	// then what it explicitly set. The outfit is folded HERE, against the
-	// board this patch lands on, so "additive" is a property of the apply and
-	// not of the moment the call was accepted.
+	// Precedence: the client's passive view, then what it explicitly set.
 	out := chalkboard.Patch{}
-	for _, p := range []chalkboard.Patch{ctxPatch, a.outfitPatchFor(input.Outfit, snap), clientPatch} {
+	for _, p := range []chalkboard.Patch{ctxPatch, clientPatch} {
 		switch {
 		case p.IsEmpty():
 		case out.IsEmpty():

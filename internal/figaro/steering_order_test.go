@@ -244,7 +244,7 @@ func TestChalkboardSetDuringToolRoundAppliesNextRound(t *testing.T) {
 	// Switch the model while the tool round is in flight.
 	_, _, err := a.Set(chalkboard.Patch{Set: map[string]json.RawMessage{
 		"system.model": json.RawMessage(`"after"`),
-	}})
+	}}, 0)
 	require.NoError(t, err)
 	close(bt.release)
 	waitTurnDone(t, frames)

@@ -3,7 +3,6 @@ package angelus_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/jack-work/figaro/internal/outfit"
 	"os"
 	"sync"
 	"testing"
@@ -92,7 +91,7 @@ model = "mock-model"
 	require.NoError(t, err)
 	defer acli.Close()
 
-	resp, err := acli.Create(ctx, outfit.Names("mock"), nil)
+	resp, err := acli.Create(ctx, dress(t, "mock"))
 	require.NoError(t, err)
 
 	ep := transport.Endpoint{Scheme: resp.Endpoint.Scheme, Address: resp.Endpoint.Address}
@@ -125,7 +124,7 @@ model = "mock-model"
 	// The switch: chalkboard state, no restart.
 	_, err = fcli.Set(ctx, rpc.ChalkboardPatch{Set: map[string]json.RawMessage{
 		"system.provider": json.RawMessage(`"other"`),
-	}})
+	}}, 0)
 	require.NoError(t, err)
 
 	_, _, err = fcli.Qua(ctx, "second", nil)
