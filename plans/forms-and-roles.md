@@ -113,3 +113,91 @@ Gluck: "that requires a bit of thought." Do not improvise it.
 - `-count=6` benchmarks with the spread reported, before and after. A single
   pair of numbers is not evidence; if a cost is O(something), show the slope.
 - Migrate a COPY of the real store, never the live one.
+
+---
+
+## Part 7 — The mistakes that cost the v0.23.0 branch time
+
+Not general advice. Each of these happened, in order, on the branch this one
+descends from, and each has a check that would have caught it.
+
+**1. Re-scoping in silence.** Asked for A and B, I judged B too large for my
+remaining context, did A, and presented a handoff note for B as though it were a
+deliverable. The scope call may even have been right; making it silently was
+not. **Check: when the budget will not cover the ask, say so IN THE TURN YOU
+NOTICE, and name the trade. Never let a note stand in for work that was
+requested.**
+
+**2. Deleting something without measuring what it bought.** I removed outfit
+stumps — and with them a shared rendered prefix and the provider's per-node
+translation cache — having measured only the FOLD (568µs, unchanged) and never
+the thing being thrown away (bytes per aria, and a cold prompt cache on every
+new conversation). Gluck caught it, not me, and the reversal cost more than the
+removal. **Check: before deleting a mechanism, write down what it buys and
+measure THAT. If you cannot measure it, you cannot argue it is not needed.**
+
+**3. Attributing a cost to code the benchmark never calls.** I blamed a +6.2%
+fork regression on `ForkWith`. `BenchmarkFork` calls `Fork` + `ApplyForm` and
+reaches `ForkWith` never; the cost was in the apply half, which is paid on EVERY
+form write rather than once per hand-driven fork — a different frequency and a
+different fix. **Check: before attributing, confirm the benchmark's call path
+actually reaches the function you are blaming. A profile or a `-run` of the
+split halves takes two minutes.**
+
+**4. Quoting a point estimate for an O(n) change.** "40.45µs -> 17.84µs" was an
+artifact of the benchtime, because history length IS `b.N` in that benchmark.
+Two people ran the same fix and got different headlines. **Check: if a cost
+scales with anything, report the SLOPE across sizes, not one pair.**
+
+**5. A synthetic benchmark that understated a real defect.** The same fix hid an
+O(history) slice copy on every form commit. It looked like noise at small N.
+**Check: for anything on the write path, run it at 200/1000/3000 and look for a
+curve, not a number.**
+
+**6. A comment that said the opposite of its code.** `actor.Queue.Close` claimed
+queued items are dropped; the code drains them, and it MUST — callers block on a
+reply. A "fix" to match the comment would have hung every writer. **Check: when
+you document a behaviour, run it. Two tests, both shapes.**
+
+**7. One answer for two different failures.** The form mirror answered a schema
+mismatch with the same "resync" a version gap gets: a gap is transient and
+re-reading cures it, a mismatch is permanent and re-reading is one RPC per frame
+forever — and it was invisible, because only the gap branch counted. **Check:
+when a function returns a bool, ask whether two callers want different things
+from `false`.**
+
+**8. Believing a test over a running binary.** The suite was green while the
+birth path leaked the raw `layers` directive onto every board. It surfaced by
+reading a real `fig state` after a real `fig new`. **Check: exercise every new
+surface through the real binary, and READ the output. Green tests are not a
+demonstration.**
+
+**9. A worktree binary reports no revision.** `go build` in a worktree leaves
+`figaro version` = `unknown` (Go's VCS detection needs `.git` to be a directory,
+and a worktree's is a file), so the CLI/daemon handshake can only warn — and an
+old daemon will happily answer a new client. **Check: always
+`-ldflags "-X github.com/jack-work/figaro/internal/cli.commit=$(git rev-parse HEAD)"`.**
+
+**10. A test shell that started the WRONG daemon.** An interactive tmux pane's
+prompt integration invoked the installed `figaro`, which autostarted a 0.22.1
+daemon in my isolated `FIGARO_RUNTIME_DIR` and answered my new client. Twenty
+minutes lost to a "bug" that was two binaries. **Check: isolate all three of
+`FIGARO_CONFIG_DIR`, `FIGARO_STATE_DIR`, `FIGARO_RUNTIME_DIR`, and drive plain
+verbs from a non-interactive shell. `nix develop .#default` INHERITS the real
+environment — use `.#sandbox` or `.#clean`.**
+
+**11. A command silently shadowed by an alias.** A new top-level `form` command
+was swallowed because `state` already aliases `form`, and its arguments were
+read as an aria id — an error that looks like a missing aria, not a routing bug.
+**Check: a canary that fails when a registered name collides with any existing
+command's aliases.**
+
+**12. Editing a file another aria was mid-edit in.** Two arias share this
+repository. **Check: `git status` before you start, and if another aria's work
+is in the tree, land it as its own commit or leave it alone — never fold it into
+yours, never stash it without saying so.**
+
+### The one-line version
+
+Green tests are not a demonstration; a benchmark is not evidence until you know
+what it calls; and when the budget will not cover the ask, say so out loud.
