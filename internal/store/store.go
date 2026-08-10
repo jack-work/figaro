@@ -111,6 +111,10 @@ type Backend interface {
 	// the aria's form channel — the version a conditional Set quotes.
 	FormVersion(ariaID string) (uint64, error)
 
+	// KeepStump names the stump collection must spare: the live default, whose
+	// re-minting would rewrite a whole outfit to save one directory.
+	KeepStump(id string)
+
 	// WatchForm registers a sink for every patch committed to an aria's form.
 	// Called on the form's writer, so a sink must hand off and return.
 	WatchForm(ariaID string, fn func(version uint64, patch message.Patch)) error

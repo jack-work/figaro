@@ -299,6 +299,11 @@ func (b *XwalBackend) ForkWith(parent string, atMainLT uint64, patch message.Pat
 func (b *XwalBackend) CreateOutfit(name string, patch message.Patch) (string, error) {
 	return b.store.CreateOutfit(name, patch)
 }
+
+// KeepStump names the one stump collection spares. WHICH stump that is, is
+// policy — the angelus knows what the configured default resolves to today; the
+// store only knows what it was asked to build.
+func (b *XwalBackend) KeepStump(id string) { b.store.KeepStump(id) }
 func (b *XwalBackend) CreateConversation(outfitID string) (string, error) {
 	return b.store.CreateConversation(outfitID)
 }

@@ -283,32 +283,49 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 	// request is cheap relative to anything downstream.
 	loaded, ofit := h.settings()
 
-	// Birth is a fork of the null form carrying a patch, and that patch always
-	// wears the default underneath: `layers:["default"]` folded first, whatever
-	// the caller sent on top. One rule for -O — it adds, it never replaces — so
-	// `send -O mantra=x` from an unbound shell means something.
-	asked := form.Patch{}
-	if req.Patch != nil {
-		asked = *req.Patch
-	}
-	asked, err := outfit.WithLayer(asked, outfit.NameDefault)
+	// TWO PATCHES, and which is which is the whole economy of this.
+	//
+	// The STUMP carries the default outfit's closure and NOTHING else, so its
+	// identity is a pure function of that closure — every aria on the same
+	// outfit shares one node, one set of records, and one rendered prefix in
+	// the provider's cache. Folding the caller's -O in here (which is what
+	// 0.22.1 did) minted a private stump per literal, so `-O mantra=x` defeated
+	// the sharing this exists for.
+	//
+	// The CHILD carries everything per-aria: what -O asked for, the runtime
+	// fill-ins, its own id. So `-O` adds to the default instead of replacing
+	// it, and that rule now falls out of the topology rather than being
+	// arranged: the default is what the child inherits, -O is what it wrote.
+	// Resolved through the reserved `default` layer, which is the one LENIENT
+	// name: a configured default that is not on disk yet folds to nothing
+	// rather than failing, because that absence is what the first-run flow
+	// rides on — it surfaces downstream as the missing provider it is.
+	outfitName := loaded.Config.DefaultOutfit
+	asked, err := outfit.WithLayer(form.Patch{}, outfit.NameDefault)
 	if err != nil {
 		return nil, err
 	}
-	outfitName := outfit.Label(asked, loaded.Config.DefaultOutfit)
-	base, err := ofit.Materialize(asked, loaded.Config.DefaultOutfit)
+	stumpPatch, err := ofit.Materialize(asked, outfitName)
 	if err != nil {
 		return nil, h.errOutfitNotFound(outfitName, err)
 	}
-	// Nothing configured and nothing sent: there is no first move to make.
-	// A default that IS named but missing on disk falls through, so the
-	// failure is reported as the missing provider it actually is.
-	if base.IsEmpty() && loaded.Config.DefaultOutfit == "" {
+
+	dress := form.Patch{}
+	if req.Patch != nil {
+		dress, err = ofit.Materialize(*req.Patch, outfitName)
+		if err != nil {
+			return nil, h.errOutfitNotFound(outfit.Label(*req.Patch, outfitName), err)
+		}
+	}
+	// The provider is resolved against what the aria will ACTUALLY wear: the
+	// stump underneath, the dressing on top.
+	base := mergePatches(stumpPatch, dress)
+	// Nothing configured and nothing sent: there is no first move to make. A
+	// default that IS named but missing on disk falls through, so the failure
+	// is reported as the missing provider it actually is.
+	if base.IsEmpty() && outfitName == "" {
 		return nil, h.errNoDefaultOutfit()
 	}
-	// outfitPatch is the STABLE identity of the node this aria hangs under;
-	// the per-create fill-ins ride the conversation's own boot patch.
-	outfitPatch := base
 
 	provName := patchString(base, "system.provider")
 	if provName == "" {
@@ -352,14 +369,20 @@ func (h *handlers) create(ctx context.Context, params json.RawMessage) (interfac
 		bp := boot
 		inlineBoot = &bp
 	} else {
-		// Birth is a fork of the null root carrying its whole form: no outfit
-		// node in between. The aria's identity is the hash of this patch, and
-		// it states its own name — where a stump used to state it for a family
-		// of arias that shared a rendered prefix. That prefix is what this
-		// trades away, deliberately: one node per aria, one patch, one record.
-		birth := birthPatch(outfitPatch, outfitName, cwd)
+		// Mint the outfit's stump if this is the first aria to wear it, then
+		// fork it. ForkWith does not care what the parent is — the null root
+		// or a stump — so birth is one verb either way.
+		stumpID, serr := backend.CreateOutfit(outfitName, birthPatch(stumpPatch, outfitName, ""))
+		if serr != nil {
+			return nil, fmt.Errorf("mint outfit stump: %w", serr)
+		}
+		// This is what the default resolves to RIGHT NOW, so it is the one
+		// collection spares. Edit the outfit's files and the hash moves; the
+		// version nobody wears any more stops being spared and is reaped when
+		// its last aria dies.
+		backend.KeepStump(stumpID)
 		var cerr error
-		id, _, cerr = backend.ForkWith("", 0, birth)
+		id, _, cerr = backend.ForkWith(stumpID, 0, childBirthPatch(dress, cwd))
 		if cerr != nil {
 			return nil, fmt.Errorf("mint aria: %w", cerr)
 		}
@@ -916,6 +939,34 @@ func forkDress(dress form.Patch, parent string) form.Patch {
 	// until the child exists, so aria_id is re-stamped by the boot patch that
 	// follows. What this guarantees is that the birth patch is never empty.
 	p.Set["system.forked_from"] = json.RawMessage(`"` + parent + `"`)
+	return p
+}
+
+// mergePatches folds b over a.
+func mergePatches(a, b form.Patch) form.Patch {
+	out := form.Patch{Set: map[string]json.RawMessage{}, Remove: append(append([]string(nil), a.Remove...), b.Remove...)}
+	for k, v := range a.Set {
+		out.Set[k] = v
+	}
+	for k, v := range b.Set {
+		out.Set[k] = v
+	}
+	return out
+}
+
+// childBirthPatch is what an aria writes for ITSELF: the dressing it asked for
+// and the runtime fill-ins. Everything else it inherits from the stump. It is
+// never empty — cwd is always known — which is what lets ForkWith demand a
+// patch.
+func childBirthPatch(dress form.Patch, cwd string) form.Patch {
+	p := form.Patch{Set: map[string]json.RawMessage{}, Remove: dress.Remove}
+	for k, v := range dress.Set {
+		p.Set[k] = v
+	}
+	if b, err := json.Marshal(cwd); err == nil && cwd != "" {
+		p.Set["system.cwd"] = b
+		p.Set["system.root"] = b
+	}
 	return p
 }
 

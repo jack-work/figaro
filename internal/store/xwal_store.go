@@ -212,6 +212,12 @@ func storeOptions(segmentSize int) xwal.StoreOptions {
 // owns all durability: appends are memory-first, disk follows with
 // bounded lag, Kick expedites).
 type XwalStore struct {
+	// keepStump is the stump collection spares (the live default). Its own
+	// lock: collectStump runs under s.mu and KeepStump is called from outside
+	// it, so sharing s.mu would invert the order.
+	keepMu    sync.Mutex
+	keepStump string
+
 	root     string
 	mu       sync.Mutex
 	trunks   *xwal.Store
@@ -388,9 +394,21 @@ func (s *XwalStore) CreateOutfit(name string, patch message.Patch) (string, erro
 	}
 	stump := outfitStump(ver)
 	for _, st := range s.trunks.Stumps() {
-		if st.Name == stump {
-			return stump, nil // already materialized
+		if st.Name != stump {
+			continue
 		}
+		// Reuse it only if it MINTED. A stump whose directory exists and whose
+		// birth record never landed is indistinguishable from a finished one by
+		// name alone, and reusing it hands every aria beneath an empty prefix —
+		// no skills, no credo — for as long as the store lives. Existence is
+		// not completeness.
+		if s.stumpBorn(stump) {
+			return stump, nil
+		}
+		if rerr := s.trunks.RemoveStump(stump); rerr != nil {
+			return "", fmt.Errorf("xwal store: half-minted stump %s: %w", stump, rerr)
+		}
+		break
 	}
 	if err := s.trunks.CreateStump(stump); err != nil {
 		return "", fmt.Errorf("xwal store: create outfit stump: %w", err)
@@ -434,6 +452,11 @@ func (s *XwalStore) ForkWith(parent string, atMainLT uint64, patch message.Patch
 	switch {
 	case parent == "":
 		child, err = s.trunks.SpawnUnderRoot()
+	case s.isStumpLocked(parent):
+		// A stump is not a trunk and has no tail to fork: spawning beneath it
+		// is what "fork the outfit" means, and the child inherits the birth
+		// record every sibling reads.
+		child, err = s.trunks.SpawnUnderStump(parent)
 	case atMainLT == 0:
 		child, err = s.trunks.ForkTail(parent)
 	default:
@@ -478,6 +501,35 @@ func (s *XwalStore) writeBirth(node string, patch message.Patch) (uint64, error)
 	// Durable before anything spawns beneath it: a crash between here and the
 	// next flush would orphan a child's fork base.
 	return version, x.SyncCoherent()
+}
+
+// KeepStump names the one stump collection spares — the current default. The
+// angelus sets it whenever it mints or reuses one, so "current" tracks the
+// outfit's content rather than its name.
+func (s *XwalStore) KeepStump(id string) {
+	s.keepMu.Lock()
+	s.keepStump = id
+	s.keepMu.Unlock()
+}
+
+// isStumpLocked reports whether an id names a stump. Caller holds s.mu.
+func (s *XwalStore) isStumpLocked(id string) bool {
+	for _, st := range s.trunks.Stumps() {
+		if st.Name == id {
+			return true
+		}
+	}
+	return false
+}
+
+// stumpBorn reports whether a stump has its birth record. Caller holds s.mu.
+func (s *XwalStore) stumpBorn(stump string) bool {
+	x, err := s.trunks.StumpHead(stump)
+	if err != nil {
+		return false
+	}
+	defer x.Close()
+	return mainTailOf(x) > 0
 }
 
 // CreateConversation spawns a conversation from an outfit stump.
@@ -910,6 +962,18 @@ func (s *XwalStore) CollectStump(id string) error {
 // and failing the delete because the collection failed would be a lie.
 func (s *XwalStore) collectStump(name string) {
 	if name == "" {
+		return
+	}
+	// The LIVE default is kept even when childless: it is the one stump the
+	// next `fig new` will want, and re-minting it means re-writing the whole
+	// outfit — every skill, every credo — for nothing. Superseded versions of
+	// the same outfit are not spared: the hash is what varies when the files
+	// change, so keeping "the default" by name would pin every version it ever
+	// had.
+	s.keepMu.Lock()
+	keep := s.keepStump
+	s.keepMu.Unlock()
+	if name == keep {
 		return
 	}
 	for _, st := range s.trunks.Stumps() {
