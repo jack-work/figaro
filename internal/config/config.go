@@ -674,6 +674,44 @@ func Load(configDir string) (*Loaded, error) {
 			cfg.DefaultOutfit = legacy.DefaultOutfit
 		}
 	}
+	// The CLI settings were read from the TOP LEVEL until they moved into
+	// [cli]. Same treatment as default_loadout above, for the same reason: a
+	// config.toml written before the move is still on disk, TOML has no idea
+	// the key was renamed, and an unread key here is silent — measured,
+	// `echo_prompt = false` at the top level yielded EchoPrompt() == true with
+	// no error and no warning. A setting that quietly stops applying is worse
+	// than one that fails loudly, because nobody goes looking.
+	//
+	// [cli] wins wherever it says anything; the old spelling only fills what
+	// it left unset. Drop this once no config in the wild predates the move.
+	var preSection CLIConfig
+	if err := toml.Unmarshal(data, &preSection); err == nil {
+		c := &cfg.CLI
+		if c.EchoPrompt == nil {
+			c.EchoPrompt = preSection.EchoPrompt
+		}
+		if c.StatusLine == nil {
+			c.StatusLine = preSection.StatusLine
+		}
+		if c.Interactive == nil {
+			c.Interactive = preSection.Interactive
+		}
+		if c.StreamCPS == nil {
+			c.StreamCPS = preSection.StreamCPS
+		}
+		if c.StreamFirstByteBypassMs == nil {
+			c.StreamFirstByteBypassMs = preSection.StreamFirstByteBypassMs
+		}
+		if c.StreamEmitIntervalMs == nil {
+			c.StreamEmitIntervalMs = preSection.StreamEmitIntervalMs
+		}
+		if c.CheckUpdates == nil {
+			c.CheckUpdates = preSection.CheckUpdates
+		}
+		if c.RefSigil == "" {
+			c.RefSigil = preSection.RefSigil
+		}
+	}
 
 	if err := cfg.validateWire(); err != nil {
 		return nil, err
