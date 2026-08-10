@@ -130,6 +130,50 @@ For UI work, a pty is the only honest oracle: see
 bug from a real session rather than a guess, record and replay it:
 [reference/tapes.md](reference/tapes.md).
 
+## Releasing: `scripts/release.sh`, always
+
+**Do not cut a release by hand.** A tag is not a release here: nothing on any
+machine follows tags.
+
+```
+flake.nix version ──▶ tag vX.Y.Z ──▶ GitHub release   (what a hand-cut release does)
+                  └──▶ `release` BRANCH               (what actually ships)
+```
+
+A `nix profile` entry tracks `?ref=release`:
+
+```
+Original flake URL: git+file:///home/gluck/dev/figaro-qua/.bare?ref=release
+```
+
+so `nix profile upgrade --all` follows that branch and nothing else. Cut a tag
+without moving `release` and the upgrade is a silent no-op — the symptom is a
+"stale" figaro that is simply the last version the branch pointed at. That is
+step 5 of the script, and it is the step a human skips.
+
+```sh
+scripts/release.sh minor -m "one outfit spec, every verb" --notes-file NOTES.md
+scripts/release.sh patch --dry-run        # print every mutation, perform none
+```
+
+It also: refuses a dirty tree or a branch behind the remote; gates on
+`go build && go vet && go test`; refuses a version already tagged or moving
+backwards; asserts that the tag and the version a built binary reports are the
+same string; and writes the GitHub release title and notes **out of the tag
+message**, so the two cannot disagree.
+
+The version lives in `flake.nix` and nowhere else. The bump argument is
+optional: with one, `flake.nix` moves and the tag follows; without one,
+whatever `flake.nix` already declares gets cut.
+
+Nothing on this machine is upgraded by the script, deliberately. Take it
+yourself, **from a terminal and not from inside an aria** — the upgrade swaps
+the binary under the running angelus that is hosting you:
+
+```sh
+figaro stop --keep-pids && nix profile upgrade --all
+```
+
 ## Versions on disk: which one to bump
 
 Three, with three owners. The test is always the same: **who cannot read what.**

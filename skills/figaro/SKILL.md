@@ -61,7 +61,7 @@ Each row is a separate read. Open one only when its "when" is true of you.
 | [start.md](start.md) | You are new to figaro and want the first hour to go well. Read once. |
 | [cli.md](cli.md) | You need a command that is not in the gesture list above, a flag's exact meaning, or the vault (passphrase/keyring) verbs. |
 | [agents.md](agents.md) | You are an agent driving figaro, or you are writing a script that does. |
-| [maintaining.md](maintaining.md) | You are changing the figaro source, or handing changed source back to its owner. |
+| [maintaining.md](maintaining.md) | You are changing the figaro source, handing changed source back to its owner, or **cutting a release** — read it before tagging anything: a tag alone ships to nobody. |
 | [updating-docs.md](updating-docs.md) | You are about to edit any file in this tree. Read it before, not after. |
 
 Deep chapters, in `reference/`. These are long by design and cost real context;
