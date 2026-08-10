@@ -26,6 +26,16 @@ import (
 //   - two tool nodes, one with a large captured output
 // ---------------------------------------------------------------------------
 
+// Every turn in the rig carries the question that provoked it, because every
+// turn in production does. Without one the renderer takes a different branch —
+// no inquiry seam, and since the speaker header closes that seam, no header
+// either — so the rig would measure a shape no reader ever sees, and its
+// rows-per-message (which is the budget the retained window is spent in)
+// would be wrong by two rows per turn.
+func heavyInquiry(seed int) string {
+	return fmt.Sprintf("Question %d: what does the transcript do with a heavy turn?", seed)
+}
+
 func heavyNodes(seed int, outputLines int) []livedoc.Node {
 	var prose strings.Builder
 	for p := range 3 {
@@ -61,7 +71,7 @@ func heavyTranscript(b *testing.B, messages, outputLines int) (*transcript, *ari
 	client.SetClosedLimit(transcriptTailLimit)
 	committed := make([]aria.TurnPart, messages)
 	for i := range committed {
-		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, outputLines)}}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Inquiry: heavyInquiry(i + 1), Nodes: heavyNodes(i+1, outputLines)}}
 	}
 	client.Apply(aria.Page{Parts: committed})
 	tr := newTranscript(io.Discard, 100, 40, &ariaView{settings: &renderSettings{}}, client, "benchmark", time.Unix(0, 0))
@@ -158,7 +168,7 @@ func BenchmarkTranscriptHeavyEnter(b *testing.B) {
 	client.SetClosedLimit(transcriptTailLimit)
 	committed := make([]aria.TurnPart, 200)
 	for i := range committed {
-		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Nodes: heavyNodes(i+1, 200)}}
+		committed[i] = aria.TurnPart{Turn: aria.Turn{ID: uint64(i + 1), Sealed: true, Inquiry: heavyInquiry(i + 1), Nodes: heavyNodes(i+1, 200)}}
 	}
 	client.Apply(aria.Page{Parts: committed})
 	b.ReportAllocs()
