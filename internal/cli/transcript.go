@@ -64,8 +64,25 @@ type transcript struct {
 	lastFull time.Time
 	lineKey  []sliceKey // slice owning each line of lines(), for resize anchoring
 	offset   int        // top line of the viewport into lines()
-	follow   bool       // stick to the bottom on new content
-	pendG    bool       // saw one 'g' (for gg)
+	// wantTop is a STANDING request for the beginning, armed by Home/gg.
+	//
+	// It exists because "top of the retained window" is not a place that holds
+	// still. Sitting at offset 0 is what arms the backward prefetch; when that
+	// page lands, older rows are prepended and restoreViewportAnchor — rightly,
+	// for an ordinary scroll — keeps the reader on the content they were
+	// looking at, which is now a long way down. Measured on a 206-message aria,
+	// five presses of Home in a row:
+	//
+	//	126–148/620 → 83–105/702 → 251–273/952 → 63–85/1014 → 273–295/1286
+	//
+	// The window grows every time and the reader never arrives. So the gesture
+	// records an INTENT rather than a position: while it stands, a landing
+	// re-pins to 0 instead of restoring the anchor, and each landing arms the
+	// next fetch, so the walk to the floor happens on the paging path and never
+	// blocks a keystroke. Any deliberate move elsewhere retracts it.
+	wantTop bool
+	follow  bool // stick to the bottom on new content
+	pendG   bool // saw one 'g' (for gg)
 
 	// Frame scheduling. render() marks the screen stale and defers when a
 	// batch is open (an input burst being drained) or when the frame-rate gate
@@ -103,7 +120,7 @@ type transcript struct {
 	// interval [from, ∞), whose floor is the anchor of its oldest message. There
 	// is no second copy of anything, in either direction.
 	//
-	// This is what dissolves the frozen detached tail (docs/range-store.md, bug
+	// This is what dissolves the frozen detached tail (skills/figaro/contributing/range-store.md, bug
 	// B). The pager used to snapshot the closed tail into t.pages and freeze the
 	// open message beside it (heldOpen), because client.Open() is the open
 	// SUFFIX: as Live.From advances, nodes LEAVE the suffix and become closed
@@ -302,6 +319,7 @@ func (t *transcript) leave() {
 // not to the frame: an offset put out of range by anything else (a search jump,
 // a page landing, a resize) is clamped, as it always was.
 func (t *transcript) scroll(delta int) {
+	t.wantTop = false
 	t.stopFollowing()
 	t.offset += delta
 	if _, maxOff := t.layout(len(t.footLines())); t.offset > maxOff {
@@ -357,7 +375,7 @@ const (
 
 // transcriptWindowRows is the retained-window budget in rendered rows. A var,
 // not a const, so the geometry sweep in transcript_geometry_bench_test.go can
-// measure the tradeoff it encodes. See docs/transcript-paging.md for the
+// measure the tradeoff it encodes. See skills/figaro/contributing/notes/transcript-paging.md for the
 // numbers behind the chosen value.
 //
 // RE-DERIVED FOR THE MERGED STACK. Axis D measured the knee at 1200 rows
@@ -553,7 +571,15 @@ func (t *transcript) lowerFloor(a aria.Anchor) {
 // reachedFloor is what to do when the walk can go no further: a search that
 // found nothing goes home, and a jump resolves against the beginning it was
 // waiting for (`:0` lands on the lowest turn that actually exists).
+//
+// A standing Home is satisfied here too. The floor is proven two ways — a page
+// that lands on it (absorbOlder, which clears the request as it re-pins) and an
+// EMPTY backward read, which is this path and is the only proof for an aria
+// whose oldest turn the wire will not hand over again. Clearing in one place
+// and not the other left the request standing forever on the commoner of the
+// two, which is a stale intent waiting for a later landing to act on.
 func (t *transcript) reachedFloor() {
+	t.wantTop = false
 	t.finishSearch(false)
 	t.jumpAdvance()
 	t.render()
@@ -640,7 +666,16 @@ func (t *transcript) absorbOlder(gained []aria.Message, anchor sliceKey, within 
 		return
 	}
 	t.buildIndex()
-	t.restoreViewportAnchor(anchor, within)
+	if t.wantTop {
+		// The reader asked for the beginning and has not asked for anything
+		// since. Hold them at the top of what is now held; the floor clears it.
+		t.offset = 0
+		if t.atAriaFloor() {
+			t.wantTop = false
+		}
+	} else {
+		t.restoreViewportAnchor(anchor, within)
+	}
 	t.jumpAdvance()
 }
 
@@ -696,7 +731,7 @@ func anchorOf(m aria.Message) aria.Anchor {
 // historyPage is a fetched page folded into the pager's units, WITH the turn
 // extents the wire stated. The extents are what let the store decide that the
 // last node of turn t and the first of turn t+1 are neighbours rather than a
-// hole: an anchor cannot answer that on its own (docs/range-store.md,
+// hole: an anchor cannot answer that on its own (skills/figaro/contributing/range-store.md,
 // "Adjacency is NOT decidable from an anchor"), and a page clipped at its tail
 // states nothing, so the map is deliberately partial.
 type historyPage struct {
@@ -855,6 +890,7 @@ func (k sliceKey) turn() int { return int(k >> sliceKeyFromBits) }
 // is cheaper than checking whether a copy of it is current — and a copy can
 // disagree with the store, which is the disease this phase treats.
 func (t *transcript) resetToTail() {
+	t.wantTop = false
 	keep := t.tailKeep()
 	n := t.client.Count()
 	if keep > n {
@@ -1094,7 +1130,7 @@ func (t *transcript) pruneCaches() {
 //
 // GAP-BLIND BY CHOICE, which is the contract's default mode: over the store's
 // window interval it asks for what is held and is never lied to about
-// adjacency — it simply gets less. See docs/range-store.md, "The two verbs".
+// adjacency — it simply gets less. See skills/figaro/contributing/range-store.md, "The two verbs".
 func (t *transcript) forEachMessage(fn func(aria.Message)) {
 	t.client.ForEachIn(t.from, windowEnd, func(m aria.Message) bool {
 		fn(m)
@@ -1942,10 +1978,15 @@ func pagerTail(t *transcript) {
 	t.resetToTail()
 }
 
-// pagerTop jumps to the top of the retained window (Home, and the second g).
+// pagerTop goes to the beginning (Home, and the second g).
+//
+// Still the CHEAP gesture — no walk is armed, nothing blocks, and a reader
+// already standing on the floor simply lands. What it adds is that the request
+// SURVIVES the fetch it provokes; see transcript.wantTop.
 func pagerTop(t *transcript) {
 	t.stopFollowing()
 	t.offset = 0
+	t.wantTop = !t.atAriaFloor()
 }
 
 // pagerPendingTop is the second half of the two-key gg gesture; the first 'g'
@@ -2039,6 +2080,7 @@ func (t *transcript) find(q string) {
 	if q == "" {
 		return
 	}
+	t.wantTop = false // a search is a deliberate move; see transcript.wantTop
 	t.matchQuery = q
 	t.settle() // search the converged window: stopFollowing must not move it under us
 	total := t.index.total
@@ -2066,6 +2108,7 @@ func (t *transcript) findRepeat(delta int) {
 	if t.matchQuery == "" || delta == 0 {
 		return
 	}
+	t.wantTop = false // a search is a deliberate move; see transcript.wantTop
 	q := t.matchQuery
 	t.settle()
 	total := t.index.total

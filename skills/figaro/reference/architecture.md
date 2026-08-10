@@ -23,7 +23,7 @@ source named here and trust it over this file.
 An agent is a memory decision, not an identity. It is built on demand and
 reclaimed when idle, while the aria's endpoint, bindings and background jobs
 outlive it — so "the aria" and "the agent serving it" are different lifetimes.
-See [reclamation.md](reclamation.md).
+See [reclamation.md](../contributing/reclamation.md).
 
 ## The IR — `internal/message`
 
@@ -157,7 +157,7 @@ clears the dirty flag with a single non-looping CAS.
 
 Outfits (`internal/outfit`) assemble a form patch from a SPEC — names,
 inline literals, and their layers — defaulting to `config.toml`'s
-`default_outfit` ([reference/outfits.md](outfits.md)). `fileName`/`dirName` tables load file bodies as
+`default_outfit` ([outfits.md](outfits.md)). `fileName`/`dirName` tables load file bodies as
 content envelopes (`{frontmatter|content, filePath}`) — skills come in this
 way (`skills.<base>`), so the agent sees a skill's frontmatter and reads its
 body on demand. Bundled first-party skills merge under the user's by name.
@@ -180,7 +180,7 @@ one is a change of listener count rather than of architecture.
 The per-aria socket is served by the **angelus**, not by the agent, and answers
 whether or not an agent is resident: `rpc.MethodNeedsAgent` decides which
 methods are served from the store and which wake the aria. See
-[reclamation.md](reclamation.md).
+[reclamation.md](../contributing/reclamation.md).
 
 ### Caller identity — `x-internal-figaro-id`
 
@@ -489,4 +489,4 @@ for list/status metadata. See arias.md for reading these safely.
 
 `XwalBackend` memoizes one row cache per (aria, channel) so a reader sees the
 writer's appends lock-free. Those caches are bounded and evictable; what they
-cost and when they are released is [reclamation.md](reclamation.md).
+cost and when they are released is [reclamation.md](../contributing/reclamation.md).

@@ -412,6 +412,7 @@ func (t *transcript) firstRefOfTurn(turn int) nodeRef {
 // The offset is set last for the same reason: stopFollowing re-derives it for
 // the detached geometry, and would otherwise overwrite the landing.
 func (t *transcript) landJump(line int, ref nodeRef) {
+	t.wantTop = false
 	t.jumpNote = ""
 	t.stopFollowing()
 	if ref.valid() {
@@ -436,6 +437,7 @@ func (t *transcript) landJump(line int, ref nodeRef) {
 // after detaching (see landJump), and a click is on screen already. Whoever
 // calls this owns where the page ends up.
 func (t *transcript) selectRef(ref nodeRef, extend bool) bool {
+	t.wantTop = false // selecting is a deliberate move; see transcript.wantTop
 	for _, p := range t.nodeRefs() {
 		if p.nodeRef != ref {
 			continue

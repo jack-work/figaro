@@ -139,8 +139,6 @@ func (s *Server) Update(nodes []livedoc.Node) {
 	s.open.ver++
 	// The question rides the frames that ESTABLISH this streaming suffix — its
 	// first, and its close — and no others. See inquiryOfLocked.
-	// The question rides the frames that ESTABLISH this streaming suffix — its
-	// first, and its close — and no others. See inquiryOfLocked.
 	inquiry, segments := "", []InquirySegment(nil)
 	if v == 0 {
 		inquiry, segments = s.inquiryOfLocked(s.open.id)

@@ -21,7 +21,7 @@ file can run a hunt end to end; a test suite cannot yet.
 | **`docs/paint-repro.md`** | one subsystem's cookbook: the pager's geometry, the store fixtures, and the findings of the paint hunts (§8.1–§8.4). |
 | **`scripts/paintpane.sh`** + `paint-jogdiff.sh`, `paint-gapcheck.sh` | the runnable shell harness (`pp_*` verbs) and two packaged oracles. |
 | **`internal/cli/tmuxsmoke_*_test.go`** | the automated end of the same method: `FIGARO_TMUX_SMOKE=1 go test ./internal/cli/ -run TestSmoke`. Real binary, real pty, real provider, skipped by default. |
-| **[tapes.md](tapes.md)** | recording a live aria's wire and replaying it: the honest fixture when the bug needs a real session's shape, and the CI end of one. |
+| **[tapes.md](../debugging/tapes.md)** | recording a live aria's wire and replaying it: the honest fixture when the bug needs a real session's shape, and the CI end of one. |
 | **this file** | the PROCEDURE that stitches them together, and the promotion path from a hunt to a case. |
 
 ---
@@ -66,7 +66,7 @@ Non-negotiables, each of which has cost somebody a wrong answer:
   `go build` gives yours. A whole night of this hunt ran on stamped scratch
   builds under Go 1.26.5 while the flake builds under 1.26.1 — a difference
   that can decide whether a rendering bug reproduces at all. See
-  [maintaining.md](../maintaining.md) for the presets and how to isolate the
+  [maintaining.md](maintaining.md) for the presets and how to isolate the
   store inside a shell.
 - **If you must use `go build`, stamp it.** A plain `go build` in a *worktree*
   records no revision (Go's VCS detection needs `.git` to be a directory), so

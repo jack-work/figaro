@@ -488,7 +488,7 @@ func TestTranscriptVirtualIndex_Degenerate(t *testing.T) {
 
 	// A single message: no separator triple, so entry 0 starts at line 0.
 	client.Apply(aria.Page{Parts: []aria.TurnPart{{Turn: aria.Turn{
-		ID: uint64(1), Sealed: true,
+		ID: uint64(1), Sealed: true, Inquiry: "q",
 		Nodes: []livedoc.Node{{Type: livedoc.NodeProse, Markdown: "solo"}},
 	}}}})
 	tr.render()

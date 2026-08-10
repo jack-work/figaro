@@ -403,7 +403,7 @@ func (i *Incipit) LiveHeight() int { return len(i.live) }
 // minInlineHeight is the viewport below which the live region draws the footer
 // ALONE. It mirrors cli.minPagerHeight deliberately: that constant is the floor
 // under which the transcript pager refuses to open, so below it there is no
-// escape hatch from the inherent inline limit (docs/ui-stream.md) — a live
+// escape hatch from the inherent inline limit (skills/figaro/reference/ui-stream.md) — a live
 // region taller than the viewport scrolls rows into native history, where they
 // can never be repainted, stranding half-drawn frames forever.
 //

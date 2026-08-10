@@ -61,11 +61,12 @@ Each row is a separate read. Open one only when its "when" is true of you.
 | [start.md](start.md) | You are new to figaro and want the first hour to go well. Read once. |
 | [cli.md](cli.md) | You need a command that is not in the gesture list above, a flag's exact meaning, or the vault (passphrase/keyring) verbs. |
 | [agents.md](agents.md) | You are an agent driving figaro, or you are writing a script that does. |
-| [maintaining.md](maintaining.md) | You are changing the figaro source, handing changed source back to its owner, or **cutting a release** — read it before tagging anything: a tag alone ships to nobody. |
-| [updating-docs.md](updating-docs.md) | You are about to edit any file in this tree. Read it before, not after. |
+| [contributing/](contributing/README.md) | You are changing figaro's source or its docs, or **cutting a release** — a tag alone ships to nobody. Start at that index. |
 
 Deep chapters, in `reference/`. These are long by design and cost real context;
-open one when you are working inside that subsystem, not to browse.
+open one when you are working inside that subsystem, not to browse. Chapters
+about changing figaro rather than using it live under
+[contributing/](contributing/README.md) and are indexed there.
 
 | File | When to read it |
 |---|---|
@@ -74,18 +75,10 @@ open one when you are working inside that subsystem, not to browse.
 | [reference/arias.md](reference/arias.md) | Reading an aria off disk, and the store layout. |
 | [reference/architecture.md](reference/architecture.md) | The three roles, the IR, the form, the RPC wire, the provider layer. |
 | [reference/ui-stream.md](reference/ui-stream.md) | How a conversation reaches a terminal: the read wire, inline freeze, the pager. |
-| [reference/ui-testing.md](reference/ui-testing.md) | Testing anything that paints, in a real pty. |
-| [reference/tapes.md](reference/tapes.md) | A rendering bug someone SAW and you cannot reproduce, or you want one recorded for CI. |
-| [reference/paint-repro.md](reference/paint-repro.md) | Hunting a specific paint bug, or running the `scripts/paint-*.sh` instruments. |
 | [reference/cache-control.md](reference/cache-control.md) | Prompt caching, and overriding it. |
-| [reference/reclamation.md](reference/reclamation.md) | What a live aria costs, when the daemon reclaims one, and the `[memory]` knobs. Read before changing the hub, the sweep, or the row caches. |
 | [reference/outfits.md](reference/outfits.md) | Composing outfits, the `-O` spec syntax, or `-O` did not do what you expected. |
+| [debugging/tapes.md](debugging/tapes.md) | Record an aria's wire and replay it: a rendering bug someone SAW and you cannot reproduce, or one recorded for CI. |
 | [reference/mantra.md](reference/mantra.md) | Maintaining your aria's mantra. |
-| [reference/trunks-substrate.md](reference/trunks-substrate.md) | Changing `internal/store` or the fork handlers. Machinery, not usage. |
-| [reference/translation-lineage.md](reference/translation-lineage.md) | Provider wire caches across a fork. |
-| [reference/range-store.md](reference/range-store.md) | A design that is **not built**. Read as a proposal. |
-| [reference/ir-convergence.md](reference/ir-convergence.md) | Part shipped, one part open. Read for the open tool-channel question. |
-| [notes/](notes/) | Finished or abandoned work. Verify before trusting. |
 
 Other first-party skills stand on their own: **subagents** for fanning work
 out, **figscript** for scripting figaro from a shell, **figla** for waiting on

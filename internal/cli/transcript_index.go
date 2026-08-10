@@ -84,7 +84,7 @@ func (e *lineEntry) sepHeight() int {
 // row height is only knowable by rendering, so a hole of twelve turns might be
 // forty rows or four thousand, and a placeholder sized from the turn count
 // would be a number we invented. One sentinel row is the honest
-// representation (docs/range-store.md, "Gaps and rendering").
+// representation (skills/figaro/contributing/range-store.md, "Gaps and rendering").
 func (e *lineEntry) height() int {
 	if e.isGap() {
 		return e.sepHeight() + 1

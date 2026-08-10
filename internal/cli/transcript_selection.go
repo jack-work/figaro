@@ -174,6 +174,7 @@ func (t *transcript) selectNode(delta int, extend bool) {
 	if len(refs) == 0 {
 		return
 	}
+	t.wantTop = false // selecting is a deliberate move; see transcript.wantTop
 	index := -1
 	if t.selection.active {
 		for i, ref := range refs {

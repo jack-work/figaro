@@ -11,7 +11,7 @@ import (
 
 // This file is the RANGE STORE — the client's model of one aria as a SET OF
 // CONTIGUOUS INTERVALS over (turn, node) space, rather than a list plus a pile
-// of booleans. See docs/range-store.md; that document is the contract and this
+// of booleans. See skills/figaro/contributing/range-store.md; that document is the contract and this
 // is its implementation.
 //
 // The bug class it exists to prevent is FABRICATED ADJACENCY: handing a caller
@@ -124,7 +124,7 @@ type Pending struct {
 
 // openTail is the ONE streaming suffix. It is today's client machinery moved
 // intact under the store, so that invariant 4 — the open turn is disjoint from
-// every range — has an owner that can be checked. (docs/range-store.md calls
+// every range — has an owner that can be checked. (skills/figaro/contributing/range-store.md calls
 // this field `open *openTurn`; the name openTurn is already taken in this
 // package by the SERVER's open-turn record, so the type is named openTail and
 // held by value, with turn == 0 meaning "nothing open", which is the sentinel

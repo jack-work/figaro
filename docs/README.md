@@ -7,7 +7,7 @@ Nothing but pointers belongs here. This directory is deliberately not a second
 home for documentation, because two homes drift in both directions at once and
 this repository has already paid for that once. The reasoning, the budgets and
 the rules are in
-[`../skills/figaro/updating-docs.md`](../skills/figaro/updating-docs.md); read
+[`../skills/figaro/contributing/updating-docs.md`](../skills/figaro/contributing/updating-docs.md); read
 it before adding any file anywhere.
 
 The practical reason the docs live under `skills/`: that tree ships inside the

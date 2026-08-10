@@ -80,14 +80,24 @@ func (c Composer) Message(m aria.Message, w int) []Row {
 	if len(body) == 0 {
 		return rows
 	}
-	if len(rows) > 0 {
+	// The speaker header closes the inquiry seam; it does not open a node run.
+	// A message with no question is a CONTINUATION of one already on screen —
+	// a page window that opened mid-turn, or a unit cut off an oversize turn —
+	// and announcing the speaker again asserts a boundary the turn does not
+	// have.
+	//
+	// Named, because the test is not "are there rows" but "was a question
+	// drawn": rows can only have come from c.inquiry today, and anything
+	// prepended above would silently bring the ghost back.
+	seam := len(rows) > 0
+	if seam {
 		rows = append(rows, chrome(""))
 		if c.Rule != nil {
 			rows = append(rows, chrome(clip(c.Rule(), w)))
 		}
-	}
-	if h := c.head(m.Role); h != "" {
-		rows = append(rows, chrome(h), chrome(""))
+		if h := c.head(m.Role); h != "" {
+			rows = append(rows, chrome(h), chrome(""))
+		}
 	}
 	return append(rows, body...)
 }
@@ -100,7 +110,7 @@ func (c Composer) Nodes(nodes []livedoc.Node, w int) []Row {
 	}
 	var rows []Row
 	for k, n := range nodes {
-		// Minted-but-empty prose/thinking (docs/turn-addressing.md, invariant 6)
+		// Minted-but-empty prose/thinking (skills/figaro/reference/turns.md, invariant 6)
 		// holds a node id so later ids cannot shift; it draws nothing.
 		if n.Type != livedoc.NodeTool && strings.TrimSpace(n.Markdown) == "" {
 			continue

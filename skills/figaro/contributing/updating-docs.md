@@ -86,7 +86,7 @@ A budget without a number is a preference.
 7. **Describe the invariant, not the diff.** No "recently", no "as of 0.15.2",
    no in-flight branch names, no changelog voice. Something genuinely planned
    and not built says so in a banner at the top, unmissably, the way
-   [reference/range-store.md](reference/range-store.md) does.
+   [range-store.md](range-store.md) does.
 8. **Check every claim against source, not against the previous doc.** A skill
    that lies is worse than no skill, because it is trusted. Quote the line you
    are describing and name its file.

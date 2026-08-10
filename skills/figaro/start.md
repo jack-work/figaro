@@ -119,4 +119,4 @@ config directory. If you shadow one, you own the copy, and it will drift.
 |---|---|
 | A command that is not above | [cli.md](cli.md) |
 | To script figaro, or drive it from an agent | [agents.md](agents.md) |
-| To change figaro itself | [maintaining.md](maintaining.md) |
+| To change figaro itself | [contributing/maintaining.md](contributing/maintaining.md) |

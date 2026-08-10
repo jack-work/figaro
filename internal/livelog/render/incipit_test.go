@@ -138,8 +138,13 @@ func TestIncipit_ThinkingAdoptedInPlace(t *testing.T) {
 	}
 
 	// content streams in; the real assistant frame adopts the region
-	in.Open(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
-	in.Freeze(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
+	// The inquiry rides the frame that ESTABLISHES the suffix, exactly as the
+	// aria server sends it; the header follows the question, so a fixture
+	// without one would be testing a frame production never emits.
+	in.Open(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Inquiry: "ask",
+		Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
+	in.Freeze(aria.Message{Turn: 2, Role: livedoc.RoleOutput, Inquiry: "ask",
+		Nodes: []livedoc.Node{{ID: "n0", Type: "prose", Markdown: "answer"}}})
 	scr = strings.Join(ft.Screen(), "\n")
 	if strings.Count(scr, "< figaro") != 1 {
 		t.Fatalf("figaro header must appear once (no orphan):\n%s", scr)
@@ -181,7 +186,7 @@ func TestIncipit_ThinkingAbandonedOnEarlyError(t *testing.T) {
 }
 
 // The projection mints prose/thinking nodes even when empty, so a block that
-// fills later cannot shift the ids after it (docs/turn-addressing.md,
+// fills later cannot shift the ids after it (skills/figaro/reference/turns.md,
 // invariant 6). Hiding them is the renderer's job: an empty node must occupy
 // no rows, while a tool node with no output yet still draws its header.
 func TestIncipit_MintedEmptyNodesDrawNothing(t *testing.T) {
