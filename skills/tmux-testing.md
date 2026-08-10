@@ -193,3 +193,38 @@ divergence, which the purity invariant forbids.
 - Is it pinning current behaviour or intended behaviour? Two tests *asserted the
   bug* — one expected a tool present in the IR to render nowhere; a golden file
   literally encoded a duplicated voice marker.
+
+## Twelve arias, one daemon, one build
+
+The suite proves one client at a time. The failures that cost releases were
+concurrent: twelve shells minting, dressing and prompting arias through ONE
+daemon, each in its own nix devshell over the same build. Not a Go test — it
+spends tokens and it needs the real provider — so it is a recipe, run by hand
+before anything that touches the store, the form writer or the inbox lands.
+
+```sh
+nix build .#default -o /tmp/fig            # the build every shell shares
+export FIGARO_STATE_DIR=/tmp/stress/state FIGARO_RUNTIME_DIR=/tmp/stress/rt
+for i in $(seq 1 12); do
+  ( nix develop --quiet --command bash -c \
+      "/tmp/fig/bin/figaro send -O mantra=stress-$i,ttl=$i -r -- \
+        'reply with the single word ok' > /tmp/stress/$i.out 2>&1" ) &
+done
+wait
+```
+
+Then read, in this order — each answers a different question:
+
+- `grep -l ok /tmp/stress/*.out | wc -l` — did all twelve get an answer? A
+  serialization bug shows up here as a hang, not a wrong answer.
+- `figaro ls -a` — twelve DISTINCT ids, each with its own mantra and 2 messages.
+  A shared-state bug shows up as a repeated mantra or a missing row.
+- `figaro state --id <one>` — the form is materialized: `-O` names became keys,
+  and `layers` is not on the board.
+- `awk '/VmRSS/{print $2}' /proc/$(cat $FIGARO_RUNTIME_DIR/angelus.pid)/status`
+  — the daemon's own footprint, not the harness's.
+
+Measured on the form branch: 41.7s wall for twelve, 12/12 answered, 56 MB
+daemon RSS, 1.5 MB store. Isolate all three of `FIGARO_CONFIG_DIR`,
+`FIGARO_STATE_DIR` and `FIGARO_RUNTIME_DIR` or the run finds the user's daemon —
+an interactive shell's own prompt integration will start one for you.

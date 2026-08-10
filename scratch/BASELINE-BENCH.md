@@ -29,3 +29,21 @@ outfit: FoldCold 643µs/471KB/1568   (was 627µs/477KB/1579)
 figaro: DressFirstTime 75µs   MaterializeWarm 69µs
         MaterializeNoLayers 11ns  ← every plain `fig set` pays only this
         ParsePatch 2.2µs (client-side, no disk)
+
+# Concurrency, by scenario (form branch, nix build, real provider)
+
+| scenario | result |
+|---|---|
+| 12 ephemeral arias, one daemon, own devshells | 12/12 answered |
+| 12 BACKED arias (birth + dress + turn + store) | 12/12, 41.7s wall, 56 MB daemon RSS, 1.5 MB store |
+| distinct ids / mantras / birth-patch hashes | 12 distinct, no shared state |
+| `layers` on any board afterwards | none — materialized and stripped |
+
+# Migration, measured on a copy of a real store (463 conversations, 230 MB)
+
+| | |
+|---|---|
+| boards read after generation 1 -> 2 | 463 / 463 |
+| non-empty | 462 (one aria never wrote a patch) |
+| `fig ls` renders lineage | yes, including pre-0.22 stumps |
+| OUTFIT column, arias older than the loadout->outfit rename | was blank for all of them; now named |
